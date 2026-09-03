@@ -12613,3 +12613,144 @@ Read straight out of `4PH Strevi Residences Schedule - BL02.xer`:
 - **The Initiation Phase branch was never incomplete.** It holds exactly **four direct tasks and no
   sub-branches** — those four rows are the whole phase. 9 of 12,465 WBS branches carry no task
   anywhere beneath them.
+## 2026-09-03 (f) — Four bugs behind "all floors are under Tower D", and a parser losing a quarter of the logic
+
+Owner, after a fresh reimport: *"the floors and zones fix is still outstanding. All floors and zones
+are loaded to Tower D. No floors and zones are loaded into Towers C to A. Trade sequence also doesn't
+have the chain link loaded is this correct?"* Plus, from the same round: *"Tower links UI still needs
+work, dropdowns are clipping. Tower links for strevi is still empty as well"*, *"the stacking shows
+Tower D has 16 floors x 4"*, and *"Why are there two different activity legends for within execution
+and outside execution phase? Let's consolidate into one legend."*
+
+⚠️⚠️ **The previous round's fix was real but secondary, and I shipped it while the primary cause sat
+one function away.** The WBS-name fallback works: measured on the file, it resolves a tower for
+**15,924 of 16,393** tasks and **17 distinct floors under each of Towers A–D**. The derive was
+building the right tree the whole time. Everything below is what happened to it afterwards.
+
+### 1 · `tower` vs `towerId` — one word, the entire floors-and-zones failure
+
+`sbDeriveFromSchedule` wrote `floors.push({ tower: … })`. Every other producer of a floor writes
+**`towerId`** (`+ Add floor`, the quick generator, `cloneFloors`) and every consumer reads it:
+`towerIdOf(f)` is `(f && f.towerId) || towerList()[0].id`, and `normalize()` resolves the same field
+with the same fallback. So `f.towerId` was `undefined` on every derived floor and all 256 of them
+were reassigned to `d.towers[0].id` — Tower D, the first in the list. Hence four towers' floors piled
+onto one, three towers empty, and Stacking showing Tower D four times over.
+
+⚠️⚠️ **AND THIS IS WHY THE HARNESS PASSED IT.** The test read `res.cfg` straight off
+`sbDeriveFromSchedule()`, where `tower` is present and the per-tower counts look perfect. The value is
+destroyed by `normalize()`, which runs *after* — and `normalize()` is a **whitelist**: it rebuilds
+every cfg field by field, so a field it does not name does not survive. This is the second bug of
+exactly that shape in one day (`par` on the phase activities was the first, same function, same
+normaliser). **A derive test that does not go through `normalize()` is testing half the path.** The
+test now applies the setup and reads what the steps read.
+
+### 2 · `predRels` was silently discarding 24.6% of this project's logic
+
+The predecessor-text parser anchored on the id and matched it as `[A-Za-z0-9._-]+`. Measured against
+`4PH Strevi Residences Schedule - BL02.xer`:
+
+| | |
+|---|---|
+| activity codes containing a character that class rejects | **3,990 of 16,393** |
+| `&` (`A-T1-AR-02-UN-U0104-DRY-D&C-010`) / `/` / space | 2,988 / 1,180 / 50 |
+| relationships whose PREDECESSOR id was truncated | **5,239 of 21,338 (24.6%)** |
+| truncated fragments that happen to BE another real id | **0** |
+
+A truncated id matches no activity, so `computeCPM` dropped the link with no error anywhere. **This
+was never a Schedule-Setup problem** — every reader of this project's logic goes through `predRels`,
+so the critical path, total float, the driving-path fallback, the Activity Network, the successor
+lists and the DCMA Health checks were all computed over three quarters of the graph, on the largest
+schedule in the suite.
+
+⚠️ **The fix peels the SUFFIX off the right rather than widening the id class.** No character class
+can hold a P6 activity code — 10 of these ids are really document titles ("D1 Door Jamb and Hardware
+Details") and a space is also this format's separator. But the suffix is a closed vocabulary: an
+optional type from four values, an optional signed integer, optionally bracketed. Match that at the
+end and the id is whatever precedes it, whatever it contains.
+⚠️ **Measured safe:** zero truncated fragments collide with a real id, so the old behaviour was
+always "no match", never "wrong match" — widening can only turn a dropped link into the correct one.
+It cannot re-point an existing one.
+
+**Verified against every real relationship** — all 21,338, parsed by both versions and compared to
+the values straight out of TASKPRED:
+
+    OLD parser fully right : 16,099 (75.4%)   wrong id: 5,239
+    NEW parser fully right : 21,338 (100.0%)  wrong id: 0   type: 0   lag: 0
+
+and in the live app path, `computeCPM` over the same rows now reports **21,338 relationships in the
+graph** (was 16,099), 267 critical activities, and 24 open ends.
+
+### 3 · The Trade sequence read a graph over the wrong keys
+
+*"Trade sequence also doesn't have the chain link loaded is this correct?"* — it was not.
+`tradeLinkIds(tr)` builds its set from `tradeActs(tr).forEach(a => ids[a.id] = 1)` and
+`countTradeLinks` keeps only `ids[k.from] && ids[k.to]`; `autoChainTrade` pushes
+`{from: acts[i-1].id, to: acts[i].id}`. So `cfg.actLinks` is a graph over activity **UUIDs**. The
+derive built it over **codes** (`REBAR`, `FORMWO`), which match no `a.id` — so every trade counted
+zero and the canvas drew nothing. Pre-existing: this step has never loaded from a derive.
+⚠️ The pairs are still COUNTED by activity NAME (the only thing a relationship between two schedule
+rows has in common with a setup line) and now WRITTEN as ids. The by-code map is **deleted** rather
+than kept alongside — two lookups differing only in which side of the same mistake they are on is how
+the mistake comes back. (It also removed an O(196 × 16,393) linear scan from the scope pass.)
+
+### 4 · Tower links: the hand-off activities had no recorded location
+
+The cross-tower pass reads `rowLoc[…].tw` at both ends, and `rowLoc` was only written for rows that
+also resolved a **floor** — the pass `return`ed first. The activities that hand one tower off to
+another are exactly the ones sitting directly under the tower branch with no floor beneath them:
+**616 of the 15,924 tower-bearing tasks have no floor, and all 16 cross-tower relationships live
+among them.** So the step reported "no relationships yet" over a file that has sixteen.
+⚠️ Two corrections to what I said last time: the honest count is **16, not 20** — the earlier figure
+measured towers by the `A-T<n>-` code prefix, which double-counts, because "Tower 1" and "Tower A"
+are *different branches* both holding T1 activities (3,969 under "Tower A", 8 under "Tower 1"). And
+the `No tower stated` bucket is now **excluded from tower relationships** (it produced four of seven
+"relationships" whose far end was "we could not tell where this work is") and **dropped entirely when
+it holds no floors**, which on this file it does not.
+
+### 5 · The Tower-links form was clipping every control
+
+Five `.pd-select`s carrying `.sbld-mini` — `width:62px`, written for the two-character number inputs
+on the Floors & Zones step. Clipped to four characters each, the form read `Tow⌄ | start⌄ | Tow⌄ |
+who⌄`, which names nothing. (The same class was misused the same way on `#b-copyfrom`.) It is
+`width:auto` now and laid out as the sentence it actually is — *"\<tower\> starts after \<tower\> ·
+\<anchor\>"* — because five bare dropdowns cannot say which tower waits and which is waited on; the
+`title` attributes were carrying that, and a tooltip is not a label.
+
+### 6 · One Activity legend chip, not two
+
+The colour key covers Execution-Phase work only, so a mixed schedule has two different marks for the
+same thing. Each mark had its own chip, each began with the word "Activity", and the pair had already
+been patched twice to make them distinguishable — which is the signal that there should be one chip.
+⚠️ **One entry, two swatches**: a legend entry is a mark plus what it means, and when one thing has
+two marks that is one entry with two swatches. Nothing is dropped; the three things a coloured bar
+encodes are still `BAR_NOTE_HTML`, the caption under the key.
+⚠️ **Three states, and it is ALWAYS emitted.** The call site was
+`(!cfg.on || _hasPlainBars) ? … : ''`, which was correct while a second chip covered the skipped
+case — merged, it would leave a project whose every activity IS in the Execution Phase with no
+Activity entry at all. Caught in the browser immediately after the merge. And the "plain outside it"
+sentence is only shown when both marks are actually on screen: claiming it otherwise describes a mark
+the reader cannot find.
+
+### Verified on the real thing
+
+A fixture built from the actual XER — the importer's own `walk()` code assignment, `xerPredText`,
+and the discipline stamp — 28,858 rows (12,465 WBS + 16,393 activities), with `location` null on
+every row and the live project's four Location-Breakdown levels defined. Read into the steps and then
+driven through the UI:
+
+- **Floors & Zones: Tower D 15 · Tower C 15 · Tower B 15 · Tower A 15** floor cards for Structural,
+  no "No floors for…" message on any of them, and the tower bar carries exactly four towers with no
+  empty bucket. Per trade under one tower: Architectural 17, Allied 16, MEPF 16, Structural 15.
+- **Trade sequence: Links (18)** on Structural with real types and lags on the arrows (`FS-1`, `FS-2`,
+  `SS`, `FS-3`) and the trade's own duration now 92 days rather than 60 with no chain. 352 activity
+  links read in total.
+- **Tower links: three real relationships** — *Tower B starts after Tower D −36d*, *Tower A starts
+  after Tower C −37d*, *Tower C starts after Tower D +1d* — and every control in the form showing its
+  full text (108 / 148 / 108 / 220 / 64 px).
+- **Zone sequence: Links (657)**, from 0.
+- **Stacking: 16 tower cards** (4 trades × 4 towers) each with its own floor count, instead of Tower D
+  carrying all of it.
+- **Legend: one Activity chip** in all three states — one swatch and "(red = % complete)" with colours
+  off, one swatch with colours on and nothing outside the phase, two swatches and the sentence when
+  both marks are on screen.
+- Derive over 16,000 execution activities: 606 ms; applying it into the steps: 709 ms.

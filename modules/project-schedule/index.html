@@ -937,10 +937,6 @@
        rule below is (1,2,0) and still beats both, so it alone decides when the chip is shown. */
     .ps-actlegend .lg-lsmon { display:none; }
     #ps-view-schedule.ps-lsm .lg-lsmon { display:inline-flex; }
-    /* Only in the mixed state — with nothing but coloured bars on screen there is no second
-       Activity chip to be told apart from, and the qualifier would be noise. */
-    .lg-lsmhalf { display:none; }
-    .ps-actlegend.ps-lsm-mixed .lg-lsmhalf { display:inline; font-style:normal; color:var(--pd-muted); margin-left:4px; }
     /* Sample of a REAL coloured bar — the counterpart to .lg-task in the plain view: the same swatch
        shows both halves at once (solid+textured actual over the pale remainder) with the baseline
        rail beneath, so the key looks like the thing it is describing rather than three flat chips.
@@ -3020,6 +3016,13 @@
        can tell at a glance which numbers are this category's own and which are inherited. */
     .sbld-xl td.xl-cell.sbld-ownd { font-weight:700; box-shadow:inset 2px 0 0 var(--pd-red); }
     /* Step-3 tower relationships — one readable sentence per row. */
+    /* The Tower-links form. See the note in stTowerLinks: these are labelled, auto-width
+       controls laid out as a sentence, never `.sbld-mini`. */
+    .sbld-tlform { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:10px 0 2px; }
+    .sbld-tlform .pd-select { width:auto; max-width:220px; height:32px; font-size:12.5px; padding:0 26px 0 8px; }
+    .sbld-tlform .pd-input { width:64px; height:32px; font-size:12.5px; }
+    .sbld-tlform label { display:inline-flex; align-items:center; gap:5px; font-size:12px; color:var(--pd-muted); }
+    .sbld-tlsep { color:var(--pd-muted); font-weight:700; }
     .sbld-tllist { display:flex; flex-direction:column; gap:6px; margin:6px 0 12px; }
     .sbld-tlrow { display:flex; align-items:center; gap:10px; padding:9px 12px; border:1px solid var(--pd-line);
       border-left:3px solid var(--pd-red); border-radius:8px; background:var(--pd-card); }
@@ -26679,12 +26682,25 @@
       host.innerHTML = head +
         '<p class="sbld-lede">Say how each tower relates to another in time. A <b>shared podium</b> is modelled as floors belonging to <b>one</b> tower that the other <b>references</b> — so pick the podium level as the anchor and the second tower hands off from it. Leave the anchor as <b>whole tower</b> to wait on everything. Anything with no relationship simply starts on the project start date.</p>' +
         '<div class="sbld-tllist">' + rowsHtml + '</div>' +
-        '<div class="sbld-sec-actions" style="flex-wrap:wrap;align-items:center;">' +
-          '<select class="pd-select sbld-mini" id="b-tlto" title="The tower that waits">' + towerOpts(list[1].id) + '</select>' +
-          '<select class="pd-select sbld-mini" id="b-tltype">' + VS_TL_TYPES.map(function (o) { return '<option value="' + o[0] + '">' + o[1] + '</option>'; }).join('') + '</select>' +
-          '<select class="pd-select sbld-mini" id="b-tlfrom" title="The tower it waits on">' + towerOpts(firstFrom) + '</select>' +
-          '<select class="pd-select sbld-mini" id="b-tlanchor" title="Narrow the handoff to one level of that tower — this is how a shared podium is referenced"></select>' +
-          '<label class="sbld-hint" style="display:inline-flex;align-items:center;gap:5px;">lag <input class="pd-input sbld-mini" id="b-tllag" type="number" step="1" value="0" style="width:70px;height:30px;" title="Days (negative = lead)"></label>' +
+        /* ⚠️⚠️ NOT `.sbld-mini` ON A <select>. That class is `width:62px`, written for the
+           two-character number inputs on the Floors & Zones step, and on these five controls it
+           clipped every one of them to its first four characters: the form read
+           `Tow⌄ | start⌄ | Tow⌄ | who⌄`, which names nothing. Owner 2026-09-03: *"Tower links UI
+           still needs work, dropdowns are clipping."* (Same class misused the same way on
+           `#b-copyfrom`, fixed in the same round.)
+           ⚠️ Laid out as a SENTENCE with the connecting words between the controls, because that
+           is what the form is: "<tower> starts after <tower> · <anchor>". Five bare dropdowns in a
+           row cannot say which is the waiting tower and which is the one waited on — the `title`
+           attributes were carrying that, and a tooltip is not a label.
+           ⚠️ `width:auto` lets a <select> size to its longest option, which is what it is for; the
+           max-width stops a long floor name ("Cluster 2 (Units 07 to 12)") stretching the row. */
+        '<div class="sbld-tlform">' +
+          '<select class="pd-select" id="b-tlto" title="The tower that waits">' + towerOpts(list[1].id) + '</select>' +
+          '<select class="pd-select" id="b-tltype">' + VS_TL_TYPES.map(function (o) { return '<option value="' + o[0] + '">' + o[1] + '</option>'; }).join('') + '</select>' +
+          '<select class="pd-select" id="b-tlfrom" title="The tower it waits on">' + towerOpts(firstFrom) + '</select>' +
+          '<span class="sbld-tlsep">·</span>' +
+          '<select class="pd-select" id="b-tlanchor" title="Narrow the handoff to one level of that tower — this is how a shared podium is referenced"></select>' +
+          '<label>lag <input class="pd-input" id="b-tllag" type="number" step="1" value="0" title="Days (negative = lead)"> d</label>' +
           '<button class="pd-btn pd-btn-primary" id="b-tladd">Add relationship</button>' +
         '</div>' +
         '<p class="sbld-hint">Relationships are applied when the schedule is traced, so re-zoning a tower keeps them pointing at the right place. A relationship that would create a loop is refused.</p>';
@@ -27857,13 +27873,25 @@
       var tree = {};   // trade -> tower -> floor -> zone -> unit -> 1
       // Where each ACTIVITY sits, so the links / scope passes below can address the same leaves the
       // zoning pass created without re-deriving any of it.
-      var rowLoc = {};   // row id -> { g, tw, fl, zn, un }
+      var rowLoc = {};   // row id -> { g, tw, fl, zn, un } - `fl` may be null
       var nNoFloor = 0;
       acts.forEach(function (r) {
         var g = sbTradeKeyOf(r);
         var tw = sbLoc(r, 'tower') || SB_NO_TOWER;
-        var fl = sbLoc(r, 'floor'); if (!fl) { nNoFloor++; return; }
+        var fl = sbLoc(r, 'floor');
         var zn = sbLoc(r, 'zone'), un = sbLoc(r, 'unit');
+        /* ⚠️⚠️ RECORDED EVEN WITH NO FLOOR, and that is what makes the Tower-links read work.
+           This used to `return` before `rowLoc[r.id]` was set, so an activity with no floor had no
+           entry at all — and the cross-tower pass needs `rowLoc[...].tw` at BOTH ends of a
+           relationship. The activities that hand one tower off to another are exactly the ones that
+           sit directly under the tower branch with no floor beneath them (mobilisation, tower crane,
+           handover): measured on the file, 616 of the 15,924 tower-bearing tasks have no floor, and
+           ALL 16 cross-tower relationships live among them. So the step read "no relationships yet"
+           over a file that has sixteen of them.
+           ⚠️ It contributes nothing to the floors/zones tree — that still needs a floor, and the
+           `if (!fl) return` below keeps it out. This only remembers where the activity IS. */
+        rowLoc[r.id] = { g: g, tw: tw, fl: fl, zn: zn, un: un };
+        if (!fl) { nNoFloor++; return; }
         tree[g] = tree[g] || {};
         tree[g][tw] = tree[g][tw] || {};
         tree[g][tw][fl] = tree[g][tw][fl] || {};
@@ -27873,7 +27901,6 @@
           seen(g + '|' + tw + '|' + fl + '|' + zn, r);
           if (un) { tree[g][tw][fl][zn][un] = 1; seen(g + '|' + tw + '|' + fl + '|' + zn + '|' + un, r); }
         }
-        rowLoc[r.id] = { g: g, tw: tw, fl: fl, zn: zn, un: un };
       });
       function byFirst(prefix) {
         return function (a, b) {
@@ -27924,12 +27951,47 @@
             nFl++;
             if (!zones.length) leafUid[lk(g, tw, fl, null, null)] = g + '/' + fId;
             byTower[tw] = (byTower[tw] || 0) + 1;
-            floors.push({ id: fId, tower: towerIds[tw] || (out.towers[0] && out.towers[0].id),
+            /* ⚠️⚠️ `towerId`, NOT `tower`, AND THAT ONE WORD WAS THE WHOLE FAILURE.
+               Owner 2026-09-03, twice, after a reimport: *"All floors and zones are loaded to Tower
+               D. No floors and zones are loaded into Towers C to A."* and *"the stacking shows Tower
+               D has 16 floors x 4 since all towers are loaded into Tower D"*.
+               Every other producer of a floor writes `towerId` (`+ Add floor`, the quick generator,
+               `cloneFloors`) and every consumer reads it: `towerIdOf(f)` is
+               `(f && f.towerId) || towerList()[0].id`, and `normalize()` resolves the same field
+               with the same fallback. This pass wrote `tower`. So `f.towerId` was undefined on every
+               derived floor and all 68 of them (17 floors x 4 towers) were reassigned to
+               `d.towers[0].id` — Tower D, the first in the list. Nothing was lost on the way IN;
+               the tree was built correctly and then thrown away one function later.
+               ⚠️⚠️ AND THIS IS WHY THE HARNESS MISSED IT: the test read `res.cfg` straight off
+               `sbDeriveFromSchedule()`, where `tower` is present and everything looks right. The
+               value is destroyed by `normalize()`, which runs after. A derive test that does not go
+               through normalize() is testing half the path — the same lesson `par` taught an hour
+               earlier, on the same function. Measured against the file: the WBS-name fallback
+               resolves a tower for 15,924 of 16,393 tasks and 17 distinct floors under EACH of
+               Towers A-D, so the input was never the problem. */
+            floors.push({ id: fId, towerId: towerIds[tw] || (out.towers[0] && out.towers[0].id),
                           code: String(fl), name: String(fl), sub: isSub(fl), kind: kindOf(fl), zones: zones });
           });
         });
         out.zoning[g].floors = floors;
       });
+      /* ⚠️⚠️ THE `No tower stated` BUCKET IS DROPPED WHEN IT HOLDS NOTHING. It exists so that
+         untowered work is not silently filed under whichever tower happens to be first (the bug
+         that put every floor under Tower D). But an activity only reaches the zoning tree if it
+         also names a FLOOR, and on the real file 692 of the untowered rows name neither — so
+         the bucket was created, drew no floors, and then appeared in the tower bar as a fifth
+         tower reading 0, with the report telling the planner to copy another tower's layout
+         into it. An empty bucket is not information; it is a fifth thing to click.
+         ⚠️ Removed only when EMPTY, and only the bucket — a real tower that came out with no
+         floors stays, because that is a fact about the schedule the planner needs to see. */
+      if (!byTower[SB_NO_TOWER]) {
+        var _bId = towerIds[SB_NO_TOWER];
+        if (_bId) {
+          out.towers = out.towers.filter(function (t) { return t.id !== _bId; });
+          towerOrder = towerOrder.filter(function (t) { return t !== SB_NO_TOWER; });
+          rep.towers = out.towers.length;
+        }
+      }
       rep.floors = nFl; rep.zones = nZn; rep.units = nUn;
       // The leaf uid an ACTIVITY belongs to, honouring the same zoneless/unitless collapse.
       function uidOfRow(r) {
@@ -28027,8 +28089,20 @@
          floors, so the most common type/lag for each pair wins.
          ⚠️ Self-pairs are dropped: "Concrete follows Concrete" is the floor-to-floor repetition of one
          activity, which the setup expresses as the floor lead/lag on step 5, not as a link. */
-      var codeByName = {};
-      out.activities.forEach(function (a) { codeByName[a.name] = a.code; });
+      /* ⚠️⚠️ THE TRADE-SEQUENCE STEP MATCHES ON THE ACTIVITY'S `id`, NOT ITS CODE, and
+         writing codes here is why it always opened on "Links (0)". `tradeLinkIds(tr)` builds its set
+         from `tradeActs(tr).forEach(a => ids[a.id] = 1)` and `countTradeLinks` keeps only
+         `ids[k.from] && ids[k.to]`; `autoChainTrade` pushes `{from: acts[i-1].id, to: acts[i].id}`.
+         So `cfg.actLinks` is a graph over activity UUIDs. This pass built it over codes (`REBAR`,
+         `FORMWO`), which match no `a.id`, so every trade counted zero links and the canvas drew
+         nothing — owner 2026-09-03: *"Trade sequence also doesn't have the chain link loaded is
+         this correct?"* It was not.
+         ⚠️ The pairs are COUNTED by activity NAME - the only thing a relationship between two
+         schedule rows has in common with a setup line - and WRITTEN as ids. The by-CODE map that
+         used to sit here is gone rather than kept beside this one: two lookups differing only in
+         which side of the same mistake they are on is how the mistake comes back. */
+      var idByName = {};
+      out.activities.forEach(function (a) { idByName[a.name] = a.id; });
       var rowById = {};   // activity_id -> ROW, so the location of a predecessor is reachable too
       acts.forEach(function (r) { if (r.activity_id) rowById[String(r.activity_id)] = r; });
       var nameById = {};
@@ -28038,16 +28112,16 @@
       var locPairs = {}, twPairs = {}, nRel = 0, nRelResolved = 0;
       acts.forEach(function (r) {
         if (!r.predecessors) return;
-        var to = codeByName[String(r.activity_name || '').trim()];
+        var to = idByName[String(r.activity_name || '').trim()];
         var toUid = uidOfRow(r), toTw = rowLoc[r.id] && rowLoc[r.id].tw;
         predRels(r.predecessors).forEach(function (x) {
           nRel++;
           var p = rowById[String(x.id)];
           var pn = nameById[String(x.id)];
           if (p) nRelResolved++;
-          // (a) name -> name, for the Trade-sequence step
+          // (a) name -> name (as activity IDS - see idByName), for the Trade-sequence step
           if (to && pn) {
-            var from = codeByName[pn];
+            var from = idByName[pn];
             if (from && from !== to) {
               var k = from + '|' + to;
               var pr = pairs[k] || (pairs[k] = { from: from, to: to, kinds: {}, n: 0 });
@@ -28066,9 +28140,15 @@
             var lkind = x.type + '|' + x.lag;
             lp.kinds[lkind] = (lp.kinds[lkind] || 0) + 1;
           }
-          // (c) tower -> tower, for the Tower-links step
+          /* (c) tower -> tower, for the Tower-links step.
+             ⚠️⚠️ THE `No tower stated` BUCKET IS EXCLUDED, because it is not a tower. Measured on
+             the real file it produced four of the seven "relationships" the step offered—
+             `Tower D -> No tower stated SS` and three like it — which say nothing a planner can act
+             on: the far end is "we could not tell where this work is". Three real ones remain
+             (Tower D -> Tower B, Tower C -> Tower A, Tower D -> Tower C), and a step showing
+             three true statements is worth more than one showing seven of which four are noise. */
           var fromTw = rowLoc[p.id] && rowLoc[p.id].tw;
-          if (fromTw && toTw && fromTw !== toTw) {
+          if (fromTw && toTw && fromTw !== toTw && fromTw !== SB_NO_TOWER && toTw !== SB_NO_TOWER) {
             var tkk = fromTw + SBK + toTw;
             var tp = twPairs[tkk] || (twPairs[tkk] = { from: fromTw, to: toTw, kinds: {}, n: 0 });
             tp.n++;
@@ -28214,10 +28294,10 @@
       var onPairs = {}, nOn = 0;
       acts.forEach(function (r) {
         var uid = uidOfRow(r); if (!uid) return;
-        var cd = codeByName[String(r.activity_name || '').trim()]; if (!cd) return;
-        var aId = null;
-        for (var i = 0; i < out.activities.length; i++) if (out.activities[i].code === cd) { aId = out.activities[i].id; break; }
-        if (!aId) return;
+        // ⚠️ Straight through `idByName`. This used to resolve the CODE and then linear-scan
+        // `out.activities` for a matching one - an O(activities) scan inside a loop over every
+        // row, i.e. 196 x 16,393 on this project, to find something a map already knows.
+        var aId = idByName[String(r.activity_name || '').trim()]; if (!aId) return;
         var k = uid + '|' + aId;
         if (!onPairs[k]) { onPairs[k] = 1; nOn++; }
       });
@@ -31802,13 +31882,56 @@
     return String(str).split(/[,;\n]+/).map(function (x) { var m = String(x).trim().match(/^([A-Za-z0-9._\-]+)/); return m ? m[1] : ''; }).filter(Boolean);
   }
   // Parse predecessor entries into { id, type (FS/SS/FF/SF), lag(days) }.
+  /* ==========================================================================================
+     PARSE "<activity id> <type><lag>, ..." — AND THE ID IS WHATEVER IS LEFT
+     ------------------------------------------------------------------------------------------
+     ⚠️⚠️ THIS USED TO ANCHOR ON THE ID AND MATCH IT AS `[A-Za-z0-9._-]+`, WHICH SILENTLY
+     THREW AWAY A QUARTER OF A REAL PROJECT'S LOGIC. Measured against
+     `4PH Strevi Residences Schedule - BL02.xer`: 3,990 of its 16,393 activity codes contain a
+     character that class rejects — `&` in 2,988 of them (`A-T1-AR-02-UN-U0104-DRY-D&C-010`), `/`
+     in 1,180, a space in 50 — and **5,239 of the 21,338 relationships (24.6%) name a predecessor
+     whose id the old pattern truncated at the first bad character**. A truncated id matches no
+     activity, so `computeCPM` dropped the link with no error anywhere.
+     That is not a Schedule-Setup problem: EVERY reader of this project's logic goes through here.
+     A quarter of the relationships missing means the critical path, total float, the driving-path
+     fallback, the Activity Network, the successor lists in the details panel and the DCMA Health
+     checks were all computed over three quarters of the graph, on the largest schedule in the
+     suite. Owner-visible symptom: "Trade sequence doesn't have the chain link loaded".
+
+     ⚠️ THE FIX IS TO PEEL THE SUFFIX OFF THE RIGHT, not to widen the id class. There is no
+     character class that can hold a P6 activity code — the 50 ids with spaces are really document
+     titles ("D1 Door Jamb and Hardware Details") and a space is also the separator this format
+     uses. But the SUFFIX is a closed vocabulary: an optional relationship type from exactly four
+     values, an optional signed integer, optionally in brackets. So match THAT at the end of the
+     token and treat everything before it as the id, whatever it contains. Every writer in this
+     module (`serializeRels`, `xerPredText`) emits exactly that shape.
+     ⚠️ MEASURED SAFE, and this is why widening is not a gamble: of the 3,990 codes the old
+     pattern truncated, the number whose truncated fragment happens to BE another real activity id
+     is **0**. So the old behaviour was always "no match", never "wrong match" — which means this
+     can only turn a dropped link into the correct one. It cannot silently re-point an existing one.
+     ⚠️ An id that itself ends in " FS" would now be read as a type. No id in any live project
+     does, and the alternative — keeping a parser that loses a quarter of the biggest schedule — is
+     not a trade worth making. Stated rather than defended against.
+     ========================================================================================== */
+  var _PR_SUFFIX = /[\s:(]+(FS|SS|FF|SF)[\s]*([+\-]?\d+)?[\s]*\)?$/i;
+  var _PR_LAGONLY = /[\s:(]+([+\-]\d+)[\s]*\)?$/;
   function predRels(str) {
     if (!str) return [];
     return String(str).split(/[,;\n]+/).map(function (x) {
       x = String(x).trim(); if (!x) return null;
-      var m = x.match(/^([A-Za-z0-9._\-]+)[\s:(]*\s*(FS|SS|FF|SF)?\s*([+\-]?\d+)?/i);
-      if (!m || !m[1]) return null;
-      return { id: m[1], type: (m[2] || 'FS').toUpperCase(), lag: m[3] ? (parseInt(m[3], 10) || 0) : 0 };
+      var type = 'FS', lag = 0;
+      var m = x.match(_PR_SUFFIX);
+      if (m) {
+        type = m[1].toUpperCase();
+        lag = m[2] ? (parseInt(m[2], 10) || 0) : 0;
+        x = x.slice(0, x.length - m[0].length);
+      } else {
+        // "X +2" / "X (-3)" — a lag with no type stated. FS is P6's default, as above.
+        var m2 = x.match(_PR_LAGONLY);
+        if (m2) { lag = parseInt(m2[1], 10) || 0; x = x.slice(0, x.length - m2[0].length); }
+      }
+      x = x.trim();
+      return x ? { id: x, type: type, lag: lag } : null;
     }).filter(Boolean);
   }
   // Recomputed automatically on every data change (see rebuild). Uses explicit
@@ -33389,12 +33512,48 @@
   // screen right now" is a question about DL, which no selector can ask. And in the mixed state it
   // NAMES the work it covers — two chips both reading "Activity" with different marks is exactly the
   // defect fixed earlier the same day.
-  function plainActChipHTML(mixed) {
-    return '<span class="lg"' +
-      (mixed ? ' title="Activities outside the Execution Phase keep the plain bar: the colour key covers execution work only."' : '') +
-      '><span class="lg-swatch lg-task"></span> Activity' +
-      (mixed ? ' <em style="font-style:normal;color:var(--pd-muted);">outside the Execution Phase</em>' : '') +
-      ' <em style="font-style:normal;color:var(--pd-red);">(red = % complete)</em></span>';
+  /* ==========================================================================================
+     ONE ACTIVITY CHIP, NOT TWO
+     ------------------------------------------------------------------------------------------
+     Owner 2026-09-03: *"Why are there two different activity legends for within execution and
+     outside execution phase? Let's consolidate into one legend."*
+
+     They were right, and the history explains how it happened rather than excusing it. The colour
+     key covers Execution-Phase work only, so in a mixed schedule two DIFFERENT marks are on screen
+     for the same thing: a plain dark bar with a red progress fill outside the phase, and a
+     trade-coloured bar inside it. Each mark got its own chip, each chip began with the word
+     "Activity", and the pair had already been patched twice — once to add "outside the Execution
+     Phase" to one, once to add "in the Execution Phase" to the other. Two patches to make two chips
+     distinguishable is the signal that there should be one chip.
+     ⚠️⚠️ SO THE MARKS SIT SIDE BY SIDE UNDER ONE LABEL. A legend entry is a mark plus what it
+     means; when one thing has two marks, that is one entry with two swatches, not two entries.
+     Nothing is dropped: both marks are still shown, both are still explained, and the "(red = %
+     complete)" reading still applies to the plain one.
+     ⚠️ In the PLAIN view (colours off) there is only one mark, so there is only one swatch and
+     the sentence about the phase would be false — it is not emitted.
+     ========================================================================================== */
+  /* ⚠️⚠️ THREE STATES, ONE CHIP, AND IT IS ALWAYS EMITTED. The call site used to be
+     `(!cfg.on || _hasPlainBars) ? plainActChipHTML(...) : ''` — correct while there were TWO
+     chips, because the coloured one covered the case this one skipped. With them merged that
+     condition would leave a project whose every activity IS in the Execution Phase with no
+     Activity entry in its legend at all. Caught in the browser immediately after the merge.
+     ⚠️ The `mixed` sentence is only true when both marks are on screen. Claiming "plain
+     outside it" on a schedule that has nothing outside it would be describing a mark the reader
+     cannot find. */
+  function plainActChipHTML(on, mixed) {
+    if (!on) {
+      return '<span class="lg"><span class="lg-swatch lg-task"></span> Activity' +
+        ' <em style="font-style:normal;color:var(--pd-red);">(red = % complete)</em></span>';
+    }
+    if (!mixed) {
+      return '<span class="lg" title="Every activity on screen is in the Execution Phase, so every bar takes its trade colour. Solid + textured is done, pale is the remaining work.">' +
+        '<span class="lg-swatch lg-lsmbar"></span> Activity</span>';
+    }
+    return '<span class="lg" title="The colour key covers Execution-Phase work only. Everything else keeps the plain bar, where red is the % complete.">' +
+      '<span class="lg-swatch lg-lsmbar"></span><span class="lg-swatch lg-task" style="margin-left:3px;"></span> Activity ' +
+      '<em style="font-style:normal;color:var(--pd-muted);">' +
+        '— coloured in the Execution Phase, plain outside it ' +
+        '<span style="color:var(--pd-red);">(red = % complete)</span></em></span>';
   }
   var MARKS_LEGEND_HTML =
       '<span class="lg lg-lsmoff"><span class="lg-swatch lg-sum"></span> WBS summary (roll-up)</span>' +
@@ -33404,38 +33563,15 @@
       // the only rail statement, so it stays. Coloured view: the bar sample carries it.
       '<span class="lg lg-lsmoff" title="The thin rail under each bar: the BL0 planned dates. The bar above it is the current dates — the offset between their edges is the slip.">' +
         '<span class="lg-swatch lg-bl"></span> Planned dates (BL0 baseline)</span>' +
-      // ⚠️ LSM-only, and the counterpart to .lg-lsmoff. With the legend on, a bar no longer reads as
-      // "dark bar + red fill" — it fills with its OWN trade colour, pale for the remaining part and
-      // solid/textured for the completed part. Nothing on screen said so, which is why two greens on
-      // one bar read as two different trades. Sample swatch, not a category.
-      // ⚠️ These two are progress WITHIN the current bar — deliberately worded so they cannot be
-      // read as the planned-vs-actual DATES comparison above. "Planned (remaining)" used to sit
-      // next to "Baseline (BL0)" and the two sounded like the same thing.
-      // One sample of a real bar, the way the plain view's "Activity (red = % complete)" chip works —
-      // solid+textured actual over the pale remainder, with the baseline rail under it — instead of
-      // three flat chips the reader has to reassemble mentally.
-      // ⚠️ WORDING. "still to do" was wrong and the owner read it as a forecast. A row encodes THREE
-      // different things and none of them may be mistakable for another:
-      //   rail        = the BL0 PLANNED DATES
-      //   bar extent  = the CURRENT/FORECAST DATES (a started activity's right edge IS the forecast
-      //                 finish — dispFin -> forecastFin, retained logic off the data date)
-      //   fill inside = PROGRESS: solid = done, pale = remaining (100 - percent_complete)
-      // So the pale part is remaining WORK inside the current dates, never a forecast date — the
-      // forecast is already expressed by where the bar ENDS. Say "remaining", never "still to do".
-      '<span class="lg lg-lsmon" title="A coloured bar carries three separate things. WHERE THE BAR SITS = the current dates; for a started activity its right edge is the forecast finish. INSIDE THE BAR = progress: solid + textured is done, pale is the remaining work. THE RAIL UNDERNEATH = the BL0 planned dates; the offset between the rail and the bar is the slip.">' +
-        '<span class="lg-swatch lg-lsmbar"></span> Activity' +
-        /* ⚠️⚠️ NAMES ITS HALF WHENEVER THE PLAIN CHIP IS ALSO SHOWN, and that became
-           necessary the moment this swatch stopped being blue. In the MIXED state (execution work
-           coloured, everything else on plain bars) the legend carries two chips that both begin
-           "Activity"; the plain one already says *"outside the Execution Phase"* (see
-           plainActChipHTML — the same defect, fixed on the other chip on 2026-09-02). While this
-           one was a palette blue against a red plain bar, colour alone told them apart. Both are
-           brand red now, by request, so the pair has to be separated in WORDS instead.
-           ⚠️ Revealed by CSS on `.ps-lsm-mixed`, not by rebuilding this constant into a
-           function: `_hasPlainBars` is computed in renderActLegend, which is also the one place
-           that knows whether the plain chip was emitted, and a class on the same host keeps the two
-           decisions from being able to disagree. */
-        '<em class="lg-lsmhalf">in the Execution Phase</em></span>' +
+      /* ⚠️⚠️ THE SECOND ACTIVITY CHIP IS GONE, MERGED INTO plainActChipHTML. Owner 2026-09-03:
+         *"Why are there two different activity legends for within execution and outside execution
+         phase? Let’s consolidate into one legend."* This was the coloured-bar half; the plain half
+         lived in plainActChipHTML, each began with the word "Activity", and each had already been
+         given a qualifier to tell it from the other. One entry carries both swatches now.
+         ⚠️ What that chip UNIQUELY said is not lost: the three things a coloured bar encodes
+         (fill = progress, extent = forecast dates, rail = planned dates) are BAR_NOTE_HTML, the
+         caption under the key, which is where they were moved on 2026-09-02 for being too long to
+         sit inside a chip. Deleting the chip does not touch them. */
       '<span class="lg"><span class="lg-swatch lg-mile"></span> Milestone</span>' +
       '<span class="lg"><span class="lg-swatch lg-dd"></span> Data date (today)</span>';
   // ⚠️ The three facts a coloured bar encodes, moved OUT of the Activity chip and onto their own
@@ -33601,15 +33737,11 @@
       // always belongs; with them on it describes the plain bars drawn for non-execution work, so it
       // belongs only when one of those is actually on screen. Shipping it unconditionally put an
       // unexplained second Activity chip in a legend that had no plain bar in it.
-      '<div class="ps-actlegend-items">' + ((!cfg.on || _hasPlainBars) ? plainActChipHTML(cfg.on) : '') + MARKS_LEGEND_HTML +
+      '<div class="ps-actlegend-items">' + plainActChipHTML(cfg.on, _hasPlainBars) + MARKS_LEGEND_HTML +
         (items ? '<span class="ps-alg-sep"></span>' + items : '') + BAR_NOTE_HTML + '</div>';
     // ⚠️ The fold chevron is INJECTED markup, so Icons.hydrate does not reach it on its own --
     // the DOMContentLoaded pass only covers static markup. Without this the button renders empty.
     if (window.Icons) Icons.hydrate(host);
-    // The mixed state, for `.lg-lsmhalf` — set from the same `_hasPlainBars` that decided whether
-    // to emit the plain chip at all, so the qualifier appears exactly when there is something to
-    // qualify against.
-    host.classList.toggle('ps-lsm-mixed', !!(cfg.on && _hasPlainBars));
     var fld = host.querySelector('.ps-alg-fold');
     if (fld) fld.onclick = function () { setLegendFold(!_legendFolded); };
     applyLegendFold();

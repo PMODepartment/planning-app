@@ -12767,3 +12767,16 @@ touched, so no `?v=` bump is due. Full detail (and the browser verification) is 
 - **Schedule Setup opens on the WBS.** The tree editor is step 2 rather than step 11: it is the only
   step that shows what the project already has, it edits the live tree rather than filling in the
   setup, and the import path already checked branches first.
+- **A quarter of the biggest schedule's logic was invisible to the CPM.** `predRels` matched activity
+  ids as `[A-Za-z0-9._-]+`, and 3,990 of 4PH Strevi's 16,393 activity codes contain `&`, `/` or a
+  space — so **5,239 of its 21,338 relationships (24.6%)** named a predecessor the parser truncated,
+  and the link was dropped with no error. The critical path, total float, the Activity Network and the
+  DCMA Health checks were all computed over three quarters of the graph. The parser now peels the
+  `<type><lag>` suffix off the right and takes the id to be whatever precedes it: verified at 100.0%
+  on all 21,338 real relationships, up from 75.4%, with zero wrong ids, types or lags.
+- **Reading a live schedule into Schedule Setup now fills the towers, the trade sequence and the tower
+  links.** Four separate defects: derived floors carried `tower` where everything else reads `towerId`
+  (so all 256 of them were reassigned to the first tower); the trade sequence's link graph is keyed on
+  activity ids and the derive wrote codes; the cross-tower pass needed a location for activities that
+  have no floor, which is exactly what a tower hand-off is; and the Tower-links form carried a 62px
+  width class that clipped all five of its dropdowns.
