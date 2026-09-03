@@ -84,6 +84,86 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-03 (r) — The chunky shell converged on the PRC app's own values
+
+Owner: *"Can you copy the formatting and css from prc-app to the planning-app. The prc-app looks more
+minimalist compared to the chunky planning-app."* One file changed — `assets/css/dashboard.css` — and
+every value below was **read out of `prc-app/assets/css/dashboard.css` and matched, not invented**.
+
+- ⚠️ **What actually read as "chunky" was the SHAPE SCALE, not any one component.** The file carried a
+  single `--pd-radius: 4px` plus six ad-hoc radii picked per component (4/8/9/10/12/14) and one
+  hardcoded shadow, so nothing agreed with anything. It now carries PRC's own scale one-for-one —
+  `--pd-radius`/`-md`/`-lg`/`-xl` (4/8/12/16) and `--pd-shadow`/`-md`/`-lg` — with the dark-mode block
+  remapping the two new shadow rungs. **Reach for a rung, never a fresh literal.**
+- **Matched to PRC exactly, measured rather than eyeballed:** `.pd-main` padding
+  `22px` → **`20px 24px 48px`** (= `.content`); `.pd-kpi` **`16px 18px` / r12** (= `.metric-card`);
+  `.pd-kpi-label` **10px/700** (= `.metric-label`); `.pd-kpi-value` **20px/800** (= `.metric-value`);
+  `.pd-sec-head h3` **11px/700 uppercase tracked muted** (= `.panel-title`); `.pd-module-card`
+  **18px / r12** (= `.panel`); the module grid gap **20px → 14px** (= `.grid-2`/`.grid-3`/
+  `.project-cards`); `.pd-table th` **11px/700, `9px 10px`, 2px bottom rule** (= `.data-table th`).
+- ⚠️ **Some values had to move UP, which is the opposite of what "minimalist" suggests.** The
+  2026-09-01 pass had already lightened the tables and weights and in places went PAST PRC — PRC keeps
+  **700** on `.metric-label`/`.data-table th` and **800** on `.metric-value`. So `.pd-kpi-value` went
+  18px/700 → 20px/800 and the table header 500 → 700. The pre-existing ⚠️ comment on `.pd-kpi-value`
+  explaining that earlier reduction was **extended, not deleted** — it records a deliberate choice this
+  pass reverses, and deleting it would leave the next reader with no idea why.
+- ⚠️ **The lift is gone from both card hovers, deliberately.** PRC marks a clickable tile with a **3px
+  bottom bar that wipes in from the left** and no `translateY`. On a 12-tile module grid a lift is the
+  single chunkiest bit of motion on the page. `.pd-module-card`'s old LEFT 4px accent (toggled by
+  `opacity`) and `.pd-proj-card`'s `translateY(-2px)` are both replaced by that wipe. **Do not put the
+  translate back.**
+- ⚠️ **`.pd-kpi` gained PRC's permanent 4px left accent** (`.metric-card::before`) — it is what makes a
+  stat card read as a stat card rather than an empty box, and `.pd-kpi-label` gained a `min-height:26px`
+  so a one-line and a two-line label still line their VALUES up across the row.
+- ⚠️ **Three self-inflicted regressions, all caught by measuring after the fact.** (1) Tightening the
+  desktop base left the **responsive overrides pointing the wrong way** — `@media(max-width:1024px)`
+  still set a module-grid gap of 16px, now LARGER than the new 14px desktop base (→ 12px; the 420px
+  card/icon/heading values were tightened below the new base too). (2) A **hierarchy inversion I
+  created**: with the tile title down to 14px, `.pd-module-figs .pd-fig b` at 15px/700 outweighed it
+  (→ figs 11.5px, bold 13px). (3) A **duplicate `.pd-table th` selector** left behind when adding
+  PRC's 9px header padding, consolidated away.
+- **Deliberately NOT done, each for a stated reason:** the ~30 remaining small-chrome radii (menus,
+  toasts, modals, chips, pills at 3/5/6/7/9/10/11/14/20px) were **not** blanket-folded onto the scale —
+  pure diff noise with no visual effect, and PRC itself uses 8/10/20px for the equivalent chrome; the
+  token comment carries the guidance instead. **Type sizing stays in px** (PRC is rem at a 87.5% root)
+  — converting ~1,000 declarations is a large blast radius and is not a formatting pass.
+  `.pd-tabbar`/`.pd-tab` stays an **underline bar**; PRC's pill segment group is a different component,
+  not a formatting difference.
+- **Verified:** brace balance **453/453**, **0 NUL bytes**, and all eight numeric convergence checks
+  above read identical to PRC's own computed values, taken with `getComputedStyle` in a real browser
+  against each app's shipped stylesheet at 1440px. Before/after/reference screenshots compared.
+  ⚠️ **A Chromium artefact cost a pass:** `fullPage: true` renders a `position:sticky; height:100vh`
+  sidebar at ~14px wide — the CSS was correct (240px, measured); shoot **viewport-only**.
+  ⚠️ The offline `@import` of Montserrat fails in both harnesses, so both fell back to a system sans —
+  symmetric, so the comparison holds, but the type is not the shipped face.
+  ⚠️ **Not verified signed in**, and no module page was opened — this is a shared-stylesheet change and
+  every module's own `module.css` loads AFTER it, so a module rule at equal specificity still wins on
+  source order.
+- Both throwaway harnesses were **deleted before committing** (`_scratch_harness.html`, git-ignored) —
+  this repo has shipped harness files to production twice.
+
+Shared asset changed → **`dashboard.css?v=` bumped `20260903a` → `20260903b` across all 29 referencing
+pages**, 0 stragglers and 0 unversioned references. **No `MODULE_V` bump** — no module `index.html`
+changed structurally.
+
+⚠️ **Merged onto `origin/main` (26 commits ahead) before this landed.** Three conflicts,
+all of the shape this file has recorded before: **two were cache-bust version collisions**
+(`issues-lessons`, `minutes-of-meeting` — main bumped their `module.css?v=` to `20260903d` while
+this side bumped `dashboard.css?v=` in the same two lines), resolved as the **union**, hunk by hunk.
+⚠️ `git checkout --theirs` is the wrong tool for a version collision — it takes main's WHOLE file
+and drops your own non-conflicting edits in it. The third was `CLAUDE.md`, where both sides prepend
+→ **both kept whole, seam marked, and this entry re-lettered `(b)` → `(r)`** because main had
+already used `(b)` twice on 2026-09-03 and had run as far as `(q)`.
+
+⚠️ **`MODULE_V` → `20260903r` after all** (main had it at `20260903q`), which reverses the call
+above: every module `index.html` DID change — its `dashboard.css?v=` line — and a module page is
+cached under `index.html?v=MODULE_V`, so without the bump a returning browser keeps serving a page
+that still requests `?v=20260903a` and the new stylesheet reaches nobody. That is this repo's own
+most-repeated deploy failure, one level up.
+
+<!-- seam: the entry above landed from `claude/planning-app-prc-styling-0zvvo4`; everything
+     below came from `origin/main` in the same merge. Both sides prepend, so both are whole. -->
+
 ### 2026-09-03 (q) — An un-floored trade is still in the building, so it carries the tower
 
 *"if there is no floors or zones under a trade ... if it is still under tower 1, then it is under tower
