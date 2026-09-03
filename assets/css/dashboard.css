@@ -286,8 +286,8 @@ a:hover { text-decoration: underline; }
    used to run 14px/500 with 9x16 padding, visibly heavier and less "clean" than
    the reference app at every size (toolbars, modals, tables all inherit this). */
 .pd-btn { display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
-  border: 1.5px solid var(--pd-line); background: var(--pd-card); color: var(--pd-ink);
-  padding: 7px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 600; }
+  border: 1px solid var(--pd-line); background: var(--pd-card); color: var(--pd-ink);
+  padding: 6px 13px; border-radius: 8px; font-size: 12.5px; font-weight: 500; }
 .pd-btn:hover { background: var(--pd-bg); border-color: var(--pd-red); color: var(--pd-red); text-decoration: none; }
 .pd-btn-primary { background: var(--pd-red); border-color: var(--pd-red); color: #fff; }
 .pd-btn-primary:hover { background: var(--pd-red-dark); border-color: var(--pd-red-dark); color: #fff; }
@@ -296,11 +296,11 @@ a:hover { text-decoration: underline; }
 
 /* ---- Forms ---- */
 .pd-field { margin-bottom: 14px; }
-.pd-field label { display: block; font-size: 11px; font-weight: 600; color: var(--pd-muted); margin-bottom: 5px;
+.pd-field label { display: block; font-size: 11px; font-weight: 500; color: var(--pd-muted); margin-bottom: 5px;
   text-transform: uppercase; letter-spacing: .03em; }
 .pd-input, .pd-select, .pd-textarea {
-  width: 100%; padding: 7px 10px; border: 1.5px solid var(--pd-line); border-radius: 8px;
-  font-size: 13px; font-family: inherit; background: var(--pd-card); color: var(--pd-ink);
+  width: 100%; padding: 6px 10px; border: 1px solid var(--pd-line); border-radius: 7px;
+  font-size: 12.5px; font-family: inherit; background: var(--pd-card); color: var(--pd-ink);
 }
 .pd-input:focus, .pd-select:focus, .pd-textarea:focus { outline: 2px solid var(--pd-red); outline-offset: -1px; }
 
@@ -314,8 +314,20 @@ a:hover { text-decoration: underline; }
 .pd-psel { position: relative; display: inline-flex; vertical-align: middle; }
 .pd-psel-native { display: none !important; }
 .pd-psel-btn { display: inline-flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; text-align: left; }
-.pd-psel-btn .pd-psel-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pd-psel-txt.pd-psel-ph { color: var(--pd-muted); }
+/* Two-line trigger: "CODE — Project Name" over a smaller "address · Group Head: X"
+   subtitle (prc-app parity — see the screenshot referenced 2026-09-02). ⚠️ SPECIFICITY
+   OVER SOURCE ORDER: every module's own project-select class (.dr-project, .cc-project,
+   .il-project, …) hardcodes `height:34px` for what used to be a single-line label, and
+   module.css always loads AFTER this file — a same-specificity override here would still
+   lose to it. `button.pd-psel-btn` (element + class = 0-1-1) beats a bare module class
+   (0-1-0) regardless of load order, which is what lets every module's topbar picker grow
+   to fit the subtitle without editing ~15 module.css files individually. */
+button.pd-psel-btn { height: auto; min-height: 30px; padding-top: 4px; padding-bottom: 4px; line-height: 1.15; }
+.pd-psel-btn .pd-psel-txt { display: flex; flex-direction: column; gap: 1px; min-width: 0; overflow: hidden; }
+.pd-psel-btn .pd-psel-txt strong { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pd-psel-btn .pd-psel-txt small { display: block; font-size: 10.5px; font-weight: 400; color: var(--pd-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pd-psel-txt.pd-psel-ph strong { color: var(--pd-muted); font-weight: 400; }
 .pd-psel-caret { flex: none; color: var(--pd-muted); }
 .pd-psel-pop {
   position: absolute; top: calc(100% + 4px); left: 0; z-index: 1000;
@@ -334,13 +346,13 @@ a:hover { text-decoration: underline; }
 .pd-nt-search input { width: 100%; box-sizing: border-box; padding: 6px 9px; border: 1px solid var(--pd-line); border-radius: 6px; font: inherit; background: var(--pd-bg); color: var(--pd-ink); }
 .pd-nt-search input:focus { outline: 2px solid var(--pd-red); outline-offset: -1px; }
 .pd-nt-portfolio { display: flex; align-items: center; gap: 8px; padding: 10px; cursor: pointer;
-  font-size: 13.5px; font-weight: 700; color: var(--pd-ink); border-bottom: 2px solid var(--pd-line); background: var(--pd-bg); }
+  font-size: 13.5px; font-weight: 600; color: var(--pd-ink); border-bottom: 2px solid var(--pd-line); background: var(--pd-bg); }
 .pd-nt-portfolio:hover { background: var(--pd-red-light); }
 .pd-nt-portfolio.sel { background: var(--pd-red); color: #fff; }
 .pd-nt-portfolio [data-ico], .pd-nt-portfolio svg { color: var(--pd-red); flex: none; }
 .pd-nt-portfolio.sel [data-ico], .pd-nt-portfolio.sel svg { color: #fff; }
 .pd-nt-list { padding: 4px 0; }
-.pd-nt-ghlabel { padding: 9px 10px 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--pd-muted); }
+.pd-nt-ghlabel { padding: 9px 10px 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: var(--pd-muted); }
 .pd-nt-ghlabel-none { font-style: italic; text-transform: none; }
 .pd-nt-ghkids { padding-bottom: 2px; }
 .pd-nt-proj { display: flex; align-items: center; gap: 7px; padding: 7px 10px 7px 22px; cursor: pointer; font-size: 13px; color: var(--pd-ink); }
@@ -351,9 +363,13 @@ a:hover { text-decoration: underline; }
 .pd-nt-empty { padding: 20px 12px; text-align: center; color: var(--pd-muted); font-size: 12.5px; }
 
 /* ---- Tables ---- */
-.pd-table { width: 100%; border-collapse: collapse; background: var(--pd-card); }
-.pd-table th, .pd-table td { padding: 10px 12px; border-bottom: 1px solid var(--pd-line); text-align: left; }
-.pd-table th { background: var(--pd-bg); font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--pd-muted); }
+/* Minimalist pass (prc-app parity): smaller type, tighter rows, no bold body text —
+   the header keeps a touch of weight (500, not the browser-default-regular it had
+   before) purely so a header row still reads as a header once the whole table is
+   this quiet, never heavier than that. */
+.pd-table { width: 100%; border-collapse: collapse; background: var(--pd-card); font-size: 12.5px; }
+.pd-table th, .pd-table td { padding: 8px 10px; border-bottom: 1px solid var(--pd-line); text-align: left; }
+.pd-table th { background: var(--pd-bg); font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: .03em; color: var(--pd-muted); }
 .pd-table tr:hover td { background: var(--pd-bg); }
 
 /* ---- Auth pages ---- */
@@ -412,10 +428,10 @@ a:hover { text-decoration: underline; }
 /* Form label used outside .pd-field (cash-flow's tabbed Assumptions, resource-loading).
    ⚠️ Same values as `.pd-field label` on purpose -- two label styles that drift apart is
       how one dialog ends up looking like a different product. */
-.pd-label { display: block; font-size: 12px; font-weight: 600; color: var(--pd-muted); margin-bottom: 5px; }
+.pd-label { display: block; font-size: 12px; font-weight: 500; color: var(--pd-muted); margin-bottom: 5px; }
 
 /* Autosave status badge (assets/js/autosave.js), placed beside an Edit modal's title. */
-.pd-autosave { font-size: 11.5px; font-weight: 600; padding: 3px 9px; border-radius: 20px;
+.pd-autosave { font-size: 11.5px; font-weight: 500; padding: 3px 9px; border-radius: 20px;
   white-space: nowrap; color: var(--pd-muted); background: var(--pd-bg); border: 1px solid var(--pd-line); }
 .pd-autosave-idle { opacity: .7; }
 .pd-autosave-busy { color: var(--pd-red); border-color: var(--pd-red); }
@@ -482,7 +498,7 @@ html.pd-dark .pd-module-card:hover { box-shadow: 0 10px 26px rgba(0,0,0,.5); }
 .num { text-align: right !important; }
 
 /* status pills */
-.pd-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.pd-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 500; }
 .pd-pill-ok { background: rgba(31,143,78,.12); color: var(--pd-ok); }
 .pd-pill-muted { background: var(--pd-line); color: var(--pd-muted); }
 .pd-pill-bad { background: rgba(196,33,39,.12); color: var(--pd-bad); }
@@ -554,7 +570,7 @@ html.pd-dark .pd-module-card:hover { box-shadow: 0 10px 26px rgba(0,0,0,.5); }
   text-transform: none; letter-spacing: 0; }
 .pd-proj-row { cursor: pointer; }
 .pd-proj-row:hover td { background: var(--pd-red-light); }
-.pd-proj-name { font-weight: 600; }
+.pd-proj-name { font-weight: 500; }
 .pd-proj-ic { margin-right: 8px; }
 
 /* project cards */
@@ -564,10 +580,10 @@ html.pd-dark .pd-module-card:hover { box-shadow: 0 10px 26px rgba(0,0,0,.5); }
 .pd-proj-card:hover { border-color: var(--pd-red-mid); box-shadow: var(--pd-shadow); transform: translateY(-2px); }
 .pd-proj-card-top { display: flex; align-items: center; justify-content: space-between; }
 .pd-proj-card-top .pd-proj-ic { font-size: 22px; }
-.pd-proj-card-title { font-weight: 700; margin: 8px 0 2px; line-height: 1.25; }
+.pd-proj-card-title { font-weight: 500; margin: 8px 0 2px; line-height: 1.25; }
 .pd-proj-card-id code { background: var(--pd-bg); padding: 1px 6px; border-radius: 5px; font-size: 12px; }
 .pd-proj-card-meta { display: flex; gap: 14px; margin-top: 12px; }
-.pd-proj-card-meta > div { font-size: 13px; font-weight: 600; }
+.pd-proj-card-meta > div { font-size: 13px; font-weight: 500; }
 .pd-proj-card-meta span { display: block; font-size: 11px; font-weight: 500; color: var(--pd-muted); }
 .pd-proj-card-loc { margin-top: 10px; font-size: 12px; color: var(--pd-muted); }
 
@@ -587,12 +603,19 @@ html.pd-dark .pd-module-card:hover { box-shadow: 0 10px 26px rgba(0,0,0,.5); }
 
 /* ---- Project Home: switcher, tabs, scaffolds ---- */
 .pd-projsw { position: relative; margin-left: 6px; }
+/* prc-app parity (2026-09-02): "CODE — Project Name" over a smaller address ·
+   Group Head subtitle. Padding trimmed 6px→5px vertical and line-height tightened
+   so the extra subtitle line sits naturally rather than making the control taller
+   than it needs to be — the whole point of the ask was a shorter dropdown, not a
+   second row of empty space. */
 .pd-projsw-btn { display: inline-flex; align-items: center; gap: 10px; background: var(--pd-bg);
-  border: 1px solid var(--pd-line); border-radius: 9px; padding: 6px 12px; cursor: pointer; color: var(--pd-ink); max-width: 520px; }
+  border: 1px solid var(--pd-line); border-radius: 9px; padding: 5px 12px; cursor: pointer; color: var(--pd-ink); max-width: 520px; }
 .pd-projsw-ic { font-size: 16px; }
-.pd-projsw-txt { display: flex; flex-direction: column; line-height: 1.18; text-align: left; min-width: 0; }
-.pd-projsw-txt strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 420px; }
-.pd-projsw-txt small { color: var(--pd-muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 440px; }
+.pd-projsw-txt { display: flex; flex-direction: column; line-height: 1.1; text-align: left; min-width: 0; gap: 1px; }
+.pd-projsw-txt strong { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 420px; }
+.pd-projsw-txt small { display: block; color: var(--pd-muted); font-size: 10.5px; font-weight: 400;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 440px; }
+.pd-projsw-txt small:empty { display: none; }
 .pd-projsw-caret { color: var(--pd-muted); }
 .pd-projsw-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 40; display: none;
   background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: 10px;
@@ -607,7 +630,7 @@ html.pd-dark .pd-module-card:hover { box-shadow: 0 10px 26px rgba(0,0,0,.5); }
 .pd-tabbar { display: flex; gap: 2px; padding: 0 24px; background: var(--pd-card);
   border-bottom: 1px solid var(--pd-line); }
 .pd-tab { border: none; background: none; padding: 13px 20px; cursor: pointer; font-size: 14px;
-  font-weight: 600; color: var(--pd-muted); border-bottom: 3px solid transparent; }
+  font-weight: 500; color: var(--pd-muted); border-bottom: 3px solid transparent; }
 .pd-tab:hover { color: var(--pd-ink); }
 .pd-tab.active { color: var(--pd-red); border-bottom-color: var(--pd-red); }
 
@@ -615,16 +638,16 @@ html.pd-dark .pd-module-card:hover { box-shadow: 0 10px 26px rgba(0,0,0,.5); }
 .pd-info-card { background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius); padding: 16px; }
 .pd-info-ic { font-size: 22px; }
 .pd-info-label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); margin-top: 8px; }
-.pd-info-val { font-size: 16px; font-weight: 700; margin-top: 2px; }
+.pd-info-val { font-size: 16px; font-weight: 600; margin-top: 2px; }
 .pd-note { margin-top: 16px; padding: 14px 16px; background: var(--pd-bg); border-left: 3px solid var(--pd-red);
   border-radius: 8px; color: var(--pd-muted); font-size: 13.5px; }
 
 /* portfolio rollup header (Program / Workspace tabs) */
 .pd-rollup-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
-.pd-rollup-kind { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; font-weight: 700;
+.pd-rollup-kind { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; font-weight: 600;
   color: var(--pd-red); background: var(--pd-red-light); padding: 3px 10px; border-radius: 999px; }
 .pd-rollup-head h3 { margin: 0; font-size: 19px; }
-.pd-rollup-gh { font-size: 13px; color: var(--pd-muted); font-weight: 600; }
+.pd-rollup-gh { font-size: 13px; color: var(--pd-muted); font-weight: 500; }
 .pd-proj-row.cur td { background: var(--pd-red-light); }
 
 /* ============================================================================
@@ -1114,16 +1137,22 @@ body { overflow-x: clip; }
   border-radius: var(--pd-radius); padding: 12px 14px; box-shadow: var(--pd-shadow);
   display: flex; flex-direction: column; gap: 4px; min-width: 0;
 }
-.pd-kpi-label { font-size: 10px; font-weight: 700; letter-spacing: .1em;
+.pd-kpi-label { font-size: 10px; font-weight: 600; letter-spacing: .1em;
   text-transform: uppercase; color: var(--pd-muted); }
-.pd-kpi-value { font-size: 18px; font-weight: 800; letter-spacing: -.01em;
+/* ⚠️ Kept at 700, not compressed further with the rest of this pass — a KPI
+   value is the one number on the whole card someone is actually scanning for,
+   and dropping it to regular weight alongside its own label would leave
+   nothing on the card to anchor the eye on. Every other weight in this file's
+   minimalist pass moved down a full step; this one moved down half a step
+   (800→700) for the same reason. */
+.pd-kpi-value { font-size: 18px; font-weight: 700; letter-spacing: -.01em;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pd-kpi-sub { color: var(--pd-muted); font-size: 12px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* Section header: title left, one action right. */
 .pd-sec-head { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; }
-.pd-sec-head h3 { margin: 0; font-size: 15px; font-weight: 800; letter-spacing: -.01em;
+.pd-sec-head h3 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -.01em;
   display: flex; align-items: center; gap: 8px; }
 .pd-sec-head > :last-child { margin-left: auto; }
 .pd-sec-note { margin: 10px 0 0; color: var(--pd-muted); font-size: 12.5px; }
@@ -1136,7 +1165,7 @@ body { overflow-x: clip; }
    than showing a zero it never measured. */
 .pd-module-figs { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px;
   margin-top: 4px; font-size: 13px; color: var(--pd-muted); }
-.pd-module-figs .pd-fig b { color: var(--pd-ink); font-size: 15px; font-weight: 800; margin-right: 3px; }
+.pd-module-figs .pd-fig b { color: var(--pd-ink); font-size: 15px; font-weight: 700; margin-right: 3px; }
 /* Amber, not red: an open item is normal work in progress, not an error. */
 .pd-module-figs .pd-fig.warn b { color: var(--pd-warn); }
 .pd-fig-when { font-size: 11.5px; }
@@ -1146,10 +1175,10 @@ body { overflow-x: clip; }
    view used to ignore it entirely and render one flat run of cards, silently
    discarding the grouping the user had just chosen. Same headers, both views. */
 .pd-cardgroup { display: flex; align-items: center; gap: 10px; margin: 20px 0 10px;
-  font-weight: 700; font-size: 13px; color: var(--pd-ink); }
+  font-weight: 600; font-size: 13px; color: var(--pd-ink); }
 .pd-cardgroup:first-child { margin-top: 2px; }
 .pd-cardgroup-rule { flex: 1 1 auto; height: 1px; background: var(--pd-line); }
-.pd-cardgroup-count { font-size: 11px; font-weight: 600; color: var(--pd-muted);
+.pd-cardgroup-count { font-size: 11px; font-weight: 500; color: var(--pd-muted);
   background: var(--pd-bg); border: 1px solid var(--pd-line); border-radius: 999px; padding: 0 7px; }
 
 /* Cards: give the metadata room to breathe and let it wrap instead of colliding. */
