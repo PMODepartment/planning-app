@@ -925,34 +925,21 @@ window.MinutesOfMeeting = (function () {
     // as reintroducing an "icon alone / label on the next line" defect on
     // narrow screens.
     if (window.UI && UI.tabsToDropdown) UI.tabsToDropdown('.il-tabs');
-    // Icon-only List/Calendar view toggle, top-right in the topbar tools —
-    // lives in index.html's markup (outside #il-mom-view like the tabs above)
-    // so it is wired once here too; only meaningful once inside Meetings, so
-    // it hides itself on the Dashboard tab via syncTopTabs().
-    document.querySelectorAll('#il-viewtoggle [data-mv]').forEach(function (b) {
-      b.onclick = function () { _momView = b.dataset.mv; _momTab = 'meetings'; render(); if (histView) histView.push(); };
-    });
+    // The List/Calendar view toggle used to be wired here too (icon-only,
+    // top-right in the topbar tools) — item 6 (2026-09-03) moved it into
+    // momBrowseFilterBarHTML/wireBrowse(), on the left directly above the
+    // meetings list/calendar it switches, wired fresh on every renderBrowse()
+    // like every other control in that bar.
   }
 
   // -------------------------------------------------------------- render ---
-  // ⚠️ ITEM #17: two top-level tabs, wired once in wire() (they live in the
-  // topbar, outside #il-mom-view, so they are never rebuilt by a re-render —
-  // only their `.active` class needs syncing here).
+  // ⚠️ ITEM #17: the Dashboard/Meetings tab strip is wired once in wire() (it
+  // lives in the topbar, outside #il-mom-view, so it is never rebuilt by a
+  // re-render) — only its `.active` class needs syncing here.
   function syncTopTabs() {
     document.querySelectorAll('.il-tabs [data-tab]').forEach(function (b) {
       b.classList.toggle('active', b.dataset.tab === _momTab);
     });
-    // The List/Calendar icon toggle only means anything inside Meetings, and
-    // only while actually browsing (not while a single meeting/series is
-    // open, where "which browse view" isn't a live choice on screen).
-    var vt = $('il-viewtoggle');
-    if (vt) {
-      var showing = _momTab === 'meetings' && (_momView === 'list' || _momView === 'calendar');
-      vt.hidden = !showing;
-      vt.querySelectorAll('[data-mv]').forEach(function (b) {
-        b.classList.toggle('on', b.dataset.mv === _momView);
-      });
-    }
   }
   function render() {
     if (!pid) { _paintEmpty('Select a project to see its minutes.'); return; }
@@ -1327,7 +1314,21 @@ window.MinutesOfMeeting = (function () {
 
   function momBrowseFilterBarHTML(shown, total) {
     var on = momBrowseFilterOn();
+    // Item 6 (2026-09-03, owner: "move all change view tab groups… to the
+    // left above the tables"): the List/Calendar switch used to live in the
+    // topbar's tool cluster, top-right — chrome, not content, and stranded
+    // above the AVATAR rather than the list it actually switches. It now
+    // opens this bar (rebuilt on every renderBrowse(), so its `.on` state
+    // never needs a separate sync pass the way the topbar copy did), leading
+    // on the LEFT — the same corner Issues & Concerns' own List/Kanban
+    // toggle already occupies, directly above ITS table.
     return '<div class="il-mom-browsebar">' +
+        '<div class="il-viewtoggle" id="il-mom-viewtoggle">' +
+          '<button type="button" class="il-vt-btn' + (_momView === 'list' ? ' on' : '') + '" data-mv="list" title="List view">' +
+            '<span data-ico="listView" data-ico-size="16"></span></button>' +
+          '<button type="button" class="il-vt-btn' + (_momView === 'calendar' ? ' on' : '') + '" data-mv="calendar" title="Calendar view">' +
+            '<span data-ico="calendar" data-ico-size="16"></span></button>' +
+        '</div>' +
         '<button class="pd-btn pd-btn-sm il-filt-toggle' + (_momFiltOpen ? ' open' : '') +
           (on ? ' has-active' : '') + '" id="il-mom-filttoggle" title="Search and filter meetings">' +
           '<span data-ico="filter" data-ico-size="15"></span> Filters</button>' +
@@ -1740,6 +1741,10 @@ window.MinutesOfMeeting = (function () {
 
   function wireBrowse() {
     var host = $('il-mom-view'); if (!host) return;
+    // Item 6 — the relocated List/Calendar toggle (see momBrowseFilterBarHTML).
+    host.querySelectorAll('#il-mom-viewtoggle [data-mv]').forEach(function (b) {
+      b.onclick = function () { _momView = b.dataset.mv; render(); if (histView) histView.push(); };
+    });
     var q = host.querySelector('#il-mom-q');
     if (q) q.oninput = function () {
       _momQ = q.value; var at = q.selectionStart;

@@ -348,7 +348,7 @@ button.pd-psel-btn { height: auto; min-height: 30px; padding-top: 4px; padding-b
 .pd-nt-portfolio { display: flex; align-items: center; gap: 8px; padding: 10px; cursor: pointer;
   font-size: 13.5px; font-weight: 600; color: var(--pd-ink); border-bottom: 2px solid var(--pd-line); background: var(--pd-bg); }
 .pd-nt-portfolio:hover { background: var(--pd-red-light); }
-.pd-nt-portfolio.sel { background: var(--pd-red); color: #fff; }
+.pd-nt-portfolio.sel { background: var(--pd-red); color: #fff; font-weight: 700; }
 .pd-nt-portfolio [data-ico], .pd-nt-portfolio svg { color: var(--pd-red); flex: none; }
 .pd-nt-portfolio.sel [data-ico], .pd-nt-portfolio.sel svg { color: #fff; }
 .pd-nt-list { padding: 4px 0; }
@@ -1133,6 +1133,9 @@ body { overflow-x: clip; }
   color: var(--pd-ink);
 }
 .pd-tabsdrop-btn:hover { background: var(--pd-bg); border-color: var(--pd-line); }
+/* opts.icon (2026-09-03) — the module identity mark baked into the trigger itself,
+   matching Project Schedule's own `.ps-title-btn span.ps-title-ico`. */
+.pd-tabsdrop-ico { color: var(--pd-red); flex: none; display: inline-flex; }
 .pd-tabsdrop-caret { color: var(--pd-muted); flex: none; }
 .pd-tabsdrop-menu {
   position: absolute; top: calc(100% + 4px); left: 0; z-index: 40; display: none;

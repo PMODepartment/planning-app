@@ -54,6 +54,13 @@ window.APP_CONFIG = {
   // order IS the nav order (renderNav's mods.map iterates it directly), so no
   // separate hardcoded nav entry is needed the way it was before this module split
   // out of issues-lessons.
+  // ⚠️ `superAdminOnly: true` (2026-09-03, owner's call, "for now") hides a module
+  // from the launcher grid, the project-mode sidebar and the portfolio-mode "every
+  // module" list for everyone but `super_admin` — read by `ModulesGrid` / `UI.renderNav`
+  // / `dashboard.html`'s own tile grid off `window.__role`, so no page has to pass a
+  // flag through for it. This is UI visibility only (the same "hidden, not blocked"
+  // shape `enabled:false` already uses for the retired modules below) — it does not
+  // touch RLS or the module's own table grants, so it is reversible in one line.
   MODULES: [
     { key: 'minutes-of-meeting', name: 'Meetings',                             path: 'modules/minutes-of-meeting/index.html', icon: 'calendar',  enabled: true, dash: { table: 'meeting_minutes', unit: 'meetings', attention: { column: 'is_distributed', values: [false], label: 'draft' },
       recent: { orderBy: 'meeting_date', limit: 4, columns: ['title', 'meeting_date', 'venue', 'meeting_group', 'is_distributed'] },
@@ -67,14 +74,14 @@ window.APP_CONFIG = {
         // Recurring series: a minute created off a schedule carries the schedule's id.
         { key: 'series',   agg: 'countWhere', column: 'schedule_id' }
       ] } },
-    { key: 'risk-register',     name: 'Risk Register',                         path: 'modules/risk-register/index.html',     icon: 'risk',       enabled: true, dash: { table: 'risk_register', unit: 'risks', attention: { column: 'status', values: ['Open'], label: 'open' },
+    { key: 'risk-register',     name: 'Risk Register',                         path: 'modules/risk-register/index.html',     icon: 'risk',       enabled: true, superAdminOnly: true, dash: { table: 'risk_register', unit: 'risks', attention: { column: 'status', values: ['Open'], label: 'open' },
       metrics: [
         { key: 'open', agg: 'countWhere', column: 'status', values: ['Open'] },
         // likelihood and impact are 1..5 in this schema, so the high/low split is 3.
         { key: 'matrix', agg: 'matrix2', x: 'impact', y: 'likelihood', split: 3,
           where: [{ column: 'status', values: ['Open'] }] }
       ] } },
-    { key: 'stakeholder-map',   name: 'Stakeholder Map',                       path: 'modules/stakeholder-map/index.html',   icon: 'compass',    enabled: true, dash: { table: 'stakeholder_map', unit: 'stakeholders',
+    { key: 'stakeholder-map',   name: 'Stakeholder Map',                       path: 'modules/stakeholder-map/index.html',   icon: 'compass',    enabled: true, superAdminOnly: true, dash: { table: 'stakeholder_map', unit: 'stakeholders',
       // ⚠️ influence and interest are 1..4 here (and stored as TEXT), so the split is 3, not the
       // risk register's midpoint. Declaring it per module is why one engine can serve both.
       metrics: [ { key: 'matrix', agg: 'matrix2', x: 'interest', y: 'influence', split: 3 } ] } },
@@ -154,13 +161,13 @@ window.APP_CONFIG = {
     // month), and NOTHING writes the `s_curve` table. The metric therefore read an empty table and
     // the dashboard card said "No curve published" on every project, forever. The dashboard's own
     // S-curve must be derived the same way the module derives it, from the schedule.
-    { key: 'manpower-loading', name: 'Manpower Loading',                        path: 'modules/manpower-loading/index.html', icon: 'users',      enabled: true, dash: { table: 'manpower_positions', unit: 'positions' } },
+    { key: 'manpower-loading', name: 'Manpower Loading',                        path: 'modules/manpower-loading/index.html', icon: 'users',      enabled: true, superAdminOnly: true, dash: { table: 'manpower_positions', unit: 'positions' } },
     // ⚠️ No `attention` key. The obvious one would be "positions short this month", but that is
     // a comparison between two columns of manpower_loading, not a status value on this table —
     // the tile reader can only count rows matching fixed values, so a guessed rule would read 0
     // forever and look like good news. The Portfolio tab is where the shortfall is answered.
-    { key: 'equipment-loading', name: 'Equipment Loading',                      path: 'modules/equipment-loading/index.html', icon: 'box',        enabled: true, dash: { table: 'equipment_items', unit: 'equipment' } },
-    { key: 'productivity-rates',name: 'Productivity Rates',                    path: 'modules/productivity-rates/index.html',icon: 'barChart',   enabled: true, dash: { table: 'productivity_entries', unit: 'entries' } },
+    { key: 'equipment-loading', name: 'Equipment Loading',                      path: 'modules/equipment-loading/index.html', icon: 'box',        enabled: true, superAdminOnly: true, dash: { table: 'equipment_items', unit: 'equipment' } },
+    { key: 'productivity-rates',name: 'Productivity Rates',                    path: 'modules/productivity-rates/index.html',icon: 'barChart',   enabled: true, superAdminOnly: true, dash: { table: 'productivity_entries', unit: 'entries' } },
     // ⚠️ Minutes of Meeting and Issues & Concerns are now TWO SEPARATE MODULES
     // (owner's explicit call) — they used to be screens in one combined module.
     // Lessons Learned stayed with the register (a lesson is captured FROM an
@@ -195,7 +202,7 @@ window.APP_CONFIG = {
       // is told about and knows nothing about where progress photos live.
       recent: { orderBy: 'taken_at', limit: 6, columns: ['title', 'works', 'taken_at', 'location'],
                 bucket: 'progress-photos', pathCol: 'photo_url', ttl: 3600 } } },
-    { key: 'contracts-claims',  name: 'Contracts & Claims',                    path: 'modules/contracts-claims/index.html',  icon: 'contract',   enabled: true, dash: { table: 'contracts_claims', unit: 'records',
+    { key: 'contracts-claims',  name: 'Contracts & Claims',                    path: 'modules/contracts-claims/index.html',  icon: 'contract',   enabled: true, superAdminOnly: true, dash: { table: 'contracts_claims', unit: 'records',
       metrics: [
         { key: 'records', agg: 'countWhere', column: 'id' },
         // The flow the dashboard draws: original contract value, then change orders by state, then
@@ -216,7 +223,7 @@ window.APP_CONFIG = {
         { key: 'claimOpen', agg: 'countWhere', column: 'id',
           where: [{ column: 'record_type', values: ['Claim'] }, { column: 'date_resolved', absent: true }] }
       ] } },
-    { key: 'cash-flow',         name: 'Cash Flow',                             path: 'modules/cash-flow/index.html',         icon: 'cash',       enabled: true, dash: { table: 'cash_flow_rollup', unit: 'periods' } },
+    { key: 'cash-flow',         name: 'Cash Flow',                             path: 'modules/cash-flow/index.html',         icon: 'cash',       enabled: true, superAdminOnly: true, dash: { table: 'cash_flow_rollup', unit: 'periods' } },
     // ⚠️ RETIRED — these two moved to the ENGINEERING APP, which is now the single
     // source for both registers. The modules and their tables are still here, and the
     // rows in them are the pre-cutover originals: readable, but STALE the moment
