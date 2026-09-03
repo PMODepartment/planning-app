@@ -63,6 +63,9 @@
     refresh:     '<path d="M4 12a8 8 0 0 1 13.7-5.7L20 8"/><polyline points="20 3 20 8 15 8"/><path d="M20 12a8 8 0 0 1-13.7 5.7L4 16"/><polyline points="4 21 4 16 9 16"/>',
     filter:      '<polygon points="3 4 21 4 14 12.5 14 19 10 21 10 12.5"/>',
     chevronRight:'<polyline points="9 6 15 12 9 18"/>',
+    chevronLeft: '<polyline points="15 6 9 12 15 18"/>',
+    // Envelope — Minutes of Meeting's Email action (icon-only toolbar button).
+    mail:        '<rect x="2.5" y="5" width="19" height="14" rx="2"/><polyline points="3 6.5 12 13 21 6.5"/>',
     download:    '<path d="M12 3v12"/><polyline points="7 11 12 16 17 11"/><line x1="4" y1="20" x2="20" y2="20"/>',
     upload:      '<path d="M12 21V9"/><polyline points="7 13 12 8 17 13"/><line x1="4" y1="4" x2="20" y2="4"/>',
     trash:       '<polyline points="3 6 5 6 21 6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>',

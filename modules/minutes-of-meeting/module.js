@@ -92,7 +92,7 @@ window.MinutesOfMeeting = (function () {
   // _momReport itself: it is where the presenter has got to right now, not a
   // property of the minute, and it resets whenever the deck changes shape.
   var _momSlide = 0;
-  var _momF = { q: '', cat: '', type: '', status: '' };   // per-minute filters (Detail)
+  var _momF = { q: '', cat: '', type: '', status: '', sort: '' };   // per-minute filters (Detail)
   var _momQ = '';                                          // meeting search (Browse)
   // Item 10 (2026-09-02): "add filter options and combine search bar to filter
   // grouping. filter group should be hidden/shown by a button." So the search
@@ -226,6 +226,14 @@ window.MinutesOfMeeting = (function () {
   var CHART_COLORS = ['#EE3124', '#2B6CB0', '#2F855A', '#B7791F', '#6B46C1',
                        '#B83280', '#00838F', '#8D6E63', '#4A5568', '#5A67D8', '#C42127'];
 
+  // ⚠️ DASHBOARD REBUILD (2026-09-03): "minutes by status copy format of
+  // issues by status. for minutes by department, minutes by responsible and
+  // minutes by meeting - use chart of issues by department." Both chart
+  // functions below are copied from the Issues & Concerns dashboard (see that
+  // module's own donutChartSVG/hbarSVG, same shape, same reasoning) rather
+  // than shared — this module split already established that a small
+  // duplicated component beats widening the split into a shared-asset change
+  // nobody asked for.
   function donutChartSVG(slices, opts) {
     opts = opts || {};
     var size = opts.size || 130, sw = opts.stroke || 20;
@@ -245,39 +253,128 @@ window.MinutesOfMeeting = (function () {
         return piece;
       }).join('');
     }
-    return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size +
-      '" role="img" aria-label="' + Fmt.esc(opts.aria || 'chart') + '">' + arcs + '</svg>';
+    // A label beside each SECTION of the donut, placed just outside the ring
+    // at that slice's own midpoint angle with a short leader line, carrying a
+    // colour marker + count + percent — the same per-slice label the Issues
+    // dashboard's Status donut uses, so "copy format of issues by status" is
+    // exact rather than approximate.
+    var labelPadX = 100, labelPadY = 16;
+    var labels = '';
+    if (total) {
+      var off2 = 0;
+      labels = slices.map(function (s) {
+        var frac = s.value / total, len = frac * circ, mid = off2 + len / 2;
+        off2 += len;
+        if (!s.value) return '';
+        var angleRad = ((mid / circ) * 360 - 90) * Math.PI / 180;
+        var cosv = Math.cos(angleRad), sinv = Math.sin(angleRad);
+        var lineR1 = r + sw / 2 + 2, lineR2 = r + sw / 2 + 16, labelR = r + sw / 2 + 20;
+        var lx1 = c + lineR1 * cosv, ly1 = c + lineR1 * sinv;
+        var lx2 = c + lineR2 * cosv, ly2 = c + lineR2 * sinv;
+        var lx = c + labelR * cosv, ly = c + labelR * sinv + 4;
+        var anchor = cosv > 0.2 ? 'start' : (cosv < -0.2 ? 'end' : 'middle');
+        var pct = Math.round((s.value / total) * 100);
+        return '<line x1="' + lx1.toFixed(1) + '" y1="' + ly1.toFixed(1) + '" x2="' + lx2.toFixed(1) +
+            '" y2="' + ly2.toFixed(1) + '" stroke="var(--pd-muted)" stroke-width="1"></line>' +
+          '<text x="' + lx.toFixed(1) + '" y="' + ly.toFixed(1) + '" text-anchor="' + anchor +
+          '" font-size="10.5" font-weight="600" fill="var(--pd-ink)">' +
+          '<tspan fill="' + s.color + '">●</tspan> ' +
+          Fmt.esc(s.label) + ': ' + s.value + ' (' + pct + '%)</text>';
+      }).join('');
+    }
+    var vw = size + labelPadX * 2, vh = size + labelPadY * 2;
+    return '<svg class="il-donut-svg" viewBox="0 0 ' + vw + ' ' + vh + '" width="100%" height="' + vh +
+      '" role="img" aria-label="' + Fmt.esc(opts.aria || 'chart') + '" preserveAspectRatio="xMidYMid meet" overflow="visible">' +
+      '<g transform="translate(' + labelPadX + ',' + labelPadY + ')">' + arcs + labels + '</g></svg>';
   }
-
-  function barChartSVG(bars, opts) {
+  function statusLegendBottomHTML(slices) {
+    return '<div class="il-dash-legend-bottom">' + slices.map(function (s) {
+      return '<span class="il-dash-legend-i"><i style="background:' + s.color + '"></i>' + Fmt.esc(s.label) + '</span>';
+    }).join('') + '</div>';
+  }
+  // ---- a crude, deterministic per-character width estimate (no canvas/DOM
+  // measurement — this module is verified by slicing pure functions out of
+  // the shipped file and running them in Node, which has neither).
+  function ilCharW(ch, fs) {
+    if (ch === ' ') return fs * 0.28;
+    if ('iIl1.,:;!\'|jt'.indexOf(ch) !== -1) return fs * 0.30;
+    if ('mwMW@%&'.indexOf(ch) !== -1) return fs * 0.85;
+    if (ch >= 'A' && ch <= 'Z') return fs * 0.68;
+    if (ch >= '0' && ch <= '9') return fs * 0.56;
+    return fs * 0.52;
+  }
+  function ilTextW(s, fs) {
+    s = s == null ? '' : String(s);
+    var w = 0;
+    for (var i = 0; i < s.length; i++) w += ilCharW(s[i], fs);
+    return w;
+  }
+  function ilWrapLines(label, maxW, fs) {
+    label = (label == null ? '' : String(label)).trim();
+    if (!label) return [''];
+    if (ilTextW(label, fs) <= maxW) return [label];
+    var words = label.split(/\s+/).filter(Boolean);
+    var lines = [], cur = '';
+    for (var i = 0; i < words.length; i++) {
+      var w = words[i];
+      var test = cur ? cur + ' ' + w : w;
+      if (cur && lines.length < 1 && ilTextW(test, fs) > maxW) { lines.push(cur); cur = w; }
+      else cur = test;
+    }
+    if (cur) lines.push(cur);
+    return lines.length ? lines : [label];
+  }
+  // A horizontal "X/Y (Z%) open" bar chart, one row per department/
+  // responsible/meeting — replaces the old vertical per-category bars.
+  // ⚠️ Rows are never capped; every department/responsible/meeting is always
+  // shown, and the caller wraps the result in a scrollable panel so a long
+  // list doesn't blow out the tile.
+  function hbarSVG(items, opts) {
     opts = opts || {};
-    var w = opts.width || 280, h = opts.height || 140, padTop = 22, padBottom = 20;
-    var bodyH = h - padTop - padBottom;
-    var max = Math.max(1, bars.reduce(function (m, b) { return Math.max(m, b.value); }, 0));
-    var bw = w / bars.length;
-    var barsSvg = bars.map(function (b, i) {
-      var bh = max ? Math.round((b.value / max) * bodyH) : 0;
-      var innerW = bw * 0.6, x = i * bw + (bw - innerW) / 2;
-      var y = padTop + (bodyH - bh);
-      return '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + innerW.toFixed(1) +
-          '" height="' + Math.max(1, bh).toFixed(1) + '" fill="' + b.color + '" rx="3"><title>' +
-          Fmt.esc(b.label) + ': ' + b.value + '</title></rect>' +
-        '<text x="' + (x + innerW / 2).toFixed(1) + '" y="' + (y - 4).toFixed(1) + '" text-anchor="middle" ' +
-          'font-size="10" fill="var(--pd-ink)">' + b.value + '</text>' +
-        '<text x="' + (x + innerW / 2).toFixed(1) + '" y="' + (h - 4).toFixed(1) + '" text-anchor="middle" ' +
-          'font-size="9" fill="var(--pd-muted)">' + Fmt.esc(clip(b.label, 10)) + '</text>';
+    items = items || [];
+    var w = opts.width || 380, barH = 22, gap = 10, padTop = 4, lineH = 13, fs = 11.5;
+    var padLeft = 132, padRight = 6;
+    var trackW = Math.max(24, w - padLeft - padRight);
+    var labelColW = padLeft - 12, edgeMargin = 4;
+    var max = Math.max(1, items.reduce(function (m, it) { return Math.max(m, it.total); }, 0));
+    var openColor = opts.openColor || '#EE3124', totalColor = opts.totalColor || 'var(--pd-line)';
+    var y = padTop;
+    var svg = items.map(function (it) {
+      var lines = ilWrapLines(it.label, labelColW, fs);
+      var anchor = 'start';
+      var labelX = edgeMargin;
+      var rowH = Math.max(barH, lines.length * lineH + 6);
+      var barY = y + (rowH - barH) / 2;
+      var barMidY = barY + barH / 2 + 4;
+      var totalW = Math.max(2, (it.total / max) * trackW);
+      var openW = Math.max(it.open ? 2 : 0, (it.open / max) * trackW);
+      var midX = padLeft + totalW / 2;
+      var valueText = it.open + '/' + it.total + ' (' + (it.total ? Math.round((it.open / it.total) * 100) : 0) + '%) open';
+      var valFits = ilTextW(valueText, 10.5) <= totalW - 8;
+      var valAnchor = valFits ? 'middle' : 'start';
+      var valX = valFits ? midX : padLeft + 4;
+      var textY0 = y + rowH / 2 - ((lines.length - 1) * lineH) / 2 + 4;
+      var labelTspans = lines.map(function (ln, li) {
+        return '<tspan x="' + labelX.toFixed(1) + '" dy="' + (li === 0 ? 0 : lineH) + '">' + Fmt.esc(ln) + '</tspan>';
+      }).join('');
+      var rowSvg =
+        '<text x="' + labelX.toFixed(1) + '" y="' + textY0.toFixed(1) +
+          '" text-anchor="' + anchor + '" font-size="' + fs + '" fill="var(--pd-ink)">' + labelTspans + '</text>' +
+        '<rect x="' + padLeft + '" y="' + barY.toFixed(1) + '" width="' + totalW.toFixed(1) + '" height="' + barH +
+          '" rx="4" fill="' + totalColor + '"><title>' + Fmt.esc(it.label) + ' — Total: ' + it.total + '</title></rect>' +
+        '<rect x="' + padLeft + '" y="' + barY.toFixed(1) + '" width="' + openW.toFixed(1) + '" height="' + barH +
+          '" rx="4" fill="' + openColor + '"><title>' + Fmt.esc(it.label) + ' — Open: ' + it.open + '</title></rect>' +
+        '<text x="' + valX.toFixed(1) + '" y="' + barMidY.toFixed(1) +
+          '" text-anchor="' + valAnchor + '" font-size="10.5" font-weight="700" fill="var(--pd-ink)" ' +
+          'paint-order="stroke" stroke="var(--pd-card)" stroke-width="3" stroke-linejoin="round">' +
+          Fmt.esc(valueText) + '</text>';
+      y += rowH + gap;
+      return rowSvg;
     }).join('');
-    return '<svg width="100%" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" role="img" ' +
-      'aria-label="' + Fmt.esc(opts.aria || 'chart') + '" preserveAspectRatio="xMidYMid meet">' + barsSvg + '</svg>';
+    var h = items.length ? (y - gap + padTop) : (padTop * 2 + barH);
+    return '<svg viewBox="0 0 ' + w + ' ' + h.toFixed(1) + '" width="100%" height="' + h.toFixed(1) + '" role="img" ' +
+      'aria-label="' + Fmt.esc(opts.aria || 'chart') + '" preserveAspectRatio="xMinYMin meet" overflow="visible">' + svg + '</svg>';
   }
-
-  // A single horizontal proportion bar with a label overlay — used for the
-  // attendance "battery" and the open-minutes stat, both single numbers
-  // rather than a category breakdown (which is what the donut/bar above are
-  // for). `tone` = 'is-battery' adds the small nub CSS treats as a battery cap.
-  // ⚠️ `meterHTML` was removed with the dashboard tiles that used it (item 13).
-  // `donutChartSVG` / `barChartSVG` / `CHART_COLORS` stay — the rebuilt
-  // dashboard's four charts read all three.
 
   // ==========================================================================
   // PEOPLE PICKER — Champion (issues) and Responsible (meeting action items)
@@ -532,6 +629,48 @@ window.MinutesOfMeeting = (function () {
     return s.length > n ? s.slice(0, n).trim() + '…' : s;
   }
 
+  // ==========================================================================
+  // ICON-ONLY DROPDOWN — replaces a `<select>` whose closed state showed a text
+  // label ("Export as…") with a button carrying only its icon, opening a small
+  // menu of the same options. Used by the meeting-list export, the per-meeting
+  // export, and anywhere else a control needs to go icon-only without losing
+  // the choice behind it. ⚠️ `id` must be unique per instance on screen — the
+  // list view and the detail view each render one, never both at once, so one
+  // id per call site is enough; `wireIconMenu` re-binds on every repaint.
+  // ==========================================================================
+  function iconMenuHTML(id, icon, title, options, extraBtnCls) {
+    return '<div class="il-icondd" id="' + id + '">' +
+      '<button type="button" class="pd-btn pd-btn-sm il-icondd-btn' + (extraBtnCls ? ' ' + extraBtnCls : '') +
+        '" title="' + Fmt.esc(title) + '" aria-label="' + Fmt.esc(title) + '">' +
+        '<span data-ico="' + icon + '" data-ico-size="16"></span></button>' +
+      '<div class="il-icondd-menu" hidden>' +
+        options.map(function (o) {
+          return '<button type="button" class="il-icondd-item" data-val="' + Fmt.esc(o.value) + '">' + Fmt.esc(o.label) + '</button>';
+        }).join('') +
+      '</div></div>';
+  }
+  // Every open menu closes before a new one opens, and a global (capture-phase,
+  // wired once in wire()) click listener closes whatever is left open on any
+  // click outside it — the same pattern the dashboard's own `.il-mom-msel`
+  // picker would need if it ever grew a second instance on screen at once.
+  function closeIconMenus(root) {
+    (root || document).querySelectorAll('.il-icondd-menu').forEach(function (m) { m.hidden = true; });
+  }
+  function wireIconMenu(root, id, onPick) {
+    var wrap = root.querySelector('#' + id); if (!wrap) return;
+    var btn = wrap.querySelector('.il-icondd-btn'), menu = wrap.querySelector('.il-icondd-menu');
+    if (!btn || !menu) return;
+    btn.onclick = function (e) {
+      e.stopPropagation();
+      var was = !menu.hidden;
+      closeIconMenus(root);
+      menu.hidden = was;
+    };
+    wrap.querySelectorAll('.il-icondd-item').forEach(function (b) {
+      b.onclick = function (e) { e.stopPropagation(); menu.hidden = true; onPick(b.dataset.val); };
+    });
+  }
+
   // ⚠️ ONE field renderer, in reporting mode a field renders as TEXT rather than a
   // control — a single-line <input> CLIPS its own value. Newlines survive as <br>
   // because the record is what was written. `extra` is appended INSIDE the block
@@ -600,11 +739,36 @@ window.MinutesOfMeeting = (function () {
     var iss = momIssueOf(it);
     return iss ? (iss.status || 'Open') : (it.status || 'Open');
   }
+  // Individual View item 1 (2026-09-03) — an explicit sort over the minute
+  // cards. ⚠️ '' means "order recorded", i.e. whatever momItemsOf() already
+  // returns (MOM_ITEMS is kept sorted by `seq` on load — see the loader) —
+  // never re-sorted here, so the un-sorted default reproduces the order the
+  // minutes were actually taken in. Every other option sorts blanks LAST,
+  // matching this app's own convention elsewhere (dates, aging, …) — an
+  // ascending sort that put blanks first would read as "nobody is
+  // responsible" being the most important thing on the list.
+  function momSortMinutes(list) {
+    var s = _momF.sort;
+    if (!s) return list;
+    var out = list.slice();
+    function cmp(av, bv) {
+      var a = av || '', b = bv || '';
+      if (!a !== !b) return a ? -1 : 1;
+      return a.localeCompare(b);
+    }
+    if (s === 'status') out.sort(function (a, b) { return cmp(momItemStatus(a), momItemStatus(b)); });
+    else if (s === 'dept') out.sort(function (a, b) { return cmp(momItemDept(a), momItemDept(b)); });
+    else if (s === 'owner') out.sort(function (a, b) {
+      return cmp(championText(a.owner_ids, a.owner), championText(b.owner_ids, b.owner));
+    });
+    else if (s === 'due') out.sort(function (a, b) { return cmp(a.due_date, b.due_date); });
+    return out;
+  }
   function momVisibleItems(momId) {
     var all = momItemsOf(momId);
-    if (!momFilterOn()) return all;
+    if (!momFilterOn()) return momSortMinutes(all);
     var q = _momF.q.toLowerCase();
-    return all.filter(function (it) {
+    var filtered = all.filter(function (it) {
       if (_momF.cat && momItemDept(it) !== _momF.cat) return false;
       if (_momF.type && (it.type || '') !== _momF.type) return false;
       if (_momF.status && momItemStatus(it) !== _momF.status) return false;
@@ -612,13 +776,14 @@ window.MinutesOfMeeting = (function () {
       return [it.item_no, momItemDept(it), it.issue, it.description, it.action_item, it.owner]
         .join(' ').toLowerCase().indexOf(q) >= 0;
     });
+    return momSortMinutes(filtered);
   }
   function momStatusFilterOpts() { return STATUSES.slice(); }
 
   function momReset() {
     MOMS = []; MOM_ITEMS = []; ISSUES = []; LESSONS = []; SCHEDULES = [];
     _momSel = null; _momErr = ''; _momLoaded = false;
-    _momQ = ''; _momF = { q: '', cat: '', type: '', status: '' };
+    _momQ = ''; _momF = { q: '', cat: '', type: '', status: '', sort: '' };
     _momView = 'list'; _momBrowsePrev = 'list'; _momTab = 'meetings';
     _momCameFromSeries = null; _momCalMode = 'month'; _momWeekStart = null;
     _addOpen = false; _addDraft = null;
@@ -686,20 +851,67 @@ window.MinutesOfMeeting = (function () {
   // ⚠️ PER MINUTE, not per module. These mirror
   // migrations/2026-08-20-department-minutes.sql line for line; where the UI and the RLS
   // disagree the user fills in a form and the save bounces with nothing to explain it.
+  // Individual View item 4 (2026-09-03) — every attendee tier is the same
+  // hybrid ids+text People Picker (peoplePickerHTML), so an attendee is
+  // anyone whose account id shows up in any of the three `.ids` arrays.
+  function attendeeIdsOf(m) {
+    if (!m) return [];
+    var out = [];
+    ['attendees_required', 'attendees_optional', 'attendees_actual'].forEach(function (k) {
+      var ids = m[k] && m[k].ids;
+      if (Array.isArray(ids)) out = out.concat(ids);
+    });
+    return out;
+  }
+  // ⚠️ Mirrors the DB's `meeting_minutes_upd` with-check exactly: an attendee
+  // only gets in WHILE the minute is still a draft. Once distributed, this
+  // returns false and canEditMinute() falls back to steward/owner alone —
+  // matching the row no longer being targetable by an attendee's UPDATE at
+  // all (the DB's USING clause requires the same "not yet distributed").
+  function isDraftAttendee(m) {
+    return !!(canAdd && m && UID && !momLocked(m) && attendeeIdsOf(m).indexOf(UID) >= 0);
+  }
+  // ⚠️ CAN EDIT FIELDS, not "may distribute" — see canDistribute() below for
+  // that narrower question. Broadened here (owner/planner/draft-attendee) so
+  // the form, the agenda and the minutes themselves are all editable by
+  // "all meeting attendees", per the owner's ask — but this must NEVER be
+  // the test a Distribute button (or canDeleteMinute) is gated on, or the UI
+  // would offer an action the DB silently refuses for an attendee.
   function canEditMinute(m) {
+    if (isSteward) return true;
+    if (canAdd && m && m.created_by && UID && m.created_by === UID) return true;
+    return isDraftAttendee(m);
+  }
+  // The narrower, ORIGINAL "canEditMinute" — owner or planner only, whatever
+  // the distribution state. Distributing (and reverting) a minute is a
+  // deliberate workflow act, not a field edit, and stays with whoever wrote
+  // it or a planner — never a draft attendee, even though they can now edit
+  // everything else on it.
+  function canDistribute(m) {
     if (isSteward) return true;
     return !!(canAdd && m && m.created_by && UID && m.created_by === UID);
   }
+  // ⚠️ Deliberately NOT `canEditMinute(m) && …` — deleting the whole record is
+  // more consequential than editing it, and the DB's `meeting_minutes_del`
+  // policy was never widened to draft attendees (own-delete stays owner/
+  // planner only). Delegating to the broadened canEditMinute here would show
+  // a Delete control the database goes on to refuse — the exact silent
+  // failure this app's own history warns against.
   function canDeleteMinute(m) {
     if (isSteward) return true;
-    return canEditMinute(m) && !momItemsOf(m.id).some(function (i) {
-      return i.issue_id && !i.carried_from_item_id;
-    });
+    return !!(canAdd && m && m.created_by && UID && m.created_by === UID) &&
+      !momItemsOf(m.id).some(function (i) {
+        return i.issue_id && !i.carried_from_item_id;
+      });
   }
   function momLocked(m) { return !!(m && m.is_distributed); }
   function minuteByLabel(m) {
     if (!m || !m.created_by) return 'Recorded before minutes noted who wrote them — a planner maintains it.';
     if (UID && m.created_by === UID) return 'Recorded by you.';
+    // Individual View item 4 — an attendee can edit a DRAFT too, so the
+    // "who can change it" answer widens while it's a draft and narrows back
+    // once it's distributed (only shown at all when you're read-only here).
+    if (!momLocked(m)) return 'Recorded by someone else — they, a planner, or one of this meeting\'s attendees can change it while it\'s a draft.';
     return 'Recorded by someone else — they or a planner can change it.';
   }
   // Short form for the List view's "Recorded by" column — never a real name, the
@@ -930,6 +1142,9 @@ window.MinutesOfMeeting = (function () {
     // momBrowseFilterBarHTML/wireBrowse(), on the left directly above the
     // meetings list/calendar it switches, wired fresh on every renderBrowse()
     // like every other control in that bar.
+    // Icon-dropdown menus (export, etc.) close on any click outside them —
+    // wired once here rather than per-render, same reasoning as the tabs above.
+    document.addEventListener('click', function () { closeIconMenus(document); });
   }
 
   // -------------------------------------------------------------- render ---
@@ -1034,22 +1249,30 @@ window.MinutesOfMeeting = (function () {
   }
   function momDashFilterOn() { return _momDashF.starred || _momDashF.meetings.length > 0; }
 
-  function momDashBarsFrom(items, keyFn, blank) {
+  // ⚠️ "for minutes by department, minutes by responsible and minutes by
+  // meeting - use chart of issues by department" — that chart is `hbarSVG`,
+  // one row per group carrying its own Open/Total count. `order`, when given,
+  // is the canonical order to sort by (unrecognised/legacy labels fall to the
+  // end, then alphabetically); otherwise the groups sort A→Z.
+  function momByOpenTotal(items, keyFn, blank, order) {
     var by = {};
-    items.forEach(function (it) { var k = keyFn(it) || blank; by[k] = (by[k] || 0) + 1; });
-    return Object.keys(by).sort(function (a, b) { return by[b] - by[a]; })
-      .map(function (k, i) { return { label: k, value: by[k], color: CHART_COLORS[i % CHART_COLORS.length] }; });
-  }
-  function momDashDonutCard(title, slices, aria) {
-    return '<div class="pd-card il-dash-card"><h4>' + Fmt.esc(title) + '</h4>' +
-      (slices.length
-        ? '<div class="il-dash-chartwrap">' + donutChartSVG(slices, { aria: aria }) +
-          '<div class="il-dash-legend">' + slices.map(function (s) {
-            return '<span class="il-dash-legend-i"><i style="background:' + s.color + '"></i>' +
-              Fmt.esc(s.label) + ' (' + s.value + ')</span>';
-          }).join('') + '</div></div>'
-        : '<div class="il-empty" style="padding:16px;">Nothing to chart yet.</div>') +
-    '</div>';
+    items.forEach(function (it) {
+      var k = keyFn(it) || blank;
+      if (!by[k]) by[k] = { label: k, open: 0, total: 0 };
+      by[k].total++;
+      if (momItemStatus(it) !== 'Closed') by[k].open++;
+    });
+    var list = Object.keys(by).map(function (k) { return by[k]; });
+    list.sort(function (a, b) {
+      if (order) {
+        var ia = order.indexOf(a.label), ib = order.indexOf(b.label);
+        if (ia === -1) ia = order.length;
+        if (ib === -1) ib = order.length;
+        if (ia !== ib) return ia - ib;
+      }
+      return a.label.localeCompare(b.label);
+    });
+    return list;
   }
 
   function momDashFilterHTML() {
@@ -1137,34 +1360,73 @@ window.MinutesOfMeeting = (function () {
       return;
     }
     var items = momDashItems();
-    var statusSlices = momDashBarsFrom(items, momItemStatus, 'Open');
-    var deptSlices = momDashBarsFrom(items, momItemDept, '(no department)');
-    var respBars = momDashBarsFrom(items, function (it) {
-      return championText(it.owner_ids, it.owner);
-    }, '(unassigned)');
-    // "Minutes per meeting" — one bar per meeting in scope, so a meeting that
-    // produced nothing still shows as a zero rather than vanishing.
-    var perMeeting = momDashMeetingIds().map(function (id, i) {
+    var total = items.length;
+    // "Minutes by Status" copies the Issues dashboard's own Status tile
+    // exactly: fixed colours per status, a donut with per-slice colour+count+
+    // percent labels, and the same legend underneath.
+    var open = 0, hold = 0, closed = 0;
+    items.forEach(function (it) {
+      var s = momItemStatus(it);
+      if (s === 'On Hold') hold++; else if (s === 'Closed') closed++; else open++;
+    });
+    var statusSlices = [
+      { label: 'Open', value: open, color: '#dc2626' },
+      { label: 'On Hold', value: hold, color: '#d97706' },
+      { label: 'Closed', value: closed, color: '#16a34a' },
+    ];
+    var deptList = momByOpenTotal(items, momItemDept, '(no department)', DEPARTMENTS);
+    var respList = momByOpenTotal(items, function (it) { return championText(it.owner_ids, it.owner); }, '(unassigned)');
+    // "Minutes per meeting" — one row per meeting in scope, so a meeting that
+    // produced nothing still shows as 0/0 rather than vanishing.
+    var byMeetingList = momDashMeetingIds().map(function (id) {
       var m = MOMS.find(function (x) { return x.id === id; }) || {};
+      var its = momItemsOf(id);
       return {
-        label: clip(m.title || '(untitled)', 28),
-        value: momItemsOf(id).length,
-        color: CHART_COLORS[i % CHART_COLORS.length],
+        label: clip(m.title || '(untitled)', 40),
+        open: its.filter(function (it) { return momItemStatus(it) !== 'Closed'; }).length,
+        total: its.length,
       };
-    }).sort(function (a, b) { return b.value - a.value; });
+    });
+    var barLegendTop = '<span class="il-dash-legend-i"><i style="background:#EE3124"></i>Open</span>' +
+      '<span class="il-dash-legend-i"><i style="background:var(--pd-line)"></i>Total</span>';
 
     host.innerHTML =
       momDashFilterHTML() +
       '<div class="il-dash-grid">' +
-        momDashDonutCard('Minutes by Status', statusSlices, 'Minutes by status') +
-        momDashDonutCard('Minutes by Department', deptSlices, 'Minutes by department') +
-        '<div class="pd-card il-dash-card"><h4>Minutes by Responsible</h4>' +
-          (respBars.length ? barChartSVG(respBars, { aria: 'Minutes by responsible' })
-                           : '<div class="il-empty" style="padding:16px;">Nothing to chart yet.</div>') +
+        '<div class="pd-card il-dash-card">' +
+          '<div class="il-dash-cardhead"><h4>Minutes by Status</h4></div>' +
+          '<div class="il-dash-cardbody il-dash-cardbody-center">' +
+            (total ? donutChartSVG(statusSlices, { aria: 'Minutes by status', size: 170 })
+              : '<div class="il-empty" style="padding:16px;">No minutes match the current filter.</div>') +
+          '</div>' +
+          (total ? statusLegendBottomHTML(statusSlices) : '') +
         '</div>' +
-        '<div class="pd-card il-dash-card il-dash-wide"><h4>Minutes per meeting</h4>' +
-          (perMeeting.length ? barChartSVG(perMeeting, { aria: 'Minutes per meeting' })
-                             : '<div class="il-empty" style="padding:16px;">Nothing to chart yet.</div>') +
+        '<div class="pd-card il-dash-card">' +
+          '<div class="il-dash-cardbody il-dash-cardbody-scroll">' +
+            (deptList.length ? hbarSVG(deptList, { aria: 'Open vs total minutes by department' })
+              : '<div class="il-empty" style="padding:16px;">No minutes match the current filter.</div>') +
+          '</div>' +
+          '<div class="il-dash-cardhead il-dash-cardhead-bottom"><h4>Minutes by Department</h4>' +
+            (deptList.length ? '<div class="il-dash-legend-top">' + barLegendTop + '</div>' : '') +
+          '</div>' +
+        '</div>' +
+        '<div class="pd-card il-dash-card">' +
+          '<div class="il-dash-cardbody il-dash-cardbody-scroll">' +
+            (respList.length ? hbarSVG(respList, { aria: 'Open vs total minutes by responsible' })
+              : '<div class="il-empty" style="padding:16px;">No minutes match the current filter.</div>') +
+          '</div>' +
+          '<div class="il-dash-cardhead il-dash-cardhead-bottom"><h4>Minutes by Responsible</h4>' +
+            (respList.length ? '<div class="il-dash-legend-top">' + barLegendTop + '</div>' : '') +
+          '</div>' +
+        '</div>' +
+        '<div class="pd-card il-dash-card il-dash-wide">' +
+          '<div class="il-dash-cardbody il-dash-cardbody-scroll">' +
+            (byMeetingList.length ? hbarSVG(byMeetingList, { aria: 'Open vs total minutes by meeting', width: 760 })
+              : '<div class="il-empty" style="padding:16px;">No meeting matches this filter.</div>') +
+          '</div>' +
+          '<div class="il-dash-cardhead il-dash-cardhead-bottom"><h4>Minutes by Meeting</h4>' +
+            (byMeetingList.length ? '<div class="il-dash-legend-top">' + barLegendTop + '</div>' : '') +
+          '</div>' +
         '</div>' +
       '</div>' +
       '<h4 class="il-mom-dashsec">Minutes by meeting</h4>' +
@@ -1329,14 +1591,19 @@ window.MinutesOfMeeting = (function () {
           '<button type="button" class="il-vt-btn' + (_momView === 'calendar' ? ' on' : '') + '" data-mv="calendar" title="Calendar view">' +
             '<span data-ico="calendar" data-ico-size="16"></span></button>' +
         '</div>' +
+        // Item 1 (2026-09-03): icon only — the toggle already says what it does
+        // via its title/aria-label, and "Filters" repeated the icon in words.
         '<button class="pd-btn pd-btn-sm il-filt-toggle' + (_momFiltOpen ? ' open' : '') +
-          (on ? ' has-active' : '') + '" id="il-mom-filttoggle" title="Search and filter meetings">' +
-          '<span data-ico="filter" data-ico-size="15"></span> Filters</button>' +
+          (on ? ' has-active' : '') + '" id="il-mom-filttoggle" title="Search and filter meetings" aria-label="Search and filter meetings">' +
+          '<span data-ico="filter" data-ico-size="15"></span></button>' +
         '<span class="il-mom-count">' + (on ? (shown + ' of ' + total + ' meetings') : (total + ' meeting' + (total === 1 ? '' : 's'))) + '</span>' +
         '<div style="flex:1;"></div>' +
-        '<select class="pd-select pd-input-sm" id="il-mom-listexport" title="Export the meeting list" style="width:auto;">' +
-          '<option value="">Export list as…</option><option value="html">HTML</option>' +
-          '<option value="pdf">PDF</option><option value="xlsx">Excel</option></select>' +
+        // Item 2 (2026-09-03): a `<select>` showing "Export list as…" is a
+        // text-labelled dropdown button; this is the same choice behind a
+        // plain icon (see iconMenuHTML above).
+        iconMenuHTML('il-mom-listexport', 'download', 'Export the meeting list', [
+          { value: 'html', label: 'HTML' }, { value: 'pdf', label: 'PDF' }, { value: 'xlsx', label: 'Excel' },
+        ]) +
         (canAdd ? '<button class="pd-btn pd-btn-primary pd-btn-sm" id="il-mom-new">+ Add meeting</button>' : '') +
       '</div>' +
       (!_momFiltOpen ? '' :
@@ -1769,13 +2036,11 @@ window.MinutesOfMeeting = (function () {
 
     var nb = host.querySelector('#il-mom-new');
     if (nb) nb.onclick = openAddMeetingModal;
-    var lex = host.querySelector('#il-mom-listexport');
-    if (lex) lex.onchange = async function () {
-      var v = lex.value; lex.value = '';
+    wireIconMenu(host, 'il-mom-listexport', async function (v) {
       if (v === 'html') momExportListHTML();
       else if (v === 'pdf') await momExportListPDF();
       else if (v === 'xlsx') momExportListXLSX();
-    };
+    });
     host.querySelectorAll('.il-mom-th[data-sort]').forEach(function (th) {
       th.onclick = function () {
         var col = th.dataset.sort;
@@ -2095,7 +2360,7 @@ window.MinutesOfMeeting = (function () {
     _momTab = 'meetings';
     if (_momView !== 'detail') _momBrowsePrev = _momView;
     _momSel = id; _momView = 'detail';
-    _momF = { q: '', cat: '', type: '', status: '' };
+    _momF = { q: '', cat: '', type: '', status: '', sort: '' };
     render();
     if (histView) histView.push();
   }
@@ -2143,48 +2408,58 @@ window.MinutesOfMeeting = (function () {
       .filter(function (v) { return v; });
   }
 
+  // ⚠️ ITEM 3/4 (2026-09-03): the favourite checkbox becomes a clickable star,
+  // and the recurring checkbox — shortened to just "Recurring meeting" — moves
+  // up beside the title, since both are properties of the meeting as a whole
+  // rather than scheduling details buried below the agenda.
+  function amFavBtnHTML(on) {
+    return '<button type="button" class="il-mom-favbtn' + (on ? ' on' : '') + '" id="il-am-fav" data-on="' +
+      (on ? '1' : '0') + '" title="' + (on ? 'Remove from favorites' : 'Add to favorites') +
+      '" aria-label="' + (on ? 'Remove from favorites' : 'Add to favorites') + '" aria-pressed="' + (on ? 'true' : 'false') + '">' +
+      (on ? '★' : '☆') + '</button>';
+  }
   function openAddMeetingModal() {
     var m = UI.modal(
       '<div class="pd-modal-header"><h3 style="margin:0;">+ Add meeting</h3>' +
         '<button class="pd-modal-close" id="il-am-x">&times;</button></div>' +
       '<div class="pd-modal-body">' +
-        '<div class="il-form-row">' +
+        '<div class="il-form-row il-am-titlerow">' +
           '<div class="pd-field" style="flex:2 1 220px;"><label>Meeting title *</label>' +
             '<input class="pd-input" id="il-am-title" placeholder="e.g. Weekly PSC Meeting"></div>' +
-          '<div class="pd-field" style="flex:1 1 130px;"><label style="display:flex;align-items:center;gap:6px;font-weight:400;">' +
-            '<input type="checkbox" id="il-am-fav" style="width:auto;"> Favorite this meeting</label></div>' +
+          '<div class="pd-field il-am-favfield" style="flex:0 0 auto;"><label>Favorite</label>' + amFavBtnHTML(false) + '</div>' +
+          '<div class="pd-field" style="flex:1 1 170px;"><label style="display:flex;align-items:center;gap:6px;font-weight:400;">' +
+            '<input type="checkbox" id="il-am-recur" style="width:auto;"> Recurring meeting</label></div>' +
         '</div>' +
+        // ITEM 6: the plain Date field and the recurring series' Start/End dates
+        // occupy the SAME row and are mutually exclusive — recur.onchange below
+        // toggles which pair is hidden, so a recurring meeting's date field is
+        // genuinely replaced rather than merely duplicated further down the form.
         '<div class="il-form-row">' +
-          '<div class="pd-field" style="flex:1 1 150px;"><label>Date *</label>' +
+          '<div class="pd-field" id="il-am-datewrap" style="flex:1 1 150px;"><label>Date *</label>' +
             '<input class="pd-input" type="date" id="il-am-date" value="' + dateVal(momToday()) + '"></div>' +
-          '<div class="pd-field" style="flex:1 1 120px;"><label>Start time</label><input class="pd-input" type="time" id="il-am-start"></div>' +
-          '<div class="pd-field" style="flex:1 1 120px;"><label>End time</label><input class="pd-input" type="time" id="il-am-end"></div>' +
+          '<div class="pd-field" id="il-am-sstartwrap" style="flex:1 1 150px;" hidden><label>Series start date *</label>' +
+            '<input class="pd-input" type="date" id="il-am-sstart" value="' + dateVal(momToday()) + '"></div>' +
+          '<div class="pd-field" id="il-am-sendwrap" style="flex:1 1 150px;" hidden><label>Series end date (optional)</label>' +
+            '<input class="pd-input" type="date" id="il-am-send"></div>' +
+          '<div class="pd-field" style="flex:1 1 120px;"><label>Start time *</label><input class="pd-input" type="time" id="il-am-start"></div>' +
+          '<div class="pd-field" style="flex:1 1 120px;"><label>End time *</label><input class="pd-input" type="time" id="il-am-end"></div>' +
         '</div>' +
         '<div class="il-form-row">' +
-          '<div class="pd-field" style="flex:1 1 200px;"><label>Venue</label><input class="pd-input" id="il-am-venue"></div>' +
+          '<div class="pd-field" style="flex:1 1 200px;"><label>Venue *</label><input class="pd-input" id="il-am-venue"></div>' +
           '<div class="pd-field" style="flex:1 1 200px;"><label>Meeting link</label><input class="pd-input" id="il-am-link" placeholder="https://…"></div>' +
+          '<div class="pd-field" style="flex:1 1 200px;"><label>Recording</label><input class="pd-input" id="il-am-rec" placeholder="https://… (optional)"></div>' +
         '</div>' +
-        '<div class="pd-field"><label>Required attendees</label>' + peoplePickerHTML('am-req', [], '', false) + '</div>' +
+        '<div class="pd-field"><label>Required attendees *</label>' + peoplePickerHTML('am-req', [], '', false) + '</div>' +
         '<div class="pd-field"><label>Optional attendees</label>' + peoplePickerHTML('am-opt', [], '', false) + '</div>' +
-        '<div class="pd-field"><label>Agenda</label><div id="il-am-agenda">' + agendaRowsHTML([]) + '</div>' +
+        '<div class="pd-field"><label>Agenda *</label><div id="il-am-agenda">' + agendaRowsHTML([]) + '</div>' +
           '<button type="button" class="pd-btn pd-btn-sm" id="il-am-agenda-add" style="margin-top:6px;">+ Add agenda item</button></div>' +
-        '<div class="il-form-row">' +
-          '<div class="pd-field" style="flex:1 1 260px;"><label style="display:flex;align-items:center;gap:6px;font-weight:400;">' +
-            '<input type="checkbox" id="il-am-recur" style="width:auto;"> This is a recurring meeting</label></div>' +
-        '</div>' +
         '<div id="il-am-recurwrap" hidden>' +
           '<div class="il-form-row">' +
-            '<div class="pd-field" style="flex:1 1 220px;"><label>Frequency</label><select class="pd-select" id="il-am-freq">' +
+            '<div class="pd-field" style="flex:1 1 220px;"><label>Frequency *</label><select class="pd-select" id="il-am-freq">' +
               FREQUENCIES.map(function (f) { return '<option value="' + f.key + '">' + f.label + '</option>'; }).join('') +
             '</select></div>' +
           '</div>' +
-          '<div class="il-form-row" id="il-sf-rulewrap">' + scheduleRuleFieldsHTML({ frequency: 'monthly_date' }) + '</div>' +
-          '<div class="il-form-row">' +
-            '<div class="pd-field" style="flex:1 1 150px;"><label>Series start date</label>' +
-              '<input class="pd-input" type="date" id="il-am-sstart" value="' + dateVal(momToday()) + '"></div>' +
-            '<div class="pd-field" style="flex:1 1 150px;"><label>Series end date (optional)</label>' +
-              '<input class="pd-input" type="date" id="il-am-send"></div>' +
-          '</div>' +
+          '<div class="il-form-row" id="il-sf-rulewrap">' + scheduleRuleFieldsHTML({ frequency: FREQUENCIES[0].key }) + '</div>' +
         '</div>' +
       '</div>' +
       '<div class="pd-modal-footer">' +
@@ -2196,10 +2471,25 @@ window.MinutesOfMeeting = (function () {
     var root = m.el;
     wirePeople(root, null);
     wireAgendaList(root);
+    function wireFavBtn() {
+      var favBtn = root.querySelector('#il-am-fav');
+      if (!favBtn) return;
+      favBtn.onclick = function () {
+        var on = favBtn.dataset.on !== '1';
+        favBtn.outerHTML = amFavBtnHTML(on);
+        wireFavBtn();
+      };
+    }
+    wireFavBtn();
     var recur = root.querySelector('#il-am-recur');
     if (recur) recur.onchange = function () {
       var wrap = root.querySelector('#il-am-recurwrap');
       if (wrap) wrap.hidden = !recur.checked;
+      var dw = root.querySelector('#il-am-datewrap'), sw = root.querySelector('#il-am-sstartwrap'),
+        ew = root.querySelector('#il-am-sendwrap');
+      if (dw) dw.hidden = recur.checked;
+      if (sw) sw.hidden = !recur.checked;
+      if (ew) ew.hidden = !recur.checked;
     };
     var freqSel = root.querySelector('#il-am-freq');
     if (freqSel) freqSel.onchange = function () {
@@ -2213,19 +2503,62 @@ window.MinutesOfMeeting = (function () {
     if (window.Icons && Icons.hydrate) Icons.hydrate(root);
   }
 
+  // ⚠️ ITEM 7 (2026-09-03): required fields, matching what a meeting needs to
+  // be useful rather than merely well-formed — start/end time, venue, at least
+  // one required attendee and at least one agenda item are always demanded; a
+  // RECURRING series additionally demands its own scheduling fields (frequency,
+  // weekday/"which" where the chosen frequency uses them, and a series start
+  // date) since those replace the plain Date field entirely (item 6).
+  function validateAddMeeting(root, g, isRecur) {
+    if (!g('il-am-title').trim()) return 'Meeting title is required.';
+    if (!g('il-am-start')) return 'Start time is required.';
+    if (!g('il-am-end')) return 'End time is required.';
+    if (!g('il-am-venue').trim()) return 'Venue is required.';
+    var reqRoot = root.querySelector('[data-people="am-req"]');
+    var reqIds = reqRoot ? idsOf(reqRoot) : [];
+    var reqText = reqRoot ? ((reqRoot.querySelector('.il-pp-free') || {}).value || '').trim() : '';
+    if (!reqIds.length && !reqText) return 'At least one required attendee is needed.';
+    if (!agendaValuesOf(root).length) return 'At least one agenda item is required.';
+    if (!isRecur) {
+      if (!g('il-am-date')) return 'Date is required.';
+      return '';
+    }
+    if (!g('il-am-freq')) return 'Frequency is required.';
+    if (!g('il-am-sstart')) return 'Series start date is required.';
+    // ⚠️ Weekday/"Which" only exist in the DOM for the frequencies that use
+    // them (scheduleRuleFieldsHTML renders a different field set per
+    // frequency) — validated only when actually present, so a monthly-date
+    // or quarterly series (which asks for a day of month instead) is never
+    // told it is missing a control it was never shown.
+    var wdEl = root.querySelector('#il-sf-weekday');
+    if (wdEl && wdEl.value === '') return 'Weekday is required.';
+    var ordEl = root.querySelector('#il-sf-ordinal');
+    if (ordEl && ordEl.value === '') return 'Which week is required.';
+    return '';
+  }
+
   async function saveAddMeeting(root, close, saveBtn) {
     var g = function (id) { var e = root.querySelector('#' + id); return e ? e.value : ''; };
     var title = g('il-am-title').trim();
     var date = g('il-am-date');
-    if (!title) { UI.toast('Meeting title is required.', 'warn'); return; }
-    if (!date) { UI.toast('Date is required.', 'warn'); return; }
+    var isRecur = !!(root.querySelector('#il-am-recur') || {}).checked;
+    var vErr = validateAddMeeting(root, g, isRecur);
+    if (vErr) { UI.toast(vErr, 'warn'); return; }
     var reqRoot = root.querySelector('[data-people="am-req"]'), optRoot = root.querySelector('[data-people="am-opt"]');
     var reqIds = reqRoot ? idsOf(reqRoot) : [], reqText = reqRoot ? ((reqRoot.querySelector('.il-pp-free') || {}).value || '') : '';
     var optIds = optRoot ? idsOf(optRoot) : [], optText = optRoot ? ((optRoot.querySelector('.il-pp-free') || {}).value || '') : '';
     var agenda = agendaValuesOf(root);
-    var isRecur = !!(root.querySelector('#il-am-recur') || {}).checked;
-    var isFav = !!(root.querySelector('#il-am-fav') || {}).checked;
+    // ITEM 3: the favourite state lives on the star button's `data-on`
+    // attribute now, not a checkbox's `.checked`.
+    var favBtn2 = root.querySelector('#il-am-fav');
+    var isFav = !!(favBtn2 && favBtn2.dataset.on === '1');
     var venue = g('il-am-venue').trim(), link = g('il-am-link').trim();
+    // ITEM 5: the recording link. ⚠️ `mom_schedules` has no `recording_url`
+    // column of its own (only `meeting_minutes` does — see the 2026-09-01
+    // migration) so this only ever reaches the plain one-time-meeting insert;
+    // a recurring series' own occurrences each get their own Recording field
+    // once created, from the full Detail editor.
+    var rec = g('il-am-rec').trim();
     var startT = g('il-am-start'), endT = g('il-am-end');
     if (saveBtn) saveBtn.disabled = true;
     try {
@@ -2265,6 +2598,7 @@ window.MinutesOfMeeting = (function () {
         var mpayload = {
           project_id: pid, title: title, meeting_date: date, meeting_group: 'Internal',
           is_favorite: isFav, venue: venue || null, meeting_link: link || null,
+          recording_url: rec || null,
           start_time: startT || null, end_time: endT || null,
           attendees_required: { ids: reqIds, text: reqText },
           attendees_optional: { ids: optIds, text: optText },
@@ -2353,10 +2687,14 @@ window.MinutesOfMeeting = (function () {
   }
 
   function momDetailHTML(mom) {
-    // ⚠️ THREE states, not two. `mayEdit` is the PERMISSION (whose minute is this);
-    // `locked` is the WORKFLOW state (has it been issued). A distributed minute is
-    // read-only even to the person who wrote it — they revert it to draft first, which
-    // is a deliberate act rather than a silent edit to a sheet already circulated.
+    // ⚠️ THREE states, not two. `mayEdit` is the PERMISSION (whose minute is this —
+    // owner, planner, OR (Individual View item 4) one of this meeting's attendees
+    // while it's still a draft, per canEditMinute()); `locked` is the WORKFLOW state
+    // (has it been issued). A distributed minute is read-only even to the person who
+    // wrote it — they revert it to draft first, which is a deliberate act rather than
+    // a silent edit to a sheet already circulated. ⚠️ Distributing itself is NARROWER
+    // than `mayEdit` — see canDistribute() — so the Distribute button below is
+    // deliberately gated on that, not on `mayEdit`.
     var mayEdit = canEditMinute(mom), locked = momLocked(mom);
     var ro = !mayEdit || locked, d = ro ? ' disabled' : '';
     var items = momItemsOf(mom.id);
@@ -2370,7 +2708,11 @@ window.MinutesOfMeeting = (function () {
         'accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx">') +
       '<div class="il-mom-toolbar">' +
         '<span class="il-mom-state' + (locked ? ' on' : '') + '">' +
-          (locked ? 'Distributed' : 'Draft — only you and planners can see this') + '</span>' +
+          // ⚠️ READING a draft has always been project-wide (meeting_minutes_read has
+          // no draft carve-out) — this label used to claim otherwise. What actually
+          // narrows is EDITING: you, a planner, or (Individual View item 4) this
+          // meeting's attendees while it's a draft.
+          (locked ? 'Distributed' : 'Draft — editable by you, a planner, or this meeting\'s attendees') + '</span>' +
         '<div style="flex:1;"></div>' +
         // Item 3/4: any meeting — not just a series — can be favorited; pinned
         // to the top of the list either way (momSortedRows). A view control,
@@ -2382,20 +2724,30 @@ window.MinutesOfMeeting = (function () {
         // unlike every other control on this card, which is gated on canEditMinute().
         // A VIEW control, so — like PDF — it is offered to everyone who can see the
         // minute, not only to whoever may edit it.
-        '<button class="pd-btn pd-btn-sm' + (_momReport ? ' is-active' : '') + '" id="il-mom-report" ' +
-          'title="Present these minutes as a clean read-only record — hides the editing controls">' +
-          (_momReport ? '\u2713 Reporting view' : 'Reporting view') + '</button>' +
+        // Individual-view item 3 (2026-09-03): reporting/export/email/distribute
+        // all go icon-only -- a row of text buttons was the busiest part of the
+        // toolbar, and each already carries a `title` naming what it does.
+        '<button class="pd-btn pd-btn-sm il-mom-iconbtn' + (_momReport ? ' is-active' : '') + '" id="il-mom-report" ' +
+          'title="' + (_momReport ? 'Exit reporting view' : 'Reporting view -- a clean read-only record') +
+          '" aria-label="Reporting view"><span data-ico="eye" data-ico-size="16"></span></button>' +
         // Item 8: one control surface for HTML/PDF/PowerPoint/Excel, plus a
         // separate Email action — both reads, offered the same way PDF was.
-        '<select class="pd-select pd-input-sm" id="il-mom-exportsel" title="Export these minutes" style="width:auto;">' +
-          '<option value="">Export as…</option><option value="html">HTML</option>' +
-          '<option value="pdf">PDF</option><option value="pptx">PowerPoint</option>' +
-          '<option value="xlsx">Excel</option></select>' +
-        '<button class="pd-btn pd-btn-sm" id="il-mom-email" title="Email these minutes">✉ Email</button>' +
-        (mayEdit ? '<button class="pd-btn pd-btn-sm' + (locked ? '' : ' pd-btn-primary') + '" id="il-mom-dist">' +
-          (locked ? '↩ Revert to draft' : '📤 Distribute') + '</button>' : '') +
+        iconMenuHTML('il-mom-exportsel', 'download', 'Export these minutes', [
+          { value: 'html', label: 'HTML' }, { value: 'pdf', label: 'PDF' },
+          { value: 'pptx', label: 'PowerPoint' }, { value: 'xlsx', label: 'Excel' },
+        ]) +
+        '<button class="pd-btn pd-btn-sm il-mom-iconbtn" id="il-mom-email" title="Email these minutes" ' +
+          'aria-label="Email these minutes"><span data-ico="mail" data-ico-size="16"></span></button>' +
+        // ⚠️ Gated on canDistribute(), NOT the broadened `mayEdit` — an attendee can
+        // edit everything else on a draft, but distributing (or reverting) it is a
+        // deliberate workflow act that stays with whoever wrote it or a planner. The
+        // DB's with-check already refuses an attendee's attempt to flip
+        // `is_distributed`; this keeps the button from ever being offered to one.
+        (canDistribute(mom) ? '<button class="pd-btn pd-btn-sm il-mom-iconbtn' + (locked ? '' : ' pd-btn-primary') + '" id="il-mom-dist" ' +
+          'title="' + (locked ? 'Revert to draft' : 'Distribute') + '" aria-label="' + (locked ? 'Revert to draft' : 'Distribute') + '">' +
+          '<span data-ico="' + (locked ? 'undo' : 'upload') + '" data-ico-size="16"></span></button>' : '') +
       '</div>' +
-      (locked && mayEdit
+      (locked && canDistribute(mom)
         ? '<p class="il-mom-note" style="margin-top:0;">These minutes have been issued, so the form is ' +
           'locked. Revert to draft to change them — everyone on the project can already read this version.</p>'
         : '') +
@@ -2405,6 +2757,12 @@ window.MinutesOfMeeting = (function () {
       // controls are live either way, per "navigate and step through slides
       // while also editing") — reporting only decides which slide is on screen.
       '<div id="il-mom-slide-details">' +
+      // ⚠️ INDIVIDUAL VIEW ITEM 2 (2026-09-03) — three named sections: Meeting
+      // details, Agenda, Minutes. Agenda and Minutes already carried their own
+      // <h4> (momAgendaSectionHTML / the "Minutes" block below); this heading
+      // completes the set so the card reads as three deliberate parts rather
+      // than one long form that happens to end in a list.
+      '<h4 class="il-mom-sechead">Meeting details</h4>' +
       '<div class="il-form-row">' +
         '<div class="pd-field" style="flex:2 1 260px;"><label>Title</label><input class="pd-input" id="il-mom-title" value="' + Fmt.esc(mom.title || '') + '"' + d + '></div>' +
         '<div class="pd-field" style="flex:1 1 140px;"><label>Date</label><input class="pd-input" type="date" id="il-mom-date" value="' + (dateVal(mom.meeting_date)) + '"' + d + '></div>' +
@@ -2512,10 +2870,12 @@ window.MinutesOfMeeting = (function () {
         'something already logged in Issues &amp; Concerns — during a PPR, or any time — so it is ' +
         'tracked here without retyping it. New issues are raised directly in that register now, not ' +
         'from these minutes.</p>' +
-        // ⚠️ Offered only when there is enough to filter. A filter bar over three
-        // rows is noise, and a "Showing 0 of 3" that a stale filter caused is how a
-        // planner concludes their minutes have lost data.
-        (items.length > 4 ? momFilterBarHTML(items) : '') +
+        // ⚠️ Gated at >1, not >4 — momFilterBarHTML() itself keeps the noisier
+        // search/category/type/status controls hidden below >4 (a filter bar over
+        // three rows is noise, and a "Showing 0 of 3" reads as lost data), but the
+        // sort control it also carries never hides a row, so it is worth showing
+        // as soon as there is more than one minute to put in an order.
+        (items.length > 1 ? momFilterBarHTML(items) : '') +
         (items.length && !vis.length
           ? '<div class="il-empty" style="padding:14px;">No minute on these minutes matches the filter.</div>'
           : '') +
@@ -2576,19 +2936,33 @@ window.MinutesOfMeeting = (function () {
 
   // mom-app keeps these in a collapsible drawer; here they sit inline above the
   // table, matching the filter bars the rest of this app already uses.
+  // ⚠️ INDIVIDUAL VIEW ITEM 1 (2026-09-03) — a sort control now lives in this
+  // same bar, and it does NOT share the search/category/type/status fields'
+  // ">4" gate. Those filters can HIDE rows, and a "0 of 3" on a tiny list reads
+  // as data loss — the reason they were gated in the first place. Sorting
+  // never hides anything, so it is offered as soon as there is more than one
+  // minute to put in an order (see the `> 1` gate at the call site).
   function momFilterBarHTML(items) {
-    var on = momFilterOn();
+    var on = momFilterOn(), full = items.length > 4;
     return '<div class="il-mom-filters">' +
-      '<span class="il-filt-ico" data-ico="filter" data-ico-size="15"></span>' +
-      '<input class="pd-input pd-input-sm" id="il-momf-q" placeholder="Search agenda, action, owner…" value="' + Fmt.esc(_momF.q) + '">' +
-      // ITEM 5 — filters on department now, over the same union the card's own
-      // select offers, so a legacy `category` value stays reachable.
-      '<select class="pd-select pd-input-sm" id="il-momf-cat">' +
-        momOptions(DEPARTMENTS, momUsedDepartments(), _momF.cat, 'All departments') + '</select>' +
-      '<select class="pd-select pd-input-sm" id="il-momf-type">' +
-        momOptions(MOM_TYPES, [], _momF.type, 'All types') + '</select>' +
-      '<select class="pd-select pd-input-sm" id="il-momf-status">' +
-        momOptions(momStatusFilterOpts(), [], _momF.status, 'All statuses') + '</select>' +
+      (full ? '<span class="il-filt-ico" data-ico="filter" data-ico-size="15"></span>' +
+        '<input class="pd-input pd-input-sm" id="il-momf-q" placeholder="Search agenda, action, owner…" value="' + Fmt.esc(_momF.q) + '">' +
+        // ITEM 5 — filters on department now, over the same union the card's own
+        // select offers, so a legacy `category` value stays reachable.
+        '<select class="pd-select pd-input-sm" id="il-momf-cat">' +
+          momOptions(DEPARTMENTS, momUsedDepartments(), _momF.cat, 'All departments') + '</select>' +
+        '<select class="pd-select pd-input-sm" id="il-momf-type">' +
+          momOptions(MOM_TYPES, [], _momF.type, 'All types') + '</select>' +
+        '<select class="pd-select pd-input-sm" id="il-momf-status">' +
+          momOptions(momStatusFilterOpts(), [], _momF.status, 'All statuses') + '</select>'
+        : '') +
+      '<select class="pd-select pd-input-sm" id="il-momf-sort" title="Sort the minutes below">' +
+        '<option value=""' + (!_momF.sort ? ' selected' : '') + '>Order recorded</option>' +
+        '<option value="status"' + (_momF.sort === 'status' ? ' selected' : '') + '>Sort by status</option>' +
+        '<option value="dept"' + (_momF.sort === 'dept' ? ' selected' : '') + '>Sort by department</option>' +
+        '<option value="owner"' + (_momF.sort === 'owner' ? ' selected' : '') + '>Sort by responsible</option>' +
+        '<option value="due"' + (_momF.sort === 'due' ? ' selected' : '') + '>Sort by target date</option>' +
+      '</select>' +
       (on ? '<button class="il-clear" id="il-momf-clear" title="Clear all filters">' +
             '<span data-ico="x" data-ico-size="14"></span>Clear</button>' : '') +
       '<span class="il-mom-count">' +
@@ -3549,7 +3923,10 @@ window.MinutesOfMeeting = (function () {
   // letting a planner assume "revert" undoes the meeting's consequences.
   async function momSetDistributed(momId, on) {
     var mom = MOMS.find(function (x) { return x.id === momId; });
-    if (!mom || !canEditMinute(mom)) return;
+    // ⚠️ canDistribute(), not canEditMinute() — a draft attendee can edit the record
+    // but never gets to issue or retract it; the DB's with-check refuses the write
+    // anyway, this just keeps the client from ever attempting it.
+    if (!mom || !canDistribute(mom)) return;
     if (on) {
       if (!confirm('Distribute "' + (mom.title || 'these minutes') +
         '"?\n\nEveryone on the project will be able to read them, and the form locks ' +
@@ -3557,7 +3934,7 @@ window.MinutesOfMeeting = (function () {
     } else {
       var raised = momItemsOf(momId).filter(function (i) { return i.issue_id; }).length;
       if (!confirm('Revert "' + (mom.title || 'these minutes') + '" to draft?' +
-        '\n\nOnly you and planners will see them again.' +
+        '\n\nYou, planners, and this meeting\'s attendees will be able to edit it again.' +
         (raised ? '\n\n' + raised + ' issue(s) already raised in Issues & Concerns STAY there — ' +
           'reverting does not retract them.' : ''))) return;
     }
@@ -4372,6 +4749,15 @@ window.MinutesOfMeeting = (function () {
     var txt = pick('[data-f="action_item"]') || pick('[data-f="issue"]');
     return txt ? clip(txt, 48) : ('Minute ' + (i - 1));
   }
+  // Reporting View item 2 (2026-09-03) — the short glyph on each switcher
+  // button: M for meeting details, A for agenda, 1/2/3… for each minute (the
+  // same ordinal momSlideLabel()'s "Minute N" fallback already uses, so the
+  // two never disagree about which number a slide is).
+  function momSlideShortLabel(el, i) {
+    if (el.id === 'il-mom-slide-details') return 'M';
+    if (el.id === 'il-mom-slide-agenda') return 'A';
+    return String(i - 1);
+  }
   function momApplySlides() {
     var host = $('il-mom-view'); if (!host) return;
     var root = host.querySelector('.il-mom-detail') || host;
@@ -4392,16 +4778,32 @@ window.MinutesOfMeeting = (function () {
     var nav = document.createElement('div');
     nav.className = 'il-mom-slidenav';
     nav.id = 'il-mom-slidenav';
+    // Reporting View item 2 (2026-09-03) — the switcher is now a row of
+    // labelled buttons (M / A / 1 / 2 / 3…), with the Back/Next arrows as
+    // plain icon buttons flanking that row rather than text buttons at
+    // either end of the whole bar. The slide's full name + counter moves to
+    // its own line underneath, since a labelled switcher no longer needs a
+    // separate caption to say WHICH slide is showing — only what it's called.
     nav.innerHTML =
-      '<button class="pd-btn pd-btn-sm" data-sl="prev"' + (_momSlide === 0 ? ' disabled' : '') + '>&larr; Back</button>' +
+      '<div class="il-mom-slidebar">' +
+        '<button type="button" class="pd-btn pd-btn-sm il-mom-slidearrow" data-sl="prev"' +
+          (_momSlide === 0 ? ' disabled' : '') + ' title="Previous slide" aria-label="Previous slide">' +
+          '<span data-ico="chevronLeft" data-ico-size="16"></span></button>' +
+        '<div class="il-mom-slidedots">' + els.map(function (el, i) {
+          return '<button type="button" class="il-mom-slidedot' + (i === _momSlide ? ' on' : '') +
+            '" data-sl="' + i + '" title="' + Fmt.esc(momSlideLabel(el, i)) + '">' +
+            Fmt.esc(momSlideShortLabel(el, i)) + '</button>';
+        }).join('') + '</div>' +
+        '<button type="button" class="pd-btn pd-btn-sm il-mom-slidearrow" data-sl="next"' +
+          (_momSlide >= els.length - 1 ? ' disabled' : '') + ' title="Next slide" aria-label="Next slide">' +
+          '<span data-ico="chevronRight" data-ico-size="16"></span></button>' +
+      '</div>' +
       '<div class="il-mom-slidename">' + Fmt.esc(momSlideLabel(els[_momSlide], _momSlide)) +
-        '<span>Slide ' + (_momSlide + 1) + ' of ' + els.length + '</span></div>' +
-      '<div class="il-mom-slidedots">' + els.map(function (el, i) {
-        return '<button type="button" class="il-mom-slidedot' + (i === _momSlide ? ' on' : '') +
-          '" data-sl="' + i + '" title="' + Fmt.esc(momSlideLabel(el, i)) + '"></button>';
-      }).join('') + '</div>' +
-      '<button class="pd-btn pd-btn-sm" data-sl="next"' +
-        (_momSlide >= els.length - 1 ? ' disabled' : '') + '>Next &rarr;</button>';
+        '<span>Slide ' + (_momSlide + 1) + ' of ' + els.length + '</span></div>';
+    // ⚠️ Built via document.createElement + innerHTML, outside the normal
+    // render()/Icons.hydrate() pass — the chevrons need their own hydrate or
+    // they render as empty spans.
+    if (window.Icons && Icons.hydrate) Icons.hydrate(nav);
     var tb = host.querySelector('.il-mom-toolbar');
     if (tb && tb.parentNode) tb.parentNode.insertBefore(nav, tb.nextSibling);
     else root.insertBefore(nav, root.firstChild);
@@ -4488,12 +4890,15 @@ window.MinutesOfMeeting = (function () {
       var again = $('il-momf-q');
       if (again) { again.focus(); try { again.setSelectionRange(at, at); } catch (e) {} }
     };
-    [['il-momf-cat', 'cat'], ['il-momf-type', 'type'], ['il-momf-status', 'status']].forEach(function (pair) {
+    [['il-momf-cat', 'cat'], ['il-momf-type', 'type'], ['il-momf-status', 'status'], ['il-momf-sort', 'sort']].forEach(function (pair) {
       var el = host.querySelector('#' + pair[0]);
       if (el) el.onchange = function () { _momF[pair[1]] = el.value; renderDetail(); };
     });
     var fc = host.querySelector('#il-momf-clear');
-    if (fc) fc.onclick = function () { _momF = { q: '', cat: '', type: '', status: '' }; renderDetail(); };
+    // ⚠️ Sort is a DISPLAY preference, not a filter — "Clear all filters" clears
+    // what narrows the list, not the order it's read in, so it's carried across
+    // rather than reset to '' with the rest.
+    if (fc) fc.onclick = function () { _momF = { q: '', cat: '', type: '', status: '', sort: _momF.sort }; renderDetail(); };
 
     var rep = host.querySelector('#il-mom-report');
     if (rep) rep.onclick = function () { _momReport = !_momReport; renderDetail(); };
@@ -4518,17 +4923,14 @@ window.MinutesOfMeeting = (function () {
     // MOMS, not the live form, so a title typed and not saved would be
     // missing from the file. Not when locked — the form is already disabled,
     // so this would be a pointless write to a distributed minute.
-    var exportSel = host.querySelector('#il-mom-exportsel');
-    if (exportSel) exportSel.onchange = async function () {
-      var v = exportSel.value; exportSel.value = '';
-      if (!v) return;
+    wireIconMenu(host, 'il-mom-exportsel', async function (v) {
       var cur = MOMS.find(function (x) { return x.id === _momSel; });
       if (cur && canEditMinute(cur) && !momLocked(cur)) await momSaveHeader();
       if (v === 'html') momExportHTML(_momSel);
       else if (v === 'pdf') await momDownloadPDF(_momSel);
       else if (v === 'pptx') await momExportPPTX(_momSel);
       else if (v === 'xlsx') momExportXLSX(_momSel);
-    };
+    });
     var emailBtn = host.querySelector('#il-mom-email');
     if (emailBtn) emailBtn.onclick = function () { momEmailMinutes(_momSel); };
 

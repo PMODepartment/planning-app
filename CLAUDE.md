@@ -84,6 +84,29 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-03 — Minutes of Meeting UI/UX pass: icon-only chrome, draft-attendee editing, a labelled reporting switcher
+
+Owner's 18-item list across Meetings List / Meetings Dashboard / Individual View /
+Reporting View. Full detail (every item, the RLS reasoning for item 4, and the two real
+pre-existing bugs found and fixed — a specificity collision that had been undoing the
+reporting view's own padding since it shipped, and a rule-fields default that didn't match
+the frequency `<select>` it sat under) is in `modules/minutes-of-meeting/CLAUDE.md` —
+module-local, since the module contract reserves shared-file edits for the app owner.
+
+**`assets/js/icons.js` — two new icons**, `mail` (the module's new icon-only Email
+button) and `chevronLeft` (paired with the existing `chevronRight` for the reporting
+view's Back/Next arrow buttons). Shared asset changed → **`icons.js?v=` bumped
+`20260902f` → `20260903a` across all 21 referencing HTML files.**
+
+**`migrations/2026-09-03-mom-draft-attendee-edit.sql` (module dev must run this)** — the
+one item that touches the database: a meeting's minutes are still editable by any of the
+meeting's recorded attendees while the record is a draft, not only by whoever wrote it or
+a planner. Distributing (and reverting) a minute stays owner/planner-only regardless —
+that RLS narrowing is unchanged, only the field-edit rule widened. Reading has always been
+project-wide for every minute, draft or distributed.
+
+<!-- both sides prepended a 2026-09-03 entry; both kept whole, seam here -->
+
 ### 2026-09-03 (f) — "No Location Breakdown Structure", on a project that has five
 
 Owner, two tabs of SLN101 side by side: Schedule Setup lists **Tower › Level › Orientation › Zone ›
