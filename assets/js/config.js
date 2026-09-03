@@ -85,7 +85,7 @@ window.APP_CONFIG = {
       // ⚠️ influence and interest are 1..4 here (and stored as TEXT), so the split is 3, not the
       // risk register's midpoint. Declaring it per module is why one engine can serve both.
       metrics: [ { key: 'matrix', agg: 'matrix2', x: 'interest', y: 'influence', split: 3 } ] } },
-    { key: 'project-schedule',  name: 'Schedule',                              path: 'modules/project-schedule/index.html', icon: 'calendar',    enabled: true, dash: { table: 'project_schedule', unit: 'activities',
+    { key: 'project-schedule',  name: 'Schedule',                              path: 'modules/project-schedule/index.html', icon: 'ganttChart',  enabled: true, dash: { table: 'project_schedule', unit: 'activities',
       // ⚠️ WBS Summary rows are roll-up headings, not work. Counting them would inflate every figure
       // on the card (a 500-activity project reads as 800) and drag the weighted % toward whatever
       // the branches happen to store.
@@ -202,7 +202,7 @@ window.APP_CONFIG = {
       // is told about and knows nothing about where progress photos live.
       recent: { orderBy: 'taken_at', limit: 6, columns: ['title', 'works', 'taken_at', 'location'],
                 bucket: 'progress-photos', pathCol: 'photo_url', ttl: 3600 } } },
-    { key: 'contracts-claims',  name: 'Contracts & Claims',                    path: 'modules/contracts-claims/index.html',  icon: 'contract',   enabled: true, superAdminOnly: true, dash: { table: 'contracts_claims', unit: 'records',
+    { key: 'contracts-claims',  name: 'Contracts & Claims',                    path: 'modules/contracts-claims/index.html',  icon: 'contract',   enabled: true, dash: { table: 'contracts_claims', unit: 'records',
       metrics: [
         { key: 'records', agg: 'countWhere', column: 'id' },
         // The flow the dashboard draws: original contract value, then change orders by state, then

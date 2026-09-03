@@ -130,9 +130,19 @@
   function navListBody(projects, groupHeads, opts) {
     opts = opts || {};
     var P = projects || [];
+    // Owner (2026-09-03): "add project code before project name" — the project id IS
+    // its code (the PK), so this needs no lookup, matching the same "CODE — Name"
+    // convention the closed trigger button already uses (enhanceProjectSelect's
+    // syncBtn / renderSwitcher's mainLabel) — a row here and the trigger it opens from
+    // should read the same way. Wrapped in its own <strong> (bold, per the owner's
+    // second ask) so it reads distinctly from the address/group-head subtitle below it,
+    // which stays regular weight.
     function projRow(p) {
+      var gh = p.group_head_id && (groupHeads || []).filter(function (g) { return g.id === p.group_head_id; })[0];
+      var sub = [p.location, gh ? 'Group Head: ' + gh.name : ''].filter(Boolean).join(' · ');
       return '<div class="pd-nt-proj' + (opts.isSelected && opts.isSelected(p) ? ' sel' : '') + '" data-nt-proj="' + esc(p.id) + '">' +
-        _ntIco('project', 14) + '<span>' + esc(p.name || p.id) + '</span></div>';
+        _ntIco('project', 14) + '<span class="pd-nt-proj-txt"><strong>' + esc(p.id + ' — ' + (p.name || p.id)) + '</strong>' +
+        (sub ? '<small>' + esc(sub) + '</small>' : '') + '</span></div>';
     }
     var portfolioRow = '<div class="pd-nt-portfolio' + (opts.portfolioActive ? ' sel' : '') + '" data-nt-portfolio="1">' +
       _ntIco('barChart', 15) + '<span>Portfolio</span></div>';

@@ -413,6 +413,31 @@
   <script src="recon.js?v=20260830b"></script>
   <script src="bim.js?v=20260902g"></script>
   <script>
+    // Item 6: Gallery/Presentations/Plans as a Project-Schedule-style dropdown
+    // instead of a flat tab row. `icon: 'camera'` — this module dropped its
+    // standalone <h1> entirely on an earlier owner ask, so the dropdown
+    // trigger is the only place left for its identity mark; matches
+    // config.js's own icon for this module.
+    // ⚠️ Bound to DOMContentLoaded HERE, not called from inside
+    // AppAuth.requireLogin's callback (2026-09-03, bug fix: "the module name
+    // appears for a few seconds before being hidden"). requireLogin awaits two
+    // real network round-trips (auth.getSession + a profile fetch) before its
+    // callback fires, and until then the flat tab-button row sat fully visible
+    // with nothing to convert it — exactly the flash reported. This needs
+    // neither auth nor project data, only the tab markup already on the page —
+    // but it DOES need UI.initModuleTopbar() to have already moved this tab
+    // strip into .pd-modulebar first. ⚠️ Calling initModuleTopbar() explicitly/
+    // early was tried and reverted — it broke theme.js's own topbar injection,
+    // which relies on running BEFORE initModuleTopbar() via DOMContentLoaded
+    // listener registration order (theme.js's script tag comes first in
+    // <head>, so its listener fires first). A THIRD DOMContentLoaded listener,
+    // registered last, fires after both of theirs have already run in the
+    // order they need — same guarantee, no reordering.
+    (function () {
+      function go() { UI.tabsToDropdown('.pp-tabs', { icon: 'camera' }); }
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go);
+      else go();
+    })();
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);
       UI.initShell();
@@ -420,12 +445,6 @@
       UI.renderNav(document.getElementById('side-nav'), 'project', {
         active: 'progress-photos', base: '../../', pname: pname, modules: APP_CONFIG.MODULES,
       });
-      // Item 6: Gallery/Presentations/Plans as a Project-Schedule-style
-      // dropdown instead of a flat tab row. `icon: 'camera'` (2026-09-03) —
-      // this module dropped its standalone <h1> entirely on an earlier owner
-      // ask, so the dropdown trigger is the only place left for its identity
-      // mark; matches config.js's own icon for this module.
-      UI.tabsToDropdown('.pp-tabs', { icon: 'camera' });
       // ⚠️ Each sub-module's init() is isolated in its own try/catch. Before
       // this, a throw anywhere in ProgressPhotos.init()/PPR.init()/etc. (e.g.
       // a project load failing, or any future bug in one file) aborted every

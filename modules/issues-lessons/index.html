@@ -202,6 +202,34 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <script src="module.js?v=20260903b"></script>
   <script>
+    // Issues & Concerns / Lessons Learned / Dashboard as a Project-Schedule-style
+    // dropdown instead of a flat tab row (kept from before the Minutes of Meeting
+    // split — still worth it at 3 tabs, matching every other module's chrome).
+    // `icon: 'clipboard'` — the module mark shown before the dropdown, matching
+    // config.js's own icon for this module; the `.il-title` <h1> stays hidden
+    // (switchScreen() already turns it off on every screen — see that comment
+    // for why it's the WHOLE element, never just its text).
+    // ⚠️ Bound to DOMContentLoaded HERE, not called from inside
+    // AppAuth.requireLogin's callback (2026-09-03, bug fix: "the module name
+    // appears for a few seconds before being hidden"). requireLogin awaits two
+    // real network round-trips (auth.getSession + a profile fetch) before its
+    // callback fires, and until then the raw <h1> title text AND the flat
+    // tab-button row both sat fully visible with nothing to convert them —
+    // exactly the flash reported. This needs neither auth nor project data,
+    // only the tab markup already on the page — but it DOES need
+    // UI.initModuleTopbar() to have already moved this tab strip into
+    // .pd-modulebar first. ⚠️ Calling initModuleTopbar() explicitly/early was
+    // tried and reverted — it broke theme.js's own topbar injection, which
+    // relies on running BEFORE initModuleTopbar() via DOMContentLoaded
+    // listener registration order (theme.js's script tag comes first in
+    // <head>, so its listener fires first). A THIRD DOMContentLoaded listener,
+    // registered last, fires after both of theirs have already run in the
+    // order they need — same guarantee, no reordering.
+    (function () {
+      function go() { UI.tabsToDropdown('.il-tabs', { icon: 'clipboard' }); }
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go);
+      else go();
+    })();
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);
       UI.initShell();
@@ -209,14 +237,6 @@
       UI.renderNav(document.getElementById('side-nav'), 'project', {
         active: 'issues-lessons', base: '../../', pname: pname, modules: APP_CONFIG.MODULES,
       });
-      // Issues & Concerns / Lessons Learned / Dashboard as a Project-Schedule-style
-      // dropdown instead of a flat tab row (kept from before the Minutes of Meeting
-      // split — still worth it at 3 tabs, matching every other module's chrome).
-      // `icon: 'clipboard'` (2026-09-03) — the module mark shown before the
-      // dropdown, matching config.js's own icon for this module; the `.il-title`
-      // <h1> stays hidden (switchScreen() already turns it off on every screen —
-      // see that comment for why it's the WHOLE element, never just its text).
-      UI.tabsToDropdown('.il-tabs', { icon: 'clipboard' });
       IssuesLessons.init(user, profile);
     });
   </script>

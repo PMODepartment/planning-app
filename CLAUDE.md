@@ -84,6 +84,102 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-03 (i) — Contracts & Claims unhidden, sidebar active state un-bolded, Schedule gets a Gantt icon, the module-name flash fixed, project selector goes bold+coded
+
+Five owner items across two messages.
+
+**1. Contracts & Claims unhidden.** Owner: *"please unhide contracts and claims register for all."*
+`superAdminOnly: true` removed from its `config.js` entry (the other six from the 2026-09-03 (b)
+pass — Risk Register, Stakeholder Map, Manpower/Equipment Loading, Productivity Rates, Cash Flow —
+stay hidden). Portfolio Overview's matching tab-hiding list (that page's own static `.po-tabs`, not
+built off `APP_CONFIG.MODULES`, so it needed its own list) drops `'contracts'` from the five it
+still hides for everyone but `super_admin`.
+
+**2. Sidebar active row: red box only, no extra bold.** Owner: *"once clicked, no need to make the
+module text bold. keep at regular, red box is enough to highlight."* `.pd-sidebar nav a.active`
+dropped its `font-weight: 600` — the active row now inherits the same 500 every other nav row uses;
+only the red background changes.
+
+**3. Project Schedule gets its own icon.** Owner: *"change icon to a gantt chart icon."* It shared
+`calendar` with Minutes of Meeting. New `ganttChart` glyph in `icons.js` (three staggered bars, the
+generic "Gantt chart" shape) — `config.js`'s `project-schedule` entry and the module's own
+`.ps-title-btn` icon (`#ps-title-btn`, index.html) both switched to it. The module's *other*
+`calendar` icons (Open schedule, the Month/Quarter/Year zoom button, duration-scenario menu items)
+are genuinely date-pickers, not the module's identity mark, and were left alone.
+
+**4. The module-name flash, root-caused and fixed — and a near-miss found while fixing it.** Owner:
+*"when clicking a module, the module name sometimes appears for a few seconds before being
+hidden."* Six modules (issues-lessons, minutes-of-meeting, progress-photos, risk-register,
+stakeholder-map, contracts-claims) call `UI.tabsToDropdown(...)` to turn a flat tab row into a
+Project-Schedule-style dropdown — but every one of them called it from *inside*
+`AppAuth.requireLogin`'s callback, which only fires after **two real network round-trips**
+(`auth.getSession()` + a profile fetch). Until that resolved, the raw `<h1>` title text AND the flat
+tab-button row both sat fully visible with nothing to convert them — exactly the reported flash,
+confirmed by simulating a 3s-delayed `requireLogin` in a real browser and sampling the DOM mid-delay.
+- ⚠️ **The obvious fix — call it immediately, at the top of each module's script — was tried first
+  and it CRASHED.** `tabsToDropdown()` needs `UI.initModuleTopbar()` to have already moved the tab
+  strip into `.pd-modulebar`, so an early call defensively re-invoked `initModuleTopbar()` too
+  (it's idempotent, guarded by its own `.pd-tb-main` existence check) — but that broke
+  **`theme.js`'s own topbar injection**, which does `topbar.insertBefore(btn,
+  topbar.querySelector('#user-bar'))` and silently assumes `#user-bar` is still a **direct child**
+  of `.pd-topbar` when it runs. `initModuleTopbar()` moves `#user-bar` into the nested
+  `.pd-tb-main`, so calling it before theme.js's own (DOMContentLoaded-bound) injection throws
+  `NotFoundError: the node before which the new node is to be inserted is not a child of this node`
+  — silently, since nothing in these pages listens for `pageerror`. Confirmed the crash was mine,
+  not pre-existing, by running the same slow-auth simulation against the untouched `origin/main`
+  copy first (no crash there).
+- ⚠️ **The real fix: don't reorder anything — add a THIRD `DOMContentLoaded` listener.** theme.js's
+  script tag loads first (in `<head>`), so its listener registers first and its injection runs
+  before ui.js's own `initModuleTopbar()` listener (registered when ui.js loads, later) — an
+  existing, working, implicit ordering guarantee neither file states out loud. Each fix is now
+  `if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go); else
+  go();` — the exact pattern theme.js/ui.js already use — with NO explicit
+  `initModuleTopbar()` call. Registered last, it fires after both of theirs, preserving the order
+  they need, while landing well before `requireLogin`'s network-bound callback (which is the whole
+  point). minutes-of-meeting's `module.js` still calls `tabsToDropdown` a second time from its own
+  `wire()` — harmless, guarded by the function's own `tabs.__pdTabsDrop` idempotency check.
+- **Verified**: driven in a real browser with `requireLogin` stubbed to resolve after 3s — at
+  500ms (well inside the old flash window) all six modules show **0 page errors**, the raw tab row
+  already hidden, and the dropdown trigger already built and showing the right label. The theme
+  toggle still renders correctly at the settled state.
+
+**5. Project selector: bold code+name, code added to the dropdown rows.** Two asks: *"make project
+code and project name in project selector bold. leave address and group head regular text"* and
+*"in project selector dropdown, add project code before project name."*
+- ⚠️ **The trigger button already wrapped "CODE — Name" in `<strong>`, but a same-day earlier
+  "minimalist" pass (`d85311f`, unrelated to this session) had neutralized it to `font-weight: 500`**
+  — barely distinguishable from the address/group-head subtitle below it (400). Both trigger
+  components — `enhanceProjectSelect`'s `.pd-psel-btn .pd-psel-txt strong` and `renderSwitcher`'s
+  `.pd-projsw-txt strong` — bumped to `700`; the subtitle (`small`, 400) and the placeholder state
+  (`.pd-psel-ph strong`, still 400) are untouched.
+  - The **open dropdown's own project rows** (`navListBody`'s `projRow`, in `assets/js/ui.js`) had
+  neither the code nor any bold at all — just the bare name. They now read "CODE — Name" in the same
+  bold (700), with an address/group-head subtitle in regular (400) beneath — mirroring the trigger's
+  own two-line shape rather than inventing a third. ⚠️ The code needs no lookup (`p.id` **is** the
+  code, the PK); the subtitle reuses the exact `[location, gh && 'Group Head: '+gh.name].join(' · ')`
+  construction `enhanceProjectSelect`'s own `subFor()` already used, just inlined since `projRow`
+  already has the project object and group-heads array in scope. A project with neither field
+  correctly renders no `<small>` at all (no empty dangling element). `.pd-nt-proj` went from a
+  single-line `align-items:center` row to `flex-start` with a stacked `.pd-nt-proj-txt` block (icon
+  nudged 2px down to sit level with the first line, not the two-line midpoint); the selected row's
+  subtitle gets the same `rgba(255,255,255,.82)` treatment the sidebar's own active-row subtitle
+  already uses, so it stays legible on the red background.
+- **Verified**: both trigger components and the dropdown-row markup rendered in a real browser
+  against the shipped CSS — `strong` computes to `700` in all three places, `small` to `400`, a
+  project missing location/group-head shows no subtitle, and the selected row's subtitle is legible
+  against the red fill.
+
+Files: `assets/js/config.js`, `assets/js/icons.js`, `assets/js/ui.js`, `assets/css/dashboard.css`,
+`modules/portfolio-overview/index.html`, `modules/project-schedule/index.html`, and the six modules'
+own `index.html` from item 4. Verified: `node --check` on every touched `.js` file; every touched
+`index.html`'s inline `<script>` parses (progress-photos' own extraction reports the same
+pre-existing false positive documented in the 2026-09-03 (b) entry — a CDN `src` URL containing the
+literal substring `build/three.min.js`, confirmed byte-identical against `origin/main`); CSS
+brace-balance holds (454/454); 0 duplicate DOM ids in any touched page (project-schedule's own
+`grep` hits are all pre-existing dynamically-templated ids from its list renderers, unrelated to
+this change). ⚠️ **Not verified signed in** — this environment has no live Supabase login; every
+claim above is a real Playwright render against the shipped files with auth/DB stubbed.
+
 ### 2026-09-03 (g) — A blank stacking pane, a breakdown fetched once, and the `is_locked` that hid the mis-phased branches
 
 Three reports on OPW101 / SLN101:

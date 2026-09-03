@@ -47,6 +47,9 @@
     trendingUp:  '<polyline points="3 17 9 11 13 15 21 7"/><polyline points="15 7 21 7 21 13"/>',
     users:       '<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 11a3 3 0 0 0 0-6"/><path d="M21 20c0-2.5-1.5-4.7-3.7-5.6"/>',
     barChart:    '<line x1="6" y1="20" x2="6" y2="12"/><line x1="12" y1="20" x2="12" y2="5"/><line x1="18" y1="20" x2="18" y2="9"/><line x1="3" y1="20" x2="21" y2="20"/>',
+    // Gantt chart — three staggered task bars, the Project Schedule module's own icon
+    // (2026-09-03, owner: distinguish it from the calendar glyph Minutes of Meeting uses).
+    ganttChart:  '<line x1="4" y1="6" x2="12" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="6" y1="18" x2="16" y2="18"/>',
     cash:        '<rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><line x1="6" y1="9" x2="6" y2="9.01"/><line x1="18" y1="15" x2="18" y2="15.01"/>',
 
     // --- KPI / misc ---

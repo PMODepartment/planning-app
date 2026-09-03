@@ -96,6 +96,25 @@
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
   <script src="module.js?v=20260903c"></script>
   <script>
+    // "Meetings" ▾ / "Meetings Dashboard" ▾ as a Project-Schedule-style
+    // dropdown instead of two plain tab buttons — module.js's wire() calls
+    // this too (harmless: the second call is a no-op, guarded by
+    // tabsToDropdown's own tabs.__pdTabsDrop check), but wire() only runs
+    // once AppAuth.requireLogin's callback fires below, and by then the flat
+    // Meetings/Meetings Dashboard button row had already been sitting fully
+    // visible for however long the two network round-trips inside
+    // requireLogin (auth.getSession + a profile fetch) took — "the module
+    // name appears for a few seconds before being hidden" (2026-09-03 bug
+    // report). Bound to DOMContentLoaded HERE instead — see the full note in
+    // risk-register/index.html for why NOT to call UI.initModuleTopbar()
+    // explicitly/early (it breaks theme.js's own topbar injection, which
+    // relies on running before it via DOMContentLoaded listener registration
+    // order — a THIRD listener, registered after theirs, preserves that).
+    (function () {
+      function go() { if (window.UI && UI.tabsToDropdown) UI.tabsToDropdown('.il-tabs'); }
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go);
+      else go();
+    })();
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);
       UI.initShell();
