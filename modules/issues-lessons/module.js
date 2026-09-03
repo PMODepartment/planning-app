@@ -73,6 +73,16 @@ window.IssuesLessons = (function () {
   // Set while a NEW issue draft was started from the Lessons Learned screen's
   // "+ New Lesson" (item #15) — routes "Back"/"Cancel" to Lessons instead of Issues.
   var _issNewFromLessons = false;
+  // Minutes of Meeting Individual View item 6 (round 3, 2026-09-03): "when
+  // adding lessons learned, going back should bring back to the meeting." Set
+  // from a `returnMom=<id>` query param on arrival (see that module's
+  // `.il-mi-lesson`/`.il-mi-lesson-open` handlers) — a pure navigation hint,
+  // never a data link (the lesson itself carries no mom_id/mom_item from this
+  // path; that was a deliberate, separate decision — see item 8, 2026-09-02).
+  // Read once at init() and kept for the rest of the visit, so a "← Back to
+  // meeting" link stays available on whatever issue/lesson this session opens
+  // next, not only the one that was open the instant the page loaded.
+  var _returnMom = null;
   // ITEM 7 (2026-09-01): while a lesson's linked issue is embedded on the
   // Lessons screen, that embed borrows `_issSel`/`_issMode`/the workflow-panel
   // flags — the SAME state the real Issues screen uses — so its Save/Hold/
@@ -496,6 +506,11 @@ window.IssuesLessons = (function () {
       await load();
       try {
         var dl = new URLSearchParams(location.search);
+        // Individual View item 6 (round 3): read BEFORE the branches below —
+        // it can arrive alongside either `newLesson` or `openLesson`, and it
+        // has to be set before whichever of those two renders its own detail
+        // view for `momReturnLinkHTML()` to have anything to show.
+        if (dl.get('returnMom')) _returnMom = dl.get('returnMom');
         // From Minutes of Meeting's "N lessons" / "Lesson captured" button.
         if (dl.get('openLesson')) openLesson(dl.get('openLesson'));
         // ⚠️ From Minutes of Meeting's "Capture lesson" button (owner item 8,
@@ -1868,6 +1883,20 @@ window.IssuesLessons = (function () {
 
   function reqMark(editable) { return editable ? ' <span class="il-req" title="Required">*</span>' : ''; }
 
+  // MoM Individual View item 6 (round 3): a second, explicit way back — the
+  // ordinary "← Back to Issues"/"← Back to Lessons" links stay too, this is
+  // additive. Rendered only while `_returnMom` is set (arrived via a
+  // `returnMom=<id>` query param from Minutes of Meeting); wired in both
+  // wireIssues() and wireLessons() since it can appear on either detail view.
+  function momReturnLinkHTML() {
+    if (!_returnMom) return '';
+    return '<button class="il-backlink il-backlink-mom" id="il-return-mom" type="button">' +
+      '<span data-ico="arrowLeft" data-ico-size="14"></span>Back to meeting</button>';
+  }
+  function goBackToMeeting() {
+    location.href = '../minutes-of-meeting/index.html?openMom=' + encodeURIComponent(_returnMom);
+  }
+
   // ------------------------------------------------- Issues: detail view -----
   // ⚠️ THIS IS STILL THE POWER APPS "VIEW OPEN ISSUES" LAYOUT — a status panel beside the
   // issue / cause / corrective-or-hold-or-closure text — just reached as a drill-down now
@@ -1895,6 +1924,7 @@ window.IssuesLessons = (function () {
     host.innerHTML =
       '<div class="il-detail-nav">' +
         '<button class="il-backlink" id="il-iss-back"><span data-ico="arrowLeft" data-ico-size="14"></span>Back to Issues</button>' +
+        momReturnLinkHTML() +
         (cur && !_issNew ? issStepHTML(cur.id) : '') +
       '</div>' +
       (cur ? issDetailHTML(cur)
@@ -2260,6 +2290,7 @@ window.IssuesLessons = (function () {
     var host = hostOverride || $('il-issues-view'); if (!host) return;
     var back = host.querySelector('#il-iss-back'); if (back) back.onclick = backFromIssueDetail;
     var back2 = host.querySelector('#il-iss-back2'); if (back2) back2.onclick = backFromIssueDetail;
+    var rm = host.querySelector('#il-return-mom'); if (rm) rm.onclick = goBackToMeeting;
     var nb = host.querySelector('#il-iss-new'); if (nb) nb.onclick = newIssue;
     var sv = host.querySelector('#il-iss-save'); if (sv) sv.onclick = saveIssue;
     var cn = host.querySelector('#il-iss-cancel');
@@ -3227,6 +3258,7 @@ window.IssuesLessons = (function () {
     }
     host.innerHTML = migrateNoteHTML() +
       '<button class="il-backlink" id="il-less-back"><span data-ico="arrowLeft" data-ico-size="14"></span>Back to Lessons</button>' +
+      momReturnLinkHTML() +
       (cur ? lessonDetailHTML(cur)
            : '<div class="il-empty" style="padding:28px;">Nothing to show — <button class="pd-btn pd-btn-sm" id="il-less-back2">go back</button>.</div>') +
       // ITEM 6 (2026-09-02): "The issue this lesson came from" -> "Background".
@@ -3434,6 +3466,7 @@ window.IssuesLessons = (function () {
     var host = $('il-lessons-view'); if (!host) return;
     var back = host.querySelector('#il-less-back'); if (back) back.onclick = backFromLessonDetail;
     var back2 = host.querySelector('#il-less-back2'); if (back2) back2.onclick = backFromLessonDetail;
+    var rm = host.querySelector('#il-return-mom'); if (rm) rm.onclick = goBackToMeeting;
     var nb = host.querySelector('#il-less-new'); if (nb) nb.onclick = function () { newLesson(null); };
     var sv = host.querySelector('#il-less-save'); if (sv) sv.onclick = saveLesson;
     var cn = host.querySelector('#il-less-cancel');

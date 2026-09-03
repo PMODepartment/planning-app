@@ -104,7 +104,7 @@ window.MinutesOfMeeting = (function () {
   // already follows (its own history records why: a hidden active filter is
   // how a planner concludes their meetings have gone missing).
   var _momFiltOpen = false;
-  var _momBrowseF = { kind: '', state: '', fav: false, group: '' };
+  var _momBrowseF = { kind: '', state: '', fav: false, group: '', archived: false };
   // ⚠️ 'list' | 'calendar' | 'detail' | 'series'. Meetings are BROWSED (list or
   // calendar); a single one is OPEN (detail); a recurring SERIES is open on its
   // own page (series — its definition + the meetings actually held under it).
@@ -1061,7 +1061,23 @@ window.MinutesOfMeeting = (function () {
         render();
       }
     });
-    if (pid) load();
+    if (pid) {
+      // Individual View item 6 (round 3): "when adding lessons learned, going
+      // back should bring back to the meeting." Issues & Concerns' "← Back to
+      // meeting" link (see that module's module.js) returns here as
+      // `?openMom=<id>` — a plain one-time deep link, distinct from the
+      // `mom_view` history-state hash above (which only ever exists once a
+      // meeting has already been opened IN THIS TAB). Read only after load()
+      // resolves, the same reason issues-lessons awaits its own load() before
+      // reading its cross-module deep-link params — MOMS has to actually
+      // contain the meeting before momOpenMeeting() can find it.
+      load().then(function () {
+        try {
+          var dl = new URLSearchParams(location.search);
+          if (dl.get('openMom')) momOpenMeeting(dl.get('openMom'));
+        } catch (e) { /* no URLSearchParams / opaque URL — nothing to deep-link to */ }
+      });
+    }
     joinCollab();
   }
 
@@ -1527,13 +1543,37 @@ window.MinutesOfMeeting = (function () {
     });
     return { open: open, total: total };
   }
+  // ⚠️ Meeting List item 3 (round 3): a recurring series' occurrences are now
+  // ROWS in this list — nested under the series' own group header — instead
+  // of being reachable only from the series' own page. `occurrences` carries
+  // that nested shape; the series row itself stays the one entry sorted/
+  // filtered/dragged as a unit (its occurrences are always date-ordered
+  // underneath it, never independently reordered).
+  function momOccRowShape(m) {
+    var c = itemOpenCount([m.id]);
+    return {
+      id: m.id,
+      dateSort: m.meeting_date || '',
+      dateLabel: m.meeting_date
+        ? (Fmt.date(m.meeting_date) + (m.start_time ? ' · ' + m.start_time : ''))
+        : '—',
+      attendees: plannedAttendeeCount(m),
+      location: m.venue || m.location || '—',
+      draft: !m.is_distributed,
+      open: c.open, total: c.total,
+    };
+  }
   function momUnifiedRows() {
     var out = [];
+    // ⚠️ Mid-turn item 1: archived rows are still BUILT here (so a "Show
+    // archived" filter can reveal them) but carry `archived: true`, which
+    // momUnifiedFilter excludes by default — see there for the reasoning.
     MOMS.forEach(function (m) {
-      if (m.schedule_id) return;   // an occurrence — browsed from its series page, not here
+      if (m.schedule_id) return;   // an occurrence — nested under its series row below
       var c = itemOpenCount([m.id]);
       out.push({
-        kind: 'meeting', id: m.id, favorite: !!m.is_favorite,
+        kind: 'meeting', id: m.id, favorite: !!m.is_favorite, archived: !!m.is_archived,
+        sortOrder: m.sort_order,
         title: m.title || '(untitled)',
         dateSort: m.meeting_date || '',
         dateLabel: m.meeting_date
@@ -1546,11 +1586,14 @@ window.MinutesOfMeeting = (function () {
         open: c.open, total: c.total,
       });
     });
-    schedActiveList().forEach(function (s) {
+    SCHEDULES.forEach(function (s) {
+      var archived = s.active === false;
       var next = schedNextOccurrence(s, momToday());
-      var cs = itemOpenCount(schedMeetingsOf(s.id).map(function (m) { return m.id; }));
+      var occMeetings = schedMeetingsOf(s.id);
+      var cs = itemOpenCount(occMeetings.map(function (m) { return m.id; }));
       out.push({
-        kind: 'series', id: s.id, favorite: !!s.is_favorite,
+        kind: 'series', id: s.id, favorite: !!s.is_favorite, archived: archived,
+        sortOrder: s.sort_order,
         title: s.title || '(untitled)',
         // ⚠️ dateSort is a real ISO date (next occurrence, else its own start)
         // even though the DISPLAYED label is the frequency, so date-sorting a
@@ -1566,12 +1609,23 @@ window.MinutesOfMeeting = (function () {
         draft: false,
         group: s.meeting_group || '',
         open: cs.open, total: cs.total,
+        occurrences: occMeetings.map(momOccRowShape),
       });
     });
     return out;
   }
   function momBrowseFilterOn() {
-    return !!(_momQ.trim() || _momBrowseF.kind || _momBrowseF.state || _momBrowseF.fav || _momBrowseF.group);
+    return !!(_momQ.trim() || _momBrowseF.kind || _momBrowseF.state || _momBrowseF.fav ||
+      _momBrowseF.group || _momBrowseF.archived);
+  }
+  // Mid-turn item 1: archived rows are excluded from the baseline BEFORE
+  // every other filter/count runs — "Show archived" flips it to show ONLY the
+  // archived ones (never both mixed together, which would read as "some of
+  // these are gone, some aren't"). Applied here, not inside momUnifiedFilter,
+  // so `total` (the "N meetings" count) never silently counts a hidden
+  // archived row as if it were on screen.
+  function momArchiveScope(rows) {
+    return rows.filter(function (r) { return _momBrowseF.archived ? r.archived : !r.archived; });
   }
   // Item 10's filter set, applied to the unified list (search folded in — the
   // box lives inside the filter group now, not beside it).
@@ -1592,6 +1646,22 @@ window.MinutesOfMeeting = (function () {
       return true;
     });
   }
+  // ⚠️ Meeting List item 5 (round 3) — manual order. `sortOrder` is a plain
+  // nullable integer (migrations/2026-09-03-meeting-list-order-archive.sql);
+  // NULL means "nobody has dragged this row yet" and it falls BEHIND every
+  // ordered row, then among the unordered ones the existing date order still
+  // applies — the same fallback rule issues-lessons' own issueOrderCmp
+  // established, so a project that has never touched manual ordering sees no
+  // change in behaviour.
+  function momOrderCmp(a, b) {
+    if (a.sortOrder != null || b.sortOrder != null) {
+      if (a.sortOrder == null) return 1;
+      if (b.sortOrder == null) return -1;
+      if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+    }
+    if (a.dateSort !== b.dateSort) return a.dateSort < b.dateSort ? 1 : -1;
+    return 0;
+  }
   // ⚠️ Favorites pinned to the top is layered OVER whatever column sort is
   // active, not an alternative to it — partition into favorite/non-favorite,
   // sort each half with the same comparator, concatenate. A column click still
@@ -1599,6 +1669,7 @@ window.MinutesOfMeeting = (function () {
   function momSortedRows(rows) {
     var col = _momSort.col, dir = _momSort.dir === 'asc' ? 1 : -1;
     function cmp(a, b) {
+      if (col === 'manual') return momOrderCmp(a, b);
       var av, bv;
       if (col === 'title') { av = a.title.toLowerCase(); bv = b.title.toLowerCase(); }
       else if (col === 'attendees') { av = a.attendees; bv = b.attendees; }
@@ -1612,6 +1683,143 @@ window.MinutesOfMeeting = (function () {
     var fav = rows.filter(function (r) { return r.favorite; }).sort(cmp);
     var rest = rows.filter(function (r) { return !r.favorite; }).sort(cmp);
     return fav.concat(rest);
+  }
+
+  // ---- Meeting List item 5: manual drag-to-reorder -----------------------
+  // ⚠️ Mirrors issues-lessons' own dragGripHTML/wireReorder/applyReorder
+  // exactly (module.js there, "ITEM 2: drag-to-reorder") — same mechanics,
+  // same spaced-by-10 renumbering, same "only the currently displayed rows
+  // are touched" rule. The one real difference: this list mixes TWO tables
+  // (meeting_minutes for a standalone meeting, mom_schedules for a series),
+  // so the write target is resolved per row from its `kind` rather than
+  // being one fixed table name.
+  var _momDragId = null;
+  function momDragGripHTML(key) {
+    return '<span class="il-draghandle il-reorderable" draggable="true" data-momreorder="' + Fmt.esc(key) +
+      '" title="Drag to reorder"><svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor">' +
+      '<circle cx="3" cy="3" r="1.3"/><circle cx="9" cy="3" r="1.3"/><circle cx="3" cy="8" r="1.3"/>' +
+      '<circle cx="9" cy="8" r="1.3"/><circle cx="3" cy="13" r="1.3"/><circle cx="9" cy="13" r="1.3"/></svg></span>';
+  }
+  function momWireReorder(container, list) {
+    if (!container) return;
+    var els = container.querySelectorAll('[data-momreorder]');
+    Array.prototype.forEach.call(els, function (el) {
+      el.onclick = function (e) { e.stopPropagation(); };
+      el.ondragstart = function (e) {
+        _momDragId = el.dataset.momreorder;
+        try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', _momDragId); } catch (e2) { /* some browsers refuse setData on certain drag sources — the id is already cached above */ }
+        el.classList.add('il-dragging');
+      };
+      el.ondragend = function () {
+        el.classList.remove('il-dragging');
+        Array.prototype.forEach.call(els, function (x) { x.classList.remove('il-drop-before', 'il-drop-after'); });
+        _momDragId = null;
+      };
+      el.ondragover = function (e) {
+        if (!_momDragId || _momDragId === el.dataset.momreorder) return;
+        e.preventDefault();
+        var rect = el.getBoundingClientRect();
+        var before = (e.clientY - rect.top) < rect.height / 2;
+        Array.prototype.forEach.call(els, function (x) { if (x !== el) x.classList.remove('il-drop-before', 'il-drop-after'); });
+        el.classList.toggle('il-drop-before', before);
+        el.classList.toggle('il-drop-after', !before);
+      };
+      el.ondrop = function (e) {
+        e.preventDefault();
+        var targetKey = el.dataset.momreorder, dragKey = _momDragId, before = el.classList.contains('il-drop-before');
+        el.classList.remove('il-drop-before', 'il-drop-after');
+        if (!dragKey || dragKey === targetKey) return;
+        momApplyReorder(list, dragKey, targetKey, before);
+      };
+    });
+  }
+  function momOrderRowKey(r) { return r.kind + ':' + r.id; }
+  function momOrderTable(kind) { return kind === 'series' ? 'mom_schedules' : 'meeting_minutes'; }
+  function momOrderLiveRow(kind, id) {
+    return (kind === 'series' ? SCHEDULES : MOMS).find(function (x) { return x.id === id; });
+  }
+  async function momApplyReorder(list, dragKey, targetKey, before) {
+    var from = -1, targetIdx = -1;
+    for (var i = 0; i < list.length; i++) { if (momOrderRowKey(list[i]) === dragKey) { from = i; break; } }
+    if (from < 0) return;
+    var arr = list.slice();
+    var moved = arr.splice(from, 1)[0];
+    for (var j = 0; j < arr.length; j++) { if (momOrderRowKey(arr[j]) === targetKey) { targetIdx = j; break; } }
+    if (targetIdx < 0) targetIdx = arr.length;
+    arr.splice(before ? targetIdx : targetIdx + 1, 0, moved);
+    var writes = [];
+    arr.forEach(function (r, i) {
+      var next = (i + 1) * 10;
+      if (r.sortOrder !== next) {
+        r.sortOrder = next;
+        var live = momOrderLiveRow(r.kind, r.id);
+        if (live) live.sort_order = next;
+        writes.push(sb().from(momOrderTable(r.kind)).update({ sort_order: next }).eq('id', r.id));
+      }
+    });
+    try { await Promise.all(writes); } catch (e) { /* best-effort — a failed write just leaves that one row's order stale until the next reload */ }
+    renderBrowse();
+  }
+
+  // ---- Mid-turn item 1: select multiple meetings, then download or archive --
+  // ⚠️ Selection is keyed "kind:id" (a series and a meeting can share no id,
+  // but the key still makes the pair explicit rather than relying on that).
+  // Deliberately scoped to TOP-LEVEL rows only — a nested occurrence has no
+  // bulk action of its own, it opens like any other meeting.
+  var _momSelected = {};
+  function momSelKey(kind, id) { return kind + ':' + id; }
+  function momIsSelected(kind, id) { return !!_momSelected[momSelKey(kind, id)]; }
+  function momSetSelect(kind, id, on) {
+    var k = momSelKey(kind, id);
+    if (on) _momSelected[k] = true; else delete _momSelected[k];
+  }
+  function momSelectionCount() { return Object.keys(_momSelected).length; }
+  function momSelectedList() {
+    return Object.keys(_momSelected).map(function (k) {
+      var i = k.indexOf(':');
+      return { kind: k.slice(0, i), id: k.slice(i + 1) };
+    });
+  }
+  function momSelectionBarHTML() {
+    var n = momSelectionCount();
+    return '<div class="il-mom-selbar">' +
+      '<span class="il-mom-selcount">' + n + ' selected</span>' +
+      '<span class="il-mom-selhint">Use the ⬇ download button above to export just these, or</span>' +
+      '<button type="button" class="pd-btn pd-btn-sm" id="il-mom-selarchive">' +
+        '<span data-ico="archive" data-ico-size="14"></span> Archive</button>' +
+      '<button type="button" class="pd-btn pd-btn-sm" id="il-mom-selclear">Clear</button>' +
+    '</div>';
+  }
+  // ⚠️ A SERIES is archived by setting `active = false` — the same flag
+  // schedActiveList() already reads, not a second column that could
+  // disagree with it (see the migration's own header comment). Best-effort
+  // per row, mirroring momToggleFavorite's own error handling: one row's RLS
+  // refusal must not stop every other selected row from archiving.
+  async function momArchiveSelected() {
+    var picks = momSelectedList();
+    if (!picks.length) { UI.toast('Select at least one meeting to archive.', 'error'); return; }
+    var ok = 0, fail = 0;
+    for (var i = 0; i < picks.length; i++) {
+      var p = picks[i];
+      try {
+        if (p.kind === 'series') {
+          var u = await sb().from('mom_schedules').update({ active: false }).eq('id', p.id);
+          if (u.error) throw u.error;
+          var s = SCHEDULES.find(function (x) { return x.id === p.id; });
+          if (s) s.active = false;
+        } else {
+          var u2 = await sb().from('meeting_minutes').update({ is_archived: true }).eq('id', p.id);
+          if (u2.error) throw u2.error;
+          var m = MOMS.find(function (x) { return x.id === p.id; });
+          if (m) m.is_archived = true;
+        }
+        ok++;
+      } catch (e) { fail++; }
+    }
+    _momSelected = {};
+    UI.toast(ok + ' archived' + (fail ? ', ' + fail + ' failed — run migrations/2026-09-03-meeting-list-order-archive.sql if this keeps happening' : ''),
+      fail && !ok ? 'error' : 'ok');
+    renderBrowse();
   }
 
   function momBrowseFilterBarHTML(shown, total) {
@@ -1654,13 +1862,15 @@ window.MinutesOfMeeting = (function () {
           '</select>' +
           '<label class="il-mom-favfilt"><input type="checkbox" id="il-momb-fav"' +
             (_momBrowseF.fav ? ' checked' : '') + '> Favorites only</label>' +
+          '<label class="il-mom-favfilt"><input type="checkbox" id="il-momb-archived"' +
+            (_momBrowseF.archived ? ' checked' : '') + '> Show archived</label>' +
           (on ? '<button class="pd-btn pd-btn-sm" id="il-momb-clear">Clear</button>' : '') +
         '</div>');
   }
   function renderBrowse() {
     var host = $('il-mom-view'); if (!host) return;
     host.classList.remove('il-mom-report');
-    var all = momUnifiedRows();
+    var all = momArchiveScope(momUnifiedRows());
     var rows = momUnifiedFilter(all);
     host.innerHTML =
       momBrowseFilterBarHTML(rows.length, all.length) +
@@ -1787,36 +1997,96 @@ window.MinutesOfMeeting = (function () {
     return '<th class="il-mom-th' + (on ? ' on' : '') + '" data-sort="' + col + '">' + Fmt.esc(label) +
       (on ? (_momSort.dir === 'asc' ? ' ▲' : ' ▼') : '') + '</th>';
   }
+  // Round 3, item 3: a recurring series' occurrences are nested rows under
+  // its own group header now, instead of being reachable only from the
+  // series page. `momOccurrenceRowsHTML` renders that nesting; the group
+  // header itself keeps opening the series page on click, unchanged.
+  function momOccurrenceRowsHTML(r) {
+    var occ = r.occurrences || [];
+    if (!occ.length) {
+      return '<tr class="il-mom-occrow il-mom-occempty"><td class="il-mom-seltd"></td>' +
+        '<td class="il-mom-orderc"></td><td class="il-mom-favtd"></td>' +
+        '<td colspan="4" style="color:var(--pd-muted);font-size:12.5px;">No meetings recorded on this schedule yet.</td>' +
+        '<td></td></tr>';
+    }
+    return occ.map(function (o) {
+      return '<tr class="il-mom-lrow il-mom-occrow" data-kind="meeting" data-id="' + Fmt.esc(o.id) + '">' +
+        '<td class="il-mom-seltd"></td>' +
+        '<td class="il-mom-orderc"></td>' +
+        '<td class="il-mom-favtd"></td>' +
+        '<td class="il-mom-occtitle">↳ ' + Fmt.esc(r.title) +
+          (o.draft ? ' <span class="il-mom-draft">Draft</span>' : '') + '</td>' +
+        '<td>' + Fmt.esc(o.dateLabel) + '</td>' +
+        '<td>' + (o.attendees || '—') + '</td>' +
+        '<td>' + Fmt.esc(o.location) + '</td>' +
+        '<td class="il-mom-opencell">' + (o.total ? (o.open + ' of ' + o.total + ' open') : '—') + '</td>' +
+      '</tr>';
+    }).join('');
+  }
+  // Item 4: per-series "add a meeting"/"edit series" buttons on the RIGHT of
+  // the group header row — offered only for a recurring series, since a
+  // standalone meeting has no series to add another occurrence to or a
+  // shared set of details to edit at that level.
+  function momGroupActsHTML(r) {
+    if (r.kind !== 'series') return '';
+    return '<span class="il-mom-grpacts">' +
+      '<button type="button" class="il-mom-grpact" data-grpadd="' + Fmt.esc(r.id) +
+        '" title="Add a meeting to this series" aria-label="Add a meeting to this series">' +
+        '<span data-ico="plus" data-ico-size="14"></span></button>' +
+      '<button type="button" class="il-mom-grpact" data-grpedit="' + Fmt.esc(r.id) +
+        '" title="Edit meeting details common to this series" aria-label="Edit series details">' +
+        '<span data-ico="pencil" data-ico-size="14"></span></button>' +
+    '</span>';
+  }
+  // Item 3: non-recurring meetings and recurring GROUP headers both read as
+  // light gray (`.il-mom-grouprow`) — a standalone meeting and a series are
+  // the two things this list is actually a list OF. A series' own occurrence
+  // rows are white (`.il-mom-occrow`, see above) so they read as nested
+  // UNDER their gray parent rather than as peers of it.
+  function momGroupRowHTML(r, canReorder) {
+    var isSeries = r.kind === 'series';
+    return '<tr class="il-mom-lrow il-mom-grouprow" data-kind="' + r.kind + '" data-id="' + Fmt.esc(r.id) + '">' +
+      '<td class="il-mom-seltd"><input type="checkbox" class="il-mom-selchk" data-selkind="' + r.kind +
+        '" data-selid="' + Fmt.esc(r.id) + '"' + (momIsSelected(r.kind, r.id) ? ' checked' : '') + '></td>' +
+      '<td class="il-mom-orderc">' + (canReorder ? momDragGripHTML(momOrderRowKey(r)) : '') + '</td>' +
+      '<td class="il-mom-favtd"><button type="button" class="il-mom-favbtn' + (r.favorite ? ' on' : '') +
+        '" data-fav="' + r.kind + ':' + Fmt.esc(r.id) + '" title="' +
+        (r.favorite ? 'Remove from favorites' : 'Add to favorites') + '">' + (r.favorite ? '★' : '☆') + '</button></td>' +
+      '<td>' + Fmt.esc(r.title) +
+        (isSeries ? ' <span class="il-mom-recur">Recurring</span>' : '') +
+        (r.draft ? ' <span class="il-mom-draft">Draft</span>' : '') + '</td>' +
+      '<td>' + Fmt.esc(r.dateLabel) + '</td>' +
+      '<td>' + (r.attendees || '—') + '</td>' +
+      '<td>' + Fmt.esc(r.location) + '</td>' +
+      // Item 11 — "X of Y open", never a bare total. ⚠️ A meeting with no
+      // minutes at all reads "—", not "0 of 0 open": nothing has been
+      // recorded yet, which is a different fact from everything being closed.
+      '<td class="il-mom-opencell">' + (r.total ? (r.open + ' of ' + r.total + ' open') : '—') +
+        momGroupActsHTML(r) + '</td>' +
+    '</tr>';
+  }
   function renderMomListHTML(rows) {
     if (!rows.length) {
       return '<div class="il-empty" style="padding:28px;">' +
-        ((MOMS.length || SCHEDULES.length) ? 'No meeting matches “' + Fmt.esc(_momQ) + '”.' : 'No minutes recorded on this project yet.') +
+        (_momBrowseF.archived ? 'No archived meetings.' :
+          ((MOMS.length || SCHEDULES.length) ? 'No meeting matches “' + Fmt.esc(_momQ) + '”.' : 'No minutes recorded on this project yet.')) +
       '</div>';
     }
     var sorted = momSortedRows(rows);
+    var canReorder = _momSort.col === 'manual' && !momBrowseFilterOn();
     return '<div class="pd-card" style="padding:0;overflow:auto;">' +
+      (momSelectionCount() ? momSelectionBarHTML() : '') +
       '<table class="pd-table il-mom-listtable"><thead><tr>' +
+        '<th class="il-mom-seltd"><input type="checkbox" id="il-mom-selall" title="Select all"></th>' +
+        '<th class="il-mom-th il-mom-orderth' + (_momSort.col === 'manual' ? ' on' : '') +
+          '" data-sort="manual" title="Manual order — drag rows to arrange them">⠿</th>' +
         '<th class="il-mom-favtd"></th>' +
         momListSortTh('Title', 'title') + momListSortTh('Date', 'date') +
         momListSortTh('Attendees', 'attendees') + momListSortTh('Location', 'location') +
         momListSortTh('Minutes', 'open') +
       '</tr></thead><tbody>' +
       sorted.map(function (r) {
-        return '<tr class="il-mom-lrow" data-kind="' + r.kind + '" data-id="' + Fmt.esc(r.id) + '">' +
-          '<td class="il-mom-favtd"><button type="button" class="il-mom-favbtn' + (r.favorite ? ' on' : '') +
-            '" data-fav="' + r.kind + ':' + Fmt.esc(r.id) + '" title="' +
-            (r.favorite ? 'Remove from favorites' : 'Add to favorites') + '">' + (r.favorite ? '★' : '☆') + '</button></td>' +
-          '<td>' + Fmt.esc(r.title) +
-            (r.kind === 'series' ? ' <span class="il-mom-recur">Recurring</span>' : '') +
-            (r.draft ? ' <span class="il-mom-draft">Draft</span>' : '') + '</td>' +
-          '<td>' + Fmt.esc(r.dateLabel) + '</td>' +
-          '<td>' + (r.attendees || '—') + '</td>' +
-          '<td>' + Fmt.esc(r.location) + '</td>' +
-          // Item 11 — "X of Y open", never a bare total. ⚠️ A meeting with no
-          // minutes at all reads "—", not "0 of 0 open": nothing has been
-          // recorded yet, which is a different fact from everything being closed.
-          '<td class="il-mom-opencell">' + (r.total ? (r.open + ' of ' + r.total + ' open') : '—') + '</td>' +
-        '</tr>';
+        return momGroupRowHTML(r, canReorder) + (r.kind === 'series' ? momOccurrenceRowsHTML(r) : '');
       }).join('') +
       '</tbody></table></div>';
   }
@@ -2080,9 +2350,15 @@ window.MinutesOfMeeting = (function () {
     });
     var fv = host.querySelector('#il-momb-fav');
     if (fv) fv.onchange = function () { _momBrowseF.fav = fv.checked; renderBrowse(); };
+    var fa = host.querySelector('#il-momb-archived');
+    if (fa) fa.onchange = function () {
+      _momBrowseF.archived = fa.checked;
+      _momSelected = {};   // a selection made under one scope has no meaning in the other
+      renderBrowse();
+    };
     var fc = host.querySelector('#il-momb-clear');
     if (fc) fc.onclick = function () {
-      _momQ = ''; _momBrowseF = { kind: '', state: '', fav: false, group: '' };
+      _momQ = ''; _momBrowseF = { kind: '', state: '', fav: false, group: '', archived: false };
       renderBrowse();
     };
 
@@ -2111,6 +2387,49 @@ window.MinutesOfMeeting = (function () {
         momToggleFavorite(b.dataset.fav.slice(0, i), b.dataset.fav.slice(i + 1));
       };
     });
+    // ---- Meeting List item 4: per-series "add a meeting" / "edit series" --
+    host.querySelectorAll('[data-grpadd]').forEach(function (b) {
+      b.onclick = function (e) {
+        e.stopPropagation();
+        _schedOccOpen = true; _schedOccDraft = null; _schedFormOpen = false; _schedFormDraft = null;
+        momOpenSeries(b.dataset.grpadd);
+      };
+    });
+    host.querySelectorAll('[data-grpedit]').forEach(function (b) {
+      b.onclick = function (e) {
+        e.stopPropagation();
+        _schedFormDraft = SCHEDULES.find(function (x) { return x.id === b.dataset.grpedit; });
+        _schedFormOpen = true; _schedOccOpen = false; _schedOccDraft = null;
+        momOpenSeries(b.dataset.grpedit);
+      };
+    });
+    // ---- Mid-turn item 1: multi-select → download (the existing button,
+    // scoped by momExportListRows) / archive ---------------------------------
+    host.querySelectorAll('.il-mom-selchk').forEach(function (cb) {
+      cb.onclick = function (e) { e.stopPropagation(); };
+      cb.onchange = function () { momSetSelect(cb.dataset.selkind, cb.dataset.selid, cb.checked); renderBrowse(); };
+    });
+    var selAll = host.querySelector('#il-mom-selall');
+    if (selAll) {
+      selAll.onclick = function (e) { e.stopPropagation(); };
+      selAll.onchange = function () {
+        var topRows = momUnifiedFilter(momArchiveScope(momUnifiedRows()));
+        topRows.forEach(function (r) { momSetSelect(r.kind, r.id, selAll.checked); });
+        renderBrowse();
+      };
+    }
+    var selArc = host.querySelector('#il-mom-selarchive');
+    if (selArc) selArc.onclick = function (e) { e.stopPropagation(); momArchiveSelected(); };
+    var selClr = host.querySelector('#il-mom-selclear');
+    if (selClr) selClr.onclick = function (e) { e.stopPropagation(); _momSelected = {}; renderBrowse(); };
+    // ---- Meeting List item 5: manual drag-to-reorder -----------------------
+    // ⚠️ Same rule as issues-lessons: dragging is only meaningful over the
+    // exact set on screen, so it is offered only while nothing is narrowing
+    // that set — a drag over a filtered subset would leave the seq math
+    // ambiguous for whatever is hidden.
+    if (_momView === 'list' && _momSort.col === 'manual' && !momBrowseFilterOn()) {
+      momWireReorder(host, momSortedRows(momUnifiedFilter(momArchiveScope(momUnifiedRows()))));
+    }
     host.querySelectorAll('.il-mom-calchip[data-mom]').forEach(function (b) {
       b.onclick = function () { momOpenMeeting(b.dataset.mom); };
     });
@@ -2482,6 +2801,11 @@ window.MinutesOfMeeting = (function () {
       '<div class="pd-modal-header"><h3 style="margin:0;">+ Add meeting</h3>' +
         '<button class="pd-modal-close" id="il-am-x">&times;</button></div>' +
       '<div class="pd-modal-body il-am-form">' +
+        // Meeting List/Add Meetings feedback (2026-09-03, round 3): each
+        // section is now its own visually distinct tile (`.il-mom-sec`,
+        // module.css) instead of a bare heading + dashed rule — "improve
+        // grouping layout and look."
+        '<div class="il-mom-sec">' +
         '<h4 class="il-mom-sechead">Details</h4>' +
         '<div class="il-form-row il-am-titlerow">' +
           '<div class="pd-field" style="flex:2 1 220px;"><label>Meeting title *</label>' +
@@ -2489,20 +2813,25 @@ window.MinutesOfMeeting = (function () {
           // ITEM 1 (round 2): a plain star, no rectangular button chrome, no
           // "Favorite" text anywhere — the star icon alone is the control.
           '<div class="pd-field il-am-favfield" style="flex:0 0 auto;">' + amGhostLabel() + amFavBtnHTML(false) + '</div>' +
-          // ITEM 4 (round 2): shortened to "Recurring" (was "Recurring meeting").
-          '<div class="pd-field" style="flex:0 0 auto;">' + amGhostLabel() +
-            '<label class="il-am-checklabel"><input type="checkbox" id="il-am-recur" style="width:auto;"> Recurring</label></div>' +
         '</div>' +
         '<div class="il-form-row">' +
-          '<div class="pd-field" style="flex:1 1 130px;"><label>Meeting type</label>' +
+          // ITEM 6 (round 3): meeting type is now REQUIRED, not just a
+          // 2-option select that's technically always "filled" by its own
+          // default — a blank leading option + validateAddMeeting() below
+          // make an actual choice mandatory.
+          '<div class="pd-field" style="flex:1 1 130px;"><label>Meeting type *</label>' +
             '<select class="pd-select" id="il-am-group">' +
+              '<option value="">— Select —</option>' +
               '<option value="Internal">Internal</option><option value="External">External</option>' +
             '</select></div>' +
+          // ITEM 3 (round 3): plain free text now, not a datalist-constrained
+          // input — nothing about a description should read as a picklist.
           '<div class="pd-field" style="flex:2 1 220px;"><label>Meeting description</label>' +
-            '<input class="pd-input" id="il-am-desc" list="il-am-desclist" placeholder="e.g. PPR Meeting, PSC Meeting">' +
-            '<datalist id="il-am-desclist">' + momTypeDatalistOptions() + '</datalist></div>' +
+            '<input class="pd-input" id="il-am-desc" placeholder="e.g. PPR Meeting, PSC Meeting"></div>' +
+        '</div>' +
         '</div>' +
 
+        '<div class="il-mom-sec">' +
         '<h4 class="il-mom-sechead">Schedule</h4>' +
         // ITEM 6: the plain Date field and the recurring series' Start/End dates
         // occupy the SAME row and are mutually exclusive — recur.onchange below
@@ -2510,6 +2839,9 @@ window.MinutesOfMeeting = (function () {
         // genuinely replaced rather than merely duplicated further down the form.
         // ITEM 3: Start/End time stay in this SAME row so they are always
         // beside each other, whichever date fields are showing.
+        // Round 3, item 2: "recurring meeting click should be in schedule
+        // group" — the Recurring checkbox now lives in the Schedule section,
+        // beside the date field it governs, instead of the Details row.
         '<div class="il-form-row">' +
           '<div class="pd-field" id="il-am-datewrap" style="flex:1 1 150px;"><label>Date *</label>' +
             '<input class="pd-input" type="date" id="il-am-date" value="' + dateVal(momToday()) + '"></div>' +
@@ -2519,6 +2851,8 @@ window.MinutesOfMeeting = (function () {
             '<input class="pd-input" type="date" id="il-am-send"></div>' +
           '<div class="pd-field" style="flex:1 1 120px;"><label>Start time *</label><input class="pd-input" type="time" id="il-am-start"></div>' +
           '<div class="pd-field" style="flex:1 1 120px;"><label>End time *</label><input class="pd-input" type="time" id="il-am-end"></div>' +
+          '<div class="pd-field" style="flex:0 0 auto;">' + amGhostLabel() +
+            '<label class="il-am-checklabel"><input type="checkbox" id="il-am-recur" style="width:auto;"> Recurring</label></div>' +
         '</div>' +
         // ITEM 5: Frequency/weekday/"every N weeks" sit directly BELOW the
         // date row now — was after Attendees/Agenda, at the very bottom of
@@ -2532,20 +2866,27 @@ window.MinutesOfMeeting = (function () {
           '</div>' +
           '<div class="il-form-row" id="il-sf-rulewrap">' + scheduleRuleFieldsHTML({ frequency: FREQUENCIES[0].key }) + '</div>' +
         '</div>' +
+        '</div>' +
 
+        '<div class="il-mom-sec">' +
         '<h4 class="il-mom-sechead">Venue</h4>' +
         '<div class="il-form-row">' +
           '<div class="pd-field" style="flex:1 1 200px;"><label>Venue *</label><input class="pd-input" id="il-am-venue"></div>' +
           '<div class="pd-field" style="flex:1 1 200px;"><label>Meeting link</label><input class="pd-input" id="il-am-link" placeholder="https://…"></div>' +
         '</div>' +
+        '</div>' +
 
+        '<div class="il-mom-sec">' +
         '<h4 class="il-mom-sechead">Attendees</h4>' +
         '<div class="pd-field"><label>Required attendees *</label>' + peoplePickerHTML('am-req', [], '', false) + '</div>' +
         '<div class="pd-field"><label>Optional attendees</label>' + peoplePickerHTML('am-opt', [], '', false) + '</div>' +
+        '</div>' +
 
-        '<h4 class="il-mom-sechead">Agenda</h4>' +
+        '<div class="il-mom-sec">' +
+        '<h4 class="il-mom-sechead">Agenda *</h4>' +
         '<div class="pd-field"><div id="il-am-agenda">' + agendaRowsHTML([]) + '</div>' +
           '<button type="button" class="pd-btn pd-btn-sm" id="il-am-agenda-add" style="margin-top:6px;">+ Add agenda item</button></div>' +
+        '</div>' +
       '</div>' +
       '<div class="pd-modal-footer">' +
         '<button class="pd-btn" id="il-am-cancel">Cancel</button>' +
@@ -2596,6 +2937,7 @@ window.MinutesOfMeeting = (function () {
   // date) since those replace the plain Date field entirely (item 6).
   function validateAddMeeting(root, g, isRecur) {
     if (!g('il-am-title').trim()) return 'Meeting title is required.';
+    if (!g('il-am-group')) return 'Meeting type is required.';
     if (!g('il-am-start')) return 'Start time is required.';
     if (!g('il-am-end')) return 'End time is required.';
     if (!g('il-am-venue').trim()) return 'Venue is required.';
@@ -2763,14 +3105,14 @@ window.MinutesOfMeeting = (function () {
   function momAgendaSectionHTML(mom, ro) {
     var ag = Array.isArray(mom.agenda) ? mom.agenda : [];
     if (ro) {
-      return '<div class="il-mom-agenda" id="il-mom-slide-agenda"><h4>Agenda</h4>' +
+      return '<div class="il-mom-agenda il-mom-sec" id="il-mom-slide-agenda"><h4>Agenda</h4>' +
         (ag.length
           ? '<ol class="il-mom-agview">' + ag.map(function (t) {
               return '<li>' + Fmt.esc(t) + '</li>'; }).join('') + '</ol>'
           : '<p class="il-mom-note">No agenda was set for this meeting.</p>') +
       '</div>';
     }
-    return '<div class="il-mom-agenda" id="il-mom-slide-agenda"><h4>Agenda</h4>' +
+    return '<div class="il-mom-agenda il-mom-sec" id="il-mom-slide-agenda"><h4>Agenda</h4>' +
       '<p class="il-mom-note">What this meeting sets out to cover. Separate from the minutes ' +
       'below, which are what was actually recorded.</p>' +
       '<div id="il-mom-agenda">' + agendaRowsHTML(ag) + '</div>' +
@@ -2875,6 +3217,12 @@ window.MinutesOfMeeting = (function () {
       // Details / Schedule / Venue / Attendees / Agenda / Minutes. The single
       // "Meeting details" block this replaced held all of Title through
       // Recording under one heading; it is now four.
+      // Individual View item 3 (round 3): "groupings should be more prominent
+      // and evident — each group should be in its own tile." Each named
+      // section below is now wrapped in `.il-mom-sec` — the same tile
+      // treatment the Add-meeting modal already uses — instead of just a
+      // heading over a dashed rule.
+      '<div class="il-mom-sec">' +
       '<h4 class="il-mom-sechead">Details</h4>' +
       '<div class="il-form-row">' +
         '<div class="pd-field" style="flex:2 1 260px;"><label>Title</label><input class="pd-input" id="il-mom-title" value="' + Fmt.esc(mom.title || '') + '"' + d + '></div>' +
@@ -2893,7 +3241,9 @@ window.MinutesOfMeeting = (function () {
           '" placeholder="e.g. PPR Meeting, PSC Meeting"' + d + '>' +
           '<datalist id="il-mom-typelist">' + momTypeDatalistOptions() + '</datalist></div>' +
       '</div>' +
+      '</div>' +
 
+      '<div class="il-mom-sec">' +
       '<h4 class="il-mom-sechead">Schedule</h4>' +
       '<div class="il-form-row">' +
         '<div class="pd-field" style="flex:1 1 140px;"><label>Date</label><input class="pd-input" type="date" id="il-mom-date" value="' + (dateVal(mom.meeting_date)) + '"' + d + '></div>' +
@@ -2914,7 +3264,9 @@ window.MinutesOfMeeting = (function () {
         '<div class="pd-field" style="flex:1 1 110px;"><label>Actual finish</label>' +
           '<input class="pd-input" type="time" id="il-mom-aetime" value="' + Fmt.esc(mom.actual_end_time || '') + '"' + d + '></div>' +
       '</div>' +
+      '</div>' +
 
+      '<div class="il-mom-sec">' +
       '<h4 class="il-mom-sechead">Venue</h4>' +
       '<div class="il-form-row">' +
         '<div class="pd-field" style="flex:1 1 160px;"><label>Venue</label>' +
@@ -2925,7 +3277,9 @@ window.MinutesOfMeeting = (function () {
         '<div class="pd-field" style="flex:1 1 200px;"><label>Recording</label>' +
           '<input class="pd-input" id="il-mom-rec" value="' + Fmt.esc(mom.recording_url || '') + '" placeholder="https://… (optional)"' + d + '></div>' +
       '</div>' +
+      '</div>' +
 
+      '<div class="il-mom-sec">' +
       '<h4 class="il-mom-sechead">Attendees</h4>' +
       // ⚠️ ITEM #20 — three attendee tiers, each the same hybrid ids+text
       // People Picker used for Champion/Responsible elsewhere in this app.
@@ -2974,6 +3328,7 @@ window.MinutesOfMeeting = (function () {
             'carried its own record; read-only</small></label>' +
             '<div class="il-mi-val">' + Fmt.esc(mom.notes).replace(/\n/g, '<br>') + '</div></div>'
         : '') +
+      '</div>' +   /* end .il-mom-sec — Attendees */
       '</div>' +   /* end #il-mom-slide-details */
       momAgendaSectionHTML(mom, ro) +
 
@@ -2981,7 +3336,7 @@ window.MinutesOfMeeting = (function () {
       // minutes". Same rows, same `mom_items` table: what changed is the name,
       // because these ARE the minutes of the meeting, not a to-do list beside
       // them. Every user-facing "action item" string in this module follows.
-      '<div class="il-mom-actions"><h4>Minutes</h4>' +
+      '<div class="il-mom-actions il-mom-sec"><h4>Minutes</h4>' +
         '<p>Each minute recorded at this meeting lives here. Use <b>Get from issue</b> to bring in ' +
         'something already logged in Issues &amp; Concerns — during a PPR, or any time — so it is ' +
         'tracked here without retyping it. New issues are raised directly in that register now, not ' +
@@ -3498,14 +3853,19 @@ window.MinutesOfMeeting = (function () {
       (canDrag ? '<span class="il-mi-draghandle" title="Drag to reorder" aria-hidden="true">⠿</span>' : '') +
       // ---- the six-cell meta grid, in mom-app's own order --------------------
       '<div class="il-mi-meta">' +
-      momFieldHTML('No.', 'il-c-no',
-        '<input class="pd-input pd-input-sm il-mi" data-f="item_no" value="' + Fmt.esc(it.item_no || '') +
-        '" placeholder="' + ((it.seq == null ? (i || 0) : it.seq) + 1) + '"' + d + '>',
-        it.item_no || String((it.seq == null ? (i || 0) : it.seq) + 1),
+      // ⚠️ Individual View item 9 (round 3): "item number should be
+      // auto-numbered and not editable." Always rendered as plain text, in
+      // BOTH edit and reporting mode — bypassing momFieldHTML's own control-
+      // vs-text switch, since there is no control here to switch to. A stored
+      // `item_no` still wins when set (a carried item keeps its original
+      // number); otherwise it is the item's position in this meeting.
+      '<div class="il-mi-f il-c-no"><label>No.</label><div class="il-mi-val">' +
+        Fmt.esc(it.item_no || String((it.seq == null ? (i || 0) : it.seq) + 1)) + '</div>' +
         // Says the action came in from an earlier meeting. ⚠️ Not a status: a carried
         // action is the SAME action, and its register link came with it — without the
         // tag it reads as something someone re-typed, and the two would be chased twice.
-        (it.carried_from_item_id ? '<span class="il-mom-carried" title="Carried over from an earlier meeting">carried</span>' : '')) +
+        (it.carried_from_item_id ? '<span class="il-mom-carried" title="Carried over from an earlier meeting">carried</span>' : '') +
+      '</div>' +
       // ⚠️ OWNER ITEM 5 (2026-09-02) — "instead of category, use department and
       // get department dropdown from issues". `DEPARTMENTS` is a verbatim copy of
       // the Issues register's own list (see its declaration). The legacy
@@ -3513,12 +3873,19 @@ window.MinutesOfMeeting = (function () {
       // through momUsedDepartments(), so a minute recorded before this change
       // keeps whatever it was filed under rather than silently reading as the
       // first option — the select-value trap this repo has been bitten by twice.
-      momFieldHTML('Department', 'il-c-dept',
-        '<select class="pd-select pd-input-sm il-mi" data-f="department"' + d + '>' +
+      // ⚠️ Individual View item 9 (round 3): department/type/responsible/
+      // issue-agenda/description/action-item are all required now. The
+      // labels carry `*` (reqMark, only while editable); the enforcement
+      // itself is in the shared `.il-mi` onchange handler below, which
+      // refuses to save a required field cleared to empty and reverts it —
+      // this screen auto-saves per field, so "required" means "clearing it
+      // is refused," not a single Save button's up-front gate.
+      momFieldHTML('Department' + reqMark(!ro), 'il-c-dept',
+        '<select class="pd-select pd-input-sm il-mi" data-f="department" data-required="1"' + d + '>' +
         momOptions(DEPARTMENTS, momUsedDepartments(), momItemDept(it)) + '</select>',
         momItemDept(it)) +
-      momFieldHTML('Type', 'il-c-type',
-        '<select class="pd-select pd-input-sm il-mi" data-f="type"' + d + '>' +
+      momFieldHTML('Type' + reqMark(!ro), 'il-c-type',
+        '<select class="pd-select pd-input-sm il-mi" data-f="type" data-required="1"' + d + '>' +
         // ⚠️ A blank option is offered because the column is nullable — without it an
         // untyped legacy row would silently read as the first option while the database
         // still holds null, the select-value trap the drawing register documents.
@@ -3535,7 +3902,13 @@ window.MinutesOfMeeting = (function () {
         iss ? (iss.status || 'Open') : (it.status || 'Open')) +
       // Same roster as the register's Champion, so an action raised into an issue
       // carries a responsible the personal view can actually resolve.
-      momFieldHTML('Responsible', 'il-c-owner',
+      // ⚠️ The `*` here is advisory, not enforced client-side like the plain
+      // fields below — the People Picker is a shared chip-based component
+      // used for several attendee fields with different requiredness needs,
+      // and reverting its chip state on a refused save risks a harder bug
+      // than the one this is fixing. A save is still refused server-side if
+      // this later grows a NOT NULL constraint.
+      momFieldHTML('Responsible' + reqMark(!ro), 'il-c-owner',
         peoplePickerHTML('mom-own-' + it.id, it.owner_ids, championExtra(it.owner_ids, it.owner), ro),
         championText(it.owner_ids, it.owner)) +
       momFieldHTML('Target date', 'il-c-due',
@@ -3550,8 +3923,8 @@ window.MinutesOfMeeting = (function () {
         momItemActLabel(it)) +
       '</div>' +
       // ---- the text blocks, full width so nothing is clipped ----------------
-      momFieldHTML('Issue / Agenda', 'il-c-issue',
-        '<input class="pd-input pd-input-sm il-mi" data-f="issue" value="' + Fmt.esc(it.issue || '') + '" placeholder="What was raised" ' + d + '>',
+      momFieldHTML('Issue / Agenda' + reqMark(!ro), 'il-c-issue',
+        '<input class="pd-input pd-input-sm il-mi" data-f="issue" data-required="1" value="' + Fmt.esc(it.issue || '') + '" placeholder="What was raised" ' + d + '>',
         it.issue) +
       // ⚠️ Description comes BEFORE the action item, and both are textareas. The
       // order follows how the item is actually written up: what was discussed, then
@@ -3559,20 +3932,23 @@ window.MinutesOfMeeting = (function () {
       // clips its own value — an action of any length was unreadable in exactly the
       // mode that exists for reading it, the same defect the reporting view fixed for
       // Issue / Agenda.
-      // ⚠️ Description was NOT on the old table at all, so it was a column the screen
-      // could never show while the PDF printed it. In reporting/read-only it appears
-      // only when it has something to say; an empty labelled block on every action is
-      // noise in a printed record. Blank when the action text CAME from `description`
-      // (a legacy row), or the card prints the same sentence twice under two headings
-      // — the rule the PDF already applies.
+      // ⚠️ Individual View item 9 (round 3): Description is now REQUIRED,
+      // reversing the earlier "optional" design decision below — the
+      // owner's explicit, later instruction wins. Description was NOT on the
+      // old table at all, so it was a column the screen could never show
+      // while the PDF printed it. In reporting/read-only it still appears
+      // only when it has something to say; an empty labelled block on every
+      // action is noise in a printed record. Blank when the action text CAME
+      // from `description` (a legacy row), or the card prints the same
+      // sentence twice under two headings — the rule the PDF already applies.
       ((ro && (!it.description || it.description === actText))
         ? ''
-        : momFieldHTML('Description <span>optional</span>', 'il-c-desc',
-            '<textarea class="pd-textarea il-mi" data-f="description" rows="2" placeholder="What was discussed"' + d + '>' +
+        : momFieldHTML('Description' + reqMark(!ro), 'il-c-desc',
+            '<textarea class="pd-textarea il-mi" data-f="description" data-required="1" rows="2" placeholder="What was discussed"' + d + '>' +
             Fmt.esc(it.description === actText ? '' : (it.description || '')) + '</textarea>',
             it.description === actText ? '' : it.description)) +
-      momFieldHTML('Action item', 'il-c-act',
-        '<textarea class="pd-textarea il-mi" data-f="action_item" rows="2" placeholder="What will be done"' + d + '>' +
+      momFieldHTML('Action item' + reqMark(!ro), 'il-c-act',
+        '<textarea class="pd-textarea il-mi" data-f="action_item" data-required="1" rows="2" placeholder="What will be done"' + d + '>' +
         Fmt.esc(actText) + '</textarea>',
         actText) +
       // ⚠️ ITEM #23 — the hold reason / closure note stays visible on the card
@@ -4050,25 +4426,20 @@ window.MinutesOfMeeting = (function () {
   // ------------------------------------------------------------- distribute ---
   // ⚠️ Distribution is the point the minutes become everyone's. Reverting does NOT
   // retract anything already raised into the register — those are their own rows and
-  // someone may already be working them — so the confirmation says so rather than
-  // letting a planner assume "revert" undoes the meeting's consequences.
+  // someone may already be working them.
+  // ⚠️ Individual View item 5 (round 3): "no need for any browser pop-up for
+  // warnings" on Distribute/Revert — a native confirm() blocks the whole page
+  // and reads as an error dialog. The information that confirm used to carry
+  // (everyone can now read this; reverting keeps raised issues where they
+  // are) moves into the SUCCESS toast instead, after the act, rather than a
+  // gate before it.
   async function momSetDistributed(momId, on) {
     var mom = MOMS.find(function (x) { return x.id === momId; });
     // ⚠️ canDistribute(), not canEditMinute() — a draft attendee can edit the record
     // but never gets to issue or retract it; the DB's with-check refuses the write
     // anyway, this just keeps the client from ever attempting it.
     if (!mom || !canDistribute(mom)) return;
-    if (on) {
-      if (!confirm('Distribute "' + (mom.title || 'these minutes') +
-        '"?\n\nEveryone on the project will be able to read them, and the form locks ' +
-        'until you revert it to draft.')) return;
-    } else {
-      var raised = momItemsOf(momId).filter(function (i) { return i.issue_id; }).length;
-      if (!confirm('Revert "' + (mom.title || 'these minutes') + '" to draft?' +
-        '\n\nYou, planners, and this meeting\'s attendees will be able to edit it again.' +
-        (raised ? '\n\n' + raised + ' issue(s) already raised in Issues & Concerns STAY there — ' +
-          'reverting does not retract them.' : ''))) return;
-    }
+    var raised = on ? 0 : momItemsOf(momId).filter(function (i) { return i.issue_id; }).length;
     var patch = { is_distributed: on, distributed_at: on ? new Date().toISOString() : null,
                   distributed_by: on ? UID : null };
     try {
@@ -4086,13 +4457,14 @@ window.MinutesOfMeeting = (function () {
         logItemHistory(it.id, mom.project_id || pid, on ? 'distribute' : 'revert', null,
           (mom.title || 'these minutes') + (on ? ' were distributed' : ' were reverted to draft'));
       });
-      UI.toast(on ? 'Minutes distributed' : 'Reverted to draft', 'ok');
+      // ⚠️ The information the old confirm() dialogs carried now lands here,
+      // after the act, in the toast — not as a gate a user has to click
+      // through before the act happens.
+      UI.toast(on
+        ? 'Minutes distributed — everyone on the project can read them. Use the Email button to notify attendees.'
+        : 'Reverted to draft.' + (raised ? ' ' + raised + ' issue(s) already raised in Issues & Concerns stay there.' : ''),
+        'ok');
       renderDetail();
-      // Item 10 — "once distribute is hit, prompt user to email to attendees
-      // confirmation." A prompt, not an automatic send: there is no mail
-      // backend here (see openEmailModal), so the honest act is to offer the
-      // Email modal and let the person fill it in and press send themselves.
-      if (on) momPromptEmailAttendees(momId);
     } catch (e) {
       UI.toast(/column|schema cache/i.test(e.message || '')
         ? 'Run migrations/2026-08-21-mom-schema-carryover-distribute.sql in Supabase first.'
@@ -4694,16 +5066,22 @@ window.MinutesOfMeeting = (function () {
   }
 
   // Item 10 (2026-09-02) — offered right after a successful Distribute.
-  // ⚠️ A confirm(), not a silent modal: distributing and emailing are two
-  // acts, and popping the Email modal unasked hijacks the screen the instant
-  // someone presses a button that said "Distribute".
-  function momPromptEmailAttendees(momId) {
-    if (!confirm('Minutes distributed.\n\nOpen the Email modal for these minutes now?')) return;
-    openEmailModal(momId);
-  }
+  // ⚠️ Individual View item 5 (round 3): "no need for any browser pop-up for
+  // warnings" — a confirm() here blocked the page the instant someone
+  // pressed Distribute, which is exactly what was being asked to stop. The
+  // toast already issued by momSetDistributed names the Email button as the
+  // way to notify attendees; nothing further pops up unasked.
 
   // ---- Meeting LIST export (item 8's second sentence) --------------------
-  function momExportListRows() { return momSortedRows(momUnifiedRows()); }
+  // ⚠️ Mid-turn item 1: "select multiple meetings and download (already has
+  // existing button)". A selection narrows the SAME download button rather
+  // than needing a second one of its own — with nothing selected, behaviour
+  // is unchanged (every meeting, as before).
+  function momExportListRows() {
+    var all = momSortedRows(momArchiveScope(momUnifiedRows()));
+    if (!momSelectionCount()) return all;
+    return all.filter(function (r) { return momIsSelected(r.kind, r.id); });
+  }
   function momExportListHTML() {
     var rows = momExportListRows();
     var body = rows.length
@@ -5251,6 +5629,18 @@ window.MinutesOfMeeting = (function () {
       f.onchange = function () {
         var id = f.closest('[data-item]').dataset.item, fld = f.dataset.f, patch = {};
         var v = f.value.trim ? f.value.trim() : f.value;
+        // ⚠️ Individual View item 9 (round 3): department/type/issue-agenda/
+        // description/action-item are required. This card saves one field at
+        // a time on change (no single Save button to gate up front), so
+        // "required" means the auto-save REFUSES a clear-to-empty and puts
+        // the field back — a fresh renderDetail() does that, since the
+        // last-saved value already lives in MOM_ITEMS and needs no extra
+        // bookkeeping here.
+        if (f.dataset.required && !v) {
+          UI.toast('This field is required and cannot be left blank.', 'error');
+          renderDetail();
+          return;
+        }
         // ⚠️ Empty means NULL on every nullable column, not the empty string.
         // `type` carries a CHECK (Issue | FYI | Report); writing '' when the planner
         // picks the blank option would be REFUSED by the database, and the other new
@@ -5330,16 +5720,24 @@ window.MinutesOfMeeting = (function () {
     // ⚠️ OWNER ITEM 8 (2026-09-02) — "it should go to the ordinary Add Lessons
     // Learned page. no linking needed. user can just return to the meeting
     // minutes after." So the link carries no momId/momItem: the sibling opens
-    // its own plain Add-a-lesson form, and the browser's Back comes straight
-    // back to this meeting (both modules bind their screens to history state).
+    // its own plain Add-a-lesson form.
+    // ⚠️ INDIVIDUAL VIEW ITEM 6 (round 3, 2026-09-03) — "going back should
+    // bring back to the meeting." Relying on the browser's own Back turned out
+    // not to be enough on its own: the sibling module's lesson screens have no
+    // VISIBLE way back to a specific meeting, only their own "← Back to
+    // Issues/Lessons" — so `returnMom` is a plain navigation hint (never a
+    // data link; `newLesson`/`openLesson` above are the ones item 8 already
+    // settled carry no link) that the sibling reads to show its own explicit
+    // "← Back to meeting" button, wired to `?openMom=<id>` here.
     host.querySelectorAll('.il-mi-lesson').forEach(function (b) {
       b.onclick = function () {
-        location.href = '../issues-lessons/index.html?screen=lessons&newLesson=1';
+        location.href = '../issues-lessons/index.html?screen=lessons&newLesson=1&returnMom=' + encodeURIComponent(_momSel);
       };
     });
     host.querySelectorAll('.il-mi-lesson-open').forEach(function (b) {
       b.onclick = function () {
-        location.href = '../issues-lessons/index.html?screen=lessons&openLesson=' + encodeURIComponent(b.dataset.lesson);
+        location.href = '../issues-lessons/index.html?screen=lessons&openLesson=' + encodeURIComponent(b.dataset.lesson) +
+          '&returnMom=' + encodeURIComponent(_momSel);
       };
     });
     // ---- the "Get from issue" panel -------------------------------------------

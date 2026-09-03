@@ -39,6 +39,19 @@
   background: transparent; border-color: transparent;
 }
 .il-topbar-tools .pd-btn:hover { background: var(--pd-bg); border-color: var(--pd-line); }
+/* Meeting List item 2 (2026-09-03, round 3): "+ Add meeting" is a LABELLED
+   button (icon-optional text + word), not one of the icon-only 34px squares
+   every other topbar tool is — without `.il-tb-labeled` it was being forced
+   into that same 34px square with "+ Add meeting" clipped inside it. Copied
+   verbatim from issues-lessons/module.css's own "+ New issue" button, the
+   pattern this item asks to match. The primary-colour override is load-
+   bearing too: `.il-topbar-tools .pd-btn` above sets a transparent
+   background at (0,2,0), which otherwise beats the shared `.pd-btn-primary`
+   rule's (0,1,0) and silently turns the button transparent. */
+.il-topbar-tools .pd-btn.il-tb-labeled { width: auto; padding: 0 12px; gap: 6px; }
+.il-topbar-tools .pd-btn.pd-btn-primary {
+  background: var(--pd-red); border-color: var(--pd-red); color: #fff;
+}
 
 /* ⚠️ REMOVED (2026-08-31, owner-reported bug #4 — see issues-lessons/module.css for
    the full explanation): a `.il-title-txt { display:none }` rule at ≤1500px, copied
@@ -78,9 +91,25 @@
 
 /* ---- Add Meeting form (round 2): named sections + guaranteed row
    alignment ------------------------------------------------------------- */
+/* Round 3 (2026-09-03) — "improve grouping layout and look when adding
+   meetings": each named section is now its own tile, not just a heading
+   over a dashed rule. Same shape reused for the Individual View's own
+   groupings below (`.il-mom-group-tile`) so both screens read as one
+   system rather than two different answers to "make grouping evident". */
+.il-mom-sec {
+  background: var(--pd-bg); border: 1px solid var(--pd-line);
+  border-radius: var(--pd-radius); padding: 12px 14px; margin-bottom: 12px;
+}
+.il-mom-sec:last-child { margin-bottom: 0; }
 /* Item 6: Details / Schedule / Venue / Attendees / Agenda, the same weight
    as the Detail view's own section headings (item 2 there). */
-.il-am-form .il-mom-sechead:not(:first-child) { margin-top: 18px; padding-top: 14px; border-top: 1px dashed var(--pd-line); }
+.il-am-form .il-mom-sechead { margin: 0 0 10px; padding: 0; border-top: 0; }
+/* Item 5 (round 3): "improve also space between label and input field.
+   reduce." — was inherited from the shared `.pd-field label`'s 5px; the
+   ghost-label reservation below still keeps rows aligned, just with a
+   tighter gap to the control underneath it. */
+.il-am-form .pd-field label { margin-bottom: 2px; }
+.il-am-form .pd-field { margin-bottom: 10px; }
 /* Items 2+3: every label in this form reserves the SAME vertical space —
    two lines' worth at this font-size — whether its own text needs one line
    or wraps to two, and whether a field has real label text at all (the
@@ -88,7 +117,7 @@
    to reserve the identical space). That is what makes every input/control
    in a row start on the same Y, rather than depending on no label ever
    wrapping at whatever width the modal happens to be. */
-.il-am-form .pd-field > label:not(.il-am-checklabel) { min-height: 26px; line-height: 13px; }
+.il-am-form .pd-field > label:not(.il-am-checklabel) { min-height: 20px; line-height: 13px; }
 .il-am-checklabel {
   display: flex; align-items: center; gap: 6px; font-weight: 400;
   height: 34px; font-size: 13px; color: var(--pd-ink);
@@ -122,11 +151,63 @@
 .il-mom-th.on { color: var(--pd-red); }
 .il-mom-lrow { cursor: pointer; }
 .il-mom-lrow:hover td { background: var(--pd-bg); }
+/* Individual View item 2 (round 3): "tag for draft or distributed, add
+   padding" — a little breathing room from the title text it sits beside,
+   on top of the padding the pill already had. */
 .il-mom-draft {
   display: inline-block; font-size: 9px; font-weight: 600; letter-spacing: .06em;
-  padding: 2px 7px; border-radius: 3px;
+  padding: 2px 7px; border-radius: 3px; margin-left: 6px;
   background: var(--pd-red-light); color: var(--pd-red);
 }
+
+/* ---- Meeting List item 3 (round 3): non-recurring meetings and recurring
+   group headers both read as a light gray row — the two things this list is
+   a list OF; a series' own occurrence rows are white, nested underneath. --- */
+.il-mom-grouprow td { background: var(--pd-bg); }
+.il-mom-grouprow:hover td { background: var(--pd-line); }
+.il-mom-occrow td { background: var(--pd-card); }
+.il-mom-occrow:hover td { background: var(--pd-bg); }
+.il-mom-occtitle { padding-left: 10px; color: var(--pd-muted); }
+.il-mom-occempty { cursor: default; }
+.il-mom-occempty:hover td { background: var(--pd-card); }
+
+/* Item 4: per-series "add a meeting"/"edit series" buttons, right of the
+   group row's own open/closed count. */
+.il-mom-opencell { position: relative; }
+.il-mom-grpacts { float: right; display: inline-flex; gap: 4px; margin-left: 8px; }
+.il-mom-grpact {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; padding: 0; border: 1px solid var(--pd-line);
+  border-radius: 5px; background: var(--pd-card); color: var(--pd-muted); cursor: pointer;
+}
+.il-mom-grpact:hover { background: var(--pd-bg); color: var(--pd-ink); border-color: var(--pd-muted); }
+
+/* Mid-turn item 1: checkbox + drag-order columns, and the selection bar that
+   appears above the table the moment anything is checked. */
+.il-mom-seltd { width: 26px; text-align: center; }
+.il-mom-orderth { width: 20px; text-align: center; cursor: pointer; user-select: none; color: var(--pd-line); }
+.il-mom-orderth:hover, .il-mom-orderth.on { color: var(--pd-red); }
+.il-mom-orderc { width: 20px; text-align: center; }
+.il-mom-selbar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 8px 12px; background: var(--pd-red-light); border-bottom: 1px solid var(--pd-line);
+}
+.il-mom-selcount { font-weight: 600; font-size: 12.5px; }
+.il-mom-selhint { font-size: 12px; color: var(--pd-muted); flex: 1 1 auto; }
+
+/* ---- Drag-to-reorder (Meeting List item 5) — mirrors issues-lessons'
+   copy of this component exactly (same class names, same mechanics), see
+   momWireReorder/momApplyReorder in module.js. */
+[draggable="true"].il-reorderable { cursor: grab; }
+.il-dragging { opacity: .45; }
+.il-drop-before { box-shadow: inset 0 2px 0 0 var(--pd-red); }
+.il-drop-after { box-shadow: inset 0 -2px 0 0 var(--pd-red); }
+.il-draghandle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; color: var(--pd-line); cursor: grab; flex: none;
+}
+.il-draghandle:hover { color: var(--pd-muted); }
+@media (max-width: 700px) { .il-draghandle { display: none; } }
 
 /* ---- Calendar view --------------------------------------------------------
    Monday-first month grid, matching the Portfolio Overview milestones calendar
@@ -213,8 +294,12 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
    icon-only, no text, no button chrome, bigger than the list row's bare
    glyph. Reused verbatim for the sticky header's own copy on a recurring
    occurrence, below. */
+/* Individual View item 4 (round 3): "same size of icons inside button" — the
+   surrounding button box stays 34px (matching .il-mom-iconbtn's own box) but
+   the glyph itself is now close to the 16px icons.js draws inside that same
+   box, not the much larger 22px it was set to before. */
 .il-mom-favbig {
-  border: 0; background: transparent; padding: 0 4px; font-size: 22px;
+  border: 0; background: transparent; padding: 0 4px; font-size: 17px;
   line-height: 1; height: 34px; display: inline-flex; align-items: center; justify-content: center;
 }
 .il-mom-favbig:hover { color: var(--pd-warn, #C77700); }
@@ -233,7 +318,7 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
 .il-mom-stickytitle { font-size: 15px; font-weight: 600; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .il-mom-recur {
   display: inline-block; font-size: 9px; font-weight: 600; letter-spacing: .06em;
-  padding: 2px 7px; border-radius: 3px; background: var(--pd-bg); color: var(--pd-muted);
+  padding: 2px 7px; border-radius: 3px; margin-left: 6px; background: var(--pd-bg); color: var(--pd-muted);
   border: 1px solid var(--pd-line);
 }
 /* Add-meeting modal's star (round 2, owner: "remove the Favorite label AND
@@ -419,9 +504,13 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
 .il-mi-f { min-width: 0; }
 .il-mi-f + .il-mi-f { margin-top: 8px; }
 .il-mi-meta .il-mi-f + .il-mi-f { margin-top: 0; }
+/* Individual View item 7 (round 3): "Activity discussed" (and every other
+   meta label) stays on one row rather than wrapping to two in a narrow grid
+   cell — a wrapped label pushes its own control down and reads as broken. */
 .il-mi-f > label {
   display: block; font-size: 9.5px; font-weight: 600; letter-spacing: .05em;
   text-transform: uppercase; color: var(--pd-muted); margin-bottom: 3px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .il-mi-f > label span { font-weight: 500; text-transform: none; letter-spacing: 0; opacity: .75; }
 .il-mi-f .pd-input, .il-mi-f .pd-select, .il-mi-f .pd-textarea { width: 100%; min-width: 0; max-width: 100%; }
@@ -435,6 +524,12 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
 
 .il-c-no .pd-input { max-width: 96px; }
 .il-c-no .il-mom-carried { display: block; margin: 3px 0 0 1px; }
+/* Individual View item 7 (round 3): the grid's explicit columns apply to
+   EVERY row, so 7 meta fields over the 6 tracks above wrapped "Activity
+   discussed" into row 2's narrowest column (0.6fr, sized for "No.") — the
+   real cause of its label wrapping to two lines. Giving it the full row
+   width fixes that at the source rather than shrinking its text to fit. */
+@media (min-width: 1100px) { .il-c-mact { grid-column: 1 / -1; } }
 
 .il-mi-foot {
   display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px;
@@ -590,11 +685,15 @@ div.il-mom-acrow { padding: 6px 10px; font-size: 11.5px; color: var(--pd-muted);
    the two that follow it. */
 .il-mom-sechead { margin: 0 0 8px; font-size: 13.5px; }
 
-.il-mom-agenda { margin: 14px 0; padding-top: 12px; border-top: 1px dashed var(--pd-line); }
+/* Individual View item 3 (round 3): the agenda now gets the same `.il-mom-sec`
+   tile treatment as Details/Schedule/Venue/Attendees above it — the old
+   dashed-top-border divider is dropped in favour of that, so the two rules
+   don't double up into a boxed tile with a dashed line inside it too. */
+.il-mom-agenda { margin: 0 0 12px; }
 .il-mom-agenda h4 { margin: 0 0 4px; font-size: 13.5px; }
 .il-mom-agview { margin: 6px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 3px; }
 .il-mom-agview li { font-size: 13px; }
-.il-mom-slides .il-mom-agenda { border-top: 0; padding-top: 0; margin-top: 0; }
+.il-mom-slides .il-mom-agenda { margin: 0; }
 
 /* ---- People picker (Responsible) ------------------------------------------
    Chips for accounts, built from the dropdown alone (2026-09-03, owner: "the

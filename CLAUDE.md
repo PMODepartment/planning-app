@@ -84,6 +84,46 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-03 (r) — View toggle re-aligned right, app-wide
+
+Owner (Minutes of Meeting round 3, item 1): *"the change view tab group should be like in
+[the] first photo. but for all modules across app, align these to the right, not left."*
+This one item names every module, not just Minutes of Meeting, so it's a shared-file
+change rather than a module-local one.
+
+`.pd-viewtoggle` (`assets/css/dashboard.css`) gains `margin-left: auto`. ⚠️ **Checked which
+modules actually render this shared class before writing the fix** — it's
+**`projects.html`'s own card/list toggle** (the class's origin), **Progress Photos'** List/
+Gallery/Plan switch, and **Issues & Concerns'** List/Kanban toggle (added 2026-09-02(b),
+"same `.pd-viewtoggle`/`.pd-vt` component Progress Photos' List/Gallery switch already
+uses"). ⚠️ **Reverses part of the 2026-09-03 (b) entry above** ("Super-admin-only modules,
+module-logo dropdowns, bold Portfolio, view toggles repositioned") for Progress Photos
+specifically — that entry moved the SAME `.pd-viewtoggle` from a `margin-left:auto`
+right-pushed position to LEADING its row instead, relocating the markup and dropping the
+`margin-left:auto` rule that had put it there. This later, more specific ask overrides
+that — the toggle is common to few enough modules that one shared rule can push it right
+without re-litigating each module's own wrapped-row layout; `margin-left:auto` moves the
+toggle (and anything
+sharing its flex row after it) to the row's trailing edge wherever it sits in the markup,
+so no module's HTML needed reordering.
+⚠️ **Minutes of Meeting's own List/Calendar switch is a SEPARATE, module-local class
+(`.il-viewtoggle`) and this shared rule does not reach it** — checked before assuming it
+did. It didn't need to: an earlier round this same session (item 2-3, "round 2") had
+already moved it to the right of its row via an explicit flex spacer
+(`momBrowseFilterBarHTML()`'s `<div style="flex:1;"></div>`), so that module already
+satisfies this ask through its own pre-existing fix.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment, the
+standing constraint for every UI pass in this repo. No live comparison against the
+owner's own screenshot of the wanted layout.
+
+Shared asset changed → **`dashboard.css?v=` bumped `20260903a` → `20260903b` across all
+29 referencing files**, per this repo's own standing cache-busting rule — a browser caches
+this file by its full URL, and the app's own history has repeatedly recorded that
+forgetting this step gets mis-diagnosed as a code bug on the next report. See
+`modules/minutes-of-meeting/CLAUDE.md`'s 2026-09-03 (d) entry for the rest of this round's
+Meeting List work.
+
 ### 2026-09-03 (q) — An un-floored trade is still in the building, so it carries the tower
 
 *"if there is no floors or zones under a trade ... if it is still under tower 1, then it is under tower

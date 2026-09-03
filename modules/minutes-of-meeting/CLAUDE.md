@@ -1,5 +1,165 @@
 # Module: minutes-of-meeting
 
+## 2026-09-03 (d) — Round 3: Meeting List grouping/reorder/archive, tile sections,
+## no-popup workflow, required fields, and "going back" returns to the meeting
+
+Owner's round-3 feedback, delivered in two waves (a four-section list, then a mid-turn
+addition once work was underway). This entry covers everything DONE this round; items
+still open are named at the end rather than silently dropped.
+
+### Meeting List
+
+**Grouping (items 3–4).** `momUnifiedRows()` now attaches every past occurrence of a
+recurring series as a nested `occurrences` array (previously occurrences were reachable
+only from the series' own page, never from the top-level list). `renderMomListHTML`
+composes a gray group-header row (`momGroupRowHTML`) followed by its white, indented
+occurrence rows (`momOccurrenceRowsHTML`, "↳" prefix) — a standalone meeting still renders
+as a single gray row, so the two states share one visual language. Each group header
+carries its own **+ add meeting / edit series** icon buttons (`momGroupActsHTML`), which
+just open the series' own existing add-occurrence/edit-series forms
+(`_schedOccOpen`/`_schedFormOpen`) via `momOpenSeries(id)` — no new form logic.
+
+**Manual sort (item 5).** Drag-to-reorder mirroring issues-lessons' own established
+pattern (`il-reorderable`/`il-dragging`/`il-drop-before`/`il-drop-after`/`il-draghandle`,
+spaced-by-10 renumbering, null-falls-back-to-date-order), adapted for a list spanning TWO
+tables — `momOrderTable(kind)` resolves `mom_schedules` vs `meeting_minutes` per row. A
+"⠿" manual-order column header (`data-sort="manual"`) reuses the header-click cycling
+already wired in `wireBrowse()`. **Run `migrations/2026-09-03-meeting-list-order-archive.sql`**
+— adds `sort_order` to both tables (nullable; NULL falls back to date order, same rule
+issues-lessons already established).
+
+**Multi-select + download + archive (mid-turn item 1).** `_momSelected` (keyed
+`"kind:id"`, top-level rows only) makes the EXISTING download button selection-aware —
+`momExportListRows()` exports the selection when non-empty, else every non-archived row —
+and adds a new **Archive** button in a contextual selection bar
+(`momSelectionBarHTML`, shown only while something is selected). `momArchiveSelected()`
+archives a series by setting `mom_schedules.active = false` (that flag has meant exactly
+this since 2026-09-01 — a second `is_archived` column would be a second, disagreeable
+answer to the same question) and a standalone meeting via the new
+`meeting_minutes.is_archived` (same migration as sort_order above). A "Show archived"
+checkbox reveals them again.
+
+⚠️ **Archive scoping deliberately lives in its own function (`momArchiveScope`), not
+folded into `momUnifiedFilter`.** Folding it in first, then noticing the bug, is why this
+is a separate function: applying it inside the filter would have counted archived rows
+toward `total` in the "N of M meetings" line even while the archived filter was off,
+overstating the register. `momArchiveScope` runs BEFORE the rest of the filter chain, in
+both `renderBrowse()` and `momExportListRows()`, so the two counts and the export can
+never disagree about what "everything" means.
+
+### Add Meetings — no changes this round (all seven items already satisfied from earlier
+### this session; see the prior CLAUDE.md entries).
+
+### Meeting Individual View
+
+- **Draft/Distributed tag padding** (item 2) — `margin-left: 6px` on
+  `.il-mom-draft`/`.il-mom-recur`.
+- **Groupings in their own tiles** (item 3) — Details/Schedule/Venue/Attendees, the
+  Agenda section and the Minutes actions block all wrapped in the existing
+  `.il-mom-sec` tile class (built earlier this session for the Add Meeting modal, reused
+  verbatim here rather than inventing a second "grouped section" style).
+- **Star sized to match its neighbouring icons** (item 4) — `.il-mom-favbig` 22px → 17px.
+- **No browser `confirm()` on distribute / revert-to-draft** (item 5). Both `confirm()`
+  calls in `momSetDistributed()` are removed; the information they carried ("everyone can
+  now read them" / "raised issues stay in the register") moved into the post-action
+  success toast instead of being lost. **A second, related popup was found and removed
+  too** — `momPromptEmailAttendees()`, which fired immediately after a successful
+  distribute asking whether to open the Email modal — part of the same interaction the
+  owner was pointing at, folded into the same success toast.
+- **"Activity discussed" wraps onto its own line instead of squeezing into the narrowest
+  column** (item 7). Root cause: `.il-mi-meta`'s grid defines 6 explicit column tracks
+  (`0.6fr 1.5fr 0.9fr 0.9fr 1.2fr 1fr`) for 7 meta fields, so the 7th wraps to a new row
+  starting in column 1 — the track sized for the short "No." field, not the longest label
+  in the set. `.il-c-mact { grid-column: 1 / -1 }` at ≥1100px spans the full row instead.
+- **Item number is auto-numbered and never editable, in either mode** (item 9). The No.
+  field bypasses `momFieldHTML`'s report/edit toggle entirely — that toggle is "editable
+  outside reporting", the wrong shape for "never editable" — and is hand-written as a
+  plain `.il-mi-val` in both states, keeping its existing `carried` badge.
+- **Department / Type / Issue-Agenda / Description / Action item are required** (item 9).
+  `reqMark(!ro)` on each label, `data-required="1"` on the underlying controls, and a
+  guard at the top of `wireDetail()`'s generic `.il-mi` onchange handler that refuses an
+  empty value on a required field (toast + `renderDetail()` reverts the DOM — the
+  last-saved value already lives in `MOM_ITEMS`, no separate undo cache needed). ⚠️ **This
+  reverses an earlier, deliberate call that Description was optional** — followed the
+  owner's newer, explicit instruction rather than the prior design note. ⚠️ **Deliberately
+  NOT enforced on the Responsible People Picker** — reverting that component's internal
+  chip/text state on a refused save is a materially different (and riskier) job than
+  reverting a plain input, and only the visual `*` marker was added there.
+- **Item 6 (back-navigation from Lessons Learned) — see the standalone entry immediately
+  below; it reaches into both modules, so it gets its own section.**
+- ⚠️ **Items 1 and 8 investigated, not changed.** Item 1 ("icons don't show on first
+  open") — traced `Icons.hydrate()`'s re-hydration guard and confirmed `render()` calls it
+  after every render branch including `renderDetail()`; the code path looks correct and
+  this could not be reproduced without a live browser, so nothing was changed rather than
+  guessing at a fix. Item 8 ("bring back Hold/Close/Remove buttons") — these already exist
+  (`momItemWFButtonsHTML`/`momItemWFPanelHTML`, the `.il-mi-del` Remove button), confirmed
+  present in the shipped code; likely a stale-cache report rather than a real gap.
+
+### "Going back should bring back to the meeting" (Individual View item 6)
+
+The existing design (2026-09-02(b), item 8) deliberately sends "+ Capture lesson"/"N
+lessons" to the sibling Issues & Concerns module with **no** `momId`/`momItem` link — a
+lesson captured at a meeting is filed like any other lesson, on purpose. The stated plan
+for getting back was the browser's native Back button, since both modules bind their
+screens to history state. ⚠️ **That mechanism works for the return trip itself (both
+modules already `histView.push()`/`bindHistoryState` correctly), but it left no VISIBLE
+way back** — the sibling's own "← Back to Issues"/"← Back to Lessons" links only navigate
+within that module, so a user who didn't know to reach for the browser's own Back button
+had no in-app affordance pointing at the meeting they came from.
+
+Fixed with a plain **navigation hint**, never a data link — the deliberate "no linking
+needed" decision from item 8 is untouched; nothing here writes `mom_id`/`mom_item_id` onto
+the lesson.
+- Both `.il-mi-lesson`/`.il-mi-lesson-open` click handlers append `&returnMom=` +
+  `encodeURIComponent(_momSel)` to the URL they navigate to.
+- Issues & Concerns reads `returnMom` at `init()` (alongside its existing
+  `newLesson`/`openLesson`/`momId` deep-link handling) into a new `_returnMom`, kept for
+  the rest of that visit — not cleared after one use — so a "← Back to meeting" link stays
+  available whatever the user does next in that session, not only on the exact record open
+  the instant the page loaded.
+- A small, additive `momReturnLinkHTML()`/`goBackToMeeting()` pair renders a **"← Back to
+  meeting"** button (paired-token `--pd-danger-text` red, not plain `--pd-red` — this
+  app has repeatedly measured brand red as under AA at this 13px/600 weight) alongside the
+  existing back links on BOTH the Issues detail view (covers the "+ Capture lesson" draft,
+  which renders through `renderIssueDetailView()` via `newLessonAsClosedIssue()`) and the
+  Lessons detail view (covers "+ View lesson", via `openLesson()`/`renderLessonDetailView()`).
+- Clicking it does `location.href = '../minutes-of-meeting/index.html?openMom=<id>'` — a
+  plain, deterministic deep link, not a reliance on browser history/bfcache semantics.
+  `MinutesOfMeeting.init()` reads `openMom` once `load()` resolves and calls the existing
+  `momOpenMeeting(id)`, the same function every other "open this meeting" path already
+  uses.
+
+### Explicitly NOT done this round (mid-turn items, flagged rather than fabricated)
+
+- **Meeting Reporting View** — drag-to-reorder the slide icons (restricted to numbered
+  minutes items, with slide M and slide A pinned first) and a general visual polish pass
+  ("too plain"). Not started.
+- **Meeting Individual View — "Close the meeting instance."** A prompt-for-closure-report
+  workflow across every open minutes item on a meeting. Not started; this is a genuinely
+  new workflow (bulk-closing every open item on one meeting, one report each) rather than
+  a tweak to something already built, and deserves its own careful pass.
+
+### Verified
+
+`node --check` clean on both `module.js` files (this module + issues-lessons). CSS brace
+balance for the whole session's accumulated changes: issues-lessons 290/290 (287/287 at
+the last commit — the round-3 CSS added across the session, including the three new
+`.il-backlink-mom`/`.il-detail-nav .il-backlink-mom` rules from this entry).
+Grepped `il-return-mom`/`_returnMom`/`momReturnLinkHTML`/`goBackToMeeting` — declared once,
+rendered in exactly the two detail-view branches, wired in both `wireIssues()` and
+`wireLessons()`; confirmed `switchScreen()` still blanks the non-active screen's host
+(2026-09-01(g)), so the two render sites can never both hold `#il-return-mom` at once.
+`returnMom`/`openMom` grepped across both files — one reader, one writer, each side.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment, the
+standing constraint for every UI pass in this repo. No live click-through of the group/
+occurrence rows, drag-to-reorder against the two-table order (the migration has not been
+run), the archive/selection bar, or the cross-module "← Back to meeting" round trip
+(browser navigation + `openMom` deep link) against real data.
+
+`module.js?v=` → `20260903e` (both modules); minutes-of-meeting's `module.css` is
+unchanged this round. No shared asset touched, no `MODULE_V` bump.
+
 ## 2026-09-03 (c) — Dashboard chart consistency (shared with Issues Dashboard), and the
 ## Responsible/attendee free-text input is retired in favour of the dropdown alone
 

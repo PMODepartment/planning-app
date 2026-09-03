@@ -543,7 +543,13 @@ html.pd-dark .pd-module-card:hover { box-shadow: 0 10px 26px rgba(0,0,0,.5); }
 .pd-toolbar-right { flex: 1 1 auto; min-width: 0; justify-content: flex-end; flex-wrap: wrap; }
 .pd-toolbar-right .pd-input-sm { flex: 0 1 220px; min-width: 0; }
 .pd-proj-count { color: var(--pd-muted); font-size: 13px; white-space: nowrap; }
-.pd-viewtoggle { flex: 0 0 auto; display: inline-flex; border: 1px solid var(--pd-line); border-radius: 8px; overflow: hidden; }
+/* Owner (2026-09-03, minutes-of-meeting feedback round 3): "change view tab
+   group … for all modules across app, align these to the right, not left."
+   Reverses the 2026-09-03 (part 6) "move to the left, leading the row" pass
+   recorded in the root CLAUDE.md — `margin-left:auto` pushes the toggle (and
+   anything sharing its flex row after it) to the row's right edge regardless
+   of where it sits in the markup, so no module's HTML needed reordering. */
+.pd-viewtoggle { flex: 0 0 auto; display: inline-flex; border: 1px solid var(--pd-line); border-radius: 8px; overflow: hidden; margin-left: auto; }
 .pd-vt { border: none; background: var(--pd-card); padding: 6px 12px; cursor: pointer; color: var(--pd-muted); font-size: 14px; }
 .pd-vt.active { background: var(--pd-red); color: #fff; }
 

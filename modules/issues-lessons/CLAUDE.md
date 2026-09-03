@@ -1,5 +1,51 @@
 # Module: issues-lessons
 
+## 2026-09-03 (d) — "← Back to meeting": a cross-module return link into Minutes of Meeting
+
+Minutes of Meeting's round-3 feedback (item 6, Individual View): *"when adding lessons
+learned, going back should bring back to the meeting."* Full reasoning and the paired
+change on the other side live in `modules/minutes-of-meeting/CLAUDE.md`; this entry
+records this module's own half.
+
+⚠️ **A navigation hint, never a data link.** The 2026-09-02(b) decision (item 8) that
+"+ Capture lesson"/"N lessons" from a meeting carry no `mom_id`/`mom_item_id` is
+untouched — that lesson is still filed exactly like any other, no linking. What was
+missing was a way BACK: the sibling module's own "← Back to Issues"/"← Back to Lessons"
+links only navigate within this module, with no affordance pointing at wherever the
+visit started.
+
+- New `_returnMom`, set once at `init()` from an optional `returnMom=<id>` query param
+  (read alongside the existing `newLesson`/`openLesson`/`momId` deep-link handling), kept
+  for the rest of the visit rather than cleared after one use.
+- New `momReturnLinkHTML()`/`goBackToMeeting()`: a small additive **"← Back to meeting"**
+  button, rendered beside the existing back-link on both `renderIssueDetailView()` (covers
+  the "+ Capture lesson" draft, which is really an Issues-shaped detail view via
+  `newLessonAsClosedIssue()`) and `renderLessonDetailView()` (covers "+ View lesson", via
+  `openLesson()`). Wired in both `wireIssues()` and `wireLessons()`.
+- ⚠️ **Colour is `--pd-danger-text`, not plain `--pd-red`.** At 13px/600 (this button
+  matches `.il-backlink`'s own size/weight exactly) this app has repeatedly measured
+  brand red under AA contrast — `--pd-danger-text` is the already-verified paired token
+  for exactly this case.
+- Clicking it navigates to `../minutes-of-meeting/index.html?openMom=<id>` — a plain,
+  deterministic query-string deep link (not a reliance on the browser's Back button or
+  bfcache), read by that module's `init()` once its own `load()` resolves.
+
+### Verified
+
+`node --check` clean. CSS brace balance 290/290 (287/287 before this session's
+accumulated round-3 work). Grepped `il-return-mom`/`_returnMom`/`momReturnLinkHTML`/
+`goBackToMeeting` — declared once, rendered in exactly two branches, wired in both
+`wireIssues()`/`wireLessons()`. Confirmed `switchScreen()` still blanks the inactive
+screen's host (2026-09-01(g)), so `#il-issues-view` and `#il-lessons-view` can never both
+carry `#il-return-mom` at once.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment, the
+standing constraint for every UI pass in this module. No live click-through of the
+cross-module round trip (arriving via `returnMom`, clicking through, landing back on the
+right meeting) against real data.
+
+`module.css/js?v=` → `20260903e`. No shared asset touched, no `MODULE_V` bump.
+
 ## 2026-09-03 (c) — Issues Dashboard chart consistency (shared with the Minutes of Meeting dashboard), and Champion's free-text input is retired in favour of the dropdown alone
 
 Owner's list included two items naming **both** dashboards (this module's Issues Dashboard and

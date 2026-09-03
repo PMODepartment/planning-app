@@ -612,6 +612,16 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
 }
 .il-backlink:hover { color: var(--pd-ink); }
 
+/* MoM Individual View item 6 (round 3): the second, contextual "back" link
+   (returning to a Minutes of Meeting record) needs to read as distinct from
+   the ordinary "← Back to Issues/Lessons" it sits beside — `--pd-danger-text`
+   is the app's own paired-per-theme accent for brand red used AS TEXT at this
+   exact 13px/600 weight (this repo has repeatedly measured plain --pd-red as
+   under AA contrast at small sizes; this token is already the fix for that). */
+.il-backlink-mom { color: var(--pd-danger-text); }
+.il-backlink-mom:hover { color: var(--pd-red-dark); }
+.il-detail-nav .il-backlink-mom { margin-bottom: 0; }
+
 /* ITEM #5: step through the filtered list from inside the detail view. */
 .il-detail-nav {
   display: flex; align-items: center; justify-content: space-between;
