@@ -274,18 +274,14 @@
    column in the Lessons Learned table (`.il-cell-wrap`, shared with Issue /
    Caused by / Corrective action below), not a sub-line under Lesson Learned. */
 
-/* ITEM 5 (this round): the "Related lessons" section on an issue's own page —
-   a plain numbered list of lesson text, nothing else (no department chip, date,
-   or action buttons). Each item IS the click target — a borderless full-width
-   button reading as a link, styled to look like ordinary body text until hovered
-   so the list reads as prose, not a row of controls. */
-.il-related-lessons { margin: 8px 0 0; padding-left: 22px; }
-.il-related-lessons li { margin: 0 0 6px; }
-.il-related-lesson-item {
-  display: inline; text-align: left; background: none; border: 0; padding: 0;
-  font: inherit; font-size: 13px; line-height: 1.5; color: var(--pd-ink); cursor: pointer;
-}
-.il-related-lesson-item:hover { color: var(--pd-red); text-decoration: underline; }
+/* ⚠️ `.il-related-lessons`/`.il-related-lesson-item` (the numbered-list version
+   of this section) are REMOVED — the section is a real table now (Lesson
+   Learned / Department / Date Closed, see issDetailHTML), reusing
+   `.il-dash-list`/`.il-dash-lesson-list` VERBATIM (see the wider comment on
+   that class below) rather than a third set of table rules for the same
+   3-column shape. The heading itself reads "Lessons Learned" on an issue's
+   own page and "Related Lessons" when this same markup is embedded on a
+   LESSON's page instead — see the excludeId comment in issDetailHTML. */
 
 /* ---- Empty states -------------------------------------------------------- */
 .il-empty { padding: 40px 24px; text-align: center; color: var(--pd-muted); }
@@ -643,8 +639,17 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
 }
 .il-workflow-acts { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
 
-/* ---- Per-issue History (item #11) — an append-only, read-only list -------- */
-.il-history { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+/* ---- Per-issue History (item #11) — an append-only, read-only list --------
+   ⚠️ THIS ROUND: a wrapping GRID, not one full-width column. Each entry is
+   narrower now ("reduced width") and the next ones flow to the side, only
+   wrapping to a new row once the current one is full ("add to the side and
+   down") — the same auto-fill/minmax shape the Kanban board columns already
+   use elsewhere in this file. `align-items:start` so a short entry never
+   stretches to match a taller one sharing its row — history entries carry
+   wildly different amounts of diff text and forcing them to equal height
+   would leave visible empty space in the shorter ones. */
+.il-history { list-style: none; margin: 0; padding: 0; display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; align-items: start; }
 .il-history-i { padding: 8px 10px; border-radius: 8px; background: var(--pd-bg); border: 1px solid var(--pd-line); }
 .il-history-top { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .il-history-action { font-weight: 700; font-size: 12.5px; color: var(--pd-ink); }
@@ -679,22 +684,38 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
 .il-dash-card { padding: 14px 16px; display: flex; flex-direction: column; }
 .il-dash-card h4 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); }
 /* ---- Items 1/2 (2026-09-01 round): the three chart tiles share ONE fixed
-   content height instead of each drifting to whatever its own chart needs,
-   and each tile's own legend moves into ITS OWN HEADER, top right, as a
-   compact swatch+label row — replacing the donut's side column and the two
-   bar tiles' below-chart legend row. This is what makes the three read as a
-   real row. */
+   content height instead of each drifting to whatever its own chart needs.
+   ⚠️ ITEM 6 (this round): that shared height is REDUCED (340px -> 260px) to
+   cut the whitespace the owner's screenshot showed around a small donut — it
+   stays the ONE value every `.il-dash-cardbody` uses, so all three tiles stay
+   equal simply by construction, not by three separately-tuned numbers. */
 .il-dash-cardhead { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin: 0 0 10px; }
+/* ITEM 2 (this round): "Issues by Department"/"Issues by Champion"'s own
+   title+legend row moves BELOW the chart body instead of above it — same
+   `.il-dash-cardhead` flex row, just the opposite margin so it reads as a
+   footer instead of a header. The Status tile's head stays on top (it was
+   never asked to move); its own bottom row is the NEW legend (item 1),
+   `.il-dash-legend-bottom` below, a sibling of this class, not this class. */
+.il-dash-cardhead-bottom { margin: 10px 0 0; }
 .il-dash-legend-top { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px 10px; max-width: 60%; }
 .il-dash-legend-top .il-dash-legend-i { font-size: 11px; white-space: nowrap; }
-.il-dash-cardbody { height: 340px; }
+/* ITEM 1 (this round): a legend row under the Status donut, distinct from
+   the per-slice labels the ring itself already carries (donutChartSVG) — the
+   owner asked for both. Centred, unlike the bar tiles' right-aligned header
+   legend, since it sits alone under a centred chart rather than beside a title. */
+.il-dash-legend-bottom { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 14px; margin-top: 10px; }
+.il-dash-cardbody { height: 260px; }
 .il-dash-cardbody-center { display: flex; align-items: center; justify-content: center; }
 /* ITEM 5 (2026-09-01, mobile round): the donut's own viewBox now carries room
    for its per-section labels (see donutChartSVG), so it's rendered at
    `width="100%"` like every other chart in this file — this caps how large
    it's allowed to scale, so a wide single-column card (mobile) doesn't blow
-   the donut+labels up to an oversized graphic just because the tile is wide. */
-.il-donut-svg { max-width: 260px; }
+   the donut+labels up to an oversized graphic just because the tile is wide.
+   ITEM 1 (this round): raised 260px -> 320px alongside donutChartSVG's own
+   larger `size` — "maximise to tile" needs both the ring AND its display cap
+   to grow together, or the bigger ring would just get scaled back down to
+   the old 260px ceiling. */
+.il-donut-svg { max-width: 320px; }
 /* ---- Item 5: the horizontal "N open of N issues" bar charts (department /
    champion) — rows are never capped (see hbarSVG in module.js), so a tile with
    many departments/champions scrolls internally within its fixed-height body
@@ -720,14 +741,31 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
 .il-dash-list th:nth-child(3), .il-dash-list td:nth-child(3) { width: 17%; }
 .il-dash-list th:nth-child(4), .il-dash-list td:nth-child(4) { width: 13%; }
 .il-dash-list th:nth-child(5), .il-dash-list td:nth-child(5) { width: 11%; }
-/* ITEM 8: the Lessons Learned tile's table has its own 3-column shape (Lesson /
-   Department / Captured) — combined-class selectors so these definitively
-   outrank the 5-column widths above regardless of source order. */
+/* `.il-dash-lesson-list` is a 3-column shape (Lesson Learned / Department /
+   Date Closed) — combined-class selectors so these definitively outrank the
+   5-column widths above regardless of source order. ⚠️ This class no longer
+   belongs to the dashboard's Lessons Learned TILE (that gained an Issue
+   column this round and moved to `.il-dash-lessontile-list`, below, so a
+   4-column table couldn't fight this rule for the SAME class name — see the
+   module.js comment above lessonsTileHTML()). It is now the issue detail's
+   own "Lessons Learned" / "Related Lessons" table (see issDetailHTML) — no
+   Issue column there on purpose, since a lesson shown on its OWN issue's
+   page has nothing useful to say about which issue it came from. */
 .il-dash-list.il-dash-lesson-list th:nth-child(1), .il-dash-list.il-dash-lesson-list td:nth-child(1) { width: 60%; }
 .il-dash-list.il-dash-lesson-list th:nth-child(2), .il-dash-list.il-dash-lesson-list td:nth-child(2) { width: 22%; }
 .il-dash-list.il-dash-lesson-list th:nth-child(3), .il-dash-list.il-dash-lesson-list td:nth-child(3) { width: 18%; }
 .il-dash-list.il-dash-lesson-list tr[data-open-lesson] { cursor: pointer; }
 .il-dash-list.il-dash-lesson-list tr[data-open-lesson]:hover td { background: var(--pd-bg); }
+/* The dashboard's own Lessons Learned tile (item 8, this round): 4 columns —
+   Lesson / Issue / Department / Captured — since the tile has to say WHICH
+   issue produced each lesson (it isn't sitting on that issue's own page).
+   Lesson keeps the lion's share; Issue is second-widest for the same reason. */
+.il-dash-list.il-dash-lessontile-list th:nth-child(1), .il-dash-list.il-dash-lessontile-list td:nth-child(1) { width: 36%; }
+.il-dash-list.il-dash-lessontile-list th:nth-child(2), .il-dash-list.il-dash-lessontile-list td:nth-child(2) { width: 30%; }
+.il-dash-list.il-dash-lessontile-list th:nth-child(3), .il-dash-list.il-dash-lessontile-list td:nth-child(3) { width: 19%; }
+.il-dash-list.il-dash-lessontile-list th:nth-child(4), .il-dash-list.il-dash-lessontile-list td:nth-child(4) { width: 15%; }
+.il-dash-list.il-dash-lessontile-list tr[data-open-lesson] { cursor: pointer; }
+.il-dash-list.il-dash-lessontile-list tr[data-open-lesson]:hover td { background: var(--pd-bg); }
 
 /* ITEM 3: the 2-up / 1-up breakpoints stay equal columns — the ask was
    specifically "if in wide screen"; there's no room left at these widths for a
