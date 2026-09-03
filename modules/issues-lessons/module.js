@@ -1884,6 +1884,14 @@ window.IssuesLessons = (function () {
     _issPrevMode = (_issMode === 'detail') ? _issPrevMode : _issMode;
     _issMode = 'detail'; _issSel = id; _issNew = null;
     _issHoldOpen = false; _issCloseOpen = false; _issReopenOpen = false;
+    // ITEM 3 (2026-09-03, lesson-view round): an explicit "open THIS issue"
+    // always wins over whatever state renderLessonDetailView had stashed to
+    // restore later. Without clearing it here, switchScreen('issues') below
+    // immediately overwrote _issSel/_issMode with the state the Issues screen
+    // held BEFORE a lesson's Background embed borrowed it — so clicking
+    // "View issue" from a lesson's own page silently landed back on the
+    // Issues log instead of the issue that was just clicked.
+    _issEmbedSaved = null;
     loadIssueHistory(id);
     if (screen !== 'issues') switchScreen('issues');
     else { syncChrome(); renderIssues(); }
@@ -1996,6 +2004,13 @@ window.IssuesLessons = (function () {
     var isNew = !r.id;
     var mayEdit = (opts && opts.readOnly) ? false : (isNew ? canAdd : canEditRow(r));
     var ro = !mayEdit, d = ro ? ' disabled' : '';
+    // ITEM 2 (2026-09-03, lesson-view round): true only for the Background embed
+    // (a lesson's own page showing the issue it came from) — `opts.readOnly` is
+    // the flag that means exactly that. Kept apart from the general `ro`/mayEdit
+    // test, which also covers ordinary permission-based read-only views (a
+    // viewer, or another department's issue on the real Issues screen) that
+    // this round does not touch.
+    var bg = !!(opts && opts.readOnly);
     var a = agingDays(r);
     var excludeId = opts && opts.excludeLessonId;
     var ls = isNew ? [] : lessonsOfIssue(r.id).filter(function (l) { return l.id !== excludeId; });
@@ -2031,11 +2046,25 @@ window.IssuesLessons = (function () {
         list.map(function (o) { return '<option' + (val === o ? ' selected' : '') + '>' + Fmt.esc(o) + '</option>'; }).join('');
     }
 
+    // ITEM 2 (2026-09-03, lesson-view round): within the Background embed
+    // specifically (`bg`), the Issue / Caused By / narrative fields keep the
+    // SAME boxed textarea chrome they'd have if editable — just disabled —
+    // instead of collapsing to bare, unboxed text the way every other
+    // read-only field on this page does via `ilField`'s report mode. Owner's
+    // ask was to keep "a box" for a consistent look while making it plainly
+    // not editable. Scoped to `bg`, not the general `ro`, so an ordinary
+    // read-only view of an issue elsewhere (a viewer, or another
+    // department's row on the real Issues screen) is unchanged.
+    function ilFieldOrBox(label, cls, control, raw) {
+      if (bg) return '<div class="il-mi-f ' + cls + '"><label>' + label + '</label>' + control + '</div>';
+      return ilField(ro, label, cls, control, raw);
+    }
+
     // ---- item #12/#13: the ONE narrative field swaps with the issue's status --
     var narrativeField;
     if (status === 'Closed') {
       // ITEM 6: "Closure Report" -> "How It Was Resolved" while forceClose.
-      narrativeField = ilField(ro, (forceClose ? 'How It Was Resolved' : 'Closure Report') + reqMark(!ro), 'il-c-action',
+      narrativeField = ilFieldOrBox((forceClose ? 'How It Was Resolved' : 'Closure Report') + reqMark(!ro), 'il-c-action',
         '<textarea class="pd-textarea il-if" data-f="closure_report" rows="4" spellcheck="true" ' +
           'placeholder="' + (forceClose ? 'How was this resolved?' : 'How was this issue resolved?') + '"' + d + (ro ? '' : ' required') + '>' +
           Fmt.esc(r.closure_report) + '</textarea>', r.closure_report) +
@@ -2048,12 +2077,12 @@ window.IssuesLessons = (function () {
           // Department, which the issue already carries and this form already collects.
           : '');
     } else if (status === 'On Hold') {
-      narrativeField = ilField(ro, 'Reason for Hold' + reqMark(!ro), 'il-c-action',
+      narrativeField = ilFieldOrBox('Reason for Hold' + reqMark(!ro), 'il-c-action',
         '<textarea class="pd-textarea il-if" data-f="hold_reason" rows="4" spellcheck="true" ' +
           'placeholder="Why is this issue on hold?"' + d + (ro ? '' : ' required') + '>' +
           Fmt.esc(r.hold_reason) + '</textarea>', r.hold_reason);
     } else {
-      narrativeField = ilField(ro, 'Corrective Action' + reqMark(!ro), 'il-c-action',
+      narrativeField = ilFieldOrBox('Corrective Action' + reqMark(!ro), 'il-c-action',
         '<textarea class="pd-textarea il-if" data-f="corrective_action" rows="4" spellcheck="true" ' +
           'placeholder="Actions taken / planned…"' + d + (ro ? '' : ' required') + '>' +
           Fmt.esc(r.corrective_action) + '</textarea>', r.corrective_action);
@@ -2194,11 +2223,11 @@ window.IssuesLessons = (function () {
         '<div class="il-iss-body">' +
           // ITEM 6: "Issue" -> "What Happened", "Caused By" -> "Root Cause"
           // while capturing a standalone lesson.
-          ilField(ro, (forceClose ? 'What Happened' : 'Issue') + reqMark(!ro), 'il-c-issue',
+          ilFieldOrBox((forceClose ? 'What Happened' : 'Issue') + reqMark(!ro), 'il-c-issue',
             '<textarea class="pd-textarea il-if" data-f="description" rows="4" spellcheck="true" ' +
               'placeholder="' + (forceClose ? 'What happened?' : 'Describe the issue or concern…') + '"' + d + (ro ? '' : ' required') + '>' + Fmt.esc(r.description) + '</textarea>',
             r.description) +
-          ilField(ro, (forceClose ? 'Root Cause' : 'Caused By') + reqMark(!ro), 'il-c-cause',
+          ilFieldOrBox((forceClose ? 'Root Cause' : 'Caused By') + reqMark(!ro), 'il-c-cause',
             '<textarea class="pd-textarea il-if" data-f="caused_by" rows="3" spellcheck="true" ' +
               'placeholder="Root cause…"' + d + (ro ? '' : ' required') + '>' + Fmt.esc(r.caused_by) + '</textarea>', r.caused_by) +
           narrativeField +
@@ -2230,9 +2259,9 @@ window.IssuesLessons = (function () {
       // OWN page (the normal case, excludeId unset) it is simply the
       // lessons THIS issue produced, so it reads "Lessons Learned" — the
       // ask was specifically to rename it there and nowhere else.
-      // ITEM 2: a real table (Lesson Learned / Department / Date Closed)
-      // replacing the plain numbered list, so the department and closure
-      // date are visible without opening each lesson — reuses
+      // ITEM 2: a real table (Lesson Learned / Department / Date Logged)
+      // replacing the plain numbered list, so the department and the date
+      // are visible without opening each lesson — reuses
       // `.il-dash-list il-dash-lesson-list` VERBATIM (see module.css) rather
       // than a third table-styling rule for the same 3-column shape.
       // Lesson text is NOT truncated — `.il-dash-list td` already wraps
@@ -2241,17 +2270,25 @@ window.IssuesLessons = (function () {
       // lesson out; only the heading and the markup change here. Each row
       // reuses the SAME `data-open-lesson` wiring `wireIssues()` already
       // applies to any such element, so opening one needs no new wiring.
+      // ITEM 1 (2026-09-03, lesson-view round): "Date Closed" -> "Date
+      // Logged", and the VALUE moved from `lessonResolvedDate(l)` to
+      // `l.date_captured` to match. Every lesson in `ls` is produced by the
+      // SAME issue, so `lessonResolvedDate` — the issue's own resolution
+      // date — was identical on every row of this table, repeating one fact
+      // about the issue rather than saying anything about each lesson.
+      // `date_captured` is per-lesson and is the same field the dashboard's
+      // own Lessons Learned tile already labels "Captured" (lessonsTileHTML),
+      // so the two can't disagree about what "when" means for a lesson.
       (forceClose ? '' :
       '<div class="il-mom-actions il-iss-lessons"><h4>' + (excludeId ? 'Related Lessons' : 'Lessons Learned') + '</h4>' +
         (ls.length
           ? '<div class="pd-tablewrap"><table class="il-dash-list il-dash-lesson-list"><thead><tr>' +
-              '<th>Lesson Learned</th><th>Department</th><th>Date Closed</th></tr></thead><tbody>' +
+              '<th>Lesson Learned</th><th>Department</th><th>Date Logged</th></tr></thead><tbody>' +
               ls.map(function (l) {
-                var closed = lessonResolvedDate(l);
                 return '<tr data-open-lesson="' + Fmt.esc(l.id) + '">' +
                   '<td>' + Fmt.esc(l.lesson || '(no lesson text)') + '</td>' +
                   '<td>' + Fmt.esc(l.department || '—') + '</td>' +
-                  '<td>' + (closed ? Fmt.date(closed) : '—') + '</td>' +
+                  '<td>' + (l.date_captured ? Fmt.date(l.date_captured) : '—') + '</td>' +
                 '</tr>';
               }).join('') + '</tbody></table></div>'
           : '<div class="il-empty" style="padding:12px;">No lesson captured from this issue yet.</div>') +
@@ -3172,7 +3209,7 @@ window.IssuesLessons = (function () {
         '<td class="il-dragcell">' + (canDrag ? dragGripHTML(l.id) + moveButtonsHTML(l.id, i === 0, i === list.length - 1) : '') + '</td>' +
         '<td class="il-ls-dept" data-l="Department">' + Fmt.esc(l.department || '—') + '</td>' +
         '<td class="il-cell-wrap" data-l="Lesson Learned"><div class="il-clip">' + Fmt.esc(l.lesson) + '</div></td>' +
-        '<td class="il-cell-wrap" data-l="Issue"><div class="il-clip">' + Fmt.esc(lessonSourceText(l)) + '</div></td>' +
+        '<td class="il-cell-wrap" data-l="Issue"><div class="il-clip">' + Fmt.esc(lessonIssueCellText(l)) + '</div></td>' +
         '<td class="il-ls-date" data-l="Date resolved">' + (resolved ? Fmt.date(resolved) : '—') + '</td>' +
       '</tr>';
     }).join('');
@@ -3249,7 +3286,7 @@ window.IssuesLessons = (function () {
         ? '<div class="il-less-issuewrap"><div class="il-dash-sec-head il-less-bg-head">' +
             '<span>Background</span>' +
             '<button class="pd-btn pd-btn-sm" id="il-less-openissue" data-open-issue="' +
-              Fmt.esc(issueRow.id) + '">Open issue in Issues &amp; Concerns →</button>' +
+              Fmt.esc(issueRow.id) + '">View issue →</button>' +
           '</div>' +
             issDetailHTML(issueRow, { excludeLessonId: cur.id, hideToolbarState: true, readOnly: true }) +
           '</div>'
@@ -3272,6 +3309,21 @@ window.IssuesLessons = (function () {
       return 'From a meeting' + (m && m.title ? ': ' + m.title : '');
     }
     return 'Captured on its own';
+  }
+
+  // ITEM 1 (2026-09-03, list round): the Lessons Learned list's own "Issue"
+  // column already carries that word in its header — repeating it inside
+  // every cell (lessonSourceText's "Issue: <text>" form) was redundant, so
+  // this column shows the linked issue's text directly instead. The
+  // meeting-linked and standalone phrasings ("From a meeting: …" /
+  // "Captured on its own") aren't an "Issue:" prefix to begin with, so they
+  // still read correctly and pass through `lessonSourceText()` unchanged.
+  function lessonIssueCellText(l) {
+    if (l && l.issue_id) {
+      var r = rows.find(function (x) { return x.id === l.issue_id; });
+      return r && r.description ? clip(r.description, 60) : '(no issue text)';
+    }
+    return lessonSourceText(l);
   }
 
   // ⚠️ `lessonCardHTML` (the card/tile renderer this used) is REMOVED this round —

@@ -1,5 +1,92 @@
 # Module: issues-lessons
 
+## 2026-09-03 (b) — Lessons list Issue column trimmed, "Date Closed" -> "Date Logged", a boxed read-only Background, and a real navigation bug in "View issue"
+
+Owner's list:
+
+**Lessons Learned list**
+1. "in issues column, remove Issue: . display the issue directly"
+
+**Lessons Learned individual view**
+1. "date closed should be date logged"
+2. "for the background showing issue, caused by, and corrective action. still place the text in a
+   box but no longer editable to maintain consistent look."
+3. "when clicking View issue (formerly Open issue in Issues & Concerns), open the issue individual
+   view. not the issue list"
+
+### Item 1 (list) — the Issue column stops repeating its own header
+
+The Lessons Learned list's "Issue" column (`renderLessonsLogView`) rendered `lessonSourceText(l)`,
+which for an issue-linked lesson returns `'Issue' + (': ' + description)` — the word "Issue" printed
+a second time inside a column already headed "Issue". New `lessonIssueCellText(l)`: for an
+issue-linked lesson it shows the issue's `description` directly (falling back to "(no issue text)"
+rather than a bare "Issue" with nothing after it); a meeting-linked or standalone lesson is
+unaffected, since "From a meeting: …" / "Captured on its own" were never an "Issue:" prefix to begin
+with. ⚠️ **Scoped to this one column, not `lessonSourceText()` itself** — that shared helper is
+still used verbatim by the toolbar state line, the Kanban card meta, the dashboard's own Lessons
+Learned tile, search, and the Excel export, none of which the owner's report named.
+
+### Item 1 (individual view) — "Date Closed" -> "Date Logged", and the value follows the rename
+
+The embedded issue's own Lessons-Learned/Related-Lessons table (`issDetailHTML`, shared by an
+issue's own page and a lesson's Background section) had a "Date Closed" column reading
+`lessonResolvedDate(l)` — the linked ISSUE's resolution date. ⚠️ **Every row in that table shares
+the same issue** (it lists the lessons produced by ONE issue, minus the one already on screen), so
+`lessonResolvedDate` printed the identical date on every row — one fact about the issue, repeated,
+not a fact about each lesson. Renamed to "Date Logged" and switched to `l.date_captured` — per-lesson,
+and the same field the dashboard's own Lessons Learned tile already labels "Captured"
+(`lessonsTileHTML`), so the two can't disagree about what "when" means for a lesson.
+
+### Item 2 — the Background section keeps its box, just disabled
+
+`ilField(report, …)`'s read-only branch (`report` truthy) collapses a field to bare, unboxed text
+(`.il-mi-val` — no border, no background) rather than the control markup — the general behaviour for
+every read-only field on this page (Days Aging, a viewer's view of someone else's issue, …). For the
+Background embed specifically that read as an inconsistent, unfinished-looking screen next to the
+still-boxed Champion picker beside it, so a new `bg` flag (`!!(opts && opts.readOnly)`, true only for
+the lesson's own Background embed) and a small `ilFieldOrBox()` wrapper keep the SAME `pd-textarea`
+box the editable state uses — with `disabled` still on the control — for Issue / Caused By / the one
+narrative field (Corrective Action / Reason for Hold / Closure Report, whichever the issue's status
+shows). ⚠️ **Scoped to `bg`, not the general `ro`** — an ordinary permission-based read-only view of
+an issue elsewhere (a viewer, or another department's row on the real Issues screen) is unchanged;
+only the Background embed gets the boxed-but-disabled treatment. The existing
+`.il-mom-detail-card :disabled { background: var(--pd-bg); … }` rule already tints a disabled control
+inside this card, so no new CSS was needed — the box just looks the same "editable-but-locked" way
+every other disabled field in this module already does.
+
+### Item 3 — ⚠️⚠️ REAL BUG: "View issue" landed on the Issues log, not the issue
+
+`switchScreen('issues')` restores `_issSel`/`_issMode` from `_issEmbedSaved` whenever the PREVIOUS
+screen was `'lessons'` — a mechanism built (2026-09-01) so leaving the Lessons screen puts the real
+Issues screen back on whatever it had open before a lesson's Background embed borrowed its state.
+`openIssue(id)` sets `_issSel = id; _issMode = 'detail';` and then, since `screen !== 'issues'` while
+viewing a lesson, itself calls `switchScreen('issues')` — which immediately **overwrote** those two
+values with whatever `_issEmbedSaved` held (the Issues screen's state from BEFORE this lesson's embed
+ever ran), silently discarding the id just clicked. The only caller reachable from inside the Lessons
+screen is the Background section's own "View issue" button, so this is exactly the reported symptom:
+clicking it opened the Issues screen but landed on the log (or whatever issue was open there
+previously), never the issue the button named. Fixed by clearing `_issEmbedSaved = null` inside
+`openIssue()` before the screen switch — an explicit "open THIS issue" always wins over a stashed
+restore-later state. The button is also relabelled "Open issue in Issues & Concerns →" -> **"View
+issue →"**, matching the owner's own name for it.
+
+### Verified
+
+`node --check module.js` clean. Confirmed `lessonResolvedDate()` still has live callers elsewhere
+(the list's own Date Resolved column, both lesson KPIs, the Kanban card meta line) — the rename in
+item 1 only touches the one call site inside the Related-Lessons/Lessons-Learned table, not the
+function itself. Confirmed every other `openIssue()` call site (dashboard issue rows, the Issues
+Kanban card, the log row, `stepIssue`) is reached only while `screen === 'issues'` already, or from
+`screen === 'dashboard'` (whose `prevScreen` never matches `'lessons'`), so clearing `_issEmbedSaved`
+inside `openIssue()` cannot affect the ordinary "leave Lessons via its own tab" restore path — that
+still goes through `switchScreen` directly, with `_issEmbedSaved` intact.
+
+⚠️ **Not verified signed-in** — no live login is possible in this environment, the standing
+constraint for every UI pass in this module. No live click-through of the boxed-but-disabled
+Background fields, the renamed list column, or the "View issue" navigation fix against real data.
+
+No shared asset changed and no schema change — module-local `module.js` only.
+
 ## 2026-09-03 — Dashboard chart tiles maximised/aligned, and the issue detail's Lessons Learned becomes a table
 
 Owner's list, off a screenshot of the Issues Dashboard:
