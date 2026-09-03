@@ -734,8 +734,13 @@ window.BIM = (function () {
                 : '<p class="pp-hint">No location selected yet.</p>') + '</div>' +
               '<button type="button" class="pd-btn" id="bim-p-locadd">Pick a location…</button></div>'
           : '<div class="pd-field"><label>Name</label><input class="pd-input" id="bim-p-name" placeholder="e.g. Ground Floor" /></div>') +
-        // Item 11 — image OR PDF.
-        '<div class="pd-field"><label>Floor plan file</label><input type="file" id="bim-p-file" accept="image/*,application/pdf" /></div>' +
+        // ⚠️ Round-2 item 6 (2026-09-02) RETIRES PDF uploads — "for floor
+        // plan, accept only images. no longer pdf". The accept attribute is
+        // the actual gate (a picker limited to image mimetypes); the render
+        // side (isPdfPlan/<embed>, below) is kept ONLY so a plan uploaded
+        // under the earlier image-or-PDF rule still displays — nothing here
+        // can create a new one any more.
+        '<div class="pd-field"><label>Floor plan file</label><input type="file" id="bim-p-file" accept="image/*" /></div>' +
       '</div>' +
       '<div class="pd-modal-footer"><button class="pd-btn" data-close>Cancel</button>' +
         '<button class="pd-btn pd-btn-primary" id="bim-p-save">Upload</button></div>';
@@ -754,13 +759,12 @@ window.BIM = (function () {
       var name = nameEl ? nameEl.value.trim() : (_planLocPicked ? _planLocPicked.label : '');
       if (hasLoc && !_planLocPicked) { UI.toast('Pick a location first', 'warn'); return; }
       if (!name) { UI.toast('Name is required', 'warn'); return; }
-      if (!f) { UI.toast('Choose an image or PDF file', 'warn'); return; }
+      if (!f) { UI.toast('Choose an image file', 'warn'); return; }
       this.disabled = true;
       try {
-        var isPdf = /pdf$/i.test(f.type) || /\.pdf$/i.test(f.name);
-        var dims = isPdf ? { w: null, h: null } : await imageDims(f);
+        var dims = await imageDims(f);
         var path = pid + '/floorplans/' + Date.now() + '_' + Math.random().toString(36).slice(2) + '_' + f.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-        var up = await sb().storage.from(BUCKET).upload(path, f, { contentType: f.type || (isPdf ? 'application/pdf' : 'image/jpeg') });
+        var up = await sb().storage.from(BUCKET).upload(path, f, { contentType: f.type || 'image/jpeg' });
         if (up.error) throw up.error;
         var row = {
           project_id: pid, name: name, level_order: 0,
@@ -789,12 +793,14 @@ window.BIM = (function () {
     };
   }
 
-  // ⚠️ PDFs have no natural pixel size the browser can measure the same way
-  // an <img> can — width/height are left null for a PDF (the render layer
-  // shows it via an <embed>, which sizes to its container regardless), so no
-  // fake dimensions are invented and asserted as fact.
+  // ⚠️ Round-2 item 6 (2026-09-02) retired PDF UPLOADS ("accept only
+  // images, no longer pdf") — both upload paths now always call this for a
+  // real image file, so the PDF short-circuit that used to sit here is
+  // gone. It's kept defensive rather than assumed-impossible: a file
+  // picker's `accept` attribute is advisory (some OS pickers/drag-drop
+  // paths don't enforce it), so a non-decodable file still degrades to
+  // {w:null,h:null} via onerror below rather than throwing.
   function imageDims(file) {
-    if (/pdf$/i.test(file.type) || /\.pdf$/i.test(file.name)) return Promise.resolve({ w: null, h: null });
     return new Promise(function (resolve) {
       var img = new Image();
       var url = URL.createObjectURL(file);
@@ -806,7 +812,9 @@ window.BIM = (function () {
   // Whether a stored floor-plan file is a PDF, purely from its path's
   // extension (uploaded paths always keep the original filename's
   // extension, see the upload path-building above) — used by the renderer to
-  // choose <embed> over <img>.
+  // choose <embed> over <img>. ⚠️ Kept ONLY for a plan uploaded before
+  // Round-2 item 6 retired PDF uploads — nothing in this file can produce a
+  // NEW row this would match any more.
   function isPdfPlan(plan) { return !!(plan && plan.image_url && /\.pdf(\?|$)/i.test(plan.image_url)); }
 
   function openPinPicker(xNorm, yNorm) {
@@ -1120,7 +1128,7 @@ window.BIM = (function () {
         '<p class="pp-hint">No floor plans uploaded yet for this project.</p>' +
         '<div class="pp-inlineplanform" id="' + idPrefix + '-inlineplan">' +
           '<input class="pd-input" id="' + idPrefix + '-inlineplan-name" placeholder="Floor plan name, e.g. Ground Floor" />' +
-          '<input type="file" id="' + idPrefix + '-inlineplan-file" accept="image/*,application/pdf" />' +
+          '<input type="file" id="' + idPrefix + '-inlineplan-file" accept="image/*" />' +
           '<button type="button" class="pd-btn" id="' + idPrefix + '-inlineplan-go">Upload</button>' +
         '</div></div>';
     }
@@ -1165,13 +1173,12 @@ window.BIM = (function () {
         var name = $(idPrefix + '-inlineplan-name').value.trim();
         var f = $(idPrefix + '-inlineplan-file').files && $(idPrefix + '-inlineplan-file').files[0];
         if (!name) { UI.toast('Name the floor plan first', 'warn'); return; }
-        if (!f) { UI.toast('Choose an image or PDF file', 'warn'); return; }
+        if (!f) { UI.toast('Choose an image file', 'warn'); return; }
         this.disabled = true;
         try {
-          var isPdf = /pdf$/i.test(f.type) || /\.pdf$/i.test(f.name);
-          var dims = isPdf ? { w: null, h: null } : await imageDims(f);
+          var dims = await imageDims(f);
           var path = pid + '/floorplans/' + Date.now() + '_' + Math.random().toString(36).slice(2) + '_' + f.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-          var up = await sb().storage.from(BUCKET).upload(path, f, { contentType: f.type || (isPdf ? 'application/pdf' : 'image/jpeg') });
+          var up = await sb().storage.from(BUCKET).upload(path, f, { contentType: f.type || 'image/jpeg' });
           if (up.error) throw up.error;
           var row = { project_id: pid, name: name, level_order: 0, image_url: path, width_px: dims.w, height_px: dims.h, created_by: uid };
           var ires = await sb().from(T_PLAN).insert(row).select();

@@ -2,6 +2,188 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Discontinue 360° panoramas: greyed out (not removed) + a one-time DB purge (2026-09-02)
+
+Owner: *"the 360 photo feature is quite buggy. let's discontinue it for now. disable and grey out
+360. delete all 360 photos from the database as well."* Landed just before the eight-item Round 2
+below, and following this file's own convention for retiring a feature: **shelved, not stripped** —
+the same call already made for 3D/Gaussian-Splat reconstruction (2026-09-01).
+
+- **Both places 360° could be started from are now `disabled` and greyed out**, matching the shape
+  the 3D button already had. The **"+ Add media" dropdown** button in `index.html` drops its
+  `data-addtype="360"` entirely (a disabled button carrying an action attribute would be confusing
+  to read, since nothing dispatches on it any more) and gets `disabled title="360° capture is on
+  hold"` instead; `module.js`'s loop that wires `[data-addtype]` clicks now only ever wires
+  Photo/Video, since 360° no longer has that attribute to match. The **upload modal's own type
+  selector** button (`#…-mtype-360`) gets the identical `disabled title="360° capture is on hold"`
+  treatment.
+- ⚠️ **The click handler that hands off to `pano.js`'s real capture flow is deliberately left wired,
+  not deleted** — a disabled button can't fire a click, so it's simply unreachable while `disabled`
+  stays on the element. Re-enabling 360° later is therefore a one-line change (drop `disabled`,
+  restore `data-addtype="360"`), not a rebuild — the whole capture/stitch pipeline in `pano.js` is
+  untouched and still fully wired underneath the disabled button.
+- ⚠️ **Reverses a narrower, more recent decision, not an old one.** An earlier round (2026-08-29
+  feedback item 17) had specifically *re-enabled* 360° as a live fourth option alongside Photo/
+  Video/3D, with only 3D staying disabled. This entry reverses exactly that — both stay disabled
+  now, and the module.js/test.js comments explaining the earlier re-enable were updated in place to
+  say so, rather than left describing a state that's no longer true.
+- **New migration `migrations/2026-09-02-discontinue-360-panoramas.sql`** — a destructive, one-time
+  cleanup of every existing panorama capture, run by the owner in the Supabase SQL editor (this repo
+  has no live DB credentials, so it can only ever ship as a migration someone runs, never something
+  executed from here). Deletes in dependency order so nothing is ever left dangling for even one
+  statement: **`floor_plan_pins`** rows pointing at a panorama first (a pin surviving its target's
+  deletion would be an orphan the app has to degrade around forever), then the stitched JPEGs
+  themselves from **`storage.objects`** (matched off each row's own `pano_url` column, so this can
+  never drift from wherever `pano.js` actually uploads to), then the **`panoramas`** rows last, once
+  nothing points at them and their files are gone. Idempotent — re-running it against an
+  already-empty table is a no-op.
+- ⚠️ **The `panoramas` table and every `item_type = 'panorama'` code branch stay in the schema and
+  in `bim.js`/`module.js`, untouched** — this migration clears data, it does not retire the feature
+  at the schema level. The app already degrades correctly with zero panorama rows (the Gallery
+  media strip and floor-plan pins render nothing when a project has none), so the UI-side change
+  above does not depend on this migration having been run.
+
+### Verified
+Covered by the same full-suite run as the Round 2 entry below (they landed in the same commit):
+`node --check` clean, the type-selector/dropdown assertions in `test.js` were updated in place
+(not silently deleted) to assert both buttons ARE disabled now, reversing the pre-existing
+assertions that had checked 360° was live. ⚠️ **The migration itself is unverified and cannot be
+run from here** — no live Supabase credentials exist in this environment; the owner runs it
+directly in the SQL editor.
+
+No `?v=` bump needed beyond what Round 2 already carries below — `module.js`/`index.html` landed
+in the same commit as that round's own version bump.
+
+## Owner feedback round 2: white-on-red markup icon, magnifier over zoom, per-pane key-plan toggles, image-only floor plans, Stack view removed, forced markup in List/Plan (2026-09-02)
+
+Owner's eight-item list off the Presentations screen + the shared floor-plan/lightbox chrome.
+Items 1–6 and 8 landed first in this same session; item 7 (Stack view) is the one this entry
+closes out, and is documented last because it's the one with the most moving parts.
+
+1. **The Presentation-pane "show markup" icon was black over its own red fill.** `.pp-iconbtn
+   .is-active` already gave the button a solid `var(--pd-red)` background — the icon inside it
+   was reading a stale/inherited `color` instead of the button's own white, the same root cause
+   as the pre-existing `.pp-del:hover` fix a few lines above it in `module.css`: the SVG's own
+   `stroke="currentColor"` needs the icon targeted **explicitly** (`.pp-iconbtn.is-active .pd-ico,
+   .pp-iconbtn.is-active [data-ico] { color: #fff; }`), or it can be left inheriting a value from
+   further up the tree. Applies to every `.pp-iconbtn.is-active` icon in the module, not just this
+   one button.
+2. **Zoom buttons removed from the presentation-pane image previews** — zoom now belongs only to
+   the full image pop-up (item 3). `applyPaneZoom` (ppr.js) and its two `#ppr-...zoomout/zoomin`
+   buttons are gone from `pane()`'s corner-tool cluster; the panes render at their natural size
+   with no zoom affordance of their own.
+3. **The image pop-up's zoom buttons became a magnifier.** `applyLightboxZoom`/`lightboxZoom`
+   (module.js) are retired; a small lens (`#pp-lb-magnifier`, `.pp-lb-magnifier` in module.css)
+   now follows the pointer over the lightbox image, showing a zoomed crop under the cursor rather
+   than scaling the whole image. `magnifierGeom(cursorX, cursorY, imgRect, wrapRect, size, zoom)`
+   is a small, pure, exported function (`PP._magnifierGeom`) computing the lens's own position and
+   the background-image offset needed to show the correct crop under it — pulled out specifically
+   so a wrong sign/offset here (which would silently show the wrong part of the photo under the
+   lens) could be genuinely executed and checked, not just read as source. `hideLightboxMagnifier`
+   hides the lens on mouseleave and whenever the lightbox itself closes or steps to a different
+   photo, so it can never be left floating over the wrong image.
+4. **The image pop-up's key plan now really shows** — position, the pin, and the direction cone
+   when recorded — sized to 1/8 of the photo, top-right, and resizable by dragging its bottom-left
+   corner. `kpResizeFrac`/`wireLightboxKpResizeDrag` compute and apply the new size purely from the
+   drag delta against the overlay's starting fraction-of-photo size, clamped to a sane min/max —
+   the same "pull the pure math out so it can be genuinely executed" reasoning as `magnifierGeom`.
+   The toggle button sits immediately to the left of the show-markup button, per the owner's own
+   placement.
+5. **Presentation panes: the key-plan toggle moved from ONE shared header control back to a toggle
+   per pane, "opposite the previous/current label."** This is a deliberate reversal of an earlier
+   round's consolidation (`showKeyPlan`, a single flag driving both panes at once) — the owner
+   asked for that consolidation to be undone specifically for the pane view, while the lightbox's
+   own single-photo overlay (item 4) stays as it was. `keyPlanOpenPane = {before:false, after:false}`
+   replaces the shared flag; each pane's own small icon button (`data-kptoggle="before"/"after"`,
+   `.ppr-panetop` wraps it beside the Previous/Current label) toggles only that pane's popup, and —
+   the rule this file's own convention insists on for every such control — the button is rendered
+   **only when that specific photo actually has a key plan at all** (`kpHasPlan`), never a
+   speculative, usually-inert toggle. `openPpr()` resets both panes' state to closed whenever a
+   presentation is opened, so a stale open popup can never carry over from a previous slide.
+6. **Floor plan upload now accepts images only — no more PDF.** `accept="image/*,application/pdf"`
+   → `accept="image/*"` on both floor-plan upload entry points (the main modal, and the inline
+   mini-form embedded in the Add/Edit Photo form). Both save handlers dropped their `isPdf`
+   detection entirely — `imageDims()` always measures a real image via `<img>.onload` now, with no
+   PDF short-circuit — and the file-choice guard's toast reads "Choose an image file" (was "...or
+   PDF file"). ⚠️ **`isPdfPlan()`/the `<embed type="application/pdf">` render path are deliberately
+   KEPT, not removed** — solely so a floor plan uploaded *before* this change (when PDF was still
+   accepted) still displays correctly; nothing in this file can produce a **new** PDF-backed plan
+   any more, and the function's own comment says so.
+7. **Stack view is removed entirely** ("remove stack view for the photos") — not retired-in-place,
+   deleted outright, the same treatment this module already gave the Today's Rounds feature. This
+   was the last item finished and is detailed in its own section below.
+8. **List and Plan views no longer show a hide/show-markup toggle — markup is on by default there.**
+   `markupGlobalVisible()`'s consumer at the per-tile render site now reads `(view === 'list' ||
+   markupGlobalVisible())` — List always draws a photo's markup when it has any, ignoring the
+   shared toggle; and the toggle button itself (`#pp-mkvistoggle`) is hidden entirely
+   (`b.hidden = true; return;`) whenever `view === 'list' || view === 'plan'`, since there is
+   nothing left for it to control on those two screens. Gallery and the lightbox keep the toggle
+   and the shared preference exactly as before.
+
+### Item 7, in full — Stack view deleted from every file
+
+⚠️ **A whole feature, deleted rather than retired-in-place**, per the owner's own wording ("remove")
+— the same standard this module already applied to Today's Rounds. Removed completely from all four
+touched files:
+
+- **`index.html`** — the `.pd-vt[data-view="stack"]` view-toggle button (the layers icon) is gone
+  from the Gallery view-switch row; only List/Gallery/Plan remain.
+- **`module.js`** — the whole implementation: `stackLevels`, `stackRowLevel`, `stackColLevel`,
+  `stackMonthsAvailable`, `mostRecentAsOf(list, cutoff)`, `stackRowSort(names)`, `stackGrid(cutoff)`,
+  `STACK_COMBINE_MAX`, `renderStackView()`, `stopStackPlay()`, `wireStackView()` — 11 functions in
+  all, plus their state (`stackRowLevelId`, `stackColLevelId`, `stackStepMode`, `stackMonth`,
+  `stackPlaying`, `stackPlayTimer`), the `id="pp-stack-*"` toolbar/table/magnifier markup those
+  functions rendered, the `view === 'stack'` dispatch branch in `render()`/`restoreUI()`'s
+  whitelist, and the `_stackGrid`/`_stackRowSort`/`_mostRecentAsOf` test-only hooks that existed
+  purely to exercise them.
+- **`module.css`** — the entire `.pp-stack*` rule block (levels/wrap/table/cell/thumb/mag, both
+  the desktop rules and the phone-width override's `.pp-stackthumb-sm` touch-target sizing).
+- **`test.js`** — every assertion that drove the retired functions was rewritten (not silently
+  deleted) to assert the OPPOSITE — that Stack view is genuinely, completely gone — following this
+  file's own "healthy churn from an intentional change" convention. A new comprehensive `[49]`
+  section sweeps for remnants across all four files: no Stack toggle button in `index.html`; not
+  one of the 11 retired functions survives in `module.js`; **not one Stack-only state variable
+  survives** (checked as real `var` declarations, not bare substring mentions — the retirement
+  comment's own prose legitimately still names `STACK_COMBINE_MAX` in passing, and an earlier draft
+  of this exact assertion falsely flagged that prose as a surviving declaration before being
+  narrowed to `!/var STACK_COMBINE_MAX/.test(mjs)`); no `id="pp-stack-*"` markup anywhere; the
+  `render()`/`restoreUI()`/view-comment dispatch mentions only `plan`'s state now, with 0 remaining
+  `view === 'stack'` branches; the retired test hooks are gone from the exported test-only object;
+  no `.pp-stack*` CSS rule survives anywhere in the stylesheet; and — the self-referential check —
+  `test.js` itself carries no surviving call to `PP._stackGrid`/`_stackRowSort`/`_mostRecentAsOf`,
+  so this file's own retired assertions were genuinely rewritten, not merely left disabled.
+
+### Verified
+
+**918 checks green, 6 known pre-existing failures** (unchanged from before this round, confirmed by
+name): `insert uses .select() to return the id`; `pane() reads each photo's own trade/works/
+location`; `the presentation row is created inside finish() — never before the wizard completes`;
+`every #fff use sits under a documented fixed-colour selector — [".ppr-panelabel.is-current"]`;
+`Clear filters does NOT reset the archived toggle — it is a separate view, not a search filter`;
+`the Add/Edit form shows a Report Type <select> defaulting to Internal for both a brand-new
+presentation and a legacy (unset) one being edited`. None of the eight items above touch any of
+these six, and none is newly introduced by this round.
+
+`node --check` clean on `module.js`/`ppr.js`/`bim.js`/`test.js`; 0 NUL bytes across every touched
+file (byte-level check); CSS braces balanced (526/526, module.css); 0 duplicate DOM `id=`
+attributes in `index.html` (91 unique). Function-set diff against the prior commit
+(`d9a7992`): `module.js` **11 lost / 7 added** (all 11 losses are Stack view, all deliberate, per
+item 7's own list above; the 7 additions — `hideLightboxMagnifier`, `kpResizeFrac`, `lineDashFor`,
+`magnifierGeom`, `setShown`, `wireLightboxKpResizeDrag`, `wireLightboxMagnifier` — are items
+3/4's own new geometry/wiring functions); `ppr.js` **1 lost / 0 added** (`applyPaneZoom`, item 2's
+own deliberate removal — its replacement, the per-pane key-plan toggle of item 5, reuses existing
+functions rather than adding new ones); `bim.js` **0 lost / 0 added** (untouched by this round).
+
+⚠️ **Not verified signed in** — same standing caveat as every entry in this file. In particular:
+the magnifier's real on-screen tracking against a live rendered photo, the key-plan overlay's
+actual drag-to-resize gesture, and the per-pane toggle's real click-through against a live
+presentation have all been verified by genuine execution of the underlying geometry/state
+functions and by structural source checks, never by driving a real browser session.
+
+`module.css`/`module.js`/`ppr.js`/`bim.js` → `?v=20260902g` (all four bumped together — this
+round touched all four, and `bim.js` in particular had no functional change but is re-stamped so
+its cache key isn't left pointing at a stale round's version string).
+
 ## Twelfth feedback round: thumbnail-only picking, drone pin provenance, markup toolbar rework, key-plan overlay, click-to-open, zoom everywhere (2026-09-02)
 
 Owner's 12-item list for the Presentations screen + the shared markup editor. No migration —

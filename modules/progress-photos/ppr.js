@@ -72,14 +72,18 @@ window.PPR = (function () {
   var filters = { from: '', to: '', archived: false, reportType: '' };  // archived: false = hide archived (default)
   var screen = 'list';           // list | slides | templates
   var viewPprId = null, slideAt = 0;
-  // ⚠️ RETIRED (item 11, current round): item 21's per-pane keyPlanOpenPane
-  // ({before,after}, two independent buttons) is replaced by ONE header
-  // button — "there should be a button at the top right corner to hide or
-  // show key plans" (singular control, both panes together). showKeyPlan is
-  // the single flag; each pane still only ever renders ITS OWN key plan
-  // overlay when it actually has one (keyPlanPathFor), so a pane with no
-  // plan never shows an empty corner box just because the other one has one.
-  var showKeyPlan = false;
+  // ⚠️ RESTORED (Round-2 item 5, 2026-09-02): item 11 (an earlier round)
+  // had consolidated the original per-pane keyPlanOpenPane ({before,after})
+  // into ONE shared header button — "singular control, both panes together".
+  // The owner has now explicitly asked for the opposite again: "in each
+  // photo tile opposite the previous/current label, add show/hide key
+  // plan" — an independent toggle PER PANE, not a single header control.
+  // The header `#ppr-kp-toggle` button (and its showKeyPlan flag) is gone;
+  // each pane renders its OWN small icon + popup, gated on its own entry in
+  // this map, and only when that photo actually has a key plan at all
+  // (never a speculative, usually-inert control — same rule this file
+  // already applies to the markup-view toggle).
+  var keyPlanOpenPane = { before: false, after: false };
   // Item 8 (2026-09-02): the key-plan overlay's own width, as a fraction of
   // the photo's rendered width — starts at 1/10 (matching item 11's fixed
   // sizing above), drag-resizable from the overlay's bottom-left corner (see
@@ -88,12 +92,10 @@ window.PPR = (function () {
   // photo, not a shared on/off decision — session-only either way.
   var KP_OVERLAY_DEFAULT = 0.10, KP_OVERLAY_MIN = 0.06, KP_OVERLAY_MAX = 0.6;
   var keyPlanOverlaySize = { before: null, after: null };
-  // Item 10 (2026-09-02): per-pane zoom level (CSS transform scale). Reset on
-  // navigating to a different slide (wireSlideNav) since it's a viewer
-  // convenience for the photo currently on screen, not something meant to
-  // persist across slides.
-  var PANE_ZOOM_MIN = 1, PANE_ZOOM_MAX = 3, PANE_ZOOM_STEP = 0.25;
-  var paneZoom = { before: 1, after: 1 };
+  // ⚠️ Round-2 item 2 (2026-09-02) RETIRES the per-pane zoom feature item 10
+  // added — "zoom is only for the image pop-up view". Its buttons, wiring and
+  // applyPaneZoom() are all removed (see pane()'s own note); nothing here
+  // reads a per-pane zoom level any more.
   // Multi-select batch actions (item 14) — deliberately SEPARATE from `selId`.
   // `selId` means "this ONE presentation is open/being previewed"; `selectedPprs`
   // is a checkbox set for Download/Archive/Merge, and when 2+ are checked it
@@ -824,7 +826,8 @@ window.PPR = (function () {
 
   function openPpr(id) {
     var p = pprById(id); if (!p) return;
-    selId = id; viewPprId = id; slideAt = 0; showKeyPlan = false;
+    selId = id; viewPprId = id; slideAt = 0;
+    keyPlanOpenPane = { before: false, after: false };
     screen = 'slides';
     render();
   }
@@ -983,18 +986,11 @@ window.PPR = (function () {
           '<button class="pp-iconbtn' + (photoMarkupVisible() ? ' is-active' : '') + '" id="ppr-photomk-toggle" ' +
             'title="Show/hide each photo\'s own markup">' +
             '<span data-ico="' + (photoMarkupVisible() ? 'eye' : 'eyeOff') + '" data-ico-size="15"></span></button>' +
-          // Item 11: "there should be a button at the top right corner to
-          // hide or show key plans" — ONE button for the whole slide
-          // (replacing item 21's two independent per-pane ppr-kp-<which>
-          // buttons), only offered when the CURRENT slide actually has a key
-          // plan on at least one pane (never a speculative, usually-inert
-          // control — same rule this file already applies to the Gallery
-          // tile's own pin icon).
-          ((cur && (keyPlanPathFor(cur, 'before') || keyPlanPathFor(cur, 'after')))
-            ? '<button class="pp-iconbtn' + (showKeyPlan ? ' is-active' : '') + '" id="ppr-kp-toggle" ' +
-                'title="Show/hide key plans">' +
-                '<span data-ico="mapPin" data-ico-size="15"></span></button>'
-            : '') +
+          // ⚠️ RETIRED (Round-2 item 5, 2026-09-02): item 11's single header
+          // "show/hide key plans" button is gone — each pane now carries its
+          // OWN toggle, opposite its Previous/Current label (see pane()
+          // below), so there is nothing left for one shared header control
+          // to do that isn't already better expressed per-pane.
           '<button class="pp-iconbtn" id="ppr-pres-dl" title="Download this presentation">' +
             '<span data-ico="download" data-ico-size="15"></span></button>' +
           (canWrite ? '<button class="pp-iconbtn" id="ppr-pres-arch" title="' + (p.archived ? 'Restore from archive' : 'Archive presentation') + '">' +
@@ -1078,12 +1074,9 @@ window.PPR = (function () {
       setPhotoMarkupVisible(!photoMarkupVisible());
       renderSlides();
     };
-    // Item 11 — the one key-plan toggle, replacing the retired per-pane
-    // ppr-kp-<which> buttons. Same shape as the photo-markup toggle above.
-    if ($('ppr-kp-toggle')) $('ppr-kp-toggle').onclick = function () {
-      showKeyPlan = !showKeyPlan;
-      renderSlides();
-    };
+    // ⚠️ RETIRED (Round-2 item 5): the single header key-plan toggle wiring
+    // is gone — each pane wires its own toggle inside wirePaneMarkup() below,
+    // against keyPlanOpenPane[which].
   }
 
   // ------------------------------------------------------ slide-sorter (item 12) ---
@@ -1258,13 +1251,16 @@ window.PPR = (function () {
     // path) is kept as a fallback ONLY for photos captured before bim.js
     // pins existed, rendered as a plain picture with no pin/cone (there is
     // no pin data to draw one from) — so an old slide still shows what it
-    // always showed. ⚠️ Show/hide itself is still item 11's ONE header
-    // toggle (`showKeyPlan`, not a per-pane one) — this pane still only ever
-    // renders ITS OWN overlay when it actually has a plan, exactly as item
-    // 11 established; only what gets drawn INSIDE that overlay changed.
+    // always showed. ⚠️ Round-2 item 5 (2026-09-02) RESTORES a per-pane
+    // open/closed state (`keyPlanOpenPane[which]`) — item 11's single
+    // shared header toggle is retired (see the module-state comment near
+    // the top of this file), so each pane now decides independently
+    // whether ITS OWN overlay is shown, via its own small icon rendered
+    // below (only when this photo actually has a plan at all).
     var kpInfo = photoId ? keyPlanInfoForPane(photoId) : null;
     var kpLegacyPath = (!kpInfo && u) ? keyPlanPathFor(sl, which) : null;
-    var kpOpen = showKeyPlan && (kpInfo || kpLegacyPath);
+    var kpHasPlan = !!(kpInfo || kpLegacyPath);
+    var kpOpen = keyPlanOpenPane[which] && kpHasPlan;
     var kpOverlay = '';
     if (kpOpen && kpInfo) {
       var kpwPct = (keyPlanOverlaySize[which] || KP_OVERLAY_DEFAULT) * 100;
@@ -1288,19 +1284,6 @@ window.PPR = (function () {
     // `hideLocation` still suppresses it here specifically because the SAME
     // value is already shown once, above the pair, when both photos agree.
     var loc = hideLocation ? null : (ph ? ph.location : sl.location) || '';
-    // Item 10 (2026-09-02): zoom in/out for every photo viewer surface,
-    // including these presentation panes — placed to the LEFT of the
-    // view/hide-markup toggle, per the ask. Zoomed via a CSS `transform:
-    // scale()` applied identically to both the <img> and its markup canvas
-    // (`applyPaneZoom`, wired in wirePaneMarkup) so the two stay pixel-
-    // aligned through any zoom level with no canvas resize/redraw needed.
-    var z = paneZoom[which] || 1;
-    var zoomTools = u
-      ? '<button class="ppr-mktool" id="ppr-zoomout-' + which + '" title="Zoom out" ' +
-        (z <= PANE_ZOOM_MIN ? 'disabled' : '') + '><span data-ico="zoomOut" data-ico-size="13"></span></button>' +
-        '<button class="ppr-mktool" id="ppr-zoomin-' + which + '" title="Zoom in" ' +
-        (z >= PANE_ZOOM_MAX ? 'disabled' : '') + '><span data-ico="zoomIn" data-ico-size="13"></span></button>'
-      : '';
     // ⚠️ Item 7 (2026-09-02): the presentation-only markup overlay/editor
     // (ppr_slide_markups, a separate drawing you'd make just for the deck) is
     // REMOVED entirely — there is nothing left to "edit" per pane; editing a
@@ -1309,7 +1292,12 @@ window.PPR = (function () {
     // header-level `#ppr-photomk-toggle` (photoMarkupVisible() below) — a
     // per-pane toggle here would be a straightforward duplicate of it, both
     // reading the exact same `ph.markup`.
-    var mkTools = u ? '<div class="ppr-panetools">' + zoomTools + '</div>' : '';
+    // ⚠️ Round-2 item 2 (2026-09-02): the per-pane zoom in/out buttons that
+    // used to sit here (`ppr-panetools`/`ppr-zoomin-<which>`/`ppr-zoomout-
+    // <which>`, driven by `applyPaneZoom`) are REMOVED — "zoom is only for
+    // the image pop-up view" (the lightbox, which gets its own zoom-then-
+    // magnifier treatment in items 3/10). A presentation pane is a preview;
+    // opening the photo (item 9's click-to-open) is how you examine it.
     // The PHOTO's own permanent markup (progress_photos.markup) — gated on
     // the ONE shared, persisted preference (photoMarkupVisible/
     // setPhotoMarkupVisible, backed by ProgressPhotos.markupGlobalVisible —
@@ -1333,7 +1321,15 @@ window.PPR = (function () {
       // Sixth round item 9: Current gets the filled brand-red chip (it's the
       // stage being reported on), Previous the quieter outlined one — so the
       // two panes read as distinct at a glance, not just by left/right order.
-      '<div class="ppr-panelabel' + (which === 'after' ? ' is-current' : '') + '">' + (which === 'before' ? 'Previous' : 'Current') + '</div>' +
+      // Round-2 item 5: a per-pane key-plan toggle sits OPPOSITE the label,
+      // in the same top row (.ppr-panetop) — only rendered when this photo
+      // actually has a plan to show (never a speculative, usually-inert
+      // control), so a pane whose photo has no pin renders no button at all.
+      '<div class="ppr-panetop">' +
+        '<div class="ppr-panelabel' + (which === 'after' ? ' is-current' : '') + '">' + (which === 'before' ? 'Previous' : 'Current') + '</div>' +
+        (kpHasPlan ? '<button class="pp-iconbtn' + (kpOpen ? ' is-active' : '') + '" data-kptoggle="' + which + '" ' +
+          'title="Show/hide key plan"><span data-ico="mapPin" data-ico-size="14"></span></button>' : '') +
+      '</div>' +
       // Sixth round items 10/11: Location is always shown (never silently
       // absent when unset), and Date/Description each carry an explicit
       // label — previously both were bare values with no indication of
@@ -1360,30 +1356,9 @@ window.PPR = (function () {
         // planner annotating THIS presentation should never have their own
         // marks obscured by whatever was already on the source photo.
         (photoMkVisible ? '<canvas class="ppr-mkcanvas ppr-photomkcanvas" id="ppr-photomkcanvas-' + which + '"></canvas>' : '') +
-        mkTools + kpOverlay +
+        kpOverlay +
       '</div>' +
     '</figure>';
-  }
-
-  // Sets an identical CSS transform on a pane's <img> AND its markup canvas
-  // (item 10) — the two are absolutely-positioned siblings occupying the
-  // same box, so applying the same `scale()` + `transform-origin` to both
-  // keeps them pixel-aligned at any zoom level with no need to resize or
-  // redraw the canvas itself.
-  function applyPaneZoom(which) {
-    var z = paneZoom[which] || 1;
-    var t = 'scale(' + z + ')';
-    var img = document.querySelector('#ppr-pane-' + which + ' .ppr-img');
-    // Item 7 retired the slide-only markup canvas (`ppr-mkcanvas-<which>`) —
-    // the only markup canvas a pane can render now is the photo's OWN,
-    // `ppr-photomkcanvas-<which>`, so that's the one that must stay pixel-
-    // aligned with the zoomed image.
-    var cv = $('ppr-photomkcanvas-' + which);
-    if (img) img.style.transform = t;
-    if (cv) cv.style.transform = t;
-    var zo = $('ppr-zoomout-' + which), zi = $('ppr-zoomin-' + which);
-    if (zo) zo.disabled = z <= PANE_ZOOM_MIN;
-    if (zi) zi.disabled = z >= PANE_ZOOM_MAX;
   }
 
   // Item 8's drag-to-resize handle: drags the overlay's BOTTOM-LEFT corner.
@@ -1445,29 +1420,24 @@ window.PPR = (function () {
         else ppaint();
       }
       // ⚠️ RETIRED: the per-pane slide-only markup canvas (`ppr-mkcanvas-
-      // <which>`) and its own toggle button (`ppr-mktoggle-<which>`), plus
-      // the old per-pane key-plan popup button (`ppr-kp-<which>`), are no
+      // <which>`) and its own toggle button (`ppr-mktoggle-<which>`) are no
       // longer emitted by pane() — item 7 removed the presentation-only
       // markup editor entirely (the photo's OWN markup, painted above via
-      // `ppr-photomkcanvas-<which>`/`pcv`, is the only markup canvas left),
-      // and item 11 replaced the two independent per-pane key-plan buttons
-      // with the single header-level `#ppr-kp-toggle` wired in wirePresActs.
-      // Item 8's resize handle still needs wiring per-pane, since the
-      // overlay itself is still per-pane (only its open/closed state is now
-      // shared via the one header toggle).
+      // `ppr-photomkcanvas-<which>`/`pcv`, is the only markup canvas left).
+      // Round-2 item 5 (2026-09-02) RESTORES the per-pane key-plan toggle
+      // (`data-kptoggle="<which>"`) — item 11's single shared header button
+      // is gone; each pane's own icon flips only ITS OWN entry in
+      // keyPlanOpenPane.
+      var kpBtn = document.querySelector('#ppr-pane-' + which + ' [data-kptoggle="' + which + '"]');
+      if (kpBtn) kpBtn.onclick = function () {
+        keyPlanOpenPane[which] = !keyPlanOpenPane[which];
+        renderSlides();
+      };
+      // Item 8's resize handle still needs wiring per-pane — the overlay
+      // itself is per-pane, and so is its open/closed state again now.
       wireKpResizeDrag(which);
-      // Item 10 — zoom in/out, left of the markup toggle.
-      var zo = $('ppr-zoomout-' + which);
-      if (zo) zo.onclick = function () {
-        paneZoom[which] = Math.max(PANE_ZOOM_MIN, (paneZoom[which] || 1) - PANE_ZOOM_STEP);
-        applyPaneZoom(which);
-      };
-      var zi = $('ppr-zoomin-' + which);
-      if (zi) zi.onclick = function () {
-        paneZoom[which] = Math.min(PANE_ZOOM_MAX, (paneZoom[which] || 1) + PANE_ZOOM_STEP);
-        applyPaneZoom(which);
-      };
-      applyPaneZoom(which);
+      // Round-2 item 2: no more per-pane zoom to wire (see pane()'s own note
+      // — zoom lives only in the lightbox now).
       // Item 9 — click the photo itself to view it full-size in the ordinary
       // lightbox. Bound on the <img> specifically (never the wrapping
       // .ppr-imgwrap) so clicking one of the corner tool buttons — siblings
@@ -1483,10 +1453,10 @@ window.PPR = (function () {
 
   function wireSlideNav(s) {
     if ($('ppr-prev')) $('ppr-prev').onclick = function () {
-      if (slideAt > 0) { slideAt--; paneZoom = { before: 1, after: 1 }; renderSlides(); }
+      if (slideAt > 0) { slideAt--; renderSlides(); }
     };
     if ($('ppr-next')) $('ppr-next').onclick = function () {
-      if (slideAt < s.length - 1) { slideAt++; paneZoom = { before: 1, after: 1 }; renderSlides(); }
+      if (slideAt < s.length - 1) { slideAt++; renderSlides(); }
     };
   }
 
@@ -2868,16 +2838,15 @@ window.PPR = (function () {
       try { return pane(sl, which, hideLocation); }
       finally { photos = savedPhotos; urlCache = savedUrlCache; }
     },
-    // Direct read/write access to the paneZoom state + a call to the real
-    // applyPaneZoom, so the zoom clamp/disable logic can be driven at both
-    // boundaries (min/max) without going through a real pointer/click event.
-    _setPaneZoom: function (which, v) { paneZoom[which] = v; },
-    _getPaneZoom: function (which) { return paneZoom[which]; },
-    _applyPaneZoom: function (which) { applyPaneZoom(which); },
-    // ⚠️ _setKeyPlanOpenPane (a hook over the OLD per-pane keyPlanOpenPane
-    // map) is deliberately NOT carried forward — item 11 retired that state
-    // entirely in favour of the single shared `showKeyPlan` flag below.
-    _setShowKeyPlan: function (v) { showKeyPlan = v; },
-    _getShowKeyPlan: function () { return showKeyPlan; }
+    // ⚠️ _setPaneZoom/_getPaneZoom/_applyPaneZoom are deliberately NOT carried
+    // forward — round-2 item 2 retired the per-pane zoom feature entirely
+    // ("zoom is only for the image pop-up view"); there is no zoom state left
+    // on a pane to drive.
+    // ⚠️ _setShowKeyPlan/_getShowKeyPlan (hooks over item 11's single shared
+    // header flag) are deliberately NOT carried forward — Round-2 item 5
+    // restores a per-pane open/closed state instead; these are the current
+    // equivalent.
+    _setKeyPlanOpenPane: function (which, v) { keyPlanOpenPane[which] = v; },
+    _getKeyPlanOpenPane: function (which) { return keyPlanOpenPane[which]; }
   };
 })();
