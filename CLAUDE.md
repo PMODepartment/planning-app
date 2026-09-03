@@ -84,6 +84,30 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-03 — Favicon nudged back up: the (ai) padding pass over-corrected
+
+Owner shared a screenshot comparing two browser tabs side by side — ours read visibly smaller than a
+reference tab's icon — and asked to increase it "by a little" to match. Follow-up to the same-day
+(ai) entry below, which had gone the other way (owner: *"reduce favicon size"*, because the old
+`favicon.png` bled edge-to-edge at close to 100% fill) and landed `favicon-icon.png` at a **68%/57%**
+width/height fill — reasonable against "bleeding," but evidently too far the other way once seen next
+to another tab.
+
+- ⚠️ **Regenerated from the pristine, untouched `assets/img/favicon.png`** (still the original
+  1020×850 source — (ai) deliberately left it alone since it doubles as the `.pd-auth-mark`/
+  `.pd-home-mark` login/home logo, and that reasoning still holds), not by re-scaling the already-
+  downsampled `favicon-icon.png` — re-scaling a 256px file that was itself scaled down from 1020px
+  would compound a second round of resampling loss for no reason when the real source is one file away.
+- **Target fill raised to ~88% width / ~73% height** (was 68%/57%) — a deliberate middle point between
+  the two complaints: nowhere near the old edge-to-edge bleed, but a clearly bigger, bolder mark than
+  the (ai) version at real favicon size. Same proportional scale-to-fit + center-on-transparent-256px-
+  canvas construction as (ai), just with a smaller margin.
+- Verified by rendering both the shipped (ai) file and this replacement down to actual 32×32 and 16×16
+  favicon sizes and comparing: the new version is legibly bigger and still fully legible with clean
+  margins at 16px, not touching the canvas edges.
+- Shared asset changed → **`favicon-icon.png?v=` bumped from none to `20260903a` across all 29
+  referencing pages** (it had shipped with no cache-bust query string at all in the (ai) pass).
+
 ### 2026-09-02 (ak) — Issues & Concerns: Kanban view, wider columns, squeezed KPI bands — and a real bug the verification caught
 Owner's 10-item follow-up on Issues & Concerns / Lessons Learned, off a screenshot of the lesson
 detail view (the "more feedback still pending" the (aj) entry below flagged as not-yet-supplied):
