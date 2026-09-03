@@ -113,6 +113,43 @@ window.PPR = (function () {
   function sb() { return AppAuth.getSB(); }
   function $(id) { return document.getElementById(id); }
   function esc(s) { return Fmt.esc(s); }
+
+  // ⚠️ PPTX export root-cause fix (2026-09-02, found by generating a real
+  // .pptx and re-opening it with JSZip+DOMParser): PptxGenJS's own
+  // encodeXmlEntities() only escapes & < > " ' — it does NOT strip XML-1.0-
+  // illegal control characters. Every string this module hands to addText()
+  // is plain user-typed text (project name, description, captions, trade/
+  // works/location) with no sanitization anywhere upstream, so a single
+  // stray control character picked up from a paste (WhatsApp, OCR, some
+  // mobile keyboards) or a legacy DB value lands in the slide XML verbatim.
+  // That is not well-formed XML, and PowerPoint's own strict parser then
+  // refuses the WHOLE file with its harshest "Sorry, PowerPoint can't read
+  // ___" message — reproduced directly: a single embedded U+000B produced
+  // "PCDATA invalid Char value 11" when the exported file was re-parsed.
+  // Strips the C0 control range (keeping tab/LF/CR, the three that XML 1.0
+  // actually allows) and drops any UNPAIRED UTF-16 surrogate (no valid
+  // Unicode code point, no valid UTF-8 encoding — the identical failure
+  // class). Deliberately narrow: it removes bytes that cannot appear in
+  // valid XML text at all, never a printable character a caption might
+  // legitimately use.
+  function sanitizePptxText(s) {
+    if (s == null) return '';
+    s = String(s).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+    var out = '';
+    for (var i = 0; i < s.length; i++) {
+      var code = s.charCodeAt(i);
+      if (code >= 0xD800 && code <= 0xDBFF) {
+        var next = s.charCodeAt(i + 1);
+        if (next >= 0xDC00 && next <= 0xDFFF) { out += s[i] + s[i + 1]; i++; }
+      } else if (code >= 0xDC00 && code <= 0xDFFF) {
+        // lone low surrogate, never reached via the high-surrogate branch above — drop it
+      } else {
+        out += s[i];
+      }
+    }
+    return out;
+  }
+
   // module.js's own reqMark() is private to ITS closure — restated here
   // rather than exported/shared, matching this file's existing convention of
   // keeping small independently-loaded helpers in step across files (see
@@ -2387,8 +2424,8 @@ window.PPR = (function () {
 
       var title = pptx.addSlide();
       title.background = { color: 'EE3124' };
-      title.addText(projName || pid, { x: 0.6, y: 2.6, w: 12, h: 0.8, fontSize: 28, bold: true, color: 'FFFFFF' });
-      title.addText((p.description || 'Progress Photos') + '\n' + longDate(p.ppr_date),
+      title.addText(sanitizePptxText(projName || pid), { x: 0.6, y: 2.6, w: 12, h: 0.8, fontSize: 28, bold: true, color: 'FFFFFF' });
+      title.addText(sanitizePptxText((p.description || 'Progress Photos') + '\n' + longDate(p.ppr_date)),
         { x: 0.6, y: 3.5, w: 12, h: 1, fontSize: 16, color: 'FFFFFF' });
 
       // PptxGenJS's `data` option takes the payload WITHOUT the `data:` prefix
@@ -2420,7 +2457,7 @@ window.PPR = (function () {
         if (data) slide.addImage({ data: stripDataPrefix(data), x: x, y: imgY, w: w, h: IMG_H, sizing: { type: 'contain', w: w, h: IMG_H } });
         else slide.addText('Photo not set', { x: x, y: imgY, w: w, h: IMG_H, align: 'center', valign: 'middle', color: '9A9A9A', fontSize: 12 });
         var capLines = [ph && ph.taken_at ? capDate(ph.taken_at) : '—', cap, tags].filter(Boolean).join('\n');
-        slide.addText(capLines, { x: x, y: capY, w: w, h: CAP_H, fontSize: 10, color: '4A4A4A', align: 'center' });
+        slide.addText(sanitizePptxText(capLines), { x: x, y: capY, w: w, h: CAP_H, fontSize: 10, color: '4A4A4A', align: 'center' });
       }
 
       s.forEach(function (sl, i) {
@@ -2433,7 +2470,7 @@ window.PPR = (function () {
           // Same shared-location tile as the live editor / HTML+PDF exports
           // (follow-up feedback items 3/4) — one centered line, whole slide
           // width, above both panes.
-          slide.addText(sharedLoc, { x: 0.4, y: 0.4, w: 12.53, h: 0.3, fontSize: 11, bold: true, color: '4A4A4A', align: 'center' });
+          slide.addText(sanitizePptxText(sharedLoc), { x: 0.4, y: 0.4, w: 12.53, h: 0.3, fontSize: 11, bold: true, color: '4A4A4A', align: 'center' });
           topBand = 0.75;
         }
         var paneTop = paneTopFor(topBand);
@@ -2446,7 +2483,7 @@ window.PPR = (function () {
       });
 
       m.close();
-      await pptx.writeFile({ fileName: 'Presentation ' + (projName || pid) + ' ' + (p.ppr_date || '') + '.pptx' });
+      await pptx.writeFile({ fileName: sanitizePptxText('Presentation ' + (projName || pid) + ' ' + (p.ppr_date || '') + '.pptx') });
       UI.toast('PowerPoint downloaded' + (res.failed ? ' — ' + res.failed + ' image(s) could not be embedded' : ''),
         res.failed ? 'warn' : 'ok');
     } catch (e) {

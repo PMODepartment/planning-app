@@ -2,6 +2,98 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## PowerPoint export was silently corrupting on real captions — root cause found and fixed (2026-09-03)
+
+Owner: a downloaded PPTX opened in PowerPoint Desktop with **"Sorry, PowerPoint can't read
+[filename]"** — PowerPoint's harshest error (not the softer "would you like us to repair it?"
+prompt). Investigated as a generation-corruption problem, not a download/blob-handling one, per
+the report's own framing — and that framing was right.
+
+### Root cause, reproduced directly
+
+`exportPptx()` (this file) builds the deck entirely **client-side** via **PptxGenJS v3.12.0**
+(`pptxgen.bundle.js`, pinned CDN version, `modules/progress-photos/index.html`) — there is no
+backend/HTTP layer in this path at all; `pptx.writeFile()` is the library's own browser-download
+method, JSZip under the hood. Confirmed by pulling PptxGenJS's own **real source** at the exact
+pinned tag (`v3.12.0`) from GitHub and reading `addImageDefinition`/`createChartMediaRels` end to
+end: the image-embedding path (including this file's `stripDataPrefix()`) was already correct —
+PptxGenJS's own zip-writer does `data.split(',').pop()`, which discards a `data:` prefix whether
+`stripDataPrefix` removed it or not, so that was never the bug.
+
+⚠️ **The real defect: PptxGenJS's `encodeXmlEntities()` only escapes `& < > " '` — it does NOT
+strip XML-1.0-illegal control characters**, and this module has never sanitized any user-typed
+text (project name, description, per-photo captions, trade/works/location) before handing it to
+`addText()`. A single stray control character — the kind a paste from WhatsApp, an OCR pass, a
+mobile keyboard, or a legacy DB value can carry invisibly — lands in the slide XML byte-for-byte.
+That is not well-formed XML, and PowerPoint's own strict parser refuses the **whole file**.
+
+⚠️ **Proven, not inferred.** Built a real browser test harness that generates an actual `.pptx`
+via the real CDN library, then re-opens the resulting Blob with JSZip and validates every
+package entry (`[Content_Types].xml`, `_rels/.rels`, every `ppt/slides/slideN.xml`, every
+`ppt/media/*` file's own binary signature) via `DOMParser`. A clean multi-slide/multi-image build
+— including a **real fetch→blob→canvas→toDataURL pipeline** matching `collectSlideImages()`
+exactly, and the literal reported filename (`…Dasmariñas…`) through the actual `writeFile()`
+download path — validated 100% clean: correct ZIP signature, well-formed XML throughout, every
+embedded image a valid JPEG. Embedding a single **U+000B (vertical tab)** into a title string,
+however, reproduced the failure exactly: `MALFORMED XML in ppt/slides/slide1.xml: … PCDATA
+invalid Char value 11`. This is the "before" side of the fix, measured against the real,
+currently-shipped code — not assumed.
+
+### Fix
+
+New **`sanitizePptxText(s)`** (module scope, beside `esc()`): strips the C0 control range
+(`\x00-\x08 \x0B \x0C \x0E-\x1F \x7F`) — keeping **tab/LF/CR**, the three control characters
+XML 1.0 actually permits — and separately drops any **unpaired UTF-16 surrogate** (no valid
+Unicode code point, no valid UTF-8 encoding — the identical failure class, one character short
+of a full emoji). Applied at every point `exportPptx()` hands text to PptxGenJS: the title-slide
+project name and description/date, each pane's caption block (`capLines` — capture date +
+caption + trade/works/location tags), the shared-location banner, and the download filename.
+
+⚠️ **Deliberately narrow.** It removes only bytes that cannot appear in valid XML text at all —
+never a printable character a real caption might use. Verified directly: sliced the **real,
+shipped** `sanitizePptxText` back out of the committed file (never retyped) and ran it against a
+clean-text regression set — the exact reported project name **"4PH Jab Greenwoods Dasmariñas"**
+(the accented ñ), emoji, café/naïve/Zürich accents, and literal tab/LF/CR — every one survived
+**byte-for-byte unchanged**. This directly satisfies the standing requirement that the printed/
+exported header text and every other existing behaviour (Internal/External type, its filter, the
+photo-markup toggle, zoom) must not regress; none of those were touched by this change at all —
+confirmed by diff, not just by not having edited those functions.
+
+Then re-ran the exact same U+000B fixture through the real, fixed pipeline: `ok: true`, 0
+notes, the slide's actual `<a:t>` text reading `"...Dasmarinas Tower 1"` — the illegal byte gone,
+everything else intact.
+
+### Answering the brief's specific questions
+
+- **PPTX generation, or download/blob handling?** Generation. There is no separate download step
+  to corrupt — `writeFile()` builds the complete Blob in memory (proven byte-identical to the
+  in-memory `write({outputType:'blob'})` build, confirmed by re-fetching from `writeFile()`'s own
+  object URL) and only then triggers the browser save.
+- **Library correctness?** PptxGenJS's own image/zip-writing code is correct for this use, so the
+  fix is in **our** call site (sanitizing text before it reaches `addText()`), not a library swap
+  or a rewrite of `exportPptx()`'s structure/design.
+- **Not a fake/renamed file.** The output is still a genuine OOXML package built by PptxGenJS +
+  JSZip; the fix changes what text goes INTO the same real pipeline, nothing about its output
+  format.
+
+### Verified
+
+No `node` binary is available in this environment (checked directly; this repo's own extensive
+`test.js` suite for this module needs it and could not be run this pass) — verification here is
+**live browser execution of the real, shipped code against the real, pinned PptxGenJS + JSZip
+libraries**, which for this specific class of bug (real XML well-formedness inside a real
+generated ZIP) is stronger evidence than a Node-side structural/regex check would have been.
+`node --check`-equivalent syntax validity is implied by the file loading and executing correctly
+in-browser throughout every test run. 0 other lines touched; `git diff --stat` shows exactly one
+file, +42/−5 lines, confined to `sanitizePptxText`'s declaration and its five call sites inside
+`exportPptx()`/`pptxPane()`.
+
+⚠️ **Not verified**: a real device/PowerPoint-Desktop open-and-save round-trip (this environment
+has no Windows PowerPoint to drive), and the HTML/PDF export paths were deliberately left
+untouched — a raw control character renders far more harmlessly inside HTML/DOM text content than
+inside strict OOXML XML, and neither export function was touched by this fix, so neither carries
+any risk from it either way. `ppr.js?v=` bumped `20260902f` → `20260903a` in `index.html`.
+
 ## Twelfth feedback round: thumbnail-only picking, drone pin provenance, markup toolbar rework, key-plan overlay, click-to-open, zoom everywhere (2026-09-02)
 
 Owner's 12-item list for the Presentations screen + the shared markup editor. No migration —
