@@ -617,22 +617,41 @@
     //    (issues-lessons/module.css, "REMOVED 2026-08-31") already fixed once
     //    and says not to reintroduce. A width-gated CSS rule can't recreate it;
     //    an unconditional JS hide can and did.
+    // ⚠️ OWNER, 2026-09-03: "for all modules, make sure to have the module icon
+    // beside the dropdown. module [icon] only, no need for the module name."
+    // The icon is therefore CLONED INTO THE TRIGGER rather than left behind in
+    // the module's own <h1> with the text hidden around it. Three things follow,
+    // and they are why this is the better shape rather than just a tidier one:
+    //   1. The icon is literally adjacent to the label at EVERY width, because
+    //      they are now one control. The old arrangement relied on the <h1> and
+    //      the trigger happening to sit on the same flex row.
+    //   2. The <h1> can be hidden UNCONDITIONALLY (see `.pd-h1-hasdrop`, no
+    //      longer width-gated), which retires the whole "bare icon alone on its
+    //      own row below 700px" hazard the previous two rounds were working
+    //      around — there is no separate icon row left to strand.
+    //   3. Nothing is lost when a module has no icon (progress-photos had no
+    //      <h1> at all): `icoHTML` is simply '' and the trigger renders as
+    //      before.
+    // ⚠️ Read ONCE, here, not inside sync(): sync() rewrites trig.innerHTML on
+    // every screen switch, so an icon appended afterwards would be wiped by the
+    // next repaint. It goes into sync()'s own template instead.
     var modBar = tabs.closest('.pd-modulebar');
-    var titleTxt = modBar && modBar.querySelector('[class$="-title-txt"]');
-    if (titleTxt) {
-      titleTxt.classList.add('pd-title-hasdrop');
-      // Item 1 (2026-09-01, mobile round): below 700px, hiding just the TEXT
-      // (note above) still reserves a whole full-width row for the now-empty-
-      // but-for-its-icon <h1> — a bare icon sitting alone on its own line,
-      // which is a materially different shape from the "icon alone / label on
-      // the next line" defect that comment warns about (there the icon had a
-      // row and the trigger's label sat on the NEXT row; the reported bug here
-      // was the FULL duplicate text, not a bare icon). Marking the <h1> itself
-      // lets dashboard.css remove that row entirely below 700px, so there is
-      // no separate icon row left to be "alone" — see `.pd-h1-hasdrop`.
-      var h1 = titleTxt.closest('h1');
-      if (h1) h1.classList.add('pd-h1-hasdrop');
+    var icoHTML = '';
+    var srcIco = modBar && modBar.querySelector('[class$="-title-ico"]');
+    if (srcIco) {
+      // ⚠️ A clone of an ALREADY-HYDRATED icon carries `data-ico-done`, which
+      // Icons.hydrate() skips, so the glyph is not injected twice; an
+      // un-hydrated one still hydrates via the Icons.hydrate(trig) in sync().
+      var c = srcIco.cloneNode(true);
+      c.removeAttribute('id');
+      c.className = 'pd-tabsdrop-ico';
+      icoHTML = c.outerHTML;
     }
+    var titleTxt = modBar && modBar.querySelector('[class$="-title-txt"]');
+    if (titleTxt) titleTxt.classList.add('pd-title-hasdrop');
+    // The whole <h1> goes — icon included, since the trigger now carries it.
+    var h1 = modBar && modBar.querySelector('h1');
+    if (h1) h1.classList.add('pd-h1-hasdrop');
 
     var wrap = document.createElement('div');
     wrap.className = 'pd-tabsdrop';
@@ -646,7 +665,8 @@
     function activeBtn() { return btns.filter(function (b) { return b.classList.contains('active'); })[0] || btns[0]; }
     function sync() {
       var a = activeBtn();
-      trig.innerHTML = '<span>' + esc(a.textContent) + '</span><span class="pd-tabsdrop-caret" data-ico="chevronDown" data-ico-size="14"></span>';
+      trig.innerHTML = icoHTML + '<span>' + esc(a.textContent) +
+        '</span><span class="pd-tabsdrop-caret" data-ico="chevronDown" data-ico-size="14"></span>';
       menu.innerHTML = btns.map(function (b, i) {
         return '<button type="button" data-i="' + i + '" class="' + (b === a ? 'cur' : '') + '">' + esc(b.textContent) + '</button>';
       }).join('');

@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Progress Photos · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260903a" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260903b" />
   <link rel="stylesheet" href="module.css?v=20260902g" />
 </head>
 <body>
@@ -29,11 +29,21 @@
     </aside>
     <div class="pd-content">
       <div class="pd-topbar">
-        <!-- The standalone "Progress Photos" <h1> is gone (owner feedback):
-             it duplicated the module's own name in the secondary top bar
-             (.pd-modulebar — see initModuleTopbar in ui.js) for no reason,
-             since the tab strip right below it already names the module as
-             its first tab. -->
+        <!-- ⚠️ REINSTATED 2026-09-03, and it does NOT bring back the duplicate
+             name the earlier owner feedback removed. UI.tabsToDropdown() clones
+             the module ICON out of this <h1> into the dropdown trigger and then
+             hides the whole <h1>, so what reaches the screen is the icon beside
+             the dropdown and no module name — which is exactly what that
+             feedback wanted and what the 2026-09-03 ask asks for. Without an
+             <h1> here there was no icon to clone and this module's dropdown was
+             the only one with nothing beside it.
+             ⚠️ The text span is kept (hidden) rather than dropped so the markup
+             matches every other module's, and so the module still identifies
+             itself if the dropdown ever fails to build. -->
+        <h1 class="pp-title" style="margin:0;">
+          <span class="pp-title-ico" data-ico="camera" data-ico-size="20"></span>
+          <span class="pp-title-txt">Progress Photos</span>
+        </h1>
         <div class="pp-projctx">
           <select class="pd-select pp-project" id="pp-project" title="Project"></select>
         </div>
@@ -401,7 +411,7 @@
   <script src="../../assets/js/auth.js?v=20260901b"></script>
   <script src="../../assets/js/db.js?v=20260901d"></script>
   <script src="../../assets/js/program.js?v=20260827a"></script>
-  <script src="../../assets/js/ui.js?v=20260902c"></script>
+  <script src="../../assets/js/ui.js?v=20260903b"></script>
   <script src="../../assets/js/icons.js?v=20260902f"></script>
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>

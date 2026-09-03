@@ -84,6 +84,72 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-03 (b) — The module icon moves INTO the dropdown trigger, app-wide
+
+Owner, with a screenshot of the Minutes of Meeting bar: *"for all modules, make sure to have the
+module icon beside the dropdown. module only, no need for the module name."*
+
+**⚠️ THE OWNER WAS CORRECTING MY OWN SCOPING FROM THE DAY BEFORE, and they were right.** The
+2026-09-02 (b) pass converted five modules' topbar tab strips to dropdowns and recorded that
+`equipment-loading`, `manpower-loading` and `productivity-rates` were left out because their
+strips were "content tabs inside the page, not the topbar strip the ask names". **They are not
+— all three sit in `.pd-topbar`** and are moved into `.pd-modulebar` by `UI.initModuleTopbar`
+exactly like the five that were converted. The earlier claim came from a regex that ran past the
+topbar's closing `</div>` into `.pd-main`; re-measured properly, only `portfolio-overview`'s and
+`resource-loading`'s strips are genuinely elsewhere. All three are converted now.
+
+**`assets/js/ui.js` — `tabsToDropdown()` now CLONES the module's icon into the trigger it
+builds**, instead of leaving it behind in the module's own `<h1>` with the title text hidden
+around it. That is a better shape than a tidier one, for three reasons:
+- The icon is adjacent to the screen label at **every** width, because they are one control. The
+  old arrangement relied on the `<h1>` and the trigger happening to land on the same flex row.
+- **It retires a hazard rather than working around it.** `.pd-h1-hasdrop` is now unconditional;
+  the previous two rounds hid only the title TEXT above 700px and then the whole `<h1>` below it,
+  specifically because on a stacked phone layout an icon-only `<h1>` claimed a full-width row and
+  sat there alone with the label on the row after — the "icon alone / label on the next line"
+  defect this repo already fixed once. With the icon inside the trigger there is no separate icon
+  row to strand, so the width gate is gone and so is the defect.
+- A module with no icon degrades to exactly the old rendering (`icoHTML` is `''`).
+⚠️ The icon markup is read **once**, not inside `sync()` — `sync()` rewrites `trig.innerHTML` on
+every screen switch, so an icon appended afterwards would be wiped by the next repaint. ⚠️ A
+clone of an already-hydrated icon carries `data-ico-done`, which `Icons.hydrate()` skips, so the
+glyph is never injected twice.
+
+**`modules/progress-photos/index.html` — its `<h1>` is reinstated, icon-only in effect.** It was
+the one module whose dropdown had nothing beside it, because an earlier owner note had removed
+the `<h1>` outright as a duplicate name. ⚠️ This does **not** bring that duplicate back: the icon
+is cloned out and the whole `<h1>` is hidden, so what reaches the screen is the icon plus the
+dropdown and no module name — which is what that feedback wanted and what this ask asks for.
+
+**`modules/_template/index.html`** gained the call so a new module inherits the pattern.
+⚠️ **It is a deliberate no-op there** — the scaffold ships one tab and `tabsToDropdown` declines
+below two, because a dropdown with one choice is not a choice. So the template still shows icon
+AND name, correctly: with no dropdown, nothing else names the screen.
+
+**Deliberately NOT changed, and each for a stated reason.** `resource-loading`, `s-curve`,
+`cash-flow` have no tab strip at all, and `_template` effectively none — hiding their name would
+leave an unlabelled icon identifying nothing. `portfolio-overview`'s `.po-tabs` lives in
+`.pd-main` and **carries `#po-projfilter-wrap` as a child**, so `tabsToDropdown`'s
+`querySelectorAll('button')` would swallow the project filter's own buttons; converting it is its
+own job. `project-schedule` already is this pattern (a title switcher button with its icon).
+`drawing-register` and `material-submittal` have no topbar (retired, `enabled:false`).
+
+**Verified in a real browser** (headless Chromium at `/opt/pw-browsers/chromium-1194`, since the
+installed Playwright pins a newer revision than the image ships) driving the **real `ui.js` and
+real `dashboard.css`** against each module's **own topbar markup extracted from its shipped
+`index.html`** — nothing retyped: **220 checks, 0 failures** across 9 modules × 1280px and 375px.
+Each asserts the trigger is built, the cloned icon is present *inside* it, hydrated to a real
+`<svg>`, ≥14px wide, positioned left of the label, brand red (`rgb(238, 49, 36)`), the `<h1>`
+computes `display:none`, the raw strip is hidden, the trigger names the active screen, no page
+h-scroll and no console errors. The printed module-bar text confirms the ask literally: e.g.
+`Contract + Add`, `Meetings`, `Monitoring + Add activity` — screen name and tools only, no module
+name anywhere. ⚠️ `_template` asserts the **opposite** (no dropdown, title still visible), so the
+single-tab guard is covered rather than skipped.
+
+⚠️ **Not verified signed in.** Shared assets changed → `ui.js?v=` `20260902c` → `20260903b` and
+`dashboard.css?v=` → `20260903b` app-wide; `MODULE_V` → `20260903b` (five module `index.html`
+files changed).
+
 ### 2026-09-02 (b) — Minutes of Meeting, corrected spec: the shared files, and a tabs-dropdown rollout
 
 The owner's follow-up ("some of my prompts were not captured") replaced the 10-item list

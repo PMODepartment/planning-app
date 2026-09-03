@@ -961,20 +961,23 @@ body { overflow-x: clip; }
 /* A title rendered as a view-switch BUTTON rather than a plain <h1> (e.g.
    Project Schedule's own dropdown) falls in here unstyled beyond flex
    defaults — it already carries its own look. */
-/* Item 1 (2026-09-01): UI.tabsToDropdown() marks a module's static title text
-   `.pd-title-hasdrop` once it has built a dropdown trigger that already names
-   the current screen — e.g. "Issues & Concerns" sitting right beside a
-   trigger reading "Issues & Concerns ▾". Hidden ONLY here, above 700px, where
-   `.pd-modulebar > h1` keeps its normal `flex:none` and rides on the SAME row
-   as the trigger, so the duplicate text has something to be redundant WITH.
-   ⚠️ Below 700px `.pd-modulebar > h1` is forced onto its own full-width row
-   (see the ≤700px block further down) with the trigger on the row after it —
-   hiding the text there would leave a bare icon on one line and the label on
-   the next, the exact defect this file's own history already fixed once
-   (search "REMOVED" in issues-lessons/module.css) and says not to bring back. */
-@media (min-width: 701px) {
-  .pd-modulebar > h1 .pd-title-hasdrop { display: none; }
-}
+/* ⚠️ OWNER, 2026-09-03: "for all modules, make sure to have the module icon
+   beside the dropdown. module [icon] only, no need for the module name."
+   UI.tabsToDropdown() now CLONES the module's icon into the dropdown trigger
+   itself, so the whole <h1> goes — at EVERY width, not just above 700px.
+   ⚠️ THIS SUPERSEDES TWO EARLIER ROUNDS AND RETIRES THEIR HAZARD. The rule
+   used to hide only the title TEXT (≥701px) and then, separately, the whole
+   <h1> (≤700px), because on a stacked phone layout an icon-only <h1> claimed a
+   full-width row and sat there alone with the trigger's label on the row
+   after it — the "icon alone / label on the next line" defect this file's own
+   history already fixed once (search "REMOVED" in issues-lessons/module.css).
+   With the icon now INSIDE the trigger there is no separate icon row to
+   strand at any width, so the width gate is gone and so is the defect.
+   `.pd-title-hasdrop` is still marked by the JS and still hidden here, purely
+   so a module that somehow renders its title text outside the <h1> cannot
+   show a duplicate label. */
+.pd-modulebar > h1.pd-h1-hasdrop { display: none; }
+.pd-modulebar > h1 .pd-title-hasdrop { display: none; }
 .pd-modulebar > [class$="-tabs"] {
   display: flex; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 0;
 }
@@ -1027,16 +1030,10 @@ body { overflow-x: clip; }
 
 @media (max-width: 700px) {
   .pd-modulebar > h1 { flex: 1 1 100%; min-width: 0; }
-  /* Item 1 (2026-09-01, mobile round): a module whose tab strip already got a
-     dropdown (UI.tabsToDropdown) drops its <h1> ENTIRELY here — "the dropdown
-     should suffice". Above, hiding just the text still leaves an icon-only h1
-     claiming a full-width row for itself; this rule (higher specificity than
-     the bare `.pd-modulebar > h1` above, so `display:none` wins over the
-     `flex:1 1 100%`) removes the row outright, so there's no separate icon
-     row left to read as "alone". Desktop (≥701px) is untouched — there the
-     icon rides on the SAME row as the dropdown trigger and tools, which is
-     the wanted look; only the stacked-rows shape below 700px changes. */
-  .pd-modulebar > h1.pd-h1-hasdrop { display: none; }
+  /* ⚠️ The ≤700px copy of `.pd-modulebar > h1.pd-h1-hasdrop { display:none }`
+     is GONE — the rule is unconditional now (see the note beside it above),
+     since the icon moved into the trigger. Restating it here would be dead
+     weight, not a safety net. */
   /* Equal segments, like a native segmented control. ⚠️ `min-height` matters:
      the modules size these to 28px, well under the 44px touch minimum — they
      were among the hardest things on the page to hit accurately. */
@@ -1111,6 +1108,10 @@ body { overflow-x: clip; }
 }
 .pd-tabsdrop-btn:hover { background: var(--pd-bg); border-color: var(--pd-line); }
 .pd-tabsdrop-caret { color: var(--pd-muted); flex: none; }
+/* The module icon, cloned in from the module's own <h1> (2026-09-03). Brand
+   red, matching how every module already rendered it in its title, and
+   `flex:none` so a long screen label can never squeeze it away. */
+.pd-tabsdrop-ico { color: var(--pd-red); flex: none; display: inline-flex; align-items: center; }
 .pd-tabsdrop-menu {
   position: absolute; top: calc(100% + 4px); left: 0; z-index: 40; display: none;
   min-width: 220px; background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: 10px;
