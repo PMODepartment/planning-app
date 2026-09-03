@@ -1,5 +1,178 @@
 # Module: minutes-of-meeting
 
+## 2026-09-03 — UI/UX polish: icon-only chrome, a clickable star, required
+## fields, the dashboard matched to Issues, sort + three named sections,
+## draft-attendee editing, and a labelled reporting-view switcher
+
+Owner's 18-item list across four screens. **Run
+`migrations/2026-09-03-mom-draft-attendee-edit.sql`** — the only item here that
+touches the database (Individual View item 4).
+
+### Meetings List
+
+**1 — filter button is icon-only.** `momBrowseFilterBarHTML()`'s toggle drops the
+"Filters" text; the funnel icon plus its `title`/`aria-label` already says what it does.
+
+**2 — export is an icon dropdown, not a labelled `<select>`.** The list's `<select
+id="il-mom-listexport">` is replaced by `iconMenuHTML()` — a small shared builder (a
+button showing one icon, a hidden menu of options) used for both this and the
+per-meeting export control below. `wireIconMenu()`/`closeIconMenus()` open/close it and
+close any other open one on the next click anywhere in the document, the same
+one-menu-open-at-a-time rule the rest of the app's dropdowns follow.
+
+**3 — Favorite is a clickable star, not a checkbox.** `amFavBtnHTML(on)` renders a ★/☆
+toggle button (`#il-am-fav`, `data-on` carries the state); clicking it swaps its own
+`outerHTML` and re-binds itself (`wireFavBtn()`, called once after render and again from
+inside its own handler — no `arguments.callee`). `saveAddMeeting` reads the favorite
+state off `data-on`, not a checkbox's `.checked`.
+
+**4 — "this is a recurring meeting" → "Recurring meeting", moved beside the title.** The
+checkbox now sits in the SAME row as the title field and the favorite star
+(`.il-am-titlerow`), rather than lower in the form where it read as one setting among many
+instead of the thing that reshapes everything below it.
+
+**5 — a Recording field.** `#il-am-rec` (Add modal) and `#il-mom-rec` (existing-meeting
+Detail editor) write `meeting_minutes.recording_url` (added 2026-09-01, already on the
+table — no new migration). ⚠️ **Only the plain one-time-meeting payload gets it — a
+recurring SERIES payload does not**, because `mom_schedules` has no `recording_url`
+column of its own; a series' individual occurrences each get their own Recording field
+once they're real `meeting_minutes` rows, from the Detail editor.
+
+**6 — Date ↔ Series start/end are mutually exclusive, in the SAME row.** `#il-am-datewrap`
+and `#il-am-sstartwrap`/`#il-am-sendwrap` are three sibling `.pd-field`s sharing one form
+row, two of them `hidden` until the Recurring checkbox is ticked. `recur.onchange` toggles
+which pair is hidden, so a recurring meeting's date field is genuinely REPLACED by the
+series dates rather than merely joined by them further down the form.
+
+**7 — required fields.** `validateAddMeeting(root, g, isRecur)` demands: title, start
+time, end time, venue, at least one required attendee (id or free text), at least one
+agenda item — always; and, when recurring, frequency and series start date, plus
+weekday/"which week" **only for the frequencies that actually render those fields**
+(`scheduleRuleFieldsHTML` shows a different field set per frequency — a monthly-date or
+quarterly series asks for a day of month instead, and was never told it was missing a
+control it was never shown). `saveAddMeeting` toasts the first failing message and stops;
+nothing is written until every check passes.
+⚠️ Fixed a latent mismatch while implementing this: the modal's initial rule-fields
+preview was hard-coded to `scheduleRuleFieldsHTML({frequency:'monthly_date'})`, while the
+`<select id="il-am-freq">` (no option pre-selected) actually *displays* its first option,
+`'weekly'` — so the fields shown on open never matched what would save if nobody touched
+the dropdown, and the new weekday-required check would have failed against a `<select>`
+that doesn't exist in that state. Now seeded from `FREQUENCIES[0].key`, so the preview and
+the default selection can't disagree.
+
+### Meetings Dashboard
+
+**1 — matched to the Issues & Concerns dashboard's own chart types.** Copied (not
+shared — this app duplicates small per-module chart components rather than sharing a
+runtime across module boundaries) `donutChartSVG` (per-slice leader-line labels),
+`hbarSVG` ("X/Y (Z%) open" bars) and their `ilCharW`/`ilTextW`/`ilWrapLines` text-wrapping
+helpers from `issues-lessons/module.js`. The old `barChartSVG`/`momDashBarsFrom`/
+`momDashDonutCard` are deleted, not left dead. **Minutes by Status** is the donut (fixed
+colors: Open red / On Hold amber / Closed green). **Minutes by Department**, **Minutes by
+Responsible** and **Minutes by Meeting** are all `hbarSVG` via one new
+`momByOpenTotal(items, keyFn, blank, order)` — a minute (like an issue) is open/closed, so
+the same "how many of this group are still open" shape applies to all three groupings.
+Department keeps `DEPARTMENTS`' own display order; the other two sort alphabetically.
+
+### Individual View
+
+**1 — sort the minutes.** A `Sort by` `<select>` (`_momF.sort`, values `''`/`status`/
+`dept`/`owner`/`due`) lives in the same bar as the search/department/type/status filters.
+⚠️ **It does NOT share their `>4`-items visibility gate.** Those filters can HIDE rows,
+and a "Showing 0 of 3" on a tiny list reads as data loss — the reason they were gated in
+the first place. Sorting never hides anything, so `momFilterBarHTML()` shows the sort
+control (and only the sort control) once there's more than one minute
+(`items.length > 1`), and shows the rest of the bar only past 4, exactly as before.
+`''` means "order recorded" — `momItemsOf()`'s own order, which is `MOM_ITEMS`'s load-time
+sort by `seq` — and is the only option that is NEVER re-sorted by `momSortMinutes()`, so
+the un-sorted default reproduces the order the minutes were actually taken in. Every other
+option sorts blanks LAST, matching this app's convention elsewhere (dates, aging, …) — an
+ascending sort putting blanks first would read as "nobody is responsible" being the most
+important row on the card. ⚠️ "Clear all filters" preserves the chosen sort — sort is a
+display preference, not something that narrows the list, so clearing what hides rows
+should not also silently reorder them back to default.
+
+**2 — three named sections.** A `<h4 class="il-mom-sechead">Meeting details</h4>` heading
+was added ahead of the details fields (Agenda and Minutes already had their own `<h4>`, so
+those needed no change) — the card now reads as three deliberate parts (Meeting details /
+Agenda / Minutes) rather than one long form that happens to end in a list.
+
+**3 — icon-only reporting/export/email/distribute.** Same `iconMenuHTML`/`wireIconMenu`
+pattern as the list's export control; a new **mail** icon was added to `icons.js` for the
+Email button (2026-09-03 shared bump, already applied earlier this session).
+
+**4 — a draft is editable by any of its attendees, not only its creator/a planner.**
+⚠️ **Reading was already project-wide** — `meeting_minutes_read` has never had a draft
+carve-out (see 2026-08-20-department-minutes.sql, "Reading is unchanged: anyone on the
+project reads the minutes") — so the on-screen state label claiming "Draft — only you and
+planners can see this" was already stale before this change; it now reads "Draft —
+editable by you, a planner, or this meeting's attendees", which is the true rule on both
+sides. The actual gap was entirely on WRITE:
+- New `attendeeIdsOf(m)` collects every id across the three attendee tiers
+  (`attendees_required`/`_optional`/`_actual`, each `{ids:[...], text:'...'}`).
+- New `isDraftAttendee(m)` — true only while `!momLocked(m)` and your id is in that list —
+  mirrors the DB's own `not is_distributed` gate exactly.
+- `canEditMinute(m)` is now `isSteward() || owner || isDraftAttendee(m)` — this is what the
+  form fields, the agenda editor and the minutes list are gated on.
+- ⚠️⚠️ **`canDeleteMinute(m)` was deliberately NOT broadened along with it** — it no
+  longer delegates to `canEditMinute`, and instead re-checks ownership directly (owner or
+  steward, exactly the old rule). Deleting the whole record is more consequential than
+  editing it, and the DB's `meeting_minutes_del` policy was never widened to attendees.
+  Delegating here would have shown a Delete control the database goes on to refuse — the
+  exact silent-failure pattern this app's own history warns against repeatedly.
+- ⚠️⚠️ **Same reasoning for Distribute.** New `canDistribute(m)` is the ORIGINAL,
+  narrower `canEditMinute` definition (owner or planner, whatever the lock state) — it
+  gates the Distribute/Revert button and `momSetDistributed()`'s own guard. An attendee
+  can now edit everything else on a draft, but issuing (or retracting) it stays a
+  deliberate act belonging to whoever wrote it or a planner; the DB's WITH CHECK already
+  refuses an attendee's attempt to flip `is_distributed`, this just keeps the UI from ever
+  offering the button for them to try.
+- The migration adds `mom_is_attendee(p_mom uuid)` (mom_items' three write policies OR it
+  in alongside `mom_is_mine`) and widens `meeting_minutes_upd` with an inline attendee
+  clause tested directly against the table's own `is_distributed`/attendee columns —
+  ⚠️ **deliberately NOT via a helper function that re-queries `meeting_minutes` for its
+  own row**, since a WITH CHECK's guarantee about seeing the row's proposed NEW values
+  only holds for columns referenced directly on the table the policy is on, not for an
+  independent subquery back into the same table from inside the same statement. `mom_items`
+  is a different table, so `mom_is_attendee()`'s subquery into `meeting_minutes` there has
+  none of that ambiguity.
+
+### Reporting View
+
+**1 — real padding per slide.** ⚠️⚠️ **Was a genuine, invisible-by-reading bug, not just
+a taste call.** `.il-mom-report .il-mi-card { padding: 16px 18px }` has existed since
+reporting view shipped, but `.il-mom-slides .il-slide { padding: 4px 0 2px }` — same
+(0,2,0) specificity, later in the file — silently won on every minute-card slide the
+whole time. A minute-card slide keeps that 16/18px padding untouched now; the Meeting
+details / Agenda slides (plain divs with no padding of their own) get `18px 20px` set
+directly on their own ids instead of through the old blanket `.il-slide` rule, which is
+now gone entirely.
+
+**2 — the switcher shows M / A / 1 / 2 / 3…, with icon-only Back/Next flanking it.**
+`momSlideShortLabel(el, i)` returns `'M'`/`'A'`/the minute's ordinal (the SAME number
+`momSlideLabel()`'s "Minute N" fallback already uses, so the two can't disagree about
+which slide is which). The nav is rebuilt: a `.il-mom-slidebar` row holds
+`[chevronLeft icon button] [labelled switcher buttons] [chevronRight icon button]`, with
+the full slide name + "Slide N of M" counter moved to its own line beneath — a labelled
+switcher no longer needs a separate caption to say WHICH slide is showing, only what it's
+called. ⚠️ The nav is built via `document.createElement` + `innerHTML`, outside the
+normal `render()`/`Icons.hydrate()` pass, so it calls `Icons.hydrate(nav)` itself right
+after setting its markup — the chevrons would otherwise render as empty spans.
+
+**Verified:** `node --check` clean on `module.js`; `module.css` brace-balanced (321/321);
+function-set diff against the pre-change file shows exactly 3 functions removed
+(`barChartSVG`, `momDashBarsFrom`, `momDashDonutCard`, all deliberate) and 18 added, none
+lost by accident; the migration is paren-balanced with comments stripped (86/86), its
+`$$` pairs (4 = 2 function bodies), and both new/altered policies have a preceding
+`drop policy if exists`. ⚠️ **Not verified signed in** — no live Supabase login is
+available in this environment, the standing constraint for every UI/RLS pass in this
+repo; in particular the draft-attendee RLS branch (item 4) has never been exercised
+against a real second account, and the migration has not been run.
+
+`module.css`/`module.js?v=` → `20260903c`. No `MODULE_V` bump — `index.html`'s structure
+is unchanged, only the module-local asset versions moved.
+
+
 ## 2026-09-02 (b) — The corrected spec: Meetings first, one toolbar row, filters
 ## behind a button, and the minutes reworked end to end
 

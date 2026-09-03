@@ -163,6 +163,38 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
   padding: 2px 7px; border-radius: 3px; background: var(--pd-bg); color: var(--pd-muted);
   border: 1px solid var(--pd-line);
 }
+/* Add-meeting modal's star (item 3, 2026-09-03) — sized to line up with the
+   34px inputs beside it in the same row, rather than the list row's smaller
+   bare glyph. */
+.il-am-favfield .il-mom-favbtn {
+  height: 34px; width: 100%; min-width: 44px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: 20px; border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
+}
+.il-am-favfield .il-mom-favbtn.on { border-color: #D4A017; }
+
+/* ---- Icon-only toolbar buttons + icon dropdown (individual-view item 3,
+   list item 2, 2026-09-03) — a `<select>`/text `<button>` reduced to just its
+   icon, with a small popover menu standing in for the select's options. */
+.il-mom-iconbtn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; padding: 0;
+}
+.il-icondd { position: relative; display: inline-flex; }
+.il-icondd-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; padding: 0;
+}
+.il-icondd-menu {
+  position: absolute; z-index: 30; top: calc(100% + 4px); right: 0; min-width: 150px;
+  display: flex; flex-direction: column; padding: 4px;
+  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
+  box-shadow: 0 6px 18px rgba(0,0,0,.14);
+}
+.il-icondd-item {
+  border: 0; background: transparent; text-align: left; padding: 7px 10px; border-radius: 6px;
+  font-size: 13px; color: var(--pd-ink); cursor: pointer;
+}
+.il-icondd-item:hover { background: var(--pd-bg); color: var(--pd-red); }
 
 /* ---- Icon-only List/Calendar toggle (item 2, topbar) ----------------------
    Reuses .il-viewtoggle's chrome (border/radius) but square icon buttons
@@ -397,26 +429,48 @@ div.il-mom-acrow { padding: 6px 10px; font-size: 11.5px; color: var(--pd-muted);
 .il-mom-slides .il-mom-addrow { display: none !important; }
 .il-mom-slides .il-mi-cards { gap: 0; }
 
+/* Reporting View item 2 (2026-09-03) — the switcher (M / A / 1 / 2 / 3…) sits
+   in its own row with the Back/Next icon buttons flanking it; the full slide
+   name + counter is a second line underneath, since the labelled switcher no
+   longer needs a caption to say WHICH slide is on screen. */
 .il-mom-slidenav {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  padding: 8px 10px; margin-bottom: 12px;
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 10px 12px; margin-bottom: 12px;
   border: 1px solid var(--pd-line); border-radius: 10px; background: var(--pd-bg);
 }
-.il-mom-slidename { flex: 1 1 160px; min-width: 0; font-size: 13.5px; font-weight: 600;
+.il-mom-slidebar { display: flex; align-items: center; gap: 8px; }
+.il-mom-slidearrow {
+  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; padding: 0;
+}
+.il-mom-slidedots { display: flex; gap: 5px; flex-wrap: wrap; flex: 1 1 auto; }
+.il-mom-slidedot {
+  min-width: 26px; height: 26px; padding: 0 8px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--pd-line); background: var(--pd-card);
+  font-size: 12px; font-weight: 700; color: var(--pd-ink);
+}
+.il-mom-slidedot.on { background: var(--pd-red); border-color: var(--pd-red); color: #fff; }
+.il-mom-slidedot:hover:not(.on) { border-color: var(--pd-red-mid); }
+.il-mom-slidename { min-width: 0; font-size: 13px; font-weight: 600; padding-left: 2px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .il-mom-slidename span { display: block; font-size: 11px; font-weight: 400; color: var(--pd-muted); }
-.il-mom-slidedots { display: flex; gap: 5px; flex-wrap: wrap; }
-.il-mom-slidedot {
-  width: 9px; height: 9px; padding: 0; border-radius: 50%; cursor: pointer;
-  border: 1px solid var(--pd-line); background: var(--pd-card);
-}
-.il-mom-slidedot.on { background: var(--pd-red); border-color: var(--pd-red); }
-.il-mom-slidedot:hover { border-color: var(--pd-red-mid); }
-/* A slide gets the whole card's width and a little breathing room, so a deck
-   reads as a deck rather than as the form with most of it hidden. */
-.il-mom-slides .il-slide { padding: 4px 0 2px; }
+/* Reporting View item 1 (2026-09-03) — real padding per slide. ⚠️ The old
+   blanket `.il-mom-slides .il-slide { padding: 4px 0 2px }` had the same
+   (0,2,0) specificity as, and came LATER in the file than, the
+   `.il-mom-report .il-mi-card` padding above — so it silently won and undid
+   that card's own 16px/18px the whole time reporting view has existed. A
+   minute-card slide now keeps that padding untouched; the Meeting-details /
+   Agenda slides (plain divs with none of their own) get it set here instead. */
+.il-mom-slides #il-mom-slide-details.il-slide,
+.il-mom-slides #il-mom-slide-agenda.il-slide { padding: 18px 20px; }
 
 /* --- The meeting's own agenda (module item 4) ------------------------------ */
+/* Individual View item 2 — three named sections (Meeting details / Agenda /
+   Minutes). Same weight as the Agenda/Minutes headings below it, so the card
+   reads as one system rather than a first section styled differently from
+   the two that follow it. */
+.il-mom-sechead { margin: 0 0 8px; font-size: 13.5px; }
+
 .il-mom-agenda { margin: 14px 0; padding-top: 12px; border-top: 1px dashed var(--pd-line); }
 .il-mom-agenda h4 { margin: 0 0 4px; font-size: 13.5px; }
 .il-mom-agview { margin: 6px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 3px; }
@@ -495,14 +549,26 @@ div.il-mom-acrow { padding: 6px 10px; font-size: 11.5px; color: var(--pd-muted);
 .il-history-when { font-size: 11.5px; color: var(--pd-muted); }
 .il-history-note { margin-top: 4px; font-size: 12.5px; color: var(--pd-ink); white-space: pre-wrap; }
 
-/* ---- Dashboard (items #2/#18) ---------------------------------------------- */
+/* ---- Dashboard (items #2/#18; rebuilt 2026-09-03 on the Issues & Concerns
+   dashboard's own card shape — "align dashboard to look of issues dashboard")
+   --------------------------------------------------------------------------- */
 .il-mom-dashsec { margin: 18px 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); }
-.il-dash-grid { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 14px; align-items: start; }
-.il-dash-card { padding: 14px 16px; }
-.il-dash-card h4 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); }
-.il-dash-wide { grid-column: 1 / 2; }
-.il-dash-chartwrap { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-.il-dash-legend { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; min-width: 0; }
+.il-dash-grid { display: grid; grid-template-columns: 0.8fr 1.6fr 1.6fr; gap: 14px; align-items: stretch; }
+.il-dash-card { padding: 14px 16px; display: flex; flex-direction: column; }
+.il-dash-card h4 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); }
+/* Status donut heads its own tile top; Department/Responsible/Meeting move
+   their heading BELOW the chart, matching the Issues dashboard exactly — see
+   `.il-dash-cardhead-bottom`. */
+.il-dash-cardhead { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin: 0 0 10px; }
+.il-dash-cardhead-bottom { margin: 10px 0 0; }
+.il-dash-legend-top { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px 10px; max-width: 60%; }
+.il-dash-legend-top .il-dash-legend-i { font-size: 11px; white-space: nowrap; }
+.il-dash-legend-bottom { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 14px; margin-top: 10px; }
+.il-dash-cardbody { height: 260px; }
+.il-dash-cardbody-center { display: flex; align-items: center; justify-content: center; }
+.il-dash-cardbody-scroll { overflow-y: auto; padding-right: 2px; }
+.il-dash-wide { grid-column: 1 / -1; }
+.il-donut-svg { max-width: 320px; }
 .il-dash-legend-i { display: flex; align-items: center; gap: 6px; color: var(--pd-ink); }
 .il-dash-legend-i i { width: 10px; height: 10px; border-radius: 3px; flex: none; display: inline-block; }
 .il-dash-list { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 480px; }
@@ -515,20 +581,19 @@ div.il-mom-acrow { padding: 6px 10px; font-size: 11.5px; color: var(--pd-muted);
 .il-mom-freqlist { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--pd-ink); }
 .il-mom-freqlist li { margin-bottom: 4px; }
 
-@media (max-width: 1000px) {
-  .il-dash-grid { grid-template-columns: 1fr 1fr; }
-  .il-dash-wide { grid-column: 1 / -1; }
-}
+@media (max-width: 1000px) { .il-dash-grid { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 700px) {
   .il-dash-grid { grid-template-columns: 1fr; }
-  .il-dash-wide { grid-column: auto; }
+  .il-dash-cardbody { height: auto; }
+  .il-dash-cardbody-scroll { overflow-y: visible; max-height: none; }
 }
 
 /* ⚠️ The attendance / open-minutes METER rules were removed with the tiles they
    styled (item 13, 2026-09-02: "remove all"). `meterHTML` went with them; the
-   donut / bar helpers stayed, because the rebuilt dashboard's four charts use
-   them. `.il-mom-freqlist` above is likewise unused by the dashboard now — the
-   series page still renders that shape. */
+   donut / hbar helpers stayed and were extended (2026-09-03) to match the
+   Issues & Concerns dashboard's own chart shapes. `.il-mom-freqlist` above is
+   likewise unused by the dashboard now — the series page still renders that
+   shape. */
 
 /* ---- The rebuilt dashboard's filter row (item 13) ------------------------- */
 .il-mom-dashfilt {
