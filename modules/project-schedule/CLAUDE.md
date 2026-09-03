@@ -1,3 +1,71 @@
+## The stacking crash, named at last: a `var` read twenty lines before it was assigned (2026-09-03) — jasantos2
+
+Owner: *"still blank after hard refresh, there is an error message shown"* — and that message is the
+whole story:
+
+> **Cannot read properties of undefined (reading '0')**
+
+Then: *"how come these errors are unfixable? the previous versions are okay, how come this changed
+now."* Both fair. Here is the answer, and it is short.
+
+### The bug
+In `renderVStack`, `var _axLvls = _vsAxis();` sat **~20 lines below** the `noLevGrpVals` loop
+that reads `_axLvls[0]`. A `var` is hoisted; its **assignment is not**. So at that loop
+`_axLvls` was still `undefined`, and `undefined[0]` throws exactly the message above.
+
+⚠️ **Why it did not break every project, which is why it shipped.** The loop body runs only over
+activities that have NO level. A project where everything is located never enters it. **OPW101 has no
+location breakdown at all**, so all 2,665 activities are in that list and it threw on the first one —
+taking the entire pane with it.
+
+### ⚠️ It is not a regression from this week's work — and the owner is right that older versions were fine
+Bisected across today's commits by comparing, in each one, the first mention of `_axLvls` against
+its declaration line:
+
+| commit | |
+|---|---|
+| 9506d27, ae12265, 5102157, 8f74443, ddb4807, 87d2691 | ok |
+| **f8fc2e2** — *"a WBS branch is a place (LBS) or a grouping"* | **bug introduced** |
+| a931489, a56eed5, and everything after | bug present |
+
+f8fc2e2 added the grouping-value report (the new `noLevGrpVals` loop). The declaration was already
+further down serving `lvl0Name`, and it was not moved up with the new reader. Every commit before
+that one is clean. **The stacking worked in earlier versions because the reader did not exist yet.**
+
+### The fix
+The declaration moved above its first reader. ⚠️ This changes nothing about what it computes:
+`_vsAxis()` is pure, memoised on the level-id signature, and depends on nothing between the two
+positions.
+
+Also: `_axLvls[0].id` in the `noTwList` test was the **one read of four** with no guard, two
+lines from the crash. It is guarded now.
+
+### ⚠️ Why the previous round could not fix this and this one could
+The round before shipped `_vsRenderSafe`, which did not repair anything — it made the pane **name**
+its failure instead of going blank. That single line of text is what turned three rounds of "it is not
+shown" into a five-minute diagnosis. Worth remembering the next time a silent failure looks cheaper
+than a loud one.
+
+---
+
+**Verified: 167 checks, and this time the crash itself is REPRODUCED.** The exact region is sliced from
+each version's own `renderVStack` and executed with a non-empty `noLevList`:
+- **HEAD throws** `Cannot read properties of undefined (reading '0')` — the owner's message, verbatim.
+- **The fix does not throw**, and returns the grouping-value list the loop was written for.
+- **Control:** moving the declaration back below the loop re-introduces the identical throw, so the
+  harness is detecting the fault and not the version label.
+- **Control:** with an empty `noLevList` even HEAD passes — which is why this reached production.
+
+A new scan (comments and string literals stripped by a real scanner, not a regex — an earlier pass
+flagged text that existed only inside the comment describing the bug) reports **no other
+use-before-assignment** in `renderVStack` or any of the 14 stacking helpers. 0 functions lost,
+0 added; the inline script parses.
+
+⚠️ **Still not verified signed-in**, and one thing is still OPEN: the grid screenshot shows OPW101 with
+**duplicate phase roots** — Initiation, Execution and Planning each appearing twice at the root. The
+lifecycle branches are now filed correctly under Planning (that fix worked), but the duplicates are a
+separate fault and are NOT addressed here.
+
 ## A blank stacking pane, a breakdown fetched once, and lifecycle branches the heal could not see (2026-09-03) — jasantos2
 
 Three reports in one thread, and the first two are the SAME bug reported twice because the app kept
