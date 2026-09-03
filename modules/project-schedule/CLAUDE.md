@@ -1,3 +1,88 @@
+## "No Location Breakdown Structure" — on a project that has five (2026-09-03) — jasantos2
+
+Owner, with two tabs of the SAME project (SLN101 — 4PH Strevi Bacoor) side by side:
+
+- **Schedule Setup › 5 · Floors & Zones** — *"This project breaks location down as **Tower › Level ›
+  Orientation › Zone › Cluster**"*, and the LBS editor lists all five levels.
+- **Project Schedule › Vertical Stacking** — *"This project has no Location Breakdown Structure, so
+  there is nothing to stack."*
+
+*"how come that is the error even though there is a defined location levels"*
+
+### ⚠️⚠️ Both panes read the SAME `LOC_LEVELS` global. The difference was WHEN.
+There is no second source and no second copy: `_locBreakdownBar()` (Schedule Setup) and
+`renderVStack()` (the stacking) both read the module's one array, and "Edit levels…" is literally
+`openLocLevels`, which selects from `location_levels`. So the disagreement was never about data.
+
+`load()` **paints from cache and calls `renderAll()` BEFORE `loadResourcesAssignments()` runs** —
+that is deliberate and documented ("the grid/Gantt only need `rows`"), and `location_levels` is
+fetched inside that later call. On a 16k-activity project the gap is seconds to minutes. For the
+whole of it, `LOC_LEVELS` is `[]` — and the stacking reported that as **"this project has no
+Location Breakdown Structure"**, a claim the code had no basis for.
+
+Two independent faults, both fixed:
+
+### 1 ⚠️ The message asserted something the app could not know
+`LOC_LEVELS.length === 0` was collapsed into one accusation regardless of cause. The loader even
+folded a **query error** into the same `[]` (`(r8 && !r8.error && r8.data) || []`), so an un-run
+migration or a missing grant also read as "you have no levels" — sending the planner to build what
+they already had.
+
+New `LOC_LOAD` state (`'pending'` / `'ok'` / `'error'`), and three answers where there was one:
+- **pending** → *"Loading this project's location breakdown…"*, and it says the stacking will draw
+  itself when the levels arrive.
+- **error** → names the actual database failure (escaped — it is a database string) and points at the
+  2026-08-04 location migration.
+- **ok + zero** → the original message, **unchanged**. It was always the right thing to say; it was
+  just being said in two cases where it was false.
+- ⚠️ `LOC_LOAD` resets to `'pending'` on a **project switch**, or moving from a project with levels
+  to one still loading would let the stacking assert "none" from the previous project's state.
+- ⚠️ `tLoc` carries its **own try/catch**, because `T()` swallows throws — without it a network
+  failure would pin `'pending'` forever and the planner would watch a spinner that never resolves.
+  Every path ends on `'ok'` or `'error'`.
+
+### 2 ⚠️⚠️ The pane was a DEAD END — nothing ever repainted it
+This is what made the wrong message permanent. **`renderAll()` does not draw the stacking** — it
+never has: header, grid, Gantt, legend, details, and that is all. The stacking pane is painted only
+by `setVStackMode()` and by its own controls. So a pane rendered during the load kept saying "no
+Location Breakdown Structure" **for the rest of the session**, no matter what arrived afterwards.
+
+New `_vsRepaintIfLevelsArrived()`, called by the `location_levels` fetch itself.
+- ⚠️ **Only when the pane is showing an empty state.** Repainting a drawn building would throw away
+  the planner's scroll position and any focus window they had open.
+- ⚠️ **Only on actual news.** Still pending with still no levels is not news — the pane is already
+  showing the right message, and re-rendering would paint the identical string over itself.
+- ⚠️ Signature-gated (`LOC_LOAD` + the level ids), so a repeat call does nothing, and it returns
+  immediately when the pane is closed.
+
+### What this does NOT fix
+⚠️ **A second tab does not learn about levels created in the first.** Tab A holds its own
+`LOC_LEVELS` and only refetches on load; defining levels in tab B changes nothing in tab A until it
+is refreshed. That is the module's existing single-fetch model and widening it to a live subscription
+is a much larger change than this report needs. The 'pending' copy at least no longer tells that
+planner their breakdown does not exist.
+
+---
+
+**Verified: 90 checks, slice-and-execute.** The empty-state block was cut out of the shipped
+`renderVStack` by brace-matching and **run** for all five states (pending / error / ok+0 / ok+5 /
+pending-but-levels-present, plus an escaping check with `<b>` in the error text); the shipped
+`_vsRepaintIfLevelsArrived` was run against a fake pane for all five paths (first call, levels
+arrive, repeat, drawn building, closed pane); and the loader's outcomes were read out of the file's
+own text. Includes the 66 checks from the tower work earlier today, re-run. Sanity gate on every
+scan: a known-present and a known-missing name through the same slicer, and a control asserting a
+state name that does not exist is absent. 0 functions lost, 1 added; the inline script parses; no NUL
+bytes.
+
+⚠️ **NOT verified signed-in.** The anon key has no grants on `project_schedule`, so this has not been
+run against SLN101. In particular the **cause** is inferred from the code path (a cache paint before
+the ancillary fetch) and from the screenshots — the Project Schedule tab's grid is also empty in
+them, which is consistent with a load still in flight, but it was not measured. If the stacking still
+reports no breakdown on SLN101 **after** the load visibly finishes, then `location_levels` really is
+returning nothing for that project id and the next step is the `'error'` text this change now
+surfaces.
+
+
 ## One tower, however the WBS spells it — substructure + superstructure combined (2026-09-03) — jasantos2
 
 Owner: *"Make the detection of the WBS structure be easier in the project schedule. In addition, the

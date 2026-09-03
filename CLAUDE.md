@@ -84,6 +84,29 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-03 (f) — "No Location Breakdown Structure", on a project that has five
+
+Owner, two tabs of SLN101 side by side: Schedule Setup lists **Tower › Level › Orientation › Zone ›
+Cluster**, Vertical Stacking says the project has no breakdown. *"how come that is the error even
+though there is a defined location levels"*
+
+Both panes read the same `LOC_LEVELS` global — the difference was **when**. `load()` paints from
+cache and renders before `loadResourcesAssignments()` fetches `location_levels`, which on a
+16k-activity project is minutes; for all of it the stacking reported an empty array as *"this project
+has no Location Breakdown Structure"*, a claim it had no basis for. It also folded a **query error**
+into the same message, blaming the planner for a missing migration. New `LOC_LOAD` state gives three
+honest answers (loading / could not be read / genuinely none), and — the reason the wrong one stuck —
+`renderAll()` **never repaints the stacking**, so the pane was a dead end for the session; the
+`location_levels` fetch now repaints it, but only when it is showing an empty state and only on
+actual news. Detail in `modules/project-schedule/CLAUDE.md`.
+
+⚠️ The "genuinely none" message is unchanged — it was always right, just said in two cases where it
+was false. ⚠️ Known limit, not fixed: a second tab still does not learn about levels created in the
+first until it reloads. ⚠️ Not verified signed-in; the cause is inferred from the code path and the
+screenshots, not measured on SLN101. 90 slice-and-execute checks. `MODULE_V` → `20260903f`.
+
+---
+
 ### 2026-09-03 (e) — A tower is one building, however the WBS spells it
 
 Owner: *"there are scenarios wherein the substructure is separated from the superstructure, so we

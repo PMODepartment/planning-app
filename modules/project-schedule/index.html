@@ -4056,6 +4056,19 @@
   // DERIVED from the schedule (group activities by code × location) rather than hand-linked.
   var CLASS_CODES = [];
   var LOC_LEVELS = [];   // Location Breakdown levels (ordered: Building > Level > Zone > …) for this project
+  /* ⚠️⚠️ WHETHER LOC_LEVELS IS EMPTY *BECAUSE THE PROJECT HAS NONE* OR *BECAUSE IT HAS NOT LOADED
+     YET* — and until this existed the app could not tell the two apart, so it asserted the first.
+     Owner 2026-09-03, two tabs of the SAME project (SLN101) side by side: Schedule Setup shows
+     "This project breaks location down as Tower › Level › Orientation › Zone › Cluster" and the LBS
+     editor lists all five, while Vertical Stacking says "This project has no Location Breakdown
+     Structure". *"how come that is the error even though there is a defined location levels"*
+     Both were reading the same LOC_LEVELS global. The difference is WHEN.
+     'pending' — load() paints from cache and renders BEFORE loadResourcesAssignments() has fetched
+                 location_levels, which on a 16k-activity project is seconds to minutes away.
+     'error'   — the select failed (no grant, un-run migration). The old code folded this into the
+                 same [] and blamed the planner for a database problem.
+     'ok'      — actually fetched. Only here may the app say the project has no breakdown. */
+  var LOC_LOAD = 'pending', LOC_LOAD_ERR = '';
   var COST_ACCTS = [], EXPENSES = [];   // cost-breakdown-structure accounts + per-activity itemized expenses
   var WBS_NODES = [];   // first-class WBS tree (authoring source of truth; projected to WBS-Summary rows)
 
@@ -5863,7 +5876,11 @@
      appear) is the whole reason this module works against a partially-migrated database. Losing it
      to a parallel rewrite would be a silent regression in exactly the case it was written for. */
   async function loadResourcesAssignments() {
-    if (!pid) { RESRC = []; ASSIGN = []; CALS = []; CODE_TYPES = []; CODE_VALUES = []; STEPS = []; COST_ACCTS = []; EXPENSES = []; LOC_LEVELS = []; PACKAGES = []; WPM_WPS = []; DSCN = []; return; }
+    if (!pid) { RESRC = []; ASSIGN = []; CALS = []; CODE_TYPES = []; CODE_VALUES = []; STEPS = []; COST_ACCTS = []; EXPENSES = []; LOC_LEVELS = []; PACKAGES = []; WPM_WPS = []; DSCN = []; LOC_LOAD = 'ok'; LOC_LOAD_ERR = ''; return; }
+    // ⚠️ Back to 'pending' for the project we are about to load — NOT left on the previous project's
+    // answer. Otherwise switching from a project WITH levels to one still loading would let the
+    // stacking assert "no breakdown" using the old project's resolved state.
+    LOC_LOAD = 'pending'; LOC_LOAD_ERR = '';
     // Each entry is a self-contained fetch that assigns its own globals and swallows its own error.
     function T(fn) { return (async function () { try { await fn(); } catch (e) {} })(); }
 
@@ -5904,8 +5921,19 @@
     // Location Breakdown levels. Tolerant of the un-run 2026-08-04 migration: no table -> no
     // levels -> the location columns/grouping simply don't appear, everything else is unaffected.
     var tLoc = T(async function () {
-      var r8 = await sb().from('location_levels').select('*').eq('project_id', pid).order('sort_order');
-      LOC_LEVELS = (r8 && !r8.error && r8.data) || [];
+      // ⚠️ The outcome is RECORDED, not just the rows. T() swallows a throw, so without the catch
+      // here a network failure would leave LOC_LOAD on 'pending' forever and the stacking would show
+      // a spinner that never resolves. Every path below ends on 'ok' or 'error'.
+      try {
+        var r8 = await sb().from('location_levels').select('*').eq('project_id', pid).order('sort_order');
+        if (r8 && r8.error) { LOC_LEVELS = []; LOC_LOAD = 'error'; LOC_LOAD_ERR = String(r8.error.message || r8.error); }
+        else { LOC_LEVELS = (r8 && r8.data) || []; LOC_LOAD = 'ok'; LOC_LOAD_ERR = ''; }
+      } catch (e) {
+        LOC_LEVELS = []; LOC_LOAD = 'error'; LOC_LOAD_ERR = (e && e.message) ? e.message : String(e);
+      }
+      // The stacking may be on screen showing "no location breakdown" from before this resolved —
+      // see _vsRepaintIfLevelsArrived.
+      try { _vsRepaintIfLevelsArrived(); } catch (e) {}
     });
     // Contract packages. Tolerant of the un-run 2026-08-19-packages.sql exactly like
     // location_levels above: no table -> no packages -> the Package column offers nothing to
@@ -14958,8 +14986,25 @@
   function renderVStack(hostEl) {
     var host = hostEl || document.getElementById('ps-vstack'); if (!host) return;
     if (!pid) { host.innerHTML = '<div class="ps-vs-empty">Select a project to see its vertical stacking.</div>'; return; }
+    /* ⚠️⚠️ THREE DIFFERENT ANSWERS, WHERE THERE USED TO BE ONE ACCUSATION. An empty LOC_LEVELS was
+       reported as "this project has no Location Breakdown Structure" no matter WHY it was empty, and
+       on the load path it is empty for seconds to minutes on every single project: load() paints
+       from cache and renders long before loadResourcesAssignments() fetches location_levels. A
+       planner who opened the stacking in that window was told their breakdown did not exist, in the
+       same session in which Schedule Setup was listing all five of its levels — see LOC_LOAD.
+       ⚠️ The 'pending' pane is not a dead end: the fetch calls _vsRepaintIfLevelsArrived() when it
+       resolves, so this replaces itself with the real building. */
     if (!LOC_LEVELS.length) {
-      host.innerHTML = '<div class="ps-vs-empty">This project has no Location Breakdown Structure, so there is nothing to stack. Add location levels (Level / Zone / Unit) and tag activities with them — a Schedule Setup push does that for you.</div>';
+      if (LOC_LOAD === 'pending') {
+        host.innerHTML = '<div class="ps-vs-empty">Loading this project&rsquo;s location breakdown…<br><span style="opacity:.7;font-size:12px;">The stacking draws itself as soon as the levels arrive.</span></div>';
+      } else if (LOC_LOAD === 'error') {
+        // ⚠️ Name the database failure instead of blaming the planner for it. The 2026-08-04
+        // migration is the usual cause, and "you have no levels" sends them to build what they
+        // already have.
+        host.innerHTML = '<div class="ps-vs-empty">The location breakdown could not be read, so there is nothing to stack yet.<br><span style="opacity:.7;font-size:12px;">' + esc(LOC_LOAD_ERR || 'the location_levels query failed') + ' — if this project has never had location levels, the 2026-08-04 location migration may not have been run.</span></div>';
+      } else {
+        host.innerHTML = '<div class="ps-vs-empty">This project has no Location Breakdown Structure, so there is nothing to stack. Add location levels (Level / Zone / Unit) and tag activities with them — a Schedule Setup push does that for you.</div>';
+      }
       return;
     }
     var _actsAll = _vsActs(), detail = _vsDetailNow();
@@ -15325,6 +15370,30 @@
     });
     host.querySelectorAll('.ps-vs-cell').forEach(function (el) { el.addEventListener('click', function () { openVsCell(el.getAttribute('data-vsk')); }); });
     if (window.Icons) Icons.hydrate(host);
+  }
+  /* ⚠️ THE STACKING IS NOT REPAINTED BY renderAll() — it never was, and that is what made the empty
+     message permanent. renderAll() draws the header, grid, Gantt, legend and details; the stacking
+     pane is painted only by setVStackMode() and by its own controls. So a pane that rendered during
+     the load, before location_levels came back, kept saying "no Location Breakdown Structure" for
+     the rest of the session no matter what arrived afterwards. Called from the location_levels
+     fetch, and cheap: it does nothing unless the pane is actually open AND showing one of the empty
+     states, so a stacking already drawn from cached levels is never re-rendered under the planner. */
+  var _vsLastLevelSig = '';
+  function _vsRepaintIfLevelsArrived() {
+    var sig = LOC_LOAD + '|' + LOC_LEVELS.map(function (l) { return l && l.id; }).join(',');
+    if (sig === _vsLastLevelSig) return;
+    _vsLastLevelSig = sig;
+    // ⚠️ Nothing has ARRIVED yet — still pending with no levels means the pane is already showing
+    // the right message, so re-rendering it would paint the identical string over itself. Only a
+    // resolved load, or levels actually appearing, is news.
+    if (LOC_LOAD === 'pending' && !LOC_LEVELS.length) return;
+    if (!vstackMode) return;
+    var host = document.getElementById('ps-vstack');
+    // Only when the pane is showing an empty state — repainting a drawn building would throw away
+    // the planner's scroll position and any focus window they had opened.
+    if (!host || !host.querySelector('.ps-vs-empty')) return;
+    _vsAnim = 'fade';
+    try { renderVStack(); } catch (e) {}
   }
   function setVStackMode(on) {
     vstackMode = on;
