@@ -615,6 +615,32 @@
       (isLead || isAccount || isProjCtx ? main : below).appendChild(el);
     });
 
+    // Pull the module's own icon glyph (<span class="xx-title-ico" data-ico="…">,
+    // per MODULE_CONTRACT.md's uniform-topbar rule) out of whatever just moved
+    // into `below` — normally the module's <h1>, or a title-switch button like
+    // Project Schedule's — and pair it with the project dropdown here in `main`,
+    // immediately to its left. Per the owner's explicit ask (2026-09-02): the
+    // dropdown itself carries no icon of its own; the module's identity glyph
+    // sits BESIDE it, never fused inside it, and never left behind on the
+    // second row where it used to ride with the title text.
+    // ⚠️ Wrapped together (`.pd-tb-projgroup`), not placed as two loose
+    // siblings — a narrow-viewport rule (dashboard.css, ≤820px) later moves the
+    // dropdown onto its own row, and without a shared wrapper the icon would be
+    // stranded back with the hamburger/theme/avatar cluster instead of moving
+    // with it.
+    var titleIco = below.querySelector('[class$="-title-ico"]');
+    var projCtx = main.querySelector('[class$="-projctx"], #ctx-switcher');
+    if (titleIco && projCtx) {
+      var group = document.createElement('div');
+      group.className = 'pd-tb-projgroup';
+      projCtx.parentNode.insertBefore(group, projCtx);
+      var mark = document.createElement('span');
+      mark.className = 'pd-tb-mark';
+      mark.appendChild(titleIco);
+      group.appendChild(mark);
+      group.appendChild(projCtx);
+    }
+
     topbar.appendChild(main);
     // Marks the topbar as restructured. The CSS keys off THIS class, never off
     // `.pd-topbar` alone — the column layout assumes `.pd-tb-main` exists.
