@@ -12718,3 +12718,17 @@ touched, so no `?v=` bump is due. Full detail (and the browser verification) is 
   into the importers.
 - **The Location Breakdown lives only in Schedule Setup › Floors & Zones now** — levels and both WBS
   matchers. The Project Schedule's Group menu keeps a signpost and a deep link.
+- **A reload no longer looks like an import.** `_repair('Loading resources…')` set `_repairBusy`,
+  which is half of `_editLocked()`, so every ordinary open of the Project Schedule raised the red
+  *"A schedule update in progress — do not edit yet"* banner and disabled Add activity on a schedule
+  that was already painted and correct. The chip still names each pass; only the passes that WRITE
+  rows lock, and those are all behind the heal gates, so a healthy project's load never locks.
+- **Working calendars can hold days that repeat every year.** A company holiday is entered once as
+  `--MM-DD` (ISO 8601's own recurring-date notation, in the existing `extra_holidays` array — no
+  migration) instead of once per year; a P6 import folds its own repeats at the parse, and a saved
+  calendar offers a button that says how many it would fold. One-off dates — proclamations, lunar
+  holidays, a shutdown after a typhoon — stay exact. `PDCal.nonWorkingReason` is indexed rather than
+  scanning the list per day, which it does up to 7,300 times per activity.
+- **Schedule Setup opens on the WBS.** The tree editor is step 2 rather than step 11: it is the only
+  step that shows what the project already has, it edits the live tree rather than filling in the
+  setup, and the import path already checked branches first.

@@ -42,7 +42,18 @@
        (The 701-1140px band already wrapped for this reason; this generalises it.) */
     .ps-tb-row { display:flex; flex-wrap:wrap; align-items:center; gap:5px; row-gap:6px; overflow:visible; min-width:0; }
     .ps-tb-row > *:not(.ps-search):not(.ps-tb-spacer) { flex:none; }
-    .ps-tb-row .ps-search { flex:0 1 auto; min-width:110px; }
+    /* ⚠️⚠️ `flex:1 1 110px`, NOT `0 1 auto`, AND THAT IS THE ITEM THAT WAS WRAPPING.
+       Owner 2026-09-03: *"In my screen resolution of a laptop, the toolbar spills over into two
+       rows."* Measured in a harness at a 1,340px window (1,237px available to the row): the buttons
+       need 1,136px and the search box a further 165px — so the row needs 1,301px and the SEARCH is
+       what goes to line two. `flex:0 1 auto` over an <input> whose inline width is 160px gives a
+       flex base size of 160px, and flex-shrink only bites once the item is ON the line — line
+       breaking happens first, on the hypothetical 160px. So it never shrank; it wrapped.
+       With a `110px` basis and grow, it takes whatever the row has left, at any width, and the row
+       can no longer break. It is still 160px+ on any normal window because it grows into the space
+       the `.ps-tb-spacer` would otherwise absorb. */
+    .ps-tb-row .ps-search { flex:1 1 100px; min-width:100px; }
+    .ps-tb-row .ps-search .pd-input { width:100%; }
     /* The <input> inside .ps-search has no CSS width, so its default min-width:auto resolves to
        its min-content (intrinsic) size — which can exceed the wrapper's declared min-width and
        silently defeat the wrapper's own flex-shrink, overflowing the toolbar row. */
@@ -129,6 +140,9 @@
     .ps-projctx .pd-psel-btn .pd-psel-txt { flex:0 1 auto; }
     /* icon-only toolbar buttons (square, centered glyph; tooltip via title) */
     .ps-toolbar .ps-icobtn { width:36px; padding:0; justify-content:center; }
+    /* See the comment on #ps-help-btn in the markup: the last 41px of the one-row toolbar.
+       `?` still opens the sheet, and Actions › Keyboard shortcuts is its permanent home. */
+    @media (max-width:1400px) { #ps-help-btn { display:none; } }
     /* Gantt-local colors control (bar colors are a Gantt-only feature) */
     .ps-gantt-pane { position:relative; }
     .ps-gantt-tools { position:absolute; top:5px; right:10px; z-index:6; }
@@ -156,7 +170,14 @@
     /* Activity Network View (PERT) */
     .ps-network { overflow:auto; height:62vh; min-height:420px; border:1px solid var(--pd-line); border-radius:var(--pd-radius); background:var(--pd-card); }
     #ps-view-schedule.ps-net-mode .ps-split, #ps-view-schedule.ps-net-mode .ps-grid-foot, #ps-view-schedule.ps-net-mode .ps-legend { display:none; }
-    #ps-view-schedule.ps-net-mode .ps-network { display:block !important; flex:1 1 auto; min-height:0; height:auto; }
+    /* ⚠️⚠️ A COLUMN WHOSE *CANVAS* SCROLLS, not a scrolling box with a sticky header.
+       The head used to scroll with the diagram and be pinned back by `position:sticky`, which works
+       until a second fixed strip is added above the drawing — the "what the columns mean" key would
+       have scrolled away under it, i.e. the explanation disappears the moment you look at the thing
+       it explains. Making the pane a flex column and giving the canvas `flex:1 1 auto; min-height:0`
+       fixes both strips in place and confines scrolling to the drawing, which is also what lets the
+       zoom controls stay reachable at any scroll offset. */
+    #ps-view-schedule.ps-net-mode .ps-network { display:flex !important; flex-direction:column; flex:1 1 auto; min-height:0; height:auto; overflow:hidden; }
     .ps-net-node { fill:var(--pd-card); stroke:var(--pd-line); stroke-width:1.5; }
     .ps-net-node.crit { stroke:#f59e0b; stroke-width:2.5; }
     .ps-net-node.done { fill:var(--pd-red-light); }
@@ -165,6 +186,33 @@
     .ps-net-edge { fill:none; stroke:var(--pd-muted); stroke-width:1.3; opacity:.55; }
     .ps-net-edge.crit { stroke:#f59e0b; opacity:1; stroke-width:2; }
     .ps-net-arrow { fill:var(--pd-muted); }
+    /* ---- Trace one activity's logic (see netTrace) --------------------------------------------
+       ⚠️⚠️ THE SAME GREEN AND ORANGE AS THE SCHEDULE SETUP'S LINK CANVAS, and the same
+       direction: #1f8f4e = PREDECESSORS (what drives it), #e08a1e = SUCCESSORS (what it drives).
+       Two screens in one module teaching two different colour languages for the same relationship
+       is how a convention stops being one — a planner who learned green-drives-it on the Zone
+       sequence step must not have to relearn it here. */
+    .ps-net-g { cursor:pointer; }
+    .ps-net-g.netdim { opacity:.13; }
+    .ps-net-g.netfocus > .ps-net-node { stroke:var(--pd-ink); stroke-width:3; }
+    .ps-net-g.netpred > .ps-net-node { stroke:#1f8f4e; stroke-width:2.5; }
+    .ps-net-g.netsucc > .ps-net-node { stroke:#e08a1e; stroke-width:2.5; }
+    .ps-net-edge.netdim { opacity:.06; }
+    .ps-net-edge.hotpred { stroke:#1f8f4e; opacity:1; stroke-width:2; }
+    .ps-net-edge.hotsucc { stroke:#e08a1e; opacity:1; stroke-width:2; }
+    /* ⚠️ The diagram scrolls in BOTH axes and the head is sticky, so the canvas needs its own
+       scroll box — an <svg> wider than the pane would otherwise stretch #ps-network itself and drag
+       the sticky head out of the viewport. */
+    .ps-net-canvas { flex:1 1 auto; min-height:120px; overflow:auto; max-width:100%; }
+    .ps-net-tools { margin-left:auto; display:inline-flex; align-items:center; gap:4px; }
+    .ps-net-tools .pd-btn { min-height:26px; height:26px; padding:0 8px; font-size:12px; }
+    .ps-net-zval { font-size:11.5px; color:var(--pd-muted); min-width:38px; text-align:center; font-variant-numeric:tabular-nums; }
+    /* The one sentence that says what the columns mean. See the note in renderNetwork. */
+    .ps-net-key { padding:7px 12px; font-size:11.5px; line-height:1.5; color:var(--pd-muted);
+      border-bottom:1px solid var(--pd-line); background:var(--pd-card); }
+    .ps-net-key b { color:var(--pd-ink); }
+    .ps-net-key .k-pred { color:#1f8f4e; font-weight:600; }
+    .ps-net-key .k-succ { color:#e08a1e; font-weight:600; }
     /* Activity Network header (auto-filter toggle) */
     .ps-net-head { display:flex; align-items:center; gap:14px; padding:8px 12px; border-bottom:1px solid var(--pd-line);
       background:var(--pd-bg); font-size:12px; color:var(--pd-muted); position:sticky; top:0; z-index:2; }
@@ -353,7 +401,25 @@
     .ps-split { --ps-gantt-min:240px; }
     .ps-grid-pane { flex:0 0 660px; max-width:70%; display:flex; flex-direction:column; border-right:2px solid var(--pd-line); min-width:0; position:relative; }
     .ps-split:not(.ps-grid-only) > .ps-grid-pane { max-width:calc(100% - var(--ps-gantt-min) - 6px) !important; }
-    .ps-split.ps-grid-only > .ps-grid-pane { max-width:100% !important; }
+    /* ⚠️⚠️ GRID-ONLY MUST ALSO *GROW*, not merely be allowed to. `max-width:100%` freed the
+       ceiling but the pane's `flex:0 0 660px` basis (or the wider inline one the divider drag saved)
+       is still what sizes it, and nothing grows it — so "Grid" hid the Gantt and left the space it
+       vacated as a dead black rectangle. Owner 2026-09-03: *"Viewing by Grid only shows a blank pane
+       at the right side. Let's maximize this space for grid only."*
+       ⚠️ `flex-grow` beats the inline basis without `!important` (the drag sets flex-basis, never
+       flex-grow), so the planner's saved width is untouched and comes straight back on Split.
+       The border-right goes too: there is no pane to its right to be divided from. */
+    .ps-split.ps-grid-only > .ps-grid-pane { max-width:100% !important; flex-grow:1; border-right:0; }
+    /* ⚠️⚠️ AND THE SLACK GOES TO THE ACTIVITY NAME, via a variable that is NOT `--c-name`.
+       Widening the pane alone just moves the dead space inside the scroller. The name column is the
+       one that is visibly truncated at every width ("Excavation to Suitable S…"), so it is where the
+       space is worth something.
+       ⚠️ It is deliberately a SEPARATE var: `--c-name` is the planner's own column width, written
+       inline on the pane by the header drag and persisted to `ps_cols`, and the next drag reads it
+       back with getComputedStyle. Adding the slack into it would save a Grid-only-sized column and
+       the width would grow again every time they switched views. This one is set by JS only while
+       Grid-only is on (see `_applyGridOnlyStretch`) and removed on the way out. */
+    .ps-split.ps-grid-only .ps-cell.c-name { width:calc(var(--c-name) + var(--ps-gonly-slack, 0px)); }
     /* Column chooser docked as an always-visible "+" at the RIGHT end of the grid header row
        (OPC-style — sits over the header, not on a separate row and not over the first label). */
     /* Higher specificity than the generic .ps-menu-wrap{position:relative} rule below, so this
@@ -612,6 +678,8 @@
     .ps-cal-days { display:flex; flex-wrap:wrap; gap:4px 12px; }
     .ps-cal-days label { display:inline-flex; align-items:center; gap:4px; font-size:12.5px; }
     .ps-cal-hols { display:flex; flex-wrap:wrap; gap:6px; }
+    /* A yearly entry reads differently from a one-off date, so it looks different. */
+    .ps-cal-hol.is-recur { border-color:var(--pd-red-mid); }
     .ps-cal-hol { display:inline-flex; align-items:center; gap:4px; background:var(--pd-bg); border:1px solid var(--pd-line);
       border-radius:999px; padding:1px 4px 1px 9px; font-size:11.5px; }
     .ps-cal-hol button { border:0; background:transparent; cursor:pointer; color:var(--pd-muted); font-size:11px; padding:0 3px; }
@@ -869,16 +937,30 @@
        rule below is (1,2,0) and still beats both, so it alone decides when the chip is shown. */
     .ps-actlegend .lg-lsmon { display:none; }
     #ps-view-schedule.ps-lsm .lg-lsmon { display:inline-flex; }
-    /* Sample swatches drawn the way a real bar is: same hue, pale remainder vs solid+texture done. */
-    .lg-plan { background:rgba(0,112,192,.30); border:1px solid rgba(0,112,192,.55); }
-    .lg-done { background:#0070C0; background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.55) 0 2px,transparent 2px 6px); }
+    /* Only in the mixed state — with nothing but coloured bars on screen there is no second
+       Activity chip to be told apart from, and the qualifier would be noise. */
+    .lg-lsmhalf { display:none; }
+    .ps-actlegend.ps-lsm-mixed .lg-lsmhalf { display:inline; font-style:normal; color:var(--pd-muted); margin-left:4px; }
     /* Sample of a REAL coloured bar — the counterpart to .lg-task in the plain view: the same swatch
        shows both halves at once (solid+textured actual over the pale remainder) with the baseline
-       rail beneath, so the key looks like the thing it is describing rather than three flat chips. */
-    .lg-lsmbar { background:rgba(0,112,192,.30); border:1px solid rgba(0,112,192,.55);
+       rail beneath, so the key looks like the thing it is describing rather than three flat chips.
+       ⚠️⚠️ DRAWN IN THE BRAND RED, NOT IN A PALETTE BLUE, and that is a reported bug rather
+       than a taste call. It used to be hard-coded #0070C0 — one arbitrary entry out of CAT_PALETTE.
+       Sitting next to a red Milestone diamond in a red-branded app, with the plain view's own
+       Activity chip also red, it read as a statement: *"turning on colour activities by changes the
+       normal activity gantt bar color from red to blue"* (owner 2026-09-03). It never did. The chip
+       is a SHAPE sample — "this is what a bar looks like now: pale remainder, solid+textured done,
+       rail underneath" — and every real bar takes its own trade colour, so the sample's hue carries
+       no information at all. A sample that carries no information must not look like one that does,
+       so it takes the house colour the rest of the key already uses.
+       ⚠️ `--pd-red-light` / `--pd-red-mid` / `--pd-red` are the shared theme tokens, so this
+       tracks light and dark for free — which the literal blue did not.
+       (`.lg-plan` / `.lg-done`, two more hard-coded blues, were deleted here: nothing has rendered
+       them since the two halves were merged into this one swatch.) */
+    .lg-lsmbar { background:var(--pd-red-light); border:1px solid var(--pd-red-mid);
       position:relative; overflow:visible; }
     .lg-lsmbar::after { content:""; position:absolute; left:0; top:0; bottom:0; width:55%;
-      background:#0070C0; background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.55) 0 2px,transparent 2px 6px); }
+      background:var(--pd-red); background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.55) 0 2px,transparent 2px 6px); }
     .lg-lsmbar::before { content:""; position:absolute; left:-2px; right:-6px; bottom:-5px; height:3px;
       background:var(--ps-bl,#2F6FB0); border-radius:2px; }
     .lg-swatch { display:inline-block; width:22px; height:11px; border-radius:2px; }
@@ -2110,6 +2192,40 @@
     .ps-menu .ps-lm-lyt button:first-child { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .ps-menu .ps-lm-lyt button:last-child { flex:0 0 30px; width:30px; padding:8px 0; text-align:center; color:var(--pd-muted); }
     .ps-lm-none { padding:8px 14px; color:var(--pd-muted); font-size:12px; }
+    /* ==========================================================================================
+       THE VIEW MENU IS COMPACT, AND THE MEASUREMENT IS THE ARGUMENT
+       ------------------------------------------------------------------------------------------
+       Owner 2026-09-03: *"Opening the View button pops up a really expanded window. Let's optimize
+       based on [screenshot]."* The screenshot showed the menu running from just under the toolbar to
+       the bottom of the viewport WITH A SCROLLBAR — i.e. past 100% of the height available.
+       Counted on that build: 8 full-width rows for what are really two pick-one groups (4 layouts,
+       2 densities) at ~29px each = 232px, plus a three-line prose note at ~54px. Both are
+       pick-one-of-N, which is what a chip row is for — the same reasoning that already put the WBS
+       outline levels on one wrapping line four rules above ("maxDepth() reaches 14 on a P6 import,
+       which as stacked buttons is taller than everything else in the menu combined").
+       ⚠️ Nothing is REMOVED. Every control that was in the menu is still in it and still one
+       click — removing items would answer a height complaint by taking away function, and the last
+       two rounds of toolbar work were spent putting these controls back where a planner can reach
+       them. This is a re-LAYOUT: ~286px of stacked rows become ~100px of chips and one line.
+       ⚠️ SCOPED TO `.ps-layout-menu`. Every other `.ps-menu` in the module is a plain list of
+       verbs where a full-width row is right, and the chip treatment would make them worse.
+       ========================================================================================== */
+    .ps-lm-chips { display:flex; flex-wrap:wrap; gap:4px; padding:2px 12px 8px; }
+    /* ⚠️ Out-specifies `.ps-menu button` (0,1,1) with (0,2,1) — that rule is display:block;
+       width:100%, which is exactly what makes a chip row impossible. */
+    .ps-layout-menu .ps-lm-chips button { display:inline-flex; align-items:center; width:auto;
+      padding:5px 9px; border:1px solid var(--pd-line); border-radius:6px; font-size:12px;
+      line-height:1.15; white-space:nowrap; }
+    .ps-layout-menu .ps-lm-chips button.on { border-color:var(--pd-red); background:var(--pd-red-light); color:var(--pd-red); font-weight:600; }
+    /* The remaining full-width rows tighten too — 8px → 6px is 2px x 7 rows. */
+    .ps-layout-menu button { padding:6px 14px; }
+    .ps-layout-menu .ps-lm-head, .ps-layout-menu .ps-gm-sec { padding-top:5px; padding-bottom:3px; }
+    /* ⚠️ A SCROLL CAP AS WELL AS anchorMenu's clamp. anchorMenu pins and clamps, but it can only
+       clamp to the room available — and `.ps-menu` is `overflow:hidden` with no max-height, so on a
+       short viewport (or with a dozen saved layouts) the last items were silently CUT OFF rather
+       than reachable. Reset layout to defaults is the escape hatch for an unusable saved layout; it
+       must never be the item that falls off the bottom. */
+    .ps-layout-menu { max-height:78vh; overflow-y:auto; overflow-x:hidden; }
     /* ⚠️ --pd-danger-text, not --pd-red. Brand red on card is 3.74:1 — under AA for 13px text.
        Sixth instance of that defect in this repo; the old Layouts menu shipped it. */
     .ps-menu button.ps-lm-save { color:var(--pd-danger-text); font-weight:600; border-top:1px solid var(--pd-line); }
@@ -2674,7 +2790,18 @@
     .sbld-phlist { margin-top:9px; display:grid; gap:5px; }
     /* name · days · computed window · delete. The window column is read-only output: the dates come
        from the chain, so they are shown rather than entered. */
-    .sbld-phrow { display:grid; grid-template-columns:14px minmax(0,1fr) 74px 168px 34px; gap:7px; align-items:center; }
+    /* ⚠️ SIX columns now: grip · name · days · concurrent · dates · delete. See stPhases for
+       why the header row and the concurrency tick exist. */
+    .sbld-phrow { display:grid; grid-template-columns:14px minmax(0,1fr) 74px 26px 168px 34px; gap:7px; align-items:center; }
+    .sbld-phrow.sbld-phhdr { font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); padding-bottom:1px; }
+    .sbld-phrow.sbld-phhdr i { font-style:normal; text-transform:none; letter-spacing:0; opacity:.7; }
+    .sbld-phpar { display:inline-flex; align-items:center; justify-content:center; cursor:pointer; }
+    .sbld-phpar input { cursor:pointer; }
+    .sbld-phpar input:disabled { cursor:default; opacity:.35; }
+    /* ⚠️ A concurrent row is marked on its LEFT EDGE, not by indenting it: the name column is
+       already narrow and an indent would misalign the one column a reader scans down. */
+    .sbld-phrow.is-par > .sbld-phgrip { box-shadow:inset 2px 0 0 var(--pd-red-mid); }
+    .sbld-phrow.is-par .sbld-phwin { color:var(--pd-ink); }
     /* ⚠️ THE IMPORT TREE HAS ITS OWN ROW, and it must: it was borrowing `.sbld-phrow`, whose grid is
        `14px 1fr 74px 168px 34px` for a PHASE ACTIVITY (grip, name, duration, window, delete). An
        import row carries a different set — expand chevron, branch name + code + count, a phase
@@ -2762,7 +2889,7 @@
       overflow:hidden; text-overflow:ellipsis; }
     .sbld-phtotal { margin:12px 0 0; font-size:12.5px; color:var(--pd-muted); }
     .sbld-phtotal b { color:var(--pd-ink); font-variant-numeric:tabular-nums; }
-    @media (max-width:720px) { .sbld-phrow { grid-template-columns:14px minmax(0,1fr) 64px 34px; }
+    @media (max-width:720px) { .sbld-phrow { grid-template-columns:14px minmax(0,1fr) 64px 26px 34px; }
       .sbld-phwin { display:none; } }
     /* step 6 — vertical stacking (building model per trade) */
     .sbld-stackgrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:18px; align-items:start; margin-top:10px; }
@@ -3094,6 +3221,7 @@
               <button id="ps-globalchange"><span data-ico="listView" data-ico-size="14"></span> Global Change (bulk edit)…</button>
               <button id="ps-filepkg" title="File work planned before this project was split into contract packages under one of them"><span data-ico="box" data-ico-size="14"></span> File under a package…</button>
               <button id="ps-diagnose" title="Where did my activities go? Read-only report on this project's data"><span data-ico="risk" data-ico-size="14"></span> Diagnose data…</button>
+              <button id="ps-help-item" title="The full list of keyboard shortcuts (or press ?)"><span data-ico="listView" data-ico-size="14"></span> Keyboard shortcuts…</button>
               <button id="ps-leveling"><span data-ico="users" data-ico-size="14"></span> Resource leveling…</button>
               <button id="ps-thresholds"><span data-ico="risk" data-ico-size="14"></span> Threshold monitoring…</button>
               <button id="ps-fmtbtn"><span data-ico="palette" data-ico-size="14"></span> Conditional formatting…</button>
@@ -3108,7 +3236,7 @@
           <button class="pd-btn" id="ps-schedbtn" title="Schedule — set the data date, calculation options &amp; recompute the CPM (P6's F9)"><span data-ico="calculator" data-ico-size="15"></span> Schedule</button>
           <span class="ps-tb-div"></span>
           <div class="ps-menu-wrap"><button class="pd-btn" id="ps-openbtn" title="Open schedule — Current, baselines &amp; what-if scenarios"><span data-ico="calendar" data-ico-size="15"></span> Open ▾</button><div class="ps-menu" id="ps-open-menu"></div></div>
-          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-groupbtn" title="Group activities — pick the levels and their order"><span data-ico="layers" data-ico-size="15"></span> <span id="ps-groupbtn-txt">Group: WBS</span> ▾</button><div class="ps-menu ps-group-menu" id="ps-group-menu"></div></div>
+          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-groupbtn" title="Grouping — pick the levels and their order. The face shows the current grouping."><span data-ico="layers" data-ico-size="15"></span> <span id="ps-groupbtn-txt">WBS</span> ▾</button><div class="ps-menu ps-group-menu" id="ps-group-menu"></div></div>
           <span class="ps-tb-div"></span>
           <!-- Contract scope. ⚠️ STILL a top-level control, one click, and it NAMES the active scope
                on its own face -- the standing rule here is that it must not be only in the Filter menu,
@@ -3119,14 +3247,14 @@
                anything -- and unlike the segment, the DEFAULT (Blended) is now quiet rather than a
                permanent red pill. The Filter menu's radios stay in sync in both directions. -->
           <div class="ps-menu-wrap" id="ps-scope">
-            <button class="pd-btn" id="ps-scopebtn" title="Contract scope — main contract work, change orders, or both together in one sequence"><span data-ico="box" data-ico-size="15"></span> <span id="ps-scopebtn-txt">Scope: Blended</span> ▾</button>
+            <button class="pd-btn" id="ps-scopebtn" title="Contract scope (the face shows the current one) — main contract work, change orders, or both together in one sequence"><span data-ico="box" data-ico-size="15"></span> <span id="ps-scopebtn-txt">Blended</span> ▾</button>
             <div class="ps-menu" id="ps-scope-menu"></div>
           </div>
           <!-- Timeline scale. ⚠️ The segment was 173px for three values; a labelled menu names the
                current scale in ~110px. The two finer controls are unchanged and still the fast path:
                drag a column edge in the date header, or Ctrl+scroll over the chart. -->
           <div class="ps-menu-wrap" id="ps-zoom">
-            <button class="pd-btn" id="ps-zoombtn" title="Timeline scale — or drag a column edge in the date header / Ctrl + scroll over the chart to fine-tune column width"><span data-ico="calendar" data-ico-size="15"></span> <span id="ps-zoombtn-txt">Zoom: Month</span> ▾</button>
+            <button class="pd-btn" id="ps-zoombtn" title="Timeline scale (the face shows the current one) — or drag a column edge in the date header / Ctrl + scroll over the chart to fine-tune column width"><span data-ico="calendar" data-ico-size="15"></span> <span id="ps-zoombtn-txt">Month</span> ▾</button>
             <div class="ps-menu" id="ps-zoom-menu"></div>
           </div>
           <!-- ⚠️ ONE CONTROL THAT NAMES THE CURRENT VIEW, replacing four adjacent mystery icons
@@ -3137,7 +3265,7 @@
                that silently toggled a mode ON with no visible name), so "Stacking" looked identical
                whether you were in it or not. The button now reads "View: Stacking", which answers
                where-am-I and what-else-is-there in one glance. See renderLayoutMenu. -->
-          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-layoutbtn" title="View — Gantt, Grid, Split, Activity Network. Progress and Stacking have their own buttons."><span data-ico="layout" data-ico-size="15"></span> <span id="ps-viewbtn-txt">View: Split</span> ▾</button><div class="ps-menu ps-layout-menu" id="ps-layout-menu"></div></div>
+          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-layoutbtn" title="View (the face shows the current one) — Gantt, Grid, Split, Activity Network. Progress and Stacking have their own buttons."><span data-ico="layout" data-ico-size="15"></span> <span id="ps-viewbtn-txt">Split</span> ▾</button><div class="ps-menu ps-layout-menu" id="ps-layout-menu"></div></div>
           <!-- ⚠️ PROGRESS, STACKING AND OUTLINE ARE TOP-LEVEL AGAIN (owner 2026-09-02): *"it should
                have their own button each at the toolbar itself"* and *"I also need the outline view to
                be out of the view button as well, so users would not need to click on multiple buttons
@@ -3186,7 +3314,27 @@
             </div>
           </div>
           <span class="ps-tb-spacer"></span>
-          <div class="ps-menu-wrap"><button class="pd-btn" id="ps-colorsbtn" title="Bar colors — Task / WBS summary / Milestone / Baseline (+ per-WBS overrides)"><span data-ico="palette" data-ico-size="15"></span> Colors</button><div class="ps-menu ps-colors-menu" id="ps-colors-menu"></div></div>
+          <!-- ⚠️ ICON-ONLY, for the same measured reason as Progress / Stacking / Outline above.
+               Owner 2026-09-03: *"In my screen resolution of a laptop, the toolbar spills over into
+               two rows. Let's optimize that by removing the 'colors' label in the colors"*. The
+               label was 47px of a row that is 40px over at 1,344px available, so this alone is the
+               whole fix at that width — nothing else has to shrink, and none of the owner's own
+               earlier width decisions (Scope / Zoom / Group as labelled menus) is spent twice.
+               ⚠️ Safe to unlabel where "View: Split" was not: Colors opens a MENU rather than
+               entering a mode, so there is no state for a label to have to report. The palette glyph
+               is the same one the Colors items inside Actions already use. -->
+          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-colorsbtn" aria-label="Bar colors" title="Bar colors — Task / WBS summary / Milestone / Baseline (+ per-WBS overrides)"><span data-ico="palette" data-ico-size="15"></span></button><div class="ps-menu ps-colors-menu" id="ps-colors-menu"></div></div>
+          <!-- ⚠️⚠️ HIDDEN BELOW 1400px, and it is the LAST 41px of the one-row fix (see the
+               .ps-search rule and _paintViewBtn for the other two). Measured with the Contract
+               Scope button also showing — the widest the row ever gets — the row needed 1,238px
+               against 1,237px available at a 1,340px window: over by ONE pixel. Something had to
+               go, and this is the only control in the row that costs nothing to lose, because it is
+               a SHORTCUT to a shortcut sheet: pressing `?` opens the same panel, which is what the
+               button's own tooltip has always said, and the sheet is now a permanent item in the
+               Actions menu as well. Every other button in the row either performs an action or
+               reports a state that nothing else reports.
+               ⚠️ A media query rather than a delete: on a wide monitor the row has room and the
+               button is a useful signpost that shortcuts exist at all. -->
           <button class="pd-btn ps-icobtn" id="ps-help-btn" title="Keyboard shortcuts (press ?)" style="font-weight:700;">?</button>
           <div class="ps-search"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="ps-search" placeholder="Search activity…" style="width:160px;" /></div>
         </div>
@@ -3756,7 +3904,7 @@
 <script src="../../assets/js/program.js?v=20260827a"></script>
 <script src="../../assets/js/ui.js?v=20260902c"></script>
 <script src="../../assets/js/icons.js?v=20260902f"></script>
-<script src="../../assets/js/calendar.js?v=20260824a"></script>
+<script src="../../assets/js/calendar.js?v=20260903a"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -3910,9 +4058,23 @@
     return _VIEW_LABEL[layoutMode] ? layoutMode : 'split';
   }
   function _viewName() { return _VIEW_LABEL[_viewKey()]; }
+  /* ⚠️⚠️ THE FACE CARRIES THE VALUE, NOT THE CATEGORY — "Split", not "View: Split".
+     The owner's standing rule for these four buttons is that each must NAME ITS CURRENT STATE on
+     its own face rather than being a mystery icon (2026-09-02: *"a new user won't be able to know
+     how to use them even with the labels button"*), and that rule is untouched: the state is
+     exactly the half that stays. What goes is the word naming the CONTROL, which the icon beside it
+     already carries, the tooltip states in full, and the open menu repeats as its own heading.
+     ⚠️ IT IS A MEASUREMENT. Removing the "Colors" label — the owner's own suggestion — frees
+     47px of a row that is 64px over at a 1,340px laptop window, so on its own it does not get the
+     row onto one line, and saying it did would be a fix in name only. "View: " / "Group: " /
+     "Zoom: " / "Scope: " are 133px more, and with the search box now shrinkable (see .ps-search)
+     the row fits at 1,340px with ~74px to spare, and still fits on a project that also shows the
+     Contract Scope button. Verified in the harness at both widths.
+     ⚠️ Four buttons, four values, side by side under their own icons — "WBS · Month · Split"
+     reads as a state line, which is what a P6 or OPC toolbar does with the same information. */
   function _paintViewBtn() {
     var t = document.getElementById('ps-viewbtn-txt');
-    if (t) t.textContent = 'View: ' + _viewName();
+    if (t) t.textContent = _viewName();
   }
   var RESRC = [], ASSIGN = [], CALS = [];   // resource master + assignments + calendars for this project
   var CODE_TYPES = [], CODE_VALUES = [], STEPS = [], UDF_DEFS = [];   // activity codes + weighted steps + UDF defs for this project
@@ -4582,7 +4744,15 @@
               ' · ' + PDCal.yearStats(c, new Date().getFullYear()).total + ' d in ' + new Date().getFullYear() +
               (PDCal.seasonsOf(c).length ? ' · ' + PDCal.seasonsOf(c).length + ' season(s)' : '') +
               (c.observe_special_days ? ' · special days off' : '') +
-              ((c.extra_holidays || []).length ? ' · ' + c.extra_holidays.length + ' extra holiday(s)' : '') + '</small></button>';
+              (function () {
+                // ⚠️ Was "226 extra holiday(s)", which is a true number that tells the planner
+                // nothing they can act on. Split, because the two kinds mean different things.
+                var _h = c.extra_holidays || []; if (!_h.length) return '';
+                var _r = _h.filter(function (x) { return PDCal.isRecurKey(x); }).length;
+                var _e = _h.length - _r;
+                return ' · ' + [_r ? _r + ' yearly' : '', _e ? _e + ' one-off' : '']
+                  .filter(Boolean).join(' + ') + ' non-working day' + (_h.length === 1 ? '' : 's');
+              })() + '</small></button>';
           }).join('') : '<div class="pd-empty" style="padding:16px;">' + (CALS.length ? 'No calendar matches that filter.' : 'No calendars on this project yet.') + '</div>') +
           '</div>' +
         '</div><div class="ps-cal-edit">' + (draft ? editHTML() : '<div class="pd-empty" style="padding:24px;">Pick a calendar to edit, or create one.</div>') + '</div></div>' +
@@ -4659,15 +4829,55 @@
           '<input class="pd-input" id="ps-cal-hpd" type="number" min="1" max="24" step="0.5" value="' + (draft.hours_per_day || 8) + '"></div>' +
         '<div class="pd-field" style="flex:1;"><label>Project default</label>' +
           '<label style="display:flex;align-items:center;gap:6px;font-size:12.5px;"><input type="checkbox" id="ps-cal-def"' + (draft.is_default ? ' checked' : '') + '> Use for activities with none set</label></div></div>' +
-        '<div class="pd-field"><label>Extra non-working days</label>' +
-          '<div class="ps-cal-hols" id="ps-cal-hols">' +
-            ((draft.extra_holidays || []).length
-              ? draft.extra_holidays.slice().sort().map(function (h) {
-                  return '<span class="ps-cal-hol">' + esc(h) + '<button data-rmhol="' + esc(h) + '" title="Remove">✕</button></span>'; }).join('')
-              : '<span style="color:var(--pd-muted);font-size:12px;">None.</span>') +
-          '</div>' +
-          '<div style="display:flex;gap:6px;margin-top:6px;"><input class="pd-input pd-input-sm" type="date" id="ps-cal-holnew" style="flex:1;">' +
-          '<button class="pd-btn pd-btn-sm" id="ps-cal-holadd">Add day</button></div></div>' +
+        /* ⚠️⚠️ TWO LISTS, BECAUSE THERE ARE TWO KINDS OF DAY and conflating them is what
+           produced the 226-chip wall. A company holiday is the SAME day every year and should be
+           entered once; a proclamation or a typhoon shutdown belongs to one date and must not
+           repeat. Owner 2026-09-03: *"let's just simplify this by only selecting the relevant days
+           and it will repeat for years since these are regular holidays. Only those special
+           non-working days that need to be exact by its date."*
+           Both live in the same stored array (see PDCal's `--MM-DD` note) — this is a reading of
+           one column, not a second column. */
+        (function () {
+          var _all = (draft.extra_holidays || []).slice();
+          var _rec = _all.filter(function (h) { return PDCal.isRecurKey(h); }).sort();
+          var _exa = _all.filter(function (h) { return !PDCal.isRecurKey(h); }).sort();
+          function chips(list, kind) {
+            if (!list.length) return '<span style="color:var(--pd-muted);font-size:12px;">None.</span>';
+            return list.map(function (h) {
+              return '<span class="ps-cal-hol' + (kind === 'r' ? ' is-recur' : '') + '">' +
+                esc(PDCal.holidayLabel(h)) + '<button data-rmhol="' + esc(h) + '" title="Remove">✕</button></span>';
+            }).join('');
+          }
+          // How many exact dates could still be folded, so the button can say what it would do
+          // rather than being a mystery the planner has to press to find out.
+          var _cw = PDCal.collapseHolidays(_all, 3);
+          return '<div class="pd-field"><label>Repeats every year</label>' +
+            '<div class="ps-cal-hols" id="ps-cal-hols-r">' + chips(_rec, 'r') + '</div>' +
+            '<small style="display:block;color:var(--pd-muted);font-size:11.5px;margin-top:4px;">' +
+            'Company and local days that fall on the same date every year — entered once, applied to ' +
+            'every year the schedule reaches. Philippine <em>regular</em> holidays are already built in ' +
+            'and are not listed here.</small>' +
+            '<div style="display:flex;gap:6px;margin-top:6px;align-items:center;flex-wrap:wrap;">' +
+              '<select class="pd-select pd-input-sm" id="ps-cal-recmo" style="width:auto;">' +
+              ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].map(function (m, i) {
+                return '<option value="' + (i + 1) + '">' + m + '</option>'; }).join('') + '</select>' +
+              '<input class="pd-input pd-input-sm" type="number" min="1" max="31" value="1" id="ps-cal-recdy" style="width:70px;">' +
+              '<button class="pd-btn pd-btn-sm" id="ps-cal-recadd">Add yearly day</button>' +
+            '</div></div>' +
+            '<div class="pd-field"><label>One-off non-working dates</label>' +
+            '<div class="ps-cal-hols" id="ps-cal-hols">' + chips(_exa, 'e') + '</div>' +
+            '<small style="display:block;color:var(--pd-muted);font-size:11.5px;margin-top:4px;">' +
+            'Days that belong to one date only — a proclamation, a lunar holiday (Eid’l Fitr, Eid’l ' +
+            'Adha, Chinese New Year), a shutdown after a typhoon.</small>' +
+            '<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;"><input class="pd-input pd-input-sm" type="date" id="ps-cal-holnew" style="flex:1;min-width:150px;">' +
+            '<button class="pd-btn pd-btn-sm" id="ps-cal-holadd">Add date</button>' +
+            (_cw.collapsed
+              ? '<button class="pd-btn pd-btn-sm" id="ps-cal-holfold" title="Turn dates that recur in three or more years into one yearly entry each. One-off dates are kept.">' +
+                'Fold ' + _cw.collapsed + ' repeating date' + (_cw.collapsed === 1 ? '' : 's') + ' → ' +
+                _cw.added.length + ' yearly</button>'
+              : '') +
+            '</div></div>';
+        })() +
         '<div class="pd-field"><label>Site climate type (PAGASA)</label>' +
           '<select class="pd-select" id="ps-cal-clim"><option value="">— not set —</option>' +
           PDCal.PH_CLIMATE_TYPES.map(function (t) {
@@ -4802,6 +5012,35 @@
         readDraft();
         draft.extra_holidays = (draft.extra_holidays || []).concat(v).filter(function (x, i, a) { return a.indexOf(x) === i; });
         render();
+      };
+      // Add a day that repeats every year. Stored as PDCal's `--MM-DD`, so it needs no column of
+      // its own and every other module reading this calendar keeps working.
+      var recAdd = root.querySelector('#ps-cal-recadd');
+      if (recAdd) recAdd.onclick = function () {
+        var mo = parseInt(root.querySelector('#ps-cal-recmo').value, 10) || 1;
+        var dy = parseInt(root.querySelector('#ps-cal-recdy').value, 10) || 1;
+        // ⚠️ Clamped by MONTH LENGTH, in a leap year so 29 Feb is allowed: a stored --02-30
+        // would simply never match and would sit in the list looking as though it did something.
+        var maxD = new Date(2024, mo, 0).getDate();
+        if (dy < 1 || dy > maxD) { UI.toast(['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][mo - 1] + ' has ' + maxD + ' days.', 'warn'); return; }
+        var key = '--' + String(mo).padStart(2, '0') + '-' + String(dy).padStart(2, '0');
+        readDraft();
+        draft.extra_holidays = (draft.extra_holidays || []).concat(key).filter(function (x, i, a) { return a.indexOf(x) === i; });
+        render();
+      };
+      // Fold repeating exact dates into yearly ones. ⚠️ An explicit button, never automatic on a
+      // saved calendar: rewriting somebody's stored schedule input without being asked is not a
+      // tidy-up, and the count on the button's face says exactly what it will do.
+      var holFold = root.querySelector('#ps-cal-holfold');
+      if (holFold) holFold.onclick = function () {
+        readDraft();
+        var col = PDCal.collapseHolidays(draft.extra_holidays || [], 3);
+        draft.extra_holidays = col.list;
+        render();
+        UI.toast('Folded ' + col.collapsed + ' date' + (col.collapsed === 1 ? '' : 's') + ' into ' +
+                 col.added.length + ' yearly entr' + (col.added.length === 1 ? 'y' : 'ies') +
+                 (col.exact.length ? ' · ' + col.exact.length + ' one-off date' + (col.exact.length === 1 ? '' : 's') + ' kept' : '') +
+                 '. Save the calendar to keep it.', 'success');
       };
       root.querySelectorAll('[data-rmhol]').forEach(function (b) {
         b.onclick = function () {
@@ -5596,104 +5835,156 @@
     }
     return out;
   }
+  /* ⚠️⚠️ THESE FETCHES RUN IN PARALLEL, AND THAT IS THE FIX FOR THE RELOAD WAIT.
+     They used to be fourteen sequential `await` blocks. Every one is INDEPENDENT — each writes its
+     own global and reads none of the others — so the chain’s real cost was fourteen round-trip
+     LATENCIES stacked end to end, with the pagination inside six of them stacked on top of that:
+     `wbs_nodes` alone is 13 sequential pages on a 12,459-node tree, and resources /
+     resource_assignments / activity_code_values / activity_steps / cost_accounts /
+     activity_expenses each pay their own. Counted on 4PH Strevi that is ~40 requests issued one at
+     a time, in a browser that will run six at once. Nothing here is CPU-bound; it is all waiting.
+     ⚠️ ORDER IS STILL ENFORCED WHERE IT MATTERS, AND ONLY THERE. `_clearPhaseMemo()` and
+     `ensureWbsSkeleton()` both read `WBS_NODES`, so they await THAT task rather than all of them.
+     ⚠️⚠️ EVERY TASK KEEPS ITS OWN catch, and `Promise.all` is deliberately given
+     already-caught promises. A Promise.all over bare promises rejects on the FIRST failure and
+     would throw away thirteen good results because one optional table has no migration — the
+     per-block tolerance those catches encode (no table → empty list → the feature simply does not
+     appear) is the whole reason this module works against a partially-migrated database. Losing it
+     to a parallel rewrite would be a silent regression in exactly the case it was written for. */
   async function loadResourcesAssignments() {
     if (!pid) { RESRC = []; ASSIGN = []; CALS = []; CODE_TYPES = []; CODE_VALUES = []; STEPS = []; COST_ACCTS = []; EXPENSES = []; LOC_LEVELS = []; PACKAGES = []; WPM_WPS = []; DSCN = []; return; }
-    try {
-      // resources/resource_assignments reach tens of thousands of rows on a P6/XER import, so an
-      // unpaginated select silently caps at 1000 and corrupts Resource/Role Usage, leveling & cost
-      // roll-ups. Resources are re-sorted by name client-side (selectAllPaged orders by id).
+    // Each entry is a self-contained fetch that assigns its own globals and swallows its own error.
+    function T(fn) { return (async function () { try { await fn(); } catch (e) {} })(); }
+
+    // resources/resource_assignments reach tens of thousands of rows on a P6/XER import, so an
+    // unpaginated select silently caps at 1000 and corrupts Resource/Role Usage, leveling & cost
+    // roll-ups. Resources are re-sorted by name client-side (selectAllPaged orders by id).
+    var tRes = T(async function () {
       var r1 = await selectAllPaged('resources', '*');
       r1.sort(function (a, b) { return String(a.name || '').localeCompare(String(b.name || '')); });
+      RESRC = r1;
+    });
+    var tAsg = T(async function () { ASSIGN = await selectAllPaged('resource_assignments', '*'); });
+    var tCal = T(async function () {
       var r3 = await sb().from('calendars').select('*').eq('project_id', pid).order('name');
-      var asg = await selectAllPaged('resource_assignments', '*');
-      RESRC = r1; ASSIGN = asg; CALS = (r3 && r3.data) || [];
-    } catch (e) { RESRC = []; ASSIGN = []; CALS = []; }
-    try {
+      CALS = (r3 && r3.data) || [];
+    });
+    var tCodeT = T(async function () {
       var r4 = await sb().from('activity_code_types').select('*').eq('project_id', pid).order('sort_order');
+      CODE_TYPES = (r4 && r4.data) || [];
+    });
+    var tCodeV = T(async function () {
       var r5 = await selectAllPaged('activity_code_values', '*');
       r5.sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0); });
-      CODE_TYPES = (r4 && r4.data) || []; CODE_VALUES = r5;
-    } catch (e) { CODE_TYPES = []; CODE_VALUES = []; }
-    try {
-      // ⚠️ Was a bare .select('*'), which Supabase caps at 1000 rows — the same silent-truncation
-      // bug already fixed on resource_assignments / drawing_register / progress_photos / wbs_nodes,
-      // missed here. activity_steps holds one row PER STEP PER ACTIVITY, so a schedule that uses
-      // Weighted Steps passes 1000 quickly (4,393 activities × 3 steps ≈ 13k). Truncation is
-      // invisible and expensive: physicalPct() then averages a partial step list and
-      // syncPhysicalPct() WRITES that wrong number into project_schedule.percent_complete, which
-      // feeds EVM, the S-curve, the cockpit and every progress roll-up.
-      // Exactly equivalent to the old query: this call had no .order(), and selectAllPaged applies
-      // the same project_id filter (its id ordering is not relied on — STEPS is looked up by
-      // activity, never by position).
-      STEPS = await selectAllPaged('activity_steps', '*');
-    } catch (e) { STEPS = []; }
-    try {
+      CODE_VALUES = r5;
+    });
+    // ⚠️ Was a bare .select('*'), which Supabase caps at 1000 rows — the same silent-truncation
+    // bug already fixed on resource_assignments / drawing_register / progress_photos / wbs_nodes,
+    // missed here. activity_steps holds one row PER STEP PER ACTIVITY, so a schedule that uses
+    // Weighted Steps passes 1000 quickly (4,393 activities × 3 steps ≈ 13k). Truncation is
+    // invisible and expensive: physicalPct() then averages a partial step list and
+    // syncPhysicalPct() WRITES that wrong number into project_schedule.percent_complete, which
+    // feeds EVM, the S-curve, the cockpit and every progress roll-up.
+    var tSteps = T(async function () { STEPS = await selectAllPaged('activity_steps', '*'); });
+    var tUdf = T(async function () {
       var r7 = await sb().from('activity_udf_defs').select('*').eq('project_id', pid).order('sort_order');
       UDF_DEFS = (r7 && r7.data) || [];
-    } catch (e) { UDF_DEFS = []; }
-    try {
-      // Location Breakdown levels. Tolerant of the un-run 2026-08-04 migration: no table -> no
-      // levels -> the location columns/grouping simply don't appear, everything else is unaffected.
+    });
+    // Location Breakdown levels. Tolerant of the un-run 2026-08-04 migration: no table -> no
+    // levels -> the location columns/grouping simply don't appear, everything else is unaffected.
+    var tLoc = T(async function () {
       var r8 = await sb().from('location_levels').select('*').eq('project_id', pid).order('sort_order');
       LOC_LEVELS = (r8 && !r8.error && r8.data) || [];
-    } catch (e) { LOC_LEVELS = []; }
-    try {
-      // Contract packages. Tolerant of the un-run 2026-08-19-packages.sql exactly like
-      // location_levels above: no table -> no packages -> the Package column offers nothing to
-      // assign and everything else is unaffected. Bounded by definition (a project has packages,
-      // not thousands of rows), so no pagination.
+    });
+    // Contract packages. Tolerant of the un-run 2026-08-19-packages.sql exactly like
+    // location_levels above: no table -> no packages -> the Package column offers nothing to
+    // assign and everything else is unaffected. Bounded by definition (a project has packages,
+    // not thousands of rows), so no pagination.
+    var tPkg = T(async function () {
       var r9 = await sb().from('packages').select('*').eq('project_id', pid).order('sort_order').order('code');
       PACKAGES = (r9 && !r9.error && r9.data) || [];
-    } catch (e) { PACKAGES = []; }
-    try {
-      /* CHANGE ORDERS (and EOTs) as the CONTRACTS & CLAIMS module recorded them.
-         ⚠️ WHY: `change_order_ref` has always been FREE TEXT, typed into a prompt() that
-            only suggested references already used on this project. The commercial team
-            records every variation next door in `contracts_claims`, and the two lists
-            could never see each other — so the schedule said "VO-14" while the register
-            said "VO-014", and no report could join them. Same database, one select.
-         ⚠️ TOLERANT: no table, no grant, no rows → an empty list, and the CO field
-            behaves exactly as it always did (free text). This must never break the
-            schedule for a project whose Contracts module was never set up.
-         ⚠️ READ-ONLY HERE. The schedule never writes a change order; it only cites one.
-            Creating variations is the Contracts & Claims module's job, and one app
-            inventing another's commercial records is unrecoverable. */
+    });
+    /* CHANGE ORDERS (and EOTs) as the CONTRACTS & CLAIMS module recorded them.
+       ⚠️ WHY: `change_order_ref` has always been FREE TEXT, typed into a prompt() that
+          only suggested references already used on this project. The commercial team
+          records every variation next door in `contracts_claims`, and the two lists
+          could never see each other — so the schedule said "VO-14" while the register
+          said "VO-014", and no report could join them. Same database, one select.
+       ⚠️ TOLERANT: no table, no grant, no rows → an empty list, and the CO field
+          behaves exactly as it always did (free text). This must never break the
+          schedule for a project whose Contracts module was never set up.
+       ⚠️ READ-ONLY HERE. The schedule never writes a change order; it only cites one.
+          Creating variations is the Contracts & Claims module's job, and one app
+          inventing another's commercial records is unrecoverable. */
+    var tCo = T(async function () {
       var rCo = await sb().from('contracts_claims')
         .select('id,record_type,reference_no,description,status,amount,approved_amount,approved_days,package_id')
         .eq('project_id', pid).in('record_type', ['Change Order', 'EOT']);
       CONTRACT_RECS = (rCo && !rCo.error && rCo.data) || [];
-    } catch (e) { CONTRACT_RECS = []; }
-    await loadWpmWorkPackages();
-    await loadClassCodes();
-    try {
-      // Duration scenarios (C3). Tolerant of the un-run migration like the two above.
+    });
+    /* ⚠️⚠️ THE ONE REAL DEPENDENCY IN THIS WAVE, AND IT IS NOT OBVIOUS.
+       `loadWpmWorkPackages` → `_prcWpmScopes()` reads `PACKAGES` to collect every WPM project this
+       schedule buys under — one schedule can span several contract codes (AVR101 covers all 7
+       towers; Towers 2-7 are bought under AVR102, a different project in the Procurement app). In
+       the old sequential order `PACKAGES` happened to be loaded two blocks earlier. Started in
+       parallel it would read the PREVIOUS project’s list, or an empty one, and silently drop every
+       work package bought under a mapped package — no error, just a picker missing entries. So this
+       task waits for that one fetch, and only that one. */
+    var tWpm = T(async function () { await tPkg; return loadWpmWorkPackages(); });
+    var tCC = T(function () { return loadClassCodes(); });
+    // Duration scenarios (C3). Tolerant of the un-run migration like the two above.
+    var tDscn = T(async function () {
       var r10 = await sb().from('duration_scenarios').select('*').eq('project_id', pid).order('name');
       DSCN = (r10 && !r10.error && r10.data) || [];
-    } catch (e) { DSCN = []; }
-    try {
-      // Keyset-paginate: a plain select caps at Supabase's 1000-row limit, which silently TRUNCATED
-      // the tree on big P6 imports (>1000 WBS nodes) — children whose parent fell past row 1000
-      // dropped out of the walk and vanished from the Manager. Paginate by id; the render/index
-      // re-sorts by sort_order, so load order is irrelevant.
-      /* ⚠️ `.filter(Boolean)` AT THE ONE PLACE THE ARRAY IS BUILT. `WBS_NODES` is iterated at ~54
-         sites, several of which read `n.parent_id` / `n.id` bare, and three of those sites are the
-         load-time tree REPAIRS — so one falsy entry does not fail locally, it throws inside
-         `rebuild()` or `_wbsResyncCodes()` and takes the whole grid or the whole repair with it.
-         Guarding 54 readers is not maintainable; keeping the array clean is. The push sites are
-         guarded individually (an insert that returns no row hands back `null`), and this covers a
-         paged read that comes back with a hole. */
+    });
+    // Keyset-paginate: a plain select caps at Supabase's 1000-row limit, which silently TRUNCATED
+    // the tree on big P6 imports (>1000 WBS nodes) — children whose parent fell past row 1000
+    // dropped out of the walk and vanished from the Manager. Paginate by id; the render/index
+    // re-sorts by sort_order, so load order is irrelevant.
+    /* ⚠️ `.filter(Boolean)` AT THE ONE PLACE THE ARRAY IS BUILT. `WBS_NODES` is iterated at ~54
+       sites, several of which read `n.parent_id` / `n.id` bare, and three of those sites are the
+       load-time tree REPAIRS — so one falsy entry does not fail locally, it throws inside
+       `rebuild()` or `_wbsResyncCodes()` and takes the whole grid or the whole repair with it.
+       Guarding 54 readers is not maintainable; keeping the array clean is. The push sites are
+       guarded individually (an insert that returns no row hands back `null`), and this covers a
+       paged read that comes back with a hole. */
+    var tWbs = T(async function () {
       WBS_NODES = (await selectAllPaged('wbs_nodes', '*')).filter(Boolean);
-    } catch (e) { WBS_NODES = []; }
+    });
+    var tCost = T(async function () {
+      var rc = await selectAllPaged('cost_accounts', '*');
+      rc.sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0); });
+      COST_ACCTS = rc;
+    });
+    var tExp = T(async function () { EXPENSES = await selectAllPaged('activity_expenses', '*'); });
+
+    // ⚠️ The two WBS-dependent steps wait for the TREE only, not for the whole wave: nothing
+    // else they read is in flight, and making them wait for `activity_expenses` would put the
+    // slowest optional table on the critical path of the phase cache the grid reads.
+    await tWbs;
+    if (!Array.isArray(WBS_NODES)) WBS_NODES = [];
     _clearPhaseMemo();   // the inherited-phase cache is keyed by node id — stale after a reload
     try { await ensureWbsSkeleton(); } catch (e) { /* best-effort auto-seed; never blocks load */ }
-    try {
-      var r9 = await selectAllPaged('cost_accounts', '*');
-      r9.sort(function (a, b) { return (a.sort_order || 0) - (b.sort_order || 0); });
-      COST_ACCTS = r9;
-    } catch (e) { COST_ACCTS = []; }
-    try {
-      EXPENSES = await selectAllPaged('activity_expenses', '*');
-    } catch (e) { EXPENSES = []; }
+
+    await Promise.all([tRes, tAsg, tCal, tCodeT, tCodeV, tSteps, tUdf, tLoc, tPkg, tCo,
+                       tWpm, tCC, tDscn, tCost, tExp]);
+    // ⚠️ The fallbacks that used to live in each `catch` block. A task whose fetch threw left its
+    // global at whatever the PREVIOUS project put there, and with the assignment now inside the
+    // task the catch can no longer clear it without repeating the list. One sweep, one place.
+    if (!Array.isArray(RESRC)) RESRC = [];
+    if (!Array.isArray(ASSIGN)) ASSIGN = [];
+    if (!Array.isArray(CALS)) CALS = [];
+    if (!Array.isArray(CODE_TYPES)) CODE_TYPES = [];
+    if (!Array.isArray(CODE_VALUES)) CODE_VALUES = [];
+    if (!Array.isArray(STEPS)) STEPS = [];
+    if (!Array.isArray(UDF_DEFS)) UDF_DEFS = [];
+    if (!Array.isArray(LOC_LEVELS)) LOC_LEVELS = [];
+    if (!Array.isArray(PACKAGES)) PACKAGES = [];
+    if (!Array.isArray(CONTRACT_RECS)) CONTRACT_RECS = [];
+    if (!Array.isArray(WPM_WPS)) WPM_WPS = [];
+    if (!Array.isArray(DSCN)) DSCN = [];
+    if (!Array.isArray(COST_ACCTS)) COST_ACCTS = [];
+    if (!Array.isArray(EXPENSES)) EXPENSES = [];
   }
   // ---- WBS tree algorithms (verified pure logic) ----
   function wbsChildren(parentId) {
@@ -7417,7 +7708,23 @@
         ' <span class="ps-lockbar-sub">Adding or changing activities is blocked until this finishes, because the rows are still being written.</span>');
     } else _lockBanner('');
   }
-  function _repair(msg) { _repairMsg = msg; _repairBusy = true; _setFresh('repair'); _syncLock(); }
+  /* ⚠️⚠️ TWO FORMS, AND THE SPLIT IS A REPORTED BUG, NOT A TIDY-UP. `_repair()` used to set
+     `_repairBusy`, and `_repairBusy` is half of `_editLocked()` — so the very first line after the
+     schedule painted, `_repair('Loading resources…')`, raised the loud red import banner
+     ("A schedule update in progress — do not edit yet") and disabled Add activity on EVERY ordinary
+     open of the module. The note above `_repairBusy` already said this must not happen:
+     *"It does NOT lock an ordinary load. A cached-then-revalidate open is not a job anybody has to
+     wait for, and locking it would make the schedule feel broken every time it opened."* It did
+     exactly that, and it is a large part of why the module reads as slow — an open that is already
+     finished still looks like a job in progress.
+     ⚠️ WHAT DECIDES WHICH FORM: does the pass WRITE? The lock exists so an edit cannot be
+     clobbered by a pass that is rewriting the same rows. Fetching resources writes nothing, so it
+     gets the chip only. The five tree repairs create, merge and delete rows, so they lock — and they
+     are all behind the `_healNeeded` / `_wbsUnlinkedActs()` gates, which means a healthy project’s
+     load now never locks at all, while a fresh import still locks for exactly as long as it did. */
+  function _repair(msg) { _repairMsg = msg; _setFresh('repair'); _syncLock(); }
+  // The locking form: use it only for a pass that WRITES rows.
+  function _repairLock(msg) { _repairMsg = msg; _repairBusy = true; _setFresh('repair'); _syncLock(); }
   // ⚠️ Cleared by the ONE state that means "nothing further can change the tree" — see the
   // `_setFresh('live')` call at the end of load(). Anything else would clear it mid-chain.
   function _repairDone() { _repairBusy = false; _repairMsg = ''; _syncLock(); }
@@ -7738,10 +8045,10 @@
     } else {
     // ⚠️ BEFORE the resync, never after: reordering re-codes the root, and the resync is what pushes
     // those codes onto the rows. Reversed, the tree and the codes disagree until the next load.
-    _repair('Checking the WBS order…');
+    _repairLock('Checking the WBS order…');
     await _wbsCanonicalRootOrder();
     if (gen !== _loadGen) return;
-    _repair('Checking WBS codes…');
+    _repairLock('Checking WBS codes…');
     await _wbsResyncCodes();
     if (gen !== _loadGen) return;
     /* ⚠️ BEFORE the row dedupe, and BEFORE the code resync would have been wrong: two nodes for one
@@ -7750,7 +8057,7 @@
        two rows backed by different nodes, which it correctly refuses to touch. Reversed, the symptom
        is left on screen and the cause is still there next load. */
     if (_isMutating()) return;
-    _repair('Checking for duplicate WBS branches…');
+    _repairLock('Checking for duplicate WBS branches…');
     var mergedNodes = await _wbsDedupeSiblingNodes();
     if (gen !== _loadGen) return;
     if (mergedNodes) {
@@ -7762,12 +8069,12 @@
     // Self-heal duplicate summary rows sharing one dotted WBS code (the shape the node dedupe above
     // cannot see). Runs after the resync: it must judge duplicates on correct codes.
     if (_isMutating()) return;
-    _repair('Checking for duplicate WBS rows…');
+    _repairLock('Checking for duplicate WBS rows…');
     await _wbsDedupeSummariesByCode();
     if (gen !== _loadGen) return;
     // Self-heal orphan WBS nodes (node with no projected summary row). No-op on healthy projects.
     if (_isMutating()) return;
-    _repair('Restoring missing WBS rows…');
+    _repairLock('Restoring missing WBS rows…');
     var healed = await _wbsEnsureSummaries();
     if (gen !== _loadGen) return;
     if (healed) { rebuild(); _cachePut(pid, rows); UI.toast('Restored ' + healed + ' WBS row' + (healed === 1 ? '' : 's') + ' that were missing from the schedule.', 'success'); }
@@ -7781,7 +8088,7 @@
     if (_wbsUnlinkedActs()) {
       // The long one on a fresh import: every activity is unattached, so this is the pass the owner
       // sat through. Naming the count is the whole point — it is proportional to the wait.
-      _repair('Attaching activities to the WBS tree…');
+      _repairLock('Attaching activities to the WBS tree…');
       var linkedN = await _wbsLinkActivityParents(true);
       if (gen !== _loadGen) return;
       if (linkedN) {
@@ -8108,7 +8415,7 @@
     var cur = filters.scope || '';
     var btn = document.getElementById('ps-scopebtn'), txt = document.getElementById('ps-scopebtn-txt');
     var menu = document.getElementById('ps-scope-menu');
-    if (txt) txt.textContent = 'Scope: ' + _scopeLabel(cur);
+    if (txt) txt.textContent = _scopeLabel(cur);   // value only — see _paintViewBtn
     if (btn) {
       btn.classList.toggle('is-main', cur === 'main');
       btn.classList.toggle('is-co', cur === 'change_order');
@@ -8142,7 +8449,7 @@
   function _zoomLabel(v) { var o = ZOOM_OPTS.filter(function (x) { return x[0] === v; })[0]; return o ? o[1] : 'Month'; }
   function _paintZoomBtn() {
     var t = document.getElementById('ps-zoombtn-txt');
-    if (t) t.textContent = 'Zoom: ' + _zoomLabel(zoom);
+    if (t) t.textContent = _zoomLabel(zoom);   // value only — see _paintViewBtn
   }
   function renderZoomMenu() {
     var menu = document.getElementById('ps-zoom-menu'); if (!menu) return;
@@ -8420,7 +8727,7 @@
   function populateGroupSelect() {
     normalizeGroupBys();
     var t = document.getElementById('ps-groupbtn-txt');
-    if (t) t.textContent = 'Group: ' + groupBys.map(dimLabel).join(' › ');
+    if (t) t.textContent = groupBys.map(dimLabel).join(' › ');   // value only — see _paintViewBtn
     var m = document.getElementById('ps-group-menu');
     if (m && m.classList.contains('open')) renderGroupMenu();
   }
@@ -11024,6 +11331,25 @@
         if (!m || e.children.length > 0) return;   // has a shift override -> a special working day, not a holiday
         out.extra_holidays.push(xerSerialToISO(m[1]));
       });
+      /* ⚠️⚠️ COLLAPSED TO ANNUAL REPEATS RIGHT HERE, AT THE PARSE.
+         P6 stores one exception row per calendar DAY, for the whole life of the calendar — "MCC
+         Project Calendar 2020-2049" arrived with 226 of them, which is the same ten company days
+         restated once a year for a decade. Left as they are, the planner opens the calendar to a
+         wall of 226 date chips (owner 2026-09-03) and correcting one holiday means finding ten.
+         ⚠️ THIS IS THE ONE PLACE IT IS DONE AUTOMATICALLY, and it is safe here for a reason
+         nowhere else shares: the list is being CREATED at this instant, so there is nothing of
+         anybody's to overwrite. Never do it to a saved calendar without being asked — see
+         PDCal.collapseHolidays and the editor's own button.
+         ⚠️ A month/day is only folded when it recurs in 3+ distinct YEARS. Eid'l Fitr, a typhoon
+         shutdown and a one-off proclamation each appear in one year and are kept verbatim, which is
+         exactly the distinction the owner drew: *"Only those special non-working days that need to
+         be exact by its date."* */
+      if (window.PDCal && PDCal.collapseHolidays) {
+        var _col = PDCal.collapseHolidays(out.extra_holidays, 3);
+        out.extra_holidays = _col.list;
+        out._holCollapsed = _col.collapsed;
+        out._holRecurring = _col.recurring.length;
+      }
     } catch (e) { /* malformed calendar data: keep the 6-day/8h default above */ }
     return out;
   }
@@ -14814,16 +15140,38 @@
     else { _animIn(document.querySelector('.ps-split')); }
   }
 
-  // ⚠️⚠️ THE NETWORK IGNORED EVERY FILTER IN THE APP, while its own over-300 message told the
-  // reader to "use Filter or Search to narrow the set". It read straight off `rows`, so neither the
-  // Filter menu, the search box nor "Execution Phase only" changed the count by one - the advice
-  // could not be followed, and on a real project (Avesta 4,321 activities, 4PH Strevi 16,485) the
-  // view therefore never rendered at all. Owner: "the PERT Diagram will always be not working since
-  // our activities exceed the 300 activity threshold." It was not the threshold.
-  // ⚠️ Now scoped exactly like the grid - `_execOnly` + `rowMatches` - so the advice is true, and
-  // with its own LOCATION pickers on top, because "show me Tower 3, 8th floor" is the question a
-  // planner actually has and no generic filter expresses it in one gesture.
+  /* ==========================================================================================
+     ITEM 4 - THE NETWORK / PERT VIEW
+     ------------------------------------------------------------------------------------------
+     Owner 2026-09-03, with two screenshots: *"Viewing PERT does not make any sense to me. We can
+     improve this more."* The screenshots show what is wrong, and it is four separate things:
+
+       1. THE TEXT RAN OUT OF THE BOXES. A node is 172px wide and the ids on this project are
+          `A-T4-AR-04-UN-U2528-FIN-PNT-020` - 31 characters at 11px, about 200px. SVG <text> does
+          not clip, so every id overflowed into the NEXT node's box: the screenshot literally reads
+          "A-T4-AR-04-UN-U2528-FIN-PNT-020A-T4-AR-04-UN-U2124-DRY-D&J-02". Nothing was readable.
+          Fixed by measuring the id and shrinking/truncating it to the box, with the full id and
+          name on hover.
+       2. NOTHING SAID WHAT THE PICTURE MEANT. Columns are logic DEPTH (how many activities must
+          finish before this one can start) - not time, not floors, not the WBS. Without that
+          sentence the diagram is 796 boxes in an arbitrary grid.
+       3. THE EDGES WERE A HAIRBALL. Nodes were ordered within each column by the order they came
+          out of `leaves`, so an activity's predecessor was routinely 40 rows away and every arrow
+          crossed the whole picture. Ordering each column by the MEAN POSITION of its predecessors
+          (barycentre - the standard first pass of Sugiyama layered layout) puts connected nodes
+          beside each other.
+       4. THERE WAS NO WAY TO ASK A QUESTION. A PERT diagram is read to answer "what drives THIS,
+          and what does it drive" - so clicking a node now traces exactly that: its predecessor
+          chain green, its successor chain orange, everything else dimmed, with a count. Same
+          colours and the same green/orange convention as the Schedule Setup's link canvas, so the
+          meaning carries over rather than being learned twice.
+
+     Kept deliberately: the location pickers, the 1,200-node cap, and reading through the app's own
+     filters - those were the previous round's fix for the view being unreachable at all.
+     ========================================================================================== */
   var netLoc = {};
+  var netFocus = null;      // activity_id whose logic is being traced, or null
+  var netZoom = 1;          // 0.4 .. 1.6
   // The activities the network is ALLOWED to draw, before the location pickers narrow it further.
   function netScoped() {
     var ec = _execOnly ? execPhaseCode() : null;
@@ -14860,6 +15208,53 @@
   // runs, and every relationship a bezier. 300 was set when the view was new; it sits below every
   // useful whole-tower slice, which is what made the view unreachable rather than merely slow.
   var NET_MAX = 1200;
+  /* How much of an activity id fits in a node box, in characters.
+     ⚠️ A MEASUREMENT, not a guess, and it is the fix for the overflowing text in the screenshots.
+     SVG has no text-overflow, `textLength` squashes glyphs illegibly, and a <clipPath> per node
+     would add 1,200 clip paths to the document. So the string is cut to fit, and `…` marks that
+     it was cut. The 0.58 factor is the average advance width of the app's UI font at this size for
+     the UPPER-CASE + digit + hyphen alphabet these ids are made of, checked against
+     `A-T4-AR-04-UN-U2528-FIN-PNT-020` at 11px: 31 chars x 11 x 0.58 = 198px, which is what the
+     browser reports for that string. Monospace-ish because the alphabet is. */
+  function netFit(s, px, size) {
+    s = String(s == null ? '' : s);
+    var max = Math.max(3, Math.floor(px / (size * 0.58)));
+    return s.length <= max ? s : (s.slice(0, max - 1) + '…');
+  }
+  /* The predecessor and successor CLOSURES of one activity - "what drives this" and "what it
+     drives", which is the only question this diagram exists to answer.
+     ⚠️ Walked over the drawn set only, and depth-capped, because `_relObjs` spans the whole project:
+     tracing from one activity on 4PH Strevi would otherwise pull in most of 21,338 relationships and
+     dim a picture the reader is looking at. Within the drawn slice the full chain is what they want.
+     ⚠️ Iterative, not recursive: a cycle in real P6 logic is common enough (the Health check reports
+     them) and a recursive walk over one would blow the stack. `seen` closes them. */
+  function netTrace(startId, drawn) {
+    var inSet = {};
+    drawn.forEach(function (t) { inSet[String(t.activity_id)] = t; });
+    function walk(dir) {
+      var seen = {}, stack = [String(startId)], out = {};
+      while (stack.length) {
+        var id = stack.pop();
+        if (seen[id]) continue;
+        seen[id] = 1;
+        var t = inSet[id]; if (!t) continue;
+        // ⚠️ `_succ` (row objects), NOT `_succObjs` — computeCPM builds `_succObjs` as
+        // `{ id, type, lag }` for the details form and the export, so it carries no row to walk to.
+        // `_succ` is the array of successor ROWS the same pass builds, which is what a graph walk
+        // needs. Reading the wrong one gave a silent no-op: every trace would show 0 successors.
+        var next = dir === 'pred' ? (t._relObjs || []).map(function (x) { return x.p; })
+                                  : (t._succ || []);
+        next.forEach(function (n) {
+          if (!n || !n.activity_id) return;
+          var k = String(n.activity_id);
+          if (!inSet[k] || seen[k]) return;
+          out[k] = 1; stack.push(k);
+        });
+      }
+      return out;
+    }
+    return { pred: walk('pred'), succ: walk('succ') };
+  }
   function renderNetwork() {
     var host = document.getElementById('ps-network'); if (!host) return;
     computeCPM();   // populates _relObjs / _succObjs so we can detect linked activities
@@ -14895,7 +15290,18 @@
       '<span>Showing <strong>' + (showAll ? all.length : linked.length) + '</strong> of ' + all.length + ' activities' +
       (all.length !== scoped.length ? ' · ' + (scoped.length - all.length) + ' outside the chosen location' : '') +
       (noLinks ? ' · no relationships defined yet — add Predecessors or use the Link tool to draw the network'
-               : (showAll ? '' : ' · ' + (all.length - linked.length) + ' unlinked hidden')) + '</span></div>';
+               : (showAll ? '' : ' · ' + (all.length - linked.length) + ' unlinked hidden')) + '</span>' +
+      // ⚠️ The zoom is on the RIGHT of the same sticky head, not floating over the diagram: the
+      // diagram scrolls in both axes and an overlay would sit on top of nodes at some scroll offset.
+      '<span class="ps-net-tools">' +
+        '<button class="pd-btn" data-netz="out" title="Zoom out">−</button>' +
+        // ⚠️ Filled in AFTER the render, not here: "Fit" is stored as -1 and only resolved to a
+        // real scale once the drawn width is known, which is ~120 lines below this string. Printing
+        // `netZoom` at this point showed "-100%" for the whole frame after pressing Fit.
+        '<span class="ps-net-zval">—</span>' +
+        '<button class="pd-btn" data-netz="in" title="Zoom in">+</button>' +
+        '<button class="pd-btn" data-netz="fit" title="Scale the whole diagram to the width of this pane">Fit</button>' +
+      '</span></div>';
     function wireHead() {
       var cb = document.getElementById('ps-net-all'); if (cb && !cb.disabled) cb.onchange = function () { netShowAll = cb.checked; renderNetwork(); };
       host.querySelectorAll('[data-netloc]').forEach(function (s) {
@@ -14908,11 +15314,20 @@
           // silently and show a slice the planner did not ask for.
           var seen = false;
           (LOC_LEVELS || []).forEach(function (l) { if (seen) delete netLoc[l.id]; if (l.id === id) seen = true; });
+          netFocus = null;   // a different slice makes the traced activity meaningless
           renderNetwork();
         };
       });
       var clr = document.getElementById('ps-net-locclr');
-      if (clr) clr.onclick = function () { netLoc = {}; renderNetwork(); };
+      if (clr) clr.onclick = function () { netLoc = {}; netFocus = null; renderNetwork(); };
+      host.querySelectorAll('[data-netz]').forEach(function (b) {
+        b.onclick = function () {
+          var a = b.dataset.netz;
+          if (a === 'fit') { netZoom = -1; }   // resolved against the real width at draw time
+          else netZoom = Math.max(0.4, Math.min(1.6, (netZoom > 0 ? netZoom : 1) + (a === 'in' ? 0.15 : -0.15)));
+          renderNetwork();
+        };
+      });
     }
     if (!all.length) { host.innerHTML = head + '<div class="ps-empty">No activities to show. Add activities and link them (Predecessors / Link).</div>'; wireHead(); return; }
     var leaves = showAll ? all : linked;
@@ -14938,27 +15353,130 @@
     leaves.forEach(function (t) { getRank(t, {}); });
     var cols = {}, maxRows = 1;
     leaves.forEach(function (t) { var r = rank[String(t.activity_id)] || 0; (cols[r] = cols[r] || []).push(t); });
-    var COLW = 210, ROWH = 62, NODEW = 172, NODEH = 44, padX = 20, padY = 20, pos = {};
-    var ranks = Object.keys(cols).map(Number), maxRank = ranks.length ? Math.max.apply(null, ranks) : 0;
-    Object.keys(cols).forEach(function (rk) { cols[rk].forEach(function (t, i) { pos[String(t.activity_id)] = { x: padX + rk * COLW, y: padY + i * ROWH }; }); maxRows = Math.max(maxRows, cols[rk].length); });
-    var W = padX * 2 + (maxRank + 1) * COLW, H = padY * 2 + maxRows * ROWH;
+    /* ⚠️⚠️ BARYCENTRE ORDERING - the fix for the hairball in the screenshot.
+       Each column was left in `leaves` order, i.e. the order rows came out of the row array, so an
+       activity and its predecessor were routinely tens of rows apart and every arrow crossed the
+       whole picture. Two left-to-right passes place each node at the MEAN row of its already-placed
+       predecessors (the standard first phase of a Sugiyama layered layout); nodes with no placed
+       predecessor keep their relative order, which is what stops the pass shuffling an unlinked set
+       for no reason.
+       ⚠️ TWO passes, not iterate-to-convergence: this runs on every render of up to 1,200 nodes,
+       and a full Sugiyama would also need dummy nodes for edges spanning more than one column,
+       which is more machinery than this view justifies.
+       ⚠️ WHAT IT WAS MEASURED TO DO, AND WHAT IT WAS NOT. Harness set, 128 linked activities over
+       5 ranks, counting pairs of edges between the same two columns whose endpoints are in
+       opposite vertical order: fed a set already ordered so that logic runs along rows, 0
+       crossings before and 0 after — the pass is a NO-OP on an order that is already right, which
+       is the property that makes it safe to run unconditionally. Fed the same set in
+       activity-NAME order (a stand-in for any order that is not logic-aligned) it took 74
+       crossings to 0.
+       The case this is FOR is the owner’s screenshot: one Level across four towers and six
+       clusters, where row order is WBS order (tower › discipline › floor › cluster) while the
+       logic runs across all of it, so a predecessor is routinely tens of rows away. No count is
+       quoted for that set, because it was not measured on it.
+       ⚠️ Row POSITIONS only. It never changes which column a node is in - that is its logic depth
+       and is the one thing the diagram is asserting. */
+    var ranksSorted = Object.keys(cols).map(Number).sort(function (a, b) { return a - b; });
+    (function barycentre() {
+      var rowOf = {};
+      ranksSorted.forEach(function (rk) { cols[rk].forEach(function (t, i) { rowOf[String(t.activity_id)] = i; }); });
+      for (var pass = 0; pass < 2; pass++) {
+        ranksSorted.forEach(function (rk) {
+          var list = cols[rk];
+          var keyed = list.map(function (t, i) {
+            var ps = (t._relObjs || []).map(function (x) { return x.p && rowOf[String(x.p.activity_id)]; })
+                                       .filter(function (v) { return typeof v === 'number'; });
+            var bc = ps.length ? ps.reduce(function (a, b) { return a + b; }, 0) / ps.length : rowOf[String(t.activity_id)];
+            return { t: t, bc: (typeof bc === 'number' ? bc : i), i: i };
+          });
+          keyed.sort(function (a, b) { return a.bc - b.bc || a.i - b.i; });
+          cols[rk] = keyed.map(function (k) { return k.t; });
+          cols[rk].forEach(function (t, i) { rowOf[String(t.activity_id)] = i; });
+        });
+      }
+    })();
+    var COLW = 210, NROWH = 62, NODEW = 172, NODEH = 44, padX = 20, padY = 20, pos = {};
+    var maxRank = ranksSorted.length ? ranksSorted[ranksSorted.length - 1] : 0;
+    Object.keys(cols).forEach(function (rk) { cols[rk].forEach(function (t, i) { pos[String(t.activity_id)] = { x: padX + rk * COLW, y: padY + i * NROWH }; }); maxRows = Math.max(maxRows, cols[rk].length); });
+    var W = padX * 2 + (maxRank + 1) * COLW, H = padY * 2 + maxRows * NROWH;
+    // ---- the traced activity, if any ---------------------------------------------------------
+    var trace = null;
+    if (netFocus && pos[String(netFocus)]) trace = netTrace(netFocus, leaves);
+    else netFocus = null;
+    function nodeState(id) {
+      if (!trace) return '';
+      if (String(id) === String(netFocus)) return ' netfocus';
+      if (trace.pred[String(id)]) return ' netpred';
+      if (trace.succ[String(id)]) return ' netsucc';
+      return ' netdim';
+    }
     var edges = '';
     leaves.forEach(function (t) {
       (t._relObjs || []).forEach(function (rel) {
         if (!rel.p) return; var a = pos[String(rel.p.activity_id)], b = pos[String(t.activity_id)]; if (!a || !b) return;
         var x1 = a.x + NODEW, y1 = a.y + NODEH / 2, x2 = b.x, y2 = b.y + NODEH / 2, mx = (x1 + x2) / 2;
         var c = (critMode && rel.p._critical && t._critical) ? ' crit' : '';
+        // ⚠️ An edge is ON the trace only when BOTH ends are - otherwise every arrow leaving the
+        // dimmed set would stay lit and the trace would read as a much larger chain than it is.
+        if (trace) {
+          var sa = nodeState(rel.p.activity_id), sb = nodeState(t.activity_id);
+          var lit = (sa !== ' netdim' && sb !== ' netdim');
+          c += lit ? (sb === ' netsucc' || sa === ' netfocus' ? ' hotsucc' : ' hotpred') : ' netdim';
+        }
         edges += '<path d="M' + x1 + ' ' + y1 + ' C ' + mx + ' ' + y1 + ', ' + mx + ' ' + y2 + ', ' + x2 + ' ' + y2 + '" class="ps-net-edge' + c + '" marker-end="url(#psarrow)"/>';
       });
     });
     var nodes = leaves.map(function (t) {
       var p = pos[String(t.activity_id)], cls = 'ps-net-node' + (t._critical ? ' crit' : '') + ((t.percent_complete || 0) >= 100 ? ' done' : '');
-      return '<g transform="translate(' + p.x + ',' + p.y + ')"><rect width="' + NODEW + '" height="' + NODEH + '" rx="6" class="' + cls + '"/>' +
-        '<text x="9" y="17" class="ps-net-id">' + esc(t.activity_id || '') + '</text>' +
-        '<text x="9" y="33" class="ps-net-name">' + esc((t.activity_name || '').slice(0, 26)) + '</text></g>';
+      var id = String(t.activity_id || ''), nm = String(t.activity_name || '');
+      var nPred = (t._relObjs || []).length, nSucc = (t._succObjs || []).length;
+      // ⚠️ The FULL id and name in a <title>, always - the box shows what fits and the tooltip
+      // shows what it is. On this project the ids are 31 characters and the box holds 26.
+      return '<g class="ps-net-g' + nodeState(id) + '" data-netid="' + esc(id) + '" transform="translate(' + p.x + ',' + p.y + ')">' +
+        '<title>' + esc(id + (nm ? '  ·  ' + nm : '') + '\n' + nPred + ' predecessor' + (nPred === 1 ? '' : 's') +
+          ' · ' + nSucc + ' successor' + (nSucc === 1 ? '' : 's') + '\nClick to trace its logic') + '</title>' +
+        '<rect width="' + NODEW + '" height="' + NODEH + '" rx="6" class="' + cls + '"/>' +
+        '<text x="9" y="17" class="ps-net-id">' + esc(netFit(id, NODEW - 18, 11)) + '</text>' +
+        '<text x="9" y="33" class="ps-net-name">' + esc(netFit(nm, NODEW - 18, 10)) + '</text></g>';
     }).join('');
-    host.innerHTML = head + '<svg width="' + W + '" height="' + H + '" style="min-width:100%;display:block;"><defs><marker id="psarrow" markerWidth="9" markerHeight="9" refX="8" refY="4" orient="auto"><path d="M0 0 L9 4 L0 8 z" class="ps-net-arrow"/></marker></defs>' + edges + nodes + '</svg>';
+    /* ⚠️ THE SENTENCE THAT MAKES THE PICTURE MEAN SOMETHING. Owner: *"Viewing PERT does not make
+       any sense to me."* Columns are LOGIC DEPTH, which nothing on screen said - a reader naturally
+       assumes left-to-right is time, and then the diagram contradicts the Gantt they just left. */
+    var tracedT = trace ? (rows.find(function (r) { return String(r.activity_id) === String(netFocus); }) || {}) : null;
+    var key = '<div class="ps-net-key">' +
+      (trace
+        ? '<b>Tracing ' + esc(netFocus) + '</b>' + (tracedT && tracedT.activity_name ? ' · ' + esc(tracedT.activity_name) : '') +
+          ' — <span class="k-pred">' + Object.keys(trace.pred).length + ' drive it</span>, ' +
+          '<span class="k-succ">' + Object.keys(trace.succ).length + ' follow it</span>, within this slice. ' +
+          '<button class="pd-btn" id="ps-net-clrfocus" style="min-height:24px;font-size:11.5px;padding:0 8px;">Clear</button>'
+        : 'Each <b>column</b> is one step of logic depth — how many activities must finish before this ' +
+          'one can start. It is <b>not</b> time; the Gantt is the time view. ' +
+          '<b>Click any box to trace it:</b> what drives it turns <span class="k-pred">green</span>, ' +
+          'what it drives turns <span class="k-succ">orange</span>.' +
+          (critMode ? ' Amber outlines are the critical path.' : '')) +
+      '</div>';
+    // ⚠️ `netZoom === -1` is the Fit request, resolved here because only now is the real drawn width
+    // known. Clamped to 1 at the top: "Fit" must never MAGNIFY a small diagram to fill the pane.
+    var paneW = Math.max(320, (host.clientWidth || 900) - 24);
+    var z = netZoom > 0 ? netZoom : Math.max(0.4, Math.min(1, paneW / W));
+    if (netZoom < 0) netZoom = z;
+    host.innerHTML = head + key +
+      '<div class="ps-net-canvas"><svg width="' + Math.round(W * z) + '" height="' + Math.round(H * z) + '" viewBox="0 0 ' + W + ' ' + H + '" style="display:block;">' +
+      '<defs><marker id="psarrow" markerWidth="9" markerHeight="9" refX="8" refY="4" orient="auto"><path d="M0 0 L9 4 L0 8 z" class="ps-net-arrow"/></marker></defs>' + edges + nodes + '</svg></div>';
     wireHead();
+    var zv = host.querySelector('.ps-net-zval'); if (zv) zv.textContent = Math.round(z * 100) + '%';
+    var cf = document.getElementById('ps-net-clrfocus');
+    if (cf) cf.onclick = function () { netFocus = null; renderNetwork(); };
+    // ⚠️ Delegated on the canvas, not bound per node: 1,200 individual listeners is 1,200
+    // closures rebuilt on every zoom step and every filter change.
+    var cv = host.querySelector('.ps-net-canvas');
+    if (cv) cv.onclick = function (e) {
+      var g = e.target.closest && e.target.closest('[data-netid]');
+      if (!g) return;
+      var id = g.getAttribute('data-netid');
+      netFocus = (String(netFocus) === String(id)) ? null : id;   // clicking the traced node clears it
+      renderNetwork();
+    };
   }
 
   // ----- OPC-style Activity Details / Project Usage panel -----
@@ -16201,10 +16719,22 @@
     rows.forEach(function (r) { var v = locValOf(r, levelId); if (v && !seen[v]) { seen[v] = 1; out.push(v); } });
     return out.sort();
   }
+  /* ⚠️ MEMOISED, because this is a full scan of every activity resolving each one's trade
+     through the WBS tree — 16,393 of them on 4PH Strevi — and its caller is the calendar editor's
+     "assign to a trade" picker, which re-renders on every checkbox, every typed field and every
+     season change. That is a 16k-row walk per keystroke, and it is a large part of *"picking a
+     calendar took a long time before it loaded"* (owner 2026-09-03).
+     ⚠️ The key is `rows` IDENTITY plus length plus `_editSeq`: load() REPLACES the array (new
+     identity), inline edits mutate it in place but bump `_editSeq`, and add/delete change the
+     length. Anything that could change a trade moves one of the three. */
+  var _wtvKey = null, _wtvRows = null, _wtvOut = null;
   function workTypeValues() {
+    var key = rows.length + '|' + _editSeq;
+    if (_wtvOut && _wtvRows === rows && _wtvKey === key) return _wtvOut;
     var seen = {}, out = [];
     rows.forEach(function (r) { var v = workOf(r); if (v && !seen[v]) { seen[v] = 1; out.push(v); } });
-    return out.sort();
+    _wtvRows = rows; _wtvKey = key; _wtvOut = out.sort();
+    return _wtvOut;
   }
   function gridCols() { return GRID_COLS.concat(extraColDefs()); }
   // Hide/rename key: built-ins keep their LABEL (back-compat with persisted prefs); extra columns
@@ -18457,9 +18987,51 @@
   var _AUDIT_LBL = { start_date: 'Start', end_date: 'Finish', actual_start: 'Actual start', actual_finish: 'Actual finish', percent_complete: '% Complete', status: 'Status', bl_start: 'BL start', bl_finish: 'BL finish', contract_date: 'Contract date', predecessors: 'Predecessors', activity_name: 'Name', duration_days: 'Duration', planned_cost: 'Planned cost', actual_cost: 'Actual cost', earned_value: 'Earned value', responsible_party: 'Responsible' };
   function _auditFieldLabel(k) { return _AUDIT_LBL[k] || k; }
   function _auditFmtVal(v) { if (v == null || v === '') return '—'; if (/^\d{4}-\d{2}-\d{2}/.test(String(v))) return Fmt.date(v); return String(v); }
+  /* ==========================================================================================
+     WHAT "RESTORE" MEANS HERE, STATED PLAINLY
+     ------------------------------------------------------------------------------------------
+     Owner 2026-09-03: *"Change history: can these versions be restored?"*
+
+     `schedule_audit` is a CHANGE LOG, not a series of versions: one row per edit, holding the
+     fields that moved and their before/after values. So there is no "the schedule as it stood on
+     Tuesday" to roll back to, and pretending otherwise would be the worst possible answer — a
+     Restore button that silently reverted only the changes that happened to be logged.
+
+     What the log CAN do, exactly, and what each row now offers:
+       • an EDIT (`update`)  → **Revert**. Every changed field's `from` value is in the row, so the
+                                revert is a normal write of those values back through persist():
+                                undoable with Ctrl+Z, and itself logged, so the history stays a
+                                truthful account rather than a thing that edits itself.
+       • a DELETION (`delete`) → **Restore**. Now that deleteRow() writes the whole row first, this
+                                re-inserts it under its ORIGINAL id.
+       • an INSERT           → nothing. The way back from "added" is to delete it, which is a
+                                deletion, not a restore.
+       • a RESCHEDULE        → nothing. It is one line standing for a CPM pass over thousands of
+                                rows; the way back is to re-run Schedule, not to unpick it.
+     For a real point-in-time version, Actions › Baselines and Actions › Snapshots are the features
+     that capture one, and the panel now says so instead of leaving the reader to wonder.
+     ========================================================================================== */
+  // Which of the four actions can be undone from what the row stores, and what to call the button.
+  function _auditUndoable(a) {
+    if (a.action === 'update') {
+      var c = a.changes || {};
+      // ⚠️ Only a diff that actually recorded a `from` can be reverted. An older build's rows,
+      // or a bulk edit that logged a bare patch, would otherwise offer a button that writes
+      // `undefined` over live values.
+      var ks = Object.keys(c).filter(function (k) { return c[k] && typeof c[k] === 'object' && 'from' in c[k]; });
+      return ks.length ? { kind: 'revert', label: 'Revert', fields: ks } : null;
+    }
+    if (a.action === 'delete' && a.changes && a.changes._row && a.changes._row.id) {
+      return { kind: 'restore', label: 'Restore', fields: null };
+    }
+    return null;
+  }
   function _auditSummary(a) {
     if (a.action === 'insert') return 'Added activity';
-    if (a.action === 'delete') return 'Deleted activity';
+    if (a.action === 'delete') {
+      var rw = a.changes && a.changes._row;
+      return 'Deleted activity' + (rw ? ' — the row was saved, so it can be restored' : ' (logged before the row was saved, so there is nothing to restore)');
+    }
     if (a.action === 'reschedule') {
       var _rn = (a.changes && a.changes.count) || '', _rk = (a.changes && a.changes.kind) || null;
       if (_rk === 'baseline-cleared') return 'Cleared the baseline from ' + _rn + ' activities';
@@ -18467,7 +19039,19 @@
       return 'Rescheduled ' + _rn + ' activities from relationships';
     }
     var c = a.changes || {}, ks = Object.keys(c); if (!ks.length) return '—';
-    return ks.map(function (k) { return '<b>' + esc(_auditFieldLabel(k)) + '</b>: ' + esc(_auditFmtVal(c[k].from)) + ' → ' + esc(_auditFmtVal(c[k].to)); }).join('; ');
+    /* ⚠️ A DIFF AND A BARE PATCH READ DIFFERENTLY. Most entries store `{from, to}`, but a bulk
+       edit (and anything written by an older build) stores the new value alone — and rendering that
+       through the two-sided template printed "Status: — → —", which says the field changed from
+       nothing to nothing. Say what is actually recorded. It is also what `_auditUndoable` keys
+       on: no `from` means no revert, because there is nothing to revert TO. */
+    return ks.map(function (k) {
+      var v = c[k];
+      if (v && typeof v === 'object' && 'from' in v) {
+        return '<b>' + esc(_auditFieldLabel(k)) + '</b>: ' + esc(_auditFmtVal(v.from)) + ' → ' + esc(_auditFmtVal(v.to));
+      }
+      return '<b>' + esc(_auditFieldLabel(k)) + '</b> set to ' + esc(_auditFmtVal(v)) +
+        ' <i style="color:var(--pd-muted);">(the previous value was not recorded)</i>';
+    }).join('; ');
   }
   async function openAudit() {
     if (!pid) { UI.toast('Load a project first.', 'warn'); return; }
@@ -18483,11 +19067,88 @@
     var body = document.getElementById('ps-audit-body');
     document.getElementById('ps-audit-count').textContent = arr.length + ' change' + (arr.length === 1 ? '' : 's') + (arr.length === 400 ? '+' : '');
     if (!arr.length) { body.innerHTML = '<div class="ps-ck-empty" style="padding:30px;">No changes recorded yet.</div>'; return; }
-    body.innerHTML = '<table class="ps-snap-tbl"><thead><tr><th>When</th><th>Who</th><th>Activity</th><th>Change</th></tr></thead><tbody>' +
+    _auditRows = {}; arr.forEach(function (a) { if (a.id) _auditRows[a.id] = a; });
+    // ⚠️ The lede is not decoration: without it a reader looking for "restore the schedule to
+    // Tuesday" concludes the feature is broken rather than absent. Say which feature does that.
+    body.innerHTML =
+      '<p style="margin:0;padding:10px 14px;font-size:12px;color:var(--pd-muted);border-bottom:1px solid var(--pd-line);">' +
+        'This is a log of individual <b>changes</b>, not a series of saved versions. An <b>edit</b> can be ' +
+        'reverted field by field and a <b>deleted activity</b> can be restored — both go through the normal ' +
+        'save, so both are undoable with Ctrl+Z and both appear here afterwards. For a point-in-time copy ' +
+        'of the whole schedule, use <b>Actions › Baselines</b> or <b>Actions › Snapshots</b>.' +
+      '</p>' +
+      '<table class="ps-snap-tbl"><thead><tr><th>When</th><th>Who</th><th>Activity</th><th>Change</th><th></th></tr></thead><tbody>' +
       arr.map(function (a) {
         var w = a.changed_at ? (Fmt.date(String(a.changed_at).slice(0, 10)) + ' ' + String(a.changed_at).slice(11, 16)) : '—';
-        return '<tr><td style="white-space:nowrap;">' + esc(w) + '</td><td>' + esc(names[a.changed_by] || '—') + '</td><td>' + esc((a.activity_id ? a.activity_id + ' · ' : '') + (a.activity_name || '')) + '</td><td>' + _auditSummary(a) + '</td></tr>';
+        var u = _auditUndoable(a);
+        var act = (u && !_editLocked())
+          ? '<button class="pd-btn pd-btn-sm" data-aundo="' + esc(a.id) + '" title="' +
+            (u.kind === 'revert'
+              ? 'Write ' + u.fields.length + ' field' + (u.fields.length === 1 ? '' : 's') + ' back to the value before this change. Saved the normal way — undoable, and logged here.'
+              : 'Re-insert this activity under its original id, so its relationships and assignments line up again.') +
+            '">' + u.label + '</button>'
+          : '';
+        return '<tr><td style="white-space:nowrap;">' + esc(w) + '</td><td>' + esc(names[a.changed_by] || '—') + '</td><td>' + esc((a.activity_id ? a.activity_id + ' · ' : '') + (a.activity_name || '')) + '</td><td>' + _auditSummary(a) + '</td>' +
+          '<td style="text-align:right;white-space:nowrap;">' + act + '</td></tr>';
       }).join('') + '</tbody></table>';
+    body.querySelectorAll('[data-aundo]').forEach(function (b) {
+      b.onclick = function () { auditUndo(_auditRows[b.dataset.aundo], b); };
+    });
+  }
+  var _auditRows = {};
+  /* Revert one logged edit, or restore one logged deletion.
+     ⚠️ BOTH GO THROUGH THE ORDINARY WRITE PATH — persist() for a revert, the same insert shape
+     deleteRow's counterpart uses for a restore. That is what gives them undo, the Realtime echo
+     suppression, the cache update and their own audit entry for free, and it is why this cannot
+     quietly diverge from what a manual edit does.
+     ⚠️ AND IT IS NOT SILENT ABOUT WHAT IT WILL WRITE. A revert names the fields and their target
+     values in the confirm, because "revert" over a row somebody else has edited since means
+     overwriting THEIR value with a value from before their change — which is sometimes exactly
+     right and must never be a surprise. */
+  async function auditUndo(a, btn) {
+    if (!a) return;
+    if (_editLocked()) { UI.toast(_editLockMsg(), 'warn'); return; }
+    var u = _auditUndoable(a); if (!u) return;
+    if (u.kind === 'revert') {
+      var r = rows.find(function (x) { return x.id === a.activity_pk; }) ||
+              (a.activity_id ? rows.find(function (x) { return String(x.activity_id) === String(a.activity_id); }) : null);
+      if (!r) { UI.toast('That activity is no longer in this schedule, so there is nothing to revert. If it was deleted, restore the deletion entry instead.', 'warn'); return; }
+      var patch = {}, lines = [];
+      u.fields.forEach(function (k) {
+        patch[k] = a.changes[k].from;
+        lines.push('• ' + _auditFieldLabel(k) + ': ' + _auditFmtVal(r[k]) + '  →  ' + _auditFmtVal(a.changes[k].from));
+      });
+      if (!confirm('Revert this change on “' + (r.activity_name || r.activity_id) + '”?\n\n' + lines.join('\n') +
+        '\n\nThe left-hand value is what the activity holds NOW — if somebody edited it after this ' +
+        'change, reverting overwrites their value too.')) return;
+      btn.disabled = true;
+      var ok = await persist(r.id, patch);
+      btn.disabled = false;
+      if (!ok) return;
+      renderGrid(); renderGantt(); renderDetails();
+      UI.toast('Reverted — Ctrl+Z undoes it, and the revert is logged here too.', 'success');
+      openAudit();
+      return;
+    }
+    // Restore a deleted activity, under its original id.
+    var row = a.changes._row;
+    if (rows.some(function (x) { return x.id === row.id; })) { UI.toast('That activity is already back in the schedule.', 'warn'); return; }
+    if (!confirm('Restore “' + (row.activity_name || row.activity_id || row.id) + '”?\n\n' +
+      'It comes back under its original id, so relationships and assignments that pointed at it line up again.')) return;
+    btn.disabled = true;
+    var ins = await sb().from(TABLE).insert(row).select().single();
+    btn.disabled = false;
+    if (ins.error) { UI.toast('Could not restore: ' + ins.error.message, 'error'); return; }
+    var back = ins.data || row;
+    rows.push(back);
+    // ⚠️ `insertMany` (not `insert`) so undo DELETES it again rather than trying to re-insert:
+    // pushUndo's 'insert' shape means "this was inserted, undo removes it", which is what is wanted.
+    pushUndo({ type: 'insertMany', inserted: [back], deleted: [] });
+    logAudit(back, 'insert', null);
+    _editSeq++; _cacheSaveSoon();
+    rebuild(true); renderGrid(); renderGantt(); renderDetails();
+    UI.toast('Restored “' + (back.activity_name || back.activity_id) + '”.', 'success');
+    openAudit();
   }
 
   // ----- MULTIPLE BASELINES (OPC-style: capture / set primary / compare) -----
@@ -24151,7 +24812,14 @@
             return { id: (a && a.id) || uidv(), n: String((a && a.n) || '').slice(0, 200),
                      // ⚠️ Clamped to 1, never 0: a zero-day phase activity would push a row whose
                      // finish precedes its start and break the chain for everything after it.
-                     d: Math.max(1, Math.min(999, Math.round(Number(a && a.d) || 1))) };
+                     d: Math.max(1, Math.min(999, Math.round(Number(a && a.d) || 1))),
+                     /* ⚠️⚠️ `par` HAS TO BE CARRIED HERE OR IT DOES NOT EXIST. This normaliser is a
+                        WHITELIST — every cfg that arrives (from a save, from the derive, from an older
+                        build) is rebuilt field by field, so a field it does not name is silently dropped.
+                        Caught in the harness: the derive marked 2 of 3 Planning-Phase activities
+                        concurrent and the step still drew them chained, because the flag never
+                        survived the trip from sbDeriveFromSchedule to cfg. */
+                     par: !!(a && a.par) };
           })
         };
       });
@@ -24975,7 +25643,7 @@
       { v: 'construction', when: 'exec' },
       { v: 'closeout', when: 'after' }
     ];
-    function sbPhAct(spec) { var i = spec.lastIndexOf(':'); return { id: uidv(), n: spec.slice(0, i), d: +spec.slice(i + 1) }; }
+    function sbPhAct(spec) { var i = spec.lastIndexOf(':'); return { id: uidv(), n: spec.slice(0, i), d: +spec.slice(i + 1), par: false }; }
     // The stored shape, with defaults filled in. ⚠️ A setup saved before today has no `phases` key at
     // all, and must open with every extra phase OFF — turning three phases on inside somebody's saved
     // recipe, which they would then push without noticing, is not a default anyone asked for.
@@ -24992,7 +25660,18 @@
     }
     function sbPhOn(v) { var ph = sbPhases()[v]; return !!(ph && ph.on && ph.acts.length); }
     function sbPhActs(v) { var ph = sbPhases()[v]; return (ph && ph.acts) || []; }
-    function sbPhDays(v) { return sbPhActs(v).reduce(function (t, a) { return t + Math.max(0, +a.d || 0); }, 0); }
+    /* Calendar days the phase actually OCCUPIES. ⚠️ NOT the sum of the durations — that is what
+       made the derived Planning Phase read "8508 days" for two years of concurrent work. Rows that
+       run alongside each other (`par`) contribute their group's longest member once. */
+    function sbPhDays(v) {
+      var total = 0, cur = 0;
+      sbPhActs(v).forEach(function (a) {
+        var d = Math.max(0, +a.d || 0);
+        if (a.par) { cur = Math.max(cur, d); }
+        else { total += cur; cur = d; }
+      });
+      return total + cur;
+    }
     // The dated plan for every enabled phase, around the generated execution window.
     // ⚠️ CALENDAR DAYS, chained finish-to-start — the same arithmetic generate() uses for the
     // execution rows (addD over a day count, no working-day calendar). Two different day models in
@@ -25008,13 +25687,43 @@
         if (d.when === 'exec' || !sbPhOn(d.v)) return;
         (d.when === 'before' ? before : after).push(d);
       });
+      /* ⚠️⚠️ ACTIVITIES ARE GROUPED, NOT BLINDLY CHAINED, and the difference is the reason
+         this was reported. A phase used to be one end-to-end chain: activity 2 starts the day
+         activity 1 finishes, always. Read the Planning Phase off a real schedule (Setup › Start ›
+         "read the live schedule") and you get 200 activities whose real durations are 240-310 days
+         each BECAUSE THEY RUN CONCURRENTLY — Competency Profile, Training Plan, Job Profile and
+         Performance Management are all running through the same two years. Chained, they summed to
+         8,508 days and the step reported the Planning Phase as *"Sep 20, 02 → Jan 04, 26"*, which is
+         what the owner saw. The number was arithmetically correct and completely wrong.
+         So an activity carries `par`: TRUE means it runs alongside the row above it rather than
+         after it. Consecutive `par` rows form ONE GROUP whose duration is the LONGEST member's, and
+         groups are what chain. `par` defaults false, so every existing setup behaves exactly as it
+         did, and the derive sets it from the real dates it read.
+         ⚠️ Grouping is done on the FORWARD list in both directions, then the backward walk
+         reverses the GROUPS — reversing the activities first would have made a `par` row attach to
+         the wrong neighbour, i.e. silently regroup the phase when it is scheduled backwards. */
+      function groupsOf(v) {
+        var out = [];
+        sbPhActs(v).forEach(function (a) {
+          if (a.par && out.length) out[out.length - 1].push(a);
+          else out.push([a]);
+        });
+        return out;
+      }
+      function grpDur(g2) { return g2.reduce(function (m, a) { return Math.max(m, Math.max(1, +a.d || 1)); }, 1); }
       // Walk the before-block BACKWARDS from the execution start.
       var cursor = addD(g.start, -1);
       before.slice().reverse().forEach(function (d) {
-        var acts = sbPhActs(d.v).slice().reverse(), rows = [];
-        acts.forEach(function (a) {
-          var dur = Math.max(1, +a.d || 1), fin = cursor, st = addD(cursor, -(dur - 1));
-          rows.unshift({ act: a, start: st, finish: fin, dur: dur });
+        var rows = [];
+        groupsOf(d.v).slice().reverse().forEach(function (grp) {
+          var dur = grpDur(grp), fin = cursor, st = addD(cursor, -(dur - 1));
+          // ⚠️ Every member of a group gets the GROUP's window, not its own duration's window:
+          // the group's span is the longest member and a shorter sibling inside it finishes early,
+          // which is exactly what "runs alongside" means.
+          grp.slice().reverse().forEach(function (a) {
+            var ad = Math.max(1, +a.d || 1);
+            rows.unshift({ act: a, start: addD(fin, -(ad - 1)), finish: fin, dur: ad });
+          });
           cursor = addD(st, -1);
         });
         out.unshift({ v: d.v, when: d.when, rows: rows, start: rows.length ? rows[0].start : null, finish: rows.length ? rows[rows.length - 1].finish : null });
@@ -25023,9 +25732,12 @@
       cursor = addD(g.finish, 1);
       after.forEach(function (d) {
         var rows = [];
-        sbPhActs(d.v).forEach(function (a) {
-          var dur = Math.max(1, +a.d || 1), st = cursor, fin = addD(cursor, dur - 1);
-          rows.push({ act: a, start: st, finish: fin, dur: dur });
+        groupsOf(d.v).forEach(function (grp) {
+          var dur = grpDur(grp), st = cursor, fin = addD(cursor, dur - 1);
+          grp.forEach(function (a) {
+            var ad = Math.max(1, +a.d || 1);
+            rows.push({ act: a, start: st, finish: addD(st, ad - 1), dur: ad });
+          });
           cursor = addD(fin, 1);
         });
         out.push({ v: d.v, when: d.when, rows: rows, start: rows.length ? rows[0].start : null, finish: rows.length ? rows[rows.length - 1].finish : null });
@@ -25338,7 +26050,32 @@
     var STEP_START = { t: 'Start', s: 'Import, or build new', fn: stStart };
     // The generation path — the original ten steps, in the original order.
     var STEPS_NEW = [
-      /* ⚠️ SECOND, BEFORE THE ACTIVITIES, and that ordering is the point (see stCalendars): every
+      /* ⚠️⚠️ WBS IS FIRST NOW, not eleventh. Owner 2026-09-03: *"Is WBS really at the end of
+         the Schedule Setup? or this should be at the beginning? Let's think about this."*
+
+         Thinking about it, the answer turns on something specific to THIS step: unlike every other
+         step, it is not data entry. Steps 3-11 fill in `cfg` and the Generate step reads `cfg`; the
+         WBS step edits the LIVE `wbs_nodes` tree directly, and the push reads that tree AT PUSH
+         TIME, not at step time. So its position cannot break anything either way, which means the
+         position is purely a question of WHEN A PLANNER WANTS TO LOOK — and the answer to that is
+         plainly "before I start typing", for three reasons:
+           • it is the project's EXISTING structure. Everything else in the wizard describes work to
+             be added; this is the only step that shows what is already there.
+           • the IMPORT path already checks branches first (STEPS_IMP step 1 is "Activities & phases",
+             which is filing each of the file's branches under a phase). Two paths through the same
+             module answering the same question in opposite orders is not a design, it is an
+             accident of when each was written.
+           • it is where the five lifecycle phases live, and "Project phases" (step 11) edits what
+             goes inside three of them. Reading the tree first is what makes that step legible.
+         ⚠️ WHAT THIS IS NOT: a claim that the tree is an INPUT to generation. The push still
+         creates the trade › tower › floor › zone branches it needs and reuses any that match, so a
+         nearly-empty tree here is the normal state on a new project — stWbs says so in as many
+         words, because a planner arriving at an empty step 2 would otherwise think it was broken.
+         ⚠️ Nothing indexes these steps by number: `_stepNo(title)` looks them up by TITLE and every
+         cross-reference in the module goes through it, so all the "see step 7" text renumbered
+         itself. Verified by grep for `_stepNo(` — there is no numeric step literal anywhere. */
+      { t: 'WBS', s: 'The branch tree you already have', fn: stWbs },
+      /* ⚠️ BEFORE THE ACTIVITIES, and that ordering is the point (see stCalendars): every
          duration typed in the next step is a count of WORKING days, so the calendar is the unit
          those numbers are expressed in. Set afterwards, everything already typed silently meant
          something else while it was being typed. */
@@ -25351,7 +26088,6 @@
       { t: 'Scope per zone', s: 'Activities per location', fn: stScope },
       { t: 'Stacking', s: 'Vertical stacking by trade', fn: stStacking },
       { t: 'Project phases', s: 'Initiation → Close-out', fn: stPhases },
-      { t: 'WBS', s: 'The live branch tree', fn: stWbs },
       { t: 'Generate', s: 'Build & preview', fn: stGenerate },
     ];
     /* The import path. ⚠️ THE ORDER IS THE DATA-CHECKING ORDER, and it is not arbitrary:
@@ -25948,7 +26684,31 @@
     function towerSVG(tr, towerId) {
       var floors = floorsOfTower(tr, towerId || activeTower());
       if (!floors.length) return '<div class="sbld-empty">No floors yet for ' + e2(GLABEL[tr]) + ' in ' + e2(towerLabel(towerId || activeTower())) + '. Add floors or basements on the left.</div>';
-      var fh = 52, gap = 6, pad = 14, labelW = 40, col = gc(tr);
+      /* ⚠️⚠️ THE LABEL GUTTER IS MEASURED, and that is the *"h Floor"* bug.
+         Owner 2026-09-03: *"See Floors and Zones screenshot: it shows 'h Floor' what does that
+         mean?"* — it means "5th Floor" with its first 22 pixels cut off. The floor label is drawn
+         with `text-anchor="end"` at x = pad + labelW - 6 = 48, so it grows LEFTWARD and anything
+         wider than ~48px runs off the left edge of the <svg> and is clipped. `labelW = 40` was sized
+         for the codes this step generates itself — "F1", "B2", "GF" — and it is right for those.
+         What broke it is reading a setup out of a live schedule: that derive puts the branch NAME in
+         `code` ("5th Floor", "Ground Floor", "Cluster 2 (Units 07 to 12)"), because that is the only
+         honest name for a floor it did not invent.
+         So the gutter is sized to the widest label present, capped, and a label past the cap is
+         truncated with the full text on hover. The 0.62 factor is the average advance width of this
+         13px bold face over the digits + upper/lower alphabet these names use, checked against
+         "Ground Floor" (12 chars -> 97px measured, 12 x 13 x 0.62 = 97). */
+      var fh = 52, gap = 6, pad = 14, col = gc(tr);
+      var LBL_MAX = 118, LBL_SZ = 13;
+      function lblFit(s) {
+        s = String(s == null ? '' : s);
+        var maxCh = Math.max(3, Math.floor(LBL_MAX / (LBL_SZ * 0.62)));
+        return s.length <= maxCh ? s : (s.slice(0, maxCh - 1) + '…');
+      }
+      var labelW = 40;
+      floors.forEach(function (f) {
+        var t = String(f.code || f.name || 'F');
+        labelW = Math.max(labelW, Math.min(LBL_MAX, Math.ceil(t.length * LBL_SZ * 0.62)) + 8);
+      });
       // Display order top→bottom: superstructure (highest floor first … ground last), then a GROUND
       // line, then basements (B1 first … deepest last). Grade sits between the two blocks.
       var supers = floors.filter(function (f) { return !f.sub; }), subs = floors.filter(function (f) { return f.sub; });
@@ -25971,7 +26731,9 @@
       var plotW = W - labelW - pad * 2, H = pad * 2 + disp.length * (fh + gap) + 10, svg = '';
       disp.forEach(function (f, i) {
         var y = pad + i * (fh + gap), zones = (showZones && f.zones.length) ? f.zones : [null], zw = plotW / zones.length;
-        svg += '<text x="' + (pad + labelW - 6) + '" y="' + (y + fh / 2 + 4) + '" text-anchor="end" font-size="13" font-weight="700" fill="' + (f.sub ? gc(tr) : 'var(--pd-muted)') + '">' + e2(f.code || f.name || 'F') + '</text>';
+        var _fl = String(f.code || f.name || 'F'), _flCut = lblFit(_fl);
+        svg += '<text x="' + (pad + labelW - 6) + '" y="' + (y + fh / 2 + 4) + '" text-anchor="end" font-size="' + LBL_SZ + '" font-weight="700" fill="' + (f.sub ? gc(tr) : 'var(--pd-muted)') + '">' +
+          (_flCut !== _fl ? '<title>' + e2(_fl) + '</title>' : '') + e2(_flCut) + '</text>';
         zones.forEach(function (z, zi) {
           var zx = pad + labelW + zi * zw, nU = (showUnits && z && z.units.length) ? z.units.length : 0, hasU = nU > 0, wIn = zw - 3, cx = zx + wIn / 2;
           svg += '<rect x="' + zx + '" y="' + y + '" width="' + wIn + '" height="' + fh + '" rx="4" fill="' + col + '" opacity="' + (f.sub ? (zi % 2 ? 0.4 : 0.55) : (zi % 2 ? 0.72 : 0.92)) + '"' + (f.sub ? ' stroke="' + col + '" stroke-width="1" stroke-dasharray="4 3"' : '') + '></rect>';
@@ -26152,7 +26914,12 @@
       var copyCtrl = otherTr.length ? '<div class="sbld-sec-actions" style="margin:2px 0 12px;flex-wrap:wrap;">' +
         '<span class="sbld-hint">Same building for several trades?</span>' +
         (zn.floors.length ? '<button class="pd-btn" id="b-applyall">Copy ' + e2(GLABEL[tr]) + ' floors/zones → all trades</button>' : '') +
-        (srcTr.length ? '<label class="sbld-hint" style="display:inline-flex;align-items:center;gap:5px;">or copy from <select class="pd-select sbld-mini" id="b-copyfrom" style="height:30px;"><option value="">choose trade…</option>' +
+        // ⚠️ NOT `.sbld-mini`, which is `width:62px` — sized for the two-character number inputs
+        // it was written for. On a <select> it clipped this control's own placeholder to "choc"
+        // (owner 2026-09-03: *"There's also an error in the dropdown UI"*), and every option with it,
+        // so the one thing the control had to say — which trade you are copying — was unreadable.
+        // `width:auto` lets a <select> size to its longest option, which is what it is for.
+        (srcTr.length ? '<label class="sbld-hint" style="display:inline-flex;align-items:center;gap:5px;">or copy from <select class="pd-select" id="b-copyfrom" style="height:30px;width:auto;max-width:230px;font-size:12px;"><option value="">choose trade…</option>' +
           srcTr.map(function (g) { return '<option value="' + g + '">' + e2(GLABEL[g]) + ' (' + leafCount(g) + ')</option>'; }).join('') + '</select></label>' : '') +
         '</div>' : '';
       var _twFloors = zn.floors.map(function (f, i) { return { f: f, i: i }; })
@@ -26746,11 +27513,32 @@
       var cards = SB_PHASE_DEFS.map(function (d) {
         if (d.when === 'exec') return execRow;
         var ph = sbPhases()[d.v], pl = planBy[d.v], on = !!ph.on;
-        var body = ph.acts.map(function (a, i) {
-          return '<div class="sbld-phrow" data-i="' + i + '">' +
-            '<span class="sbld-phgrip" draggable="true" title="Drag to reorder — the order is the chain, so it decides the dates">\u22ee\u22ee</span>' +
+        /* ⚠️⚠️ THE COLUMNS ARE NAMED NOW. Owner 2026-09-03: *"See project phases. What does
+           the fields mean? Are these activities then days? Why is there a feature to drag the
+           activity, is this relevant to the sequence? Or just a non functional feature?"* — three
+           questions that all have the same cause: a row was [grip] [name] [271] [Sep 24, 02 → Jun
+           21, 03] [bin] with no header anywhere, so "271" was a bare number and the grip looked
+           decorative. Every answer was already true (271 IS calendar days; the drag IS functional
+           and DOES decide the dates) and none of it was on screen.
+           ⚠️ A header ROW, not tooltips. A tooltip answers the question only for the reader who
+           already suspected there was one. */
+        var phHead = '<div class="sbld-phrow sbld-phhdr">' +
+          '<span class="sbld-phgrip" aria-hidden="true"></span>' +
+          '<span>Activity</span>' +
+          '<span title="Calendar days, not working days — these lifecycle activities are not scheduled against a working calendar.">Days</span>' +
+          '<span title="Tick to run this activity alongside the one above it instead of after it.">‖</span>' +
+          '<span>Dates <i>(computed)</i></span><span></span></div>';
+        var body = phHead + ph.acts.map(function (a, i) {
+          return '<div class="sbld-phrow' + (a.par ? ' is-par' : '') + '" data-i="' + i + '">' +
+            '<span class="sbld-phgrip" draggable="true" title="Drag to reorder. The order IS the sequence: each activity (or parallel group) follows the one above it, so moving a row moves the dates of everything below it.">\u22ee\u22ee</span>' +
             '<input class="pd-input sbld-phn" data-ph="' + d.v + '" data-i="' + i + '" value="' + e2(a.n) + '" placeholder="Activity name">' +
-            '<input class="pd-input sbld-phd" type="number" min="1" max="999" data-ph="' + d.v + '" data-i="' + i + '" value="' + (+a.d || 1) + '" title="Duration in calendar days">' +
+            '<input class="pd-input sbld-phd" type="number" min="1" max="999" data-ph="' + d.v + '" data-i="' + i + '" value="' + (+a.d || 1) + '" title="Duration in CALENDAR days">' +
+            /* ⚠️ Disabled on the FIRST row: "alongside the one above" has no meaning there, and a
+               tickable box that silently does nothing is worse than no box. */
+            '<label class="sbld-phpar" title="' + (i === 0
+              ? 'The first activity in a phase has nothing above it to run alongside.'
+              : 'Run this alongside “' + e2(String((ph.acts[i - 1] || {}).n || 'the row above')) + '” instead of after it. Concurrent rows form one block whose length is the longest of them.') + '">' +
+              '<input type="checkbox" data-phpar="' + d.v + '" data-i="' + i + '"' + (a.par ? ' checked' : '') + (i === 0 ? ' disabled' : '') + '></label>' +
             '<span class="sbld-phwin">' + (on && pl && pl.rows[i] ? e2(win(pl.rows[i].start, pl.rows[i].finish)) : '&mdash;') + '</span>' +
             '<button class="pd-btn sbld-del" data-phdel="' + d.v + '" data-i="' + i + '" title="Remove this activity"><span data-ico="trash" data-ico-size="14"></span></button>' +
             '</div>';
@@ -26760,8 +27548,10 @@
             '<label class="sbld-phname"><input type="checkbox" data-phon="' + d.v + '"' + (on ? ' checked' : '') + '> ' + e2(PHASE_LABELS[d.v]) + '</label>' +
             '<span class="sbld-phlock">' + (d.when === 'before' ? 'ends before the Execution Phase starts' : 'starts after the Execution Phase finishes') + '</span>' +
           '</div>' +
+          // ⚠️ Each number says what it IS. "200 activities · 8508 days" left the reader to guess
+          // whether 8508 was a total, a span or a sum — and it was the sum, which was the bug.
           '<p class="sbld-phmeta">' + (on
-            ? '<b>' + ph.acts.length + '</b> activit' + (ph.acts.length === 1 ? 'y' : 'ies') + ' · ' + sbPhDays(d.v) + ' days · ' +
+            ? '<b>' + ph.acts.length + '</b> activit' + (ph.acts.length === 1 ? 'y' : 'ies') + ' · spans <b>' + sbPhDays(d.v) + '</b> calendar days · ' +
               (pl ? e2(win(pl.start, pl.finish)) : '—')
             : 'Off — nothing is pushed for this phase.') + '</p>' +
           (on ? '<div class="sbld-phlist">' + (body || '<div class="sbld-empty">No activities yet.</div>') + '</div>' +
@@ -26780,6 +27570,12 @@
       host.innerHTML = '<h2>' + _stepNo('Project phases') + ' · The phases either side of construction</h2>' +
         '<p class="sbld-lede">Everything the other steps build <b>is</b> the Execution Phase — trades, floors, zones and links only describe construction. Add the rest of the project lifecycle here as a plain list of activities with durations: they carry no location, and nothing repeats per zone. ' +
         'The <b>before</b> phases are back-scheduled so they finish the day the Execution Phase starts, and <b>Close-out</b> picks up the day after it finishes, so the programme reads continuously.</p>' +
+        '<p class="sbld-hint"><b>Each row is one activity:</b> a <b>name</b>, a duration in <b>calendar days</b> ' +
+          '(these are not scheduled against a working calendar — they carry no location and no trade), and the ' +
+          '<b>dates</b> that follow from it. The dates are <em>computed, not typed</em>: the order of the rows is ' +
+          'the sequence, so each row starts when the row above it finishes, and <b>dragging a row changes the dates ' +
+          'of everything below it</b>. Tick <b>‖</b> to run a row <em>alongside</em> the one above instead of after ' +
+          'it — a block of concurrent rows takes as long as its longest member.</p>' +
         '<p class="sbld-hint">Only these phases exist: the schedule’s <code>phase</code> column is fixed to Initiation, Planning, Execution and Close-out in the database, so no other lifecycle name can be stored on an activity.</p>' +
         '<div class="sbld-phgrid">' + cards + '</div>' + span;
 
@@ -26798,6 +27594,12 @@
       });
       host.querySelectorAll('[data-phdel]').forEach(function (b) {
         b.onclick = function () { sbPhActs(b.dataset.phdel).splice(+b.dataset.i, 1); markDirty(); render(); };
+      });
+      host.querySelectorAll('[data-phpar]').forEach(function (c) {
+        c.onchange = function () {
+          var a = sbPhActs(c.dataset.phpar)[+c.dataset.i];
+          if (a) { a.par = c.checked; markDirty(); render(); }
+        };
       });
       // ⚠️ Names and durations commit on 'change', never on 'input': render() rebuilds the whole
       // step, so a repaint per keystroke would take the focus out of the field being typed into.
@@ -27045,17 +27847,132 @@
       return v || null;
     }
 
+    /* ==========================================================================================
+       READING LOCATION WHEN `location` IS EMPTY - THE WBS PATH IS THE OTHER COPY OF IT
+       ------------------------------------------------------------------------------------------
+       Owner 2026-09-03, on the setup derived from the live 4PH Strevi schedule: *"the floors &
+       zones only generated for Tower D but not C, B, and A"*, *"Ground Floor is repeating for Tower
+       D"*, *"See Tower links. Is there really no data here from Strevi based on the relationships of
+       the activities per tower?"*, *"See Zone Sequence: there is no sequencing in the read? Also the
+       same with Trade Sequence."*
+
+       Checked against the file (4PH Strevi Residences Schedule - BL02.xer: 12,465 PROJWBS rows,
+       16,393 TASK rows, 21,338 TASKPRED rows). Every one of those things IS in there:
+         Execution Phase > Construction Phase > Tower D | C | B | A
+                                              > <discipline> Works > 5th Floor > Zone 1 / Cluster 2
+         Tower A..D and Tower 1..4 all exist as branches; "2nd Floor".."16th Floor" appear 16 times
+         each (4 towers x 4 disciplines), "Ground Floor" 12 times, "Zone 1"/"Zone 2" 76 times each,
+         "Cluster 1..6" ~60 times each. And there are 20 cross-tower relationships, 18 of them FS.
+       So "no data" was never the truth. What was true: this derive read location out of ONE place -
+       `r.location`, the stamped Location-Breakdown value - and that column is only filled for the
+       rows the import's location mapping covered. In this file the tower sits at DIFFERENT WBS
+       DEPTHS depending on the branch ("Construction Phase > Tower D > ..." but also "Construction
+       Phase > Substructure > Tower D > ..."), so a depth-based mapping can only catch one of them
+       and every row it missed arrived with `location` empty. Empty location -> no floor -> the row
+       was skipped by the floors pass entirely, which is why three of the four towers came out bare.
+
+       ⚠️ THE FALLBACK MATCHES ON NAME, NOT DEPTH, precisely because depth is what failed. It walks
+       the row's dotted-code ancestry and classifies each branch name.
+       ⚠️ THE STAMPED VALUE STILL WINS wherever there is one. This is a fallback, never a
+       replacement: a planner who mapped their breakdown deliberately must not have it second-guessed
+       by a regex. The report says how many rows each source answered for.
+       ⚠️ Patterns validated against all 234 distinct branch names in that file: 8 towers, 17 floors,
+       2 zones, 6 clusters matched, and the near-misses that MUST NOT match do not - "Tower
+       Handover", "Residential Towers", "Inner Main Access Road (Tower 1 and 2)", "Underground Tank",
+       "Floor Finishes", "Deck over Elevator", "Residential Units".
+       ========================================================================================== */
+    /* The key separator for the composite maps below. ⚠️ A CONTROL CHARACTER, written as
+       `String.fromCharCode(1)` rather than pasted in: no location name can contain it, so
+       (trade, tower, floor, zone, unit) keys cannot collide the way a '|' or '/' key can - and
+       the same reasoning already gave SB_NO_TOWER its sentinel. Building it from a char code
+       keeps a raw control byte out of the source file, where it is invisible in every diff. */
+    var SBK = String.fromCharCode(1);
+    var _sbWbsName = null, _sbPathMemo = null;
+    function sbLocResetCache() { _sbWbsName = null; _sbPathMemo = null; }
+    function sbWbsNameIndex() {
+      if (_sbWbsName) return _sbWbsName;
+      _sbWbsName = {};
+      rows.forEach(function (r) {
+        if (isWbs(r) && r.wbs) _sbWbsName[String(r.wbs)] = String(r.activity_name || '').trim();
+      });
+      return _sbWbsName;
+    }
+    // The branch names above a row, outermost first. '4.2.2.1' -> the names of 4, 4.2, 4.2.2, 4.2.2.1.
+    function sbWbsPath(code) {
+      if (!code) return [];
+      if (!_sbPathMemo) _sbPathMemo = {};
+      var k = String(code);
+      if (_sbPathMemo[k]) return _sbPathMemo[k];
+      var ix = sbWbsNameIndex(), parts = k.split('.'), out = [], acc = '';
+      for (var i = 0; i < parts.length; i++) {
+        acc = acc ? (acc + '.' + parts[i]) : parts[i];
+        var nm = ix[acc];
+        if (nm) out.push(nm);
+      }
+      return (_sbPathMemo[k] = out);
+    }
+    /* Classify one branch name. ⚠️ ANCHORED, not substring: "Tower Handover" is a work package under
+       a tower and "Underground Tank" contains "ground" without being the Ground Floor - both are in
+       this file, and a substring test files 61 activities under a tower called "Handover".
+       ⚠️ "Cluster" is a UNIT, not a zone: this project's breakdown is Tower › Level › Zone › Cluster,
+       so Zone 1/2 is level 3 and Cluster 1..6 is level 4. */
+    function sbNameKind(nm) {
+      var s = String(nm || '').trim();
+      if (!s) return null;
+      if (/^tower\s+([a-z]|\d{1,2})$/i.test(s)) return 'tower';
+      if (/^(basement|lower\s*ground|cellar)\b/i.test(s) || /^b\d+$/i.test(s)) return 'floor';
+      if (/^(ground|mezzanine|podium|roof\s*deck|roofdeck|penthouse)(\s+floor)?$/i.test(s)) return 'floor';
+      if (/^\d+(st|nd|rd|th)\s+floor$/i.test(s) || /^(floor|level)\s*\d+$/i.test(s)) return 'floor';
+      if (/^zone\b/i.test(s)) return 'zone';
+      if (/^(cluster|unit)\b/i.test(s)) return 'unit';
+      return null;
+    }
+    // tower / floor / zone / unit for one row, from its WBS path. The DEEPEST match of each kind
+    // wins: a nested branch is the more specific statement.
+    var _sbWbsLocMemo = null;
+    function sbLocFromWbs(r) {
+      var code = String((r && r.wbs) || '');
+      if (!code) return { tower: null, floor: null, zone: null, unit: null };
+      if (!_sbWbsLocMemo) _sbWbsLocMemo = {};
+      if (_sbWbsLocMemo[code]) return _sbWbsLocMemo[code];
+      var out = { tower: null, floor: null, zone: null, unit: null };
+      sbWbsPath(code).forEach(function (nm) {
+        var k = sbNameKind(nm);
+        if (k) out[k] = nm;
+      });
+      return (_sbWbsLocMemo[code] = out);
+    }
+
     function sbDeriveFromSchedule() {
+      sbLocResetCache(); _sbWbsLocMemo = null;
       var acts = sbExecActs();
       var rep = { acts: acts.length, names: 0, trades: [], towers: 0, floors: 0, zones: 0, units: 0,
                   links: 0, phases: [], notes: [] };
       if (!acts.length) return { cfg: null, report: rep };
 
       var dims = sbDimsFromLevels();
-      if (!dims.floor) rep.notes.push('This project has no Location Breakdown, so no floors or zones could be read — define the levels on the Floors & Zones step and the locations will come from there.');
-      else rep.notes.push('Read location as ' + [dims.tower, dims.floor, dims.zone, dims.unit].filter(Boolean).map(function (l) { return l.name; }).join(' › ') + '.');
+      if (!dims.floor) rep.notes.push('This project has no Location Breakdown, so location was read from the WBS branch names instead — define the levels on the Floors & Zones step to control it.');
+      else rep.notes.push('Read location as ' + [dims.tower, dims.floor, dims.zone, dims.unit].filter(Boolean).map(function (l) { return l.name; }).join(' › ') + ', falling back to the WBS branch names where a row carries none.');
 
       var out = blank();
+
+      /* One location reader, two sources, and it COUNTS which answered. Without the count, "Tower C
+         has no floors" is a mystery; with it the report can say "1,204 activities carry no Level
+         value, so their floor was read from the WBS branch name". */
+      var srcN = { stamped: 0, wbs: 0, none: 0 }, srcSeen = {};
+      function sbLoc(r, which) {
+        var lvl = dims[which];
+        var v = lvl ? sbLocVal(r, lvl) : null;
+        var w = v ? null : sbLocFromWbs(r)[which];
+        // ⚠️ Counted ONCE PER ROW, keyed on the row id: sbLoc is called for the same row by
+        // the floors pass and again by the activities pass, and counting per call reported every
+        // total at double.
+        if (which === 'floor' && r && !srcSeen[r.id]) {
+          srcSeen[r.id] = 1;
+          if (v) srcN.stamped++; else if (w) srcN.wbs++; else srcN.none++;
+        }
+        return v || w || null;
+      }
 
       // ---- start date: the earliest thing the execution programme actually does -----------------
       var minS = null;
@@ -27063,17 +27980,29 @@
       if (minS) out.startDate = iso2(minS);
 
       // ---- towers ------------------------------------------------------------------------------
-      var towerIds = {}, towerOrder = [];
+      /* ⚠️⚠️ UNTOWERED WORK GETS ITS OWN TOWER, and that is the fix for BOTH "Ground Floor is
+         repeating for Tower D" and "floors only generated for Tower D". The floors pass keyed its
+         tree on `sbLocVal(r, dims.tower) || SB_NO_TOWER` but then wrote
+         `tower: towerIds[tw] || out.towers[0].id` - and `towerIds[SB_NO_TOWER]` is undefined
+         whenever the project HAS named towers. So every activity with no tower silently became the
+         FIRST tower's, which is Tower D on this project: its Site Development / Substructure
+         "Ground Floor" arrived a second time as a separate tree key and drew a second Ground Floor
+         row, while the towers that had no rows of their own stayed empty.
+         A bucket that is visible and named is the honest answer - the planner can then move it, copy
+         from it, or delete it, and the report says how much work is in it. */
+      var towerIds = {}, towerOrder = [], nUntowered = 0;
       acts.forEach(function (r) {
-        var t = sbLocVal(r, dims.tower) || (dims.tower ? null : SB_NO_TOWER);
-        if (!t) return;
+        var t = sbLoc(r, 'tower');
+        if (!t) { nUntowered++; return; }
         if (!(t in towerIds)) { towerIds[t] = null; towerOrder.push(t); }
       });
-      if (!towerOrder.length) towerOrder = [SB_NO_TOWER];
+      var _needNoTower = nUntowered > 0;
+      if (!towerOrder.length) { towerOrder = [SB_NO_TOWER]; _needNoTower = false; }
+      else if (_needNoTower) towerOrder.push(SB_NO_TOWER);
       out.towers = towerOrder.map(function (t, i) {
         var id = uidv();
         towerIds[t] = id;
-        if (t === SB_NO_TOWER) return { id: id, code: 'T1', name: 'Tower 1' };
+        if (t === SB_NO_TOWER) return { id: id, code: _needNoTower ? 'T?' : 'T1', name: _needNoTower ? 'No tower stated' : 'Tower 1' };
         // A name like "Tower B" gives a code of "TB"; anything else keeps its first characters.
         var m = String(t).match(/([A-Za-z0-9]+)\s*$/);
         return { id: id, code: (m ? ('T' + m[1]).slice(0, 6) : ('T' + (i + 1))), name: String(t) };
@@ -27091,11 +28020,15 @@
         if (!(key in firstSeen) || s < firstSeen[key]) firstSeen[key] = s;
       }
       var tree = {};   // trade -> tower -> floor -> zone -> unit -> 1
+      // Where each ACTIVITY sits, so the links / scope passes below can address the same leaves the
+      // zoning pass created without re-deriving any of it.
+      var rowLoc = {};   // row id -> { g, tw, fl, zn, un }
+      var nNoFloor = 0;
       acts.forEach(function (r) {
         var g = sbTradeKeyOf(r);
-        var tw = sbLocVal(r, dims.tower) || SB_NO_TOWER;
-        var fl = sbLocVal(r, dims.floor); if (!fl) return;
-        var zn = sbLocVal(r, dims.zone), un = sbLocVal(r, dims.unit);
+        var tw = sbLoc(r, 'tower') || SB_NO_TOWER;
+        var fl = sbLoc(r, 'floor'); if (!fl) { nNoFloor++; return; }
+        var zn = sbLoc(r, 'zone'), un = sbLoc(r, 'unit');
         tree[g] = tree[g] || {};
         tree[g][tw] = tree[g][tw] || {};
         tree[g][tw][fl] = tree[g][tw][fl] || {};
@@ -27105,6 +28038,7 @@
           seen(g + '|' + tw + '|' + fl + '|' + zn, r);
           if (un) { tree[g][tw][fl][zn][un] = 1; seen(g + '|' + tw + '|' + fl + '|' + zn + '|' + un, r); }
         }
+        rowLoc[r.id] = { g: g, tw: tw, fl: fl, zn: zn, un: un };
       });
       function byFirst(prefix) {
         return function (a, b) {
@@ -27126,25 +28060,70 @@
       }
       out.zoning = blankZoning();
       var nFl = 0, nZn = 0, nUn = 0;
+      // (trade, tower, floor, zone, unit) -> the LEAF uid leavesOfFloor() will produce for it.
+      // ⚠️ Built HERE, where the generated ids are in hand. Reconstructing it afterwards from names
+      // would be ambiguous: every tower has a "5th Floor" and every floor a "Zone 1".
+      var leafUid = {};
+      function lk(g, tw, fl, zn, un) { return [g, tw, fl, zn || '', un || ''].join(SBK); }
+      var byTower = {};   // tower name -> floors created, for the report
       Object.keys(tree).forEach(function (g) {
         if (!out.zoning[g]) out.zoning[g] = { floors: [] };
         var floors = [];
         Object.keys(tree[g]).sort(byFirst(g + '|')).forEach(function (tw) {
           Object.keys(tree[g][tw]).sort(byFirst(g + '|' + tw + '|')).forEach(function (fl) {
-            var zones = Object.keys(tree[g][tw][fl]).sort(byFirst(g + '|' + tw + '|' + fl + '|')).map(function (zn) {
-              var units = Object.keys(tree[g][tw][fl][zn]).sort(byFirst(g + '|' + tw + '|' + fl + '|' + zn + '|'))
-                .map(function (un) { nUn++; return { id: uidv(), code: String(un) }; });
+            var fId = uidv();
+            var zoneKeys = Object.keys(tree[g][tw][fl]).sort(byFirst(g + '|' + tw + '|' + fl + '|'));
+            var zones = zoneKeys.map(function (zn) {
+              var zId = uidv();
+              var unitKeys = Object.keys(tree[g][tw][fl][zn]).sort(byFirst(g + '|' + tw + '|' + fl + '|' + zn + '|'));
+              var units = unitKeys.map(function (un) {
+                var uId = uidv(); nUn++;
+                leafUid[lk(g, tw, fl, zn, un)] = g + '/' + fId + '/' + zId + '/' + uId;
+                return { id: uId, code: String(un) };
+              });
               nZn++;
-              return { id: uidv(), code: String(zn), units: units };
+              // A zone with no units IS the leaf (see leavesOfFloor).
+              if (!units.length) leafUid[lk(g, tw, fl, zn, null)] = g + '/' + fId + '/' + zId;
+              return { id: zId, code: String(zn), units: units };
             });
             nFl++;
-            floors.push({ id: uidv(), tower: towerIds[tw] || (out.towers[0] && out.towers[0].id),
+            if (!zones.length) leafUid[lk(g, tw, fl, null, null)] = g + '/' + fId;
+            byTower[tw] = (byTower[tw] || 0) + 1;
+            floors.push({ id: fId, tower: towerIds[tw] || (out.towers[0] && out.towers[0].id),
                           code: String(fl), name: String(fl), sub: isSub(fl), kind: kindOf(fl), zones: zones });
           });
         });
         out.zoning[g].floors = floors;
       });
       rep.floors = nFl; rep.zones = nZn; rep.units = nUn;
+      // The leaf uid an ACTIVITY belongs to, honouring the same zoneless/unitless collapse.
+      function uidOfRow(r) {
+        var L = rowLoc[r.id]; if (!L) return null;
+        return leafUid[lk(L.g, L.tw, L.fl, L.zn, L.un)] ||
+               leafUid[lk(L.g, L.tw, L.fl, L.zn, null)] ||
+               leafUid[lk(L.g, L.tw, L.fl, null, null)] || null;
+      }
+      /* ⚠️ PER-TOWER COUNTS IN THE REPORT. "Tower C has no floors" was something the owner had to
+         find by clicking each tower in turn; it is one line of the report. */
+      if (out.towers.length > 1) {
+        // ⚠️ `byTower` is keyed on the TREE key, which is the real tower name or SB_NO_TOWER —
+        // never the display name, so the "No tower stated" bucket has to be looked up by the sentinel.
+        var _bareTowers = [];
+        var _perTower = out.towers.map(function (t, i) {
+          var key = (towerOrder[i] === SB_NO_TOWER) ? SB_NO_TOWER : t.name;
+          var n = byTower[key] || 0;
+          if (!n) _bareTowers.push(t.name);
+          return t.name + ': ' + n;
+        }).join(' · ');
+        rep.notes.push('Floor rows read per tower (counting each trade separately) — ' + _perTower + '.' +
+          (_bareTowers.length
+            ? ' ' + _bareTowers.join(', ') + ' ' + (_bareTowers.length === 1 ? 'has' : 'have') +
+              ' none: no activity names ' + (_bareTowers.length === 1 ? 'it' : 'them') +
+              ' in either its stored location or its WBS branch. Copy another tower’s layout on the Floors & Zones step, or fix the Location Breakdown mapping and read again.'
+            : ''));
+      }
+      if (srcN.wbs) rep.notes.push(srcN.stamped.toLocaleString() + ' activities carried a stored location; ' + srcN.wbs.toLocaleString() + ' had none and their floor was read from the WBS branch name instead' + (srcN.none ? '; ' + srcN.none.toLocaleString() + ' had neither and were left out of the floors' : '') + '.');
+      else if (nNoFloor) rep.notes.push(nNoFloor.toLocaleString() + ' activities name no floor at all (neither a stored location nor a recognisable WBS branch), so they are not in the floors/zones.');
 
       // ---- activities --------------------------------------------------------------------------
       // One entry per activity NAME, which is what the setup's step 2 is: a name repeated across
@@ -27158,8 +28137,8 @@
         b.trades.push(sbTradeKeyOf(r));
         if (r.class_code) b.codes.push(String(r.class_code));
         b.contracts.push((typeof scopeOf === 'function' ? scopeOf(r) : null) === 'change_order' ? 'change_order' : 'main');
-        var fl = sbLocVal(r, dims.floor); if (fl) b.floors[fl] = 1;
-        var zn = sbLocVal(r, dims.zone); if (zn) b.zones[fl + '|' + zn] = 1;
+        var fl = sbLoc(r, 'floor'); if (fl) b.floors[fl] = 1;
+        var zn = sbLoc(r, 'zone'); if (zn) b.zones[fl + '|' + zn] = 1;
       });
       var usedCode = {}, seq = 0;
       out.activities = Object.keys(byName).map(function (n) {
@@ -27206,7 +28185,7 @@
       var trSeen = {}; out.activities.forEach(function (a) { trSeen[a.group] = 1; });
       rep.trades = Object.keys(trSeen).map(function (g) { return GLABEL[g] || g; });
 
-      // ---- the sequence between activity names (step 6's links) --------------------------------
+      // ---- the sequence between activity names (the Trade-sequence step's links) ---------------
       /* Read from the relationships the schedule already holds. The setup sequences CLASS CODES, not
          individual activities, so a relationship between two rows becomes a relationship between the
          two NAMES behind them — and the same pair occurs hundreds of times over the towers and
@@ -27215,43 +28194,226 @@
          activity, which the setup expresses as the floor lead/lag on step 5, not as a link. */
       var codeByName = {};
       out.activities.forEach(function (a) { codeByName[a.name] = a.code; });
+      var rowById = {};   // activity_id -> ROW, so the location of a predecessor is reachable too
+      acts.forEach(function (r) { if (r.activity_id) rowById[String(r.activity_id)] = r; });
       var nameById = {};
       acts.forEach(function (r) { if (r.activity_id) nameById[String(r.activity_id)] = String(r.activity_name || '').trim(); });
       var pairs = {};
+      // …and the same walk answers three more questions at once, so it is done once.
+      var locPairs = {}, twPairs = {}, nRel = 0, nRelResolved = 0;
       acts.forEach(function (r) {
         if (!r.predecessors) return;
-        var to = codeByName[String(r.activity_name || '').trim()]; if (!to) return;
+        var to = codeByName[String(r.activity_name || '').trim()];
+        var toUid = uidOfRow(r), toTw = rowLoc[r.id] && rowLoc[r.id].tw;
         predRels(r.predecessors).forEach(function (x) {
-          var pn = nameById[String(x.id)]; if (!pn) return;
-          var from = codeByName[pn]; if (!from || from === to) return;
-          var k = from + '|' + to;
-          var p = pairs[k] || (pairs[k] = { from: from, to: to, kinds: {}, n: 0 });
-          p.n++;
-          var kk = x.type + '|' + x.lag;
-          p.kinds[kk] = (p.kinds[kk] || 0) + 1;
+          nRel++;
+          var p = rowById[String(x.id)];
+          var pn = nameById[String(x.id)];
+          if (p) nRelResolved++;
+          // (a) name -> name, for the Trade-sequence step
+          if (to && pn) {
+            var from = codeByName[pn];
+            if (from && from !== to) {
+              var k = from + '|' + to;
+              var pr = pairs[k] || (pairs[k] = { from: from, to: to, kinds: {}, n: 0 });
+              pr.n++;
+              var kk = x.type + '|' + x.lag;
+              pr.kinds[kk] = (pr.kinds[kk] || 0) + 1;
+            }
+          }
+          if (!p) return;
+          // (b) location -> location, for the Zone-sequence step
+          var fromUid = uidOfRow(p);
+          if (fromUid && toUid && fromUid !== toUid) {
+            var lkk = fromUid + SBK + toUid;
+            var lp = locPairs[lkk] || (locPairs[lkk] = { from: fromUid, to: toUid, kinds: {}, n: 0 });
+            lp.n++;
+            var lkind = x.type + '|' + x.lag;
+            lp.kinds[lkind] = (lp.kinds[lkind] || 0) + 1;
+          }
+          // (c) tower -> tower, for the Tower-links step
+          var fromTw = rowLoc[p.id] && rowLoc[p.id].tw;
+          if (fromTw && toTw && fromTw !== toTw) {
+            var tkk = fromTw + SBK + toTw;
+            var tp = twPairs[tkk] || (twPairs[tkk] = { from: fromTw, to: toTw, kinds: {}, n: 0 });
+            tp.n++;
+            var tkind = x.type + '|' + x.lag;
+            tp.kinds[tkind] = (tp.kinds[tkind] || 0) + 1;
+          }
         });
       });
+      // The most common (type, lag) a pair was seen with.
+      function bestKind(p) {
+        var best = null, bn = -1;
+        Object.keys(p.kinds).forEach(function (kk) { if (p.kinds[kk] > bn) { bn = p.kinds[kk]; best = kk; } });
+        var bits = String(best || 'FS|0').split('|');
+        return { type: bits[0] || 'FS', lag: parseInt(bits[1], 10) || 0 };
+      }
       // Sorted by how often the pair occurs, so the canvas draws the programme's real spine first.
       var linkList = Object.keys(pairs).map(function (k) { return pairs[k]; })
         .sort(function (a, b) { return b.n - a.n; });
       out.actLinks = [];
-      var haveLink = {};
+      var haveLink = {}, actFwd = {}, actCycles = 0;
+      /* ⚠️⚠️ A derived link that would close a loop is DROPPED, not written. Real schedules
+         contain name-level cycles the activity level does not: Rebar -> Formworks -> Concrete within
+         a floor, and Concrete -> Rebar across the floor break, which at NAME level is a 3-cycle. The
+         setup's own addActLink refuses loops because generate() walks this graph. Keeping the more
+         frequent direction is the honest reduction; writing both makes the step unusable.
+         ⚠️ REACHABILITY, not just the immediate reciprocal. Checking only `to -> from` catches
+         the 2-cycle and misses every longer one — and the 3-cycle above is the COMMON case on a
+         floor-by-floor programme, not an exotic one. Verified in the harness: the naive check let
+         REBAR -> FORMWO -> CONCRE -> REBAR straight through. */
+      function actReaches(a, b) {
+        var seenA = {}, stack = [a];
+        while (stack.length) {
+          var x = stack.pop();
+          if (x === b) return true;
+          if (seenA[x]) continue;
+          seenA[x] = 1;
+          (actFwd[x] || []).forEach(function (y) { stack.push(y); });
+        }
+        return false;
+      }
       linkList.forEach(function (p) {
-        // ⚠️ A derived link that would close a loop is DROPPED, not written. Real schedules contain
-        // name-level cycles the activity level does not (Rebar->Concrete on floor 3 and
-        // Concrete->Rebar across the floor break), and the setup's own addActLink refuses loops
-        // because generate() walks the graph. Keeping the more frequent direction is the honest
-        // reduction; writing both would make step 6 unusable.
-        if (haveLink[p.to + '|' + p.from]) return;
-        var best = sbMode(Object.keys(p.kinds).map(function (kk) { return kk; }).reduce(function (acc, kk) {
-          for (var i = 0; i < p.kinds[kk]; i++) acc.push(kk);
-          return acc;
-        }, [])) || 'FS|0';
-        var bits = String(best).split('|');
+        if (haveLink[p.from + '|' + p.to]) return;
+        if (actReaches(p.to, p.from)) { actCycles++; return; }
+        var bk = bestKind(p);
         haveLink[p.from + '|' + p.to] = 1;
-        out.actLinks.push({ from: p.from, to: p.to, type: bits[0] || 'FS', lag: parseInt(bits[1], 10) || 0 });
+        (actFwd[p.from] = actFwd[p.from] || []).push(p.to);
+        out.actLinks.push({ from: p.from, to: p.to, type: bk.type, lag: bk.lag });
       });
+      if (actCycles) rep.notes.push(actCycles.toLocaleString() + ' activity-to-activity relationship' + (actCycles === 1 ? '' : 's') +
+        ' would have closed a loop at activity-NAME level (which a real floor-by-floor programme does: Concrete on one floor drives Rebar on the next) and ' + (actCycles === 1 ? 'was' : 'were') +
+        ' dropped — the more frequent direction was kept. Express the floor-to-floor repeat as the floor lead/lag on the Zone sequence step.');
       rep.links = out.actLinks.length;
+      if (nRel && !nRelResolved) rep.notes.push('None of the ' + nRel.toLocaleString() + ' predecessor references resolved to an activity in the execution programme, so no sequence could be read. That usually means the predecessors name activities outside the Execution Phase.');
+
+      /* ---- the Zone-sequence step's links (location → location) --------------------------------
+         ⚠️ THIS IS NEW, and it is the answer to *"See Zone Sequence: there is no sequencing in the
+         read?"* — that step reads `cfg.links`, which the derive never filled, so it always opened
+         on "Links (0)" no matter how much logic the schedule held.
+         ⚠️ CYCLES ARE REFUSED THE SAME WAY THE STEP'S OWN `tryLink` REFUSES THEM: `computeStarts()`
+         walks this graph and a cycle hangs it. A real schedule has plenty at this level of
+         aggregation (Zone 1 drives Zone 2 on floor 3, Zone 2 drives Zone 1 on floor 4), so the
+         MORE FREQUENT direction wins and the other is dropped — stated in the report, not hidden.
+         ⚠️ CAPPED. The step draws every link, and an unbounded read on a 21,338-relationship file
+         could hand it thousands. The most-frequent ones are the programme's real spine. */
+      var LOC_LINK_MAX = 1500;
+      var locList2 = Object.keys(locPairs).map(function (k) { return locPairs[k]; })
+        .sort(function (a, b) { return b.n - a.n; });
+      out.links = [];
+      var haveLoc = {}, locDropped = 0, locCycles = 0;
+      // Reachability over what has been accepted so far, so a cycle is caught before it is written.
+      var fwd = {};
+      function locReaches(a, b) {
+        var seenL = {}, stack = [a];
+        while (stack.length) {
+          var x = stack.pop();
+          if (x === b) return true;
+          if (seenL[x]) continue;
+          seenL[x] = 1;
+          (fwd[x] || []).forEach(function (y) { stack.push(y); });
+        }
+        return false;
+      }
+      locList2.forEach(function (p) {
+        if (out.links.length >= LOC_LINK_MAX) { locDropped++; return; }
+        if (haveLoc[p.from + SBK + p.to]) return;
+        if (locReaches(p.to, p.from)) { locCycles++; return; }
+        var bk = bestKind(p);
+        haveLoc[p.from + SBK + p.to] = 1;
+        (fwd[p.from] = fwd[p.from] || []).push(p.to);
+        out.links.push({ from: p.from, to: p.to, type: bk.type, lag: bk.lag });
+      });
+      if (out.links.length) {
+        rep.notes.push('Read ' + out.links.length.toLocaleString() + ' location-to-location link' + (out.links.length === 1 ? '' : 's') +
+          ' for the Zone sequence step' +
+          (locCycles ? ' (' + locCycles.toLocaleString() + ' would have closed a loop and were dropped — the more frequent direction was kept)' : '') +
+          (locDropped ? ' (capped at ' + LOC_LINK_MAX.toLocaleString() + '; ' + locDropped.toLocaleString() + ' rarer pairs left out)' : '') + '.');
+      } else if (Object.keys(locPairs).length === 0 && nRelResolved) {
+        rep.notes.push('Every relationship in the programme is between activities in the SAME location, so there is no location-to-location sequence to read — the Zone sequence step keeps its defaults.');
+      }
+
+      /* ---- the Tower-links step -----------------------------------------------------------------
+         ⚠️ THIS IS NEW TOO, and it is the answer to *"Is there really no data here from Strevi based
+         on the relationships of the activities per tower?"* No: there are 20 cross-tower
+         relationships in that file. The step reads `cfg.towerLinks` and the derive never filled it.
+         ⚠️ ONE LINK PER ORDERED TOWER PAIR, and only one direction: the step itself refuses A→B when
+         B→A already exists ("one of the two has to lead"), because the tower relationship is
+         expanded into leaf-to-leaf links and computeStarts takes the max over incoming edges. The
+         more frequently observed direction wins.
+         ⚠️ `fromFloorId` IS LEFT NULL — "whole tower". Anchoring on a specific floor is a
+         judgement about a shared podium that a relationship count cannot make, and guessing it
+         would silently change every date in the second tower. The step's own copy explains the
+         anchor; this fills in the part that is in the data and leaves the part that is not. */
+      var twList = Object.keys(twPairs).map(function (k) { return twPairs[k]; })
+        .sort(function (a, b) { return b.n - a.n; });
+      out.towerLinks = [];
+      var haveTw = {};
+      twList.forEach(function (p) {
+        var a = towerIds[p.from], b = towerIds[p.to];
+        if (!a || !b || a === b) return;
+        if (haveTw[a + '|' + b] || haveTw[b + '|' + a]) return;
+        var bk = bestKind(p);
+        haveTw[a + '|' + b] = 1;
+        out.towerLinks.push({ from: a, to: b, fromFloorId: null, type: bk.type, lag: bk.lag });
+      });
+      if (out.towerLinks.length) {
+        rep.notes.push('Read ' + out.towerLinks.length + ' tower relationship' + (out.towerLinks.length === 1 ? '' : 's') +
+          ' from ' + twList.reduce(function (t, p) { return t + p.n; }, 0).toLocaleString() +
+          ' cross-tower activity link' + (twList.length === 1 ? '' : 's') +
+          ' — each is set to "whole tower", because which floor a tower hands off FROM is a decision about the podium that the relationships do not state.');
+      } else if (out.towers.length > 1) {
+        rep.notes.push('No relationship in the programme crosses from one tower to another, so the towers are left starting together on the Tower links step.');
+      }
+
+      /* ---- Scope per zone ----------------------------------------------------------------------
+         Which of the trade's activities actually run in each location. ⚠️ `scopeOff` is a map of the
+         pairs that are OFF, so a faithful read of a real programme is (leaves x activities) MINUS
+         what occurred — which on a project of this size is a six-figure object that would be
+         serialised into every saved setup. So it is derived only while the map stays small enough to
+         belong in a setup row, and when it does not the report says so with the number rather than
+         leaving the planner to wonder whether the step read anything. */
+      var SCOPE_MAX = 30000;
+      out.scopeOff = {};
+      var onPairs = {}, nOn = 0;
+      acts.forEach(function (r) {
+        var uid = uidOfRow(r); if (!uid) return;
+        var cd = codeByName[String(r.activity_name || '').trim()]; if (!cd) return;
+        var aId = null;
+        for (var i = 0; i < out.activities.length; i++) if (out.activities[i].code === cd) { aId = out.activities[i].id; break; }
+        if (!aId) return;
+        var k = uid + '|' + aId;
+        if (!onPairs[k]) { onPairs[k] = 1; nOn++; }
+      });
+      var allLeaves = Object.keys(leafUid).map(function (k) { return leafUid[k]; })
+        .filter(function (v, i, a) { return a.indexOf(v) === i; });
+      var actsByTrade = {};
+      out.activities.forEach(function (a) { (actsByTrade[a.group] = actsByTrade[a.group] || []).push(a); });
+      var wouldBe = 0;
+      allLeaves.forEach(function (uid) {
+        var tr = String(uid).split('/')[0];
+        wouldBe += (actsByTrade[tr] || []).length;
+      });
+      var offCount = Math.max(0, wouldBe - nOn);
+      if (offCount && offCount <= SCOPE_MAX) {
+        allLeaves.forEach(function (uid) {
+          var tr = String(uid).split('/')[0];
+          (actsByTrade[tr] || []).forEach(function (a) {
+            var k = uid + '|' + a.id;
+            if (!onPairs[k]) out.scopeOff[k] = true;
+          });
+        });
+        rep.notes.push('Scope per zone read from the programme: ' + nOn.toLocaleString() + ' location/activity combinations are ON, ' +
+          offCount.toLocaleString() + ' are switched off because that activity never occurs in that location.');
+      } else if (!offCount && nOn) {
+        rep.notes.push('Scope per zone read from the programme: every one of the ' + nOn.toLocaleString() +
+          ' location/activity combinations occurs, so nothing is switched off.');
+      } else if (offCount) {
+        rep.notes.push('Scope per zone was left at "everything on": a faithful read needs ' + offCount.toLocaleString() +
+          ' exclusion flags (' + allLeaves.length.toLocaleString() + ' locations × the activities of their trade), which is too large to store in a saved setup. ' +
+          'Use the step’s own row/column toggles to switch off what does not apply — or narrow the activity list on the Activities step first, which is usually the real answer.');
+      }
 
       // ---- zone order per trade ----------------------------------------------------------------
       Object.keys(out.zoning).forEach(function (g) {
@@ -27266,7 +28428,7 @@
       /* Read straight off the rows: anything whose phase is not the execution phase, grouped by
          phase, in date order, with its duration. This is the one part of the setup that IS a faithful
          round trip — those phases are stored as a plain list of activities with durations, which is
-         exactly what step 9 edits. */
+         exactly what the Project phases step edits. */
       out.phases = {};
       /* ⚠️ THE SAME PHASE-OR-CODE FALLBACK AS sbExecActs, and for the same reason: an activity
          imported minutes ago has no `phase` of its own and its WBS link has not been attached yet, so
@@ -27294,16 +28456,33 @@
           return false;
         }).sort(function (a, b) { return +(pd(a.start_date) || 0) - +(pd(b.start_date) || 0); });
         if (!mine.length) return;
-        out.phases[d.v] = { on: true, acts: mine.slice(0, 200).map(function (r) {
-          return { id: uidv(), n: String(r.activity_name || '').slice(0, 200), d: Math.max(1, Math.min(999, sbDurOf(r))) };
+        /* ⚠️⚠️ `par` IS READ FROM THE REAL DATES, and this is the fix for the derived Planning Phase
+           reporting "8508 days · Sep 20, 02 → Jan 04, 26". The step chains its rows end to end, and
+           these 200 activities do not run end to end — Competency Profile, Training Plan, Job
+           Profile and Performance Management are 240-310 days EACH and all running through the same
+           two years. Chained, they summed to 23 years. An activity whose real start falls on or
+           before the running maximum finish of the ones before it is concurrent, so it is marked
+           `par` and sbPhasePlan puts it in the same block. */
+        var runMax = null;
+        out.phases[d.v] = { on: true, acts: mine.slice(0, 200).map(function (r, i) {
+          var st = pd(r.start_date) || pd(r.bl_start), fi = pd(r.end_date) || pd(r.bl_finish);
+          var par = !!(i > 0 && st && runMax && st <= runMax);
+          if (fi && (!runMax || fi > runMax)) runMax = fi;
+          return { id: uidv(), n: String(r.activity_name || '').slice(0, 200), d: Math.max(1, Math.min(999, sbDurOf(r))), par: par };
         }) };
-        rep.phases.push(PHASE_LABELS[d.v] + ' (' + out.phases[d.v].acts.length + ')');
+        var nPar = out.phases[d.v].acts.filter(function (a) { return a.par; }).length;
+        rep.phases.push(PHASE_LABELS[d.v] + ' (' + out.phases[d.v].acts.length + (nPar ? ', ' + nPar + ' concurrent' : '') + ')');
         if (mine.length > 200) rep.notes.push(PHASE_LABELS[d.v] + ' had ' + mine.length + ' activities; the first 200 were read (the step is a hand-edited list, not a generator).');
       });
 
-      // Everything that cannot be read from a result rather than a rule keeps its default, and the
-      // report says which those are so the planner knows what to look at before generating.
-      rep.notes.push('Trade hand-offs (how many floors a trade waits, what runs in parallel) and the tower interfaces are NOT recoverable from a finished schedule — those steps keep their defaults, so check steps 4–7 before generating.');
+      /* ⚠️ NAMED ONE BY ONE NOW, instead of one blanket sentence. The old note said the tower
+         interfaces were "NOT recoverable from a finished schedule", which the owner correctly
+         doubted — they are, and they are read above. What genuinely is not recoverable is the takt
+         PARAMETERS: how many floors a trade waits before the next one starts, how many zones run in
+         parallel, the floor lead/lag. Those are rules that PRODUCE a schedule; a finished schedule
+         only shows the dates they produced, and several different rule sets produce the same dates.
+         So say exactly that, and stop claiming it about the things that ARE in the data. */
+      rep.notes.push('Not recoverable, and left at their defaults: the takt PARAMETERS on the Zone/Trade sequence steps — floor lead/lag, how many floors a trade waits, what runs in parallel. A finished schedule shows the dates those rules produced, not the rules; several different settings produce the same dates. Check those steps before generating.');
       return { cfg: out, report: rep };
     }
 
@@ -28533,6 +29712,15 @@
           '<b>' + _stepNo('Generate') + ' · Push to Project Schedule</b>.' : '') +
         '</p>' +
         '<p class="sbld-lede">This is the project\u2019s live WBS \u2014 the same branches the schedule files its activities under, edited here rather than on a screen of its own. A <b>' + _stepNo('Generate') + ' \u00b7 Push</b> creates the branches this setup needs (trade \u203a tower \u203a floor \u203a zone) and reuses any that already exist; what you type here is what it reuses.</p>' +
+        /* ⚠️ SAYS SO, because this step is now SECOND rather than eleventh (see STEPS_NEW) and a
+           planner arriving here on a new project would otherwise read an almost-empty tree as a
+           fault. It is deliberately the first thing after Start: it is the only step that shows what
+           already exists rather than asking for something new. */
+        '<p class="sbld-hint"><b>This step is early on purpose</b> \u2014 it shows the structure this project ' +
+        'already has, before you describe anything new. On a fresh project it is nearly empty apart from ' +
+        'the five lifecycle phases, and that is correct: <b>' + _stepNo('Generate') + ' \u00b7 Push</b> adds the ' +
+        'trade, tower, floor and zone branches from what you set up in the steps in between. Nothing here ' +
+        'has to be filled in first.</p>' +
         '<p class="sbld-hint">Which location levels the push turns into WBS levels, and in what order, is set in the push dialog itself (<b>WBS structure</b>) \u2014 it belongs to the push, not to the tree. Re-arranging <b>activities</b> day to day is done in the <b>Project Schedule</b> grid.</p>' +
         '<p class="sbld-hint">The five top-level branches are held in a fixed order \u2014 <b>Milestones \u2192 Initiation \u2192 Planning \u2192 Execution \u2192 Close-out</b> \u2014 and restored on load if anything moves them. Everything you add sits inside them, where you can order it freely.</p>' +
         '<div class="sbld-wbsmount-tools" id="sbld-wbs-tools"></div>' +
@@ -32400,7 +33588,19 @@
       // So the pale part is remaining WORK inside the current dates, never a forecast date — the
       // forecast is already expressed by where the bar ENDS. Say "remaining", never "still to do".
       '<span class="lg lg-lsmon" title="A coloured bar carries three separate things. WHERE THE BAR SITS = the current dates; for a started activity its right edge is the forecast finish. INSIDE THE BAR = progress: solid + textured is done, pale is the remaining work. THE RAIL UNDERNEATH = the BL0 planned dates; the offset between the rail and the bar is the slip.">' +
-        '<span class="lg-swatch lg-lsmbar"></span> Activity</span>' +
+        '<span class="lg-swatch lg-lsmbar"></span> Activity' +
+        /* ⚠️⚠️ NAMES ITS HALF WHENEVER THE PLAIN CHIP IS ALSO SHOWN, and that became
+           necessary the moment this swatch stopped being blue. In the MIXED state (execution work
+           coloured, everything else on plain bars) the legend carries two chips that both begin
+           "Activity"; the plain one already says *"outside the Execution Phase"* (see
+           plainActChipHTML — the same defect, fixed on the other chip on 2026-09-02). While this
+           one was a palette blue against a red plain bar, colour alone told them apart. Both are
+           brand red now, by request, so the pair has to be separated in WORDS instead.
+           ⚠️ Revealed by CSS on `.ps-lsm-mixed`, not by rebuilding this constant into a
+           function: `_hasPlainBars` is computed in renderActLegend, which is also the one place
+           that knows whether the plain chip was emitted, and a class on the same host keeps the two
+           decisions from being able to disagree. */
+        '<em class="lg-lsmhalf">in the Execution Phase</em></span>' +
       '<span class="lg"><span class="lg-swatch lg-mile"></span> Milestone</span>' +
       '<span class="lg"><span class="lg-swatch lg-dd"></span> Data date (today)</span>';
   // ⚠️ The three facts a coloured bar encodes, moved OUT of the Activity chip and onto their own
@@ -32571,6 +33771,10 @@
     // ⚠️ The fold chevron is INJECTED markup, so Icons.hydrate does not reach it on its own --
     // the DOMContentLoaded pass only covers static markup. Without this the button renders empty.
     if (window.Icons) Icons.hydrate(host);
+    // The mixed state, for `.lg-lsmhalf` — set from the same `_hasPlainBars` that decided whether
+    // to emit the plain chip at all, so the qualifier appears exactly when there is something to
+    // qualify against.
+    host.classList.toggle('ps-lsm-mixed', !!(cfg.on && _hasPlainBars));
     var fld = host.querySelector('.ps-alg-fold');
     if (fld) fld.onclick = function () { setLegendFold(!_legendFolded); };
     applyLegendFold();
@@ -33493,13 +34697,29 @@
   async function deleteRow(r) {
     if (!r || !r.id || _editLocked()) return;
     if (isWbsNode(r)) { if (r.wbs_node_id) wbsDelete(r.wbs_node_id); return; }
-    if (!confirm('Delete activity “' + (r.activity_name || r.activity_id || r.id) + '”? This cannot be undone.')) return;
+    if (!confirm('Delete activity “' + (r.activity_name || r.activity_id || r.id) + '”?\n\n' +
+      'It is written to Change history first, so Actions › Change history can put it back.')) return;
+    /* ⚠️⚠️ THE WHOLE ROW IS AUDITED *BEFORE* THE DELETE, and that is what makes the deletion
+       recoverable. `_auditSummary` has always had a 'delete' branch and NOTHING EVER WROTE ONE — it
+       was dead code, and the confirm said "This cannot be undone", which was true because the row's
+       field values went nowhere. Owner 2026-09-03: *"Change history: can these versions be
+       restored?"* For an edit, yes (the log stores from/to — see auditRevert). For a deletion it
+       could not be, for want of writing down what was deleted.
+       ⚠️ `_`-prefixed keys are stripped: rebuild() and the CPM hang computed fields off every row
+       and several of them REFERENCE OTHER ROWS (`_relObjs` holds row objects), so storing them
+       would push a graph of the whole schedule into one jsonb cell. rebuild() recomputes all of
+       them from the real columns, which is exactly what a restore needs.
+       ⚠️ `id` is kept. Restoring under the ORIGINAL uuid is what makes relationships,
+       resource assignments and activity steps that point at this row line up again — a new uuid
+       would restore an activity that everything else had lost track of. */
+    var _snap = {}; for (var _k in r) { if (Object.prototype.hasOwnProperty.call(r, _k) && _k.charAt(0) !== '_') _snap[_k] = r[_k]; }
+    logAudit(r, 'delete', { _row: _snap });
     var res = await sb().from(TABLE).delete().eq('id', r.id);
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
     rows = rows.filter(function (x) { return x.id !== r.id; });
     if (selId === r.id) selId = null;
     rebuild(); renderGrid(); renderGantt(); renderDetails();
-    UI.toast('Activity deleted.', 'success');
+    UI.toast('Activity deleted — Actions › Change history can restore it.', 'success');
   }
   // ---- Multi-select + row clipboard (Excel/OPC-style) ----
   function _selRange(aId, bId) {
@@ -34282,6 +35502,25 @@
       _prevLayout = layoutMode;
     }
 
+    /* The slack the Activity Name column absorbs in Grid-only mode. See the CSS note on
+       `.ps-split.ps-grid-only .ps-cell.c-name` for why this is not `--c-name`.
+       ⚠️ MEASURED, not computed from the column list: extra columns (activity codes, UDFs,
+       location levels) are added at runtime and the chooser hides some, so summing the `--c-*` vars
+       would drift from what is actually on screen. The header row IS what is on screen.
+       ⚠️ The var is cleared BEFORE measuring — otherwise each pass would measure the previous
+       pass's stretched name column and the slack would converge on zero. */
+    function _applyGridOnlyStretch() {
+      var gp = document.querySelector('.ps-grid-pane'); if (!gp) return;
+      gp.style.removeProperty('--ps-gonly-slack');
+      if (layoutMode !== 'grid') return;
+      var head = document.getElementById('ps-grid-head');
+      var row = head && head.firstElementChild; if (!row) return;
+      var sum = 0;
+      Array.prototype.forEach.call(row.children, function (c) { sum += c.offsetWidth; });
+      var host = document.getElementById('ps-grid-scroll') || gp;
+      var slack = Math.floor(host.clientWidth - sum);
+      if (slack > 8) gp.style.setProperty('--ps-gonly-slack', slack + 'px');
+    }
     function applyLayout() {
       var vs = document.getElementById('ps-view-schedule'), net = layoutMode === 'network';
       if (vs) vs.classList.toggle('ps-net-mode', net);
@@ -34290,8 +35529,13 @@
       _applyGridPaneWidth();
       var det = document.getElementById('ps-details'); if (det) det.style.display = detailsHidden ? 'none' : '';
       if (net) renderNetwork(); else renderGantt();
-      requestAnimationFrame(syncHeadHeights);   // re-measure after the toggle reflow so the Gantt date header stays
+      // ⚠️ After the class toggle above has been laid out, never before it: the measurement is
+      // of the pane at its NEW width, and reading it in the same frame as the toggle returns the old
+      // one. The same frame that re-measures the head heights does this.
+      requestAnimationFrame(function () { syncHeadHeights(); _applyGridOnlyStretch(); });
     }
+    // Column widths, the chooser and the window all change the sum this measured.
+    window.addEventListener('resize', function () { if (layoutMode === 'grid') _applyGridOnlyStretch(); });
     function applyDensity(d) {
       _density = (d === 'compact') ? 'compact' : 'comfortable';
       try { localStorage.setItem('ps_density', _density); } catch (e) {}
@@ -34334,9 +35578,12 @@
     }
     function renderLayoutMenu() {
       var cur = _viewKey();
+      // ⚠️ The hint moves to `title`, not away. "grid + timeline" / "spreadsheet only" /
+      // "timeline only" / "PERT diagram" each cost a full row's width to say something the name
+      // nearly says already; on hover they are still there for the reader who needs them.
       function opt(v, label, hint) {
-        return '<button data-view="' + v + '">' + (cur === v ? '● ' : '○ ') + label +
-          (hint ? '<span style="opacity:.6;font-size:11.5px;margin-left:6px;">' + hint + '</span>' : '') + '</button>';
+        return '<button data-view="' + v + '" class="' + (cur === v ? 'on' : '') + '"' +
+          (hint ? ' title="' + esc(label + ' — ' + hint) + '"' : '') + '>' + esc(label) + '</button>';
       }
       // ⚠️ TWO SECTIONS, and the split is the one the STATE already makes rather than a cosmetic
       // grouping. The first four are `layoutMode` — arrangements of the same activity grid + timeline,
@@ -34351,8 +35598,10 @@
       };
       lMenu.innerHTML =
         hd('Schedule layout') +
+        '<div class="ps-lm-chips">' +
         opt('split', 'Split', 'grid + timeline') + opt('grid', 'Grid', 'spreadsheet only') +
         opt('gantt', 'Gantt', 'timeline only') + opt('network', 'Network', 'PERT diagram') +
+        '</div>' +
         // ⚠️⚠️ PROGRESS AND STACKING ARE NOT LISTED HERE ANY MORE (owner 2026-09-02, second ask:
         // *"still under the view button when we have already separated this entirely to the
         // toolbar"*). I kept them last time so the menu could return you from a view its own button
@@ -34363,27 +35612,40 @@
         // ⚠️ Outline also lives on the toolbar now — collapsing to a WBS level was two clicks deep in
         // a menu that is mostly about something else.
         '<div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>' +
-        '<div style="padding:6px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--pd-muted);">Row density</div>' +
-        '<button data-den="comfortable">' + (_density !== 'compact' ? '● ' : '○ ') + 'Comfortable</button>' +
-        '<button data-den="compact">' + (_density === 'compact' ? '● ' : '○ ') + 'Compact</button>' +
+        // ⚠️ DENSITY AND ZOOM UNDER ONE HEADING, because they are one question. Density picks the
+        // base row height, zoom scales it, and the reader was being asked to understand them as two
+        // unrelated sections stacked 5 rows apart. `Reset` already returns the zoom to whatever the
+        // density's own height is, which is the relationship the layout now shows.
+        hd('Row height') +
+        '<div class="ps-lm-chips">' +
+          '<button data-den="comfortable" class="' + (_density !== 'compact' ? 'on' : '') + '" title="Taller rows — the default">Comfortable</button>' +
+          '<button data-den="compact" class="' + (_density === 'compact' ? 'on' : '') + '" title="Tighter rows and smaller type">Compact</button>' +
+        '</div>' +
         // The zoom itself. Stated as the number the question is really about — how many rows fit —
         // rather than as a percentage nobody can picture.
-        '<div class="ps-gm-sec">Row zoom</div>' +
         '<div class="ps-rz-row">' +
           '<button class="pd-btn" data-rz="out" title="Shorter rows — fit more activities on screen. Or Ctrl + scroll (trackpad: pinch) over the activity grid."' + (_rowZoom <= ROW_ZOOM_MIN ? ' disabled' : '') + '>&minus;</button>' +
           '<span class="ps-rz-val">' + ROWH + 'px' + (rowsOnScreen() ? ' \u00b7 ~' + rowsOnScreen() + ' rows' : '') + '</span>' +
           '<button class="pd-btn" data-rz="in" title="Taller rows"' + (_rowZoom >= ROW_ZOOM_MAX ? ' disabled' : '') + '>+</button>' +
           '<button class="pd-btn" data-rz="reset" title="Back to the density\u2019s own row height"' + (_rowZoom === 1 ? ' disabled' : '') + '>Reset</button>' +
         '</div>' +
-        '<div class="ps-gm-note"><b>Ctrl + scroll</b> over the activity grid does this too (trackpad: pinch). Over the <b>chart</b>, Ctrl + scroll zooms the <b>timeline</b> instead \u2014 two zooms, one per pane. The Gantt follows the grid: bars, baselines and dependency arrows all lay out from the same row height.</div>' +
+        // ⚠️ ONE LINE, with the rest on hover. The full three-line version (two zooms,
+        // one per pane; the Gantt laying out from the same row height) is not wrong and was not
+        // dropped — it is the `title` on this line and on the stepper's own buttons. As prose
+        // in the menu it was 54px of a menu that had already run off the bottom of the screen.
+        '<div class="ps-gm-note" title="Ctrl + scroll over the activity GRID changes the row height (trackpad: pinch). Ctrl + scroll over the CHART zooms the timeline instead — two zooms, one per pane. The Gantt follows the grid: bars, baselines and dependency arrows all lay out from the same row height."><b>Ctrl + scroll</b> the grid (trackpad: pinch) · over the chart it zooms the timeline</div>' +
         '<div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>' +
-        '<button data-dettoggle>' + (detailsHidden ? '○ ' : '● ') + 'Show details panel</button>' +
+        // ⚠️ The two ON/OFF view switches share a chip row: both answer "what is on screen
+        // besides the schedule", both carry their state as the lit chip, and as stacked rows they
+        // were 2 of the 8 that pushed the menu off the bottom. Reporting view keeps its full
+        // explanation on hover — it is the one item here whose effect is not obvious from its name.
+        '<div class="ps-lm-chips">' +
+          '<button data-dettoggle class="' + (detailsHidden ? '' : 'on') + '" title="The Activity Details panel under the schedule">Details panel</button>' +
+          '<button data-report class="' + (_reporting ? 'on' : '') + '" title="Hide the authoring controls (Actions, Add activity, Schedule, Link, undo/redo, details panel, column filters) for meetings and screen-shares. View controls stay; nothing is written.">Reporting view</button>' +
+        '</div>' +
         '<button data-ganttset><span data-ico="settings" data-ico-size="14"></span> Gantt settings…</button>' +
         '<div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>' +
         layoutsSectionHTML() +
-        '<div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>' +
-        '<button data-report title="Hide the authoring controls (Actions, Add activity, Schedule, Link, undo/redo, details panel, column filters) for meetings and screen-shares. View controls stay; nothing is written.">' +
-          (_reporting ? '● ' : '○ ') + 'Reporting view</button>' +
         '<div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>' +
         // ⚠️ The escape hatch. A saved pane width or column layout that ends up unusable must always be
         // undoable from the UI — the owner's Gantt had vanished with no way back short of editing
@@ -35022,7 +36284,13 @@
       };
     };
 
-    (function () { var hb = document.getElementById('ps-help-btn'); if (hb) hb.onclick = function (e) { e.stopPropagation(); openShortcuts(); }; })();
+    (function () {
+      var hb = document.getElementById('ps-help-btn'); if (hb) hb.onclick = function (e) { e.stopPropagation(); openShortcuts(); };
+      // The permanent home for the sheet. The toolbar's `?` is hidden below 1400px (see its
+      // comment) and the `?` KEY does not exist on every layout, so this must always be reachable.
+      var hi = document.getElementById('ps-help-item');
+      if (hi) hi.onclick = function (e) { e.stopPropagation(); closeMenus(); openShortcuts(); };
+    })();
     document.getElementById('ps-add').onclick = function () { if (!pid) { UI.toast('Select a project first.', 'error'); return; } var sel = selRow(); if (sel) quickAddActivity(sel); else { UI.toast('Select a WBS or activity first to place the new activity — opening the full form.', 'warn'); openForm(null); } };
     document.getElementById('ps-import').onclick = function () { if (!pid) { UI.toast('Select a project first.', 'error'); return; } document.getElementById('ps-import-file').click(); };
     /* ⚠️⚠️ THE PARSE NO LONGER WRITES ANYTHING. It used to hand the parsed file straight to

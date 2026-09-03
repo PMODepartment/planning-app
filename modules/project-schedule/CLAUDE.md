@@ -12193,3 +12193,326 @@ and `SS` + lag `3` / `2` produced a real arrow labelled `SS+2`; the **2-phas
 created its link; the **Links table** listed all five; the **reciprocal** attempt was refused with the
 link count unchanged; and the commit wrote `Z1-CURE :: Z1-CONC SS+2` alongside the file’s own
 relationships.
+## 2026-09-03 (e) — Twelve reports and the reload wait
+
+One prompt, twelve numbered observations off the live 4PH Strevi schedule, plus *"On a refresh it
+takes a long time before the schedule loads up. Let's make this faster."* Answers below in the
+owner's numbering, then the load work.
+
+### The load, and why it FELT worse than it was
+
+**⚠️⚠️ THE IMPORT LOCK WAS FIRING ON EVERY ORDINARY OPEN, and that is most of the reported "slow".**
+The first thing `load()` does after painting is `_repair('Loading resources…')`, and `_repair()` set
+`_repairBusy` — which is half of `_editLocked()`. So every open of the module raised the loud red
+banner *"A schedule update in progress — do not edit yet"* and disabled Add activity, on a schedule
+that was already fully painted and correct. The note above `_repairBusy` had said this must not
+happen since the day it was written: *"It does NOT lock an ordinary load … locking it would make the
+schedule feel broken every time it opened."* It did exactly that.
+`_repair()` now sets the freshness chip only; `_repairLock()` is the locking form and is used by the
+five passes that actually WRITE rows — all of which are already behind the `_healNeeded` /
+`_wbsUnlinkedActs()` gates. So a healthy project's load never locks at all, and a fresh import locks
+for exactly as long as it did.
+
+**⚠️⚠️ `loadResourcesAssignments()` RUNS ITS FETCHES IN PARALLEL.** Fourteen sequential `await`
+blocks, every one independent — each writes its own global and reads none of the others — so the
+chain's real cost was fourteen round-trip LATENCIES stacked end to end, with the pagination inside
+six of them stacked on top: `wbs_nodes` alone is 13 sequential pages on a 12,459-node tree, and
+resources / resource_assignments / activity_code_values / activity_steps / cost_accounts /
+activity_expenses each pay their own. ~40 requests issued one at a time, in a browser that will run
+six at once, none of it CPU-bound.
+- ⚠️ Order is still enforced where it matters, and only there: `_clearPhaseMemo()` and
+  `ensureWbsSkeleton()` await the `wbs_nodes` task alone, not the whole wave.
+- ⚠️⚠️ **The one real dependency, and it is not obvious:** `loadWpmWorkPackages` →
+  `_prcWpmScopes()` reads `PACKAGES` to collect every WPM project this schedule buys under (AVR101's
+  schedule covers 7 towers; Towers 2-7 are bought under AVR102). In the old order `PACKAGES` happened
+  to load two blocks earlier. Started in parallel it would read the previous project's list and
+  silently drop those work packages — no error, just a picker missing entries. That task awaits that
+  one fetch.
+- ⚠️⚠️ Every task keeps its own `catch`, and `Promise.all` is deliberately handed already-caught
+  promises: a bare `Promise.all` rejects on the FIRST failure and would throw away thirteen good
+  results because one optional table has no migration. That per-block tolerance is the whole reason
+  this module works against a partially-migrated database.
+
+**Two hot loops that were quadratic in project size:**
+- `PDCal.nonWorkingReason()` did `extra_holidays.indexOf(ds)` — a linear scan of a 226-element array
+  of strings — and it is called ONCE PER CALENDAR DAY by `addWorkingDays`, which walks up to 7,300
+  days to turn one duration into one finish date. Up to 1.6 million string comparisons to date a
+  single activity. Indexed, cached against the array itself (WeakMap). Measured flat at 50 / 400 /
+  2,000 / 8,000 entries: 167 / 163 / 153 / 155 ms per 1,000 walks.
+- `workTypeValues()` resolved every activity's trade through the WBS tree — 16,393 of them — and its
+  caller is the calendar editor's trade picker, which re-renders on every keystroke. Memoised on
+  `rows` identity + length + `_editSeq`.
+
+### 1 · The colour legend's Activity sample is the brand colour
+
+*"turning on colour activities by changes the normal activity gantt bar color from red to blue.
+Let's just leave this to the brand color"* — it never changed any bar. `.lg-lsmbar` was hard-coded
+`#0070C0`, one arbitrary entry out of CAT_PALETTE, and next to a red Milestone diamond in a
+red-branded app it read as a statement. The chip is a SHAPE sample — pale remainder, solid+textured
+done, rail underneath — and every real bar takes its own trade colour, so the sample's hue carries no
+information at all. It is `--pd-red-light` / `--pd-red-mid` / `--pd-red` now, which also tracks light
+and dark, which the literal blue did not.
+⚠️ **Consequence handled:** in the mixed state the legend carries two chips beginning "Activity", and
+colour was what told them apart. The plain one already said *"outside the Execution Phase"*; the LSM
+one now says *"in the Execution Phase"*, revealed by `.ps-lsm-mixed` from the same `_hasPlainBars`
+that decided whether to emit the plain chip at all.
+(`.lg-plan` / `.lg-done`, two more hard-coded blues, were deleted — dead since the two halves were
+merged into one swatch.)
+
+### 2 · The toolbar is one row
+
+*"In my screen resolution of a laptop, the toolbar spills over into two rows. Let's optimize that by
+removing the 'colors' label."* Measured in a harness at a 1,340px window (1,237px to the row): the
+buttons need 1,136px and the search box a further 165px, so the row needs 1,301px and **the search is
+what goes to line two**. Removing the Colors label frees 47px of a 64px overrun — so on its own the
+owner's fix does not get there, and shipping only that would have been a fix in name only. Three
+things together do:
+- **Colors → icon-only** (the owner's own suggestion). Safe to unlabel where "View: Split" was not:
+  it opens a MENU rather than entering a mode, so there is no state for a label to report.
+- **`.ps-search` is `flex:1 1 100px`, not `0 1 auto`.** The old value over an `<input>` with an inline
+  `width:160px` gives a flex base size of 160px, and flex-shrink only bites once the item is ON the
+  line — line breaking happens first, on the hypothetical 160px. So it never shrank; it wrapped.
+- **The four state buttons carry the VALUE, not the category** — "Split", not "View: Split". The
+  owner's standing rule is that each must NAME ITS STATE on its own face, and the state is exactly
+  the half that stays; what goes is the word naming the CONTROL, which the icon beside it already
+  carries and the open menu repeats as its own heading. 133px.
+- **And the `?` button is hidden below 1400px**, which is the last 41px. With the Contract Scope
+  button also showing — the widest the row ever gets — the row needed 1,238px against 1,237px: over
+  by ONE pixel. It is the only control in the row that costs nothing to lose, because it is a
+  shortcut to a shortcut sheet: `?` opens the same panel, and it is now a permanent item in the
+  Actions menu. A media query, not a delete: on a wide monitor it is a useful signpost.
+Verified at 1,317 × 789: one row, 36px, search 235px wide. At 1,340 with Scope forced visible: still
+one row.
+
+### 3 · The View menu
+
+*"Opening the View button pops up a really expanded window."* The screenshot showed it running from
+under the toolbar to the bottom of the viewport WITH a scrollbar. Counted: 8 full-width rows for what
+are two pick-one groups (4 layouts, 2 densities) at ~29px each = 232px, plus a three-line prose note
+at ~54px. Both groups are pick-one-of-N, which is what a chip row is for — the same reasoning that
+already put the WBS outline levels on one wrapping line.
+⚠️ **Nothing was removed.** Every control is still there and still one click; the last two rounds of
+toolbar work were spent putting these where a planner can reach them. ~286px of stacked rows became
+~100px of chips and one line, and the long note is the `title` on that line. Also a `max-height:78vh`
+scroll cap: `anchorMenu` can only clamp to the room available, and *Reset layout to defaults* is the
+escape hatch for an unusable saved layout — it must never be the item that falls off the bottom.
+**Measured: 437px tall in a 789px viewport, not clipped.**
+
+### 4 · The Network / PERT view
+
+*"Viewing PERT does not make any sense to me."* Four separate things, all fixed:
+- ⚠️⚠️ **The text ran out of the boxes.** A node is 172px and this project's ids are
+  `A-T4-AR-04-UN-U2528-FIN-PNT-020` — 31 characters at 11px, about 200px. SVG `<text>` does not clip,
+  so every id overflowed into the NEXT node: the screenshot literally reads
+  `A-T4-AR-04-UN-U2528-FIN-PNT-020A-T4-AR-04-UN-U2124-DRY-D&J-02`. Nothing was readable. Measured and
+  truncated to the box now, with the full id, the name and the predecessor/successor counts on hover.
+- **Nothing said what the picture meant.** Columns are logic DEPTH — not time, not floors, not the
+  WBS. A reader naturally assumes left-to-right is time and then the diagram contradicts the Gantt
+  they just left. One sentence above the drawing says so.
+- **The edges were a hairball.** Nodes were left in row order within each column, so a predecessor
+  was routinely tens of rows away. Barycentre ordering (the first phase of a Sugiyama layered layout)
+  places each node at the mean row of its already-placed predecessors. ⚠️ Row POSITIONS only — never
+  which column a node is in, which is its logic depth and the one thing the diagram asserts.
+  ⚠️ **What it was measured to do, and what it was not:** harness set, 128 linked activities over 5
+  ranks — fed an order where logic already runs along rows, 0 crossings before and 0 after, so the
+  pass is a no-op on an order that is already right (which is what makes it safe to run
+  unconditionally); fed the same set in activity-NAME order it took 74 crossings to 0. No number is
+  quoted for the owner's own slice, because it was not measured on it.
+- **There was no way to ask a question.** A PERT diagram is read to answer "what drives THIS, and what
+  does it drive" — so clicking a node traces exactly that: predecessor chain green, successor chain
+  orange, everything else dimmed, with counts and a Clear. ⚠️ Same green/orange as the Schedule
+  Setup's link canvas and the same direction, so the convention carries over rather than being
+  learned twice. Plus zoom / Fit, and the pane is a flex column so the head and the key stay put
+  while only the drawing scrolls.
+⚠️ Two bugs found while driving it: the successor walk read `_succObjs`, which computeCPM builds as
+`{id,type,lag}` for the details form and carries no row to walk to — every trace would have shown 0
+successors (it reads `_succ` now); and the zoom label printed `-100%` for a whole frame after Fit,
+because Fit is stored as `-1` and only resolved once the drawn width is known, ~120 lines below the
+string that printed it.
+
+### 5 · Grid-only fills the width
+
+`max-width:100%` freed the ceiling but the pane's `flex:0 0 660px` basis (or the wider inline one the
+divider drag saved) still sized it and nothing grew it — so "Grid" hid the Gantt and left the space it
+vacated as a dead rectangle. `flex-grow:1` beats the inline basis without `!important` (the drag sets
+flex-basis, never flex-grow), so the planner's saved width is untouched and returns on Split.
+⚠️ **And the slack goes to the Activity Name column**, via `--ps-gonly-slack` and NOT `--c-name`:
+`--c-name` is the planner's own column width, written inline by the header drag and persisted to
+`ps_cols`, so adding the slack into it would save a Grid-only-sized column. Measured, not computed
+from the column list, because extra columns are added at runtime. Verified: 386px of slack took the
+name column 260 → 646px with the columns then summing exactly to the scroller width.
+
+### 6 · Change history — what "restore" can and cannot mean
+
+*"can these versions be restored?"* `schedule_audit` is a change LOG, not a series of versions: one
+row per edit holding the fields that moved. There is no "the schedule as it stood on Tuesday" to roll
+back to, and a Restore button that silently reverted only the changes that happened to be logged
+would be the worst possible answer. So the panel says that in as many words and points at Baselines /
+Snapshots for a point-in-time copy — and each row now offers exactly what it can:
+- an **edit** → **Revert**, writing every changed field's `from` value back through `persist()`: undoable
+  with Ctrl+Z and itself logged, so the history stays an account rather than a thing that edits
+  itself. ⚠️ The confirm names each field and both values, because reverting over a row somebody
+  edited since means overwriting THEIR value — sometimes right, never a surprise.
+- a **deletion** → **Restore**. ⚠️⚠️ `_auditSummary` has had a `delete` branch since it was written and
+  NOTHING EVER WROTE ONE — dead code, and the confirm said "This cannot be undone", which was true
+  only because the row's values went nowhere. `deleteRow()` now audits the whole row first (minus the
+  `_`-prefixed computed fields, several of which reference other rows) and the restore re-inserts it
+  **under its original id**, so relationships, assignments and steps that pointed at it line up again.
+- an **insert** → nothing. The way back from "added" is to delete it.
+- a **reschedule** → nothing. It is one line standing for a CPM pass over thousands of rows.
+⚠️ Only a diff that actually recorded a `from` offers Revert: a bulk edit logs a bare patch, and that
+now reads *"Status set to In Progress (the previous value was not recorded)"* instead of
+"Status: — → —", which claimed the field changed from nothing to nothing.
+
+### 7 · Calendars: yearly days, not one chip per year
+
+*"it loaded non working days for all years but to think that most of these only differ by year …
+Only those special non-working days that need to be exact by its date."* The "MCC Project Calendar
+2020-2049" branch arrived with **226 entries covering 2021–2030** — the same ten company days restated
+once a year. A list like that cannot be read, checked or edited: correcting one holiday means finding
+ten.
+⚠️⚠️ **The storage is unchanged.** A repeat is written into the SAME `extra_holidays` array as
+`--MM-DD`, which is not an invention — it is ISO 8601's own notation for a recurring annual date. No
+migration, no new column to add in six other modules, every existing calendar untouched, and a reader
+that has not been taught about repeats fails to match them rather than crashing on them.
+- The **XER parse folds them at the parse**, which is the one place it is safe to do automatically:
+  the list is being created at that instant, so there is nothing of anybody's to overwrite.
+- A **saved** calendar is never rewritten unasked. The editor shows two lists — "Repeats every year"
+  and "One-off non-working dates" — and a button whose face says what it would do:
+  *"Fold 100 repeating dates → 10 yearly"*.
+- A month/day is only folded when it recurs in **3+ distinct years**, so Eid'l Fitr, a proclamation
+  and a typhoon shutdown are kept verbatim. Exactly the distinction the owner drew.
+Verified: 102 chips → 10 yearly + 2 one-off; 3,360 day-by-day checks over 2021–2030 agree with the
+original list exactly; Feb 30 refused by month length; and the year preview names them
+("New Year's Day, Annual non-working day (Jan 2 · every year)").
+
+### 8 · Floors & Zones — three bugs with one cause, and two rendering faults
+
+*"it shows 'h Floor' what does that mean?"* — it means "5th Floor" with its first 22 pixels cut off.
+The floor label is drawn `text-anchor="end"` at x = pad + labelW − 6 = 48, so it grows LEFTWARD and
+anything wider than ~48px runs off the left edge of the `<svg>`. `labelW = 40` is right for the codes
+this step generates itself ("F1", "B2", "GF"); what broke it is reading a setup out of a live
+schedule, where the honest name for a floor the derive did not invent is the branch name. The gutter
+is measured now, capped, and a label past the cap is truncated with the full text on hover.
+
+*"There's also an error in the dropdown UI"* — the "or copy from" `<select>` carried `.sbld-mini`
+(`width:62px`, written for two-character number inputs), which clipped its own placeholder to "choc"
+and every option with it.
+
+*"Ground Floor is repeating for Tower D"* and *"the floors & zones only generated for Tower D but not
+C, B, and A"* are **one cause**: the floors pass keyed its tree on
+`sbLocVal(r, dims.tower) || SB_NO_TOWER` and then wrote `tower: towerIds[tw] || out.towers[0].id` —
+and `towerIds[SB_NO_TOWER]` is undefined whenever the project HAS named towers. So every activity
+with no tower silently became the FIRST tower's, which is Tower D here: its untowered Site
+Development / Substructure "Ground Floor" arrived a second time as a separate tree key and drew a
+second row, while towers with no rows of their own stayed empty. Untowered work gets its own visible,
+named bucket now, and the report gives per-tower counts so "Tower C has 0" is a line rather than
+something to discover by clicking each tower.
+
+⚠️⚠️ **And the deeper cause of the empty towers: location was read out of ONE place.** `r.location` is
+only filled for the rows the import's location mapping covered — and in this file the tower sits at
+DIFFERENT WBS DEPTHS depending on the branch ("Construction Phase › Tower D › …" but also
+"Construction Phase › Substructure › Tower D › …"), so a depth-based mapping can only catch one of
+them. Every row it missed arrived with an empty `location`, no floor, and was skipped entirely.
+There is now a fallback that walks the row's dotted-code ancestry and classifies each branch NAME —
+by name, not depth, precisely because depth is what failed. The stamped value still wins wherever
+there is one, and the report says how many rows each source answered for.
+⚠️ Patterns validated against all **234 distinct branch names in the file**: 8 towers, 17 floors, 2
+zones and 6 clusters matched, and the near-misses that must NOT match do not — "Tower Handover",
+"Residential Towers", "Inner Main Access Road (Tower 1 and 2)", "Underground Tank", "Floor Finishes",
+"Deck over Elevator", "Residential Units". ("Cluster" classifies as a UNIT, not a zone: this
+project's breakdown is Tower › Level › Zone › Cluster.)
+
+### 9 · Tower links — yes, there is data
+
+*"Is there really no data here from Strevi based on the relationships of the activities per tower?"*
+No: **20 cross-tower relationships**, 18 of them FS. The step reads `cfg.towerLinks` and the derive
+never filled it. It does now — one link per ordered tower pair, the more frequently observed
+direction winning (the step itself refuses A→B when B→A exists: "one of the two has to lead").
+⚠️ `fromFloorId` is left NULL — "whole tower". Which floor a tower hands off FROM is a judgement about
+a shared podium that a relationship count cannot make, and guessing it would silently change every
+date in the second tower. This fills in the part that is in the data and leaves the part that is not.
+
+### 10 · Zone sequence, Trade sequence, Scope per zone
+
+*"there is no sequencing in the read?"* — the Zone-sequence step reads `cfg.links`, which the derive
+never filled, so it opened on "Links (0)" no matter how much logic the schedule held. Relationships
+between activities in DIFFERENT locations are now read into it, most-frequent first, capped at 1,500.
+⚠️ Cycles are refused the way the step's own `tryLink` refuses them, because `computeStarts()` walks
+this graph — and a real programme has plenty at this level of aggregation (Zone 1 drives Zone 2 on
+floor 3; Zone 2 drives Zone 1 on floor 4). The more frequent direction wins and the report says how
+many were dropped.
+The **Trade sequence** (`actLinks`) was already derived, but its loop guard checked only the immediate
+reciprocal — which catches the 2-cycle and misses every longer one, and the 3-cycle is the COMMON case
+on a floor-by-floor programme: Rebar → Formworks → Concrete within a floor, Concrete → Rebar across
+the floor break. Caught in the harness: the naive check let `REBAR → FORMWO → CONCRE → REBAR` straight
+through. It is a reachability walk now, and the note points at the floor lead/lag, which is where that
+repeat belongs.
+**Scope per zone** is read too — but only while it stays small enough to belong in a saved setup.
+`scopeOff` is a map of the pairs that are OFF, so a faithful read is (leaves × activities) MINUS what
+occurred, which on a project this size is a six-figure object serialised into every save. Derived up
+to 30,000 flags; past that the report says so **with the number** rather than leaving the planner to
+wonder whether the step read anything.
+⚠️ The blanket note claiming the tower interfaces were "NOT recoverable from a finished schedule" is
+gone — the owner correctly doubted it. What genuinely is not recoverable is the takt PARAMETERS: floor
+lead/lag, how many floors a trade waits, what runs in parallel. A finished schedule shows the dates
+those rules produced, not the rules, and several different settings produce the same dates. The note
+says exactly that now, and nothing more.
+
+### 11 · Project phases — what the fields mean, and an 8,508-day lie
+
+*"What does the fields mean? Are these activities then days? Why is there a feature to drag the
+activity, is this relevant to the sequence? Or just a non functional feature?"* Three questions, one
+cause: a row was `[grip] [name] [271] [Sep 24, 02 → Jun 21, 03] [bin]` with **no header anywhere**.
+Every answer was already true — 271 IS calendar days, the drag IS functional and DOES decide the
+dates — and none of it was on screen. There is a header row now (Activity · Days · ‖ · Dates
+*(computed)*) and a paragraph saying the dates are computed from the order.
+
+⚠️⚠️ **And the number was nonsense, which is the real finding.** The step chained every activity end
+to end, and a Planning Phase read off a real schedule is 200 activities of 240–310 days each BECAUSE
+THEY RUN CONCURRENTLY — Competency Profile, Training Plan, Job Profile and Performance Management all
+running through the same two years. Chained, they summed to **8,508 days** and the step reported
+*"Sep 20, 02 → Jan 04, 26"*. Arithmetically correct, completely wrong.
+An activity now carries `par`: consecutive `par` rows form ONE BLOCK whose length is its longest
+member, and blocks are what chain. Defaults false, so every existing setup is unchanged; the derive
+sets it from the real dates (a start on or before the running maximum finish is concurrent); and
+`sbPhDays` counts blocks rather than summing durations.
+⚠️ Grouping is done on the FORWARD list in both directions and the backward walk reverses the BLOCKS —
+reversing the activities first would attach a `par` row to the wrong neighbour, silently regrouping
+the phase when it is scheduled backwards.
+⚠️⚠️ **`par` also had to be added to `normalizeCfg`, or it does not exist.** That normaliser is a
+WHITELIST: every cfg arriving from a save, from the derive, or from an older build is rebuilt field by
+field, so a field it does not name is dropped. Caught in the harness — the derive marked 2 of 3
+activities concurrent and the step still drew them chained.
+Verified: 3 activities, 2 concurrent → **spans 4 calendar days, all Jan 28–31**, instead of 12 chained.
+
+### 12 · The WBS step is second, not eleventh
+
+*"Is WBS really at the end of the Schedule Setup? or this should be at the beginning? Let's think
+about this."* The answer turns on something specific to this step: **it is not data entry.** Steps
+3–11 fill in `cfg` and Generate reads `cfg`; the WBS step edits the LIVE `wbs_nodes` tree, and the
+push reads that tree AT PUSH TIME. So its position cannot break anything either way — which means the
+position is purely about when a planner wants to look, and that is plainly "before I start typing":
+- it is the project's EXISTING structure, and the only step that shows what is already there;
+- the IMPORT path already checks branches first (its step 1 is filing each branch under a phase), and
+  two paths through the same module answering the same question in opposite orders is an accident of
+  when each was written, not a design;
+- it is where the five lifecycle phases live, and "Project phases" edits what goes inside three of
+  them.
+⚠️ Not a claim that the tree is an INPUT to generation: the push still creates the trade › tower ›
+floor › zone branches it needs, so a nearly-empty step 2 is the normal state on a new project — and
+the step now says so, because a planner arriving at an empty step would otherwise read it as a fault.
+⚠️ Nothing indexes steps by number: `_stepNo(title)` looks them up by TITLE and every cross-reference
+goes through it, so all the "see step 7" text renumbered itself. Verified in the browser: the rail
+reads 1 Start · 2 WBS · 3 Working calendars · 4 Activities · 5 Floors & Zones · 6 Tower links ·
+7 Zone sequence · 8 Trade sequence · 9 Scope per zone · 10 Stacking · 11 Project phases · 12 Generate.
+
+### And the XER answers to the two questions left over from (d)
+
+Read straight out of `4PH Strevi Residences Schedule - BL02.xer`:
+- **Securing of Permits and Signing of Contract are NOT milestones** — both `TT_Task`. The two Down
+  payment rows ARE (`TT_Mile`). Across the file: 16,284 tasks, 101 finish milestones, 8 start
+  milestones.
+- **The Initiation Phase branch was never incomplete.** It holds exactly **four direct tasks and no
+  sub-branches** — those four rows are the whole phase. 9 of 12,465 WBS branches carry no task
+  anywhere beneath them.

@@ -210,6 +210,106 @@
     return out;
   }
 
+  /* ==========================================================================================
+     EXTRA NON-WORKING DAYS: EXACT DATES *AND* ANNUAL REPEATS
+     ------------------------------------------------------------------------------------------
+     Owner 2026-09-03, after picking a calendar imported from P6: *"it loaded non working days for
+     all years but to think that most of these only differ by year let's just simplify this by only
+     selecting the relevant days and it will repeat for years since these are regular holidays.
+     Only those special non-working days that need to be exact by its date."*
+
+     They are right, and the numbers make the case: the "MCC Project Calendar 2020-2049" branch of
+     4PH Strevi arrived with 226 entries covering 2021 to 2030 — the same ten or so company days
+     restated once per year. A list like that cannot be read, cannot be checked, and cannot be
+     edited: correcting one company holiday means finding and fixing ten chips.
+
+     ⚠️⚠️ THE STORAGE IS UNCHANGED, DELIBERATELY. A repeat is written into the SAME
+     `extra_holidays` array as the string `--MM-DD` — which is not an invention, it is ISO 8601's own
+     notation for a recurring annual date. So:
+       • no migration, and no new column to add to `calendars` in six other modules;
+       • every existing calendar keeps working untouched (an all-exact list is still an all-exact
+         list);
+       • a reader that has not been taught about repeats simply fails to match them rather than
+         crashing on them, which is the safe direction for a shared table.
+     `--` cannot collide with a real date: an ISO date never starts with a hyphen.
+
+     ⚠️ AND IT IS INDEXED, which is the other half of the reported slowness. This function is
+     called ONCE PER CALENDAR DAY by isWorkDay → addWorkingDays, which walks up to 7,300 days to turn
+     one duration into one finish date. With `extra_holidays.indexOf(ds)` — a linear scan of a
+     226-element array of strings — that is up to 1.6 MILLION string comparisons to date a single
+     activity, and the schedule dates thousands. The index is built once per array and cached against
+     the array itself, so a re-fetched calendar gets a fresh one and a stale one is collected.
+     ========================================================================================== */
+  // The recurring form of an ISO date: '2026-08-21' -> '--08-21'.
+  function recurKey(isoOrMonthDay) {
+    var s = String(isoOrMonthDay || '');
+    if (s.indexOf('--') === 0) return s.slice(0, 7);
+    var m = s.match(/^\d{4}-(\d{2})-(\d{2})/);
+    return m ? ('--' + m[1] + '-' + m[2]) : null;
+  }
+  function isRecurKey(s) { return /^--\d{2}-\d{2}$/.test(String(s || '')); }
+  var _holIdxCache = (typeof WeakMap === 'function') ? new WeakMap() : null;
+  var _holIdxFallbackKey = null, _holIdxFallback = null;
+  function holidayIndex(cal) {
+    var list = (cal && Array.isArray(cal.extra_holidays)) ? cal.extra_holidays : null;
+    if (!list) return { exact: {}, recur: {}, nExact: 0, nRecur: 0 };
+    if (_holIdxCache) { var hit = _holIdxCache.get(list); if (hit) return hit; }
+    else if (_holIdxFallbackKey === list) return _holIdxFallback;
+    var out = { exact: {}, recur: {}, nExact: 0, nRecur: 0 };
+    for (var i = 0; i < list.length; i++) {
+      var v = String(list[i] || '').trim();
+      if (!v) continue;
+      if (isRecurKey(v)) { if (!out.recur[v]) { out.recur[v] = 1; out.nRecur++; } }
+      else if (!out.exact[v]) { out.exact[v] = 1; out.nExact++; }
+    }
+    if (_holIdxCache) _holIdxCache.set(list, out);
+    else { _holIdxFallbackKey = list; _holIdxFallback = out; }
+    return out;
+  }
+
+  /* Fold an exact-date list down to annual repeats. A month/day that appears in at least
+     `minYears` DISTINCT years is the same company holiday restated, so it becomes one `--MM-DD`;
+     anything appearing in fewer years is a one-off (a proclamation, a typhoon shutdown, a lunar
+     holiday) and is kept verbatim, which is exactly the distinction the owner drew.
+     ⚠️ Returns a NEW list and a report; it never mutates the input. Nothing calls this
+     automatically on an existing saved calendar — collapsing somebody's stored dates without being
+     asked would be a silent rewrite of a schedule input. The import does it (the list is being
+     created at that moment, so there is nothing to overwrite) and the editor offers a button. */
+  function collapseHolidays(list, minYears) {
+    minYears = minYears || 3;
+    var byMd = {}, recur = {}, exact = [];
+    (list || []).forEach(function (v) {
+      var s = String(v || '').trim(); if (!s) return;
+      if (isRecurKey(s)) { recur[s] = 1; return; }
+      var k = recurKey(s); if (!k) { exact.push(s); return; }
+      (byMd[k] = byMd[k] || []).push(s);
+    });
+    var collapsed = 0, madeRecur = [];
+    Object.keys(byMd).forEach(function (k) {
+      var yrs = {};
+      byMd[k].forEach(function (d) { yrs[d.slice(0, 4)] = 1; });
+      if (Object.keys(yrs).length >= minYears) {
+        if (!recur[k]) { recur[k] = 1; madeRecur.push(k); }
+        collapsed += byMd[k].length;
+      } else {
+        byMd[k].forEach(function (d) { exact.push(d); });
+      }
+    });
+    var recurList = Object.keys(recur).sort();
+    exact = exact.filter(function (d, i, a) { return a.indexOf(d) === i; }).sort();
+    return { list: recurList.concat(exact), recurring: recurList, added: madeRecur,
+             exact: exact, collapsed: collapsed };
+  }
+
+  var _MD_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  // How a stored entry should read on a chip: 'Aug 21 · every year' or '2026-04-09'.
+  function holidayLabel(s) {
+    var v = String(s || '').trim();
+    if (!isRecurKey(v)) return v;
+    var mo = parseInt(v.slice(2, 4), 10), dy = parseInt(v.slice(5, 7), 10);
+    return (_MD_NAMES[mo - 1] || v.slice(2, 4)) + ' ' + dy + ' \u00b7 every year';
+  }
+
   // Why a date is non-working, for the UI. Returns null when it IS a working day.
   // { kind: 'weekend' | 'regular' | 'special' | 'extra', name: '...' }
   function nonWorkingReason(cal, date) {
@@ -224,7 +324,9 @@
       var sp = phSpecialDays(date.getFullYear())[ds];
       if (sp) return { kind: 'special', name: sp };
     }
-    if (cal.extra_holidays && cal.extra_holidays.indexOf(ds) !== -1) return { kind: 'extra', name: 'Extra non-working day' };
+    var ix = holidayIndex(cal);
+    if (ix.exact[ds]) return { kind: 'extra', name: 'Extra non-working day' };
+    if (ix.nRecur && ix.recur['--' + ds.slice(5)]) return { kind: 'extra', name: 'Annual non-working day (' + holidayLabel('--' + ds.slice(5)) + ')' };
     return null;
   }
 
@@ -417,6 +519,12 @@
     hoursPerDay: hoursPerDay,
     workingHoursInRange: workingHoursInRange,
     phSeasonPreset: phSeasonPreset,
+    // Recurring extra non-working days (see the block above nonWorkingReason).
+    recurKey: recurKey,
+    isRecurKey: isRecurKey,
+    holidayIndex: holidayIndex,
+    holidayLabel: holidayLabel,
+    collapseHolidays: collapseHolidays,
     iso: iso
   };
 })(window);
