@@ -84,6 +84,24 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-03 (m) — The trades did not vanish: they were at L3, and a ticked Tower level was dropped
+
+*"from schedule setup it is okay ... yet in project schedule, the trades vanished?"* Two things, and
+neither is the trades being lost.
+
+**(1)** `dimKey` returned the skip sentinel for the tower whenever `multiTower()` was false, so a
+single-tower project silently got **four** levels after the dialog promised **five** — the ticked Tower
+never appeared and the tree started at the floors. A ticked level is now built; the tick box is the
+planner deciding, and a count must not overrule it. (Same rule as *"no defined number of towers means a
+singular tower"*.) A row with genuinely no tower id still skips the level.
+
+**(2)** The trades were built — one level under every floor, because this project ticked
+**Tower → Level → Trade → Zone → Unit** and Trade is third. Drag Trade to the top and the trade branches
+sit directly under the Execution Phase. ⚠️ That order was likely chosen while the labels were still
+wrong (fixed in `k`), so the list was being reordered against fiction. The dialog now also names
+what will sit at the top of the tree. 244 checks, 0 functions lost. `MODULE_V` → `20260903m`.
+
+---
 ### 2026-09-03 (k) — The push wrote every location one level too high
 
 *"it detected the levels as the towers, and the zones as levels"*, and *"Tower > Tower > Trade > Level

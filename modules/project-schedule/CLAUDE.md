@@ -1,3 +1,65 @@
+## The trades did not vanish — they were at L3, and a ticked Tower level was silently dropped (2026-09-03) — jasantos2
+
+Owner: *"from schedule setup it is okay, the trades have been defined well, and the trade location was
+detected. yet in project schedule, the trades vanished?"*
+
+### What the three screenshots actually show
+- **Setup step 10** — six trades, 17 floors each. Correct.
+- **The push dialog** — WBS structure ticked as **Tower → Level → Trade → Zone → Unit**, and it prints
+  *"5-level WBS"*.
+- **Project Schedule** — under Execution Phase: `F1`, `Allied Services`, `B3`, `B2`, `B1`,
+  `Ground Floor`, `2ND Floor` … **floors at the top, no Tower branch, no trade branch.**
+
+Two separate things produced that, and neither is the trades being lost.
+
+### 1 ⚠️⚠️ A ticked Tower level was silently dropped on a single-tower project
+`dimKey` returned the *"no value at this level"* sentinel for the tower whenever `multiTower()` was
+false. So the dialog promised **five** levels and the push built **four** — the Tower the planner had
+ticked simply did not appear, and the tree started one level lower than the dialog said it would.
+
+**Fixed: a ticked level is built.** The tick box is the planner deciding whether the tower is a WBS
+level; a *count* must not overrule that. This is also the owner's own rule from earlier in the day —
+*"for cases like projects with no defined number of towers, it would mean as a singular tower"* — one
+tower is still a tower and it gets its branch.
+- ⚠️ The sentinel is still returned when a row genuinely has **no tower id**, which is the case it was
+  written for. A project with no towers writes no tower branch.
+- ⚠️ Untick Tower for the old shape. One click, and now it is the planner saying so.
+
+### 2 The trades were built — one level under every floor
+Nothing lost them. The chosen order puts **Trade at L3**, so the tree is
+*Tower → each floor → the trades in that floor*. Executed against the shipped `buildTree`:
+
+| order | Execution Phase children |
+|---|---|
+| Tower → Level → **Trade** → Zone → Unit | `Tower 1` → `B3, B2, B1, Ground Floor` → `ST, AR` |
+| **Trade** → Tower → Level → Zone → Unit | `ST, AR, ALLIED` |
+
+⚠️ **Drag Trade to the top of the WBS structure list** in the push dialog and the trade branches sit
+directly under the Execution Phase, which is what the report is asking for.
+
+⚠️ Worth naming: the order in that dialog was almost certainly chosen while the LABELS were wrong.
+Until `20260903k` the label lookup mapped floor→LOC_LEVELS[0], so on this project it printed
+*Tower → Tower → Trade → …* and a planner reordering to make that read sensibly was reordering against
+fiction. The labels are correct now, so the list finally says what it will build.
+
+### The dialog now says what sits at the TOP
+The order line alone reads as a list of things that will be *present* — tick Trade, see it listed, and
+still get floors at the top because Trade is third. It now adds: **"Directly under the Execution Phase
+you will see <first level> branches; everything below it nests inside them."** The consequence of the
+order is visible before the push instead of after it.
+
+---
+
+**Verified: 244 checks.** The shipped `dimKey` + `buildTree` executed over an OPW101-shaped setup:
+the previous commit drops the tower and starts at the floors (the reported shape, reproduced), the fix
+builds `Tower 1` with the floors under it in setup order and the trades under each floor; a
+trade-first order puts the trades back on top; two towers still build two branches in `cfg.towers`
+order; a row with no tower id still skips the level; Allied Services (no floors) still attaches without
+inventing one. Controls on every scan. 0 functions lost, 0 added; the inline script parses.
+
+⚠️ **NOT verified signed-in.** ⚠️ This changes what a **new** push builds; the existing 2,665 rows keep
+the shape they were pushed with until re-pushed. ⚠️ Still open: OPW101's duplicate phase roots.
+
 ## The push wrote every location one level too high — floors stored as towers, zones as floors (2026-09-03) — jasantos2
 
 Owner, two reports, one root cause:

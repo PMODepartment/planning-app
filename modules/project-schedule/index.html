@@ -30722,7 +30722,15 @@
               '<button class="pd-btn sbld-wbsmv" data-up="' + i + '"' + (i === 0 ? ' disabled' : '') + '>↑</button>' +
               '<button class="pd-btn sbld-wbsmv" data-down="' + i + '"' + (i === work.length - 1 ? ' disabled' : '') + '>↓</button></div>';
           }).join('') + '</div>' +
-          '<p class="sbld-hint" style="margin:6px 0 0;">' + (lvl ? lvl + '-level WBS: ' + e2(work.filter(function (d) { return incl[d]; }).map(dimLabelOf).join(' → ')) : 'No levels selected — tick at least one level.') + '</p>';
+          /* ⚠️ NAME THE TOP OF THE TREE, not just the chain. The order line alone reads as a list of
+             things that will be present, and a planner who wants trade branches under the Execution
+             Phase can tick Trade, see it in the list, and still get floors at the top because Trade is
+             third. That is exactly the reported "the trades vanished" — they were built, one level
+             under every floor. Saying which level is the FIRST branch makes the consequence of the
+             order visible before the push instead of after it. */
+          '<p class="sbld-hint" style="margin:6px 0 0;">' + (lvl ? lvl + '-level WBS: ' + e2(work.filter(function (d) { return incl[d]; }).map(dimLabelOf).join(' → ')) : 'No levels selected — tick at least one level.') + '</p>' +
+          (lvl ? '<p class="sbld-hint" style="margin:2px 0 0;opacity:.8;">Directly under the Execution Phase you will see <b>' +
+            e2(dimLabelOf(work.filter(function (d) { return incl[d]; })[0])) + '</b> branches; everything below it nests inside them. Drag with ↑/↓ to change what leads.</p>' : '');
         host.querySelectorAll('[data-dim]').forEach(function (c) { c.onchange = function () { incl[c.dataset.dim] = c.checked; renderStruct(); }; });
         host.querySelectorAll('[data-up]').forEach(function (b) { b.onclick = function () { var i = +b.dataset.up; var t = work[i - 1]; work[i - 1] = work[i]; work[i] = t; renderStruct(); }; });
         host.querySelectorAll('[data-down]').forEach(function (b) { b.onclick = function () { var i = +b.dataset.down; var t = work[i + 1]; work[i + 1] = work[i]; work[i] = t; renderStruct(); }; });
@@ -31032,7 +31040,25 @@
         // ⚠️ '\u0000' is buildTree's "no value at this level" sentinel — a row returning it skips the
         // level entirely. That is how a single-tower project keeps exactly the tree it has today:
         // with one tower there is nothing to distinguish, so the level is not worth a node.
-        function dimKey(dim, r) { var l = r.loc; if (dim === 'trade') return l.trade; if (dim === 'tower') return multiTower() ? (l.towerId || '\u0000') : '\u0000'; if (dim === 'floor') return (l.floor && l.floor._all) ? '\u0000' : l.floor.id; if (dim === 'zone') return l.zone ? l.zone.id : '\u0000'; if (dim === 'unit') return l.unit ? l.unit.id : '\u0000'; return '\u0000'; }
+        /* ⚠️⚠️ A TICKED LEVEL IS BUILT. THE TOWER USED TO BE DROPPED SILENTLY.
+           Owner 2026-09-03, on OPW101: *"from schedule setup it is okay, the trades have been defined
+           well ... yet in project schedule, the trades vanished?"* The push dialog had just promised
+           **"5-level WBS: Tower -> Level -> Trade -> Zone -> Unit"**, and the tree it produced starts at
+           the FLOORS (F1, B3, B2, B1, Ground Floor ...) with no Tower branch at all.
+           The tower dim returned the "no value at this level" sentinel whenever multiTower() was
+           false, so a single-tower project silently lost the level the planner had ticked -- the
+           dialog said five levels and four were built. Combined with a Trade sitting at L3 (this
+           project reordered it there), the top of the tree became floors and the trades looked gone,
+           when they were one level down under each floor.
+           ⚠️ Owner, same thread: *"for cases like projects with no defined number of towers, it would
+           mean as a singular tower."* That is this: ONE tower is still a tower, and it gets its
+           branch. The tick box is the planner deciding whether the tower is a WBS level at all --
+           this function must not overrule it with a count.
+           ⚠️ The sentinel is still returned when the row genuinely has NO tower id, which is the
+           case it was written for. A project with no towers defined writes no tower branch.
+           ⚠️ Untick Tower in the push dialog to get the old shape -- it is one click, and it is now the
+           planner saying so rather than a count deciding it for them. */
+        function dimKey(dim, r) { var l = r.loc; if (dim === 'trade') return l.trade; if (dim === 'tower') return l.towerId || '\u0000'; if (dim === 'floor') return (l.floor && l.floor._all) ? '\u0000' : l.floor.id; if (dim === 'zone') return l.zone ? l.zone.id : '\u0000'; if (dim === 'unit') return l.unit ? l.unit.id : '\u0000'; return '\u0000'; }
         // ⚠️ The trade BRANCH is named with GWORK (the canonical "Structural Works"), not GLABEL
         // ("Structural"). work_type on the pushed activities is already GWORK, so a branch named with
         // the short label made the same trade reachable under TWO different names - and for the three
