@@ -84,6 +84,47 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-03 (d) — 16,396 activities under a visibly correct Execution Phase, and the stacking said zero
+
+Owner, with two screenshots of SLN101 (4PH Strevi Bacoor): the grid renders a perfect tree —
+**Execution Phase → Construction Phase → Substructure → Tower D → Excavation**, *Total: 16,396
+activities* — while Vertical Stacking reads **“0 execution-phase activities stacked.”** *"How come?
+even though the schedule is under the execution phase?"* Detail in
+`modules/project-schedule/CLAUDE.md`.
+
+⚠️⚠️ **Both screens were telling the truth about different things, and the app had no third source.**
+`rebuild()` derives a row's ancestry from its **dotted WBS code** and never reads the node id — that
+is why the grid is right. `phaseOf()` resolved **only** through `wbs_node_id → WBS_NODES`, and on this
+project those ids are null (the 2026-09-02 (q)/(r) batched-link timeout, and every plain importer,
+file activities by dotted code without ever linking them to a node). So all 16,396 answered *"no
+phase"*, `isExecPhase()` was false for every one, and **every execution-scoped feature — Vertical
+Stacking, Contract Scope, the activity colour key — silently reported an empty project.**
+
+- **`phaseOf` gained the code fallback**, reading the same source the grid trusts: walk the dotted
+  code's ancestors nearest-first and take the first branch name that resolves a phase — the identical
+  rule `_nodePhase` applies to the tree, applied to the projection of that tree the rows carry.
+- ⚠️ **Strictly last.** The row's own `phase` and the node chain both still win, so a healthy linked
+  project computes exactly what it computed before — asserted, along with the pre-fix expression
+  returning null for all of them, so the suite bites.
+- ⚠️ **Read-time only, and it repairs the symptom, not the link.** Nothing is written; the activities
+  are still unlinked, and *Schedule Setup → WBS → Adopt existing WBS* is still the real fix. But the
+  previously recorded recovery for this state was **a re-import**, i.e. a destructive repair of a
+  schedule that is not actually damaged.
+- ⚠️ **It cannot sweep other phases into Execution:** a Planning-phase activity's own ancestry names
+  Planning Phase, so it resolves to `planning`. Asserted for all four phases plus an orphan code,
+  which correctly still has no phase.
+- **The empty state now distinguishes the two cases** — *"nothing matches your filters"* vs *"not one
+  of this project's N activities resolves ANY phase, so this is not a filter problem"*, measured
+  rather than guessed, naming Adopt existing WBS. The old wording is exactly what made a full
+  schedule read as an empty one.
+
+**Verified: 10 checks executing the shipped `phaseOf` / `_phaseByCode` / `_nodePhase` / `isExecPhase`**
+(sliced from the file) against the tree in the owner's own screenshot; the day's other suites still
+green (26 + 14); **0 functions lost / 2 added**; parses; 0 NUL bytes.
+⚠️ **Not verified signed in** — the fix is measured against the reported shape, not against the live
+project. ⚠️ The owner's tab was on `?v=20260902ab`; **hard-refresh**, since a module page is cached by
+its full URL. `MODULE_V` → `20260903d`.
+
 ### 2026-09-03 (c) — A WBS branch is a PLACE or a GROUPING, and the stacking now reads only places
 
 Owner: *"for the vertical stacking, it should only read the locations WBS — tower, level, zones,

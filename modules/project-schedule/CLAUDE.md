@@ -1,3 +1,62 @@
+## The grid said 16,396 activities under Execution Phase; the stacking said zero (2026-09-03) — jasantos2
+
+Owner, on SLN101 (4PH Strevi Bacoor), two screenshots side by side: the Gantt shows
+`Execution Phase → Construction Phase → Substructure → Tower D → Excavation` with *Total: 16,396
+activities*, and Vertical Stacking shows **"0 execution-phase activities stacked."**
+
+⚠️⚠️ **Neither screen was lying — the app resolved "which phase is this row in" two different ways and
+only one of them worked here.**
+
+| | reads | answer on SLN101 |
+|---|---|---|
+| the grid (`rebuild`) | the **dotted WBS code**, split into ancestors | correct tree |
+| `phaseOf()` | **`wbs_node_id` → `WBS_NODES`** only | `null`, for all 16,396 |
+
+Those node ids are null on this project — the 2026-09-02 (q)/(r) batched-link timeout left 16,393
+activities unlinked, and a plain importer files by dotted code without ever creating the link. That
+state is **invisible in the grid by construction** (the changelog has said so since 2026-09-02 (o):
+*"invisible in the grid, which derives ancestry from the dotted code and never reads the node id"*),
+so the only surface that reports it is every execution-phase-scoped feature going quietly empty:
+Vertical Stacking, Contract Scope, and the activity colour key.
+
+**`phaseOf` now has a third source, in strict precedence order:**
+1. the activity's own `phase` column;
+2. `_nodePhase(wbs_node_id)` — the tree;
+3. **`_phaseByCode(wbs)` — the tree's own projection in the rows.**
+
+`_phaseByCode` walks the dotted code's ancestor prefixes **nearest-first** and takes the first branch
+NAME that resolves through `phaseFromName` — the identical precedence `_nodePhase` uses on its parent
+chain, applied to the summary rows instead. It reads the same map the location matcher builds
+(`isWbs(r) && r.wbs → r.activity_name`).
+
+- ⚠️ **It is last on purpose.** A healthy linked project computes byte-identically to before; the
+  suite asserts both directions (own phase beats the code, a linked node beats the code).
+- ⚠️ **It cannot sweep other phases into Execution.** A Planning-phase activity's own ancestry names
+  *Planning Phase*, so it answers `planning`. All four phases are asserted, plus an orphan code that
+  correctly resolves to nothing.
+- ⚠️ **Read-time only. It fixes the SYMPTOM, not the link.** No row is written and the activities stay
+  unlinked — *Schedule Setup → WBS → Adopt existing WBS* remains the real repair. What it removes is
+  the previously recorded recovery for this state, which was **a re-import**: a destructive rebuild of
+  a schedule whose data is fine and whose only problem is a missing foreign key.
+- ⚠️ **The name-map cache is cleared in `_clearPhaseMemo()` alongside the node memo.** It is built
+  from `rows`, so it goes stale on a rename, an import or a WBS repair exactly like the node memo —
+  clearing one without the other is how a half-updated phase answer survives a reload.
+
+**The empty state was the other half of the report.** *"No execution-phase activities match the
+current filters"* is a true sentence that sent the owner to look at filters, when nothing in the
+project resolved a phase at all. It now measures which case it is and, for the second, says so
+plainly and names Adopt existing WBS.
+
+**Verified: 10 checks executing the shipped `phaseOf` / `_phaseByCode` / `_nodePhase` / `isExecPhase`**,
+sliced out of `index.html`, against the exact tree in the screenshot (Milestones / Initiation /
+Planning / Execution → General Preliminaries + Construction Phase → Substructure → Tower D /
+Close-out) with **every activity's `wbs_node_id` null**. ⚠️ The suite includes the pre-fix expression
+answering `null` for all of them, so it fails against HEAD rather than passing vacuously. The day's
+other suites stay green (26 LBS + 14 wizard); **0 functions lost / 2 added**; parses; 0 NUL bytes.
+⚠️ **Not verified signed in** — measured against the reported shape, not the live project.
+⚠️ The owner's tab was serving `?v=20260902ab`: a module page is cached by its full URL, so
+**hard-refresh** before judging this. `MODULE_V` → `20260903d`.
+
 ## The WBS says what work; the LBS says where — and the stacking only reads the LBS (2026-09-03) — jasantos2
 
 Owner: *"for the vertical stacking, it should only read the locations WBS. meaning tower, level, zones,

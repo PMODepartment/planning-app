@@ -4090,7 +4090,13 @@
   // catScopeIsExec() answers false, catList() memoises the everything-coloured list, and clearing
   // only the phase memo left that list in place for the rest of the session. It reproduced on a
   // cache-painted load and NOT on a cold one, which is exactly why a single live check missed it.
-  function _clearPhaseMemo() { _phaseMemo = {}; _scopeMemo = {}; _tradeMemo = {}; _pkgMemo = {}; _catExecCache = null; _catCache = null; }
+  function _clearPhaseMemo() {
+    _phaseMemo = {}; _scopeMemo = {}; _tradeMemo = {}; _pkgMemo = {}; _catExecCache = null; _catCache = null;
+    // ⚠️ The code fallback caches a NAME MAP built from `rows`, so it goes stale on a rename, an
+    // import or a WBS repair exactly like the node memo — clearing one without the other is how a
+    // half-updated phase answer survives a reload.
+    _phaseCodeMemo = {}; _phaseCodeNames = null;
+  }
   // The phase a branch NAME implies — the same rule migrations/2026-08-12-schedule-project-phase.sql
   // used to seed the column, applied at read time so branches created after it still classify.
   // ⚠️ Kept deliberately in step with that migration: change one, change the other.
@@ -4139,7 +4145,53 @@
     _phaseMemo[nodeId] = out || null;
     return _phaseMemo[nodeId];
   }
-  function phaseOf(r) { return (r && r.phase) || _nodePhase(r && r.wbs_node_id) || null; }
+  // ⚠️⚠️ THE THIRD SOURCE, AND ON AN IMPORTED SCHEDULE IT IS THE ONLY ONE THAT ANSWERS.
+  // Reported live on SLN101 (4PH Strevi Bacoor): the grid renders a perfect tree — Execution Phase
+  // with 16,396 activities under it — while Vertical Stacking says "0 execution-phase activities".
+  // Both are telling the truth about different things:
+  //   • `rebuild()` derives a row's ancestry from its DOTTED WBS CODE and never reads the node id,
+  //     which is why the grid looks right;
+  //   • `phaseOf()` resolved ONLY through `wbs_node_id` → WBS_NODES, and on this project those ids
+  //     are null (the 2026-09-02 (q)/(r) batched-link timeout, and every plain importer, file
+  //     activities by dotted code without ever linking them to a node).
+  // So every activity answered "no phase", `isExecPhase()` was false for all 16,396, and every
+  // execution-phase-scoped feature — Vertical Stacking, Contract Scope, the activity colour key —
+  // silently reported an empty project. The recovery on record was "re-import" or "Reset WBS →
+  // rebuild", i.e. a destructive repair for a schedule that is not actually damaged.
+  // The fallback reads the SAME source the grid trusts: walk the dotted code's ancestors,
+  // nearest-first, and take the first branch NAME that resolves a phase — the identical rule
+  // `_nodePhase` applies to the tree, applied to the projection of that tree the rows carry.
+  // ⚠️ STRICTLY LAST. The row's own `phase` and the node chain both win, so a healthy linked project
+  // computes exactly what it computed before and nothing moves underneath it.
+  // ⚠️ Read-time only — no row is written, so this repairs the SYMPTOM without pretending the link
+  // exists. Re-linking the activities (WBS Manager → Adopt existing WBS) is still the real fix.
+  var _phaseCodeMemo = {}, _phaseCodeNames = null;
+  function _phaseCodeNameMap() {
+    if (_phaseCodeNames) return _phaseCodeNames;
+    var m = Object.create(null);
+    rows.forEach(function (r) { if (isWbs(r) && r.wbs) m[String(r.wbs)] = r.activity_name || ''; });
+    return (_phaseCodeNames = m);
+  }
+  function _phaseByCode(code) {
+    var c = String(code == null ? '' : code).trim();
+    if (!c) return null;
+    if (_phaseCodeMemo[c] !== undefined) return _phaseCodeMemo[c];
+    var names = _phaseCodeNameMap(), segs = c.split('.'), out = null;
+    // Nearest ancestor first — same precedence as _nodePhase's parent walk. A branch literally named
+    // "Construction Phase" sitting under "Execution Phase" therefore answers from itself, which is
+    // the same answer either way.
+    for (var i = segs.length; i >= 1; i--) {
+      var nm = names[segs.slice(0, i).join('.')];
+      if (!nm) continue;
+      var p = phaseFromName(nm);
+      if (p) { out = p; break; }
+    }
+    return (_phaseCodeMemo[c] = out);
+  }
+  function phaseOf(r) {
+    if (!r) return null;
+    return r.phase || _nodePhase(r.wbs_node_id) || _phaseByCode(r.wbs) || null;
+  }
   // ---- Trade -------------------------------------------------------------------------------
   // The branch that names the TRADE for a node: the top-most branch under the root (so
   // "Execution Phase › Structural Works › …" gives Structural Works), or the root itself when the
@@ -15014,7 +15066,18 @@
     _vsCells = {}; _vsHatchSeen = {}; _vsFocusCards = [];
     var towers;
     if (!acts.length) {
-      towers = '<div class="ps-vs-empty">No execution-phase activities match the current filters. Vertical stacking covers the <strong>Execution Phase</strong> only — activities under Initiation, Planning or Close-out are not stacked.</div>';
+      // ⚠️ "Nothing matches your filters" and "nothing in this project resolves a phase at all" are
+      // different facts, and the old message only stated the first — which is how a 16,396-activity
+      // schedule with a visibly correct Execution Phase branch read as an empty project, with the
+      // only recorded recovery being a re-import. Say which one it is, measured rather than guessed.
+      var _unph = rows.filter(function (r) { return !isWbs(r) && r._dkind !== 'group'; });
+      var _anyPhase = _unph.some(function (r) { return phaseOf(r); });
+      towers = '<div class="ps-vs-empty">No execution-phase activities match the current filters. Vertical stacking covers the <strong>Execution Phase</strong> only — activities under Initiation, Planning or Close-out are not stacked.' +
+        ((_unph.length && !_anyPhase)
+          ? '<br><br>⚠️ <strong>Not one of this project’s ' + _unph.length.toLocaleString() + ' activities resolves ANY phase</strong>, so this is not a filter problem. ' +
+            'A phase is read from the activity’s own Phase field, then its WBS node, then its dotted WBS code — if the grid shows a correct tree but nothing resolves, the activities are not linked to the WBS nodes ' +
+            'and their branch names carry no phase word. Re-run <em>Schedule Setup → WBS → Adopt existing WBS</em> to link them, or tag the top-level branches in the WBS step.'
+          : '') + '</div>';
     } else if (_vsScope === 'tower') {
       // One model per tower, every trade combined inside it — the side-by-side comparison the
       // owner asked for. Untagged rows get their own card rather than vanishing.
