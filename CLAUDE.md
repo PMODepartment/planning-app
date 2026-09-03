@@ -84,6 +84,28 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-03 (e) — A tower is one building, however the WBS spells it
+
+Owner: *"there are scenarios wherein the substructure is separated from the superstructure, so we
+need to combine them to create a tower. And there are direct instances wherein tower 1 is defined
+including substructure and superstructure combined."*
+
+New `locTowerToken()` gives a building ONE canonical identity, so `Tower 1 - Substructure`,
+`SUBSTRUCTURE - TOWER 1`, `TOWER-1 SUPERSTRUCTURE` and a plain `Tower 1` all resolve to **Tower 1**.
+Wired into the level guesser (a stage-first name now reaches the Tower level instead of being vetoed
+as a trade), the value guesser (the stages combine), and Vertical Stacking's tower read — where it is
+**read-time only**, so a project already stamped with two spellings draws one card without a single
+row being written. Also: the WBS heal chain merged duplicate branches *after* the two passes that
+refuse to run while a duplicate exists, so it took two page loads to converge; the merge now runs
+first. Detail in `modules/project-schedule/CLAUDE.md`.
+
+⚠️ `locGroupingReason` is deliberately untouched — a bare `Superstructure` still cannot become a
+storey. ⚠️ Nothing is invented: a stage branch with no tower word at all leaves the tower blank rather
+than guessing a name. ⚠️ Not verified signed-in (the anon key has no grants); verification is 66
+slice-and-execute checks against the shipped functions. `MODULE_V` → `20260903e`.
+
+---
+
 ### 2026-09-03 (d) — 16,396 activities under a visibly correct Execution Phase, and the stacking said zero
 
 Owner, with two screenshots of SLN101 (4PH Strevi Bacoor): the grid renders a perfect tree —

@@ -1,3 +1,109 @@
+## One tower, however the WBS spells it — substructure + superstructure combined (2026-09-03) — jasantos2
+
+Owner: *"Make the detection of the WBS structure be easier in the project schedule. In addition, the
+activities detected under the execution phase must be detected in the vertical stacking. Make it have
+intelligence. bc for instances, there are scenarios wherein the substructure is separated from the
+superstructure, so we need to combine them to create a tower. And there are direct instances wherein
+tower 1 is defined including substructure and superstructure combined."*
+
+### The shape of the problem
+A tower is ONE building, and a WBS routinely spells it as two structural stages. Both shapes are
+real, and both have to land on one tower:
+
+| WBS branch | must resolve to |
+|---|---|
+| `Tower 1` | Tower 1 — already combined |
+| `Tower 1 - Substructure` + `Tower 1 - Superstructure` | Tower 1 |
+| `SUBSTRUCTURE - TOWER 1` + `SUPERSTRUCTURE - TOWER 1` | Tower 1 |
+| `TOWER-D SUBSTRUCTURE` | Tower D |
+| `Superstructure (Tower 2)` | Tower 2 |
+| `Bldg 2` | Building 2 |
+
+The nested form SLN101 actually uses — `Execution Phase › Construction Phase › Substructure ›
+Tower D › Excavation` — already worked, because every matcher source resolves **deepest ancestor
+wins** and `Tower D` is deeper than `Substructure`. What did not work is every form where the
+stage word sits in the same NAME as the tower.
+
+### New `locTowerToken()` — the canonical identity of a building
+Reads a family word (tower / building / bldg / block, whole-word) plus a designator (1–3
+alphanumerics, optionally through a hyphen, dot or bracket) and returns a canonical string. Wired
+into exactly three places, each deliberately narrow:
+
+**1 ⚠️⚠️ `locGuessLevel` — the token is consulted BEFORE the grouping veto, for the tower level only.**
+`Substructure - Tower D` is a tower. `locGroupingReason` read it as a *trade* — correctly, by its
+own earliest-term rule ('substructure' at 0 beats 'tower' at 18) — so the branch never reached the
+Tower level at all. Half of Tower D's work went unlocated while `Tower D - Substructure` (place word
+leading) mapped fine: one building, split.
+- ⚠️ **`locGroupingReason` itself is UNTOUCHED.** It goes on protecting the FLOOR axis exactly as
+  before, so a bare `Superstructure` still cannot become a storey — which is the band the stacking
+  actually draws. Widening the veto would have re-admitted every stage word as a floor and put a fake
+  storey in every tower, which is the bug that rule was written for. There is a regression check
+  pinning `locGroupingReason('Substructure - Tower D') === 'trade'`.
+- ⚠️ Only when the project HAS a tower-family level; otherwise there is nowhere to put it and forcing
+  `LOC_LEVELS[0]` would write a tower name into a Zone.
+
+**2 `locGuessValue` — the canonical token wins for a tower level.** This is what actually COMBINES
+the stages. `locTrimSeg` only splits on a **spaced** separator, so it reduced `Tower D - Substructure`
+and left `TOWER-D SUBSTRUCTURE` whole — two spellings of one tower standing as two values.
+
+**3 ⚠️ `_vsTowerOf` — canonicalised at READ time, so a building already stored under two spellings
+draws ONE card.** Every project matched before today has the stages stamped verbatim in `location`;
+the stacking drew Tower 1 twice, each card holding half the work and each reporting a % complete
+against half a building, and the tower picker listed both.
+- ⚠️ **Read-time only. No row is written and no stored value is changed** — same precedent as the
+  grouping veto immediately above it. The permanent fix is to re-run "Match WBS to locations…",
+  which now proposes the canonical token itself.
+- ⚠️ **Falls back to the raw value** whenever no token can be read, so a project whose towers are
+  "T1"/"T2" or "North Wing" is byte-identical to before.
+
+### ⚠️ What it deliberately does NOT do
+- **It never invents an identity.** A bare `Substructure` / `Superstructure` pair carrying no family
+  word at all returns `''`: the tower value stays blank, which reads as the project's single implicit
+  tower. Naming it "Tower 1" from nothing would be a guess printed onto the planner's breakdown as
+  fact.
+- **A bare family word with no designator must be about the building and nothing else.**
+  `Building Permit` carries the family word and no designator; calling it a tower named "Building"
+  would put a Planning deliverable in the Location Breakdown as a place. So the bare reading is
+  accepted only when every other word is a structural stage or noise — `Tower`,
+  `TOWER SUBSTRUCTURE` yes; `Building Permit`, `Block Testing` no. `Blockwork` fails the word
+  boundary. A name WITH a designator is exempt: `Tower 2 Fit-out Works` is still Tower 2.
+
+### Also — the WBS heal chain was a two-load deadlock
+An imported phase branch lands as an **unlocked root** beside the skeleton's locked one.
+`_wbsCanonicalRootOrder` and `_wbsResyncCodes` both refuse to run while any unlocked root exists
+(deliberately), and the only pass that removes one ran **after** both. So load 1 ordered nothing and
+re-coded nothing, merged at the end, and left the dotted codes describing the pre-merge tree until
+load 2. `_wbsDedupeSiblingNodes` now runs at the **head** of the chain:
+`merge → place → order → codes → row dedupe`.
+- ⚠️ Safe before the resync **specifically because** that pass keys on `(parent_id, normalised name)`
+  and never reads a dotted code. The "re-sync the codes first" rule guards
+  `_wbsDedupeSummariesByCode`, which does read them and still runs after the resync, untouched.
+- ⚠️ The later call is **kept, not moved**: `_wbsHealSkeletonPlacement` re-parents branches and can
+  itself create a same-name sibling. The second run is gated on an in-memory grouping — zero queries
+  on a clean tree.
+- ⚠️ **Neither guard was loosened.** Refusing on an unlocked root is right; the bug was reaching that
+  question with a duplicate still in the tree.
+
+### Wizard copy
+"Match WBS to locations…" now says the combining happens, naming all three spellings, instead of
+showing one example and leaving the planner to wonder about the others.
+
+---
+
+**Verified: 66 checks, slice-and-execute** — the shipped `locTowerToken`, `locGuessLevel`,
+`locGuessValue`, `locGroupingReason`, `_vsTowerOf`, `_vsTowersIn` and `_vsTowerLevelId` sliced out of
+`index.html` by brace-matching and run for real (only `LOC_LEVELS` / `WORK_CANON` supplied, and
+`WORK_CANON` is read from the file too). Every scan carries its sanity gate: a known-present and a
+known-missing function through the same slicer, and the heal-chain order read out of the file's own
+text rather than asserted from memory. 0 functions lost, 1 added; the inline script parses; no NUL
+bytes.
+
+⚠️ **NOT verified signed-in.** The anon key has no grants on `project_schedule`, so nothing here has
+been run against One Portwood, SLN101 or any live tree — the tower shapes above are the owner's
+description and the projects' known WBS text, not measured rows. The read-time canonicalisation and
+the read-only slicing are what make that acceptable to ship: no pass writes.
+
+
 ## The grid said 16,396 activities under Execution Phase; the stacking said zero (2026-09-03) — jasantos2
 
 Owner, on SLN101 (4PH Strevi Bacoor), two screenshots side by side: the Gantt shows
