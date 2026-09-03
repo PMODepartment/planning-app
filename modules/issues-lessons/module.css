@@ -682,27 +682,24 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
    1.4fr/1fr/1fr template, is long gone — this is a plain, predictable 3-up row.) */
 .il-dash-grid { display: grid; grid-template-columns: 0.8fr 1.6fr 1.6fr; gap: 14px; align-items: stretch; }
 .il-dash-card { padding: 14px 16px; display: flex; flex-direction: column; }
+/* h4 is the chart's TITLE and the one place bold survives on this dashboard
+   (2026-09-03 owner ask, both dashboards: "no bold font except chart titles").
+   Not set here — it inherits the browser's default bold <h4> weight, exactly
+   the one exemption the ask carves out. */
 .il-dash-card h4 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); }
 /* ---- Items 1/2 (2026-09-01 round): the three chart tiles share ONE fixed
    content height instead of each drifting to whatever its own chart needs.
-   ⚠️ ITEM 6 (this round): that shared height is REDUCED (340px -> 260px) to
-   cut the whitespace the owner's screenshot showed around a small donut — it
-   stays the ONE value every `.il-dash-cardbody` uses, so all three tiles stay
-   equal simply by construction, not by three separately-tuned numbers. */
+   ⚠️ ITEM 6 (2026-09-02 round): that shared height is REDUCED (340px -> 260px)
+   to cut the whitespace the owner's screenshot showed around a small donut —
+   it stays the ONE value every `.il-dash-cardbody` uses, so all three tiles
+   stay equal simply by construction, not by three separately-tuned numbers.
+   2026-09-03 (both dashboards): every chart on this dashboard now shares ONE
+   shape — title on TOP (this class), chart body, then ONE legend centered at
+   the middle-bottom (`.il-dash-legend-bottom`) — "bar-chart titles on top of
+   chart; legend only at middle-bottom, not scattered per-item labels
+   elsewhere." Applies to the donut and both bar tiles alike; nothing here
+   differs between the two any more. */
 .il-dash-cardhead { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin: 0 0 10px; }
-/* ITEM 2 (this round): "Issues by Department"/"Issues by Champion"'s own
-   title+legend row moves BELOW the chart body instead of above it — same
-   `.il-dash-cardhead` flex row, just the opposite margin so it reads as a
-   footer instead of a header. The Status tile's head stays on top (it was
-   never asked to move); its own bottom row is the NEW legend (item 1),
-   `.il-dash-legend-bottom` below, a sibling of this class, not this class. */
-.il-dash-cardhead-bottom { margin: 10px 0 0; }
-.il-dash-legend-top { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px 10px; max-width: 60%; }
-.il-dash-legend-top .il-dash-legend-i { font-size: 11px; white-space: nowrap; }
-/* ITEM 1 (this round): a legend row under the Status donut, distinct from
-   the per-slice labels the ring itself already carries (donutChartSVG) — the
-   owner asked for both. Centred, unlike the bar tiles' right-aligned header
-   legend, since it sits alone under a centred chart rather than beside a title. */
 .il-dash-legend-bottom { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 14px; margin-top: 10px; }
 .il-dash-cardbody { height: 260px; }
 .il-dash-cardbody-center { display: flex; align-items: center; justify-content: center; }
@@ -710,18 +707,21 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
    for its per-section labels (see donutChartSVG), so it's rendered at
    `width="100%"` like every other chart in this file — this caps how large
    it's allowed to scale, so a wide single-column card (mobile) doesn't blow
-   the donut+labels up to an oversized graphic just because the tile is wide.
-   ITEM 1 (this round): raised 260px -> 320px alongside donutChartSVG's own
-   larger `size` — "maximise to tile" needs both the ring AND its display cap
-   to grow together, or the bigger ring would just get scaled back down to
-   the old 260px ceiling. */
+   the donut up to an oversized graphic just because the tile is wide.
+   ITEM 1 (2026-09-02 round): raised 260px -> 320px alongside donutChartSVG's
+   own larger `size` — "maximise to tile" needs both the ring AND its display
+   cap to grow together, or the bigger ring would just get scaled back down
+   to the old 260px ceiling. */
 .il-donut-svg { max-width: 320px; }
 /* ---- Item 5: the horizontal "N open of N issues" bar charts (department /
    champion) — rows are never capped (see hbarSVG in module.js), so a tile with
    many departments/champions scrolls internally within its fixed-height body
    rather than growing the tile without bound. */
 .il-dash-cardbody-scroll { overflow-y: auto; padding-right: 2px; }
-.il-dash-legend-i { display: flex; align-items: center; gap: 6px; color: var(--pd-ink); }
+/* One legend text size for every chart's legend, pie or bar (2026-09-03:
+   "consistent legend text sizes between both"). Not bold — see the h4 note
+   above; a legend is a caption, not a title. */
+.il-dash-legend-i { display: flex; align-items: center; gap: 6px; color: var(--pd-ink); font-size: 11px; font-weight: 400; white-space: nowrap; }
 .il-dash-legend-i i { width: 10px; height: 10px; border-radius: 3px; flex: none; display: inline-block; }
 /* ---- Item 6: the full issue list, in its own tile, Issue column widened --
    `.il-dash-list` is used ONLY by the full-list table now (the champion
@@ -792,9 +792,6 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
    (each a real tile, all three in one row on a wide screen), a Lessons
    Learned tile (item 8), and the open-issues list at the very bottom, in its
    own tile too (item 7). -------------------------------------------------- */
-/* Item 5: the two bar-chart tiles' legend now lives in their own header
-   (`.il-dash-legend-top`, above) — the below-chart `.il-dash-barlegend` row
-   this used to be is gone; see the 2026-09-01 note beside `.il-dash-cardhead`. */
 /* ---- Items 7/8: the two list tiles below the chart row ------------------ */
 .il-dash-lessons-card { margin-top: 14px; }
 .il-dash-fulllist-card { margin-top: 14px; }
@@ -854,9 +851,13 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
 }
 
 /* ---- People picker (Champion / Responsible) ------------------------------
-   Chips for accounts + one free-text line for people with no login. Both are
-   written on save (champion_ids + champion), so a printed sheet and a personal
-   view can never disagree about who owns the item. */
+   Chips for accounts, built from the dropdown alone (2026-09-03, owner: "the
+   dropdown already has add a person, so remove the redundant free-text
+   input"). Both ids and text are still written on save (champion_ids +
+   champion), so a printed sheet and a personal view can never disagree about
+   who owns the item — but the text half is now legacy-only: .il-pp-freenote
+   surfaces a pre-existing hand-typed name as a read-only note (with its own
+   remove), never a box you can type a NEW one into. */
 .il-people { display:flex; flex-direction:column; gap:6px; }
 .il-pp-chips { display:flex; flex-wrap:wrap; gap:5px; }
 .il-pp-chip {
@@ -871,7 +872,19 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
 }
 .il-pp-rm:hover { color:var(--pd-red); background:var(--pd-red-light); }
 .il-people .il-pp-add { width:auto; min-width:170px; max-width:100%; }
-.il-people .il-pp-free { width:100%; }
+.il-pp-freenote {
+  display:flex; align-items:center; gap:6px;
+  padding:4px 8px; border-radius:6px;
+  background:var(--pd-bg); border:1px dashed var(--pd-line);
+  font-size:11px; color:var(--pd-muted);
+}
+.il-pp-freenote strong { font-weight:600; color:var(--pd-ink); }
+.il-pp-rmtext {
+  border:0; background:transparent; cursor:pointer; padding:0 2px;
+  font-size:11px; line-height:1; color:var(--pd-muted); border-radius:50%;
+  flex:0 0 auto; margin-left:auto;
+}
+.il-pp-rmtext:hover { color:var(--pd-red); background:var(--pd-red-light); }
 
 /* ---- A champion with no account -----------------------------------------
    Marked, never hidden. Assignment to someone without a login is legitimate —
