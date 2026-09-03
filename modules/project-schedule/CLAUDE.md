@@ -1,3 +1,74 @@
+## The WBS reports still wrong — and the page reporting it was 40 commits old (2026-09-02) — fmlozano
+
+Owner: *"there are still errors"*, with two screenshots of One Portwood Residences' WBS.
+
+### ⚠️⚠️ First, the finding that explains "still": the tab is running an old build
+
+Both screenshots show `…/project-schedule/index.html?v=**20260902ab**`. That token was set by commit
+`294e968` — the *(ac)* entry — which is **before every WBS fix in this thread** (`aj`, `am`). So none
+of the placement heal, the backfill fix or the resync notice has ever executed on that page. A module
+page is cache-busted by the `?v=` the launcher puts on its link, and an already-open tab (or a
+bookmark) keeps whatever query string it was opened with — nothing in the code can reach back and
+change that. **Open the module from the dashboard, or hard-refresh, before judging any of it.**
+
+That is not the whole answer though, because the tree in the screenshots is genuinely broken and the
+shape CHANGED between the two reports. Both are addressed below.
+
+### The new shape: duplicate top-level phases
+
+Eight top-level branches where the skeleton declares five — **Initiation ×2, Planning ×2,
+Execution ×2**, three of the twins empty (`▼` with nothing under them), and the three Planning
+children still sitting under Execution Phase.
+
+⚠️ **This exposed a real ordering weakness in the heal I shipped last round, and it was mine.**
+`_wbsHealSkeletonPlacement` resolved the declared parent as *the first locked top-level node with a
+matching name key* — and with two "Planning Phase" roots, "first in `WBS_NODES`" is whatever the last
+fetch happened to return. That is not a decision, it is a coin toss: Procurement would be filed under
+whichever twin won this load and the other twin next load.
+
+**Three fixes, all ordering or determinism:**
+1. ⚠️ **`_wbsDedupeSkeleton()` now runs BEFORE the placement heal**, in both the repair chain and
+   `ensureWbsSkeleton`. You cannot decide where a branch belongs while there are two candidate
+   parents. It keys roots by resolved PHASE, so the twins collapse into one first. (The later call
+   inside `_wbsEnsureSummaries` stays — the passes in between can surface a new pair.)
+2. ⚠️ **The declared parent is resolved by PHASE first, name key second.** "Closeout Phase" /
+   "Close-out Phase" / a P6 file's plain "Closeout" are one branch under three spellings, and a name
+   key alone reads them as three. Verified against a phase named `Construction Phase`.
+3. ⚠️ **Ties break on the EARLIEST-CREATED node** — which is exactly the survivor
+   `_wbsDedupeSkeletonPass` keeps, so the placement and the merge agree by construction rather than by
+   luck. Asserted with the twins deliberately sorted to the head of the array.
+
+### And the part that matters most: I had guessed twice, so now it measures
+
+⚠️ **THE MODULE HAS THREE INDEPENDENT WAYS TO PUT A BRANCH UNDER THE WRONG PHASE, AND A SCREENSHOT
+CANNOT TELL THEM APART.** The grid builds its hierarchy from the dotted **CODE**; the WBS Manager
+reads the **NODE TREE**. So the same picture is produced by (1) a branch genuinely parented wrong in
+`wbs_nodes`, (2) a correct tree whose summary rows carry stale codes, or (3) duplicate top-level
+branches where both a right and a wrong one exist. I inferred (1) last round and shipped a fix for
+it; I could not confirm it then and still cannot.
+
+**Actions → Diagnose data… gained a WBS structure section** that prints all three, and it is in the
+"Copy report" text too, so it can be pasted straight back:
+- every top-level **node** with locked / phase / the code the tree computes for it, unlocked roots
+  highlighted (they are what makes `_wbsResyncCodes` refuse);
+- **skeleton placement** — each declared child, where it *should* sit, where it *actually* sits;
+- **rows whose stored code disagrees with their own node's computed code** — the exact state in which
+  the grid lies about the tree;
+- **duplicate top-level names**, with counts.
+Each gets its own verdict banner naming the cause and the remedy.
+
+**Verified: 40 checks in Node on the placement/backfill** (was 35 — three new: duplicate roots
+resolving deterministically to the earliest-created, a phase named "Construction Phase" resolving by
+phase, a renamed branch still found by its `source_kind`), **plus 11 new checks executing the shipped
+diagnostic block itself** against fixtures for each of the three causes — including that cause (1) and
+cause (2) are reported *separately* rather than both firing, and that a legacy row with no node is not
+miscounted as drift. Focus-window suites still green (29 + 86). Parses; 0 NUL bytes; braces balanced.
+
+⚠️ **Still not verified signed in.** The heals write to `wbs_nodes` on a real project the first time
+they run, and every one of them toasts what it did — so the first honest read of this is the owner
+opening the project **on a current build** and either seeing those toasts or running the new report.
+`MODULE_V` → `20260902an`.
+
 ## The magnifier is gone, and Planning Phase's branches were filed under Execution (2026-09-02) — fmlozano
 
 Owner: *"For the vertical stacking, kindly remove the magnifier since there is a zoom in already

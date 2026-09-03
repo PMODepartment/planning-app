@@ -84,6 +84,31 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-02 (an) — Duplicate phases, a coin-toss in my own heal, and a WBS diagnostic
+Owner: *"there are still errors"*, with two screenshots. Detail in `modules/project-schedule/CLAUDE.md`.
+- ⚠️⚠️ **The tab is running `?v=20260902ab`** — set by commit `294e968`, **before every WBS fix in this
+  thread**. None of them has ever executed there. A module page is cache-busted by the `?v=` the
+  launcher puts on its link, and an open tab keeps whatever query string it was opened with; nothing in
+  the code can reach back and change that. **Open it from the dashboard before judging the fix.**
+- **The new shape is duplicate top-level phases** — Initiation ×2, Planning ×2, Execution ×2, three of
+  the twins empty. ⚠️ **That exposed a coin toss in the heal I shipped last round:** it resolved the
+  declared parent as "the first locked top-level node with a matching name", and with two Planning
+  roots that is whatever the last fetch returned. Fixed three ways: `_wbsDedupeSkeleton()` now runs
+  **before** the placement heal (you cannot decide where a branch belongs while there are two candidate
+  parents), the parent is resolved by **phase** first (so `Closeout` / `Close-out` / `Construction
+  Phase` all resolve), and ties break on the **earliest-created** node — the same survivor the merge
+  keeps, so the two agree by construction.
+- ⚠️⚠️ **The module has THREE independent ways to put a branch under the wrong phase and a screenshot
+  cannot tell them apart** — the grid builds hierarchy from the dotted CODE, the WBS Manager from the
+  NODE TREE. So: a genuinely mis-parented branch, a right tree with stale codes, or duplicate branches
+  where both a right and a wrong one exist. I inferred the first last round and still cannot confirm it.
+  **Actions → Diagnose data… now prints all three** (top-level nodes with locked/phase/computed code,
+  skeleton placement want-vs-actual, rows whose code disagrees with their node, duplicate names), in
+  the copyable report text too.
+- **40 checks** on the placement/backfill (was 35) **+ 11 executing the shipped diagnostic block**,
+  proving it reports the three causes *separately*. Focus-window suites green (29 + 86).
+  ⚠️ Not verified signed in. `MODULE_V` → `20260902an`.
+
 ### 2026-09-02 (aj) — Magnifier removed; Planning Phase's branches were filed under Execution
 Owner: *"remove the magnifier since there is a zoom in already feature"* and *"There are found WBS under
 the execution phase such as procurement, design development and others that should be part of other

@@ -7981,6 +7981,16 @@
     // code is derived purely from position — so the codes must be rewritten from the tree AFTER the
     // tree is right, not before. Runs here as well as in ensureWbsSkeleton because a sync (which can
     // create these nodes) happens in between.
+    // ⚠️⚠️ THE DUPLICATE ROOTS ARE MERGED FIRST. You cannot decide where a branch belongs while
+    // there are two candidate parents — a project carrying a second Initiation / Planning /
+    // Execution (a push on an older build mints them) would otherwise have Procurement filed under
+    // whichever twin this load happened to resolve. `_wbsDedupeSkeletonPass` keys roots by resolved
+    // PHASE, so the twins collapse into one before anything is moved into them.
+    // ⚠️ It also runs later inside _wbsEnsureSummaries; that call stays, because the passes in
+    // between (placement, reorder, resync) can themselves surface a new same-name pair.
+    _repairLock('Merging duplicate WBS branches…');
+    try { await _wbsDedupeSkeleton(); } catch (e) {}
+    if (gen !== _loadGen) return;
     _repairLock('Checking the WBS placement…');
     await _wbsHealSkeletonPlacement();
     if (gen !== _loadGen) return;
@@ -20373,7 +20383,14 @@
       // ⚠️ PLACEMENT FIRST, THEN THE BACKFILL. A mis-parented child must be moved home before the
       // backfill looks for it, or the backfill sees nothing under the phase and creates an empty
       // twin beside the real branch.
-      if (WBS_NODES.length) { await _wbsHealSkeletonPlacement(); await _wbsBackfillSkeleton(); return; }
+      // ⚠️ Same order as the repair chain, and for the same reason: merge the twins, THEN decide
+      // where a child belongs, THEN create only what is genuinely absent.
+      if (WBS_NODES.length) {
+        try { await _wbsDedupeSkeleton(); } catch (e) {}
+        await _wbsHealSkeletonPlacement();
+        await _wbsBackfillSkeleton();
+        return;
+      }
       var chk = await sb().from('wbs_nodes').select('id').eq('project_id', pid).limit(1);
       if (chk.error || (chk.data && chk.data.length)) return;   // already seeded by someone else — don't duplicate
       await _seedSkeleton();
@@ -20420,16 +20437,30 @@
     var specs = _skeletonChildSpecs(); if (!specs.length) return 0;
     var ownPid = pid;
     // The declared parents, resolved among the LOCKED top-level phases only.
-    var phaseByKey = {};
-    WBS_NODES.forEach(function (n) {
-      if (n.parent_id || !n.is_locked) return;
-      var k = _wbsNameKey(n.name);
-      if (k && !phaseByKey[k]) phaseByKey[k] = n;
-    });
+    // ⚠️⚠️ BY RESOLVED PHASE FIRST, then by name key — and preferring the EARLIEST-CREATED when a
+    // project carries more than one. Both halves are load-bearing:
+    //   • by phase, because "Closeout Phase" / "Close-out Phase" / a P6 file's plain "Closeout" are
+    //     the same branch under three spellings, and a name key alone reads them as three;
+    //   • earliest-created, because on a project with DUPLICATE roots (a real, seen shape — a push
+    //     on an older build minted a second Initiation / Planning / Execution) "the first one in
+    //     WBS_NODES order" is whatever the last fetch happened to return. That is not a decision, it
+    //     is a coin toss, and it would file Procurement under whichever twin won this load and the
+    //     other twin next load. The earliest-created node is exactly the survivor
+    //     `_wbsDedupeSkeletonPass` keeps, so the two agree by construction.
+    var phaseByKey = {}, phaseByPhase = {};
+    WBS_NODES.filter(function (n) { return !n.parent_id && n.is_locked; })
+      .sort(function (a2, b2) { return String(a2.created_at || '').localeCompare(String(b2.created_at || '')); })
+      .forEach(function (n) {
+        var k = _wbsNameKey(n.name); if (k && !phaseByKey[k]) phaseByKey[k] = n;
+        var ph = n.phase || phaseFromName(n.name);
+        if (ph && !phaseByPhase[ph]) phaseByPhase[ph] = n;
+      });
     var byId = {}; WBS_NODES.forEach(function (n) { byId[n.id] = n; });
     var moved = [];
     for (var i = 0; i < specs.length; i++) {
-      var sp = specs[i], parent = phaseByKey[sp.parentKey];
+      var sp = specs[i];
+      var _declPh = phaseFromName(sp.parentName);
+      var parent = (_declPh && phaseByPhase[_declPh]) || phaseByKey[sp.parentKey];
       // ⚠️ Never CREATE the phase here — that is the backfill's job, and it has already run. A
       // project that genuinely has no Planning Phase has nowhere to put these, and inventing one
       // from a heal would impose a skeleton on a tree that opted out of it.
@@ -23298,6 +23329,49 @@
         n: kids.length, dated: kids.filter(dated).length, shown: kids.filter(function (r) { return shown[r.id]; }).length };
     });
 
+    // ---- WBS STRUCTURE ---------------------------------------------------------------------
+    // ⚠️⚠️ ADDED BECAUSE I GUESSED TWICE. The owner reported branches sitting under the wrong phase;
+    // the module has THREE independent ways that can happen and the screenshots cannot tell them
+    // apart, because the GRID builds its hierarchy from the dotted CODE while the WBS Manager reads
+    // the NODE TREE. This section prints all three so the next report is a measurement:
+    //   (1) the branch is genuinely parented wrong in `wbs_nodes`;
+    //   (2) the tree is right but the summary rows' CODES are stale (the grid then lies);
+    //   (3) there are DUPLICATE top-level branches, so both a right and a wrong one exist.
+    var _wCodeOf = {};
+    try { _wCodeOf = computeWbsCodes(); } catch (e) { _wCodeOf = {}; }
+    var _nodeById = {}; (WBS_NODES || []).forEach(function (n) { _nodeById[n.id] = n; });
+    var _topNodes = (WBS_NODES || []).filter(function (n) { return !n.parent_id; })
+      .sort(function (x, y) { return (x.sort_order || 0) - (y.sort_order || 0); });
+    var _looseRoots = _topNodes.filter(function (n) { return !n.is_locked; });
+    // A summary row whose stored code no longer matches the code its own node computes to. This is
+    // the exact state in which the grid shows a branch under a phase the tree does not put it under.
+    var _drift = wbsRows.filter(function (r) {
+      var want = r.wbs_node_id ? _wCodeOf[r.wbs_node_id] : null;
+      return want && String(r.wbs) !== String(want);
+    });
+    // Two top-level rows sharing a name — one of the shapes the owner is looking at.
+    var _topDupes = {};
+    tops.forEach(function (w) {
+      var k = String(w.activity_name || '').trim().toLowerCase(); if (!k) return;
+      (_topDupes[k] = _topDupes[k] || []).push(w);
+    });
+    var _dupTop = Object.keys(_topDupes).filter(function (k) { return _topDupes[k].length > 1; });
+    // Where each declared skeleton child ACTUALLY sits.
+    var _placement = [];
+    try {
+      _skeletonChildSpecs().forEach(function (sp) {
+        (WBS_NODES || []).forEach(function (n) {
+          var isIt = (sp.source_kind && n.source_kind === sp.source_kind) ||
+                     (_wbsNameKey(n.name) === sp.key && !n.source_kind);
+          if (!isIt) return;
+          var par = n.parent_id ? _nodeById[n.parent_id] : null;
+          _placement.push({ name: n.name, want: sp.parentName, got: par ? par.name : '(top level)',
+            ok: !!par && _wbsNameKey(par.name) === sp.parentKey, locked: !!n.is_locked,
+            code: _wCodeOf[n.id] || '—' });
+        });
+      });
+    } catch (e) {}
+
     function tbl(head, body) {
       return '<table class="ps-table" style="width:100%;margin:6px 0 14px;"><thead><tr>' +
         head.map(function (h) { return '<th style="text-align:left;">' + esc(h) + '</th>'; }).join('') +
@@ -23315,6 +23389,18 @@
       ' filed under a WBS branch that does not match it — e.g. an activity tagged "' + esc(misfiled[0].loc) + '" sitting under "' + esc(misfiled[0].under) +
       '". They render after that branch\'s sub-branches instead of inside the one they belong to.'));
     if (hiddenByView.length && !orphan.length && !noCode.length) verdict.push(warn('⚠️ ' + hiddenByView.length + ' activit' + (hiddenByView.length === 1 ? 'y is' : 'ies are') + ' filed and dated but NOT in the current view — a filter, a search or the grouping is hiding them. Clear the filter (funnel) and the search box.'));
+    if (_placement.some(function (p) { return !p.ok; })) verdict.push(warn('⚠️ ' +
+      _placement.filter(function (p) { return !p.ok; }).length + ' skeleton branch(es) sit under the wrong phase in the WBS TREE — ' +
+      _placement.filter(function (p) { return !p.ok; }).map(function (p) { return p.name + ' is under ' + p.got + ', should be ' + p.want; }).slice(0, 4).join('; ') +
+      '. Reload the project: this is repaired automatically on load.'));
+    if (_drift.length) verdict.push(warn('⚠️ ' + _drift.length + ' WBS row(s) carry a dotted code that does NOT match their own branch in the tree. ' +
+      'The grid builds its hierarchy from that code, so those branches render under the wrong phase even though the WBS Manager has them in the right place' +
+      (_looseRoots.length ? ' — and the automatic repair is REFUSING to run because ' + _looseRoots.length +
+        ' branch(es) sit at the top level outside the phases (' + _looseRoots.slice(0, 3).map(function (n) { return esc(n.name); }).join(', ') +
+        '). File those under a phase in Schedule Setup → WBS and reload.' : '. Reload the project to re-sync them.') + ''));
+    if (_dupTop.length) verdict.push(warn('⚠️ ' + _dupTop.length + ' top-level branch name(s) appear TWICE (' +
+      _dupTop.slice(0, 4).map(function (k) { return esc(_topDupes[k][0].activity_name) + ' ×' + _topDupes[k].length; }).join(', ') +
+      '). Reload the project: duplicate phases are merged automatically on load.'));
     if (!verdict.length) verdict.push('<div style="background:#E8F6EF;color:#1B6E4F;border-radius:6px;padding:8px 10px;margin:6px 0;font-size:12.5px;font-weight:600;">Every activity is filed under a real WBS row, dated, and visible in the current view. If a branch still reads "—", capture this report and the grouping you are using.</div>');
 
     var filterState = anyFilter()
@@ -23343,6 +23429,31 @@
             '</td><td>' + t.shown + '</td><td>' + t.coded + '</td><td>' +
             (Object.keys(t.codes).length ? esc(Object.keys(t.codes).sort().join(', ')) : '<i>none</i>') + '</td></tr>';
         }).join('')) +
+      '<h3 style="font-size:13px;margin:14px 0 2px;">WBS structure</h3>' +
+      note('The grid builds its hierarchy from the dotted CODE; the WBS Manager reads the NODE TREE. ' +
+        'When the two disagree, a branch renders under a phase the tree does not put it under — this is where to look.') +
+      '<div style="font-size:12.5px;margin:2px 0 8px;"><b>' + (WBS_NODES || []).length + '</b> WBS nodes · <b>' +
+        _topNodes.length + '</b> at the top level (' + _looseRoots.length + ' unlocked) · <b>' + tops.length +
+        '</b> top-level WBS rows in the grid · <b>' + _drift.length + '</b> row(s) with a stale code</div>' +
+      tbl(['Top-level branch (node)', 'Locked', 'Phase', 'Code from tree'],
+        _topNodes.map(function (n) {
+          var ph = n.phase || phaseFromName(n.name);
+          return '<tr' + (!n.is_locked ? ' style="background:#FDECEA;"' : '') + '><td><b>' + esc(n.name || '') + '</b></td><td>' +
+            (n.is_locked ? 'yes' : '<b>NO</b>') + '</td><td>' + esc(ph || '—') + '</td><td>' + esc(_wCodeOf[n.id] || '—') + '</td></tr>';
+        }).join('')) +
+      (_placement.length ? '<h4 style="font-size:12px;margin:10px 0 2px;">Skeleton branches — where they sit</h4>' +
+        tbl(['Branch', 'Should be under', 'Actually under', 'Code', 'OK'],
+          _placement.map(function (p) {
+            return '<tr' + (p.ok ? '' : ' style="background:#FDECEA;"') + '><td><b>' + esc(p.name) + '</b></td><td>' +
+              esc(p.want) + '</td><td><b>' + esc(p.got) + '</b></td><td>' + esc(p.code) + '</td><td>' +
+              (p.ok ? 'yes' : '<b>NO</b>') + '</td></tr>';
+          }).join('')) : '') +
+      (_drift.length ? '<h4 style="font-size:12px;margin:10px 0 2px;">Rows whose code disagrees with the tree (first 25 of ' + _drift.length + ')</h4>' +
+        tbl(['Branch', 'Code stored on the row', 'Code the tree computes'],
+          _drift.slice(0, 25).map(function (r) {
+            return '<tr style="background:#FDECEA;"><td><b>' + esc(r.activity_name || '') + '</b></td><td>' + esc(r.wbs || '—') +
+              '</td><td><b>' + esc(_wCodeOf[r.wbs_node_id] || '—') + '</b></td></tr>';
+          }).join('')) : '') +
       '<h3 style="font-size:13px;margin:14px 0 2px;">By top-level WBS branch</h3>' +
       tbl(['Branch', 'Code', 'Activities beneath', 'Dated', 'In view'],
         byTop.map(function (b) {
@@ -23381,6 +23492,26 @@
         'filter active: ' + (anyFilter() ? 'YES' : 'no'), '', 'BY TRADE  (trade | n | dated | inView | coded | branches)'];
       Object.keys(byTrade).sort().forEach(function (k) { var t = byTrade[k];
         lines.push('  ' + k + ' | ' + t.n + ' | ' + t.dated + ' | ' + t.shown + ' | ' + t.coded + ' | ' + Object.keys(t.codes).sort().join(',')); });
+      lines.push('', 'WBS STRUCTURE',
+        '  nodes: ' + (WBS_NODES || []).length + ' | top-level nodes: ' + _topNodes.length +
+        ' (' + _looseRoots.length + ' unlocked) | top-level grid rows: ' + tops.length + ' | stale codes: ' + _drift.length,
+        '  TOP-LEVEL NODES  (name | locked | phase | codeFromTree)');
+      _topNodes.forEach(function (n) {
+        lines.push('    ' + (n.name || '') + ' | ' + (n.is_locked ? 'locked' : 'UNLOCKED') + ' | ' +
+          ((n.phase || phaseFromName(n.name)) || '-') + ' | ' + (_wCodeOf[n.id] || '-'));
+      });
+      if (_placement.length) {
+        lines.push('  SKELETON PLACEMENT  (branch | shouldBeUnder | actuallyUnder | code | ok)');
+        _placement.forEach(function (p) {
+          lines.push('    ' + p.name + ' | ' + p.want + ' | ' + p.got + ' | ' + p.code + ' | ' + (p.ok ? 'ok' : 'WRONG'));
+        });
+      }
+      if (_drift.length) {
+        lines.push('  STALE CODES (first 25)  (branch | onRow | fromTree)');
+        _drift.slice(0, 25).forEach(function (r) {
+          lines.push('    ' + (r.activity_name || '') + ' | ' + (r.wbs || '-') + ' | ' + (_wCodeOf[r.wbs_node_id] || '-'));
+        });
+      }
       lines.push('', 'BY BRANCH  (name | code | n | dated | inView)');
       byTop.forEach(function (b) { lines.push('  ' + b.name + ' | ' + b.code + ' | ' + b.n + ' | ' + b.dated + ' | ' + b.shown); });
       if (misfiled.length) { lines.push('', 'MISFILED vs LOCATION (first 25)  (id | name | locationSays | filedUnder | path)');
