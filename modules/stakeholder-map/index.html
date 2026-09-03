@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
+  <link rel="icon" type="image/png" href="../../assets/img/favicon-icon.png" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Stakeholder Register · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260902a" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260902c" />
   <link rel="stylesheet" href="../../assets/css/mcc-rcm.css?v=20260902a" />
-  <link rel="stylesheet" href="module.css?v=20260902a" />
+  <link rel="stylesheet" href="module.css?v=20260902b" />
 </head>
 <body>
   <div class="pd-app">
@@ -44,6 +44,14 @@
           <button class="sm-tab" data-view="criteria">Criteria</button>
         </div>
         <div class="sm-topbar-tools">
+          <!-- Filters, moved into a single toggleable group (UI.wireFilterToggle,
+               ui.js) instead of the always-open bar this used to be — the funnel
+               dot lights whenever a filter narrower than "everything" is applied,
+               even while the panel is collapsed. Hidden outside Register/Cards
+               (switchView) since neither Impact/Influence nor Criteria read
+               `filters`. -->
+          <button class="pd-filttoggle" id="sm-filttoggle" title="Filters"><span data-ico="filter" data-ico-size="16"></span></button>
+          <span class="sm-tb-sep"></span>
           <button class="pd-btn" id="sm-export" title="Export the register to CSV (opens in Excel)">Export</button>
           <button class="pd-btn pd-btn-primary sm-tb-labeled" id="sm-add" title="Add a stakeholder, with a photo">+ Add stakeholder</button>
         </div>
@@ -122,13 +130,13 @@
   <script src="../../assets/js/auth.js?v=20260901b"></script>
   <script src="../../assets/js/db.js?v=20260901d"></script>
   <script src="../../assets/js/program.js?v=20260827a"></script>
-  <script src="../../assets/js/ui.js?v=20260902a"></script>
+  <script src="../../assets/js/ui.js?v=20260902c"></script>
   <script src="../../assets/js/icons.js?v=20260902f"></script>
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
   <script src="../../assets/js/mcc-rcm.js?v=20260902a"></script>
-  <script src="module.js?v=20260902a"></script>
+  <script src="module.js?v=20260902b"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);

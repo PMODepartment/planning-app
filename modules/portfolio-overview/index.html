@@ -3,14 +3,22 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="icon" type="image/png" href="../../assets/img/favicon.png" />
+  <link rel="icon" type="image/png" href="../../assets/img/favicon-icon.png" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Portfolio Dashboard · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260902a" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260902c" />
   <style>
     .po-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:14px; }
     .po-toolbar .pd-select, .po-toolbar .pd-input, .po-toolbar .pd-btn { height:36px; }
+    /* Filters (incl. each tab's search box) collapse behind one funnel toggle
+       instead of sitting permanently open — UI.wireFilterToggle (ui.js) shows/
+       hides this; the toggle itself and any action buttons (Export/Refresh)
+       stay outside it, always reachable. Shared by every `.po-toolbar` AND
+       `.po-eq-bar` (Equipment has its own bar class but the same shape). */
+    .po-toolbar-fields { display:none; }
+    .po-toolbar-fields.open { display:flex; flex-wrap:wrap; align-items:center; gap:10px; flex:1 1 auto; min-width:0; }
+    .po-eq-bar .po-toolbar-fields.open { gap:8px; }
     .po-search { position:relative; display:inline-flex; align-items:center; }
     .po-search > [data-ico] { position:absolute; left:10px; color:var(--pd-muted); pointer-events:none; display:inline-flex; }
     .po-search .pd-input { padding-left:32px; width:220px; }
@@ -349,28 +357,33 @@
 
       <div id="po-view-overview">
         <div class="po-toolbar">
-          <label class="po-chk" style="gap:6px;">Group by
-            <!-- "Parent project" consolidates the contract packages of one development
-                 (AVR101 + AVR102 = Avesta Residences) into a single group with combined
-                 figures. ⚠️ The projects stay SEPARATE rows — this is a reporting rollup,
-                 not a data change, and it is deliberately not a merge: procurement and
-                 engineering both hold AVR101 and AVR102 as their own projects, so merging
-                 here would break the one-to-one mapping every cross-app push relies on. -->
-            <select class="pd-select" id="po-group" style="max-width:190px;">
-              <option value="grouphead">Group Head</option>
-              <option value="program">Parent project</option>
-              <option value="status">Status</option>
-              <option value="none">None (flat)</option>
+          <!-- Filters (incl. the search box) live in a single toggleable group
+               instead of sitting permanently open — UI.wireFilterToggle, ui.js. -->
+          <button class="pd-filttoggle" id="po-filttoggle" title="Filters"><span data-ico="filter" data-ico-size="16"></span></button>
+          <div class="po-toolbar-fields" id="po-toolbar-fields">
+            <label class="po-chk" style="gap:6px;">Group by
+              <!-- "Parent project" consolidates the contract packages of one development
+                   (AVR101 + AVR102 = Avesta Residences) into a single group with combined
+                   figures. ⚠️ The projects stay SEPARATE rows — this is a reporting rollup,
+                   not a data change, and it is deliberately not a merge: procurement and
+                   engineering both hold AVR101 and AVR102 as their own projects, so merging
+                   here would break the one-to-one mapping every cross-app push relies on. -->
+              <select class="pd-select" id="po-group" style="max-width:190px;">
+                <option value="grouphead">Group Head</option>
+                <option value="program">Parent project</option>
+                <option value="status">Status</option>
+                <option value="none">None (flat)</option>
+              </select>
+            </label>
+            <select class="pd-select" id="po-status" title="Status filter" style="max-width:150px;">
+              <option value="">All statuses</option>
+              <option value="active">Active</option>
+              <option value="archived">Archived</option>
             </select>
-          </label>
-          <select class="pd-select" id="po-status" title="Status filter" style="max-width:150px;">
-            <option value="">All statuses</option>
-            <option value="active">Active</option>
-            <option value="archived">Archived</option>
-          </select>
-          <label class="po-chk"><input type="checkbox" id="po-behind"> Behind schedule only</label>
-          <span class="po-spacer"></span>
-          <div class="po-search"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="po-q" placeholder="Search project…" /></div>
+            <label class="po-chk"><input type="checkbox" id="po-behind"> Behind schedule only</label>
+            <span class="po-spacer"></span>
+            <div class="po-search"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="po-q" placeholder="Search project…" /></div>
+          </div>
           <button class="pd-btn" id="po-export"><span data-ico="download" data-ico-size="15"></span> Export</button>
         </div>
 
@@ -411,15 +424,17 @@
         <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Where every piece of equipment is committed, and when it comes free — across the <strong>project filter</strong> above (<span id="po-eq-scope">all projects</span>). <button class="pd-btn" id="po-eq-refresh" style="height:30px;"><span data-ico="refresh" data-ico-size="14"></span> Refresh</button></p>
         <div class="po-kpis2" id="po-eq-kpis"></div>
         <div class="po-eq-bar">
-          <span data-ico="filter" data-ico-size="15" style="color:var(--pd-muted);"></span>
-          <select class="pd-select" id="po-eq-cat"><option value="">All categories</option></select>
-          <span class="po-eq-seg" id="po-eq-avail">
-            <button data-av="" class="active">All assets</button>
-            <button data-av="free">Free now</button>
-            <button data-av="soon">Free within 3 months</button>
-            <button data-av="clash">Double-booked</button>
-          </span>
-          <div class="po-search" style="min-width:180px;"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="po-eq-q" placeholder="Search code or name…" /></div>
+          <button class="pd-filttoggle" id="po-eq-filttoggle" title="Filters"><span data-ico="filter" data-ico-size="16"></span></button>
+          <div class="po-toolbar-fields" id="po-eq-fields">
+            <select class="pd-select" id="po-eq-cat"><option value="">All categories</option></select>
+            <span class="po-eq-seg" id="po-eq-avail">
+              <button data-av="" class="active">All assets</button>
+              <button data-av="free">Free now</button>
+              <button data-av="soon">Free within 3 months</button>
+              <button data-av="clash">Double-booked</button>
+            </span>
+            <div class="po-search" style="min-width:180px;"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="po-eq-q" placeholder="Search code or name…" /></div>
+          </div>
           <span style="margin-left:auto;font-size:12px;color:var(--pd-muted);" id="po-eq-count"></span>
           <button class="pd-btn" id="po-eq-export"><span data-ico="download" data-ico-size="15"></span> Export</button>
         </div>
@@ -469,11 +484,14 @@
 
       <div id="po-view-risk" style="display:none;">
         <div class="po-toolbar">
-          <select class="pd-select" id="po-rk-status" style="max-width:160px;">
-            <option value="">All statuses</option><option>Open</option><option>In Progress</option><option>Closed</option>
-          </select>
-          <span class="po-spacer"></span>
-          <div class="po-search"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="po-rk-q" placeholder="Search risk, category…" /></div>
+          <button class="pd-filttoggle" id="po-rk-filttoggle" title="Filters"><span data-ico="filter" data-ico-size="16"></span></button>
+          <div class="po-toolbar-fields" id="po-rk-fields">
+            <select class="pd-select" id="po-rk-status" style="max-width:160px;">
+              <option value="">All statuses</option><option>Open</option><option>In Progress</option><option>Closed</option>
+            </select>
+            <span class="po-spacer"></span>
+            <div class="po-search"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="po-rk-q" placeholder="Search risk, category…" /></div>
+          </div>
           <button class="pd-btn" id="po-rk-refresh" style="height:36px;"><span data-ico="refresh" data-ico-size="14"></span></button>
         </div>
         <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Scoped to the <strong>project filter</strong> above (<span id="po-rk-scope">all projects</span>). Priority is the same 5×5 lookup the Risk Register itself uses.</p>
@@ -485,8 +503,11 @@
 
       <div id="po-view-stakeholders" style="display:none;">
         <div class="po-toolbar">
-          <span class="po-spacer"></span>
-          <div class="po-search"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="po-sh-q" placeholder="Search name, organization…" /></div>
+          <button class="pd-filttoggle" id="po-sh-filttoggle" title="Filters"><span data-ico="filter" data-ico-size="16"></span></button>
+          <div class="po-toolbar-fields" id="po-sh-fields">
+            <span class="po-spacer"></span>
+            <div class="po-search"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="po-sh-q" placeholder="Search name, organization…" /></div>
+          </div>
           <button class="pd-btn" id="po-sh-refresh" style="height:36px;"><span data-ico="refresh" data-ico-size="14"></span></button>
         </div>
         <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Scoped to the <strong>project filter</strong> above (<span id="po-sh-scope">all projects</span>).</p>
@@ -498,11 +519,14 @@
 
       <div id="po-view-issues" style="display:none;">
         <div class="po-toolbar">
-          <select class="pd-select" id="po-is-status" style="max-width:160px;">
-            <option value="">All statuses</option><option>Open</option><option>On Hold</option><option>Closed</option>
-          </select>
-          <span class="po-spacer"></span>
-          <div class="po-search"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="po-is-q" placeholder="Search issue, department…" /></div>
+          <button class="pd-filttoggle" id="po-is-filttoggle" title="Filters"><span data-ico="filter" data-ico-size="16"></span></button>
+          <div class="po-toolbar-fields" id="po-is-fields">
+            <select class="pd-select" id="po-is-status" style="max-width:160px;">
+              <option value="">All statuses</option><option>Open</option><option>On Hold</option><option>Closed</option>
+            </select>
+            <span class="po-spacer"></span>
+            <div class="po-search"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="po-is-q" placeholder="Search issue, department…" /></div>
+          </div>
           <button class="pd-btn" id="po-is-refresh" style="height:36px;"><span data-ico="refresh" data-ico-size="14"></span></button>
         </div>
         <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Scoped to the <strong>project filter</strong> above (<span id="po-is-scope">all projects</span>).</p>
@@ -557,7 +581,7 @@
 <script src="../../assets/js/db.js?v=20260901d"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
 <script src="../../assets/js/mcc-rcm.js?v=20260902a"></script>
-<script src="../../assets/js/ui.js?v=20260902a"></script>
+<script src="../../assets/js/ui.js?v=20260902c"></script>
 <script src="../../assets/js/icons.js?v=20260902f"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
@@ -2317,6 +2341,9 @@
     document.getElementById('po-behind').onchange = function (e) { behindOnly = e.target.checked; renderAll(); };
     document.getElementById('po-q').oninput = function (e) { query = e.target.value; renderAll(); };
     document.getElementById('po-export').onclick = exportExcel;
+    // Each tab's own filter row (incl. its search box) hides behind one
+    // funnel toggle instead of sitting permanently open.
+    UI.wireFilterToggle(document.getElementById('po-filttoggle'), document.getElementById('po-toolbar-fields'));
     document.querySelectorAll('.po-tab').forEach(function (b) { b.onclick = function () { switchView(b.dataset.view); histView.push(); }; });
     // Browser-history integration — see UI.bindHistoryState in ui.js. Without this,
     // switching Overview/S-Curve/Cash Flow/Resources/Equipment/Milestones never
@@ -2333,6 +2360,7 @@
     document.getElementById('po-eq-cat').onchange = function (e) { eqCat = e.target.value; eqRender(); };
     document.getElementById('po-eq-q').oninput = function (e) { eqQuery = e.target.value; eqRender(); };
     document.getElementById('po-eq-export').onclick = eqExport;
+    UI.wireFilterToggle(document.getElementById('po-eq-filttoggle'), document.getElementById('po-eq-fields'));
     document.querySelectorAll('#po-eq-avail button').forEach(function (b) {
       b.onclick = function () {
         eqAvail = b.dataset.av || '';
@@ -2344,11 +2372,14 @@
     document.getElementById('po-rk-refresh').onclick = function () { loadRisks(true); };
     document.getElementById('po-rk-status').onchange = function (e) { rkStatus = e.target.value; rkRender(); };
     document.getElementById('po-rk-q').oninput = function (e) { rkQuery = e.target.value; rkRender(); };
+    UI.wireFilterToggle(document.getElementById('po-rk-filttoggle'), document.getElementById('po-rk-fields'));
     document.getElementById('po-sh-refresh').onclick = function () { loadStakeholders(true); };
     document.getElementById('po-sh-q').oninput = function (e) { shQuery = e.target.value; shRender(); };
+    UI.wireFilterToggle(document.getElementById('po-sh-filttoggle'), document.getElementById('po-sh-fields'));
     document.getElementById('po-is-refresh').onclick = function () { loadIssues(true); };
     document.getElementById('po-is-status').onchange = function (e) { isStatus = e.target.value; isRender(); };
     document.getElementById('po-is-q').oninput = function (e) { isQuery = e.target.value; isRender(); };
+    UI.wireFilterToggle(document.getElementById('po-is-filttoggle'), document.getElementById('po-is-fields'));
     document.getElementById('po-mm-refresh').onclick = function () { loadMeetings(true); };
     document.getElementById('po-ct-refresh').onclick = function () { loadContracts(true); };
     document.getElementById('po-ph-refresh').onclick = function () { loadPhotos(true); };

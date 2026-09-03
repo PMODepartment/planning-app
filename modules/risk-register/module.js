@@ -42,6 +42,7 @@ window.RiskRegister = (function () {
   var histView = null;       // UI.bindHistoryState() handle
   var collapsed = {};        // activity_no -> true when its group is folded
   var bands = { id: true, as: true, rs: true, res: false, au: false };
+  var filterToggle = null;   // UI.wireFilterToggle() handle for #rr-filters
 
   var STATUSES = ['Open', 'In Progress', 'Closed'];
 
@@ -134,7 +135,12 @@ window.RiskRegister = (function () {
       ['rr-f-activity', 'rr-f-category', 'rr-f-sub', 'rr-f-priority', 'rr-f-status', 'rr-f-search']
         .forEach(function (id) { $(id).value = ''; });
       fillSubFilter(); render();
+      if (filterToggle) filterToggle.sync(); // fields reset programmatically — no native change event
     };
+    // The whole filter bar hides behind one funnel toggle instead of sitting
+    // permanently open (see the "Filter bar" comment in module.css) — the dot
+    // stays in sync with the panel's own controls automatically.
+    filterToggle = UI.wireFilterToggle($('rr-filttoggle'), $('rr-filters'));
     document.querySelectorAll('.rr-tabs [data-view]').forEach(function (a) {
       a.onclick = function (e) { e.preventDefault(); switchView(a.dataset.view, a); histView.push(); };
     });
@@ -616,6 +622,7 @@ window.RiskRegister = (function () {
     // The filter bar and the band toggles only apply to the register itself.
     $('rr-filters').style.display = view === 'list' ? '' : 'none';
     $('rr-bands').style.display = view === 'list' ? '' : 'none';
+    if ($('rr-filttoggle')) $('rr-filttoggle').style.display = view === 'list' ? '' : 'none';
     if (link) {
       document.querySelectorAll('.rr-tabs [data-view]').forEach(function (a) { a.classList.remove('active'); });
       link.classList.add('active');

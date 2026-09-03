@@ -141,9 +141,53 @@
 .il-clear:hover { background: var(--pd-bg); color: var(--pd-ink); }
 .il-clear[hidden] { display: none; }
 
-/* ---- KPIs ---------------------------------------------------------------- */
-.il-kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 16px; }
-.il-kpis-2 { grid-template-columns: repeat(3, 1fr); }
+/* ---- ITEM 3 (2026-09-02): List | Kanban toggle + board ---------------------
+   The toggle is the shared `.pd-viewtoggle`/`.pd-vt` component this app
+   already uses elsewhere (Progress Photos' List/Gallery switch) — kept in
+   `.il-viewbar` so a group-by picker can sit beside it once Kanban is chosen
+   (viewKanbanBarHTML(), module.js). The board itself is a horizontally-
+   scrolling row of columns (one per Department/Champion value), each a
+   vertically-scrolling stack of cards — hand-rolled like every other chart/
+   component in this app, no board library. */
+.il-viewbar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.il-kanban-groupby { height: 34px; font-size: 13px; width: auto; min-width: 170px; }
+.il-kanban { display: flex; gap: 12px; align-items: flex-start; overflow-x: auto; padding-bottom: 6px; }
+.il-kanban-col {
+  flex: 0 0 280px; background: var(--pd-bg); border: 1px solid var(--pd-line);
+  border-radius: var(--pd-radius); display: flex; flex-direction: column; max-height: 72vh;
+}
+.il-kanban-col-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 10px 12px; font-weight: 700; font-size: 13px; color: var(--pd-ink);
+  border-bottom: 1px solid var(--pd-line); flex: none;
+}
+.il-kanban-count {
+  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: 999px;
+  padding: 1px 8px; font-size: 11px; font-weight: 700; color: var(--pd-muted); flex: none;
+}
+.il-kanban-col-body { padding: 10px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; min-height: 40px; }
+.il-kanban-card {
+  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
+  box-shadow: var(--pd-shadow); padding: 10px 12px; cursor: pointer;
+}
+.il-kanban-card:hover { border-color: var(--pd-red-mid); }
+.il-kanban-card-title { font-size: 13px; font-weight: 600; color: var(--pd-ink); line-height: 1.4; }
+.il-kanban-card-meta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px;
+  font-size: 11.5px; color: var(--pd-muted);
+}
+.il-kanban-card-meta .il-pill { padding: 1px 8px; font-size: 10.5px; }
+
+/* ---- KPIs ----------------------------------------------------------------
+   ITEM 4 (2026-09-02): both bands squeeze to ONE ROW at every width down to
+   phone — Issues' band is 4 tiles now (Total/Open/On Hold/Closed — the "Avg
+   aging" tile is dropped, see renderIssueKpis), Lessons' is 2 (Lessons
+   learned/Issues closed — its own aging tile dropped the same way). Only at
+   ≤700px ("mobile view") does the band get to wrap onto a second row — see
+   the ≤700px block below — rather than the earlier 5-/3-tile bands' own
+   compression logic, which no longer applies at this tile count. */
+.il-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+.il-kpis-2 { grid-template-columns: repeat(2, 1fr); }
 .il-kpi {
   background: var(--pd-card); border: 1px solid var(--pd-line);
   border-radius: var(--pd-radius); box-shadow: var(--pd-shadow); padding: 14px 16px;
@@ -155,16 +199,25 @@
 .il-kpi.is-closed .il-kpi-val { color: #16a34a; }
 
 /* ---- Issues table -------------------------------------------------------- */
-/* ITEM 6 (this round): a smaller, denser read for both the Issues & the Lessons
-   Learned tables — "reduce font sizes to make more minimalist" — plus the Issue /
-   Caused By / Corrective Action / Lesson Learned columns widened and allowed to
-   wrap their full text rather than being clamped to 3 lines. min-width raised to
-   fit the wider columns without the header/body columns disagreeing. */
-.il-table { min-width: 1080px; font-size: 12.5px; }
+/* ITEM 6 (earlier round): a smaller, denser read for both the Issues & the
+   Lessons Learned tables — "reduce font sizes to make more minimalist" —
+   plus the Issue / Caused By / Corrective Action / Lesson Learned columns
+   widened and allowed to wrap their full text rather than being clamped to
+   3 lines. ITEMS 2/5 (2026-09-02): widened again — Issue/Caused by/
+   Corrective action (Issues) and Lesson Learned/Issue (Lessons) all share
+   this ONE `.il-cell-wrap` class, so a single width decision widens both
+   tables' wide columns at once. min-width raised with it so the header/body
+   columns keep agreeing rather than the table shrinking back onto them. */
+.il-table { min-width: 1400px; font-size: 12.5px; }
 .il-table th { white-space: nowrap; font-size: 11px; }
 .il-table td { vertical-align: top; }
-.il-cell-wrap { max-width: 420px; white-space: normal; }
+.il-cell-wrap { max-width: 620px; white-space: normal; }
 .il-cell-num { color: var(--pd-muted); font-variant-numeric: tabular-nums; }
+/* ITEM 5 (2026-09-02): the Lessons table's two NARROW columns, freeing the
+   room `.il-cell-wrap`'s widening above just took from Department/Date
+   Resolved — a date is a handful of characters and never needs to wrap. */
+.il-ls-dept { font-size: 12px; white-space: normal; max-width: 120px; }
+.il-ls-date { font-size: 12px; white-space: nowrap; max-width: 90px; }
 /* ⚠️ No `-webkit-line-clamp` any more — a clamped cell hid text with nothing on
    screen saying more was cut off. Text now wraps to as many lines as it needs
    ("allow text overflows as needed"); `overflow:hidden` also dropped since
@@ -172,10 +225,6 @@
    the ≤700px block) is untouched — that's a different, deliberately-scoped rule. */
 .il-clip { white-space: normal; }
 .il-champ { font-size: 12px; white-space: normal; max-width: 150px; }
-.il-lessontag {
-  display: inline-flex; align-items: center; gap: 4px; margin-top: 6px;
-  font-size: 11px; font-weight: 600; color: var(--pd-red);
-}
 
 /* "Raised at a meeting" — the reciprocal of the schedule module's Minutes of Meeting.
    Deliberately quieter than the lesson tag: it is provenance, not a state to act on. */
@@ -187,7 +236,6 @@
 .il-momtag { display:inline-flex; align-items:center; gap:4px; margin-top:4px; margin-left:6px;
   font-size:10.5px; font-weight:600; color:var(--pd-muted); background:var(--pd-bg);
   border:1px solid var(--pd-line); border-radius:999px; padding:1px 8px; vertical-align:middle; }
-.il-lessontag .pd-ico { color: var(--pd-red); }
 
 /* Status pill */
 .il-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-weight: 700; font-size: 12px; color: #fff; white-space: nowrap; }
@@ -218,16 +266,13 @@
 .il-lead-ico { color: var(--pd-red); flex: none; margin-top: 2px; }
 .il-lead-sub { color: var(--pd-muted); font-size: 13px; display: block; margin-top: 3px; }
 
-/* ⚠️ `.il-lessons`/`.il-lcard*`/`.il-chip` (the card/tile grid) are REMOVED this
-   round — their only emitter, `lessonCardHTML`, was deleted when item 5 replaced
-   the "Related lessons" section with a plain numbered list. `.il-lcard-src` /
-   `.il-src-issue` are KEPT: `renderLessonsLogView` still uses them for the
-   source line under a lesson's own row in the Lessons Learned table. */
-.il-lcard-src {
-  border-top: 1px dashed var(--pd-line); padding-top: 8px; margin-top: 2px;
-  font-size: 12px; color: var(--pd-muted);
-}
-.il-lcard-src .il-src-issue { color: var(--pd-ink); }
+/* ⚠️ `.il-lessons`/`.il-lcard*`/`.il-chip` (the card/tile grid) are REMOVED —
+   their only emitter, `lessonCardHTML`, was deleted when item 5 (2026-09-01)
+   replaced the "Related lessons" section with a plain numbered list.
+   `.il-lcard-src`/`.il-src-issue` are ALSO removed as of item 5 (2026-09-02):
+   the source line they styled under a lesson's row is now its own "Issue"
+   column in the Lessons Learned table (`.il-cell-wrap`, shared with Issue /
+   Caused by / Corrective action below), not a sub-line under Lesson Learned. */
 
 /* ITEM 5 (this round): the "Related lessons" section on an issue's own page —
    a plain numbered list of lesson text, nothing else (no department chip, date,
@@ -256,19 +301,12 @@
 .il-form-row { display: flex; gap: 10px; flex-wrap: wrap; }
 .il-form-row > .pd-field { flex: 1 1 160px; }
 
-/* ITEM 2 (2026-09-01, mobile round): the Issues screen's 5-tile band
-   (`.il-kpis` without the `-2` suffix — TOTAL/OPEN/ON HOLD/CLOSED/AVG AGING)
-   compresses to TWO ROWS at any narrow width, not three. ⚠️ `.il-kpis-2`
-   (the smaller, 3-tile bands elsewhere — e.g. the Lessons screen's own band,
-   item 10) still narrows to 2 columns below, since a 3-tile band reads fine
-   at 3 across all the way down and doesn't need this. 5 tiles over 3 columns
-   auto-place as 3-over-2 — exactly two rows, with no lone tile stranded on a
-   half-empty third row (5 over 2 columns gives 2+2+1, three rows). Kept at 3
-   columns all the way to phone width — the tiles get narrower, never a 3rd
-   row. */
-@media (max-width: 1000px) { .il-kpis { grid-template-columns: repeat(3, 1fr); } }
+/* ITEM 4 (2026-09-02): the old 3-tile-vs-5-tile compression logic that used
+   to live here (dropping `.il-kpis` to 3 columns at ≤1000px so 5 tiles could
+   auto-place as 3-over-2) is gone with the 5th/3rd tile it existed for —
+   `.il-kpis`/`.il-kpis-2` now stay at their base 4/2 columns down to phone
+   width, per the note above the base rule. */
 @media (max-width: 820px) {
-  .il-kpis-2 { grid-template-columns: repeat(2, 1fr); }
   .il-filters.open .il-search { flex: 1 1 100%; }
 }
 
@@ -335,12 +373,17 @@
 
   .il-filters.open { flex-wrap: wrap; gap: 8px; }
   .il-filters.open > * { flex: 1 1 100%; min-width: 0; }
-  /* ITEM 2 (2026-09-01, mobile round): `.il-kpis` (the 5-tile band) is
-     deliberately NOT narrowed to 2 columns here — see the ≤1000px/820px note
-     above; it stays at 3 all the way to phone width, so 5 tiles keep
-     compressing into exactly two rows (3-over-2) instead of three. */
-  .il-kpis { gap: 8px; }
-  .il-kpis-2 { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  /* ITEM 4 (2026-09-02): "mobile view" IS where these bands are allowed to
+     wrap — 4 tiles across a phone leaves each one too narrow to read its own
+     number, so Issues' band drops to 2-over-2 here; Lessons' 2-tile band was
+     already 2 across and just tightens its gap. */
+  .il-kpis { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .il-kpis-2 { gap: 8px; }
+  /* ITEM 3: a phone can't show two board columns side by side at 280px
+     each — narrower columns, and the group-by select takes the full row
+     rather than fighting the toggle for width. */
+  .il-kanban-col { flex-basis: 240px; }
+  .il-viewbar .il-kanban-groupby { flex: 1 1 100%; }
 }
 
 /* =========================================================================
@@ -838,3 +881,12 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
    eyebrow separator) is reused as the divider between the two, rather than a
    third separator style. */
 .il-less-issuewrap { margin-top: 18px; }
+/* ITEM 6/8 (2026-09-02): "Background" is that same eyebrow separator, plus an
+   "Open issue" link at the top right (moved here from the lesson's own
+   toolbar) — a flex-row modifier so the label and the button share the line
+   instead of the button wrapping the border-bottom the base rule already
+   carries. */
+.il-less-bg-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+}
+.il-less-bg-head span { text-transform: inherit; letter-spacing: inherit; }
