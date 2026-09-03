@@ -26654,7 +26654,30 @@
       // discipline). Trades that DO have floors keep their full per-location breakdown, unchanged.
       var haveLoc = {}; locs.forEach(function (l) { haveLoc[l.trade] = 1; });
       usedGroups().forEach(function (tr) {
-        if (!haveLoc[tr] && tradeActs(tr).length) locs.push({ uid: tr + '/__all__', trade: tr, floor: { id: '__all__', code: '', name: '', zones: [], _all: true }, zone: null, unit: null });
+      /* ⚠️⚠️ AN UN-FLOORED TRADE IS STILL IN THE BUILDING, SO IT CARRIES THE TOWER.
+         Owner 2026-09-03: *"i dont think if there is no floors or zones under a trade, it should have
+         an all location. if it is still under tower 1, then it is under tower 1."* Correct — "no
+         floors" says nothing about WHICH BUILDING the work is in. General Requirements and Site Works
+         are project-wide, not location-less.
+         The fallback used to leave `towerId` unset entirely, so `locMapOf` wrote no tower value at
+         all: those activities were the only ones in the project with a blank Tower, which put them in
+         the stacking's no-tower bucket and, when a tower level existed, beside the tower branches
+         instead of inside them.
+         ⚠️ It uses `towerIdOf` — the SAME resolver every real floor goes through in locList, which
+         falls back to the first tower for a floor that names none. Consistency with that convention
+         matters more than a special case here: a single-tower project (the reported one) resolves
+         unambiguously to its only tower, and a multi-tower project lands on the first, exactly as an
+         un-towered floor already does. A trade that genuinely belongs to one specific tower should be
+         given floors in step 5 — that is the place where the planner says so.
+         ⚠️ The FLOOR stays `_all`. This adds the tower it is in; it does not invent a storey. The
+         floor/zone/unit levels are still skipped for this row (dimKey reads `floor._all`), so it
+         attaches at the tower and no fake location is written beneath it. */
+        if (!haveLoc[tr] && tradeActs(tr).length) {
+          var _allFloor = { id: '__all__', code: '', name: '', zones: [], _all: true };
+          var _allTw = towerIdOf(_allFloor);
+          locs.push({ uid: tr + '/__all__', trade: tr, floor: _allFloor, zone: null, unit: null,
+                      towerId: _allTw, tower: towerLabel(_allTw) });
+        }
       });
       var days = {}; locs.forEach(function (l) { days[l.uid] = nodeDays(l, basis); });
       var starts = computeStarts(locs, days), start = pdd(startOverride) || pdd(cfg.startDate) || new Date();

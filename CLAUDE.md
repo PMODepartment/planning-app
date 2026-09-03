@@ -84,6 +84,21 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-03 (q) — An un-floored trade is still in the building, so it carries the tower
+
+*"if there is no floors or zones under a trade ... if it is still under tower 1, then it is under tower
+1."* Right — "no floors" says nothing about which building the work is in.
+
+The `__all__` fallback (which stops a whole discipline being dropped from a push) left `towerId`
+unset, so those activities were the only ones in the project with a blank Tower: the stacking's
+no-tower bucket, and beside the tower branches rather than inside them. It now resolves its tower
+through `towerIdOf` — the same resolver every real floor uses, which falls back to the first tower
+for a floor naming none. ⚠️ A single-tower project resolves unambiguously; a multi-tower one lands on
+the first, exactly as an un-towered floor already does (give the trade floors in step 5 to say
+otherwise). ⚠️ The floor stays `_all` — this adds the tower, it does not invent a storey, zone or
+unit, and no tower name is hard-coded. 291 checks, 0 functions lost. `MODULE_V` → `20260903q`.
+
+---
 ### 2026-09-03 (p) — A single tower is not a WBS level, and that is why Allied Services sat beside it
 
 *"why is there tower 1? if it is just a singular tower, the tower 1 should not be a WBS anymore."* Right

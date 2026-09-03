@@ -1,3 +1,51 @@
+## An un-floored trade is still in the building, so it carries the tower (2026-09-03) — jasantos2
+
+Owner: *"i dont think if there is no floors or zones under a trade, it should have an all location. if
+it is still under tower 1, then it is under tower 1. okay?"*
+
+Right. **"No floors" says nothing about which BUILDING the work is in.** General Requirements and Site
+Works are project-wide, not location-less.
+
+### What the fallback was doing
+A trade with activities but no floors gets an `__all__` location — the fallback that stops a whole
+discipline being silently dropped from a push. It left `towerId` **unset entirely**, so `locMapOf`
+wrote no tower value: those activities were the only ones in the project with a blank Tower. That put
+them in the Vertical Stacking's no-tower bucket and, whenever a tower level existed, **beside** the
+tower branches instead of inside them — which is what the previous screenshot showed.
+
+### The fix
+The `__all__` location now resolves its tower through `towerIdOf` — the **same resolver every real
+floor goes through** in `locList`, which falls back to the first tower for a floor that names none.
+
+⚠️ **Consistency with that convention matters more than a special case.** A single-tower project (the
+reported one) resolves unambiguously to its only tower. A multi-tower project lands on the **first**,
+exactly as an un-towered floor already does — and a trade that genuinely belongs to one specific tower
+should be given floors in step 5, which is the place where the planner says so.
+
+⚠️ **The floor stays `_all`.** This adds the tower the work is in; it does **not** invent a storey.
+`dimKey` still reads `floor._all` and skips the floor/zone/unit levels for this row, so it
+attaches at the tower and no fake location is written beneath it. Nothing is hard-coded — there is no
+literal "Tower 1" anywhere in the fallback.
+
+### What changes on screen
+| project | before | after |
+|---|---|---|
+| one tower | blank Tower; no-tower bucket in the stacking | tagged with that tower, grouped with everything else |
+| many towers, tower level built | **beside** the tower branches | **inside** the first tower |
+
+---
+
+**Verified: 291 checks.** The shipped `towerIdOf` executed for a floor naming no tower (falls back to
+the only one), for a multi-tower project (falls back to the first), and for an explicit id (always
+wins). The shipped `dimKey` + `buildTree` re-run over an OPW101-shaped setup: with two towers the
+project-wide trade is now **inside** Tower 1 rather than beside it, while a single-tower project still
+builds no tower branch at all and it sits with the other trades. Plus assertions read from the shipped
+text that the fallback invents no storey, zone or unit and hard-codes no tower name. 0 functions lost,
+0 added; the inline script parses.
+
+⚠️ **NOT verified signed-in**, and this changes what a **new** push writes — existing rows keep the blank
+Tower they were pushed with until re-pushed. ⚠️ Still open: OPW101's duplicate phase roots.
+
 ## A single tower is not a WBS level — and that is why Allied Services sat beside it (2026-09-03) — jasantos2
 
 Owner: *"how come the allied services is not under tower 1? and also why is there tower 1? if it is
