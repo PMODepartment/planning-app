@@ -3600,9 +3600,12 @@ console.log('\n[misc] insert().select() returns the new row id');
      /<option value="internal">Internal<\/option>/.test(pjs) &&
      /<option value="client">External \(Client\)<\/option>/.test(pjs));
   ok('the form reads the picked Report Type on Save and threads it through BOTH the direct-save path and the copy-wizard hand-off',
-     /var reportType = \$\('ppr-f-reporttype'\) \? \$\('ppr-f-reporttype'\)\.value : '';/.test(pjs) &&
+     /var reportType = \$\('ppr-frm-reporttype'\) \? \$\('ppr-frm-reporttype'\)\.value : '';/.test(pjs) &&
      /openCopyWizard\(\{ ppr_date: date, description: desc, report_type: reportType \}, copyFrom\);/.test(pjs) &&
      /var data = \{ ppr_date: date, description: desc, report_type: reportType \};/.test(pjs));
+  ok('⚠️ REGRESSION GUARD (bug found live, 2026-09-02): the form field is id="ppr-frm-reporttype", a DIFFERENT id than the list filter\'s own "ppr-f-reporttype" — document.getElementById always resolves the FIRST match in the DOM, and the persistent filter select (rendered in index.html, ahead of any modal) comes before this form field every time a modal opens. Sharing one id meant every save silently read the filter\'s current value (almost always \'\', i.e. "All") instead of what was actually picked in the modal — confirmed live: several real presentations saved with report_type = \'\' regardless of what this dropdown showed.',
+     /<select class="pd-select" id="ppr-frm-reporttype">/.test(pjs) &&
+     !/<select class="pd-select" id="ppr-f-reporttype">/.test(pjs));
 
   // --- Tolerant of the migration not having run yet ---------------------------
   ok('a shared insertPresentation()/updatePresentation() pair is used by EVERY ppr_presentations write that can carry report_type (openPprForm, createPresentationPlain, the copy wizard\'s finish(), and generateFromTemplate) — one retry rule, not four independent copies',

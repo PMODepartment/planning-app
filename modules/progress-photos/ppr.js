@@ -1369,7 +1369,16 @@ window.PPR = (function () {
           '<input class="pd-input" id="ppr-f-desc" placeholder="e.g. PPR ftm of June 2026 / Client Presentation" value="' +
           esc(p.description || '') + '" /></div>' +
         '<div class="pd-field"><label>Report Type</label>' +
-          '<select class="pd-select" id="ppr-f-reporttype">' +
+          // ⚠️ Bug fix (found live, 2026-09-02): this MUST be a different id
+          // than the list's own filter select (#ppr-f-reporttype in
+          // index.html) — document.getElementById resolves to whichever
+          // comes first in the DOM, which was always the persistent filter
+          // bar, never this modal's own field. Every save was therefore
+          // silently writing whatever the FILTER happened to be set to
+          // ('' = All, almost always) instead of what was picked here —
+          // confirmed live: several real presentations saved with
+          // report_type = '' regardless of what this dropdown showed.
+          '<select class="pd-select" id="ppr-frm-reporttype">' +
             '<option value="internal"' + (curType === 'internal' ? ' selected' : '') + '>Internal</option>' +
             '<option value="client"' + (curType === 'client' ? ' selected' : '') + '>External (Client)</option>' +
           '</select></div>' +
@@ -1394,7 +1403,7 @@ window.PPR = (function () {
       var date = $('ppr-f-date').value;
       if (!date) { UI.toast('A presentation date is required', 'warn'); return; }
       var desc = $('ppr-f-desc').value.trim();
-      var reportType = $('ppr-f-reporttype') ? $('ppr-f-reporttype').value : '';
+      var reportType = $('ppr-frm-reporttype') ? $('ppr-frm-reporttype').value : '';
       var copyFrom = $('ppr-f-copy') ? $('ppr-f-copy').value : '';
 
       // Copying from a previous presentation now goes through a wizard
