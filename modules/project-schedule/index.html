@@ -479,6 +479,25 @@
     /* ⚠️ `transparent` would be a bleed-through here too — fall back to the row's opaque base. */
     .ps-grid-row.ps-fmt { --ps-frozen-bg: var(--fmt-bg, var(--pd-card)); }
     .ps-grid-row.ps-fmt > .ps-cell.c-num, .ps-grid-row.ps-fmt > .ps-cell.c-id, .ps-grid-row.ps-fmt > .ps-cell.c-name { background:var(--ps-frozen-bg); }
+    /* ⚠️⚠️ IN DARK MODE THE FILL TINTS THE ROW — IT DOES NOT REPAINT IT.
+       Owner 2026-09-03, second look at the same grid: *"why is there light colors?"*
+       The previous fix made the text on those rows readable (dark ink on the pale fill), which was
+       the right answer to "I cannot read this" — but not to this. A conditional-format fill is a
+       LIGHT-MODE colour (the default is #FDECEA, a pale cream) and it was painted literally, so a
+       dark grid grew light blocks across it. There were ZERO dark-mode rules for .ps-fmt.
+       The fill now blends into the row's own dark surface at 22%, which keeps the HUE the planner
+       chose — the thing the rule is for — while the row stays part of a dark grid. The ink goes back
+       to the theme's, because the tinted background is dark again.
+       ⚠️ LIGHT MODE IS UNTOUCHED. There the fill is a light-mode colour on a light surface, which
+       is what it was chosen to be; muting it there would weaken a signal that already works.
+       ⚠️ The plain background is declared FIRST as a fallback: a browser without color-mix drops the
+       second declaration and keeps a correct dark row, losing only the tint.
+       ⚠️ An explicitly chosen --fmt-fg is deliberately NOT honoured here. It was picked to sit on the
+       light fill; on the dark tint it would be the unreadable half of the same bug. The hue survives
+       in the background, which is where the meaning lives.
+       ⚠️ Selection still wins — .ps-row-sel is defined after this and at higher specificity. */
+    html.pd-dark .ps-grid-pane .ps-grid-row.ps-fmt { background:var(--pd-card); background:color-mix(in srgb, var(--fmt-bg, transparent) 22%, var(--pd-card)); color:var(--pd-ink); }
+    html.pd-dark .ps-grid-row.ps-fmt { --ps-frozen-bg:var(--pd-card); --ps-frozen-bg:color-mix(in srgb, var(--fmt-bg, transparent) 22%, var(--pd-card)); }
     .ps-row-sel > .ps-cell.c-num, .ps-row-sel > .ps-cell.c-id, .ps-row-sel > .ps-cell.c-name { background:var(--pd-red-light); }
     /* Full-width selection highlight: the whole grid row tints, and a matching band spans the Gantt. */
     .ps-grid-pane .ps-grid-row.ps-row-sel { background:var(--pd-red-light); box-shadow:inset 2px 0 0 var(--pd-red); }

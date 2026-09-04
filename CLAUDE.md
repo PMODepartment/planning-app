@@ -84,6 +84,23 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-03 (u) — A conditional-format fill now tints a dark row instead of repainting it
+
+*"still not fixed ... why is there light colors?"*
+
+⚠️ The previous fix answered a different question: it made the text on those rows **readable** (dark ink
+on the pale fill), which was right for *"I cannot read this"* and irrelevant to *"why is this light"*.
+
+A format fill is a **light-mode colour** (the default `#FDECEA` is a pale cream) and it was painted
+literally on any theme — there were **zero** dark-mode rules for `.ps-fmt`. In dark mode it now blends
+into the row's own dark surface at 22%, keeping the hue the planner chose while the row stays part of a
+dark grid; the ink returns to the theme's. ⚠️ Light mode is untouched byte for byte. ⚠️ The plain
+background is declared first, so a browser without `color-mix` keeps a correct dark row rather than a
+light block. ⚠️ The frozen columns are tinted too, or they would stay light while the row went dark.
+365 checks — the cascade is parsed and proven (specificity 401 vs 200, fallback ordering, light mode
+byte-identical, selection still wins), not eyeballed. `MODULE_V` → `20260903u`.
+
+---
 ### 2026-09-03 (t) — A formatted row you could not read, and a header chopped into syllables
 
 *"UI issues here."* Two, from one screenshot.

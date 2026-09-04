@@ -1,3 +1,46 @@
+## The conditional-format fill now TINTS a dark row instead of repainting it (2026-09-03) — jasantos2
+
+Owner, on the same grid after the previous fix: *"still not fixed. how come it is still like this? why
+is there light colors?"*
+
+### ⚠️ The previous fix answered a different question, and it is worth saying so plainly
+It made the text on those rows **readable** — dark ink derived from the fill's luminance — which was
+the right answer to *"I cannot read this"*. It was not an answer to *"why is this row light at all"*.
+The rows went from unreadable cream to readable cream. The screenshot shows exactly that.
+
+### The actual cause
+A conditional-format fill is a **light-mode colour** — the default is `#FDECEA`, a pale cream — and it
+was painted **literally**, on any theme. There were **zero** dark-mode rules for `.ps-fmt`: the row
+took the fill as its background whatever surface it sat on, so a dark grid grew light blocks across it.
+
+### The fix
+In dark mode the fill now **blends into the row's own dark surface at 22%**
+(`color-mix(in srgb, var(--fmt-bg) 22%, var(--pd-card))`), and the ink returns to the theme's.
+The **hue** the planner chose survives — that is what the rule is for — while the row stays part of a
+dark grid.
+
+- ⚠️ **Light mode is untouched, byte for byte.** There the fill is a light-mode colour on a light
+  surface, which is what it was chosen to be; muting it would weaken a signal that already works.
+- ⚠️ **The plain background is declared first as a fallback.** A browser without `color-mix` drops the
+  second declaration and keeps a correct dark row, losing only the tint — never a light block.
+- ⚠️ **An explicit `--fmt-fg` is deliberately NOT honoured in dark mode.** It was picked to sit on the
+  light fill; on the dark tint it would be the unreadable half of the same bug. The meaning lives in
+  the hue, which survives in the background.
+- ⚠️ The frozen `#`/`ID`/`Name` columns get the same treatment, or they would stay light while
+  the rest of the row went dark.
+
+---
+
+**Verified: 365 checks.** The cascade is checked as a cascade, not by eye: the declaration blocks are
+parsed out of the stylesheet (comments and strings stripped) and the dark rule is shown to
+**out-specify** the base rule 401 vs 200 *and* to come later in source order; the two background
+declarations are shown to be fallback-then-`color-mix` **in that order**; the light-mode rule is
+asserted **byte-identical** to the previous commit; and the selection rule is shown to still beat the
+tint. The specificity helper carries its own known-pair control. 0 functions lost, 0 added.
+
+⚠️ **NOT verified visually** — no signed-in session. The cascade is proven; how the 22% tint looks is
+not. If it reads too strong or too faint, that number is the one to move.
+
 ## A conditionally-formatted row you could not read, and a header chopped into syllables (2026-09-03) — jasantos2
 
 Owner, with a screenshot of the Handover Tracker grid: *"UI issues here."* Two, both real.
