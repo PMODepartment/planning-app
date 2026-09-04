@@ -1604,6 +1604,91 @@
    labelled from its data-l attribute (set in module.js). The stacked cells
    must also drop `white-space:nowrap` or they ellipsize to nothing.
    -------------------------------------------------------------------------- */
+/* -----------------------------------------------------------------------
+   Floor Plan hierarchy — Tower/Floor selection, revisions, manually-drawn
+   Zones (2026-09-03). Reuses .bim-toolbar/.bim-stage-*/.bim-imgwrap/
+   .pp-form/.pd-field/.pd-btn conventions already established above; new
+   classes are additive, none of the existing ones changed shape.
+   -------------------------------------------------------------------------- */
+.bim-towerfloor { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 10px; }
+.bim-towerfloor .pd-field { min-width: 160px; margin: 0; }
+
+.pd-linkbtn {
+  background: none; border: 0; padding: 0; margin: 0; color: var(--pd-red);
+  font-size: 12px; font-weight: 600; cursor: pointer; text-decoration: underline;
+}
+.pd-linkbtn:hover { color: var(--pd-red-dark, var(--pd-red)); }
+
+.bim-viewerbar { display: flex; gap: 8px; margin-bottom: 8px; }
+.bim-viewerbar .pd-btn { padding: 5px 10px; min-width: 34px; }
+
+.bim-stage-outer.is-drawing { cursor: crosshair; }
+
+.bim-fp-info {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;
+  padding: 10px 12px; margin: 10px 0; background: var(--pd-card); border: 1px solid var(--pd-line);
+  border-radius: var(--pd-radius);
+}
+.bim-fp-info-row { display: flex; gap: 18px; flex-wrap: wrap; font-size: 13px; color: var(--pd-ink); }
+.bim-fp-info-row strong { font-weight: 700; margin-right: 4px; }
+.bim-fp-info-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Zone overlay — one SVG per rendered plan, 0..100 user units mapped 1:1 to
+   the imgwrap's percentage box (same technique the pin cone widgets above
+   already use, non-uniform scale is fine since fill/label positions are all
+   computed in the same 0..100 space). */
+.bim-zone-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.bim-zone-poly { cursor: pointer; pointer-events: all; transition: fill-opacity .15s; }
+.bim-zone-poly:hover { fill-opacity: .34 !important; }
+.bim-zone-poly.is-sel { filter: drop-shadow(0 0 1px var(--pd-ink)); }
+.bim-zone-label {
+  font-size: 3.2px; font-weight: 700; fill: var(--pd-ink); paint-order: stroke;
+  stroke: var(--pd-card); stroke-width: .6px; pointer-events: none; user-select: none;
+}
+.bim-zone-drawing { pointer-events: none; }
+.bim-zone-vertex {
+  fill: var(--pd-card); stroke: var(--pd-red); stroke-width: .5px;
+  cursor: grab; pointer-events: all;
+}
+.bim-zone-vertex:active { cursor: grabbing; }
+
+.bim-withzones { margin-top: 12px; }
+.bim-zonelist { background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius); padding: 10px 12px; }
+.bim-zonelist h4 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); }
+.bim-zonelist-row {
+  display: flex; align-items: center; gap: 8px; padding: 7px 6px; border-radius: 6px; cursor: pointer;
+}
+.bim-zonelist-row:hover { background: var(--pd-bg); }
+.bim-zonelist-row.active { background: color-mix(in srgb, var(--pd-red) 10%, var(--pd-card)); border-left: 3px solid var(--pd-red); padding-left: 3px; }
+.bim-zonelist-dot { width: 11px; height: 11px; border-radius: 50%; flex: 0 0 auto; }
+.bim-zonelist-name { flex: 1; font-size: 13px; }
+.bim-zonelist-acts { display: flex; gap: 10px; }
+
+.bim-zonedraw {
+  margin: 10px 0; padding: 12px; background: var(--pd-card); border: 1px dashed var(--pd-red);
+  border-radius: var(--pd-radius);
+}
+.bim-zonedraw-tools { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+.bim-zonedraw-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+
+.bim-revrow {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 0; border-bottom: 1px solid var(--pd-line);
+}
+.bim-revrow:last-child { border-bottom: 0; }
+.bim-revrow.is-current strong { color: var(--pd-red); }
+.bim-revbadge {
+  display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .03em;
+  color: #fff; background: var(--pd-red); border-radius: 4px; padding: 1px 6px; margin-left: 4px;
+}
+
+@media (max-width: 700px) {
+  .bim-towerfloor { flex-direction: column; gap: 8px; }
+  .bim-towerfloor .pd-field { min-width: 0; }
+  .bim-fp-info { flex-direction: column; align-items: stretch; }
+  .bim-zonedraw-tools .pd-btn, .bim-viewerbar .pd-btn { min-height: 44px; }
+}
+
 @media (max-width: 700px) {
   .bim-stage-outer { height: 60vh; }
   .bim-toolbar { flex-direction: column; align-items: stretch; }
