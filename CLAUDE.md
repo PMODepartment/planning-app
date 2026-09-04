@@ -84,6 +84,23 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-04 — Proposal: define the breakdowns first (a two-pane LBS / ABS step)
+
+Owner’s idea for an earlier Schedule Setup step: locations as a tree on the left (L1 towers, L2
+levels, L3 zones, each with its type), activity groupings as a tree on the right, then a stacking
+preview — *"to mitigate the difficulty of the matching of WBS especially when a schedule is
+migrated"*, and *"no logic whatsoever should be conflicted."*
+
+Written up as **`docs/lbs-abs-setup-step-proposal.md`**, companion to the existing
+`wbs-activity-tagging-proposal.md`. **Nothing implemented** — this is a new authoring surface over
+three data shapes that never met, in a module that took fifteen fixes today; the design is the
+deliverable and the code follows once §7 is answered. ⚠️ The constraint is answered clause by clause in
+§3: the step is an authoring surface over data that already exists, nothing downstream learns a new
+format, per-trade zoning is kept, and the `location` jsonb keeps storing **strings, not node ids**.
+35 checks — on the document: every identifier and claim it makes is asserted against the shipped
+source. ⚠️ `MODULE_V` not bumped; no application file changed.
+
+---
 ### 2026-09-04 (c) — The trade selector leads, BL and ACT are told apart, and the baseline has a name
 
 *"pls put the trade on the top, also can you emphasize which is the actual and which is the baseline ...

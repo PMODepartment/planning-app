@@ -1,3 +1,72 @@
+## Proposal — define the breakdowns FIRST: a two-pane LBS / ABS step (2026-09-04) — jasantos2
+
+Owner: *"what if instead of defining the number of floors basements … there should be an earlier step
+in defining the locations and groupings of activities … left pane … L1 towers, L2 levels, L3 zones …
+right pane is the groupings of activities … and then … an illustration what the zoning of per trade
+would look like in a vertical stacking view. However no logic whatsoever should be conflicted. The
+purpose is to mitigate the difficulty of the matching of WBS especially when a schedule is migrated."*
+
+Written up as **[`docs/lbs-abs-setup-step-proposal.md`](../../docs/lbs-abs-setup-step-proposal.md)**.
+**Nothing implemented.**
+
+### Why it is a proposal and not a commit
+This is a new authoring surface over three data shapes that were built at different times, in a module
+that has taken **fifteen fixes today** — several of them for state that was already subtly out of step
+between two screens. Building it blind, unverified against a live project, is how the next week of
+screenshots gets written. The design is the deliverable; the code follows once the open questions in §7
+are answered.
+
+### The diagnosis it rests on
+The location breakdown lives in **three** places that never met:
+
+| what | where | shape |
+|---|---|---|
+| the dimensions (Tower/Level/Zone) | `location_levels` | project-wide, ordered |
+| the **places** (Tower 1, B2, GF) | `cfg.zoning[trade].floors` | **per trade**, in the setup JSON |
+| the values on activities | `location` jsonb | free strings |
+
+So there is **no list of the project’s places** — which is why the matcher offers a free-text box and
+the planner re-types the value for every branch. That *is* the reported difficulty. It is also why
+`Copy Structural floors/zones → all trades` has to exist, and why a migrated schedule (whose WBS
+*is* the breakdown) gets re-typed by hand.
+
+### ⚠️ The constraint is the hard part, and it is answered clause by clause
+*"No logic whatsoever should be conflicted"* — §3 is a table of every existing behaviour that could
+conflict and how it survives. The rule that makes it work:
+
+> The new step is an **authoring surface over data that already exists**, not a new source of truth.
+> Nothing downstream learns a new format.
+
+Concretely: per-trade zoning is **kept** (the LBS is the catalogue; which places a trade touches stays
+in *Scope per zone*, which already has `cfg.scopeOff`); `floor.kind` and `towerId` are the
+same fields edited elsewhere; `generate()`, `buildTree` and the push read `cfg.zoning` as
+they do now, only derived rather than typed; and the LBS is **derived on first open**, so a project
+that never opens the step behaves exactly as today.
+
+⚠️⚠️ **The single most important line in the document:** the `location` jsonb keeps storing **strings,
+not node ids**. Storing ids would orphan every existing and imported row. The LBS node *supplies* the
+string; it does not replace it.
+
+⚠️ `locTowerToken` / `locGroupingReason` and this week’s assigned/excluded overrides are **kept
+unchanged** as the fallback for unmatched branches. A guess that is never consulted costs nothing;
+deleting it would break every project that has not run the new step.
+
+### Sequenced so the first slice is useful alone
+LBS tree + derive-from-existing → matcher picks from the tree (most of the benefit) → *Adopt from the
+WBS* (the migration button) → ABS tree → stacking preview. None requires the next.
+
+---
+
+**Verified: 35 checks — on the DOCUMENT, not on behaviour, because there is no behaviour.** Every
+identifier it names (`cfg.zoning`, `cfg.scopeOff`, `locTowerToken`, `multiTower`,
+`dimKey`, `activity_udf_defs` …) is asserted to exist in the shipped source, and each specific
+claim is checked against it: the four `floor.kind` values, that zoning really is per-trade, that the
+copy-to-all-trades button really exists, that `location` really stores strings keyed by level id,
+that `location_levels.match` is really written by the matcher. A proposal that misdescribes the code
+is worse than none, because the next reader builds on it.
+
+⚠️ `MODULE_V` is **not** bumped — no application file changed.
+
 ## The trade selector leads, BL and ACT are told apart, and the baseline has a name (2026-09-04) — jasantos2
 
 Owner: *"pls put the trade on the top, also can you emphasize which is the actual and which is the
