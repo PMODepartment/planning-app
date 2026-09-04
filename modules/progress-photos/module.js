@@ -259,7 +259,9 @@ window.ProgressPhotos = (function () {
     applyTileScale();
     syncChrome();
     await load();
+    console.info('[DBG-INIT] before loadSchedule, pid=', pid);
     await loadSchedule();
+    console.info('[DBG-INIT] after loadSchedule, SCHED_ACTS.length=', SCHED_ACTS.length, 'scheduleLoadedOnce=', scheduleLoadedOnce);
     // ⚠️ notifyScheduleReady() FIRST, before fillFilterOptions() — found live
     // that it must never sit behind another synchronous call that could
     // throw. Both are `location_levels`/`SCHED_ACTS`-are-now-in` follow-ups
@@ -268,7 +270,7 @@ window.ProgressPhotos = (function () {
     // fail would otherwise skip the OTHER unconditionally, with no error a
     // planner would ever see — bim.js's whole Tower/Floor picker going stale
     // is exactly the wrong kind of failure to leave dependent on that.
-    try { notifyScheduleReady(); } catch (e) { console.error(e); }
+    try { notifyScheduleReady(); console.info('[DBG-INIT] notifyScheduleReady OK, scheduleLoadedOnce=', scheduleLoadedOnce); } catch (e) { console.error('[DBG-INIT] notifyScheduleReady THREW', e); }
     try { fillFilterOptions(); } catch (e) { console.error(e); }
     await refreshQueueBadge();
     window.addEventListener('online', function () { if (pid) flushQueue(); });
