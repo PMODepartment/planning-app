@@ -84,6 +84,22 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-04 (b) — "This IS a place" is now as durable as "this is not"
+
+*"do i need to press anything for the substructure level to be detected?"* Yes —
+**Apply to activities** in *Match WBS to locations*. And a gap in yesterday's fix meant that on some
+projects even that would not have been enough: the veto read the planner's assignment from
+`location_levels.match`, a DB column behind a migration the wizard is deliberately tolerant of
+missing (*"the values are still applied, only the memory is lost"*). So the answer was applied to every
+activity and forgotten a line later, and the stacking vetoed it again.
+
+Two halves of one decision were stored with different durability — grouping-only in localStorage, the
+assignment only in the DB. `saveLocAssigned` now mirrors assignments beside the exclusions, with
+the DB column still primary. ⚠️ Values not seen this session are carried forward, as the exclusions are.
+⚠️ Grouping-only still beats an assignment, and an **unassigned** "Substructure" is still vetoed — the
+default is unchanged. 436 checks, 0 functions lost. `MODULE_V` → `20260904b`.
+
+---
 ### 2026-09-04 (a) — A basement that always landed in Tower 1, and a tagged location the stacking refused
 
 **(1)** *"when i click add basement, it always adds to tower 1 even if i selected another tower."* The

@@ -1,3 +1,52 @@
+## "This IS a place" is now as durable as "this is not" (2026-09-04) — jasantos2
+
+Owner, after the previous fix: *"how come? ... do i need to press anything for the substructure level to
+be detected?"*
+
+**Yes — `Apply to activities`.** And a gap in yesterday's fix meant that on some projects even
+that would not have been enough.
+
+### The gap
+The veto now yields to an explicit assignment, and it read that assignment from
+`location_levels.match` — a **database column behind the 2026-08-05 migration**. The wizard is
+deliberately tolerant of that column being absent: *"the values are still applied, only the memory is
+lost."* Which means on a project whose migration has not run, the planner answered, the answer was
+**applied to every activity**, and the answer was **forgotten one line later** — so the stacking vetoed
+it again.
+
+⚠️ **Two halves of one decision were recorded in two places with different durability.** The
+*grouping-only* half has always gone to localStorage; the *assignment* half went only to the DB. That
+asymmetry is what let them get out of step.
+
+New `loadLocAssigned` / `saveLocAssigned` mirror the assigned values to localStorage beside the
+exclusions. The DB column stays primary and is still written — this is the belt.
+- ⚠️ Values not seen in the current session are **carried forward**, exactly as the exclusions are, so
+  filtering the wizard list before pressing Apply cannot silently forget an earlier decision.
+- ⚠️ Browser-local, like the exclusions: a colleague on another machine reads the DB copy where the
+  migration exists and falls back to the heuristic where it does not — strictly better than before,
+  when everyone fell back to the heuristic.
+- ⚠️ **Grouping-only still beats a locally-recorded assignment.** Checked.
+
+### The answer to the question
+**Schedule Setup → 5 · Floors & Zones → Match WBS to locations… → set the level → Apply to
+activities.** That button is the whole trigger: it writes `location` onto the activities already in
+the schedule, records both halves of the decision, and (since `20260903v`) repaints the grid and
+the stacking immediately. **No re-push is needed** — the push creates activities; the matcher only
+fills in where they are.
+
+⚠️ It only touches activities that **have a WBS code** and sit **under the Execution Phase branch**.
+⚠️ The screenshots were taken on `?v=20260903g`, which predates all of this.
+
+---
+
+**Verified: 436 checks.** The veto is executed with **no `match` column at all** — a locally-recorded
+assignment is honoured, an unassigned value is still vetoed, and a grouping-only mark still wins. The
+wizard's apply block is asserted to write both halves and to carry forward what it did not see. Plus
+the whole previous suite, including the checks that an *unassigned* "Substructure", a trade name and a
+phase name are all still vetoed — the default is unchanged. 0 functions lost, 3 added.
+
+⚠️ **NOT verified signed-in.**
+
 ## A basement that always landed in Tower 1, and a tagged location the stacking refused (2026-09-04) — jasantos2
 
 Two reports, unrelated causes.

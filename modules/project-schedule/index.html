@@ -10275,6 +10275,26 @@
   function saveLocExcluded(arr) {
     try { localStorage.setItem(locExcludedKey(), JSON.stringify(arr)); } catch (e) {}
   }
+  /* THE OTHER HALF OF THE PLANNER'S ANSWER, STORED THE SAME WAY.
+     "This branch is a place, at this level" lived only in location_levels.match — a DB column behind
+     the 2026-08-05 migration, and the wizard is explicitly tolerant of that column being absent
+     ("the values are still applied, only the memory is lost"). The stacking's veto now consults that
+     memory, so on a project whose migration has not run the assignment was applied to every activity
+     and then STILL vetoed on screen: the planner answered, the answer was used, and the answer was
+     forgotten a line later.
+     ⚠️ Mirrored to localStorage beside the exclusions, which have always been stored this way. Two
+     halves of one decision recorded in two places with different durability is how they get out of
+     step. The DB column stays the primary and is still written; this is the belt.
+     ⚠️ Browser-local, like the exclusions — a colleague on another machine sees the DB copy when the
+     migration exists, and falls back to the heuristic when it does not. That is strictly better than
+     the previous behaviour, which fell back to the heuristic for everyone. */
+  function locAssignedKey() { return 'ps.locAssigned.' + (pid || ''); }
+  function loadLocAssigned() {
+    try { return JSON.parse(localStorage.getItem(locAssignedKey()) || '[]'); } catch (e) { return []; }
+  }
+  function saveLocAssigned(arr) {
+    try { localStorage.setItem(locAssignedKey(), JSON.stringify(arr)); } catch (e) {}
+  }
   function openLocWizard() {
     if (!pid) { UI.toast('Select a project first.', 'warn'); return; }
     if (!LOC_LEVELS.length) { UI.toast('Define your location levels first — Schedule Setup › Floors & Zones.', 'warn'); return; }
@@ -10602,6 +10622,13 @@
       var carried = loadLocExcluded().filter(function (n) { return !stateNames[n]; });
       var stillExcluded = state.filter(function (s) { return s.excluded && !s.lvl; }).map(function (s) { return s.name; });
       saveLocExcluded(carried.concat(stillExcluded));
+      /* And the assignments, so "this IS a place" is as durable as "this is not". Carries forward
+         any value not seen in this session, exactly as the exclusions do, so filtering the list
+         before pressing Apply cannot silently forget an earlier decision. */
+      var asgNow = state.filter(function (x) { return x.lvl && x.val; }).map(function (x) { return String(x.val).trim(); });
+      var asgSeen = {}; asgNow.forEach(function (v) { asgSeen[v] = 1; });
+      var asgCarried = loadLocAssigned().filter(function (v) { return v && !asgSeen[v]; });
+      saveLocAssigned(asgCarried.concat(asgNow));
       _vsGrpCache = null;   // the stacking's grouping veto reads this list — stale = wrong bands
       _vsAxisCache = null;
       psSetupChanged();
@@ -13657,16 +13684,22 @@
   function _vsAssignedSet() {
     var key = pid + '|' + LOC_LEVELS.map(function (l) {
       return (l && l.id) + ':' + Object.keys((l && l.match) || {}).length;
-    }).join(',');
+    }).join(',') + '|' + (function () { try { return loadLocAssigned().length; } catch (e) { return 0; } })();
     if (_vsAsgCache && _vsAsgKey === key) return _vsAsgCache;
     var set = Object.create(null);
     try {
+      // The DB memory (location_levels.match) ...
       LOC_LEVELS.forEach(function (l) {
         var m = (l && l.match) || {};
         Object.keys(m).forEach(function (k) {
           var v = String(m[k] == null ? '' : m[k]).trim();
           if (v) set[v.toLowerCase()] = 1;
         });
+      });
+      // ... and the local one, which survives an un-run migration. See saveLocAssigned.
+      loadLocAssigned().forEach(function (v) {
+        var t = String(v == null ? '' : v).trim();
+        if (t) set[t.toLowerCase()] = 1;
       });
     } catch (e) {}
     _vsAsgKey = key; _vsAsgCache = set;
