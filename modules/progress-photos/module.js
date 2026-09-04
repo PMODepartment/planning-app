@@ -1381,18 +1381,30 @@ window.ProgressPhotos = (function () {
         '<button class="pd-btn pd-btn-danger" id="pp-mk-d-yes">Delete</button></div>';
     var m = openModal(html, 440);
     $('pp-mk-d-yes').onclick = async function () {
-      this.disabled = true;
+      var btn = this;
+      btn.disabled = true;
       var mod = isPano ? window.PANO : window.RECON;
-      if (!mod || !mod.deleteById) { UI.toast('Delete is not available right now', 'error'); this.disabled = false; return; }
-      var res = await mod.deleteById(row._src);
-      if (!res || !res.ok) {
-        UI.toast((res && res.error) || 'Could not delete', 'error');
-        this.disabled = false;
-        return;
+      if (!mod || !mod.deleteById) { UI.toast('Delete is not available right now', 'error'); btn.disabled = false; return; }
+      // ⚠️ Wrapped in try/catch (2026-09-04, exhausting the "still can't
+      // delete" report): an unexpected throw (a network drop mid-request,
+      // e.g.) previously left this async handler's promise rejecting with
+      // nothing catching it — the button stayed disabled forever with no
+      // toast at all, which reads exactly like "clicking Delete does
+      // nothing". Any failure now always re-enables the button and says so.
+      try {
+        var res = await mod.deleteById(row._src);
+        if (!res || !res.ok) {
+          UI.toast((res && res.error) || 'Could not delete', 'error');
+          btn.disabled = false;
+          return;
+        }
+        m.close();
+        UI.toast((isPano ? 'Panorama' : '3D scan') + ' deleted', 'ok');
+        render();
+      } catch (e) {
+        UI.toast((e && e.message) || 'Could not delete — check your connection and try again', 'error');
+        btn.disabled = false;
       }
-      m.close();
-      UI.toast((isPano ? 'Panorama' : '3D scan') + ' deleted', 'ok');
-      render();
     };
   }
 
@@ -2399,20 +2411,55 @@ window.ProgressPhotos = (function () {
         '<button class="pd-btn pd-btn-danger" id="pp-d-yes">Delete</button></div>';
     var m = openModal(html, 460);
     $('pp-d-yes').onclick = async function () {
-      this.disabled = true;
-      var targetRows = rows.filter(function (r) { return ids.indexOf(r.id) >= 0; });
-      var res = await sb().from(TABLE).delete().in('id', ids);
-      if (res.error) { UI.toast(res.error.message, 'error'); this.disabled = false; return; }
-      // Item 1's thumbnail is a real, separate object in the same bucket —
-      // deleting only the original would leave it orphaned forever (nothing
-      // else in the app ever points at it once this row is gone).
-      var toRemove = [];
-      targetRows.forEach(function (r) { if (r.photo_url) toRemove.push(r.photo_url); if (r.thumb_url) toRemove.push(r.thumb_url); });
-      if (toRemove.length) { try { await sb().storage.from(BUCKET).remove(toRemove); } catch (e) {} }
-      m.close();
-      UI.toast((ids.length === 1 ? 'Photo' : ids.length + ' photos') + ' deleted', 'ok');
-      ids.forEach(function (id) { delete selected[id]; });
-      await load();
+      var btn = this;
+      btn.disabled = true;
+      // ⚠️ REAL BUG FIXED (2026-09-04, found auditing every delete in this
+      // module for the "still can't delete" report): this table's DELETE RLS
+      // is owner-or-admin (the generic module-table loop in
+      // supabase-schema.sql — is_writer() and (created_by = auth.uid() or
+      // is_admin())), NOT any writer. A plain `.delete().in('id', ids)` with
+      // no `.select()` can't tell "deleted" from "RLS silently matched 0
+      // rows" — Postgres/PostgREST report that as a clean success either way.
+      // The old code below always toasted "N photos deleted" and relied on
+      // the trailing `load()` to eventually correct the count — misleading
+      // for a moment, but not a permanent phantom deletion. `.select('id')`
+      // reports exactly which ids were ACTUALLY removed, so a refusal reads
+      // as a real, honest message instead of a false success.
+      // ⚠️ Also wrapped in try/catch (2026-09-04, same pass as
+      // openMediaKindDeleteConfirm/openBatchDeleteConfirm above): an
+      // unexpected throw previously left this button stuck disabled forever
+      // with no toast — indistinguishable from "clicking Delete does nothing".
+      try {
+        var res = await sb().from(TABLE).delete().in('id', ids).select('id');
+        if (res.error) { UI.toast(res.error.message, 'error'); btn.disabled = false; return; }
+        var deletedIds = (res.data || []).map(function (r) { return r.id; });
+        if (!deletedIds.length) {
+          UI.toast('You do not have permission to delete ' + (ids.length === 1 ? 'this photo' : 'these photos') +
+            ' — only the person who uploaded it or an admin can.', 'error');
+          btn.disabled = false;
+          return;
+        }
+        // Item 1's thumbnail is a real, separate object in the same bucket —
+        // deleting only the original would leave it orphaned forever (nothing
+        // else in the app ever points at it once this row is gone). Only the
+        // rows CONFIRMED deleted above get their files removed — a refused
+        // delete must never lose the file behind a row that's still there.
+        var targetRows = rows.filter(function (r) { return deletedIds.indexOf(r.id) >= 0; });
+        var toRemove = [];
+        targetRows.forEach(function (r) { if (r.photo_url) toRemove.push(r.photo_url); if (r.thumb_url) toRemove.push(r.thumb_url); });
+        if (toRemove.length) { try { await sb().storage.from(BUCKET).remove(toRemove); } catch (e) {} }
+        m.close();
+        if (deletedIds.length < ids.length) {
+          UI.toast(deletedIds.length + ' of ' + ids.length + ' deleted — the rest need an admin or their uploader to remove them', 'warn');
+        } else {
+          UI.toast((ids.length === 1 ? 'Photo' : ids.length + ' photos') + ' deleted', 'ok');
+        }
+        deletedIds.forEach(function (id) { delete selected[id]; });
+        await load();
+      } catch (e) {
+        UI.toast((e && e.message) || 'Could not delete — check your connection and try again', 'error');
+        btn.disabled = false;
+      }
     };
   }
 
@@ -2459,33 +2506,53 @@ window.ProgressPhotos = (function () {
         '<button class="pd-btn pd-btn-danger" id="pp-bd-yes">Delete</button></div>';
     var m = openModal(html, 460);
     $('pp-bd-yes').onclick = async function () {
-      this.disabled = true;
-      var failed = 0;
-      if (split.photo.length) {
-        var targetRows = rows.filter(function (r) { return split.photo.indexOf(r.id) >= 0; });
-        var res = await sb().from(TABLE).delete().in('id', split.photo);
-        if (res.error) { UI.toast(res.error.message, 'error'); this.disabled = false; return; }
-        var toRemove = [];
-        targetRows.forEach(function (r) { if (r.photo_url) toRemove.push(r.photo_url); if (r.thumb_url) toRemove.push(r.thumb_url); });
-        if (toRemove.length) { try { await sb().storage.from(BUCKET).remove(toRemove); } catch (e) {} }
+      var btn = this;
+      btn.disabled = true;
+      try {
+        var failed = 0;
+        var succeededIds = [];
+        if (split.photo.length) {
+          // ⚠️ Same `.select()` guard as openDeleteConfirm's own fix above and
+          // for the identical reason — TABLE's DELETE RLS is owner-or-admin,
+          // not any writer, so a plain `.delete().in('id', …)` can't tell a
+          // real delete from RLS silently matching 0 rows. Reported here as
+          // per-item failures joining the pano/recon counter below, rather
+          // than aborting the whole mixed batch over the photos a planner
+          // simply isn't allowed to remove.
+          var res = await sb().from(TABLE).delete().in('id', split.photo).select('id');
+          if (res.error) { UI.toast(res.error.message, 'error'); btn.disabled = false; return; }
+          var deletedPhotoIds = (res.data || []).map(function (r) { return r.id; });
+          failed += split.photo.length - deletedPhotoIds.length;
+          succeededIds = succeededIds.concat(deletedPhotoIds);
+          var targetRows = rows.filter(function (r) { return deletedPhotoIds.indexOf(r.id) >= 0; });
+          var toRemove = [];
+          targetRows.forEach(function (r) { if (r.photo_url) toRemove.push(r.photo_url); if (r.thumb_url) toRemove.push(r.thumb_url); });
+          if (toRemove.length) { try { await sb().storage.from(BUCKET).remove(toRemove); } catch (e) {} }
+        }
+        for (var i = 0; i < split.pano.length; i++) {
+          var p = (window.PANO && PANO.list ? PANO.list() : []).filter(function (x) { return x.id === split.pano[i]; })[0];
+          if (!p || !window.PANO || !PANO.deleteById) { failed++; continue; }
+          var pr = await PANO.deleteById(p);
+          if (!pr || !pr.ok) failed++; else succeededIds.push('pano:' + split.pano[i]);
+        }
+        for (var j = 0; j < split.recon.length; j++) {
+          var rc = (window.RECON && RECON.doneList ? RECON.doneList() : []).filter(function (x) { return x.id === split.recon[j]; })[0];
+          if (!rc || !window.RECON || !RECON.deleteById) { failed++; continue; }
+          var rr = await RECON.deleteById(rc);
+          if (!rr || !rr.ok) failed++; else succeededIds.push('recon:' + split.recon[j]);
+        }
+        m.close();
+        // Only ids that ACTUALLY got deleted leave `selected` — an item that
+        // failed (e.g. RLS refused it) stays checked, since it's still there
+        // and the planner may want to see it's the one that didn't go through.
+        succeededIds.forEach(function (id) { delete selected[id]; });
+        if (failed) UI.toast((total - failed) + ' of ' + total + ' item(s) deleted — ' + failed + ' could not be removed (only the uploader or an admin can)', 'warn');
+        else UI.toast(total + ' item' + (total === 1 ? '' : 's') + ' deleted', 'ok');
+        await load();
+      } catch (e) {
+        UI.toast((e && e.message) || 'Could not delete — check your connection and try again', 'error');
+        btn.disabled = false;
       }
-      for (var i = 0; i < split.pano.length; i++) {
-        var p = (window.PANO && PANO.list ? PANO.list() : []).filter(function (x) { return x.id === split.pano[i]; })[0];
-        if (!p || !window.PANO || !PANO.deleteById) { failed++; continue; }
-        var pr = await PANO.deleteById(p);
-        if (!pr || !pr.ok) failed++;
-      }
-      for (var j = 0; j < split.recon.length; j++) {
-        var rc = (window.RECON && RECON.doneList ? RECON.doneList() : []).filter(function (x) { return x.id === split.recon[j]; })[0];
-        if (!rc || !window.RECON || !RECON.deleteById) { failed++; continue; }
-        var rr = await RECON.deleteById(rc);
-        if (!rr || !rr.ok) failed++;
-      }
-      m.close();
-      ids.forEach(function (id) { delete selected[id]; });
-      if (failed) UI.toast((total - failed) + ' of ' + total + ' item(s) deleted — ' + failed + ' could not be removed', 'warn');
-      else UI.toast(total + ' item' + (total === 1 ? '' : 's') + ' deleted', 'ok');
-      await load();
     };
   }
 

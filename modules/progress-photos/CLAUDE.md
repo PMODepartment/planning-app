@@ -2,6 +2,107 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## "I still can't delete the 3D/360 photos" — the real root cause, found by auditing every delete path in the module (2026-09-04)
+
+Owner, after both the pencil-icon fix and the batch-trash-icon fix below had shipped and merged:
+*"i still cant delete the 3d/360 photos. please exhaust all means to resolve."* Both prior fixes were
+real and correct — but neither one could have closed the report, because **the actual defect was one
+level deeper than either of them touched: a delete that silently reports success while leaving the row
+in the database.**
+
+⚠️ **The changelog entry below ("Bug fix: no delete path...") contains a wrong claim, corrected here.**
+It states *"Panoramas needed no database change — they were always covered by the generic module-table
+RLS (`is_writer()`), so any writer could already delete one at the database level."* That is false.
+Read directly out of `supabase-schema.sql`'s generic per-module-table RLS loop, the actual DELETE
+policy every module table (including `panoramas` and `progress_photos`) gets is:
+
+```sql
+create policy <table>_del on <table> for delete
+  using (is_writer() and can_access_project(project_id) and (created_by = auth.uid() or is_admin()));
+```
+
+That is **owner-or-admin**, not "any writer." A planner who is approved and has access to the project
+(`is_writer()` + `can_access_project()` both pass) but did **not** upload the specific panorama/photo
+they're trying to delete gets refused by Postgres — and Supabase/PostgREST report a refused DELETE the
+same way as a successful one that happened to match zero rows: `{ data: null, error: null }`. A
+`.delete()` call with no `.select()` chained **cannot tell these two outcomes apart**.
+
+### The bug, present in every delete path in this module except one
+
+`recon.js`'s `retractRequest`/`deleteRequest` already guard against exactly this (their own comments
+say so explicitly — this is a known, previously-solved failure mode in this codebase). Auditing every
+OTHER delete call site in the module found the same missing guard in four places:
+
+- **`pano.js`'s `deletePano`** (the function `PANO.deleteById` resolves to — the one the pencil-icon
+  editor's Delete button, and the batch-delete's per-item pano branch, both actually call) had no
+  `.select()` at all. This is almost certainly **the actual bug the owner kept hitting**: delete a
+  panorama someone else uploaded → the row survives in the database → the tile is spliced out of the
+  in-memory array so it visibly disappears from the grid for that click → the very next `load()` (a
+  page refresh, a teammate's `applyRemoteChange`, a re-sync) brings it right back. That reproduces
+  "I deleted it and it's still there" precisely.
+- **`pano.js`'s `removePano`** (the older, currently-unreachable `#pano-view` screen's own delete) had
+  the identical gap — fixed too, as defence-in-depth in case that screen is ever reconnected.
+- **`module.js`'s `openDeleteConfirm`** — the real-photo delete used by the lightbox's single-photo
+  Delete button, and (before the batch-trash-icon fix below existed) also the fallback for a
+  photo-only batch selection. Same missing `.select()`, same silent-refusal-reads-as-success shape,
+  on `progress_photos` — covered by the identical owner-or-admin policy.
+- **`module.js`'s `openBatchDeleteConfirm`** — its own photo-delete block had the same gap
+  independently (it does not call `openDeleteConfirm`, by design, so it needed its own fix).
+
+### The fix, applied identically everywhere
+
+Every one of the four now uses `.select('id')` (or bare `.select()` for a single row) and reads back
+**which ids were actually returned** before treating anything as deleted:
+
+- `deletePano`/`removePano` return/toast a real, actionable message — *"You do not have permission to
+  delete this — only the person who uploaded it or an admin can."* — instead of a false success, and
+  only splice the in-memory row / touch Storage once a real deleted row comes back.
+- `openDeleteConfirm` reports an **honest partial result** on a multi-select delete: *"N of M deleted —
+  the rest need an admin or their uploader to remove them"* rather than either a blanket false success
+  or aborting the whole batch over one refused id. Storage cleanup (`photo_url`/`thumb_url`) and the
+  `selected{}` clear are both scoped to **only the confirmed-deleted ids** — a refused photo keeps its
+  file and stays checked, so the UI doesn't lie about what actually happened to it.
+- `openBatchDeleteConfirm`'s photo branch gets the identical treatment, and a refused photo joins the
+  same `failed` counter the pano/recon per-item failures already use, so a mixed batch reports one
+  honest "N of M item(s) deleted — K could not be removed" regardless of which kind(s) were refused.
+
+⚠️ **A second, independent gap closed in the same pass: none of the three async delete-confirm click
+handlers (`openDeleteConfirm`, `openBatchDeleteConfirm`, and the pencil-icon editor's
+`openMediaKindDeleteConfirm`) were wrapped in try/catch anywhere in this file.** An unexpected throw
+(a dropped connection mid-request, for instance) left the Delete button **permanently disabled with no
+toast at all** — indistinguishable, from the outside, from "clicking Delete does nothing." All three
+now capture `var btn = this;` up front and wrap their whole body in try/catch, re-enabling the button
+and toasting a real message on any unhandled failure.
+
+### Verified
+
+**15 new checks** (942 → 957, matching the pre-existing 13-failure baseline byte-for-byte — confirmed
+by diffing the exact failure-name set against `HEAD` before this round, not just the count): structural
+assertions for every `.select('id')`/`.select()` guard, the honest partial-failure reporting, the
+storage-cleanup/`selected{}`-clear scoping to confirmed-deleted ids only, and all three try/catch wraps
+— plus **genuine execution** of `PANO.deleteById`'s RLS-refusal path (a row never pushed into the fake
+store, the same technique `RECON._deleteRequest`'s own "raced — already approved" test already uses to
+prove a real Postgres RLS refusal reads correctly), which had never actually been exercised despite
+`PANO.deleteById`'s success/missing-row cases already having tests. Two pre-existing assertions that
+regex-matched the OLD `this.disabled` shape of `openMediaKindDeleteConfirm` (before its own try/catch
+wrap renamed the captured variable to `btn`) were updated in place to match the current source —
+healthy churn from an intentional change, not a weakened check. `node --check` clean on all three
+touched files (`module.js`, `pano.js`, `test.js`); 0 NUL bytes; **0 functions lost, 0 added** against
+`HEAD` (every change is a modification to an existing function's body — a `.select()` argument and a
+try/catch wrapper, never a new declaration). `recon.js` and `module.css` are untouched by this round.
+
+⚠️ **Not verified signed-in** — same standing caveat as every entry in this file. The genuine-execution
+tests prove the client-side `.select()`-guard logic is correct against a fake store with no real RLS;
+the actual live scenario (a non-owner, non-admin planner deleting someone else's panorama/photo on the
+deployed site, and confirming the row is now honestly refused with a real toast instead of a false
+"deleted") has not been driven against a live Supabase session. **This is the fix most worth a live
+click-through**, since the whole investigation traces back to a gap no structural review of the earlier
+two fixes below could have caught — only tracing every `.delete()` call in the module against the
+table's real RLS policy found it.
+
+`module.js` → `?v=20260904j`, `pano.js` → `?v=20260904b` (module-local only — no shared asset touched,
+so no app-wide `?v=`/`MODULE_V` bump).
+
 ## Follow-up: the batch trash icon still refused a 360°/3D selection — fixed to delete mixed batches (2026-09-04)
 
 Owner, off a live screenshot of the deployed Gallery (project GPR101): checked a 360° tile via its
