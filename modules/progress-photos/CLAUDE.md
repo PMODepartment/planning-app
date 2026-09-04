@@ -2,7 +2,68 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Correction: Tower/Floor reverted to Project-Schedule-only — the union + escape hatch below was wrong (2026-09-04)
+
+Owner correction, immediately after the previous entry shipped: the Project Schedule App must be
+the **sole** source of truth for Tower/Floor. Both parts of that entry's fix are **removed**:
+
+- **The "+ Type a new value…" escape hatch is gone** from `openPlanForm` (both Tower and Floor
+  `<select>`s, and their onchange handlers and the Save handler's sentinel check) — reverted to a
+  plain, closed `<select>` built straight from `towerOptions()`/`floorOptions()`, with no way to
+  type, create, or add a value from this screen at all.
+- **`distinctLocValuesAnySource()` is deleted from module.js**, not left dormant — `photoLocCombos`.
+  `distinctLocValuesFor` (the one export bim.js calls) is back to a direct, one-line delegation to
+  `distinctLocValues()` (schedule-only). A value that only ever exists on a photo's own free-typed
+  Location field is explicitly **not** an established Tower/Floor location for this purpose,
+  however real that photo is — the two are deliberately different concepts, and the earlier entry's
+  framing of that distinction as a nuisance was the mistake.
+
+**New, correctly-scoped empty state.** The gap the union was (wrongly) built to paper over was
+real: a Location Breakdown LEVEL can exist (Tower/Floor are configured) while the SCHEDULE has
+never had a single activity tagged with an actual value — `towerOptions()` legitimately empty. That
+is now its own named state, `hasEstablishedLocations()` (`bim.js`), distinct from "no Location
+Breakdown at all":
+
+- **`towerFloorBarHTML()`** shows a new **"No Locations Available"** panel — *"No Tower/Floor
+  locations have been established for this project yet. Please establish the project locations in
+  the Project Schedule App first."* — instead of a select with nothing in it.
+- **`render()`** stops at that panel (same early-return as the "no Location Breakdown at all"
+  case) rather than falling through to a floor-plan-empty-state keyed on a Tower/Floor that was
+  never really selected.
+- **The topbar "+ Add Floor Plan" button** refuses with the identical message (`UI.toast`) instead
+  of opening a modal whose Tower `<select>` would have nothing to offer — checked before
+  `openPlanForm` is ever called, not inside it.
+- ⚠️ **Scoped precisely**: a project with **zero** Location Breakdown levels at all
+  (`towerLevel()` null) is untouched by any of this — that's the separate, pre-existing "no
+  Location Breakdown set up" message and its generic free-text Name-field upload path, neither of
+  which this correction was asked to change.
+
+### Re-verified live, both required scenarios, no data created or modified in either project
+
+- **Scenario A — SLN101 (4PH Strevi Bacoor), established Schedule locations.** Switched the
+  project selector to SLN101 **only to read its existing state**, changed nothing. Confirmed via
+  `ProgressPhotos.locLevels()` + `distinctLocValuesFor()` in the console: real Tower/Floor levels
+  with real schedule-derived values resolve correctly, and the Tower/Floor `<select>`s populate
+  from exactly those values with no escape-hatch option present.
+- **Scenario B — GPR101, no established Schedule locations.** Confirmed live:
+  `distinctLocValuesFor(towerId, {})` / `(floorId, {})` both return `[]` (schedule-only, as
+  designed — GPR101's schedule has never had a Tower/Floor value tagged on any activity, only its
+  photos do). The Floor Plan screen now shows **"No Locations Available"** with the exact required
+  guidance text, the Tower/Floor bar renders no selects at all, and clicking "+ Add Floor Plan"
+  toasts the same message instead of opening a dead-end modal.
+- **The earlier live-created test zone, "Live test zone (safe to delete)," was deleted from
+  GPR101** via the ordinary Delete button in the Zones list — `Zones: 0` confirmed afterward. No
+  other data in either project was created, changed, or removed.
+
+`bim.js`/`module.js` → `?v=20260904c` (`module.css` unchanged, stays `20260904a`).
+
 ## Floor Plan Tower/Floor picker: found live to be a real dead end — fixed with a union source + an escape hatch (2026-09-04)
+
+⚠️ **SUPERSEDED — see the correction entry directly above.** The union-of-photos-and-schedule fix
+and the "+ Type a new value…" escape hatch described below were both removed the same day, per an
+explicit owner business-rule correction: the Project Schedule App must be the sole source of truth
+for Tower/Floor, with no manual entry and no photo-derived fallback. This entry is kept as the
+record of what was tried and why it was wrong, not as a description of current behaviour.
 
 Tested the Tower→Floor→Floor Plan→Zones rebuild (entry below) **signed in, live, on production**
 (GPR101 — a real, in-use project) immediately after merging it to `main`. Zone drawing, saving,

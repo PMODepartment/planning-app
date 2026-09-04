@@ -104,7 +104,19 @@ window.BIM = (function () {
     // leaves both editable (this is the generic topbar entry point, meant
     // to work for ANY tower/floor — "Replace Plan" on the floor-plan card
     // itself is the one that locks them, see render()).
-    if ($('bim-new')) $('bim-new').onclick = function () { openPlanForm({ tower: selTowerVal, floor: selFloorVal }); };
+    if ($('bim-new')) $('bim-new').onclick = function () {
+      // ⚠️ 2026-09-04: a project WITH a Tower level configured but no
+      // established Tower value yet must not open a modal whose Tower
+      // <select> has nothing real to offer — refuse with the same guidance
+      // the empty-state screen already shows, rather than a dead-end form.
+      // A project with NO Location Breakdown at all (towerLevel() null)
+      // is unaffected — that's the pre-existing generic Name-field path.
+      if (towerLevel() && !hasEstablishedLocations()) {
+        UI.toast('No Tower/Floor locations have been established for this project yet. Please establish the project locations in the Project Schedule App first.', 'warn');
+        return;
+      }
+      openPlanForm({ tower: selTowerVal, floor: selFloorVal });
+    };
     if ($('bim-place')) $('bim-place').onclick = togglePlaceMode;
     // ⚠️ Audit cleanup: #bim-plan-select doesn't exist yet at init() time
     // (it's only created inside render()'s own injected HTML), so a binding
@@ -188,6 +200,17 @@ window.BIM = (function () {
     var prior = {}; if (t && towerVal) prior[t.id] = towerVal;
     return (window.ProgressPhotos && ProgressPhotos.distinctLocValuesFor) ? ProgressPhotos.distinctLocValuesFor(f.id, prior) : [];
   }
+  // ⚠️ 2026-09-04 business rule: the Project Schedule App is the ONLY source
+  // of truth for Tower/Floor. A project can have the Tower LEVEL configured
+  // (towerLevel() non-null — the Location Breakdown exists) while nobody has
+  // yet tagged a single schedule activity with an actual Tower VALUE
+  // (towerOptions() empty) — that is a real, valid "not established yet"
+  // state, distinct from "no Location Breakdown at all", and it must show
+  // its own guidance rather than a dead, optionless <select>. Never widened
+  // to also check photos or accept a typed value — see the removed
+  // distinctLocValuesAnySource()/"+ Type a new value…" escape hatch this
+  // replaces, in module.js's own changelog for why that was wrong.
+  function hasEstablishedLocations() { return !!towerLevel() && towerOptions().length > 0; }
   // The Tower+Floor-only subset of a plan's location_values — a plan
   // uploaded under the OLD generic tree picker may carry extra, deeper
   // level values too; grouping/replacing revisions only ever compares the
@@ -357,6 +380,17 @@ window.BIM = (function () {
         'Project Schedule (Group menu &rarr; Location Breakdown&hellip;), then floor plans can be filed under it.</p>' +
       '</div>';
     }
+    // ⚠️ 2026-09-04: the Location Breakdown LEVEL exists, but no schedule
+    // activity has an actual Tower VALUE recorded yet — Tower/Floor must
+    // stay unavailable (never a free-text/manual escape hatch) until the
+    // Project Schedule App has real established locations to offer.
+    if (!hasEstablishedLocations()) {
+      return '<div class="pp-empty" style="padding:24px 12px;">' +
+        '<p>No Locations Available</p>' +
+        '<p class="pp-hint">No Tower/Floor locations have been established for this project yet. ' +
+        'Please establish the project locations in the Project Schedule App first.</p>' +
+      '</div>';
+    }
     var towers = towerOptions();
     var floors = f ? floorOptions(selTowerVal) : [];
     return '<div class="bim-towerfloor">' +
@@ -405,8 +439,12 @@ window.BIM = (function () {
     syncTools(toolsVisible);
 
     var bar = towerFloorBarHTML();
-    var t = towerLevel();
-    if (!t) { host.innerHTML = bar; return; }
+    // No Location Breakdown at all, OR the level exists but the Schedule App
+    // has no established Tower value yet — either way `bar` already carries
+    // the correct guidance message and there is no valid Tower/Floor to view
+    // a plan under, so stop here rather than falling through to a floor-plan
+    // empty-state keyed on a selTowerVal that was never a real selection.
+    if (!hasEstablishedLocations()) { host.innerHTML = bar; return; }
 
     var plan = currentPlanFor(selTowerVal, selFloorVal);
     activePlanId = plan ? plan.id : null;
@@ -1174,31 +1212,28 @@ window.BIM = (function () {
       var n = revisionsFor(t, f).length + 1;
       return 'Rev. ' + (n < 10 ? '0' + n : n);
     }
-    // ⚠️ 2026-09-04, found live on a real project: towerOptions()/floorOptions()
-    // only enumerate values already used SOMEWHERE (schedule or photos —
-    // see distinctLocValuesAnySource in module.js) — a level that legitimately
-    // has never had a value recorded anywhere still returns []. A strict
-    // <select> with nothing to offer would dead-end the whole "+ Add Floor
-    // Plan" flow, so both selects always carry a "+ Type a new value…"
-    // escape hatch, matching this module's own established convention
-    // (the Works picker's identical "+ Add custom Works value…" option).
-    var NEW_OPT = '__bimnew__';
-    function optsHTML(vals, cur) {
-      var list = vals.slice();
-      if (cur && list.indexOf(cur) === -1) list.unshift(cur); // a freshly-typed value not yet in the enumeration must still show, selected
-      return list.map(function (v) { return '<option value="' + esc(v) + '"' + (v === cur ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('') +
-        '<option value="' + NEW_OPT + '">+ Type a new value…</option>';
-    }
+    // ⚠️ 2026-09-04 correction: Tower/Floor are picked EXCLUSIVELY from the
+    // Project Schedule App's Established Locations (towerOptions()/
+    // floorOptions(), schedule-only — see distinctLocValues() in module.js).
+    // There is deliberately NO free-text/"type a new value" escape hatch and
+    // NO fallback to values only ever seen on photos — the Schedule App is
+    // the single source of truth for Tower/Floor, and this modal must never
+    // be able to invent or accept one. `hasEstablishedLocations()` gates
+    // every caller of this function (see its callers below and the topbar
+    // button's own guard), so by the time this modal opens with `hasTower`
+    // true, towerOptions() is guaranteed non-empty — if that guarantee were
+    // ever broken, refusing to render a select with nothing real to offer
+    // (rather than inventing an escape hatch again) is the correct failure.
     var html =
       '<div class="pd-modal-header"><h3>' + (lock ? 'Upload new revision' : 'Add Floor Plan') + '</h3><button class="pd-modal-close" data-close>×</button></div>' +
       '<div class="pp-form">' +
         (hasTower
           ? '<div class="pd-field"><label>Tower</label><select class="pd-select" id="bim-p-tower"' + (lock ? ' disabled' : '') + '>' +
-              optsHTML(towerOptions(), curTower) +
+              towerOptions().map(function (v) { return '<option value="' + esc(v) + '"' + (v === curTower ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('') +
             '</select></div>' +
             (floorLevel()
               ? '<div class="pd-field"><label>Floor</label><select class="pd-select" id="bim-p-floor"' + (lock ? ' disabled' : '') + '>' +
-                  optsHTML(floorOptions(curTower), curFloor) +
+                  floorOptions(curTower).map(function (v) { return '<option value="' + esc(v) + '"' + (v === curFloor ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('') +
                 '</select></div>'
               : '')
           : '<div class="pd-field"><label>Name</label><input class="pd-input" id="bim-p-name" placeholder="e.g. Ground Floor" /></div>') +
@@ -1217,30 +1252,14 @@ window.BIM = (function () {
     var m = openModal(html, 480);
     if (hasTower && !lock) {
       if ($('bim-p-tower')) $('bim-p-tower').onchange = function () {
-        var sel = this;
-        if (sel.value === NEW_OPT) {
-          var typed = (window.prompt('New Tower value:') || '').trim();
-          if (!typed) { sel.value = curTower || ''; return; }
-          curTower = typed;
-          sel.innerHTML = optsHTML(towerOptions(), curTower);
-        } else {
-          curTower = sel.value;
-        }
+        curTower = this.value;
         var fOpts = floorOptions(curTower);
         curFloor = fOpts[0] || null;
-        if ($('bim-p-floor')) $('bim-p-floor').innerHTML = optsHTML(fOpts, curFloor);
+        if ($('bim-p-floor')) $('bim-p-floor').innerHTML = fOpts.map(function (v) { return '<option value="' + esc(v) + '">' + esc(v) + '</option>'; }).join('');
         if ($('bim-p-rev')) $('bim-p-rev').value = suggestedRevision(curTower, curFloor);
       };
       if ($('bim-p-floor')) $('bim-p-floor').onchange = function () {
-        var sel = this;
-        if (sel.value === NEW_OPT) {
-          var typed = (window.prompt('New Floor value:') || '').trim();
-          if (!typed) { sel.value = curFloor || ''; return; }
-          curFloor = typed;
-          sel.innerHTML = optsHTML(floorOptions(curTower), curFloor);
-        } else {
-          curFloor = sel.value;
-        }
+        curFloor = this.value;
         if ($('bim-p-rev')) $('bim-p-rev').value = suggestedRevision(curTower, curFloor);
       };
     }
@@ -1248,14 +1267,7 @@ window.BIM = (function () {
       var f = $('bim-p-file').files && $('bim-p-file').files[0];
       var nameEl = $('bim-p-name');
       var tSel = $('bim-p-tower'), fSel = $('bim-p-floor');
-      // The escape-hatch sentinel is only ever a real select value if it was
-      // left at its browser-default selection (nobody touched the dropdown) —
-      // onchange always replaces it with the real typed value the moment it's
-      // chosen, so seeing it here means "no Tower was actually picked".
-      if (hasTower) {
-        curTower = tSel && tSel.value !== NEW_OPT ? tSel.value : curTower;
-        curFloor = fSel && fSel.value !== NEW_OPT ? fSel.value : curFloor;
-      }
+      if (hasTower) { curTower = tSel ? tSel.value : curTower; curFloor = fSel ? fSel.value : curFloor; }
       var revision = ($('bim-p-rev').value || '').trim() || 'Rev. 01';
       var name = hasTower ? towerFloorLabel(curTower, curFloor) : (nameEl ? nameEl.value.trim() : '');
       if (hasTower && !curTower) { UI.toast('Pick a Tower first', 'warn'); return; }
