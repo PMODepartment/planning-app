@@ -27,7 +27,8 @@ window.ProgressPhotos = (function () {
   var lightboxIds = [], lightboxAt = 0;
   var projectListeners = [];         // PPR screen subscribes; both share one selector
   var scheduleListeners = [];        // bim.js subscribes — see notifyScheduleReady()
-  var scheduleLoadedOnce = false;    // true once loadSchedule() has completed at least once
+  var scheduleLoadedOnce = false;    // true once LOC_LEVELS/SCHED_ACTS are first populated (not
+                                      // necessarily once loadSchedule() as a whole has returned)
   var selected = {};                 // id -> true (Gallery batch select, follow-up feedback item 5)
 
   // ---- Schedule App integration (Phase 1) ----------------------------------
@@ -259,18 +260,8 @@ window.ProgressPhotos = (function () {
     applyTileScale();
     syncChrome();
     await load();
-    console.info('[DBG-INIT] before loadSchedule, pid=', pid);
-    await loadSchedule();
-    console.info('[DBG-INIT] after loadSchedule, SCHED_ACTS.length=', SCHED_ACTS.length, 'scheduleLoadedOnce=', scheduleLoadedOnce);
-    // ⚠️ notifyScheduleReady() FIRST, before fillFilterOptions() — found live
-    // that it must never sit behind another synchronous call that could
-    // throw. Both are `location_levels`/`SCHED_ACTS`-are-now-in` follow-ups
-    // to loadSchedule(), and letting one of them (fillFilterOptions, which
-    // touches DOM elements this exact screen may not even have) silently
-    // fail would otherwise skip the OTHER unconditionally, with no error a
-    // planner would ever see — bim.js's whole Tower/Floor picker going stale
-    // is exactly the wrong kind of failure to leave dependent on that.
-    try { notifyScheduleReady(); console.info('[DBG-INIT] notifyScheduleReady OK, scheduleLoadedOnce=', scheduleLoadedOnce); } catch (e) { console.error('[DBG-INIT] notifyScheduleReady THREW', e); }
+    await loadSchedule();   // notifyScheduleReady() now fires from INSIDE loadSchedule(), as soon as
+                            // LOC_LEVELS/SCHED_ACTS are ready — see its own comment there for why.
     try { fillFilterOptions(); } catch (e) { console.error(e); }
     await refreshQueueBadge();
     window.addEventListener('online', function () { if (pid) flushQueue(); });
@@ -323,6 +314,20 @@ window.ProgressPhotos = (function () {
         function (q) { return q.neq('activity_type', 'WBS Summary'); });
       if (!ares.error) SCHED_ACTS = ares.data || [];
     } catch (e) {}
+
+    // ⚠️ 2026-09-04, found live on SLN101 (a large, real schedule): notifying
+    // bim.js HERE, not after loadSchedule() as a whole returns. LOC_LEVELS/
+    // SCHED_ACTS — everything bim.js's Tower/Floor picker actually reads —
+    // are already final at this point; the two fetches BELOW (WBS-Summary
+    // roots for the Works picker, then activity codes) are for a completely
+    // different feature and can each cost several more paginated round
+    // trips on a large project. Gating bim.js's picker on the WHOLE function
+    // finishing meant a slow/large schedule left it staring at stale "No
+    // Locations Available" for as long as those unrelated fetches ran —
+    // confirmed live: `loadSchedule()`'s own end-of-function summary log
+    // never printed at all in a real multi-minute test window on SLN101,
+    // while LOC_LEVELS/SCHED_ACTS were already correct and queryable.
+    try { notifyScheduleReady(); } catch (e) { console.error(e); }
 
     // Resolve the Execution Phase / Close-out Phase WBS-Summary rows so the
     // Works picker can scope by dotted-code ancestry (see the EXEC_WBS_CODE
@@ -475,29 +480,37 @@ window.ProgressPhotos = (function () {
     });
   }
 
-  // ⚠️ 2026-09-04: notifyProject() always fires BEFORE loadSchedule() has even
-  // started (both here and in the project <select>'s own onchange, below) —
-  // this file's own fillFilterOptions()-after-loadSchedule() call is the
-  // existing acknowledgement of that exact race for the Works datalist/
-  // filters. bim.js's Tower/Floor picker has the identical dependency
-  // (distinctLocValuesFor reads SCHED_ACTS/LOC_LEVELS) but nothing re-ran its
-  // render once schedule data actually arrived — found live: the Floor Plan
-  // screen could show "No Locations Available" on a project that genuinely
-  // HAS established locations, simply because it rendered a beat too early.
-  // `onScheduleReady` is a second, narrower listener list (bim.js only, so
-  // this doesn't cost pano.js/recon.js/ppr.js a redundant reload) fired once
-  // loadSchedule() resolves, in both places it's awaited.
+  // ⚠️ 2026-09-04: three real, independently-diagnosed problems stacked here,
+  // each found live against SLN101 (a real, large schedule) before the
+  // previous fix could be trusted:
   //
-  // ⚠️ `scheduleLoadedOnce` + onScheduleReady's own replay-on-register (below)
-  // exist because a live signed-in test found the notify-going-forward
-  // mechanism alone still wasn't enough: on this app's real, deeply-async
-  // `safeInit(...)` sequence (index.html calls ProgressPhotos.init/PPR.init/
-  // PANO.init/RECON.init/BIM.init back to back with none of them awaited),
-  // exactly WHEN each module's own async init() reaches its onProject/
-  // onScheduleReady registration relative to another module's own await
-  // chain is not something to reason out from first principles and trust —
-  // it should just be made irrelevant. `onProject` already does this (`if
-  // (pid) fn(pid, projName);`); onScheduleReady now matches it.
+  // 1. notifyProject() (bim.js's onProject callback, which triggers its
+  //    FIRST render) always fires BEFORE loadSchedule() has even started —
+  //    this file's own fillFilterOptions()-after-loadSchedule() call is the
+  //    existing acknowledgement of that exact race for the Works datalist/
+  //    filters. bim.js's Tower/Floor picker has the identical dependency
+  //    (distinctLocValuesFor reads SCHED_ACTS/LOC_LEVELS) but nothing re-ran
+  //    its render once schedule data actually arrived.
+  // 2. A plain "notify going forward" listener can still register a beat too
+  //    late relative to WHEN loadSchedule() first resolves — on this app's
+  //    deeply-async `safeInit(...)` sequence (index.html calls
+  //    ProgressPhotos.init/PPR.init/PANO.init/RECON.init/BIM.init back to
+  //    back with none of them awaited), exactly when each module's own
+  //    async init() reaches its own registration relative to another
+  //    module's await chain is not something to reason out and trust. Fixed
+  //    by making `onScheduleReady` replay-safe, `scheduleLoadedOnce` below,
+  //    matching `onProject`'s own existing `if (pid) fn(pid, projName);`.
+  // 3. THE ONE THAT ACTUALLY MATTERED FOR SLN101: `notifyScheduleReady()` was
+  //    called by CALLERS after `await loadSchedule()` as a WHOLE returned —
+  //    but that function also fetches WBS-Summary rows (Works-picker scope)
+  //    and activity codes AFTER LOC_LEVELS/SCHED_ACTS are already final, and
+  //    on a real, large schedule those extra paginated fetches can take far
+  //    longer than the two bim.js actually depends on — confirmed live: on
+  //    SLN101, `loadSchedule()`'s own end-of-function summary log never
+  //    printed in a multi-minute test window, while LOC_LEVELS/SCHED_ACTS
+  //    were already correct and queryable. Fixed by moving the call to
+  //    fire from INSIDE loadSchedule(), immediately after the data bim.js
+  //    actually reads is populated — see that call site's own comment.
   function notifyScheduleReady() {
     scheduleLoadedOnce = true;
     scheduleListeners.forEach(function (fn) {
@@ -514,8 +527,7 @@ window.ProgressPhotos = (function () {
       sessionStorage.setItem('pd_project_name', projName);
       restoreUI(); applyTileScale(); syncChrome(); notifyProject();
       await load();
-      await loadSchedule();
-      try { notifyScheduleReady(); } catch (e) { console.error(e); }
+      await loadSchedule();   // notifyScheduleReady() fires from inside loadSchedule() itself
       try { fillFilterOptions(); } catch (e) { console.error(e); }
       await refreshQueueBadge();
       joinCollab();
