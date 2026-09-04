@@ -38,24 +38,51 @@ Breakdown at all":
   Location Breakdown set up" message and its generic free-text Name-field upload path, neither of
   which this correction was asked to change.
 
-### Re-verified live, both required scenarios, no data created or modified in either project
+### A second, independent bug found WHILE re-verifying Scenario A live
 
-- **Scenario A — SLN101 (4PH Strevi Bacoor), established Schedule locations.** Switched the
-  project selector to SLN101 **only to read its existing state**, changed nothing. Confirmed via
-  `ProgressPhotos.locLevels()` + `distinctLocValuesFor()` in the console: real Tower/Floor levels
-  with real schedule-derived values resolve correctly, and the Tower/Floor `<select>`s populate
-  from exactly those values with no escape-hatch option present.
+⚠️ **Real, pre-existing race condition — not caused by this correction, but this correction is what
+made it consequential.** Re-verifying Scenario A on **SLN101** (real, rich schedule locations
+confirmed directly: Tower A–D, 18 real floor values) showed **"No Locations Available" anyway** —
+even though `ProgressPhotos.distinctLocValuesFor()`, called a moment later from the console on the
+SAME page, correctly returned the real values. The DOM was simply stale.
+
+**Root cause:** `module.js`'s `notifyProject()` — which fires bim.js's `onProject` callback and
+triggers its first `render()` — runs **before `loadSchedule()` even starts**, in both `init()` and
+the project `<select>`'s `onchange` handler. `SCHED_ACTS`/`LOC_LEVELS` (what `towerOptions()` reads)
+are therefore still empty at that first render. This file's own code already had a comment
+acknowledging the identical race for the Works datalist/filters (`fillFilterOptions()` re-run after
+`loadSchedule()`) — nothing equivalent existed for bim.js's Tower/Floor picker. With the earlier
+(now-removed) escape hatch, this race was invisible — a premature empty select just showed "+ Type
+a new value…" and looked plausible. With the correct, closed picker, the same race surfaces as a
+**false "No Locations Available" on a project that genuinely has established locations** — directly
+undermining the very guarantee Scenario A is meant to prove.
+
+**Fixed with a second, narrow listener.** `module.js` gains `onScheduleReady(fn)`/
+`notifyScheduleReady()` (a separate list from `onProject`, so pano.js/recon.js/ppr.js don't pay for
+a redundant reload), called once `loadSchedule()` resolves in both places it's awaited. `bim.js`
+registers a listener that just calls its own `render()` again — a cheap re-paint, not a full reload
+(`floor_plans`/`floor_plan_pins`/`floor_plan_zones` don't depend on schedule data at all) — so the
+Tower/Floor bar self-corrects the moment real schedule data actually arrives, whatever order the two
+async loads finish in.
+
+### Re-verified live, both required scenarios, against the fixed build — no data created or modified
+
+- **Scenario A — SLN101 (4PH Strevi Bacoor), established Schedule locations.** Switched the project
+  selector to SLN101 **only to read its existing state**, changed nothing. After the race-condition
+  fix, the Tower/Floor bar correctly populates from the real schedule values (Tower A/B/C/D; Ground
+  Floor/2nd–16th Floor/Roofdeck/Substructure) with **no escape-hatch option present**, matching
+  `distinctLocValuesFor()`'s own console-confirmed output exactly.
 - **Scenario B — GPR101, no established Schedule locations.** Confirmed live:
-  `distinctLocValuesFor(towerId, {})` / `(floorId, {})` both return `[]` (schedule-only, as
-  designed — GPR101's schedule has never had a Tower/Floor value tagged on any activity, only its
-  photos do). The Floor Plan screen now shows **"No Locations Available"** with the exact required
-  guidance text, the Tower/Floor bar renders no selects at all, and clicking "+ Add Floor Plan"
-  toasts the same message instead of opening a dead-end modal.
-- **The earlier live-created test zone, "Live test zone (safe to delete)," was deleted from
-  GPR101** via the ordinary Delete button in the Zones list — `Zones: 0` confirmed afterward. No
-  other data in either project was created, changed, or removed.
+  `distinctLocValuesFor(towerId, {})` / `(floorId, {})` both return `[]` (schedule-only, as designed
+  — GPR101's schedule has never had a Tower/Floor value tagged on any activity; only its photos do,
+  and those are correctly ignored). The Floor Plan screen shows **"No Locations Available"** with
+  the exact required guidance text, the Tower/Floor bar renders no selects at all, and clicking
+  "+ Add Floor Plan" toasts the same message instead of opening a dead-end modal.
+- **The earlier live-created test zone, "Live test zone (safe to delete)," was deleted from GPR101**
+  via the ordinary Delete button in the Zones list — `Zones: 0` confirmed afterward. No other data in
+  either project was created, changed, or removed.
 
-`bim.js`/`module.js` → `?v=20260904c` (`module.css` unchanged, stays `20260904a`).
+`bim.js`/`module.js` → `?v=20260904d` (`module.css` unchanged, stays `20260904a`).
 
 ## Floor Plan Tower/Floor picker: found live to be a real dead end — fixed with a union source + an escape hatch (2026-09-04)
 

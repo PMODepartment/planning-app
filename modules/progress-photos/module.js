@@ -26,6 +26,7 @@ window.ProgressPhotos = (function () {
   var canWrite = false;              // planner+ / admin / super_admin
   var lightboxIds = [], lightboxAt = 0;
   var projectListeners = [];         // PPR screen subscribes; both share one selector
+  var scheduleListeners = [];        // bim.js subscribes — see notifyScheduleReady()
   var selected = {};                 // id -> true (Gallery batch select, follow-up feedback item 5)
 
   // ---- Schedule App integration (Phase 1) ----------------------------------
@@ -260,6 +261,7 @@ window.ProgressPhotos = (function () {
     await loadSchedule();
     fillFilterOptions();   // load() ran before location_levels/SCHED_ACTS existed — refresh the Works
                             // datalist + location filters now that the schedule is in
+    notifyScheduleReady(); // ditto for bim.js's Tower/Floor picker — see notifyScheduleReady()
     await refreshQueueBadge();
     window.addEventListener('online', function () { if (pid) flushQueue(); });
     joinCollab();
@@ -463,6 +465,24 @@ window.ProgressPhotos = (function () {
     });
   }
 
+  // ⚠️ 2026-09-04: notifyProject() always fires BEFORE loadSchedule() has even
+  // started (both here and in the project <select>'s own onchange, below) —
+  // this file's own fillFilterOptions()-after-loadSchedule() call is the
+  // existing acknowledgement of that exact race for the Works datalist/
+  // filters. bim.js's Tower/Floor picker has the identical dependency
+  // (distinctLocValuesFor reads SCHED_ACTS/LOC_LEVELS) but nothing re-ran its
+  // render once schedule data actually arrived — found live: the Floor Plan
+  // screen could show "No Locations Available" on a project that genuinely
+  // HAS established locations, simply because it rendered a beat too early.
+  // `onScheduleReady` is a second, narrower listener list (bim.js only, so
+  // this doesn't cost pano.js/recon.js/ppr.js a redundant reload) fired once
+  // loadSchedule() resolves, in both places it's awaited.
+  function notifyScheduleReady() {
+    scheduleListeners.forEach(function (fn) {
+      try { fn(); } catch (e) { console.error(e); }
+    });
+  }
+
   function wire() {
     $('pp-project').onchange = async function () {
       pid = this.value;
@@ -474,6 +494,7 @@ window.ProgressPhotos = (function () {
       await load();
       await loadSchedule();
       fillFilterOptions();
+      notifyScheduleReady();
       await refreshQueueBadge();
       joinCollab();
     };
@@ -5287,6 +5308,9 @@ window.ProgressPhotos = (function () {
     init: init,
     // The PPR screen shares this module's project selector + trade vocabulary.
     onProject: function (fn) { projectListeners.push(fn); if (pid) fn(pid, projName); },
+    // bim.js only — see notifyScheduleReady()'s own comment for why this
+    // exists as a separate, narrower list rather than reusing onProject.
+    onScheduleReady: function (fn) { scheduleListeners.push(fn); },
     trades: function () { return TRADES.slice(); },
     _syncChrome: syncChrome,
     // ⚠️ REAL BUG fixed here (audit pass): index.html's setScreen() only ever

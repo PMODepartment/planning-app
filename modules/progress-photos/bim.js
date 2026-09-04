@@ -95,6 +95,16 @@ window.BIM = (function () {
     canWrite = ['super_admin', 'admin', 'planner'].indexOf(prof.role) >= 0;
     wire();
     ProgressPhotos.onProject(function (p, name) { pid = p; projName = name; load(); });
+    // ⚠️ 2026-09-04: notifyProject() (above) always fires BEFORE module.js's
+    // own loadSchedule() has even started, so towerOptions()/floorOptions()
+    // — and therefore hasEstablishedLocations() — can read stale, still-empty
+    // schedule data on this screen's very first paint, showing "No Locations
+    // Available" on a project that genuinely has established locations. A
+    // cheap re-render (not a full reload — floor_plans/pins/zones don't
+    // depend on schedule data) once the schedule actually finishes loading
+    // corrects it. Safe to call even if this screen isn't the active one —
+    // render()'s own `if (!host) return;` guard makes it a no-op then.
+    if (ProgressPhotos.onScheduleReady) ProgressPhotos.onScheduleReady(function () { render(); });
   }
 
   function wire() {
