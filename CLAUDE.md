@@ -84,6 +84,74 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-04 — The module icon comes out of the top bar entirely; a dropdown icon stops being baked into its button
+
+Owner sent two annotated screenshots of Issues & Concerns' topbar: *"1. remove this icon in issues
+slide as in first photo, crossed out. no module logo is allowed in this top bar across all modules.
+2. in second photo, see the box in red. keep this logo across all modules. but do not include this
+inside the dropdown selector. keep it to the left of it as a separate icon."*
+
+Both photos show the SAME icon in two different places — the outcome of two separate,
+already-shipped changes from the day before, now reversed/redone:
+
+**1. `initModuleTopbar()` (ui.js) no longer pulls a module's icon into the top identity row.**
+A 2026-09-02 pass had it extract `[class$="-title-ico"]` out of whatever landed in `.pd-modulebar`
+(a module's `<h1>`, or a title-switch button like Project Schedule's) and pair it with the project
+dropdown in `.pd-tb-main` via a new `.pd-tb-projgroup` wrapper — exactly the icon photo 1 crosses
+out. That extraction (and the `.pd-tb-mark`/`.pd-tb-projgroup` CSS built for it) is removed outright.
+⚠️ The top row goes back to being the four fixed chrome controls only (sidebar toggle · project
+dropdown · theme toggle · avatar) — a module's own icon simply stays wherever it already sits inside
+`.pd-modulebar`, which is where the fix below picks it up.
+
+**2. `UI.tabsToDropdown()`'s `opts.icon` is now a SEPARATE sibling element, never baked into the
+trigger's `innerHTML`.** A 2026-09-03 pass (the very next day, by the same concurrent thread) had
+fused it into `trig.innerHTML` specifically to dodge a mobile problem: a genuinely separate `<h1>`
+sitting beside the trigger would claim its own full-width row on a phone once emptied of its now-
+redundant text (`.pd-h1-hasdrop`), the "orphaned icon row" issues-lessons had already been bitten by
+once. ⚠️ Solved here differently, so both asks can be satisfied at once: the icon is still a real,
+separate `<span class="pd-tabsdrop-ico">` — inserted via `wrap.insertBefore(ico, trig)`, never
+written into the button's markup — but it lives INSIDE `.pd-tabsdrop` (a sibling of the trigger, not
+of `.pd-modulebar`'s own top-level children). `.pd-tabsdrop` is now a flex row itself (`display:flex;
+align-items:center; gap:6px`), and since IT is what takes the whole row on a phone
+(`.pd-tabsdrop{flex:1 1 100%}`), the icon rides along with the trigger on that one row rather than
+ever getting a row of its own. `.pd-tabsdrop-btn`'s mobile rule changed from `width:100%` to
+`flex:1 1 auto; width:auto` so it fills what's left after the icon instead of overflowing it.
+
+⚠️ **A real bug found while verifying, not by reading the code:** `Icons.hydrate(el)` looks for
+`[data-ico]` among `el`'s DESCENDANTS — it never checks `el` itself — so the first cut's
+`Icons.hydrate(ico)` was a silent no-op and shipped an empty, unhydrated icon span. Fixed by
+hydrating `wrap` (the icon's parent) instead.
+
+⚠️ **Only 2 of the 6 `tabsToDropdown()` callers pass `opts.icon`** (issues-lessons: its own `<h1>` is
+permanently `display:none`d by `switchScreen()`, on every screen, by design; progress-photos: it has
+no standalone `<h1>` at all, dropped on an earlier owner ask) — those two get the new separate icon.
+The other four (risk-register, stakeholder-map, contracts-claims, minutes-of-meeting) call it with no
+icon option at all: their own `<h1>`'s icon, once no longer extracted to the top row, naturally rides
+beside the dropdown trigger as a sibling top-level child of `.pd-modulebar` — same visual outcome,
+reached without touching those four modules at all. Project Schedule's own `.ps-title-btn` (a
+title-switch button, not a `tabsToDropdown()` conversion) is untouched — its icon has always been
+baked into that button by design, a different, older pattern the owner's screenshots don't target.
+
+**Verified in a real browser** (Playwright against a stub-auth harness, so `.pd-tb-main` and
+`.pd-modulebar` render before any login round-trip resolves) across issues-lessons, progress-photos,
+minutes-of-meeting, risk-register and project-schedule: **zero icons in `.pd-tb-main` on every one of
+the five** (only sidebar-toggle / project-select / theme-toggle present); issues-lessons and
+progress-photos each render exactly one fully-hydrated `.pd-tabsdrop-ico` (16px svg) as a genuine DOM
+sibling immediately before `.pd-tabsdrop-btn`, never inside its `innerHTML`; minutes-of-meeting and
+risk-register render zero `.pd-tabsdrop-ico` (their own `<h1>` icon is the one visible icon,
+unchanged); Project Schedule's `#ps-title-btn` keeps its `ganttChart` icon baked in, inside
+`.pd-modulebar`, with zero icons in `.pd-tb-main`. `node --check` on `ui.js`; `dashboard.css` brace
+count unchanged in shape (458/458 open/close); grepped for stray references to the removed
+`.pd-tb-mark`/`.pd-tb-projgroup` classes and the old `icoHtml` variable — none left.
+⚠️ **Not verified signed in** — the harness stubs `AppAuth.requireLogin` to never resolve, so it
+covers the pre-login DOM state only; issues-lessons' `switchScreen()` (which force-hides its `<h1>`
+on real init, leaving the new separate icon as the sole visible one) was confirmed by reading the
+shipped function, not by driving a real login.
+
+Shared assets changed → **`ui.js?v=` bumped `20260902c` → `20260904a` across all 21 referencing HTML
+files; `dashboard.css?v=` bumped `20260903b` → `20260904a` across all 29 referencing HTML files** —
+both were single, consistent versions before this change, confirmed and re-confirmed after.
+
 ### 2026-09-03 (u) — A conditional-format fill now tints a dark row instead of repainting it
 
 *"still not fixed ... why is there light colors?"*
