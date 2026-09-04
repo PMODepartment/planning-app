@@ -57,21 +57,35 @@ a new value…" and looked plausible. With the correct, closed picker, the same 
 **false "No Locations Available" on a project that genuinely has established locations** — directly
 undermining the very guarantee Scenario A is meant to prove.
 
-**Fixed with a second, narrow listener.** `module.js` gains `onScheduleReady(fn)`/
-`notifyScheduleReady()` (a separate list from `onProject`, so pano.js/recon.js/ppr.js don't pay for
-a redundant reload), called once `loadSchedule()` resolves in both places it's awaited. `bim.js`
-registers a listener that just calls its own `render()` again — a cheap re-paint, not a full reload
-(`floor_plans`/`floor_plan_pins`/`floor_plan_zones` don't depend on schedule data at all) — so the
-Tower/Floor bar self-corrects the moment real schedule data actually arrives, whatever order the two
-async loads finish in.
+**First fix attempt (`module.js` gaining `onScheduleReady(fn)`/`notifyScheduleReady()`, called once
+per `loadSchedule()` resolution, `bim.js` registering a listener that just re-`render()`s) shipped
+and was STILL WRONG — re-verified live and reproduced the identical stale "No Locations Available"
+on SLN101.** ⚠️ Diagnosed rather than guessed at a second time: a probe listener registered from the
+console mid-session DID fire correctly on a later project switch (`onchange`'s own single, linear
+`await` chain), proving the notify mechanism itself worked — the failure was specific to the very
+first page load, where `index.html` calls `ProgressPhotos.init`/`PPR.init`/`PANO.init`/`RECON.init`/
+`BIM.init` back to back with **none of them awaited** (`safeInit`'s own `try { fn(); }`). Exactly when
+each module's own async `init()` reaches ITS registration relative to `ProgressPhotos.init()`'s own
+`await` chain reaching `notifyScheduleReady()` is not something to reason out from first principles
+and trust blindly — a plain "fires going forward" listener can register a beat too late and simply
+miss the one notification that matters, with nothing after it to ever correct the screen.
+
+**Fixed properly: made `onScheduleReady` replay-safe, mirroring `onProject`'s own existing
+pattern exactly** (`onProject: function (fn) { projectListeners.push(fn); if (pid) fn(pid,
+projName); }` — a late registration still fires immediately if the data it's asking about already
+exists). New `scheduleLoadedOnce` flag, set the first time `notifyScheduleReady()` ever runs;
+`onScheduleReady(fn)` now also calls `fn()` immediately if that flag is already true. This makes
+registration ORDER irrelevant — bim.js gets the correct picture whether it registers before or
+after schedule data has already arrived, closing the exact race the first attempt only narrowed.
 
 ### Re-verified live, both required scenarios, against the fixed build — no data created or modified
 
 - **Scenario A — SLN101 (4PH Strevi Bacoor), established Schedule locations.** Switched the project
-  selector to SLN101 **only to read its existing state**, changed nothing. After the race-condition
-  fix, the Tower/Floor bar correctly populates from the real schedule values (Tower A/B/C/D; Ground
-  Floor/2nd–16th Floor/Roofdeck/Substructure) with **no escape-hatch option present**, matching
-  `distinctLocValuesFor()`'s own console-confirmed output exactly.
+  selector to SLN101 **only to read its existing state**, changed nothing. After the replay-safe fix,
+  a genuinely fresh page load (forced past the browser's document cache) correctly populates the
+  Tower/Floor bar from the real schedule values (Tower A/B/C/D; Ground Floor/2nd–16th Floor/Roofdeck/
+  Substructure) with **no escape-hatch option present**, matching `distinctLocValuesFor()`'s own
+  console-confirmed output exactly — no manual re-render call needed this time.
 - **Scenario B — GPR101, no established Schedule locations.** Confirmed live:
   `distinctLocValuesFor(towerId, {})` / `(floorId, {})` both return `[]` (schedule-only, as designed
   — GPR101's schedule has never had a Tower/Floor value tagged on any activity; only its photos do,
@@ -82,7 +96,8 @@ async loads finish in.
   via the ordinary Delete button in the Zones list — `Zones: 0` confirmed afterward. No other data in
   either project was created, changed, or removed.
 
-`bim.js`/`module.js` → `?v=20260904d` (`module.css` unchanged, stays `20260904a`).
+`bim.js` → `?v=20260904d` (unchanged this round — only module.js's registration semantics changed);
+`module.js` → `?v=20260904e` (`module.css` unchanged throughout, stays `20260904a`).
 
 ## Floor Plan Tower/Floor picker: found live to be a real dead end — fixed with a union source + an escape hatch (2026-09-04)
 

@@ -27,6 +27,7 @@ window.ProgressPhotos = (function () {
   var lightboxIds = [], lightboxAt = 0;
   var projectListeners = [];         // PPR screen subscribes; both share one selector
   var scheduleListeners = [];        // bim.js subscribes — see notifyScheduleReady()
+  var scheduleLoadedOnce = false;    // true once loadSchedule() has completed at least once
   var selected = {};                 // id -> true (Gallery batch select, follow-up feedback item 5)
 
   // ---- Schedule App integration (Phase 1) ----------------------------------
@@ -477,7 +478,19 @@ window.ProgressPhotos = (function () {
   // `onScheduleReady` is a second, narrower listener list (bim.js only, so
   // this doesn't cost pano.js/recon.js/ppr.js a redundant reload) fired once
   // loadSchedule() resolves, in both places it's awaited.
+  //
+  // ⚠️ `scheduleLoadedOnce` + onScheduleReady's own replay-on-register (below)
+  // exist because a live signed-in test found the notify-going-forward
+  // mechanism alone still wasn't enough: on this app's real, deeply-async
+  // `safeInit(...)` sequence (index.html calls ProgressPhotos.init/PPR.init/
+  // PANO.init/RECON.init/BIM.init back to back with none of them awaited),
+  // exactly WHEN each module's own async init() reaches its onProject/
+  // onScheduleReady registration relative to another module's own await
+  // chain is not something to reason out from first principles and trust —
+  // it should just be made irrelevant. `onProject` already does this (`if
+  // (pid) fn(pid, projName);`); onScheduleReady now matches it.
   function notifyScheduleReady() {
+    scheduleLoadedOnce = true;
     scheduleListeners.forEach(function (fn) {
       try { fn(); } catch (e) { console.error(e); }
     });
@@ -5309,8 +5322,10 @@ window.ProgressPhotos = (function () {
     // The PPR screen shares this module's project selector + trade vocabulary.
     onProject: function (fn) { projectListeners.push(fn); if (pid) fn(pid, projName); },
     // bim.js only — see notifyScheduleReady()'s own comment for why this
-    // exists as a separate, narrower list rather than reusing onProject.
-    onScheduleReady: function (fn) { scheduleListeners.push(fn); },
+    // exists as a separate, narrower list rather than reusing onProject, and
+    // why registering late must still fire immediately (the same "if (pid)"
+    // replay onProject already does, just keyed on scheduleLoadedOnce).
+    onScheduleReady: function (fn) { scheduleListeners.push(fn); if (scheduleLoadedOnce) fn(); },
     trades: function () { return TRADES.slice(); },
     _syncChrome: syncChrome,
     // ⚠️ REAL BUG fixed here (audit pass): index.html's setScreen() only ever
