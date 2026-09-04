@@ -84,6 +84,23 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-03 (t) — A formatted row you could not read, and a header chopped into syllables
+
+*"UI issues here."* Two, from one screenshot.
+
+**(1)** `_fmtStyleStr` emitted `--fmt-fg` only when a conditional-format rule NAMED a text
+colour, and the CSS falls back to `color:inherit`. The default fill is `#FDECEA`, a pale cream —
+so in dark mode the row got a light background and kept near-white text, and **every rule added without
+opening the Text swatch was unreadable**. The ink is now derived from the fill's luminance, the same
+rule the stacking uses for text on a coloured cell. ⚠️ An explicit colour still wins, always.
+
+**(2)** `word-break:break-word` on header cells chopped single words anywhere, rendering the
+Activity ID header as *"AC / TIV / ITY / ID"*. Headers now break **between words only**; a word wider
+than its column overflows and clips, which is legible for its first characters where four fragments are
+legible for none. Wrapping itself is unchanged. 345 checks, 0 functions lost.
+`MODULE_V` → `20260903t`.
+
+---
 ### 2026-09-03 (s) — The stacking PDF stretched every building to the page width
 
 *"for the conversion to PDF, make it more compact. look at this it is too big."* — a four-cell card

@@ -547,8 +547,17 @@
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis; box-sizing:border-box; flex:none; }
     .ps-grid-row.head .ps-cell { font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); position:relative;
       /* Header labels WRAP (data cells keep nowrap/ellipsis) so long names stay readable when the
-         column is narrow. Two lines of this 10.5px text fit the 38px head, keeping pane alignment. */
-      white-space:normal; overflow-wrap:break-word; word-break:break-word; text-overflow:clip; line-height:1.1; }
+         column is narrow. Two lines of this 10.5px text fit the 38px head, keeping pane alignment.
+         ⚠️⚠️ THEY WRAP BETWEEN WORDS, NEVER INSIDE ONE. `word-break:break-word` let a single word be
+         chopped anywhere, so a narrow Activity ID column rendered its header as four stacked
+         fragments — "AC / TIV / ITY / ID" (owner 2026-09-03, with the screenshot). That is unreadable
+         and it is not what wrapping is for: "BL START" should break after "BL", and "ACTIVITY ID"
+         after "ACTIVITY", but neither word should ever be split.
+         ⚠️ `overflow-wrap:anywhere` is deliberately NOT used either — it has the same effect on a
+         single long word. A word genuinely wider than its column now overflows and is clipped by the
+         cell, which is legible for the first few characters; four one-syllable fragments are legible
+         for none of them. The column is resizable, and the full label is in the title attribute. */
+      white-space:normal; overflow-wrap:normal; word-break:normal; hyphens:none; text-overflow:clip; line-height:1.1; }
     .c-num { width:var(--c-num); } .c-name { width:var(--c-name); } .c-id { width:var(--c-id); } .c-status { width:var(--c-status); } .c-date { width:var(--c-date); }
     /* Per-column filter row (toggled via the column "+" chooser). Grows the grid head by 30px, so
        the Gantt head is grown to match (.ps-colf-on) to keep rows aligned with bars. The frozen
@@ -17835,7 +17844,29 @@
   function saveFmtRules() { try { localStorage.setItem('ps_fmtrules_' + pid, JSON.stringify(_fmtRules)); } catch (e) {} }
   function _fmtFn(k) { var c = FMT_CONDS.find(function (x) { return x.k === k; }); return c ? c.fn : null; }
   function _rowFmt(r) { for (var i = 0; i < _fmtRules.length; i++) { var fn = _fmtFn(_fmtRules[i].cond); if (fn && fn(r)) return _fmtRules[i]; } return null; }
-  function _fmtStyleStr(f) { return '--fmt-bg:' + f.bg + ';' + (f.fg ? '--fmt-fg:' + f.fg + ';' : '') + (f.bold ? 'font-weight:600;' : ''); }
+  /* ⚠️⚠️ A FILL WITHOUT A TEXT COLOUR USED TO LEAVE THE ROW UNREADABLE.
+     Owner 2026-09-03, screenshot of the Handover Tracker grid: four activity rows rendered as pale
+     cream bands with text barely visible against them.
+     The cause: this only emitted `--fmt-fg` when the rule NAMED one, and the CSS falls back to
+     `color: inherit` — the theme's ink. The default fill is #FDECEA, a pale cream, so in DARK MODE
+     the row got a light background and kept near-white text. Every rule added without opening the
+     Text swatch produced an invisible row, and the default is exactly that rule.
+     ⚠️ The fix derives the ink from the FILL's luminance, the same rule the Vertical Stacking already
+     uses for text on a coloured cell (_vsInkFill): light fill -> dark ink, dark fill -> light ink. A
+     row is now readable in both themes whatever fill is chosen.
+     ⚠️ AN EXPLICIT fg STILL WINS, always. This fills in a colour nobody chose; it never overrides one
+     the planner did choose, even if the contrast is poor — that is their call to make. */
+  function _fmtInk(bg) {
+    try {
+      var L = _vsLum(bg);
+      if (L == null) return null;
+      return L > 0.55 ? '#14181d' : '#ffffff';
+    } catch (e) { return null; }
+  }
+  function _fmtStyleStr(f) {
+    var fg = f.fg || _fmtInk(f.bg);
+    return '--fmt-bg:' + f.bg + ';' + (fg ? '--fmt-fg:' + fg + ';' : '') + (f.bold ? 'font-weight:600;' : '');
+  }
   // Suggested fill per condition when a rule is first added.
   var _FMT_DEFBG = { critical: '#FDECEA', near: '#FFF4E5', behind: '#FFF0D9', negfloat: '#FDECEA', complete: '#E8F6EF', inprogress: '#FFF9E6', notstarted: '#F1F1F1', milestone: '#EEF3FF', constraint: '#FFF4E5', overbudget: '#FDECEA' };
   function openFmtRules() {

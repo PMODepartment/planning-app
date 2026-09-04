@@ -1,3 +1,50 @@
+## A conditionally-formatted row you could not read, and a header chopped into syllables (2026-09-03) — jasantos2
+
+Owner, with a screenshot of the Handover Tracker grid: *"UI issues here."* Two, both real.
+
+### 1 ⚠️⚠️ Four activity rows were pale cream bands with near-invisible text
+`_fmtStyleStr` emitted `--fmt-fg` **only when the rule named a text colour**, and the CSS falls
+back to `color: inherit` — the theme's own ink. The default fill for a new rule is `#FDECEA`, a
+pale cream. So in **dark mode** the row got a light background and kept near-white text.
+
+**Every rule added without opening the Text swatch produced an unreadable row — and that is the
+default path.**
+
+The ink is now derived from the fill's luminance, the same rule the Vertical Stacking already uses for
+text on a coloured cell (`_vsInkFill`): light fill → `#14181d`, dark fill → `#ffffff`.
+- ⚠️ **An explicit `fg` still wins, always.** This fills in a colour nobody chose; it never overrides
+  one the planner did choose, even where the contrast is poor — that is their call.
+- ⚠️ A fill the luminance helper cannot parse (a named colour, `rgb()`, a var) emits **no** ink rather
+  than a guessed one, exactly as before.
+
+### 2 The Activity ID header rendered as "AC / TIV / ITY / ID"
+`word-break:break-word` on the header cells let a **single word be chopped anywhere**, so a narrow
+column stacked one word as four fragments. That is unreadable, and it is not what wrapping is for:
+*"BL START"* should break after *"BL"*, *"ACTIVITY ID"* after *"ACTIVITY"* — but neither word should
+ever be split.
+
+Headers now wrap **between words only** (`word-break:normal`, `overflow-wrap:normal`,
+`hyphens:none`).
+- ⚠️ `overflow-wrap:anywhere` was deliberately not used either — same fault on a single long word.
+- ⚠️ A word genuinely wider than its column now **overflows and is clipped**, which is legible for the
+  first few characters; four one-syllable fragments are legible for none of them. The column is
+  resizable and the full label is in the title attribute.
+- ⚠️ Headers still **wrap** — this narrows *how* they break, it does not turn wrapping off.
+
+---
+
+**Verified: 345 checks.** The shipped `_fmtStyleStr` executed against the previous commit's version
+side by side: the default cream rule emitted **no** text colour before and a dark ink now, across six
+fills from white to deep blue, with an explicit colour preserved (including a deliberately poor one)
+and four unparseable fills falling back. The header CSS is compared old vs new with **comments and
+strings stripped** — an earlier run of this very harness failed its own controls by matching the
+comment that *describes* the fix. 0 functions lost, 1 added; the inline script parses.
+
+⚠️ **NOT verified visually** — no signed-in session, so the contrast is computed rather than seen.
+⚠️ Two smaller things in the same screenshot are **not** addressed: the `+` add-column button sits over
+the last header, and the sort-column tint paints over a formatted row's fill in one cell. Both are
+cosmetic and neither was named; say the word and they are quick.
+
 ## The stacking PDF stretched every building to the page width (2026-09-03) — jasantos2
 
 Owner, with the print preview: *"for the conversion to PDF, make it more compact. look at this it is
