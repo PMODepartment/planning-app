@@ -3447,13 +3447,62 @@ console.log('\n[misc] insert().select() returns the new row id');
      /if \(usage\.photoIds\.length\) \{/.test(mjs) &&
      /class="pp-delwarn"/.test(mjs) &&
      /used in ' \+ usage\.pprIds\.length \+ ' presentation'/.test(mjs));
-  ok('openDeleteConfirm is the ONE path for both the lightbox\'s single-photo Delete and the batch selection\'s Delete — remove(r) is a thin wrapper over it',
+  ok('openDeleteConfirm is the path for the lightbox\'s single-photo Delete — remove(r) is a thin wrapper over it',
      /function remove\(r\) \{ return openDeleteConfirm\(\[r\.id\]\); \}/.test(mjs) &&
-     (mjs.match(/openDeleteConfirm\(/g) || []).length === 3);   // definition + remove(r) + the batch handler
-  ok('the batch Delete button is scoped to real photos only, same 360°/3D-skip reasoning as Download/Add to Presentation',
-     mjs.indexOf("Select at least one photo — 360°/3D captures aren\\'t deleted from here") >= 0);
+     (mjs.match(/async function openDeleteConfirm\(ids\)/g) || []).length === 1);
   ok('deleting removes the ids from `selected` (a deleted photo can\'t remain "selected")',
      /ids\.forEach\(function \(id\) \{ delete selected\[id\]; \}\);/.test(mjs));
+
+  // --- 2026-09-04 fix: the batch trash icon now deletes a MIXED selection ----
+  // (real photos AND 360°/3D pseudo-rows) instead of refusing outright the
+  // moment a pano/recon tile was checked ("Select at least one photo — 360°/
+  // 3D captures aren't deleted from here"). Confirms the OLD refusal string is
+  // genuinely gone and the new dispatch-per-kind function is what the toolbar
+  // button now calls.
+  ok('the old "360°/3D captures aren\'t deleted from here" refusal is GONE — the batch trash icon no longer blocks a mixed selection',
+     mjs.indexOf("Select at least one photo — 360°/3D captures aren") < 0);
+  ok('the batch Delete button now calls openBatchDeleteConfirm(visibleSelectedIds()) directly, with no photo-only gate first',
+     /if \(\$\('pp-sel-delete'\)\) \$\('pp-sel-delete'\)\.onclick = function \(\) \{\s*openBatchDeleteConfirm\(visibleSelectedIds\(\)\);\s*\};/.test(mjs));
+  ok('openBatchDeleteConfirm splits the raw selection via splitSelectedIds and bails on an empty selection',
+     /async function openBatchDeleteConfirm\(ids\) \{/.test(mjs) &&
+     /var split = splitSelectedIds\(ids\);/.test(mjs) &&
+     /if \(!total\) return;/.test(mjs));
+  ok('a pano/recon id is resolved back to its real object (PANO.list\\(\\)\\/RECON.doneList\\(\\)) before being deleted, never deleted by its bare uuid alone',
+     /PANO && PANO\.list \? PANO\.list\(\) : \[\]\)\.filter\(function \(x\) \{ return x\.id === split\.pano\[i\]; \}\)/.test(mjs) &&
+     /RECON && RECON\.doneList \? RECON\.doneList\(\) : \[\]\)\.filter\(function \(x\) \{ return x\.id === split\.recon\[j\]; \}\)/.test(mjs));
+  ok('a pano/recon delete goes through PANO.deleteById/RECON.deleteById — never a second in-file copy of pano.js/recon.js\'s own storage-cleanup-then-row-delete logic',
+     /var pr = await PANO\.deleteById\(p\);/.test(mjs) &&
+     /var rr = await RECON\.deleteById\(rc\);/.test(mjs));
+  ok('a missing module/function (PANO or PANO.deleteById absent) counts as a failure rather than throwing',
+     /if \(!p \|\| !window\.PANO \|\| !PANO\.deleteById\) \{ failed\+\+; continue; \}/.test(mjs) &&
+     /if \(!rc \|\| !window\.RECON \|\| !RECON\.deleteById\) \{ failed\+\+; continue; \}/.test(mjs));
+  ok('a partial failure is reported honestly ("N of M item(s) deleted — K could not be removed"), not papered over as a clean success',
+     /if \(failed\) UI\.toast\(\(total - failed\) \+ ' of ' \+ total \+ ' item\(s\) deleted/.test(mjs));
+  ok('the confirm modal names each kind present in the selection (photo\\/panorama\\/3D scan counts), not a generic "N items"',
+     /parts\.push\(split\.photo\.length \+ ' photo'/.test(mjs) &&
+     /parts\.push\(split\.pano\.length \+ ' 360° panorama'/.test(mjs) &&
+     /parts\.push\(split\.recon\.length \+ ' 3D scan'/.test(mjs));
+  ok('the presentation-usage warning still runs for the photo portion of a mixed batch (best-effort, same try/catch discipline as openDeleteConfirm)',
+     /if \(split\.photo\.length\) \{\s*try \{ usage = await findPresentationUsage\(split\.photo\); \} catch \(e\)/.test(mjs));
+  ok('the mixed batch\'s photo delete uses the same TABLE-delete + storage-cleanup shape as openDeleteConfirm (row delete first, then photo_url/thumb_url cleanup)',
+     /var res = await sb\(\)\.from\(TABLE\)\.delete\(\)\.in\('id', split\.photo\);/.test(mjs) &&
+     /targetRows\.forEach\(function \(r\) \{ if \(r\.photo_url\) toRemove\.push\(r\.photo_url\); if \(r\.thumb_url\) toRemove\.push\(r\.thumb_url\); \}\);/.test(mjs));
+  ok('ids are cleared from `selected` and a fresh load() runs after a mixed batch delete',
+     /m\.close\(\);\s*ids\.forEach\(function \(id\) \{ delete selected\[id\]; \}\);\s*if \(failed\)/.test(mjs) &&
+     /await load\(\);\s*\};\s*\}\s*\n\s*\/\/ Picks \(or creates\) a presentation/.test(mjs));
+
+  // Genuine execution: splitSelectedIds against a real mixed array (pure, and
+  // the exact function every one of the assertions above assumes is correct).
+  (function () {
+    var r = PP._splitSelectedIds(['photo-1', 'pano:aaa', 'recon:bbb', 'photo-2', 'pano:ccc']);
+    ok('splitSelectedIds (genuinely executed): correctly buckets a real mixed selection into photo/pano/recon, stripping the prefix',
+       JSON.stringify(r) === JSON.stringify({ photo: ['photo-1', 'photo-2'], pano: ['aaa', 'ccc'], recon: ['bbb'] }));
+  })();
+  (function () {
+    var r = PP._splitSelectedIds([]);
+    ok('splitSelectedIds (genuinely executed): an empty selection splits to three empty arrays, not an error',
+       r.photo.length === 0 && r.pano.length === 0 && r.recon.length === 0);
+  })();
 
   // --- Item 2: icon-only batch actions ----------------------------------------
   ok('the "archive" icon exists in the shared icon set (used by the batch Archive button)',

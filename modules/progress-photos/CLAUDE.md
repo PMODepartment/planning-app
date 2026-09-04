@@ -2,6 +2,98 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Follow-up: the batch trash icon still refused a 360°/3D selection — fixed to delete mixed batches (2026-09-04)
+
+Owner, off a live screenshot of the deployed Gallery (project GPR101): checked a 360° tile via its
+select checkbox, clicked the toolbar trash icon, got the toast *"Select at least one photo — 360°/3D
+captures aren't deleted from here"*. *"please fix this. cant delete the 360/3D photo i previously
+uploaded."*
+
+⚠️ **The earlier same-day fix (the entry directly below) only closed HALF the gap.** It gave a
+panorama/reconstruction tile its own delete via the pencil-icon edit modal
+(`openMediaKindEditor` → `openMediaKindDeleteConfirm`) — a genuinely real fix, but not the path the
+screenshot shows a planner actually reaching for. The batch-selection flow (check a tile's box,
+click the toolbar trash icon) is the more discoverable route, and it had its OWN, separate guard —
+`wireSelBar`'s `pp-sel-delete` handler — that this earlier fix never touched: it split the selection
+via `splitSelectedIds`, and if it contained no real photos it refused the whole action outright,
+naming the pencil-icon path only implicitly ("aren't deleted from here") rather than actually sending
+the planner anywhere.
+
+- **The refusal is gone. `pp-sel-delete`'s click handler now calls `openBatchDeleteConfirm
+  (visibleSelectedIds())` directly** — no photo-only gate, no "skipped" toast for the 360°/3D
+  portion of the selection. A selection made of nothing but 360°/3D tiles, nothing but photos, or any
+  mix of the two all delete in one confirm-and-go action.
+- **New `openBatchDeleteConfirm(ids)`** takes the RAW, possibly-mixed selection and splits it via the
+  existing `splitSelectedIds` (already correctly bucketing `pano:<uuid>`/`recon:<uuid>` prefixed
+  pseudo-ids away from real `progress_photos` ids — that function was never the problem; only the
+  handler refusing to use its `pano`/`recon` buckets was). Each kind is then deleted through whichever
+  module actually owns it:
+  - **Real photos** — the same in-line shape `openDeleteConfirm` already uses (presentation-usage
+    warning via `findPresentationUsage`, `TABLE.delete().in('id', …)`, then `photo_url`/`thumb_url`
+    storage cleanup) — kept as its own block here rather than calling `openDeleteConfirm` a second
+    time, so the WHOLE mixed batch is confirmed and executed as **one** action with **one** modal,
+    not two sequential confirms for one click.
+  - **Panoramas/reconstructions** — resolved back to their real object (`PANO.list()`/
+    `RECON.doneList()`, matched by id) and deleted via `PANO.deleteById`/`RECON.deleteById` — the
+    exact same two functions the pencil-icon fix below already built and proved. ⚠️ **Never a second,
+    in-file copy of pano.js/recon.js's own storage-cleanup-then-row-delete logic** — the same "one
+    360° viewer, one 3D viewer, one delete path per kind" rule this module already applies everywhere
+    else a capture is opened or removed.
+- ⚠️ **A per-item failure is counted, not fatal to the batch.** A `RECON.deleteById` call can
+  legitimately fail pre-migration (a non-admin requester deleting their own `done`/`failed` scan is
+  still refused by RLS until `2026-09-04-reconstruction-delete-terminal.sql` runs — see below) —
+  `failed++` and the loop continues rather than aborting the rest of a mixed batch over one item the
+  database was always going to refuse. The closing toast reports the honest split: *"N of M item(s)
+  deleted — K could not be removed"* rather than a false "M items deleted" or aborting with nothing
+  removed at all.
+- **The confirm modal names every kind actually present** ("Delete 2 photos, 1 360° panorama, 1 3D
+  scan?"), not a generic "N items" that hides what's about to disappear.
+- ⚠️ The presentation-usage warning still runs, scoped to just the photo portion
+  (`split.photo`) — a panorama/reconstruction can never be cited by a `ppr_slides` pane (that FK only
+  points at `progress_photos`), so checking it against the whole mixed id list would be pointless
+  work at best and a `.in()` query carrying ids from the wrong table at worst.
+- `ids.forEach(function (id) { delete selected[id]; })` still runs over the WHOLE original selection
+  (not just what succeeded) after the confirm closes, then `await load()` — the same re-render this
+  file's own `mergedRows()` already needs to pick up pano/recon deletions, since `PANO.list()`/
+  `RECON.doneList()` are read fresh on every render.
+
+### Verified
+
+**12 new checks, all green** (930 → 942): the old refusal string is confirmed gone from `module.js`
+entirely (not just paraphrased in a comment — the first draft of this fix accidentally left the exact
+retired toast text quoted inside its own explanatory comment, which is precisely the "a bare mention
+in prose doesn't count, only a real declaration would" trap this file's own Stack-view retirement
+note already warns about; caught by running the assertion against the draft and rewording the comment
+rather than weakening the check); the toolbar button now calls `openBatchDeleteConfirm` with no gate
+in front of it; `splitSelectedIds` is used to bucket the raw ids and an empty selection is a no-op;
+a pano/recon id is resolved back to its REAL object before being deleted (never deleted by its bare
+uuid alone, which none of `PANO`/`RECON`'s functions accept); the dispatch goes through
+`PANO.deleteById`/`RECON.deleteById`, never a re-implementation; a missing module/function counts as
+a failure rather than throwing; a partial failure is reported honestly; the confirm modal names each
+kind present; the photo-portion presentation-usage check and the TABLE-delete-then-storage-cleanup
+shape both match `openDeleteConfirm`'s own; and ids are cleared from `selected` with a fresh `load()`
+after the batch finishes.
+
+Plus **genuine execution** of `splitSelectedIds` (test-only hook `PP._splitSelectedIds`, the same
+convention as every other pure-function hook in this file) against a real 5-id mixed array and an
+empty array — confirming the bucketing (and prefix-stripping) is correct, not merely that the source
+text looks right.
+
+`node --check` clean on both touched files; 0 NUL bytes; **0 functions lost, 1 added**
+(`openBatchDeleteConfirm`) against the prior commit. Full suite: **942 passed, 13 failed** — the
+identical 13 pre-existing, unrelated failures this file's other 2026-09-04 entries already carry
+(confirmed by re-running the exact same suite against the pre-fix commit via `git stash`: same 13,
+same names, byte-for-byte).
+
+⚠️ **Not verified signed-in** — same standing caveat as every entry in this file. No live
+click-through of the toolbar trash icon against a real mixed selection, and the reconstruction
+migration (`2026-09-04-reconstruction-delete-terminal.sql`) still has not been run — until it is, a
+non-admin's `done`/`failed` scan in a batch will report as one of the "could not be removed" failures
+rather than a false success, which is the designed degrade path, not a bug.
+
+`module.js` → `?v=20260904i` (module-local only — no shared asset touched, so no app-wide
+`?v=`/`MODULE_V` bump).
+
 ## Correction: Tower/Floor reverted to Project-Schedule-only — the union + escape hatch below was wrong (2026-09-04)
 
 Owner correction, immediately after the previous entry shipped: the Project Schedule App must be
