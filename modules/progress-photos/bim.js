@@ -18,6 +18,7 @@ window.BIM = (function () {
   var T_PLAN = 'floor_plans';
   var T_PIN  = 'floor_plan_pins';
   var T_REG  = 'floor_plan_registrations';
+  var T_ZONE = 'floor_plan_zones';
   var BUCKET = 'progress-photos';
   var SIGN_TTL = 3600;
 
@@ -26,6 +27,29 @@ window.BIM = (function () {
   var plans = [], activePlanId = null, pins = [];
   var planUrlCache = {};
   var placeMode = false;
+
+  // -------------------------------------------------------- Tower/Floor ----
+  // 2026-09-03: PROJECT → TOWER → FLOOR → FLOOR PLAN → ZONES. Project is
+  // already selected at the shell level (ProgressPhotos.onProject); Tower
+  // and Floor are the project's own first two Location Breakdown levels
+  // (ProgressPhotos.locLevels()) — the SAME schedule-driven levels every
+  // other Progress Photos screen already reads, not a second parallel
+  // concept. A project with no Location Breakdown at all has no Tower/Floor
+  // to select, and the screen says so rather than inventing one.
+  var selTowerVal = null, selFloorVal = null;
+  // Zones for the plan currently on screen (the CURRENT revision unless a
+  // past revision is being read-only-previewed via the history modal, which
+  // never touches this — it renders its own separate, throwaway zone list).
+  var zones = [];
+  var zonesEditMode = false;
+  var selectedZoneId = null;
+  // Drawing state. drawMode is 'polygon' | 'rectangle' | null. editingZoneId
+  // is the zone being reshaped (its saved geometry is what drawPoints starts
+  // from); null means a brand-new zone. rectStart is the first corner click
+  // while drawing a rectangle (a rectangle is 2 clicks, not click-per-vertex).
+  var drawMode = null, drawPoints = [], editingZoneId = null, drawName = '';
+  var rectStart = null;
+  var ZONE_COLORS = ['#EE3124', '#2B6CB0', '#2F855A', '#B7791F', '#6B46C1', '#B83280', '#00838F', '#C05621'];
   // Every pin in the PROJECT (not just the active plan) — Batch E item 8, and
   // module.js's own Plan/Stack Gallery views (item 16), need to look a photo
   // up by id, or cluster across every plan, regardless of which single plan
@@ -75,10 +99,12 @@ window.BIM = (function () {
 
   function wire() {
     // ⚠️ Called with no args, deliberately not `= openPlanForm` directly —
-    // `openPlanForm` now takes an optional `presetValues` object (item 25),
-    // and a bare assignment would pass the click MouseEvent as that
-    // argument instead.
-    if ($('bim-new')) $('bim-new').onclick = function () { openPlanForm(); };
+    // a bare assignment would pass the click MouseEvent as `opts` instead.
+    // Pre-fills the currently selected Tower/Floor for convenience but
+    // leaves both editable (this is the generic topbar entry point, meant
+    // to work for ANY tower/floor — "Replace Plan" on the floor-plan card
+    // itself is the one that locks them, see render()).
+    if ($('bim-new')) $('bim-new').onclick = function () { openPlanForm({ tower: selTowerVal, floor: selFloorVal }); };
     if ($('bim-place')) $('bim-place').onclick = togglePlaceMode;
     // ⚠️ Audit cleanup: #bim-plan-select doesn't exist yet at init() time
     // (it's only created inside render()'s own injected HTML), so a binding
@@ -100,14 +126,32 @@ window.BIM = (function () {
     host.innerHTML = '<div class="pp-empty">Loading floor plans…</div>';
     try {
       plans = await PDb.selectAll(T_PLAN, function (q) { return q.eq('project_id', pid); });
-      plans.sort(function (a, b) { return (a.level_order || 0) - (b.level_order || 0); });
     } catch (e) {
       plans = [];
       if (!/schema cache|does not exist/i.test((e && e.message) || '')) UI.toast(e.message || String(e), 'error');
     }
-    if (!plans.some(function (p) { return p.id === activePlanId; })) {
-      activePlanId = plans.length ? plans[0].id : null;
+    // 2026-09-03: default Tower/Floor to the first combination that already
+    // has a CURRENT plan, so returning to the screen lands somewhere real
+    // rather than an empty "no floor plan" state when other floors exist.
+    // Falls back to the schedule's own first Tower/Floor VALUES (not just
+    // where a plan happens to live) so a brand-new project can still start
+    // picking a tower/floor before anything has ever been uploaded.
+    if (selTowerVal == null && selFloorVal == null) {
+      var seeded = false;
+      var withCurrent = plans.filter(function (p) { return p.is_current; });
+      if (withCurrent.length) {
+        var t0 = towerLevel(), f0 = floorLevel();
+        selTowerVal = t0 ? (withCurrent[0].location_values || {})[t0.id] || null : null;
+        selFloorVal = f0 ? (withCurrent[0].location_values || {})[f0.id] || null : null;
+        seeded = true;
+      }
+      if (!seeded) {
+        var firstTower = towerOptions()[0] || null;
+        selTowerVal = firstTower;
+        selFloorVal = firstTower ? (floorOptions(firstTower)[0] || null) : null;
+      }
     }
+    activePlanId = (currentPlanFor(selTowerVal, selFloorVal) || {}).id || null;
     // ⚠️ Audit fix: this was the one un-guarded await in load() (every
     // sibling fetch above/below it is try/caught). load() itself runs
     // fire-and-forget from ProgressPhotos.onProject() with no .catch(), so a
@@ -118,9 +162,88 @@ window.BIM = (function () {
     // full page reload, and an unhandled rejection nobody could see.
     try { await signPlanUrls(); } catch (e) { planUrlCache = {}; }
     resetView();
+    zonesEditMode = false; drawMode = null; drawPoints = []; editingZoneId = null; selectedZoneId = null;
     await loadAllPins();
     await loadRegistrations();
     await loadPins();
+    await loadZones();
+  }
+
+  // ---------------------------------------------------------- Tower/Floor --
+  // Tower = the project's first Location Breakdown level, Floor = its
+  // second — reusing ProgressPhotos.locLevels() (schedule-driven, ordered by
+  // sort_order), never a second, parallel tower/floor concept. A project
+  // with fewer than 2 levels degrades: 1 level = Tower only, Floor omitted;
+  // 0 levels = no Tower/Floor selection is possible at all, and the screen
+  // says so (see render()) rather than inventing a fallback hierarchy.
+  function locLevelsList() { return (window.ProgressPhotos && ProgressPhotos.locLevels) ? ProgressPhotos.locLevels() : []; }
+  function towerLevel() { return locLevelsList()[0] || null; }
+  function floorLevel() { return locLevelsList()[1] || null; }
+  function towerOptions() {
+    var t = towerLevel(); if (!t) return [];
+    return (window.ProgressPhotos && ProgressPhotos.distinctLocValuesFor) ? ProgressPhotos.distinctLocValuesFor(t.id, {}) : [];
+  }
+  function floorOptions(towerVal) {
+    var t = towerLevel(), f = floorLevel(); if (!f) return [];
+    var prior = {}; if (t && towerVal) prior[t.id] = towerVal;
+    return (window.ProgressPhotos && ProgressPhotos.distinctLocValuesFor) ? ProgressPhotos.distinctLocValuesFor(f.id, prior) : [];
+  }
+  // The Tower+Floor-only subset of a plan's location_values — a plan
+  // uploaded under the OLD generic tree picker may carry extra, deeper
+  // level values too; grouping/replacing revisions only ever compares the
+  // first two, so those older rows still bucket correctly.
+  function towerFloorValues(locationValues) {
+    var t = towerLevel(), f = floorLevel(), out = {};
+    if (t) out[t.id] = (locationValues || {})[t.id] || '';
+    if (f) out[f.id] = (locationValues || {})[f.id] || '';
+    return out;
+  }
+  function locKey(values) {
+    var keys = Object.keys(values || {}).sort();
+    return keys.map(function (k) { return k + '=' + values[k]; }).join('&');
+  }
+  function towerFloorKey(towerVal, floorVal) {
+    var t = towerLevel(), f = floorLevel(), vals = {};
+    if (t) vals[t.id] = towerVal || '';
+    if (f) vals[f.id] = floorVal || '';
+    return locKey(vals);
+  }
+  // Every revision (current + previous) for one Tower+Floor, oldest first.
+  function revisionsFor(towerVal, floorVal) {
+    var key = towerFloorKey(towerVal, floorVal);
+    return plans.filter(function (p) { return locKey(towerFloorValues(p.location_values)) === key; })
+      .sort(function (a, b) { return String(a.created_at || '').localeCompare(String(b.created_at || '')); });
+  }
+  function currentPlanFor(towerVal, floorVal) {
+    var revs = revisionsFor(towerVal, floorVal);
+    var cur = revs.filter(function (p) { return p.is_current; });
+    // Legacy data safety net: if nothing is explicitly flagged current
+    // (rows written before this migration ran), the most recently uploaded
+    // one is treated as current rather than showing nothing at all.
+    return cur.length ? cur[cur.length - 1] : (revs.length ? revs[revs.length - 1] : null);
+  }
+  function towerFloorLabel(towerVal, floorVal) {
+    var f = floorLevel();
+    return f ? (towerVal || '—') + ' › ' + (floorVal || '—') : (towerVal || '—');
+  }
+  // Every FLOOR's current plan, one per Tower+Floor group — the list a pin
+  // picker or the Gallery's Plan/Stack views should offer, never every
+  // historical revision (a pin belongs on the drawing people actually look
+  // at; an old superseded revision is read-only history, reached only
+  // through openRevisionHistory/openRevisionPreview above).
+  function currentPlansList() {
+    var groups = {};
+    plans.forEach(function (p) {
+      var key = locKey(towerFloorValues(p.location_values));
+      (groups[key] || (groups[key] = [])).push(p);
+    });
+    var out = [];
+    Object.keys(groups).forEach(function (k) {
+      var g = groups[k].sort(function (a, b) { return String(a.created_at || '').localeCompare(String(b.created_at || '')); });
+      var cur = g.filter(function (p) { return p.is_current; });
+      out.push(cur.length ? cur[cur.length - 1] : g[g.length - 1]);
+    });
+    return out;
   }
 
   // ALL pins for the project, across every plan — kept separate from the
@@ -201,71 +324,68 @@ window.BIM = (function () {
 
   function hydrate() { if (window.Icons && Icons.hydrate) Icons.hydrate($('bim-view')); }
 
-  // 2026-08-29 item 15 — "In the Plans tab, no need for the map and the
-  // stack. this should only be all plans." Map and Stack are RELOCATED, not
-  // deleted — they now live as Gallery view modes (item 16, module.js's own
-  // renderPlanView/renderStackView), rebuilt there against the photo/pin
-  // data those views actually need. This screen goes back to being exactly
-  // what its name says: upload, browse, and pin a floor plan.
-  // Item 25: "instead of a dropdown, it would be better to have a location
-  // tree (no floor plans for the location should be grayed out) as a side
-  // tile/panel." Matches a floor_plans row to a schedule tree node by exact
-  // value-map equality — a plan uploaded against "Tower 3" alone shows as
-  // available for the "Tower 3" node itself, not for deeper nodes under it,
-  // which is the same "pick exactly one node, any depth" rule item 7 uses
-  // for photos, applied symmetrically here.
-  function locKey(values) {
-    var keys = Object.keys(values || {}).sort();
-    return keys.map(function (k) { return k + '=' + values[k]; }).join('&');
+  // --------------------------------------------------------------- zones ---
+  async function loadZones() {
+    if (!activePlanId) { zones = []; render(); return; }
+    try {
+      zones = await PDb.selectAll(T_ZONE, function (q) { return q.eq('floor_plan_id', activePlanId); });
+      zones.sort(function (a, b) { return String(a.created_at || '').localeCompare(String(b.created_at || '')); });
+    } catch (e) {
+      zones = [];
+      if (!/schema cache|does not exist/i.test((e && e.message) || '')) UI.toast(e.message || String(e), 'error');
+    }
+    render();
   }
-  function planForValues(values) {
-    var key = locKey(values);
-    return plans.filter(function (p) { return locKey(p.location_values || {}) === key; })[0] || null;
+  function zoneById(id) { return zones.filter(function (z) { return z.id === id; })[0] || null; }
+  function zoneColorFor(id) {
+    var idx = zones.map(function (z) { return z.id; }).indexOf(id);
+    return ZONE_COLORS[(idx < 0 ? zones.length : idx) % ZONE_COLORS.length];
   }
-  function planTreeNodeHTML(node) {
-    var plan = planForValues(node.values);
-    return '<button type="button" class="bim-plantree-item' + (plan ? '' : ' no-plan') +
-      (plan && plan.id === activePlanId ? ' active' : '') + '" data-treenode="' + esc(JSON.stringify(node.values)) +
-      '" title="' + (plan ? esc(plan.name) : 'No floor plan yet — click to upload one here') + '">' +
-      '<span class="bim-plantree-dot"></span>' + esc(node.value) + '</button>' +
-      (node.children.length ? '<div style="padding-left:14px;">' + node.children.map(planTreeNodeHTML).join('') + '</div>' : '');
+  function nextZoneName() {
+    var n = zones.length + 1;
+    while (zones.some(function (z) { return (z.name || '').toLowerCase() === ('Zone ' + n).toLowerCase(); })) n++;
+    return 'Zone ' + n;
   }
-  function collectMatchedIds(nodes, out) {
-    nodes.forEach(function (n) {
-      var p = planForValues(n.values);
-      if (p) out[p.id] = true;
-      collectMatchedIds(n.children, out);
-    });
-    return out;
-  }
-  function planTreePanelHTML() {
-    var tree = (window.ProgressPhotos && ProgressPhotos.locationTree) ? ProgressPhotos.locationTree() : [];
-    if (!tree.length) return '';
-    var matched = collectMatchedIds(tree, {});
-    var unmatched = plans.filter(function (p) { return !matched[p.id]; });
-    return '<div class="bim-plantree">' + tree.map(planTreeNodeHTML).join('') +
-      (unmatched.length
-        ? '<div style="border-top:1px solid var(--pd-line);margin-top:4px;">' + unmatched.map(function (p) {
-            return '<button type="button" class="bim-plantree-item' + (p.id === activePlanId ? ' active' : '') +
-              '" data-planid="' + esc(p.id) + '"><span class="bim-plantree-dot"></span>' + esc(p.name) + '</button>';
-          }).join('') + '</div>'
-        : '') +
+
+  // ---------------------------------------------------- Tower/Floor bar ----
+  function towerFloorBarHTML() {
+    var t = towerLevel(), f = floorLevel();
+    if (!t) {
+      return '<div class="pp-empty" style="padding:24px 12px;">' +
+        '<p>No Location Breakdown set up for this project yet.</p>' +
+        '<p class="pp-hint">Tower and Floor come from the project\'s Location Breakdown — set it up in ' +
+        'Project Schedule (Group menu &rarr; Location Breakdown&hellip;), then floor plans can be filed under it.</p>' +
+      '</div>';
+    }
+    var towers = towerOptions();
+    var floors = f ? floorOptions(selTowerVal) : [];
+    return '<div class="bim-towerfloor">' +
+      '<div class="pd-field"><label>Tower</label><select class="pd-select" id="bim-sel-tower">' +
+        towers.map(function (v) { return '<option value="' + esc(v) + '"' + (v === selTowerVal ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('') +
+      '</select></div>' +
+      (f ? '<div class="pd-field"><label>Floor</label><select class="pd-select" id="bim-sel-floor">' +
+        floors.map(function (v) { return '<option value="' + esc(v) + '"' + (v === selFloorVal ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('') +
+      '</select></div>' : '') +
     '</div>';
   }
-  function wirePlanTree() {
-    var host = $('bim-view'); if (!host) return;
-    Array.prototype.forEach.call(host.querySelectorAll('[data-treenode]'), function (b) {
-      b.onclick = function () {
-        var values = JSON.parse(this.dataset.treenode);
-        var plan = planForValues(values);
-        if (plan) { activePlanId = plan.id; resetView(); loadPins(); }
-        else if (canWrite) { openPlanForm(values); }
-        else UI.toast('No floor plan uploaded for this location yet', 'warn');
-      };
-    });
-    Array.prototype.forEach.call(host.querySelectorAll('[data-planid]'), function (b) {
-      b.onclick = function () { activePlanId = this.dataset.planid; resetView(); loadPins(); };
-    });
+  function wireTowerFloorBar() {
+    if ($('bim-sel-tower')) $('bim-sel-tower').onchange = function () {
+      selTowerVal = this.value;
+      var opts = floorOptions(selTowerVal);
+      selFloorVal = opts.indexOf(selFloorVal) >= 0 ? selFloorVal : (opts[0] || null);
+      afterTowerFloorChange();
+    };
+    if ($('bim-sel-floor')) $('bim-sel-floor').onchange = function () {
+      selFloorVal = this.value;
+      afterTowerFloorChange();
+    };
+  }
+  function afterTowerFloorChange() {
+    activePlanId = (currentPlanFor(selTowerVal, selFloorVal) || {}).id || null;
+    resetView();
+    zonesEditMode = false; drawMode = null; drawPoints = []; editingZoneId = null; selectedZoneId = null;
+    loadPins();   // loadPins() re-renders; loadZones() chains after via its own await inside load(), so call both here directly
+    loadZones();
   }
 
   function render() {
@@ -284,29 +404,30 @@ window.BIM = (function () {
     // happened.
     syncTools(toolsVisible);
 
-    if (!plans.length) {
-      // Even with zero plans uploaded, a project WITH a Location Breakdown
-      // still shows the tree (every node grey) so the planner can see
-      // exactly which locations need one — the same "show the skeleton even
-      // with nothing assigned yet" principle item 30 applies to Stack view.
-      var emptyTree = planTreePanelHTML();
-      host.innerHTML =
-        (emptyTree ? '<div class="bim-withtree">' + emptyTree + '<div class="pp-empty">' : '<div class="pp-empty">') +
-        '<span data-ico="compass" data-ico-size="34"></span>' +
-        '<p>No floor plans uploaded yet for this project.</p>' +
-        (canWrite ? '<p class="pp-hint">' + (emptyTree ? 'Click a location on the left, or press' : 'Press') +
-          ' <strong>+ Upload floor plan</strong> to add one, then a pin is placed for it the next time a ' +
-          'photo is added there.</p>' : '') +
-        '</div>' + (emptyTree ? '</div>' : '');
-      if (emptyTree) wirePlanTree();
+    var bar = towerFloorBarHTML();
+    var t = towerLevel();
+    if (!t) { host.innerHTML = bar; return; }
+
+    var plan = currentPlanFor(selTowerVal, selFloorVal);
+    activePlanId = plan ? plan.id : null;
+
+    if (!plan) {
+      host.innerHTML = bar +
+        '<div class="pp-empty" style="padding:32px 12px;">' +
+          '<span data-ico="compass" data-ico-size="34"></span>' +
+          '<p>No floor plan uploaded for this floor.</p>' +
+          (canWrite ? '<button class="pd-btn pd-btn-primary" id="bim-fp-add-empty">+ Add Floor Plan</button>' : '') +
+        '</div>';
+      wireTowerFloorBar();
+      if ($('bim-fp-add-empty')) $('bim-fp-add-empty').onclick = function () { openPlanForm({ tower: selTowerVal, floor: selFloorVal, lock: true }); };
+      hydrate();
       return;
     }
 
-    var plan = activePlan();
     var url = planUrl(plan);
     var aspect = (plan && plan.width_px && plan.height_px) ? (plan.height_px / plan.width_px) : 0.75;
 
-    // Batch H: Register… / Actual view controls.
+    // Batch H: Register… / Actual view controls (existing, untouched).
     var reg = actualRegistrationFor(activePlanId);
     var toolbarExtra =
       (canWrite ? '<button class="pd-btn" id="bim-register">Register a top-view photo…</button>' : '') +
@@ -314,14 +435,24 @@ window.BIM = (function () {
         '<input type="checkbox" id="bim-actualview"' + (actualView ? ' checked' : '') + ' /> Actual view</label>' : '');
 
     var actualUrl = (actualView && reg && reg.homography) ? '' : url; // Actual view swaps in a <canvas> instead of the <img>, painted after render()
-    var treePanel = planTreePanelHTML();
+    var revs = revisionsFor(selTowerVal, selFloorVal);
+
     var stageHTML =
-      '<div>' +
       '<div class="bim-toolbar">' + toolbarExtra +
         '<span class="pp-hint">Ctrl+scroll to zoom · drag to pan</span>' +
         (actualView && reg ? '<span class="bim-placebadge" style="background:color-mix(in srgb, var(--pd-ink) 14%, var(--pd-card));color:var(--pd-ink);">Actual view — warped photo, not the drawing</span>' : '') +
+        (drawMode ? '<span class="bim-placebadge">' + (drawMode === 'rectangle'
+            ? (rectStart ? 'Click the opposite corner' : 'Click the first corner of the rectangle')
+            : 'Click to add a point · double-click to finish (need at least 3)') + '</span>' : '') +
       '</div>' +
-      '<div class="bim-stage-outer" id="bim-stage-outer">' +
+      '<div class="bim-viewerbar">' +
+        '<button class="pd-btn" id="bim-vw-out" title="Zoom out">−</button>' +
+        '<button class="pd-btn" id="bim-vw-fit" title="Fit to screen">Fit</button>' +
+        '<button class="pd-btn" id="bim-vw-in" title="Zoom in">+</button>' +
+        '<button class="pd-btn" id="bim-vw-reset" title="Reset view">Reset view</button>' +
+        (selectedZoneId ? '<button class="pd-btn" id="bim-vw-clearsel" title="Clear selected zone">Clear selection</button>' : '') +
+      '</div>' +
+      '<div class="bim-stage-outer' + (drawMode ? ' is-drawing' : '') + '" id="bim-stage-outer">' +
         '<div class="bim-stage-inner" id="bim-stage-inner" style="transform:translate(' + panX + 'px,' + panY + 'px) scale(' + zoom + ');">' +
           '<div class="bim-imgwrap" id="bim-imgwrap" style="padding-bottom:' + (aspect * 100) + '%;">' +
             (actualUrl
@@ -336,22 +467,70 @@ window.BIM = (function () {
                   : '<img id="bim-img" src="' + esc(actualUrl) + '" draggable="false" />')
               : (actualView && reg ? '<canvas id="bim-actual-canvas" style="position:absolute;inset:0;width:100%;height:100%;"></canvas>' :
               '<div class="pp-empty" style="position:absolute;inset:0;">Plan image not available</div>')) +
+            zoneOverlaySVG() +
             pins.map(pinMarkerHTML).join('') +
           '</div>' +
         '</div>' +
-      '</div>' +
       '</div>';
-    host.innerHTML = treePanel ? '<div class="bim-withtree">' + treePanel + stageHTML + '</div>' : stageHTML;
-    // wirePlan() still wires the [data-pin] MARKER clicks on the stage
-    // itself (its own #bim-plan-select wiring is now a harmless no-op — that
-    // control is gone, replaced by the tree panel wired below).
+
+    var infoHTML =
+      '<div class="bim-fp-info">' +
+        '<div class="bim-fp-info-row">' +
+          '<span><strong>Revision:</strong> ' + esc(plan.revision || 'Rev. 01') + (revs.length > 1 ? ' <button class="pd-linkbtn" id="bim-fp-history">History (' + revs.length + ')</button>' : '') + '</span>' +
+          '<span><strong>Updated:</strong> ' + esc(fmtDate(plan.updated_at || plan.created_at)) + '</span>' +
+          '<span><strong>Zones:</strong> ' + zones.length + '</span>' +
+        '</div>' +
+        (canWrite ? '<div class="bim-fp-info-actions">' +
+          '<button class="pd-btn' + (zonesEditMode ? ' pd-btn-primary' : '') + '" id="bim-fp-editzones">' + (zonesEditMode ? 'Done editing zones' : 'Edit Zones') + '</button>' +
+          '<button class="pd-btn" id="bim-fp-replace">Replace Plan</button>' +
+        '</div>' : '') +
+      '</div>';
+
+    var zonePanelHTML = drawMode ? zoneDrawPanelHTML() : '';
+    var zoneListPanel = '<div class="bim-zonelist"><h4>Zones</h4>' +
+      (zones.length ? zones.map(function (z, i) {
+        return '<div class="bim-zonelist-row' + (z.id === selectedZoneId ? ' active' : '') + '" data-zonerow="' + esc(z.id) + '">' +
+          '<span class="bim-zonelist-dot" style="background:' + zoneColorFor(z.id) + ';"></span>' +
+          '<span class="bim-zonelist-name">' + esc(z.name) + '</span>' +
+          (zonesEditMode ? '<span class="bim-zonelist-acts">' +
+            '<button type="button" class="pd-linkbtn" data-zoneedit="' + esc(z.id) + '">Edit</button>' +
+            '<button type="button" class="pd-linkbtn" data-zonedel="' + esc(z.id) + '">Delete</button>' +
+          '</span>' : '') +
+        '</div>';
+      }).join('') : '<p class="pp-hint">No zones defined yet.</p>') +
+      (zonesEditMode && !drawMode ? '<button class="pd-btn pd-btn-primary" id="bim-zone-add" style="margin-top:8px;">+ Add Zone</button>' : '') +
+    '</div>';
+
+    host.innerHTML = bar + infoHTML + stageHTML + zonePanelHTML +
+      '<div class="bim-withzones">' + zoneListPanel + '</div>';
+
+    wireTowerFloorBar();
+    // wirePlan() still wires the [data-pin] MARKER clicks on the stage.
     wirePlan();
-    wirePlanTree();
     if ($('bim-register')) $('bim-register').onclick = openRegisterFlow;
     if ($('bim-actualview')) $('bim-actualview').onchange = function () { actualView = this.checked; render(); };
+    if ($('bim-fp-history')) $('bim-fp-history').onclick = function () { openRevisionHistory(revs, plan); };
+    if ($('bim-fp-editzones')) $('bim-fp-editzones').onclick = function () {
+      zonesEditMode = !zonesEditMode;
+      if (!zonesEditMode) { drawMode = null; drawPoints = []; editingZoneId = null; }
+      render();
+    };
+    if ($('bim-fp-replace')) $('bim-fp-replace').onclick = function () { openPlanForm({ tower: selTowerVal, floor: selFloorVal, lock: true }); };
+    if ($('bim-vw-out')) $('bim-vw-out').onclick = function () { zoom = Math.max(MIN_ZOOM, zoom * 0.8); applyTransform(); };
+    if ($('bim-vw-in')) $('bim-vw-in').onclick = function () { zoom = Math.min(MAX_ZOOM, zoom * 1.25); applyTransform(); };
+    if ($('bim-vw-fit')) $('bim-vw-fit').onclick = function () { resetView(); applyTransform(); };
+    if ($('bim-vw-reset')) $('bim-vw-reset').onclick = function () { resetView(); applyTransform(); };
+    if ($('bim-vw-clearsel')) $('bim-vw-clearsel').onclick = function () { selectedZoneId = null; render(); };
+    wireZoneList();
+    wireZoneDrawPanel();
     wireStageInteractions();
     hydrate();
     if (actualView && reg && reg.homography) paintActualView(reg);
+  }
+  function fmtDate(iso) {
+    if (!iso) return '—';
+    if (window.Fmt && Fmt.date) return Fmt.date(iso);
+    try { return new Date(iso).toLocaleDateString(); } catch (e) { return String(iso).slice(0, 10); }
   }
 
   function pinIcon(type) {
@@ -458,24 +637,292 @@ window.BIM = (function () {
 
     outer.addEventListener('mousedown', function (e) {
       if (e.target.closest && e.target.closest('[data-pin]')) return;
+      // 2026-09-03: while actively drawing a zone, a click places a point —
+      // panning must be suspended, or every click-to-add-a-vertex would also
+      // start a drag gesture (a real interaction conflict this stage never
+      // had before zones existed).
+      if (drawMode) return;
       dragging = true; moved = false; lastX = e.clientX; lastY = e.clientY;
     });
 
     outer.addEventListener('click', function (e) {
-      if (!placeMode || moved) return;
       if (e.target.closest && e.target.closest('[data-pin]')) return;
-      var img = $('bim-img'); if (!img) { UI.toast('Upload a floor plan image first', 'warn'); return; }
-      var rect = img.getBoundingClientRect();
-      if (!rect.width || !rect.height) return;
-      var xNorm = (e.clientX - rect.left) / rect.width;
-      var yNorm = (e.clientY - rect.top) / rect.height;
-      if (xNorm < 0 || xNorm > 1 || yNorm < 0 || yNorm > 1) return;
-      openPinPicker(xNorm, yNorm);
+      if (drawMode) { handleZoneDrawClick(e); return; }
+      if (placeMode && !moved) {
+        var img = $('bim-img'); if (!img) { UI.toast('Upload a floor plan image first', 'warn'); return; }
+        var rect = img.getBoundingClientRect();
+        if (!rect.width || !rect.height) return;
+        var xNorm = (e.clientX - rect.left) / rect.width;
+        var yNorm = (e.clientY - rect.top) / rect.height;
+        if (xNorm < 0 || xNorm > 1 || yNorm < 0 || yNorm > 1) return;
+        openPinPicker(xNorm, yNorm);
+        return;
+      }
+      // Clicking a zone's own overlay polygon selects it — the "clicking a
+      // zone on the floor plan identifies it in the list" half of spec §13.
+      // Clicking anywhere else on the plan (bare background) clears the
+      // selection, so a stale highlight can't linger with nothing to explain it.
+      if (!moved) {
+        var zoneEl = e.target.closest && e.target.closest('[data-zone]');
+        var newSel = zoneEl ? zoneEl.getAttribute('data-zone') : null;
+        if (newSel !== selectedZoneId) { selectedZoneId = newSel; render(); }
+      }
+    });
+    outer.addEventListener('dblclick', function (e) {
+      if (drawMode === 'polygon') { e.preventDefault(); finishPolygon(); }
     });
   }
   function applyTransform() {
     var el = $('bim-stage-inner');
     if (el) el.style.transform = 'translate(' + panX + 'px,' + panY + 'px) scale(' + zoom + ')';
+  }
+
+  // ------------------------------------------------------------- zones -----
+  // Spec §11: geometry is real, persisted data (floor_plan_zones.
+  // boundary_coordinates), not a visual-only overlay — drawn/dragged points
+  // are held in `drawPoints` purely as an in-memory WORKING COPY until Save
+  // writes them; nothing here paints a shape that isn't backed by that array.
+  var drawClosed = false;
+  function polygonCentroid(pts) {
+    var x = 0, y = 0;
+    pts.forEach(function (p) { x += p.x; y += p.y; });
+    return { x: x / pts.length, y: y / pts.length };
+  }
+  function zonePathD(pts) {
+    return pts.map(function (p, i) { return (i === 0 ? 'M ' : 'L ') + (p.x * 100) + ',' + (p.y * 100); }).join(' ') + (pts.length >= 3 ? ' Z' : '');
+  }
+  function zoneOverlaySVG() {
+    var body = '';
+    zones.forEach(function (z) {
+      if (z.id === editingZoneId) return; // live drawPoints below replaces its saved shape while being reshaped
+      var pts = z.boundary_coordinates || [];
+      if (pts.length < 3) return;
+      var color = zoneColorFor(z.id);
+      var isSel = z.id === selectedZoneId;
+      var c = polygonCentroid(pts);
+      body += '<path class="bim-zone-poly' + (isSel ? ' is-sel' : '') + '" data-zone="' + esc(z.id) + '" d="' + zonePathD(pts) +
+        '" fill="' + color + '" fill-opacity="' + (isSel ? 0.4 : 0.22) + '" stroke="' + color + '" stroke-width="' + (isSel ? 0.7 : 0.35) + '" />' +
+        '<text class="bim-zone-label" x="' + (c.x * 100) + '" y="' + (c.y * 100) + '" text-anchor="middle" dominant-baseline="middle">' + esc(z.name) + '</text>';
+    });
+    if (drawMode && drawPoints.length) {
+      body += '<path class="bim-zone-drawing" d="' + zonePathD(drawPoints) + '" fill="var(--pd-red)" fill-opacity="0.18" stroke="var(--pd-red)" stroke-width="0.5" stroke-dasharray="1.4,1" />';
+      drawPoints.forEach(function (p, i) {
+        body += '<circle class="bim-zone-vertex" data-vertexidx="' + i + '" cx="' + (p.x * 100) + '" cy="' + (p.y * 100) + '" r="1.1" />';
+      });
+    }
+    if (drawMode === 'rectangle' && rectStart) {
+      body += '<circle class="bim-zone-vertex" cx="' + (rectStart.x * 100) + '" cy="' + (rectStart.y * 100) + '" r="1.1" />';
+    }
+    return '<svg class="bim-zone-svg" viewBox="0 0 100 100" preserveAspectRatio="none">' + body + '</svg>';
+  }
+  function handleZoneDrawClick(e) {
+    var img = $('bim-img');
+    if (!img) { UI.toast('Plan image not available', 'warn'); return; }
+    var rect = img.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    var x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    var y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+    if (drawMode === 'rectangle') {
+      if (!rectStart) { rectStart = { x: x, y: y }; render(); return; }
+      // Two clicks — opposite corners — is the whole gesture; Rectangle is a
+      // faster convenience over Polygon's click-per-vertex, per spec §10.
+      drawPoints = [
+        { x: rectStart.x, y: rectStart.y }, { x: x, y: rectStart.y },
+        { x: x, y: y }, { x: rectStart.x, y: y }
+      ];
+      rectStart = null; drawClosed = true;
+      render();
+      return;
+    }
+    if (drawClosed) return; // polygon already closed — Save/Clear/Cancel only
+    drawPoints.push({ x: x, y: y });
+    render();
+  }
+  function finishPolygon() {
+    if (drawPoints.length < 3) { UI.toast('A zone boundary needs at least 3 points before it can be closed', 'warn'); return; }
+    drawClosed = true;
+    render();
+  }
+  function startAddZone() {
+    drawMode = 'polygon'; drawClosed = false; drawPoints = []; rectStart = null;
+    editingZoneId = null; drawName = nextZoneName();
+    render();
+  }
+  function startEditZone(id) {
+    var z = zoneById(id); if (!z) return;
+    drawMode = z.boundary_type === 'rectangle' ? 'rectangle' : 'polygon';
+    drawClosed = true; // an existing zone's saved geometry is already a closed shape
+    drawPoints = (z.boundary_coordinates || []).map(function (p) { return { x: p.x, y: p.y }; });
+    rectStart = null; editingZoneId = id; drawName = z.name;
+    render();
+  }
+  function cancelZoneDraw() {
+    drawMode = null; drawPoints = []; editingZoneId = null; rectStart = null; drawClosed = false;
+    render();
+  }
+  async function saveZone() {
+    var name = (drawName || '').trim();
+    if (!name) { UI.toast('Name the zone first', 'warn'); return; }
+    if (drawPoints.length < 3) { UI.toast('Draw a boundary with at least 3 points', 'warn'); return; }
+    var btn = $('bim-zd-save'); if (btn) btn.disabled = true;
+    var row = {
+      floor_plan_id: activePlanId, project_id: pid, name: name,
+      boundary_type: drawMode === 'rectangle' ? 'rectangle' : 'polygon',
+      boundary_coordinates: drawPoints,
+      color: editingZoneId ? zoneColorFor(editingZoneId) : ZONE_COLORS[zones.length % ZONE_COLORS.length],
+      created_by: uid, updated_at: new Date().toISOString()
+    };
+    var res = editingZoneId
+      ? await sb().from(T_ZONE).update(row).eq('id', editingZoneId)
+      : await sb().from(T_ZONE).insert(row);
+    if (res.error) {
+      // §13: avoid duplicate zone names within the same floor plan revision
+      // — enforced by a case-insensitive unique index; surfaced here as a
+      // plain, actionable message rather than a raw constraint error.
+      if (/duplicate key|unique constraint|idx_floor_plan_zones_name_uniq/i.test(res.error.message || '')) {
+        UI.toast('A zone named "' + name + '" already exists on this floor plan — pick a different name.', 'error');
+      } else {
+        UI.toast('Could not save the zone: ' + res.error.message, 'error');
+      }
+      if (btn) btn.disabled = false;
+      return;
+    }
+    UI.toast('Zone saved', 'ok');
+    drawMode = null; drawPoints = []; editingZoneId = null; rectStart = null; drawClosed = false;
+    await loadZones();
+  }
+  function deleteZone(id) {
+    var z = zoneById(id); if (!z) return;
+    if (!window.confirm('Delete zone "' + z.name + '"? This cannot be undone.')) return;
+    sb().from(T_ZONE).delete().eq('id', id).then(function (res) {
+      if (res.error) { UI.toast('Could not delete the zone: ' + res.error.message, 'error'); return; }
+      if (selectedZoneId === id) selectedZoneId = null;
+      UI.toast('Zone deleted', 'ok');
+      loadZones();
+    });
+  }
+  function zoneDrawPanelHTML() {
+    return '<div class="bim-zonedraw">' +
+      '<div class="pd-field"><label>Zone Name</label><input class="pd-input" id="bim-zd-name" value="' + esc(drawName) + '" /></div>' +
+      '<div class="bim-zonedraw-tools">' +
+        '<button type="button" class="pd-btn' + (drawMode === 'polygon' ? ' pd-btn-primary' : '') + '" id="bim-zd-polygon">Draw Polygon</button>' +
+        '<button type="button" class="pd-btn' + (drawMode === 'rectangle' ? ' pd-btn-primary' : '') + '" id="bim-zd-rect">Draw Rectangle</button>' +
+        (drawMode === 'polygon' && !drawClosed ? '<button type="button" class="pd-btn" id="bim-zd-finish">Finish shape</button>' : '') +
+        '<button type="button" class="pd-btn" id="bim-zd-undo"' + (drawPoints.length ? '' : ' disabled') + '>Delete last point</button>' +
+        '<button type="button" class="pd-btn" id="bim-zd-clear"' + (drawPoints.length ? '' : ' disabled') + '>Clear drawing</button>' +
+      '</div>' +
+      '<div class="bim-zonedraw-foot">' +
+        '<button type="button" class="pd-btn" id="bim-zd-cancel">Cancel</button>' +
+        '<button type="button" class="pd-btn pd-btn-primary" id="bim-zd-save">Save</button>' +
+      '</div>' +
+    '</div>';
+  }
+  function wireZoneDrawPanel() {
+    if ($('bim-zd-name')) $('bim-zd-name').oninput = function () { drawName = this.value; };
+    if ($('bim-zd-polygon')) $('bim-zd-polygon').onclick = function () { drawMode = 'polygon'; drawClosed = false; drawPoints = []; rectStart = null; render(); };
+    if ($('bim-zd-rect')) $('bim-zd-rect').onclick = function () { drawMode = 'rectangle'; drawClosed = false; drawPoints = []; rectStart = null; render(); };
+    if ($('bim-zd-finish')) $('bim-zd-finish').onclick = finishPolygon;
+    if ($('bim-zd-undo')) $('bim-zd-undo').onclick = function () { drawPoints.pop(); drawClosed = false; render(); };
+    if ($('bim-zd-clear')) $('bim-zd-clear').onclick = function () { drawPoints = []; rectStart = null; drawClosed = false; render(); };
+    if ($('bim-zd-cancel')) $('bim-zd-cancel').onclick = cancelZoneDraw;
+    if ($('bim-zd-save')) $('bim-zd-save').onclick = saveZone;
+    var host = $('bim-view'); if (!host) return;
+    Array.prototype.forEach.call(host.querySelectorAll('[data-vertexidx]'), function (h) { wireVertexDrag(h); });
+  }
+  // Drag an existing point to reshape the boundary — spec §9's "drag points
+  // to adjust". Repositions the SVG in place during the drag (never a full
+  // render, which would drop the pointer capture the drag itself set up,
+  // the same discipline the pin/cone widgets above already established) and
+  // only commits into `drawPoints` — Save is still what persists it.
+  function wireVertexDrag(handleEl) {
+    var idx = +handleEl.dataset.vertexidx;
+    handleEl.onpointerdown = function (e) {
+      e.stopPropagation();
+      handleEl.setPointerCapture(e.pointerId);
+      var img = $('bim-img');
+      function move(ev) {
+        if (!img) return;
+        var rect = img.getBoundingClientRect();
+        var x = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
+        var y = Math.max(0, Math.min(1, (ev.clientY - rect.top) / rect.height));
+        drawPoints[idx] = { x: x, y: y };
+        handleEl.setAttribute('cx', x * 100); handleEl.setAttribute('cy', y * 100);
+        var poly = $('bim-view').querySelector('.bim-zone-drawing');
+        if (poly) poly.setAttribute('d', zonePathD(drawPoints));
+      }
+      function up() { handleEl.onpointermove = null; window.removeEventListener('pointerup', up); }
+      handleEl.onpointermove = move;
+      window.addEventListener('pointerup', up);
+    };
+  }
+  function wireZoneList() {
+    var host = $('bim-view'); if (!host) return;
+    if ($('bim-zone-add')) $('bim-zone-add').onclick = startAddZone;
+    Array.prototype.forEach.call(host.querySelectorAll('[data-zonerow]'), function (row) {
+      row.onclick = function (e) {
+        if (e.target.closest && e.target.closest('[data-zoneedit],[data-zonedel]')) return;
+        var id = this.dataset.zonerow;
+        selectedZoneId = (selectedZoneId === id) ? null : id;
+        render();
+      };
+    });
+    Array.prototype.forEach.call(host.querySelectorAll('[data-zoneedit]'), function (b) {
+      b.onclick = function (e) { e.stopPropagation(); startEditZone(this.dataset.zoneedit); };
+    });
+    Array.prototype.forEach.call(host.querySelectorAll('[data-zonedel]'), function (b) {
+      b.onclick = function (e) { e.stopPropagation(); deleteZone(this.dataset.zonedel); };
+    });
+  }
+
+  // -------------------------------------------------- revision history -----
+  function openRevisionHistory(revs, currentPlan) {
+    var ordered = revs.slice().reverse(); // newest first
+    var html =
+      '<div class="pd-modal-header"><h3>Revision history</h3><button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-form">' +
+        ordered.map(function (p) {
+          var isCur = p.id === currentPlan.id;
+          return '<div class="bim-revrow' + (isCur ? ' is-current' : '') + '">' +
+            '<div><strong>' + esc(p.revision || 'Rev. 01') + '</strong>' + (isCur ? ' <span class="bim-revbadge">CURRENT</span>' : '') +
+              '<div class="pp-hint">Uploaded ' + esc(fmtDate(p.created_at)) + (p.created_by === uid ? ' by you' : '') + '</div></div>' +
+            '<button type="button" class="pd-btn" data-viewrev="' + esc(p.id) + '">View</button>' +
+          '</div>';
+        }).join('') +
+      '</div>' +
+      '<div class="pd-modal-footer"><button class="pd-btn" data-close>Close</button></div>';
+    var m = openModal(html, 480);
+    Array.prototype.forEach.call(m.el.querySelectorAll('[data-viewrev]'), function (b) {
+      b.onclick = function () { openRevisionPreview(this.dataset.viewrev); };
+    });
+  }
+  // Read-only — an older revision's own zones, frozen exactly as they were.
+  // §16: editing an old revision is deliberately not supported; the current
+  // revision (rendered by the main screen) is the only one zones can be
+  // added/moved/deleted on.
+  async function openRevisionPreview(planId) {
+    var plan = planById(planId); if (!plan) return;
+    var url = planUrl(plan);
+    var aspect = (plan.width_px && plan.height_px) ? (plan.height_px / plan.width_px) : 0.75;
+    var zs = [];
+    try { zs = await PDb.selectAll(T_ZONE, function (q) { return q.eq('floor_plan_id', planId); }); } catch (e) {}
+    var svgBody = zs.map(function (z, i) {
+      var pts = z.boundary_coordinates || []; if (pts.length < 3) return '';
+      var color = ZONE_COLORS[i % ZONE_COLORS.length];
+      var c = polygonCentroid(pts);
+      return '<path d="' + zonePathD(pts) + '" fill="' + color + '" fill-opacity="0.22" stroke="' + color + '" stroke-width="0.35" />' +
+        '<text class="bim-zone-label" x="' + (c.x * 100) + '" y="' + (c.y * 100) + '" text-anchor="middle" dominant-baseline="middle">' + esc(z.name) + '</text>';
+    }).join('');
+    var html =
+      '<div class="pd-modal-header"><h3>' + esc(plan.revision || 'Rev. 01') + ' — read only</h3><button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-form">' +
+        '<p class="pp-hint">Historical revision, shown as it was — ' + zs.length + ' zone(s). Editing an old revision is not supported.</p>' +
+        '<div class="bim-imgwrap" style="position:relative;padding-bottom:' + (aspect * 100) + '%;">' +
+          (url ? '<img src="' + esc(url) + '" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;" />' : '<div class="pp-empty" style="position:absolute;inset:0;">Plan image not available</div>') +
+          '<svg class="bim-zone-svg" viewBox="0 0 100 100" preserveAspectRatio="none">' + svgBody + '</svg>' +
+        '</div>' +
+      '</div>' +
+      '<div class="pd-modal-footer"><button class="pd-btn" data-close>Close</button></div>';
+    openModal(html, 640);
   }
 
   // --------------------------------------------------- registration (H) ----
@@ -704,56 +1151,72 @@ window.BIM = (function () {
   }
 
   // ------------------------------------------------------------- forms -----
-  // 2026-08-30 feedback item 12: "aside from the floor plan itself, the app
-  // should just ask for the location based on the schedule app location
-  // set-up... no need to ask for the name and the level order as the
-  // locations defined in the schedule app should already cover this." The
-  // plan's NAME is now DERIVED from the picked location's own breadcrumb
-  // (falling back to a manual name only when no Location Breakdown exists
-  // at all, matching the same "waived only when the schedule truly has
-  // nothing to offer" rule the Add-Media form applies to Works/Location);
-  // level_order is derived from the picked location's OWN depth/order in
-  // the tree by matching it against `location_levels.sort_order`, so floors
-  // still sort sensibly without asking the planner to type a number.
-  var _planLocPicked = null;   // {values, label} — set by the picker, read on save
-  // `presetValues` (item 25) — clicking a grey "no plan yet" node in the
-  // Plans-page tree opens this form with that exact location already chosen,
-  // so uploading a plan for it is one click plus a file, not a second trip
-  // through the picker.
-  function openPlanForm(presetValues) {
-    var hasLoc = window.ProgressPhotos && ProgressPhotos.hasLocationLevels && ProgressPhotos.hasLocationLevels();
-    _planLocPicked = (presetValues && Object.keys(presetValues).length)
-      ? { values: presetValues, label: ProgressPhotos.locBreadcrumbOf(presetValues) } : null;
+  // 2026-09-03: rebuilt for the Tower/Floor/Revision hierarchy. Tower and
+  // Floor are dropdowns sourced from the project's own Location Breakdown
+  // (spec §3's mockup) — pre-filled to whatever the main screen currently
+  // has selected, and DISABLED (still submitting their value) when opened
+  // as "Replace Plan" from an already-open floor, so a revision can't
+  // accidentally land under the wrong floor. Opened generically (the topbar
+  // "+ Add Floor Plan" button) they stay editable, since that button is
+  // meant to work for ANY tower/floor, not just the one on screen.
+  // Revision is always a free-text field the user can override — never
+  // inferred from the filename (spec §4) — merely SUGGESTED as "Rev. 0N"
+  // from how many revisions already exist for that Tower+Floor.
+  // Uploaded By / Uploaded Date / Last Updated are never asked for here —
+  // created_by/created_at/updated_at capture them automatically.
+  function openPlanForm(opts) {
+    opts = opts || {};
+    var hasTower = !!towerLevel();
+    var lock = !!opts.lock;
+    var curTower = opts.tower != null ? opts.tower : selTowerVal;
+    var curFloor = opts.floor != null ? opts.floor : selFloorVal;
+    function suggestedRevision(t, f) {
+      var n = revisionsFor(t, f).length + 1;
+      return 'Rev. ' + (n < 10 ? '0' + n : n);
+    }
     var html =
-      '<div class="pd-modal-header"><h3>Upload a floor plan</h3><button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pd-modal-header"><h3>' + (lock ? 'Upload new revision' : 'Add Floor Plan') + '</h3><button class="pd-modal-close" data-close>×</button></div>' +
       '<div class="pp-form">' +
-        (hasLoc
-          ? '<div class="pd-field"><label>Location <span class="pp-req">*</span></label>' +
-              '<div id="bim-p-locchosen">' + (_planLocPicked
-                ? '<div class="pp-locchosen"><span data-ico="mapPin" data-ico-size="15"></span><strong>' + esc(_planLocPicked.label) + '</strong></div>'
-                : '<p class="pp-hint">No location selected yet.</p>') + '</div>' +
-              '<button type="button" class="pd-btn" id="bim-p-locadd">Pick a location…</button></div>'
+        (hasTower
+          ? '<div class="pd-field"><label>Tower</label><select class="pd-select" id="bim-p-tower"' + (lock ? ' disabled' : '') + '>' +
+              towerOptions().map(function (v) { return '<option value="' + esc(v) + '"' + (v === curTower ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('') +
+            '</select></div>' +
+            (floorLevel()
+              ? '<div class="pd-field"><label>Floor</label><select class="pd-select" id="bim-p-floor"' + (lock ? ' disabled' : '') + '>' +
+                  floorOptions(curTower).map(function (v) { return '<option value="' + esc(v) + '"' + (v === curFloor ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('') +
+                '</select></div>'
+              : '')
           : '<div class="pd-field"><label>Name</label><input class="pd-input" id="bim-p-name" placeholder="e.g. Ground Floor" /></div>') +
         // Item 11 — image OR PDF.
         '<div class="pd-field"><label>Floor plan file</label><input type="file" id="bim-p-file" accept="image/*,application/pdf" /></div>' +
+        '<div class="pd-field"><label>Revision</label><input class="pd-input" id="bim-p-rev" value="' + esc(suggestedRevision(curTower, curFloor)) + '" /></div>' +
+        (lock ? '<p class="pp-hint">The previous revision is kept in History — it is never overwritten, and this new revision starts with no zones of its own.</p>' : '') +
       '</div>' +
       '<div class="pd-modal-footer"><button class="pd-btn" data-close>Cancel</button>' +
         '<button class="pd-btn pd-btn-primary" id="bim-p-save">Upload</button></div>';
     var m = openModal(html, 480);
-    if ($('bim-p-locadd')) $('bim-p-locadd').onclick = function () {
-      ProgressPhotos.openLocationPicker(function (values, label) {
-        _planLocPicked = { values: values, label: label };
-        var host = $('bim-p-locchosen');
-        if (host) host.innerHTML = '<div class="pp-locchosen"><span data-ico="mapPin" data-ico-size="15"></span><strong>' + esc(label) + '</strong></div>';
-        if (window.Icons && Icons.hydrate) Icons.hydrate(host);
-      });
-    };
+    if (hasTower && !lock) {
+      if ($('bim-p-tower')) $('bim-p-tower').onchange = function () {
+        curTower = this.value;
+        var fOpts = floorOptions(curTower);
+        curFloor = fOpts[0] || null;
+        if ($('bim-p-floor')) $('bim-p-floor').innerHTML = fOpts.map(function (v) { return '<option value="' + esc(v) + '">' + esc(v) + '</option>'; }).join('');
+        if ($('bim-p-rev')) $('bim-p-rev').value = suggestedRevision(curTower, curFloor);
+      };
+      if ($('bim-p-floor')) $('bim-p-floor').onchange = function () {
+        curFloor = this.value;
+        if ($('bim-p-rev')) $('bim-p-rev').value = suggestedRevision(curTower, curFloor);
+      };
+    }
     $('bim-p-save').onclick = async function () {
       var f = $('bim-p-file').files && $('bim-p-file').files[0];
       var nameEl = $('bim-p-name');
-      var name = nameEl ? nameEl.value.trim() : (_planLocPicked ? _planLocPicked.label : '');
-      if (hasLoc && !_planLocPicked) { UI.toast('Pick a location first', 'warn'); return; }
-      if (!name) { UI.toast('Name is required', 'warn'); return; }
+      var tSel = $('bim-p-tower'), fSel = $('bim-p-floor');
+      if (hasTower) { curTower = tSel ? tSel.value : curTower; curFloor = fSel ? fSel.value : curFloor; }
+      var revision = ($('bim-p-rev').value || '').trim() || 'Rev. 01';
+      var name = hasTower ? towerFloorLabel(curTower, curFloor) : (nameEl ? nameEl.value.trim() : '');
+      if (hasTower && !curTower) { UI.toast('Pick a Tower first', 'warn'); return; }
+      if (!hasTower && !name) { UI.toast('Name is required', 'warn'); return; }
       if (!f) { UI.toast('Choose an image or PDF file', 'warn'); return; }
       this.disabled = true;
       try {
@@ -762,24 +1225,42 @@ window.BIM = (function () {
         var path = pid + '/floorplans/' + Date.now() + '_' + Math.random().toString(36).slice(2) + '_' + f.name.replace(/[^a-zA-Z0-9._-]/g, '_');
         var up = await sb().storage.from(BUCKET).upload(path, f, { contentType: f.type || (isPdf ? 'application/pdf' : 'image/jpeg') });
         if (up.error) throw up.error;
+        var locVals = hasTower ? towerFloorValues((function () {
+          var t = towerLevel(), fl = floorLevel(), o = {};
+          if (t) o[t.id] = curTower; if (fl) o[fl.id] = curFloor;
+          return o;
+        })()) : {};
         var row = {
           project_id: pid, name: name, level_order: 0,
           image_url: path, width_px: dims.w, height_px: dims.h, created_by: uid,
-          location_values: _planLocPicked ? _planLocPicked.values : {}
+          location_values: locVals, revision: revision, is_current: true
         };
+        // The revision this replaces (if any) is UPDATEd to is_current:false
+        // FIRST, never deleted — §5/§16: a previous revision, and its own
+        // zones (tied to ITS floor_plan_id, untouched by this), must survive.
+        var superseded = hasTower ? currentPlanFor(curTower, curFloor) : null;
+        if (superseded) {
+          var upd = await sb().from(T_PLAN).update({ is_current: false }).eq('id', superseded.id);
+          if (upd.error && !/column .* does not exist|schema cache/i.test(upd.error.message || '')) throw upd.error;
+        }
         var ires = await sb().from(T_PLAN).insert(row).select();
         if (ires.error) {
-          // Tolerant of migrations/2026-08-30-photos-round2.sql not having
-          // run yet (floor_plans.location_values is new).
+          // Tolerant of either migration not having run yet: strip
+          // location_values (2026-08-30-photos-round2.sql) and/or
+          // revision/is_current (2026-09-03-floor-plan-revisions-zones.sql)
+          // and retry, same convention every not-yet-migrated column in
+          // this module family already follows.
           if (/column .* does not exist|schema cache/i.test(ires.error.message || '')) {
-            var stripped = Object.assign({}, row); delete stripped.location_values;
+            var stripped = Object.assign({}, row);
+            delete stripped.location_values; delete stripped.revision; delete stripped.is_current;
             ires = await sb().from(T_PLAN).insert(stripped).select();
-            if (!ires.error) UI.toast('Uploaded without the schedule location link — run migrations/2026-08-30-photos-round2.sql', 'warn');
+            if (!ires.error) UI.toast('Uploaded, but without revision tracking/location — run the pending migrations', 'warn');
           }
           if (ires.error) throw ires.error;
         }
         m.close();
-        UI.toast('Floor plan uploaded', 'ok');
+        UI.toast(superseded ? 'New revision uploaded — the previous one is kept in History' : 'Floor plan uploaded', 'ok');
+        if (hasTower) { selTowerVal = curTower; selFloorVal = curFloor; }
         activePlanId = (ires.data && ires.data[0] && ires.data[0].id) || activePlanId;
         await load();
       } catch (e) {
@@ -951,12 +1432,13 @@ window.BIM = (function () {
   // ordinary in-Plans pin flow; does not touch `activePlanId`/pan-zoom state
   // at all, so it can't disturb whatever the Plans screen is showing.
   function openPinPickerFor(itemType, itemId, itemLabel, onDone) {
-    if (!plans.length) {
+    var curPlans = currentPlansList();
+    if (!curPlans.length) {
       UI.toast('No floor plans yet — upload one on the Plans tab first', 'warn');
       if (onDone) onDone(false);
       return;
     }
-    var chosenPlanId = activePlanId || plans[0].id;
+    var chosenPlanId = activePlanId || curPlans[0].id;
     var picked = null; // {xNorm,yNorm} once clicked
 
     function planImgHTML(planId) {
@@ -971,9 +1453,9 @@ window.BIM = (function () {
       '<div class="pd-modal-header"><h3>Pin ' + esc(itemLabel || 'this') + ' on a floor plan</h3>' +
         '<button class="pd-modal-close" data-close>×</button></div>' +
       '<div class="pp-form">' +
-        (plans.length > 1
+        (curPlans.length > 1
           ? '<div class="pd-field"><label>Floor plan</label><select class="pd-select" id="bim-gpin-plan">' +
-              plans.map(function (p) { return '<option value="' + esc(p.id) + '"' + (p.id === chosenPlanId ? ' selected' : '') + '>' + esc(p.name) + '</option>'; }).join('') +
+              curPlans.map(function (p) { return '<option value="' + esc(p.id) + '"' + (p.id === chosenPlanId ? ' selected' : '') + '>' + esc(p.name) + '</option>'; }).join('') +
             '</select></div>'
           : '') +
         '<p class="pp-hint">Click on the plan where this was captured.</p>' +
@@ -1112,7 +1594,8 @@ window.BIM = (function () {
   }
 
   function pinFieldHTML(idPrefix, existing) {
-    if (!plans.length) {
+    var curPlans = currentPlansList();
+    if (!curPlans.length) {
       // Item 8: upload a floor plan RIGHT HERE rather than sending the
       // planner away to the Plans tab and losing whatever else they'd
       // already filled in on this form.
@@ -1124,12 +1607,12 @@ window.BIM = (function () {
           '<button type="button" class="pd-btn" id="' + idPrefix + '-inlineplan-go">Upload</button>' +
         '</div></div>';
     }
-    var chosenId = (existing && existing.floor_plan_id) || activePlanId || plans[0].id;
+    var chosenId = (existing && existing.floor_plan_id) || activePlanId || curPlans[0].id;
     return '<div class="pd-field pp-span2 bim-pinfield" id="' + idPrefix + '-pinfield">' +
       '<label>Key Plan' + reqMarkHTML() + ' <span class="pp-optnote">(click the plan to place a pin)</span></label>' +
-      (plans.length > 1
+      (curPlans.length > 1
         ? '<select class="pd-select" id="' + idPrefix + '-pin-plan">' +
-            plans.map(function (p) { return '<option value="' + esc(p.id) + '"' + (p.id === chosenId ? ' selected' : '') + '>' + esc(p.name) + '</option>'; }).join('') +
+            curPlans.map(function (p) { return '<option value="' + esc(p.id) + '"' + (p.id === chosenId ? ' selected' : '') + '>' + esc(p.name) + '</option>'; }).join('') +
           '</select>'
         : '<input type="hidden" id="' + idPrefix + '-pin-plan" value="' + esc(chosenId) + '" />') +
       '<div id="' + idPrefix + '-pin-imgwrap"></div>' +
@@ -1276,7 +1759,7 @@ window.BIM = (function () {
     function repaint() {
       var wrap = $(idPrefix + '-pin-imgwrap'); if (!wrap) return;
       var s = state();
-      wrap.innerHTML = stageHTML(planSel ? planSel.value : plans[0].id, s);
+      wrap.innerHTML = stageHTML(planSel ? planSel.value : currentPlansList()[0].id, s);
       wireStage(s);
     }
     function toNorm(img, clientX, clientY) {
@@ -1600,7 +2083,10 @@ window.BIM = (function () {
     // screen's own activePlanId/pan-zoom state — the same "self-contained,
     // never touches this screen's state" rule openPinPickerFor already
     // follows for the Gallery's upload-time pin picker.
-    plans: function () { return plans.slice().sort(function (a, b) { return (a.level_order || 0) - (b.level_order || 0); }); },
+    // 2026-09-03: only CURRENT revisions — a Gallery Plan/Stack browse
+    // should never surface a superseded historical drawing alongside live
+    // ones (that's what openRevisionHistory/openRevisionPreview are for).
+    plans: function () { return currentPlansList().sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); }); },
     planUrl: function (plan) { return planUrl(plan); },
     pinsForPlan: function (planId) { return allPins.filter(function (p) { return p.floor_plan_id === planId; }); }
   };

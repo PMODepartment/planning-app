@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Progress Photos · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260902a" />
-  <link rel="stylesheet" href="module.css?v=20260902a" />
+  <link rel="stylesheet" href="module.css?v=20260903a" />
 </head>
 <body>
   <div class="pd-app">
@@ -152,7 +152,7 @@
                Add Media modal's own in-photo cone widget — see bim.js's
                pinFieldHTML/wirePinField). The Plans screen is upload/browse
                only. -->
-          <button class="pd-btn pd-btn-primary pp-tb-labeled" id="bim-new" title="Upload a floor plan" style="display:none;">+ Upload floor plan</button>
+          <button class="pd-btn pd-btn-primary pp-tb-labeled" id="bim-new" title="Add a floor plan for the selected Tower/Floor" style="display:none;">+ Add Floor Plan</button>
         </div>
         <!-- Offline capture queue — visible on every screen (Rounds captures queue too) -->
         <button class="pd-btn pp-syncbtn" id="pp-sync" title="Sync photos captured while offline" hidden>
@@ -390,11 +390,11 @@
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
-  <script src="module.js?v=20260902a"></script>
+  <script src="module.js?v=20260903a"></script>
   <script src="ppr.js?v=20260903a"></script>
   <script src="pano.js?v=20260901d"></script>
   <script src="recon.js?v=20260830b"></script>
-  <script src="bim.js?v=20260902b"></script>
+  <script src="bim.js?v=20260903a"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);

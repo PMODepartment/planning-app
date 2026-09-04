@@ -2,6 +2,163 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Floor Plan rebuilt to the real hierarchy: Tower → Floor → Floor Plan (with real
+## preserved revisions) → manually-drawn, persisted Zones (2026-09-03)
+
+Owner supplied a detailed functional spec (PDF) with an explicit scope clarification: this is
+work on the **existing** "Floor Plans" subsection of Progress Photos (the third tab, alongside
+Progress Photos / Presentations — already exactly that dropdown/tab strip, confirmed by
+inspection before touching anything), not a new top-level app, and it must not add a second
+Project selector (Project is already the shell's own topbar selector).
+
+### What was actually there before this (inspected first, per the spec's own instruction)
+
+`bim.js`'s "Floor Plan overlay" had a real floor-plan **upload** and a **pin-navigator** (click a
+plan to drop a pin pointing at a photo/panorama/reconstruction, with an optional field-of-view
+cone) — genuinely useful, left entirely intact. But against THIS spec it had two real gaps:
+
+- ⚠️ **No revision concept at all.** `floor_plans` had no `revision`/`is_current` column. A
+  second upload for the same location just inserted a SECOND, undated, unordered row with no way
+  to tell which one was "the" plan — `planForValues()` returned `.filter(...)[0]`, whichever
+  happened to sort first. Uploading a corrected drawing silently produced an ambiguous duplicate,
+  not a preserved history.
+- ⚠️ **No zone/polygon concept at all.** Only point PINS existed (with an optional direction
+  cone) — there was no way to name and draw an actual area boundary, nothing to persist a
+  polygon/rectangle, and nothing for a future Progress Photos → Zone link to reference.
+
+Navigation itself needed no change — `Progress Photos | Presentations | Floor Plans` is already
+exactly the tab strip described, confirmed in `index.html` before writing anything.
+
+### Tower/Floor — reused the existing model, not a second one
+
+Per spec §1/§18 ("use the existing data architecture… do not create duplicate models"): Tower and
+Floor are the project's own first two **Location Breakdown** levels
+(`ProgressPhotos.locLevels()`), the SAME schedule-driven levels every other Progress Photos screen
+already reads — not a new `tower_id`/`floor_id` pair. A floor plan's Tower+Floor is still stored in
+the existing `location_values` jsonb (keyed by level id), so a plan uploaded under the OLD generic
+tree picker still buckets correctly — `towerFloorValues()` reads only the first two level keys out
+of whatever a row happens to carry, ignoring any deeper level a pre-rewrite upload might have set.
+⚠️ A project with fewer than 2 levels degrades: 1 level = Tower only (Floor omitted); 0 levels = no
+Tower/Floor selection is possible, and the screen says so plainly rather than inventing a fallback
+hierarchy — this is consistent with how the rest of this module already treats a missing Location
+Breakdown, not a new limitation.
+
+### Revisions — preserved, never overwritten
+
+`migrations/2026-09-03-floor-plan-revisions-zones.sql` (**USER MUST RUN**) adds
+`floor_plans.revision` (user-typed, defaults `'Rev. 01'`) and `.is_current` (boolean). Uploading a
+new revision for an already-populated Tower+Floor **UPDATEs the previous current row to
+`is_current:false` first, then INSERTs the new row** — the old row, its file, and its own zones
+(scoped to ITS `floor_plan_id`) are never touched or deleted. `created_by`/`created_at`/
+`updated_at` already existed and serve as "Uploaded By / Uploaded Date / Last Updated" — no
+duplicate audit columns were added, matching spec §4's explicit split (Revision is the one
+user-entered field; everything else is system-generated).
+
+- The Upload modal suggests `Rev. 0N` (N = existing-revision-count + 1 for that Tower+Floor) but
+  the field is always freely editable — never inferred from the filename, per spec §4.
+- **"Replace Plan"** (on the floor-plan card) and **"+ Add Floor Plan"** (topbar, generic) are the
+  SAME modal/flow — there's no functional difference between "add" and "revise" at the data-model
+  level. The card's "Replace Plan" LOCKS the Tower/Floor selects (still visible, just disabled) so
+  a revision can't land under the wrong floor by accident; the generic topbar button leaves them
+  editable, since it's meant to work for any tower/floor.
+- **Revision history** (a "History (N)" link, shown once 2+ revisions exist) opens a modal listing
+  every revision with its upload date and a CURRENT badge; each has a **View** button opening a
+  **read-only** preview — that revision's own image + its own FROZEN zones, explicitly labelled
+  "read only". Editing is only ever possible on the current revision (spec §16 — a drawing revision
+  can change the physical layout, so an old revision's zones must never be silently assumed
+  identical to the new one, and nothing here copies zones across revisions).
+
+### Zones — real, persisted, manually-drawn geometry
+
+New table `floor_plan_zones` (id, `floor_plan_id` FK — one specific REVISION, never the Tower+Floor
+group as a whole — name, `boundary_type` polygon|rectangle, `boundary_coordinates` jsonb array of
+normalized `{x,y}` points, color, created_by/created_at/updated_at). A case-insensitive unique
+index on `(floor_plan_id, lower(name))` enforces spec §13's "avoid duplicate zone names", surfaced
+as a friendly toast rather than a raw constraint error.
+
+- **Viewing vs editing mode (spec §14).** The floor-plan card renders read-only by default; **"Edit
+  Zones"** toggles edit mode, which is the only state offering "+ Add Zone" / per-zone Edit /
+  Delete — a planner just browsing the plan can't accidentally start reshaping a boundary.
+- **Drawing** (`+ Add Zone`): a small inline panel (never a modal — the plan must stay visible and
+  clickable while naming/drawing) with a Zone Name field (auto-suggested "Zone N", always
+  editable), **Draw Polygon** (default) / **Draw Rectangle** toggle, Delete-last-point, Clear
+  drawing, Cancel, Save. Polygon is click-to-add-a-point, finished either by double-clicking the
+  plan or an explicit "Finish shape" button (the spec's own wording, "double-click… to finish", is
+  honoured; the button is the more reliable path across browsers/touch). Rectangle is exactly 2
+  clicks (opposite corners), auto-closing into 4 points — the "faster convenience" spec §10 asks
+  for. **Editing an existing zone's geometry** reopens the SAME panel pre-seeded with its saved
+  points rendered as draggable vertex handles (pointer-capture drag, live-repositioned without a
+  full re-render so the drag gesture can't be interrupted — the same discipline the pre-existing
+  pin/cone widgets already established).
+- ⚠️ **Nothing is stored until Save.** The in-progress points live in a plain in-memory array the
+  whole time — `drawPoints` — exactly matching spec §11's "not merely a visual overlay" requirement
+  from the OTHER direction: the overlay IS a rendering of that array, and Save is the only thing
+  that ever writes it to `floor_plan_zones.boundary_coordinates`.
+- **Selection sync, both directions (spec §13):** clicking a zone's own overlay polygon on the plan
+  selects/highlights its row in the list; clicking a list row selects/highlights the polygon on the
+  plan. A "Clear selection" control appears whenever a zone is selected (spec §15's "clear
+  selected-zone state").
+- **Viewer**: Ctrl+scroll zoom and drag-to-pan already existed; added explicit **−/Fit/+/Reset
+  view** buttons (spec §15's full list), all operating on the same pan/zoom state the mouse
+  gestures already drove.
+- **Progress Photos → Zone readiness (spec §17/§18), deliberately NOT built further than this:**
+  `floor_plan_zones.id` is a stable UUID, scoped to a specific revision, ready for a future
+  `progress_photos.zone_id` (or similar) reference — but no such column was added, and no
+  "Progress Photos [N photos] [View] [Add]" panel was built under each zone. Spec §17 explicitly
+  says not to implement unrelated Progress Photo functionality, and there is currently no
+  photo↔zone link anywhere in the data model to honestly report a count from — a panel showing
+  invented/zero data would be worse than no panel. This is the one deliberately incomplete piece,
+  named here rather than silently shipped as if it were done.
+
+### Real, in-source discipline points (not just described — verified against the actual behaviour)
+
+- ⚠️ **`currentPlansList()`** — every OTHER caller that lists "which floor plans exist" (the
+  Gallery upload-time pin picker `openPinPickerFor`, the Add/Edit Photo form's `pinFieldHTML`, and
+  the `plans()` accessor `module.js`'s own Gallery Plan/Stack views read) was rewired from the raw
+  `plans` array (now every historical revision) to a new `currentPlansList()` — one entry per
+  Tower+Floor, always the CURRENT one. Without this, every one of those pickers would have started
+  listing every superseded revision as an equally-valid pin target the moment a project had any
+  revision history at all. **Verified directly**: a fixture with a superseded Rev. 01 and a current
+  Rev. 02 of the same floor shows exactly 2 options (not 3) in both `pinFieldHTML` and
+  `openPinPickerFor`'s picker, and the superseded revision's id never appears in either.
+- ⚠️ **Zone-drawing clicks vs. the existing pan-drag gesture.** The stage's `mousedown` handler
+  already decided "pan vs. place-a-pin"; a third meaning (draw a zone point) had to be added
+  without a click doing two things at once — `drawMode` now suspends panning entirely while active,
+  checked first in both `mousedown` and `click`.
+
+### Verified
+
+**Genuinely executed the shipped `bim.js`, not a reimplementation**, via a throwaway browser
+harness (`.claude`'s own static-server convention — served over `localhost:5173`, deleted after
+use) driving the real DOM: script loads with no syntax error; Tower/Floor selects populate from a
+stubbed 2-level Location Breakdown; empty state + "+ Add Floor Plan"; the upload modal's
+Tower/Floor pre-fill + lock behaviour; a real first-revision insert with correct
+`revision`/`is_current`/`location_values`; a full click-to-draw-a-triangle → Finish → Save cycle
+persisting exactly 3 normalized points scoped to the right `floor_plan_id`; **the spec's own §22
+test flow, literally** — reload (a fresh `load()` against the same fake DB) → zone still there;
+list↔plan selection sync both directions; Edit (rename + 3 draggable vertex handles rendered) →
+Save updates the SAME row, not a second insert; Delete → count drops, confirmed via `confirm()`;
+uploading a **second revision** for the same floor → the previous row flips to `is_current:false`
+(never deleted) → the new revision starts at **Zones: 0** (nothing carried over); the Revision
+History modal lists both with a CURRENT badge; opening the OLD revision's read-only preview shows
+**its own** frozen zone, correctly scoped by `floor_plan_id`, labelled "read only". A second,
+focused harness confirmed `currentPlansList()`'s filtering in `pinFieldHTML` and
+`openPinPickerFor` against a 3-plan/2-floor fixture (2 current, 1 superseded) — exactly the current
+ones offered, the superseded one never appearing in either picker.
+
+CSS brace-balanced (578/578); `bim.js` brace/paren-balanced (432/432, 1904/1904); 0 NUL bytes;
+migration paren-balanced, idempotent, RLS mirrors the existing `floor_plan_pins` policy shape
+exactly. `bim.js`/`module.css`/`module.js` → `?v=20260903a`; topbar button relabelled "+ Upload
+floor plan" → "**+ Add Floor Plan**" per the spec's own wording.
+
+⚠️ **Not verified**: signed in against a live Supabase session (the standing caveat for this whole
+module — no live login is possible in this environment) — in particular the real Storage upload,
+the migration actually running, and RLS against a real multi-user project are unverified beyond
+structural review. The "Delete a point" interaction (spec §9) is satisfied only as "delete the
+LAST point" (via the draw panel's own button), not an arbitrary mid-shape point — dragging any
+point to reposition it is fully supported; deleting one from the middle of an in-progress polygon
+is not, a scope trade-off made under the pass's time budget rather than an oversight.
+
 ## PowerPoint export was silently corrupting on real captions — root cause found and fixed (2026-09-03)
 
 Owner: a downloaded PPTX opened in PowerPoint Desktop with **"Sorry, PowerPoint can't read

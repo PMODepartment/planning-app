@@ -5421,6 +5421,13 @@ window.ProgressPhotos = (function () {
     // floor-plan upload form is the first caller). onPick(values, label).
     openLocationPicker: function (onPick) { openGenericLocationPicker(onPick); },
     hasLocationLevels: function () { return LOC_LEVELS.length > 0; },
+    // 2026-09-03 — Floor Plan's Tower/Floor dropdowns (bim.js) read the
+    // project's first two Location Breakdown levels via locLevels() below,
+    // then need the SOFT-CASCADE value list distinctLocValues() already
+    // computes (Floor's options narrowed to the picked Tower) without
+    // pulling in the whole node-tree picker UI — that's for a single-node
+    // "any depth" pick; Tower/Floor is always exactly two fixed levels.
+    distinctLocValuesFor: function (levelId, priorVals) { return distinctLocValues(levelId, priorVals); },
     // Item 25 — the raw node tree (not a modal), for bim.js's Plans-page
     // side panel to render as a persistent tree rather than a one-shot picker.
     locationTree: function () { return locTree(); },
