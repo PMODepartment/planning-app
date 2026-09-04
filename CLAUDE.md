@@ -84,6 +84,16 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-04 — The WBS matcher's cold open: it now reads the project's saved setup
+
+Owner: *"fix the cold open gap."* The gap flagged in the entry below — the catalogue of places was
+empty until the Schedule Setup tab had loaded a setup, which is exactly the case it exists for (import
+a schedule, then match its WBS). `ScheduleBuilder.locCatalogueFor(projectId)` now reads the saved
+`schedule_builder` row and derives the places from it. ⚠️ It never loads that setup into the builder —
+nothing is assigned to `cfg`, nothing renders, no staged import is disturbed — and the **open setup
+wins**, so a half-built setup for one package is never offered another package's floors. Not awaited:
+the modal opens instantly and the places fill in. Module only. `MODULE_V` → `20260904e`.
+
 ### 2026-09-04 — The WBS matcher now offers the places the Schedule Setup already defines
 
 Owner: *"build slice 2 first, then slice 1."* Slices 2 and 1 of yesterday's proposal, shipped —

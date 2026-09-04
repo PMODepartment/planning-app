@@ -10364,7 +10364,28 @@
       try { return (typeof ScheduleBuilder !== 'undefined' && ScheduleBuilder.locCatalogue) ? (ScheduleBuilder.locCatalogue() || {}) : {}; }
       catch (e) { return {}; }
     })();
-    var CAT_N = 0; Object.keys(CAT).forEach(function (k) { CAT_N += (CAT[k] || []).length; });
+    var CAT_N = 0;
+    function catCount() { CAT_N = 0; Object.keys(CAT).forEach(function (k) { CAT_N += (CAT[k] || []).length; }); }
+    catCount();
+    /* ⚠️⚠️ THE COLD OPEN. `ScheduleBuilder` only holds a cfg once the Schedule Setup TAB has been
+       opened this session, so on a fresh load of the Project Schedule the catalogue above is empty —
+       precisely the case this feature exists for (import a schedule, then match its WBS). So when it
+       comes up empty, ask the builder to read the project's saved setup. Deliberately NOT awaited:
+       the modal opens instantly on the free-text behaviour, and the places appear a moment later. */
+    if (!CAT_N) {
+      (function () {
+        try {
+          if (typeof ScheduleBuilder === 'undefined' || !ScheduleBuilder.locCatalogueFor) return;
+          ScheduleBuilder.locCatalogueFor(pid).then(function (c) {
+            if (!c || !Object.keys(c).length) return;
+            if (!m || !m.el || !m.el.isConnected) return;   // the planner closed it while we waited
+            CAT = c; catCount();
+            repaint();
+            UI.toast(CAT_N + ' places from this project\u2019s Schedule Setup are now offered in the value boxes.', 'info');
+          }, function () {});
+        } catch (e) {}
+      })();
+    }
     function catFor(lvlId) { return (lvlId && CAT[lvlId]) || []; }
     // ⚠️ Deliberately loose: case, spacing and punctuation only. "2ND FLOOR" and "2nd Floor" are one
     // place; "2nd Floor" and "2nd Floor Zone A" are not, and no amount of migration makes them one.
@@ -26229,6 +26250,42 @@
     // ⚠️ Each leaf carries its tower id + label, so the push and the stacking can use it in a later
     // step without re-deriving it from the floor (which is how duplicate-derivation bugs start).
     function locList() { var out = []; GROUPS.forEach(function (tr) { cfg.zoning[tr].floors.forEach(function (f) { leavesOfFloor(tr, f).forEach(function (l) { l.towerId = towerIdOf(f); l.tower = towerLabel(l.towerId); out.push(l); }); }); }); return out; }
+    function catalogueFrom(c) {
+        var out = {};
+        try {
+          if (!c || !c.zoning) return out;
+          var lv = {};
+          ['tower', 'floor', 'zone', 'unit'].forEach(function (d) { var l = locLevelFor(d); if (l) lv[d] = l.id; });
+          function add(dim, value, extra) {
+            var id = lv[dim]; if (!id) return;
+            var v = (value == null) ? '' : String(value).trim(); if (!v) return;
+            var arr = out[id] || (out[id] = []);
+            for (var i = 0; i < arr.length; i++) if (arr[i].value === v) return;
+            arr.push({ value: v, dim: dim, kind: (extra && extra.kind) || '', tower: (extra && extra.tower) || '' });
+          }
+          // ⚠️ The tower helpers (towerList / towerLabel / towerIdOf) read the LOADED cfg, so they
+          // cannot be used here — on a cold open the towers being named are not the loaded ones.
+          // Same rule as towerLabel: name, then code, then the generic word.
+          var _tw = (c.towers && c.towers.length) ? c.towers : blankTowers();
+          function _twLabel(id) {
+            for (var i = 0; i < _tw.length; i++) if (_tw[i].id === id) return _tw[i].name || _tw[i].code || 'Tower';
+            return _tw.length ? (_tw[0].name || _tw[0].code || 'Tower') : 'Tower';
+          }
+          _tw.forEach(function (t) { add('tower', _twLabel(t.id)); });
+          GROUPS.forEach(function (tr) {
+            ((c.zoning[tr] && c.zoning[tr].floors) || []).forEach(function (f) {
+              var tw = _twLabel((f && f.towerId) || (_tw[0] && _tw[0].id));
+              add('floor', f.name || f.code, { kind: floorKind(f), tower: tw });
+              (f.zones || []).forEach(function (z) {
+                add('zone', z.code || z.name, { tower: tw });
+                (z.units || []).forEach(function (u) { add('unit', u.code || u.name, { tower: tw }); });
+              });
+            });
+          });
+        } catch (e) { return out; }
+        return out;
+    }
+
     function tradeActs(tr) { return cfg.activities.filter(function (a) { return a.group === tr; }); }
     // Trades actually assigned to a Step-1 activity, in GROUPS order — later steps only ever deal
     // with these, not the full discipline universe.
@@ -32215,32 +32272,48 @@
          would produce two spellings of one floor, which is the very fault it exists to remove.
          Order is the setup's own order (towers, then floors bottom-up per trade) — the same order
          dimOrderIndex sorts the pushed WBS by. First spelling seen wins the de-dupe. */
-      locCatalogue: function () {
-        var out = {};
+      locCatalogue: function () { return catalogueFrom(cfg); },
+      /* ⚠️⚠️ THE COLD-OPEN GAP, CLOSED. `cfg` is only populated once the Schedule Setup tab has
+         loaded a setup this session — so a planner who opens the Project Schedule and goes straight
+         to the WBS matcher got an EMPTY catalogue, which is exactly when it would have helped most
+         (that is the migration case: import, then match). This reads the project's saved setup
+         directly and derives the catalogue from it.
+         ⚠️ IT DOES NOT LOAD THE SETUP INTO THE BUILDER. Nothing is assigned to `cfg`, `curSetupId`,
+         `curPid` or `mode`, and nothing renders: adopting a setup as a side effect of opening a
+         matcher would silently pick one of several packages' setups, and would discard a staged
+         import that is being reviewed. It is a READ, and it stays a read.
+         ⚠️ Same row the builder itself would open — pickDefaultSetup's "most recently edited" rule,
+         not "first alphabetically" — so the places offered are the places the planner last worked on.
+         Falls back to whatever `cfg` holds (usually {}) on any error: no table, no grants, no setup
+         saved yet, wrong project. The matcher then behaves exactly as it did before this existed. */
+      locCatalogueFor: async function (projectId) {
         try {
-          if (!cfg || !cfg.zoning) return out;
-          var lv = {};
-          ['tower', 'floor', 'zone', 'unit'].forEach(function (d) { var l = locLevelFor(d); if (l) lv[d] = l.id; });
-          function add(dim, value, extra) {
-            var id = lv[dim]; if (!id) return;
-            var v = (value == null) ? '' : String(value).trim(); if (!v) return;
-            var arr = out[id] || (out[id] = []);
-            for (var i = 0; i < arr.length; i++) if (arr[i].value === v) return;
-            arr.push({ value: v, dim: dim, kind: (extra && extra.kind) || '', tower: (extra && extra.tower) || '' });
+          var live = catalogueFrom(cfg);
+          // A setup already loaded for THIS project is the freshest answer there is — it includes
+          // edits the planner has not saved yet.
+          if (Object.keys(live).length && (!projectId || projectId === curPid)) return live;
+          if (!projectId) return live;
+          var r = await sbc().from('schedule_builder').select('id,config,updated_at,name').eq('project_id', projectId);
+          if (r.error || !r.data || !r.data.length) return live;
+          /* ⚠️ THE SETUP THAT IS OPEN WINS, and when one IS open no other is ever consulted.
+             A planner on a half-built setup for Package B must not be offered Package A's floors
+             just because A was saved more recently — the value boxes would suggest places that are
+             not in this package at all. Only when NOTHING is open does the builder's own
+             `pickDefaultSetup` rule (most recently edited) choose the row. */
+          var row = null;
+          if (curSetupId) {
+            row = r.data.filter(function (x) { return x.id === curSetupId; })[0] || null;
+            if (!row) return live;
+          } else {
+            row = r.data.slice().sort(function (a, b) {
+              return String(b.updated_at || '').localeCompare(String(a.updated_at || ''));
+            })[0];
           }
-          towerList().forEach(function (t) { add('tower', towerLabel(t.id)); });
-          GROUPS.forEach(function (tr) {
-            ((cfg.zoning[tr] && cfg.zoning[tr].floors) || []).forEach(function (f) {
-              var tw = towerLabel(towerIdOf(f));
-              add('floor', f.name || f.code, { kind: floorKind(f), tower: tw });
-              (f.zones || []).forEach(function (z) {
-                add('zone', z.code || z.name, { tower: tw });
-                (z.units || []).forEach(function (u) { add('unit', u.code || u.name, { tower: tw }); });
-              });
-            });
-          });
-        } catch (e) { return out; }
-        return out;
+          var c = (row && row.config) ? normalize(row.config) : null;
+          if (!c) return live;
+          var derived = catalogueFrom(c);
+          return Object.keys(derived).length ? derived : live;
+        } catch (e) { try { return catalogueFrom(cfg); } catch (e2) { return {}; } }
       },
       tradeLabels: function () { return GROUPS.map(function (g) { return GWORK[g] || GLABEL[g] || g; }); },
       /* THE STRUCTURE THIS SETUP DEFINES, AS THE GRID GROUP-BY DIMS.

@@ -1,3 +1,43 @@
+## The cold open: the matcher reads the saved setup when none is loaded (2026-09-04) — jasantos2
+
+Owner: *"fix the cold open gap."* The gap flagged in the entry below: `ScheduleBuilder` only holds a
+`cfg` once a setup has been loaded this session, so the catalogue the value boxes offer was empty in
+the case it exists for — a **staged import** being matched before the setup is built, or a setup that
+was never opened this session.
+
+### The fix
+- `catalogueFrom(c)` — the derivation, moved out of the export and taking the cfg as an **argument**.
+  ⚠️ The tower helpers (`towerList` / `towerLabel` / `towerIdOf`) are bound to the LOADED cfg and could
+  not be used, so the tower name is resolved from `c.towers` by the same rule (`name || code || 'Tower'`,
+  `blankTowers()` when empty). `locCatalogue()` is now `catalogueFrom(cfg)` — unchanged behaviour.
+- `ScheduleBuilder.locCatalogueFor(projectId)` — reads `schedule_builder` for that project and derives
+  the catalogue from the saved row.
+- The wizard fires it **only when the sync catalogue is empty**, and does **not await** it: the modal
+  opens instantly on the old free-text behaviour and the places appear a moment later, with a toast
+  and a repaint. If the planner closed it meanwhile (`m.el.isConnected`), nothing happens.
+
+### ⚠️ What it deliberately does NOT do
+- **It never loads the setup into the builder.** Nothing is assigned to `cfg`, `curSetupId`, `curPid`
+  or `mode`, and nothing renders. Adopting a setup as a side effect of opening a matcher would pick
+  one of several packages' setups behind the planner's back, and would discard a staged import that is
+  being reviewed. It is a read, and it stays a read.
+- **The open setup wins, and when one is open no other is consulted.** If `curSetupId` is set, that row
+  is read and only that row — a planner on a half-built setup for Package B must not be offered Package
+  A's floors because A was saved more recently. Only when nothing is open does the builder's own
+  `pickDefaultSetup` rule (most recently edited) choose.
+- **Every failure returns the loaded cfg's catalogue** (usually `{}`): no table, no grants, no setup
+  saved, wrong project → the matcher behaves exactly as it did before any of this existed.
+
+### Verified
+20 checks, again by slicing `catalogueFrom` and the wizard helpers out of the shipped file and running
+their own source. Four are new and cover this fix: a **foreign** cfg derives its own tower and its own
+floors *tagged with its own tower*, reading it does **not** disturb the loaded catalogue, and a cfg with
+no towers falls back to `blankTowers()`. ⚠️ The harness deliberately does **not** define
+`towerList`/`towerLabel` — with them defined it could not tell whether the derivation was reading its
+argument or the loaded cfg. Parse check clean; function-set diff vs HEAD **0 lost, 3 added**.
+⚠️ **Not verified signed-in:** the `schedule_builder` read itself has never run from here (the anon key
+has no grants), so the async path is unproven on real data — only the derivation it feeds is.
+
 ## The WBS matcher picks from the project's places — LBS proposal, slices 2 + 1 (2026-09-04) — jasantos2
 
 Owner: *"build slice 2 first, then slice 1."* The first code from
