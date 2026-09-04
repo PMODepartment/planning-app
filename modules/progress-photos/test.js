@@ -11,6 +11,7 @@ const migrationFile = path.join(__dirname, '..', '..', 'migrations', '2026-08-28
 const tmplMigrationFile = path.join(__dirname, '..', '..', 'migrations', '2026-08-29-ppr-report-templates.sql');
 const panoMigrationFile = path.join(__dirname, '..', '..', 'migrations', '2026-08-29-panoramas.sql');
 const reconMigrationFile = path.join(__dirname, '..', '..', 'migrations', '2026-08-29-reconstruction-requests.sql');
+const reconDeleteTerminalMigrationFile = path.join(__dirname, '..', '..', 'migrations', '2026-09-04-reconstruction-delete-terminal.sql');
 const submitFnFile = path.join(__dirname, '..', '..', 'supabase', 'functions', 'submit-reconstruction', 'index.ts');
 const webhookFnFile = path.join(__dirname, '..', '..', 'supabase', 'functions', 'reconstruction-webhook', 'index.ts');
 const floorPlanMigrationFile = path.join(__dirname, '..', '..', 'migrations', '2026-08-29-floor-plans.sql');
@@ -35,6 +36,7 @@ const store = {
   floor_plan_pins: [],
   floor_plan_registrations: [],
   reconstruction_requests: [],
+  panoramas: [],
 };
 let idSeq = 1;
 const nid = (p) => p + '-' + (idSeq++);
@@ -3886,6 +3888,112 @@ console.log('\n[misc] insert().select() returns the new row id');
        const selfSrc = fs.readFileSync(__filename, 'utf8');
        return !/PP\._stackGrid\(/.test(selfSrc) && !/PP\._stackRowSort\(/.test(selfSrc) && !/PP\._mostRecentAsOf\(/.test(selfSrc);
      })());
+  // =========================================================== [47] =========
+  // Bug fix (2026-09-04): "i cant delete 360/3D media from the photos
+  // gallery" — a panorama/reconstruction's merged-Gallery tile had an "open"
+  // and an "edit" (pencil) action, but NO delete action anywhere at all:
+  // mediaKindThumbHTML() never rendered one, openMediaKindEditor()'s footer
+  // only ever had Cancel/Save, and the real-photo delete flow
+  // (openDeleteConfirm/remove()) is deliberately scoped to rows with a
+  // progress_photos id — a pseudo-row has none there to delete. Fixed with a
+  // Delete button in that editor's footer (gated canWrite, same as Save)
+  // wired to a new openMediaKindDeleteConfirm(row), which delegates to
+  // whichever sub-module actually OWNS the row (PANO.deleteById /
+  // RECON.deleteById) — never a second, in-file copy of the storage-
+  // cleanup-then-row-delete logic those modules already have (matching this
+  // file's own "one 360° viewer, one 3D viewer" rule for everything else
+  // pano/recon-shaped).
+  console.log('\n[47] Bug fix: no delete path for 360°/3D media anywhere in the merged Gallery grid');
+
+  ok('the editor\'s footer now carries a Delete button, gated canWrite exactly like Save',
+     /\(canWrite \? '<button type="button" class="pd-btn pd-btn-danger" id="pp-mked-del">Delete<\/button>' : ''\) \+\s*\n\s*\(canWrite \? '<button type="button" class="pd-btn pd-btn-primary" id="pp-mked-save">Save<\/button>' : ''\)/.test(mjs));
+  ok('clicking it closes the editor and opens the new confirm modal for THIS row',
+     /if \(\$\('pp-mked-del'\)\) \$\('pp-mked-del'\)\.onclick = function \(\) \{\s*m\.close\(\);\s*openMediaKindDeleteConfirm\(row\);\s*\};/.test(mjs));
+  ok('openMediaKindDeleteConfirm exists and delegates to the RIGHT sub-module by _kind — PANO for a panorama, RECON otherwise — never a re-implementation of either delete',
+     /function openMediaKindDeleteConfirm\(row\) \{/.test(mjs) &&
+     /var mod = isPano \? window\.PANO : window\.RECON;/.test(mjs) &&
+     /var res = await mod\.deleteById\(row\._src\);/.test(mjs));
+  ok('a missing/unavailable sub-module (or its deleteById) is reported, not silently a no-op',
+     /if \(!mod \|\| !mod\.deleteById\) \{ UI\.toast\('Delete is not available right now', 'error'\); this\.disabled = false; return; \}/.test(mjs));
+  ok('a failed delete (e.g. RLS refusing it) surfaces the REAL reason from the sub-module, and re-enables the button rather than leaving it stuck disabled',
+     /if \(!res \|\| !res\.ok\) \{\s*UI\.toast\(\(res && res\.error\) \|\| 'Could not delete', 'error'\);\s*this\.disabled = false;\s*return;\s*\}/.test(mjs));
+  ok('success closes the modal, toasts, and re-renders the merged grid so the deleted tile disappears immediately (no reload needed)',
+     /m\.close\(\);\s*UI\.toast\(\(isPano \? 'Panorama' : '3D scan'\) \+ ' deleted', 'ok'\);\s*render\(\);/.test(mjs));
+  ok('the confirm modal names what gets cleaned up per kind (a stitched image for a panorama, a recorded video + result files for a scan)',
+     /'The stitched image is removed from storage too\.'/.test(mjs) &&
+     /'Its recorded video and any processed result files are removed from storage too\.'/.test(mjs));
+
+  // --- genuine execution: PANO.deleteById / RECON.deleteById -----------------
+  await (async function () {
+    const p1 = { id: nid('panoramas'), project_id: 'DEMO01', pano_url: 'pano-1.jpg' };
+    store.panoramas.push(p1);
+    let removed = [];
+    const realFrom = sbStub.storage.from;
+    sbStub.storage.from = () => ({
+      createSignedUrls: async (paths) => ({ data: paths.map((p) => ({ path: p, signedUrl: 'signed://' + p })), error: null }),
+      createSignedUrl: async (p) => ({ data: { signedUrl: 'signed://' + p }, error: null }),
+      upload: async (p) => ({ data: { path: p }, error: null }),
+      remove: async (paths) => { removed.push(...paths); return { error: null }; },
+    });
+    const r1 = await PANO._deletePano(p1);
+    sbStub.storage.from = realFrom;
+    ok('PANO.deleteById: reports success and genuinely removes the row', r1.ok && !store.panoramas.some((x) => x.id === p1.id));
+    ok('PANO.deleteById: removes the stitched image from Storage too (never orphaned)', removed.includes('pano-1.jpg'));
+
+    const missing = await PANO._deletePano(null);
+    eq('PANO.deleteById: a missing row reports a real error rather than throwing', missing, { ok: false, error: 'That panorama could not be found' });
+  })();
+
+  await (async function () {
+    // The actual bug: a DONE reconstruction, requested by the current user,
+    // with real result files that must be cleaned up alongside its video.
+    const r2 = {
+      id: nid('reconstruction_requests'), project_id: 'DEMO01', status: 'done',
+      video_url: 'vid-2.mp4', result_pointcloud_url: 'cloud-2.ply', result_splat_url: 'splat-2.ply',
+    };
+    store.reconstruction_requests.push(r2);
+    let removed = [];
+    const realFrom = sbStub.storage.from;
+    sbStub.storage.from = () => ({
+      createSignedUrls: async (paths) => ({ data: paths.map((p) => ({ path: p, signedUrl: 'signed://' + p })), error: null }),
+      createSignedUrl: async (p) => ({ data: { signedUrl: 'signed://' + p }, error: null }),
+      upload: async (p) => ({ data: { path: p }, error: null }),
+      remove: async (paths) => { removed.push(...paths); return { error: null }; },
+    });
+    const res = await RECON._deleteRequest(r2);
+    sbStub.storage.from = realFrom;
+    ok('RECON.deleteById: a DONE request genuinely deletes (the harness store has no RLS, so this proves the CLIENT-side logic is correct — the real DB-level gate is the 2026-09-04 migration, checked separately below)',
+       res.ok && !store.reconstruction_requests.some((x) => x.id === r2.id));
+    ok('RECON.deleteById: cleans up ALL THREE possible storage objects — the video AND both result files — never leaving any of them orphaned',
+       removed.includes('vid-2.mp4') && removed.includes('cloud-2.ply') && removed.includes('splat-2.ply'));
+
+    // The fake store has no RLS to actually refuse a delete with, so the "0
+    // rows returned" branch is exercised the same way M5's own "raced —
+    // already approved" scenario already proves .delete().select() coming
+    // back empty is read as a genuine refusal, never a false success: a row
+    // that was never pushed into the store is exactly what a delete matching
+    // nothing over the wire (an RLS refusal, or a since-vanished row) looks like.
+    const r3 = { id: nid('reconstruction_requests'), project_id: 'DEMO01', status: 'processing', video_url: 'vid-3.mp4' };
+    const refused = await RECON._deleteRequest(r3);
+    eq('RECON.deleteById: 0 rows deleted (RLS refusal or a since-vanished row) reports a real, actionable reason — never a false "deleted"',
+       refused, { ok: false, error: 'You do not have permission to delete this — an admin can, or ask them to run the pending migration.' });
+
+    const missing = await RECON._deleteRequest(null);
+    eq('RECON.deleteById: a missing row reports a real error rather than throwing', missing, { ok: false, error: 'That 3D reconstruction could not be found' });
+  })();
+
+  // --- the DB-level half: a requester's own DONE/FAILED scan is no longer
+  // admin-only to delete (the active-job window stays exactly as protected) --
+  const reconDelSql = fs.readFileSync(reconDeleteTerminalMigrationFile, 'utf8');
+  ok('migration widens the requester-own-row delete to done/failed, not just pending_approval',
+     /or \(requested_by = auth\.uid\(\) and status in \('pending_approval', 'done', 'failed'\)\)/.test(reconDelSql));
+  ok('the admin branch is untouched — an admin could already delete any status, before and after this migration',
+     /\(is_admin\(\) and can_access_project\(project_id\)\)/.test(reconDelSql));
+  ok('the policy is dropped before being recreated (idempotent / re-runnable, matching every other policy in this repo)',
+     /drop policy if exists reconstruction_requests_del on reconstruction_requests;\s*\n\s*create policy reconstruction_requests_del/.test(reconDelSql));
+  ok('folded into supabase-schema.sql, replacing the narrower pending_approval-only clause',
+     /or \(requested_by = auth\.uid\(\) and status in \('pending_approval', 'done', 'failed'\)\)/.test(fs.readFileSync(schemaFile, 'utf8')) &&
+     !/or \(requested_by = auth\.uid\(\) and status = 'pending_approval'\)/.test(fs.readFileSync(schemaFile, 'utf8')));
 
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
   process.exit(fails ? 1 : 0);
