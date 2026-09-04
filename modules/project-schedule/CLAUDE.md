@@ -1,3 +1,66 @@
+## The WBS matcher picks from the project's places — LBS proposal, slices 2 + 1 (2026-09-04) — jasantos2
+
+Owner: *"build slice 2 first, then slice 1."* The first code from
+[`docs/lbs-abs-setup-step-proposal.md`](../../docs/lbs-abs-setup-step-proposal.md). Built in the order
+asked, which is also the order that pays: slice 2 is the benefit, slice 1 is what it needs.
+
+### What was wrong
+`Match the WBS to your Location Breakdown Structure` ended in a **free-text box**. The project's actual
+places live in `cfg.zoning[trade].floors` — **inside the ScheduleBuilder closure, per trade** — so
+nothing outside it could say what the floors ARE, and the matcher had nothing to offer. On a migrated
+schedule (whose WBS *is* the breakdown, and which is the case the owner named) the planner re-typed the
+value for every branch, and each variant spelling — `2ND FLOOR`, `2nd Flr`, `2nd Floor` — became a
+separate floor in the Vertical Stacking, in the grouping dimensions and in the Location columns.
+
+### Slice 1 — `ScheduleBuilder.locCatalogue()`
+The list of places, **derived, not stored**: no table, no migration, no second source of truth. It
+reads the same `cfg` the push reads and returns `{ <location level id>: [{ value, dim, kind, tower }] }`.
+
+⚠️ **The values are the strings `locMapOf` would write, character for character** — tower =
+`towerLabel`, floor = `name || code`, zone/unit = `code || name`, each under the level `locLevelFor`
+resolves. A catalogue that offered a *prettier* spelling than the push writes would manufacture the
+very duplicate it exists to remove. Order is the setup's own order (`cfg.towers`, then floors
+bottom-up per trade — what `dimOrderIndex` sorts the pushed WBS by); first spelling seen wins the
+de-dupe across trades. A dim with **no level resolved contributes nothing** — never a next-free-column
+fallback, which is the fault the `locMapOf` note already warns about.
+
+### Slice 2 — the matcher reads it
+- The value box gets a `<datalist>` of that level's places, with the floor's **type** and **tower** as
+  the option label. Switching the *Location level* dropdown switches the list, because the places
+  belong to the level.
+- A badge beside each box: **✓ defined** (a place the setup knows), **≈ Ground Floor** (differs from a
+  defined place by case/punctuation only), **+ new** (not in the setup — allowed, just not aligned).
+- One button above the table: *Adopt the defined spelling for N values*. **That is the migration fix**
+  — the whole re-typed schedule reconciled to the setup in one explicit click.
+
+### ⚠️ What was deliberately NOT done — the owner's *"no logic whatsoever should be conflicted"*
+- **The free-text box stays** (proposal §5). A `<datalist>` suggests; it never constrains. A branch the
+  setup does not cover must stay matchable.
+- **Nothing is rewritten silently.** A near-miss is *flagged*, and snapping it is a click the planner
+  makes. A silent rewrite would change what Apply writes without anyone asking.
+- **No new storage, no new format.** The `location` jsonb keeps storing **strings**, `location_levels`
+  and its `match` table are untouched, `locGuessLevel` / `locGuessValue` / `locTowerToken` /
+  `locGroupingReason` and the assigned/excluded overrides are unchanged, and the clear-pass on Apply is
+  untouched.
+- **It degrades to the old behaviour exactly.** No setup loaded → `{}` → no datalist, no badges, no
+  snap bar. `ScheduleBuilder` only holds a `cfg` once the Schedule Setup tab has loaded one, so on a
+  cold open of the Project Schedule the wizard is the free-text box it has always been. ⚠️ **Not
+  verified:** whether planners routinely open the matcher before the Setup tab. If they do, the
+  catalogue is empty when it would help most, and the fix is to load the setup on demand — one call,
+  but it needs a live project to justify.
+- The badge is patched **in place**, never by re-rendering the tbody: the planner is typing in one of
+  those inputs and a rebuild would take the caret with it.
+
+### Verified
+16 checks, by **slicing `locCatalogue`, `catFor`, `catNorm`, `catState` and `catListId` out of the
+shipped file and executing their own source** (no reimplementation): tower/floor/zone/unit values and
+their order, de-duping across trades, `kind` + `tower` carried on a floor, a missing level contributing
+no key, `cfg == null → {}`, and the snap rule both ways — `GROUND  FLOOR` and `2ND FLOOR` resolve,
+`Ground Floor Zone A` does **not**. Plus a known-missing control, the inline-script parse check, and
+the function-set diff vs HEAD (**0 lost, 11 added**). ⚠️ **Not verified signed-in** — no live project
+from here (anon key has no grants), so the datalist, the badges and the snap button have not been seen
+on real data.
+
 ## Proposal — define the breakdowns FIRST: a two-pane LBS / ABS step (2026-09-04) — jasantos2
 
 Owner: *"what if instead of defining the number of floors basements … there should be an earlier step

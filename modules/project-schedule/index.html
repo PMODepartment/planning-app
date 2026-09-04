@@ -10348,6 +10348,66 @@
     // asks, and a single dropdown cannot express a pair.
     var filter = 'sug', q = '', depthF = '', treeSel = '';
 
+    /* ⚠️⚠️ THE VALUE BOX NOW OFFERS THE PLACES THE SETUP ALREADY DEFINES (proposal §6 slice 2).
+       Owner 2026-09-04: *"the purpose is to mitigate the difficulty of the matching of WBS
+       especially when a schedule is migrated."* This is that fix. The box was free text over a
+       breakdown that only existed inside the Schedule Setup closure, so a migrated schedule — whose
+       WBS *is* the breakdown — was re-typed branch by branch, and every typo became a second floor.
+       ⚠️ THE FREE-TEXT BOX IS KEPT (proposal §5). A <datalist> SUGGESTS; it never constrains. A
+       branch the setup does not cover must stay matchable, so this can only ever add choices.
+       ⚠️ NOTHING IS REWRITTEN BEHIND THE PLANNER. A value that differs from a defined place only by
+       case or punctuation is FLAGGED, and snapping it to the defined spelling is one explicit click
+       (see the snap bar) — a silent rewrite would change what Apply writes without anyone asking.
+       ⚠️ DEGRADES TO EXACTLY THE OLD BEHAVIOUR: no setup loaded (the Schedule Setup tab has never
+       been opened this session) → {} → no datalist, no badges, no snap bar, free text as before. */
+    var CAT = (function () {
+      try { return (typeof ScheduleBuilder !== 'undefined' && ScheduleBuilder.locCatalogue) ? (ScheduleBuilder.locCatalogue() || {}) : {}; }
+      catch (e) { return {}; }
+    })();
+    var CAT_N = 0; Object.keys(CAT).forEach(function (k) { CAT_N += (CAT[k] || []).length; });
+    function catFor(lvlId) { return (lvlId && CAT[lvlId]) || []; }
+    // ⚠️ Deliberately loose: case, spacing and punctuation only. "2ND FLOOR" and "2nd Floor" are one
+    // place; "2nd Floor" and "2nd Floor Zone A" are not, and no amount of migration makes them one.
+    function catNorm(v) { return String(v == null ? '' : v).toLowerCase().replace(/[^a-z0-9]+/g, ''); }
+    // '' = not a defined place · 'exact' = is one · otherwise the defined spelling this differs from.
+    function catState(lvlId, val) {
+      var list = catFor(lvlId), v = String(val || '').trim(); if (!list.length || !v) return '';
+      for (var i = 0; i < list.length; i++) if (list[i].value === v) return 'exact';
+      var n = catNorm(v); if (!n) return '';
+      for (var j = 0; j < list.length; j++) if (catNorm(list[j].value) === n) return list[j].value;
+      return '';
+    }
+    function catListId(lvlId) { return 'lw-dl-' + String(lvlId).replace(/[^A-Za-z0-9_-]/g, ''); }
+    function datalistsHtml() {
+      return Object.keys(CAT).map(function (lid) {
+        return '<datalist id="' + esc(catListId(lid)) + '">' + catFor(lid).map(function (c) {
+          var note = [c.kind, c.tower].filter(Boolean).join(' · ');
+          return '<option value="' + esc(c.value) + '"' + (note ? ' label="' + esc(note) + '"' : '') + '></option>';
+        }).join('') + '</datalist>';
+      }).join('');
+    }
+    // The badge beside the box: says whether what will be written is a place the setup knows about.
+    function vmarkHtml(s) {
+      if (!s.lvl || !CAT_N) return '';
+      var st = catState(s.lvl, s.val);
+      if (st === 'exact') return '<span class="lw-vmark" title="A place defined in your Schedule Setup." style="font-size:10px;font-weight:700;color:var(--pd-ok,#1a7f37);white-space:nowrap;">✓ defined</span>';
+      if (st) return '<span class="lw-vmark" title="Your Schedule Setup defines this place as ' + esc(st) + '. Two spellings of one place become two floors — use the button above the table to adopt the defined spelling." style="font-size:10px;font-weight:700;color:var(--pd-warn,#9a6700);white-space:nowrap;">≈ ' + esc(st) + '</span>';
+      if (!catFor(s.lvl).length) return '';
+      return '<span class="lw-vmark" title="Not one of the places defined in your Schedule Setup. That is allowed — it simply will not line up with the setup breakdown." style="font-size:10px;font-weight:700;color:var(--pd-muted);white-space:nowrap;">+ new</span>';
+    }
+    // Rows whose value IS a defined place, spelled differently — the migration case, counted.
+    function snapRows() {
+      return state.filter(function (s) { var c = s.lvl ? catState(s.lvl, s.val) : ''; return c && c !== 'exact'; });
+    }
+    function snapBarHtml() {
+      if (!CAT_N) return '';
+      var n = snapRows().length;
+      return '<div id="lw-snap" style="font-size:11.5px;color:var(--pd-muted);margin-bottom:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' +
+        '<span>' + CAT_N + ' place' + (CAT_N === 1 ? '' : 's') + ' defined in your Schedule Setup are offered in the value boxes.</span>' +
+        (n ? '<button class="pd-btn" id="lw-snap-go" style="padding:1px 8px;">Adopt the defined spelling for ' + n + ' value' + (n === 1 ? '' : 's') + '</button>' : '') +
+        '</div>';
+    }
+
     function lvlOptions(sel) {
       // ⚠️ "Grouping only" is the same value the empty option always carried ('' = no level), just
       // named for what it MEANS. A WBS branch is very often a pure grouping of activities —
@@ -10406,7 +10466,10 @@
           '<td style="padding:3px 6px;text-align:center;color:var(--pd-muted);white-space:nowrap;">L' + s.depth + '</td>' +
           '<td style="padding:3px 6px;text-align:right;color:var(--pd-muted);white-space:nowrap;">' + s.n.toLocaleString() + '</td>' +
           '<td style="padding:3px 6px;"><select class="pd-input lw-lvl" style="min-width:150px;">' + lvlOptions(s.lvl) + '</select></td>' +
-          '<td style="padding:3px 6px;"><input class="pd-input lw-val" value="' + esc(s.val) + '"' + (s.lvl ? '' : ' disabled') + ' style="min-width:150px;"></td>' +
+          '<td style="padding:3px 6px;"><div style="display:flex;gap:6px;align-items:center;">' +
+            '<input class="pd-input lw-val" value="' + esc(s.val) + '"' + (s.lvl ? '' : ' disabled') +
+              (catFor(s.lvl).length ? ' list="' + esc(catListId(s.lvl)) + '"' : '') + ' style="min-width:150px;flex:1 1 auto;">' +
+            vmarkHtml(s) + '</div></td>' +
         '</tr>';
       }).join('');
     }
@@ -10472,6 +10535,7 @@
         '<button class="pd-btn" id="lw-bulk">Assign all shown to…</button>' +
         '<select class="pd-input" id="lw-bulk-lvl" style="flex:0 0 200px;">' + lvlOptions('') + '</select>' +
       '</div>' +
+      datalistsHtml() + snapBarHtml() +
       '<div id="lw-shown" style="font-size:11.5px;color:var(--pd-muted);margin-bottom:2px;"></div>' +
       '<div id="lw-counts" style="font-size:12px;color:var(--pd-muted);margin-bottom:6px;"></div>' +
       '</div>' +
@@ -10524,9 +10588,30 @@
         m.el.querySelector('#lw-prev').innerHTML = locPreviewHTML(map, p, acts.length);
       }, 200);
     }
+    // ⚠️ The badge is patched IN PLACE, never by re-rendering the table: the planner is typing in
+    // one of those inputs, and rebuilding the tbody on every keystroke would take the caret with it.
+    function refreshMark(tr, s) {
+      var cell = tr.querySelector('.lw-val'); if (!cell || !cell.parentNode) return;
+      var old = cell.parentNode.querySelector('.lw-vmark'); if (old) old.parentNode.removeChild(old);
+      var html = vmarkHtml(s);
+      if (html) cell.insertAdjacentHTML('afterend', html);
+      refreshSnap();
+    }
+    function refreshSnap() {
+      var bar = m.el.querySelector('#lw-snap'); if (!bar) return;
+      bar.outerHTML = snapBarHtml();
+      var b = m.el.querySelector('#lw-snap-go'); if (b) b.onclick = snapAll;
+    }
+    function snapAll() {
+      var hit = snapRows();
+      hit.forEach(function (s) { var c = catState(s.lvl, s.val); if (c && c !== 'exact') { s.val = c; s.valEdited = true; } });
+      repaint();
+      UI.toast(hit.length + ' value' + (hit.length === 1 ? '' : 's') + ' set to the spelling your Schedule Setup defines.', 'success');
+    }
     function repaint() {
       m.el.querySelector('#lw-rows').innerHTML = rowsHtml();
       m.el.querySelector('#lw-tree').innerHTML = treeHtml();
+      refreshSnap();
       var n = visible().length;
       var lens = treeSel ? (treeSel === '__none__' ? ' · narrowed to Grouping only' :
         (' · narrowed to ' + ((LOC_LEVELS.filter(function (l) { return l.id === treeSel; })[0] || {}).name || ''))) : '';
@@ -10544,9 +10629,15 @@
         // Re-clean the value for the newly chosen level, unless the planner typed their own.
         if (!s.valEdited) s.val = s.lvl ? locGuessValue(s.name, s.lvl, LOC_LEVELS) : s.name;
         var vi = tr.querySelector('.lw-val'); vi.disabled = !s.lvl; vi.value = s.val;
+        // The offered places belong to the LEVEL, so changing the level changes the list.
+        if (catFor(s.lvl).length) vi.setAttribute('list', catListId(s.lvl)); else vi.removeAttribute('list');
+        refreshMark(tr, s);
         preview();
-      } else if (e.target.classList.contains('lw-val')) { s.val = e.target.value; s.valEdited = true; preview(); }
+      } else if (e.target.classList.contains('lw-val')) {
+        s.val = e.target.value; s.valEdited = true; refreshMark(tr, s); preview();
+      }
     });
+    var _sb0 = m.el.querySelector('#lw-snap-go'); if (_sb0) _sb0.onclick = snapAll;
     m.el.querySelector('#lw-q').oninput = function (e) { q = e.target.value; repaint(); };
     m.el.querySelector('#lw-filter').onchange = function (e) { filter = e.target.value; repaint(); };
     m.el.querySelector('#lw-depth').onchange = function (e) { depthF = e.target.value; repaint(); };
@@ -32109,6 +32200,48 @@
       },
       // The canonical trade order (GROUPS), as the labels written to work_type. The single source
       // of truth for anything outside this closure that needs to order trades.
+      /* ⚠️⚠️ THE PROJECT'S PLACES, AS A LIST — the LBS catalogue (proposal §2.1 slice 1).
+         Owner 2026-09-04: *"the purpose is to mitigate the difficulty of the matching of WBS
+         especially when a schedule is migrated."* The difficulty is that there was no list: the
+         places live in `cfg.zoning[trade].floors` PER TRADE, so nothing outside this closure could
+         say what the project's floors ARE, and the WBS matcher had to offer a free-text box and let
+         the planner re-type the value for every branch.
+         ⚠️ THIS IS DERIVED, NOT STORED. No new table, no new source of truth — it reads exactly the
+         same cfg the push reads, so a project that never opens the matcher is unaffected and a
+         project with no setup loaded gets {} and the old free-text behaviour (see the caller).
+         ⚠️ THE VALUES ARE THE STRINGS `locMapOf` WOULD WRITE, character for character:
+         tower = towerLabel, floor = name||code, zone/unit = code||name, keyed by the level
+         `locLevelFor` resolves. A catalogue that offered a prettier spelling than the push writes
+         would produce two spellings of one floor, which is the very fault it exists to remove.
+         Order is the setup's own order (towers, then floors bottom-up per trade) — the same order
+         dimOrderIndex sorts the pushed WBS by. First spelling seen wins the de-dupe. */
+      locCatalogue: function () {
+        var out = {};
+        try {
+          if (!cfg || !cfg.zoning) return out;
+          var lv = {};
+          ['tower', 'floor', 'zone', 'unit'].forEach(function (d) { var l = locLevelFor(d); if (l) lv[d] = l.id; });
+          function add(dim, value, extra) {
+            var id = lv[dim]; if (!id) return;
+            var v = (value == null) ? '' : String(value).trim(); if (!v) return;
+            var arr = out[id] || (out[id] = []);
+            for (var i = 0; i < arr.length; i++) if (arr[i].value === v) return;
+            arr.push({ value: v, dim: dim, kind: (extra && extra.kind) || '', tower: (extra && extra.tower) || '' });
+          }
+          towerList().forEach(function (t) { add('tower', towerLabel(t.id)); });
+          GROUPS.forEach(function (tr) {
+            ((cfg.zoning[tr] && cfg.zoning[tr].floors) || []).forEach(function (f) {
+              var tw = towerLabel(towerIdOf(f));
+              add('floor', f.name || f.code, { kind: floorKind(f), tower: tw });
+              (f.zones || []).forEach(function (z) {
+                add('zone', z.code || z.name, { tower: tw });
+                (z.units || []).forEach(function (u) { add('unit', u.code || u.name, { tower: tw }); });
+              });
+            });
+          });
+        } catch (e) { return out; }
+        return out;
+      },
       tradeLabels: function () { return GROUPS.map(function (g) { return GWORK[g] || GLABEL[g] || g; }); },
       /* THE STRUCTURE THIS SETUP DEFINES, AS THE GRID GROUP-BY DIMS.
          Owner 2026-09-03: *"i think the WBS tree default should be matched with what was defined in

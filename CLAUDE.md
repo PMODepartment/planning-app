@@ -84,6 +84,17 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-04 — The WBS matcher now offers the places the Schedule Setup already defines
+
+Owner: *"build slice 2 first, then slice 1."* Slices 2 and 1 of yesterday's proposal, shipped —
+`ScheduleBuilder.locCatalogue()` derives the project's places from the setup it already holds, and the
+Location wizard's **value box** offers them instead of being blank free text. A migrated schedule was
+previously re-typed branch by branch, and every typo (`2ND FLOOR` vs `2nd Floor`) became a second
+floor in the stacking. ⚠️ Nothing is stored, nothing is rewritten: no new table, no new format, the
+`location` jsonb keeps storing **strings**, the free-text box stays, and a project whose Schedule
+Setup has never been opened this session behaves exactly as before. Module only — see
+`modules/project-schedule/CLAUDE.md`. `MODULE_V` → `20260904d`.
+
 ### 2026-09-04 — Proposal: define the breakdowns first (a two-pane LBS / ABS step)
 
 Owner’s idea for an earlier Schedule Setup step: locations as a tree on the left (L1 towers, L2

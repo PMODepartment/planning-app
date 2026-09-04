@@ -1,6 +1,6 @@
 # Proposal — Define the breakdowns FIRST: a two-pane LBS / ABS step in Schedule Setup
 
-**Status: proposal only. Nothing implemented.**
+**Status: slices 1 and 2 shipped 2026-09-04 (see `modules/project-schedule/CLAUDE.md`). Slices 3-5 are still proposal only.**
 Companion to [`wbs-activity-tagging-proposal.md`](wbs-activity-tagging-proposal.md), which specifies the
 `activity_levels` half. This one specifies the **location** half, the **step** that edits both, and —
 because it is the owner's explicit constraint — a clause-by-clause account of **what it must not
@@ -170,9 +170,9 @@ module is unaffected, exactly as `packages` and `activity_udf_defs` already degr
 
 ## 6. Sequencing, smallest useful first
 
-1. **LBS tree editor + derive-from-existing.** Read-only value for the planner immediately: one place
+1. ✅ **SHIPPED 2026-09-04 — derive-from-existing**, as `ScheduleBuilder.locCatalogue()`. The tree EDITOR is not built; the derived catalogue is. **LBS tree editor + derive-from-existing.** Read-only value for the planner immediately: one place
    that shows the project's actual places. No consumer changes.
-2. **Matcher picks from the tree** (dropdown beside the free-text box). This alone is most of the
+2. ✅ **SHIPPED 2026-09-04** — a datalist of the defined places per level, a defined/near-miss/new badge, and one explicit "adopt the defined spelling" button. The free-text box is kept. **Matcher picks from the tree** (dropdown beside the free-text box). This alone is most of the
    "mitigate the difficulty of matching" benefit.
 3. **Adopt from the WBS.** The migration button.
 4. **ABS tree** (needs `activity_levels` from the companion proposal).
