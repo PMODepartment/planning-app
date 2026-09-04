@@ -175,6 +175,29 @@ window.PANO = (function () {
     await load();
   }
 
+  // Bug fix (2026-09-04): panoramas had NO delete path reachable from the
+  // merged Gallery grid at all — module.js's mediaKindThumbHTML() never
+  // rendered a delete icon and openMediaKindEditor()'s footer only had
+  // Cancel/Save, so `removePano` above (wired only to this module's own
+  // #pano-view screen, which Batch C made unreachable from the UI) was the
+  // only place this logic existed. Same signature convention as `removePano`
+  // (takes the real row object, not an id — module.js's editor already holds
+  // the exact live reference as `row._src`, per panoPseudoRow's own comment,
+  // so there's no id-lookup/reload needed here to find it). No confirm() of
+  // its own — the caller (module.js) shows its own confirm modal matching the
+  // rest of that module's delete flow — and it keeps the in-memory
+  // `panoramas` array (and this screen's own render, if it's ever visible
+  // again) in sync rather than requiring a full reload to notice the row is gone.
+  async function deletePano(p) {
+    if (!p || !p.id) return { ok: false, error: 'That panorama could not be found' };
+    if (p.pano_url) { try { await sb().storage.from(BUCKET).remove([p.pano_url]); } catch (e) {} }
+    var res = await sb().from(T_PANO).delete().eq('id', p.id);
+    if (res.error) return { ok: false, error: res.error.message };
+    panoramas = panoramas.filter(function (x) { return x.id !== p.id; });
+    if ($('pano-view')) render();
+    return { ok: true };
+  }
+
   // ------------------------------------------------------------- 360 viewer --
   // Three.js sphere-of-revolution (a cylinder, per the file-header scope note)
   // with the panorama texture mapped INSIDE-OUT so the camera, placed at the
@@ -960,6 +983,13 @@ window.PANO = (function () {
     // is that flow's only remaining entry point now that its own topbar
     // button (#pano-new) is gone (folded into the Gallery screen, item 2).
     openCapture: function () { openCaptureModal(); },
+    // Bug fix (2026-09-04) — see deletePano's own comment. Takes the real
+    // panorama row object (not an id). Returns { ok:true } or
+    // { ok:false, error }; never throws.
+    deleteById: function (p) { return deletePano(p); },
+    // Test-only hook — deletePano is otherwise unreachable outside the
+    // merged-Gallery editor's click handler.
+    _deletePano: function (p) { return deletePano(p); },
     // Item 5 — exported so the test harness can genuinely EXECUTE these
     // rather than only read them, same reasoning as every other pure-math
     // hook this app exports: a wrong string/number here is silent (nothing
