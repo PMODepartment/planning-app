@@ -955,37 +955,21 @@ body { overflow-x: clip; }
   padding: 10px 22px; min-height: 58px;
 }
 
-/* Sidebar toggle + [module icon +] dropdown lead the row; theme + avatar
-   trail it — DOM order already gives this (toggle, icon+dropdown, theme,
-   avatar), so no `order` is needed at this width. The pair shrinks/grows as
-   ONE unit so it never pushes theme/avatar off the row on a laptop-width
-   window, and so the ≤820px rule below (which moves the dropdown to its own
-   row) carries the icon along with it rather than stranding it with the
-   hamburger/theme/avatar cluster. `>` (direct child of .pd-tb-main) is
-   deliberate: on a module page the dropdown is nested one level deeper, inside
-   .pd-tb-projgroup, so only the GROUP matches here; on a shell page with no
-   module icon (initModuleTopbar finds nothing to pair it with) the dropdown
-   stays a direct child and matches directly, unchanged from before. */
+/* Sidebar toggle + dropdown lead the row; theme + avatar trail it — DOM
+   order already gives this (toggle, dropdown, theme, avatar), so no `order`
+   is needed at this width.
+   ⚠️ REVERTED (owner ask, 2026-09-04): a 2026-09-02 pass paired a module's own
+   icon glyph with the dropdown here in the top identity row (`.pd-tb-mark` +
+   `.pd-tb-projgroup`, built by initModuleTopbar() in ui.js) — "no module logo
+   is allowed in this top bar across all modules." That extraction is gone
+   from ui.js, so this row is back to the four fixed chrome controls only; a
+   module's own icon now stays in `.pd-modulebar` below (see the module bar's
+   own rules further down, and `UI.tabsToDropdown()`'s `opts.icon` for the two
+   modules whose own <h1> can't carry it). */
 .pd-topbar.pd-tb-split .pd-tb-main > [class$="-projctx"],
-.pd-topbar.pd-tb-split .pd-tb-main > #ctx-switcher,
-.pd-topbar.pd-tb-split .pd-tb-main > .pd-tb-projgroup {
+.pd-topbar.pd-tb-split .pd-tb-main > #ctx-switcher {
   flex: 1 1 220px; min-width: 0; max-width: 420px;
 }
-/* The dropdown fills whatever room is left in its group after the icon. */
-.pd-tb-projgroup { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.pd-tb-projgroup > [class$="-projctx"],
-.pd-tb-projgroup > #ctx-switcher { flex: 1 1 auto; min-width: 0; max-width: none; }
-/* The module's own icon glyph — extracted by initModuleTopbar() (ui.js) from
-   the module's <h1>/title-switch button, where it used to sit inline with the
-   title text on the second row — lives here instead: immediately before the
-   project dropdown, never fused into it (2026-09-02). Most modules' own
-   `.xx-title-ico` rule colours the icon directly (color:var(--pd-red) on the
-   class itself, not a descendant selector), so it keeps that styling wherever
-   it's moved to — except Project Schedule's, scoped `.ps-title-btn
-   span.ps-title-ico`, which the icon no longer sits inside once moved. This is
-   the backstop for that case and for any future module scoped the same way. */
-.pd-tb-mark { display: inline-flex; align-items: center; flex: none; }
-.pd-tb-mark [class$="-title-ico"] { color: var(--pd-red); }
 .pd-topbar.pd-tb-split .pd-tb-main [class$="-projctx"] .pd-select,
 .pd-topbar.pd-tb-split .pd-tb-main [class$="-projctx"] .pd-psel,
 .pd-topbar.pd-tb-split .pd-tb-main [class$="-projctx"] > button { width: 100%; max-width: none; }
@@ -1100,8 +1084,7 @@ body { overflow-x: clip; }
 @media (max-width: 700px) {
   .pd-topbar.pd-tb-split .pd-tb-main { row-gap: 8px; }
   .pd-topbar.pd-tb-split .pd-tb-main > [class$="-projctx"],
-  .pd-topbar.pd-tb-split .pd-tb-main > #ctx-switcher,
-  .pd-topbar.pd-tb-split .pd-tb-main > .pd-tb-projgroup { flex-basis: 100%; order: 5; max-width: none; }
+  .pd-topbar.pd-tb-split .pd-tb-main > #ctx-switcher { flex-basis: 100%; order: 5; max-width: none; }
 }
 
 @media (max-width: 900px) {
@@ -1197,15 +1180,21 @@ body { overflow-x: clip; }
    drives the module's own view-switching JS) but are visually hidden; this
    single trigger + menu replaces them on screen. ---- */
 .pd-tabsdrop-src { display: none !important; }
-.pd-tabsdrop { position: relative; flex: none; }
+/* ⚠️ REVISED (owner ask, 2026-09-04): `.pd-tabsdrop` is now a flex row itself
+   — `wrap` is where `opts.icon`'s separate <span> lives (inserted before the
+   trigger by tabsToDropdown() in ui.js), so it needs to lay its own children
+   out rather than staying a bare relative-positioned box. `.pd-tabsdrop-menu`
+   stays `position:absolute` (below), so it never participates in this row. */
+.pd-tabsdrop { position: relative; display: flex; align-items: center; gap: 6px; flex: none; }
 .pd-tabsdrop-btn {
   display: inline-flex; align-items: center; gap: 8px; background: none; border: 1px solid transparent;
   border-radius: 8px; padding: 6px 10px; cursor: pointer; font: inherit; font-weight: 700; font-size: 15px;
   color: var(--pd-ink);
 }
 .pd-tabsdrop-btn:hover { background: var(--pd-bg); border-color: var(--pd-line); }
-/* opts.icon (2026-09-03) — the module identity mark baked into the trigger itself,
-   matching Project Schedule's own `.ps-title-btn span.ps-title-ico`. */
+/* opts.icon (2026-09-04) — the module's own identity mark, a separate sibling
+   to the LEFT of the trigger button (never inside it), matching Project
+   Schedule's own `.ps-title-btn span.ps-title-ico` in colour only. */
 .pd-tabsdrop-ico { color: var(--pd-red); flex: none; display: inline-flex; }
 .pd-tabsdrop-caret { color: var(--pd-muted); flex: none; }
 .pd-tabsdrop-menu {
@@ -1223,7 +1212,10 @@ body { overflow-x: clip; }
 .pd-tabsdrop-menu button.cur { background: var(--pd-red-light); color: var(--pd-red); font-weight: 700; }
 @media (max-width: 700px) {
   .pd-tabsdrop { flex: 1 1 100%; }
-  .pd-tabsdrop-btn { width: 100%; justify-content: space-between; min-height: var(--pd-tap); }
+  /* `flex:1 1 auto; width:auto` (not `width:100%`) — `.pd-tabsdrop` is now a
+     flex row that may also hold `opts.icon`'s separate icon span, and the
+     trigger must only fill what's left over after it, not the whole row. */
+  .pd-tabsdrop-btn { flex: 1 1 auto; width: auto; justify-content: space-between; min-height: var(--pd-tap); }
 }
 
 /* ============================================================================
