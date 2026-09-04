@@ -84,6 +84,25 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-04 (c) — The trade selector leads, BL and ACT are told apart, and the baseline has a name
+
+*"pls put the trade on the top, also can you emphasize which is the actual and which is the baseline ...
+pls indicate if it is BL0 or maybe another current baseline."*
+
+**(1)** The trade chips sat below the whole toolbar — under the view controls, the legend and the
+activity count — so the control deciding what is on screen was the last thing before the buildings.
+It is now the first row. **(2)** The compare cell tagged its rows **P** and **A** in the same weight and
+ink; they are now **BL** (muted) and **ACT** (bold), so the difference carries the meaning and survives
+a greyscale print. "P" for planned was also the wrong word — the figure comes from the baseline
+columns. **(3)** Those columns hold whichever baseline was last *Set primary*, and the screen never said
+which. New `blPrimaryLabel()` names it in the basis label, the legend and the PDF meta.
+
+⚠️ The NAME is the label — baselines here are user-named and there is no numbering scheme, so no
+"BL1" is invented; **BL0** stays the fallback, which is what this module already calls the `bl_*`
+columns when nothing is recorded. ⚠️ The fetch is tolerant: no migration or no primary set → BL0 and
+nothing else changes. 467 checks, 0 functions lost. `MODULE_V` → `20260904c`.
+
+---
 ### 2026-09-04 (b) — "This IS a place" is now as durable as "this is not"
 
 *"do i need to press anything for the substructure level to be detected?"* Yes —

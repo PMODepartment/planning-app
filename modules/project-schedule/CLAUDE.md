@@ -1,3 +1,60 @@
+## The trade selector leads, BL and ACT are told apart, and the baseline has a name (2026-09-04) — jasantos2
+
+Owner: *"pls put the trade on the top, also can you emphasize which is the actual and which is the
+baseline. Also for the planned Baseline in vertical stacking, pls indicate if it is BL0 or maybe another
+current baseline or BLX something."*
+
+### 1 The trade selector is now the first row
+It sat **below the entire toolbar** — under the view controls, the legend sentence and the
+stacked-activity count. So the control that decides *what is on screen* was the last thing on the way
+to the buildings, and on a narrow window it wrapped below the fold entirely. Which trades you are
+looking at is the first question the panel answers, so it is the first row.
+
+### 2 ⚠️ The compare cell says BL and ACT, and they no longer look alike
+The two rows were tagged **P** and **A** in the same weight and the same ink, one above the other —
+two initials to be decoded from a legend the reader may not have on screen. **P** for *planned* is also
+the wrong word for the thing: that figure comes from the baseline columns, not from a plan in the
+abstract.
+
+| | before | after |
+|---|---|---|
+| baseline row | `P  Oct 9, 26   66%` | `BL  Oct 9, 26   66%` — muted (72%), lighter |
+| actual row | `A  Dec 13, 26  35%` | `ACT Dec 13, 26  35%` — full strength, bold |
+
+⚠️ **The difference carries the meaning**, so it survives being glanced at *and* survives a greyscale
+print — which "P" over "A" did not. The tag itself is always bold, so the word stays readable in the
+muted row.
+
+### 3 ⚠️⚠️ "Planned" now says WHOSE plan
+Every planned date and planned % on that screen reads `bl_start` / `bl_finish`, and those
+columns hold **whichever saved baseline was last "Set primary"** — `setPrimaryBaseline` overwrites
+them. The screen said *planned* and never said whose.
+
+New `BL_PRIMARY` + `blPrimaryLabel()`, surfaced in the basis label, the legend sentence and the
+PDF meta line:
+- the Planned basis reads **planned · Baseline 14-Nov-25**
+- the Compare basis reads **planned (Baseline 14-Nov-25) vs actual**
+- the legend spells out *BL = the baseline (**name**) date & %, then ACT = the actual date & % in bold*
+
+⚠️ **The NAME is the label, not a made-up "BL1".** Baselines here are user-named (*Baseline 14-Nov-25*,
+*Imported Rev C*), there is no numbering scheme, and inventing one would be a second vocabulary for the
+same object. **BL0** stays as the FALLBACK, because that is already what this module calls the `bl_*`
+columns when nothing is recorded — so a project with no primary set reads exactly as it did before.
+⚠️ The fetch is as tolerant as the other optional tables here: no migration, no grant, or no primary
+set → `null` → every label falls back to BL0 and nothing else changes. One row, two columns.
+
+---
+
+**Verified: 467 checks.** `blPrimaryLabel` is executed for a named baseline, an imported one, no
+primary at all, and a primary whose name is blank (→ BL0, not an empty label), with a control that it
+never invents "BL1"; `_vsBasisWord` is executed for all three bases. The cell change is diffed
+against the previous commit: no opacity before, role-dependent opacity and weight now, ACT strong and
+BL muted, and the old P/A tags gone. 0 functions lost, 1 added.
+
+⚠️ **NOT verified visually** — the strings and the weights are checked, how the muted row reads on screen
+is not. ⚠️ *"put the trade on the top"* was read as the **trade chip row** within the stacking panel; if
+what was meant was the trade inside each cell, say so and it is a small change.
+
 ## "This IS a place" is now as durable as "this is not" (2026-09-04) — jasantos2
 
 Owner, after the previous fix: *"how come? ... do i need to press anything for the substructure level to

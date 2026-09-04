@@ -4097,6 +4097,23 @@
                  same [] and blamed the planner for a database problem.
      'ok'      — actually fetched. Only here may the app say the project has no breakdown. */
   var LOC_LOAD = 'pending', LOC_LOAD_ERR = '', LOC_LEVELS_AT = '';
+  /* WHICH BASELINE THE PLANNED FIGURES COME FROM.
+     Owner 2026-09-04: *"for the planned Baseline in vertical stacking, pls indicate if it is BL0 or
+     maybe another current baseline or BLX something."*
+     Fair: every planned date and planned % on that screen is read from bl_start / bl_finish, and
+     those columns hold whichever saved baseline was last "Set primary" (see setPrimaryBaseline,
+     which overwrites them). The screen said "planned" and never said WHOSE plan.
+     ⚠️ The NAME is the honest label, not a made-up "BL1". The baselines are user-named ("Baseline
+     14-Nov-25", "Imported Rev C"), there is no numbering scheme, and inventing one would be a second
+     vocabulary for the same object. "BL0" stays as the FALLBACK, because that is what the rest of
+     this module already calls the bl_* columns when nothing is recorded. */
+  var BL_PRIMARY = null;         // { id, name } of the baseline currently written into bl_*
+  function blPrimaryLabel() {
+    try {
+      var n = BL_PRIMARY && String(BL_PRIMARY.name || '').trim();
+      return n ? n : 'BL0';
+    } catch (e) { return 'BL0'; }
+  }
   var COST_ACCTS = [], EXPENSES = [];   // cost-breakdown-structure accounts + per-activity itemized expenses
   var WBS_NODES = [];   // first-class WBS tree (authoring source of truth; projected to WBS-Summary rows)
 
@@ -5949,6 +5966,15 @@
     // Location Breakdown levels. Tolerant of the un-run 2026-08-04 migration: no table -> no
     // levels -> the location columns/grouping simply don't appear, everything else is unaffected.
     var tLoc = T(async function () { await refreshLocLevels(); });
+    /* The primary baseline's NAME, for the labels that say where "planned" comes from.
+       ⚠️ Tolerant in exactly the way the other optional tables here are: no schedule_baselines
+       migration, no grant, no primary set -> null -> every label falls back to "BL0" and nothing
+       else changes. Bounded (one row), so no pagination and no cost worth measuring. */
+    var tBl = T(async function () {
+      var rb = await sb().from('schedule_baselines').select('id,name').eq('project_id', pid).eq('is_primary', true).limit(1);
+      BL_PRIMARY = (rb && !rb.error && rb.data && rb.data[0]) ? rb.data[0] : null;
+    });
+    void tBl;
 
     // Contract packages. Tolerant of the un-run 2026-08-19-packages.sql exactly like
     // location_levels above: no table -> no packages -> the Package column offers nothing to
@@ -14063,7 +14089,10 @@
     return dayDiff(pl, ac);
   }
   function _vsDateWord() { return _vsDateMode === 'start' ? 'starts' : 'finishes'; }
-  function _vsBasisWord() { return _vsBasis === 'planned' ? 'planned' : (_vsBasis === 'compare' ? 'planned vs actual' : 'actual/forecast'); }
+  /* ⚠️ THE BASELINE IS NAMED WHEREVER 'PLANNED' IS. See blPrimaryLabel: the planned figures come
+     from bl_start/bl_finish, which hold whichever saved baseline was last Set primary. Saying only
+     'planned' left the reader to assume it was the original one. */
+  function _vsBasisWord() { return _vsBasis === 'planned' ? ('planned · ' + blPrimaryLabel()) : (_vsBasis === 'compare' ? ('planned (' + blPrimaryLabel() + ') vs actual') : 'actual/forecast'); }
   // Compare colours by slip, so the fill answers "are we behind here?" at a glance.
   var VS_SLIP_LATE = '#C0392B', VS_SLIP_EARLY = '#1F8F4E', VS_SLIP_ONTIME = '#3A6098', VS_SLIP_NONE = '#6f7276';
   function _vsSlipColor(sl) {
@@ -14395,9 +14424,21 @@
             ? (function () {
                 var yP = y + (lbl ? 24 : 20), yA = yP + 11, yV = yA + 12;
                 var xL = cx + 4, xR = cx + cw2 - 4;
-                function row(yy, tag, dt, pc, bold) {
-                  return '<text ' + vtx + ' x="' + xL + '" y="' + yy + '" text-anchor="start" font-size="8.5" font-weight="' + (bold ? '700' : '400') + '" fill="' + ink + '" pointer-events="none">' + tag + ' ' + esc(dt) + '</text>' +
-                    '<text ' + vtx + ' x="' + xR + '" y="' + yy + '" text-anchor="end" font-size="8.5" font-weight="800" fill="' + ink + '" pointer-events="none">' + esc(pc) + '</text>';
+                /* THE TWO ROWS ARE NAMED, AND THEY DO NOT LOOK ALIKE.
+                   Owner 2026-09-04: *"can you emphasize which is the actual and which is the
+                   baseline."* They were tagged "P" and "A" in the same weight and the same ink, one
+                   above the other - two initials that have to be decoded from a legend the reader
+                   may not have on screen. "P" for planned is also the wrong word for what it is: the
+                   figure comes from the baseline columns, not from a plan in the abstract.
+                   Now: BL (the baseline, muted and lighter) and ACT (the actual, full-strength and
+                   bold). The DIFFERENCE carries the meaning, so it survives being glanced at, and it
+                   survives a greyscale print - which "P" over "A" did not. */
+                function row(yy, tag, dt, pc, strong) {
+                  var op = strong ? '1' : '0.72';
+                  var fw = strong ? '800' : '500';
+                  return '<text ' + vtx + ' x="' + xL + '" y="' + yy + '" text-anchor="start" font-size="8.5" font-weight="' + fw + '" fill="' + ink + '" opacity="' + op + '" pointer-events="none">' +
+                      '<tspan font-weight="800" letter-spacing="0.03em">' + tag + '</tspan> ' + esc(dt) + '</text>' +
+                    '<text ' + vtx + ' x="' + xR + '" y="' + yy + '" text-anchor="end" font-size="8.5" font-weight="800" fill="' + ink + '" opacity="' + op + '" pointer-events="none">' + esc(pc) + '</text>';
                 }
                 var gap2 = _vsPocGap(c.list);
                 // The variance line carries BOTH variances — days of slip and points of POC — because
@@ -14407,8 +14448,8 @@
                   // answer: a unit nobody outside this file uses does not belong on the face of a
                   // cell. 'behind/ahead' also states the DIRECTION, which a signed number does not.
                   (gap2 == null ? '' : ' · ' + Math.abs(Math.round(gap2)) + '% ' + (gap2 > 0 ? 'ahead' : gap2 < 0 ? 'behind' : 'on plan'));
-                return row(yP, 'P', _vsDateShort(_vsPlanDate(c.list)), _vsPctTxt(planPct), false) +
-                  row(yA, 'A', _vsDateShort(fin), _vsPctTxt(pct), true) +
+                return row(yP, 'BL', _vsDateShort(_vsPlanDate(c.list)), _vsPctTxt(planPct), false) +
+                  row(yA, 'ACT', _vsDateShort(fin), _vsPctTxt(pct), true) +
                   // ⚠️ The badge REPLACES the variance line here rather than being added to it — the
                   // two would say the same thing twice, and the badge's figure is the finish variance
                   // (`_vsFinSlip`) which is the right one for a finished zone whichever way the
@@ -15413,7 +15454,7 @@
         '<rect x="0.5" y="0.5" width="13" height="11" rx="2" fill="var(--pd-muted)" opacity="0.95"></rect></svg>' +
         '<span class="ps-vs-legendtxt">' +
           (_vsBasis === 'planned' ? 'solid = due by today · hatched = not yet due' : 'solid = done · hatched = remaining') +
-          (_vsBasis === 'compare' ? ' · line = planned POC · each cell reads <strong>P</strong> = planned date &amp; %, <strong>A</strong> = actual date &amp; %, then the slip in days and how far ahead or behind plan the progress is' : '') +
+          (_vsBasis === 'compare' ? ' · line = planned POC · each cell reads <strong>BL</strong> = the baseline (<strong>' + esc(blPrimaryLabel()) + '</strong>) date &amp; %, then <strong>ACT</strong> = the actual date &amp; % in bold, then the slip in days and how far ahead or behind plan the progress is' : '') +
           // The completion badge needs saying: a coloured pill is only self-explanatory once.
           ' · a <strong>✓ DONE</strong> pill means every activity in that zone is complete, and it carries the finish variance against the baseline — ' +
           '<span style="color:' + VS_SLIP_EARLY + ';font-weight:700;">early</span>, ' +
@@ -15592,7 +15633,12 @@
     // ⚠️ The chip row shows in every scope now. It used to be per-trade only, from when it selected
     // ONE trade to look at; as a filter it narrows the per-tower and consolidated models too, and a
     // filter you cannot see is a filter that gets blamed on missing data.
-    host.innerHTML = bar + chips + warn + _vsHatchDefs() +
+    /* THE TRADE SELECTOR LEADS. Owner 2026-09-04: *"pls put the trade on the top"*. It sat below the
+       whole toolbar - under the view controls, the legend sentence and the stacked-activity count -
+       so the control that decides WHAT IS ON SCREEN was the last thing on the way to the buildings,
+       and on a narrow window it wrapped below the fold entirely. Which trades you are looking at is
+       the first question the panel answers, so it is now the first row. */
+    host.innerHTML = chips + bar + warn + _vsHatchDefs() +
       // ⚠️ The toolbar and the chips sit OUTSIDE the scroller on purpose — scrolling the buildings
       // must never take the controls that drive them off screen.
       '<div class="ps-vs-pane"><div class="ps-vs-body">' +
