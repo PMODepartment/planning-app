@@ -9248,7 +9248,7 @@
         LOC_LEVELS = LOC_LEVELS.filter(function (l) { return l.id !== srcId; });
         groupBys = groupBys.filter(function (d) { return d !== 'loc:' + srcId; });
         setGroupBys(groupBys);
-        populateGroupSelect(); seedExtraHidden(); renderHeader(); rebuild(false); renderAll();
+        psSetupChanged();
         UI.toast('Merged into "' + nm + '" — ' + p.moves.length + ' activities moved.', 'ok');
         m.close(); if (onDone) onDone();
       } catch (e) {
@@ -9334,7 +9334,8 @@
           var l = LOC_LEVELS.find(function (x) { return x.id === inp.dataset.id; }); if (!l || l.name === v) return;
           l.name = v;
           await sb().from('location_levels').update({ name: v }).eq('id', l.id);
-          populateGroupSelect(); renderHeader(); renderGrid();
+          // A RENAME is the edit the name-keyed caches exist for - see psSetupChanged.
+          psSetupChanged();
         };
       });
       listEl.querySelectorAll('[data-up],[data-down]').forEach(function (b) {
@@ -9343,7 +9344,7 @@
           var a = LOC_LEVELS[i], c = LOC_LEVELS[j]; if (!a || !c) return;
           LOC_LEVELS[i] = c; LOC_LEVELS[j] = a;
           await _batchUpdate('location_levels', LOC_LEVELS.map(function (l, k) { l.sort_order = k; return { id: l.id, patch: { sort_order: k } }; }));
-          paint(); populateGroupSelect(); renderHeader(); renderGrid();
+          paint(); psSetupChanged();
         };
       });
       listEl.querySelectorAll('[data-del]').forEach(function (b) {
@@ -9354,7 +9355,7 @@
           await sb().from('location_levels').delete().eq('id', id);
           LOC_LEVELS = LOC_LEVELS.filter(function (x) { return x.id !== id; });
           groupBys = groupBys.filter(function (d) { return d !== 'loc:' + id; });
-          paint(); setGroupBys(groupBys); renderHeader();
+          paint(); setGroupBys(groupBys); psSetupChanged();
         };
       });
       listEl.querySelectorAll('[data-merge]').forEach(function (b) {
@@ -9366,7 +9367,7 @@
       var res = await sb().from('location_levels').insert({ project_id: pid, name: v, sort_order: LOC_LEVELS.length, created_by: UID }).select().single();
       if (res.error) { UI.toast(res.error.message + ' — run the 2026-08-04 location migration.', 'error'); return; }
       LOC_LEVELS.push(res.data); el.value = ''; el.focus();
-      paint(); populateGroupSelect(); seedExtraHidden(); renderHeader(); renderGrid();
+      paint(); psSetupChanged();
     }
     m.el.querySelector('#lvl-add').onclick = addLevel;
     m.el.querySelector('#lvl-new').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); addLevel(); } };
@@ -10175,7 +10176,7 @@
         p.ups.forEach(function (u) { if (failedSet[u.rec.id]) u.rec.location = prev[u.rec.id]; });
       }
       hideLoading();
-      rebuild(false); renderGrid(); renderGantt();
+      psSetupChanged();
       var okCount = p.ups.length - res.failedIds.length;
       if (res.ok) UI.toast('Filled location on ' + p.ups.length + ' activities.', 'success');
       else UI.toast('Filled location on ' + okCount + ' of ' + p.ups.length + ' activities — run this again to retry the rest.', 'warn');
@@ -10231,7 +10232,7 @@
       var prev = {}; ups.forEach(function (u) { prev[u.rec.id] = u.rec.location; u.rec.location = u.loc; });
       var res = await _batchUpdate(TABLE, ups.map(function (u) { return { id: u.rec.id, patch: { location: u.loc } }; }));
       if (res.failedIds.length) { var f = {}; res.failedIds.forEach(function (id) { f[id] = 1; }); ups.forEach(function (u) { if (f[u.rec.id]) u.rec.location = prev[u.rec.id]; }); }
-      hideLoading(); rebuild(false); renderGrid(); renderGantt();
+      hideLoading(); psSetupChanged();
       var ok = ups.length - res.failedIds.length;
       UI.toast(res.ok ? ('Tagged ' + ups.length + ' phase activit' + (ups.length === 1 ? 'y' : 'ies') + '.') : ('Tagged ' + ok + ' of ' + ups.length + ' — run again to retry the rest.'), res.ok ? 'success' : 'warn');
       if (typeof renderStackView === 'function') renderStackView();
@@ -10603,7 +10604,7 @@
       saveLocExcluded(carried.concat(stillExcluded));
       _vsGrpCache = null;   // the stacking's grouping veto reads this list — stale = wrong bands
       _vsAxisCache = null;
-      rebuild(false); renderGrid(); renderGantt();
+      psSetupChanged();
       var wokCount = p.ups.length - wres.failedIds.length;
       var wpartial = wres.failedIds.length ? (' Updated ' + wokCount + ' of ' + p.ups.length + ' — run this again to retry the rest.') : ('Updated ' + p.ups.length + ' activities.');
       // Stated separately: clearing is the half nobody expects, and a silent removal of stored
@@ -10852,7 +10853,7 @@
       var carried = loadDiscExcluded().filter(function (n) { return !stateNames[n]; });
       var stillExcluded = state.filter(function (s) { return !s.on; }).map(function (s) { return s.name; });
       saveDiscExcluded(carried.concat(stillExcluded));
-      rebuild(false); renderGrid(); renderGantt();
+      psSetupChanged();
       var dokCount = p.ups.length - dres.failedIds.length;
       if (dres.ok) UI.toast('Set discipline/trade on ' + p.ups.length + ' activities.', 'success');
       else UI.toast('Set discipline/trade on ' + dokCount + ' of ' + p.ups.length + ' activities — run this again to retry the rest.', 'warn');
@@ -13597,8 +13598,50 @@
   // ⚠️ Read-time only: no row is modified and no value is deleted. The permanent fix is to mark the
   // branch grouping-only in the matcher, which now clears what it previously wrote.
   var _vsGrpCache = null, _vsGrpKey = null;
+  /* ⚠️⚠️ EVERYTHING THE SCHEDULE SETUP CAN CHANGE, INVALIDATED AND REPAINTED IN ONE PLACE.
+     Owner 2026-09-03: *"when i edit the WBS tree and matched the WBS to the locations etc in the
+     schedule setup, how come i think the project schedule is not updated."*
+     Both tabs are one page, so an edit on the Setup side writes to the database and to the shared
+     in-memory state — but the Project Schedule reads that state through SIX memos, and the Setup's
+     own handlers cleared at most one of them:
+       • the location wizard cleared _vsAxisCache and repainted the grid;
+       • the WBS-tree backfill repainted the grid and cleared NOTHING;
+       • the LBS editor repainted some of the grid and cleared nothing;
+       • none of them touched the phase / trade / scope memos, the grouping-veto set, the dim→level
+         map, the group-by menu, the column header, or the Vertical Stacking.
+     So a planner could re-file a branch or re-match every location and watch the schedule show the
+     answer it had computed before the edit — with no error, because nothing failed.
+     ⚠️ ONE function, called from every Setup-side write. A list of caches maintained at four call
+     sites is the shape this bug already has; the cure is not a fifth copy.
+     ⚠️ Every clear is guarded and every repaint is optional: this runs during load() as well as from
+     a dialog, and the grid may not be built yet. */
+  function psSetupChanged(opts) {
+    var o = opts || {};
+    _vsAxisCache = null; _vsAxisKey = null;
+    _vsGrpCache = null; _vsGrpKey = null;
+    try { if (typeof ScheduleBuilder !== 'undefined' && ScheduleBuilder.invalidateLocCache) ScheduleBuilder.invalidateLocCache(); } catch (e) {}
+    // The WBS tree decides an activity's phase, trade and contract scope, all memoised per node id.
+    try { _clearPhaseMemo(); } catch (e) {}
+    try { _clearScopeMemo(); } catch (e) {}
+    try { _tradeMemo = {}; } catch (e) {}
+    // The levels are columns and group-by dimensions as well as stacking bands.
+    try { populateGroupSelect(); } catch (e) {}
+    try { seedExtraHidden(); } catch (e) {}
+    try { renderHeader(); } catch (e) {}
+    if (o.rows !== false) { try { rebuild(false); } catch (e) {} }
+    try { renderGrid(); } catch (e) {}
+    try { renderGantt(); } catch (e) {}
+    // ⚠️ The stacking is NOT drawn by renderAll (see _vsRepaintIfLevelsArrived) — without this it
+    // keeps the building it drew before the match.
+    try { if (vstackMode) { _vsAnim = 'fade'; _vsRenderSafe(); } } catch (e) {}
+  }
   function _vsGroupingSet() {
-    var key = pid + '|' + LOC_LEVELS.length;
+    /* ⚠️ NAMES AND THE GROUPING-ONLY LIST, not just a count. This set decides which stored values are
+       vetoed as groupings rather than places; renaming a level, or marking a branch "grouping only"
+       in Match WBS to locations, changes the answer without changing LOC_LEVELS.length — so the
+       stacking went on honouring a value the planner had just excluded. */
+    var key = pid + '|' + LOC_LEVELS.map(function (l) { return (l && l.id) + ':' + (l && l.name); }).join(',') +
+              '|' + (function () { try { return loadLocExcluded().length; } catch (e) { return 0; } })();
     if (_vsGrpCache && _vsGrpKey === key) return _vsGrpCache;
     var set = Object.create(null);
     try { loadLocExcluded().forEach(function (n) { set[String(n).trim().toLowerCase()] = 1; }); } catch (e) {}
@@ -22083,7 +22126,16 @@
     });
     await _batchUpdate('wbs_nodes', nodeUp);
     await _batchUpdate(TABLE, schedUp);
-    rebuild(); renderWbsManager(); renderGrid(); renderGantt();
+    /* WBS TREE EDITS INVALIDATE MORE THAN THE GRID. This repainted, but cleared nothing --- and an
+       activity resolves its TRADE through _nodeTrade, which memoises the BRANCH NAME per node id.
+       So renaming a WBS branch left every activity under it reporting the old trade until a reload,
+       which is half of the owner report that this schedule "is not updated" after a Setup edit. The
+       phase and contract-scope memos read the same tree and had the same problem.
+       psSetupChanged clears all of them and repaints the header, the group-by menu and the Vertical
+       Stacking as well --- see its note. renderWbsManager stays: it is this dialog's own repaint and
+       is not the schedule grid. */
+    renderWbsManager();
+    psSetupChanged();
   }
   // Insert a projected WBS-Summary row. `wbs_node_id` is treated as optional here for the same
   // reason save() writes it separately (see the note above the contract_date/wbs_node_id writes):
@@ -25396,7 +25448,12 @@
     var _dimLvlCache = null, _dimLvlKey = null;
     function _dimLevelMap() {
       var lv = _levelsNow();
-      var key = lv.map(function (l) { return l && l.id; }).join("|");
+      /* ⚠️ THE KEY CARRIES THE NAMES, NOT JUST THE IDS. This map is resolved BY NAME (see DIM_SYN),
+         so renaming a level in the LBS editor changes the answer while leaving every id untouched —
+         an id-only key would serve the pre-rename mapping for the rest of the session. Renaming
+         "Orientation" to "Unit" is exactly the edit a planner makes to fix a bad match, and it was
+         the one edit this cache could not see. */
+      var key = lv.map(function (l) { return (l && l.id) + ':' + (l && l.name); }).join("|");
       if (_dimLvlCache && _dimLvlKey === key) return _dimLvlCache;
       var out = {}, taken = {}, DIMS = ["tower", "floor", "zone", "unit"];
       // Pass 1 — claim by NAME. A level already claimed can never be claimed again.
@@ -31958,6 +32015,9 @@
         } catch (e) { return []; }
       },
       // The raw order, for anything that wants to SHOW it rather than group by it.
+      // The dim->level map is memoised inside this closure; psSetupChanged cannot reach it from
+      // module scope, so the closure publishes the clear rather than exposing the cache.
+      invalidateLocCache: function () { try { _dimLvlCache = null; _dimLvlKey = null; } catch (e) {} },
       setupOrderLabels: function () {
         try {
           if (!cfg || !Array.isArray(cfg.wbsOrder)) return [];

@@ -152,6 +152,25 @@ Shared assets changed → **`ui.js?v=` bumped `20260902c` → `20260904a` across
 files; `dashboard.css?v=` bumped `20260903b` → `20260904a` across all 29 referencing HTML files** —
 both were single, consistent versions before this change, confirmed and re-confirmed after.
 
+### 2026-09-03 (v) — A Schedule Setup edit reached the database and six stale memos
+
+*"when i edit the WBS tree and matched the WBS to the locations etc in the schedule setup, how come i
+think the project schedule is not updated."* Because it was not — the write landed, the reader never
+heard.
+
+Both tabs are one page, and the schedule resolves phase, trade, contract scope, the stacking axis, the
+grouping veto and the dim→level map through **caches**. Match-WBS cleared one of them; **Fill from the
+WBS tree, the LBS editor and every WBS tree edit cleared none**. So a re-filed branch or a re-matched
+location showed the pre-edit answer with no error. Sharpest case: `_nodeTrade` memoises the branch
+NAME, so renaming a WBS branch left every activity under it on the old trade.
+
+Two keys also could not see a rename: the dim→level map is resolved **by name** but was keyed on ids
+alone, and the grouping veto was keyed on a level **count**. Both now carry names. New
+`psSetupChanged()` clears all six memos and repaints everything including the Vertical Stacking,
+which `renderAll` has never drawn — wired into all ten write sites, one function rather than a
+fifth copy of a list. 402 checks, 0 functions lost. `MODULE_V` → `20260903v`.
+
+---
 ### 2026-09-03 (u) — A conditional-format fill now tints a dark row instead of repainting it
 
 *"still not fixed ... why is there light colors?"*

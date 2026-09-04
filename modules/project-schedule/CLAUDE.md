@@ -1,3 +1,63 @@
+## A Schedule Setup edit reached the database and six stale memos (2026-09-03) — jasantos2
+
+Owner: *"when i edit the WBS tree and matched the WBS to the locations etc in the schedule setup, how
+come i think the project schedule is not updated."*
+
+Because it was not. The write landed; the reader did not hear about it.
+
+### ⚠️⚠️ Both tabs are ONE page, and the Project Schedule reads through six memos
+An edit on the Setup side updates the database and the shared in-memory state — but the schedule
+resolves phase, trade, contract scope, the stacking axis, the grouping-only veto and the dim→level map
+through caches. **Each handler cleared at most one of them:**
+
+| Setup action | what it cleared |
+|---|---|
+| Match WBS to locations | `_vsAxisCache` only |
+| Fill from the WBS tree | **nothing** |
+| Edit levels (rename / reorder / add / delete / merge) | **nothing** |
+| Any WBS tree edit (`_wbsCommit`) | **nothing** |
+
+None of them touched the phase / trade / scope memos, the group-by menu, the column header, or the
+Vertical Stacking. So a planner could re-file a branch or re-match every location and watch the
+schedule keep showing the answer it computed **before** the edit — with **no error**, because nothing
+had failed.
+
+⚠️ The sharpest case: an activity resolves its **trade** through `_nodeTrade`, which memoises the
+**branch name** per node id. Renaming a WBS branch left every activity under it reporting the **old
+trade** until a reload.
+
+### Two cache keys that could not see a rename
+- `_dimLevelMap` is resolved **by name** and was keyed on **ids alone**. Renaming *Orientation* →
+  *Unit* — exactly the edit a planner makes to fix a bad match — left every id untouched, so the key
+  matched and the pre-rename mapping was served for the rest of the session.
+- `_vsGroupingSet` was keyed on `pid + LOC_LEVELS.length`. Marking a branch *grouping only*
+  changes what it vetoes without changing that count, so the stacking went on honouring a value the
+  planner had just excluded.
+
+Both keys now carry the level **names** (and the exclusion count).
+
+### One invalidator, called from every Setup-side write
+New `psSetupChanged()` clears all six memos and repaints the group-by menu, the hidden-column
+seed, the header, the grid, the Gantt **and the Vertical Stacking** — which `renderAll` has never
+drawn. Wired into all ten write sites.
+- ⚠️ **One function, not a fifth copy of a list.** A cache list maintained at four call sites is the
+  exact shape of this bug; another copy would be the next one.
+- ⚠️ Every clear and every repaint is **guarded** — this also runs during `load()`, when the grid may
+  not be built yet.
+- ⚠️ `ScheduleBuilder.invalidateLocCache()` is published because the dim→level map lives inside that
+  closure: the closure exposes the **clear**, not the cache.
+
+---
+
+**Verified: 402 checks.** The invalidator is proven to clear each of the six memos and repaint each of
+the six surfaces; all five Setup entry points are shown to call it; the previous commit is shown to
+have cleared **nothing** in the backfill and the WBS commit. The key change is *executed*: same ids with
+different names now yield different keys, while the old id-only key is demonstrated to be unable to
+tell them apart. 0 functions lost, 1 added; the inline script parses.
+
+⚠️ **NOT verified signed-in.** The wiring and the keys are proven; that the screen visibly refreshes
+after a real match on a real project is not.
+
 ## The conditional-format fill now TINTS a dark row instead of repainting it (2026-09-03) — jasantos2
 
 Owner, on the same grid after the previous fix: *"still not fixed. how come it is still like this? why
