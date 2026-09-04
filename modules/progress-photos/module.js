@@ -260,9 +260,16 @@ window.ProgressPhotos = (function () {
     syncChrome();
     await load();
     await loadSchedule();
-    fillFilterOptions();   // load() ran before location_levels/SCHED_ACTS existed — refresh the Works
-                            // datalist + location filters now that the schedule is in
-    notifyScheduleReady(); // ditto for bim.js's Tower/Floor picker — see notifyScheduleReady()
+    // ⚠️ notifyScheduleReady() FIRST, before fillFilterOptions() — found live
+    // that it must never sit behind another synchronous call that could
+    // throw. Both are `location_levels`/`SCHED_ACTS`-are-now-in` follow-ups
+    // to loadSchedule(), and letting one of them (fillFilterOptions, which
+    // touches DOM elements this exact screen may not even have) silently
+    // fail would otherwise skip the OTHER unconditionally, with no error a
+    // planner would ever see — bim.js's whole Tower/Floor picker going stale
+    // is exactly the wrong kind of failure to leave dependent on that.
+    try { notifyScheduleReady(); } catch (e) { console.error(e); }
+    try { fillFilterOptions(); } catch (e) { console.error(e); }
     await refreshQueueBadge();
     window.addEventListener('online', function () { if (pid) flushQueue(); });
     joinCollab();
@@ -506,8 +513,8 @@ window.ProgressPhotos = (function () {
       restoreUI(); applyTileScale(); syncChrome(); notifyProject();
       await load();
       await loadSchedule();
-      fillFilterOptions();
-      notifyScheduleReady();
+      try { notifyScheduleReady(); } catch (e) { console.error(e); }
+      try { fillFilterOptions(); } catch (e) { console.error(e); }
       await refreshQueueBadge();
       joinCollab();
     };
