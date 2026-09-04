@@ -1253,10 +1253,21 @@ window.ProgressPhotos = (function () {
             '</select></div>') +
       '</div>' +
       '<div class="pd-modal-footer"><button class="pd-btn" data-close>Cancel</button>' +
+        (canWrite ? '<button type="button" class="pd-btn pd-btn-danger" id="pp-mked-del">Delete</button>' : '') +
         (canWrite ? '<button type="button" class="pd-btn pd-btn-primary" id="pp-mked-save">Save</button>' : '') +
       '</div>';
     var m = openModal(html, 480);
     hydrate(m.el);
+    // Bug fix (2026-09-04): this modal (opened via the pencil icon on a
+    // panorama/reconstruction tile) previously had no Delete action at
+    // all — neither did the tile itself — so there was NO way anywhere in
+    // the Gallery to delete a 360°/3D capture. Delegates to whichever
+    // sub-module actually owns the row (never a second copy of the storage-
+    // cleanup-then-row-delete logic those modules already have).
+    if ($('pp-mked-del')) $('pp-mked-del').onclick = function () {
+      m.close();
+      openMediaKindDeleteConfirm(row);
+    };
     if ($('pp-mked-locbtn')) $('pp-mked-locbtn').onclick = function () {
       openGenericLocationPicker(function (values) {
         locVals = values;
@@ -1284,6 +1295,46 @@ window.ProgressPhotos = (function () {
       Object.keys(patch).forEach(function (k) { src[k] = patch[k]; });
       m.close();
       UI.toast('Saved', 'ok');
+      render();
+    };
+  }
+
+  // Bug fix (2026-09-04): panoramas/reconstructions had NO delete path
+  // anywhere in the merged Gallery grid — mediaKindThumbHTML() rendered only
+  // "open" + "edit" (pencil), openMediaKindEditor()'s footer had only
+  // Cancel/Save, and the real-photo delete flow (openDeleteConfirm/remove())
+  // is deliberately scoped to ids with a `progress_photos` row (a pseudo-row
+  // has none there to delete). Owner report: "i cant delete 360/3D media
+  // from the photos gallery." A small, separate confirm modal mirroring
+  // openDeleteConfirm's own shape — never a second copy of pano.js/recon.js's
+  // storage-cleanup-then-row-delete logic, matching this file's "one 360°
+  // viewer, one 3D viewer" rule for everything else pano/recon-shaped.
+  function openMediaKindDeleteConfirm(row) {
+    var isPano = row._kind === 'panorama';
+    var label = isPano ? '360° panorama' : '3D scan';
+    var html =
+      '<div class="pd-modal-header"><h3>Delete ' + Fmt.esc(label) + '</h3>' +
+        '<button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-form"><p>Delete this ' + Fmt.esc(label) + '? ' +
+        (isPano
+          ? 'The stitched image is removed from storage too.'
+          : 'Its recorded video and any processed result files are removed from storage too.') +
+        ' This cannot be undone.</p></div>' +
+      '<div class="pd-modal-footer"><button class="pd-btn" data-close>Cancel</button>' +
+        '<button class="pd-btn pd-btn-danger" id="pp-mk-d-yes">Delete</button></div>';
+    var m = openModal(html, 440);
+    $('pp-mk-d-yes').onclick = async function () {
+      this.disabled = true;
+      var mod = isPano ? window.PANO : window.RECON;
+      if (!mod || !mod.deleteById) { UI.toast('Delete is not available right now', 'error'); this.disabled = false; return; }
+      var res = await mod.deleteById(row._src);
+      if (!res || !res.ok) {
+        UI.toast((res && res.error) || 'Could not delete', 'error');
+        this.disabled = false;
+        return;
+      }
+      m.close();
+      UI.toast((isPano ? 'Panorama' : '3D scan') + ' deleted', 'ok');
       render();
     };
   }

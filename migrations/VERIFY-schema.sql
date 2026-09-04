@@ -367,6 +367,9 @@ with expected(migration, kind, obj, col) as (values
     ('2026-08-31-manpower-org-schedule-manhours.sql','column','manpower_roster','location'),
     ('2026-08-31-manpower-org-schedule-manhours.sql','function','project_location_values',''),
     ('2026-08-31-manpower-org-schedule-manhours.sql','table','manpower_manhours',''),
+    ('2026-09-01-issues-lessons-reorder.sql','column','issues_lessons','sort_order'),
+    ('2026-09-01-issues-lessons-reorder.sql','column','lessons_learned','sort_order'),
+    ('2026-09-01-issues-reopen-action-plan.sql','column','issues_lessons','action_plan'),
     ('2026-09-01-mom-schedules-attendees-item-history.sql','column','meeting_minutes','attendees_actual'),
     ('2026-09-01-mom-schedules-attendees-item-history.sql','column','meeting_minutes','attendees_optional'),
     ('2026-09-01-mom-schedules-attendees-item-history.sql','column','meeting_minutes','attendees_required'),
@@ -427,7 +430,13 @@ with expected(migration, kind, obj, col) as (values
     ('2026-09-01-stakeholder-register-ops.sql','column','stakeholder_map','sort_order'),
     ('2026-09-01-stakeholder-register-ops.sql','column','stakeholder_map','stk_category'),
     ('2026-09-01-stakeholder-register-ops.sql','column','stakeholder_map','stk_sub_category'),
-    ('2026-09-01-stakeholder-register-ops.sql','column','stakeholder_map','sub_process')
+    ('2026-09-01-stakeholder-register-ops.sql','column','stakeholder_map','sub_process'),
+    ('2026-09-01-wbs-link-rpc.sql','function','wbs_link_codes',''),
+    ('2026-09-02-clear-project-rpc.sql','function','clear_project_resource_assignments',''),
+    ('2026-09-02-clear-project-rpc.sql','function','clear_project_schedule',''),
+    ('2026-09-02-clear-project-rpc.sql','function','clear_project_wbs_nodes',''),
+    ('2026-09-02-wbs-unlink-batched.sql','function','wbs_delete_orphan_leaves',''),
+    ('2026-09-02-wbs-unlink-batched.sql','function','wbs_unlink_dangling','')
 ),
 missing as (
   select e.* from expected e

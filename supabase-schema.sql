@@ -215,11 +215,15 @@ drop policy if exists reconstruction_requests_upd on reconstruction_requests;
 create policy reconstruction_requests_upd on reconstruction_requests
   for update using (is_admin() and can_access_project(project_id))
   with check (is_admin() and can_access_project(project_id));
+-- 2026-09-04: a requester may also delete their own TERMINAL (done/failed)
+-- request, not only a still-pending one — see migrations/2026-09-04-
+-- reconstruction-delete-terminal.sql for why (no live RunPod job left to
+-- orphan once a request is terminal).
 drop policy if exists reconstruction_requests_del on reconstruction_requests;
 create policy reconstruction_requests_del on reconstruction_requests
   for delete using (
     (is_admin() and can_access_project(project_id))
-    or (requested_by = auth.uid() and status = 'pending_approval')
+    or (requested_by = auth.uid() and status in ('pending_approval', 'done', 'failed'))
   );
 
 -- Floor Plan overlay (brief Section 6B / Phase 5). See

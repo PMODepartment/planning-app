@@ -313,6 +313,47 @@ window.RECON = (function () {
     await load();
   }
 
+  // Bug fix (2026-09-04): a DONE reconstruction had no delete path anywhere
+  // in the app — retractRequest above only ever applies to a still-
+  // 'pending_approval' row (retracting a live approval-queue entry), and the
+  // merged Gallery grid (module.js) never rendered a delete affordance for
+  // either media kind at all. Owner report: "i cant delete 360/3D media from
+  // the photos gallery." Same signature convention as `retractRequest` (takes
+  // the real request row object, not an id — module.js's editor already
+  // holds the exact live reference as `row._src`).
+  //
+  // ⚠️ This table's DELETE RLS policy (2026-08-29-reconstruction-requests.sql)
+  // lets an ADMIN delete any row at any status, but a non-admin REQUESTER
+  // only their own row while it's still 'pending_approval' — deliberately,
+  // so retracting can't orphan a RunPod job that's already queued/running/
+  // billed. That protection has no reason to extend to a TERMINAL row
+  // ('done'/'failed') — there's no live job left to orphan — so
+  // migrations/2026-09-04-reconstruction-delete-terminal.sql widens the
+  // requester's own-row delete to also cover 'done'/'failed'.
+  // ⚠️ USER MUST RUN THAT MIGRATION. Until then a non-admin requester
+  // deleting their own done/failed scan gets refused by the database (the
+  // error surfaces via this function's own return value — never swallowed),
+  // while an admin can already delete any status today. This function does
+  // not attempt to work around RLS in any way; it only cleans up storage
+  // + the row once the database has actually allowed the delete.
+  async function deleteRequest(r) {
+    if (!r || !r.id) return { ok: false, error: 'That 3D reconstruction could not be found' };
+    var res = await sb().from(T_REQ).delete().eq('id', r.id).select();
+    if (res.error) return { ok: false, error: res.error.message };
+    if (!res.data || !res.data.length) {
+      // RLS silently matched 0 rows rather than raising an error (the same
+      // shape retractRequest above already has to guard against) — the row
+      // still exists, so report a real, actionable reason rather than a
+      // false "deleted".
+      return { ok: false, error: 'You do not have permission to delete this — an admin can, or ask them to run the pending migration.' };
+    }
+    var toRemove = [r.video_url, r.result_pointcloud_url, r.result_splat_url].filter(Boolean);
+    if (toRemove.length) { try { await sb().storage.from(BUCKET).remove(toRemove); } catch (e) {} }
+    requests = requests.filter(function (x) { return x.id !== r.id; });
+    if ($('recon-view')) render();
+    return { ok: true };
+  }
+
   // -------------------------------------------------------------- viewer ---
   // Renders the result point cloud (COLMAP's scaled sparse/dense cloud) as
   // THREE.Points via the official PLYLoader — this is what makes measurement
@@ -413,6 +454,13 @@ window.RECON = (function () {
     // Batch C (2026-08-29): the unified Gallery feed needs this module's
     // requests loaded before it can include any done reconstructions.
     ensureLoaded: async function () { if (!requests.length) await load(); },
+    // Bug fix (2026-09-04) — see deleteRequest's own comment. Takes the real
+    // request row object (not an id). Returns { ok:true } or
+    // { ok:false, error }; never throws.
+    deleteById: function (r) { return deleteRequest(r); },
+    // Test-only hook (same convention as _retractRequest) — deleteRequest is
+    // otherwise unreachable outside the merged-Gallery editor's click handler.
+    _deleteRequest: function (r) { return deleteRequest(r); },
     // Test-only hook (same convention as bim.js's _load) — retractRequest is
     // otherwise unreachable from outside its row-menu click handler, and the
     // audit fix (M5, a delete/storage-remove ordering race) is worth
