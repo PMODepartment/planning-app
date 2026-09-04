@@ -13619,6 +13619,7 @@
     var o = opts || {};
     _vsAxisCache = null; _vsAxisKey = null;
     _vsGrpCache = null; _vsGrpKey = null;
+    _vsAsgCache = null; _vsAsgKey = null;
     try { if (typeof ScheduleBuilder !== 'undefined' && ScheduleBuilder.invalidateLocCache) ScheduleBuilder.invalidateLocCache(); } catch (e) {}
     // The WBS tree decides an activity's phase, trade and contract scope, all memoised per node id.
     try { _clearPhaseMemo(); } catch (e) {}
@@ -13648,10 +13649,47 @@
     _vsGrpKey = key; _vsGrpCache = set;
     return set;
   }
+  /* THE VALUES THE PLANNER ASSIGNED IN "MATCH WBS TO LOCATIONS", lower-cased.
+     Read from location_levels.match, which the wizard writes as { branch name: value to store } -
+     so these are exactly the values a person looked at and said "this is a place at this level".
+     Cached with the grouping set (same key, cleared by the same psSetupChanged). */
+  var _vsAsgCache = null, _vsAsgKey = null;
+  function _vsAssignedSet() {
+    var key = pid + '|' + LOC_LEVELS.map(function (l) {
+      return (l && l.id) + ':' + Object.keys((l && l.match) || {}).length;
+    }).join(',');
+    if (_vsAsgCache && _vsAsgKey === key) return _vsAsgCache;
+    var set = Object.create(null);
+    try {
+      LOC_LEVELS.forEach(function (l) {
+        var m = (l && l.match) || {};
+        Object.keys(m).forEach(function (k) {
+          var v = String(m[k] == null ? '' : m[k]).trim();
+          if (v) set[v.toLowerCase()] = 1;
+        });
+      });
+    } catch (e) {}
+    _vsAsgKey = key; _vsAsgCache = set;
+    return set;
+  }
+  /* AN EXPLICIT ASSIGNMENT BEATS THE HEURISTIC VETO.
+     Owner 2026-09-04, on AVR101 (Avesta Residences): *"how come the substructure even though it is
+     tagged as a location, is not being detected in the vertical stacking."*
+     Because locGroupingReason reads "Substructure" as a STRUCTURAL WORKS term and vetoes it - which
+     is the right default (a stage is not a storey, and banding by it puts a fake floor in every
+     tower), and which is why that rule was deliberately left alone when the tower work went in.
+     But a default is not a verdict. On this project the planner opened the matcher, saw the branch,
+     and filed it under Level (L2) with the value "Substructure" - 133 activities. A guess must not
+     out-rank the person who was asked and answered.
+     So the order is: an explicit GROUPING-ONLY mark still wins (that is also a person answering),
+     then an explicit ASSIGNMENT wins, and only an unanswered value falls to the heuristic.
+     The two explicit sets are disjoint by construction - the wizard records a branch as excluded
+     only when it has no level - so this cannot make one value both. */
   function locIsGroupingValue(v) {
     var t = String(v == null ? '' : v).trim();
     if (!t) return false;
     if (_vsGroupingSet()[t.toLowerCase()]) return true;
+    if (_vsAssignedSet()[t.toLowerCase()]) return false;
     return !!locGroupingReason(t, LOC_LEVELS);
   }
   function _vsLevVal(r, levelId) {
@@ -27898,7 +27936,17 @@
       };
       host.querySelector('#b-addfloor').onclick = function () { var nf = floorsOfTower(tr, _twAct).filter(function (f) { return !f.sub; }).length; zn.floors.push({ id: uidv(), code: 'F' + (nf + 1), name: '', kind: 'typical', towerId: _twAct, zones: [] }); markDirty(); render(); };
       // Basements build bottom-up (deepest first), so a new basement is INSERTED at index 0 (deepest).
-      host.querySelector('#b-addbsmt').onclick = function () { var nb = zn.floors.filter(function (f) { return f.sub; }).length; zn.floors.unshift({ id: uidv(), code: 'B' + (nb + 1), name: '', sub: true, kind: 'basement', zones: [] }); markDirty(); render(); };
+      /* A BASEMENT BELONGS TO THE SELECTED TOWER, LIKE EVERY OTHER FLOOR.
+         Owner 2026-09-04: *"the adding of basement is not working, meaning when i click add basement,
+         it always adds to tower 1 even if i selected another tower."*
+         Exactly so, and the line above shows why: "+ Add floor" writes towerId: _twAct, and this one
+         wrote no towerId at all. towerIdOf() falls back to the FIRST tower for a floor that names
+         none (which is right for a legacy config), so every basement silently became Tower 1s.
+         The count was wrong for the same reason: it counted basements across ALL towers, so adding
+         B1 to Tower 3 while Tower 1 already had two produced "B3". "+ Add floor" already scopes its
+         count with floorsOfTower; this now matches it.
+         Basements build bottom-up (deepest first), so a new one is still INSERTED at index 0. */
+      host.querySelector('#b-addbsmt').onclick = function () { var nb = floorsOfTower(tr, _twAct).filter(function (f) { return f.sub; }).length; zn.floors.unshift({ id: uidv(), code: 'B' + (nb + 1), name: '', sub: true, kind: 'basement', towerId: _twAct, zones: [] }); markDirty(); render(); };
       host.querySelector('#b-quick').onclick = function () {
         var B = Math.max(0, Math.min(20, qv('#q-base', 0))), F = Math.max(1, Math.min(80, qv('#q-floors', 1))), Z = Math.max(0, Math.min(20, qv('#q-zones', 0))), U = Math.max(0, Math.min(20, qv('#q-units', 0)));
         quickN[tr] = { B: B, F: F, Z: Z, U: U };

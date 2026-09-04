@@ -1,3 +1,65 @@
+## A basement that always landed in Tower 1, and a tagged location the stacking refused (2026-09-04) — jasantos2
+
+Two reports, unrelated causes.
+
+### 1 "+ Basement" ignored the selected tower
+Owner: *"the adding of basement is not working, meaning when i click add basement, it always adds to
+tower 1 even if i selected another tower."*
+
+Exactly so, and the line directly above it in the source shows why:
+
+    + Add floor  ->  { ... kind: "typical", towerId: _twAct, zones: [] }
+    + Basement   ->  { ... kind: "basement",                 zones: [] }
+
+`towerIdOf()` falls back to the **first** tower for a floor that names none — right for a legacy
+config, wrong for a floor created seconds ago in front of a tower picker. So every basement silently
+became Tower 1's.
+
+⚠️ **The count was wrong for the same reason.** It counted basements across **all** towers, so adding
+B1 to Tower 3 while Tower 1 already had two produced `B3`. `+ Add floor` already scoped its
+count with `floorsOfTower`; the basement now matches it. Basements still insert at index 0
+(deepest first).
+
+### 2 ⚠️⚠️ AVR101: "Substructure" was tagged as a Level and the stacking still dropped it
+Owner: *"how come the substructure even though it is tagged as a location, is not being detected in the
+vertical stacking."*
+
+Because `locGroupingReason` reads *Substructure* as a **structural-works term** and vetoes it. That
+is the right **default** — a stage is not a storey, and banding by it puts a fake floor in every tower —
+and it is precisely why that rule was left untouched when the tower work went in.
+
+**But a default is not a verdict.** On this project the planner opened *Match WBS to locations*, saw the
+branch, and filed it under **Level (L2)** with the value *Substructure* — **133 activities**. A guess
+must not out-rank the person who was asked and answered.
+
+New `_vsAssignedSet()` reads the values out of `location_levels.match` — which the wizard writes
+as *{ branch name: value to store }*, so they are exactly the values a person looked at and called a
+place. The order in `locIsGroupingValue` is now:
+
+1. an explicit **grouping-only** mark wins (that is also a person answering);
+2. an explicit **assignment** wins;
+3. only an **unanswered** value falls to the heuristic.
+
+- ⚠️ **The default is unchanged.** An *unassigned* "Substructure" is still vetoed, as are trade names
+  and phase names — there are regression checks for all three.
+- ⚠️ The two explicit sets are **disjoint by construction**: the wizard records a branch as excluded
+  only when it has no level, so a value cannot be both. Grouping-only is still checked first anyway.
+- ⚠️ The new set is cached beside the grouping set and cleared by the same `psSetupChanged`, so
+  re-running the matcher takes effect immediately.
+
+---
+
+**Verified: 428 checks.** Both handlers are diffed against the previous commit (no `towerId` before,
+`_twAct` now; unscoped count before, `floorsOfTower` now), and the shipped `towerIdOf` is
+executed to show a floor naming no tower really does resolve to the first — the reported symptom,
+reproduced. The veto is executed against AVR101's actual shape (a Level whose match table holds
+*Substructure*): vetoed on the previous commit, honoured now, while an unassigned copy of the same word
+is still vetoed and a grouping-only mark still beats an assignment. 0 functions lost, 1 added.
+
+⚠️ **NOT verified signed-in.** ⚠️ The stacking reads what is STORED on each activity, so branches
+matched before this fix need *Apply to activities* re-run — the values were written, but any that the
+veto had cleared are gone until the matcher writes them again.
+
 ## A Schedule Setup edit reached the database and six stale memos (2026-09-03) — jasantos2
 
 Owner: *"when i edit the WBS tree and matched the WBS to the locations etc in the schedule setup, how

@@ -84,6 +84,22 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-04 (a) — A basement that always landed in Tower 1, and a tagged location the stacking refused
+
+**(1)** *"when i click add basement, it always adds to tower 1 even if i selected another tower."* The
+line above it in the source says why: `+ Add floor` writes `towerId: _twAct` and `+ Basement`
+wrote no `towerId` at all, so `towerIdOf()` fell back to the first tower every time. The count
+was unscoped for the same reason (B1 into Tower 3 came out "B3"). Both now match the floor handler.
+
+**(2)** *"how come the substructure even though it is tagged as a location, is not being detected in the
+vertical stacking."* Because the heuristic reads *Substructure* as a structural-works term and vetoes
+it — the right **default**, but not a verdict: on AVR101 the planner filed that branch under Level (L2)
+with 133 activities. New `_vsAssignedSet()` reads the values out of `location_levels.match`, and
+an explicit assignment now beats the heuristic. ⚠️ Grouping-only still wins over both, and an
+**unassigned** "Substructure" is still vetoed — the default is unchanged. ⚠️ Branches matched before
+this need *Apply to activities* re-run. 428 checks, 0 functions lost. `MODULE_V` → `20260904a`.
+
+---
 ### 2026-09-04 — The module icon comes out of the top bar entirely; a dropdown icon stops being baked into its button
 
 Owner sent two annotated screenshots of Issues & Concerns' topbar: *"1. remove this icon in issues
