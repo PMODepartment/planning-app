@@ -70,34 +70,66 @@ each module's own async `init()` reaches ITS registration relative to `ProgressP
 and trust blindly — a plain "fires going forward" listener can register a beat too late and simply
 miss the one notification that matters, with nothing after it to ever correct the screen.
 
-**Fixed properly: made `onScheduleReady` replay-safe, mirroring `onProject`'s own existing
-pattern exactly** (`onProject: function (fn) { projectListeners.push(fn); if (pid) fn(pid,
-projName); }` — a late registration still fires immediately if the data it's asking about already
-exists). New `scheduleLoadedOnce` flag, set the first time `notifyScheduleReady()` ever runs;
-`onScheduleReady(fn)` now also calls `fn()` immediately if that flag is already true. This makes
-registration ORDER irrelevant — bim.js gets the correct picture whether it registers before or
-after schedule data has already arrived, closing the exact race the first attempt only narrowed.
+**Second fix attempt — made `onScheduleReady` replay-safe, mirroring `onProject`'s own existing
+pattern** (`onProject: function (fn) { projectListeners.push(fn); if (pid) fn(pid, projName); }` —
+a late registration still fires immediately if the data it's asking about already exists). New
+`scheduleLoadedOnce` flag, set the first time `notifyScheduleReady()` ever runs; `onScheduleReady(fn)`
+now also calls `fn()` immediately if that flag is already true. ⚠️ **This also shipped and was ALSO
+wrong** — a fresh registration probe, run live from the console immediately after this fix deployed,
+returned `firedImmediately: false` while `distinctLocValuesFor()` (called in the SAME breath) already
+returned the real schedule values — directly contradicting the theory that `scheduleLoadedOnce` should
+already be `true` by then. The replay-safe mechanism was correct; something upstream of it was not
+firing at all.
 
-### Re-verified live, both required scenarios, against the fixed build — no data created or modified
+**Third fix attempt — reordered `notifyScheduleReady()` to run before `fillFilterOptions()`** inside
+`loadSchedule()`, on the hypothesis that a throw in `fillFilterOptions()` (an unrelated, later stage)
+was silently swallowing the notify call. **Also wrong** — identical symptom on re-test.
 
-- **Scenario A — SLN101 (4PH Strevi Bacoor), established Schedule locations.** Switched the project
-  selector to SLN101 **only to read its existing state**, changed nothing. After the replay-safe fix,
-  a genuinely fresh page load (forced past the browser's document cache) correctly populates the
-  Tower/Floor bar from the real schedule values (Tower A/B/C/D; Ground Floor/2nd–16th Floor/Roofdeck/
-  Substructure) with **no escape-hatch option present**, matching `distinctLocValuesFor()`'s own
-  console-confirmed output exactly — no manual re-render call needed this time.
-- **Scenario B — GPR101, no established Schedule locations.** Confirmed live:
-  `distinctLocValuesFor(towerId, {})` / `(floorId, {})` both return `[]` (schedule-only, as designed
-  — GPR101's schedule has never had a Tower/Floor value tagged on any activity; only its photos do,
-  and those are correctly ignored). The Floor Plan screen shows **"No Locations Available"** with
-  the exact required guidance text, the Tower/Floor bar renders no selects at all, and clicking
-  "+ Add Floor Plan" toasts the same message instead of opening a dead-end modal.
-- **The earlier live-created test zone, "Live test zone (safe to delete)," was deleted from GPR101**
-  via the ordinary Delete button in the Zones list — `Zones: 0` confirmed afterward. No other data in
-  either project was created, changed, or removed.
+**The true root cause, found by injecting `[DBG-INIT]` debug markers around `await loadSchedule()`
+in `init()` and reading them back with `read_console_messages`'s `pattern` filter** (this tab had
+accumulated console history across many prior page loads in the same long-lived automated session —
+without the filter, the real signal was buried). The "before" marker fired; the "after" marker
+**never fired at all**, even minutes after real Tower/Floor data was already confirmed present via
+`distinctLocValuesFor()`. Cross-checked against `loadSchedule()`'s own pre-existing, unconditional
+end-of-function summary log (added the same day, see the entry below) — **it never printed either.**
+⚠️ **`loadSchedule()` performs FOUR sequential await-stages**: (1) `location_levels`, (2)
+`project_schedule`/`SCHED_ACTS` via paginated `fetchAllPages` — the two stages bim.js's Tower/Floor
+picker actually needs — then (3) a SEPARATE `fetchAllPages` for WBS-Summary rows (feeding the
+unrelated Works-picker/`EXEC_WBS_CODE` feature) and (4) `activity_code_types`/`activity_code_values`.
+On SLN101 — a real, large schedule — stages 3 and/or 4 apparently never resolve inside any
+reasonable test window, so **the function as a whole never returns**, even though stages 1–2 (what
+every prior fix attempt was gated on the completion of) had been done for minutes. All three
+previous fixes notified from a point that could only ever fire after the WHOLE function settled —
+which, on this project, functionally never happens.
 
-`bim.js` → `?v=20260904d` (unchanged this round — only module.js's registration semantics changed);
-`module.js` → `?v=20260904e` (`module.css` unchanged throughout, stays `20260904a`).
+**Fourth, correct fix: `notifyScheduleReady()` now fires from INSIDE `loadSchedule()` itself**,
+immediately after stage 2 (`SCHED_ACTS` populated) — not from any caller awaiting the function as a
+whole. The two now-redundant outer calls (in `init()` and the project `<select>`'s `onchange`
+handler) were removed; both call sites simply `await loadSchedule()` and rely on the notify firing
+from inside it, whenever that data is actually ready, regardless of how long stages 3–4 take or
+whether they ever finish. All debug logging was removed once this was confirmed.
+
+### Re-verified live, both required scenarios, against the TRUE fix — no data created or modified
+
+- **Scenario A — SLN101 (4PH Strevi Bacoor), established Schedule locations.** A genuinely fresh
+  navigation (past the browser's document cache) to SLN101 self-corrected automatically — the
+  Tower/Floor bar populated with the real schedule values (Tower A–D, real floor names) with **no
+  manual `render()` call from the console needed**, unlike every prior "fix." Only ever read
+  SLN101's existing state; nothing was created or changed on it.
+- **Scenario B — GPR101, no established Schedule locations.** Continued to correctly show
+  **"No Locations Available"** with the exact required guidance text, no selects rendered, and
+  "+ Add Floor Plan" toasting the same message instead of opening a dead-end modal.
+- **The test zone "Live test zone (safe to delete)" was removed from GPR101 via direct SQL** (its
+  floor plan is keyed to photo-derived, not schedule-established, Tower/Floor values, so it is
+  correctly no longer reachable through the Floor Plan UI at all now that the fix is in place — the
+  ordinary Delete button couldn't be used because the plan itself can't be opened). Confirmed via a
+  scoped `select` locating the one matching row (`floor_plan_zones.id =
+  '66f05322-2f32-46b0-97c1-29f0efc6115f'`), then a `delete … where id = … and name = …` (both
+  conditions, as a double safety check) run through the Supabase SQL Editor. Re-queried afterward:
+  **0 rows remain matching that name.** No other row in any table was touched.
+
+`bim.js` → `?v=20260904d` (unchanged this round — only module.js's registration/staging semantics
+changed); `module.js` → `?v=20260904g` (`module.css` unchanged throughout, stays `20260904a`).
 
 ## Floor Plan Tower/Floor picker: found live to be a real dead end — fixed with a union source + an escape hatch (2026-09-04)
 
