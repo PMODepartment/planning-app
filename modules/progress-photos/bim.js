@@ -1174,16 +1174,31 @@ window.BIM = (function () {
       var n = revisionsFor(t, f).length + 1;
       return 'Rev. ' + (n < 10 ? '0' + n : n);
     }
+    // ⚠️ 2026-09-04, found live on a real project: towerOptions()/floorOptions()
+    // only enumerate values already used SOMEWHERE (schedule or photos —
+    // see distinctLocValuesAnySource in module.js) — a level that legitimately
+    // has never had a value recorded anywhere still returns []. A strict
+    // <select> with nothing to offer would dead-end the whole "+ Add Floor
+    // Plan" flow, so both selects always carry a "+ Type a new value…"
+    // escape hatch, matching this module's own established convention
+    // (the Works picker's identical "+ Add custom Works value…" option).
+    var NEW_OPT = '__bimnew__';
+    function optsHTML(vals, cur) {
+      var list = vals.slice();
+      if (cur && list.indexOf(cur) === -1) list.unshift(cur); // a freshly-typed value not yet in the enumeration must still show, selected
+      return list.map(function (v) { return '<option value="' + esc(v) + '"' + (v === cur ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('') +
+        '<option value="' + NEW_OPT + '">+ Type a new value…</option>';
+    }
     var html =
       '<div class="pd-modal-header"><h3>' + (lock ? 'Upload new revision' : 'Add Floor Plan') + '</h3><button class="pd-modal-close" data-close>×</button></div>' +
       '<div class="pp-form">' +
         (hasTower
           ? '<div class="pd-field"><label>Tower</label><select class="pd-select" id="bim-p-tower"' + (lock ? ' disabled' : '') + '>' +
-              towerOptions().map(function (v) { return '<option value="' + esc(v) + '"' + (v === curTower ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('') +
+              optsHTML(towerOptions(), curTower) +
             '</select></div>' +
             (floorLevel()
               ? '<div class="pd-field"><label>Floor</label><select class="pd-select" id="bim-p-floor"' + (lock ? ' disabled' : '') + '>' +
-                  floorOptions(curTower).map(function (v) { return '<option value="' + esc(v) + '"' + (v === curFloor ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('') +
+                  optsHTML(floorOptions(curTower), curFloor) +
                 '</select></div>'
               : '')
           : '<div class="pd-field"><label>Name</label><input class="pd-input" id="bim-p-name" placeholder="e.g. Ground Floor" /></div>') +
@@ -1202,14 +1217,30 @@ window.BIM = (function () {
     var m = openModal(html, 480);
     if (hasTower && !lock) {
       if ($('bim-p-tower')) $('bim-p-tower').onchange = function () {
-        curTower = this.value;
+        var sel = this;
+        if (sel.value === NEW_OPT) {
+          var typed = (window.prompt('New Tower value:') || '').trim();
+          if (!typed) { sel.value = curTower || ''; return; }
+          curTower = typed;
+          sel.innerHTML = optsHTML(towerOptions(), curTower);
+        } else {
+          curTower = sel.value;
+        }
         var fOpts = floorOptions(curTower);
         curFloor = fOpts[0] || null;
-        if ($('bim-p-floor')) $('bim-p-floor').innerHTML = fOpts.map(function (v) { return '<option value="' + esc(v) + '">' + esc(v) + '</option>'; }).join('');
+        if ($('bim-p-floor')) $('bim-p-floor').innerHTML = optsHTML(fOpts, curFloor);
         if ($('bim-p-rev')) $('bim-p-rev').value = suggestedRevision(curTower, curFloor);
       };
       if ($('bim-p-floor')) $('bim-p-floor').onchange = function () {
-        curFloor = this.value;
+        var sel = this;
+        if (sel.value === NEW_OPT) {
+          var typed = (window.prompt('New Floor value:') || '').trim();
+          if (!typed) { sel.value = curFloor || ''; return; }
+          curFloor = typed;
+          sel.innerHTML = optsHTML(floorOptions(curTower), curFloor);
+        } else {
+          curFloor = sel.value;
+        }
         if ($('bim-p-rev')) $('bim-p-rev').value = suggestedRevision(curTower, curFloor);
       };
     }
@@ -1217,7 +1248,14 @@ window.BIM = (function () {
       var f = $('bim-p-file').files && $('bim-p-file').files[0];
       var nameEl = $('bim-p-name');
       var tSel = $('bim-p-tower'), fSel = $('bim-p-floor');
-      if (hasTower) { curTower = tSel ? tSel.value : curTower; curFloor = fSel ? fSel.value : curFloor; }
+      // The escape-hatch sentinel is only ever a real select value if it was
+      // left at its browser-default selection (nobody touched the dropdown) —
+      // onchange always replaces it with the real typed value the moment it's
+      // chosen, so seeing it here means "no Tower was actually picked".
+      if (hasTower) {
+        curTower = tSel && tSel.value !== NEW_OPT ? tSel.value : curTower;
+        curFloor = fSel && fSel.value !== NEW_OPT ? fSel.value : curFloor;
+      }
       var revision = ($('bim-p-rev').value || '').trim() || 'Rev. 01';
       var name = hasTower ? towerFloorLabel(curTower, curFloor) : (nameEl ? nameEl.value.trim() : '');
       if (hasTower && !curTower) { UI.toast('Pick a Tower first', 'warn'); return; }

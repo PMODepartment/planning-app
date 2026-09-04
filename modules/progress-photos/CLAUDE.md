@@ -2,6 +2,72 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Floor Plan Tower/Floor picker: found live to be a real dead end — fixed with a union source + an escape hatch (2026-09-04)
+
+Tested the Tower→Floor→Floor Plan→Zones rebuild (entry below) **signed in, live, on production**
+(GPR101 — a real, in-use project) immediately after merging it to `main`. Zone drawing, saving,
+reload-persistence and the Revision-history pre-fill all worked exactly as designed against the
+real database — see the "Verified live" note at the end of this entry. But opening **"Replace
+Plan"** on that same real project surfaced a genuine defect the harness never could have caught:
+
+⚠️ **`towerOptions()`/`floorOptions()` returned ZERO options on a project that is in active use.**
+`bim.js`'s Tower/Floor `<select>`s are populated by `ProgressPhotos.distinctLocValuesFor()`, which
+delegated straight to `distinctLocValues()` — **schedule-activities-only** enumeration
+(`SCHED_ACTS`, i.e. `project_schedule.location`). GPR101's schedule has **never had a single
+activity tagged with a Tower/Level value** — confirmed live via `ProgressPhotos.locLevels()` (3
+real levels: Tower/Level/Zone) and `distinctLocValuesFor(towerId, {})` returning `[]` directly in
+the console — while its **photos** already carry real, hand-typed location values ("as12",
+"asda12", "12", "64", …, visible in the Photos-screen's own filter dropdowns, which read from
+`photoLocCombos()` instead). A strict `<select>` fed only the schedule-side list had **nothing to
+offer at all**, dead-ending "+ Add Floor Plan"/"Replace Plan" on exactly the kind of project this
+module is meant to serve — one where locations were captured on photos before (or without) ever
+being entered into the schedule.
+
+**Fixed at the source, not by patching bim.js's call site.** New `distinctLocValuesAnySource()`
+(module.js) unions the existing schedule-derived list with distinct values pulled straight from
+`rows` (the photo library's own `location_values`), `priorVals`-narrowed identically against both
+sources — and `distinctLocValuesFor` (the one export bim.js calls) now resolves through it. Every
+future caller of that export inherits the fix automatically; nothing in bim.js had to know the fix
+happened.
+
+⚠️ **Even the union can legitimately be empty** — a brand-new project with no schedule locations
+and no photos yet has nothing to enumerate from either source, and that's a real, valid state, not
+a bug to route around. Both Tower and Floor `<select>`s now always carry a trailing **"+ Type a
+new value…"** option (`optsHTML()`), matching this module's own established convention for exactly
+this situation (the Works picker's "+ Add custom Works value…"). Picking it prompts for a value and
+rebuilds the select with the typed value as a real, selected `<option>` — so the picker can never
+be a closed loop with nothing in it. ⚠️ The sentinel value is checked explicitly in the Save
+handler (`tSel.value !== NEW_OPT`) — if the escape-hatch option is left at its browser-default
+selection (nobody actually opened the prompt), it must read as "no Tower chosen" and trigger the
+existing validation, never get silently saved as a literal `"__bimnew__"` location value.
+
+### Verified live (signed in, GPR101, production)
+
+- **Zone create → persist → reload**: drew a 3-point triangle (dispatched real `click` events with
+  `clientX/clientY` on `#bim-img` — the automation's coordinate-based `computer` click tool missed
+  the element for an unrelated reason and was abandoned in favour of this), named it "Live test
+  zone (safe to delete)", Finish shape → Save → **`Zones: 1`, toast "Zone saved"**, the zone
+  rendered on the plan overlay AND in the list with Edit/Delete. **A full page reload** (fresh
+  `load()` against the real DB, not a cached state) still showed `Zones: 1` with the same zone —
+  confirming real persistence, not an optimistic-UI illusion.
+- **Revision pre-fill**: "Replace Plan" opened with the header "Upload new revision", Tower/Floor
+  correctly **disabled** (locked to the existing plan's own values), file input `accept="image/*"`
+  only (no PDF), and Revision pre-filled to **"Rev. 02"** (existing-count + 1) — all per spec,
+  confirmed via direct DOM inspection before Cancel (no second revision was actually created,
+  since GPR101's existing Rev. 01 is a real, in-use floor plan and creating a real Rev. 02 on it
+  wasn't part of what needed testing).
+- **Cleanup**: the test zone is left in place intentionally, named and described as
+  safe-to-delete, rather than deleted immediately after proving the write path — a planner or the
+  next session can remove it via the ordinary Delete button in the Zones list with no DB access
+  needed. ⚠️ Flag this to the project owner before treating GPR101's Floor Plan as clean.
+- ⚠️ **Not exercised live**: the escape-hatch prompt() flow itself (would block the automated
+  browser on a native dialog) — verified by reading the code path only, plus confirming
+  `distinctLocValuesAnySource` itself (via the module.js source and the live `distinctLocValuesFor`
+  console check above) actually resolves real values where the old schedule-only version returned
+  none.
+
+`bim.js`/`module.js` → `?v=20260904b` (`module.css` unchanged this round, stays `20260904a`).
+
 ## Floor Plan rebuilt to the real hierarchy: Tower → Floor → Floor Plan (with real
 ## preserved revisions) → manually-drawn, persisted Zones (2026-09-03)
 

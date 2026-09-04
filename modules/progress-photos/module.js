@@ -5263,6 +5263,29 @@ window.ProgressPhotos = (function () {
     return out;
   }
 
+  // Distinct values for ONE level, unioned across BOTH sources — the
+  // schedule (distinctLocValues) AND the photo library. Found live
+  // (2026-09-04): a project can have real Tower/Floor values captured on
+  // photos (typed once into the free-text Location field, per this
+  // module's own datalist convention) while the SCHEDULE has never had a
+  // single activity tagged with a location at all — schedule-only
+  // enumeration then returns an empty list, and the Floor Plan module's
+  // Tower/Floor <select> (bim.js, which has no free-text escape hatch —
+  // unlike this field's own datalist) has nothing to offer at all, dead-
+  // ending the "+ Add Floor Plan" flow on a project that is otherwise in
+  // active use. `priorVals` narrows both sources identically.
+  function distinctLocValuesAnySource(levelId, priorVals) {
+    var out = distinctLocValues(levelId, priorVals).slice();
+    var seen = {}; out.forEach(function (v) { seen[v] = 1; });
+    rows.forEach(function (r) {
+      var lv = r.location_values || {};
+      for (var lid in priorVals) { if (priorVals[lid] && (lv[lid] || '') !== priorVals[lid]) return; }
+      var v = lv[levelId];
+      if (v && !seen[v]) { seen[v] = 1; out.push(v); }
+    });
+    return out.sort();
+  }
+
   // Same derivation as locCombos(), sourced from the PHOTO LIBRARY's own
   // location_values instead of the schedule's. A location that was captured
   // before its schedule zone existed (or after the zone was removed) would
@@ -5365,7 +5388,7 @@ window.ProgressPhotos = (function () {
     // computes (Floor's options narrowed to the picked Tower) without
     // pulling in the whole node-tree picker UI — that's for a single-node
     // "any depth" pick; Tower/Floor is always exactly two fixed levels.
-    distinctLocValuesFor: function (levelId, priorVals) { return distinctLocValues(levelId, priorVals); },
+    distinctLocValuesFor: function (levelId, priorVals) { return distinctLocValuesAnySource(levelId, priorVals); },
     // Item 25 — the raw node tree (not a modal), for bim.js's Plans-page
     // side panel to render as a persistent tree rather than a one-shot picker.
     locationTree: function () { return locTree(); },
