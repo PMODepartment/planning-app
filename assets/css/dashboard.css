@@ -908,14 +908,37 @@ body { overflow-x: clip; }
   padding: 10px 22px; min-height: 58px;
 }
 
-/* Sidebar toggle + dropdown lead the row; theme + avatar trail it — DOM order
-   already gives this (toggle, dropdown, theme, avatar), so no `order` is
-   needed at this width. The dropdown sits comfortably between them, shrinkable
-   so it never pushes theme/avatar off the row on a laptop-width window. */
-.pd-topbar.pd-tb-split .pd-tb-main [class$="-projctx"],
-.pd-topbar.pd-tb-split .pd-tb-main #ctx-switcher {
+/* Sidebar toggle + [module icon +] dropdown lead the row; theme + avatar
+   trail it — DOM order already gives this (toggle, icon+dropdown, theme,
+   avatar), so no `order` is needed at this width. The pair shrinks/grows as
+   ONE unit so it never pushes theme/avatar off the row on a laptop-width
+   window, and so the ≤820px rule below (which moves the dropdown to its own
+   row) carries the icon along with it rather than stranding it with the
+   hamburger/theme/avatar cluster. `>` (direct child of .pd-tb-main) is
+   deliberate: on a module page the dropdown is nested one level deeper, inside
+   .pd-tb-projgroup, so only the GROUP matches here; on a shell page with no
+   module icon (initModuleTopbar finds nothing to pair it with) the dropdown
+   stays a direct child and matches directly, unchanged from before. */
+.pd-topbar.pd-tb-split .pd-tb-main > [class$="-projctx"],
+.pd-topbar.pd-tb-split .pd-tb-main > #ctx-switcher,
+.pd-topbar.pd-tb-split .pd-tb-main > .pd-tb-projgroup {
   flex: 1 1 220px; min-width: 0; max-width: 420px;
 }
+/* The dropdown fills whatever room is left in its group after the icon. */
+.pd-tb-projgroup { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.pd-tb-projgroup > [class$="-projctx"],
+.pd-tb-projgroup > #ctx-switcher { flex: 1 1 auto; min-width: 0; max-width: none; }
+/* The module's own icon glyph — extracted by initModuleTopbar() (ui.js) from
+   the module's <h1>/title-switch button, where it used to sit inline with the
+   title text on the second row — lives here instead: immediately before the
+   project dropdown, never fused into it (2026-09-02). Most modules' own
+   `.xx-title-ico` rule colours the icon directly (color:var(--pd-red) on the
+   class itself, not a descendant selector), so it keeps that styling wherever
+   it's moved to — except Project Schedule's, scoped `.ps-title-btn
+   span.ps-title-ico`, which the icon no longer sits inside once moved. This is
+   the backstop for that case and for any future module scoped the same way. */
+.pd-tb-mark { display: inline-flex; align-items: center; flex: none; }
+.pd-tb-mark [class$="-title-ico"] { color: var(--pd-red); }
 .pd-topbar.pd-tb-split .pd-tb-main [class$="-projctx"] .pd-select,
 .pd-topbar.pd-tb-split .pd-tb-main [class$="-projctx"] .pd-psel,
 .pd-topbar.pd-tb-split .pd-tb-main [class$="-projctx"] > button { width: 100%; max-width: none; }
@@ -993,8 +1016,9 @@ body { overflow-x: clip; }
    last, wraps onto row 2 by itself via its 100% basis. ---- */
 @media (max-width: 820px) {
   .pd-topbar.pd-tb-split .pd-tb-main { row-gap: 8px; }
-  .pd-topbar.pd-tb-split .pd-tb-main [class$="-projctx"],
-  .pd-topbar.pd-tb-split .pd-tb-main #ctx-switcher { flex-basis: 100%; order: 5; max-width: none; }
+  .pd-topbar.pd-tb-split .pd-tb-main > [class$="-projctx"],
+  .pd-topbar.pd-tb-split .pd-tb-main > #ctx-switcher,
+  .pd-topbar.pd-tb-split .pd-tb-main > .pd-tb-projgroup { flex-basis: 100%; order: 5; max-width: none; }
 }
 
 @media (max-width: 900px) {
