@@ -894,9 +894,28 @@ window.BOQ = (function () {
           '<button class="pd-btn" id="boq-expand">Expand all</button>' : '') +
       /* ⚠️ Only rendered when something IS selected. A permanently-visible "Delete selected (0)"
          is a destructive control sitting armed on a screen whose whole job is data entry. */
-      (draft && selCount() ? '<button class="pd-btn pd-btn-danger" id="boq-delsel">Delete ' +
-        selCount() + ' selected</button>' : '') +
-      (canWrite ? '<button class="pd-btn" id="boq-pkgs">Assign to contract package…</button>' : '') +
+      /* ⚠️⚠️ `isDraft() && canWrite`, NOT the `draft` local — SECOND instance of the same bug in
+         this one filter bar. `draft` is declared ~17 lines BELOW here, so `var` hoisting makes it
+         `undefined` and the condition is always false: the owner ticked every row and asked
+         *"where is the delete lines?"* because the button had never once rendered. The keyboard
+         hint two lines up had the identical fault and was caught; this one was not, because both
+         were written in the same edit and only one was re-read.
+         ⚠️ Anything added to this bar must use `isDraft()`, not `draft`. */
+      (isDraft() && canWrite && selCount()
+        ? '<button class="pd-btn pd-btn-danger" id="boq-delsel">Delete ' +
+          selCount() + ' selected</button>' : '') +
+      /* ⚠️⚠️ HIDDEN WHEN THE PROJECT HAS NO LOTS. Owner, 2026-09-07: *"there is also an assign to
+         contract package button where there is no contract package. In this case it should apply
+         to the whole contract."* It already does — a line with `package_id` null belongs to the
+         project, which is what every roll-up reads — so with no lots defined the button could only
+         ever open a picker with nothing in it. Offering it implies there is an assignment to make
+         and that the current state is unassigned; both are wrong. Same argument as hiding the
+         Contract lots section: a control with nothing to act on is worse than no control, because
+         it invents a decision.
+         ⚠️ `canWrite` alone is not enough and `PKGS` is the right test, not `packages` on the
+         contract: this is per-BOQ-line assignment, and the lots it assigns to are this project's. */
+      (canWrite && PKGS.length
+        ? '<button class="pd-btn" id="boq-pkgs">Assign to contract lot…</button>' : '') +
       /* A grid whose shortcuts are undiscoverable is a grid nobody uses. Draft only - on an
          issued revision the cells are not editable and the keys do nothing. */
       /* ⚠️ `isDraft() && canWrite`, NOT the `draft` local — that is declared eight lines BELOW
