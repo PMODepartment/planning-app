@@ -1,5 +1,235 @@
 # Module: contracts-claims
 
+## Contract tab reordered, procurement-style tables, and a manual BOQ built from the class-code library (2026-09-07) — fmlozano
+
+**Run `migrations/2026-09-07-boq-manual.sql`.** Owner, three items: *"Let's just make the page cleaner.
+Let's just move the packages section at the bottom. And it should be like a table. The UI right now
+looks garbage. There is a new package and +Add button which are the same let's consolidate."* /
+*"Let's improve the table for the contract records. We can use the table UI available in the
+Procurement Dashboard."* / *"Let's enable the users to manually add a BOQ, this would be based on the
+class code library and from the class code library the planner would be able to tag it to the
+activities in the schedule module. Let's think of a better way to do this (bulk connect, per trade
+etc.). If we make the manual add of BOQ perfect, it would enable us to better execute/implement the
+import feature."* Then, mid-build: *"Let's reduce the length of the tooltips as well, with this kind
+of length it will only add more confusion to the planner."*
+
+### 1 + 2 — the Contract tab: records first, lots last, both as real tables
+
+⚠️ **Three separate faults, and they compounded.**
+1. **The page led with its rarest case.** Packages came first, and on the ordinary single-lot project
+   that first screen was a 48px-padded card headlining *"No packages"* followed by three paragraphs
+   explaining why that is fine. The actual subject of the tab — ₱3.67B of contract — sat below the
+   fold and rendered as a `<table>` **with no `<thead>` at all**: a bold reference, a wrapped
+   description, a name and an amount, with nothing saying which was which. The prose exists for a
+   real reason (it stops planners inventing packages — see the 2026-08-27 entries) but it had been
+   left in the position of a headline, so every project opened on a disclaimer.
+2. **Two primary buttons for one job.** `New package` sat top-left in brand red beside `Share with
+   Procurement & Engineering`, while the topbar carried `+ Add` — also red, also "add something
+   here". Consolidated to **one primary per screen**: `+ Add` (the topbar wizard) stays the single
+   primary, and the package action moved **inside the packages card**, scoped to the table it acts
+   on. ⚠️ It opens the **compact form**, which is what `wizard.js`'s own note says should happen
+   (*"the Contract tab's 'New package' button now opens the compact form"*) — it was still calling
+   `onNew('Package')`, i.e. the wizard, whose type step deliberately no longer offers a Package card.
+   The two had drifted apart.
+3. **Neither table had a header strip**, so nothing on the page said what it was.
+
+Both tables now use a new **`.cc-dt*` layer ported from the Procurement Dashboard's `.data-table`**:
+a titled card header carrying the row count and that table's own actions, sortable columns, and a
+footer for the note that used to be a headline.
+- ⚠️ **A LAYER OVER `.cc-table`, NOT A SECOND TABLE CLASS.** Divergent table styles is exactly what
+  the 2026-07-17 UI-uniformity pass keeps having to rework, so this adds only the four things WPM has
+  and this module did not — header strip, sortable headers, group rows, footer — and inherits sticky
+  head, hover and right-alignment from `.cc-table`.
+- ⚠️ **PORTED TO `--pd-*` TOKENS, NEVER WPM'S LITERALS.** `wpm/assets/css/dashboard.css` hard-codes
+  `#EE3124` / `#f0f0f0` / `#fff` and then re-states every one under `body.dark-mode`. Copying the
+  literals would have given this module a table that is correct in light mode and unreadable in dark
+  — the failure this file's own header warns about.
+- ⚠️ **EVERY contract record is listed, not just the unlinked ones.** The old `orphanHTML` showed only
+  contracts with no `package_id` — so on a project that DID have packages, a properly linked contract
+  appeared nowhere on the table, only as a one-line summary inside its package's row. The register's
+  own subject was reachable only as a subtitle of something else. Where a contract belongs to a lot,
+  **the lot is a column**.
+- ⚠️ **`Fmt.money` in a cell, `Fmt.moneyShort` only in the header strip.** The old records list used
+  moneyShort for the amount itself, so the only place this screen showed the contract value, it showed
+  it rounded to three significant figures (`₱3.67B`). A contract amount gets typed into a claim, and a
+  column of right-aligned abbreviations cannot be compared or checked.
+- ⚠️ **A contract outside every lot gets `whole project`, not a warning pill** — the 2026-08-27 finding
+  stands: it is only a gap when the project has lots at all, and even then everything downstream still
+  reads it at project level.
+
+**Two real defects the render harness caught, neither visible from reading:**
+- ⚠️ **`th()` was called without its sort state on three of nine columns**, throwing `Cannot read
+  properties of undefined (reading 'key')` and rendering the whole tab blank. It now **throws
+  explicitly** rather than defaulting to `csort`: defaulting would have made the packages table's
+  headers silently drive the *contracts* table's order — every header still clickable, every click
+  reordering the wrong table.
+- ⚠️ **`esc(value || '<span class="cc-mut">—</span>')` escaped its own placeholder markup**, so the
+  Counterparty cell rendered the literal string `<span class="cc-mut">—</span>`. `esc()` must wrap only
+  the untrusted value.
+- ⚠️ **Blanks sorted FIRST on descending.** The null test was inside `cmp` and multiplied by
+  `st.dir`, so sorting contract amount descending put the lots with no amount above ₱3.2B. The test is
+  now outside the direction multiplier. Measured: `asc [412.5M, 3.2B, —]`, `desc [3.2B, 412.5M, —]`.
+  Ascending looked perfect throughout, which is why reading it would not have found this.
+
+### 3 — the manual BOQ: the import chain, inverted
+
+**The invariant this had to respect.** `2026-08-24-boq.sql` states it plainly: `boq_items` is
+**append-and-supersede, never edited in place**, because it is the client's document and every claim
+argument turns on exactly what was tendered. A manual builder needs editable lines, and the lazy
+reading of that need is *"so allow edits"* — which would silently make the client's tendered BOQ
+editable too.
+
+⚠️ **The distinction that resolves it is whose document it is YET.** A revision being authored is
+nobody's evidence; a revision that has been ISSUED is the record. So:
+- `status='draft'` — lines freely editable and deletable, never billed against;
+- `status='issued'` — the 2026-08-24 rule applies in full, **enforced by a trigger** rather than by
+  every future UI remembering to.
+
+⚠️ **Both new columns default to the pre-existing behaviour** (`'issued'` / `'import'`), so no row
+changes meaning when the migration runs. A default of `'draft'` would have retroactively un-issued
+every BOQ in the database and unlocked 1,215 client lines per project.
+
+**Why this makes the importer better, which is what the owner is after.** The importer's hard problem
+is that it must INFER structure — where the header row is, which lines are headings, what a code might
+be. Authoring produces the same tables with all of that KNOWN, so a manual BOQ is a correctness oracle:
+the shape the importer is trying to reconstruct, in a form where every field is certain.
+
+**Division → sheet, group → heading, item → leaf.** Not arbitrary: `sheetTotals` and every WT % are
+computed **per sheet**, so making the division the sheet puts the trade-share weighting on the right
+axis for free. A single flat sheet would make one project-wide WT % denominator and quietly break the
+billing arithmetic this module already verified against the real sheets.
+
+- ⚠️ **`source='authored'`, a fourth value, not a reuse of `hand_picked`.** The three existing values
+  all describe reverse-engineering a code from a description someone else wrote. An authored line is
+  the opposite direction — the code came first — so the mapping is a fact, not a judgement. And
+  `boq_class_suggestions` **learns from these rows**: feeding it "a human decided this description
+  means this code" when the description was generated FROM the code is how a suggestion library starts
+  confidently proposing its own output back to itself.
+- ⚠️ **Headings carry no amount.** An imported heading holds the client's own printed subtotal (which
+  is evidence, and reconciled against); an authored one would hold OUR sum of its own children — a
+  second source of truth that goes stale the first time a child's quantity changes.
+- ⚠️ **`'measured'` with a NULL quantity, not `'lump_sum'`.** The line kind states whether the work is
+  measurable, and a concrete item is; the quantity is simply not typed yet. Defaulting to lump_sum to
+  "match the empty qty" would put every authored line outside the quantity roll-up, i.e. outside the
+  activity-quantity view this whole chain exists to feed.
+- ⚠️ **The derivation rule is the OPPOSITE of the importer's, deliberately.** For an imported line
+  `qty × displayed rate` is wrong (measured ₱8.60 out on a two-line sheet) because the client's rate is
+  a rounded display. For a line WE author the rate is the exact input, so the amount IS computed and
+  flagged `derived_amount = true` — precisely what that column was added for. An amount typed by hand
+  wins and stops the derivation (`derived_amount = false`), because a lump-sum line has an amount and
+  no rate at all; clearing it hands the line back to the rates. **Verified through all six states.**
+- ⚠️ **The reconciliation gate runs on the way OUT.** The importer's most valuable check happens at
+  import; a hand build has no equivalent moment, so `issueRev()` refuses a draft whose lines do not
+  reconcile with the stated contract total, at the same absolute-and-small ₱1 / 0.01% tolerance.
+- ⚠️ **A draft may not be `is_current`**, enforced by its own trigger — `is_current` is what the
+  contract value, the POC and the monthly revenue read, and a half-built draft sitting there would put
+  a partial contract sum into a billing conversation.
+- ⚠️ **The importer now creates its revision as a DRAFT and issues it at the end.** Two reasons, the
+  second better than the first: the parent_id second pass UPDATEs rows the trigger would refuse, and a
+  half-finished import is now visibly a draft rather than an `is_current` revision carrying a partial
+  contract sum.
+- ⚠️ **PMI proposal revisions are EXEMPT from the lock, and the exemption is load-bearing** —
+  `pmi.js`'s `removeLine()` DELETEs a priced line, and add/remove on a cost proposal is normal editing
+  right up until submission. What preserves a superseded proposal is `pmi_records.supersedes_id`, not
+  row immutability. Read honestly: this leaves a *submitted* proposal's lines as editable as they are
+  today — the status quo, not an improvement. ⚠️ The test goes through `to_jsonb`, not `r.pmi_id`,
+  because `2026-08-25-pmi.sql` may not have been run on a given deployment and a direct reference to a
+  missing column would make the whole file un-runnable.
+
+**The tree picker (the "per trade" ask).** A checkbox on every level of division › group › item, with
+search, per-division and per-group select-all, and an indeterminate box over a partial selection. A
+QS builds a BOQ a trade at a time, so ticking a division takes everything visible under it in one
+action — a 40-line concrete package is one click plus a review, not forty searches. The existing
+`pickCode` picker stays for what it is good at: mapping ONE imported line.
+- ⚠️ **Searching auto-expands** — a hit inside a collapsed division is a hit nobody can see.
+- ⚠️ **A defect the harness caught: an orphan heading.** The first cut emitted the group heading and
+  then filtered its items, so re-picking a division whose items were already present wrote a heading
+  with **nothing under it**. Measured: re-picking all of Concrete Works with 03101/03102/03201 already
+  on the revision wrote heading `03200` as an orphan. The leaves are now decided first and the heading
+  only if any survive; the toast counts sheets actually written to, not sheets picked.
+
+**Inline editing, and a silent-data-loss defect it exposed.**
+⚠️ **Numeric cells are `type="text"`, not `type="number"`, and this is the opposite of the obvious
+choice.** With `type="number"`, anything the browser cannot parse makes `input.value` read back as the
+**empty string** — so `1,000`, the way every planner writes a thousand, arrived as `""` and **silently
+cleared the quantity**. No error, no rejection, just a figure gone from a BOQ. As text, `numOf` does
+the parsing and already strips thousands separators, ₱/$/€/£ and parenthesised negatives, because the
+importer needed exactly that. **Measured after the fix:** `1,000` → 1000, `₱1,200.50` → 1200.5,
+`(500)` → −500, `abc` → refused with a toast and no write, cleared → derivation resumes.
+
+**Bulk connect: class code → schedule activities.**
+⚠️ **The gap this closes.** `candidatesFor()` offers only activities that ALREADY carry the line's
+class code, and `proposeSplit` returns nothing when there are none — correct behaviour, but on a
+freshly authored BOQ that is EVERY line, because nobody has tagged the schedule. The allocator was
+unreachable by design for exactly the workflow it exists to serve.
+
+⚠️ **It writes through a `security definer` RPC, not a plain UPDATE, and the row count is checked.**
+The policy is `project_schedule_upd: is_writer() and can_access_project(project_id) and (created_by =
+auth.uid() or is_admin())` — so a planner who did not import the schedule cannot update its rows, and
+**PostgREST answers an RLS-filtered UPDATE with 200 and zero rows.** A "Tagged 40 activities" toast
+over a table that changed nothing is the same silent-success failure `2026-09-02-wbs-link-batched.sql`
+documents, where 16,393 of 16,485 activities kept a NULL and the screen looked perfect. Verified live
+against the stub: the shortfall reports **as an error** — *"Only 1 of 2 tagged"*.
+- ⚠️ **The function writes ONE column.** Definer rights over `project_schedule` are a large privilege;
+  it may set `class_code` and nothing else, so it cannot become a back door onto dates or progress.
+- ⚠️ **It never silently retags.** An activity carrying a different non-null code is skipped unless
+  `p_overwrite` — a class code drives the cost roll-up, so quietly moving forty activities from one
+  Finance code to another is a reconciliation nobody would know to look for. Overwrite un-disables the
+  row but **does not tick it**.
+- ⚠️ **WBS summary rows are never tagged** — a code on a summary row would be counted beside its own
+  children by anything rolling up by code.
+- ⚠️ **Keyed on `activity_id`, not the row uuid** — a schedule import reinserts every row, so a uuid
+  captured on screen minutes ago may be gone while the activity it named is still there.
+- ⚠️ **Chunked at 200 ids.** A `text[]` travels in the POST body so it escapes the `in.()` URL cap, but
+  a project holds 16k activities and one array that size is the 8s statement timeout waiting to happen.
+- **Every proposal names its reason** (`names the item 95%`, `trade matches group`, `2 of 3 item
+  words`) and only ≥80% is pre-ticked. A bare highlight is unauditable — the planner cannot tell "all
+  the words matched" from "the trade field agreed", and those deserve different amounts of trust.
+- **Bulk mode** runs the matcher across every code on the BOQ at once with a preview table
+  (code · item · BOQ lines · would tag · how). ⚠️ It takes **untagged activities only** — one already
+  carrying this code needs nothing, one carrying another must not move in bulk.
+
+### Tooltips shortened (owner, mid-build)
+Every `cc-hint`, alert and toast in the new code was cut to one or two clauses — *"An empty draft: add
+lines, price them, then issue. A draft never bills."*, *"Division → sheet, group → heading, item →
+line."*, *"Does not reconcile. Lines sum to X against the stated Y — off by Z."* ⚠️ The `⚠️` blocks in
+the source are **developer comments and stay** — they are not on screen, and they are what stops the
+next reader "simplifying" a decision back into a defect.
+
+### Verified
+- **Both modals widened, and it is not cosmetic.** `.pd-modal` is `max-width: 520px`; measured at
+  1440px, the tagger's two-pane grid left the activity list **~200px wide** with every row wrapping
+  onto three lines behind two nested scrollbars. `.boq-wide` 1040px / `.boq-widish` 760px, the same
+  widening `.ccw` takes.
+- **Driven end to end in a render harness** carrying the real `dashboard.css` + `module.css` and the
+  shipped `packages.js` / `boq.js`, with a recording fake of both data layers: the class-code tree
+  (division select-all → 4 items, indeterminate parent), `addAuthoredLines` writing 3 headings + 4
+  leaves at depth 0/1 with `origin:'manual'` and 4 `boq_class_map` rows at `source:'authored'`
+  **including the padded `015051` un-de-zeroed**, all six derivation states, heading-conversion
+  clearing every figure, the tagger's pre-tick/disable/overwrite matrix, the RPC args, the shortfall
+  toast, bulk mode's preview, the reconciliation gate blocking `issueRev` and the passing case writing
+  `is_current=false` for the project then `{status:'issued', is_current:true}` in **one** update (the
+  order the draft-not-current trigger requires).
+- **Issued vs draft measured both ways:** issued → 0 editable cells, 0 selects, 0 delete buttons, no
+  banner, headers read `Material`/`Labour`; draft → 19 cells, 4 deletes, headers read `Mat. rate`/`Lab.
+  rate`, and the heading row carries **only** its description input.
+- **Both themes at 1440px and no page horizontal scroll at 375px.**
+- **Audits:** every new class resolves to a CSS rule (the `k-heading` / `k-draft` / `.boq-imp` class of
+  finding this file records); `module.js` / `wizard.js` / `pmi.js` **0 functions lost**;
+  `packages.js` −2 (`orphanHTML` → `contractsHTML`, `subLine` unused after the restructure — both
+  deliberate, not a region-replace accident); all files parse; CSS braces 378/378; **0 NUL bytes**;
+  migration code-only parens 31/31, `$$` paired, both triggers preceded by a drop.
+
+⚠️ **NOT verified signed in, and the migration has not been run.** No authored line has reached
+PostgREST, `boq_tag_activities` has never executed, and the trigger's refusal has only been reasoned
+about — the migration's own verify block at the foot is how to confirm it bites. Until it runs, `status`
+reads absent → every revision behaves as issued → **the builder is simply not offered** and the module
+works exactly as it did before.
+
+⚠️ **Five pre-existing undefined pill classes found by the audit and NOT fixed here** (out of scope):
+`boq-clm` (boq.js), `ec-basis` / `ec-in` / `ec-rm` / `ec-tot` (pmi.js). Same class as the earlier pill
+audit — they fall back to the base style silently.
+
 ## PMI tracking — the whole of B2 (2026-08-25) — fmlozano
 **Run `migrations/2026-08-25-pmi.sql`.** New 5th tab, `pmi.js`, two sub-tabs: **Register · Cost
 Terms**, plus a **case-file** modal per instruction. Implements ROADMAP B2a (bucket + typed

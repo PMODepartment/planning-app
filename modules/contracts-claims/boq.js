@@ -22,6 +22,9 @@ window.BOQ = (function () {
       T_MAP = 'boq_class_map', T_SUGG = 'boq_class_suggestions', T_ALLOC = 'boq_allocations',
       T_PER = 'boq_billing_periods', T_PROG = 'boq_progress';
   var MIGRATION = 'migrations/2026-08-24-boq.sql';
+  /* The manual builder's own migration. ⚠️ Named separately so a database that has the
+     BOQ tables but not the lifecycle columns is pointed at the right file, not the first one. */
+  var MIGRATION_MANUAL = 'migrations/2026-09-07-boq-manual.sql';
 
   var sb = function () { return window.__sb || (window.__sb = supabase.createClient(APP_CONFIG.SUPABASE_URL, APP_CONFIG.SUPABASE_ANON_KEY)); };
   var esc = function (s) { return Fmt.esc(s == null ? '' : String(s)); };
@@ -59,6 +62,10 @@ window.BOQ = (function () {
   var sub = 'items';
   var filt = { q: '', sheet: '', kind: '', mapped: '' };
   var loaded = false;
+  /* The class-code chart folded into division › group › item for the builder's tree.
+     Cached: regrouping 702 rows on every keystroke of the tree's search box is a cost that
+     only shows up on the machine with the most codes. */
+  var CODETREE = null;
 
   // ==========================================================================
   // NUMBER / TEXT HELPERS
@@ -658,14 +665,20 @@ window.BOQ = (function () {
         return '<button class="boq-subtab' + (sub === s.key ? ' active' : '') + '" data-sub="' + s.key + '">' + esc(s.label) + '</button>';
       }).join('') + '</div>' +
       '<span class="boq-spacer"></span>' + revPickerHTML() +
+      /* ⚠️ BUILD SITS BESIDE IMPORT, NOT BEHIND IT. They are two ways to the same table and
+         a project may need either first: OPW101 has a signed contract and no workbook yet.
+         Import stays the primary — it is the faster path when a file exists. */
+      (canWrite ? '<button class="pd-btn" id="boq-new" title="Build a BOQ by hand from the class-code library">New BOQ…</button>' : '') +
       (canWrite ? '<button class="pd-btn pd-btn-primary" id="boq-import">Import BOQ…</button>' : '') +
       '</div>';
 
     if (!REVS.length) {
-      h += '<div class="pd-card cc-empty"><h3>No BOQ imported yet</h3>' +
-        '<p>Import the client\'s Bill of Quantities workbook. Each import is a <strong>revision</strong> — ' +
-        'the prior one is kept, because every claim argument turns on what was tendered.</p>' +
-        (canWrite ? '<p style="margin-top:14px;"><button class="pd-btn pd-btn-primary" id="boq-import2">Import BOQ…</button></p>' : '') +
+      h += '<div class="pd-card cc-empty"><h3>No BOQ on this project yet</h3>' +
+        '<p>Import the client\'s workbook, or build one by hand from the class-code library. ' +
+        'Each is a <strong>revision</strong> — the prior one is always kept.</p>' +
+        (canWrite ? '<p style="margin-top:14px;">' +
+          '<button class="pd-btn pd-btn-primary" id="boq-import2">Import BOQ…</button> ' +
+          '<button class="pd-btn" id="boq-new2">Build by hand…</button></p>' : '') +
         '</div>';
     } else {
       h += sub === 'items' ? itemsHTML()
@@ -683,7 +696,11 @@ window.BOQ = (function () {
     return '<label class="boq-inline">Revision <select class="pd-select" id="boq-rev">' +
       REVS.map(function (r) {
         return '<option value="' + esc(r.id) + '"' + (r.id === REVID ? ' selected' : '') + '>' +
-          esc('rev ' + r.rev_no + (r.issued_date ? ' · ' + String(r.issued_date).slice(0, 10) : '') + (r.is_current ? ' · current' : ' · superseded')) +
+          /* ⚠️ A DRAFT SAYS SO IN THE PICKER. It is neither current nor superseded, and
+             labelling it "superseded" (which the old ternary did, having only two states)
+             would describe a BOQ being written as one that had been replaced. */
+          esc('rev ' + r.rev_no + (r.issued_date ? ' · ' + String(r.issued_date).slice(0, 10) : '') +
+              (revStatus(r) === 'draft' ? ' · DRAFT' : r.is_current ? ' · current' : ' · superseded')) +
           '</option>'; }).join('') + '</select></label>';
   }
 
@@ -695,6 +712,9 @@ window.BOQ = (function () {
     if (rv) rv.onchange = function () { REVID = rv.value; load(); };
     ['boq-import', 'boq-import2'].forEach(function (id) {
       var b = host.querySelector('#' + id); if (b) b.onclick = openImport;
+    });
+    ['boq-new', 'boq-new2'].forEach(function (id) {
+      var b = host.querySelector('#' + id); if (b) b.onclick = openNewRev;
     });
     if (sub === 'items') wireItems(host);
     if (sub === 'codes') wireCodes(host);
@@ -750,6 +770,18 @@ window.BOQ = (function () {
         (excl.length > 3 ? '; …' : '') + ') and are excluded from every quantity and money roll-up — they are not zeros.</div>';
     }
 
+    /* THE DRAFT BANNER. ⚠️ Every figure below it is provisional and a draft that looks
+       like an issued BOQ is a number that gets quoted in a meeting, so it is the loudest
+       thing on the screen and it carries the two actions a draft needs. */
+    if (isDraft()) {
+      h += '<div class="boq-draft">' +
+        '<span class="boq-draft-txt"><strong>Draft — not issued.</strong> Lines are editable and nothing bills ' +
+        'against it. Issue it when complete.</span>' +
+        (canWrite ? '<button class="pd-btn pd-btn-primary" id="boq-addcodes">Add lines from class codes…</button> ' +
+          '<button class="pd-btn" id="boq-issue">Issue revision…</button>' : '') +
+        '</div>';
+    }
+
     h += '<div class="boq-filters">' +
       '<input class="pd-input" id="boq-f-q" placeholder="Search item no., description, unit…" value="' + esc(filt.q) + '" />' +
       '<select class="pd-select" id="boq-f-sheet"><option value="">All sheets</option>' +
@@ -766,32 +798,54 @@ window.BOQ = (function () {
       '<button class="pd-btn" id="boq-export">Export</button>' +
       '</div>';
 
+    /* ⚠️ ON A DRAFT THE MONEY COLUMNS BECOME RATE COLUMNS, and that is the honest
+       header. An imported line's `mat_amount` is the client's own figure; an authored one's
+       is qty × the rate we typed. Showing "Material" over an input the planner fills with a
+       RATE is how a rate gets entered as an amount. */
+    var draft = isDraft() && canWrite;
     h += '<div class="pd-card cc-tablecard"><table class="cc-table boq-table"><thead><tr>' +
       '<th class="boq-no">Item</th><th class="cc-desc">Description</th><th>Unit</th>' +
-      '<th class="cc-r">Qty</th><th class="cc-r">Material</th><th class="cc-r">Labour</th>' +
+      '<th class="cc-r">Qty</th>' +
+      (draft ? '<th class="cc-r">Mat. rate</th><th class="cc-r">Lab. rate</th>'
+             : '<th class="cc-r">Material</th><th class="cc-r">Labour</th>') +
       '<th class="cc-r">Amount</th><th>Kind</th><th>Class code</th><th>Package</th><th class="cc-r">Alloc.</th>' +
+      (draft ? '<th class="cc-actcol"></th>' : '') +
       '</tr></thead><tbody>';
 
     var list = filtered();
-    if (!list.length) h += '<tr><td colspan="10" class="cc-mut" style="text-align:center;padding:30px;">No lines match these filters.</td></tr>';
+    var span = 11 + (draft ? 1 : 0);
+    if (!list.length) h += '<tr><td colspan="' + span + '" class="cc-mut" style="text-align:center;padding:30px;">No lines match these filters.</td></tr>';
     list.forEach(function (r) {
       var head = r.line_kind === 'heading';
       var cm = CMAP[r.id];
       var al = allocOf(r.id);
+      // A heading holds no figures, on a draft or otherwise, so its cells stay empty
+      // rather than becoming inputs nobody should fill.
+      var ed = draft && !head;
       h += '<tr class="' + (head ? 'boq-head' : '') + '" data-id="' + esc(r.id) + '">' +
         '<td class="boq-no" style="padding-left:' + (6 + Math.min(r.depth || 0, 6) * 12) + 'px">' + esc(r.item_no || '') + '</td>' +
-        '<td class="cc-desc"><div class="cc-desc-txt" title="' + esc(r.description || '') + '">' + esc(r.description || '') + '</div>' +
-          (r.exclusion_note ? '<div class="boq-excl">' + esc(r.exclusion_note) + '</div>' : '') +
-          '<div class="cc-mini">' + esc(r.sheet) + ' · row ' + r.source_row + (r.derived_amount ? ' · amount derived' : '') + '</div></td>' +
-        '<td>' + esc(r.unit || '') + '</td>' +
-        '<td class="cc-r">' + qtyStr(r.qty) + '</td>' +
-        '<td class="cc-r">' + money(r.mat_amount) + '</td>' +
-        '<td class="cc-r">' + money(r.lab_amount) + '</td>' +
-        '<td class="cc-r">' + (r.exclusion_note ? '<span class="cc-mut">—</span>' : money(r.amount)) + '</td>' +
-        '<td><span class="boq-kind k-' + esc(r.line_kind) + '">' + esc(kindLabel(r.line_kind)) + '</span></td>' +
+        '<td class="cc-desc">' + (draft
+          ? '<input class="boq-cell boq-cell-t" data-f="description" data-i="' + esc(r.id) + '" value="' + esc(r.description || '') + '" />'
+          : '<div class="cc-desc-txt" title="' + esc(r.description || '') + '">' + esc(r.description || '') + '</div>') +
+          (r.exclusion_note && !draft ? '<div class="boq-excl">' + esc(r.exclusion_note) + '</div>' : '') +
+          '<div class="cc-mini">' + esc(r.sheet) + ' · row ' + r.source_row +
+            (r.derived_amount ? ' · <span class="boq-derived">amount derived</span>' : '') + '</div></td>' +
+        '<td>' + (ed ? cellIn(r, 'unit', 'text') : esc(r.unit || '')) + '</td>' +
+        '<td class="cc-r">' + (ed ? cellIn(r, 'qty', 'num') : qtyStr(r.qty)) + '</td>' +
+        '<td class="cc-r">' + (ed ? cellIn(r, 'mat_rate', 'num') : money(r.mat_amount)) + '</td>' +
+        '<td class="cc-r">' + (ed ? cellIn(r, 'lab_rate', 'num') : money(r.lab_amount)) + '</td>' +
+        '<td class="cc-r">' + (ed ? cellIn(r, 'amount', 'num')
+          : (r.exclusion_note ? '<span class="cc-mut">—</span>' : money(r.amount))) + '</td>' +
+        '<td>' + (ed
+          ? '<select class="boq-cellsel" data-f="line_kind" data-i="' + esc(r.id) + '">' +
+            ['measured', 'lump_sum', 'provisional', 'excluded', 'heading'].map(function (k) {
+              return '<option value="' + k + '"' + (r.line_kind === k ? ' selected' : '') + '>' + esc(kindLabel(k)) + '</option>';
+            }).join('') + '</select>'
+          : '<span class="boq-kind k-' + esc(r.line_kind) + '">' + esc(kindLabel(r.line_kind)) + '</span>') + '</td>' +
         '<td>' + (cm ? '<span class="boq-code" title="' + esc(cm.source) + '">' + esc(cm.class_code) + '</span>' : (mappable(r) ? '<span class="cc-mut">—</span>' : '')) + '</td>' +
         '<td>' + pkgCell(r) + '</td>' +
         '<td class="cc-r">' + (qtyLine(r) ? allocChip(r, al) : '') + '</td>' +
+        (draft ? '<td class="cc-actcol"><button class="boq-rowdel" data-del="' + esc(r.id) + '" title="Delete this line">&times;</button></td>' : '') +
         '</tr>';
     });
     h += '</tbody></table></div>';
@@ -847,6 +901,38 @@ window.BOQ = (function () {
     });
     var ex = host.querySelector('#boq-export'); if (ex) ex.onclick = exportItems;
     var pk = host.querySelector('#boq-pkgs'); if (pk) pk.onclick = openAssignPackage;
+    var ac = host.querySelector('#boq-addcodes'); if (ac) ac.onclick = openCodeBuilder;
+    var is = host.querySelector('#boq-issue'); if (is) is.onclick = issueRev;
+    /* ⚠️ SAVED ON `change`, NOT ON `input`. On input every keystroke of a quantity is a
+       round trip and a re-render that steals focus mid-number — which reads as the field
+       fighting you. change fires on blur or Enter, i.e. once the figure is finished. */
+    host.querySelectorAll('.boq-cell[data-f]').forEach(function (inp) {
+      inp.onchange = function () { saveCell(inp.dataset.i, inp.dataset.f, inp.value); };
+    });
+    host.querySelectorAll('.boq-cellsel[data-f]').forEach(function (selEl) {
+      selEl.onchange = function () { saveCell(selEl.dataset.i, selEl.dataset.f, selEl.value); };
+    });
+    host.querySelectorAll('[data-del]').forEach(function (b) {
+      b.onclick = function () { delLine(b.dataset.del); };
+    });
+  }
+  /* One input per editable cell.
+     ⚠️ NUMERIC CELLS ARE type="text", NOT type="number", AND THIS IS THE OPPOSITE OF THE
+        OBVIOUS CHOICE. Measured in the render harness: with type="number", typing anything
+        the browser cannot parse makes `input.value` read back as the EMPTY STRING — so
+        `1,000`, the way every planner writes a thousand, arrived here as "" and SILENTLY
+        CLEARED the quantity. No error, no rejection, just a figure gone from a BOQ.
+        As text, `numOf` does the parsing instead, and it already strips thousands
+        separators, ₱/$/€/£ and parenthesised negatives because the importer needed exactly
+        that. So `1,000` and `₱1,200.50` are accepted, and genuine nonsense is REFUSED OUT
+        LOUD (see saveCell) rather than written as a null.
+        `inputmode="decimal"` keeps the numeric keypad on a phone, which is the only thing
+        type="number" was buying. */
+  function cellIn(r, field, kind) {
+    var v = r[field];
+    return '<input class="boq-cell" data-f="' + field + '" data-i="' + esc(r.id) + '"' +
+      (kind === 'num' ? ' inputmode="decimal"' : '') +
+      ' value="' + esc(v == null ? '' : v) + '" />';
   }
 
   function exportItems() {
@@ -1186,11 +1272,20 @@ window.BOQ = (function () {
       await sb().from(T_REV).update({ is_current: false }).eq('project_id', pid);
       var inv = {};
       picked.forEach(function (s) { inv[s.sheet] = { role: s.kind, lines: s.lines, headings: s.headings, sum: s.sum, stated: s.stated_total, header_row: s.header_row + 1 }; });
+      /* ⚠️ CREATED AS A DRAFT AND ISSUED AT THE END (2026-09-07). Two reasons, and the
+         second is the better one:
+           1. the parent_id second pass below UPDATEs the rows it just inserted, and the
+              issued-revision trigger in 2026-09-07-boq-manual.sql refuses that;
+           2. a half-finished import is now visibly a draft. Before this, a run that died
+              between the insert and the hierarchy pass left an is_current revision with a
+              partial contract sum sitting on screen as though it were the tendered document.
+         ⚠️ is_current cannot be set here either — the database refuses a current draft —
+            so it moves in the same update that issues it, once the lines are all in. */
       var rev = await sb().from(T_REV).insert({
         project_id: pid, rev_no: revNo,
         issued_date: el('bi-date').value || null, po_no: (el('bi-po').value || '').trim() || null,
         contract_total: numOf(el('bi-total').value), source_file: d.file,
-        sheet_inventory: inv, is_current: true, created_by: UID
+        sheet_inventory: inv, status: 'draft', origin: 'import', is_current: false, created_by: UID
       }).select().single();
       if (rev.error) throw rev.error;
       var revId = rev.data.id;
@@ -1248,6 +1343,14 @@ window.BOQ = (function () {
         await importBilling(revId, bills, byRow, el);
       }
 
+      /* Now it is complete: issue it and make it current, in ONE update so the
+         draft-not-current trigger sees a consistent row. */
+      say('Issuing revision ' + revNo + '…');
+      var fin = await sb().from(T_REV)
+        .update({ status: 'issued', is_current: true, updated_at: new Date().toISOString() })
+        .eq('id', revId);
+      if (fin.error) throw fin.error;
+
       UI.toast('Imported ' + payload.length + ' lines as revision ' + revNo + '.', 'success');
       m.close();
       REVID = revId;
@@ -1291,6 +1394,899 @@ window.BOQ = (function () {
       if (res.error) throw res.error;
     }
   }
+
+  // ==========================================================================
+  // MANUAL AUTHORING (2026-09-07) — a BOQ built from the class-code library
+  // ==========================================================================
+  /* Owner: *"Let's enable the users to manually add a BOQ, this would be based on the
+     class code library and from the class code library the planner would be able to tag
+     it to the activities in the schedule module. Let's think of a better way to do this
+     (bulk connect, per trade etc.). If we make the manual add of BOQ perfect, it would
+     enable us to better execute/implement the import feature."*
+
+     THE INVERSION THAT MAKES THIS WORTH BUILDING, and it is not a UI convenience.
+     The import chain runs BACKWARDS from the client's words:
+
+         client's description  ──►  guess a class code  ──►  find activities with it
+
+     Every arrow there is a place to be confidently wrong. The middle one is the whole of
+     `boq_class_map` and its suggestion library — a judgement, revision-scoped, never
+     auto-accepted, because two clients saying "Wall Systems and Cladding" may mean
+     different Finance codes. The right-hand one fails silently in the common case: no
+     activity carries the code, so nothing is proposed.
+
+     Authoring runs the chain FORWARDS:
+
+         class code  ──►  the line  ──►  the activities
+
+     The code is now the ORIGIN, not an inference, so the middle arrow stops being a
+     judgement at all — which is why these mappings are stored as `source='authored'` and
+     not 'hand_picked' (see the migration's §4: the suggestion library learns from these
+     rows, and feeding it a description that was GENERATED from the code is how it starts
+     proposing its own output back to itself).
+
+     WHY THIS MAKES THE IMPORTER BETTER, which is what the owner is actually after: the
+     importer's hard problem is that it must INFER structure — where the header row is,
+     which lines are headings, what a code might be. Authoring produces the same tables
+     with all of that KNOWN. So a manually built BOQ is a correctness oracle: the shape
+     the importer is trying to reconstruct, available in a form where every field is
+     certain. Divisions become sheets, groups become headings, items become leaves — the
+     import's `Total of X >>` marker hunt has no counterpart here because nothing needs
+     discriminating.
+
+     ⚠️ WHAT IS DELIBERATELY NOT RELAXED. `boq_items` stays append-and-supersede for
+        anything ISSUED, enforced by a trigger in the migration rather than by this file
+        remembering to. Draft lines are editable because a draft is nobody's evidence
+        yet. The instant it is issued the 2026-08-24 rule applies in full. */
+
+  function curRev() { return REVS.find(function (r) { return r.id === REVID; }) || null; }
+  /* ⚠️ ABSENT READS AS 'issued', WHICH IS HOW THIS DEGRADES. On a database where
+     2026-09-07-boq-manual.sql has not run there is no `status` column, every revision
+     reads as issued, and this whole feature is simply not offered — the tab behaves
+     exactly as it did before. The opposite default would unlock every client BOQ in the
+     app the moment someone deployed the JS ahead of the SQL. */
+  function revStatus(r) { return (r && r.status) || 'issued'; }
+  function isDraft() { return revStatus(curRev()) === 'draft'; }
+  function manualHint(err) {
+    var m = (err && err.message) || '';
+    return /status|origin|does not exist|schema cache|PGRST204|boq_tag_activities|PGRST202/i.test(m)
+      ? ' Run <code>' + MIGRATION_MANUAL + '</code> in the Supabase SQL editor, then reload.' : '';
+  }
+
+  /* ⚠️ IDENTITY IS (revision, sheet, source_row), so an authored line needs a row number
+     that is free ON ITS SHEET. Taken from the current maximum rather than from the line
+     count: deleting line 3 of 5 and adding another would otherwise reuse 5 and collide. */
+  function nextRow(sheet) {
+    var max = 0;
+    ITEMS.forEach(function (r) { if (r.sheet === sheet && r.source_row > max) max = r.source_row; });
+    return max + 1;
+  }
+
+  /* The chart folded into division › group › item. Order comes from `sort_order`, which
+     ensureCodes already sorts on, so the tree reads in Finance's own sequence. */
+  function buildTree() {
+    if (CODETREE) return CODETREE;
+    var byL1 = {}, out = [];
+    (CODES || []).forEach(function (c) {
+      var d = byL1[c.code_l1];
+      if (!d) { d = byL1[c.code_l1] = { code: c.code_l1, desc: c.desc_l1, groups: {}, order: [] }; out.push(d); }
+      var g = d.groups[c.code_l2];
+      if (!g) { g = d.groups[c.code_l2] = { code: c.code_l2, desc: c.desc_l2, items: [] }; d.order.push(g); }
+      g.items.push(c);
+    });
+    CODETREE = out;
+    return CODETREE;
+  }
+  function codeRow(code) { return (CODES || []).find(function (c) { return c.code === code; }) || null; }
+
+  // ---- Create a draft revision to author into -------------------------------
+  function openNewRev() {
+    var m = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">New BOQ &mdash; build it by hand</h2>' +
+      '<button class="pd-modal-close" id="nr-x">&times;</button></div>' +
+      '<div class="cc-form">' +
+      '<p class="cc-hint" style="margin-top:0;">An empty draft: add lines, price them, then ' +
+      '<strong>issue</strong>. A draft never bills.</p>' +
+      '<label>Revision no.<input class="pd-input" id="nr-rev" placeholder="e.g. 01 or INTERNAL-01" /></label>' +
+      '<label>Issued date<input class="pd-input" id="nr-date" type="date" /></label>' +
+      '<label>PO no. (optional)<input class="pd-input" id="nr-po" /></label>' +
+      '<label>Stated contract total (optional)<input class="pd-input" id="nr-total" type="number" step="0.01" /></label>' +
+      /* ⚠️ THE STATED TOTAL IS THE RECONCILIATION GATE'S ONLY FOOTHOLD, and on an authored
+         BOQ it is the one figure that does not come from the lines. Give it the contract
+         value and issuing will refuse a draft whose lines do not add up to it — which is
+         the single most valuable check in the importer, made available to a hand build. */
+      '<p class="cc-hint">From the signed contract, if you have it — issuing then reconciles the lines ' +
+      'against it to ₱1 or 0.01%.</p>' +
+      '</div><div class="pd-modal-footer"><button class="pd-btn" id="nr-c">Cancel</button> ' +
+      '<button class="pd-btn pd-btn-primary" id="nr-go">Create draft</button></div>');
+    var el = function (id) { return m.el.querySelector('#' + id); };
+    el('nr-x').onclick = m.close; el('nr-c').onclick = m.close;
+    el('nr-go').onclick = async function () {
+      var revNo = txtOf(el('nr-rev').value);
+      if (!revNo) { UI.toast('Give the revision a number.', 'error'); return; }
+      var b = el('nr-go'); b.disabled = true; b.textContent = 'Creating…';
+      try {
+        var ins = await sb().from(T_REV).insert({
+          project_id: pid, rev_no: revNo, issued_date: el('nr-date').value || null,
+          po_no: txtOf(el('nr-po').value) || null, contract_total: numOf(el('nr-total').value),
+          source_file: null, sheet_inventory: {},
+          // ⚠️ is_current stays FALSE and the database enforces it for a draft. The
+          //    contract value on screen must keep coming from the issued document.
+          status: 'draft', origin: 'manual', is_current: false,
+          notes: 'Built by hand from the class-code library.', created_by: UID
+        }).select().single();
+        if (ins.error) throw ins.error;
+        m.close();
+        REVID = ins.data.id; sub = 'items';
+        UI.toast('Draft revision ' + revNo + ' created. Add lines from the class-code library.', 'success');
+        await load();
+      } catch (err) {
+        b.disabled = false; b.textContent = 'Create draft';
+        var msg = (err.message || String(err));
+        UI.toast(msg + manualHint(err).replace(/<\/?code>/g, ''), 'error');
+      }
+    };
+  }
+
+  // ---- The class-code tree: pick the scope, in bulk -------------------------
+  /* ⚠️ A TREE WITH A CHECKBOX ON EVERY LEVEL, not a search-and-add-one picker. The chart
+     is 702 items under 205 groups under 42 divisions, and a QS builds a BOQ a TRADE at a
+     time — which is exactly the "per trade" the owner asked for. Ticking a division takes
+     everything visible under it in one action, so a 40-line concrete package is one click
+     plus a review, not forty searches. The existing `pickCode` picker stays for what it is
+     good at: mapping ONE imported line. */
+  async function openCodeBuilder() {
+    if (!isDraft()) { UI.toast('Lines can only be added to a draft revision.', 'error'); return; }
+    await ensureCodes();
+    if (!(CODES || []).length) {
+      UI.toast('The class-code chart is empty — run migrations/2026-08-21-class-codes.sql.', 'error');
+      return;
+    }
+    buildTree();
+    var picked = {}, open = {}, q = '';
+
+    var m = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">Add lines from the class-code library</h2>' +
+      '<button class="pd-modal-close" id="cb-x">&times;</button></div>' +
+      '<div style="padding:0 16px 4px;">' +
+      '<p class="cc-hint" style="margin-top:0;">Division → sheet, group → heading, item → line. ' +
+      'Tick a division or group to take everything under it.</p>' +
+      '<input class="pd-input" id="cb-q" placeholder="Search code, division, group or item…" autocomplete="off" style="margin-bottom:8px;" />' +
+      '<div class="boq-tree" id="cb-tree"></div>' +
+      '<div class="boq-tpicked" id="cb-count"></div></div>' +
+      '<div class="pd-modal-footer"><button class="pd-btn" id="cb-c">Cancel</button> ' +
+      '<button class="pd-btn pd-btn-primary" id="cb-go">Add lines</button></div>');
+    // One column, but three indent levels and a count on the right — 520px clips it.
+    m.el.querySelector('.pd-modal').classList.add('boq-widish');
+    var el = function (id) { return m.el.querySelector('#' + id); };
+    el('cb-x').onclick = m.close; el('cb-c').onclick = m.close;
+
+    /* Which items survive the search. ⚠️ A division or group matches on its OWN text too,
+       and then keeps all of its items — searching "concrete" must not hide the items of a
+       group called Concrete Works merely because the word is not repeated in each one. */
+    function itemsOf(g, d) {
+      if (!q) return g.items;
+      var k = normKey(q);
+      if ((d.code + ' ' + normKey(d.desc)).indexOf(k) >= 0) return g.items;
+      if ((g.code + ' ' + normKey(g.desc)).indexOf(k) >= 0) return g.items;
+      return g.items.filter(function (c) { return (c.code + ' ' + normKey(c.desc_l3)).indexOf(k) >= 0; });
+    }
+    function visible() {
+      return buildTree().map(function (d) {
+        var gs = d.order.map(function (g) { return { g: g, items: itemsOf(g, d) }; })
+                        .filter(function (x) { return x.items.length; });
+        return { d: d, gs: gs };
+      }).filter(function (x) { return x.gs.length; });
+    }
+    function nPicked() { return Object.keys(picked).length; }
+
+    function paint() {
+      var vis = visible();
+      // Searching auto-expands: a hit inside a collapsed division is a hit nobody can see.
+      var expandAll = !!q;
+      el('cb-tree').innerHTML = vis.length ? vis.map(function (x) {
+        var d = x.d;
+        var all = x.gs.reduce(function (a, y) { return a.concat(y.items); }, []);
+        var on = all.filter(function (c) { return picked[c.code]; }).length;
+        var isOpen = expandAll || !!open[d.code];
+        return '<div class="boq-tnode boq-tl1">' +
+          '<label class="boq-trow">' +
+            '<span class="boq-tcaret" data-tog="' + esc(d.code) + '">' + (isOpen ? '▾' : '▸') + '</span>' +
+            '<input type="checkbox" data-d="' + esc(d.code) + '"' + (on && on === all.length ? ' checked' : '') +
+              (on && on < all.length ? ' data-part="1"' : '') + ' />' +
+            '<span class="boq-tcode">' + esc(d.code) + '</span>' +
+            '<span class="boq-tname">' + esc(d.desc) + '</span>' +
+            '<span class="boq-tn">' + (on ? on + ' / ' : '') + all.length + '</span>' +
+          '</label>' +
+          '<div class="boq-tkids"' + (isOpen ? '' : ' hidden') + '>' +
+          x.gs.map(function (y) {
+            var gon = y.items.filter(function (c) { return picked[c.code]; }).length;
+            return '<div class="boq-tnode boq-tl2">' +
+              '<label class="boq-trow">' +
+                '<span class="boq-tcaret"></span>' +
+                '<input type="checkbox" data-g="' + esc(y.g.code) + '"' + (gon && gon === y.items.length ? ' checked' : '') + ' />' +
+                '<span class="boq-tcode">' + esc(y.g.code) + '</span>' +
+                '<span class="boq-tname">' + esc(y.g.desc) + '</span>' +
+                '<span class="boq-tn">' + (gon ? gon + ' / ' : '') + y.items.length + '</span>' +
+              '</label>' +
+              '<div class="boq-tl3">' + y.items.map(function (c) {
+                return '<label class="boq-trow">' +
+                  '<input type="checkbox" data-c="' + esc(c.code) + '"' + (picked[c.code] ? ' checked' : '') + ' />' +
+                  '<span class="boq-tcode">' + esc(c.code) + '</span>' +
+                  '<span class="boq-tname">' + esc(c.desc_l3) + '</span></label>';
+              }).join('') + '</div></div>';
+          }).join('') + '</div></div>';
+      }).join('') : '<p class="cc-mut" style="padding:14px;text-align:center;">No codes match that search.</p>';
+
+      var divs = {};
+      Object.keys(picked).forEach(function (k) { var c = codeRow(k); if (c) divs[c.desc_l1] = 1; });
+      el('cb-count').innerHTML = nPicked()
+        ? '<b>' + nPicked() + '</b> item' + (nPicked() === 1 ? '' : 's') + ' · ' +
+          Object.keys(divs).length + ' sheet' + (Object.keys(divs).length === 1 ? '' : 's')
+        : '<span class="cc-mut">Nothing selected yet.</span>';
+      el('cb-go').disabled = !nPicked();
+      wireTree();
+    }
+
+    function setAll(list, on) { list.forEach(function (c) { if (on) picked[c.code] = 1; else delete picked[c.code]; }); }
+    function wireTree() {
+      var tree = el('cb-tree');
+      tree.querySelectorAll('[data-tog]').forEach(function (t) {
+        t.onclick = function (e) {
+          e.preventDefault(); e.stopPropagation();
+          open[t.dataset.tog] = !open[t.dataset.tog]; paint();
+        };
+      });
+      tree.querySelectorAll('[data-c]').forEach(function (cb) {
+        cb.onchange = function () { if (cb.checked) picked[cb.dataset.c] = 1; else delete picked[cb.dataset.c]; paint(); };
+      });
+      tree.querySelectorAll('[data-g]').forEach(function (cb) {
+        cb.onchange = function () {
+          visible().forEach(function (x) {
+            x.gs.forEach(function (y) { if (y.g.code === cb.dataset.g) setAll(y.items, cb.checked); });
+          });
+          paint();
+        };
+      });
+      tree.querySelectorAll('[data-d]').forEach(function (cb) {
+        cb.onchange = function () {
+          visible().forEach(function (x) {
+            if (x.d.code !== cb.dataset.d) return;
+            x.gs.forEach(function (y) { setAll(y.items, cb.checked); });
+          });
+          paint();
+        };
+      });
+      // A partially-selected division reads as indeterminate rather than as "off": a bare
+      // unticked box over "12 / 40" says the opposite of what is true.
+      tree.querySelectorAll('[data-part]').forEach(function (cb) { cb.indeterminate = true; });
+    }
+
+    var t = null;
+    el('cb-q').addEventListener('input', function () {
+      clearTimeout(t); t = setTimeout(function () { q = el('cb-q').value; paint(); }, 160);
+    });
+    el('cb-go').onclick = function () { m.close(); addAuthoredLines(Object.keys(picked)); };
+    paint();
+  }
+
+  /* Write the picked codes in as lines.
+     ⚠️ DIVISION → SHEET, GROUP → HEADING, ITEM → LEAF. This is not an arbitrary mapping,
+        it is the shape the importer spends 300 lines trying to recover from a spreadsheet:
+        `sheetTotals` and every WT % are computed PER SHEET, so making the division the
+        sheet puts the trade-share weighting on the right axis for free. A single flat
+        sheet would make one project-wide WT % denominator and quietly break the billing
+        arithmetic the module already verified against the real sheets.
+     ⚠️ HEADINGS CARRY NO AMOUNT. An imported heading holds the client's own printed
+        subtotal (which is evidence, and reconciled against). An authored one would be
+        holding OUR sum of its own children — a second source of truth that goes stale the
+        first time a child's quantity changes. `moneyLine()` excludes headings from every
+        roll-up anyway, so the subtotal is derived where it is displayed.
+     ⚠️ A GROUP ALREADY PRESENT IS REUSED, never duplicated. Adding "more concrete items"
+        to a division must extend the existing heading, or the sheet ends up with two
+        identical headings and the tree reads as two unrelated groups. */
+  async function addAuthoredLines(codes) {
+    if (!canWrite || !isDraft() || !codes.length) return;
+    var m = UI.modal('<h2 style="margin-top:0;">Adding lines…</h2><p id="ad-say"><span class="cc-spin"></span>Preparing…</p>');
+    var say = function (s) { var e = m.el.querySelector('#ad-say'); if (e) e.innerHTML = '<span class="cc-spin"></span>' + esc(s); };
+    try {
+      // Group the picks by division (sheet) then by group (heading).
+      var sheets = {};
+      codes.forEach(function (code) {
+        var c = codeRow(code); if (!c) return;
+        var sh = (sheets[c.desc_l1] = sheets[c.desc_l1] || { div: c.code_l1, groups: {}, order: [] });
+        var g = sh.groups[c.code_l2];
+        if (!g) { g = sh.groups[c.code_l2] = { code: c.code_l2, desc: c.desc_l2, items: [] }; sh.order.push(g); }
+        g.items.push(c);
+      });
+
+      var newLines = [], leafKeys = [];
+      Object.keys(sheets).forEach(function (shName) {
+        var sh = sheets[shName], row = nextRow(shName), order = ITEMS.filter(function (r) { return r.sheet === shName; }).length;
+        sh.order.forEach(function (g) {
+          /* ⚠️ THE LEAVES ARE DECIDED FIRST, AND THE HEADING ONLY IF ANY SURVIVE. The first
+             cut emitted the heading and then filtered the items, so re-adding a division
+             whose items were already present wrote a heading with NOTHING UNDER IT. Measured
+             in the render harness: re-picking all of Concrete Works, with 03101/03102/03201
+             already on the revision, wrote heading 03200 as an orphan — a group row that
+             reads as an empty trade on the items table and in every export. */
+          var todo = g.items.filter(function (c) {
+            // A code already on this sheet is not added twice.
+            return !ITEMS.some(function (r) { return r.sheet === shName && String(r.item_no) === String(c.code); });
+          });
+          if (!todo.length) return;
+
+          // Reuse an existing heading for this group if the sheet already has one.
+          var existing = ITEMS.find(function (r) {
+            return r.sheet === shName && r.line_kind === 'heading' && String(r.item_no) === String(g.code);
+          });
+          var headKey = null;
+          if (existing) headKey = shName + '#' + existing.source_row;
+          else {
+            headKey = shName + '#' + row;
+            newLines.push({
+              project_id: pid, revision_id: REVID, sheet: shName, source_row: row++,
+              item_no: g.code, description: g.desc, unit: null, qty: null,
+              mat_rate: null, mat_amount: null, lab_rate: null, lab_amount: null,
+              amount: null, derived_amount: false, exclusion_note: null,
+              line_kind: 'heading', total_marker: null, depth: 0,
+              sort_order: order++, origin: 'manual', created_by: UID, _k: headKey, _pk: null
+            });
+          }
+          todo.forEach(function (c) {
+            var key = shName + '#' + row;
+            newLines.push({
+              project_id: pid, revision_id: REVID, sheet: shName, source_row: row++,
+              item_no: c.code, description: c.desc_l3, unit: null, qty: null,
+              mat_rate: null, mat_amount: null, lab_rate: null, lab_amount: null,
+              amount: null, derived_amount: false, exclusion_note: null,
+              /* ⚠️ 'measured' with a NULL quantity, deliberately. The line kind is a
+                 statement about whether the work is measurable, and a concrete item is —
+                 the quantity is simply not typed yet. Defaulting to 'lump_sum' to "match
+                 the empty qty" would put every authored line outside the quantity
+                 roll-up, i.e. outside the activity-quantity view this whole chain exists
+                 to feed. The kind is editable per row for the lines that really are lump
+                 sum or provisional. */
+              line_kind: 'measured', total_marker: null, depth: 1,
+              sort_order: order++, origin: 'manual', created_by: UID, _k: key, _pk: headKey
+            });
+            leafKeys.push({ key: key, code: c.code });
+          });
+        });
+      });
+
+      if (!newLines.length) { m.close(); UI.toast('Every code you picked is already on this revision.', 'warn'); return; }
+
+      var inserted = [];
+      for (var i = 0; i < newLines.length; i += 300) {
+        say('Writing lines ' + (i + 1) + '–' + Math.min(i + 300, newLines.length) + ' of ' + newLines.length + '…');
+        var chunk = newLines.slice(i, i + 300).map(function (p) {
+          var c2 = Object.assign({}, p); delete c2._k; delete c2._pk; return c2;
+        });
+        var res = await sb().from(T_ITEM).insert(chunk).select('id,sheet,source_row');
+        if (res.error) throw res.error;
+        inserted = inserted.concat(res.data);
+      }
+
+      // Parent links, keyed on (sheet, source_row) — the real identity, never item_no.
+      var byRow = {};
+      inserted.forEach(function (r) { byRow[r.sheet + '#' + r.source_row] = r.id; });
+      var links = newLines.filter(function (p) { return p._pk && byRow[p._k] && byRow[p._pk]; });
+      say('Linking ' + links.length + ' line(s) to their headings…');
+      for (var j = 0; j < links.length; j++) {
+        var up = await sb().from(T_ITEM).update({ parent_id: byRow[links[j]._pk] }).eq('id', byRow[links[j]._k]);
+        if (up.error) throw up.error;
+      }
+
+      /* The class map, `source='authored'`.
+         ⚠️ HEADINGS ARE NOT MAPPED. `mappable()` excludes them, and a heading carrying a
+            group code as a *mapping* would be counted in the mapped total and then
+            allocated across activities — a group is not a scope item. */
+      var maps = leafKeys.filter(function (x) { return byRow[x.key]; }).map(function (x) {
+        return { project_id: pid, revision_id: REVID, boq_item_id: byRow[x.key],
+                 class_code: x.code, source: 'authored', confidence: 1, created_by: UID };
+      });
+      for (var k2 = 0; k2 < maps.length; k2 += 300) {
+        say('Recording class codes ' + (k2 + 1) + ' of ' + maps.length + '…');
+        var mr = await sb().from(T_MAP).upsert(maps.slice(k2, k2 + 300), { onConflict: 'boq_item_id' });
+        if (mr.error) throw mr.error;
+      }
+
+      m.close();
+      /* ⚠️ Counts the sheets actually WRITTEN TO, not the sheets picked. Re-picking a
+         division whose items are all present touches none of them, and "across 1 sheet"
+         over zero new lines on that sheet is a claim the table would contradict. */
+      var touched = {};
+      newLines.forEach(function (l) { touched[l.sheet] = 1; });
+      UI.toast('Added ' + leafKeys.length + ' line(s) across ' + Object.keys(touched).length + ' sheet(s). Now price them.', 'success');
+      await load();
+    } catch (err) {
+      var msg = (err.message || String(err));
+      m.el.innerHTML = '<h2 style="margin-top:0;">Could not add the lines</h2>' +
+        '<div class="boq-alert bad">' + esc(msg) + '<p class="cc-mut">' + manualHint(err) + migrationHint(err) + '</p></div>' +
+        '<div style="text-align:right;margin-top:12px;"><button class="pd-btn" id="ad-x">Close</button></div>';
+      /* ⚠️ Closing RELOADS. A failure part-way through leaves some lines written, and the
+         planner must see which — a stale screen showing none of them invites a second run
+         that duplicates the ones that did land. */
+      var b = m.el.querySelector('#ad-x'); if (b) b.onclick = function () { m.close(); load(); };
+    }
+  }
+
+  // ---- Editing a draft line -------------------------------------------------
+  /* ⚠️ THE DERIVATION RULE, AND WHY IT IS NOT THE IMPORTER'S RULE.
+     For an IMPORTED line, `qty × displayed rate` is wrong — measured at ₱8.60 out on a
+     two-line sheet, because the client's printed rate is a rounded display of a figure we
+     never see. So the amount is taken as given and never recomputed.
+     For a line WE author, the rate is the exact input and the amount is its product. So it
+     IS computed — and flagged `derived_amount = true`, which is precisely what that column
+     was added for: telling our figures from the client's in a later reconciliation.
+     ⚠️ AN AMOUNT TYPED BY HAND WINS AND STOPS THE DERIVATION (`derived_amount = false`),
+        because a lump-sum line has an amount and no rate at all. Clearing it hands the
+        line back to the rates. */
+  function recalc(n) {
+    var q = n.qty, mr = n.mat_rate, lr = n.lab_rate;
+    var ma = (q != null && mr != null) ? q * mr : null;
+    var la = (q != null && lr != null) ? q * lr : null;
+    var out = { mat_amount: ma, lab_amount: la };
+    if (n.derived_amount === false && n.amount != null) { out.amount = n.amount; out.derived_amount = false; }
+    else if (ma != null || la != null) { out.amount = (ma || 0) + (la || 0); out.derived_amount = true; }
+    else { out.amount = null; out.derived_amount = false; }
+    return out;
+  }
+
+  async function saveCell(id, field, raw) {
+    var r = ITEMS.find(function (x) { return x.id === id; });
+    if (!r || !canWrite) return;
+    if (!isDraft()) { UI.toast('This revision is issued — its lines are immutable.', 'error'); render(); return; }
+
+    var patch = {};
+    if (field === 'description' || field === 'unit') patch[field] = txtOf(raw) || null;
+    else if (field === 'line_kind') patch.line_kind = raw;
+    else if (field === 'exclusion_note') patch.exclusion_note = txtOf(raw) || null;
+    else {
+      var s = txtOf(raw);
+      if (s === '') patch[field] = null;
+      else {
+        /* ⚠️ `numOf`, not `Number`. Number('1,000') is NaN; numOf strips the separator.
+           And an unparseable entry is REFUSED AND RE-RENDERED — which restores the stored
+           figure in the cell. Writing null for it would be the silent clear this whole
+           input type exists to prevent, and null vs 0 vs "a wrong number" are three
+           different facts in a money column. */
+        var v = numOf(s);
+        if (v == null) {
+          UI.toast('“' + s + '” is not a number — the cell is unchanged.', 'error');
+          render(); return;
+        }
+        patch[field] = v;
+      }
+      /* An amount the planner typed is theirs, so it is not derived. Clearing it is also
+         not derived — recalc() below then hands the line back to the rates. Both branches
+         are false, which is why this is not a condition. */
+      if (field === 'amount') patch.derived_amount = false;
+    }
+
+    var next = Object.assign({}, r, patch);
+    /* A heading holds no money — see addAuthoredLines. Changing a line's kind TO heading
+       therefore clears its figures rather than leaving an orphaned amount that no roll-up
+       reads and every export prints. */
+    if (next.line_kind === 'heading') {
+      Object.assign(patch, { qty: null, mat_rate: null, mat_amount: null, lab_rate: null,
+                             lab_amount: null, amount: null, derived_amount: false });
+    } else if (['qty', 'mat_rate', 'lab_rate', 'amount', 'line_kind'].indexOf(field) >= 0) {
+      Object.assign(patch, recalc(next));
+    }
+
+    var up = await sb().from(T_ITEM).update(patch).eq('id', id);
+    if (up.error) {
+      UI.toast(up.error.message + manualHint(up.error).replace(/<\/?code>/g, ''), 'error');
+      await load(); return;
+    }
+    Object.assign(r, patch);
+    render();
+  }
+
+  async function delLine(id) {
+    if (!canWrite || !isDraft()) return;
+    var r = ITEMS.find(function (x) { return x.id === id; });
+    if (!r) return;
+    var kids = ITEMS.filter(function (x) { return x.parent_id === id; });
+    if (!confirm(kids.length
+        ? 'Delete “' + (r.description || r.item_no) + '” and un-parent its ' + kids.length + ' line(s)?'
+        : 'Delete “' + (r.description || r.item_no) + '”?')) return;
+    var del = await sb().from(T_ITEM).delete().eq('id', id);
+    if (del.error) {
+      UI.toast(del.error.message + manualHint(del.error).replace(/<\/?code>/g, ''), 'error');
+      return;
+    }
+    await load();
+  }
+
+  // ---- Issue the draft ------------------------------------------------------
+  /* ⚠️ THE RECONCILIATION GATE, ON THE WAY OUT. The importer's most valuable check runs
+     at the moment of import; a hand build has no equivalent moment, so it runs here. The
+     tolerance is the same absolute-and-small ₱1 / 0.01% — widening it to 5% is exactly
+     how the ₱20,667,260.59 plant hole passed on the real workbook. */
+  function issueRev() {
+    var rev = curRev(); if (!rev || !isDraft()) return;
+    var sum = contractSum(ITEMS);
+    var recon = reconcile(sum, rev.contract_total);
+    var priced = ITEMS.filter(moneyLine).length;
+    var unpriced = ITEMS.filter(function (r) { return r.line_kind !== 'heading' && !r.exclusion_note && r.amount == null; });
+    var otherCurrent = REVS.some(function (r) { return r.id !== REVID && r.is_current; });
+
+    var body = '<p class="cc-hint" style="margin-top:0;">Issuing freezes these lines. A remeasure is then a ' +
+      '<strong>new revision</strong>.</p>' +
+      '<table class="ccw-review"><tbody>' +
+      '<tr><td>Priced lines</td><td><strong>' + priced + '</strong></td></tr>' +
+      '<tr><td>Lines sum to</td><td><strong>' + money(sum) + '</strong></td></tr>' +
+      '<tr><td>Stated contract total</td><td>' + (rev.contract_total == null
+        ? '<span class="cc-mut">not given</span>' : money(rev.contract_total)) + '</td></tr>' +
+      '</tbody></table>';
+
+    if (!priced) {
+      body += '<div class="boq-alert bad"><strong>Nothing is priced.</strong> Issuing this would file a ₱0 BOQ.</div>';
+    }
+    if (unpriced.length) {
+      body += '<div class="boq-alert warn"><strong>' + unpriced.length + ' line' + (unpriced.length === 1 ? ' carries' : 's carry') +
+        ' no amount</strong> and add' + (unpriced.length === 1 ? 's' : '') + ' nothing to the total. If the work is another ' +
+        'party\'s, mark the line <b>Excluded</b> and say why.</div>';
+    }
+    if (!recon.ok && !recon.unknown) {
+      body += '<div class="boq-alert bad"><strong>Does not reconcile.</strong> Lines sum to ' + money(recon.sum) +
+        ' against the stated ' + money(recon.stated) + ' — off by ' + money(recon.diff) + '.</div>';
+    }
+
+    /* ⚠️ "Make this the current revision" IS A CHOICE AND IS NEVER PRE-TICKED WHEN
+       ANOTHER REVISION IS ALREADY CURRENT. `is_current` is what the contract value, the
+       POC and the monthly revenue read; silently moving it would change every one of
+       those figures from a checkbox nobody looked at. Where nothing is current yet there
+       is nothing to displace, so it defaults on. */
+    body += '<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;">' +
+      '<input type="checkbox" id="is-cur"' + (otherCurrent ? '' : ' checked') + ' style="width:15px;height:15px;accent-color:var(--pd-red);" />' +
+      '<span>Make this the <strong>current</strong> revision' +
+      (otherCurrent ? ' — replaces the one the contract value, POC and revenue read.'
+                    : ' (nothing is current yet).') + '</span></label>';
+
+    var blocked = !priced || (!recon.ok && !recon.unknown);
+    var m = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">Issue revision ' + esc(rev.rev_no) + '</h2>' +
+      '<button class="pd-modal-close" id="ir-x">&times;</button></div>' +
+      '<div style="padding:2px 16px 6px;">' + body + '</div>' +
+      '<div class="pd-modal-footer"><button class="pd-btn" id="ir-c">Cancel</button> ' +
+      '<button class="pd-btn pd-btn-primary" id="ir-go"' + (blocked ? ' disabled' : '') + '>Issue revision</button></div>');
+    m.el.querySelector('#ir-x').onclick = m.close;
+    m.el.querySelector('#ir-c').onclick = m.close;
+    var go = m.el.querySelector('#ir-go');
+    if (blocked) return;
+    go.onclick = async function () {
+      var makeCurrent = m.el.querySelector('#is-cur').checked;
+      go.disabled = true; go.textContent = 'Issuing…';
+      try {
+        // ⚠️ Clear the others FIRST. Two current revisions is the state that makes the
+        //    contract value depend on row order.
+        if (makeCurrent) {
+          var cl = await sb().from(T_REV).update({ is_current: false }).eq('project_id', pid);
+          if (cl.error) throw cl.error;
+        }
+        // ⚠️ status and is_current in ONE update: the draft-not-current trigger reads the
+        //    NEW row, so setting is_current first would be refused.
+        var up = await sb().from(T_REV).update({ status: 'issued', is_current: !!makeCurrent, updated_at: new Date().toISOString() }).eq('id', REVID);
+        if (up.error) throw up.error;
+        m.close();
+        UI.toast('Revision ' + rev.rev_no + ' issued' + (makeCurrent ? ' and is now current.' : '.'), 'success');
+        await load();
+      } catch (err) {
+        go.disabled = false; go.textContent = 'Issue revision';
+        UI.toast((err.message || String(err)) + manualHint(err).replace(/<\/?code>/g, ''), 'error');
+      }
+    };
+  }
+
+  // ==========================================================================
+  // BULK CONNECT — a class code to the schedule's activities
+  // ==========================================================================
+  /* Owner: *"from the class code library the planner would be able to tag it to the
+     activities in the schedule module … (bulk connect, per trade etc.)"*
+
+     THE GAP THIS CLOSES. `candidatesFor()` offers only activities that ALREADY carry the
+     line's class code, and `proposeSplit` returns nothing when there are none — correct
+     behaviour (never spread a quantity over something arbitrary) but on a freshly authored
+     BOQ that is EVERY line, because nobody has tagged the schedule. The allocator was
+     therefore unreachable by design for exactly the workflow it exists to serve. Tagging
+     is the missing direction, and it runs from here because this is where the codes are
+     known to be right.
+
+     ⚠️ IT WRITES THROUGH `boq_tag_activities`, NOT A PLAIN UPDATE, and the row count it
+        returns is checked. `project_schedule_upd` restricts UPDATE to
+        `created_by = auth.uid() or is_admin()`, so a planner who did not import the
+        schedule cannot touch its rows — and PostgREST answers an RLS-filtered UPDATE with
+        200 and zero rows. "Tagged 40 activities" over a table that changed nothing is the
+        same silent success that left 16,393 of 16,485 activities un-linked in
+        2026-09-02-wbs-link-batched.sql. See the migration's §5.
+     ⚠️ PROPOSE → PREVIEW → APPLY, the module's standing rule. Nothing is written by
+        matching; a proposal above the confidence floor is pre-ticked, everything else is
+        shown with its reason and left for the planner. */
+  function tokensOf(s) { return normKey(s).split(' ').filter(function (w) { return w.length > 3; }); }
+  /* ⚠️ EVERY MATCH NAMES ITS REASON, and the reason is shown on screen. A bare highlight
+     is unauditable: the planner cannot tell "the words all matched" from "the trade field
+     agreed", and those deserve different amounts of trust. */
+  function matchAct(a, c) {
+    var an = normKey(a.activity_name || '');
+    if (!an) return null;
+    var l3 = normKey(c.desc_l3 || ''), l2 = normKey(c.desc_l2 || '');
+    if (l3 && an.indexOf(l3) >= 0) return { score: 0.95, why: 'names the item' };
+    if (l3 && l3.indexOf(an) >= 0 && an.length > 6) return { score: 0.85, why: 'item names it' };
+    var t3 = tokensOf(c.desc_l3 || '');
+    if (t3.length) {
+      var hit = t3.filter(function (w) { return an.indexOf(w) >= 0; }).length;
+      if (hit === t3.length) return { score: 0.8, why: 'all item words' };
+      if (hit >= 2) return { score: 0.55, why: hit + ' of ' + t3.length + ' item words' };
+    }
+    var wt = normKey(a.work_type || '');
+    if (wt && l2 && (l2.indexOf(wt) >= 0 || wt.indexOf(l2) >= 0)) return { score: 0.6, why: 'trade matches group' };
+    if (l2 && an.indexOf(l2) >= 0) return { score: 0.5, why: 'names the group' };
+    var t2 = tokensOf(c.desc_l2 || '');
+    if (t2.length) {
+      var h2 = t2.filter(function (w) { return an.indexOf(w) >= 0; }).length;
+      if (h2 >= 2) return { score: 0.35, why: h2 + ' group words' };
+    }
+    return null;
+  }
+  var TAG_FLOOR = 0.8;   // pre-ticked at or above this; proposed-but-unticked below it
+
+  function codesInBoq() {
+    var seen = {}, out = [];
+    ITEMS.forEach(function (r) {
+      var cm = CMAP[r.id]; if (!cm) return;
+      var e = seen[cm.class_code];
+      if (!e) { e = seen[cm.class_code] = { code: cm.class_code, lines: 0 }; out.push(e); }
+      e.lines++;
+    });
+    out.sort(function (a, b) { return String(a.code).localeCompare(String(b.code)); });
+    return out;
+  }
+  function actsWith(code) {
+    return (ACTS || []).filter(function (a) { return a.class_code === code; });
+  }
+
+  async function openTagActivities() {
+    await ensureCodes();
+    await ensureActs();
+    var codes = codesInBoq();
+    if (!codes.length) {
+      UI.toast('No line on this revision carries a class code yet — map or author some first.', 'warn');
+      return;
+    }
+    var cur = codes[0].code, aq = '', pickedActs = {}, overwrite = false, mode = 'one';
+
+    var m = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">Connect class codes to schedule activities</h2>' +
+      '<button class="pd-modal-close" id="tg-x">&times;</button></div>' +
+      '<div style="padding:2px 16px 6px;" id="tg-body"></div>' +
+      '<div class="pd-modal-footer" id="tg-foot"></div>');
+    /* ⚠️ WIDENED, and this is not cosmetic. `.pd-modal` is max-width 520px; measured in
+       the render harness at 1440px, the two-pane grid inside it left the activity list
+       about 200px wide — every row wrapped onto three lines behind two nested scrollbars.
+       A code list beside a candidate list needs the width the wizard's `.ccw` takes. */
+    m.el.querySelector('.pd-modal').classList.add('boq-wide');
+    var body = m.el.querySelector('#tg-body'), foot = m.el.querySelector('#tg-foot');
+    m.el.querySelector('#tg-x').onclick = m.close;
+
+    function curCode() { return codeRow(cur) || { code: cur, desc_l1: '', desc_l2: '', desc_l3: cur }; }
+
+    /* Mode B — the per-trade bulk run. One matcher, one RPC, every code at once, with a
+       preview that says how many activities each code would take and how it found them. */
+    function bulkPlan() {
+      return codes.map(function (e) {
+        var c = codeRow(e.code); if (!c) return null;
+        var hits = (ACTS || []).map(function (a) { return { a: a, m: matchAct(a, c) }; })
+          .filter(function (x) { return x.m && x.m.score >= TAG_FLOOR; })
+          /* ⚠️ UNTAGGED ACTIVITIES ONLY. One already carrying THIS code needs nothing, and
+             one carrying ANOTHER must not be moved in bulk — a class code drives the cost
+             roll-up, so retagging forty activities at once is a reconciliation nobody would
+             know to go looking for. Both cases fall out of the same test. */
+          .filter(function (x) { return !x.a.class_code; });
+        return { code: e.code, c: c, hits: hits, lines: e.lines };
+      }).filter(Boolean);
+    }
+
+    function paintBulk() {
+      var plan = bulkPlan();
+      var total = plan.reduce(function (s, p) { return s + p.hits.length; }, 0);
+      var withNone = plan.filter(function (p) { return !p.hits.length; }).length;
+      body.innerHTML = '<div class="boq-filters"><button class="pd-btn" id="tg-mode1">← One code at a time</button>' +
+        '<span class="cc-mini">Every code on this BOQ, matched at once</span></div>' +
+        '<p class="cc-hint" style="margin-top:0;">' + plan.length + ' code(s) · <strong>' + total + '</strong> tag(s) ' +
+        'at ≥' + (TAG_FLOOR * 100).toFixed(0) + '% confidence · <strong>' + withNone + '</strong> match nothing, left alone.<br>' +
+        '⚠️ Activities carrying another code are excluded — re-tagging is a per-code decision.</p>' +
+        '<div class="cc-tablewrap" style="max-height:38vh;overflow:auto;border:1px solid var(--pd-line);border-radius:var(--pd-radius);">' +
+        '<table class="cc-table" style="min-width:0;"><thead><tr><th>Class code</th><th class="cc-desc">Item</th>' +
+        '<th class="cc-r">BOQ lines</th><th class="cc-r">Would tag</th><th>How</th></tr></thead><tbody>' +
+        plan.map(function (p) {
+          var whys = {};
+          p.hits.forEach(function (x) { whys[x.m.why] = (whys[x.m.why] || 0) + 1; });
+          return '<tr><td><span class="boq-code">' + esc(p.code) + '</span></td>' +
+            '<td class="cc-desc"><div class="cc-desc-txt">' + esc(p.c.desc_l3) + '</div>' +
+            '<div class="cc-mini">' + esc(p.c.desc_l1) + ' › ' + esc(p.c.desc_l2) + '</div></td>' +
+            '<td class="cc-r">' + p.lines + '</td>' +
+            '<td class="cc-r">' + (p.hits.length ? '<strong>' + p.hits.length + '</strong>' : '<span class="cc-mut">—</span>') + '</td>' +
+            '<td>' + (Object.keys(whys).length
+              ? Object.keys(whys).map(function (w) { return '<span class="boq-why">' + esc(w) + ' ×' + whys[w] + '</span>'; }).join(' ')
+              : '<span class="cc-mut">no name resembles it</span>') + '</td></tr>';
+        }).join('') + '</tbody></table></div>';
+      foot.innerHTML = '<button class="pd-btn" id="tg-c">Close</button><span style="flex:1;"></span>' +
+        '<button class="pd-btn pd-btn-primary" id="tg-bulkgo"' + (total ? '' : ' disabled') + '>Apply ' + total + ' tag(s)</button>';
+      foot.querySelector('#tg-c').onclick = m.close;
+      body.querySelector('#tg-mode1').onclick = function () { mode = 'one'; paint(); };
+      var bg = foot.querySelector('#tg-bulkgo');
+      if (bg) bg.onclick = function () { applyBulk(plan, bg); };
+    }
+
+    async function applyBulk(plan, btn) {
+      btn.disabled = true;
+      var wrote = 0, wanted = 0, failed = [];
+      for (var i = 0; i < plan.length; i++) {
+        var p = plan[i];
+        if (!p.hits.length) continue;
+        var ids = p.hits.map(function (x) { return x.a.activity_id; });
+        wanted += ids.length;
+        btn.textContent = 'Applying ' + (i + 1) + ' of ' + plan.length + '…';
+        try {
+          var n = await tagRpc(p.code, ids, false);
+          wrote += n;
+        } catch (e) { failed.push(p.code + ': ' + (e.message || e)); }
+      }
+      await refreshActs();
+      m.close();
+      reportTagged(wrote, wanted, failed);
+      render();
+    }
+
+    function paintOne() {
+      var c = curCode();
+      var mine = actsWith(cur);
+      var scored = (ACTS || []).map(function (a) { return { a: a, m: matchAct(a, c) }; });
+      var k = normKey(aq);
+      var list = scored.filter(function (x) {
+        if (x.a.class_code === cur) return true;                  // already ours — shown, ticked, done
+        if (k) return normKey([x.a.activity_id, x.a.activity_name, x.a.work_type].join(' ')).indexOf(k) >= 0;
+        return !!x.m;                                             // with no search, only proposals
+      }).sort(function (p, q2) {
+        return ((q2.m && q2.m.score) || 0) - ((p.m && p.m.score) || 0) ||
+               String(p.a.activity_id).localeCompare(String(q2.a.activity_id));
+      }).slice(0, 300);
+
+      body.innerHTML = '<div class="boq-filters"><button class="pd-btn" id="tg-modeb">Bulk — every code at once →</button>' +
+        '<span class="cc-mini">' + codes.length + ' code(s) on this revision · ' + (ACTS || []).length + ' leaf activities</span></div>' +
+        '<div class="boq-tag">' +
+        '<div class="boq-taglist">' + codes.map(function (e) {
+          var cr = codeRow(e.code), n = actsWith(e.code).length;
+          return '<button class="boq-tagcode' + (e.code === cur ? ' on' : '') + '" data-code="' + esc(e.code) + '">' +
+            '<span class="boq-tagcode-c">' + esc(e.code) + '</span>' +
+            '<span class="boq-tagcode-d">' + esc(cr ? cr.desc_l3 : '(not in the chart)') + '</span>' +
+            '<span class="' + (n ? 'boq-why' : 'boq-taken') + '">' + (n ? n + ' act' : 'none') + '</span></button>';
+        }).join('') + '</div>' +
+        '<div class="boq-tagpane">' +
+        '<p class="cc-hint" style="margin-top:0;"><span class="boq-code">' + esc(c.code) + '</span> ' +
+          esc(c.desc_l1 || '') + ' › ' + esc(c.desc_l2 || '') + ' › <strong>' + esc(c.desc_l3 || '') + '</strong><br>' +
+          'On <strong>' + mine.length + '</strong> activit' + (mine.length === 1 ? 'y' : 'ies') + ' today. ' +
+          'Matches ≥' + (TAG_FLOOR * 100).toFixed(0) + '% are pre-ticked; weaker ones show their reason.</p>' +
+        '<input class="pd-input" id="tg-q" placeholder="Search activity id, name or trade…" value="' + esc(aq) + '" />' +
+        '<div class="boq-tagacts">' + (list.length ? list.map(function (x) {
+          var a = x.a, isMine = a.class_code === cur;
+          var taken = a.class_code && !isMine;
+          var pre = isMine || (pickedActs[a.activity_id] != null ? pickedActs[a.activity_id]
+                    : (!!x.m && x.m.score >= TAG_FLOOR && !taken));
+          return '<label class="boq-tagact">' +
+            '<input type="checkbox" data-a="' + esc(a.activity_id) + '"' + (pre ? ' checked' : '') +
+              (isMine ? ' disabled' : '') + (taken && !overwrite ? ' disabled' : '') + ' />' +
+            '<span class="boq-tagact-id">' + esc(a.activity_id) + '</span>' +
+            '<span class="boq-tagact-n">' + esc(a.activity_name || '') +
+              (a.work_type ? ' <span class="cc-mini">· ' + esc(a.work_type) + '</span>' : '') + '</span>' +
+            '<span class="boq-tagact-w">' +
+              (isMine ? '<span class="boq-why">tagged</span>'
+               : taken ? '<span class="boq-taken">has ' + esc(a.class_code) + '</span>'
+               : x.m ? '<span class="boq-why">' + esc(x.m.why) + ' ' + (x.m.score * 100).toFixed(0) + '%</span>' : '') +
+            '</span></label>';
+        }).join('') : '<p class="cc-mut" style="padding:16px;text-align:center;">No name resembles this. ' +
+            'Search to pick by hand.</p>') +
+        '</div></div></div>';
+
+      var n = Object.keys(pickedActs).filter(function (id) {
+        if (!pickedActs[id]) return false;
+        var a = (ACTS || []).find(function (x) { return x.activity_id === id; });
+        return a && a.class_code !== cur;
+      }).length;
+
+      foot.innerHTML =
+        '<label style="display:flex;align-items:center;gap:6px;font-size:12.5px;">' +
+        '<input type="checkbox" id="tg-ow"' + (overwrite ? ' checked' : '') + ' style="width:15px;height:15px;accent-color:var(--pd-red);" />' +
+        '<span>Allow re-tagging</span></label>' +
+        '<span style="flex:1;"></span><button class="pd-btn" id="tg-c">Close</button> ' +
+        '<button class="pd-btn pd-btn-primary" id="tg-go"' + (n ? '' : ' disabled') + '>Tag ' + n + ' activit' + (n === 1 ? 'y' : 'ies') + '</button>';
+
+      // Seed pickedActs from what is on screen, so the footer count matches the boxes.
+      body.querySelectorAll('[data-a]').forEach(function (cb) {
+        if (cb.disabled) return;
+        if (pickedActs[cb.dataset.a] == null) pickedActs[cb.dataset.a] = cb.checked;
+        cb.onchange = function () { pickedActs[cb.dataset.a] = cb.checked; paintFoot(); };
+      });
+      body.querySelectorAll('[data-code]').forEach(function (b) {
+        b.onclick = function () { cur = b.dataset.code; pickedActs = {}; aq = ''; paint(); };
+      });
+      body.querySelector('#tg-modeb').onclick = function () { mode = 'bulk'; paint(); };
+      var qi = body.querySelector('#tg-q'), t = null;
+      qi.addEventListener('input', function () { clearTimeout(t); t = setTimeout(function () { aq = qi.value; paint(); }, 180); });
+      wireFoot();
+      paintFoot();
+    }
+
+    function selectedIds() {
+      return Object.keys(pickedActs).filter(function (id) {
+        if (!pickedActs[id]) return false;
+        var a = (ACTS || []).find(function (x) { return x.activity_id === id; });
+        return a && a.class_code !== cur;
+      });
+    }
+    function paintFoot() {
+      var n = selectedIds().length, go = foot.querySelector('#tg-go');
+      if (!go) return;
+      go.disabled = !n;
+      go.textContent = 'Tag ' + n + ' activit' + (n === 1 ? 'y' : 'ies');
+    }
+    function wireFoot() {
+      foot.querySelector('#tg-c').onclick = m.close;
+      var ow = foot.querySelector('#tg-ow');
+      if (ow) ow.onchange = function () { overwrite = ow.checked; paint(); };
+      var go = foot.querySelector('#tg-go');
+      if (go) go.onclick = async function () {
+        var ids = selectedIds();
+        if (!ids.length) return;
+        go.disabled = true; go.textContent = 'Tagging…';
+        try {
+          var wrote = await tagRpc(cur, ids, overwrite);
+          await refreshActs();
+          pickedActs = {};
+          reportTagged(wrote, ids.length, []);
+          paint(); render();
+        } catch (e) {
+          go.disabled = false; paintFoot();
+          UI.toast((e.message || String(e)) + manualHint(e).replace(/<\/?code>/g, ''), 'error');
+        }
+      };
+    }
+
+    function paint() { if (mode === 'bulk') paintBulk(); else paintOne(); }
+    paint();
+  }
+
+  /* ⚠️ CHUNKED AT 200 IDs. A `text[]` parameter travels in the POST body so it is not
+     under the `in.()` URL cap, but a project can hold 16k activities and one array of
+     that size is a statement timeout waiting to happen (the 8s ceiling measured in
+     2026-09-02-wbs-link-batched.sql). The counts are summed across the calls. */
+  async function tagRpc(code, ids, overwrite) {
+    var wrote = 0;
+    for (var i = 0; i < ids.length; i += 200) {
+      var res = await sb().rpc('boq_tag_activities', {
+        p_project_id: pid, p_class_code: code,
+        p_activity_ids: ids.slice(i, i + 200), p_overwrite: !!overwrite
+      });
+      if (res.error) throw res.error;
+      wrote += Number(res.data) || 0;
+    }
+    return wrote;
+  }
+  /* ⚠️ THE SHORTFALL IS REPORTED, NEVER SWALLOWED. Fewer rows written than asked for has
+     exactly two causes and the planner can act on both: RLS refused the rows (they did not
+     import this schedule), or the activity id no longer exists (the schedule was
+     re-imported since this screen was opened). Saying "done" would hide both. */
+  function reportTagged(wrote, wanted, failed) {
+    if (failed && failed.length) {
+      UI.toast('Some codes failed — ' + failed.join(' | '), 'error');
+      return;
+    }
+    if (!wanted) { UI.toast('Nothing to tag.', 'warn'); return; }
+    if (wrote >= wanted) { UI.toast('Tagged ' + wrote + ' activit' + (wrote === 1 ? 'y' : 'ies') + '.', 'success'); return; }
+    UI.toast('Only ' + wrote + ' of ' + wanted + ' tagged — the rest were refused, usually because somebody else ' +
+      'imported this schedule. Nothing was skipped silently.', 'error');
+  }
+  async function refreshActs() { ACTS = null; await ensureActs(); }
 
   // ==========================================================================
   // TAB 2 — Class-code mapping (B1b)
@@ -1360,6 +2356,11 @@ window.BOQ = (function () {
         sheetList().map(function (s) { return '<option' + (filt.sheet === s ? ' selected' : '') + '>' + esc(s) + '</option>'; }).join('') + '</select>' +
       '<button class="pd-btn" id="boq-c-suggest">Propose codes</button>' +
       (canWrite ? '<button class="pd-btn" id="boq-c-acceptall">Accept all proposals…</button>' : '') +
+      /* ⚠️ THE OTHER DIRECTION, and it belongs on this tab. Mapping answers "which code
+         is this line?"; tagging answers "which activities carry that code?" — and without the
+         second the allocator has no candidates and proposes nothing, which on a freshly
+         authored BOQ is every line. */
+      (canWrite ? '<button class="pd-btn" id="boq-c-tag" title="Give schedule activities these class codes">Tag schedule activities…</button>' : '') +
       '</div>';
 
     // Worst-confidence-first: the lines needing a human are at the top.
@@ -1409,6 +2410,7 @@ window.BOQ = (function () {
     var sg = host.querySelector('#boq-c-suggest');
     if (sg) sg.onclick = async function () { sg.disabled = true; await ensureSugg(); await ensureCodes(); render(); };
     var aa = host.querySelector('#boq-c-acceptall'); if (aa) aa.onclick = acceptAllProposals;
+    var tg = host.querySelector('#boq-c-tag'); if (tg) tg.onclick = openTagActivities;
     host.querySelectorAll('[data-pick]').forEach(function (b) { b.onclick = function () { pickCode(b.dataset.pick); }; });
     host.querySelectorAll('[data-accept]').forEach(function (b) {
       b.onclick = function () {
@@ -1611,6 +2613,7 @@ window.BOQ = (function () {
     h += '<div class="boq-filters">' +
       '<input class="pd-input" id="boq-a-q" placeholder="Search lines…" value="' + esc(filt.q) + '" />' +
       (canWrite ? '<button class="pd-btn" id="boq-a-auto">Propose splits for all unallocated…</button>' : '') +
+      (canWrite ? '<button class="pd-btn" id="boq-a-tag" title="Give schedule activities these class codes">Tag schedule activities…</button>' : '') +
       '</div>';
 
     h += '<div class="pd-card cc-tablecard"><table class="cc-table boq-table"><thead><tr>' +
@@ -1646,6 +2649,7 @@ window.BOQ = (function () {
     if (q) q.addEventListener('input', function () { clearTimeout(t); t = setTimeout(function () { filt.q = q.value; render(); }, 200); });
     host.querySelectorAll('[data-split]').forEach(function (b) { b.onclick = function () { openSplit(b.dataset.split); }; });
     var au = host.querySelector('#boq-a-auto'); if (au) au.onclick = bulkPropose;
+    var tg2 = host.querySelector('#boq-a-tag'); if (tg2) tg2.onclick = openTagActivities;
   }
 
   function openSplit(itemId) {
@@ -2260,7 +3264,7 @@ window.BOQ = (function () {
     await ensureSugg();
     await load();
   }
-  function reset() { loaded = false; REVS = []; ITEMS = []; CMAP = {}; ALLOC = []; PERIODS = []; PROG = {}; REVID = null; CODES = null; ACTS = null; SCHED = null; schedErr = null; PKGS = []; }
+  function reset() { loaded = false; REVS = []; ITEMS = []; CMAP = {}; ALLOC = []; PERIODS = []; PROG = {}; REVID = null; CODES = null; CODETREE = null; ACTS = null; SCHED = null; schedErr = null; PKGS = []; }
 
   return {
     init: init, show: show, reset: reset, render: render,

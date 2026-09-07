@@ -222,7 +222,8 @@ window.ContractsClaims = (function () {
     if (view === 'contract' && window.CCPackages) {
       document.getElementById('cc-filters').style.display = 'none';
       if (document.getElementById('cc-filttoggle')) document.getElementById('cc-filttoggle').style.display = 'none';
-      CCPackages.show(pid, rows.filter(function (r) { return r.record_type === 'Contract'; }), openSub, openNew);
+      CCPackages.show(pid, rows.filter(function (r) { return r.record_type === 'Contract'; }), openSub, openNew,
+        function (id) { openForm(rows.find(function (r) { return String(r.id) === String(id); })); });
       return;
     }
     // The Claim/CO type filter only applies to the claims tab.
@@ -1043,7 +1044,20 @@ window.ContractsClaims = (function () {
       get: function () { return { v: view }; },
       apply: function (s) { switchTab(s.v); }
     });
-    document.getElementById('cc-add').onclick = openNew;
+    /* ⚠️ `openNew`, NOT `openNew` AS THE HANDLER — the difference is the whole bug.
+       Bound directly, the browser passes the PointerEvent as `type`, and CCWizard.open does
+       `st.type = type || 'Contract'`. A PointerEvent is truthy, so the wizard opened with its
+       record type set to a DOM event: no card was highlighted, and `liveSteps()` computed the
+       rail from a type that matches nothing — so the BOQ step was missing from the step count
+       until the planner happened to click a card. It recovered on that click, which is why it
+       survived; it was never right. */
+    /* Pre-selects the type THIS TAB shows, so + Add on the EOT register does not open on
+       Contract. The Claims tab covers two, and takes its own label's first — Change Order is
+       one click away in the same step. ⚠️ Never pass a falsy type to skip the choice:
+       CCWizard reads `type || 'Contract'`, so "no preference" silently means Contract. */
+    document.getElementById('cc-add').onclick = function () {
+      openNew(view === 'eot' ? 'EOT' : view === 'claims' ? 'Claim' : 'Contract');
+    };
     document.getElementById('cc-export').onclick = exportExcel;
     document.getElementById('cc-print').onclick = function () { window.print(); };
     document.getElementById('cc-clear').onclick = clearAll;

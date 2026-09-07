@@ -84,6 +84,59 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-07 — Contracts & Claims: Contract tab reordered, procurement-style tables, and a manual BOQ
+
+**Run `migrations/2026-09-07-boq-manual.sql`.** Owner's three items on the Contracts & Claims module,
+plus a mid-build ask to shorten the on-screen hint text. Full detail, the ⚠️ decisions and everything
+verified: [`modules/contracts-claims/CLAUDE.md`](modules/contracts-claims/CLAUDE.md). The parts that
+reach beyond the module:
+
+- ⚠️ **A `security definer` RPC writes `project_schedule.class_code`, and this is the shape it has to
+  be.** `project_schedule_upd` is `is_writer() and can_access_project(project_id) and (created_by =
+  auth.uid() or is_admin())`, so a planner who did not import the schedule cannot update its rows —
+  and **PostgREST answers an RLS-filtered UPDATE with 200 and zero rows.** A plain UPDATE would have
+  toasted "Tagged 40 activities" over a table that changed nothing: the same silent success
+  `2026-09-02-wbs-link-batched.sql` documents at length, where 16,393 of 16,485 activities kept a NULL
+  while the screen looked perfect. `boq_tag_activities` therefore checks `is_writer()` /
+  `can_access_project()` explicitly, **writes one column and nothing else**, and **returns the row
+  count** so the caller can report a shortfall instead of inventing a success. Verified against a stub
+  that under-reports: it surfaces as an error, not a success toast.
+- ⚠️ **`boq_items` gains a lifecycle rather than losing its invariant.** `2026-08-24-boq.sql` makes
+  that table append-and-supersede on purpose — it is the client's document, and every claim argument
+  turns on what was tendered. A manual builder needs editable lines, and the lazy reading is "so allow
+  edits". The distinction that resolves it is **whose document it is yet**: `status='draft'` is
+  editable, `status='issued'` is frozen **by a trigger** rather than by every future UI remembering
+  to. Both new columns default to today's behaviour, so no existing row changes meaning when the
+  migration runs.
+- ⚠️ **The importer now creates its revision as a draft and issues it at the end** — the parent_id
+  second pass UPDATEs rows the trigger would refuse, and a half-finished import is now visibly a draft
+  instead of an `is_current` revision carrying a partial contract sum.
+- ⚠️ **PMI proposal revisions are exempt from the lock**, or `pmi.js`'s `removeLine()` breaks. The test
+  reads `pmi_id` through `to_jsonb` because `2026-08-25-pmi.sql` may not be applied on a given
+  deployment, and a direct reference to a missing column would make the whole migration un-runnable.
+- **The Procurement Dashboard's `.data-table` idiom is ported, not copied.** ⚠️ `wpm`'s stylesheet
+  hard-codes `#EE3124` / `#f0f0f0` / `#fff` and re-states each under `body.dark-mode`; taking the
+  literals would have given this module a table correct in light mode and unreadable in dark. Every
+  value is a `--pd-*` token, so dark mode follows for free.
+
+**Four real defects found by rendering rather than reading**, each of which looked fine in the state a
+code review would have checked: `th()` called without its sort state (blank tab, and defaulting it
+would have made one table's headers reorder the other); `esc()` wrapping its own placeholder markup
+(the literal string `<span class="cc-mut">—</span>` on screen); blanks sorting **first** on descending
+while ascending looked perfect; and — the one that would have cost data — a `type="number"` cell
+reading back `""` for `1,000`, **silently clearing a quantity in a BOQ**.
+
+⚠️ **Not verified signed in, and the migration has not been run.** Until it does, `status` reads absent
+→ every revision behaves as issued → the manual builder is simply not offered and the module works
+exactly as before.
+
+⚠️ **Five pre-existing undefined pill classes** surfaced by the class audit and deliberately left
+(out of scope): `boq-clm`, `ec-basis`, `ec-in`, `ec-rm`, `ec-tot`.
+
+Assets: contracts `module.css` / `module.js` / `boq.js` / `packages.js` → `?v=20260907a`;
+`MODULE_V` → `20260907a` (the `modules-grid.js?v=` in `dashboard.html` + `modules.html`, and the
+fallback constant).
+
 ### 2026-09-04 — The WBS matcher's cold open: it now reads the project's saved setup
 
 Owner: *"fix the cold open gap."* The gap flagged in the entry below — the catalogue of places was
