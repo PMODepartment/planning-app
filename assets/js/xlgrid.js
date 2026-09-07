@@ -62,10 +62,51 @@ window.PDGrid = (function () {
     if (document.getElementById(CSS_ID)) return;
     var s = document.createElement('style');
     s.id = CSS_ID;
+    /* ⚠️⚠️ THIS IS WPM review.html's GRID SKIN, PORTED — not a new table design. Owner,
+       2026-09-07: *"we can just follow the all work packages grid design than recreate a new
+       table UI design"*, and then *"still doesn't follow the review.html grid UI"* when only the
+       KEYS had been ported. The look is half the point: a spreadsheet reads as a lattice of tight
+       cells, and the module's card-table styling (roomy padding, a rounded bordered input inside
+       every cell) reads as a form. Same rules as the original, expressed against this app's
+       tokens rather than WPM's.
+       ⚠️ THE RANGE HIGHLIGHT IS A box-shadow OVERLAY, NOT A background — copied deliberately,
+       including the reason. review.html's own comment records the bug: as a background it lost a
+       specificity fight with the zebra stripe and the row-hover tint, so dragging a range showed
+       the highlight only on the last cell touched. An inset shadow paints over whatever the cell's
+       own background happens to be. */
     s.textContent =
-      '.pdg-sel{background:rgba(238,49,36,.16)!important;border-color:rgba(238,49,36,.55)!important}' +
-      '.pdg-anchor{outline:2px solid var(--pd-red,#EE3124);outline-offset:-2px}' +
-      '.pdg-flash{transition:background .35s ease}' +
+      /* the lattice */
+      '.pdg-grid{border-collapse:separate;border-spacing:0;width:100%}' +
+      '.pdg-grid td,.pdg-grid th{border-right:1px solid var(--pd-line,#333);' +
+        'border-bottom:1px solid var(--pd-line,#333)}' +
+      '.pdg-grid td{padding:3px 5px;cursor:cell;vertical-align:middle}' +
+      /* the header band: sticky, small, uppercase, sealed with a firmer bottom border */
+      '.pdg-grid thead th{position:sticky;top:0;z-index:6;background:var(--pd-card,#222);' +
+        'font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;' +
+        'padding:5px 6px;height:32px;vertical-align:middle;white-space:nowrap;' +
+        'border-bottom:2px solid var(--pd-line,#333)}' +
+      /* zebra, strengthened: this table is wide and dense, a row must read while scrolling */
+      '.pdg-grid tbody tr:nth-child(even) td{background:rgba(128,128,128,.055)}' +
+      '.pdg-grid tbody tr:hover td{background:rgba(238,49,36,.07)}' +
+      /* numerics line up only with tabular figures */
+      '.pdg-grid .pdg-num,.pdg-grid td.cc-r{text-align:right;font-variant-numeric:tabular-nums}' +
+      '.pdg-grid .boq-cell{font-variant-numeric:tabular-nums}' +
+      /* ⚠️ The cell IS the input here, so the input must stop looking like a control: no radius,
+         no resting border of its own, filling the td so the lattice comes from the table. */
+      '.pdg-grid .boq-cell,.pdg-grid .boq-cellsel{border-radius:0;border-color:transparent;' +
+        'background:transparent;width:100%;padding:2px 3px}' +
+      '.pdg-grid .boq-cell:hover,.pdg-grid .boq-cellsel:hover{background:rgba(128,128,128,.14)}' +
+      '.pdg-grid .boq-cell:focus{background:var(--pd-card,#222);outline:2px solid var(--pd-red,#EE3124);' +
+        'outline-offset:-2px;border-color:transparent}' +
+      /* group / heading rows: red top rule and an uppercase label, as in the original */
+      '.pdg-grid tbody tr.boq-head td{background:rgba(238,49,36,.09)!important;' +
+        'border-top:2px solid var(--pd-red,#EE3124);font-weight:700}' +
+      /* selection */
+      '.pdg-sel{box-shadow:inset 0 0 0 9999px rgba(238,49,36,.22);position:relative;z-index:2}' +
+      '.pdg-anchor{outline:2px solid var(--pd-red,#EE3124);outline-offset:-2px;position:relative;z-index:3}' +
+      /* the shortcut legend */
+      '.pdg-grid .cc-mini{font-size:9.5px;opacity:.7;margin-top:1px}' +
+      '.pdg-grid .cc-desc{max-width:340px}' +
       '.pdg-hint{font-size:11px;color:var(--pd-muted,#8a8a8a)}' +
       '.pdg-hint kbd{font:inherit;font-weight:700;padding:0 3px;border:1px solid var(--pd-line,#333);' +
       'border-radius:3px;background:rgba(128,128,128,.12)}';

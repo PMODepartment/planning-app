@@ -919,7 +919,12 @@ window.BOQ = (function () {
        on OPW101's draft: **701 priceable rows x 5 numeric fields = 3,505 invisible inputs**,
        each `background: rgba(0,0,0,0)` with `border: 1px solid rgba(0,0,0,0)` and no
        placeholder. Nothing on screen said any of it could be typed into. */
-    h += '<div class="pd-card cc-tablecard"><table class="cc-table boq-table' +
+    /* ⚠️ `pdg-grid` carries WPM review.html's grid SKIN (assets/js/xlgrid.js injects it):
+       tight cells, a sticky uppercase header band, zebra stripes, tabular numerals and a
+       cell-shaped cursor. Applied on an ISSUED revision too, not just a draft — the owner
+       asked to follow that grid's design, and a bill should not change shape depending on
+       whether you may type in it. `boq-fillable` still gates only the EDITABLE affordances. */
+    h += '<div class="pd-card cc-tablecard"><table class="cc-table boq-table pdg-grid' +
       (draft ? ' boq-fillable' : '') + '"><thead><tr>' +
       '<th class="boq-no">Item</th><th class="cc-desc">Description</th><th>Unit</th>' +
       '<th class="cc-r">Qty</th>' +
