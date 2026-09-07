@@ -88,7 +88,14 @@ window.PDGrid = (function () {
       '.pdg-grid td,.pdg-grid td input,.pdg-grid td select,.pdg-grid td .cc-desc-txt,' +
         '.pdg-grid td .boq-code,.pdg-grid td .boq-no,.pdg-grid td .boq-kind' +
         '{font-size:12px;font-weight:400;line-height:1.35}' +
-      '.pdg-grid td .boq-code,.pdg-grid td .boq-no{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}' +
+      /* ⚠️ `var(--pd-mono, …)` WITH THE FULL STACK AS THE FALLBACK. This sheet is injected into
+         <head> at runtime, so it lands AFTER a module's own stylesheet and wins on equal
+         specificity — meaning a divergent stack written here silently overrides the module's
+         token and undoes the fix. The fallback matters too: a module adopting PDGrid may not
+         define --pd-mono, and it must still get a stack containing a Windows face rather than
+         falling through to the generic default (Courier New). */
+      '.pdg-grid td .boq-code,.pdg-grid td .boq-no{font-family:var(--pd-mono,ui-monospace,' +
+        'SFMono-Regular,"SF Mono",Consolas,"Liberation Mono",Menlo,monospace)}' +
       /* ⚠️ The sheet/row sub-line is REMOVED FROM THE GRID, not merely shrunk. It was the second
          line of every description cell, which is what made the rows tall and uneven, and a second
          size the moment it differed from the first. review.html has no such line. The text moves

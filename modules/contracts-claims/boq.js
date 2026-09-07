@@ -987,6 +987,27 @@ window.BOQ = (function () {
        is qty × the rate we typed. Showing "Material" over an input the planner fills with a
        RATE is how a rate gets entered as an amount. */
     var draft = isDraft() && canWrite;
+    /* ⚠️⚠️ ITEM AND CLASS CODE ARE THE SAME COLUMN ON AN AUTHORED BILL. Owner, 2026-09-07:
+       *"there is an item column which is just the same with the class code column"*. Correct, and
+       only there: `addAuthoredLines()` writes the class code AS the item number, because a line
+       written FROM a code has no other identity. On an IMPORTED bill they are different facts —
+       `item_no` is the client's own numbering (1.1, A-3, 2.04) and the class code is the Finance
+       code somebody mapped onto it — so both columns carry information and both must stay.
+       ⚠️ Decided from the DATA, not from `origin`, because a draft can hold both authored and
+       imported lines once somebody adds to an imported revision. Only when EVERY mapped line's
+       code equals its own item number is the column redundant.
+       ⚠️ ITEM is the one kept. It is the leftmost column, it carries the indent and the collapse
+       caret, and dropping it would take the tree controls with it. */
+    var codeIsItem = (function () {
+      var n = 0;
+      for (var i = 0; i < ITEMS.length; i++) {
+        var r = ITEMS[i], cm = CMAP[r.id];
+        if (!cm) continue;
+        n++;
+        if (String(cm.class_code) !== String(r.item_no || '')) return false;
+      }
+      return n > 0;
+    })();
     /* ⚠️ `boq-fillable` ONLY ON A DRAFT. The cells are transparent inputs with transparent
        borders — invisible until hovered — which is right for an ISSUED bill, where they are
        read far more often than touched and the trigger refuses writes anyway. On a draft it is
@@ -1001,18 +1022,21 @@ window.BOQ = (function () {
        whether you may type in it. `boq-fillable` still gates only the EDITABLE affordances. */
     h += '<div class="pd-card cc-tablecard"><table class="cc-table boq-table pdg-grid' +
       (draft ? ' boq-fillable' : '') + '"><thead><tr>' +
-      '<th class="boq-no">Item</th><th class="cc-desc">Description</th><th>Unit</th>' +
+      (codeIsItem ? '<th class="boq-no">Class code</th>' : '<th class="boq-no">Item</th>') +
+      '<th class="cc-desc">Description</th><th>Unit</th>' +
       '<th class="cc-r">Qty</th>' +
       (draft ? '<th class="cc-r">Mat. rate</th><th class="cc-r">Lab. rate</th>'
              : '<th class="cc-r">Material</th><th class="cc-r">Labour</th>') +
-      '<th class="cc-r">Amount</th><th>Kind</th><th>Class code</th><th>Package</th><th class="cc-r">Alloc.</th>' +
+      '<th class="cc-r">Amount</th><th>Kind</th>' +
+      (codeIsItem ? '' : '<th>Class code</th>') +
+      '<th>Package</th><th class="cc-r">Alloc.</th>' +
       /* ⚠️ Selection lives in the EXISTING actions column rather than a new leading one, so the
          column count — and every colspan that depends on it — is untouched. */
       (draft ? '<th class="cc-actcol"><input type="checkbox" id="boq-selall" title="Select every line the filters currently show" /></th>' : '') +
       '</tr></thead><tbody>';
 
     var list = filtered();
-    var span = 11 + (draft ? 1 : 0);
+    var span = 11 + (draft ? 1 : 0) - (codeIsItem ? 1 : 0);
     /* ⚠️ AN EMPTY DRAFT IS NOT A FAILED SEARCH. This said "No lines match these filters" on a
        BOQ that had just been created and had no lines to filter — technically true and useless,
        and it was the first thing a planner saw after choosing to build one by hand. The two
@@ -1106,7 +1130,8 @@ window.BOQ = (function () {
               return '<option value="' + k + '"' + (r.line_kind === k ? ' selected' : '') + '>' + esc(kindLabel(k)) + '</option>';
             }).join('') + '</select>'
           : '<span class="boq-kind k-' + esc(r.line_kind) + '">' + esc(kindLabel(r.line_kind)) + '</span>') + '</td>' +
-        '<td>' + (cm ? '<span class="boq-code" title="' + esc(cm.source) + '">' + esc(cm.class_code) + '</span>' : (mappable(r) ? '<span class="cc-mut">—</span>' : '')) + '</td>' +
+        (codeIsItem ? '' :
+          '<td>' + (cm ? '<span class="boq-code" title="' + esc(cm.source) + '">' + esc(cm.class_code) + '</span>' : (mappable(r) ? '<span class="cc-mut">—</span>' : '')) + '</td>') +
         '<td>' + pkgCell(r) + '</td>' +
         '<td class="cc-r">' + (qtyLine(r) ? allocChip(r, al) : '') + '</td>' +
         (draft ? '<td class="cc-actcol"><input type="checkbox" class="boq-selbox" data-sel="' + esc(r.id) + '"' +
