@@ -84,6 +84,24 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-07 (b) — Contracts & Claims: the BOQ had no entry point
+
+Owner: *"Where can i access the BOQ from here?"* Detail in `modules/contracts-claims/CLAUDE.md`.
+
+- ⚠️ **`#pk-boq` was wired but never rendered** — a correct `onSub('boq')` handler bound to an id no
+  markup carried. The tab strip has only `contract`/`claims`/`eot`, and a `v:'boq'` hash cannot work
+  because `switchTab()` resets `sub`. **The only route to the BOQ was `+ Add` → the wizard → its BOQ
+  step**, so the manual builder shipped the same morning was effectively unreachable.
+- **Fixed** by rendering the button in the Contract records card head — not gated on `canWrite` (a
+  viewer may read the client's BOQ; `boq.js` withholds the authoring controls itself), and emitted
+  before the empty-state return so it works on a project with no contract row yet.
+- ⚠️ **`modules/contracts-claims/packages.js` is CRLF**, unlike most of this repo. An LF anchor
+  counts 0 and reads as "the code moved"; `grep -c $'\r'` agreed and was wrong. Check a python
+  `repr()`, and translate both anchor and replacement to the file's own ending.
+- Owner has run `migrations/2026-09-07-boq-manual.sql`. `packages.js?v=20260907b`,
+  `MODULE_V` → `20260907c`.
+
+
 ### 2026-09-07 — A change order keeps the main-contract activity as ONE line item
 
 Owner: *"i want to retain the single line-item for the main contract activity."* Inserting a change

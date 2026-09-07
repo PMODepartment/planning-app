@@ -1,5 +1,49 @@
 # Module: contracts-claims
 
+## The BOQ had no way in — a handler bound to an element nobody rendered (2026-09-07b) — fmlozano
+
+Owner: *"Where can i access the BOQ from here?"* — asked from the Contract tab, and the honest
+answer was **you cannot**.
+
+### What was actually wrong
+`packages.js` has been binding `#pk-boq` to `onSub('boq')` for as long as the BOQ screen has
+existed — a correct handler, on an id that **no markup anywhere ever carried**. Three routes
+checked, all closed:
+
+| Route | Result |
+|---|---|
+| The `.cc-tab` strip | hard-coded to `contract` / `claims` / `eot` in `index.html` — no BOQ tab |
+| `#pk-boq` in the Contract tab | wired at `packages.js:352`, **never rendered** |
+| URL hash `cc_view={"v":"boq"}` | `switchTab()` sets `sub = null`, so it lands back on the register |
+
+⚠️ So the only way to reach the bill of quantities was **`+ Add` → the contract wizard → its BOQ
+step**. A planner who wanted to *read* the BOQ had to begin creating a contract to get to it, and
+on a project whose contract was already recorded there was **no route at all**. This is why the
+manual builder shipped that morning looked absent: it was reachable only through the one door that
+assumes you are importing.
+
+### The fix
+Render the button the handler was always waiting for, in the **Contract records** card head.
+
+- **Not gated on `canWrite`.** The BOQ is the client's contract document and a viewer may read it;
+  `boq.js` already withholds the import and authoring controls on its own, so gating the way *in*
+  would have hidden the document rather than protected it.
+- **Built before the `!CONTRACTS.length` early return**, so it is reachable on a project with no
+  contract row yet — which is exactly when a planner is building a BOQ by hand.
+- It sits with Contract records, not Contract lots: a BOQ is raised against the contract.
+
+### ⚠️ `packages.js` is CRLF while most of this repo is LF
+An anchor written with `\n` counted **0 matches** and read as "the code moved". It had not — every
+one of the file's 531 line endings is CRLF. `file` reported it correctly and a `grep -c $'\r'`
+check did **not** (it returned 0). Trust a python `repr()` of the bytes over either. Translate both
+the anchor and the replacement to the file's own ending, or a `\n` replacement silently leaves
+mixed endings behind.
+
+- Owner confirmed `migrations/2026-09-07-boq-manual.sql` is **run**.
+- `packages.js?v=20260907b`; `MODULE_V` → `20260907c`.
+
+---
+
 ## Contract tab reordered, procurement-style tables, and a manual BOQ built from the class-code library (2026-09-07) — fmlozano
 
 **Run `migrations/2026-09-07-boq-manual.sql`.** Owner, three items: *"Let's just make the page cleaner.

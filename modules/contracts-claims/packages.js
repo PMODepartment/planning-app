@@ -176,7 +176,25 @@ window.CCPackages = (function () {
       '<h3>Contract records</h3>' +
       '<span class="cc-dtcount">' + CONTRACTS.length + (CONTRACTS.length === 1 ? ' record' : ' records') +
         (total ? ' · ' + esc(moneyShort(total)) : '') + '</span>' +
-      '<span class="cc-dtspacer"></span></div>';
+      '<span class="cc-dtspacer"></span>' +
+      /* ⚠️⚠️ THE BOQ HAD NO ENTRY POINT AT ALL UNTIL NOW, which is why this button is
+         here rather than anywhere more considered. `wire()` below has been binding
+         `#pk-boq` to `onSub('boq')` for as long as the BOQ screen has existed, but no
+         markup ever carried that id — a correct handler on an element that is never
+         rendered. The only way in was `+ Add` → the contract wizard → its BOQ step, so a
+         planner who wanted to READ the bill had to start creating a contract to get to
+         it, and a project whose contract was already recorded had no route at all.
+         ⚠️ A URL was no escape either: `switchTab()` sets `sub = null`, so `v:'boq'` in
+         the hash lands back on the register.
+         ⚠️ NOT gated on `canWrite`. The BOQ is the client's contract document and a
+         viewer may read it — boq.js already withholds the import and authoring controls
+         on its own, so gating the way IN would hide the document, not protect it.
+         It sits in the Contract records head (not Contract lots) because a BOQ is raised
+         against the contract, and it is built BEFORE the `!CONTRACTS.length` branch
+         below returns — so it is reachable on a project that has no contract row yet,
+         which is exactly when a planner is building one by hand. */
+      '<button class="pd-btn" id="pk-boq" title="Bill of quantities — the contract document the claims, the billing and the cost roll-up are all measured against">BOQ</button>' +
+      '</div>';
 
     if (!CONTRACTS.length) {
       /* ⚠️ The way in is HERE, at the point of need, rather than only in the topbar —
