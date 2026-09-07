@@ -531,6 +531,10 @@ window.BIM = (function () {
         (canWrite ? '<div class="bim-fp-info-actions">' +
           '<button class="pd-btn' + (zonesEditMode ? ' pd-btn-primary' : '') + '" id="bim-fp-editzones">' + (zonesEditMode ? 'Done editing zones' : 'Edit Zones') + '</button>' +
           '<button class="pd-btn" id="bim-fp-replace">Replace Plan</button>' +
+          // Deletes just THIS revision (and its own zones) — never the
+          // Tower/Floor/Location, which comes from the Project Schedule App
+          // and is never touched here. See openDeleteRevisionConfirm().
+          '<button class="pd-btn pd-btn-danger" id="bim-fp-delrev">Delete Revision</button>' +
         '</div>' : '') +
       '</div>';
 
@@ -564,6 +568,7 @@ window.BIM = (function () {
       render();
     };
     if ($('bim-fp-replace')) $('bim-fp-replace').onclick = function () { openPlanForm({ tower: selTowerVal, floor: selFloorVal, lock: true }); };
+    if ($('bim-fp-delrev')) $('bim-fp-delrev').onclick = function () { openDeleteRevisionConfirm(plan.id); };
     if ($('bim-vw-out')) $('bim-vw-out').onclick = function () { zoom = Math.max(MIN_ZOOM, zoom * 0.8); applyTransform(); };
     if ($('bim-vw-in')) $('bim-vw-in').onclick = function () { zoom = Math.min(MAX_ZOOM, zoom * 1.25); applyTransform(); };
     if ($('bim-vw-fit')) $('bim-vw-fit').onclick = function () { resetView(); applyTransform(); };
@@ -933,7 +938,14 @@ window.BIM = (function () {
           return '<div class="bim-revrow' + (isCur ? ' is-current' : '') + '">' +
             '<div><strong>' + esc(p.revision || 'Rev. 01') + '</strong>' + (isCur ? ' <span class="bim-revbadge">CURRENT</span>' : '') +
               '<div class="pp-hint">Uploaded ' + esc(fmtDate(p.created_at)) + (p.created_by === uid ? ' by you' : '') + '</div></div>' +
-            '<button type="button" class="pd-btn" data-viewrev="' + esc(p.id) + '">View</button>' +
+            '<div class="bim-revrow-acts">' +
+              '<button type="button" class="pd-btn" data-viewrev="' + esc(p.id) + '">View</button>' +
+              // Delete a SPECIFIC revision from history — including a
+              // non-current one, or the current one, without first having to
+              // switch the main screen to it. Gated the same as every other
+              // write here (canWrite), never offered to a read-only viewer.
+              (canWrite ? '<button type="button" class="pd-linkbtn" data-delrev="' + esc(p.id) + '">Delete Revision</button>' : '') +
+            '</div>' +
           '</div>';
         }).join('') +
       '</div>' +
@@ -942,6 +954,94 @@ window.BIM = (function () {
     Array.prototype.forEach.call(m.el.querySelectorAll('[data-viewrev]'), function (b) {
       b.onclick = function () { openRevisionPreview(this.dataset.viewrev); };
     });
+    Array.prototype.forEach.call(m.el.querySelectorAll('[data-delrev]'), function (b) {
+      // Leaves History open behind the confirm dialog (Cancel returns to an
+      // still-accurate list); on an actual delete, onDeleted closes History
+      // too — reopening it afterward would show a stale row for the
+      // revision that no longer exists.
+      b.onclick = function () { openDeleteRevisionConfirm(this.dataset.delrev, function () { m.close(); }); };
+    });
+  }
+  // ----------------------------------------------- delete a revision -------
+  // Deletes exactly ONE Floor Plan REVISION — never the Tower, Floor, or the
+  // Schedule App's location values those come from (hasEstablishedLocations()/
+  // towerOptions()/floorOptions() are read-only against project_schedule and
+  // are never written to by anything in this file). Every child record a
+  // revision owns (floor_plan_zones, floor_plan_pins, floor_plan_registrations)
+  // carries `floor_plan_id … on delete cascade` (see
+  // migrations/2026-08-29-floor-plans.sql, 2026-09-03-floor-plan-revisions-
+  // zones.sql, 2026-08-29-floor-plan-registration.sql) — deleting the one
+  // floor_plans row is therefore enough to remove them too, correctly scoped
+  // to just this revision's own floor_plan_id, never a sibling revision's
+  // (each revision is its own row with its own id, so this can't reach zones
+  // that belong to Rev. 01 while deleting Rev. 02). Progress photos and
+  // presentations are untouched — nothing in either of those tables
+  // references floor_plans at all.
+  function openDeleteRevisionConfirm(planId, onDeleted) {
+    var plan = planById(planId); if (!plan) return;
+    var t = towerLevel(), f = floorLevel();
+    var tv = towerFloorValues(plan.location_values);
+    var towerVal = t ? tv[t.id] : null, floorVal = f ? tv[f.id] : null;
+    // Includes `plan` itself — oldest first, same order revisionsFor()
+    // always returns, so "the last remaining one" below means the same
+    // thing openPlanForm()'s own suggestedRevision()/currentPlanFor() do.
+    var siblingRevs = revisionsFor(towerVal, floorVal);
+    var isOnlyRevision = siblingRevs.length <= 1;
+    // "Current" by the real flag, or — for data written before the
+    // 2026-09-03 migration added is_current at all — by currentPlanFor()'s
+    // own documented legacy fallback (most-recently-uploaded). Either way
+    // this is the SAME test currentPlanFor() itself uses, so "was this the
+    // one on screen" can't disagree between here and the main render.
+    var wasCurrent = !!plan.is_current || (currentPlanFor(towerVal, floorVal) || {}).id === plan.id;
+    var consequence = isOnlyRevision
+      ? 'This is the only revision for this floor — after deleting it, the floor will show no floor plan uploaded, exactly as before any revision was ever uploaded.'
+      : (wasCurrent ? 'This is the current revision — the next most recent remaining revision will become current. Its own zones are unaffected and are not copied from anywhere.' : '');
+    var html =
+      '<div class="pd-modal-header"><h3>Delete Floor Plan Revision?</h3><button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-form">' +
+        '<p>You are about to delete <strong>' + esc(plan.revision || 'Rev. 01') + '</strong> and its associated zones. This action cannot be undone.</p>' +
+        (consequence ? '<p class="pp-hint">' + esc(consequence) + '</p>' : '') +
+      '</div>' +
+      '<div class="pd-modal-footer">' +
+        '<button class="pd-btn" data-close>Cancel</button>' +
+        '<button class="pd-btn pd-btn-danger" id="bim-revdel-yes">Delete Revision</button>' +
+      '</div>';
+    var m = openModal(html, 460);
+    $('bim-revdel-yes').onclick = async function () {
+      this.disabled = true;
+      var res = await sb().from(T_PLAN).delete().eq('id', plan.id);
+      if (res.error) { UI.toast('Could not delete the revision: ' + res.error.message, 'error'); this.disabled = false; return; }
+      // The row (and, via cascade, its zones/pins/registrations) is already
+      // gone at this point — the file itself is a separate, best-effort
+      // cleanup that must never make an already-successful delete read as
+      // failed.
+      if (plan.image_url) { try { await sb().storage.from(BUCKET).remove([plan.image_url]); } catch (e) {} }
+      // §5: promote the next-most-recent SURVIVING revision of this exact
+      // Tower+Floor — never a different Tower/Floor's rows, and never by
+      // copying zones (each remaining revision keeps only the zones it
+      // already had). If none remain, there is nothing to promote and the
+      // main screen's own "no floor plan uploaded" empty state already
+      // covers it (§6).
+      if (wasCurrent) {
+        var remaining = siblingRevs.filter(function (p) { return p.id !== plan.id; });
+        if (remaining.length) {
+          var promote = remaining[remaining.length - 1]; // revisionsFor(): oldest first, so this is the newest of what's left
+          var upd = await sb().from(T_PLAN).update({ is_current: true }).eq('id', promote.id);
+          // Tolerant of is_current not existing yet (pre-2026-09-03-floor-
+          // plan-revisions-zones.sql): currentPlanFor()'s own legacy
+          // fallback (most-recently-uploaded) still resolves the right
+          // revision without this write, so a failure here is silently
+          // fine rather than surfaced as an error on an already-successful
+          // delete.
+        }
+      }
+      // load() itself resets selectedZoneId/drawMode/etc. (see its own body
+      // above) — no extra cleanup needed here beyond awaiting it, below.
+      m.close();
+      if (typeof onDeleted === 'function') onDeleted();
+      UI.toast('Revision deleted', 'ok');
+      await load();
+    };
   }
   // Read-only — an older revision's own zones, frozen exactly as they were.
   // §16: editing an old revision is deliberately not supported; the current

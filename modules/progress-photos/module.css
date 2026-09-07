@@ -1677,6 +1677,7 @@
 }
 .bim-revrow:last-child { border-bottom: 0; }
 .bim-revrow.is-current strong { color: var(--pd-red); }
+.bim-revrow-acts { display: flex; align-items: center; gap: 14px; flex: 0 0 auto; }
 .bim-revbadge {
   display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .03em;
   color: #fff; background: var(--pd-red); border-radius: 4px; padding: 1px 6px; margin-left: 4px;
