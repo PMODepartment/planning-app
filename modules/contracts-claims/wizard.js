@@ -379,9 +379,43 @@ window.CCWizard = (function () {
        a wizard should give. `finish()` now opens it. */
     var scope = linkedPkgId() ? st.pkgLabel()
               : (willCreate() && primaryPkg() ? primaryPkg().code : '');
-    return (st.type === 'BOQ'
-        ? '<p class="ccw-hint"><b>Open importer</b> below takes you straight to the BOQ screen and opens the ' +
-          'file picker. Nothing has been written yet, and nothing will be until you accept the preview there.</p>'
+    /* ⚠️⚠️ A BOQ RUN NOW ASKS HOW, AND BUILD-BY-HAND IS THE DEFAULT. Owner, 2026-09-07: *"the
+       add BOQ also pops up a new type of window wherein it should go through the wizard as we have
+       agreed before. Let's make this global."* Before this the BOQ type could only end in the
+       importer, so "New BOQ" on the BOQ screen had to open a dialog of its own - a third
+       create-surface on one module, which is how they drift apart.
+       WARNING Manual is preselected because the owner ranked it the priority path and import the
+       convenience; the workbook is the faster route only on the day it exists. */
+    if (st.type === 'BOQ') {
+      var bmanual = st.boqMode !== 'import';
+      return '<p class="ccw-hint">A BOQ is stored as a <b>revision</b>, so a re-issued or remeasured ' +
+        'bill supersedes this one without destroying what was tendered.</p>' +
+        '<div class="ccw-choice">' +
+          '<label class="ccw-opt' + (bmanual ? ' on' : '') + '"><input type="radio" name="boqmode" value="manual"' +
+            (bmanual ? ' checked' : '') + ' /> <b>Build it by hand</b>' +
+            '<span class="ccw-optsub">From the class-code library. Each division becomes its own trade ' +
+            'section, and the lines carry their class codes from the start - which is what the schedule ' +
+            'matching and the cost roll-up read.</span></label>' +
+          '<label class="ccw-opt' + (bmanual ? '' : ' on') + '"><input type="radio" name="boqmode" value="import"' +
+            (bmanual ? '' : ' checked') + ' /> <b>Import the client&#39;s workbook</b>' +
+            '<span class="ccw-optsub">Faster when a file exists. The importer proposes a column map and you ' +
+            'accept or correct it - nothing is written until you do.</span></label>' +
+        '</div>' +
+        (bmanual
+          ? '<div class="ccw-grid2">' +
+              '<label>Revision label<input class="pd-input" id="ccw-brev" value="' + esc(st.boqRev || (D.nextBoqRev ? D.nextBoqRev() : '00')) + '" /></label>' +
+              '<label>Issued date<input class="pd-input" id="ccw-bdate" type="date" value="' + esc(st.boqDate || '') + '" /></label>' +
+              '<label>PO no. (optional)<input class="pd-input" id="ccw-bpo" value="' + esc(st.boqPo || '') + '" /></label>' +
+              '<label>Stated contract total (optional)<input class="pd-input" id="ccw-btotal" type="number" step="0.01" value="' + esc(st.boqTotal || '') + '" /></label>' +
+            '</div>' +
+            '<p class="ccw-hint">The label is prefilled and yours to change - <b>it is your label, not the ' +
+            'client&#39;s</b>. Give it the contract total if you have it and <b>issuing</b> will refuse a draft ' +
+            'whose lines do not add up to it.</p>'
+          : '<p class="ccw-hint"><b>Open importer</b> below takes you straight to the BOQ screen and opens ' +
+            'the file picker. Nothing is written until you accept the preview there.</p>');
+    }
+    return (false
+        ? ''
         : '<p class="ccw-hint"><b>This step is optional — most contracts are recorded before the BOQ arrives.</b> ' +
           'Press <b>Next</b> to skip it; nothing is lost, and the BOQ can be imported at any time from the ' +
           '<b>BOQ tab</b>.</p>') +
@@ -466,6 +500,19 @@ window.CCWizard = (function () {
   }
   function read(id) { var x = ov.querySelector('#' + id); return x ? (x.value || '').trim() : ''; }
   function wireStep(key) {
+    if (key === 'boq') {
+      /* WARNING The radios REPAINT rather than just setting state: choosing "build by hand"
+         reveals the four revision fields and choosing "import" hides them, so the step has to
+         re-render. capture() runs first (see paint), so anything already typed survives. */
+      ov.querySelectorAll('input[name="boqmode"]').forEach(function (r) {
+        r.onchange = function () { captureBoq(); st.boqMode = r.value; paint(); };
+      });
+      ['brev', 'bdate', 'bpo', 'btotal'].forEach(function (f) {
+        var x = ov.querySelector('#ccw-' + f);
+        if (x) x.oninput = function () { captureBoq(); };
+      });
+      return;
+    }
     if (key === 'type') {
       ov.querySelectorAll('[data-type]').forEach(function (b) {
         b.onclick = function () { st.type = b.dataset.type; paint(); };
@@ -504,7 +551,17 @@ window.CCWizard = (function () {
   }
   /* Capture whatever the current step holds before leaving it — a wizard that loses a
      field when you press Back is worse than no wizard. */
+  /* Read the BOQ step's fields into state. Split out because both capture() and the radio
+     handler need it - the radio must save what is typed BEFORE the repaint drops the inputs. */
+  function captureBoq() {
+    var r = ov.querySelector('#ccw-brev'); if (r) st.boqRev = r.value;
+    var d = ov.querySelector('#ccw-bdate'); if (d) st.boqDate = d.value;
+    var p = ov.querySelector('#ccw-bpo'); if (p) st.boqPo = p.value;
+    var t = ov.querySelector('#ccw-btotal'); if (t) st.boqTotal = t.value;
+  }
+
   function capture(key) {
+    if (key === 'boq') { captureBoq(); return; }
     if (key === 'package') {
       var sel = ov.querySelector('#ccw-pkg'); if (sel) st.pkgId = sel.value || '';
       ov.querySelectorAll('[data-pf]').forEach(function (x) {
@@ -540,6 +597,23 @@ window.CCWizard = (function () {
        modal too, and opening it under this overlay would leave the planner clicking a
        file picker they cannot reach. */
     if (st.type === 'BOQ') {
+      /* WARNING Manual WRITES (a draft revision); import HANDS OFF. Only the import path closes
+         first - the importer is a modal too, and opening it under this overlay would leave the
+         planner clicking a file picker they cannot reach. */
+      if (st.boqMode !== 'import') {
+        var brev = String(st.boqRev || '').trim();
+        if (!brev) { UI.toast('The revision needs a label - it is how this BOQ is named everywhere else.', 'error'); return; }
+        if (btn) { btn.disabled = true; btn.textContent = 'Creating...'; }
+        try {
+          await D.createBoqDraft({ rev: brev, date: st.boqDate, po: st.boqPo, total: st.boqTotal });
+          close();
+          UI.toast('Draft revision ' + brev + ' created. Add lines from the class-code library.', 'success');
+        } catch (err) {
+          if (btn) { btn.disabled = false; btn.textContent = 'Create draft'; }
+          UI.toast((err && err.message) || String(err), 'error');
+        }
+        return;
+      }
       close();
       if (D.openBoqImport) D.openBoqImport();
       else UI.toast('Open the BOQ tab and press Import BOQ.', 'info');
@@ -680,6 +754,7 @@ window.CCWizard = (function () {
          through in a browser". One blank row, primary on it — what the list has always
          assumed it starts with. */
       pkgList: [blankPkg()], pkgPrimary: 0,
+      boqMode: 'manual', boqRev: '', boqDate: '', boqPo: '', boqTotal: '',
       ref: '', desc: '', cp: '', amount: '', est: '', sub: '', d1: '', d2: '',
       pkgLabel: function () {
         var p = D.packages().filter(function (x) { return String(x.id) === String(st.pkgId); })[0];

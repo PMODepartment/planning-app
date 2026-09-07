@@ -82,6 +82,7 @@ window.BOQ = (function () {
      working right now, not a property of the bill, so it is never persisted. */
   var SEL = {};
   var _grid = null;            // the PDGrid instance bound to the current render
+  var openWizard = null;       // module.js's openNew(type) - see init()
   var loaded = false;
   /* The class-code chart folded into division › group › item for the builder's tree.
      Cached: regrouping 702 rows on every keystroke of the tree's search box is a cost that
@@ -807,8 +808,17 @@ window.BOQ = (function () {
     ['boq-import', 'boq-import2'].forEach(function (id) {
       var b = host.querySelector('#' + id); if (b) b.onclick = openImport;
     });
+    /* ⚠️⚠️ CREATION GOES THROUGH THE WIZARD, EVERYWHERE. Owner, 2026-09-07: *"the add BOQ
+       also pops up a new type of window wherein it should go through the wizard as we have
+       agreed before. Let's make this global."* This screen was the last exception — + Lot had
+       already been routed there the same day. Three different "create" dialogs on one module
+       is three places to explain the same model, and they had already drifted: the wizard
+       refuses a lot that restates a project code, the bare forms did not.
+       ⚠️ `openNewRev` is the FALLBACK, not dead code — if wizard.js failed to load, creating a
+       BOQ by hand must still be possible rather than silently unavailable. */
     ['boq-new', 'boq-new2'].forEach(function (id) {
-      var b = host.querySelector('#' + id); if (b) b.onclick = openNewRev;
+      var b = host.querySelector('#' + id);
+      if (b) b.onclick = function () { if (openWizard) openWizard('BOQ'); else openNewRev(); };
     });
     if (sub === 'items') wireItems(host);
     if (sub === 'codes') wireCodes(host);
@@ -834,6 +844,41 @@ window.BOQ = (function () {
       return normKey([r.item_no, r.description, r.unit].join(' ')).indexOf(q) >= 0;
     });
   }
+  /* ⚠️⚠️ THE BILL IS ALREADY SPLIT BY TRADE; NOTHING SAID SO. Owner, 2026-09-07:
+     *"you mentioned that I already have the trade-based BOQs. It wasn't apparent that this was
+     available when I am creating the BOQ manually."* Correct, and the fault is entirely in the
+     presentation. `addAuthoredLines()` maps DIVISION → SHEET, so a hand-built bill already has a
+     General Requirement section, a Concrete section, an Aluminum Glass & Glazing Works section —
+     42 of them on OPW101 — and `sheetTotals()` has always summed per sheet. The only way to see
+     any of that was a dropdown in the filter bar reading **"All sheets"**, which is import
+     vocabulary (a *sheet* is a tab in the client's workbook) and means nothing on a BOQ you typed.
+     Same class of leak as "Rev no.".
+     ⚠️ So the structure gets a bar of its own, above the filters: one chip per trade with its line
+     count and its value, and the current filter lit. It is not a new model — it is the model that
+     was there, made visible.
+     ⚠️ Only rendered when there is more than one trade. On a single-trade bill the bar would be
+     one chip that filters to everything, which teaches nothing and costs a row of screen. */
+  function tradeBarHTML() {
+    var list = sheetList();
+    if (list.length < 2) return '';
+    var totals = sheetTotals(ITEMS), counts = {};
+    ITEMS.forEach(function (r) {
+      if (r.line_kind === 'heading') return;
+      counts[r.sheet] = (counts[r.sheet] || 0) + 1;
+    });
+    var word = isManualDraft() ? 'trade' : 'sheet';
+    return '<div class="boq-trades">' +
+      '<span class="boq-trades-lbl">By ' + word + '</span>' +
+      '<button class="boq-trade' + (filt.sheet ? '' : ' on') + '" data-trade="">' +
+        'All<span class="boq-trade-n">' + ITEMS.filter(function (r) { return r.line_kind !== 'heading'; }).length + '</span></button>' +
+      list.map(function (sh) {
+        return '<button class="boq-trade' + (filt.sheet === sh ? ' on' : '') + '" data-trade="' + esc(sh) + '"' +
+          ' title="' + esc(sh) + ' — ' + esc(money(totals[sh] || 0)) + '">' +
+          esc(sh) + '<span class="boq-trade-n">' + (counts[sh] || 0) + '</span></button>';
+      }).join('') +
+      '</div>';
+  }
+
   function sheetList() {
     var s = {}; ITEMS.forEach(function (r) { s[r.sheet] = 1; }); return Object.keys(s).sort();
   }
@@ -852,6 +897,8 @@ window.BOQ = (function () {
       kpi('Scope boundaries', excl.length, 'excluded from roll-ups', excl.length ? 'warn' : '') +
       kpi('Mapped to class codes', Object.keys(CMAP).length, 'of ' + ITEMS.filter(mappable).length + ' mappable') +
       '</div>';
+
+    h += tradeBarHTML();
 
     if (!recon.ok && !recon.unknown) {
       h += '<div class="boq-alert bad"><strong>This revision does not reconcile.</strong> The lines sum to ' +
@@ -878,7 +925,10 @@ window.BOQ = (function () {
 
     h += '<div class="boq-filters">' +
       '<input class="pd-input" id="boq-f-q" placeholder="Search item no., description, unit…" value="' + esc(filt.q) + '" />' +
-      '<select class="pd-select" id="boq-f-sheet"><option value="">All sheets</option>' +
+      /* Same word as the trade bar above, for the same reason - "sheet" is the client's
+         workbook tab and means nothing on a bill somebody typed. */
+      '<select class="pd-select" id="boq-f-sheet"><option value="">' +
+        (isManualDraft() ? 'All trades' : 'All sheets') + '</option>' +
         sheetList().map(function (s) { return '<option' + (filt.sheet === s ? ' selected' : '') + '>' + esc(s) + '</option>'; }).join('') + '</select>' +
       '<select class="pd-select" id="boq-f-kind"><option value="">All line kinds</option>' +
         ['measured', 'lump_sum', 'provisional', 'excluded', 'heading'].map(function (k) {
@@ -970,15 +1020,23 @@ window.BOQ = (function () {
         body = '<b>No lines match these filters.</b><br><span class="cc-mut">Clear the search '
              + 'or the dropdowns above to see the whole bill.</span>';
       } else if (draft) {
-        body = '<b>This BOQ is empty — build it in three steps.</b>'
-             + '<div style="text-align:left;display:inline-block;margin:12px 0 0;line-height:1.9;">'
-             + '<b>1.</b> <b>Add lines from class codes</b> — tick a whole division or trade and '
-             + 'every code under it comes in as a line.<br>'
-             + '<b>2.</b> Fill in the <b>quantity and rates</b> on each line, right here in the table.<br>'
-             + '<b>3.</b> <b>Match to schedule</b> — spread each line across the activities that '
-             + 'carry its code.</div>'
-             + '<div style="margin-top:14px;"><span class="cc-mut">Then <b>Issue revision</b> when '
-             + 'it is complete. Until you do, nothing bills and the contract value does not move.</span></div>';
+        /* ⚠️⚠️ BLOCK ELEMENTS, NOT AN INLINE <b> FOLLOWED BY AN INLINE-BLOCK. The first version
+           put the heading in a `<b>` and the steps in a `display:inline-block` div, so the two
+           shared one line box: inside a `text-align:center` cell the heading was baseline-aligned
+           against a tall inline-block and rendered **between steps 2 and 3**. Owner, seeing it:
+           *"the tips indicated within the section isn't appropriate"* — it read as broken because
+           it was. A heading above a list is two blocks; anything else is a coincidence waiting to
+           break. ⚠️ And a real <ol> rather than hand-typed "1." "2." "3." with <br>s, so the
+           numbering cannot drift from the order and the indent is the browser's problem. */
+        body = '<div class="boq-empty-h">This BOQ is empty — build it in three steps.</div>'
+             + '<ol class="boq-empty-steps">'
+             + '<li><b>Add lines from class codes</b> — tick a whole division and every code under '
+             + 'it comes in as a line. Each division becomes its own <b>trade section</b>.</li>'
+             + '<li>Fill in the <b>quantity and rates</b>, right here in the table.</li>'
+             + '<li><b>Match to schedule</b> — spread each line across the activities carrying its code.</li>'
+             + '</ol>'
+             + '<div class="boq-empty-foot">Then <b>Issue revision</b> when it is complete. '
+             + 'Until you do, nothing bills and the contract value does not move.</div>';
       } else {
         body = '<b>This revision has no lines.</b>';
       }
@@ -1100,6 +1158,9 @@ window.BOQ = (function () {
     [['boq-f-sheet', 'sheet'], ['boq-f-kind', 'kind'], ['boq-f-mapped', 'mapped']].forEach(function (p) {
       var el = host.querySelector('#' + p[0]);
       if (el) el.onchange = function () { filt[p[1]] = el.value; render(); };
+    });
+    host.querySelectorAll('[data-trade]').forEach(function (b) {
+      b.onclick = function () { filt.sheet = b.dataset.trade || ''; render(); };
     });
     var ex = host.querySelector('#boq-export'); if (ex) ex.onclick = exportItems;
     var pk = host.querySelector('#boq-pkgs'); if (pk) pk.onclick = openAssignPackage;
@@ -1740,6 +1801,34 @@ window.BOQ = (function () {
   function codeRow(code) { return (CODES || []).find(function (c) { return c.code === code; }) || null; }
 
   // ---- Create a draft revision to author into -------------------------------
+  /* The actual insert, shared by the wizard and by openNewRev()'s fallback dialog.
+     ⚠️ `is_current` stays FALSE and the database enforces it for a draft: the contract value on
+     screen must keep coming from the issued document until this one is issued. */
+  async function createDraft(f) {
+    var ins = await sb().from(T_REV).insert({
+      project_id: pid, rev_no: f.rev, issued_date: f.date || null,
+      po_no: f.po || null, contract_total: numOf(f.total),
+      source_file: null, sheet_inventory: {},
+      status: 'draft', origin: 'manual', is_current: false,
+      notes: 'Built by hand from the class-code library.', created_by: UID
+    }).select().single();
+    if (ins.error) throw ins.error;
+    REVID = ins.data.id; sub = 'items';
+    await load();
+    return ins.data;
+  }
+
+  /* The next free numeric label, so nobody has to invent an identifier. Exported shape is a
+     plain string because rev_no is text and a client's own label may not be numeric at all. */
+  function nextRevLabel() {
+    var ns = (REVS || []).map(function (r) {
+      var mm = String(r.rev_no || '').match(/(\d+)/);
+      return mm ? parseInt(mm[1], 10) : null;
+    }).filter(function (n) { return n != null && isFinite(n); });
+    var next = ns.length ? Math.max.apply(null, ns) + 1 : 0;
+    return (next < 10 ? '0' : '') + next;
+  }
+
   function openNewRev() {
     /* ⚠⚠ THE REVISION LABEL IS PREFILLED, and that answers a real confusion — owner,
        2026-09-07: *"why does it say Rev no.?"* Because `boq_revisions.rev_no` is `text not
@@ -1829,6 +1918,9 @@ window.BOQ = (function () {
     buildTree();
     var picked = {}, open = {}, q = '';
 
+    /* ⚠️ The one place a planner decides the shape of the bill, so it is the one place worth
+       saying what ticking a division actually does. Without this the trade split is a surprise
+       discovered later, if at all. */
     var m = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">Add lines from the class-code library</h2>' +
       '<button class="pd-modal-close" id="cb-x">&times;</button></div>' +
       '<div style="padding:0 16px 4px;">' +
@@ -3585,6 +3677,9 @@ window.BOQ = (function () {
   // ==========================================================================
   function init(deps) {
     UID = deps.uid; canWrite = !!deps.canWrite; isAdmin = !!deps.isAdmin;
+    /* ⚠️ How this screen reaches the wizard. Supplied by module.js, which owns the wizard's
+       dependency object; boq.js must not build one of its own or the two would drift. */
+    openWizard = deps.openWizard || null;
   }
   async function show(projectId, label) {
     pid = projectId; projLabel = label || '';
@@ -3595,6 +3690,9 @@ window.BOQ = (function () {
 
   return {
     init: init, show: show, reset: reset, render: render,
+    /* ⚠️ Exported so the WIZARD can create the draft rather than reimplementing the insert.
+       The trigger, the is_current rule and the draft/manual defaults all live in one place. */
+    createDraft: createDraft, nextRevLabel: nextRevLabel,
     mountTo: function (id) { HOST_ID = id || 'cc-view'; },
     isLoaded: function () { return loaded; },
     /* ⚠️ EXPORTED so the wizard can HAND OFF instead of giving directions. The BOQ

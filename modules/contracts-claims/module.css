@@ -744,3 +744,35 @@ html.pd-dark .boq-why { color:#7fd6a2; }
    the column count (and every colspan derived from it) is unchanged. */
 .boq-selbox { margin-right:6px; vertical-align:middle; cursor:pointer; }
 .cc-actcol { white-space:nowrap; }
+
+/* The trade bar - the split that addAuthoredLines() has always created, made visible.
+   Scrolls horizontally rather than wrapping: 42 divisions would otherwise push the table
+   off the screen on a wide bill. */
+.boq-trades{display:flex;align-items:center;gap:6px;margin:10px 0 4px;padding-bottom:6px;
+  overflow-x:auto;white-space:nowrap}
+.boq-trades-lbl{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;
+  color:var(--pd-muted);margin-right:2px;flex:0 0 auto}
+.boq-trade{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;padding:4px 9px;
+  border:1px solid var(--pd-line);border-radius:999px;background:transparent;color:var(--pd-ink);
+  font:inherit;font-size:12px;cursor:pointer}
+.boq-trade:hover{border-color:var(--pd-muted);background:rgba(128,128,128,.10)}
+.boq-trade.on{border-color:var(--pd-red);background:rgba(238,49,36,.14);font-weight:700}
+.boq-trade-n{font-size:10.5px;font-weight:700;color:var(--pd-muted);font-variant-numeric:tabular-nums}
+.boq-trade.on .boq-trade-n{color:var(--pd-red)}
+
+/* The empty-draft guide. Blocks, left-aligned inside a centred cell via an inline-block
+   wrapper on the LIST ONLY - the heading and footer stay centred blocks of their own. */
+.boq-empty-h{font-weight:700;font-size:13.5px;color:var(--pd-ink);margin-bottom:12px}
+.boq-empty-steps{display:inline-block;text-align:left;margin:0;padding:0 0 0 22px;
+  line-height:2;max-width:640px}
+.boq-empty-steps li{margin:0}
+.boq-empty-foot{margin-top:14px;color:var(--pd-muted)}
+
+/* Wizard: a two-option choice (build by hand vs import) and the field grid under it. */
+.ccw-choice{display:grid;gap:8px;margin:12px 0}
+.ccw-opt{display:block;padding:10px 12px;border:1px solid var(--pd-line);border-radius:8px;cursor:pointer}
+.ccw-opt:hover{border-color:var(--pd-muted)}
+.ccw-opt.on{border-color:var(--pd-red);background:rgba(238,49,36,.08)}
+.ccw-optsub{display:block;margin-top:4px;font-size:12px;color:var(--pd-muted);line-height:1.5}
+.ccw-grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
+@media (max-width:560px){.ccw-grid2{grid-template-columns:1fr}}

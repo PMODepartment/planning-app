@@ -558,6 +558,16 @@ window.ContractsClaims = (function () {
          ⚠️ The importer is opened after `show()` resolves — it reads the current revision
          list to offer "supersede vs new", and opening it against an unloaded module would
          offer neither. */
+      /* ⚠️ The wizard CREATES the draft through boq.js rather than inserting the row itself:
+         the draft/manual defaults, the is_current rule the database enforces and the reload
+         afterwards all live in one place. A second insert path would be a second set of bugs. */
+      createBoqDraft: function (f) {
+        if (!window.BOQ || !BOQ.createDraft) return Promise.reject(new Error('BOQ did not load.'));
+        return BOQ.createDraft(f);
+      },
+      nextBoqRev: function () {
+        return (window.BOQ && BOQ.nextRevLabel) ? BOQ.nextRevLabel() : '00';
+      },
       openBoqImport: function () {
         openSub('boq');
         var tries = 0;
@@ -1087,7 +1097,9 @@ window.ContractsClaims = (function () {
 
     var deps = { uid: UID, canWrite: canWrite, isAdmin: isAdmin };
     if (window.CCPackages) CCPackages.init(deps);
-    if (window.BOQ) BOQ.init(deps);
+    /* The BOQ screen reaches the wizard through module.js rather than building its own
+       dependency object - one wizard, one set of deps, no drift. */
+    if (window.BOQ) BOQ.init(Object.assign({}, deps, { openWizard: openNew }));
     if (window.PMI) PMI.init(deps);
     document.querySelectorAll('.cc-tab').forEach(function (t) { t.onclick = function () { switchTab(t.dataset.view); if (histView) histView.push(); }; });
     // Browser-history integration (UI.bindHistoryState, ui.js) for the top-level
