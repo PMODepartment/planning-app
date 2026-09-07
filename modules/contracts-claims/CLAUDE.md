@@ -1,5 +1,40 @@
 # Module: contracts-claims
 
+## The class-code error was never the migration — PDb.selectAll assumed an `id` column (2026-09-07e) — fmlozano
+
+⚠️⚠️ **`PDb.selectAll` paginates with `.order('id').gt('id', last)`, and `class_codes` has no
+`id`** — its primary key IS the padded Finance `code`. So every read of the chart threw
+**`column class_codes.id does not exist`**, the caller's `catch (e) { CODES = []; }` swallowed it,
+and the screen said *"the chart is empty — run migrations/2026-08-21-class-codes.sql"*. The owner
+ran that migration, correctly, more than once, and it could never have helped.
+
+**Measured live before changing anything:** `select count(*) from class_codes` through the page's
+own signed-in client returned **702 rows, all `active: true`**. The data and RLS were fine the
+whole time. It was the `codesErr` added hours earlier in (c) that finally printed the real
+message — the diagnostic paid for itself the first time it ran.
+
+**Fixed in `db.js`:** `selectAll(table, apply, cols, key)`, `key` defaulting to `'id'` so every
+existing caller is behaviourally identical. The cursor must still be unique and non-null — a
+primary key; `sort_order`/`period`/`taken_at` remain unusable. `boq.js` now pages on `code` and
+re-sorts by `sort_order` in memory, because selectAll orders by its cursor and the migration is
+explicit that the template order is Finance's own reading sequence.
+
+⚠️ `db.js` is SHARED — `?v=` bumped across **all 23 HTML files** in one pass; a partial bump
+leaves pages disagreeing about which copy they hold.
+
+### The inline BOQ never loaded in a background tab
+The IntersectionObserver from (c) never fired: it delivers during the rendering steps, and **a
+hidden tab does not run them**. Measured — the section sat at `top: 587` in a 948px viewport, well
+inside the 500px margin, with `visibilityState: 'hidden'`, and stayed on *"Loading the BOQ…"*.
+Now the rect is checked at mount and loaded immediately if it is already near the viewport; the
+observer only covers genuine scrolling. This also survives the hidden-tab geometry artefact, where
+every rect reads 0 and therefore trips the test and loads eagerly — loading early is harmless,
+never loading is not.
+
+- `db.js?v=20260907a` (23 files), `boq.js`/`module.js?v=20260907e`, `MODULE_V` → `20260907f`.
+
+---
+
 ## A hand-built draft shows two tabs, not four (2026-09-07d) — fmlozano
 
 Owner: *"the BOQ is complicated to use and difficult to manage when it's really simple: you just

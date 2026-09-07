@@ -84,6 +84,23 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-07 (e) — The class-code error was a paging assumption, not the migration
+
+- ⚠️⚠️ **`PDb.selectAll` pages on `id`; `class_codes` is keyed on `code` and has no `id`.** Every
+  read threw `column class_codes.id does not exist`, the caller swallowed it, and the UI said *"the
+  chart is empty — run the migration"*. The owner ran it repeatedly and it could never help.
+  Verified live first: **702 rows, all active, readable** — data and RLS were fine throughout.
+  The `codesErr` added in (c) is what surfaced the real message.
+- **`selectAll(table, apply, cols, key)`** — `key` defaults to `'id'`, so existing callers are
+  unchanged; it must still be a unique non-null primary key. ⚠️ `db.js` is shared: `?v=` bumped
+  across **all 23 HTML files** in one pass.
+- ⚠️ **The inline BOQ never loaded in a hidden tab** — an IntersectionObserver only delivers during
+  the rendering steps, which a background tab skips. Now the rect is checked at mount and loads
+  immediately when already in view; the observer only handles scrolling.
+- `db.js?v=20260907a`, `boq.js`/`module.js?v=20260907e`, `MODULE_V` → `20260907h`.
+- ⚠️ Rebased onto a concurrent session that had also bumped `MODULE_V`; **both picked**
+  **`20260907f`**, so the merged value is bumped past both to `h` (see [[concurrent-sessions]]).
+
 ### 2026-09-07 — Main-contract-only closes the change-order gap; "Earthworks" stops outranking its trade
 
 Owner: *"when picking main it should exclude the 'change orders' activities hence the bar chart will

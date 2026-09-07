@@ -241,6 +241,16 @@ window.ContractsClaims = (function () {
         try { console.warn('[cc] inline BOQ failed to load', e); } catch (e2) {}
       });
     };
+    /* ⚠️⚠️ IF IT IS ALREADY IN VIEW, LOAD NOW rather than wait to be told. An
+       IntersectionObserver only delivers during the rendering steps, and A BACKGROUND TAB DOES
+       NOT RUN THEM. Measured 2026-09-07: the section sat at top:587 in a 948px viewport —
+       comfortably inside the 500px margin — and the callback never fired, because
+       document.visibilityState was 'hidden'. The section stayed on "Loading the BOQ…" forever.
+       ⚠️ This also covers the hidden-tab geometry artefact: when clientWidth is 0 every rect
+       reads 0, which trips this test and loads eagerly. Loading too early is harmless; never
+       loading is not. The observer below then handles the genuine scroll case. */
+    var r0 = el.getBoundingClientRect();
+    if (r0.top < (window.innerHeight || 0) + 500) { go(); return; }
     if (!window.IntersectionObserver) { go(); return; }
     _boqIO = new IntersectionObserver(function (entries) {
       if (entries.some(function (x) { return x.isIntersecting; })) {
