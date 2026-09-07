@@ -2998,18 +2998,48 @@ window.BOQ = (function () {
     return { method: 'prorata', parts: acts.map(function (a) { return { activity_id: a.activity_id, name: a.activity_name, qty: e2 }; }) };
   }
 
+  /* ⚠️⚠️ THIS TAB USED TO SHOW FIVE ZEROS AND A WALL. Owner, 2026-09-07: *"match to schedule tab
+     needs UI rework"*. On a freshly built BOQ every figure on it is legitimately 0 — `qtyLine()`
+     requires `qty != null`, and nothing has been priced yet — so the screen reported a true state
+     in a way that read as broken, under a four-line paragraph and a "Load schedule" button asking
+     the planner to fetch data the tab cannot function without.
+     ⚠️ ALLOCATION HAS A CHAIN OF FOUR PRECONDITIONS, and only one of them is ever the actual
+     blocker at a given moment:
+         measured lines  →  with quantities  →  with class codes  →  activities carrying those codes
+     The rework names the FIRST unmet link and offers the button that fixes it, instead of
+     presenting the whole apparatus and leaving the planner to work out which zero matters.
+     ⚠️ The explanation moves behind a <details>. It is genuinely important (a class code is a tag,
+     not a key) but it is a thing you read ONCE, and it was occupying the space where the answer
+     to "what do I do now?" belongs. */
+  function allocStage(lines, mapped) {
+    if (!ACTS) return 'loading';
+    if (!ITEMS.filter(function (r) { return r.line_kind === 'measured'; }).length) return 'nomeasured';
+    if (!lines.length) return 'noqty';
+    if (!mapped.length) return 'nocodes';
+    if (!ACTS.length) return 'nosched';
+    if (!ACTS.filter(function (a) { return a.class_code; }).length) return 'notagged';
+    return 'ready';
+  }
+
   function allocHTML() {
     var lines = ITEMS.filter(qtyLine);
     var mapped = lines.filter(function (r) { return CMAP[r.id]; });
     var done = mapped.filter(function (r) { return allocOf(r.id).length; });
     var over = lines.filter(function (r) { return allocSum(allocOf(r.id)) > (Number(r.qty) || 0) + 1e-6; });
+    var coded = ACTS ? ACTS.filter(function (a) { return a.class_code; }).length : null;
+    var stage = allocStage(lines, mapped);
 
     var h = '<div class="cc-kpis">' +
       kpi('Measured lines', lines.length, 'carry an allocatable quantity') +
       kpi('Mapped', mapped.length, 'have a class code to allocate along') +
-      kpi('Allocated', done.length, (mapped.length - done.length) + ' still unallocated', done.length === mapped.length && mapped.length ? 'good' : 'warn') +
+      kpi('Allocated', done.length, (mapped.length - done.length) + ' still unallocated',
+          mapped.length ? (done.length === mapped.length ? 'good' : 'warn') : '') +
       kpi('Over-allocated', over.length, 'Σ allocated exceeds the line qty', over.length ? 'bad' : '') +
-      kpi('Activities', ACTS ? ACTS.length : '—', 'leaf activities loaded') +
+      /* ⚠️ Activities CARRYING A CODE, not activities loaded. The raw count answers a question
+         nobody has; what gates allocation is how many of them the allocator can actually reach. */
+      kpi('Coded activities', ACTS ? coded : '—',
+          ACTS ? 'of ' + ACTS.length + ' leaf activities' : 'loading the schedule…',
+          ACTS && !coded ? 'warn' : '') +
       '</div>';
 
     if (over.length) {
@@ -3018,14 +3048,53 @@ window.BOQ = (function () {
         'fix these before anything downstream reads the derived activity quantities.</div>';
     }
 
-    h += '<p class="cc-hint">A class code is a <strong>tag</strong>, not a key — one code is carried by many activities — ' +
-      'so a BOQ line is allocated <em>across</em> them: by location match first, then pro-rata by duration, then by hand. ' +
-      '<strong>A proposal is never stored until you apply it.</strong> An activity\'s quantity is derived from these ' +
-      'allocations; there is deliberately no quantity column on the activity.</p>';
+    h += '<details class="boq-how"><summary>How matching works</summary>' +
+      '<p>A class code is a <strong>tag</strong>, not a key — one code is carried by many activities — ' +
+      'so a BOQ line is allocated <em>across</em> them: by location match first, then pro-rata by duration, ' +
+      'then by hand. <strong>A proposal is never stored until you apply it.</strong> An activity\'s quantity is ' +
+      'derived from these allocations; there is deliberately no quantity column on the activity.</p></details>';
 
-    if (!ACTS) {
-      h += '<div class="pd-card cc-empty"><h3>Schedule not loaded</h3><p>The allocator needs this project\'s leaf activities ' +
-        'and their class codes.</p><p><button class="pd-btn pd-btn-primary" id="boq-a-load">Load schedule</button></p></div>';
+    if (stage !== 'ready') {
+      var S = {
+        loading:    ['Loading the schedule…',
+                     'Reading this project\'s leaf activities and their class codes.', '', ''],
+        nomeasured: ['Nothing to allocate yet',
+                     'Allocation applies to <b>measured</b> lines — those that carry a quantity. This revision has none.',
+                     'Go to Lines', 'items'],
+        noqty:      ['No line carries a quantity yet',
+                     'A BOQ line is spread across activities <b>by quantity</b>, so there is nothing to spread until ' +
+                     'the quantities are in. Fill in <b>Qty</b> on the Lines tab — you can paste a whole column from Excel.',
+                     'Go to Lines', 'items'],
+        /* ⚠️ THE BUTTON IS WITHHELD ON A MANUAL DRAFT, because the Class Codes tab is not on
+           screen there — subsFor() shows only Lines and Match to schedule, since mapping a
+           description onto a code is meaningless for a line the code was written FROM. Offering
+           a button that sets `sub = 'codes'` would hit the fallback in render() and land the
+           planner back on Lines, having apparently done nothing. And on a hand-built bill this
+           stage means something different anyway: the codes should already be there, so their
+           absence is a fault to report, not a step to go and do. */
+        nocodes:    isManualDraft()
+                    ? ['These lines carry no class code',
+                       'Lines built from the class-code library carry their code from the start, so this should ' +
+                       'not happen. Re-add the affected lines from <b>Add lines from class codes</b>; if it ' +
+                       'persists, the class-map write is failing and the console will say why.', '', '']
+                    : ['These lines carry no class code',
+                       'A line is matched to activities <b>through its class code</b>. Imported lines are mapped ' +
+                       'on the <b>Class Codes</b> tab, which proposes a code per description for you to accept.',
+                       'Go to Class Codes', 'codes'],
+        nosched:    ['This project has no schedule yet',
+                     'Matching needs activities to spread the quantities across. Build the programme in <b>Schedule ' +
+                     'Setup</b>, then come back — the BOQ waits, and nothing here is lost.', '', ''],
+        notagged:   ['No schedule activity carries a class code',
+                     'The activities exist but none is tagged, so there is nothing for a line to match against. ' +
+                     '<b>Tag schedule activities</b> writes the codes onto them in bulk — one code, many activities.',
+                     'Tag schedule activities…', 'tag']
+      }[stage];
+      h += '<div class="pd-card cc-empty boq-stage">' +
+        (stage === 'loading' ? '<h3><span class="cc-spin"></span>' : '<h3>') + esc(S[0]) + '</h3>' +
+        '<p>' + S[1] + '</p>' +
+        (S[2] && canWrite ? '<p style="margin-top:14px;"><button class="pd-btn pd-btn-primary" ' +
+          'data-stage-go="' + S[3] + '">' + esc(S[2]) + '</button></p>' : '') +
+        '</div>';
       return h;
     }
 
@@ -3042,7 +3111,11 @@ window.BOQ = (function () {
     var list = mapped.filter(function (r) { return !filt.q || normKey([r.item_no, r.description].join(' ')).indexOf(normKey(filt.q)) >= 0; });
     // Unallocated first — this table IS the worklist.
     list.sort(function (a, b) { return allocOf(a.id).length - allocOf(b.id).length; });
-    if (!list.length) h += '<tr><td colspan="8" class="cc-mut" style="text-align:center;padding:30px;">No mapped measured lines yet — map class codes first.</td></tr>';
+    /* ⚠️ Reached only when the stage chain says everything is ready, so an empty list here can
+       ONLY be the search box — saying "map class codes first" would have been a lie at this point,
+       and it was what this said. */
+    if (!list.length) h += '<tr><td colspan="8" class="cc-mut" style="text-align:center;padding:30px;">' +
+      'No line matches “' + esc(filt.q) + '”. Clear the search to see the worklist.</td></tr>';
     list.slice(0, 300).forEach(function (r) {
       var al = allocOf(r.id), s = allocSum(al), q = Number(r.qty) || 0, rem = q - s;
       h += '<tr data-id="' + esc(r.id) + '">' +
@@ -3061,9 +3134,26 @@ window.BOQ = (function () {
     return h;
   }
 
+  var _actsLoading = false;
   function wireAlloc(host) {
-    var l = host.querySelector('#boq-a-load');
-    if (l) l.onclick = async function () { l.disabled = true; l.textContent = 'Loading…'; await ensureActs(); render(); };
+    /* ⚠️⚠️ THE SCHEDULE LOADS ITSELF. It was behind a "Load schedule" button, which asked the
+       planner to fetch the data the tab cannot do anything without — the answer is always yes, so
+       the question was pure friction. `ensureActs()` is already leaf-only and column-limited for
+       exactly this reason. ⚠️ `_actsLoading` guards the re-render: ensureActs() → render() →
+       wireAlloc() would otherwise start a second fetch while the first is in flight, and on a
+       40k-row project that is two large reads racing each other. */
+    if (!ACTS && !_actsLoading) {
+      _actsLoading = true;
+      ensureActs().then(function () { _actsLoading = false; if (sub === 'alloc') render(); })
+                  .catch(function () { _actsLoading = false; });
+    }
+    host.querySelectorAll('[data-stage-go]').forEach(function (b) {
+      b.onclick = function () {
+        var to = b.dataset.stageGo;
+        if (to === 'tag') { openTagActivities(); return; }
+        sub = to; render();
+      };
+    });
     var q = host.querySelector('#boq-a-q'), t = null;
     if (q) q.addEventListener('input', function () { clearTimeout(t); t = setTimeout(function () { filt.q = q.value; render(); }, 200); });
     host.querySelectorAll('[data-split]').forEach(function (b) { b.onclick = function () { openSplit(b.dataset.split); }; });

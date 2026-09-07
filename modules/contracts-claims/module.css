@@ -776,3 +776,12 @@ html.pd-dark .boq-why { color:#7fd6a2; }
 .ccw-optsub{display:block;margin-top:4px;font-size:12px;color:var(--pd-muted);line-height:1.5}
 .ccw-grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
 @media (max-width:560px){.ccw-grid2{grid-template-columns:1fr}}
+
+/* Match to schedule: the staged blocker card, and the collapsed explainer. */
+.boq-stage h3{margin:0 0 8px}
+.boq-stage p{max-width:620px;margin:0 auto;line-height:1.6;color:var(--pd-muted)}
+.boq-stage p b{color:var(--pd-ink)}
+.boq-how{margin:10px 0 4px;font-size:12.5px}
+.boq-how summary{cursor:pointer;color:var(--pd-muted);font-weight:600;list-style:revert}
+.boq-how summary:hover{color:var(--pd-ink)}
+.boq-how p{margin:8px 0 0;color:var(--pd-muted);line-height:1.6;max-width:900px}
