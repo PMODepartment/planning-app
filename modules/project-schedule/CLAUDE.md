@@ -64,7 +64,7 @@ shown to re-end the bar at `start + own days - 1`.
 against constructed rows; the notch has not been seen on screen, and no change order was inserted or
 merged against the database. Insert one on a throwaway activity before trusting it on live work.
 
-`MODULE_V` → `20260907b`.
+`MODULE_V` → `20260907f`.
 
 ## One line item per main-contract activity, hollow Detail levels, and the trade/WBS disagreement named (2026-09-07) — jasantos2
 

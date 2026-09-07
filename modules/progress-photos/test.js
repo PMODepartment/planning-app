@@ -316,9 +316,38 @@ ok('worksGroupedOptions buckets schedule activity names by their own work_type �
 ok('a captured Works value with no matching live schedule activity lands in its own "Previously used" bucket, never silently dropped',
    /byGroup\['Previously used'\]/.test(mjs));
 ok('openWorksPicker renders a checkbox per activity, grouped, pre-checked from the current selection', /input type="checkbox" value="' \+ Fmt\.esc\(v\) \+ '"/.test(mjs));
-ok('picking Done reads every checked checkbox into the in-memory selection, replacing it wholesale', /var picked = Array\.prototype\.map\.call\(m\.el\.querySelectorAll\('input\[type=checkbox\]:checked'\)/.test(mjs));
 ok('removing a chip filters it out of the selection (does not touch the others)',
    /_worksSel\[idPrefix\] = worksSelOf\(idPrefix\)\.filter\(function \(v\) \{ return v !== b\.dataset\.removework; \}\);/.test(mjs));
+
+console.log('\n[1b] Works picker rebuilt hierarchical (2026-09-07, Project Schedule integration): per-Trade collapse/expand, Search, Expand-all/Collapse-all, a live selected count, Apply/Cancel, no manual entry, and a Schedule-ID trace');
+ok('the "Done" button + read-every-checkbox-at-click-time mechanism is gone — checking/unchecking updates a DRAFT selection (data-workchk) live instead',
+   !/var picked = Array\.prototype\.map\.call\(m\.el\.querySelectorAll\('input\[type=checkbox\]:checked'\)/.test(mjs) &&
+   /var chk = e\.target\.closest\('\[data-workchk\]'\);[\s\S]{0,200}if \(chk\.checked\) chosen\[chk\.value\] = true; else delete chosen\[chk\.value\];/.test(mjs));
+ok('Apply commits the draft wholesale into _worksSel — the ONLY place that ever writes it (Cancel/×/backdrop never do)',
+   /_worksSel\[idPrefix\] = Object\.keys\(chosen\)\.filter\(function \(k\) \{ return chosen\[k\]; \}\);/.test(mjs));
+ok('collapsing/expanding a Trade only ever repaints the list — it never reads or writes `chosen` (collapse must not deselect)',
+   /if \(gt\) \{ collapsedState\[gt\.dataset\.grouptoggle\] = !collapsedState\[gt\.dataset\.grouptoggle\]; repaintList\(\); return; \}/.test(mjs));
+ok('a search box with the exact "Search Trade or Activity..." placeholder sits at the top of the selector',
+   /placeholder="Search Trade or Activity…" \/>/.test(mjs));
+ok('Expand all / Collapse all controls exist, each only ever touching collapsedState (never chosen)',
+   /-worksexpandall">Expand all<\/button>/.test(mjs) && /-workscollapseall">Collapse all<\/button>/.test(mjs) &&
+   /groups\.forEach\(function \(g\) \{ collapsedState\[g\.group\] = false; \}\); repaintList\(\); return;/.test(mjs) &&
+   /groups\.forEach\(function \(g\) \{ collapsedState\[g\.group\] = true; \}\); repaintList\(\); return;/.test(mjs));
+ok('the footer shows a live "N works selected" count',
+   /function countText\(\) \{ var n = selCount\(\); return n \+ \(n === 1 \? ' work' : ' works'\) \+ ' selected'; \}/.test(mjs));
+ok('no manual-entry escape hatch anywhere in the Works picker (section 15 — no way to type/create a Trade or Activity)',
+   !/Type a new/.test(mjs) && !/Add custom Works value/.test(mjs));
+ok('scheduleHasActivities is now "does the Works picker have anything to show" (worksGroupedOptions), not merely "does a schedule exist"',
+   /function scheduleHasActivities\(\) \{ return worksGroupedOptions\(\)\.length > 0; \}/.test(mjs));
+ok('the empty state names the Execution Phase requirement, with no manual-entry fallback',
+   /No works available for this project\./.test(mjs) &&
+   /Works must be established in the Project Schedule under the /.test(mjs));
+ok('a chosen Works value is resolved back to its schedule activity_id for traceability (worksActivityIdFor), never guessed when no match exists',
+   /function worksActivityIdFor\(name\) \{[\s\S]{0,300}return \(act && act\.activity_id\) \|\| null;/.test(mjs));
+eq('both Add and Edit saves store the index-aligned works_activity_ids array alongside works_multi',
+   (mjs.match(/works_activity_ids: worksActivityIdsFor\(worksList\)/g) || []).length, 2);
+ok('tolerantWrite degrades gracefully (strips works_activity_ids and warns) when that migration has not run yet',
+   /job\.patch && \('works_activity_ids' in job\.patch\)\)/.test(mjs));
 
 console.log('\n[2] Capture date / works / location / view name required (item 7 adds a required view name; item 6/7 both waive their OWN field only when the schedule truly has nothing to offer)');
 ok('requiredFieldsMissing gates date', /Capture date is required/.test(mjs));

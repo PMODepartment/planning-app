@@ -73,6 +73,9 @@ create table if not exists progress_photos (
   works       text,                  -- DEPRECATED: first-selected value only, see works_multi below
   trades      text[] default '{}'::text[],       -- multi-select (2026-08-29 feedback item 2)
   works_multi text[] default '{}'::text[],        -- multi-select (2026-08-29 feedback item 2)
+  works_activity_ids text[] default '{}'::text[], -- index-aligned with works_multi: resolved
+                                       -- project_schedule.activity_id per Works value, or NULL
+                                       -- (migrations/2026-09-07-progress-photos-works-activity-ids.sql)
   sort_order  integer,
   tags        text[],                -- optional Activity Code overlay, "<code type>: <value>"
   wbs_node_id uuid,                   -- legacy (Phase 1 first cut); references wbs_nodes(id) if ever set,

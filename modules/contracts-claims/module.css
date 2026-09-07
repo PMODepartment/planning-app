@@ -529,3 +529,187 @@ html.pd-dark {
   .ccw-rail-l { display: none; }
   .ccw-grid { grid-template-columns: 1fr; }
 }
+
+/* ==========================================================================
+   DATA-TABLE LAYER — the Procurement Dashboard's table idiom, on --pd-* tokens
+   ==========================================================================
+   Owner, 2026-09-07: *"Let's improve the table for the contract records. We can use
+   the table UI available in the Procurement Dashboard."*
+
+   ⚠️ A LAYER OVER .cc-table, NOT A SECOND TABLE CLASS. Divergent table styles is
+      exactly what the 2026-07-17 UI-uniformity pass keeps having to rework, so this
+      adds the four things WPM's `.data-table` has and this one did not — a card
+      HEADER STRIP with the row count, SORTABLE headers, GROUP rows and a FOOTER —
+      and inherits the rest (sticky head, hover, right-alignment) from .cc-table.
+
+   ⚠️ PORTED TO --pd-* TOKENS, NEVER TO WPM'S LITERALS. dashboard.css there hard-codes
+      #EE3124 / #f0f0f0 / #fff and then re-states every one of them under
+      `body.dark-mode`. Copying the literals across would give this module a table that
+      is correct in light mode and unreadable in dark — the failure this file's header
+      warns about. Every colour below is a token, so dark mode follows for free. */
+.cc-dtcard { padding:0; overflow:hidden; }          /* the strip must not scroll with the rows */
+.cc-dtcard .cc-tablewrap { overflow:auto; max-height:calc(100vh - 330px); }
+
+/* The header strip: what this table is, how many rows, and its own actions.
+   ⚠️ THE ACTIONS LIVE HERE, scoped to the table they act on, rather than as a row of
+      primary buttons above the page. That row is what made the Contract tab read as two
+      competing screens, neither of them titled. */
+.cc-dthead { display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  padding:11px 14px; border-bottom:1px solid var(--pd-line); background:var(--pd-card); }
+.cc-dthead h3 { margin:0; font-size:13px; font-weight:800; letter-spacing:.02em; color:var(--pd-ink); }
+.cc-dtcount { font-size:11.5px; font-weight:600; color:var(--pd-muted); white-space:nowrap; }
+.cc-dtspacer { flex:1 1 auto; }
+.cc-dthead .pd-btn { height:30px; padding:0 11px; font-size:12.5px; }
+
+/* Sortable headers. WPM signals these with `th[onclick]{cursor:pointer}` and a red
+   hover; same affordance, minus the inline handler. */
+.cc-table th.cc-sort { cursor:pointer; user-select:none; }
+.cc-table th.cc-sort:hover { color:var(--pd-red); }
+.cc-table th.cc-sort::after { content:"\2195"; opacity:.28; margin-left:5px; font-size:10px; }
+.cc-table th.cc-sort.asc::after  { content:"\2191"; opacity:1; color:var(--pd-red); }
+.cc-table th.cc-sort.desc::after { content:"\2193"; opacity:1; color:var(--pd-red); }
+
+/* Group / section rows — WPM's `.zone-row`, used here for a trade division inside a
+   BOQ and for a package heading inside a contract list. */
+.cc-table tr.cc-grp > td { background:var(--pd-bg); font-weight:800; font-size:11.5px;
+  text-transform:uppercase; letter-spacing:.05em; color:var(--pd-ink);
+  border-bottom:1px solid var(--pd-line); }
+html.pd-dark .cc-table tr.cc-grp > td { background:rgba(255,255,255,.05); }
+.cc-grptog { border:0; background:none; cursor:pointer; color:var(--pd-muted); font:inherit;
+  font-size:11px; padding:0 6px 0 0; }
+.cc-grptog:hover { color:var(--pd-red); }
+tr.cc-collapsed { display:none; }
+
+/* Table footer — a note or a pager under the rows, inside the same card. */
+.cc-dtfoot { padding:9px 14px; border-top:1px solid var(--pd-line); background:var(--pd-card);
+  color:var(--pd-muted); font-size:11.5px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.cc-dtfoot .pd-btn { height:28px; padding:0 10px; font-size:12px; }
+.cc-dtfoot p { margin:0; }
+
+/* An empty table states it in one line INSIDE the card, at the height of a row.
+   ⚠️ This replaces the page-filling .cc-empty card the Contract tab used to lead with:
+      "no packages" is the normal shape of a single-lot job, and a 48px-padded card
+      headlining it made the ordinary case look like a defect. */
+.cc-dtnone { padding:22px 14px; text-align:center; color:var(--pd-muted); font-size:12.5px; }
+.cc-dtnone b { color:var(--pd-ink); }
+
+/* Badges — WPM's `.badge` pill set. `.boq-kind` already covers the outlined vocabulary,
+   so these are the FILLED states a status column wants. */
+.cc-badge { display:inline-block; font-size:10.5px; font-weight:800; letter-spacing:.03em;
+  padding:2px 8px; border-radius:20px; white-space:nowrap; }
+.cc-badge.b-ok   { background:rgba(18,105,58,.12);  color:#12693a; }
+.cc-badge.b-warn { background:rgba(180,83,9,.14);   color:#b45309; }
+.cc-badge.b-bad  { background:rgba(220,38,38,.12);  color:#b3241a; }
+.cc-badge.b-mut  { background:var(--pd-bg);         color:var(--pd-muted); }
+html.pd-dark .cc-badge.b-ok   { background:rgba(127,214,162,.16); color:#7fd6a2; }
+html.pd-dark .cc-badge.b-warn { background:rgba(240,196,105,.16); color:#f0c469; }
+html.pd-dark .cc-badge.b-bad  { background:rgba(241,154,154,.16); color:#f19a9a; }
+
+/* A section rule between the two stacked tables on the Contract tab, so "records" and
+   "lots" read as two things rather than one long scroll. */
+.cc-sechead { display:flex; align-items:baseline; gap:10px; margin:18px 0 8px; }
+.cc-sechead h2 { margin:0; font-size:12px; font-weight:800; text-transform:uppercase;
+  letter-spacing:.06em; color:var(--pd-muted); white-space:nowrap; }
+.cc-sechead-rule { flex:1 1 auto; height:1px; background:var(--pd-line); }
+.cc-sechead:first-child { margin-top:2px; }
+
+@media (max-width:700px) {
+  .cc-dtcard .cc-tablewrap { max-height:none; }
+  .cc-dthead { padding:10px 12px; }
+  .cc-dthead .cc-dtspacer { display:none; }
+  .cc-dthead h3 { flex:1 1 100%; }
+}
+@media print { .cc-dthead .pd-btn, .cc-dtfoot .pd-btn { display:none !important; }
+  .cc-dtcard .cc-tablewrap { max-height:none; overflow:visible; } }
+
+/* ==========================================================================
+   MANUAL BOQ BUILDER (boq.js) — draft banner, class-code tree, inline cells
+   ========================================================================== */
+/* The draft banner. ⚠️ Deliberately the loudest thing on the screen: every figure below
+   it is provisional, and a draft that looks like an issued BOQ is a number that gets
+   quoted in a meeting. */
+.boq-draft { display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+  border:1px solid var(--boq-warn,#b45309); border-left:4px solid var(--boq-warn,#b45309);
+  background:rgba(180,83,9,.07); border-radius:var(--pd-radius); padding:11px 14px; margin-bottom:12px; }
+html.pd-dark .boq-draft { background:rgba(240,196,105,.09); }
+.boq-draft strong { color:var(--pd-ink); }
+.boq-draft-txt { flex:1 1 320px; font-size:12.5px; color:var(--pd-muted); }
+
+/* The class-code tree: division › group › item, with a checkbox on every level. */
+.boq-tree { border:1px solid var(--pd-line); border-radius:var(--pd-radius);
+  max-height:min(52vh,460px); overflow:auto; background:var(--pd-card); }
+.boq-tnode { border-bottom:1px solid var(--pd-line); }
+.boq-tnode:last-child { border-bottom:0; }
+.boq-trow { display:flex; align-items:center; gap:8px; padding:7px 10px; cursor:pointer; }
+.boq-trow:hover { background:var(--pd-bg); }
+.boq-trow input[type="checkbox"] { width:15px; height:15px; accent-color:var(--pd-red); flex:none; cursor:pointer; }
+.boq-tcode { font-family:ui-monospace,"SF Mono",Consolas,monospace; font-size:11.5px; font-weight:700;
+  color:var(--pd-muted); flex:none; min-width:58px; }
+.boq-tname { flex:1 1 auto; font-size:12.5px; min-width:0; }
+.boq-tn { color:var(--pd-muted); font-size:11px; white-space:nowrap; }
+.boq-tcaret { width:14px; text-align:center; color:var(--pd-muted); font-size:10px; flex:none; }
+.boq-tl1 > .boq-trow { font-weight:700; background:var(--pd-bg); }
+html.pd-dark .boq-tl1 > .boq-trow { background:rgba(255,255,255,.04); }
+.boq-tl2 > .boq-trow { padding-left:26px; font-weight:600; }
+.boq-tl3 .boq-trow { padding-left:46px; }
+.boq-tkids[hidden] { display:none; }
+.boq-tpicked { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:10px; font-size:12.5px; }
+.boq-tpicked b { color:var(--pd-red); }
+
+/* Inline editable cells, draft rows only. ⚠️ Direct inputs in the grid rather than a
+   per-row modal: building a 60-line BOQ through 60 modals is the workflow nobody
+   finishes, which is most of why the importer exists at all. */
+.boq-cell { width:100%; min-width:64px; font:inherit; font-size:12.5px; text-align:right;
+  color:var(--pd-ink); background:transparent; border:1px solid transparent;
+  border-radius:4px; padding:3px 5px; }
+.boq-cell:hover { border-color:var(--pd-line); }
+.boq-cell:focus { border-color:var(--pd-red); background:var(--pd-card); outline:none; }
+.boq-cell.boq-cell-t { text-align:left; min-width:120px; }
+.boq-cellsel { font:inherit; font-size:11.5px; color:var(--pd-ink); background:transparent;
+  border:1px solid transparent; border-radius:4px; padding:2px 4px; }
+.boq-cellsel:hover, .boq-cellsel:focus { border-color:var(--pd-line); background:var(--pd-card); }
+.boq-rowdel { border:0; background:none; color:var(--pd-muted); cursor:pointer; font-size:14px; padding:0 5px; }
+.boq-rowdel:hover { color:var(--boq-bad,#b3241a); }
+.boq-derived { color:var(--pd-muted); font-size:10px; }
+.boq-saving { color:var(--pd-muted); font-size:10px; }
+
+/* ==========================================================================
+   BULK CONNECT — class code to schedule activities (boq.js openTagActivities)
+   ========================================================================== */
+/* ⚠️ .pd-modal is max-width 520px. Both of these screens need more: the tagger is two
+   panes side by side (measured at 520px, the activity list came out ~200px wide with every
+   row wrapping onto three lines) and the code tree carries three indent levels plus a count
+   column. Same widening the wizard gives itself with .ccw. */
+.pd-modal.boq-wide   { max-width:1040px; width:96vw; }
+.pd-modal.boq-widish { max-width:760px;  width:94vw; }
+
+.boq-tag { display:grid; grid-template-columns:minmax(240px,300px) 1fr; gap:14px; align-items:start; }
+.boq-taglist { border:1px solid var(--pd-line); border-radius:var(--pd-radius); overflow:auto;
+  max-height:min(56vh,480px); background:var(--pd-card); }
+.boq-tagcode { display:flex; align-items:center; gap:8px; width:100%; text-align:left; border:0;
+  border-bottom:1px solid var(--pd-line); background:none; cursor:pointer; padding:8px 10px; font:inherit; }
+.boq-tagcode:last-child { border-bottom:0; }
+.boq-tagcode:hover { background:var(--pd-bg); }
+.boq-tagcode.on { background:rgba(238,49,36,.08); box-shadow:inset 3px 0 0 var(--pd-red); }
+.boq-tagcode-c { font-family:ui-monospace,"SF Mono",Consolas,monospace; font-size:11.5px; font-weight:700; flex:none; }
+.boq-tagcode-d { flex:1 1 auto; font-size:12px; color:var(--pd-muted); min-width:0;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.boq-tagpane { min-width:0; }
+.boq-tagacts { border:1px solid var(--pd-line); border-radius:var(--pd-radius); overflow:auto;
+  max-height:min(44vh,380px); background:var(--pd-card); margin-top:8px; }
+.boq-tagact { display:flex; align-items:center; gap:9px; padding:6px 10px; border-bottom:1px solid var(--pd-line); }
+.boq-tagact:last-child { border-bottom:0; }
+.boq-tagact:hover { background:var(--pd-bg); }
+.boq-tagact input[type="checkbox"] { width:15px; height:15px; accent-color:var(--pd-red); flex:none; }
+.boq-tagact-id { font-family:ui-monospace,"SF Mono",Consolas,monospace; font-size:11px;
+  color:var(--pd-muted); flex:none; min-width:78px; }
+.boq-tagact-n { flex:1 1 auto; font-size:12.5px; min-width:0; }
+.boq-tagact-w { flex:none; }
+/* A match the proposer found, and WHY — never a bare highlight. */
+.boq-why { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.03em;
+  color:var(--boq-good,#12693a); border:1px solid currentColor; border-radius:20px; padding:1px 6px; white-space:nowrap; }
+html.pd-dark .boq-why { color:#7fd6a2; }
+.boq-taken { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.03em;
+  color:var(--boq-warn,#b45309); white-space:nowrap; }
+@media (max-width:820px) { .boq-tag { grid-template-columns:1fr; }
+  .boq-taglist { max-height:200px; } }
