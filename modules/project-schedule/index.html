@@ -7459,6 +7459,11 @@
               if (pd0 == null) { var a = pd(pr.start_date), b = pd(pr.end_date); pd0 = (a && b) ? (dayDiff(a, b) + 1) : 0; }
               own += Math.max(0, +pd0 || 0);
             }
+            // ⚠️ And so does a MAIN-CONTRACT predecessor that has a variation inside its own bar.
+            // Under the single-line model the change order is a successor of its host, not a link
+            // in anybody's predecessor chain, so this walk could not see it: everything after the
+            // host would have kept the variation's days while the filter claimed they were gone.
+            own += _coGapDaysOf(pr);
             if (own > best) best = own;
           }
         }
@@ -7493,7 +7498,16 @@
     // as everything else once there are change orders upstream of the host itself.
     if (u) { var us = _mainOnlyShiftOf(r); return us > 0 ? dstr(addDays(pd(u), -us)) : u; }
     var f = r.actual_finish || forecastFin(r) || r.end_date || null;
-    if (f && _mainOnlyUnsplit()) { var sh2 = _mainOnlyShiftOf(r); if (sh2 > 0) f = dstr(addDays(pd(f), -sh2)); }
+    // ⚠️ TWO pull-backs, and they are different things. _mainOnlyShiftOf is the change-order days
+    // UPSTREAM of this row (it starts later because a variation delayed something it waits on);
+    // _coGapDaysOf is the change-order days INSIDE its own bar (the single-line model's gap). A
+    // host with a 3-day variation in the middle of it must give those 3 days back here, or
+    // Main-contract-only would close the gap and still draw a bar 3 days too long — the filter
+    // saying the variation never happened while the bar still measures it.
+    if (f && _mainOnlyUnsplit()) {
+      var sh2 = _mainOnlyShiftOf(r) + _coGapDaysOf(r);
+      if (sh2 > 0) f = dstr(addDays(pd(f), -sh2));
+    }
     // Never render a finish earlier than the start (guards against inconsistent stored dates, e.g. an
     // end_date left before a later start_date) — otherwise the bar and its relationship arrows draw
     // backwards. Clamp the DISPLAY to the start; the stored values are untouched.
@@ -9777,10 +9791,13 @@
   // The predicate below is the shared answer, used by the guesser (so a trade is never PROPOSED as
   // a location), by the wizard (so the planner sees WHY a row is grouping) and by the stacking
   // (so a value that slipped through earlier cannot draw a floor that does not exist).
+  // ⚠️ STRONG **and** WEAK here. This answers "does this name read as a trade at all", which is what
+  // keeps a trade from being proposed as a location — and "Earthworks" is still not a place. Only
+  // the PRECEDENCE between an ancestor and its child is weak (see WORK_CANON and discCanonOf).
   function _discTermHit(name) {
     var best = -1;
     for (var i = 0; i < WORK_CANON.length; i++) {
-      var at = locTermHit(name, WORK_CANON[i].terms);
+      var at = locTermHit(name, (WORK_CANON[i].terms).concat(WORK_CANON[i].weak || []));
       if (at !== -1 && (best === -1 || at < best)) best = at;
     }
     return best;
@@ -10841,10 +10858,24 @@
   // Electrical/Plumbing/Fire Protection under MEPF Works, and Wet Works/Finishing under
   // Architectural Works, and Substructure/Superstructure/Earthworks under Structural Works) — they
   // are BREAKDOWN of a trade, not a trade of their own, so they must collapse to their parent trade.
+  /* ⚠️⚠️ SOME TERMS NAME A KIND OF WORK, NOT A TRADE — and those must not outrank an ancestor that
+     names the trade outright. Owner 2026-09-07: *"why are these works tagged under structural
+     trade? even though the trade is under site development."*
+     Measured, and it was this list: `earthworks` sat in Structural Works, discCanonOf walks the WBS
+     ancestry NEAREST-FIRST and returns on the first hit, so
+     `Execution Phase › Site Development Works › Earthworks` matched *Earthworks* one level down and
+     never looked at *Site Development Works* one level up. Backfilling, a gabion and a gravity wall
+     were stamped Structural Works by the importer and drawn in the Structural building.
+     Site earthworks (roads, drainage, retaining) and structural excavation are both real, so the
+     term is genuinely ambiguous — the error was letting the ambiguous CHILD beat the explicit
+     PARENT. `weak` terms now decide a trade only when no enclosing ancestor names one outright.
+     Keep this list small and evidence-led: a term belongs here only when the same word honestly
+     appears under two different trades on real schedules. */
   var WORK_CANON = [
     { name: 'Structural Works', terms: ['structural works', 'structural', 'superstructure', 'substructure',
-      'earthworks', 'excavation', 'rebar', 'reinforcement', 'formwork', 'formworks', 'falsework',
-      'concrete works', 'concreting', 'steel works', 'steelworks', 'erection'] },
+      'rebar', 'reinforcement', 'formwork', 'formworks', 'falsework',
+      'concrete works', 'concreting', 'steel works', 'steelworks', 'erection'],
+      weak: ['earthworks', 'excavation'] },
     { name: 'Architectural Works', terms: ['architectural works', 'architectural', 'finishing works',
       'finishing', 'wet works', 'dry works', 'tiling', 'painting', 'waterproofing', 'masonry',
       'carpentry', 'glazing', 'flooring', 'ceiling', 'drywall', 'partition works', 'partition',
@@ -10860,13 +10891,18 @@
   // ⚠️ Memoised by name. This is asked once per WBS-ancestry segment per activity, and a real tree
   // repeats the same few thousand node names across tens of thousands of activities — the 4PH Strevi
   // .xer asks it ~150k times for ~2.6k distinct names, each answer costing a scan of all ~70 terms.
-  var _discCanonMemo = {};
-  function _discTermMatch(s) {
-    var k = String(s == null ? '' : s);
-    if (Object.prototype.hasOwnProperty.call(_discCanonMemo, k)) return _discCanonMemo[k];
+  // Two memos, because there are now two questions: "does this name name a trade outright" and
+  // "does it name one at all". One shared cache would answer whichever was asked first.
+  var _discCanonMemo = {}, _discCanonMemoW = {};
+  function _discTermMatch(s, allowWeak) {
+    var k = String(s == null ? '' : s), memo = allowWeak ? _discCanonMemoW : _discCanonMemo;
+    if (Object.prototype.hasOwnProperty.call(memo, k)) return memo[k];
     var hit = null;
-    for (var i = 0; i < WORK_CANON.length; i++) { if (locTermHit(k, WORK_CANON[i].terms) !== -1) { hit = WORK_CANON[i].name; break; } }
-    return (_discCanonMemo[k] = hit);
+    for (var i = 0; i < WORK_CANON.length; i++) {
+      var terms = allowWeak ? (WORK_CANON[i].terms).concat(WORK_CANON[i].weak || []) : WORK_CANON[i].terms;
+      if (locTermHit(k, terms) !== -1) { hit = WORK_CANON[i].name; break; }
+    }
+    return (memo[k] = hit);
   }
   // The canonical trade for a WBS name: prefer the schedule's OWN grouping (walk the ancestry
   // nearest-first for the enclosing trade heading — this is what correctly resolves "Fire Protection
@@ -10878,8 +10914,15 @@
   // either way the term itself resolves to Structural Works.
   function discCanonOf(name, trail) {
     var segs = trail ? String(trail).split(' › ').reverse() : [];
-    for (var i = 0; i < segs.length; i++) { var c = _discTermMatch(segs[i]); if (c) return c; }
-    return _discTermMatch(name);
+    // PASS 1, nearest-first, STRONG terms only: an ancestor that names its trade outright wins over
+    // a nearer one that only names a kind of work. This is the pass that keeps Earthworks under
+    // Site Development Works reading as Site Development Works.
+    for (var i = 0; i < segs.length; i++) { var c = _discTermMatch(segs[i], false); if (c) return c; }
+    // PASS 2, nearest-first, weak terms allowed: nothing in the ancestry named a trade, so an
+    // ambiguous term is the best evidence there is — `Execution Phase › Earthworks` is structural
+    // earthworks, and answering "no trade" there would be worse than answering the likely one.
+    for (var j = 0; j < segs.length; j++) { var c2 = _discTermMatch(segs[j], true); if (c2) return c2; }
+    return _discTermMatch(name, true);
   }
   // A name is a plausible discipline/trade if it (or its nearest enclosing WBS ancestor) resolves to
   // one of the six canonical trades.
@@ -13726,8 +13769,11 @@
     if (!branch || branch === own) return '';
     return ' <span class="ps-vs-badge-warn" title="' + esc(
       'Filed under “' + branch + '” in the WBS, but this activity’s own Trade field says “' + own +
-      '”. The activity’s own field wins, which is why it appears in the ' + own + ' building. ' +
-      'Fix whichever is wrong: retag the Trade, or move the activity to the right WBS branch.') +
+      '”. The activity’s own field wins, which is why it appears in the ' + own + ' building.\n\n' +
+      'Usually the importer stamped it: it reads the WBS ancestry nearest-first, so a branch named ' +
+      'for a KIND of work (Earthworks, Excavation) used to outrank the trade named above it. That ' +
+      'precedence is fixed as of 2026-09-07, but a trade already stored on the row is not — retag ' +
+      'the Trade column here, or re-run the import stamp.') +
       '">≠ ' + esc(branch) + '</span>';
   }
   // The activity's PROJECT tower (Tower A / Tower B), not the per-trade card this view draws.
@@ -18053,11 +18099,30 @@
   // The windows that actually interrupt THIS row. Strictly inside its span: a change order that
   // starts on the activity's own first day or ends on its last leaves no piece on that side, so it
   // is not an interruption and notching there would just shave the bar's end off.
-  function _coGapsOf(r) {
+  // ⚠️ RAW: these are the windows that EXIST, not the ones that are drawn. Read it for arithmetic
+  // (how many days the variations cost this bar); read _coGapsOf for what to paint.
+  function _coGapsRaw(r) {
     if (!r || isWbs(r) || isMile(r) || !r.activity_id || isChangeOrder(r)) return [];
     var list = _coGapMap()[String(r.activity_id)]; if (!list || !list.length) return [];
     var s = pd(r.start_date), e = pd(r.end_date); if (!s || !e) return [];
     return list.filter(function (g) { return g.s > s && g.e < e; });
+  }
+  // Days of change-order work sitting INSIDE this bar. Always the real figure, filter or not.
+  function _coGapDaysOf(r) {
+    return _coGapsRaw(r).reduce(function (t, g) { return t + (dayDiff(g.s, g.e) + 1); }, 0);
+  }
+  /* THE GAPS THAT ARE DRAWN. Owner 2026-09-07: *"for the filtering of 'blended', 'main', 'change
+     orders' activities, when picking main it should exclude the 'change orders' activities hence
+     the bar chart will revert to its original state. (meaning no gap in between)."*
+     Right, and it follows from what the notch MEANS: the gap is the change order, so with the
+     change orders filtered off the screen there is nothing on screen the hole could refer to —
+     it would just look like a broken bar. Main-contract-only is already the module's "as if the
+     variations were never instructed" view (see _mainOnlyShiftOf and _unsplitFin, which pull every
+     affected row back), so closing the gap is the same rule applied to the new single-line model
+     rather than a new exception.
+     Blended and Change-orders both keep the gap: in both, the change order is on screen. */
+  function _coGapsOf(r) {
+    return _mainOnlyUnsplit() ? [] : _coGapsRaw(r);
   }
   // The gap in words, for the bar tooltip and the Dur column: a hole in a bar with no explanation
   // is indistinguishable from a rendering fault.

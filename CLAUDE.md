@@ -84,6 +84,28 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-07 — Main-contract-only closes the change-order gap; "Earthworks" stops outranking its trade
+
+Owner: *"when picking main it should exclude the 'change orders' activities hence the bar chart will
+revert to its original state. (meaning no gap in between)."* The gap **is** the change order, so with
+the change orders filtered off screen there is nothing for the hole to refer to. Main-only now draws
+no gap — and **gives the days back**: `dispFin` subtracts both the change-order days upstream of a
+row and the ones inside its own bar, and the shift walk propagates a predecessor's internal gap days
+so successors move back too. Without that second half the filter would have claimed the variation
+never happened while the bar went on measuring it. Blended and Change-orders keep the gap.
+
+Owner: *"why are these works tagged under structural trade? even though the trade is under site
+development."* A real bug in the trade vocabulary: `earthworks` sat in **Structural Works**' terms,
+and the classifier walks the WBS ancestry nearest-first and returns on the first hit — so
+`Site Development Works › Earthworks` matched the child and never looked at the parent, and the
+importer stamped Backfilling, Gabion and Gravity Wall as Structural. Ambiguous terms are now marked
+`weak` and decide a trade only when no enclosing ancestor names one outright. "Earthworks" is still
+not a place, so no location band changes. ⚠️ Rows already stamped keep their stored trade until
+retagged — the badge says so. Module only.
+163 assertions across four suites, all executing code sliced from the shipped file, with HEAD's
+classifier run on the same inputs as the control; ⚠️ not verified signed-in. `MODULE_V` → `20260907g`.
+
+
 ### 2026-09-07 — The main-contract bar is drawn in two pieces around the change order
 
 Owner, correcting the entry below: *"the bar of a the main contract activity will be divided into two,

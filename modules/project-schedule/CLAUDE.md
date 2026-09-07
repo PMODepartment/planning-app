@@ -1,3 +1,77 @@
+## Main-contract-only closes the gap, and "Earthworks" stops outranking its own trade (2026-09-07) — jasantos2
+
+### 1. Picking **Main** closes the gap
+Owner: *"for the filtering of 'blended', 'main', 'change orders' activities, when picking main it
+should exclude the 'change orders' activities hence the bar chart will revert to its original state.
+(meaning no gap in between)."*
+
+It follows from what the notch **means**. The gap *is* the change order — so with the change orders
+filtered off the screen there is nothing left on screen for the hole to refer to, and it just reads
+as a broken bar. Main-contract-only was already this module's "as if the variations were never
+instructed" view (`_mainOnlyShiftOf` pulls every affected row back; `_unsplitFin` folds a legacy
+split host into one bar), so closing the gap applies that existing rule to the single-line model
+rather than inventing an exception. **Blended** and **Change orders** both keep the gap: in both, the
+change order is on screen.
+
+- The derivation splits in two. `_coGapsRaw(r)` is what **exists**; `_coGapsOf(r)` is what is
+  **painted** and returns `[]` under Main-only. Anything doing arithmetic reads the raw one.
+- ⚠️ **And the bar actually reverts, not just the notch.** `dispFin` now subtracts **two different
+  things** under Main-only: `_mainOnlyShiftOf(r)`, the change-order days *upstream* of the row, and
+  `_coGapDaysOf(r)`, the change-order days *inside its own bar*. Without the second, Main-only would
+  have closed the gap and still drawn a bar three days too long — the filter claiming the variation
+  never happened while the bar went on measuring it.
+- ⚠️ **Successors move back too.** Under the single-line model the change order is a *successor* of
+  its host, not a link in anybody's predecessor chain, so the shift walk could not see it: everything
+  after the host would have kept the variation's days. The walk now adds a main-contract
+  predecessor's own internal gap days alongside a change-order predecessor's duration.
+
+### 2. Why those works were tagged Structural: `earthworks` was in the Structural vocabulary
+Owner: *"why are these works tagged under structural trade? even though the trade is under site
+development."* Measured, and it is a real classification bug in `WORK_CANON`, not a data-entry slip.
+
+`earthworks` sat in **Structural Works**' term list, and `discCanonOf` walks the WBS ancestry
+**nearest-first, returning on the first hit**. So `Execution Phase › Site Development Works ›
+Earthworks` matched *Earthworks* one level down and **never looked at *Site Development Works* one
+level up**. The importer's `discStampFromWbs` then wrote `work_type = 'Structural Works'` onto
+Backfilling Works with Binder System, Gabion and Gravity Wall — which is why they were drawn in the
+Structural building and, having no storey under Site Development, in **— No level —**.
+
+Site earthworks (roads, drainage, retaining) and structural excavation are both real, so the term is
+genuinely ambiguous. The error was letting the ambiguous **child** beat the explicit **parent**:
+
+- `WORK_CANON` entries gain a **`weak`** list. `earthworks` and `excavation` moved into it.
+- `discCanonOf` takes **two passes**: nearest-first over **strong** terms only (an ancestor that names
+  its trade outright wins), then nearest-first allowing weak terms (nothing named a trade, so an
+  ambiguous term is the best evidence there is — `Execution Phase › Earthworks` is still Structural),
+  then the activity name.
+- `_discTermHit` deliberately keeps matching **strong *and* weak**, because it answers a different
+  question — "does this name read as a trade at all", which is what stops a trade being proposed as a
+  location. **"Earthworks" is still not a place.**
+- Two memos, since there are now two questions; one shared cache would answer whichever was asked
+  first.
+- Keep the `weak` list small and evidence-led: a term belongs there only when the same word honestly
+  appears under two different trades on real schedules.
+
+⚠️ **This fixes the stamp, not the rows already stamped.** `work_type` is stored, so those three
+activities keep saying Structural Works until someone retags them — the Trade column in the grid, or
+a re-run of the import stamp. The `≠ branch` badge now says exactly that, and names the precedence
+bug as the likely cause.
+
+### Verified
+**163 assertions across four suites, all passing**, every one executing code sliced out of the
+shipped file. The 39 new ones run the real classifier on the owner's three activity names and their
+real WBS trail, and the **control executes HEAD's classifier on the same inputs and gets
+`Structural Works`** — so the fix is demonstrably the fix. Also asserted: `Structural Works ›
+Earthworks` is still Structural, `Site Development Works › Excavation` is Site Development, six
+unrelated trades are byte-identical to HEAD, and `_discTermHit('Earthworks')` is unchanged so no
+location band can appear. The scope-filter rule is executed rather than grepped: Main draws 0 gaps
+while still knowing the 3 days, Blended and Change-orders draw 1, and the day count is identical in
+all three.
+⚠️ **Not verified signed-in** — the anon key has no grants on `project_schedule`. No row was retagged
+and no filter was switched on a real project.
+
+`MODULE_V` → `20260907g`.
+
 ## The main-contract BAR is drawn in two pieces with the change order in the gap (2026-09-07) — jasantos2
 
 Owner, correcting the entry below: *"no but the purpose is that, the bar of a the main contract
