@@ -1,3 +1,71 @@
+## The main-contract BAR is drawn in two pieces with the change order in the gap (2026-09-07) — jasantos2
+
+Owner, correcting the entry below: *"no but the purpose is that, the bar of a the main contract
+activity will be divided into two, since in between is the bar of the change order."*
+
+I had read "retain the single line-item" as "one continuous bar" and shipped exactly that. Both
+statements are true together: **one row, one Activity ID, one line item — and its bar broken in two,
+because the change order occupies the middle.** The row was already right; the drawing was not.
+
+### The interruption is not a stored fact — it IS the change order
+No new column, no migration. `_coGapsOf(r)` derives the suspended window from the change order
+itself: a `change_order` row that is **SS-linked** into `r` and whose span lies strictly inside r's.
+Move it, re-date it or delete it and the gap moves, re-dates or closes, with no second copy of the
+truth to go stale — the same rule `splitLabel` already followed.
+
+- **Only an SS link counts.** `applySplit` writes `<host> SS+<days worked>` precisely so the variation
+  sits *inside* the bar; a change order merely queued after the activity is an FS successor and must
+  not punch a hole in it.
+- **Strictly inside.** A change order starting on the activity's own first day or ending on its last
+  leaves no piece on that side, so it is not an interruption — notching there would just shave the
+  bar's end off.
+- Two change orders in one activity give two gaps and three pieces, ordered by date regardless of row
+  order. Milestones, WBS summaries, id-less rows and the change order itself are never notched.
+
+### An overlay, not two bars and not `clip-path`
+`.ps-bar-cut` is a notch painted in the pane colour **inside the one `.ps-bar` element**, after the
+progress fill. Two `.ps-bar` elements would need two `data-id`s and would break drag, resize, link
+mode, the critical/spotlight outlines and every selector that assumes one bar per row; `clip-path`
+would clip those outlines and the change-order ring away. `pointer-events:none`, so dragging still
+works straight through the gap. A **dotted midline** crosses it — the P6 convention for a suspended
+activity, and it says the two pieces are ONE activity, which is the thing the old two-row model could
+not say. The map behind it is rebuilt once per repaint (`_clearCoGapMemo()` at the top of
+`doRender`), because the change orders that punch the gaps are ordinary rows an edit or a drag can
+move. The bar tooltip names each window and the change order that owns it — a hole with no
+explanation is indistinguishable from a rendering fault.
+
+### `mergeSplit` now migrates old splits onto this model instead of flattening them
+Rows already split in the database were the other half of the ask, and the old merge got two things
+wrong for them:
+- ⚠️ **It gave the time impact back.** It re-ended the bar at `start + own days - 1`, quietly deleting
+  the days the variation had cost — a schedule that was honest about a 3-day change order became one
+  that was not, as a side effect of a *display* request. The segments and their gaps tile
+  `start..lastEnd` exactly, so the merged bar now simply **keeps the last segment's finish**.
+- ⚠️ **It left the change orders loose.** Under the old model each was an FS successor of the segment
+  before it, and those segments are about to be deleted. `_splitGapCos()` finds every change order
+  sitting in a gap and re-points it to `<host> SS+<days worked before it>` — the true relationship,
+  and the thing `_coGapsOf` reads. The re-link happens **before** the delete, so a failure leaves the
+  group intact and re-mergeable. The menu item now reads "Merge split back into one line item…".
+
+### Unchanged from the entry below
+One row, the finish still moves out by the change order's duration, `duration_days` still matches the
+span, successors still need no re-pointing, and the span-weighting cost noted there still stands —
+the notch is a drawing, so it changes no arithmetic.
+
+### Verified
+**108 assertions across three suites, all passing**, every one executing code sliced out of the
+shipped file: 38 new for the gap derivation and the notch (including the six cases that must *not*
+punch a hole — FS successor, FS+lag, a main-contract row, a link to another activity, a window
+touching either end, missing dates), 11 for the legacy-merge migration, plus the 48 and 22 from
+earlier today re-run green. Controls throughout: HEAD has no `ps-bar-cut`, no `_coGapsOf` and no
+`_splitGapCos`, HEAD's bar emitted nothing between the fill and the handles, and HEAD's merge is
+shown to re-end the bar at `start + own days - 1`.
+⚠️ **Not verified signed-in** — the anon key has no grants on `project_schedule`. The derivation ran
+against constructed rows; the notch has not been seen on screen, and no change order was inserted or
+merged against the database. Insert one on a throwaway activity before trusting it on live work.
+
+`MODULE_V` → `20260907b`.
+
 ## One line item per main-contract activity, hollow Detail levels, and the trade/WBS disagreement named (2026-09-07) — jasantos2
 
 Three asks in one prompt, and one of them was a question rather than a bug.

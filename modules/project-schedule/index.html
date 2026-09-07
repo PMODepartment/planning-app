@@ -903,6 +903,21 @@
       box-shadow:0 1px 2px rgba(0,0,0,.15); border:var(--ps-bar-bw,1.5px) solid var(--ps-bar-bd,transparent); box-sizing:border-box; }
     .ps-bar.task { background:var(--ps-bar); }
     .ps-bar-fill { position:absolute; left:0; top:0; bottom:0; background:var(--ps-prog,var(--pd-red)); border-radius:3px 0 0 3px; }
+    /* THE SUSPENDED WINDOW INSIDE A BAR — what makes one line item read as two pieces.
+       Owner 2026-09-07: *"the bar of a the main contract activity will be divided into two, since
+       in between is the bar of the change order."* So the row stays ONE line item (their previous
+       ask) and its BAR is interrupted where the change order sits.
+       ⚠️ AN OVERLAY, NOT TWO BARS AND NOT clip-path. Two `.ps-bar` elements would need two
+       data-ids and would break drag, resize, the link mode, the critical/spotlight outlines and
+       every selector that assumes one bar per row; clip-path would clip the outlines and the
+       change-order ring away. A notch painted in the pane colour leaves all of that intact.
+       pointer-events:none so dragging the bar still works straight through the gap. The dotted
+       midline is the P6 convention for a suspended activity: it says the two pieces are ONE
+       activity, which is exactly the thing the old two-row model could not say. */
+    .ps-bar-cut { position:absolute; top:-2px; bottom:-2px; background:var(--pd-card); z-index:2;
+      pointer-events:none; }
+    .ps-bar-cut::after { content:''; position:absolute; left:0; right:0; top:50%; height:0;
+      border-top:1px dotted var(--pd-muted); opacity:.75; }
     .ps-bar.dragging { cursor:grabbing; opacity:.85; z-index:8; }
     .ps-handle { position:absolute; top:0; bottom:0; width:6px; cursor:ew-resize; z-index:4; }
     .ps-handle.l { left:0; } .ps-handle.r { right:0; }
@@ -18010,6 +18025,48 @@
   var _gset = { labels: 'name', baseline: true, ddline: true, relLines: false };
   try { var _gs = JSON.parse(localStorage.getItem('ps_gset') || 'null'); if (_gs) _gset = Object.assign(_gset, _gs); } catch (e) {}
   function saveGset() { try { localStorage.setItem('ps_gset', JSON.stringify(_gset)); } catch (e) {} }
+  /* THE INTERRUPTION IS NOT A STORED FACT — IT IS THE CHANGE ORDER. Derived, never saved: the
+     window a main-contract bar is broken over is exactly the span of a change order that is
+     SS-linked into it, so moving, re-dating or deleting the change order moves, re-dates or
+     closes the gap with no second copy of the truth to go stale. That is the same rule splitLabel
+     already followed, and the reason no migration is needed for any of this.
+     ⚠️ Only an SS link counts. applySplit writes `<host> SS+<days worked>` precisely so the
+     variation sits INSIDE the bar; a change order merely queued after this activity is an FS
+     successor and must not punch a hole in it. */
+  var _coGapMemo = null;
+  function _clearCoGapMemo() { _coGapMemo = null; }
+  function _coGapMap() {
+    if (_coGapMemo) return _coGapMemo;
+    var m = {};
+    rows.forEach(function (co) {
+      if (isWbs(co) || !isChangeOrder(co) || !co.predecessors) return;
+      var s = pd(co.start_date), e = pd(co.end_date); if (!s || !e) return;
+      _predTokens(co.predecessors).forEach(function (tok) {
+        var mm = tok.match(/^([A-Za-z0-9._\-]+)\s+SS/i); if (!mm) return;
+        (m[mm[1]] = m[mm[1]] || []).push({ s: s, e: e, id: co.activity_id || '', name: co.activity_name || '', ref: coRefOf(co) || '' });
+      });
+    });
+    Object.keys(m).forEach(function (k) { m[k].sort(function (a, b) { return a.s - b.s; }); });
+    _coGapMemo = m;
+    return m;
+  }
+  // The windows that actually interrupt THIS row. Strictly inside its span: a change order that
+  // starts on the activity's own first day or ends on its last leaves no piece on that side, so it
+  // is not an interruption and notching there would just shave the bar's end off.
+  function _coGapsOf(r) {
+    if (!r || isWbs(r) || isMile(r) || !r.activity_id || isChangeOrder(r)) return [];
+    var list = _coGapMap()[String(r.activity_id)]; if (!list || !list.length) return [];
+    var s = pd(r.start_date), e = pd(r.end_date); if (!s || !e) return [];
+    return list.filter(function (g) { return g.s > s && g.e < e; });
+  }
+  // The gap in words, for the bar tooltip and the Dur column: a hole in a bar with no explanation
+  // is indistinguishable from a rendering fault.
+  function _coGapNote(r) {
+    var gs = _coGapsOf(r); if (!gs.length) return '';
+    return '\nSuspended ' + gs.map(function (g) {
+      return Fmt.date(dstr(g.s)) + ' – ' + Fmt.date(dstr(g.e)) + ' for ' + (g.ref || g.id || 'a change order');
+    }).join('; ');
+  }
   function _barTip(r) {
     // ⚠️ The amber ring on a bar has to be explainable without hunting for a legend — this is
     // where a planner hovers to find out what a mark means. The CO reference rides along because a
@@ -18018,7 +18075,7 @@
     var co = isChangeOrder(r) ? ('\nChange Order' + (coRefOf(r) ? ' · ' + coRefOf(r) : '')) : '';
     var pk = packageOf(r) ? ('\nPackage: ' + packageLabel(packageOf(r))) : '';
     var sd = r.start_date ? Fmt.date(r.start_date) : '—', fd = r.end_date ? Fmt.date(r.end_date) : '—';
-    return esc((r.activity_id ? r.activity_id + ' · ' : '') + (r.activity_name || '') + '\n' + (r.status || '') + (r.percent_complete != null ? ' · ' + r.percent_complete + '%' : '') + '\nStart ' + sd + '  Finish ' + fd + (r._float != null ? '  Float ' + r._float + 'd' : '') + co + pk);
+    return esc((r.activity_id ? r.activity_id + ' · ' : '') + (r.activity_name || '') + '\n' + (r.status || '') + (r.percent_complete != null ? ' · ' + r.percent_complete + '%' : '') + '\nStart ' + sd + '  Finish ' + fd + (r._float != null ? '  Float ' + r._float + 'd' : '') + co + pk + _coGapNote(r));
   }
   // ⚠️ The label now carries % COMPLETE. Owner: "how should the viewers know what is the actual
   // progress per activity — that is the main weakness of the gantt view right now." They were right:
@@ -18463,6 +18520,10 @@
 
   function doRender() {
     if (_editing) { _pendingWin = true; return; }
+    // Rebuilt once per frame rather than cached across renders: the change orders that punch the
+    // gaps are ordinary rows, so an edit, a drag or a reload can move one, and a stale map would
+    // draw a hole where no change order is any more.
+    _clearCoGapMemo();
     // The stacking panel is derived from the same filtered rows as the grid, so it repaints with it.
     if (vstackMode) renderVStack();   // defer full repaint while an inline editor is open
     // Safety net: scheduleRender()/doRender() is the single choke point every
@@ -19309,7 +19370,16 @@
     }
     // ⚠️ Composes with everything else on the bar rather than replacing it: a change order can be
     // critical, categorised (LSM colour) and spotlighted all at once, and each of those still reads.
-    out += '<div class="ps-bar task' + crit + _hlCls(r) + _scopeDimCls(r) + (isChangeOrder(r) ? ' ps-cobar' : '') + '" data-id="' + r.id + '" title="' + _barTip(r) + '" style="left:' + x2 + 'px;width:' + w2 + 'px;top:' + barTop + 'px;height:' + barH + 'px;' + barBg + '"><div class="ps-bar-fill" style="width:' + pct + '%;' + fillStyle + '"></div><div class="ps-handle l"></div><div class="ps-handle r"></div></div>';
+    // The suspended windows, in bar-local pixels (the bar's own left edge is `s`). A notch that
+    // would touch either edge is dropped rather than drawn: it would read as a shortened bar, not
+    // as an interruption, and the piece it was supposed to leave behind does not exist.
+    var _cuts = '';
+    _coGapsOf(r).forEach(function (g) {
+      var gx = dayDiff(s, g.s) * dayw, gw = Math.max((dayDiff(g.s, g.e) + 1) * dayw, 1);
+      if (gx <= 0 || gx + gw >= w2) return;
+      _cuts += '<div class="ps-bar-cut" style="left:' + gx + 'px;width:' + gw + 'px;"></div>';
+    });
+    out += '<div class="ps-bar task' + crit + _hlCls(r) + _scopeDimCls(r) + (isChangeOrder(r) ? ' ps-cobar' : '') + '" data-id="' + r.id + '" title="' + _barTip(r) + '" style="left:' + x2 + 'px;width:' + w2 + 'px;top:' + barTop + 'px;height:' + barH + 'px;' + barBg + '"><div class="ps-bar-fill" style="width:' + pct + '%;' + fillStyle + '"></div>' + _cuts + '<div class="ps-handle l"></div><div class="ps-handle r"></div></div>';
     if (showLbl && lbl) out += '<div class="ps-bar-lbl" style="left:' + (x2 + w2 + 6) + 'px;top:' + (barTop + Math.round(barH / 2) - 7) + 'px;">' + esc(lbl) + '</div>';
     return out;
   }
@@ -24725,7 +24795,7 @@
     var m = UI.modal(
       '<h3 style="margin:0 0 4px;font-size:15px;">Insert a change order into “' + esc(host.activity_name || host.activity_id || '') + '”</h3>' +
       '<p style="margin:0 0 12px;font-size:12px;color:var(--pd-muted);">' +
-        'This stays ONE line item. It keeps all ' + (dayDiff(hs, he) + 1) + ' of its own days and its bar is stretched to hold the change order, so it finishes later — the variation\'s time impact. No continuation row is generated.' +
+        'This stays ONE line item — one row, one Activity ID. Its BAR is drawn in two pieces with the change order in the gap between them, it keeps all ' + (dayDiff(hs, he) + 1) + ' of its own days, and it finishes later by the change order\'s duration — the variation\'s time impact.' +
       '</p>' +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">' +
         '<label class="pd-label" style="grid-column:1/-1;">Work stops on<input class="pd-input" type="date" id="ps-sp-date" value="' + esc(dstr(mid)) + '"></label>' +
@@ -24747,7 +24817,7 @@
         esc(Fmt.date(dstr(pl.seg1.start))) + ' → ' + esc(Fmt.date(dstr(pl.seg2.end))) +
         ' (one line: ' + (pl.seg1.dur + pl.seg2.dur) + 'd of its own work over ' + (pl.seg1.dur + pl.co.dur + pl.seg2.dur) + 'd) · ' +
         '<b>change order</b> ' + esc(Fmt.date(dstr(pl.co.start))) + ' → ' + esc(Fmt.date(dstr(pl.co.end))) + ' (' + pl.co.dur + 'd, SS+' + pl.seg1.dur + ')' +
-        '<div style="margin-top:3px;">Work stops after ' + pl.seg1.dur + ' day' + (pl.seg1.dur === 1 ? '' : 's') + ' and resumes when the change order ends. Finishes ' + pl.shift + ' day' + (pl.shift === 1 ? '' : 's') + ' later than now — one row, no continuation.</div>';
+        '<div style="margin-top:3px;">The bar breaks after ' + pl.seg1.dur + ' day' + (pl.seg1.dur === 1 ? '' : 's') + ' and resumes for its last ' + pl.seg2.dur + ' when the change order ends. Finishes ' + pl.shift + ' day' + (pl.shift === 1 ? '' : 's') + ' later than now — still one row.</div>';
       return pl;
     }
     preview();
@@ -24763,7 +24833,7 @@
     var b = splitBuild(host, plan, co);
     var own = plan.seg1.dur + plan.seg2.dur, span = own + plan.co.dur;
     if (!confirm('Insert the change order into “' + (host.activity_name || host.activity_id) + '”?\n\n' +
-      '· this activity stays ONE line item — no continuation row is created\n' +
+      '· this activity stays ONE line item; its BAR is drawn in two pieces with the change order in the gap\n' +
       '· it keeps all ' + own + ' day(s) of its own work and now spans ' + span + ' day(s), finishing ' + Fmt.date(dstr(plan.seg2.end)) + '\n' +
       '· 1 activity is created: the change order, linked SS+' + plan.seg1.dur + ' so it sits where the work stops\n' +
       '· its successors are left alone — they still follow this row, which now finishes later\n' +
@@ -24796,23 +24866,60 @@
   // Undo a split: delete the remaining-work segments, give the host its full duration back, and
   // send its successors back to it. The change orders themselves are LEFT ALONE — they are real
   // scope and deleting them is never implied by "stop splitting the bar".
+  // The change orders that sat in the GAPS of a legacy split group, paired with the day of the
+  // merged bar they start on. A gap is the calendar between one segment's finish and the next
+  // segment's start, which is exactly where applySplit used to put them.
+  function _splitGapCos(segs, barStart) {
+    var out = [];
+    for (var i = 0; i < segs.length - 1; i++) {
+      var ge = pd(segs[i].end_date), gs2 = pd(segs[i + 1].start_date);
+      if (!ge || !gs2) continue;
+      var gapS = addDays(ge, 1), gapE = addDays(gs2, -1);
+      if (gapE < gapS) continue;                       // segments abut: nothing was inserted here
+      rows.forEach(function (co) {
+        if (isWbs(co) || !isChangeOrder(co) || co.split_group === segs[i].split_group) return;
+        var s = pd(co.start_date), e = pd(co.end_date); if (!s || !e) return;
+        if (s > gapE || e < gapS) return;               // no overlap with this gap
+        if (out.some(function (x) { return x.row.id === co.id; })) return;
+        out.push({ row: co, lag: dayDiff(barStart, s) });
+      });
+    }
+    return out;
+  }
+  // Collapse a legacy split group onto the single-line model.
+  // ⚠️ IT NO LONGER GIVES THE TIME IMPACT BACK. The old version re-ended the bar at
+  // start + own days - 1, which quietly deleted the days the variation had cost: a schedule that
+  // was honest about a 3-day change order became a schedule that was not, as a side effect of a
+  // display request. The segments and their gaps tile start..lastEnd exactly, so the merged bar
+  // simply KEEPS the last segment's finish, and its duration is that full span.
+  // ⚠️ AND IT RE-LINKS THE CHANGE ORDERS. Under the old model each CO was an FS successor of the
+  // segment before it. Those segments are about to be deleted, and an FS link is not what draws a
+  // gap - so every change order found in a gap is re-pointed to `<host> SS+<days worked before
+  // it>`, which is both the true relationship and the thing _coGapsOf reads to break the bar. A
+  // merge that produced one unbroken bar with the change orders floating loose beside it would
+  // lose the very thing the owner asked to see.
   async function mergeSplit(hostId) {
     var host = rows.find(function (x) { return x.id === hostId; }); if (!host) return;
     var grp = splitGroupOf(host); if (!grp) { UI.toast('This activity is not split.', 'info'); return; }
     var segs = splitSegsOf(grp); if (segs.length < 2) { UI.toast('This activity is not split.', 'info'); return; }
-    var first = segs[0], rest = segs.slice(1);
-    var totalDur = segs.reduce(function (t, r) { return t + (r.duration_days || 0); }, 0);
-    var fs = pd(first.start_date); if (!fs) { UI.toast('The first part has no start date.', 'warn'); return; }
-    var newEnd = addDays(fs, totalDur - 1);
-    if (!confirm('Merge “' + (first.activity_name || '') + '” back into one bar?\n\n' +
+    var first = segs[0], last = segs[segs.length - 1], rest = segs.slice(1);
+    var fs2 = pd(first.start_date); if (!fs2) { UI.toast('The first part has no start date.', 'warn'); return; }
+    var le = pd(last.end_date); if (!le) { UI.toast('The last part has no finish date.', 'warn'); return; }
+    var ownDur = segs.reduce(function (t, r) { return t + (r.duration_days || 0); }, 0);
+    var span = dayDiff(fs2, le) + 1;
+    var gapCos = _splitGapCos(segs, fs2);
+    if (!confirm('Merge “' + (first.activity_name || '') + '” back into one line item?\n\n' +
       '· ' + rest.length + ' continuation row(s) are deleted\n' +
-      '· the activity becomes ' + totalDur + ' day(s), ending ' + Fmt.date(dstr(newEnd)) + '\n' +
-      '· its change order(s) are KEPT — delete them separately if that is what you want\n\nNot per-step undoable.')) return;
+      '· it becomes ONE row of ' + ownDur + ' own day(s) spanning ' + span + ' day(s) to ' + Fmt.date(dstr(le)) + ' — the finish does NOT move, so the change order time impact is kept\n' +
+      (gapCos.length
+        ? '· ' + gapCos.length + ' change order(s) are re-linked SS into this row, so its bar draws in pieces around them\n'
+        : '· no change order was found in the gap(s), so the bar will draw unbroken\n') +
+      '· the change order(s) themselves are KEPT — delete them separately if that is what you want\n\nNot per-step undoable.')) return;
     showLoading('Merging…');
     var err = null;
     try {
       // Successors of the LAST segment come back to the surviving row before it disappears.
-      var lastId = String(segs[segs.length - 1].activity_id || '');
+      var lastId = String(last.activity_id || '');
       if (lastId && first.activity_id) {
         for (var i = 0; i < rows.length; i++) {
           var r = rows[i];
@@ -24822,18 +24929,28 @@
           if (rp.error) throw rp.error;
         }
       }
+      // Re-link the gap change orders BEFORE the segments go, while their old predecessors still
+      // resolve to something and a failure here leaves the group intact and re-mergeable.
+      if (first.activity_id) {
+        for (var c = 0; c < gapCos.length; c++) {
+          var g = gapCos[c];
+          var rl = await sb().from(TABLE).update({ predecessors: String(first.activity_id) + ' SS+' + g.lag }).eq('id', g.row.id);
+          if (rl.error) throw rl.error;
+        }
+      }
       var del = await sb().from(TABLE).delete().in('id', rest.map(function (r) { return r.id; }));
       if (del.error) throw del.error;
-      var up = await sb().from(TABLE).update({ end_date: dstr(newEnd), duration_days: totalDur, split_group: null, split_seq: null }).eq('id', first.id);
+      var up = await sb().from(TABLE).update({ end_date: dstr(le), duration_days: span, split_group: null, split_seq: null }).eq('id', first.id);
       if (up.error) throw up.error;
     } catch (e) { err = (e && e.message) ? e.message : String(e); }
     hideLoading();
     if (err) { UI.toast('Merge failed: ' + err, 'error'); await load(); return; }
-    logAudit(null, 'reschedule', { count: rest.length + 1, kind: 'split-merged' });
+    logAudit(null, 'reschedule', { count: rest.length + 1 + gapCos.length, kind: 'split-merged-single-line' });
     resetUndo();
-    UI.toast('Merged back into one ' + totalDur + '-day activity.', 'success');
+    UI.toast('Merged into one line item' + (gapCos.length ? ', its bar broken over ' + gapCos.length + ' change order(s).' : '.'), 'success');
     await load();
   }
+
   async function offerCoSplice(coRow) {
     if (!coRow || !coRow.activity_id) return;
     var preds = predIds(coRow.predecessors);
@@ -37012,7 +37129,7 @@
       items.push(sep);
       items.push('<button data-act="splitco"><span data-ico="link" data-ico-size="14"></span> Insert change order here…</button>');
       if (splitGroupOf(r) && splitSegsOf(splitGroupOf(r)).length > 1) {
-        items.push('<button data-act="mergeco">Merge split back into one bar…</button>');
+        items.push('<button data-act="mergeco">Merge split back into one line item…</button>');
       }
     }
     // Cell clipboard (Ctrl+C/X/V operate on cells) — shown whenever a cell is active.

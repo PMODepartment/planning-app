@@ -84,6 +84,23 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-07 — The main-contract bar is drawn in two pieces around the change order
+
+Owner, correcting the entry below: *"the bar of a the main contract activity will be divided into two,
+since in between is the bar of the change order."* Both of their statements hold together — **one row,
+one Activity ID, and a bar broken in two** where the change order sits. The row was already right;
+the drawing was not. The gap is **derived from the change order itself** (a `change_order` row
+SS-linked into the activity, its span strictly inside), so no column and no migration: move, re-date
+or delete the change order and the gap follows. Drawn as a notch inside the single `.ps-bar` element
+with a dotted midline (the P6 suspended-activity convention) rather than as two bars or a `clip-path`,
+so drag, resize, link mode and the critical/change-order outlines all survive untouched.
+`Merge split back into one line item…` now migrates rows already split in the database onto this
+model — keeping the last segment's finish (the old merge silently deleted the variation's time impact)
+and re-linking the change orders SS so the merged bar actually draws in pieces. Module only.
+108 assertions across three suites, all executing code sliced from the shipped file, with HEAD run as
+a control; ⚠️ not verified signed-in. `MODULE_V` → `20260907b`.
+
+
 ### 2026-09-07 — A change order keeps the main-contract activity as ONE line item
 
 Owner: *"i want to retain the single line-item for the main contract activity."* Inserting a change
