@@ -119,16 +119,34 @@ end $$;
 -- ⚠️ FIX THE DATA BEFORE ADDING THE INDEX, or the migration fails on any project that already
 --    has two current revisions. Keep the newest by issued_date then created_at; the others stay
 --    readable, they simply stop being the one the module reads by default.
+--
+-- ⚠️⚠️ NULL-SAFE, AND THE FIRST VERSION WAS NOT — this is why the whole file rolled back.
+--    It used a row comparison:
+--        (x.issued_date, x.created_at, x.id) > (r.issued_date, r.created_at, r.id)
+--    `issued_date` is nullable and a DRAFT never has one, so for two draft revisions that
+--    expression evaluates to NULL rather than true or false. `exists` therefore matched nothing,
+--    NOTHING was repaired, and `create unique index ... (document_id) where is_current` then
+--    failed on the first document holding two current revisions — taking the create table, the
+--    backfill and the RLS down with it, because the SQL editor runs the script in one
+--    transaction. A repair that silently does nothing is worse than no repair: it looks like a
+--    guard while providing none.
+--
+--    `row_number()` with explicit NULLS LAST is total — every row gets a rank whatever is null,
+--    and `id` breaks any remaining tie, so exactly one revision per document survives.
+with ranked as (
+  select id,
+         row_number() over (
+           partition by document_id
+           order by issued_date desc nulls last, created_at desc nulls last, id desc
+         ) as rn
+    from boq_revisions
+   where is_current and document_id is not null
+)
 update boq_revisions r
    set is_current = false
- where r.is_current
-   and r.document_id is not null
-   and exists (
-     select 1 from boq_revisions x
-      where x.document_id = r.document_id
-        and x.is_current
-        and (x.issued_date, x.created_at, x.id) > (r.issued_date, r.created_at, r.id)
-   );
+  from ranked k
+ where k.id = r.id
+   and k.rn > 1;
 
 create unique index if not exists boq_revisions_doc_current_idx
   on boq_revisions (document_id) where is_current;

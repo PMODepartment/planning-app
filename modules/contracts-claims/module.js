@@ -568,8 +568,20 @@ window.ContractsClaims = (function () {
            installed by 2026-09-07-boq-documents.sql and from the contract-value roll-up. */
         var docId = null;
         if (f.docName && BOQ.createDocument) {
-          var d = await BOQ.createDocument(f.docName, f.divisions || []);
-          docId = d && d.id;
+          try {
+            var d = await BOQ.createDocument(f.docName, f.divisions || []);
+            docId = d && d.id;
+          } catch (e) {
+            /* WARNING A HALF-APPLIED MIGRATION MUST NOT BLOCK CREATING A BOQ. The READ path
+               already treats a missing boq_documents as "no documents" and falls back to the flat
+               behaviour; this path did not, so pressing Create draft surfaced a raw
+               PGRST205 toast and wrote nothing. Degrade the same way: make the revision without a
+               document, and say so plainly rather than failing. */
+            var m = (e && e.message) || String(e);
+            if (/boq_documents|schema cache|PGRST205|does not exist/i.test(m)) {
+              try { UI.toast('Created without a BOQ name - run migrations/2026-09-07-boq-documents.sql to enable named BOQs.', 'info'); } catch (e2) {}
+            } else { throw e; }
+          }
         }
         return BOQ.createDraft({ rev: f.rev, date: f.date, po: f.po, total: f.total, docId: docId });
       },
