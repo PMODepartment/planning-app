@@ -2,6 +2,96 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Gallery favorite star + portfolio-level favorites-only filter (2026-09-07)
+
+Owner: *"In progress photos app, add feature to favorite photos in gallery by clicking a star at
+bottom right of photo. In portfolio level, only favorite photos are displayed."* Two halves, one new
+column: **`progress_photos.favorite`**, defaulted `false`, plus a partial index on `(project_id)
+where favorite` (the overwhelming majority of rows are never favorited, so indexing only the `true`
+rows keeps it small and cheap to maintain on every insert).
+
+**Run `migrations/2026-09-07-progress-photos-favorites.sql`.**
+
+### Gallery: the star, and why it needed a SECURITY DEFINER RPC rather than a plain `.update()`
+
+⚠️ **`progress_photos`' generic module-table UPDATE policy is OWNER-OR-ADMIN**, not "any project
+writer" — read directly out of `supabase-schema.sql`'s per-module RLS loop: `using (is_writer() and
+can_access_project(project_id) and (created_by = auth.uid() or is_admin()))`. A planner who is
+approved and has access to the project but did **not** upload the specific photo they're starring
+would have their `.update({favorite:true})` silently REFUSED by Postgres — and a refused UPDATE
+reads back exactly like a successful no-op update matching zero rows: `{data:null, error:null}`.
+This is the identical false-success trap this module already had to trace and fix once for DELETE
+(see the 2026-09-04 entry below, "the real reason 3D/360 deletes silently failed").
+
+But **favoriting is deliberately a team-curation action** — any project writer should be able to
+flag a photo as a portfolio highlight, not just whoever originally uploaded it. Widening the
+table's own UPDATE policy would let any writer edit *any field* of *any* photo, which is far more
+than this needs. So a new, narrow **`set_photo_favorite(p_photo_id uuid, p_value boolean)`**
+function (SECURITY DEFINER, `set search_path = public`, matching the exact shape of every other
+privilege-bypass function in this repo — `is_admin()`, `admin_delete_user()`, etc.) checks
+`is_writer()` + `can_access_project()` itself and then flips the ONE boolean, nothing else. It
+`raise exception`s on refusal rather than silently no-oping, and `grant execute … to authenticated`
+is the only privilege it hands out.
+
+- **The star** (`favBtnHTML(r)`) sits at the bottom-right corner of each Gallery tile — a fixed
+  dark-scrim corner overlay, the same family as the existing `.pp-mkeditbtn` pencil-edit button
+  (`.pp-cardfav`, `bottom:4px; right:4px`). Filled gold (`currentColor` via `.is-fav`) when
+  favorited, an outline star otherwise. ⚠️ **Never rendered for a 360°/3D pseudo-row** — panoramas
+  and reconstructions have no `favorite` column to toggle (`favBtnHTML` returns `''` for `_kind`
+  rows), the same "the merged pseudo-row can't do everything a real photo row can" rule this
+  module already applies to Trade/Works.
+- ⚠️ **A read-only (`!canWrite`) viewer sees a plain, non-interactive `<span>` mark when a photo IS
+  favorited, and nothing at all when it isn't** — never a `<button>` that would silently do nothing
+  on click. Matches this file's own standing rule against ever showing an inert-looking interactive
+  control (the same reasoning behind hiding a disabled Save on a form nobody can submit).
+- **`toggleFavorite(r)`** is optimistic — mutates `r.favorite` and calls `render()` immediately
+  (this file's existing pattern, already used by `openForm`'s save handler), then awaits the RPC and
+  **reverts + toasts an error** if it fails, rather than leaving the star in a state the database
+  never actually agreed to.
+- New icon: `star` (a single `<polygon>`, no `fill` attribute — CSS controls the outline↔filled
+  toggle via `currentColor`) added to the shared `assets/js/icons.js`, bumped app-wide
+  (`?v=` `20260903a` → `20260907a` across all 21 referencing HTML files).
+
+### Portfolio Overview: the Photos tab is now favorites-only
+
+Owner's second half — *"in portfolio level, only favorite photos are displayed"* — is
+`modules/portfolio-overview/index.html`'s existing cross-project Photos tab (see that module's own
+CLAUDE.md for its general design). `loadPhotos()`'s query gained `.eq('favorite', true)` right next
+to the existing `.in('project_id', ids)` — narrowing the FETCH itself, not just what's displayed, so
+the KPI counts / "most recently favorited" grid / per-project table can never disagree with what was
+actually read.
+- ⚠️ **Tolerant of the pre-migration state**, matching this file's own `PDb.selectAll` "run the
+  migration" convention already used by the Equipment/Resources tabs in that same module: a missing
+  `favorite` column degrades to a nudge naming `migrations/2026-09-07-progress-photos-favorites.sql`
+  instead of a raw PostgREST error.
+- Tab renamed **"Photos" → "Favorite Photos"**; the KPI card, the section heading ("Most recently
+  captured" → "Most recently favorited"), the per-project table's column header, and both empty
+  states (grid + table) were reworded to say a photo has to be favorited to show up here, with a
+  one-line hint pointing back at the Gallery star.
+
+### Verified
+
+**985 checks green** (was 967 before this change — 18 new), re-confirmed by diffing the exact
+failure-name set against the pre-change baseline captured via `git stash`: **the same 14 pre-existing,
+unrelated failures, byte-for-byte identical before and after** — zero regressions. Structural
+assertions cover the RPC-not-plain-update requirement, the migration's idempotency + grant, its
+presence in `supabase-schema.sql`, the `[data-act="fav"]` dispatch wiring, and the CSS's fixed-scrim
+placement; **genuine execution** (via new test-only hooks `_setCanWrite`, `_favBtnHTML`,
+`_toggleFavorite`) drives `toggleFavorite` through a real RPC round-trip against the fake store both
+directions (false→true→false), confirms the store's own copy agrees (not just the in-memory
+reference), confirms a refused RPC reverts the optimistic flip and toasts the real reason, and
+confirms the whole thing is a no-op — RPC never even called — for a read-only user. `node --check`
+clean on `module.js`/`test.js`; the portfolio-overview inline script (extracted) also parses clean;
+0 NUL bytes across every touched file.
+
+⚠️ **Not verified signed in** — same standing caveat as every entry in this file. In particular: no
+live click-through of the star against a real Supabase session (a genuine non-owner writer toggling
+someone else's photo, proving the RPC bypass actually works against real RLS rather than the fake
+store), and the migration has not been run.
+
+`module.css/js?v=` → `20260907c`; `icons.js?v=` → `20260907a` (app-wide, 21 files). No `MODULE_V`
+bump needed — no module `index.html` changed structurally.
+
 ## Works field rebuilt as a hierarchical Execution-Phase Trade > Activity selector, sourced from Project Schedule (2026-09-07)
 
 Owner's spec (a 40-page PDF): the **Works** field inside **Progress Photos → Add Media** must become a

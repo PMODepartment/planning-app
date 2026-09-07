@@ -114,7 +114,12 @@
     // Zoom in/out — the standard magnifying-glass-with-a-sign glyph, both
     // sharing the same lens+handle so the two read as a pair.
     zoomIn:      '<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="11" y1="8" x2="11" y2="14"/>',
-    zoomOut:     '<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/><line x1="8" y1="11" x2="14" y2="11"/>'
+    zoomOut:     '<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/><line x1="8" y1="11" x2="14" y2="11"/>',
+    // Star — Progress Photos' Gallery favorite toggle (2026-09-07). Outline by
+    // default; a caller flips it to a solid fill via CSS (`fill:currentColor`
+    // on the favorited state) rather than a second glyph, so the shape can
+    // never disagree between the two states.
+    star:        '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26"/>'
   };
 
   function svg(name, size) {

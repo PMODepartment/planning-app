@@ -420,6 +420,27 @@
 }
 .pp-mkeditbtn:hover { background: var(--pd-red); }
 
+/* Gallery favorite star (2026-09-07) — bottom-right of the card image, the
+   same fixed dark-scrim corner-overlay language as .pp-cardsel (top-left)
+   and .pp-mkeditbtn (a pseudo-row's own bottom-right button, on a mutually
+   exclusive tile kind so the two never collide). Real photo/video rows only
+   — cardHTML() omits this for a panorama/reconstruction pseudo-row, which
+   has no `favorite` column to toggle. */
+.pp-cardfav {
+  position: absolute; bottom: 4px; right: 4px; z-index: 1; padding: 3px;
+  background: rgba(0, 0, 0, .55); border: 0; border-radius: 3px; color: #fff; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.pp-cardfav:hover { background: rgba(0, 0, 0, .75); }
+/* Filled/gold once favorited -- the icon shape never changes (one <polygon>,
+   toggled by CSS fill only), so the two states can never visually disagree
+   with the underlying boolean the way two different glyphs could. */
+.pp-cardfav.is-fav { color: #FFC940; }
+.pp-cardfav.is-fav svg { fill: currentColor; }
+/* Read-only viewers (not canWrite) get a plain, non-interactive mark. */
+.pp-cardfav.is-readonly { cursor: default; }
+.pp-cardfav.is-readonly:hover { background: rgba(0, 0, 0, .55); }
+
 /* ---- Empty / hint states ------------------------------------------------- */
 .pp-empty {
   padding: 46px 20px; text-align: center; color: var(--pd-muted);

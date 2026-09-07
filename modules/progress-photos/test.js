@@ -16,6 +16,7 @@ const submitFnFile = path.join(__dirname, '..', '..', 'supabase', 'functions', '
 const webhookFnFile = path.join(__dirname, '..', '..', 'supabase', 'functions', 'reconstruction-webhook', 'index.ts');
 const floorPlanMigrationFile = path.join(__dirname, '..', '..', 'migrations', '2026-08-29-floor-plans.sql');
 const archiveMigrationFile = path.join(__dirname, '..', '..', 'migrations', '2026-08-29-archive-flag.sql');
+const favMigrationFile = path.join(__dirname, '..', '..', 'migrations', '2026-09-07-progress-photos-favorites.sql');
 const schemaFile = path.join(__dirname, '..', '..', 'supabase-schema.sql');
 
 let fails = 0, passes = 0;
@@ -100,6 +101,19 @@ function makeQuery(table) {
 const signed = {};
 const sbStub = {
   from: (t) => makeQuery(t),
+  // Models set_photo_favorite() (migrations/2026-09-07-progress-photos-
+  // favorites.sql) closely enough to prove toggleFavorite()'s CLIENT-side
+  // logic (optimistic apply, revert-and-toast on failure) is correct — the
+  // real RLS-bypass-via-SECURITY-DEFINER guarantee is a server-side fact
+  // this harness has no RLS engine to prove, same standing limitation this
+  // file already states for every other RPC (PANO.deleteById etc.).
+  rpc: async (name, args) => {
+    if (name !== 'set_photo_favorite') return { data: null, error: { message: 'unknown rpc ' + name } };
+    const row = store.progress_photos.find((r) => r.id === args.p_photo_id);
+    if (!row) return { data: null, error: { message: 'That photo could not be found.' } };
+    row.favorite = args.p_value;
+    return { data: args.p_value, error: null };
+  },
   storage: {
     from: () => ({
       createSignedUrls: async (paths) => ({
@@ -676,7 +690,10 @@ console.log('\n[misc] insert().select() returns the new row id');
   // over). .ppr-kppopup's own #fff usage was already covered by
   // \.pp-lightbox|\.pp-lb- style contexts... it has none of its own (only a
   // box-shadow rgba), so nothing to add there.
-  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.pano-badge-warn|\.bim-pin\b|\.bim-pinstage-dot\b|#bim-place\.is-active|\.pp-mkbadge\b|\.pp-mkeditbtn\b|\.pp-plancluster\b|\.ppr-mktool\b|\.ppr-sortno\b|\.pp-mk-tool\.active|\.pano-recind\b|#pano-c-record\.is-active|\.bim-regpt\b|\.bim-conehandle-el\b|\.bim-dirhandle-el\b|\.pp-livebtn\.is-live\b|\.pp-iconbtn\.is-active\b/;
+  // Gallery favorite star (2026-09-07): .pp-cardfav is the SAME fixed-dark-
+  // scrim-over-an-arbitrary-photo family as .pp-mkeditbtn/.pp-cardsel two
+  // entries over -- a corner overlay button, never a themeable light surface.
+  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.pano-badge-warn|\.bim-pin\b|\.bim-pinstage-dot\b|#bim-place\.is-active|\.pp-mkbadge\b|\.pp-mkeditbtn\b|\.pp-plancluster\b|\.ppr-mktool\b|\.ppr-sortno\b|\.pp-mk-tool\.active|\.pano-recind\b|#pano-c-record\.is-active|\.bim-regpt\b|\.bim-conehandle-el\b|\.bim-dirhandle-el\b|\.pp-livebtn\.is-live\b|\.pp-iconbtn\.is-active\b|\.pp-cardfav\b/;
   const stray = fffRules.filter((sel) => !ALLOWED_FFF_CONTEXT.test(sel));
   ok('every #fff use sits under a documented fixed-colour selector', stray.length === 0 && fffRules.length > 0,
      JSON.stringify(stray));
@@ -4145,6 +4162,102 @@ console.log('\n[misc] insert().select() returns the new row id');
     const refused = await PANO._deletePano(ghost);
     eq('PANO.deleteById: 0 rows deleted (RLS refusal or a since-vanished row) reports a real, actionable reason — never a false "deleted"',
        refused, { ok: false, error: 'You do not have permission to delete this — only the person who uploaded it or an admin can.' });
+  })();
+
+  console.log('\n[51] Gallery favorite star (2026-09-07) — clicking a star toggles favorite via set_photo_favorite()');
+  const favMigration = fs.readFileSync(favMigrationFile, 'utf8');
+  // Structural: the star is the SAME fixed-dark-scrim corner-overlay
+  // language as .pp-cardsel/.pp-mkeditbtn, real photo/video rows only, and
+  // the RPC — never a plain .update() — is what protects a non-owner
+  // writer's toggle from the table's owner-or-admin UPDATE RLS (the exact
+  // false-success trap already traced and fixed once for delete above).
+  ok('toggleFavorite calls the set_photo_favorite RPC, never a plain .update({favorite:...}) — progress_photos\' generic UPDATE RLS is owner-or-admin, so a bare update from a non-owner writer would be silently REFUSED and read back as a false success',
+     /sb\(\)\.rpc\('set_photo_favorite', \{ p_photo_id: r\.id, p_value: next \}\)/.test(mjs));
+  ok('module.css: .pp-cardfav is a fixed dark-scrim bottom-right corner overlay, the same family as .pp-mkeditbtn',
+     /\.pp-cardfav \{[^}]*position: absolute; bottom: 4px; right: 4px;[^}]*background: rgba\(0, 0, 0, \.55\);/.test(cssFile));
+  ok('the migration adds set_photo_favorite() as SECURITY DEFINER, bypassing the owner-or-admin restriction deliberately and narrowly (one boolean field, not the whole row)',
+     /create or replace function set_photo_favorite\(p_photo_id uuid, p_value boolean\)/.test(favMigration) &&
+     /security definer set search_path = public/.test(favMigration) &&
+     /if not is_writer\(\) then/.test(favMigration));
+  ok('the migration is idempotent (add column if not exists, create-or-replace function) and grants execute to authenticated',
+     /add column if not exists favorite boolean not null default false/.test(favMigration) &&
+     /grant execute on function set_photo_favorite\(uuid, boolean\) to authenticated;/.test(favMigration));
+  ok('folded into supabase-schema.sql: the favorite column, the index, and the RPC all appear there too',
+     /favorite    boolean not null default false/.test(schemaSql) &&
+     /progress_photos_favorite_idx/.test(schemaSql) &&
+     /create or replace function set_photo_favorite\(p_photo_id uuid, p_value boolean\)/.test(schemaSql));
+  ok('the [data-act] dispatch in wireRows routes "fav" to toggleFavorite(r), the same delegated-click convention as open/download/edit/del',
+     /else if \(a === 'fav'\) toggleFavorite\(r\);/.test(mjs));
+
+  // Genuine execution: favBtnHTML's four real states, and toggleFavorite's
+  // actual RPC round-trip + optimistic-apply/revert-on-failure — against
+  // the shared sbStub/store this file's other sections already use.
+  (function () {
+    var pseudo = { id: 'pano:x', _kind: 'panorama' };
+    eq('favBtnHTML renders NOTHING for a panorama/reconstruction pseudo-row — it has no `favorite` column to toggle',
+       PP._favBtnHTML(pseudo), '');
+
+    PP._setCanWrite(true);
+    var offBtn = PP._favBtnHTML({ id: 'p1', favorite: false });
+    ok('canWrite + not favorited: a real <button data-act="fav"> with no is-fav class',
+       /<button type="button" class="pp-cardfav" data-act="fav" data-id="p1"/.test(offBtn) && !/is-fav/.test(offBtn));
+    var onBtn = PP._favBtnHTML({ id: 'p2', favorite: true });
+    ok('canWrite + favorited: is-fav class + aria-pressed="true"',
+       /class="pp-cardfav is-fav"/.test(onBtn) && /aria-pressed="true"/.test(onBtn) && /data-act="fav"/.test(onBtn));
+
+    PP._setCanWrite(false);
+    eq('read-only (!canWrite) + not favorited: nothing at all — no inert-looking control',
+       PP._favBtnHTML({ id: 'p3', favorite: false }), '');
+    var roBtn = PP._favBtnHTML({ id: 'p4', favorite: true });
+    ok('read-only (!canWrite) + favorited: a plain, non-interactive <span> mark (never a <button>, so it can never look clickable while silently doing nothing per toggleFavorite\'s own canWrite guard)',
+       /<span class="pp-cardfav is-fav is-readonly"/.test(roBtn) && !/<button/.test(roBtn) && !/data-act/.test(roBtn));
+    PP._setCanWrite(true);
+  })();
+
+  await (async function () {
+    store.progress_photos.push({ id: 'fav-row-1', project_id: 'DEMO01', favorite: false, description: 'x' });
+    var row = store.progress_photos.find(function (r) { return r.id === 'fav-row-1'; });
+    PP._setCanWrite(true);
+
+    await PP._toggleFavorite(row);
+    eq('genuinely executed: toggleFavorite flips favorite false -> true, via the RPC, on the row object itself',
+       row.favorite, true);
+    ok('the store\'s copy agrees (the RPC genuinely reached the fake DB, not just the in-memory reference)',
+       store.progress_photos.find(function (r) { return r.id === 'fav-row-1'; }).favorite === true);
+
+    await PP._toggleFavorite(row);
+    eq('…and toggles back true -> false on a second call (a real toggle, not a one-way flag)', row.favorite, false);
+
+    // Failure path: the RPC refuses (mirrors a real RLS/Postgres refusal,
+    // e.g. is_writer() failing server-side) — the optimistic flip must be
+    // REVERTED, not left silently wrong, and the planner must be told why.
+    var realRpc = sbStub.rpc;
+    sbStub.rpc = async () => ({ data: null, error: { message: 'You do not have permission to change favorites on this project.' } });
+    try {
+      var before = ctx.__toasts.length;
+      await PP._toggleFavorite(row);
+      eq('a refused RPC call reverts the optimistic flip back to its prior value, rather than leaving a UI state the database never actually agreed to',
+         row.favorite, false);
+      ok('…and toasts the real refusal reason as an error, not a silent no-op',
+         ctx.__toasts.length > before && ctx.__toasts[ctx.__toasts.length - 1][0] === 'error' &&
+         ctx.__toasts[ctx.__toasts.length - 1][1] === 'You do not have permission to change favorites on this project.');
+    } finally { sbStub.rpc = realRpc; }
+
+    // canWrite guard: toggleFavorite must be a genuine no-op for a
+    // read-only user, never reaching the RPC at all (favBtnHTML already
+    // doesn't render an interactive control for this case, but the
+    // function itself must refuse too, defence in depth).
+    PP._setCanWrite(false);
+    var rpcCalls = 0;
+    var noopRpc = sbStub.rpc;
+    sbStub.rpc = async (...a) => { rpcCalls++; return noopRpc(...a); };
+    try {
+      await PP._toggleFavorite(row);
+      eq('toggleFavorite is a no-op for a read-only (!canWrite) user — the value is unchanged', row.favorite, false);
+      eq('…and the RPC is never even called', rpcCalls, 0);
+    } finally { sbStub.rpc = noopRpc; PP._setCanWrite(true); }
+
+    store.progress_photos = store.progress_photos.filter(function (r) { return r.id !== 'fav-row-1'; });
   })();
 
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
