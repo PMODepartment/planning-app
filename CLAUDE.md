@@ -95,6 +95,38 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-07 (i) — `PDGrid`: spreadsheet keys as a shared layer, not a second grid engine
+
+Owner: *"let's develop the excel grid, let's develop it in a way that would benefit more modules /
+make it easier for planners to connect it to the activities as basis for cost loading, productivity
+rates etc."*
+
+- ⚠️⚠️ **New `assets/js/xlgrid.js` ATTACHES to a table; it does not render one.** WPM's
+  `review.html` grid — the reference the owner pointed at — is **~517 lines of JS and 148 CSS
+  rules** that own their markup end to end. Porting that would have meant rewriting every adopting
+  module's table and then maintaining a second copy that drifts from WPM's. Instead a module keeps
+  rendering exactly as it does now and PDGrid adds the behaviour, with a two-attribute contract the
+  BOQ table **already satisfied before this file existed**: `data-i` (row) and `data-f` (field).
+- **So adoption is: add the two attributes, call `PDGrid.attach`, supply a save function.** No
+  markup rewrite, no new render path — which is what makes cost loading and Productivity Rates
+  cheap to wire later.
+- ⚠️ **Editing is free because the cells are real inputs.** WPM's grid renders `<td>`s and must
+  build an editor on demand (`_xlBeginEdit`, F2, commit/cancel). Here the cell *is* the editor, so
+  "move to a cell" is `.focus()` — deleting an entire class of state, including any chance of
+  losing a half-typed value to a re-render.
+- ⚠️ **Left/Right deliberately do NOT change cells.** With real inputs the caret must stay movable;
+  Tab does columns, Up/Down/Enter do rows. The one place copying Excel exactly would fight the medium.
+- Keys: Tab/Enter/arrows, **Shift+↓ select**, **Ctrl+D fill down**, Ctrl+Z undo, Delete clears a
+  multi-cell selection only, and **paste a TSV column straight from Excel** — the feature that
+  matters most, since a BOQ is priced in a spreadsheet far more often than typed.
+- ⚠️ `onSet` routes through **`saveCell`, the same path an ordinary edit takes**, so a pasted value
+  gets identical parsing and the identical `1,000`-is-not-empty guard. A second write path would be
+  a second set of bugs.
+- ⚠️ Caught before shipping: the keyboard-hint used the `draft` local **declared eight lines below
+  it** — `var` hoisting made it `undefined`, so the hint would have silently never rendered.
+- `xlgrid.js?v=20260907a`, `boq.js`/`packages.js?v=20260907i`, `MODULE_V` → `20260907l`.
+
+
 ### 2026-09-07 (h) — Contracts & Claims: the BOQ button goes, one day after it arrived
 
 - Owner: *"there is also a BOQ button in the contract records which is redundant when we have

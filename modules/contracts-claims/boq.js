@@ -81,6 +81,7 @@ window.BOQ = (function () {
   /* Selected line ids, draft only. Same reasoning as COLLAPSED: a selection is how you are
      working right now, not a property of the bill, so it is never persisted. */
   var SEL = {};
+  var _grid = null;            // the PDGrid instance bound to the current render
   var loaded = false;
   /* The class-code chart folded into division › group › item for the builder's tree.
      Cached: regrouping 702 rows on every keystroke of the tree's search box is a cost that
@@ -896,6 +897,13 @@ window.BOQ = (function () {
       (draft && selCount() ? '<button class="pd-btn pd-btn-danger" id="boq-delsel">Delete ' +
         selCount() + ' selected</button>' : '') +
       (canWrite ? '<button class="pd-btn" id="boq-pkgs">Assign to contract package…</button>' : '') +
+      /* A grid whose shortcuts are undiscoverable is a grid nobody uses. Draft only - on an
+         issued revision the cells are not editable and the keys do nothing. */
+      /* ⚠️ `isDraft() && canWrite`, NOT the `draft` local — that is declared eight lines BELOW
+         this one, so `var` hoisting would make it `undefined` here and the hint would simply
+         never render. No error, no warning: exactly the kind of silent nothing that gets shipped
+         and then reported months later as "those shortcuts were never there". */
+      (isDraft() && canWrite && window.PDGrid ? PDGrid.hintHTML() : '') +
       '<button class="pd-btn" id="boq-export">Export</button>' +
       '</div>';
 
@@ -1079,6 +1087,25 @@ window.BOQ = (function () {
     host.querySelectorAll('.boq-cell[data-f]').forEach(function (inp) {
       inp.onchange = function () { saveCell(inp.dataset.i, inp.dataset.f, inp.value); };
     });
+    /* WARNING SPREADSHEET KEYS COME FROM THE SHARED assets/js/xlgrid.js, NOT FROM HERE. The cells
+       already carried data-i and data-f before that file existed, which is precisely why PDGrid
+       attaches to a table instead of rendering one: this module keeps its own columns, formatting
+       and validation, and gains Tab/Enter navigation, Shift-select, Ctrl+D fill-down, Ctrl+Z and
+       paste-a-column-from-Excel without a single change to how it renders.
+       WARNING onSet goes through saveCell, the SAME path an ordinary edit takes, so a pasted or
+       filled value gets the identical parsing, the identical 1,000-is-not-empty guard and the
+       identical persistence. A second write path would be a second set of bugs.
+       WARNING Re-attached on every render because render() replaces the whole table; the previous
+       instance's listeners die with the DOM it was bound to. detach() is still called so a
+       long-lived host does not accumulate them. */
+    if (window.PDGrid) {
+      if (_grid) { try { _grid.detach(); } catch (e) {} }
+      _grid = PDGrid.attach({
+        root: host,
+        cell: '.boq-cell[data-f]',
+        onSet: function (id, field, value) { saveCell(id, field, value); }
+      });
+    }
     host.querySelectorAll('.boq-cellsel[data-f]').forEach(function (selEl) {
       selEl.onchange = function () { saveCell(selEl.dataset.i, selEl.dataset.f, selEl.value); };
     });

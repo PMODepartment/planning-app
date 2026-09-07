@@ -378,10 +378,21 @@ window.CCPackages = (function () {
     /* ⚠️ ONE PRIMARY PER SCREEN. `+ Add` in the topbar opens the wizard (a contract, and
        its package step defines as many lots as the contract has); `+ Lot` here opens the
        compact form, which is the right tool for one lot and the same one Edit uses. */
+    /* WARNING BOTH + Lot BUTTONS OPEN THE WIZARD, NOT THE COMPACT FORM. Owner, 2026-09-07:
+       *"when I clicked on it showed the new package window wherein I thought we created the
+       wizard where all additions will go through the wizard"*. They did - this screen was the
+       exception, on the reasoning that a compact form is the right tool for one lot. That
+       reasoning ignored what the wizard KNOWS and the form does not: it refuses a lot that
+       restates an existing project code (the AVR101/AVR102 mistake), it explains what a lot is
+       before asking you to name one, and it gives a Package no details or dates step because
+       those belong to the contract. The bare form asks for a code with none of that, which is
+       how a lot that should have been a separate project gets created.
+       WARNING `edit()` is NOT dead - the pencil on an existing lot still opens it. Creating and
+       editing are different acts here: creation is the one that needs the guard rails. */
     var a = h.querySelector('#pk-add');
-    if (a) a.onclick = function () { edit(null); };
+    if (a) a.onclick = function () { if (onNew) onNew('Package'); else edit(null); };
     var af = h.querySelector('#pk-addfirst');
-    if (af) af.onclick = function () { edit(null); };
+    if (af) af.onclick = function () { if (onNew) onNew('Package'); else edit(null); };
     var nc = h.querySelector('#pk-newcontract');
     if (nc) nc.onclick = function () { if (onNew) onNew('Contract'); else edit(null); };
     var p = h.querySelector('#pk-push'); if (p) p.onclick = share;
