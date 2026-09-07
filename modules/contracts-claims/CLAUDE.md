@@ -13,23 +13,30 @@ Measured on OPW101 draft: **701 priceable rows x 5 numeric fields = 3,505 inputs
 - a transparent box with a transparent border and no hint, on a dark table. The inputs were all
 there and wired; nothing on screen said so. Invisible-until-hover suits an **issued** bill, which is
 read constantly and written never (the trigger refuses it), and is exactly wrong for the one screen
-whose whole purpose is data entry.  is added to the table **only on a draft**, giving
+whose whole purpose is data entry. `.boq-fillable` is added to the table **only on a draft**, giving
 the cells a resting tint and border, and empty cells now carry a shape-of-the-value placeholder
-(, , ) shown muted so they never read as a real zero.
+(`0.00`, `0`, `unit`) shown muted so they never read as a real zero.
 
 ### 924 rows under 223 headings is not a list, it is a haystack
-Headings collapse. The parent/child span is derived from **, not **, so it stays
+Headings collapse. The parent/child span is derived from **`depth`, not `parent_id`**, so it stays
 correct against what is actually on screen after a filter has removed rows from the middle of a
 branch. A caret appears **only where a heading owns rows**, because a toggle that visibly does
 nothing reads as broken; a collapsed heading shows its hidden count. Collapse all / Expand all sit
 in the filter bar, and only when the bill has headings at all.
 
-WARNING: collapse state is **in memory and deliberately not persisted**. It describes how you are
-reading the bill right now, not anything about the bill - stored, it would be shared, and one
-planner collapsing a trade would hide it from everyone.  clears it, so changing revision or
+⚠️ Collapse state is **in memory and deliberately not persisted**. It describes how you are
+reading the bill right now, not anything about the bill — stored, it would be shared, and one
+planner collapsing a trade would hide it from everyone. `reset()` clears it, so changing revision or
 project starts expanded.
 
--  /  ;  -> .
+- `boq.js` / `module.css` `?v=20260907f`; `MODULE_V` → `20260907i`.
+
+### ⚠️ How this entry got mangled the first time
+It was written through a **bash double-quoted string**, so every `` `backtick span` `` was treated as
+a command substitution and **deleted, silently** — `.boq-fillable`, `depth`, `parent_id` and the
+version line all vanished, leaving grammatical sentences with holes in them. The prose survived,
+which is what makes it dangerous: it reads as finished text. Write log entries from a **file**, never
+an inline shell string. Same family as the escaping traps in `python-inline-write-truncates`.
 
 ---
 

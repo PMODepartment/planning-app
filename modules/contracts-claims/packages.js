@@ -196,6 +196,14 @@ window.CCPackages = (function () {
          below returns — so it is reachable on a project that has no contract row yet,
          which is exactly when a planner is building one by hand. */
       '<button class="pd-btn" id="pk-boq" title="Bill of quantities — the contract document the claims, the billing and the cost roll-up are all measured against">BOQ</button>' +
+      /* ⚠️ The ONLY way to create a first contract lot from this screen, now that the empty
+         Contract lots section is not rendered at all. Writers only, and deliberately quiet: for
+         almost every project the right number of lots is zero, so this is an escape hatch rather
+         than an invitation. Once a lot exists the full section appears below and carries its own
+         `+ Lot`, and this one stops being the only route. */
+      (canWrite && !PKG.length
+        ? '<button class="pd-btn" id="pk-addfirst" title="A contract lot is a division BELOW this project — a lot inside this contract with no project code of its own. If it has its own code it is a separate project.">+ Lot</button>'
+        : '') +
       '</div>';
 
     if (!CONTRACTS.length) {
@@ -286,30 +294,27 @@ window.CCPackages = (function () {
   }
 
   function packagesHTML() {
+    /* ⚠️⚠️ NO LOTS -> NO SECTION. Owner, 2026-09-07: *"in case the project doesn't have any
+       packages can't we just have this disappear and only appear when the project has
+       packaging"*. It was ~200px of card, empty state and three-sentence footnote explaining, at
+       length, that the correct answer for almost every project is **nothing** — the header itself
+       said "none — the usual case". A screen that spends its most valuable space teaching you
+       about a feature you should not use is worse than one that omits the feature until it
+       applies.
+       ⚠️ THE WAY IN IS NOT LOST, it moves: `+ Lot` now sits in the Contract records head beside
+       BOQ (see contractsHTML), and the contract wizard's package step still creates lots. Deleting
+       the section without leaving a route would have made the first lot uncreatable from this
+       screen. The moment a project HAS a lot, the full section returns exactly as before. */
+    if (!PKG.length) return '';
+
     var h = '<div class="cc-sechead"><h2>Contract lots</h2><span class="cc-sechead-rule"></span></div>' +
       '<div class="pd-card cc-dtcard"><div class="cc-dthead">' +
       '<h3>Packages</h3>' +
-      '<span class="cc-dtcount">' + (PKG.length ? PKG.length + (PKG.length === 1 ? ' lot' : ' lots') : 'none — the usual case') + '</span>' +
+      '<span class="cc-dtcount">' + PKG.length + (PKG.length === 1 ? ' lot' : ' lots') + '</span>' +
       '<span class="cc-dtspacer"></span>' +
       (canWrite ? '<button class="pd-btn" id="pk-add">+ Lot</button>' : '') +
-      (canWrite && PKG.length ? '<button class="pd-btn" id="pk-push" title="Mirror these lots into the Procurement (WPM) and Engineering apps so their records can be filed under the same contract lots">Share with Procurement &amp; Engineering</button>' : '') +
+      (canWrite ? '<button class="pd-btn" id="pk-push" title="Mirror these lots into the Procurement (WPM) and Engineering apps so their records can be filed under the same contract lots">Share with Procurement &amp; Engineering</button>' : '') +
       '</div>';
-
-    if (!PKG.length) {
-      /* ⚠️ "No packages" IS NOT A DEFICIENCY and this no longer reads like one — same
-         argument as before, at the size of a footnote instead of a headline. It used to
-         hold up "Package 1 — Tower 1 and General Requirements / Package 2 — Towers 2-7"
-         as the model; that example is Avesta, which is TWO PROJECTS (AVR101, AVR102), so
-         the empty state was teaching the exact structure the wizard now refuses. */
-      h += '<div class="cc-dtnone"><b>' + esc(pid || 'This project') + ' is one contract lot, and most projects need no more.</b><br>' +
-        'The schedule, the BOQ, procurement and engineering all file against the project directly.</div>' +
-        '<div class="cc-dtfoot"><p>Add a lot only for a division <b>below</b> this project — a lot inside ' +
-        '<i>this</i> contract with no project code of its own (enabling works vs main works, say). ' +
-        '⚠️ If the division you have in mind already has its own code it is a <b>separate project</b>: create it ' +
-        'in the projects list and consolidate the two on the <b>Portfolio Overview</b> under ' +
-        '<b>Group by → Parent project</b>.</p></div></div>';
-      return h;
-    }
 
     var list = sortBy(PKG, psort, function (k, key) {
       if (key === 'contract_amount') return k.contract_amount == null ? null : Number(k.contract_amount);
@@ -382,6 +387,8 @@ window.CCPackages = (function () {
        compact form, which is the right tool for one lot and the same one Edit uses. */
     var a = h.querySelector('#pk-add');
     if (a) a.onclick = function () { edit(null); };
+    var af = h.querySelector('#pk-addfirst');
+    if (af) af.onclick = function () { edit(null); };
     var nc = h.querySelector('#pk-newcontract');
     if (nc) nc.onclick = function () { if (onNew) onNew('Contract'); else edit(null); };
     /* ⚠️ NOW A JUMP, NOT A NAVIGATION. The BOQ is further down this same page, so the button

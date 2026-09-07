@@ -739,3 +739,8 @@ html.pd-dark .boq-why { color:#7fd6a2; }
   background:none; color:var(--pd-muted); cursor:pointer; font-size:11px; line-height:1; }
 .boq-caret:hover { color:var(--pd-red); }
 .boq-hidden-n { color:var(--pd-muted); font-size:10.5px; font-weight:600; }
+
+/* Row selection for bulk delete. The checkbox shares the actions column with the delete X, so
+   the column count (and every colspan derived from it) is unchanged. */
+.boq-selbox { margin-right:6px; vertical-align:middle; cursor:pointer; }
+.cc-actcol { white-space:nowrap; }

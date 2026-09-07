@@ -78,6 +78,9 @@ window.BOQ = (function () {
      hide it from somebody else's screen. Cleared on reset(), so switching revision or project
      starts expanded rather than hiding rows the new bill never collapsed. */
   var COLLAPSED = {};
+  /* Selected line ids, draft only. Same reasoning as COLLAPSED: a selection is how you are
+     working right now, not a property of the bill, so it is never persisted. */
+  var SEL = {};
   var loaded = false;
   /* The class-code chart folded into division › group › item for the builder's tree.
      Cached: regrouping 702 rows on every keystroke of the tree's search box is a cost that
@@ -888,6 +891,10 @@ window.BOQ = (function () {
       (ITEMS.some(function (x) { return x.line_kind === 'heading'; })
         ? '<button class="pd-btn" id="boq-collapse">Collapse all</button>' +
           '<button class="pd-btn" id="boq-expand">Expand all</button>' : '') +
+      /* ⚠️ Only rendered when something IS selected. A permanently-visible "Delete selected (0)"
+         is a destructive control sitting armed on a screen whose whole job is data entry. */
+      (draft && selCount() ? '<button class="pd-btn pd-btn-danger" id="boq-delsel">Delete ' +
+        selCount() + ' selected</button>' : '') +
       (canWrite ? '<button class="pd-btn" id="boq-pkgs">Assign to contract package…</button>' : '') +
       '<button class="pd-btn" id="boq-export">Export</button>' +
       '</div>';
@@ -911,7 +918,9 @@ window.BOQ = (function () {
       (draft ? '<th class="cc-r">Mat. rate</th><th class="cc-r">Lab. rate</th>'
              : '<th class="cc-r">Material</th><th class="cc-r">Labour</th>') +
       '<th class="cc-r">Amount</th><th>Kind</th><th>Class code</th><th>Package</th><th class="cc-r">Alloc.</th>' +
-      (draft ? '<th class="cc-actcol"></th>' : '') +
+      /* ⚠️ Selection lives in the EXISTING actions column rather than a new leading one, so the
+         column count — and every colspan that depends on it — is untouched. */
+      (draft ? '<th class="cc-actcol"><input type="checkbox" id="boq-selall" title="Select every line the filters currently show" /></th>' : '') +
       '</tr></thead><tbody>';
 
     var list = filtered();
@@ -1004,7 +1013,9 @@ window.BOQ = (function () {
         '<td>' + (cm ? '<span class="boq-code" title="' + esc(cm.source) + '">' + esc(cm.class_code) + '</span>' : (mappable(r) ? '<span class="cc-mut">—</span>' : '')) + '</td>' +
         '<td>' + pkgCell(r) + '</td>' +
         '<td class="cc-r">' + (qtyLine(r) ? allocChip(r, al) : '') + '</td>' +
-        (draft ? '<td class="cc-actcol"><button class="boq-rowdel" data-del="' + esc(r.id) + '" title="Delete this line">&times;</button></td>' : '') +
+        (draft ? '<td class="cc-actcol"><input type="checkbox" class="boq-selbox" data-sel="' + esc(r.id) + '"' +
+          (SEL[r.id] ? ' checked' : '') + ' title="Select this line" />' +
+          '<button class="boq-rowdel" data-del="' + esc(r.id) + '" title="Delete this line">&times;</button></td>' : '') +
         '</tr>';
     });
     h += '</tbody></table></div>';
@@ -1085,6 +1096,25 @@ window.BOQ = (function () {
     };
     var eAll = host.querySelector('#boq-expand');
     if (eAll) eAll.onclick = function () { COLLAPSED = {}; render(); };
+    host.querySelectorAll('.boq-selbox[data-sel]').forEach(function (cb) {
+      cb.onchange = function () {
+        if (cb.checked) SEL[cb.dataset.sel] = 1; else delete SEL[cb.dataset.sel];
+        render();
+      };
+    });
+    /* ⚠️ Select-all means every line THE FILTERS CURRENTLY SHOW, not every line in the bill —
+       a checkbox that silently reaches past what is on screen is how people delete work they
+       could not see. Rows hidden inside a collapsed heading ARE included: they are matched by
+       the filters and the planner collapsed them for reading, not to exclude them. */
+    var sa = host.querySelector('#boq-selall');
+    if (sa) sa.onchange = function () {
+      var vis = filtered();
+      if (sa.checked) vis.forEach(function (r) { SEL[r.id] = 1; });
+      else vis.forEach(function (r) { delete SEL[r.id]; });
+      render();
+    };
+    var ds = host.querySelector('#boq-delsel');
+    if (ds) ds.onclick = delSelected;
     host.querySelectorAll('[data-del]').forEach(function (b) {
       b.onclick = function () { delLine(b.dataset.del); };
     });
@@ -2085,6 +2115,48 @@ window.BOQ = (function () {
     }
     Object.assign(r, patch);
     render();
+  }
+
+  function selCount() { return Object.keys(SEL).length; }
+
+  /* ⚠️⚠️ CHUNKED, because a bulk delete here is exactly the shape that has bitten this app before.
+     Owner, 2026-09-07: they ticked almost the whole class-code library as a test and needed the
+     lines gone — 924 rows on OPW101. Two hard limits apply (see the schedule module's notes):
+       · PostgREST's `in.(...)` lives in the URL, which caps out around 200 uuids;
+       · `statement_timeout` is ~8s, and one delete of everything can exceed it (error 57014).
+     So: 150 ids per request, sequential, with the count reported as it goes. ⚠️ It stops at the
+     FIRST failure and reports how many were actually removed rather than claiming success for the
+     whole set — a delete that half-worked and said "done" is worse than one that says where it got
+     to. `parent_id` is `on delete set null`, so removing a heading un-parents its children instead
+     of silently taking them with it. */
+  async function delSelected() {
+    if (!canWrite || !isDraft()) { UI.toast('Lines can only be deleted from a draft revision.', 'error'); return; }
+    var ids = Object.keys(SEL);
+    if (!ids.length) return;
+    var heads = ids.filter(function (id) {
+      var r = ITEMS.find(function (x) { return x.id === id; });
+      return r && r.line_kind === 'heading';
+    }).length;
+    if (!confirm('Delete ' + ids.length + ' line' + (ids.length === 1 ? '' : 's') + ' from this draft?' +
+        (heads ? String.fromCharCode(10) + String.fromCharCode(10) + heads +
+          ' of them are headings; the lines under them are kept and simply un-parented.' : '')))
+      return;
+
+    var CHUNK = 150, done = 0;
+    for (var i = 0; i < ids.length; i += CHUNK) {
+      var slice = ids.slice(i, i + CHUNK);
+      var del = await sb().from(T_ITEM).delete().in('id', slice);
+      if (del.error) {
+        await load();
+        UI.toast('Deleted ' + done + ' of ' + ids.length + ', then failed: ' +
+          del.error.message + manualHint(del.error).replace(/<\/?code>/g, ''), 'error');
+        return;
+      }
+      done += slice.length;
+    }
+    SEL = {};
+    UI.toast('Deleted ' + done + ' line' + (done === 1 ? '' : 's') + '.', 'success');
+    await load();
   }
 
   async function delLine(id) {
@@ -3468,7 +3540,7 @@ window.BOQ = (function () {
     await ensureSugg();
     await load();
   }
-  function reset() { COLLAPSED = {}; loaded = false; REVS = []; ITEMS = []; CMAP = {}; ALLOC = []; PERIODS = []; PROG = {}; REVID = null; CODES = null; CODETREE = null; ACTS = null; SCHED = null; schedErr = null; PKGS = []; }
+  function reset() { COLLAPSED = {}; SEL = {}; loaded = false; REVS = []; ITEMS = []; CMAP = {}; ALLOC = []; PERIODS = []; PROG = {}; REVID = null; CODES = null; CODETREE = null; ACTS = null; SCHED = null; schedErr = null; PKGS = []; }
 
   return {
     init: init, show: show, reset: reset, render: render,

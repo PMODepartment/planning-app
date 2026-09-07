@@ -97,16 +97,20 @@ developer, plug into one shared shell.
 
 ### 2026-09-07 (g) - Contracts & Claims: the draft BOQ table looks fillable, and headings collapse
 
-- WARNING **3,505 invisible inputs.** The draft table's cells were  with a
-  transparent border and no placeholder - present and wired, but nothing on screen said they could be
-  typed into. Owner: *"the table is not apparent to be filled out"*. Invisible-until-hover suits an
-  **issued** bill (read constantly, written never); on a draft it defeats the whole screen.
-   now applies **only on a draft**, plus muted shape-of-the-value placeholders.
-- **Headings collapse** - 924 rows under 223 headings. Spans come from **, not **,
+- ⚠️⚠️ **3,505 invisible inputs.** The draft table's cells were `background: rgba(0,0,0,0)` with a
+  `1px solid rgba(0,0,0,0)` border and no placeholder — present and wired, but nothing on screen said
+  they could be typed into. Owner: *"the table is not apparent to be filled out"*.
+  Invisible-until-hover suits an **issued** bill (read constantly, written never — the trigger
+  refuses it); on a draft it defeats the whole screen. `.boq-fillable` now applies **only on a
+  draft**, plus muted shape-of-the-value placeholders (`0.00`, `0`, `unit`).
+- **Headings collapse** — 924 rows under 223 headings. Spans come from **`depth`, not `parent_id`**,
   so they stay right after a filter removes rows mid-branch; a caret shows only where a heading owns
   rows, and Collapse all / Expand all appear only when the bill has headings.
-  WARNING: the state is in memory, not persisted - it is how you are reading the bill, not part of it.
-- /,  -> .
+  ⚠️ The state is in memory, not persisted — it is how you are reading the bill, not part of it.
+- `boq.js`/`module.css?v=20260907f`, `MODULE_V` → `20260907i`.
+- ⚠️ This entry had to be repaired: it was first written through a bash double-quoted string and
+  **every backtick span was command-substituted away**, silently. Write log entries from a file, not
+  an inline shell string — the same trap `python-inline-write-truncates` records.
 
 
 ### 2026-09-07 (f) — The changelog is deduplicated and archived by month
