@@ -33065,7 +33065,112 @@
       var a = String(r.activity_id || '').trim();
       return a || ('~' + String(r.wbs || '') + '|' + String(r.activity_name || '').trim());
     }
-    function nameOf(r) { return String(r.activity_name || '').trim() || '— Unnamed activity —'; }
+    /* ⚠️⚠️ WHAT IDENTIFIES A COST LINE, AND WHY IT HAD TO BECOME A CHOICE.
+       Owner 2026-09-07: *"currently it is designed for project schedules whose lowest level of
+       details are Activities. However what will happen if the project schedule is structured,
+       wherein zones are the lowest level of details… my intent is to cost load based on the
+       activities, similar to a BOQ. (e.g. rebar is xxx amount, formworks is yyy amount) not per
+       zone… users then assign the cost to the WBS (activity) and then the ff steps remain."*
+
+       The exercise was already right — group by NAME so "Formworks" is priced once and step 3
+       splits it across the places it occurs. What was wrong is the assumption that the LEAF ROW
+       carries the work's name. On a schedule built the other way round the leaves are *Zone 1*,
+       *Zone 2*, and the BOQ line (*Rebar Works*) is the WBS NODE above them — so step 1 enlisted
+       zone names and asked the planner to price a zone, which is not a bill of quantities.
+
+       So the cost line's identity is now a BASIS, and everything downstream is untouched because
+       it never cared: assign, distribute (equally or by a typed percentage), the time curve, apply
+       and review all key off the group and its instances, whatever those turn out to be.
+         · 'activity' — the leaf's own name. Today's behaviour, byte for byte.
+         · 'wbs'      — the nearest WBS ancestor that names WORK rather than a place. The
+                        instances are then the zone leaves under it, so "divided equally OR a
+                        percentage per zone" is the step-3 machinery that already exists.
+       ⚠️ Detected, not assumed: see detectBasis(). And once the planner chooses, the detection
+       never overrides them again (`basisChosen`) — a screen that keeps re-deciding what you are
+       pricing is worse than one that guesses wrong once. */
+    function basisOf() { return (cfg && cfg.basis === 'wbs') ? 'wbs' : 'activity'; }
+    var BASES = [
+      { k: 'activity', t: 'Activity name', d: 'The leaf rows are the work — <i>Rebar Works</i>, <i>Formworks</i>. Price each name once.' },
+      { k: 'wbs', t: 'WBS branch name', d: 'The leaf rows are places — <i>Zone 1</i>, <i>Zone 2</i>. Price the WBS branch above them and split it down.' }
+    ];
+    // Every location VALUE used anywhere in the project, lowercased. This is the project's own
+    // answer to "is this string a place" — no new vocabulary, and it is right even for a house
+    // naming scheme no term list would have guessed.
+    var _clPlaceMemo = null, _clPlaceKey = null;
+    function placeNames() {
+      var key = rows.length + '|' + (LOC_LEVELS || []).length;
+      if (_clPlaceMemo && _clPlaceKey === key) return _clPlaceMemo;
+      var out = {};
+      (LOC_LEVELS || []).forEach(function (l) {
+        rows.forEach(function (r) {
+          var v = String(locValOf(r, l.id) || '').trim();
+          if (v) out[v.toLowerCase()] = 1;
+        });
+      });
+      _clPlaceKey = key; _clPlaceMemo = out;
+      return out;
+    }
+    // ⚠️ A SECOND, INDEPENDENT SIGNAL, because the first one needs `location` to be populated and on
+    // a freshly imported schedule it often is not — which is exactly when the planner opens this
+    // tab. A leaf literally called "Zone 3" is a place whether or not the location match has run.
+    var CL_PLACE_RE = /^(zone|unit|level|floor|storey|story|basement|bldg|building|tower|block|phase|area|section|pod|wing)\b|\b(zone|unit|floor|level)\s*[-#]?\s*\d/i;
+    function isPlaceName(s) {
+      var t = String(s || '').trim(); if (!t) return false;
+      return !!placeNames()[t.toLowerCase()] || CL_PLACE_RE.test(t);
+    }
+    // WBS code -> that node's name, from the schedule's own WBS rows.
+    var _clWbsMemo = null, _clWbsKey = null;
+    function wbsNameByCode() {
+      var key = rows.length;
+      if (_clWbsMemo && _clWbsKey === key) return _clWbsMemo;
+      var m = {};
+      rows.forEach(function (r) { if (isWbs(r) && r.wbs) m[String(r.wbs)] = String(r.activity_name || '').trim(); });
+      _clWbsKey = key; _clWbsMemo = m;
+      return m;
+    }
+    // The BOQ line for a leaf under the 'wbs' basis: walk its WBS code from the DEEPEST segment
+    // outwards and take the first ancestor that names work. Deepest-first because that is the most
+    // specific true answer — *Rebar Works* under *Structural Works* is the cost line, not the trade
+    // heading above it. Zone-named ancestors are stepped over, which is the whole point.
+    function wbsLineOf(r) {
+      var code = String((r && r.wbs) || '').trim(); if (!code) return '';
+      var map = wbsNameByCode(), segs = code.split('.');
+      for (var i = segs.length; i >= 1; i--) {
+        var nm = map[segs.slice(0, i).join('.')];
+        // ⚠️ A PHASE is not work either, and it is the ancestor everything shares. Measured: a leaf
+        // filed directly on the Execution Phase root walked all the way up and became a cost line
+        // called "Execution Phase" — one line holding the whole project, which is worse than no
+        // answer. Skipped, so such a leaf falls back to its own name and stays visible.
+        if (nm && !isPlaceName(nm) && !phaseFromName(nm)) return nm;
+      }
+      return '';
+    }
+    // Which basis this schedule looks like it wants. Reported with its own evidence, never applied
+    // silently — step 1 shows the count it counted.
+    function detectBasis() {
+      var sc = scopeInfo(), tot = 0, place = 0, lined = 0;
+      sc.rows.forEach(function (r) {
+        var nm = String(r.activity_name || '').trim(); if (!nm) return;
+        tot++;
+        if (isPlaceName(nm)) place++;
+        if (wbsLineOf(r)) lined++;
+      });
+      // Both conditions, deliberately: leaves that read as places AND a work-naming branch above
+      // them to price instead. Place-named leaves with no such branch would leave the planner a
+      // basis with nothing in it.
+      var suggest = (tot >= 5 && place / tot >= 0.6 && lined / tot >= 0.6) ? 'wbs' : 'activity';
+      return { total: tot, place: place, lined: lined, suggest: suggest };
+    }
+    function nameOf(r) {
+      if (basisOf() === 'wbs') {
+        var w = wbsLineOf(r);
+        // ⚠️ Falls back to the leaf's own name rather than dropping the row: an activity with no
+        // work-naming ancestor still has cost, and silently excluding it would make the project
+        // total quietly wrong. It shows up as its own cost line, which is visible and fixable.
+        if (w) return w;
+      }
+      return String(r.activity_name || '').trim() || '— Unnamed activity —';
+    }
     function buildGroups() {
       var sc = scopeInfo(), by = {}, order = [];
       sc.rows.forEach(function (r) {
@@ -33197,6 +33302,30 @@
 
     // ---- Persistence ------------------------------------------------------------------------
     function ensureCfg() { if (!cfg) cfg = { groups: {} }; if (!cfg.groups) cfg.groups = {}; return cfg; }
+    // Seed the basis from detection ONCE, and only when the planner has never chosen. Called after
+    // load() and whenever step 1 renders, because a project's rows arrive after the config does.
+    function seedBasis() {
+      var c = ensureCfg();
+      if (c.basisChosen) return;
+      // ⚠️ NO markDirty(). This runs from a render, and a render that reports unsaved changes
+      // teaches the planner to ignore that indicator. The detection simply re-runs each session
+      // until the planner picks a basis explicitly, which is when it becomes their decision to
+      // save.
+      var d = detectBasis();
+      if (d.suggest !== basisOf()) c.basis = d.suggest;
+    }
+    function setBasis(k) {
+      var c = ensureCfg();
+      if (basisOf() === k) return;
+      // ⚠️ The priced totals are keyed by cost-line NAME, and the names change wholesale with the
+      // basis — so what was priced under the old basis is orphaned, not silently re-attached to a
+      // line that happens to share a name. Said out loud, with the count, before anything moves.
+      var priced = Object.keys(c.groups || {}).filter(function (k2) { return c.groups[k2] && c.groups[k2].total != null; });
+      if (priced.length && !confirm('Switch what is being priced to \u201c' + (k === 'wbs' ? 'WBS branch name' : 'Activity name') + '\u201d?\n\n' +
+        priced.length + ' cost line(s) already carry a total. The cost lines are named by the basis, so those figures will no longer match any line and will read as unpriced.\n\n' +
+        'Nothing is written to the schedule until you press Apply.')) return;
+      c.basis = k; c.basisChosen = true; selGroup = null; markDirty(); paint();
+    }
     function entry(name) { var c = ensureCfg(); return (c.groups[name] = c.groups[name] || { total: null, mode: 'equal', pct: {}, curve: 'linear' }); }
     async function load() {
       cfg = { groups: {} };
@@ -33376,11 +33505,11 @@
     // ---- Rendering -------------------------------------------------------------------------------
     var STEPS = [
       { t: 'Enlist activities', short: 'What is being priced',
-        d: 'Every activity under the <b>execution phase</b>, grouped by name with how many times it occurs. One cost line per name — "Formworks" is priced once, not the 40 times it is programmed. <b>Rename here and the schedule follows.</b>' },
+        d: 'Every activity under the <b>execution phase</b>, grouped into one cost line each — like a bill of quantities, where <i>Formworks</i> is priced once and not the 40 times it is programmed. <b>Choose what names a cost line:</b> the leaf activity, or the <b>WBS branch</b> above it when the leaf rows are zones. Detected for you, and changeable.' },
       { t: 'Assign cost', short: 'One total per name',
         d: 'One figure per activity name — the cost of that work <b>across the whole project</b>. Step 3 splits it across the places it occurs.' },
       { t: 'Distribute', short: 'Split across the sub-WBS',
-        d: 'Split each total across the sub-WBS it occurs in: <b>equally</b>, or by a <b>percentage</b> you set per occurrence. Shares must reach 100% before Apply will write anything.' },
+        d: 'Split each total across the rows it covers — the occurrences of that activity, or the <b>zones under that WBS branch</b>: <b>equally</b>, or by a <b>percentage</b> you set per row. Shares must reach 100% before Apply will write anything.' },
       { t: 'Spread over time', short: 'Linear, front, back or bell',
         d: 'How each occurrence\u2019s money is spent <b>across its own dates</b> \u2014 evenly, front-loaded, back-loaded, or a bell. Step 3 decided <i>where</i> the money goes; this decides <i>when</i>. It is what makes the S-Curve a projection rather than a straight line.' },
       { t: 'Consolidate & review', short: 'See where the money is',
@@ -33429,11 +33558,31 @@
       if (sc.milestones) w.push(sc.milestones + ' milestone(s) are <b>excluded</b> — a zero-duration marker carrying cost would earn its value the day it flips.');
       return w.length ? '<div class="pscl-warn">' + w.join('<br>') + '</div>' : '';
     }
+    // The basis picker, with the evidence that produced the suggestion. A chooser with no reason
+    // beside it is a chooser the planner has to guess at.
+    function basisHTML() {
+      var d = detectBasis(), cur = basisOf();
+      var chips = BASES.map(function (b) {
+        return '<button class="pd-btn' + (cur === b.k ? ' pd-btn-primary' : '') + '" data-basis="' + b.k + '">' + esc(b.t) + '</button>';
+      }).join(' ');
+      var why = d.total
+        ? (d.suggest === 'wbs'
+            ? '<b>' + d.place + ' of ' + d.total + '</b> leaf activities are named for a place (a zone, a level, a unit) rather than for work, and <b>' + d.lined + '</b> of them sit under a WBS branch that names work. On a schedule built that way the bill of quantities line is the <b>branch</b>.'
+            : '<b>' + (d.total - d.place) + ' of ' + d.total + '</b> leaf activities are named for work, so the leaf row is the cost line.')
+        : 'No leaf activities to look at yet.';
+      return '<div class="pscl-phase"><div style="padding:10px 12px 0;"><b>What is being priced</b> &nbsp;' + chips + '</div>' +
+        '<p class="pscl-note">' + esc(BASES.filter(function (b) { return b.k === cur; })[0].t) + ' — ' + BASES.filter(function (b) { return b.k === cur; })[0].d + '</p>' +
+        '<p class="pscl-note">Detected: <b>' + esc(BASES.filter(function (b) { return b.k === d.suggest; })[0].t) + '</b>. ' + why + '</p>' +
+        (cur === 'wbs' ? '<p class="pscl-note">Step 3 then splits each branch total across the leaf rows under it — <b>equally</b>, or by a <b>percentage you set per zone</b>.</p>' : '') +
+        '</div>';
+    }
     function step1HTML(t) {
-      if (!t.groups) return panelWrap(0, '<div class="sbld-empty">No activities to load cost onto yet.</div>');
-      return panelWrap(0, scopeWarnHTML(t.list._scope) + kpisHTML(t) +
+      seedBasis();
+      if (!t.groups) return panelWrap(0, basisHTML() + '<div class="sbld-empty">No activities to load cost onto yet.</div>');
+      var wbsBasis = basisOf() === 'wbs';
+      return panelWrap(0, scopeWarnHTML(t.list._scope) + basisHTML() + kpisHTML(t) +
         '<div class="sbld-tablewrap"><div class="pscl-scroll"><table class="pscl-tbl">' +
-        '<thead><tr><th>Activity name</th><th class="num">Occurrences</th><th class="sub">Sub-WBS it appears under</th><th class="num">Assigned</th><th></th></tr></thead><tbody>' +
+        '<thead><tr><th>' + (wbsBasis ? 'WBS branch (cost line)' : 'Activity name') + '</th><th class="num">' + (wbsBasis ? 'Leaf rows under it' : 'Occurrences') + '</th><th class="sub">Sub-WBS it appears under</th><th class="num">Assigned</th><th></th></tr></thead><tbody>' +
         t.list.map(function (g) {
           var wbss = {}; g.insts.forEach(function (r) { if (r.wbs) wbss[r.wbs] = 1; });
           var codes = Object.keys(wbss);
@@ -33441,7 +33590,14 @@
             '<td class="num"><span class="sbld-tag">' + g.insts.length + '×</span></td>' +
             '<td class="sub">' + esc(codes.slice(0, 4).join(', ')) + (codes.length > 4 ? ' … (' + codes.length + ')' : '') + '</td>' +
             '<td class="num money' + (g.total == null ? ' none' : '') + '">' + (g.total == null ? 'not priced' : money(g.total)) + '</td>' +
-            '<td><button class="pd-btn pd-btn-sm" data-ren="' + esc(g.name) + '">Rename</button></td></tr>';
+            // ⚠️ Rename edits the ACTIVITY NAME on every instance. Under the WBS basis the cost
+            // line is a branch, and renaming it would mean renaming a WBS node — a different
+            // write, on a different table, with different consequences for every other view that
+            // reads that branch. Offered as disabled with the reason rather than silently renaming
+            // the zone rows underneath, which is what it would otherwise have done.
+            '<td>' + (wbsBasis
+              ? '<button class="pd-btn pd-btn-sm" disabled title="This cost line is a WBS branch. Rename it in the WBS Manager — renaming here would rename the leaf rows under it, which are the zones.">Rename</button>'
+              : '<button class="pd-btn pd-btn-sm" data-ren="' + esc(g.name) + '">Rename</button>') + '</td></tr>';
         }).join('') + '</tbody></table></div></div>');
     }
     function step2HTML(t) {
@@ -33611,6 +33767,10 @@
         b.onclick = function () { step = +b.dataset.go; paint(); var p = document.getElementById('ps-view-costload'); if (p && p.scrollIntoView) p.scrollIntoView({ block: 'start' }); };
       });
       var ap2 = document.getElementById('ps-cl-apply2'); if (ap2) ap2.onclick = applyAll;
+      // step 1 — what is being priced
+      panel.querySelectorAll('[data-basis]').forEach(function (b) {
+        b.onclick = function () { setBasis(b.dataset.basis); };
+      });
       // step 1 — rename
       panel.querySelectorAll('[data-ren]').forEach(function (b) {
         b.onclick = function () {

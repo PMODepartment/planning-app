@@ -84,6 +84,32 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-07 — Cost Loading: the cost line can be the WBS branch, not only the leaf activity
+
+Owner: *"what will happen if the project schedule is structured, wherein zones are the lowest level of
+details… my intent is to cost load based on the activities, similar to a BOQ… users then assign the
+cost to the WBS (activity) and then the ff steps remain."* The exercise was already right — price
+*Formworks* once, split it across the places it occurs. One assumption was wrong: that the **leaf row
+carries the work's name**. Where the leaves are *Zone 1*, *Zone 2* the BOQ line is the **WBS node
+above them**, so step 1 was asking the planner to price a zone — and *Zone 1* under two different
+branches folded into one cost line.
+
+The cost line's identity is now a **basis**, detected from the schedule and changeable in step 1:
+the leaf's own name (unchanged for every existing project), or the nearest WBS ancestor that names
+work. The instances then become the zone rows under it, so *"equally, or a percentage per zone"* is
+step 3's existing machinery with nothing added — as are the curves, the 100%-or-refuse rule and
+Apply. "Is this a place?" is answered from the project's own location values plus one fallback
+pattern for imports that never populated them; phase and place ancestors are stepped over. Detection
+seeds without claiming unsaved changes, never overrides an explicit choice, states the count behind
+its suggestion, and warns with a count before orphaning totals already assigned.
+Also established rather than assumed: the **importer** was the writer that mis-stamped Earthworks as
+Structural (its trail includes the activity's own branch), while the Match-WBS-to-Trade **wizard** was
+never broken (its trail excludes the node's own name) — so that wizard is the safe route to retag
+rows already stored. Module only.
+204 assertions across five suites, all executing code sliced from the shipped file, with HEAD run as
+a control on the same rows; ⚠️ not verified signed-in. `MODULE_V` → `20260907h`.
+
+
 ### 2026-09-07 — Main-contract-only closes the change-order gap; "Earthworks" stops outranking its trade
 
 Owner: *"when picking main it should exclude the 'change orders' activities hence the bar chart will

@@ -1,3 +1,84 @@
+## Cost Loading: the cost line can be the WBS branch, not only the leaf activity (2026-09-07) — jasantos2
+
+Owner: *"currently it is designed for project schedules whose lowest level of details are Activities.
+However what will happen if the project schedule is structured, wherein zones are the lowest level of
+details… my intent is to cost load based on the activities, similar to a BOQ. (e.g. rebar is xxx
+amount, formworks is yyy amount) not per zone… users then assign the cost to the WBS (activity) and
+then the ff steps remain. Meaning the lowest level detail (assuming those are zones) are divided
+equally OR users are able to define what percentage of the cost belongs to that zone."*
+
+### It did not need re-furnishing — it needed one assumption removed
+The exercise was already the right one: group by name so *Formworks* is priced **once** and step 3
+splits it across the places it occurs, equally or by a typed percentage. The five steps, the rounding
+remainder, the 100%-or-refuse rule and the time curves all stay exactly as they were.
+
+What was wrong was a single assumption inside `nameOf(r)`: that **the leaf row carries the work's
+name**. On a schedule built the other way round the leaves are *Zone 1*, *Zone 2*, and the BOQ line
+(*Rebar Works*) is the **WBS node above them** — so step 1 enlisted zone names and asked the planner
+to price a zone. Worse, measured on a constructed case: *Zone 1* under **two different branches**
+folded into **one** cost line, so pricing it would have split one figure across rebar and formworks
+alike.
+
+### The cost line's identity is now a basis, detected and changeable
+- **`activity`** — the leaf's own name. Today's behaviour, byte for byte.
+- **`wbs`** — the nearest WBS ancestor that names **work**. The instances are then the zone leaves
+  under it, so *"divided equally OR a percentage per zone"* is step 3's existing machinery with
+  nothing added.
+
+Everything downstream is untouched because it never cared what a group was: assign, distribute, the
+curve, Apply and review all key off the group and its instances.
+
+- `wbsLineOf(r)` walks the leaf's WBS code **deepest-first** — the most specific true answer, so
+  *Rebar Works* wins over the *Structural Works* heading above it — stepping over any ancestor that
+  names a **place**, and (⚠️ measured) any ancestor that names a **phase**: a leaf filed directly on
+  the Execution Phase root otherwise walked all the way up and became a cost line called
+  "Execution Phase" holding the whole project, which is worse than no answer. Such a leaf now falls
+  back to its own name and stays visible rather than vanishing from the total.
+- **"Is this a place?" is answered by the project's own data**, not a new vocabulary: every location
+  value used anywhere (`locValOf` over `LOC_LEVELS`), lowercased. ⚠️ Plus one independent fallback
+  pattern, because `location` is often unpopulated on a fresh import — which is exactly when the
+  planner opens this tab. A leaf literally called "Zone 3" is a place either way.
+- `detectBasis()` proposes, and step 1 **shows the count it counted** ("4 of 5 leaf activities are
+  named for a place… and 5 of them sit under a WBS branch that names work"). Both conditions are
+  required: place-named leaves with no work-naming branch above them would offer a basis with nothing
+  in it.
+- ⚠️ Detection **seeds without marking dirty** — it runs from a render, and a render that reports
+  unsaved changes teaches the planner to ignore that indicator. Once they pick a basis
+  (`basisChosen`) detection never overrides them again.
+- ⚠️ Switching the basis with money already assigned is **stated with the count and confirmed**: cost
+  lines are keyed by name, the names change wholesale with the basis, so those totals are orphaned
+  rather than silently re-attached to a line that happens to share a name.
+- ⚠️ **Rename is disabled under the WBS basis**, with the reason. It edits `activity_name` on every
+  instance — under this basis that would rename the **zone rows**, not the branch. Renaming a WBS
+  node is a different write on a different table, so it is offered as disabled and points at the WBS
+  Manager.
+
+### Also: which writer mis-stamped those trades, established rather than assumed
+Yesterday's `earthworks` fix raised the question of *which* code path had written Structural Works
+onto the owner's rows. Both callers of `discCanonOf` pass a **different trail**, and that is the whole
+story — now asserted:
+- `discStampFromWbs` (**the importer**) builds the trail from the activity's own code, so it
+  **includes** the branch the activity sits in — `… › Site Development Works › Earthworks`. HEAD
+  matched *Earthworks* and stopped. **This is the writer that mis-stamped the rows.**
+- `locScanNames` (**the Match-WBS-to-Trade wizard**) sets `trail = trail.slice(0, -1)`, **excluding**
+  the node's own name — so it always saw `… › Site Development Works` and always offered the right
+  value. **The wizard was never broken**, which is why it is the safe route to fix rows already
+  stored: *Group ▸ Match WBS to Discipline/Trade…*, tick the branch, Apply.
+
+### Verified
+**204 assertions across five suites, all passing**, every one executing code sliced out of the
+shipped file. The 35 new ones run the real `buildGroups`/`distribute` against two constructed
+schedules — leaves-are-work and leaves-are-zones — and the controls **execute HEAD's** code on the
+same rows to show it produced zone-named cost lines, no *Rebar Works* line at all, and the two-branch
+*Zone 1* collapse. Also asserted: schedule A's grouping is **byte-identical to HEAD** (no regression
+for existing projects), 1,000,000 over three zones equally comes to 333,333.33 / .33 / .34 and sums
+back to exactly 1,000,000, a 50/30/20 per-zone split lands 500k/300k/200k, an 80% split yields no
+amounts at all, detection still works with `location` stripped, and the basis guards behave.
+⚠️ **Not verified signed-in** — the anon key has no grants on `project_schedule`. No cost was applied
+and neither basis was exercised against a real project; the two schedules are constructed rows.
+
+`MODULE_V` → `20260907h`.
+
 ## Main-contract-only closes the gap, and "Earthworks" stops outranking its own trade (2026-09-07) — jasantos2
 
 ### 1. Picking **Main** closes the gap
