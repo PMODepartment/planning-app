@@ -815,7 +815,7 @@ html.pd-dark .boq-why { color:#7fd6a2; }
    resize as you move between a trade with 3 groups and one with 40. */
 .boq-ladwrap { padding:0 16px 4px; }
 .boq-ladwrap .pd-input { margin-bottom:10px; }
-.boq-lad { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; }
+.boq-lad { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:8px; }
 .boq-lad-col { border:1px solid var(--pd-line); border-radius:8px; overflow:hidden;
   display:flex; flex-direction:column; min-width:0; }
 .boq-lad-h { display:flex; justify-content:space-between; align-items:center;

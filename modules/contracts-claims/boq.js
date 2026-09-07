@@ -1917,13 +1917,24 @@ window.BOQ = (function () {
      and grouping by trade collapses the 42 into the 7 a planner actually packages by.
      WARNING Falls back to desc_l1 for any code with no trade, so a half-run migration degrades to
      the old behaviour rather than piling every code under a blank heading. */
+  /* ⚠️⚠️ FOUR LEVELS, NOT THREE. Owner: *"what happened to the third ladder? there should be 4
+     descriptions not 3."* Correct, and the collapse was mine. The template carries Trade,
+     Description 1 (division), Description 2 (group) and Description 3 (item); I folded division
+     away when the Trade column arrived, on the reasoning that a group's code implies it.
+     ⚠️ It does not, at this scale. Architectural Works spans many divisions, so dropping one rung
+     put **104 groups in a single flat pane** — worse than the accordion the ladder replaced,
+     because at least the accordion showed which division a group belonged to.
+     ⚠️ Falls back to desc_l1 as the trade for any code with none, so a half-run
+     class-code-trades migration degrades instead of piling everything under a blank heading. */
   function buildTree() {
     if (CODETREE) return CODETREE;
-    var byL1 = {}, out = [];
+    var byT = {}, out = [];
     (CODES || []).forEach(function (c) {
       var tkey = (c.trade && String(c.trade).trim()) || c.desc_l1;
-      var d = byL1[tkey];
-      if (!d) { d = byL1[tkey] = { code: tkey, desc: tkey, groups: {}, order: [] }; out.push(d); }
+      var t = byT[tkey];
+      if (!t) { t = byT[tkey] = { code: tkey, desc: tkey, divs: {}, order: [] }; out.push(t); }
+      var d = t.divs[c.code_l1];
+      if (!d) { d = t.divs[c.code_l1] = { code: c.code_l1, desc: c.desc_l1, groups: {}, order: [] }; t.order.push(d); }
       var g = d.groups[c.code_l2];
       if (!g) { g = d.groups[c.code_l2] = { code: c.code_l2, desc: c.desc_l2, items: [] }; d.order.push(g); }
       g.items.push(c);
@@ -2102,7 +2113,7 @@ window.BOQ = (function () {
     }
     buildTree();
     /* ⚠️ `open` is gone with the tree — a ladder has no collapsed state, it has a position. */
-    var picked = {}, q = '', curTrade = null, curGroup = null;
+    var picked = {}, q = '', curTrade = null, curDiv = null, curGroup = null;
 
     /* ⚠️ The one place a planner decides the shape of the bill, so it is the one place worth
        saying what ticking a division actually does. Without this the trade split is a surprise
@@ -2137,19 +2148,36 @@ window.BOQ = (function () {
     /* Which items survive the search. ⚠️ A division or group matches on its OWN text too,
        and then keeps all of its items — searching "concrete" must not hide the items of a
        group called Concrete Works merely because the word is not repeated in each one. */
-    function itemsOf(g, d) {
+    /* ⚠️ A hit on ANY ancestor keeps everything beneath it — searching "concrete" must not hide
+       the items of a division called Concrete Works merely because the word is not repeated in
+       each one. Checked trade-first so the broadest match wins earliest. */
+    function itemsOf(g, d, t) {
       if (!q) return g.items;
       var k = normKey(q);
+      if (normKey(t.desc).indexOf(k) >= 0) return g.items;
       if ((d.code + ' ' + normKey(d.desc)).indexOf(k) >= 0) return g.items;
       if ((g.code + ' ' + normKey(g.desc)).indexOf(k) >= 0) return g.items;
       return g.items.filter(function (c) { return (c.code + ' ' + normKey(c.desc_l3)).indexOf(k) >= 0; });
     }
     function visible() {
-      return buildTree().map(function (d) {
-        var gs = d.order.map(function (g) { return { g: g, items: itemsOf(g, d) }; })
-                        .filter(function (x) { return x.items.length; });
-        return { d: d, gs: gs };
-      }).filter(function (x) { return x.gs.length; });
+      return buildTree().map(function (t) {
+        var ds = t.order.map(function (d) {
+          var gs = d.order.map(function (g) { return { g: g, items: itemsOf(g, d, t) }; })
+                          .filter(function (x) { return x.items.length; });
+          return { d: d, gs: gs };
+        }).filter(function (x) { return x.gs.length; });
+        return { t: t, ds: ds };
+      }).filter(function (x) { return x.ds.length; });
+    }
+    /* Every item under a node, at whatever depth — one helper so the three parent rungs count and
+       tick identically instead of each re-deriving the walk. */
+    function itemsUnderTrade(x) {
+      return x.ds.reduce(function (a, y) {
+        return a.concat(y.gs.reduce(function (b, z) { return b.concat(z.items); }, []));
+      }, []);
+    }
+    function itemsUnderDiv(y) {
+      return y.gs.reduce(function (b, z) { return b.concat(z.items); }, []);
     }
     function nPicked() { return Object.keys(picked).length; }
 
@@ -2165,7 +2193,7 @@ window.BOQ = (function () {
       var isOn = leaf ? !!on : (total > 0 && on === total);
       var part = !leaf && on > 0 && on < total;
       return '<div class="boq-lad-row' + (active ? ' on' : '') + '" data-rung="' + kind + '" data-key="' + esc(code) + '">' +
-        '<input type="checkbox" data-' + (kind === 'trade' ? 'd' : kind === 'group' ? 'g' : 'c') + '="' + esc(code) + '"' +
+        '<input type="checkbox" data-' + (kind === 'trade' ? 't' : kind === 'div' ? 'd' : kind === 'group' ? 'g' : 'c') + '="' + esc(code) + '"' +
           (isOn ? ' checked' : '') + (part ? ' data-part="1"' : '') + ' />' +
         /* A trade is its own label, so the code chip is suppressed rather than printing the
            same words twice; groups and items keep theirs, which is what makes them scannable. */
@@ -2183,33 +2211,47 @@ window.BOQ = (function () {
         /* ⚠️ The position is RE-VALIDATED against the filtered set every paint. Typing a search
            that excludes the trade you were standing on must move you somewhere real, not leave
            two empty panes beside a list that no longer contains your selection. */
-        var t = vis.filter(function (x) { return x.d.code === curTrade; })[0] || vis[0];
-        curTrade = t.d.code;
-        var gsel = t.gs.filter(function (y) { return y.g.code === curGroup; })[0] || t.gs[0];
+        /* ⚠️ Each position is re-validated against the filtered set, TRADE FIRST then division
+           then group, because a search that excludes your trade also invalidates everything
+           below it. Resolving them independently would leave a division from one trade showing
+           beside the groups of another. */
+        var tsel = vis.filter(function (x) { return x.t.code === curTrade; })[0] || vis[0];
+        curTrade = tsel.t.code;
+        var dsel = tsel.ds.filter(function (y) { return y.d.code === curDiv; })[0] || tsel.ds[0];
+        curDiv = dsel ? dsel.d.code : null;
+        var gsel = dsel ? (dsel.gs.filter(function (z) { return z.g.code === curGroup; })[0] || dsel.gs[0]) : null;
         curGroup = gsel ? gsel.g.code : null;
 
         var tradesHTML = vis.map(function (x) {
-          var all = x.gs.reduce(function (a, y) { return a.concat(y.items); }, []);
+          var all = itemsUnderTrade(x);
           var on = all.filter(function (c) { return picked[c.code]; }).length;
-          return ladRow('trade', x.d.code, x.d.desc, on, all.length, x.d.code === curTrade);
+          return ladRow('trade', x.t.code, x.t.desc, on, all.length, x.t.code === curTrade);
         }).join('');
 
-        var groupsHTML = t.gs.map(function (y) {
-          var on = y.items.filter(function (c) { return picked[c.code]; }).length;
-          return ladRow('group', y.g.code, y.g.desc, on, y.items.length, y.g.code === curGroup);
+        var divsHTML = tsel.ds.map(function (y) {
+          var all = itemsUnderDiv(y);
+          var on = all.filter(function (c) { return picked[c.code]; }).length;
+          return ladRow('div', y.d.code, y.d.desc, on, all.length, y.d.code === curDiv);
         }).join('');
+
+        var groupsHTML = dsel ? dsel.gs.map(function (z) {
+          var on = z.items.filter(function (c) { return picked[c.code]; }).length;
+          return ladRow('group', z.g.code, z.g.desc, on, z.items.length, z.g.code === curGroup);
+        }).join('') : '';
 
         var itemsHTML = gsel ? gsel.items.map(function (c) {
           return ladRow('item', c.code, c.desc_l3, picked[c.code] ? 1 : 0, 0, false);
         }).join('') : '';
 
+        function col(label, n, inner) {
+          return '<div class="boq-lad-col"><div class="boq-lad-h">' + label + '<span>' + n + '</span></div>' +
+            '<div class="boq-lad-body">' + inner + '</div></div>';
+        }
         el('cb-tree').innerHTML =
-          '<div class="boq-lad-col"><div class="boq-lad-h">Trade<span>' + vis.length + '</span></div>' +
-            '<div class="boq-lad-body">' + tradesHTML + '</div></div>' +
-          '<div class="boq-lad-col"><div class="boq-lad-h">Group<span>' + t.gs.length + '</span></div>' +
-            '<div class="boq-lad-body">' + groupsHTML + '</div></div>' +
-          '<div class="boq-lad-col"><div class="boq-lad-h">Item<span>' + (gsel ? gsel.items.length : 0) + '</span></div>' +
-            '<div class="boq-lad-body">' + itemsHTML + '</div></div>';
+          col('Trade', vis.length, tradesHTML) +
+          col('Division', tsel.ds.length, divsHTML) +
+          col('Group', dsel ? dsel.gs.length : 0, groupsHTML) +
+          col('Item', gsel ? gsel.items.length : 0, itemsHTML);
       }
 
       var divs = {};
@@ -2235,7 +2277,10 @@ window.BOQ = (function () {
         row.onclick = function (e) {
           if (e.target && e.target.tagName === 'INPUT') return;
           var rung = row.dataset.rung;
-          if (rung === 'trade') { curTrade = row.dataset.key; curGroup = null; paint(); }
+          /* Moving up a rung clears everything below it — standing on a division that belongs to
+             a different trade is the bug this prevents. */
+          if (rung === 'trade') { curTrade = row.dataset.key; curDiv = null; curGroup = null; paint(); }
+          else if (rung === 'div') { curDiv = row.dataset.key; curGroup = null; paint(); }
           else if (rung === 'group') { curGroup = row.dataset.key; paint(); }
         };
       });
@@ -2245,16 +2290,33 @@ window.BOQ = (function () {
       tree.querySelectorAll('[data-g]').forEach(function (cb) {
         cb.onchange = function () {
           visible().forEach(function (x) {
-            x.gs.forEach(function (y) { if (y.g.code === cb.dataset.g) setAll(y.items, cb.checked); });
+            x.ds.forEach(function (y) {
+              y.gs.forEach(function (z) { if (z.g.code === cb.dataset.g) setAll(z.items, cb.checked); });
+            });
           });
           paint();
         };
       });
+      /* ⚠️ A division is only ticked WITHIN THE TRADE ON SCREEN. Division codes are not unique
+         across trades once "Others" exists, so matching on the code alone would tick a division
+         the planner is not looking at. */
       tree.querySelectorAll('[data-d]').forEach(function (cb) {
         cb.onchange = function () {
           visible().forEach(function (x) {
-            if (x.d.code !== cb.dataset.d) return;
-            x.gs.forEach(function (y) { setAll(y.items, cb.checked); });
+            if (x.t.code !== curTrade) return;
+            x.ds.forEach(function (y) {
+              if (y.d.code !== cb.dataset.d) return;
+              setAll(itemsUnderDiv(y), cb.checked);
+            });
+          });
+          paint();
+        };
+      });
+      tree.querySelectorAll('[data-t]').forEach(function (cb) {
+        cb.onchange = function () {
+          visible().forEach(function (x) {
+            if (x.t.code !== cb.dataset.t) return;
+            setAll(itemsUnderTrade(x), cb.checked);
           });
           paint();
         };
