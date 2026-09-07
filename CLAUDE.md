@@ -95,6 +95,28 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-07 (j) — BOQ links before measurement; cost-loading spread per occurrence
+
+Owner: *"if it is matching to schedule, users are able to link despite the qts or amount not being
+assigned"*. Matching and measuring are different jobs done at different times — which activities a
+BOQ line covers is knowable off the drawings first. **Match to schedule** now lists measured, lump
+sum and provisional lines regardless of quantity or amount, proposes their candidate activities at
+qty 0, and stores the link on its own (`qty = 0` = matched, not yet quantified — no migration; the
+column is already `not null default 0`). ⚠️ The gate that mattered was silent: Apply discarded every
+zero-quantity part, so a link recorded before measurement **vanished with a success toast**. A
+qty-less line shows em dashes rather than zeros, never claims to reconcile, and reads **Link…**
+instead of **Allocate…**; over-allocation is only tested where a quantity exists.
+
+Owner: *"the function of cost loading of the project schedule should allow users to decide what type
+of distribution that activity has over the ff months."* Step 4 already offered Linear / Front / Back
+/ Bell per occurrence across its own dates — but **one shape per cost line**, which stopped being
+enough once a cost line could be a WBS branch covering twenty zones. An occurrence may now override
+its line's curve; "Same as line" deletes the override rather than freezing a copy, so a line-level
+change still moves everything not overridden. Apply and the monthly preview were switched together —
+a preview reading a different shape from the one Apply writes is an S-curve the schedule never gets.
+251 assertions across six suites, all executing code sliced from the shipped files with HEAD run as
+a control; ⚠️ not verified signed-in. `MODULE_V` → `20260907za`, `boq.js?v=20260907w`.
+
 ### 2026-09-07 (i) — `PDGrid`: spreadsheet keys as a shared layer, not a second grid engine
 
 Owner: *"let's develop the excel grid, let's develop it in a way that would benefit more modules /

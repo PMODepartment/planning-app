@@ -1,5 +1,59 @@
 # Module: contracts-claims
 
+## Match to schedule: a line can be linked before it is measured or priced (2026-09-07h) - jasantos2
+
+Owner: *"if it is matching to schedule, users are able to link despite the qts or amount not being
+assigned"*.
+
+Matching and measuring are two different jobs and they do not happen at the same time. Saying **which
+activities a BOQ line covers** is a scope decision, knowable off the drawings long before anyone has
+measured the line — it is the thing a QS does first. The tab required the quantity anyway, so the
+choice was to wait, or to type a placeholder figure; and a placeholder quantity is indistinguishable
+from a measured one the moment it is stored.
+
+### Three gates, and the middle one was losing data
+1. **The worklist could not list the line.** `qtyLine()` requires `line_kind === 'measured' && qty
+   != null`, and `allocHTML` filtered on it — so a lump-sum line, a provisional line, or a measured
+   line awaiting its figure never appeared. Now filtered on `linkLine()`: any **measured**,
+   **lump_sum** or **provisional** line. ⚠️ Headings stay out (layout) and so do **excluded** lines —
+   an exclusion is a positive statement that the work is somebody else's scope.
+2. ⚠️⚠️ **Apply silently discarded the link.** `prop.parts.filter(p => p.activity_id && Number(p.qty))`
+   dropped every zero-quantity part, so a link recorded before measurement **vanished on Apply, with
+   a success toast**. A part now needs only an activity. This was the half that lost work.
+3. **The proposal was empty.** `proposeSplit` returned `{parts: []}` when `qty` was 0, so the planner
+   faced a blank dialog and an 800-entry select. The candidates **are** the proposal when only the
+   split is unknown, so they come back at qty 0 and the link is one press of Apply. `method` stays
+   `null` — labelling it `prorata` would claim an arithmetic that did not happen.
+
+### `qty = 0` means matched, not yet quantified — and it needs no migration
+`boq_allocations.qty` is already `numeric not null default 0`, and every reader **sums** qty, so a 0
+contributes nothing to any derived activity quantity. When the figure arrives, the same dialog spreads
+it across the links that are already there.
+
+- The blocking **"No line carries a quantity yet"** stage is gone; it is now a per-line fact, not a
+  wall in front of the whole worklist. The `nomeasured`/`noqty` pair collapses into one `nolines`
+  stage that names all three linkable kinds.
+- ⚠️ **Over-allocation is only tested where a quantity exists.** `> 0 + 1e-6` would have flagged every
+  link on every un-measured line the moment the tab started listing them.
+- ⚠️ A qty-less row shows **em dashes, not zeros**: "0 allocated, 0 remaining" reads as a *finished*
+  line, the opposite of what it is. Its allocated cell reads **linked** once it is. The button says
+  **Link…** rather than **Allocate…**, and the dialog is titled *Link to activities*.
+- ⚠️ An unmeasured line does **not** report "reconciles exactly" — 0 of 0 satisfies the arithmetic and
+  says the opposite of the truth. It states what it is: a link, and what happens when the figure lands.
+- KPI: *Measured lines* → **Lines to match**, with how many of them carry a quantity to spread.
+
+### Verified
+**24 assertions** (of 251 across six suites, all passing), executing `linkLine` / `hasQty` / `qtyLine`
+sliced out of the shipped file across seven line shapes, with **HEAD executed as the control** and
+shown to reject the qty-less measured line, the lump-sum line and the provisional line outright. The
+three gates are each asserted against HEAD's own text. `qtyLine` is byte-identical — it still means
+"spreadable", and nothing that relies on that meaning moved.
+⚠️ **Not verified signed-in** — the anon key has no grants, so no allocation was written. The
+predicates and the proposal ran; the dialog has not been applied against a real project.
+
+`boq.js?v=20260907w`.
+
+
 ## The draft table now looks fillable, and headings collapse (2026-09-07g) - fmlozano
 
 Owner: *"the table is not apparent to be filled out and needs UI restructuring"* and *"we should

@@ -1318,6 +1318,10 @@
        Loading has and the builder does not: money inputs, and the step-4 cost stack. */
     .pscl-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:10px 0; }
     .pscl-note { font-size:12px; color:var(--pd-muted); }
+    /* A per-OCCURRENCE row inside a step-4 cost line: indented, quieter, and visibly subordinate
+       to the line above it so the two levels of the choice cannot be confused. */
+    .pscl-tbl tr.pscl-sub > td { background:rgba(0,0,0,.02); border-top:0; }
+    html.pd-dark .pscl-tbl tr.pscl-sub > td { background:rgba(255,255,255,.03); }
     .pscl-warn { font-size:12px; color:#8A5300; background:#FFF0D9; border:1px solid #F0D9A8; border-radius:8px; padding:8px 10px; margin-bottom:14px; }
     html.pd-dark .pscl-warn { color:#FFD79A; background:#3A2E17; border-color:#5A4620; }
     .pscl-tbl { width:100%; border-collapse:collapse; font-size:13px; }
@@ -32952,6 +32956,8 @@
   var CostLoading = (function () {
     var cfg = null, step = 0, curPid = null, curUid = null, dirty = false, wired = false, loading = false;
     var selGroup = null;          // the name selected in steps 3 and 4
+    var clCvOpen = null;          // step 4: the cost line expanded to reach its occurrences (its OWN
+                                  // state, so opening a line here never moves step 3's selection)
     var clLevel = null;           // step 4: the level being stacked
     var clScope = {};             // step 4: { <outer level id>: value } — its own, NOT the Gantt stack's
     var clAllTowers = true;       // step 4: every tower side by side, or the pinned one
@@ -32982,6 +32988,26 @@
       { k: 'bell',   t: 'Bell (mid-peak)', d: 'Ramps up, peaks mid-way, ramps down. The usual shape for a trade that builds up a crew and then demobilises.' }
     ];
     function curveOf(g) { var k = g && g.curve; return CURVES.some(function (c) { return c.k === k; }) ? k : 'linear'; }
+    /* ⚠️⚠️ THE SHAPE IS PER OCCURRENCE, NOT ONLY PER COST LINE.
+       Owner 2026-09-07: *"the function of cost loading of the project schedule should allow users
+       to decide what type of distribution that activity has over the ff months. (e.g. back loaded,
+       bell, etc.)"*
+       Step 4 already chose a shape and already applied it per occurrence across that occurrence's
+       own dates — but ONE shape for the whole cost line. That was tolerable while a cost line was
+       one activity name; it stopped being tolerable the moment a line could be a WBS BRANCH
+       covering twenty zones, because a substructure pour and a roof-level pour of the same bill
+       item do not spend the same way.
+       So the line's curve is the DEFAULT and an occurrence may override it. Stored per instance
+       key (the activity_id — see instKey: a uuid would reset itself on the next re-import).
+       ⚠️ An override is only ever an override: clearing it returns the occurrence to the line, and
+       a line-level change still moves every occurrence that has not been overridden. Storing a
+       copy of the line's curve on every instance would have frozen them all against the line. */
+    function icurveOf(g, r) {
+      var m = g && g.icurve, k = m && m[instKey(r)];
+      return CURVES.some(function (c) { return c.k === k; }) ? k : null;
+    }
+    function curveFor(g, r) { return icurveOf(g, r) || curveOf(g); }
+    function icurveCount(g) { var m = g && g.icurve; return m ? Object.keys(m).filter(function (k) { return !!m[k]; }).length : 0; }
     function curveLabel(k) { for (var i = 0; i < CURVES.length; i++) if (CURVES[i].k === k) return CURVES[i].t; return 'Linear'; }
     // A 64x22 sparkline of the curve's own DENSITY (its per-period spend), drawn from curveCdf so
     // the picture cannot drift from the arithmetic that spreads the money.
@@ -33008,13 +33034,14 @@
       gs.forEach(function (g) {
         if (onlyName && g.name !== onlyName) return;
         if (g.total == null) return;
-        var k = curveOf(g);
         distribute(g).forEach(function (d) {
           if (d.amount == null) return;
           total += d.amount;
           var st = pd(d.r.start_date), en = pd(d.r.end_date) || st;
           if (!st) { undated += d.amount; return; }
-          spreadCurveAdd(arr, M, d.amount, st, en, k);
+          // The preview must read the SAME shape Apply will write, or the S-curve on screen is not
+          // the S-curve the schedule gets.
+          spreadCurveAdd(arr, M, d.amount, st, en, curveFor(g, d.r));
         });
       });
       return { M: M, months: arr, total: r2(total), undated: r2(undated) };
@@ -33184,6 +33211,7 @@
         g.mode = (c && c.mode === 'pct') ? 'pct' : 'equal';
         g.curve = curveOf(c);
         g.pct = (c && c.pct) || {};
+        g.icurve = (c && c.icurve) || {};
         g.insts.sort(function (a, b) { return String(a.wbs || '').localeCompare(String(b.wbs || ''), undefined, { numeric: true }) || cmpGroupName(a.activity_id || '', b.activity_id || ''); });
         return g;
       });
@@ -33395,8 +33423,8 @@
       var writes = [], overwrite = 0;
       t.list.forEach(function (g) {
         if (g.total == null) return;
-        var k = curveOf(g);
         distribute(g).forEach(function (d) {
+          var k = curveFor(g, d.r);
           if (d.amount == null) return;
           var cur = d.r.planned_cost == null ? null : r2(+d.r.planned_cost);
           // ⚠️ Skipped only when the money AND the shape already match. Comparing the amount alone
@@ -33674,17 +33702,45 @@
         '<div class="sbld-tablewrap"><div class="pscl-scroll"><table class="pscl-tbl">' +
         '<thead><tr><th>Activity name</th><th class="num">Occurrences</th><th class="num">Total cost</th><th style="width:430px;">Spread over its dates</th></tr></thead><tbody>' +
         t.list.map(function (g) {
-          var cur = curveOf(g);
-          return '<tr><td class="nm">' + esc(g.name) + '</td>' +
-            '<td class="num"><span class="sbld-tag">' + g.insts.length + '\u00d7</span></td>' +
+          var cur = curveOf(g), ov = icurveCount(g), open = (clCvOpen === g.name);
+          var rowsOut = '<tr><td class="nm">' + esc(g.name) +
+            // The override count is on the LINE, because a line whose occurrences disagree with it
+            // must not look like a line that is uniformly what it says.
+            (ov ? ' <span class="sbld-tag" title="' + ov + ' occurrence(s) override this shape">' + ov + ' custom</span>' : '') + '</td>' +
+            '<td class="num"><button class="pd-btn pd-btn-sm" data-cvopen="' + esc(g.name) + '" title="Set the shape for individual occurrences">' + g.insts.length + '\u00d7' + (open ? ' \u25b4' : ' \u25be') + '</button></td>' +
             '<td class="num money' + (g.total == null ? ' none' : '') + '">' + (g.total == null ? 'not priced' : money(g.total)) + '</td>' +
             '<td><div class="pscl-curves">' + CURVES.map(function (c) {
               return '<button class="pscl-curve' + (c.k === cur ? ' on' : '') + '" data-curve="' + esc(g.name) + '" data-k="' + c.k + '" title="' + esc(c.t + ' \u2014 ' + c.d) + '">' +
                 curveSpark(c.k, c.k === cur) + '<span>' + esc(c.t) + '</span></button>';
             }).join('') + '</div></td></tr>';
+          if (!open) return rowsOut;
+          // ⚠️ The per-occurrence rows carry a "Same as the line" option FIRST and selected by
+          // default, so the fallback is visible rather than implied — and so clearing an override
+          // is the same one click that set it.
+          var amts = {}; distribute(g).forEach(function (d) { amts[instKey(d.r)] = d.amount; });
+          rowsOut += g.insts.map(function (r) {
+            var ik = instKey(r), own = icurveOf(g, r), eff = own || cur;
+            // The place, read the way step 3 reads it: the location values, in level order.
+            var where = (LOC_LEVELS || []).map(function (l) { return locValOf(r, l.id); }).filter(Boolean).join(' · ');
+            return '<tr class="pscl-sub"><td class="nm" style="padding-left:22px;">' +
+              '<span class="pscl-note">' + esc(r.activity_id || '') + (where ? ' · ' + esc(where) : '') +
+              (r.start_date ? ' · ' + esc(Fmt.date(r.start_date)) + (r.end_date ? ' \u2192 ' + esc(Fmt.date(r.end_date)) : '') : ' · <b>no dates</b>') +
+              '</span></td>' +
+              '<td class="num"></td>' +
+              '<td class="num money' + (amts[ik] == null ? ' none' : '') + '">' + (amts[ik] == null ? '\u2014' : money(amts[ik])) + '</td>' +
+              '<td><div class="pscl-curves">' +
+                '<button class="pscl-curve' + (own ? '' : ' on') + '" data-icv="' + esc(g.name) + '" data-ik="' + esc(ik) + '" data-k="" title="Follow the cost line (' + esc(curveLabel(cur)) + ')"><span>Same as line</span></button>' +
+                CURVES.map(function (c) {
+                  return '<button class="pscl-curve' + (own === c.k ? ' on' : '') + '" data-icv="' + esc(g.name) + '" data-ik="' + esc(ik) + '" data-k="' + c.k + '" title="' + esc(c.t + ' \u2014 ' + c.d) + '">' +
+                    curveSpark(c.k, own === c.k) + '<span>' + esc(c.t) + '</span></button>';
+                }).join('') +
+              '</div></td></tr>';
+          }).join('');
+          return rowsOut;
         }).join('') + '</tbody></table></div></div>' +
         '<p class="pscl-note" style="margin-top:10px;">The shape is applied <b>per occurrence, across that occurrence\u2019s own dates</b> \u2014 not across the project. ' +
-        'It changes <b>when</b> the money is forecast, never <b>how much</b>: every curve still integrates to the activity\u2019s full total.</p>');
+        'It changes <b>when</b> the money is forecast, never <b>how much</b>: every curve still integrates to the activity\u2019s full total. ' +
+        'Press the <b>' + '\u00d7' + ' count</b> to open a line and give an individual occurrence its own shape \u2014 a substructure pour and a roof-level pour of the same bill item rarely spend alike.</p>');
     }
     function step5HTML(t) {
       if (!t.priced) return panelWrap(4, '<div class="sbld-empty">Assign a cost in step 2 first — there is nothing to review yet.</div>');
@@ -33767,6 +33823,20 @@
         b.onclick = function () { step = +b.dataset.go; paint(); var p = document.getElementById('ps-view-costload'); if (p && p.scrollIntoView) p.scrollIntoView({ block: 'start' }); };
       });
       var ap2 = document.getElementById('ps-cl-apply2'); if (ap2) ap2.onclick = applyAll;
+      // step 4 — open a cost line to reach its occurrences, and set one occurrence's shape
+      panel.querySelectorAll('[data-cvopen]').forEach(function (b) {
+        b.onclick = function () { var g = b.dataset.cvopen; clCvOpen = (clCvOpen === g) ? null : g; paint(); };
+      });
+      panel.querySelectorAll('[data-icv]').forEach(function (b) {
+        b.onclick = function () {
+          var e = entry(b.dataset.icv), k = b.dataset.k || '';
+          e.icurve = e.icurve || {};
+          // ⚠️ DELETED, not set to the line's current value: an override storing 'bell' because the
+          // line happened to be bell would stop following the line the next time the line changed.
+          if (!k) delete e.icurve[b.dataset.ik]; else e.icurve[b.dataset.ik] = k;
+          markDirty(); paint();
+        };
+      });
       // step 1 — what is being priced
       panel.querySelectorAll('[data-basis]').forEach(function (b) {
         b.onclick = function () { setBasis(b.dataset.basis); };

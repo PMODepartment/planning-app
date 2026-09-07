@@ -13,6 +13,50 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### Cost Loading: the spend shape is per OCCURRENCE, not only per cost line (2026-09-07) — jasantos2
+
+Owner: *"the function of cost loading of the project schedule should allow users to decide what type
+of distribution that activity has over the ff months. (e.g. back loaded, bell, etc.)"*
+
+**Step 4 already did most of this** — *Spread over time*, with Linear / Front-loaded / Back-loaded /
+Bell, applied per occurrence across that occurrence's own dates, integrating to the full total. What
+it did **not** do was let two occurrences of one cost line differ: there was **one shape per line**.
+
+That was tolerable while a cost line was one activity name. It stopped being tolerable the moment a
+cost line could be a **WBS branch covering twenty zones** (the entry below), because a substructure
+pour and a roof-level pour of the same bill item do not spend alike.
+
+- `curveFor(g, r)` = the occurrence's override, else the line's curve. Stored as
+  `cfg.groups[name].icurve[<instKey>]` — keyed on `activity_id`, like the step-3 percentages, because
+  a uuid-keyed override would reset itself on the next re-import.
+- ⚠️ **An override is only ever an override.** Clearing it returns the occurrence to the line, and a
+  line-level change still moves every occurrence that has not been overridden. Storing a *copy* of
+  the line's curve on each instance would have frozen them all against the line — so "Same as line"
+  **deletes** the entry rather than writing the line's current value.
+- Step 4 gains a per-occurrence editor: press the **occurrence count** to open a line and set an
+  individual occurrence, each row showing its activity id, its place, its dates and its own money.
+  "Same as line" is listed **first and selected by default**, so the fallback is visible rather than
+  implied. A line with overrides carries an **"n custom"** tag, because a line whose occurrences
+  disagree with it must not look uniform.
+- ⚠️ Step 4 has its **own** open state (`clCvOpen`), so opening a line here never moves step 3's
+  selection.
+- Both readers were switched together: **Apply** writes `curveFor(g, d.r)` per row, and the **monthly
+  preview** spreads with the same call — a preview reading a different shape from the one Apply writes
+  is an S-curve on screen that the schedule never gets.
+- `curveOf` itself is byte-identical, so a config saved before this spreads exactly as it did.
+
+### Verified
+**47 new assertions** (251 across six suites, all passing), executing `curveFor` / `icurveOf` /
+`icurveCount` sliced out of the shipped file, with HEAD executed as the control and shown to have no
+`curveFor` at all and to use the line curve for every occurrence. Also asserted: an unknown curve
+name is ignored rather than trusted, a missing `icurve` map is safe, a line with no curve still falls
+back to linear, and moving the line moves exactly the occurrences that are not overridden.
+⚠️ **Not verified signed-in** — the anon key has no grants on `project_schedule`. No cost was applied
+and the editor has not been opened against a real project.
+
+`MODULE_V` → `20260907za`.
+
+
 
 ### Cost Loading: the cost line can be the WBS branch, not only the leaf activity (2026-09-07) — jasantos2
 

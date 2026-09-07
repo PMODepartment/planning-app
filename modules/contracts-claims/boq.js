@@ -301,6 +301,28 @@ window.BOQ = (function () {
      Lump-sum and provisional lines carry money but no measurable quantity; in a
      quantity roll-up they silently corrupt every productivity rate. */
   function qtyLine(r) { return r.line_kind === 'measured' && r.qty != null; }
+  /* ⚠️⚠️ MATCHING AND MEASURING ARE TWO DIFFERENT JOBS, AND THEY DO NOT HAPPEN AT THE SAME TIME.
+     Owner 2026-09-07: *"if it is matching to schedule, users are able to link despite the qts or
+     amount not being assigned"*.
+     Right: the tab was gated on `qtyLine`, so a line with no quantity could not even be SEEN in
+     Match to schedule, and the whole tab showed a "No line carries a quantity yet" wall. But
+     saying WHICH ACTIVITIES A BOQ LINE COVERS is a scope decision, and it is knowable long before
+     anyone has measured the line — it is the thing a QS does first, off the drawings. Forcing the
+     quantity in first meant either waiting, or typing a placeholder figure, and a placeholder
+     quantity is indistinguishable from a measured one the moment it is stored.
+     So the link stands on its own: `qty = 0` on the allocation row means MATCHED, NOT YET
+     QUANTIFIED. Nothing downstream needed changing for that — every reader sums qty, and 0 adds
+     nothing — and it needs no migration, because boq_allocations.qty is `not null default 0`
+     already. When the quantity arrives, the same Allocate dialog spreads it across the links that
+     are already there.
+     ⚠️ Excluded lines and headings are still out: a heading is layout, and an exclusion is a
+     positive statement that the work is somebody else's scope. */
+  function linkLine(r) {
+    return r.line_kind !== 'heading' && !r.exclusion_note &&
+      (r.line_kind === 'measured' || r.line_kind === 'lump_sum' || r.line_kind === 'provisional');
+  }
+  // Does this line have a quantity to spread, as opposed to only a link to record?
+  function hasQty(r) { return r && r.qty != null && Number(r.qty) > 0; }
 
   function parseSheet(d) {
     var g = d._grid, m = d.col_map, out = [], stack = [];
@@ -3357,7 +3379,15 @@ window.BOQ = (function () {
      schedule's location wizard already follows: propose → preview → apply. */
   function proposeSplit(r, acts) {
     var q = Number(r.qty) || 0;
-    if (!q || !acts.length) return { method: null, parts: [] };
+    if (!acts.length) return { method: null, parts: [] };
+    /* ⚠️ NO QUANTITY IS NOT NOTHING TO PROPOSE. It used to return an empty set, so a planner opening
+       an un-measured line got a blank dialog and had to add every activity from an 800-entry select —
+       which is friction precisely where the owner asked for none. The candidates ARE the proposal;
+       only the split is unknown, so each part comes back at 0 and the link is one press of Apply.
+       Method stays null: nothing has been split, and labelling this 'prorata' would claim an
+       arithmetic that did not happen. */
+    if (!q) return { method: null, parts: acts.map(function (a2) {
+      return { activity_id: a2.activity_id, name: a2.activity_name, qty: 0 }; }) };
     var loc = locMatch(r, acts);
     if (loc.length) {
       // A location match is a statement about WHERE, so an equal split across
@@ -3390,8 +3420,10 @@ window.BOQ = (function () {
      to "what do I do now?" belongs. */
   function allocStage(lines, mapped) {
     if (!ACTS) return 'loading';
-    if (!ITEMS.filter(function (r) { return r.line_kind === 'measured'; }).length) return 'nomeasured';
-    if (!lines.length) return 'noqty';
+    // ⚠️ 'noqty' IS GONE as a blocking stage — see linkLine. What used to stop the tab dead now
+    // stops nothing; a line with no quantity is listed and linkable, and the missing quantity is
+    // reported per line instead of as a wall in front of the whole worklist.
+    if (!lines.length) return 'nolines';
     if (!mapped.length) return 'nocodes';
     if (!ACTS.length) return 'nosched';
     if (!ACTS.filter(function (a) { return a.class_code; }).length) return 'notagged';
@@ -3399,15 +3431,20 @@ window.BOQ = (function () {
   }
 
   function allocHTML() {
-    var lines = ITEMS.filter(qtyLine);
+    var lines = ITEMS.filter(linkLine);
     var mapped = lines.filter(function (r) { return CMAP[r.id]; });
     var done = mapped.filter(function (r) { return allocOf(r.id).length; });
-    var over = lines.filter(function (r) { return allocSum(allocOf(r.id)) > (Number(r.qty) || 0) + 1e-6; });
+    // ⚠️ Over-allocation is only meaningful against a quantity that EXISTS. A line with none
+    // cannot be over-allocated, and testing `> 0 + 1e-6` would have flagged every link on every
+    // un-measured line as an over-allocation the moment this tab started listing them.
+    var over = lines.filter(function (r) { return hasQty(r) && allocSum(allocOf(r.id)) > (Number(r.qty) || 0) + 1e-6; });
+    var noQ = mapped.filter(function (r) { return !hasQty(r); });
+    var linkedNoQ = noQ.filter(function (r) { return allocOf(r.id).length; });
     var coded = ACTS ? ACTS.filter(function (a) { return a.class_code; }).length : null;
     var stage = allocStage(lines, mapped);
 
     var h = '<div class="cc-kpis">' +
-      kpi('Measured lines', lines.length, 'carry an allocatable quantity') +
+      kpi('Lines to match', lines.length, (lines.length - noQ.length) + ' carry a quantity to spread') +
       kpi('Mapped', mapped.length, 'have a class code to allocate along') +
       kpi('Allocated', done.length, (mapped.length - done.length) + ' still unallocated',
           mapped.length ? (done.length === mapped.length ? 'good' : 'warn') : '') +
@@ -3424,6 +3461,16 @@ window.BOQ = (function () {
         ' allocate more quantity than the BOQ line carries.</strong> Silent over-allocation is a wrong S-curve — ' +
         'fix these before anything downstream reads the derived activity quantities.</div>';
     }
+    // ⚠️ Stated as a fact, not as an obstacle. The links are real and useful; what they cannot do
+    // yet is carry a quantity into the S-curve, and that is the sentence a planner needs.
+    if (noQ.length) {
+      h += '<div class="boq-alert"><strong>' + noQ.length + ' line' + (noQ.length === 1 ? '' : 's') +
+        ' carry no quantity yet.</strong> You can still match ' + (noQ.length === 1 ? 'it' : 'them') +
+        ' to activities — the link is stored on its own and contributes <b>0</b> to any derived quantity until ' +
+        'the figure arrives. ' + (linkedNoQ.length ? linkedNoQ.length + ' of them ' + (linkedNoQ.length === 1 ? 'is' : 'are') +
+        ' already linked. ' : '') + 'Fill in <b>Qty</b> on the Lines tab and the same dialog will spread it across ' +
+        'the links already there.</div>';
+    }
 
     h += '<details class="boq-how"><summary>How matching works</summary>' +
       '<p>A class code is a <strong>tag</strong>, not a key — one code is carried by many activities — ' +
@@ -3435,12 +3482,11 @@ window.BOQ = (function () {
       var S = {
         loading:    ['Loading the schedule…',
                      'Reading this project\'s leaf activities and their class codes.', '', ''],
-        nomeasured: ['Nothing to allocate yet',
-                     'Allocation applies to <b>measured</b> lines — those that carry a quantity. This revision has none.',
-                     'Go to Lines', 'items'],
-        noqty:      ['No line carries a quantity yet',
-                     'A BOQ line is spread across activities <b>by quantity</b>, so there is nothing to spread until ' +
-                     'the quantities are in. Fill in <b>Qty</b> on the Lines tab — you can paste a whole column from Excel.',
+        nolines:    ['Nothing to match yet',
+                     'Matching applies to <b>measured</b>, <b>lump sum</b> and <b>provisional</b> lines. This revision ' +
+                     'has none of those — only headings, or lines marked <b>Excluded</b>. ' +
+                     '<br><br>A quantity is <b>not</b> needed to match a line: link it to its activities now and the ' +
+                     'quantities can follow.',
                      'Go to Lines', 'items'],
         /* ⚠️ THE BUTTON IS WITHHELD ON A MANUAL DRAFT, because the Class Codes tab is not on
            screen there — subsFor() shows only Lines and Match to schedule, since mapping a
@@ -3494,17 +3540,20 @@ window.BOQ = (function () {
     if (!list.length) h += '<tr><td colspan="8" class="cc-mut" style="text-align:center;padding:30px;">' +
       'No line matches “' + esc(filt.q) + '”. Clear the search to see the worklist.</td></tr>';
     list.slice(0, 300).forEach(function (r) {
-      var al = allocOf(r.id), s = allocSum(al), q = Number(r.qty) || 0, rem = q - s;
+      var al = allocOf(r.id), s = allocSum(al), qOn = hasQty(r), q = Number(r.qty) || 0, rem = q - s;
       h += '<tr data-id="' + esc(r.id) + '">' +
         '<td class="cc-desc"><div class="cc-desc-txt">' + esc(r.description || '') + '</div>' +
-          '<div class="cc-mini">' + esc(r.sheet) + ' · row ' + r.source_row + ' · ' + esc(r.unit || '') + '</div></td>' +
+          '<div class="cc-mini">' + esc(r.sheet) + ' · row ' + r.source_row + ' · ' + esc(r.unit || '') +
+          (qOn ? '' : ' · <b>no qty yet</b>') + '</div></td>' +
         '<td><span class="boq-code">' + esc(CMAP[r.id].class_code) + '</span></td>' +
-        '<td class="cc-r">' + qtyStr(q) + '</td>' +
-        '<td class="cc-r">' + qtyStr(s) + '</td>' +
-        '<td class="cc-r' + (rem < -1e-6 ? ' boq-bad' : '') + '">' + qtyStr(rem) + '</td>' +
+        // ⚠️ An em dash, not 0. A qty-less line showing "0" allocated "0" with "0" remaining reads
+        // as a finished line, which is the opposite of what it is.
+        '<td class="cc-r">' + (qOn ? qtyStr(q) : '<span class="cc-mut">—</span>') + '</td>' +
+        '<td class="cc-r">' + (qOn ? qtyStr(s) : (al.length ? '<span class="cc-mut">linked</span>' : '<span class="cc-mut">—</span>')) + '</td>' +
+        '<td class="cc-r' + (qOn && rem < -1e-6 ? ' boq-bad' : '') + '">' + (qOn ? qtyStr(rem) : '<span class="cc-mut">—</span>') + '</td>' +
         '<td class="cc-r">' + al.length + '</td>' +
         '<td>' + esc(al.length ? al[0].method : '') + '</td>' +
-        (canWrite ? '<td class="cc-actcol"><button class="pd-btn" data-split="' + esc(r.id) + '">Allocate…</button></td>' : '') +
+        (canWrite ? '<td class="cc-actcol"><button class="pd-btn" data-split="' + esc(r.id) + '">' + (qOn ? 'Allocate…' : 'Link…') + '</button></td>' : '') +
         '</tr>';
     });
     h += '</tbody></table></div>';
@@ -3547,7 +3596,9 @@ window.BOQ = (function () {
       ? { method: existing[0].method, parts: existing.map(function (a) { var ac = acts.find(function (x) { return x.activity_id === a.activity_id; }); return { activity_id: a.activity_id, name: ac ? ac.activity_name : '', qty: Number(a.qty) }; }) }
       : proposeSplit(r, acts);
 
-    var m = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">Allocate quantity</h2>' +
+    var qOn = hasQty(r);
+    var m = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">' +
+      (qOn ? 'Allocate quantity' : 'Link to activities') + '</h2>' +
       '<button class="pd-modal-close" id="sp-x">&times;</button></div>' +
       '<div class="boq-split" id="sp-body"></div>' +
       '<div class="pd-modal-footer"><button class="pd-btn" id="sp-cancel">Cancel</button> ' +
@@ -3563,6 +3614,8 @@ window.BOQ = (function () {
         ' · class code <code>' + esc((CMAP[r.id] || {}).class_code || '') + '</code></p>' +
         (prop.method ? '<p class="cc-hint">Proposed by <strong>' + esc(prop.method === 'location' ? 'location match' : prop.method) + '</strong>. ' +
           'Adjust any figure, then Apply. Nothing is stored until you do.</p>' : '') +
+        (qOn ? '' : '<p class="cc-hint">Add the activities this line covers. <b>Qty can stay 0</b> — you are recording ' +
+          'scope, not measurement, and the link is kept either way.</p>') +
         (acts.length ? '' : '<div class="boq-alert warn">No activity on this project carries class code <code>' +
           esc((CMAP[r.id] || {}).class_code || '') + '</code>. Allocate by hand, or tag the activities first.</div>') +
         '<table class="boq-splittab"><thead><tr><th>Activity</th><th class="cc-r">Qty</th><th></th></tr></thead><tbody>' +
@@ -3578,10 +3631,18 @@ window.BOQ = (function () {
         '</select></div>' +
         // ⚠️ The remainder is always shown, both ways. Silent over-allocation is
         // a wrong S-curve, and a silent shortfall is work nobody has planned.
-        '<p class="boq-recon ' + (Math.abs(rem) < 1e-6 ? 'ok' : rem < 0 ? 'bad' : 'warn') + '">' +
-          'Allocated ' + qtyStr(s) + ' of ' + qtyStr(q) + ' — ' +
-          (Math.abs(rem) < 1e-6 ? 'reconciles exactly.' : rem > 0 ? qtyStr(rem) + ' ' + esc(r.unit || '') + ' still unallocated.' :
-            '<strong>over-allocated by ' + qtyStr(-rem) + '</strong>.') + '</p>';
+        // ⚠️ A line with no quantity must NOT report "reconciles exactly": 0 of 0 satisfies the
+        // arithmetic and says the opposite of the truth, which is that nothing has been measured
+        // yet. It reports what it actually is — a link, and what will happen when the figure lands.
+        (qOn
+          ? '<p class="boq-recon ' + (Math.abs(rem) < 1e-6 ? 'ok' : rem < 0 ? 'bad' : 'warn') + '">' +
+            'Allocated ' + qtyStr(s) + ' of ' + qtyStr(q) + ' — ' +
+            (Math.abs(rem) < 1e-6 ? 'reconciles exactly.' : rem > 0 ? qtyStr(rem) + ' ' + esc(r.unit || '') + ' still unallocated.' :
+              '<strong>over-allocated by ' + qtyStr(-rem) + '</strong>.') + '</p>'
+          : '<p class="boq-recon warn">This line carries <strong>no quantity</strong> yet, so this stores the ' +
+            '<strong>link only</strong> — ' + prop.parts.length + ' activit' + (prop.parts.length === 1 ? 'y' : 'ies') +
+            ', each contributing 0 to any derived quantity. Enter <b>Qty</b> on the Lines tab and come back here to ' +
+            'spread it across these same activities.</p>');
 
       body.querySelectorAll('.boq-qin').forEach(function (inp) {
         inp.onchange = function () { prop.parts[+inp.dataset.i].qty = Number(inp.value) || 0; prop.method = 'manual'; paint(); };
@@ -3602,7 +3663,13 @@ window.BOQ = (function () {
     m.el.querySelector('#sp-x').onclick = m.close;
     m.el.querySelector('#sp-cancel').onclick = m.close;
     m.el.querySelector('#sp-go').onclick = async function () {
-      var parts = prop.parts.filter(function (p) { return p.activity_id && Number(p.qty); });
+      // ⚠️⚠️ WAS `p.activity_id && Number(p.qty)` — which DISCARDED every zero-quantity part, so a
+      // link recorded before the line was measured vanished on Apply with a success toast. That is
+      // the second half of the owner's 2026-09-07 ask, and it was the half that lost data: the
+      // dialog would have listed the activities, the planner would have pressed Apply, and nothing
+      // would have been stored. A part now needs only an ACTIVITY — qty 0 is a link awaiting its
+      // quantity, which is a decision worth keeping.
+      var parts = prop.parts.filter(function (p) { return p.activity_id; });
       // Replace-then-insert: an allocation set is one decision, so a partial
       // overwrite would leave a mixture of two planners' splits on one line.
       var del = await sb().from(T_ALLOC).delete().eq('boq_item_id', r.id);
