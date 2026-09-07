@@ -661,7 +661,7 @@ window.BOQ = (function () {
          selectAll orders by its cursor; the migration is explicit that this order is Finance's
          own template sequence, which is how a QS expects to read the chart. */
       CODES = await PDb.selectAll('class_codes', function (q) { return q.eq('active', true); },
-                                  'code,code_l1,code_l2,desc_l1,desc_l2,desc_l3,sort_order', 'code') || [];
+                                  'code,code_l1,code_l2,desc_l1,desc_l2,desc_l3,sort_order,trade', 'code') || [];
       CODES.sort(function (a, b) {
         var x = a.sort_order, y = b.sort_order;
         if (x == null && y == null) return String(a.code) < String(b.code) ? -1 : 1;
@@ -1906,12 +1906,24 @@ window.BOQ = (function () {
 
   /* The chart folded into division › group › item. Order comes from `sort_order`, which
      ensureCodes already sorts on, so the tree reads in Finance's own sequence. */
+  /* WARNING THE TOP RUNG IS THE TRADE, NOT THE DIVISION. Owner, 2026-09-07: *"the trade is not
+     properly adopted in the new class code mapping update."* Right: the pane was headed TRADE but
+     listed `desc_l1` -- 42 Finance divisions (Rebar, Formworks, Concrete, Stoneworks...). The
+     updated template added a real Trade column and 2026-09-07-class-code-trades.sql landed it, so
+     there are now SEVEN trades, and they are the vocabulary the SCHEDULE speaks. Grouping by
+     division meant the BOQ and the schedule could never agree on what a trade is, which is the
+     whole reason the column was added.
+     WARNING Division is not lost, it is implicit: a group's code carries it (01050 sits under 01),
+     and grouping by trade collapses the 42 into the 7 a planner actually packages by.
+     WARNING Falls back to desc_l1 for any code with no trade, so a half-run migration degrades to
+     the old behaviour rather than piling every code under a blank heading. */
   function buildTree() {
     if (CODETREE) return CODETREE;
     var byL1 = {}, out = [];
     (CODES || []).forEach(function (c) {
-      var d = byL1[c.code_l1];
-      if (!d) { d = byL1[c.code_l1] = { code: c.code_l1, desc: c.desc_l1, groups: {}, order: [] }; out.push(d); }
+      var tkey = (c.trade && String(c.trade).trim()) || c.desc_l1;
+      var d = byL1[tkey];
+      if (!d) { d = byL1[tkey] = { code: tkey, desc: tkey, groups: {}, order: [] }; out.push(d); }
       var g = d.groups[c.code_l2];
       if (!g) { g = d.groups[c.code_l2] = { code: c.code_l2, desc: c.desc_l2, items: [] }; d.order.push(g); }
       g.items.push(c);
@@ -2155,7 +2167,9 @@ window.BOQ = (function () {
       return '<div class="boq-lad-row' + (active ? ' on' : '') + '" data-rung="' + kind + '" data-key="' + esc(code) + '">' +
         '<input type="checkbox" data-' + (kind === 'trade' ? 'd' : kind === 'group' ? 'g' : 'c') + '="' + esc(code) + '"' +
           (isOn ? ' checked' : '') + (part ? ' data-part="1"' : '') + ' />' +
-        '<span class="boq-lad-code">' + esc(code) + '</span>' +
+        /* A trade is its own label, so the code chip is suppressed rather than printing the
+           same words twice; groups and items keep theirs, which is what makes them scannable. */
+        (code && code !== name ? '<span class="boq-lad-code">' + esc(code) + '</span>' : '') +
         '<span class="boq-lad-name">' + esc(name) + '</span>' +
         (total ? '<span class="boq-lad-n">' + (on ? on + '/' : '') + total + '</span>' : '') +
         '</div>';
@@ -2199,10 +2213,12 @@ window.BOQ = (function () {
       }
 
       var divs = {};
-      Object.keys(picked).forEach(function (k) { var c = codeRow(k); if (c) divs[c.desc_l1] = 1; });
+      Object.keys(picked).forEach(function (k) {
+        var c = codeRow(k); if (c) divs[(c.trade && String(c.trade).trim()) || c.desc_l1] = 1;
+      });
       el('cb-count').innerHTML = nPicked()
         ? '<b>' + nPicked() + '</b> item' + (nPicked() === 1 ? '' : 's') + ' · ' +
-          Object.keys(divs).length + ' sheet' + (Object.keys(divs).length === 1 ? '' : 's')
+          Object.keys(divs).length + ' trade' + (Object.keys(divs).length === 1 ? '' : 's')
         : '<span class="cc-mut">Nothing selected yet.</span>';
       el('cb-go').disabled = !nPicked();
       wireTree();
@@ -2280,7 +2296,11 @@ window.BOQ = (function () {
       var sheets = {};
       codes.forEach(function (code) {
         var c = codeRow(code); if (!c) return;
-        var sh = (sheets[c.desc_l1] = sheets[c.desc_l1] || { div: c.code_l1, groups: {}, order: [] });
+        /* WARNING SHEET = TRADE, not division. This is what makes a hand-built BOQ's sections the
+           same seven names the schedule uses, so 'Structural Works' means one thing in both.
+           It was desc_l1, which produced up to 42 sections per bill and none of them a trade. */
+        var tkey = (c.trade && String(c.trade).trim()) || c.desc_l1;
+        var sh = (sheets[tkey] = sheets[tkey] || { div: c.code_l1, groups: {}, order: [] });
         var g = sh.groups[c.code_l2];
         if (!g) { g = sh.groups[c.code_l2] = { code: c.code_l2, desc: c.desc_l2, items: [] }; sh.order.push(g); }
         g.items.push(c);
