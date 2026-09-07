@@ -13646,7 +13646,29 @@
       html + '</div>';
   }
   function _vsMaxDetail() { return Math.max(1, _vsAxis().length); }
-  function _vsDetailNow() { return Math.max(1, Math.min(_vsDetail, _vsMaxDetail())); }
+  /* MIXING TRADES FORCES LEVEL 1 - A DATA-COHERENCE RULE, NOT A DISPLAY PREFERENCE.
+     Owner 2026-09-04: *"whenever the option of mixing the different trades of a certain tower is
+     chosen, pls illustrate the vertical stacking in terms of level 1. Bc the zoning of trades may
+     be different and therefore may cause incoherent data when consolidating the trades."*
+     Right, and it is the setup that makes it so: zoning is stored PER TRADE
+     (cfg.zoning[trade].floors[].zones[].units[]) with its own ids, so Structural may pour a floor
+     in 6 zones while Architectural fits it out in 2 - and because a cell is keyed by the zone
+     VALUE (locValOf), two trades that happen to both call a zone "Z1" land in ONE cell which then
+     reports a single date, a single percentage and a single slip over work from two different
+     breakdowns. The floor is the one axis every trade shares, so a combined model is drawn at
+     level 1.
+     Nothing is lost: Per trade still draws each trade at its own full zone/unit depth, which is
+     where a per-trade zoning question belongs. */
+  var _vsMixTrades = false;
+  var VS_MIX_NOTE = 'Combining trades draws the building at level 1 only. Each trade zones its floors its own way in the Schedule Setup, so one cell spanning several trades would report one date and one percentage over two different breakdowns. Switch to Per trade, or pick a single trade, for the zone and unit detail.';
+  function _vsDetailNow() {
+    // The clamp lives HERE rather than in _vsMaxDetail so the deeper buttons stay on screen -
+    // disabled, carrying the reason - and the planner's own choice of 2 or 3 is remembered for
+    // when they switch back to Per trade. Dropping them from the loop would both hide that the
+    // choice exists and silently reset it.
+    if (_vsMixTrades) return 1;
+    return Math.max(1, Math.min(_vsDetail, _vsMaxDetail()));
+  }
   function _vsTradeOf(r) { return workOf(r) || NO_TRADE; }
   // The activity's PROJECT tower (Tower A / Tower B), not the per-trade card this view draws.
   // ⚠️⚠️ THERE ARE TWO WRITERS AND THEY USE DIFFERENT KEYS. `location` is a jsonb map keyed by
@@ -14648,7 +14670,7 @@
     var body = (showPath ? '<div class="ps-vs-note" style="margin:0 0 8px;">These carry no value on the ' +
         esc(((_vsAxis()[0] || {}).name) || 'level') + ' level. The <strong>WBS branch</strong> column is why: ' +
         'if you can see a floor in it, the branch name is not being matched — fix it with ' +
-        '<em>Group ▾ → Match WBS to locations…</em>. If there is no floor in it, the work genuinely ' +
+        '<em>Schedule Setup › Floors &amp; Zones → Match WBS to locations…</em>. If there is no floor in it, the work genuinely ' +
         'belongs to the site rather than to a storey.</div>' : '') +
       '<div class="ps-vs-tblwrap"><table class="ps-table"><thead><tr>' +
       cols.map(function (h) { return '<th style="text-align:left;">' + h + '</th>'; }).join('') +
@@ -15279,7 +15301,8 @@
     var meta = [
       ['Tower', towerWord],
       ['View', scopeWord],
-      ['Detail', _vsAxis().slice(0, detail).map(function (l) { return l.name; }).join(' › ')],
+      ['Detail', _vsAxis().slice(0, detail).map(function (l) { return l.name; }).join(' › ') +
+        (_vsMixTrades ? ' — levels only (trades combined; each trade zones its floors differently)' : '')],
       ['Dates', _vsBasisWord() + ' · ' + (_vsDateMode === 'start' ? 'start' : 'finish')],
       ['Trades', _vsTradeSel.length ? _vsTradeSel.join(', ') : 'all']
     ];
@@ -15432,7 +15455,7 @@
       };
       return;
     }
-    var _actsAll = _vsActs(), detail = _vsDetailNow();
+    var _actsAll = _vsActs(), detail;
     // ⚠️ The tower filter is applied BEFORE the trades are collected, so focusing Tower B lists the
     // trades that are actually in Tower B rather than every trade in the project.
     var towerNames = _vsTowersIn(_actsAll);
@@ -15461,10 +15484,23 @@
     var actsPreTrade = acts;
     if (_vsTradeSel.length) acts = acts.filter(function (r) { return _vsTradeOn(_vsTradeOf(r)); });
 
+    // ONE ANSWER FOR THE WHOLE VIEW, never per card. Per tower is a side-by-side comparison, so
+    // cards drawn at different depths would be the same incoherence in another form - and Detail
+    // is a single global control, which cannot report two states at once. So the view counts as
+    // mixed when the scope COMBINES trades and the selection holds more than one of them:
+    // narrowing the chips to a single trade un-mixes it and the zones come straight back.
+    // Per trade never mixes - each card there is one trade.
+    _vsMixTrades = (_vsScope === 'tower' || _vsScope === 'all') && tradesShown.length > 1;
+    detail = _vsDetailNow();
+
     var detailBtns = '';
     for (var dlv = 1; dlv <= _vsMaxDetail(); dlv++) {
+      // A button that looks live and is overridden is the silent failure this module keeps
+      // recording - so a level a combined model cannot honestly draw is disabled and says why.
+      var _dOff = _vsMixTrades && dlv > 1;
       detailBtns += '<button data-vsdet="' + dlv + '"' + (detail === dlv ? ' class="on"' : '') +
-        ' title="' + esc(_vsAxis().slice(0, dlv).map(function (l) { return l.name; }).join(' › ')) + '">' + dlv + '</button>';
+        (_dOff ? ' disabled' : '') +
+        ' title="' + esc(_dOff ? VS_MIX_NOTE : _vsAxis().slice(0, dlv).map(function (l) { return l.name; }).join(' › ')) + '">' + dlv + '</button>';
     }
     // ⚠️ Multi-select. Clicking a trade TOGGLES it, so several can be shown side by side; "All
     // trades" clears the selection rather than ticking every box (see the note on _vsTradeSel).
@@ -15523,7 +15559,9 @@
       (towerNames.length > 1 ? '<button data-vssc="tower"' + (_vsScope === 'tower' ? ' class="on"' : '') + ' title="One building model per tower, all trades combined">Per tower</button>' : '') +
       '<button data-vssc="all"' + (_vsScope === 'all' ? ' class="on"' : '') + ' title="One model for the whole project, all trades combined">Consolidated</button></span>' +
       '<span class="ps-vs-note">Detail</span><span class="ps-vs-seg">' + detailBtns + '</span>' +
-      '<span class="ps-vs-note">' + esc(_vsAxis().slice(0, detail).map(function (l) { return l.name; }).join(' › ')) + '</span>' +
+      '<span class="ps-vs-note"' + (_vsMixTrades ? ' title="' + esc(VS_MIX_NOTE) + '"' : '') + '>' +
+        esc(_vsAxis().slice(0, detail).map(function (l) { return l.name; }).join(' › ')) +
+        (_vsMixTrades ? ' — levels only (trades combined)' : '') + '</span>' +
       '<span class="ps-tb-div"></span>' +
       '<span class="ps-vs-note">Dates</span><span class="ps-vs-seg">' +
         [['actual', 'Actual', 'Actual where recorded, forecast where not — the dates the grid shows'],
@@ -15677,10 +15715,10 @@
           esc(noLevGrpVals.slice(0, 6).join(', ')) + (noLevGrpVals.length > 6 ? ' and ' + (noLevGrpVals.length - 6) + ' more' : '') +
           ' ' + (noLevGrpVals.length === 1 ? 'is a phase / trade' : 'are phases / trades') + ', not ' + esc(lvl0Name) + 's, so the stacking will not band by ' +
           (noLevGrpVals.length === 1 ? 'it' : 'them') + '. That is deliberate: a stacking band is a physical part of the building. ' +
-          'Give this work its real ' + esc(lvl0Name) + ' in <em>Group ▾ → Match WBS to locations…</em>, or leave it here;') : '') +
+          'Give this work its real ' + esc(lvl0Name) + ' in <em>Schedule Setup › Floors &amp; Zones → Match WBS to locations…</em>, or leave it here;') : '') +
         '<br>• <strong>a branch name is not matched</strong> — open the band and read the ' +
         '<em>WBS branch</em> column: if you can see a ' + esc(lvl0Name) + ' in it (an abbreviation such ' +
-        'as <em>RD</em> for Roofdeck is the usual culprit), add it in <em>Group ▾ → Match WBS to locations…</em>;' +
+        'as <em>RD</em> for Roofdeck is the usual culprit), add it in <em>Schedule Setup › Floors &amp; Zones → Match WBS to locations…</em>;' +
         '<br>• <strong>the work genuinely has no ' + esc(lvl0Name) + '</strong> — substructure, footings and ' +
         'site works sit below or outside the storeys. Give them their own ' + esc(lvl0Name) + ' value if you ' +
         'want them banded, or leave them here;' +
@@ -27789,6 +27827,311 @@
         openLocBackfill();
       };
     }
+    /* ⚠️⚠️ ADOPT FROM THE WBS — proposal §2.4 / §6 slice 3, and the whole point of the exercise for
+       a MIGRATED schedule. Owner 2026-09-04: *"the purpose is to mitigate the difficulty of the
+       matching of WBS especially when a schedule is migrated."*
+       Slice 2 made the matcher pick from the setup's places. This is the other direction, for the
+       case where the setup is the EMPTY side: an imported schedule already contains the building —
+       "Tower 1 › 5TH FLOOR › Zone A" — and until now the planner re-typed all of it into Floors &
+       Zones by hand before any of it could be matched. This walks the tree it already has and offers
+       to create the towers, floors and zones from it.
+       ⚠️ IT IS THE SAME VALUES, IN BOTH DIRECTIONS. The place it creates is named with
+       `locGuessValue` — the identical string the matcher would write for that branch — so a place
+       adopted here is a place the matcher then reports as "✓ defined" rather than a near-miss. Two
+       features deriving one name two ways is how the duplicate spellings started.
+       ⚠️ IT ONLY EVER ADDS. Nothing is renamed, reordered or deleted: a value that already exists
+       (compared the same loose way the matcher compares — case and punctuation) is shown as already
+       defined and skipped. The one ordering decision it makes is for the floors it creates itself.
+       ⚠️ IT WRITES TO cfg, unlike the other three buttons on this bar — so it marks the setup UNSAVED
+       and the planner still has to press Save. That is deliberate: a dialog that silently saved a
+       structure derived from a heuristic would be unreviewable. */
+    function adoptDimMap() {
+      var out = {};
+      ['tower', 'floor', 'zone', 'unit'].forEach(function (d) { var l = locLevelFor(d); if (l) out[l.id] = d; });
+      return out;
+    }
+    // The kind tag for a floor the WBS named. ⚠️ Derived from `levelRank`, the module's own vertical
+    // order (negative = below grade, 900 = roof), NOT from a second vocabulary of my own — the stack
+    // and the setup must agree about what a basement is. Anything unranked is 'typical', which is
+    // exactly what "+ Add floor" gives a floor the planner types by hand.
+    function adoptKindOf(name) {
+      var r = null;
+      try { r = (typeof levelRank === 'function') ? levelRank(name) : null; } catch (e) { r = null; }
+      if (/\bpodium\b/i.test(String(name || ''))) return 'podium';
+      if (r == null) return 'typical';
+      if (r >= 900) return 'roof';
+      if (r < 0) return 'basement';
+      if (r === 0) return 'podium';       // ground floor — the vocabulary step 5 already uses
+      return 'typical';
+    }
+    function adoptRankOf(name) {
+      try { var r = (typeof levelRank === 'function') ? levelRank(name) : null; return (r == null) ? null : r; }
+      catch (e) { return null; }
+    }
+    // Loose equality, the SAME rule the matcher's badge uses: case and punctuation only.
+    function adoptNorm(v) { return String(v == null ? '' : v).toLowerCase().replace(/[^a-z0-9]+/g, ''); }
+    function adoptHas(list, v) {
+      var n = adoptNorm(v); if (!n) return false;
+      for (var i = 0; i < list.length; i++) if (adoptNorm(list[i]) === n) return true;
+      return false;
+    }
+    /* The scan. Reads the LIVE schedule's WBS branch names through the same three module functions
+       the matcher uses — `locExecScopedActs`, `locScanNames`, `locGuessLevel` / `locGuessValue` — so
+       a branch this proposes as a place is a branch the matcher would also call a place, and a
+       grouping branch (a phase, a trade) is refused by both. Returns the tree, nothing else. */
+    function adoptScan() {
+      var out = { towers: [], skipped: 0, read: 0 };
+      if (typeof locExecScopedActs !== 'function' || typeof locScanNames !== 'function' ||
+          typeof locGuessLevel !== 'function' || typeof locGuessValue !== 'function') return out;
+      var lv = _levelsNow(); if (!lv.length) return out;
+      var acts = locExecScopedActs(); if (!acts.length) return out;
+      var nameByCode = {};
+      rows.forEach(function (r) { if (isWbs(r) && r.wbs) nameByCode[String(r.wbs)] = r.activity_name || ''; });
+      var found = locScanNames(acts, function (r) { return r.wbs; }, nameByCode);
+      out.read = found.length;
+      var dimOf = adoptDimMap();
+      // name -> { dim, value } for every branch name in the scan, so an ancestor can be classified
+      // without re-guessing it once per descendant.
+      var cls = {};
+      function classify(nm) {
+        if (Object.prototype.hasOwnProperty.call(cls, nm)) return cls[nm];
+        var id = null;
+        try { id = locGuessLevel(nm, lv); } catch (e) { id = null; }
+        var d = id ? dimOf[id] : null;
+        var v = null;
+        if (d) { try { v = locGuessValue(nm, id, lv); } catch (e) { v = nm; } }
+        return (cls[nm] = d ? { dim: d, value: String(v || nm).trim() } : null);
+      }
+      // The nearest ancestor of `wantDim`, walking the branch's own trail from the inside out.
+      function ancestor(trail, wantDim) {
+        var segs = trail ? String(trail).split(' › ') : [];
+        for (var i = segs.length - 1; i >= 0; i--) {
+          var c = classify(segs[i]);
+          if (c && c.dim === wantDim) return c.value;
+        }
+        return null;
+      }
+      // The tower every floor that names none belongs to — the project's single implicit tower, the
+      // same reading `towerIdOf` and the dim resolver already take (see the tower notes there).
+      var implicitTower = (function () {
+        var t = (cfg && cfg.towers && cfg.towers.length) ? cfg.towers[0] : null;
+        return t ? (t.name || t.code || 'Tower 1') : 'Tower 1';
+      })();
+      function tower(v, implicit) {
+        for (var i = 0; i < out.towers.length; i++) if (adoptNorm(out.towers[i].value) === adoptNorm(v)) return out.towers[i];
+        var t = { value: v, n: 0, implicit: !!implicit, floors: [] };
+        out.towers.push(t); return t;
+      }
+      function floor(t, v, n) {
+        for (var i = 0; i < t.floors.length; i++) if (adoptNorm(t.floors[i].value) === adoptNorm(v)) { t.floors[i].n += n; return t.floors[i]; }
+        var f = { value: v, n: n, kind: adoptKindOf(v), rank: adoptRankOf(v), zones: [] };
+        t.floors.push(f); return f;
+      }
+      found.forEach(function (e) {
+        var c = classify(e.name);
+        if (!c) { out.skipped++; return; }
+        if (c.dim === 'tower') { tower(c.value, false).n += e.n; return; }
+        if (c.dim === 'floor') {
+          var tv = ancestor(e.trail, 'tower');
+          var t = tower(tv || implicitTower, !tv); t.n += e.n;
+          floor(t, c.value, e.n);
+          return;
+        }
+        if (c.dim === 'zone') {
+          var fv = ancestor(e.trail, 'floor');
+          if (!fv) { out.skipped++; return; }   // a zone with no floor above it has nowhere to go
+          var tv2 = ancestor(e.trail, 'tower');
+          var t2 = tower(tv2 || implicitTower, !tv2);
+          var f2 = floor(t2, fv, 0);
+          if (!adoptHas(f2.zones.map(function (z) { return z.value; }), c.value)) f2.zones.push({ value: c.value, n: e.n });
+          return;
+        }
+        // A UNIT is deliberately not adopted: it is the level whose values are least often real
+        // places in an imported tree (they are room numbers, work packages, occasionally dates), and
+        // a wrong unit multiplies every floor it sits under. Left for the planner to add by hand.
+        out.skipped++;
+      });
+      // Bottom-up, the order step 5 draws and `dimOrderIndex` sorts the pushed WBS by. Unrankable
+      // values keep their scan order and sit after the ranked ones, never above the roof.
+      out.towers.forEach(function (t) {
+        var ranked = t.floors.filter(function (f) { return f.rank != null; }).sort(function (a, b) { return a.rank - b.rank; });
+        t.floors = ranked.concat(t.floors.filter(function (f) { return f.rank == null; }));
+      });
+      return out;
+    }
+    function openLocAdopt() {
+      var scan = adoptScan();
+      if (!scan.towers.length) {
+        UI.toast(scan.read
+          ? 'None of the ' + scan.read + ' WBS branch names read as a place. Match them by hand with "Match WBS to locations…".'
+          : 'No Execution Phase activities with a WBS code to read from.', 'warn');
+        return;
+      }
+      var used = usedGroups();
+      if (!used.length) { UI.toast('Add activities and assign each one a trade first — floors are defined per trade.', 'warn'); return; }
+      var cat = catalogueFrom(cfg);
+      var lvT = locLevelFor('tower'), lvF = locLevelFor('floor'), lvZ = locLevelFor('zone');
+      function have(lvl) { return (lvl && cat[lvl.id] ? cat[lvl.id] : []).map(function (x) { return x.value; }); }
+      var haveT = have(lvT), haveF = have(lvF), haveZ = have(lvZ);
+      // What each proposal WOULD be: 'new' or 'already defined'. Computed once, so the dialog and the
+      // apply cannot disagree about it.
+      scan.towers.forEach(function (t) {
+        t.exists = adoptHas(haveT, t.value);
+        t.on = !t.exists;
+        t.floors.forEach(function (f) {
+          f.exists = adoptHas(haveF, f.value);
+          f.on = !f.exists;
+          f.zones.forEach(function (z) { z.exists = adoptHas(haveZ, z.value); z.on = !z.exists; });
+        });
+      });
+      var target = 'all';
+      function newCounts() {
+        var t = 0, f = 0, z = 0;
+        scan.towers.forEach(function (T) {
+          if (T.on && !T.exists) t++;
+          T.floors.forEach(function (F) {
+            if (F.on && !F.exists) f++;
+            F.zones.forEach(function (Z) { if (Z.on && !Z.exists) z++; });
+          });
+        });
+        return { t: t, f: f, z: z, total: t + f + z };
+      }
+      function chk(on, path, dis) {
+        return '<input type="checkbox" class="ad-ck" data-p="' + e2(path) + '"' + (on ? ' checked' : '') + (dis ? ' disabled' : '') + ' style="margin:0 6px 0 0;">';
+      }
+      function tag(txt, warn) {
+        return '<span style="font-size:10px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;border:1px solid var(--pd-line);border-radius:99px;padding:0 5px;white-space:nowrap;color:' +
+          (warn ? 'var(--pd-muted)' : 'var(--pd-ink)') + ';">' + e2(txt) + '</span>';
+      }
+      function treeHtml() {
+        return scan.towers.map(function (t, ti) {
+          var h = '<div style="padding:5px 4px 2px;border-top:1px solid var(--pd-line);">' +
+            '<label style="display:flex;gap:6px;align-items:center;font-weight:650;font-size:12.5px;cursor:pointer;">' +
+            chk(t.on, ti + '', t.exists) + '<span>' + e2(t.value) + '</span>' +
+            (t.exists ? tag('already defined', true) : tag('new tower')) +
+            (t.implicit ? tag('no tower named in the WBS', true) : '') +
+            '<span style="color:var(--pd-muted);font-weight:400;">' + t.n.toLocaleString() + ' activities</span></label></div>';
+          h += t.floors.map(function (f, fi) {
+            var s = '<div style="padding:1px 4px 1px 22px;">' +
+              '<label style="display:flex;gap:6px;align-items:center;font-size:12px;cursor:pointer;">' +
+              chk(f.on, ti + '.' + fi, f.exists) + '<span>' + e2(f.value) + '</span>' +
+              tag(KIND_LABEL[f.kind] || f.kind, true) +
+              (f.exists ? tag('already defined', true) : '') +
+              (f.n ? '<span style="color:var(--pd-muted);">' + f.n.toLocaleString() + '</span>' : '') +
+              '</label></div>';
+            s += f.zones.map(function (z, zi) {
+              return '<div style="padding:0 4px 0 44px;">' +
+                '<label style="display:flex;gap:6px;align-items:center;font-size:11.5px;cursor:pointer;color:var(--pd-ink);">' +
+                chk(z.on, ti + '.' + fi + '.' + zi, z.exists) + '<span>' + e2(z.value) + '</span>' +
+                (z.exists ? tag('already defined', true) : '') + '</label></div>';
+            }).join('');
+            return s;
+          }).join('');
+          return h;
+        }).join('');
+      }
+      function tradeOptions() {
+        return '<option value="all">All ' + used.length + ' trades in use</option>' +
+          used.map(function (g) { return '<option value="' + e2(g) + '">' + e2(GLABEL[g] || g) + ' only</option>'; }).join('');
+      }
+      var m = UI.modal('<div style="width:100%;max-height:84vh;display:flex;flex-direction:column;">' +
+        '<h2 style="margin:0 0 4px;">Adopt the location breakdown from the WBS</h2>' +
+        '<p style="color:var(--pd-muted);font-size:12.5px;margin:0 0 8px;">Your schedule’s WBS already contains the building. These are the <strong>places</strong> it names — towers, floors and zones — with the ones this setup already defines marked. Adopting them creates the floors and zones for you instead of typing them, which is the whole job once for a <strong>migrated schedule</strong>. ' +
+        '<strong>Nothing is deleted, renamed or reordered</strong> — this only adds what is missing, and you still have to press <strong>Save</strong> afterwards. Floors are defined <em>per trade</em>, so choose who gets them; a trade can always differ afterwards in <em>Scope per zone</em>.</p>' +
+        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">' +
+          '<span style="font-size:12px;color:var(--pd-muted);">Create the floors for</span>' +
+          '<select class="pd-input" id="ad-trade" style="flex:0 0 260px;">' + tradeOptions() + '</select>' +
+          '<span id="ad-sum" style="font-size:12px;color:var(--pd-muted);"></span>' +
+        '</div>' +
+        '<div id="ad-tree" style="flex:1 1 auto;overflow:auto;border:1px solid var(--pd-line);border-radius:6px;padding:4px 6px;min-height:120px;">' + treeHtml() + '</div>' +
+        (scan.skipped ? '<div style="font-size:11.5px;color:var(--pd-muted);margin-top:6px;">' + scan.skipped + ' branch name' + (scan.skipped === 1 ? '' : 's') + ' were not offered — a phase, a trade, a work type, or a zone with no floor above it. Match those by hand with “Match WBS to locations…”.</div>' : '') +
+        '<div style="text-align:right;margin-top:12px;"><button class="pd-btn" id="ad-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="ad-go">Adopt</button></div>' +
+      '</div>');
+      var _pm = m.el.querySelector('.pd-modal');
+      if (_pm) { _pm.style.maxWidth = 'min(94vw,900px)'; _pm.style.width = 'min(94vw,900px)'; }
+      function sum() {
+        var c = newCounts();
+        m.el.querySelector('#ad-sum').textContent = c.total
+          ? (c.t + ' tower' + (c.t === 1 ? '' : 's') + ', ' + c.f + ' floor' + (c.f === 1 ? '' : 's') + ', ' + c.z + ' zone' + (c.z === 1 ? '' : 's') + ' will be created.')
+          : 'Nothing selected — this setup already defines every place the WBS names.';
+        var go = m.el.querySelector('#ad-go');
+        go.textContent = c.total ? ('Adopt ' + c.total + ' place' + (c.total === 1 ? '' : 's')) : 'Adopt';
+        go.disabled = !c.total;
+      }
+      sum();
+      m.el.querySelector('#ad-trade').onchange = function (e) { target = e.target.value; };
+      // ⚠️ A tower or floor that is turned OFF turns off everything under it: creating a zone whose
+      // floor was not created would silently attach it to a floor the planner did not ask for.
+      m.el.querySelector('#ad-tree').addEventListener('change', function (e) {
+        if (!e.target.classList.contains('ad-ck')) return;
+        var p = String(e.target.dataset.p || '').split('.').map(Number), on = e.target.checked;
+        var T = scan.towers[p[0]]; if (!T) return;
+        if (p.length === 1) { T.on = on; if (!on) T.floors.forEach(function (F) { F.on = false; F.zones.forEach(function (Z) { Z.on = false; }); }); }
+        else if (p.length === 2) { var F2 = T.floors[p[1]]; if (!F2) return; F2.on = on; if (!on) F2.zones.forEach(function (Z) { Z.on = false; }); if (on) T.on = true; }
+        else { var F3 = T.floors[p[1]]; if (!F3) return; var Z3 = F3.zones[p[2]]; if (!Z3) return; Z3.on = on; if (on) { F3.on = true; T.on = true; } }
+        m.el.querySelector('#ad-tree').innerHTML = treeHtml();
+        sum();
+      });
+      m.el.querySelector('#ad-x').onclick = m.close;
+      m.el.querySelector('#ad-go').onclick = function () {
+        var c = newCounts(); if (!c.total) { m.close(); return; }
+        var trades = (target === 'all') ? used.slice() : [target];
+        var madeT = 0, madeF = 0, madeZ = 0, appended = [];
+        // 1 — towers. A tower is project-wide (cfg.towers), so it is created once, not per trade.
+        scan.towers.forEach(function (T) {
+          if (!T.on || T.exists || T.implicit) return;
+          var list = towerList();
+          if (list.some(function (x) { return adoptNorm(x.name || x.code) === adoptNorm(T.value); })) return;
+          if (!cfg.towers || !cfg.towers.length) cfg.towers = list.slice();
+          cfg.towers.push({ id: uidv(), code: 'T' + (cfg.towers.length + 1), name: T.value });
+          madeT++;
+        });
+        function towerIdFor(T) {
+          var hit = towerList().filter(function (x) { return adoptNorm(x.name || x.code) === adoptNorm(T.value); })[0];
+          return (hit || towerList()[0]).id;
+        }
+        // 2 — floors and zones, per trade. ⚠️ APPEND, never reorder: an existing list is the
+        // planner's own order (they drag it in step 5) and the pushed WBS follows it, so a floor
+        // that arrives late is added at the end and REPORTED, rather than being slotted in on a
+        // guess about where it belongs.
+        trades.forEach(function (tr) {
+          if (!cfg.zoning[tr]) cfg.zoning[tr] = { floors: [] };
+          var fl = cfg.zoning[tr].floors, wasEmpty = !fl.length, addedHere = 0;
+          scan.towers.forEach(function (T) {
+            if (!T.on) return;
+            var tid = towerIdFor(T);
+            T.floors.forEach(function (F) {
+              if (!F.on) return;
+              var ex = fl.filter(function (x) { return adoptNorm(x.name || x.code) === adoptNorm(F.value); })[0] || null;
+              var zonesOn = F.zones.filter(function (Z) { return Z.on; });
+              if (ex) {
+                // The floor is already here — only its MISSING zones are added, to the floor as it is.
+                zonesOn.forEach(function (Z) {
+                  if ((ex.zones || []).some(function (z) { return adoptNorm(z.code || z.name) === adoptNorm(Z.value); })) return;
+                  (ex.zones || (ex.zones = [])).push({ id: uidv(), code: Z.value, name: '', units: [] });
+                  madeZ++;
+                });
+                return;
+              }
+              var sub = F.kind === 'basement';
+              var nSame = fl.filter(function (x) { return (!!x.sub) === sub && towerIdOf(x) === tid; }).length;
+              // ⚠️ name IS the value the push writes (locMapOf: floor = name || code); the code is
+              // only the short label step 5 draws, numbered the way "+ Add floor" numbers it.
+              fl.push({ id: uidv(), code: (sub ? 'B' : 'F') + (nSame + 1), name: F.value, sub: sub,
+                kind: F.kind, towerId: tid,
+                zones: zonesOn.map(function (Z) { madeZ++; return { id: uidv(), code: Z.value, name: '', units: [] }; }) });
+              madeF++; addedHere++;
+            });
+          });
+          if (!wasEmpty && addedHere) appended.push((GLABEL[tr] || tr) + ' (+' + addedHere + ')');
+        });
+        pruneLinks(); markDirty(); render(); m.close();
+        UI.toast('Adopted ' + madeT + ' tower(s), ' + madeF + ' floor(s) and ' + madeZ + ' zone(s) from the WBS. Press Save to keep it.', 'success');
+        // ⚠️ Said out loud rather than silently fixed: a trade that already had floors got the new
+        // ones at the END of its list, and the list order is the building's order.
+        if (appended.length) UI.toast('Check the floor order for ' + appended.join(', ') + ' — new floors were added at the end of a list you had already arranged.', 'warn');
+      };
+    }
     function leafCount(tr) { return cfg.zoning[tr].floors.reduce(function (t, f) { return t + leavesOfFloor(tr, f).length; }, 0); }
     // Tower visual: floors stacked (ground at bottom), each split into zones, each zone into units.
     // ⚠️ towerId is REQUIRED, not optional: an optional argument here is how the leak happened in the
@@ -36007,7 +36350,7 @@
       if (!grid.count) {
         cnt.textContent = '';
         body.innerHTML = ctrls + '<div class="ps-ck-empty">No activities carry a <strong>' + esc(stkLevelName(_stkLevel)) +
-          '</strong> value. Run <strong>Group ▸ Match WBS to locations…</strong> first.</div>';
+          '</strong> value. Run <strong>Schedule Setup ▸ Floors &amp; Zones ▸ Match WBS to locations…</strong> first.</div>';
         wireStackCtrls(body);
         return;
       }
@@ -36028,7 +36371,7 @@
       if (!model.length) {
         cnt.textContent = '';
         body.innerHTML = ctrls + '<div class="ps-ck-empty">No activities carry a <strong>' + esc(stkLevelName(_stkLevel)) +
-          '</strong> value. Run <strong>Group ▸ Match WBS to locations…</strong> first.</div>';
+          '</strong> value. Run <strong>Schedule Setup ▸ Floors &amp; Zones ▸ Match WBS to locations…</strong> first.</div>';
         wireStackCtrls(body);
         return;
       }

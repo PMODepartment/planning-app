@@ -1,3 +1,68 @@
+## Vertical Stacking: combining trades draws the building at level 1 (2026-09-04) — jasantos2
+
+Owner: *"whenever the option of mixing the different trades of a certain tower is chosen, pls
+illustrate the vertical stacking in terms of level 1. Bc the zoning of trades may be different and
+therefore may cause incoherent data when consolidating the trades."*
+
+Right, and the setup is what makes it so. Zoning is stored **per trade** —
+`cfg.zoning[trade].floors[].zones[].units[]`, each with its own ids — so Structural may pour a floor
+in 6 zones while Architectural fits the same floor out in 2. And a stacking cell is keyed by the
+zone **VALUE** (`_vsRowCells` → `ids.map(id => locValOf(r, id) || '—').join(' · ')`), so two trades
+that both happen to call a zone "Z1" land in **one** cell, which then reports a single date, a single
+percentage and a single slip over work from two different breakdowns. That is the incoherence, and it
+is arithmetic, not appearance. The floor is the one axis every trade shares.
+
+### The rule
+- `_vsMixTrades = (_vsScope === 'tower' || _vsScope === 'all') && tradesShown.length > 1;` — set once
+  the trade selection is final (after the `_vsTradeSel` filter, where `tradesShown` is known), and
+  `detail` is resolved from it. `Per trade` never mixes: each card there is one trade.
+- `_vsDetailNow()` returns `1` when mixed. **The clamp lives here, not in `_vsMaxDetail()`**, so the
+  deeper Detail buttons stay on screen and the planner's own choice of 2 or 3 survives a switch back
+  to Per trade. Clamping the button loop's bound would have both hidden that the choice exists and
+  silently reset it. All five call sites inherit the clamp.
+
+### It says why, in three places
+- The **Detail buttons** for 2 and 3 are `disabled` when mixed, with `VS_MIX_NOTE` as their tooltip.
+  A control that looks live and is then overridden is the silent failure this module keeps recording.
+- The **toolbar axis caption** appends `— levels only (trades combined)` and carries the note.
+- The **PDF meta row** says `— levels only (trades combined; each trade zones its floors differently)`.
+  A printed sheet outlives the screen that knew why.
+
+### Nothing is hidden and nothing is lost
+**Per trade** still draws each trade at its own full zone/unit depth — that is where a per-trade
+zoning question belongs — and **narrowing the chips to a single trade un-mixes the view**, bringing
+the zones straight back on Per tower and Consolidated too.
+
+### Verified
+Slice-and-execute against the shipped file (never a reimplementation): `_vsDetailNow` and the
+`_vsMixTrades` line were cut out of `index.html` and run — 22 assertions pass, covering the clamp,
+the max-detail clamp still applying when not mixed, `_vsDetail` left untouched, and the flag across
+`trade`/`tower`/`all` × 0/1/2/3 trades. Gated by controls: the **pre-patch** `_vsDetailNow` sliced
+from HEAD returns 3 where the patched one returns 1, and `VS_MIX_NOTE` is absent from HEAD — so the
+suite bites. Inline script parses; `function NAME(` set vs HEAD: **0 lost**.
+⚠️ **Not verified signed-in** — the anon key has no grants on `project_schedule`, so no live project
+was rendered. The clamp is pure logic and was executed; the on-screen result was not seen.
+
+### ⚠️ Finding, not touched: the Consolidated trade split has never rendered
+`_vsTowerSVG`'s 4th parameter `tradeSplit` and its helper `_vsRowTradeCells(list, trades)` are fully
+implemented and committed, and **no call site passes them** (14736, 15725, 15732, 15740). Its own
+comment says Consolidated "used to merge every trade into ONE cell per level painted brand red, so
+the one view whose whole purpose is comparing trades was the one view in which you could not tell
+them apart" — so that earlier owner-requested split is dead code on screen today. Left alone: the ask
+here was level 1, and wiring it is a feature change nobody asked for. Worth a decision.
+
+### Also in this commit
+- **Two stale pointers fixed** (36315, 36336): `Run Group ▸ Match WBS to locations…` →
+  `Run Schedule Setup ▸ Floors & Zones ▸ Match WBS to locations…`, matching where it actually lives.
+- ⚠️ **305 lines authored by a concurrent session**, carried in because they were already in the
+  working tree: the slice-3 *"Adopt from the WBS"* block (`adoptDimMap`, `adoptKindOf`, `adoptRankOf`,
+  `adoptNorm`, `adoptHas`, `adoptScan()`, `openLocAdopt()`) plus 3 pointer rewordings (14651, 15680,
+  15683). **I did not write, review or verify them.** `openLocAdopt` is wired to **no button** — there
+  is no `b-locadopt` handler — so it is unreachable and **nothing in the UI changes**. One line of
+  wiring is the next step whenever that is wanted.
+- `MODULE_V` → `20260904g` (`dashboard.html`, `modules.html`, and the fallback in
+  `assets/js/modules-grid.js` — all three).
+
 ## The cold open: the matcher reads the saved setup when none is loaded (2026-09-04) — jasantos2
 
 Owner: *"fix the cold open gap."* The gap flagged in the entry below: `ScheduleBuilder` only holds a

@@ -84,6 +84,23 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-04 — Vertical Stacking: combining trades draws the building at level 1
+
+Owner: *"whenever the option of mixing the different trades of a certain tower is chosen, pls
+illustrate the vertical stacking in terms of level 1. Bc the zoning of trades may be different and
+therefore may cause incoherent data when consolidating the trades."* Correct, and it is arithmetic:
+zoning is stored per trade, and a stacking cell is keyed by the zone **value**, so two trades that
+both call a zone "Z1" collapse into one cell reporting a single date, percentage and slip over two
+different breakdowns. **Per tower** and **Consolidated** now draw at level 1 — the one axis every
+trade shares — and say why on the disabled Detail buttons, the toolbar caption and the PDF. Per trade
+keeps its full zone/unit depth, and narrowing the chips to a single trade brings the zones back.
+Verified by slicing the shipped `_vsDetailNow` out of the file and executing it (22 assertions,
+controls included); ⚠️ not verified signed-in. Module only. `MODULE_V` → `20260904g`.
+⚠️ Also carried in this commit, already in the working tree and **authored by a concurrent session,
+unreviewed by me**: 305 lines of the slice-3 "Adopt from the WBS" work, wired to no button and so
+currently unreachable.
+
+
 ### 2026-09-04 — The WBS matcher's cold open: it now reads the project's saved setup
 
 Owner: *"fix the cold open gap."* The gap flagged in the entry below — the catalogue of places was
