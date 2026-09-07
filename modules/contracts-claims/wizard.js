@@ -424,7 +424,11 @@ window.CCWizard = (function () {
             'anything is written.</span></label>' +
         '</div>' +
         (bmanual
-          ? '<div class="ccw-grid2">' +
+          ? '<label>BOQ name<input class="pd-input" id="ccw-bname" placeholder="e.g. Structural Works BOQ" value="' +
+              esc(st.boqName || '') + '" /></label>' +
+            '<p class="ccw-hint">This BOQ keeps <b>its own revision series</b>. Name it the way the ' +
+            'client packages it - "Package 2 BOQ", "Structural Works BOQ" - not after a fixed trade list.</p>' +
+            '<div class="ccw-grid2">' +
               '<label>Revision label<input class="pd-input" id="ccw-brev" value="' + esc(st.boqRev || (D.nextBoqRev ? D.nextBoqRev() : '00')) + '" /></label>' +
               '<label>Issued date<input class="pd-input" id="ccw-bdate" type="date" value="' + esc(st.boqDate || '') + '" /></label>' +
               '<label>PO no. (optional)<input class="pd-input" id="ccw-bpo" value="' + esc(st.boqPo || '') + '" /></label>' +
@@ -544,7 +548,7 @@ window.CCWizard = (function () {
       ov.querySelectorAll('input[name="boqmode"]').forEach(function (r) {
         r.onchange = function () { captureBoq(); st.boqMode = r.value; paint(); };
       });
-      ['brev', 'bdate', 'bpo', 'btotal'].forEach(function (f) {
+      ['bname', 'brev', 'bdate', 'bpo', 'btotal'].forEach(function (f) {
         var x = ov.querySelector('#ccw-' + f);
         if (x) x.oninput = function () { captureBoq(); };
       });
@@ -591,6 +595,7 @@ window.CCWizard = (function () {
   /* Read the BOQ step's fields into state. Split out because both capture() and the radio
      handler need it - the radio must save what is typed BEFORE the repaint drops the inputs. */
   function captureBoq() {
+    var n = ov.querySelector('#ccw-bname'); if (n) st.boqName = n.value;
     var r = ov.querySelector('#ccw-brev'); if (r) st.boqRev = r.value;
     var d = ov.querySelector('#ccw-bdate'); if (d) st.boqDate = d.value;
     var p = ov.querySelector('#ccw-bpo'); if (p) st.boqPo = p.value;
@@ -646,12 +651,17 @@ window.CCWizard = (function () {
       }
       if (st.boqMode !== 'import') {
         var brev = String(st.boqRev || '').trim();
+        var bname = String(st.boqName || '').trim();
+        /* WARNING The NAME is what makes this a separate BOQ rather than another revision of the
+           same one. Without it the document cannot be created and the revision would be orphaned,
+           so it is required where the revision label is merely prefilled. */
+        if (!bname) { UI.toast('Give the BOQ a name - it is what separates it from the other BOQs on this project.', 'error'); return; }
         if (!brev) { UI.toast('The revision needs a label - it is how this BOQ is named everywhere else.', 'error'); return; }
         if (btn) { btn.disabled = true; btn.textContent = 'Creating...'; }
         try {
-          await D.createBoqDraft({ rev: brev, date: st.boqDate, po: st.boqPo, total: st.boqTotal });
+          await D.createBoqDraft({ docName: bname, rev: brev, date: st.boqDate, po: st.boqPo, total: st.boqTotal });
           close();
-          UI.toast('Draft revision ' + brev + ' created. Add lines from the class-code library.', 'success');
+          UI.toast(bname + ' rev ' + brev + ' created. Add lines from the class-code library.', 'success');
         } catch (err) {
           if (btn) { btn.disabled = false; btn.textContent = 'Create draft'; }
           UI.toast((err && err.message) || String(err), 'error');
@@ -798,7 +808,7 @@ window.CCWizard = (function () {
          through in a browser". One blank row, primary on it — what the list has always
          assumed it starts with. */
       pkgList: [blankPkg()], pkgPrimary: 0,
-      boqMode: 'manual', boqNew: false, boqRev: '', boqDate: '', boqPo: '', boqTotal: '',
+      boqMode: 'manual', boqNew: false, boqName: '', boqRev: '', boqDate: '', boqPo: '', boqTotal: '',
       ref: '', desc: '', cp: '', amount: '', est: '', sub: '', d1: '', d2: '',
       pkgLabel: function () {
         var p = D.packages().filter(function (x) { return String(x.id) === String(st.pkgId); })[0];

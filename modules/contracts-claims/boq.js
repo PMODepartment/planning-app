@@ -32,6 +32,13 @@ window.BOQ = (function () {
   // ---- state ---------------------------------------------------------------
   var UID = null, canWrite = false, isAdmin = false, pid = null, projLabel = '';
   var REVS = [], REVID = null, ITEMS = [], CMAP = {}, ALLOC = [], PERIODS = [], PROG = {};
+  /* ⚠️⚠️ A BOQ IS A DOCUMENT WITH ITS OWN REVISION SERIES (2026-09-07-boq-documents.sql).
+     Before that migration `boq_revisions` was unique on (project_id, lower(rev_no)) — one
+     series per PROJECT — so a second trade BOQ had to call itself 01, a number that is not
+     the second revision of anything. `DOCS` is this project's BOQs; `DOCID` is the one on
+     screen. Confirmed against OPW101's own workbooks: 'Package 2 BOQ rev.05' is the
+     package's revision, not Architectural's. */
+  var DOCS = [], DOCID = null;
   /* CLAIMED progress, period_id -> { item_id: 0..1 }, from
      2026-08-26-boq-claimed-vs-certified.sql. Kept SEPARATE from PROG rather
      than folded into it: PROG is the certified figure every POC, revenue and
@@ -590,8 +597,20 @@ window.BOQ = (function () {
     REVS = []; ITEMS = []; CMAP = {}; ALLOC = []; PERIODS = []; PROG = {}; CLAIM = {};
     if (!pid) { render(); return; }
     try {
+      /* ⚠️ Tolerant of the migration not having been run: a missing table or column reads as
+         'no documents', and the module falls back to the old flat behaviour rather than
+         erroring. Every other schema addition in this file is loaded the same way. */
+      try { DOCS = await PDb.selectAll('boq_documents', function (q) { return q.eq('project_id', pid).order('sort_order'); }); }
+      catch (e) { DOCS = []; }
       REVS = await PDb.selectAll(T_REV, function (q) { return q.eq('project_id', pid); });
       REVS.sort(function (a, b) { return String(b.issued_date || '').localeCompare(String(a.issued_date || '')) || String(b.rev_no).localeCompare(String(a.rev_no), undefined, { numeric: true }); });
+      /* ⚠️ The DOCUMENT is chosen before the revision, because 'the current revision' only
+         means anything inside one. Keep the planner's document if it still exists — a reload
+         after adding lines must not silently jump them to another BOQ. */
+      if (DOCS.length) {
+        if (!DOCID || !DOCS.some(function (d) { return d.id === DOCID; })) DOCID = DOCS[0].id;
+        REVS = REVS.filter(function (r) { return !r.document_id || r.document_id === DOCID; });
+      }
       var cur = REVS.find(function (r) { return r.is_current; }) || REVS[0];
       REVID = (REVID && REVS.some(function (r) { return r.id === REVID; })) ? REVID : (cur && cur.id) || null;
       if (REVID) {
@@ -793,8 +812,18 @@ window.BOQ = (function () {
   }
 
   function revPickerHTML() {
-    if (!REVS.length) return '';
-    return '<label class="boq-inline">Revision <select class="pd-select" id="boq-rev">' +
+    /* ⚠️ The document picker comes FIRST and is shown even with one document, so the planner can
+       see which BOQ they are in without having to infer it from the revision label. Hidden only
+       when the migration has not run and there are no documents at all. */
+    var docSel = DOCS.length
+      ? '<label class="boq-inline">BOQ <select class="pd-select" id="boq-doc">' +
+        DOCS.map(function (d) {
+          return '<option value="' + esc(d.id) + '"' + (d.id === DOCID ? ' selected' : '') + '>' +
+            esc(d.name) + '</option>';
+        }).join('') + '</select></label> '
+      : '';
+    if (!REVS.length) return docSel;
+    return docSel + '<label class="boq-inline">Revision <select class="pd-select" id="boq-rev">' +
       REVS.map(function (r) {
         return '<option value="' + esc(r.id) + '"' + (r.id === REVID ? ' selected' : '') + '>' +
           /* ⚠️ A DRAFT SAYS SO IN THE PICKER. It is neither current nor superseded, and
@@ -811,6 +840,11 @@ window.BOQ = (function () {
     });
     var rv = host.querySelector('#boq-rev');
     if (rv) rv.onchange = function () { REVID = rv.value; load(); };
+    var dv = host.querySelector('#boq-doc');
+    /* ⚠️ REVID is cleared, not kept: the revision on screen belongs to the OLD document and
+       would not be found in the new one's list, leaving the picker on a revision whose lines
+       are not the ones displayed. load() picks that document's current revision. */
+    if (dv) dv.onchange = function () { DOCID = dv.value; REVID = null; load(); };
     /* ⚠️ Both import buttons are gone (the wizard asks build-or-import now), so this binding is
        dead markup-side. Removed rather than left as a harmless no-op: a handler for an id nothing
        renders is exactly the shape of the `#pk-boq` bug that hid the BOQ screen for a day. */
@@ -1621,7 +1655,14 @@ window.BOQ = (function () {
       // ⚠️ A new revision supersedes, it does not replace: the prior rows are
       // left alone and only is_current moves. Deleting them would destroy the
       // only record of what was tendered.
-      await sb().from(T_REV).update({ is_current: false }).eq('project_id', pid);
+      /* ⚠️⚠️ SCOPED TO THE DOCUMENT, NOT THE PROJECT. This cleared `is_current` across every
+         revision of the project, which was right while a project had one BOQ and is a data
+         corruption now that it has several: importing a Structural BOQ would un-current the
+         Architectural one, and the contract value — which sums each document's current
+         revision — would quietly drop that BOQ's whole amount. */
+      var _sup = sb().from(T_REV).update({ is_current: false });
+      _sup = DOCID ? _sup.eq('document_id', DOCID) : _sup.eq('project_id', pid).is('document_id', null);
+      await _sup;
       var inv = {};
       picked.forEach(function (s) { inv[s.sheet] = { role: s.kind, lines: s.lines, headings: s.headings, sum: s.sum, stated: s.stated_total, header_row: s.header_row + 1 }; });
       /* ⚠️ CREATED AS A DRAFT AND ISSUED AT THE END (2026-09-07). Two reasons, and the
@@ -1637,7 +1678,8 @@ window.BOQ = (function () {
         project_id: pid, rev_no: revNo,
         issued_date: el('bi-date').value || null, po_no: (el('bi-po').value || '').trim() || null,
         contract_total: numOf(el('bi-total').value), source_file: d.file,
-        sheet_inventory: inv, status: 'draft', origin: 'import', is_current: false, created_by: UID
+        sheet_inventory: inv, status: 'draft', origin: 'import', is_current: false, created_by: UID,
+        document_id: DOCID || null
       }).select().single();
       if (rev.error) throw rev.error;
       var revId = rev.data.id;
@@ -1853,7 +1895,11 @@ window.BOQ = (function () {
         po_no: f.po || null, contract_total: numOf(f.total),
         source_file: null, sheet_inventory: {},
         status: 'draft', origin: 'manual', is_current: false,
-        notes: 'Built by hand from the class-code library.', created_by: UID
+        notes: 'Built by hand from the class-code library.', created_by: UID,
+        /* ⚠️ Without this every new BOQ is written with a NULL document_id — orphaned from the
+           model the migration just installed, and invisible to the per-document revision series
+           and the contract-value roll-up. `f.docId` lets a caller create the document first. */
+        document_id: f.docId || DOCID || null
       }).select().single();
       if (!ins.error) {
         REVID = ins.data.id; sub = 'items';
@@ -1878,6 +1924,21 @@ window.BOQ = (function () {
 
   /* The draft this project is already building, if any. Exported for the wizard, which must not
      offer "start a new revision" as the way to add another trade - see its BOQ step. */
+  /* Create a BOQ document — the thing that owns a revision series. `divisions` is advisory:
+     it records which trades this BOQ is meant to cover so the UI can steer, and never gates a
+     write, because the commercial packaging varies by client (Package 2 holds Architectural,
+     Package 3 holds AR — the same trade in two documents). */
+  async function createDocument(name, divisions) {
+    var ins = await sb().from('boq_documents').insert({
+      project_id: pid, name: String(name || '').trim(),
+      divisions: divisions || [], sort_order: DOCS.length, created_by: UID
+    }).select().single();
+    if (ins.error) throw ins.error;
+    DOCS.push(ins.data);
+    DOCID = ins.data.id;
+    return ins.data;
+  }
+
   function currentDraft() {
     return (REVS || []).filter(function (r) { return revStatus(r) === 'draft'; })[0] || null;
   }
@@ -3870,13 +3931,15 @@ window.BOQ = (function () {
     await ensureSugg();
     await load();
   }
-  function reset() { COLLAPSED = {}; SEL = {}; loaded = false; REVS = []; ITEMS = []; CMAP = {}; ALLOC = []; PERIODS = []; PROG = {}; REVID = null; CODES = null; CODETREE = null; ACTS = null; SCHED = null; schedErr = null; PKGS = []; }
+  function reset() { COLLAPSED = {}; SEL = {}; loaded = false; DOCS = []; DOCID = null; REVS = []; ITEMS = []; CMAP = {}; ALLOC = []; PERIODS = []; PROG = {}; REVID = null; CODES = null; CODETREE = null; ACTS = null; SCHED = null; schedErr = null; PKGS = []; }
 
   return {
     init: init, show: show, reset: reset, render: render,
     /* ⚠️ Exported so the WIZARD can create the draft rather than reimplementing the insert.
        The trigger, the is_current rule and the draft/manual defaults all live in one place. */
     createDraft: createDraft, nextRevLabel: nextRevLabel, currentDraft: currentDraft,
+    createDocument: createDocument,
+    documents: function () { return DOCS.slice(); },
     /* Opens the class-code picker on the existing draft - the wizard's "add a trade" path. */
     addTrades: function () { sub = 'items'; render(); return openCodeBuilder(); },
     mountTo: function (id) { HOST_ID = id || 'cc-view'; },

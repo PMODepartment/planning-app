@@ -561,9 +561,20 @@ window.ContractsClaims = (function () {
       /* ⚠️ The wizard CREATES the draft through boq.js rather than inserting the row itself:
          the draft/manual defaults, the is_current rule the database enforces and the reload
          afterwards all live in one place. A second insert path would be a second set of bugs. */
-      createBoqDraft: function (f) {
-        if (!window.BOQ || !BOQ.createDraft) return Promise.reject(new Error('BOQ did not load.'));
-        return BOQ.createDraft(f);
+      createBoqDraft: async function (f) {
+        if (!window.BOQ || !BOQ.createDraft) throw new Error('BOQ did not load.');
+        /* WARNING A NEW BOQ IS A DOCUMENT PLUS ITS FIRST REVISION, in that order. Creating only
+           the revision leaves document_id NULL, which orphans it from the per-document series
+           installed by 2026-09-07-boq-documents.sql and from the contract-value roll-up. */
+        var docId = null;
+        if (f.docName && BOQ.createDocument) {
+          var d = await BOQ.createDocument(f.docName, f.divisions || []);
+          docId = d && d.id;
+        }
+        return BOQ.createDraft({ rev: f.rev, date: f.date, po: f.po, total: f.total, docId: docId });
+      },
+      boqDocuments: function () {
+        return (window.BOQ && BOQ.documents) ? BOQ.documents() : [];
       },
       /* Whether a draft is already open, so the wizard can offer ADDING TO IT rather than
          starting a rival revision. Returns null when the BOQ has not loaded, which the
