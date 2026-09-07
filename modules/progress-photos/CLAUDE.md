@@ -2,6 +2,141 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Works field rebuilt as a hierarchical Execution-Phase Trade > Activity selector, sourced from Project Schedule (2026-09-07)
+
+Owner's spec (a 40-page PDF): the **Works** field inside **Progress Photos → Add Media** must become a
+controlled selector that can only pick EXISTING Project Schedule activities under **Current Project →
+Execution Phase → Trade → Activity** — never a free-typed value, never another project's data, never a
+photo-derived fallback. Explicitly scoped to this one field: no new module, no new page, no redesign of
+Location/Floor Plan/Presentations.
+
+⚠️ **Inspected before touching anything, per the spec's own instruction, and the answer was "half of
+this already exists."** The Works picker was already schedule-sourced, project-scoped, phase-filtered
+and multi-select (see the 2026-08-30 "Reverses…back to a real multi-select" entry above) — genuinely
+new work here is the **hierarchy's presentation** (collapsible Trade groups, search, Expand/Collapse
+all, a live selected count, explicit Apply/Cancel) and a **traceable schedule reference** the prior
+design never stored. Nothing about Location or Floor Plan was touched.
+
+### Where Trade/Activity actually live in the schedule (inspected, not assumed)
+
+- **Execution Phase is a filter, never a selectable level** — `EXEC_WBS_CODE`/`CLOSEOUT_WBS_CODE`
+  (already resolved in `loadSchedule()`, unchanged) are the dotted-code roots of the Project Schedule's
+  own **"Execution Phase" / "Closeout Phase" WBS-Summary branches**, found by name
+  (`branchPhaseFromName`, the exact substring rule Project Schedule's own `phaseFromName()` uses).
+  `inExecOrCloseout(a)` accepts a raw `phase==='construction'/'closeout'` stamp OR a `wbs` code at/under
+  either root (`wbsUnderRoot`, boundary-safe — `"4"` matches `"4.1"`, never `"40.1"`) — this reads the
+  **schedule's real underlying data**, deliberately independent of whatever grouping/view preset (Tower/
+  Level/Zone/…) a planner currently has the Project Schedule module displaying (spec §5).
+- **Trade = `project_schedule.work_type`** (the same canonical bucket Project Schedule itself groups by:
+  General Requirements / Site Works / Structural / Architectural / MEPF / …) — this is the grouping/
+  collapse level, never itself selectable.
+- **Activity = `project_schedule.activity_name`**, on real `Task` rows (Start/Finish Milestones excluded
+  — a schedule commonly names a floor-completion milestone after the floor itself, which is not a
+  "Works" a photo is capturing) — the only selectable, multi-select unit.
+- All of this comes from the **existing** `SCHED_ACTS` array (a plain read of `project_schedule`,
+  keyset-paginated, already scoped to the current project by `pid` — no second project selector was
+  ever added, per spec §17). No new fetch, no new endpoint.
+
+### What changed vs. what was already there
+
+1. **The selector is now genuinely hierarchical, not a flat checkbox grid.** `openWorksPicker` rebuilt
+   around `worksGroupedOptions()` (unchanged — still groups by `work_type`, still folds any legacy
+   free-text value with no live schedule match into its own trailing "Previously used" bucket rather
+   than dropping it): each Trade is now a **collapsible section** with a caret (chevronDown/
+   chevronRight, the existing shared icon set — no new icons needed), its own activity count, and
+   **Expand all / Collapse all** controls that only ever touch a separate `collapsedState` map, never
+   the selection.
+2. **Search** — a box at the top matching Trade *or* Activity name (case-insensitive substring); a
+   matching Activity keeps its parent Trade visible/expanded automatically (forced open only visually,
+   never written into `collapsedState`, so clearing the search restores whatever the planner had
+   manually expanded/collapsed). Search never creates or modifies a Work.
+3. **Selection is a draft until Apply.** `chosen` is seeded from the already-applied selection when the
+   modal opens; only the **Apply** button ever commits it back into `_worksSel[idPrefix]` (the field's
+   real, displayed state). **Cancel**, the **×**, and a backdrop click all just close the modal with
+   `chosen` discarded — exactly the spec's own worked example (existing "Column Formworks" + a
+   newly-but-not-applied "Column Concrete" → Cancel → only "Column Formworks" remains).
+4. **A live "N works selected" count** in the footer, updated on every checkbox change and every
+   collapse/search re-render.
+5. **No manual input, anywhere** — confirmed by grep, not assumed: no "+ Type a new value"/"+ Add custom
+   Works value" control exists in this picker (there never was one in the Works field specifically; a
+   look-alike escape hatch on the unrelated Tower/Floor picker was already removed and reversed by an
+   earlier, explicit owner correction — see the 2026-09-04 "Correction: Tower/Floor reverted…" entry).
+   Every checkbox value is a real, already-existing schedule name; Trade/Activity can never be renamed
+   or created from this screen, and nothing here writes to `project_schedule`/`wbs_nodes`.
+6. **The empty state is now literal and stops demanding the impossible.** ⚠️ **Real, if narrow, bug
+   fixed along the way**: `requiredFieldsMissing`'s Works gate read `scheduleHasActivities()`, which
+   only ever checked "does `project_schedule` have ANY row" (`SCHED_ACTS.length > 0`) — so a project
+   whose schedule exists but has **nothing** past the Execution/Close-out + milestone filter (e.g.
+   everything is still Planning-phase) demanded "At least one Works value is required" with **zero**
+   pickable options, a dead end with no manual-entry escape (correctly, per spec — but then the field
+   simply couldn't be satisfied). `scheduleHasActivities()` now means exactly what the Works field
+   needs it to: `worksGroupedOptions().length > 0`. The empty-state copy matches the spec's own wording
+   verbatim: *"No works available for this project. Works must be established in the Project Schedule
+   under the Execution Phase before they can be selected here."* — and no "+ Add works" button is
+   rendered in that state, so there is nothing to click into a dead modal.
+
+### Data storage — now traceable to the real schedule record, not display text alone
+
+`works_multi` (existing `text[]`, display names, deduped by name across every WBS branch/floor a name
+recurs on — deliberately unchanged, still what every filter/grouping/display reader uses) is joined by
+a new, **index-aligned** `works_activity_ids text[]` — the resolved `project_schedule.activity_id` (the
+same P6 business-key column this app already treats as *the* schedule reference everywhere else) for
+each chosen Works value, or `NULL` when no live schedule match exists (a legacy free-text value, or an
+activity since renamed/removed — the "Previously used" bucket).
+
+⚠️ **Not a strict foreign key, and deliberately not one — read the existing architecture first.** Works
+is dedupe-by-NAME because one schedule activity name legitimately recurs across dozens of WBS branches
+(the same "Rebar Installation" on every floor of a tower); a single Works entry therefore represents a
+**group** of schedule rows, not one. `worksActivityIdFor(name)` resolves the **first** matching row as
+the representative record — a best-effort trace, not a hard 1:1 link, which is exactly what the spec's
+own §18 asked for ("do not blindly create this exact schema… the critical requirement is that the
+selected Work must remain traceable to the actual Project Schedule record") without inventing a second,
+competing master-data model inside Progress Photos.
+
+Migration: **`migrations/2026-09-07-progress-photos-works-activity-ids.sql`** (idempotent `alter table
+… add column if not exists`; folded into `supabase-schema.sql`). Tolerant of not having run yet —
+`tolerantWrite()` strips `works_activity_ids` and retries once on a "column does not exist" error
+(warns once per session), the same convention already used for `trades`/`works_multi`/`view_name`/
+`media_type`/`thumb_url`/`adjustments` in this same function.
+
+### Location remains completely separate, untouched
+
+Not a single line of `locationFieldHTML`/`locTree`/`resolveActivity`/`locBreadcrumb`/`currentLocValues`
+was touched. `resolveActivity(locVals)` still derives the row's own `activity_id`/`activity_name`
+snapshot from the **Location** pick (a different, pre-existing concept: "what is the schedule's current
+activity at this physical location", auto-computed, not user-chosen) — this is unrelated to the Works
+field's own new `works_activity_ids` and the two are not merged.
+
+### Verified
+
+⚠️ **No `node` binary and no live Supabase login are available in this environment** (checked directly —
+neither `python`/`python3` nor `node` resolve to anything beyond Microsoft Store shims, in Bash or
+PowerShell) — the same standing limitation nearly every other entry in this file records. Given that,
+verification here is: (1) careful manual review of every edited region, re-read in full after editing;
+(2) a whole-file brace/paren balance check on `module.js` (1333/1333 braces, 4921/4921 parens) and
+`module.css` (584/584 braces) — clean; (3) a byte-level 0-NUL-bytes check on both files; (4) confirming
+every new/changed function is declared **exactly once** (`openWorksPicker`, `worksMultiFieldHTML`,
+`scheduleHasActivities`, `worksActivityIdFor`, `worksActivityIdsFor`, `worksGroupedOptions`,
+`repaintWorksChips`, `wireWorksMultiField`, `readWorksMulti`, `deriveTradesForWorksList` — one
+declaration each); (5) every new `test.js` regex assertion was individually run **against the real,
+shipped `module.js`** via a literal-pattern search tool (not node, but a genuine match against the exact
+source bytes, which for a pure string/regex structural assertion is equivalent evidence) — all pass;
+(6) confirming the one now-stale pre-existing assertion (the old "Done" button's
+`querySelectorAll('input[type=checkbox]:checked')` read-at-Apply-time pattern) is rewritten, not left
+silently failing, matching this file's own "healthy churn from an intentional change" convention.
+
+⚠️ **Not verified**: no live click-through exists — the collapse/expand persistence across a real
+render cycle, the search box's real behaviour against a live project's own Trade/Activity names, and
+the `works_activity_ids` write actually reaching a live database (the migration has not been run) are
+all unverified beyond the structural checks above. **Existing Location, Floor Plan and Presentations
+behaviour is untouched by this change** (no line in `bim.js`/`ppr.js`/`pano.js`/`recon.js` was edited),
+and the Add Media save/upload pipeline itself (files, thumbnails, offline queue, batch concurrency) is
+unmodified — only the Works field's own render/read functions and the two save-payload object literals
+that already existed were touched.
+
+`module.css/js?v=` → `20260907b` (module-local only — Works has no shared/app-wide asset, so no
+`MODULE_V`/`icons.js` bump was needed).
+
 ## Delete Revision added to the existing Floor Plan feature (2026-09-07)
 
 The Floor Plan feature already had real, working revisions (Replace Plan → a new `floor_plans`
