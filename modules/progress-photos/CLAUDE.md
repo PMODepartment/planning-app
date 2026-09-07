@@ -2,6 +2,50 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Delete Revision added to the existing Floor Plan feature (2026-09-07)
+
+The Floor Plan feature already had real, working revisions (Replace Plan → a new `floor_plans`
+row, the previous one flipped to `is_current:false`, never deleted) but no way to delete one —
+a wrong upload or a stale test revision was permanent. Added **Delete Revision**, targeted:
+nothing about upload/Replace Plan/revision creation/zone drawing changed.
+
+- Reachable two ways, both `canWrite`-gated: a **Delete Revision** button on the currently-viewed
+  revision's info bar (next to Edit Zones/Replace Plan — the only route when a floor has just one
+  revision, since "History (N)" only renders past 2), and a **per-row Delete Revision** link in the
+  existing Revision History modal, so a middle/non-current revision can be deleted without first
+  switching the main screen to it.
+- Both route through one new `openDeleteRevisionConfirm(planId, onDeleted)` — one confirm modal
+  (`pd-btn-danger`, matching `module.js`'s own `openDeleteConfirm` pattern), naming the revision
+  and warning plainly when it's the only one or the current one.
+- ⚠️ **No new deletion mechanism — reused the existing FK cascade.** `floor_plan_zones` /
+  `floor_plan_pins` / `floor_plan_registrations` already declare `floor_plan_id … on delete
+  cascade` (2026-08-29-floor-plans.sql, 2026-09-03-floor-plan-revisions-zones.sql, 2026-08-29-
+  floor-plan-registration.sql), scoped per revision's own id — so one `DELETE FROM floor_plans` is
+  correct and sufficient; no zone/pin/registration ever leaks across revisions and nothing in
+  `progress_photos`/`ppr_slides` is touched (neither table references `floor_plans` at all).
+  ⚠️ Checked that `floor_plan_registrations`' ownership-restricted delete policy
+  (`created_by = auth.uid() or is_admin()`) can't block this: Postgres bypasses RLS for
+  FK-driven referential-integrity actions, including `ON DELETE CASCADE` — confirmed against
+  Postgres's own documented behavior before relying on it, not assumed.
+- If the deleted revision was current, the next-most-recent SURVIVING revision for that exact
+  Tower+Floor is promoted (`is_current:true`) — never a sibling Tower/Floor's rows, never by
+  copying zones. Tolerant of `is_current` not existing yet (pre-migration): `currentPlanFor()`'s
+  own already-documented legacy fallback (most-recently-uploaded) resolves the same answer anyway.
+  Deleting the only revision promotes nothing — the floor falls back to the existing "No floor
+  plan uploaded" empty state, unchanged.
+- The image file (`image_url`) is removed from storage as a separate, best-effort step after the
+  row delete succeeds — same ordering discipline as `module.js`'s photo delete (a failed storage
+  cleanup must never make an already-successful row delete read as failed).
+
+**Verified structurally** (no live Supabase session is possible in this environment — the standing
+limitation for this whole module): braces/parens balanced, 0 NUL bytes, no duplicate DOM ids,
+exactly one definition of the new function with its two intended call sites; every cascade/RLS
+claim above was checked against the actual migration text, not assumed. ⚠️ **Not click-tested
+live** — the six scenarios (only/middle/current revision, zone integrity, reload, location
+integrity) are unverified end-to-end; this is the real gap for whoever tests next.
+
+`bim.js`/`module.css?v=` → `20260907a`.
+
 ## "I still can't delete the 3D/360 photos" — the real root cause, found by auditing every delete path in the module (2026-09-04)
 
 Owner, after both the pencil-icon fix and the batch-trash-icon fix below had shipped and merged:
