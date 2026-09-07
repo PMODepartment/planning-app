@@ -844,3 +844,8 @@ html.pd-dark .boq-why { color:#7fd6a2; }
 /* One modal header shape everywhere: a title, and one line saying what the screen is for.
    Replaces per-modal paragraphs of theory sitting above the controls. */
 .pd-modal-sub { margin-top:3px; font-size:12px; color:var(--pd-muted); line-height:1.4; }
+
+/* A computed cell. Muted and italic-free: it must read as a FIGURE, not as disabled chrome,
+   because it is the number the planner actually checks. The cursor says it is not typed into. */
+.boq-calc { color:var(--pd-muted); cursor:default; font-variant-numeric:tabular-nums; }
+.pdg-grid td.boq-calc { background:rgba(128,128,128,.05); }

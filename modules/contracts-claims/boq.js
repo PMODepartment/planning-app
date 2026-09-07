@@ -1054,23 +1054,26 @@ window.BOQ = (function () {
        cell-shaped cursor. Applied on an ISSUED revision too, not just a draft — the owner
        asked to follow that grid's design, and a bill should not change shape depending on
        whether you may type in it. `boq-fillable` still gates only the EDITABLE affordances. */
+    /* ⚠️ A REAL <colgroup>, WHICH IS WHAT MAKES THE WIDTHS PROPORTIONAL. Owner: *"the column
+       width is not proportional to the content"*. It could not be: the table was hand-written
+       <td>s with no declared widths, so every column was whatever the browser inferred from the
+       longest cell it happened to see. `w` on each column spec is now a real declaration, and
+       Description gets 300px because it is prose while UoM gets 74 because it holds "m2". */
+    var COLS = boqCols(draft, codeIsItem);
     h += '<div class="pd-card cc-tablecard"><table class="cc-table boq-table pdg-grid' +
-      (draft ? ' boq-fillable' : '') + '"><thead><tr>' +
-      (codeIsItem ? '<th class="boq-no">Class code</th>' : '<th class="boq-no">Item</th>') +
-      '<th class="cc-desc">Description</th><th>Unit</th>' +
-      '<th class="cc-r">Qty</th>' +
-      (draft ? '<th class="cc-r">Mat. rate</th><th class="cc-r">Lab. rate</th>'
-             : '<th class="cc-r">Material</th><th class="cc-r">Labour</th>') +
-      '<th class="cc-r">Amount</th><th>Kind</th>' +
-      (codeIsItem ? '' : '<th>Class code</th>') +
-      '<th>Package</th><th class="cc-r">Alloc.</th>' +
-      /* ⚠️ Selection lives in the EXISTING actions column rather than a new leading one, so the
-         column count — and every colspan that depends on it — is untouched. */
-      (draft ? '<th class="cc-actcol"><input type="checkbox" id="boq-selall" title="Select every line the filters currently show" /></th>' : '') +
-      '</tr></thead><tbody>';
+      (draft ? ' boq-fillable' : '') + '" style="table-layout:fixed;min-width:' +
+      COLS.reduce(function (a, c) { return a + c.w; }, 0) + 'px">' +
+      '<colgroup>' + COLS.map(function (c) { return '<col style="width:' + c.w + 'px">'; }).join('') + '</colgroup>' +
+      '<thead><tr>' +
+      COLS.map(function (c) {
+        return '<th' + (c.r ? ' class="cc-r"' : '') + '>' +
+          (c.k === '_act'
+            ? '<input type="checkbox" id="boq-selall" title="Select every line the filters currently show" />'
+            : esc(c.label)) + '</th>';
+      }).join('') + '</tr></thead><tbody>';
 
     var list = filtered();
-    var span = 11 + (draft ? 1 : 0) - (codeIsItem ? 1 : 0);
+    var span = COLS.length;
     /* ⚠️ AN EMPTY DRAFT IS NOT A FAILED SEARCH. This said "No lines match these filters" on a
        BOQ that had just been created and had no lines to filter — technically true and useless,
        and it was the first thing a planner saw after choosing to build one by hand. The two
@@ -1120,58 +1123,101 @@ window.BOQ = (function () {
     }
     var skipDepth = null;   // while set, anything deeper than this is inside a collapsed heading
 
+
+    /* Child counts per heading, for the collapse carets — over the CURRENT list order. */
+    var kids = {};
+    for (var ki = 0; ki < list.length; ki++) {
+      if (list[ki].line_kind !== 'heading') continue;
+      var kd = list[ki].depth || 0, kn = 0;
+      for (var kj = ki + 1; kj < list.length && (list[kj].depth || 0) > kd; kj++) kn++;
+      kids[list[ki].id] = kn;
+    }
+    var skipDepth = null;
+
     list.forEach(function (r) {
       var rd = r.depth || 0;
       if (skipDepth !== null) {
-        if (rd > skipDepth) return;   // hidden under a collapsed heading
-        skipDepth = null;             // back out to a sibling or shallower row
+        if (rd > skipDepth) return;
+        skipDepth = null;
       }
       var head = r.line_kind === 'heading';
       if (head && COLLAPSED[r.id]) skipDepth = rd;
       var cm = CMAP[r.id];
       var al = allocOf(r.id);
-      // A heading holds no figures, on a draft or otherwise, so its cells stay empty
-      // rather than becoming inputs nobody should fill.
+      // A heading holds no figures, so its cells stay empty rather than becoming inputs.
       var ed = draft && !head;
+
       h += '<tr class="' + (head ? 'boq-head' : '') + '" data-id="' + esc(r.id) + '">' +
-        '<td class="boq-no" style="padding-left:' + (6 + Math.min(rd, 6) * 12) + 'px">' +
-          /* ⚠️ A caret only where there is something to collapse. A heading with no rows under
-             it (the last one on a sheet, or one whose children a filter removed) gets no
-             control, because a toggle that visibly does nothing reads as broken. */
-          (head && kids[r.id]
-            ? '<button class="boq-caret" data-tog="' + esc(r.id) + '" title="' +
-              (COLLAPSED[r.id] ? 'Expand' : 'Collapse') + '" aria-expanded="' +
-              (COLLAPSED[r.id] ? 'false' : 'true') + '">' + (COLLAPSED[r.id] ? '\u25b8' : '\u25be') +
-              '</button>' : '') +
-          esc(r.item_no || '') +
-          (head && COLLAPSED[r.id] ? ' <span class="boq-hidden-n">' + kids[r.id] + ' hidden</span>' : '') +
-          '</td>' +
-        '<td class="cc-desc">' + (draft
-          ? '<input class="boq-cell boq-cell-t" data-f="description" data-i="' + esc(r.id) + '" value="' + esc(r.description || '') + '" />'
-          : '<div class="cc-desc-txt" title="' + esc(r.description || '') + '">' + esc(r.description || '') + '</div>') +
-          (r.exclusion_note && !draft ? '<div class="boq-excl">' + esc(r.exclusion_note) + '</div>' : '') +
-          '<div class="cc-mini">' + esc(r.sheet) + ' · row ' + r.source_row +
-            (r.derived_amount ? ' · <span class="boq-derived">amount derived</span>' : '') + '</div></td>' +
-        '<td>' + (ed ? cellIn(r, 'unit', 'text') : esc(r.unit || '')) + '</td>' +
-        '<td class="cc-r">' + (ed ? cellIn(r, 'qty', 'num') : qtyStr(r.qty)) + '</td>' +
-        '<td class="cc-r">' + (ed ? cellIn(r, 'mat_rate', 'num') : money(r.mat_amount)) + '</td>' +
-        '<td class="cc-r">' + (ed ? cellIn(r, 'lab_rate', 'num') : money(r.lab_amount)) + '</td>' +
-        '<td class="cc-r">' + (ed ? cellIn(r, 'amount', 'num')
-          : (r.exclusion_note ? '<span class="cc-mut">—</span>' : money(r.amount))) + '</td>' +
-        '<td>' + (ed
-          ? '<select class="boq-cellsel" data-f="line_kind" data-i="' + esc(r.id) + '">' +
-            ['measured', 'lump_sum', 'provisional', 'excluded', 'heading'].map(function (k) {
-              return '<option value="' + k + '"' + (r.line_kind === k ? ' selected' : '') + '>' + esc(kindLabel(k)) + '</option>';
-            }).join('') + '</select>'
-          : '<span class="boq-kind k-' + esc(r.line_kind) + '">' + esc(kindLabel(r.line_kind)) + '</span>') + '</td>' +
-        (codeIsItem ? '' :
-          '<td>' + (cm ? '<span class="boq-code" title="' + esc(cm.source) + '">' + esc(cm.class_code) + '</span>' : (mappable(r) ? '<span class="cc-mut">—</span>' : '')) + '</td>') +
-        '<td>' + pkgCell(r) + '</td>' +
-        '<td class="cc-r">' + (qtyLine(r) ? allocChip(r, al) : '') + '</td>' +
-        (draft ? '<td class="cc-actcol"><input type="checkbox" class="boq-selbox" data-sel="' + esc(r.id) + '"' +
-          (SEL[r.id] ? ' checked' : '') + ' title="Select this line" />' +
-          '<button class="boq-rowdel" data-del="' + esc(r.id) + '" title="Delete this line">&times;</button></td>' : '') +
-        '</tr>';
+        COLS.map(function (c) {
+          var cls = c.r ? ' class="cc-r"' : '';
+
+          if (c.k === 'item_no') {
+            return '<td class="boq-no"' + ' style="padding-left:' + (6 + Math.min(rd, 6) * 12) + 'px">' +
+              (head && kids[r.id]
+                ? '<button class="boq-caret" data-tog="' + esc(r.id) + '" title="' +
+                  (COLLAPSED[r.id] ? 'Expand' : 'Collapse') + '" aria-expanded="' +
+                  (COLLAPSED[r.id] ? 'false' : 'true') + '">' + (COLLAPSED[r.id] ? '\u25b8' : '\u25be') +
+                  '</button>' : '') +
+              esc(r.item_no || '') +
+              (head && COLLAPSED[r.id] ? ' <span class="boq-hidden-n">' + kids[r.id] + '</span>' : '') +
+              '</td>';
+          }
+          if (c.k === 'description') {
+            return '<td class="cc-desc" title="' + esc((r.sheet || '') + ' \u00b7 row ' + r.source_row) + '">' +
+              (draft
+                ? '<input class="boq-cell boq-cell-t" data-f="description" data-i="' + esc(r.id) + '" value="' + esc(r.description || '') + '" />'
+                : '<div class="cc-desc-txt">' + esc(r.description || '') + '</div>') +
+              (r.exclusion_note && !draft ? '<div class="boq-excl">' + esc(r.exclusion_note) + '</div>' : '') +
+              '<div class="cc-mini">' + esc(r.sheet) + ' \u00b7 row ' + r.source_row + '</div></td>';
+          }
+          if (c.k === 'unit') return '<td>' + (head ? '' : uomCell(r, ed)) + '</td>';
+
+          /* ⚠️⚠️ A COMPUTED COLUMN IS RENDERED, NEVER TYPED INTO. recalc() already maintains
+             mat_amount / lab_amount / amount on every qty or rate change; these cells simply show
+             what it produced. Rendering an <input> here would invite an edit that the next recalc
+             silently overwrites — a figure that will not stay where you put it is worse than one
+             you cannot edit at all. */
+          if (c.calc === true) {
+            return '<td class="cc-r boq-calc" title="' + esc(c.label + ' = quantity x rate') + '">' +
+              (head ? '' : money2(r[c.k])) + '</td>';
+          }
+          if (c.k === 'amount') {
+            /* Derived by default, typed by exception — `derived_amount` records which. */
+            if (head) return '<td class="cc-r"></td>';
+            if (r.derived_amount !== false && !ed) return '<td class="cc-r boq-calc">' + money2(r.amount) + '</td>';
+            return '<td class="cc-r' + (r.derived_amount !== false ? ' boq-calc' : '') + '">' +
+              (ed ? cellIn(r, 'amount', 'num') : (r.exclusion_note ? '<span class="cc-mut">\u2014</span>' : money2(r.amount))) + '</td>';
+          }
+          if (c.type === 'num') {
+            return '<td class="cc-r">' + (head ? '' : (ed ? cellIn(r, c.k, 'num')
+              : (c.k === 'qty' ? qtyStr(r.qty) : money2(r[c.k])))) + '</td>';
+          }
+          if (c.k === 'line_kind') {
+            return '<td>' + (ed
+              ? '<select class="boq-cellsel" data-f="line_kind" data-i="' + esc(r.id) + '">' +
+                ['measured', 'lump_sum', 'provisional', 'excluded', 'heading'].map(function (k) {
+                  return '<option value="' + k + '"' + (r.line_kind === k ? ' selected' : '') + '>' + esc(kindLabel(k)) + '</option>';
+                }).join('') + '</select>'
+              : '<span class="boq-kind k-' + esc(r.line_kind) + '">' + esc(kindLabel(r.line_kind)) + '</span>') + '</td>';
+          }
+          if (c.k === '_class') {
+            return '<td>' + (cm ? '<span class="boq-code" title="' + esc(cm.source) + '">' + esc(cm.class_code) + '</span>'
+              : (mappable(r) ? '<span class="cc-mut">\u2014</span>' : '')) + '</td>';
+          }
+          if (c.k === '_pkg') return '<td>' + pkgCell(r) + '</td>';
+          if (c.k === '_alloc') return '<td class="cc-r">' + (qtyLine(r) ? allocChip(r, al) : '') + '</td>';
+          if (c.k === '_act') {
+            /* ⚠️ NO PER-ROW DELETE. Owner: *"delete this line button in the row shouldn't be here
+               as well since we have the checkbox already."* Two ways to delete one line is one
+               too many, and the × was the more dangerous of the pair: a single unconfirmed click
+               sitting at the end of every row, next to a checkbox, on a table you scroll fast.
+               Selection + "Delete N selected" is the same act with a confirm and a count.
+               ⚠️ delLine() is kept — openSplit and the import preview still call it. */
+            return '<td class="cc-actcol"><input type="checkbox" class="boq-selbox" data-sel="' + esc(r.id) + '"' +
+              (SEL[r.id] ? ' checked' : '') + ' title="Select this line" /></td>';
+          }
+          return '<td' + cls + '></td>';
+        }).join('') + '</tr>';
     });
     h += '</tbody></table></div>';
     return h;
@@ -1292,9 +1338,11 @@ window.BOQ = (function () {
     };
     var ds = host.querySelector('#boq-delsel');
     if (ds) ds.onclick = delSelected;
-    host.querySelectorAll('[data-del]').forEach(function (b) {
-      b.onclick = function () { delLine(b.dataset.del); };
-    });
+    /* ⚠️ The per-row × is gone (selection + "Delete N selected" replaces it), so nothing in the
+       items table renders `data-del` any more. Removed rather than left as a harmless no-op —
+       twice today a handler bound to an id nothing renders has cost real time (`#pk-boq` hid the
+       BOQ screen for a day; `#boq-import` outlived its buttons). `delLine()` itself stays: the
+       import preview still calls it. */
   }
   /* One input per editable cell.
      ⚠️ NUMERIC CELLS ARE type="text", NOT type="number", AND THIS IS THE OPPOSITE OF THE
@@ -2361,6 +2409,90 @@ window.BOQ = (function () {
      ⚠️ AN AMOUNT TYPED BY HAND WINS AND STOPS THE DERIVATION (`derived_amount = false`),
         because a lump-sum line has an amount and no rate at all. Clearing it hands the
         line back to the rates. */
+
+  /* ==========================================================================
+     THE COLUMN SPEC — width, type and read-only are DATA, not markup
+     ==========================================================================
+     Owner, 2026-09-07: *"some of the columns here should be computed automatically not manually
+     inputted i.e. qty mat rate lab rate amount"*, *"the unit should be a dropdown list of unit of
+     measurements and let's call it UoM rather than Unit"*, *"the column width is not proportional
+     to the content"*, and *"the grid does not follow the Procurement Dashboard's review.html grid
+     completely"*.
+
+     ⚠️⚠️ ALL FOUR ARE THE SAME MISSING THING: review.html drives its grid from `XL_COLS`, a list
+     of `{k, label, w, type, ro}`. This table was hand-written `<td>`s, so a width could only be
+     guessed in CSS, a type could not be declared at all, and "computed" had nowhere to live. With
+     a spec, `w` gives a real <colgroup> (proportional widths), `type` picks the editor, and `calc`
+     marks a column as derived.
+
+     ⚠️ THE ARITHMETIC WAS ALREADY THERE AND INVISIBLE. `recalc()` has always computed
+     mat_amount = qty x mat_rate, lab_amount = qty x lab_rate, amount = the two summed, and
+     saveCell() has always called it. What the screen showed was three EDITABLE money columns
+     (Mat. rate, Lab. rate, Amount) and neither computed column — so it read as "type everything".
+     Nothing about the maths changes here; the derived figures simply become visible and read-only.
+
+     ⚠️ THE COLUMN SET IS OPW101's OWN BOQ HEADER, read out of
+     "One Portwood Package 2 BOQ ... rev.05", sheet Architectural, rows 12-13:
+         ITEM NO. | ITEM DESCRIPTION | UNIT | QUANTITY | UNIT COST(MATERIAL) |
+         MATERIAL COST | LABOR + CONS | LABOR COST | TOTAL AMOUNT
+     so Material cost and Labor cost are columns the planner reads, not fields they fill. */
+
+  /* ⚠️ DERIVED FROM THE OWNER'S OWN BILLS, not invented: the units on every OPW101 line that
+     carries a numeric quantity are m2 (623), lm (112), set (76), lot (42), sets (15), mos (12),
+     ea (7), unit (4), pc (3), kg (2). `sets` and `l.m` are variants of `set` and `lm` and are not
+     offered again. The rest are standard construction units the bills simply had no line for yet.
+     ⚠️ AN OFF-LIST VALUE IS NEVER LOST — see uomCell(). An imported bill carries units this list
+     has never heard of, and a <select> that silently drops one would erase a tendered figure's
+     unit on the next save. */
+  var UOM = ['lot', 'set', 'pc', 'ea', 'unit', 'm', 'lm', 'm2', 'm3', 'kg', 'tonne',
+             'L', 'bag', 'roll', 'sheet', 'mos', 'day', 'hr'];
+
+  function money2(v) { return v == null ? '' : Fmt.money(v); }
+
+  function boqCols(draft, codeIsItem) {
+    var C = [];
+    C.push({ k: 'item_no', label: codeIsItem ? 'Class code' : 'Item', w: 96, mono: true, ro: true });
+    C.push({ k: 'description', label: 'Description', w: 300, type: 'text' });
+    C.push({ k: 'unit', label: 'UoM', w: 74, type: 'uom' });
+    C.push({ k: 'qty', label: 'Quantity', w: 92, type: 'num', r: true });
+    C.push({ k: 'mat_rate', label: 'Mat. rate', w: 100, type: 'num', r: true });
+    C.push({ k: 'mat_amount', label: 'Mat. cost', w: 112, type: 'money', r: true, calc: true });
+    C.push({ k: 'lab_rate', label: 'Lab. rate', w: 100, type: 'num', r: true });
+    C.push({ k: 'lab_amount', label: 'Lab. cost', w: 112, type: 'money', r: true, calc: true });
+    /* ⚠️ Total stays OVERRIDABLE, and `derived_amount` is the flag that already records which it
+       is. A lump-sum line has an amount and no quantity to derive it from, so refusing the entry
+       would make those lines unrepresentable. It is derived by DEFAULT and typed by exception. */
+    C.push({ k: 'amount', label: 'Total amount', w: 124, type: 'num', r: true, calc: 'soft' });
+    C.push({ k: 'line_kind', label: 'Kind', w: 112, type: 'kind' });
+    if (!codeIsItem) C.push({ k: '_class', label: 'Class code', w: 100 });
+    /* ⚠️ NO PACKAGE COLUMN WHEN THE PROJECT HAS NO LOTS. Owner: *"why is there a package column
+       when there is no package in this contract at all?"* — right, and it is the third place this
+       has come up (the Contract lots section and the Assign-to-lot button were the others). With
+       no lots every cell reads "—" forever, and a column of em-dashes is not information, it is a
+       column of questions. A line with a null package_id already belongs to the whole contract. */
+    if (PKGS.length) C.push({ k: '_pkg', label: 'Package', w: 96 });
+    /* ⚠️ "Alloc." meant nothing to anybody. Owner: *"what is the Alloc. column referring to?"* It
+       is how much of this line's quantity has been spread across schedule activities — the state
+       the Match to schedule tab manages — so it now carries that tab's own word. Shown only on a
+       revision that has something to match: it is empty on every line until quantities exist. */
+    C.push({ k: '_alloc', label: 'Matched', w: 84, r: true });
+    if (draft) C.push({ k: '_act', label: '', w: 58 });
+    return C;
+  }
+
+  /* A <select> that can never lose what it is given. */
+  function uomCell(r, ed) {
+    var v = r.unit == null ? '' : String(r.unit);
+    if (!ed) return esc(v);
+    var opts = UOM.slice();
+    if (v && opts.indexOf(v) < 0) opts.unshift(v);   // keep an imported unit this list lacks
+    return '<select class="boq-cellsel" data-f="unit" data-i="' + esc(r.id) + '">' +
+      '<option value=""' + (v ? '' : ' selected') + '></option>' +
+      opts.map(function (u) {
+        return '<option value="' + esc(u) + '"' + (u === v ? ' selected' : '') + '>' + esc(u) + '</option>';
+      }).join('') + '</select>';
+  }
+
   function recalc(n) {
     var q = n.qty, mr = n.mat_rate, lr = n.lab_rate;
     var ma = (q != null && mr != null) ? q * mr : null;
