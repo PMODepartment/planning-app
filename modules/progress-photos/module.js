@@ -82,6 +82,7 @@ window.ProgressPhotos = (function () {
   var migrationWarnedViewName = false;     // same, for the 2026-08-30 view_name column (item 7)
   var migrationWarnedThumb = false;        // same, for the 2026-08-30 thumb_url column (item 1, round 2)
   var migrationWarnedAdjust = false;       // same, for the 2026-08-30 adjustments column (item 5, round 2)
+  var migrationWarnedWorksIds = false;     // same, for the 2026-09-07 works_activity_ids column (Works→Schedule ID trace)
   // Today's Rounds (the streamlined-walkthrough screen) was removed entirely
   // per owner feedback (2026-08-29, "Rounds can be removed") — its state vars
   // (roundsFilter/roundsSelected/walkState/_roundsComboByKey) and its render/
@@ -1007,12 +1008,38 @@ window.ProgressPhotos = (function () {
     });
     return out;
   }
-  // Whether the project's schedule actually offers anything to pick — this is
-  // the "if the schedule has not been set-up" test the Works field's own
-  // required-ness hinges on (requiredFieldsMissing, below): SCHED_ACTS being
-  // empty means there is no schedule integration to speak of, not merely
-  // that today's picked Trade/phase filters narrowed it to nothing.
-  function scheduleHasActivities() { return SCHED_ACTS.length > 0; }
+  // Resolves the schedule activity's own stable id (project_schedule.
+  // activity_id — the P6 business key already used everywhere else in this
+  // app as THE reference into a schedule row) for one Works value, so the
+  // selection can be traced back to the real Project Schedule record rather
+  // than only a display string. Matched by NAME, same as deriveTradeForWorks
+  // — Works is deliberately deduped by activity name across every floor/WBS
+  // branch a name recurs on (see distinctScheduleWorks' own comment), so the
+  // FIRST matching row is the representative record. A value with no live
+  // schedule match (free text captured before this integration, or an
+  // activity since renamed/removed — the "Previously used" bucket) has
+  // nothing to trace to and returns null rather than guessing one.
+  function worksActivityIdFor(name) {
+    if (!name) return null;
+    var v = String(name).trim().toLowerCase();
+    var act = SCHED_ACTS.filter(function (a) { return (a.activity_name || '').trim().toLowerCase() === v; })[0];
+    return (act && act.activity_id) || null;
+  }
+  // Index-aligned with the Works name list (works_multi) — a parallel array
+  // of resolved schedule ids (or null per entry). Traceability only: nothing
+  // in this module ever matches/derives FROM this array, name is still what
+  // every reader (filters, grouping, display, deriveTradeForWorks) uses.
+  function worksActivityIdsFor(list) { return (list || []).map(worksActivityIdFor); }
+  // Whether the Works picker has anything at all to offer — i.e. the project's
+  // schedule contains at least one real Task activity under Execution/
+  // Close-out phase, past the milestone exclusion (worksGroupedOptions' own
+  // scoping). This is the "nothing to pick" gate behind BOTH the Works
+  // field's required-ness (requiredFieldsMissing, below) and its own empty
+  // state (worksMultiFieldHTML) — deliberately NOT the coarser "does this
+  // project have a schedule at all" (a plain SCHED_ACTS.length check), or a
+  // schedule that exists but resolves nothing past that scoping would still
+  // demand a Works value nobody could possibly supply, with no way to.
+  function scheduleHasActivities() { return worksGroupedOptions().length > 0; }
   // Every distinct schedule activity NAME eligible as a Works value, bucketed
   // by its work_type ("the project-defined activity groups") — the same
   // exec/closeout + non-milestone scoping distinctScheduleWorks() already
@@ -1056,10 +1083,23 @@ window.ProgressPhotos = (function () {
         '<span data-ico="x" data-ico-size="11"></span></button></span>';
     }).join('') + '</div>';
   }
+  // Full field block — label (+ required marker, only when the Works picker
+  // genuinely has something to offer) + the applied-selection chips + "+ Add
+  // works", OR the empty state (section 16/17 — no manual-entry fallback,
+  // ever). Bundles its own wrapper the same way locationFieldHTML() already
+  // does, so callers (openUpload/openForm) just splice this in rather than
+  // repeating the surrounding <div class="pd-field">/<label> markup.
   function worksMultiFieldHTML(idPrefix, existingWorks) {
     _worksSel[idPrefix] = (existingWorks || []).slice();
-    return '<div id="' + idPrefix + '-worksfield">' + worksChipsHTML(idPrefix) +
-      '<button type="button" class="pd-btn" id="' + idPrefix + '-worksadd">+ Add works</button></div>';
+    if (!scheduleHasActivities()) {
+      return '<div class="pd-field pp-span2"><label>Works</label>' +
+        '<p class="pp-hint">No works available for this project.</p>' +
+        '<p class="pp-hint">Works must be established in the Project Schedule under the ' +
+        'Execution Phase before they can be selected here.</p></div>';
+    }
+    return '<div class="pd-field pp-span2"><label>Works' + reqMark() + '</label>' +
+      '<div id="' + idPrefix + '-worksfield">' + worksChipsHTML(idPrefix) +
+      '<button type="button" class="pd-btn" id="' + idPrefix + '-worksadd">+ Add works</button></div></div>';
   }
   function repaintWorksChips(idPrefix) {
     var host = $(idPrefix + '-worksfield'); if (!host) return;
@@ -1068,28 +1108,134 @@ window.ProgressPhotos = (function () {
     wireWorksMultiField(idPrefix);
     hydrate(host);
   }
+  // ---- The hierarchical Trade > Activity selector -------------------------
+  // Opened by "+ Add works". Trade (project_schedule.work_type) is the
+  // grouping/collapse level; Activity (activity_name) is the only selectable,
+  // multi-select item — sourced ENTIRELY from worksGroupedOptions(), i.e. the
+  // current project's own Execution/Close-out phase schedule activities.
+  // There is no way to type/create a Trade or an Activity anywhere in here
+  // (section 15) — every checkbox value is a real, already-existing schedule
+  // name.
+  //
+  // Cancel/Apply: `chosen` is a DRAFT, seeded from the already-applied
+  // selection (_worksSel[idPrefix]) when the modal opens. Only the Apply
+  // button ever writes back to _worksSel — Cancel, ×, and a backdrop click
+  // all just close the modal (openModal's own close path) with `chosen`
+  // discarded, so whatever was applied before the picker opened is exactly
+  // what remains selected.
+  //
+  // Collapse/expand is a SEPARATE piece of state (`collapsedState`, keyed by
+  // Trade name) from `chosen` — toggling it only ever re-renders the list
+  // from the SAME `chosen` object, so hiding/showing a Trade's activities can
+  // never touch which of them are checked (section 9/10's own requirement).
+  // Search is a third, independent piece of state: while a term is set, a
+  // matching Trade is force-expanded (never written into `collapsedState`,
+  // so clearing the search restores the manual expand/collapse state exactly
+  // as it was — section 11's own requirement).
   function openWorksPicker(idPrefix) {
     var groups = worksGroupedOptions();
+    if (!groups.length) return;   // "+ Add works" isn't rendered without groups — belt-and-braces
     var chosen = {}; worksSelOf(idPrefix).forEach(function (v) { chosen[v] = true; });
+    var collapsedState = {};      // Trade name -> true (manually collapsed); default expanded
+    var searchTerm = '';
+
+    function selCount() { return Object.keys(chosen).filter(function (k) { return chosen[k]; }).length; }
+    function countText() { var n = selCount(); return n + (n === 1 ? ' work' : ' works') + ' selected'; }
+
+    function groupHTML(g) {
+      var term = searchTerm.trim().toLowerCase();
+      var groupMatches = !term || g.group.toLowerCase().indexOf(term) >= 0;
+      // A matching Trade name shows ALL of its Activities (searching for a
+      // Trade should surface the whole group); otherwise only Activities
+      // whose own name matches are kept.
+      var items = g.items.filter(function (v) { return !term || groupMatches || v.toLowerCase().indexOf(term) >= 0; });
+      if (term && !items.length) return '';
+      var isCollapsed = term ? false : !!collapsedState[g.group];
+      return '<div class="pp-worksgroup">' +
+        '<button type="button" class="pp-worksgroup-hd" data-grouptoggle="' + Fmt.esc(g.group) + '" ' +
+          'aria-expanded="' + (!isCollapsed) + '">' +
+          '<span class="pp-worksgroup-caret">' + (window.Icons ? Icons.svg(isCollapsed ? 'chevronRight' : 'chevronDown', 14) : (isCollapsed ? '▸' : '▾')) + '</span>' +
+          '<span class="pp-worksgroup-name">' + Fmt.esc(g.group) + '</span>' +
+          '<span class="pp-worksgroup-count">' + items.length + '</span>' +
+        '</button>' +
+        (isCollapsed ? '' : '<div class="pp-worksgroup-items">' + items.map(function (v) {
+          return '<label class="pp-worksitem"><input type="checkbox" value="' + Fmt.esc(v) + '" data-workchk' +
+            (chosen[v] ? ' checked' : '') + ' /> <span>' + Fmt.esc(v) + '</span></label>';
+        }).join('') + '</div>') +
+      '</div>';   // closes the outer .pp-worksgroup opened at the top of this function —
+                  // ⚠️ 2026-09-07 REAL BUG, found live: this was missing in BOTH branches
+                  // (collapsed and expanded alike), so every Trade group left one <div>
+                  // permanently unclosed. With 4 groups that's 4 unclosed divs; the
+                  // browser's parser then consumed the template's real closing tags for
+                  // #...-workslist and .pp-workspicker trying to close those instead,
+                  // leaving the FOOTER (Apply/Cancel/count) nested INSIDE the list
+                  // container rather than a sibling after it — so replacing the list's
+                  // own innerHTML on any collapse/search repaint silently deleted the
+                  // footer along with it. Caught by driving the real picker in a live
+                  // browser and querying the DOM directly (querySelector('.pp-worksfooter')
+                  // returned null after any repaint) — invisible to a static/regex read of
+                  // the source, since each string fragment reads fine in isolation.
+    }
+    function listHTML() {
+      var body = groups.map(groupHTML).join('');
+      if (searchTerm.trim() && !body) return '<p class="pp-hint pp-worksempty">No Trade or Activity matches “' + Fmt.esc(searchTerm.trim()) + '”.</p>';
+      return body;
+    }
+    function repaintList() {
+      var host = $(idPrefix + '-workslist');
+      if (host) { host.innerHTML = listHTML(); hydrate(host); }
+      var cnt = $(idPrefix + '-workscount');
+      if (cnt) cnt.textContent = countText();
+    }
+
     var html =
-      '<div class="pd-modal-header"><h3>Add works</h3><button class="pd-modal-close" data-close>×</button></div>' +
-      '<div class="pp-form">' +
-        (groups.length
-          ? '<div class="pp-worksgrid">' + groups.map(function (g) {
-              return '<div class="pp-worksgroup"><span class="pp-worksgroup-name">' + Fmt.esc(g.group) + '</span>' +
-                g.items.map(function (v) {
-                  return '<label class="pp-worksitem"><input type="checkbox" value="' + Fmt.esc(v) + '"' +
-                    (chosen[v] ? ' checked' : '') + ' /> ' + Fmt.esc(v) + '</label>';
-                }).join('') + '</div>';
-            }).join('') + '</div>'
-          : '<p class="pp-hint">No schedule activities are set up for this project yet — Works can be left blank.</p>') +
+      '<div class="pd-modal-header"><h3>Select Works</h3><button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-form pp-workspicker">' +
+        '<div class="pp-workssearch">' +
+          (window.Icons ? '<span data-ico="search" data-ico-size="14"></span>' : '') +
+          '<input type="text" class="pd-input" id="' + idPrefix + '-workssearch" placeholder="Search Trade or Activity…" />' +
+        '</div>' +
+        '<div class="pp-worksbar">' +
+          '<button type="button" class="pd-btn pd-btn-sm" id="' + idPrefix + '-worksexpandall">Expand all</button>' +
+          '<button type="button" class="pd-btn pd-btn-sm" id="' + idPrefix + '-workscollapseall">Collapse all</button>' +
+        '</div>' +
+        '<div class="pp-worksgrid" id="' + idPrefix + '-workslist">' + listHTML() + '</div>' +
       '</div>' +
-      '<div class="pd-modal-footer"><button class="pd-btn" data-close>Cancel</button>' +
-        '<button class="pd-btn pd-btn-primary" id="pp-works-done">Done</button></div>';
-    var m = openModal(html, 480);
-    $('pp-works-done').onclick = function () {
-      var picked = Array.prototype.map.call(m.el.querySelectorAll('input[type=checkbox]:checked'), function (c) { return c.value; });
-      _worksSel[idPrefix] = picked;
+      '<div class="pd-modal-footer pp-worksfooter">' +
+        '<span class="pp-workscount" id="' + idPrefix + '-workscount">' + countText() + '</span>' +
+        '<div class="pp-worksfooter-btns">' +
+          '<button class="pd-btn" data-close>Cancel</button>' +
+          '<button class="pd-btn pd-btn-primary" id="' + idPrefix + '-worksapply">Apply</button>' +
+        '</div>' +
+      '</div>';
+    var m = openModal(html, 560);
+    hydrate(m.el);
+
+    var searchInput = $(idPrefix + '-workssearch');
+    if (searchInput) searchInput.oninput = function () { searchTerm = this.value; repaintList(); };
+
+    // Delegated (not re-wired per render) — collapse toggles and Expand/
+    // Collapse all only ever repaint the list, never touch `chosen`.
+    m.el.addEventListener('click', function (e) {
+      var gt = e.target.closest('[data-grouptoggle]');
+      if (gt) { collapsedState[gt.dataset.grouptoggle] = !collapsedState[gt.dataset.grouptoggle]; repaintList(); return; }
+      if (e.target.closest('#' + idPrefix + '-worksexpandall')) {
+        groups.forEach(function (g) { collapsedState[g.group] = false; }); repaintList(); return;
+      }
+      if (e.target.closest('#' + idPrefix + '-workscollapseall')) {
+        groups.forEach(function (g) { collapsedState[g.group] = true; }); repaintList(); return;
+      }
+    });
+    m.el.addEventListener('change', function (e) {
+      var chk = e.target.closest('[data-workchk]');
+      if (!chk) return;
+      if (chk.checked) chosen[chk.value] = true; else delete chosen[chk.value];
+      var cnt = $(idPrefix + '-workscount');
+      if (cnt) cnt.textContent = countText();
+    });
+
+    $(idPrefix + '-worksapply').onclick = function () {
+      _worksSel[idPrefix] = Object.keys(chosen).filter(function (k) { return chosen[k]; });
       m.close();
       repaintWorksChips(idPrefix);
     };
@@ -1100,6 +1246,8 @@ window.ProgressPhotos = (function () {
     var host = $(idPrefix + '-worksfield');
     if (host) Array.prototype.forEach.call(host.querySelectorAll('[data-removework]'), function (b) {
       b.onclick = function () {
+        // Removing a chip from the media form is display-only — it never
+        // touches the underlying Project Schedule record (section 14/18).
         _worksSel[idPrefix] = worksSelOf(idPrefix).filter(function (v) { return v !== b.dataset.removework; });
         repaintWorksChips(idPrefix);
       };
@@ -4770,8 +4918,7 @@ window.ProgressPhotos = (function () {
             '<input class="pd-input" id="pp-desc" placeholder="e.g. Model Unit" /></div>' +
           '<div class="pd-field"><label>Capture date' + reqMark() + '</label>' +
             '<input class="pd-input" type="date" id="pp-date" value="' + today + '" required /></div>' +
-          '<div class="pd-field pp-span2"><label>Works' + reqMark() + '</label>' +
-            worksMultiFieldHTML('pp', []) + '</div>' +
+          worksMultiFieldHTML('pp', []) +
           locationFieldHTML('pp', preset.locationValues || {}) +
           (window.BIM ? BIM.pinFieldHTML('pp', null) : '') +
         '</div>' +
@@ -4881,6 +5028,7 @@ window.ProgressPhotos = (function () {
         taken_at: $('pp-date').value || null,
         trades: tradeList,
         works_multi: worksList,
+        works_activity_ids: worksActivityIdsFor(worksList),
         trade: tradeList[0] || null,
         works: worksList[0] || null,
         location: locBreadcrumb(locVals) || null,
@@ -5246,6 +5394,19 @@ window.ProgressPhotos = (function () {
       }
       return await doWrite(Object.assign({}, job, { patch: stripped4 }));
     }
+    // Same tolerance for works_activity_ids (2026-09-07, Works→Schedule ID
+    // trace) — works_multi (the names, above) still saves fully; only the
+    // per-value schedule-id trace is dropped until the column exists.
+    if (!w.ok && /column .* does not exist|schema cache/i.test((w.error && w.error.message) || '') &&
+        job.patch && ('works_activity_ids' in job.patch)) {
+      var stripped8 = Object.assign({}, job.patch);
+      delete stripped8.works_activity_ids;
+      if (!migrationWarnedWorksIds) {
+        migrationWarnedWorksIds = true;
+        UI.toast('Saved without the Works→Schedule ID trace — run migrations/2026-09-07-progress-photos-works-activity-ids.sql', 'warn');
+      }
+      return await doWrite(Object.assign({}, job, { patch: stripped8 }));
+    }
     return w;
   }
 
@@ -5398,8 +5559,7 @@ window.ProgressPhotos = (function () {
             '<input class="pd-input" id="pp-e-desc" value="' + Fmt.esc(r.description || '') + '" /></div>' +
           '<div class="pd-field"><label>Capture date' + reqMark() + '</label>' +
             '<input class="pd-input" type="date" id="pp-e-date" value="' + Fmt.esc(r.taken_at || '') + '" required /></div>' +
-          '<div class="pd-field pp-span2"><label>Works' + reqMark() + '</label>' +
-            worksMultiFieldHTML('pp-e', worksOf(r)) + '</div>' +
+          worksMultiFieldHTML('pp-e', worksOf(r)) +
           locationFieldHTML('pp-e', r.location_values || {}, r.view_name) +
           (window.BIM ? BIM.pinFieldHTML('pp-e', existingPinInfo ? existingPinInfo.pin : null) : '') +
         '</div>' +
@@ -5442,6 +5602,7 @@ window.ProgressPhotos = (function () {
         taken_at: $('pp-e-date').value || null,
         trades: tradeList,
         works_multi: worksList,
+        works_activity_ids: worksActivityIdsFor(worksList),
         trade: tradeList[0] || null,
         works: worksList[0] || null,
         location: locBreadcrumb(locVals) || null,
