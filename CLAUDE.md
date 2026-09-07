@@ -84,6 +84,25 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-07 — A change order keeps the main-contract activity as ONE line item
+
+Owner: *"i want to retain the single line-item for the main contract activity."* Inserting a change
+order no longer generates a continuation row. The host keeps its id, name, start and all of its own
+days, and its finish moves out by the change order's duration — the same time impact, one bar. The
+change order is linked `SS+<days worked>` so it sits inside the bar rather than lying about an FS,
+and because the row that followed the host still follows it, there is nothing to re-point at all.
+Rows already split in the database are untouched and can still be collapsed with "Merge split back
+into one bar…". ⚠️ The honest cost: date-span-weighted roll-ups now see the host spanning the change
+order's days too, so that window is counted in both rows — the trade for a single line item.
+Also: the Detail levels a combined Vertical Stacking model cannot draw are now **hollow** (dimmed,
+dashed, `not-allowed`) rather than merely inert, and the no-level list marks a row whose own **Trade**
+field disagrees with the WBS branch it is filed under — which is why Structural Works showed
+activities sitting under Site Development Works, and is data rather than an error. Module only.
+Verified by slicing the shipped `splitPlan`/`splitBuild`/`_vsTradeConflict` out of the file and
+executing them (48 assertions, HEAD executed as a control); ⚠️ not verified signed-in.
+`MODULE_V` → `20260907a`.
+
+
 ### 2026-09-04 — Vertical Stacking: combining trades draws the building at level 1
 
 Owner: *"whenever the option of mixing the different trades of a certain tower is chosen, pls

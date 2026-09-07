@@ -1,3 +1,78 @@
+## One line item per main-contract activity, hollow Detail levels, and the trade/WBS disagreement named (2026-09-07) — jasantos2
+
+Three asks in one prompt, and one of them was a question rather than a bug.
+
+### 1. A change order no longer generates a second main-contract row
+Owner: *"recently we have a system wherein if a change order activity is inserted between a main
+contract activity a separate line of the main contract activity is generated. Now i want to retain
+the single line-item for the main contract activity."*
+
+`splitBuild` no longer cuts the host in two. It keeps its id, its name, its start and every one of
+its own days; its **finish moves out by the change order's duration** — the same time impact the
+two-row model produced, now carried by one bar. The change order is the only row created.
+
+- **Nothing to re-point.** The old model *had* to send every successor to the continuation row or the
+  successor would start while the second half of the work was still going. The row that followed the
+  host is still the row that follows it, so that entire failure mode leaves with the second row —
+  `repoint` and `renumber` are now always empty.
+- **The change order is linked `SS+<days worked before the interruption>`**, not FS. Under the two-row
+  model the host was truncated at the cut, so "after the host" was true. With one uncut line an FS
+  link would claim the variation starts after the *whole* activity finishes — false, and it would
+  slide the change order to the wrong end of the bar the next time anything recalculated.
+- **`duration_days` is written to match the new span** (own days + the change order's). The scheduling
+  engine derives a finish from a duration and would otherwise pull the bar back to the old date.
+- ⚠️ **THE HONEST COST of one line.** The date-span-weighted roll-ups (`_vsPct` and friends weight by
+  `dayDiff(start,end)+1`) now see the host spanning the change order's days too, so that window is
+  counted in **both** rows. Two rows tiled the window exactly and did not. That is the trade for a
+  single line item and it was the owner's call; if it ever matters, weight by `duration_days`.
+- **Legacy splits are untouched.** `mergeSplit` ("Merge split back into one bar…"), `splitLabel`
+  ("part 1 of 2") and `splitSegsOf` all stay, so rows already split in the database keep reading
+  correctly and can still be collapsed. `splitRenumber` was **deleted** — it renumbered the segments
+  of a group, there are no new groups, and it had no caller left. Unreachable code that looks
+  maintained is the thing this module keeps having to re-discover.
+- The dialog, its live preview, the confirm and the toast all describe one bar now: where the work
+  stops, the `SS+n` link, the day it finishes, and "no continuation row is created".
+
+### 2. The unavailable Detail levels are drawn hollow
+Owner: *"if the per tower or consolidate option is chosen, can you at least hollow the options for the
+other levels of details."* Right — yesterday's change only added the `disabled` attribute, which
+stops the click but leaves the button looking live, and a control that looks live and does nothing is
+the silent failure this module keeps recording. `.ps-vs-seg > button:disabled` is now transparent,
+dimmed, italic, dashed-divided and `cursor:not-allowed`, in **both** copies of that ruleset (the file
+carries the vertical-stacking block twice). The tooltip still carries `VS_MIX_NOTE`.
+
+### 3. "Why is there an error for the structural works trade?" — there isn't one
+Owner: *"why is there an error for the structural works trade? it detected activities under the site
+dev works trade?"* Nothing was mis-detected. `workOf()` is documented **"its own field wins;
+otherwise the WBS says"** — so `A47480` / `A47490` / `A47500`, whose own **Trade** field reads
+*Structural Works*, are drawn in the Structural building even though their WBS branch is
+*Execution Phase › Site Development Works › Earthworks*. They then land in **— No level —** because
+the Site Development branch names no storey, which is the ordinary truth for a gabion or a gravity
+wall.
+
+That disagreement is worth *seeing* every time rather than being explained once, so `_vsTradeConflict(r)`
+marks it in the no-level list: a `≠ <branch>` badge beside the trade, naming both sides, saying which
+one is being obeyed and what to fix (retag the Trade, or move the activity to the right branch). A
+sentence appears above the table only when at least one row in it carries the mark.
+
+### Verified
+Slice-and-execute against the shipped file, never a reimplementation: `splitPlan`, `splitBuild`,
+`splitFreeId` and `_vsTradeConflict` were cut out of `index.html` and executed against the app's own
+`dayDiff`/`addDays`/`dstr`/`pd` (also sliced) — **48 assertions pass**, covering the one-row result,
+the dates (a 10-day activity cut on day 5 with a 3-day CO finishes 3 days later at 13 days span), the
+`SS+4` link, the CO id fallback, both refusal guards, and the badge across agreement / disagreement /
+no-field / no-branch / null. Gated by controls: the **pre-patch** `splitBuild` sliced from HEAD is
+executed too and is shown to create the continuation row, truncate the host to the cut, write
+`split_group` and use a bare FS — so the suite bites. Inline script parses; `function NAME(` set vs
+HEAD: **1 lost, `splitRenumber`, intentionally**. The 22 assertions from yesterday's level-1 rule
+still pass.
+
+⚠️ **Not verified signed-in** — the anon key has no grants on `project_schedule`, so no real project
+was rendered and no change order was actually inserted against the database. The arithmetic and the
+badge were executed; the on-screen and on-write results were not seen.
+
+`MODULE_V` → `20260907a`.
+
 ## Vertical Stacking: combining trades draws the building at level 1 (2026-09-04) — jasantos2
 
 Owner: *"whenever the option of mixing the different trades of a certain tower is chosen, pls

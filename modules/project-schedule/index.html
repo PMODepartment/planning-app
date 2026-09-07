@@ -1421,6 +1421,18 @@
       padding:6px 11px; cursor:pointer; border-right:1px solid var(--pd-line); }
     .ps-vs-seg > button:last-child { border-right:0; }
     .ps-vs-seg > button.on { background:var(--pd-red); border-color:var(--pd-red); color:#fff; font-weight:700; }
+    /* HOLLOW, not merely inert. Owner 2026-09-07: *"if the per tower or consolidate option is
+       chosen, can you at least hollow the options for the other levels of details."* Right - the
+       `disabled` attribute stops the click but leaves the button looking live, and a control that
+       looks live and does nothing is the silent failure this module keeps recording. So a Detail
+       level a combined model cannot honestly draw is drawn hollow: no fill, dimmed ink, a dashed
+       divider and cursor:not-allowed. The tooltip still carries the reason. */
+    .ps-vs-seg > button:disabled { background:transparent; color:var(--pd-muted); opacity:.55;
+      cursor:not-allowed; border-right-style:dashed; font-style:italic; }
+    .ps-vs-seg > button:disabled:hover { background:transparent; }
+    /* The trade-vs-WBS disagreement badge in the "no level" list. */
+    .ps-vs-badge-warn { display:inline-block; margin-left:6px; padding:0 5px; border-radius:4px;
+      border:1px dashed var(--pd-line); color:var(--pd-muted); font-size:11px; cursor:help; white-space:nowrap; }
     /* An icon + label inside a .ps-vs-seg button (the PDF export). It used to borrow the
        magnifier button's rule; that went with the magnifier, so it has its own name now. */
     .ps-vs-icolab { display:inline-flex; align-items:center; gap:6px; }
@@ -1556,6 +1568,18 @@
       padding:6px 11px; cursor:pointer; border-right:1px solid var(--pd-line); }
     .ps-vs-seg > button:last-child { border-right:0; }
     .ps-vs-seg > button.on { background:var(--pd-red); border-color:var(--pd-red); color:#fff; font-weight:700; }
+    /* HOLLOW, not merely inert. Owner 2026-09-07: *"if the per tower or consolidate option is
+       chosen, can you at least hollow the options for the other levels of details."* Right - the
+       `disabled` attribute stops the click but leaves the button looking live, and a control that
+       looks live and does nothing is the silent failure this module keeps recording. So a Detail
+       level a combined model cannot honestly draw is drawn hollow: no fill, dimmed ink, a dashed
+       divider and cursor:not-allowed. The tooltip still carries the reason. */
+    .ps-vs-seg > button:disabled { background:transparent; color:var(--pd-muted); opacity:.55;
+      cursor:not-allowed; border-right-style:dashed; font-style:italic; }
+    .ps-vs-seg > button:disabled:hover { background:transparent; }
+    /* The trade-vs-WBS disagreement badge in the "no level" list. */
+    .ps-vs-badge-warn { display:inline-block; margin-left:6px; padding:0 5px; border-radius:4px;
+      border:1px dashed var(--pd-line); color:var(--pd-muted); font-size:11px; cursor:help; white-space:nowrap; }
     .ps-vs-chips { display:flex; gap:6px; flex-wrap:wrap; }
     .ps-vs-chip { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--pd-line); background:var(--pd-card);
       color:var(--pd-ink); border-radius:999px; padding:4px 10px; font-size:12px; cursor:pointer; }
@@ -13670,6 +13694,27 @@
     return Math.max(1, Math.min(_vsDetail, _vsMaxDetail()));
   }
   function _vsTradeOf(r) { return workOf(r) || NO_TRADE; }
+  /* THE TRADE ON A ROW CAN DISAGREE WITH THE BRANCH IT IS FILED UNDER, and that disagreement - not
+     a bug - is the answer to the owner’s 2026-09-07 question: *"why is there an error for the
+     structural works trade? it detected activities under the site dev works trade?"* There is no
+     error and nothing was mis-detected. workOf() is documented "its own field wins; otherwise the
+     WBS says", so a row whose own Trade field reads Structural Works is drawn in the Structural
+     building even though its WBS branch is Execution Phase › Site Development Works › Earthworks.
+     It then lands in "no level" because the Site Development branch names no storey - which is the
+     ordinary truth for a gabion or a gravity wall.
+     The disagreement is worth SEEING every time rather than being explained once, so it is marked
+     in the list, both sides are named, and the tooltip says which one is being obeyed. */
+  function _vsTradeConflict(r) {
+    var own = r && r.work_type ? String(r.work_type).trim() : '';
+    if (!own) return '';                    // no field of its own, so nothing to disagree with
+    var branch = _nodeTrade(r && r.wbs_node_id);
+    if (!branch || branch === own) return '';
+    return ' <span class="ps-vs-badge-warn" title="' + esc(
+      'Filed under “' + branch + '” in the WBS, but this activity’s own Trade field says “' + own +
+      '”. The activity’s own field wins, which is why it appears in the ' + own + ' building. ' +
+      'Fix whichever is wrong: retag the Trade, or move the activity to the right WBS branch.') +
+      '">≠ ' + esc(branch) + '</span>';
+  }
   // The activity's PROJECT tower (Tower A / Tower B), not the per-trade card this view draws.
   // ⚠️⚠️ THERE ARE TWO WRITERS AND THEY USE DIFFERENT KEYS. `location` is a jsonb map keyed by
   // `location_levels.id` (a uuid) — that is what the WBS→location matcher (`locMapPlan`) and both
@@ -14672,12 +14717,15 @@
         'if you can see a floor in it, the branch name is not being matched — fix it with ' +
         '<em>Schedule Setup › Floors &amp; Zones → Match WBS to locations…</em>. If there is no floor in it, the work genuinely ' +
         'belongs to the site rather than to a storey.</div>' : '') +
+      (showPath && d.list.some(_vsTradeConflict) ? '<div class="ps-vs-note" style="margin:-4px 0 8px;">' +
+        'A <span class="ps-vs-badge-warn">≠ branch</span> mark means that row' + '’' + 's own <strong>Trade</strong> field disagrees with the branch it is filed under. ' +
+        'The activity' + '’' + 's own field wins, so it is drawn in the trade it names — which is how work under one branch shows up in another trade' + '’' + 's building. Hover the mark for both sides.</div>' : '') +
       '<div class="ps-vs-tblwrap"><table class="ps-table"><thead><tr>' +
       cols.map(function (h) { return '<th style="text-align:left;">' + h + '</th>'; }).join('') +
       '</tr></thead><tbody>' +
       d.list.slice().sort(function (a, b) { var x = pd(dispFin(a)), y = pd(dispFin(b)); return (x ? +x : 0) - (y ? +y : 0); }).map(function (r) {
         var _v = finVar(r), _pp = plannedPOC(r);
-        return '<tr><td>' + esc(r.activity_id || '') + '</td><td>' + esc(r.activity_name || '') + '</td><td>' + esc(_vsTradeOf(r)) +
+        return '<tr><td>' + esc(r.activity_id || '') + '</td><td>' + esc(r.activity_name || '') + '</td><td>' + esc(_vsTradeOf(r)) + _vsTradeConflict(r) +
           (showPath ? '</td><td style="color:var(--pd-muted);">' + (esc(_vsWbsPath(r)) || '<em>no WBS branch</em>') : '') +
           '</td><td>' + esc(r.bl_start ? Fmt.date(r.bl_start) : '—') + '</td><td>' + esc(r.bl_finish ? Fmt.date(r.bl_finish) : '—') +
           '</td><td>' + esc(dispStart(r) ? Fmt.date(dispStart(r)) : '—') + '</td><td>' + esc(dispFin(r) ? Fmt.date(dispFin(r)) : '—') +
@@ -24602,69 +24650,60 @@
     for (var n = 2; n < 999; n++) if (!taken[cand + '-' + n]) return cand + '-' + n;
     return cand + '-' + Date.now();
   }
-  // THE WHOLE EDIT, as data. Returns { hostPatch, coRow, segRow, renumber, repoint } — nothing is
-  // written here, so the arithmetic and the relationship rewiring can be tested without a database.
-  // ⚠️ REWIRING IS THE PART THAT MATTERS. Whatever followed the host must now follow the host's
-  // REMAINDER, or the successor would start while the second half of the work is still going —
-  // silently, and looking perfectly normal on screen.
-  //   · the host keeps its own predecessors (it still starts when it always did)
-  //   · the CO follows the host                    (FS)
-  //   · the remainder follows the CO               (FS)
-  //   · everything that followed the host now follows the remainder, KEEPING its type and lag
+  // THE WHOLE EDIT, as data. Returns { hostPatch, coRow } — nothing is written here, so the
+  // arithmetic can be tested without a database.
+  //
+  // ⚠️⚠️ ONE LINE ITEM, BY REQUEST. Owner 2026-09-07: *"recently we have a system wherein if a
+  // change order activity is inserted between a main contract activity a separate line of the main
+  // contract activity is generated. Now i want to retain the single line-item for the main contract
+  // activity."* So the host is no longer cut in two. It keeps its id, its name, its start and every
+  // one of its own days, and its FINISH MOVES OUT by the change order's duration — the same time
+  // impact the two-row model produced, now carried by one bar. The change order is the only row
+  // created.
+  //   · the host keeps its own predecessors AND its own successors. Because the row that followed
+  //     it is still the row that follows it, THERE IS NOTHING TO RE-POINT. The old model had to send
+  //     every successor to a continuation row or it would start while the second half of the work
+  //     was still going; that whole failure mode leaves with the second row.
+  //   · the CO is linked SS+<days worked before the interruption>, so it sits INSIDE the host's bar
+  //     at the point the work actually stops.
+  //   · the CO stays its own line item, with its own scope_type and ref — it is real scope.
+  // ⚠️ duration_days is written to MATCH the new span (own days + the change order's), because the
+  // scheduling engine derives a finish from a duration and would otherwise pull the bar back to the
+  // old date the next time anything recalculates.
+  // ⚠️ THE HONEST COST of one line: the date-span-weighted roll-ups (_vsPct and friends weight by
+  // dayDiff(start,end)+1) now see the host spanning the change order's days too, so that window is
+  // counted in both rows. Two rows tiled the window exactly and did not. That is the trade for a
+  // single line item, and it was the owner's call; if it ever matters, weight by duration_days,
+  // which is still the host's own work plus the gap and is written consistently here.
   function splitBuild(host, plan, co) {
-    var grp = host.split_group || ('SG-' + (host.activity_id || host.id) + '-' + rows.length);
-    var seq = host.split_seq || 1;
     var coId = splitFreeId(co.ref ? String(co.ref).trim() : ((host.activity_id || 'CO') + '-CO'));
-    var segId = splitFreeId((host.activity_id || 'A') + '-P' + (seq + 1));
-    // The remainder is the SAME line item: same name, same WBS, same trade, same location, same
-    // scope. Only its dates, its id and its position in the group differ.
-    var segRow = {
-      activity_id: segId, activity_name: host.activity_name, activity_type: 'Task',
-      status: 'Not Started', percent_complete: 0,
-      start_date: dstr(plan.seg2.start), end_date: dstr(plan.seg2.end), duration_days: plan.seg2.dur,
-      predecessors: coId, wbs: host.wbs || null, wbs_node_id: host.wbs_node_id || null,
-      work_type: host.work_type || null, location: host.location || null,
-      phase: host.phase || null, scope_type: host.scope_type || null,
-      change_order_ref: host.change_order_ref || null,
-      activity_codes: host.activity_codes || {},
-      split_group: grp, split_seq: seq + 1
-    };
+    var lag = plan.seg1.dur;                          // days the host works before the interruption
+    var own = plan.seg1.dur + plan.seg2.dur;          // the host's OWN days - unchanged by the variation
     var coRow = {
       activity_id: coId, activity_name: co.name || 'Change order', activity_type: 'Task',
       status: 'Not Started', percent_complete: 0,
       start_date: dstr(plan.co.start), end_date: dstr(plan.co.end), duration_days: plan.co.dur,
-      predecessors: host.activity_id || null, wbs: host.wbs || null, wbs_node_id: host.wbs_node_id || null,
+      // ⚠️ SS + the days already worked, NOT an FS from the host. Under the two-row model the host
+      // was truncated at the cut, so "after the host" was true; with one uncut line an FS link would
+      // claim the variation starts after the WHOLE activity finishes - false, and it would slide the
+      // change order to the wrong end of the bar the next time anything recalculates.
+      predecessors: host.activity_id ? (String(host.activity_id) + ' SS+' + lag) : null,
+      wbs: host.wbs || null, wbs_node_id: host.wbs_node_id || null,
       work_type: host.work_type || null, location: host.location || null,
       phase: host.phase || 'construction',
       scope_type: 'change_order', change_order_ref: co.ref ? String(co.ref).trim() : null
-      // ⚠️ No split_group. The CO is its own line item that happens to sit in the gap — it is not
-      // part of the host's work, and folding it into the group would report its days as the host's.
+      // No split_group. The change order is its own line item that happens to sit in the gap, and
+      // folding it into the host would report its days as main-contract work.
     };
-    // Successors of the host, excluding the two rows being created.
-    var repoint = [];
-    if (host.activity_id) {
-      rows.forEach(function (r) {
-        if (r.id === host.id || isWbs(r) || !r.predecessors) return;
-        if (_predTokens(r.predecessors).some(function (t) { return t.split(/\s+/)[0] === String(host.activity_id); })) {
-          repoint.push({ id: r.id, predecessors: _repointPred(r.predecessors, String(host.activity_id), segId) });
-        }
-      });
-    }
     return {
-      hostPatch: { end_date: dstr(plan.seg1.end), duration_days: plan.seg1.dur, split_group: grp, split_seq: seq },
-      coRow: coRow, segRow: segRow,
-      renumber: splitRenumber(splitSegsOf(host.split_group), seq),
-      repoint: repoint
+      hostPatch: { end_date: dstr(plan.seg2.end), duration_days: own + plan.co.dur },
+      coRow: coRow,
+      // Kept as empty/null so nothing downstream has to learn a new shape: there is no second half
+      // to create, no group to renumber and - the point - nothing to re-point.
+      segRow: null, renumber: [], repoint: []
     };
   }
-  function splitRenumber(segs, afterSeq) {
-    var out = [];
-    segs.forEach(function (r) {
-      var q = r.split_seq || 0;
-      if (q > afterSeq) out.push({ id: r.id, split_seq: q + 1 });
-    });
-    return out;
-  }
+
   // Swap one predecessor's Activity ID for another INSIDE a predecessor string, keeping that entry's
   // relationship type and lag — re-pointing the edge, not replacing it with a default FS.
   function _repointPred(str, fromId, toId) {
@@ -24686,7 +24725,7 @@
     var m = UI.modal(
       '<h3 style="margin:0 0 4px;font-size:15px;">Insert a change order into “' + esc(host.activity_name || host.activity_id || '') + '”</h3>' +
       '<p style="margin:0 0 12px;font-size:12px;color:var(--pd-muted);">' +
-        'This activity keeps all ' + (dayDiff(hs, he) + 1) + ' of its own days. Its remaining work moves after the change order, so the line item finishes later — the variation\'s time impact.' +
+        'This stays ONE line item. It keeps all ' + (dayDiff(hs, he) + 1) + ' of its own days and its bar is stretched to hold the change order, so it finishes later — the variation\'s time impact. No continuation row is generated.' +
       '</p>' +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">' +
         '<label class="pd-label" style="grid-column:1/-1;">Work stops on<input class="pd-input" type="date" id="ps-sp-date" value="' + esc(dstr(mid)) + '"></label>' +
@@ -24704,10 +24743,11 @@
       if (pl.err) { $('#ps-sp-prev').innerHTML = '<span style="color:var(--pd-red);">' + esc(pl.err) + '</span>'; $('#ps-sp-go').disabled = true; return null; }
       $('#ps-sp-go').disabled = false;
       $('#ps-sp-prev').innerHTML =
-        '<b>part 1</b> ' + esc(Fmt.date(dstr(pl.seg1.start))) + ' → ' + esc(Fmt.date(dstr(pl.seg1.end))) + ' (' + pl.seg1.dur + 'd) · ' +
-        '<b>change order</b> ' + esc(Fmt.date(dstr(pl.co.start))) + ' → ' + esc(Fmt.date(dstr(pl.co.end))) + ' (' + pl.co.dur + 'd) · ' +
-        '<b>part 2</b> ' + esc(Fmt.date(dstr(pl.seg2.start))) + ' → ' + esc(Fmt.date(dstr(pl.seg2.end))) + ' (' + pl.seg2.dur + 'd)' +
-        '<div style="margin-top:3px;">Finishes ' + pl.shift + ' day' + (pl.shift === 1 ? '' : 's') + ' later than now.</div>';
+        '<b>' + esc(host.activity_name || host.activity_id || 'this activity') + '</b> ' +
+        esc(Fmt.date(dstr(pl.seg1.start))) + ' → ' + esc(Fmt.date(dstr(pl.seg2.end))) +
+        ' (one line: ' + (pl.seg1.dur + pl.seg2.dur) + 'd of its own work over ' + (pl.seg1.dur + pl.co.dur + pl.seg2.dur) + 'd) · ' +
+        '<b>change order</b> ' + esc(Fmt.date(dstr(pl.co.start))) + ' → ' + esc(Fmt.date(dstr(pl.co.end))) + ' (' + pl.co.dur + 'd, SS+' + pl.seg1.dur + ')' +
+        '<div style="margin-top:3px;">Work stops after ' + pl.seg1.dur + ' day' + (pl.seg1.dur === 1 ? '' : 's') + ' and resumes when the change order ends. Finishes ' + pl.shift + ' day' + (pl.shift === 1 ? '' : 's') + ' later than now — one row, no continuation.</div>';
       return pl;
     }
     preview();
@@ -24721,46 +24761,38 @@
   }
   async function applySplit(host, plan, co) {
     var b = splitBuild(host, plan, co);
-    var n = 2 + b.renumber.length + b.repoint.length;
+    var own = plan.seg1.dur + plan.seg2.dur, span = own + plan.co.dur;
     if (!confirm('Insert the change order into “' + (host.activity_name || host.activity_id) + '”?\n\n' +
-      '· this activity finishes ' + plan.seg1.dur + ' day(s) in, then resumes after the change order\n' +
-      '· 2 activities are created (the change order, and the remaining work)\n' +
-      (b.repoint.length ? '· ' + b.repoint.length + ' successor(s) will follow the remaining work instead of this row\n' : '') +
+      '· this activity stays ONE line item — no continuation row is created\n' +
+      '· it keeps all ' + own + ' day(s) of its own work and now spans ' + span + ' day(s), finishing ' + Fmt.date(dstr(plan.seg2.end)) + '\n' +
+      '· 1 activity is created: the change order, linked SS+' + plan.seg1.dur + ' so it sits where the work stops\n' +
+      '· its successors are left alone — they still follow this row, which now finishes later\n' +
       '\nThe line item finishes ' + plan.shift + ' day(s) later. Not per-step undoable.')) return;
     showLoading('Inserting change order…');
     var err = null;
     try {
-      var ins = await sb().from(TABLE).insert([
-        Object.assign({ project_id: pid, created_by: UID }, b.coRow),
-        Object.assign({ project_id: pid, created_by: UID }, b.segRow)
-      ]).select();
+      // The change order first, the host second: if the insert fails the host still reads the way it
+      // always did, which is the recoverable order.
+      var ins = await sb().from(TABLE).insert([Object.assign({ project_id: pid, created_by: UID }, b.coRow)]).select();
       if (ins.error) throw ins.error;
       var up = await sb().from(TABLE).update(b.hostPatch).eq('id', host.id);
       if (up.error) throw up.error;
-      for (var i = 0; i < b.renumber.length; i++) {
-        var rn = await sb().from(TABLE).update({ split_seq: b.renumber[i].split_seq }).eq('id', b.renumber[i].id);
-        if (rn.error) throw rn.error;
-      }
-      for (var j = 0; j < b.repoint.length; j++) {
-        var rp = await sb().from(TABLE).update({ predecessors: b.repoint[j].predecessors }).eq('id', b.repoint[j].id);
-        if (rp.error) throw rp.error;
-      }
     } catch (e) { err = (e && e.message) ? e.message : String(e); }
     hideLoading();
     if (err) {
-      // ⚠️ Name the migration when the columns are the problem — this is the same failure mode the
-      // contract-scope columns had, and "could not save" with no cause is what sent the owner
-      // guessing for days.
-      UI.toast(/split_group|split_seq/.test(err)
-        ? 'Could not split: this project\'s database has no split columns. Run migrations/2026-08-21-schedule-split-change-orders.sql in the Supabase SQL editor, then reload.'
-        : 'Could not split: ' + err, 'error');
+      // ⚠️ Name the migration when the columns are the problem — "could not save" with no cause is
+      // what sent the owner guessing for days when the contract-scope columns were missing.
+      UI.toast(/scope_type|change_order_ref|phase/.test(err)
+        ? 'Could not insert the change order: this project\'s database has no contract-scope columns. Run migrations/2026-08-19-schedule-contract-scope.sql in the Supabase SQL editor, then reload.'
+        : 'Could not insert the change order: ' + err, 'error');
       await load(); return;
     }
-    logAudit(null, 'reschedule', { count: n, kind: 'split-change-order' });
+    logAudit(null, 'reschedule', { count: 2, kind: 'insert-change-order-single-line' });
     resetUndo();
-    UI.toast('Change order inserted. “' + (host.activity_name || host.activity_id) + '” now finishes ' + plan.shift + ' day(s) later.', 'success');
+    UI.toast('Change order inserted. “' + (host.activity_name || host.activity_id) + '” stays one line and now finishes ' + plan.shift + ' day(s) later.', 'success');
     await load();
   }
+
   // Undo a split: delete the remaining-work segments, give the host its full duration back, and
   // send its successors back to it. The change orders themselves are LEFT ALONE — they are real
   // scope and deleting them is never implied by "stop splitting the bar".
