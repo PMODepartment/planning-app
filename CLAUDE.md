@@ -95,6 +95,19 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-07 (h) — Contracts & Claims: the BOQ button goes, one day after it arrived
+
+- Owner: *"there is also a BOQ button in the contract records which is redundant when we have
+  already moved the BOQ section to the contract page"* — correct. It was added that morning to fix
+  the BOQ having **no entry point at all** while it was still a sub-screen you navigated to; moving
+  the BOQ inline onto the same page made it redundant the same afternoon. A button that scrolls you
+  a few hundred pixels down the page you are already reading is noise in a card header.
+- ⚠️ `openSub('boq')` **stays** in `module.js` and still switches tab + scrolls, because the
+  contract wizard's BOQ step hands off through it. That is a hand-off from another screen, not a
+  control on this one.
+- `packages.js?v=20260907h`, `MODULE_V` → `20260907k`.
+
+
 ### 2026-09-07 (g) - Contracts & Claims: the draft BOQ table looks fillable, and headings collapse
 
 - ⚠️⚠️ **3,505 invisible inputs.** The draft table's cells were `background: rgba(0,0,0,0)` with a

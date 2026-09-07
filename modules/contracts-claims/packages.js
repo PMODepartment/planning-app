@@ -179,23 +179,16 @@ window.CCPackages = (function () {
       '<span class="cc-dtcount">' + CONTRACTS.length + (CONTRACTS.length === 1 ? ' record' : ' records') +
         (total ? ' · ' + esc(moneyShort(total)) : '') + '</span>' +
       '<span class="cc-dtspacer"></span>' +
-      /* ⚠️⚠️ THE BOQ HAD NO ENTRY POINT AT ALL UNTIL NOW, which is why this button is
-         here rather than anywhere more considered. `wire()` below has been binding
-         `#pk-boq` to `onSub('boq')` for as long as the BOQ screen has existed, but no
-         markup ever carried that id — a correct handler on an element that is never
-         rendered. The only way in was `+ Add` → the contract wizard → its BOQ step, so a
-         planner who wanted to READ the bill had to start creating a contract to get to
-         it, and a project whose contract was already recorded had no route at all.
-         ⚠️ A URL was no escape either: `switchTab()` sets `sub = null`, so `v:'boq'` in
-         the hash lands back on the register.
-         ⚠️ NOT gated on `canWrite`. The BOQ is the client's contract document and a
-         viewer may read it — boq.js already withholds the import and authoring controls
-         on its own, so gating the way IN would hide the document, not protect it.
-         It sits in the Contract records head (not Contract lots) because a BOQ is raised
-         against the contract, and it is built BEFORE the `!CONTRACTS.length` branch
-         below returns — so it is reachable on a project that has no contract row yet,
-         which is exactly when a planner is building one by hand. */
-      '<button class="pd-btn" id="pk-boq" title="Bill of quantities — the contract document the claims, the billing and the cost roll-up are all measured against">BOQ</button>' +
+      /* ⚠️ THERE IS NO BOQ BUTTON HERE ANY MORE, and its absence is the point. It existed for
+         about a day, to fix the BOQ having no entry point at all while it was still a separate
+         sub-screen you navigated to. Moving the BOQ inline onto this same page made it
+         redundant the same afternoon — owner, 2026-09-07: *"there is also a BOQ button in the
+         contract records which is redundant when we have already moved the BOQ section to the
+         contract page"*. A button that scrolls you a few hundred pixels down the page you are
+         already looking at is noise in a card header that should carry actions, not navigation.
+         ⚠️ `openSub('boq')` still exists in module.js and still switches tab + scrolls, because
+         the contract wizard's BOQ step hands off through it. That is a hand-off from another
+         screen, not a control on this one. */
       /* ⚠️ The ONLY way to create a first contract lot from this screen, now that the empty
          Contract lots section is not rendered at all. Writers only, and deliberately quiet: for
          almost every project the right number of lots is zero, so this is an escape hatch rather
@@ -391,16 +384,6 @@ window.CCPackages = (function () {
     if (af) af.onclick = function () { edit(null); };
     var nc = h.querySelector('#pk-newcontract');
     if (nc) nc.onclick = function () { if (onNew) onNew('Contract'); else edit(null); };
-    /* ⚠️ NOW A JUMP, NOT A NAVIGATION. The BOQ is further down this same page, so the button
-       scrolls to it rather than replacing the view — the contract and its bill stay on one
-       screen, which is the point of moving it here. Kept rather than deleted because the
-       section sits below the lots and is easy to miss on a project with several. */
-    var bq = h.querySelector('#pk-boq');
-    if (bq) bq.onclick = function () {
-      var t = document.getElementById('cc-boq-head');
-      if (t && t.scrollIntoView) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      else if (onSub) onSub('boq');
-    };
     var p = h.querySelector('#pk-push'); if (p) p.onclick = share;
     h.querySelectorAll('[data-edit]').forEach(function (b) {
       b.onclick = function () { edit(PKG.filter(function (k) { return String(k.id) === b.dataset.edit; })[0]); };
