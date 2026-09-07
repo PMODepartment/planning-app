@@ -168,11 +168,65 @@ window.PANO = (function () {
 
   async function removePano(p) {
     if (!confirm('Delete this panorama? This cannot be undone.')) return;
-    if (p.pano_url) await sb().storage.from(BUCKET).remove([p.pano_url]);
-    var res = await sb().from(T_PANO).delete().eq('id', p.id);
+    // ⚠️ Same `.select()` guard as `deletePano` below, and for the same
+    // reason — the RLS DELETE policy is owner-or-admin, not any writer, and
+    // a plain `.delete()` with no `.select()` cannot tell "actually deleted"
+    // from "RLS silently matched 0 rows". Fixed here too even though this
+    // function is dormant (its only caller, #pano-view, is unreachable from
+    // the current UI) so it can't reintroduce the same false-success trap if
+    // that screen is ever brought back.
+    var res = await sb().from(T_PANO).delete().eq('id', p.id).select();
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    if (!res.data || !res.data.length) {
+      UI.toast('You do not have permission to delete this — only the person who uploaded it or an admin can.', 'error');
+      return;
+    }
+    if (p.pano_url) { try { await sb().storage.from(BUCKET).remove([p.pano_url]); } catch (e) {} }
     UI.toast('Panorama deleted', 'ok');
     await load();
+  }
+
+  // Bug fix (2026-09-04): panoramas had NO delete path reachable from the
+  // merged Gallery grid at all — module.js's mediaKindThumbHTML() never
+  // rendered a delete icon and openMediaKindEditor()'s footer only had
+  // Cancel/Save, so `removePano` above (wired only to this module's own
+  // #pano-view screen, which Batch C made unreachable from the UI) was the
+  // only place this logic existed. Same signature convention as `removePano`
+  // (takes the real row object, not an id — module.js's editor already holds
+  // the exact live reference as `row._src`, per panoPseudoRow's own comment,
+  // so there's no id-lookup/reload needed here to find it). No confirm() of
+  // its own — the caller (module.js) shows its own confirm modal matching the
+  // rest of that module's delete flow — and it keeps the in-memory
+  // `panoramas` array (and this screen's own render, if it's ever visible
+  // again) in sync rather than requiring a full reload to notice the row is gone.
+  // ⚠️ REAL BUG FIXED (2026-09-04, exhausting the "still can't delete"
+  // report): this table's DELETE RLS policy (the generic module-table loop
+  // in supabase-schema.sql) is `is_writer() and (created_by = auth.uid() or
+  // is_admin())` — NOT "any writer", despite this file's own earlier claim
+  // that panoramas needed no DB change. A non-admin planner deleting a
+  // panorama someone ELSE uploaded is silently refused BY POSTGRES: the
+  // DELETE matches 0 rows and Supabase reports that as a plain success with
+  // no error. The old code below only checked `res.error`, so it read that
+  // silent refusal as "deleted" — toasted success, spliced the row out of
+  // the in-memory array so it visibly vanished from the grid — while the row
+  // was NEVER actually removed from the database, and reappears on the next
+  // reload/resync. Exactly the same trap `deleteRequest` below was already
+  // built to guard against (`.select()` + check the returned row count);
+  // this function just never got the same guard.
+  async function deletePano(p) {
+    if (!p || !p.id) return { ok: false, error: 'That panorama could not be found' };
+    var res = await sb().from(T_PANO).delete().eq('id', p.id).select();
+    if (res.error) return { ok: false, error: res.error.message };
+    if (!res.data || !res.data.length) {
+      return { ok: false, error: 'You do not have permission to delete this — only the person who uploaded it or an admin can.' };
+    }
+    // Storage cleanup only after a REAL row delete is confirmed — removing
+    // the file first and then discovering RLS refused the row would leave
+    // the row pointing at a now-missing object.
+    if (p.pano_url) { try { await sb().storage.from(BUCKET).remove([p.pano_url]); } catch (e) {} }
+    panoramas = panoramas.filter(function (x) { return x.id !== p.id; });
+    if ($('pano-view')) render();
+    return { ok: true };
   }
 
   // ------------------------------------------------------------- 360 viewer --
@@ -960,6 +1014,13 @@ window.PANO = (function () {
     // is that flow's only remaining entry point now that its own topbar
     // button (#pano-new) is gone (folded into the Gallery screen, item 2).
     openCapture: function () { openCaptureModal(); },
+    // Bug fix (2026-09-04) — see deletePano's own comment. Takes the real
+    // panorama row object (not an id). Returns { ok:true } or
+    // { ok:false, error }; never throws.
+    deleteById: function (p) { return deletePano(p); },
+    // Test-only hook — deletePano is otherwise unreachable outside the
+    // merged-Gallery editor's click handler.
+    _deletePano: function (p) { return deletePano(p); },
     // Item 5 — exported so the test harness can genuinely EXECUTE these
     // rather than only read them, same reasoning as every other pure-math
     // hook this app exports: a wrong string/number here is silent (nothing

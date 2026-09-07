@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260903b" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260904a" />
   <style>
     .ps-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
     .ps-tab { padding:8px 20px; cursor:pointer; font-weight:600; font-size:13px; color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
@@ -479,6 +479,25 @@
     /* ⚠️ `transparent` would be a bleed-through here too — fall back to the row's opaque base. */
     .ps-grid-row.ps-fmt { --ps-frozen-bg: var(--fmt-bg, var(--pd-card)); }
     .ps-grid-row.ps-fmt > .ps-cell.c-num, .ps-grid-row.ps-fmt > .ps-cell.c-id, .ps-grid-row.ps-fmt > .ps-cell.c-name { background:var(--ps-frozen-bg); }
+    /* ⚠️⚠️ IN DARK MODE THE FILL TINTS THE ROW — IT DOES NOT REPAINT IT.
+       Owner 2026-09-03, second look at the same grid: *"why is there light colors?"*
+       The previous fix made the text on those rows readable (dark ink on the pale fill), which was
+       the right answer to "I cannot read this" — but not to this. A conditional-format fill is a
+       LIGHT-MODE colour (the default is #FDECEA, a pale cream) and it was painted literally, so a
+       dark grid grew light blocks across it. There were ZERO dark-mode rules for .ps-fmt.
+       The fill now blends into the row's own dark surface at 22%, which keeps the HUE the planner
+       chose — the thing the rule is for — while the row stays part of a dark grid. The ink goes back
+       to the theme's, because the tinted background is dark again.
+       ⚠️ LIGHT MODE IS UNTOUCHED. There the fill is a light-mode colour on a light surface, which
+       is what it was chosen to be; muting it there would weaken a signal that already works.
+       ⚠️ The plain background is declared FIRST as a fallback: a browser without color-mix drops the
+       second declaration and keeps a correct dark row, losing only the tint.
+       ⚠️ An explicitly chosen --fmt-fg is deliberately NOT honoured here. It was picked to sit on the
+       light fill; on the dark tint it would be the unreadable half of the same bug. The hue survives
+       in the background, which is where the meaning lives.
+       ⚠️ Selection still wins — .ps-row-sel is defined after this and at higher specificity. */
+    html.pd-dark .ps-grid-pane .ps-grid-row.ps-fmt { background:var(--pd-card); background:color-mix(in srgb, var(--fmt-bg, transparent) 22%, var(--pd-card)); color:var(--pd-ink); }
+    html.pd-dark .ps-grid-row.ps-fmt { --ps-frozen-bg:var(--pd-card); --ps-frozen-bg:color-mix(in srgb, var(--fmt-bg, transparent) 22%, var(--pd-card)); }
     .ps-row-sel > .ps-cell.c-num, .ps-row-sel > .ps-cell.c-id, .ps-row-sel > .ps-cell.c-name { background:var(--pd-red-light); }
     /* Full-width selection highlight: the whole grid row tints, and a matching band spans the Gantt. */
     .ps-grid-pane .ps-grid-row.ps-row-sel { background:var(--pd-red-light); box-shadow:inset 2px 0 0 var(--pd-red); }
@@ -547,8 +566,17 @@
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis; box-sizing:border-box; flex:none; }
     .ps-grid-row.head .ps-cell { font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); position:relative;
       /* Header labels WRAP (data cells keep nowrap/ellipsis) so long names stay readable when the
-         column is narrow. Two lines of this 10.5px text fit the 38px head, keeping pane alignment. */
-      white-space:normal; overflow-wrap:break-word; word-break:break-word; text-overflow:clip; line-height:1.1; }
+         column is narrow. Two lines of this 10.5px text fit the 38px head, keeping pane alignment.
+         ⚠️⚠️ THEY WRAP BETWEEN WORDS, NEVER INSIDE ONE. `word-break:break-word` let a single word be
+         chopped anywhere, so a narrow Activity ID column rendered its header as four stacked
+         fragments — "AC / TIV / ITY / ID" (owner 2026-09-03, with the screenshot). That is unreadable
+         and it is not what wrapping is for: "BL START" should break after "BL", and "ACTIVITY ID"
+         after "ACTIVITY", but neither word should ever be split.
+         ⚠️ `overflow-wrap:anywhere` is deliberately NOT used either — it has the same effect on a
+         single long word. A word genuinely wider than its column now overflows and is clipped by the
+         cell, which is legible for the first few characters; four one-syllable fragments are legible
+         for none of them. The column is resizable, and the full label is in the title attribute. */
+      white-space:normal; overflow-wrap:normal; word-break:normal; hyphens:none; text-overflow:clip; line-height:1.1; }
     .c-num { width:var(--c-num); } .c-name { width:var(--c-name); } .c-id { width:var(--c-id); } .c-status { width:var(--c-status); } .c-date { width:var(--c-date); }
     /* Per-column filter row (toggled via the column "+" chooser). Grows the grid head by 30px, so
        the Gantt head is grown to match (.ps-colf-on) to keep rows aligned with bars. The frozen
@@ -3861,7 +3889,7 @@
 <script src="../../assets/js/auth.js?v=20260901b"></script>
 <script src="../../assets/js/db.js?v=20260901d"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
-<script src="../../assets/js/ui.js?v=20260902c"></script>
+<script src="../../assets/js/ui.js?v=20260904a"></script>
 <script src="../../assets/js/icons.js?v=20260903a"></script>
 <script src="../../assets/js/calendar.js?v=20260903a"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
@@ -4069,6 +4097,23 @@
                  same [] and blamed the planner for a database problem.
      'ok'      — actually fetched. Only here may the app say the project has no breakdown. */
   var LOC_LOAD = 'pending', LOC_LOAD_ERR = '', LOC_LEVELS_AT = '';
+  /* WHICH BASELINE THE PLANNED FIGURES COME FROM.
+     Owner 2026-09-04: *"for the planned Baseline in vertical stacking, pls indicate if it is BL0 or
+     maybe another current baseline or BLX something."*
+     Fair: every planned date and planned % on that screen is read from bl_start / bl_finish, and
+     those columns hold whichever saved baseline was last "Set primary" (see setPrimaryBaseline,
+     which overwrites them). The screen said "planned" and never said WHOSE plan.
+     ⚠️ The NAME is the honest label, not a made-up "BL1". The baselines are user-named ("Baseline
+     14-Nov-25", "Imported Rev C"), there is no numbering scheme, and inventing one would be a second
+     vocabulary for the same object. "BL0" stays as the FALLBACK, because that is what the rest of
+     this module already calls the bl_* columns when nothing is recorded. */
+  var BL_PRIMARY = null;         // { id, name } of the baseline currently written into bl_*
+  function blPrimaryLabel() {
+    try {
+      var n = BL_PRIMARY && String(BL_PRIMARY.name || '').trim();
+      return n ? n : 'BL0';
+    } catch (e) { return 'BL0'; }
+  }
   var COST_ACCTS = [], EXPENSES = [];   // cost-breakdown-structure accounts + per-activity itemized expenses
   var WBS_NODES = [];   // first-class WBS tree (authoring source of truth; projected to WBS-Summary rows)
 
@@ -5921,6 +5966,15 @@
     // Location Breakdown levels. Tolerant of the un-run 2026-08-04 migration: no table -> no
     // levels -> the location columns/grouping simply don't appear, everything else is unaffected.
     var tLoc = T(async function () { await refreshLocLevels(); });
+    /* The primary baseline's NAME, for the labels that say where "planned" comes from.
+       ⚠️ Tolerant in exactly the way the other optional tables here are: no schedule_baselines
+       migration, no grant, no primary set -> null -> every label falls back to "BL0" and nothing
+       else changes. Bounded (one row), so no pagination and no cost worth measuring. */
+    var tBl = T(async function () {
+      var rb = await sb().from('schedule_baselines').select('id,name').eq('project_id', pid).eq('is_primary', true).limit(1);
+      BL_PRIMARY = (rb && !rb.error && rb.data && rb.data[0]) ? rb.data[0] : null;
+    });
+    void tBl;
 
     // Contract packages. Tolerant of the un-run 2026-08-19-packages.sql exactly like
     // location_levels above: no table -> no packages -> the Package column offers nothing to
@@ -9220,7 +9274,7 @@
         LOC_LEVELS = LOC_LEVELS.filter(function (l) { return l.id !== srcId; });
         groupBys = groupBys.filter(function (d) { return d !== 'loc:' + srcId; });
         setGroupBys(groupBys);
-        populateGroupSelect(); seedExtraHidden(); renderHeader(); rebuild(false); renderAll();
+        psSetupChanged();
         UI.toast('Merged into "' + nm + '" — ' + p.moves.length + ' activities moved.', 'ok');
         m.close(); if (onDone) onDone();
       } catch (e) {
@@ -9306,7 +9360,8 @@
           var l = LOC_LEVELS.find(function (x) { return x.id === inp.dataset.id; }); if (!l || l.name === v) return;
           l.name = v;
           await sb().from('location_levels').update({ name: v }).eq('id', l.id);
-          populateGroupSelect(); renderHeader(); renderGrid();
+          // A RENAME is the edit the name-keyed caches exist for - see psSetupChanged.
+          psSetupChanged();
         };
       });
       listEl.querySelectorAll('[data-up],[data-down]').forEach(function (b) {
@@ -9315,7 +9370,7 @@
           var a = LOC_LEVELS[i], c = LOC_LEVELS[j]; if (!a || !c) return;
           LOC_LEVELS[i] = c; LOC_LEVELS[j] = a;
           await _batchUpdate('location_levels', LOC_LEVELS.map(function (l, k) { l.sort_order = k; return { id: l.id, patch: { sort_order: k } }; }));
-          paint(); populateGroupSelect(); renderHeader(); renderGrid();
+          paint(); psSetupChanged();
         };
       });
       listEl.querySelectorAll('[data-del]').forEach(function (b) {
@@ -9326,7 +9381,7 @@
           await sb().from('location_levels').delete().eq('id', id);
           LOC_LEVELS = LOC_LEVELS.filter(function (x) { return x.id !== id; });
           groupBys = groupBys.filter(function (d) { return d !== 'loc:' + id; });
-          paint(); setGroupBys(groupBys); renderHeader();
+          paint(); setGroupBys(groupBys); psSetupChanged();
         };
       });
       listEl.querySelectorAll('[data-merge]').forEach(function (b) {
@@ -9338,7 +9393,7 @@
       var res = await sb().from('location_levels').insert({ project_id: pid, name: v, sort_order: LOC_LEVELS.length, created_by: UID }).select().single();
       if (res.error) { UI.toast(res.error.message + ' — run the 2026-08-04 location migration.', 'error'); return; }
       LOC_LEVELS.push(res.data); el.value = ''; el.focus();
-      paint(); populateGroupSelect(); seedExtraHidden(); renderHeader(); renderGrid();
+      paint(); psSetupChanged();
     }
     m.el.querySelector('#lvl-add').onclick = addLevel;
     m.el.querySelector('#lvl-new').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); addLevel(); } };
@@ -10147,7 +10202,7 @@
         p.ups.forEach(function (u) { if (failedSet[u.rec.id]) u.rec.location = prev[u.rec.id]; });
       }
       hideLoading();
-      rebuild(false); renderGrid(); renderGantt();
+      psSetupChanged();
       var okCount = p.ups.length - res.failedIds.length;
       if (res.ok) UI.toast('Filled location on ' + p.ups.length + ' activities.', 'success');
       else UI.toast('Filled location on ' + okCount + ' of ' + p.ups.length + ' activities — run this again to retry the rest.', 'warn');
@@ -10203,7 +10258,7 @@
       var prev = {}; ups.forEach(function (u) { prev[u.rec.id] = u.rec.location; u.rec.location = u.loc; });
       var res = await _batchUpdate(TABLE, ups.map(function (u) { return { id: u.rec.id, patch: { location: u.loc } }; }));
       if (res.failedIds.length) { var f = {}; res.failedIds.forEach(function (id) { f[id] = 1; }); ups.forEach(function (u) { if (f[u.rec.id]) u.rec.location = prev[u.rec.id]; }); }
-      hideLoading(); rebuild(false); renderGrid(); renderGantt();
+      hideLoading(); psSetupChanged();
       var ok = ups.length - res.failedIds.length;
       UI.toast(res.ok ? ('Tagged ' + ups.length + ' phase activit' + (ups.length === 1 ? 'y' : 'ies') + '.') : ('Tagged ' + ok + ' of ' + ups.length + ' — run again to retry the rest.'), res.ok ? 'success' : 'warn');
       if (typeof renderStackView === 'function') renderStackView();
@@ -10246,6 +10301,26 @@
   function saveLocExcluded(arr) {
     try { localStorage.setItem(locExcludedKey(), JSON.stringify(arr)); } catch (e) {}
   }
+  /* THE OTHER HALF OF THE PLANNER'S ANSWER, STORED THE SAME WAY.
+     "This branch is a place, at this level" lived only in location_levels.match — a DB column behind
+     the 2026-08-05 migration, and the wizard is explicitly tolerant of that column being absent
+     ("the values are still applied, only the memory is lost"). The stacking's veto now consults that
+     memory, so on a project whose migration has not run the assignment was applied to every activity
+     and then STILL vetoed on screen: the planner answered, the answer was used, and the answer was
+     forgotten a line later.
+     ⚠️ Mirrored to localStorage beside the exclusions, which have always been stored this way. Two
+     halves of one decision recorded in two places with different durability is how they get out of
+     step. The DB column stays the primary and is still written; this is the belt.
+     ⚠️ Browser-local, like the exclusions — a colleague on another machine sees the DB copy when the
+     migration exists, and falls back to the heuristic when it does not. That is strictly better than
+     the previous behaviour, which fell back to the heuristic for everyone. */
+  function locAssignedKey() { return 'ps.locAssigned.' + (pid || ''); }
+  function loadLocAssigned() {
+    try { return JSON.parse(localStorage.getItem(locAssignedKey()) || '[]'); } catch (e) { return []; }
+  }
+  function saveLocAssigned(arr) {
+    try { localStorage.setItem(locAssignedKey(), JSON.stringify(arr)); } catch (e) {}
+  }
   function openLocWizard() {
     if (!pid) { UI.toast('Select a project first.', 'warn'); return; }
     if (!LOC_LEVELS.length) { UI.toast('Define your location levels first — Schedule Setup › Floors & Zones.', 'warn'); return; }
@@ -10272,6 +10347,87 @@
     // one merged list: "show me the un-matched level-3 branches" is the question a planner actually
     // asks, and a single dropdown cannot express a pair.
     var filter = 'sug', q = '', depthF = '', treeSel = '';
+
+    /* ⚠️⚠️ THE VALUE BOX NOW OFFERS THE PLACES THE SETUP ALREADY DEFINES (proposal §6 slice 2).
+       Owner 2026-09-04: *"the purpose is to mitigate the difficulty of the matching of WBS
+       especially when a schedule is migrated."* This is that fix. The box was free text over a
+       breakdown that only existed inside the Schedule Setup closure, so a migrated schedule — whose
+       WBS *is* the breakdown — was re-typed branch by branch, and every typo became a second floor.
+       ⚠️ THE FREE-TEXT BOX IS KEPT (proposal §5). A <datalist> SUGGESTS; it never constrains. A
+       branch the setup does not cover must stay matchable, so this can only ever add choices.
+       ⚠️ NOTHING IS REWRITTEN BEHIND THE PLANNER. A value that differs from a defined place only by
+       case or punctuation is FLAGGED, and snapping it to the defined spelling is one explicit click
+       (see the snap bar) — a silent rewrite would change what Apply writes without anyone asking.
+       ⚠️ DEGRADES TO EXACTLY THE OLD BEHAVIOUR: no setup loaded (the Schedule Setup tab has never
+       been opened this session) → {} → no datalist, no badges, no snap bar, free text as before. */
+    var CAT = (function () {
+      try { return (typeof ScheduleBuilder !== 'undefined' && ScheduleBuilder.locCatalogue) ? (ScheduleBuilder.locCatalogue() || {}) : {}; }
+      catch (e) { return {}; }
+    })();
+    var CAT_N = 0;
+    function catCount() { CAT_N = 0; Object.keys(CAT).forEach(function (k) { CAT_N += (CAT[k] || []).length; }); }
+    catCount();
+    /* ⚠️⚠️ THE COLD OPEN. `ScheduleBuilder` only holds a cfg once the Schedule Setup TAB has been
+       opened this session, so on a fresh load of the Project Schedule the catalogue above is empty —
+       precisely the case this feature exists for (import a schedule, then match its WBS). So when it
+       comes up empty, ask the builder to read the project's saved setup. Deliberately NOT awaited:
+       the modal opens instantly on the free-text behaviour, and the places appear a moment later. */
+    if (!CAT_N) {
+      (function () {
+        try {
+          if (typeof ScheduleBuilder === 'undefined' || !ScheduleBuilder.locCatalogueFor) return;
+          ScheduleBuilder.locCatalogueFor(pid).then(function (c) {
+            if (!c || !Object.keys(c).length) return;
+            if (!m || !m.el || !m.el.isConnected) return;   // the planner closed it while we waited
+            CAT = c; catCount();
+            repaint();
+            UI.toast(CAT_N + ' places from this project\u2019s Schedule Setup are now offered in the value boxes.', 'info');
+          }, function () {});
+        } catch (e) {}
+      })();
+    }
+    function catFor(lvlId) { return (lvlId && CAT[lvlId]) || []; }
+    // ⚠️ Deliberately loose: case, spacing and punctuation only. "2ND FLOOR" and "2nd Floor" are one
+    // place; "2nd Floor" and "2nd Floor Zone A" are not, and no amount of migration makes them one.
+    function catNorm(v) { return String(v == null ? '' : v).toLowerCase().replace(/[^a-z0-9]+/g, ''); }
+    // '' = not a defined place · 'exact' = is one · otherwise the defined spelling this differs from.
+    function catState(lvlId, val) {
+      var list = catFor(lvlId), v = String(val || '').trim(); if (!list.length || !v) return '';
+      for (var i = 0; i < list.length; i++) if (list[i].value === v) return 'exact';
+      var n = catNorm(v); if (!n) return '';
+      for (var j = 0; j < list.length; j++) if (catNorm(list[j].value) === n) return list[j].value;
+      return '';
+    }
+    function catListId(lvlId) { return 'lw-dl-' + String(lvlId).replace(/[^A-Za-z0-9_-]/g, ''); }
+    function datalistsHtml() {
+      return Object.keys(CAT).map(function (lid) {
+        return '<datalist id="' + esc(catListId(lid)) + '">' + catFor(lid).map(function (c) {
+          var note = [c.kind, c.tower].filter(Boolean).join(' · ');
+          return '<option value="' + esc(c.value) + '"' + (note ? ' label="' + esc(note) + '"' : '') + '></option>';
+        }).join('') + '</datalist>';
+      }).join('');
+    }
+    // The badge beside the box: says whether what will be written is a place the setup knows about.
+    function vmarkHtml(s) {
+      if (!s.lvl || !CAT_N) return '';
+      var st = catState(s.lvl, s.val);
+      if (st === 'exact') return '<span class="lw-vmark" title="A place defined in your Schedule Setup." style="font-size:10px;font-weight:700;color:var(--pd-ok,#1a7f37);white-space:nowrap;">✓ defined</span>';
+      if (st) return '<span class="lw-vmark" title="Your Schedule Setup defines this place as ' + esc(st) + '. Two spellings of one place become two floors — use the button above the table to adopt the defined spelling." style="font-size:10px;font-weight:700;color:var(--pd-warn,#9a6700);white-space:nowrap;">≈ ' + esc(st) + '</span>';
+      if (!catFor(s.lvl).length) return '';
+      return '<span class="lw-vmark" title="Not one of the places defined in your Schedule Setup. That is allowed — it simply will not line up with the setup breakdown." style="font-size:10px;font-weight:700;color:var(--pd-muted);white-space:nowrap;">+ new</span>';
+    }
+    // Rows whose value IS a defined place, spelled differently — the migration case, counted.
+    function snapRows() {
+      return state.filter(function (s) { var c = s.lvl ? catState(s.lvl, s.val) : ''; return c && c !== 'exact'; });
+    }
+    function snapBarHtml() {
+      if (!CAT_N) return '';
+      var n = snapRows().length;
+      return '<div id="lw-snap" style="font-size:11.5px;color:var(--pd-muted);margin-bottom:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' +
+        '<span>' + CAT_N + ' place' + (CAT_N === 1 ? '' : 's') + ' defined in your Schedule Setup are offered in the value boxes.</span>' +
+        (n ? '<button class="pd-btn" id="lw-snap-go" style="padding:1px 8px;">Adopt the defined spelling for ' + n + ' value' + (n === 1 ? '' : 's') + '</button>' : '') +
+        '</div>';
+    }
 
     function lvlOptions(sel) {
       // ⚠️ "Grouping only" is the same value the empty option always carried ('' = no level), just
@@ -10331,7 +10487,10 @@
           '<td style="padding:3px 6px;text-align:center;color:var(--pd-muted);white-space:nowrap;">L' + s.depth + '</td>' +
           '<td style="padding:3px 6px;text-align:right;color:var(--pd-muted);white-space:nowrap;">' + s.n.toLocaleString() + '</td>' +
           '<td style="padding:3px 6px;"><select class="pd-input lw-lvl" style="min-width:150px;">' + lvlOptions(s.lvl) + '</select></td>' +
-          '<td style="padding:3px 6px;"><input class="pd-input lw-val" value="' + esc(s.val) + '"' + (s.lvl ? '' : ' disabled') + ' style="min-width:150px;"></td>' +
+          '<td style="padding:3px 6px;"><div style="display:flex;gap:6px;align-items:center;">' +
+            '<input class="pd-input lw-val" value="' + esc(s.val) + '"' + (s.lvl ? '' : ' disabled') +
+              (catFor(s.lvl).length ? ' list="' + esc(catListId(s.lvl)) + '"' : '') + ' style="min-width:150px;flex:1 1 auto;">' +
+            vmarkHtml(s) + '</div></td>' +
         '</tr>';
       }).join('');
     }
@@ -10397,6 +10556,7 @@
         '<button class="pd-btn" id="lw-bulk">Assign all shown to…</button>' +
         '<select class="pd-input" id="lw-bulk-lvl" style="flex:0 0 200px;">' + lvlOptions('') + '</select>' +
       '</div>' +
+      datalistsHtml() + snapBarHtml() +
       '<div id="lw-shown" style="font-size:11.5px;color:var(--pd-muted);margin-bottom:2px;"></div>' +
       '<div id="lw-counts" style="font-size:12px;color:var(--pd-muted);margin-bottom:6px;"></div>' +
       '</div>' +
@@ -10449,9 +10609,30 @@
         m.el.querySelector('#lw-prev').innerHTML = locPreviewHTML(map, p, acts.length);
       }, 200);
     }
+    // ⚠️ The badge is patched IN PLACE, never by re-rendering the table: the planner is typing in
+    // one of those inputs, and rebuilding the tbody on every keystroke would take the caret with it.
+    function refreshMark(tr, s) {
+      var cell = tr.querySelector('.lw-val'); if (!cell || !cell.parentNode) return;
+      var old = cell.parentNode.querySelector('.lw-vmark'); if (old) old.parentNode.removeChild(old);
+      var html = vmarkHtml(s);
+      if (html) cell.insertAdjacentHTML('afterend', html);
+      refreshSnap();
+    }
+    function refreshSnap() {
+      var bar = m.el.querySelector('#lw-snap'); if (!bar) return;
+      bar.outerHTML = snapBarHtml();
+      var b = m.el.querySelector('#lw-snap-go'); if (b) b.onclick = snapAll;
+    }
+    function snapAll() {
+      var hit = snapRows();
+      hit.forEach(function (s) { var c = catState(s.lvl, s.val); if (c && c !== 'exact') { s.val = c; s.valEdited = true; } });
+      repaint();
+      UI.toast(hit.length + ' value' + (hit.length === 1 ? '' : 's') + ' set to the spelling your Schedule Setup defines.', 'success');
+    }
     function repaint() {
       m.el.querySelector('#lw-rows').innerHTML = rowsHtml();
       m.el.querySelector('#lw-tree').innerHTML = treeHtml();
+      refreshSnap();
       var n = visible().length;
       var lens = treeSel ? (treeSel === '__none__' ? ' · narrowed to Grouping only' :
         (' · narrowed to ' + ((LOC_LEVELS.filter(function (l) { return l.id === treeSel; })[0] || {}).name || ''))) : '';
@@ -10469,9 +10650,15 @@
         // Re-clean the value for the newly chosen level, unless the planner typed their own.
         if (!s.valEdited) s.val = s.lvl ? locGuessValue(s.name, s.lvl, LOC_LEVELS) : s.name;
         var vi = tr.querySelector('.lw-val'); vi.disabled = !s.lvl; vi.value = s.val;
+        // The offered places belong to the LEVEL, so changing the level changes the list.
+        if (catFor(s.lvl).length) vi.setAttribute('list', catListId(s.lvl)); else vi.removeAttribute('list');
+        refreshMark(tr, s);
         preview();
-      } else if (e.target.classList.contains('lw-val')) { s.val = e.target.value; s.valEdited = true; preview(); }
+      } else if (e.target.classList.contains('lw-val')) {
+        s.val = e.target.value; s.valEdited = true; refreshMark(tr, s); preview();
+      }
     });
+    var _sb0 = m.el.querySelector('#lw-snap-go'); if (_sb0) _sb0.onclick = snapAll;
     m.el.querySelector('#lw-q').oninput = function (e) { q = e.target.value; repaint(); };
     m.el.querySelector('#lw-filter').onchange = function (e) { filter = e.target.value; repaint(); };
     m.el.querySelector('#lw-depth').onchange = function (e) { depthF = e.target.value; repaint(); };
@@ -10573,9 +10760,16 @@
       var carried = loadLocExcluded().filter(function (n) { return !stateNames[n]; });
       var stillExcluded = state.filter(function (s) { return s.excluded && !s.lvl; }).map(function (s) { return s.name; });
       saveLocExcluded(carried.concat(stillExcluded));
+      /* And the assignments, so "this IS a place" is as durable as "this is not". Carries forward
+         any value not seen in this session, exactly as the exclusions do, so filtering the list
+         before pressing Apply cannot silently forget an earlier decision. */
+      var asgNow = state.filter(function (x) { return x.lvl && x.val; }).map(function (x) { return String(x.val).trim(); });
+      var asgSeen = {}; asgNow.forEach(function (v) { asgSeen[v] = 1; });
+      var asgCarried = loadLocAssigned().filter(function (v) { return v && !asgSeen[v]; });
+      saveLocAssigned(asgCarried.concat(asgNow));
       _vsGrpCache = null;   // the stacking's grouping veto reads this list — stale = wrong bands
       _vsAxisCache = null;
-      rebuild(false); renderGrid(); renderGantt();
+      psSetupChanged();
       var wokCount = p.ups.length - wres.failedIds.length;
       var wpartial = wres.failedIds.length ? (' Updated ' + wokCount + ' of ' + p.ups.length + ' — run this again to retry the rest.') : ('Updated ' + p.ups.length + ' activities.');
       // Stated separately: clearing is the half nobody expects, and a silent removal of stored
@@ -10824,7 +11018,7 @@
       var carried = loadDiscExcluded().filter(function (n) { return !stateNames[n]; });
       var stillExcluded = state.filter(function (s) { return !s.on; }).map(function (s) { return s.name; });
       saveDiscExcluded(carried.concat(stillExcluded));
-      rebuild(false); renderGrid(); renderGantt();
+      psSetupChanged();
       var dokCount = p.ups.length - dres.failedIds.length;
       if (dres.ok) UI.toast('Set discipline/trade on ' + p.ups.length + ' activities.', 'success');
       else UI.toast('Set discipline/trade on ' + dokCount + ' of ' + p.ups.length + ' activities — run this again to retry the rest.', 'warn');
@@ -13452,7 +13646,29 @@
       html + '</div>';
   }
   function _vsMaxDetail() { return Math.max(1, _vsAxis().length); }
-  function _vsDetailNow() { return Math.max(1, Math.min(_vsDetail, _vsMaxDetail())); }
+  /* MIXING TRADES FORCES LEVEL 1 - A DATA-COHERENCE RULE, NOT A DISPLAY PREFERENCE.
+     Owner 2026-09-04: *"whenever the option of mixing the different trades of a certain tower is
+     chosen, pls illustrate the vertical stacking in terms of level 1. Bc the zoning of trades may
+     be different and therefore may cause incoherent data when consolidating the trades."*
+     Right, and it is the setup that makes it so: zoning is stored PER TRADE
+     (cfg.zoning[trade].floors[].zones[].units[]) with its own ids, so Structural may pour a floor
+     in 6 zones while Architectural fits it out in 2 - and because a cell is keyed by the zone
+     VALUE (locValOf), two trades that happen to both call a zone "Z1" land in ONE cell which then
+     reports a single date, a single percentage and a single slip over work from two different
+     breakdowns. The floor is the one axis every trade shares, so a combined model is drawn at
+     level 1.
+     Nothing is lost: Per trade still draws each trade at its own full zone/unit depth, which is
+     where a per-trade zoning question belongs. */
+  var _vsMixTrades = false;
+  var VS_MIX_NOTE = 'Combining trades draws the building at level 1 only. Each trade zones its floors its own way in the Schedule Setup, so one cell spanning several trades would report one date and one percentage over two different breakdowns. Switch to Per trade, or pick a single trade, for the zone and unit detail.';
+  function _vsDetailNow() {
+    // The clamp lives HERE rather than in _vsMaxDetail so the deeper buttons stay on screen -
+    // disabled, carrying the reason - and the planner's own choice of 2 or 3 is remembered for
+    // when they switch back to Per trade. Dropping them from the loop would both hide that the
+    // choice exists and silently reset it.
+    if (_vsMixTrades) return 1;
+    return Math.max(1, Math.min(_vsDetail, _vsMaxDetail()));
+  }
   function _vsTradeOf(r) { return workOf(r) || NO_TRADE; }
   // The activity's PROJECT tower (Tower A / Tower B), not the per-trade card this view draws.
   // ⚠️⚠️ THERE ARE TWO WRITERS AND THEY USE DIFFERENT KEYS. `location` is a jsonb map keyed by
@@ -13569,18 +13785,104 @@
   // ⚠️ Read-time only: no row is modified and no value is deleted. The permanent fix is to mark the
   // branch grouping-only in the matcher, which now clears what it previously wrote.
   var _vsGrpCache = null, _vsGrpKey = null;
+  /* ⚠️⚠️ EVERYTHING THE SCHEDULE SETUP CAN CHANGE, INVALIDATED AND REPAINTED IN ONE PLACE.
+     Owner 2026-09-03: *"when i edit the WBS tree and matched the WBS to the locations etc in the
+     schedule setup, how come i think the project schedule is not updated."*
+     Both tabs are one page, so an edit on the Setup side writes to the database and to the shared
+     in-memory state — but the Project Schedule reads that state through SIX memos, and the Setup's
+     own handlers cleared at most one of them:
+       • the location wizard cleared _vsAxisCache and repainted the grid;
+       • the WBS-tree backfill repainted the grid and cleared NOTHING;
+       • the LBS editor repainted some of the grid and cleared nothing;
+       • none of them touched the phase / trade / scope memos, the grouping-veto set, the dim→level
+         map, the group-by menu, the column header, or the Vertical Stacking.
+     So a planner could re-file a branch or re-match every location and watch the schedule show the
+     answer it had computed before the edit — with no error, because nothing failed.
+     ⚠️ ONE function, called from every Setup-side write. A list of caches maintained at four call
+     sites is the shape this bug already has; the cure is not a fifth copy.
+     ⚠️ Every clear is guarded and every repaint is optional: this runs during load() as well as from
+     a dialog, and the grid may not be built yet. */
+  function psSetupChanged(opts) {
+    var o = opts || {};
+    _vsAxisCache = null; _vsAxisKey = null;
+    _vsGrpCache = null; _vsGrpKey = null;
+    _vsAsgCache = null; _vsAsgKey = null;
+    try { if (typeof ScheduleBuilder !== 'undefined' && ScheduleBuilder.invalidateLocCache) ScheduleBuilder.invalidateLocCache(); } catch (e) {}
+    // The WBS tree decides an activity's phase, trade and contract scope, all memoised per node id.
+    try { _clearPhaseMemo(); } catch (e) {}
+    try { _clearScopeMemo(); } catch (e) {}
+    try { _tradeMemo = {}; } catch (e) {}
+    // The levels are columns and group-by dimensions as well as stacking bands.
+    try { populateGroupSelect(); } catch (e) {}
+    try { seedExtraHidden(); } catch (e) {}
+    try { renderHeader(); } catch (e) {}
+    if (o.rows !== false) { try { rebuild(false); } catch (e) {} }
+    try { renderGrid(); } catch (e) {}
+    try { renderGantt(); } catch (e) {}
+    // ⚠️ The stacking is NOT drawn by renderAll (see _vsRepaintIfLevelsArrived) — without this it
+    // keeps the building it drew before the match.
+    try { if (vstackMode) { _vsAnim = 'fade'; _vsRenderSafe(); } } catch (e) {}
+  }
   function _vsGroupingSet() {
-    var key = pid + '|' + LOC_LEVELS.length;
+    /* ⚠️ NAMES AND THE GROUPING-ONLY LIST, not just a count. This set decides which stored values are
+       vetoed as groupings rather than places; renaming a level, or marking a branch "grouping only"
+       in Match WBS to locations, changes the answer without changing LOC_LEVELS.length — so the
+       stacking went on honouring a value the planner had just excluded. */
+    var key = pid + '|' + LOC_LEVELS.map(function (l) { return (l && l.id) + ':' + (l && l.name); }).join(',') +
+              '|' + (function () { try { return loadLocExcluded().length; } catch (e) { return 0; } })();
     if (_vsGrpCache && _vsGrpKey === key) return _vsGrpCache;
     var set = Object.create(null);
     try { loadLocExcluded().forEach(function (n) { set[String(n).trim().toLowerCase()] = 1; }); } catch (e) {}
     _vsGrpKey = key; _vsGrpCache = set;
     return set;
   }
+  /* THE VALUES THE PLANNER ASSIGNED IN "MATCH WBS TO LOCATIONS", lower-cased.
+     Read from location_levels.match, which the wizard writes as { branch name: value to store } -
+     so these are exactly the values a person looked at and said "this is a place at this level".
+     Cached with the grouping set (same key, cleared by the same psSetupChanged). */
+  var _vsAsgCache = null, _vsAsgKey = null;
+  function _vsAssignedSet() {
+    var key = pid + '|' + LOC_LEVELS.map(function (l) {
+      return (l && l.id) + ':' + Object.keys((l && l.match) || {}).length;
+    }).join(',') + '|' + (function () { try { return loadLocAssigned().length; } catch (e) { return 0; } })();
+    if (_vsAsgCache && _vsAsgKey === key) return _vsAsgCache;
+    var set = Object.create(null);
+    try {
+      // The DB memory (location_levels.match) ...
+      LOC_LEVELS.forEach(function (l) {
+        var m = (l && l.match) || {};
+        Object.keys(m).forEach(function (k) {
+          var v = String(m[k] == null ? '' : m[k]).trim();
+          if (v) set[v.toLowerCase()] = 1;
+        });
+      });
+      // ... and the local one, which survives an un-run migration. See saveLocAssigned.
+      loadLocAssigned().forEach(function (v) {
+        var t = String(v == null ? '' : v).trim();
+        if (t) set[t.toLowerCase()] = 1;
+      });
+    } catch (e) {}
+    _vsAsgKey = key; _vsAsgCache = set;
+    return set;
+  }
+  /* AN EXPLICIT ASSIGNMENT BEATS THE HEURISTIC VETO.
+     Owner 2026-09-04, on AVR101 (Avesta Residences): *"how come the substructure even though it is
+     tagged as a location, is not being detected in the vertical stacking."*
+     Because locGroupingReason reads "Substructure" as a STRUCTURAL WORKS term and vetoes it - which
+     is the right default (a stage is not a storey, and banding by it puts a fake floor in every
+     tower), and which is why that rule was deliberately left alone when the tower work went in.
+     But a default is not a verdict. On this project the planner opened the matcher, saw the branch,
+     and filed it under Level (L2) with the value "Substructure" - 133 activities. A guess must not
+     out-rank the person who was asked and answered.
+     So the order is: an explicit GROUPING-ONLY mark still wins (that is also a person answering),
+     then an explicit ASSIGNMENT wins, and only an unanswered value falls to the heuristic.
+     The two explicit sets are disjoint by construction - the wizard records a branch as excluded
+     only when it has no level - so this cannot make one value both. */
   function locIsGroupingValue(v) {
     var t = String(v == null ? '' : v).trim();
     if (!t) return false;
     if (_vsGroupingSet()[t.toLowerCase()]) return true;
+    if (_vsAssignedSet()[t.toLowerCase()]) return false;
     return !!locGroupingReason(t, LOC_LEVELS);
   }
   function _vsLevVal(r, levelId) {
@@ -13921,7 +14223,10 @@
     return dayDiff(pl, ac);
   }
   function _vsDateWord() { return _vsDateMode === 'start' ? 'starts' : 'finishes'; }
-  function _vsBasisWord() { return _vsBasis === 'planned' ? 'planned' : (_vsBasis === 'compare' ? 'planned vs actual' : 'actual/forecast'); }
+  /* ⚠️ THE BASELINE IS NAMED WHEREVER 'PLANNED' IS. See blPrimaryLabel: the planned figures come
+     from bl_start/bl_finish, which hold whichever saved baseline was last Set primary. Saying only
+     'planned' left the reader to assume it was the original one. */
+  function _vsBasisWord() { return _vsBasis === 'planned' ? ('planned · ' + blPrimaryLabel()) : (_vsBasis === 'compare' ? ('planned (' + blPrimaryLabel() + ') vs actual') : 'actual/forecast'); }
   // Compare colours by slip, so the fill answers "are we behind here?" at a glance.
   var VS_SLIP_LATE = '#C0392B', VS_SLIP_EARLY = '#1F8F4E', VS_SLIP_ONTIME = '#3A6098', VS_SLIP_NONE = '#6f7276';
   function _vsSlipColor(sl) {
@@ -14253,9 +14558,21 @@
             ? (function () {
                 var yP = y + (lbl ? 24 : 20), yA = yP + 11, yV = yA + 12;
                 var xL = cx + 4, xR = cx + cw2 - 4;
-                function row(yy, tag, dt, pc, bold) {
-                  return '<text ' + vtx + ' x="' + xL + '" y="' + yy + '" text-anchor="start" font-size="8.5" font-weight="' + (bold ? '700' : '400') + '" fill="' + ink + '" pointer-events="none">' + tag + ' ' + esc(dt) + '</text>' +
-                    '<text ' + vtx + ' x="' + xR + '" y="' + yy + '" text-anchor="end" font-size="8.5" font-weight="800" fill="' + ink + '" pointer-events="none">' + esc(pc) + '</text>';
+                /* THE TWO ROWS ARE NAMED, AND THEY DO NOT LOOK ALIKE.
+                   Owner 2026-09-04: *"can you emphasize which is the actual and which is the
+                   baseline."* They were tagged "P" and "A" in the same weight and the same ink, one
+                   above the other - two initials that have to be decoded from a legend the reader
+                   may not have on screen. "P" for planned is also the wrong word for what it is: the
+                   figure comes from the baseline columns, not from a plan in the abstract.
+                   Now: BL (the baseline, muted and lighter) and ACT (the actual, full-strength and
+                   bold). The DIFFERENCE carries the meaning, so it survives being glanced at, and it
+                   survives a greyscale print - which "P" over "A" did not. */
+                function row(yy, tag, dt, pc, strong) {
+                  var op = strong ? '1' : '0.72';
+                  var fw = strong ? '800' : '500';
+                  return '<text ' + vtx + ' x="' + xL + '" y="' + yy + '" text-anchor="start" font-size="8.5" font-weight="' + fw + '" fill="' + ink + '" opacity="' + op + '" pointer-events="none">' +
+                      '<tspan font-weight="800" letter-spacing="0.03em">' + tag + '</tspan> ' + esc(dt) + '</text>' +
+                    '<text ' + vtx + ' x="' + xR + '" y="' + yy + '" text-anchor="end" font-size="8.5" font-weight="800" fill="' + ink + '" opacity="' + op + '" pointer-events="none">' + esc(pc) + '</text>';
                 }
                 var gap2 = _vsPocGap(c.list);
                 // The variance line carries BOTH variances — days of slip and points of POC — because
@@ -14265,8 +14582,8 @@
                   // answer: a unit nobody outside this file uses does not belong on the face of a
                   // cell. 'behind/ahead' also states the DIRECTION, which a signed number does not.
                   (gap2 == null ? '' : ' · ' + Math.abs(Math.round(gap2)) + '% ' + (gap2 > 0 ? 'ahead' : gap2 < 0 ? 'behind' : 'on plan'));
-                return row(yP, 'P', _vsDateShort(_vsPlanDate(c.list)), _vsPctTxt(planPct), false) +
-                  row(yA, 'A', _vsDateShort(fin), _vsPctTxt(pct), true) +
+                return row(yP, 'BL', _vsDateShort(_vsPlanDate(c.list)), _vsPctTxt(planPct), false) +
+                  row(yA, 'ACT', _vsDateShort(fin), _vsPctTxt(pct), true) +
                   // ⚠️ The badge REPLACES the variance line here rather than being added to it — the
                   // two would say the same thing twice, and the badge's figure is the finish variance
                   // (`_vsFinSlip`) which is the right one for a finished zone whichever way the
@@ -14353,7 +14670,7 @@
     var body = (showPath ? '<div class="ps-vs-note" style="margin:0 0 8px;">These carry no value on the ' +
         esc(((_vsAxis()[0] || {}).name) || 'level') + ' level. The <strong>WBS branch</strong> column is why: ' +
         'if you can see a floor in it, the branch name is not being matched — fix it with ' +
-        '<em>Group ▾ → Match WBS to locations…</em>. If there is no floor in it, the work genuinely ' +
+        '<em>Schedule Setup › Floors &amp; Zones → Match WBS to locations…</em>. If there is no floor in it, the work genuinely ' +
         'belongs to the site rather than to a storey.</div>' : '') +
       '<div class="ps-vs-tblwrap"><table class="ps-table"><thead><tr>' +
       cols.map(function (h) { return '<th style="text-align:left;">' + h + '</th>'; }).join('') +
@@ -14984,7 +15301,8 @@
     var meta = [
       ['Tower', towerWord],
       ['View', scopeWord],
-      ['Detail', _vsAxis().slice(0, detail).map(function (l) { return l.name; }).join(' › ')],
+      ['Detail', _vsAxis().slice(0, detail).map(function (l) { return l.name; }).join(' › ') +
+        (_vsMixTrades ? ' — levels only (trades combined; each trade zones its floors differently)' : '')],
       ['Dates', _vsBasisWord() + ' · ' + (_vsDateMode === 'start' ? 'start' : 'finish')],
       ['Trades', _vsTradeSel.length ? _vsTradeSel.join(', ') : 'all']
     ];
@@ -15137,7 +15455,7 @@
       };
       return;
     }
-    var _actsAll = _vsActs(), detail = _vsDetailNow();
+    var _actsAll = _vsActs(), detail;
     // ⚠️ The tower filter is applied BEFORE the trades are collected, so focusing Tower B lists the
     // trades that are actually in Tower B rather than every trade in the project.
     var towerNames = _vsTowersIn(_actsAll);
@@ -15166,10 +15484,23 @@
     var actsPreTrade = acts;
     if (_vsTradeSel.length) acts = acts.filter(function (r) { return _vsTradeOn(_vsTradeOf(r)); });
 
+    // ONE ANSWER FOR THE WHOLE VIEW, never per card. Per tower is a side-by-side comparison, so
+    // cards drawn at different depths would be the same incoherence in another form - and Detail
+    // is a single global control, which cannot report two states at once. So the view counts as
+    // mixed when the scope COMBINES trades and the selection holds more than one of them:
+    // narrowing the chips to a single trade un-mixes it and the zones come straight back.
+    // Per trade never mixes - each card there is one trade.
+    _vsMixTrades = (_vsScope === 'tower' || _vsScope === 'all') && tradesShown.length > 1;
+    detail = _vsDetailNow();
+
     var detailBtns = '';
     for (var dlv = 1; dlv <= _vsMaxDetail(); dlv++) {
+      // A button that looks live and is overridden is the silent failure this module keeps
+      // recording - so a level a combined model cannot honestly draw is disabled and says why.
+      var _dOff = _vsMixTrades && dlv > 1;
       detailBtns += '<button data-vsdet="' + dlv + '"' + (detail === dlv ? ' class="on"' : '') +
-        ' title="' + esc(_vsAxis().slice(0, dlv).map(function (l) { return l.name; }).join(' › ')) + '">' + dlv + '</button>';
+        (_dOff ? ' disabled' : '') +
+        ' title="' + esc(_dOff ? VS_MIX_NOTE : _vsAxis().slice(0, dlv).map(function (l) { return l.name; }).join(' › ')) + '">' + dlv + '</button>';
     }
     // ⚠️ Multi-select. Clicking a trade TOGGLES it, so several can be shown side by side; "All
     // trades" clears the selection rather than ticking every box (see the note on _vsTradeSel).
@@ -15228,7 +15559,9 @@
       (towerNames.length > 1 ? '<button data-vssc="tower"' + (_vsScope === 'tower' ? ' class="on"' : '') + ' title="One building model per tower, all trades combined">Per tower</button>' : '') +
       '<button data-vssc="all"' + (_vsScope === 'all' ? ' class="on"' : '') + ' title="One model for the whole project, all trades combined">Consolidated</button></span>' +
       '<span class="ps-vs-note">Detail</span><span class="ps-vs-seg">' + detailBtns + '</span>' +
-      '<span class="ps-vs-note">' + esc(_vsAxis().slice(0, detail).map(function (l) { return l.name; }).join(' › ')) + '</span>' +
+      '<span class="ps-vs-note"' + (_vsMixTrades ? ' title="' + esc(VS_MIX_NOTE) + '"' : '') + '>' +
+        esc(_vsAxis().slice(0, detail).map(function (l) { return l.name; }).join(' › ')) +
+        (_vsMixTrades ? ' — levels only (trades combined)' : '') + '</span>' +
       '<span class="ps-tb-div"></span>' +
       '<span class="ps-vs-note">Dates</span><span class="ps-vs-seg">' +
         [['actual', 'Actual', 'Actual where recorded, forecast where not — the dates the grid shows'],
@@ -15271,7 +15604,7 @@
         '<rect x="0.5" y="0.5" width="13" height="11" rx="2" fill="var(--pd-muted)" opacity="0.95"></rect></svg>' +
         '<span class="ps-vs-legendtxt">' +
           (_vsBasis === 'planned' ? 'solid = due by today · hatched = not yet due' : 'solid = done · hatched = remaining') +
-          (_vsBasis === 'compare' ? ' · line = planned POC · each cell reads <strong>P</strong> = planned date &amp; %, <strong>A</strong> = actual date &amp; %, then the slip in days and how far ahead or behind plan the progress is' : '') +
+          (_vsBasis === 'compare' ? ' · line = planned POC · each cell reads <strong>BL</strong> = the baseline (<strong>' + esc(blPrimaryLabel()) + '</strong>) date &amp; %, then <strong>ACT</strong> = the actual date &amp; % in bold, then the slip in days and how far ahead or behind plan the progress is' : '') +
           // The completion badge needs saying: a coloured pill is only self-explanatory once.
           ' · a <strong>✓ DONE</strong> pill means every activity in that zone is complete, and it carries the finish variance against the baseline — ' +
           '<span style="color:' + VS_SLIP_EARLY + ';font-weight:700;">early</span>, ' +
@@ -15382,10 +15715,10 @@
           esc(noLevGrpVals.slice(0, 6).join(', ')) + (noLevGrpVals.length > 6 ? ' and ' + (noLevGrpVals.length - 6) + ' more' : '') +
           ' ' + (noLevGrpVals.length === 1 ? 'is a phase / trade' : 'are phases / trades') + ', not ' + esc(lvl0Name) + 's, so the stacking will not band by ' +
           (noLevGrpVals.length === 1 ? 'it' : 'them') + '. That is deliberate: a stacking band is a physical part of the building. ' +
-          'Give this work its real ' + esc(lvl0Name) + ' in <em>Group ▾ → Match WBS to locations…</em>, or leave it here;') : '') +
+          'Give this work its real ' + esc(lvl0Name) + ' in <em>Schedule Setup › Floors &amp; Zones → Match WBS to locations…</em>, or leave it here;') : '') +
         '<br>• <strong>a branch name is not matched</strong> — open the band and read the ' +
         '<em>WBS branch</em> column: if you can see a ' + esc(lvl0Name) + ' in it (an abbreviation such ' +
-        'as <em>RD</em> for Roofdeck is the usual culprit), add it in <em>Group ▾ → Match WBS to locations…</em>;' +
+        'as <em>RD</em> for Roofdeck is the usual culprit), add it in <em>Schedule Setup › Floors &amp; Zones → Match WBS to locations…</em>;' +
         '<br>• <strong>the work genuinely has no ' + esc(lvl0Name) + '</strong> — substructure, footings and ' +
         'site works sit below or outside the storeys. Give them their own ' + esc(lvl0Name) + ' value if you ' +
         'want them banded, or leave them here;' +
@@ -15450,7 +15783,12 @@
     // ⚠️ The chip row shows in every scope now. It used to be per-trade only, from when it selected
     // ONE trade to look at; as a filter it narrows the per-tower and consolidated models too, and a
     // filter you cannot see is a filter that gets blamed on missing data.
-    host.innerHTML = bar + chips + warn + _vsHatchDefs() +
+    /* THE TRADE SELECTOR LEADS. Owner 2026-09-04: *"pls put the trade on the top"*. It sat below the
+       whole toolbar - under the view controls, the legend sentence and the stacked-activity count -
+       so the control that decides WHAT IS ON SCREEN was the last thing on the way to the buildings,
+       and on a narrow window it wrapped below the fold entirely. Which trades you are looking at is
+       the first question the panel answers, so it is now the first row. */
+    host.innerHTML = chips + bar + warn + _vsHatchDefs() +
       // ⚠️ The toolbar and the chips sit OUTSIDE the scroller on purpose — scrolling the buildings
       // must never take the controls that drive them off screen.
       '<div class="ps-vs-pane"><div class="ps-vs-body">' +
@@ -17835,7 +18173,29 @@
   function saveFmtRules() { try { localStorage.setItem('ps_fmtrules_' + pid, JSON.stringify(_fmtRules)); } catch (e) {} }
   function _fmtFn(k) { var c = FMT_CONDS.find(function (x) { return x.k === k; }); return c ? c.fn : null; }
   function _rowFmt(r) { for (var i = 0; i < _fmtRules.length; i++) { var fn = _fmtFn(_fmtRules[i].cond); if (fn && fn(r)) return _fmtRules[i]; } return null; }
-  function _fmtStyleStr(f) { return '--fmt-bg:' + f.bg + ';' + (f.fg ? '--fmt-fg:' + f.fg + ';' : '') + (f.bold ? 'font-weight:600;' : ''); }
+  /* ⚠️⚠️ A FILL WITHOUT A TEXT COLOUR USED TO LEAVE THE ROW UNREADABLE.
+     Owner 2026-09-03, screenshot of the Handover Tracker grid: four activity rows rendered as pale
+     cream bands with text barely visible against them.
+     The cause: this only emitted `--fmt-fg` when the rule NAMED one, and the CSS falls back to
+     `color: inherit` — the theme's ink. The default fill is #FDECEA, a pale cream, so in DARK MODE
+     the row got a light background and kept near-white text. Every rule added without opening the
+     Text swatch produced an invisible row, and the default is exactly that rule.
+     ⚠️ The fix derives the ink from the FILL's luminance, the same rule the Vertical Stacking already
+     uses for text on a coloured cell (_vsInkFill): light fill -> dark ink, dark fill -> light ink. A
+     row is now readable in both themes whatever fill is chosen.
+     ⚠️ AN EXPLICIT fg STILL WINS, always. This fills in a colour nobody chose; it never overrides one
+     the planner did choose, even if the contrast is poor — that is their call to make. */
+  function _fmtInk(bg) {
+    try {
+      var L = _vsLum(bg);
+      if (L == null) return null;
+      return L > 0.55 ? '#14181d' : '#ffffff';
+    } catch (e) { return null; }
+  }
+  function _fmtStyleStr(f) {
+    var fg = f.fg || _fmtInk(f.bg);
+    return '--fmt-bg:' + f.bg + ';' + (fg ? '--fmt-fg:' + fg + ';' : '') + (f.bold ? 'font-weight:600;' : '');
+  }
   // Suggested fill per condition when a rule is first added.
   var _FMT_DEFBG = { critical: '#FDECEA', near: '#FFF4E5', behind: '#FFF0D9', negfloat: '#FDECEA', complete: '#E8F6EF', inprogress: '#FFF9E6', notstarted: '#F1F1F1', milestone: '#EEF3FF', constraint: '#FFF4E5', overbudget: '#FDECEA' };
   function openFmtRules() {
@@ -22033,7 +22393,16 @@
     });
     await _batchUpdate('wbs_nodes', nodeUp);
     await _batchUpdate(TABLE, schedUp);
-    rebuild(); renderWbsManager(); renderGrid(); renderGantt();
+    /* WBS TREE EDITS INVALIDATE MORE THAN THE GRID. This repainted, but cleared nothing --- and an
+       activity resolves its TRADE through _nodeTrade, which memoises the BRANCH NAME per node id.
+       So renaming a WBS branch left every activity under it reporting the old trade until a reload,
+       which is half of the owner report that this schedule "is not updated" after a Setup edit. The
+       phase and contract-scope memos read the same tree and had the same problem.
+       psSetupChanged clears all of them and repaints the header, the group-by menu and the Vertical
+       Stacking as well --- see its note. renderWbsManager stays: it is this dialog's own repaint and
+       is not the schedule grid. */
+    renderWbsManager();
+    psSetupChanged();
   }
   // Insert a projected WBS-Summary row. `wbs_node_id` is treated as optional here for the same
   // reason save() writes it separately (see the note above the contract_date/wbs_node_id writes):
@@ -25346,7 +25715,12 @@
     var _dimLvlCache = null, _dimLvlKey = null;
     function _dimLevelMap() {
       var lv = _levelsNow();
-      var key = lv.map(function (l) { return l && l.id; }).join("|");
+      /* ⚠️ THE KEY CARRIES THE NAMES, NOT JUST THE IDS. This map is resolved BY NAME (see DIM_SYN),
+         so renaming a level in the LBS editor changes the answer while leaving every id untouched —
+         an id-only key would serve the pre-rename mapping for the rest of the session. Renaming
+         "Orientation" to "Unit" is exactly the edit a planner makes to fix a bad match, and it was
+         the one edit this cache could not see. */
+      var key = lv.map(function (l) { return (l && l.id) + ':' + (l && l.name); }).join("|");
       if (_dimLvlCache && _dimLvlKey === key) return _dimLvlCache;
       var out = {}, taken = {}, DIMS = ["tower", "floor", "zone", "unit"];
       // Pass 1 — claim by NAME. A level already claimed can never be claimed again.
@@ -25914,6 +26288,42 @@
     // ⚠️ Each leaf carries its tower id + label, so the push and the stacking can use it in a later
     // step without re-deriving it from the floor (which is how duplicate-derivation bugs start).
     function locList() { var out = []; GROUPS.forEach(function (tr) { cfg.zoning[tr].floors.forEach(function (f) { leavesOfFloor(tr, f).forEach(function (l) { l.towerId = towerIdOf(f); l.tower = towerLabel(l.towerId); out.push(l); }); }); }); return out; }
+    function catalogueFrom(c) {
+        var out = {};
+        try {
+          if (!c || !c.zoning) return out;
+          var lv = {};
+          ['tower', 'floor', 'zone', 'unit'].forEach(function (d) { var l = locLevelFor(d); if (l) lv[d] = l.id; });
+          function add(dim, value, extra) {
+            var id = lv[dim]; if (!id) return;
+            var v = (value == null) ? '' : String(value).trim(); if (!v) return;
+            var arr = out[id] || (out[id] = []);
+            for (var i = 0; i < arr.length; i++) if (arr[i].value === v) return;
+            arr.push({ value: v, dim: dim, kind: (extra && extra.kind) || '', tower: (extra && extra.tower) || '' });
+          }
+          // ⚠️ The tower helpers (towerList / towerLabel / towerIdOf) read the LOADED cfg, so they
+          // cannot be used here — on a cold open the towers being named are not the loaded ones.
+          // Same rule as towerLabel: name, then code, then the generic word.
+          var _tw = (c.towers && c.towers.length) ? c.towers : blankTowers();
+          function _twLabel(id) {
+            for (var i = 0; i < _tw.length; i++) if (_tw[i].id === id) return _tw[i].name || _tw[i].code || 'Tower';
+            return _tw.length ? (_tw[0].name || _tw[0].code || 'Tower') : 'Tower';
+          }
+          _tw.forEach(function (t) { add('tower', _twLabel(t.id)); });
+          GROUPS.forEach(function (tr) {
+            ((c.zoning[tr] && c.zoning[tr].floors) || []).forEach(function (f) {
+              var tw = _twLabel((f && f.towerId) || (_tw[0] && _tw[0].id));
+              add('floor', f.name || f.code, { kind: floorKind(f), tower: tw });
+              (f.zones || []).forEach(function (z) {
+                add('zone', z.code || z.name, { tower: tw });
+                (z.units || []).forEach(function (u) { add('unit', u.code || u.name, { tower: tw }); });
+              });
+            });
+          });
+        } catch (e) { return out; }
+        return out;
+    }
+
     function tradeActs(tr) { return cfg.activities.filter(function (a) { return a.group === tr; }); }
     // Trades actually assigned to a Step-1 activity, in GROUPS order — later steps only ever deal
     // with these, not the full discipline universe.
@@ -27417,6 +27827,311 @@
         openLocBackfill();
       };
     }
+    /* ⚠️⚠️ ADOPT FROM THE WBS — proposal §2.4 / §6 slice 3, and the whole point of the exercise for
+       a MIGRATED schedule. Owner 2026-09-04: *"the purpose is to mitigate the difficulty of the
+       matching of WBS especially when a schedule is migrated."*
+       Slice 2 made the matcher pick from the setup's places. This is the other direction, for the
+       case where the setup is the EMPTY side: an imported schedule already contains the building —
+       "Tower 1 › 5TH FLOOR › Zone A" — and until now the planner re-typed all of it into Floors &
+       Zones by hand before any of it could be matched. This walks the tree it already has and offers
+       to create the towers, floors and zones from it.
+       ⚠️ IT IS THE SAME VALUES, IN BOTH DIRECTIONS. The place it creates is named with
+       `locGuessValue` — the identical string the matcher would write for that branch — so a place
+       adopted here is a place the matcher then reports as "✓ defined" rather than a near-miss. Two
+       features deriving one name two ways is how the duplicate spellings started.
+       ⚠️ IT ONLY EVER ADDS. Nothing is renamed, reordered or deleted: a value that already exists
+       (compared the same loose way the matcher compares — case and punctuation) is shown as already
+       defined and skipped. The one ordering decision it makes is for the floors it creates itself.
+       ⚠️ IT WRITES TO cfg, unlike the other three buttons on this bar — so it marks the setup UNSAVED
+       and the planner still has to press Save. That is deliberate: a dialog that silently saved a
+       structure derived from a heuristic would be unreviewable. */
+    function adoptDimMap() {
+      var out = {};
+      ['tower', 'floor', 'zone', 'unit'].forEach(function (d) { var l = locLevelFor(d); if (l) out[l.id] = d; });
+      return out;
+    }
+    // The kind tag for a floor the WBS named. ⚠️ Derived from `levelRank`, the module's own vertical
+    // order (negative = below grade, 900 = roof), NOT from a second vocabulary of my own — the stack
+    // and the setup must agree about what a basement is. Anything unranked is 'typical', which is
+    // exactly what "+ Add floor" gives a floor the planner types by hand.
+    function adoptKindOf(name) {
+      var r = null;
+      try { r = (typeof levelRank === 'function') ? levelRank(name) : null; } catch (e) { r = null; }
+      if (/\bpodium\b/i.test(String(name || ''))) return 'podium';
+      if (r == null) return 'typical';
+      if (r >= 900) return 'roof';
+      if (r < 0) return 'basement';
+      if (r === 0) return 'podium';       // ground floor — the vocabulary step 5 already uses
+      return 'typical';
+    }
+    function adoptRankOf(name) {
+      try { var r = (typeof levelRank === 'function') ? levelRank(name) : null; return (r == null) ? null : r; }
+      catch (e) { return null; }
+    }
+    // Loose equality, the SAME rule the matcher's badge uses: case and punctuation only.
+    function adoptNorm(v) { return String(v == null ? '' : v).toLowerCase().replace(/[^a-z0-9]+/g, ''); }
+    function adoptHas(list, v) {
+      var n = adoptNorm(v); if (!n) return false;
+      for (var i = 0; i < list.length; i++) if (adoptNorm(list[i]) === n) return true;
+      return false;
+    }
+    /* The scan. Reads the LIVE schedule's WBS branch names through the same three module functions
+       the matcher uses — `locExecScopedActs`, `locScanNames`, `locGuessLevel` / `locGuessValue` — so
+       a branch this proposes as a place is a branch the matcher would also call a place, and a
+       grouping branch (a phase, a trade) is refused by both. Returns the tree, nothing else. */
+    function adoptScan() {
+      var out = { towers: [], skipped: 0, read: 0 };
+      if (typeof locExecScopedActs !== 'function' || typeof locScanNames !== 'function' ||
+          typeof locGuessLevel !== 'function' || typeof locGuessValue !== 'function') return out;
+      var lv = _levelsNow(); if (!lv.length) return out;
+      var acts = locExecScopedActs(); if (!acts.length) return out;
+      var nameByCode = {};
+      rows.forEach(function (r) { if (isWbs(r) && r.wbs) nameByCode[String(r.wbs)] = r.activity_name || ''; });
+      var found = locScanNames(acts, function (r) { return r.wbs; }, nameByCode);
+      out.read = found.length;
+      var dimOf = adoptDimMap();
+      // name -> { dim, value } for every branch name in the scan, so an ancestor can be classified
+      // without re-guessing it once per descendant.
+      var cls = {};
+      function classify(nm) {
+        if (Object.prototype.hasOwnProperty.call(cls, nm)) return cls[nm];
+        var id = null;
+        try { id = locGuessLevel(nm, lv); } catch (e) { id = null; }
+        var d = id ? dimOf[id] : null;
+        var v = null;
+        if (d) { try { v = locGuessValue(nm, id, lv); } catch (e) { v = nm; } }
+        return (cls[nm] = d ? { dim: d, value: String(v || nm).trim() } : null);
+      }
+      // The nearest ancestor of `wantDim`, walking the branch's own trail from the inside out.
+      function ancestor(trail, wantDim) {
+        var segs = trail ? String(trail).split(' › ') : [];
+        for (var i = segs.length - 1; i >= 0; i--) {
+          var c = classify(segs[i]);
+          if (c && c.dim === wantDim) return c.value;
+        }
+        return null;
+      }
+      // The tower every floor that names none belongs to — the project's single implicit tower, the
+      // same reading `towerIdOf` and the dim resolver already take (see the tower notes there).
+      var implicitTower = (function () {
+        var t = (cfg && cfg.towers && cfg.towers.length) ? cfg.towers[0] : null;
+        return t ? (t.name || t.code || 'Tower 1') : 'Tower 1';
+      })();
+      function tower(v, implicit) {
+        for (var i = 0; i < out.towers.length; i++) if (adoptNorm(out.towers[i].value) === adoptNorm(v)) return out.towers[i];
+        var t = { value: v, n: 0, implicit: !!implicit, floors: [] };
+        out.towers.push(t); return t;
+      }
+      function floor(t, v, n) {
+        for (var i = 0; i < t.floors.length; i++) if (adoptNorm(t.floors[i].value) === adoptNorm(v)) { t.floors[i].n += n; return t.floors[i]; }
+        var f = { value: v, n: n, kind: adoptKindOf(v), rank: adoptRankOf(v), zones: [] };
+        t.floors.push(f); return f;
+      }
+      found.forEach(function (e) {
+        var c = classify(e.name);
+        if (!c) { out.skipped++; return; }
+        if (c.dim === 'tower') { tower(c.value, false).n += e.n; return; }
+        if (c.dim === 'floor') {
+          var tv = ancestor(e.trail, 'tower');
+          var t = tower(tv || implicitTower, !tv); t.n += e.n;
+          floor(t, c.value, e.n);
+          return;
+        }
+        if (c.dim === 'zone') {
+          var fv = ancestor(e.trail, 'floor');
+          if (!fv) { out.skipped++; return; }   // a zone with no floor above it has nowhere to go
+          var tv2 = ancestor(e.trail, 'tower');
+          var t2 = tower(tv2 || implicitTower, !tv2);
+          var f2 = floor(t2, fv, 0);
+          if (!adoptHas(f2.zones.map(function (z) { return z.value; }), c.value)) f2.zones.push({ value: c.value, n: e.n });
+          return;
+        }
+        // A UNIT is deliberately not adopted: it is the level whose values are least often real
+        // places in an imported tree (they are room numbers, work packages, occasionally dates), and
+        // a wrong unit multiplies every floor it sits under. Left for the planner to add by hand.
+        out.skipped++;
+      });
+      // Bottom-up, the order step 5 draws and `dimOrderIndex` sorts the pushed WBS by. Unrankable
+      // values keep their scan order and sit after the ranked ones, never above the roof.
+      out.towers.forEach(function (t) {
+        var ranked = t.floors.filter(function (f) { return f.rank != null; }).sort(function (a, b) { return a.rank - b.rank; });
+        t.floors = ranked.concat(t.floors.filter(function (f) { return f.rank == null; }));
+      });
+      return out;
+    }
+    function openLocAdopt() {
+      var scan = adoptScan();
+      if (!scan.towers.length) {
+        UI.toast(scan.read
+          ? 'None of the ' + scan.read + ' WBS branch names read as a place. Match them by hand with "Match WBS to locations…".'
+          : 'No Execution Phase activities with a WBS code to read from.', 'warn');
+        return;
+      }
+      var used = usedGroups();
+      if (!used.length) { UI.toast('Add activities and assign each one a trade first — floors are defined per trade.', 'warn'); return; }
+      var cat = catalogueFrom(cfg);
+      var lvT = locLevelFor('tower'), lvF = locLevelFor('floor'), lvZ = locLevelFor('zone');
+      function have(lvl) { return (lvl && cat[lvl.id] ? cat[lvl.id] : []).map(function (x) { return x.value; }); }
+      var haveT = have(lvT), haveF = have(lvF), haveZ = have(lvZ);
+      // What each proposal WOULD be: 'new' or 'already defined'. Computed once, so the dialog and the
+      // apply cannot disagree about it.
+      scan.towers.forEach(function (t) {
+        t.exists = adoptHas(haveT, t.value);
+        t.on = !t.exists;
+        t.floors.forEach(function (f) {
+          f.exists = adoptHas(haveF, f.value);
+          f.on = !f.exists;
+          f.zones.forEach(function (z) { z.exists = adoptHas(haveZ, z.value); z.on = !z.exists; });
+        });
+      });
+      var target = 'all';
+      function newCounts() {
+        var t = 0, f = 0, z = 0;
+        scan.towers.forEach(function (T) {
+          if (T.on && !T.exists) t++;
+          T.floors.forEach(function (F) {
+            if (F.on && !F.exists) f++;
+            F.zones.forEach(function (Z) { if (Z.on && !Z.exists) z++; });
+          });
+        });
+        return { t: t, f: f, z: z, total: t + f + z };
+      }
+      function chk(on, path, dis) {
+        return '<input type="checkbox" class="ad-ck" data-p="' + e2(path) + '"' + (on ? ' checked' : '') + (dis ? ' disabled' : '') + ' style="margin:0 6px 0 0;">';
+      }
+      function tag(txt, warn) {
+        return '<span style="font-size:10px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;border:1px solid var(--pd-line);border-radius:99px;padding:0 5px;white-space:nowrap;color:' +
+          (warn ? 'var(--pd-muted)' : 'var(--pd-ink)') + ';">' + e2(txt) + '</span>';
+      }
+      function treeHtml() {
+        return scan.towers.map(function (t, ti) {
+          var h = '<div style="padding:5px 4px 2px;border-top:1px solid var(--pd-line);">' +
+            '<label style="display:flex;gap:6px;align-items:center;font-weight:650;font-size:12.5px;cursor:pointer;">' +
+            chk(t.on, ti + '', t.exists) + '<span>' + e2(t.value) + '</span>' +
+            (t.exists ? tag('already defined', true) : tag('new tower')) +
+            (t.implicit ? tag('no tower named in the WBS', true) : '') +
+            '<span style="color:var(--pd-muted);font-weight:400;">' + t.n.toLocaleString() + ' activities</span></label></div>';
+          h += t.floors.map(function (f, fi) {
+            var s = '<div style="padding:1px 4px 1px 22px;">' +
+              '<label style="display:flex;gap:6px;align-items:center;font-size:12px;cursor:pointer;">' +
+              chk(f.on, ti + '.' + fi, f.exists) + '<span>' + e2(f.value) + '</span>' +
+              tag(KIND_LABEL[f.kind] || f.kind, true) +
+              (f.exists ? tag('already defined', true) : '') +
+              (f.n ? '<span style="color:var(--pd-muted);">' + f.n.toLocaleString() + '</span>' : '') +
+              '</label></div>';
+            s += f.zones.map(function (z, zi) {
+              return '<div style="padding:0 4px 0 44px;">' +
+                '<label style="display:flex;gap:6px;align-items:center;font-size:11.5px;cursor:pointer;color:var(--pd-ink);">' +
+                chk(z.on, ti + '.' + fi + '.' + zi, z.exists) + '<span>' + e2(z.value) + '</span>' +
+                (z.exists ? tag('already defined', true) : '') + '</label></div>';
+            }).join('');
+            return s;
+          }).join('');
+          return h;
+        }).join('');
+      }
+      function tradeOptions() {
+        return '<option value="all">All ' + used.length + ' trades in use</option>' +
+          used.map(function (g) { return '<option value="' + e2(g) + '">' + e2(GLABEL[g] || g) + ' only</option>'; }).join('');
+      }
+      var m = UI.modal('<div style="width:100%;max-height:84vh;display:flex;flex-direction:column;">' +
+        '<h2 style="margin:0 0 4px;">Adopt the location breakdown from the WBS</h2>' +
+        '<p style="color:var(--pd-muted);font-size:12.5px;margin:0 0 8px;">Your schedule’s WBS already contains the building. These are the <strong>places</strong> it names — towers, floors and zones — with the ones this setup already defines marked. Adopting them creates the floors and zones for you instead of typing them, which is the whole job once for a <strong>migrated schedule</strong>. ' +
+        '<strong>Nothing is deleted, renamed or reordered</strong> — this only adds what is missing, and you still have to press <strong>Save</strong> afterwards. Floors are defined <em>per trade</em>, so choose who gets them; a trade can always differ afterwards in <em>Scope per zone</em>.</p>' +
+        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">' +
+          '<span style="font-size:12px;color:var(--pd-muted);">Create the floors for</span>' +
+          '<select class="pd-input" id="ad-trade" style="flex:0 0 260px;">' + tradeOptions() + '</select>' +
+          '<span id="ad-sum" style="font-size:12px;color:var(--pd-muted);"></span>' +
+        '</div>' +
+        '<div id="ad-tree" style="flex:1 1 auto;overflow:auto;border:1px solid var(--pd-line);border-radius:6px;padding:4px 6px;min-height:120px;">' + treeHtml() + '</div>' +
+        (scan.skipped ? '<div style="font-size:11.5px;color:var(--pd-muted);margin-top:6px;">' + scan.skipped + ' branch name' + (scan.skipped === 1 ? '' : 's') + ' were not offered — a phase, a trade, a work type, or a zone with no floor above it. Match those by hand with “Match WBS to locations…”.</div>' : '') +
+        '<div style="text-align:right;margin-top:12px;"><button class="pd-btn" id="ad-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="ad-go">Adopt</button></div>' +
+      '</div>');
+      var _pm = m.el.querySelector('.pd-modal');
+      if (_pm) { _pm.style.maxWidth = 'min(94vw,900px)'; _pm.style.width = 'min(94vw,900px)'; }
+      function sum() {
+        var c = newCounts();
+        m.el.querySelector('#ad-sum').textContent = c.total
+          ? (c.t + ' tower' + (c.t === 1 ? '' : 's') + ', ' + c.f + ' floor' + (c.f === 1 ? '' : 's') + ', ' + c.z + ' zone' + (c.z === 1 ? '' : 's') + ' will be created.')
+          : 'Nothing selected — this setup already defines every place the WBS names.';
+        var go = m.el.querySelector('#ad-go');
+        go.textContent = c.total ? ('Adopt ' + c.total + ' place' + (c.total === 1 ? '' : 's')) : 'Adopt';
+        go.disabled = !c.total;
+      }
+      sum();
+      m.el.querySelector('#ad-trade').onchange = function (e) { target = e.target.value; };
+      // ⚠️ A tower or floor that is turned OFF turns off everything under it: creating a zone whose
+      // floor was not created would silently attach it to a floor the planner did not ask for.
+      m.el.querySelector('#ad-tree').addEventListener('change', function (e) {
+        if (!e.target.classList.contains('ad-ck')) return;
+        var p = String(e.target.dataset.p || '').split('.').map(Number), on = e.target.checked;
+        var T = scan.towers[p[0]]; if (!T) return;
+        if (p.length === 1) { T.on = on; if (!on) T.floors.forEach(function (F) { F.on = false; F.zones.forEach(function (Z) { Z.on = false; }); }); }
+        else if (p.length === 2) { var F2 = T.floors[p[1]]; if (!F2) return; F2.on = on; if (!on) F2.zones.forEach(function (Z) { Z.on = false; }); if (on) T.on = true; }
+        else { var F3 = T.floors[p[1]]; if (!F3) return; var Z3 = F3.zones[p[2]]; if (!Z3) return; Z3.on = on; if (on) { F3.on = true; T.on = true; } }
+        m.el.querySelector('#ad-tree').innerHTML = treeHtml();
+        sum();
+      });
+      m.el.querySelector('#ad-x').onclick = m.close;
+      m.el.querySelector('#ad-go').onclick = function () {
+        var c = newCounts(); if (!c.total) { m.close(); return; }
+        var trades = (target === 'all') ? used.slice() : [target];
+        var madeT = 0, madeF = 0, madeZ = 0, appended = [];
+        // 1 — towers. A tower is project-wide (cfg.towers), so it is created once, not per trade.
+        scan.towers.forEach(function (T) {
+          if (!T.on || T.exists || T.implicit) return;
+          var list = towerList();
+          if (list.some(function (x) { return adoptNorm(x.name || x.code) === adoptNorm(T.value); })) return;
+          if (!cfg.towers || !cfg.towers.length) cfg.towers = list.slice();
+          cfg.towers.push({ id: uidv(), code: 'T' + (cfg.towers.length + 1), name: T.value });
+          madeT++;
+        });
+        function towerIdFor(T) {
+          var hit = towerList().filter(function (x) { return adoptNorm(x.name || x.code) === adoptNorm(T.value); })[0];
+          return (hit || towerList()[0]).id;
+        }
+        // 2 — floors and zones, per trade. ⚠️ APPEND, never reorder: an existing list is the
+        // planner's own order (they drag it in step 5) and the pushed WBS follows it, so a floor
+        // that arrives late is added at the end and REPORTED, rather than being slotted in on a
+        // guess about where it belongs.
+        trades.forEach(function (tr) {
+          if (!cfg.zoning[tr]) cfg.zoning[tr] = { floors: [] };
+          var fl = cfg.zoning[tr].floors, wasEmpty = !fl.length, addedHere = 0;
+          scan.towers.forEach(function (T) {
+            if (!T.on) return;
+            var tid = towerIdFor(T);
+            T.floors.forEach(function (F) {
+              if (!F.on) return;
+              var ex = fl.filter(function (x) { return adoptNorm(x.name || x.code) === adoptNorm(F.value); })[0] || null;
+              var zonesOn = F.zones.filter(function (Z) { return Z.on; });
+              if (ex) {
+                // The floor is already here — only its MISSING zones are added, to the floor as it is.
+                zonesOn.forEach(function (Z) {
+                  if ((ex.zones || []).some(function (z) { return adoptNorm(z.code || z.name) === adoptNorm(Z.value); })) return;
+                  (ex.zones || (ex.zones = [])).push({ id: uidv(), code: Z.value, name: '', units: [] });
+                  madeZ++;
+                });
+                return;
+              }
+              var sub = F.kind === 'basement';
+              var nSame = fl.filter(function (x) { return (!!x.sub) === sub && towerIdOf(x) === tid; }).length;
+              // ⚠️ name IS the value the push writes (locMapOf: floor = name || code); the code is
+              // only the short label step 5 draws, numbered the way "+ Add floor" numbers it.
+              fl.push({ id: uidv(), code: (sub ? 'B' : 'F') + (nSame + 1), name: F.value, sub: sub,
+                kind: F.kind, towerId: tid,
+                zones: zonesOn.map(function (Z) { madeZ++; return { id: uidv(), code: Z.value, name: '', units: [] }; }) });
+              madeF++; addedHere++;
+            });
+          });
+          if (!wasEmpty && addedHere) appended.push((GLABEL[tr] || tr) + ' (+' + addedHere + ')');
+        });
+        pruneLinks(); markDirty(); render(); m.close();
+        UI.toast('Adopted ' + madeT + ' tower(s), ' + madeF + ' floor(s) and ' + madeZ + ' zone(s) from the WBS. Press Save to keep it.', 'success');
+        // ⚠️ Said out loud rather than silently fixed: a trade that already had floors got the new
+        // ones at the END of its list, and the list order is the building's order.
+        if (appended.length) UI.toast('Check the floor order for ' + appended.join(', ') + ' — new floors were added at the end of a list you had already arranged.', 'warn');
+      };
+    }
     function leafCount(tr) { return cfg.zoning[tr].floors.reduce(function (t, f) { return t + leavesOfFloor(tr, f).length; }, 0); }
     // Tower visual: floors stacked (ground at bottom), each split into zones, each zone into units.
     // ⚠️ towerId is REQUIRED, not optional: an optional argument here is how the leak happened in the
@@ -27791,7 +28506,17 @@
       };
       host.querySelector('#b-addfloor').onclick = function () { var nf = floorsOfTower(tr, _twAct).filter(function (f) { return !f.sub; }).length; zn.floors.push({ id: uidv(), code: 'F' + (nf + 1), name: '', kind: 'typical', towerId: _twAct, zones: [] }); markDirty(); render(); };
       // Basements build bottom-up (deepest first), so a new basement is INSERTED at index 0 (deepest).
-      host.querySelector('#b-addbsmt').onclick = function () { var nb = zn.floors.filter(function (f) { return f.sub; }).length; zn.floors.unshift({ id: uidv(), code: 'B' + (nb + 1), name: '', sub: true, kind: 'basement', zones: [] }); markDirty(); render(); };
+      /* A BASEMENT BELONGS TO THE SELECTED TOWER, LIKE EVERY OTHER FLOOR.
+         Owner 2026-09-04: *"the adding of basement is not working, meaning when i click add basement,
+         it always adds to tower 1 even if i selected another tower."*
+         Exactly so, and the line above shows why: "+ Add floor" writes towerId: _twAct, and this one
+         wrote no towerId at all. towerIdOf() falls back to the FIRST tower for a floor that names
+         none (which is right for a legacy config), so every basement silently became Tower 1s.
+         The count was wrong for the same reason: it counted basements across ALL towers, so adding
+         B1 to Tower 3 while Tower 1 already had two produced "B3". "+ Add floor" already scopes its
+         count with floorsOfTower; this now matches it.
+         Basements build bottom-up (deepest first), so a new one is still INSERTED at index 0. */
+      host.querySelector('#b-addbsmt').onclick = function () { var nb = floorsOfTower(tr, _twAct).filter(function (f) { return f.sub; }).length; zn.floors.unshift({ id: uidv(), code: 'B' + (nb + 1), name: '', sub: true, kind: 'basement', towerId: _twAct, zones: [] }); markDirty(); render(); };
       host.querySelector('#b-quick').onclick = function () {
         var B = Math.max(0, Math.min(20, qv('#q-base', 0))), F = Math.max(1, Math.min(80, qv('#q-floors', 1))), Z = Math.max(0, Math.min(20, qv('#q-zones', 0))), U = Math.max(0, Math.min(20, qv('#q-units', 0)));
         quickN[tr] = { B: B, F: F, Z: Z, U: U };
@@ -31875,6 +32600,64 @@
       },
       // The canonical trade order (GROUPS), as the labels written to work_type. The single source
       // of truth for anything outside this closure that needs to order trades.
+      /* ⚠️⚠️ THE PROJECT'S PLACES, AS A LIST — the LBS catalogue (proposal §2.1 slice 1).
+         Owner 2026-09-04: *"the purpose is to mitigate the difficulty of the matching of WBS
+         especially when a schedule is migrated."* The difficulty is that there was no list: the
+         places live in `cfg.zoning[trade].floors` PER TRADE, so nothing outside this closure could
+         say what the project's floors ARE, and the WBS matcher had to offer a free-text box and let
+         the planner re-type the value for every branch.
+         ⚠️ THIS IS DERIVED, NOT STORED. No new table, no new source of truth — it reads exactly the
+         same cfg the push reads, so a project that never opens the matcher is unaffected and a
+         project with no setup loaded gets {} and the old free-text behaviour (see the caller).
+         ⚠️ THE VALUES ARE THE STRINGS `locMapOf` WOULD WRITE, character for character:
+         tower = towerLabel, floor = name||code, zone/unit = code||name, keyed by the level
+         `locLevelFor` resolves. A catalogue that offered a prettier spelling than the push writes
+         would produce two spellings of one floor, which is the very fault it exists to remove.
+         Order is the setup's own order (towers, then floors bottom-up per trade) — the same order
+         dimOrderIndex sorts the pushed WBS by. First spelling seen wins the de-dupe. */
+      locCatalogue: function () { return catalogueFrom(cfg); },
+      /* ⚠️⚠️ THE COLD-OPEN GAP, CLOSED. `cfg` is only populated once the Schedule Setup tab has
+         loaded a setup this session — so a planner who opens the Project Schedule and goes straight
+         to the WBS matcher got an EMPTY catalogue, which is exactly when it would have helped most
+         (that is the migration case: import, then match). This reads the project's saved setup
+         directly and derives the catalogue from it.
+         ⚠️ IT DOES NOT LOAD THE SETUP INTO THE BUILDER. Nothing is assigned to `cfg`, `curSetupId`,
+         `curPid` or `mode`, and nothing renders: adopting a setup as a side effect of opening a
+         matcher would silently pick one of several packages' setups, and would discard a staged
+         import that is being reviewed. It is a READ, and it stays a read.
+         ⚠️ Same row the builder itself would open — pickDefaultSetup's "most recently edited" rule,
+         not "first alphabetically" — so the places offered are the places the planner last worked on.
+         Falls back to whatever `cfg` holds (usually {}) on any error: no table, no grants, no setup
+         saved yet, wrong project. The matcher then behaves exactly as it did before this existed. */
+      locCatalogueFor: async function (projectId) {
+        try {
+          var live = catalogueFrom(cfg);
+          // A setup already loaded for THIS project is the freshest answer there is — it includes
+          // edits the planner has not saved yet.
+          if (Object.keys(live).length && (!projectId || projectId === curPid)) return live;
+          if (!projectId) return live;
+          var r = await sbc().from('schedule_builder').select('id,config,updated_at,name').eq('project_id', projectId);
+          if (r.error || !r.data || !r.data.length) return live;
+          /* ⚠️ THE SETUP THAT IS OPEN WINS, and when one IS open no other is ever consulted.
+             A planner on a half-built setup for Package B must not be offered Package A's floors
+             just because A was saved more recently — the value boxes would suggest places that are
+             not in this package at all. Only when NOTHING is open does the builder's own
+             `pickDefaultSetup` rule (most recently edited) choose the row. */
+          var row = null;
+          if (curSetupId) {
+            row = r.data.filter(function (x) { return x.id === curSetupId; })[0] || null;
+            if (!row) return live;
+          } else {
+            row = r.data.slice().sort(function (a, b) {
+              return String(b.updated_at || '').localeCompare(String(a.updated_at || ''));
+            })[0];
+          }
+          var c = (row && row.config) ? normalize(row.config) : null;
+          if (!c) return live;
+          var derived = catalogueFrom(c);
+          return Object.keys(derived).length ? derived : live;
+        } catch (e) { try { return catalogueFrom(cfg); } catch (e2) { return {}; } }
+      },
       tradeLabels: function () { return GROUPS.map(function (g) { return GWORK[g] || GLABEL[g] || g; }); },
       /* THE STRUCTURE THIS SETUP DEFINES, AS THE GRID GROUP-BY DIMS.
          Owner 2026-09-03: *"i think the WBS tree default should be matched with what was defined in
@@ -31908,6 +32691,9 @@
         } catch (e) { return []; }
       },
       // The raw order, for anything that wants to SHOW it rather than group by it.
+      // The dim->level map is memoised inside this closure; psSetupChanged cannot reach it from
+      // module scope, so the closure publishes the clear rather than exposing the cache.
+      invalidateLocCache: function () { try { _dimLvlCache = null; _dimLvlKey = null; } catch (e) {} },
       setupOrderLabels: function () {
         try {
           if (!cfg || !Array.isArray(cfg.wbsOrder)) return [];
@@ -35564,7 +36350,7 @@
       if (!grid.count) {
         cnt.textContent = '';
         body.innerHTML = ctrls + '<div class="ps-ck-empty">No activities carry a <strong>' + esc(stkLevelName(_stkLevel)) +
-          '</strong> value. Run <strong>Group ▸ Match WBS to locations…</strong> first.</div>';
+          '</strong> value. Run <strong>Schedule Setup ▸ Floors &amp; Zones ▸ Match WBS to locations…</strong> first.</div>';
         wireStackCtrls(body);
         return;
       }
@@ -35585,7 +36371,7 @@
       if (!model.length) {
         cnt.textContent = '';
         body.innerHTML = ctrls + '<div class="ps-ck-empty">No activities carry a <strong>' + esc(stkLevelName(_stkLevel)) +
-          '</strong> value. Run <strong>Group ▸ Match WBS to locations…</strong> first.</div>';
+          '</strong> value. Run <strong>Schedule Setup ▸ Floors &amp; Zones ▸ Match WBS to locations…</strong> first.</div>';
         wireStackCtrls(body);
         return;
       }

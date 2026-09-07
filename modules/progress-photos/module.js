@@ -1310,10 +1310,21 @@ window.ProgressPhotos = (function () {
             '</select></div>') +
       '</div>' +
       '<div class="pd-modal-footer"><button class="pd-btn" data-close>Cancel</button>' +
+        (canWrite ? '<button type="button" class="pd-btn pd-btn-danger" id="pp-mked-del">Delete</button>' : '') +
         (canWrite ? '<button type="button" class="pd-btn pd-btn-primary" id="pp-mked-save">Save</button>' : '') +
       '</div>';
     var m = openModal(html, 480);
     hydrate(m.el);
+    // Bug fix (2026-09-04): this modal (opened via the pencil icon on a
+    // panorama/reconstruction tile) previously had no Delete action at
+    // all — neither did the tile itself — so there was NO way anywhere in
+    // the Gallery to delete a 360°/3D capture. Delegates to whichever
+    // sub-module actually owns the row (never a second copy of the storage-
+    // cleanup-then-row-delete logic those modules already have).
+    if ($('pp-mked-del')) $('pp-mked-del').onclick = function () {
+      m.close();
+      openMediaKindDeleteConfirm(row);
+    };
     if ($('pp-mked-locbtn')) $('pp-mked-locbtn').onclick = function () {
       openGenericLocationPicker(function (values) {
         locVals = values;
@@ -1342,6 +1353,58 @@ window.ProgressPhotos = (function () {
       m.close();
       UI.toast('Saved', 'ok');
       render();
+    };
+  }
+
+  // Bug fix (2026-09-04): panoramas/reconstructions had NO delete path
+  // anywhere in the merged Gallery grid — mediaKindThumbHTML() rendered only
+  // "open" + "edit" (pencil), openMediaKindEditor()'s footer had only
+  // Cancel/Save, and the real-photo delete flow (openDeleteConfirm/remove())
+  // is deliberately scoped to ids with a `progress_photos` row (a pseudo-row
+  // has none there to delete). Owner report: "i cant delete 360/3D media
+  // from the photos gallery." A small, separate confirm modal mirroring
+  // openDeleteConfirm's own shape — never a second copy of pano.js/recon.js's
+  // storage-cleanup-then-row-delete logic, matching this file's "one 360°
+  // viewer, one 3D viewer" rule for everything else pano/recon-shaped.
+  function openMediaKindDeleteConfirm(row) {
+    var isPano = row._kind === 'panorama';
+    var label = isPano ? '360° panorama' : '3D scan';
+    var html =
+      '<div class="pd-modal-header"><h3>Delete ' + Fmt.esc(label) + '</h3>' +
+        '<button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-form"><p>Delete this ' + Fmt.esc(label) + '? ' +
+        (isPano
+          ? 'The stitched image is removed from storage too.'
+          : 'Its recorded video and any processed result files are removed from storage too.') +
+        ' This cannot be undone.</p></div>' +
+      '<div class="pd-modal-footer"><button class="pd-btn" data-close>Cancel</button>' +
+        '<button class="pd-btn pd-btn-danger" id="pp-mk-d-yes">Delete</button></div>';
+    var m = openModal(html, 440);
+    $('pp-mk-d-yes').onclick = async function () {
+      var btn = this;
+      btn.disabled = true;
+      var mod = isPano ? window.PANO : window.RECON;
+      if (!mod || !mod.deleteById) { UI.toast('Delete is not available right now', 'error'); btn.disabled = false; return; }
+      // ⚠️ Wrapped in try/catch (2026-09-04, exhausting the "still can't
+      // delete" report): an unexpected throw (a network drop mid-request,
+      // e.g.) previously left this async handler's promise rejecting with
+      // nothing catching it — the button stayed disabled forever with no
+      // toast at all, which reads exactly like "clicking Delete does
+      // nothing". Any failure now always re-enables the button and says so.
+      try {
+        var res = await mod.deleteById(row._src);
+        if (!res || !res.ok) {
+          UI.toast((res && res.error) || 'Could not delete', 'error');
+          btn.disabled = false;
+          return;
+        }
+        m.close();
+        UI.toast((isPano ? 'Panorama' : '3D scan') + ' deleted', 'ok');
+        render();
+      } catch (e) {
+        UI.toast((e && e.message) || 'Could not delete — check your connection and try again', 'error');
+        btn.disabled = false;
+      }
     };
   }
 
@@ -2278,20 +2341,15 @@ window.ProgressPhotos = (function () {
       }
       openAddToPresentation(split.photo);
     };
-    // Item 1 (owner feedback) — batch delete, joining Download/Add to
-    // Presentation/Archive in the selection cluster. Scoped to real photos
-    // only (a 360°/3D pseudo-row has no row in TABLE for this to delete),
-    // same reasoning as the two splits above.
+    // Item 1 (owner feedback), widened: batch delete now covers a MIXED
+    // selection — real photos AND 360°/3D pseudo-rows — through the SAME
+    // toolbar trash icon, not just photos. It used to refuse the whole
+    // action the instant a 360°/3D tile was checked, toasting a warning that
+    // pointed elsewhere instead — exactly the path a planner naturally
+    // reaches for (check a tile, click the toolbar trash icon). See
+    // openBatchDeleteConfirm below for the fix.
     if ($('pp-sel-delete')) $('pp-sel-delete').onclick = function () {
-      var split = splitSelectedIds(visibleSelectedIds());
-      if (!split.photo.length) {
-        UI.toast('Select at least one photo — 360°/3D captures aren\'t deleted from here', 'warn');
-        return;
-      }
-      if (split.pano.length || split.recon.length) {
-        UI.toast((split.pano.length + split.recon.length) + ' 360°/3D item(s) skipped — delete covers photos only', 'warn');
-      }
-      openDeleteConfirm(split.photo);
+      openBatchDeleteConfirm(visibleSelectedIds());
     };
   }
 
@@ -2353,20 +2411,148 @@ window.ProgressPhotos = (function () {
         '<button class="pd-btn pd-btn-danger" id="pp-d-yes">Delete</button></div>';
     var m = openModal(html, 460);
     $('pp-d-yes').onclick = async function () {
-      this.disabled = true;
-      var targetRows = rows.filter(function (r) { return ids.indexOf(r.id) >= 0; });
-      var res = await sb().from(TABLE).delete().in('id', ids);
-      if (res.error) { UI.toast(res.error.message, 'error'); this.disabled = false; return; }
-      // Item 1's thumbnail is a real, separate object in the same bucket —
-      // deleting only the original would leave it orphaned forever (nothing
-      // else in the app ever points at it once this row is gone).
-      var toRemove = [];
-      targetRows.forEach(function (r) { if (r.photo_url) toRemove.push(r.photo_url); if (r.thumb_url) toRemove.push(r.thumb_url); });
-      if (toRemove.length) { try { await sb().storage.from(BUCKET).remove(toRemove); } catch (e) {} }
-      m.close();
-      UI.toast((ids.length === 1 ? 'Photo' : ids.length + ' photos') + ' deleted', 'ok');
-      ids.forEach(function (id) { delete selected[id]; });
-      await load();
+      var btn = this;
+      btn.disabled = true;
+      // ⚠️ REAL BUG FIXED (2026-09-04, found auditing every delete in this
+      // module for the "still can't delete" report): this table's DELETE RLS
+      // is owner-or-admin (the generic module-table loop in
+      // supabase-schema.sql — is_writer() and (created_by = auth.uid() or
+      // is_admin())), NOT any writer. A plain `.delete().in('id', ids)` with
+      // no `.select()` can't tell "deleted" from "RLS silently matched 0
+      // rows" — Postgres/PostgREST report that as a clean success either way.
+      // The old code below always toasted "N photos deleted" and relied on
+      // the trailing `load()` to eventually correct the count — misleading
+      // for a moment, but not a permanent phantom deletion. `.select('id')`
+      // reports exactly which ids were ACTUALLY removed, so a refusal reads
+      // as a real, honest message instead of a false success.
+      // ⚠️ Also wrapped in try/catch (2026-09-04, same pass as
+      // openMediaKindDeleteConfirm/openBatchDeleteConfirm above): an
+      // unexpected throw previously left this button stuck disabled forever
+      // with no toast — indistinguishable from "clicking Delete does nothing".
+      try {
+        var res = await sb().from(TABLE).delete().in('id', ids).select('id');
+        if (res.error) { UI.toast(res.error.message, 'error'); btn.disabled = false; return; }
+        var deletedIds = (res.data || []).map(function (r) { return r.id; });
+        if (!deletedIds.length) {
+          UI.toast('You do not have permission to delete ' + (ids.length === 1 ? 'this photo' : 'these photos') +
+            ' — only the person who uploaded it or an admin can.', 'error');
+          btn.disabled = false;
+          return;
+        }
+        // Item 1's thumbnail is a real, separate object in the same bucket —
+        // deleting only the original would leave it orphaned forever (nothing
+        // else in the app ever points at it once this row is gone). Only the
+        // rows CONFIRMED deleted above get their files removed — a refused
+        // delete must never lose the file behind a row that's still there.
+        var targetRows = rows.filter(function (r) { return deletedIds.indexOf(r.id) >= 0; });
+        var toRemove = [];
+        targetRows.forEach(function (r) { if (r.photo_url) toRemove.push(r.photo_url); if (r.thumb_url) toRemove.push(r.thumb_url); });
+        if (toRemove.length) { try { await sb().storage.from(BUCKET).remove(toRemove); } catch (e) {} }
+        m.close();
+        if (deletedIds.length < ids.length) {
+          UI.toast(deletedIds.length + ' of ' + ids.length + ' deleted — the rest need an admin or their uploader to remove them', 'warn');
+        } else {
+          UI.toast((ids.length === 1 ? 'Photo' : ids.length + ' photos') + ' deleted', 'ok');
+        }
+        deletedIds.forEach(function (id) { delete selected[id]; });
+        await load();
+      } catch (e) {
+        UI.toast((e && e.message) || 'Could not delete — check your connection and try again', 'error');
+        btn.disabled = false;
+      }
+    };
+  }
+
+  // The batch-selection Delete button's real entry point — takes the RAW,
+  // possibly-mixed selection (real photo ids alongside pano:<uuid>/
+  // recon:<uuid> pseudo-ids) and deletes every kind through whichever module
+  // actually owns it. Real photos go through the same in-line delete
+  // openDeleteConfirm(ids) already uses (presentation-usage warning +
+  // TABLE delete + storage cleanup, kept here rather than re-calling that
+  // function so the whole mixed batch is confirmed and executed as ONE
+  // action); a panorama/reconstruction is deleted via PANO.deleteById/
+  // RECON.deleteById — the exact functions openMediaKindDeleteConfirm
+  // already uses for a single item's own edit-modal delete — never a second,
+  // in-file copy of that storage-cleanup-then-row-delete logic.
+  async function openBatchDeleteConfirm(ids) {
+    var split = splitSelectedIds(ids);
+    var total = split.photo.length + split.pano.length + split.recon.length;
+    if (!total) return;
+    var usage = { photoIds: [], pprIds: [] };
+    if (split.photo.length) {
+      try { usage = await findPresentationUsage(split.photo); } catch (e) { /* best-effort — a failed check must not block deleting */ }
+    }
+    var parts = [];
+    if (split.photo.length) parts.push(split.photo.length + ' photo' + (split.photo.length === 1 ? '' : 's'));
+    if (split.pano.length) parts.push(split.pano.length + ' 360° panorama' + (split.pano.length === 1 ? '' : 's'));
+    if (split.recon.length) parts.push(split.recon.length + ' 3D scan' + (split.recon.length === 1 ? '' : 's'));
+    var warnHtml = '';
+    if (usage.photoIds.length) {
+      var pluralPhoto = usage.photoIds.length === 1;
+      var pluralPpr = usage.pprIds.length === 1;
+      warnHtml = '<div class="pp-delwarn"><span aria-hidden="true">⚠</span><span>' +
+        (pluralPhoto ? 'One of the photos is' : usage.photoIds.length + ' of the photos are') +
+        ' used in ' + usage.pprIds.length + ' presentation' + (pluralPpr ? '' : 's') + '. Deleting ' +
+        (pluralPhoto ? 'it' : 'them') + ' will remove ' + (pluralPhoto ? 'it' : 'them') +
+        ' from ' + (pluralPpr ? 'that presentation' : 'those presentations') + ' too.</span></div>';
+    }
+    var html =
+      '<div class="pd-modal-header"><h3>Delete ' + total + ' item' + (total === 1 ? '' : 's') + '</h3>' +
+        '<button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-form"><p>Delete ' + Fmt.esc(parts.join(', ')) +
+        '? Every file is removed from storage too. This cannot be undone.</p>' + warnHtml + '</div>' +
+      '<div class="pd-modal-footer">' +
+        '<button class="pd-btn" data-close>Cancel</button>' +
+        '<button class="pd-btn pd-btn-danger" id="pp-bd-yes">Delete</button></div>';
+    var m = openModal(html, 460);
+    $('pp-bd-yes').onclick = async function () {
+      var btn = this;
+      btn.disabled = true;
+      try {
+        var failed = 0;
+        var succeededIds = [];
+        if (split.photo.length) {
+          // ⚠️ Same `.select()` guard as openDeleteConfirm's own fix above and
+          // for the identical reason — TABLE's DELETE RLS is owner-or-admin,
+          // not any writer, so a plain `.delete().in('id', …)` can't tell a
+          // real delete from RLS silently matching 0 rows. Reported here as
+          // per-item failures joining the pano/recon counter below, rather
+          // than aborting the whole mixed batch over the photos a planner
+          // simply isn't allowed to remove.
+          var res = await sb().from(TABLE).delete().in('id', split.photo).select('id');
+          if (res.error) { UI.toast(res.error.message, 'error'); btn.disabled = false; return; }
+          var deletedPhotoIds = (res.data || []).map(function (r) { return r.id; });
+          failed += split.photo.length - deletedPhotoIds.length;
+          succeededIds = succeededIds.concat(deletedPhotoIds);
+          var targetRows = rows.filter(function (r) { return deletedPhotoIds.indexOf(r.id) >= 0; });
+          var toRemove = [];
+          targetRows.forEach(function (r) { if (r.photo_url) toRemove.push(r.photo_url); if (r.thumb_url) toRemove.push(r.thumb_url); });
+          if (toRemove.length) { try { await sb().storage.from(BUCKET).remove(toRemove); } catch (e) {} }
+        }
+        for (var i = 0; i < split.pano.length; i++) {
+          var p = (window.PANO && PANO.list ? PANO.list() : []).filter(function (x) { return x.id === split.pano[i]; })[0];
+          if (!p || !window.PANO || !PANO.deleteById) { failed++; continue; }
+          var pr = await PANO.deleteById(p);
+          if (!pr || !pr.ok) failed++; else succeededIds.push('pano:' + split.pano[i]);
+        }
+        for (var j = 0; j < split.recon.length; j++) {
+          var rc = (window.RECON && RECON.doneList ? RECON.doneList() : []).filter(function (x) { return x.id === split.recon[j]; })[0];
+          if (!rc || !window.RECON || !RECON.deleteById) { failed++; continue; }
+          var rr = await RECON.deleteById(rc);
+          if (!rr || !rr.ok) failed++; else succeededIds.push('recon:' + split.recon[j]);
+        }
+        m.close();
+        // Only ids that ACTUALLY got deleted leave `selected` — an item that
+        // failed (e.g. RLS refused it) stays checked, since it's still there
+        // and the planner may want to see it's the one that didn't go through.
+        succeededIds.forEach(function (id) { delete selected[id]; });
+        if (failed) UI.toast((total - failed) + ' of ' + total + ' item(s) deleted — ' + failed + ' could not be removed (only the uploader or an admin can)', 'warn');
+        else UI.toast(total + ' item' + (total === 1 ? '' : 's') + ' deleted', 'ok');
+        await load();
+      } catch (e) {
+        UI.toast((e && e.message) || 'Could not delete — check your connection and try again', 'error');
+        btn.disabled = false;
+      }
     };
   }
 
@@ -5527,6 +5713,14 @@ window.ProgressPhotos = (function () {
     _mergedRows: function () { return mergedRows(); },
     _panoPseudoRow: function (p) { return panoPseudoRow(p); },
     _reconPseudoRow: function (r) { return reconPseudoRow(r); },
+    // Test-only hooks (2026-09-04 fix — the batch trash icon refused a mixed
+    // selection outright; see openBatchDeleteConfirm's own comment). Splitting
+    // is pure and worth executing directly; the confirm/delete flow itself is
+    // exposed so a test can drive the real modal + real PANO/RECON.deleteById
+    // dispatch against an injected store, the same way _openModal already
+    // lets a test drive the recursion-fix modal for real.
+    _splitSelectedIds: function (ids) { return splitSelectedIds(ids); },
+    _openBatchDeleteConfirm: function (ids) { return openBatchDeleteConfirm(ids); },
     // Test-only hooks for the markup engine (Batch F, 2026-08-29) — the same
     // convention as every hook above: genuinely EXECUTE the per-shape canvas
     // drawing and the eraser's nearest-object hit test against real objects,

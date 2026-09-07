@@ -642,31 +642,16 @@
       (isLead || isAccount || isProjCtx ? main : below).appendChild(el);
     });
 
-    // Pull the module's own icon glyph (<span class="xx-title-ico" data-ico="…">,
-    // per MODULE_CONTRACT.md's uniform-topbar rule) out of whatever just moved
-    // into `below` — normally the module's <h1>, or a title-switch button like
-    // Project Schedule's — and pair it with the project dropdown here in `main`,
-    // immediately to its left. Per the owner's explicit ask (2026-09-02): the
-    // dropdown itself carries no icon of its own; the module's identity glyph
-    // sits BESIDE it, never fused inside it, and never left behind on the
-    // second row where it used to ride with the title text.
-    // ⚠️ Wrapped together (`.pd-tb-projgroup`), not placed as two loose
-    // siblings — a narrow-viewport rule (dashboard.css, ≤820px) later moves the
-    // dropdown onto its own row, and without a shared wrapper the icon would be
-    // stranded back with the hamburger/theme/avatar cluster instead of moving
-    // with it.
-    var titleIco = below.querySelector('[class$="-title-ico"]');
-    var projCtx = main.querySelector('[class$="-projctx"], #ctx-switcher');
-    if (titleIco && projCtx) {
-      var group = document.createElement('div');
-      group.className = 'pd-tb-projgroup';
-      projCtx.parentNode.insertBefore(group, projCtx);
-      var mark = document.createElement('span');
-      mark.className = 'pd-tb-mark';
-      mark.appendChild(titleIco);
-      group.appendChild(mark);
-      group.appendChild(projCtx);
-    }
+    // ⚠️ REVERTED (owner ask, 2026-09-04): the 2026-09-02 pass here used to
+    // pull a module's own icon glyph out of `below` and pair it with the
+    // project dropdown in `main` (the top identity row) — "no module logo is
+    // allowed in this top bar across all modules." The top row is back to
+    // being exactly the four fixed chrome controls the block comment above
+    // this function describes; a module's own icon simply stays wherever it
+    // already sits inside `below` (its <h1>, or a title-switch button like
+    // Project Schedule's), which lands it in `.pd-modulebar` below — see the
+    // module bar's own CSS for how it renders beside a tabs strip / dropdown
+    // there instead.
 
     topbar.appendChild(main);
     // Marks the topbar as restructured. The CSS keys off THIS class, never off
@@ -683,15 +668,19 @@
   // are wired to — just hidden (`.pd-tabsdrop-src`); picking a menu item
   // simply clicks the corresponding real button, so no module JS needs to
   // change to adopt this. Call once per tab strip, after it is populated.
-  // opts.icon (2026-09-03): a module identity icon prepended INSIDE the
-  // trigger — Project Schedule's own `.ps-title-btn` bakes its icon into the
-  // button the same way. Deliberately not a separate <h1> sitting beside the
-  // trigger: issues-lessons tried exactly that and then had to hide the whole
-  // element outright once the tabs strip got a dropdown, because a lone icon
-  // left standing next to it stole a full row on its own on mobile (see
-  // module.js's switchScreen — "not just a text-only display:none... no
-  // orphaned icon row"). Baking the icon into the trigger removes the row it
-  // would have needed in the first place, so there is nothing left to hide.
+  // opts.icon (2026-09-04, owner ask — supersedes the 2026-09-03 approach of
+  // baking it into `trig.innerHTML`): the module identity icon is a SEPARATE
+  // element immediately to the LEFT of the trigger, not fused inside the
+  // button — "keep this logo... but do not include this inside the dropdown
+  // selector. keep it to the left of it as a separate icon." It is still a
+  // child of `.pd-tabsdrop` (a sibling of the trigger, not of
+  // `.pd-modulebar`'s own top-level children), which is what avoids the
+  // mobile problem the 2026-09-03 comment was written to solve: on a phone
+  // `.pd-tabsdrop` itself takes the whole row (dashboard.css, ≤700px), so the
+  // icon rides along with the trigger on that one row rather than becoming an
+  // orphaned icon-only row of its own — the same outcome, reached by nesting
+  // it inside the trigger's own flex unit instead of by fusing it into the
+  // button.
   function tabsToDropdown(selOrEl, opts) {
     var tabs = typeof selOrEl === 'string' ? document.querySelector(selOrEl) : selOrEl;
     if (!tabs || tabs.__pdTabsDrop) return;
@@ -745,12 +734,25 @@
     wrap.appendChild(trig); wrap.appendChild(menu);
     tabs.parentNode.insertBefore(wrap, tabs);
 
-    var icoHtml = (opts && opts.icon)
-      ? '<span class="pd-tabsdrop-ico" data-ico="' + esc(opts.icon) + '" data-ico-size="16"></span>' : '';
+    // The icon is built once, as its own element, and inserted BEFORE the
+    // trigger inside `wrap` — never written into `trig.innerHTML`, so it can
+    // never be mistaken for part of the dropdown control itself.
+    if (opts && opts.icon) {
+      var ico = document.createElement('span');
+      ico.className = 'pd-tabsdrop-ico';
+      ico.setAttribute('data-ico', opts.icon);
+      ico.setAttribute('data-ico-size', '16');
+      wrap.insertBefore(ico, trig);
+      // ⚠️ `Icons.hydrate(el)` looks for `[data-ico]` among EL'S DESCENDANTS —
+      // it never checks `el` itself — so hydrating `ico` directly is a no-op
+      // (found the hard way: an empty, unhydrated span). Hydrate `wrap`
+      // instead, which has `ico` as a child.
+      if (window.Icons) Icons.hydrate(wrap);
+    }
     function activeBtn() { return btns.filter(function (b) { return b.classList.contains('active'); })[0] || btns[0]; }
     function sync() {
       var a = activeBtn();
-      trig.innerHTML = icoHtml + '<span>' + esc(a.textContent) + '</span><span class="pd-tabsdrop-caret" data-ico="chevronDown" data-ico-size="14"></span>';
+      trig.innerHTML = '<span>' + esc(a.textContent) + '</span><span class="pd-tabsdrop-caret" data-ico="chevronDown" data-ico-size="14"></span>';
       menu.innerHTML = btns.map(function (b, i) {
         return '<button type="button" data-i="' + i + '" class="' + (b === a ? 'cur' : '') + '">' + esc(b.textContent) + '</button>';
       }).join('');

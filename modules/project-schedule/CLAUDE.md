@@ -1,3 +1,558 @@
+## Vertical Stacking: combining trades draws the building at level 1 (2026-09-04) — jasantos2
+
+Owner: *"whenever the option of mixing the different trades of a certain tower is chosen, pls
+illustrate the vertical stacking in terms of level 1. Bc the zoning of trades may be different and
+therefore may cause incoherent data when consolidating the trades."*
+
+Right, and the setup is what makes it so. Zoning is stored **per trade** —
+`cfg.zoning[trade].floors[].zones[].units[]`, each with its own ids — so Structural may pour a floor
+in 6 zones while Architectural fits the same floor out in 2. And a stacking cell is keyed by the
+zone **VALUE** (`_vsRowCells` → `ids.map(id => locValOf(r, id) || '—').join(' · ')`), so two trades
+that both happen to call a zone "Z1" land in **one** cell, which then reports a single date, a single
+percentage and a single slip over work from two different breakdowns. That is the incoherence, and it
+is arithmetic, not appearance. The floor is the one axis every trade shares.
+
+### The rule
+- `_vsMixTrades = (_vsScope === 'tower' || _vsScope === 'all') && tradesShown.length > 1;` — set once
+  the trade selection is final (after the `_vsTradeSel` filter, where `tradesShown` is known), and
+  `detail` is resolved from it. `Per trade` never mixes: each card there is one trade.
+- `_vsDetailNow()` returns `1` when mixed. **The clamp lives here, not in `_vsMaxDetail()`**, so the
+  deeper Detail buttons stay on screen and the planner's own choice of 2 or 3 survives a switch back
+  to Per trade. Clamping the button loop's bound would have both hidden that the choice exists and
+  silently reset it. All five call sites inherit the clamp.
+
+### It says why, in three places
+- The **Detail buttons** for 2 and 3 are `disabled` when mixed, with `VS_MIX_NOTE` as their tooltip.
+  A control that looks live and is then overridden is the silent failure this module keeps recording.
+- The **toolbar axis caption** appends `— levels only (trades combined)` and carries the note.
+- The **PDF meta row** says `— levels only (trades combined; each trade zones its floors differently)`.
+  A printed sheet outlives the screen that knew why.
+
+### Nothing is hidden and nothing is lost
+**Per trade** still draws each trade at its own full zone/unit depth — that is where a per-trade
+zoning question belongs — and **narrowing the chips to a single trade un-mixes the view**, bringing
+the zones straight back on Per tower and Consolidated too.
+
+### Verified
+Slice-and-execute against the shipped file (never a reimplementation): `_vsDetailNow` and the
+`_vsMixTrades` line were cut out of `index.html` and run — 22 assertions pass, covering the clamp,
+the max-detail clamp still applying when not mixed, `_vsDetail` left untouched, and the flag across
+`trade`/`tower`/`all` × 0/1/2/3 trades. Gated by controls: the **pre-patch** `_vsDetailNow` sliced
+from HEAD returns 3 where the patched one returns 1, and `VS_MIX_NOTE` is absent from HEAD — so the
+suite bites. Inline script parses; `function NAME(` set vs HEAD: **0 lost**.
+⚠️ **Not verified signed-in** — the anon key has no grants on `project_schedule`, so no live project
+was rendered. The clamp is pure logic and was executed; the on-screen result was not seen.
+
+### ⚠️ Finding, not touched: the Consolidated trade split has never rendered
+`_vsTowerSVG`'s 4th parameter `tradeSplit` and its helper `_vsRowTradeCells(list, trades)` are fully
+implemented and committed, and **no call site passes them** (14736, 15725, 15732, 15740). Its own
+comment says Consolidated "used to merge every trade into ONE cell per level painted brand red, so
+the one view whose whole purpose is comparing trades was the one view in which you could not tell
+them apart" — so that earlier owner-requested split is dead code on screen today. Left alone: the ask
+here was level 1, and wiring it is a feature change nobody asked for. Worth a decision.
+
+### Also in this commit
+- **Two stale pointers fixed** (36315, 36336): `Run Group ▸ Match WBS to locations…` →
+  `Run Schedule Setup ▸ Floors & Zones ▸ Match WBS to locations…`, matching where it actually lives.
+- ⚠️ **305 lines authored by a concurrent session**, carried in because they were already in the
+  working tree: the slice-3 *"Adopt from the WBS"* block (`adoptDimMap`, `adoptKindOf`, `adoptRankOf`,
+  `adoptNorm`, `adoptHas`, `adoptScan()`, `openLocAdopt()`) plus 3 pointer rewordings (14651, 15680,
+  15683). **I did not write, review or verify them.** `openLocAdopt` is wired to **no button** — there
+  is no `b-locadopt` handler — so it is unreachable and **nothing in the UI changes**. One line of
+  wiring is the next step whenever that is wanted.
+- `MODULE_V` → `20260904g` (`dashboard.html`, `modules.html`, and the fallback in
+  `assets/js/modules-grid.js` — all three).
+
+## The cold open: the matcher reads the saved setup when none is loaded (2026-09-04) — jasantos2
+
+Owner: *"fix the cold open gap."* The gap flagged in the entry below: `ScheduleBuilder` only holds a
+`cfg` once a setup has been loaded this session, so the catalogue the value boxes offer was empty in
+the case it exists for — a **staged import** being matched before the setup is built, or a setup that
+was never opened this session.
+
+### The fix
+- `catalogueFrom(c)` — the derivation, moved out of the export and taking the cfg as an **argument**.
+  ⚠️ The tower helpers (`towerList` / `towerLabel` / `towerIdOf`) are bound to the LOADED cfg and could
+  not be used, so the tower name is resolved from `c.towers` by the same rule (`name || code || 'Tower'`,
+  `blankTowers()` when empty). `locCatalogue()` is now `catalogueFrom(cfg)` — unchanged behaviour.
+- `ScheduleBuilder.locCatalogueFor(projectId)` — reads `schedule_builder` for that project and derives
+  the catalogue from the saved row.
+- The wizard fires it **only when the sync catalogue is empty**, and does **not await** it: the modal
+  opens instantly on the old free-text behaviour and the places appear a moment later, with a toast
+  and a repaint. If the planner closed it meanwhile (`m.el.isConnected`), nothing happens.
+
+### ⚠️ What it deliberately does NOT do
+- **It never loads the setup into the builder.** Nothing is assigned to `cfg`, `curSetupId`, `curPid`
+  or `mode`, and nothing renders. Adopting a setup as a side effect of opening a matcher would pick
+  one of several packages' setups behind the planner's back, and would discard a staged import that is
+  being reviewed. It is a read, and it stays a read.
+- **The open setup wins, and when one is open no other is consulted.** If `curSetupId` is set, that row
+  is read and only that row — a planner on a half-built setup for Package B must not be offered Package
+  A's floors because A was saved more recently. Only when nothing is open does the builder's own
+  `pickDefaultSetup` rule (most recently edited) choose.
+- **Every failure returns the loaded cfg's catalogue** (usually `{}`): no table, no grants, no setup
+  saved, wrong project → the matcher behaves exactly as it did before any of this existed.
+
+### Verified
+20 checks, again by slicing `catalogueFrom` and the wizard helpers out of the shipped file and running
+their own source. Four are new and cover this fix: a **foreign** cfg derives its own tower and its own
+floors *tagged with its own tower*, reading it does **not** disturb the loaded catalogue, and a cfg with
+no towers falls back to `blankTowers()`. ⚠️ The harness deliberately does **not** define
+`towerList`/`towerLabel` — with them defined it could not tell whether the derivation was reading its
+argument or the loaded cfg. Parse check clean; function-set diff vs HEAD **0 lost, 3 added**.
+⚠️ **Not verified signed-in:** the `schedule_builder` read itself has never run from here (the anon key
+has no grants), so the async path is unproven on real data — only the derivation it feeds is.
+
+## The WBS matcher picks from the project's places — LBS proposal, slices 2 + 1 (2026-09-04) — jasantos2
+
+Owner: *"build slice 2 first, then slice 1."* The first code from
+[`docs/lbs-abs-setup-step-proposal.md`](../../docs/lbs-abs-setup-step-proposal.md). Built in the order
+asked, which is also the order that pays: slice 2 is the benefit, slice 1 is what it needs.
+
+### What was wrong
+`Match the WBS to your Location Breakdown Structure` ended in a **free-text box**. The project's actual
+places live in `cfg.zoning[trade].floors` — **inside the ScheduleBuilder closure, per trade** — so
+nothing outside it could say what the floors ARE, and the matcher had nothing to offer. On a migrated
+schedule (whose WBS *is* the breakdown, and which is the case the owner named) the planner re-typed the
+value for every branch, and each variant spelling — `2ND FLOOR`, `2nd Flr`, `2nd Floor` — became a
+separate floor in the Vertical Stacking, in the grouping dimensions and in the Location columns.
+
+### Slice 1 — `ScheduleBuilder.locCatalogue()`
+The list of places, **derived, not stored**: no table, no migration, no second source of truth. It
+reads the same `cfg` the push reads and returns `{ <location level id>: [{ value, dim, kind, tower }] }`.
+
+⚠️ **The values are the strings `locMapOf` would write, character for character** — tower =
+`towerLabel`, floor = `name || code`, zone/unit = `code || name`, each under the level `locLevelFor`
+resolves. A catalogue that offered a *prettier* spelling than the push writes would manufacture the
+very duplicate it exists to remove. Order is the setup's own order (`cfg.towers`, then floors
+bottom-up per trade — what `dimOrderIndex` sorts the pushed WBS by); first spelling seen wins the
+de-dupe across trades. A dim with **no level resolved contributes nothing** — never a next-free-column
+fallback, which is the fault the `locMapOf` note already warns about.
+
+### Slice 2 — the matcher reads it
+- The value box gets a `<datalist>` of that level's places, with the floor's **type** and **tower** as
+  the option label. Switching the *Location level* dropdown switches the list, because the places
+  belong to the level.
+- A badge beside each box: **✓ defined** (a place the setup knows), **≈ Ground Floor** (differs from a
+  defined place by case/punctuation only), **+ new** (not in the setup — allowed, just not aligned).
+- One button above the table: *Adopt the defined spelling for N values*. **That is the migration fix**
+  — the whole re-typed schedule reconciled to the setup in one explicit click.
+
+### ⚠️ What was deliberately NOT done — the owner's *"no logic whatsoever should be conflicted"*
+- **The free-text box stays** (proposal §5). A `<datalist>` suggests; it never constrains. A branch the
+  setup does not cover must stay matchable.
+- **Nothing is rewritten silently.** A near-miss is *flagged*, and snapping it is a click the planner
+  makes. A silent rewrite would change what Apply writes without anyone asking.
+- **No new storage, no new format.** The `location` jsonb keeps storing **strings**, `location_levels`
+  and its `match` table are untouched, `locGuessLevel` / `locGuessValue` / `locTowerToken` /
+  `locGroupingReason` and the assigned/excluded overrides are unchanged, and the clear-pass on Apply is
+  untouched.
+- **It degrades to the old behaviour exactly.** No setup loaded → `{}` → no datalist, no badges, no
+  snap bar. `ScheduleBuilder` only holds a `cfg` once the Schedule Setup tab has loaded one, so on a
+  cold open of the Project Schedule the wizard is the free-text box it has always been. ⚠️ **Not
+  verified:** whether planners routinely open the matcher before the Setup tab. If they do, the
+  catalogue is empty when it would help most, and the fix is to load the setup on demand — one call,
+  but it needs a live project to justify.
+- The badge is patched **in place**, never by re-rendering the tbody: the planner is typing in one of
+  those inputs and a rebuild would take the caret with it.
+
+### Verified
+16 checks, by **slicing `locCatalogue`, `catFor`, `catNorm`, `catState` and `catListId` out of the
+shipped file and executing their own source** (no reimplementation): tower/floor/zone/unit values and
+their order, de-duping across trades, `kind` + `tower` carried on a floor, a missing level contributing
+no key, `cfg == null → {}`, and the snap rule both ways — `GROUND  FLOOR` and `2ND FLOOR` resolve,
+`Ground Floor Zone A` does **not**. Plus a known-missing control, the inline-script parse check, and
+the function-set diff vs HEAD (**0 lost, 11 added**). ⚠️ **Not verified signed-in** — no live project
+from here (anon key has no grants), so the datalist, the badges and the snap button have not been seen
+on real data.
+
+## Proposal — define the breakdowns FIRST: a two-pane LBS / ABS step (2026-09-04) — jasantos2
+
+Owner: *"what if instead of defining the number of floors basements … there should be an earlier step
+in defining the locations and groupings of activities … left pane … L1 towers, L2 levels, L3 zones …
+right pane is the groupings of activities … and then … an illustration what the zoning of per trade
+would look like in a vertical stacking view. However no logic whatsoever should be conflicted. The
+purpose is to mitigate the difficulty of the matching of WBS especially when a schedule is migrated."*
+
+Written up as **[`docs/lbs-abs-setup-step-proposal.md`](../../docs/lbs-abs-setup-step-proposal.md)**.
+**Nothing implemented.**
+
+### Why it is a proposal and not a commit
+This is a new authoring surface over three data shapes that were built at different times, in a module
+that has taken **fifteen fixes today** — several of them for state that was already subtly out of step
+between two screens. Building it blind, unverified against a live project, is how the next week of
+screenshots gets written. The design is the deliverable; the code follows once the open questions in §7
+are answered.
+
+### The diagnosis it rests on
+The location breakdown lives in **three** places that never met:
+
+| what | where | shape |
+|---|---|---|
+| the dimensions (Tower/Level/Zone) | `location_levels` | project-wide, ordered |
+| the **places** (Tower 1, B2, GF) | `cfg.zoning[trade].floors` | **per trade**, in the setup JSON |
+| the values on activities | `location` jsonb | free strings |
+
+So there is **no list of the project’s places** — which is why the matcher offers a free-text box and
+the planner re-types the value for every branch. That *is* the reported difficulty. It is also why
+`Copy Structural floors/zones → all trades` has to exist, and why a migrated schedule (whose WBS
+*is* the breakdown) gets re-typed by hand.
+
+### ⚠️ The constraint is the hard part, and it is answered clause by clause
+*"No logic whatsoever should be conflicted"* — §3 is a table of every existing behaviour that could
+conflict and how it survives. The rule that makes it work:
+
+> The new step is an **authoring surface over data that already exists**, not a new source of truth.
+> Nothing downstream learns a new format.
+
+Concretely: per-trade zoning is **kept** (the LBS is the catalogue; which places a trade touches stays
+in *Scope per zone*, which already has `cfg.scopeOff`); `floor.kind` and `towerId` are the
+same fields edited elsewhere; `generate()`, `buildTree` and the push read `cfg.zoning` as
+they do now, only derived rather than typed; and the LBS is **derived on first open**, so a project
+that never opens the step behaves exactly as today.
+
+⚠️⚠️ **The single most important line in the document:** the `location` jsonb keeps storing **strings,
+not node ids**. Storing ids would orphan every existing and imported row. The LBS node *supplies* the
+string; it does not replace it.
+
+⚠️ `locTowerToken` / `locGroupingReason` and this week’s assigned/excluded overrides are **kept
+unchanged** as the fallback for unmatched branches. A guess that is never consulted costs nothing;
+deleting it would break every project that has not run the new step.
+
+### Sequenced so the first slice is useful alone
+LBS tree + derive-from-existing → matcher picks from the tree (most of the benefit) → *Adopt from the
+WBS* (the migration button) → ABS tree → stacking preview. None requires the next.
+
+---
+
+**Verified: 35 checks — on the DOCUMENT, not on behaviour, because there is no behaviour.** Every
+identifier it names (`cfg.zoning`, `cfg.scopeOff`, `locTowerToken`, `multiTower`,
+`dimKey`, `activity_udf_defs` …) is asserted to exist in the shipped source, and each specific
+claim is checked against it: the four `floor.kind` values, that zoning really is per-trade, that the
+copy-to-all-trades button really exists, that `location` really stores strings keyed by level id,
+that `location_levels.match` is really written by the matcher. A proposal that misdescribes the code
+is worse than none, because the next reader builds on it.
+
+⚠️ `MODULE_V` is **not** bumped — no application file changed.
+
+## The trade selector leads, BL and ACT are told apart, and the baseline has a name (2026-09-04) — jasantos2
+
+Owner: *"pls put the trade on the top, also can you emphasize which is the actual and which is the
+baseline. Also for the planned Baseline in vertical stacking, pls indicate if it is BL0 or maybe another
+current baseline or BLX something."*
+
+### 1 The trade selector is now the first row
+It sat **below the entire toolbar** — under the view controls, the legend sentence and the
+stacked-activity count. So the control that decides *what is on screen* was the last thing on the way
+to the buildings, and on a narrow window it wrapped below the fold entirely. Which trades you are
+looking at is the first question the panel answers, so it is the first row.
+
+### 2 ⚠️ The compare cell says BL and ACT, and they no longer look alike
+The two rows were tagged **P** and **A** in the same weight and the same ink, one above the other —
+two initials to be decoded from a legend the reader may not have on screen. **P** for *planned* is also
+the wrong word for the thing: that figure comes from the baseline columns, not from a plan in the
+abstract.
+
+| | before | after |
+|---|---|---|
+| baseline row | `P  Oct 9, 26   66%` | `BL  Oct 9, 26   66%` — muted (72%), lighter |
+| actual row | `A  Dec 13, 26  35%` | `ACT Dec 13, 26  35%` — full strength, bold |
+
+⚠️ **The difference carries the meaning**, so it survives being glanced at *and* survives a greyscale
+print — which "P" over "A" did not. The tag itself is always bold, so the word stays readable in the
+muted row.
+
+### 3 ⚠️⚠️ "Planned" now says WHOSE plan
+Every planned date and planned % on that screen reads `bl_start` / `bl_finish`, and those
+columns hold **whichever saved baseline was last "Set primary"** — `setPrimaryBaseline` overwrites
+them. The screen said *planned* and never said whose.
+
+New `BL_PRIMARY` + `blPrimaryLabel()`, surfaced in the basis label, the legend sentence and the
+PDF meta line:
+- the Planned basis reads **planned · Baseline 14-Nov-25**
+- the Compare basis reads **planned (Baseline 14-Nov-25) vs actual**
+- the legend spells out *BL = the baseline (**name**) date & %, then ACT = the actual date & % in bold*
+
+⚠️ **The NAME is the label, not a made-up "BL1".** Baselines here are user-named (*Baseline 14-Nov-25*,
+*Imported Rev C*), there is no numbering scheme, and inventing one would be a second vocabulary for the
+same object. **BL0** stays as the FALLBACK, because that is already what this module calls the `bl_*`
+columns when nothing is recorded — so a project with no primary set reads exactly as it did before.
+⚠️ The fetch is as tolerant as the other optional tables here: no migration, no grant, or no primary
+set → `null` → every label falls back to BL0 and nothing else changes. One row, two columns.
+
+---
+
+**Verified: 467 checks.** `blPrimaryLabel` is executed for a named baseline, an imported one, no
+primary at all, and a primary whose name is blank (→ BL0, not an empty label), with a control that it
+never invents "BL1"; `_vsBasisWord` is executed for all three bases. The cell change is diffed
+against the previous commit: no opacity before, role-dependent opacity and weight now, ACT strong and
+BL muted, and the old P/A tags gone. 0 functions lost, 1 added.
+
+⚠️ **NOT verified visually** — the strings and the weights are checked, how the muted row reads on screen
+is not. ⚠️ *"put the trade on the top"* was read as the **trade chip row** within the stacking panel; if
+what was meant was the trade inside each cell, say so and it is a small change.
+
+## "This IS a place" is now as durable as "this is not" (2026-09-04) — jasantos2
+
+Owner, after the previous fix: *"how come? ... do i need to press anything for the substructure level to
+be detected?"*
+
+**Yes — `Apply to activities`.** And a gap in yesterday's fix meant that on some projects even
+that would not have been enough.
+
+### The gap
+The veto now yields to an explicit assignment, and it read that assignment from
+`location_levels.match` — a **database column behind the 2026-08-05 migration**. The wizard is
+deliberately tolerant of that column being absent: *"the values are still applied, only the memory is
+lost."* Which means on a project whose migration has not run, the planner answered, the answer was
+**applied to every activity**, and the answer was **forgotten one line later** — so the stacking vetoed
+it again.
+
+⚠️ **Two halves of one decision were recorded in two places with different durability.** The
+*grouping-only* half has always gone to localStorage; the *assignment* half went only to the DB. That
+asymmetry is what let them get out of step.
+
+New `loadLocAssigned` / `saveLocAssigned` mirror the assigned values to localStorage beside the
+exclusions. The DB column stays primary and is still written — this is the belt.
+- ⚠️ Values not seen in the current session are **carried forward**, exactly as the exclusions are, so
+  filtering the wizard list before pressing Apply cannot silently forget an earlier decision.
+- ⚠️ Browser-local, like the exclusions: a colleague on another machine reads the DB copy where the
+  migration exists and falls back to the heuristic where it does not — strictly better than before,
+  when everyone fell back to the heuristic.
+- ⚠️ **Grouping-only still beats a locally-recorded assignment.** Checked.
+
+### The answer to the question
+**Schedule Setup → 5 · Floors & Zones → Match WBS to locations… → set the level → Apply to
+activities.** That button is the whole trigger: it writes `location` onto the activities already in
+the schedule, records both halves of the decision, and (since `20260903v`) repaints the grid and
+the stacking immediately. **No re-push is needed** — the push creates activities; the matcher only
+fills in where they are.
+
+⚠️ It only touches activities that **have a WBS code** and sit **under the Execution Phase branch**.
+⚠️ The screenshots were taken on `?v=20260903g`, which predates all of this.
+
+---
+
+**Verified: 436 checks.** The veto is executed with **no `match` column at all** — a locally-recorded
+assignment is honoured, an unassigned value is still vetoed, and a grouping-only mark still wins. The
+wizard's apply block is asserted to write both halves and to carry forward what it did not see. Plus
+the whole previous suite, including the checks that an *unassigned* "Substructure", a trade name and a
+phase name are all still vetoed — the default is unchanged. 0 functions lost, 3 added.
+
+⚠️ **NOT verified signed-in.**
+
+## A basement that always landed in Tower 1, and a tagged location the stacking refused (2026-09-04) — jasantos2
+
+Two reports, unrelated causes.
+
+### 1 "+ Basement" ignored the selected tower
+Owner: *"the adding of basement is not working, meaning when i click add basement, it always adds to
+tower 1 even if i selected another tower."*
+
+Exactly so, and the line directly above it in the source shows why:
+
+    + Add floor  ->  { ... kind: "typical", towerId: _twAct, zones: [] }
+    + Basement   ->  { ... kind: "basement",                 zones: [] }
+
+`towerIdOf()` falls back to the **first** tower for a floor that names none — right for a legacy
+config, wrong for a floor created seconds ago in front of a tower picker. So every basement silently
+became Tower 1's.
+
+⚠️ **The count was wrong for the same reason.** It counted basements across **all** towers, so adding
+B1 to Tower 3 while Tower 1 already had two produced `B3`. `+ Add floor` already scoped its
+count with `floorsOfTower`; the basement now matches it. Basements still insert at index 0
+(deepest first).
+
+### 2 ⚠️⚠️ AVR101: "Substructure" was tagged as a Level and the stacking still dropped it
+Owner: *"how come the substructure even though it is tagged as a location, is not being detected in the
+vertical stacking."*
+
+Because `locGroupingReason` reads *Substructure* as a **structural-works term** and vetoes it. That
+is the right **default** — a stage is not a storey, and banding by it puts a fake floor in every tower —
+and it is precisely why that rule was left untouched when the tower work went in.
+
+**But a default is not a verdict.** On this project the planner opened *Match WBS to locations*, saw the
+branch, and filed it under **Level (L2)** with the value *Substructure* — **133 activities**. A guess
+must not out-rank the person who was asked and answered.
+
+New `_vsAssignedSet()` reads the values out of `location_levels.match` — which the wizard writes
+as *{ branch name: value to store }*, so they are exactly the values a person looked at and called a
+place. The order in `locIsGroupingValue` is now:
+
+1. an explicit **grouping-only** mark wins (that is also a person answering);
+2. an explicit **assignment** wins;
+3. only an **unanswered** value falls to the heuristic.
+
+- ⚠️ **The default is unchanged.** An *unassigned* "Substructure" is still vetoed, as are trade names
+  and phase names — there are regression checks for all three.
+- ⚠️ The two explicit sets are **disjoint by construction**: the wizard records a branch as excluded
+  only when it has no level, so a value cannot be both. Grouping-only is still checked first anyway.
+- ⚠️ The new set is cached beside the grouping set and cleared by the same `psSetupChanged`, so
+  re-running the matcher takes effect immediately.
+
+---
+
+**Verified: 428 checks.** Both handlers are diffed against the previous commit (no `towerId` before,
+`_twAct` now; unscoped count before, `floorsOfTower` now), and the shipped `towerIdOf` is
+executed to show a floor naming no tower really does resolve to the first — the reported symptom,
+reproduced. The veto is executed against AVR101's actual shape (a Level whose match table holds
+*Substructure*): vetoed on the previous commit, honoured now, while an unassigned copy of the same word
+is still vetoed and a grouping-only mark still beats an assignment. 0 functions lost, 1 added.
+
+⚠️ **NOT verified signed-in.** ⚠️ The stacking reads what is STORED on each activity, so branches
+matched before this fix need *Apply to activities* re-run — the values were written, but any that the
+veto had cleared are gone until the matcher writes them again.
+
+## A Schedule Setup edit reached the database and six stale memos (2026-09-03) — jasantos2
+
+Owner: *"when i edit the WBS tree and matched the WBS to the locations etc in the schedule setup, how
+come i think the project schedule is not updated."*
+
+Because it was not. The write landed; the reader did not hear about it.
+
+### ⚠️⚠️ Both tabs are ONE page, and the Project Schedule reads through six memos
+An edit on the Setup side updates the database and the shared in-memory state — but the schedule
+resolves phase, trade, contract scope, the stacking axis, the grouping-only veto and the dim→level map
+through caches. **Each handler cleared at most one of them:**
+
+| Setup action | what it cleared |
+|---|---|
+| Match WBS to locations | `_vsAxisCache` only |
+| Fill from the WBS tree | **nothing** |
+| Edit levels (rename / reorder / add / delete / merge) | **nothing** |
+| Any WBS tree edit (`_wbsCommit`) | **nothing** |
+
+None of them touched the phase / trade / scope memos, the group-by menu, the column header, or the
+Vertical Stacking. So a planner could re-file a branch or re-match every location and watch the
+schedule keep showing the answer it computed **before** the edit — with **no error**, because nothing
+had failed.
+
+⚠️ The sharpest case: an activity resolves its **trade** through `_nodeTrade`, which memoises the
+**branch name** per node id. Renaming a WBS branch left every activity under it reporting the **old
+trade** until a reload.
+
+### Two cache keys that could not see a rename
+- `_dimLevelMap` is resolved **by name** and was keyed on **ids alone**. Renaming *Orientation* →
+  *Unit* — exactly the edit a planner makes to fix a bad match — left every id untouched, so the key
+  matched and the pre-rename mapping was served for the rest of the session.
+- `_vsGroupingSet` was keyed on `pid + LOC_LEVELS.length`. Marking a branch *grouping only*
+  changes what it vetoes without changing that count, so the stacking went on honouring a value the
+  planner had just excluded.
+
+Both keys now carry the level **names** (and the exclusion count).
+
+### One invalidator, called from every Setup-side write
+New `psSetupChanged()` clears all six memos and repaints the group-by menu, the hidden-column
+seed, the header, the grid, the Gantt **and the Vertical Stacking** — which `renderAll` has never
+drawn. Wired into all ten write sites.
+- ⚠️ **One function, not a fifth copy of a list.** A cache list maintained at four call sites is the
+  exact shape of this bug; another copy would be the next one.
+- ⚠️ Every clear and every repaint is **guarded** — this also runs during `load()`, when the grid may
+  not be built yet.
+- ⚠️ `ScheduleBuilder.invalidateLocCache()` is published because the dim→level map lives inside that
+  closure: the closure exposes the **clear**, not the cache.
+
+---
+
+**Verified: 402 checks.** The invalidator is proven to clear each of the six memos and repaint each of
+the six surfaces; all five Setup entry points are shown to call it; the previous commit is shown to
+have cleared **nothing** in the backfill and the WBS commit. The key change is *executed*: same ids with
+different names now yield different keys, while the old id-only key is demonstrated to be unable to
+tell them apart. 0 functions lost, 1 added; the inline script parses.
+
+⚠️ **NOT verified signed-in.** The wiring and the keys are proven; that the screen visibly refreshes
+after a real match on a real project is not.
+
+## The conditional-format fill now TINTS a dark row instead of repainting it (2026-09-03) — jasantos2
+
+Owner, on the same grid after the previous fix: *"still not fixed. how come it is still like this? why
+is there light colors?"*
+
+### ⚠️ The previous fix answered a different question, and it is worth saying so plainly
+It made the text on those rows **readable** — dark ink derived from the fill's luminance — which was
+the right answer to *"I cannot read this"*. It was not an answer to *"why is this row light at all"*.
+The rows went from unreadable cream to readable cream. The screenshot shows exactly that.
+
+### The actual cause
+A conditional-format fill is a **light-mode colour** — the default is `#FDECEA`, a pale cream — and it
+was painted **literally**, on any theme. There were **zero** dark-mode rules for `.ps-fmt`: the row
+took the fill as its background whatever surface it sat on, so a dark grid grew light blocks across it.
+
+### The fix
+In dark mode the fill now **blends into the row's own dark surface at 22%**
+(`color-mix(in srgb, var(--fmt-bg) 22%, var(--pd-card))`), and the ink returns to the theme's.
+The **hue** the planner chose survives — that is what the rule is for — while the row stays part of a
+dark grid.
+
+- ⚠️ **Light mode is untouched, byte for byte.** There the fill is a light-mode colour on a light
+  surface, which is what it was chosen to be; muting it would weaken a signal that already works.
+- ⚠️ **The plain background is declared first as a fallback.** A browser without `color-mix` drops the
+  second declaration and keeps a correct dark row, losing only the tint — never a light block.
+- ⚠️ **An explicit `--fmt-fg` is deliberately NOT honoured in dark mode.** It was picked to sit on the
+  light fill; on the dark tint it would be the unreadable half of the same bug. The meaning lives in
+  the hue, which survives in the background.
+- ⚠️ The frozen `#`/`ID`/`Name` columns get the same treatment, or they would stay light while
+  the rest of the row went dark.
+
+---
+
+**Verified: 365 checks.** The cascade is checked as a cascade, not by eye: the declaration blocks are
+parsed out of the stylesheet (comments and strings stripped) and the dark rule is shown to
+**out-specify** the base rule 401 vs 200 *and* to come later in source order; the two background
+declarations are shown to be fallback-then-`color-mix` **in that order**; the light-mode rule is
+asserted **byte-identical** to the previous commit; and the selection rule is shown to still beat the
+tint. The specificity helper carries its own known-pair control. 0 functions lost, 0 added.
+
+⚠️ **NOT verified visually** — no signed-in session. The cascade is proven; how the 22% tint looks is
+not. If it reads too strong or too faint, that number is the one to move.
+
+## A conditionally-formatted row you could not read, and a header chopped into syllables (2026-09-03) — jasantos2
+
+Owner, with a screenshot of the Handover Tracker grid: *"UI issues here."* Two, both real.
+
+### 1 ⚠️⚠️ Four activity rows were pale cream bands with near-invisible text
+`_fmtStyleStr` emitted `--fmt-fg` **only when the rule named a text colour**, and the CSS falls
+back to `color: inherit` — the theme's own ink. The default fill for a new rule is `#FDECEA`, a
+pale cream. So in **dark mode** the row got a light background and kept near-white text.
+
+**Every rule added without opening the Text swatch produced an unreadable row — and that is the
+default path.**
+
+The ink is now derived from the fill's luminance, the same rule the Vertical Stacking already uses for
+text on a coloured cell (`_vsInkFill`): light fill → `#14181d`, dark fill → `#ffffff`.
+- ⚠️ **An explicit `fg` still wins, always.** This fills in a colour nobody chose; it never overrides
+  one the planner did choose, even where the contrast is poor — that is their call.
+- ⚠️ A fill the luminance helper cannot parse (a named colour, `rgb()`, a var) emits **no** ink rather
+  than a guessed one, exactly as before.
+
+### 2 The Activity ID header rendered as "AC / TIV / ITY / ID"
+`word-break:break-word` on the header cells let a **single word be chopped anywhere**, so a narrow
+column stacked one word as four fragments. That is unreadable, and it is not what wrapping is for:
+*"BL START"* should break after *"BL"*, *"ACTIVITY ID"* after *"ACTIVITY"* — but neither word should
+ever be split.
+
+Headers now wrap **between words only** (`word-break:normal`, `overflow-wrap:normal`,
+`hyphens:none`).
+- ⚠️ `overflow-wrap:anywhere` was deliberately not used either — same fault on a single long word.
+- ⚠️ A word genuinely wider than its column now **overflows and is clipped**, which is legible for the
+  first few characters; four one-syllable fragments are legible for none of them. The column is
+  resizable and the full label is in the title attribute.
+- ⚠️ Headers still **wrap** — this narrows *how* they break, it does not turn wrapping off.
+
+---
+
+**Verified: 345 checks.** The shipped `_fmtStyleStr` executed against the previous commit's version
+side by side: the default cream rule emitted **no** text colour before and a dark ink now, across six
+fills from white to deep blue, with an explicit colour preserved (including a deliberately poor one)
+and four unparseable fills falling back. The header CSS is compared old vs new with **comments and
+strings stripped** — an earlier run of this very harness failed its own controls by matching the
+comment that *describes* the fix. 0 functions lost, 1 added; the inline script parses.
+
+⚠️ **NOT verified visually** — no signed-in session, so the contrast is computed rather than seen.
+⚠️ Two smaller things in the same screenshot are **not** addressed: the `+` add-column button sits over
+the last header, and the sort-column tint paints over a formatted row's fill in one cell. Both are
+cosmetic and neither was named; say the word and they are quick.
+
 ## The stacking PDF stretched every building to the page width (2026-09-03) — jasantos2
 
 Owner, with the print preview: *"for the conversion to PDF, make it more compact. look at this it is

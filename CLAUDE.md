@@ -84,6 +84,233 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-04 — Vertical Stacking: combining trades draws the building at level 1
+
+Owner: *"whenever the option of mixing the different trades of a certain tower is chosen, pls
+illustrate the vertical stacking in terms of level 1. Bc the zoning of trades may be different and
+therefore may cause incoherent data when consolidating the trades."* Correct, and it is arithmetic:
+zoning is stored per trade, and a stacking cell is keyed by the zone **value**, so two trades that
+both call a zone "Z1" collapse into one cell reporting a single date, percentage and slip over two
+different breakdowns. **Per tower** and **Consolidated** now draw at level 1 — the one axis every
+trade shares — and say why on the disabled Detail buttons, the toolbar caption and the PDF. Per trade
+keeps its full zone/unit depth, and narrowing the chips to a single trade brings the zones back.
+Verified by slicing the shipped `_vsDetailNow` out of the file and executing it (22 assertions,
+controls included); ⚠️ not verified signed-in. Module only. `MODULE_V` → `20260904g`.
+⚠️ Also carried in this commit, already in the working tree and **authored by a concurrent session,
+unreviewed by me**: 305 lines of the slice-3 "Adopt from the WBS" work, wired to no button and so
+currently unreachable.
+
+
+### 2026-09-04 — The WBS matcher's cold open: it now reads the project's saved setup
+
+Owner: *"fix the cold open gap."* The gap flagged in the entry below — the catalogue of places was
+empty until the Schedule Setup tab had loaded a setup, which is exactly the case it exists for (import
+a schedule, then match its WBS). `ScheduleBuilder.locCatalogueFor(projectId)` now reads the saved
+`schedule_builder` row and derives the places from it. ⚠️ It never loads that setup into the builder —
+nothing is assigned to `cfg`, nothing renders, no staged import is disturbed — and the **open setup
+wins**, so a half-built setup for one package is never offered another package's floors. Not awaited:
+the modal opens instantly and the places fill in. Module only. `MODULE_V` → `20260904e`.
+
+### 2026-09-04 — The WBS matcher now offers the places the Schedule Setup already defines
+
+Owner: *"build slice 2 first, then slice 1."* Slices 2 and 1 of yesterday's proposal, shipped —
+`ScheduleBuilder.locCatalogue()` derives the project's places from the setup it already holds, and the
+Location wizard's **value box** offers them instead of being blank free text. A migrated schedule was
+previously re-typed branch by branch, and every typo (`2ND FLOOR` vs `2nd Floor`) became a second
+floor in the stacking. ⚠️ Nothing is stored, nothing is rewritten: no new table, no new format, the
+`location` jsonb keeps storing **strings**, the free-text box stays, and a project whose Schedule
+Setup has never been opened this session behaves exactly as before. Module only — see
+`modules/project-schedule/CLAUDE.md`. `MODULE_V` → `20260904d`.
+
+### 2026-09-04 — Proposal: define the breakdowns first (a two-pane LBS / ABS step)
+
+Owner’s idea for an earlier Schedule Setup step: locations as a tree on the left (L1 towers, L2
+levels, L3 zones, each with its type), activity groupings as a tree on the right, then a stacking
+preview — *"to mitigate the difficulty of the matching of WBS especially when a schedule is
+migrated"*, and *"no logic whatsoever should be conflicted."*
+
+Written up as **`docs/lbs-abs-setup-step-proposal.md`**, companion to the existing
+`wbs-activity-tagging-proposal.md`. **Nothing implemented** — this is a new authoring surface over
+three data shapes that never met, in a module that took fifteen fixes today; the design is the
+deliverable and the code follows once §7 is answered. ⚠️ The constraint is answered clause by clause in
+§3: the step is an authoring surface over data that already exists, nothing downstream learns a new
+format, per-trade zoning is kept, and the `location` jsonb keeps storing **strings, not node ids**.
+35 checks — on the document: every identifier and claim it makes is asserted against the shipped
+source. ⚠️ `MODULE_V` not bumped; no application file changed.
+
+---
+### 2026-09-04 (c) — The trade selector leads, BL and ACT are told apart, and the baseline has a name
+
+*"pls put the trade on the top, also can you emphasize which is the actual and which is the baseline ...
+pls indicate if it is BL0 or maybe another current baseline."*
+
+**(1)** The trade chips sat below the whole toolbar — under the view controls, the legend and the
+activity count — so the control deciding what is on screen was the last thing before the buildings.
+It is now the first row. **(2)** The compare cell tagged its rows **P** and **A** in the same weight and
+ink; they are now **BL** (muted) and **ACT** (bold), so the difference carries the meaning and survives
+a greyscale print. "P" for planned was also the wrong word — the figure comes from the baseline
+columns. **(3)** Those columns hold whichever baseline was last *Set primary*, and the screen never said
+which. New `blPrimaryLabel()` names it in the basis label, the legend and the PDF meta.
+
+⚠️ The NAME is the label — baselines here are user-named and there is no numbering scheme, so no
+"BL1" is invented; **BL0** stays the fallback, which is what this module already calls the `bl_*`
+columns when nothing is recorded. ⚠️ The fetch is tolerant: no migration or no primary set → BL0 and
+nothing else changes. 467 checks, 0 functions lost. `MODULE_V` → `20260904c`.
+
+---
+### 2026-09-04 (b) — "This IS a place" is now as durable as "this is not"
+
+*"do i need to press anything for the substructure level to be detected?"* Yes —
+**Apply to activities** in *Match WBS to locations*. And a gap in yesterday's fix meant that on some
+projects even that would not have been enough: the veto read the planner's assignment from
+`location_levels.match`, a DB column behind a migration the wizard is deliberately tolerant of
+missing (*"the values are still applied, only the memory is lost"*). So the answer was applied to every
+activity and forgotten a line later, and the stacking vetoed it again.
+
+Two halves of one decision were stored with different durability — grouping-only in localStorage, the
+assignment only in the DB. `saveLocAssigned` now mirrors assignments beside the exclusions, with
+the DB column still primary. ⚠️ Values not seen this session are carried forward, as the exclusions are.
+⚠️ Grouping-only still beats an assignment, and an **unassigned** "Substructure" is still vetoed — the
+default is unchanged. 436 checks, 0 functions lost. `MODULE_V` → `20260904b`.
+
+---
+### 2026-09-04 (a) — A basement that always landed in Tower 1, and a tagged location the stacking refused
+
+**(1)** *"when i click add basement, it always adds to tower 1 even if i selected another tower."* The
+line above it in the source says why: `+ Add floor` writes `towerId: _twAct` and `+ Basement`
+wrote no `towerId` at all, so `towerIdOf()` fell back to the first tower every time. The count
+was unscoped for the same reason (B1 into Tower 3 came out "B3"). Both now match the floor handler.
+
+**(2)** *"how come the substructure even though it is tagged as a location, is not being detected in the
+vertical stacking."* Because the heuristic reads *Substructure* as a structural-works term and vetoes
+it — the right **default**, but not a verdict: on AVR101 the planner filed that branch under Level (L2)
+with 133 activities. New `_vsAssignedSet()` reads the values out of `location_levels.match`, and
+an explicit assignment now beats the heuristic. ⚠️ Grouping-only still wins over both, and an
+**unassigned** "Substructure" is still vetoed — the default is unchanged. ⚠️ Branches matched before
+this need *Apply to activities* re-run. 428 checks, 0 functions lost. `MODULE_V` → `20260904a`.
+
+---
+### 2026-09-04 — The module icon comes out of the top bar entirely; a dropdown icon stops being baked into its button
+
+Owner sent two annotated screenshots of Issues & Concerns' topbar: *"1. remove this icon in issues
+slide as in first photo, crossed out. no module logo is allowed in this top bar across all modules.
+2. in second photo, see the box in red. keep this logo across all modules. but do not include this
+inside the dropdown selector. keep it to the left of it as a separate icon."*
+
+Both photos show the SAME icon in two different places — the outcome of two separate,
+already-shipped changes from the day before, now reversed/redone:
+
+**1. `initModuleTopbar()` (ui.js) no longer pulls a module's icon into the top identity row.**
+A 2026-09-02 pass had it extract `[class$="-title-ico"]` out of whatever landed in `.pd-modulebar`
+(a module's `<h1>`, or a title-switch button like Project Schedule's) and pair it with the project
+dropdown in `.pd-tb-main` via a new `.pd-tb-projgroup` wrapper — exactly the icon photo 1 crosses
+out. That extraction (and the `.pd-tb-mark`/`.pd-tb-projgroup` CSS built for it) is removed outright.
+⚠️ The top row goes back to being the four fixed chrome controls only (sidebar toggle · project
+dropdown · theme toggle · avatar) — a module's own icon simply stays wherever it already sits inside
+`.pd-modulebar`, which is where the fix below picks it up.
+
+**2. `UI.tabsToDropdown()`'s `opts.icon` is now a SEPARATE sibling element, never baked into the
+trigger's `innerHTML`.** A 2026-09-03 pass (the very next day, by the same concurrent thread) had
+fused it into `trig.innerHTML` specifically to dodge a mobile problem: a genuinely separate `<h1>`
+sitting beside the trigger would claim its own full-width row on a phone once emptied of its now-
+redundant text (`.pd-h1-hasdrop`), the "orphaned icon row" issues-lessons had already been bitten by
+once. ⚠️ Solved here differently, so both asks can be satisfied at once: the icon is still a real,
+separate `<span class="pd-tabsdrop-ico">` — inserted via `wrap.insertBefore(ico, trig)`, never
+written into the button's markup — but it lives INSIDE `.pd-tabsdrop` (a sibling of the trigger, not
+of `.pd-modulebar`'s own top-level children). `.pd-tabsdrop` is now a flex row itself (`display:flex;
+align-items:center; gap:6px`), and since IT is what takes the whole row on a phone
+(`.pd-tabsdrop{flex:1 1 100%}`), the icon rides along with the trigger on that one row rather than
+ever getting a row of its own. `.pd-tabsdrop-btn`'s mobile rule changed from `width:100%` to
+`flex:1 1 auto; width:auto` so it fills what's left after the icon instead of overflowing it.
+
+⚠️ **A real bug found while verifying, not by reading the code:** `Icons.hydrate(el)` looks for
+`[data-ico]` among `el`'s DESCENDANTS — it never checks `el` itself — so the first cut's
+`Icons.hydrate(ico)` was a silent no-op and shipped an empty, unhydrated icon span. Fixed by
+hydrating `wrap` (the icon's parent) instead.
+
+⚠️ **Only 2 of the 6 `tabsToDropdown()` callers pass `opts.icon`** (issues-lessons: its own `<h1>` is
+permanently `display:none`d by `switchScreen()`, on every screen, by design; progress-photos: it has
+no standalone `<h1>` at all, dropped on an earlier owner ask) — those two get the new separate icon.
+The other four (risk-register, stakeholder-map, contracts-claims, minutes-of-meeting) call it with no
+icon option at all: their own `<h1>`'s icon, once no longer extracted to the top row, naturally rides
+beside the dropdown trigger as a sibling top-level child of `.pd-modulebar` — same visual outcome,
+reached without touching those four modules at all. Project Schedule's own `.ps-title-btn` (a
+title-switch button, not a `tabsToDropdown()` conversion) is untouched — its icon has always been
+baked into that button by design, a different, older pattern the owner's screenshots don't target.
+
+**Verified in a real browser** (Playwright against a stub-auth harness, so `.pd-tb-main` and
+`.pd-modulebar` render before any login round-trip resolves) across issues-lessons, progress-photos,
+minutes-of-meeting, risk-register and project-schedule: **zero icons in `.pd-tb-main` on every one of
+the five** (only sidebar-toggle / project-select / theme-toggle present); issues-lessons and
+progress-photos each render exactly one fully-hydrated `.pd-tabsdrop-ico` (16px svg) as a genuine DOM
+sibling immediately before `.pd-tabsdrop-btn`, never inside its `innerHTML`; minutes-of-meeting and
+risk-register render zero `.pd-tabsdrop-ico` (their own `<h1>` icon is the one visible icon,
+unchanged); Project Schedule's `#ps-title-btn` keeps its `ganttChart` icon baked in, inside
+`.pd-modulebar`, with zero icons in `.pd-tb-main`. `node --check` on `ui.js`; `dashboard.css` brace
+count unchanged in shape (458/458 open/close); grepped for stray references to the removed
+`.pd-tb-mark`/`.pd-tb-projgroup` classes and the old `icoHtml` variable — none left.
+⚠️ **Not verified signed in** — the harness stubs `AppAuth.requireLogin` to never resolve, so it
+covers the pre-login DOM state only; issues-lessons' `switchScreen()` (which force-hides its `<h1>`
+on real init, leaving the new separate icon as the sole visible one) was confirmed by reading the
+shipped function, not by driving a real login.
+
+Shared assets changed → **`ui.js?v=` bumped `20260902c` → `20260904a` across all 21 referencing HTML
+files; `dashboard.css?v=` bumped `20260903b` → `20260904a` across all 29 referencing HTML files** —
+both were single, consistent versions before this change, confirmed and re-confirmed after.
+
+### 2026-09-03 (v) — A Schedule Setup edit reached the database and six stale memos
+
+*"when i edit the WBS tree and matched the WBS to the locations etc in the schedule setup, how come i
+think the project schedule is not updated."* Because it was not — the write landed, the reader never
+heard.
+
+Both tabs are one page, and the schedule resolves phase, trade, contract scope, the stacking axis, the
+grouping veto and the dim→level map through **caches**. Match-WBS cleared one of them; **Fill from the
+WBS tree, the LBS editor and every WBS tree edit cleared none**. So a re-filed branch or a re-matched
+location showed the pre-edit answer with no error. Sharpest case: `_nodeTrade` memoises the branch
+NAME, so renaming a WBS branch left every activity under it on the old trade.
+
+Two keys also could not see a rename: the dim→level map is resolved **by name** but was keyed on ids
+alone, and the grouping veto was keyed on a level **count**. Both now carry names. New
+`psSetupChanged()` clears all six memos and repaints everything including the Vertical Stacking,
+which `renderAll` has never drawn — wired into all ten write sites, one function rather than a
+fifth copy of a list. 402 checks, 0 functions lost. `MODULE_V` → `20260903v`.
+
+---
+### 2026-09-03 (u) — A conditional-format fill now tints a dark row instead of repainting it
+
+*"still not fixed ... why is there light colors?"*
+
+⚠️ The previous fix answered a different question: it made the text on those rows **readable** (dark ink
+on the pale fill), which was right for *"I cannot read this"* and irrelevant to *"why is this light"*.
+
+A format fill is a **light-mode colour** (the default `#FDECEA` is a pale cream) and it was painted
+literally on any theme — there were **zero** dark-mode rules for `.ps-fmt`. In dark mode it now blends
+into the row's own dark surface at 22%, keeping the hue the planner chose while the row stays part of a
+dark grid; the ink returns to the theme's. ⚠️ Light mode is untouched byte for byte. ⚠️ The plain
+background is declared first, so a browser without `color-mix` keeps a correct dark row rather than a
+light block. ⚠️ The frozen columns are tinted too, or they would stay light while the row went dark.
+365 checks — the cascade is parsed and proven (specificity 401 vs 200, fallback ordering, light mode
+byte-identical, selection still wins), not eyeballed. `MODULE_V` → `20260903u`.
+
+---
+### 2026-09-03 (t) — A formatted row you could not read, and a header chopped into syllables
+
+*"UI issues here."* Two, from one screenshot.
+
+**(1)** `_fmtStyleStr` emitted `--fmt-fg` only when a conditional-format rule NAMED a text
+colour, and the CSS falls back to `color:inherit`. The default fill is `#FDECEA`, a pale cream —
+so in dark mode the row got a light background and kept near-white text, and **every rule added without
+opening the Text swatch was unreadable**. The ink is now derived from the fill's luminance, the same
+rule the stacking uses for text on a coloured cell. ⚠️ An explicit colour still wins, always.
+
+**(2)** `word-break:break-word` on header cells chopped single words anywhere, rendering the
+Activity ID header as *"AC / TIV / ITY / ID"*. Headers now break **between words only**; a word wider
+than its column overflows and clips, which is legible for its first characters where four fragments are
+legible for none. Wrapping itself is unchanged. 345 checks, 0 functions lost.
+`MODULE_V` → `20260903t`.
+
+---
 ### 2026-09-03 (s) — The stacking PDF stretched every building to the page width
 
 *"for the conversion to PDF, make it more compact. look at this it is too big."* — a four-cell card

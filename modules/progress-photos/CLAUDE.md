@@ -46,6 +46,199 @@ integrity) are unverified end-to-end; this is the real gap for whoever tests nex
 
 `bim.js`/`module.css?v=` → `20260907a`.
 
+## "I still can't delete the 3D/360 photos" — the real root cause, found by auditing every delete path in the module (2026-09-04)
+
+Owner, after both the pencil-icon fix and the batch-trash-icon fix below had shipped and merged:
+*"i still cant delete the 3d/360 photos. please exhaust all means to resolve."* Both prior fixes were
+real and correct — but neither one could have closed the report, because **the actual defect was one
+level deeper than either of them touched: a delete that silently reports success while leaving the row
+in the database.**
+
+⚠️ **The changelog entry below ("Bug fix: no delete path...") contains a wrong claim, corrected here.**
+It states *"Panoramas needed no database change — they were always covered by the generic module-table
+RLS (`is_writer()`), so any writer could already delete one at the database level."* That is false.
+Read directly out of `supabase-schema.sql`'s generic per-module-table RLS loop, the actual DELETE
+policy every module table (including `panoramas` and `progress_photos`) gets is:
+
+```sql
+create policy <table>_del on <table> for delete
+  using (is_writer() and can_access_project(project_id) and (created_by = auth.uid() or is_admin()));
+```
+
+That is **owner-or-admin**, not "any writer." A planner who is approved and has access to the project
+(`is_writer()` + `can_access_project()` both pass) but did **not** upload the specific panorama/photo
+they're trying to delete gets refused by Postgres — and Supabase/PostgREST report a refused DELETE the
+same way as a successful one that happened to match zero rows: `{ data: null, error: null }`. A
+`.delete()` call with no `.select()` chained **cannot tell these two outcomes apart**.
+
+### The bug, present in every delete path in this module except one
+
+`recon.js`'s `retractRequest`/`deleteRequest` already guard against exactly this (their own comments
+say so explicitly — this is a known, previously-solved failure mode in this codebase). Auditing every
+OTHER delete call site in the module found the same missing guard in four places:
+
+- **`pano.js`'s `deletePano`** (the function `PANO.deleteById` resolves to — the one the pencil-icon
+  editor's Delete button, and the batch-delete's per-item pano branch, both actually call) had no
+  `.select()` at all. This is almost certainly **the actual bug the owner kept hitting**: delete a
+  panorama someone else uploaded → the row survives in the database → the tile is spliced out of the
+  in-memory array so it visibly disappears from the grid for that click → the very next `load()` (a
+  page refresh, a teammate's `applyRemoteChange`, a re-sync) brings it right back. That reproduces
+  "I deleted it and it's still there" precisely.
+- **`pano.js`'s `removePano`** (the older, currently-unreachable `#pano-view` screen's own delete) had
+  the identical gap — fixed too, as defence-in-depth in case that screen is ever reconnected.
+- **`module.js`'s `openDeleteConfirm`** — the real-photo delete used by the lightbox's single-photo
+  Delete button, and (before the batch-trash-icon fix below existed) also the fallback for a
+  photo-only batch selection. Same missing `.select()`, same silent-refusal-reads-as-success shape,
+  on `progress_photos` — covered by the identical owner-or-admin policy.
+- **`module.js`'s `openBatchDeleteConfirm`** — its own photo-delete block had the same gap
+  independently (it does not call `openDeleteConfirm`, by design, so it needed its own fix).
+
+### The fix, applied identically everywhere
+
+Every one of the four now uses `.select('id')` (or bare `.select()` for a single row) and reads back
+**which ids were actually returned** before treating anything as deleted:
+
+- `deletePano`/`removePano` return/toast a real, actionable message — *"You do not have permission to
+  delete this — only the person who uploaded it or an admin can."* — instead of a false success, and
+  only splice the in-memory row / touch Storage once a real deleted row comes back.
+- `openDeleteConfirm` reports an **honest partial result** on a multi-select delete: *"N of M deleted —
+  the rest need an admin or their uploader to remove them"* rather than either a blanket false success
+  or aborting the whole batch over one refused id. Storage cleanup (`photo_url`/`thumb_url`) and the
+  `selected{}` clear are both scoped to **only the confirmed-deleted ids** — a refused photo keeps its
+  file and stays checked, so the UI doesn't lie about what actually happened to it.
+- `openBatchDeleteConfirm`'s photo branch gets the identical treatment, and a refused photo joins the
+  same `failed` counter the pano/recon per-item failures already use, so a mixed batch reports one
+  honest "N of M item(s) deleted — K could not be removed" regardless of which kind(s) were refused.
+
+⚠️ **A second, independent gap closed in the same pass: none of the three async delete-confirm click
+handlers (`openDeleteConfirm`, `openBatchDeleteConfirm`, and the pencil-icon editor's
+`openMediaKindDeleteConfirm`) were wrapped in try/catch anywhere in this file.** An unexpected throw
+(a dropped connection mid-request, for instance) left the Delete button **permanently disabled with no
+toast at all** — indistinguishable, from the outside, from "clicking Delete does nothing." All three
+now capture `var btn = this;` up front and wrap their whole body in try/catch, re-enabling the button
+and toasting a real message on any unhandled failure.
+
+### Verified
+
+**15 new checks** (942 → 957, matching the pre-existing 13-failure baseline byte-for-byte — confirmed
+by diffing the exact failure-name set against `HEAD` before this round, not just the count): structural
+assertions for every `.select('id')`/`.select()` guard, the honest partial-failure reporting, the
+storage-cleanup/`selected{}`-clear scoping to confirmed-deleted ids only, and all three try/catch wraps
+— plus **genuine execution** of `PANO.deleteById`'s RLS-refusal path (a row never pushed into the fake
+store, the same technique `RECON._deleteRequest`'s own "raced — already approved" test already uses to
+prove a real Postgres RLS refusal reads correctly), which had never actually been exercised despite
+`PANO.deleteById`'s success/missing-row cases already having tests. Two pre-existing assertions that
+regex-matched the OLD `this.disabled` shape of `openMediaKindDeleteConfirm` (before its own try/catch
+wrap renamed the captured variable to `btn`) were updated in place to match the current source —
+healthy churn from an intentional change, not a weakened check. `node --check` clean on all three
+touched files (`module.js`, `pano.js`, `test.js`); 0 NUL bytes; **0 functions lost, 0 added** against
+`HEAD` (every change is a modification to an existing function's body — a `.select()` argument and a
+try/catch wrapper, never a new declaration). `recon.js` and `module.css` are untouched by this round.
+
+⚠️ **Not verified signed-in** — same standing caveat as every entry in this file. The genuine-execution
+tests prove the client-side `.select()`-guard logic is correct against a fake store with no real RLS;
+the actual live scenario (a non-owner, non-admin planner deleting someone else's panorama/photo on the
+deployed site, and confirming the row is now honestly refused with a real toast instead of a false
+"deleted") has not been driven against a live Supabase session. **This is the fix most worth a live
+click-through**, since the whole investigation traces back to a gap no structural review of the earlier
+two fixes below could have caught — only tracing every `.delete()` call in the module against the
+table's real RLS policy found it.
+
+`module.js` → `?v=20260904j`, `pano.js` → `?v=20260904b` (module-local only — no shared asset touched,
+so no app-wide `?v=`/`MODULE_V` bump).
+
+## Follow-up: the batch trash icon still refused a 360°/3D selection — fixed to delete mixed batches (2026-09-04)
+
+Owner, off a live screenshot of the deployed Gallery (project GPR101): checked a 360° tile via its
+select checkbox, clicked the toolbar trash icon, got the toast *"Select at least one photo — 360°/3D
+captures aren't deleted from here"*. *"please fix this. cant delete the 360/3D photo i previously
+uploaded."*
+
+⚠️ **The earlier same-day fix (the entry directly below) only closed HALF the gap.** It gave a
+panorama/reconstruction tile its own delete via the pencil-icon edit modal
+(`openMediaKindEditor` → `openMediaKindDeleteConfirm`) — a genuinely real fix, but not the path the
+screenshot shows a planner actually reaching for. The batch-selection flow (check a tile's box,
+click the toolbar trash icon) is the more discoverable route, and it had its OWN, separate guard —
+`wireSelBar`'s `pp-sel-delete` handler — that this earlier fix never touched: it split the selection
+via `splitSelectedIds`, and if it contained no real photos it refused the whole action outright,
+naming the pencil-icon path only implicitly ("aren't deleted from here") rather than actually sending
+the planner anywhere.
+
+- **The refusal is gone. `pp-sel-delete`'s click handler now calls `openBatchDeleteConfirm
+  (visibleSelectedIds())` directly** — no photo-only gate, no "skipped" toast for the 360°/3D
+  portion of the selection. A selection made of nothing but 360°/3D tiles, nothing but photos, or any
+  mix of the two all delete in one confirm-and-go action.
+- **New `openBatchDeleteConfirm(ids)`** takes the RAW, possibly-mixed selection and splits it via the
+  existing `splitSelectedIds` (already correctly bucketing `pano:<uuid>`/`recon:<uuid>` prefixed
+  pseudo-ids away from real `progress_photos` ids — that function was never the problem; only the
+  handler refusing to use its `pano`/`recon` buckets was). Each kind is then deleted through whichever
+  module actually owns it:
+  - **Real photos** — the same in-line shape `openDeleteConfirm` already uses (presentation-usage
+    warning via `findPresentationUsage`, `TABLE.delete().in('id', …)`, then `photo_url`/`thumb_url`
+    storage cleanup) — kept as its own block here rather than calling `openDeleteConfirm` a second
+    time, so the WHOLE mixed batch is confirmed and executed as **one** action with **one** modal,
+    not two sequential confirms for one click.
+  - **Panoramas/reconstructions** — resolved back to their real object (`PANO.list()`/
+    `RECON.doneList()`, matched by id) and deleted via `PANO.deleteById`/`RECON.deleteById` — the
+    exact same two functions the pencil-icon fix below already built and proved. ⚠️ **Never a second,
+    in-file copy of pano.js/recon.js's own storage-cleanup-then-row-delete logic** — the same "one
+    360° viewer, one 3D viewer, one delete path per kind" rule this module already applies everywhere
+    else a capture is opened or removed.
+- ⚠️ **A per-item failure is counted, not fatal to the batch.** A `RECON.deleteById` call can
+  legitimately fail pre-migration (a non-admin requester deleting their own `done`/`failed` scan is
+  still refused by RLS until `2026-09-04-reconstruction-delete-terminal.sql` runs — see below) —
+  `failed++` and the loop continues rather than aborting the rest of a mixed batch over one item the
+  database was always going to refuse. The closing toast reports the honest split: *"N of M item(s)
+  deleted — K could not be removed"* rather than a false "M items deleted" or aborting with nothing
+  removed at all.
+- **The confirm modal names every kind actually present** ("Delete 2 photos, 1 360° panorama, 1 3D
+  scan?"), not a generic "N items" that hides what's about to disappear.
+- ⚠️ The presentation-usage warning still runs, scoped to just the photo portion
+  (`split.photo`) — a panorama/reconstruction can never be cited by a `ppr_slides` pane (that FK only
+  points at `progress_photos`), so checking it against the whole mixed id list would be pointless
+  work at best and a `.in()` query carrying ids from the wrong table at worst.
+- `ids.forEach(function (id) { delete selected[id]; })` still runs over the WHOLE original selection
+  (not just what succeeded) after the confirm closes, then `await load()` — the same re-render this
+  file's own `mergedRows()` already needs to pick up pano/recon deletions, since `PANO.list()`/
+  `RECON.doneList()` are read fresh on every render.
+
+### Verified
+
+**12 new checks, all green** (930 → 942): the old refusal string is confirmed gone from `module.js`
+entirely (not just paraphrased in a comment — the first draft of this fix accidentally left the exact
+retired toast text quoted inside its own explanatory comment, which is precisely the "a bare mention
+in prose doesn't count, only a real declaration would" trap this file's own Stack-view retirement
+note already warns about; caught by running the assertion against the draft and rewording the comment
+rather than weakening the check); the toolbar button now calls `openBatchDeleteConfirm` with no gate
+in front of it; `splitSelectedIds` is used to bucket the raw ids and an empty selection is a no-op;
+a pano/recon id is resolved back to its REAL object before being deleted (never deleted by its bare
+uuid alone, which none of `PANO`/`RECON`'s functions accept); the dispatch goes through
+`PANO.deleteById`/`RECON.deleteById`, never a re-implementation; a missing module/function counts as
+a failure rather than throwing; a partial failure is reported honestly; the confirm modal names each
+kind present; the photo-portion presentation-usage check and the TABLE-delete-then-storage-cleanup
+shape both match `openDeleteConfirm`'s own; and ids are cleared from `selected` with a fresh `load()`
+after the batch finishes.
+
+Plus **genuine execution** of `splitSelectedIds` (test-only hook `PP._splitSelectedIds`, the same
+convention as every other pure-function hook in this file) against a real 5-id mixed array and an
+empty array — confirming the bucketing (and prefix-stripping) is correct, not merely that the source
+text looks right.
+
+`node --check` clean on both touched files; 0 NUL bytes; **0 functions lost, 1 added**
+(`openBatchDeleteConfirm`) against the prior commit. Full suite: **942 passed, 13 failed** — the
+identical 13 pre-existing, unrelated failures this file's other 2026-09-04 entries already carry
+(confirmed by re-running the exact same suite against the pre-fix commit via `git stash`: same 13,
+same names, byte-for-byte).
+
+⚠️ **Not verified signed-in** — same standing caveat as every entry in this file. No live
+click-through of the toolbar trash icon against a real mixed selection, and the reconstruction
+migration (`2026-09-04-reconstruction-delete-terminal.sql`) still has not been run — until it is, a
+non-admin's `done`/`failed` scan in a batch will report as one of the "could not be removed" failures
+rather than a false success, which is the designed degrade path, not a bug.
+
+`module.js` → `?v=20260904i` (module-local only — no shared asset touched, so no app-wide
+`?v=`/`MODULE_V` bump).
+
 ## Correction: Tower/Floor reverted to Project-Schedule-only — the union + escape hatch below was wrong (2026-09-04)
 
 Owner correction, immediately after the previous entry shipped: the Project Schedule App must be
@@ -832,6 +1025,96 @@ source checks, not by driving a live browser session.
 `?v=20260902f`; `bim.js` → `?v=20260902b` (both bumped fresh, since their reconciled content differs
 from what either round alone shipped); `assets/js/icons.js` (new `zoomIn`/`zoomOut`/`drone` icons,
 shared app-wide) → `?v=20260902f` across all 20 referencing pages.
+
+## Bug fix: no delete path for 360°/3D media anywhere in the Gallery (2026-09-04)
+
+Owner report, verbatim: *"i cant delete 360/3D media from the photos gallery. pleas fix bug."*
+Confirmed by reading every place a panorama/reconstruction pseudo-row is rendered or acted on —
+**there was genuinely no delete affordance anywhere**, not a hidden/broken one:
+`mediaKindThumbHTML(r, cls)` (its Gallery tile) renders only an "open" click target and, for
+writers, a pencil `.pp-mkeditbtn` that opens `openMediaKindEditor(row)`; that editor's own footer
+had only Cancel/Save; and the batch/lightbox Delete flow for real photos
+(`openDeleteConfirm`/`remove(r)`) is deliberately scoped to rows with a `progress_photos` id — a
+pseudo-row (`_kind: 'panorama'|'reconstruction'`) has none there to delete. `pano.js` did carry a
+full delete (`removePano`, storage + row), but it was wired only to the `#pano-view` screen's own
+grid — the dedicated 360°/3D tabs Batch C folded into the Gallery and made unreachable from the
+UI. `recon.js` had **no** general delete at all — only `retractRequest`, scoped to a still-
+`pending_approval` request being retracted from the approval queue, a different operation.
+
+- **`openMediaKindEditor`'s footer gains a Delete button** (`#pp-mked-del`, `pd-btn-danger`,
+  gated `canWrite` exactly like Save). Clicking it closes the editor and opens a new, small
+  confirm modal (`openMediaKindDeleteConfirm(row)`) mirroring `openDeleteConfirm`'s own shape —
+  naming what gets cleaned up per kind (a stitched image for a panorama; a recorded video *and*
+  any processed result files for a scan) and refusing anything until confirmed.
+- ⚠️ **The confirm modal delegates to whichever sub-module actually owns the row**
+  (`window.PANO.deleteById` for a panorama, `window.RECON.deleteById` otherwise) — never a
+  second, in-file copy of the storage-cleanup-then-row-delete logic those two modules already
+  have. Same "one 360° viewer, one 3D viewer" rule this file already applies to opening a pin/
+  tile; it now applies to deleting one too.
+- **New `pano.js` `deletePano(p)`** / **`recon.js` `deleteRequest(r)`**, both exported as
+  `deleteById(row)` — same signature convention as the pre-existing `removePano(p)`/
+  `retractRequest(r)`: they take the real row **object**, not an id, since `openMediaKindEditor`
+  already holds the exact live reference as `row._src` (per `panoPseudoRow`/`reconPseudoRow`'s own
+  comment — the merged pseudo-row's `_src` **is** the object `PANO.list()`/`RECON.doneList()`
+  return, not a copy), so there's no id-lookup-and-reload needed to find it. Both:
+  - clean up every Storage object the row can carry (`pano_url` for a panorama; `video_url` +
+    `result_pointcloud_url` + `result_splat_url` for a reconstruction — all three, since a done
+    job can have result files the still-pending `retractRequest` path never had to consider) —
+    best-effort, wrapped in try/catch, matching every other storage-cleanup call in this app;
+  - delete the row, splice it out of the sub-module's own in-memory array (`panoramas`/
+    `requests`) so the very next `render()` — and this module's own `mergedRows()`, which reads
+    `PANO.list()`/`RECON.doneList()` fresh on every call — omits it immediately, with no reload;
+  - return `{ ok:true }` or `{ ok:false, error }`, **never throw** — the caller surfaces the real
+    reason and re-enables its button rather than the delete silently no-oping.
+- ⚠️ **The reconstruction half needed a real database-level fix too, not just a client-side one.**
+  `reconstruction_requests`' own DELETE policy (2026-08-29-reconstruction-requests.sql) lets an
+  **admin** delete any row at any status, but a **non-admin requester** only their own row while
+  it's still `pending_approval` — deliberately, so retracting can't orphan a RunPod job that's
+  already `approved`/`queued`/`processing` and genuinely billing. That reasoning has no bearing on
+  a **terminal** row (`done`/`failed`): there is no live job left to orphan once RunPod has already
+  finished with it, so a non-admin requester needing an admin just to remove their own completed
+  (or failed) 3D scan from their own project's gallery was an oversight, not a deliberate choice.
+  **`migrations/2026-09-04-reconstruction-delete-terminal.sql` (USER MUST RUN)** widens the
+  requester's own-row delete to `status in ('pending_approval', 'done', 'failed')` — the admin
+  branch and the active-job window (`approved`/`queued`/`processing`, still admin-only) are
+  untouched. Folded into `supabase-schema.sql`; `supabase-build.sql`/`migrations/VERIFY-schema.sql`
+  regenerated (`node migrations/gen-build.js` / `gen-verify.js`).
+  ⚠️ **Until that migration runs**, a non-admin requester deleting their own done/failed scan is
+  refused by the database — `deleteRequest`'s own `.delete().select()` correctly reads that as
+  "0 rows deleted" (the same shape `retractRequest`'s M5 fix already has to guard against, not a
+  Supabase error) and surfaces a real, actionable message naming the two ways out (an admin can do
+  it today; running the migration lets the requester do it themselves) rather than a false
+  "deleted". An **admin** can already delete any status, before and after this migration.
+- Panoramas needed **no** database change — they were always covered by the generic module-table
+  RLS (`is_writer()`), so any writer could already delete one at the database level; the entire
+  bug there was the missing client-side affordance.
+
+### Verified
+
+**18 new checks, all green** (872 → 890): structural assertions for the editor's Delete button,
+its wiring, `openMediaKindDeleteConfirm`'s per-kind dispatch, its missing-module/failed-delete/
+success paths, and the confirm copy; plus **genuine execution** of both new functions (test-only
+hooks `PANO._deletePano`/`RECON._deleteRequest`, same convention as `RECON._retractRequest`)
+against the harness's mutable in-memory store — a real panorama deletes and its image is removed
+from Storage; a `done` reconstruction with all three possible result/video files deletes and
+cleans up every one of them; a delete matching **0** rows (simulating an RLS refusal, the same way
+`retractRequest`'s own M5 test proves `.delete().select()` returning empty is read as a genuine
+refusal and not a false success) reports the real reason; a missing row reports an error rather
+than throwing, for both kinds. Plus structural checks that the new migration widens exactly the
+intended clause, is idempotent (dropped before recreated), and is folded into
+`supabase-schema.sql` with the narrower pre-fix clause gone. `node --check` clean on all three
+touched JS files; 0 NUL bytes; CSS braces balanced (527/527, unchanged — no CSS touched); 0
+duplicate DOM ids; a function-set diff against the prior commit shows **0 functions lost**, 3
+intentional additions (`openMediaKindDeleteConfirm`, `deletePano`, `deleteRequest`).
+
+⚠️ **Not verified signed-in** — same standing caveat as every entry in this file. No live
+click-through of the Delete button against a real panorama/reconstruction, and the migration has
+not been run. The genuine-execution tests above prove the client-side logic is correct against a
+store with no RLS; the real RLS refusal-and-recovery path (pre-migration) and the widened
+success path (post-migration) are both unverified against live Supabase.
+
+`module.js` → `?v=20260904h`, `pano.js`/`recon.js` → `?v=20260904a` (module-local only — no shared
+asset touched, so no app-wide `?v=`/`MODULE_V` bump).
 
 ## Eight-item owner feedback round: delete + presentation-usage warning, icon-only
 ## batch actions, additive archive filter, full-res-on-first-open fix, icon-only
