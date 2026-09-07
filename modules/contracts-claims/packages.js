@@ -24,12 +24,13 @@ window.CCPackages = (function () {
   'use strict';
   var UID = null, canWrite = false, pid = null, PKG = [], loaded = false;
   var CONTRACTS = [], onSub = null, onNew = null, onEditRecord = null;   // contracts to join, the BOQ, the wizard, the record form
+  var onBoq = null;                 // mounts the inline BOQ section - see module.js
   var esc = function (x) { return Fmt.esc(String(x == null ? '' : x)); };
   function host() { return document.getElementById('cc-view'); }
 
   function init(deps) { UID = deps.uid; canWrite = !!deps.canWrite; }
   function reset() { loaded = false; PKG = []; }
-  async function show(projectId, contracts, openSub, openNew, editRecord) {
+  async function show(projectId, contracts, openSub, openNew, editRecord, mountBoq) {
     pid = projectId;
     CONTRACTS = contracts || [];
     onSub = openSub || null;
@@ -38,6 +39,7 @@ window.CCPackages = (function () {
        save). This view only needs the way IN to it, so the pencil on a contract row opens
        the same form the Claims register does rather than a second, thinner copy. */
     onEditRecord = editRecord || null;
+    onBoq = mountBoq || null;
     await load();
   }
   async function load() {
@@ -275,6 +277,14 @@ window.CCPackages = (function () {
   }
 
   /* ---- Table 2: the contract lots (packages) ----------------------------- */
+  /* The inline BOQ's shell. The heading is ours so the section is legible before the BOQ
+     has loaded (and if it never does); everything inside #cc-boq-inline belongs to boq.js. */
+  function boqSectionHTML() {
+    return '<div class="cc-sechead" id="cc-boq-head"><h2>Bill of quantities</h2>' +
+      '<span class="cc-sechead-rule"></span></div>' +
+      '<div id="cc-boq-inline"><div class="cc-empty"><p class="cc-mut">Loading the BOQ…</p></div></div>';
+  }
+
   function packagesHTML() {
     var h = '<div class="cc-sechead"><h2>Contract lots</h2><span class="cc-sechead-rule"></span></div>' +
       '<div class="pd-card cc-dtcard"><div class="cc-dthead">' +
@@ -354,9 +364,16 @@ window.CCPackages = (function () {
 
   function render() {
     var h = host(); if (!h) return;
-    h.innerHTML = contractsHTML() + packagesHTML();
+    /* ⚠️⚠️ THE BOQ IS A SECTION OF THIS TAB, NOT A SCREEN YOU LEAVE FOR. Owner, 2026-09-07:
+       *"Can't the BOQ page be relocated in the contracts page?"* — chosen over a fourth
+       top-level tab, which was the alternative on offer. It is emitted as an EMPTY container
+       and filled by module.js, because the BOQ owns six round-trips of its own and this
+       function is re-run on every package edit; re-rendering it here would refetch the whole
+       bill each time somebody renames a lot. */
+    h.innerHTML = contractsHTML() + packagesHTML() + boqSectionHTML();
     if (window.Icons && Icons.hydrate) Icons.hydrate(h);
     wire(h);
+    if (onBoq) onBoq();
   }
 
   function wire(h) {
@@ -367,7 +384,16 @@ window.CCPackages = (function () {
     if (a) a.onclick = function () { edit(null); };
     var nc = h.querySelector('#pk-newcontract');
     if (nc) nc.onclick = function () { if (onNew) onNew('Contract'); else edit(null); };
-    var bq = h.querySelector('#pk-boq'); if (bq && onSub) bq.onclick = function () { onSub('boq'); };
+    /* ⚠️ NOW A JUMP, NOT A NAVIGATION. The BOQ is further down this same page, so the button
+       scrolls to it rather than replacing the view — the contract and its bill stay on one
+       screen, which is the point of moving it here. Kept rather than deleted because the
+       section sits below the lots and is easy to miss on a project with several. */
+    var bq = h.querySelector('#pk-boq');
+    if (bq) bq.onclick = function () {
+      var t = document.getElementById('cc-boq-head');
+      if (t && t.scrollIntoView) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      else if (onSub) onSub('boq');
+    };
     var p = h.querySelector('#pk-push'); if (p) p.onclick = share;
     h.querySelectorAll('[data-edit]').forEach(function (b) {
       b.onclick = function () { edit(PKG.filter(function (k) { return String(k.id) === b.dataset.edit; })[0]); };

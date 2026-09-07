@@ -182,7 +182,20 @@ window.ContractsClaims = (function () {
   var sub = null;              // null | 'boq' | 'pmi'
   function subBar() { return document.getElementById('cc-subbar'); }
   function clearSubBar() { var b = subBar(); if (b) b.remove(); }
+  /* ⚠️ 'boq' NO LONGER OPENS AN OVERLAY — it lives in the Contract tab now. Callers that
+     still ask for it (the wizard's hand-off) are sent to the tab and scrolled to the section,
+     so that entry point keeps working without a second BOQ surface existing. PMI is unchanged
+     and still a sub-screen. */
   function openSub(which) {
+    if (which === 'boq') {
+      sub = null;
+      if (view !== 'contract') switchTab('contract'); else render();
+      setTimeout(function () {
+        var t = document.getElementById('cc-boq-head');
+        if (t && t.scrollIntoView) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 60);
+      return;
+    }
     var mod = which === 'boq' ? window.BOQ : window.PMI;
     if (!mod) { UI.toast(which.toUpperCase() + ' did not load.', 'error'); return; }
     sub = which;
@@ -205,6 +218,38 @@ window.ContractsClaims = (function () {
     var b = host && host.querySelector('#cc-open-pmi');
     if (b) b.onclick = function () { openSub('pmi'); };
   }
+  /* ⚠️⚠️ THE INLINE BOQ LOADS WHEN IT IS SCROLLED TO, NOT WHEN THE TAB OPENS. The BOQ is
+     1,200+ lines plus its mapping, allocations and every billing period — six round-trips that
+     the old sub-screen only paid when you chose to open it. Moving it inline would have charged
+     every visit to the Contract tab for a screen most sessions never read, so an
+     IntersectionObserver defers it until the section nears the viewport. The owner asked for
+     nothing to click; this keeps that promise without the bill.
+     ⚠️ `_boqFor` stops a reload on every packages re-render (renaming a lot re-runs that
+     function): once loaded for a project we re-PAINT rather than re-FETCH. Keyed by project id,
+     so switching projects still reloads — a stale bill would show another project's value. */
+  var _boqFor = null, _boqIO = null;
+  function mountBoqInline() {
+    var el = document.getElementById('cc-boq-inline');
+    if (!el || !window.BOQ) return;
+    BOQ.mountTo('cc-boq-inline');
+    if (_boqIO) { _boqIO.disconnect(); _boqIO = null; }
+    if (_boqFor === pid && BOQ.isLoaded && BOQ.isLoaded()) { BOQ.render(); return; }
+    var go = function () {
+      _boqFor = pid;
+      Promise.resolve(BOQ.show(pid, projName())).catch(function (e) {
+        _boqFor = null;
+        try { console.warn('[cc] inline BOQ failed to load', e); } catch (e2) {}
+      });
+    };
+    if (!window.IntersectionObserver) { go(); return; }
+    _boqIO = new IntersectionObserver(function (entries) {
+      if (entries.some(function (x) { return x.isIntersecting; })) {
+        _boqIO.disconnect(); _boqIO = null; go();
+      }
+    }, { rootMargin: '500px' });   // start a little before it is on screen
+    _boqIO.observe(el);
+  }
+
   function render() {
     var host = document.getElementById('cc-view');
     /* The BOQ tab is a different KIND of screen — the client's contract document
@@ -223,7 +268,8 @@ window.ContractsClaims = (function () {
       document.getElementById('cc-filters').style.display = 'none';
       if (document.getElementById('cc-filttoggle')) document.getElementById('cc-filttoggle').style.display = 'none';
       CCPackages.show(pid, rows.filter(function (r) { return r.record_type === 'Contract'; }), openSub, openNew,
-        function (id) { openForm(rows.find(function (r) { return String(r.id) === String(id); })); });
+        function (id) { openForm(rows.find(function (r) { return String(r.id) === String(id); })); },
+        mountBoqInline);
       return;
     }
     // The Claim/CO type filter only applies to the claims tab.

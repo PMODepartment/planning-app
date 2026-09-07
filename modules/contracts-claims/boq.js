@@ -41,6 +41,14 @@ window.BOQ = (function () {
         separately recorded", i.e. claimed = certified — never zero. */
   var CLAIM = {};
   var CODES = null, ACTS = null;            // lazy: class_codes chart, schedule activities
+  /* ⚠️ THE BOQ NO LONGER OWNS THE SCREEN. It used to write straight into `#cc-view`, which
+     is the module's whole view area — fine for a full-screen sub-view, impossible for a
+     section living inside the Contract tab. Owner, 2026-09-07: *"Can't the BOQ page be
+     relocated in the contracts page?"* `mountTo()` moves the target; everything else in this
+     file renders through `hostEl()` and does not care where it lands. Falls back to cc-view
+     so a caller that never mounts behaves exactly as before. */
+  var HOST_ID = 'cc-view';
+  var codesErr = null;                      // why the chart is empty - see ensureCodes()
   /* A3's tail / decision #2. PKGS is this project's `packages` rows, loaded
      tolerantly: the table arrives with 2026-08-19-packages.sql and the column
      with 2026-08-25-package-adoption.sql, and until both are run the BOQ must
@@ -593,17 +601,31 @@ window.BOQ = (function () {
       catch (e) { PKGS = []; }   // no packages table yet: the feature is simply absent
       loaded = true;
     } catch (err) {
-      document.getElementById('cc-view').innerHTML = '<div class="pd-card cc-empty"><h3>Could not load the BOQ</h3><p>' +
+      hostEl().innerHTML = '<div class="pd-card cc-empty"><h3>Could not load the BOQ</h3><p>' +
         esc(err.message || String(err)) + '</p><p class="cc-mut">' + migrationHint(err) + '</p></div>';
       return;
     }
     render();
   }
 
+  /* ⚠⚠ AN EMPTY RESULT IS NOT A CACHE. This read `if (CODES) return CODES;`, and **an empty
+     array is truthy in JavaScript** — so the first call on a database whose chart had not been
+     seeded stored `[]` and every later call returned it without ever querying again. Owner,
+     2026-09-07: *"I've run the migration for the class codes already. But the error statement
+     is still the same."* It was: the page had cached the empty answer before the migration ran,
+     and only a reload could clear it. The failure mode is the worst kind — the fix is applied,
+     the app keeps reporting the old problem, and the migration looks broken.
+     ⚠️ Re-querying while empty costs one round-trip per attempt, and ONLY in the broken case:
+     as soon as a single row comes back it caches normally and never asks again.
+     ⚠️ `codesErr` is kept so the message can tell an EMPTY chart (run the migration) apart
+     from a REFUSED read (RLS — `class_codes_read` requires `is_approved()`, so an unapproved
+     account sees zero rows and no error). Those need opposite actions and read identically. */
   async function ensureCodes() {
-    if (CODES) return CODES;
-    try { CODES = await PDb.selectAll('class_codes', function (q) { return q.eq('active', true).order('sort_order'); }, 'code,code_l1,code_l2,desc_l1,desc_l2,desc_l3'); }
-    catch (e) { CODES = []; }
+    if (CODES && CODES.length) return CODES;
+    try {
+      CODES = await PDb.selectAll('class_codes', function (q) { return q.eq('active', true).order('sort_order'); }, 'code,code_l1,code_l2,desc_l1,desc_l2,desc_l3') || [];
+      codesErr = null;
+    } catch (e) { CODES = []; codesErr = e; }
     return CODES;
   }
   /* The schedule's own POC, via the shared RPC — one round-trip returning a few
@@ -654,8 +676,12 @@ window.BOQ = (function () {
     { key: 'billing', label: 'Billing / POC' }
   ];
 
+  function hostEl() {
+    return document.getElementById(HOST_ID) || document.getElementById('cc-view');
+  }
   function render() {
-    var host = document.getElementById('cc-view');
+    var host = hostEl();
+    if (!host) return;
     if (!host) return;
     if (!pid) { host.innerHTML = '<div class="pd-card cc-empty"><h3>Select a project</h3></div>'; return; }
     if (!loaded) { host.innerHTML = '<div class="pd-card cc-empty"><h3><span class="cc-spin"></span>Loading the BOQ…</h3></div>'; return; }
@@ -665,20 +691,27 @@ window.BOQ = (function () {
         return '<button class="boq-subtab' + (sub === s.key ? ' active' : '') + '" data-sub="' + s.key + '">' + esc(s.label) + '</button>';
       }).join('') + '</div>' +
       '<span class="boq-spacer"></span>' + revPickerHTML() +
-      /* ⚠️ BUILD SITS BESIDE IMPORT, NOT BEHIND IT. They are two ways to the same table and
-         a project may need either first: OPW101 has a signed contract and no workbook yet.
-         Import stays the primary — it is the faster path when a file exists. */
-      (canWrite ? '<button class="pd-btn" id="boq-new" title="Build a BOQ by hand from the class-code library">New BOQ…</button>' : '') +
-      (canWrite ? '<button class="pd-btn pd-btn-primary" id="boq-import">Import BOQ…</button>' : '') +
+      /* ⚠⚠ BUILDING BY HAND IS THE PRIMARY ACT; IMPORT IS THE CONVENIENCE — owner, 2026-09-07:
+         *"Let's make sure that the manual add of BOQ is a priority and the import feature is
+         only a convenience."* This REVERSES the weighting shipped that morning, which argued
+         import is the faster path when a file exists. True, but it ranked the two by the speed
+         of the happy case rather than by which one always works: a workbook arrives late, in a
+         shape the parser has never seen, or not at all. The hand build has no external
+         dependency, and its lines carry class codes from the start — which is what the schedule
+         tagging and the cost roll-up actually read.
+         ⚠️ Primary sits RIGHTMOST, as in every other toolbar here, so the two swap places as
+         well as swapping weight. */
+      (canWrite ? '<button class="pd-btn" id="boq-import" title="Read the client\'s workbook — faster when a file exists, and it lands in the same table">Import BOQ…</button>' : '') +
+      (canWrite ? '<button class="pd-btn pd-btn-primary" id="boq-new" title="Build a BOQ by hand from the class-code library">New BOQ…</button>' : '') +
       '</div>';
 
     if (!REVS.length) {
       h += '<div class="pd-card cc-empty"><h3>No BOQ on this project yet</h3>' +
-        '<p>Import the client\'s workbook, or build one by hand from the class-code library. ' +
-        'Each is a <strong>revision</strong> — the prior one is always kept.</p>' +
+        '<p>Build one from the class-code library — or import the client\'s workbook if you ' +
+        'have it. Each is a <strong>revision</strong>, and the prior one is always kept.</p>' +
         (canWrite ? '<p style="margin-top:14px;">' +
-          '<button class="pd-btn pd-btn-primary" id="boq-import2">Import BOQ…</button> ' +
-          '<button class="pd-btn" id="boq-new2">Build by hand…</button></p>' : '') +
+          '<button class="pd-btn pd-btn-primary" id="boq-new2">Build by hand…</button> ' +
+          '<button class="pd-btn" id="boq-import2">Import BOQ…</button></p>' : '') +
         '</div>';
     } else {
       h += sub === 'items' ? itemsHTML()
@@ -1481,12 +1514,31 @@ window.BOQ = (function () {
 
   // ---- Create a draft revision to author into -------------------------------
   function openNewRev() {
+    /* ⚠⚠ THE REVISION LABEL IS PREFILLED, and that answers a real confusion — owner,
+       2026-09-07: *"why does it say Rev no.?"* Because `boq_revisions.rev_no` is `text not
+       null` and was designed to hold THE CLIENT'S OWN LABEL off an imported workbook ('05',
+       'rev.05', 'R2'). That is import thinking leaking into the manual path: a BOQ you are
+       authoring has no client label to copy, so the dialog demanded the planner invent an
+       identifier before they could begin. It stays editable and the column stays NOT NULL, so
+       imports are untouched and still carry whatever the client called it. */
+    var nextRev = (function () {
+      var ns = (REVS || []).map(function (r) {
+        var mm = String(r.rev_no || '').match(/(\d+)/);   // 'rev.05' -> 5, 'INTERNAL-01' -> 1
+        return mm ? parseInt(mm[1], 10) : null;
+      }).filter(function (n) { return n != null && isFinite(n); });
+      var next = ns.length ? Math.max.apply(null, ns) + 1 : 0;
+      return (next < 10 ? '0' : '') + next;
+    })();
     var m = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">New BOQ &mdash; build it by hand</h2>' +
       '<button class="pd-modal-close" id="nr-x">&times;</button></div>' +
       '<div class="cc-form">' +
-      '<p class="cc-hint" style="margin-top:0;">An empty draft: add lines, price them, then ' +
-      '<strong>issue</strong>. A draft never bills.</p>' +
-      '<label>Revision no.<input class="pd-input" id="nr-rev" placeholder="e.g. 01 or INTERNAL-01" /></label>' +
+      '<p class="cc-hint" style="margin-top:0;">An empty draft. Add lines from the class-code ' +
+      'library, price them, then <strong>issue</strong> it. <b>A draft never bills and never ' +
+      'shows as the contract value</b>, so nothing downstream moves until you say so.</p>' +
+      '<label>Revision label<input class="pd-input" id="nr-rev" value="' + esc(nextRev) + '" /></label>' +
+      '<p class="cc-hint">Prefilled, and yours to change — <b>this is your label, not the ' +
+      'client\'s</b>. An imported BOQ carries whatever the client called it; one you author has ' +
+      'none to copy.</p>' +
       '<label>Issued date<input class="pd-input" id="nr-date" type="date" /></label>' +
       '<label>PO no. (optional)<input class="pd-input" id="nr-po" /></label>' +
       '<label>Stated contract total (optional)<input class="pd-input" id="nr-total" type="number" step="0.01" /></label>' +
@@ -1502,7 +1554,10 @@ window.BOQ = (function () {
     el('nr-x').onclick = m.close; el('nr-c').onclick = m.close;
     el('nr-go').onclick = async function () {
       var revNo = txtOf(el('nr-rev').value);
-      if (!revNo) { UI.toast('Give the revision a number.', 'error'); return; }
+      // Prefilled above, so this fires only if it was deliberately cleared. rev_no is NOT NULL,
+      // so there is nothing sensible to fall back to.
+      if (!revNo) { UI.toast('The revision needs a label — it is how this BOQ is named ' +
+        'everywhere else. \u201c' + nextRev + '\u201d is fine.', 'error'); return; }
       var b = el('nr-go'); b.disabled = true; b.textContent = 'Creating…';
       try {
         var ins = await sb().from(T_REV).insert({
@@ -1538,7 +1593,10 @@ window.BOQ = (function () {
     if (!isDraft()) { UI.toast('Lines can only be added to a draft revision.', 'error'); return; }
     await ensureCodes();
     if (!(CODES || []).length) {
-      UI.toast('The class-code chart is empty — run migrations/2026-08-21-class-codes.sql.', 'error');
+      UI.toast(codesErr
+        ? 'Could not read the class-code chart: ' + (codesErr.message || codesErr)
+        : 'The class-code chart is empty — run migrations/2026-08-21-class-codes.sql, then reload this page.',
+        'error');
       return;
     }
     buildTree();
@@ -2447,7 +2505,7 @@ window.BOQ = (function () {
       list.innerHTML = hits.length ? hits.map(function (c) {
         return '<button class="boq-pickrow" data-code="' + esc(c.code) + '"><code>' + esc(c.code) + '</code>' +
           '<span>' + esc(c.desc_l1) + ' › ' + esc(c.desc_l2) + ' › <strong>' + esc(c.desc_l3) + '</strong></span></button>';
-      }).join('') : '<p class="cc-mut">No codes match. ' + ((CODES || []).length ? '' : 'The class-code chart is empty — run migrations/2026-08-21-class-codes.sql.') + '</p>';
+      }).join('') : '<p class="cc-mut">No codes match. ' + ((CODES || []).length ? '' : 'The class-code chart is empty — run migrations/2026-08-21-class-codes.sql, then reload this page.') + '</p>';
       list.querySelectorAll('[data-code]').forEach(function (b) {
         b.onclick = function () { m.close(); saveMap(r, b.dataset.code, 'hand_picked', null); };
       });
@@ -3268,6 +3326,8 @@ window.BOQ = (function () {
 
   return {
     init: init, show: show, reset: reset, render: render,
+    mountTo: function (id) { HOST_ID = id || 'cc-view'; },
+    isLoaded: function () { return loaded; },
     /* ⚠️ EXPORTED so the wizard can HAND OFF instead of giving directions. The BOQ
        wizard type used to end on "Done", write nothing, and tell the planner to go to
        the BOQ tab and find the importer themselves — owner, 2026-08-27: *"I don't

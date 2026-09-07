@@ -1,5 +1,67 @@
 # Module: contracts-claims
 
+## Manual BOQ becomes the primary path, and it moves into the Contract tab (2026-09-07c) — fmlozano
+
+Four owner items in one pass, plus the bug that was blocking all of them.
+
+### ⚠️⚠️ The blocker: an empty result was cached forever
+*"I've run the migration for the class codes already. But the error statement is still the same."*
+It had run — 702 rows, `Success. No rows returned`. The app could not see them:
+
+```js
+async function ensureCodes() {
+  if (CODES) return CODES;        // ⚠️ an empty array is TRUTHY in JavaScript
+  ...
+  catch (e) { CODES = []; }
+}
+```
+
+Opening the BOQ **before** the migration cached `CODES = []`, and because `[]` is truthy every
+later call returned it **without ever querying again**. Only a reload could clear it. The worst
+shape of failure: the fix is applied, the app keeps reporting the old problem, and the migration
+looks broken. ⚠️ Ruled out first, in order: `active` is `not null default true` so the omitted
+column was not it; `grant select` and `class_codes_read` both exist so it was not RLS.
+
+**Fixed:** `if (CODES && CODES.length)` — an empty result is no longer a cache, so it re-queries
+while empty and caches normally the moment a row returns. `codesErr` is now kept so an **empty
+chart** (run the migration) can be told apart from a **refused read** (`is_approved()` false →
+zero rows, no error). Those need opposite actions and previously read identically.
+
+### Manual is the priority, import is the convenience
+*"Let's make sure that the manual add of BOQ is a priority and the import feature is only a
+convenience."* This reverses that morning's weighting, which argued import is faster when a file
+exists. True, but it ranked the paths by the speed of the happy case rather than by which one
+always works — a workbook arrives late, in an unknown shape, or never. Build is now `pd-btn-primary`
+and sits rightmost in both the toolbar and the empty state; import is the plain button.
+
+### "Why does it say Rev no.?"
+Because `boq_revisions.rev_no` is `text not null` and was designed for **the client's own label**
+off an imported workbook (`05`, `rev.05`, `R2`) — import thinking leaking into the manual path. A
+BOQ you author has no client label to copy, so the dialog demanded an invented identifier before
+you could start. Now **prefilled** with the next free number and editable; the column stays NOT
+NULL and imports still carry whatever the client called it.
+
+### The BOQ moved into the Contract tab
+*"Can't the BOQ page be relocated in the contracts page?"* Chosen over a fourth top-level tab.
+`boq.js` wrote straight into `#cc-view`; it now renders through `hostEl()` with `mountTo()`, and
+`packages.js` emits a **Bill of quantities** section below Contract lots. `openSub('boq')` no
+longer opens an overlay — it switches to the tab and scrolls, so the wizard hand-off still works
+with only one BOQ surface in existence.
+
+⚠️ **It loads on scroll, not on tab open.** The BOQ is six round-trips; inline would have charged
+every Contract-tab visit for a screen most sessions never read. An IntersectionObserver defers it,
+and `_boqFor` re-paints rather than re-fetches when a package edit re-runs the render.
+
+### ⚠️ `module.js` has MIXED line endings — 14 CRLF among 1,098 LF
+The `CCPackages.show(...)` call is one of the CRLF lines while its neighbours are LF, so a
+normalised anchor counted 0. Anchors there must be **byte-exact**; the edit asserts the CRLF count
+is still 14 afterwards so it cannot silently normalise the file. (`packages.js` is wholly CRLF,
+`boq.js` wholly LF — three files, three conventions, in one module.)
+
+- `boq.js` / `packages.js` / `module.js` → `?v=20260907c`; `MODULE_V` → `20260907d`.
+
+---
+
 ## The BOQ had no way in — a handler bound to an element nobody rendered (2026-09-07b) — fmlozano
 
 Owner: *"Where can i access the BOQ from here?"* — asked from the Contract tab, and the honest

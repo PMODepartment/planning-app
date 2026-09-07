@@ -84,6 +84,26 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-07 (c) — Contracts & Claims: manual BOQ first, and the BOQ moves inline
+
+Owner, four items. Detail in `modules/contracts-claims/CLAUDE.md`.
+
+- ⚠️⚠️ **The class-code error was a truthy empty array.** `ensureCodes()` read `if (CODES) return
+  CODES;` and **`[]` is truthy**, so opening the BOQ before the migration cached the empty answer
+  and it never queried again — *"I've run the migration already. But the error statement is still
+  the same."* Fixed to `if (CODES && CODES.length)`, plus a `codesErr` so an empty chart is
+  distinguishable from a read refused by RLS. (Not `active`, which defaults true; not grants.)
+- **Manual build is now the primary action**, import the convenience — reversing that morning's
+  weighting, which ranked the two by the speed of the happy case rather than by which always works.
+- **"Rev no." is prefilled.** `rev_no` is NOT NULL and was meant for the *client's* label off an
+  import; a hand-built BOQ has none to copy, so it no longer demands an invented one.
+- **The BOQ is a section of the Contract tab**, not an overlay — `boq.js` renders through a
+  movable host. ⚠️ It loads on scroll (IntersectionObserver), because inline would otherwise charge
+  every Contract-tab visit six round-trips.
+- ⚠️ **`modules/contracts-claims/module.js` has MIXED endings** — 14 CRLF among 1,098 LF, and the
+  line I needed was one of the 14. Byte-exact anchors only. `?v=20260907c`, `MODULE_V` → `20260907d`.
+
+
 ### 2026-09-07 (b) — Contracts & Claims: the BOQ had no entry point
 
 Owner: *"Where can i access the BOQ from here?"* Detail in `modules/contracts-claims/CLAUDE.md`.
