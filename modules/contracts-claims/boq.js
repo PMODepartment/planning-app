@@ -69,6 +69,15 @@ window.BOQ = (function () {
   var SCHED = null, schedErr = null;
   var sub = 'items';
   var filt = { q: '', sheet: '', kind: '', mapped: '' };
+  /* ⚠️ COLLAPSED HEADINGS, keyed by row id. Owner, 2026-09-07: *"we should also have the
+     collapsible option for the header rows"* — OPW101's draft is **924 rows under 223
+     headings**, which is unnavigable as a flat list.
+     ⚠️ Kept in memory only, and deliberately NOT persisted: it describes how you are reading
+     the bill right now, not anything about the bill. A collapse state written to the database
+     would be shared with everyone on the project, and a planner who collapsed a trade would
+     hide it from somebody else's screen. Cleared on reset(), so switching revision or project
+     starts expanded rather than hiding rows the new bill never collapsed. */
+  var COLLAPSED = {};
   var loaded = false;
   /* The class-code chart folded into division › group › item for the builder's tree.
      Cached: regrouping 702 rows on every keystroke of the tree's search box is a cost that
@@ -875,6 +884,10 @@ window.BOQ = (function () {
         '<option value="no"' + (filt.mapped === 'no' ? ' selected' : '') + '>Unmapped</option></select>' +
       '<span class="cc-count">' + filtered().length + ' of ' + ITEMS.length + '</span>' +
       '<span class="boq-spacer"></span>' +
+      /* Only worth showing when there is a hierarchy to act on. */
+      (ITEMS.some(function (x) { return x.line_kind === 'heading'; })
+        ? '<button class="pd-btn" id="boq-collapse">Collapse all</button>' +
+          '<button class="pd-btn" id="boq-expand">Expand all</button>' : '') +
       (canWrite ? '<button class="pd-btn" id="boq-pkgs">Assign to contract package…</button>' : '') +
       '<button class="pd-btn" id="boq-export">Export</button>' +
       '</div>';
@@ -884,7 +897,15 @@ window.BOQ = (function () {
        is qty × the rate we typed. Showing "Material" over an input the planner fills with a
        RATE is how a rate gets entered as an amount. */
     var draft = isDraft() && canWrite;
-    h += '<div class="pd-card cc-tablecard"><table class="cc-table boq-table"><thead><tr>' +
+    /* ⚠️ `boq-fillable` ONLY ON A DRAFT. The cells are transparent inputs with transparent
+       borders — invisible until hovered — which is right for an ISSUED bill, where they are
+       read far more often than touched and the trigger refuses writes anyway. On a draft it is
+       exactly wrong: owner, 2026-09-07, *"the table is not apparent to be filled out"*. Measured
+       on OPW101's draft: **701 priceable rows x 5 numeric fields = 3,505 invisible inputs**,
+       each `background: rgba(0,0,0,0)` with `border: 1px solid rgba(0,0,0,0)` and no
+       placeholder. Nothing on screen said any of it could be typed into. */
+    h += '<div class="pd-card cc-tablecard"><table class="cc-table boq-table' +
+      (draft ? ' boq-fillable' : '') + '"><thead><tr>' +
       '<th class="boq-no">Item</th><th class="cc-desc">Description</th><th>Unit</th>' +
       '<th class="cc-r">Qty</th>' +
       (draft ? '<th class="cc-r">Mat. rate</th><th class="cc-r">Lab. rate</th>'
@@ -923,15 +944,45 @@ window.BOQ = (function () {
       h += '<tr><td colspan="' + span + '" class="cc-mut" style="text-align:center;padding:30px;">'
          + body + '</td></tr>';
     }
+    /* How many rows each heading owns, in the CURRENT (filtered, ordered) list. A heading owns
+       every following row deeper than itself, up to the next row at its own depth or shallower —
+       derived from `depth` rather than `parent_id`, so it stays correct against exactly what is on
+       screen even when a filter has removed rows from the middle of a branch. */
+    var kids = {};
+    for (var ki = 0; ki < list.length; ki++) {
+      if (list[ki].line_kind !== 'heading') continue;
+      var kd = list[ki].depth || 0, kn = 0;
+      for (var kj = ki + 1; kj < list.length && (list[kj].depth || 0) > kd; kj++) kn++;
+      kids[list[ki].id] = kn;
+    }
+    var skipDepth = null;   // while set, anything deeper than this is inside a collapsed heading
+
     list.forEach(function (r) {
+      var rd = r.depth || 0;
+      if (skipDepth !== null) {
+        if (rd > skipDepth) return;   // hidden under a collapsed heading
+        skipDepth = null;             // back out to a sibling or shallower row
+      }
       var head = r.line_kind === 'heading';
+      if (head && COLLAPSED[r.id]) skipDepth = rd;
       var cm = CMAP[r.id];
       var al = allocOf(r.id);
       // A heading holds no figures, on a draft or otherwise, so its cells stay empty
       // rather than becoming inputs nobody should fill.
       var ed = draft && !head;
       h += '<tr class="' + (head ? 'boq-head' : '') + '" data-id="' + esc(r.id) + '">' +
-        '<td class="boq-no" style="padding-left:' + (6 + Math.min(r.depth || 0, 6) * 12) + 'px">' + esc(r.item_no || '') + '</td>' +
+        '<td class="boq-no" style="padding-left:' + (6 + Math.min(rd, 6) * 12) + 'px">' +
+          /* ⚠️ A caret only where there is something to collapse. A heading with no rows under
+             it (the last one on a sheet, or one whose children a filter removed) gets no
+             control, because a toggle that visibly does nothing reads as broken. */
+          (head && kids[r.id]
+            ? '<button class="boq-caret" data-tog="' + esc(r.id) + '" title="' +
+              (COLLAPSED[r.id] ? 'Expand' : 'Collapse') + '" aria-expanded="' +
+              (COLLAPSED[r.id] ? 'false' : 'true') + '">' + (COLLAPSED[r.id] ? '\u25b8' : '\u25be') +
+              '</button>' : '') +
+          esc(r.item_no || '') +
+          (head && COLLAPSED[r.id] ? ' <span class="boq-hidden-n">' + kids[r.id] + ' hidden</span>' : '') +
+          '</td>' +
         '<td class="cc-desc">' + (draft
           ? '<input class="boq-cell boq-cell-t" data-f="description" data-i="' + esc(r.id) + '" value="' + esc(r.description || '') + '" />'
           : '<div class="cc-desc-txt" title="' + esc(r.description || '') + '">' + esc(r.description || '') + '</div>') +
@@ -1020,6 +1071,20 @@ window.BOQ = (function () {
     host.querySelectorAll('.boq-cellsel[data-f]').forEach(function (selEl) {
       selEl.onchange = function () { saveCell(selEl.dataset.i, selEl.dataset.f, selEl.value); };
     });
+    host.querySelectorAll('[data-tog]').forEach(function (b) {
+      b.onclick = function () {
+        var id = b.dataset.tog;
+        if (COLLAPSED[id]) delete COLLAPSED[id]; else COLLAPSED[id] = 1;
+        render();
+      };
+    });
+    var cAll = host.querySelector('#boq-collapse');
+    if (cAll) cAll.onclick = function () {
+      ITEMS.forEach(function (x) { if (x.line_kind === 'heading') COLLAPSED[x.id] = 1; });
+      render();
+    };
+    var eAll = host.querySelector('#boq-expand');
+    if (eAll) eAll.onclick = function () { COLLAPSED = {}; render(); };
     host.querySelectorAll('[data-del]').forEach(function (b) {
       b.onclick = function () { delLine(b.dataset.del); };
     });
@@ -1036,10 +1101,16 @@ window.BOQ = (function () {
         LOUD (see saveCell) rather than written as a null.
         `inputmode="decimal"` keeps the numeric keypad on a phone, which is the only thing
         type="number" was buying. */
+  /* A placeholder is the cheapest possible 'you may type here'. ⚠️ It is deliberately the
+     SHAPE of the expected value (0.00 for money, 0 for a count, the word unit for text)
+     rather than a label — the column header already names the field, and repeating it in every
+     one of 3,505 cells is noise. Shown muted so an empty cell never reads as a real zero. */
+  var CELL_PH = { qty: '0', mat_rate: '0.00', lab_rate: '0.00', amount: '0.00', unit: 'unit' };
   function cellIn(r, field, kind) {
-    var v = r[field];
+    var v = r[field], ph = CELL_PH[field];
     return '<input class="boq-cell" data-f="' + field + '" data-i="' + esc(r.id) + '"' +
       (kind === 'num' ? ' inputmode="decimal"' : '') +
+      (ph ? ' placeholder="' + ph + '"' : '') +
       ' value="' + esc(v == null ? '' : v) + '" />';
   }
 
@@ -3397,7 +3468,7 @@ window.BOQ = (function () {
     await ensureSugg();
     await load();
   }
-  function reset() { loaded = false; REVS = []; ITEMS = []; CMAP = {}; ALLOC = []; PERIODS = []; PROG = {}; REVID = null; CODES = null; CODETREE = null; ACTS = null; SCHED = null; schedErr = null; PKGS = []; }
+  function reset() { COLLAPSED = {}; loaded = false; REVS = []; ITEMS = []; CMAP = {}; ALLOC = []; PERIODS = []; PROG = {}; REVID = null; CODES = null; CODETREE = null; ACTS = null; SCHED = null; schedErr = null; PKGS = []; }
 
   return {
     init: init, show: show, reset: reset, render: render,

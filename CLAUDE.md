@@ -95,6 +95,20 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-07 (g) - Contracts & Claims: the draft BOQ table looks fillable, and headings collapse
+
+- WARNING **3,505 invisible inputs.** The draft table's cells were  with a
+  transparent border and no placeholder - present and wired, but nothing on screen said they could be
+  typed into. Owner: *"the table is not apparent to be filled out"*. Invisible-until-hover suits an
+  **issued** bill (read constantly, written never); on a draft it defeats the whole screen.
+   now applies **only on a draft**, plus muted shape-of-the-value placeholders.
+- **Headings collapse** - 924 rows under 223 headings. Spans come from **, not **,
+  so they stay right after a filter removes rows mid-branch; a caret shows only where a heading owns
+  rows, and Collapse all / Expand all appear only when the bill has headings.
+  WARNING: the state is in memory, not persisted - it is how you are reading the bill, not part of it.
+- /,  -> .
+
+
 ### 2026-09-07 (f) — The changelog is deduplicated and archived by month
 
 Owner: *"Fix the duplicated CLAUDE.md and finish the consolidation."*
