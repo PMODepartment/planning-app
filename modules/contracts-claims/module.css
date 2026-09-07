@@ -785,3 +785,44 @@ html.pd-dark .boq-why { color:#7fd6a2; }
 .boq-how summary{cursor:pointer;color:var(--pd-muted);font-weight:600;list-style:revert}
 .boq-how summary:hover{color:var(--pd-ink)}
 .boq-how p{margin:8px 0 0;color:var(--pd-muted);line-height:1.6;max-width:900px}
+
+/* ==========================================================================
+   THE CLASS-CODE LADDER (boq.js openCodeBuilder)
+   ==========================================================================
+   Trade -> Group -> Item, three panes side by side. Replaces a single-column
+   accordion holding 42 divisions, 205 groups and 702 items, where finding one
+   trade meant scrolling a 949-row list. A BOQ is built a trade at a time, so
+   the trade is the first question rather than something to hunt for.
+   Every pane scrolls independently and to a FIXED height: the modal must not
+   resize as you move between a trade with 3 groups and one with 40. */
+.boq-ladwrap { padding:0 16px 4px; }
+.boq-ladwrap .pd-input { margin-bottom:10px; }
+.boq-lad { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; }
+.boq-lad-col { border:1px solid var(--pd-line); border-radius:8px; overflow:hidden;
+  display:flex; flex-direction:column; min-width:0; }
+.boq-lad-h { display:flex; justify-content:space-between; align-items:center;
+  padding:6px 10px; font-size:10.5px; font-weight:700; text-transform:uppercase;
+  letter-spacing:.04em; color:var(--pd-muted); background:rgba(128,128,128,.10);
+  border-bottom:1px solid var(--pd-line); }
+.boq-lad-h span { font-variant-numeric:tabular-nums; }
+.boq-lad-body { height:340px; overflow-y:auto; }
+.boq-lad-row { display:flex; align-items:center; gap:8px; padding:5px 10px; cursor:pointer;
+  border-bottom:1px solid rgba(128,128,128,.10); }
+.boq-lad-row:hover { background:rgba(128,128,128,.12); }
+.boq-lad-row.on { background:rgba(238,49,36,.14); }
+.boq-lad-row input { flex:0 0 auto; cursor:pointer; }
+/* A partly-picked parent must not read as unpicked - same signal the tree used. */
+.boq-lad-row input[data-part] { outline:2px solid var(--pd-red); outline-offset:1px; }
+.boq-lad-code { flex:0 0 auto; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:11px; color:var(--pd-muted); }
+.boq-lad-name { flex:1 1 auto; font-size:12px; overflow:hidden; text-overflow:ellipsis;
+  white-space:nowrap; }
+.boq-lad-n { flex:0 0 auto; font-size:10.5px; font-weight:700; color:var(--pd-muted);
+  font-variant-numeric:tabular-nums; }
+.boq-lad-row.on .boq-lad-n { color:var(--pd-red); }
+@media (max-width:820px) { .boq-lad { grid-template-columns:1fr; }
+  .boq-lad-body { height:180px; } }
+
+/* One modal header shape everywhere: a title, and one line saying what the screen is for.
+   Replaces per-modal paragraphs of theory sitting above the controls. */
+.pd-modal-sub { margin-top:3px; font-size:12px; color:var(--pd-muted); line-height:1.4; }

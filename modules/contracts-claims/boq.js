@@ -1955,23 +1955,36 @@ window.BOQ = (function () {
       return;
     }
     buildTree();
-    var picked = {}, open = {}, q = '';
+    /* ⚠️ `open` is gone with the tree — a ladder has no collapsed state, it has a position. */
+    var picked = {}, q = '', curTrade = null, curGroup = null;
 
     /* ⚠️ The one place a planner decides the shape of the bill, so it is the one place worth
        saying what ticking a division actually does. Without this the trade split is a surprise
        discovered later, if at all. */
-    var m = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">Add lines from the class-code library</h2>' +
+    /* ⚠️⚠️ A LADDER, NOT A TREE. Owner, 2026-09-07: *"the class code library should map out the
+       trades first (Description 1). I think its better to present this as a ladder selection
+       rather than presenting it this way. Right now it will be very tedious for the planner to add
+       class codes selecting manually which to add."* He is right, and the numbers say why: one
+       column holding 42 divisions, 205 groups and 702 items means the planner scrolls a 949-row
+       accordion to find one trade. A BOQ is built A TRADE AT A TIME, so the trade is the first
+       question, not something to hunt for.
+       ⚠️ Three panes, Finder-style: Trade → Group → Item, each filtering the next. Ticking is
+       still available at EVERY level — a whole trade in one click stays the fast path — but
+       drilling in no longer costs an expanding accordion that pushes everything else off screen.
+       ⚠️ The header follows the standard modal shape (title + one-line subtitle) rather than a
+       paragraph of theory; what "division → sheet" means belongs in the result, not in the way. */
+    var m = UI.modal('<div class="pd-modal-header">' +
+      '<div><h2 style="margin:0;">Add lines</h2>' +
+      '<div class="pd-modal-sub">Pick a trade, then take the whole trade or drill into its groups</div></div>' +
       '<button class="pd-modal-close" id="cb-x">&times;</button></div>' +
-      '<div style="padding:0 16px 4px;">' +
-      '<p class="cc-hint" style="margin-top:0;">Division → sheet, group → heading, item → line. ' +
-      'Tick a division or group to take everything under it.</p>' +
-      '<input class="pd-input" id="cb-q" placeholder="Search code, division, group or item…" autocomplete="off" style="margin-bottom:8px;" />' +
-      '<div class="boq-tree" id="cb-tree"></div>' +
+      '<div class="boq-ladwrap">' +
+      '<input class="pd-input" id="cb-q" placeholder="Search code, trade, group or item…" autocomplete="off" />' +
+      '<div class="boq-lad" id="cb-tree"></div>' +
       '<div class="boq-tpicked" id="cb-count"></div></div>' +
       '<div class="pd-modal-footer"><button class="pd-btn" id="cb-c">Cancel</button> ' +
       '<button class="pd-btn pd-btn-primary" id="cb-go">Add lines</button></div>');
-    // One column, but three indent levels and a count on the right — 520px clips it.
-    m.el.querySelector('.pd-modal').classList.add('boq-widish');
+    // Three panes side by side need the wide shell, not the 760px one.
+    m.el.querySelector('.pd-modal').classList.add('boq-wide');
     var el = function (id) { return m.el.querySelector('#' + id); };
     el('cb-x').onclick = m.close; el('cb-c').onclick = m.close;
 
@@ -1994,43 +2007,54 @@ window.BOQ = (function () {
     }
     function nPicked() { return Object.keys(picked).length; }
 
+    /* One row, used at all three rungs so they stay typographically identical. */
+    function ladRow(kind, code, name, on, total, active) {
+      var part = on > 0 && on < total;
+      return '<div class="boq-lad-row' + (active ? ' on' : '') + '" data-rung="' + kind + '" data-key="' + esc(code) + '">' +
+        '<input type="checkbox" data-' + (kind === 'trade' ? 'd' : kind === 'group' ? 'g' : 'c') + '="' + esc(code) + '"' +
+          (total && on === total ? ' checked' : '') + (part ? ' data-part="1"' : '') + ' />' +
+        '<span class="boq-lad-code">' + esc(code) + '</span>' +
+        '<span class="boq-lad-name">' + esc(name) + '</span>' +
+        (total ? '<span class="boq-lad-n">' + (on ? on + '/' : '') + total + '</span>' : '') +
+        '</div>';
+    }
+
     function paint() {
       var vis = visible();
-      // Searching auto-expands: a hit inside a collapsed division is a hit nobody can see.
-      var expandAll = !!q;
-      el('cb-tree').innerHTML = vis.length ? vis.map(function (x) {
-        var d = x.d;
-        var all = x.gs.reduce(function (a, y) { return a.concat(y.items); }, []);
-        var on = all.filter(function (c) { return picked[c.code]; }).length;
-        var isOpen = expandAll || !!open[d.code];
-        return '<div class="boq-tnode boq-tl1">' +
-          '<label class="boq-trow">' +
-            '<span class="boq-tcaret" data-tog="' + esc(d.code) + '">' + (isOpen ? '▾' : '▸') + '</span>' +
-            '<input type="checkbox" data-d="' + esc(d.code) + '"' + (on && on === all.length ? ' checked' : '') +
-              (on && on < all.length ? ' data-part="1"' : '') + ' />' +
-            '<span class="boq-tcode">' + esc(d.code) + '</span>' +
-            '<span class="boq-tname">' + esc(d.desc) + '</span>' +
-            '<span class="boq-tn">' + (on ? on + ' / ' : '') + all.length + '</span>' +
-          '</label>' +
-          '<div class="boq-tkids"' + (isOpen ? '' : ' hidden') + '>' +
-          x.gs.map(function (y) {
-            var gon = y.items.filter(function (c) { return picked[c.code]; }).length;
-            return '<div class="boq-tnode boq-tl2">' +
-              '<label class="boq-trow">' +
-                '<span class="boq-tcaret"></span>' +
-                '<input type="checkbox" data-g="' + esc(y.g.code) + '"' + (gon && gon === y.items.length ? ' checked' : '') + ' />' +
-                '<span class="boq-tcode">' + esc(y.g.code) + '</span>' +
-                '<span class="boq-tname">' + esc(y.g.desc) + '</span>' +
-                '<span class="boq-tn">' + (gon ? gon + ' / ' : '') + y.items.length + '</span>' +
-              '</label>' +
-              '<div class="boq-tl3">' + y.items.map(function (c) {
-                return '<label class="boq-trow">' +
-                  '<input type="checkbox" data-c="' + esc(c.code) + '"' + (picked[c.code] ? ' checked' : '') + ' />' +
-                  '<span class="boq-tcode">' + esc(c.code) + '</span>' +
-                  '<span class="boq-tname">' + esc(c.desc_l3) + '</span></label>';
-              }).join('') + '</div></div>';
-          }).join('') + '</div></div>';
-      }).join('') : '<p class="cc-mut" style="padding:14px;text-align:center;">No codes match that search.</p>';
+      if (!vis.length) {
+        el('cb-tree').innerHTML = '<p class="cc-mut" style="padding:24px;text-align:center;">No codes match that search.</p>';
+      } else {
+        /* ⚠️ The position is RE-VALIDATED against the filtered set every paint. Typing a search
+           that excludes the trade you were standing on must move you somewhere real, not leave
+           two empty panes beside a list that no longer contains your selection. */
+        var t = vis.filter(function (x) { return x.d.code === curTrade; })[0] || vis[0];
+        curTrade = t.d.code;
+        var gsel = t.gs.filter(function (y) { return y.g.code === curGroup; })[0] || t.gs[0];
+        curGroup = gsel ? gsel.g.code : null;
+
+        var tradesHTML = vis.map(function (x) {
+          var all = x.gs.reduce(function (a, y) { return a.concat(y.items); }, []);
+          var on = all.filter(function (c) { return picked[c.code]; }).length;
+          return ladRow('trade', x.d.code, x.d.desc, on, all.length, x.d.code === curTrade);
+        }).join('');
+
+        var groupsHTML = t.gs.map(function (y) {
+          var on = y.items.filter(function (c) { return picked[c.code]; }).length;
+          return ladRow('group', y.g.code, y.g.desc, on, y.items.length, y.g.code === curGroup);
+        }).join('');
+
+        var itemsHTML = gsel ? gsel.items.map(function (c) {
+          return ladRow('item', c.code, c.desc_l3, picked[c.code] ? 1 : 0, 0, false);
+        }).join('') : '';
+
+        el('cb-tree').innerHTML =
+          '<div class="boq-lad-col"><div class="boq-lad-h">Trade<span>' + vis.length + '</span></div>' +
+            '<div class="boq-lad-body">' + tradesHTML + '</div></div>' +
+          '<div class="boq-lad-col"><div class="boq-lad-h">Group<span>' + t.gs.length + '</span></div>' +
+            '<div class="boq-lad-body">' + groupsHTML + '</div></div>' +
+          '<div class="boq-lad-col"><div class="boq-lad-h">Item<span>' + (gsel ? gsel.items.length : 0) + '</span></div>' +
+            '<div class="boq-lad-body">' + itemsHTML + '</div></div>';
+      }
 
       var divs = {};
       Object.keys(picked).forEach(function (k) { var c = codeRow(k); if (c) divs[c.desc_l1] = 1; });
@@ -2045,10 +2069,16 @@ window.BOQ = (function () {
     function setAll(list, on) { list.forEach(function (c) { if (on) picked[c.code] = 1; else delete picked[c.code]; }); }
     function wireTree() {
       var tree = el('cb-tree');
-      tree.querySelectorAll('[data-tog]').forEach(function (t) {
-        t.onclick = function (e) {
-          e.preventDefault(); e.stopPropagation();
-          open[t.dataset.tog] = !open[t.dataset.tog]; paint();
+      /* ⚠️ Clicking the ROW moves the ladder; clicking its CHECKBOX picks. Without the guard the
+         checkbox click bubbles to the row and does both, so ticking a trade would also jump you
+         into it — which is precisely the kind of "it did something I did not ask for" that makes
+         a picker feel unsafe on 702 rows. */
+      tree.querySelectorAll('.boq-lad-row').forEach(function (row) {
+        row.onclick = function (e) {
+          if (e.target && e.target.tagName === 'INPUT') return;
+          var rung = row.dataset.rung;
+          if (rung === 'trade') { curTrade = row.dataset.key; curGroup = null; paint(); }
+          else if (rung === 'group') { curGroup = row.dataset.key; paint(); }
         };
       });
       tree.querySelectorAll('[data-c]').forEach(function (cb) {
