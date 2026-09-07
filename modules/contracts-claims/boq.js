@@ -623,7 +623,19 @@ window.BOQ = (function () {
   async function ensureCodes() {
     if (CODES && CODES.length) return CODES;
     try {
-      CODES = await PDb.selectAll('class_codes', function (q) { return q.eq('active', true).order('sort_order'); }, 'code,code_l1,code_l2,desc_l1,desc_l2,desc_l3') || [];
+      /* ⚠️ Paged on `code`, not `id` — this table's primary key IS the padded Finance code and
+         there is no `id` column. ⚠️ `sort_order` is fetched and applied IN MEMORY because
+         selectAll orders by its cursor; the migration is explicit that this order is Finance's
+         own template sequence, which is how a QS expects to read the chart. */
+      CODES = await PDb.selectAll('class_codes', function (q) { return q.eq('active', true); },
+                                  'code,code_l1,code_l2,desc_l1,desc_l2,desc_l3,sort_order', 'code') || [];
+      CODES.sort(function (a, b) {
+        var x = a.sort_order, y = b.sort_order;
+        if (x == null && y == null) return String(a.code) < String(b.code) ? -1 : 1;
+        if (x == null) return 1;
+        if (y == null) return -1;
+        return x - y;
+      });
       codesErr = null;
     } catch (e) { CODES = []; codesErr = e; }
     return CODES;
