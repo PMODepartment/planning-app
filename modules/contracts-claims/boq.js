@@ -1804,18 +1804,51 @@ window.BOQ = (function () {
   /* The actual insert, shared by the wizard and by openNewRev()'s fallback dialog.
      ⚠️ `is_current` stays FALSE and the database enforces it for a draft: the contract value on
      screen must keep coming from the issued document until this one is issued. */
+  /* ⚠️⚠️ RETRIES ON A DUPLICATE LABEL INSTEAD OF FAILING. Owner hit
+     `duplicate key value violates unique constraint "boq_revisions_project_rev_idx"` creating a
+     second BOQ: the suggested label came back "00" when rev 00 already existed. The cause is load
+     ORDER, not arithmetic — `nextRevLabel()` reads the in-memory REVS, and the BOQ section loads
+     lazily when it scrolls into view, so opening the wizard from the top of the page asks an
+     empty list what the next number is and is told zero.
+     ⚠️ Fixed here rather than only in the suggestion, because ANY caller can race that load, and
+     because two planners can pick the same label at the same moment however good the default is.
+     The unique index is the real authority; this asks it and moves on. The label actually used is
+     returned, so the caller reports what happened rather than what it intended. */
   async function createDraft(f) {
-    var ins = await sb().from(T_REV).insert({
-      project_id: pid, rev_no: f.rev, issued_date: f.date || null,
-      po_no: f.po || null, contract_total: numOf(f.total),
-      source_file: null, sheet_inventory: {},
-      status: 'draft', origin: 'manual', is_current: false,
-      notes: 'Built by hand from the class-code library.', created_by: UID
-    }).select().single();
-    if (ins.error) throw ins.error;
-    REVID = ins.data.id; sub = 'items';
-    await load();
-    return ins.data;
+    var label = String(f.rev || '').trim() || '00';
+    for (var attempt = 0; attempt < 12; attempt++) {
+      var ins = await sb().from(T_REV).insert({
+        project_id: pid, rev_no: label, issued_date: f.date || null,
+        po_no: f.po || null, contract_total: numOf(f.total),
+        source_file: null, sheet_inventory: {},
+        status: 'draft', origin: 'manual', is_current: false,
+        notes: 'Built by hand from the class-code library.', created_by: UID
+      }).select().single();
+      if (!ins.error) {
+        REVID = ins.data.id; sub = 'items';
+        await load();
+        return ins.data;
+      }
+      var msg = ins.error.message || '';
+      var dup = ins.error.code === '23505' || /duplicate key|already exists/i.test(msg);
+      if (!dup) throw ins.error;
+      // Take the number off the end and step it, so 'INTERNAL-01' becomes 'INTERNAL-02'.
+      var m = label.match(/^(.*?)(\d+)$/);
+      if (m) {
+        var n = String(parseInt(m[2], 10) + 1);
+        while (n.length < m[2].length) n = '0' + n;
+        label = m[1] + n;
+      } else {
+        label = label + '-2';
+      }
+    }
+    throw new Error('Could not find a free revision label after 12 tries.');
+  }
+
+  /* The draft this project is already building, if any. Exported for the wizard, which must not
+     offer "start a new revision" as the way to add another trade - see its BOQ step. */
+  function currentDraft() {
+    return (REVS || []).filter(function (r) { return revStatus(r) === 'draft'; })[0] || null;
   }
 
   /* The next free numeric label, so nobody has to invent an identifier. Exported shape is a
@@ -3782,7 +3815,9 @@ window.BOQ = (function () {
     init: init, show: show, reset: reset, render: render,
     /* ⚠️ Exported so the WIZARD can create the draft rather than reimplementing the insert.
        The trigger, the is_current rule and the draft/manual defaults all live in one place. */
-    createDraft: createDraft, nextRevLabel: nextRevLabel,
+    createDraft: createDraft, nextRevLabel: nextRevLabel, currentDraft: currentDraft,
+    /* Opens the class-code picker on the existing draft - the wizard's "add a trade" path. */
+    addTrades: function () { sub = 'items'; render(); return openCodeBuilder(); },
     mountTo: function (id) { HOST_ID = id || 'cc-view'; },
     isLoaded: function () { return loaded; },
     /* ⚠️ EXPORTED so the wizard can HAND OFF instead of giving directions. The BOQ

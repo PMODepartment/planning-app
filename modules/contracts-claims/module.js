@@ -565,6 +565,15 @@ window.ContractsClaims = (function () {
         if (!window.BOQ || !BOQ.createDraft) return Promise.reject(new Error('BOQ did not load.'));
         return BOQ.createDraft(f);
       },
+      /* Whether a draft is already open, so the wizard can offer ADDING TO IT rather than
+         starting a rival revision. Returns null when the BOQ has not loaded, which the
+         wizard treats as "unknown" and simply does not claim either way. */
+      boqDraft: function () {
+        return (window.BOQ && BOQ.currentDraft) ? BOQ.currentDraft() : null;
+      },
+      addBoqTrades: function () {
+        if (window.BOQ && BOQ.addTrades) return BOQ.addTrades();
+      },
       nextBoqRev: function () {
         return (window.BOQ && BOQ.nextRevLabel) ? BOQ.nextRevLabel() : '00';
       },

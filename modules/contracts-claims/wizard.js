@@ -388,18 +388,40 @@ window.CCWizard = (function () {
        convenience; the workbook is the faster route only on the day it exists. */
     if (st.type === 'BOQ') {
       var bmanual = st.boqMode !== 'import';
-      return '<p class="ccw-hint">A BOQ is stored as a <b>revision</b>, so a re-issued or remeasured ' +
-        'bill supersedes this one without destroying what was tendered.</p>' +
+      /* WARNING A TRADE IS NOT A REVISION, AND THIS STEP HAS TO SAY SO. Owner, 2026-09-07: *"I
+         tried creating one when there is already an existing BOQ 00 for Gen Req (not issued yet).
+         While I have not yet finalized the Gen Req BOQ I am trying to create another BOQ for other
+         trades."* That is the natural reading of "New BOQ", and it is the wrong action: a second
+         revision would SUPERSEDE the first, not sit beside it, and the contract sum is per
+         revision - two half-bills would each report a partial contract value. Trades already live
+         WITHIN one revision as sheets (addAuthoredLines maps division -> sheet).
+         WARNING So when a draft is already open the step leads with ADD TO IT, and starting a new
+         revision moves to second place with what it actually means spelled out. Offered only when
+         D.boqDraft() answers - it returns null while the BOQ section has not loaded, and the
+         wizard must not claim there is no draft when it simply does not know yet. */
+      var bdraft = D.boqDraft ? D.boqDraft() : null;
+      if (bdraft && st.boqNew !== true) {
+        return '<p class="ccw-hint"><b>Trades live inside one BOQ, not beside it.</b> Each division ' +
+          'you add becomes its own trade section.</p>' +
+          '<div class="ccw-choice">' +
+            '<label class="ccw-opt on"><b>Add trades to ' + esc(bdraft.rev_no) + ' (draft)</b>' +
+              '<span class="ccw-optsub">Pick more divisions from the class-code library. This is what you ' +
+              'want for another trade.</span></label>' +
+          '</div>' +
+          '<p class="ccw-hint"><a href="#" id="ccw-bnew">Start a new revision instead</a> - only for a ' +
+          're-issued or remeasured bill, which <b>supersedes</b> ' + esc(bdraft.rev_no) + '.</p>';
+      }
+      return '<p class="ccw-hint">Stored as a <b>revision</b>: a re-issue supersedes it without ' +
+        'destroying what was tendered.</p>' +
         '<div class="ccw-choice">' +
           '<label class="ccw-opt' + (bmanual ? ' on' : '') + '"><input type="radio" name="boqmode" value="manual"' +
             (bmanual ? ' checked' : '') + ' /> <b>Build it by hand</b>' +
             '<span class="ccw-optsub">From the class-code library. Each division becomes its own trade ' +
-            'section, and the lines carry their class codes from the start - which is what the schedule ' +
-            'matching and the cost roll-up read.</span></label>' +
+            'section, with class codes already on every line.</span></label>' +
           '<label class="ccw-opt' + (bmanual ? '' : ' on') + '"><input type="radio" name="boqmode" value="import"' +
             (bmanual ? '' : ' checked') + ' /> <b>Import the client&#39;s workbook</b>' +
-            '<span class="ccw-optsub">Faster when a file exists. The importer proposes a column map and you ' +
-            'accept or correct it - nothing is written until you do.</span></label>' +
+            '<span class="ccw-optsub">Faster when a file exists. You accept the column map before ' +
+            'anything is written.</span></label>' +
         '</div>' +
         (bmanual
           ? '<div class="ccw-grid2">' +
@@ -408,11 +430,10 @@ window.CCWizard = (function () {
               '<label>PO no. (optional)<input class="pd-input" id="ccw-bpo" value="' + esc(st.boqPo || '') + '" /></label>' +
               '<label>Stated contract total (optional)<input class="pd-input" id="ccw-btotal" type="number" step="0.01" value="' + esc(st.boqTotal || '') + '" /></label>' +
             '</div>' +
-            '<p class="ccw-hint">The label is prefilled and yours to change - <b>it is your label, not the ' +
-            'client&#39;s</b>. Give it the contract total if you have it and <b>issuing</b> will refuse a draft ' +
-            'whose lines do not add up to it.</p>'
-          : '<p class="ccw-hint"><b>Open importer</b> below takes you straight to the BOQ screen and opens ' +
-            'the file picker. Nothing is written until you accept the preview there.</p>');
+            '<p class="ccw-hint">Your label, not the client&#39;s. A contract total here makes <b>issuing</b> ' +
+            'check the lines add up to it.</p>'
+          : '<p class="ccw-hint"><b>Open importer</b> takes you to the file picker. Nothing is written ' +
+            'until you accept the preview.</p>');
     }
     return (false
         ? ''
@@ -501,6 +522,8 @@ window.CCWizard = (function () {
   function read(id) { var x = ov.querySelector('#' + id); return x ? (x.value || '').trim() : ''; }
   function wireStep(key) {
     if (key === 'boq') {
+      var bn = ov.querySelector('#ccw-bnew');
+      if (bn) bn.onclick = function (e) { e.preventDefault(); st.boqNew = true; paint(); };
       /* WARNING The radios REPAINT rather than just setting state: choosing "build by hand"
          reveals the four revision fields and choosing "import" hides them, so the step has to
          re-render. capture() runs first (see paint), so anything already typed survives. */
@@ -600,6 +623,13 @@ window.CCWizard = (function () {
       /* WARNING Manual WRITES (a draft revision); import HANDS OFF. Only the import path closes
          first - the importer is a modal too, and opening it under this overlay would leave the
          planner clicking a file picker they cannot reach. */
+      /* The draft path: hand off to the class-code picker on the revision already open. */
+      var bd = D.boqDraft ? D.boqDraft() : null;
+      if (bd && st.boqNew !== true) {
+        close();
+        if (D.addBoqTrades) D.addBoqTrades();
+        return;
+      }
       if (st.boqMode !== 'import') {
         var brev = String(st.boqRev || '').trim();
         if (!brev) { UI.toast('The revision needs a label - it is how this BOQ is named everywhere else.', 'error'); return; }
@@ -754,7 +784,7 @@ window.CCWizard = (function () {
          through in a browser". One blank row, primary on it — what the list has always
          assumed it starts with. */
       pkgList: [blankPkg()], pkgPrimary: 0,
-      boqMode: 'manual', boqRev: '', boqDate: '', boqPo: '', boqTotal: '',
+      boqMode: 'manual', boqNew: false, boqRev: '', boqDate: '', boqPo: '', boqTotal: '',
       ref: '', desc: '', cp: '', amount: '', est: '', sub: '', d1: '', d2: '',
       pkgLabel: function () {
         var p = D.packages().filter(function (x) { return String(x.id) === String(st.pkgId); })[0];
