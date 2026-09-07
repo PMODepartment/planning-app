@@ -676,18 +676,54 @@ window.BOQ = (function () {
     { key: 'billing', label: 'Billing / POC' }
   ];
 
+  /* ⚠⚠ A HAND-BUILT DRAFT SHOWS TWO TABS, NOT FOUR — owner, 2026-09-07: *"the BOQ is
+     complicated to use and difficult to manage when it's really simple: you just have a BOQ and
+     a class code library and you just have to match it with the activities in the schedule."*
+     That is an accurate description of the manual job, and two of the four tabs have no part in
+     it:
+       · **Class Codes** maps a CLIENT'S DESCRIPTIONS onto codes, with proposals, confidence and
+         a suggestion library. On an authored line the CODE CAME FIRST and the description was
+         written from it — there is nothing to infer. This is exactly why 2026-09-07-boq-manual
+         added a fourth source value, `authored`, instead of reusing `hand_picked`: the mapping
+         is a fact, not a judgement. Showing a judgement UI over facts invites re-deciding what
+         was never in doubt, and `boq_class_suggestions` LEARNS from that tab.
+       · **Billing / POC** cannot do anything before the revision is issued — a draft never
+         bills, which the database enforces. It was four screens of accrual vocabulary offering
+         a "New billing period" button on a document that cannot be billed.
+     ⚠️ GATED ON `origin='manual' AND status='draft'`, so an IMPORT IS COMPLETELY UNTOUCHED, and
+     the full four tabs return the moment the revision is issued — nothing is removed from the
+     product, it is deferred until it means something. `Allocations` is also renamed here to
+     **Match to schedule**, which is the owner's own phrase for it; the import path keeps the
+     quantity-allocation wording it shares with the reconciliation screens. */
+  function isManualDraft() {
+    var r = curRev() || {};
+    return revStatus(r) === 'draft' && r.origin === 'manual';
+  }
+  function subsFor() {
+    if (!isManualDraft()) return SUBS;
+    return [
+      { key: 'items', label: 'Lines' },
+      { key: 'alloc', label: 'Match to schedule' }
+    ];
+  }
+
   function hostEl() {
     return document.getElementById(HOST_ID) || document.getElementById('cc-view');
   }
   function render() {
     var host = hostEl();
     if (!host) return;
-    if (!host) return;
     if (!pid) { host.innerHTML = '<div class="pd-card cc-empty"><h3>Select a project</h3></div>'; return; }
     if (!loaded) { host.innerHTML = '<div class="pd-card cc-empty"><h3><span class="cc-spin"></span>Loading the BOQ…</h3></div>'; return; }
 
+    /* ⚠️ If the visible set shrank under us — issuing flips it back to four, and picking a
+       different revision can too — a `sub` that is no longer on offer would render a blank body
+       with no tab lit. Fall back to the one tab that always exists. */
+    var subs = subsFor();
+    if (!subs.some(function (x) { return x.key === sub; })) sub = 'items';
+
     var h = '<div class="boq-bar">' +
-      '<div class="boq-subtabs">' + SUBS.map(function (s) {
+      '<div class="boq-subtabs">' + subs.map(function (s) {
         return '<button class="boq-subtab' + (sub === s.key ? ' active' : '') + '" data-sub="' + s.key + '">' + esc(s.label) + '</button>';
       }).join('') + '</div>' +
       '<span class="boq-spacer"></span>' + revPickerHTML() +
@@ -847,7 +883,34 @@ window.BOQ = (function () {
 
     var list = filtered();
     var span = 11 + (draft ? 1 : 0);
-    if (!list.length) h += '<tr><td colspan="' + span + '" class="cc-mut" style="text-align:center;padding:30px;">No lines match these filters.</td></tr>';
+    /* ⚠️ AN EMPTY DRAFT IS NOT A FAILED SEARCH. This said "No lines match these filters" on a
+       BOQ that had just been created and had no lines to filter — technically true and useless,
+       and it was the first thing a planner saw after choosing to build one by hand. The two
+       cases are now distinguished: nothing here YET (say what to do) versus nothing matching
+       (say how to clear it). Owner, 2026-09-07: *"make sure that the BOQ manual add is
+       intuitive and easy to use."* */
+    if (!list.length) {
+      var filtering = !!(filt.q || filt.sheet || filt.kind || filt.mapped);
+      var body;
+      if (filtering) {
+        body = '<b>No lines match these filters.</b><br><span class="cc-mut">Clear the search '
+             + 'or the dropdowns above to see the whole bill.</span>';
+      } else if (draft) {
+        body = '<b>This BOQ is empty — build it in three steps.</b>'
+             + '<div style="text-align:left;display:inline-block;margin:12px 0 0;line-height:1.9;">'
+             + '<b>1.</b> <b>Add lines from class codes</b> — tick a whole division or trade and '
+             + 'every code under it comes in as a line.<br>'
+             + '<b>2.</b> Fill in the <b>quantity and rates</b> on each line, right here in the table.<br>'
+             + '<b>3.</b> <b>Match to schedule</b> — spread each line across the activities that '
+             + 'carry its code.</div>'
+             + '<div style="margin-top:14px;"><span class="cc-mut">Then <b>Issue revision</b> when '
+             + 'it is complete. Until you do, nothing bills and the contract value does not move.</span></div>';
+      } else {
+        body = '<b>This revision has no lines.</b>';
+      }
+      h += '<tr><td colspan="' + span + '" class="cc-mut" style="text-align:center;padding:30px;">'
+         + body + '</td></tr>';
+    }
     list.forEach(function (r) {
       var head = r.line_kind === 'heading';
       var cm = CMAP[r.id];

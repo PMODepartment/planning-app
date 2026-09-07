@@ -1,5 +1,47 @@
 # Module: contracts-claims
 
+## A hand-built draft shows two tabs, not four (2026-09-07d) — fmlozano
+
+Owner: *"the BOQ is complicated to use and difficult to manage when it's really simple: you just
+have a BOQ and a class code library and you just have to match it with the activities in the
+schedule."* That is an accurate description of the manual job — and measured against it, **half
+the screen had no part in it**.
+
+| Tab | Job on a hand-built draft |
+|---|---|
+| BOQ Items → **Lines** | the work |
+| Class Codes | ❌ **nothing** |
+| Allocations → **Match to schedule** | the work |
+| Billing / POC | ❌ **nothing yet** |
+
+⚠️ **Class Codes maps a CLIENT'S DESCRIPTIONS onto codes** — proposals, confidence, a suggestion
+library. On an authored line **the code came first** and the description was written from it, so
+there is nothing to infer. This is precisely why `2026-09-07-boq-manual.sql` added a fourth source
+value, `authored`, rather than reusing `hand_picked`: the mapping is a *fact*, not a judgement.
+Showing a judgement UI over facts invites re-deciding what was never in doubt — and
+`boq_class_suggestions` **learns** from that tab, so it would have started proposing its own output
+back to itself.
+
+⚠️ **Billing / POC cannot act before the revision is issued** — a draft never bills, and the
+database enforces it. It was four screens of accrual vocabulary offering a *New billing period*
+button on a document that cannot be billed.
+
+**Gated on `origin='manual' AND status='draft'`,** so an import is untouched and all four tabs
+return the moment the revision is issued. Nothing is removed from the product; it is deferred
+until it means something. `sub` falls back to `items` when the visible set shrinks, so a tab that
+disappears cannot leave a blank body with nothing lit.
+
+### The empty draft now says what to do
+It read **"No lines match these filters"** on a BOQ that had just been created and had no lines to
+filter — technically true, useless, and the first thing you saw after choosing to build by hand.
+Now it distinguishes *nothing yet* (three numbered steps: add lines from class codes → fill
+quantity and rates → match to schedule, then issue) from *nothing matching* (clear the filters).
+
+- Also tidied a duplicated `if (!host) return;` left by the `mountTo()` edit in (c).
+- `boq.js?v=20260907d`; `MODULE_V` → `20260907e`.
+
+---
+
 ## Manual BOQ becomes the primary path, and it moves into the Contract tab (2026-09-07c) — fmlozano
 
 Four owner items in one pass, plus the bug that was blocking all of them.

@@ -84,6 +84,23 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-07 (d) — Contracts & Claims: the manual BOQ loses the half of the screen it never used
+
+Owner: *"the BOQ is complicated to use… it's really simple: you just have a BOQ and a class code
+library and you just have to match it with the activities in the schedule."*
+
+- **A hand-built draft now shows two tabs, not four** — `Lines` and `Match to schedule`.
+  ⚠️ `Class Codes` maps a *client's descriptions* onto codes; on an authored line the **code came
+  first**, so there is nothing to infer — the same reasoning that gave manual lines their own
+  `authored` source. Worse, that tab **teaches** `boq_class_suggestions`, so it would have learned
+  from its own output. ⚠️ `Billing / POC` cannot act before issuing — a draft never bills.
+- **Gated on `origin='manual' AND status='draft'`**: imports are untouched, and all four tabs
+  return on issue. Nothing removed, only deferred until it means something.
+- **The empty draft explains itself** instead of saying "No lines match these filters" on a BOQ
+  with no lines — three numbered steps, and the filter case kept separate.
+- `boq.js?v=20260907d`, `MODULE_V` → `20260907e`.
+
+
 ### 2026-09-07 (c) — Contracts & Claims: manual BOQ first, and the BOQ moves inline
 
 Owner, four items. Detail in `modules/contracts-claims/CLAUDE.md`.
