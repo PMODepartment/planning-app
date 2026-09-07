@@ -2095,10 +2095,18 @@ window.BOQ = (function () {
 
     /* One row, used at all three rungs so they stay typographically identical. */
     function ladRow(kind, code, name, on, total, active) {
-      var part = on > 0 && on < total;
+      /* ⚠️⚠️ A LEAF HAS NO CHILDREN, SO `total` IS 0 AND THE PARENT TEST CANNOT BE REUSED. The
+         checked test was `total && on === total`, which short-circuits to falsy for every item
+         row — so ticking a trade selected all 127 codes (the footer said so) while every Item
+         checkbox rendered UNCHECKED. Owner: *"I checked the General Requirement in the trade
+         column and the Item did not check? Is this intentional?"* No: the state was right and the
+         control was lying about it, which is worse than either being wrong on its own. */
+      var leaf = !total;
+      var isOn = leaf ? !!on : (total > 0 && on === total);
+      var part = !leaf && on > 0 && on < total;
       return '<div class="boq-lad-row' + (active ? ' on' : '') + '" data-rung="' + kind + '" data-key="' + esc(code) + '">' +
         '<input type="checkbox" data-' + (kind === 'trade' ? 'd' : kind === 'group' ? 'g' : 'c') + '="' + esc(code) + '"' +
-          (total && on === total ? ' checked' : '') + (part ? ' data-part="1"' : '') + ' />' +
+          (isOn ? ' checked' : '') + (part ? ' data-part="1"' : '') + ' />' +
         '<span class="boq-lad-code">' + esc(code) + '</span>' +
         '<span class="boq-lad-name">' + esc(name) + '</span>' +
         (total ? '<span class="boq-lad-n">' + (on ? on + '/' : '') + total + '</span>' : '') +
