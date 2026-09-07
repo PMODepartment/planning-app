@@ -75,6 +75,26 @@ window.PDGrid = (function () {
        the highlight only on the last cell touched. An inset shadow paints over whatever the cell's
        own background happens to be. */
     s.textContent =
+      /* ⚠️⚠️ ONE FONT SIZE FOR EVERY CELL, and this is the single biggest difference between this
+         grid and review.html's. Owner, comparing them: *"it seems that the fonts are different for
+         all of the texts in the page"*. Measured on a BOQ row before this: SIX sizes plus a weight
+         change — .cc-table td 13px, .boq-cell 12.5px, .boq-cellsel 11.5px, .boq-no 11.5px mono,
+         .boq-code 11.5px mono, .cc-mini 11px, and font-weight 600 on the description. review.html
+         sets one size on `table.xl td` and lets everything inherit; a spreadsheet reads as a
+         spreadsheet because every cell is typographically identical, and the eye scans a column
+         instead of stumbling over six treatments.
+         ⚠️ Monospace SURVIVES on the code columns — that is an alignment device for
+         fixed-width identifiers, not decoration — but at the same size as everything else. */
+      '.pdg-grid td,.pdg-grid td input,.pdg-grid td select,.pdg-grid td .cc-desc-txt,' +
+        '.pdg-grid td .boq-code,.pdg-grid td .boq-no,.pdg-grid td .boq-kind' +
+        '{font-size:12px;font-weight:400;line-height:1.35}' +
+      '.pdg-grid td .boq-code,.pdg-grid td .boq-no{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}' +
+      /* ⚠️ The sheet/row sub-line is REMOVED FROM THE GRID, not merely shrunk. It was the second
+         line of every description cell, which is what made the rows tall and uneven, and a second
+         size the moment it differed from the first. review.html has no such line. The text moves
+         to the cell's tooltip (see boq.js), so nothing is lost and every row is one line high. */
+      '.pdg-grid td .cc-mini{display:none}' +
+      '.pdg-grid td .cc-desc-txt{-webkit-line-clamp:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
       /* the lattice */
       '.pdg-grid{border-collapse:separate;border-spacing:0;width:100%}' +
       '.pdg-grid td,.pdg-grid th{border-right:1px solid var(--pd-line,#333);' +
@@ -95,9 +115,24 @@ window.PDGrid = (function () {
          no resting border of its own, filling the td so the lattice comes from the table. */
       '.pdg-grid .boq-cell,.pdg-grid .boq-cellsel{border-radius:0;border-color:transparent;' +
         'background:transparent;width:100%;padding:2px 3px}' +
-      '.pdg-grid .boq-cell:hover,.pdg-grid .boq-cellsel:hover{background:rgba(128,128,128,.14)}' +
-      '.pdg-grid .boq-cell:focus{background:var(--pd-card,#222);outline:2px solid var(--pd-red,#EE3124);' +
-        'outline-offset:-2px;border-color:transparent}' +
+      '.pdg-grid .boq-cell:hover,.pdg-grid .boq-cellsel:hover{background:rgba(128,128,128,.10)}' +
+      /* ⚠️ Overrides .boq-fillable's resting tint INSIDE a grid. Both are (0,2,0) so source order
+         decides, and this stylesheet is injected into <head> after module.css loads. The fillable
+         affordance was right when each cell was an island; with a full lattice the borders already
+         say "this is a cell", and the tint on top of them read as 4,000 boxes. */
+      '.pdg-grid.boq-fillable .boq-cell,.pdg-grid.boq-fillable .boq-cellsel' +
+        '{background:transparent;border-color:transparent}' +
+      /* ⚠️⚠️ THE SELECTION RING IS ON THE CELL, NOT THE INPUT. Owner: *"the select pane is not
+         proper as well compared to the review.html build"*. The input sits inset inside its td, so
+         an outline on the input drew a box with a visible gap all round it — review.html outlines
+         the <td> itself, so the ring is the cell. `:focus-within` puts it back where it belongs and
+         the input's own outline is suppressed. The little square bottom-right is review.html's fill
+         handle, kept as a visual cue that a cell is the anchor of a range. */
+      '.pdg-grid td:focus-within{outline:2px solid var(--pd-red,#EE3124);outline-offset:-2px;' +
+        'position:relative;z-index:4}' +
+      '.pdg-grid td:focus-within::after{content:"";position:absolute;right:-3px;bottom:-3px;' +
+        'width:6px;height:6px;background:var(--pd-red,#EE3124);border:1px solid var(--pd-card,#222)}' +
+      '.pdg-grid .boq-cell:focus{outline:none;background:transparent;border-color:transparent}' +
       /* group / heading rows: red top rule and an uppercase label, as in the original */
       '.pdg-grid tbody tr.boq-head td{background:rgba(238,49,36,.09)!important;' +
         'border-top:2px solid var(--pd-red,#EE3124);font-weight:700}' +

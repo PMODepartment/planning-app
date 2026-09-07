@@ -763,8 +763,15 @@ window.BOQ = (function () {
          tagging and the cost roll-up actually read.
          ⚠️ Primary sits RIGHTMOST, as in every other toolbar here, so the two swap places as
          well as swapping weight. */
-      (canWrite ? '<button class="pd-btn" id="boq-import" title="Read the client\'s workbook — faster when a file exists, and it lands in the same table">Import BOQ…</button>' : '') +
-      (canWrite ? '<button class="pd-btn pd-btn-primary" id="boq-new" title="Build a BOQ by hand from the class-code library">New BOQ…</button>' : '') +
+      /* ⚠️⚠️ NO STANDALONE IMPORT BUTTON. Owner, 2026-09-07: *"there is also an import BOQ button
+         where in this is already available in the wizard. Having a separate button for this would
+         defeat the purpose of processes going to the wizard first."* Exactly right — a second door
+         into the same room is how two paths drift, which is the whole reason `+ Lot` and `New BOQ`
+         were routed through the wizard earlier today. **Add BOQ** opens the wizard, and the wizard
+         asks build-by-hand or import.
+         ⚠️ `openImport()` stays exported — the wizard's import branch calls it. What is removed is
+         the button that bypassed the question, not the capability. */
+      (canWrite ? '<button class="pd-btn pd-btn-primary" id="boq-new" title="Add a BOQ — build it by hand from the class-code library, or import the client\'s workbook">Add BOQ…</button>' : '') +
       '</div>';
 
     if (!REVS.length) {
@@ -772,8 +779,7 @@ window.BOQ = (function () {
         '<p>Build one from the class-code library — or import the client\'s workbook if you ' +
         'have it. Each is a <strong>revision</strong>, and the prior one is always kept.</p>' +
         (canWrite ? '<p style="margin-top:14px;">' +
-          '<button class="pd-btn pd-btn-primary" id="boq-new2">Build by hand…</button> ' +
-          '<button class="pd-btn" id="boq-import2">Import BOQ…</button></p>' : '') +
+          '<button class="pd-btn pd-btn-primary" id="boq-new2">Add BOQ…</button></p>' : '') +
         '</div>';
     } else {
       h += sub === 'items' ? itemsHTML()
@@ -805,9 +811,9 @@ window.BOQ = (function () {
     });
     var rv = host.querySelector('#boq-rev');
     if (rv) rv.onchange = function () { REVID = rv.value; load(); };
-    ['boq-import', 'boq-import2'].forEach(function (id) {
-      var b = host.querySelector('#' + id); if (b) b.onclick = openImport;
-    });
+    /* ⚠️ Both import buttons are gone (the wizard asks build-or-import now), so this binding is
+       dead markup-side. Removed rather than left as a harmless no-op: a handler for an id nothing
+       renders is exactly the shape of the `#pk-boq` bug that hid the BOQ screen for a day. */
     /* ⚠️⚠️ CREATION GOES THROUGH THE WIZARD, EVERYWHERE. Owner, 2026-09-07: *"the add BOQ
        also pops up a new type of window wherein it should go through the wizard as we have
        agreed before. Let's make this global."* This screen was the last exception — + Lot had

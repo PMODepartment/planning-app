@@ -515,11 +515,25 @@ window.CCWizard = (function () {
     ov.querySelector('#ccw-body').innerHTML = RENDER[cur.key]();
     ov.querySelector('#ccw-back').disabled = i === 0;
     var last = i === ls.length - 1;
-    ov.querySelector('#ccw-next').textContent = last ? (st.type === 'BOQ' ? 'Open importer' : 'Save') : 'Next';
+    /* ⚠️⚠️ THE BUTTON NAMES THE ACTION YOU CHOSE. It read "Open importer" for every BOQ run —
+       hard-coded back when import was the only ending a BOQ type had — so the step could say
+       "Add trades to 00 (draft)" while the button underneath promised a file picker. Owner:
+       *"why is the button open importer where we prioritize to have the build to be manual
+       first"*. A wizard whose button contradicts its own step is worse than no wizard. */
+    ov.querySelector('#ccw-next').textContent = last ? boqActionLabel() : 'Next';
     ov.querySelector('#ccw-next').className = 'pd-btn ' + (last ? 'pd-btn-primary' : 'pd-btn-primary');
     wireStep(cur.key);
   }
   function read(id) { var x = ov.querySelector('#' + id); return x ? (x.value || '').trim() : ''; }
+  /* The three endings a BOQ run can have, in the order the owner ranked them: adding trades to a
+     draft that already exists, building a new one by hand, and — only if asked for — importing. */
+  function boqActionLabel() {
+    if (st.type !== 'BOQ') return 'Save';
+    var d = D.boqDraft ? D.boqDraft() : null;
+    if (d && st.boqNew !== true) return 'Add trades';
+    return st.boqMode === 'import' ? 'Open importer' : 'Create draft';
+  }
+
   function wireStep(key) {
     if (key === 'boq') {
       var bn = ov.querySelector('#ccw-bnew');
