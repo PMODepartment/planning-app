@@ -2,6 +2,362 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Live UI test on AVR101 found the Round-1 fix (below) was wiping ~3,600 real trade
+## activities — "Construction Phase" is a WBS container on this project, not an admin bucket
+## (2026-09-08)
+
+Owner's explicit instruction this round: perform the actual live UI test (Progress Photos →
+Add Media → Works → Other) against the real, running app and real AVR101 data — not fixtures,
+not code inspection — and fix whatever the live test finds before reporting done.
+
+### What the live test found
+
+Signed into the local dev build (serving this module's own uncommitted `module.js`, connected to
+the real Supabase backend) and opened Add Media → Works on AVR101. The floor-label fix (the entry
+below) worked exactly as designed — searching "Floor", "6th", "Roof", "Roofdeck", "Ground Floor"
+all correctly returned zero matches. But the picker as a whole had collapsed to almost nothing:
+**Other (18) / Site Development (9) / Structural Works (3) / Previously used (1)** — no
+Architectural Works, no MEPF Works, no Allied Services group at all. Searching "Waterproofing" (a
+real `Architectural Works`-tagged activity, confirmed present and correctly offered on the
+**deployed, unfixed** site) returned **zero matches** on the fixed build.
+
+The module's own diagnostic console line named the cause directly:
+`excluded branch codes=["4.1","4.2"]`, `108 in Execution/Close-out scope` — out of AVR101's 4321
+activities. Querying `project_schedule` directly through the live, authenticated session (via
+`window.AppAuth.getSB()`) confirmed the real WBS shape:
+
+```
+wbs "4"   = Execution Phase
+wbs "4.1" = General Requirements       (a genuine flat admin/mobilization branch)
+wbs "4.2" = Construction Phase         (contains 1000+ rows — the query cap; real count is higher)
+wbs "4.2.<tower>.1" = Structural Works    (once per tower, towers 1–7)
+wbs "4.2.<tower>.2" = Architectural Works (once per tower)
+wbs "4.2.<tower>.3" = MEPF Works          (once per tower)
+wbs "4.3" = Site Development Works     (a direct Execution-Phase sibling)
+```
+
+**"Construction Phase" is the literal WBS parent of every per-tower Structural/Architectural/MEPF
+branch on this project — not a sibling admin bucket alongside them.** The [[exec-branch-exclusion]]
+fix below (2026-09-08, Round 1) excluded it wholesale as a direct child of Execution Phase, on the
+strength of the owner's own screenshot showing General Requirements/Site Development/Structural
+Works/Architectural Works/MEPF Works/Allied Services/Construction Phase as apparent siblings. That
+screenshot reflected a rolled-up/aggregated tree view, not each branch's literal one-level WBS
+parentage — excluding the literal `"4.2"` branch by prefix (`wbsUnderRoot`) discarded every trade
+activity nested under it, which is nearly the entire schedule (Structural 16 + Architectural 15 +
+MEPF 3 groups' worth of distinct names, thousands of rows).
+
+General Requirements (`"4.1"`) has no such nested trade content — confirmed live, it is a genuine
+flat branch with no Structural/Architectural/MEPF children — so it stays excluded correctly.
+
+### The fix
+
+One line, in `module.js`: `EXEC_BRANCH_EXCLUDE_TERMS` drops `'construction phase'`, keeping only
+`'general requirement'`. No other logic changed — `execExcludedCodesFrom()`, `inExecOrCloseout()`,
+and the floor/location-label exclusion (below) are all untouched; this only narrows which branch
+NAME is looked up and excluded, using the exact same live-schedule-name-resolution mechanism as
+before (no hardcoding, no new master data).
+
+⚠️ **This correction reverses part of a rule the owner explicitly specified in the original
+Message A request** (based on that request's own screenshot) — but the owner's stated goal was
+"only Site Development/Structural Works/Architectural Works/MEPF Works/Allied Services are
+eligible," and excluding the WBS container that literally holds three of those five branches
+directly contradicted that stated goal once tested against the real data. Flagged prominently
+rather than silently changed.
+
+### Verified — genuine live re-test, same session, same AVR101 project
+
+Console diagnostic before/after the fix, same project, same schedule:
+
+| | before (Round 1 as shipped) | after (this fix) |
+|---|---|---|
+| excluded branch codes | `["4.1","4.2"]` | `["4.1"]` |
+| activities in scope | 108 | **3922** |
+| distinct Works names | 30 | **61** |
+
+Full picker content after the fix, live on AVR101 (Expand all, no search filter):
+- **Structural Works (16)** — Backfilling Works with Binder System, Backfilling and compaction,
+  Concreting, Excavation, Formworks, Formworks / Precast, Gabion (including miscellaneous), Gravel
+  Bedding, Gravity Wall, Haul-out Materials, Lean Concrete, Precast, Precast Delivery On-Site,
+  Rebar, Soil Treatment, Trimming Works
+- **MEPF Works (3)** — 1st Fix, 2nd Fix, 3rd Fix
+- **Architectural Works (15)** — Concrete Floor Topping, Door Installation and Lockset, Final
+  Painting Works, Masonry Works, Metal Works, Modular/Cabinetry, Primer Application, Rubbed
+  concrete (Stru Rect), Sealant Works (Exterior/Interior), Skim Coating, T&B Water closet Drywall,
+  Tile Works, **Waterproofing**, Window Installation
+- **Site Development (9)** — Base Course, Concrete 3000 psi, Finishing, Formworks, Rebar,
+  SUBGRADE, Site Development, Surface compaction, Vas-Built PC Panel
+- **Allied Services (2)** — Elevator, Generator
+- **Other (18)** — Commercial/Financial/Technical Closeout, Resource Demobilization, Tower 1–7
+  Full/Partial Closeout — **zero floor or location names**, confirmed by search: "Floor", "6th",
+  "Roof", "Roofdeck", "Ground Floor" all return "No Trade or Activity matches" against the live,
+  real, post-fix picker.
+
+No `General Requirements` group. No `Construction Phase` bucket (its real content is now correctly
+distributed across the trade groups it actually belongs to, exactly as it always should have been).
+
+**This is genuine execution against the live, authenticated app and the real AVR101 database** —
+not a fixture, not a mock. `AppAuth.getSB()` was used to run read-only diagnostic queries
+confirming the exact WBS codes, row counts, and `work_type`/`location` values behind every claim
+above, and the Add Media → Works picker was driven end-to-end in a real browser session.
+
+`module.js?v=` → `20260908d` (module-local only; `module.css` unchanged, stays `20260907b`).
+
+## Floor/location labels excluded from the Works picker — a structural rule, not a name list
+## (2026-09-08)
+
+Third round of the same AVR101 investigation. After excluding General Requirements/Construction
+Phase (the entry below), floor-named activities ("6th Floor", "Ground Floor", "Roof Deck",
+"Roofdeck") kept appearing under "Other" — traced across several read-only diagnostic rounds
+(all data pulled by the owner from their own signed-in session; this environment has no live DB
+access at all, confirmed by a direct probe returning `42501 permission denied` for an
+unauthenticated read).
+
+### What the diagnostics established, in order of elimination
+
+- **Not a misclassified `activity_type`.** Every floor-named row is genuinely `'Task'`, not a
+  `'WBS Summary'` heading that slipped through — disproved a self-referencing-parent-name
+  hypothesis outright (0 of hundreds of blank-`work_type` rows matched their own immediate WBS
+  branch's name).
+- **Not a "which WBS branch" problem.** The 329 blank-`work_type` Tasks span almost the entire
+  project lifecycle — Initiation Phase, Planning Phase, Closeout Phase, **and** Execution Phase ›
+  Construction Phase › Tower N › non-trade sub-branches (e.g. "Testing and Commissioning"). No
+  branch-exclusion rule (the earlier General Requirements/Construction Phase fix included) can
+  reach most of these rows, since most of them aren't even under Construction Phase.
+- **Not a corrupted/gapped WBS trail.** 328 of 329 blank rows have a fully-named, gap-free
+  ancestor chain — `discCanonOf()` (Project Schedule's own trade classifier) had a complete
+  chain to search and correctly found no trade term in it. **The blank `work_type` is accurate,
+  not a data defect** — these activities genuinely have no discipline, whether they're a floor
+  label or a legitimate admin/closeout activity.
+- **The one difference found**: `location`. Every admin/closeout example (`Resource
+  Demobilization`, `Technical Closeout`, …) has `location: null` or `{}`. The one floor example
+  traced in full (`"6th Floor"`) carried a real `location` value. That distinction — "does this
+  activity's own name coincide with a value this same project already uses as a Tower/Floor/Zone
+  location" — is what the fix below operationalizes.
+
+### The rule (scoped to blank `work_type` only, per the owner's explicit narrowing)
+
+```js
+// module.js, above distinctScheduleWorks()
+function locNormKey(s) {
+  return String(s == null ? '' : s).trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+function scheduleLocationValueKeys() {
+  var set = {};
+  LOC_LEVELS.forEach(function (lvl) {
+    distinctLocValues(lvl.id).forEach(function (v) { set[locNormKey(v)] = true; });
+  });
+  return set;
+}
+function isLocationLabelActivity(a, locKeys) {
+  if (a.work_type && String(a.work_type).trim()) return false;
+  return !!locKeys[locNormKey(a.activity_name)];
+}
+```
+
+An activity is excluded from `distinctScheduleWorks()`/`worksGroupedOptions()` when **both**:
+`work_type` is blank, **and** its own `activity_name` (normalized) matches a value this same
+project's schedule already uses as a Location Breakdown value (Tower/Floor/Zone/…) anywhere.
+
+⚠️ **Deliberately not a name list.** It asks *this project's own schedule data* what counts as a
+location — via `distinctLocValues()`, the exact function that already populates this module's own
+Tower/Floor/Location fields — so it holds on any project regardless of floor count or naming
+convention, and needs no maintenance if a project's floor names change.
+
+⚠️ **Scoped to blank `work_type` only, on purpose, per the owner's explicit instruction.** A real
+trade activity is never named a bare location string in practice, so this can never touch a
+properly-classified row — but gating on blank `work_type` as well removes any theoretical risk
+from that edge case, at zero cost, since every confirmed problem row already satisfies both
+conditions.
+
+⚠️ **Normalization folds case/spacing/punctuation** — the same technique Project Schedule's own
+`locNormKey()` uses to merge "Roof Deck" and "Roofdeck" into one location value. Without it, a
+project using both spellings (schedule data commonly does, per Project Schedule's own history)
+would only catch one of the two.
+
+⚠️ **`Resource Demobilization` / `Technical Closeout` / `Financial Closeout` / `Commercial
+Closeout` and every other non-floor blank-`work_type` activity are deliberately untouched** —
+none of them is ever offered as a Tower/Floor/Zone value anywhere in a real project's Location
+Breakdown, so none of them can ever match `scheduleLocationValueKeys()`. Confirmed by genuine
+execution below, not assumed.
+
+Applied identically in both `distinctScheduleWorks()` (the flat suggestion list) and
+`worksGroupedOptions()` (the grouped picker, source of the "Other" bucket) — right after the
+existing Start/Finish Milestone exclusion, before the Execution/Close-out scope check, so the two
+functions can never disagree about which activities are eligible Works candidates.
+
+### Verified
+
+⚠️ **This environment has no live Supabase session** (same standing limitation as every prior
+round in this thread) — verification is genuine execution of the exact shipped functions, sliced
+verbatim from `module.js` (never retyped), against a fixture built to reproduce the confirmed
+AVR101 diagnostic shape:
+
+- A real Floor-tagged activity elsewhere in the project makes "6th Floor"/"Ground Floor"/"Roof
+  Deck" genuine location values (`scheduleLocationValueKeys()` correctly resolves to
+  `{tower3, 4thfloor, 6thfloor, groundfloor, roofdeck}`).
+- `"6th Floor"`, `"Ground Floor"` (blank `work_type`) → `isLocationLabelActivity` returns `true`
+  → **absent from both `distinctScheduleWorks()` and every group, including "Other".**
+- `"Roofdeck"` (no space, blank `work_type`) tested against a location value stored as `"Roof
+  Deck"` (with a space) → still correctly matched and excluded — the normalization fold works.
+- `"Resource Demobilization"`, `"Technical Closeout"`, `"Financial Closeout"`, `"Commercial
+  Closeout"` (all blank `work_type`, no location) → `isLocationLabelActivity` returns `false` →
+  **unchanged, still present, still bucketed under "Other" exactly as before.**
+- `"Formworks"`, `"MEP Rough-in"`, `"Slab Pour"`, `"Waterproofing"` (real `work_type`) → never
+  even tested against the location check (short-circuited by the `work_type` guard) → grouped
+  under their own trade names exactly as before, byte-for-byte unaffected.
+- `"7th Floor"` typed `Finish Milestone` → still excluded by the pre-existing, untouched milestone
+  rule, confirming the two exclusions compose correctly and don't interfere with each other.
+- Full resulting `groups` output from the fixture:
+  ```
+  MEPF Works: MEP Rough-in
+  Structural Works: Formworks, Slab Pour
+  Allied Services: Waterproofing
+  Other: Commercial Closeout, Financial Closeout, Resource Demobilization, Technical Closeout
+  ```
+
+Also re-verified structurally: brace/paren balance (1357/1357, 5038/5038), 0 NUL bytes, every new
+symbol (`locNormKey`, `scheduleLocationValueKeys`, `isLocationLabelActivity`) declared exactly
+once. New test-only hooks (`_locNormKey`, `_isLocationLabelActivity`, `_scheduleLocationValueKeys`,
+and `_worksGroupedOptions` widened to also inject `LOC_LEVELS`) added to `module.js`'s own exported
+`ProgressPhotos` object for the next session with a working `node` to drive through `test.js`.
+
+**No `project_schedule` record, Schedule Builder, XER importer, `work_type` value, Tower/Floor
+location data, or Project Schedule App file was touched.** The entire change is three new
+functions plus two one-line call-site additions inside `progress-photos/module.js`.
+
+⚠️ **Not verified signed-in against the real AVR101 project** — same standing limitation as every
+entry in this file. The fixture above reproduces every confirmed fact from the diagnostic rounds
+(the location-value shape, the blank-`work_type` pattern, the specific activity names involved),
+but the actual live re-test — opening Add Media → Works on AVR101 and confirming (a) the 14 floor
+labels are gone, (b) "Other" contains only the admin/closeout names, (c) the trade groups are
+unchanged, (d) no other activity vanished unexpectedly — is the owner's to run.
+
+`module.js?v=` → `20260908c` (module-local only; `module.css` unchanged, stays `20260907b`).
+
+## Works picker was including two of Execution Phase's own sibling branches
+## (General Requirements, Construction Phase) — diagnosed against the real
+## AVR101 WBS before touching anything (2026-09-08)
+
+Owner, with a live screenshot of AVR101's Project Schedule grid: Execution Phase (wbs code
+**"4"**, per the 2026-09-08 root-cause fix above's own console diagnostic — *"Execution
+root='4'"*) has **7 direct-child WBS-Summary branches**, not the 5 real trades:
+
+```
+Execution Phase (4)
+├── General Requirements   (4.1)   ❌ should be excluded
+├── Site Development       (4.2)   ✅ valid trade
+├── Structural Works       (4.3)   ✅ valid trade
+├── Architectural Works    (4.4)   ✅ valid trade
+├── MEPF Works             (4.5)   ✅ valid trade
+├── Allied Services        (4.6)   ✅ valid trade
+└── Construction Phase     (4.7)   ❌ should be excluded
+```
+
+⚠️ **Diagnosed by reading the actual code and the actual data shape before writing anything**,
+per the owner's explicit instruction. Findings, in the order the owner asked for them:
+
+1. **`inExecOrCloseout(a)`** (the ONLY scoping gate the Works picker applies) tests
+   `wbsUnderRoot(a.wbs, EXEC_WBS_CODE)` — a **boundary-safe prefix match against the whole
+   Execution Phase root ("4")**. That test is true for **every** activity under **all seven**
+   sibling branches, because all seven share the "4." prefix. There was no mechanism anywhere
+   in this file that distinguished "under Execution Phase" from "under one of the five real
+   trade branches specifically" — the two questions had never been separated.
+2. **The "Others" bucket the owner suspected is real, and it traces to Construction Phase.**
+   `worksGroupedOptions()` groups by `a.work_type` (Project Schedule's own canonical bucket —
+   General Requirements / Site Works / Structural Works / Architectural Works / MEPF Works /
+   Site Development / Allied Services / **Others**), falling back to the literal string
+   `'Other'` only when `work_type` is blank. "Others" is itself one of Project Schedule's eight
+   canonical `work_type` values (see that module's `GWORK`/`WORK_ORDER`) — a branch like
+   Construction Phase, which is not itself a trade name, is exactly the kind of branch the
+   WBS→Trade matcher in Project Schedule falls back to classifying as **"Others"**. So
+   Construction Phase's activities were reaching the picker bucketed under a group named
+   "Others"/"Other" — which is precisely what the owner observed and suspected.
+3. **General Requirements' activities were NOT landing in "Others"** — `TRADE_WORK_TERMS`
+   already has an entry for `'General Requirements': ['general requirement']`, so those
+   activities bucketed correctly under a group literally named **"General Requirements"** —
+   visible, not hidden inside "Others", but still wrongly present per the owner's rule (❌
+   EXCLUDE). Both branches needed the same fix, for different reasons: one leaked into a
+   catch-all bucket, the other leaked into a bucket that looked legitimate.
+4. **Why**, mechanically: `inExecOrCloseout()` only ever asked "is this WBS code at or under
+   the Execution Phase root", never "which of Execution Phase's own children is it under" —
+   there was no branch-level distinction at all, so nothing could have refused General
+   Requirements or Construction Phase without a new check.
+
+### The fix — resolve two branch codes by name, exactly like the two phase roots already are
+
+⚠️ **Do NOT hide "Others" in the UI, do NOT filter by Activity name, do NOT hard-code
+Activities, do NOT invent Trade/Activity master data, do NOT fall back to another project** —
+all explicit owner constraints, and none of them were touched. Instead, two of Execution
+Phase's own **direct-child WBS-Summary branch codes** are now resolved live off the schedule's
+own data, using the identical technique the file already uses to find `EXEC_WBS_CODE`/
+`CLOSEOUT_WBS_CODE` themselves (`branchPhaseFromName` — a substring match against a WBS-Summary
+row's own name):
+
+- New `EXEC_BRANCH_EXCLUDE_TERMS = ['general requirement', 'construction phase']` and
+  `execExcludedCodesFrom(wbsSummaryRows, execCode)` — scans the same `wbsSummaryRows` already
+  fetched for the phase-root resolution (no second fetch), restricted to rows that are
+  **direct children** of the Execution Phase root (one dotted-code segment deeper — "4.1"
+  through "4.7", never a same-named branch nested deep inside a real trade), and returns the
+  codes of any that match either term. Computed once per `loadSchedule()`, stored in a new
+  `EXEC_EXCLUDE_CODES` module var.
+- **`inExecOrCloseout(a)` now checks the WBS-code path FIRST**, before the `phase`-column
+  fallback (reversed from before): when an activity's `wbs` resolves under the Execution root,
+  it is only in scope if it is **not** also under one of the excluded codes. This reordering is
+  necessary, not cosmetic — every sibling branch under Execution Phase stamps the *identical*
+  `phase` value (`'construction'`), so the `phase` column can never by itself distinguish a
+  Structural Works row from a General Requirements row. The phase-only fallback (no resolvable
+  `wbs` at all — the pre-existing degrade path for an un-migrated/legacy row) is **unchanged**
+  and cannot apply the new exclusion, since it has no WBS ancestry to test it against.
+- **Closeout Phase is completely untouched** — the owner's diagram only restricts Execution
+  Phase's own children; the exclusion codes are only ever tested against activities resolving
+  under `EXEC_WBS_CODE`, never `CLOSEOUT_WBS_CODE`.
+- ⚠️ **This is not "creating new master data" or "hard-coding Activities."** It reads two
+  structural **WBS branch names** — not activity names — live off *this project's own* schedule
+  on every load, the same way `EXEC_WBS_CODE`/`CLOSEOUT_WBS_CODE` themselves already are. A
+  project that renames or reorders these branches is read correctly on its next load with no
+  code change; nothing about this depends on a fixed WBS code, a fixed project, or a fixed
+  activity list.
+
+### Verified
+
+**Genuinely executed in a real browser** (this environment has no `node`/`python` binary,
+confirmed directly again this pass), via the local dev-preview static server: the exact,
+verbatim function bodies of `wbsUnderRoot`, `execExcludedCodesFrom`, `inExecOrCloseout` and
+`worksGroupedOptions` were sliced straight out of the shipped `module.js` (never retyped) and
+run against a fixture built to match the **owner's own screenshot exactly** (Execution Phase
+"4" with all seven real children, Closeout Phase "5" as a separate root) plus one synthetic
+activity per branch:
+
+- `execExcludedCodesFrom(wbsSummaryRows, '4')` → `["4.1", "4.7"]` — exactly General Requirements
+  and Construction Phase, nothing else.
+- Every activity under General Requirements (`wbs: "4.1.1"`) and Construction Phase
+  (`wbs: "4.7.1"`) → `inExecOrCloseout` returns `false` (excluded).
+- Every activity under Site Development / Structural Works / Architectural Works / MEPF Works /
+  Allied Services → `inExecOrCloseout` returns `true` (included), unaffected.
+- The Closeout Phase activity (`wbs: "5.1"`) → still `true` (untouched).
+- `worksGroupedOptions()` over the same fixture returns **exactly 5 groups** — `Site
+  Development`, `Structural Works`, `Architectural Works`, `MEPF Works`, `Allied Services` —
+  with **no `General Requirements` group and no `Others`/`Other` group at all.**
+
+Also re-verified structurally: brace/paren balance (1346/1346, 4994/4994), 0 NUL bytes, and
+every new symbol (`EXEC_EXCLUDE_CODES`, `EXEC_BRANCH_EXCLUDE_TERMS`, `execExcludedCodesFrom`,
+the rewritten `inExecOrCloseout`) declared **exactly once**. New test-only hooks
+(`_execExcludedCodesFrom`, `_inExecOrCloseout`, `_worksGroupedOptions` — same save/restore-
+closure-state convention as `_deriveTradeForWorks`) were added to `module.js`'s own exported
+`ProgressPhotos` object (not to `test.js` itself, which wasn't touched this pass) so the next
+session with a working `node` can drive this through the real `test.js` harness too, rather than
+only the ad-hoc browser fixture above.
+
+⚠️ **Not verified signed-in against the real AVR101 project** — same standing limitation as
+every entry in this file. The fixture above was built to exactly reproduce the real WBS shape
+from the owner's own screenshot and the confirmed live console diagnostic (`Execution
+root="4"`), but the actual re-test — opening Add Media → Works on AVR101 and confirming the
+picker now shows exactly Site Development / Structural Works / Architectural Works / MEPF
+Works / Allied Services with no General Requirements group and no Others group — is the
+owner's to run.
+
+`module.js?v=` → `20260908b` (module-local only; `module.css` unchanged, stays `20260907b`).
+
 ## Root cause of the live "Works selector shows no Trade/Activity records" — a transient
 ## client-side auth race, NOT a database/RLS/GRANT problem (2026-09-08)
 

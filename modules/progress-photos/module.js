@@ -63,6 +63,17 @@ window.ProgressPhotos = (function () {
   // is more reliable than the raw `phase` column, which on a real imported
   // project (e.g. Avesta) is blank on nearly every leaf activity.
   var EXEC_WBS_CODE = null, CLOSEOUT_WBS_CODE = null;
+  // Codes of Execution Phase's own DIRECT-CHILD sibling branches that must
+  // never reach the Works picker even though they sit under the Execution
+  // root (2026-09-08, owner's rule off a live screenshot of AVR101):
+  // "General Requirements" (mobilization/overhead -- not trade work a site
+  // photo documents) and "Construction Phase" (this project's own extra
+  // sibling branch alongside the five real trades; its activities' work_type
+  // doesn't resolve to any of this module's canonical trades, which is why
+  // they were surfacing as a bogus "Others" group in the picker). Resolved
+  // live off the schedule's own WBS-Summary rows every load -- see
+  // `execExcludedCodesFrom()`, below `wbsUnderRoot()`.
+  var EXEC_EXCLUDE_CODES = [];
   // Substring match (not anchored to the whole name), the same rule Project
   // Schedule's own `phaseFromName()` uses to classify a WBS branch by name —
   // reused deliberately rather than re-deriving a stricter pattern, so a
@@ -331,7 +342,7 @@ window.ProgressPhotos = (function () {
   async function loadSchedule() {
     LOC_LEVELS = []; SCHED_ACTS = [];
     CODE_TYPES = []; CODE_VALUES = [];
-    EXEC_WBS_CODE = null; CLOSEOUT_WBS_CODE = null;
+    EXEC_WBS_CODE = null; CLOSEOUT_WBS_CODE = null; EXEC_EXCLUDE_CODES = [];
     if (!pid) return;
     try {
       var lres = await sb().from('location_levels').select('id,name,sort_order')
@@ -409,6 +420,11 @@ window.ProgressPhotos = (function () {
         'Works picker will fall back to the raw project_schedule.phase column only, which is ' +
         'often blank on an imported schedule. Check the WBS Manager for the exact branch names.');
     }
+    // Two of Execution Phase's own direct sibling branches -- General
+    // Requirements and Construction Phase -- must never reach the Works
+    // picker (see EXEC_EXCLUDE_CODES' own comment, above). Derived from the
+    // SAME wbsSummaryRows already in hand, no second fetch.
+    EXEC_EXCLUDE_CODES = execExcludedCodesFrom(wbsSummaryRows, EXEC_WBS_CODE);
 
     try {
       var tres = await sb().from('activity_code_types').select('id,name').eq('project_id', pid);
@@ -429,7 +445,8 @@ window.ProgressPhotos = (function () {
       var eligibleNames = distinctScheduleWorks();
       console.info('[progress-photos] loadSchedule(' + pid + '): ' + SCHED_ACTS.length +
         ' non-summary activities loaded, Execution root=' + JSON.stringify(EXEC_WBS_CODE) +
-        ', Closeout root=' + JSON.stringify(CLOSEOUT_WBS_CODE) + ', ' + inScopeCount +
+        ', Closeout root=' + JSON.stringify(CLOSEOUT_WBS_CODE) + ', excluded branch codes=' +
+        JSON.stringify(EXEC_EXCLUDE_CODES) + ', ' + inScopeCount +
         ' in Execution/Close-out scope, ' + eligibleNames.length +
         ' distinct Works name(s) eligible: ' + JSON.stringify(eligibleNames.slice(0, 20)));
     } catch (e) { console.warn('[progress-photos] diagnostic summary threw:', e); }
@@ -440,9 +457,62 @@ window.ProgressPhotos = (function () {
     if (!code || !root) return false;
     return code === root || code.indexOf(root + '.') === 0;
   }
+  // Which of Execution Phase's own DIRECT-CHILD branches must be excluded
+  // from the Works picker's scope (2026-09-08). Pure function of the
+  // schedule's own WBS-Summary rows + the already-resolved Execution root
+  // code -- no hard-coded activity, no new Trade/Activity master data, and
+  // nothing borrowed from another project: this reads a structural WBS
+  // branch NAME live off the schedule that is actually loaded, the same
+  // technique already used above to find EXEC_WBS_CODE/CLOSEOUT_WBS_CODE
+  // themselves (branchPhaseFromName).
+  // ⚠️ Restricted to DIRECT children (one dotted-code segment deeper than
+  // the Execution root) -- a same-named branch nested deep inside a
+  // legitimate trade branch (unlikely, but not impossible) must never be
+  // swept in by a bare substring match anywhere in the tree.
+  // ⚠️ 'construction phase' was REMOVED from this list on 2026-09-08 after a
+  // live test on AVR101 showed it excluding ~3,600+ real Structural/
+  // Architectural/MEPF activities -- on that project's real schedule,
+  // "Construction Phase" is the WBS CONTAINER of all the per-tower trade
+  // branches (Structural/Architectural/MEPF Works each sit at
+  // 4.2.<tower>.1/.2/.3, i.e. UNDER Construction Phase), not a sibling
+  // admin bucket alongside them. The original screenshot this rule was
+  // built from showed Structural/Architectural/MEPF/Site Development/
+  // Allied Services as apparent siblings of Construction Phase, which
+  // reflected a rolled-up/aggregated view, not their literal one-level
+  // WBS parentage -- excluding the literal branch wiped out the real work
+  // it contains. General Requirements has no such nested trade content
+  // (confirmed live: it is a genuine flat admin/mobilization branch) and
+  // stays excluded.
+  var EXEC_BRANCH_EXCLUDE_TERMS = ['general requirement'];
+  function execExcludedCodesFrom(wbsSummaryRows, execCode) {
+    if (!execCode) return [];
+    var execDepth = (execCode.match(/\./g) || []).length;
+    var out = [];
+    (wbsSummaryRows || []).forEach(function (w) {
+      var code = w.wbs;
+      if (!code || !wbsUnderRoot(code, execCode)) return;
+      var depth = (code.match(/\./g) || []).length;
+      if (depth !== execDepth + 1) return;   // direct child of Execution Phase only
+      var nm = String(w.activity_name == null ? '' : w.activity_name).trim().toLowerCase();
+      if (!nm) return;
+      if (EXEC_BRANCH_EXCLUDE_TERMS.some(function (t) { return nm.indexOf(t) >= 0; })) out.push(code);
+    });
+    return out;
+  }
   function inExecOrCloseout(a) {
-    if (a.phase === 'construction' || a.phase === 'closeout') return true;
-    return wbsUnderRoot(a.wbs, EXEC_WBS_CODE) || wbsUnderRoot(a.wbs, CLOSEOUT_WBS_CODE);
+    // ⚠️ The WBS-code path is checked FIRST when a `wbs` code is present and
+    // resolves under Execution Phase -- it is the only signal that can tell
+    // a Structural Works row apart from a General Requirements or
+    // Construction Phase row; every sibling branch under Execution Phase
+    // stamps the SAME `phase` value ('construction'), so the phase column
+    // alone can never carry this distinction. The phase-only fallback below
+    // is unchanged from before and only ever applies when there is no
+    // resolvable wbs ancestry to test the exclusion against.
+    if (wbsUnderRoot(a.wbs, EXEC_WBS_CODE)) {
+      return !EXEC_EXCLUDE_CODES.some(function (c) { return wbsUnderRoot(a.wbs, c); });
+    }
+    if (wbsUnderRoot(a.wbs, CLOSEOUT_WBS_CODE)) return true;
+    return a.phase === 'construction' || a.phase === 'closeout';
   }
 
   // Value of one level for any {location: {...}} bearing record (an activity
@@ -980,12 +1050,59 @@ window.ProgressPhotos = (function () {
     if (Array.isArray(tradeFilter)) return tradeFilter;
     return tradeFilter ? [tradeFilter] : [];
   }
+  // ---- Floor/location labels are places, not Works (2026-09-08) ------------
+  // Diagnosed live on AVR101 across several rounds: activities like "6th Floor",
+  // "Ground Floor", "Roof Deck" were reaching the Works picker (usually bucketed
+  // under "Other") because they are real `activity_type: 'Task'` rows with a
+  // blank `work_type` -- same shape as many legitimate blank-work_type
+  // activities (Resource Demobilization, Technical/Financial/Commercial
+  // Closeout, ...), which the owner explicitly wants to KEEP appearing. Blank
+  // work_type alone cannot tell the two apart -- confirmed by tracing the real
+  // WBS ancestry of both: neither group's chain contains a trade term, and
+  // both have complete (non-corrupted) WBS trails, so the blank work_type is
+  // equally "correct" for both. What actually differs is the ACTIVITY'S OWN
+  // NAME: a floor label is, by definition, a value this same project's own
+  // Location Breakdown already uses to tag WHERE work happens (this module's
+  // own Tower/Floor/Location fields, fed by `distinctLocValues()`, below) --
+  // "Resource Demobilization" is never offered as a Tower/Floor value anywhere.
+  // ⚠️ Deliberately NOT a name list -- it asks THIS project's own schedule data
+  // what counts as a location, so it holds for any floor count/naming on any
+  // project, and never needs updating by hand.
+  //
+  // Normalizes the same way Project Schedule's own `locNormKey()` merges
+  // differently-spelled location values ("Roof Deck" vs "Roofdeck") -- folds
+  // case, spacing and punctuation so both spellings compare equal here too.
+  function locNormKey(s) {
+    return String(s == null ? '' : s).trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+  }
+  // Every distinct value used ANYWHERE as a location value on this project's
+  // schedule, across every Location Breakdown level -- normalized, as a lookup
+  // set. Built from `distinctLocValues()` per level rather than a second scan
+  // of SCHED_ACTS, so this can never disagree with what the Tower/Floor/
+  // Location fields elsewhere in this same form already offer.
+  function scheduleLocationValueKeys() {
+    var set = {};
+    LOC_LEVELS.forEach(function (lvl) {
+      distinctLocValues(lvl.id).forEach(function (v) { set[locNormKey(v)] = true; });
+    });
+    return set;
+  }
+  // ⚠️ Scoped to blank `work_type` ONLY -- a real trade activity is never named
+  // a bare location string, so this can never touch a properly classified row
+  // regardless of what its name happens to be. `locKeys` is computed once by
+  // the caller (not once per activity) via `scheduleLocationValueKeys()`.
+  function isLocationLabelActivity(a, locKeys) {
+    if (a.work_type && String(a.work_type).trim()) return false;
+    return !!locKeys[locNormKey(a.activity_name)];
+  }
   function distinctScheduleWorks(tradeFilter) {
     var trades = tradesAsArray(tradeFilter);
     var seen = {}, out = [];
+    var locKeys = scheduleLocationValueKeys();
     SCHED_ACTS.forEach(function (a) {
       if (a.activity_type === 'Start Milestone' || a.activity_type === 'Finish Milestone') return;
       if (!inExecOrCloseout(a)) return;
+      if (isLocationLabelActivity(a, locKeys)) return;
       var matches = !trades.length || trades.some(function (t) { return workTypeMatchesTrade(a.work_type, t); });
       if (!matches) return;
       var v = (a.activity_name || '').trim();
@@ -1097,9 +1214,11 @@ window.ProgressPhotos = (function () {
   // dropped from what can still be picked.
   function worksGroupedOptions() {
     var byGroup = {}, order = [];
+    var locKeys = scheduleLocationValueKeys();
     SCHED_ACTS.forEach(function (a) {
       if (a.activity_type === 'Start Milestone' || a.activity_type === 'Finish Milestone') return;
       if (!inExecOrCloseout(a)) return;
+      if (isLocationLabelActivity(a, locKeys)) return;
       var name = (a.activity_name || '').trim();
       if (!name) return;
       var group = (a.work_type || '').trim() || 'Other';
@@ -6047,6 +6166,46 @@ window.ProgressPhotos = (function () {
     // shared background-colour decision so the exact fill===false-vs-
     // undefined bug (and its fix) can be asserted directly, not just
     // inferred from drawMarkupObjects' rendered calls.
-    _textBoxFillColor: function (o) { return textBoxFillColor(o); }
+    _textBoxFillColor: function (o) { return textBoxFillColor(o); },
+    // Test-only hooks (2026-09-08 fix) — genuinely EXECUTE the Execution
+    // Phase branch-exclusion logic rather than only regex-checking it.
+    // `execExcludedCodesFrom` is already pure (no closure state to save/
+    // restore). `inExecOrCloseout` reads EXEC_WBS_CODE/CLOSEOUT_WBS_CODE/
+    // EXEC_EXCLUDE_CODES from the closure, so this hook saves/injects/
+    // restores all three around the call — same convention as
+    // `_deriveTradeForWorks`'s SCHED_ACTS handling, above.
+    _execExcludedCodesFrom: function (wbsSummaryRows, execCode) { return execExcludedCodesFrom(wbsSummaryRows, execCode); },
+    _inExecOrCloseout: function (a, execCode, closeoutCode, excludeCodes) {
+      var savedE = EXEC_WBS_CODE, savedC = CLOSEOUT_WBS_CODE, savedX = EXEC_EXCLUDE_CODES;
+      EXEC_WBS_CODE = execCode; CLOSEOUT_WBS_CODE = closeoutCode; EXEC_EXCLUDE_CODES = excludeCodes || [];
+      try { return inExecOrCloseout(a); }
+      finally { EXEC_WBS_CODE = savedE; CLOSEOUT_WBS_CODE = savedC; EXEC_EXCLUDE_CODES = savedX; }
+    },
+    // Runs worksGroupedOptions()/distinctScheduleWorks() against an injected
+    // SCHED_ACTS + resolved scope (+ LOC_LEVELS, for the 2026-09-08
+    // floor/location-label exclusion below), so a test can prove the
+    // "Others" bucket is genuinely gone (not merely hidden) for activities
+    // under General Requirements/Construction Phase, and that the five real
+    // trade branches still surface correctly under their own group names.
+    _worksGroupedOptions: function (schedActs, execCode, closeoutCode, excludeCodes, locLevels) {
+      var savedA = SCHED_ACTS, savedE = EXEC_WBS_CODE, savedC = CLOSEOUT_WBS_CODE, savedX = EXEC_EXCLUDE_CODES, savedL = LOC_LEVELS;
+      SCHED_ACTS = schedActs || []; EXEC_WBS_CODE = execCode; CLOSEOUT_WBS_CODE = closeoutCode; EXEC_EXCLUDE_CODES = excludeCodes || [];
+      if (locLevels) LOC_LEVELS = locLevels;
+      try { return worksGroupedOptions(); }
+      finally { SCHED_ACTS = savedA; EXEC_WBS_CODE = savedE; CLOSEOUT_WBS_CODE = savedC; EXEC_EXCLUDE_CODES = savedX; LOC_LEVELS = savedL; }
+    },
+    // Test-only hooks (2026-09-08 — floor/location labels excluded from the
+    // Works picker). `locNormKey`/`isLocationLabelActivity` are pure enough
+    // to expose directly; `scheduleLocationValueKeys` reads SCHED_ACTS/
+    // LOC_LEVELS from the closure via `distinctLocValues()`, so it's
+    // save/restored like every other closure-reading hook above.
+    _locNormKey: function (s) { return locNormKey(s); },
+    _isLocationLabelActivity: function (a, locKeys) { return isLocationLabelActivity(a, locKeys); },
+    _scheduleLocationValueKeys: function (schedActs, locLevels) {
+      var savedA = SCHED_ACTS, savedL = LOC_LEVELS;
+      SCHED_ACTS = schedActs || []; LOC_LEVELS = locLevels || [];
+      try { return scheduleLocationValueKeys(); }
+      finally { SCHED_ACTS = savedA; LOC_LEVELS = savedL; }
+    }
   };
 })();
