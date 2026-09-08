@@ -95,6 +95,41 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### Schedule Setup: the WBS step and the Library become one Structure step with two views (2026-09-08) — jasantos2
+
+Owner: *"merge the WBS in step 2 into step 6… Call the view for the step 2 as 5PMLC, and step 6 as
+Construction Library… edits made should be updated live"*, then *"delete some groupings… multiple
+selection of rows in the right pane, and then right click, group them together with a defined group
+name. As well as re-arranging the items."*
+
+- **One step, two views.** *Structure* replaces both steps: **5PMLC** is the project's whole live WBS
+  (Milestones → Close-out), **Construction Library** is the places and groupings inside Execution.
+  5PMLC is the default, which keeps the orientation the old step 2 existed to give. The **import path
+  gains the 5PMLC view**, which it never had. Old deep links (`gotoStep('WBS')`, `'Library'`) still
+  resolve and select the matching view.
+- ⚠️ **On "updated live", honestly:** the views edit different stores — 5PMLC edits the **live** WBS
+  tree, the Construction Library edits **this setup's draft**, which becomes branches at
+  *Generate ▸ Push*. So a Library edit cannot make a branch appear in the tree; the branch does not
+  exist yet, and writing branches per keystroke would litter a project's live WBS with structure
+  nobody pushed. What *is* live is the bridge line between the two views, recomputed on every render
+  from both sources, and it names the push in as many words.
+- **Delete a grouping.** ⚠️ It deletes the **rung**, not the work: everything under it moves up into
+  the parent, and the confirm says so. Nothing on this screen can delete an activity.
+- **Multi-select and group.** Click a name, shift-click for a range, right-click to act. ⚠️ Grouping
+  **inserts** a shared rung above the selection rather than overwriting their paths, so nothing they
+  already had is discarded; a selection spanning trades makes one grouping of that name inside each
+  trade, and the toast says when that happened.
+- **Re-arranging** items and whole groupings, within siblings. ⚠️ Not cosmetic — this order is the
+  order the push builds the branches in.
+
+**544 assertions across nine suites, all passing** (96 new). A browser render caught two defects
+this time, including a selected row that showed its tint but not its edge because a single-class rule
+lost to the equally-specific depth rules below it. ⚠️ **Not verified signed-in** — nothing was pushed
+and no live WBS tree was loaded, so the two views have never been switched between against a real
+project.
+
+`MODULE_V` → `20260908g`. Detail: [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
 ### Schedule Setup Library: the grouping becomes a path, and the places gain their unit rung (2026-09-08) — jasantos2
 
 Owner: *"for the library, allow users to add more levels and as well as in the right pane for the

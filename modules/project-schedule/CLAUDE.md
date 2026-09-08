@@ -13,6 +13,135 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### The WBS step and the Library merge into Structure — 5PMLC and Construction Library (2026-09-08) — jasantos2
+
+Owner: *"can you merge the WBS in step 2 into step 6. There should be 2 different views there in
+step 6… Call the view for the step 2 as 5PMLC, and step 6 as Construction Library. since they are
+both editable, edits made should be updated live."* And, mid-turn: *"provide users capabilities to
+delete some groupings… multiple selection of rows in the right pane, and then right click, group
+them together with a defined group name. As well as re-arranging the items pls."*
+
+### 1. One step, two views
+`stStructure` owns the heading, two tabs and a bridge line, then delegates the body to `stWbs`
+(**5PMLC**) or `stLibrary` (**Construction Library**). Both view bodies lost their own `<h2>`.
+
+- ⚠️ **Why the merge is right and not just fewer steps:** the two screens always answered the same
+  question at two zoom levels — the whole lifecycle tree, and the places and work that end up inside
+  its Execution branch. Two rail entries for one subject is what let a planner edit the breakdown in
+  one place while reading it in another.
+- ⚠️ **What it costs, because it is a real loss:** the WBS step was deliberately *first*, on the
+  grounds that it is the only step showing what already exists rather than asking for something new.
+  The merged step sits where the Library sat, after Activities and Floors & Zones, because the
+  Construction Library is a *read* of those two. Mitigated, not ignored: **5PMLC is the default
+  view**, so arriving at the step still shows the existing tree first. The original ordering note is
+  kept in `STEPS_NEW` rather than deleted — it is still true about the tree.
+- ⚠️ **The import path gains the 5PMLC view**, which it never had: `STEPS_IMP` had no WBS step at
+  all, so an import could not see the project's live tree from inside the wizard — on the one path
+  where comparing the file's structure against the project's own *is* the job.
+- ⚠️ Switching views is safe **only** because `render()` calls `sbWbsPark()` unconditionally first.
+  The 5PMLC view *borrows* the live WBS editor's DOM into the panel; repainting the panel with those
+  nodes still inside it would destroy the tree for the rest of the session.
+- ⚠️ `gotoStep('WBS')` and `gotoStep('Library')` still resolve, and carry the **intent**: they select
+  the matching view. A deep link from another module failing silently is worse than a renamed step.
+- ⚠️ The stale *"this step is early on purpose"* paragraph is **gone**. It was true while the tree
+  was step 2 and would now be false on screen, which is the kind of sentence that teaches a planner
+  to stop trusting the page. What survives is the half still needed: an almost-empty tree here is
+  *correct* on a new project.
+
+### 2. ⚠️⚠️ What "updated live" can and cannot mean — the owner asked, and half of it is undeliverable
+The two views edit **different stores**, which is the design of this module, not an implementation
+detail: **5PMLC edits `WBS_NODES`** (the project's live tree, written to the database as you type)
+and **Construction Library edits `cfg`** (this setup's draft, which becomes branches when
+Generate ▸ Push runs). So a Construction Library edit **cannot** make a branch appear in the 5PMLC
+tree — the branch does not exist yet. Writing branches on every keystroke would litter a project's
+live WBS with structure for activities nobody ever pushed, and the live tree has no undo.
+
+What **is** live is the **bridge line**, and it is the part that matters: recomputed from `cfg` *and*
+`WBS_NODES` on every render, and every edit in either view calls `render()`. Rename a grouping in the
+Construction Library and the 5PMLC view's description of the Execution Phase changes immediately;
+the number of branches the live tree already holds sits on the Construction Library's own screen.
+⚠️ It says **"when you Push"** in as many words, and *"they are not in the tree below until then"*.
+A counter implying the branch was already there is the looks-live-does-nothing failure this log keeps
+recording. `strExecCount` returns **null**, not 0, when there is no Execution Phase branch at all —
+"none yet" and "an empty one" are different situations and the line says which.
+
+### 3. Deleting a grouping
+⚠️⚠️ **NOTHING ON THIS SCREEN DELETES AN ACTIVITY.** `absDelSeg` removes the **rung**: everything
+under it moves up into the parent. It is the exact inverse of `absAddSub`, and that symmetry is why
+it is safe to offer — whatever a planner can insert they can take back out. The confirm names the
+destination *and* says no activity is deleted, because "Delete" on a heading reads as "delete what
+is under it" and that would be a rotten surprise to be wrong about.
+⚠️ **Delete is a row button**, not only a context-menu entry: a destructive-sounding action that
+exists only behind a right-click is one nobody finds and nobody trusts.
+
+### 4. Multi-select, and grouping a selection
+Click a name to select, **shift-click** for a range, **right-click** to act.
+- ⚠️ The selection is module state keyed by activity id, so it **survives** the full re-render every
+  edit triggers, and is **pruned** against `cfg.activities` on read so a deleted activity cannot
+  leave a ghost in "3 selected".
+- ⚠️ Shift extends through the **rendered** order (`_libOrder`), not `cfg.activities`: the planner is
+  selecting what they can see, and the two orders differ the moment anything is grouped.
+- ⚠️⚠️ **Grouping INSERTS, it does not flatten.** `Substructure › Rebar › x` grouped with
+  `Substructure › Formworks › y` under "Phase 1" gives `Substructure › Phase 1 › Rebar › x` and
+  `Substructure › Phase 1 › Formworks › y`: they now share a grouping, which is what was asked for,
+  and neither loses the rung it had. Overwriting both paths with `Substructure › Phase 1` would
+  "group" them by deleting structure the planner authored.
+- ⚠️ **Per trade.** A grouping is a branch under one trade, so a selection spanning trades becomes a
+  grouping of that name inside *each* trade. The toast says so — that is not what "group them
+  together" sounds like, and finding out by reading the pane afterwards is worse.
+- ⚠️ A trade whose items would pass the cap is refused **as a whole and counted**, never truncated.
+- The item name is a real `<button>`, so rows are reachable by keyboard; every inherited button style
+  is undone so it still reads as the row's text.
+
+### 5. Re-arranging
+⚠️ **The order is `cfg.activities`, and it is not cosmetic:** `absSegList` reads first-seen order out
+of it, so it decides the order of the groupings in this pane **and** of the branches the push builds.
+- Moves are **within siblings** (same trade, same path). Swapping with whatever sits next in the
+  array would trade places with an item in another grouping — changing the pushed order of two
+  branches while this pane appears not to move at all.
+- ⚠️ A multi-row move walks **against the direction of travel**, so a block moves as one.
+- ⚠️⚠️ **And a selected row never swaps with another selected row.** Measured on the fixture, not
+  predicted: with both rows of a two-row grouping selected there is nothing to move past, and the
+  ordering rule alone let them swap with *each other* — the planner's selection reordering itself
+  instead of refusing. Ordering fixes the block that has room; the `hold` guard fixes the one that
+  has none.
+- A whole **grouping** travels as a block: `absMoveNode` lifts its items out and re-inserts them at
+  the target sibling block's edge. ⚠️ Not item-by-item swapping — a grouping's position is where its
+  first item sits relative to the *other* groupings' items, and those are a different sibling set.
+- `cfg.activities` is mutated **in place** wherever a whole new order is written, never reassigned.
+
+### 6. The right-click menu
+⚠️ Appended to `document.body`, not into the panel: the panel is rebuilt with `innerHTML` on every
+edit, so a menu living inside it would be destroyed by the action it just triggered. Closed before
+any action runs and at the top of every `stLibrary` render; its document listeners are removed on
+close rather than left behind; Escape closes it; and it is positioned **after** measuring, because a
+menu placed blindly at the cursor opens off-screen exactly where a right-click on the last row is.
+⚠️ **One listener on the pane**, resolved with `closest()` — binding `contextmenu` per row means a
+handler per activity on a pane that repaints on every keystroke. A right-click on neither a row nor a
+heading is left to the browser: suppressing the native menu over empty space buys nothing and takes
+away Inspect.
+
+### Verified
+**544 assertions across nine suites, all passing.** The 96 new ones execute `absDelSeg`,
+`absGroupSel`, `absCommonDepth`, `absRowKey`, `absMoveItem`, `absMoveSel`, `absMoveNode`, the
+selection readers and `strLibStats` / `strExecCount` sliced out of the shipped file: the activity
+count unchanged across a delete, the insert-not-flatten property, the per-trade split, the cap
+refusal leaving paths untouched, both ends of every move, and the whole-sibling-set case.
+Controls: HEAD had no delete, no selection, no menu and no reorder, and had WBS and Library as two
+separate steps. harness7's two step-registration assertions were retargeted at the merged step
+rather than dropped.
+Also **rendered and inspected in a browser**, which is where two defects were found: the five-button
+row from earlier today, and — after the CSS was written and asserted — a selected row that showed the
+tint and **no bar**, because a single-class `.sbld-libpicked` loses its `box-shadow` to the
+equally-specific depth rules declared later in the same sheet. Fixed with two classes and re-read off
+the computed style: `rgb(238, 49, 36) 3px inset` on picked rows, the grey depth line on the rest.
+⚠️ **Not verified signed-in** — the anon key has no grants, so nothing was pushed and no live
+`WBS_NODES` was loaded. `strExecCount` was executed against a hand-built node list; the 5PMLC view's
+mount path is HEAD's `sbWbsMount`/`sbWbsPark` unchanged, but the two views have never been switched
+between in a real browser session against a real project.
+
+`MODULE_V` → `20260908g`.
+
 ### The Library's levels stop being three: a grouping is a path, and a place has a unit (2026-09-08) — jasantos2
 
 Owner: *"for the library, allow users to add more levels and as well as in the right pane for the

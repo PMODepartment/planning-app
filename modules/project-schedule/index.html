@@ -2788,6 +2788,58 @@
        each body scrolls on its own: a 400-floor tower must not push the trades off the screen.
        Indentation carries the level (L1/L2/L3) exactly as the sheet does; a left rule per level
        does the work a tree of disclosure arrows would do more noisily. */
+    /* THE TWO VIEWS of the Structure step. Tabs rather than a segmented toggle, because each one
+       carries a second line saying how big it is — which is the information that tells a planner
+       which view they want before they open it. */
+    .sbld-strtabs { display:flex; gap:8px; margin:0 0 10px; flex-wrap:wrap; }
+    .sbld-strtab { flex:0 1 auto; text-align:left; display:flex; flex-direction:column; gap:1px;
+      padding:7px 14px; border:1px solid var(--pd-line); border-radius:9px; background:var(--pd-card);
+      color:var(--pd-muted); font:inherit; font-size:13px; cursor:pointer; min-width:0; }
+    .sbld-strtab b { color:var(--pd-ink); font-size:13.5px; font-weight:700; }
+    .sbld-strtab span { font-size:10.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .sbld-strtab:hover:not(.on) { background:var(--pd-bg); }
+    /* ⚠️ The current view is marked by a FILLED left edge and the app's red, not by colour alone. */
+    .sbld-strtab.on { background:var(--pd-bg); border-color:var(--pd-red); box-shadow:inset 3px 0 0 var(--pd-red); cursor:default; }
+    .sbld-strjump { margin-left:8px; font-size:11.5px; padding:1px 8px; min-height:0; }
+    /* The selection bar. It EXISTS only while something is selected — see libSelBar. */
+    .sbld-libselbar { display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+      padding:6px 11px; border-bottom:1px solid var(--pd-line); background:var(--pd-bg); font-size:12px; }
+    .sbld-libselbtn { font-size:11.5px; padding:2px 9px; min-height:0; }
+    .sbld-libselwarn { font-size:10.5px; color:var(--pd-muted); border:1px dashed var(--pd-line);
+      border-radius:99px; padding:0 6px; cursor:help; }
+    .sbld-libselhint { font-size:10.5px; color:var(--pd-muted); margin-left:auto; }
+    /* An item name is a button now (it is the selection hit target), so every inherited button
+       style has to be undone — it must still read as the row's text. */
+    .sbld-libpick { border:0; background:none; padding:0; margin:0; font:inherit; color:inherit;
+      text-align:left; cursor:pointer; }
+    .sbld-libpick:hover { text-decoration:underline; text-decoration-style:dotted; }
+    /* ⚠️ A selected row is marked by a left bar AND a tint, never by tint alone: the pane already
+       spends its tints on trade colour and on depth.
+       ⚠⚠ TWO CLASSES, NOT ONE. Read off a rendered pane, not predicted: as a single-class rule this
+       lost the box-shadow to .sbld-libL3/L4/L5 (`inset 1px 0 0 var(--pd-line)`), which are declared
+       LATER in this sheet and are equally specific — so a picked row showed the tint and no bar,
+       i.e. exactly the tint-alone marking the line above forbids. `.sbld-libitem.sbld-libpicked`
+       outranks them wherever they sit, and only item rows are ever picked so it is also truer. */
+    .sbld-libitem.sbld-libpicked { background:color-mix(in srgb, var(--pd-red) 7%, transparent);
+      box-shadow:inset 3px 0 0 var(--pd-red); }
+    /* Fallback for a browser without color-mix(): the bar carries the state on its own, so losing
+       the tint costs nothing legible. Order does not matter here - the @supports query itself is
+       what gates it, and it is false in every browser that understands the rule above. */
+    @supports not (background: color-mix(in srgb, red 7%, transparent)) {
+      .sbld-libitem.sbld-libpicked { background:var(--pd-bg); }
+    }
+    .sbld-libpicked .sbld-libpick { font-weight:600; }
+    .sbld-libtooldel:hover:not(:disabled) { color:var(--pd-red); border-color:var(--pd-red); }
+    /* The right-click menu. Lives on document.body (see libMenu), so it needs its own stacking
+       context and a z-index above the sticky L1 headings inside the pane. */
+    .sbld-libmenu { position:fixed; z-index:9000; min-width:210px; padding:4px;
+      background:var(--pd-card); border:1px solid var(--pd-line); border-radius:9px;
+      box-shadow:0 8px 26px rgba(0,0,0,.18); font-size:12.5px; }
+    .sbld-libmenui { display:block; width:100%; text-align:left; border:0; background:none;
+      font:inherit; color:var(--pd-ink); padding:6px 9px; border-radius:6px; cursor:pointer; }
+    .sbld-libmenui:hover:not(:disabled) { background:var(--pd-bg); }
+    .sbld-libmenui:disabled { color:var(--pd-muted); opacity:.5; cursor:not-allowed; }
+    .sbld-libmenusep { height:1px; margin:4px 6px; background:var(--pd-line); }
     .sbld-libbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:0 0 10px; }
     .sbld-libspacer { flex:1 1 auto; }
     .sbld-lib { display:grid; grid-template-columns:1fr 1fr; gap:12px; align-items:start; }
@@ -26618,7 +26670,7 @@
         '<li><b>' + _stepNo('Scope per zone') + ' · Scope per zone</b> — tick which activities apply to each location.</li>' +
         '<li><b>' + _stepNo('Stacking') + ' · Stacking</b> — the vertical stacking per trade: each zone with its number and completion date.</li>' +
         '<li><b>' + _stepNo('Project phases') + ' · Project phases</b> — the lifecycle either side of construction (Initiation / Planning / Close-out), as a flat list of activities with durations. Everything in the steps above IS the Execution Phase.</li>' +
-        '<li><b>' + _stepNo('WBS') + ' · WBS</b> — the project\'s live branch tree, edited here (it used to live on the WBS Manager screen). The push creates the branches this setup needs and reuses the ones already there.</li>' +
+        '<li><b>' + _stepNo('Structure') + ' · Structure</b> — two views of one breakdown: <b>5PMLC</b> is the project\'s live branch tree (its own step until today, and the WBS Manager screen before that), and <b>Construction Library</b> is the places and groupings that end up inside its Execution Phase. The push creates the branches this setup needs and reuses the ones already there.</li>' +
         '<li><b>' + _stepNo('Generate') + ' · Generate</b> — build the schedule and push it into the live Project Schedule.</li></ul>' +
         '<h4>Linking (steps ' + _stepNo('Zone sequence') + ' &amp; ' + _stepNo('Trade sequence') + ') — pick, then confirm</h4><ol>' +
         '<li><b>Click</b> one or more <b>source</b> blocks/nodes (red outline). Click again to deselect.</li>' +
@@ -27591,7 +27643,20 @@
     var STEP_START = { t: 'Start', s: 'Import, or build new', fn: stStart };
     // The generation path — the original ten steps, in the original order.
     var STEPS_NEW = [
-      /* ⚠️⚠️ WBS IS FIRST NOW, not eleventh. Owner 2026-09-03: *"Is WBS really at the end of
+      /* ⚠️⚠️ THE WBS STEP IS GONE FROM HERE — IT IS A VIEW OF `Structure` NOW.
+         Owner 2026-09-08: *"can you merge the WBS in step 2 into step 6— Call the view for the
+         step 2 as 5PMLC, and step 6 as Construction Library."* See stStructure for the whole
+         rationale, for what the merge COSTS, and for what "updated live" can honestly mean when
+         one view edits the live tree and the other edits this setup's draft.
+         ⚠️ The reasoning that put it first is kept below rather than deleted, because it is still
+         true about the TREE and it is why 5PMLC is the merged step's DEFAULT view: arriving at the
+         step still shows what already exists before anything new is described. What changed is
+         that it no longer costs a rail entry of its own to say so.
+         ⚠️ Old deep links keep working: gotoStep('WBS') and gotoStep('Library') resolve to this
+         step and select the matching view (see the public gotoStep).
+
+         --- the original note, on why the tree came first ---
+         Owner 2026-09-03: *"Is WBS really at the end of
          the Schedule Setup? or this should be at the beginning? Let's think about this."*
 
          Thinking about it, the answer turns on something specific to THIS step: unlike every other
@@ -27615,7 +27680,6 @@
          ⚠️ Nothing indexes these steps by number: `_stepNo(title)` looks them up by TITLE and every
          cross-reference in the module goes through it, so all the "see step 7" text renumbered
          itself. Verified by grep for `_stepNo(` — there is no numeric step literal anywhere. */
-      { t: 'WBS', s: 'The branch tree you already have', fn: stWbs },
       /* ⚠️ BEFORE THE ACTIVITIES, and that ordering is the point (see stCalendars): every
          duration typed in the next step is a count of WORKING days, so the calendar is the unit
          those numbers are expressed in. Set afterwards, everything already typed silently meant
@@ -27623,10 +27687,12 @@
       { t: 'Working calendars', s: 'Which days are workable', fn: stCalendars },
       { t: 'Activities', s: 'Class-code list + duration', fn: stActivities },
       { t: 'Floors & Zones', s: 'Location Breakdown Structure', fn: stLevels },
-      /* ⚠️ AFTER both, not before. The library is a READ of the places and the items plus the two
-         ways to fill them from the WBS — put in front of them it would be an empty screen on a new
-         project, which is the opposite of orienting anybody. */
-      { t: 'Library', s: 'Places and groupings, side by side', fn: stLibrary },
+      /* ⚠️ AFTER both, not before. The Construction Library view is a READ of the places and the
+         items plus the two ways to fill them from the WBS — put in front of them it would be an
+         empty screen on a new project, which is the opposite of orienting anybody. That is also
+         why the merged step sits HERE and not at position 2: of its two views, only 5PMLC could
+         have led. */
+      { t: 'Structure', s: '5PMLC and Construction Library', fn: stStructure },
       { t: 'Tower links', s: 'How towers interface', fn: stTowerLinks },
       { t: 'Zone sequence', s: 'Order of locations', fn: stSequence },
       { t: 'Trade sequence', s: 'Order codes per level type', fn: stTradeSeq },
@@ -27648,7 +27714,11 @@
       { t: 'Floors & Zones', s: 'Location Breakdown Structure', fn: stImpLoc },
       // ⚠️ On the IMPORT path this is the step that matters most, because the WBS being read is
       // right there: it is where "detecting WBS, locations" either worked or visibly did not.
-      { t: 'Library', s: 'Places and groupings, side by side', fn: stLibrary },
+      // ⚠️ AND THE IMPORT PATH GAINS THE 5PMLC VIEW, which it never had: there was no WBS step on
+      // this path at all, so an import could not see the project's live tree from inside the wizard
+      // — on the one path where comparing the file's structure against the project's own is the
+      // entire job.
+      { t: 'Structure', s: '5PMLC and Construction Library', fn: stStructure },
       { t: 'Relationships', s: 'Keep the file\u2019s logic, or not', fn: stImpRels },
       { t: 'Review & import', s: 'Write it into the schedule', fn: stImpCommit },
     ];
@@ -27718,6 +27788,159 @@
         rd.onload = function (e) { try { var wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' }); var ws = wb.Sheets[wb.SheetNames[0]]; importActivities(XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })); } catch (err) { UI.toast('Could not read the Excel file: ' + (err.message || err), 'error'); } };
         rd.readAsArrayBuffer(file);
       } else { rd.onload = function (e) { importActivities(parseCsv(String(e.target.result))); }; rd.readAsText(file); }
+    }
+    /* ==========================================================================================
+       THE STRUCTURE STEP — ONE step, TWO views of the same breakdown.
+       Owner 2026-09-08: *"can you merge the WBS in step 2 into step 6. There should be 2 different
+       views there in step 6, one view is showcasing the complete 5PMLC similar to the view in step
+       2. Now the other view should just focus on the execution phase or construction phase similar
+       to the view in step 6 currently. Call the view for the step 2 as 5PMLC, and step 6 as
+       Construction Library."*
+
+       ⚠️ WHY THE MERGE IS RIGHT AND NOT JUST FEWER STEPS: the two screens were always answering the
+       same question at two zoom levels. The WBS step showed the whole lifecycle tree — Milestones,
+       Initiation, Planning, Execution, Close-out — and the Library showed the places and the work
+       that end up INSIDE Execution. Two rail entries for one subject is what made it possible to
+       edit the breakdown in one place while reading it in another.
+
+       ⚠️ WHAT THE MERGE COSTS, stated because it is a real loss and the owner should know it: the
+       WBS step was deliberately FIRST (see the note kept below), on the grounds that it is the only
+       step showing what already exists rather than asking for something new. The merged step sits
+       where the Library sat — after Activities and Floors & Zones — because the Construction
+       Library is a READ of those two and is an empty screen before them. Mitigated, not ignored:
+       **5PMLC is the default view**, so arriving at the step still shows the existing tree first.
+
+       ⚠️⚠️ AND WHAT "UPDATED LIVE" CAN AND CANNOT MEAN — the owner asked for it, and half of it is
+       not deliverable as asked. The two views edit DIFFERENT STORES, which is not an implementation
+       detail but the design of this module:
+         • 5PMLC edits `WBS_NODES` — the project's LIVE tree, written to the database as you type;
+         • Construction Library edits `cfg` — THIS SETUP's draft, which becomes branches when
+           Generate ▸ Push runs, and not before.
+       So a Construction Library edit CANNOT make a branch appear in the 5PMLC tree, because the
+       branch does not exist yet. The push is the commit point by design: writing branches on every
+       keystroke would litter a project's live WBS with structure for activities nobody ever pushed,
+       and the live tree has no undo.
+       WHAT IS LIVE is the bridge line, and it is the part that actually matters: it is recomputed
+       from `cfg` AND from `WBS_NODES` on every render, and every edit in either view calls
+       render() — so renaming a grouping in the Construction Library changes what the 5PMLC view
+       says about the Execution Phase immediately, and the number of branches the live tree already
+       holds is on the Construction Library's own screen. Both views always describe the same moment.
+       ⚠️ It says "when you Push" in as many words. A counter that implied the branch was already
+       there is exactly the looks-live-does-nothing failure this log keeps recording.
+       ========================================================================================== */
+    var STR_VIEW_KEY = 'ps_sbld_strview';
+    var _strView = null;
+    // ⚠️ Remembered per browser, like the rail's minimised state: a planner who works in one view
+    // should not have to re-choose it on every visit. Defaults to 5PMLC — see the cost note above.
+    function strView() {
+      if (_strView) return _strView;
+      try {
+        var v = localStorage.getItem(STR_VIEW_KEY);
+        if (v === 'lib' || v === 'pmlc') return (_strView = v);
+      } catch (e) {}
+      return (_strView = 'pmlc');
+    }
+    // ⚠️ Two entry points, because one caller must NOT repaint. gotoStep selects a view and then
+    // renders itself; a render() in here would paint the step twice on every deep link, and the
+    // first of those paints would mount the live WBS tree only to have it parked and re-mounted.
+    function strSetViewQuiet(v) {
+      _strView = (v === 'lib') ? 'lib' : 'pmlc';
+      try { localStorage.setItem(STR_VIEW_KEY, _strView); } catch (e) {}
+    }
+    function strSetView(v) { strSetViewQuiet(v); render(); }
+    /* Everything both views count, read ONCE per render from the setup itself.
+       ⚠️ One reader, so the bridge line and the Library's own header tags cannot disagree — two
+       counts of the same thing drifting apart is how a screen starts contradicting itself. */
+    function strLibStats() {
+      var locs = libLocTree(), tree = libGroupTree();
+      var nF = 0, nZ = 0, nU = 0;
+      locs.forEach(function (T) {
+        nF += T.floors.length;
+        T.floors.forEach(function (F2) { nZ += F2.zones.length; F2.zones.forEach(function (Z2) { nU += Z2.units.length; }); });
+      });
+      return { locs: locs, tree: tree, nF: nF, nZ: nZ, nU: nU,
+        nI: (cfg.activities || []).length,
+        nG: tree.reduce(function (s, t) { return s + libGrpCount(t); }, 0),
+        nT: tree.length, deep: absMaxDepth() };
+    }
+    /* How many branches the LIVE tree already holds inside its top-level Execution Phase.
+       ⚠️ Returns null, not 0, when there is no such branch at all: "no Execution Phase yet" and
+       "an Execution Phase holding nothing" are different situations and the bridge says which. */
+    function strExecCount() {
+      try {
+        var all = (typeof WBS_NODES !== 'undefined' && WBS_NODES) ? WBS_NODES : [];
+        var root = null;
+        for (var i = 0; i < all.length; i++) {
+          if (!all[i].parent_id && _libNorm(all[i].name) === 'execution phase') { root = all[i]; break; }
+        }
+        if (!root) return null;
+        var kids = {};
+        all.forEach(function (x) { if (x.parent_id) (kids[x.parent_id] = kids[x.parent_id] || []).push(x); });
+        var n = 0;
+        (function walk(id) { (kids[id] || []).forEach(function (c) { n++; walk(c.id); }); })(root.id);
+        return n;
+      } catch (e) { return null; }
+    }
+    function strLibPhrase(s) {
+      return '<b>' + s.nT + '</b> trade' + (s.nT === 1 ? '' : 's') + ', <b>' + s.nG + '</b> grouping' +
+        (s.nG === 1 ? '' : 's') + (s.deep > 1 ? ' over <b>' + s.deep + '</b> levels' : '') +
+        ', <b>' + s.nI + '</b> item' + (s.nI === 1 ? '' : 's') + ' and <b>' + s.nF + '</b> floor' +
+        (s.nF === 1 ? '' : 's') + ' × <b>' + s.nZ + '</b> area' + (s.nZ === 1 ? '' : 's') +
+        (s.nU ? ' × <b>' + s.nU + '</b> unit' + (s.nU === 1 ? '' : 's') : '');
+    }
+    function strTabs(v) {
+      var s = strLibStats();
+      var n = 0;
+      try { n = (typeof WBS_NODES !== 'undefined' && WBS_NODES) ? WBS_NODES.length : 0; } catch (e) {}
+      function tab(k, label, sub) {
+        return '<button class="sbld-strtab' + (v === k ? ' on' : '') + '" data-strview="' + k + '"' +
+          (v === k ? ' aria-current="page"' : '') + '><b>' + label + '</b><span>' + e2(sub) + '</span></button>';
+      }
+      return '<div class="sbld-strtabs" role="tablist">' +
+        tab('pmlc', '5PMLC', n ? (n + ' branch' + (n === 1 ? '' : 'es') + ' · the whole lifecycle')
+                              : 'the whole lifecycle · empty so far') +
+        tab('lib', 'Construction Library', s.nT + ' trade' + (s.nT === 1 ? '' : 's') + ' · ' +
+          s.nI + ' item' + (s.nI === 1 ? '' : 's') + ' · inside the execution phase') +
+        '</div>';
+    }
+    // ⚠️ The one live thing across the two views. See the note at the top of this block for why it
+    // is a LINE and not a branch, and why it names the push.
+    function strBridge(v) {
+      var s = strLibStats(), ex = strExecCount();
+      if (v === 'pmlc') {
+        return '<p class="sbld-note"><b>Construction Library → Execution Phase.</b> This setup describes ' +
+          strLibPhrase(s) + '. Those become branches <b>inside Execution Phase</b> when you <b>' +
+          _stepNo('Generate') + ' · Push</b> — they are <b>not</b> in the tree below until then, which is ' +
+          'why editing here and editing there are two different acts. ' +
+          '<button class="pd-btn sbld-strjump" data-strview="lib">Edit them in Construction Library →</button></p>';
+      }
+      return '<p class="sbld-note">' +
+        (ex == null
+          ? 'This project has <b>no Execution Phase branch</b> in its live WBS yet — <b>' + _stepNo('Generate') +
+            ' · Push</b> creates it. '
+          : 'Its live WBS holds <b>' + ex + '</b> branch' + (ex === 1 ? '' : 'es') + ' inside <b>Execution Phase</b> right now. ') +
+        'What you edit on this view is <b>this setup</b>; the push is what turns it into branches there. ' +
+        '<button class="pd-btn sbld-strjump" data-strview="pmlc">See the whole tree in 5PMLC →</button></p>';
+    }
+    function stStructure(host) {
+      var v = strView();
+      host.innerHTML = '<h2>' + _stepNo('Structure') + ' · Structure — ' +
+        (v === 'lib' ? 'Construction Library' : '5PMLC') + '</h2>' +
+        '<p class="sbld-lede">One breakdown, two zoom levels. <b>5PMLC</b> is the project’s whole live tree — ' +
+        'Milestones, Initiation, Planning, Execution, Close-out. <b>Construction Library</b> is the places and the ' +
+        'work that end up inside <b>Execution</b>. Both are editable; they edit different things, and the line under ' +
+        'the tabs says which.</p>' +
+        strTabs(v) + strBridge(v) +
+        '<div id="sbld-strbody"></div>';
+      // Both the tabs and the bridge's jump button carry data-strview, so one wiring serves both.
+      host.querySelectorAll('[data-strview]').forEach(function (b) {
+        b.onclick = function () { if (b.dataset.strview !== v) strSetView(b.dataset.strview); };
+      });
+      var body = host.querySelector('#sbld-strbody');
+      // ⚠️ The 5PMLC view BORROWS the live WBS editor into this panel (sbWbsMount). It is safe to
+      // switch views only because render() parks those nodes first, unconditionally — repainting
+      // this panel with them still inside it would destroy the tree for the rest of the session.
+      if (v === 'lib') stLibrary(body); else stWbs(body);
     }
     /* ==========================================================================================
        THE LIBRARY — the project's places on the left, its activity groupings on the right.
@@ -27821,6 +28044,345 @@
       });
       return out;
     }
+    /* ==========================================================================================
+       AUTHORING THE GROUPING TREE — delete a rung, group a selection, reorder.
+       Owner 2026-09-08: *"provide users capabilities to delete some groupings that have been made
+       as well. In addition, pls provide users more convenient functions, such as multiple selection
+       of rows in the right pane, and then right click, group them together with a defined group
+       name. As well as re-arranging the items pls."*
+
+       ⚠️⚠️ NOTHING HERE DELETES AN ACTIVITY. Every operation writes grouping PATHS: deleting a
+       grouping moves its contents up a rung, grouping a selection inserts a rung above them, and
+       reordering permutes `cfg.activities`. An activity is deleted in the Activities step, on
+       purpose — a planner clearing up a breakdown on this screen must never be able to lose work
+       from the schedule by tidying a heading, and "Delete" on a heading is exactly the control that
+       would do it if it deleted what was underneath.
+       ========================================================================================== */
+    var SEP1 = String.fromCharCode(1);
+    /* Delete one rung: everything under it moves UP into its parent.
+       ⚠️ The exact inverse of absAddSub, which inserts one. That symmetry is the reason the
+       operation is safe to offer at all: whatever a planner can insert they can take back out, and
+       neither direction touches an activity's existence. The segment is matched before it is
+       spliced, so a stale node (rendered, then the data changed underneath) rewrites nothing. */
+    function absDelSeg(node) {
+      var d = (node && node.path) ? node.path.length - 1 : -1;
+      if (!(d >= 0)) return 0;
+      var hit = 0;
+      (node.acts || []).forEach(function (a) {
+        var p = absPathOf(a);
+        if (p.length <= d || _libNorm(p[d]) !== _libNorm(node.name)) return;
+        p.splice(d, 1); absSetPath(a, p); hit++;
+      });
+      return hit;
+    }
+    /* The deepest rung a set of paths all agree on. Used to decide WHERE a new grouping goes when
+       several items are grouped together: at the point their existing structure stops matching.
+       ⚠️ Normalised, and it stops at the shortest path, so ['A','B'] + ['A'] agree to depth 1. */
+    function absCommonDepth(paths) {
+      if (!paths || !paths.length) return 0;
+      var d = 0;
+      for (;;) {
+        var seg = null;
+        for (var i = 0; i < paths.length; i++) {
+          if (d >= paths[i].length) return d;
+          var k = _libNorm(paths[i][d]);
+          if (seg === null) seg = k;
+          else if (seg !== k) return d;
+        }
+        d++;
+      }
+    }
+    /* Group a selection under one new grouping.
+       ⚠️ IT INSERTS, IT DOES NOT FLATTEN. Grouping `Substructure > Rebar > x` with
+       `Substructure > Formworks > y` under "Phase 1" gives `Substructure > Phase 1 > Rebar > x` and
+       `Substructure > Phase 1 > Formworks > y`: they now share a grouping, which is what was asked
+       for, and neither loses the rung it already had. Overwriting their paths with
+       `Substructure > Phase 1` would group them by DELETING structure the planner authored.
+       ⚠️ PER TRADE. A grouping belongs to one trade (it is a branch under it), so a selection
+       spanning trades becomes a grouping of that name inside EACH trade rather than one impossible
+       shared branch. The caller reports that, because it is not what "group them together" sounds
+       like and the planner should not have to discover it.
+       ⚠️ A trade whose items would pass the cap is REFUSED as a whole and counted, never truncated
+       to fit — see absAddWhy for why truncating is silent data loss. */
+    function absGroupSel(ids, name) {
+      var nm = String(name == null ? '' : name).trim();
+      var out = { moved: 0, refused: 0, trades: 0 };
+      if (!nm || !ids || !ids.length) return out;
+      var mine = (cfg.activities || []).filter(function (a) { return ids.indexOf(a.id) >= 0; });
+      if (!mine.length) return out;
+      var byTrade = {};
+      mine.forEach(function (a) { var g = a.group || 'ST'; (byTrade[g] = byTrade[g] || []).push(a); });
+      Object.keys(byTrade).forEach(function (g) {
+        var set = byTrade[g], paths = set.map(function (a) { return absPathOf(a); });
+        if (paths.some(function (p) { return p.length + 1 > ABS_MAX_GRP; })) { out.refused += set.length; return; }
+        var d = absCommonDepth(paths);
+        set.forEach(function (a, i) { var p = paths[i].slice(); p.splice(d, 0, nm); absSetPath(a, p); });
+        out.moved += set.length; out.trades++;
+      });
+      return out;
+    }
+    /* ==========================================================================================
+       REORDERING. ⚠️ THE ORDER IS `cfg.activities`, AND IT IS NOT COSMETIC: absSegList reads
+       first-seen order out of that array, so it decides the order of the GROUPINGS in this pane
+       AND the order of the branches the push builds (dimOrderIndex). Re-arranging here is
+       therefore a real edit of the schedule's structure, not a display preference.
+       ⚠️ `cfg.activities` is mutated IN PLACE (length = 0, then push) wherever a whole new order is
+       written, never reassigned — the same rule STEPS follows, for the same reason: something else
+       may be holding the array.
+       ========================================================================================== */
+    // Two items are siblings when they render next to each other: same trade, same grouping path.
+    function absRowKey(a) {
+      return (a && (a.group || 'ST')) + SEP1 +
+        absPathOf(a).map(function (s) { return _libNorm(s); }).join(SEP1);
+    }
+    /* Move one item one slot among its SIBLINGS. ⚠️ Siblings, not "the next entry in
+       cfg.activities": swapping with whatever happens to sit next in the array would trade places
+       with an item in another grouping, which changes the pushed order of two branches while this
+       pane does not appear to move at all. At either end it refuses rather than wrapping. */
+    function absMoveItem(a, dir, hold) {
+      var list = cfg.activities || [], key = absRowKey(a), sibs = [];
+      list.forEach(function (x, i) { if (absRowKey(x) === key) sibs.push(i); });
+      var here = list.indexOf(a), at = sibs.indexOf(here);
+      if (at < 0) return false;
+      var to = at + (dir < 0 ? -1 : 1);
+      if (to < 0 || to >= sibs.length) return false;
+      var i1 = sibs[at], i2 = sibs[to];
+      /* ⚠️ NEVER SWAP WITH ANOTHER ROW IN THE SAME MOVING SET. That is an internal shuffle of the
+         block rather than a move of it, and when the selection IS the whole sibling set — nothing
+         to move past — it is the only thing that could possibly happen. Measured, not predicted:
+         selecting both rows of a two-row grouping and pressing Move down swapped the two with each
+         other, so the planner saw their selection reorder itself instead of refusing.
+         Ordering the walk against the direction of travel (see absMoveSel) is NOT enough on its
+         own: it fixes the block that has room to move, not the block that has none. */
+      if (hold && hold.indexOf(list[i2]) >= 0) return false;
+      var t = list[i1];
+      list[i1] = list[i2]; list[i2] = t;
+      return true;
+    }
+    /* Move a whole selection. ⚠️ BOTTOM-UP WHEN MOVING DOWN, TOP-DOWN WHEN MOVING UP. Moving the
+       topmost row of a selected block downward first would swap it with the second row OF THE SAME
+       BLOCK — a no-op the planner reads as a random shuffle. Ordering the walk against the
+       direction of travel is what makes a multi-row move look like one move. */
+    function absMoveSel(acts, dir) {
+      var list = cfg.activities || [];
+      var ord = (acts || []).slice().sort(function (x, y) { return list.indexOf(x) - list.indexOf(y); });
+      if (dir > 0) ord.reverse();
+      var n = 0;
+      ord.forEach(function (a) { if (absMoveItem(a, dir, ord)) n++; });
+      return n;
+    }
+    /* Move a whole GROUPING among its sibling groupings.
+       ⚠️ NOT absMoveSel over its items. A grouping's position is where its first item sits relative
+       to the OTHER groupings' items, and its items are in a different sibling set from theirs — so
+       item-by-item swapping cannot express this move at all. Its whole block is lifted out and
+       re-inserted at the target block's start (moving up) or just past its end (moving down). */
+    function absMoveNode(node, dir) {
+      if (!node || !node.path || !node.path.length) return false;
+      var trade = node.g, d = node.path.length - 1;
+      var pre = node.path.slice(0, d).map(function (s) { return _libNorm(s); }).join(SEP1);
+      var sibs = absSegList(trade, d).filter(function (s) {
+        return d === 0 || String(s.key).indexOf(pre + SEP1) === 0;
+      });
+      var myKey = node.path.map(function (s) { return _libNorm(s); }).join(SEP1);
+      var at = -1;
+      for (var i = 0; i < sibs.length; i++) if (sibs[i].key === myKey) { at = i; break; }
+      var to = at + (dir < 0 ? -1 : 1);
+      if (at < 0 || to < 0 || to >= sibs.length) return false;
+      var list = cfg.activities || [];
+      function block(key) {
+        return list.filter(function (a) { return (a.group || 'ST') === trade && absPathKey(a, d) === key; });
+      }
+      var mine = block(myKey), other = block(sibs[to].key);
+      if (!mine.length || !other.length) return false;
+      var rest = list.filter(function (a) { return mine.indexOf(a) < 0; });
+      var anchor = (dir < 0) ? rest.indexOf(other[0]) : rest.indexOf(other[other.length - 1]) + 1;
+      if (anchor < 0) return false;
+      var next = rest.slice(0, anchor).concat(mine, rest.slice(anchor));
+      list.length = 0;
+      next.forEach(function (a) { list.push(a); });
+      return true;
+    }
+    /* ==========================================================================================
+       SELECTION. Kept in module state and keyed by activity id, so it SURVIVES the full re-render
+       that every edit triggers — a selection lost on each keystroke is worse than no selection.
+       ⚠️ Pruned against cfg.activities on read, so an id whose activity was deleted in another step
+       can never make a stale row count towards "3 selected".
+       ========================================================================================== */
+    var _libSel = {}, _libSelLast = null, _libOrder = [];
+    function libSelIds() {
+      var live = {};
+      (cfg.activities || []).forEach(function (a) { live[a.id] = 1; });
+      return Object.keys(_libSel).filter(function (id) { return live[id]; });
+    }
+    function libSelActs() {
+      var ids = libSelIds();
+      return (cfg.activities || []).filter(function (a) { return ids.indexOf(a.id) >= 0; });
+    }
+    function libSelHas(id) { return !!_libSel[id]; }
+    function libSelClear() { _libSel = {}; _libSelLast = null; }
+    /* ⚠️ Shift extends from the LAST clicked row through the RENDERED order (_libOrder), not through
+       cfg.activities: the planner is selecting what they can see, and the two orders differ the
+       moment anything is grouped (the pane nests, the array does not). */
+    function libSelClick(id, shift) {
+      if (shift && _libSelLast && _libOrder.length) {
+        var a = _libOrder.indexOf(_libSelLast), b = _libOrder.indexOf(id);
+        if (a >= 0 && b >= 0) {
+          var lo = Math.min(a, b), hi = Math.max(a, b);
+          for (var i = lo; i <= hi; i++) _libSel[_libOrder[i]] = 1;
+          _libSelLast = id;
+          return;
+        }
+      }
+      if (_libSel[id]) delete _libSel[id]; else _libSel[id] = 1;
+      _libSelLast = id;
+    }
+    // The bar only exists when something is selected: an always-present toolbar of controls that
+    // do nothing yet is the kind of dead furniture this pane has been cleared of twice.
+    function libSelBar() {
+      var ids = libSelIds();
+      if (!ids.length) return '';
+      var acts = libSelActs(), trades = {};
+      acts.forEach(function (a) { trades[a.group || 'ST'] = 1; });
+      var nT = Object.keys(trades).length;
+      return '<div class="sbld-libselbar">' +
+        '<b>' + ids.length + ' selected</b>' +
+        (nT > 1 ? '<span class="sbld-libselwarn" title="A grouping belongs to one trade, so grouping this selection creates one grouping of that name inside each of the ' + nT + ' trades">across ' + nT + ' trades</span>' : '') +
+        '<button class="pd-btn pd-btn-primary sbld-libselbtn" data-libgroup="1">Group into a new grouping…</button>' +
+        '<button class="pd-btn sbld-libselbtn" data-libmove="-1" title="Move the selected rows up among their siblings">Move up</button>' +
+        '<button class="pd-btn sbld-libselbtn" data-libmove="1" title="Move the selected rows down among their siblings">Move down</button>' +
+        '<button class="pd-btn sbld-libselbtn" data-libselclear="1">Clear</button>' +
+        '<span class="sbld-libselhint">Click a name to select · Shift-click for a range · right-click for more</span>' +
+        '</div>';
+    }
+    /* ==========================================================================================
+       THE CONTEXT MENU. ⚠️ Appended to document.body, not into the panel: the panel is rebuilt with
+       innerHTML on every edit, and a menu living inside it would be destroyed by the very action it
+       just triggered. It is closed explicitly before any action runs, and at the top of every
+       stLibrary render, so a stale menu can never sit over a repainted pane.
+       ========================================================================================== */
+    var _libMenuEl = null;
+    function _libMenuAway(e) { if (_libMenuEl && !_libMenuEl.contains(e.target)) libMenuClose(); }
+    function _libMenuKey(e) { if (e.key === 'Escape' || e.key === 'Esc') libMenuClose(); }
+    function libMenuClose() {
+      if (!_libMenuEl) return;
+      document.removeEventListener('mousedown', _libMenuAway, true);
+      document.removeEventListener('keydown', _libMenuKey, true);
+      if (_libMenuEl.parentNode) _libMenuEl.parentNode.removeChild(_libMenuEl);
+      _libMenuEl = null;
+    }
+    function libMenu(x, y, items) {
+      libMenuClose();
+      var d = document.createElement('div');
+      d.className = 'sbld-libmenu';
+      d.innerHTML = items.map(function (it, i) {
+        if (it.sep) return '<div class="sbld-libmenusep"></div>';
+        return '<button class="sbld-libmenui" data-mi="' + i + '"' + (it.off ? ' disabled' : '') +
+          ' title="' + e2(it.off || it.tip || it.label) + '">' + e2(it.label) + '</button>';
+      }).join('');
+      document.body.appendChild(d);
+      _libMenuEl = d;
+      // ⚠️ Positioned AFTER insertion, off the measured box: a menu placed blindly at the cursor
+      // opens off-screen near the window edge, which is where a right-click on the last row is.
+      var r = d.getBoundingClientRect();
+      d.style.left = Math.max(4, Math.min(x, (window.innerWidth || 1200) - r.width - 6)) + 'px';
+      d.style.top = Math.max(4, Math.min(y, (window.innerHeight || 800) - r.height - 6)) + 'px';
+      d.querySelectorAll('[data-mi]').forEach(function (b) {
+        b.onclick = function () {
+          var it = items[+b.dataset.mi];
+          libMenuClose();
+          if (it && it.go) it.go();
+        };
+      });
+      document.addEventListener('mousedown', _libMenuAway, true);
+      document.addEventListener('keydown', _libMenuKey, true);
+    }
+    // Ask for a grouping name and apply it to the selection, reporting what actually happened.
+    function libGroupPrompt(acts) {
+      if (!acts.length) return;
+      var typed = prompt('Group ' + acts.length + ' item' + (acts.length === 1 ? '' : 's') +
+        ' under a new grouping — name it:', '');
+      var nm = String(typed == null ? '' : typed).trim();
+      if (!nm) return;
+      var r = absGroupSel(acts.map(function (a) { return a.id; }), nm);
+      if (!r.moved) {
+        UI.toast(r.refused
+          ? ('Nothing grouped: ' + r.refused + ' of those are already as deep as the grouping tree goes (L' + (ABS_MAX_GRP + 1) + ').')
+          : 'Nothing grouped.', 'warn');
+        return;
+      }
+      // ⚠️ Says when it made more than one grouping. "Group them together" does not sound like
+      // "one grouping per trade", and finding that out by reading the pane afterwards is worse.
+      UI.toast('Grouped ' + r.moved + ' item' + (r.moved === 1 ? '' : 's') + ' under "' + nm + '"' +
+        (r.trades > 1 ? ' — one grouping of that name in each of ' + r.trades + ' trades, because a grouping belongs to a trade' : '') +
+        (r.refused ? '. ' + r.refused + ' left alone: already at L' + (ABS_MAX_GRP + 1) + '.' : '.'),
+        r.refused ? 'warn' : 'success');
+      libSelClear();
+      markDirty(); render();
+    }
+    function libDelPrompt(node) {
+      var parent = node.path.length > 1 ? node.path[node.path.length - 2] : (GWORK[node.g] || GLABEL[node.g] || node.g);
+      // ⚠️ Names the destination and says no activity is deleted. A "Delete" on a heading reads as
+      // "delete what is under it", and it would be a rotten surprise to be wrong about.
+      if (!confirm('Delete the grouping "' + node.name + '"?\n\n' +
+          'Its ' + node.acts.length + ' item' + (node.acts.length === 1 ? '' : 's') +
+          ' move up into "' + parent + '". No activity is deleted.')) return;
+      var hit = absDelSeg(node);
+      if (!hit) { UI.toast('That grouping is no longer there — nothing changed.', 'warn'); return; }
+      UI.toast('Deleted "' + node.name + '" — ' + hit + ' item' + (hit === 1 ? '' : 's') + ' moved up.', 'success');
+      markDirty(); render();
+    }
+    function libRenamePrompt(node) {
+      var typed = prompt('Rename this L' + (node.path.length + 1) + ' grouping — all ' + node.acts.length +
+        ' item(s) under it follow:', node.name);
+      var nm = String(typed == null ? '' : typed).trim();
+      if (!nm || _libNorm(nm) === _libNorm(node.name)) return;
+      if (absRenameSeg(node, nm)) { markDirty(); render(); }
+    }
+    function libSubPrompt(node) {
+      var typed = prompt('Insert a level under "' + node.name + '" — name the new L' + (node.path.length + 2) +
+        ' grouping, and its ' + node.acts.length + ' item(s) move one rung deeper inside it:', '');
+      var nm = String(typed == null ? '' : typed).trim();
+      if (!nm) return;
+      if (absAddSub(node, nm)) { markDirty(); render(); }
+      else UI.toast(absAddWhy(node) || 'Could not insert a level there.', 'warn');
+    }
+    // The menu for an ITEM row. `a` is the row that was right-clicked; the selection is what acts,
+    // and right-clicking outside it selects that row first so the menu never acts on rows the
+    // planner cannot see they picked.
+    function libItemMenu(e, a) {
+      if (!libSelHas(a.id)) { libSelClear(); _libSel[a.id] = 1; _libSelLast = a.id; render(); }
+      var acts = libSelActs(), one = acts.length === 1;
+      var lv = absLevelOf(a);
+      libMenu(e.clientX, e.clientY, [
+        { label: 'Group ' + acts.length + ' item' + (one ? '' : 's') + ' into a new grouping…',
+          go: function () { libGroupPrompt(acts); } },
+        { sep: 1 },
+        { label: 'Move up', tip: 'Move among its siblings — the order the push builds', go: function () { if (absMoveSel(acts, -1)) { markDirty(); render(); } } },
+        { label: 'Move down', go: function () { if (absMoveSel(acts, 1)) { markDirty(); render(); } } },
+        { sep: 1 },
+        { label: 'Move out a rung (L' + (lv - 1) + ')', off: lv <= 2 ? 'Already directly under its trade' : '',
+          go: function () { var m = 0; acts.forEach(function (x) { if (absSetLevel(x, absLevelOf(x) - 1)) m++; }); if (m) { markDirty(); render(); } } },
+        { label: 'Move in a rung (L' + (lv + 1) + ')', off: lv >= 2 + ABS_MAX_GRP ? ('L' + (2 + ABS_MAX_GRP) + ' is as deep as it goes') : '',
+          go: function () { var m = 0; acts.forEach(function (x) { if (absSetLevel(x, absLevelOf(x) + 1)) m++; }); if (m) { markDirty(); render(); } } },
+        { sep: 1 },
+        { label: 'Clear selection', go: function () { libSelClear(); render(); } }
+      ]);
+    }
+    function libNodeMenu(e, node) {
+      var why = absAddWhy(node);
+      libMenu(e.clientX, e.clientY, [
+        { label: 'Rename grouping…', go: function () { libRenamePrompt(node); } },
+        { label: 'Insert a level under it…', off: why, go: function () { libSubPrompt(node); } },
+        { label: 'Delete grouping…', tip: 'Its items move up a rung; no activity is deleted',
+          go: function () { libDelPrompt(node); } },
+        { sep: 1 },
+        { label: 'Move grouping up', go: function () { if (absMoveNode(node, -1)) { markDirty(); render(); } } },
+        { label: 'Move grouping down', go: function () { if (absMoveNode(node, 1)) { markDirty(); render(); } } },
+        { sep: 1 },
+        { label: 'Select its ' + node.acts.length + ' item' + (node.acts.length === 1 ? '' : 's'),
+          go: function () { libSelClear(); node.acts.forEach(function (a) { _libSel[a.id] = 1; }); _libSelLast = node.acts.length ? node.acts[node.acts.length - 1].id : null; render(); } }
+      ]);
+    }
     function libGrpCount(n) {
       return (n.kids || []).reduce(function (s, k) { return s + 1 + libGrpCount(k); }, 0);
     }
@@ -27836,6 +28398,13 @@
         '<button class="sbld-libtool" data-libsub="' + i + '"' + (why ? ' disabled' : '') + ' title="' + e2(why ||
           ('Insert a level under this grouping — its ' + n.acts.length + (n.acts.length === 1 ? ' item moves' : ' items move') + ' one rung deeper, inside the new one')) +
           '">+ level</button>' +
+        // ⚠️ DELETE IS A ROW BUTTON, not only a context-menu entry. The owner asked for the
+        // capability plainly, and a destructive-sounding action that exists only behind a
+        // right-click is one a planner never finds and never trusts. It deletes the RUNG:
+        // libDelPrompt names where the items go and says no activity is deleted.
+        '<button class="sbld-libtool sbld-libtooldel" data-libdel="' + i + '" title="' +
+          e2('Delete this grouping — its ' + n.acts.length + ' item' + (n.acts.length === 1 ? '' : 's') +
+            ' move up a rung. No activity is deleted.') + '">Delete</button>' +
         '</span>';
     }
     // A grouping node and everything under it. Items first, then sub-groupings: a heading's own
@@ -27844,7 +28413,7 @@
       var h = '';
       if (n.path.length) {
         var lv = n.path.length + 1;
-        h += '<div class="sbld-libL' + lv + ' sbld-libgrp">' +
+        h += '<div class="sbld-libL' + lv + ' sbld-libgrp" data-libnode="' + _libNodes.length + '">' +
           libLv(lv, 'grp', n.path.length === 1 ? 'Grouping' : ('Grouping ' + n.path.length)) +
           '<span class="sbld-libnm">' + e2(n.name) + '</span>' + libNodeTools(n) +
           '<span class="sbld-libwho" title="' + e2(n.acts.length + ' item(s) under this grouping') + '">' + n.acts.length + '</span></div>';
@@ -27854,7 +28423,11 @@
       return h;
     }
     function stLibrary(host) {
+      // ⚠️ All three are per-render: the node registry the menus index into, the render order a
+      // shift-click range walks, and any menu left open over the pane this call is replacing.
       _libNodes = [];
+      _libOrder = [];
+      libMenuClose();
       var locs = libLocTree(), tree = libGroupTree();
       var nF = 0, nZ = 0, nU = 0;
       locs.forEach(function (T) {
@@ -27897,15 +28470,18 @@
           '<span class="sbld-libedit" title="‹ and › move an item between rungs; Rename and + level restructure a grouping">levels are editable</span>' +
           '<span class="sbld-tag">' + tree.length + ' trade' + (tree.length === 1 ? '' : 's') + ' · ' + nG + ' grouping' + (nG === 1 ? '' : 's') +
           ' · ' + nI + ' item' + (nI === 1 ? '' : 's') + (deep > 1 ? ' · ' + deep + ' grouping levels' : '') + '</span></div>' +
-        '<div class="sbld-libbody">' +
+        libSelBar() +
+        '<div class="sbld-libbody" id="sbld-libgrpbody">' +
         (nI ? tree.map(function (T) {
           return '<div class="sbld-libL1" style="--zc:' + gc(T.g) + '">' + libLv(1, 'grp', 'Trade') + e2(T.label) + '</div>' +
             libNodeHTML(T);
         }).join('') : '<div class="sbld-empty">No items yet. Add them in <b>Activities</b>, or <b>Read from the WBS</b>.</div>') +
         '</div></div>';
 
-      host.innerHTML = '<h2>' + _stepNo('Library') + ' · Library — places and activity groupings</h2>' +
-        '<p class="sbld-lede">The two halves of the structure this schedule is read through: <b>where</b> the work happens ' +
+      // ⚠️ No <h2>: this is the Construction Library VIEW of the Structure step, and stStructure
+      // owns the heading and the tabs. The lede stays — it describes THIS view's two panes.
+      host.innerHTML =
+        '<p class="sbld-lede">The two halves of the <b>execution phase</b> this schedule is read through: <b>where</b> the work happens ' +
         'on the left, and <b>what</b> the work is on the right. A migrated schedule already names both in its WBS — ' +
         'read them in rather than typing them, then correct what the reader got wrong.</p>' +
         '<div class="sbld-libbar">' +
@@ -27930,8 +28506,17 @@
           'no path is L2, one grouping is L3, two is L4, and the chip at the head of each row says which. So <b>‹</b> and ' +
           '<b>›</b> <i>are</i> the move: › puts the item one rung deeper (inside a grouping, borrowing the name of a ' +
           'grouping beside it or asking you for a new one), ‹ takes it one rung out. Type the whole path in the field if ' +
-          'you prefer — <code>Substructure / Rebar</code>. <b>+ level</b> on a grouping inserts a rung under it and moves ' +
-          'everything beneath one step deeper, and <b>Rename</b> retitles a rung for every item under it.<br>' +
+          'you prefer — <code>Substructure / Rebar</code>.<br>' +
+          '<b>Restructuring, on a grouping row.</b> <b>+ level</b> inserts a rung under it and moves everything beneath one ' +
+          'step deeper; <b>Rename</b> retitles the rung for every item under it; <b>Delete</b> removes the rung and moves its ' +
+          'items up into its parent — <i>no activity is ever deleted here</i>, that is the <b>Activities</b> step.<br>' +
+          '<b>Several at once.</b> Click an item\u2019s name to select it, <b>shift-click</b> for a range, then <b>right-click</b> — ' +
+          '<i>Group N items into a new grouping</i> puts them under one new rung <i>without</i> discarding the rungs they already ' +
+          'have. A selection spanning trades makes one grouping of that name inside each trade, because a grouping belongs to a ' +
+          'trade; the toast says when that happened.<br>' +
+          '<b>Re-arranging.</b> <b>Move up</b> / <b>Move down</b> on the selection bar or the right-click menu reorders items ' +
+          'among their siblings, and a grouping travels as one block. — this is not cosmetic: the order here is the order ' +
+          'the push builds the branches in.<br>' +
           '<b>And it reaches the schedule.</b> Every grouping rung is a real <b>WBS level</b> (<i>Grouping</i>, ' +
           '<i>Grouping 2</i>…): the push nests them between the trade and the places, and you can reorder or drop each ' +
           'one with the other levels in <b>Generate → WBS structure</b>. A rung nothing uses is skipped entirely, so nothing ' +
@@ -27976,6 +28561,38 @@
           if (!nm) return;
           if (absAddSub(n, nm)) { markDirty(); render(); }
         };
+      });
+      host.querySelectorAll('[data-libdel]').forEach(function (b) {
+        b.onclick = function () { var nd = _libNodes[+b.dataset.libdel]; if (nd) libDelPrompt(nd); };
+      });
+      host.querySelectorAll('[data-libsel]').forEach(function (b) {
+        b.onclick = function (ev) { libSelClick(b.dataset.libsel, !!(ev && ev.shiftKey)); render(); };
+      });
+      host.querySelectorAll('[data-libgroup]').forEach(function (b) {
+        b.onclick = function () { libGroupPrompt(libSelActs()); };
+      });
+      host.querySelectorAll('[data-libmove]').forEach(function (b) {
+        b.onclick = function () { if (absMoveSel(libSelActs(), +b.dataset.libmove)) { markDirty(); render(); } };
+      });
+      host.querySelectorAll('[data-libselclear]').forEach(function (b) {
+        b.onclick = function () { libSelClear(); render(); };
+      });
+      /* Right-click anywhere in the work pane. ⚠️ ONE listener on the pane, resolved by closest():
+         binding contextmenu per row would mean a handler per activity on a pane that repaints on
+         every keystroke. A right-click on neither a row nor a heading is left to the browser —
+         suppressing the native menu over empty space buys nothing and takes away Inspect. */
+      var _gb = host.querySelector('#sbld-libgrpbody');
+      if (_gb) _gb.addEventListener('contextmenu', function (ev) {
+        var it = ev.target.closest ? ev.target.closest('[data-libitem]') : null;
+        if (it) {
+          var a = (cfg.activities || []).filter(function (x) { return x.id === it.dataset.libitem; })[0];
+          if (a) { ev.preventDefault(); libItemMenu(ev, a); return; }
+        }
+        var nd = ev.target.closest ? ev.target.closest('[data-libnode]') : null;
+        if (nd) {
+          var node = _libNodes[+nd.dataset.libnode];
+          if (node) { ev.preventDefault(); libNodeMenu(ev, node); }
+        }
       });
       host.querySelectorAll('[data-libgrp]').forEach(function (inp) {
         inp.onchange = function () {
@@ -28241,8 +28858,18 @@
       // ⚠️ absLevelOf, never a literal. An item sits on the rung its own path ends on, and printing
       // a fixed 3 there was the owner's reported "L1 and then L3" jump.
       var lv = absLevelOf(a), p = absPathOf(a);
-      return '<div class="sbld-libL' + lv + ' sbld-libitem">' + libLv(lv, 'grp', lv === 2 ? 'Item, directly under its trade' : 'Item') +
-        '<span class="sbld-libnm">' + e2(a.name || a.code || '(unnamed)') + '</span>' +
+      // ⚠️ Recorded in RENDER order, which is what a shift-click range means to the planner
+      // (see libSelClick) — cfg.activities is a different order the moment anything is grouped.
+      _libOrder.push(a.id);
+      var sel = libSelHas(a.id);
+      return '<div class="sbld-libL' + lv + ' sbld-libitem' + (sel ? ' sbld-libpicked' : '') + '" data-libitem="' + e2(a.id) + '">' +
+        libLv(lv, 'grp', lv === 2 ? 'Item, directly under its trade' : 'Item') +
+        // ⚠️ A real <button>, so the row is reachable and selectable by keyboard too. The name
+        // is the hit target rather than the whole row: the row also carries a text field and
+        // three buttons, and a row-wide click would fight every one of them.
+        '<button type="button" class="sbld-libnm sbld-libpick" data-libsel="' + e2(a.id) + '"' +
+          ' aria-pressed="' + (sel ? 'true' : 'false') + '" title="' + e2((sel ? 'Selected · click to unselect. ' : 'Click to select. ') +
+            'Shift-click for a range, then right-click to group them.') + '">' + e2(a.name || a.code || '(unnamed)') + '</button>' +
         (a.code ? '<span class="sbld-libcode">' + e2(a.code) + '</span>' : '') +
         libLvPick(a, lv) +
         '<input class="pd-input sbld-libgin" data-libgrp="' + e2(a.id) + '" value="' + e2(p.join(' › ')) + '" placeholder="grouping › sub-grouping…" title="' +
@@ -32204,7 +32831,9 @@
       var _liveActs = 0, _gen = 0;
       try { _liveActs = (rows || []).filter(function (r) { return !isWbs(r) && r._dkind !== 'group'; }).length; } catch (e) {}
       try { _gen = generate('int').rows.length; } catch (e) {}
-      host.innerHTML = '<h2>' + _stepNo('WBS') + ' · The work breakdown structure</h2>' +
+      // ⚠️ No <h2> of its own: this is the 5PMLC VIEW of the Structure step now, and stStructure
+      // owns the heading, the tabs and the bridge line above it.
+      host.innerHTML =
         // ⚠️ Stated before the tree, not after it: the count on every row is what the LIVE schedule
         // holds, which is 0 on a project that has never been pushed to — and that is not a report
         // about the programme the Generate step previews.
@@ -32216,16 +32845,17 @@
         (_gen ? ' The <b>' + _gen + '</b> activities this setup generates are not there until you ' +
           '<b>' + _stepNo('Generate') + ' · Push to Project Schedule</b>.' : '') +
         '</p>' +
-        '<p class="sbld-lede">This is the project\u2019s live WBS \u2014 the same branches the schedule files its activities under, edited here rather than on a screen of its own. A <b>' + _stepNo('Generate') + ' \u00b7 Push</b> creates the branches this setup needs (trade \u203a tower \u203a floor \u203a zone) and reuses any that already exist; what you type here is what it reuses.</p>' +
-        /* ⚠️ SAYS SO, because this step is now SECOND rather than eleventh (see STEPS_NEW) and a
-           planner arriving here on a new project would otherwise read an almost-empty tree as a
-           fault. It is deliberately the first thing after Start: it is the only step that shows what
-           already exists rather than asking for something new. */
-        '<p class="sbld-hint"><b>This step is early on purpose</b> \u2014 it shows the structure this project ' +
-        'already has, before you describe anything new. On a fresh project it is nearly empty apart from ' +
-        'the five lifecycle phases, and that is correct: <b>' + _stepNo('Generate') + ' \u00b7 Push</b> adds the ' +
-        'trade, tower, floor and zone branches from what you set up in the steps in between. Nothing here ' +
-        'has to be filled in first.</p>' +
+        '<p class="sbld-lede">This is the project’s <b>live</b> WBS — the same branches the schedule files its activities under, saved as you type. A <b>' + _stepNo('Generate') + ' · Push</b> creates the branches this setup needs (trade › grouping › tower › floor › zone) and reuses any that already exist; what you type here is what it reuses.</p>' +
+        /* ⚠️ REWRITTEN WHEN THE STEP MERGED. This used to read "this step is early on purpose",
+           which was true while the tree was step 2 and is now simply FALSE on screen — the kind of
+           stale sentence that teaches a planner to stop trusting the page. What survives is the part
+           that is still true and still needed: an almost-empty tree here is CORRECT on a new project,
+           and a planner who is not told that reads it as a fault. */
+        '<p class="sbld-hint"><b>An almost-empty tree here is correct on a new project.</b> Apart from the ' +
+        'five lifecycle phases there is nothing to show until something is pushed: <b>' + _stepNo('Generate') +
+        ' · Push</b> adds the trade, grouping, tower, floor and zone branches that the ' +
+        '<b>Construction Library</b> view and the steps around it describe. Nothing here has to be ' +
+        'filled in first.</p>' +
         '<p class="sbld-hint">Which location levels the push turns into WBS levels, and in what order, is set in the push dialog itself (<b>WBS structure</b>) \u2014 it belongs to the push, not to the tree. Re-arranging <b>activities</b> day to day is done in the <b>Project Schedule</b> grid.</p>' +
         '<p class="sbld-hint">The five top-level branches are held in a fixed order \u2014 <b>Milestones \u2192 Initiation \u2192 Planning \u2192 Execution \u2192 Close-out</b> \u2014 and restored on load if anything moves them. Everything you add sits inside them, where you can order it freely.</p>' +
         '<div class="sbld-wbsmount-tools" id="sbld-wbs-tools"></div>' +
@@ -33566,6 +34196,14 @@
          than throwing the planner's parsed file away. */
       gotoStep: function (title) {
         sbSyncSteps();
+        /* ⚠️ THE OLD TITLES STILL RESOLVE. 'WBS' and 'Library' were two steps until 2026-09-08 and
+           are two VIEWS of 'Structure' now, so a deep link, another module's button, or a habit that
+           asks for either must land on the merged step with the right view showing rather than fail
+           silently. The alias carries the INTENT, not just the destination: asking for 'WBS' selects
+           5PMLC and asking for 'Library' selects Construction Library. Quiet, because this function
+           renders itself. */
+        var _al = { 'WBS': 'pmlc', 'Library': 'lib' };
+        if (_al[title]) { strSetViewQuiet(_al[title]); title = 'Structure'; }
         var i = STEPS.map(function (x) { return x.t; }).indexOf(title);
         if (i >= 0) { step = i; render(); return true; }
         if (mode === 'import') return false;
