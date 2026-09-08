@@ -2216,16 +2216,40 @@ window.BOQ = (function () {
      everything visible under it in one action, so a 40-line concrete package is one click
      plus a review, not forty searches. The existing `pickCode` picker stays for what it is
      good at: mapping ONE imported line. */
-  async function openCodeBuilder() {
-    if (!isDraft()) { UI.toast('Lines can only be added to a draft revision.', 'error'); return; }
+  /* ⚠️⚠️ THE PICKER'S MARKUP AND WIRING ARE SHARED, NOT COPIED. Owner asked for the class-code
+     library to live inside the wizard as well as in its own dialog. The tempting answer is to
+     paste the ladder into wizard.js; the honest one is that a second copy drifts, and this module
+     has already paid for that twice today (two create-dialogs, two import doors). So the markup is
+     one function and the behaviour is one mount, and both hosts call them.
+     ⚠️ `root` is whatever element contains the markup — a modal here, a wizard step body there.
+     Nothing below reaches for `document` or for the modal. */
+  function codePickerHTML() {
+    return '<div class="boq-ladwrap">' +
+      '<input class="pd-input" id="cb-q" placeholder="Search code, trade, group or item…" autocomplete="off" />' +
+      '<div class="boq-lad" id="cb-tree"></div>' +
+      '<div class="boq-tpicked" id="cb-count"></div></div>';
+  }
+
+  /* Mount the ladder into `root`. Returns the live selection so a host can read it when its own
+     button is pressed — the picker never decides what happens next. */
+  async function mountCodePicker(root, opts) {
+    opts = opts || {};
     await ensureCodes();
     if (!(CODES || []).length) {
       UI.toast(codesErr
         ? 'Could not read the class-code chart: ' + (codesErr.message || codesErr)
         : 'The class-code chart is empty — run migrations/2026-08-21-class-codes.sql, then reload this page.',
         'error');
-      return;
+      return null;
     }
+    return _mountPicker(root, opts);
+  }
+
+  /* The ladder itself: state, filtering, painting and wiring. Hosted by openCodeBuilder in a
+     modal and by the wizard in a step body — see codePickerHTML(). Returns the live selection so
+     the HOST decides what happens next; the picker never writes anything itself. */
+  function _mountPicker(root, opts) {
+    var el = function (id) { return root.querySelector('#' + id); };
     buildTree();
     /* ⚠️ `open` is gone with the tree — a ladder has no collapsed state, it has a position. */
     var picked = {}, q = '', curTrade = null, curDiv = null, curGroup = null;
@@ -2245,20 +2269,6 @@ window.BOQ = (function () {
        drilling in no longer costs an expanding accordion that pushes everything else off screen.
        ⚠️ The header follows the standard modal shape (title + one-line subtitle) rather than a
        paragraph of theory; what "division → sheet" means belongs in the result, not in the way. */
-    var m = UI.modal('<div class="pd-modal-header">' +
-      '<div><h2 style="margin:0;">Add lines</h2>' +
-      '<div class="pd-modal-sub">Pick a trade, then take the whole trade or drill into its groups</div></div>' +
-      '<button class="pd-modal-close" id="cb-x">&times;</button></div>' +
-      '<div class="boq-ladwrap">' +
-      '<input class="pd-input" id="cb-q" placeholder="Search code, trade, group or item…" autocomplete="off" />' +
-      '<div class="boq-lad" id="cb-tree"></div>' +
-      '<div class="boq-tpicked" id="cb-count"></div></div>' +
-      '<div class="pd-modal-footer"><button class="pd-btn" id="cb-c">Cancel</button> ' +
-      '<button class="pd-btn pd-btn-primary" id="cb-go">Add lines</button></div>');
-    // Three panes side by side need the wide shell, not the 760px one.
-    m.el.querySelector('.pd-modal').classList.add('boq-wide');
-    var el = function (id) { return m.el.querySelector('#' + id); };
-    el('cb-x').onclick = m.close; el('cb-c').onclick = m.close;
 
     /* Which items survive the search. ⚠️ A division or group matches on its OWN text too,
        and then keeps all of its items — searching "concrete" must not hide the items of a
@@ -2445,8 +2455,39 @@ window.BOQ = (function () {
     el('cb-q').addEventListener('input', function () {
       clearTimeout(t); t = setTimeout(function () { q = el('cb-q').value; paint(); }, 160);
     });
-    el('cb-go').onclick = function () { m.close(); addAuthoredLines(Object.keys(picked)); };
+    var _t = null;
+    var qi = el('cb-q');
+    if (qi) qi.addEventListener('input', function () {
+      clearTimeout(_t); _t = setTimeout(function () { q = qi.value; paint(); }, 160);
+    });
+    /* The host is told the count on every change so it can label its own button — "Add 40 lines"
+       is a different promise from "Add lines", and only the host knows where to put it. */
+    if (opts.onCount) { var _p = paint; paint = function () { _p(); opts.onCount(nPicked()); }; }
     paint();
+    return {
+      codes: function () { return Object.keys(picked); },
+      count: function () { return nPicked(); },
+      repaint: function () { paint(); }
+    };
+  }
+
+  async function openCodeBuilder() {
+    if (!isDraft()) { UI.toast('Lines can only be added to a draft revision.', 'error'); return; }
+    var m = UI.modal(mHead('Add lines',
+        'Pick a trade, then take the whole trade or drill into its groups', 'cb-x') +
+      codePickerHTML() +
+      '<div class="pd-modal-footer"><button class="pd-btn" id="cb-c">Cancel</button> ' +
+      '<button class="pd-btn pd-btn-primary" id="cb-go">Add lines</button></div>');
+    // Four panes side by side need the wide shell, not the 760px one.
+    m.el.querySelector('.pd-modal').classList.add('boq-wide');
+    m.el.querySelector('#cb-x').onclick = m.close;
+    m.el.querySelector('#cb-c').onclick = m.close;
+    var go = m.el.querySelector('#cb-go');
+    var p = await mountCodePicker(m.el, {
+      onCount: function (n) { go.disabled = !n; go.textContent = n ? 'Add ' + n + ' lines' : 'Add lines'; }
+    });
+    if (!p) { m.close(); return; }
+    go.onclick = function () { m.close(); addAuthoredLines(p.codes()); };
   }
 
   /* Write the picked codes in as lines.
@@ -4344,6 +4385,10 @@ window.BOQ = (function () {
        The trigger, the is_current rule and the draft/manual defaults all live in one place. */
     createDraft: createDraft, nextRevLabel: nextRevLabel, currentDraft: currentDraft,
     createDocument: createDocument,
+    /* The class-code ladder, so the WIZARD can host it in a step instead of carrying a copy. */
+    codePickerHTML: codePickerHTML,
+    mountCodePicker: mountCodePicker,
+    addAuthoredLines: function (codes) { return addAuthoredLines(codes); },
     documents: function () { return DOCS.slice(); },
     /* Opens the class-code picker on the existing draft - the wizard's "add a trade" path. */
     addTrades: function () { sub = 'items'; render(); return openCodeBuilder(); },

@@ -867,3 +867,9 @@ html.pd-dark .boq-why { color:#7fd6a2; }
 /* The row-number gutter. Muted and tabular so it reads as an index, never as data. */
 .pdg-rownum { color:var(--pd-muted); font-variant-numeric:tabular-nums; font-size:11px;
   user-select:none; cursor:default; }
+
+/* The wizard widens only for the Trades step, which hosts the four-pane class-code ladder.
+   Every other step is a short form, and a form stretched this wide is harder to read. */
+.ccw.ccw-wide { max-width:1120px; width:96vw; }
+.ccw.ccw-wide .boq-ladwrap { padding:0; }
+.ccw.ccw-wide .boq-lad-body { height:300px; }

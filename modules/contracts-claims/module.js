@@ -585,6 +585,19 @@ window.ContractsClaims = (function () {
         }
         return BOQ.createDraft({ rev: f.rev, date: f.date, po: f.po, total: f.total, docId: docId });
       },
+      /* WARNING The wizard hosts boq.js's OWN picker rather than carrying a copy. A second ladder
+         would drift from the first, which this module has already paid for twice today. */
+      boqPickerHTML: function () {
+        return (window.BOQ && BOQ.codePickerHTML) ? BOQ.codePickerHTML() : '';
+      },
+      mountBoqPicker: function (root, opts) {
+        if (!window.BOQ || !BOQ.mountCodePicker) return Promise.resolve(null);
+        return BOQ.mountCodePicker(root, opts || {});
+      },
+      addBoqLines: function (codes) {
+        if (!window.BOQ || !BOQ.addAuthoredLines) return Promise.resolve();
+        return BOQ.addAuthoredLines(codes);
+      },
       boqDocuments: function () {
         return (window.BOQ && BOQ.documents) ? BOQ.documents() : [];
       },
