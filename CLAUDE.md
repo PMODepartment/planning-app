@@ -95,6 +95,40 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### Construction Library: Excel-style Ctrl-click selection, and a drag grip replacing the Move buttons (2026-09-08) — jasantos2
+
+Owner: *"for the multiple selection, can you adapt similar to excel wherein if multiple selection,
+you must hold ctrl and then click to select another row. And also instead of having buttons to move
+up and move down, there should be a menu icon on the left, to allow smooth rearrangement."*
+
+- **Excel's rules, exactly.** A plain click **replaces** the selection (it used to toggle, which let
+  a selection accumulate quietly and then *Group* act on all of it); **Ctrl** — or **Cmd** — toggles
+  one row and keeps the rest; **Shift** takes the range from the anchor and replaces, **Ctrl+Shift**
+  adds. ⚠️ The anchor does not move on a shift-click, so shift-clicking again re-picks the range from
+  the same start instead of ratcheting outward.
+- **A ≡ grip, first in every re-arrangeable row.** Drag to re-arrange. ⚠️ Only the grip is
+  draggable, never the row — a draggable ancestor kills text selection in the grouping-path field.
+- ⚠️ **One drop does both halves of what a drag means:** the order *and* the grouping. Dropping a row
+  inside another grouping re-homes it as well as placing it; a drag that reordered but left the path
+  alone would park a row visually inside a grouping it is not in. Cross-trade drops are refused with
+  the reason, because a trade is set by a discipline matcher elsewhere and re-trading a row by
+  dragging it past a heading would undo that.
+- A grouping's grip moves the **whole grouping** among its own siblings; a drag started on a selected
+  row carries the **whole selection**.
+- ⚠️ **Move up / Move down are gone from the bar, as asked** — kept in the right-click menu, and the
+  grip takes **↑ / ↓**, so re-arranging never needs a mouse.
+
+**599 assertions across ten suites, all passing** (54 new). ⚠️⚠️ **This time the drag was fired in a
+browser**: a git-ignored page renders the shipped pane and wires the shipped handlers, so real
+`DragEvent`s were dispatched at it — the reorder, the re-home, the refused cross-trade drop (with no
+dirty flag), a whole grouping moved, and both keyboard routes all confirmed on the live DOM. It also
+caught a defect the tests could not: the drop edge and the selection edge are both two-class rules,
+so the one declared later wins, and the marker was vanishing on exactly the rows being dragged.
+⚠️ **Not verified signed-in** — nothing was pushed, and the drag has not run inside the module with
+a real project loaded.
+
+`MODULE_V` → `20260908h`. Detail: [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
 ### Schedule Setup: the WBS step and the Library become one Structure step with two views (2026-09-08) — jasantos2
 
 Owner: *"merge the WBS in step 2 into step 6… Call the view for the step 2 as 5PMLC, and step 6 as

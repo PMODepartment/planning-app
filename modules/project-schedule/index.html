@@ -2805,6 +2805,15 @@
     .sbld-libselbar { display:flex; align-items:center; gap:8px; flex-wrap:wrap;
       padding:6px 11px; border-bottom:1px solid var(--pd-line); background:var(--pd-bg); font-size:12px; }
     .sbld-libselbtn { font-size:11.5px; padding:2px 9px; min-height:0; }
+    /* THE GRIP. A real <button> (see libWireDrag) so ArrowUp/ArrowDown reach it, styled down to a
+       handle. ⚠️ `flex:none` and a fixed width: it is the first thing in every re-arrangeable row,
+       and a grip that changed width with the row would stop the names lining up. */
+    .sbld-libgrip { flex:none; width:15px; border:0; background:none; padding:0; margin-right:3px;
+      color:var(--pd-line); font:inherit; font-size:13px; line-height:1; text-align:center;
+      cursor:grab; border-radius:3px; }
+    .sbld-libgrip:hover, .sbld-libgrip:focus { color:var(--pd-ink); background:var(--pd-bg); }
+    .sbld-libgrip:active { cursor:grabbing; }
+
     .sbld-libselwarn { font-size:10.5px; color:var(--pd-muted); border:1px dashed var(--pd-line);
       border-radius:99px; padding:0 6px; cursor:help; }
     .sbld-libselhint { font-size:10.5px; color:var(--pd-muted); margin-left:auto; }
@@ -2829,6 +2838,13 @@
       .sbld-libitem.sbld-libpicked { background:var(--pd-bg); }
     }
     .sbld-libpicked .sbld-libpick { font-weight:600; }
+    /* THE DROP EDGE. ⚠️⚠️ DECLARED HERE, AFTER THE PICKED RULE, AND THAT POSITION IS THE POINT.
+       Two classes beat the single-class depth rules, but they only TIE with
+       `.sbld-libitem.sbld-libpicked` — so placed before it (where it was first written) the marker
+       vanished on any selected row, i.e. on exactly the rows being dragged. Second time today the
+       same tie has bitten this pane; the rule is: anything that must win goes last. */
+    .sbld-libbody .sbld-libdropbefore { box-shadow:inset 0 3px 0 var(--pd-red); }
+    .sbld-libbody .sbld-libdropafter { box-shadow:inset 0 -3px 0 var(--pd-red); }
     .sbld-libtooldel:hover:not(:disabled) { color:var(--pd-red); border-color:var(--pd-red); }
     /* The right-click menu. Lives on document.body (see libMenu), so it needs its own stacking
        context and a z-index above the sticky L1 headings inside the pane. */
@@ -28203,6 +28219,198 @@
       return true;
     }
     /* ==========================================================================================
+       DRAG TO RE-ARRANGE. Owner 2026-09-08: *"instead of having buttons to move up and move down,
+       there should be a menu icon on the left, to allow smooth rearrangement."*
+
+       ⚠️ ONE DROP DOES BOTH HALVES OF WHAT A DRAG MEANS: where in the ORDER, and which GROUPING.
+       A drag that reordered but left the item's path alone would park a row visually inside a
+       grouping it does not belong to — the pane and the pushed tree disagreeing about the same
+       item, which is the failure this log keeps recording. So dropping onto a row adopts that row's
+       grouping path as well as its position.
+       ⚠️ SAME TRADE ONLY. A trade is not a grouping rung, it is the activity's `group` field, and it
+       is edited in Activities and in the schedule's Trade column with a discipline matcher behind
+       it. Silently re-trading an activity because it was dragged past a heading would undo that
+       work; the drop is refused with the reason instead.
+       ⚠️ The Move up / Move down BUTTONS are gone from the selection bar, as asked. They stay in the
+       right-click menu, which is the keyboard and precision path — and the grip itself takes
+       ArrowUp / ArrowDown, so re-arranging never requires a mouse.
+       ========================================================================================== */
+    var _libDrag = null, _libDrop = null;
+    // The grip. ⚠️ Only the GRIP is draggable, never the row: a draggable ancestor kills text
+    // selection in its descendants, and this row carries the grouping-path text field.
+    function libGrip(kind, ref) {
+      return '<button type="button" class="sbld-libgrip" draggable="true" data-libdrag="' + e2(ref) + '"' +
+        ' data-libdragkind="' + kind + '" aria-label="Re-arrange" title="' +
+        e2('Drag to re-arrange · ↑ / ↓ moves one row · ' +
+          (kind === 'node' ? 'a grouping moves among its own siblings'
+                           : 'drop inside another grouping to move it there')) + '">≡</button>';
+    }
+    function _libDropClear() {
+      try {
+        var q = document.querySelectorAll('.sbld-libdropbefore, .sbld-libdropafter');
+        Array.prototype.forEach.call(q, function (el) {
+          el.classList.remove('sbld-libdropbefore'); el.classList.remove('sbld-libdropafter');
+        });
+      } catch (e) {}
+      _libDrop = null;
+    }
+    function _libDragEnd() { _libDropClear(); _libDrag = null; }
+    // ⚠️ The marker is on the ROW, not a floating line: a separately positioned line has to be kept
+    // in step with a scrolling, virtual-free but re-rendering pane, and an inset edge cannot drift.
+    function _libDropMark(row, after) {
+      if (_libDrop && _libDrop.row === row && _libDrop.after === after) return;
+      _libDropClear();
+      row.classList.add(after ? 'sbld-libdropafter' : 'sbld-libdropbefore');
+      _libDrop = { row: row, after: after };
+    }
+    /* Apply a drop of ITEMS. Returns false for a no-op or a refusal, so the caller repaints only
+       when something moved. */
+    function libDropItems(ids, t) {
+      var list = cfg.activities || [];
+      var moving = list.filter(function (a) { return ids.indexOf(a.id) >= 0; });
+      if (!moving.length) return false;
+      var tgtItem = t.row.dataset.libitem
+        ? list.filter(function (a) { return a.id === t.row.dataset.libitem; })[0] : null;
+      var tgtNode = (!tgtItem && t.row.dataset.libnode != null && t.row.dataset.libnode !== '')
+        ? _libNodes[+t.row.dataset.libnode] : null;
+      if (!tgtItem && !tgtNode) return false;
+      // ⚠️ Dropping onto a row that is itself being dragged is a no-op, and must be REFUSED rather
+      // than computed: the target's index is looked up in the list with the movers removed, so it
+      // would come back -1 and the block would land at the very end of the trade.
+      if (tgtItem && moving.indexOf(tgtItem) >= 0) return false;
+      var trade = tgtItem ? (tgtItem.group || 'ST') : tgtNode.g;
+      if (moving.some(function (a) { return (a.group || 'ST') !== trade; })) {
+        UI.toast('A row can only be dragged inside its own trade — change an activity’s trade in ' +
+          _stepNo('Activities') + ' · Activities, or with the Trade column in the schedule.', 'warn');
+        return false;
+      }
+      var path = tgtItem ? absPathOf(tgtItem) : tgtNode.path.slice();
+      var pk = path.map(function (s) { return _libNorm(s); }).join(SEP1);
+      // ⚠️ Written only when it DIFFERS, so a pure reorder never rewrites a path.
+      moving.forEach(function (a) {
+        if (absPathOf(a).map(function (s) { return _libNorm(s); }).join(SEP1) !== pk) absSetPath(a, path);
+      });
+      var rest = list.filter(function (a) { return moving.indexOf(a) < 0; });
+      var at;
+      if (tgtItem) at = rest.indexOf(tgtItem) + (t.after ? 1 : 0);
+      else {
+        // Dropped on a grouping HEADING: the top of it, or the bottom of everything under it.
+        var blk = rest.filter(function (a) {
+          return (a.group || 'ST') === trade && absPathKey(a, path.length - 1) === pk;
+        });
+        at = blk.length ? (t.after ? rest.indexOf(blk[blk.length - 1]) + 1 : rest.indexOf(blk[0])) : rest.length;
+      }
+      if (at < 0) at = rest.length;
+      var next = rest.slice(0, at).concat(moving, rest.slice(at));
+      list.length = 0;
+      next.forEach(function (a) { list.push(a); });
+      return true;
+    }
+    /* Apply a drop of a whole GROUPING. ⚠️ Among its OWN SIBLINGS only: re-parenting a whole branch
+       by dragging is a restructure with no visible confirmation, and the grouping-path field and
+       ‹ › already do it deliberately. A drop anywhere else is refused with that reason rather than
+       silently ignored, because a drag that lands and does nothing reads as a broken control. */
+    function libDropNode(idx, t) {
+      var nd = _libNodes[idx], list = cfg.activities || [];
+      if (!nd || !nd.path || !nd.path.length) return false;
+      var d2 = nd.path.length - 1;
+      var tgtItem = t.row.dataset.libitem
+        ? list.filter(function (a) { return a.id === t.row.dataset.libitem; })[0] : null;
+      var tgtNode = (!tgtItem && t.row.dataset.libnode != null && t.row.dataset.libnode !== '')
+        ? _libNodes[+t.row.dataset.libnode] : null;
+      var tGroup = tgtNode ? tgtNode.g : (tgtItem ? (tgtItem.group || 'ST') : null);
+      var myKey = nd.path.map(function (s) { return _libNorm(s); }).join(SEP1);
+      // The target's branch AT MY DEPTH — so dropping on any row inside a sibling grouping works.
+      var tKey = tgtNode ? tgtNode.path.slice(0, d2 + 1).map(function (s) { return _libNorm(s); }).join(SEP1)
+                         : (tgtItem ? absPathKey(tgtItem, d2) : '');
+      // ⚠️ Itself is the ONLY silent no-op: dropping a grouping back where it was is not a mistake
+      // to explain. Everything else gets the reason — including a target with no branch at this
+      // depth at all (dropping a sub-grouping onto a bare item in another trade), which returned
+      // false with no message and read as the drag simply not working.
+      if (tKey === myKey) return false;
+      var myPre = myKey.split(SEP1).slice(0, d2).join(SEP1);
+      var tPre = tKey ? tKey.split(SEP1).slice(0, d2).join(SEP1) : null;
+      if (!tKey || tGroup !== nd.g || myPre !== tPre) {
+        UI.toast('A grouping can only be re-arranged among its own siblings. To move it somewhere ' +
+          'else, edit the grouping path on its items.', 'warn');
+        return false;
+      }
+      var mine = list.filter(function (a) { return (a.group || 'ST') === nd.g && absPathKey(a, d2) === myKey; });
+      var rest = list.filter(function (a) { return mine.indexOf(a) < 0; });
+      var other = rest.filter(function (a) { return (a.group || 'ST') === nd.g && absPathKey(a, d2) === tKey; });
+      if (!mine.length || !other.length) return false;
+      var at = t.after ? rest.indexOf(other[other.length - 1]) + 1 : rest.indexOf(other[0]);
+      if (at < 0) return false;
+      var next = rest.slice(0, at).concat(mine, rest.slice(at));
+      list.length = 0;
+      next.forEach(function (a) { list.push(a); });
+      return true;
+    }
+    // ⚠️ ONE set of listeners on the pane, not one per row: this pane repaints on every keystroke,
+    // and five drag events per activity is a handler count that grows with the project.
+    function libWireDrag(pane) {
+      if (!pane) return;
+      pane.addEventListener('dragstart', function (ev) {
+        var g = ev.target.closest ? ev.target.closest('[data-libdrag]') : null;
+        if (!g) return;
+        if (g.dataset.libdragkind === 'node') _libDrag = { kind: 'node', idx: +g.dataset.libdrag };
+        else {
+          /* ⚠️ Dragging a row that is IN the selection drags the WHOLE selection — the Excel model
+             the rest of this pane now follows. Dragging one outside it drags only that row and makes
+             it the selection, so a drag can never move rows the planner cannot see they picked. */
+          var id = g.dataset.libdrag;
+          if (!libSelHas(id)) { libSelClear(); _libSel[id] = 1; _libSelLast = id; }
+          _libDrag = { kind: 'item', ids: libSelIds() };
+        }
+        try {
+          ev.dataTransfer.effectAllowed = 'move';
+          ev.dataTransfer.setData('text/plain', String(g.dataset.libdrag));
+        } catch (e) {}
+      });
+      pane.addEventListener('dragover', function (ev) {
+        if (!_libDrag) return;
+        var row = ev.target.closest ? ev.target.closest('[data-libitem],[data-libnode]') : null;
+        if (!row) return;
+        ev.preventDefault();
+        try { ev.dataTransfer.dropEffect = 'move'; } catch (e) {}
+        var r = row.getBoundingClientRect();
+        _libDropMark(row, (ev.clientY - r.top) > r.height / 2);
+      });
+      pane.addEventListener('drop', function (ev) {
+        if (!_libDrag) return;
+        ev.preventDefault();
+        var d = _libDrag, t = _libDrop;
+        _libDragEnd();
+        if (!t) return;
+        var moved = (d.kind === 'node') ? libDropNode(d.idx, t) : libDropItems(d.ids, t);
+        if (moved) { markDirty(); render(); }
+      });
+      // ⚠️ Cleared on dragend AND on leaving the pane: a marker left painted on a row after an
+      // abandoned drag is a lie about where the next drop would land.
+      pane.addEventListener('dragend', function () { _libDragEnd(); });
+      pane.addEventListener('dragleave', function (ev) {
+        if (ev.target === pane) _libDropClear();
+      });
+      /* The keyboard equivalent, on the grip itself. ⚠️ This is why the grip is a <button> and not a
+         styled span: dragging is a mouse gesture, and removing the Move buttons from the bar would
+         otherwise have left no way to re-arrange without one. */
+      pane.addEventListener('keydown', function (ev) {
+        var g = ev.target.closest ? ev.target.closest('[data-libdrag]') : null;
+        if (!g) return;
+        var dir = ev.key === 'ArrowUp' ? -1 : (ev.key === 'ArrowDown' ? 1 : 0);
+        if (!dir) return;
+        ev.preventDefault();
+        var moved;
+        if (g.dataset.libdragkind === 'node') moved = absMoveNode(_libNodes[+g.dataset.libdrag], dir);
+        else {
+          var id = g.dataset.libdrag;
+          if (!libSelHas(id)) { libSelClear(); _libSel[id] = 1; _libSelLast = id; }
+          moved = absMoveSel(libSelActs(), dir) > 0;
+        }
+        if (moved) { markDirty(); render(); }
+      });
+    }
+    /* ==========================================================================================
        SELECTION. Kept in module state and keyed by activity id, so it SURVIVES the full re-render
        that every edit triggers — a selection lost on each keystroke is worse than no selection.
        ⚠️ Pruned against cfg.activities on read, so an id whose activity was deleted in another step
@@ -28220,20 +28428,35 @@
     }
     function libSelHas(id) { return !!_libSel[id]; }
     function libSelClear() { _libSel = {}; _libSelLast = null; }
-    /* ⚠️ Shift extends from the LAST clicked row through the RENDERED order (_libOrder), not through
-       cfg.activities: the planner is selecting what they can see, and the two orders differ the
-       moment anything is grouped (the pane nests, the array does not). */
-    function libSelClick(id, shift) {
+    /* ⚠️⚠️ EXCEL'S SELECTION MODEL, not a toggle-per-click. Owner 2026-09-08: *"adapt similar to
+       excel wherein if multiple selection, you must hold ctrl and then click to select another
+       row."* So:
+         • a PLAIN click REPLACES the selection with that row — it used to toggle, which is what
+           let a selection accumulate quietly while the planner thought they were just reading
+           rows, and then Group acted on all of them;
+         • Ctrl (or Cmd) toggles ONE row and keeps the rest;
+         • Shift takes the range from the anchor, REPLACING the selection — Ctrl+Shift adds it;
+         • and the ANCHOR DOES NOT MOVE on a shift-click, so shift-clicking again re-picks the range
+           from the same start. That is what makes a range adjustable instead of ratcheting.
+       ⚠️ Shift walks the RENDERED order (_libOrder), never cfg.activities: the planner is selecting
+       what they can see, and the two orders differ the moment anything is grouped. */
+    function libSelClick(id, mods) {
+      var ctrl = !!(mods && (mods.ctrl || mods.meta)), shift = !!(mods && mods.shift);
       if (shift && _libSelLast && _libOrder.length) {
         var a = _libOrder.indexOf(_libSelLast), b = _libOrder.indexOf(id);
         if (a >= 0 && b >= 0) {
+          if (!ctrl) _libSel = {};
           var lo = Math.min(a, b), hi = Math.max(a, b);
           for (var i = lo; i <= hi; i++) _libSel[_libOrder[i]] = 1;
-          _libSelLast = id;
           return;
         }
       }
-      if (_libSel[id]) delete _libSel[id]; else _libSel[id] = 1;
+      if (ctrl) {
+        if (_libSel[id]) delete _libSel[id]; else _libSel[id] = 1;
+      } else {
+        _libSel = {};
+        _libSel[id] = 1;
+      }
       _libSelLast = id;
     }
     // The bar only exists when something is selected: an always-present toolbar of controls that
@@ -28248,10 +28471,11 @@
         '<b>' + ids.length + ' selected</b>' +
         (nT > 1 ? '<span class="sbld-libselwarn" title="A grouping belongs to one trade, so grouping this selection creates one grouping of that name inside each of the ' + nT + ' trades">across ' + nT + ' trades</span>' : '') +
         '<button class="pd-btn pd-btn-primary sbld-libselbtn" data-libgroup="1">Group into a new grouping…</button>' +
-        '<button class="pd-btn sbld-libselbtn" data-libmove="-1" title="Move the selected rows up among their siblings">Move up</button>' +
-        '<button class="pd-btn sbld-libselbtn" data-libmove="1" title="Move the selected rows down among their siblings">Move down</button>' +
+        // ⚠️ NO Move up / Move down here any more, as asked: the ≡ grip on each row does it by
+        // dragging. They are kept in the right-click menu, which is the precision path, and the
+        // grip takes ArrowUp / ArrowDown — so removing the buttons costs no keyboard access.
         '<button class="pd-btn sbld-libselbtn" data-libselclear="1">Clear</button>' +
-        '<span class="sbld-libselhint">Click a name to select · Shift-click for a range · right-click for more</span>' +
+        '<span class="sbld-libselhint">Ctrl-click to add a row · Shift-click for a range · drag ≡ to re-arrange</span>' +
         '</div>';
     }
     /* ==========================================================================================
@@ -28413,7 +28637,11 @@
       var h = '';
       if (n.path.length) {
         var lv = n.path.length + 1;
-        h += '<div class="sbld-libL' + lv + ' sbld-libgrp" data-libnode="' + _libNodes.length + '">' +
+        // ⚠️ The node index is read BEFORE libNodeTools pushes it, so the row and its tools carry
+        // the same index. Reading it after would point the grip at the NEXT grouping.
+        var _ni = _libNodes.length;
+        h += '<div class="sbld-libL' + lv + ' sbld-libgrp" data-libnode="' + _ni + '">' +
+          libGrip('node', _ni) +
           libLv(lv, 'grp', n.path.length === 1 ? 'Grouping' : ('Grouping ' + n.path.length)) +
           '<span class="sbld-libnm">' + e2(n.name) + '</span>' + libNodeTools(n) +
           '<span class="sbld-libwho" title="' + e2(n.acts.length + ' item(s) under this grouping') + '">' + n.acts.length + '</span></div>';
@@ -28510,13 +28738,17 @@
           '<b>Restructuring, on a grouping row.</b> <b>+ level</b> inserts a rung under it and moves everything beneath one ' +
           'step deeper; <b>Rename</b> retitles the rung for every item under it; <b>Delete</b> removes the rung and moves its ' +
           'items up into its parent — <i>no activity is ever deleted here</i>, that is the <b>Activities</b> step.<br>' +
-          '<b>Several at once.</b> Click an item\u2019s name to select it, <b>shift-click</b> for a range, then <b>right-click</b> — ' +
+          '<b>Several at once, as in Excel.</b> Click an item\u2019s name to select just that row, <b>Ctrl-click</b> to add or ' +
+          'remove one, <b>Shift-click</b> for a range, then <b>right-click</b> — ' +
           '<i>Group N items into a new grouping</i> puts them under one new rung <i>without</i> discarding the rungs they already ' +
           'have. A selection spanning trades makes one grouping of that name inside each trade, because a grouping belongs to a ' +
           'trade; the toast says when that happened.<br>' +
-          '<b>Re-arranging.</b> <b>Move up</b> / <b>Move down</b> on the selection bar or the right-click menu reorders items ' +
-          'among their siblings, and a grouping travels as one block. — this is not cosmetic: the order here is the order ' +
-          'the push builds the branches in.<br>' +
+          '<b>Re-arranging: drag the ≡ grip.</b> Drop a row where you want it — above or below the row you are over. ' +
+          'Dropping it <i>inside another grouping</i> moves it there as well as re-ordering it, so one gesture does both; ' +
+          'a grouping\u2019s grip moves the whole grouping among its own siblings. A drag carries the <b>whole selection</b> when ' +
+          'you start it on a selected row. No mouse? The grip takes <b>↑</b> / <b>↓</b>, and the right-click menu still has ' +
+          '<i>Move up</i> / <i>Move down</i>. — this is not cosmetic: the order here is the order the push builds the ' +
+          'branches in.<br>' +
           '<b>And it reaches the schedule.</b> Every grouping rung is a real <b>WBS level</b> (<i>Grouping</i>, ' +
           '<i>Grouping 2</i>…): the push nests them between the trade and the places, and you can reorder or drop each ' +
           'one with the other levels in <b>Generate → WBS structure</b>. A rung nothing uses is skipped entirely, so nothing ' +
@@ -28566,13 +28798,13 @@
         b.onclick = function () { var nd = _libNodes[+b.dataset.libdel]; if (nd) libDelPrompt(nd); };
       });
       host.querySelectorAll('[data-libsel]').forEach(function (b) {
-        b.onclick = function (ev) { libSelClick(b.dataset.libsel, !!(ev && ev.shiftKey)); render(); };
+        b.onclick = function (ev) {
+          libSelClick(b.dataset.libsel, { ctrl: !!(ev && ev.ctrlKey), meta: !!(ev && ev.metaKey), shift: !!(ev && ev.shiftKey) });
+          render();
+        };
       });
       host.querySelectorAll('[data-libgroup]').forEach(function (b) {
         b.onclick = function () { libGroupPrompt(libSelActs()); };
-      });
-      host.querySelectorAll('[data-libmove]').forEach(function (b) {
-        b.onclick = function () { if (absMoveSel(libSelActs(), +b.dataset.libmove)) { markDirty(); render(); } };
       });
       host.querySelectorAll('[data-libselclear]').forEach(function (b) {
         b.onclick = function () { libSelClear(); render(); };
@@ -28582,6 +28814,7 @@
          every keystroke. A right-click on neither a row nor a heading is left to the browser —
          suppressing the native menu over empty space buys nothing and takes away Inspect. */
       var _gb = host.querySelector('#sbld-libgrpbody');
+      libWireDrag(_gb);
       if (_gb) _gb.addEventListener('contextmenu', function (ev) {
         var it = ev.target.closest ? ev.target.closest('[data-libitem]') : null;
         if (it) {
@@ -28863,13 +29096,17 @@
       _libOrder.push(a.id);
       var sel = libSelHas(a.id);
       return '<div class="sbld-libL' + lv + ' sbld-libitem' + (sel ? ' sbld-libpicked' : '') + '" data-libitem="' + e2(a.id) + '">' +
+        // ⚠️ FIRST in the row, as asked ("a menu icon on the left"). Before the level chip, so the
+        // grips line up down the pane while the chips stay stepped by depth.
+        libGrip('item', a.id) +
         libLv(lv, 'grp', lv === 2 ? 'Item, directly under its trade' : 'Item') +
         // ⚠️ A real <button>, so the row is reachable and selectable by keyboard too. The name
         // is the hit target rather than the whole row: the row also carries a text field and
         // three buttons, and a row-wide click would fight every one of them.
         '<button type="button" class="sbld-libnm sbld-libpick" data-libsel="' + e2(a.id) + '"' +
-          ' aria-pressed="' + (sel ? 'true' : 'false') + '" title="' + e2((sel ? 'Selected · click to unselect. ' : 'Click to select. ') +
-            'Shift-click for a range, then right-click to group them.') + '">' + e2(a.name || a.code || '(unnamed)') + '</button>' +
+          ' aria-pressed="' + (sel ? 'true' : 'false') + '" title="' + e2((sel ? 'Selected. ' : '') +
+            'Click selects this row on its own · Ctrl-click adds or removes one · Shift-click takes a range. ' +
+            'Then right-click to group them.') + '">' + e2(a.name || a.code || '(unnamed)') + '</button>' +
         (a.code ? '<span class="sbld-libcode">' + e2(a.code) + '</span>' : '') +
         libLvPick(a, lv) +
         '<input class="pd-input sbld-libgin" data-libgrp="' + e2(a.id) + '" value="' + e2(p.join(' › ')) + '" placeholder="grouping › sub-grouping…" title="' +

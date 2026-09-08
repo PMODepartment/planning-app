@@ -13,6 +13,83 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### Excel's selection model, and a grip instead of Move buttons (2026-09-08) — jasantos2
+
+Owner: *"for the multiple selection, can you adapt similar to excel wherein if multiple selection,
+you must hold ctrl and then click to select another row. And also instead of having buttons to move
+up and move down, there should be a menu icon on the left, to allow smooth rearrangement."*
+
+### 1. Excel's rules, exactly
+`libSelClick` takes a modifier object now instead of a `shift` boolean:
+
+- a **plain click replaces** the selection with that row. ⚠️ It used to *toggle*, which is what let a
+  selection accumulate quietly while a planner thought they were only reading rows — and then
+  *Group* acted on all of them.
+- **Ctrl** (or **Cmd**, so a Mac behaves the same) toggles one row and keeps the rest.
+- **Shift** takes the range from the anchor and **replaces**; **Ctrl+Shift** adds it.
+- ⚠️ The **anchor does not move** on a shift-click, so shift-clicking again re-picks the range from
+  the same start. That is what makes a range adjustable instead of ratcheting outward.
+- ⚠️ Shift still walks the **rendered** order, never `cfg.activities`: the planner selects what they
+  can see, and the two orders differ the moment anything is grouped.
+
+### 2. The grip, and the buttons that are gone
+Every re-arrangeable row carries a **≡** grip as its **first** element — before the level chip, so
+the grips line up down the pane while the chips stay stepped by depth. Drag it to re-arrange.
+
+- ⚠️ **Only the grip is draggable, never the row.** A draggable ancestor kills text selection in its
+  descendants, and this row carries the grouping-path text field.
+- ⚠️⚠️ **One drop does both halves of what a drag means:** where in the *order*, and which
+  *grouping*. Dropping inside another grouping re-homes the row as well as placing it. A drag that
+  reordered but left the path alone would park a row visually inside a grouping it is not in — the
+  pane and the pushed tree disagreeing about the same item.
+- ⚠️ **Same trade only.** A trade is the activity's `group` field, edited in Activities and in the
+  schedule's Trade column with a discipline matcher behind it; silently re-trading an activity
+  because it was dragged past a heading would undo that work. Refused with the reason.
+- A grouping's grip moves the **whole grouping** among its **own siblings**. Re-parenting a branch by
+  dragging is a restructure with no confirmation step, and the path field and ‹ › already do it
+  deliberately — so that drop is refused, *with the reason*, rather than ignored.
+- A drag started on a **selected** row carries the **whole selection**; started elsewhere it selects
+  that row first, so a drag can never move rows the planner cannot see they picked.
+- ⚠️ **Move up / Move down are gone from the selection bar, as asked** — but they stay in the
+  right-click menu, and the grip itself takes **ArrowUp / ArrowDown**. That is why the grip is a
+  `<button>` and not a styled span: dragging is a mouse gesture, and removing the buttons would
+  otherwise have left no way to re-arrange without one.
+
+### 3. Two defects the tests found, and one the CSS cascade did
+- ⚠️ A grouping dropped where it cannot go **returned false with no message** when the target had no
+  branch at that depth — the drag landed and nothing happened, which reads as a broken control.
+  Only dropping a grouping *back where it was* is silent now; everything else explains itself.
+- ⚠️⚠️ **The drop edge lost to the selection rule.** `.sbld-libbody .sbld-libdropbefore` and
+  `.sbld-libitem.sbld-libpicked` are both two classes, so the one declared **later** wins — and the
+  marker was written first, which meant it vanished on any selected row, i.e. on exactly the rows
+  being dragged. **Second time today the same tie has bitten this pane** (the picked rule itself lost
+  to the depth rules this morning). The rule now recorded: *anything that must win goes last.*
+- ⚠️ One of my own assertions was wrong rather than the code: it demanded no `cfg.activities =`
+  anywhere in the file, but the CSV importer replaces the list and the catalogue concats to it, both
+  on purpose. Scoped to the three functions that write a whole new order.
+
+### Verified
+**599 assertions across ten suites, all passing.** The 54 new ones execute `libSelClick` through
+every modifier combination and the two drop appliers `libDropItems` / `libDropNode` sliced out of the
+shipped file — fed the same `{ row: { dataset } }` shape the real `dragover` hands them.
+Controls: HEAD toggled on a plain click, had `data-libmove` bar buttons, and had no grip, no
+`libWireDrag` and no `data-libdrag` at all. harness10's two selection assertions were retargeted to
+the new model, not dropped.
+⚠️⚠️ **And this time the drag was actually fired in a browser.** A git-ignored page renders the
+shipped `stLibrary` and wires the shipped `libWireDrag`, so real `DragEvent`s with a real
+`DataTransfer` could be dispatched at it. Confirmed on the live DOM: `_libNodes` indices match the
+rendered `data-libnode` attributes; a reorder inside a grouping; a drop into another grouping that
+re-homed *and* placed the row; a cross-trade drop refused with its toast and **no** dirty flag; a
+whole grouping moved past its sibling; the previously-silent bad node drop now warning; ArrowUp /
+ArrowDown on both an item grip and a grouping grip; Enter doing nothing; and the drop edge measured
+at `rgb(238, 49, 36) 0 -3px inset` **on a selected row**, with the selection bar returning when the
+class is removed.
+⚠️ **Not verified signed-in** — the anon key has no grants, so nothing was pushed. The drag was
+exercised against the shipped functions in a real browser, but not inside the running module with a
+real project loaded.
+
+`MODULE_V` → `20260908h`.
+
 ### The WBS step and the Library merge into Structure — 5PMLC and Construction Library (2026-09-08) — jasantos2
 
 Owner: *"can you merge the WBS in step 2 into step 6. There should be 2 different views there in
