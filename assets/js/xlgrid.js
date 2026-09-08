@@ -146,6 +146,36 @@ window.PDGrid = (function () {
       /* selection */
       '.pdg-sel{box-shadow:inset 0 0 0 9999px rgba(238,49,36,.22);position:relative;z-index:2}' +
       '.pdg-anchor{outline:2px solid var(--pd-red,#EE3124);outline-offset:-2px;position:relative;z-index:3}' +
+      /* ---- ported furniture: resize grip, freeze pin, set-all, fill handle, required ---- */
+      /* WARNING The grip sits INSIDE the th and is only visible on hover, so 13 permanent grab
+         bars do not compete with the column labels. Full height so the target is easy to hit. */
+      '.pdg-grid thead th.pdg-th{position:relative;padding-right:34px}' +
+      '.pdg-rz{position:absolute;top:0;right:0;width:6px;height:100%;cursor:col-resize;' +
+        'opacity:0;background:var(--pd-red,#EE3124)}' +
+      '.pdg-grid thead th:hover .pdg-rz{opacity:.45}' +
+      '.pdg-rz:hover{opacity:1!important}' +
+      '.pdg-pin,.pdg-setall{position:absolute;top:50%;transform:translateY(-50%);border:0;' +
+        'background:none;color:var(--pd-muted,#8a8a8a);cursor:pointer;font-size:11px;line-height:1;' +
+        'padding:0 2px;opacity:0}' +
+      '.pdg-pin{right:14px}.pdg-setall{right:24px}' +
+      '.pdg-grid thead th:hover .pdg-pin,.pdg-grid thead th:hover .pdg-setall{opacity:.55}' +
+      '.pdg-pin:hover,.pdg-setall:hover{opacity:1!important;color:var(--pd-red,#EE3124)}' +
+      '.pdg-pin.on{opacity:.9;color:var(--pd-red,#EE3124)}' +
+      /* WARNING A frozen cell needs its own background or the scrolling columns show through it,
+         and a z-index above the body but below the sticky header. The edge rule is what tells the
+         eye where the frozen block ends. */
+      '.pdg-grid td.pdg-frozen,.pdg-grid th.pdg-frozen{position:sticky;z-index:4;' +
+        'background:var(--pd-card,#222)}' +
+      '.pdg-grid thead th.pdg-frozen{z-index:7}' +
+      '.pdg-grid .pdg-frozen-edge{border-right:2px solid var(--pd-red,#EE3124)}' +
+      '.pdg-fill{position:absolute;width:8px;height:8px;background:var(--pd-red,#EE3124);' +
+        'border:1px solid var(--pd-card,#222);z-index:9;cursor:crosshair;display:none}' +
+      '.pdg-fillprev{box-shadow:inset 0 0 0 9999px rgba(238,49,36,.10);' +
+        'outline:1px dashed rgba(238,49,36,.6);outline-offset:-1px}' +
+      /* WARNING Required-and-empty is a LEFT BAR, not a red fill. A filled cell would fight the
+         zebra, the selection overlay and the computed tint all at once, and on a draft where most
+         cells start empty a red screen says nothing. */
+      '.pdg-missing{box-shadow:inset 3px 0 0 var(--pd-warn,#D97706)}' +
       /* the shortcut legend */
       '.pdg-grid .cc-mini{font-size:9.5px;opacity:.7;margin-top:1px}' +
       '.pdg-grid .cc-desc{max-width:340px}' +
@@ -155,11 +185,46 @@ window.PDGrid = (function () {
     document.head.appendChild(s);
   }
 
+  /* ⚠️⚠️ THESE ARE PORTED FROM review.html, AND TWO OF ITS FEATURES ARE DELIBERATELY NOT.
+     Ported: drag-to-resize with per-user persistence, frozen columns, the fill handle,
+     required-and-empty highlighting, and per-column set-all.
+
+     NOT ported, with reasons, because blind parity would be worse than judgement:
+       · DIRTY TRACKING / "unsaved" COUNT / DRAFT AUTOSAVE. review.html stages every edit in
+         `_gridEdits` and saves the batch later, so it must show what is unsaved and protect it.
+         This grid writes each cell straight through on `change`. There is nothing unsaved to
+         track — an "unsaved: 0" badge that can never read anything else is noise, and a
+         localStorage draft would be a second copy of data already committed to Postgres.
+       · COLLAPSIBLE COLUMN GROUPS. review.html carries 76 columns in named groups; this table
+         has 13. Collapsing a group of two or three costs more than it saves. The equivalent
+         win here is collapsing ROWS by heading, which the BOQ already does. */
   function attach(opt) {
     ensureCss();
     var root = opt.root;
     var sel = opt.cell || '.pdg-cell';
     if (!root) return { detach: function () {} };
+
+    /* The host's column spec, when it has one. Everything below degrades quietly without it:
+       a grid that only passes `root` and `cell` keeps exactly the behaviour it had before. */
+    var SPEC = opt.columns || null;
+    var SKEY = opt.storageKey || 'pdgrid';
+    var MINW = 48, MAXW = 640;
+    var widths = {}, freezeKey = null;
+
+    function lsKey(what) { return 'pdg_' + SKEY + '_' + what; }
+    function loadPrefs() {
+      try { widths = JSON.parse(localStorage.getItem(lsKey('w')) || '{}') || {}; } catch (e) { widths = {}; }
+      try { freezeKey = localStorage.getItem(lsKey('f')) || null; } catch (e) { freezeKey = null; }
+    }
+    function savePrefs() {
+      try { localStorage.setItem(lsKey('w'), JSON.stringify(widths)); } catch (e) {}
+      try {
+        if (freezeKey) localStorage.setItem(lsKey('f'), freezeKey);
+        else localStorage.removeItem(lsKey('f'));
+      } catch (e) {}
+    }
+    function colW(c) { var v = widths[c.k]; return (typeof v === 'number' && v > 0) ? v : c.w; }
+    loadPrefs();
 
     var cells = [];        // [{el, id, field, r, c}]
     var byRC = {};         // 'r:c' -> cell
@@ -170,6 +235,144 @@ window.PDGrid = (function () {
     var undo = [];         // [[{el,id,field,prev}]]
 
     function key(r, c) { return r + ':' + c; }
+
+    function table() { return root.querySelector('table.pdg-grid'); }
+
+    /* ⚠️ WIDTH LIVES ON THE <col>, NOT THE CELLS. With `table-layout:fixed` the colgroup is the
+       only thing the browser reads, so one write per column resizes the whole table — and a drag
+       can update it live without re-rendering 4,000 cells. */
+    function applyWidths() {
+      var t = table(); if (!t || !SPEC) return;
+      var colEls = t.querySelectorAll('colgroup col');
+      var total = 0;
+      SPEC.forEach(function (c, i) {
+        var w = colW(c); total += w;
+        if (colEls[i]) { colEls[i].style.width = w + 'px'; }
+      });
+      t.style.minWidth = total + 'px';
+    }
+
+    /* ⚠️ A FROZEN COLUMN IS STICKY AT ITS OWN LEFT OFFSET, so the offsets must be recomputed
+       whenever a width changes — which is why the resize drag re-applies this on release. The
+       boundary is inclusive: freezing "Description" pins everything up to and including it,
+       because a contiguous left freeze is the only kind that reads correctly when you scroll. */
+    function applyFreeze() {
+      var t = table(); if (!t || !SPEC) return;
+      t.querySelectorAll('.pdg-frozen').forEach(function (el) {
+        el.classList.remove('pdg-frozen', 'pdg-frozen-edge');
+        el.style.left = '';
+      });
+      if (!freezeKey) return;
+      var upto = -1;
+      SPEC.forEach(function (c, i) { if (c.k === freezeKey) upto = i; });
+      if (upto < 0) return;
+      var left = 0;
+      for (var i = 0; i <= upto; i++) {
+        var l = left;
+        t.querySelectorAll('tr').forEach(function (tr) {
+          var cell = tr.children[i];
+          if (!cell) return;
+          cell.classList.add('pdg-frozen');
+          if (i === upto) cell.classList.add('pdg-frozen-edge');
+          cell.style.left = l + 'px';
+        });
+        left += colW(SPEC[i]);
+      }
+    }
+
+    /* Header furniture: a resize grip, a pin, and (where the host allows it) a set-all caret.
+       Injected rather than required of the host, so adopting PDGrid stays a two-attribute job. */
+    function decorateHead() {
+      var t = table(); if (!t || !SPEC) return;
+      var ths = t.querySelectorAll('thead th');
+      SPEC.forEach(function (c, i) {
+        var th = ths[i]; if (!th || th.querySelector('.pdg-rz')) return;
+        th.classList.add('pdg-th');
+        if (c.k === freezeKey) th.classList.add('pdg-pinned');
+
+        var pin = document.createElement('button');
+        pin.className = 'pdg-pin' + (c.k === freezeKey ? ' on' : '');
+        pin.type = 'button';
+        pin.title = c.k === freezeKey ? 'Unfreeze' : 'Freeze columns up to here';
+        pin.textContent = '\u25e7';
+        pin.onmousedown = function (e) { e.stopPropagation(); };
+        pin.onclick = function (e) {
+          e.preventDefault(); e.stopPropagation();
+          freezeKey = (freezeKey === c.k) ? null : c.k;
+          savePrefs(); applyWidths(); applyFreeze(); decorateHead();
+        };
+        th.appendChild(pin);
+
+        /* ⚠️ Set-all is offered ONLY where the host says a column is safe for it. A blanket
+           "set every cell in this column" over a money column is a way to destroy a bill in one
+           click; over UoM or Kind it is the single biggest time-saver on the screen. */
+        if (opt.onSetColumn && c.setAll) {
+          var sa = document.createElement('button');
+          sa.className = 'pdg-setall'; sa.type = 'button';
+          sa.title = 'Set this column for every row shown';
+          sa.textContent = '\u22ee';
+          sa.onmousedown = function (e) { e.stopPropagation(); };
+          sa.onclick = function (e) {
+            e.preventDefault(); e.stopPropagation();
+            opt.onSetColumn(c);
+          };
+          th.appendChild(sa);
+        }
+
+        var grip = document.createElement('div');
+        grip.className = 'pdg-rz';
+        grip.title = 'Drag to resize · double-click to reset';
+        grip.onmousedown = function (e) { startResize(e, c, i); };
+        grip.ondblclick = function (e) {
+          e.preventDefault(); e.stopPropagation();
+          delete widths[c.k]; savePrefs(); applyWidths(); applyFreeze();
+        };
+        th.appendChild(grip);
+      });
+    }
+
+    /* ⚠️ The drag updates the <col> live and re-renders NOTHING — on 4,400 cells a re-render per
+       mousemove is unusable. Only on release are the prefs saved and the freeze offsets redone,
+       because those depend on the final width. */
+    function startResize(e, c, i) {
+      e.preventDefault(); e.stopPropagation();
+      var t = table(); if (!t) return;
+      var startX = e.clientX, startW = colW(c);
+      var colEl = t.querySelectorAll('colgroup col')[i];
+      document.body.style.cursor = 'col-resize';
+      function move(ev) {
+        var w = Math.max(MINW, Math.min(MAXW, startW + (ev.clientX - startX)));
+        widths[c.k] = w;
+        if (colEl) colEl.style.width = w + 'px';
+        t.style.minWidth = SPEC.reduce(function (a, x) { return a + colW(x); }, 0) + 'px';
+      }
+      function up() {
+        document.removeEventListener('mousemove', move);
+        document.removeEventListener('mouseup', up);
+        document.body.style.cursor = '';
+        savePrefs(); applyFreeze();
+      }
+      document.addEventListener('mousemove', move);
+      document.addEventListener('mouseup', up);
+    }
+
+    /* ⚠️ REQUIRED-AND-EMPTY, not merely empty. A blank cell is only a problem where the host has
+       said a value is expected — flagging every empty cell on a 4,400-cell grid would paint the
+       whole screen and mean nothing. */
+    function paintRequired() {
+      if (!SPEC) return;
+      var req = {};
+      SPEC.forEach(function (c) { if (c.req) req[c.k] = 1; });
+      if (!Object.keys(req).length) return;
+      for (var i = 0; i < cells.length; i++) {
+        var x = cells[i];
+        var bad = req[x.field] && String(x.el.value || '').trim() === '';
+        x.el.classList.toggle('pdg-missing', !!bad);
+      }
+    }
+    function missingCount() {
+      return root.querySelectorAll('.pdg-missing').length;
+    }
 
     /* Rebuilt from the DOM on every keystroke path that needs it, because the host module
        re-renders freely (a filter, a collapse, a save) and any map we cached would be stale.
@@ -243,11 +446,74 @@ window.PDGrid = (function () {
     function paint() {
       clearPaint();
       var R = range();
-      if (!R) return;
+      if (!R) { syncFill(); return; }
       for (var r = R.r1; r <= R.r2; r++) {
         var x = at(r, R.c);
         if (x) x.el.classList.add(R.r1 === R.r2 ? 'pdg-anchor' : 'pdg-sel');
       }
+      syncFill();
+    }
+
+    /* WARNING THE FILL HANDLE IS THE MOUSE EQUIVALENT OF Ctrl+D, and the reason review.html has
+       one: a planner pricing a trade drags a rate down forty lines without touching the keyboard.
+       It is positioned against the LAST cell of the current selection, in the scroll container's
+       coordinates, so it tracks horizontal scroll instead of drifting off the cell it belongs to. */
+    var fillFrom = null, fillTo = null;
+
+    function syncFill() {
+      var h = root.querySelector('.pdg-fill');
+      var R = range();
+      var last = R && at(R.r2, R.c);
+      if (!last || !SPEC) { if (h) h.style.display = 'none'; return; }
+      var wrap = root.querySelector('.cc-tablewrap') || root;
+      if (!h) {
+        h = document.createElement('div');
+        h.className = 'pdg-fill';
+        h.title = 'Drag down to copy this value';
+        h.onmousedown = startFill;
+        wrap.style.position = wrap.style.position || 'relative';
+        wrap.appendChild(h);
+      }
+      var tr = last.el.getBoundingClientRect(), wr = wrap.getBoundingClientRect();
+      h.style.display = 'block';
+      h.style.left = (tr.right - wr.left + wrap.scrollLeft - 4) + 'px';
+      h.style.top = (tr.bottom - wr.top + wrap.scrollTop - 4) + 'px';
+    }
+
+    function paintFillPreview() {
+      root.querySelectorAll('.pdg-fillprev').forEach(function (el) { el.classList.remove('pdg-fillprev'); });
+      if (fillTo == null || !fillFrom) return;
+      for (var r = fillFrom.r2 + 1; r <= fillTo; r++) {
+        var x = at(r, fillFrom.c);
+        if (x) x.el.classList.add('pdg-fillprev');
+      }
+    }
+
+    function startFill(e) {
+      e.preventDefault(); e.stopPropagation();
+      index();
+      var R = range(); if (!R) return;
+      fillFrom = R; fillTo = null;
+      function move(ev) {
+        var el = document.elementFromPoint(ev.clientX, ev.clientY);
+        var c = el && cellOf(el.closest && el.closest(sel) ? el.closest(sel) : el);
+        if (!c) { var td = el && el.closest && el.closest('td'); if (td) c = cellOf(td.querySelector(sel)); }
+        if (c && c.c === fillFrom.c && c.r > fillFrom.r2) { fillTo = c.r; paintFillPreview(); }
+      }
+      function up() {
+        document.removeEventListener('mousemove', move);
+        document.removeEventListener('mouseup', up);
+        if (fillTo != null) {
+          var src = at(fillFrom.r1, fillFrom.c);
+          var b = [];
+          if (src) for (var r = fillFrom.r2 + 1; r <= fillTo; r++) setCell(at(r, fillFrom.c), src.el.value, b);
+          commit(b);
+        }
+        fillFrom = null; fillTo = null;
+        paintFillPreview(); paint();
+      }
+      document.addEventListener('mousemove', move);
+      document.addEventListener('mouseup', up);
     }
 
     function go(cell, keepAnchor) {
@@ -405,7 +671,20 @@ window.PDGrid = (function () {
       if (!anchor) paint();
     }
 
-    index();
+    /* WARNING RE-RUN ON EVERY REFRESH, because the host re-renders the whole table on a filter, a
+       collapse or a save — which throws away the colgroup widths, the sticky offsets and the
+       header furniture along with it. layout() is what makes those survive a render the host
+       knows nothing about. */
+    function layout() {
+      index();
+      applyWidths();
+      decorateHead();
+      applyFreeze();
+      paintRequired();
+      syncFill();
+    }
+
+    layout();
     root.addEventListener('keydown', onKey);
     root.addEventListener('copy', onCopy);
     root.addEventListener('paste', onPaste);
@@ -419,7 +698,11 @@ window.PDGrid = (function () {
         root.removeEventListener('focusin', onFocusIn);
         clearPaint();
       },
-      refresh: index,
+      refresh: layout,
+      /* How many required cells are still empty - the host renders the legend, since only it
+         knows where to put it. */
+      missing: missingCount,
+      resetWidths: function () { widths = {}; savePrefs(); applyWidths(); applyFreeze(); },
       /* Exported for a harness: the grid's whole job is the map it builds from the DOM, so a
          test can assert the map without a browser. */
       _map: function () { return { rows: rows.slice(), cols: cols.slice(), n: cells.length }; }

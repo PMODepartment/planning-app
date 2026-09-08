@@ -2470,7 +2470,7 @@ window.ProgressPhotos = (function () {
         '<span class="pp-cardsel"><input type="checkbox" data-sel="' + r.id + '" aria-label="Select ' +
           Fmt.esc(r.description || 'this photo') + '"' +
           (selected[r.id] ? ' checked' : '') + ' /></span>' +
-        '<div class="pp-cardimg">' + thumb(r, 'pp-cardphoto') + '</div>' +
+        '<div class="pp-cardimg">' + thumb(r, 'pp-cardphoto') + favBtnHTML(r) + '</div>' +
       '</figure>';
     }
   }
@@ -2492,6 +2492,55 @@ window.ProgressPhotos = (function () {
   // gone; the equivalent logic now lives in matchesFilters()/mergedRows()/
   // panoPseudoRow()/reconPseudoRow() above, and mediaKindThumbHTML() (below,
   // called from thumb()) draws the tile inline in List/Gallery.
+
+  // Gallery favorite star (2026-09-07): bottom-right of the card image,
+  // real photo/video rows only -- a panorama/reconstruction pseudo-row
+  // (`r._kind`) has no `favorite` column on it to toggle, so it renders
+  // nothing rather than a button that would silently do nothing on click.
+  // ⚠️ Read-only (non-`canWrite`) users get a plain static mark when a photo
+  // IS favorited, never an interactive-looking <button> — same rule this
+  // file already applies to every other writer-gated affordance (compare
+  // mediaKindThumbHTML's `canWrite ? '<button …pp-mkeditbtn…' : ''` two
+  // functions above): a control that looks clickable but silently does
+  // nothing on click (toggleFavorite's own `if (!canWrite) return;`) is
+  // worse than no control. Everyone still SEES which photos are favorited —
+  // favoriting is shared team curation, and that's the whole point of the
+  // Portfolio-level favorites-only view this feature also feeds.
+  function favBtnHTML(r) {
+    if (r._kind) return '';
+    var on = !!r.favorite;
+    if (!canWrite) {
+      return on ? '<span class="pp-cardfav is-fav is-readonly" title="Favorited" aria-hidden="true">' +
+        '<span data-ico="star" data-ico-size="14"></span></span>' : '';
+    }
+    return '<button type="button" class="pp-cardfav' + (on ? ' is-fav' : '') +
+      '" data-act="fav" data-id="' + Fmt.esc(r.id) + '" aria-pressed="' + (on ? 'true' : 'false') +
+      '" title="' + (on ? 'Remove from favorites' : 'Mark as favorite') + '">' +
+      '<span data-ico="star" data-ico-size="14"></span></button>';
+  }
+
+  // Toggles a photo's favorite flag via the set_photo_favorite() RPC
+  // (migrations/2026-09-07-progress-photos-favorites.sql) -- NEVER a plain
+  // `.update({favorite:...})`. progress_photos' own UPDATE RLS is
+  // owner-or-admin (the generic module-table policy), so a bare update from
+  // a non-owner writer would be silently REFUSED by Postgres and read back
+  // as `{data:null, error:null}` -- indistinguishable from a genuine no-op
+  // success. This is the exact false-success trap already traced and fixed
+  // once for delete (see CLAUDE.md, 2026-09-04) -- favoriting is a shared
+  // team-curation action, so ANY project writer must be able to flip it, not
+  // just whoever uploaded the photo, and the RPC is what makes that safe.
+  async function toggleFavorite(r) {
+    if (!canWrite) return;
+    var next = !r.favorite;
+    r.favorite = next; render(); // optimistic -- reverted below on failure
+    try {
+      var res = await sb().rpc('set_photo_favorite', { p_photo_id: r.id, p_value: next });
+      if (res.error) throw res.error;
+    } catch (e) {
+      r.favorite = !next; render();
+      UI.toast((e && e.message) || 'Could not update favorite.', 'error');
+    }
+  }
 
   // Kind-aware tile for a panorama/reconstruction pseudo-row (thumb()'s
   // `r._kind` branch). Clicking the tile opens the real viewer
@@ -2542,6 +2591,7 @@ window.ProgressPhotos = (function () {
         else if (a === 'download') download(r);
         else if (a === 'edit') openForm(r);
         else if (a === 'del') remove(r);
+        else if (a === 'fav') toggleFavorite(r);
       };
     });
     // Item 7 — the List row itself opens the lightbox (per-row action icons
@@ -6246,6 +6296,14 @@ window.ProgressPhotos = (function () {
       SCHED_ACTS = schedActs || []; LOC_LEVELS = locLevels || [];
       try { return scheduleLocationValueKeys(); }
       finally { SCHED_ACTS = savedA; LOC_LEVELS = savedL; }
-    }
+    },
+    // Test-only hooks for the Gallery favorite star (2026-09-07) — genuinely
+    // EXECUTE favBtnHTML/toggleFavorite's real logic (not just regex-check
+    // the source), same convention as every hook above. _setCanWrite is
+    // exposed so the writer-gated vs. read-only markup can both be driven,
+    // matching ppr.js's/bim.js's own established `_setCanWrite` hook.
+    _setCanWrite: function (v) { canWrite = v; },
+    _favBtnHTML: function (r) { return favBtnHTML(r); },
+    _toggleFavorite: function (r) { return toggleFavorite(r); }
   };
 })();

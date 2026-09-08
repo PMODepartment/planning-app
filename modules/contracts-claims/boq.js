@@ -39,6 +39,20 @@ window.BOQ = (function () {
      screen. Confirmed against OPW101's own workbooks: 'Package 2 BOQ rev.05' is the
      package's revision, not Architectural's. */
   var DOCS = [], DOCID = null;
+  /* ⚠️⚠️ THE PROJECT'S CONTRACT VALUE IS THE SUM ACROSS DOCUMENTS, NOT THIS ONE'S TOTAL.
+     Once a project holds several BOQs the headline figure was only the BOQ you happened to be
+     looking at — a wrong number on screen, and the kind that gets quoted. `ALLREVS` keeps the
+     unfiltered revision list (REVS is narrowed to the selected document) and `PROJTOTAL` is
+     the sum of every document's CURRENT revision.
+     ⚠️ Only computed when there is more than one document. With one, this document's total IS
+     the project total, and the extra read would be pure cost on every load. */
+  var ALLREVS = [], PROJTOTAL = null;
+  /* WARNING Finance trade -> the procurement trades that actually let the work
+     (2026-09-07-trade-map.sql). NOT a merge of the two vocabularies: they classify different
+     things, cost versus subcontract, and MEPF Works is one cost class bought as four POs --
+     which the owner's own billing shows ("MEPF PO", "STRUCTURAL PO"). This translates between
+     them so a bill of quantities can say which package will deliver each trade. */
+  var TRADEMAP = {};
   /* CLAIMED progress, period_id -> { item_id: 0..1 }, from
      2026-08-26-boq-claimed-vs-certified.sql. Kept SEPARATE from PROG rather
      than folded into it: PROG is the certified figure every POC, revenue and
@@ -89,6 +103,12 @@ window.BOQ = (function () {
      working right now, not a property of the bill, so it is never persisted. */
   var SEL = {};
   var _grid = null;            // the PDGrid instance bound to the current render
+  /* WARNING The column spec of the render that just happened. itemsHTML() builds it and
+     wireItems() needs it, and they are different functions - `var COLS` inside itemsHTML is
+     invisible there and would have thrown a ReferenceError the first time a draft rendered.
+     Module-scoped rather than passed, because wireItems is called from the shared wire path
+     that does not know which tab produced the markup. */
+  var LASTCOLS = null;
   var openWizard = null;       // module.js's openNew(type) - see init()
   var loaded = false;
   /* The class-code chart folded into division › group › item for the builder's tree.
@@ -624,7 +644,23 @@ window.BOQ = (function () {
          erroring. Every other schema addition in this file is loaded the same way. */
       try { DOCS = await PDb.selectAll('boq_documents', function (q) { return q.eq('project_id', pid).order('sort_order'); }); }
       catch (e) { DOCS = []; }
+      /* Reference data, tiny and shared, loaded the same tolerant way: without the migration it
+         is an empty map and the trade chips simply carry no counterpart.
+         WARNING A PLAIN SELECT, NOT PDb.selectAll. selectAll pages with .order(key).gt(key, last)
+         and needs a UNIQUE key; trade_map's primary key is the PAIR, so 'MEPF Works' appears four
+         times and a page boundary landing inside that group would silently drop the rest of it.
+         The whole table is nine rows -- one request, no cursor, nothing to get wrong. */
+      try {
+        var tmr = await sb().from('trade_map').select('finance_trade,procurement_trade')
+                            .order('finance_trade').order('procurement_trade').limit(500);
+        if (tmr.error) throw tmr.error;
+        TRADEMAP = {};
+        (tmr.data || []).forEach(function (r) {
+          (TRADEMAP[r.finance_trade] = TRADEMAP[r.finance_trade] || []).push(r.procurement_trade);
+        });
+      } catch (e) { TRADEMAP = {}; }
       REVS = await PDb.selectAll(T_REV, function (q) { return q.eq('project_id', pid); });
+      ALLREVS = REVS.slice();
       REVS.sort(function (a, b) { return String(b.issued_date || '').localeCompare(String(a.issued_date || '')) || String(b.rev_no).localeCompare(String(a.rev_no), undefined, { numeric: true }); });
       /* ⚠️ The DOCUMENT is chosen before the revision, because 'the current revision' only
          means anything inside one. Keep the planner's document if it still exists — a reload
@@ -633,6 +669,7 @@ window.BOQ = (function () {
         if (!DOCID || !DOCS.some(function (d) { return d.id === DOCID; })) DOCID = DOCS[0].id;
         REVS = REVS.filter(function (r) { return !r.document_id || r.document_id === DOCID; });
       }
+      await computeProjectTotal();
       var cur = REVS.find(function (r) { return r.is_current; }) || REVS[0];
       REVID = (REVID && REVS.some(function (r) { return r.id === REVID; })) ? REVID : (cur && cur.id) || null;
       if (REVID) {
@@ -816,7 +853,14 @@ window.BOQ = (function () {
       '</div>';
 
     if (!REVS.length) {
-      h += '<div class="pd-card cc-empty"><h3>No BOQ on this project yet</h3>' +
+      /* WARNING TWO DIFFERENT EMPTY STATES, and one message used to answer both. With a document
+         on screen the picker above is showing its NAME, so "No BOQ on this project yet" directly
+         contradicts what the planner can read one line higher. A named BOQ holding no revision is
+         now a reachable state -- deleting the only revision leaves it, and the wizard fills it --
+         so the copy has to tell the two apart. */
+      var emptyDoc = (DOCS || []).filter(function (x) { return x.id === DOCID; })[0] || null;
+      h += '<div class="pd-card cc-empty"><h3>' +
+        (emptyDoc ? esc(emptyDoc.name) + ' has no revision yet' : 'No BOQ on this project yet') + '</h3>' +
         '<p>Build one from the class-code library — or import the client\'s workbook if you ' +
         'have it. Each is a <strong>revision</strong>, and the prior one is always kept.</p>' +
         (canWrite ? '<p style="margin-top:14px;">' +
@@ -842,9 +886,34 @@ window.BOQ = (function () {
         DOCS.map(function (d) {
           return '<option value="' + esc(d.id) + '"' + (d.id === DOCID ? ' selected' : '') + '>' +
             esc(d.name) + '</option>';
-        }).join('') + '</select></label> '
+        }).join('') + '</select></label>' +
+        /* ⚠️ A NAME MUST BE FIXABLE. The backfill names a document from its own data — one distinct
+           sheet becomes "<sheet> BOQ", otherwise "Main BOQ" — so OPW101 came out as "Main BOQ"
+           simply because its draft was empty when the migration ran. A generated name with no way
+           to correct it is a permanent scar from a one-off migration. */
+        (canWrite ? '<button class="boq-iconbtn" id="boq-docname" aria-label="Rename this BOQ" ' +
+          'title="Rename this BOQ">\u270e</button>' : '') +
+        /* WARNING A surrogate PAIR, not \u1f5d1 -- a JS \u escape takes exactly four hex digits,
+           so the five-digit form would render as the character \u1f5d followed by a literal 1. */
+        (canWrite ? '<button class="boq-iconbtn boq-iconbtn-danger" id="boq-docdel" ' +
+          'aria-label="Delete this BOQ" title="Delete this BOQ">\ud83d\uddd1</button>' : '') + ' '
       : '';
     if (!REVS.length) return docSel;
+    /* WARNING THE TRASH SITS ON THE REVISION TOO, and only on a DRAFT one. Deleting a BOQ was all
+       or nothing: a planner who authored the wrong revision -- wrong trades, wrong labels, a
+       remeasure started against the wrong scope -- could delete the whole named bill or nothing.
+       Owner, 2026-09-08: *"I need a delete BOQ as well, not just the lines within the BOQ just in
+       case."* Three granularities now exist and they are different jobs: the lines (Delete
+       selected), one revision (here), the whole BOQ (beside its name).
+       WARNING Rendered only for a draft. An ISSUED revision is the client's tendered document and
+       this module's central invariant is supersede-never-edit-away; a delete control that appeared
+       over it would have to refuse on click, and a button whose only behaviour is to refuse is
+       worse than no button -- it teaches the planner the module is arbitrary. */
+    var curR = curRev();
+    var revDel = (canWrite && curR && revStatus(curR) === 'draft')
+      ? '<button class="boq-iconbtn boq-iconbtn-danger" id="boq-revdel" ' +
+        'aria-label="Delete this draft revision" title="Delete this draft revision">\ud83d\uddd1</button>'
+      : '';
     return docSel + '<label class="boq-inline">Revision <select class="pd-select" id="boq-rev">' +
       REVS.map(function (r) {
         return '<option value="' + esc(r.id) + '"' + (r.id === REVID ? ' selected' : '') + '>' +
@@ -853,7 +922,7 @@ window.BOQ = (function () {
              would describe a BOQ being written as one that had been replaced. */
           esc('rev ' + r.rev_no + (r.issued_date ? ' · ' + String(r.issued_date).slice(0, 10) : '') +
               (revStatus(r) === 'draft' ? ' · DRAFT' : r.is_current ? ' · current' : ' · superseded')) +
-          '</option>'; }).join('') + '</select></label>';
+          '</option>'; }).join('') + '</select></label>' + revDel;
   }
 
   function wireShell(host) {
@@ -867,6 +936,142 @@ window.BOQ = (function () {
        would not be found in the new one's list, leaving the picker on a revision whose lines
        are not the ones displayed. load() picks that document's current revision. */
     if (dv) dv.onchange = function () { DOCID = dv.value; REVID = null; load(); };
+    var dd = host.querySelector('#boq-docdel');
+    /* WARNING DELETING A BOQ DESTROYS EVERY REVISION AND EVERY LINE UNDER IT -- boq_items and
+       boq_class_map both cascade from boq_revisions, which cascades from boq_documents. So this
+       refuses more than it allows:
+         - an ISSUED revision is never deletable. It is the client's tendered document and the
+           evidence a claim argument turns on; this module's model is "superseded, never edited
+           away", and a delete that ignored it would undo that in one click.
+         - a billing period BLOCKS it in the database itself: boq_billing_periods references
+           boq_revisions WITHOUT cascade, so Postgres refuses. That refusal is translated into
+           plain language instead of surfacing a foreign-key error.
+         - the confirm names the counts, because "delete this BOQ?" hides how much is going.
+       WARNING The LAST document is not deletable either: every revision must hang off one, so
+       removing the only document would orphan the next revision and leave the picker empty. */
+    if (dd) dd.onclick = async function () {
+      var d = DOCS.filter(function (x) { return x.id === DOCID; })[0];
+      if (!d) return;
+      /* WARNING THE "LAST DOCUMENT" REFUSAL IS GONE, and it was over-cautious. Its stated reason
+         was that removing the only document "orphans the next revision and leaves the picker
+         empty" -- but boq_revisions CASCADES from boq_documents, so there is no next revision to
+         orphan, and an empty picker is a state this screen already renders on purpose: every
+         project starts there, and render() answers it with "No BOQ on this project yet" and an
+         Add BOQ button. Owner, 2026-09-08: *"I need a delete BOQ as well, not just the lines
+         within the BOQ just in case."* On a project with exactly one BOQ -- which is most of them,
+         and the case a wrong first attempt actually happens in -- the control refused every time,
+         so from where he stood it did not exist. The gates that protect real evidence (an issued
+         revision, a recorded billing period) are untouched below; this one protected nothing. */
+      var mine = ALLREVS.filter(function (r) { return r.document_id === d.id; });
+      var issued = mine.filter(function (r) { return revStatus(r) !== 'draft'; });
+      if (issued.length) {
+        UI.toast(d.name + ' holds ' + issued.length + ' issued revision' +
+          (issued.length === 1 ? '' : 's') + '. An issued BOQ is the tendered document and is never ' +
+          'deleted - supersede it with a new revision instead.', 'error');
+        return;
+      }
+      var nLines = mine.some(function (r) { return r.id === REVID; }) ? ITEMS.length : 0;
+      /* WARNING The confirm NAMES THE COUNTS -- "Delete this BOQ?" hides how much is going -- and
+         when this is the only BOQ it says so, because "the project will have no BOQ" is a
+         materially different outcome from "one of several is going" and the planner cannot see
+         which case they are in from the trash icon alone. */
+      var lastOne = DOCS.length < 2;
+      if (!confirm('Delete "' + d.name + '" and its ' + mine.length + ' draft revision' +
+                   (mine.length === 1 ? '' : 's') +
+                   (nLines ? ' (' + nLines + ' lines on the open one)' : '') + '?' +
+                   String.fromCharCode(10) + String.fromCharCode(10) +
+                   (lastOne ? 'This is the only BOQ on the project - it will be left with no BOQ at all, ' +
+                              'and the contract value will read zero until another is created.' +
+                              String.fromCharCode(10) + String.fromCharCode(10) : '') +
+                   'This cannot be undone.')) return;
+      var del = await sb().from('boq_documents').delete().eq('id', d.id);
+      if (del.error) {
+        var m2 = del.error.message || '';
+        UI.toast(/violates foreign key|still referenced/i.test(m2)
+          ? d.name + ' has billing periods recorded against it, so it cannot be deleted. Remove ' +
+            'those first, or keep the BOQ and supersede it.'
+          : m2, 'error');
+        return;
+      }
+      UI.toast('Deleted ' + d.name + '.', 'success');
+      DOCID = null; REVID = null;
+      await load();
+    };
+
+    /* WARNING DELETING A DRAFT REVISION DESTROYS ITS LINES -- boq_items and boq_class_map both
+       cascade from boq_revisions. Same shape of control as the document trash above, and the same
+       three real gates: issued is never deletable, a recorded billing period is refused by the
+       DATABASE (boq_billing_periods references boq_revisions WITHOUT cascade, so Postgres says no
+       and the foreign-key error is translated rather than shown raw), and the confirm names the
+       line count.
+       WARNING THE ONLY REVISION OF A BOQ IS REFUSED, and this is a real gate rather than caution:
+       no path in this module adds a revision to a document that has none. openNewRev() writes
+       document_id from DOCID but the wizard's revision path is offered only when the document
+       already holds one, so a document emptied this way would be a shell nothing could fill. The
+       message names the control that does work -- the trash beside the BOQ name, which since
+       today deletes the last BOQ too. */
+    var rd = host.querySelector('#boq-revdel');
+    if (rd) rd.onclick = async function () {
+      var r = curRev();
+      if (!r) return;
+      if (revStatus(r) !== 'draft') {
+        UI.toast('rev ' + r.rev_no + ' is issued. An issued BOQ is the tendered document and is never ' +
+          'deleted - supersede it with a new revision instead.', 'error');
+        return;
+      }
+      /* WARNING THE "ONLY REVISION" REFUSAL IS GONE, and it was mine, from earlier today. Its
+         reasoning was sound at the time -- no path added a revision to a document with none, so
+         emptying one left a shell nothing could fill -- and the honest fix was to remove the dead
+         end rather than to guard it. The wizard's revision path is now offered on a document with
+         ZERO revisions ("Create the first revision of NAME"), and the empty state above names the
+         document instead of denying it exists. A refusal that exists only because a neighbouring
+         screen is incomplete should be removed with the incompleteness, not kept as a monument. */
+      var sibs = REVS.filter(function (x) { return x.document_id === r.document_id; });
+      var lastRev = sibs.length < 2;
+      var dnm = (DOCS.filter(function (x) { return x.id === DOCID; })[0] || {}).name;
+      if (!confirm('Delete draft rev ' + r.rev_no + ' and its ' + ITEMS.length + ' line' +
+                   (ITEMS.length === 1 ? '' : 's') + '?' +
+                   String.fromCharCode(10) + String.fromCharCode(10) +
+                   (lastRev ? 'This is the only revision of ' + (dnm || 'this BOQ') +
+                              ', which will be left empty. The BOQ itself is kept -- add a revision ' +
+                              'to it from Add BOQ, or delete the BOQ with the trash beside its name.' +
+                              String.fromCharCode(10) + String.fromCharCode(10) : '') +
+                   'This cannot be undone.')) return;
+      var del = await sb().from(T_REV).delete().eq('id', r.id);
+      if (del.error) {
+        var m3 = del.error.message || '';
+        UI.toast(/violates foreign key|still referenced/i.test(m3)
+          ? 'rev ' + r.rev_no + ' has billing periods recorded against it, so it cannot be deleted. ' +
+            'Remove those first, or keep it and supersede it.'
+          : m3, 'error');
+        return;
+      }
+      UI.toast('Deleted draft rev ' + r.rev_no + '.', 'success');
+      REVID = null;
+      await load();
+    };
+
+    var dn = host.querySelector('#boq-docname');
+    if (dn) dn.onclick = async function () {
+      var d = DOCS.filter(function (x) { return x.id === DOCID; })[0];
+      if (!d) return;
+      var name = prompt('Name this BOQ — the way the client packages it, e.g. "Package 2 BOQ".', d.name);
+      if (name == null) return;
+      name = String(name).trim();
+      if (!name || name === d.name) return;
+      var up = await sb().from('boq_documents').update({ name: name, updated_at: new Date().toISOString() }).eq('id', d.id);
+      if (up.error) {
+        /* The unique index on (project_id, lower(name)) is the real authority; say which rule
+           was hit rather than echoing a constraint name at the planner. */
+        UI.toast(/duplicate key|unique/i.test(up.error.message || '')
+          ? 'Another BOQ on this project is already called that.'
+          : up.error.message, 'error');
+        return;
+      }
+      d.name = name;
+      UI.toast('Renamed to ' + name + '.', 'success');
+      render();
+    };
     /* ⚠️ Both import buttons are gone (the wizard asks build-or-import now), so this binding is
        dead markup-side. Removed rather than left as a harmless no-op: a handler for an id nothing
        renders is exactly the shape of the `#pk-boq` bug that hid the BOQ screen for a day. */
@@ -934,8 +1139,24 @@ window.BOQ = (function () {
       '<button class="boq-trade' + (filt.sheet ? '' : ' on') + '" data-trade="">' +
         'All<span class="boq-trade-n">' + ITEMS.filter(function (r) { return r.line_kind !== 'heading'; }).length + '</span></button>' +
       list.map(function (sh) {
+        /* WARNING The tooltip names the PROCUREMENT trades this cost class is let under, which is
+           the question a planner has in front of a BOQ: who buys this? "Others" maps to nothing and
+           says so, rather than being quietly given a counterpart it does not have.
+           WARNING Line breaks via fromCharCode. Every backslash escape that crossed
+           bash -> python -> JS today lost a layer somewhere; this form has none to lose. */
+        var prcList = TRADEMAP[sh];
+        var nl2 = String.fromCharCode(10) + String.fromCharCode(10);
+        /* WARNING Only on a hand-built bill, where the chip IS a Finance trade. On an IMPORT the
+           chip is the client's own sheet name ("BILLING BREAKDOWN ", trailing space and all), so
+           looking it up would miss every time and the tooltip would tell a planner that a sheet
+           has no procurement trade -- a statement about the mapping that is really a statement
+           about a name the mapping was never asked about. */
+        var tip = sh + ' — ' + money(totals[sh] || 0) +
+          (word !== 'trade' || !Object.keys(TRADEMAP).length ? ''
+            : prcList && prcList.length ? nl2 + 'Let under: ' + prcList.join(', ')
+            : nl2 + 'No procurement trade maps to this.');
         return '<button class="boq-trade' + (filt.sheet === sh ? ' on' : '') + '" data-trade="' + esc(sh) + '"' +
-          ' title="' + esc(sh) + ' — ' + esc(money(totals[sh] || 0)) + '">' +
+          ' title="' + esc(tip) + '">' +
           esc(sh) + '<span class="boq-trade-n">' + (counts[sh] || 0) + '</span></button>';
       }).join('') +
       '</div>';
@@ -954,7 +1175,12 @@ window.BOQ = (function () {
 
     var h = '<div class="cc-kpis">' +
       kpi('Lines', ITEMS.filter(function (r) { return r.line_kind !== 'heading'; }).length, ITEMS.filter(function (r) { return r.line_kind === 'heading'; }).length + ' headings') +
-      kpi('Contract value', money(total), 'sum of priced lines') +
+      /* ⚠️ When several BOQs exist the headline is the PROJECT figure and the sub-line names
+         this document's share, because the contract is the sum of its bills. With one BOQ the
+         two are identical and saying so twice would be noise. */
+      (PROJTOTAL != null
+        ? kpi('Contract value', money(PROJTOTAL), 'all ' + DOCS.length + ' BOQs · this one ' + money(total))
+        : kpi('Contract value', money(total), 'sum of priced lines')) +
       kpi('Measured lines', measured, 'carry a quantity') +
       kpi('Scope boundaries', excl.length, 'excluded from roll-ups', excl.length ? 'warn' : '') +
       kpi('Mapped to class codes', Object.keys(CMAP).length, 'of ' + ITEMS.filter(mappable).length + ' mappable') +
@@ -1082,6 +1308,7 @@ window.BOQ = (function () {
        longest cell it happened to see. `w` on each column spec is now a real declaration, and
        Description gets 300px because it is prose while UoM gets 74 because it holds "m2". */
     var COLS = boqCols(draft, codeIsItem);
+    LASTCOLS = COLS;
     h += '<div class="pd-card cc-tablecard"><table class="cc-table boq-table pdg-grid' +
       (draft ? ' boq-fillable' : '') + '" style="table-layout:fixed;min-width:' +
       COLS.reduce(function (a, c) { return a + c.w; }, 0) + 'px">' +
@@ -1155,6 +1382,7 @@ window.BOQ = (function () {
       kids[list[ki].id] = kn;
     }
     var skipDepth = null;
+    var rowNo = 0;
 
     list.forEach(function (r) {
       var rd = r.depth || 0;
@@ -1168,11 +1396,18 @@ window.BOQ = (function () {
       var al = allocOf(r.id);
       // A heading holds no figures, so its cells stay empty rather than becoming inputs.
       var ed = draft && !head;
+      if (!head) rowNo++;
 
       h += '<tr class="' + (head ? 'boq-head' : '') + '" data-id="' + esc(r.id) + '">' +
         COLS.map(function (c) {
           var cls = c.r ? ' class="cc-r"' : '';
 
+          if (c.k === '_row') {
+            /* Numbered over what is ON SCREEN, so it always matches what the planner is counting
+               down. A number tied to the stored row would skip wherever a filter or a collapsed
+               heading hides something, which is worse than no number. */
+            return '<td class="cc-r pdg-rownum">' + (head ? '' : rowNo) + '</td>';
+          }
           if (c.k === 'item_no') {
             return '<td class="boq-no"' + ' style="padding-left:' + (6 + Math.min(rd, 6) * 12) + 'px">' +
               (head && kids[r.id]
@@ -1321,7 +1556,27 @@ window.BOQ = (function () {
       _grid = PDGrid.attach({
         root: host,
         cell: '.boq-cell[data-f]',
-        onSet: function (id, field, value) { saveCell(id, field, value); }
+        /* WARNING The SPEC is what unlocks the ported features: `w` drives the colgroup and the
+           resize, `req` drives the empty-cell bar, `setAll` says which columns are safe to write
+           wholesale. Without it PDGrid still works, it just has nothing to lay out. */
+        columns: LASTCOLS || [],
+        storageKey: 'boq',
+        onSet: function (id, field, value) { saveCell(id, field, value); },
+        onSetColumn: function (col) {
+          var v = prompt('Set ' + col.label + ' for every line shown on this tab:', '');
+          if (v == null) return;
+          v = String(v).trim();
+          var list2 = filtered().filter(function (r) { return r.line_kind !== 'heading'; });
+          if (!list2.length) return;
+          if (!confirm('Set ' + col.label + ' to "' + v + '" on ' + list2.length + ' line' +
+                       (list2.length === 1 ? '' : 's') + '?')) return;
+          /* Sequential, through saveCell, so each write gets the same parsing and the same
+             recalc a typed edit would - and so a failure stops rather than half-applying. */
+          (async function () {
+            for (var i = 0; i < list2.length; i++) await saveCell(list2[i].id, col.k, v);
+            UI.toast('Set ' + col.label + ' on ' + list2.length + ' lines.', 'success');
+          })();
+        }
       });
     }
     host.querySelectorAll('.boq-cellsel[data-f]').forEach(function (selEl) {
@@ -1486,7 +1741,7 @@ window.BOQ = (function () {
     });
     var target = PKGS[0].id;   // '' means "clear the assignment"
 
-    var m = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">Assign BOQ to a contract package</h2>' +
+    var m = UI.modal('<div class="pd-modal-header"><div><h2 style="margin:0;">Assign BOQ to a contract lot</h2><div class="pd-modal-sub">Which lot these lines are administered under</div></div>' +
       '<button class="pd-modal-close" id="ap-x">&times;</button></div>' +
       '<div class="boq-imp" id="ap-body"></div>' +
       '<div class="pd-modal-footer"><button class="pd-btn" id="ap-c">Cancel</button> ' +
@@ -1575,7 +1830,7 @@ window.BOQ = (function () {
   // ==========================================================================
   function openImport() {
     if (!canWrite) { UI.toast('You do not have permission to import.', 'error'); return; }
-    var m = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">Import BOQ</h2>' +
+    var m = UI.modal('<div class="pd-modal-header"><div><h2 style="margin:0;">Import BOQ</h2><div class="pd-modal-sub">Read the client&#39;s workbook — you accept the column map before anything is written</div></div>' +
       '<button class="pd-modal-close" id="bi-x">&times;</button></div>' +
       '<div class="boq-imp" id="bi-body">' +
       '<p class="cc-hint">Pick the client\'s BOQ workbook. Nothing is written until you accept the preview — ' +
@@ -2032,6 +2287,22 @@ window.BOQ = (function () {
     return ins.data;
   }
 
+  /* ⚠️ One read, and only when it can differ from what is already on screen. The `in.(...)`
+     filter is safe here however many BOQs exist — it lists CURRENT revisions, one per document,
+     nowhere near the ~200-uuid URL cap that bites elsewhere in this app. */
+  async function computeProjectTotal() {
+    PROJTOTAL = null;
+    if (DOCS.length < 2) return;
+    var ids = ALLREVS.filter(function (r) { return r.is_current && r.document_id; })
+                     .map(function (r) { return r.id; });
+    if (!ids.length) { PROJTOTAL = 0; return; }
+    try {
+      var rows = await PDb.selectAll(T_ITEM, function (q) { return q.in('revision_id', ids); },
+                                     'amount,line_kind,exclusion_note');
+      PROJTOTAL = rows.reduce(function (a, r) { return a + (moneyLine(r) ? Number(r.amount) : 0); }, 0);
+    } catch (e) { PROJTOTAL = null; }   // a failed roll-up shows this document's figure, never a wrong one
+  }
+
   function currentDraft() {
     return (REVS || []).filter(function (r) { return revStatus(r) === 'draft'; })[0] || null;
   }
@@ -2063,12 +2334,23 @@ window.BOQ = (function () {
       var next = ns.length ? Math.max.apply(null, ns) + 1 : 0;
       return (next < 10 ? '0' : '') + next;
     })();
-    var m = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">New BOQ &mdash; build it by hand</h2>' +
+    /* WARNING WHICH BOQ THIS LANDS IN, said out loud, because this dialog cannot ask. It is the
+       fallback for a page where wizard.js failed to load, so it stays deliberately one screen --
+       but "New BOQ" over a project that already has three of them is a promise it does not keep:
+       the revision goes into the BOQ currently on screen. */
+    var nrDoc = (DOCS || []).filter(function (x) { return x.id === DOCID; })[0] || null;
+    var m = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">' +
+      (nrDoc ? 'New revision of ' + esc(nrDoc.name) : 'New BOQ &mdash; build it by hand') + '</h2>' +
       '<button class="pd-modal-close" id="nr-x">&times;</button></div>' +
       '<div class="cc-form">' +
       '<p class="cc-hint" style="margin-top:0;">An empty draft. Add lines from the class-code ' +
       'library, price them, then <strong>issue</strong> it. <b>A draft never bills and never ' +
       'shows as the contract value</b>, so nothing downstream moves until you say so.</p>' +
+      (nrDoc
+        ? '<p class="cc-hint">This becomes a revision of <b>' + esc(nrDoc.name) + '</b>. For a ' +
+          'separately named BOQ, use <b>Add BOQ\u2026</b> \u2014 this short form is the fallback for when ' +
+          'the wizard could not load, and it cannot create one.</p>'
+        : '') +
       '<label>Revision label<input class="pd-input" id="nr-rev" value="' + esc(nextRev) + '" /></label>' +
       '<p class="cc-hint">Prefilled, and yours to change — <b>this is your label, not the ' +
       'client\'s</b>. An imported BOQ carries whatever the client called it; one you author has ' +
@@ -2094,20 +2376,29 @@ window.BOQ = (function () {
         'everywhere else. \u201c' + nextRev + '\u201d is fine.', 'error'); return; }
       var b = el('nr-go'); b.disabled = true; b.textContent = 'Creating…';
       try {
-        var ins = await sb().from(T_REV).insert({
-          project_id: pid, rev_no: revNo, issued_date: el('nr-date').value || null,
-          po_no: txtOf(el('nr-po').value) || null, contract_total: numOf(el('nr-total').value),
-          source_file: null, sheet_inventory: {},
-          // ⚠️ is_current stays FALSE and the database enforces it for a draft. The
-          //    contract value on screen must keep coming from the issued document.
-          status: 'draft', origin: 'manual', is_current: false,
-          notes: 'Built by hand from the class-code library.', created_by: UID
-        }).select().single();
-        if (ins.error) throw ins.error;
+        /* WARNING ⚠️⚠️ THIS INSERT WROTE NO `document_id`, SO EVERY REVISION IT MADE WAS AN ORPHAN.
+           `2026-09-07-boq-documents.sql` made the document the owner of a revision series, and
+           `createDraft` was given `document_id: f.docId || DOCID || null` for exactly that reason
+           -- but this dialog kept its own copy of the insert from before the migration and never
+           gained the column. An orphan is not invisible, which is what made it survive: `load()`
+           filters `!r.document_id || r.document_id === DOCID`, so a null-document revision shows
+           under EVERY BOQ on the project. Two BOQs would both list it, the per-document contract
+           roll-up (`computeProjectTotal`, which requires `is_current && document_id`) would count
+           it under neither, and nothing would error.
+           WARNING Fixed by DELETING the second insert path rather than adding the column to it.
+           A rival insert also lacked the duplicate-label retry that `createDraft` grew after the
+           owner hit `boq_revisions_project_rev_idx` -- so this dialog would still fail outright on
+           a label collision that the wizard recovers from. One writer, one set of rules. */
+        var made = await createDraft({ rev: revNo, date: el('nr-date').value,
+                                       po: txtOf(el('nr-po').value), total: el('nr-total').value });
         m.close();
-        REVID = ins.data.id; sub = 'items';
-        UI.toast('Draft revision ' + revNo + ' created. Add lines from the class-code library.', 'success');
-        await load();
+        // createDraft already set REVID, sub and reloaded -- it is the one writer now.
+        /* createDraft retries a taken label and returns the one it actually used, so this reports
+           what happened rather than what was asked for. */
+        var got = (made && made.rev_no) || revNo;
+        UI.toast('Draft revision ' + got +
+          (got !== revNo ? ' created (' + revNo + ' was already taken).' : ' created.') +
+          ' Add lines from the class-code library.', 'success');
       } catch (err) {
         b.disabled = false; b.textContent = 'Create draft';
         var msg = (err.message || String(err));
@@ -2123,16 +2414,40 @@ window.BOQ = (function () {
      everything visible under it in one action, so a 40-line concrete package is one click
      plus a review, not forty searches. The existing `pickCode` picker stays for what it is
      good at: mapping ONE imported line. */
-  async function openCodeBuilder() {
-    if (!isDraft()) { UI.toast('Lines can only be added to a draft revision.', 'error'); return; }
+  /* ⚠️⚠️ THE PICKER'S MARKUP AND WIRING ARE SHARED, NOT COPIED. Owner asked for the class-code
+     library to live inside the wizard as well as in its own dialog. The tempting answer is to
+     paste the ladder into wizard.js; the honest one is that a second copy drifts, and this module
+     has already paid for that twice today (two create-dialogs, two import doors). So the markup is
+     one function and the behaviour is one mount, and both hosts call them.
+     ⚠️ `root` is whatever element contains the markup — a modal here, a wizard step body there.
+     Nothing below reaches for `document` or for the modal. */
+  function codePickerHTML() {
+    return '<div class="boq-ladwrap">' +
+      '<input class="pd-input" id="cb-q" placeholder="Search code, trade, group or item…" autocomplete="off" />' +
+      '<div class="boq-lad" id="cb-tree"></div>' +
+      '<div class="boq-tpicked" id="cb-count"></div></div>';
+  }
+
+  /* Mount the ladder into `root`. Returns the live selection so a host can read it when its own
+     button is pressed — the picker never decides what happens next. */
+  async function mountCodePicker(root, opts) {
+    opts = opts || {};
     await ensureCodes();
     if (!(CODES || []).length) {
       UI.toast(codesErr
         ? 'Could not read the class-code chart: ' + (codesErr.message || codesErr)
         : 'The class-code chart is empty — run migrations/2026-08-21-class-codes.sql, then reload this page.',
         'error');
-      return;
+      return null;
     }
+    return _mountPicker(root, opts);
+  }
+
+  /* The ladder itself: state, filtering, painting and wiring. Hosted by openCodeBuilder in a
+     modal and by the wizard in a step body — see codePickerHTML(). Returns the live selection so
+     the HOST decides what happens next; the picker never writes anything itself. */
+  function _mountPicker(root, opts) {
+    var el = function (id) { return root.querySelector('#' + id); };
     buildTree();
     /* ⚠️ `open` is gone with the tree — a ladder has no collapsed state, it has a position. */
     var picked = {}, q = '', curTrade = null, curDiv = null, curGroup = null;
@@ -2152,20 +2467,6 @@ window.BOQ = (function () {
        drilling in no longer costs an expanding accordion that pushes everything else off screen.
        ⚠️ The header follows the standard modal shape (title + one-line subtitle) rather than a
        paragraph of theory; what "division → sheet" means belongs in the result, not in the way. */
-    var m = UI.modal('<div class="pd-modal-header">' +
-      '<div><h2 style="margin:0;">Add lines</h2>' +
-      '<div class="pd-modal-sub">Pick a trade, then take the whole trade or drill into its groups</div></div>' +
-      '<button class="pd-modal-close" id="cb-x">&times;</button></div>' +
-      '<div class="boq-ladwrap">' +
-      '<input class="pd-input" id="cb-q" placeholder="Search code, trade, group or item…" autocomplete="off" />' +
-      '<div class="boq-lad" id="cb-tree"></div>' +
-      '<div class="boq-tpicked" id="cb-count"></div></div>' +
-      '<div class="pd-modal-footer"><button class="pd-btn" id="cb-c">Cancel</button> ' +
-      '<button class="pd-btn pd-btn-primary" id="cb-go">Add lines</button></div>');
-    // Three panes side by side need the wide shell, not the 760px one.
-    m.el.querySelector('.pd-modal').classList.add('boq-wide');
-    var el = function (id) { return m.el.querySelector('#' + id); };
-    el('cb-x').onclick = m.close; el('cb-c').onclick = m.close;
 
     /* Which items survive the search. ⚠️ A division or group matches on its OWN text too,
        and then keeps all of its items — searching "concrete" must not hide the items of a
@@ -2284,7 +2585,12 @@ window.BOQ = (function () {
         ? '<b>' + nPicked() + '</b> item' + (nPicked() === 1 ? '' : 's') + ' · ' +
           Object.keys(divs).length + ' trade' + (Object.keys(divs).length === 1 ? '' : 's')
         : '<span class="cc-mut">Nothing selected yet.</span>';
-      el('cb-go').disabled = !nPicked();
+      /* ⚠️⚠️ THE PICKER DOES NOT TOUCH THE HOST'S BUTTON. This read `el('cb-go').disabled = …`,
+         which is the MODAL's Add-lines button — and in the wizard there is no `#cb-go`, so it threw
+         a TypeError that aborted paint() before `wireTree()` ran. The panes rendered, and not one
+         checkbox had a handler: a picker that looks completely normal and silently does nothing.
+         The host is told the count through `opts.onCount` and labels its own control; that is the
+         whole point of the split, and this line was the last thing still crossing it. */
       wireTree();
     }
 
@@ -2352,8 +2658,39 @@ window.BOQ = (function () {
     el('cb-q').addEventListener('input', function () {
       clearTimeout(t); t = setTimeout(function () { q = el('cb-q').value; paint(); }, 160);
     });
-    el('cb-go').onclick = function () { m.close(); addAuthoredLines(Object.keys(picked)); };
+    var _t = null;
+    var qi = el('cb-q');
+    if (qi) qi.addEventListener('input', function () {
+      clearTimeout(_t); _t = setTimeout(function () { q = qi.value; paint(); }, 160);
+    });
+    /* The host is told the count on every change so it can label its own button — "Add 40 lines"
+       is a different promise from "Add lines", and only the host knows where to put it. */
+    if (opts.onCount) { var _p = paint; paint = function () { _p(); opts.onCount(nPicked()); }; }
     paint();
+    return {
+      codes: function () { return Object.keys(picked); },
+      count: function () { return nPicked(); },
+      repaint: function () { paint(); }
+    };
+  }
+
+  async function openCodeBuilder() {
+    if (!isDraft()) { UI.toast('Lines can only be added to a draft revision.', 'error'); return; }
+    var m = UI.modal(mHead('Add lines',
+        'Pick a trade, then take the whole trade or drill into its groups', 'cb-x') +
+      codePickerHTML() +
+      '<div class="pd-modal-footer"><button class="pd-btn" id="cb-c">Cancel</button> ' +
+      '<button class="pd-btn pd-btn-primary" id="cb-go">Add lines</button></div>');
+    // Four panes side by side need the wide shell, not the 760px one.
+    m.el.querySelector('.pd-modal').classList.add('boq-wide');
+    m.el.querySelector('#cb-x').onclick = m.close;
+    m.el.querySelector('#cb-c').onclick = m.close;
+    var go = m.el.querySelector('#cb-go');
+    var p = await mountCodePicker(m.el, {
+      onCount: function (n) { go.disabled = !n; go.textContent = n ? 'Add ' + n + ' lines' : 'Add lines'; }
+    });
+    if (!p) { m.close(); return; }
+    go.onclick = function () { m.close(); addAuthoredLines(p.codes()); };
   }
 
   /* Write the picked codes in as lines.
@@ -2553,12 +2890,32 @@ window.BOQ = (function () {
 
   function money2(v) { return v == null ? '' : Fmt.money(v); }
 
+  /* ⚠️⚠️ ONE HEADER SHAPE FOR EVERY DIALOG IN THIS MODULE. Owner: *"let's make all pop-up
+     windows consistent"*. There were ELEVEN headers and one of them had a subtitle — the rest
+     opened with a bare title and then explained themselves in a paragraph sitting on top of
+     the controls, which is what made the module read as assembled rather than designed.
+     ⚠️ A helper rather than a convention, because a convention is what produced eleven
+     variants. `sub` is one line: what this dialog is for, not how it works. */
+  function mHead(title, sub, closeId) {
+    return '<div class="pd-modal-header"><div><h2 style="margin:0;">' + title + '</h2>' +
+      (sub ? '<div class="pd-modal-sub">' + sub + '</div>' : '') + '</div>' +
+      '<button class="pd-modal-close" id="' + closeId + '">&times;</button></div>';
+  }
+
   function boqCols(draft, codeIsItem) {
     var C = [];
+    /* WARNING A ROW-NUMBER GUTTER, as review.html has. On a 700-line bill "which row was that?"
+       is asked constantly - when reading a rate back to somebody, when comparing against the
+       client's printed BOQ, when saying where an error is. The item code does not answer it
+       because it is not sequential and repeats across trades. Narrow, muted, never editable. */
+    C.push({ k: '_row', label: '#', w: 44, ro: true, r: true });
     C.push({ k: 'item_no', label: codeIsItem ? 'Class code' : 'Item', w: 96, mono: true, ro: true });
     C.push({ k: 'description', label: 'Description', w: 300, type: 'text' });
-    C.push({ k: 'unit', label: 'UoM', w: 74, type: 'uom' });
-    C.push({ k: 'qty', label: 'Quantity', w: 92, type: 'num', r: true });
+    /* setAll is offered on UoM and Kind only - a vocabulary, where one value down a whole
+       trade is normal. It is NOT offered on any money column: a blanket write there is a way
+       to destroy a bill in one click. */
+    C.push({ k: 'unit', label: 'UoM', w: 74, type: 'uom', setAll: true, req: true });
+    C.push({ k: 'qty', label: 'Quantity', w: 92, type: 'num', r: true, req: true });
     C.push({ k: 'mat_rate', label: 'Mat. rate', w: 100, type: 'num', r: true });
     C.push({ k: 'mat_amount', label: 'Mat. cost', w: 112, type: 'money', r: true, calc: true });
     C.push({ k: 'lab_rate', label: 'Lab. rate', w: 100, type: 'num', r: true });
@@ -2567,7 +2924,7 @@ window.BOQ = (function () {
        is. A lump-sum line has an amount and no quantity to derive it from, so refusing the entry
        would make those lines unrepresentable. It is derived by DEFAULT and typed by exception. */
     C.push({ k: 'amount', label: 'Total amount', w: 124, type: 'num', r: true, calc: 'soft' });
-    C.push({ k: 'line_kind', label: 'Kind', w: 112, type: 'kind' });
+    C.push({ k: 'line_kind', label: 'Kind', w: 112, type: 'kind', setAll: true });
     if (!codeIsItem) C.push({ k: '_class', label: 'Class code', w: 100 });
     /* ⚠️ NO PACKAGE COLUMN WHEN THE PROJECT HAS NO LOTS. Owner: *"why is there a package column
        when there is no package in this contract at all?"* — right, and it is the third place this
@@ -2874,7 +3231,7 @@ window.BOQ = (function () {
     }
     var cur = codes[0].code, aq = '', pickedActs = {}, overwrite = false, mode = 'one';
 
-    var m = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">Connect class codes to schedule activities</h2>' +
+    var m = UI.modal('<div class="pd-modal-header"><div><h2 style="margin:0;">Tag schedule activities</h2><div class="pd-modal-sub">Write a class code onto the activities it covers, in bulk</div></div>' +
       '<button class="pd-modal-close" id="tg-x">&times;</button></div>' +
       '<div style="padding:2px 16px 6px;" id="tg-body"></div>' +
       '<div class="pd-modal-footer" id="tg-foot"></div>');
@@ -3244,7 +3601,7 @@ window.BOQ = (function () {
     var r = ITEMS.find(function (x) { return x.id === itemId; });
     if (!r) return;
     await ensureCodes();
-    var m = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">Map to a class code</h2>' +
+    var m = UI.modal('<div class="pd-modal-header"><div><h2 style="margin:0;">Map to a class code</h2><div class="pd-modal-sub">Give this imported line the Finance code it files under</div></div>' +
       '<button class="pd-modal-close" id="pk-x">&times;</button></div>' +
       '<div class="boq-pick"><p class="cc-hint">' + esc(r.description || r.item_no || '') + '</p>' +
       '<input class="pd-input" id="pk-q" placeholder="Search code, division, group or item…" autocomplete="off" />' +
@@ -4003,7 +4360,7 @@ window.BOQ = (function () {
   function newPeriod() {
     var ord = periodsOrdered(), last = ord[ord.length - 1];
     var rev = REVS.find(function (r) { return r.id === REVID; }) || {};
-    var m = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">New billing period</h2>' +
+    var m = UI.modal('<div class="pd-modal-header"><div><h2 style="margin:0;">New billing period</h2><div class="pd-modal-sub">A period is the BOQ plus one cumulative percentage per line</div></div>' +
       '<button class="pd-modal-close" id="np-x">&times;</button></div>' +
       '<div class="boq-imp-grid">' +
       '<label>Billing no.<input class="pd-input" id="np-no" value="' + esc(last ? String(Number(last.billing_no) + 1 || '') : '1') + '" /></label>' +
@@ -4220,7 +4577,10 @@ window.BOQ = (function () {
     await ensureSugg();
     await load();
   }
-  function reset() { COLLAPSED = {}; SEL = {}; loaded = false; DOCS = []; DOCID = null; REVS = []; ITEMS = []; CMAP = {}; ALLOC = []; PERIODS = []; PROG = {}; REVID = null; CODES = null; CODETREE = null; ACTS = null; SCHED = null; schedErr = null; PKGS = []; }
+  /* WARNING ALLREVS and PROJTOTAL belong here too: a project switch that kept them would show
+     the previous project's contract value under the new project's name. */
+  function reset() { COLLAPSED = {}; SEL = {}; loaded = false; DOCS = []; DOCID = null; TRADEMAP = {};
+    ALLREVS = []; PROJTOTAL = null; REVS = []; ITEMS = []; CMAP = {}; ALLOC = []; PERIODS = []; PROG = {}; REVID = null; CODES = null; CODETREE = null; ACTS = null; SCHED = null; schedErr = null; PKGS = []; }
 
   return {
     init: init, show: show, reset: reset, render: render,
@@ -4228,6 +4588,21 @@ window.BOQ = (function () {
        The trigger, the is_current rule and the draft/manual defaults all live in one place. */
     createDraft: createDraft, nextRevLabel: nextRevLabel, currentDraft: currentDraft,
     createDocument: createDocument,
+    /* WARNING The BOQ THE PLANNER IS STANDING IN, exported so the wizard can name it. Without it
+       the wizard could only offer "a new revision" in the abstract, and the whole confusion this
+       answers is that "new revision" and "another BOQ" were indistinguishable on screen. A
+       revision belongs to a document; the offer has to say which one. */
+    currentDocument: function () {
+      var d = (DOCS || []).filter(function (x) { return x.id === DOCID; })[0];
+      return d ? { id: d.id, name: d.name } : null;
+    },
+    /* How many revisions the CURRENT document already holds. `rev` is only a meaningful offer
+       when there is something to supersede -- on a document with none it is just "create". */
+    revisionCount: function () { return (REVS || []).length; },
+    /* The class-code ladder, so the WIZARD can host it in a step instead of carrying a copy. */
+    codePickerHTML: codePickerHTML,
+    mountCodePicker: mountCodePicker,
+    addAuthoredLines: function (codes) { return addAuthoredLines(codes); },
     documents: function () { return DOCS.slice(); },
     /* Opens the class-code picker on the existing draft - the wizard's "add a trade" path. */
     addTrades: function () { sub = 'items'; render(); return openCodeBuilder(); },

@@ -89,12 +89,20 @@ create table if not exists progress_photos (
                                        -- Key plan is per PHOTO, not per PPR slide (migrations/2026-08-28-*.sql):
                                        -- one comparison can pair two photos with different key plans.
   archived    boolean default false,  -- soft-archive (Gallery batch action, 2026-08-29 follow-up) — never a hard delete
+  favorite    boolean not null default false, -- Gallery star toggle; ANY project writer may set this via
+                                       -- set_photo_favorite() (SECURITY DEFINER), bypassing the table's
+                                       -- owner-or-admin UPDATE policy — see migrations/2026-09-07-*.sql
   media_type  text default 'photo',  -- 'photo' | 'video' (18-item list item 4) — never related to 360/3D/Gaussian Splatting
   markup      jsonb default '[]'::jsonb,  -- vector annotation layer (18-item list item 13), hidden on Gallery tiles
   created_by  uuid references users(id),
   created_at  timestamptz default now(),
   updated_at  timestamptz default now()
 );
+
+-- Fast lookup for the Portfolio Overview's favorites-only Photos tab and a
+-- project's own favorited count. Partial — most rows are never favorited.
+create index if not exists progress_photos_favorite_idx
+  on progress_photos (project_id) where favorite;
 
 -- 1b) PPR Presentations (progress-photos module) -----------------------------
 -- A PPR = one monthly Project Performance Review presentation; each slide is a
@@ -781,6 +789,33 @@ begin
   delete from auth.users where id = target;
 end $$;
 grant execute on function admin_delete_user(uuid) to authenticated;
+
+-- set_photo_favorite: toggle a Progress Photos row's favorite flag as ANY
+-- project writer, bypassing progress_photos' own owner-or-admin UPDATE
+-- policy for this one field. See migrations/2026-09-07-progress-photos-
+-- favorites.sql for the full rationale (why a bare client-side .update()
+-- would silently be refused, and why this is a narrow bypass rather than a
+-- widened table policy).
+create or replace function set_photo_favorite(p_photo_id uuid, p_value boolean)
+returns boolean language plpgsql security definer set search_path = public as $$
+declare v_project text;
+begin
+  if not is_writer() then
+    raise exception 'You do not have permission to change favorites on this project.';
+  end if;
+
+  select project_id into v_project from progress_photos where id = p_photo_id;
+  if v_project is null then
+    raise exception 'That photo could not be found.';
+  end if;
+  if not can_access_project(v_project) then
+    raise exception 'You do not have access to this project.';
+  end if;
+
+  update progress_photos set favorite = p_value, updated_at = now() where id = p_photo_id;
+  return p_value;
+end $$;
+grant execute on function set_photo_favorite(uuid, boolean) to authenticated;
 
 -- users + projects
 alter table users    enable row level security;

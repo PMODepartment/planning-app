@@ -79,6 +79,20 @@ window.CCWizard = (function () {
     /* ⚠️ NO REVIEW FOR A BOQ RUN. It had one, and its entire content was "Nothing is
        recorded for a BOQ-only run" — a step that exists to say it has nothing to say. The
        BOQ step is now the last one, and its button opens the importer. */
+    /* WARNING THE CLASS-CODE LIBRARY IS A STEP, NOT A SEPARATE DIALOG. Owner: *"can't we just
+       include this already in the wizard?"* It can, and it belongs there: choosing the trades IS
+       the act of creating a hand-built BOQ, so making it a modal that opens afterwards split one
+       decision across two screens. Shown only for a BOQ run that is being built by hand -- an
+       import has nothing to pick, and adding trades to an existing draft hands off to the picker
+       on the BOQ screen where the rest of that bill already is. */
+    { key: 'codes',   label: 'Trades',   sub: 'Pick the trades this BOQ covers',
+      when: function () {
+        if (st.type !== 'BOQ' || st.boqMode === 'import') return false;
+        /* WARNING Reads boqPath(), not boqDraft() directly. Adding trades to a draft that already
+           exists hands off to the picker on the BOQ screen (where the rest of that bill already
+           is), so it has no Trades step; the other two paths create a revision here and do. */
+        return boqPath() !== 'add';
+      } },
     { key: 'review',  label: 'Review',   sub: 'Check, then save',
       when: function () { return st.type !== 'BOQ'; } }
   ];
@@ -360,6 +374,43 @@ window.CCWizard = (function () {
       'Evaluated and approved dates are recorded later, on the record itself.</p>';
   }
 
+  /* WARNING WHICH OF THE THREE ENDINGS A BOQ RUN HAS, resolved in ONE place. The step's copy, the
+     rail's Trades entry, the primary button's label and finish() all read this, so they cannot
+     disagree about what pressing the button will do -- which they already did once, when the step
+     said "Add trades to 00" under a button promising a file picker.
+       add - another trade SECTION inside the draft that is already open. One document, one revision.
+       doc - another BOQ DOCUMENT, with its own revision series and its own contract value.
+       rev - another REVISION of the document on screen, which SUPERSEDES the one before it.
+     WARNING The stored choice is validated against what is actually available every time rather
+     than trusted: boqDraft() answers null until the BOQ section has loaded, so a run opened from
+     the top of the page must not be locked to a path that turns out not to exist. */
+  function boqPath() {
+    var d = D.boqDraft ? D.boqDraft() : null;
+    var doc = D.boqDoc ? D.boqDoc() : null;
+    var n = D.boqRevCount ? D.boqRevCount() : 0;
+    /* WARNING `rev` NEEDS A DOCUMENT, NOT A REVISION. Gated on `doc && n` when it shipped this
+       morning, which left an empty BOQ document unreachable: nothing could add its first revision,
+       so deleting the only revision of a BOQ had to be refused to avoid creating a dead end. That
+       refusal is now gone from boq.js and this is why -- the path fills the empty document, and
+       the step's copy says "the first revision" rather than claiming a supersede that has nothing
+       to supersede. */
+    var can = { doc: true, add: !!d, rev: !!doc };
+    var want = st.boqPath || (d ? 'add' : 'doc');
+    return can[want] ? want : 'doc';
+  }
+
+  /* WARNING THE PREFILLED LABEL IS RE-DERIVED WHEN THE PATH CHANGES, and only while the planner
+     has not typed one. Caught in the harness: switching from "Create another BOQ" to "New
+     revision" left the field reading 00, because captureBoq() had already stored the other path's
+     prefill and `st.boqRev || default` cannot tell a stored prefill from a typed answer. It is not
+     corruption -- createDraft retries a duplicate label and steps it -- but the planner would be
+     told 00 and get 01, which is the module telling them something it knows is not so.
+     `boqRevTyped` is the distinction, set by the field's own oninput and never by a repaint. */
+  function boqRevDefault(path) {
+    if (st.boqRevTyped && st.boqRev) return st.boqRev;
+    return path === 'rev' && D.nextBoqRev ? D.nextBoqRev() : '00';
+  }
+
   function stepBoq() {
     /* ⚠️ OPTIONAL, AND SAID SO — owner, on seeing this step: *"is this section optional?
        Or even at the right time to add where for example a project had just been awarded
@@ -400,19 +451,78 @@ window.CCWizard = (function () {
          D.boqDraft() answers - it returns null while the BOQ section has not loaded, and the
          wizard must not claim there is no draft when it simply does not know yet. */
       var bdraft = D.boqDraft ? D.boqDraft() : null;
-      if (bdraft && st.boqNew !== true) {
-        return '<p class="ccw-hint"><b>Trades live inside one BOQ, not beside it.</b> Each division ' +
-          'you add becomes its own trade section.</p>' +
-          '<div class="ccw-choice">' +
-            '<label class="ccw-opt on"><b>Add trades to ' + esc(bdraft.rev_no) + ' (draft)</b>' +
-              '<span class="ccw-optsub">Pick more divisions from the class-code library. This is what you ' +
-              'want for another trade.</span></label>' +
-          '</div>' +
-          '<p class="ccw-hint"><a href="#" id="ccw-bnew">Start a new revision instead</a> - only for a ' +
-          're-issued or remeasured bill, which <b>supersedes</b> ' + esc(bdraft.rev_no) + '.</p>';
+      var bdoc = D.boqDoc ? D.boqDoc() : null;
+      var nrev = D.boqRevCount ? D.boqRevCount() : 0;
+      var bpath = boqPath();
+      var hh = '';
+      /* WARNING A BOQ, A REVISION AND A TRADE SECTION ARE THREE DIFFERENT THINGS, and this step
+         used to offer only two of them. Owner, 2026-09-08: *"I have an existing BOQ and I want to
+         add another BOQ since my first BOQ only covers General Requirement. In the Wizard it says
+         'Start a new revision instead' which is misleading with my objective to create a new
+         BOQ."* He is right twice over.
+         WARNING First the WORD was wrong. Second -- and worse -- the word did not match the code:
+         that link set `boqNew`, and finish() then called createBoqDraft WITH a `docName`, which
+         creates a new BOQ DOCUMENT. So the only route to the thing he wanted was the one labelled
+         as the thing he did not want, and the label promised a supersede that never happened. A
+         control that lies about which of two irreversible-looking things it does is worse than a
+         missing control, because the planner has no reason to check.
+         WARNING So the three paths are three named choices with what each does spelled out, and
+         `rev` now does what its name says: a revision INSIDE the document on screen, created with
+         no docName, which is the one that supersedes. */
+      /* WARNING GATED ON `bdoc`, NOT `bdoc && nrev` -- and the difference is the whole point of the
+         empty-document fix. With the revision count in this condition a BOQ holding no revision
+         rendered NO choices at all and fell through to the plain create form, which makes ANOTHER
+         document: the empty one stayed unreachable however the paths below were gated. Caught in
+         the harness, not by reading -- `can.rev` was already right, and this line silently
+         overruled it. */
+      if (bdraft || bdoc) {
+        hh += '<p class="ccw-hint"><b>A BOQ is one document with its own revision series, and trades ' +
+          'live inside it as sections.</b> So covering another trade is neither a new BOQ nor a new ' +
+          'revision -- unless the client bills that trade separately, in which case it is a BOQ of ' +
+          'its own.</p><div class="ccw-choice">';
+        if (bdraft) {
+          hh += '<label class="ccw-opt' + (bpath === 'add' ? ' on' : '') + '">' +
+            '<input type="radio" name="boqpath" value="add"' + (bpath === 'add' ? ' checked' : '') + ' /> ' +
+            '<b>Add trades to rev ' + esc(bdraft.rev_no) + '</b>' +
+            '<span class="ccw-optsub">Another trade section inside ' +
+            esc(bdoc ? bdoc.name : 'this BOQ') + '. One bill, one contract value -- the usual answer ' +
+            'while a draft is still being written.</span></label>';
+        }
+        hh += '<label class="ccw-opt' + (bpath === 'doc' ? ' on' : '') + '">' +
+          '<input type="radio" name="boqpath" value="doc"' + (bpath === 'doc' ? ' checked' : '') + ' /> ' +
+          '<b>Create another BOQ</b>' +
+          '<span class="ccw-optsub">A separate document with its own name, its own revision series and ' +
+          'its own issue. Nothing about ' + esc(bdoc ? bdoc.name : 'the existing BOQ') + ' changes, and ' +
+          'the project contract value adds them together. This is what a separately packaged bill ' +
+          'is.</span></label>';
+        if (bdoc) {
+          /* ⚠️ TWO DIFFERENT PROMISES UNDER ONE PATH, and the copy has to pick the right one. With
+             revisions present this supersedes; on an empty document there is nothing to supersede
+             and saying so would be false. Same control, honest label. */
+          hh += '<label class="ccw-opt' + (bpath === 'rev' ? ' on' : '') + '">' +
+            '<input type="radio" name="boqpath" value="rev"' + (bpath === 'rev' ? ' checked' : '') + ' /> ' +
+            '<b>' + (nrev ? 'New revision of ' : 'First revision of ') + esc(bdoc.name) + '</b>' +
+            '<span class="ccw-optsub">' + (nrev
+              ? 'Re-issued or remeasured -- the SAME scope, priced again. It <b>supersedes</b> the ' +
+                'current revision when you issue it, and what was tendered is kept.'
+              : esc(bdoc.name) + ' holds no revision yet, so this one starts its series. Nothing is ' +
+                'superseded -- there is nothing there to supersede.') +
+            '</span></label>';
+        }
+        hh += '</div>';
       }
-      return '<p class="ccw-hint">Stored as a <b>revision</b>: a re-issue supersedes it without ' +
-        'destroying what was tendered.</p>' +
+      if (bpath === 'add') {
+        return hh + '<p class="ccw-hint">Next opens the class-code library on rev ' +
+          esc(bdraft ? bdraft.rev_no : '') + '. Each division you take becomes its own trade section, ' +
+          'with class codes already on every line.</p>';
+      }
+      return hh +
+        (bpath === 'rev'
+          ? '<p class="ccw-hint">' + (nrev ? 'A revision of <b>' : 'The first revision of <b>') +
+            esc(bdoc ? bdoc.name : '') + '</b>. It starts as a ' +
+            'draft, so nothing is superseded and no contract value moves until you issue it.</p>'
+          : '<p class="ccw-hint">Stored as a <b>revision</b>: a re-issue supersedes it without ' +
+            'destroying what was tendered.</p>') +
         '<div class="ccw-choice">' +
           '<label class="ccw-opt' + (bmanual ? ' on' : '') + '"><input type="radio" name="boqmode" value="manual"' +
             (bmanual ? ' checked' : '') + ' /> <b>Build it by hand</b>' +
@@ -424,12 +534,28 @@ window.CCWizard = (function () {
             'anything is written.</span></label>' +
         '</div>' +
         (bmanual
-          ? '<label>BOQ name<input class="pd-input" id="ccw-bname" placeholder="e.g. Structural Works BOQ" value="' +
-              esc(st.boqName || '') + '" /></label>' +
-            '<p class="ccw-hint">This BOQ keeps <b>its own revision series</b>. Name it the way the ' +
-            'client packages it - "Package 2 BOQ", "Structural Works BOQ" - not after a fixed trade list.</p>' +
+          /* WARNING THE NAME IS ASKED FOR ONLY WHERE IT IS THE THING BEING CREATED. A new BOQ
+             document needs one and finish() refuses without it; a new REVISION of a document that
+             already has a name has nothing to name, and a second name field there would invite
+             renaming the BOQ as a side effect of revising it. */
+          ? (bpath === 'rev'
+              ? '<p class="ccw-hint">This revision belongs to <b>' + esc(bdoc ? bdoc.name : '') + '</b> -- ' +
+                'to make a separately named bill instead, go back and choose <b>Create another ' +
+                'BOQ</b>.</p>'
+              : '<label>BOQ name<input class="pd-input" id="ccw-bname" placeholder="e.g. Structural Works BOQ" value="' +
+                esc(st.boqName || '') + '" /></label>' +
+                '<p class="ccw-hint">This BOQ keeps <b>its own revision series</b>. Name it the way the ' +
+                'client packages it - "Package 2 BOQ", "Structural Works BOQ" - not after a fixed trade list.</p>') +
             '<div class="ccw-grid2">' +
-              '<label>Revision label<input class="pd-input" id="ccw-brev" value="' + esc(st.boqRev || (D.nextBoqRev ? D.nextBoqRev() : '00')) + '" /></label>' +
+              /* WARNING A NEW DOCUMENT STARTS ITS OWN SERIES AT 00, and nextBoqRev() is the wrong
+                 default for it -- that function reads the revisions of the BOQ on screen, so a
+                 second BOQ was being suggested "01" as though it continued the first one's series.
+                 2026-09-07-boq-documents.sql section 5 replaced the project-wide unique index on
+                 rev_no with a per-DOCUMENT one precisely so both bills can hold a rev 00. Without
+                 that migration createDraft's duplicate retry steps the label instead of failing,
+                 so this is a better default either way rather than a new dependency. */
+              '<label>Revision label<input class="pd-input" id="ccw-brev" value="' +
+                esc(boqRevDefault(bpath)) + '" /></label>' +
               '<label>Issued date<input class="pd-input" id="ccw-bdate" type="date" value="' + esc(st.boqDate || '') + '" /></label>' +
               '<label>PO no. (optional)<input class="pd-input" id="ccw-bpo" value="' + esc(st.boqPo || '') + '" /></label>' +
               '<label>Stated contract total (optional)<input class="pd-input" id="ccw-btotal" type="number" step="0.01" value="' + esc(st.boqTotal || '') + '" /></label>' +
@@ -504,7 +630,13 @@ window.CCWizard = (function () {
     return h;
   }
 
-  var RENDER = { type: stepType, package: stepPackage, details: stepDetails, dates: stepDates, boq: stepBoq, review: stepReview };
+  function stepCodes() {
+    return '<p class="ccw-hint">Each trade you take becomes its own <b>section</b> of this BOQ, with ' +
+      'class codes already on every line. You can add more later.</p>' +
+      D.boqPickerHTML();
+  }
+  var RENDER = { type: stepType, package: stepPackage, details: stepDetails, dates: stepDates,
+                 boq: stepBoq, codes: stepCodes, review: stepReview };
 
   // ---- shell -----------------------------------------------------------------
   function paint() {
@@ -517,6 +649,11 @@ window.CCWizard = (function () {
     ov.querySelector('#ccw-h').textContent = (i + 1) + ' · ' + txt(cur.label);
     ov.querySelector('#ccw-sub').textContent = txt(cur.sub);
     ov.querySelector('#ccw-body').innerHTML = RENDER[cur.key]();
+    /* WARNING The Trades step hosts a FOUR-PANE ladder, which does not fit the wizard's normal
+       width. The shell widens for that step only rather than being wide throughout -- every other
+       step is a short form, and a form stretched to 1040px is harder to read, not easier. */
+    var shell = ov.querySelector('.ccw');
+    if (shell) shell.classList.toggle('ccw-wide', cur.key === 'codes');
     ov.querySelector('#ccw-back').disabled = i === 0;
     var last = i === ls.length - 1;
     /* ⚠️⚠️ THE BUTTON NAMES THE ACTION YOU CHOSE. It read "Open importer" for every BOQ run —
@@ -533,15 +670,42 @@ window.CCWizard = (function () {
      draft that already exists, building a new one by hand, and — only if asked for — importing. */
   function boqActionLabel() {
     if (st.type !== 'BOQ') return 'Save';
-    var d = D.boqDraft ? D.boqDraft() : null;
-    if (d && st.boqNew !== true) return 'Add trades';
-    return st.boqMode === 'import' ? 'Open importer' : 'Create draft';
+    if (boqPath() === 'add') return 'Add trades';
+    if (st.boqMode === 'import') return 'Open importer';
+    /* The two creating paths make the same object -- a draft revision -- but of different things,
+       and the button is the last chance to say which. "Create draft" over a run that is about to
+       spawn a second bill reads as though it were still the first one. */
+    if (boqPath() !== 'rev') return 'Create BOQ';
+    return (D.boqRevCount && D.boqRevCount()) ? 'Create revision' : 'Create first revision';
   }
 
   function wireStep(key) {
+    if (key === 'codes') {
+      /* WARNING Mounted after paint(), because the ladder needs its container in the DOM. The live
+         picker is kept on `st` so finish() can read the selection, and so stepping Back and
+         forward re-mounts rather than losing what was ticked. */
+      D.mountBoqPicker(ov.querySelector('#ccw-body'), {
+        onCount: function (n) {
+          st.boqCodesN = n;
+          var b = ov.querySelector('#ccw-next');
+          /* WARNING FALLS BACK TO boqActionLabel(), NOT to a literal. This read 'Create draft' when
+             nothing was ticked -- fine while a BOQ run had one ending, and wrong the moment there
+             were three: on the revision path the button would say "Create draft" while the step
+             above it promised a revision of a named BOQ. That is the same button-contradicts-its-own-
+             step defect this wizard was already fixed for once, reintroduced from the picker side. */
+          if (b) b.textContent = n ? 'Create with ' + n + ' lines' : boqActionLabel();
+        }
+      }).then(function (p) { st.boqPicker = p; });
+      return;
+    }
     if (key === 'boq') {
-      var bn = ov.querySelector('#ccw-bnew');
-      if (bn) bn.onclick = function (e) { e.preventDefault(); st.boqNew = true; paint(); };
+      /* WARNING The path radios REPAINT, like the mode radios below and for the same reason: the
+         fields differ per path (a new document asks for a name, a new revision does not) and the
+         Trades step itself appears or disappears, so the rail has to be redrawn too. capture()
+         runs first inside paint(), so anything already typed survives the switch. */
+      ov.querySelectorAll('input[name="boqpath"]').forEach(function (r) {
+        r.onchange = function () { captureBoq(); st.boqPath = r.value; paint(); };
+      });
       /* WARNING The radios REPAINT rather than just setting state: choosing "build by hand"
          reveals the four revision fields and choosing "import" hides them, so the step has to
          re-render. capture() runs first (see paint), so anything already typed survives. */
@@ -550,7 +714,9 @@ window.CCWizard = (function () {
       });
       ['bname', 'brev', 'bdate', 'bpo', 'btotal'].forEach(function (f) {
         var x = ov.querySelector('#ccw-' + f);
-        if (x) x.oninput = function () { captureBoq(); };
+        /* Typing in the revision field is what makes the label THEIRS; every other write to
+           st.boqRev is this wizard echoing its own prefill back to itself. */
+        if (x) x.oninput = function () { if (f === 'brev') st.boqRevTyped = true; captureBoq(); };
       });
       return;
     }
@@ -643,8 +809,8 @@ window.CCWizard = (function () {
          first - the importer is a modal too, and opening it under this overlay would leave the
          planner clicking a file picker they cannot reach. */
       /* The draft path: hand off to the class-code picker on the revision already open. */
-      var bd = D.boqDraft ? D.boqDraft() : null;
-      if (bd && st.boqNew !== true) {
+      var bpath = boqPath();
+      if (bpath === 'add') {
         close();
         if (D.addBoqTrades) D.addBoqTrades();
         return;
@@ -652,18 +818,36 @@ window.CCWizard = (function () {
       if (st.boqMode !== 'import') {
         var brev = String(st.boqRev || '').trim();
         var bname = String(st.boqName || '').trim();
-        /* WARNING The NAME is what makes this a separate BOQ rather than another revision of the
-           same one. Without it the document cannot be created and the revision would be orphaned,
-           so it is required where the revision label is merely prefilled. */
-        if (!bname) { UI.toast('Give the BOQ a name - it is what separates it from the other BOQs on this project.', 'error'); return; }
+        var bdocf = D.boqDoc ? D.boqDoc() : null;
+        /* WARNING THE NAME IS WHAT MAKES IT A SEPARATE BOQ, and passing one is exactly what
+           createBoqDraft turns into a new boq_documents row. So it is required on the `doc` path
+           and must NOT be sent on the `rev` path -- a docName there would silently create a second
+           document instead of the revision the step promised, which is the bug this whole change
+           exists to remove, reintroduced from the other side. */
+        if (bpath === 'doc' && !bname) {
+          UI.toast('Give the BOQ a name - it is what separates it from the other BOQs on this project.', 'error'); return; }
         if (!brev) { UI.toast('The revision needs a label - it is how this BOQ is named everywhere else.', 'error'); return; }
         if (btn) { btn.disabled = true; btn.textContent = 'Creating...'; }
         try {
-          await D.createBoqDraft({ docName: bname, rev: brev, date: st.boqDate, po: st.boqPo, total: st.boqTotal });
+          await D.createBoqDraft(bpath === 'rev'
+            ? { rev: brev, date: st.boqDate, po: st.boqPo, total: st.boqTotal }
+            : { docName: bname, rev: brev, date: st.boqDate, po: st.boqPo, total: st.boqTotal });
+          /* WARNING The lines go in AFTER the draft exists and BEFORE the wizard closes, so one
+             press produces a BOQ with its trades in it rather than an empty shell plus a second
+             errand. A failure here leaves the draft standing -- which is correct: the revision was
+             created, and the planner can pick trades again on the BOQ screen. */
+          var codes = st.boqPicker ? st.boqPicker.codes() : [];
+          if (codes.length && D.addBoqLines) await D.addBoqLines(codes);
           close();
-          UI.toast(bname + ' rev ' + brev + ' created. Add lines from the class-code library.', 'success');
+          /* The toast NAMES WHICH BOQ, because after this change there can be more than one and
+             "rev 00 created" would not say where it landed. */
+          var made = bpath === 'rev' ? (bdocf ? bdocf.name : 'This BOQ') : bname;
+          UI.toast(made + ' rev ' + brev + ' created' +
+            (codes.length ? ' with ' + codes.length + ' lines.' : '. Add lines from the class-code library.') +
+            (bpath === 'rev' ? ' It is a draft - nothing is superseded until you issue it.' : ''),
+            'success');
         } catch (err) {
-          if (btn) { btn.disabled = false; btn.textContent = 'Create draft'; }
+          if (btn) { btn.disabled = false; btn.textContent = boqActionLabel(); }
           UI.toast((err && err.message) || String(err), 'error');
         }
         return;
@@ -808,7 +992,13 @@ window.CCWizard = (function () {
          through in a browser". One blank row, primary on it — what the list has always
          assumed it starts with. */
       pkgList: [blankPkg()], pkgPrimary: 0,
-      boqMode: 'manual', boqNew: false, boqName: '', boqRev: '', boqDate: '', boqPo: '', boqTotal: '',
+      /* WARNING boqPath starts EMPTY, not 'add'. boqPath() derives the default from what actually
+         exists on every read, and boqDraft() answers null until the BOQ section has loaded -- a
+         frozen default would claim there is no draft when it merely does not know yet. This
+         replaces `boqNew`, whose two states could not express the three real endings. */
+      boqMode: 'manual', boqPath: '', boqName: '', boqRev: '', boqRevTyped: false,
+      boqDate: '', boqPo: '', boqTotal: '',
+      boqPicker: null, boqCodesN: 0,
       ref: '', desc: '', cp: '', amount: '', est: '', sub: '', d1: '', d2: '',
       pkgLabel: function () {
         var p = D.packages().filter(function (x) { return String(x.id) === String(st.pkgId); })[0];
