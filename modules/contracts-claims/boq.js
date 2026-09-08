@@ -2387,7 +2387,12 @@ window.BOQ = (function () {
         ? '<b>' + nPicked() + '</b> item' + (nPicked() === 1 ? '' : 's') + ' · ' +
           Object.keys(divs).length + ' trade' + (Object.keys(divs).length === 1 ? '' : 's')
         : '<span class="cc-mut">Nothing selected yet.</span>';
-      el('cb-go').disabled = !nPicked();
+      /* ⚠️⚠️ THE PICKER DOES NOT TOUCH THE HOST'S BUTTON. This read `el('cb-go').disabled = …`,
+         which is the MODAL's Add-lines button — and in the wizard there is no `#cb-go`, so it threw
+         a TypeError that aborted paint() before `wireTree()` ran. The panes rendered, and not one
+         checkbox had a handler: a picker that looks completely normal and silently does nothing.
+         The host is told the count through `opts.onCount` and labels its own control; that is the
+         whole point of the split, and this line was the last thing still crossing it. */
       wireTree();
     }
 
