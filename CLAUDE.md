@@ -95,6 +95,30 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-08 (e) — The right pane's skipped L2 was a bug of mine; the grouping becomes a WBS rung
+
+Owner: *"how come on the right pane, the trades are L1 and then L3 is followed?"* Because
+`libItemRow` printed a **literal L3** on every item — so an item with no grouping sat at depth 2,
+directly under its trade, while claiming L3. The pane announced a rung that was not there.
+`absLevelOf` answers it from the position instead: **inside a grouping = L3, directly under the trade
+= L2**, derived and never stored, so the number cannot disagree with the tree the push builds.
+
+Owner: *"allow the identification / adjustments of the levels of each item… This would then be
+inputted as information for the schedule builder."* Each item now carries an **L2 / L3** pair, and
+setting the level *is* the structural move — L3 means "has a grouping", L2 means "has none", so the
+buttons set and clear it. ⚠️ Two buttons, not a free number: L1 is a trade, and the trades are the
+project's fixed disciplines, so a 1/2/3 box would invite typing 1 and having nothing happen.
+
+And it reaches the builder literally: **`agroup` is now a WBS dim**, nesting between the trade and the
+places (`Structural Works › Rebar › 3rd Floor › Zone 1`), keyed on the normalised grouping name,
+named by it and ordered by the setup's own order. ⚠️⚠️ **It self-skips** — `dimKey` returns the same
+sentinel `tower` uses on a single-tower project — so a project where nothing is grouped pushes a tree
+**identical** to before, and a **saved** setup does not include the rung until the planner ticks it in
+*Generate → WBS structure*. ⚠️ It does **not** change the Vertical Stacking axis, which is the
+*location* breakdown; the grouping shows up in the WBS tree and every WBS-branch readout instead.
+Module only. 366 assertions across eight suites, plus a browser render whose chips, tooltips, picker
+states and font weights were read out of the DOM; ⚠️ not verified signed-in. `MODULE_V` → `20260908e`.
+
 ### 2026-09-08 (d) — The Library labels L1/L2/L3, and the Schedule Setup rail minimises
 
 Owner: *"there should be levels like L1, L2, L3 like in the pic i sent, so it is easier for everyone to

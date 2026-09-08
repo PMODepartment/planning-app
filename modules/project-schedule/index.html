@@ -2824,11 +2824,22 @@
        and the FLOOR NAME is the thing that must stay readable. */
     .sbld-libwho { margin-left:auto; text-align:right; white-space:nowrap; min-width:0; overflow:hidden;
       text-overflow:ellipsis; flex:0 1 auto; }
-    .sbld-libitem { justify-content:space-between; }
+    /* ⚠️ An ITEM promoted to L2 borrows .sbld-libL2, which is a HEADING style. Reset the weight
+       or an ungrouped item reads as a grouping with no children. */
+    .sbld-libitem { justify-content:space-between; font-weight:400; }
     .sbld-libnm { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .sbld-libcode { flex:none; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
     /* The one editable field on the screen, kept visually quiet until it is used or hovered so the
        pane reads as a structure rather than as a form. */
+    /* The rung picker: two small buttons, the current rung inert. Sized to sit inside a 3px-tall
+       row without changing its height, so turning the pane into a form does not make it taller. */
+    .sbld-liblvpick { flex:none; display:inline-flex; gap:2px; margin-right:6px; }
+    .sbld-liblvbtn { border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-muted);
+      font:inherit; font-size:9.5px; font-weight:700; line-height:14px; padding:0 4px; border-radius:3px; cursor:pointer; }
+    .sbld-liblvbtn:hover:not(:disabled) { color:var(--pd-ink); background:var(--pd-bg); }
+    /* ⚠️ The current rung is disabled AND visibly so — it is a state, not an action. */
+    .sbld-liblvbtn.on { background:var(--pd-bg); color:var(--pd-muted); border-style:dashed; cursor:default; opacity:.6; }
+    .sbld-libedit { font-size:10px; color:var(--pd-muted); border:1px dashed var(--pd-line); border-radius:99px; padding:0 6px; }
     .sbld-libgin { flex:none; width:120px; font-size:11.5px; padding:2px 6px; min-height:0;
       background:transparent; border-color:transparent; }
     .sbld-libgin:hover, .sbld-libgin:focus { background:var(--pd-card); border-color:var(--pd-line); }
@@ -25994,8 +26005,22 @@
        WARNING A SAVED SETUP KEEPS ITS OWN ORDER. This is the default for setups that have never
        chosen one -- overwriting a planner's saved structure on load would be a silent edit of their
        work. Reorder an existing setup with the up/down arrows in Push to Project Schedule. */
-    var WBS_DIMS = ['tower', 'trade', 'floor', 'zone', 'unit'];
-    var DIM_LABEL = { trade: 'Trade', tower: 'Tower', floor: 'Floor', zone: 'Zone', unit: 'Unit' };
+    /* ⚠️⚠️ `agroup` — THE ACTIVITY GROUPING (L2 in the Library's right pane) IS A WBS DIM.
+       Owner 2026-09-08: *"allow the identification / adjustments of the levels of each item… This
+       would then be inputted as information for the schedule builder, and would aid in identifying
+       the structure of the schedule."*
+       So the grouping is not a label on a screen: it is a rung, orderable in the WBS-order editor
+       with the same arrows as every other dim, and the push nests it between the trade and the
+       places. `Structural Works → Rebar → 3rd Floor → Zone 1` instead of the trade jumping
+       straight to the floor.
+       ⚠️ IT SELF-SKIPS. dimKey returns the same '\u0000' sentinel `tower` uses on a single-tower
+       project, so an item with no grouping attaches to its trade and the rung disappears — which
+       means a project where nothing is grouped pushes a tree IDENTICAL to before this existed.
+       That property is asserted, because it is what makes adding a dim safe.
+       ⚠️ A SAVED setup is untouched: `incl[d]` is read from the setup's OWN wbsOrder (see the push),
+       so a setup saved before today simply does not include the rung until the planner ticks it. */
+    var WBS_DIMS = ['tower', 'trade', 'agroup', 'floor', 'zone', 'unit'];
+    var DIM_LABEL = { trade: 'Trade', agroup: 'Grouping', tower: 'Tower', floor: 'Floor', zone: 'Zone', unit: 'Unit' };
     // ⚠️ The builder's three location levels ARE the project's Location Breakdown levels — the push
     // even creates them when a project has none. Owner 2026-08-18: "the location breakdown should be
     // intuitive to define … first, then do the schedule builder". So the labels now come from the
@@ -26097,7 +26122,7 @@
       } catch (e) {}
       return DIM_LABEL[d] || d;
     }
-    function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], towers: blankTowers(), towerLinks: [], zoning: blankZoning(), links: [], actLinks: [], actLinksKind: {}, scopeOff: {}, floorLead: 4, tradeLeads: {}, tradeBatch: {}, tradeParallel: {}, tradeBatchKind: {}, tradeParallelKind: {}, zoneSimul: {}, unitSimul: {}, floorLag: {}, zoneOrder: {}, locLevel: 'auto', wbsOrder: ['tower', 'trade', 'floor', 'zone', 'unit'], phases: {} }; }
+    function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], towers: blankTowers(), towerLinks: [], zoning: blankZoning(), links: [], actLinks: [], actLinksKind: {}, scopeOff: {}, floorLead: 4, tradeLeads: {}, tradeBatch: {}, tradeParallel: {}, tradeBatchKind: {}, tradeParallelKind: {}, zoneSimul: {}, unitSimul: {}, floorLag: {}, zoneOrder: {}, locLevel: 'auto', wbsOrder: ['tower', 'trade', 'agroup', 'floor', 'zone', 'unit'], phases: {} }; }
     function normActivity(a) {
       var legacy = +a.duration || 0;
       // ⚠ `> 0`, not `!= null`: a row seeded with an explicit 0 must still mirror the other column
@@ -27753,6 +27778,7 @@
 
       var right = '<div class="sbld-libpane">' +
         '<div class="sbld-libhead"><b>Trade (Groupings and Items)</b>' + libLegend('grp') +
+          '<span class="sbld-libedit" title="Press L2 / L3 on an item to move it between rungs">levels are editable</span>' +
           '<span class="sbld-tag">' + tree.length + ' trade' + (tree.length === 1 ? '' : 's') + ' · ' + nG + ' grouping' + (nG === 1 ? '' : 's') + ' · ' + nI + ' item' + (nI === 1 ? '' : 's') + '</span></div>' +
         '<div class="sbld-libbody">' +
         (nI ? tree.map(function (T) {
@@ -27785,6 +27811,13 @@
           'zones its floors its own way, which is why combining trades in Vertical Stacking draws at level 1.<br>' +
           '<b>Right — work.</b> Trade (L1) › grouping (L2) › item (L3). The <b>grouping</b> is the only field that lives ' +
           'here; everything else is the same data <b>Floors &amp; Zones</b> and <b>Activities</b> edit, so there is one copy of it.<br>' +
+          '<b>The rung is the position, not a number you type.</b> An item <b>inside a grouping</b> is L3; an item ' +
+          '<b>directly under its trade</b> is L2 — so pressing <b>L2</b> clears its grouping and pressing <b>L3</b> puts it in ' +
+          'one. That is why an ungrouped item reads L2 and not L3.<br>' +
+          '<b>And it reaches the schedule.</b> The grouping is a real <b>WBS rung</b> (<i>Grouping</i>): the push nests it ' +
+          'between the trade and the places, and you can reorder or drop it with the other levels in <b>Generate → ' +
+          'WBS structure</b>. A trade whose items are all L2 skips the rung entirely, so nothing appears that you did not ' +
+          'author.<br>' +
           '<b>No unit column.</b> A unit belongs to a BOQ line, and Contracts &amp; Claims already carries it.');
 
       var b1 = host.querySelector('#b-libloc');
@@ -27795,6 +27828,16 @@
       if (b2) b2.onclick = function () { try { openDiscWizard(); } catch (e) { UI.toast('Could not open the trade matcher: ' + (e && e.message ? e.message : e), 'error'); } };
       var b3 = host.querySelector('#b-libgoloc'); if (b3) b3.onclick = function () { libGoto('Floors & Zones'); };
       var b4 = host.querySelector('#b-libgoact'); if (b4) b4.onclick = function () { libGoto('Activities'); };
+      host.querySelectorAll('[data-liblv]').forEach(function (b) {
+        b.onclick = function () {
+          var a = (cfg.activities || []).filter(function (x) { return x.id === b.dataset.liblv; })[0];
+          if (!a) return;
+          // ⚠️ Only repaint when something MOVED. absSetLevel refuses a no-op (and a demote the
+          // planner cancelled out of), and marking the setup dirty for a refused change would
+          // report unsaved work that does not exist.
+          if (absSetLevel(a, +b.dataset.lv)) { markDirty(); render(); }
+        };
+      });
       host.querySelectorAll('[data-libgrp]').forEach(function (inp) {
         inp.onchange = function () {
           var a = (cfg.activities || []).filter(function (x) { return x.id === inp.dataset.libgrp; })[0];
@@ -27823,8 +27866,58 @@
     // runs of the LETTER s, so "Rebar Consumables" normalised to "rebar con umable " and any
     // comparison built on it was quietly meaningless.
     function _libNorm(v) { return String(v == null ? '' : v).trim().toLowerCase().replace(/\s+/g, ' '); }
-    function libLv(nth, side) {
-      return '<span class="sbld-liblv lv' + nth + '" title="' + e2('L' + nth + ' · ' + LIB_LV[side][nth - 1]) + '">L' + nth + '</span>';
+    /* THE ACTIVITY BREAKDOWN, as three rungs. One reader for the Library, the push and the
+       WBS-order editor, so a grouping cannot mean one thing on screen and another in the tree. */
+    function absGrpOf(a) { return String((a && a.grp) || '').trim(); }
+    function absGrpKey(a) { return _libNorm(absGrpOf(a)); }
+    // ⚠️ THE LEVEL IS THE POSITION, not a stored number. An item inside a grouping is L3; an item
+    // directly under its trade is L2 — and that is the answer to the owner's 2026-09-08 question
+    // *"how come on the right pane, the trades are L1 and then L3 is followed?"*: an ungrouped item
+    // WAS printed L3 while sitting at depth 2, so the pane claimed a rung that was not there.
+    // Storing a level alongside the grouping would let the two disagree, and then the number on
+    // screen would stop describing the tree the push builds.
+    function absLevelOf(a) { return absGrpOf(a) ? 3 : 2; }
+    // Every grouping a trade uses, in the order cfg.activities first mentions them — the same
+    // "the setup's own order" rule dimOrderIndex applies to floors and zones.
+    function absGrpList(trade) {
+      var out = [], seen = {};
+      (cfg.activities || []).forEach(function (a) {
+        if ((a.group || 'ST') !== trade) return;
+        var k = absGrpKey(a); if (!k || seen[k]) return;
+        seen[k] = 1; out.push({ key: k, name: absGrpOf(a) });
+      });
+      return out;
+    }
+    function absGrpIndex(trade, key) {
+      if (!key) return 99999;
+      var l = absGrpList(trade);
+      for (var i = 0; i < l.length; i++) if (l[i].key === key) return i;
+      return 99999;
+    }
+    /* Move an item between rungs. ⚠️ L2 and L3 are not two fields: L3 means "has a grouping" and L2
+       means "has none", so setting the level IS setting or clearing `grp`. Demoting to L3 needs a
+       name, and the one offered is the trade's most recently used grouping rather than a blank —
+       an item that lands in a grouping called "" would sit at L3 in the pane and skip the rung in
+       the tree, which is the disagreement absLevelOf exists to prevent. */
+    function absSetLevel(a, lv) {
+      if (!a) return false;
+      if (lv === 2) { if (!a.grp) return false; delete a.grp; return true; }
+      if (lv !== 3 || absGrpOf(a)) return false;
+      var l = absGrpList(a.group || 'ST');
+      var name = l.length ? l[l.length - 1].name : '';
+      if (!name) {
+        var typed = prompt('Name the grouping this item belongs to (L2):', '');
+        name = String(typed == null ? '' : typed).trim();
+        if (!name) return false;
+      }
+      a.grp = name; return true;
+    }
+    // ⚠️ `what` overrides the rung NAME, because the same rung can hold different things: an item
+    // that sits at L2 is at the grouping DEPTH but is not a grouping, and labelling it one would
+    // make the tooltip contradict the row it is on.
+    function libLv(nth, side, what) {
+      var nm = what || LIB_LV[side][nth - 1];
+      return '<span class="sbld-liblv lv' + nth + '" title="' + e2('L' + nth + ' · ' + nm) + '">L' + nth + '</span>';
     }
     function libLegend(side) {
       return '<span class="sbld-liblegend">' + LIB_LV[side].map(function (t, i) {
@@ -27832,11 +27925,32 @@
       }).join('') + '</span>';
     }
     function libItemRow(a) {
-      return '<div class="sbld-libL3 sbld-libitem">' + libLv(3, 'grp') +
+      // ⚠️ absLevelOf, never a literal 3. An item directly under its trade IS at level 2, and
+      // printing 3 there was the owner's reported "L1 and then L3" jump.
+      var lv = absLevelOf(a);
+      return '<div class="sbld-libL' + lv + ' sbld-libitem">' + libLv(lv, 'grp', lv === 2 ? 'Item, directly under its trade' : 'Item') +
         '<span class="sbld-libnm">' + e2(a.name || a.code || '(unnamed)') + '</span>' +
         (a.code ? '<span class="sbld-libcode">' + e2(a.code) + '</span>' : '') +
-        '<input class="pd-input sbld-libgin" data-libgrp="' + e2(a.id) + '" value="' + e2(a.grp || '') + '" placeholder="grouping…" title="The L2 grouping this item belongs to, e.g. Siteworks, Rebar, Formworks">' +
+        libLvPick(a, lv) +
+        '<input class="pd-input sbld-libgin" data-libgrp="' + e2(a.id) + '" value="' + e2(a.grp || '') + '" placeholder="grouping…" title="The L2 grouping this item belongs to, e.g. Siteworks, Rebar, Formworks. Clearing it moves the item to L2.">' +
         '</div>';
+    }
+    /* The level picker. ⚠️ TWO BUTTONS, NOT A FREE NUMBER: the rungs an ITEM can occupy are L2
+       (directly under its trade) and L3 (inside a grouping), and there is no third possibility to
+       offer. L1 is a trade, and the trades are the project's eight fixed disciplines — a free
+       1/2/3 box would invite a planner to type 1 and then have nothing happen, which is the
+       looks-live-does-nothing failure this module keeps recording. The current rung is `on` and
+       inert; the other one is the move. */
+    function libLvPick(a, lv) {
+      return '<span class="sbld-liblvpick">' +
+        [2, 3].map(function (k) {
+          var on = (k === lv);
+          return '<button class="sbld-liblvbtn' + (on ? ' on' : '') + '" data-liblv="' + e2(a.id) + '" data-lv="' + k + '"' +
+            (on ? ' disabled' : '') + ' title="' + e2(on
+              ? ('Already at L' + k + ' · ' + (k === 2 ? 'directly under its trade' : 'inside a grouping'))
+              : (k === 2 ? 'Move to L2 — directly under its trade, clearing its grouping'
+                         : 'Move to L3 — inside a grouping')) + '">L' + k + '</button>';
+        }).join('') + '</span>';
     }
     function stActivities(host) {
       var cols = XL_COLS;
@@ -32445,7 +32559,10 @@
            ⚠️ MULTIPLE TOWERS STILL GET A BRANCH EACH. And a project-wide trade (no floors, so no
            tower) still sits beside them rather than being assigned to one arbitrarily — it genuinely
            spans them, and picking Tower 1 would be inventing a fact. */
-        function dimKey(dim, r) { var l = r.loc; if (dim === 'trade') return l.trade; if (dim === 'tower') return multiTower() ? (l.towerId || '\u0000') : '\u0000'; if (dim === 'floor') return (l.floor && l.floor._all) ? '\u0000' : l.floor.id; if (dim === 'zone') return l.zone ? l.zone.id : '\u0000'; if (dim === 'unit') return l.unit ? l.unit.id : '\u0000'; return '\u0000'; }
+        // ⚠️ `agroup` keys on the grouping NAME, normalised, because that is what identifies it — two
+        // items typed "Rebar" and "rebar " are one grouping, and keying on the raw string would build
+        // two branches that look identical in the tree.
+        function dimKey(dim, r) { var l = r.loc; if (dim === 'trade') return l.trade; if (dim === 'agroup') return absGrpKey(r.act) || '\u0000'; if (dim === 'tower') return multiTower() ? (l.towerId || '\u0000') : '\u0000'; if (dim === 'floor') return (l.floor && l.floor._all) ? '\u0000' : l.floor.id; if (dim === 'zone') return l.zone ? l.zone.id : '\u0000'; if (dim === 'unit') return l.unit ? l.unit.id : '\u0000'; return '\u0000'; }
         // ⚠️ The trade BRANCH is named with GWORK (the canonical "Structural Works"), not GLABEL
         // ("Structural"). work_type on the pushed activities is already GWORK, so a branch named with
         // the short label made the same trade reachable under TWO different names - and for the three
@@ -32478,6 +32595,7 @@
         function dimName(dim, r) {
           var l = r.loc || {}, v = null;
           if (dim === 'trade') v = GWORK[l.trade] || GLABEL[l.trade] || l.trade;
+          else if (dim === 'agroup') v = absGrpOf(r.act);
           else if (dim === 'tower') v = towerLabel(l.towerId);
           // ⚠️ Floor branch is named by the floor's NAME ("Ground Floor"), falling back to its code —
           // owner: "utilize the names of the floors as the name of the WBS". Its unique code comes from
@@ -32523,6 +32641,7 @@
           var l = (r && r.loc) || {}, i = -1;
           try {
             if (dim === "trade") i = GROUPS.indexOf(l.trade);
+            else if (dim === "agroup") i = absGrpIndex(l.trade, absGrpKey(r.act));
             else if (dim === "tower") i = towerList().findIndex(function (t) { return t.id === l.towerId; });
             else if (dim === "floor") i = (l.floor && !l.floor._all && cfg.zoning[l.trade]) ? cfg.zoning[l.trade].floors.indexOf(l.floor) : -1;
             else if (dim === "zone") i = (l.floor && l.zone && l.floor.zones) ? l.floor.zones.indexOf(l.zone) : -1;
