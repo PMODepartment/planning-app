@@ -39,6 +39,14 @@ window.BOQ = (function () {
      screen. Confirmed against OPW101's own workbooks: 'Package 2 BOQ rev.05' is the
      package's revision, not Architectural's. */
   var DOCS = [], DOCID = null;
+  /* ⚠️⚠️ THE PROJECT'S CONTRACT VALUE IS THE SUM ACROSS DOCUMENTS, NOT THIS ONE'S TOTAL.
+     Once a project holds several BOQs the headline figure was only the BOQ you happened to be
+     looking at — a wrong number on screen, and the kind that gets quoted. `ALLREVS` keeps the
+     unfiltered revision list (REVS is narrowed to the selected document) and `PROJTOTAL` is
+     the sum of every document's CURRENT revision.
+     ⚠️ Only computed when there is more than one document. With one, this document's total IS
+     the project total, and the extra read would be pure cost on every load. */
+  var ALLREVS = [], PROJTOTAL = null;
   /* CLAIMED progress, period_id -> { item_id: 0..1 }, from
      2026-08-26-boq-claimed-vs-certified.sql. Kept SEPARATE from PROG rather
      than folded into it: PROG is the certified figure every POC, revenue and
@@ -625,6 +633,7 @@ window.BOQ = (function () {
       try { DOCS = await PDb.selectAll('boq_documents', function (q) { return q.eq('project_id', pid).order('sort_order'); }); }
       catch (e) { DOCS = []; }
       REVS = await PDb.selectAll(T_REV, function (q) { return q.eq('project_id', pid); });
+      ALLREVS = REVS.slice();
       REVS.sort(function (a, b) { return String(b.issued_date || '').localeCompare(String(a.issued_date || '')) || String(b.rev_no).localeCompare(String(a.rev_no), undefined, { numeric: true }); });
       /* ⚠️ The DOCUMENT is chosen before the revision, because 'the current revision' only
          means anything inside one. Keep the planner's document if it still exists — a reload
@@ -633,6 +642,7 @@ window.BOQ = (function () {
         if (!DOCID || !DOCS.some(function (d) { return d.id === DOCID; })) DOCID = DOCS[0].id;
         REVS = REVS.filter(function (r) { return !r.document_id || r.document_id === DOCID; });
       }
+      await computeProjectTotal();
       var cur = REVS.find(function (r) { return r.is_current; }) || REVS[0];
       REVID = (REVID && REVS.some(function (r) { return r.id === REVID; })) ? REVID : (cur && cur.id) || null;
       if (REVID) {
@@ -842,7 +852,13 @@ window.BOQ = (function () {
         DOCS.map(function (d) {
           return '<option value="' + esc(d.id) + '"' + (d.id === DOCID ? ' selected' : '') + '>' +
             esc(d.name) + '</option>';
-        }).join('') + '</select></label> '
+        }).join('') + '</select></label>' +
+        /* ⚠️ A NAME MUST BE FIXABLE. The backfill names a document from its own data — one distinct
+           sheet becomes "<sheet> BOQ", otherwise "Main BOQ" — so OPW101 came out as "Main BOQ"
+           simply because its draft was empty when the migration ran. A generated name with no way
+           to correct it is a permanent scar from a one-off migration. */
+        (canWrite ? '<button class="boq-iconbtn" id="boq-docname" aria-label="Rename this BOQ" ' +
+          'title="Rename this BOQ">\u270e</button>' : '') + ' '
       : '';
     if (!REVS.length) return docSel;
     return docSel + '<label class="boq-inline">Revision <select class="pd-select" id="boq-rev">' +
@@ -867,6 +883,27 @@ window.BOQ = (function () {
        would not be found in the new one's list, leaving the picker on a revision whose lines
        are not the ones displayed. load() picks that document's current revision. */
     if (dv) dv.onchange = function () { DOCID = dv.value; REVID = null; load(); };
+    var dn = host.querySelector('#boq-docname');
+    if (dn) dn.onclick = async function () {
+      var d = DOCS.filter(function (x) { return x.id === DOCID; })[0];
+      if (!d) return;
+      var name = prompt('Name this BOQ — the way the client packages it, e.g. "Package 2 BOQ".', d.name);
+      if (name == null) return;
+      name = String(name).trim();
+      if (!name || name === d.name) return;
+      var up = await sb().from('boq_documents').update({ name: name, updated_at: new Date().toISOString() }).eq('id', d.id);
+      if (up.error) {
+        /* The unique index on (project_id, lower(name)) is the real authority; say which rule
+           was hit rather than echoing a constraint name at the planner. */
+        UI.toast(/duplicate key|unique/i.test(up.error.message || '')
+          ? 'Another BOQ on this project is already called that.'
+          : up.error.message, 'error');
+        return;
+      }
+      d.name = name;
+      UI.toast('Renamed to ' + name + '.', 'success');
+      render();
+    };
     /* ⚠️ Both import buttons are gone (the wizard asks build-or-import now), so this binding is
        dead markup-side. Removed rather than left as a harmless no-op: a handler for an id nothing
        renders is exactly the shape of the `#pk-boq` bug that hid the BOQ screen for a day. */
@@ -954,7 +991,12 @@ window.BOQ = (function () {
 
     var h = '<div class="cc-kpis">' +
       kpi('Lines', ITEMS.filter(function (r) { return r.line_kind !== 'heading'; }).length, ITEMS.filter(function (r) { return r.line_kind === 'heading'; }).length + ' headings') +
-      kpi('Contract value', money(total), 'sum of priced lines') +
+      /* ⚠️ When several BOQs exist the headline is the PROJECT figure and the sub-line names
+         this document's share, because the contract is the sum of its bills. With one BOQ the
+         two are identical and saying so twice would be noise. */
+      (PROJTOTAL != null
+        ? kpi('Contract value', money(PROJTOTAL), 'all ' + DOCS.length + ' BOQs · this one ' + money(total))
+        : kpi('Contract value', money(total), 'sum of priced lines')) +
       kpi('Measured lines', measured, 'carry a quantity') +
       kpi('Scope boundaries', excl.length, 'excluded from roll-ups', excl.length ? 'warn' : '') +
       kpi('Mapped to class codes', Object.keys(CMAP).length, 'of ' + ITEMS.filter(mappable).length + ' mappable') +
@@ -1486,7 +1528,7 @@ window.BOQ = (function () {
     });
     var target = PKGS[0].id;   // '' means "clear the assignment"
 
-    var m = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">Assign BOQ to a contract package</h2>' +
+    var m = UI.modal('<div class="pd-modal-header"><div><h2 style="margin:0;">Assign BOQ to a contract lot</h2><div class="pd-modal-sub">Which lot these lines are administered under</div></div>' +
       '<button class="pd-modal-close" id="ap-x">&times;</button></div>' +
       '<div class="boq-imp" id="ap-body"></div>' +
       '<div class="pd-modal-footer"><button class="pd-btn" id="ap-c">Cancel</button> ' +
@@ -1575,7 +1617,7 @@ window.BOQ = (function () {
   // ==========================================================================
   function openImport() {
     if (!canWrite) { UI.toast('You do not have permission to import.', 'error'); return; }
-    var m = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">Import BOQ</h2>' +
+    var m = UI.modal('<div class="pd-modal-header"><div><h2 style="margin:0;">Import BOQ</h2><div class="pd-modal-sub">Read the client&#39;s workbook — you accept the column map before anything is written</div></div>' +
       '<button class="pd-modal-close" id="bi-x">&times;</button></div>' +
       '<div class="boq-imp" id="bi-body">' +
       '<p class="cc-hint">Pick the client\'s BOQ workbook. Nothing is written until you accept the preview — ' +
@@ -2030,6 +2072,22 @@ window.BOQ = (function () {
     DOCS.push(ins.data);
     DOCID = ins.data.id;
     return ins.data;
+  }
+
+  /* ⚠️ One read, and only when it can differ from what is already on screen. The `in.(...)`
+     filter is safe here however many BOQs exist — it lists CURRENT revisions, one per document,
+     nowhere near the ~200-uuid URL cap that bites elsewhere in this app. */
+  async function computeProjectTotal() {
+    PROJTOTAL = null;
+    if (DOCS.length < 2) return;
+    var ids = ALLREVS.filter(function (r) { return r.is_current && r.document_id; })
+                     .map(function (r) { return r.id; });
+    if (!ids.length) { PROJTOTAL = 0; return; }
+    try {
+      var rows = await PDb.selectAll(T_ITEM, function (q) { return q.in('revision_id', ids); },
+                                     'amount,line_kind,exclusion_note');
+      PROJTOTAL = rows.reduce(function (a, r) { return a + (moneyLine(r) ? Number(r.amount) : 0); }, 0);
+    } catch (e) { PROJTOTAL = null; }   // a failed roll-up shows this document's figure, never a wrong one
   }
 
   function currentDraft() {
@@ -2553,6 +2611,18 @@ window.BOQ = (function () {
 
   function money2(v) { return v == null ? '' : Fmt.money(v); }
 
+  /* ⚠️⚠️ ONE HEADER SHAPE FOR EVERY DIALOG IN THIS MODULE. Owner: *"let's make all pop-up
+     windows consistent"*. There were ELEVEN headers and one of them had a subtitle — the rest
+     opened with a bare title and then explained themselves in a paragraph sitting on top of
+     the controls, which is what made the module read as assembled rather than designed.
+     ⚠️ A helper rather than a convention, because a convention is what produced eleven
+     variants. `sub` is one line: what this dialog is for, not how it works. */
+  function mHead(title, sub, closeId) {
+    return '<div class="pd-modal-header"><div><h2 style="margin:0;">' + title + '</h2>' +
+      (sub ? '<div class="pd-modal-sub">' + sub + '</div>' : '') + '</div>' +
+      '<button class="pd-modal-close" id="' + closeId + '">&times;</button></div>';
+  }
+
   function boqCols(draft, codeIsItem) {
     var C = [];
     C.push({ k: 'item_no', label: codeIsItem ? 'Class code' : 'Item', w: 96, mono: true, ro: true });
@@ -2874,7 +2944,7 @@ window.BOQ = (function () {
     }
     var cur = codes[0].code, aq = '', pickedActs = {}, overwrite = false, mode = 'one';
 
-    var m = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">Connect class codes to schedule activities</h2>' +
+    var m = UI.modal('<div class="pd-modal-header"><div><h2 style="margin:0;">Tag schedule activities</h2><div class="pd-modal-sub">Write a class code onto the activities it covers, in bulk</div></div>' +
       '<button class="pd-modal-close" id="tg-x">&times;</button></div>' +
       '<div style="padding:2px 16px 6px;" id="tg-body"></div>' +
       '<div class="pd-modal-footer" id="tg-foot"></div>');
@@ -3244,7 +3314,7 @@ window.BOQ = (function () {
     var r = ITEMS.find(function (x) { return x.id === itemId; });
     if (!r) return;
     await ensureCodes();
-    var m = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">Map to a class code</h2>' +
+    var m = UI.modal('<div class="pd-modal-header"><div><h2 style="margin:0;">Map to a class code</h2><div class="pd-modal-sub">Give this imported line the Finance code it files under</div></div>' +
       '<button class="pd-modal-close" id="pk-x">&times;</button></div>' +
       '<div class="boq-pick"><p class="cc-hint">' + esc(r.description || r.item_no || '') + '</p>' +
       '<input class="pd-input" id="pk-q" placeholder="Search code, division, group or item…" autocomplete="off" />' +
@@ -4003,7 +4073,7 @@ window.BOQ = (function () {
   function newPeriod() {
     var ord = periodsOrdered(), last = ord[ord.length - 1];
     var rev = REVS.find(function (r) { return r.id === REVID; }) || {};
-    var m = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">New billing period</h2>' +
+    var m = UI.modal('<div class="pd-modal-header"><div><h2 style="margin:0;">New billing period</h2><div class="pd-modal-sub">A period is the BOQ plus one cumulative percentage per line</div></div>' +
       '<button class="pd-modal-close" id="np-x">&times;</button></div>' +
       '<div class="boq-imp-grid">' +
       '<label>Billing no.<input class="pd-input" id="np-no" value="' + esc(last ? String(Number(last.billing_no) + 1 || '') : '1') + '" /></label>' +
@@ -4220,7 +4290,10 @@ window.BOQ = (function () {
     await ensureSugg();
     await load();
   }
-  function reset() { COLLAPSED = {}; SEL = {}; loaded = false; DOCS = []; DOCID = null; REVS = []; ITEMS = []; CMAP = {}; ALLOC = []; PERIODS = []; PROG = {}; REVID = null; CODES = null; CODETREE = null; ACTS = null; SCHED = null; schedErr = null; PKGS = []; }
+  /* WARNING ALLREVS and PROJTOTAL belong here too: a project switch that kept them would show
+     the previous project's contract value under the new project's name. */
+  function reset() { COLLAPSED = {}; SEL = {}; loaded = false; DOCS = []; DOCID = null;
+    ALLREVS = []; PROJTOTAL = null; REVS = []; ITEMS = []; CMAP = {}; ALLOC = []; PERIODS = []; PROG = {}; REVID = null; CODES = null; CODETREE = null; ACTS = null; SCHED = null; schedErr = null; PKGS = []; }
 
   return {
     init: init, show: show, reset: reset, render: render,

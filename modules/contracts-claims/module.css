@@ -849,3 +849,17 @@ html.pd-dark .boq-why { color:#7fd6a2; }
    because it is the number the planner actually checks. The cursor says it is not typed into. */
 .boq-calc { color:var(--pd-muted); cursor:default; font-variant-numeric:tabular-nums; }
 .pdg-grid td.boq-calc { background:rgba(128,128,128,.05); }
+
+/* A bare icon control - used for the BOQ rename pencil. Sized to sit on the same baseline as
+   the .pd-select beside it rather than stretching the row. */
+.boq-iconbtn { height:30px; width:30px; padding:0; border:1px solid transparent; border-radius:6px;
+  background:transparent; color:var(--pd-muted); cursor:pointer; font-size:13px; line-height:1;
+  vertical-align:middle; }
+.boq-iconbtn:hover { border-color:var(--pd-line); color:var(--pd-ink); background:rgba(128,128,128,.12); }
+
+/* A GHOST control: an escape hatch, not an invitation. Reads as text until you approach it.
+   Used where the correct answer for most projects is "do nothing" - see + Lot. */
+.boq-ghostbtn { height:30px; padding:0 10px; border:1px solid transparent; border-radius:6px;
+  background:transparent; color:var(--pd-muted); font:inherit; font-size:12px; font-weight:600;
+  cursor:pointer; }
+.boq-ghostbtn:hover { border-color:var(--pd-line); color:var(--pd-ink); background:rgba(128,128,128,.10); }
