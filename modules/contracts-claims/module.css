@@ -857,6 +857,17 @@ html.pd-dark .boq-why { color:#7fd6a2; }
   vertical-align:middle; }
 .boq-iconbtn:hover { border-color:var(--pd-line); color:var(--pd-ink); background:rgba(128,128,128,.12); }
 
+/* The DESTRUCTIVE twin of .boq-iconbtn. Muted at rest exactly like its sibling - a delete
+   control that is red before you reach it reads as a warning about the page rather than a
+   button, and this one sits beside a rename pencil in a card header. It commits to danger red
+   only on hover/focus, where the intent is already there. */
+.boq-iconbtn-danger:hover, .boq-iconbtn-danger:focus-visible {
+  /* --pd-danger-text, NOT a literal: dashboard.css defines it per theme (#C42127 light,
+     #FF8A80 dark, both measured above the AA floor). A hard-coded red would be correct in
+     one theme and unreadable in the other - this module's own recorded trap. */
+  border-color:var(--pd-danger-text); color:var(--pd-danger-text);
+  background:color-mix(in srgb, var(--pd-danger-text) 12%, transparent); }
+
 /* A GHOST control: an escape hatch, not an invitation. Reads as text until you approach it.
    Used where the correct answer for most projects is "do nothing" - see + Lot. */
 .boq-ghostbtn { height:30px; padding:0 10px; border:1px solid transparent; border-radius:6px;

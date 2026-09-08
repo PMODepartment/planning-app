@@ -47,6 +47,12 @@ window.BOQ = (function () {
      ⚠️ Only computed when there is more than one document. With one, this document's total IS
      the project total, and the extra read would be pure cost on every load. */
   var ALLREVS = [], PROJTOTAL = null;
+  /* WARNING Finance trade -> the procurement trades that actually let the work
+     (2026-09-07-trade-map.sql). NOT a merge of the two vocabularies: they classify different
+     things, cost versus subcontract, and MEPF Works is one cost class bought as four POs --
+     which the owner's own billing shows ("MEPF PO", "STRUCTURAL PO"). This translates between
+     them so a bill of quantities can say which package will deliver each trade. */
+  var TRADEMAP = {};
   /* CLAIMED progress, period_id -> { item_id: 0..1 }, from
      2026-08-26-boq-claimed-vs-certified.sql. Kept SEPARATE from PROG rather
      than folded into it: PROG is the certified figure every POC, revenue and
@@ -638,6 +644,21 @@ window.BOQ = (function () {
          erroring. Every other schema addition in this file is loaded the same way. */
       try { DOCS = await PDb.selectAll('boq_documents', function (q) { return q.eq('project_id', pid).order('sort_order'); }); }
       catch (e) { DOCS = []; }
+      /* Reference data, tiny and shared, loaded the same tolerant way: without the migration it
+         is an empty map and the trade chips simply carry no counterpart.
+         WARNING A PLAIN SELECT, NOT PDb.selectAll. selectAll pages with .order(key).gt(key, last)
+         and needs a UNIQUE key; trade_map's primary key is the PAIR, so 'MEPF Works' appears four
+         times and a page boundary landing inside that group would silently drop the rest of it.
+         The whole table is nine rows -- one request, no cursor, nothing to get wrong. */
+      try {
+        var tmr = await sb().from('trade_map').select('finance_trade,procurement_trade')
+                            .order('finance_trade').order('procurement_trade').limit(500);
+        if (tmr.error) throw tmr.error;
+        TRADEMAP = {};
+        (tmr.data || []).forEach(function (r) {
+          (TRADEMAP[r.finance_trade] = TRADEMAP[r.finance_trade] || []).push(r.procurement_trade);
+        });
+      } catch (e) { TRADEMAP = {}; }
       REVS = await PDb.selectAll(T_REV, function (q) { return q.eq('project_id', pid); });
       ALLREVS = REVS.slice();
       REVS.sort(function (a, b) { return String(b.issued_date || '').localeCompare(String(a.issued_date || '')) || String(b.rev_no).localeCompare(String(a.rev_no), undefined, { numeric: true }); });
@@ -864,7 +885,11 @@ window.BOQ = (function () {
            simply because its draft was empty when the migration ran. A generated name with no way
            to correct it is a permanent scar from a one-off migration. */
         (canWrite ? '<button class="boq-iconbtn" id="boq-docname" aria-label="Rename this BOQ" ' +
-          'title="Rename this BOQ">\u270e</button>' : '') + ' '
+          'title="Rename this BOQ">\u270e</button>' : '') +
+        /* WARNING A surrogate PAIR, not \u1f5d1 -- a JS \u escape takes exactly four hex digits,
+           so the five-digit form would render as the character \u1f5d followed by a literal 1. */
+        (canWrite ? '<button class="boq-iconbtn boq-iconbtn-danger" id="boq-docdel" ' +
+          'aria-label="Delete this BOQ" title="Delete this BOQ">\ud83d\uddd1</button>' : '') + ' '
       : '';
     if (!REVS.length) return docSel;
     return docSel + '<label class="boq-inline">Revision <select class="pd-select" id="boq-rev">' +
@@ -889,6 +914,53 @@ window.BOQ = (function () {
        would not be found in the new one's list, leaving the picker on a revision whose lines
        are not the ones displayed. load() picks that document's current revision. */
     if (dv) dv.onchange = function () { DOCID = dv.value; REVID = null; load(); };
+    var dd = host.querySelector('#boq-docdel');
+    /* WARNING DELETING A BOQ DESTROYS EVERY REVISION AND EVERY LINE UNDER IT -- boq_items and
+       boq_class_map both cascade from boq_revisions, which cascades from boq_documents. So this
+       refuses more than it allows:
+         - an ISSUED revision is never deletable. It is the client's tendered document and the
+           evidence a claim argument turns on; this module's model is "superseded, never edited
+           away", and a delete that ignored it would undo that in one click.
+         - a billing period BLOCKS it in the database itself: boq_billing_periods references
+           boq_revisions WITHOUT cascade, so Postgres refuses. That refusal is translated into
+           plain language instead of surfacing a foreign-key error.
+         - the confirm names the counts, because "delete this BOQ?" hides how much is going.
+       WARNING The LAST document is not deletable either: every revision must hang off one, so
+       removing the only document would orphan the next revision and leave the picker empty. */
+    if (dd) dd.onclick = async function () {
+      var d = DOCS.filter(function (x) { return x.id === DOCID; })[0];
+      if (!d) return;
+      if (DOCS.length < 2) {
+        UI.toast('This is the only BOQ on the project - rename it instead, or add another first.', 'error');
+        return;
+      }
+      var mine = ALLREVS.filter(function (r) { return r.document_id === d.id; });
+      var issued = mine.filter(function (r) { return revStatus(r) !== 'draft'; });
+      if (issued.length) {
+        UI.toast(d.name + ' holds ' + issued.length + ' issued revision' +
+          (issued.length === 1 ? '' : 's') + '. An issued BOQ is the tendered document and is never ' +
+          'deleted - supersede it with a new revision instead.', 'error');
+        return;
+      }
+      var nLines = mine.some(function (r) { return r.id === REVID; }) ? ITEMS.length : 0;
+      if (!confirm('Delete "' + d.name + '" and its ' + mine.length + ' draft revision' +
+                   (mine.length === 1 ? '' : 's') +
+                   (nLines ? ' (' + nLines + ' lines on the open one)' : '') + '?' +
+                   String.fromCharCode(10) + String.fromCharCode(10) + 'This cannot be undone.')) return;
+      var del = await sb().from('boq_documents').delete().eq('id', d.id);
+      if (del.error) {
+        var m2 = del.error.message || '';
+        UI.toast(/violates foreign key|still referenced/i.test(m2)
+          ? d.name + ' has billing periods recorded against it, so it cannot be deleted. Remove ' +
+            'those first, or keep the BOQ and supersede it.'
+          : m2, 'error');
+        return;
+      }
+      UI.toast('Deleted ' + d.name + '.', 'success');
+      DOCID = null; REVID = null;
+      await load();
+    };
+
     var dn = host.querySelector('#boq-docname');
     if (dn) dn.onclick = async function () {
       var d = DOCS.filter(function (x) { return x.id === DOCID; })[0];
@@ -977,8 +1049,24 @@ window.BOQ = (function () {
       '<button class="boq-trade' + (filt.sheet ? '' : ' on') + '" data-trade="">' +
         'All<span class="boq-trade-n">' + ITEMS.filter(function (r) { return r.line_kind !== 'heading'; }).length + '</span></button>' +
       list.map(function (sh) {
+        /* WARNING The tooltip names the PROCUREMENT trades this cost class is let under, which is
+           the question a planner has in front of a BOQ: who buys this? "Others" maps to nothing and
+           says so, rather than being quietly given a counterpart it does not have.
+           WARNING Line breaks via fromCharCode. Every backslash escape that crossed
+           bash -> python -> JS today lost a layer somewhere; this form has none to lose. */
+        var prcList = TRADEMAP[sh];
+        var nl2 = String.fromCharCode(10) + String.fromCharCode(10);
+        /* WARNING Only on a hand-built bill, where the chip IS a Finance trade. On an IMPORT the
+           chip is the client's own sheet name ("BILLING BREAKDOWN ", trailing space and all), so
+           looking it up would miss every time and the tooltip would tell a planner that a sheet
+           has no procurement trade -- a statement about the mapping that is really a statement
+           about a name the mapping was never asked about. */
+        var tip = sh + ' — ' + money(totals[sh] || 0) +
+          (word !== 'trade' || !Object.keys(TRADEMAP).length ? ''
+            : prcList && prcList.length ? nl2 + 'Let under: ' + prcList.join(', ')
+            : nl2 + 'No procurement trade maps to this.');
         return '<button class="boq-trade' + (filt.sheet === sh ? ' on' : '') + '" data-trade="' + esc(sh) + '"' +
-          ' title="' + esc(sh) + ' — ' + esc(money(totals[sh] || 0)) + '">' +
+          ' title="' + esc(tip) + '">' +
           esc(sh) + '<span class="boq-trade-n">' + (counts[sh] || 0) + '</span></button>';
       }).join('') +
       '</div>';
@@ -4381,7 +4469,7 @@ window.BOQ = (function () {
   }
   /* WARNING ALLREVS and PROJTOTAL belong here too: a project switch that kept them would show
      the previous project's contract value under the new project's name. */
-  function reset() { COLLAPSED = {}; SEL = {}; loaded = false; DOCS = []; DOCID = null;
+  function reset() { COLLAPSED = {}; SEL = {}; loaded = false; DOCS = []; DOCID = null; TRADEMAP = {};
     ALLREVS = []; PROJTOTAL = null; REVS = []; ITEMS = []; CMAP = {}; ALLOC = []; PERIODS = []; PROG = {}; REVID = null; CODES = null; CODETREE = null; ACTS = null; SCHED = null; schedErr = null; PKGS = []; }
 
   return {

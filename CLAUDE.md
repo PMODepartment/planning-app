@@ -95,6 +95,43 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-07 (k) — A BOQ can be deleted; Finance's cost classes are translated to Procurement's trades
+
+**Run `migrations/2026-09-07-trade-map.sql`.** Owner: *"Let's add the option to delete BOQ first.
+Let's do the proper mapping if you think that would help us in the finance and procurement
+connectivity."* Detail in [`modules/contracts-claims/CLAUDE.md`](modules/contracts-claims/CLAUDE.md).
+
+- **Delete is mostly refusal.** `boq_items` and `boq_class_map` cascade from `boq_revisions`, which
+  cascades from `boq_documents`, so the control refuses an **issued** revision outright (the tendered
+  document, the thing a claim argument turns on), refuses the **last** document (every revision hangs
+  off one), translates the database's own refusal when `boq_billing_periods` — which references
+  revisions **without** cascade — blocks it, and names the counts in the confirm.
+- ⚠️⚠️ **`trade_map` TRANSLATES two vocabularies rather than merging them, and an earlier reading of
+  mine was wrong.** I reported that Finance's 7 `class_codes.trade` values and Procurement's 10
+  `work_packages.trade` values *"join to nothing, silently"* and recommended rewriting one. **There is
+  no join.** `PRC_TRADE_ORDER` is a display sort order whose own comment says an unlisted trade *"is
+  NOT dropped"*, and `project_schedule` has no trade column at all — verified, 0 occurrences. The two
+  lists classify different things: how Finance files **cost**, and how Procurement **lets** the work.
+  MEPF Works is one cost class bought as four subcontracts, which the owner's own billing proves
+  (*"MEPF PO"* and *"STRUCTURAL PO"* are separate POs). A table, not a constant — Finance revises the
+  chart without a deploy, and both apps can read a table. **"Others" is left unmapped** on purpose.
+- ⚠️ **`PDb.selectAll` was the wrong reader for it** and the fix is a plain select: selectAll pages
+  with `.order(key).gt(key, last)` and needs a **unique** key, while `trade_map`'s primary key is the
+  PAIR — a page boundary inside the four MEPF rows would silently drop the rest of the group. Same
+  family as the `class_codes.id` failure in (e), caught this time before shipping.
+- ⚠️ **Audited on the owner's prompt — *"check that we have class codes to connect the activities to
+  the costing"* — and three of the four links exist.** The chart (702 rows / 698 active) is there, the
+  activity carries a code, the BOQ line carries one, and the line links to activities. But
+  `modules/project-schedule/index.html` reads **no `boq_*` table at all**: Cost Loading keys its cost
+  lines on the activity **NAME** and step 2's total is **typed by hand**. A BOQ line priced under
+  03101 and forty activities tagged 03101 never meet. The class code is a tag for grouping and
+  reporting; it is **not yet a cost carrier**. Named as the next feature rather than built, ⚠️ because
+  the trap to design around first is double counting — one line allocated across forty activities must
+  contribute its amount once, so the sum belongs on the **allocation**, not on the tag.
+- `boq.js?v=20260907zb`, contracts `module.css?v=20260907q`; `MODULE_V` → `20260907zf`.
+- ⚠️ **Not verified signed-in** — the migration has not been run, so no `trade_map` row has been read
+  and no BOQ has been deleted through the new control.
+
 ### 2026-09-07 (j) — BOQ links before measurement; cost-loading spread per occurrence
 
 Owner: *"if it is matching to schedule, users are able to link despite the qts or amount not being
