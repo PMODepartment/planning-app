@@ -95,6 +95,47 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### Schedule Setup Library: the grouping becomes a path, and the places gain their unit rung (2026-09-08) — jasantos2
+
+Owner: *"for the library, allow users to add more levels and as well as in the right pane for the
+groupings and items."*
+
+The Library's two panes were three rungs deep each, by construction. Both now go four.
+
+- **Right pane — the grouping is a PATH.** A trade holds a *tree* of groupings, and an item sits on
+  whichever rung its own path ends on (`Structural › Substructure › Concrete Works › Rebar › Rebar`).
+  Stored as `grp` + `grps` and read only through `absPathOf`; ⚠️ `grp` always holds rung 1, so every
+  reader written before nesting existed gets exactly the value it used to get.
+- **Editing it: ‹ out / › in.** ⚠️ One button per rung does not survive more rungs — a rendered pane
+  showed **L2 L3 L4 L5 L6 on every item row**, squeezing the activity name. Promote/demote is two
+  controls at any depth, and the chip at the head of the row already names the rung. Deepening
+  borrows a **sibling's** name, in the spelling the pane draws; cancelling writes nothing.
+- **Restructuring: Rename and + level.** Rename retitles a rung for every item under *that* node
+  (two same-named groupings under different parents stay two). ⚠️ **+ level INSERTS** a rung and
+  moves everything beneath one step deeper — the first version moved direct items only, and the
+  rendered check found the button dead on the one grouping most worth inserting a phase under.
+  A sub-tree already at the cap refuses rather than being truncated, which would be silent loss.
+- **Left pane — the unit.** ⚠️ It has existed in `cfg.zoning`, in the push and behind Floors &
+  Zones' own buttons since before this pane did; the pane just stopped at the zone, so a project
+  with units read as if it had none. Four is the honest number: those are the rungs the setup
+  stores and the stacking bands by. A fifth is a schema change and its own prompt.
+- **The rung names come from the project.** The left pane reads its own location levels, so a
+  breakdown named *Tower › Level › Zone › Cluster* says so here as it does in the push dialog.
+- **One WBS dim per rung** — `agroup`…`agroup4`, keyed on the whole prefix so two parents' `Rebar`
+  stay two branches. ⚠️ Every rung **self-skips**: a project that groups nothing pushes a tree
+  identical to before this existed, and a saved setup gains nothing until it is ticked in
+  *Generate → WBS structure*. The dialog now says *why* each skipped dim is skipped, per dim.
+
+⚠️ It does **not** change the Vertical Stacking axis: that axis is the location breakdown, and the
+grouping is activity structure.
+
+**447 assertions across eight suites, all passing** (123 new, executing the shipped path model, the
+Library's tree builder and the push's own `dimKey`), plus a browser render that is where four of the
+defects above were found. ⚠️ **Not verified signed-in** — the anon key has no grants, so the four
+grouping rungs have never been built against a real project's WBS.
+
+`MODULE_V` → `20260908f`. Detail: [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
 ### 2026-09-08 (e) — The right pane's skipped L2 was a bug of mine; the grouping becomes a WBS rung
 
 Owner: *"how come on the right pane, the trades are L1 and then L3 is followed?"* Because

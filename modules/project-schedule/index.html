@@ -2806,6 +2806,16 @@
       box-shadow:inset 1px 0 0 var(--pd-line); }
     .sbld-libL3 { display:flex; align-items:center; gap:8px; padding:3px 11px 3px 40px; font-size:12px;
       color:var(--pd-ink); box-shadow:inset 1px 0 0 var(--pd-line); }
+    /* L4-L6 — the deeper rungs: the location UNIT on the left, sub-groupings and the items inside
+       them on the right. Same shape as L3, one indent step further in, because the only thing that
+       distinguishes them IS depth. ⚠️ The font size stops shrinking at L3: three more steps of half
+       a pixel would land a real activity name at 10.5px, and the deepest rows are the ones a
+       planner most needs to read. */
+    .sbld-libL4, .sbld-libL5, .sbld-libL6 { display:flex; align-items:center; gap:8px; padding:3px 11px; font-size:12px;
+      color:var(--pd-ink); box-shadow:inset 1px 0 0 var(--pd-line); }
+    .sbld-libL4 { padding-left:56px; }
+    .sbld-libL5 { padding-left:72px; }
+    .sbld-libL6 { padding-left:88px; }
     /* The rung, as a fixed-width chip so the names still line up down the pane. Tinted by depth
        rather than coloured: three saturated badges per row would compete with the trade colour and
        with the change-order and critical marks the rest of this module already spends colour on. */
@@ -2814,7 +2824,7 @@
       border:1px solid var(--pd-line); color:var(--pd-muted); background:var(--pd-bg); cursor:help;
       vertical-align:2px; }
     .sbld-liblv.lv1 { color:var(--pd-ink); background:var(--pd-card); }
-    .sbld-liblv.lv3 { opacity:.72; }
+    .sbld-liblv.lv3, .sbld-liblv.lv4, .sbld-liblv.lv5, .sbld-liblv.lv6 { opacity:.72; }
     /* The legend repeats the vocabulary once per pane, because L2 means a floor on one side and a
        grouping on the other and nothing else on screen says so. */
     .sbld-liblegend { display:flex; gap:8px; margin-left:10px; font-size:10.5px; color:var(--pd-muted); flex-wrap:wrap; }
@@ -2827,6 +2837,21 @@
     /* ⚠️ An ITEM promoted to L2 borrows .sbld-libL2, which is a HEADING style. Reset the weight
        or an ungrouped item reads as a grouping with no children. */
     .sbld-libitem { justify-content:space-between; font-weight:400; }
+    /* A grouping heading row. align-items:center because it now carries BUTTONS — L2's baseline
+       alignment (right for the floor rows it was written for) hangs them below the text.
+       ⚠️ font-weight HERE, not on .sbld-libL2. Read off the rendered pane: only an L2 grouping was
+       bold, because the weight came from the L2 row style — so a SUB-grouping (L3, L4) rendered at
+       the same weight as the items inside it, and the pane stopped showing which rows are headings
+       at exactly the depths this change adds. A grouping is a heading at every rung. */
+    .sbld-libgrp { align-items:center; font-weight:600; }
+    /* Rename / + level. ⚠️ Dimmed but NEVER hidden: a control revealed only on hover is a control
+       nobody finds, and restructuring the breakdown is the whole point of this pane. */
+    .sbld-libtools { flex:none; display:inline-flex; gap:4px; opacity:.55; transition:opacity .12s; }
+    .sbld-libgrp:hover .sbld-libtools, .sbld-libtools:focus-within { opacity:1; }
+    .sbld-libtool { border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-muted);
+      font:inherit; font-size:10px; font-weight:400; line-height:15px; padding:0 5px; border-radius:3px; cursor:pointer; }
+    .sbld-libtool:hover:not(:disabled) { color:var(--pd-ink); background:var(--pd-bg); }
+    .sbld-libtool:disabled { opacity:.45; cursor:not-allowed; }
     .sbld-libnm { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .sbld-libcode { flex:none; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
     /* The one editable field on the screen, kept visually quiet until it is used or hovered so the
@@ -2835,12 +2860,12 @@
        row without changing its height, so turning the pane into a form does not make it taller. */
     .sbld-liblvpick { flex:none; display:inline-flex; gap:2px; margin-right:6px; }
     .sbld-liblvbtn { border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-muted);
-      font:inherit; font-size:9.5px; font-weight:700; line-height:14px; padding:0 4px; border-radius:3px; cursor:pointer; }
+      font:inherit; font-size:12px; font-weight:700; line-height:14px; padding:0 5px; border-radius:3px; cursor:pointer; }
     .sbld-liblvbtn:hover:not(:disabled) { color:var(--pd-ink); background:var(--pd-bg); }
-    /* ⚠️ The current rung is disabled AND visibly so — it is a state, not an action. */
-    .sbld-liblvbtn.on { background:var(--pd-bg); color:var(--pd-muted); border-style:dashed; cursor:default; opacity:.6; }
+    /* ⚠️ An end of the range is disabled AND visibly so, with the reason in its title. */
+    .sbld-liblvbtn:disabled { opacity:.35; cursor:not-allowed; }
     .sbld-libedit { font-size:10px; color:var(--pd-muted); border:1px dashed var(--pd-line); border-radius:99px; padding:0 6px; }
-    .sbld-libgin { flex:none; width:120px; font-size:11.5px; padding:2px 6px; min-height:0;
+    .sbld-libgin { flex:none; width:230px; font-size:11.5px; padding:2px 6px; min-height:0;
       background:transparent; border-color:transparent; }
     .sbld-libgin:hover, .sbld-libgin:focus { background:var(--pd-card); border-color:var(--pd-line); }
     .sbld-libgin:not([value=""]) { border-color:var(--pd-line); }
@@ -26019,8 +26044,33 @@
        That property is asserted, because it is what makes adding a dim safe.
        ⚠️ A SAVED setup is untouched: `incl[d]` is read from the setup's OWN wbsOrder (see the push),
        so a setup saved before today simply does not include the rung until the planner ticks it. */
-    var WBS_DIMS = ['tower', 'trade', 'agroup', 'floor', 'zone', 'unit'];
-    var DIM_LABEL = { trade: 'Trade', agroup: 'Grouping', tower: 'Tower', floor: 'Floor', zone: 'Zone', unit: 'Unit' };
+    /* ⚠️⚠️ ONE DIM PER GROUPING RUNG. Owner 2026-09-08: *"for the library, allow users to add more
+       levels."* The grouping is a PATH now (see absPathOf), so the push needs a rung to build each
+       segment on: `agroup` is the first, `agroup2` the second, up to ABS_MAX_GRP. They are listed
+       here rather than generated so the WBS-order editor can name and reorder each one like every
+       other dim, and so the cap is visible in the same file that enforces it.
+       ⚠️ EVERY ONE OF THEM SELF-SKIPS — dimKey returns the '\u0000' sentinel for an item whose path
+       is shorter, so a project that groups nothing pushes a tree IDENTICAL to before any of this
+       existed, and a project two deep never builds a third rung. willBuild() says so in the dialog
+       instead of promising a level it will not occupy. */
+    var WBS_DIMS = ['tower', 'trade', 'agroup', 'agroup2', 'agroup3', 'agroup4', 'floor', 'zone', 'unit'];
+    var DIM_LABEL = { trade: 'Trade', agroup: 'Grouping', agroup2: 'Grouping 2', agroup3: 'Grouping 3', agroup4: 'Grouping 4', tower: 'Tower', floor: 'Floor', zone: 'Zone', unit: 'Unit' };
+    // dim -> which rung of the grouping path it builds, or -1 for a dim that is not a grouping.
+    // ⚠️ The ONE parser of these names, so `agroup3` cannot mean depth 3 in one function and 2 in
+    // another — an off-by-one here would file every item one rung too high in the pushed WBS.
+    function absDimDepth(dim) {
+      if (dim === 'agroup') return 0;
+      return /^agroup[2-9]$/.test(String(dim)) ? (+String(dim).charAt(6) - 1) : -1;
+    }
+    // Why a ticked dim will still be skipped, in the planner's words. ⚠️ Driven by the same
+    // predicates the push uses (multiTower, absMaxDepth), never by a copy of them.
+    function _dimSkipWhy(d) {
+      if (d === 'tower') return 'this project has one tower, so it would be a level with a single branch';
+      var ad = absDimDepth(d);
+      if (ad === 0) return 'no item has a grouping yet — give one a grouping in the Library';
+      if (ad > 0) return 'nothing is grouped ' + (ad + 1) + ' levels deep — add a level in the Library';
+      return 'nothing to build at this level';
+    }
     // ⚠️ The builder's three location levels ARE the project's Location Breakdown levels — the push
     // even creates them when a project has none. Owner 2026-08-18: "the location breakdown should be
     // intuitive to define … first, then do the schedule builder". So the labels now come from the
@@ -26122,7 +26172,7 @@
       } catch (e) {}
       return DIM_LABEL[d] || d;
     }
-    function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], towers: blankTowers(), towerLinks: [], zoning: blankZoning(), links: [], actLinks: [], actLinksKind: {}, scopeOff: {}, floorLead: 4, tradeLeads: {}, tradeBatch: {}, tradeParallel: {}, tradeBatchKind: {}, tradeParallelKind: {}, zoneSimul: {}, unitSimul: {}, floorLag: {}, zoneOrder: {}, locLevel: 'auto', wbsOrder: ['tower', 'trade', 'agroup', 'floor', 'zone', 'unit'], phases: {} }; }
+    function blank() { return { startDate: iso2(new Date()), activities: [], catalog: [], towers: blankTowers(), towerLinks: [], zoning: blankZoning(), links: [], actLinks: [], actLinksKind: {}, scopeOff: {}, floorLead: 4, tradeLeads: {}, tradeBatch: {}, tradeParallel: {}, tradeBatchKind: {}, tradeParallelKind: {}, zoneSimul: {}, unitSimul: {}, floorLag: {}, zoneOrder: {}, locLevel: 'auto', wbsOrder: ['tower', 'trade', 'agroup', 'agroup2', 'agroup3', 'agroup4', 'floor', 'zone', 'unit'], phases: {} }; }
     function normActivity(a) {
       var legacy = +a.duration || 0;
       // ⚠ `> 0`, not `!= null`: a row seeded with an explicit 0 must still mirror the other column
@@ -27686,7 +27736,7 @@
        the same fact the Vertical Stacking level-1 rule turns on) and the items already live in
        `cfg.activities`. Giving the library its own copy of either is exactly the two-screens-
        disagreeing failure this module keeps recording, so the library reads those and writes back
-       to them. The one genuinely new field is the L2 GROUPING (`a.grp`), because the image asks for
+       to them. The one genuinely new field is the GROUPING PATH (`a.grp` + `a.grps`), because the image asks for
        a middle level and `cfg.activities` had only trade → item.
 
        ⚠️ WHY IT IS A STEP AND NOT A NEW SCREEN: on a migrated schedule the answer to "what are the
@@ -27701,6 +27751,10 @@
       // The union across trades, which IS the project's location library: a floor that only one
       // trade works is still a floor of the building. Which trades have it is shown, because that
       // difference is real and hiding it would make the pane look like a contradiction.
+      // ⚠️ FOUR RUNGS, NOT THREE. Owner 2026-09-08: *"allow users to add more levels."* The UNIT
+      // rung has existed in `cfg.zoning` (and in the push, and in Floors & Zones' +/- buttons)
+      // since before this pane did — the pane simply stopped at the zone and never showed it, so a
+      // project with units read as if it had none. It is collected here and drawn at L4.
       var byTower = [], seenT = {};
       function tw(name) {
         if (seenT[name] != null) return byTower[seenT[name]];
@@ -27721,43 +27775,101 @@
           if (F2.trades.indexOf(g) < 0) F2.trades.push(g);
           (f.zones || []).forEach(function (zz) {
             var zn = String(zz.name || zz.code || '').trim(); if (!zn) return;
-            if (!F2.seenZ[zn]) { F2.seenZ[zn] = 1; F2.zones.push(zn); }
+            var Z2 = F2.seenZ[zn];
+            if (!Z2) { Z2 = F2.seenZ[zn] = { name: zn, units: [], seenU: {} }; F2.zones.push(Z2); }
+            // ⚠️ `code || name` for a unit, matching the PUSH's dimName — Floors & Zones creates
+            // units with a code and no name, so `name || code` would have printed nothing here
+            // while the WBS printed U1.
+            (zz.units || []).forEach(function (uu) {
+              var un = String(uu.code || uu.name || '').trim(); if (!un) return;
+              if (!Z2.seenU[un]) { Z2.seenU[un] = 1; Z2.units.push(un); }
+            });
           });
         });
       });
       return byTower;
     }
+    /* ⚠️⚠️ THE GROUPING IS A PATH, NOT A NAME. Owner 2026-09-08: *"for the library, allow users to
+       add more levels and as well as in the right pane for the groupings and items."*
+       So a trade no longer holds one rung of groupings — it holds a TREE of them,
+       `Substructure › Rebar › Splices`, and the item sits on whichever rung its own path ends on.
+       ⚠️ An item with no path still sits DIRECTLY under its trade rather than under an invented
+       "(ungrouped)" heading, which would look like a real grouping somebody chose. */
     function libGroupTree() {
-      // trade (L1) → grouping (L2) → item (L3), from cfg.activities. An item with no grouping sits
-      // directly under its trade rather than under an invented "(ungrouped)" heading that would
-      // then look like a real grouping somebody chose.
-      var out = [], seen = {};
+      var out = [];
       GROUPS.forEach(function (g) {
         var items = (cfg.activities || []).filter(function (a) { return (a.group || 'ST') === g; });
         if (!items.length) return;
-        var node = { g: g, label: GWORK[g] || GLABEL[g] || g, groups: [], loose: [], seenG: {} };
+        var node = { g: g, label: GWORK[g] || GLABEL[g] || g, path: [], kids: [], seenK: {}, items: [], acts: [] };
         items.forEach(function (a) {
-          var gn = String(a.grp || '').trim();
-          if (!gn) { node.loose.push(a); return; }
-          var G2 = node.seenG[gn];
-          if (!G2) { G2 = node.seenG[gn] = { name: gn, items: [] }; node.groups.push(G2); }
-          G2.items.push(a);
+          var at = node;
+          node.acts.push(a);
+          absPathOf(a).forEach(function (seg) {
+            // ⚠️ Keyed NORMALISED: "Rebar" and "rebar " are one grouping, and keying raw would
+            // build two branches that look identical on screen and in the pushed WBS.
+            var k = _libNorm(seg), K = at.seenK[k];
+            if (!K) {
+              K = at.seenK[k] = { g: g, name: seg, path: at.path.concat(seg), kids: [], seenK: {}, items: [], acts: [] };
+              at.kids.push(K);
+            }
+            at = K; at.acts.push(a);
+          });
+          // The item lands on the node its path ENDS on — the trade itself when the path is empty.
+          at.items.push(a);
         });
-        out.push(node); seen[g] = 1;
+        out.push(node);
       });
       return out;
     }
+    function libGrpCount(n) {
+      return (n.kids || []).reduce(function (s, k) { return s + 1 + libGrpCount(k); }, 0);
+    }
+    /* The grouping nodes the rendered pane is showing, so a Rename / + level button can name one
+       without encoding a whole path into an attribute. ⚠️ Reset at the top of every stLibrary
+       render and read by handlers wired in that same call, so an index can never outlive its node. */
+    var _libNodes = [];
+    function libNodeTools(n) {
+      var i = _libNodes.push(n) - 1;
+      var why = absAddWhy(n);          // ⚠️ the same predicate absAddSub refuses on, not a copy
+      return '<span class="sbld-libtools">' +
+        '<button class="sbld-libtool" data-libren="' + i + '" title="Rename this grouping — every item under it follows">Rename</button>' +
+        '<button class="sbld-libtool" data-libsub="' + i + '"' + (why ? ' disabled' : '') + ' title="' + e2(why ||
+          ('Insert a level under this grouping — its ' + n.acts.length + (n.acts.length === 1 ? ' item moves' : ' items move') + ' one rung deeper, inside the new one')) +
+          '">+ level</button>' +
+        '</span>';
+    }
+    // A grouping node and everything under it. Items first, then sub-groupings: a heading's own
+    // members read before its sub-headings, the same way an outline does.
+    function libNodeHTML(n) {
+      var h = '';
+      if (n.path.length) {
+        var lv = n.path.length + 1;
+        h += '<div class="sbld-libL' + lv + ' sbld-libgrp">' +
+          libLv(lv, 'grp', n.path.length === 1 ? 'Grouping' : ('Grouping ' + n.path.length)) +
+          '<span class="sbld-libnm">' + e2(n.name) + '</span>' + libNodeTools(n) +
+          '<span class="sbld-libwho" title="' + e2(n.acts.length + ' item(s) under this grouping') + '">' + n.acts.length + '</span></div>';
+      }
+      h += n.items.map(function (a) { return libItemRow(a); }).join('');
+      h += n.kids.map(function (k) { return libNodeHTML(k); }).join('');
+      return h;
+    }
     function stLibrary(host) {
+      _libNodes = [];
       var locs = libLocTree(), tree = libGroupTree();
-      var nF = 0, nZ = 0;
-      locs.forEach(function (T) { nF += T.floors.length; T.floors.forEach(function (F2) { nZ += F2.zones.length; }); });
+      var nF = 0, nZ = 0, nU = 0;
+      locs.forEach(function (T) {
+        nF += T.floors.length;
+        T.floors.forEach(function (F2) { nZ += F2.zones.length; F2.zones.forEach(function (Z2) { nU += Z2.units.length; }); });
+      });
       var nI = (cfg.activities || []).length;
-      var nG = tree.reduce(function (s, t) { return s + t.groups.length; }, 0);
+      var nG = tree.reduce(function (s, t) { return s + libGrpCount(t); }, 0);
+      var deep = absMaxDepth();
       var imported = (typeof rows !== 'undefined' && rows) ? rows.filter(function (r) { return isWbs(r); }).length : 0;
 
       var left = '<div class="sbld-libpane">' +
-        '<div class="sbld-libhead"><b>Location (Floor and Area)</b>' + libLegend('loc') +
-          '<span class="sbld-tag">' + nF + ' floor' + (nF === 1 ? '' : 's') + ' · ' + nZ + ' area' + (nZ === 1 ? '' : 's') + '</span></div>' +
+        '<div class="sbld-libhead"><b>Location — where the work happens</b>' + libLegend('loc', nU ? 4 : 3) +
+          '<span class="sbld-tag">' + nF + ' floor' + (nF === 1 ? '' : 's') + ' · ' + nZ + ' area' + (nZ === 1 ? '' : 's') +
+          (nU ? ' · ' + nU + ' unit' + (nU === 1 ? '' : 's') : '') + '</span></div>' +
         '<div class="sbld-libbody">' +
         (nF ? locs.map(function (T) {
           if (!T.floors.length) return '';
@@ -27771,24 +27883,24 @@
                   ? '<span class="sbld-libkind">' + e2(KIND_LABEL[F2.kind] || F2.kind) + '</span>' : '') +
                 '<span class="sbld-libwho" title="Trades that define this floor">' +
                   e2(F2.trades.map(function (g) { return GLABEL[g] || g; }).join(', ')) + '</span></div>' +
-                F2.zones.map(function (z) { return '<div class="sbld-libL3">' + libLv(3, 'loc') + e2(z) + '</div>'; }).join('');
+                F2.zones.map(function (Z2) {
+                  return '<div class="sbld-libL3">' + libLv(3, 'loc') + e2(Z2.name) +
+                    (Z2.units.length ? '<span class="sbld-libwho">' + Z2.units.length + ' unit' + (Z2.units.length === 1 ? '' : 's') + '</span>' : '') + '</div>' +
+                    Z2.units.map(function (u) { return '<div class="sbld-libL4">' + libLv(4, 'loc') + e2(u) + '</div>'; }).join('');
+                }).join('');
             }).join('');
         }).join('') : '<div class="sbld-empty">No floors yet. <b>Read from the WBS</b> if this schedule was imported, or define them in <b>Floors &amp; Zones</b>.</div>') +
         '</div></div>';
 
       var right = '<div class="sbld-libpane">' +
-        '<div class="sbld-libhead"><b>Trade (Groupings and Items)</b>' + libLegend('grp') +
-          '<span class="sbld-libedit" title="Press L2 / L3 on an item to move it between rungs">levels are editable</span>' +
-          '<span class="sbld-tag">' + tree.length + ' trade' + (tree.length === 1 ? '' : 's') + ' · ' + nG + ' grouping' + (nG === 1 ? '' : 's') + ' · ' + nI + ' item' + (nI === 1 ? '' : 's') + '</span></div>' +
+        '<div class="sbld-libhead"><b>Trade — what the work is</b>' + libLegend('grp') +
+          '<span class="sbld-libedit" title="‹ and › move an item between rungs; Rename and + level restructure a grouping">levels are editable</span>' +
+          '<span class="sbld-tag">' + tree.length + ' trade' + (tree.length === 1 ? '' : 's') + ' · ' + nG + ' grouping' + (nG === 1 ? '' : 's') +
+          ' · ' + nI + ' item' + (nI === 1 ? '' : 's') + (deep > 1 ? ' · ' + deep + ' grouping levels' : '') + '</span></div>' +
         '<div class="sbld-libbody">' +
         (nI ? tree.map(function (T) {
-          var h = '<div class="sbld-libL1" style="--zc:' + gc(T.g) + '">' + libLv(1, 'grp') + e2(T.label) + '</div>';
-          h += T.groups.map(function (G2) {
-            return '<div class="sbld-libL2">' + libLv(2, 'grp') + e2(G2.name) + '<span class="sbld-libwho">' + G2.items.length + '</span></div>' +
-              G2.items.map(function (a) { return libItemRow(a); }).join('');
-          }).join('');
-          h += T.loose.map(function (a) { return libItemRow(a); }).join('');
-          return h;
+          return '<div class="sbld-libL1" style="--zc:' + gc(T.g) + '">' + libLv(1, 'grp', 'Trade') + e2(T.label) + '</div>' +
+            libNodeHTML(T);
         }).join('') : '<div class="sbld-empty">No items yet. Add them in <b>Activities</b>, or <b>Read from the WBS</b>.</div>') +
         '</div></div>';
 
@@ -27809,16 +27921,22 @@
         _sbldHow('<b>Left — places.</b> The union across trades: a floor only one trade works is still a floor of the ' +
           'building, and the trades that define it are listed beside it. Floors are defined <i>per trade</i> because a trade ' +
           'zones its floors its own way, which is why combining trades in Vertical Stacking draws at level 1.<br>' +
-          '<b>Right — work.</b> Trade (L1) › grouping (L2) › item (L3). The <b>grouping</b> is the only field that lives ' +
-          'here; everything else is the same data <b>Floors &amp; Zones</b> and <b>Activities</b> edit, so there is one copy of it.<br>' +
-          '<b>The rung is the position, not a number you type.</b> An item <b>inside a grouping</b> is L3; an item ' +
-          '<b>directly under its trade</b> is L2 — so pressing <b>L2</b> clears its grouping and pressing <b>L3</b> puts it in ' +
-          'one. That is why an ungrouped item reads L2 and not L3.<br>' +
-          '<b>And it reaches the schedule.</b> The grouping is a real <b>WBS rung</b> (<i>Grouping</i>): the push nests it ' +
-          'between the trade and the places, and you can reorder or drop it with the other levels in <b>Generate → ' +
-          'WBS structure</b>. A trade whose items are all L2 skips the rung entirely, so nothing appears that you did not ' +
-          'author.<br>' +
-          '<b>No unit column.</b> A unit belongs to a BOQ line, and Contracts &amp; Claims already carries it.');
+          '<b>The places go four deep</b> — ' + e2(libLvNames('loc').join(' › ')) + ' — because those are the four rungs ' +
+          'the setup stores and the push builds. Add or remove them in <b>Floors &amp; Zones</b>; this pane reads them.<br>' +
+          '<b>Right — work.</b> Trade (L1) › grouping (L2) › <i>as many sub-groupings as you need</i> › item. The ' +
+          '<b>grouping path</b> is the only field that lives here; everything else is the same data <b>Floors &amp; Zones</b> ' +
+          'and <b>Activities</b> edit, so there is one copy of it.<br>' +
+          '<b>The rung is the position, not a number you type.</b> An item sits on the rung its own grouping path ends on — ' +
+          'no path is L2, one grouping is L3, two is L4, and the chip at the head of each row says which. So <b>‹</b> and ' +
+          '<b>›</b> <i>are</i> the move: › puts the item one rung deeper (inside a grouping, borrowing the name of a ' +
+          'grouping beside it or asking you for a new one), ‹ takes it one rung out. Type the whole path in the field if ' +
+          'you prefer — <code>Substructure / Rebar</code>. <b>+ level</b> on a grouping inserts a rung under it and moves ' +
+          'everything beneath one step deeper, and <b>Rename</b> retitles a rung for every item under it.<br>' +
+          '<b>And it reaches the schedule.</b> Every grouping rung is a real <b>WBS level</b> (<i>Grouping</i>, ' +
+          '<i>Grouping 2</i>…): the push nests them between the trade and the places, and you can reorder or drop each ' +
+          'one with the other levels in <b>Generate → WBS structure</b>. A rung nothing uses is skipped entirely, so nothing ' +
+          'appears that you did not author.<br>' +
+          '<b>No unit column.</b> A unit of measure belongs to a BOQ line, and Contracts &amp; Claims already carries it.');
 
       var b1 = host.querySelector('#b-libloc');
       // ⚠️ FINALLY WIRED. openLocAdopt() has been complete and reachable from nothing since it was
@@ -27832,19 +27950,40 @@
         b.onclick = function () {
           var a = (cfg.activities || []).filter(function (x) { return x.id === b.dataset.liblv; })[0];
           if (!a) return;
-          // ⚠️ Only repaint when something MOVED. absSetLevel refuses a no-op (and a demote the
+          // ⚠️ Only repaint when something MOVED. absSetLevel refuses a no-op (and a deepening the
           // planner cancelled out of), and marking the setup dirty for a refused change would
           // report unsaved work that does not exist.
           if (absSetLevel(a, +b.dataset.lv)) { markDirty(); render(); }
+        };
+      });
+      host.querySelectorAll('[data-libren]').forEach(function (b) {
+        b.onclick = function () {
+          var n = _libNodes[+b.dataset.libren]; if (!n) return;
+          var typed = prompt('Rename this L' + (n.path.length + 1) + ' grouping — all ' + n.acts.length + ' item(s) under it follow:', n.name);
+          var nm = String(typed == null ? '' : typed).trim();
+          // ⚠️ Cancelled, emptied, or the same name: not a change. Renaming to the same spelling
+          // would still repaint and still flag the setup dirty.
+          if (!nm || _libNorm(nm) === _libNorm(n.name)) return;
+          if (absRenameSeg(n, nm)) { markDirty(); render(); }
+        };
+      });
+      host.querySelectorAll('[data-libsub]').forEach(function (b) {
+        b.onclick = function () {
+          var n = _libNodes[+b.dataset.libsub]; if (!n) return;
+          var typed = prompt('Insert a level under "' + n.name + '" — name the new L' + (n.path.length + 2) +
+            ' grouping, and its ' + n.acts.length + ' item(s) move one rung deeper inside it:', '');
+          var nm = String(typed == null ? '' : typed).trim();
+          if (!nm) return;
+          if (absAddSub(n, nm)) { markDirty(); render(); }
         };
       });
       host.querySelectorAll('[data-libgrp]').forEach(function (inp) {
         inp.onchange = function () {
           var a = (cfg.activities || []).filter(function (x) { return x.id === inp.dataset.libgrp; })[0];
           if (!a) return;
-          var v = String(inp.value || '').trim();
-          // Deleted rather than stored empty, so an item with no grouping is one state and not two.
-          if (v) a.grp = v; else delete a.grp;
+          // The whole path in one field. absSetPath deletes rather than storing '', so an item with
+          // no grouping is one state and not two.
+          absSetPath(a, absParsePath(inp.value));
           markDirty(); render();
         };
       });
@@ -27861,96 +28000,278 @@
        *under* another one, but not WHICH RUNG it is on — and the two panes put different things on
        the same rung (a floor and a grouping are both L2), which is exactly the correspondence the
        sheet is for. The chip is the same width on every row so the names still line up. */
-    var LIB_LV = { loc: ['Tower', 'Floor', 'Area / Zone'], grp: ['Trade', 'Grouping', 'Item'] };
     // ⚠️ `\s+`, not `s+`. Written as the latter first and caught by its own assertion: it collapsed
     // runs of the LETTER s, so "Rebar Consumables" normalised to "rebar con umable " and any
     // comparison built on it was quietly meaningless.
     function _libNorm(v) { return String(v == null ? '' : v).trim().toLowerCase().replace(/\s+/g, ' '); }
-    /* THE ACTIVITY BREAKDOWN, as three rungs. One reader for the Library, the push and the
-       WBS-order editor, so a grouping cannot mean one thing on screen and another in the tree. */
-    function absGrpOf(a) { return String((a && a.grp) || '').trim(); }
+    /* ==========================================================================================
+       THE ACTIVITY BREAKDOWN, as a PATH of grouping rungs. One reader for the Library, the push and
+       the WBS-order editor, so a grouping cannot mean one thing on screen and another in the tree.
+       ⚠️⚠️ WHY THERE IS A CAP. Every grouping rung has to exist as a WBS dim (`agroup`, `agroup2`…)
+       for the push to be able to build it, and each one appears as a row in the WBS-structure
+       editor. Four rungs put an item at L6 — trade › four groupings › item — which is deeper than
+       any breakdown this office draws; an unbounded list would fill that editor with rows no
+       project uses. The cap is enforced in ONE place, absSetPath, so no other code path can create
+       a rung the push cannot build.
+       ========================================================================================== */
+    var ABS_MAX_GRP = 4;
+    /* THE PATH, read. ⚠️ `grp` ALWAYS HOLDS RUNG 1 and `grps` only exists when the path is deeper,
+       so every reader written before nesting existed — the push's `agroup` dim, absGrpOf, a saved
+       setup loaded from the database — still gets exactly the value it used to get. That is what
+       makes this a widening rather than a migration. */
+    function absPathOf(a) {
+      if (!a) return [];
+      var src = Array.isArray(a.grps) ? a.grps : null, out = [];
+      if (src) {
+        for (var i = 0; i < src.length && out.length < ABS_MAX_GRP; i++) {
+          var s = String(src[i] == null ? '' : src[i]).trim();
+          // ⚠️ STOPS at a hole, never skips it. Skipping would silently PROMOTE every rung below
+          // the hole, so a corrupt ['A', '', 'C'] would read as A › C — a branch nobody authored.
+          if (!s) break;
+          out.push(s);
+        }
+        if (out.length) return out;
+      }
+      var one = String((a && a.grp) || '').trim();
+      return one ? [one] : [];
+    }
+    /* THE PATH, written — and the ONLY writer. Keeps `grp` and `grps` in step so they can never
+       disagree, deletes rather than storing '' so "no grouping" is one state and not two, and
+       applies the cap. ⚠️ It DROPS empty segments where the reader stops at them: a caller's
+       intent is the names it passed, while a stored hole is corrupt data of unknown shape. */
+    function absSetPath(a, arr) {
+      if (!a) return false;
+      var p = [];
+      (arr || []).forEach(function (s) {
+        s = String(s == null ? '' : s).trim();
+        if (s && p.length < ABS_MAX_GRP) p.push(s);
+      });
+      if (!p.length) { delete a.grp; delete a.grps; return true; }
+      a.grp = p[0];
+      if (p.length > 1) a.grps = p.slice(); else delete a.grps;
+      return true;
+    }
+    /* The path as ONE field. ⚠️ Separators are `/ > › » |` — a planner typing "Substructure / Rebar"
+       means two rungs, and those are the marks they reach for. The price of one field instead of a
+       modal per rung is that a grouping NAME cannot contain a slash; Rename takes any text, so a
+       name that needs one is still reachable. */
+    function absParsePath(s) {
+      return String(s == null ? '' : s).split(/[\/>›»|]+/).map(function (x) { return String(x).trim(); })
+        .filter(Boolean).slice(0, ABS_MAX_GRP);
+    }
+    function absGrpOf(a) { return absPathOf(a)[0] || ''; }
     function absGrpKey(a) { return _libNorm(absGrpOf(a)); }
-    // ⚠️ THE LEVEL IS THE POSITION, not a stored number. An item inside a grouping is L3; an item
-    // directly under its trade is L2 — and that is the answer to the owner's 2026-09-08 question
-    // *"how come on the right pane, the trades are L1 and then L3 is followed?"*: an ungrouped item
-    // WAS printed L3 while sitting at depth 2, so the pane claimed a rung that was not there.
-    // Storing a level alongside the grouping would let the two disagree, and then the number on
-    // screen would stop describing the tree the push builds.
-    function absLevelOf(a) { return absGrpOf(a) ? 3 : 2; }
-    // Every grouping a trade uses, in the order cfg.activities first mentions them — the same
-    // "the setup's own order" rule dimOrderIndex applies to floors and zones.
-    function absGrpList(trade) {
+    // ⚠️ THE LEVEL IS THE POSITION, not a stored number. An item sits on the rung its own path ends
+    // on: no grouping is L2, one is L3, two is L4 — and that is the answer to the owner's
+    // 2026-09-08 question *"how come on the right pane, the trades are L1 and then L3 is
+    // followed?"*: an ungrouped item WAS printed L3 while sitting at depth 2, so the pane claimed a
+    // rung that was not there. Storing a level alongside the path would let the two disagree, and
+    // then the number on screen would stop describing the tree the push builds.
+    function absLevelOf(a) { return 2 + absPathOf(a).length; }
+    /* The branch key at one depth. ⚠️ THE WHOLE PREFIX, NOT JUST THE SEGMENT: two different
+       groupings can each hold a "Rebar", and keying on the segment alone would collapse them into
+       one WBS branch holding both parents' work. Normalised, so two spellings are one branch. */
+    function absPathKey(a, depth) {
+      var p = absPathOf(a);
+      if (!(depth >= 0) || depth >= p.length) return '';
+      // ⚠️ Joined on a CONTROL CHARACTER, never on '': concatenating would make ['ab','c'] and
+      // ['a','bc'] the same key — two unrelated branches merged into one WBS node.
+      return p.slice(0, depth + 1).map(function (s) { return _libNorm(s); }).join(String.fromCharCode(1));
+    }
+    // Every distinct path prefix a trade uses at one depth, in the order cfg.activities first
+    // mentions them — the same "the setup's own order" rule dimOrderIndex applies to floors.
+    function absSegList(trade, depth) {
       var out = [], seen = {};
       (cfg.activities || []).forEach(function (a) {
         if ((a.group || 'ST') !== trade) return;
-        var k = absGrpKey(a); if (!k || seen[k]) return;
-        seen[k] = 1; out.push({ key: k, name: absGrpOf(a) });
+        var k = absPathKey(a, depth); if (!k || seen[k]) return;
+        seen[k] = 1; out.push({ key: k, name: absPathOf(a)[depth] });
       });
       return out;
     }
-    function absGrpIndex(trade, key) {
+    // ⚠️ UNKNOWN SORTS LAST (99999), never first — see dimOrderIndex.
+    function absSegIndex(trade, depth, key) {
       if (!key) return 99999;
-      var l = absGrpList(trade);
+      var l = absSegList(trade, depth);
       for (var i = 0; i < l.length; i++) if (l[i].key === key) return i;
       return 99999;
     }
-    /* Move an item between rungs. ⚠️ L2 and L3 are not two fields: L3 means "has a grouping" and L2
-       means "has none", so setting the level IS setting or clearing `grp`. Demoting to L3 needs a
-       name, and the one offered is the trade's most recently used grouping rather than a blank —
-       an item that lands in a grouping called "" would sit at L3 in the pane and skip the rung in
-       the tree, which is the disagreement absLevelOf exists to prevent. */
+    // Kept as the depth-0 case, because that is the rung `agroup` and the Library's callers ask for.
+    function absGrpList(trade) { return absSegList(trade, 0); }
+    function absGrpIndex(trade, key) { return absSegIndex(trade, 0, key); }
+    // How deep the grouping tree actually goes — in one trade, or (trade null) across the project.
+    // Drives which rungs the level picker offers and which WBS dims the push admits it will skip.
+    function absDepthMax(trade) {
+      var n = 0;
+      (cfg.activities || []).forEach(function (a) {
+        if (trade && (a.group || 'ST') !== trade) return;
+        n = Math.max(n, absPathOf(a).length);
+      });
+      return n;
+    }
+    function absMaxDepth() { return absDepthMax(null); }
+    /* The name a new rung borrows: the most recent grouping that is a SIBLING of the position being
+       filled — i.e. one whose parents already agree with the path built so far.
+       ⚠️ SIBLING, not "the last path authored in the trade". Measured, not assumed: with
+       `Substructure › Rebar` and `Superstructure › Rebar` both present, seeding from the last path
+       authored anywhere in the trade offered Superstructure's segment to an item sitting under
+       Substructure — so it either filed the item under a parent it is not in, or (with the
+       agreement guard) threw away a perfectly good sibling and asked the planner to retype a name
+       already on screen two rows above.
+       ⚠️ Named from absSegList, so the spelling offered is the branch's FIRST-SEEN one — the
+       spelling the pane is drawing. Borrowing the raw last value would suggest "  rebar " for a
+       branch the pane calls "Rebar": one branch, but the planner would see it renamed under them. */
+    function absSeedSeg(trade, prefix) {
+      var SEP = String.fromCharCode(1), d = (prefix || []).length, out = '';
+      var pk = d ? prefix.map(function (s) { return _libNorm(s); }).join(SEP) + SEP : '';
+      absSegList(trade, d).forEach(function (s) {
+        if (pk && String(s.key).indexOf(pk) !== 0) return;
+        out = s.name;
+      });
+      return String(out || '').trim();
+    }
+    /* Move an item between rungs. ⚠️ THE LEVEL AND THE PATH ARE ONE THING: L2 means "no grouping",
+       L3 means "one", L4 means "two", so setting the level IS lengthening or truncating the path.
+       Deepening needs names, and the ones offered come from the trade's most recent path rather
+       than from blanks — an item that landed in a grouping called "" would sit at L3 in the pane
+       and skip the rung in the tree, which is the disagreement absLevelOf exists to prevent. */
     function absSetLevel(a, lv) {
       if (!a) return false;
-      if (lv === 2) { if (!a.grp) return false; delete a.grp; return true; }
-      if (lv !== 3 || absGrpOf(a)) return false;
-      var l = absGrpList(a.group || 'ST');
-      var name = l.length ? l[l.length - 1].name : '';
-      if (!name) {
-        var typed = prompt('Name the grouping this item belongs to (L2):', '');
-        name = String(typed == null ? '' : typed).trim();
-        if (!name) return false;
+      var want = (+lv) - 2;                        // how many grouping rungs sit above the item
+      if (!(want >= 0 && want <= ABS_MAX_GRP)) return false;
+      var cur = absPathOf(a);
+      if (cur.length === want) return false;       // ⚠️ a no-op is REFUSED: nothing dirty, no repaint
+      if (want < cur.length) { absSetPath(a, cur.slice(0, want)); return true; }
+      var out = cur.slice();
+      while (out.length < want) {
+        var d = out.length;
+        // ⚠️ Re-asked at EVERY rung with the path built so far, so each borrowed name is a sibling
+        // of the slot it fills rather than a segment lifted from somewhere else in the trade.
+        var name = absSeedSeg(a.group || 'ST', out);
+        if (!name) {
+          var typed = prompt('Name the L' + (d + 2) + ' grouping this item belongs to:', '');
+          name = String(typed == null ? '' : typed).trim();
+          // ⚠️ Cancelled halfway: NOTHING is written. The path is built in a copy and committed
+          // only at the end, so a half-named chain can never reach the activity.
+          if (!name) return false;
+        }
+        out.push(name);
       }
-      a.grp = name; return true;
+      absSetPath(a, out); return true;
+    }
+    /* Rename one rung. ⚠️ Only the items UNDER THIS NODE follow, which is the whole point of
+       nesting: a "Rebar" under Substructure and a "Rebar" under Superstructure are two groupings,
+       and renaming one must not touch the other. The segment is matched before it is replaced, so
+       a stale node (rendered, then the data changed underneath) rewrites nothing. */
+    function absRenameSeg(node, name) {
+      var nm = String(name == null ? '' : name).trim(), d = (node && node.path.length - 1), hit = 0;
+      if (!node || !nm || !(d >= 0)) return false;
+      (node.acts || []).forEach(function (a) {
+        var p = absPathOf(a);
+        if (p.length <= d || _libNorm(p[d]) !== _libNorm(node.name)) return;
+        p[d] = nm; absSetPath(a, p); hit++;
+      });
+      return hit > 0;
+    }
+    /* Why a rung cannot be inserted under this grouping, in the planner's words — or '' when it can.
+       ⚠️ ONE SOURCE OF TRUTH for the button's disabled state, its tooltip AND absAddSub's refusal.
+       A predicate copied into a renderer is how a control ends up enabled for something the
+       function then refuses, which is the failure this module keeps recording. */
+    function absAddWhy(node) {
+      if (!node || !node.path || !node.path.length) return 'A trade is L1 — the rung under it is a grouping, which an item gets by being given one';
+      if (node.path.length >= ABS_MAX_GRP) return 'L' + (ABS_MAX_GRP + 1) + ' is as deep as the grouping tree goes';
+      var deepest = 0;
+      (node.acts || []).forEach(function (a) { deepest = Math.max(deepest, absPathOf(a).length); });
+      if (!deepest) return 'Nothing under this grouping to move down';
+      // ⚠️ Refused rather than TRUNCATED. Pushing a sub-tree that already reaches the cap would
+      // have to drop somebody's deepest rung to fit, which is silent data loss dressed as a tidy-up.
+      if (deepest >= ABS_MAX_GRP) return 'Something under this grouping is already at L' + (ABS_MAX_GRP + 1) + ', so nothing below it can move deeper';
+      return '';
+    }
+    /* INSERT a rung under a grouping: a new named child takes its place, and EVERYTHING beneath it
+       — its own items and its sub-groupings' whole sub-trees — moves one rung deeper inside it.
+       ⚠️ Everything, not only the direct items. The first version moved the direct items alone,
+       which meant a grouping holding only sub-groupings (Concrete Works, in the rendered check) had
+       nothing to move and the button was dead — so the one grouping a planner most wants to insert
+       a phase under was the one that refused. Inserting is the outline operation "indent my
+       children", and it is well defined for every descendant.
+       ⚠️ Nothing stores a grouping: it exists because items name it. So this writes paths, and an
+       'empty' rung is not representable — which is why there is no way to create one and no way to
+       leave one behind. */
+    function absAddSub(node, name) {
+      var nm = String(name == null ? '' : name).trim();
+      if (!nm || absAddWhy(node)) return false;
+      var d = node.path.length;
+      (node.acts || []).forEach(function (a) {
+        var p = absPathOf(a); p.splice(d, 0, nm); absSetPath(a, p);
+      });
+      return true;
+    }
+    /* ⚠️ THE RUNG NAMES ARE NOT A CONSTANT ANY MORE. The left pane's rungs are the project's OWN
+       location levels wherever it has defined them (a project whose breakdown reads Tower › Level ›
+       Zone › Cluster now says so here, exactly as the push dialog does), and the right pane's depth
+       is whatever the planner has built. The old three-names-per-side constant is what made "more
+       levels" impossible to even say on screen. */
+    function libLvNames(side) {
+      if (side === 'loc') return ['tower', 'floor', 'zone', 'unit'].map(function (d) { return dimLabelOf(d); });
+      var out = ['Trade'], n = absMaxDepth();
+      // ⚠️ 'Grouping 2' matches DIM_LABEL.agroup2, so the legend, the WBS-order editor and the
+      // pushed branch all call the same rung by the same name.
+      for (var i = 1; i <= n; i++) out.push(i === 1 ? 'Grouping' : ('Grouping ' + i));
+      out.push('Item');
+      return out;
     }
     // ⚠️ `what` overrides the rung NAME, because the same rung can hold different things: an item
     // that sits at L2 is at the grouping DEPTH but is not a grouping, and labelling it one would
     // make the tooltip contradict the row it is on.
     function libLv(nth, side, what) {
-      var nm = what || LIB_LV[side][nth - 1];
-      return '<span class="sbld-liblv lv' + nth + '" title="' + e2('L' + nth + ' · ' + nm) + '">L' + nth + '</span>';
+      var nm = what || libLvNames(side)[nth - 1] || ('Level ' + nth);
+      return '<span class="sbld-liblv lv' + Math.min(nth, 6) + '" title="' + e2('L' + nth + ' · ' + nm) + '">L' + nth + '</span>';
     }
-    function libLegend(side) {
-      return '<span class="sbld-liblegend">' + LIB_LV[side].map(function (t, i) {
+    // `upto` trims the legend to the rungs this project actually has — promising an L4 Unit on a
+    // project with no units is the same overclaim the WBS editor's "skipped" marker exists to stop.
+    function libLegend(side, upto) {
+      var a = libLvNames(side);
+      if (upto && upto < a.length) a = a.slice(0, upto);
+      return '<span class="sbld-liblegend">' + a.map(function (t, i) {
         return '<span title="' + e2(t) + '"><b>L' + (i + 1) + '</b> ' + e2(t) + '</span>';
       }).join('') + '</span>';
     }
     function libItemRow(a) {
-      // ⚠️ absLevelOf, never a literal 3. An item directly under its trade IS at level 2, and
-      // printing 3 there was the owner's reported "L1 and then L3" jump.
-      var lv = absLevelOf(a);
+      // ⚠️ absLevelOf, never a literal. An item sits on the rung its own path ends on, and printing
+      // a fixed 3 there was the owner's reported "L1 and then L3" jump.
+      var lv = absLevelOf(a), p = absPathOf(a);
       return '<div class="sbld-libL' + lv + ' sbld-libitem">' + libLv(lv, 'grp', lv === 2 ? 'Item, directly under its trade' : 'Item') +
         '<span class="sbld-libnm">' + e2(a.name || a.code || '(unnamed)') + '</span>' +
         (a.code ? '<span class="sbld-libcode">' + e2(a.code) + '</span>' : '') +
         libLvPick(a, lv) +
-        '<input class="pd-input sbld-libgin" data-libgrp="' + e2(a.id) + '" value="' + e2(a.grp || '') + '" placeholder="grouping…" title="The L2 grouping this item belongs to, e.g. Siteworks, Rebar, Formworks. Clearing it moves the item to L2.">' +
+        '<input class="pd-input sbld-libgin" data-libgrp="' + e2(a.id) + '" value="' + e2(p.join(' › ')) + '" placeholder="grouping › sub-grouping…" title="' +
+          e2('The grouping path this item sits under, deepest last. Separate the rungs with / or › — "Substructure / Rebar" puts it at L4. Clearing it moves the item to L2.') + '">' +
         '</div>';
     }
-    /* The level picker. ⚠️ TWO BUTTONS, NOT A FREE NUMBER: the rungs an ITEM can occupy are L2
-       (directly under its trade) and L3 (inside a grouping), and there is no third possibility to
-       offer. L1 is a trade, and the trades are the project's eight fixed disciplines — a free
-       1/2/3 box would invite a planner to type 1 and then have nothing happen, which is the
-       looks-live-does-nothing failure this module keeps recording. The current rung is `on` and
-       inert; the other one is the move. */
+    /* The rung picker: OUT one rung, IN one rung. ⚠️ ONE BUTTON PER RUNG DOES NOT SURVIVE MORE
+       RUNGS — measured on a rendered pane, not guessed: a trade three groupings deep printed
+       L2 L3 L4 L5 L6 on every single item and squeezed the activity NAME, which is the one thing on
+       the row that has to stay readable. Two buttons instead, at any depth, and the rung itself is
+       already named by the chip at the head of the row, so nothing is lost by not listing them.
+       This is also the promote/demote idiom every outline editor uses, which is what this pane is.
+       ⚠️ The bounds are the item's OWN, not the trade's: out stops at L2 (no grouping — L1 is a
+       TRADE, and the trades are the project's fixed disciplines), and in stops at the cap. An item
+       can always go ONE deeper than it is, borrowing a sibling's name or asking for one, which is
+       how a new rung gets created at all. */
     function libLvPick(a, lv) {
-      return '<span class="sbld-liblvpick">' +
-        [2, 3].map(function (k) {
-          var on = (k === lv);
-          return '<button class="sbld-liblvbtn' + (on ? ' on' : '') + '" data-liblv="' + e2(a.id) + '" data-lv="' + k + '"' +
-            (on ? ' disabled' : '') + ' title="' + e2(on
-              ? ('Already at L' + k + ' · ' + (k === 2 ? 'directly under its trade' : 'inside a grouping'))
-              : (k === 2 ? 'Move to L2 — directly under its trade, clearing its grouping'
-                         : 'Move to L3 — inside a grouping')) + '">L' + k + '</button>';
-        }).join('') + '</span>';
+      var lo = 2, hi = 2 + ABS_MAX_GRP;
+      function b(k, glyph, what) {
+        var dead = (k < lo || k > hi);
+        var why = dead
+          ? (k < lo ? 'Already directly under its trade — L1 is the trade itself'
+                    : ('L' + hi + ' is as deep as the grouping tree goes'))
+          : ('Move ' + what + ' to L' + k + ' — ' + (k === 2 ? 'directly under its trade, clearing its grouping'
+              : ((k - 2) + ' grouping level' + (k - 2 === 1 ? '' : 's') + ' above it')));
+        return '<button class="sbld-liblvbtn" data-liblv="' + e2(a.id) + '" data-lv="' + k + '"' +
+          (dead ? ' disabled' : '') + ' title="' + e2(why) + '">' + glyph + '</button>';
+      }
+      return '<span class="sbld-liblvpick">' + b(lv - 1, '‹', 'out') + b(lv + 1, '›', 'in') + '</span>';
     }
     function stActivities(host) {
       var cols = XL_COLS;
@@ -32194,7 +32515,17 @@
            tower and it starts building — it simply does not claim a level it will not occupy.
            ⚠️ Driven by the same predicate the push uses, not a copy of it. Two functions disagreeing
            about which levels get built is the bug this whole exchange has been about. */
-        function willBuild(d) { return incl[d] && !(d === 'tower' && !multiTower()); }
+        // ⚠️ A GROUPING RUNG NOTHING REACHES IS SKIPPED TOO, on exactly the terms the tower is:
+        // dimKey returns the sentinel for it, so counting it as a level would promise a level the
+        // push does not build. Note this now also covers `agroup` on a project that groups nothing —
+        // which it always did in the tree, and never admitted in this dialog.
+        function willBuild(d) {
+          if (!incl[d]) return false;
+          if (d === 'tower' && !multiTower()) return false;
+          var ad = absDimDepth(d);
+          if (ad >= 0 && absMaxDepth() <= ad) return false;
+          return true;
+        }
         var lvl = 0;
         host.innerHTML = '<div style="font-size:12px;font-weight:700;margin-bottom:4px;">WBS structure <span style="font-weight:400;color:var(--pd-muted);">(drag order with ↑/↓; tick to include)</span></div>' +
           '<div class="sbld-wbsrows">' + work.map(function (d, i) {
@@ -32202,7 +32533,7 @@
             var skipped = on && !build;
             return '<div class="sbld-wbsrow"' + (skipped ? ' style="opacity:.6;"' : '') + '><label style="flex:1;display:flex;align-items:center;gap:7px;"><input type="checkbox" data-dim="' + d + '"' + (on ? ' checked' : '') + '>' +
               '<span class="sbld-wbslvl">' + (build ? 'L' + lvl : '—') + '</span> ' + e2(dimLabelOf(d)) +
-              (skipped ? '<span class="sbld-hint" style="margin:0;">skipped — this project has one tower, so it would be a level with a single branch</span>' : '') + '</label>' +
+              (skipped ? '<span class="sbld-hint" style="margin:0;">skipped — ' + e2(_dimSkipWhy(d)) + '</span>' : '') + '</label>' +
               '<button class="pd-btn sbld-wbsmv" data-up="' + i + '"' + (i === 0 ? ' disabled' : '') + '>↑</button>' +
               '<button class="pd-btn sbld-wbsmv" data-down="' + i + '"' + (i === work.length - 1 ? ' disabled' : '') + '>↓</button></div>';
           }).join('') + '</div>' +
@@ -32562,7 +32893,7 @@
         // ⚠️ `agroup` keys on the grouping NAME, normalised, because that is what identifies it — two
         // items typed "Rebar" and "rebar " are one grouping, and keying on the raw string would build
         // two branches that look identical in the tree.
-        function dimKey(dim, r) { var l = r.loc; if (dim === 'trade') return l.trade; if (dim === 'agroup') return absGrpKey(r.act) || '\u0000'; if (dim === 'tower') return multiTower() ? (l.towerId || '\u0000') : '\u0000'; if (dim === 'floor') return (l.floor && l.floor._all) ? '\u0000' : l.floor.id; if (dim === 'zone') return l.zone ? l.zone.id : '\u0000'; if (dim === 'unit') return l.unit ? l.unit.id : '\u0000'; return '\u0000'; }
+        function dimKey(dim, r) { var l = r.loc; var _ad = absDimDepth(dim); if (_ad >= 0) return absPathKey(r.act, _ad) || '\u0000'; if (dim === 'trade') return l.trade; if (dim === 'tower') return multiTower() ? (l.towerId || '\u0000') : '\u0000'; if (dim === 'floor') return (l.floor && l.floor._all) ? '\u0000' : l.floor.id; if (dim === 'zone') return l.zone ? l.zone.id : '\u0000'; if (dim === 'unit') return l.unit ? l.unit.id : '\u0000'; return '\u0000'; }
         // ⚠️ The trade BRANCH is named with GWORK (the canonical "Structural Works"), not GLABEL
         // ("Structural"). work_type on the pushed activities is already GWORK, so a branch named with
         // the short label made the same trade reachable under TWO different names - and for the three
@@ -32595,7 +32926,7 @@
         function dimName(dim, r) {
           var l = r.loc || {}, v = null;
           if (dim === 'trade') v = GWORK[l.trade] || GLABEL[l.trade] || l.trade;
-          else if (dim === 'agroup') v = absGrpOf(r.act);
+          else if (absDimDepth(dim) >= 0) v = absPathOf(r.act)[absDimDepth(dim)];
           else if (dim === 'tower') v = towerLabel(l.towerId);
           // ⚠️ Floor branch is named by the floor's NAME ("Ground Floor"), falling back to its code —
           // owner: "utilize the names of the floors as the name of the WBS". Its unique code comes from
@@ -32641,7 +32972,7 @@
           var l = (r && r.loc) || {}, i = -1;
           try {
             if (dim === "trade") i = GROUPS.indexOf(l.trade);
-            else if (dim === "agroup") i = absGrpIndex(l.trade, absGrpKey(r.act));
+            else if (absDimDepth(dim) >= 0) i = absSegIndex(l.trade, absDimDepth(dim), absPathKey(r.act, absDimDepth(dim)));
             else if (dim === "tower") i = towerList().findIndex(function (t) { return t.id === l.towerId; });
             else if (dim === "floor") i = (l.floor && !l.floor._all && cfg.zoning[l.trade]) ? cfg.zoning[l.trade].floors.indexOf(l.floor) : -1;
             else if (dim === "zone") i = (l.floor && l.zone && l.floor.zones) ? l.floor.zones.indexOf(l.zone) : -1;
