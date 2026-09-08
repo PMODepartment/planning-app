@@ -2,6 +2,108 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Root cause of the live "Works selector shows no Trade/Activity records" — a transient
+## client-side auth race, NOT a database/RLS/GRANT problem (2026-09-08)
+
+Owner's live console diagnostic on **AVR101** (the exact `console.info`/`console.warn` lines the
+2026-09-07 entry below already ships) gave the decisive evidence:
+
+```
+[progress-photos] WBS-Summary fetch failed for project AVR101:
+{ code: '42501', message: 'permission denied for table project_schedule',
+  hint: 'Grant the required privileges … GRANT SELECT ON public.project_schedule TO anon;' }
+
+[progress-photos] loadSchedule(AVR101): 4321 non-summary activities loaded,
+Execution root=null, Closeout root=null, 0 in Execution/Close-out scope, 0 distinct Works name(s)
+```
+
+### The root cause, traced and confirmed — not guessed
+
+⚠️ **The two lines together prove the database is correctly configured.** Both `console` lines come
+from `loadSchedule()` querying the exact same table (`project_schedule`), through the exact same
+singleton Supabase client (`AppAuth.getSB()` — created once in `auth.js`, never re-created anywhere
+this module can reach — confirmed by grepping the whole repo for `createClient(` and finding it only
+in unrelated modules/Edge Functions), under the exact same signed-in session, **seconds apart**. The
+FIRST of the two (the main `project_schedule` fetch, excluding WBS-Summary rows) succeeded and
+returned **4321 rows**. The SECOND (a separate fetch scoped to `activity_type = 'WBS Summary'` only,
+which resolves the Execution/Close-out root codes) failed with **`42501` naming the `anon` role**.
+
+Two requests against the identical table, under the identical client and session, cannot have
+genuinely different table grants or RLS policies — Postgres grants/RLS are not request-scoped. The
+only way the SECOND request could resolve to `anon` is if, at the exact moment it was composed, the
+client's in-memory session cache transiently read as empty and the request went out with **no
+Authorization Bearer header at all** — which PostgREST then evaluates using only the `apikey` header,
+i.e. as the `anon` role (confirmed against Supabase's own `42501` troubleshooting doc and PostgREST's
+documented role-resolution behaviour, neither of which supports a per-request GRANT/RLS difference on
+one table). This exact class of failure — `getSession()`'s cache transiently resolving null moments
+after a successful, identically-authenticated request — is a real, independently documented
+supabase-js v2 client bug (GitHub `supabase/supabase-js` issues **#1560**, **#1612**, and discussion
+**#19608**, among others), not something specific to this app's schema.
+
+⚠️ **Why THIS particular request was the one to land in the race window, not the main fetch that ran
+moments before it.** `loadSchedule()` fired the main `project_schedule` fetch, then called
+`notifyScheduleReady()` **synchronously**, which invokes every registered `onScheduleReady` listener —
+including `bim.js`'s, which repaints its Tower/Floor DOM (see the 2026-09-04 entry below on that exact
+listener chain) — and only THEN, afterward, fired the second, WBS-Summary-only fetch. That gap between
+two requests, with another module's DOM-touching callback running inside it, is exactly the kind of
+window a client-side session-cache race lands in.
+
+### The fix — client-side only, no GRANT, no RLS, no fallback project, no hardcoded data
+
+Per the owner's explicit constraints, **nothing in the database was touched.** `project_schedule`'s
+grants and RLS were never the problem (proven above), so widening `anon`'s access — the exact fix
+Supabase's own generated hint suggested — would have been the wrong fix for the actual defect, and
+would have needlessly exposed the whole table to unauthenticated reads project-wide, which this app
+has never done for any table (confirmed: no other module/migration in this repo grants `anon` direct
+table access — every table is `authenticated`-only, scoped by RLS).
+
+Two changes, both in `module.js`, both scoped to the **shared `fetchAllPages()` helper** and
+`loadSchedule()`'s own call shape:
+
+1. **`fetchAllPages()` now retries EXACTLY ONCE on a `42501` response**, after an explicit
+   `await sb().auth.getSession()` to force the client to re-settle its session (the same recovery
+   every one of the linked upstream supabase-js issues describes happening once the session is
+   actively re-checked). A retry that still fails still surfaces as a real error — no silent
+   swallowing, no second retry, so a **genuine** permissions problem (a real missing grant, a real RLS
+   gap) still reports honestly rather than being papered over. This hardens every current and future
+   caller of `fetchAllPages()`, not just this one query.
+2. **`loadSchedule()` no longer makes TWO separate sequential `project_schedule` fetches with a
+   listener-callback gap between them.** It now does **one** combined, unfiltered fetch of the whole
+   table (Task rows and WBS-Summary rows together) and derives both `SCHED_ACTS` (non-summary rows)
+   and the Execution/Close-out root-code resolution from that **same** in-memory result set — closing
+   the specific gap the race landed in, and matching how **Project Schedule's own `load()`** has
+   always read this identical table (one paginated pass over everything, never split into a
+   Task-only and a WBS-Summary-only round trip — confirmed by reading its `load()` before making this
+   change, per the owner's own instruction).
+
+⚠️ **Both changes are additive/structural — nothing about Trade/Activity identification, the
+Execution-Phase name-matching rule, or the Works picker's own logic changed.** `SCHED_ACTS`,
+`EXEC_WBS_CODE`/`CLOSEOUT_WBS_CODE`, `worksGroupedOptions()`, and the picker itself are all unchanged
+downstream consumers of the same data, now assembled without the vulnerable gap.
+
+### Expected result on re-test
+
+With the fix deployed, re-opening Add Media on AVR101 should log a single `project_schedule` fetch
+succeeding (or, in the rare event the race still lands on that one combined request, one
+`console.info('… recovered from a transient 42501 …')` line showing the retry caught it) and the
+summary line should read a real `Execution root=`/`Closeout root=` code pair with a non-zero
+in-scope/eligible-Works count — assuming AVR101's schedule has a WBS-Summary branch whose name
+resolves via `branchPhaseFromName()` (a real remaining possibility, distinct from this fix, per the
+2026-08-13e/f/g entries below on that exact naming-match failure mode).
+
+⚠️ **Not verified signed-in** — same standing limitation as every entry in this file (no live login,
+no `node` binary in this environment; confirmed again this pass — checked directly, neither resolves).
+Verified instead: brace/paren balance (1334/1334, 4945/4945), 0 NUL bytes (confirmed via byte-count
+comparison after stripping `\0`, not the `grep -c $'\0'` line-count trap this file's own history
+already warns about), exactly one declaration each of `fetchAllPages`/`buildQuery`/`loadSchedule`,
+and a full manual re-read of the edited function confirming it closes correctly and every downstream
+reader (`SCHED_ACTS`, `inExecOrCloseout`, the diagnostic summary) is unchanged in shape. `test.js` has
+no existing assertions tied to the two-fetch shape this replaces (grepped for `WBS-Summary fetch`/
+`wbsRowCount`/`fetchAllPages` — none found), so nothing there needed updating; no new tests were added
+given `node` isn't available here to execute them.
+
+`module.js?v=` → `20260908a` (module-local only; `module.css` unchanged, stays `20260907b`).
+
 ## Works field rebuilt as a hierarchical Execution-Phase Trade > Activity selector, sourced from Project Schedule (2026-09-07)
 
 Owner's spec (a 40-page PDF): the **Works** field inside **Progress Photos → Add Media** must become a

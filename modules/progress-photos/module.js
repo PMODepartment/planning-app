@@ -281,14 +281,44 @@ window.ProgressPhotos = (function () {
   // reason. location_levels itself is a short, curated per-project list (a
   // handful of rows) — not paginated, matching how Project Schedule's own
   // openLocLevels() loads it.
+  // ⚠️ 2026-09-08: hardened against a documented supabase-js v2 client-side
+  // race (github.com/supabase/supabase-js issues #1560, #1612, discussion
+  // #19608, among others) where the client's in-memory session cache can
+  // transiently resolve to null between two requests fired moments apart on
+  // the SAME already-authenticated client -- the very next PostgREST request
+  // then goes out with no Authorization header at all and is evaluated as
+  // the `anon` role. Confirmed live on AVR101: a project_schedule fetch
+  // failed `42501 permission denied for table project_schedule` (hint
+  // naming `anon`) immediately after a DIFFERENT project_schedule fetch --
+  // same table, same client, same session, seconds earlier -- had just
+  // returned 4321 rows successfully. That proves the table's own grants/RLS
+  // are correct (they can't differ request-to-request); it was a transient
+  // client auth-state hiccup, not a database misconfiguration, so the fix
+  // belongs here, not in a GRANT/RLS change. A `42501` on any single page is
+  // retried EXACTLY ONCE, after an explicit `sb().auth.getSession()` forces
+  // the client to resettle its session (the same recovery every one of
+  // those upstream issues describes happening once the session is actively
+  // re-checked) -- never silently swallowed, and never retried a second
+  // time, so a GENUINE permissions problem still surfaces as an error.
   async function fetchAllPages(table, selectCols, extraFilter) {
     var all = [], last = null;
-    while (true) {
+    function buildQuery() {
       var q = sb().from(table).select(selectCols).eq('project_id', pid);
       if (extraFilter) q = extraFilter(q);
       q = q.order('id', { ascending: true }).limit(1000);
       if (last) q = q.gt('id', last);
-      var res = await q;
+      return q;
+    }
+    while (true) {
+      var res = await buildQuery();
+      if (res.error && res.error.code === '42501') {
+        try { await sb().auth.getSession(); } catch (e) {}
+        var retryRes = await buildQuery();
+        if (!retryRes.error) {
+          console.info('[progress-photos] fetchAllPages(' + table + '): recovered from a transient 42501 after re-settling the session.');
+        }
+        res = retryRes;
+      }
       if (res.error) return { data: null, error: res.error };
       var batch = res.data || [];
       all = all.concat(batch);
@@ -309,22 +339,47 @@ window.ProgressPhotos = (function () {
       if (!lres.error) LOC_LEVELS = lres.data || [];
     } catch (e) {}
 
+    // ⚠️ 2026-09-08 ROOT-CAUSE FIX, confirmed live on AVR101: this used to be
+    // TWO separate sequential project_schedule fetches -- the main one here
+    // (excluding WBS-Summary rows) and a second one further down (WBS-Summary
+    // rows only, for resolving the Execution/Close-out root codes) -- with a
+    // synchronous notifyScheduleReady() call, which invokes OTHER modules'
+    // listener callbacks (bim.js's render(), etc.), sitting in between them.
+    // The live diagnostic showed the SECOND of those two fetches failing
+    // `42501 permission denied for table project_schedule` (hint naming the
+    // `anon` role) immediately after the FIRST -- same table, same client,
+    // same session -- had just succeeded with 4321 rows. Two fetches against
+    // the identical table under the identical client cannot have genuinely
+    // different grants/RLS; this was a transient supabase-js client-side
+    // auth-state race landing in the gap between the two requests (see
+    // fetchAllPages' own comment for the documented upstream issue), not a
+    // database problem. Fixed by not having a gap at all: ONE combined,
+    // unfiltered fetch of the whole project_schedule table (Task rows AND
+    // WBS-Summary rows together) -- exactly how Project Schedule's OWN
+    // load() has always read this same table (one paginated pass, never
+    // split into a Task-only and a WBS-Summary-only round trip) -- with both
+    // SCHED_ACTS and the WBS-Summary root resolution derived from the SAME
+    // already-fetched result set in memory. No RLS/GRANT was touched --
+    // there was nothing wrong with either to fix.
+    var allSchedRows = [];
     try {
       var ares = await fetchAllPages('project_schedule',
-        'id,activity_id,activity_name,location,activity_type,status,start_date,end_date,work_type,phase,wbs',
-        function (q) { return q.neq('activity_type', 'WBS Summary'); });
-      if (!ares.error) SCHED_ACTS = ares.data || [];
-    } catch (e) {}
+        'id,activity_id,activity_name,location,activity_type,status,start_date,end_date,work_type,phase,wbs');
+      if (!ares.error) allSchedRows = ares.data || [];
+      else console.warn('[progress-photos] project_schedule fetch failed for project ' + pid + ':', ares.error);
+    } catch (e) {
+      console.warn('[progress-photos] project_schedule fetch threw for project ' + pid + ':', e);
+    }
+    SCHED_ACTS = allSchedRows.filter(function (a) { return a.activity_type !== 'WBS Summary'; });
 
     // ⚠️ 2026-09-04, found live on SLN101 (a large, real schedule): notifying
     // bim.js HERE, not after loadSchedule() as a whole returns. LOC_LEVELS/
     // SCHED_ACTS — everything bim.js's Tower/Floor picker actually reads —
-    // are already final at this point; the two fetches BELOW (WBS-Summary
-    // roots for the Works picker, then activity codes) are for a completely
-    // different feature and can each cost several more paginated round
-    // trips on a large project. Gating bim.js's picker on the WHOLE function
+    // are already final at this point; the activity-codes fetch below is for
+    // a completely different feature and can cost several more round trips
+    // on a large project. Gating bim.js's picker on the WHOLE function
     // finishing meant a slow/large schedule left it staring at stale "No
-    // Locations Available" for as long as those unrelated fetches ran —
+    // Locations Available" for as long as that unrelated fetch ran —
     // confirmed live: `loadSchedule()`'s own end-of-function summary log
     // never printed at all in a real multi-minute test window on SLN101,
     // while LOC_LEVELS/SCHED_ACTS were already correct and queryable.
@@ -334,33 +389,25 @@ window.ProgressPhotos = (function () {
     // Works picker can scope by dotted-code ancestry (see the EXEC_WBS_CODE
     // comment above) -- the raw `phase` column alone is not reliable enough
     // on an imported schedule that never had every activity re-stamped.
-    try {
-      var wres = await fetchAllPages('project_schedule', 'wbs,activity_name,activity_type',
-        function (q) { return q.eq('activity_type', 'WBS Summary'); });
-      if (!wres.error) {
-        var execBest = null, closeoutBest = null, wbsRowCount = (wres.data || []).length;
-        (wres.data || []).forEach(function (w) {
-          var code = w.wbs;
-          if (!code) return;
-          var ph = branchPhaseFromName(w.activity_name);
-          if (!ph) return;
-          var depth = (code.match(/\./g) || []).length;
-          if (ph === 'construction' && (!execBest || depth < execBest.depth)) execBest = { code: code, depth: depth };
-          if (ph === 'closeout' && (!closeoutBest || depth < closeoutBest.depth)) closeoutBest = { code: code, depth: depth };
-        });
-        EXEC_WBS_CODE = execBest ? execBest.code : null;
-        CLOSEOUT_WBS_CODE = closeoutBest ? closeoutBest.code : null;
-        if (!EXEC_WBS_CODE && !CLOSEOUT_WBS_CODE) {
-          console.warn('[progress-photos] Could not find an Execution Phase / Closeout Phase WBS ' +
-            'branch among ' + wbsRowCount + ' WBS-Summary row(s) for project ' + pid + ' -- the ' +
-            'Works picker will fall back to the raw project_schedule.phase column only, which is ' +
-            'often blank on an imported schedule. Check the WBS Manager for the exact branch names.');
-        }
-      } else {
-        console.warn('[progress-photos] WBS-Summary fetch failed for project ' + pid + ':', wres.error);
-      }
-    } catch (e) {
-      console.warn('[progress-photos] WBS-Summary fetch threw for project ' + pid + ':', e);
+    // Derived from `allSchedRows` above -- no second fetch.
+    var wbsSummaryRows = allSchedRows.filter(function (a) { return a.activity_type === 'WBS Summary'; });
+    var execBest = null, closeoutBest = null;
+    wbsSummaryRows.forEach(function (w) {
+      var code = w.wbs;
+      if (!code) return;
+      var ph = branchPhaseFromName(w.activity_name);
+      if (!ph) return;
+      var depth = (code.match(/\./g) || []).length;
+      if (ph === 'construction' && (!execBest || depth < execBest.depth)) execBest = { code: code, depth: depth };
+      if (ph === 'closeout' && (!closeoutBest || depth < closeoutBest.depth)) closeoutBest = { code: code, depth: depth };
+    });
+    EXEC_WBS_CODE = execBest ? execBest.code : null;
+    CLOSEOUT_WBS_CODE = closeoutBest ? closeoutBest.code : null;
+    if (!EXEC_WBS_CODE && !CLOSEOUT_WBS_CODE) {
+      console.warn('[progress-photos] Could not find an Execution Phase / Closeout Phase WBS ' +
+        'branch among ' + wbsSummaryRows.length + ' WBS-Summary row(s) for project ' + pid + ' -- the ' +
+        'Works picker will fall back to the raw project_schedule.phase column only, which is ' +
+        'often blank on an imported schedule. Check the WBS Manager for the exact branch names.');
     }
 
     try {
