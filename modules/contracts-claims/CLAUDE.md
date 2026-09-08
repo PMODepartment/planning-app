@@ -1,5 +1,245 @@
 # Module: contracts-claims
 
+## The Trades step was loading fine — a text-field CSS rule was hiding it (2026-09-08a) — fmlozano
+
+Owner: *"1. The trades in the add BOQ is not loading properly. 2. I have an existing BOQ and I want
+to add another BOQ since my first BOQ only covers General Requirement. In the Wizard it says 'Start
+a new revision instead' which is misleading with my objective to create a new BOQ. 3. I need a
+delete BOQ as well, not just the lines within the BOQ just in case."*
+
+### 1 — ⚠️⚠️ `.ccw-main input` gave every checkbox `width:100%`, and the ladder went off-screen
+Nothing was failing to load. All 702 class codes were read, the four panes were built, and the pane
+headers even printed their counts (**TRADE 7 · DIVISION 1 · GROUP 17 · ITEM 6**) — the rows were
+there with only a checkbox visible, centred, and a horizontal scrollbar under every pane.
+
+`module.css` line 506 said `.ccw-main input, .ccw-main select, .ccw-main textarea { width:100%;
+padding:9px 11px; border; background }` — a **text-field** rule, applied to *every* input inside the
+wizard's main pane. The Trades step hosts `boq.js`'s four-pane ladder there, so every ladder
+checkbox became a text field. **Measured in a browser against the shipped file:**
+
+| | before | after |
+|---|---|---|
+| ladder checkbox width | **181.75px** (in a 201.75px row) | **13px** |
+| `.boq-lad-name` width | 0 | 107px (`"General Requirement"`) |
+| pane `scrollWidth` / `clientWidth` | **254 / 202** | 202 / 202 |
+
+The code chip, the item name and the n/total count were pushed clean past the pane, and the tick
+glyph rendered centred inside its own stretched box — which is exactly what the owner's screenshot
+shows. The name string was in the DOM the whole time.
+
+- ⚠️ **The symptom pointed at the wrong layer.** "Not loading" is the honest reading of that screen:
+  containers with counts and no content is what a failed fetch looks like. Two prior entries in this
+  file chased real data faults with a similar shape (`PDb.selectAll` on a table with no `id`; the
+  cached empty `CODES`), which makes the CSS answer *less* likely to be reached, not more.
+- ⚠️ **Fixed by TYPE, not per widget:** `input:not([type="checkbox"]):not([type="radio"])`. A
+  `.boq-lad-row input { width:auto }` override would have fixed the ladder and left the trap armed
+  for the next control. It also un-stretched the three **radios** the wizard already renders — the
+  BOQ build/import pair and the primary-package column were 100%-wide radios, wrong since they were
+  written and never noticed because a stretched radio still works.
+- ⚠️ Verified in the Browser pane on a harness holding the real `module.css` and the real `ladRow`
+  markup, before and after. ⚠️ The pane must be **fronted** to measure: a hidden tab reports
+  `clientWidth 0` for everything and serves a stale frame — the artefact already recorded in
+  `browser-hidden-tab-artefact`.
+
+### 2 — ⚠️⚠️ "Start a new revision instead" DID NOT START A REVISION
+The owner is right about the wording, and the wording was the smaller half. That link set
+`st.boqNew = true`, and `finish()` then called `createBoqDraft` **with a `docName`** — which creates
+a new `boq_documents` row. So:
+
+- the only route to **another BOQ** was the one labelled as the thing he did not want;
+- the label promised a **supersede** that never happened;
+- there was **no** route to a genuine new revision of the BOQ on screen at all.
+
+A control that lies about which of two hard-to-unpick things it does is worse than a missing one,
+because the planner has no reason to check. Replaced with **three named choices**, each saying what
+it does, gated on what exists:
+
+| path | offered when | writes |
+|---|---|---|
+| **Add trades to rev NN** | a draft is open | nothing — hands off to the class-code picker on that draft |
+| **Create another BOQ** | always | `createBoqDraft({docName, rev …})` → new document + its rev 00 |
+| **New revision of NAME** | the document holds ≥1 revision | `createBoqDraft({rev …})` → **no docName**, so a revision inside that document |
+
+- ⚠️ `boqPath()` resolves this in **one** place, read by the step's copy, the rail's Trades entry,
+  the primary button's label and `finish()` — the four that already disagreed once, when the step
+  said *"Add trades to 00"* under a button promising a file picker. The stored choice is
+  **re-validated against what exists on every read**: `boqDraft()` answers null until the BOQ
+  section has loaded, so a run opened from the top of the page must not be locked to a path that
+  turns out not to exist.
+- ⚠️ **The name field is asked for only on `doc`,** and `finish()` must not send a `docName` on
+  `rev` — that would silently create a second document instead of the revision the step promised,
+  i.e. this exact bug reintroduced from the other side. Asserted in the harness (below).
+- ⚠️ **A new document's first revision defaults to `00`, not `nextBoqRev()`.** That function reads
+  the revisions of the BOQ *on screen*, so a second BOQ was being offered "01" as though it
+  continued the first one's series. `2026-09-07-boq-documents.sql` §5 replaced the project-wide
+  unique index on `rev_no` with a per-**document** one precisely so both bills can hold a rev 00.
+- ⚠️ **The prefill re-derives when the path changes, unless the planner typed one.** Caught in the
+  harness: `doc` → `rev` left the field reading 00, because `captureBoq()` had already stored the
+  other path's prefill and `st.boqRev || default` cannot tell a stored prefill from a typed answer.
+  Not corruption — `createDraft` retries a duplicate and steps the label — but the planner would be
+  told 00 and get 01. `boqRevTyped` is the distinction, set by the field's own `oninput` and never
+  by a repaint.
+- The button now names the object: **Add trades** / **Create BOQ** / **Create revision**.
+
+### 3 — the last BOQ is deletable, and a draft REVISION is deletable
+Yesterday's trash control existed but refused on `DOCS.length < 2`, so on a project with exactly one
+BOQ — most of them, and the case a wrong first attempt happens in — it refused every time. From
+where the owner stood it did not exist.
+
+- ⚠️ **The "last document" refusal protected nothing.** Its stated reason was that removing the only
+  document *"orphans the next revision and leaves the picker empty"* — but `boq_revisions` **cascades
+  from** `boq_documents`, so there is no next revision to orphan, and an empty picker is a state
+  `render()` already answers on purpose (*"No BOQ on this project yet"* + Add BOQ). Every project
+  starts there. Removed; the confirm now says the project will be left with **no BOQ at all and a
+  contract value reading zero**, because that is a materially different outcome from "one of several
+  is going" and the trash icon cannot say which case you are in.
+- **A draft revision now has its own trash**, beside the revision picker. Three granularities, three
+  different jobs: the lines (*Delete selected*), one revision, the whole BOQ.
+- ⚠️ **Rendered only on a DRAFT.** An issued revision is the tendered document and this module's
+  invariant is supersede-never-edit-away; a control that appeared over it would have to refuse on
+  click, and a button whose only behaviour is to refuse teaches the planner the module is arbitrary.
+- ⚠️ **The ONLY revision of a BOQ is refused, and this one is a real gate.** No path in this module
+  adds a revision to a document that has none — `openNewRev()` writes `document_id` from `DOCID`,
+  but the wizard's revision path is offered only when the document already holds one — so a document
+  emptied this way would be a shell nothing could fill. The message names the control that does
+  work: the trash beside the BOQ name, which since today deletes the last BOQ too.
+- Unchanged and still doing the real work: an **issued** revision is never deletable, and
+  `boq_billing_periods` references `boq_revisions` **without** cascade so Postgres refuses outright
+  — that foreign-key error is translated, not shown raw.
+
+### 4 — ⚠️⚠️ The class-code bridge runs ONE WAY, and the owner's process needs the other two
+Owner: *"Let's check how the defined class codes should connect with the activities defined in the
+schedule … In terms of process, high level BOQ will be the basis -> detailed schedule will be
+developed -> detailed BOQ will be based on the detailed schedule."*
+
+That process has three hand-offs. **Only the middle one is built, and it only works after the
+schedule already exists.** Measured, not assumed: `grep -c 'boq_' modules/project-schedule/index.html`
+returns **0** — the schedule reads no `boq_*` table at all, so every link below lives on the
+Contracts side and writes *into* the schedule.
+
+| Hand-off | What the process needs | State |
+|---|---|---|
+| high-level BOQ → **detailed schedule** | the BOQ's codes seed the activities | ❌ **nothing** |
+| schedule ↔ BOQ **tagging** | activities carry `class_code` | ✅ `boq_tag_activities`, propose→preview→apply, per code |
+| detailed schedule → **detailed BOQ** | the tagged activities seed the BOQ lines | ❌ **nothing** — `addAuthoredLines(codes)` reads the class-code **library**, never the schedule |
+| BOQ money → **activity cost** | the priced line loads the activity | ❌ **nothing** — Cost Loading keys on the activity NAME |
+
+⚠️ **The tagger closes the wrong end for this process.** `boq_tag_activities` matches a code against
+activities that **already exist** and writes `project_schedule.class_code`; `matchAct` scores on
+`desc_l3` / `desc_l2` word overlap against `activity_name`, floor 0.8 for a pre-tick. Excellent when
+the schedule was imported from P6 and the BOQ arrives after. In the owner's order the schedule does
+**not** exist yet at step 1, and at step 3 the codes are already on the activities — so the tagger
+has nothing to propose in either direction, and the planner re-types the connection twice.
+
+⚠️⚠️ **Cost Loading is the reason a code cannot carry money today, and it is a NAME-keyed screen.**
+Confirmed at `modules/project-schedule/index.html:33201` — `buildGroups()` groups by `nameOf(r)`
+(the activity name, or a work-naming WBS ancestor) and reads `cfg.groups[name].total`, which is
+**typed by hand**. So a BOQ line priced at X under `03101` and forty activities tagged `03101` sit
+in the same database, both carrying the same code, and the money is re-keyed between them by a human.
+The class code is a **tag for grouping and reporting; it is not a cost carrier.** (Recorded in the
+2026-09-07i entry; re-verified here, unchanged.)
+
+⚠️ **The trap to design around before building any of this is DOUBLE COUNTING.** One BOQ line
+allocated across forty activities must contribute its amount **once**. `boq_allocations` already
+carries the split (and, since 2026-09-07h, a `qty = 0` link that means *matched, not yet
+quantified*), so the money belongs on the **allocation**, never on the tag. Summing
+`boq_items.amount` over "every activity whose `class_code` matches" would multiply the contract by
+the number of activities sharing a code — silently, and in the direction that looks like good news.
+
+**The three things that would make the process one continuous chain, cheapest first:**
+1. **Seed the schedule from the high-level BOQ.** The Trades step's own ladder selection is already
+   a list of codes with `desc_l2` / `desc_l3` — the same strings the Schedule Builder needs for
+   activity names. A "from the BOQ's class codes" source in the builder turns step 1 → step 2 into
+   propose → preview → apply instead of re-typing 122 headings. Uses only what both sides already
+   store; needs no migration.
+2. **Seed the detailed BOQ from the tagged schedule.** The inverse of `addAuthoredLines`: one line
+   per activity (or per code × location, reusing the existing location matcher), with
+   `boq_class_map` written from `project_schedule.class_code` and `boq_allocations` written from the
+   activity it came from — so the detailed BOQ is **born matched**, and the Match-to-schedule
+   worklist starts empty instead of at 122.
+3. **Then, and only then, make the code carry money:** offer *"total from the BOQ"* in Cost Loading
+   beside the leaf name and the WBS ancestor, summing over **allocations**. Third because (2) is
+   what makes the allocations exist to sum; done first it would sum a table nobody has filled.
+
+⚠️ None of the three is built here — this entry records the audit, not the feature. What *is*
+already true and worth saying to a planner: the codes do connect the activities, in one direction,
+after the schedule exists.
+
+### 5 — what is still missing for the module to be holistic
+Read off this file and `ROADMAP.md` §B rather than invented. Ordered by what blocks a real month-end.
+
+**Blocking a live project**
+- ⚠️ **Design decision #6 is still OPEN and needs the owner** (ROADMAP §B, unresolved since
+  2026-08-25): billing periods run **26th → 25th** while Cash Flow and the S-curve are monthly.
+  Pro-rata across the two months, or assign the period to the month holding its end date? Both are
+  defensible and they give **different monthly revenue** — so the Cash Flow mirror is reading a
+  figure whose definition has not been agreed.
+- **No billing on a hand-built BOQ until it is issued**, which is correct (the database enforces it)
+  but means the whole authored path has never been through a period end to end.
+- **The `status` column on `contracts_claims` has no fixed vocabulary**, so the module tile claims
+  no attention figure (ROADMAP §A: "a guessed one reads 0 forever and looks like good news").
+
+**Half-built, columns exist and the editor does not**
+- **The PMI approval chain** — roles are captured per profile and stored as jsonb; there is no
+  per-record editor to tick off "Recommending Approval". Per-stage aging surfaces the exposure the
+  chain would explain, which is why this was deferred rather than dropped.
+- **Promoting a PMI to a `contracts_claims` claim is manual** — `claim_id` is stored but set by hand.
+- **`trade_map` is unread in anger.** The migration has not been run, so no row has been read and
+  the tooltip has never named a procurement trade. It also fires **only on a hand-built bill**: on
+  an import the chip is the client's own sheet name (`'BILLING BREAKDOWN '`, trailing space and all).
+
+**Consistency gaps that will bite**
+- ⚠️ **`openNewRev()` still writes `document_id` from `DOCID`, and it is the FALLBACK path** used
+  only if `wizard.js` fails to load. It is the one create-surface that does not go through the
+  wizard, which is exactly the shape of drift this module has already paid for twice (two create
+  dialogs, two import doors).
+- **A BOQ document with no revision is unreachable.** No path adds a revision to an empty document,
+  which is why deleting the only revision is refused above. Either the wizard's `rev` path should
+  offer *"create the first revision of NAME"* when the document is empty, or the empty state should
+  not be creatable at all.
+- **Two POC systems exist and must stay two** (ROADMAP §B1d): the schedule's `schedule_scurve_agg`
+  and the BOQ billing POC. The Billing tab shows Contractual · Progress · Variance side by side —
+  the variance is a report and must never auto-reconcile.
+
+**Not built, deliberately — recorded so nobody rebuilds the argument**
+- No OCR of client PMI PDFs. A mis-parsed amount in a claims register gets quoted at a meeting.
+- No UI path that edits an issued `boq_items` line's description, unit, qty or amount. A remeasure
+  is a new revision; every claim argument turns on exactly what was tendered.
+- No `project_schedule.quantity` column. An activity's quantity is **derived** through the
+  `boq_activity_quantity` view, or quantities live in three places and drift.
+
+
+### Verified
+Driven in the Browser pane against the **real `wizard.js`** with a stubbed dependency object, all
+four `finish()` endings asserted on the payload rather than the toast:
+
+| run | button | call |
+|---|---|---|
+| `add` | Add trades | `addBoqTrades()`, nothing written |
+| `doc` + name | Create with 12 lines | `createBoqDraft({docName:"Structural Works BOQ", rev:"00"})` then `addBoqLines(2)` |
+| `rev` | Create with 12 lines | `createBoqDraft({rev:"01"})` — **no docName** |
+| `doc`, no name | Create with 12 lines | **refused**, zero calls |
+
+Plus the two degenerate worlds: a **fresh project** (no draft, no document) shows no path radios and
+falls back to the original build/import + name step; a document whose revisions are all **issued**
+offers `doc` and `rev` but not `add`. And the prefill: `doc`→00, `rev`→01, a typed `R2` survives a
+path switch.
+
+⚠️ **Not verified signed-in.** The stubs stand in for `boq.js`, so no document, revision or line has
+been written or deleted through these paths against a real project. The delete gates are argued from
+the migrations' own cascade declarations, not observed refusing.
+
+- `module.css` / `boq.js` / `wizard.js` / `module.js` `?v=20260908a`; `MODULE_V` → `20260908a`.
+- New exports so the wizard can NAME what it is about to do rather than describe it in the abstract:
+  `BOQ.currentDocument()`, `BOQ.revisionCount()`, surfaced as `D.boqDoc()` / `D.boqRevCount()`.
+
+### ⚠️ `boq.js` is LF; `wizard.js` and `module.css` are CRLF
+Third recorded instance in this module (`module.js` has 14 CRLF among 1,098 LF; `packages.js` is
+wholly CRLF). A patch script that assumes one of them silently matches **zero** occurrences — which
+looks exactly like "the anchor text moved". Detect per file: `CRLF = '\r\n' in s`.
+
+---
+
 ## A BOQ can be deleted, and a trade now names who buys it (2026-09-07i) - fmlozano
 
 Owner: *"Let's add the option to delete BOQ first. Let's do the proper mapping if you think that would

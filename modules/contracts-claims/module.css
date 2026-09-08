@@ -503,7 +503,21 @@ html.pd-dark {
 .ccw-main h3 { margin: 0; font-size: 15px; }
 .ccw-sub { margin: 2px 0 12px; color: var(--pd-muted); font-size: 12px; }
 .ccw-main label { display: block; font-size: 12px; font-weight: 600; color: var(--pd-muted); margin: 10px 0 0; }
-.ccw-main input, .ccw-main select, .ccw-main textarea { width: 100%; margin-top: 4px; padding: 9px 11px;
+/* ⚠⚠ CHECKBOXES AND RADIOS ARE EXCLUDED, and the omission cost the Trades step its labels.
+   This rule said `.ccw-main input`, so EVERY input inside the wizard's main pane was given
+   `width:100%` and 9px/11px of padding — including the four-pane class-code ladder that the
+   Trades step hosts. Measured on the shipped file: the ladder's checkbox rendered **181.75px
+   wide in a 201.75px row**, which pushed the code chip, the item name and the n/total count
+   clean out of the pane (scrollWidth 254 against clientWidth 202) and centred the tick glyph
+   inside its own stretched box. Owner: *"The trades in the add BOQ is not loading properly."*
+   It was loading — all 702 codes were there, in the DOM, off-screen. Nothing about the symptom
+   pointed at CSS, which is what made it read as a data failure.
+   ⚠ It also stretched the three RADIOS the wizard renders (the BOQ build/import pair and the
+   primary-package column), so a text-field rule was quietly deforming every toggle control in
+   the wizard. Scoped by TYPE rather than patched per-widget: a control added inside .ccw-main
+   later inherits the correct behaviour instead of inheriting the next version of this bug. */
+.ccw-main input:not([type="checkbox"]):not([type="radio"]),
+.ccw-main select, .ccw-main textarea { width: 100%; margin-top: 4px; padding: 9px 11px;
   border: 1px solid var(--pd-line); border-radius: 8px; font: inherit; font-size: 14px;
   background: var(--pd-card); color: var(--pd-ink); }
 .ccw-main textarea { min-height: 68px; resize: vertical; }

@@ -95,6 +95,46 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-08 (a) — The Trades step was never failing to load; a text-field CSS rule was hiding it
+
+No migration. Owner: *"1. The trades in the add BOQ is not loading properly. 2. … it says 'Start a
+new revision instead' which is misleading with my objective to create a new BOQ. 3. I need a delete
+BOQ as well."* Detail in [`modules/contracts-claims/CLAUDE.md`](modules/contracts-claims/CLAUDE.md).
+
+- ⚠️⚠️ **`.ccw-main input { width:100% }` was applied to the class-code ladder's checkboxes.** A
+  text-field rule, matching *every* input inside the wizard's main pane — and the Trades step hosts
+  `boq.js`'s four-pane ladder there. Measured in a browser on the shipped file: the ladder checkbox
+  rendered **181.75px wide in a 201.75px row**, pushing the code chip, the item name and the n/total
+  count clean out of the pane (`scrollWidth 254` against `clientWidth 202`) and centring the tick
+  glyph in its own stretched box. All 702 codes were read and every name was in the DOM. Scoped by
+  **type** — `input:not([type="checkbox"]):not([type="radio"])` — which also un-stretched the three
+  radios the wizard already rendered as 100%-wide controls.
+- ⚠️⚠️ **"Start a new revision instead" did not start a revision — it created a new BOQ document.**
+  The link set `boqNew` and `finish()` then passed a `docName`, which is exactly what makes a new
+  `boq_documents` row. So the only route to the thing the owner wanted was labelled as the thing he
+  did not want, the label promised a supersede that never happened, and there was no route to a real
+  revision of the BOQ on screen at all. Now three named choices — **Add trades to rev NN** /
+  **Create another BOQ** / **New revision of NAME** — resolved by one `boqPath()` that the step's
+  copy, the rail, the button label and `finish()` all read, and re-validated against what exists on
+  every read because `boqDraft()` answers null until the BOQ section has loaded.
+- **The last BOQ is deletable, and a draft revision has its own trash.** The `DOCS.length < 2`
+  refusal protected nothing — `boq_revisions` cascades from `boq_documents`, so there was no next
+  revision to orphan, and an empty picker is a state `render()` already answers on purpose. On a
+  project with one BOQ the control refused every time, so from the owner's side it did not exist.
+  The gates that guard evidence are untouched: an **issued** revision is never deletable, and
+  `boq_billing_periods` blocks a delete in the **database**.
+- ⚠️ **Audited, not built: the class-code bridge runs one way.** `grep -c 'boq_'` over
+  `modules/project-schedule/index.html` returns **0**. Of the owner's four hand-offs (high-level BOQ
+  → schedule, tagging, schedule → detailed BOQ, BOQ money → activity cost) only **tagging** exists,
+  and it only works once the schedule already does. Cost Loading groups by activity **name**
+  (`index.html:33201`) and its total is typed by hand, so a class code is a reporting tag and not a
+  cost carrier. The trap to design around first is **double counting** — one line allocated across
+  forty activities must contribute once, so the money belongs on the allocation, never on the tag.
+- Assets `module.css` / `boq.js` / `wizard.js` / `module.js` `?v=20260908a`; `MODULE_V` →
+  `20260908a`.
+- ⚠️ **Not verified signed-in.** The wizard's four endings were asserted on their `createBoqDraft`
+  payloads against stubbed deps, so nothing has been written or deleted against a real project.
+
 ### 2026-09-07 (k) — A BOQ can be deleted; Finance's cost classes are translated to Procurement's trades
 
 **Run `migrations/2026-09-07-trade-map.sql`.** Owner: *"Let's add the option to delete BOQ first.

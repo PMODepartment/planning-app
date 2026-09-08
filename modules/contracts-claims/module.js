@@ -601,6 +601,15 @@ window.ContractsClaims = (function () {
       boqDocuments: function () {
         return (window.BOQ && BOQ.documents) ? BOQ.documents() : [];
       },
+      /* WARNING The BOQ currently on screen, so the wizard can NAME what a new revision would
+         supersede. Returns null before the BOQ section has loaded, which the wizard reads as
+         "unknown" and does not claim either way -- the same tolerance as boqDraft above. */
+      boqDoc: function () {
+        return (window.BOQ && BOQ.currentDocument) ? BOQ.currentDocument() : null;
+      },
+      boqRevCount: function () {
+        return (window.BOQ && BOQ.revisionCount) ? BOQ.revisionCount() : 0;
+      },
       /* Whether a draft is already open, so the wizard can offer ADDING TO IT rather than
          starting a rival revision. Returns null when the BOQ has not loaded, which the
          wizard treats as "unknown" and simply does not claim either way. */
