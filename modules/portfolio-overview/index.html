@@ -339,7 +339,7 @@
         <button class="po-tab" data-view="issues"><span data-ico="clipboard" data-ico-size="15"></span> Issues</button>
         <button class="po-tab" data-view="meetings"><span data-ico="calendar" data-ico-size="15"></span> Meetings</button>
         <button class="po-tab" data-view="contracts"><span data-ico="contract" data-ico-size="15"></span> Contracts</button>
-        <button class="po-tab" data-view="photos"><span data-ico="camera" data-ico-size="15"></span> Photos</button>
+        <button class="po-tab" data-view="photos"><span data-ico="camera" data-ico-size="15"></span> Favorite Photos</button>
         <button class="po-tab" data-view="productivity"><span data-ico="barChart" data-ico-size="15"></span> Productivity</button>
         <!-- Project filter lives here (not in the Overview toolbar) so it's reachable from every tab
              — it scopes the Overview table AND the S-Curve / Cash Flow views. -->
@@ -553,10 +553,10 @@
       </div>
 
       <div id="po-view-photos" style="display:none;">
-        <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Scoped to the <strong>project filter</strong> above (<span id="po-ph-scope">all projects</span>). <button class="pd-btn" id="po-ph-refresh" style="height:30px;"><span data-ico="refresh" data-ico-size="14"></span> Refresh</button></p>
+        <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Only photos marked as a favorite (starred in a project's Gallery) are shown here. Scoped to the <strong>project filter</strong> above (<span id="po-ph-scope">all projects</span>). <button class="pd-btn" id="po-ph-refresh" style="height:30px;"><span data-ico="refresh" data-ico-size="14"></span> Refresh</button></p>
         <div class="po-kpis2" id="po-ph-kpis"></div>
         <div class="po-card">
-          <h3 style="text-transform:none;font-size:15px;">Most recently captured</h3>
+          <h3 style="text-transform:none;font-size:15px;">Most recently favorited</h3>
           <div class="po-photo-grid" id="po-ph-grid"></div>
         </div>
         <div class="po-card" style="margin-top:16px;padding:0;overflow:hidden;">
@@ -582,7 +582,7 @@
 <script src="../../assets/js/program.js?v=20260827a"></script>
 <script src="../../assets/js/mcc-rcm.js?v=20260902a"></script>
 <script src="../../assets/js/ui.js?v=20260904a"></script>
-<script src="../../assets/js/icons.js?v=20260903a"></script>
+<script src="../../assets/js/icons.js?v=20260907a"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -2214,6 +2214,12 @@
   // per-project bucket), so a batched createSignedUrls call — the same primitive the module
   // itself uses — is enough for a recent-photos strip. No presentation/PPR consolidation here;
   // that stays a per-project screen.
+  // ⚠️ 2026-09-07: scoped to FAVORITES ONLY (owner's ask — "in portfolio level, only favorite
+  // photos are displayed"). `.eq('favorite', true)` narrows the read itself, not just the
+  // display, so the KPI counts/grid/table can never disagree with what was actually fetched.
+  // Tolerant of the pre-migration state (migrations/2026-09-07-progress-photos-favorites.sql
+  // not yet run): a missing `favorite` column degrades to the same "run the migration" nudge
+  // this file already uses for equipment/resources, rather than a raw PostgREST error.
   var phRows = null, phLoadedIds = null;
   var PH_BUCKET = 'progress-photos';
   async function loadPhotos(force) {
@@ -2222,13 +2228,15 @@
     document.getElementById('po-ph-scope').textContent = scopeLabel(ids);
     var kpis = document.getElementById('po-ph-kpis'), grid = document.getElementById('po-ph-grid'), tbl = document.getElementById('po-ph-table');
     if (!ids.length) { kpis.innerHTML = ''; grid.innerHTML = ''; tbl.innerHTML = ''; return; }
-    grid.innerHTML = '<div class="po-empty">Reading the photo libraries of ' + ids.length + ' project(s)…</div>';
+    grid.innerHTML = '<div class="po-empty">Reading the favorited photos of ' + ids.length + ' project(s)…</div>';
     kpis.innerHTML = ''; tbl.innerHTML = '';
     try {
-      phRows = await PDb.selectAll('progress_photos', function (q) { return q.in('project_id', ids); });
+      phRows = await PDb.selectAll('progress_photos', function (q) { return q.in('project_id', ids).eq('favorite', true); });
     } catch (e) {
       var msg = (e && e.message) || String(e);
-      grid.innerHTML = '<div class="po-empty">' + esc(msg) + '</div>';
+      grid.innerHTML = '<div class="po-empty">' + (/favorite|schema cache/i.test(msg)
+        ? 'Run <code>migrations/2026-09-07-progress-photos-favorites.sql</code> to enable favorites and the portfolio-level favorites view.'
+        : 'Could not load: ' + esc(msg)) + '</div>';
       return;
     }
     phLoadedIds = ids;
@@ -2241,12 +2249,12 @@
     var withProj = {}; list.forEach(function (r) { withProj[r.project_id] = 1; });
     var latest = list.reduce(function (mx, r) { return (r.taken_at && r.taken_at > mx) ? r.taken_at : mx; }, '');
     document.getElementById('po-ph-kpis').innerHTML =
-      kpi2('Photos', String(list.length)) + kpi2('Trades covered', String(Object.keys(trades).length)) +
+      kpi2('Favorited photos', String(list.length)) + kpi2('Trades covered', String(Object.keys(trades).length)) +
       kpi2('Projects', String(Object.keys(withProj).length)) + kpi2('Latest capture', latest ? Fmt.date(latest) : '—');
 
     var recent = list.slice().sort(function (a, b) { return (b.taken_at || '').localeCompare(a.taken_at || ''); }).slice(0, 18);
     var grid = document.getElementById('po-ph-grid');
-    if (!recent.length) { grid.innerHTML = '<div class="po-empty">No photos on the selected projects yet.</div>'; }
+    if (!recent.length) { grid.innerHTML = '<div class="po-empty">No photos have been favorited on the selected projects yet. Star a photo in a project\'s Gallery to have it show up here.</div>'; }
     else {
       var paths = recent.map(function (r) { return r.thumb_url || r.photo_url; }).filter(Boolean);
       var urlByPath = {};
@@ -2272,10 +2280,10 @@
     });
     var rows = Object.keys(byProj).map(function (id) { return { id: id, name: nameById[id] || id, n: byProj[id].n, latest: byProj[id].latest, trades: Object.keys(byProj[id].trades).length }; })
       .sort(function (a, b) { return b.n - a.n; });
-    var head = '<thead><tr><th>Project</th><th class="num">Photos</th><th class="num">Trades</th><th>Latest capture</th></tr></thead>';
+    var head = '<thead><tr><th>Project</th><th class="num">Favorited photos</th><th class="num">Trades</th><th>Latest capture</th></tr></thead>';
     var body = rows.length ? rows.map(function (r) {
       return '<tr><td>' + esc(r.name) + '</td><td class="num">' + r.n + '</td><td class="num">' + r.trades + '</td><td>' + (r.latest ? Fmt.date(r.latest) : '—') + '</td></tr>';
-    }).join('') : '<tr><td colspan="4" class="po-empty">No photos on the selected projects yet.</td></tr>';
+    }).join('') : '<tr><td colspan="4" class="po-empty">No photos have been favorited on the selected projects yet.</td></tr>';
     document.getElementById('po-ph-table').innerHTML = head + '<tbody>' + body + '</tbody>';
   }
 
