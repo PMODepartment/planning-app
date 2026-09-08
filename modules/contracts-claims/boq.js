@@ -853,7 +853,14 @@ window.BOQ = (function () {
       '</div>';
 
     if (!REVS.length) {
-      h += '<div class="pd-card cc-empty"><h3>No BOQ on this project yet</h3>' +
+      /* WARNING TWO DIFFERENT EMPTY STATES, and one message used to answer both. With a document
+         on screen the picker above is showing its NAME, so "No BOQ on this project yet" directly
+         contradicts what the planner can read one line higher. A named BOQ holding no revision is
+         now a reachable state -- deleting the only revision leaves it, and the wizard fills it --
+         so the copy has to tell the two apart. */
+      var emptyDoc = (DOCS || []).filter(function (x) { return x.id === DOCID; })[0] || null;
+      h += '<div class="pd-card cc-empty"><h3>' +
+        (emptyDoc ? esc(emptyDoc.name) + ' has no revision yet' : 'No BOQ on this project yet') + '</h3>' +
         '<p>Build one from the class-code library — or import the client\'s workbook if you ' +
         'have it. Each is a <strong>revision</strong>, and the prior one is always kept.</p>' +
         (canWrite ? '<p style="margin-top:14px;">' +
@@ -1012,17 +1019,24 @@ window.BOQ = (function () {
           'deleted - supersede it with a new revision instead.', 'error');
         return;
       }
+      /* WARNING THE "ONLY REVISION" REFUSAL IS GONE, and it was mine, from earlier today. Its
+         reasoning was sound at the time -- no path added a revision to a document with none, so
+         emptying one left a shell nothing could fill -- and the honest fix was to remove the dead
+         end rather than to guard it. The wizard's revision path is now offered on a document with
+         ZERO revisions ("Create the first revision of NAME"), and the empty state above names the
+         document instead of denying it exists. A refusal that exists only because a neighbouring
+         screen is incomplete should be removed with the incompleteness, not kept as a monument. */
       var sibs = REVS.filter(function (x) { return x.document_id === r.document_id; });
-      if (sibs.length < 2) {
-        var dnm = (DOCS.filter(function (x) { return x.id === DOCID; })[0] || {}).name;
-        UI.toast('rev ' + r.rev_no + ' is the only revision of ' + (dnm || 'this BOQ') +
-          ', and a BOQ with none cannot be added to. Delete the BOQ itself instead - the trash ' +
-          'beside its name.', 'error');
-        return;
-      }
+      var lastRev = sibs.length < 2;
+      var dnm = (DOCS.filter(function (x) { return x.id === DOCID; })[0] || {}).name;
       if (!confirm('Delete draft rev ' + r.rev_no + ' and its ' + ITEMS.length + ' line' +
                    (ITEMS.length === 1 ? '' : 's') + '?' +
-                   String.fromCharCode(10) + String.fromCharCode(10) + 'This cannot be undone.')) return;
+                   String.fromCharCode(10) + String.fromCharCode(10) +
+                   (lastRev ? 'This is the only revision of ' + (dnm || 'this BOQ') +
+                              ', which will be left empty. The BOQ itself is kept -- add a revision ' +
+                              'to it from Add BOQ, or delete the BOQ with the trash beside its name.' +
+                              String.fromCharCode(10) + String.fromCharCode(10) : '') +
+                   'This cannot be undone.')) return;
       var del = await sb().from(T_REV).delete().eq('id', r.id);
       if (del.error) {
         var m3 = del.error.message || '';
@@ -2320,12 +2334,23 @@ window.BOQ = (function () {
       var next = ns.length ? Math.max.apply(null, ns) + 1 : 0;
       return (next < 10 ? '0' : '') + next;
     })();
-    var m = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">New BOQ &mdash; build it by hand</h2>' +
+    /* WARNING WHICH BOQ THIS LANDS IN, said out loud, because this dialog cannot ask. It is the
+       fallback for a page where wizard.js failed to load, so it stays deliberately one screen --
+       but "New BOQ" over a project that already has three of them is a promise it does not keep:
+       the revision goes into the BOQ currently on screen. */
+    var nrDoc = (DOCS || []).filter(function (x) { return x.id === DOCID; })[0] || null;
+    var m = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">' +
+      (nrDoc ? 'New revision of ' + esc(nrDoc.name) : 'New BOQ &mdash; build it by hand') + '</h2>' +
       '<button class="pd-modal-close" id="nr-x">&times;</button></div>' +
       '<div class="cc-form">' +
       '<p class="cc-hint" style="margin-top:0;">An empty draft. Add lines from the class-code ' +
       'library, price them, then <strong>issue</strong> it. <b>A draft never bills and never ' +
       'shows as the contract value</b>, so nothing downstream moves until you say so.</p>' +
+      (nrDoc
+        ? '<p class="cc-hint">This becomes a revision of <b>' + esc(nrDoc.name) + '</b>. For a ' +
+          'separately named BOQ, use <b>Add BOQ\u2026</b> \u2014 this short form is the fallback for when ' +
+          'the wizard could not load, and it cannot create one.</p>'
+        : '') +
       '<label>Revision label<input class="pd-input" id="nr-rev" value="' + esc(nextRev) + '" /></label>' +
       '<p class="cc-hint">Prefilled, and yours to change — <b>this is your label, not the ' +
       'client\'s</b>. An imported BOQ carries whatever the client called it; one you author has ' +
@@ -2351,20 +2376,29 @@ window.BOQ = (function () {
         'everywhere else. \u201c' + nextRev + '\u201d is fine.', 'error'); return; }
       var b = el('nr-go'); b.disabled = true; b.textContent = 'Creating…';
       try {
-        var ins = await sb().from(T_REV).insert({
-          project_id: pid, rev_no: revNo, issued_date: el('nr-date').value || null,
-          po_no: txtOf(el('nr-po').value) || null, contract_total: numOf(el('nr-total').value),
-          source_file: null, sheet_inventory: {},
-          // ⚠️ is_current stays FALSE and the database enforces it for a draft. The
-          //    contract value on screen must keep coming from the issued document.
-          status: 'draft', origin: 'manual', is_current: false,
-          notes: 'Built by hand from the class-code library.', created_by: UID
-        }).select().single();
-        if (ins.error) throw ins.error;
+        /* WARNING ⚠️⚠️ THIS INSERT WROTE NO `document_id`, SO EVERY REVISION IT MADE WAS AN ORPHAN.
+           `2026-09-07-boq-documents.sql` made the document the owner of a revision series, and
+           `createDraft` was given `document_id: f.docId || DOCID || null` for exactly that reason
+           -- but this dialog kept its own copy of the insert from before the migration and never
+           gained the column. An orphan is not invisible, which is what made it survive: `load()`
+           filters `!r.document_id || r.document_id === DOCID`, so a null-document revision shows
+           under EVERY BOQ on the project. Two BOQs would both list it, the per-document contract
+           roll-up (`computeProjectTotal`, which requires `is_current && document_id`) would count
+           it under neither, and nothing would error.
+           WARNING Fixed by DELETING the second insert path rather than adding the column to it.
+           A rival insert also lacked the duplicate-label retry that `createDraft` grew after the
+           owner hit `boq_revisions_project_rev_idx` -- so this dialog would still fail outright on
+           a label collision that the wizard recovers from. One writer, one set of rules. */
+        var made = await createDraft({ rev: revNo, date: el('nr-date').value,
+                                       po: txtOf(el('nr-po').value), total: el('nr-total').value });
         m.close();
-        REVID = ins.data.id; sub = 'items';
-        UI.toast('Draft revision ' + revNo + ' created. Add lines from the class-code library.', 'success');
-        await load();
+        // createDraft already set REVID, sub and reloaded -- it is the one writer now.
+        /* createDraft retries a taken label and returns the one it actually used, so this reports
+           what happened rather than what was asked for. */
+        var got = (made && made.rev_no) || revNo;
+        UI.toast('Draft revision ' + got +
+          (got !== revNo ? ' created (' + revNo + ' was already taken).' : ' created.') +
+          ' Add lines from the class-code library.', 'success');
       } catch (err) {
         b.disabled = false; b.textContent = 'Create draft';
         var msg = (err.message || String(err));

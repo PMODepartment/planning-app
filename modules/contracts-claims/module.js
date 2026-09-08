@@ -1150,11 +1150,39 @@ window.ContractsClaims = (function () {
     });
 
     var deps = { uid: UID, canWrite: canWrite, isAdmin: isAdmin };
+    /* ⚠️⚠️ THE PMI TAB WRITES A CLAIM THROUGH THE CLAIMS REGISTER'S OWN persistRecord, never with
+       an insert of its own. `2026-08-25-pmi.sql` put `claim_id` on `pmi_records` — *"set when this
+       instruction becomes priced commercial work"* — and nothing has ever set it: grep found
+       `claim_id` exactly ONCE in pmi.js, in a read-only chip. So the register showed a "claim"
+       badge that could not be earned, and the promotion the roadmap calls for was a SQL statement.
+       ⚠️ persistRecord carries the whole missing-column degrade (`_dropMissingNull`, eight
+       attempts, `warnDropped` naming the right migration per column). A second insert path here
+       would be a second set of bugs on the one table whose schema is provably incomplete on the
+       live database — 2026-08-27 confirmed `contracts_claims.package_id` absent. */
+    var pmiDeps = Object.assign({}, deps, {
+      createClaim: async function (payload) {
+        var res = await persistRecord(payload, null);
+        if (!res.ok) throw (res.error || new Error('Could not create the claim.'));
+        warnDropped(res.dropped);
+        return res.row;
+      },
+      /* ⚠️ THE ROLLBACK, and it is not optional. The claim is written FIRST because the PMI needs
+         its id, so a failed link leaves a real commercial record with nothing pointing at it —
+         indistinguishable from a duplicate somebody filed by hand. Exactly the trap the wizard's
+         package rollback was added for after the owner hit it twice. */
+      deleteClaim: async function (id) {
+        var d = await sb().from(TABLE).delete().eq('id', id);
+        if (d.error) throw d.error;
+        rows = rows.filter(function (x) { return String(x.id) !== String(id); });
+      },
+      claimById: function (id) { return rows.filter(function (x) { return String(x.id) === String(id); })[0] || null; },
+      gotoClaim: function (t) { gotoTypeTab(t); }
+    });
     if (window.CCPackages) CCPackages.init(deps);
     /* The BOQ screen reaches the wizard through module.js rather than building its own
        dependency object - one wizard, one set of deps, no drift. */
     if (window.BOQ) BOQ.init(Object.assign({}, deps, { openWizard: openNew }));
-    if (window.PMI) PMI.init(deps);
+    if (window.PMI) PMI.init(pmiDeps);
     document.querySelectorAll('.cc-tab').forEach(function (t) { t.onclick = function () { switchTab(t.dataset.view); if (histView) histView.push(); }; });
     // Browser-history integration (UI.bindHistoryState, ui.js) for the top-level
     // Contract/Claims/Extension-of-Time tabs — without it the browser's native Back

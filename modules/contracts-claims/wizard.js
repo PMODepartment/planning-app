@@ -388,7 +388,13 @@ window.CCWizard = (function () {
     var d = D.boqDraft ? D.boqDraft() : null;
     var doc = D.boqDoc ? D.boqDoc() : null;
     var n = D.boqRevCount ? D.boqRevCount() : 0;
-    var can = { doc: true, add: !!d, rev: !!(doc && n) };
+    /* WARNING `rev` NEEDS A DOCUMENT, NOT A REVISION. Gated on `doc && n` when it shipped this
+       morning, which left an empty BOQ document unreachable: nothing could add its first revision,
+       so deleting the only revision of a BOQ had to be refused to avoid creating a dead end. That
+       refusal is now gone from boq.js and this is why -- the path fills the empty document, and
+       the step's copy says "the first revision" rather than claiming a supersede that has nothing
+       to supersede. */
+    var can = { doc: true, add: !!d, rev: !!doc };
     var want = st.boqPath || (d ? 'add' : 'doc');
     return can[want] ? want : 'doc';
   }
@@ -463,7 +469,13 @@ window.CCWizard = (function () {
          WARNING So the three paths are three named choices with what each does spelled out, and
          `rev` now does what its name says: a revision INSIDE the document on screen, created with
          no docName, which is the one that supersedes. */
-      if (bdraft || (bdoc && nrev)) {
+      /* WARNING GATED ON `bdoc`, NOT `bdoc && nrev` -- and the difference is the whole point of the
+         empty-document fix. With the revision count in this condition a BOQ holding no revision
+         rendered NO choices at all and fell through to the plain create form, which makes ANOTHER
+         document: the empty one stayed unreachable however the paths below were gated. Caught in
+         the harness, not by reading -- `can.rev` was already right, and this line silently
+         overruled it. */
+      if (bdraft || bdoc) {
         hh += '<p class="ccw-hint"><b>A BOQ is one document with its own revision series, and trades ' +
           'live inside it as sections.</b> So covering another trade is neither a new BOQ nor a new ' +
           'revision -- unless the client bills that trade separately, in which case it is a BOQ of ' +
@@ -483,13 +495,19 @@ window.CCWizard = (function () {
           'its own issue. Nothing about ' + esc(bdoc ? bdoc.name : 'the existing BOQ') + ' changes, and ' +
           'the project contract value adds them together. This is what a separately packaged bill ' +
           'is.</span></label>';
-        if (bdoc && nrev) {
+        if (bdoc) {
+          /* ⚠️ TWO DIFFERENT PROMISES UNDER ONE PATH, and the copy has to pick the right one. With
+             revisions present this supersedes; on an empty document there is nothing to supersede
+             and saying so would be false. Same control, honest label. */
           hh += '<label class="ccw-opt' + (bpath === 'rev' ? ' on' : '') + '">' +
             '<input type="radio" name="boqpath" value="rev"' + (bpath === 'rev' ? ' checked' : '') + ' /> ' +
-            '<b>New revision of ' + esc(bdoc.name) + '</b>' +
-            '<span class="ccw-optsub">Re-issued or remeasured -- the SAME scope, priced again. It ' +
-            '<b>supersedes</b> the current revision when you issue it, and what was tendered is ' +
-            'kept.</span></label>';
+            '<b>' + (nrev ? 'New revision of ' : 'First revision of ') + esc(bdoc.name) + '</b>' +
+            '<span class="ccw-optsub">' + (nrev
+              ? 'Re-issued or remeasured -- the SAME scope, priced again. It <b>supersedes</b> the ' +
+                'current revision when you issue it, and what was tendered is kept.'
+              : esc(bdoc.name) + ' holds no revision yet, so this one starts its series. Nothing is ' +
+                'superseded -- there is nothing there to supersede.') +
+            '</span></label>';
         }
         hh += '</div>';
       }
@@ -500,7 +518,8 @@ window.CCWizard = (function () {
       }
       return hh +
         (bpath === 'rev'
-          ? '<p class="ccw-hint">A revision of <b>' + esc(bdoc ? bdoc.name : '') + '</b>. It starts as a ' +
+          ? '<p class="ccw-hint">' + (nrev ? 'A revision of <b>' : 'The first revision of <b>') +
+            esc(bdoc ? bdoc.name : '') + '</b>. It starts as a ' +
             'draft, so nothing is superseded and no contract value moves until you issue it.</p>'
           : '<p class="ccw-hint">Stored as a <b>revision</b>: a re-issue supersedes it without ' +
             'destroying what was tendered.</p>') +
@@ -656,7 +675,8 @@ window.CCWizard = (function () {
     /* The two creating paths make the same object -- a draft revision -- but of different things,
        and the button is the last chance to say which. "Create draft" over a run that is about to
        spawn a second bill reads as though it were still the first one. */
-    return boqPath() === 'rev' ? 'Create revision' : 'Create BOQ';
+    if (boqPath() !== 'rev') return 'Create BOQ';
+    return (D.boqRevCount && D.boqRevCount()) ? 'Create revision' : 'Create first revision';
   }
 
   function wireStep(key) {
@@ -668,7 +688,12 @@ window.CCWizard = (function () {
         onCount: function (n) {
           st.boqCodesN = n;
           var b = ov.querySelector('#ccw-next');
-          if (b) b.textContent = n ? 'Create with ' + n + ' lines' : 'Create draft';
+          /* WARNING FALLS BACK TO boqActionLabel(), NOT to a literal. This read 'Create draft' when
+             nothing was ticked -- fine while a BOQ run had one ending, and wrong the moment there
+             were three: on the revision path the button would say "Create draft" while the step
+             above it promised a revision of a named BOQ. That is the same button-contradicts-its-own-
+             step defect this wizard was already fixed for once, reintroduced from the picker side. */
+          if (b) b.textContent = n ? 'Create with ' + n + ' lines' : boqActionLabel();
         }
       }).then(function (p) { st.boqPicker = p; });
       return;

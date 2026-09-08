@@ -1,5 +1,201 @@
 # Module: contracts-claims
 
+## Two columns that existed since August finally have an editor, and the second insert path is gone (2026-09-08b) — fmlozano
+
+Owner: *"Let's do the half-built and consistency gaps first."* Four items off this morning's audit.
+Every one of them turned out to be something the **database already supported** and the UI never
+reached — which is why they were cheap, and why nobody had noticed they were missing.
+
+### 1 — ⚠️⚠️ `internal_chain` / `client_chain`: two jsonb columns, ZERO reads in `pmi.js`
+`2026-08-25-pmi.sql` declared both `jsonb not null default '{}'` with the reason written into the
+migration: *"a proposal three weeks with the COO is not 'Submitted' — it is NOT SUBMITTED AT ALL"*.
+The roles were configurable per client from day one (`contract_profiles.internal_roles` /
+`client_roles`, ordered, comma-separated) and the record had nowhere to say who was holding it.
+Grep: the two column names appeared **0 times** in `pmi.js`. So the register could report an
+instruction sitting **94 days** and not say **with whom** — the one fact that makes the number
+something a PM can act on this afternoon.
+
+Now: an **Approval chain** section in the case file, ours and the client's side by side, each role a
+row with *arrived* / *cleared* / days / signed-by. Three derived facts the module never had:
+
+- **the holder** — who has it now, and for how long;
+- **`n` of `m` cleared** per side, as a badge;
+- **a third clock in the case-file header** — "In stage 40d" beside "With COO — 31d". `agingOf()`
+  answers *how long at this stage*; `chainAgingOf()` answers *how long on one desk inside it*. The
+  migration required both and only the first existed.
+
+⚠️⚠️ **A ROLE IS RENAMEABLE AND THE CHAIN IS KEYED BY ITS NAME.** Renaming "COO" to "Chief Operating
+Officer" in the profile strands every date recorded under the old spelling. It is **not dropped and
+not silently re-pointed**: it renders as an **orphan** row, amber, labelled *"not in the profile's
+role list — recorded before it was renamed or removed"*, below the configured roles. Re-pointing by
+position would be worse than losing it — it would attribute one manager's sign-off to another. A
+**case-only** edit (`coo` → `COO`) IS matched, because that is a typo fix rather than a rename, and
+writes always use the profile's current spelling.
+
+⚠️ **ORDER COMES FROM THE PROFILE, NEVER FROM THE JSONB'S OWN KEYS.** Object keys enumerate in
+insertion order, which is *data-entry* order — record the COO first and the chain would claim the COO
+signs first. The approval sequence is configuration, not a side effect of typing. This is the single
+assertion the contrast build below breaks hardest.
+
+⚠️ **`complete` is FALSE on a chain with no roles configured, deliberately.** "Nobody has to approve
+this" and "everyone has approved it" are opposite facts, and only one of them should keep the
+contradiction note quiet.
+
+⚠️ **THE CONTRADICTION IS REPORTED, NEVER CORRECTED.** A record at **Submitted** whose internal chain
+is not cleared is exactly the case the migration was written for — and it is just as often a chain
+nobody filled in. Only the planner knows which, so the screen states the disagreement and stops.
+Auto-advancing the stage from the chain (or refusing the stage) makes the register lie in whichever
+case it guessed wrong. Same house rule as the POC variance on the Billing tab.
+
+- ⚠️ **Two roles holding at once is a real state and is not flattened** — sent to two managers, or a
+  mistyped date. The holder is the earlier one in profile order; the summary counts both.
+- ⚠️ **An em dash, never 0.** A role that has not received it yet has no duration; a `0d` reads as
+  "cleared the same day", the opposite claim.
+- ⚠️ **An empty husk (`{in:null,out:null}`) is not an orphan**, and a save omits a role with nothing
+  recorded rather than storing one. Storing husks would grow a key per role per save, and the orphan
+  detection — whose whole job is to notice a key the profile no longer lists — would start reporting
+  rows the planner never touched.
+- ⚠️ **The chain saves only on its own button**, and says so. The case file rebuilds its `innerHTML`
+  after an upload or a priced line, so an unsaved date would go with it.
+- ⚠️ **The register's holder line goes in the existing "In stage" cell, not a tenth column.** The
+  table is already nine wide, and "with whom" is not a separate fact from "how long in this stage" —
+  it is the answer to the question that number provokes.
+- ⚠️ The relations section is relabelled **Related instructions**. `chainHTML()` already existed and
+  meant parent/supersedes/spawned; two "chains" in one module is vocabulary inherited from the
+  migration, so the screen no longer repeats the ambiguous word.
+
+### 2 — ⚠️⚠️ `claim_id` existed since August and NOTHING COULD SET IT
+Same shape. `pmi_records.claim_id` references `contracts_claims(id)` `on delete set null` — *"set
+when this instruction becomes priced commercial work"*, and the register already drew a **claim**
+chip off it. `claim_id` appeared exactly **once** in `pmi.js`: reading that chip. So the badge was
+unearnable and the roadmap's *"promoting a PMI to a contracts_claims row in one click"* was, in
+practice, a hand-written `UPDATE`.
+
+**Raise claim / CO…** in the case-file footer, beside the other two things a case file can *become*.
+
+- ⚠️ **THE TYPE IS ASKED, NOT DERIVED.** The tempting rule — money means Change Order, days mean EOT
+  — is wrong in both directions: a variation routinely carries both, and whether priced work is a
+  change order or a **claim** is a judgement about entitlement, not arithmetic on the proposal.
+- ⚠️ **IT WRITES THROUGH `persistRecord`, the claims register's own writer**, handed in by module.js.
+  That path carries the missing-column degrade (`_dropMissingNull`, eight attempts, `warnDropped`
+  naming the right migration per column) on the one table whose schema is **provably incomplete on
+  the live database** — 2026-08-27 confirmed `contracts_claims.package_id` absent. A second insert
+  here would be a second set of bugs.
+- ⚠️⚠️ **THE CLAIM IS ROLLED BACK IF THE LINK FAILS.** It is written first because the instruction
+  needs its id, so a failed `claim_id` update leaves a real commercial record with nothing pointing
+  at it — indistinguishable from a duplicate filed by hand, and it would be reported to the client
+  as a second variation. If the rollback itself fails the toast names the record to remove by hand.
+  Exactly the trap the wizard's package rollback was added for after the owner hit it twice.
+- ⚠️ **REFUSED IF ALREADY PROMOTED**, naming the existing record. Two claims for one instruction is a
+  **double count** in the register the client is billed from, and it looks exactly like two
+  legitimate variations.
+- **Every prefill is visible, editable, and says where it came from.** `est_amount` ← the cost
+  build-up's TOTAL step; `date_filed` ← **received**, not issued, and not today; `status` ← the
+  instruction's outcome, which is a straight copy because the migration deliberately reused
+  `contracts_claims`' own four-value vocabulary.
+- ⚠️ **`sub_amount` is prefilled ONLY when the instruction has a submitted date.** Copying the card
+  total in regardless asserts we submitted at that figure — on a proposal still sitting with an
+  internal approver.
+- ⚠️ **`package_id` is left NULL.** An instruction carries no package, and inheriting the project's
+  only one would claim a commercial lot nobody assigned.
+- ⚠️ An EOT writes **days**, a change order writes **money** — never both. The register has separate
+  columns and a peso figure on a row whose subject is time is just wrong.
+- The instruction is **not** closed or altered. It stays the case file, with its documents, its
+  priced lines and its approval chain.
+- ⚠️ Absent deps (an older `module.js`) mean the control is **not offered** — never a half-working one.
+
+### 3 — ⚠️⚠️ `openNewRev()` wrote NO `document_id`, so every revision it made was an ORPHAN
+**And this corrects entry (2026-09-08a), which said the opposite.** That entry claimed *"`openNewRev()`
+writes `document_id` from `DOCID`"* — it did not; the insert had no such key. I asserted it from the
+function's purpose rather than from its payload, and the payload is four lines long. Read the insert.
+
+`2026-09-07-boq-documents.sql` made the document the owner of a revision series, and `createDraft`
+was given `document_id: f.docId || DOCID || null` for exactly that reason — but this dialog kept its
+own copy of the pre-migration insert and never gained the column.
+
+⚠️ **The orphan is not invisible, which is what let it survive.** `load()` filters
+`!r.document_id || r.document_id === DOCID`, so a null-document revision shows under **every** BOQ on
+the project; two BOQs would both list it, `computeProjectTotal` (which requires `is_current &&
+document_id`) would count it under **neither**, and nothing would error.
+
+⚠️ **Fixed by DELETING the second insert path, not by adding the column to it.** The rival insert also
+lacked the duplicate-label retry `createDraft` grew after the owner hit
+`boq_revisions_project_rev_idx` — so this dialog would still have failed outright on a collision the
+wizard recovers from. One writer, one set of rules; the toast now reports the label actually used.
+The dialog is also honest about what it does: titled *New revision of `<name>`*, pointing at
+**Add BOQ…** for a separately named one, since it is the fallback for a page where `wizard.js` failed
+to load and cannot ask.
+
+### 4 — an empty BOQ document is reachable, so a refusal I wrote this morning could go
+**Also a correction to (2026-09-08a).** That entry's *"the ONLY revision of a BOQ is refused, and this
+one is a real gate"* described a guard around a dead end of my own making. The honest fix is to remove
+the dead end.
+
+- The wizard's revision path is now offered on a document with **zero** revisions —
+  **First revision of `<name>`**, with copy that does not claim a supersede when there is nothing to
+  supersede.
+- The `!REVS.length` empty state names the document (*"Main BOQ has no revision yet"*) instead of
+  *"No BOQ on this project yet"*, which directly contradicted the picker one line above it.
+- The delete refusal is gone; the confirm says the BOQ will be left empty and names both ways out.
+
+⚠️ **`can.rev` was already right and one line silently overruled it.** The step's render gate still
+read `if (bdraft || (bdoc && nrev))`, so an empty document rendered **no choices at all** and fell
+through to the plain create form — which makes *another* document. Caught in the harness, not by
+reading: the two conditions are eight lines apart and each looks correct alone.
+
+⚠️ **The picker's zero-count label was a fifth voice.** `onCount` hard-coded `'Create draft'` when
+nothing was ticked — fine while a BOQ run had one ending, wrong the moment there were three: on the
+revision path the button said *"Create draft"* under a step promising a revision of a named BOQ. It
+now falls back to `boqActionLabel()`. Same button-contradicts-its-own-step defect this wizard was
+already fixed for once, reintroduced from the picker side.
+
+### Verified
+**40 assertions** executing `chainRows` / `chainSummary` / `chainAgingOf` / `chainConflict` sliced out
+of the **shipped `pmi.js`** (loaded whole in a `vm` context, never reimplemented), against the
+migration's own example roles — *Office Supervisor, MEPF & Finishing Manager, Project Manager, COO* /
+*Prepared, Checked, Noted, Approved*. Twelve groups: profile ordering against deliberately
+reverse-inserted keys, the renamed-role orphan, the case-only match, the empty husk, two holders at
+once, the Submitted contradiction and its two silent cases, a record with no profile, a null and a
+non-object chain, the separate client sequence, and a future arrival date.
+
+**Three contrast builds, to show the suite bites:**
+
+| contrast | result |
+|---|---|
+| order taken from `Object.keys(ch)` instead of the profile | **7 failures, then a hard `TypeError`** — the orphan row vanishes and `rows[4]` is undefined |
+| `complete` without the roles-configured guard | 1 failure — exactly *"complete is FALSE with no roles"* |
+| a pending role reporting `0` days instead of `null` | 1 failure — exactly *"days null, not 0"* |
+
+**Rendered in a browser** against the real `module.css`: the two side-by-side ladders, the `3/4
+cleared` badge, the three row states, the amber orphan row carrying its dates, and the contradiction
+alert reading *"This is at Submitted, but our chain shows 1 of 4 cleared and it is still with COO."*
+**The wizard driven through five worlds** — draft+revision, no-draft+revision, empty document, fresh
+project, and zero codes ticked — asserting the paths offered, the name field, the rev prefill
+(`doc`→00, `rev` with 1 revision→01, empty→00), the three button labels, and that `rev` sends
+`createBoqDraft({rev})` with **no `docName`** while `doc` sends one.
+
+⚠️ **Not verified signed-in.** No chain has been written, no claim raised or rolled back, and no
+revision created through the repaired fallback against a real project. The rollback ordering and the
+`persistRecord` hand-off are structurally verified only — the same standing caveat as the PMI tab's
+original build.
+
+- `module.css` / `boq.js` / `wizard.js` / `module.js` / `pmi.js` `?v=20260908b`; `MODULE_V` →
+  `20260908b`.
+- New: `BOQ.currentDocument()` / `revisionCount()` were added in (a); this adds `PMI.init` deps
+  `createClaim` / `deleteClaim` / `claimById` / `gotoClaim`, built in module.js so the claims
+  register keeps sole ownership of its table.
+
+### Still open after this
+- **Design decision #6** (billing periods 26th→25th against monthly Cash Flow) — still needs the
+  owner, still the one open item that changes a reported figure.
+- **`trade_map`'s migration has not been run**, so the trade tooltip has still never named a
+  procurement trade.
+- **`contracts_claims.status` has no fixed vocabulary**, so the module tile still claims no attention
+  count.
+- The class-code chain's three missing hand-offs (audited in (a), not built).
+
+---
+
 ## The Trades step was loading fine — a text-field CSS rule was hiding it (2026-09-08a) — fmlozano
 
 Owner: *"1. The trades in the add BOQ is not loading properly. 2. I have an existing BOQ and I want
