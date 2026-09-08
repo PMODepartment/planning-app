@@ -863,3 +863,7 @@ html.pd-dark .boq-why { color:#7fd6a2; }
   background:transparent; color:var(--pd-muted); font:inherit; font-size:12px; font-weight:600;
   cursor:pointer; }
 .boq-ghostbtn:hover { border-color:var(--pd-line); color:var(--pd-ink); background:rgba(128,128,128,.10); }
+
+/* The row-number gutter. Muted and tabular so it reads as an index, never as data. */
+.pdg-rownum { color:var(--pd-muted); font-variant-numeric:tabular-nums; font-size:11px;
+  user-select:none; cursor:default; }

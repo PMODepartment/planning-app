@@ -97,6 +97,12 @@ window.BOQ = (function () {
      working right now, not a property of the bill, so it is never persisted. */
   var SEL = {};
   var _grid = null;            // the PDGrid instance bound to the current render
+  /* WARNING The column spec of the render that just happened. itemsHTML() builds it and
+     wireItems() needs it, and they are different functions - `var COLS` inside itemsHTML is
+     invisible there and would have thrown a ReferenceError the first time a draft rendered.
+     Module-scoped rather than passed, because wireItems is called from the shared wire path
+     that does not know which tab produced the markup. */
+  var LASTCOLS = null;
   var openWizard = null;       // module.js's openNew(type) - see init()
   var loaded = false;
   /* The class-code chart folded into division › group › item for the builder's tree.
@@ -1124,6 +1130,7 @@ window.BOQ = (function () {
        longest cell it happened to see. `w` on each column spec is now a real declaration, and
        Description gets 300px because it is prose while UoM gets 74 because it holds "m2". */
     var COLS = boqCols(draft, codeIsItem);
+    LASTCOLS = COLS;
     h += '<div class="pd-card cc-tablecard"><table class="cc-table boq-table pdg-grid' +
       (draft ? ' boq-fillable' : '') + '" style="table-layout:fixed;min-width:' +
       COLS.reduce(function (a, c) { return a + c.w; }, 0) + 'px">' +
@@ -1197,6 +1204,7 @@ window.BOQ = (function () {
       kids[list[ki].id] = kn;
     }
     var skipDepth = null;
+    var rowNo = 0;
 
     list.forEach(function (r) {
       var rd = r.depth || 0;
@@ -1210,11 +1218,18 @@ window.BOQ = (function () {
       var al = allocOf(r.id);
       // A heading holds no figures, so its cells stay empty rather than becoming inputs.
       var ed = draft && !head;
+      if (!head) rowNo++;
 
       h += '<tr class="' + (head ? 'boq-head' : '') + '" data-id="' + esc(r.id) + '">' +
         COLS.map(function (c) {
           var cls = c.r ? ' class="cc-r"' : '';
 
+          if (c.k === '_row') {
+            /* Numbered over what is ON SCREEN, so it always matches what the planner is counting
+               down. A number tied to the stored row would skip wherever a filter or a collapsed
+               heading hides something, which is worse than no number. */
+            return '<td class="cc-r pdg-rownum">' + (head ? '' : rowNo) + '</td>';
+          }
           if (c.k === 'item_no') {
             return '<td class="boq-no"' + ' style="padding-left:' + (6 + Math.min(rd, 6) * 12) + 'px">' +
               (head && kids[r.id]
@@ -1363,7 +1378,27 @@ window.BOQ = (function () {
       _grid = PDGrid.attach({
         root: host,
         cell: '.boq-cell[data-f]',
-        onSet: function (id, field, value) { saveCell(id, field, value); }
+        /* WARNING The SPEC is what unlocks the ported features: `w` drives the colgroup and the
+           resize, `req` drives the empty-cell bar, `setAll` says which columns are safe to write
+           wholesale. Without it PDGrid still works, it just has nothing to lay out. */
+        columns: LASTCOLS || [],
+        storageKey: 'boq',
+        onSet: function (id, field, value) { saveCell(id, field, value); },
+        onSetColumn: function (col) {
+          var v = prompt('Set ' + col.label + ' for every line shown on this tab:', '');
+          if (v == null) return;
+          v = String(v).trim();
+          var list2 = filtered().filter(function (r) { return r.line_kind !== 'heading'; });
+          if (!list2.length) return;
+          if (!confirm('Set ' + col.label + ' to "' + v + '" on ' + list2.length + ' line' +
+                       (list2.length === 1 ? '' : 's') + '?')) return;
+          /* Sequential, through saveCell, so each write gets the same parsing and the same
+             recalc a typed edit would - and so a failure stops rather than half-applying. */
+          (async function () {
+            for (var i = 0; i < list2.length; i++) await saveCell(list2[i].id, col.k, v);
+            UI.toast('Set ' + col.label + ' on ' + list2.length + ' lines.', 'success');
+          })();
+        }
       });
     }
     host.querySelectorAll('.boq-cellsel[data-f]').forEach(function (selEl) {
@@ -2625,10 +2660,18 @@ window.BOQ = (function () {
 
   function boqCols(draft, codeIsItem) {
     var C = [];
+    /* WARNING A ROW-NUMBER GUTTER, as review.html has. On a 700-line bill "which row was that?"
+       is asked constantly - when reading a rate back to somebody, when comparing against the
+       client's printed BOQ, when saying where an error is. The item code does not answer it
+       because it is not sequential and repeats across trades. Narrow, muted, never editable. */
+    C.push({ k: '_row', label: '#', w: 44, ro: true, r: true });
     C.push({ k: 'item_no', label: codeIsItem ? 'Class code' : 'Item', w: 96, mono: true, ro: true });
     C.push({ k: 'description', label: 'Description', w: 300, type: 'text' });
-    C.push({ k: 'unit', label: 'UoM', w: 74, type: 'uom' });
-    C.push({ k: 'qty', label: 'Quantity', w: 92, type: 'num', r: true });
+    /* setAll is offered on UoM and Kind only - a vocabulary, where one value down a whole
+       trade is normal. It is NOT offered on any money column: a blanket write there is a way
+       to destroy a bill in one click. */
+    C.push({ k: 'unit', label: 'UoM', w: 74, type: 'uom', setAll: true, req: true });
+    C.push({ k: 'qty', label: 'Quantity', w: 92, type: 'num', r: true, req: true });
     C.push({ k: 'mat_rate', label: 'Mat. rate', w: 100, type: 'num', r: true });
     C.push({ k: 'mat_amount', label: 'Mat. cost', w: 112, type: 'money', r: true, calc: true });
     C.push({ k: 'lab_rate', label: 'Lab. rate', w: 100, type: 'num', r: true });
@@ -2637,7 +2680,7 @@ window.BOQ = (function () {
        is. A lump-sum line has an amount and no quantity to derive it from, so refusing the entry
        would make those lines unrepresentable. It is derived by DEFAULT and typed by exception. */
     C.push({ k: 'amount', label: 'Total amount', w: 124, type: 'num', r: true, calc: 'soft' });
-    C.push({ k: 'line_kind', label: 'Kind', w: 112, type: 'kind' });
+    C.push({ k: 'line_kind', label: 'Kind', w: 112, type: 'kind', setAll: true });
     if (!codeIsItem) C.push({ k: '_class', label: 'Class code', w: 100 });
     /* ⚠️ NO PACKAGE COLUMN WHEN THE PROJECT HAS NO LOTS. Owner: *"why is there a package column
        when there is no package in this contract at all?"* — right, and it is the third place this
