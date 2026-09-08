@@ -79,6 +79,18 @@ window.CCWizard = (function () {
     /* ⚠️ NO REVIEW FOR A BOQ RUN. It had one, and its entire content was "Nothing is
        recorded for a BOQ-only run" — a step that exists to say it has nothing to say. The
        BOQ step is now the last one, and its button opens the importer. */
+    /* WARNING THE CLASS-CODE LIBRARY IS A STEP, NOT A SEPARATE DIALOG. Owner: *"can't we just
+       include this already in the wizard?"* It can, and it belongs there: choosing the trades IS
+       the act of creating a hand-built BOQ, so making it a modal that opens afterwards split one
+       decision across two screens. Shown only for a BOQ run that is being built by hand -- an
+       import has nothing to pick, and adding trades to an existing draft hands off to the picker
+       on the BOQ screen where the rest of that bill already is. */
+    { key: 'codes',   label: 'Trades',   sub: 'Pick the trades this BOQ covers',
+      when: function () {
+        if (st.type !== 'BOQ' || st.boqMode === 'import') return false;
+        var d = D.boqDraft ? D.boqDraft() : null;
+        return !(d && st.boqNew !== true);
+      } },
     { key: 'review',  label: 'Review',   sub: 'Check, then save',
       when: function () { return st.type !== 'BOQ'; } }
   ];
@@ -504,7 +516,13 @@ window.CCWizard = (function () {
     return h;
   }
 
-  var RENDER = { type: stepType, package: stepPackage, details: stepDetails, dates: stepDates, boq: stepBoq, review: stepReview };
+  function stepCodes() {
+    return '<p class="ccw-hint">Each trade you take becomes its own <b>section</b> of this BOQ, with ' +
+      'class codes already on every line. You can add more later.</p>' +
+      D.boqPickerHTML();
+  }
+  var RENDER = { type: stepType, package: stepPackage, details: stepDetails, dates: stepDates,
+                 boq: stepBoq, codes: stepCodes, review: stepReview };
 
   // ---- shell -----------------------------------------------------------------
   function paint() {
@@ -517,6 +535,11 @@ window.CCWizard = (function () {
     ov.querySelector('#ccw-h').textContent = (i + 1) + ' · ' + txt(cur.label);
     ov.querySelector('#ccw-sub').textContent = txt(cur.sub);
     ov.querySelector('#ccw-body').innerHTML = RENDER[cur.key]();
+    /* WARNING The Trades step hosts a FOUR-PANE ladder, which does not fit the wizard's normal
+       width. The shell widens for that step only rather than being wide throughout -- every other
+       step is a short form, and a form stretched to 1040px is harder to read, not easier. */
+    var shell = ov.querySelector('.ccw');
+    if (shell) shell.classList.toggle('ccw-wide', cur.key === 'codes');
     ov.querySelector('#ccw-back').disabled = i === 0;
     var last = i === ls.length - 1;
     /* ⚠️⚠️ THE BUTTON NAMES THE ACTION YOU CHOSE. It read "Open importer" for every BOQ run —
@@ -539,6 +562,19 @@ window.CCWizard = (function () {
   }
 
   function wireStep(key) {
+    if (key === 'codes') {
+      /* WARNING Mounted after paint(), because the ladder needs its container in the DOM. The live
+         picker is kept on `st` so finish() can read the selection, and so stepping Back and
+         forward re-mounts rather than losing what was ticked. */
+      D.mountBoqPicker(ov.querySelector('#ccw-body'), {
+        onCount: function (n) {
+          st.boqCodesN = n;
+          var b = ov.querySelector('#ccw-next');
+          if (b) b.textContent = n ? 'Create with ' + n + ' lines' : 'Create draft';
+        }
+      }).then(function (p) { st.boqPicker = p; });
+      return;
+    }
     if (key === 'boq') {
       var bn = ov.querySelector('#ccw-bnew');
       if (bn) bn.onclick = function (e) { e.preventDefault(); st.boqNew = true; paint(); };
@@ -660,8 +696,16 @@ window.CCWizard = (function () {
         if (btn) { btn.disabled = true; btn.textContent = 'Creating...'; }
         try {
           await D.createBoqDraft({ docName: bname, rev: brev, date: st.boqDate, po: st.boqPo, total: st.boqTotal });
+          /* WARNING The lines go in AFTER the draft exists and BEFORE the wizard closes, so one
+             press produces a BOQ with its trades in it rather than an empty shell plus a second
+             errand. A failure here leaves the draft standing -- which is correct: the revision was
+             created, and the planner can pick trades again on the BOQ screen. */
+          var codes = st.boqPicker ? st.boqPicker.codes() : [];
+          if (codes.length && D.addBoqLines) await D.addBoqLines(codes);
           close();
-          UI.toast(bname + ' rev ' + brev + ' created. Add lines from the class-code library.', 'success');
+          UI.toast(bname + ' rev ' + brev + ' created' +
+            (codes.length ? ' with ' + codes.length + ' lines.' : '. Add lines from the class-code library.'),
+            'success');
         } catch (err) {
           if (btn) { btn.disabled = false; btn.textContent = 'Create draft'; }
           UI.toast((err && err.message) || String(err), 'error');
@@ -809,6 +853,7 @@ window.CCWizard = (function () {
          assumed it starts with. */
       pkgList: [blankPkg()], pkgPrimary: 0,
       boqMode: 'manual', boqNew: false, boqName: '', boqRev: '', boqDate: '', boqPo: '', boqTotal: '',
+      boqPicker: null, boqCodesN: 0,
       ref: '', desc: '', cp: '', amount: '', est: '', sub: '', d1: '', d2: '',
       pkgLabel: function () {
         var p = D.packages().filter(function (x) { return String(x.id) === String(st.pkgId); })[0];

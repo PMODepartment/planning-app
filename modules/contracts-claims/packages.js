@@ -194,8 +194,13 @@ window.CCPackages = (function () {
          almost every project the right number of lots is zero, so this is an escape hatch rather
          than an invitation. Once a lot exists the full section appears below and carries its own
          `+ Lot`, and this one stops being the only route. */
+      /* WARNING QUIETER THAN A pd-btn, DELIBERATELY. Owner: *"+Lot button needs UI rework"*.
+         With the Contract lots section hidden on a project with no lots, this is the only
+         thing left in that header - and for almost every project the right number of lots is
+         ZERO. A primary-weight button there reads as a step to take. It is an escape hatch,
+         so it looks like one: a text-weight control that gains a border on hover. */
       (canWrite && !PKG.length
-        ? '<button class="pd-btn" id="pk-addfirst" title="A contract lot is a division BELOW this project — a lot inside this contract with no project code of its own. If it has its own code it is a separate project.">+ Lot</button>'
+        ? '<button class="boq-ghostbtn" id="pk-addfirst" title="A contract lot is a division BELOW this project. If the division already has its own project code it is a separate project, not a lot.">+ Lot</button>'
         : '') +
       '</div>';
 

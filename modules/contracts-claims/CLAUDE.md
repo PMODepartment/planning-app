@@ -1,5 +1,89 @@
 # Module: contracts-claims
 
+## A BOQ can be deleted, and a trade now names who buys it (2026-09-07i) - fmlozano
+
+Owner: *"Let's add the option to delete BOQ first. Let's do the proper mapping if you think that would
+help us in the finance and procurement connectivity."*
+
+### Delete a BOQ - and the four things it refuses
+A trash control sits beside the rename pencil in the BOQ picker. The chain under it is total:
+`boq_items` and `boq_class_map` cascade from `boq_revisions`, which cascades from `boq_documents`.
+So the value of this control is almost entirely in what it will not do.
+
+1. ⚠️ **An ISSUED revision is never deletable.** `2026-08-24-boq.sql` makes `boq_items`
+   append-and-supersede because it is the client's tendered document and every claim argument turns
+   on exactly what was tendered. A delete that ignored that would undo the module's central invariant
+   in one click. Drafts only; the message says supersede instead.
+2. ⚠️ **A billing period blocks it in the DATABASE.** `boq_billing_periods` references
+   `boq_revisions` **without** cascade, so Postgres refuses outright. The foreign-key error is
+   translated - *"has billing periods recorded against it"* - rather than shown raw.
+3. ⚠️ **The LAST document is not deletable.** Every revision hangs off a document; removing the only
+   one orphans the next revision and leaves the picker empty. Rename it, or add another first.
+4. **The confirm names counts** - revisions, and lines on the open one. *"Delete this BOQ?"* hides
+   how much is going.
+
+### The mapping: Finance's SEVEN cost classes against Procurement's TEN letting trades
+**Run `migrations/2026-09-07-trade-map.sql`.** Hovering a trade chip now names the procurement trades
+that class is let under: *General Requirement -> Let under: General Requirements*, *MEPF Works -> Let
+under: Mechanical Works, Electrical and Auxiliary Works, Plumbing Works, Fire Protection Works*.
+
+⚠️⚠️ **THIS TRANSLATES; IT DOES NOT MERGE, AND AN EARLIER READING OF MINE WAS WRONG.** I reported that
+the two vocabularies *"join to nothing, silently"* and recommended rewriting one to match the other.
+There is no join to break. `PRC_TRADE_ORDER` in the schedule module is a **display sort order** whose
+own comment says an unlisted trade *"is NOT dropped"*, and `project_schedule` has **no trade column**
+at all - verified, 0 occurrences. Nothing was ever joining.
+
+What exists is two legitimate classifications of the same work: `class_codes.trade` is how Finance
+classifies **cost**; `work_packages.trade` (WPM's `XL_TRADES`) is how Procurement **lets** it. MEPF is
+one cost class bought as four subcontracts, which the owner's own billing proves - *"PROGRESS BILLING
+NO. 1 MEPF PO"* and *"NO.7 STRUCTURAL PO"* are separate POs. Forcing either list to impersonate the
+other destroys a real distinction.
+
+- ⚠️ **A TABLE, not a constant.** Finance revises this chart without a deploy, and both apps can read
+  a table; neither can read the other's JavaScript.
+- ⚠️ **"Others" is deliberately UNMAPPED** - Finance's catch-all of 94 codes, not a trade. A line
+  under it resolves to no procurement trade and says so, which is the honest answer and visible
+  rather than silently wrong.
+- ⚠️ **The tooltip fires only on a hand-built bill**, where the chip IS a Finance trade. On an import
+  the chip is the client's own sheet name (`'BILLING BREAKDOWN '`, trailing space and all), so a
+  lookup would miss every time and report a mapping gap that is really a name the mapping was never
+  asked about.
+- ⚠️ **A plain select, NOT `PDb.selectAll`.** selectAll pages with `.order(key).gt(key, last)` and
+  needs a **unique** key; `trade_map`'s primary key is the PAIR, so "MEPF Works" appears four times
+  and a page boundary inside that group would silently drop the rest of it. Nine rows, one request.
+- Missing table -> empty map -> the chips carry no counterpart. Same tolerance as every other schema
+  addition in this file.
+
+### ⚠️ Class codes DO connect the activities - and the costing does not read them
+Owner: *"You can also check that we have class codes to connect the activities to the costing."*
+Audited end to end. Three of the four links exist; the fourth does not.
+
+| Link | State |
+|---|---|
+| The chart | ✅ `class_codes`, **702 rows / 698 active** after the dedupe, each now carrying a `trade` |
+| Activity -> code | ✅ `project_schedule.class_code` - grid cell, row editor, importer, groupable at L1/L2/L3, and bulk-written from the BOQ by `boq_tag_activities` |
+| BOQ line -> code | ✅ `boq_class_map`, per revision |
+| BOQ line -> activity | ✅ `boq_allocations`, and `boq_activity_quantity` derives the activity's quantity |
+| **BOQ money -> activity cost** | ❌ **nothing** |
+
+⚠️⚠️ **`modules/project-schedule/index.html` reads NO `boq_*` table - zero occurrences.** Cost Loading
+keys its cost lines on the activity **NAME** (`cfg.groups[name]`), and step 2's total is **typed by
+hand**. So a BOQ line priced at X under 03101 and forty activities tagged 03101 sit in the same
+database, both carrying the same code, and the planner re-types the money between them. The class
+code is a **tag for grouping and reporting**, and it is not yet a **cost carrier**.
+
+That is a feature, not a fix, and it is not built here: it would let Cost Loading offer *"total from
+the BOQ"* as a basis beside the leaf name and the WBS ancestor, summing `boq_items.amount` over the
+lines whose `boq_class_map` code matches the activities in the group. ⚠️ The trap to design around
+first is **double counting** - one BOQ line allocated across forty activities must contribute its
+amount once, so the sum belongs on the allocation, not on the tag.
+
+- `boq.js?v=20260907zb`, `module.css?v=20260907q`; `MODULE_V` -> `20260907zf`.
+- ⚠️ **Not verified signed-in.** The migration has not been run, so no `trade_map` row has been read
+  and no BOQ has been deleted through this control.
+
+---
+
 ## Match to schedule: a line can be linked before it is measured or priced (2026-09-07h) - jasantos2
 
 Owner: *"if it is matching to schedule, users are able to link despite the qts or amount not being
