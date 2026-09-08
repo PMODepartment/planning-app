@@ -503,7 +503,21 @@ html.pd-dark {
 .ccw-main h3 { margin: 0; font-size: 15px; }
 .ccw-sub { margin: 2px 0 12px; color: var(--pd-muted); font-size: 12px; }
 .ccw-main label { display: block; font-size: 12px; font-weight: 600; color: var(--pd-muted); margin: 10px 0 0; }
-.ccw-main input, .ccw-main select, .ccw-main textarea { width: 100%; margin-top: 4px; padding: 9px 11px;
+/* ⚠⚠ CHECKBOXES AND RADIOS ARE EXCLUDED, and the omission cost the Trades step its labels.
+   This rule said `.ccw-main input`, so EVERY input inside the wizard's main pane was given
+   `width:100%` and 9px/11px of padding — including the four-pane class-code ladder that the
+   Trades step hosts. Measured on the shipped file: the ladder's checkbox rendered **181.75px
+   wide in a 201.75px row**, which pushed the code chip, the item name and the n/total count
+   clean out of the pane (scrollWidth 254 against clientWidth 202) and centred the tick glyph
+   inside its own stretched box. Owner: *"The trades in the add BOQ is not loading properly."*
+   It was loading — all 702 codes were there, in the DOM, off-screen. Nothing about the symptom
+   pointed at CSS, which is what made it read as a data failure.
+   ⚠ It also stretched the three RADIOS the wizard renders (the BOQ build/import pair and the
+   primary-package column), so a text-field rule was quietly deforming every toggle control in
+   the wizard. Scoped by TYPE rather than patched per-widget: a control added inside .ccw-main
+   later inherits the correct behaviour instead of inheriting the next version of this bug. */
+.ccw-main input:not([type="checkbox"]):not([type="radio"]),
+.ccw-main select, .ccw-main textarea { width: 100%; margin-top: 4px; padding: 9px 11px;
   border: 1px solid var(--pd-line); border-radius: 8px; font: inherit; font-size: 14px;
   background: var(--pd-card); color: var(--pd-ink); }
 .ccw-main textarea { min-height: 68px; resize: vertical; }
@@ -884,3 +898,44 @@ html.pd-dark .boq-why { color:#7fd6a2; }
 .ccw.ccw-wide { max-width:1120px; width:96vw; }
 .ccw.ccw-wide .boq-ladwrap { padding:0; }
 .ccw.ccw-wide .boq-lad-body { height:300px; }
+
+/* ==========================================================================
+   THE APPROVAL CHAIN — two side-by-side ladders inside the PMI case file
+   Ours and the client's, because they are separate sequences with separate
+   owners; stacking them would read as one eight-step approval.
+   ========================================================================== */
+.pmi-chwrap { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:8px; }
+@media (max-width:900px) { .pmi-chwrap { grid-template-columns:1fr; } }
+.pmi-chs { border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; min-width:0; }
+.pmi-chs-h { display:flex; align-items:center; justify-content:space-between; gap:8px;
+  padding:7px 11px; font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.04em;
+  color:var(--pd-muted); background:rgba(128,128,128,.10); border-bottom:1px solid var(--pd-line); }
+.pmi-chs > p { padding:12px; margin:0; font-size:12px; line-height:1.5; }
+.pmi-chtab { font-size:12px; }
+.pmi-chtab th { font-size:10px; }
+.pmi-chtab td { padding:5px 8px; vertical-align:middle; }
+/* ⚠️ The date inputs are the primary control here, so they get a real resting border and a
+   compact height rather than inheriting the tall form field: five roles x two dates is ten
+   controls in a modal that already carries three tables. */
+.pmi-chtab .pmi-chd, .pmi-chtab .pmi-chby { height:28px; padding:0 6px; font-size:12px;
+  border:1px solid var(--pd-line); border-radius:6px; background:var(--pd-card); color:var(--pd-ink);
+  width:100%; box-sizing:border-box; min-width:0; }
+.pmi-chtab .pmi-chd:focus, .pmi-chtab .pmi-chby:focus { outline:2px solid var(--pd-red); outline-offset:-2px; }
+/* THE THREE STATES, and they must be distinguishable at a glance rather than read.
+   cleared = done and quiet · with = the one row that wants attention · pending = not yet its turn. */
+.pmi-chtab tr.pmi-ch-cleared td { background:rgba(18,105,58,.07); }
+html.pd-dark .pmi-chtab tr.pmi-ch-cleared td { background:rgba(78,209,139,.08); }
+.pmi-chtab tr.pmi-ch-with td { background:rgba(238,49,36,.09); }
+.pmi-chtab tr.pmi-ch-with td:first-child { box-shadow:inset 3px 0 0 var(--pd-red); }
+.pmi-chtab tr.pmi-ch-pending td { color:var(--pd-muted); }
+/* An ORPHAN is data whose role no longer exists in the profile. Amber, not red: nothing is
+   broken and nothing is lost — it needs re-keying, which is a chore, not an error. */
+.pmi-chtab tr.pmi-ch-orphan td { background:#FFF0D9; }
+html.pd-dark .pmi-chtab tr.pmi-ch-orphan td { background:#3A2E17; }
+.pmi-chtab tr.pmi-ch-orphan td:first-child { box-shadow:inset 3px 0 0 var(--pd-warn, #B8860B); }
+/* The register's holder line. Quiet — it sits under an aging figure that already carries the
+   colour, and two loud things in one cell means neither is read. */
+.pmi-holder { color:var(--pd-muted); font-weight:600; }
+/* "Cleared" as a positive statement. Same green the cost build-up uses for a closing figure. */
+.cc-ok { color:#0E7A4A; font-weight:700; }
+html.pd-dark .cc-ok { color:#4ED18B; }

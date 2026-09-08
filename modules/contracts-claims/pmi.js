@@ -219,6 +219,108 @@ window.PMI = (function () {
   }
 
   // ==========================================================================
+  // THE APPROVAL CHAIN WITHIN A STAGE (B2b's missing half)
+  // ==========================================================================
+  /* ⚠️⚠️ `internal_chain` / `client_chain` HAVE EXISTED SINCE 2026-08-25 AND NOTHING READ THEM.
+     `2026-08-25-pmi.sql` declares both `jsonb not null default '{}'`, with the reason spelled out
+     in the migration: *"a proposal three weeks with the COO is not 'Submitted' — it is NOT
+     SUBMITTED AT ALL"*. The roles were configurable per profile from day one
+     (`contract_profiles.internal_roles` / `client_roles`, ordered, comma-separated) and the record
+     had nowhere to record who was holding it. Grep confirmed it: the two column names appeared
+     ZERO times in `pmi.js`. So the register could say an instruction had been sitting 94 days and
+     not say with whom — which is the one fact that makes the number actionable.
+
+     SHAPE: keyed by ROLE NAME, exactly as the migration says —
+       { "COO": { "in": "2026-06-24", "out": "2026-07-02", "by": "R. Cruz", "note": "…" } }
+     `in` = the date it arrived with that role, `out` = the date they cleared it. Both, because one
+     date cannot distinguish "cleared in a day" from "still sitting there".
+
+     ⚠️ A ROLE IS RENAMEABLE IN THE PROFILE, AND THE CHAIN IS KEYED BY ITS NAME. Renaming "COO" to
+     "Chief Operating Officer" therefore strands every date recorded against the old spelling. It is
+     NOT dropped and it is NOT silently re-pointed: a stranded key renders as an **orphan** row,
+     labelled, below the configured roles, so the dates are visible and the planner can re-key them
+     deliberately. Silently re-pointing by position would be worse than losing them — it would
+     attribute one manager's sign-off to another. A case-only edit ("coo") IS matched, because that
+     is a typo fix rather than a rename, and writes always use the profile's current spelling. */
+  function chainOf(r, side) {
+    var v = side === 'client' ? (r && r.client_chain) : (r && r.internal_chain);
+    return (v && typeof v === 'object') ? v : {};
+  }
+  function rolesOf(r, side) {
+    var pr = profileOf(r);
+    var list = (pr && (side === 'client' ? pr.client_roles : pr.internal_roles)) || [];
+    return (Array.isArray(list) ? list : []).map(txt).filter(Boolean);
+  }
+  /* Case-insensitive read, exact-case write — see the rename note above. */
+  function chainEntry(ch, role) {
+    if (Object.prototype.hasOwnProperty.call(ch, role)) return ch[role] || {};
+    var want = normKey(role), hit = null;
+    Object.keys(ch).forEach(function (k) { if (!hit && normKey(k) === want) hit = ch[k]; });
+    return hit || {};
+  }
+  function dOf(e, f) { var v = e && e[f]; return v ? String(v).slice(0, 10) : ''; }
+  /* One ordered pass, so the rows on screen, the holder and the summary can never disagree.
+     ⚠️ ORDER COMES FROM THE PROFILE, never from the jsonb's own key order. Object keys enumerate
+     in insertion order, which is DATA-ENTRY order — record the COO first and the chain would claim
+     the COO signs first. The approval sequence is configuration, not a side effect of typing. */
+  function chainRows(r, side) {
+    var ch = chainOf(r, side), roles = rolesOf(r, side), seen = {}, rows = [];
+    function row(role, e, orphan) {
+      var i = dOf(e, 'in'), o = dOf(e, 'out');
+      return { role: role, in: i, out: o, by: txt(e && e.by), note: txt(e && e.note),
+               orphan: !!orphan, state: o ? 'cleared' : (i ? 'with' : 'pending'),
+               days: o ? daysBetween(i, o) : (i ? daysBetween(i, todayISO()) : null) };
+    }
+    roles.forEach(function (role) { seen[normKey(role)] = 1; rows.push(row(role, chainEntry(ch, role), false)); });
+    Object.keys(ch).forEach(function (k) {
+      if (seen[normKey(k)]) return;
+      var e = ch[k] || {};
+      if (!dOf(e, 'in') && !dOf(e, 'out') && !txt(e.by) && !txt(e.note)) return;   // an empty husk is not an orphan
+      rows.push(row(k, e, true));
+    });
+    return rows;
+  }
+  /* ⚠️ THE HOLDER IS THE FIRST role that has it and has not cleared it, in profile order — not the
+     only one. Two roles both holding is a real state (it was sent to two managers at once, or a
+     date was mistyped) and flattening it to one would hide the second. The summary counts them. */
+  function chainSummary(r, side) {
+    var rows = chainRows(r, side);
+    var real = rows.filter(function (x) { return !x.orphan; });
+    var cleared = real.filter(function (x) { return x.state === 'cleared'; }).length;
+    var withNow = real.filter(function (x) { return x.state === 'with'; });
+    var holder = withNow[0] || null;
+    return { rows: rows, n: real.length, cleared: cleared, holder: holder,
+             holding: withNow.length, orphans: rows.filter(function (x) { return x.orphan; }).length,
+             /* ⚠️ `complete` is FALSE on a chain with no roles configured, deliberately. "Nobody
+                has to approve this" and "everyone has approved it" are opposite facts, and only
+                one of them should let the contradiction note below stay quiet. */
+             complete: real.length > 0 && cleared === real.length,
+             configured: real.length > 0 };
+  }
+  /* ⚠️ A SECOND AGING FIGURE, and it answers a different question from agingOf(). The stage clock
+     says how long the instruction has been at "Estimated"; this says how long it has been on ONE
+     desk inside that stage. The migration's own note requires both — "days since receipt while
+     un-responded" and "days in internal approval" are different questions with different owners. */
+  function chainAgingOf(r, side) {
+    var sm = chainSummary(r, side);
+    if (!sm.holder || sm.holder.days == null || sm.holder.days < 0) return null;
+    return { role: sm.holder.role, days: sm.holder.days, since: sm.holder.in };
+  }
+  /* ⚠️ THE CONTRADICTION IS REPORTED, NEVER CORRECTED — the same house rule as the POC variance on
+     the Billing tab. A record at Submitted whose internal chain is not cleared is exactly the case
+     the migration was written for; it is also, just as often, a chain nobody bothered to fill in.
+     Only the planner knows which, so the screen states the disagreement and stops. Auto-advancing
+     the stage from the chain (or refusing the stage) would make the register lie in whichever of
+     the two cases it guessed wrong. */
+  var STAGES_PAST_INTERNAL = { submitted: 1, evaluated: 1, client_approved: 1, rejected: 1 };
+  function chainConflict(r) {
+    if (!STAGES_PAST_INTERNAL[r.stage]) return null;
+    var sm = chainSummary(r, 'internal');
+    if (!sm.configured || sm.complete) return null;
+    return { cleared: sm.cleared, n: sm.n, holder: sm.holder };
+  }
+
+  // ==========================================================================
   // LOAD
   // ==========================================================================
   function migHint(err) {
@@ -367,6 +469,7 @@ window.PMI = (function () {
     if (!list.length) h += '<tr><td colspan="9" class="cc-mut" style="text-align:center;padding:32px;">No instructions match these filters.</td></tr>';
     list.forEach(function (r) {
       var ag = agingOf(r), tot = totalAgeOf(r), c = completeness(r);
+      var chAg = chainAgingOf(r, 'internal'), cfl = chainConflict(r);
       var card = evalCard(cardFor(r), directOf(LINES[r.id]).total);
       var ptot = proposalTotal(r);
       var agCls = !ag ? '' : ag.days >= 90 ? ' bad' : ag.days >= 30 ? ' warn' : '';
@@ -375,8 +478,16 @@ window.PMI = (function () {
           '<div class="cc-mini pmi-refs">' + esc(refOf(r)) + '</div></td>' +
         '<td><span class="boq-kind k-' + esc(r.stage) + '">' + esc((STAGE_BY[r.stage] || {}).label || r.stage) + '</span>' +
           (r.is_latest ? '' : '<div class="cc-mini">superseded</div>') + '</td>' +
+        /* ⚠️ THE HOLDER GOES IN THE EXISTING "In stage" CELL, not a tenth column. The table is
+           already nine wide, and "with whom" is not a separate fact from "how long in this stage"
+           — it is the answer to the question that number provokes. A new column would push the
+           money off the right of a laptop screen to say something belonging right here. */
         '<td class="cc-r"><span class="cc-age' + agCls + '">' + (ag ? ag.days + 'd' : '') + '</span>' +
-          (ag ? '<div class="cc-mini">' + esc(ag.note) + '</div>' : '') + '</td>' +
+          (ag ? '<div class="cc-mini">' + esc(ag.note) + '</div>' : '') +
+          (chAg ? '<div class="cc-mini pmi-holder" title="' + esc('with ' + chAg.role + ' since ' + fmtDate(chAg.since)) + '">with ' +
+                  esc(chAg.role.length > 22 ? chAg.role.slice(0, 21) + '\u2026' : chAg.role) + ' \u00b7 ' + chAg.days + 'd</div>' : '') +
+          (cfl ? '<div class="cc-mini boq-bad" title="' + esc('our chain shows ' + cfl.cleared + ' of ' + cfl.n + ' cleared') + '">chain not cleared</div>' : '') +
+          '</td>' +
         '<td class="cc-r">' + (tot == null ? '' : tot + 'd') + '</td>' +
         '<td>' + (r.outcome ? '<span class="cc-st st-' + esc(String(r.outcome).toLowerCase()) + '">' + esc(r.outcome) + '</span>' : '<span class="cc-mut">—</span>') + '</td>' +
         '<td class="cc-r">' + (ptot == null ? '<span class="cc-mut">not priced</span>' : money(ptot)) +
@@ -543,6 +654,9 @@ window.PMI = (function () {
       '<div class="pd-modal-footer">' +
       (canWrite ? '<button class="pd-btn" id="cf-rev">New revision…</button> ' +
                   '<button class="pd-btn" id="cf-spawn">Spawn follow-on…</button> ' +
+                  /* Sits with the other two things a case file can BECOME, not among the edit
+                     controls: promoting is a commercial act, not a correction. */
+                  (canPromote() ? '<button class="pd-btn" id="cf-promote">Raise claim / CO…</button> ' : '') +
                   '<button class="pd-btn" id="cf-edit">Edit</button> ' : '') +
       '<button class="pd-btn" id="cf-close">Close</button></div>');
     var body = m.el.querySelector('#cf-body');
@@ -553,11 +667,14 @@ window.PMI = (function () {
       m.el.querySelector('#cf-edit').onclick = function () { m.close(); openForm(r); };
       m.el.querySelector('#cf-rev').onclick = function () { m.close(); newRevision(r); };
       m.el.querySelector('#cf-spawn').onclick = function () { m.close(); spawnFrom(r); };
+      var pb = m.el.querySelector('#cf-promote');
+      if (pb) pb.onclick = function () { m.close(); promoteToClaim(recById(id) || r); };
     }
 
     function paint() {
       r = recById(id) || r;
       var ag = agingOf(r), tot = totalAgeOf(r), c = completeness(r);
+      var chSm = chainSummary(r, 'internal'), chAg = chainAgingOf(r, 'internal');
       var lines = LINES[r.id] || [], dir = directOf(lines);
       var card = evalCard(cardFor(r), dir.total);
       var prof = profileOf(r);
@@ -568,13 +685,24 @@ window.PMI = (function () {
         '<div><span class="cc-mini">Stage</span><div><span class="boq-kind k-' + esc(r.stage) + '">' +
           esc((STAGE_BY[r.stage] || {}).label || r.stage) + '</span></div></div>' +
         '<div><span class="cc-mini">In stage</span><div>' + (ag ? ag.days + 'd — ' + esc(ag.note) : '<span class="cc-mut">clock stopped</span>') + '</div></div>' +
+        /* ⚠️ THE THIRD CLOCK, and the one the register could never show: which desk it is on, and
+           for how long. "94 days at Estimated" is a number; "94 days at Estimated, 31 of them with
+           the COO" is something a PM can act on this afternoon. */
+        '<div><span class="cc-mini">With</span><div>' + (chAg
+            ? esc(chAg.role) + ' — ' + chAg.days + 'd'
+            : (chSm.configured
+                ? (chSm.complete ? '<span class="cc-ok">chain cleared</span>' : '<span class="cc-mut">not recorded</span>')
+                : '<span class="cc-mut">no roles set</span>')) + '</div></div>' +
         '<div><span class="cc-mini">Total age from receipt</span><div>' + (tot == null ? '—' : tot + 'd') + '</div></div>' +
         '</div>';
 
       if (r.scope) h += '<p class="pmi-scope">' + esc(r.scope) + '</p>';
 
       // ---- the chain, all three relations named apart -----------------------
-      h += '<div class="cc-sec">Chain</div><div class="pmi-chain">' + chainHTML(r) + '</div>';
+      h += '<div class="cc-sec">Related instructions</div><div class="pmi-chain">' + chainHTML(r) + '</div>';
+
+      // ---- the approval chain, ours then the client's ----------------------
+      h += chainSectionHTML(r);
 
       // ---- typed attachments ----------------------------------------------
       h += '<div class="cc-sec">Documents' + (prof && prof.required_docs.length ? ' — ' + (c.need.length - c.missing.length) + ' of ' + c.need.length + ' required attached' : '') + '</div>';
@@ -657,6 +785,107 @@ window.PMI = (function () {
     paint();
   }
 
+  /* ⚠️ NAMED `chainSectionHTML`, NOT `chainHTML` — and the collision is worth a line, because
+     `chainHTML(r)` already exists in this file and means something completely different: the
+     PARENT / SUPERSEDES / SPAWNED relations between records. That one is about which instructions
+     are related; this one is about who has signed. Two "chains" in one module is unfortunate
+     vocabulary inherited from the migration, so the section headings say **Related instructions**
+     and **Approval chain** rather than repeating the ambiguous word on screen. */
+  function chainSideHTML(r, side, title, blurb) {
+    var sm = chainSummary(r, side);
+    var h = '<div class="pmi-chs"><div class="pmi-chs-h">' + esc(title) +
+      (sm.configured
+        ? '<span class="boq-alloc ' + (sm.complete ? 'full' : sm.cleared ? 'part' : 'none') + '">' +
+          sm.cleared + '/' + sm.n + ' cleared</span>'
+        : '') + '</div>';
+    if (!sm.configured && !sm.rows.length) {
+      return h + '<p class="cc-mut">' + esc(blurb) + '</p></div>';
+    }
+    h += '<table class="boq-splittab pmi-chtab"><thead><tr><th>Role</th><th>Arrived</th><th>Cleared</th>' +
+      '<th class="cc-r">Days</th><th>Signed by</th></tr></thead><tbody>';
+    sm.rows.forEach(function (x, i) {
+      var key = side + '-' + i;
+      /* ⚠️ The ROLE NAME travels in a data attribute, not re-read from the profile on save. The
+         profile can be edited in another tab between opening this modal and pressing Save, and a
+         re-read would then write the dates against whatever the role is called by then. */
+      h += '<tr class="pmi-ch-' + x.state + (x.orphan ? ' pmi-ch-orphan' : '') + '" data-chrow="' + esc(key) + '" data-chside="' + esc(side) + '" data-chrole="' + esc(x.role) + '">' +
+        '<td><b>' + esc(x.role) + '</b>' +
+          (x.orphan ? '<div class="cc-mini boq-bad">not in the profile\u2019s role list \u2014 recorded before it was renamed or removed</div>' : '') +
+          (x.state === 'with' && !x.orphan ? '<div class="cc-mini">holding it now</div>' : '') + '</td>' +
+        (canWrite
+          ? '<td><input class="pd-input pmi-chd" type="date" data-chf="in" value="' + esc(x.in) + '" /></td>' +
+            '<td><input class="pd-input pmi-chd" type="date" data-chf="out" value="' + esc(x.out) + '" /></td>'
+          : '<td>' + esc(fmtDate(x.in) || '\u2014') + '</td><td>' + esc(fmtDate(x.out) || '\u2014') + '</td>') +
+        /* ⚠️ An em dash, never 0. A role that has not received it yet has NO duration; a zero reads
+           as "cleared the same day", which is the opposite claim. */
+        '<td class="cc-r">' + (x.days == null ? '<span class="cc-mut">\u2014</span>'
+            : '<span class="cc-age' + (x.state === 'with' && x.days >= 14 ? (x.days >= 30 ? ' bad' : ' warn') : '') + '">' + x.days + 'd</span>') + '</td>' +
+        (canWrite
+          ? '<td><input class="pd-input pmi-chby" data-chf="by" value="' + esc(x.by) + '" placeholder="name (optional)" /></td>'
+          : '<td>' + esc(x.by || '\u2014') + '</td>') +
+        '</tr>';
+    });
+    h += '</tbody></table></div>';
+    return h;
+  }
+
+  function chainSectionHTML(r) {
+    var pr = profileOf(r);
+    var h = '<div class="cc-sec">Approval chain</div>';
+    var cf = chainConflict(r);
+    if (cf) {
+      h += '<div class="boq-alert warn"><strong>This is at ' +
+        esc((STAGE_BY[r.stage] || {}).label || r.stage) + ', but our chain shows ' + cf.cleared +
+        ' of ' + cf.n + ' cleared' + (cf.holder ? ' and it is still with <strong>' + esc(cf.holder.role) + '</strong>' : '') +
+        '.</strong> Either the sign-offs have not been recorded, or the stage is ahead of the truth — ' +
+        'a proposal still with an internal approver is not submitted. This is reported, never corrected: ' +
+        'only you know which of the two it is.</div>';
+    }
+    if (!pr) {
+      h += '<p class="cc-hint">No contract profile on this instruction, so there are no approval roles to ' +
+        'record against. Roles are per client (ours and theirs, in order) — set them on a profile under ' +
+        '<strong>Cost Terms</strong>, then pick that profile on this record.</p>';
+    }
+    h += '<div class="pmi-chwrap">' +
+      chainSideHTML(r, 'internal', 'Ours',
+        'This client\u2019s profile lists no internal approval roles. Add them in order (Office Supervisor, ' +
+        'MEPF & Finishing Manager, Project Manager, COO) and the days on each desk become visible.') +
+      chainSideHTML(r, 'client', 'The client\u2019s',
+        'No client-side roles listed (Prepared, Checked, Noted, Approved, D&C Head).') +
+      '</div>';
+    if (canWrite && (chainSummary(r, 'internal').rows.length || chainSummary(r, 'client').rows.length)) {
+      h += '<div class="pmi-up"><button class="pd-btn pd-btn-primary" id="cf-chsave">Save approval chain</button>' +
+        '<span class="cc-mini" id="cf-chst"></span></div>' +
+        '<p class="cc-hint">⚠️ The chain saves only when you press this — the case file repaints itself after an ' +
+        'upload or a priced line, and an unsaved date would go with it.</p>';
+    }
+    return h;
+  }
+
+  /* Read every chain row back out of the DOM into the two jsonb objects.
+     ⚠️ A ROLE WITH NOTHING RECORDED IS OMITTED, not stored as `{in:null,out:null}`. Storing husks
+     would grow a key per role on every save, and then the orphan detection — whose whole job is to
+     notice a key the profile no longer lists — would be reporting empty rows the planner never
+     touched. `{}` is the column's own default and means "nothing recorded yet". */
+  function readChains(root) {
+    var out = { internal: {}, client: {} };
+    root.querySelectorAll('[data-chrow]').forEach(function (tr) {
+      var side = tr.dataset.chside, role = tr.dataset.chrole;
+      var g = function (f) { var x = tr.querySelector('[data-chf="' + f + '"]'); return x ? txt(x.value) : ''; };
+      var e = {};
+      var i = g('in'), o = g('out'), by = g('by');
+      if (i) e.in = i;
+      if (o) e.out = o;
+      if (by) e.by = by;
+      /* Any note already on the row survives — it has no input yet, and a save must never be a
+         quiet delete of a field this screen does not show. */
+      var prev = chainEntry(chainOf(recById(selId) || {}, side), role);
+      if (prev && prev.note) e.note = prev.note;
+      if (Object.keys(e).length) out[side][role] = e;
+    });
+    return out;
+  }
+
   function chainHTML(r) {
     var out = [];
     function row(kind, label, other, note) {
@@ -697,6 +926,28 @@ window.PMI = (function () {
     if (fi) fi.onchange = function () { uploadAttachment(m, r, paint); };
     var al = m.el.querySelector('#cf-addline');
     if (al) al.onclick = function () { addLine(r, paint); };
+    var cs = m.el.querySelector('#cf-chsave');
+    if (cs) cs.onclick = async function () {
+      var st = m.el.querySelector('#cf-chst');
+      var ch = readChains(m.el);
+      cs.disabled = true; if (st) st.textContent = 'Saving\u2026';
+      var up = await sb().from(T_PMI).update({
+        internal_chain: ch.internal, client_chain: ch.client, updated_at: new Date().toISOString()
+      }).eq('id', r.id);
+      cs.disabled = false; if (st) st.textContent = '';
+      if (up.error) {
+        UI.toast('Could not save the approval chain: ' + up.error.message + migHint(up.error).replace(/<\/?code>/g, ''), 'error');
+        return;
+      }
+      /* ⚠️ The IN-MEMORY row is updated before the repaint rather than reloading the whole tab.
+         `load()` here would drop and re-fetch every record, attachment and priced line to show two
+         jsonb columns, and it would close nothing gracefully mid-modal. The register re-reads the
+         same objects, so its holder line follows. */
+      var live = recById(r.id);
+      if (live) { live.internal_chain = ch.internal; live.client_chain = ch.client; }
+      UI.toast('Approval chain saved.', 'success');
+      paint(); render();
+    };
   }
 
   // ==========================================================================
@@ -1115,9 +1366,180 @@ window.PMI = (function () {
   }
 
   // ==========================================================================
+  // PROMOTION — a filed instruction becomes a commercial record
+  // ==========================================================================
+  /* ⚠️⚠️ `claim_id` HAS EXISTED SINCE 2026-08-25 AND NOTHING COULD SET IT. The migration is
+     explicit — *"set when this instruction becomes priced commercial work"*, `on delete set null`
+     so deleting the claim never deletes the instruction that caused it — and the register already
+     drew a "claim" chip off it. Grep found `claim_id` exactly once in this file: reading that chip.
+     So the badge was unearnable and the roadmap's *"promoting a PMI to a contracts_claims row in
+     one click"* was, in practice, a hand-written UPDATE.
+
+     ⚠️ THE TYPE IS ASKED, NOT DERIVED. The tempting rule is "money means Change Order, days mean
+     EOT" and it is wrong in both directions: a variation instruction routinely carries both, and
+     whether a priced instruction is a change order or a CLAIM is a commercial judgement about
+     entitlement, not an arithmetic fact about the proposal. Guessing it writes the wrong record
+     type into the register that gets reported to the client.
+
+     ⚠️ EVERY PREFILL IS VISIBLE AND EDITABLE, and the dialog names where each figure came from.
+     A promotion that silently copied the card total into `sub_amount` would be asserting the
+     proposal was submitted at that figure — which is true only if it was actually submitted. */
+  var PROMOTE_TYPES = ['Change Order', 'Claim', 'EOT'];
+
+  /* What the instruction can carry into a claim, computed once so the dialog and the payload
+     cannot disagree about it. */
+  function promoteBasis(r) {
+    var total = proposalTotal(r);                 // null when unpriced — NEVER 0
+    var days = r.eot_days == null ? null : Number(r.eot_days);
+    return {
+      total: total, days: days,
+      /* ⚠️ `date_filed` is when the case opened on OUR desk, which for an instruction is the day
+         it was received — not the day it was issued by the client, and not today. The claims
+         register ages a pending record from `date_submitted`, so that one maps straight across. */
+      filed: r.date_received || r.date_issued || null,
+      submitted: r.date_submitted || null,
+      /* Same vocabulary on both sides by design: 2026-08-25-pmi.sql reused contracts_claims' own
+         outcome list rather than inventing a parallel one, precisely so this copy is a copy. */
+      status: r.outcome || 'Pending',
+      ref: txt(r.our_ref) || txt(r.client_ref) || '',
+      desc: txt(r.title) || txt(r.scope).slice(0, 200) || ''
+    };
+  }
+
+  function promoteToClaim(r) {
+    if (!canPromote()) { UI.toast('You do not have permission to raise a commercial record.', 'error'); return; }
+    /* ⚠️ REFUSED IF ALREADY PROMOTED, and this is the gate that matters. Two claims for one
+       instruction is a DOUBLE COUNT in the register the client is billed from, and it would look
+       exactly like two legitimate variations. The existing link is offered instead. */
+    if (r.claim_id) {
+      var ex = HOST.claimById ? HOST.claimById(r.claim_id) : null;
+      UI.toast(labelFor(r) + ' ' + refOf(r) + ' is already linked to a commercial record' +
+        (ex ? ' (' + (txt(ex.reference_no) || txt(ex.description) || ex.record_type) + ')' : '') +
+        '. Raising a second one would double-count it in the register.', 'error');
+      return;
+    }
+    var b = promoteBasis(r);
+    var money2 = function (n) { return n == null ? '' : String(n); };
+    var m = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">Raise a commercial record from ' +
+      esc(labelFor(r)) + '</h2>' +
+      '<p class="pd-modal-sub">' + esc(refOf(r)) + '</p>' +
+      '<button class="pd-modal-close" id="pr-x">&times;</button></div>' +
+      '<div class="cc-form">' +
+      (b.total == null && b.days == null
+        ? '<div class="boq-alert warn">This instruction has <strong>no priced total and no EOT days</strong>, so the ' +
+          'record will carry neither. That is a legitimate thing to file — a change order raised before it is priced ' +
+          '— but nothing will roll up until the figures land.</div>'
+        : '') +
+      '<label>Record type<select class="pd-select" id="pr-type">' +
+        PROMOTE_TYPES.map(function (t) { return '<option>' + esc(t) + '</option>'; }).join('') +
+      '</select><span class="cc-mini">Asked, never guessed: whether priced work is a change order or a ' +
+      'claim is a judgement about entitlement, and an instruction can carry money and time at once.</span></label>' +
+      '<label>Reference no.<input class="pd-input" id="pr-ref" value="' + esc(b.ref) + '" />' +
+        '<span class="cc-mini">from our reference, falling back to the client\u2019s</span></label>' +
+      '<label class="cc-wide">Description<textarea id="pr-desc">' + esc(b.desc) + '</textarea>' +
+        '<span class="cc-mini">from the title, falling back to the instructed scope</span></label>' +
+      '<label>Counterparty<input class="pd-input" id="pr-cp" value="" />' +
+        '<span class="cc-mini">not carried \u2014 an instruction records no counterparty column, so this is blank ' +
+        'rather than guessed from the project</span></label>' +
+      '<div class="cc-sec">Value</div>' +
+      '<label>Estimated amount<input class="pd-input" id="pr-est" type="number" step="0.01" value="' + esc(money2(b.total)) + '" />' +
+        '<span class="cc-mini">' + (b.total == null ? 'the proposal is not priced' : 'the cost build-up\u2019s TOTAL step \u2014 the figure the card closes at') + '</span></label>' +
+      '<label>Submitted amount<input class="pd-input" id="pr-sub" type="number" step="0.01" value="' +
+        esc(b.submitted ? money2(b.total) : '') + '" />' +
+        /* ⚠️ Prefilled ONLY when the instruction actually has a submission date. Copying the card
+           total in regardless would assert we submitted at that figure on a proposal still sitting
+           with an internal approver. */
+        '<span class="cc-mini">' + (b.submitted ? 'same figure \u2014 this instruction was submitted on ' + esc(fmtDate(b.submitted)) : 'left blank: this instruction has no submitted date, so nothing was submitted at any figure') + '</span></label>' +
+      '<label>EOT days<input class="pd-input" id="pr-days" type="number" step="1" value="' + esc(money2(b.days)) + '" />' +
+        '<span class="cc-mini">carried into est./sub. days when the type is EOT</span></label>' +
+      '<div class="cc-sec">Dates &amp; status</div>' +
+      '<label>Date filed<input class="pd-input" id="pr-filed" type="date" value="' + esc(b.filed ? String(b.filed).slice(0, 10) : '') + '" />' +
+        '<span class="cc-mini">when it landed on our desk \u2014 received, not issued</span></label>' +
+      '<label>Date submitted<input class="pd-input" id="pr-subd" type="date" value="' + esc(b.submitted ? String(b.submitted).slice(0, 10) : '') + '" />' +
+        '<span class="cc-mini">the register ages a pending record from this</span></label>' +
+      '<label>Status<select class="pd-select" id="pr-status">' +
+        OUTCOMES.map(function (o) { return '<option' + (b.status === o ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('') +
+      '</select><span class="cc-mini">the same four values both registers use \u2014 copied from this instruction\u2019s outcome</span></label>' +
+      '<p class="cc-hint">The record is created in the claims register and this instruction is linked to it. ' +
+      'The instruction is <strong>not</strong> closed or altered \u2014 it stays the case file, with its documents, ' +
+      'its priced lines and its approval chain.</p>' +
+      '</div><div class="pd-modal-footer"><button class="pd-btn" id="pr-c">Cancel</button> ' +
+      '<button class="pd-btn pd-btn-primary" id="pr-go">Raise record</button></div>');
+    var el = function (id) { return m.el.querySelector('#' + id); };
+    el('pr-x').onclick = m.close; el('pr-c').onclick = m.close;
+
+    el('pr-go').onclick = async function () {
+      var t = el('pr-type').value;
+      var num = function (id) { var v = txt(el(id).value); return v === '' ? null : (isFinite(Number(v)) ? Number(v) : null); };
+      var v = function (id) { var x = txt(el(id).value); return x === '' ? null : x; };
+      var ref = v('pr-ref'), desc = v('pr-desc');
+      if (!ref && !desc) { UI.toast('Give the record a reference number or a description.', 'error'); return; }
+      var isEot = t === 'EOT';
+      var days = num('pr-days');
+      var payload = {
+        project_id: pid, record_type: t,
+        reference_no: ref, description: desc, counterparty: v('pr-cp'),
+        /* ⚠️ package_id is deliberately NULL. An instruction carries no package, and inheriting
+           the project's only package would claim a commercial lot nobody assigned. */
+        package_id: null,
+        amount: null,
+        /* An EOT is measured in DAYS and a change order in MONEY, and the register has separate
+           columns for each. Writing the amount onto an EOT would put a peso figure in a row whose
+           whole subject is time. */
+        est_amount: isEot ? null : num('pr-est'), sub_amount: isEot ? null : num('pr-sub'),
+        eval_amount: null, approved_amount: null,
+        est_days: isEot ? days : null, sub_days: isEot ? days : null,
+        eval_days: null, approved_days: null,
+        status: el('pr-status').value || 'Pending',
+        date_filed: v('pr-filed'), date_submitted: v('pr-subd'),
+        date_evaluated: null, date_approved: null,
+        remarks: 'Raised from ' + labelFor(r) + ' ' + refOf(r) + '.',
+        updated_at: new Date().toISOString()
+      };
+      var btn = el('pr-go'); btn.disabled = true; btn.textContent = 'Raising\u2026';
+      var made = null;
+      try {
+        made = await HOST.createClaim(payload);
+        if (!made || !made.id) throw new Error('The claim was written but returned no id, so it cannot be linked.');
+        var up = await sb().from(T_PMI).update({ claim_id: made.id, updated_at: new Date().toISOString() }).eq('id', r.id);
+        if (up.error) throw up.error;
+      } catch (err) {
+        /* ⚠️ ROLL THE CLAIM BACK. It is written first because the instruction needs its id, so a
+           failed link leaves a real commercial record with nothing pointing at it —
+           indistinguishable from a duplicate filed by hand, and it would be reported to the client
+           as a second variation. Same rule, and the same reason, as the wizard's package rollback. */
+        var extra = '';
+        if (made && made.id && HOST.deleteClaim) {
+          try { await HOST.deleteClaim(made.id); extra = ' The record was rolled back, so nothing was left behind.'; }
+          catch (e2) { extra = ' \u26a0 The record could NOT be rolled back \u2014 remove "' +
+            (payload.reference_no || payload.description || t) + '" from the ' + t + ' register by hand.'; }
+        }
+        btn.disabled = false; btn.textContent = 'Raise record';
+        UI.toast(((err && err.message) || String(err)) + migHint(err).replace(/<\/?code>/g, '') + extra, 'error');
+        return;
+      }
+      var live = recById(r.id);
+      if (live) live.claim_id = made.id;
+      m.close();
+      UI.toast(t + ' ' + (payload.reference_no || '') + ' raised and linked to ' + refOf(r) + '.', 'success');
+      render();
+    };
+  }
+
+  // ==========================================================================
   // HOST API
   // ==========================================================================
-  function init(deps) { UID = deps.uid; canWrite = !!deps.canWrite; isAdmin = !!deps.isAdmin; }
+  function init(deps) {
+    UID = deps.uid; canWrite = !!deps.canWrite; isAdmin = !!deps.isAdmin;
+    /* ⚠️ Handed in by module.js rather than reached for: the claims register owns
+       `contracts_claims`, its `persistRecord` carries the missing-column degrade, and a second
+       writer on that table from this file would drift from it. Absent (an older module.js) means
+       the promote control simply is not offered — never a half-working one. */
+    HOST = { createClaim: deps.createClaim || null, deleteClaim: deps.deleteClaim || null,
+             claimById: deps.claimById || null, gotoClaim: deps.gotoClaim || null };
+  }
+  var HOST = { createClaim: null, deleteClaim: null, claimById: null, gotoClaim: null };
+  function canPromote() { return !!(canWrite && HOST.createClaim); }
   async function show(projectId, label) { pid = projectId; projLabel = label || ''; await load(); }
   function reset() { loaded = false; RECS = []; ATT = {}; PROFILES = []; TERMS = {}; LINES = {}; REVS = {}; selId = null; }
 
@@ -1129,6 +1551,16 @@ window.PMI = (function () {
       evalCard: evalCard, directOf: directOf, completeness: completeness, bumpRev: bumpRev,
       proposalTotal: proposalTotal, cardFor: cardFor,
       refOf: refOf, labelFor: labelFor, visible: visible, chainHTML: chainHTML,
+      /* The approval chain's derivation, exported so the ordering, the holder and the
+         orphan-detection are testable against the shipped functions. */
+      chainRows: chainRows, chainSummary: chainSummary, chainAgingOf: chainAgingOf,
+      chainConflict: chainConflict, chainEntry: chainEntry, profileOf: profileOf,
+      /* The promotion's field mapping, exported so what lands in contracts_claims is testable
+         without a database. */
+      promoteBasis: promoteBasis, PROMOTE_TYPES: PROMOTE_TYPES,
+      /* The rendered section, so its three states and the orphan row can be checked in a
+         browser without signing in and opening a real case file. */
+      chainSectionHTML: chainSectionHTML, registerHTML: registerHTML,
       _set: function (o) {
         if (o.RECS) RECS = o.RECS; if (o.ATT) ATT = o.ATT; if (o.PROFILES) PROFILES = o.PROFILES;
         if (o.TERMS) TERMS = o.TERMS; if (o.LINES) LINES = o.LINES; if (o.REVS) REVS = o.REVS;

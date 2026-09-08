@@ -853,7 +853,14 @@ window.BOQ = (function () {
       '</div>';
 
     if (!REVS.length) {
-      h += '<div class="pd-card cc-empty"><h3>No BOQ on this project yet</h3>' +
+      /* WARNING TWO DIFFERENT EMPTY STATES, and one message used to answer both. With a document
+         on screen the picker above is showing its NAME, so "No BOQ on this project yet" directly
+         contradicts what the planner can read one line higher. A named BOQ holding no revision is
+         now a reachable state -- deleting the only revision leaves it, and the wizard fills it --
+         so the copy has to tell the two apart. */
+      var emptyDoc = (DOCS || []).filter(function (x) { return x.id === DOCID; })[0] || null;
+      h += '<div class="pd-card cc-empty"><h3>' +
+        (emptyDoc ? esc(emptyDoc.name) + ' has no revision yet' : 'No BOQ on this project yet') + '</h3>' +
         '<p>Build one from the class-code library — or import the client\'s workbook if you ' +
         'have it. Each is a <strong>revision</strong>, and the prior one is always kept.</p>' +
         (canWrite ? '<p style="margin-top:14px;">' +
@@ -892,6 +899,21 @@ window.BOQ = (function () {
           'aria-label="Delete this BOQ" title="Delete this BOQ">\ud83d\uddd1</button>' : '') + ' '
       : '';
     if (!REVS.length) return docSel;
+    /* WARNING THE TRASH SITS ON THE REVISION TOO, and only on a DRAFT one. Deleting a BOQ was all
+       or nothing: a planner who authored the wrong revision -- wrong trades, wrong labels, a
+       remeasure started against the wrong scope -- could delete the whole named bill or nothing.
+       Owner, 2026-09-08: *"I need a delete BOQ as well, not just the lines within the BOQ just in
+       case."* Three granularities now exist and they are different jobs: the lines (Delete
+       selected), one revision (here), the whole BOQ (beside its name).
+       WARNING Rendered only for a draft. An ISSUED revision is the client's tendered document and
+       this module's central invariant is supersede-never-edit-away; a delete control that appeared
+       over it would have to refuse on click, and a button whose only behaviour is to refuse is
+       worse than no button -- it teaches the planner the module is arbitrary. */
+    var curR = curRev();
+    var revDel = (canWrite && curR && revStatus(curR) === 'draft')
+      ? '<button class="boq-iconbtn boq-iconbtn-danger" id="boq-revdel" ' +
+        'aria-label="Delete this draft revision" title="Delete this draft revision">\ud83d\uddd1</button>'
+      : '';
     return docSel + '<label class="boq-inline">Revision <select class="pd-select" id="boq-rev">' +
       REVS.map(function (r) {
         return '<option value="' + esc(r.id) + '"' + (r.id === REVID ? ' selected' : '') + '>' +
@@ -900,7 +922,7 @@ window.BOQ = (function () {
              would describe a BOQ being written as one that had been replaced. */
           esc('rev ' + r.rev_no + (r.issued_date ? ' · ' + String(r.issued_date).slice(0, 10) : '') +
               (revStatus(r) === 'draft' ? ' · DRAFT' : r.is_current ? ' · current' : ' · superseded')) +
-          '</option>'; }).join('') + '</select></label>';
+          '</option>'; }).join('') + '</select></label>' + revDel;
   }
 
   function wireShell(host) {
@@ -930,10 +952,16 @@ window.BOQ = (function () {
     if (dd) dd.onclick = async function () {
       var d = DOCS.filter(function (x) { return x.id === DOCID; })[0];
       if (!d) return;
-      if (DOCS.length < 2) {
-        UI.toast('This is the only BOQ on the project - rename it instead, or add another first.', 'error');
-        return;
-      }
+      /* WARNING THE "LAST DOCUMENT" REFUSAL IS GONE, and it was over-cautious. Its stated reason
+         was that removing the only document "orphans the next revision and leaves the picker
+         empty" -- but boq_revisions CASCADES from boq_documents, so there is no next revision to
+         orphan, and an empty picker is a state this screen already renders on purpose: every
+         project starts there, and render() answers it with "No BOQ on this project yet" and an
+         Add BOQ button. Owner, 2026-09-08: *"I need a delete BOQ as well, not just the lines
+         within the BOQ just in case."* On a project with exactly one BOQ -- which is most of them,
+         and the case a wrong first attempt actually happens in -- the control refused every time,
+         so from where he stood it did not exist. The gates that protect real evidence (an issued
+         revision, a recorded billing period) are untouched below; this one protected nothing. */
       var mine = ALLREVS.filter(function (r) { return r.document_id === d.id; });
       var issued = mine.filter(function (r) { return revStatus(r) !== 'draft'; });
       if (issued.length) {
@@ -943,10 +971,19 @@ window.BOQ = (function () {
         return;
       }
       var nLines = mine.some(function (r) { return r.id === REVID; }) ? ITEMS.length : 0;
+      /* WARNING The confirm NAMES THE COUNTS -- "Delete this BOQ?" hides how much is going -- and
+         when this is the only BOQ it says so, because "the project will have no BOQ" is a
+         materially different outcome from "one of several is going" and the planner cannot see
+         which case they are in from the trash icon alone. */
+      var lastOne = DOCS.length < 2;
       if (!confirm('Delete "' + d.name + '" and its ' + mine.length + ' draft revision' +
                    (mine.length === 1 ? '' : 's') +
                    (nLines ? ' (' + nLines + ' lines on the open one)' : '') + '?' +
-                   String.fromCharCode(10) + String.fromCharCode(10) + 'This cannot be undone.')) return;
+                   String.fromCharCode(10) + String.fromCharCode(10) +
+                   (lastOne ? 'This is the only BOQ on the project - it will be left with no BOQ at all, ' +
+                              'and the contract value will read zero until another is created.' +
+                              String.fromCharCode(10) + String.fromCharCode(10) : '') +
+                   'This cannot be undone.')) return;
       var del = await sb().from('boq_documents').delete().eq('id', d.id);
       if (del.error) {
         var m2 = del.error.message || '';
@@ -958,6 +995,59 @@ window.BOQ = (function () {
       }
       UI.toast('Deleted ' + d.name + '.', 'success');
       DOCID = null; REVID = null;
+      await load();
+    };
+
+    /* WARNING DELETING A DRAFT REVISION DESTROYS ITS LINES -- boq_items and boq_class_map both
+       cascade from boq_revisions. Same shape of control as the document trash above, and the same
+       three real gates: issued is never deletable, a recorded billing period is refused by the
+       DATABASE (boq_billing_periods references boq_revisions WITHOUT cascade, so Postgres says no
+       and the foreign-key error is translated rather than shown raw), and the confirm names the
+       line count.
+       WARNING THE ONLY REVISION OF A BOQ IS REFUSED, and this is a real gate rather than caution:
+       no path in this module adds a revision to a document that has none. openNewRev() writes
+       document_id from DOCID but the wizard's revision path is offered only when the document
+       already holds one, so a document emptied this way would be a shell nothing could fill. The
+       message names the control that does work -- the trash beside the BOQ name, which since
+       today deletes the last BOQ too. */
+    var rd = host.querySelector('#boq-revdel');
+    if (rd) rd.onclick = async function () {
+      var r = curRev();
+      if (!r) return;
+      if (revStatus(r) !== 'draft') {
+        UI.toast('rev ' + r.rev_no + ' is issued. An issued BOQ is the tendered document and is never ' +
+          'deleted - supersede it with a new revision instead.', 'error');
+        return;
+      }
+      /* WARNING THE "ONLY REVISION" REFUSAL IS GONE, and it was mine, from earlier today. Its
+         reasoning was sound at the time -- no path added a revision to a document with none, so
+         emptying one left a shell nothing could fill -- and the honest fix was to remove the dead
+         end rather than to guard it. The wizard's revision path is now offered on a document with
+         ZERO revisions ("Create the first revision of NAME"), and the empty state above names the
+         document instead of denying it exists. A refusal that exists only because a neighbouring
+         screen is incomplete should be removed with the incompleteness, not kept as a monument. */
+      var sibs = REVS.filter(function (x) { return x.document_id === r.document_id; });
+      var lastRev = sibs.length < 2;
+      var dnm = (DOCS.filter(function (x) { return x.id === DOCID; })[0] || {}).name;
+      if (!confirm('Delete draft rev ' + r.rev_no + ' and its ' + ITEMS.length + ' line' +
+                   (ITEMS.length === 1 ? '' : 's') + '?' +
+                   String.fromCharCode(10) + String.fromCharCode(10) +
+                   (lastRev ? 'This is the only revision of ' + (dnm || 'this BOQ') +
+                              ', which will be left empty. The BOQ itself is kept -- add a revision ' +
+                              'to it from Add BOQ, or delete the BOQ with the trash beside its name.' +
+                              String.fromCharCode(10) + String.fromCharCode(10) : '') +
+                   'This cannot be undone.')) return;
+      var del = await sb().from(T_REV).delete().eq('id', r.id);
+      if (del.error) {
+        var m3 = del.error.message || '';
+        UI.toast(/violates foreign key|still referenced/i.test(m3)
+          ? 'rev ' + r.rev_no + ' has billing periods recorded against it, so it cannot be deleted. ' +
+            'Remove those first, or keep it and supersede it.'
+          : m3, 'error');
+        return;
+      }
+      UI.toast('Deleted draft rev ' + r.rev_no + '.', 'success');
+      REVID = null;
       await load();
     };
 
@@ -2244,12 +2334,23 @@ window.BOQ = (function () {
       var next = ns.length ? Math.max.apply(null, ns) + 1 : 0;
       return (next < 10 ? '0' : '') + next;
     })();
-    var m = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">New BOQ &mdash; build it by hand</h2>' +
+    /* WARNING WHICH BOQ THIS LANDS IN, said out loud, because this dialog cannot ask. It is the
+       fallback for a page where wizard.js failed to load, so it stays deliberately one screen --
+       but "New BOQ" over a project that already has three of them is a promise it does not keep:
+       the revision goes into the BOQ currently on screen. */
+    var nrDoc = (DOCS || []).filter(function (x) { return x.id === DOCID; })[0] || null;
+    var m = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">' +
+      (nrDoc ? 'New revision of ' + esc(nrDoc.name) : 'New BOQ &mdash; build it by hand') + '</h2>' +
       '<button class="pd-modal-close" id="nr-x">&times;</button></div>' +
       '<div class="cc-form">' +
       '<p class="cc-hint" style="margin-top:0;">An empty draft. Add lines from the class-code ' +
       'library, price them, then <strong>issue</strong> it. <b>A draft never bills and never ' +
       'shows as the contract value</b>, so nothing downstream moves until you say so.</p>' +
+      (nrDoc
+        ? '<p class="cc-hint">This becomes a revision of <b>' + esc(nrDoc.name) + '</b>. For a ' +
+          'separately named BOQ, use <b>Add BOQ\u2026</b> \u2014 this short form is the fallback for when ' +
+          'the wizard could not load, and it cannot create one.</p>'
+        : '') +
       '<label>Revision label<input class="pd-input" id="nr-rev" value="' + esc(nextRev) + '" /></label>' +
       '<p class="cc-hint">Prefilled, and yours to change — <b>this is your label, not the ' +
       'client\'s</b>. An imported BOQ carries whatever the client called it; one you author has ' +
@@ -2275,20 +2376,29 @@ window.BOQ = (function () {
         'everywhere else. \u201c' + nextRev + '\u201d is fine.', 'error'); return; }
       var b = el('nr-go'); b.disabled = true; b.textContent = 'Creating…';
       try {
-        var ins = await sb().from(T_REV).insert({
-          project_id: pid, rev_no: revNo, issued_date: el('nr-date').value || null,
-          po_no: txtOf(el('nr-po').value) || null, contract_total: numOf(el('nr-total').value),
-          source_file: null, sheet_inventory: {},
-          // ⚠️ is_current stays FALSE and the database enforces it for a draft. The
-          //    contract value on screen must keep coming from the issued document.
-          status: 'draft', origin: 'manual', is_current: false,
-          notes: 'Built by hand from the class-code library.', created_by: UID
-        }).select().single();
-        if (ins.error) throw ins.error;
+        /* WARNING ⚠️⚠️ THIS INSERT WROTE NO `document_id`, SO EVERY REVISION IT MADE WAS AN ORPHAN.
+           `2026-09-07-boq-documents.sql` made the document the owner of a revision series, and
+           `createDraft` was given `document_id: f.docId || DOCID || null` for exactly that reason
+           -- but this dialog kept its own copy of the insert from before the migration and never
+           gained the column. An orphan is not invisible, which is what made it survive: `load()`
+           filters `!r.document_id || r.document_id === DOCID`, so a null-document revision shows
+           under EVERY BOQ on the project. Two BOQs would both list it, the per-document contract
+           roll-up (`computeProjectTotal`, which requires `is_current && document_id`) would count
+           it under neither, and nothing would error.
+           WARNING Fixed by DELETING the second insert path rather than adding the column to it.
+           A rival insert also lacked the duplicate-label retry that `createDraft` grew after the
+           owner hit `boq_revisions_project_rev_idx` -- so this dialog would still fail outright on
+           a label collision that the wizard recovers from. One writer, one set of rules. */
+        var made = await createDraft({ rev: revNo, date: el('nr-date').value,
+                                       po: txtOf(el('nr-po').value), total: el('nr-total').value });
         m.close();
-        REVID = ins.data.id; sub = 'items';
-        UI.toast('Draft revision ' + revNo + ' created. Add lines from the class-code library.', 'success');
-        await load();
+        // createDraft already set REVID, sub and reloaded -- it is the one writer now.
+        /* createDraft retries a taken label and returns the one it actually used, so this reports
+           what happened rather than what was asked for. */
+        var got = (made && made.rev_no) || revNo;
+        UI.toast('Draft revision ' + got +
+          (got !== revNo ? ' created (' + revNo + ' was already taken).' : ' created.') +
+          ' Add lines from the class-code library.', 'success');
       } catch (err) {
         b.disabled = false; b.textContent = 'Create draft';
         var msg = (err.message || String(err));
@@ -4478,6 +4588,17 @@ window.BOQ = (function () {
        The trigger, the is_current rule and the draft/manual defaults all live in one place. */
     createDraft: createDraft, nextRevLabel: nextRevLabel, currentDraft: currentDraft,
     createDocument: createDocument,
+    /* WARNING The BOQ THE PLANNER IS STANDING IN, exported so the wizard can name it. Without it
+       the wizard could only offer "a new revision" in the abstract, and the whole confusion this
+       answers is that "new revision" and "another BOQ" were indistinguishable on screen. A
+       revision belongs to a document; the offer has to say which one. */
+    currentDocument: function () {
+      var d = (DOCS || []).filter(function (x) { return x.id === DOCID; })[0];
+      return d ? { id: d.id, name: d.name } : null;
+    },
+    /* How many revisions the CURRENT document already holds. `rev` is only a meaningful offer
+       when there is something to supersede -- on a document with none it is just "create". */
+    revisionCount: function () { return (REVS || []).length; },
     /* The class-code ladder, so the WIZARD can host it in a step instead of carrying a copy. */
     codePickerHTML: codePickerHTML,
     mountCodePicker: mountCodePicker,

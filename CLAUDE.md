@@ -95,6 +95,170 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-08 (e) — The right pane's skipped L2 was a bug of mine; the grouping becomes a WBS rung
+
+Owner: *"how come on the right pane, the trades are L1 and then L3 is followed?"* Because
+`libItemRow` printed a **literal L3** on every item — so an item with no grouping sat at depth 2,
+directly under its trade, while claiming L3. The pane announced a rung that was not there.
+`absLevelOf` answers it from the position instead: **inside a grouping = L3, directly under the trade
+= L2**, derived and never stored, so the number cannot disagree with the tree the push builds.
+
+Owner: *"allow the identification / adjustments of the levels of each item… This would then be
+inputted as information for the schedule builder."* Each item now carries an **L2 / L3** pair, and
+setting the level *is* the structural move — L3 means "has a grouping", L2 means "has none", so the
+buttons set and clear it. ⚠️ Two buttons, not a free number: L1 is a trade, and the trades are the
+project's fixed disciplines, so a 1/2/3 box would invite typing 1 and having nothing happen.
+
+And it reaches the builder literally: **`agroup` is now a WBS dim**, nesting between the trade and the
+places (`Structural Works › Rebar › 3rd Floor › Zone 1`), keyed on the normalised grouping name,
+named by it and ordered by the setup's own order. ⚠️⚠️ **It self-skips** — `dimKey` returns the same
+sentinel `tower` uses on a single-tower project — so a project where nothing is grouped pushes a tree
+**identical** to before, and a **saved** setup does not include the rung until the planner ticks it in
+*Generate → WBS structure*. ⚠️ It does **not** change the Vertical Stacking axis, which is the
+*location* breakdown; the grouping shows up in the WBS tree and every WBS-branch readout instead.
+Module only. 366 assertions across eight suites, plus a browser render whose chips, tooltips, picker
+states and font weights were read out of the DOM; ⚠️ not verified signed-in. `MODULE_V` → `20260908e`.
+
+### 2026-09-08 (d) — The Library labels L1/L2/L3, and the Schedule Setup rail minimises
+
+Owner: *"there should be levels like L1, L2, L3 like in the pic i sent, so it is easier for everyone to
+see also. also make the steps on the left side be minimized so more space."*
+
+Both panes of the Library now carry a fixed-width **rung chip** on every row, with a legend per pane —
+because indentation says a row is *under* another one but not **which rung** it is on, and the two panes
+put different things on the same rung (L2 is a Floor on the left, a Grouping on the right), which is the
+correspondence the sheet exists to show. Tinted by depth rather than coloured, so it does not compete
+with the trade colour or the change-order and critical marks.
+
+The step rail collapses to a **46px strip of numbered circles** — numbers, not nothing, since the steps
+are referred to by number everywhere else in this module. ⚠️ The toggle lives outside the rail (which
+`innerHTML` rebuilds every render and would throw it away) and the state is re-applied after every rail
+render, so a repaint cannot silently expand it. One class drives both rails, so Schedule Setup and Cost
+Loading cannot disagree. ⚠️ Named `sbld-railmin`: `.sbld-mini` already exists for an unrelated control.
+
+⚠️ **Two layout defects were found by rendering the shipped function and looking at it** — a floor named
+*Roof Deck* printing its kind label as well ("Roof Deck  Roof Deck"), and a six-trade list widening the
+row past the floor name. And the fix for the first shipped with `/s+/g` instead of `/\s+/g`, collapsing
+runs of the letter **s** — caught by asserting the normaliser rather than trusting it. Module only.
+323 assertions across seven suites; ⚠️ not verified signed-in. `MODULE_V` → `20260908d`.
+
+### 2026-09-08 (c) — Two jsonb columns from August get an editor; the BOQ's second insert path is deleted
+
+No migration. Owner: *"Let's do the half-built and consistency gaps first."* Every one of the four
+turned out to be something the **database already supported and the UI never reached** — which is why
+they were cheap, and why nobody had noticed. Detail in
+[`modules/contracts-claims/CLAUDE.md`](modules/contracts-claims/CLAUDE.md).
+
+- ⚠️⚠️ **`pmi_records.internal_chain` / `client_chain` had ZERO reads in `pmi.js`.**
+  `2026-08-25-pmi.sql` declared both, with the reason in the migration — *"a proposal three weeks
+  with the COO is not 'Submitted' — it is NOT SUBMITTED AT ALL"* — and the roles were configurable
+  per client from day one. So the register could report an instruction sitting **94 days** and not
+  say **with whom**. There is now an **Approval chain** section (ours and the client's, per role:
+  arrived / cleared / days / signed-by), a **holder** figure in the case-file header beside the stage
+  clock, and a `n/m cleared` badge. ⚠️ Order comes from the **profile**, never from the jsonb's own
+  keys — object keys enumerate in *data-entry* order, so that would let recording the COO first claim
+  the COO signs first. ⚠️ A **renamed** role strands its dates as a labelled **orphan** row rather
+  than being dropped or silently re-pointed; re-pointing by position would attribute one manager's
+  sign-off to another. ⚠️ A record at Submitted with an uncleared chain is **reported, never
+  corrected** — it is just as often a chain nobody filled in, and only the planner knows which.
+- ⚠️⚠️ **`pmi_records.claim_id` existed since August and nothing could set it.** The register already
+  drew a "claim" chip off it; `claim_id` appeared exactly once in `pmi.js`, reading that chip. So the
+  roadmap's *"promoting a PMI to a contracts_claims row in one click"* was a hand-written `UPDATE`.
+  **Raise claim / CO…** now does it — writing through the claims register's own `persistRecord` (which
+  carries the missing-column degrade on the one table proven incomplete on the live database), asking
+  the record **type** rather than deriving it, refusing a second promotion because two claims for one
+  instruction is a double count in the register the client is billed from, and ⚠️ **rolling the claim
+  back** if the link fails, since the claim is written first and an unlinked one is indistinguishable
+  from a duplicate filed by hand.
+- ⚠️⚠️ **`openNewRev()` wrote no `document_id`, so every revision it made was an orphan — and this
+  corrects yesterday's entry (a), which said the opposite.** I claimed it wrote one from `DOCID`; it
+  did not, and the insert is four lines long. `load()` shows a null-document revision under **every**
+  BOQ on the project while `computeProjectTotal` counts it under **none**, and nothing errors — which
+  is what let it survive. Fixed by **deleting the second insert path**, not by adding the column to
+  it: the rival insert also lacked the duplicate-label retry `createDraft` grew after the owner hit
+  `boq_revisions_project_rev_idx`.
+- **An empty BOQ document is now reachable, so a refusal I wrote yesterday could go.** The wizard
+  offers *First revision of `<name>`* on a document with zero revisions, the empty state names the
+  document instead of denying a BOQ exists, and the delete refusal is removed. ⚠️ `can.rev` was
+  already right and the step's **render gate** eight lines away silently overruled it — caught in a
+  harness, not by reading.
+- **Verified:** 40 assertions executing the chain derivation sliced out of the shipped `pmi.js`, with
+  **three contrast builds** — jsonb-key ordering fails 7 assertions and then throws; the two
+  single-purpose regressions fail exactly the one assertion each was written for. Rendered in a
+  browser (both ladders, the three row states, the amber orphan, the contradiction alert) and the
+  wizard driven through five worlds asserting paths, prefills, the three button labels and that `rev`
+  sends **no `docName`**.
+- Assets `module.css` / `boq.js` / `wizard.js` / `module.js` / `pmi.js` `?v=20260908c`; `MODULE_V` →
+  `20260908c`.
+- ⚠️ **Not verified signed-in.** No chain written, no claim raised or rolled back, no revision created
+  through the repaired fallback against a real project.
+
+> ⚠️ **Two sessions landed on 2026-09-08 and BOTH numbered themselves `(b)` and BOTH bumped `MODULE_V` to `20260908b`.** Resolved as the union — both entries kept whole, the Contracts & Claims one re-lettered `(c)`, and `MODULE_V` bumped past both to `20260908c` so a browser that fetched `20260908b` between the two pushes cannot keep a half-updated module page. Same collision, and the same resolution, as 2026-09-07 (e).
+
+### 2026-09-08 (b) — Cost Loading reads the BOQ; a Library step puts places beside work
+
+Owner: *"i want you to redirect the step 2 to the contracts and claims app. since technically the
+assigning of cost per activity should be matched / defined in the BOQ."* Step 2 no longer asks for the
+figure — it **reads** it. `boqDerive()` shares each priced BOQ line's amount across the activities it
+is matched to (by allocated quantity, or **1/n** for a link-only line), skipping headings, exclusions
+and amount-less lines; the read crosses modules under the caller's own RLS and writes nothing.
+⚠️ **Two columns, not one box:** *From the BOQ* read-only beside an *Override*, because a single field
+would let a planner think they had corrected the BOQ and hide that the correction stops following it.
+Clearing the override returns the line to the BOQ. It degrades rather than blocks — no BOQ, no tables
+or no grants all still allow typed totals, with the reason stated.
+
+Owner: *"there should be a library in the schedule setup module. That library should first define the
+locations on the left pane, and on the right the groupings of activities."* A new **Library** step in
+Schedule Setup, in the shape of the attached cost-structure sheet: places left, trade → grouping →
+item right. ⚠️ It is a view and an authoring surface, **not a second store** — the places live in
+`cfg.zoning` and the items in `cfg.activities`; only the L2 grouping is new. And **`openLocAdopt()` is
+finally wired**: complete and reachable from nothing since it was written (flagged twice), it is now
+*Read locations from the WBS…*, beside *Match WBS to trades…* — which is the import complaint
+answered, since the matching could always be done but was in front of nobody. Module only.
+296 assertions across seven suites, all executing code sliced from the shipped file with HEAD run as a
+control; ⚠️ not verified signed-in. `MODULE_V` → `20260908b`.
+
+
+### 2026-09-08 (a) — The Trades step was never failing to load; a text-field CSS rule was hiding it
+
+No migration. Owner: *"1. The trades in the add BOQ is not loading properly. 2. … it says 'Start a
+new revision instead' which is misleading with my objective to create a new BOQ. 3. I need a delete
+BOQ as well."* Detail in [`modules/contracts-claims/CLAUDE.md`](modules/contracts-claims/CLAUDE.md).
+
+- ⚠️⚠️ **`.ccw-main input { width:100% }` was applied to the class-code ladder's checkboxes.** A
+  text-field rule, matching *every* input inside the wizard's main pane — and the Trades step hosts
+  `boq.js`'s four-pane ladder there. Measured in a browser on the shipped file: the ladder checkbox
+  rendered **181.75px wide in a 201.75px row**, pushing the code chip, the item name and the n/total
+  count clean out of the pane (`scrollWidth 254` against `clientWidth 202`) and centring the tick
+  glyph in its own stretched box. All 702 codes were read and every name was in the DOM. Scoped by
+  **type** — `input:not([type="checkbox"]):not([type="radio"])` — which also un-stretched the three
+  radios the wizard already rendered as 100%-wide controls.
+- ⚠️⚠️ **"Start a new revision instead" did not start a revision — it created a new BOQ document.**
+  The link set `boqNew` and `finish()` then passed a `docName`, which is exactly what makes a new
+  `boq_documents` row. So the only route to the thing the owner wanted was labelled as the thing he
+  did not want, the label promised a supersede that never happened, and there was no route to a real
+  revision of the BOQ on screen at all. Now three named choices — **Add trades to rev NN** /
+  **Create another BOQ** / **New revision of NAME** — resolved by one `boqPath()` that the step's
+  copy, the rail, the button label and `finish()` all read, and re-validated against what exists on
+  every read because `boqDraft()` answers null until the BOQ section has loaded.
+- **The last BOQ is deletable, and a draft revision has its own trash.** The `DOCS.length < 2`
+  refusal protected nothing — `boq_revisions` cascades from `boq_documents`, so there was no next
+  revision to orphan, and an empty picker is a state `render()` already answers on purpose. On a
+  project with one BOQ the control refused every time, so from the owner's side it did not exist.
+  The gates that guard evidence are untouched: an **issued** revision is never deletable, and
+  `boq_billing_periods` blocks a delete in the **database**.
+- ⚠️ **Audited, not built: the class-code bridge runs one way.** `grep -c 'boq_'` over
+  `modules/project-schedule/index.html` returns **0**. Of the owner's four hand-offs (high-level BOQ
+  → schedule, tagging, schedule → detailed BOQ, BOQ money → activity cost) only **tagging** exists,
+  and it only works once the schedule already does. Cost Loading groups by activity **name**
+  (`index.html:33201`) and its total is typed by hand, so a class code is a reporting tag and not a
+  cost carrier. The trap to design around first is **double counting** — one line allocated across
+  forty activities must contribute once, so the money belongs on the allocation, never on the tag.
+- Assets `module.css` / `boq.js` / `wizard.js` / `module.js` `?v=20260908a`; `MODULE_V` →
+  `20260908a`.
+- ⚠️ **Not verified signed-in.** The wizard's four endings were asserted on their `createBoqDraft`
+  payloads against stubbed deps, so nothing has been written or deleted against a real project.
+
 ### 2026-09-07 (k) — A BOQ can be deleted; Finance's cost classes are translated to Procurement's trades
 
 **Run `migrations/2026-09-07-trade-map.sql`.** Owner: *"Let's add the option to delete BOQ first.
