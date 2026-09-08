@@ -424,7 +424,7 @@ window.ProgressPhotos = (function () {
     // Requirements and Construction Phase -- must never reach the Works
     // picker (see EXEC_EXCLUDE_CODES' own comment, above). Derived from the
     // SAME wbsSummaryRows already in hand, no second fetch.
-    EXEC_EXCLUDE_CODES = execExcludedCodesFrom(wbsSummaryRows, EXEC_WBS_CODE);
+    EXEC_EXCLUDE_CODES = execExcludedCodesFrom(wbsSummaryRows, EXEC_WBS_CODE, SCHED_ACTS);
 
     try {
       var tres = await sb().from('activity_code_types').select('id,name').eq('project_id', pid);
@@ -484,7 +484,24 @@ window.ProgressPhotos = (function () {
   // (confirmed live: it is a genuine flat admin/mobilization branch) and
   // stays excluded.
   var EXEC_BRANCH_EXCLUDE_TERMS = ['general requirement'];
-  function execExcludedCodesFrom(wbsSummaryRows, execCode) {
+  // ⚠️ Added 2026-09-08 (PR review finding): this name-based exclusion is
+  // tuned against ONE project's WBS shape (AVR101) but runs for EVERY
+  // project using this module -- exactly the assumption that caused the
+  // "Construction Phase" bug above in the first place. Rather than trust a
+  // branch name alone on a project whose WBS conventions haven't been
+  // checked, a name-matched branch is only actually excluded once it's also
+  // confirmed to carry no already-classified trade work anywhere under it
+  // (any depth, not just direct children -- a real trade branch can nest
+  // arbitrarily deep). If some other project's "General Requirements" (or a
+  // future added term) turns out to be a container for real trade content
+  // the way Construction Phase was here, this refuses to exclude it and
+  // warns instead of silently repeating the same bug on a different project.
+  function branchHasClassifiedWork(code, schedActs) {
+    return (schedActs || []).some(function (a) {
+      return wbsUnderRoot(a.wbs, code) && !!(a.work_type && String(a.work_type).trim());
+    });
+  }
+  function execExcludedCodesFrom(wbsSummaryRows, execCode, schedActs) {
     if (!execCode) return [];
     var execDepth = (execCode.match(/\./g) || []).length;
     var out = [];
@@ -495,7 +512,15 @@ window.ProgressPhotos = (function () {
       if (depth !== execDepth + 1) return;   // direct child of Execution Phase only
       var nm = String(w.activity_name == null ? '' : w.activity_name).trim().toLowerCase();
       if (!nm) return;
-      if (EXEC_BRANCH_EXCLUDE_TERMS.some(function (t) { return nm.indexOf(t) >= 0; })) out.push(code);
+      if (!EXEC_BRANCH_EXCLUDE_TERMS.some(function (t) { return nm.indexOf(t) >= 0; })) return;
+      if (branchHasClassifiedWork(code, schedActs)) {
+        console.warn('[progress-photos] WBS branch "' + w.activity_name + '" (' + code + ') matches an ' +
+          'exclude term but contains already-classified trade work -- NOT excluding it from the Works ' +
+          'picker. Check whether this project\'s WBS naming convention differs from the one this rule ' +
+          'was tuned against.');
+        return;
+      }
+      out.push(code);
     });
     return out;
   }
@@ -1227,7 +1252,15 @@ window.ProgressPhotos = (function () {
     });
     var already = {};
     order.forEach(function (g) { Object.keys(byGroup[g]).forEach(function (n) { already[n] = true; }); });
-    var extra = distinctCapturedWorks().filter(function (v) { return !already[v]; });
+    // ⚠️ 2026-09-08 (PR review finding): distinctCapturedWorks() reads already-
+    // SAVED photo rows, not the schedule -- a Works value typed/picked before
+    // this location-label fix existed (e.g. a floor name saved on an older
+    // photo) would otherwise still surface here unfiltered. Applying the same
+    // locKeys check a captured value can never be excluded for having a real
+    // work_type (captured rows carry no work_type of their own) -- only for
+    // its NAME matching a real location value, the same rule every schedule-
+    // derived activity above is already held to.
+    var extra = distinctCapturedWorks().filter(function (v) { return !already[v] && !locKeys[locNormKey(v)]; });
     if (extra.length) {
       byGroup['Previously used'] = {};
       extra.forEach(function (v) { byGroup['Previously used'][v] = true; });
@@ -6174,7 +6207,8 @@ window.ProgressPhotos = (function () {
     // EXEC_EXCLUDE_CODES from the closure, so this hook saves/injects/
     // restores all three around the call — same convention as
     // `_deriveTradeForWorks`'s SCHED_ACTS handling, above.
-    _execExcludedCodesFrom: function (wbsSummaryRows, execCode) { return execExcludedCodesFrom(wbsSummaryRows, execCode); },
+    _execExcludedCodesFrom: function (wbsSummaryRows, execCode, schedActs) { return execExcludedCodesFrom(wbsSummaryRows, execCode, schedActs); },
+    _branchHasClassifiedWork: function (code, schedActs) { return branchHasClassifiedWork(code, schedActs); },
     _inExecOrCloseout: function (a, execCode, closeoutCode, excludeCodes) {
       var savedE = EXEC_WBS_CODE, savedC = CLOSEOUT_WBS_CODE, savedX = EXEC_EXCLUDE_CODES;
       EXEC_WBS_CODE = execCode; CLOSEOUT_WBS_CODE = closeoutCode; EXEC_EXCLUDE_CODES = excludeCodes || [];
@@ -6187,12 +6221,18 @@ window.ProgressPhotos = (function () {
     // "Others" bucket is genuinely gone (not merely hidden) for activities
     // under General Requirements/Construction Phase, and that the five real
     // trade branches still surface correctly under their own group names.
-    _worksGroupedOptions: function (schedActs, execCode, closeoutCode, excludeCodes, locLevels) {
-      var savedA = SCHED_ACTS, savedE = EXEC_WBS_CODE, savedC = CLOSEOUT_WBS_CODE, savedX = EXEC_EXCLUDE_CODES, savedL = LOC_LEVELS;
+    // ⚠️ `capturedRows` (added for the PR-review "Previously used" fix, same
+    // day) optionally injects the photo-library `rows` array too, so a test
+    // can prove a captured floor-name Works value is excluded from the
+    // "Previously used" bucket without writing a throwaway row to any real
+    // project's live database.
+    _worksGroupedOptions: function (schedActs, execCode, closeoutCode, excludeCodes, locLevels, capturedRows) {
+      var savedA = SCHED_ACTS, savedE = EXEC_WBS_CODE, savedC = CLOSEOUT_WBS_CODE, savedX = EXEC_EXCLUDE_CODES, savedL = LOC_LEVELS, savedR = rows;
       SCHED_ACTS = schedActs || []; EXEC_WBS_CODE = execCode; CLOSEOUT_WBS_CODE = closeoutCode; EXEC_EXCLUDE_CODES = excludeCodes || [];
       if (locLevels) LOC_LEVELS = locLevels;
+      if (capturedRows) rows = capturedRows;
       try { return worksGroupedOptions(); }
-      finally { SCHED_ACTS = savedA; EXEC_WBS_CODE = savedE; CLOSEOUT_WBS_CODE = savedC; EXEC_EXCLUDE_CODES = savedX; LOC_LEVELS = savedL; }
+      finally { SCHED_ACTS = savedA; EXEC_WBS_CODE = savedE; CLOSEOUT_WBS_CODE = savedC; EXEC_EXCLUDE_CODES = savedX; LOC_LEVELS = savedL; rows = savedR; }
     },
     // Test-only hooks (2026-09-08 — floor/location labels excluded from the
     // Works picker). `locNormKey`/`isLocationLabelActivity` are pure enough

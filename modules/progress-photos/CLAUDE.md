@@ -2,6 +2,52 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## PR review found two gaps in the fix below — fixed before merging (2026-09-08)
+
+A code review of the PR carrying the fix below (git diff against `main`) surfaced two real,
+non-blocking findings — fixed the same session, before merging, per the reviewer's own request.
+
+**1. The "Previously used" bucket bypassed the floor-label filter.** `worksGroupedOptions()`'s
+trailing bucket is built from `distinctCapturedWorks()` — a scan of already-SAVED photo rows, not
+the schedule — and never called `isLocationLabelActivity()`. A photo saved with a floor-name Works
+value (e.g. typed or picked before this fix existed) would still surface that floor name under
+"Previously used". Confirmed dormant on AVR101 today (queried `progress_photos` directly: none of
+its 3 rows carry a floor-name Works value) but a real, untested gap in the "no floor labels
+anywhere" claim for any project with older captured data. Fixed with one added condition:
+```js
+var extra = distinctCapturedWorks().filter(function (v) { return !already[v] && !locKeys[locNormKey(v)]; });
+```
+A previously-captured value is now held to the exact same rule as a schedule-derived one — its name
+must not match a value the project's own Location Breakdown already uses.
+
+**2. The branch-name exclusion was untested beyond AVR101.** `EXEC_BRANCH_EXCLUDE_TERMS` (now just
+`'general requirement'`) is a static, per-project-unverified name match applied to every project
+using this module — the exact same shape of assumption that caused the Construction Phase bug this
+PR was already fixing (a screenshot-based rule that turned out wrong once tested against real data).
+Hardened `execExcludedCodesFrom()` to self-verify before excluding: a name-matched branch is now
+skipped (not excluded) if it's found to contain any already-classified trade work (any activity
+under it, any depth, with a non-blank `work_type`) — `branchHasClassifiedWork(code, schedActs)`. If
+a future term, or 'general requirement' on some other project, turns out to nest real trade content
+the way Construction Phase did here, this refuses to exclude it and logs a `console.warn` naming the
+branch, rather than silently repeating the same bug on a different project.
+
+Confirmed this is a true no-op for AVR101 (queried live: General Requirements' 22 rows all have
+`work_type: null`, so it's still correctly excluded, `console.warn` never fires) — the full picker
+re-tested live afterward is byte-for-byte identical to before this hardening.
+
+Both fixes verified by genuine execution (not fixtures presented as production behavior, and not
+live writes to AVR101's real data):
+- `_execExcludedCodesFrom`/`_branchHasClassifiedWork` run against a synthetic "General Requirements
+  contains real Structural Works" fixture correctly REFUSE to exclude it (`[]`), and against a
+  fixture matching AVR101's real shape (no classified work under General Requirements) still
+  correctly exclude it (`["4.1"]`).
+- `_worksGroupedOptions` widened with an optional 6th param (`capturedRows`, save/restore-injects
+  the real `rows` array — the same convention as its other injected closure state) so a captured
+  "6th Floor" Works value could be proven excluded from "Previously used" without writing a
+  throwaway row into any live project's database.
+
+`module.js?v=` → `20260908f` (module-local only; `module.css` unchanged, stays `20260907b`).
+
 ## Live UI test on AVR101 found the Round-1 fix (below) was wiping ~3,600 real trade
 ## activities — "Construction Phase" is a WBS container on this project, not an admin bucket
 ## (2026-09-08)
