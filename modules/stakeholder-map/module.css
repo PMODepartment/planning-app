@@ -64,7 +64,25 @@ html.pd-dark .sm-bands-row th.sm-bandhead { color:#FF8A80; }
 html.pd-dark .sm-band.on { color:#FF8A80; }
 
 /* KPIs */
-.sm-kpis { display:grid; grid-template-columns:repeat(7, 1fr); gap:12px; margin-bottom:18px; }
+/* ⚠ AUTO-FIT, NOT A COLUMN COUNT -- this is the "fit the other 4 kpi cards in a
+   single level row" half of the owner's 2026-09-08 ask, and the rule is copied
+   verbatim from the shared `.pd-kpis` (dashboard.css) rather than re-tuned here.
+   It used to be `repeat(7, 1fr)` plus three breakpoints (1600 -> 4, 1000 -> 3,
+   700 -> 2), sized for the seven cards renderKpis used to emit. Four cards in that
+   grid is WORSE than seven, not better: seven tracks at desktop width leaves three
+   empty cells, and at the owner's own screenshot width (918px) the 1000px
+   breakpoint drops it to three tracks -- so four cards would still have wrapped to
+   two rows and the complaint would have survived the change that was meant to fix it.
+   MEASURED against the shipped stylesheets with this rule in place (8 widths, 700-1900px):
+   four cards are ONE row at 760px and every width above it -- there is no upper bound,
+   because auto-fit stops adding tracks once the four are placed and 1fr stretches them
+   (466px each at 1900px, so no ragged empty cell). 918px, the width the owner's own
+   screenshot was taken at, is one row here and TWO rows with the old seven cards, which
+   is the reported bug reproduced. Below 760px four cards go to two rows, correct on a
+   phone. A hardcoded four-column rule is exactly what the shared
+   `.pd-kpis` comment records removing from five modules, because each copy's own
+   breakpoints left a ragged empty cell at some window width -- do not add one back. */
+.sm-kpis { display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:12px; margin-bottom:18px; }
 .sm-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius);
   box-shadow:var(--pd-shadow); padding:14px 16px; }
 .sm-kpi-val { font-size:24px; font-weight:800; line-height:1; }
@@ -281,9 +299,9 @@ html.pd-dark .sm-fsec { color:#FF8A80; }
   border-radius:4px; padding:3px 7px; font-size:11px; cursor:pointer; font-family:var(--pd-font); }
 .sm-sug:hover { border-style:solid; border-color:var(--pd-red-mid); color:var(--pd-ink); background:var(--pd-red-light); }
 
-@media (max-width:1600px) { .sm-kpis { grid-template-columns:repeat(4,1fr); } }
-@media (max-width:1000px) { .sm-kpis { grid-template-columns:repeat(3,1fr); } }
-@media (max-width:700px)  { .sm-kpis { grid-template-columns:repeat(2,1fr); } }
+/* ⚠ The three `.sm-kpis` column-count breakpoints that used to live here are GONE
+   (2026-09-08): auto-fit does the same job from one declaration, and these were the
+   reason four cards still wrapped at 918px. Do not reintroduce them. */
 
 /* ---- Mobile & tablet ---------------------------------------------------
    The register is read-mostly (all editing happens in a modal), so on a narrow

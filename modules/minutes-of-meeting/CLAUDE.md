@@ -1,5 +1,90 @@
 # Module: minutes-of-meeting
 
+## 2026-09-08 — The toolbar's four buttons were invisible, not broken; `+ Add meeting` wrapped inside a 34px square
+
+Owner: *"Toolbar needs UI rework, the UI for the minutes itself is bugged. I am not sure if one of the
+buttons are present view. or any of the functions of the other buttons as well."* Three independent
+defects, one of which explains the whole report.
+
+### ⚠️⚠️ 1. `renderDetail()` wrote `data-ico` placeholders and never hydrated them
+
+Every control in the detail toolbar — reporting view, export, email, distribute — is a
+`<span data-ico="…">` that `Icons.hydrate()` fills in. `render()` hydrates `#il-mom-view` *after*
+calling `renderDetail()`, so a **first landing on a meeting looked completely correct**. But
+**28 other call sites invoke `renderDetail()` directly** — toggling reporting view, every item-workflow
+step, every filter change, every save — and each one rebuilt the toolbar with nothing to fill the icons
+in. So the four buttons went blank **the moment you touched anything**, which is exactly the state the
+owner's screenshot caught. They were never broken; they had no glyphs.
+
+The favourite star survived only because it is a literal ★/☆ character, not an icon — which is why the
+screenshot shows one visible control and four empty boxes.
+
+⚠️ **Fixed in `renderDetail()` itself, not at the 28 callers**, for the same reason
+`psSetupChanged()` exists in project-schedule: a list every future caller has to remember is a list
+that goes stale.
+
+**Measured in a browser against the shipped `module.css` and the real `icons.js`:** without the
+hydrate call, all four buttons report `svg: false` and empty labels — the screenshot reproduced; with
+it, all four render, the export dropdown's icon included.
+
+### ⚠️ 2. `.il-topbar-tools .pd-btn` had no `:not()`, so a labelled button got a 34px box
+
+The rule exists to make the **icon-only** chrome square. Without an exclusion it forced
+`width: 34px` onto *every* `.pd-btn` in the cluster — including `+ Add meeting`, whose two words then
+wrapped onto two lines inside a 34px box. That is the wrap in the owner's screenshot.
+
+Now `.il-topbar-tools .pd-btn:not(.il-tb-labeled)` keeps the square, and
+`.il-topbar-tools .pd-btn.il-tb-labeled` gets `width:auto; padding:0 12px; white-space:nowrap`. Same
+shape, and the same fix, as contracts-claims' `.cc-tb-labeled`.
+
+**Measured both ways:** with the class, **106px wide and ONE line box**
+(`Range.getClientRects().length === 1`, `scrollWidth/clientWidth 104/104`); with the class removed,
+**34px and TWO line boxes**, `39/32` — overflowing. Icon-only buttons stay 34×34 and the page still has
+no horizontal scroll.
+
+⚠️ **The first version of that assertion was unsound and would have passed either way.** It compared the
+button's height against `fontSize × 1.6 + 6` — but 34px is the button's own *set* height, so a wrapped
+and an unwrapped button measure identically. Redone by counting line boxes. The code was right; the
+test was not.
+
+⚠️ **`.pd-btn` in the shared `dashboard.css` carries no `white-space` at all**, so any multi-word button
+wraps wherever a flex parent squeezes it. Fixed module-locally because that file is being edited by
+another session today; the shared gap is worth closing on its own.
+
+### 3. The reporting toggle gets a word; the state chip stops being a paragraph
+
+⚠️ **A principled exception to the 2026-09-03 icon-only pass, not a reversal of it.** That pass was
+about the three **actions** (export / email / distribute), which are self-evident as icons and each
+carry a `title`. This is a **mode** — it changes what the whole screen is — and the owner could not
+identify it even in principle. It now reads **Present** / **Exit** beside the eye
+(`.il-mom-modebtn` / `.il-mom-modetxt`), with the `title` still naming it as the reporting view so the
+two vocabularies stay connected. ⚠️ **Same word and same treatment in Issues & Concerns**, which got
+its present view back in the same commit — the two registers must name this the same thing.
+
+⚠️ **The state chip carried a 60-character sentence.** It rendered
+*"Draft — editable by you, a planner, or this meeting's attendees"* inside a status pill, which made an
+essay out of a chip and pushed the toolbar's controls to the far edge. The chip now says **Draft** /
+**Distributed**; the sentence **moved to its own note line** beside the locked-state note that already
+lives there, so it is still on screen and still readable on a phone. ⚠️ Not a `title` — that would have
+hidden it from touch entirely. ⚠️ It still says **editing**, not reading: reading a draft has always
+been project-wide (`meeting_minutes_read` has no draft carve-out).
+
+⚠️ `.il-mom-toolbar` gained `align-items: center` — the chip and the 34px controls have different
+heights, and the default stretch made the chip a tall rounded slab.
+
+### Verified
+`node --check` clean; `module.css` brace-balanced (352/352). The hydrate fix is confirmed **in scope**
+(`renderDetail`'s own `var host = $('il-mom-view')`, the call placed immediately before
+`wireDetail()`). Geometry and icon presence are real browser measurements against the shipped
+stylesheet, taken with the tab **visible** — a hidden tab voids all geometry and the harness refuses to
+report rather than returning zeros.
+
+⚠️ **Not verified signed in** — no meeting has been opened against a real project, so the 28 call sites
+that produced the blank state have not been exercised live; the fix is measured on the toolbar markup
+`momDetailHTML` emits, hydrated and unhydrated.
+
+`module.css` / `module.js?v=20260908pv`; `index.html` gained `il-tb-labeled` on `#il-mom-tb-add`;
+`MODULE_V` → `20260908pv`.
 ## 2026-09-03 (c) — Dashboard chart consistency (shared with Issues Dashboard), and the
 ## Responsible/attendee free-text input is retired in favour of the dropdown alone
 

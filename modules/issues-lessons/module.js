@@ -1862,11 +1862,32 @@ window.IssuesLessons = (function () {
 
   function issReset() {
     _issSel = null; _issNew = null; _issQ = ''; _issMode = 'log'; _issPrevMode = 'log';
+    // ⚠️ `_issReport` resets with the rest of the per-record state. Carrying a
+    //    present mode onto the NEXT issue you open shows it read-only for no
+    //    reason the screen explains.
+    _issReport = false;
     _issHoldOpen = false; _issCloseOpen = false; _issReopenOpen = false; _issReopenNote = '';
     _issCloseDraft = { report: '', lesson: '', dateResolved: '' };
   }
 
   function reqMark(editable) { return editable ? ' <span class="il-req" title="Required">*</span>' : ''; }
+
+  // ---- Present view (restored 2026-09-08) ----------------------------------
+  // Owner: *"Issues & Concerns: what happened to the present view?"*
+  // ⚠️ THIS IS A DELIBERATE REVERSAL, AND THE NOTE IT REVERSES IS STILL IN
+  //    module.css: entry (f)/(g) removed the old toggle on the reasoning that
+  //    "Detail itself is the single-record read/edit view now, and the toplevel
+  //    Dashboard covers what reporting meant" — recorded there as *"No need for
+  //    reporting view" — confirmed unreachable, not just unused*. That was right
+  //    about the DASHBOARD (a portfolio read) and wrong about the SINGLE RECORD:
+  //    presenting one issue in a meeting is not the same act as reading the
+  //    register, and Minutes of Meeting and Project Schedule both kept a present
+  //    mode for exactly that. This restores it for the single record only.
+  // ⚠️ SESSION-ONLY, never persisted, and reset on leaving the record. A screen
+  //    that comes back read-only tomorrow reads as "I have lost permission",
+  //    which is the failure mode the Project Schedule's own reporting view
+  //    documents.
+  var _issReport = false;
 
   // ------------------------------------------------- Issues: detail view -----
   // ⚠️ THIS IS STILL THE POWER APPS "VIEW OPEN ISSUES" LAYOUT — a status panel beside the
@@ -1892,18 +1913,34 @@ window.IssuesLessons = (function () {
     // list yet, and it degrades to a plain note when the open record has fallen out
     // of the active filter (e.g. it was just closed while "Open items only" is set)
     // rather than guessing which neighbour to step to.
+    // ⚠️ Offered only for a SAVED record. A not-yet-saved draft has nothing to
+    //    present, and forcing it read-only would strand whatever was typed.
+    var canPresent = !!(cur && !_issNew);
+    if (!canPresent) _issReport = false;
+    host.classList.toggle('il-report', _issReport && canPresent);
     host.innerHTML =
       '<div class="il-detail-nav">' +
         '<button class="il-backlink" id="il-iss-back"><span data-ico="arrowLeft" data-ico-size="14"></span>Back to Issues</button>' +
         (cur && !_issNew ? issStepHTML(cur.id) : '') +
+        // ⚠️ The Exit button IS the only way back out of the mode, so it lives in
+        //    the nav row, which the mode leaves visible — the same rule the
+        //    Project Schedule's reporting view follows for its Layout menu.
+        (canPresent
+          ? '<button class="pd-btn pd-btn-sm il-modebtn' + (_issReport ? ' is-active' : '') + '" id="il-iss-present" ' +
+            'title="' + (_issReport ? 'Exit the present view' : 'Present this issue — a clean read-only record') + '">' +
+            '<span data-ico="eye" data-ico-size="14"></span>' +
+            '<span class="il-modetxt">' + (_issReport ? 'Exit' : 'Present') + '</span></button>'
+          : '') +
       '</div>' +
-      (cur ? issDetailHTML(cur)
+      (cur ? issDetailHTML(cur, { present: _issReport && canPresent })
            : '<div class="il-empty" style="padding:28px;">This issue is no longer in the current filter — ' +
              '<button class="pd-btn pd-btn-sm" id="il-iss-back2">go back</button>.</div>');
     wireIssues();
     var prevBtn = $('il-iss-prev'), nextBtn = $('il-iss-next');
     if (prevBtn) prevBtn.onclick = function () { stepIssue(-1); };
     if (nextBtn) nextBtn.onclick = function () { stepIssue(1); };
+    var presBtn = $('il-iss-present');
+    if (presBtn) presBtn.onclick = function () { _issReport = !_issReport; renderIssueDetailView(); };
     if (window.Icons && Icons.hydrate) Icons.hydrate(host);
   }
 
@@ -1948,7 +1985,16 @@ window.IssuesLessons = (function () {
   // says what this block is.
   function issDetailHTML(r, opts) {
     var isNew = !r.id;
-    var mayEdit = (opts && opts.readOnly) ? false : (isNew ? canAdd : canEditRow(r));
+    // ⚠️ `present` IS ITS OWN FLAG AND MUST NOT BE FOLDED INTO `readOnly`, even
+    //    though both end at ro=true. `readOnly` additionally sets `bg` below, which
+    //    means "this is the Background embed on a lesson's page" and keeps the
+    //    narrative fields in BOXED, disabled textarea chrome. A present view wants
+    //    the exact opposite — ilField's report mode, bare text — because an <input>
+    //    clips its own value, which is what made the Minutes' long Issue/Agenda
+    //    unreadable in the one mode that exists for reading it (measured there at
+    //    659px of text in a 416px box). Reusing readOnly would have silently turned
+    //    the present view into a Background embed.
+    var mayEdit = (opts && (opts.readOnly || opts.present)) ? false : (isNew ? canAdd : canEditRow(r));
     var ro = !mayEdit, d = ro ? ' disabled' : '';
     // ITEM 2 (2026-09-03, lesson-view round): true only for the Background embed
     // (a lesson's own page showing the issue it came from) — `opts.readOnly` is

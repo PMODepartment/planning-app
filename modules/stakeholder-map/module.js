@@ -390,21 +390,38 @@ window.StakeholderMap = (function () {
   function renderKpis() {
     var counts = {}; E().PRIORITIES.forEach(function (p) { counts[p] = 0; });
     var ap = {}; E().APPROACHES.forEach(function (a) { ap[a] = 0; });
-    var noPhoto = 0, noPlan = 0, catchup = 0;
+    var catchup = 0;
     rows.forEach(function (r) {
       var p = priorityOf(r); if (p) counts[p]++;
       var a = approachOf(r); if (a && ap[a] != null) ap[a]++;
-      if (!r.photo_path) noPhoto++;
-      if (!String(r.engagement_plan || '').trim()) noPlan++;
       if (strategyOf(gapOf(r)) === 'Catch up') catchup++;
     });
+    /* ⚠ FOUR CARDS, AND THE THREE THAT WENT ARE THE ONES THAT ANSWERED NOTHING.
+       Owner, 2026-09-08: *"The kpi warnings in the stakeholder map isn't necessary let's
+       remove the total number of stakeholders, no photo, and no engagement plan. Let's fit
+       the other 4 kpi cards in a single level row."*
+       - 'Stakeholders' restated the register's own row count, which the table header
+         already prints;
+       - 'No photo' and 'No engagement plan' are data-entry chores, not stakeholder
+         standing. They read as warnings about the project when they are warnings about
+         the form, and on a young register they are simply the row count again.
+       What survives is the four that rank ATTENTION: who matters, how to handle them,
+       and who is drifting.
+       ⚠ NEITHER SIGNAL IS LOST, which is what makes the removal safe rather than a
+          trade: 'no photo' is still a filter (filters.flag === 'nophoto') and a missing
+          plan still prints on the stakeholder's own card (.sm-card-plan-none). They stop
+          competing for the eye at the top of the screen; they do not stop being visible.
+       ⚠⚠ THE SECOND HALF OF THE ASK -- "a single level row" -- IS IN module.css,
+          NOT HERE, and it is not optional: `.sm-kpis` was a hardcoded `repeat(7, 1fr)`
+          with breakpoints at 1600/1000/700, so four cards would have sat in a seven-track
+          grid on a desktop and in a THREE-track one at the 918px the owner's screenshot
+          was taken at -- still two rows, the complaint unfixed, with three empty cells
+          added. With the auto-fit rule this commit puts there instead, four cards MEASURE
+          as one row at 760px and every width above. See the note on that rule. */
     $('sm-kpis').innerHTML =
-      kpi('Stakeholders', rows.length, '', 'on the register') +
       kpi('1st Priority', counts['1st Priority'], 'rcm-p1', 'high impact × high influence') +
       kpi('Manage Closely', ap['Manage Closely'], 'sm-k-manage', 'per the Impact / Influence map') +
       kpi('Keep Satisfied', ap['Keep Satisfied'], 'sm-k-satisfy', 'high impact, low influence') +
-      kpi('No photo', noPhoto, 'sm-k-warn', 'faces still missing') +
-      kpi('No engagement plan', noPlan, 'sm-k-warn', 'registered but not planned for') +
       kpi('Catch-up needed', catchup, 'sm-k-warn', 'relationship 2+ levels below target');
   }
   function kpi(label, val, cls, sub) {

@@ -95,6 +95,93 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-08 (pv) — Three registers: a KPI strip that fits, four invisible buttons, and a present view put back
+
+No migration. Owner's items 1–3 of four; **item 4 (Progress Photos) was explicitly paused by the owner
+and is not in this commit.** Detail in each module's own `CLAUDE.md`.
+
+- ⚠️⚠️ **Stakeholder Map's KPI strip needed a CSS change that the first cut of this work did not
+  contain, and only rebasing onto main exposed that.** The owner asked to drop three cards and *"fit
+  the other 4 kpi cards in a single level row."* Dropping the cards is four lines; the row is
+  `.sm-kpis`, which was `repeat(7, 1fr)` with breakpoints at 1600/1000/700 — sized for the seven cards
+  that used to be there. **Four cards in that grid is worse than seven, not better:** seven tracks at
+  desktop width leaves three empty cells, and at 918px — the width the owner's own screenshot was taken
+  at — the 1000px breakpoint drops it to three tracks, so four cards would still have wrapped to two
+  rows and the complaint would have survived the change meant to fix it. `.sm-kpis` now carries the
+  shared `.pd-kpis` rule verbatim (`repeat(auto-fit, minmax(170px, 1fr))`) and the three breakpoints
+  are gone. ⚠️ **MEASURED, 8 widths from 700–1900px:** four cards are **one row at 760px and every
+  width above it**, with no upper bound (auto-fit stops adding tracks once the four are placed and
+  `1fr` stretches them — 466px each at 1900px, so no ragged empty cell); at 918px it is one row where
+  the old seven cards are **two**, which is the reported bug reproduced. Below 760px it goes to two
+  rows, correct on a phone. ⚠️ Neither removed signal is lost: *no photo* is still a filter
+  (`filters.flag === 'nophoto'`) and a missing plan still prints on the stakeholder's own card.
+- ⚠️⚠️ **Meetings' four detail-toolbar buttons were not broken, they were INVISIBLE.**
+  *"I am not sure if one of the buttons are present view. or any of the functions of the other buttons
+  as well."* Every control in that toolbar is a `data-ico` placeholder that `Icons.hydrate()` fills in;
+  `render()` hydrates `#il-mom-view` after calling `renderDetail()`, so a **first landing looked
+  correct** — but **28 other call sites invoke `renderDetail()` directly** (toggling reporting view,
+  every workflow step, every filter change, every save), and each rebuilt the toolbar with nothing to
+  fill the icons in. Fixed at `renderDetail()` rather than at the 28 callers, for the same reason
+  `psSetupChanged()` exists in project-schedule. The favourite star survived only because it is a
+  literal ★/☆, not an icon. **Measured both ways in a browser:** unhydrated, all four report
+  `svg:false` with empty labels — the screenshot's blank buttons; hydrated, all four render.
+- ⚠️ **`+ Add meeting` wrapped because a 34px square rule had no `:not()`.**
+  `.il-topbar-tools .pd-btn` forced `width:34px` onto **every** button in the cluster, so two words
+  wrapped inside a 34px box. **Measured:** with `.il-tb-labeled` it is 106px and **one line box**
+  (`scrollWidth/clientWidth 104/104`); with the class removed, 34px and **two line boxes**,
+  `39/32` — overflowing. ⚠️ The first version of this assertion was **unsound** (it compared height
+  against `fontSize × 1.6`, but 34px is the button's *set* height, so it reported a wrap either way);
+  redone by counting line boxes with `Range.getClientRects()`. ⚠️ `.pd-btn` in the **shared**
+  `dashboard.css` carries no `white-space`, so this is a shared gap fixed module-locally — that file is
+  being edited by another session today.
+- **The mode toggle gets a word, in both registers.** Export / email / distribute are *actions* and read
+  fine as icons with titles; a reporting view is a **mode** — it changes what the whole screen is — and
+  the owner could not identify it even in principle. Both now read **Present** / **Exit**, same word and
+  same treatment in Meetings and in Issues & Concerns. The Meetings state chip also stops being a
+  paragraph: it carried the whole sentence *"Draft — editable by you, a planner, or this meeting's
+  attendees"*, which made a 60-character essay out of a status pill; the sentence moved to its own note
+  line beside the locked note, so it is still on screen and still readable on a phone (a `title` would
+  have hidden it from touch entirely).
+- ⚠️⚠️ **Issues & Concerns' present view is RESTORED, and this is a deliberate reversal of a decision
+  whose note is still in that module's `module.css`.** *"what happened to the present view?"* — it was
+  removed on purpose in `256deb7`, recorded there as *"No need for reporting view" — confirmed
+  unreachable, not just unused*. That reasoning was right about the **Dashboard** (a portfolio read) and
+  wrong about the **single record**: presenting one issue in a meeting is not the same act as reading the
+  register, and both Minutes of Meeting and Project Schedule kept a present mode for exactly that. The
+  note is left in place and answered rather than deleted.
+- ⚠️⚠️ **`present` is its own flag and must NOT be folded into `opts.readOnly`, even though both end at
+  `ro=true`.** `readOnly` additionally sets `bg`, which means *"this is the Background embed on a
+  lesson's page"* and keeps the narrative fields in **boxed, disabled textarea chrome** — the exact
+  opposite of what a present view wants, because an `<input>` clips its own value (measured in Meetings
+  at 659px of text in a 416px box). Reusing `readOnly` would have silently turned the present view into
+  a Background embed. ⚠️ **7 assertions executing the flag computation sliced verbatim out of the
+  shipped `issDetailHTML`**, with a **contrast build** on the pre-fix line: it fails exactly the
+  `present` case (`ro:false` where `ro:true` is required), so the suite bites. ⚠️ The mode is
+  **session-only and reset on leaving the record** — a screen that comes back read-only tomorrow reads
+  as *"I have lost permission"*.
+- ⚠️ **Two defects caught in this commit that the first cut would have shipped**, both from rebasing onto
+  main rather than committing out of a shared working tree: my present-view CSS first targeted
+  `.il-iss-actions` and `.il-mi-card`, **neither of which issues-lessons emits** (the real names are
+  `.il-mom-actions` and `.il-iss-card`) — a silent no-op; and `font-size: var(--pd-fs-sm)` referenced a
+  token that **does not exist on main** (the `--pd-fs-*` scale is another session's unlanded work), so
+  the declaration would have been dropped at computed-value time. Every selector is now verified against
+  the markup the module actually emits, and the token carries a `12px` fallback so it is correct now and
+  adopts the scale when it lands.
+- ⚠️⚠️ **Built in a temp worktree off `origin/main`, NOT staged out of the shared clone, and that was
+  the whole difficulty of this commit.** The clone has **55 modified files** belonging to a concurrent
+  session — an app-wide typography-token and shared-component refactor that had already migrated
+  `#sm-kpis`/`#il-kpis` onto `.pd-kpis`, rewritten `stakeholder-map/module.js` by 840 lines, and burned
+  `?v=20260908d` on `dashboard.css` and `ui.js`. **Item 1's verified behaviour depended on that
+  unlanded migration** (which is how the missing CSS was found), and committing their `?v=` bumps
+  without their file contents would have cache-poisoned their real deploy. Only module-local `?v=`
+  tokens are bumped here; every shared asset token is left exactly as main has it.
+- Assets `module.css` / `module.js` `?v=20260908pv` in all three modules; **`MODULE_V` → `20260908pv`**.
+  ⚠️ **Deliberately not a letter in the daily sequence** — main is already at `20260908h`, and the two
+  collisions this month were both two sessions independently picking the same next letter.
+- ⚠️ **Not verified signed in.** No live login is possible here. The KPI row, the toolbar geometry and
+  the icon hydration are real browser measurements against the shipped stylesheets with the module's own
+  markup; the present view's flags are asserted against code sliced out of the shipped file. Nothing has
+  been driven against a real project.
 ### Construction Library: Excel-style Ctrl-click selection, and a drag grip replacing the Move buttons (2026-09-08) — jasantos2
 
 Owner: *"for the multiple selection, can you adapt similar to excel wherein if multiple selection,

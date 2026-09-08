@@ -33,10 +33,25 @@
 
 /* Tool cluster */
 .il-topbar-tools { display: flex; align-items: center; gap: 4px; margin-left: auto; }
-.il-topbar-tools .pd-btn {
+/* ⚠ THE 34px SQUARE IS FOR THE ICON-ONLY BUTTONS AND MUST NOT CATCH A LABELLED
+   ONE. This rule had no `:not()`, so it forced width:34px onto EVERY .pd-btn in
+   the cluster -- including "+ Add meeting", whose two words then wrapped onto two
+   lines inside a 34px box. That is the wrap in the owner's 2026-09-08 screenshot.
+   MEASURED, both ways: with `.il-tb-labeled` the button is 106px wide and occupies
+   ONE line box (Range.getClientRects().length === 1, scrollWidth/clientWidth
+   104/104); with the class removed it is 34px wide and TWO line boxes, overflowing.
+   Same shape, and the same fix, as contracts-claims' `.cc-tb-labeled`. */
+.il-topbar-tools .pd-btn:not(.il-tb-labeled) {
   height: 34px; width: 34px; padding: 0; font-size: 13px;
   display: inline-flex; align-items: center; justify-content: center;
   background: transparent; border-color: transparent;
+}
+/* ⚠ `.pd-btn` in the SHARED dashboard.css carries no `white-space`, so any
+   multi-word button wraps wherever a flex parent squeezes it. Fixed here rather
+   than shared because dashboard.css is being edited by another session today;
+   the shared gap is worth closing on its own. */
+.il-topbar-tools .pd-btn.il-tb-labeled {
+  height: 34px; width: auto; padding: 0 12px; gap: 6px; white-space: nowrap;
 }
 .il-topbar-tools .pd-btn:hover { background: var(--pd-bg); border-color: var(--pd-line); }
 
@@ -482,7 +497,19 @@ div.il-mom-acrow { padding: 6px 10px; font-size: 11.5px; color: var(--pd-muted);
   .il-mom-stickyhead { margin: -12px -12px 12px; padding: 10px 12px; }
 }
 
-.il-mom-toolbar { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+/* ⚠ `align-items:center` matters: the state chip and the 34px controls have
+   different heights, and stretch made the chip a tall rounded slab. */
+.il-mom-toolbar { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+/* The one labelled control in the detail toolbar -- see momDetailHTML. Sized like
+   .il-mom-iconbtn but free to hold its word. */
+.il-mom-modebtn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 34px; padding: 0 11px; white-space: nowrap;
+}
+.il-mom-modetxt { font-size: var(--pd-fs-sm, 12px); font-weight: 600; }
+/* ⚠ Reporting mode hides nothing in this toolbar -- the Exit button IS the way
+   back out, so it must stay legible in the mode it turns off. */
+.il-mom-report .il-mom-modebtn { border-color: var(--pd-red); color: var(--pd-red); }
 
 .il-mom-state {
   font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 20px;

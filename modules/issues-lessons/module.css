@@ -618,6 +618,36 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
   gap: 12px; flex-wrap: wrap; margin-bottom: 10px;
 }
 .il-detail-nav .il-backlink { margin-bottom: 0; }
+
+/* ---- Present view (restored 2026-09-08) ---------------------------------
+   The mode toggle. Labelled, unlike the step arrows beside it, because it is a
+   MODE — it changes what the whole screen is — and the owner could not identify
+   the equivalent icon-only control in Minutes of Meeting ("I am not sure if one
+   of the buttons are present view"). Same treatment, same word, in both modules. */
+.il-modebtn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 30px; padding: 0 11px; margin-left: auto; white-space: nowrap;
+}
+.il-modetxt { font-size: var(--pd-fs-sm, 12px); font-weight: 600; }
+.il-modebtn.is-active { border-color: var(--pd-red); color: var(--pd-red); }
+
+/* ⚠️ PRESENTATION ONLY — every read-only behaviour comes from `opts.present`
+   forcing ro=true in issDetailHTML, NOT from CSS. A mode that only hid controls
+   in CSS would leave them clickable via the keyboard, and the DB would then
+   refuse the write with an error the planner could not explain. This block just
+   makes the record read like a sheet: no hover affordances, a little more air,
+   and the register's own chrome out of the way.
+   ⚠️ `.il-detail-nav` is deliberately NOT hidden — it holds the Exit button. */
+.il-report .il-iss-actions,
+.il-report .il-req { display: none; }
+.il-report .il-mi-card { padding: 16px 18px; }
+.il-report .il-mi-f label { color: var(--pd-muted); }
+.il-report input, .il-report select, .il-report textarea { pointer-events: none; }
+
+@media print {
+  /* Presenting often ends in a printout; the nav is chrome either way. */
+  .il-detail-nav { display: none !important; }
+}
 .il-steps { display: inline-flex; align-items: center; gap: 8px; }
 .il-stepnote { font-size: 12px; color: var(--pd-muted); white-space: nowrap; }
 .il-steps .il-iconbtn { width: 26px; height: 26px; font-size: 16px; line-height: 1; }

@@ -2742,6 +2742,22 @@ window.MinutesOfMeeting = (function () {
         : '<p class="il-mom-note">You can read the minutes of this project.</p>')) +
       '<button type="button" class="pd-btn pd-btn-sm il-mom-back" id="il-mom-back">← Back to meetings</button>' +
       momDetailHTML(cur);
+    // ⚠️⚠️ HYDRATE HERE, NOT ONLY IN render(). This is the owner's 2026-09-08 report
+    //    — *"I am not sure if one of the buttons are present view. or any of the
+    //    functions of the other buttons as well"* — and the buttons were not broken,
+    //    they were INVISIBLE. Every control in this card's toolbar is a `data-ico`
+    //    placeholder that `Icons.hydrate()` fills in; `render()` does hydrate
+    //    `#il-mom-view` after calling us, so a FIRST landing looked correct. But
+    //    **28 other call sites invoke renderDetail() directly** — toggling reporting
+    //    view, every item-workflow step, every filter change, every save — and each
+    //    rebuilt this toolbar with nothing to fill the icons in. So the four buttons
+    //    went blank the moment you touched anything, which is precisely the state the
+    //    screenshot caught.
+    // ⚠️ Fixed HERE rather than at the 28 callers for the same reason
+    //    psSetupChanged() exists in project-schedule: a list every future caller has
+    //    to remember is a list that goes stale. The favourite star survived only
+    //    because it is a literal ★/☆ character, not an icon.
+    if (window.Icons && Icons.hydrate) Icons.hydrate(host);
     wireDetail();
     var back = host.querySelector('#il-mom-back');
     if (back) back.onclick = function () {
@@ -2823,7 +2839,14 @@ window.MinutesOfMeeting = (function () {
           // no draft carve-out) — this label used to claim otherwise. What actually
           // narrows is EDITING: you, a planner, or (Individual View item 4) this
           // meeting's attendees while it's a draft.
-          (locked ? 'Distributed' : 'Draft — editable by you, a planner, or this meeting\'s attendees') + '</span>' +
+          // ⚠️ A CHIP STATES THE STATE. This one carried the whole sentence
+          //    "Draft — editable by you, a planner, or this meeting's attendees",
+          //    which made a 60-character paragraph out of a status pill and pushed
+          //    the toolbar's controls off to the far edge. The sentence is not
+          //    dropped — it moved to its own note line below, where the locked-state
+          //    note already lives, so it is still on screen and still readable on a
+          //    phone (a `title` would have hidden it from touch entirely).
+          (locked ? 'Distributed' : 'Draft') + '</span>' +
         '<div style="flex:1;"></div>' +
         // ITEM 5 (round 2): the favorite label ("★ Favorited"/"☆ Favorite")
         // is gone — a plain, larger star icon, no text, matching the icon-only
@@ -2840,9 +2863,18 @@ window.MinutesOfMeeting = (function () {
         // Individual-view item 3 (2026-09-03): reporting/export/email/distribute
         // all go icon-only -- a row of text buttons was the busiest part of the
         // toolbar, and each already carries a `title` naming what it does.
-        '<button class="pd-btn pd-btn-sm il-mom-iconbtn' + (_momReport ? ' is-active' : '') + '" id="il-mom-report" ' +
-          'title="' + (_momReport ? 'Exit reporting view' : 'Reporting view -- a clean read-only record') +
-          '" aria-label="Reporting view"><span data-ico="eye" data-ico-size="16"></span></button>' +
+        // ⚠️ THE ONE LABELLED CONTROL HERE, and the exception is principled rather
+        //    than a reversal of the 2026-09-03 icon-only pass: that pass was about the
+        //    three ACTIONS (export / email / distribute), which are self-evident as
+        //    icons and each carry a title. This is a MODE — it changes what the whole
+        //    screen is — and the owner could not identify it even in principle
+        //    ("I am not sure if one of the buttons are present view"). "Present" is
+        //    the owner's own word for it; the title still names it as the reporting
+        //    view so the two vocabularies stay connected.
+        '<button class="pd-btn pd-btn-sm il-mom-modebtn' + (_momReport ? ' is-active' : '') + '" id="il-mom-report" ' +
+          'title="' + (_momReport ? 'Exit reporting view' : 'Reporting view -- a clean read-only record to present from') +
+          '" aria-label="Reporting view"><span data-ico="eye" data-ico-size="16"></span>' +
+          '<span class="il-mom-modetxt">' + (_momReport ? 'Exit' : 'Present') + '</span></button>' +
         // Item 8: one control surface for HTML/PDF/PowerPoint/Excel, plus a
         // separate Email action — both reads, offered the same way PDF was.
         iconMenuHTML('il-mom-exportsel', 'download', 'Export these minutes', [
@@ -2863,7 +2895,12 @@ window.MinutesOfMeeting = (function () {
       (locked && canDistribute(mom)
         ? '<p class="il-mom-note" style="margin-top:0;">These minutes have been issued, so the form is ' +
           'locked. Revert to draft to change them — everyone on the project can already read this version.</p>'
-        : '') +
+        // The sentence the state chip used to carry. ⚠️ Still says EDITING, not
+        // reading: reading a draft has always been project-wide (meeting_minutes_read
+        // has no draft carve-out), and an earlier version of this label claimed
+        // otherwise.
+        : (mayEdit ? '<p class="il-mom-note" style="margin-top:0;">A draft — you, a planner, or this ' +
+            'meeting\'s attendees can edit it. Everyone on the project can read it.</p>' : '')) +
       // ⚠️ ITEM 12 — the reporting view is a slide deck now, and these ids are
       // what it steps through: #il-mom-slide-details, #il-mom-slide-agenda, then
       // one .il-mi-card per minute. The markup is IDENTICAL in both modes (the
