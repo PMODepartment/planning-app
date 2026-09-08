@@ -903,6 +903,21 @@
       box-shadow:0 1px 2px rgba(0,0,0,.15); border:var(--ps-bar-bw,1.5px) solid var(--ps-bar-bd,transparent); box-sizing:border-box; }
     .ps-bar.task { background:var(--ps-bar); }
     .ps-bar-fill { position:absolute; left:0; top:0; bottom:0; background:var(--ps-prog,var(--pd-red)); border-radius:3px 0 0 3px; }
+    /* THE SUSPENDED WINDOW INSIDE A BAR — what makes one line item read as two pieces.
+       Owner 2026-09-07: *"the bar of a the main contract activity will be divided into two, since
+       in between is the bar of the change order."* So the row stays ONE line item (their previous
+       ask) and its BAR is interrupted where the change order sits.
+       ⚠️ AN OVERLAY, NOT TWO BARS AND NOT clip-path. Two `.ps-bar` elements would need two
+       data-ids and would break drag, resize, the link mode, the critical/spotlight outlines and
+       every selector that assumes one bar per row; clip-path would clip the outlines and the
+       change-order ring away. A notch painted in the pane colour leaves all of that intact.
+       pointer-events:none so dragging the bar still works straight through the gap. The dotted
+       midline is the P6 convention for a suspended activity: it says the two pieces are ONE
+       activity, which is exactly the thing the old two-row model could not say. */
+    .ps-bar-cut { position:absolute; top:-2px; bottom:-2px; background:var(--pd-card); z-index:2;
+      pointer-events:none; }
+    .ps-bar-cut::after { content:''; position:absolute; left:0; right:0; top:50%; height:0;
+      border-top:1px dotted var(--pd-muted); opacity:.75; }
     .ps-bar.dragging { cursor:grabbing; opacity:.85; z-index:8; }
     .ps-handle { position:absolute; top:0; bottom:0; width:6px; cursor:ew-resize; z-index:4; }
     .ps-handle.l { left:0; } .ps-handle.r { right:0; }
@@ -1303,6 +1318,10 @@
        Loading has and the builder does not: money inputs, and the step-4 cost stack. */
     .pscl-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:10px 0; }
     .pscl-note { font-size:12px; color:var(--pd-muted); }
+    /* A per-OCCURRENCE row inside a step-4 cost line: indented, quieter, and visibly subordinate
+       to the line above it so the two levels of the choice cannot be confused. */
+    .pscl-tbl tr.pscl-sub > td { background:rgba(0,0,0,.02); border-top:0; }
+    html.pd-dark .pscl-tbl tr.pscl-sub > td { background:rgba(255,255,255,.03); }
     .pscl-warn { font-size:12px; color:#8A5300; background:#FFF0D9; border:1px solid #F0D9A8; border-radius:8px; padding:8px 10px; margin-bottom:14px; }
     html.pd-dark .pscl-warn { color:#FFD79A; background:#3A2E17; border-color:#5A4620; }
     .pscl-tbl { width:100%; border-collapse:collapse; font-size:13px; }
@@ -1421,6 +1440,18 @@
       padding:6px 11px; cursor:pointer; border-right:1px solid var(--pd-line); }
     .ps-vs-seg > button:last-child { border-right:0; }
     .ps-vs-seg > button.on { background:var(--pd-red); border-color:var(--pd-red); color:#fff; font-weight:700; }
+    /* HOLLOW, not merely inert. Owner 2026-09-07: *"if the per tower or consolidate option is
+       chosen, can you at least hollow the options for the other levels of details."* Right - the
+       `disabled` attribute stops the click but leaves the button looking live, and a control that
+       looks live and does nothing is the silent failure this module keeps recording. So a Detail
+       level a combined model cannot honestly draw is drawn hollow: no fill, dimmed ink, a dashed
+       divider and cursor:not-allowed. The tooltip still carries the reason. */
+    .ps-vs-seg > button:disabled { background:transparent; color:var(--pd-muted); opacity:.55;
+      cursor:not-allowed; border-right-style:dashed; font-style:italic; }
+    .ps-vs-seg > button:disabled:hover { background:transparent; }
+    /* The trade-vs-WBS disagreement badge in the "no level" list. */
+    .ps-vs-badge-warn { display:inline-block; margin-left:6px; padding:0 5px; border-radius:4px;
+      border:1px dashed var(--pd-line); color:var(--pd-muted); font-size:11px; cursor:help; white-space:nowrap; }
     /* An icon + label inside a .ps-vs-seg button (the PDF export). It used to borrow the
        magnifier button's rule; that went with the magnifier, so it has its own name now. */
     .ps-vs-icolab { display:inline-flex; align-items:center; gap:6px; }
@@ -1556,6 +1587,18 @@
       padding:6px 11px; cursor:pointer; border-right:1px solid var(--pd-line); }
     .ps-vs-seg > button:last-child { border-right:0; }
     .ps-vs-seg > button.on { background:var(--pd-red); border-color:var(--pd-red); color:#fff; font-weight:700; }
+    /* HOLLOW, not merely inert. Owner 2026-09-07: *"if the per tower or consolidate option is
+       chosen, can you at least hollow the options for the other levels of details."* Right - the
+       `disabled` attribute stops the click but leaves the button looking live, and a control that
+       looks live and does nothing is the silent failure this module keeps recording. So a Detail
+       level a combined model cannot honestly draw is drawn hollow: no fill, dimmed ink, a dashed
+       divider and cursor:not-allowed. The tooltip still carries the reason. */
+    .ps-vs-seg > button:disabled { background:transparent; color:var(--pd-muted); opacity:.55;
+      cursor:not-allowed; border-right-style:dashed; font-style:italic; }
+    .ps-vs-seg > button:disabled:hover { background:transparent; }
+    /* The trade-vs-WBS disagreement badge in the "no level" list. */
+    .ps-vs-badge-warn { display:inline-block; margin-left:6px; padding:0 5px; border-radius:4px;
+      border:1px dashed var(--pd-line); color:var(--pd-muted); font-size:11px; cursor:help; white-space:nowrap; }
     .ps-vs-chips { display:flex; gap:6px; flex-wrap:wrap; }
     .ps-vs-chip { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--pd-line); background:var(--pd-card);
       color:var(--pd-ink); border-radius:999px; padding:4px 10px; font-size:12px; cursor:pointer; }
@@ -3887,7 +3930,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../../assets/js/config.js?v=20260902a"></script>
 <script src="../../assets/js/auth.js?v=20260901b"></script>
-<script src="../../assets/js/db.js?v=20260901d"></script>
+<script src="../../assets/js/db.js?v=20260907a"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
 <script src="../../assets/js/ui.js?v=20260904a"></script>
 <script src="../../assets/js/icons.js?v=20260903a"></script>
@@ -7420,6 +7463,11 @@
               if (pd0 == null) { var a = pd(pr.start_date), b = pd(pr.end_date); pd0 = (a && b) ? (dayDiff(a, b) + 1) : 0; }
               own += Math.max(0, +pd0 || 0);
             }
+            // ⚠️ And so does a MAIN-CONTRACT predecessor that has a variation inside its own bar.
+            // Under the single-line model the change order is a successor of its host, not a link
+            // in anybody's predecessor chain, so this walk could not see it: everything after the
+            // host would have kept the variation's days while the filter claimed they were gone.
+            own += _coGapDaysOf(pr);
             if (own > best) best = own;
           }
         }
@@ -7454,7 +7502,16 @@
     // as everything else once there are change orders upstream of the host itself.
     if (u) { var us = _mainOnlyShiftOf(r); return us > 0 ? dstr(addDays(pd(u), -us)) : u; }
     var f = r.actual_finish || forecastFin(r) || r.end_date || null;
-    if (f && _mainOnlyUnsplit()) { var sh2 = _mainOnlyShiftOf(r); if (sh2 > 0) f = dstr(addDays(pd(f), -sh2)); }
+    // ⚠️ TWO pull-backs, and they are different things. _mainOnlyShiftOf is the change-order days
+    // UPSTREAM of this row (it starts later because a variation delayed something it waits on);
+    // _coGapDaysOf is the change-order days INSIDE its own bar (the single-line model's gap). A
+    // host with a 3-day variation in the middle of it must give those 3 days back here, or
+    // Main-contract-only would close the gap and still draw a bar 3 days too long — the filter
+    // saying the variation never happened while the bar still measures it.
+    if (f && _mainOnlyUnsplit()) {
+      var sh2 = _mainOnlyShiftOf(r) + _coGapDaysOf(r);
+      if (sh2 > 0) f = dstr(addDays(pd(f), -sh2));
+    }
     // Never render a finish earlier than the start (guards against inconsistent stored dates, e.g. an
     // end_date left before a later start_date) — otherwise the bar and its relationship arrows draw
     // backwards. Clamp the DISPLAY to the start; the stored values are untouched.
@@ -9738,10 +9795,13 @@
   // The predicate below is the shared answer, used by the guesser (so a trade is never PROPOSED as
   // a location), by the wizard (so the planner sees WHY a row is grouping) and by the stacking
   // (so a value that slipped through earlier cannot draw a floor that does not exist).
+  // ⚠️ STRONG **and** WEAK here. This answers "does this name read as a trade at all", which is what
+  // keeps a trade from being proposed as a location — and "Earthworks" is still not a place. Only
+  // the PRECEDENCE between an ancestor and its child is weak (see WORK_CANON and discCanonOf).
   function _discTermHit(name) {
     var best = -1;
     for (var i = 0; i < WORK_CANON.length; i++) {
-      var at = locTermHit(name, WORK_CANON[i].terms);
+      var at = locTermHit(name, (WORK_CANON[i].terms).concat(WORK_CANON[i].weak || []));
       if (at !== -1 && (best === -1 || at < best)) best = at;
     }
     return best;
@@ -10802,10 +10862,24 @@
   // Electrical/Plumbing/Fire Protection under MEPF Works, and Wet Works/Finishing under
   // Architectural Works, and Substructure/Superstructure/Earthworks under Structural Works) — they
   // are BREAKDOWN of a trade, not a trade of their own, so they must collapse to their parent trade.
+  /* ⚠️⚠️ SOME TERMS NAME A KIND OF WORK, NOT A TRADE — and those must not outrank an ancestor that
+     names the trade outright. Owner 2026-09-07: *"why are these works tagged under structural
+     trade? even though the trade is under site development."*
+     Measured, and it was this list: `earthworks` sat in Structural Works, discCanonOf walks the WBS
+     ancestry NEAREST-FIRST and returns on the first hit, so
+     `Execution Phase › Site Development Works › Earthworks` matched *Earthworks* one level down and
+     never looked at *Site Development Works* one level up. Backfilling, a gabion and a gravity wall
+     were stamped Structural Works by the importer and drawn in the Structural building.
+     Site earthworks (roads, drainage, retaining) and structural excavation are both real, so the
+     term is genuinely ambiguous — the error was letting the ambiguous CHILD beat the explicit
+     PARENT. `weak` terms now decide a trade only when no enclosing ancestor names one outright.
+     Keep this list small and evidence-led: a term belongs here only when the same word honestly
+     appears under two different trades on real schedules. */
   var WORK_CANON = [
     { name: 'Structural Works', terms: ['structural works', 'structural', 'superstructure', 'substructure',
-      'earthworks', 'excavation', 'rebar', 'reinforcement', 'formwork', 'formworks', 'falsework',
-      'concrete works', 'concreting', 'steel works', 'steelworks', 'erection'] },
+      'rebar', 'reinforcement', 'formwork', 'formworks', 'falsework',
+      'concrete works', 'concreting', 'steel works', 'steelworks', 'erection'],
+      weak: ['earthworks', 'excavation'] },
     { name: 'Architectural Works', terms: ['architectural works', 'architectural', 'finishing works',
       'finishing', 'wet works', 'dry works', 'tiling', 'painting', 'waterproofing', 'masonry',
       'carpentry', 'glazing', 'flooring', 'ceiling', 'drywall', 'partition works', 'partition',
@@ -10821,13 +10895,18 @@
   // ⚠️ Memoised by name. This is asked once per WBS-ancestry segment per activity, and a real tree
   // repeats the same few thousand node names across tens of thousands of activities — the 4PH Strevi
   // .xer asks it ~150k times for ~2.6k distinct names, each answer costing a scan of all ~70 terms.
-  var _discCanonMemo = {};
-  function _discTermMatch(s) {
-    var k = String(s == null ? '' : s);
-    if (Object.prototype.hasOwnProperty.call(_discCanonMemo, k)) return _discCanonMemo[k];
+  // Two memos, because there are now two questions: "does this name name a trade outright" and
+  // "does it name one at all". One shared cache would answer whichever was asked first.
+  var _discCanonMemo = {}, _discCanonMemoW = {};
+  function _discTermMatch(s, allowWeak) {
+    var k = String(s == null ? '' : s), memo = allowWeak ? _discCanonMemoW : _discCanonMemo;
+    if (Object.prototype.hasOwnProperty.call(memo, k)) return memo[k];
     var hit = null;
-    for (var i = 0; i < WORK_CANON.length; i++) { if (locTermHit(k, WORK_CANON[i].terms) !== -1) { hit = WORK_CANON[i].name; break; } }
-    return (_discCanonMemo[k] = hit);
+    for (var i = 0; i < WORK_CANON.length; i++) {
+      var terms = allowWeak ? (WORK_CANON[i].terms).concat(WORK_CANON[i].weak || []) : WORK_CANON[i].terms;
+      if (locTermHit(k, terms) !== -1) { hit = WORK_CANON[i].name; break; }
+    }
+    return (memo[k] = hit);
   }
   // The canonical trade for a WBS name: prefer the schedule's OWN grouping (walk the ancestry
   // nearest-first for the enclosing trade heading — this is what correctly resolves "Fire Protection
@@ -10839,8 +10918,15 @@
   // either way the term itself resolves to Structural Works.
   function discCanonOf(name, trail) {
     var segs = trail ? String(trail).split(' › ').reverse() : [];
-    for (var i = 0; i < segs.length; i++) { var c = _discTermMatch(segs[i]); if (c) return c; }
-    return _discTermMatch(name);
+    // PASS 1, nearest-first, STRONG terms only: an ancestor that names its trade outright wins over
+    // a nearer one that only names a kind of work. This is the pass that keeps Earthworks under
+    // Site Development Works reading as Site Development Works.
+    for (var i = 0; i < segs.length; i++) { var c = _discTermMatch(segs[i], false); if (c) return c; }
+    // PASS 2, nearest-first, weak terms allowed: nothing in the ancestry named a trade, so an
+    // ambiguous term is the best evidence there is — `Execution Phase › Earthworks` is structural
+    // earthworks, and answering "no trade" there would be worse than answering the likely one.
+    for (var j = 0; j < segs.length; j++) { var c2 = _discTermMatch(segs[j], true); if (c2) return c2; }
+    return _discTermMatch(name, true);
   }
   // A name is a plausible discipline/trade if it (or its nearest enclosing WBS ancestor) resolves to
   // one of the six canonical trades.
@@ -13670,6 +13756,30 @@
     return Math.max(1, Math.min(_vsDetail, _vsMaxDetail()));
   }
   function _vsTradeOf(r) { return workOf(r) || NO_TRADE; }
+  /* THE TRADE ON A ROW CAN DISAGREE WITH THE BRANCH IT IS FILED UNDER, and that disagreement - not
+     a bug - is the answer to the owner’s 2026-09-07 question: *"why is there an error for the
+     structural works trade? it detected activities under the site dev works trade?"* There is no
+     error and nothing was mis-detected. workOf() is documented "its own field wins; otherwise the
+     WBS says", so a row whose own Trade field reads Structural Works is drawn in the Structural
+     building even though its WBS branch is Execution Phase › Site Development Works › Earthworks.
+     It then lands in "no level" because the Site Development branch names no storey - which is the
+     ordinary truth for a gabion or a gravity wall.
+     The disagreement is worth SEEING every time rather than being explained once, so it is marked
+     in the list, both sides are named, and the tooltip says which one is being obeyed. */
+  function _vsTradeConflict(r) {
+    var own = r && r.work_type ? String(r.work_type).trim() : '';
+    if (!own) return '';                    // no field of its own, so nothing to disagree with
+    var branch = _nodeTrade(r && r.wbs_node_id);
+    if (!branch || branch === own) return '';
+    return ' <span class="ps-vs-badge-warn" title="' + esc(
+      'Filed under “' + branch + '” in the WBS, but this activity’s own Trade field says “' + own +
+      '”. The activity’s own field wins, which is why it appears in the ' + own + ' building.\n\n' +
+      'Usually the importer stamped it: it reads the WBS ancestry nearest-first, so a branch named ' +
+      'for a KIND of work (Earthworks, Excavation) used to outrank the trade named above it. That ' +
+      'precedence is fixed as of 2026-09-07, but a trade already stored on the row is not — retag ' +
+      'the Trade column here, or re-run the import stamp.') +
+      '">≠ ' + esc(branch) + '</span>';
+  }
   // The activity's PROJECT tower (Tower A / Tower B), not the per-trade card this view draws.
   // ⚠️⚠️ THERE ARE TWO WRITERS AND THEY USE DIFFERENT KEYS. `location` is a jsonb map keyed by
   // `location_levels.id` (a uuid) — that is what the WBS→location matcher (`locMapPlan`) and both
@@ -14672,12 +14782,15 @@
         'if you can see a floor in it, the branch name is not being matched — fix it with ' +
         '<em>Schedule Setup › Floors &amp; Zones → Match WBS to locations…</em>. If there is no floor in it, the work genuinely ' +
         'belongs to the site rather than to a storey.</div>' : '') +
+      (showPath && d.list.some(_vsTradeConflict) ? '<div class="ps-vs-note" style="margin:-4px 0 8px;">' +
+        'A <span class="ps-vs-badge-warn">≠ branch</span> mark means that row' + '’' + 's own <strong>Trade</strong> field disagrees with the branch it is filed under. ' +
+        'The activity' + '’' + 's own field wins, so it is drawn in the trade it names — which is how work under one branch shows up in another trade' + '’' + 's building. Hover the mark for both sides.</div>' : '') +
       '<div class="ps-vs-tblwrap"><table class="ps-table"><thead><tr>' +
       cols.map(function (h) { return '<th style="text-align:left;">' + h + '</th>'; }).join('') +
       '</tr></thead><tbody>' +
       d.list.slice().sort(function (a, b) { var x = pd(dispFin(a)), y = pd(dispFin(b)); return (x ? +x : 0) - (y ? +y : 0); }).map(function (r) {
         var _v = finVar(r), _pp = plannedPOC(r);
-        return '<tr><td>' + esc(r.activity_id || '') + '</td><td>' + esc(r.activity_name || '') + '</td><td>' + esc(_vsTradeOf(r)) +
+        return '<tr><td>' + esc(r.activity_id || '') + '</td><td>' + esc(r.activity_name || '') + '</td><td>' + esc(_vsTradeOf(r)) + _vsTradeConflict(r) +
           (showPath ? '</td><td style="color:var(--pd-muted);">' + (esc(_vsWbsPath(r)) || '<em>no WBS branch</em>') : '') +
           '</td><td>' + esc(r.bl_start ? Fmt.date(r.bl_start) : '—') + '</td><td>' + esc(r.bl_finish ? Fmt.date(r.bl_finish) : '—') +
           '</td><td>' + esc(dispStart(r) ? Fmt.date(dispStart(r)) : '—') + '</td><td>' + esc(dispFin(r) ? Fmt.date(dispFin(r)) : '—') +
@@ -17962,6 +18075,67 @@
   var _gset = { labels: 'name', baseline: true, ddline: true, relLines: false };
   try { var _gs = JSON.parse(localStorage.getItem('ps_gset') || 'null'); if (_gs) _gset = Object.assign(_gset, _gs); } catch (e) {}
   function saveGset() { try { localStorage.setItem('ps_gset', JSON.stringify(_gset)); } catch (e) {} }
+  /* THE INTERRUPTION IS NOT A STORED FACT — IT IS THE CHANGE ORDER. Derived, never saved: the
+     window a main-contract bar is broken over is exactly the span of a change order that is
+     SS-linked into it, so moving, re-dating or deleting the change order moves, re-dates or
+     closes the gap with no second copy of the truth to go stale. That is the same rule splitLabel
+     already followed, and the reason no migration is needed for any of this.
+     ⚠️ Only an SS link counts. applySplit writes `<host> SS+<days worked>` precisely so the
+     variation sits INSIDE the bar; a change order merely queued after this activity is an FS
+     successor and must not punch a hole in it. */
+  var _coGapMemo = null;
+  function _clearCoGapMemo() { _coGapMemo = null; }
+  function _coGapMap() {
+    if (_coGapMemo) return _coGapMemo;
+    var m = {};
+    rows.forEach(function (co) {
+      if (isWbs(co) || !isChangeOrder(co) || !co.predecessors) return;
+      var s = pd(co.start_date), e = pd(co.end_date); if (!s || !e) return;
+      _predTokens(co.predecessors).forEach(function (tok) {
+        var mm = tok.match(/^([A-Za-z0-9._\-]+)\s+SS/i); if (!mm) return;
+        (m[mm[1]] = m[mm[1]] || []).push({ s: s, e: e, id: co.activity_id || '', name: co.activity_name || '', ref: coRefOf(co) || '' });
+      });
+    });
+    Object.keys(m).forEach(function (k) { m[k].sort(function (a, b) { return a.s - b.s; }); });
+    _coGapMemo = m;
+    return m;
+  }
+  // The windows that actually interrupt THIS row. Strictly inside its span: a change order that
+  // starts on the activity's own first day or ends on its last leaves no piece on that side, so it
+  // is not an interruption and notching there would just shave the bar's end off.
+  // ⚠️ RAW: these are the windows that EXIST, not the ones that are drawn. Read it for arithmetic
+  // (how many days the variations cost this bar); read _coGapsOf for what to paint.
+  function _coGapsRaw(r) {
+    if (!r || isWbs(r) || isMile(r) || !r.activity_id || isChangeOrder(r)) return [];
+    var list = _coGapMap()[String(r.activity_id)]; if (!list || !list.length) return [];
+    var s = pd(r.start_date), e = pd(r.end_date); if (!s || !e) return [];
+    return list.filter(function (g) { return g.s > s && g.e < e; });
+  }
+  // Days of change-order work sitting INSIDE this bar. Always the real figure, filter or not.
+  function _coGapDaysOf(r) {
+    return _coGapsRaw(r).reduce(function (t, g) { return t + (dayDiff(g.s, g.e) + 1); }, 0);
+  }
+  /* THE GAPS THAT ARE DRAWN. Owner 2026-09-07: *"for the filtering of 'blended', 'main', 'change
+     orders' activities, when picking main it should exclude the 'change orders' activities hence
+     the bar chart will revert to its original state. (meaning no gap in between)."*
+     Right, and it follows from what the notch MEANS: the gap is the change order, so with the
+     change orders filtered off the screen there is nothing on screen the hole could refer to —
+     it would just look like a broken bar. Main-contract-only is already the module's "as if the
+     variations were never instructed" view (see _mainOnlyShiftOf and _unsplitFin, which pull every
+     affected row back), so closing the gap is the same rule applied to the new single-line model
+     rather than a new exception.
+     Blended and Change-orders both keep the gap: in both, the change order is on screen. */
+  function _coGapsOf(r) {
+    return _mainOnlyUnsplit() ? [] : _coGapsRaw(r);
+  }
+  // The gap in words, for the bar tooltip and the Dur column: a hole in a bar with no explanation
+  // is indistinguishable from a rendering fault.
+  function _coGapNote(r) {
+    var gs = _coGapsOf(r); if (!gs.length) return '';
+    return '\nSuspended ' + gs.map(function (g) {
+      return Fmt.date(dstr(g.s)) + ' – ' + Fmt.date(dstr(g.e)) + ' for ' + (g.ref || g.id || 'a change order');
+    }).join('; ');
+  }
   function _barTip(r) {
     // ⚠️ The amber ring on a bar has to be explainable without hunting for a legend — this is
     // where a planner hovers to find out what a mark means. The CO reference rides along because a
@@ -17970,7 +18144,7 @@
     var co = isChangeOrder(r) ? ('\nChange Order' + (coRefOf(r) ? ' · ' + coRefOf(r) : '')) : '';
     var pk = packageOf(r) ? ('\nPackage: ' + packageLabel(packageOf(r))) : '';
     var sd = r.start_date ? Fmt.date(r.start_date) : '—', fd = r.end_date ? Fmt.date(r.end_date) : '—';
-    return esc((r.activity_id ? r.activity_id + ' · ' : '') + (r.activity_name || '') + '\n' + (r.status || '') + (r.percent_complete != null ? ' · ' + r.percent_complete + '%' : '') + '\nStart ' + sd + '  Finish ' + fd + (r._float != null ? '  Float ' + r._float + 'd' : '') + co + pk);
+    return esc((r.activity_id ? r.activity_id + ' · ' : '') + (r.activity_name || '') + '\n' + (r.status || '') + (r.percent_complete != null ? ' · ' + r.percent_complete + '%' : '') + '\nStart ' + sd + '  Finish ' + fd + (r._float != null ? '  Float ' + r._float + 'd' : '') + co + pk + _coGapNote(r));
   }
   // ⚠️ The label now carries % COMPLETE. Owner: "how should the viewers know what is the actual
   // progress per activity — that is the main weakness of the gantt view right now." They were right:
@@ -18415,6 +18589,10 @@
 
   function doRender() {
     if (_editing) { _pendingWin = true; return; }
+    // Rebuilt once per frame rather than cached across renders: the change orders that punch the
+    // gaps are ordinary rows, so an edit, a drag or a reload can move one, and a stale map would
+    // draw a hole where no change order is any more.
+    _clearCoGapMemo();
     // The stacking panel is derived from the same filtered rows as the grid, so it repaints with it.
     if (vstackMode) renderVStack();   // defer full repaint while an inline editor is open
     // Safety net: scheduleRender()/doRender() is the single choke point every
@@ -19261,7 +19439,16 @@
     }
     // ⚠️ Composes with everything else on the bar rather than replacing it: a change order can be
     // critical, categorised (LSM colour) and spotlighted all at once, and each of those still reads.
-    out += '<div class="ps-bar task' + crit + _hlCls(r) + _scopeDimCls(r) + (isChangeOrder(r) ? ' ps-cobar' : '') + '" data-id="' + r.id + '" title="' + _barTip(r) + '" style="left:' + x2 + 'px;width:' + w2 + 'px;top:' + barTop + 'px;height:' + barH + 'px;' + barBg + '"><div class="ps-bar-fill" style="width:' + pct + '%;' + fillStyle + '"></div><div class="ps-handle l"></div><div class="ps-handle r"></div></div>';
+    // The suspended windows, in bar-local pixels (the bar's own left edge is `s`). A notch that
+    // would touch either edge is dropped rather than drawn: it would read as a shortened bar, not
+    // as an interruption, and the piece it was supposed to leave behind does not exist.
+    var _cuts = '';
+    _coGapsOf(r).forEach(function (g) {
+      var gx = dayDiff(s, g.s) * dayw, gw = Math.max((dayDiff(g.s, g.e) + 1) * dayw, 1);
+      if (gx <= 0 || gx + gw >= w2) return;
+      _cuts += '<div class="ps-bar-cut" style="left:' + gx + 'px;width:' + gw + 'px;"></div>';
+    });
+    out += '<div class="ps-bar task' + crit + _hlCls(r) + _scopeDimCls(r) + (isChangeOrder(r) ? ' ps-cobar' : '') + '" data-id="' + r.id + '" title="' + _barTip(r) + '" style="left:' + x2 + 'px;width:' + w2 + 'px;top:' + barTop + 'px;height:' + barH + 'px;' + barBg + '"><div class="ps-bar-fill" style="width:' + pct + '%;' + fillStyle + '"></div>' + _cuts + '<div class="ps-handle l"></div><div class="ps-handle r"></div></div>';
     if (showLbl && lbl) out += '<div class="ps-bar-lbl" style="left:' + (x2 + w2 + 6) + 'px;top:' + (barTop + Math.round(barH / 2) - 7) + 'px;">' + esc(lbl) + '</div>';
     return out;
   }
@@ -24602,69 +24789,60 @@
     for (var n = 2; n < 999; n++) if (!taken[cand + '-' + n]) return cand + '-' + n;
     return cand + '-' + Date.now();
   }
-  // THE WHOLE EDIT, as data. Returns { hostPatch, coRow, segRow, renumber, repoint } — nothing is
-  // written here, so the arithmetic and the relationship rewiring can be tested without a database.
-  // ⚠️ REWIRING IS THE PART THAT MATTERS. Whatever followed the host must now follow the host's
-  // REMAINDER, or the successor would start while the second half of the work is still going —
-  // silently, and looking perfectly normal on screen.
-  //   · the host keeps its own predecessors (it still starts when it always did)
-  //   · the CO follows the host                    (FS)
-  //   · the remainder follows the CO               (FS)
-  //   · everything that followed the host now follows the remainder, KEEPING its type and lag
+  // THE WHOLE EDIT, as data. Returns { hostPatch, coRow } — nothing is written here, so the
+  // arithmetic can be tested without a database.
+  //
+  // ⚠️⚠️ ONE LINE ITEM, BY REQUEST. Owner 2026-09-07: *"recently we have a system wherein if a
+  // change order activity is inserted between a main contract activity a separate line of the main
+  // contract activity is generated. Now i want to retain the single line-item for the main contract
+  // activity."* So the host is no longer cut in two. It keeps its id, its name, its start and every
+  // one of its own days, and its FINISH MOVES OUT by the change order's duration — the same time
+  // impact the two-row model produced, now carried by one bar. The change order is the only row
+  // created.
+  //   · the host keeps its own predecessors AND its own successors. Because the row that followed
+  //     it is still the row that follows it, THERE IS NOTHING TO RE-POINT. The old model had to send
+  //     every successor to a continuation row or it would start while the second half of the work
+  //     was still going; that whole failure mode leaves with the second row.
+  //   · the CO is linked SS+<days worked before the interruption>, so it sits INSIDE the host's bar
+  //     at the point the work actually stops.
+  //   · the CO stays its own line item, with its own scope_type and ref — it is real scope.
+  // ⚠️ duration_days is written to MATCH the new span (own days + the change order's), because the
+  // scheduling engine derives a finish from a duration and would otherwise pull the bar back to the
+  // old date the next time anything recalculates.
+  // ⚠️ THE HONEST COST of one line: the date-span-weighted roll-ups (_vsPct and friends weight by
+  // dayDiff(start,end)+1) now see the host spanning the change order's days too, so that window is
+  // counted in both rows. Two rows tiled the window exactly and did not. That is the trade for a
+  // single line item, and it was the owner's call; if it ever matters, weight by duration_days,
+  // which is still the host's own work plus the gap and is written consistently here.
   function splitBuild(host, plan, co) {
-    var grp = host.split_group || ('SG-' + (host.activity_id || host.id) + '-' + rows.length);
-    var seq = host.split_seq || 1;
     var coId = splitFreeId(co.ref ? String(co.ref).trim() : ((host.activity_id || 'CO') + '-CO'));
-    var segId = splitFreeId((host.activity_id || 'A') + '-P' + (seq + 1));
-    // The remainder is the SAME line item: same name, same WBS, same trade, same location, same
-    // scope. Only its dates, its id and its position in the group differ.
-    var segRow = {
-      activity_id: segId, activity_name: host.activity_name, activity_type: 'Task',
-      status: 'Not Started', percent_complete: 0,
-      start_date: dstr(plan.seg2.start), end_date: dstr(plan.seg2.end), duration_days: plan.seg2.dur,
-      predecessors: coId, wbs: host.wbs || null, wbs_node_id: host.wbs_node_id || null,
-      work_type: host.work_type || null, location: host.location || null,
-      phase: host.phase || null, scope_type: host.scope_type || null,
-      change_order_ref: host.change_order_ref || null,
-      activity_codes: host.activity_codes || {},
-      split_group: grp, split_seq: seq + 1
-    };
+    var lag = plan.seg1.dur;                          // days the host works before the interruption
+    var own = plan.seg1.dur + plan.seg2.dur;          // the host's OWN days - unchanged by the variation
     var coRow = {
       activity_id: coId, activity_name: co.name || 'Change order', activity_type: 'Task',
       status: 'Not Started', percent_complete: 0,
       start_date: dstr(plan.co.start), end_date: dstr(plan.co.end), duration_days: plan.co.dur,
-      predecessors: host.activity_id || null, wbs: host.wbs || null, wbs_node_id: host.wbs_node_id || null,
+      // ⚠️ SS + the days already worked, NOT an FS from the host. Under the two-row model the host
+      // was truncated at the cut, so "after the host" was true; with one uncut line an FS link would
+      // claim the variation starts after the WHOLE activity finishes - false, and it would slide the
+      // change order to the wrong end of the bar the next time anything recalculates.
+      predecessors: host.activity_id ? (String(host.activity_id) + ' SS+' + lag) : null,
+      wbs: host.wbs || null, wbs_node_id: host.wbs_node_id || null,
       work_type: host.work_type || null, location: host.location || null,
       phase: host.phase || 'construction',
       scope_type: 'change_order', change_order_ref: co.ref ? String(co.ref).trim() : null
-      // ⚠️ No split_group. The CO is its own line item that happens to sit in the gap — it is not
-      // part of the host's work, and folding it into the group would report its days as the host's.
+      // No split_group. The change order is its own line item that happens to sit in the gap, and
+      // folding it into the host would report its days as main-contract work.
     };
-    // Successors of the host, excluding the two rows being created.
-    var repoint = [];
-    if (host.activity_id) {
-      rows.forEach(function (r) {
-        if (r.id === host.id || isWbs(r) || !r.predecessors) return;
-        if (_predTokens(r.predecessors).some(function (t) { return t.split(/\s+/)[0] === String(host.activity_id); })) {
-          repoint.push({ id: r.id, predecessors: _repointPred(r.predecessors, String(host.activity_id), segId) });
-        }
-      });
-    }
     return {
-      hostPatch: { end_date: dstr(plan.seg1.end), duration_days: plan.seg1.dur, split_group: grp, split_seq: seq },
-      coRow: coRow, segRow: segRow,
-      renumber: splitRenumber(splitSegsOf(host.split_group), seq),
-      repoint: repoint
+      hostPatch: { end_date: dstr(plan.seg2.end), duration_days: own + plan.co.dur },
+      coRow: coRow,
+      // Kept as empty/null so nothing downstream has to learn a new shape: there is no second half
+      // to create, no group to renumber and - the point - nothing to re-point.
+      segRow: null, renumber: [], repoint: []
     };
   }
-  function splitRenumber(segs, afterSeq) {
-    var out = [];
-    segs.forEach(function (r) {
-      var q = r.split_seq || 0;
-      if (q > afterSeq) out.push({ id: r.id, split_seq: q + 1 });
-    });
-    return out;
-  }
+
   // Swap one predecessor's Activity ID for another INSIDE a predecessor string, keeping that entry's
   // relationship type and lag — re-pointing the edge, not replacing it with a default FS.
   function _repointPred(str, fromId, toId) {
@@ -24686,7 +24864,7 @@
     var m = UI.modal(
       '<h3 style="margin:0 0 4px;font-size:15px;">Insert a change order into “' + esc(host.activity_name || host.activity_id || '') + '”</h3>' +
       '<p style="margin:0 0 12px;font-size:12px;color:var(--pd-muted);">' +
-        'This activity keeps all ' + (dayDiff(hs, he) + 1) + ' of its own days. Its remaining work moves after the change order, so the line item finishes later — the variation\'s time impact.' +
+        'This stays ONE line item — one row, one Activity ID. Its BAR is drawn in two pieces with the change order in the gap between them, it keeps all ' + (dayDiff(hs, he) + 1) + ' of its own days, and it finishes later by the change order\'s duration — the variation\'s time impact.' +
       '</p>' +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">' +
         '<label class="pd-label" style="grid-column:1/-1;">Work stops on<input class="pd-input" type="date" id="ps-sp-date" value="' + esc(dstr(mid)) + '"></label>' +
@@ -24704,10 +24882,11 @@
       if (pl.err) { $('#ps-sp-prev').innerHTML = '<span style="color:var(--pd-red);">' + esc(pl.err) + '</span>'; $('#ps-sp-go').disabled = true; return null; }
       $('#ps-sp-go').disabled = false;
       $('#ps-sp-prev').innerHTML =
-        '<b>part 1</b> ' + esc(Fmt.date(dstr(pl.seg1.start))) + ' → ' + esc(Fmt.date(dstr(pl.seg1.end))) + ' (' + pl.seg1.dur + 'd) · ' +
-        '<b>change order</b> ' + esc(Fmt.date(dstr(pl.co.start))) + ' → ' + esc(Fmt.date(dstr(pl.co.end))) + ' (' + pl.co.dur + 'd) · ' +
-        '<b>part 2</b> ' + esc(Fmt.date(dstr(pl.seg2.start))) + ' → ' + esc(Fmt.date(dstr(pl.seg2.end))) + ' (' + pl.seg2.dur + 'd)' +
-        '<div style="margin-top:3px;">Finishes ' + pl.shift + ' day' + (pl.shift === 1 ? '' : 's') + ' later than now.</div>';
+        '<b>' + esc(host.activity_name || host.activity_id || 'this activity') + '</b> ' +
+        esc(Fmt.date(dstr(pl.seg1.start))) + ' → ' + esc(Fmt.date(dstr(pl.seg2.end))) +
+        ' (one line: ' + (pl.seg1.dur + pl.seg2.dur) + 'd of its own work over ' + (pl.seg1.dur + pl.co.dur + pl.seg2.dur) + 'd) · ' +
+        '<b>change order</b> ' + esc(Fmt.date(dstr(pl.co.start))) + ' → ' + esc(Fmt.date(dstr(pl.co.end))) + ' (' + pl.co.dur + 'd, SS+' + pl.seg1.dur + ')' +
+        '<div style="margin-top:3px;">The bar breaks after ' + pl.seg1.dur + ' day' + (pl.seg1.dur === 1 ? '' : 's') + ' and resumes for its last ' + pl.seg2.dur + ' when the change order ends. Finishes ' + pl.shift + ' day' + (pl.shift === 1 ? '' : 's') + ' later than now — still one row.</div>';
       return pl;
     }
     preview();
@@ -24721,66 +24900,95 @@
   }
   async function applySplit(host, plan, co) {
     var b = splitBuild(host, plan, co);
-    var n = 2 + b.renumber.length + b.repoint.length;
+    var own = plan.seg1.dur + plan.seg2.dur, span = own + plan.co.dur;
     if (!confirm('Insert the change order into “' + (host.activity_name || host.activity_id) + '”?\n\n' +
-      '· this activity finishes ' + plan.seg1.dur + ' day(s) in, then resumes after the change order\n' +
-      '· 2 activities are created (the change order, and the remaining work)\n' +
-      (b.repoint.length ? '· ' + b.repoint.length + ' successor(s) will follow the remaining work instead of this row\n' : '') +
+      '· this activity stays ONE line item; its BAR is drawn in two pieces with the change order in the gap\n' +
+      '· it keeps all ' + own + ' day(s) of its own work and now spans ' + span + ' day(s), finishing ' + Fmt.date(dstr(plan.seg2.end)) + '\n' +
+      '· 1 activity is created: the change order, linked SS+' + plan.seg1.dur + ' so it sits where the work stops\n' +
+      '· its successors are left alone — they still follow this row, which now finishes later\n' +
       '\nThe line item finishes ' + plan.shift + ' day(s) later. Not per-step undoable.')) return;
     showLoading('Inserting change order…');
     var err = null;
     try {
-      var ins = await sb().from(TABLE).insert([
-        Object.assign({ project_id: pid, created_by: UID }, b.coRow),
-        Object.assign({ project_id: pid, created_by: UID }, b.segRow)
-      ]).select();
+      // The change order first, the host second: if the insert fails the host still reads the way it
+      // always did, which is the recoverable order.
+      var ins = await sb().from(TABLE).insert([Object.assign({ project_id: pid, created_by: UID }, b.coRow)]).select();
       if (ins.error) throw ins.error;
       var up = await sb().from(TABLE).update(b.hostPatch).eq('id', host.id);
       if (up.error) throw up.error;
-      for (var i = 0; i < b.renumber.length; i++) {
-        var rn = await sb().from(TABLE).update({ split_seq: b.renumber[i].split_seq }).eq('id', b.renumber[i].id);
-        if (rn.error) throw rn.error;
-      }
-      for (var j = 0; j < b.repoint.length; j++) {
-        var rp = await sb().from(TABLE).update({ predecessors: b.repoint[j].predecessors }).eq('id', b.repoint[j].id);
-        if (rp.error) throw rp.error;
-      }
     } catch (e) { err = (e && e.message) ? e.message : String(e); }
     hideLoading();
     if (err) {
-      // ⚠️ Name the migration when the columns are the problem — this is the same failure mode the
-      // contract-scope columns had, and "could not save" with no cause is what sent the owner
-      // guessing for days.
-      UI.toast(/split_group|split_seq/.test(err)
-        ? 'Could not split: this project\'s database has no split columns. Run migrations/2026-08-21-schedule-split-change-orders.sql in the Supabase SQL editor, then reload.'
-        : 'Could not split: ' + err, 'error');
+      // ⚠️ Name the migration when the columns are the problem — "could not save" with no cause is
+      // what sent the owner guessing for days when the contract-scope columns were missing.
+      UI.toast(/scope_type|change_order_ref|phase/.test(err)
+        ? 'Could not insert the change order: this project\'s database has no contract-scope columns. Run migrations/2026-08-19-schedule-contract-scope.sql in the Supabase SQL editor, then reload.'
+        : 'Could not insert the change order: ' + err, 'error');
       await load(); return;
     }
-    logAudit(null, 'reschedule', { count: n, kind: 'split-change-order' });
+    logAudit(null, 'reschedule', { count: 2, kind: 'insert-change-order-single-line' });
     resetUndo();
-    UI.toast('Change order inserted. “' + (host.activity_name || host.activity_id) + '” now finishes ' + plan.shift + ' day(s) later.', 'success');
+    UI.toast('Change order inserted. “' + (host.activity_name || host.activity_id) + '” stays one line and now finishes ' + plan.shift + ' day(s) later.', 'success');
     await load();
   }
+
   // Undo a split: delete the remaining-work segments, give the host its full duration back, and
   // send its successors back to it. The change orders themselves are LEFT ALONE — they are real
   // scope and deleting them is never implied by "stop splitting the bar".
+  // The change orders that sat in the GAPS of a legacy split group, paired with the day of the
+  // merged bar they start on. A gap is the calendar between one segment's finish and the next
+  // segment's start, which is exactly where applySplit used to put them.
+  function _splitGapCos(segs, barStart) {
+    var out = [];
+    for (var i = 0; i < segs.length - 1; i++) {
+      var ge = pd(segs[i].end_date), gs2 = pd(segs[i + 1].start_date);
+      if (!ge || !gs2) continue;
+      var gapS = addDays(ge, 1), gapE = addDays(gs2, -1);
+      if (gapE < gapS) continue;                       // segments abut: nothing was inserted here
+      rows.forEach(function (co) {
+        if (isWbs(co) || !isChangeOrder(co) || co.split_group === segs[i].split_group) return;
+        var s = pd(co.start_date), e = pd(co.end_date); if (!s || !e) return;
+        if (s > gapE || e < gapS) return;               // no overlap with this gap
+        if (out.some(function (x) { return x.row.id === co.id; })) return;
+        out.push({ row: co, lag: dayDiff(barStart, s) });
+      });
+    }
+    return out;
+  }
+  // Collapse a legacy split group onto the single-line model.
+  // ⚠️ IT NO LONGER GIVES THE TIME IMPACT BACK. The old version re-ended the bar at
+  // start + own days - 1, which quietly deleted the days the variation had cost: a schedule that
+  // was honest about a 3-day change order became a schedule that was not, as a side effect of a
+  // display request. The segments and their gaps tile start..lastEnd exactly, so the merged bar
+  // simply KEEPS the last segment's finish, and its duration is that full span.
+  // ⚠️ AND IT RE-LINKS THE CHANGE ORDERS. Under the old model each CO was an FS successor of the
+  // segment before it. Those segments are about to be deleted, and an FS link is not what draws a
+  // gap - so every change order found in a gap is re-pointed to `<host> SS+<days worked before
+  // it>`, which is both the true relationship and the thing _coGapsOf reads to break the bar. A
+  // merge that produced one unbroken bar with the change orders floating loose beside it would
+  // lose the very thing the owner asked to see.
   async function mergeSplit(hostId) {
     var host = rows.find(function (x) { return x.id === hostId; }); if (!host) return;
     var grp = splitGroupOf(host); if (!grp) { UI.toast('This activity is not split.', 'info'); return; }
     var segs = splitSegsOf(grp); if (segs.length < 2) { UI.toast('This activity is not split.', 'info'); return; }
-    var first = segs[0], rest = segs.slice(1);
-    var totalDur = segs.reduce(function (t, r) { return t + (r.duration_days || 0); }, 0);
-    var fs = pd(first.start_date); if (!fs) { UI.toast('The first part has no start date.', 'warn'); return; }
-    var newEnd = addDays(fs, totalDur - 1);
-    if (!confirm('Merge “' + (first.activity_name || '') + '” back into one bar?\n\n' +
+    var first = segs[0], last = segs[segs.length - 1], rest = segs.slice(1);
+    var fs2 = pd(first.start_date); if (!fs2) { UI.toast('The first part has no start date.', 'warn'); return; }
+    var le = pd(last.end_date); if (!le) { UI.toast('The last part has no finish date.', 'warn'); return; }
+    var ownDur = segs.reduce(function (t, r) { return t + (r.duration_days || 0); }, 0);
+    var span = dayDiff(fs2, le) + 1;
+    var gapCos = _splitGapCos(segs, fs2);
+    if (!confirm('Merge “' + (first.activity_name || '') + '” back into one line item?\n\n' +
       '· ' + rest.length + ' continuation row(s) are deleted\n' +
-      '· the activity becomes ' + totalDur + ' day(s), ending ' + Fmt.date(dstr(newEnd)) + '\n' +
-      '· its change order(s) are KEPT — delete them separately if that is what you want\n\nNot per-step undoable.')) return;
+      '· it becomes ONE row of ' + ownDur + ' own day(s) spanning ' + span + ' day(s) to ' + Fmt.date(dstr(le)) + ' — the finish does NOT move, so the change order time impact is kept\n' +
+      (gapCos.length
+        ? '· ' + gapCos.length + ' change order(s) are re-linked SS into this row, so its bar draws in pieces around them\n'
+        : '· no change order was found in the gap(s), so the bar will draw unbroken\n') +
+      '· the change order(s) themselves are KEPT — delete them separately if that is what you want\n\nNot per-step undoable.')) return;
     showLoading('Merging…');
     var err = null;
     try {
       // Successors of the LAST segment come back to the surviving row before it disappears.
-      var lastId = String(segs[segs.length - 1].activity_id || '');
+      var lastId = String(last.activity_id || '');
       if (lastId && first.activity_id) {
         for (var i = 0; i < rows.length; i++) {
           var r = rows[i];
@@ -24790,18 +24998,28 @@
           if (rp.error) throw rp.error;
         }
       }
+      // Re-link the gap change orders BEFORE the segments go, while their old predecessors still
+      // resolve to something and a failure here leaves the group intact and re-mergeable.
+      if (first.activity_id) {
+        for (var c = 0; c < gapCos.length; c++) {
+          var g = gapCos[c];
+          var rl = await sb().from(TABLE).update({ predecessors: String(first.activity_id) + ' SS+' + g.lag }).eq('id', g.row.id);
+          if (rl.error) throw rl.error;
+        }
+      }
       var del = await sb().from(TABLE).delete().in('id', rest.map(function (r) { return r.id; }));
       if (del.error) throw del.error;
-      var up = await sb().from(TABLE).update({ end_date: dstr(newEnd), duration_days: totalDur, split_group: null, split_seq: null }).eq('id', first.id);
+      var up = await sb().from(TABLE).update({ end_date: dstr(le), duration_days: span, split_group: null, split_seq: null }).eq('id', first.id);
       if (up.error) throw up.error;
     } catch (e) { err = (e && e.message) ? e.message : String(e); }
     hideLoading();
     if (err) { UI.toast('Merge failed: ' + err, 'error'); await load(); return; }
-    logAudit(null, 'reschedule', { count: rest.length + 1, kind: 'split-merged' });
+    logAudit(null, 'reschedule', { count: rest.length + 1 + gapCos.length, kind: 'split-merged-single-line' });
     resetUndo();
-    UI.toast('Merged back into one ' + totalDur + '-day activity.', 'success');
+    UI.toast('Merged into one line item' + (gapCos.length ? ', its bar broken over ' + gapCos.length + ' change order(s).' : '.'), 'success');
     await load();
   }
+
   async function offerCoSplice(coRow) {
     if (!coRow || !coRow.activity_id) return;
     var preds = predIds(coRow.predecessors);
@@ -32738,6 +32956,8 @@
   var CostLoading = (function () {
     var cfg = null, step = 0, curPid = null, curUid = null, dirty = false, wired = false, loading = false;
     var selGroup = null;          // the name selected in steps 3 and 4
+    var clCvOpen = null;          // step 4: the cost line expanded to reach its occurrences (its OWN
+                                  // state, so opening a line here never moves step 3's selection)
     var clLevel = null;           // step 4: the level being stacked
     var clScope = {};             // step 4: { <outer level id>: value } — its own, NOT the Gantt stack's
     var clAllTowers = true;       // step 4: every tower side by side, or the pinned one
@@ -32768,6 +32988,26 @@
       { k: 'bell',   t: 'Bell (mid-peak)', d: 'Ramps up, peaks mid-way, ramps down. The usual shape for a trade that builds up a crew and then demobilises.' }
     ];
     function curveOf(g) { var k = g && g.curve; return CURVES.some(function (c) { return c.k === k; }) ? k : 'linear'; }
+    /* ⚠️⚠️ THE SHAPE IS PER OCCURRENCE, NOT ONLY PER COST LINE.
+       Owner 2026-09-07: *"the function of cost loading of the project schedule should allow users
+       to decide what type of distribution that activity has over the ff months. (e.g. back loaded,
+       bell, etc.)"*
+       Step 4 already chose a shape and already applied it per occurrence across that occurrence's
+       own dates — but ONE shape for the whole cost line. That was tolerable while a cost line was
+       one activity name; it stopped being tolerable the moment a line could be a WBS BRANCH
+       covering twenty zones, because a substructure pour and a roof-level pour of the same bill
+       item do not spend the same way.
+       So the line's curve is the DEFAULT and an occurrence may override it. Stored per instance
+       key (the activity_id — see instKey: a uuid would reset itself on the next re-import).
+       ⚠️ An override is only ever an override: clearing it returns the occurrence to the line, and
+       a line-level change still moves every occurrence that has not been overridden. Storing a
+       copy of the line's curve on every instance would have frozen them all against the line. */
+    function icurveOf(g, r) {
+      var m = g && g.icurve, k = m && m[instKey(r)];
+      return CURVES.some(function (c) { return c.k === k; }) ? k : null;
+    }
+    function curveFor(g, r) { return icurveOf(g, r) || curveOf(g); }
+    function icurveCount(g) { var m = g && g.icurve; return m ? Object.keys(m).filter(function (k) { return !!m[k]; }).length : 0; }
     function curveLabel(k) { for (var i = 0; i < CURVES.length; i++) if (CURVES[i].k === k) return CURVES[i].t; return 'Linear'; }
     // A 64x22 sparkline of the curve's own DENSITY (its per-period spend), drawn from curveCdf so
     // the picture cannot drift from the arithmetic that spreads the money.
@@ -32794,13 +33034,14 @@
       gs.forEach(function (g) {
         if (onlyName && g.name !== onlyName) return;
         if (g.total == null) return;
-        var k = curveOf(g);
         distribute(g).forEach(function (d) {
           if (d.amount == null) return;
           total += d.amount;
           var st = pd(d.r.start_date), en = pd(d.r.end_date) || st;
           if (!st) { undated += d.amount; return; }
-          spreadCurveAdd(arr, M, d.amount, st, en, k);
+          // The preview must read the SAME shape Apply will write, or the S-curve on screen is not
+          // the S-curve the schedule gets.
+          spreadCurveAdd(arr, M, d.amount, st, en, curveFor(g, d.r));
         });
       });
       return { M: M, months: arr, total: r2(total), undated: r2(undated) };
@@ -32851,7 +33092,112 @@
       var a = String(r.activity_id || '').trim();
       return a || ('~' + String(r.wbs || '') + '|' + String(r.activity_name || '').trim());
     }
-    function nameOf(r) { return String(r.activity_name || '').trim() || '— Unnamed activity —'; }
+    /* ⚠️⚠️ WHAT IDENTIFIES A COST LINE, AND WHY IT HAD TO BECOME A CHOICE.
+       Owner 2026-09-07: *"currently it is designed for project schedules whose lowest level of
+       details are Activities. However what will happen if the project schedule is structured,
+       wherein zones are the lowest level of details… my intent is to cost load based on the
+       activities, similar to a BOQ. (e.g. rebar is xxx amount, formworks is yyy amount) not per
+       zone… users then assign the cost to the WBS (activity) and then the ff steps remain."*
+
+       The exercise was already right — group by NAME so "Formworks" is priced once and step 3
+       splits it across the places it occurs. What was wrong is the assumption that the LEAF ROW
+       carries the work's name. On a schedule built the other way round the leaves are *Zone 1*,
+       *Zone 2*, and the BOQ line (*Rebar Works*) is the WBS NODE above them — so step 1 enlisted
+       zone names and asked the planner to price a zone, which is not a bill of quantities.
+
+       So the cost line's identity is now a BASIS, and everything downstream is untouched because
+       it never cared: assign, distribute (equally or by a typed percentage), the time curve, apply
+       and review all key off the group and its instances, whatever those turn out to be.
+         · 'activity' — the leaf's own name. Today's behaviour, byte for byte.
+         · 'wbs'      — the nearest WBS ancestor that names WORK rather than a place. The
+                        instances are then the zone leaves under it, so "divided equally OR a
+                        percentage per zone" is the step-3 machinery that already exists.
+       ⚠️ Detected, not assumed: see detectBasis(). And once the planner chooses, the detection
+       never overrides them again (`basisChosen`) — a screen that keeps re-deciding what you are
+       pricing is worse than one that guesses wrong once. */
+    function basisOf() { return (cfg && cfg.basis === 'wbs') ? 'wbs' : 'activity'; }
+    var BASES = [
+      { k: 'activity', t: 'Activity name', d: 'The leaf rows are the work — <i>Rebar Works</i>, <i>Formworks</i>. Price each name once.' },
+      { k: 'wbs', t: 'WBS branch name', d: 'The leaf rows are places — <i>Zone 1</i>, <i>Zone 2</i>. Price the WBS branch above them and split it down.' }
+    ];
+    // Every location VALUE used anywhere in the project, lowercased. This is the project's own
+    // answer to "is this string a place" — no new vocabulary, and it is right even for a house
+    // naming scheme no term list would have guessed.
+    var _clPlaceMemo = null, _clPlaceKey = null;
+    function placeNames() {
+      var key = rows.length + '|' + (LOC_LEVELS || []).length;
+      if (_clPlaceMemo && _clPlaceKey === key) return _clPlaceMemo;
+      var out = {};
+      (LOC_LEVELS || []).forEach(function (l) {
+        rows.forEach(function (r) {
+          var v = String(locValOf(r, l.id) || '').trim();
+          if (v) out[v.toLowerCase()] = 1;
+        });
+      });
+      _clPlaceKey = key; _clPlaceMemo = out;
+      return out;
+    }
+    // ⚠️ A SECOND, INDEPENDENT SIGNAL, because the first one needs `location` to be populated and on
+    // a freshly imported schedule it often is not — which is exactly when the planner opens this
+    // tab. A leaf literally called "Zone 3" is a place whether or not the location match has run.
+    var CL_PLACE_RE = /^(zone|unit|level|floor|storey|story|basement|bldg|building|tower|block|phase|area|section|pod|wing)\b|\b(zone|unit|floor|level)\s*[-#]?\s*\d/i;
+    function isPlaceName(s) {
+      var t = String(s || '').trim(); if (!t) return false;
+      return !!placeNames()[t.toLowerCase()] || CL_PLACE_RE.test(t);
+    }
+    // WBS code -> that node's name, from the schedule's own WBS rows.
+    var _clWbsMemo = null, _clWbsKey = null;
+    function wbsNameByCode() {
+      var key = rows.length;
+      if (_clWbsMemo && _clWbsKey === key) return _clWbsMemo;
+      var m = {};
+      rows.forEach(function (r) { if (isWbs(r) && r.wbs) m[String(r.wbs)] = String(r.activity_name || '').trim(); });
+      _clWbsKey = key; _clWbsMemo = m;
+      return m;
+    }
+    // The BOQ line for a leaf under the 'wbs' basis: walk its WBS code from the DEEPEST segment
+    // outwards and take the first ancestor that names work. Deepest-first because that is the most
+    // specific true answer — *Rebar Works* under *Structural Works* is the cost line, not the trade
+    // heading above it. Zone-named ancestors are stepped over, which is the whole point.
+    function wbsLineOf(r) {
+      var code = String((r && r.wbs) || '').trim(); if (!code) return '';
+      var map = wbsNameByCode(), segs = code.split('.');
+      for (var i = segs.length; i >= 1; i--) {
+        var nm = map[segs.slice(0, i).join('.')];
+        // ⚠️ A PHASE is not work either, and it is the ancestor everything shares. Measured: a leaf
+        // filed directly on the Execution Phase root walked all the way up and became a cost line
+        // called "Execution Phase" — one line holding the whole project, which is worse than no
+        // answer. Skipped, so such a leaf falls back to its own name and stays visible.
+        if (nm && !isPlaceName(nm) && !phaseFromName(nm)) return nm;
+      }
+      return '';
+    }
+    // Which basis this schedule looks like it wants. Reported with its own evidence, never applied
+    // silently — step 1 shows the count it counted.
+    function detectBasis() {
+      var sc = scopeInfo(), tot = 0, place = 0, lined = 0;
+      sc.rows.forEach(function (r) {
+        var nm = String(r.activity_name || '').trim(); if (!nm) return;
+        tot++;
+        if (isPlaceName(nm)) place++;
+        if (wbsLineOf(r)) lined++;
+      });
+      // Both conditions, deliberately: leaves that read as places AND a work-naming branch above
+      // them to price instead. Place-named leaves with no such branch would leave the planner a
+      // basis with nothing in it.
+      var suggest = (tot >= 5 && place / tot >= 0.6 && lined / tot >= 0.6) ? 'wbs' : 'activity';
+      return { total: tot, place: place, lined: lined, suggest: suggest };
+    }
+    function nameOf(r) {
+      if (basisOf() === 'wbs') {
+        var w = wbsLineOf(r);
+        // ⚠️ Falls back to the leaf's own name rather than dropping the row: an activity with no
+        // work-naming ancestor still has cost, and silently excluding it would make the project
+        // total quietly wrong. It shows up as its own cost line, which is visible and fixable.
+        if (w) return w;
+      }
+      return String(r.activity_name || '').trim() || '— Unnamed activity —';
+    }
     function buildGroups() {
       var sc = scopeInfo(), by = {}, order = [];
       sc.rows.forEach(function (r) {
@@ -32865,6 +33211,7 @@
         g.mode = (c && c.mode === 'pct') ? 'pct' : 'equal';
         g.curve = curveOf(c);
         g.pct = (c && c.pct) || {};
+        g.icurve = (c && c.icurve) || {};
         g.insts.sort(function (a, b) { return String(a.wbs || '').localeCompare(String(b.wbs || ''), undefined, { numeric: true }) || cmpGroupName(a.activity_id || '', b.activity_id || ''); });
         return g;
       });
@@ -32983,6 +33330,30 @@
 
     // ---- Persistence ------------------------------------------------------------------------
     function ensureCfg() { if (!cfg) cfg = { groups: {} }; if (!cfg.groups) cfg.groups = {}; return cfg; }
+    // Seed the basis from detection ONCE, and only when the planner has never chosen. Called after
+    // load() and whenever step 1 renders, because a project's rows arrive after the config does.
+    function seedBasis() {
+      var c = ensureCfg();
+      if (c.basisChosen) return;
+      // ⚠️ NO markDirty(). This runs from a render, and a render that reports unsaved changes
+      // teaches the planner to ignore that indicator. The detection simply re-runs each session
+      // until the planner picks a basis explicitly, which is when it becomes their decision to
+      // save.
+      var d = detectBasis();
+      if (d.suggest !== basisOf()) c.basis = d.suggest;
+    }
+    function setBasis(k) {
+      var c = ensureCfg();
+      if (basisOf() === k) return;
+      // ⚠️ The priced totals are keyed by cost-line NAME, and the names change wholesale with the
+      // basis — so what was priced under the old basis is orphaned, not silently re-attached to a
+      // line that happens to share a name. Said out loud, with the count, before anything moves.
+      var priced = Object.keys(c.groups || {}).filter(function (k2) { return c.groups[k2] && c.groups[k2].total != null; });
+      if (priced.length && !confirm('Switch what is being priced to \u201c' + (k === 'wbs' ? 'WBS branch name' : 'Activity name') + '\u201d?\n\n' +
+        priced.length + ' cost line(s) already carry a total. The cost lines are named by the basis, so those figures will no longer match any line and will read as unpriced.\n\n' +
+        'Nothing is written to the schedule until you press Apply.')) return;
+      c.basis = k; c.basisChosen = true; selGroup = null; markDirty(); paint();
+    }
     function entry(name) { var c = ensureCfg(); return (c.groups[name] = c.groups[name] || { total: null, mode: 'equal', pct: {}, curve: 'linear' }); }
     async function load() {
       cfg = { groups: {} };
@@ -33052,8 +33423,8 @@
       var writes = [], overwrite = 0;
       t.list.forEach(function (g) {
         if (g.total == null) return;
-        var k = curveOf(g);
         distribute(g).forEach(function (d) {
+          var k = curveFor(g, d.r);
           if (d.amount == null) return;
           var cur = d.r.planned_cost == null ? null : r2(+d.r.planned_cost);
           // ⚠️ Skipped only when the money AND the shape already match. Comparing the amount alone
@@ -33162,11 +33533,11 @@
     // ---- Rendering -------------------------------------------------------------------------------
     var STEPS = [
       { t: 'Enlist activities', short: 'What is being priced',
-        d: 'Every activity under the <b>execution phase</b>, grouped by name with how many times it occurs. One cost line per name — "Formworks" is priced once, not the 40 times it is programmed. <b>Rename here and the schedule follows.</b>' },
+        d: 'Every activity under the <b>execution phase</b>, grouped into one cost line each — like a bill of quantities, where <i>Formworks</i> is priced once and not the 40 times it is programmed. <b>Choose what names a cost line:</b> the leaf activity, or the <b>WBS branch</b> above it when the leaf rows are zones. Detected for you, and changeable.' },
       { t: 'Assign cost', short: 'One total per name',
         d: 'One figure per activity name — the cost of that work <b>across the whole project</b>. Step 3 splits it across the places it occurs.' },
       { t: 'Distribute', short: 'Split across the sub-WBS',
-        d: 'Split each total across the sub-WBS it occurs in: <b>equally</b>, or by a <b>percentage</b> you set per occurrence. Shares must reach 100% before Apply will write anything.' },
+        d: 'Split each total across the rows it covers — the occurrences of that activity, or the <b>zones under that WBS branch</b>: <b>equally</b>, or by a <b>percentage</b> you set per row. Shares must reach 100% before Apply will write anything.' },
       { t: 'Spread over time', short: 'Linear, front, back or bell',
         d: 'How each occurrence\u2019s money is spent <b>across its own dates</b> \u2014 evenly, front-loaded, back-loaded, or a bell. Step 3 decided <i>where</i> the money goes; this decides <i>when</i>. It is what makes the S-Curve a projection rather than a straight line.' },
       { t: 'Consolidate & review', short: 'See where the money is',
@@ -33215,11 +33586,31 @@
       if (sc.milestones) w.push(sc.milestones + ' milestone(s) are <b>excluded</b> — a zero-duration marker carrying cost would earn its value the day it flips.');
       return w.length ? '<div class="pscl-warn">' + w.join('<br>') + '</div>' : '';
     }
+    // The basis picker, with the evidence that produced the suggestion. A chooser with no reason
+    // beside it is a chooser the planner has to guess at.
+    function basisHTML() {
+      var d = detectBasis(), cur = basisOf();
+      var chips = BASES.map(function (b) {
+        return '<button class="pd-btn' + (cur === b.k ? ' pd-btn-primary' : '') + '" data-basis="' + b.k + '">' + esc(b.t) + '</button>';
+      }).join(' ');
+      var why = d.total
+        ? (d.suggest === 'wbs'
+            ? '<b>' + d.place + ' of ' + d.total + '</b> leaf activities are named for a place (a zone, a level, a unit) rather than for work, and <b>' + d.lined + '</b> of them sit under a WBS branch that names work. On a schedule built that way the bill of quantities line is the <b>branch</b>.'
+            : '<b>' + (d.total - d.place) + ' of ' + d.total + '</b> leaf activities are named for work, so the leaf row is the cost line.')
+        : 'No leaf activities to look at yet.';
+      return '<div class="pscl-phase"><div style="padding:10px 12px 0;"><b>What is being priced</b> &nbsp;' + chips + '</div>' +
+        '<p class="pscl-note">' + esc(BASES.filter(function (b) { return b.k === cur; })[0].t) + ' — ' + BASES.filter(function (b) { return b.k === cur; })[0].d + '</p>' +
+        '<p class="pscl-note">Detected: <b>' + esc(BASES.filter(function (b) { return b.k === d.suggest; })[0].t) + '</b>. ' + why + '</p>' +
+        (cur === 'wbs' ? '<p class="pscl-note">Step 3 then splits each branch total across the leaf rows under it — <b>equally</b>, or by a <b>percentage you set per zone</b>.</p>' : '') +
+        '</div>';
+    }
     function step1HTML(t) {
-      if (!t.groups) return panelWrap(0, '<div class="sbld-empty">No activities to load cost onto yet.</div>');
-      return panelWrap(0, scopeWarnHTML(t.list._scope) + kpisHTML(t) +
+      seedBasis();
+      if (!t.groups) return panelWrap(0, basisHTML() + '<div class="sbld-empty">No activities to load cost onto yet.</div>');
+      var wbsBasis = basisOf() === 'wbs';
+      return panelWrap(0, scopeWarnHTML(t.list._scope) + basisHTML() + kpisHTML(t) +
         '<div class="sbld-tablewrap"><div class="pscl-scroll"><table class="pscl-tbl">' +
-        '<thead><tr><th>Activity name</th><th class="num">Occurrences</th><th class="sub">Sub-WBS it appears under</th><th class="num">Assigned</th><th></th></tr></thead><tbody>' +
+        '<thead><tr><th>' + (wbsBasis ? 'WBS branch (cost line)' : 'Activity name') + '</th><th class="num">' + (wbsBasis ? 'Leaf rows under it' : 'Occurrences') + '</th><th class="sub">Sub-WBS it appears under</th><th class="num">Assigned</th><th></th></tr></thead><tbody>' +
         t.list.map(function (g) {
           var wbss = {}; g.insts.forEach(function (r) { if (r.wbs) wbss[r.wbs] = 1; });
           var codes = Object.keys(wbss);
@@ -33227,7 +33618,14 @@
             '<td class="num"><span class="sbld-tag">' + g.insts.length + '×</span></td>' +
             '<td class="sub">' + esc(codes.slice(0, 4).join(', ')) + (codes.length > 4 ? ' … (' + codes.length + ')' : '') + '</td>' +
             '<td class="num money' + (g.total == null ? ' none' : '') + '">' + (g.total == null ? 'not priced' : money(g.total)) + '</td>' +
-            '<td><button class="pd-btn pd-btn-sm" data-ren="' + esc(g.name) + '">Rename</button></td></tr>';
+            // ⚠️ Rename edits the ACTIVITY NAME on every instance. Under the WBS basis the cost
+            // line is a branch, and renaming it would mean renaming a WBS node — a different
+            // write, on a different table, with different consequences for every other view that
+            // reads that branch. Offered as disabled with the reason rather than silently renaming
+            // the zone rows underneath, which is what it would otherwise have done.
+            '<td>' + (wbsBasis
+              ? '<button class="pd-btn pd-btn-sm" disabled title="This cost line is a WBS branch. Rename it in the WBS Manager — renaming here would rename the leaf rows under it, which are the zones.">Rename</button>'
+              : '<button class="pd-btn pd-btn-sm" data-ren="' + esc(g.name) + '">Rename</button>') + '</td></tr>';
         }).join('') + '</tbody></table></div></div>');
     }
     function step2HTML(t) {
@@ -33304,17 +33702,45 @@
         '<div class="sbld-tablewrap"><div class="pscl-scroll"><table class="pscl-tbl">' +
         '<thead><tr><th>Activity name</th><th class="num">Occurrences</th><th class="num">Total cost</th><th style="width:430px;">Spread over its dates</th></tr></thead><tbody>' +
         t.list.map(function (g) {
-          var cur = curveOf(g);
-          return '<tr><td class="nm">' + esc(g.name) + '</td>' +
-            '<td class="num"><span class="sbld-tag">' + g.insts.length + '\u00d7</span></td>' +
+          var cur = curveOf(g), ov = icurveCount(g), open = (clCvOpen === g.name);
+          var rowsOut = '<tr><td class="nm">' + esc(g.name) +
+            // The override count is on the LINE, because a line whose occurrences disagree with it
+            // must not look like a line that is uniformly what it says.
+            (ov ? ' <span class="sbld-tag" title="' + ov + ' occurrence(s) override this shape">' + ov + ' custom</span>' : '') + '</td>' +
+            '<td class="num"><button class="pd-btn pd-btn-sm" data-cvopen="' + esc(g.name) + '" title="Set the shape for individual occurrences">' + g.insts.length + '\u00d7' + (open ? ' \u25b4' : ' \u25be') + '</button></td>' +
             '<td class="num money' + (g.total == null ? ' none' : '') + '">' + (g.total == null ? 'not priced' : money(g.total)) + '</td>' +
             '<td><div class="pscl-curves">' + CURVES.map(function (c) {
               return '<button class="pscl-curve' + (c.k === cur ? ' on' : '') + '" data-curve="' + esc(g.name) + '" data-k="' + c.k + '" title="' + esc(c.t + ' \u2014 ' + c.d) + '">' +
                 curveSpark(c.k, c.k === cur) + '<span>' + esc(c.t) + '</span></button>';
             }).join('') + '</div></td></tr>';
+          if (!open) return rowsOut;
+          // ⚠️ The per-occurrence rows carry a "Same as the line" option FIRST and selected by
+          // default, so the fallback is visible rather than implied — and so clearing an override
+          // is the same one click that set it.
+          var amts = {}; distribute(g).forEach(function (d) { amts[instKey(d.r)] = d.amount; });
+          rowsOut += g.insts.map(function (r) {
+            var ik = instKey(r), own = icurveOf(g, r), eff = own || cur;
+            // The place, read the way step 3 reads it: the location values, in level order.
+            var where = (LOC_LEVELS || []).map(function (l) { return locValOf(r, l.id); }).filter(Boolean).join(' · ');
+            return '<tr class="pscl-sub"><td class="nm" style="padding-left:22px;">' +
+              '<span class="pscl-note">' + esc(r.activity_id || '') + (where ? ' · ' + esc(where) : '') +
+              (r.start_date ? ' · ' + esc(Fmt.date(r.start_date)) + (r.end_date ? ' \u2192 ' + esc(Fmt.date(r.end_date)) : '') : ' · <b>no dates</b>') +
+              '</span></td>' +
+              '<td class="num"></td>' +
+              '<td class="num money' + (amts[ik] == null ? ' none' : '') + '">' + (amts[ik] == null ? '\u2014' : money(amts[ik])) + '</td>' +
+              '<td><div class="pscl-curves">' +
+                '<button class="pscl-curve' + (own ? '' : ' on') + '" data-icv="' + esc(g.name) + '" data-ik="' + esc(ik) + '" data-k="" title="Follow the cost line (' + esc(curveLabel(cur)) + ')"><span>Same as line</span></button>' +
+                CURVES.map(function (c) {
+                  return '<button class="pscl-curve' + (own === c.k ? ' on' : '') + '" data-icv="' + esc(g.name) + '" data-ik="' + esc(ik) + '" data-k="' + c.k + '" title="' + esc(c.t + ' \u2014 ' + c.d) + '">' +
+                    curveSpark(c.k, own === c.k) + '<span>' + esc(c.t) + '</span></button>';
+                }).join('') +
+              '</div></td></tr>';
+          }).join('');
+          return rowsOut;
         }).join('') + '</tbody></table></div></div>' +
         '<p class="pscl-note" style="margin-top:10px;">The shape is applied <b>per occurrence, across that occurrence\u2019s own dates</b> \u2014 not across the project. ' +
-        'It changes <b>when</b> the money is forecast, never <b>how much</b>: every curve still integrates to the activity\u2019s full total.</p>');
+        'It changes <b>when</b> the money is forecast, never <b>how much</b>: every curve still integrates to the activity\u2019s full total. ' +
+        'Press the <b>' + '\u00d7' + ' count</b> to open a line and give an individual occurrence its own shape \u2014 a substructure pour and a roof-level pour of the same bill item rarely spend alike.</p>');
     }
     function step5HTML(t) {
       if (!t.priced) return panelWrap(4, '<div class="sbld-empty">Assign a cost in step 2 first — there is nothing to review yet.</div>');
@@ -33397,6 +33823,24 @@
         b.onclick = function () { step = +b.dataset.go; paint(); var p = document.getElementById('ps-view-costload'); if (p && p.scrollIntoView) p.scrollIntoView({ block: 'start' }); };
       });
       var ap2 = document.getElementById('ps-cl-apply2'); if (ap2) ap2.onclick = applyAll;
+      // step 4 — open a cost line to reach its occurrences, and set one occurrence's shape
+      panel.querySelectorAll('[data-cvopen]').forEach(function (b) {
+        b.onclick = function () { var g = b.dataset.cvopen; clCvOpen = (clCvOpen === g) ? null : g; paint(); };
+      });
+      panel.querySelectorAll('[data-icv]').forEach(function (b) {
+        b.onclick = function () {
+          var e = entry(b.dataset.icv), k = b.dataset.k || '';
+          e.icurve = e.icurve || {};
+          // ⚠️ DELETED, not set to the line's current value: an override storing 'bell' because the
+          // line happened to be bell would stop following the line the next time the line changed.
+          if (!k) delete e.icurve[b.dataset.ik]; else e.icurve[b.dataset.ik] = k;
+          markDirty(); paint();
+        };
+      });
+      // step 1 — what is being priced
+      panel.querySelectorAll('[data-basis]').forEach(function (b) {
+        b.onclick = function () { setBasis(b.dataset.basis); };
+      });
       // step 1 — rename
       panel.querySelectorAll('[data-ren]').forEach(function (b) {
         b.onclick = function () {
@@ -36980,7 +37424,7 @@
       items.push(sep);
       items.push('<button data-act="splitco"><span data-ico="link" data-ico-size="14"></span> Insert change order here…</button>');
       if (splitGroupOf(r) && splitSegsOf(splitGroupOf(r)).length > 1) {
-        items.push('<button data-act="mergeco">Merge split back into one bar…</button>');
+        items.push('<button data-act="mergeco">Merge split back into one line item…</button>');
       }
     }
     // Cell clipboard (Ctrl+C/X/V operate on cells) — shown whenever a cell is active.

@@ -26,13 +26,21 @@
     // ⚠️ Paginates by `id` (the uuid PK) because a keyset cursor MUST be unique and non-null —
     // `sort_order`/`period`/`taken_at` are none of those, so they cannot be the cursor. Rows come
     // back in id order; **re-sort in memory** if you need a display order.
-    async selectAll(table, apply, cols) {
-      var out = [], last = null, PAGE = 1000;
+    // ⚠️⚠️ `key` NAMES THE CURSOR COLUMN, and it exists because assuming `id` broke a real screen
+    // in a way nobody could diagnose. `class_codes` is keyed on `code` (the padded Finance code)
+    // and has NO `id`, so every read of it threw *"column class_codes.id does not exist"*. The
+    // caller caught that and showed "the chart is empty — run the migration", so the owner ran
+    // the migration repeatedly, correctly, and it could never help (2026-09-07). ⚠️ The cursor
+    // must still be UNIQUE and NON-NULL — a primary key. `sort_order`, `period` and `taken_at`
+    // remain unusable for the same reason as before. Rows come back in KEY order; re-sort in
+    // memory for a display order.
+    async selectAll(table, apply, cols, key) {
+      var out = [], last = null, PAGE = 1000, k = key || 'id';
       for (;;) {
         var q = sb().from(table).select(cols || '*');
         if (typeof apply === 'function') q = apply(q);
-        q = q.order('id', { ascending: true }).limit(PAGE);
-        if (last) q = q.gt('id', last);
+        q = q.order(k, { ascending: true }).limit(PAGE);
+        if (last) q = q.gt(k, last);
         var res = await q;
         if (res.error) throw res.error;
         var page = res.data || [];
@@ -40,8 +48,8 @@
         // A short page means the server had nothing more — the only safe terminator, since a full
         // page is ambiguous (it may or may not be the last).
         if (page.length < PAGE) return out;
-        last = page[page.length - 1].id;
-        // Defensive: a table whose `id` is not unique would loop forever otherwise.
+        last = page[page.length - 1][k];
+        // Defensive: a table whose key is not unique would loop forever otherwise.
         if (last == null) return out;
       }
     },

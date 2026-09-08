@@ -23,17 +23,23 @@
 window.CCPackages = (function () {
   'use strict';
   var UID = null, canWrite = false, pid = null, PKG = [], loaded = false;
-  var CONTRACTS = [], onSub = null, onNew = null;   // contracts to join, the BOQ, and the wizard
+  var CONTRACTS = [], onSub = null, onNew = null, onEditRecord = null;   // contracts to join, the BOQ, the wizard, the record form
+  var onBoq = null;                 // mounts the inline BOQ section - see module.js
   var esc = function (x) { return Fmt.esc(String(x == null ? '' : x)); };
   function host() { return document.getElementById('cc-view'); }
 
   function init(deps) { UID = deps.uid; canWrite = !!deps.canWrite; }
   function reset() { loaded = false; PKG = []; }
-  async function show(projectId, contracts, openSub, openNew) {
+  async function show(projectId, contracts, openSub, openNew, editRecord, mountBoq) {
     pid = projectId;
     CONTRACTS = contracts || [];
     onSub = openSub || null;
     onNew = openNew || null;
+    /* The record form lives in module.js (types, the claim pipeline, the tolerant-column
+       save). This view only needs the way IN to it, so the pencil on a contract row opens
+       the same form the Claims register does rather than a second, thinner copy. */
+    onEditRecord = editRecord || null;
+    onBoq = mountBoq || null;
     await load();
   }
   async function load() {
@@ -66,103 +72,277 @@ window.CCPackages = (function () {
   function contractFor(pkgId) {
     return CONTRACTS.filter(function (r) { return String(r.package_id || '') === String(pkgId); })[0] || null;
   }
-  function money(n) { return n == null ? null : Fmt.moneyShort(n); }
-  function subLine(k) {
-    var c = contractFor(k.id);
-    if (!c) return '<span class="cc-mut">— no contract record yet —</span>';
-    var bits = [];
-    if (c.reference_no) bits.push('<strong>' + esc(c.reference_no) + '</strong>');
-    if (c.counterparty) bits.push(esc(c.counterparty));
-    if (c.date_filed) bits.push('signed ' + esc(Fmt.date(c.date_filed)));
-    /* ⚠️ The CONTRACT's amount is shown when it differs from the package's. They are
-       seeded from one another and then edited apart, and a silent disagreement between
-       the contract value and the package value is exactly the kind of drift that only
-       surfaces in a billing dispute. */
-    if (c.amount != null && k.contract_amount != null && Number(c.amount) !== Number(k.contract_amount)) {
-      bits.push('<span class="cc-warn">⚠ contract says ' + esc(money(c.amount)) + '</span>');
-    }
-    return bits.join(' · ') || '<span class="cc-mut">— contract record has no details —</span>';
+  /* ⚠️ FULL PESOS IN A TABLE CELL, ABBREVIATED ONLY IN A SUMMARY STRIP. `Fmt.moneyShort`
+     turns ₱3,670,000,000 into "₱3.67B", which is the right thing above a table and the
+     wrong thing inside one: a contract amount is a figure that gets typed into a claim, and
+     a column of right-aligned abbreviations cannot be compared or checked. The old records
+     list used moneyShort for the amount itself — so the only place this screen showed the
+     contract value, it showed it rounded to three significant figures. */
+  function money(n) { return n == null ? null : Fmt.money(n); }
+  function moneyShort(n) { return n == null ? null : Fmt.moneyShort(n); }
+
+  /* ==========================================================================
+     THE CONTRACT TAB, REORDERED — records first, lots last (2026-09-07)
+     ==========================================================================
+     Owner: *"Let's just make the page cleaner. Let's just move the packages section at
+     the bottom. And it should be like a table. The UI right now looks garbage. There is
+     a new package and +Add button which are the same let's consolidate."*
+
+     Three separate faults, and they compound:
+
+     1. ⚠️ THE PAGE LED WITH ITS RAREST CASE. Packages came first and, on the ordinary
+        single-lot project, that first screen was a 48px-padded card headlining "No
+        packages" followed by three paragraphs explaining why that is fine. The actual
+        subject of the tab — the contract, ₱3.67B of it — was pushed below the fold and
+        rendered as a `<table>` WITH NO `<thead>` AT ALL: a bold reference, a wrapped
+        description, a name and an amount, with nothing saying which was which. The prose
+        was written to stop planners inventing packages (that history is real and the
+        reasoning is kept below) but it had been left in the position of a headline, so
+        every project was greeted by a disclaimer.
+
+     2. ⚠️ TWO PRIMARY BUTTONS FOR ONE JOB. `New package` sat top-left in brand red
+        beside `Share with Procurement & Engineering`, while the topbar carried `+ Add` —
+        also red, also "add something here". They are consolidated the way the buttons
+        themselves suggest: ONE primary per screen (`+ Add`, the topbar wizard, which is
+        where a contract is recorded) and the package action moved INSIDE the packages
+        card, scoped to the table it acts on. A lot is added where lots are listed.
+        ⚠️ It opens the compact FORM, not the wizard — which is what wizard.js's own
+           note says should happen ("The Contract tab's 'New package' button now opens
+           the compact form, which is the right tool for adding one lot"). It was still
+           calling `onNew('Package')`, i.e. the wizard, whose type step deliberately no
+           longer offers a Package card. The two had drifted apart.
+
+     3. ⚠️ NEITHER TABLE HAD A HEADER STRIP, so nothing on the page said what it was.
+        Both now use the `.cc-dt*` layer ported from the Procurement Dashboard's
+        `.data-table`: a titled card header carrying the row count and that table's own
+        actions, sortable columns, and a footer for the note that used to be a headline.
+
+     WHAT IS DELIBERATELY UNCHANGED: the data, the matching rule (`package_id`, never
+     code or name), the guarded delete, and the ARGUMENT of the notes below. A
+     single-lot contract still needs no package and the screen still says so — as a
+     footnote under the lots table, which is where a footnote goes. */
+
+  /* Sort state, per table. ⚠️ Held on the module rather than in the DOM so a re-render
+     (a save, a package created) does not silently reset the planner's chosen order. */
+  var csort = { key: 'reference_no', dir: 1 };
+  var psort = { key: 'code', dir: 1 };
+
+  function cmp(a, b) {
+    if (typeof a === 'number' && typeof b === 'number') return a - b;
+    return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+  }
+  /* ⚠️ BLANKS SORT LAST IN *BOTH* DIRECTIONS, so the null test sits OUTSIDE the direction
+     multiplier. The first cut had it inside `cmp` and multiplied the result by `st.dir`,
+     which flipped it: sorting contract amount descending put the three lots with NO amount
+     at the TOP of the table, above ₱3.2B. Caught by measuring, not by reading — ascending
+     looked perfect. An empty cell is not the smallest value, it is an absent one, and a
+     column sorted to surface the largest figures must not lead with the unknowns. */
+  function sortBy(list, st, valOf) {
+    return list.slice().sort(function (x, y) {
+      var a = valOf(x, st.key), b = valOf(y, st.key);
+      if (a == null && b == null) return 0;
+      if (a == null) return 1;
+      if (b == null) return -1;
+      return cmp(a, b) * st.dir;
+    });
+  }
+  /* ⚠️ `st` IS REQUIRED and this throws when it is missing rather than defaulting to
+     one of the two sort states. Three of these calls shipped without it in the first cut,
+     and the render harness caught it as `Cannot read properties of undefined (reading
+     'key')` — loudly, which is the point. Defaulting to `csort` would have made the
+     packages table's headers silently drive the CONTRACTS table's order: every header
+     still clickable, every click reordering the wrong table. */
+  function th(label, key, st, cls) {
+    if (!st) throw new Error('th("' + label + '") needs its sort state — csort or psort.');
+    return '<th class="cc-sort' + (cls ? ' ' + cls : '') + (st.key === key ? (st.dir > 0 ? ' asc' : ' desc') : '') +
+      '" data-sort="' + esc(key) + '">' + esc(label) + '</th>';
   }
 
-  /* Contracts carrying no package.
-     ⚠️ THIS USED TO BE A WARNING AND IT WAS WRONG ON BOTH COUNTS — corrected 2026-08-27
-        after the owner hit it on OPW101: *"OPW101 is a one work construction contract
-        without any packages. But this requires me to connect it to a package."*
-        1. It is not required. `package_id` is nullable on contracts_claims, boq_items,
-           project_schedule and wbs_nodes, with no back-fill — 2026-08-25-package-adoption
-           says so outright: *"every existing row keeps package_id NULL, which is [normal]"*.
-        2. The old text claimed *"nothing downstream can file against them"*. False. The
-           schedule, the BOQ, procurement and engineering all file against the PROJECT; a
-           package only NARROWS that. A single-lot contract like OPW101 needs none, and
-           telling a planner otherwise pushes them to invent one — which is how a project
-           code ends up restated as a package.
-     So it warns ONLY when this project actually has packages, where a contract sitting
-     outside all of them really is a gap someone left. */
-  function orphanHTML() {
-    var loose = CONTRACTS.filter(function (r) { return !r.package_id; });
-    if (!loose.length) return '';
+  /* ---- Table 1: the contract records ------------------------------------- */
+  /* ⚠️ EVERY contract record, not just the unlinked ones. The old `orphanHTML` showed
+     only contracts with no `package_id` — so on a project that DID have packages, a
+     contract properly linked to one appeared nowhere on this table, only as a one-line
+     summary inside its package's row. The register's own subject was reachable only as
+     a subtitle of something else. Where a contract belongs to a lot, the lot is a
+     COLUMN. */
+  function contractsHTML() {
+    var list = sortBy(CONTRACTS, csort, function (r, k) {
+      if (k === 'amount') return r.amount == null ? null : Number(r.amount);
+      if (k === 'package') return pkgLabel(r.package_id);
+      return r[k] == null || r[k] === '' ? null : r[k];
+    });
+    var total = CONTRACTS.reduce(function (a, r) { var n = Number(r.amount); return a + (isFinite(n) ? n : 0); }, 0);
     var hasPkgs = PKG.length > 0;
-    return '<div class="pd-card cc-tablecard" style="margin-top:12px;">' +
-      '<h3 class="boq-h3">' + (hasPkgs ? 'Contract records not linked to a package' : 'Contract records') + '</h3>' +
-      '<table class="cc-table"><tbody>' +
-      loose.map(function (r) {
-        return '<tr><td><strong>' + esc(r.reference_no || '(no reference)') + '</strong>' +
-          (r.description ? ' — ' + esc(r.description) : '') + '</td>' +
-          '<td>' + esc(r.counterparty || '') + '</td>' +
-          '<td class="cc-r">' + esc(r.amount == null ? '' : money(r.amount)) + '</td>' +
-          '<td>' + (hasPkgs ? '<span class="boq-kind">no package</span>' : '') + '</td></tr>';
-      }).join('') +
-      '</tbody></table>' +
-      (hasPkgs
-        ? '<p class="cc-hint">⚠️ This project <b>has</b> packages, and these sit outside all of them — so they ' +
-          'are missing from any package-filtered view, though the schedule, BOQ, procurement and engineering ' +
-          'still read them at project level. Open the record and link it to the lot it belongs to.</p>'
-        : '<p class="cc-hint">This project has no packages, so these contracts cover the whole project — which is ' +
-          'the normal shape for a single-lot job. Nothing is missing: the schedule, BOQ, procurement and ' +
-          'engineering all file against the project, and a package only <b>narrows</b> that.</p>') +
+
+    var h = '<div class="pd-card cc-dtcard"><div class="cc-dthead">' +
+      '<h3>Contract records</h3>' +
+      '<span class="cc-dtcount">' + CONTRACTS.length + (CONTRACTS.length === 1 ? ' record' : ' records') +
+        (total ? ' · ' + esc(moneyShort(total)) : '') + '</span>' +
+      '<span class="cc-dtspacer"></span>' +
+      /* ⚠️ THERE IS NO BOQ BUTTON HERE ANY MORE, and its absence is the point. It existed for
+         about a day, to fix the BOQ having no entry point at all while it was still a separate
+         sub-screen you navigated to. Moving the BOQ inline onto this same page made it
+         redundant the same afternoon — owner, 2026-09-07: *"there is also a BOQ button in the
+         contract records which is redundant when we have already moved the BOQ section to the
+         contract page"*. A button that scrolls you a few hundred pixels down the page you are
+         already looking at is noise in a card header that should carry actions, not navigation.
+         ⚠️ `openSub('boq')` still exists in module.js and still switches tab + scrolls, because
+         the contract wizard's BOQ step hands off through it. That is a hand-off from another
+         screen, not a control on this one. */
+      /* ⚠️ The ONLY way to create a first contract lot from this screen, now that the empty
+         Contract lots section is not rendered at all. Writers only, and deliberately quiet: for
+         almost every project the right number of lots is zero, so this is an escape hatch rather
+         than an invitation. Once a lot exists the full section appears below and carries its own
+         `+ Lot`, and this one stops being the only route. */
+      (canWrite && !PKG.length
+        ? '<button class="pd-btn" id="pk-addfirst" title="A contract lot is a division BELOW this project — a lot inside this contract with no project code of its own. If it has its own code it is a separate project.">+ Lot</button>'
+        : '') +
       '</div>';
+
+    if (!CONTRACTS.length) {
+      /* ⚠️ The way in is HERE, at the point of need, rather than only in the topbar —
+         but it is the SAME wizard the topbar opens, not a second path. */
+      h += '<div class="cc-dtnone"><b>No contract record for this project yet.</b><br>' +
+        'The signed contract is what the claims, the BOQ and the billing are all raised against.' +
+        (canWrite ? '<div style="margin-top:12px;"><button class="pd-btn pd-btn-primary" id="pk-newcontract">Record the contract</button></div>' : '') +
+        '</div></div>';
+      return h;
+    }
+
+    h += '<div class="cc-tablewrap"><table class="cc-table"><thead><tr>' +
+      th('Reference', 'reference_no', csort) +
+      th('Description', 'description', csort, 'cc-desc') +
+      th('Counterparty', 'counterparty', csort) +
+      (hasPkgs ? th('Lot', 'package', csort) : '') +
+      th('Signed', 'date_filed', csort, 'cc-nowrap') +
+      th('Contract amount', 'amount', csort, 'cc-r') +
+      (canWrite ? '<th class="cc-actcol"></th>' : '') +
+      '</tr></thead><tbody>';
+
+    list.forEach(function (r) {
+      h += '<tr data-id="' + esc(r.id) + '">' +
+        '<td class="cc-ref">' + esc(r.reference_no || '—') + '</td>' +
+        '<td class="cc-desc"><div class="cc-desc-txt" title="' + esc(r.description || '') + '">' +
+          (r.description ? esc(r.description) : '<span class="cc-mut">(no description)</span>') + '</div>' +
+          /* ⚠️ The contract-vs-package disagreement keeps its warning, moved from the
+             package row to the contract row — it is the contract's figure that is at
+             odds, and this is the table where that figure is read. */
+          (amtWarn(r) ? '<div class="cc-mini cc-warn">' + amtWarn(r) + '</div>' : '') + '</td>' +
+        '<td>' + (r.counterparty ? esc(r.counterparty) : '<span class="cc-mut">—</span>') + '</td>' +
+        (hasPkgs ? '<td>' + (r.package_id
+            ? '<span class="boq-code">' + esc(pkgLabel(r.package_id)) + '</span>'
+            /* ⚠️ NOT a warning pill. 2026-08-27: a contract outside every lot is only a
+               gap because this project has lots at all — and even then the schedule, the
+               BOQ, procurement and engineering all still read it at project level. */
+            : '<span class="cc-badge b-mut">whole project</span>') + '</td>' : '') +
+        '<td class="cc-nowrap">' + (r.date_filed ? esc(Fmt.date(r.date_filed)) : '<span class="cc-mut">— not set —</span>') + '</td>' +
+        '<td class="cc-r">' + (r.amount == null ? '<span class="cc-mut">—</span>' : '<strong>' + esc(money(r.amount)) + '</strong>') + '</td>' +
+        (canWrite ? '<td class="cc-actcol"><button class="pd-btn" data-cedit="' + esc(r.id) + '" title="Edit this contract record">&#9998;</button></td>' : '') +
+        '</tr>';
+    });
+
+    // The roll-up, only where it says something a single row does not.
+    if (CONTRACTS.length > 1) {
+      h += '<tr class="cc-total"><td></td><td class="cc-desc">Total of ' + CONTRACTS.length + ' contract records</td>' +
+        '<td></td>' + (hasPkgs ? '<td></td>' : '') + '<td></td>' +
+        '<td class="cc-r">' + esc(money(total)) + '</td>' + (canWrite ? '<td></td>' : '') + '</tr>';
+    }
+    h += '</tbody></table></div>';
+
+    /* The footnote that used to be the headline. It only fires where it is TRUE: a
+       contract sitting outside the lots of a project that has lots. */
+    var loose = CONTRACTS.filter(function (r) { return !r.package_id; });
+    if (hasPkgs && loose.length) {
+      h += '<div class="cc-dtfoot"><p>⚠️ ' + loose.length + ' of these sit outside every lot, so they are ' +
+        'missing from any lot-filtered view — though the schedule, BOQ, procurement and engineering still read ' +
+        'them at project level. Open one and link it to the lot it belongs to if that is wrong.</p></div>';
+    }
+    return h + '</div>';
   }
 
-  function render() {
-    var h = host(); if (!h) return;
-    var head = '<div class="boq-filters">' +
-      (canWrite ? '<button class="pd-btn pd-btn-primary" id="pk-add">New package</button> ' +
-        '<button class="pd-btn" id="pk-push" title="Mirror these packages into the Procurement (WPM) and Engineering apps so their records can be filed under the same contract lots">Share with Procurement &amp; Engineering</button>' : '') +
+  function pkgLabel(id) {
+    if (!id) return null;
+    var p = PKG.filter(function (x) { return String(x.id) === String(id); })[0];
+    /* ⚠️ A lot that no longer exists reads UNLINKED, never blank. The FK is ON DELETE SET
+       NULL, so "no lot" and "a lot that vanished" must not look alike. */
+    return p ? (p.code || p.name) : 'UNLINKED';
+  }
+  /* ⚠️ The contract's amount and its lot's are seeded from one another and then edited
+     apart, and a silent disagreement between the two is exactly the drift that only
+     surfaces in a billing dispute. */
+  function amtWarn(c) {
+    if (!c.package_id || c.amount == null) return '';
+    var p = PKG.filter(function (x) { return String(x.id) === String(c.package_id); })[0];
+    if (!p || p.contract_amount == null || Number(p.contract_amount) === Number(c.amount)) return '';
+    return '⚠ lot ' + esc(p.code || p.name) + ' says ' + esc(money(p.contract_amount));
+  }
+
+  /* ---- Table 2: the contract lots (packages) ----------------------------- */
+  /* The inline BOQ's shell. The heading is ours so the section is legible before the BOQ
+     has loaded (and if it never does); everything inside #cc-boq-inline belongs to boq.js. */
+  function boqSectionHTML() {
+    return '<div class="cc-sechead" id="cc-boq-head"><h2>Bill of quantities</h2>' +
+      '<span class="cc-sechead-rule"></span></div>' +
+      '<div id="cc-boq-inline"><div class="cc-empty"><p class="cc-mut">Loading the BOQ…</p></div></div>';
+  }
+
+  function packagesHTML() {
+    /* ⚠️⚠️ NO LOTS -> NO SECTION. Owner, 2026-09-07: *"in case the project doesn't have any
+       packages can't we just have this disappear and only appear when the project has
+       packaging"*. It was ~200px of card, empty state and three-sentence footnote explaining, at
+       length, that the correct answer for almost every project is **nothing** — the header itself
+       said "none — the usual case". A screen that spends its most valuable space teaching you
+       about a feature you should not use is worse than one that omits the feature until it
+       applies.
+       ⚠️ THE WAY IN IS NOT LOST, it moves: `+ Lot` now sits in the Contract records head beside
+       BOQ (see contractsHTML), and the contract wizard's package step still creates lots. Deleting
+       the section without leaving a route would have made the first lot uncreatable from this
+       screen. The moment a project HAS a lot, the full section returns exactly as before. */
+    if (!PKG.length) return '';
+
+    var h = '<div class="cc-sechead"><h2>Contract lots</h2><span class="cc-sechead-rule"></span></div>' +
+      '<div class="pd-card cc-dtcard"><div class="cc-dthead">' +
+      '<h3>Packages</h3>' +
+      '<span class="cc-dtcount">' + PKG.length + (PKG.length === 1 ? ' lot' : ' lots') + '</span>' +
+      '<span class="cc-dtspacer"></span>' +
+      (canWrite ? '<button class="pd-btn" id="pk-add">+ Lot</button>' : '') +
+      (canWrite ? '<button class="pd-btn" id="pk-push" title="Mirror these lots into the Procurement (WPM) and Engineering apps so their records can be filed under the same contract lots">Share with Procurement &amp; Engineering</button>' : '') +
       '</div>';
-    if (!PKG.length) {
-      h.innerHTML = head +
-        /* ⚠️ "No packages" IS NOT A DEFICIENCY, and this screen no longer implies it is.
-           It used to headline *"No contract packages yet"* and then hold up
-           "Package 1 — Tower 1 and General Requirements / Package 2 — Towers 2-7" as the
-           model. That example is Avesta — which is TWO PROJECTS (AVR101, AVR102), not two
-           packages — so the empty state was teaching the exact structure the wizard now
-           refuses, on every project that had none. */
-        '<div class="pd-card cc-empty"><h3>No packages — and most projects need none</h3>' +
-        '<p>A project code (<b>' + esc(pid || 'OPW101') + '</b>) already names one contract lot. The schedule, ' +
-        'the BOQ, procurement and engineering all file against the project directly, so a single-work ' +
-        'contract is complete exactly as it is.</p>' +
-        '<p class="cc-hint">Add a package only for a division <b>below</b> this project — a lot inside ' +
-        '<i>this</i> contract with no project code of its own (enabling works vs main works, say). ' +
-        '⚠️ If the division you have in mind already has its own code, it is a <b>separate project</b>: ' +
-        'create it in the projects list, and consolidate the two on the <b>Portfolio Overview</b> under ' +
-        '<b>Group by → Parent project</b>.</p></div>' + orphanHTML();
-      wire(h); return;
-    }
-    var rows = PKG.map(function (k) {
-      /* ⚠️ A package with no finish date reads "— not set —", never blank: the schedule's
-         EOT arithmetic needs it (revised finish = end_date + granted days), so a missing
-         one is a gap to fill, not an empty cell to scroll past. */
-      return '<tr data-pk="' + esc(k.id) + '">' +
-        '<td><strong>' + esc(k.code) + '</strong></td>' +
-        '<td>' + esc(k.name) + '</td>' +
+
+    var list = sortBy(PKG, psort, function (k, key) {
+      if (key === 'contract_amount') return k.contract_amount == null ? null : Number(k.contract_amount);
+      return k[key] == null || k[key] === '' ? null : k[key];
+    });
+
+    h += '<div class="cc-tablewrap"><table class="cc-table"><thead><tr>' +
+      th('Code', 'code', psort) + th('Name', 'name', psort, 'cc-desc') +
+      th('Status', 'status', psort) + th('Start', 'start_date', psort, 'cc-nowrap') +
+      th('Finish', 'end_date', psort, 'cc-nowrap') +
+      th('Contract amount', 'contract_amount', psort, 'cc-r') +
+      '<th>Contract record</th><th>Buys under</th>' +
+      (canWrite ? '<th class="cc-actcol"></th>' : '') +
+      '</tr></thead><tbody>';
+
+    list.forEach(function (k) {
+      var c = contractFor(k.id);
+      h += '<tr data-pk="' + esc(k.id) + '">' +
+        '<td class="cc-ref">' + esc(k.code) + '</td>' +
+        '<td class="cc-desc"><div class="cc-desc-txt">' + esc(k.name) + '</div></td>' +
         /* k-active / k-archived are this status's OWN variants. The first cut borrowed
            k-measured, which is legible but means "measured quantity" everywhere else —
            one class with two meanings is how a vocabulary rots. */
         '<td><span class="boq-kind k-' + esc(k.status === 'archived' ? 'archived' : 'active') + '">' +
           esc(k.status || 'active') + '</span></td>' +
-        '<td>' + (k.start_date ? esc(Fmt.date(k.start_date)) : '<span class="cc-mut">— not set —</span>') + '</td>' +
-        '<td>' + (k.end_date ? esc(Fmt.date(k.end_date)) : '<span class="cc-mut">— not set —</span>') + '</td>' +
-        '<td class="cc-r">' + (k.contract_amount != null ? esc(Fmt.moneyShort(k.contract_amount)) : '<span class="cc-mut">—</span>') + '</td>' +
+        '<td class="cc-nowrap">' + (k.start_date ? esc(Fmt.date(k.start_date)) : '<span class="cc-mut">— not set —</span>') + '</td>' +
+        /* ⚠️ A lot with no finish date reads "— not set —", never blank: the schedule's
+           EOT arithmetic needs it (revised finish = end_date + granted days), so a
+           missing one is a gap to fill, not an empty cell to scroll past. */
+        '<td class="cc-nowrap">' + (k.end_date ? esc(Fmt.date(k.end_date)) : '<span class="cc-mut">— not set —</span>') + '</td>' +
+        '<td class="cc-r">' + (k.contract_amount != null ? esc(money(k.contract_amount)) : '<span class="cc-mut">—</span>') + '</td>' +
+        /* ⚠️ A lot with NO contract record is real (created directly, or before the
+           contract was entered) and must still say so rather than look complete. */
+        '<td>' + (c ? '<span class="cc-badge b-ok">' + esc(c.reference_no || 'recorded') + '</span>'
+                    : '<span class="cc-badge b-warn">none yet</span>') + '</td>' +
         /* The mapping has to be VISIBLE on the list. A lot silently pointing at another
            project's procurement is exactly the kind of thing nobody finds until a buyer
            reports an empty picker. */
@@ -171,28 +351,69 @@ window.CCPackages = (function () {
           : '<span class="cc-mut">this project</span>') + '</td>' +
         (canWrite ? '<td class="cc-actcol"><button class="pd-btn" data-edit="' + esc(k.id) + '">Edit</button></td>' : '') +
         '</tr>';
-    }).join('');
-    h.innerHTML = head +
-      '<div class="pd-card cc-tablecard"><table class="cc-table"><thead><tr>' +
-      '<th>Code</th><th>Name</th><th>Status</th><th>Start</th><th>Finish</th>' +
-      '<th class="cc-r">Contract amount</th><th>Buys under</th>' + (canWrite ? '<th class="cc-actcol"></th>' : '') +
-      '</tr></thead><tbody>' + rows + '</tbody></table>' +
-      '<p class="cc-hint">These are what the schedule files its top-level rows under, what the BOQ is ' +
-      'assigned to, and what procurement and engineering read once shared. ⚠️ <b>Finish</b> is the ' +
-      'contractual completion date the schedule\'s EOT arithmetic revises — a package without one shows ' +
-      'no revised finish and no exposure.</p></div>' + orphanHTML();
-    wire(h);
+    });
+    h += '</tbody></table></div>' +
+      '<div class="cc-dtfoot"><p>These are what the schedule files its top-level rows under, what the BOQ is ' +
+      'assigned to, and what procurement and engineering read once shared. ⚠️ <b>Finish</b> is the contractual ' +
+      'completion date the schedule\'s EOT arithmetic revises — a lot without one shows no revised finish and no ' +
+      'exposure.</p></div></div>';
+    return h;
   }
+
+  function render() {
+    var h = host(); if (!h) return;
+    /* ⚠️⚠️ THE BOQ IS A SECTION OF THIS TAB, NOT A SCREEN YOU LEAVE FOR. Owner, 2026-09-07:
+       *"Can't the BOQ page be relocated in the contracts page?"* — chosen over a fourth
+       top-level tab, which was the alternative on offer. It is emitted as an EMPTY container
+       and filled by module.js, because the BOQ owns six round-trips of its own and this
+       function is re-run on every package edit; re-rendering it here would refetch the whole
+       bill each time somebody renames a lot. */
+    h.innerHTML = contractsHTML() + packagesHTML() + boqSectionHTML();
+    if (window.Icons && Icons.hydrate) Icons.hydrate(h);
+    wire(h);
+    if (onBoq) onBoq();
+  }
+
   function wire(h) {
-    /* ⚠️ NEW GOES THROUGH THE WIZARD, edit keeps the compact form — the same rule the
-       records follow. A raw modal for one kind of new thing and a guided flow for the
-       others is exactly the inconsistency the owner spotted. */
+    /* ⚠️ ONE PRIMARY PER SCREEN. `+ Add` in the topbar opens the wizard (a contract, and
+       its package step defines as many lots as the contract has); `+ Lot` here opens the
+       compact form, which is the right tool for one lot and the same one Edit uses. */
+    /* WARNING BOTH + Lot BUTTONS OPEN THE WIZARD, NOT THE COMPACT FORM. Owner, 2026-09-07:
+       *"when I clicked on it showed the new package window wherein I thought we created the
+       wizard where all additions will go through the wizard"*. They did - this screen was the
+       exception, on the reasoning that a compact form is the right tool for one lot. That
+       reasoning ignored what the wizard KNOWS and the form does not: it refuses a lot that
+       restates an existing project code (the AVR101/AVR102 mistake), it explains what a lot is
+       before asking you to name one, and it gives a Package no details or dates step because
+       those belong to the contract. The bare form asks for a code with none of that, which is
+       how a lot that should have been a separate project gets created.
+       WARNING `edit()` is NOT dead - the pencil on an existing lot still opens it. Creating and
+       editing are different acts here: creation is the one that needs the guard rails. */
     var a = h.querySelector('#pk-add');
     if (a) a.onclick = function () { if (onNew) onNew('Package'); else edit(null); };
-    var bq = h.querySelector('#pk-boq'); if (bq && onSub) bq.onclick = function () { onSub('boq'); };
+    var af = h.querySelector('#pk-addfirst');
+    if (af) af.onclick = function () { if (onNew) onNew('Package'); else edit(null); };
+    var nc = h.querySelector('#pk-newcontract');
+    if (nc) nc.onclick = function () { if (onNew) onNew('Contract'); else edit(null); };
     var p = h.querySelector('#pk-push'); if (p) p.onclick = share;
     h.querySelectorAll('[data-edit]').forEach(function (b) {
       b.onclick = function () { edit(PKG.filter(function (k) { return String(k.id) === b.dataset.edit; })[0]); };
+    });
+    /* Editing a CONTRACT record from this tab. ⚠️ Delegated up to module.js rather than
+       reimplemented — the record form knows about types, the claim pipeline and the
+       tolerant-column save, none of which belongs in the packages view. */
+    h.querySelectorAll('[data-cedit]').forEach(function (b) {
+      b.onclick = function () { if (onEditRecord) onEditRecord(b.dataset.cedit); };
+    });
+    // Sorting. Which table a header belongs to is read off its own table element, so the
+    // two never drive one another's order.
+    h.querySelectorAll('th[data-sort]').forEach(function (t) {
+      t.onclick = function () {
+        var inPkgTable = !!t.closest('table').querySelector('th[data-sort="code"]');
+        var st = inPkgTable ? psort : csort, k = t.dataset.sort;
+        if (st.key === k) st.dir = -st.dir; else { st.key = k; st.dir = 1; }
+        render();
+      };
     });
   }
 

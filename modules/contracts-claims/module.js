@@ -182,7 +182,20 @@ window.ContractsClaims = (function () {
   var sub = null;              // null | 'boq' | 'pmi'
   function subBar() { return document.getElementById('cc-subbar'); }
   function clearSubBar() { var b = subBar(); if (b) b.remove(); }
+  /* ⚠️ 'boq' NO LONGER OPENS AN OVERLAY — it lives in the Contract tab now. Callers that
+     still ask for it (the wizard's hand-off) are sent to the tab and scrolled to the section,
+     so that entry point keeps working without a second BOQ surface existing. PMI is unchanged
+     and still a sub-screen. */
   function openSub(which) {
+    if (which === 'boq') {
+      sub = null;
+      if (view !== 'contract') switchTab('contract'); else render();
+      setTimeout(function () {
+        var t = document.getElementById('cc-boq-head');
+        if (t && t.scrollIntoView) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 60);
+      return;
+    }
     var mod = which === 'boq' ? window.BOQ : window.PMI;
     if (!mod) { UI.toast(which.toUpperCase() + ' did not load.', 'error'); return; }
     sub = which;
@@ -205,6 +218,48 @@ window.ContractsClaims = (function () {
     var b = host && host.querySelector('#cc-open-pmi');
     if (b) b.onclick = function () { openSub('pmi'); };
   }
+  /* ⚠️⚠️ THE INLINE BOQ LOADS WHEN IT IS SCROLLED TO, NOT WHEN THE TAB OPENS. The BOQ is
+     1,200+ lines plus its mapping, allocations and every billing period — six round-trips that
+     the old sub-screen only paid when you chose to open it. Moving it inline would have charged
+     every visit to the Contract tab for a screen most sessions never read, so an
+     IntersectionObserver defers it until the section nears the viewport. The owner asked for
+     nothing to click; this keeps that promise without the bill.
+     ⚠️ `_boqFor` stops a reload on every packages re-render (renaming a lot re-runs that
+     function): once loaded for a project we re-PAINT rather than re-FETCH. Keyed by project id,
+     so switching projects still reloads — a stale bill would show another project's value. */
+  var _boqFor = null, _boqIO = null;
+  function mountBoqInline() {
+    var el = document.getElementById('cc-boq-inline');
+    if (!el || !window.BOQ) return;
+    BOQ.mountTo('cc-boq-inline');
+    if (_boqIO) { _boqIO.disconnect(); _boqIO = null; }
+    if (_boqFor === pid && BOQ.isLoaded && BOQ.isLoaded()) { BOQ.render(); return; }
+    var go = function () {
+      _boqFor = pid;
+      Promise.resolve(BOQ.show(pid, projName())).catch(function (e) {
+        _boqFor = null;
+        try { console.warn('[cc] inline BOQ failed to load', e); } catch (e2) {}
+      });
+    };
+    /* ⚠️⚠️ IF IT IS ALREADY IN VIEW, LOAD NOW rather than wait to be told. An
+       IntersectionObserver only delivers during the rendering steps, and A BACKGROUND TAB DOES
+       NOT RUN THEM. Measured 2026-09-07: the section sat at top:587 in a 948px viewport —
+       comfortably inside the 500px margin — and the callback never fired, because
+       document.visibilityState was 'hidden'. The section stayed on "Loading the BOQ…" forever.
+       ⚠️ This also covers the hidden-tab geometry artefact: when clientWidth is 0 every rect
+       reads 0, which trips this test and loads eagerly. Loading too early is harmless; never
+       loading is not. The observer below then handles the genuine scroll case. */
+    var r0 = el.getBoundingClientRect();
+    if (r0.top < (window.innerHeight || 0) + 500) { go(); return; }
+    if (!window.IntersectionObserver) { go(); return; }
+    _boqIO = new IntersectionObserver(function (entries) {
+      if (entries.some(function (x) { return x.isIntersecting; })) {
+        _boqIO.disconnect(); _boqIO = null; go();
+      }
+    }, { rootMargin: '500px' });   // start a little before it is on screen
+    _boqIO.observe(el);
+  }
+
   function render() {
     var host = document.getElementById('cc-view');
     /* The BOQ tab is a different KIND of screen — the client's contract document
@@ -222,7 +277,9 @@ window.ContractsClaims = (function () {
     if (view === 'contract' && window.CCPackages) {
       document.getElementById('cc-filters').style.display = 'none';
       if (document.getElementById('cc-filttoggle')) document.getElementById('cc-filttoggle').style.display = 'none';
-      CCPackages.show(pid, rows.filter(function (r) { return r.record_type === 'Contract'; }), openSub, openNew);
+      CCPackages.show(pid, rows.filter(function (r) { return r.record_type === 'Contract'; }), openSub, openNew,
+        function (id) { openForm(rows.find(function (r) { return String(r.id) === String(id); })); },
+        mountBoqInline);
       return;
     }
     // The Claim/CO type filter only applies to the claims tab.
@@ -501,6 +558,48 @@ window.ContractsClaims = (function () {
          ⚠️ The importer is opened after `show()` resolves — it reads the current revision
          list to offer "supersede vs new", and opening it against an unloaded module would
          offer neither. */
+      /* ⚠️ The wizard CREATES the draft through boq.js rather than inserting the row itself:
+         the draft/manual defaults, the is_current rule the database enforces and the reload
+         afterwards all live in one place. A second insert path would be a second set of bugs. */
+      createBoqDraft: async function (f) {
+        if (!window.BOQ || !BOQ.createDraft) throw new Error('BOQ did not load.');
+        /* WARNING A NEW BOQ IS A DOCUMENT PLUS ITS FIRST REVISION, in that order. Creating only
+           the revision leaves document_id NULL, which orphans it from the per-document series
+           installed by 2026-09-07-boq-documents.sql and from the contract-value roll-up. */
+        var docId = null;
+        if (f.docName && BOQ.createDocument) {
+          try {
+            var d = await BOQ.createDocument(f.docName, f.divisions || []);
+            docId = d && d.id;
+          } catch (e) {
+            /* WARNING A HALF-APPLIED MIGRATION MUST NOT BLOCK CREATING A BOQ. The READ path
+               already treats a missing boq_documents as "no documents" and falls back to the flat
+               behaviour; this path did not, so pressing Create draft surfaced a raw
+               PGRST205 toast and wrote nothing. Degrade the same way: make the revision without a
+               document, and say so plainly rather than failing. */
+            var m = (e && e.message) || String(e);
+            if (/boq_documents|schema cache|PGRST205|does not exist/i.test(m)) {
+              try { UI.toast('Created without a BOQ name - run migrations/2026-09-07-boq-documents.sql to enable named BOQs.', 'info'); } catch (e2) {}
+            } else { throw e; }
+          }
+        }
+        return BOQ.createDraft({ rev: f.rev, date: f.date, po: f.po, total: f.total, docId: docId });
+      },
+      boqDocuments: function () {
+        return (window.BOQ && BOQ.documents) ? BOQ.documents() : [];
+      },
+      /* Whether a draft is already open, so the wizard can offer ADDING TO IT rather than
+         starting a rival revision. Returns null when the BOQ has not loaded, which the
+         wizard treats as "unknown" and simply does not claim either way. */
+      boqDraft: function () {
+        return (window.BOQ && BOQ.currentDraft) ? BOQ.currentDraft() : null;
+      },
+      addBoqTrades: function () {
+        if (window.BOQ && BOQ.addTrades) return BOQ.addTrades();
+      },
+      nextBoqRev: function () {
+        return (window.BOQ && BOQ.nextRevLabel) ? BOQ.nextRevLabel() : '00';
+      },
       openBoqImport: function () {
         openSub('boq');
         var tries = 0;
@@ -1030,7 +1129,9 @@ window.ContractsClaims = (function () {
 
     var deps = { uid: UID, canWrite: canWrite, isAdmin: isAdmin };
     if (window.CCPackages) CCPackages.init(deps);
-    if (window.BOQ) BOQ.init(deps);
+    /* The BOQ screen reaches the wizard through module.js rather than building its own
+       dependency object - one wizard, one set of deps, no drift. */
+    if (window.BOQ) BOQ.init(Object.assign({}, deps, { openWizard: openNew }));
     if (window.PMI) PMI.init(deps);
     document.querySelectorAll('.cc-tab').forEach(function (t) { t.onclick = function () { switchTab(t.dataset.view); if (histView) histView.push(); }; });
     // Browser-history integration (UI.bindHistoryState, ui.js) for the top-level
@@ -1043,7 +1144,20 @@ window.ContractsClaims = (function () {
       get: function () { return { v: view }; },
       apply: function (s) { switchTab(s.v); }
     });
-    document.getElementById('cc-add').onclick = openNew;
+    /* ⚠️ `openNew`, NOT `openNew` AS THE HANDLER — the difference is the whole bug.
+       Bound directly, the browser passes the PointerEvent as `type`, and CCWizard.open does
+       `st.type = type || 'Contract'`. A PointerEvent is truthy, so the wizard opened with its
+       record type set to a DOM event: no card was highlighted, and `liveSteps()` computed the
+       rail from a type that matches nothing — so the BOQ step was missing from the step count
+       until the planner happened to click a card. It recovered on that click, which is why it
+       survived; it was never right. */
+    /* Pre-selects the type THIS TAB shows, so + Add on the EOT register does not open on
+       Contract. The Claims tab covers two, and takes its own label's first — Change Order is
+       one click away in the same step. ⚠️ Never pass a falsy type to skip the choice:
+       CCWizard reads `type || 'Contract'`, so "no preference" silently means Contract. */
+    document.getElementById('cc-add').onclick = function () {
+      openNew(view === 'eot' ? 'EOT' : view === 'claims' ? 'Claim' : 'Contract');
+    };
     document.getElementById('cc-export').onclick = exportExcel;
     document.getElementById('cc-print').onclick = function () { window.print(); };
     document.getElementById('cc-clear').onclick = clearAll;

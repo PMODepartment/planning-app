@@ -379,9 +379,68 @@ window.CCWizard = (function () {
        a wizard should give. `finish()` now opens it. */
     var scope = linkedPkgId() ? st.pkgLabel()
               : (willCreate() && primaryPkg() ? primaryPkg().code : '');
-    return (st.type === 'BOQ'
-        ? '<p class="ccw-hint"><b>Open importer</b> below takes you straight to the BOQ screen and opens the ' +
-          'file picker. Nothing has been written yet, and nothing will be until you accept the preview there.</p>'
+    /* ⚠️⚠️ A BOQ RUN NOW ASKS HOW, AND BUILD-BY-HAND IS THE DEFAULT. Owner, 2026-09-07: *"the
+       add BOQ also pops up a new type of window wherein it should go through the wizard as we have
+       agreed before. Let's make this global."* Before this the BOQ type could only end in the
+       importer, so "New BOQ" on the BOQ screen had to open a dialog of its own - a third
+       create-surface on one module, which is how they drift apart.
+       WARNING Manual is preselected because the owner ranked it the priority path and import the
+       convenience; the workbook is the faster route only on the day it exists. */
+    if (st.type === 'BOQ') {
+      var bmanual = st.boqMode !== 'import';
+      /* WARNING A TRADE IS NOT A REVISION, AND THIS STEP HAS TO SAY SO. Owner, 2026-09-07: *"I
+         tried creating one when there is already an existing BOQ 00 for Gen Req (not issued yet).
+         While I have not yet finalized the Gen Req BOQ I am trying to create another BOQ for other
+         trades."* That is the natural reading of "New BOQ", and it is the wrong action: a second
+         revision would SUPERSEDE the first, not sit beside it, and the contract sum is per
+         revision - two half-bills would each report a partial contract value. Trades already live
+         WITHIN one revision as sheets (addAuthoredLines maps division -> sheet).
+         WARNING So when a draft is already open the step leads with ADD TO IT, and starting a new
+         revision moves to second place with what it actually means spelled out. Offered only when
+         D.boqDraft() answers - it returns null while the BOQ section has not loaded, and the
+         wizard must not claim there is no draft when it simply does not know yet. */
+      var bdraft = D.boqDraft ? D.boqDraft() : null;
+      if (bdraft && st.boqNew !== true) {
+        return '<p class="ccw-hint"><b>Trades live inside one BOQ, not beside it.</b> Each division ' +
+          'you add becomes its own trade section.</p>' +
+          '<div class="ccw-choice">' +
+            '<label class="ccw-opt on"><b>Add trades to ' + esc(bdraft.rev_no) + ' (draft)</b>' +
+              '<span class="ccw-optsub">Pick more divisions from the class-code library. This is what you ' +
+              'want for another trade.</span></label>' +
+          '</div>' +
+          '<p class="ccw-hint"><a href="#" id="ccw-bnew">Start a new revision instead</a> - only for a ' +
+          're-issued or remeasured bill, which <b>supersedes</b> ' + esc(bdraft.rev_no) + '.</p>';
+      }
+      return '<p class="ccw-hint">Stored as a <b>revision</b>: a re-issue supersedes it without ' +
+        'destroying what was tendered.</p>' +
+        '<div class="ccw-choice">' +
+          '<label class="ccw-opt' + (bmanual ? ' on' : '') + '"><input type="radio" name="boqmode" value="manual"' +
+            (bmanual ? ' checked' : '') + ' /> <b>Build it by hand</b>' +
+            '<span class="ccw-optsub">From the class-code library. Each division becomes its own trade ' +
+            'section, with class codes already on every line.</span></label>' +
+          '<label class="ccw-opt' + (bmanual ? '' : ' on') + '"><input type="radio" name="boqmode" value="import"' +
+            (bmanual ? '' : ' checked') + ' /> <b>Import the client&#39;s workbook</b>' +
+            '<span class="ccw-optsub">Faster when a file exists. You accept the column map before ' +
+            'anything is written.</span></label>' +
+        '</div>' +
+        (bmanual
+          ? '<label>BOQ name<input class="pd-input" id="ccw-bname" placeholder="e.g. Structural Works BOQ" value="' +
+              esc(st.boqName || '') + '" /></label>' +
+            '<p class="ccw-hint">This BOQ keeps <b>its own revision series</b>. Name it the way the ' +
+            'client packages it - "Package 2 BOQ", "Structural Works BOQ" - not after a fixed trade list.</p>' +
+            '<div class="ccw-grid2">' +
+              '<label>Revision label<input class="pd-input" id="ccw-brev" value="' + esc(st.boqRev || (D.nextBoqRev ? D.nextBoqRev() : '00')) + '" /></label>' +
+              '<label>Issued date<input class="pd-input" id="ccw-bdate" type="date" value="' + esc(st.boqDate || '') + '" /></label>' +
+              '<label>PO no. (optional)<input class="pd-input" id="ccw-bpo" value="' + esc(st.boqPo || '') + '" /></label>' +
+              '<label>Stated contract total (optional)<input class="pd-input" id="ccw-btotal" type="number" step="0.01" value="' + esc(st.boqTotal || '') + '" /></label>' +
+            '</div>' +
+            '<p class="ccw-hint">Your label, not the client&#39;s. A contract total here makes <b>issuing</b> ' +
+            'check the lines add up to it.</p>'
+          : '<p class="ccw-hint"><b>Open importer</b> takes you to the file picker. Nothing is written ' +
+            'until you accept the preview.</p>');
+    }
+    return (false
+        ? ''
         : '<p class="ccw-hint"><b>This step is optional — most contracts are recorded before the BOQ arrives.</b> ' +
           'Press <b>Next</b> to skip it; nothing is lost, and the BOQ can be imported at any time from the ' +
           '<b>BOQ tab</b>.</p>') +
@@ -460,12 +519,41 @@ window.CCWizard = (function () {
     ov.querySelector('#ccw-body').innerHTML = RENDER[cur.key]();
     ov.querySelector('#ccw-back').disabled = i === 0;
     var last = i === ls.length - 1;
-    ov.querySelector('#ccw-next').textContent = last ? (st.type === 'BOQ' ? 'Open importer' : 'Save') : 'Next';
+    /* ⚠️⚠️ THE BUTTON NAMES THE ACTION YOU CHOSE. It read "Open importer" for every BOQ run —
+       hard-coded back when import was the only ending a BOQ type had — so the step could say
+       "Add trades to 00 (draft)" while the button underneath promised a file picker. Owner:
+       *"why is the button open importer where we prioritize to have the build to be manual
+       first"*. A wizard whose button contradicts its own step is worse than no wizard. */
+    ov.querySelector('#ccw-next').textContent = last ? boqActionLabel() : 'Next';
     ov.querySelector('#ccw-next').className = 'pd-btn ' + (last ? 'pd-btn-primary' : 'pd-btn-primary');
     wireStep(cur.key);
   }
   function read(id) { var x = ov.querySelector('#' + id); return x ? (x.value || '').trim() : ''; }
+  /* The three endings a BOQ run can have, in the order the owner ranked them: adding trades to a
+     draft that already exists, building a new one by hand, and — only if asked for — importing. */
+  function boqActionLabel() {
+    if (st.type !== 'BOQ') return 'Save';
+    var d = D.boqDraft ? D.boqDraft() : null;
+    if (d && st.boqNew !== true) return 'Add trades';
+    return st.boqMode === 'import' ? 'Open importer' : 'Create draft';
+  }
+
   function wireStep(key) {
+    if (key === 'boq') {
+      var bn = ov.querySelector('#ccw-bnew');
+      if (bn) bn.onclick = function (e) { e.preventDefault(); st.boqNew = true; paint(); };
+      /* WARNING The radios REPAINT rather than just setting state: choosing "build by hand"
+         reveals the four revision fields and choosing "import" hides them, so the step has to
+         re-render. capture() runs first (see paint), so anything already typed survives. */
+      ov.querySelectorAll('input[name="boqmode"]').forEach(function (r) {
+        r.onchange = function () { captureBoq(); st.boqMode = r.value; paint(); };
+      });
+      ['bname', 'brev', 'bdate', 'bpo', 'btotal'].forEach(function (f) {
+        var x = ov.querySelector('#ccw-' + f);
+        if (x) x.oninput = function () { captureBoq(); };
+      });
+      return;
+    }
     if (key === 'type') {
       ov.querySelectorAll('[data-type]').forEach(function (b) {
         b.onclick = function () { st.type = b.dataset.type; paint(); };
@@ -504,7 +592,18 @@ window.CCWizard = (function () {
   }
   /* Capture whatever the current step holds before leaving it — a wizard that loses a
      field when you press Back is worse than no wizard. */
+  /* Read the BOQ step's fields into state. Split out because both capture() and the radio
+     handler need it - the radio must save what is typed BEFORE the repaint drops the inputs. */
+  function captureBoq() {
+    var n = ov.querySelector('#ccw-bname'); if (n) st.boqName = n.value;
+    var r = ov.querySelector('#ccw-brev'); if (r) st.boqRev = r.value;
+    var d = ov.querySelector('#ccw-bdate'); if (d) st.boqDate = d.value;
+    var p = ov.querySelector('#ccw-bpo'); if (p) st.boqPo = p.value;
+    var t = ov.querySelector('#ccw-btotal'); if (t) st.boqTotal = t.value;
+  }
+
   function capture(key) {
+    if (key === 'boq') { captureBoq(); return; }
     if (key === 'package') {
       var sel = ov.querySelector('#ccw-pkg'); if (sel) st.pkgId = sel.value || '';
       ov.querySelectorAll('[data-pf]').forEach(function (x) {
@@ -540,6 +639,35 @@ window.CCWizard = (function () {
        modal too, and opening it under this overlay would leave the planner clicking a
        file picker they cannot reach. */
     if (st.type === 'BOQ') {
+      /* WARNING Manual WRITES (a draft revision); import HANDS OFF. Only the import path closes
+         first - the importer is a modal too, and opening it under this overlay would leave the
+         planner clicking a file picker they cannot reach. */
+      /* The draft path: hand off to the class-code picker on the revision already open. */
+      var bd = D.boqDraft ? D.boqDraft() : null;
+      if (bd && st.boqNew !== true) {
+        close();
+        if (D.addBoqTrades) D.addBoqTrades();
+        return;
+      }
+      if (st.boqMode !== 'import') {
+        var brev = String(st.boqRev || '').trim();
+        var bname = String(st.boqName || '').trim();
+        /* WARNING The NAME is what makes this a separate BOQ rather than another revision of the
+           same one. Without it the document cannot be created and the revision would be orphaned,
+           so it is required where the revision label is merely prefilled. */
+        if (!bname) { UI.toast('Give the BOQ a name - it is what separates it from the other BOQs on this project.', 'error'); return; }
+        if (!brev) { UI.toast('The revision needs a label - it is how this BOQ is named everywhere else.', 'error'); return; }
+        if (btn) { btn.disabled = true; btn.textContent = 'Creating...'; }
+        try {
+          await D.createBoqDraft({ docName: bname, rev: brev, date: st.boqDate, po: st.boqPo, total: st.boqTotal });
+          close();
+          UI.toast(bname + ' rev ' + brev + ' created. Add lines from the class-code library.', 'success');
+        } catch (err) {
+          if (btn) { btn.disabled = false; btn.textContent = 'Create draft'; }
+          UI.toast((err && err.message) || String(err), 'error');
+        }
+        return;
+      }
       close();
       if (D.openBoqImport) D.openBoqImport();
       else UI.toast('Open the BOQ tab and press Import BOQ.', 'info');
@@ -680,6 +808,7 @@ window.CCWizard = (function () {
          through in a browser". One blank row, primary on it — what the list has always
          assumed it starts with. */
       pkgList: [blankPkg()], pkgPrimary: 0,
+      boqMode: 'manual', boqNew: false, boqName: '', boqRev: '', boqDate: '', boqPo: '', boqTotal: '',
       ref: '', desc: '', cp: '', amount: '', est: '', sub: '', d1: '', d2: '',
       pkgLabel: function () {
         var p = D.packages().filter(function (x) { return String(x.id) === String(st.pkgId); })[0];
