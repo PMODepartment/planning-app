@@ -95,6 +95,29 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-08 (b) — Cost Loading reads the BOQ; a Library step puts places beside work
+
+Owner: *"i want you to redirect the step 2 to the contracts and claims app. since technically the
+assigning of cost per activity should be matched / defined in the BOQ."* Step 2 no longer asks for the
+figure — it **reads** it. `boqDerive()` shares each priced BOQ line's amount across the activities it
+is matched to (by allocated quantity, or **1/n** for a link-only line), skipping headings, exclusions
+and amount-less lines; the read crosses modules under the caller's own RLS and writes nothing.
+⚠️ **Two columns, not one box:** *From the BOQ* read-only beside an *Override*, because a single field
+would let a planner think they had corrected the BOQ and hide that the correction stops following it.
+Clearing the override returns the line to the BOQ. It degrades rather than blocks — no BOQ, no tables
+or no grants all still allow typed totals, with the reason stated.
+
+Owner: *"there should be a library in the schedule setup module. That library should first define the
+locations on the left pane, and on the right the groupings of activities."* A new **Library** step in
+Schedule Setup, in the shape of the attached cost-structure sheet: places left, trade → grouping →
+item right. ⚠️ It is a view and an authoring surface, **not a second store** — the places live in
+`cfg.zoning` and the items in `cfg.activities`; only the L2 grouping is new. And **`openLocAdopt()` is
+finally wired**: complete and reachable from nothing since it was written (flagged twice), it is now
+*Read locations from the WBS…*, beside *Match WBS to trades…* — which is the import complaint
+answered, since the matching could always be done but was in front of nobody. Module only.
+296 assertions across seven suites, all executing code sliced from the shipped file with HEAD run as a
+control; ⚠️ not verified signed-in. `MODULE_V` → `20260908b`.
+
 ### 2026-09-08 (a) — The Trades step was never failing to load; a text-field CSS rule was hiding it
 
 No migration. Owner: *"1. The trades in the add BOQ is not loading properly. 2. … it says 'Start a

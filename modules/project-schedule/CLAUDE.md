@@ -13,6 +13,99 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### Cost Loading step 2 reads the BOQ; a Library step puts the places beside the work (2026-09-08) — jasantos2
+
+### 1. The money is defined in the BOQ, and step 2 now reads it
+Owner: *"i want you to redirect the step 2 to the contracts and claims app. since technically the
+assigning of cost per activity should be matched / defined in the BOQ in the contracts and claims
+module."*
+
+Correct, and it is the argument this module already makes about `planned_cost`: two places that can
+each state the cost of an activity will disagree, and then nobody can say which figure the S-curve
+was drawn from. The BOQ is the priced document — it reconciles to a contract total, it is revisioned,
+and Contracts & Claims already matches its lines to these very activities.
+
+- `boqDerive(items, allocs)` — **pure**, so it can be executed without a database (the anon key has
+  no grants on the BOQ tables either). `loadBoq()` does the reading and nothing else.
+  - share = `alloc.qty / Σalloc.qty` where the line has allocated quantities;
+  - ⚠️ share = **1/n** where it has none — the link-only case yesterday's BOQ change made possible,
+    and the only reading the data supports. Weighting by anything else would invent a measurement.
+  - ⚠️ Headings, **excluded** lines and amount-less lines contribute nothing. `boq_activity_quantity`
+    could not be reused: it rolls up *quantity* and deliberately drops lump-sum and provisional
+    lines, which carry money and no quantity.
+- Read across modules by **the caller's own RLS** (`can_access_project`), so this can never see a
+  project the planner cannot, and nothing here writes to the BOQ.
+- ⚠️ **Two columns, not one box holding whichever won.** *From the BOQ* is read-only beside an
+  *Override* input. A single field showing the BOQ figure would make a planner who edits it believe
+  they had corrected the BOQ — and would hide that the correction stops following it. Clearing the
+  box returns the line to the BOQ; a BOQ correction then flows through with nobody re-typing anything.
+- ⚠️ **It degrades, never blocks.** No BOQ, no tables, no grants — all land on "you can still type
+  totals below", with the reason verbatim, because a missing table and a missing grant need opposite
+  responses. Manual entry stays: removing it would strand a project that has no BOQ yet.
+- The step reports what it found (`n of m priced lines matched`) and names the unmatched ones as work
+  to do on the BOQ's own **Match to schedule** tab. Steps 3, 4 and 5 are untouched — only **where the
+  figure comes from** has moved.
+- ⚠️ The counts are their own variables, not keys on the id→amount map: an activity whose
+  `activity_id` happened to be `_lines` would otherwise have been handed the line count as its cost.
+- Not awaited on open: the tab paints on the config it has and the BOQ figures fill in a moment later.
+
+### 2. A Library step — places on the left, work on the right
+Owner: *"there are still problems in detecting WBS, locations etc when importing a very detailed
+schedule… there should be a library in the schedule setup module. That library should first define
+the locations on the left pane, and on the right the groupings of activities, similar to the image
+attached. make the UI better"*
+
+A two-pane step in the shape of the attached cost-structure sheet: **Location (Floor and Area)** down
+the left, **Trade (Groupings and Items)** down the right at three levels — L1 trade, L2 grouping,
+L3 item.
+
+- ⚠️⚠️ **A view and an authoring surface, not a second store.** The places already live in
+  `cfg.zoning` (per trade, because a trade genuinely zones its floors its own way — the same fact the
+  Vertical Stacking level-1 rule turns on) and the items in `cfg.activities`. A library with its own
+  copy of either is the two-screens-disagreeing failure this log keeps recording. The one genuinely
+  new field is the **L2 grouping** (`a.grp`), because the sheet asks for a middle level and
+  `cfg.activities` had only trade → item.
+- **Left pane** is the union across trades — a floor only one trade works is still a floor of the
+  building — and it names the trades that define each one, because that difference is real and hiding
+  it would make the pane read as a contradiction.
+- **Right pane** groups items under their grouping; an item with none sits **directly under its
+  trade** rather than under an invented "(ungrouped)" heading that would look like a real choice. The
+  grouping input is the only editable thing on the screen and stays visually quiet until used.
+- ⚠️ **`openLocAdopt()` is finally wired.** It has been complete and reachable from **nothing** since
+  it was written — flagged twice in this log as dead code. *Read locations from the WBS…* is the
+  button it always belonged on, and *Match WBS to trades…* opens the existing trade matcher beside
+  it. That is the import complaint answered: not that the matching could not be done, but that it was
+  not in front of anyone.
+- Both buttons are **disabled with the reason** when the project has no imported WBS to read.
+- Registered on **both** paths, after Activities and Floors & Zones — in front of them it would be an
+  empty screen on a new project. On the import path it is the step that matters most.
+- ⚠️ **No UoM column**, though the sheet has one: a unit belongs to a BOQ line and Contracts & Claims
+  already carries it.
+- The panes are a **grid** so the columns cannot drift as either side grows, each body scrolls on its
+  own (a 400-floor tower must not push the trades off screen), and it collapses to one column under
+  900px.
+
+### Verified
+**296 assertions across seven suites, all passing**, every one executing code sliced out of the
+shipped file. The 45 new ones run `boqDerive` over eight table shapes (60/40 weighting, the 1/n
+link-only split, headings, exclusions, amount-less lines, an unmatched priced line, accumulation
+across lines, thirds rounding to 2dp), run `buildGroups` to prove the BOQ→override precedence in both
+directions with the BOQ figure still reported beside an override, and run `libLocTree`/`libGroupTree`
+over a constructed cfg (a shared floor appearing once with both trades named, deduplicated zones, the
+L1/L2/L3 tree, an ungrouped item, an empty trade omitted, an empty project not throwing). Controls:
+HEAD has no `boqDerive`, read the total only from the typed config, and **defined `openLocAdopt` while
+calling it from nowhere**.
+⚠️ **Not verified signed-in** — the anon key has no grants on `project_schedule` or the BOQ tables. No
+BOQ was read from a live project and the Library has not been rendered against a real schedule; the
+trees and the arithmetic were executed against constructed data.
+
+### ⚠️ What this does NOT do
+The library does not yet **drive** the importer's detection — it shows what was detected and gives you
+the two ways to fix it. Making the location and trade guessers prefer library values over their
+vocabularies is the next step, and it is a change to matching behaviour that deserves its own prompt.
+
+`MODULE_V` → `20260908b`.
+
 ### Cost Loading: the spend shape is per OCCURRENCE, not only per cost line (2026-09-07) — jasantos2
 
 Owner: *"the function of cost loading of the project schedule should allow users to decide what type
