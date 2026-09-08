@@ -13,6 +13,75 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### The Library labels its levels L1/L2/L3, and the step rail minimises (2026-09-08) — jasantos2
+
+Owner: *"there should be levels like L1, L2, L3 like in the pic i sent, so it is easier for everyone to
+see also. also make the steps on the left side be minimized so more space."*
+
+### 1. The rung is labelled, not only indented
+The sheet carries L1/L2/L3 as its own column, and it is right to. Indentation tells you a row sits
+*under* another one; it does not tell you **which rung** it is on — and the two panes put different
+things on the same rung, which is the correspondence the sheet exists to show:
+
+| | L1 | L2 | L3 |
+|---|---|---|---|
+| **Location** | Tower | Floor | Area / Zone |
+| **Trade** | Trade | Grouping | Item |
+
+- A fixed-width chip on every row, so the names still line up down the pane; **tinted by depth rather
+  than coloured**, because three saturated badges per row would compete with the trade colour and with
+  the change-order and critical marks this module already spends colour on. Each carries
+  `L2 · Floor` as its tooltip.
+- Each pane header repeats the vocabulary once (`L1 Tower · L2 Floor · L3 Area / Zone`) — nothing else
+  on screen says that L2 means a floor on one side and a grouping on the other.
+
+### 2. The step rail minimises to a strip of numbers
+- One class on `.sbld-wrap` collapses the column to **46px**: the numbered circles stay, the titles and
+  subtitles collapse, and each circle keeps its full `n. Title — subtitle` as a tooltip.
+- ⚠️ **Numbers, not nothing.** The steps are referred to by number everywhere else in this module —
+  which is why `_stepNo()` exists and no step number is ever hard-coded — so a rail that vanished would
+  take the reader's place in the sequence with it.
+- ⚠️ **The toggle lives OUTSIDE the rail**, in a new `.sbld-railcol`: the rail itself is rebuilt by
+  `innerHTML` on every render and would throw the button away.
+- ⚠️ **Re-applied after every rail render** (three call sites), because the wrap and the toggle survive
+  a repaint while the rail does not — without that a repaint would silently expand it again.
+- One class drives **both** rails (Schedule Setup and Cost Loading share these classes), so they cannot
+  end up in different states. Remembered per browser in `localStorage`, read inside `try/catch`.
+- The button says what pressing it **does** (`« Minimise` / `»`), not what the state is — a toggle
+  labelled with its own current state is the one everybody reads backwards. Wired once per button, not
+  once per render.
+- ⚠️ Named **`sbld-railmin`**, not `sbld-min`: `.sbld-mini` already exists for an unrelated small
+  select, and a class that is a prefix of another is a trap for the next reader. Its own assertion
+  tripped on exactly that before the rename.
+
+### Two defects found by RENDERING it, not by reading it
+The shipped `stLibrary()` was executed against a constructed cfg and its real markup put on screen
+with the module's own stylesheet:
+- **"Roof Deck  Roof Deck"** — a floor actually named *Roof Deck* printed its name and its *kind*
+  label, which reads as a duplication bug rather than as a category. The kind is now suppressed when
+  it repeats the name.
+- **A long trade list widened the row.** Six trades on one floor is normal; the floor name is the thing
+  that must stay readable, so the trade list shrinks and ellipses instead.
+
+### ⚠️ And a real bug the assertion caught, in the fix for the first defect
+`_libNorm` was written `.replace(/s+/g, ' ')` — **no backslash** — so it collapsed runs of the letter
+**s**: "Rebar Consumables" normalised to `rebar con umable ` and every comparison built on it was
+quietly meaningless. Caught by asserting the normaliser rather than trusting it, and it is exactly the
+class of typo that reads correctly at a glance.
+
+### Verified
+**323 assertions across seven suites, all passing.** The 27 new ones execute the shipped `libLv`,
+`libLegend` and `_libNorm`, and assert the rail's mechanics against the file's own text: the toggle
+outside the rail, both wraps wrapped, three `sbldMinSync()` calls, the once-per-button wiring, the
+defensive `localStorage` read, and that `.sbld-mini`'s occurrence count is **unchanged** by the rename.
+Controls: HEAD has no level chips, no `libLv`, no minimise state and no rail column.
+Also **rendered and looked at** — expanded and minimised, in a browser, at 1400px — which is how both
+layout defects above were found; the harness page is git-ignored and was deleted before committing.
+⚠️ **Not verified signed-in** — the anon key has no grants, so this was the shipped render function
+against constructed data, not a real project's places and items.
+
+`MODULE_V` → `20260908d`.
+
 ### Cost Loading step 2 reads the BOQ; a Library step puts the places beside the work (2026-09-08) — jasantos2
 
 ### 1. The money is defined in the BOQ, and step 2 now reads it

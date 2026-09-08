@@ -95,6 +95,29 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-08 (d) — The Library labels L1/L2/L3, and the Schedule Setup rail minimises
+
+Owner: *"there should be levels like L1, L2, L3 like in the pic i sent, so it is easier for everyone to
+see also. also make the steps on the left side be minimized so more space."*
+
+Both panes of the Library now carry a fixed-width **rung chip** on every row, with a legend per pane —
+because indentation says a row is *under* another one but not **which rung** it is on, and the two panes
+put different things on the same rung (L2 is a Floor on the left, a Grouping on the right), which is the
+correspondence the sheet exists to show. Tinted by depth rather than coloured, so it does not compete
+with the trade colour or the change-order and critical marks.
+
+The step rail collapses to a **46px strip of numbered circles** — numbers, not nothing, since the steps
+are referred to by number everywhere else in this module. ⚠️ The toggle lives outside the rail (which
+`innerHTML` rebuilds every render and would throw it away) and the state is re-applied after every rail
+render, so a repaint cannot silently expand it. One class drives both rails, so Schedule Setup and Cost
+Loading cannot disagree. ⚠️ Named `sbld-railmin`: `.sbld-mini` already exists for an unrelated control.
+
+⚠️ **Two layout defects were found by rendering the shipped function and looking at it** — a floor named
+*Roof Deck* printing its kind label as well ("Roof Deck  Roof Deck"), and a six-trade list widening the
+row past the floor name. And the fix for the first shipped with `/s+/g` instead of `/\s+/g`, collapsing
+runs of the letter **s** — caught by asserting the normaliser rather than trusting it. Module only.
+323 assertions across seven suites; ⚠️ not verified signed-in. `MODULE_V` → `20260908d`.
+
 ### 2026-09-08 (c) — Two jsonb columns from August get an editor; the BOQ's second insert path is deleted
 
 No migration. Owner: *"Let's do the half-built and consistency gaps first."* Every one of the four
