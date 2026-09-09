@@ -1,5 +1,83 @@
 # Module: portfolio-overview
 
+## 2026-09-09 (p3) — The 13 in-page tabs go, the Group Head column goes, and the S-curve becomes per-project
+
+Owner's three Portfolio Dashboard items.
+
+### 1 — The tab strip was a second copy of the sidebar
+
+*"The tabs in the page itself is redundant with the buttons of the side panel."* Correct:
+`UI.renderNav`'s portfolio section already deep-links into every one of those views through
+`#po_view=`. The 13-button `.po-tabs` strip is removed.
+
+- ⚠️ **Routing survives untouched** — `switchView` is driven by `UI.bindHistoryState` off the URL hash,
+  never by the buttons, so every existing deep link still works. The `.active` toggle, the click wiring
+  and the role-gating loop are **deleted, not left dead**.
+- ⚠️⚠️ **MILESTONES WOULD HAVE BECOME UNREACHABLE.** It has no module, so `PORTFOLIO_TAB` (which maps
+  module keys) cannot produce it, and the strip was its only entry point. `ui.js` now lists it
+  explicitly in the portfolio section. `overview` needs no row — the plain "Dashboard" link lands there.
+- ⚠️⚠️ **THE PROJECT FILTER WAS A CHILD OF THE STRIP** and scopes *every* view, so it could not go with
+  it. It keeps its own `.po-scopebar` rather than moving into the Overview toolbar, where the other
+  twelve views could not reach it. ⚠️ That bar must never become an `overflow-x` container — the menu
+  is `position:absolute` and would be clipped, which the removed comment recorded and this one keeps.
+- ⚠️⚠️ **THE ROLE GATE MOVED INTO `switchView`, AND IT IS STRICTLY STRONGER THAN WHAT IT REPLACES.** It
+  used to set `hidden` on five tab buttons — which never stopped anyone typing the `#po_view=` hash,
+  because the hash goes straight to `switchView`. Gating the view closes the door the tabs never did.
+  Same five as before, matching `superAdminOnly` in `config.js`, which is also what gates the sidebar.
+  UI visibility only, no RLS change — unchanged from before.
+
+### 2 — Group Head column removed
+
+Redundant with the group-head row segregator. ⚠️ `groupHead()` itself **stays**: it feeds the search,
+the row grouping and the Excel export. ⚠️ Removing a column means four other places must follow, and
+they are the easy thing to miss — the `colspan="3"` group row's fillers, the TOTAL row's fillers, and
+the empty state's `colspan`. **Asserted**: header, body row, group subtotal, TOTAL and empty state all
+count **8**. ⚠️ The empty-state anchor was scoped to the projects table — the identical
+`colspan="9" class="po-empty"` string appears in the Resources and Equipment tables, which still have
+nine columns of their own and must not be touched. ⚠️ My first cell counter reported the subtotal row
+as 6 against a header of 8; the row was correct and the COUNTER was wrong (an optional colspan group
+with a lazy quantifier is simply skipped, so `colspan="3"` counted as 1). Rewritten before it was used
+to justify anything.
+
+### 3 — One chart, colour = project, line style = series
+
+*"a chart s-curve showing the different s-curves of different projects … however, I am thinking how
+this would look if there are even 2 projects with different s-curves (BL, Actual, Forecast)."*
+
+- ⚠️⚠️ **`scCompute` WAS A HAND-COPIED DUPLICATE of `assets/js/scurve.js` and is now a wrapper over the
+  shared engine.** That duplicate is exactly the drift the 2026-09-01 extraction into `PDScurve`
+  existed to prevent, and it had already cost something real: the *"Overall Progress" ≡ "Actual to
+  date"* identity bug has to be reasoned about in three places instead of one. Fixing the engine now
+  fixes this page too — which is what makes the Stage-5 KPI work land once instead of three times.
+- ⚠️⚠️ **THE Y AXIS IS PER-PROJECT PERCENT, NOT A SHARED ABSOLUTE TOTAL.** Duration units are not
+  comparable across projects: a 40,000-day programme would flatten a 2,000-day one into the axis and
+  the comparison would say nothing. Every curve runs 0→100% of its own total.
+- ⚠️ **`project_id` added to the lean select.** Its absence is precisely *why* a per-project overlay
+  was impossible — every row arrived anonymous. The rest of the column list now mirrors `PDScurve.COLS`
+  so the fetch and the engine cannot drift about which columns the maths needs.
+- ⚠️ **The RPC fast path is kept, for the KPI strip only.** `schedule_scurve_agg_multi` returns one
+  combined aggregate and cannot produce per-project series, so the overlay comes from rows — but
+  rendering the roll-up KPIs off the RPC first means the strip still appears immediately instead of
+  waiting on a 40k-row fetch, which is what it always did.
+- ⚠️ **Above 5 projects the chart defaults to Actual-only and SAYS SO on screen.** N projects × 3
+  series is 3N lines. It is a default, not a limit — three checkboxes bring Baseline and Forecast back,
+  and **no project is ever silently dropped from a chart**.
+- ⚠️ Series are drawn as runs split on nulls, not one polyline through the gaps — a single polyline
+  would draw a straight line across months a project does not cover. Cumulative values carry forward
+  after a project ends, because a gap there would read as progress going away.
+
+**Verified** by slicing the shipped overlay out of the page and executing it against seven-, three- and
+two-project fixtures built through the real `PDScurve.compute`: 2 projects → **6 polylines in 2
+colours**; 3 → **9 in 3**; 7 → **7 solid lines with the note shown**; 7 with every series ticked →
+**21 lines, 7 colours, note gone**; y-axis 0–100%; and **no drawn point outside the plot box**, which is
+what proves the per-project percent normalisation. Rendered and screenshotted in dark mode.
+
+⚠️ `.po-planned2` / `.po-actual2` deleted rather than left dead — they styled the two polylines of the
+old single combined curve, and colour is per project now, so it cannot come from a static class.
+
+`MODULE_V` → `20260909p3`; the page now loads `scurve.js`.
+⚠️ **Not verified signed in** — no real project schedule has been drawn.
+
 Cross-project **Portfolio Overview** dashboard (Phase 2). Unlike other modules it is
 **project-agnostic** — it reads ALL projects the signed-in user can access (RLS-scoped) plus
 the workspace tree, and does not use `pd_project`.

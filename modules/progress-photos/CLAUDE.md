@@ -2,6 +2,44 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## 2026-09-09 (p3) — The gallery stops looking like a folder of files
+
+Owner: *"Project Photos, I want this not to look like a windows explorer folder view looking like a
+bunch of photos database. Let's compile properly."*
+
+⚠️⚠️ **The resemblance was not a metaphor — it was the tile size, and it is MEASURED.**
+`gallerySizeScale` defaulted to **1/3** against `TILE_BASE_MIN = 290` / `TILE_BASE_H = 210`, which
+resolves to a **125px card holding a 70px-tall image**. That is Explorer's small-icon density almost
+exactly. The default is now **0.75** → a **263px card with a 158px image**: a grid you read rather
+than an icon wall you scan. Both figures are real browser measurements of the shipped `galleryHTML`.
+
+⚠️ **The other half was that the tile carried NO TEXT AT ALL.** `cardHTML` emitted an image and a
+checkbox and nothing else, so a wall of them cannot read as anything but a file listing. Each tile now
+carries a two-line caption — description, then date · location. ⚠️ Deliberately **not** the full
+metadata: the lightbox owns that (a 2026-08-28 decision this does not reverse). Both lines are
+`white-space: nowrap` + `text-overflow: ellipsis`, because a tile that grows to fit its text destroys
+the grid rhythm.
+
+⚠️⚠️ **A STORED SCALE IS NOW ONLY HONOURED ONCE THE SLIDER HAS ACTUALLY BEEN MOVED**, and without this
+the fix would have reached nobody who reported it. Every existing user has a stored `1/3` written by
+the *old default*, which is indistinguishable from a deliberate choice — so inferring intent from the
+value would either strand them all on the tiny tiles, or silently overrule someone who genuinely wanted
+them. A new `tilescaleset` flag records the choice at the moment it is made.
+
+⚠️ **The phone grid is untouched and gets no captions.** Below 768px it is a deliberate 3-column,
+2px-gap, `aspect-ratio:1` iOS-Photos wall; a caption strip under a ~120px tile is unreadable.
+
+**Verified** by slicing the shipped `galleryHTML` out of `module.js` and executing it against fixtures
+in a browser with the real stylesheet: at the shipped default **0 caption lines clipped and 0 wrapped**
+across 14 lines, `white-space: nowrap` and `text-overflow: ellipsis` both confirmed applied; dragged to
+1.5 also clean; dragged to 1/3 the captions clip with an ellipsis, which is that rule working rather
+than a defect. ⚠️ My first overflow probe was written `? false : false` — an assertion that could never
+fail — alongside a "wrapped" counter that was really re-detecting overflow (it returned the same 10 as
+the clip counter). Both were redone before any of the above was believed.
+
+`module.js` / `module.css` → `?v=20260909p3`; `MODULE_V` → `20260909p3`.
+⚠️ **Not verified signed in** — no real photo row has been rendered.
+
 ## PR review found two gaps in the fix below — fixed before merging (2026-09-08)
 
 A code review of the PR carrying the fix below (git diff against `main`) surfaced two real,

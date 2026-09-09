@@ -143,9 +143,10 @@
     /* module tabs (Overview / S-Curve / Cash Flow / …) — wraps rather than scrolling, at every
        width, now that there are 13 of them: #po-projfilter-wrap's dropdown is position:absolute,
        so an overflow-x scroller here would clip it (the exact trap the module topbar hit). */
-    .po-tabs { display:flex; flex-wrap:wrap; row-gap:2px; border-bottom:2px solid var(--pd-line); margin-bottom:16px; }
-    .po-tab { padding:9px 18px; cursor:pointer; font-weight:600; font-size:13.5px; color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
-    .po-tab.active { color:var(--pd-red); border-bottom-color:var(--pd-red); }
+    /* The scope bar is what is left of `.po-tabs` once the 13 redundant tabs went: it
+       carries the project filter, which scopes every view. Right-aligned, no bottom rule
+       — there is no longer a tab row for a rule to underline. */
+    .po-scopebar { display:flex; justify-content:flex-end; margin-bottom:14px; }
     /* cross-project S-Curve / Cash Flow views */
     .po-kpis2 { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:16px; }
     .po-kpi2 { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; padding:14px 16px; }
@@ -159,9 +160,16 @@
     .po-lg2 { display:inline-flex; align-items:center; }
     .sw2 { display:inline-block; width:14px; height:10px; margin-right:6px; border-radius:2px; }
     .sw2-line { width:18px; height:0; border-top:2px solid; margin-right:6px; }
-    .po-planned2 { fill:none; stroke:var(--pd-dark); stroke-width:2; }
-    html.pd-dark .po-planned2 { stroke:#c7ccd1; }
-    .po-actual2 { fill:none; stroke:var(--pd-red); stroke-width:2.5; }
+    /* Per-project overlay: which series are drawn, and why some are off by default. */
+    .po-sc-series { display:flex; flex-wrap:wrap; gap:14px; margin-top:10px; font-size:12px; color:var(--pd-muted); }
+    .po-sc-series label { display:inline-flex; align-items:center; gap:5px; cursor:pointer; }
+    .po-sc-series input { width:auto; min-height:0; }
+    .po-sc-note { margin-top:8px; font-size:12px; color:var(--pd-muted); line-height:1.5; }
+    /* The project legend can be long, so it wraps and sits under the style legend. */
+    .po-legend-proj { margin-top:6px; }
+    /* ⚠ `.po-planned2` / `.po-actual2` are DELETED, not left dead: they styled the two
+       polylines of the old single combined curve, and the per-project overlay strokes each
+       line inline (colour is per PROJECT now, so it cannot come from a static class). */
   
       /* ---- Mobile & tablet (2026-07-23) --------------------------------
          Shared chrome (topbar wrap, sheet modals, 16px inputs, 44px targets)
@@ -193,9 +201,8 @@
          filter's own menu off. Same trap the module topbar hit. The filter
          takes its own full-width row so the tabs keep theirs. */
       @media (max-width: 900px) {
-        .po-tabs { flex-wrap: wrap; row-gap: 2px; }
-        .po-tab { flex: 1 1 auto; justify-content: center; min-height: 44px; }
-        #po-projfilter-wrap { margin-left: 0 !important; flex: 1 1 100%; order: -1; margin-bottom: 8px; }
+        .po-scopebar { justify-content: stretch; }
+        #po-projfilter-wrap { flex: 1 1 100%; }
         #po-projfilter-wrap > button { width: 100%; min-height: 44px; }
       }
     
@@ -327,24 +334,21 @@
     </div>
 
     <div class="pd-main">
-      <div class="po-tabs">
-        <button class="po-tab active" data-view="overview"><span data-ico="barChart" data-ico-size="15"></span> Overview</button>
-        <button class="po-tab" data-view="scurve"><span data-ico="trendingUp" data-ico-size="15"></span> S-Curve</button>
-        <button class="po-tab" data-view="cashflow"><span data-ico="cash" data-ico-size="15"></span> Cash Flow</button>
-        <button class="po-tab" data-view="resources"><span data-ico="users" data-ico-size="15"></span> Resources</button>
-        <button class="po-tab" data-view="equipment"><span data-ico="box" data-ico-size="15"></span> Equipment</button>
-        <button class="po-tab" data-view="milestones"><span data-ico="calendar" data-ico-size="15"></span> Milestones</button>
-        <button class="po-tab" data-view="risk"><span data-ico="risk" data-ico-size="15"></span> Risk Register</button>
-        <button class="po-tab" data-view="stakeholders"><span data-ico="compass" data-ico-size="15"></span> Stakeholders</button>
-        <button class="po-tab" data-view="issues"><span data-ico="clipboard" data-ico-size="15"></span> Issues</button>
-        <button class="po-tab" data-view="meetings"><span data-ico="calendar" data-ico-size="15"></span> Meetings</button>
-        <button class="po-tab" data-view="contracts"><span data-ico="contract" data-ico-size="15"></span> Contracts</button>
-        <button class="po-tab" data-view="photos"><span data-ico="camera" data-ico-size="15"></span> Favorite Photos</button>
-        <button class="po-tab" data-view="productivity"><span data-ico="barChart" data-ico-size="15"></span> Productivity</button>
-        <!-- Project filter lives here (not in the Overview toolbar) so it's reachable from every tab
-             — it scopes the Overview table AND the S-Curve / Cash Flow views. -->
-        <div class="po-projfilter" id="po-projfilter-wrap" style="margin-left:auto;align-self:center;">
-          <button class="pd-btn" id="po-projfilter-btn" type="button" title="Filter which projects appear in every tab">
+      <!-- ⚠⚠ THE 13-BUTTON `.po-tabs` STRIP WAS REMOVED (owner, 2026-09-09):
+             "The tabs in the page itself is redundant with the buttons of the side panel."
+             It was, exactly — UI.renderNav's portfolio section already deep-links into every
+             one of these views via `#po_view=`, so the strip was a second copy of the sidebar
+             sitting inside the page.
+           ⚠ Routing did NOT live in the strip and is untouched: `switchView` is driven by
+             UI.bindHistoryState off the URL hash, so every existing deep link still works.
+           ⚠⚠ THE PROJECT FILTER WAS A CHILD OF THAT STRIP and had to survive it — it scopes
+             EVERY view, not just Overview. It keeps its own bar rather than moving into the
+             Overview toolbar (where the other twelve views could not reach it), and that bar
+             must never become an overflow-x container: the menu is position:absolute and
+             would be clipped. -->
+      <div class="po-scopebar">
+        <div class="po-projfilter" id="po-projfilter-wrap">
+          <button class="pd-btn" id="po-projfilter-btn" type="button" title="Filter which projects appear in every view">
             <span data-ico="filter" data-ico-size="14"></span> <span id="po-projfilter-label">All projects</span> <span data-ico="chevronDown" data-ico-size="13"></span>
           </button>
           <div class="po-projfilter-menu" id="po-projfilter-menu">
@@ -581,7 +585,10 @@
 <script src="../../assets/js/db.js?v=20260909n"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
 <script src="../../assets/js/mcc-rcm.js?v=20260902a"></script>
-<script src="../../assets/js/ui.js?v=20260909m"></script>
+  <!-- ⚠ The shared S-curve engine. This page used to carry a hand-copied duplicate of
+       its maths (scCompute), the exact drift the 2026-09-01 extraction existed to stop. -->
+  <script src="../../assets/js/scurve.js?v=20260901a"></script>
+<script src="../../assets/js/ui.js?v=20260909p3"></script>
 <script src="../../assets/js/icons.js?v=20260909ui"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
@@ -766,7 +773,6 @@
     { k: 'id', label: 'ID', num: false },
     { k: 'status', label: 'Status', num: false },
     { k: 'progress', label: 'Schedule', num: false },
-    { k: 'grouphead', label: 'Group Head', num: false },
     { k: 'ffin', label: 'Forecast Finish', num: false },
     { k: 'orig', label: 'Original', num: true },
     { k: 'est', label: 'Estimated', num: true },
@@ -778,7 +784,6 @@
       case 'id': return (p.id || '').toLowerCase();
       case 'status': return (p.status || 'active');
       case 'progress': return progressOf(p) == null ? -1 : progressOf(p);
-      case 'grouphead': return (groupHead(p) || '').toLowerCase();
       case 'ffin': return +(pd(p.forecast_finish || p.end_date) || 0);
       case 'orig': return num(p.original_budget);
       case 'est': return num(p.estimated_cost);
@@ -795,7 +800,6 @@
       '<td><code>' + esc(p.id) + '</code></td>' +
       '<td>' + statusPill(p.status) + '</td>' +
       '<td>' + schedCell(p) + '</td>' +
-      '<td>' + esc(groupHead(p) || '—') + '</td>' +
       '<td>' + Fmt.date(p.forecast_finish || p.end_date) + '</td>' +
       '<td class="num">' + (p.original_budget != null ? Fmt.moneyShort(p.original_budget) : '—') + '</td>' +
       '<td class="num">' + (p.estimated_cost != null ? Fmt.moneyShort(p.estimated_cost) : '—') + '</td>' +
@@ -831,7 +835,9 @@
       ? plist.length + ' package' + (plist.length === 1 ? '' : 's')
       : String(plist.length);
     return '<tr class="po-grp" data-grp="' + esc(name) + '"><td colspan="3"><span class="po-grp-name"><span class="po-caret">' + (open ? '▾' : '▸') + '</span>' + esc(groupDisplayOf(name, plist)) + ' <span style="color:var(--pd-muted);font-weight:400;">(' + esc(unit) + ')</span></span></td>' +
-      '<td' + (pr ? ' title="' + esc(pr.how) + '"' : '') + '>' + (pr ? pr.pct + '%' : '—') + '</td><td></td><td></td>' +
+      // ⚠ CELL COUNT: colspan 3 (Project/ID/Status) + Schedule + 1 filler (Forecast
+      //   Finish) + 3 money = 8, matching COLS now that Group Head is gone.
+      '<td' + (pr ? ' title="' + esc(pr.how) + '"' : '') + '>' + (pr ? pr.pct + '%' : '—') + '</td><td></td>' +
       '<td class="num">' + (orig ? Fmt.moneyShort(orig) : '—') + '</td><td class="num">' + (est ? Fmt.moneyShort(est) : '—') + '</td>' +
       '<td class="num">' + ((orig || est) ? Fmt.moneyShort(est - orig) : '—') + '</td></tr>';
   }
@@ -841,7 +847,7 @@
     }).join('') + '</tr></thead>';
     var sorted = list.slice().sort(function (a, b) { var x = sortVal(a, sortCol), y = sortVal(b, sortCol); return x < y ? -sortDir : x > y ? sortDir : 0; });
     var body = '';
-    if (!sorted.length) { body = '<tr><td colspan="9" class="po-empty">No projects match the current filters.</td></tr>'; }
+    if (!sorted.length) { body = '<tr><td colspan="8" class="po-empty">No projects match the current filters.</td></tr>'; }
     else if (groupMode === 'none') { body = sorted.map(projRow).join(''); }
     else {
       var groups = {}, order = [];
@@ -851,7 +857,7 @@
     }
     // grand total
     var gOrig = list.reduce(function (a, p) { return a + num(p.original_budget); }, 0), gEst = list.reduce(function (a, p) { return a + num(p.estimated_cost); }, 0);
-    if (sorted.length) body += '<tr class="po-tot-row"><td colspan="3">TOTAL (' + sorted.length + ')</td><td></td><td></td><td></td>' +
+    if (sorted.length) body += '<tr class="po-tot-row"><td colspan="3">TOTAL (' + sorted.length + ')</td><td></td><td></td>' +
       '<td class="num">' + (gOrig ? Fmt.moneyShort(gOrig) : '—') + '</td><td class="num">' + (gEst ? Fmt.moneyShort(gEst) : '—') + '</td><td class="num">' + ((gOrig || gEst) ? Fmt.moneyShort(gEst - gOrig) : '—') + '</td></tr>';
     var t = document.getElementById('po-table');
     t.innerHTML = head + '<tbody>' + body + '</tbody>';
@@ -985,7 +991,12 @@
     // OFFSET .range(): OFFSET re-scans every preceding row (deep pages timed out on 42k-row
     // projects) and, with NO .order(), OFFSET pages can duplicate/skip rows → wrong totals.
     // Lean columns only (the fields scCompute reads) — not select('*') across tens of thousands.
-    var LEAN = 'id,activity_type,start_date,end_date,duration_days,percent_complete,actual_start,actual_finish';
+    // ⚠⚠ `project_id` IS LOAD-BEARING and was deliberately absent before: every row
+    //    arrived anonymous, which is exactly why a per-project overlay could not be drawn.
+    // ⚠ The rest of the list mirrors PDScurve.COLS so the fetch and the engine cannot
+    //    drift about which columns the maths needs.
+    var LEAN = 'project_id,' + (window.PDScurve ? PDScurve.COLS.join(',')
+      : 'id,activity_type,start_date,end_date,duration_days,percent_complete,actual_start,actual_finish');
     var last = null;
     while (true) {
       var q = sb().from('project_schedule').select(LEAN).in('project_id', ids).order('id', { ascending: true }).limit(1000);
@@ -996,47 +1007,165 @@
     }
     return all;
   }
+  // ⚠️⚠️ scCompute() USED TO BE A HAND-COPIED DUPLICATE of assets/js/scurve.js's maths and
+  //    is now a thin wrapper over the shared engine. The duplicate is exactly the drift the
+  //    2026-09-01 extraction into PDScurve existed to prevent, and it had already cost
+  //    something real: the "Overall Progress" / "Actual to date" identity bug had to be
+  //    reasoned about in THREE places instead of one. Fixing the engine now fixes this page.
+  // ⚠️ PDScurve.compute() filters its own leaves (WBS Summary rows excluded), so nothing
+  //    here pre-filters — a second leaf rule is a second thing to get wrong.
   function scCompute(list) {
-    var leaves = list.filter(function (r) { return !isWbsRow(r); });
-    if (!leaves.length) return { empty: true };
-    function val(a) { if (a.duration_days) return a.duration_days; var s = pd(a.start_date), e = pd(a.end_date); if (s && e) return (e - s) / 86400000 + 1; return 1; }
-    function done(a) { return val(a) * (Math.max(0, Math.min(100, a.percent_complete || 0)) / 100); }
-    var TOT = leaves.reduce(function (s, a) { return s + val(a); }, 0);
-    var ds = [], de = [];
-    leaves.forEach(function (a) { var s = pd(a.start_date), e = pd(a.end_date); if (s) ds.push(+s); if (e) de.push(+e); });
-    if (!ds.length) return { empty: true };
-    var min = new Date(Math.min.apply(null, ds));
-    var tnow = today();
-    var overallDone = leaves.reduce(function (s, a) { return s + done(a); }, 0);
-    var maxEnd = new Date(Math.max.apply(null, de.length ? de : ds));
-    var domainMax = new Date(Math.max(+maxEnd, +tnow));
-    var months = [], c = new Date(min.getFullYear(), min.getMonth(), 1);
-    while (c <= domainMax) { months.push(new Date(c)); c = new Date(c.getFullYear(), c.getMonth() + 1, 1); }
-    var plannedC = [], actualC = [];
-    months.forEach(function (m) {
-      var mEnd = new Date(m.getFullYear(), m.getMonth() + 1, 0);
-      var pv = 0, av = 0;
-      leaves.forEach(function (a) {
-        var s = pd(a.start_date), e = pd(a.end_date) || s; if (!s) return;
-        var pf = mEnd >= e ? 1 : (mEnd < s ? 0 : (e > s ? (mEnd - s) / (e - s) : 1));
-        pv += val(a) * pf;
-        if (mEnd < tnow) {
-          var aS = pd(a.actual_start || a.start_date);
-          var aE = pd(a.actual_finish) || pd(a.end_date) || aS;
-          if (aS) { var af = mEnd >= aE ? 1 : (mEnd < aS ? 0 : (aE > aS ? (mEnd - aS) / (aE - aS) : 1)); av += done(a) * af; }
-        }
-      });
-      plannedC.push(pv); actualC.push(av);
-    });
-    var ti = -1;
-    for (var i = 0; i < months.length; i++) { var me = new Date(months[i].getFullYear(), months[i].getMonth() + 1, 0); if (me >= tnow) { ti = i; break; } }
-    if (ti < 0) ti = months.length - 1;
-    actualC[ti] = overallDone;
-    for (var k = ti + 1; k < actualC.length; k++) actualC[k] = 0;
-    var plannedPct = TOT ? plannedC[ti] / TOT * 100 : 0, actualPct = TOT ? actualC[ti] / TOT * 100 : 0;
-    var overallPct = TOT ? overallDone / TOT * 100 : 0;
-    return { empty: false, months: months, plannedC: plannedC, actualC: actualC, TOT: TOT, plannedPct: plannedPct, actualPct: actualPct, overallPct: overallPct, variance: actualPct - plannedPct, ti: ti, activities: leaves.length };
+    if (!window.PDScurve) return { empty: true };
+    return PDScurve.compute(list || []);
   }
+
+  // ---- per-project overlay --------------------------------------------------
+  // Owner: "a chart s-curve showing the different s-curves of different projects …
+  // however, I am thinking how this would look if there are even 2 projects with
+  // different s-curves (BL, Actual, Forecast) for each project."
+  // The answer the chart implements: COLOUR = project, LINE STYLE = series.
+  // ⚠️⚠️ THE Y AXIS IS PER-PROJECT PERCENT, NOT A SHARED ABSOLUTE TOTAL. Duration units
+  //    are not comparable across projects — a 40,000-day programme would flatten a
+  //    2,000-day one into the axis and the comparison would say nothing. Every curve runs
+  //    0→100% of ITS OWN total, which is what "compare the S-curves" means.
+  var SC_PALETTE = ['#E5534B', '#2F86D8', '#2FA36B', '#C9A227', '#9B59B6', '#E08A3C', '#17A2A2', '#D45D8C'];
+  // ⚠️ Above this many projects the chart defaults to Actual-only. N projects × 3 series is
+  //    3N lines; past ~5 the overlay stops being readable. It is a DEFAULT, not a limit —
+  //    the toggles below re-enable the other series, and no project is ever silently dropped.
+  var SC_FULL_MAX = 5;
+  var scSeriesSel = null;          // null = the user has not chosen; auto-pick by count
+  var scData = null;
+
+  function scMonthKey(m) { return m.getFullYear() * 12 + m.getMonth(); }
+
+  // Re-index one project's cumulative series onto the shared month axis.
+  // ⚠️ Before the project starts the value is 0 and after it ends it holds its last value —
+  //    these are CUMULATIVE curves, so carrying forward is the truthful continuation. A gap
+  //    would read as "progress went away".
+  function scOnAxis(d, arr, axis, fromIdx, toIdx) {
+    var by = {};
+    d.months.forEach(function (m, i) { by[scMonthKey(m)] = arr[i]; });
+    var out = [], carry = null;
+    axis.forEach(function (k, i) {
+      var inRange = (fromIdx == null || i >= fromIdx) && (toIdx == null || i <= toIdx);
+      var v = by[k];
+      if (v == null) v = carry;
+      else carry = v;
+      out.push(inRange ? v : null);
+    });
+    return out;
+  }
+
+  function scRenderChart() {
+    var host = document.getElementById('po-sc-chart');
+    if (!scData || !scData.per.length) {
+      host.innerHTML = '<div class="po-empty">No dated activities found for the selected projects.</div>';
+      return;
+    }
+    var per = scData.per;
+    var sel = scSeriesSel || { bl: per.length <= SC_FULL_MAX, ac: true, fc: per.length <= SC_FULL_MAX };
+
+    // shared month axis: the union across every drawn project
+    var lo = Infinity, hi = -Infinity;
+    per.forEach(function (p) {
+      p.d.months.forEach(function (m) { var k = scMonthKey(m); if (k < lo) lo = k; if (k > hi) hi = k; });
+    });
+    var axis = [], labels = [];
+    for (var k = lo; k <= hi; k++) { axis.push(k); labels.push(new Date(Math.floor(k / 12), k % 12, 1)); }
+
+    var W = 1000, H = 340, padL = 40, padR = 14, padT = 14, padB = 30, n = axis.length;
+    function x(i) { return padL + (n <= 1 ? 0 : (i / (n - 1)) * (W - padL - padR)); }
+    function y(pct) { return padT + (1 - pct / 100) * (H - padT - padB); }
+
+    var grid = '';
+    [0, 25, 50, 75, 100].forEach(function (p) {
+      var yy = y(p);
+      grid += '<line x1="' + padL + '" y1="' + yy + '" x2="' + (W - padR) + '" y2="' + yy + '" class="po-grid2"/>' +
+              '<text x="' + (padL - 6) + '" y="' + (yy + 3) + '" class="po-ylab2">' + p + '%</text>';
+    });
+    var xlab = '', step = Math.max(1, Math.ceil(n / 12));
+    labels.forEach(function (mo, i) {
+      if (i % step === 0) xlab += '<text x="' + x(i) + '" y="' + (H - padB + 15) + '" class="po-xlab2">' +
+        mo.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }) + '</text>';
+    });
+
+    // today line — same month index on the shared axis for every project
+    var tnow = today();
+    var tKey = tnow.getFullYear() * 12 + tnow.getMonth();
+    var tIdx = axis.indexOf(tKey);
+    var todayL = tIdx < 0 ? '' : '<line x1="' + x(tIdx) + '" y1="' + padT + '" x2="' + x(tIdx) + '" y2="' + (H - padB) +
+      '" stroke="var(--pd-red)" stroke-width="1.2" stroke-dasharray="4 3" opacity=".7"/>';
+
+    function poly(vals, colour, dash, width) {
+      // ⚠️ Split on nulls rather than joining across them — one polyline through a gap
+      //    draws a straight line over months the series does not cover.
+      var runs = [], cur = [];
+      vals.forEach(function (v, i) {
+        if (v == null) { if (cur.length) { runs.push(cur); cur = []; } return; }
+        cur.push(x(i) + ',' + y(v));
+      });
+      if (cur.length) runs.push(cur);
+      return runs.filter(function (r) { return r.length > 1; }).map(function (r) {
+        return '<polyline points="' + r.join(' ') + '" fill="none" stroke="' + colour +
+          '" stroke-width="' + width + '"' + (dash ? ' stroke-dasharray="' + dash + '"' : '') +
+          ' stroke-linejoin="round" stroke-linecap="round"/>';
+      }).join('');
+    }
+
+    var lines = '';
+    per.forEach(function (p, pi) {
+      var d = p.d, c = scColor(pi), T = d.TOT || 1;
+      var pctOf = function (v) { return v == null ? null : v / T * 100; };
+      if (sel.bl) lines += poly(scOnAxis(d, d.plannedC.map(pctOf), axis, null, null), c, '5 3', 1.4);
+      if (sel.ac) {
+        var acIdxHi = axis.indexOf(scMonthKey(d.months[d.ti]));
+        lines += poly(scOnAxis(d, d.actualC.map(pctOf), axis, null, acIdxHi < 0 ? null : acIdxHi), c, '', 2.2);
+      }
+      if (sel.fc && d.forecastC) {
+        var fcIdxLo = axis.indexOf(scMonthKey(d.months[d.ti]));
+        lines += poly(scOnAxis(d, d.forecastC.map(pctOf), axis, fcIdxLo < 0 ? null : fcIdxLo, null), c, '1.5 2.5', 1.6);
+      }
+    });
+
+    var projLegend = per.map(function (p, pi) {
+      return '<span class="po-lg2"><span class="sw2-line" style="border-color:' + scColor(pi) +
+        ';border-width:2px;"></span>' + esc(p.name) + '</span>';
+    }).join('');
+    var styleLegend =
+      '<span class="po-lg2"><span class="sw2-line" style="border-color:currentColor;border-style:dashed;"></span>Baseline</span>' +
+      '<span class="po-lg2"><span class="sw2-line" style="border-color:currentColor;"></span>Actual</span>' +
+      '<span class="po-lg2"><span class="sw2-line" style="border-color:currentColor;border-style:dotted;"></span>Forecast</span>';
+    var toggles =
+      '<div class="po-sc-series">' +
+        ['bl', 'ac', 'fc'].map(function (kk, i) {
+          var lbl = ['Baseline', 'Actual', 'Forecast'][i];
+          return '<label><input type="checkbox" data-sc="' + kk + '"' + (sel[kk] ? ' checked' : '') + '> ' + lbl + '</label>';
+        }).join('') +
+      '</div>';
+    // ⚠️ When the default has quietly dropped two series, SAY SO. A chart that silently
+    //    shows a third of what was asked for reads as missing data.
+    var note = (!scSeriesSel && per.length > SC_FULL_MAX)
+      ? '<div class="po-sc-note">Showing <b>Actual</b> only — ' + per.length +
+        ' projects × 3 series is too many lines to read. Tick Baseline or Forecast to add them back, ' +
+        'or narrow the project filter.</div>'
+      : '';
+
+    host.innerHTML =
+      '<svg viewBox="0 0 ' + W + ' ' + H + '" class="po-svg">' + grid + todayL + lines + xlab + '</svg>' +
+      toggles + note +
+      '<div class="po-legend2">' + styleLegend + '</div>' +
+      '<div class="po-legend2 po-legend-proj">' + projLegend + '</div>';
+
+    host.querySelectorAll('input[data-sc]').forEach(function (cb) {
+      cb.onchange = function () {
+        scSeriesSel = scSeriesSel || { bl: sel.bl, ac: sel.ac, fc: sel.fc };
+        scSeriesSel[cb.dataset.sc] = cb.checked;
+        scRenderChart();
+      };
+    });
+  }
+
+  function scColor(i) { return SC_PALETTE[i % SC_PALETTE.length]; }
   // Same shape as scCompute(), but from the server-side combined aggregate (one JSON of
   // ~monthly buckets) instead of every raw activity row across the scoped projects.
   function scComputeFromAgg(a) {
@@ -1072,46 +1201,52 @@
       kpi2('Planned to date', r1(d.plannedPct) + '%') + kpi2('Actual to date', r1(d.actualPct) + '%') +
       kpi2('Schedule Variance', (v > 0 ? '+' : '') + v + ' pp', v >= 0 ? '--pd-ok' : '--pd-bad');
   }
-  function scRenderChart(d) {
-    var host = document.getElementById('po-sc-chart');
-    if (d.empty) { host.innerHTML = '<div class="po-empty">No dated activities found for the selected projects.</div>'; return; }
-    var W = 1000, H = 320, padL = 46, padR = 16, padT = 16, padB = 32, n = d.months.length, maxV = (d.TOT || 1) * 1.02;
-    function x(i) { return padL + (n <= 1 ? 0 : (i / (n - 1)) * (W - padL - padR)); }
-    function y(v) { return padT + (1 - (v / maxV)) * (H - padT - padB); }
-    var grid = '';
-    [0, .25, .5, .75, 1].forEach(function (p) { var yy = y(maxV * p); grid += '<line x1="' + padL + '" y1="' + yy + '" x2="' + (W - padR) + '" y2="' + yy + '" class="po-grid2"/><text x="' + (padL - 6) + '" y="' + (yy + 3) + '" class="po-ylab2">' + Math.round(p * 100) + '%</text>'; });
-    var xlab = ''; var step = Math.max(1, Math.ceil(n / 10));
-    d.months.forEach(function (mo, i) { if (i % step === 0) xlab += '<text x="' + x(i) + '" y="' + (H - padB + 16) + '" class="po-xlab2">' + mo.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }) + '</text>'; });
-    var pl = d.plannedC.map(function (v, i) { return x(i) + ',' + y(v); }).join(' ');
-    var ac = []; d.actualC.forEach(function (v, i) { if (i <= d.ti) ac.push(x(i) + ',' + y(v)); });
-    var tx = x(d.ti);
-    var todayL = '<line x1="' + tx + '" y1="' + padT + '" x2="' + tx + '" y2="' + (H - padB) + '" stroke="var(--pd-red)" stroke-width="1.5" stroke-dasharray="4 3"/>';
-    host.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="po-svg">' + grid + todayL +
-      '<polyline class="po-planned2" points="' + pl + '"/>' + (ac.length ? '<polyline class="po-actual2" points="' + ac.join(' ') + '"/>' : '') + xlab + '</svg>' +
-      '<div class="po-legend2"><span class="po-lg2"><span class="sw2-line" style="border-color:var(--pd-dark);"></span>Planned progress</span>' +
-      '<span class="po-lg2"><span class="sw2-line" style="border-color:var(--pd-red);"></span>Actual progress</span></div>';
-  }
   var scLoadedIds = null;
   async function loadScurve(force) {
     var ids = scopedProjectIds();
     if (!force && scLoadedIds && scLoadedIds.join(',') === ids.join(',')) return;
     document.getElementById('po-sc-scope').textContent = scopeLabel(ids);
-    if (!ids.length) { document.getElementById('po-sc-kpis').innerHTML = ''; document.getElementById('po-sc-chart').innerHTML = '<div class="po-empty">No projects match the current filter.</div>'; return; }
-    document.getElementById('po-sc-chart').innerHTML = '<div class="po-empty">Loading schedules across ' + ids.length + ' project(s)…</div>';
-    document.getElementById('po-sc-kpis').innerHTML = '';
+    var kpiHost = document.getElementById('po-sc-kpis'), chartHost = document.getElementById('po-sc-chart');
+    if (!ids.length) {
+      kpiHost.innerHTML = '';
+      chartHost.innerHTML = '<div class="po-empty">No projects match the current filter.</div>';
+      scData = null; return;
+    }
+    chartHost.innerHTML = '<div class="po-empty">Loading schedules across ' + ids.length + ' project(s)…</div>';
+    kpiHost.innerHTML = '';
     try {
-      // FAST PATH: one combined server-side aggregate across the scoped projects (dozens of
-      // monthly buckets) instead of every raw activity row. Falls back to the row fetch when
-      // the RPC isn't deployed yet.
-      var d = null;
+      // ⚠️ THE FAST PATH IS KEPT, FOR THE KPI STRIP ONLY. `schedule_scurve_agg_multi`
+      //    returns ONE combined monthly aggregate for the whole selection — it cannot
+      //    produce per-project series, so the overlay has to come from rows. Rendering
+      //    the roll-up KPIs off the RPC first means the strip appears immediately instead
+      //    of waiting on a 40k-row fetch, which is what it always did.
+      var roll = null;
       try {
         var r = await sb().rpc('schedule_scurve_agg_multi', { p_ids: ids });
-        if (!r.error && r.data && r.data.months) d = scComputeFromAgg(r.data);
-      } catch (e) { d = null; }
-      if (!d) { var list = await fetchScheduleForIds(ids); d = scCompute(list); }
+        if (!r.error && r.data && r.data.months) { roll = scComputeFromAgg(r.data); scRenderKpis(roll); }
+      } catch (e) { roll = null; }
+
+      var rows = await fetchScheduleForIds(ids);
+      if (!roll || roll.empty) { roll = scCompute(rows); scRenderKpis(roll); }
+
+      // ⚠️ Grouped by `project_id`, which fetchScheduleForIds now selects. It was
+      //    deliberately absent from the LEAN column list before — which is precisely WHY
+      //    a per-project overlay was impossible: every row arrived anonymous and the
+      //    combined maths never needed to know which project it came from.
+      var byP = {};
+      rows.forEach(function (x) { (byP[x.project_id] = byP[x.project_id] || []).push(x); });
+      var nameOf = {};
+      PROJ.forEach(function (p) { nameOf[p.id] = p.name || p.id; });
+      var per = ids.map(function (id) { return { id: id, name: nameOf[id] || id, d: scCompute(byP[id] || []) }; })
+                   .filter(function (p) { return p.d && !p.d.empty; });
+
+      scData = { rollup: roll, per: per };
       scLoadedIds = ids;
-      scRenderKpis(d); scRenderChart(d);
-    } catch (e) { UI.toast('Could not load schedules: ' + (e.message || e), 'error'); document.getElementById('po-sc-chart').innerHTML = '<div class="po-empty">Load failed.</div>'; }
+      scRenderChart();
+    } catch (e) {
+      UI.toast('Could not load schedules: ' + (e.message || e), 'error');
+      chartHost.innerHTML = '<div class="po-empty">Load failed.</div>';
+    }
   }
 
   // ================= Portfolio Cash Flow (cross-project) =================
@@ -1864,10 +1999,18 @@
     document.getElementById('po-ms-refresh').onclick = function () { loadMilestones(true); };
   }
 
+  // ⚠⚠ THE ROLE GATE MOVED IN HERE FROM THE TAB STRIP, AND IT IS STRICTLY STRONGER.
+  //    It used to be a loop that set `hidden` on five `.po-tab` buttons — which never
+  //    stopped anyone typing the `#po_view=` hash, because the hash goes straight to
+  //    switchView. Gating the view itself closes the entry point the tabs never covered.
+  //    ⚠ Same five as before, matching `superAdminOnly` in config.js, which is also what
+  //    gates the sidebar (ui.js `visible`). UI visibility only — no RLS change, as before.
+  var PO_SUPERADMIN_VIEWS = ['risk', 'stakeholders', 'equipment', 'cashflow', 'productivity'];
+
   function switchView(v) {
+    if (PO_SUPERADMIN_VIEWS.indexOf(v) !== -1 && window.__role !== 'super_admin') v = 'overview';
     view = v;
     wireMilestones();
-    document.querySelectorAll('.po-tab').forEach(function (b) { b.classList.toggle('active', b.dataset.view === v); });
     document.getElementById('po-view-overview').style.display = v === 'overview' ? '' : 'none';
     document.getElementById('po-view-scurve').style.display = v === 'scurve' ? '' : 'none';
     document.getElementById('po-view-cashflow').style.display = v === 'cashflow' ? '' : 'none';
@@ -2352,12 +2495,6 @@
     // unhidden app-wide now, so its tab stays too. `resources`/`s-curve`/`milestones`/
     // `issues`/`meetings`/`photos`/`overview` stay — none of those seven modules are
     // superAdminOnly.
-    if (profile.role !== 'super_admin') {
-      ['risk', 'stakeholders', 'equipment', 'cashflow', 'productivity'].forEach(function (v) {
-        var b = document.querySelector('.po-tab[data-view="' + v + '"]');
-        if (b) b.hidden = true;
-      });
-    }
     document.getElementById('po-group').onchange = function (e) { groupMode = e.target.value; collapsed = {}; renderAll(); };
     wireProjFilter();
     document.getElementById('po-status').onchange = function (e) { statusFilter = e.target.value; renderAll(); };
@@ -2367,7 +2504,6 @@
     // Each tab's own filter row (incl. its search box) hides behind one
     // funnel toggle instead of sitting permanently open.
     UI.wireFilterToggle(document.getElementById('po-filttoggle'), document.getElementById('po-toolbar-fields'));
-    document.querySelectorAll('.po-tab').forEach(function (b) { b.onclick = function () { switchView(b.dataset.view); histView.push(); }; });
     // Browser-history integration — see UI.bindHistoryState in ui.js. Without this,
     // switching Overview/S-Curve/Cash Flow/Resources/Equipment/Milestones never
     // touches the URL, so the browser's native Back button jumps straight past

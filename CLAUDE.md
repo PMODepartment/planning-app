@@ -95,6 +95,59 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-09 (p3) — Portfolio's 13 in-page tabs go, the S-curve becomes per-project, and the KPI cards stop explaining themselves
+
+Owner's three Portfolio Dashboard items and two Project Dashboard items. Stage 3 of a five-stage pass.
+Detail in [`modules/portfolio-overview/CLAUDE.md`](modules/portfolio-overview/CLAUDE.md) and
+[`modules/progress-photos/CLAUDE.md`](modules/progress-photos/CLAUDE.md). What reaches beyond a module:
+
+- ⚠️⚠️ **`ui.js` gains a MILESTONES row, and without it the tab removal would have orphaned a whole
+  view.** Milestones has no module, so `PORTFOLIO_TAB` — which maps module keys to portfolio views —
+  cannot produce it, and the in-page strip was its only entry point. Found by enumerating what the
+  sidebar can reach *before* deleting the thing being replaced, not after.
+- ⚠️⚠️ **THE PORTFOLIO ROLE GATE MOVED FROM THE TAB BUTTONS INTO `switchView`, AND IS STRICTLY
+  STRONGER.** It used to set `hidden` on five `.po-tab` buttons — which never stopped anyone typing the
+  `#po_view=` hash, because the hash routes straight to `switchView`. Gating the view closes the entry
+  point the tabs never covered. Same five modules, still matching `superAdminOnly` in `config.js`;
+  UI visibility only, no RLS change.
+- ⚠️⚠️ **`portfolio-overview` STOPS CARRYING ITS OWN COPY OF THE S-CURVE MATHS.** `scCompute` was a
+  hand-copied duplicate of `assets/js/scurve.js` — the exact drift the 2026-09-01 extraction into
+  `PDScurve` existed to prevent — and it is now a wrapper over the shared engine. This is a
+  prerequisite, not tidying: the *"Overall Progress" ≡ "Actual to date"* identity bug exists in three
+  places, and Stage 5 can only fix it once if this page reads the shared engine.
+- **The portfolio S-curve draws one line per project**: colour = project, Baseline dashed, Actual
+  solid, Forecast dotted. ⚠️ The y-axis is **per-project percent**, never a shared absolute total — a
+  40,000-day programme would otherwise flatten a 2,000-day one into the axis. ⚠️ `project_id` had to be
+  added to the lean select; its absence is precisely why this was impossible before. ⚠️ Above five
+  projects it defaults to Actual-only **and says so on screen**; no project is ever silently dropped.
+- **Project Dashboard: four KPI paragraphs become four short notes plus one row-level sentence.**
+  Owner: *"There are too many text tooltips for each KPI card."* ⚠️ The load-bearing comment above
+  `perfCard` still holds — POC is duration-weighted while SPI/CPI are cost ratios, and a row of bare
+  numbers invites combining them — so the basis is still stated, **once, contrasting both bases in one
+  sentence** instead of four cards each explaining themselves. ⚠️ Empty cards keep their own text:
+  that one names a missing input and where to capture it, which is actionable rather than explanatory.
+  The S-curve hint drops from three sentences to one, keeping only what the chart cannot show itself.
+- **Progress Photos: the Explorer resemblance was the tile size, measured.** The default scale of 1/3
+  resolved to a **125px card holding a 70px image**; it is now **263px / 158px**, and each tile carries
+  a two-line caption where it previously carried no text at all.
+
+**Verified** by slicing the shipped overlay and the shipped `galleryHTML` out of their files and
+executing them against fixtures in a real browser, then measuring: 2/3/7-project overlays produce
+6/9/7 polylines in 2/3/7 colours with no point outside the plot box; every photo caption line is
+unclipped and unwrapped at the shipped scale. Portfolio table cell arithmetic **asserted** at 8 across
+header, body, group subtotal, TOTAL and empty state. `node --check` clean; inline `<script>` parses
+(⚠️ progress-photos' own extraction reports the documented pre-existing false positive — a CDN `src`
+containing `build/three.min.js` — **confirmed identical on HEAD** rather than assumed); CSS braces
+593/593; 47 assets on one version each, 0 splits, 0 missing.
+
+- `ui.js` → `?v=20260909p3` (21 pages); progress-photos `module.js`/`module.css` → `?v=20260909p3`;
+  `MODULE_V` → `20260909p3`. `scurve.js` is unchanged and keeps `20260901a` — it simply gains a third
+  referencing page.
+- ⚠️ `modules/project-schedule/index.html` and `modules/contracts-claims/index.html` are again staged
+  as **HEAD + this change only**; the concurrent session's extraction of `splitPlan` into the untracked
+  `assets/js/co-insert.js` is still in the working tree and is not mine to commit.
+- ⚠️ **Not verified signed in.**
+
 ### 2026-09-09 (u2) — Minutes of Meeting: the PDF stops being a screenshot, and `hidden` starts working app-wide
 
 Owner's six Minutes-of-Meeting items. Stage 2 of a five-stage pass. Full detail:

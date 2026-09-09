@@ -394,6 +394,14 @@
           '<span class="pd-navico" data-ico="grid"></span><span class="pd-navtxt">Projects</span></a>' +
         '<a href="' + poBase + '"' + cls('portfolio-dashboard') + ' title="Portfolio Dashboard">' +
           '<span class="pd-navico" data-ico="barChart"></span><span class="pd-navtxt">Dashboard</span></a>' +
+        // ⚠️⚠️ MILESTONES HAS NO MODULE, so `pmods` below cannot produce it — it is a
+        //    portfolio-only view that existed ONLY as an in-page tab. When the owner had
+        //    that tab strip removed (2026-09-09) it would have become unreachable: the
+        //    strip was its single entry point, and PORTFOLIO_TAB maps module keys, not
+        //    views. Listed explicitly here for that reason. `overview` needs no row —
+        //    the plain `poBase` "Dashboard" link above already lands on it.
+        '<a href="' + poHref('milestones') + '" title="Milestones — portfolio-wide">' +
+          '<span class="pd-navico" data-ico="calendar"></span><span class="pd-navtxt">Milestones</span></a>' +
         pmods.map(function (m) {
           var tab = PORTFOLIO_TAB[m.key];
           var href = tab ? poHref(tab) : (window.ModulesGrid ? base + ModulesGrid.href(m) : base + m.path);

@@ -315,6 +315,17 @@
    the lightbox, once a photo is opened: see .pp-lb-kpoverlay near
    .pp-lb-markup. */
 .pp-cardimg { position: relative; background: var(--pd-bg); }
+/* The tile caption (2026-09-09). ⚠ The card is a flex COLUMN already, so the caption
+   sits under the image without touching the image rules. Two lines maximum, both
+   clipped — a tile that grows to fit its text destroys the grid rhythm. */
+.pp-cardcap {
+  padding: 6px 8px 7px; font-size: var(--pd-fs-micro); color: var(--pd-muted);
+  line-height: 1.35; border-top: 1px solid var(--pd-line); background: var(--pd-card);
+}
+.pp-cardcap b, .pp-cardcap span {
+  display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pp-cardcap b { color: var(--pd-ink); font-weight: 600; margin-bottom: 1px; }
 .pp-cardphoto {
   width: 100%; height: var(--pp-tile-h, 210px); object-fit: cover; display: block; cursor: zoom-in;
 }
@@ -1825,6 +1836,9 @@
      red border on selection, it just has nothing to override at rest now. */
   .pp-gallery { grid-template-columns: repeat(3, 1fr); gap: 2px; }
   .pp-card { border: none; border-radius: 0; background: transparent; }
+  /* ⚠ No captions in the phone grid: it is a deliberate 3-column, 2px-gap iOS-Photos
+     wall (see above), and a caption strip under a ~120px tile is unreadable anyway. */
+  .pp-cardcap { display: none; }
   .pp-card.pp-selrow { border: 2px solid var(--pd-red); }
   /* Square crop, not the desktop's fixed 210px rectangle — a 3-per-row grid
      needs its tile height to follow the column width, not a constant. */

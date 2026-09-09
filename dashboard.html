@@ -128,6 +128,12 @@
     /* ⚠️ The basis line is not decoration: a number with no stated basis gets trusted further than
        it deserves. Every card carries one, including the empty ones. */
     .pd-perf-b { display:block; font-size:var(--pd-fs-xs); color:var(--pd-muted); margin-top:6px; line-height:1.45; }
+    /* One short line, not a paragraph: a verdict or a comparison, never an explanation. */
+    .pd-perf-note { display:block; font-size:var(--pd-fs-xs); color:var(--pd-muted); margin-top:5px; line-height:1.4; }
+    /* The basis for the whole row, said once. Spans every column of the grid. */
+    .pd-perf-basis { grid-column:1/-1; margin:2px 2px 0; font-size:var(--pd-fs-xs);
+      color:var(--pd-muted); line-height:1.5; }
+    .pd-perf-basis b { font-weight:700; color:var(--pd-muted); }
     .pd-perf-good { color:#2FA36B; }
     .pd-perf-none .pd-perf-b { opacity:.9; }
     @media (max-width:640px) { .pd-perf-v { font-size:var(--pd-fs-stat); } }
@@ -345,9 +351,9 @@
   <script src="assets/js/db.js?v=20260909n"></script>
   <script src="assets/js/program.js?v=20260827a"></script>
   <script src="assets/js/scurve.js?v=20260901a"></script>
-  <script src="assets/js/ui.js?v=20260909m"></script>
+  <script src="assets/js/ui.js?v=20260909p3"></script>
   <script src="assets/js/icons.js?v=20260909ui"></script>
-  <script src="assets/js/modules-grid.js?v=20260909u2"></script>
+  <script src="assets/js/modules-grid.js?v=20260909p3"></script>
   <script src="assets/js/my-work.js?v=20260902a"></script>
   <script>
   (function () {
@@ -482,6 +488,7 @@
           ? '<strong class="pd-perf-v">' + o.value + '</strong>'
           : '<strong class="pd-perf-v pd-perf-em">' + Fmt.esc(o.empty || 'No data') + '</strong>') +
         (o.bar != null ? '<div class="pd-perf-bar"><i style="width:' + Math.max(0, Math.min(100, o.bar)) + '%"></i></div>' : '') +
+        (o.note ? '<small class="pd-perf-note">' + o.note + '</small>' : '') +
         (o.basis ? '<small class="pd-perf-b">' + o.basis + '</small>' : '') + '</div>';
     }
 
@@ -502,8 +509,7 @@
         ? perfCard({ label: 'Planned POC', empty: blN ? 'No baseline dates' : 'Not baselined',
             basis: 'Needs <b>bl_start</b> and <b>bl_finish</b> on the activities. Capture a baseline in <b>Project Schedule</b>.' })
         : perfCard({ label: 'Planned POC', value: Math.round(planned) + '%', color: '#8A93A6', bar: planned,
-            basis: 'Where the baseline says this project should be today.<br>Duration-weighted across ' +
-              blN + ' baselined activit' + (blN === 1 ? 'y' : 'ies') + '.' });
+            note: 'Baseline, ' + blN + ' activit' + (blN === 1 ? 'y' : 'ies') });
 
       var c2;
       if (poc == null) {
@@ -511,29 +517,39 @@
           basis: acts ? 'No progress recorded against any activity yet.' : 'Nothing to report on.' });
       } else {
         var gap = planned == null ? null : (poc - planned);
+        // ⚠ The comparison IS the useful half and stays; the sentence explaining the
+        //   weighting moved to the row-level basis line below, where it is said once.
         c2 = perfCard({ label: 'Actual POC', value: Math.round(poc) + '%', color: '#2FA36B', bar: poc,
-          basis: 'Duration-weighted across ' + acts + ' activities.<br>' +
-            (gap == null
-              ? '<span class="pd-stat-warn">No baseline, so there is no planned % to compare this against.</span>'
-              : '<span class="' + tone(gap >= 0) + '">' + (gap >= 0 ? '+' : '') + Math.round(gap) +
-                ' pts vs planned</span> &mdash; same duration weighting.') });
+          note: (gap == null
+            ? '<span class="pd-stat-warn">No baseline to compare</span>'
+            : '<span class="' + tone(gap >= 0) + '">' + (gap >= 0 ? '+' : '') + Math.round(gap) +
+              ' pts vs planned</span>') });
       }
 
       var c3 = spi == null
         ? perfCard({ label: 'SPI', empty: 'No planned value',
             basis: 'SPI is EV &divide; PV. Needs a <b>baseline</b> and <b>planned cost</b> to measure against.' })
         : perfCard({ label: 'SPI', value: r2(spi), color: spi >= 1 ? '#2FA36B' : '#E5534B',
-            basis: '<span class="' + tone(spi >= 1) + '">' + (spi >= 1 ? 'On or ahead of plan' : 'Behind schedule') +
-              '</span><br>Earned &divide; planned value, by cost.' });
+            note: '<span class="' + tone(spi >= 1) + '">' + (spi >= 1 ? 'On or ahead of plan' : 'Behind schedule') + '</span>' });
 
       var c4 = cpi == null
         ? perfCard({ label: 'CPI', empty: 'No actual cost',
             basis: 'CPI is EV &divide; AC. Needs recorded <b>actual cost</b> on the schedule.' })
         : perfCard({ label: 'CPI', value: r2(cpi), color: cpi >= 1 ? '#2FA36B' : '#E5534B',
-            basis: '<span class="' + tone(cpi >= 1) + '">' + (cpi >= 1 ? 'Under budget' : 'Over budget') +
-              '</span><br>Earned &divide; actual cost.' });
+            note: '<span class="' + tone(cpi >= 1) + '">' + (cpi >= 1 ? 'Under budget' : 'Over budget') + '</span>' });
 
-      host.innerHTML = c1 + c2 + c3 + c4;
+      // ⚠⚠ THE BASIS IS STILL STATED — ONCE, FOR THE ROW, instead of four times in four
+      //    paragraphs. The owner's complaint was the volume of explanatory text ("every KPI
+      //    card should be very intuitive"), NOT the honesty: the comment above this function
+      //    is load-bearing and still holds, because POC and SPI/CPI are genuinely not
+      //    measured the same way and a row of bare numbers invites combining them. Saying it
+      //    once, contrasting the two bases in a single sentence, is clearer than four cards
+      //    each explaining themselves in isolation — and it is four lines of prose, not
+      //    sixteen. ⚠ EMPTY cards keep their own text: that one is not an explanation, it
+      //    names the missing input and where to capture it, which is actionable.
+      host.innerHTML = c1 + c2 + c3 + c4 +
+        '<p class="pd-perf-basis">Planned and Actual POC are <b>duration-weighted</b> and directly ' +
+        'comparable. SPI and CPI are <b>cost ratios</b> (earned \u00f7 planned, earned \u00f7 actual).</p>';
     }
 
     // ---- shared bits -------------------------------------------------------------------------
@@ -859,13 +875,16 @@
         // ⚠️ The scroll hint is CONDITIONAL. On a quarterly axis the columns share the panel out and
         //    there is usually nothing to scroll, and an instruction to do something the page will not
         //    do reads as a broken control rather than as a leftover sentence.
+        // ⚠ Three sentences down to one. What went is the half that described what
+        //   HOVERING does — hovering demonstrates itself — and the note that percentages
+        //   are comparable, which the shared axis already shows. What stays is the two
+        //   things the chart cannot say for itself: that the current period is read at
+        //   TODAY rather than at its end, and (quarterly only) that a cumulative curve
+        //   must not be added up. The scroll half stays CONDITIONAL for the reason above.
         '<div class="pd-viz-s pd-mini-note">' +
-          (W + SC_KEY > (host.clientWidth || 0) - 34 ? 'Scroll sideways for the whole programme; hover' : 'Hover') +
-          ' a ' + unit + ' for its figures. Percentages are of the project total, so they are ' +
-          'comparable across ' + unit + 's. ' + (mode === 'q'
-            ? 'A quarter reads at its <b>end</b> — these are cumulative curves, so quarters are never added up. '
-            : '') +
-          'The <b>' + unit + ' in progress</b> is read at today, not at its end.</div>';
+          (W + SC_KEY > (host.clientWidth || 0) - 34 ? 'Scroll sideways for the whole programme. ' : '') +
+          'The <b>' + unit + ' in progress</b> is read at today, not at its end.' +
+          (mode === 'q' ? ' Quarters read at their <b>end</b> and are never added up.' : '') + '</div>';
 
       // ---- the period toggle ----
       // A repaint, never a re-fetch: the curve is already computed and held in MET.
