@@ -294,23 +294,52 @@ window.RiskRegister = (function () {
     (list || rows).forEach(function (r) { var p = priorityOf(r); if (p) c[p]++; });
     return c;
   }
+  // Thin adapter onto the SHARED metric card (UI.kpi, assets/js/ui.js). The
+  // hand-rolled `.rr-kpi` markup that stood here is gone -- it put the value
+  // above the label at 24px where every other card in the app puts the label
+  // above the value at 20px, and carried no brand accent bar. The rcm-* class
+  // still arrives as `cls` and the shared CSS reads it, so the priority
+  // colouring is unchanged.
   function kpi(label, val, cls, sub) {
-    return '<div class="rr-kpi ' + cls + '"><div class="rr-kpi-val">' + val + '</div>' +
-      '<div class="rr-kpi-label">' + label + '</div>' +
-      (sub ? '<div class="rr-kpi-sub">' + sub + '</div>' : '') + '</div>';
+    return UI.kpi(label, val, { cls: cls || '', sub: sub });
   }
 
   // ---- band (column-group) toggles ---------------------------------------
+  // ⚠️ TWO labels per band, and the split is load-bearing.
+  //   `label` is the FULL band name and is what the table's own band header row
+  //          prints above the columns (bandRow, below) and what the Add/Edit
+  //          modal titles its sections with. It is the register's vocabulary and
+  //          must keep matching the controlled document.
+  //   `short` is the toggle's own caption in the module bar, where the whole
+  //          control has to fit on ONE row beside the project picker, the tabs
+  //          dropdown, the filter funnel and two buttons.
+  //          ⚠️ MEASURED, not estimated (2026-09-08, canvas measureText against
+  //          the resolved 700 11px Montserrat, so it is the real rendered width):
+  //            five FULL names  = 429px
+  //            five SHORT verbs = 332px
+  //          The rest of the bar runs ~610px, and the content box is
+  //          viewport - 240 sidebar - 44 padding. At 1280px that is 996px, so the
+  //          verbs total 942 and fit, while the full names total 1039 and force
+  //          the project picker -- the one child with `flex: 0 1 auto` -- to give
+  //          up 43px of a project name on every laptop.
+  // The full name is still one hover away (title=), so nothing is hidden.
   var BANDS = [
-    { key: 'id',  label: 'Identification' },
-    { key: 'as',  label: 'Assessment' },
-    { key: 'rs',  label: 'Response' },
-    { key: 'res', label: 'Residual' },
-    { key: 'au',  label: 'Audit plan' }
+    { key: 'id',  label: 'Identification', short: 'Identify' },
+    { key: 'as',  label: 'Assessment',     short: 'Assess'   },
+    { key: 'rs',  label: 'Response',       short: 'Respond'  },
+    { key: 'res', label: 'Residual',       short: 'Residual' },
+    { key: 'au',  label: 'Audit plan',     short: 'Audit'    }
   ];
   function renderBandToggles() {
-    $('rr-bands').innerHTML = '<span class="rr-bands-lab">Bands</span>' + BANDS.map(function (b) {
-      return '<button class="rr-band' + (bands[b.key] ? ' on' : '') + '" data-band="' + b.key + '">' + b.label + '</button>';
+    // ⚠️ `aria-pressed`, not `aria-checked`: these are N INDEPENDENT toggles, not
+    // one choice of five. A radiogroup here would tell a screen-reader user that
+    // turning Assessment on turns Identification off, which is not what happens.
+    $('rr-bands').innerHTML = BANDS.map(function (b) {
+      var on = !!bands[b.key];
+      return '<button type="button" class="' + (on ? 'on' : '') + '" data-band="' + b.key + '"' +
+        ' aria-pressed="' + on + '"' +
+        ' title="' + Fmt.esc(b.label) + ' columns — click to ' + (on ? 'hide' : 'show') + '">' +
+        Fmt.esc(b.short) + '</button>';
     }).join('');
     $('rr-bands').querySelectorAll('[data-band]').forEach(function (btn) {
       btn.onclick = function () {
@@ -534,9 +563,11 @@ window.RiskRegister = (function () {
         resCard('Not re-assessed', unscored, '', 'residual band left blank') +
       '</div>';
   }
+  // Same card, one extra class so the residual row can size itself differently
+  // from the KPI strip if it ever needs to. It does not today -- which is the
+  // point: a residual band count and a KPI are the same kind of fact.
   function resCard(label, val, cls, sub) {
-    return '<div class="rr-rescard ' + cls + '"><div class="rr-kpi-val">' + val + '</div>' +
-      '<div class="rr-kpi-label">' + label + '</div><div class="rr-kpi-sub">' + sub + '</div></div>';
+    return UI.kpi(label, val, { cls: 'rr-rescard' + (cls ? ' ' + cls : ''), sub: sub });
   }
 
   // ---- Risk Universe view ------------------------------------------------
@@ -584,11 +615,11 @@ window.RiskRegister = (function () {
   function renderCriteria() {
     var e = E();
     $('rr-criteria').innerHTML =
-      '<div class="pd-card"><h2 style="margin-top:0;">Risk rating criteria</h2>' +
+      '<div class="pd-card"><h2>Risk rating criteria</h2>' +
       '<p class="rr-help">Transcribed from “Criteria for Risk Assessment” in <em>SLN101. OPS. Risk Register</em>. Score every risk event against these tables so two planners on two projects mean the same thing by a 4.</p>' +
       e.probabilityTableHTML() + e.impactTableHTML() + e.treatmentTableHTML() +
       '</div>' +
-      '<div class="pd-card"><h2 style="margin-top:0;">Priority heat map (reference)</h2>' +
+      '<div class="pd-card"><h2>Priority heat map (reference)</h2>' +
       '<p class="rr-help">Priority / Level is a lookup of Impact × Probability into this grid — <strong>not</strong> a band on the product. Impact 5 × Probability 1 and Impact 1 × Probability 5 both score 5, and land on different priorities.</p>' +
       '<div class="rr-refgrid">' + e.gridHTML({
         xMax: 5, yMax: 5, xLabel: 'Impact →', yLabel: 'Probability →',
@@ -597,11 +628,11 @@ window.RiskRegister = (function () {
         cell: function (x, y) { return '<span class="rcm-gcell-lab">' + e.priorityShort(e.RISK_GRID[y][x]) + '</span>'; }
       }) + '</div>' + e.priorityLegendHTML(null) +
       '</div>' +
-      '<div class="pd-card"><h2 style="margin-top:0;">Residual risk assessment</h2>' +
+      '<div class="pd-card"><h2>Residual risk assessment</h2>' +
       '<p class="rr-help">After the control is in place, re-score the event: <strong>severity × occurrence × degree of control</strong> (1–125). This is the number a control is supposed to move; leaving it blank means the register can only ever show inherent risk.</p>' +
       e.controlTableHTML() + e.residualBandTableHTML() +
       '</div>' +
-      '<div class="pd-card"><h2 style="margin-top:0;">Control masterlist</h2>' + e.controlMasterlistHTML() + '</div>';
+      '<div class="pd-card"><h2>Control masterlist</h2>' + e.controlMasterlistHTML() + '</div>';
   }
 
   var VIEWS = ['list', 'heat', 'universe', 'criteria'];
@@ -621,7 +652,16 @@ window.RiskRegister = (function () {
     });
     // The filter bar and the band toggles only apply to the register itself.
     $('rr-filters').style.display = view === 'list' ? '' : 'none';
-    $('rr-bands').style.display = view === 'list' ? '' : 'none';
+    // ⚠️ Hide the seg's own trailing separator WITH it. The bands moved into the
+    // module bar's tool cluster (2026-09-08), where every group is fenced by a
+    // 1px `.rr-tb-sep`; hiding only the control left its fence behind, so the
+    // three non-Register views showed two dividers with nothing between them.
+    (function () {
+      var el = $('rr-bands'), show = view === 'list';
+      el.style.display = show ? '' : 'none';
+      var sep = el.nextElementSibling;
+      if (sep && sep.classList.contains('rr-tb-sep')) sep.style.display = show ? '' : 'none';
+    }());
     if ($('rr-filttoggle')) $('rr-filttoggle').style.display = view === 'list' ? '' : 'none';
     if (link) {
       document.querySelectorAll('.rr-tabs [data-view]').forEach(function (a) { a.classList.remove('active'); });
@@ -666,7 +706,24 @@ window.RiskRegister = (function () {
     }).join('');
 
     var m = UI.modal(
-      '<h2 style="margin-top:0;">' + (isNew ? 'Add risk event' : 'Edit risk event') + '</h2>' +
+      // ⚠️ HEADER / BODY / FOOTER, not a raw dump into `.pd-modal`.
+      // `.pd-modal` is itself the scroller (max-height:90vh; overflow-y:auto), so
+      // the previous shape -- a bare <h2>, then ~40 fields across six RCM bands,
+      // then a right-aligned <div> of buttons at the very bottom of that same
+      // scrolling column -- took BOTH the title and the Save button off screen the
+      // moment the form was scrolled. dashboard.css has carried a written warning
+      // about exactly this since 2026-07-02, and it had already been fixed
+      // one-module-at-a-time for `#ps-modal` (2026-08-24) and `.boq-imp`
+      // (2026-08-26). This is the same fix, in the last two modules still on the
+      // old shape. `.pd-modal-body` bounds the scroll to the fields, so the title
+      // and Save stay put by construction rather than by a sticky offset.
+      // ⚠️ The button ids are unchanged (#f-cancel / #f-save) -- the wiring below
+      // finds them through m.el, so moving them into the footer rewires nothing.
+      '<div class="pd-modal-header">' +
+        '<h2>' + (isNew ? 'Add risk event' : 'Edit risk event') + '</h2>' +
+        '<button type="button" class="pd-modal-close" id="f-x" aria-label="Close">&times;</button>' +
+      '</div>' +
+      '<div class="pd-modal-body">' +
 
       '<div class="rr-fsec">1 · Risk identification</div>' +
       '<div class="rr-frow">' +
@@ -741,8 +798,11 @@ window.RiskRegister = (function () {
       '</div>' +
 
       dl('dl-roles', roles) + '<datalist id="dl-subproc"></datalist>' +
-      '<div style="text-align:right;margin-top:10px;"><button class="pd-btn" id="f-cancel">Cancel</button> ' +
-      '<button class="pd-btn pd-btn-primary" id="f-save">Save</button></div>'
+      '</div>' +
+      '<div class="pd-modal-footer">' +
+        '<button class="pd-btn" id="f-cancel">Cancel</button>' +
+        '<button class="pd-btn pd-btn-primary" id="f-save">Save</button>' +
+      '</div>'
     );
 
     function q(sel) { return m.el.querySelector(sel); }
@@ -824,6 +884,11 @@ window.RiskRegister = (function () {
 
     wireModalCursor(m, isNew ? null : r);
     q('#f-cancel').onclick = m.close;
+    // The header's own X (added with the header/body/footer restructure) --
+    // every other dialog in the app that has a `.pd-modal-header` has one, and
+    // a modal whose only way out is a Cancel button at the bottom of a long
+    // scroll is the same defect in a different place.
+    q('#f-x').onclick = m.close;
     q('#f-save').onclick = async function () {
       var no = +q('#f-act').value || null;
       var act = no ? e.activityByNo(no) : null;
@@ -971,8 +1036,21 @@ window.RiskRegister = (function () {
 
   async function del(id) {
     if (!confirm('Delete this risk event? This cannot be undone.')) return;
-    var res = await sb().from(TABLE).delete().eq('id', id);
+    // ⚠️ `.select('id')` and a row-count check. This table's DELETE policy is
+    // owner-or-admin (`is_writer() and (created_by = auth.uid() or is_admin())`,
+    // from the generic module-table loop in supabase-schema.sql), NOT any
+    // writer. Deleting a risk event somebody else raised therefore matches ZERO
+    // rows, and PostgREST reports that as a clean success with no error -- so the
+    // old code toasted "Deleted" over a row that is still in the register and
+    // reappears on the next load. Same defect, same fix, as the photo deletes in
+    // progress-photos (2026-09-04).
+    var res = await sb().from(TABLE).delete().eq('id', id).select('id');
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    if (!res.data || !res.data.length) {
+      UI.toast('Not deleted — the database refused it. A risk event can only be removed by whoever raised it, or by an admin.', 'error');
+      load();
+      return;
+    }
     UI.toast('Deleted', 'ok'); load();
   }
 

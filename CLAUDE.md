@@ -95,6 +95,63 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-09 (m) — The other session's 33-commit-old working tree, merged rather than discarded
+
+The clone had `.git/rebase-merge/` present but **completely empty** — no `head-name`, `onto`,
+`orig-head`, todo or done — so `git status` claimed *"you are currently rebasing … all conflicts
+fixed"* with no rebase to continue. ⚠️ I had earlier reported this as a paused rebase belonging to a
+concurrent session; that was wrong and is corrected here. The directory was stale state from Sep 7,
+and `git rebase --quit` could not remove it (a lock, most likely OneDrive syncing `.git`), so the
+empty directory was removed directly.
+
+Underneath it sat 48 modified files and 2 genuinely new ones on a HEAD **33 commits behind**. Two
+independent checks agreed the work was real and unpushed: `stakeholder-map/module.js` carried
+**41 mentions of "directory" against 0 upstream** (2,176 lines vs 1,420), plus
+`migrations/2026-09-08-stakeholder-directory.sql` and `test-directory.js`, neither on `origin/main`.
+
+⚠️⚠️ **A PULL WOULD HAVE COST THAT, AND GITHUB DESKTOP WAS OFFERING TO DO IT.** The tree diverged in
+BOTH directions — ahead on stakeholder-map, and 2,044 lines behind on `project-schedule/index.html`
+— so `pull` refuses and the tool's remedy is stash-or-discard. Captured first as
+`refs/backup/worktree-20260909` and the branch `wip/other-session-20260909`, both built through a
+throwaway index so **HEAD, the index and every file on disk were untouched**.
+
+**43 conflict hunks across 27 files. Resolved by rule, not by picking a side:**
+
+- ⚠️ **`modules/project-schedule/*` → OURS, and this is the one that mattered.** The wip side's diff
+  there is a **reversion**: it deletes the *"Cost Loading step 2 reads the BOQ"* 2026-09-08 entry,
+  which exists in both the merge base and `origin/main`. Measured — base 39,319 lines,
+  `origin/main` 41,241, wip 39,197. wip never had the Structure step; the "theirs 0" hunks were its
+  own local deletions overlapping upstream's additions, not a considered removal.
+- ⚠️ **`issues-lessons/module.css` → THEIRS on the `.il-report` rules, and it is verified, not
+  preferred.** OURS targets `.il-iss-actions` and `.il-mi-card`, which `module.js` emits **zero**
+  times — silent no-ops. THEIRS targets `.il-mom-actions` / `.il-iss-card` / `.il-workflow-*`, which
+  it emits 3 / 2 / 3 / 1 times.
+- ⚠️⚠️ **`stakeholder-map` CSS *and* JS → THEIRS together, as a consistency requirement.** wip drops
+  the module-local `.sm-kpi*` set for the shared `.pd-kpis` / `UI.kpi` component. `risk-register`'s
+  `module.js` had **already auto-merged onto `UI.kpi`**, so keeping OURS for stakeholder-map's CSS
+  while its JS emits `UI.kpi` would have rendered the KPI strip unstyled. Confirmed after resolving:
+  the container is `<div class="pd-kpis" id="sm-kpis">` and `dashboard.css` defines it.
+- **The comment-only hunks → OURS.** `--pd-fs-base` **is** `13px`, so HEAD's literal and wip's token
+  are the same value; the rest differed only in `⚠` vs `⚠️` and `--` vs an em dash.
+- ⚠️ **21 files were pure cache-bust collisions** and were resolved mechanically by a test that
+  normalises the version string and compares the two sides — never `--ours` / `--theirs`, which take
+  a whole file and drop your own non-conflicting edits in it.
+
+⚠️ **Every asset whose CONTENT the merge changed got a version newer than BOTH sides** (`20260909m`,
+18 assets, 29 pages) — the merged bytes existed on neither side, so neither side's string is honest.
+Audited by resolving each reference to its real path (a basename grouping reports a false split,
+since every module has its own `module.css`): **40 distinct assets, one version each, none missing.**
+
+**Verified:** 40 JS files parse, 0 failures; CSS braces balanced on all 8 changed stylesheets; 0 NUL
+bytes; both sides' work present — Structure step, the 2026-09-08 changelog entry, the delete-BOQ
+handler, `TRADEMAP`, `affected.js`'s ladder/tree/preview, and the stakeholder directory with its
+migration and test. Root `CLAUDE.md` is byte-identical to `origin/main` — no doubled changelog. ⚠️ The
+two duplicate `2026-09-03 (b)/(c)` headings it reports are **pre-existing upstream**, and the (b) pair
+is the documented legitimate one.
+
+⚠️ **Not verified signed in, and not rendered.** This is a textual integration: nothing was clicked
+through, and the stakeholder directory has never been exercised against a live project.
+
 ### 2026-09-09 (cq) — The Affected-work intro drops from four lines to one
 
 Owner: *"Let's reduce the text in the step intro."* The third time the wizard's prose has been

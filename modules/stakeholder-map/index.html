@@ -7,9 +7,9 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Stakeholder Register · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260904a" />
-  <link rel="stylesheet" href="../../assets/css/mcc-rcm.css?v=20260902a" />
-  <link rel="stylesheet" href="module.css?v=20260908pv" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260909m" />
+  <link rel="stylesheet" href="../../assets/css/mcc-rcm.css?v=20260909m" />
+  <link rel="stylesheet" href="module.css?v=20260909m" />
 </head>
 <body>
   <div class="pd-app">
@@ -50,6 +50,14 @@
                even while the panel is collapsed. Hidden outside Register/Cards
                (switchView) since neither Impact/Influence nor Criteria read
                `filters`. -->
+          <!-- RCM band (column-group) toggles — the shared `.pd-seg` segmented control
+               (dashboard.css), multi-select variant, exactly as the Risk Register does it.
+               See the longer note in modules/risk-register/index.html: these were a row of
+               bespoke pills in a slot nothing else in the app uses, and the two registers
+               MUST make this choice the same way or the shared RCM furniture stops being
+               shared. Six bands here, five there — that is the only difference. -->
+          <span class="pd-seg pd-seg-multi sm-bands" id="sm-bands" role="group" aria-label="Column bands shown in the register"></span>
+          <span class="sm-tb-sep"></span>
           <button class="pd-filttoggle" id="sm-filttoggle" title="Filters"><span data-ico="filter" data-ico-size="16"></span></button>
           <span class="sm-tb-sep"></span>
           <button class="pd-btn" id="sm-export" title="Export the register to CSV (opens in Excel)">Export</button>
@@ -82,12 +90,8 @@
           <button class="sm-clear" id="sm-clear"><span data-ico="x" data-ico-size="14"></span>Clear</button>
         </div>
 
-        <!-- RCM band (column-group) toggles — the honest equivalent of scrolling
-             the sheet sideways. Rendered by module.js; state persists per browser. -->
-        <div class="sm-bands" id="sm-bands"></div>
-
         <!-- KPIs -->
-        <div class="sm-kpis" id="sm-kpis"></div>
+        <div class="pd-kpis" id="sm-kpis"></div>
 
         <!-- Register view -->
         <div id="sm-view-list">
@@ -104,13 +108,13 @@
         <!-- Impact / Influence view -->
         <div id="sm-view-grid" style="display:none;">
           <div class="pd-card">
-            <h2 style="margin-top:0;">Priority level — Impact × Influence</h2>
+            <h2 class="pd-panel-t">Priority level — Impact × Influence</h2>
             <p class="sm-help">The 4×4 lookup the register's own <code>Priority Level</code> formula reads. Click a cell to filter the register to it.</p>
             <div class="sm-gridwrap"><div id="sm-grid-priority"></div></div>
             <div id="sm-grid-legend"></div>
           </div>
           <div class="pd-card">
-            <h2 style="margin-top:0;">Impact / Influence map — engagement approach</h2>
+            <h2 class="pd-panel-t">Impact / Influence map — engagement approach</h2>
             <p class="sm-help">The same two ratings, read through the workbook's Mendelow map instead. <strong>It does not always agree with the priority lookup above, and the register keeps both</strong> as separate columns — see <em>Criteria</em>. Each stakeholder's Approach can be overridden by hand.</p>
             <div class="sm-gridwrap"><div id="sm-grid-mendelow"></div></div>
             <div id="sm-grid-mendelow-legend"></div>
@@ -130,13 +134,13 @@
   <script src="../../assets/js/auth.js?v=20260901b"></script>
   <script src="../../assets/js/db.js?v=20260907a"></script>
   <script src="../../assets/js/program.js?v=20260827a"></script>
-  <script src="../../assets/js/ui.js?v=20260904a"></script>
+  <script src="../../assets/js/ui.js?v=20260909m"></script>
   <script src="../../assets/js/icons.js?v=20260907a"></script>
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
   <script src="../../assets/js/mcc-rcm.js?v=20260902a"></script>
-  <script src="module.js?v=20260908pv"></script>
+  <script src="module.js?v=20260909m"></script>
   <script>
     // Item 1 (2026-09-02) — see the note in minutes-of-meeting/index.html:
     // the topbar tabs become one dropdown and the static module label beside

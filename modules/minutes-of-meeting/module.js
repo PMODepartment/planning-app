@@ -2340,8 +2340,18 @@ window.MinutesOfMeeting = (function () {
     if (!confirm('Delete the schedule "' + (s.title || '') + '"?' +
       (n ? '\n\n' + n + ' recorded meeting(s) STAY — they simply stop pointing back at a recurring schedule.' : ''))) return;
     try {
-      var dl = await sb().from('mom_schedules').delete().eq('id', id);
+      // ⚠️ `.select('id')` and a row-count check. These module tables carry an
+      // owner-or-admin DELETE policy (`is_writer() and (created_by = auth.uid()
+      // or is_admin())`), so a refusal matches ZERO rows and PostgREST reports a
+      // clean success with NO error -- the old code then filtered the schedule
+      // out of the local array and toasted "Schedule deleted" over a row that is
+      // still there and returns on the next load. Same defect, same fix, as the
+      // progress-photos deletes (2026-09-04).
+      var dl = await sb().from('mom_schedules').delete().eq('id', id).select('id');
       if (dl.error) throw dl.error;
+      if (!dl.data || !dl.data.length) {
+        throw new Error('The database refused it. A schedule can only be deleted by whoever created it, or by an admin.');
+      }
       SCHEDULES = SCHEDULES.filter(function (x) { return x.id !== id; });
       if (_seriesSel === id) { _seriesSel = null; _momView = _momBrowsePrev || 'list'; }
       UI.toast('Schedule deleted', 'ok');
@@ -5407,8 +5417,19 @@ window.MinutesOfMeeting = (function () {
         // name the object with and it is orphaned in the bucket forever.
         var paths = momPathsOf(it ? [it] : []);
         try {
-          var dl = await sb().from('mom_items').delete().eq('id', id);
+          // ⚠️ `.select('id')` and a row-count check — owner-or-admin DELETE
+          // policy, so a refusal is a silent zero-row success (see the schedule
+          // delete above).
+          // ⚠️⚠️ AND THE ATTACHMENT REMOVAL MUST NOT RUN ON A REFUSAL. The line
+          //     below deletes the item's files from the bucket; unguarded, a
+          //     REFUSED row delete still destroyed them, leaving a live agenda
+          //     item whose attachments are gone for good. Losing a file is not
+          //     the same class of bug as a misleading toast.
+          var dl = await sb().from('mom_items').delete().eq('id', id).select('id');
           if (dl.error) throw dl.error;
+          if (!dl.data || !dl.data.length) {
+            throw new Error('The database refused it. An agenda item can only be deleted by whoever added it, or by an admin.');
+          }
           if (paths.length) { try { await sb().storage.from(MOM_BUCKET).remove(paths); } catch (e) {} }
           MOM_ITEMS = MOM_ITEMS.filter(function (x) { return x.id !== id; });
           renderDetail();
@@ -5431,8 +5452,17 @@ window.MinutesOfMeeting = (function () {
         (paths.length ? '\n\n' + paths.length + ' attached file(s) are deleted too.' : '') +
         (raised ? '\n\n' + raised + ' issue(s) already raised in Issues & Concerns will REMAIN — they simply stop pointing back at a meeting.' : ''))) return;
       try {
-        var dl = await sb().from('meeting_minutes').delete().eq('id', _momSel);
+        // ⚠️ Same guard, and here the stakes are highest in the module: the
+        // confirm() above warns that N attached files go with the minutes, and
+        // unguarded that removal ran even when the ROW delete was refused --
+        // destroying every attachment on a meeting that then stayed in the
+        // register. Owner-or-admin DELETE policy; a refusal is a silent zero-row
+        // success (see the two deletes above).
+        var dl = await sb().from('meeting_minutes').delete().eq('id', _momSel).select('id');
         if (dl.error) throw dl.error;
+        if (!dl.data || !dl.data.length) {
+          throw new Error('The database refused it. Minutes can only be deleted by whoever recorded them, or by an admin.');
+        }
         if (paths.length) { try { await sb().storage.from(MOM_BUCKET).remove(paths); } catch (e) {} }
         MOM_ITEMS = MOM_ITEMS.filter(function (x) { return x.mom_id !== _momSel; });
         MOMS = MOMS.filter(function (x) { return x.id !== _momSel; });

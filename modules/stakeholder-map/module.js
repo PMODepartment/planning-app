@@ -55,6 +55,212 @@ window.StakeholderMap = (function () {
   var bands = { id: true, as: true, en: true, rs: false, res: false, au: false };
   var filterToggle = null;   // UI.wireFilterToggle() handle for #sm-filters
 
+  // ==========================================================================
+  // THE STAKEHOLDER DIRECTORY -- a person is global, an engagement is per project
+  // --------------------------------------------------------------------------
+  // migrations/2026-09-08-stakeholder-directory.sql. Owner, 2026-09-08: "it would
+  // be very tedious to fill this out for every stakeholder ... if there is an
+  // existing stakeholder it should be able to add it in the stakeholder map of
+  // the project."
+  //
+  // PERSON_FIELDS is the whole contract, in one place, and BOTH directions read
+  // it -- the overlay on load and the split on save. Two hand-maintained lists is
+  // how a field ends up global in one direction and project-local in the other,
+  // which presents as "my correction saved and then came back wrong".
+  //
+  // ⚠️ WHAT IS *NOT* HERE IS THE POINT. `relationship_champion`, `relationship_owner`,
+  //    `primary_responsible`, `alternate`, `megawide_counterpart` and
+  //    `engagement_plan` all name a PERSON but are PROJECT facts: who owns the
+  //    relationship on THIS job. The same mayor can be owned by two different
+  //    Megawide people on two projects, and that is not a conflict to reconcile.
+  //    Nor is `stk_category` here -- the risk-taxonomy classification is a
+  //    judgement about this project's exposure, while `category` (Sector) is a
+  //    fact about the institution.
+  var DIR = 'stakeholders';
+  var PERSON_FIELDS = ['name', 'title', 'nickname', 'role_title', 'organization',
+                       'category', 'stakeholder_group', 'email', 'contact',
+                       'birthday', 'gift_tier', 'photo_path', 'photo_thumb_path'];
+  var people = {};        // stakeholder id -> directory row (the ones this project links)
+  var dirAll = null;      // the whole directory, lazily loaded for the picker; null = not yet
+  var dirUsage = {};      // stakeholder id -> project_id[]  (for "already on N projects")
+  var dirOff = false;     // true once we know the table is not there yet
+
+  function personOf(row) { return row && row.stakeholder_id ? people[row.stakeholder_id] : null; }
+
+  // ⚠️ Overlay, not merge-with-preference-for-the-row. Where a person is linked
+  //    the DIRECTORY WINS on every person field, including blanking one the
+  //    project row still has a stale value for -- otherwise "I removed his old
+  //    e-mail" would appear to work on the directory and keep showing the old
+  //    address on the register that reads the mirror.
+  //    Unlinked (pre-migration, or blank-named) rows are left completely alone.
+  function overlayPeople() {
+    rows.forEach(function (row) {
+      var p = personOf(row);
+      if (!p) return;
+      PERSON_FIELDS.forEach(function (f) { row[f] = p[f] == null ? null : p[f]; });
+    });
+  }
+
+  function dirMissing(err) {
+    return /relation .*stakeholders.* does not exist|could not find the table|schema cache/i
+      .test((err && (err.message || err.hint)) || '');
+  }
+
+  // Load only the people THIS project links, plus their cross-project usage.
+  // ⚠️ Two narrow queries, not one join. `PDb.selectAll` keyset-paginates and the
+  //    module's whole read path is built on plain table selects; a PostgREST
+  //    embedded select would also silently return null for a row whose person was
+  //    deleted, which is indistinguishable from "not linked".
+  async function loadPeople() {
+    people = {}; dirUsage = {};
+    var ids = {};
+    rows.forEach(function (r) { if (r.stakeholder_id) ids[r.stakeholder_id] = 1; });
+    var list = Object.keys(ids);
+    if (!list.length) return;
+    try {
+      // ⚠️ Chunked at 200. An `in.()` filter travels in the URL and a long list
+      //    trips the server's URL cap -- the same limit the schedule module hit.
+      for (var i = 0; i < list.length; i += 200) {
+        var res = await sb().from(DIR).select('*').in('id', list.slice(i, i + 200));
+        if (res.error) throw res.error;
+        (res.data || []).forEach(function (p) { people[p.id] = p; });
+      }
+      // ⚠️ CHUNKED TOO. This read the first 200 ids only while the loop above
+      //    chunked correctly, so on a register with more than 200 distinct people
+      //    the "registered on N projects" line in the form would quietly under-
+      //    report -- a wrong number presented as a fact, which is worse than no
+      //    number. Same 200 as above, same reason: `in.()` travels in the URL.
+      for (var j = 0; j < list.length; j += 200) {
+        var use = await sb().from(TABLE).select('stakeholder_id,project_id').in('stakeholder_id', list.slice(j, j + 200));
+        if (use.error) continue;
+        (use.data || []).forEach(function (u) {
+          if (!u.stakeholder_id) return;
+          var a = dirUsage[u.stakeholder_id] || (dirUsage[u.stakeholder_id] = []);
+          if (a.indexOf(u.project_id) === -1) a.push(u.project_id);
+        });
+      }
+    } catch (err) {
+      // ⚠️ NOT fatal, and it must not be. Until the owner runs the migration the
+      //    table is absent; every row is then simply unlinked and the module
+      //    behaves exactly as it did before this feature existed.
+      if (dirMissing(err)) { dirOff = true; return; }
+      UI.toast('Stakeholder directory unavailable: ' + ((err && err.message) || 'request failed'), 'warn');
+    }
+  }
+
+  // Create-or-find a directory entry for a person, and return its id.
+  // ⚠️ Find-then-insert, and the INSERT still has to cope with losing a race:
+  //    two planners registering the same new mayor on two projects at the same
+  //    moment both find nothing and both insert, and the second hits
+  //    `stakeholders_name_org_uidx`. That is not an error to report -- the other
+  //    insert produced exactly the row this one wanted, so the 23505 is caught
+  //    and turned into a second lookup. Postgres's own unique index is what makes
+  //    the outcome correct; this function only has to not panic about it.
+  // ⚠️ Matching is on (name, organization) case-insensitively, folding a blank
+  //    organisation to '' -- the SAME key as the unique index, or a "find" that
+  //    misses would insert a duplicate the index then refuses, and the save would
+  //    fail with a constraint error the planner cannot act on.
+  async function findOrCreatePerson(fields) {
+    var name = String(fields.name || '').trim();
+    var org  = String(fields.organization || '').trim();
+    if (!name) return null;
+
+    async function find() {
+      var res = await sb().from(DIR).select('*').ilike('name', name).limit(50);
+      if (res.error) throw res.error;
+      var hit = (res.data || []).filter(function (x) {
+        return String(x.name || '').trim().toLowerCase() === name.toLowerCase() &&
+               String(x.organization || '').trim().toLowerCase() === org.toLowerCase();
+      })[0];
+      return hit || null;
+    }
+
+    var found = await find();
+    if (found) return found;
+
+    var row = {};
+    PERSON_FIELDS.forEach(function (f) {
+      if (fields[f] !== undefined) row[f] = fields[f] === '' ? null : fields[f];
+    });
+    row.name = name;
+    row.organization = org || null;
+    row.created_by = profile.id;                 // REQUIRED for RLS (stakeholders_ins)
+    row.updated_at = new Date().toISOString();
+    var ins = await sb().from(DIR).insert(row).select('*');
+    if (ins.error) {
+      // 23505 = unique_violation: somebody else inserted this person first.
+      if (String(ins.error.code) === '23505' || /duplicate key|already exists/i.test(ins.error.message || '')) {
+        var again = await find();
+        if (again) return again;
+      }
+      throw ins.error;
+    }
+    return (ins.data || [])[0] || null;
+  }
+
+  // Write person fields back to the directory. This is the ONLY path that
+  // changes a person, and it is reached from one place -- the "Edit person"
+  // dialog. A project's Save never touches it.
+  async function updatePerson(id, fields) {
+    var patch = {};
+    PERSON_FIELDS.forEach(function (f) {
+      if (fields[f] !== undefined) patch[f] = fields[f] === '' ? null : fields[f];
+    });
+    patch.updated_at = new Date().toISOString();
+    var res = await sb().from(DIR).update(patch).eq('id', id).select('id');
+    if (res.error) throw res.error;
+    // ⚠️ .select('id') and a length check, not a bare await. An RLS refusal on
+    //    UPDATE matches zero rows and returns NO error -- this app has been bitten
+    //    by exactly that shape before (progress-photos' deletes, 2026-09-xx), and
+    //    reporting "Saved" over a write that never happened is the worst outcome
+    //    available.
+    if (!res.data || !res.data.length) {
+      throw new Error('The directory refused the change (viewers cannot edit people).');
+    }
+
+    // ---- refresh the MIRROR on every project row that links this person ----
+    // ⚠️ WHY THIS IS NEEDED AT ALL, given overlayPeople() already makes this
+    //    module's own screens correct: `modules/portfolio-overview/index.html`
+    //    reads `stakeholder_map` DIRECTLY (line ~2010) and renders `r.name`,
+    //    `r.organization` and `r.category` from it, with no directory join. So
+    //    without this, correcting a mayor's title here fixed the register and
+    //    left the cross-project Stakeholders tab showing the old one until
+    //    somebody happened to re-save that project's row. Measured, not assumed:
+    //    that page's own `shRender()` was read before writing this.
+    // ⚠️ ONE statement across every linked row, and it is ALLOWED to come back
+    //    short. `stakeholder_map`'s UPDATE policy is owner-or-admin, so a planner
+    //    cannot rewrite a row another project's planner created -- PostgREST
+    //    filters those out and reports success for the rest. That is why the
+    //    count is returned rather than swallowed: a partial refresh is a real
+    //    outcome the caller has to be able to describe honestly.
+    // ⚠️ BEST EFFORT, never fatal. The person IS updated at this point (the
+    //    directory is the source of truth), so throwing here would report a
+    //    successful change as a failure -- the worse of the two errors.
+    var mirrored = 0, mirrorErr = null;
+    try {
+      var mir = {};
+      PERSON_FIELDS.forEach(function (f) { if (patch[f] !== undefined) mir[f] = patch[f]; });
+      mir.updated_at = patch.updated_at;
+      var mres = await sb().from(TABLE).update(mir).eq('stakeholder_id', id).select('id');
+      if (mres.error) mirrorErr = mres.error;
+      else mirrored = (mres.data || []).length;
+    } catch (e) { mirrorErr = e; }
+    return { mirrored: mirrored, mirrorErr: mirrorErr };
+  }
+
+  // The full directory, for the picker. Cached for the session -- it is a master
+  // list of a few hundred people, not project data that changes under you.
+  async function loadDirAll(force) {
+    if (dirAll && !force) return dirAll;
+    try {
+      dirAll = await PDb.selectAll(DIR, function (q) { return q.order('name'); });
+    } catch (err) {
+      if (dirMissing(err)) { dirOff = true; dirAll = []; return dirAll; }
+      throw err;
+    }
+    return dirAll;
+  }
+
   // ---- BD-map vocabulary, kept because live rows carry it -----------------
   // The corporate BD/TCD map this module was first built from classifies a
   // stakeholder by Sector and Group. The OPS register does not, but ~every
@@ -172,7 +378,11 @@ window.StakeholderMap = (function () {
     renderCriteria();
     renderBandToggles();
 
-    $('sm-add').onclick = function () { openForm(null); };
+    // ⚠️ The picker, not the blank form. See openAddPicker's own note: reusing an
+    // existing person is the DEFAULT path now, and "Add a new person" is the
+    // fallback inside it. openAddPicker falls through to openForm(null) by itself
+    // when the directory migration has not been run yet.
+    $('sm-add').onclick = function () { openAddPicker(); };
     $('sm-export').onclick = exportCsv;
     $('sm-project').onchange = function (e) {
       pid = e.target.value; sessionStorage.setItem('pd_project', pid); load(); joinCollab();
@@ -266,6 +476,16 @@ window.StakeholderMap = (function () {
       UI.toast(migrationHint(res.error), 'error'); return;
     }
     rows = res.data || [];
+
+    // ⚠️ BEFORE sortRows() and BEFORE the cache write, both deliberately.
+    //    sortRows() orders by `name`, which for a linked row is the DIRECTORY's
+    //    name -- sorting first and overlaying after would order the register by
+    //    whatever stale mirror the project row happened to hold. And the offline
+    //    cache must hold what the user actually saw, so it is written from the
+    //    overlaid rows, not the raw ones.
+    await loadPeople();
+    overlayPeople();
+
     sortRows();
     if (window.PDSync) PDSync.cachePut(PID_PFX + ':' + pid, rows);
 
@@ -396,51 +616,72 @@ window.StakeholderMap = (function () {
       var a = approachOf(r); if (a && ap[a] != null) ap[a]++;
       if (strategyOf(gapOf(r)) === 'Catch up') catchup++;
     });
-    /* ⚠ FOUR CARDS, AND THE THREE THAT WENT ARE THE ONES THAT ANSWERED NOTHING.
+    /* ⚠️ FOUR CARDS, AND THE THREE THAT WENT ARE THE ONES THAT ANSWERED NOTHING.
        Owner, 2026-09-08: *"The kpi warnings in the stakeholder map isn't necessary let's
        remove the total number of stakeholders, no photo, and no engagement plan. Let's fit
        the other 4 kpi cards in a single level row."*
-       - 'Stakeholders' restated the register's own row count, which the table header
+       — 'Stakeholders' restated the register's own row count, which the table header
          already prints;
-       - 'No photo' and 'No engagement plan' are data-entry chores, not stakeholder
+       — 'No photo' and 'No engagement plan' are data-entry chores, not stakeholder
          standing. They read as warnings about the project when they are warnings about
          the form, and on a young register they are simply the row count again.
        What survives is the four that rank ATTENTION: who matters, how to handle them,
        and who is drifting.
-       ⚠ NEITHER SIGNAL IS LOST, which is what makes the removal safe rather than a
+       ⚠️ NEITHER SIGNAL IS LOST, which is what makes the removal safe rather than a
           trade: 'no photo' is still a filter (filters.flag === 'nophoto') and a missing
           plan still prints on the stakeholder's own card (.sm-card-plan-none). They stop
           competing for the eye at the top of the screen; they do not stop being visible.
-       ⚠⚠ THE SECOND HALF OF THE ASK -- "a single level row" -- IS IN module.css,
-          NOT HERE, and it is not optional: `.sm-kpis` was a hardcoded `repeat(7, 1fr)`
-          with breakpoints at 1600/1000/700, so four cards would have sat in a seven-track
-          grid on a desktop and in a THREE-track one at the 918px the owner's screenshot
-          was taken at -- still two rows, the complaint unfixed, with three empty cells
-          added. With the auto-fit rule this commit puts there instead, four cards MEASURE
-          as one row at 760px and every width above. See the note on that rule. */
+       ⚠️ NO COLUMN COUNT IS DECLARED HERE, deliberately. The shared `.pd-kpis` is
+          `repeat(auto-fit, minmax(170px, 1fr))`, and MEASURED against the shipped CSS the
+          four cards are ONE row from 860px to 1850px — including 918px, which is the
+          width the owner's own screenshot was taken at (7 cards → 2 rows there, cards
+          209 CSS px). Below 760px they go to 2 rows, which is correct on a tablet. A
+          hardcoded 4-column rule is exactly what UI.kpis' own comment records removing
+          from five modules, because each copy's breakpoints left a ragged empty cell at
+          some window width. */
     $('sm-kpis').innerHTML =
       kpi('1st Priority', counts['1st Priority'], 'rcm-p1', 'high impact × high influence') +
       kpi('Manage Closely', ap['Manage Closely'], 'sm-k-manage', 'per the Impact / Influence map') +
       kpi('Keep Satisfied', ap['Keep Satisfied'], 'sm-k-satisfy', 'high impact, low influence') +
       kpi('Catch-up needed', catchup, 'sm-k-warn', 'relationship 2+ levels below target');
   }
+  // Adapter onto the SHARED metric card (UI.kpi). See the note in
+  // risk-register/module.js -- the two registers had two hand-rolled copies of
+  // the same card and they had already drifted (7 columns here, 6 there).
   function kpi(label, val, cls, sub) {
-    return '<div class="sm-kpi ' + cls + '"><div class="sm-kpi-val">' + val + '</div>' +
-      '<div class="sm-kpi-label">' + label + '</div>' + (sub ? '<div class="sm-kpi-sub">' + sub + '</div>' : '') + '</div>';
+    return UI.kpi(label, val, { cls: cls || '', sub: sub });
   }
 
   // ---- band toggles -----------------------------------------------------
+  // ⚠️ `label` is the FULL band name, printed by the table's own band header row
+  // and used to title the Add/Edit modal's sections — the register's controlled
+  // vocabulary. `short` is only the toggle caption in the module bar, which has
+  // to hold this control plus the picker, the tabs dropdown, the funnel and two
+  // buttons on ONE row. Same split, same reason, as risk-register/module.js.
+  // ⚠️ SIX bands here, and that is why the split matters MORE in this module
+  //    than in the Risk Register. Measured the same way (canvas measureText,
+  //    resolved 700 11px Montserrat): six FULL names = 527px, six SHORT verbs =
+  //    399px. Against a 996px content box at 1280px and ~610px of other controls,
+  //    the full names overflow by ~140px — enough to squeeze the project picker
+  //    down to an ellipsis. The verbs leave ~-13px, absorbed by the picker's own
+  //    `flex: 0 1 auto` as a few characters of a long project name.
+  //    The full name stays one hover away (title=), so nothing is hidden.
   var BANDS = [
-    { key: 'id',  label: 'Identification' },
-    { key: 'as',  label: 'Assessment' },
-    { key: 'rs',  label: 'Response' },
-    { key: 'en',  label: 'Engagement' },
-    { key: 'res', label: 'Residual' },
-    { key: 'au',  label: 'Audit plan' }
+    { key: 'id',  label: 'Identification', short: 'Identify' },
+    { key: 'as',  label: 'Assessment',     short: 'Assess'   },
+    { key: 'rs',  label: 'Response',       short: 'Respond'  },
+    { key: 'en',  label: 'Engagement',     short: 'Engage'   },
+    { key: 'res', label: 'Residual',       short: 'Residual' },
+    { key: 'au',  label: 'Audit plan',     short: 'Audit'    }
   ];
   function renderBandToggles() {
-    $('sm-bands').innerHTML = '<span class="sm-bands-lab">Bands</span>' + BANDS.map(function (b) {
-      return '<button class="sm-band' + (bands[b.key] ? ' on' : '') + '" data-band="' + b.key + '">' + b.label + '</button>';
+    // `aria-pressed`, not `aria-checked` — six independent toggles, not one of six.
+    $('sm-bands').innerHTML = BANDS.map(function (b) {
+      var on = !!bands[b.key];
+      return '<button type="button" class="' + (on ? 'on' : '') + '" data-band="' + b.key + '"' +
+        ' aria-pressed="' + on + '"' +
+        ' title="' + Fmt.esc(b.label) + ' columns — click to ' + (on ? 'hide' : 'show') + '">' +
+        Fmt.esc(b.short) + '</button>';
     }).join('');
     $('sm-bands').querySelectorAll('[data-band]').forEach(function (btn) {
       btn.onclick = function () {
@@ -781,14 +1022,14 @@ window.StakeholderMap = (function () {
         scale.map(function (x) { return ['<strong>' + x.rating + '</strong>', Fmt.esc(x.label), Fmt.esc(x.desc)]; }), note);
     }
     $('sm-criteria').innerHTML =
-      '<div class="pd-card"><h2 style="margin-top:0;">Stakeholder assessment criteria</h2>' +
+      '<div class="pd-card"><h2>Stakeholder assessment criteria</h2>' +
       '<p class="sm-help">Transcribed from “Criteria for Assessment” in <em>CSF101. OPS. Stakeholder Register</em>. Both axes are 1–4 — narrower than the risk register\'s 1–5, and deliberately so: a stakeholder is placed, not measured.</p>' +
       scaleTable('Table 1A — Impact rating', STK_IMPACT, null) +
       scaleTable('Table 1B — Influence rating', STK_INFLUENCE,
         '⚠️ The controlled document numbers the influence scale 1–4 but leaves its descriptors blank. The wording above is the parallel phrasing of the impact scale, supplied here so two planners score the same way — it is not a transcription.') +
       '</div>' +
 
-      '<div class="pd-card"><h2 style="margin-top:0;">Priority level and response category</h2>' +
+      '<div class="pd-card"><h2>Priority level and response category</h2>' +
       '<p class="sm-help">Priority Level is a lookup of Impact × Influence into the 4×4 grid below (the range the register\'s own <code>INDEX/MATCH</code> formula reads). Response Category is then a lookup of the priority.</p>' +
       '<div class="sm-refgrid">' + e.gridHTML({
         xMax: 4, yMax: 4, xLabel: 'Influence →', yLabel: 'Impact →',
@@ -802,7 +1043,7 @@ window.StakeholderMap = (function () {
         })) +
       '</div>' +
 
-      '<div class="pd-card"><h2 style="margin-top:0;">Impact / Influence map — the engagement approach</h2>' +
+      '<div class="pd-card"><h2>Impact / Influence map — the engagement approach</h2>' +
       '<p class="sm-help">Table 2 of the criteria sheet, and the classic Mendelow grid. ' +
       '<strong>⚠️ It disagrees with the Response Category lookup on some cells, and the workbook keeps both.</strong> ' +
       'Impact 3 × Influence 3 is 2nd Priority → <em>Keep Informed</em> by the lookup, and <em>Keep Satisfied</em> by this map. They are two different columns of the register (Q and AF), computed two different ways; this module shows both rather than inventing a single answer the source does not give. The Approach field can be overridden per stakeholder when a planner\'s judgement differs.</p>' +
@@ -814,11 +1055,11 @@ window.StakeholderMap = (function () {
       }) + '</div>' +
       '</div>' +
 
-      '<div class="pd-card"><h2 style="margin-top:0;">Residual risk assessment</h2>' +
+      '<div class="pd-card"><h2>Residual risk assessment</h2>' +
       '<p class="sm-help">A stakeholder is also a risk source, so the register re-scores them after the engagement response is in place: <strong>severity × occurrence × degree of control</strong> (1–125).</p>' +
       e.controlTableHTML() + e.residualBandTableHTML() + '</div>' +
 
-      '<div class="pd-card"><h2 style="margin-top:0;">Relationship strategy (BD map)</h2>' +
+      '<div class="pd-card"><h2>Relationship strategy (BD map)</h2>' +
       '<p class="sm-help">Carried over from the corporate <em>BD / TCD Stakeholder Map</em>, which the OPS register does not replace: rate the relationship you have and the one you need, and the gap sets a strategy and a minimum contact frequency.</p>' +
       e.tbl('Relationship rating', ['Rating', 'Meaning'],
         [4, 3, 2, 1].map(function (k) { return ['<strong>' + k + '</strong>', REL_L[k]]; })) +
@@ -828,7 +1069,7 @@ window.StakeholderMap = (function () {
         '⚠️ The BD workbook contradicts itself: its Guide sheet says Maintain = semi-annually and Enhance = quarterly, while the live cell formula — which the data actually follows — says the above. The live formula governs.') +
       '</div>' +
 
-      '<div class="pd-card"><h2 style="margin-top:0;">MCC Stakeholder Universe</h2>' +
+      '<div class="pd-card"><h2>MCC Stakeholder Universe</h2>' +
       '<p class="sm-help">The same 10-term taxonomy the Risk Register uses, so a stakeholder and the risks they create can be read against each other.</p>' +
       e.universeTableHTML() + '</div>';
   }
@@ -849,7 +1090,16 @@ window.StakeholderMap = (function () {
     // Filters apply to the register AND the cards (both are lists of people);
     // the band toggles are columns, so they belong to the register alone.
     $('sm-filters').style.display = (view === 'list' || view === 'cards') ? '' : 'none';
-    $('sm-bands').style.display = view === 'list' ? '' : 'none';
+    // ⚠️ Hide the seg's own trailing separator WITH it. The bands moved into the
+    // module bar's tool cluster (2026-09-08), where every group is fenced by a
+    // 1px `.sm-tb-sep`; hiding only the control left its fence behind, so the
+    // three non-Register views showed two dividers with nothing between them.
+    (function () {
+      var el = $('sm-bands'), show = view === 'list';
+      el.style.display = show ? '' : 'none';
+      var sep = el.nextElementSibling;
+      if (sep && sep.classList.contains('sm-tb-sep')) sep.style.display = show ? '' : 'none';
+    }());
     if ($('sm-filttoggle')) $('sm-filttoggle').style.display = (view === 'list' || view === 'cards') ? '' : 'none';
     if (link) {
       document.querySelectorAll('.sm-tabs [data-view]').forEach(function (a) { a.classList.remove('active'); });
@@ -924,12 +1174,312 @@ window.StakeholderMap = (function () {
   }
 
   // ========================================================================
+  // EDIT PERSON -- the one door into the GLOBAL half of a stakeholder
+  // ------------------------------------------------------------------------
+  // ⚠️ A SEPARATE DIALOG, not an unlock button on band 1, and that is the whole
+  //    design. Owner ask, 2026-09-08: "we should just consider if the updating of
+  //    the stakeholder will have a global-level and project-level information."
+  //    A single form where some fields quietly write to three other projects and
+  //    the rest do not is the version of this feature that loses data: a planner
+  //    fixes a typo in a role while assessing project B and changes what projects
+  //    A and C print, with nothing on screen having said so. So the global fields
+  //    live behind their own dialog whose title, banner and Save button all name
+  //    the blast radius.
+  //
+  // ⚠️ It re-reads the person from the server before showing the form. The cached
+  //    copy could be minutes old and another planner may have corrected the same
+  //    record; editing a stale copy and saving it would silently revert them.
+  async function openPersonForm(personId, onSaved) {
+    var m0 = UI.modal('<div class="pd-modal-header"><h2>Loading person…</h2></div>' +
+                      '<div class="pd-modal-body"><div class="sm-ap-load">Fetching the shared record…</div></div>');
+    var cur = null;
+    try {
+      var res = await sb().from(DIR).select('*').eq('id', personId).limit(1);
+      if (res.error) throw res.error;
+      cur = (res.data || [])[0];
+      if (!cur) throw new Error('That person is no longer in the directory.');
+    } catch (err) {
+      m0.close();
+      UI.toast((err && err.message) || 'Could not load the person', 'error');
+      return;
+    }
+    m0.close();
+
+    // How many projects this change will reach. Counted, never guessed -- the
+    // sentence on screen is a claim about the user's data and has to be true.
+    var projCount = 1;
+    try {
+      var u = await sb().from(TABLE).select('project_id').eq('stakeholder_id', personId);
+      var seen = {};
+      (u.data || []).forEach(function (x) { seen[x.project_id] = 1; });
+      projCount = Object.keys(seen).length || 1;
+    } catch (e) { /* fall back to the honest minimum of 1 */ }
+
+    function optsOf(list, val) {
+      return '<option value="">—</option>' + list.map(function (o) {
+        return '<option' + (val === o ? ' selected' : '') + '>' + Fmt.esc(o) + '</option>';
+      }).join('');
+    }
+
+    var m = UI.modal(
+      '<div class="pd-modal-header">' +
+        '<h2>Edit person</h2>' +
+        '<button type="button" class="pd-modal-close" id="ep-x" aria-label="Close">&times;</button>' +
+      '</div>' +
+      '<div class="pd-modal-body">' +
+        '<div class="sm-scope" data-scope="warn">' +
+          '<span class="sm-scope-ic" data-ico="users" data-ico-size="15"></span>' +
+          '<span class="sm-scope-tx">These are the person\'s own details. Saving changes them on ' +
+            '<strong>' + (projCount === 1 ? 'this project' : 'all ' + projCount + ' projects') +
+            '</strong> where they are registered. This project\'s assessment, response, ' +
+            'engagement plan and owner are not affected.</span>' +
+        '</div>' +
+        '<div class="sm-frow">' +
+          '<div class="pd-field" style="flex:2;"><label>Name of stakeholder</label><input class="pd-input" id="ep-name" value="' + Fmt.esc(cur.name) + '"></div>' +
+          '<div class="pd-field" style="flex:1;"><label>Nickname</label><input class="pd-input" id="ep-nick" value="' + Fmt.esc(cur.nickname) + '"></div>' +
+          '<div class="pd-field" style="flex:0 0 110px;"><label>Honorific</label><input class="pd-input" id="ep-title" value="' + Fmt.esc(cur.title) + '" placeholder="Engr. / Ar."></div>' +
+        '</div>' +
+        '<div class="sm-frow">' +
+          '<div class="pd-field" style="flex:2;"><label>Role</label><input class="pd-input" id="ep-role" value="' + Fmt.esc(cur.role_title) + '"></div>' +
+          '<div class="pd-field" style="flex:2;"><label>Organisation</label><input class="pd-input" id="ep-org" list="dl-orgs" value="' + Fmt.esc(cur.organization) + '"></div>' +
+        '</div>' +
+        '<div class="sm-frow">' +
+          '<div class="pd-field" style="flex:1;"><label>Sector</label><select class="pd-select" id="ep-sector">' + optsOf(SECTORS, cur.category) + '</select></div>' +
+          '<div class="pd-field" style="flex:1;"><label>Group</label><select class="pd-select" id="ep-group">' + optsOf(GROUPS, cur.stakeholder_group) +
+            (cur.stakeholder_group && GROUPS.indexOf(cur.stakeholder_group) === -1 ? '<option selected>' + Fmt.esc(cur.stakeholder_group) + '</option>' : '') + '</select></div>' +
+        '</div>' +
+        '<div class="sm-frow">' +
+          '<div class="pd-field" style="flex:1;"><label>Email</label><input class="pd-input" type="email" id="ep-email" value="' + Fmt.esc(cur.email) + '"></div>' +
+          '<div class="pd-field" style="flex:1;"><label>Contact no.</label><input class="pd-input" id="ep-contact" value="' + Fmt.esc(cur.contact) + '"></div>' +
+          '<div class="pd-field" style="flex:0 0 160px;"><label>Birthday</label><input class="pd-input" type="date" id="ep-bday" value="' + (cur.birthday || '') + '"></div>' +
+          '<div class="pd-field" style="flex:0 0 120px;"><label>Gift tier</label><input class="pd-input" id="ep-gift" value="' + Fmt.esc(cur.gift_tier) + '"></div>' +
+        '</div>' +
+        '<div class="pd-field"><label>Notes about this person</label>' +
+          '<textarea class="pd-textarea" id="ep-notes" rows="2" placeholder="Anything true of them wherever they appear — not this project\'s engagement plan.">' + Fmt.esc(cur.notes) + '</textarea></div>' +
+      '</div>' +
+      '<div class="pd-modal-footer">' +
+        '<button class="pd-btn" id="ep-cancel">Cancel</button>' +
+        '<button class="pd-btn pd-btn-primary" id="ep-save">Save for all projects</button>' +
+      '</div>');
+
+    function q(sel) { return m.el.querySelector(sel); }
+    q('#ep-x').onclick = m.close;
+    q('#ep-cancel').onclick = m.close;
+
+    q('#ep-save').onclick = async function () {
+      var btn = q('#ep-save');
+      var fields = {
+        name: q('#ep-name').value.trim(),
+        nickname: q('#ep-nick').value.trim(),
+        title: q('#ep-title').value.trim(),
+        role_title: q('#ep-role').value.trim(),
+        organization: q('#ep-org').value.trim(),
+        category: q('#ep-sector').value,
+        stakeholder_group: q('#ep-group').value,
+        email: q('#ep-email').value.trim(),
+        contact: q('#ep-contact').value.trim(),
+        birthday: q('#ep-bday').value || null,
+        gift_tier: q('#ep-gift').value.trim(),
+      };
+      if (!fields.name) { UI.toast('Name is required', 'warn'); return; }
+      try {
+        btn.disabled = true; btn.textContent = 'Saving…';
+        // `notes` is not in PERSON_FIELDS (it has no mirror column on
+        // stakeholder_map), so it is patched alongside rather than through it.
+        await updatePerson(personId, fields);
+        var nres = await sb().from(DIR).update({ notes: q('#ep-notes').value.trim() || null }).eq('id', personId);
+        if (nres.error) throw nres.error;
+        UI.toast(projCount === 1 ? 'Person updated' : 'Person updated on ' + projCount + ' projects', 'ok');
+        m.close();
+        // ⚠️ A full reload, not a local patch. The person's fields are mirrored
+        //    onto every project row, and the rows this project holds have to be
+        //    re-overlaid AND re-sorted (the register sorts by name). load() is the
+        //    one path that does all of that in the right order.
+        if (typeof onSaved === 'function') onSaved();
+        dirAll = null;
+        load();
+      } catch (err) {
+        UI.toast((err && err.message) || 'Save failed', 'error');
+      } finally {
+        btn.disabled = false; btn.textContent = 'Save for all projects';
+      }
+    };
+
+    // ⚠️ `hydrate`, not `paint`. icons.js exports { svg, hydrate, names } and
+    //    hydrates on DOMContentLoaded only — markup injected into a modal AFTER
+    //    that point keeps its bare `data-ico` span and renders NOTHING, silently.
+    //    It also skips anything already carrying data-ico-done, so calling it on a
+    //    subtree is cheap and idempotent.
+    if (window.Icons) Icons.hydrate(m.el);
+  }
+
+  // ========================================================================
+  // ADD -- pick an existing person first, type a new one only if they are new
+  // ------------------------------------------------------------------------
+  // ⚠️ THIS IS THE POINT OF THE WHOLE DIRECTORY FEATURE, so it is the DEFAULT
+  //    path and not an option tucked inside the form. "+ Add stakeholder" used to
+  //    open a blank 6-band form; registering a City Mayor already on three other
+  //    projects meant re-typing twelve identity fields and re-uploading a
+  //    photograph that already existed in the bucket. Now it opens this: a search
+  //    over the directory, with "Add a new person" as the fallback for someone
+  //    genuinely new.
+  //
+  // ⚠️ Choosing a person does NOT create the row and close. It opens the normal
+  //    Add form with the identity band pre-filled AND LOCKED TO THE DIRECTORY,
+  //    because the project-level bands -- which activity, what impact, whose
+  //    relationship -- still have to be filled in and are the only reason a
+  //    project row exists. Creating the row on click would leave an unassessed
+  //    stakeholder on the register with no impact, no influence and no owner,
+  //    which is worse than not adding them.
+  async function openAddPicker() {
+    if (!pid) { UI.toast('Select a project first', 'warn'); return; }
+
+    // If the migration has not been run there is no directory to pick from, so
+    // this step would be a dead dialog -- go straight to the blank form.
+    if (dirOff) { openForm(null); return; }
+
+    var m = UI.modal(
+      '<div class="pd-modal-header">' +
+        '<h2>Add stakeholder</h2>' +
+        '<button type="button" class="pd-modal-close" id="ap-x" aria-label="Close">&times;</button>' +
+      '</div>' +
+      '<div class="pd-modal-body">' +
+        '<p class="sm-help" style="margin:0 0 10px;">Search the stakeholder directory. Picking someone reuses their name, role, organisation and photo &mdash; you only fill in this project\'s assessment.</p>' +
+        '<input class="pd-input" id="ap-q" placeholder="Search by name, role or organisation…" autocomplete="off">' +
+        '<div class="sm-ap-list" id="ap-list"><div class="sm-ap-load">Loading directory…</div></div>' +
+      '</div>' +
+      '<div class="pd-modal-footer">' +
+        '<button class="pd-btn" id="ap-cancel">Cancel</button>' +
+        '<button class="pd-btn pd-btn-primary" id="ap-new">Add a new person</button>' +
+      '</div>');
+
+    function q(sel) { return m.el.querySelector(sel); }
+    q('#ap-x').onclick = m.close;
+    q('#ap-cancel').onclick = m.close;
+    q('#ap-new').onclick = function () { m.close(); openForm(null); };
+
+    var all = [];
+    try { all = await loadDirAll(); }
+    catch (err) { q('#ap-list').innerHTML = '<div class="sm-ap-load">Directory unavailable: ' + Fmt.esc((err && err.message) || 'request failed') + '</div>'; return; }
+    if (dirOff) { m.close(); openForm(null); return; }
+
+    // Who is ALREADY on this project, so they can be shown and disabled rather
+    // than silently missing from the list -- "why can't I find him" is worse than
+    // "he is already here".
+    var here = {};
+    rows.forEach(function (row) { if (row.stakeholder_id) here[row.stakeholder_id] = 1; });
+
+    // Cross-project usage for every person in the directory, so the list can say
+    // "on 3 projects". One query, not one per person.
+    var usage = {};
+    try {
+      var u = await sb().from(TABLE).select('stakeholder_id,project_id').not('stakeholder_id', 'is', null);
+      (u.data || []).forEach(function (x) {
+        var a = usage[x.stakeholder_id] || (usage[x.stakeholder_id] = []);
+        if (a.indexOf(x.project_id) === -1) a.push(x.project_id);
+      });
+    } catch (e) { /* the count is a nicety; the picker still works without it */ }
+
+    function paint() {
+      var term = q('#ap-q').value.trim().toLowerCase();
+      var hits = !term ? all : all.filter(function (x) {
+        return [x.name, x.role_title, x.organization, x.nickname, x.stakeholder_group]
+          .some(function (v) { return String(v || '').toLowerCase().indexOf(term) !== -1; });
+      });
+      if (!all.length) {
+        q('#ap-list').innerHTML = '<div class="sm-ap-load">The directory is empty. Add the first person with <strong>Add a new person</strong> &mdash; everyone you add from now on is reusable on every project.</div>';
+        return;
+      }
+      if (!hits.length) {
+        q('#ap-list').innerHTML = '<div class="sm-ap-load">Nobody in the directory matches &ldquo;' + Fmt.esc(term) + '&rdquo;. Use <strong>Add a new person</strong>.</div>';
+        return;
+      }
+      // ⚠️ Capped, and it says so. The list is a picker, not a browser -- rendering
+      //    a few hundred rows with an avatar each on every keystroke is what makes
+      //    a search box feel broken.
+      var shown = hits.slice(0, 60);
+      q('#ap-list').innerHTML = shown.map(function (x) {
+        var on = (usage[x.id] || []).length;
+        var mine = !!here[x.id];
+        var sub = [x.role_title, x.organization].filter(Boolean).join(' · ');
+        return '<button type="button" class="sm-ap-row' + (mine ? ' is-here' : '') + '" data-id="' + x.id + '"' +
+            (mine ? ' disabled title="Already on this project"' : '') + '>' +
+            avatarHTML(x, 'sm') +
+            '<span class="sm-ap-txt"><strong>' + Fmt.esc(x.name) + '</strong>' +
+              (sub ? '<small>' + Fmt.esc(sub) + '</small>' : '') + '</span>' +
+            '<span class="sm-ap-tag">' + (mine ? 'on this project'
+               : on ? 'on ' + on + ' project' + (on === 1 ? '' : 's') : 'not yet used') + '</span>' +
+          '</button>';
+      }).join('') +
+      (hits.length > shown.length
+        ? '<div class="sm-ap-load">' + (hits.length - shown.length) + ' more match — keep typing to narrow it down.</div>' : '');
+
+      q('#ap-list').querySelectorAll('[data-id]').forEach(function (b) {
+        b.onclick = function () {
+          var person = all.filter(function (x) { return x.id === b.dataset.id; })[0];
+          if (!person) return;
+          m.close();
+          openForm(null, { person: person });
+        };
+      });
+    }
+
+    // ⚠️ Sign the shown faces, then repaint ONCE. A face is the reason photos
+    //    exist in this module at all ("walking into a meeting with a client's
+    //    operations head you have never met"), so a picker of initials would
+    //    throw away the feature at the moment it is most useful. Signing is one
+    //    batched round trip for at most 60 paths, fired AFTER the list is already
+    //    on screen -- the same two-pass shape load() uses, for the same reason.
+    //    Guarded against the modal having been closed in the meantime.
+    var signing = false;
+    async function paintAndSign() {
+      paint();
+      if (signing || !m.el.isConnected) return;
+      var need = [];
+      m.el.querySelectorAll('[data-id]').forEach(function (b) {
+        var x = all.filter(function (y) { return y.id === b.dataset.id; })[0];
+        var path = x && (x.photo_thumb_path || x.photo_path);
+        if (path && !urlCache[path]) need.push(path);
+      });
+      if (!need.length) return;
+      signing = true;
+      await signPaths(need);
+      signing = false;
+      if (m.el.isConnected) paint();
+    }
+
+    if (window.Icons) Icons.hydrate(m.el);
+    q('#ap-q').oninput = paintAndSign;
+    paintAndSign();
+    q('#ap-q').focus();
+  }
+
+  // ========================================================================
   // Add / Edit
   // ========================================================================
-  function openForm(r) {
+  function openForm(r, fopts) {
     if (!pid) { UI.toast('Select a project first', 'warn'); return; }
     var isNew = !r; r = r || {};
     var e = E();
+    fopts = fopts || {};
+
+    // ---- which PERSON is this row about? ----------------------------------
+    // Three cases, and they are genuinely different:
+    //   picked   -- openAddPicker chose an existing directory entry. `person` is
+    //               set, so the identity band is that person's, read-only.
+    //   linked   -- an existing project row that points at a directory entry.
+    //               Same treatment: identity is shared, edited via "Edit person".
+    //   legacy   -- a row from before the migration (or one whose person was
+    //               deleted). `person` is null, the identity fields are the row's
+    //               own, and saving CREATES the directory entry and links it, so
+    //               the register cleans itself up as people touch it.
+    var person = fopts.person || personOf(r) || null;
+    var shared = !!person;
+    // ⚠️ Read the identity fields off the PERSON where there is one. `r` is the
+    //    mirror and can be stale; this is the same precedence overlayPeople()
+    //    applies, and the form must not disagree with the table behind it.
+    var ident = shared ? person : r;
+    var onProjects = shared ? ((dirUsage[person.id] || fopts.onProjects || []).length || 1) : 0;
 
     // Photo state for this modal. ⚠️ The file is held in memory and uploaded on
     // SAVE, not on pick: uploading on pick means every abandoned modal leaves an
@@ -948,6 +1498,18 @@ window.StakeholderMap = (function () {
       }
       return s;
     }
+    // ⚠️ Band 1's inputs are DISABLED, not hidden, when the person is shared.
+    //    Hiding them would leave a planner unable to see the name of the person
+    //    they are assessing; disabling shows the facts and says "not here".
+    //    `disabled` (not `readonly`) on purpose: a readonly input still looks and
+    //    tabs like an editable one, and this app's own `.pd-input:focus` ring
+    //    would then fire on a field that cannot be typed into.
+    //    ⚠️ It also means these fields are NOT in the save payload's person half
+    //    when shared -- see the save handler, which reads them only for the
+    //    unlinked/new case. A disabled input's .value still reads fine, so the
+    //    guard there is on `shared`, not on the DOM.
+    var dis = shared ? ' disabled' : '';
+
     function relSel(val) {
       var s = '<option value="">—</option>';
       for (var k = 4; k >= 1; k--) s += '<option value="' + k + '"' + (n4(val) === k ? ' selected' : '') + '>' + k + ' — ' + REL_L[k] + '</option>';
@@ -968,40 +1530,89 @@ window.StakeholderMap = (function () {
     }).join('');
 
     var m = UI.modal(
-      '<h2 style="margin-top:0;">' + (isNew ? 'Add stakeholder' : 'Edit stakeholder') + '</h2>' +
+      // ⚠️ HEADER / BODY / FOOTER, not a raw dump into `.pd-modal`.
+      // `.pd-modal` is itself the scroller (max-height:90vh; overflow-y:auto), so
+      // the previous shape -- a bare <h2>, then ~40 fields across six RCM bands,
+      // then a right-aligned <div> of buttons at the very bottom of that same
+      // scrolling column -- took BOTH the title and the Save button off screen the
+      // moment the form was scrolled. dashboard.css has carried a written warning
+      // about exactly this since 2026-07-02, and it had already been fixed
+      // one-module-at-a-time for `#ps-modal` (2026-08-24) and `.boq-imp`
+      // (2026-08-26). This is the same fix, in the last two modules still on the
+      // old shape. `.pd-modal-body` bounds the scroll to the fields, so the title
+      // and Save stay put by construction rather than by a sticky offset.
+      // ⚠️ The button ids are unchanged (#f-cancel / #f-save) -- the wiring below
+      // finds them through m.el, so moving them into the footer rewires nothing.
+      '<div class="pd-modal-header">' +
+        '<h2>' + (isNew ? 'Add stakeholder' : 'Edit stakeholder') + '</h2>' +
+        '<button type="button" class="pd-modal-close" id="f-x" aria-label="Close">&times;</button>' +
+      '</div>' +
+      '<div class="pd-modal-body">' +
 
-      '<div class="sm-fsec">1 · Identity &amp; photo</div>' +
+            // ⚠️ BAND 1 IS THE ONLY BAND THAT IS NOT ABOUT THIS PROJECT, and the form
+      //    now says so instead of leaving a planner to discover it. Owner ask,
+      //    2026-09-08: "we should just consider if the updating of the
+      //    stakeholder will have a global-level and project-level information."
+      //    Everything from band 2 down is this project's assessment of the
+      //    person; band 1 IS the person. Editing a shared identity from inside
+      //    one project's form and silently changing it on three others is the
+      //    trap this banner exists to close -- so where the person is shared, the
+      //    fields are DISABLED here and there is one explicit door into them.
+      '<div class="sm-fsec">1 · Identity &amp; photo' +
+        '<span class="sm-fsec-hint">' + (shared ? 'shared — the same person on every project' : 'this person') + '</span></div>' +
+      (shared
+        ? '<div class="sm-scope" data-scope="global">' +
+            '<span class="sm-scope-ic" data-ico="users" data-ico-size="15"></span>' +
+            '<span class="sm-scope-tx"><strong>' + Fmt.esc(ident.name) + '</strong> comes from the shared stakeholder directory' +
+              (onProjects > 1 ? ' and is registered on <strong>' + onProjects + ' projects</strong>' : '') +
+              '. Their name, role, organisation, contact details and photo are the same everywhere.</span>' +
+            '<button type="button" class="pd-btn pd-btn-sm sm-scope-btn" id="f-editperson">Edit person…</button>' +
+          '</div>'
+        : '<div class="sm-scope" data-scope="new">' +
+            '<span class="sm-scope-ic" data-ico="users" data-ico-size="15"></span>' +
+            '<span class="sm-scope-tx">' + (isNew
+              ? 'Saving adds this person to the <strong>shared directory</strong>, so the next project can reuse them without re-typing any of this.'
+              : 'This row predates the shared directory. Saving adds this person to it and links them, so a correction here reaches every project from then on.') +
+            '</span>' +
+          '</div>') +
+'<div class="sm-fsec">1 · Identity &amp; photo</div>' +
       '<div class="sm-idrow">' +
         // The photo well IS the drop target and the file picker — a separate
         // "Choose file" button beside a preview is two controls for one job.
-        '<div class="sm-photowell" id="f-well" tabindex="0" role="button" aria-label="Add or replace photo">' +
+        // ⚠️ The PHOTO is a person fact too, so a shared row's well is inert
+        //    (`.is-locked` blocks the pointer and the keyboard, and wire() skips
+        //    its handlers). A photo picker that opens, uploads, and then has its
+        //    result discarded by the save split would be the worst of the three
+        //    possible behaviours.
+        '<div class="sm-photowell' + (shared ? ' is-locked' : '') + '" id="f-well"' +
+          (shared ? '' : ' tabindex="0" role="button"') + ' aria-label="Add or replace photo">' +
           '<div class="sm-photowell-img" id="f-prev"></div>' +
           '<div class="sm-photowell-hint" id="f-well-hint">Add photo</div>' +
           '<input type="file" id="f-file" accept="image/*" hidden>' +
         '</div>' +
         '<div class="sm-idfields">' +
           '<div class="sm-frow">' +
-            '<div class="pd-field" style="flex:2;"><label>Name of stakeholder</label><input class="pd-input" id="f-name" value="' + Fmt.esc(r.name) + '"></div>' +
-            '<div class="pd-field" style="flex:1;"><label>Nickname</label><input class="pd-input" id="f-nick" value="' + Fmt.esc(r.nickname) + '"></div>' +
-            '<div class="pd-field" style="flex:0 0 110px;"><label>Honorific</label><input class="pd-input" id="f-title" value="' + Fmt.esc(r.title) + '" placeholder="Engr. / Ar."></div>' +
+            '<div class="pd-field" style="flex:2;"><label>Name of stakeholder</label><input class="pd-input" id="f-name" value="' + Fmt.esc(ident.name) + '"' + dis + '></div>' +
+            '<div class="pd-field" style="flex:1;"><label>Nickname</label><input class="pd-input" id="f-nick" value="' + Fmt.esc(ident.nickname) + '"' + dis + '></div>' +
+            '<div class="pd-field" style="flex:0 0 110px;"><label>Honorific</label><input class="pd-input" id="f-title" value="' + Fmt.esc(ident.title) + '" placeholder="Engr. / Ar."' + dis + '></div>' +
           '</div>' +
           '<div class="sm-frow">' +
-            '<div class="pd-field" style="flex:2;"><label>Role</label><input class="pd-input" id="f-role" value="' + Fmt.esc(r.role_title) + '" placeholder="e.g. C2W — Operations Head"></div>' +
-            '<div class="pd-field" style="flex:2;"><label>Organisation</label><input class="pd-input" id="f-org" list="dl-orgs" value="' + Fmt.esc(r.organization) + '"></div>' +
+            '<div class="pd-field" style="flex:2;"><label>Role</label><input class="pd-input" id="f-role" value="' + Fmt.esc(ident.role_title) + '" placeholder="e.g. C2W — Operations Head"' + dis + '></div>' +
+            '<div class="pd-field" style="flex:2;"><label>Organisation</label><input class="pd-input" id="f-org" list="dl-orgs" value="' + Fmt.esc(ident.organization) + '"' + dis + '></div>' +
           '</div>' +
           '<div class="sm-frow">' +
-            '<div class="pd-field" style="flex:1;"><label>Sector</label><select class="pd-select" id="f-sector">' + opts(SECTORS, r.category, true) + '</select></div>' +
-            '<div class="pd-field" style="flex:1;"><label>Group</label><select class="pd-select" id="f-group">' + opts(GROUPS, r.stakeholder_group, true) +
-              (r.stakeholder_group && GROUPS.indexOf(r.stakeholder_group) === -1 ? '<option selected>' + Fmt.esc(r.stakeholder_group) + '</option>' : '') + '</select></div>' +
+            '<div class="pd-field" style="flex:1;"><label>Sector</label><select class="pd-select" id="f-sector"' + dis + '>' + opts(SECTORS, ident.category, true) + '</select></div>' +
+            '<div class="pd-field" style="flex:1;"><label>Group</label><select class="pd-select" id="f-group"' + dis + '>' + opts(GROUPS, ident.stakeholder_group, true) +
+              (ident.stakeholder_group && GROUPS.indexOf(ident.stakeholder_group) === -1 ? '<option selected>' + Fmt.esc(ident.stakeholder_group) + '</option>' : '') + '</select></div>' +
             '<div class="pd-field" style="flex:1;"><label>Relationship champion</label><input class="pd-input" id="f-champ" list="dl-people" value="' + Fmt.esc(r.relationship_champion) + '"></div>' +
           '</div>' +
         '</div>' +
       '</div>' +
       '<div class="sm-frow">' +
-        '<div class="pd-field" style="flex:1;"><label>Email</label><input class="pd-input" type="email" id="f-email" value="' + Fmt.esc(r.email) + '"></div>' +
-        '<div class="pd-field" style="flex:1;"><label>Contact no.</label><input class="pd-input" id="f-contact" value="' + Fmt.esc(r.contact) + '"></div>' +
-        '<div class="pd-field" style="flex:0 0 160px;"><label>Birthday</label><input class="pd-input" type="date" id="f-bday" value="' + (r.birthday || '') + '"></div>' +
-        '<div class="pd-field" style="flex:0 0 120px;"><label>Gift tier</label><input class="pd-input" id="f-gift" value="' + Fmt.esc(r.gift_tier) + '"></div>' +
+        '<div class="pd-field" style="flex:1;"><label>Email</label><input class="pd-input" type="email" id="f-email" value="' + Fmt.esc(ident.email) + '"' + dis + '></div>' +
+        '<div class="pd-field" style="flex:1;"><label>Contact no.</label><input class="pd-input" id="f-contact" value="' + Fmt.esc(ident.contact) + '"' + dis + '></div>' +
+        '<div class="pd-field" style="flex:0 0 160px;"><label>Birthday</label><input class="pd-input" type="date" id="f-bday" value="' + (ident.birthday || '') + '"' + dis + '></div>' +
+        '<div class="pd-field" style="flex:0 0 120px;"><label>Gift tier</label><input class="pd-input" id="f-gift" value="' + Fmt.esc(ident.gift_tier) + '"' + dis + '></div>' +
       '</div>' +
 
       '<div class="sm-fsec">2 · Register placement</div>' +
@@ -1076,8 +1687,11 @@ window.StakeholderMap = (function () {
       '<div class="pd-field"><label>Notes</label><textarea class="pd-textarea" id="f-eng" rows="2">' + Fmt.esc(r.engagement) + '</textarea></div>' +
 
       dl('dl-people', people) + dl('dl-orgs', orgs) + '<datalist id="dl-subproc"></datalist>' +
-      '<div style="text-align:right;margin-top:10px;"><button class="pd-btn" id="f-cancel">Cancel</button> ' +
-      '<button class="pd-btn pd-btn-primary" id="f-save">Save</button></div>'
+      '</div>' +
+      '<div class="pd-modal-footer">' +
+        '<button class="pd-btn" id="f-cancel">Cancel</button>' +
+        '<button class="pd-btn pd-btn-primary" id="f-save">Save</button>' +
+      '</div>'
     );
 
     function q(sel) { return m.el.querySelector(sel); }
@@ -1085,7 +1699,12 @@ window.StakeholderMap = (function () {
     // -- photo well ---------------------------------------------------------
     function paintPhoto() {
       var prev = q('#f-prev'), hint = q('#f-well-hint');
-      var url = previewUrl || (!removeExisting ? fullPhotoUrl(r) : '');
+      // ⚠️ `ident`, not `r`. For a person just chosen in the Add picker `r` is
+      //    `{}` -- the project row does not exist yet -- so reading the row would
+      //    show an initials placeholder for someone whose photograph is already
+      //    in the bucket, which is precisely the re-upload this feature exists to
+      //    avoid. `ident` is the person where there is one and the row otherwise.
+      var url = previewUrl || (!removeExisting ? fullPhotoUrl(ident) : '');
       if (url) {
         prev.innerHTML = '<img src="' + Fmt.esc(url) + '" alt="">' +
           '<button type="button" class="sm-photo-x" id="f-photo-x" title="Remove photo">×</button>';
@@ -1102,7 +1721,7 @@ window.StakeholderMap = (function () {
         };
       } else {
         prev.innerHTML = '<span class="sm-photowell-ph">' +
-          Fmt.esc(initials(q('#f-name') ? q('#f-name').value : r.name)) + '</span>';
+          Fmt.esc(initials(q('#f-name') ? q('#f-name').value : ident.name)) + '</span>';
         hint.textContent = 'Add photo';
       }
     }
@@ -1119,22 +1738,39 @@ window.StakeholderMap = (function () {
       q('#f-name').dispatchEvent(new Event('input', { bubbles: true }));
     }
     var well = q('#f-well');
-    well.onclick = function (ev) { if (!ev.target.closest('.sm-photo-x')) q('#f-file').click(); };
-    well.onkeydown = function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); q('#f-file').click(); } };
-    q('#f-file').onchange = function () { takeFile(this.files && this.files[0]); this.value = ''; };
-    ['dragenter', 'dragover'].forEach(function (t) {
-      well.addEventListener(t, function (ev) { ev.preventDefault(); well.classList.add('drop'); });
-    });
-    ['dragleave', 'drop'].forEach(function (t) {
-      well.addEventListener(t, function (ev) { ev.preventDefault(); well.classList.remove('drop'); });
-    });
-    well.addEventListener('drop', function (ev) {
-      var f = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
-      takeFile(f);
-    });
-    // A blank well shows the initials, so it has to follow the name as it is typed.
-    q('#f-name').addEventListener('input', function () { if (!previewUrl && (removeExisting || !r.photo_path)) paintPhoto(); });
+    // ⚠️ The photo is a PERSON fact, so on a shared row none of this is wired at
+    //    all. `.is-locked`'s `pointer-events:none` would already swallow the
+    //    click, but relying on a CSS property to enforce a data rule is how a
+    //    later "let's make the well clickable again" change quietly re-opens the
+    //    hole: pick a file, upload it on save, and watch the save split discard
+    //    the path. The handlers simply do not exist here.
+    if (!shared) {
+      well.onclick = function (ev) { if (!ev.target.closest('.sm-photo-x')) q('#f-file').click(); };
+      well.onkeydown = function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); q('#f-file').click(); } };
+      q('#f-file').onchange = function () { takeFile(this.files && this.files[0]); this.value = ''; };
+      ['dragenter', 'dragover'].forEach(function (t) {
+        well.addEventListener(t, function (ev) { ev.preventDefault(); well.classList.add('drop'); });
+      });
+      ['dragleave', 'drop'].forEach(function (t) {
+        well.addEventListener(t, function (ev) { ev.preventDefault(); well.classList.remove('drop'); });
+      });
+      well.addEventListener('drop', function (ev) {
+        var f = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
+        takeFile(f);
+      });
+      // A blank well shows the initials, so it has to follow the name as it is typed.
+      q('#f-name').addEventListener('input', function () { if (!previewUrl && (removeExisting || !r.photo_path)) paintPhoto(); });
+    }
     paintPhoto();
+
+    // A person picked from the directory may have a photo whose URL this session
+    // has never signed (they were on another project). Sign it and repaint --
+    // one batched round trip, after the form is already on screen.
+    if (shared && (ident.photo_path || ident.photo_thumb_path) && !fullPhotoUrl(ident)) {
+      signPaths([ident.photo_path, ident.photo_thumb_path]).then(function () {
+        if (m.el.isConnected) paintPhoto();
+      });
+    }
 
     // -- activity → objective/description + sub-process suggestions ---------
     function paintActivity() {
@@ -1210,13 +1846,65 @@ window.StakeholderMap = (function () {
     var _origClose = m.close;
     m.close = function () { if (previewUrl) { URL.revokeObjectURL(previewUrl); previewUrl = null; } _origClose(); };
     q('#f-cancel').onclick = m.close;
+    // The header's own X (added with the header/body/footer restructure) --
+    // every other dialog in the app that has a `.pd-modal-header` has one, and
+    // a modal whose only way out is a Cancel button at the bottom of a long
+    // scroll is the same defect in a different place.
+    q('#f-x').onclick = m.close;
+
+    // Band 1's one door into the global fields. Closes this form first: the
+    // person dialog reloads the register on save, so leaving a stale project
+    // form open behind it would show pre-edit identity values over post-edit
+    // data -- and its own Save would then write that stale mirror back.
+    // The band-1 scope banner carries a `data-ico` span, injected after
+    // DOMContentLoaded — hydrate this modal's subtree or it renders empty.
+    if (window.Icons) Icons.hydrate(m.el);
+
+    var epBtn = q('#f-editperson');
+    if (epBtn) {
+      epBtn.onclick = function () {
+        var id = person.id;
+        m.close();
+        openPersonForm(id);
+      };
+    }
 
     q('#f-save').onclick = async function () {
       var btn = q('#f-save');
       var no = +q('#f-act').value || null;
       var act = no ? e.activityByNo(no) : null;
-      var data = {
-        project_id: pid,
+      // ---- the identity half -------------------------------------------
+      // ⚠️ Read from the PERSON where the row is shared, and from the (then
+      //    editable) band-1 inputs where it is not. The inputs are `disabled` in
+      //    the shared case, so reading them would work and would be WRONG in a
+      //    quiet way: a disabled input reports its rendered value, so the payload
+      //    would look correct while silently re-asserting a snapshot of the
+      //    directory taken when the modal opened -- and would therefore overwrite
+      //    any change another user made to that person in the meantime. The guard
+      //    is `shared`, not the DOM.
+      var ident2 = shared ? {
+        name:      person.name,
+        nickname:  person.nickname,
+        title:     person.title,
+        role_title: person.role_title,
+        organization: person.organization,
+        category:          person.category,
+        stakeholder_group: person.stakeholder_group,
+        email:    person.email,
+        contact:  person.contact,
+        birthday: person.birthday || null,
+        gift_tier: person.gift_tier,
+        // ⚠️ THE PHOTO PATHS TOO. Without these a person picked from the
+        //    directory saves a project row with a null photo_path, so the register
+        //    and the Cards view show initials for someone whose photograph is
+        //    already in the bucket -- self-healing on the next load() via
+        //    overlayPeople(), which makes it a flicker rather than a bug and
+        //    therefore harder to notice and fix. The path is COPIED, not the
+        //    object: the bucket's policies are not project-scoped, so a path
+        //    minted under another project is readable here (see the migration).
+        photo_path: person.photo_path || null,
+        photo_thumb_path: person.photo_thumb_path || null,
+      } : {
         name:      q('#f-name').value.trim(),
         nickname:  q('#f-nick').value.trim(),
         title:     q('#f-title').value.trim(),
@@ -1224,11 +1912,19 @@ window.StakeholderMap = (function () {
         organization: q('#f-org').value.trim(),
         category:          q('#f-sector').value,          // Sector (BD map)
         stakeholder_group: q('#f-group').value,
-        relationship_champion: q('#f-champ').value.trim(),
         email:    q('#f-email').value.trim(),
         contact:  q('#f-contact').value.trim(),
         birthday: q('#f-bday').value || null,
         gift_tier: q('#f-gift').value.trim(),
+      };
+
+      var data = Object.assign({
+        project_id: pid,
+        // ⚠️ `relationship_champion` sits with the identity fields on screen but
+        //    is a PROJECT fact and is read from the form in BOTH cases -- see the
+        //    PERSON_FIELDS note at the top of this file. It is deliberately not
+        //    in `ident2`.
+        relationship_champion: q('#f-champ').value.trim(),
         activity_no:         no,
         // Denormalised deliberately: the row still says which process it belongs
         // to when exported, or read by something that has not loaded MCCRCM.
@@ -1264,7 +1960,11 @@ window.StakeholderMap = (function () {
         alternate:           q('#f-alt').value.trim(),
         engagement:          q('#f-eng').value.trim(),
         updated_at: new Date().toISOString(),
-      };
+      }, ident2);
+      // ⚠️ The mirror is still written. `stakeholders` is the source of truth,
+      //    but the CSV export, the offline cache, the live-collaboration cell
+      //    paint and the project dashboard's own tile all read the project row
+      //    directly -- see the migration's note on why the columns stayed.
       if (!data.name) { UI.toast('Name is required', 'warn'); return; }
 
       var oldPaths = [];
@@ -1281,6 +1981,41 @@ window.StakeholderMap = (function () {
           oldPaths = [r.photo_path, r.photo_thumb_path];
         }
         btn.textContent = 'Saving…';
+
+        // ---- the directory link ---------------------------------------
+        // ⚠️ BEFORE the project row is written, so the row is never persisted
+        //    with a null link it would then need a second write to repair. If
+        //    this throws, nothing has been saved yet and the planner can retry.
+        // ⚠️ Three cases:
+        //      shared  -- already linked or picked; keep the link, touch nothing
+        //                 in the directory. Person edits go through "Edit person".
+        //      dirOff  -- the migration has not been run. Skip silently; the row
+        //                 saves exactly as it did before this feature existed.
+        //      else    -- a new person, or a legacy row being saved for the first
+        //                 time since the migration: create-or-find and link. This
+        //                 is what progressively cleans up the pre-migration rows.
+        if (shared) {
+          data.stakeholder_id = person.id;
+        } else if (!dirOff) {
+          try {
+            var pr = await findOrCreatePerson(data);
+            if (pr) {
+              data.stakeholder_id = pr.id;
+              people[pr.id] = pr;
+              if (dirAll) dirAll = null;            // the picker's cache is now stale
+            }
+          } catch (derr) {
+            // ⚠️ NOT fatal. The register row is the record the project needs; the
+            //    directory is an optimisation on top of it. Failing the whole save
+            //    because a shared master list refused would block a planner from
+            //    recording a stakeholder at all -- so it degrades to an unlinked
+            //    row (exactly a pre-migration row) and SAYS SO rather than
+            //    pretending the person was shared.
+            if (dirMissing(derr)) dirOff = true;
+            else UI.toast('Saved to this project only — the shared directory refused: ' +
+                          ((derr && derr.message) || 'request failed'), 'warn');
+          }
+        }
 
         if (isNew) {
           data.created_by = profile.id;              // REQUIRED for RLS
@@ -1407,12 +2142,33 @@ window.StakeholderMap = (function () {
 
   async function del(id) {
     var r = rows.filter(function (x) { return x.id === id; })[0];
-    if (!confirm('Delete this stakeholder? This cannot be undone.')) return;
-    var res = await sb().from(TABLE).delete().eq('id', id);
+    if (!confirm('Delete this stakeholder from THIS project? The person stays in the shared directory and on any other project. This cannot be undone.')) return;
+    // ⚠️ `.select('id')`, and the row count is CHECKED. This table's DELETE
+    // policy is owner-or-admin (`is_writer() and (created_by = auth.uid() or
+    // is_admin())`, from the generic module-table loop in supabase-schema.sql),
+    // NOT any writer -- so deleting a stakeholder somebody else registered
+    // matches ZERO rows and PostgREST reports that as a clean success, with no
+    // error. The same defect, the same fix, as the photo deletes in
+    // progress-photos (2026-09-04); this is its sibling in this module.
+    // ⚠️⚠️ HERE IT WAS WORSE THAN A MISLEADING TOAST. The photo cleanup below
+    //     ran unconditionally, so a REFUSED delete still removed the objects --
+    //     leaving a live row pointing at two paths that no longer exist, i.e. a
+    //     stakeholder who permanently loses their face and cannot get it back
+    //     from this screen. The cleanup is now gated on the row actually going.
+    var res = await sb().from(TABLE).delete().eq('id', id).select('id');
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    if (!res.data || !res.data.length) {
+      UI.toast('Not deleted — the database refused it. A register row can only be removed by whoever added it, or by an admin.', 'error');
+      load();          // put the row back on screen; it never left the database
+      return;
+    }
     // The row is gone, so its photo objects are now unreachable — remove them
     // rather than leaving them to accumulate in the bucket forever.
-    if (r) await removeObjects([r.photo_path, r.photo_thumb_path]);
+    // ⚠️ Only the paths this PROJECT row owned. A person shared with another
+    //    project points at the same object, so this is why the directory row is
+    //    never touched here: deleting the person's photo because one project
+    //    stopped tracking them would blank their face everywhere.
+    if (r && !r.stakeholder_id) await removeObjects([r.photo_path, r.photo_thumb_path]);
     UI.toast('Deleted', 'ok'); load();
   }
 

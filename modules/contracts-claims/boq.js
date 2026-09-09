@@ -1206,7 +1206,15 @@ window.BOQ = (function () {
       h += '<div class="boq-draft">' +
         '<span class="boq-draft-txt"><strong>Draft — not issued.</strong> Lines are editable and nothing bills ' +
         'against it. Issue it when complete.</span>' +
-        (canWrite ? '<button class="pd-btn pd-btn-primary" id="boq-addcodes">Add lines from class codes…</button> ' +
+        (canWrite ?
+          /* WARNING TWO DOORS, AND THE ORDER SAYS WHICH IS WHICH. "From the schedule" is the one
+             the owner's process asks for at this point -- the detailed bill is read off the
+             detailed programme -- and it produces lines that arrive already matched. The class-code
+             ladder stays for work the programme does not carry yet, and for the FIRST, high-level
+             bill, which is written before any schedule exists. Primary sits rightmost here, as in
+             every other toolbar in this module. */
+          '<button class="pd-btn" id="boq-addsched">Add lines from the schedule…</button> ' +
+          '<button class="pd-btn pd-btn-primary" id="boq-addcodes">Add lines from class codes…</button> ' +
           '<button class="pd-btn" id="boq-issue">Issue revision…</button>' : '') +
         '</div>';
     }
@@ -1533,6 +1541,7 @@ window.BOQ = (function () {
     var ex = host.querySelector('#boq-export'); if (ex) ex.onclick = exportItems;
     var pk = host.querySelector('#boq-pkgs'); if (pk) pk.onclick = openAssignPackage;
     var ac = host.querySelector('#boq-addcodes'); if (ac) ac.onclick = openCodeBuilder;
+    var asch = host.querySelector('#boq-addsched'); if (asch) asch.onclick = openSeedFromSchedule;
     var is = host.querySelector('#boq-issue'); if (is) is.onclick = issueRev;
     /* ⚠️ SAVED ON `change`, NOT ON `input`. On input every keystroke of a quantity is a
        round trip and a re-render that steals focus mid-number — which reads as the field
@@ -2708,7 +2717,185 @@ window.BOQ = (function () {
      ⚠️ A GROUP ALREADY PRESENT IS REUSED, never duplicated. Adding "more concrete items"
         to a division must extend the existing heading, or the sheet ends up with two
         identical headings and the tree reads as two unrelated groups. */
-  async function addAuthoredLines(codes) {
+  // ==========================================================================
+  // HAND-OFF 2 — THE DETAILED SCHEDULE SEEDS THE DETAILED BOQ
+  // ==========================================================================
+  /* Owner's process, 2026-09-08: *"high level BOQ will be the basis -> detailed schedule will be
+     developed -> detailed BOQ will be based on the detailed schedule."* The third step had no
+     bridge. `addAuthoredLines` reads the class-code LIBRARY — 702 codes for the whole business —
+     so a planner whose schedule was already tagged had to find those same codes again in a ladder,
+     and then match every resulting line back to the activities it came from on another tab.
+
+     This reads the direction the process actually runs: the activities that already carry a class
+     code become the bill, and the lines arrive with their allocations already written, so the
+     Match-to-schedule worklist starts EMPTY instead of at 122.
+
+     ⚠️⚠️ ONE LINE PER CLASS CODE, ALLOCATED ACROSS ITS ACTIVITIES — not one line per activity.
+     The tempting reading of "detailed" is a line per place (Rebar 3F, Rebar 4F, …), and this
+     module already has the machinery for the other shape: `boq_allocations` carries the per-place
+     split, `boq_activity_quantity` derives each activity's quantity from it, and Cost Loading's new
+     step-2 reader splits a LINE's amount over its allocations. A line per activity would give forty
+     lines each needing their own rate for one item, and — the part that matters — it would make the
+     bill's line count a function of the programme's zone breakdown, so re-zoning the schedule would
+     silently change the shape of the tendered bill. The allocation is where the detail belongs.
+
+     ⚠️ NOTHING IS WRITTEN BY PROPOSING. Propose -> preview -> apply, the module's standing rule:
+     every code is listed with how many activities carry it and whether it is already on the bill,
+     and the planner unticks what they do not want. */
+  function scheduleSeedPlan(acts, items, cmap, codeOf) {
+    var by = {}, order = [];
+    (acts || []).forEach(function (a) {
+      var code = String((a && a.class_code) || '').trim();
+      if (!code) return;
+      var e = by[code];
+      if (!e) { e = by[code] = { code: code, acts: [], onBill: false, chart: null }; order.push(e); }
+      /* ⚠️ DEDUPED ON activity_id, never on the row uuid. An import reinserts every row, so the
+         uuid changes and the activity_id does not — the rule `schedule-document-links` records and
+         the one `boq_allocations.activity_id` is typed `text` for. */
+      if (a.activity_id && e.acts.indexOf(a.activity_id) < 0) e.acts.push(a.activity_id);
+    });
+    /* Already on the bill = some line on this revision is MAPPED to that code. Checked through the
+       class map rather than by matching item_no, because an imported line's item_no is the client's
+       own numbering and has nothing to do with the code it was mapped to. */
+    var mapped = {};
+    Object.keys(cmap || {}).forEach(function (itemId) {
+      var c = cmap[itemId]; if (c && c.class_code) mapped[String(c.class_code).trim()] = 1;
+    });
+    order.forEach(function (e) {
+      e.onBill = !!mapped[e.code];
+      e.chart = codeOf ? codeOf(e.code) : null;
+    });
+    /* Chart order where the chart knows the code, then the unknown ones, so the preview reads in
+       Finance's own sequence like every other list in this module. */
+    order.sort(function (x, y) {
+      var a = x.chart ? (x.chart.sort_order == null ? 1e9 : x.chart.sort_order) : 2e9;
+      var b = y.chart ? (y.chart.sort_order == null ? 1e9 : y.chart.sort_order) : 2e9;
+      return a - b || String(x.code).localeCompare(String(y.code));
+    });
+    return order;
+  }
+
+  async function openSeedFromSchedule() {
+    if (!canWrite) { UI.toast('You do not have permission to add lines.', 'error'); return; }
+    if (!isDraft()) { UI.toast('Only a draft can take new lines. An issued revision is superseded, never edited.', 'error'); return; }
+    await ensureCodes();
+    await ensureActs();
+    var plan = scheduleSeedPlan(ACTS, ITEMS, CMAP, codeRow);
+    var takeable = plan.filter(function (e) { return !e.onBill; });
+
+    if (!plan.length) {
+      /* ⚠️ THE TWO EMPTY CASES ARE DIFFERENT QUESTIONS and get different answers. No schedule at
+         all is "import or build one"; a schedule nobody has tagged is "tag it", and the control
+         that does that is one tab away. Collapsing them into "nothing to add" sends the planner
+         hunting on the wrong screen. */
+      var nAct = (ACTS || []).length;
+      var em = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">Nothing to seed from yet</h2>' +
+        '<button class="pd-modal-close" id="ss-x">&times;</button></div><div class="cc-form">' +
+        (nAct
+          ? '<p class="cc-hint" style="margin-top:0;">This project has <b>' + nAct + '</b> activit' +
+            (nAct === 1 ? 'y' : 'ies') + ', and <b>not one of them carries a class code</b>. The bill ' +
+            'is built from those codes, so there is nothing to read yet.</p>' +
+            '<p class="cc-hint">Tag the programme first — <b>Match to schedule</b> on this BOQ proposes ' +
+            'activities for each code you already have, or set the Class Code column in the Project ' +
+            'Schedule. The Schedule Setup can also load its activities <b>from this BOQ</b>, which ' +
+            'tags them as it goes.</p>'
+          : '<p class="cc-hint" style="margin-top:0;">This project has <b>no schedule activities</b> ' +
+            'yet. Build or import one in the Project Schedule, tag it with class codes, then come ' +
+            'back — a detailed bill is read off a detailed programme.</p>') +
+        '</div><div class="pd-modal-footer"><button class="pd-btn" id="ss-c">Close</button></div>');
+      em.el.querySelectorAll('#ss-x,#ss-c').forEach(function (b) { b.onclick = em.close; });
+      return;
+    }
+
+    var picked = {};
+    takeable.forEach(function (e) { picked[e.code] = 1; });
+
+    var m = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">Add lines from the schedule</h2>' +
+      '<p class="pd-modal-sub">One line per class code, already matched to the activities that carry it</p>' +
+      '<button class="pd-modal-close" id="ss-x">&times;</button></div>' +
+      '<div class="cc-form" id="ss-body"></div>' +
+      '<div class="pd-modal-footer"><span class="cc-mini" id="ss-cnt"></span> ' +
+      '<button class="pd-btn" id="ss-c">Cancel</button> ' +
+      '<button class="pd-btn pd-btn-primary" id="ss-go">Add lines</button></div>');
+    var el = function (id) { return m.el.querySelector('#' + id); };
+    el('ss-x').onclick = m.close; el('ss-c').onclick = m.close;
+
+    function nPicked() { return Object.keys(picked).length; }
+    function nActs() {
+      return plan.reduce(function (t, e) { return t + (picked[e.code] ? e.acts.length : 0); }, 0);
+    }
+    function paint() {
+      var onBill = plan.length - takeable.length;
+      var h = '<p class="cc-hint" style="margin-top:0;">' +
+        '<b>' + plan.length + '</b> class code' + (plan.length === 1 ? '' : 's') + ' on this programme, ' +
+        'carried by <b>' + plan.reduce(function (t, e) { return t + e.acts.length; }, 0) + '</b> activities' +
+        (onBill ? '. <b>' + onBill + '</b> already on this bill and unticked' : '') + '.</p>' +
+        /* ⚠️ Says what the quantity will be, because "matched" and "measured" are different states
+           and a bill of zero-quantity lines is alarming if you do not know it is deliberate. */
+        '<p class="cc-hint">Each line is created <b>measured with no quantity</b> and linked to its ' +
+        'activities at <b>quantity 0</b> — matched, not yet measured. Nothing rolls up until you ' +
+        'enter the figures; then <b>Match to schedule</b> spreads each quantity over the links that ' +
+        'are already there.</p>' +
+        '<table class="boq-splittab"><thead><tr><th style="width:28px;"></th><th>Class code</th>' +
+        '<th>Description</th><th class="cc-r">Activities</th><th>Trade</th></tr></thead><tbody>';
+      plan.forEach(function (e) {
+        var c = e.chart;
+        h += '<tr' + (e.onBill ? ' class="cc-mut"' : '') + '>' +
+          '<td><input type="checkbox" data-ss="' + esc(e.code) + '"' + (picked[e.code] ? ' checked' : '') + ' /></td>' +
+          '<td><code>' + esc(e.code) + '</code>' + (e.onBill ? '<div class="cc-mini">already on this bill</div>' : '') + '</td>' +
+          '<td>' + esc(c ? c.desc_l3 : '') +
+            (c ? '<div class="cc-mini">' + esc(c.desc_l2 || '') + '</div>'
+               /* ⚠️ A code the chart does not list is SHOWN, not dropped. It is on the programme, it
+                  is what a planner tagged, and hiding it would make the bill quietly narrower than
+                  the schedule with nothing saying so. It lands on its own sheet below. */
+               : '<div class="cc-mini boq-bad">not in the class-code chart — it will be filed under Others</div>') + '</td>' +
+          '<td class="cc-r">' + e.acts.length + '</td>' +
+          '<td>' + esc(c ? ((c.trade && String(c.trade).trim()) || c.desc_l1 || '') : 'Others') + '</td>' +
+          '</tr>';
+      });
+      h += '</tbody></table>';
+      el('ss-body').innerHTML = h;
+      el('ss-cnt').textContent = nPicked() + ' code(s) · ' + nActs() + ' link(s)';
+      el('ss-go').disabled = !nPicked();
+      el('ss-body').querySelectorAll('[data-ss]').forEach(function (cb) {
+        cb.onchange = function () {
+          if (cb.checked) picked[cb.dataset.ss] = 1; else delete picked[cb.dataset.ss];
+          el('ss-cnt').textContent = nPicked() + ' code(s) · ' + nActs() + ' link(s)';
+          el('ss-go').disabled = !nPicked();
+        };
+      });
+    }
+    paint();
+
+    el('ss-go').onclick = async function () {
+      var codes = plan.filter(function (e) { return picked[e.code]; });
+      if (!codes.length) return;
+      /* ⚠️ Only codes the CHART knows can become a line, because addAuthoredLines files a line by
+         its chart row (trade -> sheet, group -> heading, desc_l3 -> description) and has nothing to
+         file an unknown code under. Reported rather than silently skipped — the count is the
+         planner's next job, on the chart or on the activity. */
+      var known = codes.filter(function (e) { return !!e.chart; });
+      var unknown = codes.length - known.length;
+      if (!known.length) {
+        UI.toast('None of the ticked codes are in the class-code chart, so no line can be filed. ' +
+          'Fix the code on those activities, or add the codes to the chart.', 'error');
+        return;
+      }
+      var alloc = {};
+      known.forEach(function (e) { alloc[e.code] = e.acts; });
+      m.close();
+      await addAuthoredLines(known.map(function (e) { return e.code; }), alloc);
+      if (unknown) {
+        UI.toast(unknown + ' ticked code(s) are not in the class-code chart and were skipped — ' +
+          'nothing can be filed under a code the chart does not list.', 'warn');
+      }
+    };
+  }
+
+  /* `alloc` (optional) maps a class code to the activity_ids that carry it, and turns this from
+     "add lines" into "add lines that are already matched to the programme" — hand-off 2. See
+     seedFromSchedule below for why that is the whole point of the feature. */
+  async function addAuthoredLines(codes, alloc) {
     if (!canWrite || !isDraft() || !codes.length) return;
     var m = UI.modal('<h2 style="margin-top:0;">Adding lines…</h2><p id="ad-say"><span class="cc-spin"></span>Preparing…</p>');
     var say = function (s) { var e = m.el.querySelector('#ad-say'); if (e) e.innerHTML = '<span class="cc-spin"></span>' + esc(s); };
@@ -2819,13 +3006,46 @@ window.BOQ = (function () {
         if (mr.error) throw mr.error;
       }
 
+      /* ==========================================================================
+         HAND-OFF 2 — THE LINES ARE BORN MATCHED
+         ==========================================================================
+         ⚠️⚠️ ONE ALLOCATION PER (LINE, ACTIVITY), AT qty 0. `qty = 0` is not a missing figure: the
+         2026-09-07h change established it as *matched, not yet quantified*, the column is
+         `numeric not null default 0`, and every reader SUMS qty — so a link contributes nothing to
+         any derived quantity until the measure arrives. That is exactly the state a BOQ seeded
+         from the programme should be in: the scope decision is made, the measurement is not.
+         ⚠️ `method` is 'manual' because the constraint allows only location/prorata/manual and
+         NEITHER of the other two happened here. Calling it 'prorata' would claim an arithmetic
+         that was never performed — the same reason proposeSplit leaves method null at qty 0.
+         ⚠️ UPSERT on the pair index (`boq_allocations_pair_idx` is unique on
+         (boq_item_id, activity_id)), so a re-run cannot double-link. */
+      var allocRows = [];
+      if (alloc) {
+        leafKeys.forEach(function (x) {
+          var id = byRow[x.key]; if (!id) return;
+          (alloc[x.code] || []).forEach(function (actId) {
+            if (!actId) return;
+            allocRows.push({ project_id: pid, boq_item_id: id, activity_id: String(actId),
+                             qty: 0, method: 'manual', accepted_by: UID });
+          });
+        });
+        for (var a2 = 0; a2 < allocRows.length; a2 += 300) {
+          say('Matching to the programme ' + (a2 + 1) + ' of ' + allocRows.length + '…');
+          var ar = await sb().from(T_ALLOC).upsert(allocRows.slice(a2, a2 + 300),
+                                                   { onConflict: 'boq_item_id,activity_id' });
+          if (ar.error) throw ar.error;
+        }
+      }
+
       m.close();
       /* ⚠️ Counts the sheets actually WRITTEN TO, not the sheets picked. Re-picking a
          division whose items are all present touches none of them, and "across 1 sheet"
          over zero new lines on that sheet is a claim the table would contradict. */
       var touched = {};
       newLines.forEach(function (l) { touched[l.sheet] = 1; });
-      UI.toast('Added ' + leafKeys.length + ' line(s) across ' + Object.keys(touched).length + ' sheet(s). Now price them.', 'success');
+      UI.toast('Added ' + leafKeys.length + ' line(s) across ' + Object.keys(touched).length + ' sheet(s)' +
+        (allocRows.length ? ', matched to ' + allocRows.length + ' activit' + (allocRows.length === 1 ? 'y' : 'ies') +
+          '. Now measure and price them.' : '. Now price them.'), 'success');
       await load();
     } catch (err) {
       var msg = (err.message || String(err));
@@ -4621,6 +4841,9 @@ window.BOQ = (function () {
       sheetTotals: sheetTotals, contractSum: contractSum, wtOf: wtOf, periodTotals: periodTotals,
       sheetPocs: sheetPocs, moneyLine: moneyLine, qtyLine: qtyLine, mappable: mappable,
       proposeSplit: proposeSplit, locMatch: locMatch, allocSum: allocSum, suggestFor: suggestFor,
+      /* Hand-off 2's proposal, so what the schedule becomes is testable without a database, and
+         the dialog itself so it can be rendered in a browser rather than a copy of its markup. */
+      scheduleSeedPlan: scheduleSeedPlan, openSeedFromSchedule: openSeedFromSchedule,
       statedTotalOf: statedTotalOf, billingColsOf: billingColsOf, guessRev: guessRev, sumStated: sumStated,
       pkgName: pkgName, pkgCell: pkgCell, schedPoc: schedPoc, sheetPkgState: sheetPkgState,
       /* Decision #7's second half: dispute, testable against the shipped rule. */
@@ -4634,6 +4857,11 @@ window.BOQ = (function () {
         if (o.PERIODS) PERIODS = o.PERIODS; if (o.PROG) PROG = o.PROG; if (o.SUGG) SUGG = o.SUGG;
         if (o.CLAIM) CLAIM = o.CLAIM;
         if (o.ACTS) ACTS = o.ACTS; if (o.pid) pid = o.pid; if (o.PKGS) PKGS = o.PKGS;
+        /* Enough state for a harness to open a real dialog rather than a copy of its markup —
+           isDraft() reads curRev(), and codeRow() reads CODES. */
+        if (o.REVS) REVS = o.REVS; if (o.REVID) REVID = o.REVID;
+        if (o.CODES) CODES = o.CODES; if (o.canWrite != null) canWrite = !!o.canWrite;
+        if (o.DOCS) DOCS = o.DOCS; if (o.loaded != null) loaded = !!o.loaded;
         if (o.SCHED !== undefined) SCHED = o.SCHED; if (o.schedErr !== undefined) schedErr = o.schedErr;
       }
     }

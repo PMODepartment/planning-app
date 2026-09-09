@@ -2670,9 +2670,17 @@ window.IssuesLessons = (function () {
       kpi('On Hold', hold, 'is-hold') +
       kpi('Closed', closed, 'is-closed');
   }
+  // Adapter onto the SHARED metric card (UI.kpi, assets/js/ui.js). The
+  // hand-rolled `.il-kpi` that stood here drew a 26px value above a 12px label
+  // and carried no accent bar -- the largest of the five copies of this card the
+  // suite had accumulated, and the reason the same "Open" count looked like a
+  // different class of number here and on the project dashboard.
+  // `is-open` / `is-hold` / `is-closed` map onto the shared status variants, so
+  // the three status colours come from the app's own tokens now instead of a
+  // hardcoded #16a34a that had no dark-mode pair.
+  var _KPI_CLS = { 'is-open': 'pd-kpi-bad', 'is-hold': 'pd-kpi-warn', 'is-closed': 'pd-kpi-ok' };
   function kpi(label, val, cls) {
-    return '<div class="il-kpi ' + cls + '"><div class="il-kpi-val">' + val + '</div>' +
-      '<div class="il-kpi-label">' + label + '</div></div>';
+    return UI.kpi(label, val, { cls: _KPI_CLS[cls] || cls || '' });
   }
 
   // ==========================================================================
@@ -3682,8 +3690,20 @@ window.IssuesLessons = (function () {
     var l = LESSONS.find(function (x) { return x.id === _lessSel; });
     if (!l || !canEditLesson(l)) return;
     if (!confirm('Delete this lesson? The issue or meeting it came from is not affected.')) return;
-    var res = await sb().from(LESSON_TABLE).delete().eq('id', l.id);
+    // ⚠️ `.select('id')` and a row-count check — these module tables carry an
+    // owner-or-admin DELETE policy (`is_writer() and (created_by = auth.uid() or
+    // is_admin())`), so a refusal matches ZERO rows and PostgREST returns a clean
+    // success with no error. Without this the module toasted "Deleted", removed
+    // the lesson from the local array, and the row came back on the next load.
+    // Same defect, same fix, as the progress-photos deletes (2026-09-04).
+    // ⚠️ canEditLesson() above is the UI's own guess at the same rule; it is not
+    //    a substitute for reading what the server actually did.
+    var res = await sb().from(LESSON_TABLE).delete().eq('id', l.id).select('id');
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    if (!res.data || !res.data.length) {
+      UI.toast('Not deleted — the database refused it. A lesson can only be removed by whoever captured it, or by an admin.', 'error');
+      return;
+    }
     LESSONS = LESSONS.filter(function (x) { return x.id !== l.id; });
     _lessSel = null;
     UI.toast('Deleted', 'ok');
@@ -3732,8 +3752,16 @@ window.IssuesLessons = (function () {
     var n = lessonsOfIssue(id).length;
     if (!confirm('Delete this issue? This cannot be undone.' +
       (n ? '\n\nThe ' + n + ' lesson' + (n === 1 ? '' : 's') + ' captured from it stay in the library, unlinked.' : ''))) return;
-    var res = await sb().from(TABLE).delete().eq('id', id);
+    // ⚠️ Same owner-or-admin DELETE policy, same silent-zero-rows trap — see the
+    // note on the lesson delete above. An issue raised by a colleague could not
+    // be deleted and said it had been.
+    var res = await sb().from(TABLE).delete().eq('id', id).select('id');
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    if (!res.data || !res.data.length) {
+      UI.toast('Not deleted — the database refused it. An issue can only be removed by whoever raised it, or by an admin.', 'error');
+      load();
+      return;
+    }
     if (_issSel === id) _issSel = null;
     UI.toast('Deleted', 'ok'); load();
   }
