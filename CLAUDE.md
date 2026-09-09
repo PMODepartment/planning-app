@@ -95,6 +95,41 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-09 (cq) — The Affected-work intro drops from four lines to one
+
+Owner: *"Let's reduce the text in the step intro."* The third time the wizard's prose has been
+called too long, so this cuts on a rule rather than by taste.
+
+**Two of the four sentences were teaching the control, and the control now teaches itself.**
+*"Tick a place to take all of it, or search to add individual activities"* described a screen that
+did not yet exist when it was written. It does now: the ladder carries a count on every rung, the
+tree carries carets and checkboxes, and the search box's own placeholder names every field it
+matches. A caption narrating a legible control is just more to read before you can use it.
+
+⚠️ **What survives is the one fact the screen cannot show: no date moves.** A planner who believes
+saving reschedules the programme will not touch this step at all, and nothing on the page can
+disprove that on its own — so it stays, as three words in bold rather than a clause about previewed
+steps and pending variations.
+
+⚠️ **The EOT half — "the granted days stay a single figure on the record" — went with the rest**,
+because this step has no days field to mislead anyone with. The reasoning is unchanged and still
+recorded where a developer looks: the ⚠️ block above the function, and at length in
+`migrations/2026-09-09-cc-affected-activities.sql`. Deleting on-screen prose is not deleting the
+decision behind it.
+
+| type | before | after |
+|---|---|---|
+| Change Order | 65 words | **23** |
+| EOT | 41 words | **14** |
+| Claim | 27 words | **11** |
+
+**Measured in the browser, in the real wizard shell** (not counted by eye): at 1440 all three render
+as **one line**; at 918 the Change Order hint takes two and the other two stay at one. It was four
+lines at both widths. No page horizontal scroll at either.
+
+- `wizard.js?v=20260909cq`; `MODULE_V` → `20260909cq`. No other file changed.
+- ⚠️ **Not verified signed in** — the wizard was driven against a stubbed data layer.
+
 ### 2026-09-09 (cp) — The Affected-work picker: a ladder, a WBS tree, and a Gantt beside them
 
 Owner, on the step shipped that morning: *"UI is clashing let's fix … I want to have the level

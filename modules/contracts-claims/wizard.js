@@ -661,17 +661,25 @@ window.CCWizard = (function () {
        ⚠️ AN EOT SELECTION IS EVIDENCE, NOT AN ENTITLEMENT. The days stay the single
           contract-level figure on the record; these activities are the delay BASIS. Delay on
           parallel paths is concurrent, so per-activity days could not be summed -- the long
-          version is in migrations/2026-09-09-cc-affected-activities.sql. */
+          version is in migrations/2026-09-09-cc-affected-activities.sql.
+       ⚠️⚠️ CUT TO ONE LINE, 2026-09-09. Owner: *"let's reduce the text in the step intro"*, the
+          third time the wizard's prose has been called too long. Two of the four sentences were
+          teaching the CONTROL -- *"tick a place to take all of it, or search to add individual
+          activities"* -- and the control now says that itself: the ladder carries a count per rung,
+          the tree carries carets and checkboxes, and the search box's own placeholder names every
+          field it matches. A caption narrating a legible control is just more to read.
+       ⚠️ WHAT SURVIVES IS THE ONE FACT THE SCREEN CANNOT SHOW: no date moves. A planner who
+          believes saving reschedules the programme will not use this step at all, and nothing on
+          the page can disprove it. The EOT half of that -- "the granted days stay one figure" --
+          went with the rest, because this step has no days field to mislead anyone with; the
+          reasoning stays here and in the migration, which is where a developer looks. */
     var hint = st.type === 'EOT'
-      ? 'The activities this delay ran through — the <b>basis</b> of the claim. The granted days ' +
-        'stay a single figure on the record; nothing here carries days, and no date moves.'
+      ? 'The activities this delay ran through — the claim’s <b>basis</b>. No dates move.'
       : st.type === 'Claim'
-      ? 'The activities this claim is argued from. Recording them changes no dates.'
-      : 'The activities this change order affects. <b>Nothing is rescheduled by saving</b> — ' +
-        'inserting the change-order work into these activities is a separate, previewed step in ' +
-        'the Project Schedule, so a pending variation never moves a finish date on its own.';
-    return '<p class="ccw-hint">' + hint + ' Tick a place to take all of it, or search to add ' +
-      'individual activities. Optional — you can come back to it on the record.</p>' +
+      ? 'The activities this claim is argued from. No dates move.'
+      : 'The activities this change order affects. <b>No dates move</b> — inserting the work is a ' +
+        'separate, previewed step in the Project Schedule.';
+    return '<p class="ccw-hint">' + hint + ' Optional.</p>' +
       (D.affectedPickerHTML ? D.affectedPickerHTML()
         : '<p class="ccw-hint">The activity picker is unavailable in this build.</p>');
   }
