@@ -95,6 +95,32 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-09 (t) — Minutes of Meeting: the empty card above the table was one we emptied ourselves
+
+Owner: *"There is a big empty space above the table let's fix the UI."* Self-inflicted, and the
+history is in this log: on **2026-09-03** Filter, Export and **+ Add meeting** all moved OUT of that
+in-page row into the secondary top bar, and the leading “3 meetings” count moved BELOW the table as
+a footnote. Each move was right on its own. What none of them noticed is what was left: a bordered,
+padded, full-width **card whose entire content was a 34px two-button toggle**.
+
+⚠ **A card is a container for content.** With nothing left to contain it stops reading as a
+container and starts reading as a rendering fault — which is exactly how it was reported. The chrome
+is removed (no background, no border, no padding) and the row simply right-aligns its toggle above
+the table. **Measured against the real stylesheet: 54px → 36px**, plus the bottom margin 14 → 10.
+
+⚠ **The toggle STAYS in the content rather than following the other three into the topbar.** Item 6
+of that same 2026-09-03 round moved view toggles deliberately *out* of the chrome and into the
+content, “on top of the view they switch”. So the chrome goes and the control stays — removing the
+card is not an invitation to undo that.
+
+⚠ The `flex:1` spacer div went with it: the row right-aligns itself now, and a spacer whose only
+job is to push one control across is a div somebody has to reason about the next time a second
+control appears. ⚠ The **filters panel** below is untouched and keeps its own card — verified, since
+stripping the wrong one would have left the open filters floating on the page background.
+
+`module.js` / `module.css` → `?v=20260909t`; `MODULE_V` → `20260909t`.
+⚠ **Not verified signed in** — measured in a harness carrying the real stylesheets, not on the live
+module.
 ### 2026-09-09 (s) — Contracts & Claims: two duplicate buttons removed, and the export finally asks
 
 Six owner items on the Contract tab, all of them about the same thing — controls sitting where they

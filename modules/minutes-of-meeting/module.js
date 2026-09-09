@@ -1675,8 +1675,10 @@ window.MinutesOfMeeting = (function () {
     // ⚠️ Owner: the leading "3 meetings" count "does not provide any useful piece of
     //    information" at the top of the screen. It moved BELOW the table as a quiet
     //    italic note (momListFootnote) — still on screen, no longer the first thing read.
+    /* ⚠ The flex:1 spacer went with the card: the row right-aligns itself now, and a spacer
+       whose only job was to push one control across is a div that has to be reasoned about
+       every time somebody adds a second one. */
     return '<div class="il-mom-browsebar">' +
-        '<div style="flex:1;"></div>' +
         '<div class="il-viewtoggle" id="il-mom-viewtoggle">' +
           '<button type="button" class="il-vt-btn' + (_momView === 'list' ? ' on' : '') + '" data-mv="list" title="List view">' +
             '<span data-ico="listView" data-ico-size="16"></span></button>' +

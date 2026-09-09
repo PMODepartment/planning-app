@@ -123,10 +123,17 @@
    BROWSE — the List / Calendar top-level views (new: "the minutes module
    should include a list of all meetings … in list view and calendar view").
    ========================================================================== */
+/* ⚠⚠ NOT A CARD ANY MORE. Owner: *"There is a big empty space above the table."* Correct, and
+   it was self-inflicted: Filter, Export and "+ Add meeting" all moved OUT of this row into the
+   secondary top bar on 2026-09-03, and the count moved BELOW the table the same day -- leaving a
+   bordered, padded, full-width card whose entire content was a 34px two-button toggle. A card is a
+   container for content; with nothing left to contain it reads as a rendering fault.
+   ⚠ The toggle STAYS here rather than following the other three into the topbar. Owner item 6 of
+   that same round moved view toggles deliberately out of the chrome and into the content, "on top
+   of the view they switch" -- so the chrome goes and the control stays. */
 .il-mom-browsebar {
-  display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px;
-  background: var(--pd-card); border: 1px solid var(--pd-line);
-  border-radius: var(--pd-radius); padding: 8px 12px;
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  justify-content: flex-end; margin-bottom: 10px;
 }
 .il-mom-search { flex: 1 1 240px; min-width: 160px; }
 
