@@ -7,8 +7,8 @@
   <link rel="apple-touch-icon" href="assets/img/icon.png?v=20260830b" />
   <script src="assets/js/theme.js?v=20260812b"></script>
   <title>Dashboard — Planners Dashboard</title>
-  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260904a" />
-  <link rel="stylesheet" href="assets/css/my-work.css?v=20260902a" />
+  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260908d" />
+  <link rel="stylesheet" href="assets/css/my-work.css?v=20260908d" />
 </head>
 <body>
   <div class="pd-app">
@@ -119,39 +119,39 @@
       background:var(--pd-card, var(--pd-bg)); border:1px solid var(--pd-line);
     }
     .pd-perf::before { content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--pc, var(--pd-muted)); }
-    .pd-perf-l { font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--pd-muted); font-weight:700; }
-    .pd-perf-v { display:block; font-size:25px; font-weight:800; line-height:1.15; margin-top:5px; letter-spacing:-.02em; }
+    .pd-perf-l { font-size:var(--pd-fs-micro); letter-spacing:.07em; text-transform:uppercase; color:var(--pd-muted); font-weight:700; }
+    .pd-perf-v { display:block; font-size:var(--pd-fs-hero); font-weight:800; line-height:1.15; margin-top:5px; letter-spacing:-.02em; }
     /* An empty card must not look like a measured one: smaller, muted, and it states the gap. */
-    .pd-perf-em { font-size:15px; font-weight:700; color:var(--pd-muted); }
+    .pd-perf-em { font-size:var(--pd-fs-md); font-weight:700; color:var(--pd-muted); }
     .pd-perf-bar { position:relative; height:5px; border-radius:3px; background:var(--pd-line); margin-top:9px; overflow:hidden; }
     .pd-perf-bar > i { display:block; height:100%; border-radius:3px; background:var(--pc, var(--pd-muted)); }
     /* ⚠️ The basis line is not decoration: a number with no stated basis gets trusted further than
        it deserves. Every card carries one, including the empty ones. */
-    .pd-perf-b { display:block; font-size:11.5px; color:var(--pd-muted); margin-top:6px; line-height:1.45; }
+    .pd-perf-b { display:block; font-size:var(--pd-fs-xs); color:var(--pd-muted); margin-top:6px; line-height:1.45; }
     .pd-perf-good { color:#2FA36B; }
     .pd-perf-none .pd-perf-b { opacity:.9; }
-    @media (max-width:640px) { .pd-perf-v { font-size:21px; } }
+    @media (max-width:640px) { .pd-perf-v { font-size:var(--pd-fs-stat); } }
     /* Kept from the retired chips block: the perf cards and both list panels still use it. */
-    .pd-stat-warn { font-size:11.5px; color:var(--pd-muted); }
+    .pd-stat-warn { font-size:var(--pd-fs-xs); color:var(--pd-muted); }
 
     /* ---- Mini stat band, shared by the Minutes of Meeting and Issues panels ------------------- */
     .pd-mini-band { display:grid; grid-template-columns:repeat(auto-fit, minmax(96px, 1fr)); gap:8px; }
     .pd-mini-c { border:1px solid var(--pd-line); border-radius:9px; padding:9px 11px; background:var(--pd-card); border-left-width:3px; }
     .pd-mini-c.ok { border-left-color:var(--pd-ok, #2FA36B); }
     .pd-mini-c.bad { border-left-color:#E5534B; }
-    .pd-mini-l { display:block; font-size:9.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--pd-muted); font-weight:700; }
-    .pd-mini-v { display:block; font-size:19px; font-weight:800; line-height:1.2; margin-top:3px; letter-spacing:-.02em; }
-    .pd-mini-s { display:block; font-size:10.5px; color:var(--pd-muted); margin-top:3px; line-height:1.4; }
+    .pd-mini-l { display:block; font-size:var(--pd-fs-micro); text-transform:uppercase; letter-spacing:.06em; color:var(--pd-muted); font-weight:700; }
+    .pd-mini-v { display:block; font-size:var(--pd-fs-stat); font-weight:800; line-height:1.2; margin-top:3px; letter-spacing:-.02em; }
+    .pd-mini-s { display:block; font-size:var(--pd-fs-micro); color:var(--pd-muted); margin-top:3px; line-height:1.4; }
     .pd-mini-bar { height:5px; border-radius:3px; background:var(--pd-line); margin-top:11px; overflow:hidden; }
     .pd-mini-bar > i { display:block; height:100%; border-radius:3px; background:#2FA36B; }
     .pd-mini-note { margin-top:10px; }
     /* A capped list -- four rows at most, set in config.js. A panel that grew with the register
        would push everything below it off the page on a busy project. */
     .pd-list { list-style:none; margin:12px 0 0; padding:10px 0 0; border-top:1px solid var(--pd-line); display:grid; gap:7px; }
-    .pd-list-r { display:flex; align-items:center; gap:8px; font-size:11.5px; min-width:0; }
+    .pd-list-r { display:flex; align-items:center; gap:8px; font-size:var(--pd-fs-xs); min-width:0; }
     .pd-list-d { color:var(--pd-muted); flex:none; font-variant-numeric:tabular-nums; width:86px; }
     .pd-list-t { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .pd-tag { flex:none; font-size:9.5px; font-weight:700; padding:2px 7px; border-radius:999px;
+    .pd-tag { flex:none; font-size:var(--pd-fs-micro); font-weight:700; padding:2px 7px; border-radius:999px;
       border:1px solid var(--pd-line); color:var(--pd-muted); background:var(--pd-bg); }
     .pd-tag-ok { color:#2FA36B; border-color:#2FA36B55; }
     .pd-tag-warn { color:#E08A3C; border-color:#E08A3C55; }
@@ -159,9 +159,9 @@
     @media (max-width:520px) { .pd-list-d { display:none; } }
 
     /* ---- S-Curve panel ------------------------------------------------------------------------ */
-    .pd-sc-kpi { display:flex; flex-wrap:wrap; gap:16px; font-size:11.5px; color:var(--pd-muted); margin-bottom:8px; }
-    .pd-sc-kpi b { font-size:15px; color:var(--pd-ink); font-weight:800; letter-spacing:-.02em; }
-    .pd-sc-legend { display:flex; flex-wrap:wrap; gap:14px; font-size:10.5px; color:var(--pd-muted); margin-bottom:6px; }
+    .pd-sc-kpi { display:flex; flex-wrap:wrap; gap:16px; font-size:var(--pd-fs-xs); color:var(--pd-muted); margin-bottom:8px; }
+    .pd-sc-kpi b { font-size:var(--pd-fs-md); color:var(--pd-ink); font-weight:800; letter-spacing:-.02em; }
+    .pd-sc-legend { display:flex; flex-wrap:wrap; gap:14px; font-size:var(--pd-fs-micro); color:var(--pd-muted); margin-bottom:6px; }
     .pd-sc-legend i, .pd-sc-tip i { display:inline-block; width:14px; height:0; border-top-width:2px; border-top-style:solid; margin-right:6px; vertical-align:middle; }
     .pd-sc-legend i.pl, .pd-sc-tip i.pl { border-top-color:#8A93A6; }
     .pd-sc-legend i.ac, .pd-sc-tip i.ac { border-top-color:#2FA36B; }
@@ -179,7 +179,7 @@
     .pd-sc-pl { fill:none; stroke:#8A93A6; stroke-width:2; stroke-linejoin:round; stroke-linecap:round; }
     .pd-sc-ac { fill:none; stroke:#2FA36B; stroke-width:2.5; stroke-linejoin:round; stroke-linecap:round; }
     .pd-sc-fc { fill:none; stroke:#C9A227; stroke-width:2; stroke-dasharray:5 4; stroke-linejoin:round; stroke-linecap:round; }
-    .pd-sc-tbl { border-collapse:collapse; font-size:10px; table-layout:fixed; margin-top:6px; }
+    .pd-sc-tbl { border-collapse:collapse; font-size:var(--pd-fs-micro); table-layout:fixed; margin-top:6px; }
     /* ⚠️ The 46px here is only a FALLBACK. The real widths come from the <colgroup> the panel
        emits, because the column width is computed per render (see scColFor) and the chart and the
        table must be laid out from one number. Under `table-layout:fixed` a col's width beats a
@@ -187,7 +187,7 @@
     .pd-sc-tbl th, .pd-sc-tbl td { width:46px; text-align:center; padding:3px 0; color:var(--pd-muted);
       white-space:nowrap; font-variant-numeric:tabular-nums; }
     .pd-sc-tbl th { font-weight:700; border-bottom:1px solid var(--pd-line); }
-    .pd-sc-tbl th small { display:block; font-size:8.5px; opacity:.75; font-weight:600; }
+    .pd-sc-tbl th small { display:block; font-size:var(--pd-fs-micro); opacity:.75; font-weight:600; }
     /* ⚠️ th.k AND td.k, both. Under `table-layout:fixed` the FIRST row sets every column width,
        and that row is the header — so styling only `td.k` left the header's corner cell at the
        month width, the whole table 46px narrower than it declared, and every month column sitting
@@ -214,56 +214,44 @@
     .pd-sc-tbl .now { color:var(--pd-ink); font-weight:800; }
     .pd-sc-tip { position:absolute; top:6px; z-index:3; pointer-events:none; min-width:150px;
       background:var(--pd-card, var(--pd-bg)); border:1px solid var(--pd-line); border-radius:8px;
-      padding:7px 9px; font-size:10.5px; color:var(--pd-muted); display:grid; gap:2px;
+      padding:7px 9px; font-size:var(--pd-fs-micro); color:var(--pd-muted); display:grid; gap:2px;
       box-shadow:0 6px 18px rgba(0,0,0,.28); }
-    .pd-sc-tip b { color:var(--pd-ink); font-size:11px; margin-bottom:2px; }
-    .pd-sc-tip-s { font-size:9.5px; opacity:.85; margin-bottom:2px; }
+    .pd-sc-tip b { color:var(--pd-ink); font-size:var(--pd-fs-xs); margin-bottom:2px; }
+    .pd-sc-tip-s { font-size:var(--pd-fs-micro); opacity:.85; margin-bottom:2px; }
 
-    /* Period switch. ⚠️ Deliberately the SAME segmented control the S-Curve module uses for its
-       Duration/Cost switch (`.sc-seg` there) — a planner moving between the panel and the module
-       should not have to learn a second control for the same kind of choice. */
-    .pd-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
-    .pd-seg button { border:0; background:var(--pd-card); color:var(--pd-ink); font:inherit; font-size:11px;
-      font-weight:700; padding:5px 11px; cursor:pointer; line-height:1.3; }
-    .pd-seg button + button { border-left:1px solid var(--pd-line); }
-    .pd-seg button:hover { background:var(--pd-bg); }
-    /* ⚠️ Brand red with white text is the app's established ACTIVE state — the sidebar's current
-       nav item, .pd-btn-primary, the node tree's selection and the view tabs all use exactly this
-       pair. It measures 4.12:1, under AA for 11px text, and that is a property of the brand red
-       rather than of this control: forking it here would make one panel's toggle the only active
-       state in the app that looks different. Raised deliberately rather than silently diverged. */
-    .pd-seg button.on { background:var(--pd-red); color:#fff; }
-    /* ⚠️ 44px on a phone, per the rule assets/css/dashboard.css states for exactly this shape:
-       segmented buttons sized to their text were "among the hardest things on the page to hit
-       accurately". The desktop size is unchanged — this is the tap area, not visual bulk. */
-    @media (max-width:700px) { .pd-seg button { min-height:var(--pd-tap); padding:8px 13px; } }
+    /* Period switch. .pd-seg now lives in assets/css/dashboard.css (promoted
+       2026-09-08). The copy that stood here was identical in effect and, loading
+       after that file, was the one actually on screen -- so leaving both would have
+       meant the shared block was never the thing rendered. Same control, one
+       definition, now shared with the two registers' band toggles.
+       The dashboard is the SINGLE-CHOICE mode; .pd-seg-multi is the registers'. */
     /* The head puts the legend slot on the right; the switch shares it with the module link. */
     .pd-viz-h .pd-viz-legend { align-items:center; gap:12px; }
 
     /* ---- list extras shared by the deadline / MoM / Issues panels ---------------------------- */
     .pd-list-top { margin-top:0; padding-top:0; border-top:0; }
-    .pd-list-h { font-size:10.5px; color:var(--pd-muted); margin-top:12px; padding-top:10px;
+    .pd-list-h { font-size:var(--pd-fs-micro); color:var(--pd-muted); margin-top:12px; padding-top:10px;
       border-top:1px solid var(--pd-line); font-weight:600; }
     .pd-list-h + .pd-list { margin-top:7px; padding-top:0; border-top:0; }
-    .pd-list-t small { display:block; font-size:9.5px; color:var(--pd-muted); font-weight:500;
+    .pd-list-t small { display:block; font-size:var(--pd-fs-micro); color:var(--pd-muted); font-weight:500;
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .pd-list-r.done .pd-list-t { opacity:.6; }
-    .pd-list-r .pd-no { color:var(--pd-muted); font-weight:700; font-size:10px; }
+    .pd-list-r .pd-no { color:var(--pd-muted); font-weight:700; font-size:var(--pd-fs-micro); }
     .pd-ms { color:#C9A227; }
     .pd-due-r.late .pd-list-t { color:var(--pd-ink); }
-    .pd-due-p { flex:none; width:34px; text-align:right; font-size:10.5px; font-weight:700;
+    .pd-due-p { flex:none; width:34px; text-align:right; font-size:var(--pd-fs-micro); font-weight:700;
       color:var(--pd-muted); font-variant-numeric:tabular-nums; }
 
     /* ---- "My items" drawer -------------------------------------------------------------------- */
     .mw-fab { position:fixed; right:18px; bottom:18px; z-index:60; display:inline-flex; align-items:center;
       gap:8px; padding:11px 15px; border-radius:999px; border:1px solid var(--pd-line);
-      background:var(--pd-card, var(--pd-bg)); color:var(--pd-ink); font-size:12.5px; font-weight:700;
+      background:var(--pd-card, var(--pd-bg)); color:var(--pd-ink); font-size:var(--pd-fs-sm); font-weight:700;
       cursor:pointer; box-shadow:0 8px 24px rgba(0,0,0,.32); }
     .mw-fab:hover { border-color:var(--pd-muted); }
     .mw-fab.has { border-color:var(--pd-red); }
-    .mw-fab-ico { font-size:14px; line-height:1; }
+    .mw-fab-ico { font-size:var(--pd-fs-md); line-height:1; }
     .mw-fab-n { min-width:19px; height:19px; padding:0 5px; border-radius:999px; background:var(--pd-red);
-      color:#fff; font-size:10.5px; line-height:19px; text-align:center; font-weight:800; }
+      color:#fff; font-size:var(--pd-fs-micro); line-height:19px; text-align:center; font-weight:800; }
     .mw-scrim { position:fixed; inset:0; z-index:70; background:rgba(0,0,0,.42);
       opacity:0; transition:opacity .18s ease; }
     .mw-scrim.open { opacity:1; }
@@ -273,8 +261,8 @@
       transform:translateX(100%); transition:transform .2s ease; }
     .mw-drawer.open { transform:translateX(0); }
     .mw-drawer-head { display:flex; align-items:center; justify-content:space-between; gap:12px;
-      padding:14px 18px; border-bottom:1px solid var(--pd-line); font-size:14px; flex:none; }
-    .mw-drawer-x { background:none; border:0; color:var(--pd-muted); font-size:24px; line-height:1;
+      padding:14px 18px; border-bottom:1px solid var(--pd-line); font-size:var(--pd-fs-md); flex:none; }
+    .mw-drawer-x { background:none; border:0; color:var(--pd-muted); font-size:var(--pd-fs-hero); line-height:1;
       cursor:pointer; padding:0 4px; }
     .mw-drawer-x:hover { color:var(--pd-ink); }
     .mw-drawer-body { overflow-y:auto; padding:14px 18px 22px; flex:1 1 auto; }
@@ -294,10 +282,10 @@
     .pd-viz-2col { display:grid; grid-template-columns:repeat(auto-fit, minmax(360px, 1fr)); gap:12px; }
     .pd-viz-2col > .pd-viz { margin-top:12px; }
     .pd-viz-h { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:13px; }
-    .pd-viz-t { font-size:13.5px; font-weight:800; letter-spacing:-.01em; }
-    .pd-viz-s { font-size:11px; color:var(--pd-muted); }
-    .pd-viz-empty { font-size:12px; color:var(--pd-muted); padding:14px 2px; line-height:1.55; }
-    .pd-viz-legend { display:flex; gap:13px; flex-wrap:wrap; font-size:10.5px; color:var(--pd-muted); }
+    .pd-viz-t { font-size:var(--pd-fs-base); font-weight:800; letter-spacing:-.01em; }
+    .pd-viz-s { font-size:var(--pd-fs-xs); color:var(--pd-muted); }
+    .pd-viz-empty { font-size:var(--pd-fs-sm); color:var(--pd-muted); padding:14px 2px; line-height:1.55; }
+    .pd-viz-legend { display:flex; gap:13px; flex-wrap:wrap; font-size:var(--pd-fs-micro); color:var(--pd-muted); }
     .pd-viz-legend i { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px; }
 
     /* Programme view — one row per trade.
@@ -306,9 +294,9 @@
        read as three-quarters finished. Only the fill and the shortfall band carry colour now. */
     .pd-pv { display:grid; grid-template-columns:196px 1fr 62px; gap:9px 12px; align-items:center; }
     .pd-pv-l { min-width:0; line-height:1.3; }
-    .pd-pv-l b { display:block; font-size:11.5px; font-weight:700; color:var(--pd-ink);
+    .pd-pv-l b { display:block; font-size:var(--pd-fs-xs); font-weight:700; color:var(--pd-ink);
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .pd-pv-l small { display:block; font-size:10px; color:var(--pd-muted); white-space:nowrap;
+    .pd-pv-l small { display:block; font-size:var(--pd-fs-micro); color:var(--pd-muted); white-space:nowrap;
       overflow:hidden; text-overflow:ellipsis; }
     .pd-pv-l small.dim { opacity:.75; }
     .pd-pv-t { position:relative; height:18px; border-radius:9px; background:var(--pd-line); overflow:hidden; }
@@ -332,8 +320,8 @@
       opacity:.55; border-radius:1px; }
     /* Its own grid cell, never inside the clipped track — a % that can be sliced mid-digit into a
        different number is worse than no %. */
-    .pd-pv-n { font-size:11px; font-weight:700; text-align:right; line-height:1.25; }
-    .pd-pv-n small { display:block; font-size:9px; font-weight:600; color:var(--pd-muted); }
+    .pd-pv-n { font-size:var(--pd-fs-xs); font-weight:700; text-align:right; line-height:1.25; }
+    .pd-pv-n small { display:block; font-size:var(--pd-fs-micro); font-weight:600; color:var(--pd-muted); }
     .pd-viz-legend i.pd-lg-span { background:var(--pd-card); border:1px solid var(--pd-line); }
     .pd-viz-legend i.pd-lg-gap { background:repeating-linear-gradient(135deg, #E5534B 0 3px, transparent 3px 6px); }
     .pd-viz-legend i.pd-lg-now { background:var(--pd-ink); opacity:.55; width:3px; border-radius:1px; }
@@ -346,9 +334,9 @@
     .pd-ph { display:grid; grid-template-columns:repeat(auto-fill, minmax(112px, 1fr)); gap:8px; }
     .pd-ph-i { border-radius:9px; overflow:hidden; border:1px solid var(--pd-line); background:var(--pd-bg); }
     .pd-ph-i img { display:block; width:100%; height:74px; object-fit:cover; }
-    .pd-ph-x { height:74px; display:flex; align-items:center; justify-content:center; color:var(--pd-muted); font-size:10px; }
-    .pd-ph-c { padding:5px 7px 6px; font-size:9.5px; color:var(--pd-muted); line-height:1.35; }
-    .pd-ph-c b { display:block; color:var(--pd-ink); font-size:10px; font-weight:700;
+    .pd-ph-x { height:74px; display:flex; align-items:center; justify-content:center; color:var(--pd-muted); font-size:var(--pd-fs-micro); }
+    .pd-ph-c { padding:5px 7px 6px; font-size:var(--pd-fs-micro); color:var(--pd-muted); line-height:1.35; }
+    .pd-ph-c b { display:block; color:var(--pd-ink); font-size:var(--pd-fs-micro); font-weight:700;
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -357,9 +345,9 @@
   <script src="assets/js/db.js?v=20260907a"></script>
   <script src="assets/js/program.js?v=20260827a"></script>
   <script src="assets/js/scurve.js?v=20260901a"></script>
-  <script src="assets/js/ui.js?v=20260904a"></script>
+  <script src="assets/js/ui.js?v=20260908d"></script>
   <script src="assets/js/icons.js?v=20260903a"></script>
-  <script src="assets/js/modules-grid.js?v=20260908c"></script>
+  <script src="assets/js/modules-grid.js?v=20260908d"></script>
   <script src="assets/js/my-work.js?v=20260902a"></script>
   <script>
   (function () {

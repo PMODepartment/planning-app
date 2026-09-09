@@ -945,10 +945,59 @@
     return { open: function () { setOpen(true); }, close: function () { setOpen(false); }, sync: sync };
   }
 
+  // ---- KPI / metric card -------------------------------------------------
+  // ⚠️ ONE metric card for the whole suite. Before 2026-09-08 there were FIVE
+  // hand-rolled copies -- `.rr-kpi`, `.sm-kpi`, `.il-kpi`, `.cf-kpi` and the
+  // dashboard's own `.pd-perf`/`.pd-mini-c` -- and they disagreed about
+  // everything a card can disagree about: the value ran 19 / 20 / 23 / 24 / 25 /
+  // 26px depending on which module you were standing in, the label ran 9.5 / 10 /
+  // 10.5 / 12px, three of them put the value ABOVE the label and two below, and
+  // only the dashboard's carried the brand accent bar. The shared `.pd-kpi` block
+  // in dashboard.css had been written for exactly this and was used by NOTHING.
+  //
+  // opts: { sub, cls, title }
+  //   cls   extra classes on the card. Two vocabularies are understood by the
+  //         shared CSS and neither needs module CSS:
+  //           `pd-kpi-ok` / `pd-kpi-warn` / `pd-kpi-bad`  -- app status colours
+  //           any `rcm-*` level class (mcc-rcm.css)        -- register semantics
+  //         Both tint the accent bar AND the value; the label stays muted so it
+  //         is still readable, which is the rule the registers had already
+  //         arrived at independently.
+  //   sub   the basis line. ⚠️ Pass one. A number with no stated basis gets
+  //         trusted further than it deserves -- the dashboard's own perf cards
+  //         carry a basis even when empty, and that note is worth honouring here.
+  //
+  // ⚠️ LABEL FIRST, then value, then sub. Not a style preference: `.pd-kpi-label`
+  // reserves the two lines a wrapping label needs (min-height + flex-end) so that
+  // a one-word and a three-word label still line their VALUES up across the row.
+  // Emitting value-first, as three of the five copies did, breaks that alignment.
+  function kpi(label, value, opts) {
+    opts = opts || {};
+    var cls = opts.cls ? ' ' + opts.cls : '';
+    return '<div class="pd-kpi' + cls + '"' +
+      (opts.title ? ' title="' + esc(opts.title) + '"' : '') + '>' +
+      '<div class="pd-kpi-label">' + esc(label) + '</div>' +
+      // Values are pre-formatted HTML in several call sites (money spans,
+      // pills), so this one is deliberately NOT escaped. Callers pass numbers
+      // or their own already-escaped markup.
+      '<div class="pd-kpi-value">' + (value == null ? '—' : value) + '</div>' +
+      (opts.sub ? '<div class="pd-kpi-sub">' + esc(opts.sub) + '</div>' : '') +
+      '</div>';
+  }
+  // Wrap N cards in the shared responsive strip. auto-fit, so six cards reflow to
+  // 3+3 and then 2+2+2 without any module declaring its own column count -- the
+  // five copies each hardcoded one (6, 7, 4) plus its own breakpoints, which is
+  // why the same register showed a ragged empty cell at one window width and not
+  // another.
+  function kpis(html, extraCls) {
+    return '<div class="pd-kpis' + (extraCls ? ' ' + extraCls : '') + '">' + html + '</div>';
+  }
+
   window.UI = { toast: toast, renderUserBar: renderUserBar, modal: modal, initShell: initShell,
                 enhanceProjectSelect: enhanceProjectSelect, initModuleTopbar: initModuleTopbar,
                 acceptSuggestOnTab: acceptSuggestOnTab, bindHistoryState: bindHistoryState,
                 renderNav: renderNav, renderSwitcher: renderSwitcher,
                 renderNavListInto: renderNavListInto, tabsToDropdown: tabsToDropdown,
-                wireFilterToggle: wireFilterToggle };
+                wireFilterToggle: wireFilterToggle,
+                kpi: kpi, kpis: kpis };
 })();

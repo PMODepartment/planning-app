@@ -3157,7 +3157,12 @@ console.log('\n[misc] insert().select() returns the new row id');
   // mostRecentAsOf/stackRowSort, no id="pp-stack-* anywhere).
 
   ok('module.css: .pp-livebtn / .is-live are defined (a solid brand-red fill + white text — same fixed-background exemption from the dark-mode #fff audit as .pp-tab.active / .pd-btn-primary)',
-     /\.pp-livebtn \{ padding: 4px 12px; font-size: 12px; \}/.test(cssFile) &&
+     // font-size is a --pd-fs-* token since the 2026-09-08 type-scale pass:
+     // the eight rungs in dashboard.css are the whole permitted set, so a test
+     // that pins a literal px here would fail the next time one is corrected
+     // centrally -- which is the point of having tokens. The rung is asserted,
+     // not the pixel.
+     /\.pp-livebtn \{ padding: 4px 12px; font-size: var\(--pd-fs-sm\); \}/.test(cssFile) &&
      /\.pp-livebtn\.is-live \{ background: var\(--pd-red\); border-color: var\(--pd-red\); color: #fff;/.test(cssFile));
 
   ok('pp-plan-mlive is referenced exactly 3 times in module.js — once rendered, twice in the wiring ($(id) guard + $(id).onclick, the same shape every sibling stepper button already uses) — never a stray 4th reference suggesting a leftover or a duplicate; its retired Stack-view sibling (pp-stack-mlive) is referenced zero times',
@@ -3565,7 +3570,7 @@ console.log('\n[misc] insert().select() returns the new row id');
      /return '<select class="pd-select" data-lvl="' \+ l\.id \+ '" title="' \+ Fmt\.esc\(l\.name\) \+ '">' \+\s*\n\s*'<option value="">' \+ Fmt\.esc\(l\.name\) \+ '<\/option>' \+/.test(mjs));
   ok('the filter panel is visibly denser (item 8): smaller control height/font, tighter panel padding/gap',
      /\.pp-filters \{\s*\n\s*display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px;\s*\n\s*background: var\(--pd-card\); border: 1px solid var\(--pd-line\);\s*\n\s*border-radius: var\(--pd-radius\); padding: 6px 10px;/.test(css) &&
-     /\.pp-filters \.pd-input, \.pp-filters \.pd-select \{ height: 30px; font-size: 12px; \}/.test(css));
+     /\.pp-filters \.pd-input, \.pp-filters \.pd-select \{ height: 30px; font-size: var\(--pd-fs-sm\); \}/.test(css));
 
   // --- Items 5/6: lightbox toolbar layout -------------------------------------
   ok('#pp-lb-keyplan and #pp-lb-markuptoggle now live in their own right-hand cluster (#pp-lb-tools-right), not the main left toolbar',

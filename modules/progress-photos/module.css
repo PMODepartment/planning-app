@@ -27,7 +27,7 @@
 /* Project context — borderless until hover (Drawing Register's .dr-project) */
 .pp-projctx { display: flex; align-items: center; min-width: 0; flex: 0 1 auto; }
 .pp-project {
-  max-width: 230px; min-width: 120px; height: 34px; font-weight: 600; font-size: 13px;
+  max-width: 230px; min-width: 120px; height: 34px; font-weight: 600; font-size: var(--pd-fs-base);
   background: transparent; border-color: transparent;
 }
 .pp-project:hover, .pp-project:focus { background: var(--pd-card); border-color: var(--pd-line); }
@@ -45,7 +45,7 @@
 }
 .pp-tab {
   border: 0; background: var(--pd-card); color: var(--pd-ink);
-  height: 100%; padding: 0 14px; font-weight: 600; font-size: 13px; cursor: pointer;
+  height: 100%; padding: 0 14px; font-weight: 600; font-size: var(--pd-fs-base); cursor: pointer;
   font-family: var(--pd-font); transition: background .12s;
   display: inline-flex; align-items: center; justify-content: center; line-height: 1;
 }
@@ -56,7 +56,7 @@
 /* Tool cluster beside the profile */
 .pp-topbar-tools { display: flex; align-items: center; gap: 4px; margin-left: auto; }
 .pp-topbar-tools .pd-btn {
-  height: 34px; width: 34px; padding: 0; font-size: 13px;
+  height: 34px; width: 34px; padding: 0; font-size: var(--pd-fs-base);
   display: inline-flex; align-items: center; justify-content: center;
   background: transparent; border-color: transparent;
 }
@@ -75,7 +75,7 @@
 .pp-crumbback {
   display: inline-flex; align-items: center; gap: 5px; height: 34px; padding: 0 10px;
   background: transparent; border: 1px solid transparent; border-radius: var(--pd-radius);
-  color: var(--pd-muted); font-size: 12.5px; font-weight: 600; cursor: pointer;
+  color: var(--pd-muted); font-size: var(--pd-fs-sm); font-weight: 600; cursor: pointer;
 }
 .pp-crumbback:hover { background: var(--pd-bg); border-color: var(--pd-line); color: var(--pd-ink); }
 
@@ -91,7 +91,7 @@
    revealing the date-range/archived controls). */
 .pp-topsearch { display: flex; align-items: center; gap: 4px; flex: 0 1 220px; min-width: 90px; }
 .pp-topsearch .pd-input {
-  height: 34px; font-size: 13px; width: 100%; min-width: 0;
+  height: 34px; font-size: var(--pd-fs-base); width: 100%; min-width: 0;
 }
 .pp-topfilttoggle {
   height: 34px; width: 34px; padding: 0; flex: none;
@@ -124,25 +124,25 @@
 .pp-filters-body { display: contents; }
 .pp-filttoggle { display: none; }
 .pp-filt-ico { color: var(--pd-muted); flex: none; }
-.pp-filters .pd-input, .pp-filters .pd-select { height: 30px; font-size: 12px; }
+.pp-filters .pd-input, .pp-filters .pd-select { height: 30px; font-size: var(--pd-fs-sm); }
 .pp-filters .pp-search { flex: 1 1 260px; min-width: 160px; }
 .pp-filters .pd-select { flex: 0 0 auto; max-width: 130px; }
 /* Date range: a muted caption + input reading as one control */
 .pp-datefield {
   display: inline-flex; align-items: center; gap: 5px; flex: none;
-  font-size: 11.5px; color: var(--pd-muted); white-space: nowrap;
+  font-size: var(--pd-fs-xs); color: var(--pd-muted); white-space: nowrap;
 }
 .pp-datefield .pd-input { width: 128px; }
 /* "Show archived" reads as one more control among the others, so it takes
    the same reduced density rather than the .ppr-allloc default (that class
    is also used as a block label elsewhere, so it's scoped here, not
    redefined). */
-.pp-filters .ppr-allloc { font-size: 11.5px; margin: 0; }
+.pp-filters .ppr-allloc { font-size: var(--pd-fs-xs); margin: 0; }
 /* Clear filters: a subtle, borderless ghost that only appears when a filter is
    active — sits inline after the filters (no margin-left:auto orphaning on wrap). */
 .pp-clear {
   display: inline-flex; align-items: center; gap: 5px; flex: none;
-  height: 30px; padding: 0 9px; font-size: 11.5px; font-weight: 500;
+  height: 30px; padding: 0 9px; font-size: var(--pd-fs-xs); font-weight: 500;
   color: var(--pd-muted); background: transparent;
   border: 0; border-radius: var(--pd-radius); cursor: pointer;
   transition: background .12s, color .12s;
@@ -159,7 +159,7 @@
 .pp-listbar {
   display: flex; align-items: center; gap: 12px; margin-bottom: 10px; min-height: 30px;
 }
-.pp-countbar { color: var(--pd-muted); font-size: 13px; }
+.pp-countbar { color: var(--pd-muted); font-size: var(--pd-fs-base); }
 
 /* ---- List view ----------------------------------------------------------- */
 .pp-grid {
@@ -179,7 +179,7 @@
 .pp-grid-head {
   position: sticky; top: 0; z-index: 2;
   background: var(--pd-bg); border-bottom: 1px solid var(--pd-line);
-  font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  font-size: var(--pd-fs-xs); font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
   color: var(--pd-muted);
 }
 .pp-grid-head > div { padding: 9px 10px; }
@@ -190,12 +190,12 @@
   background: color-mix(in srgb, var(--pd-red) 7%, var(--pd-card));
   border-bottom: 1px solid var(--pd-line);
   border-left: 3px solid var(--pd-red);
-  font-size: 13px;
+  font-size: var(--pd-fs-base);
 }
 .pp-group:hover { background: color-mix(in srgb, var(--pd-red) 12%, var(--pd-card)); }
 .pp-caret { display: inline-flex; color: var(--pd-muted); }
 .pp-groupcount {
-  margin-left: 6px; font-size: 11px; font-weight: 700; color: var(--pd-muted);
+  margin-left: 6px; font-size: var(--pd-fs-xs); font-weight: 700; color: var(--pd-muted);
   background: var(--pd-bg); border: 1px solid var(--pd-line);
   border-radius: 999px; padding: 1px 8px;
 }
@@ -209,7 +209,7 @@
 .pp-selcell { display: flex; align-items: center; justify-content: center; }
 .pp-selcell input, .pp-cardsel input { width: 16px; height: 16px; cursor: pointer; }
 .pp-cell {
-  padding: 8px 10px; font-size: 13px; color: var(--pd-ink);
+  padding: 8px 10px; font-size: var(--pd-fs-base); color: var(--pd-ink);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .pp-date { font-variant-numeric: tabular-nums; }
@@ -244,7 +244,7 @@
 /* ---- Icon buttons (used by the lightbox tools + PPR's own row actions) --- */
 .pp-iconbtn {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 27px; height: 27px; cursor: pointer; font-size: 13px;
+  width: 27px; height: 27px; cursor: pointer; font-size: var(--pd-fs-base);
   background: transparent; border: 1px solid transparent;
   border-radius: 3px; color: var(--pd-muted);
 }
@@ -338,7 +338,7 @@
 .pp-mtype {
   flex: 1 1 0; padding: 8px 10px; text-align: center; cursor: pointer;
   background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
-  color: var(--pd-ink); font-size: 13px; font-weight: 600;
+  color: var(--pd-ink); font-size: var(--pd-fs-base); font-weight: 600;
 }
 .pp-mtype.active { border-color: var(--pd-red); color: var(--pd-red); background: color-mix(in srgb, var(--pd-red) 8%, var(--pd-card)); }
 .pp-mtype:disabled { cursor: not-allowed; color: var(--pd-muted); opacity: .6; }
@@ -366,7 +366,7 @@
 .pp-addmenu[hidden] { display: none; }
 .pp-addmenu-item {
   display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 0; background: transparent;
-  color: var(--pd-ink); font-size: 13px; text-align: left; border-radius: 4px; cursor: pointer;
+  color: var(--pd-ink); font-size: var(--pd-fs-base); text-align: left; border-radius: 4px; cursor: pointer;
 }
 .pp-addmenu-item:hover:not(:disabled) { background: var(--pd-bg); }
 .pp-addmenu-item:disabled { cursor: not-allowed; color: var(--pd-muted); opacity: .6; }
@@ -376,12 +376,12 @@
    render from it. */
 .pp-groupby {
   display: inline-flex; align-items: center; gap: 7px;
-  font-size: 12.5px; color: var(--pd-muted);
+  font-size: var(--pd-fs-sm); color: var(--pd-muted);
 }
 .pp-groupby .pd-select { width: auto; }
 /* Fifth round item 7 — subtle, not filled: "markup visible" is the default/
    common state, so this shouldn't read as an alarming always-on red button. */
-.pp-mkvistoggle { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; }
+.pp-mkvistoggle { display: inline-flex; align-items: center; gap: 5px; font-size: var(--pd-fs-sm); }
 .pp-mkvistoggle.is-active { color: var(--pd-red); border-color: var(--pd-red); }
 /* Round-2 item 8: the button is hidden on List/Plan views via el.hidden=true
    (module.js's syncMkVisBtn). Without this override, `.pp-mkvistoggle`'s own
@@ -393,7 +393,7 @@
 .pp-gallerygrouphead {
   display: flex; align-items: center; gap: 9px; margin: 0 0 9px;
   padding-bottom: 6px; border-bottom: 1px solid var(--pd-line);
-  font-size: 13.5px; color: var(--pd-ink);
+  font-size: var(--pd-fs-base); color: var(--pd-ink);
 }
 
 /* ---- Panorama/reconstruction tiles, INLINE in the merged grid (items 6+8, current round) --- */
@@ -409,7 +409,7 @@
 /* Bottom-left/-right so this never collides with .pp-cardsel (top-left,
    the select checkbox) on a Gallery card carrying both overlays. */
 .pp-mkbadge {
-  position: absolute; bottom: 4px; left: 4px; font-size: 10px; font-weight: 700;
+  position: absolute; bottom: 4px; left: 4px; font-size: var(--pd-fs-micro); font-weight: 700;
   color: #fff; background: color-mix(in srgb, var(--pd-red) 85%, black);
   border-radius: 999px; padding: 1px 6px; pointer-events: none;
 }
@@ -427,7 +427,7 @@
   background: var(--pd-card);
 }
 .pp-empty p { margin: 8px 0 0; }
-.pp-hint { font-size: 12.5px; color: var(--pd-muted); }
+.pp-hint { font-size: var(--pd-fs-sm); color: var(--pd-muted); }
 /* Audit fix: used in module.js/ppr.js (e.g. Stack's "+N more" note, the
    merge wizard's per-presentation slide count) but was never defined here
    at all — those spans were rendering as plain unstyled ink instead of
@@ -517,13 +517,13 @@
 }
 .pp-lb-cap {
   margin-top: 12px; color: #fff; text-align: center;
-  display: flex; flex-direction: column; gap: 3px; font-size: 13px;
+  display: flex; flex-direction: column; gap: 3px; font-size: var(--pd-fs-base);
 }
 .pp-lb-cap span { color: #dcdbdb; }
-.pp-lb-count { font-size: 12px; opacity: .75; }
+.pp-lb-count { font-size: var(--pd-fs-sm); opacity: .75; }
 .pp-lb-btn {
   position: absolute; top: 50%; transform: translateY(-50%);
-  width: 46px; height: 70px; cursor: pointer; font-size: 24px;
+  width: 46px; height: 70px; cursor: pointer; font-size: var(--pd-fs-hero);
   background: rgba(255, 255, 255, .12); border: 0; color: #fff;
 }
 .pp-lb-btn:hover { background: rgba(255, 255, 255, .28); }
@@ -531,7 +531,7 @@
 .pp-lb-next { right: 14px; }
 .pp-lb-close {
   position: absolute; top: 14px; right: 16px;
-  width: 38px; height: 38px; cursor: pointer; font-size: 22px;
+  width: 38px; height: 38px; cursor: pointer; font-size: var(--pd-fs-stat);
   background: rgba(255, 255, 255, .12); border: 0; color: #fff; border-radius: 3px;
 }
 .pp-lb-close:hover { background: var(--pd-red); }
@@ -560,7 +560,7 @@
 .pp-mk-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
 .pp-mk-tools { display: flex; gap: 4px; flex-wrap: wrap; }
 .pp-mk-tool {
-  padding: 6px 10px; font-size: 12.5px; cursor: pointer;
+  padding: 6px 10px; font-size: var(--pd-fs-sm); cursor: pointer;
   background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: 3px; color: var(--pd-ink);
 }
 .pp-mk-tool.active { background: var(--pd-red); border-color: var(--pd-red); color: #fff; }
@@ -586,7 +586,7 @@
   background: var(--pd-bg); border: 1px solid var(--pd-line); border-radius: 3px;
 }
 .pp-progress {
-  margin-top: 10px; font-size: 13px; color: var(--pd-muted);
+  margin-top: 10px; font-size: var(--pd-fs-base); color: var(--pd-muted);
 }
 /* Item 1 — the delete-confirm modal's warning when a photo being deleted is
    used in one or more presentation slides. Same paired-token shape as the
@@ -596,7 +596,7 @@
 .pp-delwarn {
   margin-top: 10px; padding: 8px 10px; border-radius: var(--pd-radius);
   background: color-mix(in srgb, var(--pd-warn) 16%, var(--pd-card));
-  color: var(--pd-warn); font-size: 12.5px; display: flex; align-items: flex-start; gap: 6px;
+  color: var(--pd-warn); font-size: var(--pd-fs-sm); display: flex; align-items: flex-start; gap: 6px;
 }
 
 /* ---- Offline queue button (topbar, always visible — Rounds captures queue too) */
@@ -620,18 +620,18 @@
   border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
   background: var(--pd-card); padding: 10px 12px; margin-top: 4px;
 }
-.pp-wbssection > label { display: block; font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+.pp-wbssection > label { display: block; font-size: var(--pd-fs-sm); font-weight: 700; margin-bottom: 6px; }
 .pp-wbscascade { display: flex; flex-wrap: wrap; gap: 8px; }
 .pp-wbslevel { flex: 1 1 150px; min-width: 130px; }
 /* The resolved path — the one place the structured WBS location is shown;
    the free-text Location label below is never auto-filled from this. */
 .pp-wbscrumb {
   margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--pd-line);
-  font-size: 13px; color: var(--pd-ink); font-weight: 600;
+  font-size: var(--pd-fs-base); color: var(--pd-ink); font-weight: 600;
 }
-.pp-optnote { font-weight: 400; color: var(--pd-muted); font-size: 11.5px; }
+.pp-optnote { font-weight: 400; color: var(--pd-muted); font-size: var(--pd-fs-xs); }
 .pp-req { color: var(--pd-bad); font-weight: 700; }
-.pp-actctx { font-size: 12.5px; color: var(--pd-muted); margin-top: -2px; }
+.pp-actctx { font-size: var(--pd-fs-sm); color: var(--pd-muted); margin-top: -2px; }
 .pp-actline { margin-top: 4px; }
 .pp-actline strong { color: var(--pd-ink); }
 .pp-lastref { display: flex; align-items: center; gap: 8px; }
@@ -640,7 +640,7 @@
   border: 1px solid var(--pd-line); flex: none;
 }
 .pp-codetags { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
-.pp-codegroup { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; }
+.pp-codegroup { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--pd-fs-sm); }
 .pp-codegroup-name { font-weight: 700; color: var(--pd-muted); min-width: 70px; }
 .pp-codechk { display: inline-flex; align-items: center; gap: 4px; font-weight: 400; }
 
@@ -655,7 +655,7 @@
    an explicit style.display in syncChrome() instead of the `hidden`
    attribute — see wireSelBar()'s own comment in module.js.
    ============================================================================ */
-.pp-selcount-tb { font-size: 12.5px; font-weight: 600; color: var(--pd-muted); padding: 0 4px; }
+.pp-selcount-tb { font-size: var(--pd-fs-sm); font-weight: 600; color: var(--pd-muted); padding: 0 4px; }
 
 /* ============================================================================
    PPR Presentations (the "View PPRs" screens)
@@ -679,7 +679,7 @@
 }
 .ppr-head {
   background: var(--pd-bg); border-bottom: 1px solid var(--pd-line);
-  font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  font-size: var(--pd-fs-xs); font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
   color: var(--pd-muted);
 }
 .ppr-head > div { padding: 9px 10px; }
@@ -688,7 +688,7 @@
 .ppr-row:hover { background: var(--pd-bg); }
 .ppr-row.sel { background: color-mix(in srgb, var(--pd-red) 9%, var(--pd-card)); }
 .ppr-cell {
-  padding: 8px 10px; font-size: 13px; color: var(--pd-ink);
+  padding: 8px 10px; font-size: var(--pd-fs-base); color: var(--pd-ink);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .ppr-date { font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -719,10 +719,10 @@
      below the 4.5:1 threshold. Same darkening this app already uses
      elsewhere for the identical brand-red-as-a-small-badge case; measures
      5.44:1, unchanged in dark mode since --pd-red itself doesn't remap. */
-  background: color-mix(in srgb, var(--pd-red) 85%, black); color: #fff; font-size: 11px; font-weight: 700;
+  background: color-mix(in srgb, var(--pd-red) 85%, black); color: #fff; font-size: var(--pd-fs-xs); font-weight: 700;
   display: flex; align-items: center; justify-content: center;
 }
-.ppr-tmpl-loclabel { flex: 1 1 auto; font-size: 13px; color: var(--pd-ink); min-width: 0;
+.ppr-tmpl-loclabel { flex: 1 1 auto; font-size: var(--pd-fs-base); color: var(--pd-ink); min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ppr-tmpl-baseline { flex: 0 0 220px; max-width: 220px; }
 .ppr-tmpl-locbtns { flex: 0 0 auto; display: flex; gap: 2px; }
@@ -732,7 +732,7 @@
 .ppr-tmpl-pickrow {
   text-align: left; padding: 8px 10px; border: 1px solid var(--pd-line);
   border-radius: var(--pd-radius); background: var(--pd-card); color: var(--pd-ink);
-  font-size: 13px; cursor: pointer;
+  font-size: var(--pd-fs-base); cursor: pointer;
 }
 .ppr-tmpl-pickrow:hover { background: var(--pd-bg); border-color: var(--pd-red); }
 
@@ -744,18 +744,18 @@
 .ppr-preview-head {
   padding: 9px 10px; background: var(--pd-bg);
   border-bottom: 1px solid var(--pd-line);
-  font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  font-size: var(--pd-fs-xs); font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
   color: var(--pd-muted); text-align: center;
 }
 .ppr-noslides {
-  padding: 70px 16px; text-align: center; color: var(--pd-muted); font-size: 15px;
+  padding: 70px 16px; text-align: center; color: var(--pd-muted); font-size: var(--pd-fs-md);
 }
 .ppr-thumbs {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 12px; padding: 14px;
 }
 .ppr-thumbwrap { display: flex; align-items: flex-end; gap: 6px; }
-.ppr-thumbno { font-size: 12px; color: var(--pd-muted); min-width: 12px; }
+.ppr-thumbno { font-size: var(--pd-fs-sm); color: var(--pd-muted); min-width: 12px; }
 .ppr-thumb {
   width: 100%; height: 86px; object-fit: cover; cursor: zoom-in;
   border: 1px solid var(--pd-line); border-radius: 3px; background: var(--pd-bg);
@@ -766,13 +766,13 @@
 .ppr-combined { padding: 4px 0 10px; }
 .ppr-combined-group + .ppr-combined-group { border-top: 1px solid var(--pd-line); margin-top: 4px; }
 .ppr-combined-head {
-  padding: 10px 14px 0; font-size: 12.5px; font-weight: 700; color: var(--pd-ink);
+  padding: 10px 14px 0; font-size: var(--pd-fs-sm); font-weight: 700; color: var(--pd-ink);
 }
 /* No click handler on these thumbs (which of several open presentations a
    click should land in is ambiguous) — the zoom cursor would falsely
    advertise one. */
 .ppr-combined .ppr-thumb { cursor: default; }
-.ppr-combined .ppr-noslides { padding: 8px 14px 14px; text-align: left; font-size: 13px; }
+.ppr-combined .ppr-noslides { padding: 8px 14px 14px; text-align: left; font-size: var(--pd-fs-base); }
 
 /* ---- Slides view --------------------------------------------------------- */
 .ppr-slidehead, .ppr-meta {
@@ -787,19 +787,19 @@
    is otherwise only used in the topbar, so this reasserts its own gap isn't
    doubled by the parent's flex `gap` (the button has no margin of its own). */
 .ppr-slideback { flex: 0 0 auto; }
-.ppr-hfield { display: flex; align-items: baseline; gap: 10px; font-size: 13.5px; }
+.ppr-hfield { display: flex; align-items: baseline; gap: 10px; font-size: var(--pd-fs-base); }
 .ppr-hfield label {
   font-weight: 700; color: var(--pd-ink); margin: 0; white-space: nowrap;
 }
 .ppr-hfield span { color: var(--pd-muted); }
 .ppr-nav { display: inline-flex; align-items: center; gap: 6px; }
 .ppr-navbtn {
-  width: 24px; height: 24px; cursor: pointer; font-size: 16px; line-height: 1;
+  width: 24px; height: 24px; cursor: pointer; font-size: var(--pd-fs-lg); line-height: 1;
   background: transparent; border: 0; color: var(--pd-red);
 }
 .ppr-navbtn:disabled { color: var(--pd-line); cursor: default; }
 .ppr-kpbtn {
-  cursor: pointer; font-size: 14px; background: transparent;
+  cursor: pointer; font-size: var(--pd-fs-md); background: transparent;
   border: 1px solid var(--pd-line); border-radius: 3px; color: var(--pd-ink);
   width: 28px; height: 24px;
 }
@@ -828,7 +828,7 @@
 }
 .ppr-panetop .ppr-panelabel { margin-bottom: 0; }
 .ppr-panelabel {
-  display: inline-flex; font-size: 10.5px; font-weight: 700; letter-spacing: .05em;
+  display: inline-flex; font-size: var(--pd-fs-micro); font-weight: 700; letter-spacing: .05em;
   text-transform: uppercase; padding: 3px 9px; border-radius: 999px; margin-bottom: 8px;
   background: var(--pd-bg); border: 1px solid var(--pd-line); color: var(--pd-muted);
 }
@@ -869,11 +869,11 @@
    location line (a bolder ink weight so it reads as "what this slide is
    OF", with location as the supporting detail beneath it). */
 .ppr-sortworks {
-  padding: 3px 6px 0; font-size: 11px; font-weight: 700; color: var(--pd-ink);
+  padding: 3px 6px 0; font-size: var(--pd-fs-xs); font-weight: 700; color: var(--pd-ink);
   background: var(--pd-bg); line-height: 1.3;
 }
 .ppr-sortloc {
-  padding: 3px 6px; font-size: 10.5px; color: var(--pd-muted); background: var(--pd-bg);
+  padding: 3px 6px; font-size: var(--pd-fs-micro); color: var(--pd-muted); background: var(--pd-bg);
   border-top: 1px solid var(--pd-line); line-height: 1.3;
 }
 .ppr-sortworks + .ppr-sortloc { border-top: none; }
@@ -882,7 +882,7 @@
   display: flex; align-items: center; justify-content: center;
   /* Audit fix (WCAG AA) — same reasoning/measurement as .ppr-tmpl-locorder
      above: 4.12:1 plain, 5.44:1 darkened. */
-  background: color-mix(in srgb, var(--pd-red) 85%, black); color: #fff; font-size: 11.5px; font-weight: 700;
+  background: color-mix(in srgb, var(--pd-red) 85%, black); color: #fff; font-size: var(--pd-fs-xs); font-weight: 700;
   border-radius: 10px; pointer-events: none;
 }
 
@@ -909,8 +909,8 @@
   box-shadow: 0 2px 10px rgba(0, 0, 0, .35); background: var(--pd-card);
 }
 .ppr-pane figcaption { text-align: center; margin-top: 7px; }
-.ppr-capdate { font-size: 13.5px; color: var(--pd-ink); }
-.ppr-captxt { font-style: italic; font-size: 12.5px; color: var(--pd-muted); margin-top: 2px; }
+.ppr-capdate { font-size: var(--pd-fs-base); color: var(--pd-ink); }
+.ppr-captxt { font-style: italic; font-size: var(--pd-fs-sm); color: var(--pd-muted); margin-top: 2px; }
 .ppr-slideacts { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
 /* Edit/Delete PRESENTATION, relocated into the slidehead (follow-up feedback
    item 1 moved the row's own icons to Download/Preview/Archive only). */
@@ -921,7 +921,7 @@
    each pane's own tags line below. */
 .ppr-sharedloc {
   display: inline-flex; align-items: center; gap: 6px;
-  font-size: 12.5px; font-weight: 600; color: var(--pd-ink); margin: 0 0 12px;
+  font-size: var(--pd-fs-sm); font-weight: 600; color: var(--pd-ink); margin: 0 0 12px;
   background: var(--pd-bg); border: 1px solid var(--pd-line); border-radius: 999px;
   padding: 5px 12px; left: 50%; position: relative; transform: translateX(-50%);
 }
@@ -933,9 +933,9 @@
   display: flex; align-items: center; gap: 10px; text-align: left;
   padding: 10px 12px; width: 100%; box-sizing: border-box;
 }
-.ppr-fmtchoices small { display: block; color: var(--pd-muted); font-weight: 400; font-size: 11.5px; }
+.ppr-fmtchoices small { display: block; color: var(--pd-muted); font-weight: 400; font-size: var(--pd-fs-xs); }
 /* Merge wizard's source list (item 14) */
-.pp-mergelist { margin: 0 0 14px; padding-left: 20px; font-size: 13px; }
+.pp-mergelist { margin: 0 0 14px; padding-left: 20px; font-size: var(--pd-fs-base); }
 .pp-mergelist li { margin-bottom: 4px; }
 
 /* ⚠️ RETIRED (item 10, current round): .ppr-previewbox styled the read-only
@@ -943,7 +943,7 @@
    see ppr.js's own note at that spot for why it had nothing left to call it. */
 
 /* "Show all locations" override (item 9) */
-.ppr-allloc { display: block; font-size: 12px; color: var(--pd-muted); margin: 4px 0 8px; }
+.ppr-allloc { display: block; font-size: var(--pd-fs-sm); color: var(--pd-muted); margin: 4px 0 8px; }
 .ppr-allloc input { margin-right: 5px; }
 
 /* Thumbnail-grid photo picker (18-item list item 6 — replaces the old plain
@@ -964,7 +964,7 @@
   width: 100%; height: 90px; display: flex; align-items: center; justify-content: center;
   color: var(--pd-muted); background: var(--pd-bg);
 }
-.ppr-pickcap { padding: 5px 7px; font-size: 11px; color: var(--pd-muted); line-height: 1.35; }
+.ppr-pickcap { padding: 5px 7px; font-size: var(--pd-fs-xs); color: var(--pd-muted); line-height: 1.35; }
 .ppr-pickcap .d { font-weight: 700; color: var(--pd-ink); display: block; }
 
 /* The "photo chosen" button that replaces the old <select> once a photo is
@@ -977,11 +977,11 @@
 }
 .ppr-pickchosen:hover { border-color: var(--pd-red); }
 .ppr-pickchosen img { width: 78px; height: 58px; object-fit: cover; border-radius: 3px; flex: 0 0 auto; background: var(--pd-bg); }
-.ppr-pickchosen span { font-size: 12px; color: var(--pd-muted); line-height: 1.4; }
+.ppr-pickchosen span { font-size: var(--pd-fs-sm); color: var(--pd-muted); line-height: 1.4; }
 .ppr-pickchosen em { color: var(--pd-red); font-style: normal; font-weight: 600; }
 
 /* Copy-presentation wizard (item 6) */
-.ppr-wizstep { font-size: 12px; color: var(--pd-muted); margin: 0 0 10px; text-align: center; }
+.ppr-wizstep { font-size: var(--pd-fs-sm); color: var(--pd-muted); margin: 0 0 10px; text-align: center; }
 .ppr-wizpane { display: flex; flex-direction: column; gap: 6px; }
 .ppr-wizpane .ppr-img { max-height: 220px; object-fit: contain; }
 
@@ -996,18 +996,18 @@
 .pano-thumb .pp-noimg { height: 160px; }
 .pano-badge {
   position: absolute; top: 8px; left: 8px; padding: 3px 8px; border-radius: 3px;
-  font-size: 10.5px; font-weight: 700; letter-spacing: .02em;
+  font-size: var(--pd-fs-micro); font-weight: 700; letter-spacing: .02em;
 }
 .pano-badge-warn { background: var(--pd-warn); color: #fff; }
 .pano-meta { padding: 10px 12px 4px; }
-.pano-loc { font-size: 13.5px; font-weight: 600; color: var(--pd-ink); }
-.pano-date { font-size: 12px; color: var(--pd-muted); margin-top: 2px; }
+.pano-loc { font-size: var(--pd-fs-base); font-weight: 600; color: var(--pd-ink); }
+.pano-date { font-size: var(--pd-fs-sm); color: var(--pd-muted); margin-top: 2px; }
 .pano-acts { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 10px 12px 12px; }
 
 .pano-viewerwrap { position: relative; text-align: center; }
 .pano-viewerwrap canvas { width: 100%; max-width: 100%; height: auto; border-radius: var(--pd-radius); cursor: grab; background: #000; }
 .pano-viewerwrap canvas:active { cursor: grabbing; }
-.pano-viewerhint { font-size: 11.5px; color: var(--pd-muted); margin-top: 6px; }
+.pano-viewerhint { font-size: var(--pd-fs-xs); color: var(--pd-muted); margin-top: 6px; }
 
 .pano-capturearea { margin-top: 12px; }
 .pano-camwrap { margin: 10px 0; position: relative; max-width: 420px; }
@@ -1020,7 +1020,7 @@
 .pano-recind {
   position: absolute; top: 10px; left: 10px; display: flex; align-items: center; gap: 7px;
   padding: 4px 10px 4px 8px; border-radius: 999px; background: rgba(0,0,0,.6); color: #fff;
-  font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums;
+  font-size: var(--pd-fs-sm); font-weight: 600; font-variant-numeric: tabular-nums;
 }
 /* ⚠️ Same bug class as .pp-addmenu above: `display: flex` unconditionally
    beats the UA's `[hidden] { display: none }`, so stopRecTimer()'s
@@ -1035,26 +1035,26 @@
 }
 @keyframes pano-recpulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
 #pano-c-record.is-active { background: var(--pd-red); border-color: var(--pd-red); color: #fff; }
-.pano-cmp-controls { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-bottom: 10px; font-size: 12.5px; color: var(--pd-muted); }
+.pano-cmp-controls { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-bottom: 10px; font-size: var(--pd-fs-sm); color: var(--pd-muted); }
 .pano-cmp-controls label { display: flex; align-items: center; gap: 6px; }
 .pano-cmp-controls select { min-width: 160px; }
-.pano-src { font-size: 11px; padding: 2px 7px; border-radius: 3px; background: var(--pd-bg); color: var(--pd-muted); border: 1px solid var(--pd-line); margin-left: 6px; vertical-align: middle; }
+.pano-src { font-size: var(--pd-fs-xs); padding: 2px 7px; border-radius: 3px; background: var(--pd-bg); color: var(--pd-muted); border: 1px solid var(--pd-line); margin-left: 6px; vertical-align: middle; }
 
 /* ---- 3D Reconstruction Requests (brief 6A / Phase 4) --------------------- */
 .recon-section { margin-bottom: 20px; }
-.recon-sectitle { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); margin: 0 0 8px; }
+.recon-sectitle { font-size: var(--pd-fs-base); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); margin: 0 0 8px; }
 .recon-row {
   background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
   padding: 10px 12px; margin-bottom: 8px;
 }
 .recon-rowmain { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-.recon-loc { font-size: 13.5px; font-weight: 600; color: var(--pd-ink); }
-.recon-date { font-size: 12px; color: var(--pd-muted); margin-left: auto; }
-.recon-src { font-size: 11px; padding: 2px 7px; border-radius: 3px; background: var(--pd-bg); color: var(--pd-muted); border: 1px solid var(--pd-line); }
-.recon-note { font-size: 12.5px; color: var(--pd-muted); margin-top: 6px; }
+.recon-loc { font-size: var(--pd-fs-base); font-weight: 600; color: var(--pd-ink); }
+.recon-date { font-size: var(--pd-fs-sm); color: var(--pd-muted); margin-left: auto; }
+.recon-src { font-size: var(--pd-fs-xs); padding: 2px 7px; border-radius: 3px; background: var(--pd-bg); color: var(--pd-muted); border: 1px solid var(--pd-line); }
+.recon-note { font-size: var(--pd-fs-sm); color: var(--pd-muted); margin-top: 6px; }
 .recon-note-bad { color: var(--pd-bad); }
 .recon-acts { display: flex; gap: 8px; margin-top: 10px; }
-.recon-badge { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 3px; letter-spacing: .02em; }
+.recon-badge { font-size: var(--pd-fs-xs); font-weight: 700; padding: 3px 9px; border-radius: 3px; letter-spacing: .02em; }
 /* Each pairs the token's own OWN colour as text with a tint of that SAME
    token as background (the proven .pd-pill-ok pattern from dashboard.css) —
    every one of --pd-warn/--pd-red/--pd-ok/--pd-bad already carries a paired
@@ -1073,7 +1073,7 @@
    together by the parent transform. */
 .bim-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 10px; }
 .bim-placebadge {
-  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+  font-size: var(--pd-fs-xs); font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
   padding: 3px 9px; border-radius: 3px;
   background: color-mix(in srgb, var(--pd-red) 14%, var(--pd-card)); color: var(--pd-red);
 }
@@ -1149,13 +1149,13 @@
    mode; the floor-stepper is genuinely new). */
 .pp-plantoolbar { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
 .pp-planfloorbar, .pp-planmonthbar {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: var(--pd-fs-base);
 }
 /* Sixth round item 3: a plain text label — same role in BOTH the Floor and
    Month bars, so the two rows read as one consistent toolbar shape (label,
    then the stepper/control cluster, then one short trailing hint) instead
    of a labelled <select> on one row and a bare, unlabelled stepper on the other. */
-.pp-planfloorlabel { font-size: 12.5px; font-weight: 600; color: var(--pd-muted); }
+.pp-planfloorlabel { font-size: var(--pd-fs-sm); font-weight: 600; color: var(--pd-muted); }
 .pp-planfloorbar .pd-select { width: auto; min-width: 140px; }
 .pp-planmonthbar strong { min-width: 64px; text-align: center; font-variant-numeric: tabular-nums; }
 /* "Live" jump-back button (Plan view's month stepper — Stack view's own
@@ -1163,7 +1163,7 @@
    on/off shape as .pp-tab.active / .pd-btn-primary: a solid brand-red fill
    with white text is always legible regardless of theme, so it's exempt
    from the dark-mode #fff audit like those two. */
-.pp-livebtn { padding: 4px 12px; font-size: 12px; }
+.pp-livebtn { padding: 4px 12px; font-size: var(--pd-fs-sm); }
 .pp-livebtn.is-live { background: var(--pd-red); border-color: var(--pd-red); color: #fff; cursor: default; }
 .pp-livebtn.is-live:hover { background: var(--pd-red); border-color: var(--pd-red); }
 .pp-planstage { position: relative; }
@@ -1174,7 +1174,7 @@
   min-width: 30px; height: 30px; padding: 0 6px; border-radius: 999px;
   background: color-mix(in srgb, var(--pd-red) 85%, black); color: #fff;
   border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .35);
-  font-size: 13px; font-weight: 700; cursor: pointer;
+  font-size: var(--pd-fs-base); font-weight: 700; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
 }
 /* Sixth round item 2 — a photo-backed cluster marker, iOS Photos map style:
@@ -1187,7 +1187,7 @@
 .pp-plancluster-badge {
   position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; padding: 0 4px;
   border-radius: 999px; background: color-mix(in srgb, var(--pd-red) 85%, black); color: #fff;
-  border: 2px solid #fff; font-size: 10.5px; font-weight: 700;
+  border: 2px solid #fff; font-size: var(--pd-fs-micro); font-weight: 700;
   display: flex; align-items: center; justify-content: center;
 }
 
@@ -1209,7 +1209,7 @@
   border-radius: 50%; background: var(--pd-ok); border: 2px solid #fff;
   box-shadow: 0 1px 4px rgba(0, 0, 0, .45); pointer-events: none;
   display: flex; align-items: center; justify-content: center;
-  font-size: 9px; font-weight: 700; color: #fff;
+  font-size: var(--pd-fs-micro); font-weight: 700; color: #fff;
 }
 .bim-regpt.is-pending { background: var(--pd-warn); animation: bim-regpt-pulse 1s ease-in-out infinite; }
 @keyframes bim-regpt-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
@@ -1224,7 +1224,7 @@
 }
 .bim-plantree-item {
   display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
-  padding: 8px 10px; font-size: 13px; background: transparent; border: 0;
+  padding: 8px 10px; font-size: var(--pd-fs-base); background: transparent; border: 0;
   border-bottom: 1px solid var(--pd-line); cursor: pointer; color: var(--pd-ink);
 }
 .bim-plantree-item:last-child { border-bottom: 0; }
@@ -1276,9 +1276,9 @@
   cursor: grab; z-index: 2; box-shadow: 0 1px 2px rgba(0, 0, 0, .5);
 }
 .bim-dirhandle-el:active { cursor: grabbing; }
-.bim-conehint { font-size: 12px; color: var(--pd-muted); margin: 6px 0 0; }
+.bim-conehint { font-size: var(--pd-fs-sm); color: var(--pd-muted); margin: 6px 0 0; }
 .bim-conena-badge {
-  display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600;
+  display: inline-flex; align-items: center; gap: 5px; font-size: var(--pd-fs-xs); font-weight: 600;
   color: var(--pd-muted); margin-top: 4px;
 }
 /* Fifth round item 8: "does not apply" now hides the wedge ENTIRELY (bim.js
@@ -1358,17 +1358,17 @@
 }
 .ppr-panehead-loc {
   display: flex; align-items: center; justify-content: center; gap: 5px;
-  font-size: 12px; font-weight: 600; color: var(--pd-ink); margin-bottom: 3px;
+  font-size: var(--pd-fs-sm); font-weight: 600; color: var(--pd-ink); margin-bottom: 3px;
 }
 .ppr-panehead-loc span[data-ico] { color: var(--pd-red); }
-.ppr-panehead .ppr-capdate { font-size: 13.5px; color: var(--pd-ink); }
-.ppr-panehead .ppr-captxt { font-style: italic; font-size: 12.5px; color: var(--pd-muted); margin-top: 2px; }
+.ppr-panehead .ppr-capdate { font-size: var(--pd-fs-base); color: var(--pd-ink); }
+.ppr-panehead .ppr-captxt { font-style: italic; font-size: var(--pd-fs-sm); color: var(--pd-muted); margin-top: 2px; }
 /* Sixth round items 10/11: an explicit label before each value (Date /
    Description / Location were previously bare, unlabelled values) — a
    quieter uppercase tag so it reads as a field name, not a second value.
    `font-style:normal` overrides the italic .ppr-captxt inherits it from. */
 .ppr-panehead-lbl {
-  font-style: normal; font-size: 9.5px; font-weight: 700; text-transform: uppercase;
+  font-style: normal; font-size: var(--pd-fs-micro); font-weight: 700; text-transform: uppercase;
   letter-spacing: .04em; color: var(--pd-muted); margin-right: 3px;
 }
 
@@ -1379,7 +1379,7 @@
   display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; min-height: 0;
 }
 .pp-workschip {
-  display: inline-flex; align-items: center; gap: 5px; font-size: 12px;
+  display: inline-flex; align-items: center; gap: 5px; font-size: var(--pd-fs-sm);
   padding: 3px 8px 3px 10px; border-radius: 999px; font-weight: 600;
   background: color-mix(in srgb, var(--pd-red) 12%, var(--pd-card)); color: var(--pd-ink);
   border: 1px solid color-mix(in srgb, var(--pd-red) 30%, var(--pd-line));
@@ -1391,11 +1391,11 @@
 .pp-workschip button:hover { color: var(--pd-bad); }
 .pp-worksgroup + .pp-worksgroup { margin-top: 4px; }
 .pp-worksgroup-name {
-  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  font-size: var(--pd-fs-xs); font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
   color: var(--pd-muted); display: block; margin-bottom: 4px;
 }
 .pp-worksitem {
-  display: flex; align-items: center; gap: 8px; padding: 6px 4px; font-size: 13px;
+  display: flex; align-items: center; gap: 8px; padding: 6px 4px; font-size: var(--pd-fs-base);
   border-bottom: 1px solid var(--pd-line); cursor: pointer;
 }
 .pp-worksitem:last-child { border-bottom: 0; }
@@ -1423,35 +1423,35 @@
 .pp-worksgroup-hd:hover { background: var(--pd-bg); }
 .pp-worksgroup-caret { display: flex; flex: none; color: var(--pd-muted); }
 .pp-worksgroup-hd .pp-worksgroup-name {
-  flex: 1 1 auto; font-size: 12.5px; font-weight: 700; text-transform: none;
+  flex: 1 1 auto; font-size: var(--pd-fs-sm); font-weight: 700; text-transform: none;
   letter-spacing: 0; color: var(--pd-ink); margin-bottom: 0; display: block;
 }
 .pp-worksgroup-count {
-  flex: none; font-size: 11px; font-weight: 600; color: var(--pd-muted);
+  flex: none; font-size: var(--pd-fs-xs); font-weight: 600; color: var(--pd-muted);
   background: var(--pd-bg); border-radius: 999px; padding: 1px 7px;
 }
 .pp-worksgroup-items { padding-left: 22px; }
 .pp-worksempty { text-align: center; padding: 24px 8px; }
 .pp-worksfooter { justify-content: space-between; align-items: center; }
-.pp-workscount { font-size: 12.5px; color: var(--pd-muted); font-weight: 600; }
+.pp-workscount { font-size: var(--pd-fs-sm); color: var(--pd-muted); font-weight: 600; }
 .pp-worksfooter-btns { display: flex; gap: 10px; }
 
 /* ---- Item 7: single-node Location picker + required view name ------------ */
 .pp-locchosen {
   display: flex; align-items: center; gap: 8px; padding: 8px 10px; margin-bottom: 6px;
   background: color-mix(in srgb, var(--pd-red) 8%, var(--pd-card));
-  border: 1px solid var(--pd-line); border-radius: var(--pd-radius); font-size: 13px;
+  border: 1px solid var(--pd-line); border-radius: var(--pd-radius); font-size: var(--pd-fs-base);
 }
 .pp-locchosen span[data-ico] { color: var(--pd-red); flex: none; }
 .pp-locchosen strong { flex: 1 1 auto; }
 .pp-locnode {
   display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
-  padding: 7px 8px; font-size: 13px; background: transparent; border: 0;
+  padding: 7px 8px; font-size: var(--pd-fs-base); background: transparent; border: 0;
   border-radius: 3px; cursor: pointer; color: var(--pd-ink);
 }
 .pp-locnode:hover { background: var(--pd-bg); }
 .pp-locnode .pp-locnode-lvl {
-  font-size: 10.5px; text-transform: uppercase; letter-spacing: .03em; color: var(--pd-muted);
+  font-size: var(--pd-fs-micro); text-transform: uppercase; letter-spacing: .03em; color: var(--pd-muted);
   min-width: 60px; flex: none;
 }
 .pp-loctree { max-height: 360px; overflow-y: auto; }
@@ -1561,11 +1561,11 @@
   background: var(--pd-bg); border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
 }
 .pp-mk-grouplabel {
-  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  font-size: var(--pd-fs-micro); font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
   color: var(--pd-muted); white-space: nowrap;
 }
 .pp-mk-group-fill input[type=range] { width: 70px; }
-.pp-mk-group-fill label { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--pd-ink); white-space: nowrap; }
+.pp-mk-group-fill label { display: flex; align-items: center; gap: 4px; font-size: var(--pd-fs-sm); color: var(--pd-ink); white-space: nowrap; }
 /* Fourth round, item 3: fill colour is a SECOND, independent swatch row
    nested in the fill controls — smaller than the main border-colour row so
    the two are visually distinct at a glance (border = the bigger swatches
@@ -1580,11 +1580,11 @@
 .pp-mk-toggle {
   width: 26px; height: 26px; padding: 0; border-radius: 4px; border: 1px solid var(--pd-line);
   background: var(--pd-card); color: var(--pd-ink); cursor: pointer;
-  display: inline-flex; align-items: center; justify-content: center; font-size: 13px; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center; font-size: var(--pd-fs-base); line-height: 1;
 }
 .pp-mk-toggle.active { border-color: var(--pd-red); color: var(--pd-red); background: var(--pd-bg); }
 .pp-mk-checklabel {
-  display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--pd-ink); white-space: nowrap;
+  display: flex; align-items: center; gap: 4px; font-size: var(--pd-fs-sm); color: var(--pd-ink); white-space: nowrap;
 }
 .pp-mk-canvaswrap { position: relative; max-width: 100%; touch-action: none; }
 .pp-mk-canvaswrap img { width: 100%; display: block; border-radius: var(--pd-radius); user-select: none; -webkit-user-drag: none; }
@@ -1603,8 +1603,8 @@
 
 /* ---- Item 5 (fourth round): exposure/brightness/contrast/sharpness ------- */
 .pp-adj-sliders { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
-.pp-adj-row { display: grid; grid-template-columns: 90px 32px 1fr; align-items: center; gap: 8px; font-size: 13px; color: var(--pd-ink); }
-.pp-adj-val { color: var(--pd-muted); font-size: 12px; text-align: right; }
+.pp-adj-row { display: grid; grid-template-columns: 90px 32px 1fr; align-items: center; gap: 8px; font-size: var(--pd-fs-base); color: var(--pd-ink); }
+.pp-adj-val { color: var(--pd-muted); font-size: var(--pd-fs-sm); text-align: right; }
 .pp-adj-row input[type=range] { width: 100%; }
 
 /* ---- Staged-file grid (Add Media): a Markup AND an Adjust button per file  */
@@ -1649,7 +1649,7 @@
 
 .pd-linkbtn {
   background: none; border: 0; padding: 0; margin: 0; color: var(--pd-red);
-  font-size: 12px; font-weight: 600; cursor: pointer; text-decoration: underline;
+  font-size: var(--pd-fs-sm); font-weight: 600; cursor: pointer; text-decoration: underline;
 }
 .pd-linkbtn:hover { color: var(--pd-red-dark, var(--pd-red)); }
 
@@ -1663,7 +1663,7 @@
   padding: 10px 12px; margin: 10px 0; background: var(--pd-card); border: 1px solid var(--pd-line);
   border-radius: var(--pd-radius);
 }
-.bim-fp-info-row { display: flex; gap: 18px; flex-wrap: wrap; font-size: 13px; color: var(--pd-ink); }
+.bim-fp-info-row { display: flex; gap: 18px; flex-wrap: wrap; font-size: var(--pd-fs-base); color: var(--pd-ink); }
 .bim-fp-info-row strong { font-weight: 700; margin-right: 4px; }
 .bim-fp-info-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
@@ -1688,14 +1688,14 @@
 
 .bim-withzones { margin-top: 12px; }
 .bim-zonelist { background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius); padding: 10px 12px; }
-.bim-zonelist h4 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); }
+.bim-zonelist h4 { margin: 0 0 8px; font-size: var(--pd-fs-base); text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); }
 .bim-zonelist-row {
   display: flex; align-items: center; gap: 8px; padding: 7px 6px; border-radius: 6px; cursor: pointer;
 }
 .bim-zonelist-row:hover { background: var(--pd-bg); }
 .bim-zonelist-row.active { background: color-mix(in srgb, var(--pd-red) 10%, var(--pd-card)); border-left: 3px solid var(--pd-red); padding-left: 3px; }
 .bim-zonelist-dot { width: 11px; height: 11px; border-radius: 50%; flex: 0 0 auto; }
-.bim-zonelist-name { flex: 1; font-size: 13px; }
+.bim-zonelist-name { flex: 1; font-size: var(--pd-fs-base); }
 .bim-zonelist-acts { display: flex; gap: 10px; }
 
 .bim-zonedraw {
@@ -1713,7 +1713,7 @@
 .bim-revrow.is-current strong { color: var(--pd-red); }
 .bim-revrow-acts { display: flex; align-items: center; gap: 14px; flex: 0 0 auto; }
 .bim-revbadge {
-  display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .03em;
+  display: inline-block; font-size: var(--pd-fs-micro); font-weight: 700; letter-spacing: .03em;
   color: #fff; background: var(--pd-red); border-radius: 4px; padding: 1px 6px; margin-left: 4px;
 }
 
@@ -1758,13 +1758,13 @@
   }
   .pp-row .pp-selcell input { width: 22px; height: 22px; }
   .pp-row .pp-cell:not(.pp-thumbcell):not(.pp-selcell) {
-    grid-column: 2; padding: 0; font-size: 12.5px;
+    grid-column: 2; padding: 0; font-size: var(--pd-fs-sm);
     white-space: normal; overflow: visible; text-overflow: clip;
   }
   .pp-row .pp-cell[data-l]::before {
     content: attr(data-l) ": "; color: var(--pd-muted); font-weight: 600;
   }
-  .pp-row .pp-desc { font-size: 13.5px; font-weight: 600; line-height: 1.3; }
+  .pp-row .pp-desc { font-size: var(--pd-fs-base); font-weight: 600; line-height: 1.3; }
   .pp-iconbtn { width: 40px; height: 40px; border-color: var(--pd-line); }
 
   /* Works picker (2026-09-07): Expand/Collapse all and Apply/Cancel are real
@@ -1787,7 +1787,7 @@
 
   /* Lightbox: give the photo the screen and keep the controls thumb-sized. */
   .pp-lb-img { max-width: 96vw; max-height: 66vh; border-width: 2px; }
-  .pp-lb-btn { width: 44px; height: 56px; font-size: 20px; }
+  .pp-lb-btn { width: 44px; height: 56px; font-size: var(--pd-fs-stat); }
   .pp-lb-prev { left: 4px; }
   .pp-lb-next { right: 4px; }
   .pp-lb-close { width: 44px; height: 44px; top: max(10px, env(safe-area-inset-top)); right: 10px; }

@@ -27,7 +27,7 @@
 /* Project context — borderless until hover */
 .il-projctx { display: flex; align-items: center; min-width: 0; flex: 0 1 auto; }
 .il-project {
-  max-width: 230px; min-width: 120px; height: 34px; font-weight: 600; font-size: 13px;
+  max-width: 230px; min-width: 120px; height: 34px; font-weight: 600; font-size: var(--pd-fs-base);
   background: transparent; border-color: transparent;
 }
 .il-project:hover, .il-project:focus { background: var(--pd-card); border-color: var(--pd-line); }
@@ -39,7 +39,7 @@
 }
 .il-tab {
   border: 0; background: var(--pd-card); color: var(--pd-ink);
-  padding: 6px 14px; font-weight: 600; font-size: 13px; cursor: pointer;
+  padding: 6px 14px; font-weight: 600; font-size: var(--pd-fs-base); cursor: pointer;
   font-family: var(--pd-font); transition: background .12s; white-space: nowrap;
 }
 .il-tab + .il-tab { border-left: 1px solid var(--pd-line); }
@@ -49,7 +49,7 @@
 /* Tool cluster */
 .il-topbar-tools { display: flex; align-items: center; gap: 4px; margin-left: auto; }
 .il-topbar-tools .pd-btn {
-  height: 34px; width: 34px; padding: 0; font-size: 13px;
+  height: 34px; width: 34px; padding: 0; font-size: var(--pd-fs-base);
   display: inline-flex; align-items: center; justify-content: center;
   background: transparent; border-color: transparent;
 }
@@ -75,7 +75,7 @@
 .il-export-menu.open { display: flex; }
 .il-export-menu button {
   text-align: left; background: none; border: 0; border-radius: 6px;
-  padding: 8px 10px; font-size: 13px; color: var(--pd-ink); cursor: pointer;
+  padding: 8px 10px; font-size: var(--pd-fs-base); color: var(--pd-ink); cursor: pointer;
 }
 .il-export-menu button:hover { background: var(--pd-bg); color: var(--pd-red); }
 
@@ -87,7 +87,7 @@
    state they read/write is decided by whichever screen is active (see
    wireTopFilters() in module.js). */
 .il-topsearch { display: flex; align-items: center; gap: 4px; flex: 0 1 220px; min-width: 90px; }
-.il-topsearch .pd-input { height: 34px; font-size: 13px; width: 100%; min-width: 0; }
+.il-topsearch .pd-input { height: 34px; font-size: var(--pd-fs-base); width: 100%; min-width: 0; }
 .il-topfilttoggle {
   position: relative; height: 34px; width: 34px; padding: 0; flex: none;
   display: inline-flex; align-items: center; justify-content: center;
@@ -120,7 +120,7 @@
    font clips its own descenders — "Any aging" lost the tail of its g. This module
    has hit that exact defect once before on the action-item filters; do not put the
    fixed height back to tighten the bar. */
-.il-filters .pd-input, .il-filters .pd-select { min-height: 34px; font-size: 13px; }
+.il-filters .pd-input, .il-filters .pd-select { min-height: 34px; font-size: var(--pd-fs-base); }
 .il-filters .il-search { flex: 1 1 240px; min-width: 160px; }
 /* ⚠️ The selects must be able to SHRINK. `flex: 0 0 auto` gives an auto basis —
    the control's own content width — and a flex item will not go below that, so
@@ -133,7 +133,7 @@
 /* Clear filters: subtle borderless ghost, only shown when a filter is active */
 .il-clear {
   display: inline-flex; align-items: center; gap: 5px; flex: none;
-  height: 34px; padding: 0 10px; font-size: 12px; font-weight: 500;
+  height: 34px; padding: 0 10px; font-size: var(--pd-fs-sm); font-weight: 500;
   color: var(--pd-muted); background: transparent;
   border: 0; border-radius: var(--pd-radius); cursor: pointer;
   transition: background .12s, color .12s;
@@ -150,7 +150,7 @@
    vertically-scrolling stack of cards — hand-rolled like every other chart/
    component in this app, no board library. */
 .il-viewbar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
-.il-kanban-groupby { height: 34px; font-size: 13px; width: auto; min-width: 170px; }
+.il-kanban-groupby { height: 34px; font-size: var(--pd-fs-base); width: auto; min-width: 170px; }
 .il-kanban { display: flex; gap: 12px; align-items: flex-start; overflow-x: auto; padding-bottom: 6px; }
 .il-kanban-col {
   flex: 0 0 280px; background: var(--pd-bg); border: 1px solid var(--pd-line);
@@ -158,12 +158,12 @@
 }
 .il-kanban-col-head {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  padding: 10px 12px; font-weight: 700; font-size: 13px; color: var(--pd-ink);
+  padding: 10px 12px; font-weight: 700; font-size: var(--pd-fs-base); color: var(--pd-ink);
   border-bottom: 1px solid var(--pd-line); flex: none;
 }
 .il-kanban-count {
   background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: 999px;
-  padding: 1px 8px; font-size: 11px; font-weight: 700; color: var(--pd-muted); flex: none;
+  padding: 1px 8px; font-size: var(--pd-fs-xs); font-weight: 700; color: var(--pd-muted); flex: none;
 }
 .il-kanban-col-body { padding: 10px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; min-height: 40px; }
 .il-kanban-card {
@@ -171,12 +171,12 @@
   box-shadow: var(--pd-shadow); padding: 10px 12px; cursor: pointer;
 }
 .il-kanban-card:hover { border-color: var(--pd-red-mid); }
-.il-kanban-card-title { font-size: 13px; font-weight: 600; color: var(--pd-ink); line-height: 1.4; }
+.il-kanban-card-title { font-size: var(--pd-fs-base); font-weight: 600; color: var(--pd-ink); line-height: 1.4; }
 .il-kanban-card-meta {
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px;
-  font-size: 11.5px; color: var(--pd-muted);
+  font-size: var(--pd-fs-xs); color: var(--pd-muted);
 }
-.il-kanban-card-meta .il-pill { padding: 1px 8px; font-size: 10.5px; }
+.il-kanban-card-meta .il-pill { padding: 1px 8px; font-size: var(--pd-fs-micro); }
 
 /* ---- KPIs ----------------------------------------------------------------
    ITEM 4 (2026-09-02): both bands squeeze to ONE ROW at every width down to
@@ -186,17 +186,16 @@
    ≤700px ("mobile view") does the band get to wrap onto a second row — see
    the ≤700px block below — rather than the earlier 5-/3-tile bands' own
    compression logic, which no longer applies at this tile count. */
-.il-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
-.il-kpis-2 { grid-template-columns: repeat(2, 1fr); }
-.il-kpi {
-  background: var(--pd-card); border: 1px solid var(--pd-line);
-  border-radius: var(--pd-radius); box-shadow: var(--pd-shadow); padding: 14px 16px;
-}
-.il-kpi-val { font-size: 26px; font-weight: 800; line-height: 1; }
-.il-kpi-label { color: var(--pd-muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; margin-top: 6px; }
-.il-kpi.is-open .il-kpi-val { color: var(--pd-bad); }
-.il-kpi.is-hold .il-kpi-val { color: var(--pd-warn); }
-.il-kpi.is-closed .il-kpi-val { color: #16a34a; }
+/* KPIs -- the SHARED `.pd-kpis` / `.pd-kpi` card (dashboard.css + UI.kpi).
+   The `.il-kpi*` set that stood here is gone; the status colours are the shared
+   `.pd-kpi-bad` / `-warn` / `-ok` variants, mapped in module.js.
+   ⚠️ `#16a34a` for Closed went with it. It was the only one of the three that
+   was not a token, so it alone did not lighten on the dark theme -- `--pd-ok`
+   remaps to #34D27B there. A hardcoded green beside two tokens is how a card
+   ends up looking right in one theme and muddy in the other.
+   `.il-kpis-2` (the Lessons board's two-tile band) needs no rule of its own now:
+   the shared strip is auto-fit, so two cards fill the row and four reflow to
+   2+2 on a phone without either count being declared anywhere. */
 
 /* ---- Issues table -------------------------------------------------------- */
 /* ITEM 6 (earlier round): a smaller, denser read for both the Issues & the
@@ -208,23 +207,23 @@
    this ONE `.il-cell-wrap` class, so a single width decision widens both
    tables' wide columns at once. min-width raised with it so the header/body
    columns keep agreeing rather than the table shrinking back onto them. */
-.il-table { min-width: 1400px; font-size: 12.5px; }
-.il-table th { white-space: nowrap; font-size: 11px; }
+.il-table { min-width: 1400px; font-size: var(--pd-fs-sm); }
+.il-table th { white-space: nowrap; font-size: var(--pd-fs-xs); }
 .il-table td { vertical-align: top; }
 .il-cell-wrap { max-width: 620px; white-space: normal; }
 .il-cell-num { color: var(--pd-muted); font-variant-numeric: tabular-nums; }
 /* ITEM 5 (2026-09-02): the Lessons table's two NARROW columns, freeing the
    room `.il-cell-wrap`'s widening above just took from Department/Date
    Resolved — a date is a handful of characters and never needs to wrap. */
-.il-ls-dept { font-size: 12px; white-space: normal; max-width: 120px; }
-.il-ls-date { font-size: 12px; white-space: nowrap; max-width: 90px; }
+.il-ls-dept { font-size: var(--pd-fs-sm); white-space: normal; max-width: 120px; }
+.il-ls-date { font-size: var(--pd-fs-sm); white-space: nowrap; max-width: 90px; }
 /* ⚠️ No `-webkit-line-clamp` any more — a clamped cell hid text with nothing on
    screen saying more was cut off. Text now wraps to as many lines as it needs
    ("allow text overflows as needed"); `overflow:hidden` also dropped since
    there's nothing left to clip. The mobile card view's OWN clamp (below, inside
    the ≤700px block) is untouched — that's a different, deliberately-scoped rule. */
 .il-clip { white-space: normal; }
-.il-champ { font-size: 12px; white-space: normal; max-width: 150px; }
+.il-champ { font-size: var(--pd-fs-sm); white-space: normal; max-width: 150px; }
 
 /* "Raised at a meeting" — the reciprocal of the schedule module's Minutes of Meeting.
    Deliberately quieter than the lesson tag: it is provenance, not a state to act on. */
@@ -232,13 +231,13 @@
    boundary should read as information, not as an error. (There is no per-row "you can't
    edit this" dash in the LOG any more — item #4 made the whole row clickable instead,
    and issDetailHTML renders it read-only there when canEditRow(r) is false.) */
-.il-raisedby { margin:6px 0 0; font-size:12px; color:var(--pd-muted); }
+.il-raisedby { margin:6px 0 0; font-size:var(--pd-fs-sm); color:var(--pd-muted); }
 .il-momtag { display:inline-flex; align-items:center; gap:4px; margin-top:4px; margin-left:6px;
-  font-size:10.5px; font-weight:600; color:var(--pd-muted); background:var(--pd-bg);
+  font-size:var(--pd-fs-micro); font-weight:600; color:var(--pd-muted); background:var(--pd-bg);
   border:1px solid var(--pd-line); border-radius:999px; padding:1px 8px; vertical-align:middle; }
 
 /* Status pill */
-.il-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-weight: 700; font-size: 12px; color: #fff; white-space: nowrap; }
+.il-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-weight: 700; font-size: var(--pd-fs-sm); color: #fff; white-space: nowrap; }
 .il-pill.is-open   { background: #dc2626; }
 .il-pill.is-hold   { background: #d97706; }
 .il-pill.is-closed { background: #16a34a; }
@@ -254,7 +253,7 @@
 .il-iconbtn {
   width: 30px; height: 30px; padding: 0; border: 1px solid var(--pd-line);
   background: var(--pd-card); border-radius: var(--pd-radius); cursor: pointer;
-  color: var(--pd-ink); font-size: 14px; line-height: 1;
+  color: var(--pd-ink); font-size: var(--pd-fs-md); line-height: 1;
 }
 .il-iconbtn:hover { background: var(--pd-bg); }
 .il-iconbtn.is-danger:hover { color: var(--pd-bad); border-color: var(--pd-bad); }
@@ -264,7 +263,7 @@
   display: flex; gap: 12px; align-items: flex-start; padding: 12px 16px; margin-bottom: 14px;
 }
 .il-lead-ico { color: var(--pd-red); flex: none; margin-top: 2px; }
-.il-lead-sub { color: var(--pd-muted); font-size: 13px; display: block; margin-top: 3px; }
+.il-lead-sub { color: var(--pd-muted); font-size: var(--pd-fs-base); display: block; margin-top: 3px; }
 
 /* ⚠️ `.il-lessons`/`.il-lcard*`/`.il-chip` (the card/tile grid) are REMOVED —
    their only emitter, `lessonCardHTML`, was deleted when item 5 (2026-09-01)
@@ -286,11 +285,11 @@
 /* ---- Empty states -------------------------------------------------------- */
 .il-empty { padding: 40px 24px; text-align: center; color: var(--pd-muted); }
 .il-empty .pd-ico { color: var(--pd-line); }
-.il-empty-title { margin-top: 10px; font-size: 15px; color: var(--pd-ink); }
+.il-empty-title { margin-top: 10px; font-size: var(--pd-fs-md); color: var(--pd-ink); }
 
 /* ---- Modal form ---------------------------------------------------------- */
 .il-form-sec {
-  margin: 14px 0 4px; font-size: 12px; font-weight: 700; text-transform: uppercase;
+  margin: 14px 0 4px; font-size: var(--pd-fs-sm); font-weight: 700; text-transform: uppercase;
   letter-spacing: .05em; color: var(--pd-muted);
   border-bottom: 1px solid var(--pd-line); padding-bottom: 4px;
 }
@@ -344,13 +343,13 @@
   .il-table tr:hover td { background: none; }
   .il-table td {
     display: block; border: 0; padding: 3px 0;
-    white-space: normal; max-width: none; font-size: 13px;
+    white-space: normal; max-width: none; font-size: var(--pd-fs-base);
   }
   .il-table td[data-l]::before {
-    content: attr(data-l) ": "; color: var(--pd-muted); font-weight: 600; font-size: 12px;
+    content: attr(data-l) ": "; color: var(--pd-muted); font-weight: 600; font-size: var(--pd-fs-sm);
   }
   /* The issue text is the headline of the card, not a labelled field. */
-  .il-table td.il-cell-issue { font-size: 14px; font-weight: 600; padding-bottom: 6px; }
+  .il-table td.il-cell-issue { font-size: var(--pd-fs-md); font-weight: 600; padding-bottom: 6px; }
   .il-table td.il-cell-issue::before { content: none; }
   /* ⚠️ The desktop `.il-clip` rule (above) dropped its clamp this round (item 6) —
      this mobile-card clamp now carries its OWN full definition rather than
@@ -360,10 +359,10 @@
     display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
   }
   /* Row number reads as a card index, kept small and unlabelled. */
-  .il-table td.il-cell-num { font-size: 11px; color: var(--pd-muted); }
+  .il-table td.il-cell-num { font-size: var(--pd-fs-xs); color: var(--pd-muted); }
   .il-table td.il-cell-num::before { content: "#"; }
   .il-table td.il-rowacts { display: flex; gap: 8px; margin-top: 8px; }
-  .il-iconbtn { width: 42px; height: 42px; font-size: 16px; }
+  .il-iconbtn { width: 42px; height: 42px; font-size: var(--pd-fs-lg); }
   /* An empty-state row spans the card, not a phantom column. */
   .il-table td[colspan] { text-align: center; }
 
@@ -373,8 +372,7 @@
      wrap — 4 tiles across a phone leaves each one too narrow to read its own
      number, so Issues' band drops to 2-over-2 here; Lessons' 2-tile band was
      already 2 across and just tightens its gap. */
-  .il-kpis { grid-template-columns: repeat(2, 1fr); gap: 8px; }
-  .il-kpis-2 { gap: 8px; }
+  /* (`.pd-kpis` handles its own reflow -- auto-fit, 12px gap, both bands.) */
   /* ITEM 3: a phone can't show two board columns side by side at 280px
      each — narrower columns, and the group-by select takes the full row
      rather than fighting the toggle for width. */
@@ -392,7 +390,7 @@
 .il-mom-list { flex: 0 0 260px; }
 .il-mom-detail { flex: 1 1 auto; min-width: 0; }
 .il-mom-head {
-  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+  font-size: var(--pd-fs-xs); font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
   color: var(--pd-muted); margin: 0 0 6px;
 }
 .il-mom-head span { color: var(--pd-ink); }
@@ -401,25 +399,25 @@
 .il-mom-item {
   display: block; width: 100%; text-align: left; background: var(--pd-card);
   border: 1px solid var(--pd-line); border-radius: 8px; padding: 8px 10px;
-  margin-bottom: 6px; cursor: pointer; font-size: 13px; color: var(--pd-ink);
+  margin-bottom: 6px; cursor: pointer; font-size: var(--pd-fs-base); color: var(--pd-ink);
 }
 .il-mom-item:hover { border-color: var(--pd-red-mid); }
 .il-mom-item.on { border-color: var(--pd-red); background: var(--pd-red-light); }
-.il-mom-item small { display: block; color: var(--pd-muted); font-size: 11px; margin-top: 2px; }
+.il-mom-item small { display: block; color: var(--pd-muted); font-size: var(--pd-fs-xs); margin-top: 2px; }
 .il-mom-detail-card { background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: 10px; padding: 14px 16px; }
 .il-mom-actions {
   border: 1px solid var(--pd-line); border-radius: 8px; padding: 10px 12px;
   margin-top: 12px; background: var(--pd-bg);
 }
-.il-mom-actions h4 { margin: 0 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--pd-muted); }
-.il-mom-actions p { margin: 0 0 8px; font-size: 12px; color: var(--pd-muted); }
+.il-mom-actions h4 { margin: 0 0 4px; font-size: var(--pd-fs-xs); text-transform: uppercase; letter-spacing: .06em; color: var(--pd-muted); }
+.il-mom-actions p { margin: 0 0 8px; font-size: var(--pd-fs-sm); color: var(--pd-muted); }
 .il-mom-actions td { vertical-align: middle; }
 /* A labelled field block — the same shape as the PDF's grey cells. */
 .il-mi-f { min-width: 0; }          /* ⚠️ or a long value stretches its grid track */
 .il-mi-f + .il-mi-f { margin-top: 8px; }
 .il-mi-meta .il-mi-f + .il-mi-f { margin-top: 0; }   /* the grid owns that spacing */
 .il-mi-f > label {
-  display: block; font-size: 9.5px; font-weight: 700; letter-spacing: .05em;
+  display: block; font-size: var(--pd-fs-micro); font-weight: 700; letter-spacing: .05em;
   text-transform: uppercase; color: var(--pd-muted); margin-bottom: 3px;
 }
 .il-mi-f > label span { font-weight: 500; text-transform: none; letter-spacing: 0; opacity: .75; }
@@ -449,12 +447,12 @@
    reading it. `overflow-wrap` also breaks an unspaced run so it can never widen the
    card and reintroduce a horizontal scroll. */
 .il-mi-val {
-  font-size: 13px; line-height: 1.45; color: var(--pd-ink);
+  font-size: var(--pd-fs-base); line-height: 1.45; color: var(--pd-ink);
   white-space: pre-wrap; overflow-wrap: anywhere; padding: 2px 0; min-height: 19px;
 }
 .il-mi-val.is-empty { color: var(--pd-muted); }
 
-.il-mom-note { font-size: 12px; color: var(--pd-muted); margin: 0 0 10px; }
+.il-mom-note { font-size: var(--pd-fs-sm); color: var(--pd-muted); margin: 0 0 10px; }
 /* The byline describes the whole record, so it needs air under it — without the
    bottom margin it butts against the next field's label and reads as that field's
    hint rather than as "who recorded these minutes". */
@@ -484,14 +482,14 @@
    to its recorder and to planners (enforced by RLS), so the wording says who
    can see it rather than just naming the state. */
 .il-mom-state {
-  font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 20px;
+  font-size: var(--pd-fs-xs); font-weight: 700; padding: 3px 9px; border-radius: 20px;
   background: var(--pd-bg); color: var(--pd-muted); border: 1px solid var(--pd-line);
 }
 .il-mom-state.on { background: #d4f5d4; color: #1a8f3a; border-color: #b6e8b6; }
 /* Marks an unissued minute in the meetings list. Absolute so it cannot push the
    title's own layout around on a narrow list column. */
 .il-mom-draft {
-  float: right; font-size: 9px; font-weight: 800; letter-spacing: .06em;
+  float: right; font-size: var(--pd-fs-micro); font-weight: 800; letter-spacing: .06em;
   padding: 1px 6px; border-radius: 3px; margin-left: 6px;
   background: var(--pd-red-light); color: var(--pd-red);
 }
@@ -563,7 +561,7 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
    inherits the ink colour, which measures 16.3 and looks like a pass. */
 .il-iss-panel::before {
   content: 'Status';
-  font-size: 10px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase;
+  font-size: var(--pd-fs-micro); font-weight: 800; letter-spacing: .09em; text-transform: uppercase;
   color: var(--il-panel-accent);
   padding-bottom: 8px; margin-bottom: 2px;
   border-bottom: 1px solid var(--pd-line);
@@ -608,7 +606,7 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
 .il-backlink {
   display: inline-flex; align-items: center; gap: 6px; margin-bottom: 10px;
   background: none; border: 0; padding: 0; cursor: pointer;
-  color: var(--pd-muted); font-size: 13px; font-weight: 600;
+  color: var(--pd-muted); font-size: var(--pd-fs-base); font-weight: 600;
 }
 .il-backlink:hover { color: var(--pd-ink); }
 
@@ -618,9 +616,50 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
   gap: 12px; flex-wrap: wrap; margin-bottom: 10px;
 }
 .il-detail-nav .il-backlink { margin-bottom: 0; }
+
+/* ---- Present view (restored 2026-09-08) ---------------------------------
+   The mode toggle. Labelled, unlike the step arrows beside it, because it is a
+   MODE — it changes what the whole screen is — and the owner could not identify
+   the equivalent icon-only control in Minutes of Meeting ("I am not sure if one
+   of the buttons are present view"). Same treatment, same word, in both modules. */
+.il-modebtn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 30px; padding: 0 11px; margin-left: auto; white-space: nowrap;
+}
+.il-modetxt { font-size: var(--pd-fs-sm); font-weight: 600; }
+.il-modebtn.is-active { border-color: var(--pd-red); color: var(--pd-red); }
+
+/* ⚠️ PRESENTATION ONLY — every read-only behaviour comes from `opts.present`
+   forcing ro=true in issDetailHTML, NOT from CSS. A mode that only hid controls
+   in CSS would leave them clickable via the keyboard, and the DB would then
+   refuse the write with an error the planner could not explain. This block just
+   makes the record read like a sheet: no hover affordances, a little more air,
+   and the register's own chrome out of the way.
+   ⚠️ `.il-detail-nav` is deliberately NOT hidden — it holds the Exit button. */
+/* ⚠️ EVERY SELECTOR BELOW IS A CLASS issDetailHTML ACTUALLY EMITS — checked
+   against the function's own markup, not guessed. A first cut targeted
+   `.il-iss-actions` and `.il-mi-card`, neither of which this module emits
+   (`.il-mom-actions` and `.il-iss-card` are the real ones — the `il-mom-` prefix
+   is a leftover from before Minutes of Meeting was split out), so the rules were
+   silent no-ops. Same trap as the invented wrapper classes in the mobile pass. */
+.il-report .il-mom-actions,
+.il-report .il-mom-addrow,
+.il-report .il-workflow-acts,
+.il-report .il-workflow-btns,
+.il-report .il-req { display: none; }
+/* ⚠️ The workflow PANEL itself stays — it carries the status and its history,
+   which is exactly what you present. Only its buttons go. */
+.il-report .il-iss-card { padding: 16px 18px; }
+.il-report .il-mi-f label { color: var(--pd-muted); }
+.il-report input, .il-report select, .il-report textarea { pointer-events: none; }
+
+@media print {
+  /* Presenting often ends in a printout; the nav is chrome either way. */
+  .il-detail-nav { display: none !important; }
+}
 .il-steps { display: inline-flex; align-items: center; gap: 8px; }
-.il-stepnote { font-size: 12px; color: var(--pd-muted); white-space: nowrap; }
-.il-steps .il-iconbtn { width: 26px; height: 26px; font-size: 16px; line-height: 1; }
+.il-stepnote { font-size: var(--pd-fs-sm); color: var(--pd-muted); white-space: nowrap; }
+.il-steps .il-iconbtn { width: 26px; height: 26px; font-size: var(--pd-fs-lg); line-height: 1; }
 .il-steps .il-iconbtn:disabled { opacity: .35; cursor: default; }
 .il-steps .il-iconbtn:disabled:hover { background: var(--pd-card); }
 
@@ -634,7 +673,7 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
   display: flex; flex-direction: column; gap: 8px;
 }
 .il-workflow-panel label {
-  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  font-size: var(--pd-fs-xs); font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
   color: var(--pd-muted); margin-bottom: -2px;
 }
 .il-workflow-acts { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
@@ -652,13 +691,13 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; align-items: start; }
 .il-history-i { padding: 8px 10px; border-radius: 8px; background: var(--pd-bg); border: 1px solid var(--pd-line); }
 .il-history-top { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
-.il-history-action { font-weight: 700; font-size: 12.5px; color: var(--pd-ink); }
-.il-history-when { font-size: 11.5px; color: var(--pd-muted); }
-.il-history-note { margin-top: 4px; font-size: 12.5px; color: var(--pd-ink); white-space: pre-wrap; }
+.il-history-action { font-weight: 700; font-size: var(--pd-fs-sm); color: var(--pd-ink); }
+.il-history-when { font-size: var(--pd-fs-xs); color: var(--pd-muted); }
+.il-history-note { margin-top: 4px; font-size: var(--pd-fs-sm); color: var(--pd-ink); white-space: pre-wrap; }
 /* ITEM #6: the field-by-field before -> after list under each history entry. */
 .il-history-diff {
   list-style: none; margin: 6px 0 0; padding: 6px 0 0; border-top: 1px dashed var(--pd-line);
-  display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--pd-muted);
+  display: flex; flex-direction: column; gap: 3px; font-size: var(--pd-fs-sm); color: var(--pd-muted);
 }
 .il-history-diff strong { color: var(--pd-ink); font-weight: 600; }
 .il-history-diff em { font-style: normal; opacity: .6; }
@@ -669,7 +708,7 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
 /* An uppercase eyebrow separating the two halves of the combined page, matching
    this app's established KPI-section-label convention. */
 .il-dash-sec-head {
-  font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em;
+  font-size: var(--pd-fs-xs); font-weight: 800; text-transform: uppercase; letter-spacing: .06em;
   color: var(--pd-muted); margin: 18px 0 10px; padding-bottom: 6px;
   border-bottom: 1px solid var(--pd-line);
 }
@@ -686,7 +725,7 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
    (2026-09-03 owner ask, both dashboards: "no bold font except chart titles").
    Not set here — it inherits the browser's default bold <h4> weight, exactly
    the one exemption the ask carves out. */
-.il-dash-card h4 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); }
+.il-dash-card h4 { margin: 0; font-size: var(--pd-fs-base); text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); }
 /* ---- Items 1/2 (2026-09-01 round): the three chart tiles share ONE fixed
    content height instead of each drifting to whatever its own chart needs.
    ⚠️ ITEM 6 (2026-09-02 round): that shared height is REDUCED (340px -> 260px)
@@ -721,15 +760,15 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
 /* One legend text size for every chart's legend, pie or bar (2026-09-03:
    "consistent legend text sizes between both"). Not bold — see the h4 note
    above; a legend is a caption, not a title. */
-.il-dash-legend-i { display: flex; align-items: center; gap: 6px; color: var(--pd-ink); font-size: 11px; font-weight: 400; white-space: nowrap; }
+.il-dash-legend-i { display: flex; align-items: center; gap: 6px; color: var(--pd-ink); font-size: var(--pd-fs-xs); font-weight: 400; white-space: nowrap; }
 .il-dash-legend-i i { width: 10px; height: 10px; border-radius: 3px; flex: none; display: inline-block; }
 /* ---- Item 6: the full issue list, in its own tile, Issue column widened --
    `.il-dash-list` is used ONLY by the full-list table now (the champion
    breakdown table it used to also serve is gone — item 5's bar rows already
    state their own open/total). `table-layout:fixed` makes the column
    percentages below actually hold instead of just hinting at them. */
-.il-dash-list { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12.5px; min-width: 560px; }
-.il-dash-list th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em;
+.il-dash-list { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: var(--pd-fs-sm); min-width: 560px; }
+.il-dash-list th { text-align: left; font-size: var(--pd-fs-micro); text-transform: uppercase; letter-spacing: .04em;
   color: var(--pd-muted); padding: 4px 8px 6px; border-bottom: 1px solid var(--pd-line); }
 .il-dash-list td { padding: 6px 8px; border-bottom: 1px solid var(--pd-line); vertical-align: top; word-break: break-word; }
 .il-dash-list tr:last-child td { border-bottom: 0; }
@@ -800,9 +839,9 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
   margin: 0 0 8px;
 }
 .il-dash-fulllist-head h4 {
-  margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted);
+  margin: 0; font-size: var(--pd-fs-base); text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted);
 }
-.il-dash-fulllist-count { font-size: 12px; color: var(--pd-muted); }
+.il-dash-fulllist-count { font-size: var(--pd-fs-sm); color: var(--pd-muted); }
 /* ITEM 7 (2026-09-01, mobile round): both list tiles cap their height and
    scroll internally rather than growing the whole page taller the more open
    issues / lessons a project has — the shared `.pd-tablewrap` (dashboard.css)
@@ -836,7 +875,7 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
   display: flex; align-items: center; justify-content: center;
   width: 22px; height: 16px; padding: 0; border: 1px solid var(--pd-line);
   border-radius: 3px; background: var(--pd-card); color: var(--pd-muted);
-  font-size: 8px; line-height: 1; cursor: pointer;
+  font-size: var(--pd-fs-micro); line-height: 1; cursor: pointer;
 }
 .il-movebtn:hover:not(:disabled) { background: var(--pd-bg); color: var(--pd-ink); }
 .il-movebtn:disabled { opacity: .3; cursor: default; }
@@ -847,7 +886,7 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
      pair reads as a compact toolbar line rather than an unexplained vertical
      stack taking its own height before the card's real content starts. */
   .il-movebtns { display: flex; flex-direction: row; gap: 6px; margin-bottom: 4px; }
-  .il-movebtn { width: 36px; height: 28px; font-size: 12px; }
+  .il-movebtn { width: 36px; height: 28px; font-size: var(--pd-fs-sm); }
 }
 
 /* ---- People picker (Champion / Responsible) ------------------------------
@@ -864,11 +903,11 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
   display:inline-flex; align-items:center; gap:5px;
   padding:3px 6px 3px 9px; border-radius:999px;
   background:var(--pd-bg); border:1px solid var(--pd-line);
-  font-size:12px; font-weight:600; color:var(--pd-ink); line-height:1.5;
+  font-size:var(--pd-fs-sm); font-weight:600; color:var(--pd-ink); line-height:1.5;
 }
 .il-pp-rm {
   border:0; background:transparent; cursor:pointer; padding:0 2px;
-  font-size:11px; line-height:1; color:var(--pd-muted); border-radius:50%;
+  font-size:var(--pd-fs-xs); line-height:1; color:var(--pd-muted); border-radius:50%;
 }
 .il-pp-rm:hover { color:var(--pd-red); background:var(--pd-red-light); }
 .il-people .il-pp-add { width:auto; min-width:170px; max-width:100%; }
@@ -876,12 +915,12 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
   display:flex; align-items:center; gap:6px;
   padding:4px 8px; border-radius:6px;
   background:var(--pd-bg); border:1px dashed var(--pd-line);
-  font-size:11px; color:var(--pd-muted);
+  font-size:var(--pd-fs-xs); color:var(--pd-muted);
 }
 .il-pp-freenote strong { font-weight:600; color:var(--pd-ink); }
 .il-pp-rmtext {
   border:0; background:transparent; cursor:pointer; padding:0 2px;
-  font-size:11px; line-height:1; color:var(--pd-muted); border-radius:50%;
+  font-size:var(--pd-fs-xs); line-height:1; color:var(--pd-muted); border-radius:50%;
   flex:0 0 auto; margin-left:auto;
 }
 .il-pp-rmtext:hover { color:var(--pd-red); background:var(--pd-red-light); }
@@ -893,7 +932,7 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
    two they picked. */
 .il-pp-chip.is-contact { border-style:dashed; }
 .il-pp-noacct {
-  font-size:9.5px; font-weight:700; letter-spacing:.3px; text-transform:uppercase;
+  font-size:var(--pd-fs-micro); font-weight:700; letter-spacing:.3px; text-transform:uppercase;
   color:var(--pd-muted); border-left:1px solid var(--pd-line); padding-left:6px;
 }
 .il-pp-new {
@@ -906,23 +945,23 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
    their own rows when the pane is genuinely too narrow. */
 .il-pp-newrow .pd-input { flex:1 1 150px; min-width:0; }
 .il-pp-newact { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
-.il-pp-nnote { font-size:11px; color:var(--pd-muted); flex:1 1 200px; }
+.il-pp-nnote { font-size:var(--pd-fs-xs); color:var(--pd-muted); flex:1 1 200px; }
 
 /* ---- ITEM 9 (2026-09-01): click-a-column-header sort — Issues log + the new
    Lessons table (see sortThHTML/cycleSort in module.js). ---------------- */
 .il-th-sort { cursor: pointer; user-select: none; white-space: nowrap; }
 .il-th-sort:hover { color: var(--pd-ink); }
 .il-th-sort.is-active { color: var(--pd-red); }
-.il-sort-arrow { display: inline-block; margin-left: 3px; font-size: 9px; }
+.il-sort-arrow { display: inline-block; margin-left: 3px; font-size: var(--pd-fs-micro); }
 /* Shown above the table only while a sort is active — the way back to manual
    (drag) order, since a sorted view and a dragged position can't coexist. */
 .il-sortnote {
-  font-size: 12px; color: var(--pd-muted); margin-bottom: 8px;
+  font-size: var(--pd-fs-sm); color: var(--pd-muted); margin-bottom: 8px;
   padding: 6px 10px; border-radius: 8px; background: var(--pd-bg); border: 1px solid var(--pd-line);
 }
 .il-sortnote button {
   border: 0; background: none; color: var(--pd-red); cursor: pointer;
-  font-size: 12px; font-weight: 700; padding: 0; margin-left: 4px;
+  font-size: var(--pd-fs-sm); font-weight: 700; padding: 0; margin-left: 4px;
 }
 .il-sortnote button:hover { text-decoration: underline; }
 

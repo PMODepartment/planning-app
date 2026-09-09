@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260904a" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260908d" />
   <style>
     .ps-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
     .ps-tab { padding:8px 20px; cursor:pointer; font-weight:600; font-size:13px; color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
@@ -2760,44 +2760,6 @@
     .sbld-dot { width:10px; height:10px; border-radius:50%; display:inline-block; flex:none; }
     .sbld-quick { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--pd-muted); flex-wrap:wrap; }
     .sbld-step2ct { font-size:11px; color:var(--pd-muted); margin-left:4px; }
-
-    /* ---- Library: two panes, places on the left and the work on the right ------------------
-       Owner 2026-09-07 asked for the shape of a cost-structure sheet, and "make the UI better".
-       The two panes are a GRID, not floats, so the columns stay aligned as either side grows, and
-       each body scrolls on its own: a 400-floor tower must not push the trades off the screen.
-       Indentation carries the level (L1/L2/L3) exactly as the sheet does; a left rule per level
-       does the work a tree of disclosure arrows would do more noisily. */
-    .sbld-libbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:0 0 10px; }
-    .sbld-libspacer { flex:1 1 auto; }
-    .sbld-lib { display:grid; grid-template-columns:1fr 1fr; gap:12px; align-items:start; }
-    .sbld-libpane { border:1px solid var(--pd-line); border-radius:10px; background:var(--pd-card); overflow:hidden; min-width:0; }
-    .sbld-libhead { display:flex; align-items:center; gap:8px; justify-content:space-between;
-      padding:8px 11px; border-bottom:1px solid var(--pd-line); background:var(--pd-bg); font-size:13px; }
-    .sbld-libbody { max-height:520px; overflow:auto; padding:4px 0 8px; }
-    /* L1 - the tower, or the trade. The only level that gets a fill, because it is the only one
-       that is a heading rather than a member of something. */
-    .sbld-libL1 { position:sticky; top:0; z-index:1; padding:6px 11px; margin-top:2px;
-      background:var(--pd-bg); border-top:1px solid var(--pd-line); border-bottom:1px solid var(--pd-line);
-      font-size:12.5px; font-weight:700; letter-spacing:.01em; }
-    /* The trade colour rides on the left edge, the same colour the rest of the builder uses for it. */
-    .sbld-libL1[style*="--zc"] { box-shadow:inset 3px 0 0 var(--zc, var(--pd-line)); }
-    .sbld-libL2 { display:flex; align-items:baseline; gap:8px; padding:4px 11px 4px 24px; font-size:12.5px; font-weight:600;
-      box-shadow:inset 1px 0 0 var(--pd-line); }
-    .sbld-libL3 { display:flex; align-items:center; gap:8px; padding:3px 11px 3px 40px; font-size:12px;
-      color:var(--pd-ink); box-shadow:inset 1px 0 0 var(--pd-line); }
-    .sbld-libkind, .sbld-libwho, .sbld-libcode { font-size:10.5px; color:var(--pd-muted); font-weight:400; }
-    .sbld-libwho { margin-left:auto; text-align:right; white-space:nowrap; }
-    .sbld-libitem { justify-content:space-between; }
-    .sbld-libnm { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .sbld-libcode { flex:none; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
-    /* The one editable field on the screen, kept visually quiet until it is used or hovered so the
-       pane reads as a structure rather than as a form. */
-    .sbld-libgin { flex:none; width:120px; font-size:11.5px; padding:2px 6px; min-height:0;
-      background:transparent; border-color:transparent; }
-    .sbld-libgin:hover, .sbld-libgin:focus { background:var(--pd-card); border-color:var(--pd-line); }
-    .sbld-libgin:not([value=""]) { border-color:var(--pd-line); }
-    .sbld-note { font-size:12px; color:var(--pd-muted); margin:0 0 10px; }
-    @media (max-width:900px) { .sbld-lib { grid-template-columns:1fr; } .sbld-libbody { max-height:340px; } }
     .sbld-znplus, .sbld-znminus, .sbld-unplus, .sbld-unminus { width:30px; height:30px; padding:0; flex:none; font-size:17px; font-weight:700; line-height:1; display:inline-flex; align-items:center; justify-content:center; }
     .sbld-zncount { min-width:22px; text-align:center; font-variant-numeric:tabular-nums; font-weight:700; font-size:14px; }
     /* step 2 — nested floor → zone → unit editor */
@@ -3970,7 +3932,7 @@
 <script src="../../assets/js/auth.js?v=20260901b"></script>
 <script src="../../assets/js/db.js?v=20260907a"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
-<script src="../../assets/js/ui.js?v=20260904a"></script>
+<script src="../../assets/js/ui.js?v=20260908d"></script>
 <script src="../../assets/js/icons.js?v=20260903a"></script>
 <script src="../../assets/js/calendar.js?v=20260903a"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
@@ -25790,6 +25752,180 @@
       else UI.toast('All ' + CLASS_CODE_DB.length + ' library class codes are already loaded.', 'info');
       render();
     }
+    /* ==================================================================
+       HAND-OFF 1 — THE HIGH-LEVEL BOQ SEEDS THE SCHEDULE
+       ==================================================================
+       Owner's process, 2026-09-08: *"high level BOQ will be the basis -> detailed schedule will be
+       developed -> detailed BOQ will be based on the detailed schedule."* Step 1 of that had no
+       bridge at all. The only way to populate this list was `+ Library` — a generic chart of every
+       code in the business — so the planner read the BOQ on one screen and re-typed its trades here.
+
+       ⚠️⚠️ AND `+ Library` CANNOT PRODUCE A LINKABLE ACTIVITY, which is the real reason this
+       matters rather than merely being convenient. `CLASS_CODE_DB` holds 197 entries whose codes are
+       **de-zeroed GROUP codes** — `'1050'`, not `'01050'` — while `class_codes.code` is the padded
+       **Level 3 item** code (`2026-08-21-class-codes.sql`: *"padded Level 3, e.g. '015051' (leading
+       zeros significant)"*) and `code_l2` is the padded group. `generate()` writes the catalog's
+       code straight into `project_schedule.class_code`, so a schedule built from `+ Library` carries
+       a value that is neither an item code nor even a correctly padded group code. It resolves to
+       nothing in the chart, and `boq_tag_activities` — which matches `boq_class_map.class_code`, an
+       item code — can never match it. The whole class-code chain is broken at its first step.
+       ⚠️ `+ Library` is LEFT ALONE (it is another developer's surface and rows already stamped from
+       it are real data) but it is no longer the only door, it is no longer described as the standard
+       one, and the step now COUNTS the build's unresolvable codes rather than leaving the planner to
+       discover the problem when matching silently finds nothing.
+
+       ⚠️ ITEM LEVEL (L3), NOT GROUP LEVEL, and this is the load-bearing choice. Rolling the BOQ's
+       codes up to their group would produce far fewer catalog rows and match `+ Library`'s shape —
+       and it would reintroduce exactly the defect above, because an activity coded to a group can
+       never be matched back to a BOQ line. L3 is the one depth `class_codes.code`,
+       `project_schedule.class_code`, `boq_class_map.class_code` and `boq_tag_activities` all speak.
+       The DETAIL of the schedule does not come from code depth anyway — `generate()` explodes each
+       catalog row across the floors and zones. */
+    var _boqSeedState = null;   // {n, rev, unresolved, noTrade} from the last run, for the step's note
+
+    /* Which revision of each BOQ document to read.
+       ⚠️ NOT `is_current` ALONE. A project whose BOQ has never been issued has `is_current = false`
+       on every revision — the database enforces it for a draft — and that is precisely the project
+       this feature exists for (a high-level BOQ being written now, to build the schedule from). So:
+       the current revision per document, else that document's latest draft. Revisions with a null
+       document_id (pre-2026-09-07-boq-documents, or written by the old fallback dialog) form their
+       own bucket rather than being dropped. */
+    function _pickBoqRevs(rows) {
+      var by = {};
+      (rows || []).forEach(function (r) {
+        var k = r.document_id || '_none';
+        var cur = by[k];
+        if (!cur) { by[k] = r; return; }
+        if (r.is_current && !cur.is_current) { by[k] = r; return; }
+        if (cur.is_current) return;
+        // Neither is current: take the higher revision label, numerically where possible.
+        var a = String(r.rev_no || ''), b = String(cur.rev_no || '');
+        if (a.localeCompare(b, undefined, { numeric: true }) > 0) by[k] = r;
+      });
+      return Object.keys(by).map(function (k) { return by[k]; });
+    }
+
+    /* THE CATALOG ROWS A SET OF BOQ MAPPINGS BECOMES. Pure, so the decisions below are testable
+       against the shipped file rather than against a description of it.
+       `maps` = boq_class_map rows, `desc` = boq_item_id -> the bill's own description,
+       `existing` = every activity/catalog row already in the setup. */
+    function _boqSeedPlan(maps, desc, existing) {
+      var have = {};
+      (existing || []).forEach(function (a) { if (a && a.code) have[String(a.code).trim()] = 1; });
+      var seen = {}, rows = [], dup = 0, unresolved = 0, noTrade = 0;
+      (maps || []).forEach(function (m) {
+        var code = String((m && m.class_code) || '').trim();
+        /* ⚠️ DEDUPED ON THE CODE, and it has to be: a bill maps MANY lines to one code (the same
+           item measured on eight floors), and one catalog row per mapping would put the same
+           activity in the programme eight times before the zone explosion even runs. */
+        if (!code || seen[code]) return;
+        seen[code] = 1;
+        if (have[code]) { dup++; return; }
+        var cc = ccByCode(code);
+        if (!cc) unresolved++;
+        /* ⚠️ NO TRADE IS INVENTED. Finance's 7 trades and this builder's 8 GROUPS are not the same
+           list — "Civil Works" and "Metal Works" have no counterpart here — so parseTrade is tried
+           on the trade, then on the division name, and anything still unresolved lands on OT and is
+           COUNTED. The trade column is editable right here, so a reported count is a worklist; a
+           guessed trade is a wrong bill of quantities three screens later. */
+        var g = (cc && (parseTrade(cc.trade) || parseTrade(cc.desc_l1))) || null;
+        if (!g) { g = 'OT'; noTrade++; }
+        rows.push({
+          id: uidv(), code: code,
+          /* ⚠️ THE CHART'S NAME WINS over the bill's own wording. `desc_l3` is what every other
+             picker in both modules shows, while a client's line reads "Supply and install rebar to
+             3rd floor slab" — too specific for a row about to be exploded across forty zones. The
+             bill's description is the FALLBACK, for a code the chart does not list. */
+          name: (cc && cc.desc_l3) || (desc && desc[m.boq_item_id]) || code,
+          group: g,
+          /* ⚠️ Durations stay EMPTY. A BOQ knows money and quantity; it does not know how long the
+             work takes, and a seeded number is indistinguishable from a considered one once stored. */
+          durInt: null, durExt: null, scope: 'zone'
+        });
+        have[code] = 1;
+      });
+      return { rows: rows, dup: dup, unresolved: unresolved, noTrade: noTrade };
+    }
+
+    async function loadFromBoq() {
+      var btn = document.getElementById('b-boq');
+      if (btn) { btn.disabled = true; btn.textContent = 'Reading the BOQ…'; }
+      function done(msg, kind) {
+        if (btn) { btn.disabled = false; btn.textContent = '+ From the BOQ'; }
+        UI.toast(msg, kind || 'info');
+        render();
+      }
+      try {
+        // The chart, so a code can be given its proper name and trade. Idempotent.
+        await loadClassCodes();
+        var revs = await sbc().from('boq_revisions')
+          .select('id,rev_no,document_id,is_current,status').eq('project_id', curPid).limit(500);
+        if (revs.error) throw revs.error;
+        var pick = _pickBoqRevs(revs.data);
+        if (!pick.length) {
+          _boqSeedState = { n: 0, why: 'nobo\u0071' };
+          return done('This project has no BOQ yet. Build one in Contracts & Claims — the class codes ' +
+            'you take there are what this list reads.', 'warn');
+        }
+        var ids = pick.map(function (r) { return r.id; });
+        /* ⚠️ PDb.selectAll, not a bare select: a detailed bill runs past the 1000-row read cap, and
+           silently taking the first 1000 mappings would seed a schedule that is missing trades with
+           nothing on screen saying so. Paged on `id`, which is this table's uuid primary key. */
+        var maps = await PDb.selectAll('boq_class_map',
+          function (q) { return q.in('revision_id', ids); }, 'boq_item_id,class_code', 'id');
+        if (!maps.length) {
+          _boqSeedState = { n: 0, why: 'nomap' };
+          return done('The BOQ on this project carries no class codes yet. Author its lines from the ' +
+            'class-code library, or map an imported bill on the BOQ\u2019s Class Codes tab, then come back.', 'warn');
+        }
+        /* The bill's own descriptions, used ONLY where a code is not in the chart. Precedence
+           matters: `desc_l3` is the canonical name and is what `+ Library` and every picker show,
+           while a client's line reads "Supply and install rebar to 3rd floor slab" — too specific
+           for a catalog row that is about to be exploded across forty zones. */
+        var items = await PDb.selectAll('boq_items',
+          function (q) { return q.in('revision_id', ids); }, 'id,description,line_kind', 'id');
+        var desc = {}; items.forEach(function (r) { desc[r.id] = r.description; });
+
+        var plan = _boqSeedPlan(maps, desc, (cfg.activities || []).concat(cfg.catalog || []));
+        plan.rows.forEach(function (r) { cfg.catalog.push(r); });
+        var added = plan.rows.length, dup = plan.dup, unresolved = plan.unresolved, noTrade = plan.noTrade;
+
+        var revLbl = pick.map(function (r) { return 'rev ' + r.rev_no + (r.is_current ? '' : ' (draft)'); }).join(', ');
+        _boqSeedState = { n: added, rev: revLbl, unresolved: unresolved, noTrade: noTrade, dup: dup };
+        if (!added) {
+          return done('Every class code on the BOQ (' + revLbl + ') is already in this setup.', 'info');
+        }
+        markDirty();
+        done('Loaded ' + added + ' class code(s) from the BOQ (' + revLbl + ')' +
+          (dup ? ', skipping ' + dup + ' already here' : '') + '. ' +
+          (noTrade ? noTrade + ' need a trade set. ' : '') +
+          'Tick them and press \u2190 to add them to the build, then give them durations.', 'success');
+      } catch (e) {
+        /* ⚠️ DEGRADES, never blocks — the same tolerance every other cross-module read in this file
+           has. No BOQ tables, no grants, or an unrun migration all land here and say so; the rest
+           of the Setup is untouched and `+ Library` still works. */
+        var m2 = (e && e.message) || String(e);
+        _boqSeedState = { n: 0, why: 'err', err: m2 };
+        done(/does not exist|schema cache|PGRST20|relation/i.test(m2)
+          ? 'The BOQ tables are not on this database yet, so there is nothing to read: ' + m2
+          : 'Could not read the BOQ: ' + m2, 'error');
+      }
+    }
+
+    /* How many codes in the BUILD cannot be resolved in the chart. This is the measurement that
+       makes the `+ Library` defect above visible where it happens, instead of leaving it to be
+       discovered as "matching finds nothing" on another screen weeks later. Counted, never
+       auto-corrected: the rows are real data and only the planner knows what they meant. */
+    function _unlinkableCodes() {
+      if (!CLASS_CODES || !CLASS_CODES.length) return null;   // chart unread: claim nothing
+      var bad = 0, tot = 0;
+      (cfg.activities || []).forEach(function (a) {
+        var c = String(a.code || '').trim(); if (!c) return;
+        tot++; if (!ccByCode(c)) bad++;
+      });
+      return { bad: bad, tot: tot };
+    }
+
     function scopeLabel(s) { var o = SCOPE_OPTS.filter(function (x) { return x[0] === (s || 'zone'); })[0]; return o ? o[1] : 'Per zone'; }
     function parseScope(text) {
       var t = String(text == null ? '' : text).trim().toLowerCase();
@@ -25800,7 +25936,20 @@
     }
     function parseTrade(text) {
       var t = String(text == null ? '' : text).trim().toLowerCase();
-      var map = { 'general requirements': 'GR', 'general requirement': 'GR', 'gen req': 'GR', 'general': 'GR', 'gr': 'GR', 'site works': 'SW', 'sitework': 'SW', 'siteworks': 'SW', 'site work': 'SW', 'sw': 'SW', 'structural': 'ST', 'structure': 'ST', 'st': 'ST', 'architectural': 'AR', 'architecture': 'AR', 'ar': 'AR', 'mepf': 'MEPF', 'site development': 'SD', 'sitedevelopment': 'SD', 'site dev': 'SD', 'allied services': 'ALLIED', 'allied': 'ALLIED', 'others': 'OT', 'other': 'OT', 'ot': 'OT' };
+      /* ⚠️⚠️ THE "... WORKS" FORMS WERE MISSING, and they are the ones every other part of this app
+         actually stores. `GWORK` above writes 'Structural Works' / 'Architectural Works' /
+         'MEPF Works' into `project_schedule.work_type`, and `class_codes.trade` — Finance's own
+         chart — holds exactly those strings too. Without them `parseTrade('Structural Works')`
+         returned NULL: typing or pasting the canonical trade name into the Trade column silently
+         did nothing, and seeding this list from the BOQ filed almost every code under *Others*.
+         Caught by a test on hand-off 1, not by reading — the bare forms ('structural') were present
+         and the map looked complete.
+         ⚠️ 'Civil Works' and 'Metal Works' are DELIBERATELY ABSENT. Finance classifies 7 trades and
+         this builder has 8 GROUPS; those two have no honest counterpart here (Civil sits between
+         Site Works and Site Development, Metal between Structural and Architectural). They land on
+         Others and are COUNTED, so the planner decides in the editable Trade column. Guessing would
+         file structural steel under the wrong trade in every roll-up downstream. */
+      var map = { 'general requirements': 'GR', 'general requirement': 'GR', 'gen req': 'GR', 'general': 'GR', 'gr': 'GR', 'site works': 'SW', 'sitework': 'SW', 'siteworks': 'SW', 'site work': 'SW', 'sw': 'SW', 'structural': 'ST', 'structural works': 'ST', 'structure': 'ST', 'st': 'ST', 'architectural': 'AR', 'architectural works': 'AR', 'architecture': 'AR', 'ar': 'AR', 'mepf': 'MEPF', 'mepf works': 'MEPF', 'site development': 'SD', 'site development works': 'SD', 'sitedevelopment': 'SD', 'site dev': 'SD', 'allied services': 'ALLIED', 'allied': 'ALLIED', 'others': 'OT', 'other': 'OT', 'ot': 'OT' };
       if (map[t]) return map[t];
       var up = t.toUpperCase(); return GROUPS.indexOf(up) >= 0 ? up : null;
     }
@@ -27479,10 +27628,6 @@
       { t: 'Working calendars', s: 'Which days are workable', fn: stCalendars },
       { t: 'Activities', s: 'Class-code list + duration', fn: stActivities },
       { t: 'Floors & Zones', s: 'Location Breakdown Structure', fn: stLevels },
-      /* ⚠️ AFTER both, not before. The library is a READ of the places and the items plus the two
-         ways to fill them from the WBS — put in front of them it would be an empty screen on a new
-         project, which is the opposite of orienting anybody. */
-      { t: 'Library', s: 'Places and groupings, side by side', fn: stLibrary },
       { t: 'Tower links', s: 'How towers interface', fn: stTowerLinks },
       { t: 'Zone sequence', s: 'Order of locations', fn: stSequence },
       { t: 'Trade sequence', s: 'Order codes per level type', fn: stTradeSeq },
@@ -27502,9 +27647,6 @@
     var STEPS_IMP = [
       { t: 'Activities & phases', s: 'Check the file, file each branch', fn: stImpPhases },
       { t: 'Floors & Zones', s: 'Location Breakdown Structure', fn: stImpLoc },
-      // ⚠️ On the IMPORT path this is the step that matters most, because the WBS being read is
-      // right there: it is where "detecting WBS, locations" either worked or visibly did not.
-      { t: 'Library', s: 'Places and groupings, side by side', fn: stLibrary },
       { t: 'Relationships', s: 'Keep the file\u2019s logic, or not', fn: stImpRels },
       { t: 'Review & import', s: 'Write it into the schedule', fn: stImpCommit },
     ];
@@ -27575,177 +27717,6 @@
         rd.readAsArrayBuffer(file);
       } else { rd.onload = function (e) { importActivities(parseCsv(String(e.target.result))); }; rd.readAsText(file); }
     }
-    /* ==========================================================================================
-       THE LIBRARY — the project's places on the left, its activity groupings on the right.
-
-       Owner 2026-09-07: *"there are still problems in detecting WBS, locations etc when importing a
-       very detailed schedule to the app. Take for instance the Strevi Bacoor project… there should
-       be a library in the schedule setup module. That library should first define the locations on
-       the left pane, and on the right the groupings of activities, similar to the image attached."*
-
-       The image is a cost-structure sheet: `Location (Floor and Area)` down the left, and
-       `Trade (Groupings and Items)` down the right at three levels — L1 a trade (2.0 STRUCTURAL),
-       L2 a grouping (Siteworks, Rebar, Formworks), L3 an item (Clearing & Grubbing, Excavation).
-
-       ⚠️⚠️ THIS IS A VIEW AND AN AUTHORING SURFACE, NOT A SECOND STORE. The places already live in
-       `cfg.zoning` (per trade, because a trade genuinely zones its floors its own way — that is
-       the same fact the Vertical Stacking level-1 rule turns on) and the items already live in
-       `cfg.activities`. Giving the library its own copy of either is exactly the two-screens-
-       disagreeing failure this module keeps recording, so the library reads those and writes back
-       to them. The one genuinely new field is the L2 GROUPING (`a.grp`), because the image asks for
-       a middle level and `cfg.activities` had only trade → item.
-
-       ⚠️ WHY IT IS A STEP AND NOT A NEW SCREEN: on a migrated schedule the answer to "what are the
-       places" is already sitting in the imported WBS, and both ways of getting it there — adopt the
-       locations, match the trades — are one press from here. That is the import problem the owner
-       is describing: not that the matching cannot be done, but that it was not in front of anyone.
-       ⚠️ No UoM column. The image has one, but a unit belongs to a BOQ line and the BOQ already
-       carries it; a second place to state a unit is the duplication this comment keeps warning
-       about. Cost and quantity come from Contracts & Claims — see the Cost Loading step 2 note.
-       ========================================================================================== */
-    function libLocTree() {
-      // The union across trades, which IS the project's location library: a floor that only one
-      // trade works is still a floor of the building. Which trades have it is shown, because that
-      // difference is real and hiding it would make the pane look like a contradiction.
-      var byTower = [], seenT = {};
-      function tw(name) {
-        if (seenT[name] != null) return byTower[seenT[name]];
-        seenT[name] = byTower.length;
-        var o = { name: name, floors: [], seenF: {} };
-        byTower.push(o); return o;
-      }
-      (cfg.towers || []).forEach(function (t) { tw(t.name || t.code || 'Tower'); });
-      if (!byTower.length) tw('Tower 1');
-      Object.keys(cfg.zoning || {}).forEach(function (g) {
-        var z = cfg.zoning[g]; if (!z || !z.floors) return;
-        z.floors.forEach(function (f) {
-          var tname = f.tower || (byTower[0] && byTower[0].name) || 'Tower 1';
-          var T = tw(tname);
-          var key = String(f.name || f.code || '').trim(); if (!key) return;
-          var F2 = T.seenF[key];
-          if (!F2) { F2 = T.seenF[key] = { name: key, kind: f.kind || '', trades: [], zones: [], seenZ: {} }; T.floors.push(F2); }
-          if (F2.trades.indexOf(g) < 0) F2.trades.push(g);
-          (f.zones || []).forEach(function (zz) {
-            var zn = String(zz.name || zz.code || '').trim(); if (!zn) return;
-            if (!F2.seenZ[zn]) { F2.seenZ[zn] = 1; F2.zones.push(zn); }
-          });
-        });
-      });
-      return byTower;
-    }
-    function libGroupTree() {
-      // trade (L1) → grouping (L2) → item (L3), from cfg.activities. An item with no grouping sits
-      // directly under its trade rather than under an invented "(ungrouped)" heading that would
-      // then look like a real grouping somebody chose.
-      var out = [], seen = {};
-      GROUPS.forEach(function (g) {
-        var items = (cfg.activities || []).filter(function (a) { return (a.group || 'ST') === g; });
-        if (!items.length) return;
-        var node = { g: g, label: GWORK[g] || GLABEL[g] || g, groups: [], loose: [], seenG: {} };
-        items.forEach(function (a) {
-          var gn = String(a.grp || '').trim();
-          if (!gn) { node.loose.push(a); return; }
-          var G2 = node.seenG[gn];
-          if (!G2) { G2 = node.seenG[gn] = { name: gn, items: [] }; node.groups.push(G2); }
-          G2.items.push(a);
-        });
-        out.push(node); seen[g] = 1;
-      });
-      return out;
-    }
-    function stLibrary(host) {
-      var locs = libLocTree(), tree = libGroupTree();
-      var nF = 0, nZ = 0;
-      locs.forEach(function (T) { nF += T.floors.length; T.floors.forEach(function (F2) { nZ += F2.zones.length; }); });
-      var nI = (cfg.activities || []).length;
-      var nG = tree.reduce(function (s, t) { return s + t.groups.length; }, 0);
-      var imported = (typeof rows !== 'undefined' && rows) ? rows.filter(function (r) { return isWbs(r); }).length : 0;
-
-      var left = '<div class="sbld-libpane">' +
-        '<div class="sbld-libhead"><b>Location (Floor and Area)</b>' +
-          '<span class="sbld-tag">' + nF + ' floor' + (nF === 1 ? '' : 's') + ' · ' + nZ + ' area' + (nZ === 1 ? '' : 's') + '</span></div>' +
-        '<div class="sbld-libbody">' +
-        (nF ? locs.map(function (T) {
-          if (!T.floors.length) return '';
-          return '<div class="sbld-libL1">' + e2(T.name) + '</div>' +
-            T.floors.map(function (F2) {
-              return '<div class="sbld-libL2">' + e2(F2.name) +
-                (F2.kind ? '<span class="sbld-libkind">' + e2(KIND_LABEL[F2.kind] || F2.kind) + '</span>' : '') +
-                '<span class="sbld-libwho" title="Trades that define this floor">' +
-                  e2(F2.trades.map(function (g) { return GLABEL[g] || g; }).join(', ')) + '</span></div>' +
-                F2.zones.map(function (z) { return '<div class="sbld-libL3">' + e2(z) + '</div>'; }).join('');
-            }).join('');
-        }).join('') : '<div class="sbld-empty">No floors yet. <b>Read from the WBS</b> if this schedule was imported, or define them in <b>Floors &amp; Zones</b>.</div>') +
-        '</div></div>';
-
-      var right = '<div class="sbld-libpane">' +
-        '<div class="sbld-libhead"><b>Trade (Groupings and Items)</b>' +
-          '<span class="sbld-tag">' + tree.length + ' trade' + (tree.length === 1 ? '' : 's') + ' · ' + nG + ' grouping' + (nG === 1 ? '' : 's') + ' · ' + nI + ' item' + (nI === 1 ? '' : 's') + '</span></div>' +
-        '<div class="sbld-libbody">' +
-        (nI ? tree.map(function (T) {
-          var h = '<div class="sbld-libL1" style="--zc:' + gc(T.g) + '">' + e2(T.label) + '</div>';
-          h += T.groups.map(function (G2) {
-            return '<div class="sbld-libL2">' + e2(G2.name) + '<span class="sbld-libwho">' + G2.items.length + '</span></div>' +
-              G2.items.map(function (a) { return libItemRow(a); }).join('');
-          }).join('');
-          h += T.loose.map(function (a) { return libItemRow(a); }).join('');
-          return h;
-        }).join('') : '<div class="sbld-empty">No items yet. Add them in <b>Activities</b>, or <b>Read from the WBS</b>.</div>') +
-        '</div></div>';
-
-      host.innerHTML = '<h2>' + _stepNo('Library') + ' · Library — places and activity groupings</h2>' +
-        '<p class="sbld-lede">The two halves of the structure this schedule is read through: <b>where</b> the work happens ' +
-        'on the left, and <b>what</b> the work is on the right. A migrated schedule already names both in its WBS — ' +
-        'read them in rather than typing them, then correct what the reader got wrong.</p>' +
-        '<div class="sbld-libbar">' +
-          '<button class="pd-btn pd-btn-primary" id="b-libloc"' + (imported ? '' : ' disabled title="This project has no imported WBS branches to read"') + '>Read locations from the WBS…</button>' +
-          '<button class="pd-btn" id="b-libtrade"' + (imported ? '' : ' disabled title="This project has no imported WBS branches to read"') + '>Match WBS to trades…</button>' +
-          '<span class="sbld-libspacer"></span>' +
-          '<button class="pd-btn" id="b-libgoloc">Edit floors &amp; zones →</button>' +
-          '<button class="pd-btn" id="b-libgoact">Edit items →</button>' +
-        '</div>' +
-        (imported ? '' : '<p class="sbld-note">Nothing has been imported into this project, so there is no WBS to read — ' +
-          'build the two sides by hand in <b>Floors &amp; Zones</b> and <b>Activities</b>.</p>') +
-        '<div class="sbld-lib">' + left + right + '</div>' +
-        _sbldHow('<b>Left — places.</b> The union across trades: a floor only one trade works is still a floor of the ' +
-          'building, and the trades that define it are listed beside it. Floors are defined <i>per trade</i> because a trade ' +
-          'zones its floors its own way, which is why combining trades in Vertical Stacking draws at level 1.<br>' +
-          '<b>Right — work.</b> Trade (L1) › grouping (L2) › item (L3). The <b>grouping</b> is the only field that lives ' +
-          'here; everything else is the same data <b>Floors &amp; Zones</b> and <b>Activities</b> edit, so there is one copy of it.<br>' +
-          '<b>No unit column.</b> A unit belongs to a BOQ line, and Contracts &amp; Claims already carries it.');
-
-      var b1 = host.querySelector('#b-libloc');
-      // ⚠️ FINALLY WIRED. openLocAdopt() has been complete and reachable from nothing since it was
-      // written (flagged twice in this log); the Library is the screen it always belonged on.
-      if (b1) b1.onclick = function () { try { openLocAdopt(); } catch (e) { UI.toast('Could not read the WBS: ' + (e && e.message ? e.message : e), 'error'); } };
-      var b2 = host.querySelector('#b-libtrade');
-      if (b2) b2.onclick = function () { try { openDiscWizard(); } catch (e) { UI.toast('Could not open the trade matcher: ' + (e && e.message ? e.message : e), 'error'); } };
-      var b3 = host.querySelector('#b-libgoloc'); if (b3) b3.onclick = function () { libGoto('Floors & Zones'); };
-      var b4 = host.querySelector('#b-libgoact'); if (b4) b4.onclick = function () { libGoto('Activities'); };
-      host.querySelectorAll('[data-libgrp]').forEach(function (inp) {
-        inp.onchange = function () {
-          var a = (cfg.activities || []).filter(function (x) { return x.id === inp.dataset.libgrp; })[0];
-          if (!a) return;
-          var v = String(inp.value || '').trim();
-          // Deleted rather than stored empty, so an item with no grouping is one state and not two.
-          if (v) a.grp = v; else delete a.grp;
-          markDirty(); render();
-        };
-      });
-    }
-    // The rail owns navigation; this is the same two lines gotoStep runs, without going out
-    // through the public object and back in.
-    function libGoto(t) {
-      var i = STEPS.map(function (x) { return x.t; }).indexOf(t);
-      if (i >= 0) { step = i; render(); }
-    }
-    function libItemRow(a) {
-      return '<div class="sbld-libL3 sbld-libitem">' +
-        '<span class="sbld-libnm">' + e2(a.name || a.code || '(unnamed)') + '</span>' +
-        (a.code ? '<span class="sbld-libcode">' + e2(a.code) + '</span>' : '') +
-        '<input class="pd-input sbld-libgin" data-libgrp="' + e2(a.id) + '" value="' + e2(a.grp || '') + '" placeholder="grouping…" title="The L2 grouping this item belongs to, e.g. Siteworks, Rebar, Formworks">' +
-        '</div>';
-    }
     function stActivities(host) {
       var cols = XL_COLS;
       var CW = function (c) { return xColW[c.k] || (c.w || (c.k === 'name' ? 260 : 110)); };
@@ -27763,14 +27734,25 @@
           '<span class="sbld-hold-code">' + e2(a.code || '—') + ' · ' + e2(GLABEL[a.group] || '') + '</span></button>';
       }).join('');
       var holdPane = '<div class="sbld-holdgrip" id="b-holdgrip" title="Drag to resize the library"></div>' +
-        '<div class="sbld-hold" style="flex:0 0 ' + holdW + 'px"><div class="sbld-hold-h"><span>All class codes (' + cfg.catalog.length + ')</span>' + (catSel.length ? '<span style="font-size:10.5px;color:var(--pd-muted);">' + catSel.length + ' ticked</span>' : '') + '<button class="pd-btn sbld-libbtn" id="b-lib" title="Load the standard class-code library (' + CLASS_CODE_DB.length + ' codes) into this list">+ Library</button></div>' +
+        '<div class="sbld-hold" style="flex:0 0 ' + holdW + 'px"><div class="sbld-hold-h"><span>All class codes (' + cfg.catalog.length + ')</span>' + (catSel.length ? '<span style="font-size:10.5px;color:var(--pd-muted);">' + catSel.length + ' ticked</span>' : '') +
+        /* ⚠️ THE BOQ BUTTON IS PRIMARY AND SITS FIRST. It loads the codes this project's bill
+           actually carries — a worklist — where `+ Library` loads a generic chart of everything and
+           produces codes nothing downstream can match (see loadFromBoq's note). Ordering is the
+           cheapest way to say which one a planner should reach for. */
+        '<button class="pd-btn pd-btn-primary sbld-libbtn" id="b-boq" title="Load the class codes this project\u2019s BOQ carries, from Contracts &amp; Claims">+ From the BOQ</button>' +
+        '<button class="pd-btn sbld-libbtn" id="b-lib" title="Load the generic class-code library (' + CLASS_CODE_DB.length + ' group codes). Prefer + From the BOQ \u2014 these codes are group-level and cannot be matched to a BOQ line.">+ Library</button></div>' +
         '<div class="sbld-hold-list">' + (cfg.catalog.length ? holdItems : '<div class="sbld-empty" style="padding:10px;font-size:11.5px;">Empty. Codes you send out of the build with <b>&rarr;</b> land here; tick them and press <b>&larr;</b> to load them back.</div>') + '</div></div>';
       var shuttle = '<div class="sbld-shuttle"><button class="pd-btn" id="b-load" title="Load the ticked class codes into the build">&larr;</button><button class="pd-btn" id="b-unload" title="Remove the selected grid rows from the build (send to the list)">&rarr;</button></div>';
       host.innerHTML = '<h2>' + _stepNo('Activities') + ' · Activities &amp; required duration</h2>' +
         '<p class="sbld-lede">The class codes this programme is built from — code, name, trade, <b>scope</b> and its interior/exterior duration — as a spreadsheet, beside a holding list of every code available.</p>' +
         _sbldHow('The grid works like Excel: <b>click</b> a cell, <b>drag</b> or <b>Shift-click</b> to select a range, <b>double-click</b> or type to edit, <b>Ctrl+C / Ctrl+V</b> to copy &amp; paste (paste one cell into a selection to fill it), <b>Ctrl+D</b> to fill down, <b>Delete</b> to clear — or paste a block straight from Excel.' +
           '<ul><li><b>&larr;</b> loads ticked codes from the holding list into the build; <b>&rarr;</b> sends selected grid rows back out.</li>' +
-          '<li><b>+ Library</b> loads the standard class-code library into the holding list.</li>' +
+          '<li><b>+ From the BOQ</b> loads the class codes this project\u2019s BOQ actually carries — the ' +
+          'high-level bill is the basis for the schedule, so this is the normal way to start. Durations ' +
+          'stay blank: a BOQ knows money and quantity, not how long the work takes.</li>' +
+          '<li><b>+ Library</b> loads a generic list of group codes. ⚠️ Codes from it are <b>group</b> ' +
+          'codes and cannot be matched back to a BOQ line, so an activity built from one will not carry ' +
+          'cost or quantity — use it only for work the BOQ does not cover.</li>' +
           '<li><b>Scope</b> says whether a duration covers a zone, a floor or the whole project. Anything coarser than a zone is auto-split down to per-zone; refine it in step ' + _stepNo('Trade sequence') + '.</li></ul>') +
         '<div class="sbld-sec-actions"><button class="pd-btn pd-btn-primary" id="b-add">+ Add row</button><button class="pd-btn" id="b-seed">Load typical set</button>' +
         '<button class="pd-btn" id="b-delrows">Delete selected rows</button>' +
@@ -27779,6 +27761,29 @@
         '<input type="file" id="b-uplfile" accept=".csv,.xlsx,.xls" style="display:none" /></div>' +
         (cfg.activities.length ? '' : '<div class="sbld-empty" style="margin-bottom:8px;">No activities in the build yet — <b>Add row</b>, <b>Load typical set</b>, load from the list with <b>&larr;</b>, or paste rows from Excel into the grid.</div>') +
         '<div class="sbld-actsplit"><div class="sbld-xlwrap" tabindex="0" id="b-xl"><table class="sbld-xl" style="table-layout:fixed;width:' + totalW + 'px;">' + colgroup + '<thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>' + shuttle + holdPane + '</div>' +
+        (function () {
+          /* ⚠️ MEASURED, NOT ASSERTED, and silent when it has nothing to say. `_unlinkableCodes`
+             returns null while the chart has not loaded — claiming "0 unmatched" off an unread
+             chart would be the most reassuring possible lie. */
+          var u = _unlinkableCodes();
+          var out = '';
+          if (u && u.bad) {
+            out += '<div class="pscl-warn" style="margin:8px 0 0;">⚠️ <b>' + u.bad + ' of ' + u.tot +
+              '</b> class codes in the build are not in the class-code chart. Activities generated from ' +
+              'them cannot be matched to a BOQ line, so they will carry no cost and no quantity. Codes ' +
+              'loaded with <b>+ Library</b> are group-level and do this; reload those trades with ' +
+              '<b>+ From the BOQ</b> instead.</div>';
+          }
+          var st2 = _boqSeedState;
+          if (st2 && st2.n) {
+            out += '<p class="sbld-hint">Last read from the BOQ (' + e2(st2.rev) + '): <b>' + st2.n +
+              '</b> code(s) loaded' + (st2.dup ? ', ' + st2.dup + ' already here' : '') +
+              (st2.noTrade ? ' — <b>' + st2.noTrade + '</b> landed on <i>Others</i> because the BOQ\u2019s trade has no counterpart here; set them in the Trade column' : '') +
+              (st2.unresolved ? ' — ' + st2.unresolved + ' carried a code the chart does not list, named from the bill itself' : '') +
+              '.</p>';
+          }
+          return out;
+        })() +
         '<p class="sbld-hint">Trade accepts the name or code (General Requirements/GR · Site Works/SW · Structural/ST · Architectural/AR · MEPF · Allied Services/ALLIED · Others/OT). Row order here is the fallback sequence; fine-tune links in step ' + _stepNo('Trade sequence') + '.</p>';
       // toolbar
       host.querySelector('#b-add').onclick = function () { cfg.activities.push({ id: uidv(), code: '', name: '', group: 'ST', durInt: null, durExt: null, contract: 'main', coRef: '' }); xf = { r: cfg.activities.length - 1, c: 0 }; xa = { r: xf.r, c: 0 }; xWantFocus = true; markDirty(); render(); };
@@ -27791,6 +27796,7 @@
         markDirty(); render();
       };
       var libBtn = host.querySelector('#b-lib'); if (libBtn) libBtn.onclick = loadClassCodeLibrary;
+      var boqBtn = host.querySelector('#b-boq'); if (boqBtn) boqBtn.onclick = loadFromBoq;
       // resizable grid columns — drag a header's right edge; widths persist in xColW across re-renders
       host.querySelectorAll('.xl-colgrip').forEach(function (g) {
         g.addEventListener('mousedown', function (ev) {
@@ -33147,7 +33153,11 @@
         autoTrace: autoTrace, towerLinkEdges: towerLinkEdges, locList: locList,
         setStep: function (n) { step = n; }, render: function () { render(); },
         setPid: function (id) { curPid = id; curUid = 'u1'; },
-        setTrade: function (t) { uiTrade = t; }
+        setTrade: function (t) { uiTrade = t; },
+        /* Hand-off 1 (the BOQ seeds this setup) -- the two decisions worth asserting: which
+           revision of each BOQ document is read, and what a set of mappings becomes. */
+        pickBoqRevs: _pickBoqRevs, boqSeedPlan: _boqSeedPlan, unlinkableCodes: _unlinkableCodes,
+        setCatalog: function (c) { cfg.catalog = c; }, getCatalog: function () { return cfg.catalog; }
       } };
   })();
 
@@ -33304,79 +33314,6 @@
     // ⚠️ Keyed on activity_id (the P6/business key), never the row uuid: a re-import replaces every
     // row and mints new uuids, so a uuid-keyed distribution would reset itself on the next import.
     // An activity with no id falls back to its WBS code + name, which is stable for the same reason.
-    /* ⚠️⚠️ THE MONEY COMES FROM THE BOQ. Owner 2026-09-07: *"i want you to redirect the step 2 to
-       the contracts and claims app. since technically the assigning of cost per activity should be
-       matched / defined in the BOQ in the contracts and claims module."*
-       Correct, and it is the same argument this module already makes about `planned_cost`: two
-       places that can each state the cost of an activity will disagree, and then nobody can say
-       which figure the S-curve was drawn from. The BOQ is the priced document — it reconciles to a
-       contract total, it is revisioned, and Contracts & Claims already matches its lines to these
-       very activities. So step 2 READS it rather than asking for the figure again.
-
-       ⚠️ HOW AN ACTIVITY GETS ITS SHARE OF A LINE'S AMOUNT. boq_activity_quantity (the view
-       shipped with the BOQ) rolls up QUANTITY, not money, and deliberately excludes lump-sum and
-       provisional lines — which carry money and no quantity. So the amount is derived here:
-         share = alloc.qty / Σalloc.qty   when the line has allocated quantities,
-         share = 1 / (number of links)   when it has none — the only honest reading of a
-                                         link-only line, and the case the 2026-09-07 BOQ change
-                                         made possible.
-       ⚠️ Headings and EXCLUDED lines contribute nothing: an exclusion is a positive statement that
-       the work is another party's scope, so folding its amount in would price work nobody is doing.
-       ⚠️ Read-only, and read across modules by the CALLER'S OWN RLS (`can_access_project`), so this
-       can never see a project the planner cannot. Nothing here writes to the BOQ. */
-    // ⚠️ The counts are their OWN variables, not keys on the id→amount map: an activity whose
-    // activity_id happened to be '_lines' would otherwise be handed the line count as its cost.
-    var _boqMap = null, _boqLines = 0, _boqLinked = 0, _boqState = 'idle', _boqErr = '', _boqPid = null;
-    /* The share arithmetic, as a PURE function of the two tables — so it can be EXECUTED without a
-       database, which is the only way any of this gets checked (the anon key has no grants on the
-       BOQ tables either). loadBoq() does the reading and nothing else. */
-    function boqDerive(items, allocs) {
-      var byItem = {};
-      (allocs || []).forEach(function (a) { (byItem[a.boq_item_id] = byItem[a.boq_item_id] || []).push(a); });
-      var out = {}, lines = 0, linked = 0;
-      (items || []).forEach(function (i) {
-        // A heading is layout; an exclusion is a positive statement that the work is another
-        // party's scope; an amount-less line has no money to share out.
-        if (i.line_kind === 'heading' || i.exclusion_note || i.amount == null) return;
-        lines++;
-        var list = byItem[i.id] || []; if (!list.length) return;
-        linked++;
-        var denom = list.reduce(function (t, a) { return t + (Number(a.qty) || 0); }, 0);
-        list.forEach(function (a) {
-          // ⚠️ 1/n when the line has no allocated quantity at all. That is the link-only case the
-          // 2026-09-07 BOQ change made possible, and an equal split is the only reading the data
-          // supports — weighting by anything else would be inventing a measurement.
-          var share = denom > 0 ? ((Number(a.qty) || 0) / denom) : (1 / list.length);
-          var k = String(a.activity_id);
-          out[k] = r2((out[k] || 0) + (+i.amount) * share);
-        });
-      });
-      return { map: out, lines: lines, linked: linked };
-    }
-    function boqAmountOf(r) { return (_boqMap && r && r.activity_id) ? (_boqMap[String(r.activity_id)] || null) : null; }
-    function boqTotalOf(g) {
-      if (!_boqMap) return null;
-      var t = 0, hit = 0;
-      g.insts.forEach(function (r) { var a = boqAmountOf(r); if (a != null) { t += a; hit++; } });
-      return hit ? { total: r2(t), hit: hit, of: g.insts.length } : null;
-    }
-    async function loadBoq() {
-      if (!curPid) return;
-      _boqState = 'loading'; _boqErr = '';
-      try {
-        var it = await sbc().from('boq_items').select('id,amount,line_kind,exclusion_note').eq('project_id', curPid);
-        if (it.error) throw it.error;
-        var al = await sbc().from('boq_allocations').select('boq_item_id,activity_id,qty').eq('project_id', curPid);
-        if (al.error) throw al.error;
-        var d = boqDerive(it.data || [], al.data || []);
-        _boqMap = d.map; _boqLines = d.lines; _boqLinked = d.linked; _boqState = 'ok';
-      } catch (e) {
-        // ⚠️ DEGRADES, never blocks. No BOQ tables, no grants, or no BOQ on this project all land
-        // here, and in every one of those cases the planner must still be able to load cost by
-        // hand rather than be told the tab is broken.
-        _boqMap = null; _boqLines = 0; _boqLinked = 0; _boqState = 'err'; _boqErr = (e && e.message) ? e.message : String(e);
-      }
-    }
     function instKey(r) {
       var a = String(r.activity_id || '').trim();
       return a || ('~' + String(r.wbs || '') + '|' + String(r.activity_name || '').trim());
@@ -33496,19 +33433,12 @@
       });
       var list = order.map(function (n) {
         var g = by[n], c = (cfg && cfg.groups && cfg.groups[n]) || null;
-        // ⚠️ THE OVERRIDE WINS, and it is the only way a typed figure survives — see step 2. A
-        // BOQ-derived total is recomputed from the BOQ every time, so correcting the BOQ corrects
-        // the loading without anybody re-typing anything.
-        g.over = c && c.total != null ? c.total : null;
-        g.boq = null;   // filled below, once insts are known
-        g.total = g.over;
+        g.total = c && c.total != null ? c.total : null;
         g.mode = (c && c.mode === 'pct') ? 'pct' : 'equal';
         g.curve = curveOf(c);
         g.pct = (c && c.pct) || {};
         g.icurve = (c && c.icurve) || {};
         g.insts.sort(function (a, b) { return String(a.wbs || '').localeCompare(String(b.wbs || ''), undefined, { numeric: true }) || cmpGroupName(a.activity_id || '', b.activity_id || ''); });
-        g.boq = boqTotalOf(g);
-        if (g.over == null && g.boq) g.total = g.boq.total;
         return g;
       });
       list.sort(function (a, b) { return cmpGroupName(a.name, b.name); });
@@ -33924,68 +33854,22 @@
               : '<button class="pd-btn pd-btn-sm" data-ren="' + esc(g.name) + '">Rename</button>') + '</td></tr>';
         }).join('') + '</tbody></table></div></div>');
     }
-    // Where the money is defined, and how to get there. A redirect that does not carry the reader
-    // is just a refusal, so the link is the first thing on the step.
-    function boqPanelHTML(t) {
-      var ov = t.list.filter(function (g) { return g.over != null; }).length;
-      var fromBoq = t.list.filter(function (g) { return g.over == null && g.boq; }).length;
-      var link = '<a class="pd-btn pd-btn-primary" href="../contracts-claims/index.html" ' +
-        'title="Opens Contracts &amp; Claims on this same project">Open the BOQ in Contracts &amp; Claims →</a>';
-      var body;
-      if (_boqState === 'loading') body = '<p class="pscl-note">Reading this project’s BOQ…</p>';
-      else if (_boqState === 'ok' && _boqMap && _boqLines > 0) {
-        body = '<p class="pscl-note">Read <b>' + _boqLinked + ' of ' + _boqLines + '</b> priced BOQ line' +
-          (_boqLines === 1 ? '' : 's') + ' that are matched to activities, giving <b>' + fromBoq + '</b> cost line' +
-          (fromBoq === 1 ? '' : 's') + ' their total. ' +
-          (_boqLines > _boqLinked
-            ? '<b>' + (_boqLines - _boqLinked) + '</b> priced line' +
-              ((_boqLines - _boqLinked) === 1 ? ' is' : 's are') +
-              ' not matched to any activity yet, so their money reaches nothing here — match them on the BOQ’s <b>Match to schedule</b> tab.'
-            : 'Every priced line is matched.') + '</p>';
-      } else if (_boqState === 'ok') {
-        body = '<p class="pscl-note">This project’s BOQ carries <b>no priced lines</b> yet. Build or import it in Contracts &amp; ' +
-          'Claims and the totals appear here — or type them below, which is then recorded as an override.</p>';
-      } else if (_boqState === 'err') {
-        // ⚠️ The reason, verbatim, because "could not read the BOQ" with no cause is what sends the
-        // owner guessing: a missing table and a missing grant need opposite responses.
-        body = '<p class="pscl-warn">The BOQ could not be read, so nothing is pre-filled from it: <b>' + esc(_boqErr) + '</b>. ' +
-          'You can still type totals below.</p>';
-      } else body = '<p class="pscl-note">The BOQ has not been read yet.</p>';
-      return '<div class="pscl-phase"><div style="padding:10px 12px 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">' +
-        '<b>Cost is defined in the BOQ</b>' + link +
-        '<button class="pd-btn" id="ps-cl-boqre" title="Read the BOQ again">Refresh from the BOQ</button></div>' +
-        body +
-        (ov ? '<p class="pscl-warn">' + ov + ' cost line' + (ov === 1 ? ' carries a typed override that replaces' : 's carry a typed override that replaces') +
-          ' its BOQ figure. An override is remembered and does <b>not</b> follow a BOQ correction — clear the box to go back to the BOQ.</p>' : '') +
-        '</div>';
-    }
     function step2HTML(t) {
-      if (!t.groups) return panelWrap(1, boqPanelHTML(t) + '<div class="sbld-empty">No activities to price yet.</div>');
+      if (!t.groups) return panelWrap(1, '<div class="sbld-empty">No activities to price yet.</div>');
       // ⚠️ The running total is a FOOTER row, not another KPI box: it belongs at the bottom of the
-      // column it sums, where a planner reading down the list can see it move.
-      return panelWrap(1, boqPanelHTML(t) + kpisHTML(t) + tradePanelHTML() +
+      // column it sums, where a planner typing down the list can see it move.
+      return panelWrap(1, kpisHTML(t) + tradePanelHTML() +
         '<div class="sbld-tablewrap"><div class="pscl-scroll"><table class="pscl-tbl">' +
-        '<thead><tr><th>Activity name</th><th class="num">Occurrences</th><th class="num">From the BOQ</th>' +
-        '<th class="num" style="width:210px;">Override</th><th class="num sub">Per occurrence (equal)</th></tr></thead><tbody>' +
+        '<thead><tr><th>Activity name</th><th class="num">Occurrences</th><th class="num" style="width:210px;">Total cost</th><th class="num sub">Per occurrence (equal)</th></tr></thead><tbody>' +
         t.list.map(function (g) {
-          // ⚠️ TWO COLUMNS, not one box holding whichever won. A single field showing the BOQ figure
-          // would make a planner who edits it believe they had corrected the BOQ, and would hide
-          // that the correction stops following it.
-          var b = g.boq;
           return '<tr><td class="nm">' + esc(g.name) + '</td>' +
             '<td class="num"><span class="sbld-tag">' + g.insts.length + '×</span></td>' +
-            '<td class="num money' + (b ? '' : ' none') + '"' +
-              (b && b.hit < b.of ? ' title="' + b.hit + ' of ' + b.of + ' occurrences are matched to a BOQ line"' : '') + '>' +
-              (b ? money(b.total) + (b.hit < b.of ? ' <span class="pscl-note">(' + b.hit + '/' + b.of + ')</span>' : '') : 'not matched') + '</td>' +
             '<td class="num"><span class="pscl-money"><span class="cur">₱</span>' +
-              '<input class="pscl-in" data-cost="' + esc(g.name) + '" value="' + (g.over == null ? '' : g.over) + '" placeholder="' + (b ? 'from BOQ' : '0.00') + '" inputmode="decimal"></span></td>' +
+              '<input class="pscl-in" data-cost="' + esc(g.name) + '" value="' + (g.total == null ? '' : g.total) + '" placeholder="0.00" inputmode="decimal"></span></td>' +
             '<td class="num sub">' + (g.total == null ? '—' : money(g.total / Math.max(1, g.insts.length))) + '</td></tr>';
         }).join('') + '</tbody>' +
         '<tfoot><tr><td>Assigned so far</td><td class="num">' + t.priced + ' of ' + t.groups + '</td>' +
-        '<td class="num">' + money(t.assigned) + '</td><td></td><td></td></tr></tfoot></table></div></div>' +
-        '<p class="pscl-note" style="margin-top:10px;">Steps 3, 4 and 5 are unchanged: the total is still split across the ' +
-        'places the work occurs, still spread over each occurrence’s own dates, and still written as Planned IBB by <b>Apply</b>. ' +
-        'Only <b>where the figure comes from</b> has moved.</p>');
+        '<td class="num">' + money(t.assigned) + '</td><td></td></tr></tfoot></table></div></div>');
     }
     function step3HTML(t) {
       if (!t.groups) return panelWrap(2, '<div class="sbld-empty">Nothing to distribute yet.</div>');
@@ -34165,8 +34049,6 @@
         b.onclick = function () { step = +b.dataset.go; paint(); var p = document.getElementById('ps-view-costload'); if (p && p.scrollIntoView) p.scrollIntoView({ block: 'start' }); };
       });
       var ap2 = document.getElementById('ps-cl-apply2'); if (ap2) ap2.onclick = applyAll;
-      var bqr = document.getElementById('ps-cl-boqre');
-      if (bqr) bqr.onclick = async function () { bqr.disabled = true; await loadBoq(); bqr.disabled = false; paint(); };
       // step 4 — open a cost line to reach its occurrences, and set one occurrence's shape
       panel.querySelectorAll('[data-cvopen]').forEach(function (b) {
         b.onclick = function () { var g = b.dataset.cvopen; clCvOpen = (clCvOpen === g) ? null : g; paint(); };
@@ -34243,10 +34125,6 @@
       wireBar();
       if (!p) { var panel = document.getElementById('ps-cl-panel'); if (panel) panel.innerHTML = '<div class="ps-empty">Select a project to load cost onto its activities.</div>'; return; }
       if (p !== curPid) { curPid = p; curUid = u; selGroup = null; clScope = {}; clLevel = null; step = 0; await load(); }
-      // ⚠️ NOT awaited, and it repaints itself when it lands: the tab opens on the config it
-      // already has, and the BOQ figures fill in a moment later. Awaiting a cross-module read
-      // here would hold the whole tab behind another project's table.
-      if (_boqState === 'idle' || _boqPid !== curPid) { _boqPid = curPid; loadBoq().then(function () { if (curPid === _boqPid) paint(); }); }
       curUid = u;
       paint();
     }

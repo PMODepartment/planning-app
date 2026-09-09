@@ -847,8 +847,18 @@ window.BIM = (function () {
   function deleteZone(id) {
     var z = zoneById(id); if (!z) return;
     if (!window.confirm('Delete zone "' + z.name + '"? This cannot be undone.')) return;
-    sb().from(T_ZONE).delete().eq('id', id).then(function (res) {
+    // ⚠️ `.select('id')` and a row-count check. Owner-or-admin DELETE policy, so
+    // a refusal matches ZERO rows and PostgREST calls that a clean success --
+    // the old code then cleared the selection and toasted "Zone deleted" over a
+    // zone that is still on the plan. Same defect, same fix, as the deletes
+    // audited in module.js on 2026-09-04.
+    sb().from(T_ZONE).delete().eq('id', id).select('id').then(function (res) {
       if (res.error) { UI.toast('Could not delete the zone: ' + res.error.message, 'error'); return; }
+      if (!res.data || !res.data.length) {
+        UI.toast('Not deleted — the database refused it. A zone can only be removed by whoever drew it, or by an admin.', 'error');
+        loadZones();
+        return;
+      }
       if (selectedZoneId === id) selectedZoneId = null;
       UI.toast('Zone deleted', 'ok');
       loadZones();
@@ -1009,8 +1019,22 @@ window.BIM = (function () {
     var m = openModal(html, 460);
     $('bim-revdel-yes').onclick = async function () {
       this.disabled = true;
-      var res = await sb().from(T_PLAN).delete().eq('id', plan.id);
+      // ⚠️ `.select('id')` and a ROW-COUNT check. These tables carry an
+      // owner-or-admin DELETE policy, so a refusal matches ZERO rows and
+      // PostgREST reports it as a clean success with NO error -- the module then
+      // toasts success over a row that never left. Same defect, same fix, as the
+      // photo/pano/recon deletes audited in module.js on 2026-09-04; these are
+      // their siblings in this file, missed by that pass.
+      // ⚠⚠ AND THE FILE REMOVAL BELOW MUST NOT RUN ON A REFUSAL. Unguarded,
+      //     a refused row delete still removed the plan image from the bucket,
+      //     leaving a live revision whose drawing is gone for good -- along with
+      //     every zone, pin and registration that still points at it.
+      var res = await sb().from(T_PLAN).delete().eq('id', plan.id).select('id');
       if (res.error) { UI.toast('Could not delete the revision: ' + res.error.message, 'error'); this.disabled = false; return; }
+      if (!res.data || !res.data.length) {
+        UI.toast('Not deleted — the database refused it. A revision can only be removed by whoever uploaded it, or by an admin.', 'error');
+        this.disabled = false; return;
+      }
       // The row (and, via cascade, its zones/pins/registrations) is already
       // gone at this point — the file itself is a separate, best-effort
       // cleanup that must never make an already-successful delete read as
