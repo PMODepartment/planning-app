@@ -1005,6 +1005,25 @@ html.pd-dark .boq-why { color:#7fd6a2; }
 .cca-imp-warn { margin-top:6px; padding-top:6px; border-top:1px solid var(--pd-line);
   font-size:10px; line-height:1.45; color:var(--pd-muted); }
 
+/* The grid's shortcut hint, at the FOOT of the grid it describes rather than in the filter bar
+   above it. A line of keyboard syntax between the planner and the first row is read once and then
+   in the way forever; below the last row it is where you look when you want it. */
+.boq-gridfoot { padding:7px 2px 2px; border-top:1px solid var(--pd-line); margin-top:2px; }
+
+/* The topbar export chooser: what goes in the workbook. */
+.ccx-body { display:flex; flex-direction:column; gap:8px; }
+.ccx-opt { display:flex; align-items:flex-start; gap:9px; padding:9px 11px; cursor:pointer;
+  border:1px solid var(--pd-line); border-radius:8px; background:var(--pd-card); }
+.ccx-opt:hover { border-color:var(--pd-red); }
+.ccx-opt input { margin-top:2px; flex:0 0 auto; }
+.ccx-opt span { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.ccx-opt b { font-size:13px; font-weight:700; color:var(--pd-ink); }
+.ccx-opt small { font-size:11px; color:var(--pd-muted); line-height:1.45; }
+/* ⚠ An option with nothing behind it is shown DISABLED with the reason, not hidden. Hiding it
+   would leave the planner wondering whether the app can export a BOQ at all; this says it can, and
+   that this project has none yet. */
+.ccx-opt.off { opacity:.55; cursor:not-allowed; }
+.ccx-opt.off:hover { border-color:var(--pd-line); }
 /* ---- the preview GANTT ----------------------------------------------------
    Replaces the old per-activity strip. Owner: *"The per activity view doesn't bring much value ...
    I was thinking that it would show the whole Gantt view of the schedule and it would see the

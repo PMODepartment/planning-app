@@ -139,7 +139,11 @@
     // which stays regular weight.
     function projRow(p) {
       var gh = p.group_head_id && (groupHeads || []).filter(function (g) { return g.id === p.group_head_id; })[0];
-      var sub = [p.location, gh ? 'Group Head: ' + gh.name : ''].filter(Boolean).join(' · ');
+      /* ⚠ THE LABEL IS DROPPED, THE NAME IS NOT. Owner: *"remove the 'Group Head:' and just
+         leave who the group head is"*. In a two-line project row the subtitle has room for the
+         location AND a name, and "Group Head: " spent a third of it restating a column heading
+         the reader already understands from context. The name is still there and still second. */
+      var sub = [p.location, gh ? gh.name : ''].filter(Boolean).join(' · ');
       return '<div class="pd-nt-proj' + (opts.isSelected && opts.isSelected(p) ? ' sel' : '') + '" data-nt-proj="' + esc(p.id) + '">' +
         _ntIco('project', 14) + '<span class="pd-nt-proj-txt"><strong>' + esc(p.id + ' — ' + (p.name || p.id)) + '</strong>' +
         (sub ? '<small>' + esc(sub) + '</small>' : '') + '</span></div>';
@@ -275,7 +279,7 @@
       var row = (projs || []).filter(function (p) { return p.id === v; })[0];
       if (!row) return '';
       var gh = row.group_head_id && (ghs || []).filter(function (g) { return g.id === row.group_head_id; })[0];
-      return [row.location, gh ? 'Group Head: ' + gh.name : ''].filter(Boolean).join(' · ');
+      return [row.location, gh ? gh.name : ''].filter(Boolean).join(' · ');
     }
     function syncBtn() {
       var t = labelFor(sel.value), ph = !t;
@@ -490,7 +494,7 @@
         var row = (_pdSwProj || []).filter(function (p) { return p.id === pid; })[0];
         if (!row) return;
         var gh = row.group_head_id && (_pdSwGh || []).filter(function (g) { return g.id === row.group_head_id; })[0];
-        sub.textContent = [row.location, gh ? 'Group Head: ' + gh.name : ''].filter(Boolean).join(' · ');
+        sub.textContent = [row.location, gh ? gh.name : ''].filter(Boolean).join(' · ');
       });
     }
 

@@ -1132,9 +1132,12 @@ window.ContractsClaims = (function () {
   // ==========================================================================
   // EXPORT
   // ==========================================================================
-  function exportExcel() {
+  /* ⚠ SPLIT so the chooser below can put this sheet in the SAME workbook as the BOQ. Returns
+     rows and writes nothing; null when there is nothing to export, so the chooser can say so
+     rather than emit an empty sheet. */
+  function recordsSheet() {
     var c = cfg(), list = visibleRows();
-    if (!list.length) { UI.toast('Nothing to export.', 'error'); return; }
+    if (!list.length) return null;
     var aoa = list.map(function (r) {
       var o = { 'Reference': r.reference_no || '', 'Description': clean(r.description) || clean(r.title) };
       if (view === 'claims') o['Type'] = r.record_type || '';
@@ -1155,12 +1158,71 @@ window.ContractsClaims = (function () {
     if (view === 'claims') tot['Type'] = '';
     c.cols.forEach(function (col) { tot[col.head] = t[col.key]; });
     aoa.push(tot);
+    return { name: c.label, rows: aoa };
+  }
 
-    var ws = XLSX.utils.json_to_sheet(aoa);
-    ws['!cols'] = Object.keys(aoa[0]).map(function (k) { return { wch: k === 'Description' ? 46 : Math.max(13, k.length + 2) }; });
+  /* ---- the topbar export ----------------------------------------------------
+     Owner: *"There is an export button at the title bar we can have option to export to excel for
+     which items contracts/boq/ or all"*. It used to export whatever register tab you were on and
+     nothing else, silently -- so a planner wanting the BOQ had to know to find a second Export
+     button further down the page. That button is gone; this asks.
+     ⚠ BOTH SHEETS COME FROM THEIR OWN MODULE, never re-derived here. `BOQ.sheet()` decides what a
+     BOQ export contains; `recordsSheet()` decides what a register export contains. A chooser that
+     rebuilt either column set would be a second definition of the same thing.
+     ⚠ An option with nothing behind it is DISABLED and says why, rather than being offered and
+     then producing an empty file. */
+  function exportSheets(which) {
+    var out = [];
+    if (which !== 'boq') { var r = recordsSheet(); if (r) out.push(r); }
+    if (which !== 'records' && window.BOQ && BOQ.sheet) { var b = BOQ.sheet(); if (b) out.push(b); }
+    if (!out.length) { UI.toast('Nothing to export.', 'error'); return; }
     var wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, c.label.slice(0, 28));
-    XLSX.writeFile(wb, c.label + ' - ' + (projName() || pid) + '.xlsx');
+    out.forEach(function (sh) {
+      var ws = XLSX.utils.json_to_sheet(sh.rows);
+      ws['!cols'] = Object.keys(sh.rows[0]).map(function (k) {
+        return { wch: k === 'Description' ? 46 : Math.max(13, k.length + 2) };
+      });
+      XLSX.utils.book_append_sheet(wb, ws, String(sh.name).slice(0, 28));
+    });
+    var label = out.length > 1 ? 'Contracts and BOQ' : out[0].name;
+    XLSX.writeFile(wb, label + ' - ' + (projName() || pid) + '.xlsx');
+  }
+
+  function exportExcel() {
+    var hasRec = !!recordsSheet();
+    var hasBoq = !!(window.BOQ && BOQ.sheet && BOQ.sheet());
+    if (!hasRec && !hasBoq) { UI.toast('Nothing to export.', 'error'); return; }
+    var c = cfg();
+    function opt(v, label, sub, on) {
+      return '<label class="ccx-opt' + (on ? '' : ' off') + '">' +
+        '<input type="radio" name="ccx" value="' + v + '"' + (on ? '' : ' disabled') + '>' +
+        '<span><b>' + esc(label) + '</b><small>' + esc(sub) + '</small></span></label>';
+    }
+    /* ⚠ The same header shape boq.js's `mHead` emits, written out rather than imported: `mHead`
+       is module-local to boq.js and exporting a formatting helper across files to save four lines
+       would couple the two for nothing. */
+    var m = UI.modal('<div class="pd-modal-header"><div><h2 style="margin:0;">Export to Excel</h2>' +
+      '<div class="pd-modal-sub">One workbook. Choose what goes in it.</div></div>' +
+      '<button class="pd-modal-close" id="ccx-x">&times;</button></div>' +
+      '<div class="pd-modal-body ccx-body">' +
+        opt('records', c.label, hasRec ? 'What this tab is showing, with its totals row.'
+                                       : 'Nothing on this tab to export.', hasRec) +
+        opt('boq', 'Bill of quantities', hasBoq ? 'The current revision, under the filters set on it.'
+                                                : 'No BOQ lines on this project yet.', hasBoq) +
+        opt('all', 'Both', (hasRec && hasBoq) ? 'Two sheets in one workbook.'
+                                              : 'Needs records and a BOQ.', hasRec && hasBoq) +
+      '</div>' +
+      '<div class="pd-modal-footer"><button class="pd-btn" id="ccx-c">Cancel</button>' +
+      '<button class="pd-btn pd-btn-primary" id="ccx-go">Export</button></div>');
+    var first = m.el.querySelector('input[name="ccx"]:not([disabled])');
+    if (first) first.checked = true;
+    m.el.querySelectorAll('#ccx-x,#ccx-c').forEach(function (b) { b.onclick = m.close; });
+    m.el.querySelector('#ccx-go').onclick = function () {
+      var sel = m.el.querySelector('input[name="ccx"]:checked');
+      if (!sel) return;
+      m.close();
+      exportSheets(sel.value);
+    };
   }
   function projName() {
     var s = document.getElementById('cc-project');

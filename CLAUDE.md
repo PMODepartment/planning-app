@@ -95,6 +95,54 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-09 (s) — Contracts & Claims: two duplicate buttons removed, and the export finally asks
+
+Six owner items on the Contract tab, all of them about the same thing — controls sitting where they
+do not belong.
+
+- ⚠⚠ **"Add BOQ…" is gone from the BOQ toolbar.** *"There is an +Add button in the title bar and
+  another Add BOQ at the bottom."* The topbar **+ Add** opens the same wizard, and that wizard's BOQ
+  step creates a **new BOQ document** (`boqPath() === 'add'`), not only a revision on an existing
+  one — checked before removing it, because deleting the only route to a second trade BOQ would
+  have undone a feature asked for two days ago. The **empty-state** button stays: with no BOQ at all
+  the section is otherwise a dead end, and a call to action is not a duplicate of a visible control.
+- ⚠⚠ **`+ Lot` is gone from the Contract records head.** Also verified first: lots are created by
+  the contract wizard's package step, and by **editing** the contract record afterwards (the pencil
+  offers the same None / Define / Link choice). The `+ Lot` **inside** the Contract lots section
+  stays — but that section only exists once a lot does, so it is an action within its own subject
+  rather than an invitation on a screen where the right answer is almost always zero lots.
+- **The keyboard hint moved to the FOOT of the grid.** In the filter bar it put a line of keyboard
+  syntax between the planner and the first row on every open — read once, then in the way forever.
+  ⚠ The `isDraft() && canWrite` comment travelled with it, because the `var`-hoisting trap it warns
+  about travels with the line.
+- ⚠⚠ **The topbar export now asks what to export.** *"There is an export button at the title bar we
+  can have option to export to excel for which items contracts/boq/ or all."* It used to emit
+  whichever register tab you were on, silently, so the BOQ needed a second Export button further
+  down the page. That button is deleted and the topbar opens a chooser: **records / BOQ / both**,
+  both sheets in one workbook.
+  ⚠ **Each sheet is built by its own module** — `BOQ.sheet()` and `recordsSheet()`, both refactored
+  to return rows and write nothing. A chooser that rebuilt either column set would be a second
+  definition of what an export contains, and the two would drift the first time a column moved.
+  ⚠ An option with nothing behind it is **disabled with its reason on screen**, not hidden — hiding
+  it would leave the planner wondering whether the app can export a BOQ at all.
+- **Contract records gets the section head the BOQ has.** *"The UI of Bill of Quantities title is
+  okay. Let's adopt the same way for the contract records."* Bill of quantities and Contract lots
+  are both announced by a `.cc-sechead`; this one carried its title inside the card, so three
+  sections on one page were introduced two different ways. The card's own `<h3>` went with it —
+  repeating the words directly under the heading is what made that header feel crowded.
+- **The project selector drops "Group Head: ".** *"just leave who the group head is"*. In a
+  two-line row the subtitle has room for the location and a name; the label spent a third of it
+  restating a column heading the reader already understands. Three sites in the shared `ui.js`.
+
+**Verified:** all six confirmed by static assertion (button ids gone, section head present, hint
+under the grid, dead `pk-addfirst` wiring removed with its button); the new chooser **rendered
+against the real stylesheets** in both themes — disabled option dimmed at 0.55 with `not-allowed`,
+first enabled option pre-selected, every colour resolving through `--pd-*` in dark. Class audit
+clean apart from the two pre-existing strays this log already records (`boq-clm`, `cc-listbar`).
+41 JS files parse; CSS braces 555/555; every asset on one version.
+⚠ `ui.js` is SHARED — `?v=` bumped across all 21 referencing pages in one pass.
+contracts `boq.js` / `module.js` / `packages.js` / `module.css` / `ui.js` → `?v=20260909s`;
+`MODULE_V` → `20260909s`. ⚠ **Not verified signed in** — no workbook has actually been written.
 ### 2026-09-09 (r) — The change-order engine becomes shared, and the wizard previews what it will create
 
 **New `assets/js/co-insert.js`.** Owner: *"The per activity view doesn't bring much value ... I was

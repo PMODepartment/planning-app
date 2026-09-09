@@ -855,7 +855,13 @@ window.BOQ = (function () {
          asks build-by-hand or import.
          ⚠️ `openImport()` stays exported — the wizard's import branch calls it. What is removed is
          the button that bypassed the question, not the capability. */
-      (canWrite ? '<button class="pd-btn pd-btn-primary" id="boq-new" title="Add a BOQ — build it by hand from the class-code library, or import the client\'s workbook">Add BOQ…</button>' : '') +
+      /* ⚠⚠ THE "Add BOQ" BUTTON IS GONE FROM HERE. Owner: *"There is an +Add button in the
+         title bar and another Add BOQ at the bottom. Let's just remove the one at the bottom."*
+         Right: the topbar + Add opens the same wizard, and the wizard's BOQ step creates a NEW BOQ
+         document (boqPath() === "add"), not only a revision on an existing one. Two primary buttons
+         for one job, a few hundred pixels apart, is how a planner learns to distrust both.
+         ⚠ The empty-state button below STAYS: with no BOQ at all this section is otherwise a dead
+         end, and a call to action is not a duplicate of a control you can already see. */
       '</div>';
 
     if (!REVS.length) {
@@ -1268,14 +1274,11 @@ window.BOQ = (function () {
          contract: this is per-BOQ-line assignment, and the lots it assigns to are this project's. */
       (canWrite && PKGS.length
         ? '<button class="pd-btn" id="boq-pkgs">Assign to contract lot…</button>' : '') +
-      /* A grid whose shortcuts are undiscoverable is a grid nobody uses. Draft only - on an
-         issued revision the cells are not editable and the keys do nothing. */
-      /* ⚠️ `isDraft() && canWrite`, NOT the `draft` local — that is declared eight lines BELOW
-         this one, so `var` hoisting would make it `undefined` here and the hint would simply
-         never render. No error, no warning: exactly the kind of silent nothing that gets shipped
-         and then reported months later as "those shortcuts were never there". */
-      (isDraft() && canWrite && window.PDGrid ? PDGrid.hintHTML() : '') +
-      '<button class="pd-btn" id="boq-export">Export</button>' +
+      /* ⚠ The keyboard hint and Export have BOTH left this bar. The hint moved to the FOOT of the
+         grid it describes (see itemsHTML); Export moved to the topbar, which now asks what to
+         export -- owner: *"There is an export button at the title bar we can have option to export
+         to excel for which items contracts/boq/ or all"*. What is left here is only what narrows
+         the view, which is what a filter bar is for. */
       '</div>';
 
     /* ⚠️ ON A DRAFT THE MONEY COLUMNS BECOME RATE COLUMNS, and that is the honest
@@ -1480,6 +1483,16 @@ window.BOQ = (function () {
         }).join('') + '</tr>';
     });
     h += '</tbody></table></div>';
+    /* ⚠⚠ THE SHORTCUT HINT SITS UNDER THE GRID, NOT ABOVE IT. Owner: *"Can we move the keyboard
+       tooltips at the bottom of the BOQ grid."* In the filter bar it put a line of keyboard syntax
+       between the planner and the first row on every open -- read once, then in the way forever. At
+       the foot it is where you look when you want it and nowhere when you do not.
+       ⚠ `isDraft() && canWrite`, NOT the `draft` local: that is declared BELOW this point, so `var`
+       hoisting would make it `undefined` and the hint would silently never render. The comment
+       travels with the line, because the trap travels with it. */
+    if (isDraft() && canWrite && window.PDGrid) {
+      h += '<div class="boq-gridfoot">' + PDGrid.hintHTML() + '</div>';
+    }
     return h;
   }
   function pkgName(id) {
@@ -1533,7 +1546,6 @@ window.BOQ = (function () {
     host.querySelectorAll('[data-trade]').forEach(function (b) {
       b.onclick = function () { filt.sheet = b.dataset.trade || ''; render(); };
     });
-    var ex = host.querySelector('#boq-export'); if (ex) ex.onclick = exportItems;
     var pk = host.querySelector('#boq-pkgs'); if (pk) pk.onclick = openAssignPackage;
     var ac = host.querySelector('#boq-addcodes'); if (ac) ac.onclick = openCodeBuilder;
     var asch = host.querySelector('#boq-addsched'); if (asch) asch.onclick = openSeedFromSchedule;
@@ -1650,9 +1662,13 @@ window.BOQ = (function () {
       ' value="' + esc(v == null ? '' : v) + '" />';
   }
 
-  function exportItems() {
+  /* ⚠ SPLIT IN TWO so the topbar's "export what?" chooser can put this alongside the contract
+     records in ONE workbook. `boqSheet()` returns rows and writes nothing; `exportItems()` is the
+     one-sheet download. A chooser that re-implemented these columns would be a second definition of
+     what a BOQ export contains, and the two would drift the first time a column moved. */
+  function boqSheet() {
     var list = filtered();
-    if (!list.length) { UI.toast('Nothing to export.', 'error'); return; }
+    if (!list.length) return null;
     var aoa = list.map(function (r) {
       return {
         'Sheet': r.sheet, 'Source Row': r.source_row, 'Item No': r.item_no || '',
@@ -1668,9 +1684,14 @@ window.BOQ = (function () {
         'Allocated Qty': allocSum(allocOf(r.id)) || ''
       };
     });
-    var ws = XLSX.utils.json_to_sheet(aoa), wb = XLSX.utils.book_new();
-    ws['!cols'] = Object.keys(aoa[0]).map(function (k) { return { wch: k === 'Description' ? 50 : Math.max(12, k.length + 2) }; });
-    XLSX.utils.book_append_sheet(wb, ws, 'BOQ');
+    return { name: 'BOQ', rows: aoa };
+  }
+  function exportItems() {
+    var sh = boqSheet();
+    if (!sh) { UI.toast('Nothing to export.', 'error'); return; }
+    var ws = XLSX.utils.json_to_sheet(sh.rows), wb = XLSX.utils.book_new();
+    ws['!cols'] = Object.keys(sh.rows[0]).map(function (k) { return { wch: k === 'Description' ? 50 : Math.max(12, k.length + 2) }; });
+    XLSX.utils.book_append_sheet(wb, ws, sh.name);
     XLSX.writeFile(wb, 'BOQ - ' + (projLabel || pid) + '.xlsx');
   }
 
@@ -4801,6 +4822,10 @@ window.BOQ = (function () {
 
   return {
     init: init, show: show, reset: reset, render: render,
+    /* ⚠ For the topbar's "export what?" chooser. Returns the CURRENT revision's rows under the
+       filters on screen, or null when there is nothing -- so the chooser can grey the option
+       rather than produce an empty sheet. It writes no file; the caller owns the workbook. */
+    sheet: boqSheet,
     /* ⚠️ Exported so the WIZARD can create the draft rather than reimplementing the insert.
        The trigger, the is_current rule and the draft/manual defaults all live in one place. */
     createDraft: createDraft, nextRevLabel: nextRevLabel, currentDraft: currentDraft,
