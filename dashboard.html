@@ -130,10 +130,6 @@
     .pd-perf-b { display:block; font-size:var(--pd-fs-xs); color:var(--pd-muted); margin-top:6px; line-height:1.45; }
     /* One short line, not a paragraph: a verdict or a comparison, never an explanation. */
     .pd-perf-note { display:block; font-size:var(--pd-fs-xs); color:var(--pd-muted); margin-top:5px; line-height:1.4; }
-    /* The basis for the whole row, said once. Spans every column of the grid. */
-    .pd-perf-basis { grid-column:1/-1; margin:2px 2px 0; font-size:var(--pd-fs-xs);
-      color:var(--pd-muted); line-height:1.5; }
-    .pd-perf-basis b { font-weight:700; color:var(--pd-muted); }
     .pd-perf-good { color:#2FA36B; }
     .pd-perf-none .pd-perf-b { opacity:.9; }
     @media (max-width:640px) { .pd-perf-v { font-size:var(--pd-fs-stat); } }
@@ -547,9 +543,20 @@
       //    each explaining themselves in isolation — and it is four lines of prose, not
       //    sixteen. ⚠ EMPTY cards keep their own text: that one is not an explanation, it
       //    names the missing input and where to capture it, which is actionable.
-      host.innerHTML = c1 + c2 + c3 + c4 +
-        '<p class="pd-perf-basis">Planned and Actual POC are <b>duration-weighted</b> and directly ' +
-        'comparable. SPI and CPI are <b>cost ratios</b> (earned \u00f7 planned, earned \u00f7 actual).</p>';
+      /* ⚠⚠ THE BASIS PARAGRAPH IS GONE, AND REMOVING IT WIDENED THE CARDS BY 233px EACH.
+         Owner asked for two things -- *"The 4 KPI cards should fit properly right now everything
+         looks squeezed"* and *"remove the ... tooltip since this is understood common sense"* --
+         and they were THE SAME BUG. The paragraph carried `grid-column:1/-1`, which OCCUPIES every
+         track of `repeat(auto-fit, minmax(196px,1fr))`, so `auto-fit` could never collapse the
+         empty ones. MEASURED at 1900px: WITH the line, 8 live tracks and cards at 221px with
+         captions wrapping to 3 lines; WITHOUT it, 4 tracks at 454px and 4 collapsed to 0, captions
+         down to 1-2. A full-width child in an auto-fit grid silently defeats the auto-fit.
+         ⚠ The prose was defensible when written -- a number with no stated basis gets trusted
+         further than it deserves -- but the owner is right that EV/PV and duration-weighting are
+         common ground for a planner. The EMPTY cards keep their own text, which names a missing
+         input and where to capture it rather than explaining a concept; that is the half worth
+         keeping. */
+      host.innerHTML = c1 + c2 + c3 + c4;
     }
 
     // ---- shared bits -------------------------------------------------------------------------
