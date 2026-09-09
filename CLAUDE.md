@@ -95,6 +95,111 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-09 (y) — The brand mark grows 29%, the caption goes white, and the block does not get taller
+
+Owner: *"Make the logo bigger and the Planning Suite color white. Optimize the space as well and make
+sure everything looks professional looking."* Four asks, and the third is the one that constrains the
+other three — a bigger mark that simply pushes the nav back down is not an optimisation.
+
+#### ⚠️ The mark was smaller than its box, which is why 28px read small
+`favicon-icon.png` is the M padded into a 256x256 canvas. **Measured off the file rather than eyeballed:
+the opaque bounding box is 224x187, i.e. 87.5% x 73.0% fill.** So the 28px box was drawing a
+**24.5 x 20.5** glyph — the mark was already losing ~4px to transparent padding before it sat down
+next to the words. At **36px** the drawn glyph is **31.5 x 26.3**. That is the "bigger" that was asked
+for, and it is bigger by more than the box numbers suggest.
+
+#### ⚠️⚠️ It got bigger and the rail got SHORTER, which is the whole of "optimize the space"
+Padding went 14/12 → **11/10**, so with a mark 8px taller the brand block measures **58px** against the
+56px it measured before this round (and the **95px** it was two rounds ago). The nav starts at 58px.
+
+⚠️ **The collapsed rail was re-padded to the same 11/10, and that fixed a jump nobody had reported.**
+It carried `16px 8px`, so its brand block was 60px against the expanded rail's 56 — toggling the rail
+nudged all 13 nav rows by 4px. Both states now measure **58px** and the rows hold still.
+
+⚠️ **The mobile drawer went 28/22 → 22/18** for the same reason in reverse: left alone, the taller mark
+would have added 8px to a drawer header that did not need it. It now measures **77px**, 2px *less* than
+before, and `max()` still hands a notched phone its safe-area inset.
+
+#### ⚠️ White is not only what was asked for — the red caption was failing contrast
+`--pd-red` (#EE3124) on the rail (#231F20 light / #161717 dark) computes to **3.96:1 and 4.36:1**. At
+10px that is small text, so the bar is **4.5:1**, and it was under it in both themes. `#fff` computes to
+**16.30:1 and 17.96:1**. It also resolves a hierarchy problem: the mark and the words were both red, so
+two things competed to be the brand; with the mark keeping the colour, the words become the brightest
+*text* in the rail, above the nav rows' `rgba(255,255,255,.65)`.
+- Caption sized 10 → **11px** (`--pd-fs-xs`) to hold its own beside a bigger mark, and tracking eased
+  **.18 → .15em**, because the same tracking at a larger size ran the lockup wide.
+
+#### Verified
+Measured in a harness whose brand markup is lifted **byte-for-byte out of `dashboard.html`** (only the
+`src` swapped for the real PNG's bytes as a data URI) with `dashboard.css` inlined, at 1440x820:
+- **Expanded rail (240px):** block **58px**, mark **36x36**, lockup centred to **0.05px** (34.8 vs 34.75
+  ideal), caption `rgb(255,255,255)` / 11px / 1.65px tracking, **18.7px** of slack before the inner edge.
+- **Collapsed rail (64px):** block **58px** — identical to expanded — mark centred **32.0 vs 32.0**,
+  **6px** clearance each side of the 48px inner width, caption and section labels `display:none`.
+- **Mobile drawer (290px @ 718px):** block **77px**, mark 36px, caption shown.
+
+⚠️ **The first attempt measured nothing.** The pane renders a file outside the project as a `data:`
+snapshot, so the relative `<link>` to `dashboard.css` resolved to nothing and it reported black text and
+a 702px sidebar — the *third* time this session a harness has reported an unstyled page as a finding.
+Inlining the stylesheet is what made the numbers real. ⚠️ A `getBoundingClientRect` read issued in the
+**same batch** as `resize_window` also returned 240px for a 64px rail. **Not pre-reflow geometry — it is
+the first frame of a transition.** `.pd-sidebar` carries `transition: width .2s ease, flex-basis .2s
+ease, padding .2s ease` (dashboard.css:135), so an immediate read returns the START value and looks
+settled. The computed-style read said 64px while the rect said 240, which is the tell. The fix is not
+to wait: inject `*{transition:none!important;animation:none!important}` and force a reflow before
+measuring anything that animates — the trap is already on file from 2026-09-01 and 2026-09-09.
+
+⚠️ Screenshots could not confirm the visual — the static snapshot does not re-render after DOM
+mutation — so this rests on geometry and computed styles, not on a picture.
+
+CSS-only across all 29 pages; no markup changed. `dashboard.css` → `?v=20260909y`. `MODULE_V` untouched,
+because no module asset moved.
+
+### 2026-09-09 (x) — The sidebar brand becomes the red M with PLANNING SUITE beside it
+
+Owner: *"Instead of the Megawide Construction logo lets make it the red megawide m logo and beside
+it is the Planning Suite."* **CSS only** — both `<img>`s were already in all 29 pages' markup (the
+wordmark for the expanded rail, the mark for the collapsed one), so no HTML changed.
+
+⚠ **The wordmark named the company; the mark can do that in 28px.** `MEGAWIDE CONSTRUCTION` is a
+5.81:1 lockup, so it had to span most of a 240px rail to stay legible — spending the widest element
+in the sidebar on something every page of this app already belongs to, while the thing it actually
+identifies, the Planning Suite, was the small red line underneath. Now the mark carries the company
+and the product name gets the row beside it.
+
+| | before today | after (w) | **after (x)** |
+|---|---|---|---|
+| brand block | 95px | 79px | **56px** |
+| first nav row | 131px | 109px | **87px** |
+
+**44px reclaimed across the two changes**, a third of the original block, with the nav starting
+where the logo used to end.
+
+⚠⚠ **`gap` WAS THE WRONG TOOL AND MEASURING IS THE ONLY REASON I KNOW IT.** The markup carries a
+bare `Planners Dashboard` text node between the two images — the thing `font-size: 0` exists to
+hide. In a flex container that text node becomes an **anonymous flex item**: zero-width, but still
+an item, so `gap: 9px` was applied on **both** sides of it and the measured space came out **18px**.
+The spacing is a `margin-left` on the caption instead, which is exactly one gap however many empty
+text nodes the markup carries. Re-measured: **10px**, lockup centred to within 0px.
+
+⚠ **All three brand states move together, and two of them invert.** The mark was `display:none` by
+default and shown only under `.pd-collapsed`; that default is now `block`, so the collapsed rail
+drops only the *words* (verified: rail 64px, mark `block` and centred, words and wordmark `none`),
+and the phone drawer — which re-expands `.pd-collapsed` — stops restoring the wordmark and stops
+suppressing the mark. With one mark instead of two there is nothing left to stack.
+
+⚠ **The phone drawer is verified by SOURCE, not by measurement, and that distinction is the point.**
+The pane refused to emulate a narrow viewport for the second time today, reporting `clientWidth 980`
+against a 375px request — so what that check measured was the *collapsed desktop rail*, not the
+drawer. Verified instead against the shipped bytes: all three rules present verbatim, brace-matched
+as **contained** in the `@media (max-width: 820px)` block at lines 1067–1118, and both base
+declarations (176, 193) earlier in source order. That is a proof about the cascade; it is not a
+rendered drawer, and it is worth checking on a real phone.
+
+⚠ `logo-white.png` is **retired from the sidebar, not deleted** — it is still the login and home
+mark (`.pd-auth-mark`), and its `<img>` stays in the markup, which is what kept this to one file.
+⚠ `dashboard.css` is SHARED — `?v=` bumped across **all 29 pages**. `MODULE_V` → `20260909x`.
+⚠ **Not verified signed in.**
 ### Zone layout in Floors & Zones — the prerequisite the 3D stacking reads (2026-09-09) — jasantos2
 
 Owner: *"the pre-requisites for the 3D to be established is to define the location of the zones and
