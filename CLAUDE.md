@@ -95,6 +95,48 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-09 (p) — Cash Flow's number inputs swept, and a regression in yesterday's fix caught
+
+Owner: *"let's sweep the cash flow number inputs"* — the follow-up the audit named. **Not swept
+blind:** the audit's own rule is that the READER has to be checked first, and checking it here found
+both a worse variant of the bug and a defect I had introduced hours earlier.
+
+#### It was worse here than in Contracts & Claims
+Cash Flow's reader was `function num(v) { return Number(v) || 0; }`. So a comma-typed amount did not
+become null — it became **`0`**. ⚠⚠ A null is at least visibly absent on the next load; a **0 is a
+real number that flows into the arithmetic unnoticed**, and `s-ibb` (Contract Amount IBB) feeds
+`var base = numInput('s-ibb') || 0` in **six** places, so the entire projection would have been drawn
+off a zero contract with nothing on screen looking wrong.
+
+#### ⚠⚠ A REGRESSION IN THE (n) FIX, FOUND BY EXECUTING IT
+The tolerant reader I shipped yesterday stripped commas after checking only for *a comma following a
+dot*. That caught `1.000,50` but **not `12,5`, which it turned into `125`** — where the original
+`Number("12,5")` gave NaN → null. I replaced a silent blank with a **silent wrong number**, which is
+the worse of the two. Both readers now **validate the comma shape instead of stripping it**: an
+English thousands separator is always followed by exactly three digits, so the whole string is
+matched against `^-?\d{1,3}(,\d{3})+(\.\d+)?$` and anything else is refused.
+
+#### And an ordering bug the suite caught before it shipped
+The first cut validated commas **before** stripping the currency symbol, so `₱1,200.50` failed the
+pattern and returned 0 — the exact bug being fixed, reintroduced one step earlier in the same
+function. Reordered. ⚠ It was a *test* that found this, not a reading: the code looked right.
+
+#### What was flipped, and what deliberately was NOT
+**8 of 27** inputs are money-capable and are now `type="text"` + `inputmode="decimal"`: `s-ibb`,
+`s-bcb`, `s-limit`, the actuals `₱ amount`, and the four **basis-dependent** tranche inputs that hold
+either a peso figure or a percent depending on `t.basis` — those cannot stay numeric, since half
+their uses are money.
+⚠ **The other 19 stay `type="number"` on purpose.** They are percentages and month counts: a
+thousands separator is not expressible in them, and the spinner plus the mobile numeric keypad are
+worth keeping where they are safe. Sweeping them too would have been change without benefit.
+⚠ **No change handler needed touching** — every one already reads `v === '' ? null : num(v)`, so
+making `num()` parse was enough, and empty stays distinguishable from zero.
+
+**35 assertions, 0 failures**, executed against both readers sliced out of the shipped files:
+`₱1,200.50`, `(1,500.25)`, `1,397,462,269.86`, `12.5%`, `$1,000` all parse; `12,5`, `1.000,50`,
+`1,00` and `1,0000` are all **refused** rather than guessed; numbers pass through untouched and junk
+still yields `0`, so every `num(x) || 0` caller keeps its exact previous contract.
+contracts `module.js` → `?v=20260909p`; `MODULE_V` → `20260909p`. ⚠ **Not verified signed in.**
 ### 2026-09-09 (n) — Whole-app audit: a money field that blanked itself, four caches that cached failure
 
 Owner: *"Debug the planning app whole and check for improvements."* Audited against **this repo's own

@@ -935,14 +935,16 @@ window.ContractsClaims = (function () {
         var t = String(x).trim();
         if (!t) return null;
         var neg = /^\(.*\)$/.test(t);
-        t = t.replace(/[()]/g, '');
-        /* ⚠ AMBIGUOUS SEPARATORS ARE REFUSED, and this goes one step further than boq.js's
-           `numOf` on purpose. Stripping commas blindly turns the European "1.000,50" into
-           "1.00050" -> 1.0005: not a rejection, a WRONG NUMBER that looks real. A comma appearing
-           after a dot is never English formatting, so it is refused instead of guessed -- a blank
-           field is visible on the next load; a plausible wrong figure is not. */
-        if (t.indexOf(',') > t.lastIndexOf('.') && t.indexOf('.') >= 0) return null;
-        t = t.replace(/[₱$€£,\s]/g, '');
+        t = t.replace(/[()]/g, '').replace(/%$/, '').replace(/[₱$€£\s]/g, '');
+        /* ⚠⚠ COMMAS ARE VALIDATED, NOT STRIPPED. Blind stripping corrupts rather than
+           rejects: "1.000,50" becomes 1.0005 and "12,5" becomes 125 -- plausible wrong numbers,
+           which is worse than a refusal because nothing on screen looks off. A comma used as an
+           English thousands separator is ALWAYS followed by exactly three digits, so the whole
+           string is matched against that shape first and anything else is refused. */
+        if (t.indexOf(',') >= 0) {
+          if (!/^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(t)) return null;
+          t = t.replace(/,/g, '');
+        }
         if (!/^-?\d*\.?\d+$/.test(t)) return null;
         var y = Number(t);
         if (!isFinite(y)) return null;

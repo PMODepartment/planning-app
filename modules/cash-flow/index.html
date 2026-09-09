@@ -439,7 +439,35 @@
 
   function sb() { return AppAuth.getSB(); }
   function esc(s) { return Fmt.esc(s); }
-  function num(v) { return Number(v) || 0; }
+  /* ⚠⚠ TOLERANT OF THE WAY PEOPLE ACTUALLY TYPE MONEY, because the money fields below are
+     now type="text". MEASURED in a real browser: input[type=number].value returns "" for any
+     value the spec cannot parse -- "1,000", "₱1,200.50", "(500)" all read back EMPTY -- and the
+     old body was `Number(v) || 0`, so a comma-typed contract amount silently became **0** and the
+     whole projection was drawn off a zero contract. Worse than the same trap in Contracts &
+     Claims, where it became null: a 0 is a real number that flows into arithmetic unnoticed.
+     ⚠ Numbers pass straight through, and every unparseable input still returns 0, so every
+     existing caller (`num(x) || 0`, `num(t.percent)`) keeps its exact previous contract. */
+  function num(v) {
+    if (typeof v === 'number') return isFinite(v) ? v : 0;
+    if (v == null) return 0;
+    var t = String(v).trim();
+    if (!t) return 0;
+    var neg = /^\(.*\)$/.test(t);
+    t = t.replace(/[()]/g, '').replace(/%$/, '').replace(/[₱$€£\s]/g, '');
+    /* ⚠⚠ COMMAS ARE VALIDATED, NOT STRIPPED. Blind stripping corrupts rather than
+       rejects: "1.000,50" becomes 1.0005 and "12,5" becomes 125 -- plausible wrong numbers,
+       which is worse than a refusal because nothing on screen looks off. A comma used as an
+       English thousands separator is ALWAYS followed by exactly three digits, so the whole
+       string is matched against that shape first and anything else is refused. */
+    if (t.indexOf(',') >= 0) {
+      if (!/^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(t)) return 0;
+      t = t.replace(/,/g, '');
+    }
+    if (!/^-?\d*\.?\d+$/.test(t)) return 0;
+    var n = Number(t);
+    if (!isFinite(n)) return 0;
+    return neg ? -n : n;
+  }
   var MABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   function pd(v) { if (!v) return null; var m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return new Date(+m[1], +m[2]-1, +m[3]); var d = new Date(v); return isNaN(d) ? null : d; }
   function monthLabel(d) { return MABBR[d.getMonth()] + " '" + String(d.getFullYear()).slice(2); }
@@ -1566,7 +1594,7 @@
         '<input class="pd-input cf-act-i" data-i="' + i + '" data-k="period" type="month" value="' + (a.period ? String(a.period).slice(0, 7) : '') + '">' +
         '<select class="pd-select cf-act-i" data-i="' + i + '" data-k="direction"><option value="in"' + (a.direction !== 'out' ? ' selected' : '') + '>Cash In</option><option value="out"' + (a.direction === 'out' ? ' selected' : '') + '>Cash Out</option></select>' +
         '<input class="pd-input cf-act-i" data-i="' + i + '" data-k="category" placeholder="Category" value="' + esc(a.category || '') + '">' +
-        '<input class="pd-input cf-act-i" data-i="' + i + '" data-k="amount" type="number" step="0.01" placeholder="₱ amount" value="' + (a.amount != null ? a.amount : '') + '">' +
+        '<input class="pd-input cf-act-i" data-i="' + i + '" data-k="amount" type="text" inputmode="decimal" placeholder="₱ amount" value="' + (a.amount != null ? a.amount : '') + '">' +
         '<input class="pd-input cf-act-i" data-i="' + i + '" data-k="description" placeholder="Description" value="' + esc(a.description || '') + '">' +
         '<button type="button" class="cf-btn-sm cf-act-del" data-i="' + i + '" title="Remove">&#215;</button></div>';
     }).join('') : '<div class="cf-hint" style="padding:6px 0;">No actuals recorded yet.</div>';
@@ -1796,8 +1824,8 @@
     function pane(key, active, inner) { return '<div class="cf-form-grid cf-fpane" data-pane="' + key + '"' + (active ? '' : ' style="display:none;"') + '>' + inner + '</div>'; }
 
     var contractPane =
-      fld('Contract Amount — IBB (₱, VAT inc.)', '<input class="pd-input" id="s-ibb" type="number" step="0.01" value="' + (s.contract_ibb != null ? s.contract_ibb : '') + '">', 'Cash-in base — total billable to the client.') +
-      fld('Contract Amount — BCB (₱, VAT inc.)', '<input class="pd-input" id="s-bcb" type="number" step="0.01" value="' + (s.contract_bcb != null ? s.contract_bcb : '') + '">', 'Cost baseline, VAT-inclusive (same basis as IBB) — compared to IBB for gross margin.') +
+      fld('Contract Amount — IBB (₱, VAT inc.)', '<input class="pd-input" id="s-ibb" type="text" inputmode="decimal" value="' + (s.contract_ibb != null ? s.contract_ibb : '') + '">', 'Cash-in base — total billable to the client.') +
+      fld('Contract Amount — BCB (₱, VAT inc.)', '<input class="pd-input" id="s-bcb" type="text" inputmode="decimal" value="' + (s.contract_bcb != null ? s.contract_bcb : '') + '">', 'Cost baseline, VAT-inclusive (same basis as IBB) — compared to IBB for gross margin.') +
       fld('Cashflow start month', '<input class="pd-input" id="s-start" type="month" value="' + (s.start_period ? String(s.start_period).slice(0, 7) : '') + '">', 'Blank → schedule start.') +
       fld('VAT', '<label class="cf-check"><input type="checkbox" id="s-vat"' + ((s.vat_percent == null || num(s.vat_percent) > 0) ? ' checked' : '') + '> Contract is VAT-inclusive (12%)</label>', 'Untick only for zero-rated / VAT-exempt contracts. Used to derive the VAT-exclusive base for EWT.') +
       fld('WPM project id (cash-out source)', '<input class="pd-input" id="s-wpm" value="' + esc(s.wpm_project_id || '') + '">', 'The Procurement app project id whose work packages fund cash-out. Blank → this project id.', true) +
@@ -1816,7 +1844,7 @@
     var termsPane =
       fld('Billing terms (months)', '<input class="pd-input" id="s-terms" type="number" step="1" value="' + (s.billing_terms_months != null ? s.billing_terms_months : 1) + '">', 'Lag from certification to cash receipt.') +
       fld('Financing rate (% p.a. on drawdowns)', '<input class="pd-input" id="s-fin" type="number" step="0.01" value="' + pctVal(s.finance_rate) + '">', 'Annual interest applied to the negative cumulative (peak funding). 0 = off.') +
-      fld('Funding / credit-line limit (₱)', '<input class="pd-input" id="s-limit" type="number" step="0.01" value="' + (s.funding_limit != null ? s.funding_limit : '') + '">', 'Flag months where cumulative net drops below −this. Blank = no limit.');
+      fld('Funding / credit-line limit (₱)', '<input class="pd-input" id="s-limit" type="text" inputmode="decimal" value="' + (s.funding_limit != null ? s.funding_limit : '') + '">', 'Flag months where cumulative net drops below −this. Blank = no limit.');
 
     var dpPane =
       fld('Downpayment % (simple)', '<input class="pd-input" id="s-dp" type="number" step="0.01" value="' + pctVal(s.dp_percent) + '">', 'Used only when NO tranches are defined below.') +
@@ -1893,7 +1921,7 @@
         '<input class="pd-input cf-dp-i" data-i="' + i + '" data-k="label" placeholder="Label" value="' + esc(t.label || '') + '">' +
         '<input class="pd-input cf-dp-i" data-i="' + i + '" data-k="category" placeholder="Trade / tag" value="' + esc(t.category || '') + '">' +
         '<select class="pd-select cf-dp-i" data-i="' + i + '" data-k="basis"><option value="percent"' + (t.basis !== 'amount' ? ' selected' : '') + '>% of contract</option><option value="amount"' + (t.basis === 'amount' ? ' selected' : '') + '>fixed ₱</option></select>' +
-        '<input class="pd-input cf-dp-i" data-i="' + i + '" data-k="' + (t.basis === 'amount' ? 'amount' : 'percent_pct') + '" type="number" step="0.01" placeholder="' + (t.basis === 'amount' ? '₱ amount' : '%') + '" value="' + (t.basis === 'amount' ? (t.amount != null ? t.amount : '') : pctVal(t.percent)) + '">' +
+        '<input class="pd-input cf-dp-i" data-i="' + i + '" data-k="' + (t.basis === 'amount' ? 'amount' : 'percent_pct') + '" type="text" inputmode="decimal" placeholder="' + (t.basis === 'amount' ? '₱ amount' : '%') + '" value="' + (t.basis === 'amount' ? (t.amount != null ? t.amount : '') : pctVal(t.percent)) + '">' +
         '<select class="pd-select cf-dp-i" data-i="' + i + '" data-k="timing_mode"><option value="milestone"' + (t.timing_mode === 'milestone' ? ' selected' : '') + '>@ milestone</option><option value="month"' + (t.timing_mode === 'month' ? ' selected' : '') + '>fixed month</option><option value="offset"' + (t.timing_mode === 'offset' ? ' selected' : '') + '>offset (mo)</option></select>' +
         timingCtrl(t, i) +
         '<input class="pd-input cf-dp-i" data-i="' + i + '" data-k="recoup_pct" type="number" step="0.01" placeholder="recoup % (auto)" value="' + pctVal(t.recoup_percent) + '">' +
@@ -1947,7 +1975,7 @@
         return '<div class="cf-trt-row">' +
           '<input class="pd-input cf-trt-i" data-ti="' + i + '" data-ji="' + j + '" data-k="label" placeholder="Label" value="' + esc(x.label || '') + '">' +
           '<select class="pd-select cf-trt-i" data-ti="' + i + '" data-ji="' + j + '" data-k="basis"><option value="percent"' + (x.basis !== 'amount' ? ' selected' : '') + '>% of trade</option><option value="amount"' + (x.basis === 'amount' ? ' selected' : '') + '>fixed ₱</option></select>' +
-          '<input class="pd-input cf-trt-i" data-ti="' + i + '" data-ji="' + j + '" data-k="' + (x.basis === 'amount' ? 'amount' : 'percent_pct') + '" type="number" step="0.01" placeholder="' + (x.basis === 'amount' ? '₱' : '%') + '" value="' + (x.basis === 'amount' ? (x.amount != null ? x.amount : '') : pctVal(x.percent)) + '">' +
+          '<input class="pd-input cf-trt-i" data-ti="' + i + '" data-ji="' + j + '" data-k="' + (x.basis === 'amount' ? 'amount' : 'percent_pct') + '" type="text" inputmode="decimal" placeholder="' + (x.basis === 'amount' ? '₱' : '%') + '" value="' + (x.basis === 'amount' ? (x.amount != null ? x.amount : '') : pctVal(x.percent)) + '">' +
           '<select class="pd-select cf-trt-i" data-ti="' + i + '" data-ji="' + j + '" data-k="timing_mode"><option value="milestone"' + (x.timing_mode === 'milestone' ? ' selected' : '') + '>@ milestone</option><option value="month"' + (x.timing_mode === 'month' ? ' selected' : '') + '>fixed month</option><option value="offset"' + (x.timing_mode === 'offset' ? ' selected' : '') + '>offset</option></select>' +
           timingCtrl(x, j) +
           '<input class="pd-input cf-trt-i" data-ti="' + i + '" data-ji="' + j + '" data-k="recoup_pct" type="number" step="0.01" placeholder="recoup %" value="' + pctVal(x.recoup_percent) + '">' +
@@ -1966,7 +1994,7 @@
       return '<div class="cf-tr-row">' +
         '<input class="pd-input cf-tr-i" data-i="' + i + '" data-k="name" placeholder="Trade / package" value="' + esc(t.name || '') + '">' +
         '<select class="pd-select cf-tr-i" data-i="' + i + '" data-k="basis"><option value="percent"' + (t.basis !== 'amount' ? ' selected' : '') + '>% of contract</option><option value="amount"' + (t.basis === 'amount' ? ' selected' : '') + '>fixed ₱</option></select>' +
-        '<input class="pd-input cf-tr-i" data-i="' + i + '" data-k="' + (t.basis === 'amount' ? 'amount' : 'percent_pct') + '" type="number" step="0.01" placeholder="' + (t.basis === 'amount' ? '₱' : '%') + '" value="' + (t.basis === 'amount' ? (t.amount != null ? t.amount : '') : pctVal(t.percent)) + '">' +
+        '<input class="pd-input cf-tr-i" data-i="' + i + '" data-k="' + (t.basis === 'amount' ? 'amount' : 'percent_pct') + '" type="text" inputmode="decimal" placeholder="' + (t.basis === 'amount' ? '₱' : '%') + '" value="' + (t.basis === 'amount' ? (t.amount != null ? t.amount : '') : pctVal(t.percent)) + '">' +
         dpCell +
         '<input class="pd-input cf-tr-i" data-i="' + i + '" data-k="ret_pct" type="number" step="0.01" placeholder="Ret %" title="Retention %" value="' + pctVal(t.retention_percent) + '">' +
         '<input class="pd-input cf-tr-i" data-i="' + i + '" data-k="terms" type="number" step="1" placeholder="terms" title="Billing terms (months) — blank = default" value="' + (t.billing_terms_months != null ? t.billing_terms_months : '') + '">' +
@@ -2031,7 +2059,7 @@
       return '<div class="cf-bm-row">' +
         '<input class="pd-input cf-bm-i" data-i="' + i + '" data-k="description" placeholder="Milestone description" value="' + esc(t.description || '') + '">' +
         '<select class="pd-select cf-bm-i" data-i="' + i + '" data-k="basis"><option value="amount"' + (t.basis !== 'percent' ? ' selected' : '') + '>fixed ₱</option><option value="percent"' + (t.basis === 'percent' ? ' selected' : '') + '>% of IBB</option></select>' +
-        '<input class="pd-input cf-bm-i" data-i="' + i + '" data-k="' + (t.basis === 'percent' ? 'percent_pct' : 'amount') + '" type="number" step="0.01" placeholder="' + (t.basis === 'percent' ? '%' : '₱') + '" value="' + (t.basis === 'percent' ? pctVal(t.percent) : (t.amount != null ? t.amount : '')) + '">' +
+        '<input class="pd-input cf-bm-i" data-i="' + i + '" data-k="' + (t.basis === 'percent' ? 'percent_pct' : 'amount') + '" type="text" inputmode="decimal" placeholder="' + (t.basis === 'percent' ? '%' : '₱') + '" value="' + (t.basis === 'percent' ? pctVal(t.percent) : (t.amount != null ? t.amount : '')) + '">' +
         '<select class="pd-select cf-bm-i" data-i="' + i + '" data-k="trigger_mode"><option value="milestone"' + (t.trigger_mode === 'milestone' ? ' selected' : '') + '>@ milestone</option><option value="month"' + (t.trigger_mode === 'month' ? ' selected' : '') + '>fixed month</option><option value="offset"' + (t.trigger_mode === 'offset' ? ' selected' : '') + '>offset</option></select>' +
         timingCtrl(t, i) +
         '<button type="button" class="cf-btn-sm cf-bm-del" data-i="' + i + '" title="Remove">&#215;</button>' +
