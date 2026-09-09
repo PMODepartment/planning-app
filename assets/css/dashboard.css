@@ -164,8 +164,10 @@ a:hover { text-decoration: underline; }
      but still a flex item, so a `gap` is applied on BOTH sides of it. Measured: `gap:9px` produced
      an 18px space between the mark and the words. The spacing lives on `small` as a margin, which
      is exactly one gap however many empty text nodes the markup carries. */
+  /* ⚠ 11/10 rather than 14/12: the mark grew 28 -> 36px and the block still measures the same,
+     which is what "optimize the space" has to mean once the thing inside it gets bigger. */
   display: flex; align-items: center; justify-content: center;
-  margin: 0; padding: 14px 18px 12px;
+  margin: 0; padding: 11px 16px 10px;
   background: var(--pd-sidebar-bg);
   border-bottom: 1px solid rgba(255,255,255,.08);
   text-align: center;
@@ -178,9 +180,16 @@ a:hover { text-decoration: underline; }
   /* ⚠ No `display` of its own now -- as a flex item it lays out beside the mark. It was `block`
      to sit UNDER the wordmark; that is exactly what changed.
      ⚠ `margin-left` rather than the container's `gap` -- see the note on .pd-brand. */
-  margin-left: 10px;
-  font-size: var(--pd-fs-micro); font-weight: 700; letter-spacing: .18em;   /* PRC .app-label */
-  color: var(--pd-red); text-transform: uppercase; opacity: 1;
+  margin-left: 11px;
+  /* ⚠ 11px, up from 10, and WHITE. Owner: *"make the Planning Suite color white"*. The red was
+     doing the same job as the mark beside it, so the lockup had two things competing to be the
+     brand; with the mark carrying the colour the words become the brightest TEXT in the rail
+     instead -- above the nav rows' rgba(255,255,255,.65), which is the hierarchy a product name
+     should have.
+     ⚠ Tracking eased .18 -> .15em: the same tracking at a larger size ran the lockup wide, and
+     at 240px the rail has 204px of inner width to hold mark + margin + 14 characters. */
+  font-size: var(--pd-fs-xs); font-weight: 700; letter-spacing: .15em;   /* PRC .app-label */
+  color: #fff; text-transform: uppercase; opacity: 1;
   /* letter-spacing appends a trailing gap AFTER the last letter, which drags centred text
      visually left. Pad the same amount back on to re-centre it optically. */
   padding-left: .18em;
@@ -190,7 +199,12 @@ a:hover { text-decoration: underline; }
    ⚠ It used to be `display:none` by default and shown only under `.pd-collapsed`, because the
    expanded rail carried the wordmark instead. With the wordmark retired the default inverts, and
    the two overrides below follow it rather than each other. */
-.pd-brand-mark { display: block; width: 28px; height: 28px; margin: 0; flex: none; object-fit: contain; }
+/* ⚠ 36px, not 28: `favicon-icon.png` is the mark padded into a 256x256 canvas at ~88%/73% fill,
+   so its DRAWN glyph is smaller than the box it sits in. MEASURED off the file: the opaque bbox is
+   224x187 of 256x256 = 87.5% x 73.0%, so a 28px box drew a 24.5 x 20.5 glyph -- which is why it
+   read small beside the words. A 36px box draws 31.5 x 26.3, and still clears the 64px collapsed
+   rail's 48px of inner width. */
+.pd-brand-mark { display: block; width: 36px; height: 36px; margin: 0; flex: none; object-fit: contain; }
 /* PRC .sidebar-section — 16px 12px 4px around the rows.
    ⚠ The top 16 became 10: the brand block directly above already ends in 12px of padding and a
    rule, so the full 16 stacked into 28px of nothing between the wordmark and the PROJECT label.
@@ -271,7 +285,10 @@ a:hover { text-decoration: underline; }
 /* ⚠️ This block used to hide the logo and the caption and put NOTHING back, so the 64px
    rail opened with an empty padded box above bare icons. The mark takes their place. */
 .pd-app.pd-collapsed .pd-brand-mark { display: block; }
-.pd-app.pd-collapsed .pd-brand { padding: 16px 8px; }
+/* ⚠ 11/10 matches the expanded rail's padding exactly, so the brand block is 58px in BOTH
+   states and the nav rows do not jump vertically when the rail is toggled -- they used to,
+   16/16 against 14/12. 8px sides still leave the 64px rail 48px of inner width for a 36px mark. */
+.pd-app.pd-collapsed .pd-brand { padding: 11px 8px 10px; }
 .pd-sidebar-toggle {
   display: inline-flex; flex-direction: column; justify-content: center; gap: 4px;
   width: 40px; height: 40px; padding: 0 10px; flex: 0 0 40px;
@@ -1102,7 +1119,10 @@ body { overflow-x: clip; }
      a notch makes the drawer's own top padding larger than 18px. */
   .pd-app.pd-collapsed .pd-brand,
   .pd-sidebar .pd-brand {
-    margin: 0; padding: max(28px, env(safe-area-inset-top)) 20px 22px;
+    /* ⚠ 28/22 -> 22/18, because the mark grew 28 -> 36px and the drawer header would
+       otherwise have gained 8px it did not need. The max() still hands a notched phone its
+       inset, which is the only reason the top value is not simply 22. */
+    margin: 0; padding: max(22px, env(safe-area-inset-top)) 20px 18px;
   }
 
   /* Nav rows are the primary touch targets on a phone. */
