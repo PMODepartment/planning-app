@@ -95,6 +95,84 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-09 (n) — Whole-app audit: a money field that blanked itself, four caches that cached failure
+
+Owner: *"Debug the planning app whole and check for improvements."* Audited against **this repo's own
+recorded failure modes** rather than a generic checklist, because those are the bugs it actually
+ships. Two mechanical passes over 113k lines, then every candidate read by hand.
+
+⚠️⚠️ **MOST OF WHAT THE SCAN FLAGGED WAS THE SCAN'S OWN FAULT, AND SAYING SO IS THE POINT.** The two
+loudest findings — *"35 tables never granted"* and *"4 tables with RLS and no policy"* — were both
+artifacts of my regexes. The policies exist, created dynamically via
+`execute format('create policy %I on %I', ...)`, which a literal pattern cannot see; the grants are a
+multi-table statement plus a blanket `grant ... on all tables in schema public` at
+`supabase-schema.sql:721`. **209 raw findings reduced to 6 real ones.** An audit that reports its
+false positives as findings is worse than no audit.
+
+#### ⚠️⚠️ The one that loses data: nine `type="number"` fields in Contracts & Claims
+**MEASURED in a real browser, not asserted** — `input[type=number].value` returns `""` for anything
+the spec cannot parse, which is every way a planner writes money:
+
+| typed | `type="number"` | `type="text"` |
+|---|---|---|
+| `1,000` | **`""`** | `1,000` |
+| `1,397,462,269.86` | **`""`** | preserved |
+| `₱1,200.50` | **`""`** | preserved |
+| `(500)` | **`""`** | preserved |
+
+`n()` turned that `""` into **`null`**, so typing the contract amount with thousands separators
+**silently blanked it** — no error, and nothing afterwards to say a figure had ever been entered.
+⚠️ `1,397,462,269.86` is not a hypothetical: it is a contract amount from this register's own
+history. The four EOT day fields carry it too — this project's day counts are four digits
+(1,048 / 1,095), so `1,048` blanked just as readily.
+
+⚠️ **The BOQ found this trap in August and fixed it for its grid cells only** (`boq.js:1629`, *"NUMERIC
+CELLS ARE type=text ... AND THIS IS THE OPPOSITE OF THE OBVIOUS CHOICE"*). The record form beside it
+never got the fix, and no other module knows the trap exists. All nine fields are now
+`type="text"` + `inputmode`, and `n()` parses the way `numOf` does.
+⚠️ **It goes one step FURTHER than `numOf`, deliberately:** stripping commas blindly turns the
+European `1.000,50` into `1.0005` — not a rejection, a **wrong number that looks real**. A comma after
+a dot is never English formatting, so it is refused rather than guessed. **12 assertions, executed
+against the function sliced out of the shipped file**; the ambiguous case is one of them, and it
+failed until the guard was added.
+
+#### ⚠️ Four caches that cache failure, all the same shape
+`[]` is truthy, so `if (X) return X;` caches an empty answer **and an error** for the whole session:
+
+| where | consequence |
+|---|---|
+| `boq.js ensureActs` | any RLS refusal or 8s timeout → the allocator reports "no activities" forever |
+| `boq.js ensureSugg` | starts legitimately empty on a fresh deployment → never queries twice |
+| **`assets/js/db.js getPeople`** | **shared** — one transient RPC failure at load and *every* assignment picker in *every* module silently offers free text for the session |
+| `equipment-loading loadTowerVals` | caches `[]` when no level is chosen → picking one afterwards does nothing |
+
+⚠️ This is the **exact** defect `ensureCodes` documents at `boq.js:703` — fixed there in
+September, left standing in its sibling sixty lines below, and in three other files. All four now
+guard on `.length`.
+
+#### A block written twice
+`boq.js`'s heading child-count loop appeared **twice, back to back**, with only blank lines between —
+same `var kids`, same nested loop over the full line list, the second overwriting the first with
+identical values. A merge artifact. Removed; up to ~900 rows are no longer walked twice for nothing.
+⚠️ Found by the hoisting scanner, **for the wrong reason** — it saw the first copy's variables used
+"before" the second copy's `var`. Right answer, wrong mechanism, and worth recording as such.
+
+#### Reported, deliberately NOT changed
+- **Duplicate DOM ids** on 4 pages (`eq-x` ×2, `f-name` ×3, project-schedule's list renderers). Every
+  pair sits in a **mutually exclusive modal**, so only one is ever mounted — `getElementById`
+  returning the first is currently harmless. Fragile, not broken; flagged for whoever touches them.
+- **140 other `type="number"` inputs**, mostly Cash Flow money fields carrying the same latent risk.
+  Not swept blind: each module needs its own reader checked first, which is a pass per module.
+- `assets/js/mcc-rcm.js` has **606 CRLF among 617 LF** — anchors there must be byte-exact.
+
+⚠️ **The audit's own duplicate-id check is unreliable** and was caught being so: adding a comment to
+one file made a real duplicate *disappear* from the report, because regex comment-stripping mis-pairs
+against `/*` and `*/` inside string literals. Raw `grep` is authoritative; the checker is a shortlist.
+
+`db.js` / `boq.js` / contracts `module.js` → `?v=20260909n` (db.js is shared — 23 pages);
+`MODULE_V` → `20260909n`. 40 JS files parse, CSS braces balanced, 0 NUL bytes, every asset on one
+version, nothing referenced-but-missing. ⚠️ **Not verified signed in** — no form was submitted.
+
 ### 2026-09-09 (m2) — The stakeholder-directory migration could not run, twice over
 
 Owner ran `migrations/2026-09-08-stakeholder-directory.sql` and got

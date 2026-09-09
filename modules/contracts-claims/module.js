@@ -777,21 +777,21 @@ window.ContractsClaims = (function () {
 
       // Contract amount — only relevant to a Contract row.
       '<div class="cc-sec" data-only="Contract">Contract value</div>' +
-      '<label data-only="Contract">Contract amount<input id="cc-f-amount" type="number" step="0.01" value="' + esc(e.amount == null ? '' : e.amount) + '" /></label>' +
+      '<label data-only="Contract">Contract amount<input id="cc-f-amount" type="text" inputmode="decimal" value="' + esc(e.amount == null ? '' : e.amount) + '" /></label>' +
 
       // The four-stage pipeline, money or days depending on type.
       '<div class="cc-sec" data-not="Contract">Pipeline</div>' +
       '<p class="cc-hint" data-not="Contract">Estimated → Submitted → Evaluated → Client Approved. ' +
         '<span data-only="EOT">Extension of Time is measured in days.</span>' +
         '<span data-not="EOT">Claims and Change Orders are amounts.</span></p>' +
-      '<label data-money>Estimated amount<input id="cc-f-est-a" type="number" step="0.01" value="' + esc(e.est_amount == null ? '' : e.est_amount) + '" /></label>' +
-      '<label data-money>Submitted amount<input id="cc-f-sub-a" type="number" step="0.01" value="' + esc(e.sub_amount == null ? '' : e.sub_amount) + '" /></label>' +
-      '<label data-money>Evaluated amount<input id="cc-f-eval-a" type="number" step="0.01" value="' + esc(e.eval_amount == null ? '' : e.eval_amount) + '" /></label>' +
-      '<label data-money>Client approved amount<input id="cc-f-appr-a" type="number" step="0.01" value="' + esc(e.approved_amount == null ? '' : e.approved_amount) + '" /></label>' +
-      '<label data-days>Estimated days<input id="cc-f-est-d" type="number" step="1" value="' + esc(e.est_days == null ? '' : e.est_days) + '" /></label>' +
-      '<label data-days>Submitted days<input id="cc-f-sub-d" type="number" step="1" value="' + esc(e.sub_days == null ? '' : e.sub_days) + '" /></label>' +
-      '<label data-days>Evaluated days<input id="cc-f-eval-d" type="number" step="1" value="' + esc(e.eval_days == null ? '' : e.eval_days) + '" /></label>' +
-      '<label data-days>Client approved days<input id="cc-f-appr-d" type="number" step="1" value="' + esc(e.approved_days == null ? '' : e.approved_days) + '" /></label>' +
+      '<label data-money>Estimated amount<input id="cc-f-est-a" type="text" inputmode="decimal" value="' + esc(e.est_amount == null ? '' : e.est_amount) + '" /></label>' +
+      '<label data-money>Submitted amount<input id="cc-f-sub-a" type="text" inputmode="decimal" value="' + esc(e.sub_amount == null ? '' : e.sub_amount) + '" /></label>' +
+      '<label data-money>Evaluated amount<input id="cc-f-eval-a" type="text" inputmode="decimal" value="' + esc(e.eval_amount == null ? '' : e.eval_amount) + '" /></label>' +
+      '<label data-money>Client approved amount<input id="cc-f-appr-a" type="text" inputmode="decimal" value="' + esc(e.approved_amount == null ? '' : e.approved_amount) + '" /></label>' +
+      '<label data-days>Estimated days<input id="cc-f-est-d" type="text" inputmode="numeric" value="' + esc(e.est_days == null ? '' : e.est_days) + '" /></label>' +
+      '<label data-days>Submitted days<input id="cc-f-sub-d" type="text" inputmode="numeric" value="' + esc(e.sub_days == null ? '' : e.sub_days) + '" /></label>' +
+      '<label data-days>Evaluated days<input id="cc-f-eval-d" type="text" inputmode="numeric" value="' + esc(e.eval_days == null ? '' : e.eval_days) + '" /></label>' +
+      '<label data-days>Client approved days<input id="cc-f-appr-d" type="text" inputmode="numeric" value="' + esc(e.approved_days == null ? '' : e.approved_days) + '" /></label>' +
 
       '<div class="cc-sec" data-not="Contract">Status &amp; dates</div>' +
       '<label data-not="Contract">Status<select id="cc-f-stat"><option value="">—</option>' +
@@ -915,7 +915,39 @@ window.ContractsClaims = (function () {
     el('cc-m-cancel').onclick = m.close;
     el('cc-m-save').onclick = async function () {
       var v = function (id) { var x = (el(id).value || '').trim(); return x === '' ? null : x; };
-      var n = function (id) { var x = v(id); if (x == null) return null; var y = Number(x); return isFinite(y) ? y : null; };
+      /* ⚠⚠ THE FIELDS ABOVE ARE type="text", NOT type="number", AND THIS READER IS WHY.
+         MEASURED in a real browser: for input[type=number] the DOM returns "" for ANY value the
+         spec cannot parse -- and that includes every way a planner actually writes money.
+             "1,000"             -> ""
+             "1,397,462,269.86"  -> ""      (a real contract amount from this register)
+             "₱1,200.50"          -> ""
+             "(500)"             -> ""
+         `Number("")` is 0, `v()` returns null, and the field saved as NULL. So typing the contract
+         amount with the thousands separators everyone uses silently BLANKED it, with no error and
+         no way to tell afterwards. The EOT day counts are four digits here too (1,048 / 1,095),
+         so they carry the same risk and were switched with them.
+         ⚠ The parser mirrors boq.js's `numOf`, which was written for exactly this after the
+         same trap was found in the BOQ grid -- see the note at boq.js:1629. Kept as a separate
+         copy rather than exported, because boq.js is loaded only on the Contract tab. */
+      var n = function (id) {
+        var x = v(id);
+        if (x == null) return null;
+        var t = String(x).trim();
+        if (!t) return null;
+        var neg = /^\(.*\)$/.test(t);
+        t = t.replace(/[()]/g, '');
+        /* ⚠ AMBIGUOUS SEPARATORS ARE REFUSED, and this goes one step further than boq.js's
+           `numOf` on purpose. Stripping commas blindly turns the European "1.000,50" into
+           "1.00050" -> 1.0005: not a rejection, a WRONG NUMBER that looks real. A comma appearing
+           after a dot is never English formatting, so it is refused instead of guessed -- a blank
+           field is visible on the next load; a plausible wrong figure is not. */
+        if (t.indexOf(',') > t.lastIndexOf('.') && t.indexOf('.') >= 0) return null;
+        t = t.replace(/[₱$€£,\s]/g, '');
+        if (!/^-?\d*\.?\d+$/.test(t)) return null;
+        var y = Number(t);
+        if (!isFinite(y)) return null;
+        return neg ? -y : y;
+      };
       var t = el('cc-f-rtype').value;
       /* WHICH PACKAGE THIS RECORD POINTS AT, resolved per type.
          · Claim / CO / EOT → the package it is raised against (may be none).

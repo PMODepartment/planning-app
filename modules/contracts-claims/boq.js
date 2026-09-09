@@ -761,7 +761,13 @@ window.BOQ = (function () {
      the allocator needs — a project can hold 40k rows and this is a side
      register most sessions never open. */
   async function ensureActs() {
-    if (ACTS) return ACTS;
+    /* ⚠⚠ `ACTS && ACTS.length`, NOT `ACTS`. An empty array is TRUTHY, so the plain guard
+       cached BOTH failure states for the whole session: the `catch` below sets `[]` on any error
+       (an RLS refusal, an 8s statement timeout), and a project with no schedule yet also yields
+       `[]`. Either way the allocator went on reporting "no activities" after the cause was fixed,
+       and only a reload could clear it. This is the identical defect ensureCodes documents at
+       :703 -- fixed there, left standing in this sibling 60 lines below it. */
+    if (ACTS && ACTS.length) return ACTS;
     try {
       var rows = await PDb.selectAll('project_schedule', function (q) { return q.eq('project_id', pid); },
         'id,activity_id,activity_name,class_code,location,work_type,duration_days,activity_type,scope_type');
@@ -1379,17 +1385,6 @@ window.BOQ = (function () {
       kids[list[ki].id] = kn;
     }
     var skipDepth = null;   // while set, anything deeper than this is inside a collapsed heading
-
-
-    /* Child counts per heading, for the collapse carets — over the CURRENT list order. */
-    var kids = {};
-    for (var ki = 0; ki < list.length; ki++) {
-      if (list[ki].line_kind !== 'heading') continue;
-      var kd = list[ki].depth || 0, kn = 0;
-      for (var kj = ki + 1; kj < list.length && (list[kj].depth || 0) > kd; kj++) kn++;
-      kids[list[ki].id] = kn;
-    }
-    var skipDepth = null;
     var rowNo = 0;
 
     list.forEach(function (r) {
@@ -3688,7 +3683,9 @@ window.BOQ = (function () {
   // ==========================================================================
   var SUGG = null;
   async function ensureSugg() {
-    if (SUGG) return SUGG;
+    // ⚠ Same empty-array trap as ensureActs / ensureCodes: `[]` is truthy, and this one starts
+    //   legitimately empty on a fresh deployment, so it would never query twice.
+    if (SUGG && SUGG.length) return SUGG;
     try { SUGG = await PDb.selectAll(T_SUGG, function (q) { return q; }); } catch (e) { SUGG = []; }
     return SUGG;
   }

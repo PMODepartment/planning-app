@@ -534,7 +534,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="../../assets/js/config.js?v=20260902a"></script>
 <script src="../../assets/js/auth.js?v=20260901b"></script>
-<script src="../../assets/js/db.js?v=20260907a"></script>
+<script src="../../assets/js/db.js?v=20260909n"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
 <script src="../../assets/js/ui.js?v=20260909m"></script>
 <script src="../../assets/js/icons.js?v=20260907a"></script>
@@ -2459,8 +2459,14 @@
   function blockTowerVal(id) { var b = blockById(id); return b ? (b.tower || b.name || '') : ''; }
 
   async function loadTowerVals() {
-    if (TOWERVALS) return TOWERVALS;
-    if (!PLAN.level_id) { TOWERVALS = []; return TOWERVALS; }
+    /* ⚠⚠ `TOWERVALS.length`, NOT `TOWERVALS`. `[]` is truthy, and BOTH short paths below
+       produce one: no level chosen yet, and any RPC error. Cached, the site plan then showed no
+       towers for the rest of the session even after the planner picked a level -- which is
+       exactly the silent-empty failure the comment above this function warns about. */
+    if (TOWERVALS && TOWERVALS.length) return TOWERVALS;
+    /* ⚠ Not cached: with no level chosen there is nothing to cache, and storing `[]` here is
+       what made choosing a level afterwards have no effect. */
+    if (!PLAN.level_id) return [];
     try {
       var r = await sb().rpc('project_location_values', { p_project_id: pid, p_key: PLAN.level_id });
       if (r.error) throw r.error;
