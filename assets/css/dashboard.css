@@ -140,19 +140,31 @@ a:hover { text-decoration: underline; }
    room above/below it. */
 .pd-sidebar .pd-brand {
   font-size: 0;                                  /* hides the inline text node beside the logo */
-  display: block; margin: 0; padding: 28px 20px 24px;
+  display: block; margin: 0; padding: 22px 18px 18px;
   background: var(--pd-sidebar-bg);
   border-bottom: 1px solid rgba(255,255,255,.08);
   text-align: center;
 }
+/* ⚠️ 150px in a 240px rail left the wordmark floating in 28/24px of padding, reading as
+   an afterthought rather than as the brand. It is a 5.81:1 lockup, so width is the only
+   lever on its presence: 176px gives it the rail without touching the 20px side gutters. */
 .pd-brand-logo {
-  display: block; width: 100%; max-width: 150px; height: auto;
-  margin: 0 auto 10px; object-fit: contain; object-position: center center;
+  display: block; width: 100%; max-width: 176px; height: auto;
+  margin: 0 auto 9px; object-fit: contain; object-position: center center;
 }
 .pd-sidebar .pd-brand small {
-  display: block; font-size: var(--pd-fs-micro); font-weight: 700; letter-spacing: .14em;   /* PRC .app-label */
+  display: block; font-size: var(--pd-fs-micro); font-weight: 700; letter-spacing: .18em;   /* PRC .app-label */
   color: var(--pd-red); text-transform: uppercase; opacity: 1;
+  /* letter-spacing appends a trailing gap AFTER the last letter, which drags centred text
+     visually left. Pad the same amount back on to re-centre it optically. */
+  padding-left: .18em;
 }
+/* The collapsed rail's brand mark — the red Megawide "M". `favicon-icon.png` is that mark
+   already padded to 256x256, so no new asset was cut for this.
+   ⚠️ Hidden by default and shown ONLY under .pd-collapsed; the mobile drawer re-expands
+   .pd-collapsed (see the <=820px block) and hides it again there, or the phone drawer
+   would show the wordmark and the mark stacked. */
+.pd-brand-mark { display: none; width: 30px; height: 30px; margin: 0 auto; object-fit: contain; }
 /* PRC .sidebar-section — 16px 12px 4px around the rows. */
 .pd-sidebar nav { margin: 0; padding: 16px 12px 4px; display: flex; flex-direction: column; gap: 2px; }
 .pd-sidebar nav a {
@@ -225,7 +237,10 @@ a:hover { text-decoration: underline; }
 .pd-app.pd-collapsed .pd-navico { margin-right: 0; }
 .pd-app.pd-collapsed .pd-navsec { display: none; }
 .pd-app.pd-collapsed .pd-brand-logo, .pd-app.pd-collapsed .pd-brand small { display: none; }
-.pd-app.pd-collapsed .pd-brand { padding: 18px 8px; }
+/* ⚠️ This block used to hide the logo and the caption and put NOTHING back, so the 64px
+   rail opened with an empty padded box above bare icons. The mark takes their place. */
+.pd-app.pd-collapsed .pd-brand-mark { display: block; }
+.pd-app.pd-collapsed .pd-brand { padding: 16px 8px; }
 .pd-sidebar-toggle {
   display: inline-flex; flex-direction: column; justify-content: center; gap: 4px;
   width: 40px; height: 40px; padding: 0 10px; flex: 0 0 40px;
@@ -996,6 +1011,9 @@ body { overflow-x: clip; }
   .pd-app.pd-collapsed .pd-navsec { display: block; }
   .pd-app.pd-collapsed .pd-navico { margin-right: 10px; }
   .pd-app.pd-collapsed .pd-brand-logo, .pd-app.pd-collapsed .pd-brand small { display: block; }
+  /* ⚠️ and the mark goes away again — the drawer is showing the full wordmark, so leaving
+     the collapsed mark visible would stack the two marks on top of each other. */
+  .pd-app.pd-collapsed .pd-brand-mark { display: none; }
   /* ⚠️ The negative side margins this rule used to carry are GONE with the
      padding model: .pd-sidebar has no padding of its own any more (it matches
      PRC, where each child pads itself), so a negative margin here would drag the

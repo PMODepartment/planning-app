@@ -95,6 +95,78 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-09 (ui) — The sidebar brand, a collapsed rail that shows the mark, and two sibling links you can tell apart
+
+Owner's three Global items: *"The logo and the 'Planning Suite' title in the side panel looks off. Let's
+optimize the UI to make it more professional looking."* / *"when the side panel is collapsed, I want to
+see the red megawide logo 'M' at the very top of the side panel."* / *"when collapsed the redirect link
+is unidentifiable. Let's plan how to show the procurement and engineering apps logo."*
+Stage 1 of a five-stage pass; the other four areas follow as their own commits.
+
+- **The brand block.** Wordmark `max-width` 150 → **176px** (it is a 5.81:1 lockup, so width is the only
+  lever on its presence, and 150px in a 240px rail read as an afterthought floating in 28/24px of
+  padding); padding `28px 20px 24px` → `22px 18px 18px`; caption tracking `.14em` → `.18em` with a
+  matching `padding-left: .18em` — letter-spacing appends a gap AFTER the last letter, which drags
+  centred text visually left, so the pad puts it back on the optical centre.
+- ⚠️ **"Planning Suite" was on screen TWICE** — the brand `<small>` and the footer's *"EPC · PMO ·
+  Planning Suite"*, in all 21 sidebar pages. The **footer** drops it: the product name belongs at the
+  top where it identifies the app, and the footer is left naming the org unit that owns it.
+- ⚠️⚠️ **NO NEW ASSET WAS CUT FOR THE COLLAPSED MARK.** `assets/img/favicon.png` **is** the red Megawide
+  "M" (established by rendering it, not by its name), and `favicon-icon.png` is that same mark already
+  padded to 256×256 and already cache-busted. The collapsed block previously hid the logo **and** the
+  caption and put nothing back, so the 64px rail opened with an empty padded box above bare icons.
+- ⚠️⚠️ **A PER-APP LOGO WAS NOT AN OPTION, AND ESTABLISHING THAT CHANGED THE ANSWER.** The owner asked
+  for "the procurement and engineering apps logo". `engineering-app`, `wpm` (Procurement) and this app
+  all ship the **same** 1020×850 Megawide mark — so a logo would have been three identical marks, no
+  more distinguishable than the two identical `externalLink` glyphs it was meant to replace. They get
+  purpose-drawn glyphs instead: a **purchase cart** and a **drafting compass**. ⚠️ Namespaced `app*`
+  deliberately — `compass` (Stakeholder Map) and `ruler` are already taken, and a sibling link sitting a
+  few rows under the Stakeholder Map row must not wear a near-copy of its icon. `externalLink` is
+  **not orphaned** (`modules-grid.js:58` still draws it on retired-module cards).
+
+⚠️⚠️ **BOTH "FAILURES" DURING VERIFICATION WERE THE HIDDEN-TAB ARTEFACT, NOT THE CODE — and neither
+would have been visible by reading.** (1) The first pass measured **every width as 0** and reported
+`brandPad` as the **mobile** value; `visibilityState` was `hidden` and `innerWidth` was **0**, which
+matches `max-width: 820px`, so the phone rules were legitimately winning against a zero-width viewport.
+(2) After a screenshot forced a paint, the collapsed rail still measured **240px** where the rule says
+64 — and it stayed 240 after a 450ms wait. That is not the rule losing: **a hidden tab never advances a
+CSS transition**, so `width` sits at its start value indefinitely. A cascade probe confirmed
+`.pd-app.pd-collapsed .pd-sidebar` **matches** with no later rule overriding it; re-measuring with
+transitions disabled gives **64px**. Measuring during a transition measures the animation, not the rule.
+
+**Measured, transitions disabled, at 1440px and 400px in both themes:** expanded rail **240** / logo
+**176 × 30.3** / mark `display:none` / padding `22px 18px 18px`; collapsed rail **64** / mark **30 × 30
+and centred** (|cx − railW/2| < 1.5px) / logo, caption, footer and both sibling labels all hidden / both
+sibling icons 16px with **genuinely different shapes** (`circle,path,path,path,path` vs
+`circle,circle,path`); the 400px drawer re-expands `.pd-collapsed` to 290px and **suppresses the mark**,
+so the wordmark and the mark can never stack; **no horizontal page scroll at either width**. Zero pages
+are left with two identical sibling icons. `dashboard.css` braces **483/483**, both changed JS files
+parse, `Icons.names` **79 → 81**, 0 NUL bytes.
+
+- Assets `dashboard.css` / `icons.js` / `modules-grid.js` → `?v=20260909ui` across **29 / 21 / 2**
+  references; audited to **0 version splits over 47 distinct assets** and **0 referenced-but-missing
+  files**. `MODULE_V` → `20260909ui`, fallback literal included — every module `index.html` changed, and
+  a module page is cached under `index.html?v=MODULE_V`, so without it a returning browser keeps serving
+  a page that still requests the old stylesheet. ⚠️ **Deliberately not the next letter in the daily
+  sequence**: the concurrent session in this tree is already on `20260909r`.
+- ⚠️⚠️ **TWO PAGES WERE STAGED AS "HEAD + MY EDITS", NOT FROM THE WORKING TREE.**
+  `modules/project-schedule/index.html` and `modules/contracts-claims/index.html` carry a concurrent
+  session's in-progress extraction of `splitPlan` into the **still-untracked** `assets/js/co-insert.js`.
+  Committing the working-tree copies would have shipped a `<script src>` pointing at a file that is not
+  in the repo, and deleted `splitPlan` with it. Verified after staging: those two blobs contain **0**
+  `co-insert` references, project-schedule's staged copy still contains `splitPlan`, and the staged diff
+  for both is exactly the six lines of this change. Their working trees are untouched, as is
+  `contracts-claims/wizard.js`.
+- ⚠️ **A false positive worth recording rather than reporting as a finding:** the first `?v=` audit
+  claimed 19 "unversioned references", every one of which was the asset NAME occurring in prose inside a
+  comment (*"comes from dashboard.css"*). The checker now resolves only `src=`/`href=` attribute values.
+  An earlier line-ending check was wrong the same way — `grep -c $'\r'` degenerated to an empty pattern
+  and reported every one of the 21 files as CRLF; they are all **pure LF**, re-derived by counting bytes.
+- ⚠️ **Not verified signed in.** `requireLogin` redirects without a session, so this was measured against
+  a harness **generated from the shipped `dashboard.html`** with the Supabase-dependent scripts stripped —
+  never hand-copied, because a hand-copied shell puts different rules in the cascade than the ones that
+  actually ship (the trap recorded on 2026-09-09 cp). The harness was deleted before committing.
+
 ### 2026-09-09 (q) — The Affected-work preview answers the question a change order actually raises
 
 Owner: *"I want the preview to show the overall change in the Gantt not just the bar graph how much
