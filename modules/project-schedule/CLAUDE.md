@@ -13,6 +13,109 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### Vertical Stacking gains a 3D view, and the 2D card is proved untouched (2026-09-09) — jasantos2
+
+Owner: *"i was thinking of establishing a 3D view of the 2D vertical stacking that is already
+established. Meaning the pre-requisites is defining the section plan and how the layout of the zones
+and areas are. As well as defining from the top view, which is the front, right side, left side and
+rear elevations."*
+
+### 1. ⚠️⚠️ ONE MODEL, TWO RENDERERS — and the 2D card is proved untouched
+`_vsTowerModel` is the level ordering, the grade split and each row's cells, **lifted verbatim** out
+of `_vsTowerSVG`. Two renderers deriving their own level order is how a project ends up with a 3D
+view that puts the 5th floor somewhere else than the 2D view of the same data, with no way to tell
+which is right.
+
+⚠️ The 2D Vertical Stacking card is the view the owner reads daily, and this moved 28 lines out of
+the middle of its renderer. So it is **not** verified by sampling an input: the suite **reverses the
+refactor** — puts the moved statements back, restores the caller's early return and the `rowCells`
+closure — and asserts the result equals HEAD's `_vsTowerSVG` **statement for statement**. That holds
+over *every* input, which no fixture could. Two consequences worth recording:
+- ⚠️ **No re-indent.** Both functions are declared at the same depth, so the statements moved exactly
+  as they were — which is also what makes the reversal a pure text swap rather than a judgement.
+- ⚠️ The model returns **null** for "nothing to stack"; the message is the 2D card's own markup and
+  the 3D card has its own. The model owns no HTML.
+
+### 2. The prerequisites, and what they honestly are
+The schedule holds a floor's zones as an **ordered list** — `{ id, code, name, units }`, no polygon,
+no coordinates, no area. So the plan is the planner's own two statements, not a survey:
+- **Plan columns** — how the zones *wrap* in plan, which is what turns `Zone 1…4` into a 2×2 plate
+  instead of a 1×4 strip. Auto is a wide-ish grid (`ceil(√n)`), because that is how a plan is drawn.
+- **Front faces N / E / S / W** — which edge of that plan is the **front** elevation. ⚠️ Right, rear
+  and left are **derived** by rotation, never stored: four separate fields could contradict each
+  other, and a building cannot have two fronts. Asserted for all four choices.
+That is enough to place every zone relative to every other and to name the four elevations — and
+**not** enough to state a dimension or an area. The card says so on screen.
+
+### 3. ⚠️⚠️ ONE FOOTPRINT FOR THE BUILDING — two flaws only measurement found
+Both of these looked entirely plausible on screen:
+- **Per-storey grids made a 2-zone floor draw half the width of a 4-zone floor.** Ragged, and false:
+  a floor with two zones has the *same* plate, cut differently. Found by *rendering* it.
+- **A storey whose cells did not fill its grid left a HOLE.** Three cells in a 2×2 covered
+  three-quarters of the plate — `4.5` of `6`. Found by asserting the covered **area**, not by
+  looking: the ragged version was unremarkable to the eye.
+So the plate is sized once from the busiest storey, and `_vsPlanSlots` spreads a storey's `n` cells
+over at most `plate.rows` rows, each cell taking the full share of its own row. That **tiles the
+plate exactly for any n** — asserted for every cell count on every plate up to twelve zones.
+
+### 4. The rest of the card
+- ⚠️ **The same three channels the 2D cell uses**, so the two cards cannot say different things:
+  colour = the trade, brightness = done vs remaining, height = the storey. The done stretch grows
+  from the cell's left edge exactly as the 2D solid bar does.
+- The **grade plane** sits at the model's own `groundAt`, and the un-levelled band stays translucent
+  here as it is dashed there.
+- ⚠️ **One drill-down.** `cellKey` lives in the model, so the 3D card composes the identical
+  `keyPrefix|level|cell` string and clicking a block opens the *same* panel `openVsCell` opens.
+  Each renderer registers what it drew, with the same pure helpers.
+- Six viewpoints — **Front / Right / Rear / Left / Top / Iso** — computed from the front edge, plus
+  drag to orbit and scroll to zoom. ⚠️ Orbit is two angles and a radius rather than `OrbitControls`:
+  the r128 examples loader is a second script to keep pinned for no gain here. The elevation is
+  clamped just short of vertical, where `lookAt` has no defined roll and the model flips.
+
+### 5. three.js, and the costs of having it
+- ⚠️ The **same pinned r128** Progress Photos already ships (its 360° viewer and point-cloud
+  reconstruction both load it), reusing that exact URL. Two three.js builds on one site is a real
+  hazard — two `THREE` globals, whichever script wins — and Progress Photos' own test asserts the
+  revision.
+- ⚠️ **Lazily loaded, on first use.** ~600KB, and the Project Schedule opens on the grid; every
+  planner who never opens the 3D card would otherwise pay for it on every page load. An in-flight
+  load is shared, an existing tag reused, a failed load clears the cache so a retry can work, and
+  the failure message says the **2D view needs nothing and still works**.
+- ⚠️⚠️ **Every repaint frees its WebGL contexts.** A browser caps them (~16) then silently kills the
+  oldest — so without `_vs3Reset()` at the top of `renderVStack`, a dozen basis switches would leave
+  a screen of blank models and a clean console. Each scene forces context loss and drops its own
+  handlers.
+
+### What this is NOT
+No zone outlines, no dimensions, no areas, no cross-section drawing, no imported geometry. The
+owner's *"cross-sections of the plans to define the zones"* would need geometry the model does not
+carry — a plan image per floor type, a polygon per zone, and a decision about whether geometry is
+shared across trades or per trade (`cfg.zoning` is per trade, deliberately). That is a separate
+piece of work with a storage decision in it, and this card is honest about standing in front of it.
+⚠️ The **PDF export path still renders 2D**, untouched.
+
+### Verified
+**732 assertions across eleven suites, all passing.** The 73 new ones execute `_vsPlanGrid`,
+`_vsPlanSlots`, `_vsElevOf/_vsElevLabel`, the pref round-trip and the plate arithmetic, and prove
+the refactor by reversal. Controls: HEAD had the ordering inline, no model function, no `data-vs3d`,
+no `_vsTowerBody`, no `WebGLRenderer`.
+⚠️ One of my own controls was wrong rather than the code, for the third time this week: `THREE.` as a
+"HEAD has no 3D" control matched the prose *"NOT THREE."* in a comment. **Grepping a 39k-line file
+of prose-rich comments for a bare English word is not a control** — it measures the changelog.
+⚠️⚠️ **And the card was actually drawn, orbited and picked in a browser**, loading the real pinned
+three.js: the storeys stack, the plate is uniform, the grade plane sits below the un-levelled band,
+Top gives a plan, and a click opened `TW:Tower A|2nd Floor|Zone 3` — the exact key format the 2D
+card registers. Picking was checked from all six viewpoints; the only pixel that opens nothing is
+the **dead centre of the front elevation**, which is the 6% gap *between* two plan columns — correct,
+since there is no single zone there, and 8px either side lands on a block. That was confirmed rather
+than assumed after the first test made it look like a broken raycast.
+⚠️ **Not verified signed-in** — the anon key has no grants, so this ran against a fixture model in a
+git-ignored page, never inside the module with a real project's activities loaded. The model itself
+needs no browser proof (see the reversal), but the 2D↔3D toggle, the mount pass and the dispose path
+have not been exercised against live data.
+
+`MODULE_V` → `20260909a`.
+
 ### Excel's selection model, and a grip instead of Move buttons (2026-09-08) — jasantos2
 
 Owner: *"for the multiple selection, can you adapt similar to excel wherein if multiple selection,

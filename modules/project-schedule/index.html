@@ -14732,10 +14732,395 @@
   }
   // `tradeSplit` (Consolidated only) = the canonical trade order; when present each level row is
   // split by trade instead of by the location sub-path, and each cell paints its own trade colour.
-  function _vsTowerSVG(list, baseColor, keyPrefix, tradeSplit) {
-    // ⚠️ Bands by the AXIS level (the floor), never by LOC_LEVELS[0] — that is the tower on a
-    // `Tower › Level › Zone` breakdown, and this card is already scoped to one tower, so banding by
-    // it produced a single band with the floors running sideways. See _vsAxis.
+  /* ==========================================================================================
+     THE PLAN, THE ORIENTATION, AND THE 3D VIEW OF THE VERTICAL STACKING.
+     Owner 2026-09-09: *"i was thinking of establishing a 3D view of the 2D vertical stacking that
+     is already established. Meaning the pre-requisites is defining the section plan and how the
+     layout of the zones and areas are. As well as defining from the top view, which is the front,
+     right side, left side and rear elevations."*
+
+     ⚠️⚠️ IT IS THE SAME MODEL, NOT A SECOND ONE. `_vsTowerModel` is the level ordering, the grade
+     split and the per-row cells — extracted out of _vsTowerSVG so that the 2D card and the 3D card
+     read ONE computation. Two renderers deriving their own levels is how a project ends up with a
+     3D view that puts the 5th floor in a different place from the 2D view of the same data, and
+     there would be no way to tell which was right. The extraction is verified by executing the
+     shipped _vsTowerSVG before and after and diffing its SVG byte for byte.
+
+     ⚠️ WHAT THE FOOTPRINT IS, STATED PLAINLY: a SCHEMATIC. The app knows a floor's zones as an
+     ORDERED LIST — `{ id, code, name, units }`, no polygon, no coordinates, no area (see the setup
+     normaliser). So the plan here is the planner's own two statements, not a survey:
+       • `_vsPlanCols` — how the zones WRAP in plan (1 = a row, 2 = two columns, …), which is what
+         turns "Zone 1, Zone 2, Zone 3, Zone 4" into a 2×2 plan instead of a 1×4 strip;
+       • `_vsFront`   — which EDGE of that plan is the FRONT elevation, from which right, rear and
+         left follow by rotation.
+     That is enough to place every zone relative to every other and to name the four elevations,
+     which is what the owner asked for. It is NOT enough to state a dimension or an area, and this
+     view never prints one. Real zone outlines would need geometry the model does not carry — see
+     the note in the 3D card's own footer, which says so on screen rather than only here.
+     ========================================================================================== */
+  var _vsPlanCols = 0;        // 0 = auto (√n, wide-ish) · 1..4 = the planner's own wrap
+  var _vsFront = 'S';         // which plan edge faces the viewer in the FRONT elevation
+  var _vs3D = false;          // 2D card or 3D card
+  function _loadVs3D() {
+    try {
+      var c = localStorage.getItem('ps_vsplancols'); if (c != null) _vsPlanCols = Math.max(0, Math.min(4, parseInt(c, 10) || 0));
+      var f = localStorage.getItem('ps_vsfront'); if (f === 'N' || f === 'E' || f === 'S' || f === 'W') _vsFront = f;
+      _vs3D = localStorage.getItem('ps_vs3d') === '1';
+    } catch (e) {}
+  }
+  function _saveVs3D() {
+    try {
+      localStorage.setItem('ps_vsplancols', String(_vsPlanCols));
+      localStorage.setItem('ps_vsfront', _vsFront);
+      localStorage.setItem('ps_vs3d', _vs3D ? '1' : '0');
+    } catch (e) {}
+  }
+  // The four elevations, named from the front edge. ⚠️ DERIVED, never four stored fields: the four
+  // names are one fact (which way the building faces) and storing them separately would let them
+  // contradict each other — a building with two "front" sides.
+  var _VS_EDGES = ['N', 'E', 'S', 'W'];
+  var _VS_EDGE_NAME = { N: 'North', E: 'East', S: 'South', W: 'West' };
+  function _vsElevOf(which) {
+    var i = _VS_EDGES.indexOf(_vsFront);
+    if (i < 0) i = 2;
+    var off = { front: 0, right: 1, rear: 2, left: 3 }[which];
+    return _VS_EDGES[(i + (off || 0)) % 4];
+  }
+  function _vsElevLabel(which) {
+    return which.charAt(0).toUpperCase() + which.slice(1) + ' (' + _VS_EDGE_NAME[_vsElevOf(which)] + ')';
+  }
+  /* The plan grid for n cells: columns × rows, and where cell i sits.
+     ⚠️ Auto is a WIDE-ISH grid (ceil(√n)), not a square: a floor with 6 zones reads as 3×2, which is
+     closer to how a building plan is drawn than 2×3 stood on end. The planner overrides it, because
+     only they know whether their four zones are a square or a strip. */
+  function _vsPlanGrid(n) {
+    var cols = _vsPlanCols > 0 ? _vsPlanCols : Math.max(1, Math.ceil(Math.sqrt(Math.max(1, n))));
+    cols = Math.min(cols, Math.max(1, n));
+    return { cols: cols, rows: Math.max(1, Math.ceil(n / cols)) };
+  }
+  /* Where each of a storey's n cells sits on the BUILDING's plate.
+     ⚠️⚠️ IT TILES THE PLATE EXACTLY, FOR ANY n, and that is the whole point of it. Laying a
+     storey out on its own sub-grid left a HOLE whenever n did not fill that grid — three cells in
+     a 2×2 covered three-quarters of the plate — so a 3-zone floor drew smaller than a 6-zone one
+     and the model was back to implying a floor plate that shrinks with the zone count. Caught by
+     asserting the covered AREA rather than by looking at it: the ragged version looked plausible.
+     So: spread n cells over at most `plate.rows` rows, as evenly as possible, and give every cell
+     the full share of its own row. Row r holds `cnt` cells, each 1/cnt of the plate's width and
+     1/rows of its depth — which sums to the plate, exactly, whatever n is.
+     ⚠️ At most n rows: one cell must not be asked to sit in a two-row plate and leave the other
+     row empty. */
+  function _vsPlanSlots(n, plate) {
+    // ⚠️ ALWAYS AT LEAST ONE SLOT. The renderer clamps its cell count to 1 before calling, so 0
+    // is unreachable today - but a layout function that can hand back nothing to draw is a trap
+    // for the next caller, and the guarantee costs one clamp.
+    n = Math.max(1, Math.floor(n) || 0);
+    var rows = Math.max(1, Math.min(plate && plate.rows ? plate.rows : 1, n));
+    var out = [], base = Math.floor(n / rows), extra = n % rows;
+    for (var r = 0; r < rows; r++) {
+      var cnt = base + (r < extra ? 1 : 0);
+      for (var c = 0; c < cnt; c++) out.push({ row: r, col: c, cols: cnt, rows: rows });
+    }
+    return out;
+  }
+  /* ==========================================================================================
+     THE 3D CARD. three.js r128 — the revision ALREADY PINNED AND SHIPPED in this repo (Progress
+     Photos' 360° viewer and its point-cloud reconstruction both load it).
+     ⚠️ LOADED LAZILY, ON FIRST USE. It is ~600KB, and the Project Schedule opens on the grid: every
+     planner who never opens the 3D card would otherwise pay for it on every page load.
+     ⚠️ AND AT THE SAME REVISION, never a second one. Two three.js builds on one site is a real
+     hazard (two `THREE` globals, whichever script wins), and Progress Photos' own test asserts the
+     pinned revision — so this reuses that exact URL rather than picking a modern release.
+     ========================================================================================== */
+  var VS_THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js';
+  var _vs3Load = null;
+  function _vsThree() {
+    if (typeof THREE !== 'undefined') return Promise.resolve(THREE);
+    if (_vs3Load) return _vs3Load;
+    _vs3Load = new Promise(function (res, rej) {
+      // ⚠️ Reuse an existing tag if one is already on the page — the module is one document with
+      // several views, and a second identical <script> would evaluate three.js twice.
+      var have = document.querySelector('script[src="' + VS_THREE_URL + '"]');
+      if (have) { have.addEventListener('load', function () { res(typeof THREE !== 'undefined' ? THREE : null); }); return; }
+      var s = document.createElement('script');
+      s.src = VS_THREE_URL;
+      s.onload = function () { res(typeof THREE !== 'undefined' ? THREE : null); };
+      s.onerror = function () { _vs3Load = null; rej(new Error('could not load the 3D library')); };
+      document.head.appendChild(s);
+    });
+    return _vs3Load;
+  }
+  var _vs3Scenes = [];   // { renderer, dispose } for every live canvas, so a repaint frees its GPU context
+  function _vs3Dispose() {
+    // ⚠️ EVERY repaint of this view must free its WebGL contexts. A browser caps them (~16) and
+    // silently kills the OLDEST when the cap is passed — so without this, switching basis a dozen
+    // times leaves a screen of blank canvases and no error anywhere.
+    _vs3Scenes.forEach(function (s) { try { s.dispose(); } catch (e) {} });
+    _vs3Scenes = [];
+  }
+  /* Build one building. `model` is _vsTowerModel's output, so the storeys, the grade split and the
+     cells are the 2D card's own. Returns a dispose function. */
+  function _vs3Build(host, model, baseColor, keyPrefix, T) {
+    var W = host.clientWidth || 520, H = Math.max(320, Math.min(520, host.clientWidth ? host.clientWidth * 0.72 : 380));
+    var scene = new T.Scene();
+    var renderer = new T.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(W, H);
+    host.innerHTML = '';
+    host.appendChild(renderer.domElement);
+
+    // Storey geometry, in abstract units. ⚠️ No dimension is claimed: 1 unit per zone cell and a
+    // storey 0.55 units tall is a PROPORTION chosen to read like a building, and the card says so.
+    var CELL = 1, SH = 0.55, GAPY = 0.06;
+    var storeys = model.disp.length;
+    var grp = new T.Group();
+    var picks = [];
+    /* ⚠️⚠️ ONE FOOTPRINT FOR THE WHOLE BUILDING, sized by the busiest storey.
+       Read off the first render rather than predicted: laying every storey out on its own grid drew
+       a 2-zone floor at half the width of a 4-zone floor, which made the model ragged AND made it
+       say something false — a floor with two zones has the SAME floor plate as one with four, cut
+       differently. So the plate is fixed here and each storey's cells divide it. */
+    var _maxCells = model.disp.reduce(function (m, v) {
+      return Math.max(m, (model.rowCells(model.byLevel[v], model.detail) || []).length || 1);
+    }, 1);
+    var PLATE = _vsPlanGrid(_maxCells);
+    var maxCols = PLATE.cols, maxRows = PLATE.rows;
+    model.disp.forEach(function (v, li) {
+      var cells = model.rowCells(model.byLevel[v], model.detail);
+      var n = cells.length || 1;
+      // The plate's own size, and where this storey's cells sit on it.
+      var plateW = PLATE.cols * CELL, plateD = PLATE.rows * CELL;
+      var slots = _vsPlanSlots(n, PLATE);
+      // The storey's Y: top of the list is the highest floor, so invert the index.
+      var y = (storeys - 1 - li) * (SH + GAPY);
+      var isNo = (v === VS_NOLEV);
+      cells.forEach(function (c, ci) {
+        var p = slots[ci] || { row: 0, col: 0, cols: 1, rows: 1 };
+        // The cell's share of the plate, less a hairline so neighbouring zones read as separate.
+        var shW = plateW / p.cols, shD = plateD / p.rows;
+        var exW = shW * 0.94, exD = shD * 0.94;
+        var pct = _vsProgress(c.list);
+        var fill = c.color || baseColor;
+        var col = new T.Color(fill);
+        // ⚠️ THE SAME THREE CHANNELS THE 2D CELL USES, so the two cards cannot say different things:
+        //   colour = which trade/category · brightness = done vs remaining · height = the storey.
+        // The done fraction is a SECOND, brighter box in front of the dimmer one, which is the 3D
+        // equivalent of the 2D cell's hard-edged progress split rather than a new visual language.
+        var dim = col.clone().multiplyScalar(0.42);
+        var x = (p.col - (p.cols - 1) / 2) * shW;
+        var z = (p.row - (p.rows - 1) / 2) * shD;
+        // ⚠️ The done stretch grows from the cell's LEFT edge, exactly as the 2D cell's solid bar
+        // does — so a half-done zone reads the same way in both cards. Centring it instead would
+        // make 50% look like a block floating in the middle of its own zone.
+        function box(w, colr, opacity) {
+          var m = new T.Mesh(
+            new T.BoxGeometry(w, SH, exD),
+            new T.MeshLambertMaterial({ color: colr, transparent: opacity < 1, opacity: opacity })
+          );
+          m.position.set(x - (exW - w) / 2, y + SH / 2, z);
+          return m;
+        }
+        // ⚠️ EACH RENDERER REGISTERS WHAT IT DREW, into the same registry openVsCell reads, with
+        // the same pure helpers the 2D cell calls. Clicking a box therefore opens the identical
+        // panel — there is no second drill-down to keep in step with the first.
+        var _key = model.cellKey(keyPrefix, v, c), _done = _vsDone(c.list);
+        _vsCells[_key] = { level: v, cell: c.label, list: c.list, pct: pct, fin: _vsDate(c.list),
+          done: _done, fslip: _done ? _vsFinSlip(c.list) : null };
+        var rem = box(exW, dim, isNo ? 0.35 : 1);
+        rem.userData.key = _key;
+        grp.add(rem); picks.push(rem);
+        if (pct > 0) {
+          var dw = Math.max(0.04, exW * Math.min(100, pct) / 100);
+          var don = box(dw, col, isNo ? 0.5 : 1);
+          don.position.z = z + 0.001;
+          don.userData.key = _key;
+          grp.add(don); picks.push(don);
+        }
+      });
+    });
+    // The grade plane, at the same place the 2D card draws its grade line.
+    if (model.groundAt > 0 && model.groundAt < storeys) {
+      var gy = (storeys - model.groundAt) * (SH + GAPY) - GAPY / 2;
+      var pw = Math.max(maxCols, maxRows) * CELL * 1.9;   // ⚠️ the plate, not the tallest storey's own grid
+      var gm = new T.Mesh(new T.PlaneGeometry(pw, pw),
+        new T.MeshBasicMaterial({ color: 0x8a8f98, transparent: true, opacity: 0.16, side: T.DoubleSide }));
+      gm.rotation.x = -Math.PI / 2; gm.position.y = gy;
+      grp.add(gm);
+    }
+    scene.add(grp);
+    scene.add(new T.AmbientLight(0xffffff, 0.72));
+    var dl = new T.DirectionalLight(0xffffff, 0.55); dl.position.set(3, 6, 4); scene.add(dl);
+
+    var span = Math.max(maxCols, maxRows) * CELL, tall = storeys * (SH + GAPY);
+    var camera = new T.PerspectiveCamera(38, W / H, 0.1, 500);
+    var target = new T.Vector3(0, tall / 2, 0);
+    /* ⚠️ THE VIEWPOINTS ARE THE OWNER'S FOUR ELEVATIONS, and they are computed from `_vsFront` —
+       so "Front" means the side the planner nominated, in every project, rather than whichever way
+       the maths happened to point. Top is the plan; Iso is the reading view. */
+    function place(which) {
+      var d = Math.max(span * 2.6, tall * 1.9) + 1.5;
+      if (which === 'top') { camera.position.set(0.001, tall + d * 0.9, 0.001); camera.lookAt(target); return; }
+      if (which === 'iso') { camera.position.set(d * 0.62, tall * 0.85 + d * 0.42, d * 0.62); camera.lookAt(target); return; }
+      // front = +Z looking back, and each further elevation is a quarter turn clockwise.
+      var turn = { front: 0, right: 1, rear: 2, left: 3 }[which] || 0;
+      var a = turn * Math.PI / 2;
+      camera.position.set(Math.sin(a) * d, tall * 0.55, Math.cos(a) * d);
+      camera.lookAt(target);
+    }
+    var view = 'iso';
+    place(view);
+
+    // Orbit by drag, without pulling in OrbitControls: two angles and a radius is the whole of what
+    // this view needs, and the r128 examples loader is a second script to keep pinned.
+    var rot = { az: Math.PI / 4, el: 0.5, r: Math.max(span * 2.6, tall * 1.9) + 1.5 }, drag = null;
+    function applyRot() {
+      camera.position.set(
+        rot.r * Math.cos(rot.el) * Math.sin(rot.az),
+        tall / 2 + rot.r * Math.sin(rot.el),
+        rot.r * Math.cos(rot.el) * Math.cos(rot.az));
+      camera.lookAt(target);
+      renderer.render(scene, camera);
+    }
+    function setView(which) {
+      view = which;
+      if (which === 'top') { rot.az = 0; rot.el = 1.45; }
+      else if (which === 'iso') { rot.az = Math.PI / 4; rot.el = 0.5; }
+      else { rot.az = ({ front: 0, right: 1, rear: 2, left: 3 }[which] || 0) * Math.PI / 2; rot.el = 0.12; }
+      applyRot();
+    }
+    var cv = renderer.domElement;
+    cv.style.cursor = 'grab';
+    cv.onpointerdown = function (e) { drag = { x: e.clientX, y: e.clientY, az: rot.az, el: rot.el }; cv.style.cursor = 'grabbing'; };
+    cv.onpointermove = function (e) {
+      if (!drag) return;
+      rot.az = drag.az - (e.clientX - drag.x) * 0.008;
+      // ⚠️ Clamped just short of straight down / straight up: at exactly ±π/2 the up-vector and the
+      // view direction are parallel and lookAt has no defined roll, which flips the model.
+      rot.el = Math.max(-0.2, Math.min(1.5, drag.el + (e.clientY - drag.y) * 0.006));
+      applyRot();
+    };
+    cv.onpointerup = cv.onpointerleave = function () { drag = null; cv.style.cursor = 'grab'; };
+    cv.onwheel = function (e) {
+      e.preventDefault();
+      rot.r = Math.max(span * 1.2, Math.min(span * 12 + tall * 6, rot.r * (e.deltaY > 0 ? 1.08 : 0.93)));
+      applyRot();
+    };
+    // Click a box to open the same cell the 2D card opens — one drill-down, not a second one.
+    var ray = new T.Raycaster();
+    cv.onclick = function (e) {
+      var r = cv.getBoundingClientRect();
+      ray.setFromCamera(new T.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
+      var hit = ray.intersectObjects(picks, false)[0];
+      if (hit && hit.object.userData.key) openVsCell(hit.object.userData.key);
+    };
+    setView('iso');
+    return {
+      setView: setView,
+      dispose: function () {
+        try { renderer.forceContextLoss(); } catch (e) {}
+        try { renderer.dispose(); } catch (e) {}
+        cv.onpointerdown = cv.onpointermove = cv.onpointerup = cv.onwheel = cv.onclick = null;
+      }
+    };
+  }
+  // The plan/orientation controls, and the six viewpoints. Rendered as part of the 3D card so they
+  // are never on screen for the 2D card, where they would do nothing.
+  function _vs3Bar() {
+    var cols = [[0, 'Auto'], [1, '1'], [2, '2'], [3, '3'], [4, '4']];
+    return '<div class="ps-vs3-bar">' +
+      '<span class="ps-vs-note" title="How the zones on a floor are laid out in PLAN. The app knows their order, not their shape — this is what turns four zones into a 2×2 plan rather than a 1×4 strip.">Plan columns</span>' +
+      '<span class="ps-vs-seg">' + cols.map(function (o) {
+        return '<button data-vs3col="' + o[0] + '"' + (_vsPlanCols === o[0] ? ' class="on"' : '') + '>' + o[1] + '</button>';
+      }).join('') + '</span>' +
+      '<span class="ps-tb-div"></span>' +
+      '<span class="ps-vs-note" title="Seen from the top view, which edge of the plan is the FRONT of the building. Right, rear and left follow from it.">Front faces</span>' +
+      '<span class="ps-vs-seg">' + _VS_EDGES.map(function (e) {
+        return '<button data-vs3front="' + e + '"' + (_vsFront === e ? ' class="on"' : '') + ' title="' + _VS_EDGE_NAME[e] + '">' + e + '</button>';
+      }).join('') + '</span>' +
+      '<span class="ps-tb-div"></span>' +
+      '<span class="ps-vs-note">View</span><span class="ps-vs-seg">' +
+      [['front', _vsElevLabel('front')], ['right', _vsElevLabel('right')],
+       ['rear', _vsElevLabel('rear')], ['left', _vsElevLabel('left')],
+       ['top', 'Top (plan)'], ['iso', 'Iso']].map(function (o) {
+        return '<button data-vs3view="' + o[0] + '" title="' + esc(o[1]) + '">' +
+          esc(o[0] === 'top' ? 'Top' : (o[0] === 'iso' ? 'Iso' : o[0].charAt(0).toUpperCase() + o[0].slice(1))) + '</button>';
+      }).join('') + '</span>' +
+      '</div>';
+  }
+  /* ⚠️ THE CARD SAYS WHAT IT IS, ON SCREEN. This view is the one place in the module where a reader
+     could reasonably assume a spatial claim — a solid model looks surveyed — and it is not one: the
+     footprint comes from the zone COUNT and the planner's own plan-columns setting, and the storey
+     height is a proportion. Saying so under the model is the difference between a useful schematic
+     and a drawing somebody measures off. */
+  function _vs3Foot() {
+    return '<p class="ps-vs3-foot">Schematic: the storeys, their order and the grade line are the ' +
+      'same as the 2D view. The <b>footprint</b> is the zone count laid out on the plan grid you set ' +
+      'above &mdash; the schedule holds no zone outlines or dimensions, so <b>no length or area is ' +
+      'implied</b>. Drag to orbit, scroll to zoom, click a block for its dates.</p>';
+  }
+  // Called at the top of every renderVStack: free the WebGL contexts this repaint replaces, and
+  // empty the queue so a card that is no longer on screen cannot be built into a stale mount.
+  function _vs3Reset() { _vs3Dispose(); _vs3Pending = []; }
+  /* One body for a tower card: the 2D drawing, or a mount the 3D pass fills in.
+     ⚠️ A WRAPPER, so the three existing call sites change by one word and the 2D path is left
+     exactly as it was. A WebGL canvas cannot be built inside an HTML string, so the model is
+     parked here and the scenes are built after the insert — see _vs3Mount. */
+  var _vs3Pending = [];
+  function _vsTowerBody(list, baseColor, keyPrefix, tradeSplit) {
+    if (!_vs3D) return _vsTowerSVG(list, baseColor, keyPrefix, tradeSplit);
+    var m = _vsTowerModel(list, tradeSplit);
+    if (!m) return '<div class="ps-vs-empty">Nothing to stack for this selection.</div>';
+    _vs3Pending.push({ key: keyPrefix, model: m, color: baseColor });
+    return _vs3Bar() + '<div class="ps-vs3-mount" data-vs3mount="' + esc(keyPrefix) + '">' +
+      '<div class="ps-vs3-load">Loading the 3D view…</div></div>' + _vs3Foot();
+  }
+  function _vs3Mount(host) {
+    if (!_vs3D || !_vs3Pending.length) return;
+    var jobs = _vs3Pending.slice();
+    _vsThree().then(function (T) {
+      if (!T) throw new Error('the library loaded but did not define THREE');
+      jobs.forEach(function (j) {
+        var el = null;
+        var all = host.querySelectorAll('[data-vs3mount]');
+        for (var i = 0; i < all.length; i++) if (all[i].getAttribute('data-vs3mount') === j.key) { el = all[i]; break; }
+        if (!el) return;
+        try {
+          var s = _vs3Build(el, j.model, j.color, j.key, T);
+          _vs3Scenes.push(s);
+          // The viewpoint buttons belong to THIS card, so they are found within its own card box.
+          var card = el.closest ? el.closest('.ps-vs-tower') : el.parentNode;
+          (card || el.parentNode).querySelectorAll('[data-vs3view]').forEach(function (b) {
+            b.onclick = function () {
+              (card || el.parentNode).querySelectorAll('[data-vs3view]').forEach(function (x) { x.classList.remove('on'); });
+              b.classList.add('on');
+              s.setView(b.dataset.vs3view);
+            };
+          });
+        } catch (e) {
+          // ⚠️ Names the card that failed and why, and leaves the others alone. A blank canvas with
+          // a clean console is the worst outcome for a view whose whole job is to be looked at.
+          el.innerHTML = '<div class="ps-vs-empty">Could not draw this building in 3D: ' +
+            esc(e && e.message ? e.message : String(e)) + '</div>';
+        }
+      });
+    }).catch(function (e) {
+      var all = host.querySelectorAll('[data-vs3mount]');
+      for (var i = 0; i < all.length; i++) {
+        all[i].innerHTML = '<div class="ps-vs-empty">The 3D view needs its drawing library from the network, and it did not load (' +
+          esc(e && e.message ? e.message : String(e)) + '). The <b>2D</b> view needs nothing and still works.</div>';
+      }
+    });
+  }
+  /* ==========================================================================================
+     THE TOWER MODEL — the storeys, the grade split and each row’s cells — lifted out of
+     _vsTowerSVG so that the 2D card and the 3D card read ONE computation.
+     ⚠️⚠️ Two renderers deriving their own level order is how a project ends up with a 3D view
+     that puts the 5th floor somewhere else than the 2D view of the same data, with no way to
+     tell which one is right. Every comment inside this function was written for the 2D card and
+     is still exactly as true: the text is unchanged, only its home moved.
+     ⚠️ Returns null for "nothing to stack" rather than the message, because the message is the
+     2D card’s markup and the 3D card needs its own.
+     ========================================================================================== */
+  function _vsTowerModel(list, tradeSplit) {
     var _ax = _vsAxis(), lvl0 = _ax[0].id, detail = _vsDetailNow();
     var byLevel = {}, levels = [], noLev = [];
     list.forEach(function (r) {
@@ -14744,7 +15129,7 @@
       if (!(v in byLevel)) { byLevel[v] = []; levels.push(v); }
       byLevel[v].push(r);
     });
-    if (!levels.length && !noLev.length) return '<div class="ps-vs-empty">Nothing to stack for this selection.</div>';
+    if (!levels.length && !noLev.length) return null;
     // Build order (bottom-up); the display flips it below. The WBS manager's sort_order decides
     // when it can — see _vsOrderLevels — so this view and the WBS tree cannot disagree.
     var _byWbs = _vsOrderLevels(levels, byLevel);
@@ -14764,13 +15149,30 @@
     var disp = above.slice().reverse().concat(below.slice().reverse()), groundAt = above.length;
     // The un-levelled band is a real row, below grade, so it is impossible to miss and still clickable.
     if (noLev.length) { byLevel[VS_NOLEV] = noLev; disp = disp.concat([VS_NOLEV]); }
+    // The cells of one row. ⚠️ ONE resolver for both renderers, and for the 2D card’s own width
+    // measurement — see the note at the call site that used to own this closure.
+    function rowCells(l, k) { return tradeSplit ? _vsRowTradeCells(l, tradeSplit) : _vsRowCells(l, k); }
+    /* ⚠️ ONE KEY BUILDER. The 2D card composes `keyPrefix|level|cell` inline to register each
+       cell in _vsCells; the 3D card must compose the IDENTICAL string or its clicks would look up
+       cells that do not exist. Kept here so neither renderer owns the format. */
+    function cellKey(keyPrefix, v, c) { return keyPrefix + '|' + v + '|' + (c.label || '*'); }
+    return { byLevel: byLevel, levels: levels, disp: disp, groundAt: groundAt, detail: detail,
+      rowCells: rowCells, cellKey: cellKey };
+  }
+  function _vsTowerSVG(list, baseColor, keyPrefix, tradeSplit) {
+    // ⚠️ Bands by the AXIS level (the floor), never by LOC_LEVELS[0] — that is the tower on a
+    // `Tower › Level › Zone` breakdown, and this card is already scoped to one tower, so banding by
+    // it produced a single band with the floors running sideways. See _vsAxis.
+    var _m = _vsTowerModel(list, tradeSplit);
+    if (!_m) return '<div class="ps-vs-empty">Nothing to stack for this selection.</div>';
+    var byLevel = _m.byLevel, levels = _m.levels, disp = _m.disp, groundAt = _m.groundAt, detail = _m.detail;
     // ⚠️ Compare now prints a planned row and an actual row, each carrying a date AND its POC, plus
     // the variance line — one more line than it used to, hence the extra height.
     var fh = (_vsBasis === 'compare') ? 60 : 44, gap = 6, pad = 14, labelW = 92;
     // How many cells the widest row holds at a given detail — the tower's width in "zone units".
     // One place both the width measurement and the render resolve a row's cells, so they can
     // never split on different axes.
-    function rowCells(l, k) { return tradeSplit ? _vsRowTradeCells(l, tradeSplit) : _vsRowCells(l, k); }
+    var rowCells = _m.rowCells;   // ⚠️ the model’s, so the width measurement and the render cannot split on different axes
     function cellsAt(k) { return disp.reduce(function (m, v) { return Math.max(m, rowCells(byLevel[v], k).length || 1); }, 1); }
     // ⚠️ At detail >= 2 the building's width comes from the ZONE breakdown and never shrinks below
     // it — every zone cell needs room for its date. Detail 3 may need more than the zone count, so
@@ -15732,8 +16134,16 @@
   // ⚠️ `hostEl` lets the PHONE view render the stack into its own container. The desktop
   // #ps-vstack still exists (hidden) at phone width, so a duplicate id would win getElementById
   // and the phone would paint into an invisible node — hence an argument, not a second id.
+  var _vs3Init = false;
   function renderVStack(hostEl) {
     var host = hostEl || document.getElementById('ps-vstack'); if (!host) return;
+    // ⚠️ The prefs are read ONCE, here rather than at script load: this view is one of several in
+    // the module and reading localStorage on every repaint is work for no answer that can change.
+    if (!_vs3Init) { _vs3Init = true; _loadVs3D(); }
+    // ⚠️⚠️ BEFORE the innerHTML below, unconditionally. Every canvas this repaint is about to
+    // discard holds a WebGL context, and a browser caps them (~16) then silently kills the OLDEST
+    // — so without this, a dozen basis switches leave a screen of blank models and a clean console.
+    _vs3Reset();
     if (!pid) { host.innerHTML = '<div class="ps-vs-empty">Select a project to see its vertical stacking.</div>'; return; }
     /* ⚠️⚠️ THREE DIFFERENT ANSWERS, WHERE THERE USED TO BE ONE ACCUSATION. An empty LOC_LEVELS was
        reported as "this project has no Location Breakdown Structure" no matter WHY it was empty, and
@@ -15882,6 +16292,11 @@
       '<span class="ps-vs-seg"><button data-vssc="trade"' + (_vsScope === 'trade' ? ' class="on"' : '') + ' title="One building model per trade">Per trade</button>' +
       (towerNames.length > 1 ? '<button data-vssc="tower"' + (_vsScope === 'tower' ? ' class="on"' : '') + ' title="One building model per tower, all trades combined">Per tower</button>' : '') +
       '<button data-vssc="all"' + (_vsScope === 'all' ? ' class="on"' : '') + ' title="One model for the whole project, all trades combined">Consolidated</button></span>' +
+      '<span class="ps-tb-div"></span>' +
+      '<span class="ps-vs-seg">' +
+        '<button data-vs3d="0"' + (!_vs3D ? ' class="on"' : '') + ' title="The section: storeys as rows, zones across">2D</button>' +
+        '<button data-vs3d="1"' + (_vs3D ? ' class="on"' : '') + ' title="The same storeys and zones as a solid model you can orbit, with the four elevations named">3D</button>' +
+      '</span>' +
       '<span class="ps-vs-note">Detail</span><span class="ps-vs-seg">' + detailBtns + '</span>' +
       '<span class="ps-vs-note"' + (_vsMixTrades ? ' title="' + esc(VS_MIX_NOTE) + '"' : '') + '>' +
         esc(_vsAxis().slice(0, detail).map(function (l) { return l.name; }).join(' › ')) +
@@ -16084,14 +16499,14 @@
           '<span class="n"><span class="ps-vs-dot" style="background:' + col + '"></span>' + esc(t) + '</span>' +
           '<span class="ct">' + list.length + ' activities · ' + _vsProgress(list) + '% ' + _vsProgressWord() +
           ' · ' + tt.length + ' trade' + (tt.length === 1 ? '' : 's') + '</span>' + _vsFocusReg(t, col, list, 'TW:' + t) + '</div>' + _vsCardMeter(list) +
-          _vsTowerSVG(list, col, 'TW:' + t) + '</div>';
+          _vsTowerBody(list, col, 'TW:' + t) + '</div>';
       }).join('');
     } else if (_vsScope === 'all') {
       towers = '<div class="ps-vs-tower" style="--tc:var(--pd-red)"><div class="ps-vs-towerh"><span class="n">Consolidated &mdash; ' +
         (_vsTradeSel.length ? esc(tradesShown.join(', ')) : 'all trades') +
         (_vsTower === 'ALL' ? '' : ' &middot; ' + esc(_vsTower)) + '</span>' +
         '<span class="ct">' + acts.length + ' activities · ' + _vsProgress(acts) + '% ' + _vsProgressWord() + ' · ' + trades.length + ' trade' + (trades.length === 1 ? '' : 's') + '</span>' + _vsFocusReg('Consolidated', 'var(--pd-red)', acts, 'ALL') + '</div>' + _vsCardMeter(acts) +
-        _vsTowerSVG(acts, 'var(--pd-red)', 'ALL') + '</div>';
+        _vsTowerBody(acts, 'var(--pd-red)', 'ALL') + '</div>';
     } else {
       towers = tradesShown.map(function (t) {
         var list = acts.filter(function (r) { return _vsTradeOf(r) === t; });
@@ -16099,7 +16514,7 @@
         return '<div class="ps-vs-tower" style="--tc:' + col + '"><div class="ps-vs-towerh">' +
           '<span class="n"><span class="ps-vs-dot" style="background:' + col + '"></span>' + esc(t) + '</span>' +
           '<span class="ct">' + list.length + ' activities · ' + _vsProgress(list) + '% ' + _vsProgressWord() + '</span>' + _vsFocusReg(t, col, list, t) + '</div>' + _vsCardMeter(list) +
-          _vsTowerSVG(list, col, t) + '</div>';
+          _vsTowerBody(list, col, t) + '</div>';
       }).join('');
     }
     // ⚠️ The defs must be in the DOM before the towers that reference them are laid out, so they are
@@ -16127,6 +16542,18 @@
       for (var _ti = 0; _ti < _tw.length; _ti++) _tw[_ti].style.setProperty('--i', Math.min(_ti, 8));
     }
     _vsAnim = null;   // one-shot: the next repaint is silent unless a handler asks again
+    // ⚠️ AFTER the insert, never before: a WebGL canvas has to be in the document to size itself,
+    // and _vs3Dispose above has already freed the contexts this repaint replaced.
+    _vs3Mount(host);
+    host.querySelectorAll('[data-vs3d]').forEach(function (b) {
+      b.onclick = function () { _vs3D = b.dataset.vs3d === '1'; _saveVs3D(); _vsAnim = 'fade'; renderVStack(); };
+    });
+    host.querySelectorAll('[data-vs3col]').forEach(function (b) {
+      b.onclick = function () { _vsPlanCols = parseInt(b.dataset.vs3col, 10) || 0; _saveVs3D(); renderVStack(); };
+    });
+    host.querySelectorAll('[data-vs3front]').forEach(function (b) {
+      b.onclick = function () { _vsFront = b.dataset.vs3front; _saveVs3D(); renderVStack(); };
+    });
     host.querySelectorAll('[data-vssc]').forEach(function (b) { b.onclick = function () { _vsScope = b.dataset.vssc; _vsAnim = 'in'; renderVStack(); }; });
     host.querySelectorAll('[data-vsdet]').forEach(function (b) { b.onclick = function () { _vsDetail = parseInt(b.dataset.vsdet, 10) || 1; _vsAnim = 'fade'; renderVStack(); }; });
     host.querySelectorAll('[data-vsdt]').forEach(function (b) { b.onclick = function () { _vsDateMode = b.dataset.vsdt; _vsAnim = 'fade'; renderVStack(); }; });

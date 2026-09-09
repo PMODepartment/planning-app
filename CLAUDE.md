@@ -95,6 +95,42 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### Vertical Stacking gains a 3D view, with the plan layout and the four elevations as its prerequisites (2026-09-09) — jasantos2
+
+Owner: *"establishing a 3D view of the 2D vertical stacking that is already established… the
+pre-requisites is defining the section plan and how the layout of the zones and areas are. As well
+as defining from the top view, which is the front, right side, left side and rear elevations."*
+
+- **A `2D | 3D` switch on the Vertical Stacking toolbar.** The 3D card is the *same* storeys, the
+  same grade line and the same cells as the 2D card — ⚠️ literally: the level ordering was lifted
+  into one `_vsTowerModel` that both renderers read, because two renderers deriving their own order
+  is how a 3D view ends up disagreeing with the 2D view of the same data.
+- ⚠️⚠️ **The 2D card is proved untouched, not spot-checked.** It is the view read daily and this
+  moved 28 lines out of the middle of its renderer, so the suite **reverses the refactor** and
+  asserts the result equals HEAD's renderer statement for statement — a proof over every input.
+- **The prerequisites**: *Plan columns* (how the zones wrap in plan) and *Front faces N/E/S/W*
+  (which edge is the front). Right, rear and left are **derived** by rotation, never stored — a
+  building cannot have two fronts. Six viewpoints follow: Front / Right / Rear / Left / Top / Iso,
+  plus drag to orbit and click a block for its dates (the *same* panel the 2D cell opens).
+- ⚠️⚠️ **Two geometry flaws that only measurement found**, both plausible on screen: per-storey grids
+  drew a 2-zone floor at half the width of a 4-zone floor (a floor with two zones has the *same*
+  plate, cut differently), and a storey whose cells did not fill its grid left a hole — three cells
+  covering 4.5 of a 6-unit plate. Every storey now tiles the same plate exactly, asserted for every
+  cell count on every plate up to twelve zones.
+- ⚠️ **What it is not**: a survey. The schedule holds zones as an ordered list with no outlines,
+  coordinates or areas, so the footprint is schematic and the card **says so on screen** — no length
+  or area is implied. Cross-sections drawn off real plans remain a separate piece of work with a
+  storage decision in it.
+- three.js is the **same pinned r128 Progress Photos already ships**, loaded **lazily** so the grid
+  does not pay 600KB for a card most sessions never open, and every repaint frees its WebGL contexts
+  (a browser caps them, then silently kills the oldest).
+
+**732 assertions across eleven suites, all passing** (73 new), and the card was **drawn, orbited and
+picked in a real browser** with the real library. ⚠️ **Not verified signed-in** — it ran against a
+fixture model, never inside the module with a live project's activities.
+
+`MODULE_V` → `20260909a`. Detail: [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
 ### Construction Library: Excel-style Ctrl-click selection, and a drag grip replacing the Move buttons (2026-09-08) — jasantos2
 
 Owner: *"for the multiple selection, can you adapt similar to excel wherein if multiple selection,
