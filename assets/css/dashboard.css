@@ -140,7 +140,18 @@ a:hover { text-decoration: underline; }
    room above/below it. */
 .pd-sidebar .pd-brand {
   font-size: 0;                                  /* hides the inline text node beside the logo */
-  display: block; margin: 0; padding: 22px 18px 18px;
+  /* ⚠⚠ 22/18 BECAME 14/12, AND THE POINT IS WHERE THE NAV STARTS. Owner: *"Reclaim the height so
+     the nav starts higher, smoothen the placement of the Planning Suite."* MEASURED at 1440x820
+     before touching anything: the brand block was **95px** and the first nav row began at **131px**
+     -- 22 top + 30 logo + 9 + 15 wordmark + 18 bottom + 1 border, then nav's own 16. Nearly a fifth
+     of a 13-item rail spent before the first item.
+     ⚠ AND IT SMOOTHS THE LOCKUP RATHER THAN ONLY SHRINKING IT. The old spacing ran 22 above the
+     logo, 9 between logo and wordmark, 18 below -- so the wordmark sat nearer the logo than the
+     rule beneath it while the outer margins disagreed by 4px. 14 / 7 / 12 keeps the pair tight
+     (the wordmark belongs to the logo) with outer margins that read as even.
+     ⚠ The <=820px block below restates this padding with its own safe-area value, so the phone
+     drawer is untouched by this; .pd-collapsed keeps its own 16px 8px for the icon rail. */
+  display: block; margin: 0; padding: 14px 18px 12px;
   background: var(--pd-sidebar-bg);
   border-bottom: 1px solid rgba(255,255,255,.08);
   text-align: center;
@@ -150,7 +161,7 @@ a:hover { text-decoration: underline; }
    lever on its presence: 176px gives it the rail without touching the 20px side gutters. */
 .pd-brand-logo {
   display: block; width: 100%; max-width: 176px; height: auto;
-  margin: 0 auto 9px; object-fit: contain; object-position: center center;
+  margin: 0 auto 7px; object-fit: contain; object-position: center center;
 }
 .pd-sidebar .pd-brand small {
   display: block; font-size: var(--pd-fs-micro); font-weight: 700; letter-spacing: .18em;   /* PRC .app-label */
@@ -165,8 +176,11 @@ a:hover { text-decoration: underline; }
    .pd-collapsed (see the <=820px block) and hides it again there, or the phone drawer
    would show the wordmark and the mark stacked. */
 .pd-brand-mark { display: none; width: 30px; height: 30px; margin: 0 auto; object-fit: contain; }
-/* PRC .sidebar-section — 16px 12px 4px around the rows. */
-.pd-sidebar nav { margin: 0; padding: 16px 12px 4px; display: flex; flex-direction: column; gap: 2px; }
+/* PRC .sidebar-section — 16px 12px 4px around the rows.
+   ⚠ The top 16 became 10: the brand block directly above already ends in 12px of padding and a
+   rule, so the full 16 stacked into 28px of nothing between the wordmark and the PROJECT label.
+   The side and bottom values are PRC's and are untouched. */
+.pd-sidebar nav { margin: 0; padding: 10px 12px 4px; display: flex; flex-direction: column; gap: 2px; }
 .pd-sidebar nav a {
   /* PRC .nav-item, exactly: rgba white (not a blue-grey), 500 weight, 8px radius. */
   color: rgba(255,255,255,.65); padding: 9px 12px; border-radius: 8px;
