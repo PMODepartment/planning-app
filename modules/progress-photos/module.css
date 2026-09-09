@@ -401,11 +401,22 @@
    bug this codebase has already hit for `.pp-addmenu`/`.pp-selbar`. */
 .pp-mkvistoggle[hidden] { display: none; }
 .pp-gallerygroup { margin-bottom: 20px; }
+/* ⚠⚠ STICKY, AND CLICKABLE. At 150 photos the gallery is 10.8 screens tall and at 400 it is
+   25.4 (both measured against the shipped renderer at 1600x900) -- so a heading that scrolls away
+   leaves you in the middle of a tile wall with nothing saying which month you are looking at.
+   ⚠ `top: 0` and `z-index: 2` match `.pp-grid-head`, the list view's own sticky header, rather
+   than inventing a second convention; the opaque background is what stops tiles showing through.
+   ⚠ The cursor and hover state are not decoration -- the head toggles the group, and a control
+   that does something must look like one. */
 .pp-gallerygrouphead {
   display: flex; align-items: center; gap: 9px; margin: 0 0 9px;
-  padding-bottom: 6px; border-bottom: 1px solid var(--pd-line);
+  padding: 6px 8px; border-bottom: 1px solid var(--pd-line);
   font-size: var(--pd-fs-base); color: var(--pd-ink);
+  position: sticky; top: 0; z-index: 2; background: var(--pd-bg);
+  cursor: pointer; border-left: 3px solid var(--pd-red); border-radius: 3px 3px 0 0;
 }
+.pp-gallerygrouphead:hover { background: color-mix(in srgb, var(--pd-red) 8%, var(--pd-bg)); }
+.pp-gallerygrouphead .pp-caret { flex: none; color: var(--pd-muted); display: inline-flex; }
 
 /* ---- Panorama/reconstruction tiles, INLINE in the merged grid (items 6+8, current round) --- */
 /* Supersedes the old "Batch C, 2026-08-29" .pp-mediastrip/.pp-mediatile*

@@ -95,6 +95,48 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-09 (v) — Progress Photos at 150+: the gallery was missing the collapse the LIST view already had
+
+Owner: *"The progress photos UI need to be updated ... This needs to be properly compiled when
+anticipating the photos database could reach up to 150+ photos."* Measured before changing anything,
+by slicing the **shipped** `galleryHTML` / `groupRows` / `cardHTML` / `thumb` out of `module.js` and
+running them over fixtures — so the markup under measurement is the real renderer's, not a copy.
+
+| photos | DOM nodes | page height | **screens of scrolling** |
+|---|---|---|---|
+| 150 | 1,549 | 9,747px | **10.8** |
+| 400 | 4,049 | 22,880px | **25.4** |
+
+⚠⚠ **THE THROUGHPUT WAS NEVER THE PROBLEM, and it is worth saying because that is where a scale
+complaint usually leads.** All 150 images already carry `loading="lazy"`; signing is already batched
+through `createSignedUrls` with a transform-thumbnail path and an on-demand full-res fallback; the
+DOM is small. Nothing here needed virtualising, paginating or caching.
+
+⚠⚠ **What it lacked was a way to put a month away once you had looked at it — and the LIST view has
+had exactly that all along.** `listHTML` emits `.pp-group` with `data-group`, reads `collapsed[g.key]`
+and `saveUI()`s it; `galleryHTML` emitted a plain heading with none of it. So the view the owner was
+complaining about was the one *without* the feature its sibling already shipped. That is an
+asymmetry to close, not a feature to invent.
+
+- **Gallery groups collapse**, reusing `collapsed{}` and the **same keys** the list writes — so a
+  month closed in one view is closed in the other, and one wiring serves both
+  (`.pp-group,.pp-gallerygrouphead[data-group]`) so they cannot drift apart.
+  **Measured: collapsing 7 of 8 month groups takes 150 photos from 10.8 screens to 1.6 — −85%.**
+- **The heading is sticky**, `top:0; z-index:2`, matching `.pp-grid-head` (the list view's own sticky
+  header) rather than inventing a second convention. Measured mid-scroll at 4,200px: exactly **one**
+  heading pinned, reading *June 2026 · 21*. Before, headings scrolled away and a tile wall said
+  nothing about where you were.
+- ⚠ The class stays `.pp-gallerygrouphead` rather than becoming `.pp-group`: the list's rule carries
+  `min-width:980px` for its horizontally-scrolling grid, which would have forced a phantom scrollbar
+  across the tile wall. Same behaviour, its own chrome.
+
+⚠ **A cached stylesheet nearly produced a false negative.** The first measurement reported the head
+as `position:static` with a transparent background — the harness linked `module.css` with no `?v=`
+and the browser served the old copy. The rule was correct on disk the whole time. Cache-busted and
+re-measured; this is the same class of thing this repo's own `?v=` discipline exists for.
+
+`module.js` / `module.css` → `?v=20260909v`; `MODULE_V` → `20260909v`.
+⚠ **Not verified signed in** — fixtures through sliced renderers, no real photo row rendered.
 ### Vertical Stacking restored after I broke it, plus 3D in full screen and under Planned vs Actual (2026-09-09) — jasantos2
 
 Owner, with a screenshot: *"where is the 3D? and how come there is an error, no vertical stacking
