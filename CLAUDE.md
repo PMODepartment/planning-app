@@ -95,6 +95,51 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-09 (x) — The sidebar brand becomes the red M with PLANNING SUITE beside it
+
+Owner: *"Instead of the Megawide Construction logo lets make it the red megawide m logo and beside
+it is the Planning Suite."* **CSS only** — both `<img>`s were already in all 29 pages' markup (the
+wordmark for the expanded rail, the mark for the collapsed one), so no HTML changed.
+
+⚠ **The wordmark named the company; the mark can do that in 28px.** `MEGAWIDE CONSTRUCTION` is a
+5.81:1 lockup, so it had to span most of a 240px rail to stay legible — spending the widest element
+in the sidebar on something every page of this app already belongs to, while the thing it actually
+identifies, the Planning Suite, was the small red line underneath. Now the mark carries the company
+and the product name gets the row beside it.
+
+| | before today | after (w) | **after (x)** |
+|---|---|---|---|
+| brand block | 95px | 79px | **56px** |
+| first nav row | 131px | 109px | **87px** |
+
+**44px reclaimed across the two changes**, a third of the original block, with the nav starting
+where the logo used to end.
+
+⚠⚠ **`gap` WAS THE WRONG TOOL AND MEASURING IS THE ONLY REASON I KNOW IT.** The markup carries a
+bare `Planners Dashboard` text node between the two images — the thing `font-size: 0` exists to
+hide. In a flex container that text node becomes an **anonymous flex item**: zero-width, but still
+an item, so `gap: 9px` was applied on **both** sides of it and the measured space came out **18px**.
+The spacing is a `margin-left` on the caption instead, which is exactly one gap however many empty
+text nodes the markup carries. Re-measured: **10px**, lockup centred to within 0px.
+
+⚠ **All three brand states move together, and two of them invert.** The mark was `display:none` by
+default and shown only under `.pd-collapsed`; that default is now `block`, so the collapsed rail
+drops only the *words* (verified: rail 64px, mark `block` and centred, words and wordmark `none`),
+and the phone drawer — which re-expands `.pd-collapsed` — stops restoring the wordmark and stops
+suppressing the mark. With one mark instead of two there is nothing left to stack.
+
+⚠ **The phone drawer is verified by SOURCE, not by measurement, and that distinction is the point.**
+The pane refused to emulate a narrow viewport for the second time today, reporting `clientWidth 980`
+against a 375px request — so what that check measured was the *collapsed desktop rail*, not the
+drawer. Verified instead against the shipped bytes: all three rules present verbatim, brace-matched
+as **contained** in the `@media (max-width: 820px)` block at lines 1067–1118, and both base
+declarations (176, 193) earlier in source order. That is a proof about the cascade; it is not a
+rendered drawer, and it is worth checking on a real phone.
+
+⚠ `logo-white.png` is **retired from the sidebar, not deleted** — it is still the login and home
+mark (`.pd-auth-mark`), and its `<img>` stays in the markup, which is what kept this to one file.
+⚠ `dashboard.css` is SHARED — `?v=` bumped across **all 29 pages**. `MODULE_V` → `20260909x`.
+⚠ **Not verified signed in.**
 ### 2026-09-09 (w) — The sidebar brand block gives 22px back to the nav
 
 Owner: *"Reclaim the height so the nav starts higher, smoothen the placement of the Planning
