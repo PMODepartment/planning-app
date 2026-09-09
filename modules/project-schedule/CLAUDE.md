@@ -13,6 +13,49 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### A stray NUL byte made this changelog un-greppable (2026-09-09) — fmlozano
+
+Found while adding the entry below: this file carried **one NUL byte** (0x00) at offset 39,939, and
+plain `grep` answers `Binary file modules/project-schedule/CLAUDE.md matches` instead of the matching
+line. On a 107 KB changelog that is the module's primary history, that is a real papercut — you had
+to remember `grep -a`.
+
+**The prose had lost nothing.** The NUL sat *inside a quoted code literal*:
+
+> `dimKey` returns the same `'<NUL>'` sentinel `tower` uses on a single-tower project
+
+`dimKey` genuinely returns `'\u0000'` (`index.html:34259`), and that file's **own comments write the
+sentinel as the escape** (`:26605`, `:26616`). So the entry was correctly quoting a real NUL sentinel
+— whatever wrote it interpolated the *character* instead of the escape *text*. Repaired to `\u0000`,
+which both preserves the meaning and matches the code's wording verbatim. One byte became six
+characters; the line count is unchanged.
+
+- ⚠⚠ **WRITING THIS ENTRY REPRODUCED THE BUG, TWICE.** The two places above that name
+  the sentinel came out as real NUL bytes, because the text was written through a tool that
+  interprets escape sequences -- exactly what happened to the entry being repaired. Caught by
+  re-scanning the entry before committing it. **When you need the six characters of an escape in
+  prose, build them from character codes and verify the bytes afterwards**; do not type the escape
+  and trust the write. Same family as the heredoc-escape traps already recorded in this repo.
+- ⚠️ **`git grep` was never affected, and an earlier statement of mine said it was.** Git sniffs only
+  the **first 8000 bytes** for binary content and the NUL was at ~40 KB, so `git grep` always treated
+  this file as text. GNU `grep` scans the whole buffer, which is why the two disagreed. Worth knowing
+  before chasing "grep says binary" as a git problem.
+- **Swept the whole repo**: 287 tracked text files (`.md .js .css .html .sql .json .txt .webmanifest
+  .yml .yaml`), and this was the **only** one. Now zero.
+- ⚠️ **Introduced by `d496488` (2026-09-08)** — bisected across the file's last 25 commits;
+  `bb8e239` immediately before it is clean. Same family as the scripted-write traps this repo already
+  records: a value interpolated as a character where the escape text was meant.
+- ⚠️ **FOUND AND DELIBERATELY LEFT: `index.html:34282-34283` quotes the same sentinel as `' '` — a
+  literal SPACE (0x20, verified in the bytes), not the NUL.** *"buildTree only creates a node when
+  `dimKey()` is not `' '`, and `dimKey` returns `' '` for exactly the cases dimName returned null
+  for"* — both wrong about a sentinel defined 23 lines below them. Almost certainly the same mangling,
+  normalised to a space rather than to a NUL. Not fixed here **because the repo's own rule bumps
+  `MODULE_V` on any change to a module's `index.html`**, and paying an app-wide cache-bust plus a
+  conflict on a file another session is actively editing, to correct two words in a comment with no
+  behavioural effect, is the wrong trade. It is recorded here so the next reader of that comment does
+  not trust it — fix it when something else in that file is being changed anyway.
+
+No `MODULE_V` bump: markdown only.
 ### A CO Ref column that unlocks a bulk edit already written, select-by-location, and the bulk change-order insert (2026-09-09) — fmlozano
 
 Owner: *"There is already a function to add change order in the activities within the schedule module
@@ -517,7 +560,7 @@ it is a **rung in the pushed WBS**, sitting between the trade and the places:
   name (two items typed `Rebar` and `rebar ` are one grouping, and keying raw would build two branches
   that look identical), named by the grouping, and ordered by the order `cfg.activities` first
   mentions them — the same "the setup's own order" rule floors and zones already follow.
-- ⚠️⚠️ **IT SELF-SKIPS, and that is what makes adding a dim safe.** `dimKey` returns the same `' '`
+- ⚠️⚠️ **IT SELF-SKIPS, and that is what makes adding a dim safe.** `dimKey` returns the same `'\u0000'`
   sentinel `tower` uses on a single-tower project, so an ungrouped item attaches to its trade and the
   rung disappears — a project where nothing is grouped pushes a tree **identical** to before this
   existed. `buildTree`'s skip rule is HEAD's, untouched. Both are asserted.
