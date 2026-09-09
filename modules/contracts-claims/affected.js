@@ -554,6 +554,12 @@ window.CCAffected = (function () {
     (opts.initial || []).forEach(function (i) { if (i) sel[String(i)] = 1; });
     var cur = {};        // level id -> normalised value key — the ladder's POSITION
     var open = {};       // branch code -> 1 — expanded in the tree
+    /* ⚠ SEPARATE from `open`. The picker tree and the preview Gantt show the same branches for
+       different reasons -- you collapse a branch in the picker to stop scrolling past it, and in
+       the preview to see the shape of the impact. Sharing one map made collapsing in one pane
+       silently reorganise the other. Preview branches start OPEN, because a collapsed Gantt is
+       an empty Gantt. */
+    var gopen = {};
     var q = '';
     var coDur = 0;       // change-order duration for the preview; 0 = bars only
 
@@ -656,72 +662,148 @@ window.CCAffected = (function () {
         '</div>';
     }
 
+    /* The change-order plan for the current selection, from the SHARED engine.
+       ⚠️⚠️ `COInsert.bulkSplitPlan` is the SAME function the Project Schedule runs when it actually
+       performs the insert (assets/js/co-insert.js). That is the whole point of the extraction: this
+       preview cannot drift from what the insert does, because there is nothing to drift from.
+       ⚠️ UTC helpers are handed in, because this module's dates are UTC while the schedule's are
+       local. The engine standardises on neither -- see its header.
+       ⚠️ `usedIds` reads ACTS, so a proposed Activity ID never collides with one already on the
+       programme, exactly as it will not when the schedule writes it. */
+    var CO = (window.COInsert && window.COInsert.make({
+      pd: pd, dstr: function (d) { return d ? d.toISOString().slice(0, 10) : null; },
+      addDays: addDays, dayDiff: dayDiff,
+      usedIds: function () { return ACTS.map(function (a) { return a.activity_id; }); }
+    })) || null;
+
+    function optVal(k) { var v = opts[k]; return (typeof v === 'function') ? v() : (v || ''); }
+
+    function planFor(hosts) {
+      if (!CO || !coDur) return null;
+      /* ⚠️ EOT IS NOT AN INSERT. Its activities are the delay BASIS -- the granted days move the
+         contract completion date, they are not added to the work. The schedule's own bulk screen
+         refuses to plan one for the same reason, and showing proposed activities here would invite
+         a planner to expect rows that will never be created. */
+      if (optVal('recType') === 'EOT') return null;
+      return CO.bulkSplitPlan(hosts, optVal('coRef'), optVal('coName') || 'Change order', coDur, 'mid');
+    }
+
+    /* The Gantt. WBS branches, the host bars with the gap the variation opens inside them, and the
+       CHANGE-ORDER ACTIVITIES THAT WILL BE CREATED drawn as their own rows beneath their host.
+       Owner: *"a change order not only affects existing activities but will also add them."* */
     function ganttHTML(list) {
-      if (!list.length) return '<div class="cca-empty">Nothing selected yet — the preview draws the activities you pick.</div>';
-      var rows = list.filter(function (a) { return pd(a.start_date) && pd(a.end_date); });
-      if (!rows.length) return '<div class="cca-empty">' + list.length + ' selected, but none carry both a start and a finish, so there is nothing to draw.</div>';
+      if (!list.length) {
+        return '<div class="cca-empty">Nothing selected yet.</div>';
+      }
+      var dated = list.filter(function (a) { return pd(a.start_date) && pd(a.end_date); });
+      if (!dated.length) {
+        return '<div class="cca-empty">' + list.length + ' selected, but none carry both a start ' +
+               'and a finish, so there is nothing to draw.</div>';
+      }
+
+      var plan = planFor(dated);
+      var byHost = {};
+      (plan || []).forEach(function (p) { byHost[String(p.host.activity_id)] = p; });
+
+      // ---- the window: everything the plan touches, before and after ----------
       var mn = null, mx = null;
-      rows.forEach(function (a) {
-        var s = pd(a.start_date), e = pd(a.end_date), pv = previewOf(a, coDur);
-        if (pv && pv.newEnd) e = pv.newEnd;
-        if (!mn || s < mn) mn = s;
-        if (!mx || e > mx) mx = e;
+      function seen(d) { if (!d) return; if (!mn || d < mn) mn = d; if (!mx || d > mx) mx = d; }
+      dated.forEach(function (a) {
+        seen(pd(a.start_date)); seen(pd(a.end_date));
+        var p = byHost[String(a.activity_id)];
+        if (p && p.build) { seen(pd(p.build.hostPatch.end_date)); seen(pd(p.build.coRow.end_date)); }
       });
-      var total = Math.max(1, dayDiff(mn, mx) + 1);
-      /* Auto-fit, clamped — a preview has no zoom, so the window must always fit what is selected. */
-      var dayw = Math.max(0.8, Math.min(6, 560 / total));
-      var W = Math.max(110, Math.round(total * dayw));
-      function xOf(d) { return Math.round(dayDiff(mn, d) * dayw); }
+      if (!mn || !mx) return '<div class="cca-empty">No dates to draw.</div>';
+      var span = Math.max(1, dayDiff(mn, mx) + 1);
+      function pct(d) { return Math.max(0, Math.min(100, (dayDiff(mn, d) / span) * 100)); }
+      function seg(a, b) {
+        var l = pct(a), r = pct(b);
+        return 'left:' + l.toFixed(2) + '%;width:' + Math.max(0.4, r - l).toFixed(2) + '%;';
+      }
 
-      var out = '<div class="cca-mg"><div class="cca-mg-row cca-mg-head">' +
-        '<span class="cca-mg-lbl"></span><span class="cca-mg-track" style="width:' + W + 'px;">' +
-        '<b class="cca-mg-t0">' + esc(shortDate(mn)) + '</b><b class="cca-mg-t1">' + esc(shortDate(mx)) + '</b>' +
-        '</span><span class="cca-mg-fin">Finish</span></div>';
+      // ---- rows, grouped by WBS ----------------------------------------------
+      var entries = treeOf(dated, NAME_BY_CODE, LEVELS);
+      /* ⚠ `undefined` means never seen -> OPEN; an explicit 0 means the planner collapsed it.
+         Using delete for the collapse would make it indistinguishable from never-seen, so a
+         collapsed branch would spring open on the next repaint -- which is every keystroke. */
+      entries.forEach(function (e) { if (e.branch && gopen[e.code] === undefined) gopen[e.code] = 1; });
+      var vis = visibleTree(entries, gopen);
+      var out = [], drawn = 0, capped = false;
 
-      /* ⚠️ THE STRIP CARRIES THE SAME QUALIFIER THE TREE DOES, and it has to: the owner's whole
-         complaint is that most activities share a name, and a preview listing "Formworks" nine
-         times answers the question "which ones did I pick?" with "some Formworks". Qualified only
-         where the name actually repeats, exactly as treeOf does it. */
-      var mgN = {};
-      rows.forEach(function (a) { var k = String(a.activity_name || '').trim(); mgN[k] = (mgN[k] || 0) + 1; });
+      for (var i = 0; i < vis.length; i++) {
+        var e = vis[i];
+        var pad = 'padding-left:' + (8 + e.depth * 12) + 'px;';
+        if (e.branch) {
+          /* A branch row carries the span of everything under it, so a collapsed branch still says
+             when its work happens rather than going blank. */
+          var kids = e.acts || [], bs = null, be = null;
+          kids.forEach(function (k) {
+            var s = pd(k.start_date), en = pd(k.end_date);
+            if (!s || !en) return;
+            if (!bs || s < bs) bs = s;
+            var p2 = byHost[String(k.activity_id)];
+            if (p2 && p2.build) { var pe = pd(p2.build.hostPatch.end_date); if (pe > en) en = pe; }
+            if (!be || en > be) be = en;
+          });
+          out.push('<div class="cca-gr-row cca-gr-branch" data-gb="' + esc(e.code) + '" style="' + pad + '">' +
+            '<span class="cca-gr-lbl"><span class="cca-caret">' + (gopen[e.code] ? '▾' : '▸') + '</span>' +
+            esc(e.name || e.code) + ' <i>' + e.n + '</i></span>' +
+            '<span class="cca-gr-track">' +
+              (bs && be ? '<i class="cca-gr-sum" style="' + seg(bs, be) + '"></i>' : '') +
+            '</span></div>');
+          continue;
+        }
 
-      out += rows.slice(0, 120).map(function (a) {
-        var s = pd(a.start_date), e = pd(a.end_date), pv = previewOf(a, coDur);
-        var x = xOf(s), w = Math.max(3, Math.round((dayDiff(s, e) + 1) * dayw));
+        if (drawn >= 300) { capped = true; break; }
+        var a = e.a, s0 = pd(a.start_date), e0 = pd(a.end_date);
+        var p = byHost[String(a.activity_id)];
         var bar = '';
-        if (pv && pv.newEnd) {
-          // the ghost rail runs to the NEW finish, so the added time is the visible thing
-          bar += '<i class="cca-mg-ghost" style="left:' + x + 'px;width:' + Math.max(3, Math.round((dayDiff(s, pv.newEnd) + 1) * dayw)) + 'px;"></i>';
+        if (p && p.build) {
+          var newEnd = pd(p.build.hostPatch.end_date);
+          // the host, now finishing later
+          bar += '<i class="cca-gr-bar" style="' + seg(s0, newEnd) + '"></i>';
+          // ⚠️ The notch is drawn from the PLAN's own co window, not re-derived here -- it is where
+          //    the engine says the work stops, so the picture cannot disagree with the insert.
+          bar += '<i class="cca-gr-cut" style="' + seg(p.plan.co.start, p.plan.co.end) + '"></i>';
+          bar += '<i class="cca-gr-ext" style="' + seg(e0, newEnd) + '"></i>';
+        } else {
+          bar += '<i class="cca-gr-bar" style="' + seg(s0, e0) + '"></i>';
         }
-        bar += '<i class="cca-mg-bar" style="left:' + x + 'px;width:' + w + 'px;"></i>';
-        if (pv && pv.gapStart) {
-          /* ⚠️ BAR-LOCAL COORDINATES — the gap's origin is the bar's own start, not the timeline's,
-             which is how the schedule draws its own notch. A notch touching either edge is DROPPED
-             rather than drawn as a stub that reads like a rendering fault. */
-          var gx = dayDiff(s, pv.gapStart) * dayw;
-          var gw = Math.max(1, Math.round((dayDiff(pv.gapStart, pv.gapEnd) + 1) * dayw));
-          var full = (dayDiff(s, pv.newEnd) + 1) * dayw;
-          if (gx > 0 && gx + gw < full) bar += '<i class="cca-mg-cut" style="left:' + Math.round(x + gx) + 'px;width:' + gw + 'px;"></i>';
-        }
-        var nm = String(a.activity_name || '').trim();
-        var qual = (mgN[nm] > 1) ? (locSuffix(a, LEVELS) || a.activity_id) : '';
-        return '<div class="cca-mg-row"><span class="cca-mg-lbl" title="' +
-          esc(a.activity_id + ' · ' + (a.activity_name || '') + (qual ? ' · ' + qual : '')) + '">' +
-          esc(nm || a.activity_id) +
-          (qual ? '<span class="cca-qual"> · ' + esc(qual) + '</span>' : '') + '</span>' +
-          '<span class="cca-mg-track" style="width:' + W + 'px;">' + bar + '</span>' +
-          '<span class="cca-mg-fin">' + (pv && pv.err
-            ? '<span class="cca-mg-no" title="' + esc(pv.err) + '">' + esc(pv.err) + '</span>'
-            : pv && pv.newEnd
-            ? esc(shortDate(pv.newEnd)) + ' <b class="cca-mg-plus">+' + pv.shift + 'd</b>'
-            : esc(shortDate(e))) + '</span></div>';
-      }).join('');
-      out += '</div>';
+        out.push('<div class="cca-gr-row" style="' + pad + '">' +
+          '<span class="cca-gr-lbl" title="' + esc(a.activity_id + ' · ' + (a.activity_name || '')) + '">' +
+            esc(a.activity_name || a.activity_id) +
+            (e.qual ? '<span class="cca-qual"> · ' + esc(e.qual) + '</span>' : '') + '</span>' +
+          '<span class="cca-gr-track">' + bar + '</span></div>');
+        drawn++;
 
-      if (rows.length > 120) out += '<div class="cca-mg-more">+' + (rows.length - 120) + ' more not drawn</div>';
-      var nodate = list.length - rows.length;
-      if (nodate) out += '<div class="cca-mg-more">' + nodate + ' selected activit' + (nodate === 1 ? 'y has' : 'ies have') + ' no dates and cannot be drawn.</div>';
-      return out;
+        // ---- the activity this variation CREATES -----------------------------
+        if (p && p.build) {
+          var cr = p.build.coRow;
+          out.push('<div class="cca-gr-row cca-gr-new" style="padding-left:' + (8 + (e.depth + 1) * 12) + 'px;">' +
+            '<span class="cca-gr-lbl" title="' + esc('New activity ' + cr.activity_id + ' · ' +
+              cr.start_date + ' → ' + cr.end_date + ' · ' + cr.predecessors) + '">' +
+              '<span class="cca-gr-plus">+</span>' + esc(cr.activity_id) +
+              '<span class="cca-qual"> · ' + esc(cr.activity_name) + '</span></span>' +
+            '<span class="cca-gr-track">' +
+              '<i class="cca-gr-cobar" style="' + seg(pd(cr.start_date), pd(cr.end_date)) + '"></i>' +
+            '</span></div>');
+        } else if (p && p.err) {
+          out.push('<div class="cca-gr-row cca-gr-err" style="padding-left:' + (8 + (e.depth + 1) * 12) + 'px;">' +
+            '<span class="cca-gr-lbl">' + esc(p.err) + '</span><span class="cca-gr-track"></span></div>');
+        }
+      }
+
+      var nNew = (plan || []).filter(function (p) { return p.build; }).length;
+      var nErr = (plan || []).filter(function (p) { return p.err; }).length;
+      return '<div class="cca-gr-head"><span>' +
+          (plan ? '<b>' + nNew + '</b> new activit' + (nNew === 1 ? 'y' : 'ies') + ' will be created' +
+                  (nErr ? ' · <b>' + nErr + '</b> refused' : '')
+                : (optVal('recType') === 'EOT'
+                    ? 'An EOT adds no activities — its set is the delay basis'
+                    : 'Enter a duration to see the activities this creates')) +
+        '</span><span>' + esc(fullDate(mn)) + ' → ' + esc(fullDate(mx)) + '</span></div>' +
+        '<div class="cca-gr">' + out.join('') + '</div>' +
+        (capped ? '<div class="cca-mg-more">Showing the first 300 rows — collapse a branch to see the rest.</div>' : '');
     }
 
     function ladderHTML(lad) {
@@ -834,12 +916,12 @@ window.CCAffected = (function () {
           '<div class="cca-col">' +
             '<div class="cca-h"><span>Preview</span>' +
               '<span class="cca-durwrap">CO <input class="cca-dur cca-ctl" id="cca-dur" size="3" inputmode="numeric" value="' + (coDur || '') + '" placeholder="0"> days</span></div>' +
+            /* ⚠ THE GANTT IS NOT HIDDEN BEHIND A TOGGLE ANY MORE. It was a <details> while it
+               was a strip of 240 one-pixel bars -- correct then, wrong now: grouped under its WBS
+               branches and carrying the activities the variation creates, it IS the preview, and
+               the headline above it is the summary of what it shows. */
             '<div class="cca-body cca-mgbody">' + impactHTML(selActs) +
-              (selActs.length
-                ? '<details class="cca-imp-det"' + (selActs.length <= 12 ? ' open' : '') + '>' +
-                    '<summary>Per activity (' + selActs.length + ')</summary>' +
-                    ganttHTML(selActs) + '</details>'
-                : '') + '</div>' +
+              (selActs.length ? ganttHTML(selActs) : '') + '</div>' +
           '</div>' +
         '</div>';
       wire();
@@ -889,6 +971,9 @@ window.CCAffected = (function () {
         };
       });
 
+      host.querySelectorAll('.cca-gr-branch[data-gb]').forEach(function (el) {
+        el.onclick = function () { var c = el.dataset.gb; gopen[c] = gopen[c] ? 0 : 1; paint(); };
+      });
       host.querySelectorAll('.cca-row[data-branch]').forEach(function (el) {
         el.onclick = function (e) {
           if (e.target && e.target.tagName === 'INPUT') return;

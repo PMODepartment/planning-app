@@ -926,8 +926,11 @@ html.pd-dark .boq-why { color:#7fd6a2; }
 .cca-h span { font-variant-numeric:tabular-nums; }
 .cca-body { overflow-y:auto; }
 .cca-ladbody { height:150px; }
-.cca-treebody { height:300px; }
-.cca-mgbody { height:300px; overflow:auto; }
+.cca-treebody { height:360px; }
+/* ⚠ Taller than the tree pane’s sibling default was, because the preview now carries a
+   headline AND a Gantt: at 300px the Gantt got about six rows, which is a keyhole onto the
+   thing the panel exists to show. */
+.cca-mgbody { height:360px; overflow:auto; }
 .cca-empty { padding:14px 12px; font-size:11.5px; line-height:1.5; color:var(--pd-muted); }
 .cca-empty code { font-family:var(--pd-mono); font-size:11px; }
 
@@ -972,8 +975,8 @@ html.pd-dark .boq-why { color:#7fd6a2; }
 /* ---- the PROGRAMME IMPACT panel -------------------------------------------
    The answer to "what does this change order do?", above the per-bar detail. The strip below it
    is the evidence; this is the finding. */
-.cca-imp { padding:10px 12px; }
-.cca-imp-h { display:flex; flex-direction:column; gap:2px; margin-bottom:9px; }
+.cca-imp { padding:8px 12px 10px; }
+.cca-imp-h { display:flex; flex-direction:column; gap:1px; margin-bottom:7px; }
 .cca-imp-h b { font-size:13px; font-weight:700; color:var(--pd-ink); }
 .cca-imp-h span { font-size:11px; color:var(--pd-muted); }
 /* Only a REAL slip takes the danger colour. "Unchanged" must not read as an alarm, and an
@@ -996,52 +999,58 @@ html.pd-dark .boq-why { color:#7fd6a2; }
 .cca-imp-ax { display:flex; justify-content:space-between; margin-top:3px;
   font-size:9.5px; color:var(--pd-muted); font-variant-numeric:tabular-nums; }
 
-.cca-imp-note { margin-top:8px; font-size:11px; line-height:1.55; color:var(--pd-muted); }
+.cca-imp-note { margin-top:7px; font-size:10.5px; line-height:1.5; color:var(--pd-muted); }
 .cca-imp-note b { color:var(--pd-ink); font-weight:700; }
 /* ⚠ The honesty line. Muted but always present -- `slip` is a lower bound, not a forecast. */
-.cca-imp-warn { margin-top:7px; padding-top:7px; border-top:1px solid var(--pd-line);
-  font-size:10.5px; line-height:1.5; color:var(--pd-muted); }
+.cca-imp-warn { margin-top:6px; padding-top:6px; border-top:1px solid var(--pd-line);
+  font-size:10px; line-height:1.45; color:var(--pd-muted); }
 
-/* The per-activity strip becomes evidence you can open, not the whole answer. Collapsed by
-   default past 12 rows, which is where 240 one-pixel bars stopped meaning anything. */
-.cca-imp-det { border-top:1px solid var(--pd-line); }
-.cca-imp-det > summary { cursor:pointer; padding:7px 12px; font-size:10px; font-weight:700;
-  text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
-.cca-imp-det > summary:hover { color:var(--pd-ink); background:rgba(128,128,128,.08); }
-/* ---- the Gantt strip ------------------------------------------------------
-   ⚠️ Positioned divs, not SVG. Adapted from the schedule's own `renderMobileGanttBody`, which is
-   the only self-contained date-scaled bar renderer in the repo; contracts-claims draws no SVG at
-   all today and a preview strip is not the place to introduce that idiom.
-   ⚠️ `min-width:max-content` on the strip is what keeps every row's track aligned once the body
-   scrolls horizontally -- without it each row would size to its own content. */
-.cca-mg { padding:4px 0; min-width:max-content; }
-.cca-mg-row { display:flex; align-items:center; gap:8px; padding:2px 10px; }
-.cca-mg-head { position:sticky; top:0; z-index:1; background:var(--pd-card);
-  font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
-  color:var(--pd-muted); border-bottom:1px solid var(--pd-line); padding-bottom:3px; }
-/* ⚠️ Wide enough for a qualified name ("Formworks · Z1"), because an unqualified one is what
-   the owner reported as unusable. The strip scrolls horizontally rather than truncating the
-   part that identifies the row. */
-.cca-mg-lbl { flex:0 0 128px; min-width:0; font-size:11px; overflow:hidden;
+/* ---- the preview GANTT ----------------------------------------------------
+   Replaces the old per-activity strip. Owner: *"The per activity view doesn't bring much value ...
+   I was thinking that it would show the whole Gantt view of the schedule and it would see the
+   relationships per level/activity/wbs."* So rows are grouped under their WBS branches, host bars
+   carry the gap the variation opens, and the activities the change order CREATES are drawn as
+   their own rows beneath their host.
+   ⚠ Percentage geometry throughout, so the pane needs no measurement pass and reflows with the
+   modal instead of being laid out in pixels against a width it has to guess. */
+.cca-gr-head { display:flex; justify-content:space-between; gap:8px; padding:6px 10px;
+  border-bottom:1px solid var(--pd-line); font-size:10px; color:var(--pd-muted);
+  background:rgba(128,128,128,.06); position:sticky; top:0; z-index:2; }
+.cca-gr-head b { color:var(--pd-ink); }
+.cca-gr { padding:2px 0 6px; }
+.cca-gr-row { display:flex; align-items:center; gap:8px; padding:1px 10px 1px 0; height:18px; }
+.cca-gr-lbl { flex:0 0 150px; min-width:0; font-size:10.5px; overflow:hidden;
   text-overflow:ellipsis; white-space:nowrap; }
-.cca-mg-track { position:relative; flex:0 0 auto; height:13px; border-radius:3px;
-  background:rgba(128,128,128,.10); }
-.cca-mg-head .cca-mg-track { background:none; height:12px; }
-.cca-mg-t0 { position:absolute; left:0; top:0; }
-.cca-mg-t1 { position:absolute; right:0; top:0; }
-.cca-mg-fin { flex:0 0 88px; text-align:right; font-size:10px; color:var(--pd-muted);
-  font-variant-numeric:tabular-nums; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.cca-mg-bar { position:absolute; top:2px; height:9px; border-radius:2px; background:var(--pd-red); }
-/* ⚠️ A TOKEN, never the `#6b7280` the schedule's own strip hardcodes -- that literal is a
-   light-mode grey and this modal renders in both themes. */
-.cca-mg-ghost { position:absolute; top:1px; height:11px; border-radius:3px;
-  border:1px dashed var(--pd-muted); opacity:.7; }
-/* The notch the change order opens inside the bar -- the P6 suspended-activity convention the
-   schedule already draws with `.ps-bar-cut`. Bar-local coordinates; see ganttHTML. */
-.cca-mg-cut { position:absolute; top:2px; height:9px; background:var(--pd-card);
+.cca-gr-track { position:relative; flex:1 1 auto; height:12px; border-radius:2px;
+  background:rgba(128,128,128,.08); }
+
+/* An existing activity. Where a variation lands it is drawn to its NEW finish, with the gap and
+   the added tail marked inside it -- one bar, matching how the schedule itself draws a split. */
+.cca-gr-bar { position:absolute; top:1px; height:10px; border-radius:2px; background:var(--ps-cc-bar,#8a8f94); }
+html.pd-dark .cca-gr-bar { background:#6f767d; }
+/* The notch: where work stops. Bar-local, taken from the PLAN's own co window. */
+.cca-gr-cut { position:absolute; top:1px; height:10px; background:var(--pd-card);
   border-left:1px dashed var(--pd-muted); border-right:1px dashed var(--pd-muted); }
-.cca-mg-plus { color:var(--pd-red); font-weight:700; }
-.cca-mg-no { color:var(--pd-muted); }
+/* The days the variation adds past the original finish. */
+.cca-gr-ext { position:absolute; top:1px; height:10px; border-radius:0 2px 2px 0;
+  background:color-mix(in srgb, var(--pd-danger-text) 30%, transparent); }
+/* A collapsed branch still says WHEN its work happens rather than going blank. */
+.cca-gr-sum { position:absolute; top:4px; height:4px; border-radius:2px; background:rgba(128,128,128,.45); }
+
+.cca-gr-branch { cursor:pointer; }
+.cca-gr-branch:hover { background:rgba(128,128,128,.10); }
+.cca-gr-branch .cca-gr-lbl { font-weight:600; font-size:10.5px; }
+.cca-gr-branch .cca-gr-lbl i { font-style:normal; color:var(--pd-muted); font-weight:400; }
+
+/* ⚠⚠ THE ROW THAT DID NOT EXIST BEFORE: an activity the change order CREATES. It is red and
+   marked with a +, because it is the half of a variation the old preview could not show at all -- a
+   planner has to be able to see the work being ADDED, not only the bars being stretched. */
+.cca-gr-new .cca-gr-lbl { color:var(--pd-red); font-family:var(--pd-mono); font-size:9.5px; }
+.cca-gr-plus { display:inline-block; width:11px; font-weight:800; color:var(--pd-red); }
+.cca-gr-cobar { position:absolute; top:2px; height:8px; border-radius:2px; background:var(--pd-red); }
+/* A host the engine refused (1-day, undated, already cites this reference) says so on its own row
+   rather than being silently absent from a list the planner thought was complete. */
+.cca-gr-err .cca-gr-lbl { color:var(--pd-muted); font-style:italic; font-size:9.5px; }
 .cca-mg-more { padding:6px 10px; font-size:10.5px; color:var(--pd-muted); }
 
 @media (max-width:820px) {

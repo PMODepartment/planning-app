@@ -95,6 +95,79 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-09 (r) — The change-order engine becomes shared, and the wizard previews what it will create
+
+**New `assets/js/co-insert.js`.** Owner: *"The per activity view doesn't bring much value ... I was
+thinking that it would show the whole Gantt view of the schedule and it would see the relationships
+per level/activity/wbs ... We should also consider when a change order not only affects existing
+activities but will also add them. I believe there is a function already that is available in the
+schedule module. Let's implement holistically."* All three are right, and the third is the one that
+decided the shape of this.
+
+#### ⚠️⚠️ The arithmetic moved out of project-schedule, and the reason its own comment gave for keeping it was half right
+`splitPlan` / `splitBuild` / `bulkSplitPlan` lived inside `modules/project-schedule/index.html`, under
+a comment stating: *"AND IT LIVES HERE, NOT IN CONTRACTS & CLAIMS ... inserting the work is this
+module's job."* **True of the WRITES, which still happen only there. False of the READS.** Contracts
+& Claims has to preview the same result — a planner raising a variation needs to see the activities
+it will create before agreeing to it — and the only two ways to do that were to copy the arithmetic
+or share it. `affected.js` already carried a comment refusing the copy: *"a second copy of the one
+calculation a CO claim turns on."* So it is shared: **one implementation, two callers.**
+
+⚠️⚠️ **THE DATE HELPERS ARE INJECTED, AND THAT IS WHAT MADE THE MOVE SAFE.** project-schedule's
+`pd`/`dstr`/`addDays` are **local-time**; contracts-claims' are **UTC**, deliberately (in UTC+8 a
+plain `YYYY-MM-DD` parsed locally lands on the previous day at 16:00 and every bar starts a day
+early). Standardising the shared file on either would have silently moved the other module's dates.
+The *arithmetic* is what must not be duplicated; the date representation is each module's own.
+
+⚠️ **One deliberate behaviour change, recorded rather than left to be discovered:** the single-insert
+id allocator now scans to 9999 rather than 999, because the bulk allocator (which threads a `taken`
+map, without which 23 hosts under `CO-014` would every one be handed the id `CO-014`) is the survivor
+of the two. It can only ever find *more* free ids.
+
+**Proved identical, not asserted:** a suite slices the OLD `splitPlan`/`splitFreeId`/`splitBuild`/
+`_bulkFreeId`/`bulkSplitPlan` out of **git HEAD** and executes them beside the shipped shared file
+over the same inputs — 3 starts × 6 spans × 4 durations × 5 cut positions, plus id collisions,
+1/5/23-host runs, a fixed cut date producing mixed refusals, and the undated / already-cites
+branches. **370 results compared, 370 identical, 0 differing.** A refactor that cannot show this is a
+rewrite with extra steps.
+
+#### The preview is a Gantt, and it draws the work being ADDED
+The per-activity strip is gone. In its place, grouped under their **WBS branches** (collapsible,
+open by default): each host bar drawn to its **new** finish with the notch where work stops, and —
+the half the old preview could not show at all — **the change-order activity that will be created**,
+as its own red row beneath its host.
+
+- ⚠️ Those rows come from `bulkSplitPlan`, **the same function the schedule runs when it performs the
+  insert**. The ids are real (`CO-014`, `CO-014-2`, `CO-014-3` — the bulk allocator working), the
+  dates are real, and the tooltip carries the actual predecessor string (`ST-5-1 SS+12`). The preview
+  cannot drift from the insert, because there is nothing to drift from.
+- ⚠️ **A refused host says so on its own row** — *"A 1-day activity cannot be split…"*, the engine's
+  own message — rather than being quietly absent from a list the planner believes is complete.
+- ⚠️ **An EOT plans nothing.** Its activities are the delay *basis*; the granted days move the
+  contract completion date and are not added to the work. The schedule's bulk screen refuses one for
+  the same reason, and proposing rows here would invite a planner to expect activities that will
+  never exist.
+- ⚠️ The Gantt is **not behind a `<details>` any more**. It was, while it was a strip of 240
+  one-pixel bars — correct then, wrong now: it *is* the preview, and the impact headline above it is
+  the summary of what it shows. The preview pane grew 300 → 360px to match, and the tree beside it
+  with it.
+- ⚠️ Preview branches keep their **own** open/closed map. Sharing one with the picker tree made
+  collapsing in one pane silently reorganise the other; and a collapse stores `0` rather than
+  deleting the key, or it would be indistinguishable from never-seen and spring open on the next
+  repaint — which is every keystroke.
+
+#### Verified
+370 equivalence assertions (above) + the 18 on `impactOf`, all sliced from shipped files. Driven
+through the real `CCWizard.open()` at 1440px in both themes: **21 activities created, 1 refused**,
+ids allocated from the reference, WBS grouping correct, no page horizontal scroll, and every colour
+resolving through `--pd-*` in dark (`.cca-gr-bar` → `#6f767d`, no hardcoded light grey). Class audit
+clean **both** ways after deleting the now-dead `.cca-mg-*` strip rules and the `<details>` rules.
+⚠️ Also brought the `MODULE_V` **fallback** literal current — it had drifted 4 versions behind. It is
+only used by a page that omits the `?v=`, which is why the drift was invisible.
+`co-insert.js` (new) / `affected.js` / `wizard.js` / contracts `module.css` → `?v=20260909r`;
+`MODULE_V` → `20260909r`.
+⚠️ **Not verified signed in** — fixture data through a stubbed layer. No activity has been inserted.
+
 ### 2026-09-09 (p3) — Portfolio's 13 in-page tabs go, the S-curve becomes per-project, and the KPI cards stop explaining themselves
 
 Owner's three Portfolio Dashboard items and two Project Dashboard items. Stage 3 of a five-stage pass.

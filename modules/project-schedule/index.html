@@ -4141,6 +4141,7 @@
 <script src="../../assets/js/calendar.js?v=20260903a"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
+<script src="../../assets/js/co-insert.js?v=20260909r"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 (function () {
@@ -25236,157 +25237,27 @@
   // finishes coDur days further out. That is the owner's "extend the finish" decision and the
   // honest CPM result: the variation's time impact is the thing a CO claim has to evidence.
   // Returns null with a reason when the cut cannot produce two workable halves.
-  function splitPlan(hostStart, hostEnd, cut, coDur) {
-    if (!hostStart || !hostEnd || !cut) return { err: 'This activity has no start and finish to split.' };
-    var dur = dayDiff(hostStart, hostEnd) + 1;
-    if (dur < 2) return { err: 'A 1-day activity cannot be split — there is no point inside it. Lengthen it, or add the change order as its own activity.' };
-    if (cut <= hostStart) return { err: 'Pick a date AFTER the activity starts (' + Fmt.date(dstr(hostStart)) + ') — the first part needs at least one day.' };
-    if (cut > hostEnd) return { err: 'Pick a date on or before the activity finishes (' + Fmt.date(dstr(hostEnd)) + ') — the second part needs at least one day.' };
-    var d1 = dayDiff(hostStart, cut) ;              // days worked before the interruption
-    var d2 = dur - d1;                              // the host's remaining days, moved later
-    var co = Math.max(1, Math.round(coDur || 1));
-    var coStart = cut, coEnd = addDays(coStart, co - 1);
-    var s2 = addDays(coEnd, 1), e2 = addDays(s2, d2 - 1);
-    return {
-      seg1: { start: hostStart, end: addDays(cut, -1), dur: d1 },
-      co:   { start: coStart, end: coEnd, dur: co },
-      seg2: { start: s2, end: e2, dur: d2 },
-      shift: co                                     // how much later the line item now finishes
-    };
-  }
-  // Inserting a segment after `afterSeq` pushes every later segment down one. Returns the patches
-  // to apply, so the caller can write them in one pass and the ordering stays a pure function.
-  // A unique Activity ID, checked against everything currently in the project.
-  function splitFreeId(cand) {
-    var taken = {}; rows.forEach(function (r) { if (r.activity_id) taken[String(r.activity_id)] = 1; });
-    if (!taken[cand]) return cand;
-    for (var n = 2; n < 999; n++) if (!taken[cand + '-' + n]) return cand + '-' + n;
-    return cand + '-' + Date.now();
-  }
-  // THE WHOLE EDIT, as data. Returns { hostPatch, coRow } — nothing is written here, so the
-  // arithmetic can be tested without a database.
-  //
-  // ⚠️⚠️ ONE LINE ITEM, BY REQUEST. Owner 2026-09-07: *"recently we have a system wherein if a
-  // change order activity is inserted between a main contract activity a separate line of the main
-  // contract activity is generated. Now i want to retain the single line-item for the main contract
-  // activity."* So the host is no longer cut in two. It keeps its id, its name, its start and every
-  // one of its own days, and its FINISH MOVES OUT by the change order's duration — the same time
-  // impact the two-row model produced, now carried by one bar. The change order is the only row
-  // created.
-  //   · the host keeps its own predecessors AND its own successors. Because the row that followed
-  //     it is still the row that follows it, THERE IS NOTHING TO RE-POINT. The old model had to send
-  //     every successor to a continuation row or it would start while the second half of the work
-  //     was still going; that whole failure mode leaves with the second row.
-  //   · the CO is linked SS+<days worked before the interruption>, so it sits INSIDE the host's bar
-  //     at the point the work actually stops.
-  //   · the CO stays its own line item, with its own scope_type and ref — it is real scope.
-  // ⚠️ duration_days is written to MATCH the new span (own days + the change order's), because the
-  // scheduling engine derives a finish from a duration and would otherwise pull the bar back to the
-  // old date the next time anything recalculates.
-  // ⚠️ THE HONEST COST of one line: the date-span-weighted roll-ups (_vsPct and friends weight by
-  // dayDiff(start,end)+1) now see the host spanning the change order's days too, so that window is
-  // counted in both rows. Two rows tiled the window exactly and did not. That is the trade for a
-  // single line item, and it was the owner's call; if it ever matters, weight by duration_days,
-  // which is still the host's own work plus the gap and is written consistently here.
-  function splitBuild(host, plan, co) {
-    var coId = splitFreeId(co.ref ? String(co.ref).trim() : ((host.activity_id || 'CO') + '-CO'));
-    var lag = plan.seg1.dur;                          // days the host works before the interruption
-    var own = plan.seg1.dur + plan.seg2.dur;          // the host's OWN days - unchanged by the variation
-    var coRow = {
-      activity_id: coId, activity_name: co.name || 'Change order', activity_type: 'Task',
-      status: 'Not Started', percent_complete: 0,
-      start_date: dstr(plan.co.start), end_date: dstr(plan.co.end), duration_days: plan.co.dur,
-      // ⚠️ SS + the days already worked, NOT an FS from the host. Under the two-row model the host
-      // was truncated at the cut, so "after the host" was true; with one uncut line an FS link would
-      // claim the variation starts after the WHOLE activity finishes - false, and it would slide the
-      // change order to the wrong end of the bar the next time anything recalculates.
-      predecessors: host.activity_id ? (String(host.activity_id) + ' SS+' + lag) : null,
-      wbs: host.wbs || null, wbs_node_id: host.wbs_node_id || null,
-      work_type: host.work_type || null, location: host.location || null,
-      phase: host.phase || 'construction',
-      scope_type: 'change_order', change_order_ref: co.ref ? String(co.ref).trim() : null
-      // No split_group. The change order is its own line item that happens to sit in the gap, and
-      // folding it into the host would report its days as main-contract work.
-    };
-    return {
-      hostPatch: { end_date: dstr(plan.seg2.end), duration_days: own + plan.co.dur },
-      coRow: coRow,
-      // Kept as empty/null so nothing downstream has to learn a new shape: there is no second half
-      // to create, no group to renumber and - the point - nothing to re-point.
-      segRow: null, renumber: [], repoint: []
-    };
-  }
-
-  // Swap one predecessor's Activity ID for another INSIDE a predecessor string, keeping that entry's
-  // relationship type and lag — re-pointing the edge, not replacing it with a default FS.
-  function _repointPred(str, fromId, toId) {
-    return _predTokens(str).map(function (tok) {
-      var m = tok.match(/^([A-Za-z0-9._\-]+)([\s\S]*)$/);
-      return (m && m[1] === fromId) ? (toId + m[2]) : tok;
-    }).join(', ');
-  }
-  /* ---- The bulk change-order insert -----------------------------------------------------------
-     Owner 2026-09-09: *"There is already a function to add change order in the activities within
-     the schedule module this just needs to be integrated in the wizard and in a bulk manner in
-     case that the CO/EOT affects a lot."*
-
-     ⚠️⚠️ IT REUSES `splitPlan` AND `splitBuild` UNMODIFIED. They are pure functions that return
-        data and write nothing, which is exactly what makes a bulk PREVIEW possible -- 23 hosts can
-        be planned, shown and then applied. Re-deriving those dates here would be a second copy of
-        the one calculation a change-order claim turns on, and the two copies would drift.
-     ⚠️⚠️ AND IT LIVES HERE, NOT IN CONTRACTS & CLAIMS, for the same reason: the arithmetic is
-        here, and this app is the one that owns schedule writes. Contracts & Claims records WHICH
-        activities a variation touches; inserting the work is this module's job.
-     ⚠️ ONE PREVIEW FOR THE WHOLE RUN, replacing applySplit's per-host confirm(). Twenty-three
-        confirmations is not a user interface, and a planner clicking through them cannot see the
-        total time impact they are agreeing to. */
-
-  /* ⚠️⚠️ A BULK-SAFE ID ALLOCATOR, AND IT IS NOT OPTIONAL. `splitFreeId` checks the candidate
-     against `rows` only -- correct for one insert, and quietly catastrophic for many, because
-     `splitBuild` uses `co.ref` as the id when one is given. Nothing is written until the end of
-     the run, so `rows` never grows during it: twenty-three hosts under CO-014 would every one of
-     them be handed the id "CO-014". Twenty-three activities sharing an Activity ID breaks the
-     predecessor strings (which reference activities BY id), the schedule<->document links and the
-     affected-activity links, all silently. So the run threads a `taken` map through and each id is
-     checked against both. */
-  function _bulkFreeId(cand, taken) {
-    var c = String(cand || 'CO');
-    var used = {}; rows.forEach(function (r) { if (r.activity_id) used[String(r.activity_id)] = 1; });
-    if (!used[c] && !taken[c]) { taken[c] = 1; return c; }
-    for (var i = 2; i < 9999; i++) {
-      var t = c + '-' + i;
-      if (!used[t] && !taken[t]) { taken[t] = 1; return t; }
-    }
-    var f = c + '-' + Date.now(); taken[f] = 1; return f;
-  }
-
-  /* Plans the whole run. PURE -- returns descriptors and writes nothing, so the preview and the
-     apply cannot disagree about what will happen.
-     `cut` is either a Date (the same day for every host, refused where it falls outside) or the
-     string 'mid' (each host's own midpoint, which splitPlan guarantees is always valid).
-     Every host resolves to exactly one entry, with either `plan` or `err` -- so the preview can
-     show refusals rather than a shorter list than the planner selected. */
-  function bulkSplitPlan(hosts, coRef, coName, coDur, cut) {
-    var taken = {};
-    return hosts.map(function (h) {
-      var hs = pd(h.start_date), he = pd(h.end_date);
-      if (!hs || !he) return { host: h, err: 'No start and finish to split.' };
-      /* ⚠️ Already carrying THIS reference -> refused, and named as such. Re-running the insert
-         after a partial failure must not give one host the same change order twice; a DIFFERENT
-         reference on the host is fine and is not refused, because an activity genuinely can be
-         hit by two variations. */
-      if (h.change_order_ref && coRef && String(h.change_order_ref).trim() === String(coRef).trim()) {
-        return { host: h, err: 'Already cites ' + coRef + '.' };
-      }
-      var c = (cut === 'mid') ? addDays(hs, Math.max(1, Math.floor((dayDiff(hs, he) + 1) / 2))) : cut;
-      var pl = splitPlan(hs, he, c, coDur);
-      if (pl.err) return { host: h, err: pl.err };
-      var b = splitBuild(h, pl, { name: coName, ref: coRef });
-      // The one thing splitBuild cannot get right in bulk -- see _bulkFreeId.
-      b.coRow.activity_id = _bulkFreeId(coRef ? String(coRef).trim() : ((h.activity_id || 'CO') + '-CO'), taken);
-      return { host: h, plan: pl, build: b };
-    });
-  }
+  /* ---- change-order insertion ---------------------------------------------------------------
+     ⚠️⚠️ THE ARITHMETIC MOVED TO assets/js/co-insert.js AND ONLY THE WIRING IS LEFT HERE.
+     `splitPlan` / `splitBuild` / `bulkSplitPlan` were defined in this file, and this file's own
+     comment explained why they should stay: *"AND IT LIVES HERE, NOT IN CONTRACTS & CLAIMS ...
+     inserting the work is this module's job."* That is still true of the WRITES, which still happen
+     here and nowhere else. It was never true of the READS: Contracts & Claims has to PREVIEW the
+     same result, and the alternatives were to copy the arithmetic or to share it. It is shared.
+     ⚠️ THE DATE HELPERS ARE PASSED IN, and that is what makes the move safe. This module's
+     `pd`/`dstr`/`addDays` are LOCAL-time; contracts-claims' are UTC by deliberate choice. The
+     shared file standardises on NEITHER — it takes whichever the caller uses, so nothing about this
+     module's dates changed in the extraction.
+     ⚠️ `usedIds` is a FUNCTION, not a snapshot: `rows` is replaced wholesale on every reload, and a
+     list captured at wiring time would allocate ids against a stale project. */
+  var _CO = COInsert.make({
+    pd: pd, dstr: dstr, addDays: addDays, dayDiff: dayDiff,
+    fmtDate: function (iso) { return Fmt.date(iso); },
+    usedIds: function () { return rows.map(function (r) { return r.activity_id; }); }
+  });
+  function splitPlan(hostStart, hostEnd, cut, coDur) { return _CO.splitPlan(hostStart, hostEnd, cut, coDur); }
+  function splitBuild(host, plan, co) { return _CO.splitBuild(host, plan, co); }
+  function bulkSplitPlan(hosts, coRef, coName, coDur, cut) { return _CO.bulkSplitPlan(hosts, coRef, coName, coDur, cut); }
 
   function openBulkSplit() {
     if (!pid || !rows.length) { UI.toast('Load a project first.', 'warn'); return; }

@@ -740,6 +740,13 @@ window.CCWizard = (function () {
       if (!D.mountAffectedPicker) return;
       D.mountAffectedPicker(ov.querySelector('#ccw-body'), {
         initial: st.affIds || [],
+        /* ⚠ The preview builds the change-order ACTIVITIES this record will create, and
+           `splitBuild` derives their Activity ID from the reference -- so without these the
+           preview would show the right dates under invented ids. Read live from the state
+           rather than captured, because Back to step 1 can change the reference. */
+        coRef: function () { return st.ref || ''; },
+        coName: function () { return st.desc || ''; },
+        recType: function () { return st.type || ''; },
         onCount: function (n) {
           /* ⚠️ Mirrors `st.affIds` on every change rather than only reading it at the end. The
              Trades step's equivalent kept only the live handle, so walking Back off the step and
