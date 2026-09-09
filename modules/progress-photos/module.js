@@ -2467,10 +2467,27 @@ window.ProgressPhotos = (function () {
       // otherwise print an empty <strong></strong> and a redundant total
       // count identical to the toolbar's own #pp-count above the grid).
       if (g.key === NO_GROUP_KEY) return cards;
-      return '<div class="pp-gallerygroup">' +
-        '<div class="pp-gallerygrouphead"><strong>' + Fmt.esc(g.label) + '</strong>' +
-          '<span class="pp-groupcount">' + g.items.length + '</span></div>' +
-        cards + '</div>';
+      /* ⚠⚠ THE GALLERY'S GROUPS ARE COLLAPSIBLE NOW, AND THIS IS NOT A NEW FEATURE -- it is the
+         one the LIST view has had all along. Owner: *"This needs to be properly compiled when
+         anticipating the photos database could reach up to 150+ photos."*
+         MEASURED against the shipped renderer at 1600x900: **150 photos = 9,747px, 10.8 screens of
+         scrolling; 400 photos = 22,880px, 25.4 screens** -- with eight month headings that scroll
+         away and nothing to jump between them. The DOM was never the problem (1,549 nodes at 150,
+         every image already `loading="lazy"`, signing already batched). The problem was that the
+         gallery had no way to put a month away once you had looked at it.
+         ⚠ It reuses `collapsed{}` and the SAME group keys the list view writes, so a month
+         collapsed in one view is collapsed in the other and `saveUI()` persists it -- the two views
+         finally agree instead of each holding a private idea of what is open.
+         ⚠ The class stays `.pp-gallerygrouphead` rather than becoming `.pp-group`: the list's rule
+         carries `min-width:980px` for its own horizontally-scrolling grid, which would force a
+         phantom scrollbar across the tile wall. Same behaviour, its own chrome. */
+      var isCol = !!collapsed[g.key];
+      var head = '<div class="pp-gallerygrouphead" data-group="' + Fmt.esc(g.key) + '">' +
+        '<span class="pp-caret" data-ico="' + (isCol ? 'chevronRight' : 'chevronDown') + '" data-ico-size="14"></span>' +
+        '<strong>' + Fmt.esc(g.label) + '</strong>' +
+        '<span class="pp-groupcount">' + g.items.length + '</span></div>';
+      if (isCol) return '<div class="pp-gallerygroup">' + head + '</div>';
+      return '<div class="pp-gallerygroup">' + head + cards + '</div>';
     }).join('');
     return body;
 
@@ -2592,7 +2609,9 @@ window.ProgressPhotos = (function () {
   }
 
   function wireRows(host) {
-    Array.prototype.forEach.call(host.querySelectorAll('.pp-group'), function (g) {
+    /* ⚠ BOTH views' group heads. The gallery's carries the same `data-group` and toggles the
+       same `collapsed{}` entry, so one wiring serves both and they cannot drift apart. */
+    Array.prototype.forEach.call(host.querySelectorAll('.pp-group,.pp-gallerygrouphead[data-group]'), function (g) {
       g.onclick = function () {
         var k = g.dataset.group;
         collapsed[k] = !collapsed[k];
