@@ -95,6 +95,44 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### Vertical Stacking restored after I broke it, plus 3D in full screen and under Planned vs Actual (2026-09-09) — jasantos2
+
+Owner, with a screenshot: *"where is the 3D? and how come there is an error, no vertical stacking
+now."* The live view read **"below is not defined"**.
+
+- ⚠️⚠️ **I broke it.** Yesterday's refactor lifted the level ordering into `_vsTowerModel`; that
+  region declares `above` and `below`, the drawing code still reads both, and the model did not hand
+  them back — so the card threw on every project. Fixed by returning them.
+- ⚠️⚠️ **And the proof I trusted could not see it.** I had verified that refactor by *reversing* it
+  and diffing against HEAD statement for statement. That passed, and was worthless here by
+  construction: reversing the extraction reassembles the whole function, so every variable resolves
+  inside it regardless of the shipped scope. **A textual-equivalence proof cannot see a
+  ReferenceError.** I checked the code was the same and never checked it still ran.
+- **Two checks now exist.** A runtime check that *executes* the shipped renderer on all three bases
+  and the trade-split path; ⚠️ its resolver links the **real** functions on demand and **refuses to
+  stub** any name the module does not define as a function — otherwise it would have gone green on
+  the broken file. Proved both ways: 10/10 fail naming `below` on the broken file, 10/10 pass on the
+  fixed one. Plus a static check that no variable left in the model is still read by the renderer.
+- **Where the 3D was:** already in the Vertical Stacking toolbar, `2D | 3D`, 2D default. It was
+  invisible only because the view threw before the toolbar drew.
+- **Planned vs Actual in 3D:** the 2D cell's three channels, unchanged — fill = the trade (⚠️ kept,
+  because replacing it once made every trade unidentifiable), brightness = done, and the **slip on
+  the block's edges**, plus a **baseline mark** at the planned fraction (absent when there is no
+  baseline; a mark at 0 would claim something different).
+- **Full screen in 3D:** the focus window builds the model, two side-by-side under compare, each
+  with its own viewpoint bar. ⚠️ The SVG-only zoom/fit controls are **not emitted** rather than left
+  dead — which created a null-dereference crash that the suite caught. Full screen **resizes** the
+  canvas, and the scrubber rebuilds the scenes while keeping the chosen viewpoint and disposing the
+  old GPU contexts.
+
+**479 assertions across eleven suites plus the runtime check, all passing.** ⚠️ Two suites remain
+broken by the concurrent change-order refactor (named again, not dropped). ⚠️ A `sed` prefix match
+nearly shipped collateral damage to two unrelated version strings — caught by reading the diff.
+⚠️ **Not verified signed-in**: the fix is proved by executing the shipped renderer, not by loading
+the live page.
+
+`MODULE_V` → `20260909v`. Detail: [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
 ### 2026-09-09 (u) — The dashboard KPI cards were squeezed BY the line the owner asked to remove
 
 Owner, two asks in one message: *"The 4 KPI cards should fit properly right now everything looks

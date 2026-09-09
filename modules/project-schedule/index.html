@@ -1838,6 +1838,14 @@
     @media (prefers-reduced-motion: reduce) { .ps-vs-meter > i { transition:none; } }
 
     /* The expand affordance on each tower card. Opacity, not display, so it stays keyboard-reachable. */
+    /* ⚠️⚠️ THE 3D PANE MUST HAVE A HEIGHT OF ITS OWN. resize() reads host.clientHeight to size
+       the drawing buffer, and a canvas is replaced-element content that contributes nothing back to
+       its parent's height — so a mount with `height:auto` measures 0, the buffer is sized 0 and
+       the pane renders black. min-height keeps it honest when windowed; the flex fill is what makes
+       full screen actually use the display. */
+    .ps-vs-fz-vp.is3d { display:flex; min-height:320px; }
+    .ps-vs-fz-3d { flex:1 1 auto; min-height:320px; align-self:stretch; }
+    .ps-vs-fz-3d canvas { display:block; border-radius:8px; }
     .ps-vs-expand { flex:none; width:26px; height:26px; display:inline-flex; align-items:center; justify-content:center;
       border:1px solid var(--pd-line); border-radius:7px; background:var(--pd-card); color:var(--pd-muted);
       cursor:pointer; opacity:0; transition:opacity .15s ease, border-color .15s ease, color .15s ease; }
@@ -15021,6 +15029,41 @@
         var rem = box(exW, dim, isNo ? 0.35 : 1);
         rem.userData.key = _key;
         grp.add(rem); picks.push(rem);
+        /* ⚠️⚠️ COMPARE KEEPS THE TRADE COLOUR HERE TOO, and that is not a style choice — it is the
+           rule the 2D cell records: replacing the fill with the slip colour turned every building
+           into four greys and reds and the trades became unidentifiable (owner: *"when clicking
+           planned vs actual the color of the trades are gone"*). So the three facts stay on three
+           independent channels, and the 3D card uses the SAME three:
+             FILL       = which trade (or tower / package)
+             BRIGHTNESS = how much is done
+             EDGES      = early / on time / late / no baseline   — the 2D cell's outline
+           ⚠️ Edges, not a tint: a tint would collide with the brightness channel, which is
+           already spoken for. LineSegments over the box's own geometry is the cheapest faithful
+           equivalent of a 2.5px stroke, and it survives every camera angle. */
+        if (_vsBasis === 'compare') {
+          var _sl = _vsSlip(c.list);
+          var _eg = new T.LineSegments(
+            new T.EdgesGeometry(rem.geometry),
+            new T.LineBasicMaterial({ color: new T.Color(_vsSlipColor(_sl)) }));
+          _eg.position.copy(rem.position);
+          _eg.userData.key = _key;
+          grp.add(_eg);
+          /* ⚠️ AND THE BASELINE'S OWN MARK. The 2D compare cell shows where the baseline says
+             progress should be, so "behind by this much" is a GAP you can see rather than two
+             numbers to subtract. A thin slab at that fraction is the 3D reading of the same mark;
+             it protrudes very slightly (exD * 1.04) so it is visible from the elevations, not only
+             from above. Absent when there is no baseline — a mark at 0 would read as "nothing was
+             planned by now", which is a different claim from "nobody has baselined this". */
+          var _pp = _vsPlanPct(c.list);
+          if (_pp != null) {
+            var _at = Math.max(0, Math.min(1, _pp / 100));
+            var _mk = new T.Mesh(new T.BoxGeometry(exW * 0.02 + 0.012, SH * 1.02, exD * 1.04),
+              new T.MeshBasicMaterial({ color: 0xf4f5f6 }));
+            _mk.position.set(x - exW / 2 + exW * _at, y + SH / 2, z);
+            _mk.userData.key = _key;
+            grp.add(_mk); picks.push(_mk);
+          }
+        }
         if (pct > 0) {
           var dw = Math.max(0.04, exW * Math.min(100, pct) / 100);
           var don = box(dw, col, isNo ? 0.5 : 1);
@@ -15108,6 +15151,24 @@
     setView('iso');
     return {
       setView: setView,
+      // ⚠️ Readable, so a rebuild can put the camera back where the planner left it (see the
+      // focus window's scrub path). Without it every scrub frame would snap back to Iso.
+      view: function () { return view; },
+      /* ⚠️⚠️ RESIZE IS A CAPABILITY, NOT AN EVENT LISTENER IN HERE. A WebGL canvas does not reflow:
+         its drawing buffer and the camera's aspect are numbers set once, so a card that goes full
+         screen keeps drawing at the old size and the model sits in a corner of a black rectangle.
+         The owner (or the modal) knows when the box changed; this is how it says so. */
+      resize: function () {
+        var w = host.clientWidth || W;
+        // ⚠️ Take the host's own height when it HAS one (the focus window gives its stage a real
+        // height, and full screen makes that height the display); fall back to the card's 0.72
+        // aspect inline, where the host is only as tall as what it contains.
+        var h = (host.clientHeight > 60) ? host.clientHeight : Math.max(320, Math.min(520, w * 0.72));
+        renderer.setSize(w, h);
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        applyRot();
+      },
       dispose: function () {
         try { renderer.forceContextLoss(); } catch (e) {}
         try { renderer.dispose(); } catch (e) {}
@@ -15145,7 +15206,15 @@
      height is a proportion. Saying so under the model is the difference between a useful schematic
      and a drawing somebody measures off. */
   function _vs3Foot() {
-    return '<p class="ps-vs3-foot">Schematic: the storeys, their order and the grade line are the ' +
+    // ⚠️ The compare sentence appears only under Planned vs Actual. Naming a channel that is not
+    // being painted teaches a planner to look for something that is not there.
+    var cmp = (_vsBasis === 'compare')
+      ? '<b>Planned vs actual:</b> the block\u2019s <b>edges</b> carry the slip (early / on time / late / no ' +
+        'baseline) and the pale slab is where the <b>baseline</b> says the work should be \u2014 the gap to the ' +
+        'bright stretch is how far behind or ahead it is. The trade colour is kept, so the trades stay ' +
+        'identifiable. '
+      : '';
+    return '<p class="ps-vs3-foot">' + cmp + 'Schematic: the storeys, their order and the grade line are the ' +
       'same as the 2D view. The <b>footprint</b> is the zone count laid out on the plan grid you set ' +
       'above &mdash; the schedule holds no zone outlines or dimensions, so <b>no length or area is ' +
       'implied</b>. Drag to orbit, scroll to zoom, click a block for its dates.</p>';
@@ -15249,8 +15318,13 @@
        cell in _vsCells; the 3D card must compose the IDENTICAL string or its clicks would look up
        cells that do not exist. Kept here so neither renderer owns the format. */
     function cellKey(keyPrefix, v, c) { return keyPrefix + '|' + v + '|' + (c.label || '*'); }
+    /* ⚠️⚠️ `above` AND `below` ARE PART OF THE MODEL'S ANSWER, not internals. The drawing code
+       reads both (a basement row is styled from `below`, and the grade line from where `above`
+       ends), so leaving them behind in here is what made the 2D view throw
+       "below is not defined" and refuse to draw at all. Anything the renderer still mentions has
+       to come back out — see the harness check that now enumerates exactly that. */
     return { byLevel: byLevel, levels: levels, disp: disp, groundAt: groundAt, detail: detail,
-      rowCells: rowCells, cellKey: cellKey };
+      above: above, below: below, rowCells: rowCells, cellKey: cellKey };
   }
   function _vsTowerSVG(list, baseColor, keyPrefix, tradeSplit) {
     // ⚠️ Bands by the AXIS level (the floor), never by LOC_LEVELS[0] — that is the tower on a
@@ -15259,6 +15333,7 @@
     var _m = _vsTowerModel(list, tradeSplit);
     if (!_m) return '<div class="ps-vs-empty">Nothing to stack for this selection.</div>';
     var byLevel = _m.byLevel, levels = _m.levels, disp = _m.disp, groundAt = _m.groundAt, detail = _m.detail;
+    var above = _m.above, below = _m.below;   // ⚠️ both are READ below; see the note in the model
     // ⚠️ Compare now prints a planned row and an actual row, each carrying a date AND its POC, plus
     // the variance line — one more line than it used to, hence the extra height.
     var fh = (_vsBasis === 'compare') ? 60 : 44, gap = 6, pad = 14, labelW = 92;
@@ -15589,6 +15664,34 @@
     return { svg: sv, cells: cells };
   }
 
+  /* The same build, in 3D. ⚠️ It mirrors _vsFocusBuild deliberately: the basis is swapped around
+     the call and restored in a `finally`, and `_vsCells` is snapshotted, because a modal build must
+     not leave the main view's cell map describing a basis the main view is not drawing.
+     ⚠️ It returns the SCENE HANDLE, not markup: a WebGL canvas cannot be built inside a string,
+     and it has to be disposed rather than garbage-collected (see _vs3Dispose). */
+  function _vs3FocusBuild(mount, list, color, prefix, basis, T) {
+    var saveB = _vsBasis, saveC = _vsCells;
+    _vsCells = {};
+    var scene, cells;
+    try {
+      if (basis) _vsBasis = basis;
+      var model = _vsTowerModel(list, null);
+      if (!model) { mount.innerHTML = '<div class="ps-vs-empty">Nothing to stack for this selection.</div>'; return null; }
+      scene = _vs3Build(mount, model, color, prefix, T);
+      cells = _vsCells;
+    } finally { _vsBasis = saveB; _vsCells = saveC; }
+    return { scene: scene, cells: cells };
+  }
+  // ⚠️ Scenes owned by the focus window, kept apart from the cards' own: closing the window frees
+  // these and must not touch the ones still on screen behind it.
+  var _vs3FocusScenes = [];
+  function _vs3FocusDispose() {
+    _vs3FocusScenes.forEach(function (s) { try { s.dispose(); } catch (e) {} });
+    _vs3FocusScenes = [];
+  }
+  function _vs3FocusResize() {
+    _vs3FocusScenes.forEach(function (s) { try { s.resize(); } catch (e) {} });
+  }
   // ⚠️⚠️ ZOOM IS THE SVG'S OWN width/height, NEVER `transform: scale()`. Owner, on the first cut:
   // *"the quality is too low"* — and they were right. A CSS transform scale on a composited layer
   // stretches the BITMAP the browser already rasterised at 1:1, so at 180% every date and every
@@ -15820,8 +15923,15 @@
     var mark = function () {
       var on = (document.fullscreenElement === boxEl) || boxEl.classList.contains('is-maxed');
       if (btn) btn.classList.toggle('on', on);
-      // The panes changed size, so the fit is stale — re-fit on the frame after the box has settled.
-      requestAnimationFrame(function () { requestAnimationFrame(function () { _vsFocusFit(); }); });
+      /* The panes changed size, so what is stale depends on the mode: an SVG needs re-fitting, and
+         a canvas needs RESIZING — its drawing buffer and the camera aspect are numbers, so a
+         fullscreened 3D pane would otherwise keep drawing at the windowed size in the corner of a
+         much larger box. ⚠️ Two frames, as before: one for the box to settle, one to measure it. */
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          if (_vsFocus && _vsFocus.threed) _vs3FocusResize(); else _vsFocusFit();
+        });
+      });
     };
     if (isFs || boxEl.classList.contains('is-maxed')) {
       boxEl.classList.remove('is-maxed');
@@ -15863,10 +15973,14 @@
       // makes every key unique to its own pane and the two windows silently stop following each
       // other. They cannot collide anyway: _vsFocusBuild gives each build its own `_vsCells`.
       // ⚠️ Measured, not read: with the suffix the browser run marked 1 of 2 panes on hover.
-      var built = panes.map(function (p) {
+      // ⚠️ Not built in 3D: this is the SVG path, and rendering a tower to a string only to throw
+      // it away is work paid for by a planner who asked for the model.
+      var built = _vs3D ? [] : panes.map(function (p) {
         return _vsFocusBuild(card.list, card.color, card.prefix + '|FZ', p.basis);
       });
-      var sv0 = built[0].svg;
+      // ⚠️ `built` is EMPTY in 3D (nothing is rendered to a string), so both of these reads have
+      // to tolerate it. Unguarded, `built[0].svg` throws and the focus window never opens at all.
+      var sv0 = built.length ? built[0].svg : null;
       var W = sv0 ? parseFloat(sv0.getAttribute('width')) || 0 : 0;
       var H = sv0 ? parseFloat(sv0.getAttribute('height')) || 0 : 0;
       var sp = _vsSpan(card.list);
@@ -15879,10 +15993,16 @@
           '<span class="ps-vs-seg"><button id="ps-vs-fzcmp"' + (cmp ? ' class="on"' : '') +
             ' title="Show the baseline building on the left and the recorded/forecast building on the right. Hovering or panning either one drives both.">Planned vs Actual, side by side</button></span>' +
           '<span class="ps-tb-div"></span>' +
-          '<span class="ps-vs-seg"><button id="ps-vs-fzout" title="Zoom out">&#8722;</button>' +
+          /* ⚠️⚠️ OMITTED IN 3D, NOT DISABLED. Zoom %, Fit and the pan hint describe an SVG that is
+             sized and translated; a WebGL canvas has none of those semantics — it orbits and it
+             dollies, which the model's own drag and wheel already do. Leaving three controls on
+             screen that quietly do nothing is the looks-live-does-nothing failure this module keeps
+             recording, so they are not emitted at all and the viewpoint bar takes their place. */
+          (_vs3D ? '' :
+            '<span class="ps-vs-seg"><button id="ps-vs-fzout" title="Zoom out">&#8722;</button>' +
             '<button id="ps-vs-fzin" title="Zoom in">+</button></span>' +
-          '<span class="ps-vs-note" id="ps-vs-fzz" style="min-width:44px;text-align:center;">100%</span>' +
-          '<span class="ps-vs-seg"><button id="ps-vs-fzfit" title="Fit the whole building in the window (double-click the building does the same)">Fit</button></span>' +
+            '<span class="ps-vs-note" id="ps-vs-fzz" style="min-width:44px;text-align:center;">100%</span>' +
+            '<span class="ps-vs-seg"><button id="ps-vs-fzfit" title="Fit the whole building in the window (double-click the building does the same)">Fit</button></span>') +
           '<span class="ps-vs-seg"><button id="ps-vs-fzfs"' + (isMaxed() ? ' class="on"' : '') +
             ' title="Full screen \u2014 the building gets the whole display. Esc or this button comes back.">' +
             '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;" aria-hidden="true">' +
@@ -15896,9 +16016,18 @@
             return (i ? '<div class="ps-vs-fz-div" aria-hidden="true"></div>' : '') +
               '<div class="ps-vs-fz-pane"><div class="ps-vs-fz-panelab">' +
               '<span class="sw" style="background:' + (cmp ? (i === 0 ? 'var(--pd-muted)' : card.color) : card.color) + '"></span>' + esc(p.lab) + '</div>' +
-              '<div class="ps-vs-fz-vp" data-fzvp="' + i + '"><div class="ps-vs-fz-canvas" data-fzc="' + i + '"></div>' +
-              (i === 0 ? '<div class="ps-vs-fz-hint">scroll = zoom · drag = pan · double-click = fit</div>' : '') +
-              '</div></div>';
+              (_vs3D
+                // ⚠️ The viewpoint bar is PER PANE, so in compare each building can be turned to a
+                // different elevation — which is exactly how a planner checks whether the baseline
+                // and the actual differ on the side they care about.
+                ? (_vs3Bar() + '<div class="ps-vs-fz-vp is3d" data-fzvp="' + i + '">' +
+                   '<div class="ps-vs3-mount ps-vs-fz-3d" data-fz3d="' + i + '"></div>' +
+                   (i === 0 ? '<div class="ps-vs-fz-hint">drag = orbit · scroll = zoom · click a block for its dates</div>' : '') +
+                   '</div>')
+                : ('<div class="ps-vs-fz-vp" data-fzvp="' + i + '"><div class="ps-vs-fz-canvas" data-fzc="' + i + '"></div>' +
+                   (i === 0 ? '<div class="ps-vs-fz-hint">scroll = zoom · drag = pan · double-click = fit</div>' : '') +
+                   '</div>')) +
+              '</div>';
           }).join('') +
         '</div>' +
         // ---- The frozen row -----------------------------------------------------------------
@@ -15932,28 +16061,95 @@
       // from it rather than trusting whichever basis the map was built at.
       _vsFocus = {
         cmp: cmp, z: 1, px: 0, py: 0, w: W, h: H, name: card.name,
-        cells: built[built.length - 1].cells, hoverKey: undefined, panes: [],
+        cells: built.length ? built[built.length - 1].cells : {}, hoverKey: undefined, panes: [],
         zlab: wrap.querySelector('#ps-vs-fzz'), readEl: wrap.querySelector('#ps-vs-fz-read')
       };
-      built.forEach(function (b, i) {
-        var canvas = wrap.querySelector('[data-fzc="' + i + '"]');
-        var vp = wrap.querySelector('[data-fzvp="' + i + '"]');
-        if (!b.svg || !canvas || !vp) return;
-        canvas.appendChild(b.svg);
-        _vsFocus.panes.push({ vp: vp, canvas: canvas, svg: b.svg });
-        _vsFocusWirePane(vp, b.svg);
-      });
-      _vsFocusReadout();
-      // Measured after layout: a getBoundingClientRect taken before the modal has been laid out
-      // reports 0 and the fit silently does nothing.
-      requestAnimationFrame(function () { _vsFocusFit(); });
+      if (_vs3D) {
+        /* ⚠️⚠️ `_vsFocus.panes` IS LEFT EMPTY IN 3D, AND THAT IS THE MECHANISM. Every SVG-only
+           routine in this window already begins `if (!F || !F.panes.length) return;` — so the pan,
+           the zoom, the fit and the cross-pane hover sync go inert on their own rather than needing
+           a `threed` check threaded through each of them. `_vsFocus.threed` is set for the things
+           that must behave DIFFERENTLY (paint, and the fullscreen re-fit), not for the things that
+           must simply not happen. */
+        _vsFocus.threed = true;
+        _vs3FocusDispose();
+        _vsThree().then(function (T) {
+          if (!T) throw new Error('the library loaded but did not define THREE');
+          panes.forEach(function (p, i) {
+            var mount = wrap.querySelector('[data-fz3d="' + i + '"]');
+            if (!mount) return;
+            var b3 = _vs3FocusBuild(mount, card.list, card.color, card.prefix + '|FZ', p.basis, T);
+            if (!b3 || !b3.scene) return;
+            _vs3FocusScenes.push(b3.scene);
+            // The last pane's map wins, exactly as the SVG path does — see the note above.
+            _vsFocus.cells = b3.cells;
+            var bar = mount.parentNode && mount.parentNode.parentNode
+              ? mount.parentNode.parentNode.querySelector('.ps-vs3-bar') : null;
+            if (bar) bar.querySelectorAll('[data-vs3view]').forEach(function (btn) {
+              btn.onclick = function () {
+                bar.querySelectorAll('[data-vs3view]').forEach(function (x) { x.classList.remove('on'); });
+                btn.classList.add('on');
+                b3.scene.setView(btn.dataset.vs3view);
+              };
+            });
+          });
+          // ⚠️ Sized on the frame AFTER the modal has been laid out: a canvas measured before
+          // that reports a 0-wide host and draws nothing, which is the 3D twin of the fit bug
+          // recorded on the SVG path below.
+          requestAnimationFrame(function () { _vs3FocusResize(); });
+        }).catch(function (e) {
+          wrap.querySelectorAll('[data-fz3d]').forEach(function (mt) {
+            mt.innerHTML = '<div class="ps-vs-empty">The 3D view needs its drawing library from the network, and it did not load (' +
+              esc(e && e.message ? e.message : String(e)) + '). Switch the view behind this window to <b>2D</b>.</div>';
+          });
+        });
+      } else {
+        built.forEach(function (b, i) {
+          var canvas = wrap.querySelector('[data-fzc="' + i + '"]');
+          var vp = wrap.querySelector('[data-fzvp="' + i + '"]');
+          if (!b.svg || !canvas || !vp) return;
+          canvas.appendChild(b.svg);
+          _vsFocus.panes.push({ vp: vp, canvas: canvas, svg: b.svg });
+          _vsFocusWirePane(vp, b.svg);
+        });
+        _vsFocusReadout();
+        // Measured after layout: a getBoundingClientRect taken before the modal has been laid out
+        // reports 0 and the fit silently does nothing.
+        requestAnimationFrame(function () { _vsFocusFit(); });
+      }
       // ---- The two speeds --------------------------------------------------------------------
       // ⚠️ `paint` swaps ONLY the svg in each pane. The first cut rewrote `wrap.innerHTML`, which
       // destroyed and rebuilt the header, the footer and the scrubber TRACK THE POINTER WAS ON, and
       // re-bound every handler — per frame. Swapping one node per pane leaves the viewport listeners
       // (they are bound to the viewport, not the svg) and every control untouched.
       _vsFocus.paint = function () {
-        var F = _vsFocus; if (!F || !F.panes.length) return;
+        var F = _vsFocus; if (!F) return;
+        /* ⚠️⚠️ IN 3D THE SCENES ARE REBUILT, and that is not laziness — a scene is geometry, and
+           the as-of date changes every cell's progress, so there is no node to swap. It is cheap
+           (a few hundred boxes) and, critically, the OLD contexts are disposed first: a browser
+           caps WebGL contexts and silently kills the oldest, so a planner dragging the scrubber
+           across a year would otherwise watch the model go blank half-way.
+           ⚠️ The camera is NOT reset: setView is not called, so the angle the planner chose
+           survives the scrub. Losing the viewpoint on every frame of a drag would make the
+           scrubber unusable for the one job it has. */
+        if (F.threed) {
+          var T = (typeof THREE !== 'undefined') ? THREE : null;
+          if (!T) return;
+          var keep = _vs3FocusScenes.map(function (s) { return s.view && s.view(); });
+          _vs3FocusDispose();
+          panes.forEach(function (p, i) {
+            var mount = wrap.querySelector('[data-fz3d="' + i + '"]');
+            if (!mount) return;
+            var b3 = _vs3FocusBuild(mount, card.list, card.color, card.prefix + '|FZ', p.basis, T);
+            if (!b3 || !b3.scene) return;
+            if (keep[i] && b3.scene.setView) b3.scene.setView(keep[i]);
+            _vs3FocusScenes.push(b3.scene);
+            F.cells = b3.cells;
+          });
+          _vs3FocusResize();
+          return;
+        }
+        if (!F.panes.length) return;
         F.panes.forEach(function (pn, i) {
           var nb = _vsFocusBuild(card.list, card.color, card.prefix + '|FZ', panes[i] ? panes[i].basis : null);
           if (!nb.svg || !pn.svg || !pn.svg.parentNode) return;
@@ -16018,11 +16214,24 @@
       _vsFocusWireScrub(wrap, card.list);
 
       wrap.querySelector('#ps-vs-fzx').onclick = function () { m.close(); };
-      wrap.querySelector('#ps-vs-fzfit').onclick = function () { _vsFocusFit(); };
-      var fsB = wrap.querySelector('#ps-vs-fzfs');
+      /* ⚠️⚠️ EVERY ONE OF THESE IS OPTIONAL NOW. Zoom, Fit and the zoom label are not emitted in
+         3D (see the header), so `wrap.querySelector('#ps-vs-fzfit').onclick = ...` would throw on
+         null and the focus window would never open at all — a crash, not a missing control.
+         Close, Full screen and the compare toggle exist in BOTH modes and stay unconditional. */
+      var _q = function (id) { return wrap.querySelector('#' + id); };
+      var _fit = _q('ps-vs-fzfit'); if (_fit) _fit.onclick = function () { _vsFocusFit(); };
+      var fsB = _q('ps-vs-fzfs');
       if (fsB) fsB.onclick = function () { _vsFocusFullscreen(boxEl, fsB); };
-      wrap.querySelector('#ps-vs-fzin').onclick = function () { _vsFocusCentreZoom(1.25); };
-      wrap.querySelector('#ps-vs-fzout').onclick = function () { _vsFocusCentreZoom(1 / 1.25); };
+      var _zin = _q('ps-vs-fzin'); if (_zin) _zin.onclick = function () { _vsFocusCentreZoom(1.25); };
+      var _zout = _q('ps-vs-fzout'); if (_zout) _zout.onclick = function () { _vsFocusCentreZoom(1 / 1.25); };
+      // The plan wrap and the front edge, inside the window: changing either re-builds, because
+      // both change the GEOMETRY rather than the camera.
+      wrap.querySelectorAll('[data-vs3col]').forEach(function (b) {
+        b.onclick = function () { _vsPlanCols = parseInt(b.dataset.vs3col, 10) || 0; _saveVs3D(); build(); };
+      });
+      wrap.querySelectorAll('[data-vs3front]').forEach(function (b) {
+        b.onclick = function () { _vsFront = b.dataset.vs3front; _saveVs3D(); build(); };
+      });
       wrap.querySelector('#ps-vs-fzcmp').onclick = function () {
         cmp = !cmp;
         build();   // rebuilt rather than toggled: the second building has to be BUILT at its own basis
@@ -16039,6 +16248,9 @@
       // Leaving full screen with the modal still open would strand the page in it.
       if (document.fullscreenElement === boxEl && document.exitFullscreen) { try { document.exitFullscreen(); } catch (e) {} }
       var moved = (_vsAsOf !== _asOfOnOpen);
+      // ⚠️ The window's own scenes, freed here and nowhere else. The cards behind it keep theirs:
+      // _vs3FocusScenes is a separate list from _vs3Scenes for exactly this reason.
+      _vs3FocusDispose();
       _vsFocus = null; _close();
       if (moved) renderVStack();   // once, so the stack behind agrees with the date you left on
     };

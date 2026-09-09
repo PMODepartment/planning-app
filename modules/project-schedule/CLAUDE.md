@@ -13,6 +13,97 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### I broke Vertical Stacking, and the proof I trusted could not see it (2026-09-09) — jasantos2
+
+Owner, with a screenshot of the live view: *"where is the 3D? and how come there is an error, no
+vertical stacking now."* The view read **"The Vertical Stacking could not be drawn for this project.
+below is not defined."**
+
+### ⚠️⚠️ 1. What I broke, and why my verification missed it
+Yesterday's refactor lifted the level ordering out of `_vsTowerSVG` into `_vsTowerModel`. That region
+declares `above` and `below` — and the **drawing code still reads both** (a basement row is styled
+from `below`, the grade line from where `above` ends). The model kept them and handed back only
+`byLevel / levels / disp / groundAt / detail`, so the renderer threw `ReferenceError: below is not
+defined` on **every** project. Not a corner case: the whole card, every scope, every basis.
+
+⚠️⚠️ **And I had "proved" that refactor correct.** The proof reversed the transformation and diffed
+the result against HEAD statement for statement. It passed — and it was worthless for this class of
+bug, *by construction*: reversing the extraction reassembles the whole function, so every variable
+resolves inside it no matter what the shipped scope looks like. **A textual-equivalence proof cannot
+see a ReferenceError.** I checked that the code was the same and never checked that it still ran.
+
+Two checks now exist so this cannot recur:
+- **`vscheck.js` — it RUNS the shipped renderer.** On a fabricated tower, on all three bases, plus
+  the trade-split path, asserting it returns SVG rather than throwing. ⚠️ Its dependency resolver is
+  the part that makes it honest: on a `ReferenceError` it slices the **real** function of that name
+  out of the module and retries, and if the name is **not** a function there it **refuses to stub it**
+  and stays failed. Auto-stubbing everything would have made this pass on the broken file — worse
+  than no check. Verified both ways: on the broken file it fails 10/10 and prints
+  `REFUSED TO STUB: below`; on the fixed file it passes 10/10, having linked 29 real functions.
+- **A static orphan check** in the suite: every variable the model declares, minus the ones the
+  renderer destructures back, must not appear anywhere in the renderer's remaining body.
+
+### 2. Where the 3D is
+It was already there — the **`2D | 3D`** pair sits in the Vertical Stacking toolbar beside Detail,
+with **2D the default**. The owner could not see it because the view threw before the toolbar drew;
+nothing was missing but the render. No change was needed for that part of the ask.
+
+### 3. Planned vs Actual, in 3D
+⚠️ The 2D cell's rule is recorded and it is followed here rather than reinvented: **compare keeps the
+trade colour**, because replacing the fill with the slip colour once turned every building into greys
+and reds and the trades became unidentifiable. So the same three independent channels:
+`FILL` = the trade · `BRIGHTNESS` = done vs remaining · `EDGES` = the slip.
+- The slip rides `LineSegments` built from the **block's own geometry**, so it cannot drift from the
+  block, coloured by the 2D card's own `_vsSlipColor`.
+- The **baseline's mark** is a thin slab at the planned fraction, protruding slightly so it reads
+  from the elevations and not only from above. ⚠️ Absent when there is no baseline — a mark at 0
+  would claim "nothing was planned by now", which is a different statement from "nobody baselined
+  this". Clamped to its own cell, and pickable, so clicking it opens the cell rather than nothing.
+- The footer names these channels **only under compare**: naming a channel that is not being painted
+  teaches a planner to look for something that is not there.
+
+### 4. Full screen, in 3D
+The focus window builds the model now. `_vs3FocusBuild` mirrors `_vsFocusBuild` deliberately — basis
+swapped around the call and restored in a `finally`, `_vsCells` snapshotted — so a modal build cannot
+leave the main view's cell map on a basis the main view is not drawing. Under compare it is **two
+models side by side**, each with **its own viewpoint bar**, which is how you check whether baseline
+and actual differ on the side you care about.
+- ⚠️⚠️ **`_vsFocus.panes` is left empty in 3D, and that is the mechanism.** Every SVG-only routine in
+  that window already begins `if (!F || !F.panes.length) return;`, so the pan, the zoom, the fit and
+  the cross-pane hover sync go inert on their own instead of needing a flag threaded through each.
+- ⚠️ **Zoom, the zoom label and Fit are not emitted at all in 3D** — they describe an SVG that is
+  sized and translated, and a canvas orbits and dollies instead. Leaving three dead controls on
+  screen is the looks-live-does-nothing failure this log keeps recording.
+- ⚠️ **A crash this created and the suite caught:** not emitting them means
+  `wrap.querySelector('#ps-vs-fzfit').onclick = …` dereferences null, and the focus window would
+  not open **at all**. Every optional control is wired defensively now.
+- ⚠️ **Full screen RESIZES the canvas.** A WebGL drawing buffer and a camera aspect are numbers set
+  once; without it a fullscreened model keeps drawing at the windowed size in the corner of a much
+  larger box. On the second frame, so the box has settled before it is measured. And the mount is
+  given a real height — a canvas contributes nothing back to its parent, so `height:auto` measures 0
+  and the pane renders black.
+- ⚠️ **The as-of scrubber rebuilds the scenes** (a scene is geometry; there is no node to swap),
+  **disposing the old contexts first** — a browser caps WebGL contexts and silently kills the oldest,
+  so dragging across a year would otherwise blank the model half-way — and it **keeps the viewpoint**
+  the planner chose, because losing it every frame would make the scrubber useless.
+- The window's scenes are a separate list from the cards' own, so closing it frees only its own.
+
+### Verified
+**479 assertions across eleven suites plus the new runtime check, all passing** — 22, 36+11+5, 39+6,
+35, 46+28, 123, 97, 54, 77, 54, and vscheck 10.
+⚠️ **harness2 and two assertions in harness3 are still broken by the concurrent change-order
+refactor**, not by a defect: they slice `splitPlan` / `splitBuild` out of this file and those now
+delegate to a `_CO` global from `assets/js/co-insert.js`. Named again rather than quietly dropped.
+⚠️ **A `sed` prefix match nearly shipped collateral damage**: bumping `20260909u` also rewrote
+`dashboard.css?v=20260909u2` and `icons.js?v=20260909ui` into `…v2` / `…vi`. Caught by reading the
+diff before committing, and reverted. A version bump must match the whole token.
+⚠️ **Not verified signed-in** — the module page redirects to sign-in for the anon key, so the fix is
+proved by executing the shipped renderer (all three bases, plus the trade-split path) rather than by
+loading the live view. The 3D focus window and the compare channels have not been drawn in a browser
+this turn; that is the first thing to check on the next pass.
+
+`MODULE_V` → `20260909v`.
+
 ### Vertical Stacking gains a 3D view, and the 2D card is proved untouched (2026-09-09) — jasantos2
 
 Owner: *"i was thinking of establishing a 3D view of the 2D vertical stacking that is already
