@@ -95,6 +95,35 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-09 (u) — The dashboard KPI cards were squeezed BY the line the owner asked to remove
+
+Owner, two asks in one message: *"The 4 KPI cards should fit properly right now everything looks
+squeezed"* and *"remove the ... tooltip since this is understood common sense."* **They were the
+same bug**, which is not what either of us expected.
+
+⚠⚠ **`grid-column:1/-1` OCCUPIES EVERY TRACK, SO `auto-fit` CAN NEVER COLLAPSE ONE.** The grid is
+`repeat(auto-fit, minmax(196px, 1fr))`, which at 1900px lays down **eight** tracks and is supposed
+to collapse the four with nothing in them. The basis paragraph spanned `1/-1`, so all eight counted
+as occupied and the four cards were handed a quarter of the row each.
+
+**Measured at 1900px, before and after, in a harness carrying the shipped rules:**
+
+| | tracks | card width | caption lines |
+|---|---|---|---|
+| with the basis line | `221px × 8` | **221px** | 2–3 |
+| without it | `454px × 4` + 4 collapsed | **454px** | 1–2 |
+
+**+233px per card**, from deleting a sentence. No grid rule was touched — the auto-fit was correct
+all along and was simply being prevented from doing its job.
+
+⚠ **The prose was defensible when it was written** (a number with no stated basis gets trusted
+further than it deserves) and the owner is right that EV ÷ PV and duration-weighting are common
+ground for a planner. ⚠ The **empty** cards keep their own text: that is not an explanation of a
+concept, it names a missing input and where to capture it, which is actionable — and it is the half
+the earlier entry's reasoning actually protects.
+
+The now-dead `.pd-perf-basis` rules went with it. `MODULE_V` → `20260909u`.
+⚠ **Not verified signed in** — measured against the shipped rules in a harness, not on live data.
 ### 2026-09-09 (t) — Minutes of Meeting: the empty card above the table was one we emptied ourselves
 
 Owner: *"There is a big empty space above the table let's fix the UI."* Self-inflicted, and the
