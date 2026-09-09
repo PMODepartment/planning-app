@@ -158,9 +158,22 @@ identical values. A merge artifact. Removed; up to ~900 rows are no longer walke
 "before" the second copy's `var`. Right answer, wrong mechanism, and worth recording as such.
 
 #### Reported, deliberately NOT changed
-- **Duplicate DOM ids** on 4 pages (`eq-x` ×2, `f-name` ×3, project-schedule's list renderers). Every
-  pair sits in a **mutually exclusive modal**, so only one is ever mounted — `getElementById`
-  returning the first is currently harmless. Fragile, not broken; flagged for whoever touches them.
+- **Duplicate DOM ids — re-checked properly, and the class is CLEAN.** The first pass used the
+  unreliable checker described below, so the finding was re-derived with a character scanner that
+  blanks comments only and respects string literals, splitting **static markup** from **JS-emitted**
+  ids. Result: **zero duplicates in static markup on all 29 pages**, and **zero ids that appear both
+  statically and in JS output** — those are the two shapes that would put two same-id elements in
+  the document at once. Every remaining duplicate is JS-emitted and mutually exclusive **by
+  construction**, in one of three shapes, each verified by reading the code:
+    - a **ternary**, so exactly one branch can render — productivity-rates `f-wp`
+      (`WPS.length ? <select> : <input>`), project-schedule `b-aconfirm`;
+    - **branch-replaced `innerHTML`** — resource-loading's `openForm` writes `f-name` / `f-rate` /
+      `f-uom` / `f-rem` in three `if/else if/else` arms that each REPLACE the form body;
+    - **two separate modals** that never open together — equipment-loading `eq-x`
+      (`openForm` vs `openMonths`), project-schedule's `lw-*` (the LBS matcher vs the trade matcher).
+  ⚠ My earlier one-line claim that *"every pair sits in a mutually exclusive modal"* was right in
+  conclusion and wrong in detail — only the third shape is a modal. Sharing ids across two modals is
+  still the fragile one: nothing but convention stops both being open at once.
 - **140 other `type="number"` inputs**, mostly Cash Flow money fields carrying the same latent risk.
   Not swept blind: each module needs its own reader checked first, which is a pass per module.
 - `assets/js/mcc-rcm.js` has **606 CRLF among 617 LF** — anchors there must be byte-exact.
