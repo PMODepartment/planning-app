@@ -35,6 +35,63 @@
   --pd-danger-text: #C42127;
   /* Type + shape */
   --pd-font: 'Gotham', 'Montserrat', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  /* Brandbook 2026 names Gotham the PRIMARY face and Avenir Next Condensed the
+     SECONDARY. Gotham is licensed and not bundled, so Montserrat carries the
+     look on the web (same geometric sans skeleton); if a Gotham webfont licence
+     is ever obtained, self-host it and this stack picks it up with no other
+     edit. --pd-font-cond is the brandbook's secondary face, for the one job a
+     condensed cut is actually better at than the primary: a long column header
+     in a narrow cell. Avenir Next Condensed ships with macOS/iOS and Office on
+     Windows; the fallbacks are the nearest condensed grotesques, and the LAST
+     entry is the primary stack so a machine with none of them degrades to the
+     normal face rather than to a browser default serif. */
+  --pd-font-cond: 'Avenir Next Condensed', 'Roboto Condensed', 'Segoe UI Semibold', var(--pd-font);
+
+  /* ⚠️ TYPE SCALE — EIGHT RUNGS, AND THEY ARE THE WHOLE SET.
+     Measured 2026-09-08 before this block existed: **29 distinct font-size
+     values** in 1,997 declarations across the shared CSS, the shell pages and
+     the sixteen modules — 8, 8.5, 9, 9.5, 10, 10.5, 11, 11.5, 12, 12.5, 13,
+     13.5, 14, 15, 15.5, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 28. Half a
+     pixel of difference is invisible on its own and unmistakable in aggregate:
+     it is most of what reads as "each module was built by a different person".
+
+     The rungs are NOT invented — each is the most-used value in its own cluster,
+     so normalising moves a module TOWARD the rest of the app rather than into a
+     new look. Counts at the time of writing: 12px×375, 11px×292, 13px×261,
+     12.5px×217.
+
+     Reach for a rung. Never write a fresh literal, and never split a rung
+     (12px "because 12.5 looks big here" is how the 29 happened).
+
+     The two legitimate exemptions, both different MEDIA rather than different
+     opinions: (1) `font-size` on an SVG <text> is in USER UNITS, not pixels —
+     progress-photos' 3.2px plan label and project-schedule's 8px dependency
+     tags are correct as they are; (2) the print/export stylesheets emitted as
+     strings (cash-flow, project-schedule) are laid out for paper. */
+  --pd-fs-micro: 10px;    /* UPPERCASE label, caption, count badge */
+  --pd-fs-xs:    11px;    /* pill, chip, tag, table sub-text, legend */
+  --pd-fs-sm:  12.5px;    /* button, input, select, secondary body */
+  --pd-fs-base:  13px;    /* table body, list rows, default prose */
+  --pd-fs-md:    15px;    /* page title, module title, section title */
+  --pd-fs-lg:    16px;    /* modal title — the largest heading in the app */
+  --pd-fs-stat:  20px;    /* KPI / metric value */
+  --pd-fs-hero:  24px;    /* the ONE biggest number on a screen. Not a heading. */
+  /* ⚠️ NOT a rung — a platform floor. iOS Safari zooms the page whenever a
+     FOCUSED input's font-size is under 16px, so every form control goes to this
+     at phone width. It is numerically equal to --pd-fs-lg today and must not be
+     merged with it: --pd-fs-lg is a heading size and is free to change, this one
+     is fixed by the browser. */
+  --pd-fs-tap:   16px;
+  /* ⚠️ ALSO NOT A RUNG — the INHERITED BASE. Every unstyled string in the app,
+     every `em`-based length, and the UA's own h1..h6 sizes (which are multiples
+     of the inherited size) are computed from this one number, so it is a
+     foundation and not a choice a component gets to make.
+     ⚠️ It has its own token BECAUSE the 2026-09-08 normalisation pass initially
+     folded `body { font-size: 14px }` into --pd-fs-md and made the ENTIRE app 7%
+     larger in one line -- measured live on the probe page: body computed 15px and
+     a bare <h2> in a card went from 21px to 22.5px. A base and a heading rung
+     that happen to be near each other are still different jobs. */
+  --pd-fs-body:  14px;
   /* ⚠️ Radii and shadows are a SCALE, mirroring PRC's --radius-sm/md/lg/xl and
      --shadow-sm/md/lg one-for-one. Before this the file carried six ad-hoc radii
      (4/8/9/10/12/14) picked per component, which is most of what read as
@@ -61,7 +118,7 @@ body {
   font-family: var(--pd-font);
   background: var(--pd-bg);
   color: var(--pd-ink);
-  font-size: 14px;
+  font-size: var(--pd-fs-body);
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
 }
@@ -83,25 +140,37 @@ a:hover { text-decoration: underline; }
    room above/below it. */
 .pd-sidebar .pd-brand {
   font-size: 0;                                  /* hides the inline text node beside the logo */
-  display: block; margin: 0; padding: 28px 20px 24px;
+  display: block; margin: 0; padding: 22px 18px 18px;
   background: var(--pd-sidebar-bg);
   border-bottom: 1px solid rgba(255,255,255,.08);
   text-align: center;
 }
+/* ⚠️ 150px in a 240px rail left the wordmark floating in 28/24px of padding, reading as
+   an afterthought rather than as the brand. It is a 5.81:1 lockup, so width is the only
+   lever on its presence: 176px gives it the rail without touching the 20px side gutters. */
 .pd-brand-logo {
-  display: block; width: 100%; max-width: 150px; height: auto;
-  margin: 0 auto 10px; object-fit: contain; object-position: center center;
+  display: block; width: 100%; max-width: 176px; height: auto;
+  margin: 0 auto 9px; object-fit: contain; object-position: center center;
 }
 .pd-sidebar .pd-brand small {
-  display: block; font-size: 9px; font-weight: 700; letter-spacing: .14em;   /* PRC .app-label */
+  display: block; font-size: var(--pd-fs-micro); font-weight: 700; letter-spacing: .18em;   /* PRC .app-label */
   color: var(--pd-red); text-transform: uppercase; opacity: 1;
+  /* letter-spacing appends a trailing gap AFTER the last letter, which drags centred text
+     visually left. Pad the same amount back on to re-centre it optically. */
+  padding-left: .18em;
 }
+/* The collapsed rail's brand mark — the red Megawide "M". `favicon-icon.png` is that mark
+   already padded to 256x256, so no new asset was cut for this.
+   ⚠️ Hidden by default and shown ONLY under .pd-collapsed; the mobile drawer re-expands
+   .pd-collapsed (see the <=820px block) and hides it again there, or the phone drawer
+   would show the wordmark and the mark stacked. */
+.pd-brand-mark { display: none; width: 30px; height: 30px; margin: 0 auto; object-fit: contain; }
 /* PRC .sidebar-section — 16px 12px 4px around the rows. */
 .pd-sidebar nav { margin: 0; padding: 16px 12px 4px; display: flex; flex-direction: column; gap: 2px; }
 .pd-sidebar nav a {
   /* PRC .nav-item, exactly: rgba white (not a blue-grey), 500 weight, 8px radius. */
   color: rgba(255,255,255,.65); padding: 9px 12px; border-radius: 8px;
-  font-size: 13px; font-weight: 500;
+  font-size: var(--pd-fs-base); font-weight: 500;
   display: flex; align-items: center; gap: 10px; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis;
   transition: background .15s, color .15s;
@@ -116,7 +185,7 @@ a:hover { text-decoration: underline; }
 .pd-sidebar .pd-navsec {
   /* PRC .sidebar-section-label: rgba(255,255,255,.3), 0 8px inside the section's
      own 12px, hence the 8px here (nav already supplies the 12). */
-  font-size: 9px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+  font-size: var(--pd-fs-micro); font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
   color: rgba(255,255,255,.3); padding: 16px 8px 4px; margin: 0;
 }
 /* PRC's first .sidebar-section still gets its full 16px above the label; nav already
@@ -124,7 +193,7 @@ a:hover { text-decoration: underline; }
 .pd-sidebar nav .pd-navsec:first-child { padding-top: 0; }
 /* Stacked label + optional sub-caption (e.g. current project under Project Home) */
 .pd-sidebar .pd-navtxt { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
-.pd-sidebar .pd-nav-sub { font-size: 10.5px; font-weight: 400; color: #96a0b0; margin-top: 2px;
+.pd-sidebar .pd-nav-sub { font-size: var(--pd-fs-micro); font-weight: 400; color: #96a0b0; margin-top: 2px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
 .pd-sidebar nav a.active .pd-nav-sub { color: rgba(255,255,255,.82); }
 /* Cross-app links to the sibling apps. Sidebar markup is repeated per page here
@@ -136,14 +205,14 @@ a:hover { text-decoration: underline; }
 .pd-nav-foot { margin-top: auto; padding: 14px 12px 4px; border-top: 1px solid rgba(255,255,255,.08); }
 .pd-nav-sibling {
   display: flex; align-items: center; gap: 10px; padding: 10px 12px;
-  border-radius: 8px; font-size: 12.5px; color: #96a0b0;
+  border-radius: 8px; font-size: var(--pd-fs-sm); color: #96a0b0;
 }
 .pd-nav-sibling:hover { background: rgba(255,255,255,.08); color: #fff; text-decoration: none; }
 .pd-nav-sibling .pd-navico { opacity: .75; }
 /* PRC .sidebar-footer, value for value. */
 .pd-sidebar-foot {
   padding: 14px 20px; border-top: 1px solid rgba(255,255,255,.06);
-  font-size: 10px; color: rgba(255,255,255,.25); line-height: 1.6;
+  font-size: var(--pd-fs-micro); color: rgba(255,255,255,.25); line-height: 1.6;
 }
 /* PRC keeps the sidebar as its ONLY scroll container and makes the bar thin and
    subtle, so it doesn't read as a second UI. */
@@ -168,7 +237,10 @@ a:hover { text-decoration: underline; }
 .pd-app.pd-collapsed .pd-navico { margin-right: 0; }
 .pd-app.pd-collapsed .pd-navsec { display: none; }
 .pd-app.pd-collapsed .pd-brand-logo, .pd-app.pd-collapsed .pd-brand small { display: none; }
-.pd-app.pd-collapsed .pd-brand { padding: 18px 8px; }
+/* ⚠️ This block used to hide the logo and the caption and put NOTHING back, so the 64px
+   rail opened with an empty padded box above bare icons. The mark takes their place. */
+.pd-app.pd-collapsed .pd-brand-mark { display: block; }
+.pd-app.pd-collapsed .pd-brand { padding: 16px 8px; }
 .pd-sidebar-toggle {
   display: inline-flex; flex-direction: column; justify-content: center; gap: 4px;
   width: 40px; height: 40px; padding: 0 10px; flex: 0 0 40px;
@@ -186,17 +258,17 @@ a:hover { text-decoration: underline; }
   padding: 10px 22px; min-height: 58px; display: flex; align-items: center; gap: 12px;
   position: sticky; top: 0; z-index: 20;
 }
-.pd-topbar h1 { font-size: 15px; margin: 0; font-weight: 700; letter-spacing: -.01em; }
+.pd-topbar h1 { font-size: var(--pd-fs-md); margin: 0; font-weight: 700; letter-spacing: -.01em; }
 .pd-topbar-mark { height: 26px; width: auto; display: block; object-fit: contain; flex-shrink: 0; }  /* PRC .topbar-logo */
 #user-bar { display: flex; align-items: center; gap: 10px; margin-left: auto; }
 .pd-userbar-name { font-weight: 600; }
 .pd-userbar-role {
-  font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+  font-size: var(--pd-fs-xs); text-transform: uppercase; letter-spacing: .04em;
   background: var(--pd-bg); color: var(--pd-muted); padding: 2px 8px; border-radius: 999px;
 }
 .pd-userbar-logout {
   border: 1px solid var(--pd-line); background: var(--pd-card); color: var(--pd-ink);
-  padding: 5px 12px; border-radius: 8px; cursor: pointer; font-size: 13px;
+  padding: 5px 12px; border-radius: 8px; cursor: pointer; font-size: var(--pd-fs-base);
 }
 .pd-userbar-logout:hover { background: var(--pd-bg); }
 
@@ -204,7 +276,7 @@ a:hover { text-decoration: underline; }
 .pd-user { position: relative; }
 .pd-avatar {
   width: 36px; height: 36px; border-radius: 50%; background: var(--pd-red); color: #fff;
-  border: none; cursor: pointer; font-size: 13px; font-weight: 700; font-family: inherit;
+  border: none; cursor: pointer; font-size: var(--pd-fs-base); font-weight: 700; font-family: inherit;
   display: flex; align-items: center; justify-content: center;
 }
 .pd-avatar:hover { background: var(--pd-red-dark); }
@@ -215,22 +287,22 @@ a:hover { text-decoration: underline; }
 }
 .pd-usermenu.open { display: block; }
 .pd-usermenu-head { padding: 14px 16px; border-bottom: 1px solid var(--pd-line); }
-.pd-usermenu-name { font-size: 13px; font-weight: 600; color: var(--pd-ink); }
-.pd-usermenu-role { font-size: 11px; color: var(--pd-muted); margin-top: 2px; text-transform: capitalize; }
+.pd-usermenu-name { font-size: var(--pd-fs-base); font-weight: 600; color: var(--pd-ink); }
+.pd-usermenu-role { font-size: var(--pd-fs-xs); color: var(--pd-muted); margin-top: 2px; text-transform: capitalize; }
 /* System destinations (Projects / My Work / Admin). These live in the account
    menu because it is the only chrome present on every page — see the note in
    ui.js renderUserBar. Normal ink, so Sign out keeps red to itself. */
 .pd-usermenu-links { border-bottom: 1px solid var(--pd-line); padding: 4px 0; }
 .pd-usermenu-link {
   display: flex; align-items: center; gap: 8px; padding: 10px 16px;
-  font-size: 13px; font-weight: 500; color: var(--pd-ink);
+  font-size: var(--pd-fs-base); font-weight: 500; color: var(--pd-ink);
   text-decoration: none; cursor: pointer;
 }
 .pd-usermenu-link:hover { background: var(--pd-bg); }
 .pd-usermenu-link svg { flex: none; opacity: .7; }
 .pd-usermenu-signout {
   display: flex; align-items: center; gap: 8px; width: 100%; padding: 12px 16px;
-  font-size: 13px; font-weight: 600; font-family: inherit; color: var(--pd-danger-text);
+  font-size: var(--pd-fs-base); font-weight: 600; font-family: inherit; color: var(--pd-danger-text);
   background: none; border: none; cursor: pointer; text-align: left;
 }
 .pd-usermenu-signout:hover { background: var(--pd-bg); }
@@ -250,8 +322,8 @@ a:hover { text-decoration: underline; }
 /* Sized to PRC's largest heading (.page-title, 1.0714rem/700) rather than a hero.
    PRC's own dashboards carry no 22px body heading at all — they open straight on
    the metric row — so this is the closest faithful equivalent. */
-.pd-home-head h2 { margin: 0 0 2px; font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
-.pd-home-head p { margin: 0; color: var(--pd-muted); font-size: 12.5px; }
+.pd-home-head h2 { margin: 0 0 2px; font-size: var(--pd-fs-md); font-weight: 700; letter-spacing: -.01em; }
+.pd-home-head p { margin: 0; color: var(--pd-muted); font-size: var(--pd-fs-sm); }
 
 /* Big, evenly distributed tiles. 4 across on wide screens → 7 cards = 4 + 3. */
 .pd-module-grid {
@@ -288,14 +360,14 @@ a:hover { text-decoration: underline; }
 
 .pd-module-icon {
   width: 40px; height: 40px; border-radius: var(--pd-radius-md); background: var(--pd-red-light);
-  display: flex; align-items: center; justify-content: center; font-size: 20px; line-height: 1;
+  display: flex; align-items: center; justify-content: center; font-size: var(--pd-fs-stat); line-height: 1;
 }
 .pd-module-body { margin-top: auto; }
-.pd-module-title { font-weight: 700; font-size: 14px; color: var(--pd-ink); margin-bottom: 3px; line-height: 1.3; }
-.pd-module-sub { color: var(--pd-red); font-size: 11.5px; font-weight: 600; }
+.pd-module-title { font-weight: 700; font-size: var(--pd-fs-md); color: var(--pd-ink); margin-bottom: 3px; line-height: 1.3; }
+.pd-module-sub { color: var(--pd-red); font-size: var(--pd-fs-xs); font-weight: 600; }
 .pd-module-card.disabled .pd-module-sub { color: var(--pd-muted); font-weight: 500; }
 .pd-badge-soon {
-  font-size: 10px; text-transform: uppercase; letter-spacing: .05em;
+  font-size: var(--pd-fs-micro); text-transform: uppercase; letter-spacing: .05em;
   background: var(--pd-bg); color: var(--pd-muted); padding: 3px 9px; border-radius: 999px;
 }
 
@@ -305,21 +377,143 @@ a:hover { text-decoration: underline; }
    the reference app at every size (toolbars, modals, tables all inherit this). */
 .pd-btn { display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
   border: 1px solid var(--pd-line); background: var(--pd-card); color: var(--pd-ink);
-  padding: 6px 13px; border-radius: 8px; font-size: 12.5px; font-weight: 500; }
+  padding: 6px 13px; border-radius: 8px; font-size: var(--pd-fs-sm); font-weight: 500; }
+/* ⚠️⚠️ THE `hidden` ATTRIBUTE DID NOT WORK ON ANY .pd-btn IN THIS APP, ANYWHERE.
+   The rule above is specificity (0,1,0) — exactly equal to the user agent's own
+   `[hidden] { display: none }` — and an author rule always beats the UA default at
+   equal specificity. So every `btn.hidden = true` in every module set an attribute
+   that changed nothing, and the button stayed on screen.
+   MEASURED before this line existed: four `.pd-btn`s carrying the attribute all
+   computed `display:flex`. In Minutes of Meeting that put the filter funnel on
+   screens that draw no filter panel — clicking it silently toggled state you only
+   saw on returning to the list, which reads as "the button does nothing".
+   ⚠️ This is the SAME defect `minutes-of-meeting/module.css` documents at length for
+   `.il-icondd-menu` and fixed there with `:not([hidden])`. It was never generalised.
+   ⚠️ An attribute selector is (0,1,0) too, so this wins on SOURCE ORDER — it must stay
+   after `.pd-btn`. Any future `display` on `.pd-btn` declared below this re-breaks it. */
+.pd-btn[hidden] { display: none; }
+
+/* ---- Busy spinner (shared) ----------------------------------------------
+   ⚠️ There was NO spinner in assets/ at all — zero keyframes — so three modules had
+   each rolled a private, byte-for-byte identical copy (`.cc-spin`, `.dr-spin`,
+   `.ms-spin`). Promoted here rather than letting Minutes of Meeting add a fourth.
+   Works inside a button (the refresh control) and inside a card heading, which is
+   how the three private copies were each used. */
+.pd-spin {
+  display: inline-block; width: 13px; height: 13px; vertical-align: -2px;
+  border: 2px solid var(--pd-line); border-top-color: var(--pd-red); border-radius: 50%;
+  animation: pd-spin .7s linear infinite;
+}
+.pd-spin + * { margin-left: 6px; }   /* only when it actually precedes something */
+@keyframes pd-spin { to { transform: rotate(360deg); } }
+/* A spinner is the one control that must still READ as busy without motion. */
+@media (prefers-reduced-motion: reduce) {
+  .pd-spin { animation-duration: 2.4s; }
+}
 .pd-btn:hover { background: var(--pd-bg); border-color: var(--pd-red); color: var(--pd-red); text-decoration: none; }
 .pd-btn-primary { background: var(--pd-red); border-color: var(--pd-red); color: #fff; }
 .pd-btn-primary:hover { background: var(--pd-red-dark); border-color: var(--pd-red-dark); color: #fff; }
 .pd-btn-danger { background: transparent; border-color: var(--pd-bad); color: var(--pd-bad); }
 .pd-btn-danger:hover { background: var(--pd-bad); border-color: var(--pd-bad); color: #fff; }
 
+/* ---- Segmented control (`.pd-seg`) ----
+   PROMOTED HERE 2026-09-08. It already existed three times over — `.sc-seg` in
+   the S-Curve module, an identical `.pd-seg` in dashboard.html's own inline
+   <style>, and the `.pd-viewtoggle`/`.pd-vt` pair further down this file — and a
+   fourth copy was about to be written for the two registers' band toggles. One
+   definition, four call sites.
+
+   ⚠️ dashboard.html's inline copy was DELETED in the same commit. Its rules
+   loaded after this file and would have silently won on source order, so leaving
+   both would mean this block was never the thing on screen.
+
+   TWO MODES, and the difference is semantic, not cosmetic:
+     .pd-seg            one choice of N   — role="radiogroup", `.on` on exactly one
+     .pd-seg.pd-seg-multi  N independent  — role="group", `.on` on any number
+   The multi variant is drawn differently ON PURPOSE: solid brand red says "this
+   is the one selected", and painting four of six buttons solid red says nothing.
+   A multi button lit is the red-tint + red-border treatment this app already
+   uses for an engaged filter (`.pd-filttoggle.is-active`, `.pd-band` before it),
+   which reads as "included" rather than "current".
+
+   ⚠️ Brand red + white is the app's established ACTIVE state (sidebar current
+   item, .pd-btn-primary, view tabs, node-tree selection). It measures 4.12:1 —
+   under AA for text this size, which is a property of the brand red rather than
+   of this control. Kept deliberately so one control is not the only active state
+   in the app that looks different; the multi variant, which is new, uses the
+   compliant tint pairing instead. */
+.pd-seg { display: inline-flex; flex: none; border: 1px solid var(--pd-line);
+  border-radius: var(--pd-radius-md); overflow: hidden; background: var(--pd-card); }
+.pd-seg > button {
+  border: 0; background: var(--pd-card); color: var(--pd-muted);
+  font-family: inherit; font-size: var(--pd-fs-xs); font-weight: 700;
+  padding: 5px 11px; line-height: 1.3; cursor: pointer; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 5px;
+  transition: background .12s, color .12s;
+}
+.pd-seg > button + button { border-left: 1px solid var(--pd-line); }
+.pd-seg > button:hover { background: var(--pd-bg); color: var(--pd-ink); }
+.pd-seg > button.on { background: var(--pd-red); color: #fff; }
+/* A label welded to the left of the group, so the control names itself without
+   spending a whole line on a heading above it (which is what the two registers'
+   "Bands" row used to do). Inside the border, on the quiet surface. */
+.pd-seg-lab {
+  display: inline-flex; align-items: center; flex: none;
+  padding: 0 9px; background: var(--pd-bg); color: var(--pd-muted);
+  font-size: var(--pd-fs-micro); font-weight: 700;
+  letter-spacing: .06em; text-transform: uppercase;
+  border-right: 1px solid var(--pd-line);
+}
+.pd-seg-multi > button.on {
+  background: var(--pd-red-light); color: var(--pd-red-dark);
+  box-shadow: inset 0 -2px 0 var(--pd-red);
+}
+.pd-seg-multi > button.on:hover { background: var(--pd-red-light); color: var(--pd-red-dark); }
+/* ⚠️ --pd-red-dark is not a text colour on the dark theme: measured 2.64:1 on
+   --pd-red-light. #FF8A80 is the shade this app already settled on for red text
+   on dark (issues-lessons 2026-08-24; risk-register's own band pill 2026-09-02)
+   — 6.2 on a card. Light mode passes at 5.11 and is left alone. */
+html.pd-dark .pd-seg-multi > button.on,
+html.pd-dark .pd-seg-multi > button.on:hover { color: #FF8A80; }
+/* Icon-only rung, for a control that has no room for words. */
+.pd-seg > button.pd-seg-ico { padding: 5px 9px; }
+/* ⚠️ In a MODULE BAR or a topbar the seg sits in a row of 34px-tall controls
+   (.pd-btn, .pd-select, .pd-filttoggle, the project picker). At its natural
+   ~27px it read as a smaller, lesser class of control rather than a peer, which
+   is exactly the "each part was built separately" tell this pass is removing.
+   Height only — the type size and padding rungs are unchanged. */
+.pd-modulebar .pd-seg, .pd-topbar .pd-seg { min-height: 34px; }
+.pd-modulebar .pd-seg > button, .pd-topbar .pd-seg > button { padding: 0 11px; }
+/* 44px on a phone. Segmented buttons sized to their own text were measured as
+   "among the hardest things on the page to hit accurately" — this is tap area,
+   not visual bulk, so the desktop size is untouched. */
+@media (max-width: 700px) {
+  .pd-seg > button { min-height: var(--pd-tap); padding: 8px 13px; }
+  .pd-seg-lab { padding: 0 11px; }
+}
+
 /* ---- Forms ---- */
 .pd-field { margin-bottom: 14px; }
-.pd-field label { display: block; font-size: 11px; font-weight: 500; color: var(--pd-muted); margin-bottom: 5px;
+.pd-field label { display: block; font-size: var(--pd-fs-xs); font-weight: 500; color: var(--pd-muted); margin-bottom: 5px;
   text-transform: uppercase; letter-spacing: .03em; }
 .pd-input, .pd-select, .pd-textarea {
   width: 100%; padding: 6px 10px; border: 1px solid var(--pd-line); border-radius: 7px;
-  font-size: 12.5px; font-family: inherit; background: var(--pd-card); color: var(--pd-ink);
+  font-size: var(--pd-fs-sm); font-family: inherit; background: var(--pd-card); color: var(--pd-ink);
 }
+/* ⚠️⚠️ AN INPUT, A DATE INPUT AND A SELECT WITH IDENTICAL PADDING AND FONT-SIZE STILL
+   COME OUT AT THREE DIFFERENT HEIGHTS, because each control type adds its own intrinsic
+   box on top of what CSS asks for. MEASURED in the Add-meeting modal, dark, 900px:
+   text input 29px, <select> 31px, date input 31px — side by side in one form row, which
+   is the "the dropdown uses a different UI" the owner reported. (Colour, border and
+   radius all matched; the mismatch is purely the box.)
+   ⚠️ `min-height`, deliberately NOT `height`. There are many `<textarea class="pd-input">`
+   in this app — a fixed height would collapse every one of them to a single line — and
+   project-schedule has `<select multiple size="4">`. min-height raises the short controls
+   and leaves the tall ones alone.
+   ⚠️ Specificity (0,1,0) and declared BEFORE `.pd-input-sm`, so the 34px compact variant
+   still wins on source order, and every module-local `.xx-filters .pd-select` (0,2,0)
+   still wins outright. */
+.pd-input, .pd-select { min-height: 32px; }
 .pd-input:focus, .pd-select:focus, .pd-textarea:focus { outline: 2px solid var(--pd-red); outline-offset: -1px; }
 
 /* ---- Project selector (UI.enhanceProjectSelect) ----
@@ -347,7 +541,7 @@ button.pd-psel-btn { height: auto; min-height: 30px; padding-top: 4px; padding-b
    a genuinely bold 700 so the two lines are visually distinct; the subtitle (`small`,
    below) and the placeholder state (`.pd-psel-ph strong`, further down) are untouched. */
 .pd-psel-btn .pd-psel-txt strong { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pd-psel-btn .pd-psel-txt small { display: block; font-size: 10.5px; font-weight: 400; color: var(--pd-muted);
+.pd-psel-btn .pd-psel-txt small { display: block; font-size: var(--pd-fs-micro); font-weight: 400; color: var(--pd-muted);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pd-psel-txt.pd-psel-ph strong { color: var(--pd-muted); font-weight: 400; }
 .pd-psel-caret { flex: none; color: var(--pd-muted); }
@@ -368,42 +562,42 @@ button.pd-psel-btn { height: auto; min-height: 30px; padding-top: 4px; padding-b
 .pd-nt-search input { width: 100%; box-sizing: border-box; padding: 6px 9px; border: 1px solid var(--pd-line); border-radius: 6px; font: inherit; background: var(--pd-bg); color: var(--pd-ink); }
 .pd-nt-search input:focus { outline: 2px solid var(--pd-red); outline-offset: -1px; }
 .pd-nt-portfolio { display: flex; align-items: center; gap: 8px; padding: 10px; cursor: pointer;
-  font-size: 13.5px; font-weight: 600; color: var(--pd-ink); border-bottom: 2px solid var(--pd-line); background: var(--pd-bg); }
+  font-size: var(--pd-fs-base); font-weight: 600; color: var(--pd-ink); border-bottom: 2px solid var(--pd-line); background: var(--pd-bg); }
 .pd-nt-portfolio:hover { background: var(--pd-red-light); }
 .pd-nt-portfolio.sel { background: var(--pd-red); color: #fff; font-weight: 700; }
 .pd-nt-portfolio [data-ico], .pd-nt-portfolio svg { color: var(--pd-red); flex: none; }
 .pd-nt-portfolio.sel [data-ico], .pd-nt-portfolio.sel svg { color: #fff; }
 .pd-nt-list { padding: 4px 0; }
-.pd-nt-ghlabel { padding: 9px 10px 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: var(--pd-muted); }
+.pd-nt-ghlabel { padding: 9px 10px 4px; font-size: var(--pd-fs-xs); font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: var(--pd-muted); }
 .pd-nt-ghlabel-none { font-style: italic; text-transform: none; }
 .pd-nt-ghkids { padding-bottom: 2px; }
 /* Owner (2026-09-03): each row now carries "CODE — Name" (bold) plus an address/
    group-head subtitle (regular), matching the closed trigger's own two-line label —
    flex-start (not center) so the icon aligns with the first line rather than the
    midpoint of both. */
-.pd-nt-proj { display: flex; align-items: flex-start; gap: 7px; padding: 6px 10px 6px 22px; cursor: pointer; font-size: 13px; color: var(--pd-ink); }
+.pd-nt-proj { display: flex; align-items: flex-start; gap: 7px; padding: 6px 10px 6px 22px; cursor: pointer; font-size: var(--pd-fs-base); color: var(--pd-ink); }
 .pd-nt-proj svg { color: var(--pd-muted); flex: none; margin-top: 2px; }
 .pd-nt-proj-txt { display: flex; flex-direction: column; gap: 1px; min-width: 0; overflow: hidden; }
 .pd-nt-proj-txt strong { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pd-nt-proj-txt small { display: block; font-size: 10.5px; font-weight: 400; color: var(--pd-muted);
+.pd-nt-proj-txt small { display: block; font-size: var(--pd-fs-micro); font-weight: 400; color: var(--pd-muted);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pd-nt-proj:hover { background: var(--pd-red-light); }
 .pd-nt-proj.sel { background: var(--pd-red); color: #fff; }
 .pd-nt-proj.sel svg { color: #fff; }
 .pd-nt-proj.sel .pd-nt-proj-txt small { color: rgba(255,255,255,.82); }
-.pd-nt-empty { padding: 20px 12px; text-align: center; color: var(--pd-muted); font-size: 12.5px; }
+.pd-nt-empty { padding: 20px 12px; text-align: center; color: var(--pd-muted); font-size: var(--pd-fs-sm); }
 
 /* ---- Tables ---- */
 /* Minimalist pass (prc-app parity): smaller type, tighter rows, no bold body text —
    the header keeps a touch of weight (500, not the browser-default-regular it had
    before) purely so a header row still reads as a header once the whole table is
    this quiet, never heavier than that. */
-.pd-table { width: 100%; border-collapse: collapse; background: var(--pd-card); font-size: 12.5px; }
+.pd-table { width: 100%; border-collapse: collapse; background: var(--pd-card); font-size: var(--pd-fs-sm); }
 .pd-table th, .pd-table td { padding: 8px 10px; border-bottom: 1px solid var(--pd-line); text-align: left; }
 /* = PRC .data-table th: a real header band (700 + a 2px rule under it), not a
    washed-out 500-weight row. --pd-line/--pd-bg already hold PRC's own
    --mw-gray/--mw-gray-light values, so only weight/tracking/hover change. */
-.pd-table th { background: var(--pd-bg); font-size: 11px; font-weight: 700; text-transform: uppercase;
+.pd-table th { background: var(--pd-bg); font-size: var(--pd-fs-xs); font-weight: 700; text-transform: uppercase;
   letter-spacing: .04em; color: var(--pd-muted); border-bottom: 2px solid var(--pd-line);
   padding: 9px 10px; }
 .pd-table tr:hover td { background: var(--pd-red-light); }
@@ -413,14 +607,14 @@ button.pd-psel-btn { height: auto; min-height: 30px; padding-top: 4px; padding-b
 .pd-auth-card { width: 100%; max-width: 380px; }
 .pd-auth-logo { text-align: center; margin-bottom: 18px; }
 .pd-auth-mark { display: block; height: 56px; width: auto; margin: 0 auto 12px; }
-.pd-auth-logo .pd-brand { font-size: 22px; font-weight: 800; color: var(--pd-red); }
+.pd-auth-logo .pd-brand { font-size: var(--pd-fs-stat); font-weight: 800; color: var(--pd-red); }
 .pd-auth-logo small { color: var(--pd-muted); }
 
 /* ---- Toast ---- */
 .pd-toast {
   position: fixed; bottom: 24px; left: 50%; transform: translate(-50%, 20px);
   background: var(--pd-dark); color: #fff; padding: 11px 18px; border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0,0,0,.2); opacity: 0; transition: all .25s ease; z-index: 1000; font-size: 14px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.2); opacity: 0; transition: all .25s ease; z-index: 1000; font-size: var(--pd-fs-md);
 }
 .pd-toast.show { opacity: 1; transform: translate(-50%, 0); }
 .pd-toast-ok { background: var(--pd-ok); }
@@ -438,13 +632,64 @@ button.pd-psel-btn { height: auto; min-height: 30px; padding-top: 4px; padding-b
    into .pd-modal (no header/footer wrapper) keep using that 22px padding untouched. */
 .pd-modal-header { display: flex; align-items: center; justify-content: space-between; gap: 14px;
   margin: -22px -22px 18px; padding: 14px 20px; border-bottom: 1px solid var(--pd-line);
-  font-size: 16px; font-weight: 700; border-radius: 12px 12px 0 0; }
-.pd-modal-close { border: none; background: none; font-size: 20px; line-height: 1; color: var(--pd-muted);
+  font-size: var(--pd-fs-lg); font-weight: 700; border-radius: 12px 12px 0 0; }
+.pd-modal-close { border: none; background: none; font-size: var(--pd-fs-stat); line-height: 1; color: var(--pd-muted);
   cursor: pointer; width: 30px; height: 30px; border-radius: 6px; flex: none;
   display: inline-flex; align-items: center; justify-content: center; }
 .pd-modal-close:hover { background: var(--pd-bg); color: var(--pd-ink); }
 .pd-modal-footer { display: flex; justify-content: flex-end; gap: 10px;
   margin: 18px -22px -22px; padding: 14px 20px; border-top: 1px solid var(--pd-line); }
+
+/* ---- HEADINGS INSIDE SHARED CHROME ----
+   ⚠️ MEASURED 2026-09-08 on a local probe page against the real stylesheet, not
+   reasoned about, and both findings were systemic rather than per-module.
+
+   1) THE MODAL TITLE. Twelve files across six modules emit
+      `<div class="pd-modal-header"><h3>Title</h3>...` and NOTHING in the app
+      styled that heading. So it took the UA default 1.17em/bold and computed
+      **18.72px** -- larger than the 16px `.pd-modal-header` itself declares --
+      and its UA `margin: 1em 0` computed to **18.72px above AND below**. Because
+      `.pd-modal-header` is a flex row those margins do NOT collapse, so every
+      one of those dialogs carried ~37px of dead vertical space it never asked
+      for and a title a size and a half too big. The header already carries the
+      size and the weight; the heading's whole job here is to stop overriding it.
+      `font: inherit` (not `font-size: inherit`) so family, weight, style and
+      line-height all come from the header too -- a heading that inherits only
+      its size still arrives bold-by-UA and drifts again the day the header's
+      own weight changes.
+
+   2) A PANEL TITLE INSIDE A CARD. Same omission, wider blast radius: bare
+      `<h2>`/`<h3>`/`<h4>` sit directly inside `.pd-card` in the two registers,
+      Contracts & Claims, the Drawing Register and more, and none of them were
+      styled either. Measured **22.5px/700** for the registers' five `<h2>`
+      panel titles -- bigger than the modal title, bigger than the 20px KPI
+      value, and half again the 15px module title right above them. It was the
+      single loudest "these screens were each built separately" tell on the
+      Heat Map and Impact/Influence tabs.
+
+   ⚠️ The top margin goes and the bottom margin stays. The UA's `1em 0` fought
+   the card's own 18px padding above the heading (which is the gap that read as
+   sloppy) while the space BELOW it is real separation from the content -- so
+   this is 0 above, 10px below, not `margin: 0`.
+
+   `.pd-panel-t` is the same treatment as an explicit class, for a panel title
+   that is not a direct child of the card (e.g. inside a header row). Prefer the
+   class in new code; the descendant rules are the safety net that stops the next
+   bare heading from shipping at 22px. */
+.pd-modal-header > h1, .pd-modal-header > h2,
+.pd-modal-header > h3, .pd-modal-header > h4 {
+  font: inherit; margin: 0; letter-spacing: -.01em; min-width: 0;
+}
+.pd-card > h2, .pd-card > h3, .pd-card > h4,
+.pd-panel-t {
+  margin: 0 0 10px; font-size: var(--pd-fs-md); font-weight: 700;
+  letter-spacing: -.01em; color: var(--pd-ink); line-height: 1.3;
+}
+/* A help/lede paragraph immediately under a panel title supplies its own top
+   spacing in several modules (`.rr-help`, `.sm-help`, `.pd-sec-note`); with the
+   title's 10px below it, that doubled. The title yields, not the paragraph. */
+.pd-card > h2 + p, .pd-card > h3 + p, .pd-card > h4 + p,
+.pd-panel-t + p { margin-top: 0; }
 
 /* THE BODY BETWEEN THEM. The comment above has said "header/BODY/footer" since 2026-07-02
    and .pd-modal-body was never actually written -- it is emitted in cash-flow (4x),
@@ -464,10 +709,10 @@ button.pd-psel-btn { height: auto; min-height: 30px; padding-top: 4px; padding-b
 /* Form label used outside .pd-field (cash-flow's tabbed Assumptions, resource-loading).
    ⚠️ Same values as `.pd-field label` on purpose -- two label styles that drift apart is
       how one dialog ends up looking like a different product. */
-.pd-label { display: block; font-size: 12px; font-weight: 500; color: var(--pd-muted); margin-bottom: 5px; }
+.pd-label { display: block; font-size: var(--pd-fs-sm); font-weight: 500; color: var(--pd-muted); margin-bottom: 5px; }
 
 /* Autosave status badge (assets/js/autosave.js), placed beside an Edit modal's title. */
-.pd-autosave { font-size: 11.5px; font-weight: 500; padding: 3px 9px; border-radius: 20px;
+.pd-autosave { font-size: var(--pd-fs-xs); font-weight: 500; padding: 3px 9px; border-radius: 20px;
   white-space: nowrap; color: var(--pd-muted); background: var(--pd-bg); border: 1px solid var(--pd-line); }
 .pd-autosave-idle { opacity: .7; }
 .pd-autosave-busy { color: var(--pd-red); border-color: var(--pd-red); }
@@ -477,7 +722,7 @@ button.pd-psel-btn { height: auto; min-height: 30px; padding-top: 4px; padding-b
 /* ---- Theme toggle button (injected by theme.js) ---- */
 .pd-theme-toggle {
   width: 38px; height: 38px; border-radius: 9px; border: 1px solid var(--pd-line);
-  background: var(--pd-card); cursor: pointer; font-size: 17px; line-height: 1;
+  background: var(--pd-card); cursor: pointer; font-size: var(--pd-fs-lg); line-height: 1;
   display: inline-flex; align-items: center; justify-content: center;
 }
 .pd-theme-toggle:hover { background: var(--pd-bg); }
@@ -531,12 +776,12 @@ html.pd-dark .pd-module-card:hover { box-shadow: var(--pd-shadow-md); }
    ============================================================================ */
 
 /* small form helpers */
-.pd-input-sm { padding: 6px 10px; font-size: 13px; height: 34px; }
-.pd-btn-sm { padding: 4px 10px; font-size: 12px; }
+.pd-input-sm { padding: 6px 10px; font-size: var(--pd-fs-base); height: 34px; }
+.pd-btn-sm { padding: 4px 10px; font-size: var(--pd-fs-sm); }
 .num { text-align: right !important; }
 
 /* status pills */
-.pd-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 500; }
+.pd-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: var(--pd-fs-xs); font-weight: 500; }
 .pd-pill-ok { background: rgba(31,143,78,.12); color: var(--pd-ok); }
 .pd-pill-muted { background: var(--pd-line); color: var(--pd-muted); }
 .pd-pill-bad { background: rgba(196,33,39,.12); color: var(--pd-bad); }
@@ -547,9 +792,9 @@ html.pd-dark .pd-module-card:hover { box-shadow: var(--pd-shadow-md); }
 .pd-proj-pane { flex: 1 1 auto; min-width: 0; padding-top: 14px; }
 /* Count badge on a grouped list's header row. (It began life in the group-head
    pane, hence the name — the pane is gone, the badge is not.) */
-.pd-tree-count { font-size: 11px; color: var(--pd-muted); background: var(--pd-bg);
+.pd-tree-count { font-size: var(--pd-fs-xs); color: var(--pd-muted); background: var(--pd-bg);
   border: 1px solid var(--pd-line); border-radius: 999px; padding: 0 7px; min-width: 18px; text-align: center; }
-.pd-icon-btn { border: none; background: transparent; cursor: pointer; font-size: 18px; color: var(--pd-red); line-height: 1; }
+.pd-icon-btn { border: none; background: transparent; cursor: pointer; font-size: var(--pd-fs-lg); color: var(--pd-red); line-height: 1; }
 /* In the projects toolbar the gear sits between two 34px selects — without an
    explicit height it collapsed to its 18px glyph and rode high in the row. */
 .pd-toolbar-right .pd-icon-btn { height: 34px; display: inline-flex; align-items: center; justify-content: center; }
@@ -565,10 +810,10 @@ html.pd-dark .pd-module-card:hover { box-shadow: var(--pd-shadow-md); }
 .pd-toolbar-left { min-width: 0; flex-wrap: wrap; }
 .pd-toolbar-right { flex: 1 1 auto; min-width: 0; justify-content: flex-end; flex-wrap: wrap; }
 .pd-toolbar-right .pd-input-sm { flex: 0 1 220px; min-width: 0; }
-.pd-proj-count { color: var(--pd-muted); font-size: 13px; white-space: nowrap; }
+.pd-proj-count { color: var(--pd-muted); font-size: var(--pd-fs-base); white-space: nowrap; }
 .pd-viewtoggle { flex: 0 0 auto; display: inline-flex; border: 1px solid var(--pd-line); border-radius: 8px; overflow: hidden; }
 .pd-vt { border: none; background: var(--pd-card); padding: 6px 14px; cursor: pointer; color: var(--pd-muted);
-  font-size: 12px; font-weight: 600; }
+  font-size: var(--pd-fs-sm); font-weight: 600; }
 .pd-vt.active { background: var(--pd-red); color: #fff; }
 
 /* add dropdown */
@@ -578,7 +823,7 @@ html.pd-dark .pd-module-card:hover { box-shadow: var(--pd-shadow-md); }
   box-shadow: var(--pd-shadow); min-width: 220px; overflow: hidden; }
 .pd-add-menu.open { display: block; }
 .pd-add-menu button { display: block; width: 100%; text-align: left; border: none; background: none;
-  padding: 10px 14px; cursor: pointer; color: var(--pd-ink); font-size: 13.5px; }
+  padding: 10px 14px; cursor: pointer; color: var(--pd-ink); font-size: var(--pd-fs-base); }
 .pd-add-menu button:hover { background: var(--pd-red-light); }
 
 /* projects table */
@@ -588,9 +833,9 @@ html.pd-dark .pd-module-card:hover { box-shadow: var(--pd-shadow-md); }
    of it show at once without opening each project just to scan the list.
    Scoped to .pd-proj-table (layered on the same <table> as .pd-table) so no
    other table in the app — e.g. admin.html's Users table — is affected. */
-.pd-proj-table th, .pd-proj-table td { padding: 6px 12px; font-size: 12.5px; }
-.pd-proj-table th { font-size: 10.5px; }
-.pd-proj-table code { background: var(--pd-bg); padding: 1px 6px; border-radius: 5px; font-size: 11px; }
+.pd-proj-table th, .pd-proj-table td { padding: 6px 12px; font-size: var(--pd-fs-sm); }
+.pd-proj-table th { font-size: var(--pd-fs-micro); }
+.pd-proj-table code { background: var(--pd-bg); padding: 1px 6px; border-radius: 5px; font-size: var(--pd-fs-xs); }
 /* PRC's grouped-table header (_ghHeadCells): a tinted chip with a RED LEFT
    BORDER, then a muted "N projects" beside it. ⚠️ Deliberately NOT a solid-red
    pill — PRC's own note records that as user feedback ("no red overlay behind
@@ -599,11 +844,11 @@ html.pd-dark .pd-module-card:hover { box-shadow: var(--pd-shadow-md); }
    Ours must be tokens (--pd-bg / --pd-ink / --pd-red-light are the same values
    in light mode), or the chip turns into a white slab on the dark theme. */
 .pd-ghchip {
-  display: inline-block; font-size: 10px; font-weight: 700; color: var(--pd-ink);
+  display: inline-block; font-size: var(--pd-fs-micro); font-weight: 700; color: var(--pd-ink);
   background: var(--pd-red-light); border-left: 3px solid var(--pd-red);
   padding: 2px 8px; border-radius: 4px; vertical-align: middle;
 }
-.pd-ghcount { font-size: 10px; color: var(--pd-muted); margin-left: 8px; }
+.pd-ghcount { font-size: var(--pd-fs-micro); color: var(--pd-muted); margin-left: 8px; }
 .pd-group-row td { background: var(--pd-bg); color: var(--pd-ink);
   padding: 6px 10px; border-top: 2px solid var(--pd-line);
   text-transform: none; letter-spacing: 0; }
@@ -624,23 +869,23 @@ html.pd-dark .pd-module-card:hover { box-shadow: var(--pd-shadow-md); }
 .pd-proj-card:hover { border-color: var(--pd-red); box-shadow: var(--pd-shadow-md); }
 .pd-proj-card:hover::after { transform: scaleX(1); }
 .pd-proj-card-top { display: flex; align-items: center; justify-content: space-between; }
-.pd-proj-card-top .pd-proj-ic { font-size: 22px; }
+.pd-proj-card-top .pd-proj-ic { font-size: var(--pd-fs-stat); }
 .pd-proj-card-title { font-weight: 500; margin: 8px 0 2px; line-height: 1.25; }
-.pd-proj-card-id code { background: var(--pd-bg); padding: 1px 6px; border-radius: 5px; font-size: 12px; }
+.pd-proj-card-id code { background: var(--pd-bg); padding: 1px 6px; border-radius: 5px; font-size: var(--pd-fs-sm); }
 .pd-proj-card-meta { display: flex; gap: 14px; margin-top: 12px; }
-.pd-proj-card-meta > div { font-size: 13px; font-weight: 500; }
-.pd-proj-card-meta span { display: block; font-size: 11px; font-weight: 500; color: var(--pd-muted); }
-.pd-proj-card-loc { margin-top: 10px; font-size: 12px; color: var(--pd-muted); }
+.pd-proj-card-meta > div { font-size: var(--pd-fs-base); font-weight: 500; }
+.pd-proj-card-meta span { display: block; font-size: var(--pd-fs-xs); font-weight: 500; color: var(--pd-muted); }
+.pd-proj-card-loc { margin-top: 10px; font-size: var(--pd-fs-sm); color: var(--pd-muted); }
 
 /* Manage Group Heads modal (item 6) */
 .pd-ghm-list { max-height: 50vh; overflow-y: auto; border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md); }
 .pd-ghm-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--pd-line); }
 .pd-ghm-row:last-child { border-bottom: none; }
 .pd-ghm-order { display: flex; flex-direction: column; gap: 0; flex: none; }
-.pd-ghm-order .pd-icon-btn { font-size: 14px; padding: 0; height: 18px; }
+.pd-ghm-order .pd-icon-btn { font-size: var(--pd-fs-md); padding: 0; height: 18px; }
 .pd-ghm-name { flex: 1; min-width: 0; }
-.pd-ghm-name strong { display: block; font-size: 13px; }
-.pd-ghm-name small { display: block; color: var(--pd-muted); font-size: 11.5px; margin-top: 1px; }
+.pd-ghm-name strong { display: block; font-size: var(--pd-fs-base); }
+.pd-ghm-name small { display: block; color: var(--pd-muted); font-size: var(--pd-fs-xs); margin-top: 1px; }
 .pd-ghm-name small code { background: var(--pd-bg); padding: 0 4px; border-radius: 4px; }
 
 .pd-empty { padding: 40px; text-align: center; color: var(--pd-muted);
@@ -655,12 +900,12 @@ html.pd-dark .pd-module-card:hover { box-shadow: var(--pd-shadow-md); }
    second row of empty space. */
 .pd-projsw-btn { display: inline-flex; align-items: center; gap: 10px; background: var(--pd-bg);
   border: 1px solid var(--pd-line); border-radius: 9px; padding: 5px 12px; cursor: pointer; color: var(--pd-ink); max-width: 520px; }
-.pd-projsw-ic { font-size: 16px; }
+.pd-projsw-ic { font-size: var(--pd-fs-lg); }
 .pd-projsw-txt { display: flex; flex-direction: column; line-height: 1.1; text-align: left; min-width: 0; gap: 1px; }
 /* Owner (2026-09-03): same fix as .pd-psel-btn's own trigger — 500 read too close to
    the address/group-head subtitle below it; the subtitle stays regular. */
 .pd-projsw-txt strong { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 420px; }
-.pd-projsw-txt small { display: block; color: var(--pd-muted); font-size: 10.5px; font-weight: 400;
+.pd-projsw-txt small { display: block; color: var(--pd-muted); font-size: var(--pd-fs-micro); font-weight: 400;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 440px; }
 .pd-projsw-txt small:empty { display: none; }
 .pd-projsw-caret { color: var(--pd-muted); }
@@ -671,30 +916,30 @@ html.pd-dark .pd-module-card:hover { box-shadow: var(--pd-shadow-md); }
 /* The list body inside .pd-projsw-menu is the shared .pd-nt-* nav tree (see
    above) mounted into a .pd-nt-mount div, so the switcher's own CSS only
    needs to style the static "All projects" link that sits below it. */
-.pd-projsw-all { display: block; padding: 11px 14px; color: var(--pd-red); font-weight: 600; font-size: 13px; border-top: 1px solid var(--pd-line); }
+.pd-projsw-all { display: block; padding: 11px 14px; color: var(--pd-red); font-weight: 600; font-size: var(--pd-fs-base); border-top: 1px solid var(--pd-line); }
 .pd-projsw-all:hover { background: var(--pd-bg); }
 
 .pd-tabbar { display: flex; gap: 2px; padding: 0 20px; background: var(--pd-card);
   border-bottom: 1px solid var(--pd-line); }
-.pd-tab { border: none; background: none; padding: 10px 16px; cursor: pointer; font-size: 12.5px;
+.pd-tab { border: none; background: none; padding: 10px 16px; cursor: pointer; font-size: var(--pd-fs-sm);
   font-weight: 600; color: var(--pd-muted); border-bottom: 2px solid transparent; }
 .pd-tab:hover { color: var(--pd-ink); }
 .pd-tab.active { color: var(--pd-red); border-bottom-color: var(--pd-red); }
 
 .pd-info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; }
 .pd-info-card { background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius-lg); padding: 16px; }
-.pd-info-ic { font-size: 22px; }
-.pd-info-label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); margin-top: 8px; }
-.pd-info-val { font-size: 16px; font-weight: 600; margin-top: 2px; }
+.pd-info-ic { font-size: var(--pd-fs-stat); }
+.pd-info-label { font-size: var(--pd-fs-xs); text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); margin-top: 8px; }
+.pd-info-val { font-size: var(--pd-fs-lg); font-weight: 600; margin-top: 2px; }
 .pd-note { margin-top: 16px; padding: 14px 16px; background: var(--pd-bg); border-left: 3px solid var(--pd-red);
-  border-radius: 8px; color: var(--pd-muted); font-size: 13.5px; }
+  border-radius: 8px; color: var(--pd-muted); font-size: var(--pd-fs-base); }
 
 /* portfolio rollup header (Program / Workspace tabs) */
 .pd-rollup-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
-.pd-rollup-kind { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; font-weight: 600;
+.pd-rollup-kind { font-size: var(--pd-fs-xs); text-transform: uppercase; letter-spacing: .05em; font-weight: 600;
   color: var(--pd-red); background: var(--pd-red-light); padding: 3px 10px; border-radius: 999px; }
-.pd-rollup-head h3 { margin: 0; font-size: 19px; }
-.pd-rollup-gh { font-size: 13px; color: var(--pd-muted); font-weight: 500; }
+.pd-rollup-head h3 { margin: 0; font-size: var(--pd-fs-stat); }
+.pd-rollup-gh { font-size: var(--pd-fs-base); color: var(--pd-muted); font-weight: 500; }
 .pd-proj-row.cur td { background: var(--pd-red-light); }
 
 /* ============================================================================
@@ -807,11 +1052,14 @@ body { overflow-x: clip; }
   .pd-app.pd-collapsed .pd-sidebar nav, .pd-app.pd-collapsed .pd-nav-foot { padding-left: 12px; padding-right: 12px; }
   .pd-app.pd-collapsed .pd-sidebar-foot { display: block; }
   .pd-app.pd-collapsed .pd-sidebar nav a,
-  .pd-app.pd-collapsed .pd-nav-sibling { justify-content: flex-start; padding: 12px; gap: 10px; font-size: 13px; }
+  .pd-app.pd-collapsed .pd-nav-sibling { justify-content: flex-start; padding: 12px; gap: 10px; font-size: var(--pd-fs-base); }
   .pd-app.pd-collapsed .pd-navtxt { display: flex; }
   .pd-app.pd-collapsed .pd-navsec { display: block; }
   .pd-app.pd-collapsed .pd-navico { margin-right: 10px; }
   .pd-app.pd-collapsed .pd-brand-logo, .pd-app.pd-collapsed .pd-brand small { display: block; }
+  /* ⚠️ and the mark goes away again — the drawer is showing the full wordmark, so leaving
+     the collapsed mark visible would stack the two marks on top of each other. */
+  .pd-app.pd-collapsed .pd-brand-mark { display: none; }
   /* ⚠️ The negative side margins this rule used to carry are GONE with the
      padding model: .pd-sidebar has no padding of its own any more (it matches
      PRC, where each child pads itself), so a negative margin here would drag the
@@ -837,7 +1085,7 @@ body { overflow-x: clip; }
 /* ---- Phone ---- */
 @media (max-width: 700px) {
   .pd-topbar { padding: 9px 12px; gap: 8px; flex-wrap: wrap; row-gap: 8px; }
-  .pd-topbar h1 { font-size: 15px; }
+  .pd-topbar h1 { font-size: var(--pd-fs-md); }
   .pd-topbar-mark { height: 24px; }
   .pd-main { padding: 12px; }
   .pd-card { padding: 14px; }
@@ -846,9 +1094,16 @@ body { overflow-x: clip; }
   .pd-input, .pd-select, .pd-textarea, .pd-input-sm,
   input[type="text"], input[type="number"], input[type="date"],
   input[type="email"], input[type="password"], input[type="search"],
-  select, textarea { font-size: 16px; }
+  select, textarea { font-size: var(--pd-fs-tap); }
   .pd-input, .pd-select, .pd-textarea { padding: 10px 12px; }
   .pd-input-sm { height: 40px; padding: 8px 10px; }
+
+  /* ⚠️ The phone-width `.pd-home-head h2` / `.pd-modulebar h1` shrink to 14px
+     that stood here is GONE, not converted: the type scale has no 14px rung, so
+     it could only have become --pd-fs-md (15px), which is what those headings
+     already are -- a rule that changes nothing is worse than no rule, because
+     the next reader assumes it does something. Titles stay at --pd-fs-md on a
+     phone; the 1px is not worth a dead declaration. */
 
   /* Touch targets — 44px is the accessibility MINIMUM, not a visual target.
      min-height/min-width alone already guarantee it; everything below this
@@ -908,12 +1163,11 @@ body { overflow-x: clip; }
 
   .pd-projsw-btn { max-width: 100%; }
   .pd-projsw-txt strong, .pd-projsw-txt small { max-width: 52vw; }
-  .pd-tab { padding: 10px 13px; font-size: 12px; }
+  .pd-tab { padding: 10px 13px; font-size: var(--pd-fs-sm); }
   .pd-proj-cards { grid-template-columns: 1fr; }
   .pd-info-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
   .pd-module-card { min-height: 0; padding: 14px; gap: 9px; }
-  .pd-module-icon { width: 36px; height: 36px; border-radius: var(--pd-radius-md); font-size: 18px; }
-  .pd-home-head h2 { font-size: 14px; }
+  .pd-module-icon { width: 36px; height: 36px; border-radius: var(--pd-radius-md); font-size: var(--pd-fs-lg); }
   .pd-toast { left: 12px; right: 12px; bottom: max(16px, env(safe-area-inset-bottom)); transform: translateY(20px); }
   .pd-toast.show { transform: none; }
   .pd-auth-wrap { padding: 16px; align-items: flex-start; padding-top: 8vh; }
@@ -921,7 +1175,6 @@ body { overflow-x: clip; }
 
 /* ---- Small phone ---- */
 @media (max-width: 420px) {
-  .pd-modulebar h1 { font-size: 14px; }
   .pd-main { padding: 10px; }
   .pd-card { padding: 12px; }
   .pd-userbar-role, .pd-userbar-name { display: none; }   /* the avatar carries identity */
@@ -989,7 +1242,7 @@ body { overflow-x: clip; }
    rules still load after this file and set the same values, so nothing changes for them. */
 .pd-topbar [class$="-projctx"] > .pd-select {
   max-width: 230px; min-width: 120px; height: 34px;
-  font-weight: 600; font-size: 13px;
+  font-weight: 600; font-size: var(--pd-fs-base);
   background: transparent; border-color: transparent;
 }
 .pd-topbar [class$="-projctx"] > .pd-select:hover,
@@ -1034,7 +1287,7 @@ body { overflow-x: clip; }
 /* The module's icon + title text — text is shown again now that it has its
    own bar with real room, rather than competing with tabs/tools for a single
    compact row. */
-.pd-modulebar > h1 { display: inline-flex; align-items: center; gap: 8px; margin: 0; font-size: 15px; font-weight: 700; flex: none; }
+.pd-modulebar > h1 { display: inline-flex; align-items: center; gap: 8px; margin: 0; font-size: var(--pd-fs-md); font-weight: 700; flex: none; }
 /* A title rendered as a view-switch BUTTON rather than a plain <h1> (e.g.
    Project Schedule's own dropdown) falls in here unstyled beyond flex
    defaults — it already carries its own look. */
@@ -1127,7 +1380,7 @@ body { overflow-x: clip; }
        of tabs in a 393px viewport. Wrapping to two lines keeps every label
        readable in full; ellipsis would hide which tab you are on. */
     min-width: 0; white-space: normal; line-height: 1.15;
-    font-size: 12.5px; padding-left: 6px; padding-right: 6px; text-align: center;
+    font-size: var(--pd-fs-sm); padding-left: 6px; padding-right: 6px; text-align: center;
   }
   /* Dropdown, moved to row 2 of .pd-tb-main at this phone breakpoint, gets
      the same touch-target rule row 1's own controls already carry. */
@@ -1163,11 +1416,11 @@ body { overflow-x: clip; }
   .pd-app .pd-main .pd-select, .pd-app .pd-main .pd-input {
     height: auto; min-height: var(--pd-tap);
     /* ⚠️ Re-assert the iOS zoom guard. The generic `.pd-input` rule above is
-       (0,1,0) and every module's `.xx-filters .pd-input { font-size:13px }` is
+       (0,1,0) and every module's `.xx-filters .pd-input { font-size:var(--pd-fs-base) }` is
        (0,2,0) in a stylesheet that loads later — so the guard was being
        silently overridden and tapping a filter search still zoomed the page.
        Measured 13px on Progress Photos before this rule. */
-    font-size: 16px;
+    font-size: var(--pd-fs-tap);
   }
   /* Inputs inside a table cell or a segmented control are sized by their
      container, not the filter bar — leave those alone. */
@@ -1188,7 +1441,7 @@ body { overflow-x: clip; }
 .pd-tabsdrop { position: relative; display: flex; align-items: center; gap: 6px; flex: none; }
 .pd-tabsdrop-btn {
   display: inline-flex; align-items: center; gap: 8px; background: none; border: 1px solid transparent;
-  border-radius: 8px; padding: 6px 10px; cursor: pointer; font: inherit; font-weight: 700; font-size: 15px;
+  border-radius: 8px; padding: 6px 10px; cursor: pointer; font: inherit; font-weight: 700; font-size: var(--pd-fs-md);
   color: var(--pd-ink);
 }
 .pd-tabsdrop-btn:hover { background: var(--pd-bg); border-color: var(--pd-line); }
@@ -1205,7 +1458,7 @@ body { overflow-x: clip; }
 .pd-tabsdrop-menu.open { display: block; }
 .pd-tabsdrop-menu button {
   display: block; width: 100%; text-align: left; border: none; background: none;
-  padding: 9px 14px; cursor: pointer; color: var(--pd-ink); font-size: 13.5px; border-bottom: 1px solid var(--pd-line);
+  padding: 9px 14px; cursor: pointer; color: var(--pd-ink); font-size: var(--pd-fs-base); border-bottom: 1px solid var(--pd-line);
 }
 .pd-tabsdrop-menu button:last-child { border-bottom: none; }
 .pd-tabsdrop-menu button:hover { background: var(--pd-red-light); }
@@ -1238,7 +1491,7 @@ body { overflow-x: clip; }
 }
 /* ⚠️ MIN-height, not height — a fixed box against the shared 16px control font
    clips its own descenders (this app has hit that exact defect before). */
-.pd-filtergroup .pd-input, .pd-filtergroup .pd-select { min-height: 34px; font-size: 13px; }
+.pd-filtergroup .pd-input, .pd-filtergroup .pd-select { min-height: 34px; font-size: var(--pd-fs-base); }
 .pd-filtergroup .pd-select { flex: 1 1 150px; min-width: 0; max-width: 200px; }
 .pd-filtergroup input[type="text"], .pd-filtergroup input[type="search"],
 .pd-filtergroup input:not([type]) { flex: 1 1 220px; min-width: 160px; }
@@ -1290,11 +1543,34 @@ body { overflow-x: clip; }
    it is the cheapest way to stop a KPI row looking like a row of empty panels. */
 .pd-kpi::before {
   content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
-  background: var(--pd-red);
+  background: var(--pd-kpi-accent, var(--pd-red));
 }
+/* SEMANTIC VARIANTS (2026-09-08) — so a module can colour a metric without
+   writing its own card. Two vocabularies, one mechanism:
+     .pd-kpi-ok / -warn / -bad    the app's own status tokens
+     any rcm-* level class         the registers' priority/residual semantics,
+                                   whose --rcm-c (fill) / --rcm-t (text) pair is
+                                   declared in assets/css/mcc-rcm.css
+   ⚠️ Only the ACCENT and the VALUE take the colour. The LABEL stays --pd-muted.
+   Both registers had already arrived at that rule independently and written the
+   same warning above it: the semantic tokens are tuned for large type, and a
+   10px/700 uppercase label in --pd-warn measures under AA. A card whose label
+   you cannot read is not colour-coding.
+   ⚠️ The value is 20px/800 = "large text" for WCAG (>=18.66px bold, so 3:1).
+   Measured on --pd-card: ok 4.0 light / 9.6 dark, warn 3.9 / 8.4, bad 5.9 / 6.5.
+   Passing, and only because the threshold for this size is 3:1 — do not reuse
+   these three on smaller text. */
+.pd-kpi-value { color: var(--pd-kpi-vc, inherit); }
+.pd-kpi-ok   { --pd-kpi-vc: var(--pd-ok);   --pd-kpi-accent: var(--pd-ok); }
+.pd-kpi-warn { --pd-kpi-vc: var(--pd-warn); --pd-kpi-accent: var(--pd-warn); }
+.pd-kpi-bad  { --pd-kpi-vc: var(--pd-bad);  --pd-kpi-accent: var(--pd-bad); }
+/* An rcm-* class sets --rcm-c/--rcm-t and nothing else does, so matching on the
+   variables' presence is exact — no need to list all seven levels here and then
+   forget one when mcc-rcm.css gains an eighth. */
+.pd-kpi[class*="rcm-"] { --pd-kpi-vc: var(--rcm-t); --pd-kpi-accent: var(--rcm-c); }
 /* min-height reserves the two lines a wrapping label needs (= PRC .metric-label),
    so a one-line and a two-line label still line their VALUES up across the row. */
-.pd-kpi-label { font-size: 10px; font-weight: 700; letter-spacing: .06em;
+.pd-kpi-label { font-size: var(--pd-fs-micro); font-weight: 700; letter-spacing: .06em;
   text-transform: uppercase; color: var(--pd-muted);
   min-height: 26px; display: flex; align-items: flex-end; }
 /* ⚠️ Kept at 700, not compressed further with the rest of this pass — a KPI
@@ -1305,9 +1581,9 @@ body { overflow-x: clip; }
    (800→700) for the same reason. Restored to PRC's own .metric-value
    (1.4286rem/800 = 20px/800) in the 2026-09-03 convergence pass — PRC is
    *bolder* here than this file had become, not lighter. */
-.pd-kpi-value { font-size: 20px; font-weight: 800; letter-spacing: -.3px;
+.pd-kpi-value { font-size: var(--pd-fs-stat); font-weight: 800; letter-spacing: -.3px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pd-kpi-sub { color: var(--pd-muted); font-size: 12px;
+.pd-kpi-sub { color: var(--pd-muted); font-size: var(--pd-fs-xs);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* Section header: title left, one action right. */
@@ -1315,12 +1591,12 @@ body { overflow-x: clip; }
 /* = PRC .panel-title (0.7857rem/700, uppercase, tracked, secondary ink, red icon).
    This is the defining minimalist tell: a section heading is a quiet LABEL over
    its content, not a second page title competing with the content for weight. */
-.pd-sec-head h3 { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: .07em;
+.pd-sec-head h3 { margin: 0; font-size: var(--pd-fs-xs); font-weight: 700; letter-spacing: .07em;
   text-transform: uppercase; color: var(--pd-muted);
   display: flex; align-items: center; gap: 7px; }
 .pd-sec-head h3 svg, .pd-sec-head h3 .pd-ico { color: var(--pd-red); }
 .pd-sec-head > :last-child { margin-left: auto; }
-.pd-sec-note { margin: 10px 0 0; color: var(--pd-muted); font-size: 12.5px; }
+.pd-sec-note { margin: 10px 0 0; color: var(--pd-muted); font-size: var(--pd-fs-sm); }
 .pd-pkg-card { margin-bottom: 18px; }
 /* The table is the widest thing on the page on a phone — let it scroll inside
    its own card instead of pushing the whole document sideways. */
@@ -1329,21 +1605,21 @@ body { overflow-x: clip; }
 /* Module tile figures. A tile without a published `dash` spec says so rather
    than showing a zero it never measured. */
 .pd-module-figs { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px;
-  margin-top: 2px; font-size: 11.5px; color: var(--pd-muted); }
-.pd-module-figs .pd-fig b { color: var(--pd-ink); font-size: 13px; font-weight: 700; margin-right: 3px; }
+  margin-top: 2px; font-size: var(--pd-fs-xs); color: var(--pd-muted); }
+.pd-module-figs .pd-fig b { color: var(--pd-ink); font-size: var(--pd-fs-base); font-weight: 700; margin-right: 3px; }
 /* Amber, not red: an open item is normal work in progress, not an error. */
 .pd-module-figs .pd-fig.warn b { color: var(--pd-warn); }
-.pd-fig-when { font-size: 11.5px; }
-.pd-fig-load, .pd-fig-none { font-size: 12.5px; font-style: italic; }
+.pd-fig-when { font-size: var(--pd-fs-xs); }
+.pd-fig-load, .pd-fig-none { font-size: var(--pd-fs-sm); font-style: italic; }
 
 /* Grouped CARD view. The list view groups by the Group-by selection; the card
    view used to ignore it entirely and render one flat run of cards, silently
    discarding the grouping the user had just chosen. Same headers, both views. */
 .pd-cardgroup { display: flex; align-items: center; gap: 10px; margin: 20px 0 10px;
-  font-weight: 600; font-size: 13px; color: var(--pd-ink); }
+  font-weight: 600; font-size: var(--pd-fs-base); color: var(--pd-ink); }
 .pd-cardgroup:first-child { margin-top: 2px; }
 .pd-cardgroup-rule { flex: 1 1 auto; height: 1px; background: var(--pd-line); }
-.pd-cardgroup-count { font-size: 11px; font-weight: 500; color: var(--pd-muted);
+.pd-cardgroup-count { font-size: var(--pd-fs-xs); font-weight: 500; color: var(--pd-muted);
   background: var(--pd-bg); border: 1px solid var(--pd-line); border-radius: 999px; padding: 0 7px; }
 
 /* Cards: give the metadata room to breathe and let it wrap instead of colliding. */
@@ -1360,5 +1636,5 @@ body { overflow-x: clip; }
    pattern (progress-photos .pp-clear / material-submittal .ms-clearfilt),
    promoted here so both apps share one. Shown only when a filter is set. */
 .pd-clear { display: inline-flex; align-items: center; gap: 5px; border: none; background: transparent;
-  color: var(--pd-muted); cursor: pointer; font-size: 12.5px; padding: 6px 8px; border-radius: 6px; }
+  color: var(--pd-muted); cursor: pointer; font-size: var(--pd-fs-sm); padding: 6px 8px; border-radius: 6px; }
 .pd-clear:hover { color: var(--pd-red); background: var(--pd-bg); }

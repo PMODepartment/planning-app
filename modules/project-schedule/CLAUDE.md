@@ -116,6 +116,186 @@ have not been exercised against live data.
 
 `MODULE_V` → `20260909a`.
 
+### A stray NUL byte made this changelog un-greppable (2026-09-09) — fmlozano
+
+Found while adding the entry below: this file carried **one NUL byte** (0x00) at offset 39,939, and
+plain `grep` answers `Binary file modules/project-schedule/CLAUDE.md matches` instead of the matching
+line. On a 107 KB changelog that is the module's primary history, that is a real papercut — you had
+to remember `grep -a`.
+
+**The prose had lost nothing.** The NUL sat *inside a quoted code literal*:
+
+> `dimKey` returns the same `'<NUL>'` sentinel `tower` uses on a single-tower project
+
+`dimKey` genuinely returns `'\u0000'` (`index.html:34259`), and that file's **own comments write the
+sentinel as the escape** (`:26605`, `:26616`). So the entry was correctly quoting a real NUL sentinel
+— whatever wrote it interpolated the *character* instead of the escape *text*. Repaired to `\u0000`,
+which both preserves the meaning and matches the code's wording verbatim. One byte became six
+characters; the line count is unchanged.
+
+- ⚠⚠ **WRITING THIS ENTRY REPRODUCED THE BUG, TWICE.** The two places above that name
+  the sentinel came out as real NUL bytes, because the text was written through a tool that
+  interprets escape sequences -- exactly what happened to the entry being repaired. Caught by
+  re-scanning the entry before committing it. **When you need the six characters of an escape in
+  prose, build them from character codes and verify the bytes afterwards**; do not type the escape
+  and trust the write. Same family as the heredoc-escape traps already recorded in this repo.
+- ⚠️ **`git grep` was never affected, and an earlier statement of mine said it was.** Git sniffs only
+  the **first 8000 bytes** for binary content and the NUL was at ~40 KB, so `git grep` always treated
+  this file as text. GNU `grep` scans the whole buffer, which is why the two disagreed. Worth knowing
+  before chasing "grep says binary" as a git problem.
+- **Swept the whole repo**: 287 tracked text files (`.md .js .css .html .sql .json .txt .webmanifest
+  .yml .yaml`), and this was the **only** one. Now zero.
+- ⚠️ **Introduced by `d496488` (2026-09-08)** — bisected across the file's last 25 commits;
+  `bb8e239` immediately before it is clean. Same family as the scripted-write traps this repo already
+  records: a value interpolated as a character where the escape text was meant.
+- ⚠️ **FOUND AND DELIBERATELY LEFT: `index.html:34282-34283` quotes the same sentinel as `' '` — a
+  literal SPACE (0x20, verified in the bytes), not the NUL.** *"buildTree only creates a node when
+  `dimKey()` is not `' '`, and `dimKey` returns `' '` for exactly the cases dimName returned null
+  for"* — both wrong about a sentinel defined 23 lines below them. Almost certainly the same mangling,
+  normalised to a space rather than to a NUL. Not fixed here **because the repo's own rule bumps
+  `MODULE_V` on any change to a module's `index.html`**, and paying an app-wide cache-bust plus a
+  conflict on a file another session is actively editing, to correct two words in a comment with no
+  behavioural effect, is the wrong trade. It is recorded here so the next reader of that comment does
+  not trust it — fix it when something else in that file is being changed anyway.
+
+No `MODULE_V` bump: markdown only.
+### A CO Ref column that unlocks a bulk edit already written, select-by-location, and the bulk change-order insert (2026-09-09) — fmlozano
+
+Owner: *"There is already a function to add change order in the activities within the schedule module
+this just needs to be integrated in the wizard and in a bulk manner in case that the CO/EOT affects a
+lot … we can also expand that idea for both the wizard and in the schedule app by selecting affected
+activities based on the location and optional to add other activities in the schedule as well."*
+Reads the new `cc_affected_activities` table — see
+[`modules/contracts-claims/CLAUDE.md`](../contracts-claims/CLAUDE.md) for the register's half.
+
+### ⚠️⚠️ A bulk edit that was fully built and had no door
+
+`fillDown(field, srcRow)` has carried a dedicated `change_order_ref` branch since it was written: it
+filters the selection to `isExecPhase`, reports how many it skipped and explains the refusal with
+`_phaseWhy`. `_FIELD_LABELS` names the field. `_CELL_META_BY_LABEL`'s own comment says *"marking a run
+of activities as one change order is exactly the bulk edit these columns exist for."*
+
+**None of it had ever run.** `fillDown` is reachable only from a grid cell's `data-field`; the Scope
+cell emits `data-field="scope_type"` and renders the ref as a read-only `.ps-coref` span; and a
+repo-wide search for `data-field="change_order_ref"` returned nothing. So the feature existed, guarded
+its own edge cases, and was unreachable.
+
+**A `Change Order Ref` column is the door.** Right-click → *Fill Change Order Ref down (N)* and Ctrl+D
+now work on a multi-row selection, which is how one variation gets stamped across a whole floor.
+
+- ⚠️ **Setting a ref does NOT change the row's scope**, deliberately — the same contract `promptCoRef`
+  has always kept, writing `{ change_order_ref }` and nothing else. `scope_type` says whether the row
+  **is** change-order work; the ref says **which** variation it belongs to, and a main-contract
+  activity legitimately cites the CO that affected it. Inferring one from the other would silently
+  reclassify main-contract work as a variation on the strength of a bulk fill-down.
+- ⚠️ **Execution phase only, and not editable elsewhere** — the same rule `scopeCellHtml` applies, so
+  the column cannot quietly acquire a value that means nothing.
+- ⚠️ **Appended to `GRID_COLS`, not inserted** — a saved column sort/order is **positional**, and
+  inserting mid-list re-points it at a different column. Verified the row emits exactly 26 cells for
+  26 built-in columns, with `c-coref` 26th and emitted last, or every dynamic column would shift.
+- The enum reuses **`coSelOpts`** — the same builder the details panel and `promptCoRef` use — so the
+  registered change orders, the "not in the register" warning and the ordering cannot disagree
+  between the three places a ref can be set. `_colText` includes the register **description**, so
+  filtering the column on "plumbing" finds the activities under a CO numbered "CO 01": a planner
+  remembers what the variation was, not its number.
+
+### Select activities by location (Actions menu)
+
+⚠️⚠️ **A SELECTOR, NOT A SECOND BULK-EDIT ENGINE, and that is the whole design.** It resolves a place
+to activities and loads them into `_selSet` — the selection every bulk action in this file already
+reads through `_selectedTaskRows()`. So fill-down, copy, cut, actualize dates and delete all apply to
+the result with **no new apply path, no second set of permissions and no second set of bugs**.
+
+⚠️ Global Change could not have done this job: `GC_FIELDS` addresses plain row fields and `gcMatch`
+reads `r[field]` directly, while `location` is a jsonb map — it cannot see a place at all.
+
+- Values are grouped by `locNormKey`, so `2ND FLOOR` and `2nd Floor` are **one** place with a `×N`
+  badge. Measured: three spellings of one floor collapse to one entry gathering all 18 rows.
+- ⚠️ **It says how many are off screen.** `_selSet` resolves against `rows`, not the displayed list,
+  so a bulk action legitimately reaches an activity the current filter hides — correct, and alarming
+  to discover afterwards. The dialog counts them before you commit.
+- ⚠️ `selId` is set to the first selection so the context menu has an anchor: without it,
+  right-clicking to reach Fill-down resets the selection to the row under the cursor and throws the
+  whole set away.
+- ⚠️ Three different reasons there may be no levels, and only one is the planner's to fix — `LOC_LOAD`
+  is exactly that distinction, and claiming "no breakdown" while the read is pending or refused is a
+  failure this module has already shipped once.
+
+### The bulk change-order insert
+
+⚠️⚠️ **IT REUSES `splitPlan` AND `splitBuild` UNMODIFIED** — proven by the diff, which contains six
+`+` mentions of them and **zero** deletions. They are pure functions that return data and write
+nothing, which is precisely what makes a whole-run **preview** possible: 23 hosts can be planned,
+shown and then applied. Re-deriving those dates would be a second copy of the one calculation a
+change-order claim turns on.
+
+⚠️⚠️ **And it lives here, not in Contracts & Claims**, for the same reason: the arithmetic is here,
+and this app owns schedule writes. The register records **which** activities a variation touches;
+inserting the work is this module's job.
+
+- **One preview table for the whole run**, replacing `applySplit`'s per-host `confirm()`. Twenty-three
+  confirmations is not an interface, and a planner clicking through them cannot see the total time
+  impact they are agreeing to.
+- ⚠️ **All three refusal classes are LISTED with their reason, never skipped**: no dates, a 1-day
+  activity (there is no point inside it), and a host **already citing this reference** — so re-running
+  after a partial failure cannot give one host the same change order twice. A *different* ref on the
+  host is not refused: an activity genuinely can be hit by two variations.
+- The cut is a **rule**, not a date, because one date cannot fall inside 23 different spans. *At each
+  activity's midpoint* is the default and, being what `openSplitDialog` itself defaults to, is
+  **always valid** — asserted across every duration from 2 to 40 days, 0 refusals. *On one date* is
+  offered and refuses per host where it falls outside.
+- ⚠️ **Change-order rows first, host patches second** — the same recoverable order `applySplit` uses.
+  If the inserts fail every host still reads as it always did; if the patches fail the change orders
+  exist and are visible. The reverse leaves hosts finishing later with nothing in the gap to explain
+  why. `created_by` is stamped, because `project_schedule_ins` requires it. Host patches go through
+  `_batchUpdate`, whose `failedIds` are reported as *"somebody else imported this schedule, so their
+  rows are not yours to change"* rather than as a generic failure.
+
+### ⚠️⚠️ The defect that would have corrupted data: 23 activities sharing an Activity ID
+
+`splitBuild` uses `co.ref` as the new row's id when one is given, and `splitFreeId` checks the
+candidate against `rows` **only** — which never grows during a run, because nothing is written until
+the end. So every host under CO-014 would have been handed the id **`CO-014`**. Activity IDs are what
+predecessor strings reference, what the schedule↔document links key on and what these new
+affected-activity links key on, so it would have broken three separate things **silently**.
+
+`_bulkFreeId` threads a `taken` map through the run and checks both it and `rows`. **The contrast build
+proves the fix is what matters**: reverting that one condition fails exactly the three id-uniqueness
+assertions and nothing else. The suite also runs the shipped `splitFreeId` as a control and asserts it
+returns the same id five times — which is correct for one insert, and is why the allocator exists.
+
+### Affected marker and filter
+
+A quiet chip on a leaf row naming the records recorded against it (capped at two references plus a
+count — an activity re-touched by six variations over two years is real and would push the name off
+the row). ⚠️ **A marker, not a scope change**: the row is still main-contract work. `filters.aff`
+narrows the grid to one record's set, so *"what does CO-014 touch?"* is answerable from the Gantt;
+WBS and group rows pass through, the same rule the critical-path and scope filters use.
+
+⚠️ **`'Claim'` joined the register fetch**, since the wizard offers the step for all three
+raised-against types — harmless to everything else, because `coRegistered()` still filters to
+`record_type === 'Change Order'`.
+
+⚠️ `AFF_BY_ACT` is cached and depends on `CC_AFFECTED` and `CONTRACT_RECS` **only, not on `rows`** —
+it is keyed on `activity_id` and `affectedOf(r)` looks the row's own id up in it — so the single
+invalidation beside the fetch is sufficient. An earlier version of that comment claimed it depended on
+the rows, which was wrong and is corrected in place.
+
+### Verified
+
+`node --check` on the extracted 2.7MB inline script; **0 duplicate DOM ids introduced** — ⚠️ that gate
+caught the duration input carrying the same id in both branches of the cut-mode ternary (only one
+existed at runtime, but two branches sharing an id is how a `getElementById` starts reading the wrong
+box after an unrelated edit), now emitted once; the 26-column/26-cell alignment; and 54 slice-and-
+execute assertions with three contrast builds. Reads of the new table are tolerant in exactly the way
+the register fetch beside them is: no table, no grant or an un-run migration leaves an empty list and
+a schedule that behaves precisely as it did before.
+
+⚠️ **Not verified signed in.** No bulk insert has been applied, no ref filled down and no marker
+rendered against a real project; the migration has not been run, so `cc_affected_activities` reads as
+absent and every one of these surfaces reports "nothing recorded yet".
+
+`MODULE_V` → `20260909co`.
 ### Excel's selection model, and a grip instead of Move buttons (2026-09-08) — jasantos2
 
 Owner: *"for the multiple selection, can you adapt similar to excel wherein if multiple selection,
@@ -483,7 +663,7 @@ it is a **rung in the pushed WBS**, sitting between the trade and the places:
   name (two items typed `Rebar` and `rebar ` are one grouping, and keying raw would build two branches
   that look identical), named by the grouping, and ordered by the order `cfg.activities` first
   mentions them — the same "the setup's own order" rule floors and zones already follow.
-- ⚠️⚠️ **IT SELF-SKIPS, and that is what makes adding a dim safe.** `dimKey` returns the same `' '`
+- ⚠️⚠️ **IT SELF-SKIPS, and that is what makes adding a dim safe.** `dimKey` returns the same `'\u0000'`
   sentinel `tower` uses on a single-tower project, so an ungrouped item attaches to its trade and the
   rung disappears — a project where nothing is grouped pushes a tree **identical** to before this
   existed. `buildTree`'s skip rule is HEAD's, untouched. Both are asserted.

@@ -18,6 +18,20 @@
     arrowLeft:   '<line x1="20" y1="12" x2="5" y2="12"/><polyline points="11 18 5 12 11 6"/>',
     arrowRight:  '<line x1="4" y1="12" x2="19" y2="12"/><polyline points="13 6 19 12 13 18"/>',
     externalLink: '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>',
+    // --- Sibling-app identity marks (the .pd-nav-sibling links) ---------------
+    // ⚠️ BOTH sibling links used to be `externalLink`, so on the 64px collapsed rail
+    //    they rendered as two IDENTICAL glyphs separated only by a `title` — i.e. the
+    //    destination was unreadable without hovering. They need marks of their own, and
+    //    a per-app LOGO is not an option: engineering-app, wpm (Procurement) and this app
+    //    all ship the same 1020x850 Megawide "M", so a logo would be three identical marks.
+    // ⚠️ Deliberately namespaced `app*`. `compass` (Stakeholder Map) and `ruler` (markup
+    //    tools) are already taken by other modules, and a sibling link sitting three rows
+    //    under the Stakeholder Map row must not wear a near-copy of its icon.
+    // Procurement: a purchase cart. Distinct from `box` (a cube) and `cash` at 16px.
+    appProcurement: '<circle cx="9.5" cy="20" r="1.4"/><circle cx="17" cy="20" r="1.4"/><path d="M2.5 4h2.3l2.5 11.3a1.5 1.5 0 0 0 1.5 1.2h7.7a1.5 1.5 0 0 0 1.5-1.2L19.5 8H5.6"/>',
+    // Engineering: a DRAFTING compass (pivot + splayed legs + arc), which reads as
+    // engineering rather than as navigation — the shape `compass` deliberately is not.
+    appEngineering: '<circle cx="12" cy="4.3" r="1.5"/><path d="M12 5.8v1.4"/><path d="M11.2 7.4 6.4 20.3"/><path d="M12.8 7.4 17.6 20.3"/><path d="M8.4 15.1a7.2 7.2 0 0 0 7.2 0"/>',
     chevronDown: '<polyline points="6 9 12 15 18 9"/>',
     search:      '<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/>',
     plus:        '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',

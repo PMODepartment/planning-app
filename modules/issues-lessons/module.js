@@ -1862,11 +1862,32 @@ window.IssuesLessons = (function () {
 
   function issReset() {
     _issSel = null; _issNew = null; _issQ = ''; _issMode = 'log'; _issPrevMode = 'log';
+    // ⚠️ `_issReport` resets with the rest of the per-record state. Carrying a
+    //    present mode onto the NEXT issue you open shows it read-only for no
+    //    reason the screen explains.
+    _issReport = false;
     _issHoldOpen = false; _issCloseOpen = false; _issReopenOpen = false; _issReopenNote = '';
     _issCloseDraft = { report: '', lesson: '', dateResolved: '' };
   }
 
   function reqMark(editable) { return editable ? ' <span class="il-req" title="Required">*</span>' : ''; }
+
+  // ---- Present view (restored 2026-09-08) ----------------------------------
+  // Owner: *"Issues & Concerns: what happened to the present view?"*
+  // ⚠️ THIS IS A DELIBERATE REVERSAL, AND THE NOTE IT REVERSES IS STILL IN
+  //    module.css: entry (f)/(g) removed the old toggle on the reasoning that
+  //    "Detail itself is the single-record read/edit view now, and the toplevel
+  //    Dashboard covers what reporting meant" — recorded there as *"No need for
+  //    reporting view" — confirmed unreachable, not just unused*. That was right
+  //    about the DASHBOARD (a portfolio read) and wrong about the SINGLE RECORD:
+  //    presenting one issue in a meeting is not the same act as reading the
+  //    register, and Minutes of Meeting and Project Schedule both kept a present
+  //    mode for exactly that. This restores it for the single record only.
+  // ⚠️ SESSION-ONLY, never persisted, and reset on leaving the record. A screen
+  //    that comes back read-only tomorrow reads as "I have lost permission",
+  //    which is the failure mode the Project Schedule's own reporting view
+  //    documents.
+  var _issReport = false;
 
   // ------------------------------------------------- Issues: detail view -----
   // ⚠️ THIS IS STILL THE POWER APPS "VIEW OPEN ISSUES" LAYOUT — a status panel beside the
@@ -1892,18 +1913,34 @@ window.IssuesLessons = (function () {
     // list yet, and it degrades to a plain note when the open record has fallen out
     // of the active filter (e.g. it was just closed while "Open items only" is set)
     // rather than guessing which neighbour to step to.
+    // ⚠️ Offered only for a SAVED record. A not-yet-saved draft has nothing to
+    //    present, and forcing it read-only would strand whatever was typed.
+    var canPresent = !!(cur && !_issNew);
+    if (!canPresent) _issReport = false;
+    host.classList.toggle('il-report', _issReport && canPresent);
     host.innerHTML =
       '<div class="il-detail-nav">' +
         '<button class="il-backlink" id="il-iss-back"><span data-ico="arrowLeft" data-ico-size="14"></span>Back to Issues</button>' +
         (cur && !_issNew ? issStepHTML(cur.id) : '') +
+        // ⚠️ The Exit button IS the only way back out of the mode, so it lives in
+        //    the nav row, which the mode leaves visible — the same rule the
+        //    Project Schedule's reporting view follows for its Layout menu.
+        (canPresent
+          ? '<button class="pd-btn pd-btn-sm il-modebtn' + (_issReport ? ' is-active' : '') + '" id="il-iss-present" ' +
+            'title="' + (_issReport ? 'Exit the present view' : 'Present this issue — a clean read-only record') + '">' +
+            '<span data-ico="eye" data-ico-size="14"></span>' +
+            '<span class="il-modetxt">' + (_issReport ? 'Exit' : 'Present') + '</span></button>'
+          : '') +
       '</div>' +
-      (cur ? issDetailHTML(cur)
+      (cur ? issDetailHTML(cur, { present: _issReport && canPresent })
            : '<div class="il-empty" style="padding:28px;">This issue is no longer in the current filter — ' +
              '<button class="pd-btn pd-btn-sm" id="il-iss-back2">go back</button>.</div>');
     wireIssues();
     var prevBtn = $('il-iss-prev'), nextBtn = $('il-iss-next');
     if (prevBtn) prevBtn.onclick = function () { stepIssue(-1); };
     if (nextBtn) nextBtn.onclick = function () { stepIssue(1); };
+    var presBtn = $('il-iss-present');
+    if (presBtn) presBtn.onclick = function () { _issReport = !_issReport; renderIssueDetailView(); };
     if (window.Icons && Icons.hydrate) Icons.hydrate(host);
   }
 
@@ -1948,7 +1985,16 @@ window.IssuesLessons = (function () {
   // says what this block is.
   function issDetailHTML(r, opts) {
     var isNew = !r.id;
-    var mayEdit = (opts && opts.readOnly) ? false : (isNew ? canAdd : canEditRow(r));
+    // ⚠️ `present` IS ITS OWN FLAG AND MUST NOT BE FOLDED INTO `readOnly`, even
+    //    though both end at ro=true. `readOnly` additionally sets `bg` below, which
+    //    means "this is the Background embed on a lesson's page" and keeps the
+    //    narrative fields in BOXED, disabled textarea chrome. A present view wants
+    //    the exact opposite — ilField's report mode, bare text — because an <input>
+    //    clips its own value, which is what made the Minutes' long Issue/Agenda
+    //    unreadable in the one mode that exists for reading it (measured there at
+    //    659px of text in a 416px box). Reusing readOnly would have silently turned
+    //    the present view into a Background embed.
+    var mayEdit = (opts && (opts.readOnly || opts.present)) ? false : (isNew ? canAdd : canEditRow(r));
     var ro = !mayEdit, d = ro ? ' disabled' : '';
     // ITEM 2 (2026-09-03, lesson-view round): true only for the Background embed
     // (a lesson's own page showing the issue it came from) — `opts.readOnly` is
@@ -2624,9 +2670,17 @@ window.IssuesLessons = (function () {
       kpi('On Hold', hold, 'is-hold') +
       kpi('Closed', closed, 'is-closed');
   }
+  // Adapter onto the SHARED metric card (UI.kpi, assets/js/ui.js). The
+  // hand-rolled `.il-kpi` that stood here drew a 26px value above a 12px label
+  // and carried no accent bar -- the largest of the five copies of this card the
+  // suite had accumulated, and the reason the same "Open" count looked like a
+  // different class of number here and on the project dashboard.
+  // `is-open` / `is-hold` / `is-closed` map onto the shared status variants, so
+  // the three status colours come from the app's own tokens now instead of a
+  // hardcoded #16a34a that had no dark-mode pair.
+  var _KPI_CLS = { 'is-open': 'pd-kpi-bad', 'is-hold': 'pd-kpi-warn', 'is-closed': 'pd-kpi-ok' };
   function kpi(label, val, cls) {
-    return '<div class="il-kpi ' + cls + '"><div class="il-kpi-val">' + val + '</div>' +
-      '<div class="il-kpi-label">' + label + '</div></div>';
+    return UI.kpi(label, val, { cls: _KPI_CLS[cls] || cls || '' });
   }
 
   // ==========================================================================
@@ -3636,8 +3690,20 @@ window.IssuesLessons = (function () {
     var l = LESSONS.find(function (x) { return x.id === _lessSel; });
     if (!l || !canEditLesson(l)) return;
     if (!confirm('Delete this lesson? The issue or meeting it came from is not affected.')) return;
-    var res = await sb().from(LESSON_TABLE).delete().eq('id', l.id);
+    // ⚠️ `.select('id')` and a row-count check — these module tables carry an
+    // owner-or-admin DELETE policy (`is_writer() and (created_by = auth.uid() or
+    // is_admin())`), so a refusal matches ZERO rows and PostgREST returns a clean
+    // success with no error. Without this the module toasted "Deleted", removed
+    // the lesson from the local array, and the row came back on the next load.
+    // Same defect, same fix, as the progress-photos deletes (2026-09-04).
+    // ⚠️ canEditLesson() above is the UI's own guess at the same rule; it is not
+    //    a substitute for reading what the server actually did.
+    var res = await sb().from(LESSON_TABLE).delete().eq('id', l.id).select('id');
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    if (!res.data || !res.data.length) {
+      UI.toast('Not deleted — the database refused it. A lesson can only be removed by whoever captured it, or by an admin.', 'error');
+      return;
+    }
     LESSONS = LESSONS.filter(function (x) { return x.id !== l.id; });
     _lessSel = null;
     UI.toast('Deleted', 'ok');
@@ -3686,8 +3752,16 @@ window.IssuesLessons = (function () {
     var n = lessonsOfIssue(id).length;
     if (!confirm('Delete this issue? This cannot be undone.' +
       (n ? '\n\nThe ' + n + ' lesson' + (n === 1 ? '' : 's') + ' captured from it stay in the library, unlinked.' : ''))) return;
-    var res = await sb().from(TABLE).delete().eq('id', id);
+    // ⚠️ Same owner-or-admin DELETE policy, same silent-zero-rows trap — see the
+    // note on the lesson delete above. An issue raised by a colleague could not
+    // be deleted and said it had been.
+    var res = await sb().from(TABLE).delete().eq('id', id).select('id');
     if (res.error) { UI.toast(res.error.message, 'error'); return; }
+    if (!res.data || !res.data.length) {
+      UI.toast('Not deleted — the database refused it. An issue can only be removed by whoever raised it, or by an admin.', 'error');
+      load();
+      return;
+    }
     if (_issSel === id) _issSel = null;
     UI.toast('Deleted', 'ok'); load();
   }

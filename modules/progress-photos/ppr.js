@@ -1648,8 +1648,21 @@ window.PPR = (function () {
     $('ppr-d-yes').onclick = async function () {
       this.disabled = true;
       // ppr_slides.ppr_id is ON DELETE CASCADE, so the slides go with it.
-      var res = await sb().from(T_PPR).delete().eq('id', p.id);
+      // ⚠️ `.select('id')` and a ROW-COUNT check. These tables carry an
+      // owner-or-admin DELETE policy, so a refusal matches ZERO rows and
+      // PostgREST reports it as a clean success with NO error -- the module then
+      // toasts success over a row that never left. Same defect, same fix, as the
+      // photo/pano/recon deletes audited in module.js on 2026-09-04; these are
+      // their siblings in this file, missed by that pass.
+      // ⚠⚠ The confirm above promises the slides go too (ppr_slides.ppr_id is
+      //     ON DELETE CASCADE). A refusal cascades nothing -- so reporting success
+      //     here claimed a whole presentation had been removed when none of it had.
+      var res = await sb().from(T_PPR).delete().eq('id', p.id).select('id');
       if (res.error) { UI.toast(res.error.message, 'error'); this.disabled = false; return; }
+      if (!res.data || !res.data.length) {
+        UI.toast('Not deleted — the database refused it. A presentation can only be removed by whoever created it, or by an admin.', 'error');
+        this.disabled = false; return;
+      }
       m.close(); UI.toast('Presentation deleted', 'ok');
       if (selId === p.id) selId = null;
       await load();
@@ -2093,8 +2106,20 @@ window.PPR = (function () {
     var m = openModal(html, 460);
     $('ppr-sd-yes').onclick = async function () {
       this.disabled = true;
-      var res = await sb().from(T_SLIDE).delete().eq('id', sl.id);
+      // ⚠️ `.select('id')` and a ROW-COUNT check. These tables carry an
+      // owner-or-admin DELETE policy, so a refusal matches ZERO rows and
+      // PostgREST reports it as a clean success with NO error -- the module then
+      // toasts success over a row that never left. Same defect, same fix, as the
+      // photo/pano/recon deletes audited in module.js on 2026-09-04; these are
+      // their siblings in this file, missed by that pass.
+      // ⚠⚠ The key-plan file removal below must not run on a refusal, or a
+      //     surviving slide loses its key plan permanently.
+      var res = await sb().from(T_SLIDE).delete().eq('id', sl.id).select('id');
       if (res.error) { UI.toast(res.error.message, 'error'); this.disabled = false; return; }
+      if (!res.data || !res.data.length) {
+        UI.toast('Not deleted — the database refused it. A slide can only be removed by whoever added it, or by an admin.', 'error');
+        this.disabled = false; return;
+      }
       if (sl.key_plan_url) { try { await sb().storage.from(BUCKET).remove([sl.key_plan_url]); } catch (e) {} }
       m.close(); UI.toast('Slide deleted', 'ok');
       await load();
@@ -2734,8 +2759,18 @@ window.PPR = (function () {
     var m = openModal(html, 420);
     $('tmpl-d-yes').onclick = async function () {
       this.disabled = true;
-      var res = await sb().from(T_TMPL).delete().eq('id', t.id);
+      // ⚠️ `.select('id')` and a ROW-COUNT check. These tables carry an
+      // owner-or-admin DELETE policy, so a refusal matches ZERO rows and
+      // PostgREST reports it as a clean success with NO error -- the module then
+      // toasts success over a row that never left. Same defect, same fix, as the
+      // photo/pano/recon deletes audited in module.js on 2026-09-04; these are
+      // their siblings in this file, missed by that pass.
+      var res = await sb().from(T_TMPL).delete().eq('id', t.id).select('id');
       if (res.error) { UI.toast(res.error.message, 'error'); this.disabled = false; return; }
+      if (!res.data || !res.data.length) {
+        UI.toast('Not deleted — the database refused it. A template can only be removed by whoever created it, or by an admin.', 'error');
+        this.disabled = false; return;
+      }
       m.close(); UI.toast('Template deleted', 'ok');
       await loadTemplates(); renderTemplates();
     };

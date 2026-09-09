@@ -93,10 +93,30 @@ window.CCWizard = (function () {
            is), so it has no Trades step; the other two paths create a revision here and do. */
         return boqPath() !== 'add';
       } },
+    /* ⚠️⚠️ WHICH ACTIVITIES THIS TOUCHES. Owner 2026-09-09: *"adding change orders and
+       extension of time the planner should be able to easily select which activities are affected
+       with the CO/EOT."* Until now the wizard wrote one contracts_claims row and nothing else --
+       no step, field or payload key mentioned the schedule -- so the commercial record and the
+       programme it argues about could not see each other from this side at all.
+       ⚠️ SHOWN FOR ALL THREE RAISED-AGAINST TYPES, Claim included, and that is not scope creep:
+          this wizard already treats Claim and Change Order identically in every other step (same
+          fields, same money columns, one shared branch in stepDetails), and a claim's basis is
+          activities exactly as a change order's scope is. Excluding it would be the special case.
+       ⚠️ NO `hasSchedule()` GATE, deliberately -- and this departs from the plan for this work.
+          `when()` is called synchronously on every paint, so it cannot await the schedule read;
+          gating on a load that may not have finished would make the step, the rail count and the
+          Back/Next arithmetic appear and disappear mid-flow. Instead open() PREFETCHES the
+          activities and the step's own picker states every empty case by name -- no schedule, no
+          location levels, or a read that was refused. A step that explains why it is empty beats
+          a step that silently is not there. */
+    { key: 'affected', label: 'Affected work', sub: 'Which activities this touches',
+      when: function () { return raisedAgainst(); } },
     { key: 'review',  label: 'Review',   sub: 'Check, then save',
       when: function () { return st.type !== 'BOQ'; } }
   ];
   function liveSteps() { return STEPS.filter(function (s) { return s.when(); }); }
+  /* Steps whose content is two or more panes and needs the wide shell. See paint(). */
+  var WIDE_STEPS = ['codes', 'affected'];
   // label/sub may be a string or a function of the current type — resolved in one place so
   // the rail, the heading and the sub-heading can never disagree about what a step is called.
   function txt(v) { return typeof v === 'function' ? v() : v; }
@@ -635,8 +655,36 @@ window.CCWizard = (function () {
       'class codes already on every line. You can add more later.</p>' +
       D.boqPickerHTML();
   }
+  function stepAffected() {
+    /* The hint says what the selection IS, per type, because the two readings are genuinely
+       different and getting them the wrong way round is how a claim goes wrong.
+       ⚠️ AN EOT SELECTION IS EVIDENCE, NOT AN ENTITLEMENT. The days stay the single
+          contract-level figure on the record; these activities are the delay BASIS. Delay on
+          parallel paths is concurrent, so per-activity days could not be summed -- the long
+          version is in migrations/2026-09-09-cc-affected-activities.sql.
+       ⚠️⚠️ CUT TO ONE LINE, 2026-09-09. Owner: *"let's reduce the text in the step intro"*, the
+          third time the wizard's prose has been called too long. Two of the four sentences were
+          teaching the CONTROL -- *"tick a place to take all of it, or search to add individual
+          activities"* -- and the control now says that itself: the ladder carries a count per rung,
+          the tree carries carets and checkboxes, and the search box's own placeholder names every
+          field it matches. A caption narrating a legible control is just more to read.
+       ⚠️ WHAT SURVIVES IS THE ONE FACT THE SCREEN CANNOT SHOW: no date moves. A planner who
+          believes saving reschedules the programme will not use this step at all, and nothing on
+          the page can disprove it. The EOT half of that -- "the granted days stay one figure" --
+          went with the rest, because this step has no days field to mislead anyone with; the
+          reasoning stays here and in the migration, which is where a developer looks. */
+    var hint = st.type === 'EOT'
+      ? 'The activities this delay ran through — the claim’s <b>basis</b>. No dates move.'
+      : st.type === 'Claim'
+      ? 'The activities this claim is argued from. No dates move.'
+      : 'The activities this change order affects. <b>No dates move</b> — inserting the work is a ' +
+        'separate, previewed step in the Project Schedule.';
+    return '<p class="ccw-hint">' + hint + ' Optional.</p>' +
+      (D.affectedPickerHTML ? D.affectedPickerHTML()
+        : '<p class="ccw-hint">The activity picker is unavailable in this build.</p>');
+  }
   var RENDER = { type: stepType, package: stepPackage, details: stepDetails, dates: stepDates,
-                 boq: stepBoq, codes: stepCodes, review: stepReview };
+                 boq: stepBoq, codes: stepCodes, affected: stepAffected, review: stepReview };
 
   // ---- shell -----------------------------------------------------------------
   function paint() {
@@ -651,9 +699,13 @@ window.CCWizard = (function () {
     ov.querySelector('#ccw-body').innerHTML = RENDER[cur.key]();
     /* WARNING The Trades step hosts a FOUR-PANE ladder, which does not fit the wizard's normal
        width. The shell widens for that step only rather than being wide throughout -- every other
-       step is a short form, and a form stretched to 1040px is harder to read, not easier. */
+       step is a short form, and a form stretched to 1040px is harder to read, not easier.
+       ⚠️ `affected` joins it for the same reason and NOT by copying the literal: a places pane
+          beside an activities pane at the normal width leaves the activity names about 200px, which
+          is the measured failure the BOQ tagger's own `.boq-wide` exists to fix. WIDE_STEPS is the
+          one list, so a third wide step cannot disagree with the toggle. */
     var shell = ov.querySelector('.ccw');
-    if (shell) shell.classList.toggle('ccw-wide', cur.key === 'codes');
+    if (shell) shell.classList.toggle('ccw-wide', WIDE_STEPS.indexOf(cur.key) >= 0);
     ov.querySelector('#ccw-back').disabled = i === 0;
     var last = i === ls.length - 1;
     /* ⚠️⚠️ THE BUTTON NAMES THE ACTION YOU CHOSE. It read "Open importer" for every BOQ run —
@@ -680,6 +732,37 @@ window.CCWizard = (function () {
   }
 
   function wireStep(key) {
+    if (key === 'affected') {
+      /* ⚠️ Mounted after paint() for the same reason the ladder is: the picker needs its container
+         in the document, and paint() replaces #ccw-body wholesale on every step change. The live
+         handle is kept on `st` so finish() can read the selection AND so stepping Back and forward
+         re-mounts from `st.affIds` rather than losing what was ticked. */
+      if (!D.mountAffectedPicker) return;
+      D.mountAffectedPicker(ov.querySelector('#ccw-body'), {
+        initial: st.affIds || [],
+        /* ⚠ The preview builds the change-order ACTIVITIES this record will create, and
+           `splitBuild` derives their Activity ID from the reference -- so without these the
+           preview would show the right dates under invented ids. Read live from the state
+           rather than captured, because Back to step 1 can change the reference. */
+        coRef: function () { return st.ref || ''; },
+        coName: function () { return st.desc || ''; },
+        recType: function () { return st.type || ''; },
+        onCount: function (n) {
+          /* ⚠️ Mirrors `st.affIds` on every change rather than only reading it at the end. The
+             Trades step's equivalent kept only the live handle, so walking Back off the step and
+             forward again started from nothing -- the handle was gone with the DOM. */
+          if (st.affPicker) st.affIds = st.affPicker.ids();
+          var b = ov.querySelector('#ccw-next');
+          if (b && b.textContent.indexOf('Sav') !== 0) {
+            b.textContent = n ? 'Next · ' + n + ' selected' : 'Next';
+          }
+        }
+      }).then(function (p) {
+        st.affPicker = p;
+        if (p) st.affIds = p.ids();
+      });
+      return;
+    }
     if (key === 'codes') {
       /* WARNING Mounted after paint(), because the ladder needs its container in the DOM. The live
          picker is kept on `st` so finish() can read the selection, and so stepping Back and
@@ -970,9 +1053,45 @@ window.CCWizard = (function () {
         (madeIds.length ? ' All ' + madeIds.length + ' package(s) were rolled back, so nothing was left behind.' : ''), 'error');
       return;
     }
+    /* ⚠️⚠️ THE LINKS ARE WRITTEN AFTER THE RECORD, because they reference its id -- which does
+       not exist until the insert returns. That ordering is forced, and it has a consequence:
+       ⚠️ A FAILED LINK WRITE MUST NOT FAIL THE SAVE, and must not roll the record back either.
+          The record is the thing the planner came to create and it is already safely stored; the
+          links are an optional annotation on it that can be re-picked on the record in one click.
+          Rolling a good record back to undo an annotation would be strictly worse than reporting
+          it. So this reports by name and leaves the record standing -- unlike rollbackPackages
+          above, where the package was created FIRST and would have been left orphaned.
+       ⚠️ The commonest failure here is the un-run migration, and it is named as such: this table
+          arrives with 2026-09-09-cc-affected-activities.sql, and `contracts_claims.package_id`
+          proved that "the migration has not been run yet" is the normal state on first deploy. */
+    var affIds = (st.affPicker ? st.affPicker.ids() : (st.affIds || []));
+    var affMsg = '';
+    /* ⚠ `res.row.id`, NOT `res.id`. persistRecord returns { ok, row, dropped } -- the first cut
+       of this read res.id, which is undefined, so every link write would have been skipped and the
+       "returned no id" branch below would have fired on every single save. Caught by reading the
+       function rather than assuming its shape. */
+    var newId = res.row && res.row.id;
+    if (affIds.length && D.saveAffected && newId) {
+      var ar = await D.saveAffected(newId, affIds);
+      if (ar && ar.err) {
+        affMsg = String(ar.err).indexOf('no-migration:') === 0
+          ? ' ⚠️ The ' + affIds.length + ' affected activit' + (affIds.length === 1 ? 'y was' : 'ies were') +
+            ' NOT saved — run ' + String(ar.err).slice('no-migration:'.length) + ', then re-pick them on the record.'
+          : ' ⚠️ The ' + affIds.length + ' affected activit' + (affIds.length === 1 ? 'y was' : 'ies were') +
+            ' NOT saved: ' + ar.err;
+      } else if (ar && ar.added) {
+        affMsg = ' ' + ar.added + ' affected activit' + (ar.added === 1 ? 'y' : 'ies') + ' linked.';
+      }
+    } else if (affIds.length && !newId) {
+      /* Defensive and honest: persistRecord returns the inserted row, but if a future change ever
+         stops returning its id there is nothing to link to and the planner must be told. */
+      affMsg = ' ⚠️ The ' + affIds.length + ' affected activities could not be linked — the saved ' +
+        'record returned no id. Re-pick them on the record.';
+    }
     close();
-    UI.toast(madeIds.length
-      ? 'Contract saved, and ' + madeIds.length + ' package(s) created.' : 'Record added.', 'success');
+    UI.toast((madeIds.length
+      ? 'Contract saved, and ' + madeIds.length + ' package(s) created.' : 'Record added.') + affMsg,
+      affMsg.indexOf('⚠️') >= 0 ? 'warn' : 'success');
     if (D.warnDropped) D.warnDropped(res.dropped);
     D.done(t);
   }
@@ -999,12 +1118,22 @@ window.CCWizard = (function () {
       boqMode: 'manual', boqPath: '', boqName: '', boqRev: '', boqRevTyped: false,
       boqDate: '', boqPo: '', boqTotal: '',
       boqPicker: null, boqCodesN: 0,
+      /* The affected-activity selection. `affIds` is the state; `affPicker` is only the live
+         handle, which dies with the DOM on every step change -- see wireStep('affected'). */
+      affPicker: null, affIds: [],
       ref: '', desc: '', cp: '', amount: '', est: '', sub: '', d1: '', d2: '',
       pkgLabel: function () {
         var p = D.packages().filter(function (x) { return String(x.id) === String(st.pkgId); })[0];
         return p ? ((p.code ? p.code + ' — ' : '') + p.name) : '';
       }
     };
+    /* ⚠️ PREFETCH, NOT AWAIT. Reading a 16k-activity schedule takes seconds; the planner needs
+       three or four clicks to reach the Affected work step, so starting the read here means it is
+       almost always ready by the time they arrive. Awaiting it would stall the wizard from opening
+       for a step that is optional, and for record types that never show it. Errors are deliberately
+       swallowed -- the picker reports its own load state by name. */
+    if (D.prefetchAffected) { try { D.prefetchAffected(); } catch (e) {} }
+
     ov = document.createElement('div');
     ov.className = 'pd-modal-overlay ccw-ov';
     ov.innerHTML =

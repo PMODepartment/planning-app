@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260904a" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260909u2" />
   <style>
     .ps-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
     .ps-tab { padding:8px 20px; cursor:pointer; font-weight:600; font-size:13px; color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
@@ -448,7 +448,7 @@
     .ps-cols-corner .ps-cols-menu { right:0; left:auto; }
     .ps-gantt-pane { flex:1 1 auto; display:flex; flex-direction:column; min-width:0; }
 
-    .ps-grid-pane { --c-num:46px; --c-id:80px; --c-name:260px; --c-status:112px; --c-date:92px; --c-dur:58px; --c-poc:92px; --c-pct:92px; --c-durpct:104px; --c-cost:108px; --c-ctype:132px; --c-flt:64px; --c-var:76px; --c-task:124px; --c-con:150px; --c-condate:104px; --c-scope:146px; --c-pkg:150px; --c-ccode:190px; --c-x:130px; }
+    .ps-grid-pane { --c-num:46px; --c-id:80px; --c-name:260px; --c-status:112px; --c-date:92px; --c-dur:58px; --c-poc:92px; --c-pct:92px; --c-durpct:104px; --c-cost:108px; --c-ctype:132px; --c-flt:64px; --c-var:76px; --c-task:124px; --c-con:150px; --c-condate:104px; --c-scope:146px; --c-pkg:150px; --c-ccode:190px; --c-coref:150px; --c-x:130px; }
     /* Leading row-number (#) gutter + frozen Activity ID/Name columns: they stay put (and header/
        body stay aligned) while the rest of the grid scrolls. The "#" cell is DOM child 1 but not a
        data column, so column reorder (CSS `order`) must never move it — pin it with order:-1. Sticky
@@ -670,6 +670,15 @@
     .c-scope { width:var(--c-scope); }
     .c-pkg { width:var(--c-pkg); }
     .c-ccode { width:var(--c-ccode); }
+    .c-coref { width:var(--c-coref); }
+    /* A ref the Contracts & Claims register does not know about. NOT an error -- the variation may
+       be recorded later, or on paper -- but it must be visible, because an unregistered change
+       order is money nobody is tracking commercially. Same wording coIsRegistered's own note uses.
+       ⚠️ Ink and border carry the meaning, never a fill: a semantic background fails contrast in
+          one theme or the other, which this app has now fixed three times. */
+    .ps-coref-bad { color:var(--pd-red); border-color:var(--pd-red); }
+    /* Inherited from a WBS branch rather than set on the row -- shown, but visibly not owned. */
+    .ps-coref-inh { opacity:.62; font-style:italic; }
     .ps-cctag { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11px; }
     .ps-cctag.unknown { color:var(--pd-red); }
     /* A package tag is neutral by design: unlike CO/MC it carries no judgement,
@@ -2490,6 +2499,12 @@
     .ps-gm-n { flex:none; width:16px; height:16px; border-radius:50%; background:var(--pd-red); color:#fff;
       font-size:10px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; }
     .ps-dsuffix { color:var(--pd-muted); font-weight:400; font-size:11.5px; }
+    /* "Affected by CO-014" on a leaf row. Quiet on purpose: it is context, not a warning, and the
+       row is still main-contract work. Ink + border, never a fill -- a semantic background fails
+       contrast in one theme or the other. */
+    .ps-affchip { display:inline-block; margin-left:6px; padding:0 5px; border-radius:3px;
+      border:1px solid var(--pd-line); color:var(--pd-muted); font-weight:600; font-size:10px;
+      font-variant-numeric:tabular-nums; vertical-align:1px; }
     .ps-gm-lbl { flex:1; font-size:12.5px; color:var(--pd-ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .ps-gm-x { flex:none; width:22px; height:22px; padding:0; border:1px solid transparent; background:none;
       border-radius:4px; cursor:pointer; color:var(--pd-muted); font-size:11px; }
@@ -3326,17 +3341,17 @@
        (ps-title-btn/.ps-tab) — the sidebar nav is cross-module (Dashboard + other
        modules), not a second way to switch Schedule/Cost/Planner/WBS/Builder. -->
   <aside class="pd-sidebar">
-    <div class="pd-brand"><img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>Planning Suite</small></div>
+    <div class="pd-brand"><img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction"><img class="pd-brand-mark" src="../../assets/img/favicon-icon.png?v=20260903a" alt="" aria-hidden="true">Planners Dashboard<small>Planning Suite</small></div>
     <nav id="side-nav"></nav>
     <div class="pd-nav-foot">
       <a class="pd-nav-sibling" href="https://pmodepartment.github.io/engineering-app/" target="_blank" rel="noopener" title="Opens Engineering App in a new tab">
-        <span class="pd-navico" data-ico="externalLink"></span><span class="pd-navtxt">Engineering App</span>
+        <span class="pd-navico" data-ico="appEngineering"></span><span class="pd-navtxt">Engineering App</span>
       </a>
       <a class="pd-nav-sibling" href="https://pmodepartment.github.io/prc-app/" target="_blank" rel="noopener" title="Opens Procurement App in a new tab">
-        <span class="pd-navico" data-ico="externalLink"></span><span class="pd-navtxt">Procurement App</span>
+        <span class="pd-navico" data-ico="appProcurement"></span><span class="pd-navtxt">Procurement App</span>
       </a>
     </div>
-    <div class="pd-sidebar-foot">Megawide Construction Corporation<br>EPC &middot; PMO &middot; Planning Suite</div>
+    <div class="pd-sidebar-foot">Megawide Construction Corporation<br>EPC &middot; PMO</div>
   </aside>
   <div class="pd-content">
     <div class="pd-topbar">
@@ -3428,6 +3443,8 @@
               <button id="ps-udfbtn"><span data-ico="listView" data-ico-size="14"></span> User-Defined Fields…</button>
               <button id="ps-costacctbtn"><span data-ico="cash" data-ico-size="14"></span> Cost Accounts…</button>
               <button id="ps-globalchange"><span data-ico="listView" data-ico-size="14"></span> Global Change (bulk edit)…</button>
+              <button id="ps-selloc" title="Select every activity at one or more places (tower, level, zone), then use any bulk action on them"><span data-ico="layers" data-ico-size="14"></span> Select activities by location…</button>
+              <button id="ps-cobulk" title="The activities each change order or EOT is recorded against, and inserting the change-order work into all of them at once"><span data-ico="box" data-ico-size="14"></span> Change orders &amp; EOT…</button>
               <button id="ps-filepkg" title="File work planned before this project was split into contract packages under one of them"><span data-ico="box" data-ico-size="14"></span> File under a package…</button>
               <button id="ps-diagnose" title="Where did my activities go? Read-only report on this project's data"><span data-ico="risk" data-ico-size="14"></span> Diagnose data…</button>
               <button id="ps-help-item" title="The full list of keyboard shortcuts (or press ?)"><span data-ico="listView" data-ico-size="14"></span> Keyboard shortcuts…</button>
@@ -4117,13 +4134,14 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../../assets/js/config.js?v=20260902a"></script>
 <script src="../../assets/js/auth.js?v=20260901b"></script>
-<script src="../../assets/js/db.js?v=20260907a"></script>
+<script src="../../assets/js/db.js?v=20260909n"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
-<script src="../../assets/js/ui.js?v=20260904a"></script>
-<script src="../../assets/js/icons.js?v=20260907a"></script>
+<script src="../../assets/js/ui.js?v=20260909s"></script>
+<script src="../../assets/js/icons.js?v=20260909ui"></script>
 <script src="../../assets/js/calendar.js?v=20260903a"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
+<script src="../../assets/js/co-insert.js?v=20260909r"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 (function () {
@@ -4299,6 +4317,20 @@
   /* Change Orders + EOTs from the Contracts & Claims register, read-only. See the
      load for why this exists and why it tolerates every kind of absence. */
   var CONTRACT_RECS = [];
+  /* The Contracts & Claims module's affected-activity links (2026-09-09-cc-affected-activities.sql),
+     keyed on `activity_id` -- see that migration for why it is the id and not the row uuid.
+     ⚠️ READ-ONLY HERE, like CONTRACT_RECS beside it: this app never writes a commercial record or
+     its scope, it cites them. What the schedule DOES own is the consequence -- inserting the change
+     order's work into the hosts, which is openBulkSplit() below and which writes only
+     project_schedule.
+     ⚠️ `AFF_BY_ACT` is a derived index. Scanning the link list per row per render is
+     O(rows x links) and this grid repaints on every keystroke, so it is built once and cached.
+     It depends on CC_AFFECTED and CONTRACT_RECS ONLY -- NOT on `rows`, because it is keyed on
+     `activity_id` and `affectedOf(r)` looks the row's own id up in it. So the single
+     invalidation beside the fetch is sufficient: editing, adding or deleting an activity cannot
+     make it stale, and a re-import that renumbers activities simply stops matching -- which is
+     the orphaned-link state the Contracts module reports by name. */
+  var CC_AFFECTED = [], AFF_BY_ACT = null;
   // The Procurement (WPM) app's work packages for this project, read from the
   // `wpm_work_packages` MIRROR — never from the WPM app directly (its anon key is public).
   // This is what `project_schedule.work_package` now points at: an activity carries the
@@ -4572,6 +4604,39 @@
     return (CONTRACT_RECS || []).filter(function (x) {
       return x.record_type === 'Change Order' && String(x.reference_no || '').trim();
     }).sort(function (a, b) { return String(a.reference_no).localeCompare(String(b.reference_no), undefined, { numeric: true }); });
+  }
+  /* activity_id -> [ contracts_claims row ], built once per change. ⚠️ A link whose record is not
+     in CONTRACT_RECS is DROPPED here rather than shown as an unnamed marker: the record may be a
+     Contract (which is never raised against activities) or may have been deleted with its cascade
+     still in flight, and a chip that cannot say what it belongs to is noise. */
+  function affByAct() {
+    if (AFF_BY_ACT) return AFF_BY_ACT;
+    var byId = {};
+    (CONTRACT_RECS || []).forEach(function (x) { byId[x.id] = x; });
+    var out = {};
+    (CC_AFFECTED || []).forEach(function (l) {
+      var rec = byId[l.cc_id]; if (!rec) return;
+      (out[l.activity_id] = out[l.activity_id] || []).push(rec);
+    });
+    AFF_BY_ACT = out;
+    return out;
+  }
+  // The CO / EOT / Claim records recorded as affecting this activity.
+  function affectedOf(r) {
+    if (!r || !r.activity_id) return [];
+    return affByAct()[String(r.activity_id)] || [];
+  }
+  // Every record that has at least one link, for the filter menu. Ordered by reference.
+  function affRecords() {
+    var seen = {}, out = [];
+    var by = affByAct();
+    Object.keys(by).forEach(function (a) { by[a].forEach(function (rec) { if (!seen[rec.id]) { seen[rec.id] = 1; out.push(rec); } }); });
+    return out.sort(function (a, b) {
+      return String(a.reference_no || '').localeCompare(String(b.reference_no || ''), undefined, { numeric: true });
+    });
+  }
+  function affCountFor(ccId) {
+    return (CC_AFFECTED || []).filter(function (l) { return String(l.cc_id) === String(ccId); }).length;
   }
   function coLabel(ref) {
     var hit = coRegistered().filter(function (x) { return String(x.reference_no).trim() === String(ref).trim(); })[0];
@@ -6227,10 +6292,23 @@
           Creating variations is the Contracts & Claims module's job, and one app
           inventing another's commercial records is unrecoverable. */
     var tCo = T(async function () {
+      /* ⚠️ 'Claim' JOINED THE LIST (2026-09-09). The Contracts & Claims wizard offers the
+         affected-activity step for all three raised-against types, so a claim can carry links --
+         and without its record here the marker could name a set but not what it belongs to.
+         Harmless to everything else: `coRegistered()` still filters to record_type ===
+         'Change Order', so no change-order behaviour widens. */
       var rCo = await sb().from('contracts_claims')
         .select('id,record_type,reference_no,description,status,amount,approved_amount,approved_days,package_id')
-        .eq('project_id', pid).in('record_type', ['Change Order', 'EOT']);
+        .eq('project_id', pid).in('record_type', ['Change Order', 'EOT', 'Claim']);
       CONTRACT_RECS = (rCo && !rCo.error && rCo.data) || [];
+      /* ⚠️ TOLERANT IN EXACTLY THE SAME WAY, and it has to be: no table, no grant or an un-run
+         migration must leave an empty list and a schedule that behaves precisely as it did before
+         this feature existed. A project whose Contracts module was never set up must not be broken
+         by it. */
+      var rAff = await sb().from('cc_affected_activities')
+        .select('id,cc_id,activity_id,note').eq('project_id', pid);
+      CC_AFFECTED = (rAff && !rAff.error && rAff.data) || [];
+      AFF_BY_ACT = null;
     });
     /* ⚠️⚠️ THE ONE REAL DEPENDENCY IN THIS WAVE, AND IT IS NOT OBVIOUS.
        `loadWpmWorkPackages` → `_prcWpmScopes()` reads `PACKAGES` to collect every WPM project this
@@ -7518,7 +7596,8 @@
   // Drag-reorder is only meaningful in WBS grouping with no active column sort (otherwise order is
   // derived from the grouping / column sort, so a manual sequence wouldn't stick).
   function _reorderEnabled() { return groupBys.length === 1 && groupBys[0] === 'wbs' && !colSort && !window.__viewOnly && !window.__archived; }
-  var filters = { status: {}, type: {}, behind: false, crit: false, look: 0, scope: '', wp: '', codes: {}, col: {}, adv: { match: 'all', rules: [] } };   // empty sets = show all; crit = critical-path only; look = weeks (0 = all); codes: { "<code_type_id>": { "<code_value_id>": true } }; col: per-column contains-filter { "<colKey>": "text" }; adv: multi-condition builder
+  /* `aff` = a contracts_claims id, or '' for no filter -- "show me only what CO-014 touches". */
+  var filters = { status: {}, type: {}, behind: false, crit: false, look: 0, scope: '', wp: '', aff: '', codes: {}, col: {}, adv: { match: 'all', rules: [] } };   // empty sets = show all; crit = critical-path only; look = weeks (0 = all); codes: { "<code_type_id>": { "<code_value_id>": true } }; col: per-column contains-filter { "<colKey>": "text" }; adv: multi-condition builder
   var _colFilterOn = false; try { _colFilterOn = localStorage.getItem('ps_colfilter') === '1'; } catch (e) {}
   var _colfT = null;   // debounce timer for column-filter typing
   var _hideEmptyGroups = false; try { _hideEmptyGroups = localStorage.getItem('ps_hideempty') === '1'; } catch (e) {}
@@ -12826,6 +12905,9 @@
       case 'con': return r.primary_constraint;
       case 'condate': return r.primary_constraint_date;
       case 'scope': return scopeTypeLabel(scopeOf(r));
+      // The row's OWN ref, else the one it inherits — so sorting groups a variation together
+      // however the ref was recorded.
+      case 'coref': return r.change_order_ref || coRefOf(r) || null;
       case 'pkg': return packageLabel(packageOf(r));
       case 'task': return taskKindOf(r);
       case 'dur': { var s = pd(r.start_date), e = pd(r.end_date); return (s && e) ? dayDiff(s, e) + 1 : (r.duration_days != null ? r.duration_days : null); }
@@ -12862,6 +12944,10 @@
       case 'condate': return r.primary_constraint_date ? Fmt.date(r.primary_constraint_date) : '';
       // Includes the CO reference so the per-column filter finds "VO-014", not just "Change Order".
       case 'scope': { var sv = scopeOf(r); if (!sv) return ''; var cr = sv === 'change_order' ? coRefOf(r) : ''; return scopeTypeLabel(sv) + (cr ? ' ' + cr : ''); }
+      /* Includes the DESCRIPTION from the register, so filtering this column on "plumbing" finds
+         the activities under a change order whose reference is "CO 01". A planner remembers what
+         the variation was, not its number. */
+      case 'coref': { var cv = r.change_order_ref || coRefOf(r); return cv ? (cv + ' ' + coLabel(cv)) : ''; }
       // The full "CODE — Name", so the per-column filter finds either half.
       case 'pkg': return packageLabel(packageOf(r));
       case 'task': return taskKindOf(r);
@@ -12898,6 +12984,13 @@
     }
     // Critical-path only: exclude non-critical activities (WBS rows pass so ancestors are kept).
     if (filters.crit && !isWbs(r) && !r._critical) return false;
+    /* Only the activities one CO / EOT / Claim is recorded against.
+       ⚠️ WBS and group rows pass through, the same rule the critical-path and scope filters use --
+       without their headings the surviving activities have nothing locating them in the tree. */
+    if (filters.aff && !isWbsNode(r)) {
+      var _af = affectedOf(r);
+      if (!_af.some(function (x) { return String(x.id) === String(filters.aff); })) return false;
+    }
     // Contract scope: Main contract only / Change orders only / blended (the '' default shows both).
     // Summary + group rows pass through so a filtered view keeps the WBS headings that locate the
     // surviving activities — the same rule the critical-path filter uses.
@@ -18207,7 +18300,19 @@
     // Finance's class code (Level 3). The one term this app and the Procurement app share, so it
     // is what a work package's scope gets derived from. Appended, like the columns above, so a
     // saved positional column sort/order keeps pointing at the column it was set on.
-    ['ccode','Class Code','c-ccode']
+    ['ccode','Class Code','c-ccode'],
+    /* ⚠️⚠️ THE CHANGE ORDER REF AS ITS OWN COLUMN, AND THIS IS WHY IT MATTERS FAR MORE THAN IT
+       LOOKS. `fillDown(field, srcRow)` has had a dedicated `change_order_ref` branch since it was
+       written -- it filters the selection to isExecPhase, reports the skipped count and explains
+       the refusal, and `_CELL_META_BY_LABEL`'s own comment says "marking a run of activities as one
+       change order is exactly the bulk edit these columns exist for". NONE OF IT HAS EVER RUN.
+       `fillDown` is reachable only from a grid cell's `data-field`, the Scope cell emits
+       `data-field="scope_type"` and renders the ref as a read-only span, and a repo-wide search for
+       `data-field="change_order_ref"` returned nothing. So the bulk CO-tagging feature was already
+       built and had no door. This column is the door.
+       ⚠️ Appended, not inserted, like the three above it -- a saved column sort/order is POSITIONAL
+          and inserting mid-list would silently re-point it at a different column. */
+    ['coref','Change Order Ref','c-coref']
   ];
   // Dynamic columns (OPC "define columns"): the project's Activity Codes + User-Defined Fields become
   // real, choosable grid columns appended after the 18 built-ins. Tuple shape matches GRID_COLS
@@ -18872,7 +18977,24 @@
   // The qualifier printed after a leaf row's name: the location levels the current grouping does
   // not already state (locSuffixOf), or - for a row with no location - its immediate WBS parent.
   function _dsuffixHtml(r) {
-    return (r._dsuffix ? ' <span class="ps-dsuffix" title="Level / zone / unit not shown as a grouping">· ' + esc(r._dsuffix) + '</span>' : '') + _splitSuffixHtml(r);
+    return (r._dsuffix ? ' <span class="ps-dsuffix" title="Level / zone / unit not shown as a grouping">· ' + esc(r._dsuffix) + '</span>' : '') + _splitSuffixHtml(r) + _affSuffixHtml(r);
+  }
+  /* "This activity is recorded as affected by CO-014." Answers the owner's *"what does CO-014
+     touch?"* from the Gantt rather than only from the register.
+     ⚠️ A MARKER, NOT A SCOPE CHANGE. The row is still main-contract work; being affected by a
+     variation is a different fact from being one, which is the same distinction corefCellHtml
+     keeps. The chip is deliberately quiet -- this is context, not a warning.
+     ⚠️ Capped at two references with a count, because an activity re-touched by six variations
+        over two years is real and would otherwise push the name off the row. */
+  function _affSuffixHtml(r) {
+    var recs = affectedOf(r); if (!recs.length) return '';
+    var refs = recs.map(function (x) { return x.reference_no || x.record_type || '?'; });
+    var shown = refs.slice(0, 2).join(', ') + (refs.length > 2 ? ' +' + (refs.length - 2) : '');
+    var tip = recs.map(function (x) {
+      return (x.reference_no || '(no ref)') + ' · ' + (x.record_type || '') +
+        (x.status ? ' · ' + x.status : '') + (x.description ? ' — ' + String(x.description).slice(0, 70) : '');
+    }).join('\n');
+    return ' <span class="ps-affchip" title="' + esc('Recorded as affected by:\n' + tip) + '">' + esc(shown) + '</span>';
   }
   // A split segment says which part of its line item it is. Without this, two rows carrying the
   // SAME activity name and different dates read as duplicate data rather than one interrupted bar.
@@ -19097,6 +19219,28 @@
       '<span class="ps-scopetag ' + (co ? (own ? 'co-strong' : 'co') : 'mc') + '">' + esc(co ? 'CO' : 'MC') + '</span>' +
       (ref ? '<span class="ps-coref">' + esc(ref) + '</span>' : '') + '</div>';
   }
+  /* ⚠️ SETTING A REF DOES NOT CHANGE THE ROW'S SCOPE, deliberately -- it is the same contract
+     `promptCoRef` has always kept, which writes `{ change_order_ref: ref }` and nothing else. The
+     two facts are separate: `scope_type` says whether the row IS change-order work, the ref says
+     WHICH variation it belongs to, and a main-contract activity legitimately cites the CO that
+     affected it. Inferring one from the other here would silently reclassify main-contract work as
+     a variation on the strength of a bulk fill-down.
+     ⚠️ Execution phase only, and NOT editable elsewhere -- so the column cannot quietly acquire a
+        value that means nothing, the same rule scopeCellHtml applies to Scope. */
+  function corefCellHtml(r) {
+    if (!isExecPhase(r)) {
+      return '<div class="ps-cell c-coref" title="' + esc('A change order reference applies to the Execution Phase only. This activity\'s phase is ' + _phaseWhy(r) + '.') + '"><span style="color:var(--pd-muted);">—</span></div>';
+    }
+    var ref = r.change_order_ref ? String(r.change_order_ref) : '';
+    var inh = !ref ? coRefOf(r) : '';          // a ref inherited from a WBS branch, shown but not owned
+    var bad = ref && !coIsRegistered(ref);
+    return '<div class="ps-cell c-coref ps-editable" data-id="' + r.id + '" data-field="change_order_ref" ' +
+      'data-type="enum" data-enum="coref" title="' + esc(ref
+        ? (bad ? ref + ' — not in the Contracts & Claims register' : ref)
+        : (inh ? inh + ' (inherited from this activity\'s WBS branch)' : 'No change order cited')) + '">' +
+      (ref ? '<span class="ps-coref' + (bad ? ' ps-coref-bad' : '') + '">' + esc(bad ? '⚠ ' + ref : ref) + '</span>'
+           : (inh ? '<span class="ps-coref ps-coref-inh">' + esc(inh) + '</span>' : '')) + '</div>';
+  }
   function pkgCellHtml(r) {
     var pv = packageOf(r), own = !!r.package_id;
     if (!pv) {
@@ -19222,7 +19366,7 @@
         ? '<div class="ps-cell c-dur" title="Planned Duration = baseline span (locked)">' + (dur !== '' ? dur + 'd' : '') + '</div>'
         : '<div class="ps-cell c-dur ps-editable" data-id="' + r.id + '" data-field="planned_duration" data-type="pdur">' + (dur !== '' ? dur + 'd' : '') + '</div>') +
       costCellsHtml(r) +
-      '<div class="ps-cell c-flt">' + (r._critical ? '<span class="ps-cp-tag">CP</span>' : (r._float != null ? r._float + 'd' : '')) + '</div>' + varCellHtml(r) + taskCellHtml(r) + conCellsHtml(r) + scopeCellHtml(r) + pkgCellHtml(r) + ccodeCellHtml(r) + gridExtraHtml(r) + PLUS_CELL + '</div>';
+      '<div class="ps-cell c-flt">' + (r._critical ? '<span class="ps-cp-tag">CP</span>' : (r._float != null ? r._float + 'd' : '')) + '</div>' + varCellHtml(r) + taskCellHtml(r) + conCellsHtml(r) + scopeCellHtml(r) + pkgCellHtml(r) + ccodeCellHtml(r) + corefCellHtml(r) + gridExtraHtml(r) + PLUS_CELL + '</div>';
   }
 
   function doRender() {
@@ -19657,7 +19801,10 @@
     // ('work' or 'loc:<levelId>') and the location values live in the `location` jsonb map.
     if (type === 'xcol') raw = field === 'work' ? (r.work_type || '') : locValOf(r, field.slice(4));
     // Closed vocabularies get a real <select>, not a text box (see the note above the enum columns).
-    var _enum = type === 'enum' ? (cell.dataset.enum === 'scope' ? SCOPE_SEL_OPTS : cell.dataset.enum === 'pkg' ? packageSelOpts() : cell.dataset.enum === 'ccode' ? ccodeSelOpts(raw) : CONSTRAINT_OPTS) : null;
+    /* ⚠️ `coref` reuses `coSelOpts` -- the SAME builder the details panel and promptCoRef use, so
+       the registered change orders, the "not in the register" warning and the ordering cannot
+       disagree between the three places a ref can be set. */
+    var _enum = type === 'enum' ? (cell.dataset.enum === 'scope' ? SCOPE_SEL_OPTS : cell.dataset.enum === 'pkg' ? packageSelOpts() : cell.dataset.enum === 'ccode' ? ccodeSelOpts(raw) : cell.dataset.enum === 'coref' ? coSelOpts(raw) : CONSTRAINT_OPTS) : null;
     var inp;
     if (_enum) {
       inp = document.createElement('select');
@@ -21426,6 +21573,123 @@
   var GC_WHERE_OPS = { text: ['is', 'is not', 'contains', 'is empty', 'is not empty'], num: ['=', '≠', '≥', '≤', 'is empty', 'is not empty'], date: ['on', 'before', 'after', 'is empty', 'is not empty'] };
   var GC_THEN_OPS = { text: ['Set to', 'Clear'], num: ['Set to', 'Add', 'Subtract', 'Multiply by', 'Clear'], date: ['Set to', 'Shift by (days)', 'Clear'] };
   var _gcWhere = [{}, {}, {}], _gcThen = [{}];   // condition/action rows (blank field = ignored)
+  /* ---- Select activities by location ---------------------------------------------------------
+     Owner 2026-09-09: *"selecting affected activities based on the location and optional to add
+     other activities in the schedule as well."*
+
+     ⚠️⚠️ THIS IS A SELECTOR, NOT A SECOND BULK-EDIT ENGINE, and that is the whole design.
+        It resolves a place to activities and loads them into `_selSet` -- the selection every bulk
+        action in this file already reads through `_selectedTaskRows()`. So fill-down (including the
+        Change Order Ref column added in this same change), copy, cut, actualize dates and delete
+        all work on the result with NO new apply path, no second set of permissions and no second
+        set of bugs. Global Change could not have done this job: `GC_FIELDS` addresses plain row
+        fields and `location` is a jsonb map, so it cannot see a place at all.
+     ⚠️ Values are grouped by `locNormKey`, so "2ND FLOOR" and "2nd Floor" are ONE place. Offering
+        them separately is how a planner ticks a floor and silently misses a third of it. */
+  function locSelValues(levelId) {
+    if (!levelId) return [];
+    var byKey = {};
+    rows.forEach(function (r) {
+      if (isWbs(r) || !r.activity_id) return;
+      var v = String(locValOf(r, levelId) || '').trim(); if (!v) return;
+      var k = locNormKey(v); if (!k) return;
+      (byKey[k] = byKey[k] || { key: k, variants: [], ids: [] });
+      byKey[k].variants.push(v); byKey[k].ids.push(r.id);
+    });
+    return Object.keys(byKey).map(function (k) {
+      var g = byKey[k], counts = {};
+      g.variants.forEach(function (v) { counts[v] = (counts[v] || 0) + 1; });
+      var label = Object.keys(counts).sort(function (a, b) {
+        var ra = locSpellRank(a), rb = locSpellRank(b);
+        for (var i = 0; i < ra.length; i++) if (ra[i] !== rb[i]) return ra[i] - rb[i];
+        if (counts[b] !== counts[a]) return counts[b] - counts[a];
+        if (a.length !== b.length) return a.length - b.length;
+        return a.localeCompare(b);
+      })[0];
+      return { key: k, label: label, spellings: Object.keys(counts).length, ids: g.ids };
+    }).sort(function (x, y) {
+      if (y.ids.length !== x.ids.length) return y.ids.length - x.ids.length;
+      return String(x.label).localeCompare(String(y.label), undefined, { numeric: true });
+    });
+  }
+
+  function openSelByLoc() {
+    if (!pid || !rows.length) { UI.toast('Load a project first.', 'warn'); return; }
+    /* ⚠️ THREE DIFFERENT REASONS THERE MAY BE NO LEVELS, and only one of them is the planner's to
+       fix. LOC_LOAD is exactly this distinction (see its own note) -- claiming "no breakdown" while
+       the read is still pending or was refused is the failure this app already shipped once. */
+    if (!LOC_LEVELS.length) {
+      UI.toast(LOC_LOAD === 'pending' ? 'Still reading this project\'s location levels — try again in a moment.'
+        : LOC_LOAD === 'error' ? ('The location levels could not be read: ' + (LOC_LOAD_ERR || 'unknown error'))
+        : 'This project has no Location Breakdown yet. Define levels in Schedule Setup › Floors & Zones, then match the WBS to them.', 'warn');
+      return;
+    }
+    var lvlId = LOC_LEVELS[0].id, picked = {};
+    var m = UI.modal(
+      '<h3 style="margin:0 0 4px;font-size:15px;">Select activities by location</h3>' +
+      '<p style="margin:0 0 12px;font-size:12px;color:var(--pd-muted);">' +
+        'Loads them into the grid selection. Every bulk action then applies — including ' +
+        '<b>Fill Change Order Ref down</b>, which is how one variation is stamped across a whole floor.' +
+      '</p>' +
+      '<label class="pd-label">Level<select class="pd-input" id="ps-sl-lvl">' +
+        LOC_LEVELS.map(function (l, i) { return '<option value="' + esc(l.id) + '"' + (i ? '' : ' selected') + '>' + esc(l.name) + '</option>'; }).join('') +
+      '</select></label>' +
+      '<div id="ps-sl-vals" style="max-height:44vh;overflow:auto;border:1px solid var(--pd-line);border-radius:8px;margin-top:8px;"></div>' +
+      '<div id="ps-sl-note" style="margin-top:8px;font-size:12px;color:var(--pd-muted);"></div>' +
+      '<div style="text-align:right;margin-top:14px;"><button class="pd-btn" id="ps-sl-x">Cancel</button> ' +
+      '<button class="pd-btn pd-btn-primary" id="ps-sl-go" style="margin-left:6px;" disabled>Select</button></div>');
+    var $ = function (id) { return m.el.querySelector(id); };
+
+    function chosenIds() {
+      var out = {}, vals = locSelValues(lvlId);
+      vals.forEach(function (v) { if (picked[v.key]) v.ids.forEach(function (i) { out[i] = 1; }); });
+      return Object.keys(out);
+    }
+    function paint() {
+      var vals = locSelValues(lvlId);
+      $('#ps-sl-vals').innerHTML = vals.length
+        ? vals.map(function (v) {
+            return '<label style="display:flex;align-items:center;gap:8px;padding:5px 10px;border-bottom:1px solid rgba(128,128,128,.10);cursor:pointer;">' +
+              '<input type="checkbox" data-k="' + esc(v.key) + '"' + (picked[v.key] ? ' checked' : '') + '>' +
+              '<span style="flex:1 1 auto;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(v.label) +
+              (v.spellings > 1 ? ' <span style="font-size:9.5px;color:var(--pd-muted);" title="Spelled ' + v.spellings + ' ways on this schedule — treated as one place">×' + v.spellings + '</span>' : '') +
+              '</span><span style="font-size:10px;font-weight:700;color:var(--pd-muted);">' + v.ids.length + '</span></label>';
+          }).join('')
+        : '<div style="padding:14px 12px;font-size:12px;color:var(--pd-muted);">No activity carries a value at this level.</div>';
+      var ids = chosenIds();
+      /* ⚠️ SAYS HOW MANY ARE OFF SCREEN. `_selSet` is resolved against `rows`, not the displayed
+         list, so a bulk action legitimately reaches an activity the current filter hides -- which
+         is correct, and would be alarming to discover afterwards. */
+      var visible = 0, inDL = {};
+      DL.forEach(function (d) { if (d && d.id) inDL[d.id] = 1; });
+      ids.forEach(function (i) { if (inDL[i]) visible++; });
+      $('#ps-sl-note').innerHTML = ids.length
+        ? '<b>' + ids.length + '</b> activit' + (ids.length === 1 ? 'y' : 'ies') + ' will be selected' +
+          (visible < ids.length ? ' — <b>' + (ids.length - visible) + '</b> of them are hidden by the current filter and will still be selected.' : '.')
+        : 'Tick one or more places.';
+      $('#ps-sl-go').disabled = !ids.length;
+      $('#ps-sl-vals').querySelectorAll('input[data-k]').forEach(function (cb) {
+        cb.onchange = function () { if (cb.checked) picked[cb.dataset.k] = 1; else delete picked[cb.dataset.k]; paint(); };
+      });
+    }
+    $('#ps-sl-lvl').onchange = function () { lvlId = $('#ps-sl-lvl').value; picked = {}; paint(); };
+    $('#ps-sl-x').onclick = m.close;
+    $('#ps-sl-go').onclick = function () {
+      var ids = chosenIds(); if (!ids.length) return;
+      _selSet = new Set(ids);
+      _selAnchor = ids[0];
+      /* ⚠️ `selId` is set to the first selection so the context menu has an anchor row -- without
+         it, right-clicking to reach Fill-down would reset the selection to the row under the
+         cursor and throw the whole set away. */
+      selId = ids[0];
+      m.close();
+      highlightRow();
+      UI.toast('Selected ' + ids.length + ' activit' + (ids.length === 1 ? 'y' : 'ies') +
+        '. Right-click a cell for the bulk actions, or Ctrl+D to fill a column down.', 'success');
+    };
+    paint();
+  }
+
   function openGlobalChange() { if (!pid || !rows.length) { UI.toast('Load a project first.', 'warn'); return; } _gcWhere = [{}, {}, {}]; _gcThen = [{}]; document.getElementById('ps-gc-back').classList.add('open'); document.getElementById('ps-gc-result').textContent = ''; document.getElementById('ps-gc-apply').disabled = true; renderGCRows(); }
   function closeGlobalChange() { document.getElementById('ps-gc-back').classList.remove('open'); }
   function _gcFieldSelect(sel, cls) { return '<select class="pd-select ' + cls + '" style="min-width:150px;"><option value="">— field —</option>' + GC_FIELDS.map(function (f) { return '<option value="' + f.k + '"' + (sel === f.k ? ' selected' : '') + '>' + esc(f.label) + '</option>'; }).join('') + '</select>'; }
@@ -25400,97 +25664,217 @@
   // finishes coDur days further out. That is the owner's "extend the finish" decision and the
   // honest CPM result: the variation's time impact is the thing a CO claim has to evidence.
   // Returns null with a reason when the cut cannot produce two workable halves.
-  function splitPlan(hostStart, hostEnd, cut, coDur) {
-    if (!hostStart || !hostEnd || !cut) return { err: 'This activity has no start and finish to split.' };
-    var dur = dayDiff(hostStart, hostEnd) + 1;
-    if (dur < 2) return { err: 'A 1-day activity cannot be split — there is no point inside it. Lengthen it, or add the change order as its own activity.' };
-    if (cut <= hostStart) return { err: 'Pick a date AFTER the activity starts (' + Fmt.date(dstr(hostStart)) + ') — the first part needs at least one day.' };
-    if (cut > hostEnd) return { err: 'Pick a date on or before the activity finishes (' + Fmt.date(dstr(hostEnd)) + ') — the second part needs at least one day.' };
-    var d1 = dayDiff(hostStart, cut) ;              // days worked before the interruption
-    var d2 = dur - d1;                              // the host's remaining days, moved later
-    var co = Math.max(1, Math.round(coDur || 1));
-    var coStart = cut, coEnd = addDays(coStart, co - 1);
-    var s2 = addDays(coEnd, 1), e2 = addDays(s2, d2 - 1);
-    return {
-      seg1: { start: hostStart, end: addDays(cut, -1), dur: d1 },
-      co:   { start: coStart, end: coEnd, dur: co },
-      seg2: { start: s2, end: e2, dur: d2 },
-      shift: co                                     // how much later the line item now finishes
+  /* ---- change-order insertion ---------------------------------------------------------------
+     ⚠️⚠️ THE ARITHMETIC MOVED TO assets/js/co-insert.js AND ONLY THE WIRING IS LEFT HERE.
+     `splitPlan` / `splitBuild` / `bulkSplitPlan` were defined in this file, and this file's own
+     comment explained why they should stay: *"AND IT LIVES HERE, NOT IN CONTRACTS & CLAIMS ...
+     inserting the work is this module's job."* That is still true of the WRITES, which still happen
+     here and nowhere else. It was never true of the READS: Contracts & Claims has to PREVIEW the
+     same result, and the alternatives were to copy the arithmetic or to share it. It is shared.
+     ⚠️ THE DATE HELPERS ARE PASSED IN, and that is what makes the move safe. This module's
+     `pd`/`dstr`/`addDays` are LOCAL-time; contracts-claims' are UTC by deliberate choice. The
+     shared file standardises on NEITHER — it takes whichever the caller uses, so nothing about this
+     module's dates changed in the extraction.
+     ⚠️ `usedIds` is a FUNCTION, not a snapshot: `rows` is replaced wholesale on every reload, and a
+     list captured at wiring time would allocate ids against a stale project. */
+  var _CO = COInsert.make({
+    pd: pd, dstr: dstr, addDays: addDays, dayDiff: dayDiff,
+    fmtDate: function (iso) { return Fmt.date(iso); },
+    usedIds: function () { return rows.map(function (r) { return r.activity_id; }); }
+  });
+  function splitPlan(hostStart, hostEnd, cut, coDur) { return _CO.splitPlan(hostStart, hostEnd, cut, coDur); }
+  function splitBuild(host, plan, co) { return _CO.splitBuild(host, plan, co); }
+  function bulkSplitPlan(hosts, coRef, coName, coDur, cut) { return _CO.bulkSplitPlan(hosts, coRef, coName, coDur, cut); }
+
+  function openBulkSplit() {
+    if (!pid || !rows.length) { UI.toast('Load a project first.', 'warn'); return; }
+    var recs = affRecords();
+    if (!recs.length) {
+      UI.toast((CC_AFFECTED && CC_AFFECTED.length)
+        ? 'Links exist but none point at a change order, EOT or claim on this project.'
+        : 'No change order or EOT has its affected activities recorded yet. Record them in Contracts & Claims — raise or edit the record and use the Affected work step.', 'warn');
+      return;
+    }
+    var ccId = recs[0].id, cutMode = 'mid', cutDate = dstr(today()), coDur = 1;
+    var m = UI.modal(
+      '<h3 style="margin:0 0 4px;font-size:15px;">Change orders &amp; EOT — affected activities</h3>' +
+      '<p style="margin:0 0 12px;font-size:12px;color:var(--pd-muted);">' +
+        'Recorded in Contracts &amp; Claims. <b>An EOT moves the contract completion date, not these ' +
+        'activities</b> — its set is the delay basis, so no insert is offered for one.' +
+      '</p>' +
+      '<label class="pd-label">Record<select class="pd-input" id="ps-bs-rec">' +
+        recs.map(function (x, i) {
+          return '<option value="' + esc(x.id) + '"' + (i ? '' : ' selected') + '>' +
+            esc((x.reference_no || '(no ref)') + ' · ' + (x.record_type || '') +
+                (x.status ? ' · ' + x.status : '') + ' — ' + affCountFor(x.id) + ' activities') + '</option>';
+        }).join('') +
+      '</select></label>' +
+      '<div id="ps-bs-body" style="margin-top:10px;"></div>' +
+      '<div style="text-align:right;margin-top:14px;">' +
+        '<button class="pd-btn" id="ps-bs-x">Close</button> ' +
+        '<button class="pd-btn" id="ps-bs-only" style="margin-left:6px;">Show only these</button> ' +
+        '<button class="pd-btn pd-btn-primary" id="ps-bs-go" style="margin-left:6px;">Insert change order work…</button>' +
+      '</div>');
+    var $ = function (id) { return m.el.querySelector(id); };
+
+    function rec() { return recs.filter(function (x) { return x.id === ccId; })[0] || recs[0]; }
+    function hostsFor(id) {
+      var want = {};
+      (CC_AFFECTED || []).forEach(function (l) { if (String(l.cc_id) === String(id)) want[String(l.activity_id)] = 1; });
+      var out = [], seen = {};
+      rows.forEach(function (r) {
+        if (isWbs(r) || !r.activity_id) return;
+        if (want[String(r.activity_id)] && !seen[r.activity_id]) { seen[r.activity_id] = 1; out.push(r); }
+      });
+      return { hosts: out, missing: Object.keys(want).filter(function (a) { return !seen[a]; }) };
+    }
+
+    function paint() {
+      var r0 = rec(), hm = hostsFor(ccId), isEot = r0.record_type === 'EOT';
+      var plan = isEot ? [] : bulkSplitPlan(hm.hosts, r0.reference_no, r0.description || 'Change order', coDur,
+        cutMode === 'mid' ? 'mid' : pd(cutDate));
+      var okN = plan.filter(function (p) { return p.plan; }).length;
+      var badN = plan.length - okN;
+
+      $('#ps-bs-body').innerHTML =
+        (hm.missing.length
+          ? '<p style="margin:0 0 8px;padding:7px 10px;border-left:3px solid var(--pd-red);background:rgba(238,49,36,.07);font-size:11.5px;">' +
+            '<b>' + hm.missing.length + '</b> linked activit' + (hm.missing.length === 1 ? 'y is' : 'ies are') +
+            ' no longer on this schedule (' + esc(hm.missing.slice(0, 6).join(', ')) + (hm.missing.length > 6 ? ', …' : '') +
+            '). A re-import renumbers activities — re-pick them on the record.</p>'
+          : '') +
+        (isEot
+          ? '<p style="font-size:12px;">This EOT is recorded against <b>' + hm.hosts.length + '</b> activit' +
+            (hm.hosts.length === 1 ? 'y' : 'ies') + ', as the <b>basis</b> of the claim. ' +
+            (r0.approved_days != null ? 'The granted <b>' + r0.approved_days + ' day(s)</b> move the contract completion date; they are not added to these activities. '
+                                      : 'No days have been approved on it yet. ') +
+            'Nothing here is inserted or rescheduled.</p>'
+          /* ⚠ THE DURATION INPUT IS EMITTED ONCE, unconditionally, and only the CUT control
+             varies. The first cut of this gave the duration input its id in BOTH branches of the
+             ternary -- only one existed at runtime, but two branches sharing an id is how a
+             `getElementById` starts reading the wrong box after an unrelated edit. Caught by the
+             duplicate-id gate, which cannot tell a source duplicate from a real one.
+             ⚠ auto-fit, so the row lays out whether there are two controls or three. */
+          : '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;">' +
+              '<label class="pd-label">Work stops' +
+                '<select class="pd-input" id="ps-bs-cutmode">' +
+                  '<option value="mid"' + (cutMode === 'mid' ? ' selected' : '') + '>at each activity\'s midpoint</option>' +
+                  '<option value="date"' + (cutMode === 'date' ? ' selected' : '') + '>on one date</option>' +
+                '</select></label>' +
+              (cutMode === 'date'
+                ? '<label class="pd-label">Date<input class="pd-input" type="date" id="ps-bs-date" value="' + esc(cutDate) + '"></label>'
+                : '') +
+              '<label class="pd-label">Duration (days)<input class="pd-input" type="number" min="1" id="ps-bs-dur" value="' + coDur + '"></label>' +
+            '</div>' +
+            '<p style="margin:8px 0 6px;font-size:11.5px;color:var(--pd-muted);">' +
+              'Each activity stays <b>one line item</b> — its bar breaks and it finishes ' + coDur + ' day(s) later. ' +
+              '<b>' + okN + '</b> will be changed' + (badN ? ', <b>' + badN + '</b> refused (listed below with the reason)' : '') + '.' +
+              (cutMode === 'mid' ? ' The midpoint is always inside an activity, so it never refuses on the date.' : '') +
+            '</p>' +
+            '<div style="max-height:34vh;overflow:auto;border:1px solid var(--pd-line);border-radius:8px;">' +
+            '<table class="pd-table" style="width:100%;font-size:11.5px;"><thead><tr>' +
+              '<th>Activity</th><th>Finish now</th><th>Finish after</th><th>Change order row</th></tr></thead><tbody>' +
+            (plan.length ? plan.map(function (p) {
+              var nm = esc((p.host.activity_id || '') + ' · ' + (p.host.activity_name || ''));
+              if (p.err) {
+                return '<tr><td>' + nm + '</td><td colspan="3" style="color:var(--pd-red);">Refused — ' + esc(p.err) + '</td></tr>';
+              }
+              return '<tr><td>' + nm + '</td>' +
+                '<td>' + esc(Fmt.date(p.host.end_date)) + '</td>' +
+                '<td><b>' + esc(Fmt.date(dstr(p.plan.seg2.end))) + '</b> <span style="color:var(--pd-muted);">+' + p.plan.shift + 'd</span></td>' +
+                '<td>' + esc(p.build.coRow.activity_id) + ' <span style="color:var(--pd-muted);">SS+' + p.plan.seg1.dur + '</span></td></tr>';
+            }).join('') : '<tr><td colspan="4" style="color:var(--pd-muted);">Nothing recorded against this record.</td></tr>') +
+            '</tbody></table></div>');
+
+      var gb = $('#ps-bs-go');
+      gb.style.display = isEot ? 'none' : '';
+      gb.disabled = !okN;
+      gb.textContent = okN ? 'Insert into ' + okN + ' activit' + (okN === 1 ? 'y' : 'ies') + '…' : 'Nothing to insert';
+      var cm = $('#ps-bs-cutmode');
+      if (cm) cm.onchange = function () { cutMode = cm.value; paint(); };
+      var dd = $('#ps-bs-date'); if (dd) dd.onchange = function () { cutDate = dd.value; paint(); };
+      var du = $('#ps-bs-dur'); if (du) du.oninput = function () { coDur = Math.max(1, parseInt(du.value, 10) || 1); paint(); };
+      gb.onclick = function () { apply(plan.filter(function (p) { return p.plan; })); };
+    }
+
+    async function apply(ok) {
+      if (!ok.length) return;
+      var r0 = rec();
+      var shift = ok.reduce(function (s, p) { return Math.max(s, p.plan.shift); }, 0);
+      if (!confirm('Insert ' + r0.reference_no + ' into ' + ok.length + ' activit' + (ok.length === 1 ? 'y' : 'ies') + '?\n\n' +
+        '· each stays ONE line item, its bar drawn in two pieces with the change order in the gap\n' +
+        '· ' + ok.length + ' change-order activit' + (ok.length === 1 ? 'y is' : 'ies are') + ' created, each linked SS into its host\n' +
+        '· every one of those ' + ok.length + ' line items finishes later, by up to ' + shift + ' day(s)\n' +
+        '· successors are left alone — they still follow their row, which now finishes later\n' +
+        '\nNot per-step undoable.')) return;
+      m.close();
+      showLoading('Inserting ' + ok.length + ' change order' + (ok.length === 1 ? '' : 's') + '…');
+      var err = null, made = 0;
+      try {
+        /* ⚠️ CHANGE-ORDER ROWS FIRST, HOST PATCHES SECOND -- the same recoverable order applySplit
+           uses. If the inserts fail, every host still reads exactly as it always did; if the
+           patches fail, the change orders exist and are visible, which is a state a planner can
+           see and fix. The reverse order leaves hosts finishing later with nothing in the gap to
+           explain why.
+           ⚠️ Chunked at 40, and `created_by` stamped -- project_schedule_ins requires
+              `created_by = auth.uid()`, so an unstamped insert is refused outright. */
+        for (var i = 0; i < ok.length; i += 40) {
+          var body = ok.slice(i, i + 40).map(function (p) {
+            return Object.assign({ project_id: pid, created_by: UID }, p.build.coRow);
+          });
+          var ins = await sb().from(TABLE).insert(body).select();
+          if (ins.error) throw ins.error;
+          made += body.length;
+        }
+        var ups = ok.map(function (p) { return { id: p.host.id, patch: p.build.hostPatch }; });
+        var res = await _batchUpdate(TABLE, ups);
+        if (res && res.failedIds && res.failedIds.length) {
+          err = res.failedIds.length + ' of ' + ups.length + ' activities could not be updated — usually because ' +
+                'somebody else imported this schedule, so their rows are not yours to change. The change-order ' +
+                'activities were created; those hosts still show their old finish.';
+        }
+      } catch (e) { err = (e && e.message) ? e.message : String(e); }
+      hideLoading();
+      if (err) {
+        UI.toast(/scope_type|change_order_ref|phase/.test(err)
+          ? 'Could not insert: this project\'s database has no contract-scope columns. Run migrations/2026-08-19-schedule-contract-scope.sql, then reload.'
+          : 'Inserted ' + made + ' change order row(s), but: ' + err, 'error');
+      } else {
+        UI.toast('Inserted ' + made + ' change order' + (made === 1 ? '' : 's') + ' and moved ' + ok.length + ' finish date(s).', 'success');
+      }
+      logAudit(null, 'reschedule', { count: made * 2, kind: 'insert-change-order-bulk', ref: r0.reference_no });
+      await load();
+    }
+
+    $('#ps-bs-rec').onchange = function () { ccId = $('#ps-bs-rec').value; paint(); };
+    $('#ps-bs-x').onclick = m.close;
+    /* Answers *"what does CO-014 touch?"* on the Gantt -- see filters.aff in rowMatches. */
+    $('#ps-bs-only').onclick = function () {
+      filters.aff = ccId; m.close(); renderAll();
+      UI.toast('Showing only what ' + (rec().reference_no || 'this record') + ' touches. Clear it from the Filter menu.', 'success');
     };
-  }
-  // Inserting a segment after `afterSeq` pushes every later segment down one. Returns the patches
-  // to apply, so the caller can write them in one pass and the ordering stays a pure function.
-  // A unique Activity ID, checked against everything currently in the project.
-  function splitFreeId(cand) {
-    var taken = {}; rows.forEach(function (r) { if (r.activity_id) taken[String(r.activity_id)] = 1; });
-    if (!taken[cand]) return cand;
-    for (var n = 2; n < 999; n++) if (!taken[cand + '-' + n]) return cand + '-' + n;
-    return cand + '-' + Date.now();
-  }
-  // THE WHOLE EDIT, as data. Returns { hostPatch, coRow } — nothing is written here, so the
-  // arithmetic can be tested without a database.
-  //
-  // ⚠️⚠️ ONE LINE ITEM, BY REQUEST. Owner 2026-09-07: *"recently we have a system wherein if a
-  // change order activity is inserted between a main contract activity a separate line of the main
-  // contract activity is generated. Now i want to retain the single line-item for the main contract
-  // activity."* So the host is no longer cut in two. It keeps its id, its name, its start and every
-  // one of its own days, and its FINISH MOVES OUT by the change order's duration — the same time
-  // impact the two-row model produced, now carried by one bar. The change order is the only row
-  // created.
-  //   · the host keeps its own predecessors AND its own successors. Because the row that followed
-  //     it is still the row that follows it, THERE IS NOTHING TO RE-POINT. The old model had to send
-  //     every successor to a continuation row or it would start while the second half of the work
-  //     was still going; that whole failure mode leaves with the second row.
-  //   · the CO is linked SS+<days worked before the interruption>, so it sits INSIDE the host's bar
-  //     at the point the work actually stops.
-  //   · the CO stays its own line item, with its own scope_type and ref — it is real scope.
-  // ⚠️ duration_days is written to MATCH the new span (own days + the change order's), because the
-  // scheduling engine derives a finish from a duration and would otherwise pull the bar back to the
-  // old date the next time anything recalculates.
-  // ⚠️ THE HONEST COST of one line: the date-span-weighted roll-ups (_vsPct and friends weight by
-  // dayDiff(start,end)+1) now see the host spanning the change order's days too, so that window is
-  // counted in both rows. Two rows tiled the window exactly and did not. That is the trade for a
-  // single line item, and it was the owner's call; if it ever matters, weight by duration_days,
-  // which is still the host's own work plus the gap and is written consistently here.
-  function splitBuild(host, plan, co) {
-    var coId = splitFreeId(co.ref ? String(co.ref).trim() : ((host.activity_id || 'CO') + '-CO'));
-    var lag = plan.seg1.dur;                          // days the host works before the interruption
-    var own = plan.seg1.dur + plan.seg2.dur;          // the host's OWN days - unchanged by the variation
-    var coRow = {
-      activity_id: coId, activity_name: co.name || 'Change order', activity_type: 'Task',
-      status: 'Not Started', percent_complete: 0,
-      start_date: dstr(plan.co.start), end_date: dstr(plan.co.end), duration_days: plan.co.dur,
-      // ⚠️ SS + the days already worked, NOT an FS from the host. Under the two-row model the host
-      // was truncated at the cut, so "after the host" was true; with one uncut line an FS link would
-      // claim the variation starts after the WHOLE activity finishes - false, and it would slide the
-      // change order to the wrong end of the bar the next time anything recalculates.
-      predecessors: host.activity_id ? (String(host.activity_id) + ' SS+' + lag) : null,
-      wbs: host.wbs || null, wbs_node_id: host.wbs_node_id || null,
-      work_type: host.work_type || null, location: host.location || null,
-      phase: host.phase || 'construction',
-      scope_type: 'change_order', change_order_ref: co.ref ? String(co.ref).trim() : null
-      // No split_group. The change order is its own line item that happens to sit in the gap, and
-      // folding it into the host would report its days as main-contract work.
-    };
-    return {
-      hostPatch: { end_date: dstr(plan.seg2.end), duration_days: own + plan.co.dur },
-      coRow: coRow,
-      // Kept as empty/null so nothing downstream has to learn a new shape: there is no second half
-      // to create, no group to renumber and - the point - nothing to re-point.
-      segRow: null, renumber: [], repoint: []
-    };
+    paint();
   }
 
-  // Swap one predecessor's Activity ID for another INSIDE a predecessor string, keeping that entry's
-  // relationship type and lag — re-pointing the edge, not replacing it with a default FS.
+  // Right-click a main-contract activity -> "Insert change order here…". Asks for the date the work
+  // is interrupted, and the CO's name / reference / duration.
+  /* ⚠️⚠️ RESTORED 2026-09-09 after a merge. This definition went missing from the file while its
+     CALLERS stayed: `_repointPred` is used at two sites and put into PS.fn, so the object literal
+     that builds PS.fn threw a ReferenceError — which is module-fatal, not a quiet bug in a
+     corner. It was present in this file until the concurrent change-order-engine work landed, and
+     nothing anywhere in the repository defines it now (grepped: three references, no definition).
+     Restored VERBATIM from the last commit that had it rather than rewritten, so if that work
+     meant to move it into a shared engine the two are identical and the move is still open.
+     ⚠️ Its one dependency, _predTokens, is still in this file.
+
+     Swap one predecessor's Activity ID for another INSIDE a predecessor string, keeping that
+     entry's relationship type and lag — re-pointing the edge, not replacing it with a default FS. */
   function _repointPred(str, fromId, toId) {
     return _predTokens(str).map(function (tok) {
-      var m = tok.match(/^([A-Za-z0-9._\-]+)([\s\S]*)$/);
+      var m = tok.match(/^([A-Za-z0-9._-]+)([sS]*)$/);
       return (m && m[1] === fromId) ? (toId + m[2]) : tok;
     }).join(', ');
   }
-  // Right-click a main-contract activity -> "Insert change order here…". Asks for the date the work
-  // is interrupted, and the CO's name / reference / duration.
   function openSplitDialog(hostId) {
     var host = rows.find(function (x) { return x.id === hostId; });
     if (!host || isWbs(host)) { UI.toast('Pick an activity to split.', 'warn'); return; }
@@ -39381,6 +39765,10 @@
   // start_date/actual_start (or end_date/actual_finish) per the row's state, so copy reads the
   // DISPLAYED date and paste routes through _dateEditPatch to the field the grid itself would edit.
   var _CELL_META_BY_LABEL = {
+    /* ⚠️ 'Change Order Ref' is what finally makes fillDown's own change_order_ref branch
+       reachable -- see the note on the column tuple in GRID_COLS. Ctrl+D and right-click
+       "Fill Change Order Ref down (N)" both resolve through here. */
+    'Change Order Ref':      { f: 'change_order_ref', edit: 1, t: 'text' },
     'Activity ID':           { f: 'activity_id', edit: 1, t: 'text' },
     'Activity Name':         { f: 'activity_name', edit: 1, t: 'text' },
     'Status':                { f: 'status', edit: 0, t: 'text' },
@@ -40504,6 +40892,8 @@
     document.getElementById('ps-udf-back').onclick = function (e) { if (e.target === this) closeUdf(); };
     document.getElementById('ps-udf-add').onclick = addUdfDef;
     document.getElementById('ps-globalchange').onclick = function () { aMenu.classList.remove('open'); openGlobalChange(); };
+    document.getElementById('ps-selloc').onclick = function () { aMenu.classList.remove('open'); openSelByLoc(); };
+    document.getElementById('ps-cobulk').onclick = function () { aMenu.classList.remove('open'); openBulkSplit(); };
     document.getElementById('ps-diagnose').onclick = function () { aMenu.classList.remove('open'); openDiagnose(); };
     document.getElementById('ps-leveling').onclick = function () { aMenu.classList.remove('open'); openLeveling(); };
     document.getElementById('ps-lvl-x').onclick = closeLeveling;

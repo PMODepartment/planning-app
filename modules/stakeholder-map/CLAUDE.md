@@ -1,5 +1,73 @@
 # Module: stakeholder-map
 
+## 2026-09-08 — Four KPI cards, and the row rule that had to change with them
+
+Owner: *"The kpi warnings in the stakeholder map isn't necessary let's remove the total number of
+stakeholders, no photo, and no engagement plan. Let's fit the other 4 kpi cards in a single level row."*
+
+**Which three went, and why they answered nothing.** *Stakeholders* restated the register's own row
+count, which the table header already prints. *No photo* and *No engagement plan* are **data-entry
+chores, not stakeholder standing** — they read as warnings about the project when they are warnings
+about the form, and on a young register they are simply the row count a third and fourth time. What
+survives is the four that rank **attention**: who matters (`1st Priority`), how to handle them
+(`Manage Closely` / `Keep Satisfied`), and who is drifting (`Catch-up needed`).
+
+⚠️ **Neither removed signal is lost, which is what makes this a removal rather than a trade.**
+*no photo* is still a filter (`filters.flag === 'nophoto'`) and a missing plan still prints on the
+stakeholder's own card (`.sm-card-plan-none`). They stop competing for the eye at the top of the
+screen; they do not stop being visible.
+
+### ⚠️⚠️ The second half of the ask is CSS, and it is not optional
+
+`.sm-kpis` was `grid-template-columns: repeat(7, 1fr)` with breakpoints at 1600 → 4, 1000 → 3,
+700 → 2 — a column count sized for the seven cards that used to be emitted. **Four cards in that grid
+is worse than seven, not better:**
+
+- at desktop width, seven tracks holding four cards leaves **three empty cells**;
+- at **918px** — the width the owner's own screenshot was taken at — the 1000px breakpoint drops it to
+  **three tracks**, so four cards **still wrap to two rows**. The complaint would have survived the
+  change that was meant to fix it, which is exactly the failure mode a "just delete three cards" patch
+  invites.
+
+It now carries the shared `.pd-kpis` rule **verbatim** — `repeat(auto-fit, minmax(170px, 1fr))` — and
+the three breakpoints are deleted. ⚠️ Copied rather than re-tuned, and **no four-column rule is
+declared**: a hardcoded column count is precisely what the shared `.pd-kpis` comment records removing
+from five modules, because each copy's own breakpoints left a ragged empty cell at some window width.
+
+**MEASURED against the shipped stylesheets, 8 widths from 700–1900px, with the module's own `kpi()`
+markup copied verbatim out of `module.js`:**
+
+| width | 4 cards | 7 cards (before) | card width |
+|---|---|---|---|
+| 700 | 2 rows | 3 rows | 225px |
+| 760 | **1 row** | 2 rows | 181px |
+| 860 | **1 row** | 2 rows | 206px |
+| **918** | **1 row** | **2 rows** ← the screenshot | 221px |
+| 1100 | **1 row** | 2 rows | 266px |
+| 1440 | **1 row** | 1 row | 351px |
+| 1850 | **1 row** | 1 row | 454px |
+| 1900 | **1 row** | 1 row | 466px |
+
+⚠️ **There is no upper bound** — auto-fit stops adding tracks once the four are placed and `1fr`
+stretches them to fill, so the row cannot go ragged however wide the window gets. Two rows below 760px
+is correct on a phone. ⚠️ **This corrects a figure from an earlier draft of this work**, which claimed
+the one-row range was 860–1850px; that was measured against the shared `.pd-kpis` container in a
+different harness, not against this module's own rule, and the upper bound was an artefact of it.
+
+⚠️ **A concurrent session is separately migrating `#sm-kpis` onto the shared `.pd-kpis`** (deleting
+`.sm-kpis` outright and routing `kpi()` through `UI.kpi`). That work is not on main yet. When it lands
+it **supersedes this rule harmlessly** — same declaration, one fewer copy — and the four-card
+`renderKpis()` is correct in both worlds. The conflict, if there is one, resolves by taking their
+delete.
+
+### Verified
+`node --check` clean; `module.css` brace-balanced (179/179); **0 remaining references to `noPhoto` /
+`noPlan`** (the accumulators went with the cards). The geometry is a real browser measurement, not a
+reading of the CSS.
+
+⚠️ **Not verified signed in** — the strip has not been rendered against a real register.
+
+`module.css` / `module.js?v=20260908pv`; `MODULE_V` → `20260908pv`.
 ## EPC → MCC finished: the file, the global and the captions (2026-09-02f) — fmlozano
 
 Owner: *"Finish the EPC → MCC rename."* The 2026-09-01 pass renamed the two view **headings** and

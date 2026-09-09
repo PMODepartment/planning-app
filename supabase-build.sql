@@ -11,7 +11,7 @@
 --
 -- Paste the whole file into the Supabase SQL editor and run it. Every migration
 -- is individually idempotent (verified: 0 `create policy` without a preceding
--- drop across all 135), so this file is safe to re-run.
+-- drop across all 155), so this file is safe to re-run.
 --
 -- ⚠️ ORDER IS NOT FILENAME ORDER. 9 file(s) are moved to satisfy a
 --    dependency the filenames get wrong — see gen-build.js for the two failure
@@ -24,7 +24,7 @@
 -- ⚠️ Verify afterwards with migrations/VERIFY-schema.sql, which reports any
 --    declared table, column or function that is missing.
 --
--- Generated from 135 migrations. Order changes vs filename order:
+-- Generated from 155 migrations. Order changes vs filename order:
 --   * 2026-06-18-grants.sql  (now at position 2)
 --   * 2026-06-18-phase2-modules.sql  (now at position 3)
 --   * 2026-06-18-project-access-rls.sql  (now at position 4)
@@ -114,6 +114,9 @@ create table if not exists progress_photos (
   works       text,                  -- DEPRECATED: first-selected value only, see works_multi below
   trades      text[] default '{}'::text[],       -- multi-select (2026-08-29 feedback item 2)
   works_multi text[] default '{}'::text[],        -- multi-select (2026-08-29 feedback item 2)
+  works_activity_ids text[] default '{}'::text[], -- index-aligned with works_multi: resolved
+                                       -- project_schedule.activity_id per Works value, or NULL
+                                       -- (migrations/2026-09-07-progress-photos-works-activity-ids.sql)
   sort_order  integer,
   tags        text[],                -- optional Activity Code overlay, "<code type>: <value>"
   wbs_node_id uuid,                   -- legacy (Phase 1 first cut); references wbs_nodes(id) if ever set,
@@ -127,12 +130,20 @@ create table if not exists progress_photos (
                                        -- Key plan is per PHOTO, not per PPR slide (migrations/2026-08-28-*.sql):
                                        -- one comparison can pair two photos with different key plans.
   archived    boolean default false,  -- soft-archive (Gallery batch action, 2026-08-29 follow-up) — never a hard delete
+  favorite    boolean not null default false, -- Gallery star toggle; ANY project writer may set this via
+                                       -- set_photo_favorite() (SECURITY DEFINER), bypassing the table's
+                                       -- owner-or-admin UPDATE policy — see migrations/2026-09-07-*.sql
   media_type  text default 'photo',  -- 'photo' | 'video' (18-item list item 4) — never related to 360/3D/Gaussian Splatting
   markup      jsonb default '[]'::jsonb,  -- vector annotation layer (18-item list item 13), hidden on Gallery tiles
   created_by  uuid references users(id),
   created_at  timestamptz default now(),
   updated_at  timestamptz default now()
 );
+
+-- Fast lookup for the Portfolio Overview's favorites-only Photos tab and a
+-- project's own favorited count. Partial — most rows are never favorited.
+create index if not exists progress_photos_favorite_idx
+  on progress_photos (project_id) where favorite;
 
 -- 1b) PPR Presentations (progress-photos module) -----------------------------
 -- A PPR = one monthly Project Performance Review presentation; each slide is a
@@ -144,6 +155,12 @@ create table if not exists ppr_presentations (
   ppr_date    date,                  -- PPR meeting date
   description text,                  -- e.g. "PPR ftm of June 2026"
   archived    boolean default false, -- soft-archive (Presentations-list row action, 2026-08-29 follow-up)
+  -- 'internal' | 'client' (shown "External (Client)"). NULL = not yet
+  -- classified (legacy row) — deliberately NO default here; see
+  -- migrations/2026-09-02-ppr-presentation-report-type.sql for why a
+  -- backfilled default would be a wrong guess on at least one real row.
+  -- Same vocabulary as ppr_report_templates.meeting_type below.
+  report_type text,
   created_by  uuid references users(id),
   created_at  timestamptz default now(),
   updated_at  timestamptz default now()
@@ -256,11 +273,15 @@ drop policy if exists reconstruction_requests_upd on reconstruction_requests;
 create policy reconstruction_requests_upd on reconstruction_requests
   for update using (is_admin() and can_access_project(project_id))
   with check (is_admin() and can_access_project(project_id));
+-- 2026-09-04: a requester may also delete their own TERMINAL (done/failed)
+-- request, not only a still-pending one — see migrations/2026-09-04-
+-- reconstruction-delete-terminal.sql for why (no live RunPod job left to
+-- orphan once a request is terminal).
 drop policy if exists reconstruction_requests_del on reconstruction_requests;
 create policy reconstruction_requests_del on reconstruction_requests
   for delete using (
     (is_admin() and can_access_project(project_id))
-    or (requested_by = auth.uid() and status = 'pending_approval')
+    or (requested_by = auth.uid() and status in ('pending_approval', 'done', 'failed'))
   );
 
 -- Floor Plan overlay (brief Section 6B / Phase 5). See
@@ -810,6 +831,33 @@ begin
 end $$;
 grant execute on function admin_delete_user(uuid) to authenticated;
 
+-- set_photo_favorite: toggle a Progress Photos row's favorite flag as ANY
+-- project writer, bypassing progress_photos' own owner-or-admin UPDATE
+-- policy for this one field. See migrations/2026-09-07-progress-photos-
+-- favorites.sql for the full rationale (why a bare client-side .update()
+-- would silently be refused, and why this is a narrow bypass rather than a
+-- widened table policy).
+create or replace function set_photo_favorite(p_photo_id uuid, p_value boolean)
+returns boolean language plpgsql security definer set search_path = public as $$
+declare v_project text;
+begin
+  if not is_writer() then
+    raise exception 'You do not have permission to change favorites on this project.';
+  end if;
+
+  select project_id into v_project from progress_photos where id = p_photo_id;
+  if v_project is null then
+    raise exception 'That photo could not be found.';
+  end if;
+  if not can_access_project(v_project) then
+    raise exception 'You do not have access to this project.';
+  end if;
+
+  update progress_photos set favorite = p_value, updated_at = now() where id = p_photo_id;
+  return p_value;
+end $$;
+grant execute on function set_photo_favorite(uuid, boolean) to authenticated;
+
 -- users + projects
 alter table users    enable row level security;
 alter table projects enable row level security;
@@ -947,7 +995,7 @@ create index if not exists project_schedule_split_group_idx
   on project_schedule (project_id, split_group, split_seq);
 
 -- ==========================================================================
--- [001/135] 2026-06-18-admin-delete-user.sql
+-- [001/155] 2026-06-18-admin-delete-user.sql
 -- ==========================================================================
 -- ============================================================================
 -- Feature: admin "Delete user completely". Run in the Supabase SQL editor.
@@ -991,7 +1039,7 @@ grant execute on function admin_delete_user(uuid) to authenticated;
 
 
 -- ==========================================================================
--- [002/135] 2026-06-18-grants.sql
+-- [002/155] 2026-06-18-grants.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: table privileges (GRANTs) for the API roles.
@@ -1021,7 +1069,7 @@ alter default privileges in schema public
 
 
 -- ==========================================================================
--- [003/135] 2026-06-18-phase2-modules.sql
+-- [003/155] 2026-06-18-phase2-modules.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: Phase 2 module tables (Project Schedule / Cost Loading & S-Curve,
@@ -1093,7 +1141,7 @@ end $$;
 
 
 -- ==========================================================================
--- [004/135] 2026-06-18-project-access-rls.sql
+-- [004/155] 2026-06-18-project-access-rls.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: per-project access control (database-enforced)
@@ -1145,7 +1193,7 @@ end $$;
 
 
 -- ==========================================================================
--- [005/135] 2026-06-18-fix-rls-recursion.sql
+-- [005/155] 2026-06-18-fix-rls-recursion.sql
 -- ==========================================================================
 -- ============================================================================
 -- Bug fix: RLS infinite recursion ("stack depth limit exceeded", code 54001).
@@ -1186,7 +1234,7 @@ $$;
 
 
 -- ==========================================================================
--- [006/135] 2026-06-18-s-curve-module.sql
+-- [006/155] 2026-06-18-s-curve-module.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: split S-Curve into its own module → add `s_curve` table.
@@ -1224,7 +1272,7 @@ create policy s_curve_del on s_curve for delete using (can_access_project(projec
 
 
 -- ==========================================================================
--- [007/135] 2026-06-18-storage-buckets.sql
+-- [007/155] 2026-06-18-storage-buckets.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: Storage buckets + policies for modules that upload files.
@@ -1260,7 +1308,7 @@ end $$;
 
 
 -- ==========================================================================
--- [008/135] 2026-06-30-add-flores-group.sql
+-- [008/155] 2026-06-30-add-flores-group.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: add "Flores Group" group head under Operations.
@@ -1272,7 +1320,7 @@ on conflict (id) do nothing;
 
 
 -- ==========================================================================
--- [009/135] 2026-06-30-project-schedule-columns.sql
+-- [009/155] 2026-06-30-project-schedule-columns.sql
 -- ==========================================================================
 -- Migration: Project Schedule — extended columns
 -- Run this in the Supabase SQL editor (or the consolidated setup SQL).
@@ -1301,7 +1349,7 @@ $$;
 
 
 -- ==========================================================================
--- [010/135] 2026-06-30-schedule-baseline-columns.sql
+-- [010/155] 2026-06-30-schedule-baseline-columns.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: baseline (BL0) columns for the Project Schedule Gantt.
@@ -1319,7 +1367,7 @@ update project_schedule
 
 
 -- ==========================================================================
--- [011/135] 2026-06-30-schedule-predecessors-and-rollup.sql
+-- [011/155] 2026-06-30-schedule-predecessors-and-rollup.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: predecessors column (dependencies / critical path) + per-project
@@ -1341,7 +1389,7 @@ alter table projects add column if not exists schedule_updated_at  timestamptz;
 
 
 -- ==========================================================================
--- [012/135] 2026-06-30-workspaces-project-selector.sql
+-- [012/155] 2026-06-30-workspaces-project-selector.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: Workspaces (Workspace → Program → Project hierarchy) + Project
@@ -1443,7 +1491,7 @@ on conflict (id) do nothing;
 
 
 -- ==========================================================================
--- [013/135] 2026-07-01-project-schedule-opc-fields.sql
+-- [013/155] 2026-07-01-project-schedule-opc-fields.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: add remaining Oracle Primavera Cloud (OPC) Activity Details fields
@@ -1475,7 +1523,7 @@ alter table project_schedule
 
 
 -- ==========================================================================
--- [014/135] 2026-07-01-resource-role-master.sql
+-- [014/155] 2026-07-01-resource-role-master.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: Resource & Role master (OPC-faithful) for the resource-loading
@@ -1534,7 +1582,7 @@ end $$;
 
 
 -- ==========================================================================
--- [015/135] 2026-07-02-baseline-cost-column.sql
+-- [015/155] 2026-07-02-baseline-cost-column.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: baseline planned cost (matches OPC's "BL Planned IBB" column).
@@ -1551,7 +1599,7 @@ update project_schedule
 
 
 -- ==========================================================================
--- [016/135] 2026-07-03-resource-assignments.sql
+-- [016/155] 2026-07-03-resource-assignments.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: resource_assignments — links activities to resources/roles with
@@ -1590,7 +1638,7 @@ create policy resource_assignments_del on resource_assignments for delete using 
 
 
 -- ==========================================================================
--- [017/135] 2026-07-06-working-calendars.sql
+-- [017/155] 2026-07-06-working-calendars.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: Working calendars for the resource-loading + project-schedule
@@ -1649,7 +1697,7 @@ end $$;
 
 
 -- ==========================================================================
--- [018/135] 2026-07-07-activity-codes.sql
+-- [018/155] 2026-07-07-activity-codes.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: Activity Codes (OPC-style project-defined code dictionaries, e.g.
@@ -1702,7 +1750,7 @@ grant select, insert, update, delete on activity_code_values to authenticated;
 
 
 -- ==========================================================================
--- [019/135] 2026-07-07-activity-steps.sql
+-- [019/155] 2026-07-07-activity-steps.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: Weighted Steps (OPC-style per-activity checklist) that rolls up
@@ -1737,7 +1785,7 @@ grant select, insert, update, delete on activity_steps to authenticated;
 
 
 -- ==========================================================================
--- [020/135] 2026-07-07-assignment-curve.sql
+-- [020/155] 2026-07-07-assignment-curve.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: resource/cost distribution curve per assignment (P6 "Resource
@@ -1755,7 +1803,7 @@ comment on column resource_assignments.curve is
 
 
 -- ==========================================================================
--- [021/135] 2026-07-07-risk-3point-duration.sql
+-- [021/155] 2026-07-07-risk-3point-duration.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: per-activity 3-point duration override for the Monte Carlo schedule
@@ -1777,7 +1825,7 @@ comment on column project_schedule.risk_pessimistic_pct is
 
 
 -- ==========================================================================
--- [022/135] 2026-07-07-schedule-audit.sql
+-- [022/155] 2026-07-07-schedule-audit.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: schedule change audit trail. One row per change event (who changed
@@ -1812,7 +1860,7 @@ grant select, insert on schedule_audit to authenticated;
 
 
 -- ==========================================================================
--- [023/135] 2026-07-07-schedule-baselines.sql
+-- [023/155] 2026-07-07-schedule-baselines.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: multiple named schedule baselines (OPC-style). Each baseline is one
@@ -1849,7 +1897,7 @@ grant select, insert, update, delete on schedule_baselines to authenticated;
 
 
 -- ==========================================================================
--- [024/135] 2026-07-07-schedule-contract-date.sql
+-- [024/155] 2026-07-07-schedule-contract-date.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: per-activity Contract Date (obligation/LD date) on project_schedule.
@@ -1866,7 +1914,7 @@ comment on column project_schedule.contract_date is
 
 
 -- ==========================================================================
--- [025/135] 2026-07-07-schedule-scenarios.sql
+-- [025/155] 2026-07-07-schedule-scenarios.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: What-if scenarios (P6/OPC "Reflections") — a named, restorable
@@ -1905,7 +1953,7 @@ grant select, insert, update, delete on schedule_scenarios to authenticated;
 
 
 -- ==========================================================================
--- [026/135] 2026-07-07-schedule-snapshots.sql
+-- [026/155] 2026-07-07-schedule-snapshots.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: schedule snapshots — "where we said we'd be". One row per snapshot
@@ -1949,7 +1997,7 @@ grant select, insert, update, delete on schedule_snapshots to authenticated;
 
 
 -- ==========================================================================
--- [027/135] 2026-07-07-schedule-thresholds.sql
+-- [027/155] 2026-07-07-schedule-thresholds.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: schedule threshold monitors (P6 "Thresholds") — rules that watch a
@@ -1983,7 +2031,7 @@ grant select, insert, update, delete on schedule_thresholds to authenticated;
 
 
 -- ==========================================================================
--- [028/135] 2026-07-07-user-defined-fields.sql
+-- [028/155] 2026-07-07-user-defined-fields.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: User-Defined Fields (UDFs, P6/OPC "User Defined Fields") — project-
@@ -2017,7 +2065,7 @@ grant select, insert, update, delete on activity_udf_defs to authenticated;
 
 
 -- ==========================================================================
--- [029/135] 2026-07-07-wbs-nodes.sql
+-- [029/155] 2026-07-07-wbs-nodes.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: first-class Work Breakdown Structure (P6 PROJWBS). The WBS tree is
@@ -2062,7 +2110,7 @@ grant select, insert, update, delete on wbs_nodes to authenticated;
 
 
 -- ==========================================================================
--- [030/135] 2026-07-07-weekly-commitments.sql
+-- [030/155] 2026-07-07-weekly-commitments.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: Last Planner System weekly work plan + Percent Plan Complete (PPC).
@@ -2098,7 +2146,7 @@ grant select, insert, update, delete on weekly_commitments to authenticated;
 
 
 -- ==========================================================================
--- [031/135] 2026-07-11-activity-seq-order.sql
+-- [031/155] 2026-07-11-activity-seq-order.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: manual activity sequence for drag-and-drop row reorder (2026-07-11)
@@ -2113,7 +2161,7 @@ alter table project_schedule add column if not exists seq_order numeric;
 
 
 -- ==========================================================================
--- [032/135] 2026-07-11-portfolio-resource-rpc.sql
+-- [032/155] 2026-07-11-portfolio-resource-rpc.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: Portfolio resource demand — server-side aggregation RPC (2026-07-11)
@@ -2163,7 +2211,7 @@ grant execute on function portfolio_resource_summary(text[]) to authenticated;
 
 
 -- ==========================================================================
--- [033/135] 2026-07-11-resource-cost-parity.sql
+-- [033/155] 2026-07-11-resource-cost-parity.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: Resource / cost-side OPC parity (2026-07-11)
@@ -2234,7 +2282,7 @@ alter table project_schedule add column if not exists cost_rollup boolean defaul
 
 
 -- ==========================================================================
--- [034/135] 2026-07-14-billing-milestones.sql
+-- [034/155] 2026-07-14-billing-milestones.sql
 -- ==========================================================================
 -- Milestone-based progress billing --------------------------------------------
 -- Some contracts bill fixed lump-sum amounts on reaching project milestones
@@ -2275,7 +2323,7 @@ create policy cash_flow_billing_milestones_write on cash_flow_billing_milestones
 
 
 -- ==========================================================================
--- [035/135] 2026-07-14-cash-flow-dp-tranches.sql
+-- [035/155] 2026-07-14-cash-flow-dp-tranches.sql
 -- ==========================================================================
 -- Cash Flow — downpayment tranches ------------------------------------------
 -- The client downpayment is rarely a single lump sum: per the commercial
@@ -2322,7 +2370,7 @@ create policy cash_flow_dp_tranches_write on cash_flow_dp_tranches
 
 
 -- ==========================================================================
--- [036/135] 2026-07-14-cash-flow-settings.sql
+-- [036/155] 2026-07-14-cash-flow-settings.sql
 -- ==========================================================================
 -- Cash Flow — projection settings (one row per project) ----------------------
 -- The Cash Flow module is a DERIVED projection: cash-in timing comes from the
@@ -2365,7 +2413,7 @@ create policy cash_flow_settings_write on cash_flow_settings
 
 
 -- ==========================================================================
--- [037/135] 2026-07-14-cash-flow-v2.sql
+-- [037/155] 2026-07-14-cash-flow-v2.sql
 -- ==========================================================================
 -- Cash Flow v2: tax withholdings, staged retention, recorded actuals, roll-up ---
 
@@ -2422,7 +2470,7 @@ create policy cash_flow_rollup_write on cash_flow_rollup for all
 
 
 -- ==========================================================================
--- [038/135] 2026-07-14-cash-flow-v3.sql
+-- [038/155] 2026-07-14-cash-flow-v3.sql
 -- ==========================================================================
 -- Cash Flow v3: (#5) financing cost, (#8) funding limit, (#6) scenario snapshots,
 -- (#7) per-trade cash-in packages. Data date is stored client-side (localStorage),
@@ -2491,7 +2539,7 @@ create policy cash_flow_scen_write on cash_flow_scenarios for all
 
 
 -- ==========================================================================
--- [039/135] 2026-07-14-cashflow-schedule-agg-rpc.sql
+-- [039/155] 2026-07-14-cashflow-schedule-agg-rpc.sql
 -- ==========================================================================
 -- Server-side monthly S-curve aggregate for the Cash Flow module ---------------
 -- The Cash Flow projection needs each month's duration- AND cost-weighted
@@ -2560,7 +2608,7 @@ grant execute on function cashflow_schedule_agg(text) to authenticated;
 
 
 -- ==========================================================================
--- [040/135] 2026-07-14-cashout-retention-stages.sql
+-- [040/155] 2026-07-14-cashout-retention-stages.sql
 -- ==========================================================================
 -- Separate cash-OUT retention release staging ---------------------------------
 -- Subcontract retention terms can differ from the client's. These optional
@@ -2574,7 +2622,7 @@ alter table cash_flow_settings add column if not exists co_ret_rel2_months integ
 
 
 -- ==========================================================================
--- [041/135] 2026-07-14-ev-poc.sql
+-- [041/155] 2026-07-14-ev-poc.sql
 -- ==========================================================================
 -- Project Schedule: separate Earned Value (physical) POC, independent of the schedule Duration POC
 -- (percent_complete). ev_poc is informational/physical progress and does NOT drive dates.
@@ -2586,7 +2634,7 @@ comment on column public.project_schedule.ev_poc is 'Earned Value POC (%) — ph
 
 
 -- ==========================================================================
--- [042/135] 2026-07-14-grant-service-role.sql
+-- [042/155] 2026-07-14-grant-service-role.sql
 -- ==========================================================================
 -- Grant table privileges to service_role -------------------------------------
 -- The original schema granted DML only to `authenticated` (app users run as that
@@ -2606,7 +2654,7 @@ alter default privileges in schema public
 
 
 -- ==========================================================================
--- [043/135] 2026-07-14-seed-sln101-trades.sql
+-- [043/155] 2026-07-14-seed-sln101-trades.sql
 -- ==========================================================================
 -- One-time backfill of WPM trades into the mirror for SLN101 --------------------------
 -- The authoritative trade for every SLN101 work package, taken from the WPM import
@@ -2719,7 +2767,7 @@ where m.wpm_project_id = 'SLN101' and m.wp_no = v.wp_no
 
 
 -- ==========================================================================
--- [044/135] 2026-07-14-trade-dp-tranches.sql
+-- [044/155] 2026-07-14-trade-dp-tranches.sql
 -- ==========================================================================
 -- Per-trade DP tranches -------------------------------------------------------
 -- A cash-in trade package can break its downpayment into tranches (each with its
@@ -2732,7 +2780,7 @@ alter table cash_flow_trade_packages
 
 
 -- ==========================================================================
--- [045/135] 2026-07-14-wpm-work-packages-mirror.sql
+-- [045/155] 2026-07-14-wpm-work-packages-mirror.sql
 -- ==========================================================================
 -- WPM work-packages MIRROR (cash-out source for the Cash Flow module) ---------
 -- Procurement budgets live in a SEPARATE Supabase project (the WPM app). Its
@@ -2780,7 +2828,7 @@ create policy wpm_work_packages_read on wpm_work_packages
 
 
 -- ==========================================================================
--- [046/135] 2026-07-14-wpm-mirror-award-status.sql
+-- [046/155] 2026-07-14-wpm-mirror-award-status.sql
 -- ==========================================================================
 -- Add award/procurement/delivery status to the WPM mirror -------------------
 -- Lets the Cash Flow module ground "actual" cash-out in real awarded status:
@@ -2793,7 +2841,7 @@ alter table wpm_work_packages add column if not exists delivery_status     text;
 
 
 -- ==========================================================================
--- [047/135] 2026-07-14-wpm-mirror-trade.sql
+-- [047/155] 2026-07-14-wpm-mirror-trade.sql
 -- ==========================================================================
 -- Trade / cost-code group on the WPM mirror -----------------------------------------
 -- The Cash Flow cash-out drill-down groups work packages by trade (SITE WORKS /
@@ -2806,7 +2854,7 @@ alter table wpm_work_packages add column if not exists trade text;
 
 
 -- ==========================================================================
--- [048/135] 2026-07-16-consolidated.sql
+-- [048/155] 2026-07-16-consolidated.sql
 -- ==========================================================================
 -- ============================================================================
 -- 2026-07-16 — ONE migration covering everything outstanding. Run this alone.
@@ -2977,7 +3025,7 @@ grant execute on function admin_delete_workspace(text)         to authenticated;
 
 
 -- ==========================================================================
--- [049/135] 2026-07-16-drawing-register-full.sql
+-- [049/155] 2026-07-16-drawing-register-full.sql
 -- ==========================================================================
 -- ============================================================================
 -- Drawing Register — full-fidelity rebuild (matches the Megawide "Drawing
@@ -3029,7 +3077,7 @@ create index if not exists drawing_register_project_sort_idx
 
 
 -- ==========================================================================
--- [050/135] 2026-07-16-drawing-register-nodes.sql
+-- [050/155] 2026-07-16-drawing-register-nodes.sql
 -- ==========================================================================
 -- ============================================================================
 -- Drawing Register — structural tree nodes.
@@ -3049,7 +3097,7 @@ create index if not exists drawing_register_kind_idx
 
 
 -- ==========================================================================
--- [051/135] 2026-07-17-issues-lessons.sql
+-- [051/155] 2026-07-17-issues-lessons.sql
 -- ==========================================================================
 -- ============================================================================
 -- Issues, Concerns & Lessons Learned — module columns
@@ -3093,7 +3141,7 @@ create index if not exists issues_lessons_proj_date_idx
 
 
 -- ==========================================================================
--- [052/135] 2026-07-17-ppr-presentations.sql
+-- [052/155] 2026-07-17-ppr-presentations.sql
 -- ==========================================================================
 -- ============================================================================
 -- Progress Photos — PPR Presentations (the "View PPRs" side of the app)
@@ -3173,7 +3221,7 @@ end $$;
 
 
 -- ==========================================================================
--- [053/135] 2026-07-17-progress-photos.sql
+-- [053/155] 2026-07-17-progress-photos.sql
 -- ==========================================================================
 -- ============================================================================
 -- Progress Photos — Photos Database columns
@@ -3200,7 +3248,7 @@ create index if not exists progress_photos_proj_date_idx
 
 
 -- ==========================================================================
--- [054/135] 2026-07-20-contracts-claims-full.sql
+-- [054/155] 2026-07-20-contracts-claims-full.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: Contracts & Claims Register — full fidelity against the Power Apps
@@ -3266,7 +3314,7 @@ comment on column contracts_claims.date_submitted is
 
 
 -- ==========================================================================
--- [055/135] 2026-07-20-material-submittal-full.sql
+-- [055/155] 2026-07-20-material-submittal-full.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: Material Submittal Log — full fidelity against the PMO workbook
@@ -3363,7 +3411,7 @@ comment on column material_submittal.date_approved is
 
 
 -- ==========================================================================
--- [056/135] 2026-07-20-material-submittal-storage-delete.sql
+-- [056/155] 2026-07-20-material-submittal-storage-delete.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: widen the material-submittal bucket's DELETE policy to planners.
@@ -3421,7 +3469,7 @@ end $$;
 
 
 -- ==========================================================================
--- [057/135] 2026-07-20-productivity-rates-full.sql
+-- [057/155] 2026-07-20-productivity-rates-full.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: Productivity Rates — full module schema (Productivity Monitoring)
@@ -3518,7 +3566,7 @@ end $$;
 
 
 -- ==========================================================================
--- [058/135] 2026-07-20-schedule-scurve-agg.sql
+-- [058/155] 2026-07-20-schedule-scurve-agg.sql
 -- ==========================================================================
 -- ============================================================================
 -- Shared server-side monthly S-curve aggregate (generalizes cashflow_schedule_agg)
@@ -3616,7 +3664,7 @@ create index if not exists project_schedule_proj_id_idx on project_schedule (pro
 
 
 -- ==========================================================================
--- [059/135] 2026-07-20-stakeholder-map-full.sql
+-- [059/155] 2026-07-20-stakeholder-map-full.sql
 -- ==========================================================================
 -- ============================================================================
 -- Stakeholder Map — full corporate-BD methodology
@@ -3661,7 +3709,7 @@ create index if not exists stakeholder_map_project_name_idx
 
 
 -- ==========================================================================
--- [060/135] 2026-07-20-storage-planner-delete-all-buckets.sql
+-- [060/155] 2026-07-20-storage-planner-delete-all-buckets.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: widen the DELETE policy on the remaining two module buckets
@@ -3717,7 +3765,7 @@ end $$;
 
 
 -- ==========================================================================
--- [061/135] 2026-07-21-rls-project-scope-fix.sql
+-- [061/155] 2026-07-21-rls-project-scope-fix.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: RLS project-scope fix for the schedule / cost support tables
@@ -3770,7 +3818,7 @@ end $$;
 
 
 -- ==========================================================================
--- [062/135] 2026-07-21-viewer-readonly.sql
+-- [062/155] 2026-07-21-viewer-readonly.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: make the 'viewer' role truly read-only (audit finding #7, 2026-07-21)
@@ -3844,7 +3892,7 @@ end $$;
 
 
 -- ==========================================================================
--- [063/135] 2026-07-22-schedule-rows-rpc.sql
+-- [063/155] 2026-07-22-schedule-rows-rpc.sql
 -- ==========================================================================
 -- One-call schedule fetch RPC (Project Schedule cold-load speedup)
 -- ------------------------------------------------------------------------------------------------
@@ -3878,7 +3926,7 @@ grant execute on function public.schedule_rows(text) to authenticated;
 
 
 -- ==========================================================================
--- [064/135] 2026-07-23-schedule-builder.sql
+-- [064/155] 2026-07-23-schedule-builder.sql
 -- ==========================================================================
 -- ============================================================================
 -- Schedule Builder sub-module — bottom-up / location-based schedule setup.
@@ -3913,7 +3961,7 @@ create policy schedule_builder_write on schedule_builder
 
 
 -- ==========================================================================
--- [065/135] 2026-07-25-schedule-document-links.sql
+-- [065/155] 2026-07-25-schedule-document-links.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: link the Drawing Register + Material Submittal Log to the
@@ -3973,7 +4021,7 @@ comment on column material_submittal.lead_days is
 
 
 -- ==========================================================================
--- [066/135] 2026-07-26-realtime-collab-material-submittal.sql
+-- [066/155] 2026-07-26-realtime-collab-material-submittal.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: enable Supabase Realtime for the Material Submittal Log (PDCollab).
@@ -4008,7 +4056,7 @@ alter table public.material_submittal replica identity full;
 
 
 -- ==========================================================================
--- [067/135] 2026-07-26-realtime-collab-progress-photos.sql
+-- [067/155] 2026-07-26-realtime-collab-progress-photos.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: enable Supabase Realtime for Progress Photos (PDCollab).
@@ -4046,7 +4094,7 @@ alter table public.progress_photos replica identity full;
 
 
 -- ==========================================================================
--- [068/135] 2026-07-26-realtime-collab-project-schedule.sql
+-- [068/155] 2026-07-26-realtime-collab-project-schedule.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: enable Supabase Realtime for the Project Schedule (PDCollab).
@@ -4090,7 +4138,7 @@ alter table public.project_schedule replica identity full;
 
 
 -- ==========================================================================
--- [069/135] 2026-07-26-realtime-collab-registers.sql
+-- [069/155] 2026-07-26-realtime-collab-registers.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: enable Supabase Realtime for the modal-edit registers (PDCollab).
@@ -4130,7 +4178,7 @@ end $$;
 
 
 -- ==========================================================================
--- [070/135] 2026-07-26-realtime-collab.sql
+-- [070/155] 2026-07-26-realtime-collab.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: enable Supabase Realtime for live collaboration (PDCollab).
@@ -4173,7 +4221,7 @@ alter table public.drawing_register replica identity full;
 
 
 -- ==========================================================================
--- [071/135] 2026-07-27-realtime-collab-cash-flow.sql
+-- [071/155] 2026-07-27-realtime-collab-cash-flow.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: enable Supabase Realtime for Cash Flow (PDCollab).
@@ -4216,7 +4264,7 @@ end $$;
 
 
 -- ==========================================================================
--- [072/135] 2026-07-27-realtime-collab-productivity-rates.sql
+-- [072/155] 2026-07-27-realtime-collab-productivity-rates.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: enable Supabase Realtime for Productivity Rates (PDCollab).
@@ -4254,7 +4302,7 @@ alter table public.productivity_entries    replica identity full;
 
 
 -- ==========================================================================
--- [073/135] 2026-08-03-wbs-skeleton.sql
+-- [073/155] 2026-08-03-wbs-skeleton.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: auto-generated WBS skeleton support.
@@ -4273,7 +4321,7 @@ alter table wbs_nodes add column if not exists source_kind text;
 
 
 -- ==========================================================================
--- [074/135] 2026-08-04-activity-location-work-type.sql
+-- [074/155] 2026-08-04-activity-location-work-type.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: Location Breakdown Structure (LBS) + work type on schedule activities.
@@ -4329,7 +4377,7 @@ grant select, insert, update, delete on location_levels to authenticated;
 
 
 -- ==========================================================================
--- [075/135] 2026-08-05-drawing-register-sheets.sql
+-- [075/155] 2026-08-05-drawing-register-sheets.sql
 -- ==========================================================================
 -- ============================================================================
 -- Drawing Register — per-sheet tracking matrix.
@@ -4363,7 +4411,7 @@ comment on column drawing_register.parent_id is
 
 
 -- ==========================================================================
--- [076/135] 2026-08-05-location-level-match.sql
+-- [076/155] 2026-08-05-location-level-match.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: remember which WBS names a planner matched to each location level.
@@ -4397,7 +4445,7 @@ alter table location_levels add column if not exists match jsonb default '{}'::j
 
 
 -- ==========================================================================
--- [077/135] 2026-08-10-progress-photos-schedule-integration.sql
+-- [077/155] 2026-08-10-progress-photos-schedule-integration.sql
 -- ==========================================================================
 -- ============================================================================
 -- Progress Photos — Schedule App integration (Phase 1)
@@ -4436,7 +4484,7 @@ create index if not exists progress_photos_wbs_node_idx on progress_photos(proje
 
 
 -- ==========================================================================
--- [078/135] 2026-08-11-drawing-register-scope.sql
+-- [078/155] 2026-08-11-drawing-register-scope.sql
 -- ==========================================================================
 -- Drawing Register: Scope column (Main Contract / Change Order).
 -- Idempotent. Existing rows default to 'Main Contract' (the common case; nothing
@@ -4450,7 +4498,7 @@ update drawing_register set scope = 'Main Contract' where scope is null;
 
 
 -- ==========================================================================
--- [079/135] 2026-08-11-fix-privilege-escalation.sql
+-- [079/155] 2026-08-11-fix-privilege-escalation.sql
 -- ==========================================================================
 -- ============================================================================
 -- SECURITY FIX — privilege escalation via the users UPDATE policy
@@ -4632,7 +4680,7 @@ create trigger users_guard_self_insert
 
 
 -- ==========================================================================
--- [080/135] 2026-08-12-delete-project-residue.sql
+-- [080/155] 2026-08-12-delete-project-residue.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: admin_delete_project() — stop counting bookkeeping residue as
@@ -4790,7 +4838,7 @@ grant execute on function admin_project_delete_preview(text)  to authenticated;
 
 
 -- ==========================================================================
--- [081/135] 2026-08-12-group-heads-replace-workspaces.sql
+-- [081/155] 2026-08-12-group-heads-replace-workspaces.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: replace the Workspace → Program → Group tree with a flat
@@ -4959,7 +5007,7 @@ drop table if exists workspaces;
 
 
 -- ==========================================================================
--- [082/135] 2026-08-12-progress-photos-location-breakdown.sql
+-- [082/155] 2026-08-12-progress-photos-location-breakdown.sql
 -- ==========================================================================
 -- ============================================================================
 -- Progress Photos — switch from wbs_nodes to Project Schedule's real
@@ -4997,7 +5045,7 @@ alter table progress_photos add column if not exists location_values jsonb defau
 
 
 -- ==========================================================================
--- [083/135] 2026-08-12-schedule-project-phase.sql
+-- [083/155] 2026-08-12-schedule-project-phase.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: project PHASE (Initiation / Planning / Construction / Close-out)
@@ -5078,7 +5126,7 @@ update project_schedule ps
 
 
 -- ==========================================================================
--- [084/135] 2026-08-19-department-issues.sql
+-- [084/155] 2026-08-19-department-issues.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: (D1) DEPARTMENTS CAN RAISE ISSUES.
@@ -5168,7 +5216,7 @@ grant select, insert, update, delete on issues_lessons to authenticated;
 
 
 -- ==========================================================================
--- [085/135] 2026-08-19-duration-scenarios-and-mom.sql
+-- [085/155] 2026-08-19-duration-scenarios-and-mom.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: (C3) DURATION SCENARIOS and (C4) MINUTES OF MEETING.
@@ -5331,7 +5379,7 @@ end $$;
 
 
 -- ==========================================================================
--- [086/135] 2026-08-19-eng-design-progress-mirror.sql
+-- [086/155] 2026-08-19-eng-design-progress-mirror.sql
 -- ==========================================================================
 -- Engineering App design-progress MIRROR (Design Development source) -----------
 -- The drawing register and material submittal log live in a SEPARATE Supabase
@@ -5406,7 +5454,7 @@ create policy eng_design_progress_read on eng_design_progress
 
 
 -- ==========================================================================
--- [087/135] 2026-08-19-packages.sql
+-- [087/155] 2026-08-19-packages.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: PACKAGES — a contract package lives INSIDE a project.
@@ -5508,7 +5556,7 @@ create trigger packages_touch before update on packages
 
 
 -- ==========================================================================
--- [088/135] 2026-08-19-schedule-contract-scope.sql
+-- [088/155] 2026-08-19-schedule-contract-scope.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: CONTRACT SCOPE on schedule activities — is this line of work part
@@ -5577,7 +5625,7 @@ create index if not exists wbs_nodes_scope_type_idx        on wbs_nodes (project
 
 
 -- ==========================================================================
--- [089/135] 2026-08-19-schedule-package.sql
+-- [089/155] 2026-08-19-schedule-package.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: CONTRACT PACKAGE on schedule activities — WHICH package does this
@@ -5676,7 +5724,7 @@ grant execute on function admin_delete_package(uuid) to authenticated;
 
 
 -- ==========================================================================
--- [090/135] 2026-08-20-department-minutes.sql
+-- [090/155] 2026-08-20-department-minutes.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: DEPARTMENTS CAN RECORD MINUTES (the other half of D1).
@@ -5868,7 +5916,7 @@ grant select, insert, update, delete on mom_items to authenticated;
 
 
 -- ==========================================================================
--- [091/135] 2026-08-21-class-codes.sql
+-- [091/155] 2026-08-21-class-codes.sql
 -- ==========================================================================
 -- Class codes: Finance's chart of scope, and a first-class column on the schedule ----------
 -- Source: "EPC. FIN. Class Code Mapping Template" (sheet "Excel Temp", header row 9).
@@ -6674,7 +6722,7 @@ on conflict (code) do update set
 
 
 -- ==========================================================================
--- [092/135] 2026-08-21-mom-schema-carryover-distribute.sql
+-- [092/155] 2026-08-21-mom-schema-carryover-distribute.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: MINUTES OF MEETING — richer item schema, carry-over, draft/distribute.
@@ -6933,7 +6981,7 @@ grant select, insert, update, delete on mom_items to authenticated;
 
 
 -- ==========================================================================
--- [093/135] 2026-08-21-mom-type-and-attachments.sql
+-- [093/155] 2026-08-21-mom-type-and-attachments.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: MINUTES OF MEETING — meeting type + per-action attachments.
@@ -7053,7 +7101,7 @@ create policy mom_attachments_del on storage.objects
 
 
 -- ==========================================================================
--- [094/135] 2026-08-21-schedule-split-change-orders.sql
+-- [094/155] 2026-08-21-schedule-split-change-orders.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: SPLIT a main-contract activity around a CHANGE ORDER.
@@ -7121,7 +7169,7 @@ create index if not exists project_schedule_split_group_idx
 
 
 -- ==========================================================================
--- [095/135] 2026-08-22-unify-mom-status.sql
+-- [095/155] 2026-08-22-unify-mom-status.sql
 -- ==========================================================================
 -- 2026-08-22 — one status vocabulary for minutes and the register
 --
@@ -7210,7 +7258,7 @@ end $$;
 
 
 -- ==========================================================================
--- [096/135] 2026-08-24-boq.sql
+-- [096/155] 2026-08-24-boq.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: BOQ — the client's Bill of Quantities, its class-code mapping,
@@ -7642,7 +7690,7 @@ grant select on boq_activity_quantity to authenticated;
 
 
 -- ==========================================================================
--- [097/135] 2026-08-24-dedupe-existing-calendars.sql
+-- [097/155] 2026-08-24-dedupe-existing-calendars.sql
 -- ==========================================================================
 -- ============================================================================
 -- ONE-OFF CLEANUP: collapse the duplicate calendars left behind by repeated XER
@@ -7877,7 +7925,7 @@ from calendars group by project_id order by defaults desc, project_id;
 
 
 -- ==========================================================================
--- [098/135] 2026-08-24-equipment-loading.sql
+-- [098/155] 2026-08-24-equipment-loading.sql
 -- ==========================================================================
 -- ============================================================================
 -- Equipment Loading (per project) — 2026-08-24
@@ -8011,7 +8059,7 @@ create trigger equipment_site_plan_touch before update on equipment_site_plan
 
 
 -- ==========================================================================
--- [099/135] 2026-08-24-equipment-code-and-sharing.sql
+-- [099/155] 2026-08-24-equipment-code-and-sharing.sql
 -- ==========================================================================
 -- ============================================================================
 -- Equipment Loading — a unique equipment CODE, and equipment shared between towers
@@ -8113,7 +8161,7 @@ create policy equipment_tower_links_write on equipment_tower_links
 
 
 -- ==========================================================================
--- [100/135] 2026-08-24-equipment-schedule-link.sql
+-- [100/155] 2026-08-24-equipment-schedule-link.sql
 -- ==========================================================================
 -- ============================================================================
 -- Equipment Loading â link a line item's DURATION to the project schedule
@@ -8185,7 +8233,7 @@ create index if not exists project_schedule_wbs_idx
 
 
 -- ==========================================================================
--- [101/135] 2026-08-24-seasonal-calendars.sql
+-- [101/155] 2026-08-24-seasonal-calendars.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: SEASONAL working calendars + opt-in Philippine special days.
@@ -8244,7 +8292,7 @@ end $$;
 
 
 -- ==========================================================================
--- [102/135] 2026-08-24-site-plan-bucket.sql
+-- [102/155] 2026-08-24-site-plan-bucket.sql
 -- ==========================================================================
 -- ============================================================================
 -- Equipment Loading — storage for the site development plan image
@@ -8305,7 +8353,7 @@ create policy site_plans_delete on storage.objects
 
 
 -- ==========================================================================
--- [103/135] 2026-08-25-equipment-icons.sql
+-- [103/155] 2026-08-25-equipment-icons.sql
 -- ==========================================================================
 -- ============================================================================
 -- Equipment Loading — a chosen icon per piece of equipment
@@ -8331,7 +8379,7 @@ alter table equipment_items add column if not exists icon text;
 
 
 -- ==========================================================================
--- [104/135] 2026-08-25-package-adoption.sql
+-- [104/155] 2026-08-25-package-adoption.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: A3's TAIL — package adoption on the Contracts & Claims tables,
@@ -8452,7 +8500,7 @@ grant select on boq_package_value to authenticated;
 
 
 -- ==========================================================================
--- [105/135] 2026-08-25-pmi.sql
+-- [105/155] 2026-08-25-pmi.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: PMI TRACKING — the instruction, its case file, and the contractual
@@ -8847,7 +8895,7 @@ create policy contracts_claims_del on storage.objects
 
 
 -- ==========================================================================
--- [106/135] 2026-08-25-schedule-cost-loading.sql
+-- [106/155] 2026-08-25-schedule-cost-loading.sql
 -- ==========================================================================
 -- ============================================================================
 -- Cost Loading (Project Schedule) — how a project's cost is assigned to activities.
@@ -8898,7 +8946,7 @@ create policy schedule_cost_loading_write on schedule_cost_loading
 
 
 -- ==========================================================================
--- [107/135] 2026-08-25-vendor-identity.sql
+-- [107/155] 2026-08-25-vendor-identity.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: F1 — VENDOR IDENTITY in the Planners app.
@@ -9024,7 +9072,7 @@ create index if not exists idx_prod_act_vendor on productivity_activities (vendo
 
 
 -- ==========================================================================
--- [108/135] 2026-08-25-vendor-performance.sql
+-- [108/155] 2026-08-25-vendor-performance.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: F2 / F3 / F4 / F5 — VENDOR PERFORMANCE.
@@ -9337,7 +9385,7 @@ grant select on vendor_rate_library to authenticated;
 
 
 -- ==========================================================================
--- [109/135] 2026-08-26-activity-cost-curve.sql
+-- [109/155] 2026-08-26-activity-cost-curve.sql
 -- ==========================================================================
 -- Cost Loading: the spread curve travels with the money.
 --
@@ -9374,7 +9422,7 @@ comment on column public.project_schedule.cost_curve is
 
 
 -- ==========================================================================
--- [110/135] 2026-08-26-boq-claimed-vs-certified.sql
+-- [110/155] 2026-08-26-boq-claimed-vs-certified.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: CLAIMED vs CERTIFIED progress — making DISPUTE measurable.
@@ -9468,7 +9516,7 @@ grant select on boq_period_dispute to authenticated;
 
 
 -- ==========================================================================
--- [111/135] 2026-08-26-lessons-learned.sql
+-- [111/155] 2026-08-26-lessons-learned.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: LESSONS LEARNED BECOMES ITS OWN RECORD.
@@ -9597,7 +9645,7 @@ where i.lesson_learned is not null
 
 
 -- ==========================================================================
--- [112/135] 2026-08-26-package-scoped-schedule.sql
+-- [112/155] 2026-08-26-package-scoped-schedule.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: PACKAGE-SCOPED SCHEDULING — named Builder setups per package,
@@ -9784,7 +9832,7 @@ create unique index if not exists wbs_nodes_package_root_idx
 
 
 -- ==========================================================================
--- [113/135] 2026-08-26-people-and-assignment.sql
+-- [113/155] 2026-08-26-people-and-assignment.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: CHAMPIONS AND RESPONSIBLES BECOME PEOPLE, NOT TYPED TEXT.
@@ -9900,7 +9948,7 @@ create index if not exists lessons_learned_created_by_idx on lessons_learned (cr
 
 
 -- ==========================================================================
--- [114/135] 2026-08-27-manpower-loading.sql
+-- [114/155] 2026-08-27-manpower-loading.sql
 -- ==========================================================================
 -- ============================================================================
 -- Manpower Loading (per project) — 2026-08-27
@@ -10068,7 +10116,7 @@ end $$;
 
 
 -- ==========================================================================
--- [115/135] 2026-08-27-package-external-codes.sql
+-- [115/155] 2026-08-27-package-external-codes.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: a contract package carries the CODES IT BUYS UNDER
@@ -10203,7 +10251,7 @@ grant select on package_mapping_conflicts to authenticated;
 
 
 -- ==========================================================================
--- [116/135] 2026-08-27-project-program.sql
+-- [116/155] 2026-08-27-project-program.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: projects.program — an explicit PARENT PROJECT override
@@ -10270,7 +10318,7 @@ create index if not exists projects_program_idx on projects (upper(program));
 
 
 -- ==========================================================================
--- [117/135] 2026-08-28-people-directory.sql
+-- [117/155] 2026-08-28-people-directory.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: A CHAMPION WHO HAS NO ACCOUNT IS STILL A PERSON.
@@ -10416,7 +10464,7 @@ grant execute on function app_people() to authenticated;
 
 
 -- ==========================================================================
--- [118/135] 2026-08-28-photo-keyplan-and-ppr-meeting.sql
+-- [118/155] 2026-08-28-photo-keyplan-and-ppr-meeting.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: 2026-08-28 — Progress Photos / PPR feedback round
@@ -10449,7 +10497,7 @@ comment on column ppr_slides.location is
 
 
 -- ==========================================================================
--- [119/135] 2026-08-29-archive-flag.sql
+-- [119/155] 2026-08-29-archive-flag.sql
 -- ==========================================================================
 -- Progress Photos — soft-archive flag (2026-08-29 follow-up feedback)
 -- ------------------------------------------------------------------------------
@@ -10479,7 +10527,7 @@ create index if not exists ppr_presentations_archived_idx       on ppr_presentat
 
 
 -- ==========================================================================
--- [120/135] 2026-08-29-floor-plan-registration.sql
+-- [120/155] 2026-08-29-floor-plan-registration.sql
 -- ==========================================================================
 -- Top-view photo -> floor plan registration (18-item list, Batch H, item 17)
 -- ------------------------------------------------------------------------------
@@ -10531,7 +10579,7 @@ create policy floor_plan_registrations_del on floor_plan_registrations for delet
 
 
 -- ==========================================================================
--- [121/135] 2026-08-29-floor-plans.sql
+-- [121/155] 2026-08-29-floor-plans.sql
 -- ==========================================================================
 -- Progress Photos — Floor Plan overlay (brief Section 6B / Phase 5)
 -- ------------------------------------------------------------------
@@ -10606,7 +10654,7 @@ end $$;
 
 
 -- ==========================================================================
--- [122/135] 2026-08-29-markup.sql
+-- [122/155] 2026-08-29-markup.sql
 -- ==========================================================================
 -- Photo/slide markup & annotation (18-item list, Batch F, items 13/14)
 -- ------------------------------------------------------------------------------
@@ -10662,7 +10710,7 @@ create policy ppr_slide_markups_del on ppr_slide_markups for delete
 
 
 -- ==========================================================================
--- [123/135] 2026-08-29-panoramas.sql
+-- [123/155] 2026-08-29-panoramas.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: 2026-08-29 — Panoramic Capture (brief Section 6 / Phase 3)
@@ -10719,7 +10767,7 @@ alter table panoramas add column if not exists source text default 'ground';
 
 
 -- ==========================================================================
--- [124/135] 2026-08-29-photo-media-type.sql
+-- [124/155] 2026-08-29-photo-media-type.sql
 -- ==========================================================================
 -- Progress Photos — Video as a first-class media type (18-item list item 4)
 -- ------------------------------------------------------------------------------
@@ -10743,7 +10791,7 @@ comment on column progress_photos.media_type is '''photo'' | ''video'' — how t
 
 
 -- ==========================================================================
--- [125/135] 2026-08-29-photo-trades-works-multi.sql
+-- [125/155] 2026-08-29-photo-trades-works-multi.sql
 -- ==========================================================================
 -- Progress Photos — Trade/Works become multi-select (2026-08-29 feedback item 2)
 -- ------------------------------------------------------------------------------
@@ -10765,7 +10813,7 @@ comment on column progress_photos.works is 'Deprecated: first-selected value onl
 
 
 -- ==========================================================================
--- [126/135] 2026-08-29-pin-direction.sql
+-- [126/155] 2026-08-29-pin-direction.sql
 -- ==========================================================================
 -- Floor Plan pins — direction/POV capture (18-item list, Batch E)
 -- ------------------------------------------------------------------------------
@@ -10789,7 +10837,7 @@ comment on column floor_plan_pins.direction_deg is 'Camera facing direction in d
 
 
 -- ==========================================================================
--- [127/135] 2026-08-29-ppr-report-templates.sql
+-- [127/155] 2026-08-29-ppr-report-templates.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: 2026-08-29 — PPR Report Templates (brief Section 5, Phase 2)
@@ -10863,7 +10911,7 @@ create index if not exists ppr_report_templates_proj_idx
 
 
 -- ==========================================================================
--- [128/135] 2026-08-29-reconstruction-requests.sql
+-- [128/155] 2026-08-29-reconstruction-requests.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: 2026-08-29 — 3D Reconstruction Requests (brief 6A / Phase 4)
@@ -10968,7 +11016,7 @@ create policy reconstruction_requests_del on reconstruction_requests
 
 
 -- ==========================================================================
--- [129/135] 2026-08-30-photos-round2.sql
+-- [129/155] 2026-08-30-photos-round2.sql
 -- ==========================================================================
 -- Progress Photos — 2026-08-30 feedback round, schema additions
 -- ------------------------------------------------------------------------------
@@ -11017,7 +11065,7 @@ comment on column floor_plans.location_values is 'The one schedule Location Brea
 
 
 -- ==========================================================================
--- [130/135] 2026-08-30-photos-round3.sql
+-- [130/155] 2026-08-30-photos-round3.sql
 -- ==========================================================================
 -- Progress Photos — fourth feedback round, schema additions
 -- ------------------------------------------------------------------------------
@@ -11052,7 +11100,7 @@ comment on column progress_photos.adjustments is 'Non-destructive {exposure,brig
 
 
 -- ==========================================================================
--- [131/135] 2026-08-31-issues-workflow-history.sql
+-- [131/155] 2026-08-31-issues-workflow-history.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: Issues & Concerns status workflow (Update / Put On Hold / Close)
@@ -11141,7 +11189,7 @@ create policy issues_lessons_history_ins on issues_lessons_history
 
 
 -- ==========================================================================
--- [132/135] 2026-08-31-manpower-org-schedule-manhours.sql
+-- [132/155] 2026-08-31-manpower-org-schedule-manhours.sql
 -- ==========================================================================
 -- ============================================================================
 -- Manpower Loading — Table of Organization, schedule/location tagging, manhours
@@ -11259,7 +11307,47 @@ grant execute on function public.project_location_values(text, text) to authenti
 
 
 -- ==========================================================================
--- [133/135] 2026-09-01-mom-schedules-attendees-item-history.sql
+-- [133/155] 2026-09-01-issues-lessons-reorder.sql
+-- ==========================================================================
+-- Issues, Concerns & Lessons Learned: manual drag-to-reorder.
+-- ----------------------------------------------------------------------------
+-- Adds a plain, nullable `sort_order` to both tables. NULL means "no manual
+-- order has been set yet" — the log falls back to its existing date-based
+-- order (newest first) exactly as before. Dragging a row in the Issues log,
+-- the closed-issues table on the Lessons Learned screen, or the standalone
+-- lesson cards assigns sort_order (spaced by 10, so a later drop can slot
+-- between two existing values without renumbering everything) and from then
+-- on that list's display order is sort_order ascending, with unordered rows
+-- falling back to the date-based order after the ordered ones.
+--
+-- Idempotent; safe to re-run.
+-- ============================================================================
+
+alter table issues_lessons add column if not exists sort_order integer;
+alter table lessons_learned add column if not exists sort_order integer;
+
+
+-- ==========================================================================
+-- [134/155] 2026-09-01-issues-reopen-action-plan.sql
+-- ==========================================================================
+-- Issues & Concerns: reopening an On Hold issue back to Open.
+-- ----------------------------------------------------------------------------
+-- Item 1: On Hold now has its own way back to Open (a "Reopen Issue" button,
+-- mirroring the existing Put On Hold / Close Issue reveal-panel workflow) and
+-- it always asks for an Action Plan before the transition is allowed — the
+-- same "narrative required before the status changes" rule Hold (Reason for
+-- Hold) and Close (Closure Report) already follow. `action_plan` is a plain
+-- nullable column: most rows never touch this transition, so there is nothing
+-- to back-fill.
+--
+-- Idempotent; safe to re-run.
+-- ============================================================================
+
+alter table issues_lessons add column if not exists action_plan text;
+
+
+-- ==========================================================================
+-- [135/155] 2026-09-01-mom-schedules-attendees-item-history.sql
 -- ==========================================================================
 -- ============================================================================
 -- Migration: Minutes of Meeting — recurring schedules, structured attendees,
@@ -11412,7 +11500,7 @@ create policy mom_items_history_ins on mom_items_history
 
 
 -- ==========================================================================
--- [134/135] 2026-09-01-risk-register-rcm.sql
+-- [136/155] 2026-09-01-risk-register-rcm.sql
 -- ==========================================================================
 -- ============================================================================
 -- Risk Register -> the real EPC Risk and Control Matrix (RCM)
@@ -11513,7 +11601,7 @@ create index if not exists risk_register_activity_idx
 
 
 -- ==========================================================================
--- [135/135] 2026-09-01-stakeholder-register-ops.sql
+-- [137/155] 2026-09-01-stakeholder-register-ops.sql
 -- ==========================================================================
 -- ============================================================================
 -- Stakeholder Map -> the real EPC Stakeholder Register (+ stakeholder photos)
@@ -11657,8 +11745,2647 @@ drop policy if exists stakeholder_photos_delete on storage.objects;
 create policy stakeholder_photos_delete on storage.objects
   for delete using (bucket_id = 'stakeholder-photos' and (owner = auth.uid() or public.is_planner()));
 
+
 -- ==========================================================================
--- [136] supabase-schema.sql — DEFERRED TAIL
+-- [138/155] 2026-09-01-wbs-link-rpc.sql
+-- ==========================================================================
+-- One-call WBS link RPC (Project Schedule — WBS adoption after a big import)
+-- ------------------------------------------------------------------------------------------------
+-- After an import, `wbsAdopt()` builds one wbs_node per WBS-Summary row and then has to write
+-- project_schedule.wbs_node_id back onto every row. It did that with one single-row PATCH per row
+-- (40 in flight): 12,465 requests / 312 sequential waves for the 4PH Strevi Residences .xer — the
+-- app looks hung for minutes, and any wave that fails leaves nodes unlinked. An unlinked node reads
+-- to `_wbsEnsureSummaries()` as "this node has no summary row", which it heals by INSERTING one,
+-- sequentially — the duplicate-WBS-row runaway seen on Avesta (AVR101).
+--
+-- This function does the whole set as a SINGLE UPDATE ... FROM jsonb_to_recordset. It matches on the
+-- dotted WBS code, so it links the summary row AND any activity carrying that same code (a Builder
+-- push / manually-added activity), which is exactly what the client loop did.
+--
+-- SECURITY INVOKER (the default) → the function runs as the CALLER, so Row-Level Security on
+-- project_schedule still applies: a user can only relink rows in projects they can write. Do NOT
+-- change this to SECURITY DEFINER — that would let any caller rewrite another project's tree links.
+--
+-- The client calls this first and falls back to per-row updates if the function is absent, so it is
+-- safe to deploy the client before or after this migration.
+--
+-- Idempotent: create-or-replace + a re-granted execute privilege. Safe to run multiple times.
+
+create or replace function public.wbs_link_codes(p_project_id text, p_map jsonb)
+returns integer
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  n integer;
+begin
+  update public.project_schedule s
+     set wbs_node_id = m.node_id
+    from jsonb_to_recordset(coalesce(p_map, '[]'::jsonb)) as m(code text, node_id uuid)
+   where s.project_id = p_project_id
+     and s.wbs = m.code
+     and s.wbs_node_id is distinct from m.node_id;
+  get diagnostics n = row_count;
+  return n;
+end;
+$$;
+
+-- Logged-in app users authenticate via Supabase Auth, so their requests run as `authenticated`.
+grant execute on function public.wbs_link_codes(text, jsonb) to authenticated;
+
+
+-- ================================================================================================
+-- 2) Attach IMPORTED ACTIVITIES to their WBS branch.
+-- ------------------------------------------------------------------------------------------------
+-- `wbs_link_codes` above links rows whose dotted code EQUALS a branch's code — summary rows, and the
+-- Builder-pushed / manually-added activities that are filed AT a branch. An IMPORTED activity is not
+-- one of those: it carries its own LEAF code ("4.2.3.1.5" under branch "4.2.3.1"), so it matched
+-- nothing and every import left `wbs_node_id` NULL on every activity. Measured on the real exports:
+-- 4,393 of 4,393 (Avesta) and 16,393 of 16,393 (4PH Strevi).
+--
+-- The grid never showed it, because rebuild() derives ancestry by SPLITTING the dotted code. What
+-- broke was everything keyed on the NODE:
+--   * the WBS Manager's "N activities" read 0 on all 1,623 / 12,464 nodes;
+--   * phaseOf() is `r.phase || _nodePhase(r.wbs_node_id)`, so every activity had NO phase —
+--     isExecPhase() was false everywhere and Vertical Stacking reported "0 execution-phase
+--     activities stacked" on a project holding 3,874 of them;
+--   * workOf() had no branch to infer a trade from, and Contract Scope read "—".
+--
+-- ⚠️ NO PAYLOAD. The project's own WBS-Summary rows ARE the (dotted code -> node id) map, so the
+-- join runs entirely inside the database. That is the point: the client-side alternative is one
+-- PATCH per activity — 16,393 requests, the runaway `wbs_link_codes` was written to kill — so the
+-- client has NO row-by-row fallback for this one and reports the missing function instead.
+--
+-- Matching rule: an activity belongs to the branch whose code is its own code minus the last
+-- segment. `regexp_replace(wbs, '\.[^.]+$', '')` is exactly that, and the `like '%.%'` guard keeps a
+-- single-segment code (which has no parent) from matching a top-level branch as its own parent.
+--
+-- The sub-select collapses the code -> node map with min(), so a project that still carries two
+-- summary rows sharing one dotted code resolves deterministically instead of picking at random.
+--
+-- SECURITY INVOKER (the default) — runs as the CALLER, so RLS on project_schedule still applies.
+-- Idempotent, and safe to re-run: rows that already carry the right node are excluded by the
+-- `is distinct from` test, so a second run reports 0.
+
+create or replace function public.wbs_link_activity_parents(p_project_id text)
+returns integer
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  n integer;
+begin
+  update public.project_schedule a
+     set wbs_node_id = s.node_id
+    from (
+      select wbs, min(wbs_node_id::text)::uuid as node_id
+        from public.project_schedule
+       where project_id = p_project_id
+         and activity_type = 'WBS Summary'
+         and wbs_node_id is not null
+         and wbs is not null
+       group by wbs
+    ) s
+   where a.project_id = p_project_id
+     and a.activity_type is distinct from 'WBS Summary'
+     and a.wbs_node_id is null
+     and a.wbs is not null
+     and a.wbs like '%.%'
+     and s.wbs = regexp_replace(a.wbs, '\.[^.]+$', '')
+     and a.wbs_node_id is distinct from s.node_id;
+  get diagnostics n = row_count;
+  return n;
+end;
+$$;
+
+grant execute on function public.wbs_link_activity_parents(text) to authenticated;
+
+
+-- ==========================================================================
+-- [139/155] 2026-09-02-clear-project-rpc.sql
+-- ==========================================================================
+-- One-call project CLEAR (Project Schedule — "Clear schedule" and every REPLACE import)
+-- ================================================================================================
+-- WHY THIS EXISTS, and why the obvious fix was not enough.
+--
+-- `Clear schedule` was a single `delete ... where project_id = $1` from PostgREST. On SLN101 that
+-- returned **"canceling statement due to statement timeout"** and cleared nothing. The 2026-09-02
+-- client fix chunked it into `delete ... where id in (<200 ids>)` requests, which WORKS but is
+-- brutally slow: measured by the owner at **100-200 activities per 2 seconds**, i.e. ~10ms per row.
+--
+-- ⚠️ THAT 10ms IS NOT DATABASE TIME. `project_schedule` carries no trigger, no rule and nothing
+-- referencing it (`grep -rn "references project_schedule"` over the whole schema: no matches), and
+-- it is indexed on `(project_id, id)`. Deleting 16,485 rows server-side is one index scan. The cost
+-- is the HTTP ROUND TRIP: 200 ids is already close to the practical URL length for a PostgREST
+-- `in.(...)` filter (36-char uuids + encoding ≈ 8KB), so the chunk size cannot simply be raised —
+-- 20,000 rows means ~100 sequential requests whatever we do on the client. The fix has to move the
+-- loop into the database.
+--
+-- 4PH Strevi Bacoor is 16,485 activities and 12,465 WBS nodes. At 200 per round trip that is ~145
+-- requests and minutes of spinner; here it is one call.
+--
+-- WHY A ROW LIMIT RATHER THAN A BARE `delete where project_id = $1`:
+-- the bare form is what timed out in the first place. `statement_timeout` is a property of the
+-- deployment, not of this function — a plpgsql loop inside one call does NOT get a fresh timeout per
+-- iteration, because the timer is armed once when the top-level statement starts. So the bound has
+-- to be visible to the CALLER, which can then come back for more. `p_limit` is that bound: the
+-- client asks for a batch, gets the count, and calls again until it gets 0. It also lets the client
+-- HALVE the batch and retry when a call does time out, instead of failing the whole operation.
+--
+-- SECURITY INVOKER (the default) — the function runs as the CALLER, so Row-Level Security still
+-- applies and a user can only clear projects they can already write. ⚠️ Do NOT change this to
+-- SECURITY DEFINER: these functions delete a whole project's schedule, and definer rights would let
+-- any authenticated caller wipe any project.
+--
+-- The client calls these first and falls back to its id-chunking loop when the function is absent,
+-- so it is safe to deploy the client before or after this migration.
+--
+-- Idempotent: create-or-replace + re-granted execute. Safe to run more than once.
+
+-- 1) The activities. -------------------------------------------------------------------------
+create or replace function public.clear_project_schedule(p_project_id text, p_limit integer default 20000)
+returns integer
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  n integer;
+begin
+  delete from public.project_schedule
+   where id in (
+     select id from public.project_schedule
+      where project_id = p_project_id
+      limit greatest(1, coalesce(p_limit, 20000))
+   );
+  get diagnostics n = row_count;
+  return n;
+end;
+$$;
+
+grant execute on function public.clear_project_schedule(text, integer) to authenticated;
+
+
+-- 2) The WBS tree. ---------------------------------------------------------------------------
+-- ⚠️ `is_locked = false` ONLY, exactly like the client's `_clearWbsTree`. The standard Milestones /
+-- Initiation / Planning / Execution Phase skeleton is locked and must survive a clear — the whole
+-- app assumes it exists, and an import re-adopts underneath it.
+-- ⚠️ Children before parents is NOT needed: `wbs_nodes.parent_id` is
+-- `references wbs_nodes(id) on delete cascade`, so a batch that deletes a parent takes its subtree
+-- with it. That also means the returned count UNDER-reports what actually went, which is why the
+-- client loops until it gets 0 rather than counting up to a total it predicted.
+create or replace function public.clear_project_wbs_nodes(p_project_id text, p_limit integer default 20000)
+returns integer
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  n integer;
+begin
+  delete from public.wbs_nodes
+   where id in (
+     select id from public.wbs_nodes
+      where project_id = p_project_id
+        and coalesce(is_locked, false) = false
+      limit greatest(1, coalesce(p_limit, 20000))
+   );
+  get diagnostics n = row_count;
+  return n;
+end;
+$$;
+
+grant execute on function public.clear_project_wbs_nodes(text, integer) to authenticated;
+
+
+-- 3) Resource assignments, cleared by both REPLACE paths alongside the activities. -------------
+create or replace function public.clear_project_resource_assignments(p_project_id text, p_limit integer default 20000)
+returns integer
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  n integer;
+begin
+  delete from public.resource_assignments
+   where id in (
+     select id from public.resource_assignments
+      where project_id = p_project_id
+      limit greatest(1, coalesce(p_limit, 20000))
+   );
+  get diagnostics n = row_count;
+  return n;
+end;
+$$;
+
+grant execute on function public.clear_project_resource_assignments(text, integer) to authenticated;
+
+
+-- ==========================================================================
+-- [140/155] 2026-09-02-discontinue-360-panoramas.sql
+-- ==========================================================================
+-- ============================================================================
+-- Progress Photos — discontinue 360° panoramas: delete all existing captures
+-- 2026-09-02
+--
+-- Owner: "the 360 photo feature is quite buggy. let's discontinue it for now.
+-- disable and grey out 360. delete all 360 photos from the database as well."
+--
+-- ⚠️ This is a DESTRUCTIVE, ONE-TIME cleanup, run by the app owner in the
+-- Supabase SQL editor — this repo has no live DB credentials, so it can only
+-- ever ship as a migration the owner runs, never as something executed from
+-- here. The UI-side change (the 360° option greyed out in both the "+ Add
+-- media" dropdown and the upload modal's own type selector) ships alongside
+-- this file but does not depend on it — the app degrades correctly with 0
+-- panorama rows either way, since `pano.js`'s own gallery strip and floor-plan
+-- pins already render nothing when a project has none.
+--
+-- ⚠️ The 360° CODE is deliberately NOT removed — same "shelve, don't strip"
+-- call already made for the 3D/RunPod reconstruction feature (see
+-- modules/progress-photos/CLAUDE.md, 2026-09-01). `pano.js`, the `panoramas`
+-- table, and every `item_type = 'panorama'` branch in bim.js/module.js stay
+-- in place, untouched and simply unreachable from the UI. Re-enabling the
+-- feature later is a UI-only change (drop `disabled` on the two buttons);
+-- this migration only clears the accumulated buggy captures, it does not
+-- retire the feature at the schema level.
+--
+-- Three things reference a panorama and all three are cleaned up, in an
+-- order that never leaves a dangling reference for even one statement:
+--   1. floor_plan_pins  — a pin can point at a panorama (item_type='panorama').
+--      Deleted FIRST: a pin pointing at an about-to-be-deleted panorama would
+--      otherwise become an orphan the app has to degrade around forever,
+--      when it could simply not exist.
+--   2. storage.objects  — the stitched panorama JPEGs themselves, uploaded to
+--      <project_id>/panoramas/<ts>_<rand>.jpg in the shared 'progress-photos'
+--      bucket (pano.js's own BUCKET/upload-path constants). Deleted from the
+--      row's own `pano_url` column so this can never drift from wherever the
+--      app itself actually uploads to.
+--   3. panoramas        — the rows themselves, last, once nothing points at
+--      them and their files are gone.
+--
+-- ⚠️ Storage objects are removed via SQL against `storage.objects` directly
+-- (Supabase Storage's metadata lives in this same Postgres database) rather
+-- than the Storage HTTP API, which the SQL editor has no way to call —
+-- exactly why the app's own `pano.js` uses that API instead, and why this
+-- file uses SQL instead: whichever surface you're actually running from.
+--
+-- Idempotent: running this again when the table is already empty is a no-op.
+-- ============================================================================
+
+begin;
+
+-- 1. Orphan-proof the pins first.
+delete from floor_plan_pins
+ where item_type = 'panorama';
+
+-- 2. Remove the stitched panorama files from Storage.
+delete from storage.objects
+ where bucket_id = 'progress-photos'
+   and name in (select pano_url from panoramas where pano_url is not null);
+
+-- 3. Remove the panorama rows themselves.
+delete from panoramas;
+
+commit;
+
+
+-- ==========================================================================
+-- [141/155] 2026-09-02-meetings-rehaul.sql
+-- ==========================================================================
+-- ============================================================================
+-- Migration: Minutes of Meeting rehaul — meeting start/end time, favorites,
+-- and recurring series carry their own defaults (venue/link/attendees/agenda/
+-- time/end date) so a series is a real, browsable object from the moment it
+-- is created, not just a rule that produces meetings once one exists.
+--
+-- Run this whole file in the Supabase SQL editor. Idempotent (safe to re-run).
+--
+-- ⚠️ WHY `mom_schedules` NEEDS ITS OWN venue/link/attendees/agenda, NOT ONLY
+--    `meeting_minutes`. Before this, a recurring series' "+ Add a meeting"
+--    form could only default from the LAST HELD occurrence — a brand-new
+--    series with no occurrence yet had nothing to show, and the unified
+--    Meetings list (list + series in one list, per the rehaul) has no
+--    occurrence to read attendee-count / location from until one exists.
+--    So the series itself now carries the same defaults a standalone meeting
+--    does; "+ Add a meeting" still prefers the most recent occurrence when
+--    one exists (a schedule drifts over time — the series' own values are
+--    the STARTING point, not a value that silently overrides what actually
+--    happened last time).
+--
+-- ⚠️ WHY start_time/end_time ARE TEXT ('HH:MM'), NOT a Postgres `time`.
+--    Every other date-shaped field this module writes comes straight off an
+--    <input>'s .value with no Date object in between (meeting_date is a real
+--    `date` column but is always read/written as its own 'YYYY-MM-DD' string
+--    — never parsed into a JS Date, which is how this app's local-vs-UTC bugs
+--    keep happening). A `time` column adds a server-side type Supabase-js has
+--    to round-trip faithfully for no benefit here — nothing in this module
+--    does time arithmetic in SQL, only in the client (the week-view grid).
+--
+-- ⚠️ WHY `end_date` ON `mom_schedules`, NOT JUST `start_date`. Every
+--    recurring series before this was open-ended forever — schedDatesInRange
+--    would produce planned dates into the far future with no way to stop.
+--    Nullable: a null end_date means "no end", the same as before this
+--    column existed, so no existing schedule's behaviour changes on migrate.
+-- ============================================================================
+
+-- ---------------------------------------------------------------------------
+-- 1. meeting_minutes — start/end time (planned), actual start/end time (once
+--    held), and a favorite flag.
+-- ---------------------------------------------------------------------------
+alter table meeting_minutes add column if not exists start_time text;
+alter table meeting_minutes add column if not exists end_time   text;
+-- ⚠️ Separate columns from start_time/end_time, not the same field reused
+-- once the meeting is over — a meeting that ran long or started late needs
+-- BOTH the plan and what actually happened on the record at once (the same
+-- reason attendees_required and attendees_actual are two columns, not one).
+alter table meeting_minutes add column if not exists actual_start_time text;
+alter table meeting_minutes add column if not exists actual_end_time   text;
+alter table meeting_minutes add column if not exists is_favorite boolean not null default false;
+create index if not exists meeting_minutes_favorite_idx on meeting_minutes(project_id, is_favorite);
+
+-- ---------------------------------------------------------------------------
+-- 2. mom_schedules — end date, favorite, and its own venue/link/attendees/
+--    agenda/time defaults (see header comment).
+-- ---------------------------------------------------------------------------
+alter table mom_schedules add column if not exists end_date date;
+alter table mom_schedules add column if not exists is_favorite boolean not null default false;
+alter table mom_schedules add column if not exists venue text;
+alter table mom_schedules add column if not exists meeting_link text;
+alter table mom_schedules add column if not exists start_time text;
+alter table mom_schedules add column if not exists end_time   text;
+alter table mom_schedules add column if not exists attendees_required jsonb;
+alter table mom_schedules add column if not exists attendees_optional jsonb;
+-- ⚠️ Genuinely missing from the table that created `mom_schedules` — the
+-- weekly-recurrence code path (schedDatesInRange / scheduleRuleFieldsHTML)
+-- has read/written `interval_n` since that table was introduced, but the
+-- CREATE TABLE never declared the column, so "every 2 weeks" has silently
+-- been writing to nothing and always recurring weekly. Backfilled to 1
+-- (weekly, the default before this existed) rather than left null, since
+-- schedDatesInRange treats a null interval as falsy and falls back to 1
+-- anyway — the default just makes that explicit in the schema too.
+alter table mom_schedules add column if not exists interval_n int not null default 1;
+
+-- ---------------------------------------------------------------------------
+-- 3. meeting_minutes.agenda — the meeting's own agenda list.
+--
+-- ⚠️ WHY A jsonb ARRAY AND NOT `mom_items` ROWS. An agenda is the list of
+--    TOPICS a meeting intends to cover; a minute is the RECORD of what was
+--    said about one of them, with its own department, responsible, target
+--    date, hold/close workflow and audit history. Modelling the agenda as
+--    mom_items rows would mean every topic nobody ended up minuting still
+--    shows up as an empty minute in the register, in the exports and in the
+--    dashboard counts. Same array-of-strings shape as
+--    mom_schedules.default_agenda above, so a recurring series' default
+--    agenda copies straight across with no transformation.
+-- ---------------------------------------------------------------------------
+alter table meeting_minutes add column if not exists agenda jsonb;
+
+-- ---------------------------------------------------------------------------
+-- 4. mom_items — a minute's own department and its own discussed activity.
+--
+-- ⚠️ WHY `department` RATHER THAN REUSING `category`. `mom_items.category`
+--    came from mom-app's own taxonomy (Technical / Commercial / Safety / …),
+--    a second classifying dimension that meant roughly the same thing as the
+--    department already carried by every issue in Issues & Concerns — and
+--    could disagree with it, which is exactly the drift that made
+--    issues_lessons drop its own "lesson category" in favour of department
+--    (2026-09-01(d)). The department vocabulary is now the single one, read
+--    from the same 11-value list the register's own picker offers, so a
+--    minute pulled in from an issue keeps the department it was raised
+--    under instead of being re-classified into a parallel scheme.
+-- ⚠️ `category` IS NOT DROPPED. Existing rows still hold real values, the
+--    exports still print whatever is there, and a destructive drop of a
+--    populated column is not something a feature migration should do — it
+--    simply stops being offered as an editor.
+-- ---------------------------------------------------------------------------
+alter table mom_items add column if not exists department text;
+-- ⚠️ The activity discussed moves from the MEETING to the MINUTE. One
+--    meeting covers several activities; tagging the whole meeting with one
+--    of them was only ever true of a single-topic meeting, and it is the
+--    individual minute that a schedule activity is actually about.
+--    `meeting_minutes.schedule_activity_id` is left in place (populated on
+--    existing meetings, still printed by the exports) rather than migrated —
+--    a meeting-level tag is not wrong, only coarse, and rewriting it into
+--    one arbitrary minute would invent a precision nobody recorded.
+alter table mom_items add column if not exists schedule_activity_id text;
+-- One minute, one department index — the dashboard groups by it (Minutes by
+-- Department) across every meeting on the project.
+create index if not exists mom_items_department_idx on mom_items(project_id, department);
+-- ⚠️ A plain jsonb ARRAY OF STRINGS (["Review budget", "Site walk-through"]),
+-- not a table of its own. An agenda item defined at series-creation time is
+-- just a STARTING LIST of topics — the moment an occurrence is created each
+-- one becomes a real `mom_items` row with the full action-item apparatus
+-- (owner, due date, status workflow, history) behind it. A second table here
+-- would just be a queue of text waiting to become the thing mom_items
+-- already is; the array is that queue and nothing more.
+alter table mom_schedules add column if not exists default_agenda jsonb;
+
+
+-- ==========================================================================
+-- [142/155] 2026-09-02-ppr-presentation-report-type.sql
+-- ==========================================================================
+-- Progress Photos — Presentations gain a Report Type (Internal / External-Client)
+-- ------------------------------------------------------------------------------
+-- Owner ask: distinguish and filter Internal vs External (client-facing)
+-- presentations in the "View PPRs" list.
+--
+-- ⚠️ Reuses the SAME two-value vocabulary ppr_report_templates.meeting_type
+-- already established ('internal' / 'client') rather than inventing a second
+-- spelling of the same classification (the "internal/external" vs
+-- "internal/client" drift is exactly the class of bug this app's own history
+-- has been bitten by more than once — see the mom-app category dropdowns and
+-- the two status vocabularies). Free text, no CHECK — same call as
+-- meeting_type itself and meeting_minutes.meeting_type (2026-08-20): the
+-- vocabulary lives in the app, not a schema constraint, since a planner may
+-- reasonably want a third label later. The UI shows 'client' as
+-- "External (Client)".
+--
+-- ⚠️ NO DEFAULT on purpose. `add column ... default 'internal'` would
+-- backfill EVERY existing presentation — including ones already named
+-- "External Weekly Report" in their own free-text Description — to
+-- "Internal", which is a wrong guess dressed up as a migration. Existing
+-- presentations are left NULL (unclassified) rather than guessed from their
+-- text; they show under "All" in the new filter and simply don't match
+-- either specific option until a planner opens one and picks a value.
+-- The app's own Add/Edit Presentation form defaults its picker to Internal
+-- for NEW presentations only — a visible, changeable default, not a silent
+-- backend one.
+--
+-- Idempotent; folded into supabase-schema.sql.
+
+alter table ppr_presentations add column if not exists report_type text;
+
+comment on column ppr_presentations.report_type is '''internal'' | ''client'' (shown as "External (Client)"). NULL = not yet classified (legacy row). Same vocabulary as ppr_report_templates.meeting_type; no CHECK.';
+
+
+-- ==========================================================================
+-- [143/155] 2026-09-02-wbs-link-batched.sql
+-- ==========================================================================
+-- Batch the activity->branch link, because the single-statement version times out on a real project
+-- ================================================================================================
+-- MEASURED, not theorised. Called against 4PH Strevi (SLN101) in the owner's signed-in browser:
+--
+--     rpc('wbs_link_activity_parents', { p_project_id: 'SLN101' })
+--       -> 57014  "canceling statement due to statement timeout"   after 8,173 ms
+--
+-- So the deployment's `statement_timeout` is ~8s and this function needs more: it is ONE update over
+-- 16,485 activities joined against a GROUP BY over 12,473 WBS-summary rows, with the join key
+-- computed per row (`regexp_replace(wbs, '\.[^.]+$', '')`), which no index can serve.
+--
+-- ⚠️ THE CONSEQUENCE WAS SILENT AND SEVERE. `_wbsLinkActivityParents` catches the error and only
+-- toasts when not silent — and every caller that matters passes silent. So the import finished, the
+-- WBS tree was complete (12,473 nodes, all summary rows linked), and **16,393 of 16,485 activities
+-- kept `wbs_node_id = NULL`** with nothing said. That is the exact state documented in
+-- 2026-09-01-wbs-link-rpc.sql: `phaseOf()` null for every activity, so `isExecPhase()` false
+-- everywhere and Vertical Stacking draws nothing; `workOf()` finds no trade; every WBS Manager count
+-- reads 0 — while the grid looks perfect, because `rebuild()` derives ancestry by splitting the
+-- dotted code and never reads the node id.
+--
+-- THE FIX IS THE ONE THE CLEAR ALREADY USES: bound the work per call and let the caller come back.
+-- A plpgsql loop inside one call would NOT help — the timeout is armed once, when the top-level
+-- statement starts — so the bound has to be visible to the client, which loops until it gets 0 and
+-- halves `p_limit` if a call still times out.
+--
+-- ⚠️ `drop function` first, deliberately. Adding a defaulted second parameter to the existing
+-- one-argument function would leave BOTH in the catalog, and PostgREST cannot resolve
+-- `wbs_link_activity_parents(p_project_id)` against two candidates — it answers PGRST203
+-- (ambiguous). Replacing it outright keeps exactly one signature, and the default keeps any older
+-- client that calls it with one argument working.
+--
+-- SECURITY INVOKER — runs as the CALLER, so RLS on project_schedule still applies. Idempotent: rows
+-- already carrying the right node are excluded, so a second run reports 0.
+
+drop function if exists public.wbs_link_activity_parents(text);
+drop function if exists public.wbs_link_activity_parents(text, integer);
+
+create or replace function public.wbs_link_activity_parents(p_project_id text, p_limit integer default 4000)
+returns integer
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  n integer;
+begin
+  with map as (
+    select wbs, min(wbs_node_id::text)::uuid as node_id
+      from public.project_schedule
+     where project_id = p_project_id
+       and activity_type = 'WBS Summary'
+       and wbs_node_id is not null
+       and wbs is not null
+     group by wbs
+  ),
+  targets as (
+    select a.id, m.node_id
+      from public.project_schedule a
+      join map m on m.wbs = regexp_replace(a.wbs, '\.[^.]+$', '')
+     where a.project_id = p_project_id
+       and a.activity_type is distinct from 'WBS Summary'
+       and a.wbs_node_id is null
+       and a.wbs is not null
+       and a.wbs like '%.%'
+     limit greatest(1, coalesce(p_limit, 4000))
+  )
+  update public.project_schedule s
+     set wbs_node_id = t.node_id
+    from targets t
+   where s.id = t.id;
+  get diagnostics n = row_count;
+  return n;
+end;
+$$;
+
+grant execute on function public.wbs_link_activity_parents(text, integer) to authenticated;
+
+
+-- ==========================================================================
+-- [144/155] 2026-09-02-wbs-unlink-batched.sql
+-- ==========================================================================
+-- Batch the "clear dangling wbs_node_id" pass of Reset WBS tree
+-- ================================================================================================
+-- Reset WBS tree deletes the unlocked nodes and then has to clear every `project_schedule.
+-- wbs_node_id` that pointed at them. It did that as ONE update:
+--
+--     update project_schedule set wbs_node_id = null
+--      where project_id = $1 and wbs_node_id is not null and wbs_node_id not in (<locked ids>)
+--
+-- ⚠️ On 4PH Strevi that is ~28,958 rows in one statement, and this deployment's `statement_timeout`
+-- is **~8 seconds** — measured, not assumed: `wbs_link_activity_parents` returned 57014 after
+-- 8,173ms on 16,485 rows the same afternoon. So Reset WBS tree — the documented recovery from a
+-- broken tree — would itself fail on exactly the projects that need it, leaving the nodes deleted
+-- and every row still pointing at them.
+--
+-- ⚠️ NO KEEP-LIST. The old form had to be told which nodes survived, and passed them as a
+-- `not in (…)` of ids. This asks the better question: null the rows whose node **no longer exists**.
+-- After the delete that is precisely the dangling set, it cannot be wrong about which nodes
+-- survived, and it needs no argument that grows with the tree.
+--
+-- ⚠️ Bounded by `p_limit` for the same reason as every other statement here: a plpgsql loop inside
+-- one call does NOT get a fresh timeout per iteration, because the timer is armed once when the
+-- top-level statement starts. The caller loops until it gets 0 and halves the batch on 57014.
+--
+-- SECURITY INVOKER — runs as the CALLER, so RLS still applies. Idempotent: a second run finds
+-- nothing dangling and returns 0.
+
+create or replace function public.wbs_unlink_dangling(p_project_id text, p_limit integer default 4000)
+returns integer
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  n integer;
+begin
+  update public.project_schedule s
+     set wbs_node_id = null
+   where s.id in (
+     select a.id
+       from public.project_schedule a
+      where a.project_id = p_project_id
+        and a.wbs_node_id is not null
+        and not exists (select 1 from public.wbs_nodes w where w.id = a.wbs_node_id)
+      limit greatest(1, coalesce(p_limit, 4000))
+   );
+  get diagnostics n = row_count;
+  return n;
+end;
+$$;
+
+grant execute on function public.wbs_unlink_dangling(text, integer) to authenticated;
+
+
+-- ================================================================================================
+-- 2) Orphan NODES — a node no WBS-summary row points at.
+-- ------------------------------------------------------------------------------------------------
+-- Adopting twice against a stale in-memory copy inserts a second node for every branch that already
+-- had one. Measured on 4PH Strevi: `wbs_nodes` went 12,473 -> **18,323** against 12,473 summary
+-- rows, i.e. 5,850 duplicates — exactly the number the first adopt had left outstanding.
+--
+-- ⚠️ Duplicates do not sit still. `_wbsEnsureSummaries()` projects a summary row for any node without
+-- one, so the next load manufactures a summary row per duplicate, which the next adopt then adopts.
+-- That is the duplicate-WBS-row runaway.
+--
+-- ⚠️ THIS DELETES LEAVES ONLY (`not exists (child)`), and that is the whole safety argument.
+-- `wbs_nodes.parent_id` is `on delete cascade`, so deleting an orphan that happens to be the PARENT
+-- of a referenced node would silently take the good node with it. Peeling only childless orphans,
+-- repeatedly, can never do that: a node is removed only once nothing hangs beneath it. The caller
+-- loops until it returns 0, so a duplicated SUBTREE still goes completely, one layer at a time.
+-- ⚠️ Locked skeleton nodes are excluded outright — they are legitimately unreferenced.
+
+create or replace function public.wbs_delete_orphan_leaves(p_project_id text, p_limit integer default 2000)
+returns integer
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  n integer;
+begin
+  delete from public.wbs_nodes
+   where id in (
+     select w.id
+       from public.wbs_nodes w
+      where w.project_id = p_project_id
+        and coalesce(w.is_locked, false) = false
+        and not exists (select 1 from public.wbs_nodes c where c.parent_id = w.id)
+        and not exists (select 1 from public.project_schedule s
+                         where s.project_id = p_project_id and s.wbs_node_id = w.id)
+      limit greatest(1, coalesce(p_limit, 2000))
+   );
+  get diagnostics n = row_count;
+  return n;
+end;
+$$;
+
+grant execute on function public.wbs_delete_orphan_leaves(text, integer) to authenticated;
+
+
+-- ==========================================================================
+-- [145/155] 2026-09-03-floor-plan-revisions-zones.sql
+-- ==========================================================================
+-- Progress Photos — Floor Plan revisions + manually-drawn Zones
+-- ------------------------------------------------------------------
+-- Two additive changes to the existing floor_plans / floor_plan_pins schema
+-- (migrations/2026-08-29-floor-plans.sql, 2026-08-30-photos-round2.sql).
+-- Reuses the EXISTING location model rather than inventing a parallel one:
+-- a floor plan is already keyed by `location_values` (a jsonb map onto the
+-- project's schedule Location Breakdown levels). Tower = the project's
+-- first Location Breakdown level, Floor = its second — the same "first two
+-- levels" convention this app's own module.js already documents elsewhere
+-- (locRequiredLevels()). No new tower_id/floor_id columns.
+--
+-- 1) REVISIONS. `floor_plans` previously had no revision concept at all —
+--    uploading a second plan for the same Tower+Floor silently created a
+--    second, undated, unordered row with no way to tell which was current.
+--    `revision` (user-typed, belongs to the drawing itself — never inferred
+--    from the filename) + `is_current` (exactly one true row per Tower+Floor
+--    group, enforced in application code: the previous current row is
+--    UPDATEd to false, never deleted, in the same save that inserts the
+--    new one). created_by/created_at/updated_at already existed and serve
+--    as "Uploaded By / Uploaded Date / Last Updated" — no duplicate columns.
+--
+-- 2) ZONES. `floor_plan_zones` — a user-drawn polygon/rectangle boundary,
+--    named by the user, scoped to ONE floor_plan_id (one specific
+--    REVISION, never the Tower+Floor group as a whole) — so a new revision
+--    starts with zero zones and old revisions keep exactly the zones they
+--    had, per spec: "do not silently copy old geometry to a new revision."
+--    Deliberately NOT the same thing as a `location_levels` "Zone" level
+--    (a schedule-driven text tag) — this is a real drawn boundary, additive
+--    and unrelated to that existing concept.
+--
+-- Idempotent; folded into supabase-schema.sql's per-module RLS loop.
+
+alter table floor_plans add column if not exists revision text not null default 'Rev. 01';
+alter table floor_plans add column if not exists is_current boolean not null default true;
+comment on column floor_plans.revision is 'User-entered drawing revision label (e.g. "Rev. 03") — belongs to the document, never inferred from the filename.';
+comment on column floor_plans.is_current is 'Exactly one true row per (project, location_values) group. Older revisions are preserved with this flipped to false, never deleted.';
+
+create index if not exists idx_floor_plans_current on floor_plans(project_id, is_current);
+
+-- One row per user-drawn zone, scoped to a specific floor-plan REVISION.
+-- boundary_coordinates is an ordered array of {x,y} points normalized 0..1
+-- against the plan image — the same normalized-coordinate convention
+-- floor_plan_pins.x_norm/y_norm already uses, so both share one mental
+-- model of "a point on this plan". Stored as one array regardless of
+-- whether the user drew a polygon or a rectangle — boundary_type is
+-- provenance (which tool was used) only, never a second geometry format,
+-- so every consumer (render/hit-test/edit) has exactly one shape to handle.
+create table if not exists floor_plan_zones (
+  id uuid primary key default gen_random_uuid(),
+  floor_plan_id uuid not null references floor_plans(id) on delete cascade,
+  project_id text references projects(id),
+  name text not null,
+  boundary_type text not null default 'polygon' check (boundary_type in ('polygon', 'rectangle')),
+  boundary_coordinates jsonb not null,
+  color text,
+  created_by uuid references users(id),
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create index if not exists idx_floor_plan_zones_plan on floor_plan_zones(floor_plan_id);
+create index if not exists idx_floor_plan_zones_project on floor_plan_zones(project_id);
+-- Avoid duplicate zone names within the same floor-plan revision (spec
+-- §13), case-insensitive so "Zone A" and "zone a" are treated as the same
+-- collision. A partial unique index rather than a plain UNIQUE constraint
+-- so it composes cleanly if a future soft-delete flag is ever added.
+create unique index if not exists idx_floor_plan_zones_name_uniq
+  on floor_plan_zones(floor_plan_id, lower(name));
+
+do $$
+begin
+  if not exists (select 1 from pg_policies where tablename = 'floor_plan_zones' and policyname = 'floor_plan_zones_rw') then
+    execute 'alter table floor_plan_zones enable row level security';
+    execute 'create policy floor_plan_zones_rw on floor_plan_zones for all
+      using (is_writer() and can_access_project(project_id))
+      with check (is_writer() and can_access_project(project_id))';
+    execute 'create policy floor_plan_zones_read on floor_plan_zones for select
+      using (can_access_project(project_id))';
+  end if;
+end $$;
+
+
+-- ==========================================================================
+-- [146/155] 2026-09-03-mom-draft-attendee-edit.sql
+-- ==========================================================================
+-- ============================================================================
+-- Migration: DRAFT MINUTES ARE EDITABLE BY THEIR ATTENDEES, NOT ONLY THEIR
+-- CREATOR/A PLANNER (Individual View item 4, 2026-09-03).
+--
+-- Run this whole file in the Supabase SQL editor. Idempotent (safe to re-run).
+--
+-- WHY: the owner asked that "for drafts, all meeting attendees (not just the
+-- creator/planner) should be able to see and edit the draft." Reading was
+-- already project-wide — meeting_minutes_read has never carried a draft
+-- carve-out (see 2026-08-20-department-minutes.sql, "Reading is unchanged").
+-- The gap was entirely on the write side: `meeting_minutes_upd` and the
+-- `mom_items_*` policies only ever let the CREATOR (or a planner) touch a
+-- minute — attendees_required/_optional/_actual (2026-09-01) record who was
+-- invited, but recording them never granted them anything.
+--
+-- ⚠️ ONLY WHILE THE MINUTE IS STILL A DRAFT. Once distributed, the record is
+--    everyone's to read but nobody's to silently rewrite except its creator
+--    or a planner — reverting to draft first is a deliberate act, not
+--    something an attendee's edit should bypass.
+--
+-- ⚠️ DISTRIBUTING (AND REVERTING) STAYS OUT OF SCOPE. An attendee gets to
+--    EDIT the record — title, agenda, the minutes themselves — never to
+--    ISSUE it. The update policy's WITH CHECK below tests `is_distributed`
+--    against the ROW BEING WRITTEN, so an attendee's own update is accepted
+--    only while the row they are writing STAYS undistributed; they cannot
+--    flip it themselves. (Deliberately NOT delegated to a function that
+--    re-queries meeting_minutes for its own row — WITH CHECK's guarantee
+--    about seeing the proposed NEW values only holds for the table's own
+--    columns referenced directly, not for a subquery back into the same
+--    table from inside the same statement, so the attendee test here reads
+--    `attendees_required`/`_optional`/`_actual`/`is_distributed` as plain
+--    columns rather than through a helper function.)
+--
+-- ⚠️ mom_items DOES get a helper (mom_is_attendee below) — it is a DIFFERENT
+--    table, so a subquery into meeting_minutes from there has none of the
+--    same-statement ambiguity; it simply reads that minute's current row.
+-- ============================================================================
+
+-- ---- 0) Guard: fail readably rather than with "function does not exist" -----
+do $$
+begin
+  if to_regprocedure('public.is_writer()') is null then
+    raise exception 'is_writer() is missing — run migrations/2026-07-21-viewer-readonly.sql first';
+  end if;
+  if to_regprocedure('public.mom_is_mine(uuid)') is null then
+    raise exception 'mom_is_mine() is missing — run migrations/2026-08-20-department-minutes.sql first';
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_name = 'meeting_minutes' and column_name = 'attendees_required'
+  ) then
+    raise exception 'meeting_minutes.attendees_required is missing — run migrations/2026-09-01-mom-schedules-attendees-item-history.sql first';
+  end if;
+end $$;
+
+
+-- ---- 1) Helper for mom_items — "am I an attendee on this DRAFT?" -----------
+-- ⚠️ SECURITY DEFINER + a pinned search_path, like every other helper here.
+create or replace function mom_is_attendee(p_mom uuid) returns boolean
+  language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from meeting_minutes m
+    where m.id = p_mom
+      and not m.is_distributed
+      and (
+        (m.attendees_required -> 'ids') @> to_jsonb(auth.uid()::text)
+        or (m.attendees_optional -> 'ids') @> to_jsonb(auth.uid()::text)
+        or (m.attendees_actual -> 'ids') @> to_jsonb(auth.uid()::text)
+      )
+  );
+$$;
+
+grant execute on function mom_is_attendee(uuid) to authenticated;
+
+
+-- ---- 2) meeting_minutes — widen UPDATE only ---------------------------------
+-- Read and INSERT are untouched (an attendee doesn't create the record —
+-- whoever ran the meeting does). DELETE is untouched on purpose: see the
+-- header note above and canDeleteMinute() in module.js, which was deliberately
+-- NOT broadened alongside canEditMinute().
+drop policy if exists meeting_minutes_upd on meeting_minutes;
+create policy meeting_minutes_upd on meeting_minutes
+  for update using (
+    can_access_project(project_id)
+    and (
+      is_planner()
+      or (is_writer() and created_by = auth.uid())
+      -- A draft ATTENDEE may edit the record too. `is_distributed` and the
+      -- attendee columns here refer to the CURRENT (pre-update) row, since
+      -- USING filters which existing rows may even be targeted.
+      or (
+        is_writer() and not is_distributed
+        and (
+          (attendees_required -> 'ids') @> to_jsonb(auth.uid()::text)
+          or (attendees_optional -> 'ids') @> to_jsonb(auth.uid()::text)
+          or (attendees_actual -> 'ids') @> to_jsonb(auth.uid()::text)
+        )
+      )
+    )
+  ) with check (
+    can_access_project(project_id)
+    and (
+      is_planner()
+      or (is_writer() and created_by = auth.uid())
+      -- Tested against the ROW BEING WRITTEN — `is_distributed` here is the
+      -- proposed NEW value, so an attendee's update is accepted only while
+      -- the row they are writing stays undistributed. They cannot flip
+      -- `is_distributed` themselves; only the creator or a planner can,
+      -- through the branch above.
+      or (
+        is_writer() and not is_distributed
+        and (
+          (attendees_required -> 'ids') @> to_jsonb(auth.uid()::text)
+          or (attendees_optional -> 'ids') @> to_jsonb(auth.uid()::text)
+          or (attendees_actual -> 'ids') @> to_jsonb(auth.uid()::text)
+        )
+      )
+    )
+  );
+
+
+-- ---- 3) mom_items — widen insert/update/delete the same way ---------------
+-- ⚠️ OWNER ITEM 1 (2026-09-02) renamed these rows from "action items" to
+-- "Minutes" — they ARE the record of what was said, so an attendee who may
+-- now edit the draft's fields must also be able to add to / correct its
+-- minutes, not just its header. Same three-way OR everywhere: planner, the
+-- minute's creator (mom_is_mine), or a draft attendee (mom_is_attendee).
+drop policy if exists mom_items_ins on mom_items;
+create policy mom_items_ins on mom_items
+  for insert with check (
+    is_writer() and can_access_project(project_id)
+    and (is_planner() or mom_is_mine(mom_id) or mom_is_attendee(mom_id))
+  );
+
+drop policy if exists mom_items_upd on mom_items;
+create policy mom_items_upd on mom_items
+  for update using (
+    is_writer() and can_access_project(project_id)
+    and (is_planner() or mom_is_mine(mom_id) or mom_is_attendee(mom_id))
+  ) with check (
+    is_writer() and can_access_project(project_id)
+    and (is_planner() or mom_is_mine(mom_id) or mom_is_attendee(mom_id))
+  );
+
+drop policy if exists mom_items_del on mom_items;
+create policy mom_items_del on mom_items
+  for delete using (
+    is_writer() and can_access_project(project_id)
+    and (is_planner() or mom_is_mine(mom_id) or mom_is_attendee(mom_id))
+  );
+
+-- Done.
+
+
+-- ==========================================================================
+-- [147/155] 2026-09-04-reconstruction-delete-terminal.sql
+-- ==========================================================================
+-- ============================================================================
+-- Migration: 2026-09-04 — let a requester delete their own DONE/FAILED 3D
+-- reconstruction, not only a still-pending one.
+-- Idempotent. Run in the Supabase SQL editor, then fold into supabase-schema.sql.
+-- ============================================================================
+--
+-- Bug: "i cant delete 360/3D media from the photos gallery" — panoramas had
+-- no delete UI anywhere (fixed client-side, see modules/progress-photos/
+-- pano.js's deletePanoById + module.js's openMediaKindDeleteConfirm), but a
+-- DONE 3D reconstruction has a second, DATABASE-level blocker: the original
+-- 2026-08-29-reconstruction-requests.sql DELETE policy lets an admin delete
+-- any row at any status, but a non-admin REQUESTER only their OWN row while
+-- it is still 'pending_approval'.
+--
+-- That restriction exists for a real reason — retracting a row out from under
+-- a job that's already 'approved'/'queued'/'processing' would orphan a real,
+-- billed RunPod job with nothing in the database pointing at it (see that
+-- migration's own comment). But the reasoning STOPS applying the moment the
+-- job reaches a TERMINAL state: a 'done' or 'failed' request has no live job
+-- left to orphan — RunPod has already finished with it — so there is no
+-- reason a requester should need an admin just to remove their own completed
+-- (or failed) 3D scan from their own project's gallery.
+--
+-- This widens the requester's own-row delete to also cover 'done'/'failed',
+-- while the active-job window ('pending_approval' still handled the same as
+-- before is a no-op here since it's unioned, and 'approved'/'queued'/
+-- 'processing' remain admin-only) stays exactly as protected as before.
+
+drop policy if exists reconstruction_requests_del on reconstruction_requests;
+create policy reconstruction_requests_del on reconstruction_requests
+  for delete using (
+    (is_admin() and can_access_project(project_id))
+    or (requested_by = auth.uid() and status in ('pending_approval', 'done', 'failed'))
+  );
+
+
+-- ==========================================================================
+-- [148/155] 2026-09-07-boq-documents.sql
+-- ==========================================================================
+-- ============================================================================
+-- BOQ DOCUMENTS: a revision series per BOQ, not per project
+--
+-- Owner, 2026-09-07: *"Each BOQ trade ... have their own revision 00 -> 01 etc, and they
+-- should be able to segregate these easily. Right now the wizard only allows me to create by
+-- revision and the trades isn't apparent since I will create a trade-based BOQ that will be
+-- tagged as revision 01 which is incorrect since this is a new BOQ referring to a different
+-- trade."*
+--
+-- ⚠️⚠️ THE MODEL WAS WRONG, NOT THE PLANNER. 2026-08-24-boq.sql enforces
+--
+--     create unique index boq_revisions_project_rev_idx on boq_revisions (project_id, lower(rev_no));
+--
+-- one revision series PER PROJECT. So "General Requirements rev 00" and "Structural rev 00"
+-- could not coexist, and creating the second BOQ had to call itself 01 -- a number that is not
+-- the second revision of anything. That is the duplicate-key error the owner hit.
+--
+-- ⚠️ CONFIRMED AGAINST FOUR REAL OPW101 WORKBOOKS, not assumed:
+--     "One Portwood Package 2 BOQ ... rev.05"   sheets: Architectural, HS-SP, IFO HL&LL, ACOUSTIC
+--     "Package 3 ... (MCC BOQ)"                 sheets: ST, AR, MEPF
+--     "PROGRESS BILLING NO. 1 MEPF PO"          sheets: Summary, ST, AR
+--     "PROGRESS BILLING NO.7 STRUCTURAL PO"     sheets: Structural (2), SOA
+--   Two facts follow, and they shape this file:
+--     1. THE REVISION BELONGS TO THE PACKAGE. `rev.05` is Package 2's, not Architectural's.
+--        So the revision series hangs off a DOCUMENT, and a document is named by whatever the
+--        client's packaging calls it -- "Package 2 BOQ" -- never by a fixed trade list.
+--     2. A TRADE CAN APPEAR IN TWO DOCUMENTS. Package 2 has "Architectural" and Package 3 has
+--        "AR". So exclusivity is NOT enforced here. Owner: *"let's have the option to split
+--        since it varies by client."* ⚠️ This costs nothing arithmetically: lines are distinct
+--        rows, so an overlapping trade cannot double-count a sum. Overlap is a tidiness
+--        question the UI can warn about, not a correctness one the database must refuse.
+--
+-- Run in the Supabase SQL editor (Planners project). Idempotent / re-runnable.
+-- ============================================================================
+
+-- ---------------------------------------------------------------------------
+-- 1) The document
+-- ---------------------------------------------------------------------------
+-- ⚠️ `divisions` is ADVISORY, and deliberately so. It records which class-code Level-1
+--    divisions this BOQ is meant to cover, so the UI can steer the planner and warn when a
+--    line lands outside them -- but it never gates a write. The commercial packaging varies
+--    by client (see Package 2 vs Package 3 above), and a schema that hard-codes a trade list
+--    would refuse the next client's arrangement.
+create table if not exists boq_documents (
+  id           uuid primary key default gen_random_uuid(),
+  project_id   text not null references projects(id) on delete cascade,
+  name         text not null,                 -- 'Package 2 BOQ', 'Structural Works BOQ'
+  code         text,                          -- optional short label, e.g. 'PKG2'
+  divisions    text[] default '{}',           -- advisory: class_codes.code_l1 values
+  package_id   uuid,                          -- optional link to a contract lot, when one exists
+  sort_order   integer default 0,
+  notes        text,
+  created_by   uuid references users(id),
+  created_at   timestamptz default now(),
+  updated_at   timestamptz default now()
+);
+
+create index if not exists boq_documents_project_idx on boq_documents (project_id, sort_order);
+
+-- Two BOQs on one project must not share a name, or the revision picker is ambiguous.
+create unique index if not exists boq_documents_project_name_idx
+  on boq_documents (project_id, lower(name));
+
+-- ---------------------------------------------------------------------------
+-- 2) Hang every revision off a document
+-- ---------------------------------------------------------------------------
+alter table boq_revisions add column if not exists document_id uuid references boq_documents(id) on delete cascade;
+
+-- ---------------------------------------------------------------------------
+-- 3) Backfill — every existing revision gets a document, named from its own contents
+-- ---------------------------------------------------------------------------
+-- ⚠️ NAMED FROM THE DATA, NOT HARD-CODED. The owner asked that OPW101's existing rev 00 be
+--    adopted as "General Requirements BOQ", and it can be -- but only because every one of its
+--    127 lines sits on the 'General Requirement' sheet. So the rule is general: if all of a
+--    project's existing lines share ONE sheet, the document is named "<that sheet> BOQ";
+--    otherwise it is "Main BOQ" and the planner renames it. Special-casing one project id in a
+--    migration is how the next project gets a wrong name silently.
+-- ⚠️ ONE DOCUMENT PER PROJECT, holding every existing revision. Splitting historical revisions
+--    across guessed documents would invent a revision history nobody recorded.
+do $$
+declare
+  p record;
+  doc_name text;
+  new_doc uuid;
+begin
+  for p in select distinct project_id from boq_revisions where document_id is null loop
+    select case
+             when count(distinct i.sheet) = 1 then max(i.sheet) || ' BOQ'
+             else 'Main BOQ'
+           end
+      into doc_name
+      from boq_items i
+      join boq_revisions r on r.id = i.revision_id
+     where r.project_id = p.project_id
+       and i.sheet is not null and i.sheet <> '';
+
+    doc_name := coalesce(doc_name, 'Main BOQ');
+
+    -- Re-runnable: reuse the document if this migration already made one.
+    select id into new_doc from boq_documents
+     where project_id = p.project_id and lower(name) = lower(doc_name) limit 1;
+
+    if new_doc is null then
+      insert into boq_documents (project_id, name, sort_order)
+      values (p.project_id, doc_name, 0)
+      returning id into new_doc;
+    end if;
+
+    update boq_revisions set document_id = new_doc
+     where project_id = p.project_id and document_id is null;
+
+    raise notice 'boq_documents: % -> "%"', p.project_id, doc_name;
+  end loop;
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 4) is_current becomes one-per-DOCUMENT
+-- ---------------------------------------------------------------------------
+-- ⚠️ FIX THE DATA BEFORE ADDING THE INDEX, or the migration fails on any project that already
+--    has two current revisions. Keep the newest by issued_date then created_at; the others stay
+--    readable, they simply stop being the one the module reads by default.
+--
+-- ⚠️⚠️ NULL-SAFE, AND THE FIRST VERSION WAS NOT — this is why the whole file rolled back.
+--    It used a row comparison:
+--        (x.issued_date, x.created_at, x.id) > (r.issued_date, r.created_at, r.id)
+--    `issued_date` is nullable and a DRAFT never has one, so for two draft revisions that
+--    expression evaluates to NULL rather than true or false. `exists` therefore matched nothing,
+--    NOTHING was repaired, and `create unique index ... (document_id) where is_current` then
+--    failed on the first document holding two current revisions — taking the create table, the
+--    backfill and the RLS down with it, because the SQL editor runs the script in one
+--    transaction. A repair that silently does nothing is worse than no repair: it looks like a
+--    guard while providing none.
+--
+--    `row_number()` with explicit NULLS LAST is total — every row gets a rank whatever is null,
+--    and `id` breaks any remaining tie, so exactly one revision per document survives.
+with ranked as (
+  select id,
+         row_number() over (
+           partition by document_id
+           order by issued_date desc nulls last, created_at desc nulls last, id desc
+         ) as rn
+    from boq_revisions
+   where is_current and document_id is not null
+)
+update boq_revisions r
+   set is_current = false
+  from ranked k
+ where k.id = r.id
+   and k.rn > 1;
+
+create unique index if not exists boq_revisions_doc_current_idx
+  on boq_revisions (document_id) where is_current;
+
+-- ---------------------------------------------------------------------------
+-- 5) THE SWAP: a revision label is unique WITHIN ITS DOCUMENT
+-- ---------------------------------------------------------------------------
+-- ⚠️ This is the constraint the owner actually hit. Dropped only after the backfill above, so
+--    there is never a window where two revisions of one document could share a label.
+--    Case-insensitive for the same reason as before: 'rev.05' and 'REV.05' are one revision to
+--    a human, and letting both exist splits the register in two.
+create unique index if not exists boq_revisions_doc_rev_idx
+  on boq_revisions (document_id, lower(rev_no));
+
+drop index if exists boq_revisions_project_rev_idx;
+
+-- Keep a project-wide lookup for the contract-value roll-up, which now spans documents.
+create index if not exists boq_revisions_project_doc_idx
+  on boq_revisions (project_id, document_id, is_current);
+
+-- ---------------------------------------------------------------------------
+-- 6) RLS — same shape as every other boq_* table
+-- ---------------------------------------------------------------------------
+alter table boq_documents enable row level security;
+
+drop policy if exists boq_documents_read on boq_documents;
+create policy boq_documents_read on boq_documents
+  for select to authenticated using (can_access_project(project_id));
+
+drop policy if exists boq_documents_write on boq_documents;
+create policy boq_documents_write on boq_documents
+  for all to authenticated
+  using (is_planner() and can_access_project(project_id))
+  with check (is_planner() and can_access_project(project_id));
+
+grant select, insert, update, delete on boq_documents to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Verify
+-- ---------------------------------------------------------------------------
+--   select d.project_id, d.name, count(r.id) revisions,
+--          count(*) filter (where r.is_current) current_revs
+--     from boq_documents d left join boq_revisions r on r.document_id = d.id
+--    group by 1,2 order by 1,2;             -- current_revs must be 0 or 1 per row
+--
+--   select count(*) from boq_revisions where document_id is null;   -- expect 0
+--
+--   -- the label collision that started this is now legal across documents:
+--   --   two different documents may each hold a rev '00'; one document may not.
+--
+--   -- contract value now spans documents (what the module reads):
+--   select r.project_id, sum(i.amount) from boq_items i
+--     join boq_revisions r on r.id = i.revision_id
+--    where r.is_current and i.line_kind <> 'heading'
+--    group by 1;
+
+
+-- ==========================================================================
+-- [149/155] 2026-09-07-boq-manual.sql
+-- ==========================================================================
+-- ============================================================================
+-- Manual BOQ authoring: a DRAFT revision the planner builds from the class-code
+-- library, plus the guarded write that tags schedule activities with a code.
+--
+-- Owner, 2026-09-07: *"Let's enable the users to manually add a BOQ, this would be based
+-- on the class code library and from the class code library the planner would be able to
+-- tag it to the activities in the schedule module. […] If we make the manual add of BOQ
+-- perfect, it would enable us to better execute/implement the import feature."*
+--
+-- ⚠️ THIS MIGRATION EXISTS TO PROTECT AN INVARIANT, NOT TO RELAX IT.
+--    2026-08-24-boq.sql states it plainly: `boq_items` is APPEND-AND-SUPERSEDE, never
+--    edited in place, because it is the CLIENT'S document and every claim argument turns
+--    on exactly what was tendered. A manual builder needs editable lines, and the lazy
+--    reading of that need is "so allow edits". That would silently make the client's
+--    tendered BOQ editable too, which is the one thing the table was built to prevent.
+--
+--    The distinction that resolves it is WHOSE DOCUMENT IT IS *YET*. A revision being
+--    authored is nobody's evidence — it is a working draft. A revision that has been
+--    ISSUED is the record. So the lifecycle is the fix:
+--      · status='draft'  — lines are freely editable and deletable. Never billed against.
+--      · status='issued' — the 2026-08-24 rule applies in full, ENFORCED BY A TRIGGER
+--                          rather than by every future UI remembering to.
+--    An imported revision is issued the moment its import finishes. A manual one is
+--    issued when the planner says so.
+--
+-- ⚠️ THE IMPORTER NOW CREATES ITS REVISION AS A DRAFT AND FLIPS IT AT THE END, because
+--    it UPDATEs the rows it just inserted (the parent_id second pass) and the trigger
+--    below would refuse that. This is not a workaround — it is more correct than what it
+--    replaces: a half-finished import is now visibly a draft, so a failed run can no
+--    longer be billed against as though it were the tendered document.
+--
+-- Run in the Supabase SQL editor (Planners project). Idempotent / re-runnable.
+-- ============================================================================
+
+-- ---------------------------------------------------------------------------
+-- 1) The revision lifecycle
+-- ---------------------------------------------------------------------------
+-- ⚠️ BOTH DEFAULT TO THE PRE-EXISTING BEHAVIOUR, and that is the whole point of the
+--    defaults. Every revision that exists today came from an import and is finished, so
+--    'issued'/'import' describes it exactly — no back-fill decision, no row that changes
+--    meaning when this file runs. A default of 'draft' would retroactively un-issue every
+--    BOQ in the database and unlock 1,215 client lines per project.
+alter table boq_revisions add column if not exists status text not null default 'issued';
+alter table boq_revisions add column if not exists origin text not null default 'import';
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'boq_revisions_status_ck') then
+    alter table boq_revisions add constraint boq_revisions_status_ck
+      check (status in ('draft', 'issued'));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'boq_revisions_origin_ck') then
+    alter table boq_revisions add constraint boq_revisions_origin_ck
+      check (origin in ('import', 'manual'));
+  end if;
+end $$;
+
+-- ⚠️ A DRAFT MAY NOT BE THE CURRENT REVISION. `is_current` is what the BOQ tab reads by
+--    default and what the contract value, the POC and the monthly revenue are computed
+--    from. A half-built draft sitting there would put a partial contract sum on screen
+--    and into a billing conversation. Enforced in the database, not merely avoided in the
+--    UI, because it is a money figure that leaves this app inside a claim.
+create or replace function boq_revisions_draft_not_current() returns trigger
+language plpgsql set search_path = public as $$
+begin
+  if new.status = 'draft' and coalesce(new.is_current, false) then
+    raise exception 'A draft BOQ revision cannot be the current one — issue it first.'
+      using errcode = 'check_violation';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists boq_revisions_draft_not_current_t on boq_revisions;
+create trigger boq_revisions_draft_not_current_t
+  before insert or update on boq_revisions
+  for each row execute function boq_revisions_draft_not_current();
+
+-- ---------------------------------------------------------------------------
+-- 2) Where a line came from
+-- ---------------------------------------------------------------------------
+-- ⚠️ NOT DERIVABLE FROM THE REVISION, which is why it is its own column. A revision
+--    records how it STARTED; a line records who wrote it. The two diverge the first time
+--    a planner adds a missing trade to a draft they began by import — and "did the client
+--    give us this line, or did we?" is a question a claim turns on.
+alter table boq_items add column if not exists origin text not null default 'import';
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'boq_items_origin_ck') then
+    alter table boq_items add constraint boq_items_origin_ck
+      check (origin in ('import', 'manual'));
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 3) THE LOCK. An issued revision's document columns are immutable.
+-- ---------------------------------------------------------------------------
+-- ⚠️ COLUMN-SELECTIVE, DELIBERATELY. A blanket "no UPDATE on an issued revision" would
+--    break two writes that are legitimately OURS rather than the client's:
+--      · `package_id` — which contract lot a line is administered under
+--        (boq.js openAssignPackage). Assigning a lot does not restate the client's BOQ.
+--      · `sort_order` — display order.
+--    Everything that describes WHAT WAS TENDERED is frozen: item_no, description, unit,
+--    qty, the four material/labour figures, amount, derived_amount, exclusion_note,
+--    line_kind, total_marker, the identity (sheet, source_row) and the hierarchy
+--    (parent_id, depth).
+--
+-- ⚠️ DELETE IS REFUSED OUTRIGHT on an issued revision. A remeasure is a NEW revision with
+--    the prior retained; deleting a tendered line destroys the evidence. Dropping a whole
+--    REVISION still cascades — that is an explicit, visible act, which is a different
+--    thing from a line quietly disappearing out of one.
+--
+-- ⚠️ PMI PROPOSAL REVISIONS ARE EXEMPT, and this exemption is load-bearing: `pmi.js`
+--    removeLine() DELETEs a priced line, and addLine/removeLine on a cost proposal are
+--    normal editing right up until it is submitted. Locking them would break a shipped
+--    feature. What preserves a superseded PROPOSAL is not row immutability but
+--    `pmi_records.supersedes_id` — a revision is a new row and the old one stays as the
+--    evidence (2026-08-25-pmi.sql). Read honestly: this leaves a *submitted* proposal's
+--    lines as editable as they are today. That is the status quo, not an improvement — a
+--    stage-aware lock on the PMI chain is a separate piece of work.
+--    ⚠️ The pmi_id test goes through `to_jsonb`, not `r.pmi_id`, because
+--       2026-08-25-pmi.sql may not have been run on a given deployment and a direct
+--       reference to a column that does not exist would make this whole file un-runnable.
+--       An absent key reads as NULL, which is exactly "not a PMI revision".
+create or replace function boq_items_issued_guard() returns trigger
+language plpgsql set search_path = public as $$
+declare
+  rev jsonb;
+begin
+  select to_jsonb(r) into rev from boq_revisions r
+   where r.id = coalesce(old.revision_id, new.revision_id);
+
+  -- No revision (a cascade is removing it), still a draft, or a PMI cost proposal: let it
+  -- through. `coalesce` covers the instant between this file's two statements on a live
+  -- database, where the column exists on the table but not yet in a cached row.
+  if rev is null
+     or coalesce(rev->>'status', 'issued') <> 'issued'
+     or rev->>'pmi_id' is not null then
+    if tg_op = 'DELETE' then return old; end if;
+    return new;
+  end if;
+
+  if tg_op = 'DELETE' then
+    raise exception 'BOQ line % belongs to an ISSUED revision and cannot be deleted. Supersede the revision instead.', old.id
+      using errcode = 'check_violation';
+  end if;
+
+  if new.item_no        is distinct from old.item_no
+  or new.description    is distinct from old.description
+  or new.unit           is distinct from old.unit
+  or new.qty            is distinct from old.qty
+  or new.mat_rate       is distinct from old.mat_rate
+  or new.mat_amount     is distinct from old.mat_amount
+  or new.lab_rate       is distinct from old.lab_rate
+  or new.lab_amount     is distinct from old.lab_amount
+  or new.amount         is distinct from old.amount
+  or new.derived_amount is distinct from old.derived_amount
+  or new.exclusion_note is distinct from old.exclusion_note
+  or new.line_kind      is distinct from old.line_kind
+  or new.total_marker   is distinct from old.total_marker
+  or new.parent_id      is distinct from old.parent_id
+  or new.depth          is distinct from old.depth
+  or new.sheet          is distinct from old.sheet
+  or new.source_row     is distinct from old.source_row
+  then
+    raise exception 'BOQ line % is in an ISSUED revision — its tendered figures are immutable. Only package_id and sort_order may change.', old.id
+      using errcode = 'check_violation';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists boq_items_issued_guard_t on boq_items;
+create trigger boq_items_issued_guard_t
+  before update or delete on boq_items
+  for each row execute function boq_items_issued_guard();
+
+-- ---------------------------------------------------------------------------
+-- 4) 'authored' — a class code that was never a guess
+-- ---------------------------------------------------------------------------
+-- ⚠️ A FOURTH SOURCE, NOT A REUSE OF 'hand_picked'. The three existing values all
+--    describe reverse-engineering a code from a description somebody else wrote:
+--    suggested (the library proposed it), bulk_accepted (accepted in a batch),
+--    hand_picked (a human chose it for a client's line). A manually authored line is the
+--    opposite direction — THE CODE CAME FIRST and the line was written from it, so the
+--    mapping is a fact, not a judgement. Recording it as 'hand_picked' would file a
+--    certainty in the same bucket as an inference, and `boq_class_suggestions` LEARNS
+--    from these rows: feeding it "a human decided this description means this code" when
+--    the description was generated FROM the code is how a suggestion library starts
+--    confidently proposing its own output back to itself.
+do $$
+declare
+  c text;
+begin
+  for c in select conname from pg_constraint
+            where conrelid = 'boq_class_map'::regclass and contype = 'c'
+              and pg_get_constraintdef(oid) ilike '%source%hand_picked%'
+  loop
+    execute format('alter table boq_class_map drop constraint %I', c);
+  end loop;
+  alter table boq_class_map add constraint boq_class_map_source_check
+    check (source in ('suggested', 'bulk_accepted', 'hand_picked', 'authored'));
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 5) THE GUARDED WRITE: tag schedule activities with a class code
+-- ---------------------------------------------------------------------------
+-- ⚠️ THIS IS AN RPC AND NOT A PLAIN UPDATE FOR A MEASURED REASON. The policy is
+--
+--     project_schedule_upd: is_writer() and can_access_project(project_id)
+--                           and (created_by = auth.uid() or is_admin())
+--
+--   so a planner who did not IMPORT the schedule cannot update its rows — and PostgREST
+--   answers an UPDATE that RLS filters down to nothing with **200 and zero rows**. No
+--   error. A "Tagged 40 activities" toast over a table that changed nothing is exactly the
+--   silent-success failure 2026-09-02-wbs-link-batched.sql documents at length, where
+--   16,393 of 16,485 activities kept a NULL and the screen looked perfect.
+--
+--   SECURITY DEFINER with the checks written out, therefore, and it RETURNS THE ROW COUNT
+--   so the caller can report a shortfall instead of inventing a success.
+--
+-- ⚠️ IT WRITES ONE COLUMN. Definer rights over project_schedule are a large privilege to
+--    hand out; this function may set `class_code` and nothing else, so it cannot become a
+--    back door onto dates, durations, progress or ownership.
+--
+-- ⚠️ IT NEVER SILENTLY RETAGS. An activity already carrying a DIFFERENT non-null code is
+--    skipped unless p_overwrite is true — a class code drives the cost roll-up, so quietly
+--    moving forty activities from one Finance code to another is a reconciliation nobody
+--    would know to go looking for. `p_class_code => null` CLEARS a tag, and needs the same
+--    deliberate act: with p_overwrite false it clears nothing that is already tagged.
+--
+-- ⚠️ WBS SUMMARY ROWS ARE NEVER TAGGED. A class code on a summary row would be counted
+--    beside its own children by anything rolling up by code — the double-count trap the
+--    schedule module documents throughout.
+drop function if exists public.boq_tag_activities(text, text, text[], boolean);
+
+create or replace function public.boq_tag_activities(
+  p_project_id   text,
+  p_class_code   text,
+  p_activity_ids text[],
+  p_overwrite    boolean default false
+) returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  n integer;
+begin
+  if not is_writer() then
+    raise exception 'Not permitted: a viewer cannot tag schedule activities.'
+      using errcode = 'insufficient_privilege';
+  end if;
+  if not can_access_project(p_project_id) then
+    raise exception 'Not permitted: no access to project %.', p_project_id
+      using errcode = 'insufficient_privilege';
+  end if;
+  if p_activity_ids is null or array_length(p_activity_ids, 1) is null then
+    return 0;
+  end if;
+
+  -- ⚠️ Keyed on activity_id (the schedule's own business key), NOT the row uuid — see the
+  --    module note: a schedule import REINSERTS every row, so a uuid captured on screen
+  --    minutes ago may already be gone while the activity it named is still there.
+  update project_schedule s
+     set class_code = p_class_code
+   where s.project_id = p_project_id
+     and s.activity_id = any(p_activity_ids)
+     and s.activity_type is distinct from 'WBS Summary'
+     and s.class_code is distinct from p_class_code
+     and (p_overwrite
+          or ((s.class_code is null or s.class_code = '') and p_class_code is not null));
+  get diagnostics n = row_count;
+  return n;
+end;
+$$;
+
+grant execute on function public.boq_tag_activities(text, text, text[], boolean) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Verify
+-- ---------------------------------------------------------------------------
+--   select status, origin, count(*) from boq_revisions group by 1,2;   -- all issued/import
+--   select origin, count(*) from boq_items group by 1;                 -- all import
+--
+--   -- the lock bites (expect: ERROR … tendered figures are immutable)
+--   update boq_items set qty = coalesce(qty,0) + 1
+--    where id = (select i.id from boq_items i join boq_revisions r on r.id = i.revision_id
+--                 where r.status = 'issued' limit 1);
+--
+--   -- package_id still moves on an issued revision (expect: UPDATE 1)
+--   update boq_items set sort_order = sort_order
+--    where id = (select i.id from boq_items i join boq_revisions r on r.id = i.revision_id
+--                 where r.status = 'issued' limit 1);
+--
+--   -- a draft cannot be current (expect: ERROR … issue it first)
+--   insert into boq_revisions (project_id, rev_no, status, origin, is_current)
+--   values ('OPW101', 'ZZ-TEST', 'draft', 'manual', true);
+
+
+-- ==========================================================================
+-- [150/155] 2026-09-07-class-code-dedupe.sql
+-- ==========================================================================
+-- ============================================================================
+-- Retire four de-zeroed twins in the class-code chart
+--
+-- Owner reported "duplicate rows" in the Add-lines picker. They are real, and they are in
+-- Finance's template rather than in the app: 101 groups hold two or more codes sharing a
+-- description, across 209 of the 702 codes. Almost all of those are legitimate -- a 5-digit and a
+-- 6-digit code for the same words is a granularity difference Finance maintains on purpose.
+--
+-- ⚠️⚠️ EXACTLY FOUR ARE NOT. These are the SAME NUMBER written twice, once padded and once with
+--    its leading zero stripped, in the SAME group with the SAME description:
+--
+--        011011 / 11011   Office - Megawide & Owner
+--        011021 / 11021   Barracks
+--        011031 / 11031   Staging Area
+--        011032 / 11032   Utilities
+--
+--    The padded form is authoritative. 2026-08-21-class-codes.sql says so in its own header:
+--    "THE PADDED LEVEL-3 CODE IS THE KEY. Do NOT strip its leading zeros." So the stripped twin
+--    is retired and the padded one stays.
+--
+-- ⚠️⚠️ TWO OTHER ZERO-STRIP PAIRS EXIST AND MUST NOT BE TOUCHED. They are the exact pairs that
+--    same header warns about, and they are DIFFERENT ITEMS that happen to collide when de-zeroed:
+--
+--        015051  General Requirement > Support Equipment > Earthmoving
+--         15051  Metal Works         > Railings          > Railings
+--        017151  General Requirement > Bonds/Permits     > Misc. LGU and Estate Tax
+--         17151  Aluminum Glass      > Swing Windows     > Aluminum Swing Windows
+--
+--    Retiring either would delete a real cost code. This file names all six pairs so the
+--    distinction is on the record, and touches only the four where group AND description match.
+--
+-- ⚠️ DEACTIVATED, NEVER DELETED. `active = false` is what the picker already filters on
+--    (ensureCodes reads `.eq('active', true)`), so a retired code disappears from selection while
+--    every BOQ line and every schedule activity that already carries it keeps working and keeps
+--    reporting. A delete would break existing rows and could not be undone; this is one UPDATE
+--    away from being reversed.
+--
+-- Run in the Supabase SQL editor (Planners project). Idempotent / re-runnable.
+-- ============================================================================
+
+-- ---------------------------------------------------------------------------
+-- 1) Who is already using the twins? Read this BEFORE and AFTER.
+-- ---------------------------------------------------------------------------
+-- ⚠️ Deactivating hides a code from the picker; it does not migrate anything that already
+--    references it. If either count below is non-zero, decide whether to re-point those rows at
+--    the padded code first -- the app will keep working either way, but the two forms would go on
+--    reporting as separate lines in a cost roll-up.
+do $$
+declare
+  n_map integer := 0;
+  n_act integer := 0;
+begin
+  select count(*) into n_map from boq_class_map where class_code in ('11011','11021','11031','11032');
+  begin
+    execute $q$ select count(*) from project_schedule where class_code in ('11011','11021','11031','11032') $q$
+      into n_act;
+  exception when undefined_column or undefined_table then n_act := -1;
+  end;
+  raise notice 'de-zeroed twins in use -> boq_class_map: % row(s), project_schedule: % (-1 = column absent)', n_map, n_act;
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 2) Retire the four
+-- ---------------------------------------------------------------------------
+-- ⚠️ Guarded on the padded twin actually existing. If a chart is ever reseeded without it, this
+--    must not quietly retire the only surviving copy of the item.
+update class_codes c
+   set active = false
+ where c.code in ('11011', '11021', '11031', '11032')
+   and exists (
+     select 1 from class_codes p
+      where p.code = '0' || c.code
+        and p.code_l2 = c.code_l2
+        and p.desc_l3 = c.desc_l3
+   );
+
+-- ---------------------------------------------------------------------------
+-- Verify
+-- ---------------------------------------------------------------------------
+--   select code, code_l2, desc_l3, active from class_codes
+--    where code in ('011011','11011','011021','11021','011031','11031','011032','11032')
+--    order by desc_l3, code;
+--     -- expect: the 0-prefixed rows active = true, the others active = false
+--
+--   select count(*) from class_codes where active;         -- expect 698 (was 702)
+--
+--   -- the two pairs that must still BOTH be active, because they are different items:
+--   select code, desc_l1, desc_l3, active from class_codes
+--    where code in ('015051','15051','017151','17151') order by code;
+--     -- expect: all four active = true
+--
+-- To reverse:
+--   update class_codes set active = true where code in ('11011','11021','11031','11032');
+
+
+-- ==========================================================================
+-- [151/155] 2026-09-07-class-code-trades.sql
+-- ==========================================================================
+-- ============================================================================
+-- class_codes.trade -- the vocabulary the SCHEDULE already speaks
+--
+-- Owner, 2026-09-07: *"I also updated the class code mapping template list to properly
+-- determine its trade that we have defined before in the schedule module."*
+--
+-- The template gained a "Trade" column (col 6, ahead of Description 1) and every one of its
+-- 702 codes now carries one. This file lands that column on `class_codes`, so a BOQ line and a
+-- schedule activity can finally be grouped by the SAME word.
+--
+-- WARNING WARNING THE TWO VOCABULARIES DO NOT MATCH YET, AND THE JOIN FAILS SILENTLY.
+--   The schedule's canonical list is PRC_TRADE_ORDER in modules/project-schedule/index.html:
+--     General Requirements, Site Works, Structural Works, Architectural Works, Mechanical Works,
+--     Electrical and Auxiliary Works, Plumbing Works, Fire Protection Works, Allied Services,
+--     Site Development Works
+--   The template's seven are:
+--     General Requirement, Site Works, Structural Works, Architectural Works, MEPF Works,
+--     Allied Services Works, Others
+--   Three differences, and each one produces ZERO matches with no error:
+--     1. "General Requirement" vs "General Requirements"      -- 126 codes, singular/plural
+--     2. "Allied Services Works" vs "Allied Services"         --   8 codes, suffix
+--     3. "MEPF Works" (320 codes) has NO schedule counterpart -- the schedule splits it into
+--        Mechanical / Electrical and Auxiliary / Plumbing / Fire Protection
+--
+--   WARNING THE VALUES ARE LOADED VERBATIM BELOW, NOT NORMALISED. Which spelling is
+--   authoritative is a decision about Finance's chart and the schedule's trade list, not
+--   something a migration should quietly pick -- and guessing wrong would move 454 of 702 codes
+--   under a trade nobody chose. Section 3 holds the normalisation, COMMENTED OUT, for whichever
+--   direction is decided.
+--
+-- Run in the Supabase SQL editor (Planners project). Idempotent / re-runnable.
+-- ============================================================================
+
+-- ---------------------------------------------------------------------------
+-- 1) The column
+-- ---------------------------------------------------------------------------
+alter table class_codes add column if not exists trade text;
+
+create index if not exists idx_class_codes_trade on class_codes (trade);
+
+-- ---------------------------------------------------------------------------
+-- 2) The mapping, verbatim from the template (702 codes, all assigned)
+-- ---------------------------------------------------------------------------
+-- One statement rather than 702, so it is one transaction and one pass.
+update class_codes c
+   set trade = v.trade
+  from (values
+  ('01051','General Requirement'),
+  ('01052','General Requirement'),
+  ('010521','General Requirement'),
+  ('010522','General Requirement'),
+  ('010523','General Requirement'),
+  ('010524','General Requirement'),
+  ('01101','General Requirement'),
+  ('011011','General Requirement'),
+  ('01102','General Requirement'),
+  ('011021','General Requirement'),
+  ('011022','General Requirement'),
+  ('01103','General Requirement'),
+  ('011031','General Requirement'),
+  ('011032','General Requirement'),
+  ('01104','General Requirement'),
+  ('01105','General Requirement'),
+  ('01151','General Requirement'),
+  ('011511','General Requirement'),
+  ('01152','General Requirement'),
+  ('01201','General Requirement'),
+  ('012011','General Requirement'),
+  ('012012','General Requirement'),
+  ('012013','General Requirement'),
+  ('01202','General Requirement'),
+  ('012021','General Requirement'),
+  ('01251','General Requirement'),
+  ('012511','General Requirement'),
+  ('01301','General Requirement'),
+  ('013011','General Requirement'),
+  ('01302','General Requirement'),
+  ('013021','General Requirement'),
+  ('01303','General Requirement'),
+  ('01304','General Requirement'),
+  ('01351','General Requirement'),
+  ('013511','General Requirement'),
+  ('01352','General Requirement'),
+  ('013521','General Requirement'),
+  ('01353','General Requirement'),
+  ('013531','General Requirement'),
+  ('01354','General Requirement'),
+  ('01401','General Requirement'),
+  ('014011','General Requirement'),
+  ('01451','General Requirement'),
+  ('014511','General Requirement'),
+  ('014512','General Requirement'),
+  ('01452','General Requirement'),
+  ('014521','General Requirement'),
+  ('01453','General Requirement'),
+  ('014531','General Requirement'),
+  ('01454','General Requirement'),
+  ('01501','General Requirement'),
+  ('015011','General Requirement'),
+  ('015012','General Requirement'),
+  ('01502','General Requirement'),
+  ('01503','General Requirement'),
+  ('015031','General Requirement'),
+  ('01504','General Requirement'),
+  ('015041','General Requirement'),
+  ('01505','General Requirement'),
+  ('015051','General Requirement'),
+  ('01506','General Requirement'),
+  ('01507','General Requirement'),
+  ('015071','General Requirement'),
+  ('01508','General Requirement'),
+  ('015081','General Requirement'),
+  ('01551','General Requirement'),
+  ('015511','General Requirement'),
+  ('01601','General Requirement'),
+  ('01602','General Requirement'),
+  ('016021','General Requirement'),
+  ('016022','General Requirement'),
+  ('016023','General Requirement'),
+  ('01651','General Requirement'),
+  ('01652','General Requirement'),
+  ('01653','General Requirement'),
+  ('01654','General Requirement'),
+  ('01655','General Requirement'),
+  ('01656','General Requirement'),
+  ('016561','General Requirement'),
+  ('016562','General Requirement'),
+  ('016563','General Requirement'),
+  ('01657','General Requirement'),
+  ('01658','General Requirement'),
+  ('01659','General Requirement'),
+  ('01660','General Requirement'),
+  ('01661','General Requirement'),
+  ('01700','General Requirement'),
+  ('01701','General Requirement'),
+  ('017011','General Requirement'),
+  ('01702','General Requirement'),
+  ('017021','General Requirement'),
+  ('01703','General Requirement'),
+  ('01704','General Requirement'),
+  ('01705','General Requirement'),
+  ('01706','General Requirement'),
+  ('01707','General Requirement'),
+  ('01708','General Requirement'),
+  ('01709','General Requirement'),
+  ('01710','General Requirement'),
+  ('01711','General Requirement'),
+  ('017111','General Requirement'),
+  ('01712','General Requirement'),
+  ('01713','General Requirement'),
+  ('017131','General Requirement'),
+  ('01714','General Requirement'),
+  ('017141','General Requirement'),
+  ('01715','General Requirement'),
+  ('017151','General Requirement'),
+  ('01716','General Requirement'),
+  ('01717','General Requirement'),
+  ('01719','General Requirement'),
+  ('01751','General Requirement'),
+  ('01752','General Requirement'),
+  ('01753','General Requirement'),
+  ('01754','General Requirement'),
+  ('01755','General Requirement'),
+  ('01801','General Requirement'),
+  ('018011','General Requirement'),
+  ('01851','General Requirement'),
+  ('01852','General Requirement'),
+  ('018521','General Requirement'),
+  ('018522','General Requirement'),
+  ('01901','Others'),
+  ('02051','Site Works'),
+  ('02052','Site Works'),
+  ('02053','Site Works'),
+  ('02054','Site Works'),
+  ('02055','Site Works'),
+  ('02056','Site Works'),
+  ('02057','Site Works'),
+  ('02058','Site Works'),
+  ('02059','Site Works'),
+  ('02060','Site Works'),
+  ('02101','Site Works'),
+  ('02102','Site Works'),
+  ('02103','Site Works'),
+  ('02104','Site Works'),
+  ('02105','Site Works'),
+  ('02106','Site Works'),
+  ('02107','Site Works'),
+  ('02108','Site Works'),
+  ('02151','Site Works'),
+  ('02152','Site Works'),
+  ('02153','Site Works'),
+  ('02154','Site Works'),
+  ('02201','Site Works'),
+  ('02202','Site Works'),
+  ('03051','Structural Works'),
+  ('03052','Structural Works'),
+  ('03053','Structural Works'),
+  ('04051','Structural Works'),
+  ('04052','Structural Works'),
+  ('04053','Structural Works'),
+  ('05051','Structural Works'),
+  ('05052','Structural Works'),
+  ('06051','Structural Works'),
+  ('06052','Structural Works'),
+  ('06053','Structural Works'),
+  ('06054','Structural Works'),
+  ('06055','Structural Works'),
+  ('06056','Structural Works'),
+  ('06057','Structural Works'),
+  ('06058','Structural Works'),
+  ('06059','Structural Works'),
+  ('07051','Structural Works'),
+  ('07052','Structural Works'),
+  ('07053','Structural Works'),
+  ('07054','Structural Works'),
+  ('08051','Architectural Works'),
+  ('08101','Architectural Works'),
+  ('08151','Architectural Works'),
+  ('08201','Architectural Works'),
+  ('08251','Architectural Works'),
+  ('08301','Architectural Works'),
+  ('08351','Architectural Works'),
+  ('08401','Architectural Works'),
+  ('08451','Architectural Works'),
+  ('08501','Architectural Works'),
+  ('08551','Architectural Works'),
+  ('08601','Architectural Works'),
+  ('08651','Architectural Works'),
+  ('08701','Architectural Works'),
+  ('09051','Architectural Works'),
+  ('09101','Architectural Works'),
+  ('09151','Architectural Works'),
+  ('10051','Architectural Works'),
+  ('10101','Architectural Works'),
+  ('10151','Architectural Works'),
+  ('10201','Architectural Works'),
+  ('10251','Architectural Works'),
+  ('10301','Architectural Works'),
+  ('10351','Architectural Works'),
+  ('10401','Architectural Works'),
+  ('10451','Architectural Works'),
+  ('10501','Architectural Works'),
+  ('10551','Architectural Works'),
+  ('11011','General Requirement'),
+  ('110111','Others'),
+  ('110114','Others'),
+  ('11021','General Requirement'),
+  ('110211','Others'),
+  ('11031','General Requirement'),
+  ('110311','Others'),
+  ('110314','Others'),
+  ('11032','General Requirement'),
+  ('110321','Others'),
+  ('11051','Architectural Works'),
+  ('11101','Architectural Works'),
+  ('11151','Architectural Works'),
+  ('12051','Architectural Works'),
+  ('12101','Architectural Works'),
+  ('12151','Architectural Works'),
+  ('12201','Architectural Works'),
+  ('12251','Architectural Works'),
+  ('12301','Architectural Works'),
+  ('12351','Architectural Works'),
+  ('12401','Architectural Works'),
+  ('12451','Architectural Works'),
+  ('12501','Architectural Works'),
+  ('13051','Architectural Works'),
+  ('13101','Architectural Works'),
+  ('13151','Architectural Works'),
+  ('13201','Architectural Works'),
+  ('13251','Architectural Works'),
+  ('13301','Architectural Works'),
+  ('13351','Architectural Works'),
+  ('13401','Architectural Works'),
+  ('14051','Architectural Works'),
+  ('14101','Architectural Works'),
+  ('14151','Architectural Works'),
+  ('15051','Architectural Works'),
+  ('15052','Architectural Works'),
+  ('15061','Architectural Works'),
+  ('15101','Architectural Works'),
+  ('15151','Architectural Works'),
+  ('15201','Architectural Works'),
+  ('15251','Architectural Works'),
+  ('15301','Architectural Works'),
+  ('15351','Architectural Works'),
+  ('15401','Architectural Works'),
+  ('15451','Architectural Works'),
+  ('15501','Architectural Works'),
+  ('15551','Architectural Works'),
+  ('15601','Architectural Works'),
+  ('15651','Architectural Works'),
+  ('16051','Architectural Works'),
+  ('16101','Architectural Works'),
+  ('16151','Architectural Works'),
+  ('16201','Architectural Works'),
+  ('16251','Architectural Works'),
+  ('16301','Architectural Works'),
+  ('16351','Architectural Works'),
+  ('16401','Architectural Works'),
+  ('16451','Architectural Works'),
+  ('17051','Architectural Works'),
+  ('17101','Architectural Works'),
+  ('17151','Architectural Works'),
+  ('17201','Architectural Works'),
+  ('17251','Architectural Works'),
+  ('17301','Architectural Works'),
+  ('17351','Architectural Works'),
+  ('17401','Architectural Works'),
+  ('17451','Architectural Works'),
+  ('17501','Architectural Works'),
+  ('17551','Architectural Works'),
+  ('18051','Architectural Works'),
+  ('18101','Architectural Works'),
+  ('18151','Architectural Works'),
+  ('18201','Architectural Works'),
+  ('19051','Architectural Works'),
+  ('19101','Architectural Works'),
+  ('19151','Architectural Works'),
+  ('191511','Architectural Works'),
+  ('19201','Architectural Works'),
+  ('20051','Architectural Works'),
+  ('20052','Architectural Works'),
+  ('20101','Architectural Works'),
+  ('20151','Architectural Works'),
+  ('201511','Architectural Works'),
+  ('20201','Architectural Works'),
+  ('20251','Architectural Works'),
+  ('20301','Architectural Works'),
+  ('21051','Architectural Works'),
+  ('22051','Architectural Works'),
+  ('23051','Architectural Works'),
+  ('23052','Architectural Works'),
+  ('24051','Architectural Works'),
+  ('25051','MEPF Works'),
+  ('250511','MEPF Works'),
+  ('25052','MEPF Works'),
+  ('250521','MEPF Works'),
+  ('25053','MEPF Works'),
+  ('250531','MEPF Works'),
+  ('25054','MEPF Works'),
+  ('250541','Others'),
+  ('25055','MEPF Works'),
+  ('250551','MEPF Works'),
+  ('25056','MEPF Works'),
+  ('250561','MEPF Works'),
+  ('250562','MEPF Works'),
+  ('250563','MEPF Works'),
+  ('250564','MEPF Works'),
+  ('250565','MEPF Works'),
+  ('250566','MEPF Works'),
+  ('250567','MEPF Works'),
+  ('25057','MEPF Works'),
+  ('250571','MEPF Works'),
+  ('25058','MEPF Works'),
+  ('250581','MEPF Works'),
+  ('25059','MEPF Works'),
+  ('250591','MEPF Works'),
+  ('25060','MEPF Works'),
+  ('25061','MEPF Works'),
+  ('25062','MEPF Works'),
+  ('250621','MEPF Works'),
+  ('250622','MEPF Works'),
+  ('250623','MEPF Works'),
+  ('25063','MEPF Works'),
+  ('25064','MEPF Works'),
+  ('250641','MEPF Works'),
+  ('25065','MEPF Works'),
+  ('250651','MEPF Works'),
+  ('25101','MEPF Works'),
+  ('251011','MEPF Works'),
+  ('25102','MEPF Works'),
+  ('251021','MEPF Works'),
+  ('25103','MEPF Works'),
+  ('251031','MEPF Works'),
+  ('25104','MEPF Works'),
+  ('25151','MEPF Works'),
+  ('251511','MEPF Works'),
+  ('25152','MEPF Works'),
+  ('251521','MEPF Works'),
+  ('251522','MEPF Works'),
+  ('25153','MEPF Works'),
+  ('251531','MEPF Works'),
+  ('25154','MEPF Works'),
+  ('251541','MEPF Works'),
+  ('25155','MEPF Works'),
+  ('251551','MEPF Works'),
+  ('25156','MEPF Works'),
+  ('251561','MEPF Works'),
+  ('25157','MEPF Works'),
+  ('251571','MEPF Works'),
+  ('25158','MEPF Works'),
+  ('251581','MEPF Works'),
+  ('25159','MEPF Works'),
+  ('251591','MEPF Works'),
+  ('25201','MEPF Works'),
+  ('252011','MEPF Works'),
+  ('25202','MEPF Works'),
+  ('252021','MEPF Works'),
+  ('25203','MEPF Works'),
+  ('252031','MEPF Works'),
+  ('25211','MEPF Works'),
+  ('252111','MEPF Works'),
+  ('25212','MEPF Works'),
+  ('25213','MEPF Works'),
+  ('25251','MEPF Works'),
+  ('252511','MEPF Works'),
+  ('25252','MEPF Works'),
+  ('252521','MEPF Works'),
+  ('25253','MEPF Works'),
+  ('252531','MEPF Works'),
+  ('25301','MEPF Works'),
+  ('253011','MEPF Works'),
+  ('25302','MEPF Works'),
+  ('253021','MEPF Works'),
+  ('25303','MEPF Works'),
+  ('253031','MEPF Works'),
+  ('25351','MEPF Works'),
+  ('253511','MEPF Works'),
+  ('25352','MEPF Works'),
+  ('253521','MEPF Works'),
+  ('25353','MEPF Works'),
+  ('253531','MEPF Works'),
+  ('253532','MEPF Works'),
+  ('25401','MEPF Works'),
+  ('25402','MEPF Works'),
+  ('25403','MEPF Works'),
+  ('25451','MEPF Works'),
+  ('25452','MEPF Works'),
+  ('25453','MEPF Works'),
+  ('25501','MEPF Works'),
+  ('255011','MEPF Works'),
+  ('25502','MEPF Works'),
+  ('255021','MEPF Works'),
+  ('255022','MEPF Works'),
+  ('25503','MEPF Works'),
+  ('255031','MEPF Works'),
+  ('255032','MEPF Works'),
+  ('25504','MEPF Works'),
+  ('255041','MEPF Works'),
+  ('255042','MEPF Works'),
+  ('25551','MEPF Works'),
+  ('255511','MEPF Works'),
+  ('255512','MEPF Works'),
+  ('25552','MEPF Works'),
+  ('255521','MEPF Works'),
+  ('255522','MEPF Works'),
+  ('25553','MEPF Works'),
+  ('255531','Others'),
+  ('255532','MEPF Works'),
+  ('25601','MEPF Works'),
+  ('256011','MEPF Works'),
+  ('25602','MEPF Works'),
+  ('25603','MEPF Works'),
+  ('25604','MEPF Works'),
+  ('25605','MEPF Works'),
+  ('25606','MEPF Works'),
+  ('25611','MEPF Works'),
+  ('25612','MEPF Works'),
+  ('25613','MEPF Works'),
+  ('256131','MEPF Works'),
+  ('25651','MEPF Works'),
+  ('256511','MEPF Works'),
+  ('256512','MEPF Works'),
+  ('256513','MEPF Works'),
+  ('256514','MEPF Works'),
+  ('25652','MEPF Works'),
+  ('256521','MEPF Works'),
+  ('256522','MEPF Works'),
+  ('25653','MEPF Works'),
+  ('25701','MEPF Works'),
+  ('25751','MEPF Works'),
+  ('26051','MEPF Works'),
+  ('260511','MEPF Works'),
+  ('26052','MEPF Works'),
+  ('260521','MEPF Works'),
+  ('26053','MEPF Works'),
+  ('26054','MEPF Works'),
+  ('260541','MEPF Works'),
+  ('26101','MEPF Works'),
+  ('26151','MEPF Works'),
+  ('261511','MEPF Works'),
+  ('261512','MEPF Works'),
+  ('26152','MEPF Works'),
+  ('261521','MEPF Works'),
+  ('26153','MEPF Works'),
+  ('26154','MEPF Works'),
+  ('26155','MEPF Works'),
+  ('26156','MEPF Works'),
+  ('26157','MEPF Works'),
+  ('26158','MEPF Works'),
+  ('26159','MEPF Works'),
+  ('26160','MEPF Works'),
+  ('261601','MEPF Works'),
+  ('261602','MEPF Works'),
+  ('26161','MEPF Works'),
+  ('261611','MEPF Works'),
+  ('26201','MEPF Works'),
+  ('262012','Others'),
+  ('26251','MEPF Works'),
+  ('262512','MEPF Works'),
+  ('26252','MEPF Works'),
+  ('26301','MEPF Works'),
+  ('263011','MEPF Works'),
+  ('263012','MEPF Works'),
+  ('26350','MEPF Works'),
+  ('26351','MEPF Works'),
+  ('26352','MEPF Works'),
+  ('26353','MEPF Works'),
+  ('26354','MEPF Works'),
+  ('26355','MEPF Works'),
+  ('26401','MEPF Works'),
+  ('26402','MEPF Works'),
+  ('26403','MEPF Works'),
+  ('26451','MEPF Works'),
+  ('26452','MEPF Works'),
+  ('26453','MEPF Works'),
+  ('26501','MEPF Works'),
+  ('265011','MEPF Works'),
+  ('265012','MEPF Works'),
+  ('26502','MEPF Works'),
+  ('26503','MEPF Works'),
+  ('26551','MEPF Works'),
+  ('26552','MEPF Works'),
+  ('26553','MEPF Works'),
+  ('26601','MEPF Works'),
+  ('26602','MEPF Works'),
+  ('26603','MEPF Works'),
+  ('26651','MEPF Works'),
+  ('266511','MEPF Works'),
+  ('26652','MEPF Works'),
+  ('26653','MEPF Works'),
+  ('26701','MEPF Works'),
+  ('267011','MEPF Works'),
+  ('26702','MEPF Works'),
+  ('267021','MEPF Works'),
+  ('26703','MEPF Works'),
+  ('26751','MEPF Works'),
+  ('267511','MEPF Works'),
+  ('26752','MEPF Works'),
+  ('26753','MEPF Works'),
+  ('26801','MEPF Works'),
+  ('268011','MEPF Works'),
+  ('268012','MEPF Works'),
+  ('26802','MEPF Works'),
+  ('26851','MEPF Works'),
+  ('268511','MEPF Works'),
+  ('26852','MEPF Works'),
+  ('268521','MEPF Works'),
+  ('268522','MEPF Works'),
+  ('27051','MEPF Works'),
+  ('270511','MEPF Works'),
+  ('270512','MEPF Works'),
+  ('27052','MEPF Works'),
+  ('27053','MEPF Works'),
+  ('27054','MEPF Works'),
+  ('27055','MEPF Works'),
+  ('27101','MEPF Works'),
+  ('271011','MEPF Works'),
+  ('27102','MEPF Works'),
+  ('271021','MEPF Works'),
+  ('27103','MEPF Works'),
+  ('27104','MEPF Works'),
+  ('271041','MEPF Works'),
+  ('27105','MEPF Works'),
+  ('271051','MEPF Works'),
+  ('27106','MEPF Works'),
+  ('271061','MEPF Works'),
+  ('27107','MEPF Works'),
+  ('271071','MEPF Works'),
+  ('27108','MEPF Works'),
+  ('271081','MEPF Works'),
+  ('27151','MEPF Works'),
+  ('271511','MEPF Works'),
+  ('271512','MEPF Works'),
+  ('27152','MEPF Works'),
+  ('271521','MEPF Works'),
+  ('27153','MEPF Works'),
+  ('271531','MEPF Works'),
+  ('271532','MEPF Works'),
+  ('27154','MEPF Works'),
+  ('271541','MEPF Works'),
+  ('271542','MEPF Works'),
+  ('271543','MEPF Works'),
+  ('27201','MEPF Works'),
+  ('272011','MEPF Works'),
+  ('27202','MEPF Works'),
+  ('272021','MEPF Works'),
+  ('272022','MEPF Works'),
+  ('27203','MEPF Works'),
+  ('272031','MEPF Works'),
+  ('27204','MEPF Works'),
+  ('27215','Others'),
+  ('27251','MEPF Works'),
+  ('272511','MEPF Works'),
+  ('27252','MEPF Works'),
+  ('272521','MEPF Works'),
+  ('27301','MEPF Works'),
+  ('27302','MEPF Works'),
+  ('27303','MEPF Works'),
+  ('273031','MEPF Works'),
+  ('27304','MEPF Works'),
+  ('273041','MEPF Works'),
+  ('27305','MEPF Works'),
+  ('273051','MEPF Works'),
+  ('27306','MEPF Works'),
+  ('27307','MEPF Works'),
+  ('27308','MEPF Works'),
+  ('273081','MEPF Works'),
+  ('27309','MEPF Works'),
+  ('273091','MEPF Works'),
+  ('273092','MEPF Works'),
+  ('273093','MEPF Works'),
+  ('273094','MEPF Works'),
+  ('27351','MEPF Works'),
+  ('273511','MEPF Works'),
+  ('27352','MEPF Works'),
+  ('27353','MEPF Works'),
+  ('27401','MEPF Works'),
+  ('274011','MEPF Works'),
+  ('27402','MEPF Works'),
+  ('274021','MEPF Works'),
+  ('274022','MEPF Works'),
+  ('27403','MEPF Works'),
+  ('28051','MEPF Works'),
+  ('280511','MEPF Works'),
+  ('28052','MEPF Works'),
+  ('280521','MEPF Works'),
+  ('28101','MEPF Works'),
+  ('281011','MEPF Works'),
+  ('28102','MEPF Works'),
+  ('281021','MEPF Works'),
+  ('28103','MEPF Works'),
+  ('281031','MEPF Works'),
+  ('28104','MEPF Works'),
+  ('281041','MEPF Works'),
+  ('28151','MEPF Works'),
+  ('281511','MEPF Works'),
+  ('28201','MEPF Works'),
+  ('28251','MEPF Works'),
+  ('282511','MEPF Works'),
+  ('28252','MEPF Works'),
+  ('282521','MEPF Works'),
+  ('28253','MEPF Works'),
+  ('282531','MEPF Works'),
+  ('28301','MEPF Works'),
+  ('283011','MEPF Works'),
+  ('28302','MEPF Works'),
+  ('28303','MEPF Works'),
+  ('28304','MEPF Works'),
+  ('28305','MEPF Works'),
+  ('283051','MEPF Works'),
+  ('28306','MEPF Works'),
+  ('283061','MEPF Works'),
+  ('283062','MEPF Works'),
+  ('283063','MEPF Works'),
+  ('28307','MEPF Works'),
+  ('283071','MEPF Works'),
+  ('29051','Allied Services Works'),
+  ('29052','Allied Services Works'),
+  ('29101','Allied Services Works'),
+  ('29151','Allied Services Works'),
+  ('29201','Allied Services Works'),
+  ('29251','Allied Services Works'),
+  ('292511','Allied Services Works'),
+  ('29252','Allied Services Works'),
+  ('30051','Others'),
+  ('30052','Others'),
+  ('31051','Others'),
+  ('32051','Others'),
+  ('32101','Others'),
+  ('32151','Others'),
+  ('321511','Others'),
+  ('33051','Others'),
+  ('33052','Others'),
+  ('33053','Others'),
+  ('33054','Others'),
+  ('33055','Others'),
+  ('330551','Others'),
+  ('330553','Others'),
+  ('33056','Others'),
+  ('330563','Others'),
+  ('33057','Others'),
+  ('330572','Others'),
+  ('330573','Others'),
+  ('33058','Others'),
+  ('33059','Others'),
+  ('33060','Others'),
+  ('34051','Others'),
+  ('340511','Others'),
+  ('340512','Others'),
+  ('35051','Others'),
+  ('36051','Others'),
+  ('36052','Others'),
+  ('36053','Others'),
+  ('37051','Others'),
+  ('37052','Others'),
+  ('37053','Others'),
+  ('37054','Others'),
+  ('37055','Others'),
+  ('37056','Others'),
+  ('37057','Others'),
+  ('37058','Others'),
+  ('37059','Others'),
+  ('37060','Others'),
+  ('37061','Others'),
+  ('37062','Others'),
+  ('37063','Others'),
+  ('37064','Others'),
+  ('37065','Others'),
+  ('37066','Others'),
+  ('37067','Others'),
+  ('37068','Others'),
+  ('37069','Others'),
+  ('37070','Others'),
+  ('37071','Others'),
+  ('37072','Others'),
+  ('37073','Others'),
+  ('37074','Others'),
+  ('37075','Others'),
+  ('38051','Others'),
+  ('39051','Others'),
+  ('39052','Others'),
+  ('39053','Others'),
+  ('39054','Others'),
+  ('39055','Others'),
+  ('39056','Others'),
+  ('39101','Others'),
+  ('39102','Others'),
+  ('39151','Others'),
+  ('39152','Others'),
+  ('39201','Others'),
+  ('39202','Others'),
+  ('39203','Others'),
+  ('39251','Others'),
+  ('39252','Others'),
+  ('39253','Others'),
+  ('39301','Others'),
+  ('39302','Others'),
+  ('39303','Others'),
+  ('39351','Others'),
+  ('39352','Others'),
+  ('39353','Others'),
+  ('39354','Others'),
+  ('39401','Others'),
+  ('39402','Others'),
+  ('50000','Others'),
+  ('51000','Others'),
+  ('NOBDT','Others')
+) as v(code, trade)
+ where c.code = v.code
+   and c.trade is distinct from v.trade;
+
+-- ---------------------------------------------------------------------------
+-- 3) OPTIONAL normalisation -- run ONLY once the direction is decided
+-- ---------------------------------------------------------------------------
+-- Direction A: bend the class codes to the schedule's existing words.
+--   update class_codes set trade = 'General Requirements' where trade = 'General Requirement';
+--   update class_codes set trade = 'Allied Services'      where trade = 'Allied Services Works';
+--   -- MEPF has no single counterpart; splitting it needs a rule per code, not a rename.
+--
+-- Direction B: bend the schedule to the template (a code change, not SQL) -- PRC_TRADE_ORDER
+--   becomes the template's seven, and existing activities carrying the four MEPF sub-trades
+--   are re-tagged. Larger, but it is the list Finance actually maintains.
+
+-- ---------------------------------------------------------------------------
+-- Verify
+-- ---------------------------------------------------------------------------
+--   select trade, count(*) from class_codes group by 1 order by 2 desc;
+--     -- expect: MEPF Works 320, General Requirement 126, Architectural Works 109,
+--     --         Others 96, Site Works 24, Structural Works 21, Allied Services Works 8
+--
+--   select count(*) from class_codes where trade is null;      -- expect 0
+--
+--   -- how many schedule activities would actually match, today:
+--   select cc.trade, count(distinct s.id)
+--     from project_schedule s join class_codes cc on cc.code = s.class_code
+--    group by 1 order by 2 desc;
+
+
+-- ==========================================================================
+-- [152/155] 2026-09-07-progress-photos-favorites.sql
+-- ==========================================================================
+-- Progress Photos — favorite photos (Gallery star) + portfolio-level favorites-only view
+-- ------------------------------------------------------------------------------
+-- Idempotent (add column if not exists, drop-then-create policy/function);
+-- folds into supabase-schema.sql. Safe to re-run.
+--
+-- Why a column PLUS a SECURITY DEFINER RPC, not just a plain UPDATE:
+-- `progress_photos`' generic module-table UPDATE policy (the DO-block loop
+-- near the bottom of supabase-schema.sql, policy `progress_photos_upd`) is
+-- OWNER-OR-ADMIN: `is_writer() and can_access_project(project_id) and
+-- (created_by = auth.uid() or is_admin())`. A plain client-side
+-- `.update({favorite:true})` from a non-owner, non-admin project writer would
+-- therefore be SILENTLY REFUSED by Postgres and read back as
+-- `{ data: null, error: null }` — a refused write is indistinguishable from a
+-- genuine no-op update, the exact false-success trap this module already had
+-- to fix once for DELETE (see modules/progress-photos/CLAUDE.md, 2026-09-04
+-- "the real reason 3D/360 deletes silently failed"). Favoriting is
+-- deliberately a TEAM CURATION action — any project writer should be able to
+-- flag a photo as a portfolio highlight, not just whoever originally uploaded
+-- it — so this is a narrow, explicit bypass of the ownership check via one
+-- SECURITY DEFINER function, never a widening of the table's own UPDATE
+-- policy (which would let any writer edit ANY field of ANY photo, not just
+-- the one boolean this needs).
+alter table progress_photos add column if not exists favorite boolean not null default false;
+
+-- Fast lookup for the Portfolio Overview's favorites-only query (scoped by
+-- project, filtered to favorite = true) and for a project's own favorited
+-- count. Partial index — the overwhelming majority of rows are not
+-- favorited, so indexing only the true rows keeps it small and cheap to
+-- maintain on every insert.
+create index if not exists progress_photos_favorite_idx
+  on progress_photos (project_id) where favorite;
+
+-- set_photo_favorite: toggle a single photo's favorite flag as ANY project
+-- writer, bypassing the table's owner-or-admin UPDATE restriction for this
+-- one field only. Raises on refusal rather than silently no-oping — never a
+-- bare `update ... where ...` with no row-count check, which is exactly the
+-- pattern that produced the false-success DELETE bug this module already had
+-- to trace and fix once.
+create or replace function set_photo_favorite(p_photo_id uuid, p_value boolean)
+returns boolean language plpgsql security definer set search_path = public as $$
+declare v_project text;
+begin
+  if not is_writer() then
+    raise exception 'You do not have permission to change favorites on this project.';
+  end if;
+
+  select project_id into v_project from progress_photos where id = p_photo_id;
+  if v_project is null then
+    raise exception 'That photo could not be found.';
+  end if;
+  if not can_access_project(v_project) then
+    raise exception 'You do not have access to this project.';
+  end if;
+
+  update progress_photos set favorite = p_value, updated_at = now() where id = p_photo_id;
+  return p_value;
+end $$;
+grant execute on function set_photo_favorite(uuid, boolean) to authenticated;
+
+
+-- ==========================================================================
+-- [153/155] 2026-09-07-progress-photos-works-activity-ids.sql
+-- ==========================================================================
+-- Progress Photos — Add Media → Works: traceable Schedule Activity references
+-- ------------------------------------------------------------------------------
+-- Idempotent (add column if not exists); folds into supabase-schema.sql.
+-- The app is TOLERANT of this column not existing yet (module.js's
+-- tolerantWrite() strips it and retries, warning once) — running this late
+-- costs nothing already saved, it just starts recording the trace going
+-- forward. `works_multi` (the display names, already live) is untouched.
+--
+-- Why this column, and why it holds what it holds:
+-- `progress_photos.works_multi` stores the CHOSEN Works values as plain
+-- display text (activity names), deduped by name — the same activity name
+-- commonly recurs across many WBS branches/floors of a real P6 schedule
+-- (e.g. "Rebar Installation" on every level of a tower), so one Works entry
+-- necessarily represents a GROUP of schedule rows, not a single one. Storing
+-- a single "the" schedule row id per name is therefore a best-effort
+-- traceability aid (the first/representative matching row), not a strict
+-- foreign key — hence a plain text[], not a uuid[] FK array. It is
+-- INDEX-ALIGNED with works_multi (same convention as WPM's own
+-- awarded_vendor_ids/awarded_vendor_amounts): entry i here is the resolved
+-- project_schedule.activity_id for works_multi[i], or NULL when the value
+-- has no live schedule match (free text captured before this integration,
+-- or an activity since renamed/removed).
+alter table progress_photos add column if not exists works_activity_ids text[] default '{}'::text[];
+comment on column progress_photos.works_activity_ids is
+  'Index-aligned with works_multi: the resolved project_schedule.activity_id (the P6 business key) for each chosen Works value, or NULL when no live schedule match exists. Traceability only — nothing in the app matches/derives FROM this array, works_multi (the name) remains authoritative for display, filtering and grouping.';
+
+
+-- ==========================================================================
+-- [154/155] 2026-09-07-trade-map.sql
+-- ==========================================================================
+-- ============================================================================
+-- trade_map: Finance's cost classes <-> Procurement's letting trades
+--
+-- Owner: *"let's do the proper mapping if you think that would help us in the finance and
+-- procurement connectivity."*
+--
+-- ⚠️⚠️ THE TWO LISTS ARE NOT A MISTAKE TO BE MERGED, AND THIS FILE EXISTS BECAUSE OF THAT.
+--    An earlier reading of mine was wrong and is corrected here for the record: I reported that
+--    the two vocabularies "join to nothing, silently" and recommended rewriting one to match the
+--    other. There is no join. `PRC_TRADE_ORDER` in modules/project-schedule/index.html is a
+--    DISPLAY SORT ORDER for work packages -- its own comment says an unlisted trade "is NOT
+--    dropped: it sorts after these under its own name" -- and `project_schedule` has no trade
+--    column at all. Nothing was ever joining.
+--
+--    What actually exists is two legitimate classifications of the same work:
+--      · class_codes.trade   -- SEVEN values. How Finance classifies COST.
+--      · work_packages.trade -- TEN values (WPM's XL_TRADES). How Procurement LETS the work.
+--    MEPF Works is one cost class and four separate subcontracts, and the owner's own billing
+--    proves it: "PROGRESS BILLING NO. 1 MEPF PO" and "NO.7 STRUCTURAL PO" are separate POs.
+--    Forcing either list to impersonate the other would destroy a real distinction.
+--
+-- ⚠️ SO THIS TRANSLATES RATHER THAN MERGES. One Finance trade maps to one or more Procurement
+--    trades. That is the shape of the truth: a BOQ line priced under "MEPF Works" is delivered by
+--    up to four different subcontracts, and a report that wants to walk from a bill of quantities
+--    to the package that buys it needs to know which.
+--
+-- ⚠️ A TABLE, NOT A CONSTANT IN CODE. Finance revises this chart, and the mapping is the kind of
+--    thing that changes without a deploy. It is also readable by both apps, which a constant in
+--    one module's JavaScript is not.
+--
+-- Run in the Supabase SQL editor (Planners project). Idempotent / re-runnable.
+-- ============================================================================
+
+create table if not exists trade_map (
+  finance_trade      text not null,   -- class_codes.trade
+  procurement_trade  text not null,   -- work_packages.trade (WPM XL_TRADES)
+  note               text,
+  primary key (finance_trade, procurement_trade)
+);
+
+create index if not exists idx_trade_map_fin on trade_map (finance_trade);
+create index if not exists idx_trade_map_prc on trade_map (procurement_trade);
+
+-- ---------------------------------------------------------------------------
+-- The mapping
+-- ---------------------------------------------------------------------------
+-- ⚠️ Six of the seven are one-to-one and differ only in wording; MEPF is the real one-to-many.
+--    "Others" is deliberately LEFT UNMAPPED -- it is Finance's catch-all (94 codes), not a trade,
+--    and inventing a procurement counterpart for it would put real work under a heading nobody
+--    lets a subcontract against. A line under Others resolves to no procurement trade, which is
+--    the honest answer and is visible rather than silently wrong.
+insert into trade_map (finance_trade, procurement_trade, note) values
+  ('General Requirement',   'General Requirements',           'wording differs only in the plural'),
+  ('Site Works',            'Site Works',                     null),
+  ('Structural Works',      'Structural Works',               null),
+  ('Architectural Works',   'Architectural Works',            null),
+  ('Allied Services Works', 'Allied Services',                'wording differs only in the suffix'),
+  ('MEPF Works',            'Mechanical Works',               'MEPF is one cost class, four subcontracts'),
+  ('MEPF Works',            'Electrical and Auxiliary Works', 'MEPF is one cost class, four subcontracts'),
+  ('MEPF Works',            'Plumbing Works',                 'MEPF is one cost class, four subcontracts'),
+  ('MEPF Works',            'Fire Protection Works',          'MEPF is one cost class, four subcontracts')
+on conflict (finance_trade, procurement_trade) do update set note = excluded.note;
+
+-- ---------------------------------------------------------------------------
+-- RLS -- reference data every planner reads, admins maintain
+-- ---------------------------------------------------------------------------
+alter table trade_map enable row level security;
+
+drop policy if exists trade_map_read on trade_map;
+create policy trade_map_read on trade_map
+  for select to authenticated using (is_approved());
+
+drop policy if exists trade_map_write on trade_map;
+create policy trade_map_write on trade_map
+  for all to authenticated using (is_admin()) with check (is_admin());
+
+grant select, insert, update, delete on trade_map to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Verify
+-- ---------------------------------------------------------------------------
+--   select finance_trade, count(*) procurement_trades,
+--          string_agg(procurement_trade, ', ' order by procurement_trade)
+--     from trade_map group by 1 order by 1;
+--     -- expect 6 rows at 1 each, MEPF Works at 4
+--
+--   -- which Finance trades have no procurement counterpart? (expect exactly: Others)
+--   select distinct c.trade from class_codes c
+--    where c.active and c.trade is not null
+--      and not exists (select 1 from trade_map m where m.finance_trade = c.trade);
+--
+--   -- and the reverse: which procurement trades no Finance trade maps to?
+--   -- (expect: Site Development Works -- WPM lets it, Finance files it under Site Works/Others)
+--   select unnest(array['General Requirements','Site Works','Structural Works','Architectural Works',
+--                       'Mechanical Works','Electrical and Auxiliary Works','Plumbing Works',
+--                       'Fire Protection Works','Allied Services','Site Development Works']) as prc
+--   except select procurement_trade from trade_map;
+
+
+-- ==========================================================================
+-- [155/155] 2026-09-09-cc-affected-activities.sql
+-- ==========================================================================
+-- ============================================================================
+-- cc_affected_activities: which schedule activities a Change Order / EOT touches
+--
+-- Owner, 2026-09-09: *"adding change orders and extension of time the planner should be able to
+-- easily select which activities are affected with the CO/EOT ... in a bulk manner in case that
+-- the CO/EOT affects a lot ... by selecting affected activities based on the location and optional
+-- to add other activities in the schedule as well."*
+--
+-- WHY A TABLE AND NOT A COLUMN. `project_schedule.change_order_ref` already exists and already
+-- joins to `contracts_claims.reference_no` -- the schedule reads the register at index.html:6043 to
+-- resolve it. It cannot carry this feature, for three separate reasons:
+--   1. It is ONE text column, so a second variation overwrites the first. Real projects re-touch
+--      the same activity: CO-014 adds work to 5F Formworks in March and EOT-003 cites the same
+--      activity as its delay basis in June. Both facts have to survive.
+--   2. Paired with `scope_type = 'change_order'` it already MEANS something else -- "this row IS
+--      change-order scope". Writing it onto a main-contract activity to mean "this row is AFFECTED
+--      BY that change order" overloads one column with two incompatible readings.
+--   3. EOT has nowhere to go at all. There is no `eot_ref`, and there should not be one.
+--
+-- ⚠️⚠️ AN EOT LINK CARRIES NO DAYS, AND THAT IS THE WHOLE POINT OF THE SHAPE.
+--    `contracts_claims.approved_days` stays the single contract-level figure the schedule already
+--    sums (index.html:35194-35203: "Contract finish + granted days = Revised finish"). The rows in
+--    THIS table are the delay BASIS -- evidence of which activities the delay ran through -- and
+--    they are deliberately a SET, not numbers.
+--    Storing days per activity would invite the obvious roll-up, and that roll-up is wrong: delay
+--    on parallel paths is CONCURRENT. Two activities each slipping 10 days on two parallel paths is
+--    10 days of project delay, not 20 -- only the critical path carries. A summed per-activity day
+--    column would produce a figure nobody could defend in a claim, and this app already has a
+--    roll-up that would happily report it. Same trap the BOQ allocations recorded from the other
+--    direction: *"one line allocated across forty activities must contribute its amount once, so
+--    the sum belongs on the allocation, not on the tag."*
+--
+-- ⚠️⚠️ KEYED ON `activity_id` (TEXT), NEVER ON `project_schedule.id`.
+--    An import DELETES AND REINSERTS every row on the project, so every uuid changes and a uuid
+--    link would be silently destroyed by the next import -- while the planner's Activity ID
+--    survives, because it is the id the planner and Primavera both use. This is the rule the
+--    schedule<->document links already follow and the reason `boq_tag_activities` keys the same way.
+--
+-- ⚠️ NO FOREIGN KEY TO project_schedule, on purpose.
+--    `activity_id` carries no unique constraint (it is unique per project, not globally), so an FK
+--    is not even declarable -- and if it were, it would make an import FAIL rather than merely
+--    orphan a link. A link whose activity no longer exists is a real state that a planner needs to
+--    see and re-point, not a constraint violation mid-import. The UI names those rows.
+--
+-- ⚠️ NO SECURITY-DEFINER RPC IS NEEDED FOR THIS FEATURE, and it is worth writing down why, because
+--    `boq_tag_activities` in 2026-09-07-boq-manual.sql had to be one. That function UPDATES
+--    `project_schedule`, and `project_schedule_upd` is gated on `created_by = auth.uid() or
+--    is_admin()` -- so a planner who did not import the schedule cannot update its rows, and
+--    PostgREST answers an RLS-filtered UPDATE with 200 and ZERO ROWS. Silent success.
+--    Because the link lives in its own table, nothing here updates an activity anybody else
+--    imported. `project_schedule` INSERT is only `is_writer() and created_by = auth.uid() and
+--    can_access_project(...)` -- no ownership clause -- so even the bulk change-order insert needs
+--    no definer function, and it runs in the schedule module where that arithmetic already lives.
+--
+-- Add-only and idempotent. Run in the Supabase SQL editor.
+-- ============================================================================
+
+create table if not exists cc_affected_activities (
+  id          uuid primary key default gen_random_uuid(),
+  project_id  text not null,
+  cc_id       uuid not null references contracts_claims(id) on delete cascade,
+  -- The planner's Activity ID, not a row uuid. See the note above.
+  activity_id text not null,
+  -- Free text for the one thing the set cannot say: WHY this activity is in it ("trenching
+  -- re-routed", "access denied 12-24 Mar"). Never a number -- see the no-days note above.
+  note        text,
+  created_by  uuid,
+  created_at  timestamptz default now(),
+  -- One activity appears at most once per record. Makes re-saving the picker an upsert rather
+  -- than a duplicate, and makes "is this activity already linked?" a single lookup.
+  unique (cc_id, activity_id)
+);
+
+-- ⚠️ `on delete cascade` above is deliberate: the links are part of the record's own argument, not
+--    independent data. Deleting CO-014 must not leave 23 rows pointing at nothing.
+
+-- Both directions are queried: "what does this record touch?" (the record form, the wizard) and
+-- "what touches this activity?" (the schedule's marker on every visible row).
+create index if not exists cc_aff_cc_idx  on cc_affected_activities(project_id, cc_id);
+create index if not exists cc_aff_act_idx on cc_affected_activities(project_id, activity_id);
+
+alter table cc_affected_activities enable row level security;
+
+-- Same four-policy shape 2026-07-21-viewer-readonly.sql establishes for every project-scoped
+-- register table. Reading is project-wide; writing needs a non-viewer; changing or removing
+-- somebody else's link needs to be your own row or an admin.
+-- ⚠️ `drop policy if exists` before each create, so the file is re-runnable.
+drop policy if exists cc_aff_read on cc_affected_activities;
+create policy cc_aff_read on cc_affected_activities
+  for select using (can_access_project(project_id));
+
+drop policy if exists cc_aff_ins on cc_affected_activities;
+create policy cc_aff_ins on cc_affected_activities
+  for insert with check (is_writer() and created_by = auth.uid() and can_access_project(project_id));
+
+drop policy if exists cc_aff_upd on cc_affected_activities;
+create policy cc_aff_upd on cc_affected_activities
+  for update using (is_writer() and can_access_project(project_id) and (created_by = auth.uid() or is_admin()))
+          with check (is_writer() and can_access_project(project_id));
+
+drop policy if exists cc_aff_del on cc_affected_activities;
+create policy cc_aff_del on cc_affected_activities
+  for delete using (is_writer() and can_access_project(project_id) and (created_by = auth.uid() or is_admin()));
+
+grant select, insert, update, delete on cc_affected_activities to authenticated;
+
+-- ==========================================================================
+-- [156] supabase-schema.sql — DEFERRED TAIL
 -- These base statements touch tables that only /migrations creates (see
 -- gen-build.js), so they run last. All are idempotent.
 -- ==========================================================================

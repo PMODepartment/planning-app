@@ -244,7 +244,13 @@ window.ProgressPhotos = (function () {
       var g = localStorage.getItem(uiKey('gallerygroup'));
       if (['none', 'month', 'trade', 'location'].indexOf(g) >= 0) galleryGroupBy = g;
       var ts = parseFloat(localStorage.getItem(uiKey('tilescale')));
-      if (ts && ts >= 0.2 && ts <= 2) gallerySizeScale = ts;
+      // ⚠⚠ A STORED SCALE IS ONLY HONOURED ONCE THE SLIDER HAS ACTUALLY BEEN MOVED.
+      //   Every existing user has a stored 1/3 written by the old default, which is
+      //   indistinguishable from a deliberate choice — so inferring intent from the
+      //   VALUE would either strand them all on the tiny tiles the fix is about, or
+      //   silently overrule someone who really wanted them. `tilescaleset` records the
+      //   choice explicitly at the moment it is made, which is not ambiguous.
+      if (ts && ts >= 0.2 && ts <= 2 && localStorage.getItem(uiKey('tilescaleset')) === '1') gallerySizeScale = ts;
     } catch (e) { collapsed = {}; }
   }
   // Applies the current scale as CSS custom properties on the gallery's own
@@ -689,7 +695,8 @@ window.ProgressPhotos = (function () {
     if ($('pp-tilesize')) {
       $('pp-tilesize').value = gallerySizeScale;
       $('pp-tilesize').oninput = function () {
-        gallerySizeScale = parseFloat(this.value) || 1 / 3;
+        gallerySizeScale = parseFloat(this.value) || PP_TILE_SCALE_DEFAULT;
+        try { localStorage.setItem(uiKey('tilescaleset'), '1'); } catch (e) {}
         applyTileScale();
       };
       $('pp-tilesize').onchange = function () { saveUI(); };
@@ -1881,7 +1888,13 @@ window.ProgressPhotos = (function () {
   // at before the control existed — per the owner's ask; dragging back up to
   // 1.0 reproduces the old fixed tile size exactly.
   var TILE_BASE_MIN = 290, TILE_BASE_H = 210;
-  var gallerySizeScale = 1 / 3;
+  // ⚠⚠ 0.75, NOT 1/3, AND THE OLD DEFAULT IS THE WHOLE BUG. At 1/3 these constants
+  //    resolve to tiles ~97x70px — which is precisely Windows Explorer's small-icon
+  //    density, and is why the owner reported the gallery "looking like a bunch of photos
+  //    database" rather than a record. At 0.75 they are ~218x158: an editorial grid you
+  //    read, not an icon wall you scan. The slider is untouched; only where it starts.
+  var PP_TILE_SCALE_OLD = 1 / 3, PP_TILE_SCALE_DEFAULT = 0.75;
+  var gallerySizeScale = PP_TILE_SCALE_DEFAULT;
 
   // ---- Plan view (item 16 — relocated here from the Plans tab's own Map
   // mode, item 15 having removed it from there). Reads project-wide data
@@ -2446,6 +2459,7 @@ window.ProgressPhotos = (function () {
   // lightbox once a photo is opened. Grouping is picked from the SHARED
   // #pp-groupby selector in the list bar (index.html) now, not a picker of
   // its own — see groupRows()'s own comment.
+  function clipCap(s, n) { s = String(s || ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; }
   function galleryHTML(list) {
     var body = groupRows(list).map(function (g) {
       var cards = '<div class="pp-gallery">' + g.items.map(cardHTML).join('') + '</div>';
@@ -2466,11 +2480,26 @@ window.ProgressPhotos = (function () {
       // openPinPreview() crop-zoom popup are RETIRED. The key-plan button now
       // lives only in the lightbox toolbar (#pp-lb-keyplan, wired in
       // paintLightbox()), shown once a photo is actually opened.
+      // ⚠⚠ THE CAPTION IS THE OTHER HALF OF THE "EXPLORER FOLDER" COMPLAINT. The tile
+      //    was IMAGE ONLY — no date, no place, nothing — so a wall of them reads as a file
+      //    listing with thumbnails. Two lines of context turn each one into a record of
+      //    something that happened somewhere.
+      // ⚠ Deliberately NOT the full metadata: the lightbox owns that (a 2026-08-28
+      //    decision this does not reverse). Date and place only, each clipped to one line.
+      var when = r.taken_at ? Fmt.date(r.taken_at) : '';
+      var where = (r.location || '').trim();
+      var what = (r.description || '').trim();
+      var cap = (when || where || what)
+        ? '<figcaption class="pp-cardcap">' +
+            (what ? '<b>' + Fmt.esc(clipCap(what, 48)) + '</b>' : '') +
+            '<span>' + Fmt.esc([when, where].filter(Boolean).join('  ·  ')) + '</span>' +
+          '</figcaption>'
+        : '';
       return '<figure class="pp-card' + (selected[r.id] ? ' pp-selrow' : '') + '" data-id="' + r.id + '">' +
         '<span class="pp-cardsel"><input type="checkbox" data-sel="' + r.id + '" aria-label="Select ' +
           Fmt.esc(r.description || 'this photo') + '"' +
           (selected[r.id] ? ' checked' : '') + ' /></span>' +
-        '<div class="pp-cardimg">' + thumb(r, 'pp-cardphoto') + favBtnHTML(r) + '</div>' +
+        '<div class="pp-cardimg">' + thumb(r, 'pp-cardphoto') + favBtnHTML(r) + '</div>' + cap +
       '</figure>';
     }
   }

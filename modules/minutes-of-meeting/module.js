@@ -764,6 +764,13 @@ window.MinutesOfMeeting = (function () {
     _seriesSel = null; _schedFormOpen = false; _schedFormDraft = null;
     _schedOccOpen = false; _schedOccDraft = null;
     _momItemWF = {}; ITEM_HISTORY = {};
+    // ⚠️ These were NOT reset, so switching project cleared the search box while
+    //    keeping the filter values that hide rows — a filtered-looking list with an
+    //    empty-looking filter bar reads as missing data.
+    //    ⚠️ Shape copied from the declaration at the top of this file and from the
+    //    "Clear all filters" handler — NOT invented here. A reset object with a key the
+    //    real one lacks is the same defect as the `_momDashF` one fixed below.
+    _momFiltOpen = false; _momBrowseF = { kind: '', state: '', fav: false, group: '' };
     MOM_ACT_NAME = {};   // activity ids are project-scoped — this cache is too
   }
 
@@ -1080,6 +1087,31 @@ window.MinutesOfMeeting = (function () {
     if (pid) sessionStorage.setItem('pd_project', pid);
   }
 
+  // Swap a chrome button for a spinner while an await is in flight, and put its own
+  // markup back afterwards. ⚠️ `.pd-spin` is the SHARED spinner in dashboard.css — this
+  // module deliberately does not add a fourth private copy of the one three other modules
+  // had each rolled for themselves.
+  // ⚠️ The original markup is stashed on the element, not recomputed, because these
+  // buttons hold a `data-ico` span that Icons.hydrate() has already replaced with an
+  // <svg>; rebuilding the placeholder would leave an un-hydrated empty box behind.
+  function setBusy(btn, on) {
+    if (!btn) return;
+    if (on) {
+      if (btn.dataset.busy) return;
+      btn.dataset.busy = '1';
+      btn._pdHTML = btn.innerHTML;
+      btn.innerHTML = '<span class="pd-spin"></span>';
+      btn.disabled = true;
+      btn.setAttribute('aria-busy', 'true');
+    } else {
+      if (!btn.dataset.busy) return;
+      delete btn.dataset.busy;
+      if (btn._pdHTML != null) btn.innerHTML = btn._pdHTML;
+      btn.disabled = false;
+      btn.removeAttribute('aria-busy');
+    }
+  }
+
   function wire() {
     $('il-project').onchange = function () {
       pid = this.value;
@@ -1092,7 +1124,19 @@ window.MinutesOfMeeting = (function () {
       joinCollab();
     };
     var rb = $('il-refresh');
-    if (rb) rb.onclick = function () { momReset(); load(); };
+    // ⚠️⚠️ THIS CLICK USED TO BE COMPLETELY SILENT. `momReset()` sets
+    //    `_momLoaded = false` but never calls `render()`, and `load()` awaits four to five
+    //    round trips before its own single `render()` at the end — so for the whole
+    //    duration the button did not change, the old content stayed frozen on screen, and
+    //    not even the "Loading minutes…" empty state painted. Indistinguishable from a
+    //    dead control, which is exactly how it was reported.
+    if (rb) rb.onclick = async function () {
+      if (rb.disabled) return;                 // a second click must not start a second load
+      momReset();
+      setBusy(rb, true);
+      render();                                // paints _paintEmpty('Loading minutes…') immediately
+      try { await load(); } finally { setBusy(rb, false); }
+    };
     // ⚠️ REHAUL ITEM 1 — the Dashboard/Meetings tab strip lives in the topbar
     // (index.html), outside #il-mom-view, so it is wired ONCE here rather
     // than in wireBrowse()/wireDetail(), which re-run on every repaint of
@@ -1489,7 +1533,11 @@ window.MinutesOfMeeting = (function () {
     });
     var clr = host.querySelector('#il-momd-clear');
     if (clr) clr.onclick = function () {
-      _momDashF = { starred: false, meetings: [], pickOpen: false };
+      // ⚠️ `open` MUST be carried — the initialiser has it and this replacement object
+      //    did not, so clearing the filters also collapsed the panel and left
+      //    syncTopbarTools() reading `undefined`. Clearing what is filtered is not the
+      //    same act as closing the filter panel.
+      _momDashF = { open: _momDashF.open, starred: false, meetings: [], pickOpen: false };
       renderMomDashboard();
     };
     host.querySelectorAll('[data-openmom]').forEach(function (el) {
@@ -1624,9 +1672,13 @@ window.MinutesOfMeeting = (function () {
     // What is left of this bar is the count and the List/Calendar switch,
     // now on the RIGHT (was leading on the left) so it reads as sitting "on
     // top of the view" it switches, per the owner's marked-up screenshot.
+    // ⚠️ Owner: the leading "3 meetings" count "does not provide any useful piece of
+    //    information" at the top of the screen. It moved BELOW the table as a quiet
+    //    italic note (momListFootnote) — still on screen, no longer the first thing read.
+    /* ⚠ The flex:1 spacer went with the card: the row right-aligns itself now, and a spacer
+       whose only job was to push one control across is a div that has to be reasoned about
+       every time somebody adds a second one. */
     return '<div class="il-mom-browsebar">' +
-        '<span class="il-mom-count">' + (on ? (shown + ' of ' + total + ' meetings') : (total + ' meeting' + (total === 1 ? '' : 's'))) + '</span>' +
-        '<div style="flex:1;"></div>' +
         '<div class="il-viewtoggle" id="il-mom-viewtoggle">' +
           '<button type="button" class="il-vt-btn' + (_momView === 'list' ? ' on' : '') + '" data-mv="list" title="List view">' +
             '<span data-ico="listView" data-ico-size="16"></span></button>' +
@@ -1657,6 +1709,23 @@ window.MinutesOfMeeting = (function () {
           (on ? '<button class="pd-btn pd-btn-sm" id="il-momb-clear">Clear</button>' : '') +
         '</div>');
   }
+  // The meeting count, as a footnote under the table.
+  // ⚠⚠ LIST VIEW ONLY, and that is not a styling choice. The list and the calendar count
+  //    DIFFERENT SETS: `momUnifiedRows()` deliberately excludes the occurrences of a recurring
+  //    series (a series is one row), while the calendar plots `momSearchList()` over all of
+  //    MOMS *including* every occurrence. Printing this figure under the calendar would put a
+  //    number under a grid that visibly disagrees with it.
+  // ⚠️ Its own class, not `.il-mom-count` — that class is reused for a different count in
+  //    the detail view (momFilterBarHTML), and styling one would have moved the other.
+  function momListFootnote(shown, total) {
+    if (!total) return '';                       // the empty state already says there are none
+    var on = momBrowseFilterOn();
+    var txt = on
+      ? ('Showing ' + shown + ' of ' + total + ' meeting' + (total === 1 ? '' : 's'))
+      : (total + ' meeting' + (total === 1 ? '' : 's') + ' on this project');
+    return '<p class="il-mom-foot">' + Fmt.esc(txt) + '</p>';
+  }
+
   function renderBrowse() {
     var host = $('il-mom-view'); if (!host) return;
     host.classList.remove('il-mom-report');
@@ -1667,7 +1736,9 @@ window.MinutesOfMeeting = (function () {
       (_momErr
         ? '<div class="il-empty" style="padding:24px;">Could not load minutes: ' + Fmt.esc(_momErr) +
           '<br><small>If this says the relation does not exist, run <code>migrations/2026-08-19-duration-scenarios-and-mom.sql</code>.</small></div>'
-        : (_momView === 'calendar' ? renderMomCalendarHTML(momSearchList()) : renderMomListHTML(rows)));
+        : (_momView === 'calendar'
+            ? renderMomCalendarHTML(momSearchList())
+            : renderMomListHTML(rows) + momListFootnote(rows.length, all.length)));
     wireBrowse();
     if (window.Icons && Icons.hydrate) Icons.hydrate(host);
   }
@@ -2340,8 +2411,18 @@ window.MinutesOfMeeting = (function () {
     if (!confirm('Delete the schedule "' + (s.title || '') + '"?' +
       (n ? '\n\n' + n + ' recorded meeting(s) STAY — they simply stop pointing back at a recurring schedule.' : ''))) return;
     try {
-      var dl = await sb().from('mom_schedules').delete().eq('id', id);
+      // ⚠️ `.select('id')` and a row-count check. These module tables carry an
+      // owner-or-admin DELETE policy (`is_writer() and (created_by = auth.uid()
+      // or is_admin())`), so a refusal matches ZERO rows and PostgREST reports a
+      // clean success with NO error -- the old code then filtered the schedule
+      // out of the local array and toasted "Schedule deleted" over a row that is
+      // still there and returns on the next load. Same defect, same fix, as the
+      // progress-photos deletes (2026-09-04).
+      var dl = await sb().from('mom_schedules').delete().eq('id', id).select('id');
       if (dl.error) throw dl.error;
+      if (!dl.data || !dl.data.length) {
+        throw new Error('The database refused it. A schedule can only be deleted by whoever created it, or by an admin.');
+      }
       SCHEDULES = SCHEDULES.filter(function (x) { return x.id !== id; });
       if (_seriesSel === id) { _seriesSel = null; _momView = _momBrowsePrev || 'list'; }
       UI.toast('Schedule deleted', 'ok');
@@ -2742,6 +2823,22 @@ window.MinutesOfMeeting = (function () {
         : '<p class="il-mom-note">You can read the minutes of this project.</p>')) +
       '<button type="button" class="pd-btn pd-btn-sm il-mom-back" id="il-mom-back">← Back to meetings</button>' +
       momDetailHTML(cur);
+    // ⚠️⚠️ HYDRATE HERE, NOT ONLY IN render(). This is the owner's 2026-09-08 report
+    //    — *"I am not sure if one of the buttons are present view. or any of the
+    //    functions of the other buttons as well"* — and the buttons were not broken,
+    //    they were INVISIBLE. Every control in this card's toolbar is a `data-ico`
+    //    placeholder that `Icons.hydrate()` fills in; `render()` does hydrate
+    //    `#il-mom-view` after calling us, so a FIRST landing looked correct. But
+    //    **28 other call sites invoke renderDetail() directly** — toggling reporting
+    //    view, every item-workflow step, every filter change, every save — and each
+    //    rebuilt this toolbar with nothing to fill the icons in. So the four buttons
+    //    went blank the moment you touched anything, which is precisely the state the
+    //    screenshot caught.
+    // ⚠️ Fixed HERE rather than at the 28 callers for the same reason
+    //    psSetupChanged() exists in project-schedule: a list every future caller has
+    //    to remember is a list that goes stale. The favourite star survived only
+    //    because it is a literal ★/☆ character, not an icon.
+    if (window.Icons && Icons.hydrate) Icons.hydrate(host);
     wireDetail();
     var back = host.querySelector('#il-mom-back');
     if (back) back.onclick = function () {
@@ -2823,7 +2920,14 @@ window.MinutesOfMeeting = (function () {
           // no draft carve-out) — this label used to claim otherwise. What actually
           // narrows is EDITING: you, a planner, or (Individual View item 4) this
           // meeting's attendees while it's a draft.
-          (locked ? 'Distributed' : 'Draft — editable by you, a planner, or this meeting\'s attendees') + '</span>' +
+          // ⚠️ A CHIP STATES THE STATE. This one carried the whole sentence
+          //    "Draft — editable by you, a planner, or this meeting's attendees",
+          //    which made a 60-character paragraph out of a status pill and pushed
+          //    the toolbar's controls off to the far edge. The sentence is not
+          //    dropped — it moved to its own note line below, where the locked-state
+          //    note already lives, so it is still on screen and still readable on a
+          //    phone (a `title` would have hidden it from touch entirely).
+          (locked ? 'Distributed' : 'Draft') + '</span>' +
         '<div style="flex:1;"></div>' +
         // ITEM 5 (round 2): the favorite label ("★ Favorited"/"☆ Favorite")
         // is gone — a plain, larger star icon, no text, matching the icon-only
@@ -2840,9 +2944,18 @@ window.MinutesOfMeeting = (function () {
         // Individual-view item 3 (2026-09-03): reporting/export/email/distribute
         // all go icon-only -- a row of text buttons was the busiest part of the
         // toolbar, and each already carries a `title` naming what it does.
-        '<button class="pd-btn pd-btn-sm il-mom-iconbtn' + (_momReport ? ' is-active' : '') + '" id="il-mom-report" ' +
-          'title="' + (_momReport ? 'Exit reporting view' : 'Reporting view -- a clean read-only record') +
-          '" aria-label="Reporting view"><span data-ico="eye" data-ico-size="16"></span></button>' +
+        // ⚠️ THE ONE LABELLED CONTROL HERE, and the exception is principled rather
+        //    than a reversal of the 2026-09-03 icon-only pass: that pass was about the
+        //    three ACTIONS (export / email / distribute), which are self-evident as
+        //    icons and each carry a title. This is a MODE — it changes what the whole
+        //    screen is — and the owner could not identify it even in principle
+        //    ("I am not sure if one of the buttons are present view"). "Present" is
+        //    the owner's own word for it; the title still names it as the reporting
+        //    view so the two vocabularies stay connected.
+        '<button class="pd-btn pd-btn-sm il-mom-modebtn' + (_momReport ? ' is-active' : '') + '" id="il-mom-report" ' +
+          'title="' + (_momReport ? 'Exit reporting view' : 'Reporting view -- a clean read-only record to present from') +
+          '" aria-label="Reporting view"><span data-ico="eye" data-ico-size="16"></span>' +
+          '<span class="il-mom-modetxt">' + (_momReport ? 'Exit' : 'Present') + '</span></button>' +
         // Item 8: one control surface for HTML/PDF/PowerPoint/Excel, plus a
         // separate Email action — both reads, offered the same way PDF was.
         iconMenuHTML('il-mom-exportsel', 'download', 'Export these minutes', [
@@ -2863,7 +2976,12 @@ window.MinutesOfMeeting = (function () {
       (locked && canDistribute(mom)
         ? '<p class="il-mom-note" style="margin-top:0;">These minutes have been issued, so the form is ' +
           'locked. Revert to draft to change them — everyone on the project can already read this version.</p>'
-        : '') +
+        // The sentence the state chip used to carry. ⚠️ Still says EDITING, not
+        // reading: reading a draft has always been project-wide (meeting_minutes_read
+        // has no draft carve-out), and an earlier version of this label claimed
+        // otherwise.
+        : (mayEdit ? '<p class="il-mom-note" style="margin-top:0;">A draft — you, a planner, or this ' +
+            'meeting\'s attendees can edit it. Everyone on the project can read it.</p>' : '')) +
       // ⚠️ ITEM 12 — the reporting view is a slide deck now, and these ids are
       // what it steps through: #il-mom-slide-details, #il-mom-slide-agenda, then
       // one .il-mi-card per minute. The markup is IDENTICAL in both modes (the
@@ -4382,53 +4500,27 @@ window.MinutesOfMeeting = (function () {
   }
 
   // ------------------------------------------------------------------- pdf ----
-  // ⚠️ The layout below is the standalone mom-app's `downloadPDF()` reproduced field
-  // for field — same red header band, same six-column meta grid, same grey field
-  // blocks, same badge palette, same html2pdf/jsPDF settings — so a minute exported
-  // from here and one exported from that app are the SAME sheet. Do not "tidy" the
-  // inline styles into module.css: html2canvas rasterises this DOM, and the module's
-  // own stylesheet deliberately does not reach it (a themed export would come out dark).
-  var MOM_PDF_BADGE = {
-    'open': 'background:#d4f5d4;color:#1a8f3a;',
-    'closed': 'background:#e5e5ea;color:#666;',
-    'on hold': 'background:#fff3cd;color:#b06800;',
-    // ⚠️ RETAINED although no row can hold 'In Progress' since the 2026-08-22
-    // migration. An export runs against MOM_ITEMS in memory, so a tab opened before the
-    // migration can still print a stale value — and dropping the key would render it in
-    // the default grey, the same grey as Closed. One line, and it fails safe.
-    'in progress': 'background:#fff3cd;color:#b06800;',
-    'issue': 'background:#fde8e8;color:#b40000;',
-    'fyi': 'background:#e8f0fe;color:#1a56db;',
-    'report': 'background:#f3e8ff;color:#6b21a8;'
-  };
-  function momPdfBadge(val) {
-    var s = MOM_PDF_BADGE[String(val || '').toLowerCase()] || 'background:#eee;color:#333;';
-    return '<span style="' + s + ';font-size:9px;font-weight:700;padding:2px 8px;border-radius:20px;' +
-      'display:inline-block;">' + Fmt.esc(val || '-') + '</span>';
-  }
-  function momPdfCell(label, val, mono) {
-    return '<div style="background:#f7f7f8;border-radius:5px;padding:6px 8px;border:1px solid #e5e5ea;">' +
-      '<div style="font-size:8px;font-weight:600;color:#8e8e93;text-transform:uppercase;margin-bottom:2px;">' + label + '</div>' +
-      '<div style="font-size:10px;' + (mono ? 'font-family:monospace;' : '') + '">' + Fmt.esc(val || '-') + '</div></div>';
-  }
-  function momPdfField(label, val) {
-    // Newlines survive as <br> — the notes field is multi-line, and a flattened
-    // paragraph is not the record of what was said.
-    var safe = Fmt.esc(val || '-').replace(/\n/g, '<br>');
-    return '<div style="margin-bottom:6px;background:#f7f7f8;border-radius:6px;padding:7px 10px;border:1px solid #e5e5ea;">' +
-      '<div style="font-size:8px;font-weight:600;color:#8e8e93;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:2px;">' + label + '</div>' +
-      '<div style="font-size:10px;color:#1c1c1e;word-break:break-word;">' + safe + '</div></div>';
-  }
+  // ⚠️⚠️ THE RASTER PDF HELPERS THAT STOOD HERE ARE DELETED, NOT LEFT DEAD.
+  //    `MOM_PDF_BADGE`, `momPdfBadge`, `momPdfCell` and `momPdfField` built inline-styled
+  //    HTML for html2canvas to photograph. Their only two callers -- momDownloadPDF and
+  //    momExportListPDF -- now draw the document natively (see the jsPDF section below),
+  //    so all four had zero remaining references.
+  //    ⚠️ Their header comment claimed this sheet reproduced the standalone mom-app's
+  //    `downloadPDF()` "field for field ... the SAME sheet". That is no longer true and
+  //    is deliberately not carried forward: matching a raster export field-for-field is
+  //    what made the layout bugs unfixable. The native sheet keeps the same INFORMATION
+  //    and the same colour vocabulary; it is not a pixel copy.
 
   // ---- Export & Email (item 8) -------------------------------------------
-  // ⚠️ Deliberately NOT sharing markup-building code with momDownloadPDF
-  // below — that function is already verified end-to-end (a real produced
-  // PDF was opened and checked, not just its source measured; see this
-  // module's own CLAUDE.md for the "measuring the source of a render is not
-  // verifying the render" lesson that cost a round of debugging once).
-  // Touching it to extract a shared helper risks reintroducing exactly that
-  // class of bug in an already-working export. A little duplication of the
-  // field list across four formats is the safer trade.
+  // ⚠️ HTML / XLSX / PPTX keep their own field lists rather than sharing one with
+  // the PDF. That was already the rule here, and the reason has CHANGED rather than
+  // gone away: it used to be "do not touch a verified raster export", and the PDF is
+  // no longer that export. It stands now because the four formats genuinely differ —
+  // the PDF paginates and wraps, XLSX is one row per minute, PPTX is one slide — so a
+  // shared builder would have to be parameterised into something longer than the four
+  // it replaced. ⚠️ The lesson underneath it still holds and is why this file's PDF
+  // work is verified on a REAL PRODUCED FILE (bytes extracted and inspected), never
+  // by reading the code that emits it.
   function momExportFilenameBase(mom) {
     return (mom.title || 'Meeting').replace(/[^a-zA-Z0-9_]/g, '_') + (momLocked(mom) ? '' : '_DRAFT');
   }
@@ -4735,210 +4827,396 @@ window.MinutesOfMeeting = (function () {
     XLSX.writeFile(wb, 'Meetings_' + (projName || 'Project').replace(/[^a-zA-Z0-9_]/g, '_') + '.xlsx');
     UI.toast('Excel file downloaded', 'ok');
   }
-  async function momExportListPDF() {
-    if (typeof html2pdf !== 'function') { UI.toast('The PDF library did not load — check the connection and reload.', 'error'); return; }
-    var rows = momExportListRows();
-    var td = 'padding:5px 8px;border:1px solid #e5e5ea;';
-    var rowsHTML = rows.length
-      ? rows.map(function (r) {
-          return '<tr><td style="' + td + '">' + (r.favorite ? '★' : '') + '</td>' +
-            '<td style="' + td + '">' + Fmt.esc(r.title) + (r.kind === 'series' ? ' (Recurring)' : '') + '</td>' +
-            '<td style="' + td + '">' + Fmt.esc(r.dateLabel) + '</td>' +
-            '<td style="' + td + '">' + (r.attendees || '') + '</td>' +
-            '<td style="' + td + '">' + Fmt.esc(r.location) + '</td></tr>';
-        }).join('')
-      : '<tr><td colspan="5" style="' + td + '">No meetings recorded.</td></tr>';
-    var holder = document.createElement('div');
-    holder.style.cssText = 'position:fixed;left:-10000px;top:0;width:190mm;';
-    var wrap = document.createElement('div');
-    wrap.style.cssText = 'font-family:Arial,sans-serif;font-size:10px;color:#1c1c1e;width:190mm;padding:15mm 10mm;box-sizing:border-box;background:#fff;';
-    wrap.innerHTML =
-      '<div style="background:#b40000;padding:14px 20px;margin:-20px -20px 18px -20px;">' +
-        '<div style="font-size:14px;font-weight:700;color:#fff;">Meetings — ' + Fmt.esc(projName) + '</div></div>' +
-      '<table style="border-collapse:collapse;width:100%;"><thead><tr>' +
-        '<th style="' + td + 'text-align:left;background:#f7f7f8;"></th>' +
-        '<th style="' + td + 'text-align:left;background:#f7f7f8;">Title</th>' +
-        '<th style="' + td + 'text-align:left;background:#f7f7f8;">Date / Frequency</th>' +
-        '<th style="' + td + 'text-align:left;background:#f7f7f8;">Attendees</th>' +
-        '<th style="' + td + 'text-align:left;background:#f7f7f8;">Location</th>' +
-      '</tr></thead><tbody>' + rowsHTML + '</tbody></table>';
-    holder.appendChild(wrap);
-    document.body.appendChild(holder);
-    try {
-      await html2pdf().set({
-        margin: [10, 10, 10, 10], filename: 'Meetings_' + (projName || 'Project').replace(/[^a-zA-Z0-9_]/g, '_') + '.pdf',
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, allowTaint: true, logging: false, backgroundColor: '#ffffff' },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-      }).from(wrap).save();
-      UI.toast('PDF downloaded', 'ok');
-    } catch (e) {
-      UI.toast('PDF error: ' + ((e && e.message) || e), 'error');
-    } finally {
-      if (holder.parentNode) holder.parentNode.removeChild(holder);
+  // ==========================================================================
+  // NATIVE PDF (jsPDF + autoTable) — replaces the html2canvas raster export.
+  // --------------------------------------------------------------------------
+  // ⚠️⚠️ WHY THIS WAS REWRITTEN, AND WHY IT MUST NOT GO BACK TO html2pdf.
+  // The old export was `html2pdf().from(node).save()` — html2canvas rasterises the
+  // DOM and jsPDF pastes the bitmap in. Every page was ONE JPEG. Consequences,
+  // measured on a real exported file (Meeting_Aug_28__2026_MOM.pdf, 3 pages):
+  //   - 350 KB for three pages, and no selectable or searchable text at all;
+  //   - it PHOTOGRAPHED the screen's layout bugs. A 400-character unbroken run ran
+  //     off the right edge of the sheet and was CLIPPED AT THE PAGE BOUNDARY —
+  //     the reported "texts are not properly wrapped and spilling over the page".
+  //     No CSS fix can help: the overflow is inside the picture.
+  //   - page breaks fell wherever the bitmap was sliced, leaving half-empty sheets.
+  // Drawing the document natively makes wrapping a property of the RENDERER
+  // (`splitTextToSize` cannot overflow) rather than something the CSS has to get
+  // right, and the text stays real text.
+  // ⚠️ jsPDF is NOT available from the html2pdf bundle — MEASURED: with only
+  // html2pdf.bundle.min.js loaded, `window.jspdf` is undefined and `html2pdf.jsPDF`
+  // does not exist. index.html therefore loads jspdf.umd + the autotable plugin.
+  // ==========================================================================
+
+  var PDFC = {
+    red:   [180, 0, 0],
+    ink:   [28, 28, 30],
+    muted: [128, 128, 138],
+    line:  [223, 223, 229],
+    panel: [247, 247, 248],
+    white: [255, 255, 255]
+  };
+  // Same vocabulary as the on-screen pills, in print-safe tints.
+  var PDF_BADGE2 = {
+    'open':      { bg: [255, 233, 233], fg: [178, 30, 30] },
+    'on hold':   { bg: [255, 243, 222], fg: [166, 105, 10] },
+    'closed':    { bg: [228, 245, 233], fg: [21, 114, 66] },
+    'issue':     { bg: [255, 233, 233], fg: [178, 30, 30] },
+    'fyi':       { bg: [231, 239, 255], fg: [38, 86, 184] },
+    'report':    { bg: [239, 239, 244], fg: [66, 66, 78] }
+  };
+
+  function pdfNew() {
+    var C = window.jspdf && window.jspdf.jsPDF;
+    if (!C) return null;
+    return new C({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
+  }
+
+  // ⚠️ Resolves to null instead of rejecting. A logo that fails to load must cost the
+  // header its picture, never the whole export.
+  // ⚠️⚠️ IT IS DOWNSCALED FIRST, AND THAT IS NOT A MICRO-OPTIMISATION. `logo-white.png`
+  //    is 6846x1178 (106 KB) and the band draws it 42mm wide — about 500px at 300dpi.
+  //    Embedding the original made the LOGO 93.5 KB of a 104.5 KB export (MEASURED on a
+  //    real produced file): the picture outweighed the entire minutes record ~9:1, which
+  //    would have undone most of the point of dropping the raster export. Re-drawn
+  //    through a canvas at print resolution before it ever reaches addImage.
+  // ⚠️ PNG, not JPEG: the wordmark is white on TRANSPARENT and sits on the red band —
+  //    JPEG has no alpha and would put a white box across the header.
+  function pdfLoadImg(src, targetW) {
+    return new Promise(function (res) {
+      var im = new Image();
+      im.onload = function () {
+        try {
+          var w = Math.min(targetW || 520, im.naturalWidth);
+          var h = Math.round(w * (im.naturalHeight / im.naturalWidth));
+          var cv = document.createElement('canvas');
+          cv.width = w; cv.height = h;
+          cv.getContext('2d').drawImage(im, 0, 0, w, h);
+          res({ data: cv.toDataURL('image/png'), w: w, h: h });
+        } catch (e) {
+          // A tainted canvas (should not happen — same origin) still leaves the
+          // original usable, so fall back to it rather than losing the logo.
+          res({ data: im, w: im.naturalWidth, h: im.naturalHeight });
+        }
+      };
+      im.onerror = function () { res(null); };
+      im.src = src;
+    });
+  }
+
+  function pdfCtx(doc, head) {
+    return { doc: doc, L: 14, R: 14, w: 210 - 28, top: 32, bottom: 281, y: 32, head: head };
+  }
+
+  // Draws the red band. ⚠️ Does NOT move the cursor — autoTable's didDrawPage calls
+  // this for pages IT creates, where the cursor is autoTable's business, not ours.
+  function pdfBand(c) {
+    var d = c.doc, h = c.head;
+    d.setFillColor.apply(d, PDFC.red);
+    d.rect(0, 0, 210, 24, 'F');
+    var tx = c.L;
+    if (h.logo) {
+      // preserve the wordmark's aspect ratio; it is ~5.8:1
+      var lw = 42, lh = lw * (h.logo.h / h.logo.w || 0.172);
+      // ⚠️ A fixed alias, so jsPDF stores ONE copy of the bitmap and every page after
+      //    the first references it. Without it the same logo is embedded per page.
+      try { d.addImage(h.logo.data, 'PNG', c.L, 12 - lh / 2, lw, lh, 'pdMomLogo', 'FAST'); tx = c.L + lw + 6; } catch (e) {}
+    }
+    d.setTextColor.apply(d, PDFC.white);
+    if (h.draft) {
+      d.setFillColor.apply(d, PDFC.white);
+      d.roundedRect(210 - c.R - 15, 6.2, 15, 5, 1, 1, 'F');
+      d.setTextColor.apply(d, PDFC.red);
+      d.setFont('helvetica', 'bold'); d.setFontSize(6.5);
+      d.text('DRAFT', 210 - c.R - 7.5, 9.9, { align: 'center' });
+      d.setTextColor.apply(d, PDFC.white);
+    }
+    d.setFont('helvetica', 'bold'); d.setFontSize(11);
+    var maxT = 210 - c.R - tx - (h.draft ? 18 : 0);
+    var tl = d.splitTextToSize(h.title || 'Meeting', maxT);
+    d.text(tl[0], tx, h.sub ? 11.5 : 13.5);
+    if (h.sub) {
+      d.setFont('helvetica', 'normal'); d.setFontSize(7.5);
+      d.text(d.splitTextToSize(h.sub, 210 - c.R - tx)[0], tx, 16.5);
+    }
+    d.setTextColor.apply(d, PDFC.ink);
+  }
+
+  function pdfPage(c) { c.doc.addPage(); pdfBand(c); c.y = c.top; }
+  function pdfNeed(c, h) { if (c.y + h > c.bottom) pdfPage(c); }
+
+  // A section heading — the three named parts of the record.
+  function pdfHeading(c, txt) {
+    pdfNeed(c, 12);
+    var d = c.doc;
+    c.y += 3;
+    d.setFont('helvetica', 'bold'); d.setFontSize(9);
+    d.setTextColor.apply(d, PDFC.ink);
+    d.text(txt, c.L, c.y);
+    c.y += 1.8;
+    d.setDrawColor.apply(d, PDFC.red); d.setLineWidth(0.5);
+    d.line(c.L, c.y, c.L + 16, c.y);
+    d.setLineWidth(0.2);
+    c.y += 4;
+  }
+
+  // A labelled value block. ⚠️ The value is wrapped by splitTextToSize and then drawn
+  // line by line with a page check per CHUNK, so a 400-character run becomes N lines
+  // that flow across pages instead of running off the sheet. This is the whole reason
+  // the export was rewritten.
+  function pdfField(c, label, val, opts) {
+    opts = opts || {};
+    var d = c.doc, pad = 2.2, w = opts.w || c.w, x = opts.x || c.L;
+    var txt = (val == null || val === '') ? '—' : String(val);
+    d.setFont('helvetica', 'normal'); d.setFontSize(8.5);
+    var lines = d.splitTextToSize(txt, w - pad * 2);
+    var lh = 3.7, labH = 3.6;
+    var i = 0;
+    while (i < lines.length) {
+      pdfNeed(c, labH + lh + pad * 2);
+      var room = Math.max(1, Math.floor((c.bottom - c.y - labH - pad * 2) / lh));
+      var chunk = lines.slice(i, i + room);
+      var boxH = labH + chunk.length * lh + pad * 2 - 0.6;
+      d.setFillColor.apply(d, PDFC.panel);
+      d.setDrawColor.apply(d, PDFC.line);
+      d.roundedRect(x, c.y, w, boxH, 1.2, 1.2, 'FD');
+      d.setFont('helvetica', 'bold'); d.setFontSize(6);
+      d.setTextColor.apply(d, PDFC.muted);
+      d.text(String(i === 0 ? label : label + ' (cont.)').toUpperCase(), x + pad, c.y + pad + 1.8);
+      d.setFont('helvetica', 'normal'); d.setFontSize(8.5);
+      d.setTextColor.apply(d, PDFC.ink);
+      for (var k = 0; k < chunk.length; k++) {
+        d.text(chunk[k], x + pad, c.y + pad + labH + 1.2 + k * lh);
+      }
+      c.y += boxH + 2;
+      i += chunk.length;
+    }
+  }
+
+  function pdfBadgeCell(d, txt, x, y, val) {
+    var st = PDF_BADGE2[String(val || '').toLowerCase()] || { bg: [238, 238, 238], fg: [60, 60, 60] };
+    d.setFont('helvetica', 'bold'); d.setFontSize(6.5);
+    var tw = d.getTextWidth(txt) + 4;
+    d.setFillColor.apply(d, st.bg);
+    d.roundedRect(x, y - 2.6, tw, 4.2, 1, 1, 'F');
+    d.setTextColor.apply(d, st.fg);
+    d.text(txt, x + 2, y + 0.4);
+    d.setTextColor.apply(d, PDFC.ink);
+  }
+
+  // "Page N of M", stamped once at the end when M is finally known.
+  function pdfFooters(c, note) {
+    var d = c.doc, n = d.getNumberOfPages();
+    for (var p = 1; p <= n; p++) {
+      d.setPage(p);
+      d.setFont('helvetica', 'normal'); d.setFontSize(6.5);
+      d.setTextColor.apply(d, PDFC.muted);
+      d.setDrawColor.apply(d, PDFC.line); d.setLineWidth(0.2);
+      d.line(c.L, 284, 210 - c.R, 284);
+      if (note) d.text(d.splitTextToSize(note, c.w - 30)[0], c.L, 288);
+      d.text('Page ' + p + ' of ' + n, 210 - c.R, 288, { align: 'right' });
+    }
+  }
+
+  // ⚠️ ITEM 3 (owner): "the output pdf/export should show the attendees of the meeting
+  // as well." They were already BUILT — but every tier was behind `if (mom.attendees_x)`
+  // and each printed only when non-empty, so a meeting with none recorded produced a
+  // sheet with no attendee section at all and nothing saying why. That is the state the
+  // owner's exported file was in. The section is now ALWAYS printed, and says plainly
+  // when a tier is empty, because "nobody was recorded" is itself a fact about a minute.
+  function momPdfAttendees(c, mom) {
+    pdfHeading(c, 'Attendees');
+    var structured = mom.attendees_required || mom.attendees_optional || mom.attendees_actual;
+    if (structured) {
+      var tiers = [
+        ['Required', mom.attendees_required],
+        ['Optional', mom.attendees_optional],
+        ['Actual', mom.attendees_actual]
+      ];
+      for (var i = 0; i < tiers.length; i++) {
+        var o = tiers[i][1] || {};
+        var names = championText(o.ids || [], o.text || '');
+        var n = (o.ids || []).length + ((o.text || '').trim() ? 1 : 0);
+        pdfField(c, tiers[i][0] + (n ? ' (' + n + ')' : ''), names || 'None recorded');
+      }
+    } else {
+      // The legacy free-text column, printed only when no structured tier exists —
+      // printing both would show the same names twice under two headings.
+      pdfField(c, 'Attendees', mom.attendees || 'None recorded');
     }
   }
 
   async function momDownloadPDF(momId) {
     var mom = MOMS.find(function (x) { return x.id === momId; });
     if (!mom) return;
-    if (typeof html2pdf !== 'function') {
+    var doc = pdfNew();
+    if (!doc) {
       UI.toast('The PDF library did not load — check the connection and reload.', 'error');
       return;
     }
-    var btn = $('il-mom-pdf'), orig = btn ? btn.innerHTML : '';
-    if (btn) { btn.textContent = 'Generating…'; btn.disabled = true; }
-    var wrap = null, holder = null;
+    var btn = document.getElementById('il-mom-exportsel')
+      ? document.querySelector('#il-mom-exportsel .il-icondd-btn') : null;
+    setBusy(btn, true);
     try {
       var items = momItemsOf(mom.id);
-      var filename = (mom.title || 'Meeting').replace(/[^a-zA-Z0-9_]/g, '_') +
-        (momLocked(mom) ? '' : '_DRAFT') + '_MOM.pdf';
+      var locked = momLocked(mom);
+      var logo = await pdfLoadImg('../../assets/img/logo-white.png');
+      var c = pdfCtx(doc, {
+        logo: logo,
+        draft: !locked,
+        title: (projName || '') + ' — ' + (mom.title || 'Meeting'),
+        // ⚠️ Built from the parts that EXIST. The raster export joined these
+        // unconditionally and printed "- (3 items)" with a dangling dash and a pin
+        // for a meeting with no location.
+        sub: [
+          mom.meeting_date ? Fmt.date(mom.meeting_date) : null,
+          mom.location || null,
+          items.length + ' item' + (items.length === 1 ? '' : 's')
+        ].filter(Boolean).join('  ·  ')
+      });
+      pdfBand(c);
+      doc.setProperties({ title: (mom.title || 'Meeting'), subject: projName || '' });
 
-      var cards = items.map(function (it, i) {
+      // ---- Meeting details ----
+      pdfHeading(c, 'Meeting details');
+      pdfField(c, 'Meeting', [mom.meeting_group, mom.meeting_type].filter(Boolean).join(' — ') || '—');
+      if (mom.venue) pdfField(c, 'Venue', mom.venue);
+      if (mom.meeting_link) pdfField(c, 'Meeting link', mom.meeting_link);
+      if (mom.recording_url) pdfField(c, 'Recording', mom.recording_url);
+      if (mom.schedule_activity_id) {
+        pdfField(c, 'Activity discussed', mom.schedule_activity_id +
+          (MOM_ACT_NAME[mom.schedule_activity_id] ? ' · ' + MOM_ACT_NAME[mom.schedule_activity_id] : ''));
+      }
+      if (mom.notes) pdfField(c, 'Notes / discussion', mom.notes);
+
+      momPdfAttendees(c, mom);
+
+      // ---- Minutes ----
+      pdfHeading(c, 'Minutes' + (items.length ? ' (' + items.length + ')' : ''));
+      if (!items.length) {
+        pdfField(c, 'Minutes', 'No minutes were recorded on this meeting.');
+      }
+      items.forEach(function (it, i) {
         var iss = momIssueOf(it);
         // ⚠️ Rows written before the migration hold their action text in `description`.
         var actText = it.action_item || it.description;
-        return '<div style="margin-bottom:14px;padding:12px;border:1px solid #ddd;border-radius:8px;break-inside:avoid;">' +
-          '<div style="display:grid;grid-template-columns:0.4fr 1.5fr 0.9fr 0.9fr 1.2fr 1fr;gap:5px;margin-bottom:8px;">' +
-            momPdfCell('No.', it.item_no || String((it.seq == null ? i : it.seq) + 1), true) +
-            momPdfCell('Department', momItemDept(it)) +
-            '<div style="background:#f7f7f8;border-radius:5px;padding:6px 8px;border:1px solid #e5e5ea;">' +
-              '<div style="font-size:8px;font-weight:600;color:#8e8e93;text-transform:uppercase;margin-bottom:2px;">Type</div>' +
-              // ⚠️ Falls back to the register link only when the row is untyped — legacy
-              // rows predate the `type` column, and printing a dash for every one of them
-              // would lose a true statement the export can still make about them.
-              momPdfBadge(it.type || (it.issue_id ? 'Issue' : 'FYI')) + '</div>' +
-            '<div style="background:#f7f7f8;border-radius:5px;padding:6px 8px;border:1px solid #e5e5ea;">' +
-              '<div style="font-size:8px;font-weight:600;color:#8e8e93;text-transform:uppercase;margin-bottom:2px;">Status</div>' +
-              // ⚠️ Once raised, the REGISTER owns the status — the same rule the screen
-              // follows. Printing `mom_items.status` for a raised action would put a
-              // stale status on paper that outlives the screen showing the live one.
-              momPdfBadge(iss ? (iss.status || 'Open') : (it.status || 'Open')) + '</div>' +
-            momPdfCell('Responsible', it.owner) +
-            momPdfCell('Target Date', it.due_date ? Fmt.date(it.due_date) : '', true) +
-          '</div>' +
-          // mom-app's three text blocks, now backed by three real columns.
-          // ⚠️ Each falls back to what the row can still truthfully say, because rows
-          // written before the migration hold their action text in `description`.
-          momPdfField('Issue / Agenda', it.issue) +
-          momPdfField('Action Item', actText) +
-          // Blank when the action text CAME from description (a legacy row), or the
-          // sheet prints the same sentence twice under two different headings.
-          momPdfField('Description', it.description !== actText ? it.description : '') +
-          // ⚠️ ITEM #23 — the same narrative the screen keeps visible after
-          // the workflow panel that captured it has closed.
-          (!it.issue_id && it.status === 'On Hold' && it.hold_reason ? momPdfField('Reason for Hold', it.hold_reason) : '') +
-          (!it.issue_id && it.status === 'Closed' && it.closure_report ? momPdfField('Closure note', it.closure_report) : '') +
-          // Not a mom-app block: mom-app has no register to point at. Printed only when
-          // the action has actually been raised, so it never adds an empty row.
-          // Named, never embedded: the bucket is private, so a link in the sheet would
-          // be dead for whoever opens the PDF. Saying a file exists is the useful half.
-          (it.attachment_name ? momPdfField('Attachment', it.attachment_name) : '') +
-          (iss ? momPdfField('Status in Issues & Concerns',
+        var status = iss ? (iss.status || 'Open') : (it.status || 'Open');
+        var type = it.type || (it.issue_id ? 'Issue' : 'FYI');
+
+        pdfNeed(c, 26);
+        doc.autoTable({
+          startY: c.y,
+          margin: { left: c.L, right: c.R, top: c.top },
+          head: [['No.', 'Department', 'Type', 'Status', 'Responsible', 'Target date']],
+          body: [[
+            String(it.item_no || (it.seq == null ? i : it.seq) + 1),
+            momItemDept(it) || '—', '', '',
+            it.owner || '—',
+            it.due_date ? Fmt.date(it.due_date) : '—'
+          ]],
+          theme: 'grid',
+          styles: { font: 'helvetica', fontSize: 7.5, cellPadding: 1.6, overflow: 'linebreak',
+                    lineColor: PDFC.line, lineWidth: 0.15, textColor: PDFC.ink },
+          headStyles: { fillColor: PDFC.panel, textColor: PDFC.muted, fontStyle: 'bold', fontSize: 6 },
+          columnStyles: { 0: { cellWidth: 12 }, 2: { cellWidth: 20 }, 3: { cellWidth: 22 } },
+          // The Type and Status cells are drawn as pills instead of plain text, so the
+          // sheet keeps the screen's colour vocabulary.
+          didDrawCell: function (data) {
+            if (data.section !== 'body') return;
+            if (data.column.index === 2) pdfBadgeCell(doc, type, data.cell.x + 1.6, data.cell.y + data.cell.height / 2 + 0.6, type);
+            if (data.column.index === 3) pdfBadgeCell(doc, status, data.cell.x + 1.6, data.cell.y + data.cell.height / 2 + 0.6, status);
+          },
+          didDrawPage: function () { pdfBand(c); }
+        });
+        c.y = doc.lastAutoTable.finalY + 2;
+
+        // ⚠️ Field order matches the SCREEN (Issue → Description → Action item). The
+        // raster export printed Issue → Action → Description, so the paper and the
+        // screen disagreed about the order of the record.
+        pdfField(c, 'Issue / Agenda', it.issue);
+        // Blank when the action text CAME from description (a legacy row), or the sheet
+        // prints the same sentence twice under two different headings.
+        if (it.description && it.description !== actText) pdfField(c, 'Description', it.description);
+        pdfField(c, 'Action item', actText);
+        if (!it.issue_id && it.status === 'On Hold' && it.hold_reason) pdfField(c, 'Reason for hold', it.hold_reason);
+        if (!it.issue_id && it.status === 'Closed' && it.closure_report) pdfField(c, 'Closure note', it.closure_report);
+        // Named, never linked: the bucket is private, so a URL here would be dead for
+        // whoever opens the PDF. Saying a file exists is the useful half.
+        if (it.attachment_name) pdfField(c, 'Attachment', it.attachment_name);
+        if (iss) {
+          pdfField(c, 'Status in Issues & Concerns',
             (iss.status || 'Open') + (iss.champion ? ' · champion ' + iss.champion : '') +
-            (it.carried_from_item_id ? ' · carried over from an earlier meeting' : '')) : '') +
-        '</div>';
-      }).join('');
+            (it.carried_from_item_id ? ' · carried over from an earlier meeting' : ''));
+        }
+        c.y += 2;
+      });
 
-      // ⚠️ A plain detached element, not a full document string: html2canvas renders
-      // whatever DOM it is handed, and reusing the module's own markup would drag the
-      // dark-theme variables in with it.
-      // ⚠️⚠️ THE EXPORTED NODE MUST BE IN NORMAL FLOW. DO NOT PUT `position:fixed`
-      // (or absolute) BACK ON `wrap`. It used to carry `position:fixed;left:-10000px`
-      // to park itself off-screen, and that produced a COMPLETELY BLANK PDF — every
-      // sheet was an empty A4 page whose content stream held nothing but a line width.
-      //
-      // Why: html2pdf clones the source into its own container and measures it there.
-      // An out-of-flow element contributes NOTHING to that container's height, so
-      // html2canvas got the right width and a height of ZERO and rendered no image at
-      // all (measured: canvas 1438x0, and `/XObject <<>>` empty in the produced file).
-      // An explicit `height` does not save it — the clone is still out of flow.
-      //
-      // So the OFF-SCREEN PARKING MOVES TO A HOLDER and the captured element stays in
-      // normal flow inside it. The holder is what hides the node; `wrap` is what gets
-      // rendered. Measured after the change: canvas 1438x360 with real content.
-      holder = document.createElement('div');
-      holder.style.cssText = 'position:fixed;left:-10000px;top:0;width:190mm;';
+      pdfFooters(c, (projName || '') + ' · ' + (mom.title || 'Meeting') +
+        (locked ? '' : ' · DRAFT — not yet distributed'));
 
-      wrap = document.createElement('div');
-      wrap.style.cssText = 'font-family:Arial,sans-serif;font-size:9px;color:#1c1c1e;width:190mm;' +
-        'padding:15mm 10mm;box-sizing:border-box;background:#fff;';
-
-      // Header fields this module records and mom-app does not. They are the minute's
-      // substance — dropping them to match a narrower app would export a worse record —
-      // so they print in the same field blocks, above the actions.
-      var head = '';
-      // ⚠️ ITEM #20 — the STRUCTURED attendee tiers print when any of them has
-      // been filled in; the old free-text `attendees` column is the fallback
-      // for a minute recorded before they existed, never printed alongside
-      // them (that would show the same names twice under two headings).
-      if (mom.attendees_required || mom.attendees_optional || mom.attendees_actual) {
-        if (mom.attendees_required) head += momPdfField('Required attendees', championText(mom.attendees_required.ids, mom.attendees_required.text));
-        if (mom.attendees_optional) head += momPdfField('Optional attendees', championText(mom.attendees_optional.ids, mom.attendees_optional.text));
-        if (mom.attendees_actual) head += momPdfField('Actual attendees', championText(mom.attendees_actual.ids, mom.attendees_actual.text));
-      } else if (mom.attendees) {
-        head += momPdfField('Attendees', mom.attendees);
-      }
-      // ⚠️ ITEM #21 — the group (Internal/External) and the free-text
-      // description print together, since neither alone is what the old
-      // single "Meeting type" line used to say.
-      if (mom.meeting_group || mom.meeting_type) {
-        head += momPdfField('Meeting', [mom.meeting_group, mom.meeting_type].filter(Boolean).join(' — '));
-      }
-      if (mom.venue) head += momPdfField('Venue', mom.venue);
-      if (mom.meeting_link) head += momPdfField('Meeting link', mom.meeting_link);
-      if (mom.recording_url) head += momPdfField('Recording', mom.recording_url);
-      if (mom.schedule_activity_id) {
-        head += momPdfField('Activity discussed', mom.schedule_activity_id +
-          (MOM_ACT_NAME[mom.schedule_activity_id] ? ' · ' + MOM_ACT_NAME[mom.schedule_activity_id] : ''));
-      }
-      if (mom.notes) head += momPdfField('Notes / discussion', mom.notes);
-      if (head) head = '<div style="margin-bottom:14px;">' + head + '</div>';
-
-      wrap.innerHTML =
-        '<div style="background:#b40000;padding:14px 20px;margin:-20px -20px 18px -20px;display:flex;justify-content:space-between;align-items:center;">' +
-          '<img src="../../assets/img/logo-white.png" style="height:26px;width:auto;" crossorigin="anonymous"/>' +
-          '<div style="text-align:right;">' +
-            '<div style="font-size:12px;font-weight:700;color:#fff;">' +
-              // ⚠️ An undistributed minute MUST say so on paper. A PDF outlives the screen
-              // that knows it was a draft, and a sheet that reads as issued minutes when
-              // nobody has issued them is the one way this export can mislead.
-              (momLocked(mom) ? '' : '<span style="background:#fff;color:#b40000;font-size:9px;' +
-                'font-weight:800;padding:2px 7px;border-radius:3px;letter-spacing:0.08em;' +
-                'margin-right:8px;vertical-align:middle;">DRAFT</span>') +
-              Fmt.esc(projName) + ' — ' + Fmt.esc(mom.title || 'Meeting') + '</div>' +
-            '<div style="font-size:9px;color:rgba(255,255,255,0.85);margin-top:3px;">📅 ' +
-              Fmt.esc(mom.meeting_date ? Fmt.date(mom.meeting_date) : '-') + '   📍 ' + Fmt.esc(mom.location || '-') +
-              '   (' + items.length + ' item' + (items.length !== 1 ? 's' : '') + ')</div>' +
-          '</div>' +
-        '</div>' + head +
-        (items.length ? cards : momPdfField('Minutes', 'No minutes were recorded on this meeting.'));
-
-      // ⚠️ Must be IN the document: html2canvas measures a laid-out element, and an
-      // orphan node has no box. The HOLDER is parked off-screen so the page does not
-      // jump; `wrap` sits in normal flow inside it (see the warning above).
-      holder.appendChild(wrap);
-      document.body.appendChild(holder);
-
-      await html2pdf().set({
-        margin: [10, 10, 10, 10],
-        filename: filename,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, allowTaint: true, logging: false, backgroundColor: '#ffffff' },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-      }).from(wrap).save();
-
+      var filename = (mom.title || 'Meeting').replace(/[^a-zA-Z0-9_]/g, '_') +
+        (locked ? '' : '_DRAFT') + '_MOM.pdf';
+      doc.save(filename);
       UI.toast('PDF downloaded', 'ok');
     } catch (e) {
       UI.toast('PDF error: ' + ((e && e.message) || e), 'error');
     } finally {
-      // ⚠️ In `finally`: a throw mid-render would otherwise leave the off-screen node
-      // in the document, and every later export would stack another one.
-      // Removing the holder takes `wrap` with it.
-      if (holder && holder.parentNode) holder.parentNode.removeChild(holder);
-      if (btn) { btn.innerHTML = orig; btn.disabled = false; }
+      setBusy(btn, false);
     }
   }
+
+  // The meeting LIST as a table. Same native engine — one code path for both exports,
+  // so they cannot drift in wrapping or page handling.
+  async function momExportListPDF() {
+    var doc = pdfNew();
+    if (!doc) {
+      UI.toast('The PDF library did not load — check the connection and reload.', 'error');
+      return;
+    }
+    try {
+      var rows = momExportListRows();
+      var logo = await pdfLoadImg('../../assets/img/logo-white.png');
+      var c = pdfCtx(doc, {
+        logo: logo, draft: false,
+        title: (projName || '') + ' — Meetings',
+        sub: rows.length + ' meeting' + (rows.length === 1 ? '' : 's') + '  ·  ' + Fmt.date(momToday())
+      });
+      pdfBand(c);
+      doc.autoTable({
+        startY: c.top,
+        margin: { left: c.L, right: c.R, top: c.top },
+        head: [['', 'Title', 'Date / Frequency', 'Attendees', 'Location', 'Minutes']],
+        // ⚠️ Field names taken from momUnifiedRows()'s own row shape, not guessed:
+        //    kind / title / dateLabel / attendees / location / open / total / favorite.
+        //    `open`/`total` are counts, and a meeting with no minutes reads —, never
+        //    "0 of 0 open", which is the rule the list view itself follows.
+        body: rows.map(function (r) {
+          return [
+            r.favorite ? '*' : '',
+            (r.title || '—') + (r.kind === 'series' ? '  (Recurring)' : ''),
+            r.dateLabel || '—',
+            String(r.attendees == null ? '—' : r.attendees),
+            r.location || '—',
+            r.total ? (r.open + ' of ' + r.total + ' open') : '—'
+          ];
+        }),
+        theme: 'grid',
+        styles: { font: 'helvetica', fontSize: 8, cellPadding: 1.8, overflow: 'linebreak',
+                  lineColor: PDFC.line, lineWidth: 0.15, textColor: PDFC.ink },
+        headStyles: { fillColor: PDFC.panel, textColor: PDFC.muted, fontStyle: 'bold', fontSize: 6.5 },
+        columnStyles: { 0: { cellWidth: 5, halign: 'center' }, 2: { cellWidth: 28 },
+                        3: { cellWidth: 18, halign: 'right' }, 5: { cellWidth: 24 } },
+        didDrawPage: function () { pdfBand(c); }
+      });
+      pdfFooters(c, (projName || '') + ' · Meetings');
+      doc.save((projName || 'Project').replace(/[^a-zA-Z0-9_]/g, '_') + '_Meetings.pdf');
+      UI.toast('PDF downloaded', 'ok');
+    } catch (e) {
+      UI.toast('PDF error: ' + ((e && e.message) || e), 'error');
+    }
+  }
+
+
 
   // ==========================================================================
   // ITEM 12 — REPORTING VIEW AS A SLIDE DECK.
@@ -5370,8 +5648,19 @@ window.MinutesOfMeeting = (function () {
         // name the object with and it is orphaned in the bucket forever.
         var paths = momPathsOf(it ? [it] : []);
         try {
-          var dl = await sb().from('mom_items').delete().eq('id', id);
+          // ⚠️ `.select('id')` and a row-count check — owner-or-admin DELETE
+          // policy, so a refusal is a silent zero-row success (see the schedule
+          // delete above).
+          // ⚠️⚠️ AND THE ATTACHMENT REMOVAL MUST NOT RUN ON A REFUSAL. The line
+          //     below deletes the item's files from the bucket; unguarded, a
+          //     REFUSED row delete still destroyed them, leaving a live agenda
+          //     item whose attachments are gone for good. Losing a file is not
+          //     the same class of bug as a misleading toast.
+          var dl = await sb().from('mom_items').delete().eq('id', id).select('id');
           if (dl.error) throw dl.error;
+          if (!dl.data || !dl.data.length) {
+            throw new Error('The database refused it. An agenda item can only be deleted by whoever added it, or by an admin.');
+          }
           if (paths.length) { try { await sb().storage.from(MOM_BUCKET).remove(paths); } catch (e) {} }
           MOM_ITEMS = MOM_ITEMS.filter(function (x) { return x.id !== id; });
           renderDetail();
@@ -5394,8 +5683,17 @@ window.MinutesOfMeeting = (function () {
         (paths.length ? '\n\n' + paths.length + ' attached file(s) are deleted too.' : '') +
         (raised ? '\n\n' + raised + ' issue(s) already raised in Issues & Concerns will REMAIN — they simply stop pointing back at a meeting.' : ''))) return;
       try {
-        var dl = await sb().from('meeting_minutes').delete().eq('id', _momSel);
+        // ⚠️ Same guard, and here the stakes are highest in the module: the
+        // confirm() above warns that N attached files go with the minutes, and
+        // unguarded that removal ran even when the ROW delete was refused --
+        // destroying every attachment on a meeting that then stayed in the
+        // register. Owner-or-admin DELETE policy; a refusal is a silent zero-row
+        // success (see the two deletes above).
+        var dl = await sb().from('meeting_minutes').delete().eq('id', _momSel).select('id');
         if (dl.error) throw dl.error;
+        if (!dl.data || !dl.data.length) {
+          throw new Error('The database refused it. Minutes can only be deleted by whoever recorded them, or by an admin.');
+        }
         if (paths.length) { try { await sb().storage.from(MOM_BUCKET).remove(paths); } catch (e) {} }
         MOM_ITEMS = MOM_ITEMS.filter(function (x) { return x.mom_id !== _momSel; });
         MOMS = MOMS.filter(function (x) { return x.id !== _momSel; });
