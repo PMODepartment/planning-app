@@ -95,6 +95,39 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-09 (w) — The sidebar brand block gives 22px back to the nav
+
+Owner: *"Reclaim the height so the nav starts higher, smoothen the placement of the Planning
+Suite."* **Measured at 1440×820 before touching anything**: the brand block was **95px** and the
+first nav row began at **131px** — 22 top padding + 30 logo + 9 + 15 wordmark + 18 bottom + 1 rule,
+and then nav's own 16 before the PROJECT label. Nearly a fifth of a 13-item rail spent before the
+first item.
+
+| | before | after |
+|---|---|---|
+| brand block | 95px | **79px** |
+| first nav row | 131px | **109px** |
+| PROJECT label | 111px | **89px** |
+
+⚠ **The wordmark is smoothed, not just squeezed.** The old rhythm ran **22 / 9 / 18** — the
+wordmark sat nearer the logo than the rule beneath it while the outer margins disagreed by 4px, so
+the lockup read as drifting rather than centred. It is now **14 / 7 / 13**: the pair stays tight
+(the wordmark belongs to the mark) with outer margins that read as even. Measured, not eyeballed.
+⚠ The `.18em` letter-spacing and the matching `padding-left` optical re-centre are untouched — that
+hack is correct and its comment explains why.
+
+⚠ **Both other brand states verified unchanged.** The collapsed icon rail keeps its own
+`16px 8px` and still swaps the wordmark for the mark (measured: 63px, logo `display:none`, mark
+`block`). The phone drawer keeps its safe-area padding because the `@media (max-width:820px)`
+block restates `.pd-brand` at **line 1084**, after the rule edited at **line 154** and at equal
+specificity — ⚠ confirmed by SOURCE ORDER rather than by measurement, because the pane refused to
+emulate 420px and reported 980 instead. Saying which of the two it was matters: one is proof, the
+other is a check that did not run.
+
+⚠ `dashboard.css` is SHARED — `?v=` bumped across **all 29 pages** in one pass; a partial bump
+leaves pages disagreeing about which copy they hold. `MODULE_V` → `20260909w`.
+⚠ **Not verified signed in** — measured in a harness carrying the brand markup byte-for-byte from
+`dashboard.html` and the real stylesheet.
 ### 2026-09-09 (v) — Progress Photos at 150+: the gallery was missing the collapse the LIST view already had
 
 Owner: *"The progress photos UI need to be updated ... This needs to be properly compiled when
