@@ -275,6 +275,8 @@ window.CCAffected = (function () {
   function addDays(d, n) { var x = new Date(d.getTime()); x.setUTCDate(x.getUTCDate() + n); return x; }
   var MON3 = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   function shortDate(d) { return d ? (MON3[d.getUTCMonth()] + ' ' + d.getUTCDate()) : '—'; }
+  // ⚠ The programme finish is often a year or more out, where "Mar 12" is ambiguous.
+  function fullDate(d) { return d ? (d.getUTCDate() + ' ' + MON3[d.getUTCMonth()] + ' ' + d.getUTCFullYear()) : '—'; }
 
   // ---- the WBS code, as ancestry -------------------------------------------
   /* ⚠️⚠️ ANCESTRY COMES FROM SPLITTING THE DOTTED `wbs` STRING, NEVER FROM `wbs_node_id`.
@@ -484,6 +486,52 @@ window.CCAffected = (function () {
     return { cut: cut, gapStart: cut, gapEnd: addDays(cut, dur - 1), newEnd: addDays(e, dur), shift: dur };
   }
 
+  /* ---- THE OVERALL IMPACT (pure) ------------------------------------------
+     Owner: *"I want the preview to show the overall change in the Gantt ... The current preview
+     doesn't provide any useful information."* Correct, and the screenshot shows why: 240 selected
+     activities drew 240 bars 1-3px wide across a project-wide window. It answered "which bars did I
+     tick", which the tree beside it already answers, and never answered the only question a change
+     order actually raises -- WHAT DOES THIS DO TO THE PROGRAMME?
+
+     ⚠️⚠️ N DAYS ON 240 ACTIVITIES IS NOT 240 x N DAYS, AND IT IS USUALLY NOT EVEN N. The activities
+     run in parallel, so what moves is the LATEST finish among them -- and that only moves the
+     programme if it was already the programme's own finish. This computes exactly that, and nothing
+     it cannot stand behind.
+
+     ⚠️⚠️ `slip` IS A LOWER BOUND, NOT A FORECAST. It is pure date arithmetic over the selected
+     activities. It does NOT run CPM, does not move successors, and cannot know whether a
+     non-critical activity has float to absorb the insertion. A slip of 0 therefore means "the added
+     time ends inside the current programme window", NEVER "the project is unaffected" -- and the
+     panel says so in those words. The real knock-on is the Project Schedule's job, which is where
+     `splitPlan`/`splitBuild` live and why this file refuses to copy them. */
+  function impactOf(sel, all, dur) {
+    function span(list) {
+      var mn = null, mx = null;
+      (list || []).forEach(function (a) {
+        var s = pd(a.start_date), e = pd(a.end_date);
+        if (!s || !e) return;
+        if (!mn || s < mn) mn = s;
+        if (!mx || e > mx) mx = e;
+      });
+      return { start: mn, finish: mx };
+    }
+    var proj = span(all), sp = span(sel);
+    var dated = (sel || []).filter(function (a) { return pd(a.start_date) && pd(a.end_date); });
+    var oneDay = dated.filter(function (a) { return dayDiff(pd(a.start_date), pd(a.end_date)) + 1 < 2; });
+    // The selection's own finish after the insertion. Every selected bar grows by `dur`, so the
+    // latest of them grows by `dur` -- no more.
+    var selAfter = (sp.finish && dur) ? addDays(sp.finish, dur) : sp.finish;
+    var progAfter = proj.finish;
+    if (selAfter && proj.finish && selAfter > proj.finish) progAfter = selAfter;
+    return {
+      proj: proj, sel: sp, selAfter: selAfter, progAfter: progAfter,
+      slip: (proj.finish && progAfter) ? dayDiff(proj.finish, progAfter) : 0,
+      selGrew: (sp.finish && selAfter) ? dayDiff(sp.finish, selAfter) : 0,
+      nSel: (sel || []).length, nDated: dated.length,
+      nUndated: (sel || []).length - dated.length, nOneDay: oneDay.length
+    };
+  }
+
   // ---- the picker ----------------------------------------------------------
   function pickerHTML() {
     return '<div class="cca" id="cca-root"><div class="cca-loading">Reading the schedule…</div></div>';
@@ -529,6 +577,83 @@ window.CCAffected = (function () {
                String(a.wbs || '').toLowerCase().indexOf(ql) >= 0 ||
                locSuffix(a, LEVELS).toLowerCase().indexOf(ql) >= 0;
       });
+    }
+
+    /* The headline the owner asked for: what this does to the PROGRAMME, above the per-bar
+       detail rather than instead of it. See impactOf for what these numbers do and do not claim. */
+    function impactHTML(sel) {
+      if (!sel.length) {
+        return '<div class="cca-empty">Nothing selected yet \u2014 pick the activities this change ' +
+               'order touches and its effect on the programme appears here.</div>';
+      }
+      var imp = impactOf(sel, ACTS, coDur);
+      if (!imp.sel.start || !imp.proj.start) {
+        return '<div class="cca-empty">' + imp.nSel + ' selected, but none of them carry both a ' +
+               'start and a finish, so there is no impact to compute.</div>';
+      }
+
+      var head;
+      if (!coDur) {
+        head = '<div class="cca-imp-h"><b>Enter the change order\u2019s duration</b>' +
+               '<span>then this shows what it does to the programme.</span></div>';
+      } else if (imp.slip > 0) {
+        head = '<div class="cca-imp-h cca-imp-slip"><b>Programme finish moves ' + imp.slip +
+               ' day' + (imp.slip === 1 ? '' : 's') + ' later</b><span>' +
+               esc(fullDate(imp.proj.finish)) + ' \u2192 ' + esc(fullDate(imp.progAfter)) + '</span></div>';
+      } else {
+        /* \u26a0 "unchanged" is stated as a fact about DATES, never as "no impact" -- this does not
+           run CPM, so an activity with float can still push its successors. */
+        head = '<div class="cca-imp-h"><b>Programme finish unchanged</b><span>the added time ends ' +
+               'inside the current programme, which finishes ' + esc(fullDate(imp.proj.finish)) +
+               '.</span></div>';
+      }
+
+      // ---- one bar for the whole programme ----------------------------------
+      var t0 = imp.proj.start, t1 = imp.progAfter || imp.proj.finish;
+      var span = Math.max(1, dayDiff(t0, t1) + 1);
+      function pc(d) { return Math.max(0, Math.min(100, (dayDiff(t0, d) / span) * 100)); }
+      var progR = pc(imp.proj.finish);
+      var selL = pc(imp.sel.start), selR = pc(imp.sel.finish);
+      var selAfterR = pc(imp.selAfter || imp.sel.finish);
+      var bar =
+        '<div class="cca-imp-bar" title="' + esc('Programme ' + fullDate(imp.proj.start) + ' \u2192 ' +
+          fullDate(imp.proj.finish)) + '">' +
+          '<i class="cca-imp-prog" style="left:0;width:' + progR.toFixed(2) + '%;"></i>' +
+          (imp.slip > 0
+            ? '<i class="cca-imp-ext" style="left:' + progR.toFixed(2) + '%;width:' +
+              (100 - progR).toFixed(2) + '%;"></i>' : '') +
+          (selAfterR > selR
+            ? '<i class="cca-imp-selafter" style="left:' + selL.toFixed(2) + '%;width:' +
+              (selAfterR - selL).toFixed(2) + '%;"></i>' : '') +
+          '<i class="cca-imp-sel" style="left:' + selL.toFixed(2) + '%;width:' +
+            Math.max(0.6, selR - selL).toFixed(2) + '%;"></i>' +
+        '</div>' +
+        '<div class="cca-imp-ax"><span>' + esc(fullDate(t0)) + '</span>' +
+          '<span>' + esc(fullDate(t1)) + '</span></div>';
+
+      // ---- what actually moved, in words -----------------------------------
+      var facts = [];
+      facts.push('<b>' + imp.nSel + '</b> activit' + (imp.nSel === 1 ? 'y' : 'ies') + ' selected');
+      if (coDur) {
+        /* \u26a0\u26a0 THE NUMBER THAT MAKES THE WHOLE PANEL WORTH HAVING. Selecting 240 activities and
+           adding 10 days does not add 2,400 days, and a planner reading 240 bars cannot see that.
+           The selected work runs in parallel, so its own window grows by the change order's
+           duration and no more. */
+        facts.push('their work spans ' + esc(fullDate(imp.sel.start)) + ' \u2192 ' +
+                   esc(fullDate(imp.sel.finish)) + ', growing <b>' + imp.selGrew + ' day' +
+                   (imp.selGrew === 1 ? '' : 's') + '</b> to ' + esc(fullDate(imp.selAfter)) +
+                   ' \u2014 not ' + imp.nSel + ' \u00d7 ' + coDur + ', because they run in parallel');
+      }
+      if (imp.nUndated) facts.push('<b>' + imp.nUndated + '</b> carr' + (imp.nUndated === 1 ? 'ies' : 'y') + ' no dates and cannot be drawn');
+      if (imp.nOneDay) facts.push('<b>' + imp.nOneDay + '</b> too short to split (1 day)');
+
+      return '<div class="cca-imp">' + head + bar +
+        '<div class="cca-imp-note">' + facts.join(' \u00b7 ') + '.</div>' +
+        /* \u26a0 The limit is on screen, not only in the source: a planner must not read `slip` as a
+           rescheduled forecast. */
+        '<div class="cca-imp-warn">Dates only \u2014 nothing is rescheduled here and successors are not ' +
+          'moved. The Project Schedule performs the insertion and shows the real knock-on.</div>' +
+        '</div>';
     }
 
     function ganttHTML(list) {
@@ -709,7 +834,12 @@ window.CCAffected = (function () {
           '<div class="cca-col">' +
             '<div class="cca-h"><span>Preview</span>' +
               '<span class="cca-durwrap">CO <input class="cca-dur cca-ctl" id="cca-dur" size="3" inputmode="numeric" value="' + (coDur || '') + '" placeholder="0"> days</span></div>' +
-            '<div class="cca-body cca-mgbody">' + ganttHTML(selActs) + '</div>' +
+            '<div class="cca-body cca-mgbody">' + impactHTML(selActs) +
+              (selActs.length
+                ? '<details class="cca-imp-det"' + (selActs.length <= 12 ? ' open' : '') + '>' +
+                    '<summary>Per activity (' + selActs.length + ')</summary>' +
+                    ganttHTML(selActs) + '</details>'
+                : '') + '</div>' +
           '</div>' +
         '</div>';
       wire();
@@ -805,7 +935,7 @@ window.CCAffected = (function () {
       normKey: normKey, bestSpelling: bestSpelling, spellRank: spellRank,
       stampSegs: stampSegs, cmpCode: cmpCode, actsUnder: actsUnder, locSuffix: locSuffix,
       valuesAt: valuesAt, ladderOf: ladderOf, treeOf: treeOf, visibleTree: visibleTree,
-      previewOf: previewOf, pd: pd, addDays: addDays, dayDiff: dayDiff
+      previewOf: previewOf, impactOf: impactOf, pd: pd, addDays: addDays, dayDiff: dayDiff
     }
   };
 })();

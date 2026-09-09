@@ -95,6 +95,49 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-09 (q) — The Affected-work preview answers the question a change order actually raises
+
+Owner: *"I want the preview to show the overall change in the Gantt not just the bar graph how much
+it lengthens in the Gantt. The current preview doesn't provide any useful information."* Right, and
+the screenshot shows exactly why: **240 selected activities drew 240 bars 1-3px wide** across a
+project-wide window. It answered *"which bars did I tick"* — which the tree beside it already
+answers — and never answered the only question a variation raises: **what does this do to the
+programme?**
+
+#### ⚠⚠ N days on 240 activities is not 240 × N, and usually not even N
+The activities run in **parallel**. What moves is the LATEST finish among them, and that only moves
+the programme if it was already the programme's own finish. New pure `impactOf(sel, all, dur)`
+computes precisely that — and it can, because `ACTS` already holds **every** activity on the
+project, not just the selection, so the programme window is knowable without another read.
+
+The panel now leads with the finding:
+- **Programme finish moves N days later**, with the before → after dates — or **unchanged**, when the
+  added time ends inside the current programme.
+- **One bar for the whole programme**: what exists now, where the selection sits inside it, and the
+  extension past the current finish. That is the "overall change in the Gantt".
+- The sentence that makes it worth having: *"their work spans 1 Mar 2026 → 30 Jun 2027, growing
+  **45 days** to 14 Aug 2027 — not 110 × 45, because they run in parallel."*
+
+⚠⚠ **`slip` IS A LOWER BOUND, NOT A FORECAST, and the panel says so on screen.** This is date
+arithmetic over the selected activities. It does **not** run CPM, does not move successors, and
+cannot know whether a non-critical activity has float to absorb the insertion — so a slip of 0 means
+*"the added time ends inside the current programme window"*, **never** *"the project is
+unaffected"*. That distinction is the whole reason this file still refuses to copy `splitPlan`.
+
+⚠ **The per-activity strip is kept, demoted to evidence** — a `<details>` that opens itself at ≤12
+rows and stays shut above that. It was never wrong, only mis-ranked: at 240 rows it is noise, at 6 it
+is exactly what you want. Deleting it would have thrown away a real view to fix a layout decision.
+
+**18 assertions** on `impactOf`, sliced out of the shipped file: 240 parallel activities × 10 days
+grows the span by **10, not 2,400**; the programme finish does **not** move when the selection is not
+the last-finishing work; it moves by **10** when it is; a selection ending 4 days short of the
+programme with a 10-day order yields **6** days of slip (partial float absorbed); undated and 1-day
+activities are counted rather than silently dropped; an empty selection does not throw.
+**Driven in a real browser** through the actual `CCWizard.open()` at 1440px, both themes: the slip
+and unchanged branches both render correctly, `--pd-danger-text` resolves to `#FF8A80` in dark with
+`color-mix` computed and **no hardcoded literal**.
+`affected.js` / `module.css` → `?v=20260909q`; `MODULE_V` → `20260909q`.
+⚠ **Not verified signed in** — fixture data through a stubbed data layer; no real programme read.
 ### 2026-09-09 (p) — Cash Flow's number inputs swept, and a regression in yesterday's fix caught
 
 Owner: *"let's sweep the cash flow number inputs"* — the follow-up the audit named. **Not swept

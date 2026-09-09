@@ -969,6 +969,45 @@ html.pd-dark .boq-why { color:#7fd6a2; }
   border-radius:4px; background:var(--pd-bg); color:var(--pd-ink); font:inherit; font-size:10.5px;
   text-align:center; font-variant-numeric:tabular-nums; }
 
+/* ---- the PROGRAMME IMPACT panel -------------------------------------------
+   The answer to "what does this change order do?", above the per-bar detail. The strip below it
+   is the evidence; this is the finding. */
+.cca-imp { padding:10px 12px; }
+.cca-imp-h { display:flex; flex-direction:column; gap:2px; margin-bottom:9px; }
+.cca-imp-h b { font-size:13px; font-weight:700; color:var(--pd-ink); }
+.cca-imp-h span { font-size:11px; color:var(--pd-muted); }
+/* Only a REAL slip takes the danger colour. "Unchanged" must not read as an alarm, and an
+   un-entered duration must not read as a result. */
+.cca-imp-slip b { color:var(--pd-danger-text); }
+
+/* One bar for the whole programme: what is there now, what the selection occupies inside it, and
+   what the change order adds past the end. Percentage widths, so it needs no measurement pass. */
+.cca-imp-bar { position:relative; height:16px; border-radius:3px;
+  background:rgba(128,128,128,.10); overflow:hidden; }
+.cca-imp-prog { position:absolute; top:0; height:16px; background:rgba(128,128,128,.22); }
+/* The extension past today's finish -- dashed, because it is arithmetic, not a rescheduled date. */
+.cca-imp-ext { position:absolute; top:0; height:16px;
+  background:color-mix(in srgb, var(--pd-danger-text) 16%, transparent);
+  border-left:1px dashed var(--pd-danger-text); }
+/* The selection AFTER the insertion sits under the solid bar, so the growth reads as a tail. */
+.cca-imp-selafter { position:absolute; top:3px; height:10px; border-radius:2px;
+  border:1px dashed var(--pd-red); opacity:.75; }
+.cca-imp-sel { position:absolute; top:3px; height:10px; border-radius:2px; background:var(--pd-red); }
+.cca-imp-ax { display:flex; justify-content:space-between; margin-top:3px;
+  font-size:9.5px; color:var(--pd-muted); font-variant-numeric:tabular-nums; }
+
+.cca-imp-note { margin-top:8px; font-size:11px; line-height:1.55; color:var(--pd-muted); }
+.cca-imp-note b { color:var(--pd-ink); font-weight:700; }
+/* ⚠ The honesty line. Muted but always present -- `slip` is a lower bound, not a forecast. */
+.cca-imp-warn { margin-top:7px; padding-top:7px; border-top:1px solid var(--pd-line);
+  font-size:10.5px; line-height:1.5; color:var(--pd-muted); }
+
+/* The per-activity strip becomes evidence you can open, not the whole answer. Collapsed by
+   default past 12 rows, which is where 240 one-pixel bars stopped meaning anything. */
+.cca-imp-det { border-top:1px solid var(--pd-line); }
+.cca-imp-det > summary { cursor:pointer; padding:7px 12px; font-size:10px; font-weight:700;
+  text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
+.cca-imp-det > summary:hover { color:var(--pd-ink); background:rgba(128,128,128,.08); }
 /* ---- the Gantt strip ------------------------------------------------------
    ⚠️ Positioned divs, not SVG. Adapted from the schedule's own `renderMobileGanttBody`, which is
    the only self-contained date-scaled bar renderer in the repo; contracts-claims draws no SVG at
