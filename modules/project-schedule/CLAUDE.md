@@ -13,6 +13,110 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### The zone layout: where each zone SITS, defined per floor type (2026-09-09) — jasantos2
+
+Owner: *"the pre-requisites for the 3D to be established is to define the location of the zones and
+areas. in the schedule setup, in the step of defining the floors, i believe step 4. the setup of the
+zones and floors should be established there per floor or type (type is the basement, podium /
+commercial, typical, roof deck)."*
+
+Until now a floor's zones were an **ordered list and nothing more** — which is why both stacking
+cards drew them as equal slices: that was genuinely all there was. This is the missing half.
+
+### 1. The model: `cfg.zonePlan`
+A coarse plan grid, `{ cols, rows, cells: { "r,c": zoneCode } }`, held in two bags:
+`kind` (basement / podium / typical / roof) and `floor` (per-floor overrides). `zpFor(floor)`
+resolves the floor's own plate first, then its type's, and **returns null when neither exists** —
+which is what lets every consumer say *"no layout defined"* rather than draw an invented one.
+
+- ⚠️⚠️ **Per type first, per floor only where it differs**, which is the owner's own framing. A
+  forty-storey tower has four or five distinct plates, not forty; `kind` already groups them and is
+  the grouping every other per-level setting here uses (see `actLinksKind`).
+- ⚠️⚠️ **A grid, not a polygon, deliberately.** A polygon needs a plan image, a scale calibration
+  and a drawing tool; a grid needs two numbers and some clicking, and it answers the question the
+  stacking views actually ask — *which zone is where, and roughly how big*. It gives relative
+  position and relative area. It does **not** give dimensions, and nothing downstream implies it
+  does — the editor and the 3D footer both say so.
+- ⚠️ **Keyed by zone CODE, not zone id.** `cfg.zoning` is per trade, so a zone id exists only inside
+  one trade's copy of the building — but a floor has one physical shape. Keying on the code
+  (normalised) lets one plate serve every trade that names its zones the same way, which is the
+  normal case. A plan per trade would be the same drawing eight times, and would let two trades
+  disagree about the shape of one slab.
+- ⚠️ `zpNorm` **drops a stored cell outside its own grid**, so shrinking a plate and growing it back
+  really does forget. `zpNormAll` drops an unknown *kind* but **keeps an unknown floor id** — a kind
+  is a closed vocabulary, a floor id may belong to a floor that has not resolved yet, and dropping
+  it would delete a planner's layout on a round-trip.
+
+### 2. The editor, in Floors & Zones
+Type tabs (only for types this trade actually has, each showing its floor count and a ✓ when a plate
+exists), an **Applies to** scope, a grid size, a palette of that type's zone codes, and a paintable
+plate. Plus a legend with each zone's cell count and a warning naming any zone **not placed yet**.
+
+- ⚠️⚠️ **The plate is created only when a cell is actually painted**, and in exactly one place.
+  Arriving at the step, switching type or nudging the grid all leave the setup untouched — that is
+  what keeps *"no plate yet"* true. A plate emptied of every cell is **removed**, so "no plate" and
+  "a plate with nothing on it" are not two states that look identical.
+- ⚠️ Zones are told apart by **shade of the trade colour**, never by hue: hue means *trade*
+  everywhere else in this module, and spending it here would make one channel say two things. The
+  code is printed in the cell as well, so the shade never carries it alone.
+- ⚠️ A drag **repaints once at the end**, not per cell — this step re-renders the whole floors list,
+  and doing that per mouseover of a 12 × 12 grid is unusable. `mouseup` is caught on the *document*,
+  so releasing outside the grid still ends the drag.
+
+### 3. ⚠️⚠️ Two defects found by DRIVING it in a browser, not by reading it
+Both concerned the per-floor override, and both made the planner's own layout look **lost**:
+- **Picking a floor with no override drew an empty grid** — even though its type's plate was in force
+  for it. It now **shows that plate** as the starting point, says so on screen (*"showing the Typical
+  plate — paint to give this floor its own"*), and the first paint creates the override as a
+  **deep copy plus the edit** rather than wiping it.
+- **"Use the type's plate" left the editor on that floor's now-deleted scope**, so it reported *"no
+  plate yet"* over an empty grid while the type's plate sat there intact. It returns to the type's
+  scope, which is the only thing that sentence can honestly mean.
+
+### 4. The 3D card reads it
+`ScheduleBuilder.zonePlanByLabel()` is the one thing that crosses the module boundary, keyed by
+**floor label** — because the stacking view knows a floor only as the label on an activity's
+location, and the matching belongs on the side that owns `cfg`. Deep-copied on the way out: a caller
+that mutated a plate would be editing the planner's setup from another module.
+
+- ⚠️ **Memoised per render** and cleared where every other per-render accumulator is. Forty storeys
+  × eight trades would otherwise re-cross the boundary and deep-copy every plate hundreds of times
+  for one repaint.
+- ⚠️⚠️ **One plate is drawn per tower, so a mixed answer must fall back.** `_vs3PlateOf` returns the
+  shared size only when *every* storey drawn agrees; a podium at 4 × 3 and typical floors at 2 × 2
+  cannot both be right, and squashing one onto the other would misreport both. A storey with **no**
+  plate counts as a disagreement.
+- ⚠️ Per cell, the zone is placed by **its own label** — so Zone 2 sits where the planner put Zone 2
+  rather than second in the wrap. A cell the plate does not name **keeps its wrap slot**, which is
+  why a half-painted plate degrades instead of losing zones.
+- A zone painted across several cells is **drawn across them**, centred on its own footprint.
+  ⚠️ An L-shape becomes the **box around it** — the editor says so in as many words rather than
+  leaving it to be discovered.
+- ⚠️ The footer now says **whose** layout is on screen: the planner's, or a guess with the route to
+  fixing it. The schematic warning stays either way — a layout gives positions, not dimensions.
+
+### Verified
+**770 assertions across twelve suites plus the runtime check, all passing** — 79 new. The zone-plan
+suite executes `zpFor` / `zpBox` / `zpNorm` / `zpNormAll` / `zpByLabel` / `zpPaletteFor` and the 3D
+side's `_vs3PlateOf` / `_vsZpBox`, sliced from the shipped file: type vs override resolution, the
+L-shape's box, the round-trip sanitising, the asymmetric kind/floor-id rule, the deep copy, and the
+agree/disagree/no-plate cases for the shared plate.
+⚠️ **And it was driven in a browser**, which is where both defects above came from: painting,
+erasing, switching type, creating and removing an override, and the "creates nothing until painted"
+property all read back off the live DOM.
+⚠️ **Three suites needed retargeting, not fixing**: two of harness12's assertions described the
+plate/centre lines that this change edits (the property is unchanged and better), one of harness14's
+tracked `paint()`'s *shape* rather than its property, and two harness contexts needed
+`_vsPlanDefined`. Named rather than quietly adjusted.
+⚠️ **harness2 and two assertions in harness3 are still broken by the concurrent change-order
+refactor** (they slice `splitPlan` / `splitBuild`, which now delegate to `assets/js/co-insert.js`).
+Named again rather than dropped.
+⚠️ **Not verified signed-in** — the anon key has no grants. The editor was exercised against the
+shipped functions in a real browser, but nothing was saved to a setup and no project has been pushed
+with a layout defined, so the 3D card has not yet been seen reading a real one.
+
+`MODULE_V` → `20260909x`.
+
 ### I broke Vertical Stacking, and the proof I trusted could not see it (2026-09-09) — jasantos2
 
 Owner, with a screenshot of the live view: *"where is the 3D? and how come there is an error, no

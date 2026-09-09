@@ -95,6 +95,41 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### Zone layout in Floors & Zones — the prerequisite the 3D stacking reads (2026-09-09) — jasantos2
+
+Owner: *"the pre-requisites for the 3D to be established is to define the location of the zones and
+areas. in the schedule setup, in the step of defining the floors… per floor or type (type is the
+basement, podium / commercial, typical, roof deck)."*
+
+A floor's zones were an **ordered list and nothing more**, which is exactly why both stacking cards
+drew them as equal slices. Floors & Zones now has a **Zone layout** editor: a coarse plan grid held
+per floor **type**, with a per-floor override, saying which part of the plate each zone occupies.
+
+- ⚠️⚠️ **A grid, not a polygon** — deliberately. It gives each zone its **position** and **relative
+  size**, which is what the stacking views ask for. It is **not** a survey: no dimensions, and the
+  editor and the 3D footer both say so.
+- ⚠️ **Per type first**, because a forty-storey tower has four or five distinct plates, not forty.
+  One floor that genuinely differs gets its own; "Use the type's plate" gives it back.
+- ⚠️ **Keyed by zone code**, so one plate serves every trade that names its zones the same way — a
+  floor has one physical shape, and a plan per trade would let two trades disagree about one slab.
+- ⚠️ **The plate is created only when a cell is painted.** Arriving, switching type or nudging the
+  grid write nothing, so "no plate yet" stays true.
+- **The 3D card reads it**: zones sit where you put them, a zone spanning cells is drawn across them,
+  and the footer says whether the positions are yours or a guess. ⚠️ One plate is drawn per tower, so
+  storeys whose plates disagree fall back to the old wrap rather than squashing one onto the other.
+
+⚠️⚠️ **Two defects came out of driving the editor in a browser**, not from reading it — both made a
+planner's own layout look lost: picking a floor with no override drew an empty grid instead of the
+plate that floor actually uses, and "Use the type's plate" then reported "no plate yet" over an empty
+grid while the type's plate sat there intact.
+
+**770 assertions across twelve suites plus the runtime check, all passing** (79 new). ⚠️ Three suites
+needed *retargeting* where this change edited the lines they described — named, not quietly adjusted.
+⚠️ Two suites remain broken by the concurrent change-order refactor. ⚠️ **Not verified signed-in**:
+nothing was saved to a setup, so the 3D card has not been seen reading a real layout.
+
+`MODULE_V` → `20260909x`. Detail: [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
 ### 2026-09-09 (w) — The sidebar brand block gives 22px back to the nav
 
 Owner: *"Reclaim the height so the nav starts higher, smoothen the placement of the Planning
