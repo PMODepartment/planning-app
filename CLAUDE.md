@@ -142,8 +142,12 @@ Measured in a harness whose brand markup is lifted **byte-for-byte out of `dashb
 snapshot, so the relative `<link>` to `dashboard.css` resolved to nothing and it reported black text and
 a 702px sidebar — the *third* time this session a harness has reported an unstyled page as a finding.
 Inlining the stylesheet is what made the numbers real. ⚠️ A `getBoundingClientRect` read issued in the
-**same batch** as `resize_window` also returned pre-reflow geometry (240px for a 64px rail); the
-computed-style read disagreed, and re-reading in a separate call settled it at 64px.
+**same batch** as `resize_window` also returned 240px for a 64px rail. **Not pre-reflow geometry — it is
+the first frame of a transition.** `.pd-sidebar` carries `transition: width .2s ease, flex-basis .2s
+ease, padding .2s ease` (dashboard.css:135), so an immediate read returns the START value and looks
+settled. The computed-style read said 64px while the rect said 240, which is the tell. The fix is not
+to wait: inject `*{transition:none!important;animation:none!important}` and force a reflow before
+measuring anything that animates — the trap is already on file from 2026-09-01 and 2026-09-09.
 
 ⚠️ Screenshots could not confirm the visual — the static snapshot does not re-render after DOM
 mutation — so this rests on geometry and computed styles, not on a picture.
