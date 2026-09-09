@@ -41,7 +41,15 @@
    ONE line box (Range.getClientRects().length === 1, scrollWidth/clientWidth
    104/104); with the class removed it is 34px wide and TWO line boxes, overflowing.
    Same shape, and the same fix, as contracts-claims' `.cc-tb-labeled`. */
-.il-topbar-tools .pd-btn:not(.il-tb-labeled) {
+/* ⚠️⚠️ `:not([hidden])` IS LOAD-BEARING, and the shared `.pd-btn[hidden]` fix is NOT
+   enough on its own. This selector is (0,3,0) and the shared rule is (0,2,0), so its
+   `display: inline-flex` outranked it and the icon-only chrome — the filter funnel and
+   the refresh button — stayed on screen on every view, `hidden` or not. MEASURED: with
+   the shared fix alone, `+ Add meeting` correctly went to `display:none` (it is excluded
+   by the `:not(.il-tb-labeled)` above) while the funnel and refresh both still computed
+   `flex`. Excluding hidden buttons here lets the shared rule decide, and is the same fix
+   this file already applies to `.il-icondd-menu` further down. */
+.il-topbar-tools .pd-btn:not(.il-tb-labeled):not([hidden]) {
   height: 34px; width: 34px; padding: 0; font-size: 13px;
   display: inline-flex; align-items: center; justify-content: center;
   background: transparent; border-color: transparent;
@@ -89,7 +97,9 @@
 
 /* ---- Header form row (Title / Date / Location / Meeting type) ------------ */
 .il-form-row { display: flex; gap: 10px; flex-wrap: wrap; }
-.il-form-row > .pd-field { flex: 1 1 160px; }
+/* ⚠️ min-width:0, the same fix `.il-mi-f` already carries. Without it a long value
+   in any header field blows the whole row out past the card. */
+.il-form-row > .pd-field { flex: 1 1 160px; min-width: 0; }
 
 /* ---- Add Meeting form (round 2): named sections + guaranteed row
    alignment ------------------------------------------------------------- */
@@ -131,6 +141,9 @@
 
 /* ---- List view ------------------------------------------------------------ */
 .il-mom-listtable { min-width: 720px; }
+/* Values wrap; headers break between WORDS only — chopping a header mid-word renders
+   "ACTIVITY ID" as "AC/TIV/ITY/ID" (project-schedule, 2026-09-03 t). */
+.il-mom-listtable td, .il-dash-list td { overflow-wrap: anywhere; }
 .il-mom-listtable th { white-space: nowrap; }
 .il-mom-th { cursor: pointer; user-select: none; }
 .il-mom-th:hover { color: var(--pd-ink); }
@@ -272,7 +285,11 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
   display: inline-flex; align-items: center; justify-content: center;
   width: 34px; height: 34px; padding: 0;
 }
+/* ⚠⚠ Same (0,1,0)-vs-[hidden] tie documented for .il-icondd-menu below, on the
+   WRAPPER this time — and it is the wrapper that syncTopbarTools() sets `hidden` on.
+   Fixing the menu in August left the export control itself visible on every screen. */
 .il-icondd { position: relative; display: inline-flex; }
+.il-icondd[hidden] { display: none; }
 .il-icondd-btn {
   display: inline-flex; align-items: center; justify-content: center;
   width: 34px; height: 34px; padding: 0;
@@ -546,6 +563,14 @@ div.il-mom-acrow { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--p
 .il-mom-filters .pd-select { flex: 0 1 auto; min-width: 130px; max-width: 190px; }
 .il-mom-filters #il-momf-q { flex: 1 1 200px; min-width: 0; width: auto; }
 .il-mom-count { margin-left: auto; font-size: var(--pd-fs-sm); color: var(--pd-muted); white-space: nowrap; }
+/* The meeting count as a footnote under the list (owner: the leading "3 meetings"
+   at the top of the screen said nothing useful there).
+   ⚠️ Its own class — `.il-mom-count` above is the DETAIL view's "Showing N of M"
+   and restyling that one would have changed a different screen. */
+.il-mom-foot {
+  margin: 8px 2px 0; font-size: var(--pd-fs-xs); color: var(--pd-muted);
+  font-style: italic; line-height: 1.5;
+}
 
 /* --- Attachment cell ------------------------------------------------------ */
 .il-mom-file { display: inline-flex; gap: 4px; align-items: center; }
@@ -708,9 +733,16 @@ div.il-mom-acrow { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--p
 .il-history { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .il-history-i { padding: 8px 10px; border-radius: 8px; background: var(--pd-bg); border: 1px solid var(--pd-line); }
 .il-history-top { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
-.il-history-action { font-weight: 600; font-size: var(--pd-fs-sm); color: var(--pd-ink); }
+/* ⚠️ min-width:0 — a flex item's default `min-width:auto` resolves to its content's
+   intrinsic width, so an unbroken run of characters in the action label cannot shrink
+   and pushes the timestamp out of the card. */
+.il-history-action { font-weight: 600; font-size: var(--pd-fs-sm); color: var(--pd-ink); min-width: 0; overflow-wrap: anywhere; }
 .il-history-when { font-size: var(--pd-fs-xs); color: var(--pd-muted); }
-.il-history-note { margin-top: 4px; font-size: var(--pd-fs-sm); color: var(--pd-ink); white-space: pre-wrap; }
+/* ⚠️⚠️ `white-space: pre-wrap` DOES NOT BREAK AN UNBROKEN RUN OF CHARACTERS. It was
+   already here and the note still overflowed — MEASURED at 797px of content in a 396px
+   card. pre-wrap honours newlines the planner typed; `overflow-wrap: anywhere` is what
+   breaks a 400-character word. Both are needed, and only `.il-mi-val` had the pair. */
+.il-history-note { margin-top: 4px; font-size: var(--pd-fs-sm); color: var(--pd-ink); white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* ---- Dashboard (items #2/#18; rebuilt 2026-09-03 on the Issues & Concerns
    dashboard's own card shape — "align dashboard to look of issues dashboard")
@@ -871,7 +903,8 @@ div.il-mom-acrow { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--p
 }
 /* The field-by-field before → after, mirroring the Issues register's own. */
 .il-history-diff { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
-.il-history-diff li { font-size: var(--pd-fs-sm); color: var(--pd-ink); }
+/* ⚠️ This prints BOTH sides of a before → after, so one long value overflows twice. */
+.il-history-diff li { font-size: var(--pd-fs-sm); color: var(--pd-ink); overflow-wrap: anywhere; }
 .il-history-diff strong { font-weight: 600; color: var(--pd-muted); }
 .il-history-diff em { color: var(--pd-muted); font-style: normal; }
 

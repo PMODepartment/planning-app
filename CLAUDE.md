@@ -95,6 +95,57 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-09 (u2) — Minutes of Meeting: the PDF stops being a screenshot, and `hidden` starts working app-wide
+
+Owner's six Minutes-of-Meeting items. Stage 2 of a five-stage pass. Full detail:
+[`modules/minutes-of-meeting/CLAUDE.md`](modules/minutes-of-meeting/CLAUDE.md). The parts that reach
+beyond the module:
+
+- ⚠️⚠️ **`hidden` DID NOT WORK ON ANY `.pd-btn` IN THIS APP, ANYWHERE.**
+  `.pd-btn { display: inline-flex }` is specificity **(0,1,0)** — exactly equal to the user agent's own
+  `[hidden] { display: none }` — and an author rule beats the UA default at equal specificity. So every
+  `btn.hidden = true` in every module set an attribute that changed nothing. **MEASURED before the fix:
+  four `.pd-btn`s carrying the attribute all computed `display:flex`.** In Minutes of Meeting that put
+  the filter funnel on screens that draw no filter panel, so clicking it silently toggled state you only
+  saw later — which is how it was reported ("the search and filter view doesn't work when clicked").
+  ⚠️ This is the **same defect** `minutes-of-meeting/module.css` has documented at length since August
+  for `.il-icondd-menu`, fixed there with `:not([hidden])` and never generalised. Now one line in
+  `dashboard.css`, fixing the class app-wide.
+  ⚠️ **The shared fix alone was not sufficient, and only measuring showed it:** a module rule at
+  (0,3,0) outranked it, so `+ Add meeting` hid correctly while the funnel and refresh did not.
+- ⚠️ **A shared `.pd-spin`.** There was **no spinner in `assets/` at all** — zero keyframes — and three
+  modules (`.cc-spin`, `.dr-spin`, `.ms-spin`) had each rolled a byte-identical private copy. Promoted
+  rather than letting a fourth be added. Carries a `prefers-reduced-motion` slow-down.
+- ⚠️⚠️ **`.pd-input` and `.pd-select` now pin `min-height: 32px`, and my hypothesis about why was
+  wrong.** I expected native `<select>` chrome to be the "different UI" the owner reported. Measured:
+  background, border, radius and colour all **match**. What differs is the box — text input **29px**,
+  `<select>` **31px**, date input **31px**, three heights in one form row, because neither class pins a
+  height and each control type adds its own intrinsic box.
+  ⚠️ **`min-height`, deliberately NOT `height`** — this app has many `<textarea class="pd-input">`,
+  which a fixed height would have collapsed to one line, and project-schedule has
+  `<select multiple size="4">`. Both re-measured after the change: textarea **59px**, multiple-select
+  **78px**, `.pd-input-sm` still **34px**, and the three form controls now agree at **32px**.
+- **The module drops `html2pdf` for native jsPDF + autoTable.** The owner's own exported file proved the
+  export was a **photograph**: `Producer (jsPDF 2.3.1)`, two `/DCTDecode` images at 1438×2096, **0 text
+  operators**, 341.5 KB — so the reported text overflow was baked into a bitmap where no stylesheet
+  could reach it. Now **21.1 KB with 103 selectable text operators and 0 JPEGs**, wrapping guaranteed by
+  `splitTextToSize`. ⚠️ `jsPDF` is **not** obtainable from the html2pdf bundle (measured:
+  `window.jspdf` undefined, `html2pdf.jsPDF` absent), which is why two new tags rather than reuse.
+  ⚠️ `issues-lessons` and `progress-photos` still load html2pdf and are untouched.
+
+**Verified** on real produced PDF files — the shipped drawing code sliced out of `module.js` and
+executed against fixtures, the bytes captured and the PDF structure parsed — not by reading the code
+that emits it. CSS measured before and after in a browser. `node --check` clean; inline `<script>`
+parses; braces 492/492 and 355/355; 0 NUL bytes; **47 assets on one version each, 0 version splits,
+0 referenced-but-missing**. ⚠️ **Not verified signed in.**
+
+- Shared `dashboard.css` → `?v=20260909u2` (29 pages); module `module.css` / `module.js` →
+  `?v=20260909u2`; `MODULE_V` → `20260909u2` (the module's `index.html` swapped its PDF libraries).
+- ⚠️ `modules/project-schedule/index.html` and `modules/contracts-claims/index.html` are again staged as
+  **HEAD + this change only** — they still carry the concurrent session's in-progress extraction of
+  `splitPlan` into the untracked `assets/js/co-insert.js`, and committing the working-tree copies would
+  ship a `<script src>` pointing at a file that is not in the repo.
+
 ### 2026-09-09 (ui) — The sidebar brand, a collapsed rail that shows the mark, and two sibling links you can tell apart
 
 Owner's three Global items: *"The logo and the 'Planning Suite' title in the side panel looks off. Let's

@@ -1,5 +1,141 @@
 # Module: minutes-of-meeting
 
+## 2026-09-09 (u2) — The PDF stops being a screenshot; `hidden` starts working; text wraps
+
+Owner's six Minutes-of-Meeting items. Stage 2 of a five-stage pass.
+
+### ⚠️⚠️ 1+5 — The export was a PHOTOGRAPH of the screen, so no CSS could fix it
+
+The reported *"texts are not properly wrapped and spilling over the page"* was not a CSS bug in the
+export. `momDownloadPDF` was `html2pdf().from(node).save()` — html2canvas rasterises the DOM and jsPDF
+pastes the bitmap in. **Every page was one JPEG.** Established by opening the owner's own attached file
+(`Meeting_Aug_28__2026_MOM.pdf`) and reading its bytes: `Producer (jsPDF 2.3.1)`, two `/DCTDecode`
+streams at 1438×2096, **0 text-showing operators**, 341.5 KB. The 400-character run ran off the right
+edge and was clipped **inside the picture**, where a stylesheet cannot reach it.
+
+**Rewritten to draw natively with jsPDF + autoTable.** Wrapping is now a property of the renderer —
+`splitTextToSize` cannot overflow — rather than something the CSS has to get right.
+
+| | old (raster) | new (native) |
+|---|---|---|
+| size | **341.5 KB** | **21.1 KB** |
+| pages | 2 | 2 |
+| full-page JPEGs | **2** | **0** |
+| selectable text ops | **0** | **103** |
+
+⚠️ **jsPDF is NOT obtainable from the html2pdf bundle**, which the first plan assumed. MEASURED: with
+only `html2pdf.bundle.min.js` loaded, `window.jspdf` is `undefined` and `html2pdf.jsPDF` does not
+exist. `index.html` now loads `jspdf.umd` + the autotable plugin and **drops html2pdf entirely** —
+it had no other caller here. The two other modules that load it are untouched.
+
+⚠️ **The logo was 93.5 KB of a 104.5 KB export** on the first cut — `logo-white.png` is 6846×1178 and
+the band draws it 42mm wide. It is now re-drawn through a canvas at print resolution before it reaches
+`addImage`, and given a fixed alias so jsPDF stores one copy for the whole document: **10.1 KB**.
+⚠️ PNG, not JPEG — the wordmark is white on transparent and sits on the red band; JPEG has no alpha
+and would have put a white box across the header.
+
+⚠️ **The four raster helpers are DELETED, not left dead** (`MOM_PDF_BADGE`, `momPdfBadge`,
+`momPdfCell`, `momPdfField` — 1,735 characters). Their only two callers were the two rewritten
+functions, so all four had zero remaining references.
+
+### 3 — Attendees: they were built, and they were invisible
+
+⚠️ The owner asked for attendees in the export. They were **already implemented** — but every tier sat
+behind `if (mom.attendees_required)` and printed only when non-empty, so a meeting with none recorded
+produced a sheet with no attendee section at all and nothing saying why. That is exactly the state the
+owner's attached file was in. The section is now **always printed** and says `None recorded` per tier,
+because "nobody was recorded" is itself a fact about a minute. The legacy free-text column still prints
+only when no structured tier exists, so names never appear twice under two headings.
+**Also added to the two exports that omitted them entirely** — XLSX and PPTX carried no attendee row at
+all.
+
+⚠️ Two smaller things the raster sheet got wrong, fixed while rewriting: the header printed
+`- (3 items)` with a dangling dash and a pin for a meeting with no location (the subtitle is now built
+from the parts that exist); and the field order was Issue → Action → Description while the **screen**
+is Issue → Description → Action, so paper and screen disagreed about the order of the record.
+
+### ⚠️⚠️ 4 — `hidden` DID NOT WORK ON ANY `.pd-btn` IN THIS APP
+
+The filter funnel appeared on screens that draw no filter panel; clicking it silently toggled state the
+owner only saw on returning to the list. Root cause is a specificity tie: `.pd-btn { display:inline-flex }`
+in the shared sheet is **(0,1,0)** — exactly equal to the user agent's `[hidden] { display:none }` — and
+an author rule wins ties. **MEASURED before the fix: all four buttons carrying the attribute computed
+`display:flex`.**
+
+⚠️ This is the **same defect this file already documents at length for `.il-icondd-menu`** and fixed in
+August with `:not([hidden])`. It was never generalised.
+
+⚠️ **The shared fix alone was not enough, and only measuring showed that.** `.pd-btn[hidden]` is
+(0,2,0), but `.il-topbar-tools .pd-btn:not(.il-tb-labeled)` here is **(0,3,0)** and outranked it — so
+`+ Add meeting` correctly hid (it is excluded by that `:not()`) while the funnel and refresh both still
+computed `flex`. The module rule now carries `:not([hidden])` too. Both fixes verified together: all
+four hidden, a control button still visible.
+
+**Refresh had no feedback at all.** `momReset(); load();` — `momReset()` sets `_momLoaded = false` but
+**never calls `render()`**, and `load()` awaits four to five round trips before its single `render()`.
+So the button did not change, the old content stayed frozen, and not even *"Loading minutes…"* painted.
+It now shows a spinner, disables itself, renders immediately, and restores in a `finally`.
+⚠️ The spinner is the **new shared `.pd-spin`** — there was no spinner in `assets/` at all, and three
+modules had each rolled a byte-identical private copy. Promoted rather than adding a fourth.
+
+Two state defects found while tracing it: the dashboard **Clear** handler replaced `_momDashF` with an
+object **missing the `open` key**, so clearing the filters also collapsed the panel and left
+`syncTopbarTools()` reading `undefined`; and `momReset()` cleared `_momQ` but not `_momFiltOpen` /
+`_momBrowseF`, so a project switch emptied the search box while keeping the filter values that hide
+rows. ⚠️ **I made that exact mistake myself while fixing it** — my first `_momBrowseF` reset invented a
+`starred` key and dropped `fav`. Caught by asserting all three reset sites have an identical key set;
+they now do.
+
+### 2 — Dropdowns
+
+⚠️ **My hypothesis was wrong and the measurement is the useful part.** I expected native `<select>`
+chrome. Measured in the Add-meeting modal (dark, 900px): background, border, radius and colour all
+**match** `.pd-input` exactly. What differs is the **box** — text input **29px**, `<select>` **31px**,
+date input **31px**, three heights in one form row. `.pd-input`/`.pd-select` pin no height, so each
+control type contributes its own intrinsic box.
+
+Fixed in the shared sheet with `min-height: 32px`. ⚠️ **`min-height`, deliberately not `height`** —
+there are many `<textarea class="pd-input">` in this app, which a fixed height would have collapsed to
+a single line, and project-schedule has `<select multiple size="4">`. Both re-measured after the fix:
+input/select/date all **32px**, textarea **59px**, multiple-select **78px**, compact `.pd-input-sm`
+still **34px**.
+
+⚠️ **Reported, not silently fixed:** this module carries **four unrelated dropdown patterns**
+(`iconMenuHTML`, the dashboard multi-select, the activity popover, shared `tabsToDropdown`), and
+`assets/` has no shared combobox at all. Converging them is an app-wide job, not this commit. The
+dashboard multi-select **was** wired into `closeIconMenus`, which it was not before.
+
+### 6 — The meeting count becomes a footnote
+
+Owner: the leading *"3 meetings"* *"does not provide any useful piece of information"*. Moved below the
+table as an italic note. ⚠️ Emitted from `renderBrowse()`, **not** from inside `renderMomListHTML` —
+that card is `overflow:auto` so the note would scroll sideways with the table, and the function returns
+early on an empty list. ⚠️ Its own class: `.il-mom-count` is reused for a *different* count in the
+detail view. ⚠️ **List view only** — `momUnifiedRows()` excludes occurrences of a recurring series while
+the calendar plots all of `MOMS` including them, so the figure would contradict the grid it sat under.
+
+### Verified
+
+**The PDF is verified on REAL PRODUCED FILES**, not by reading the code that emits them: the shipped
+drawing code is sliced out of `module.js` by brace matching and executed against fixtures (including a
+400-character run and a meeting with no minutes), the bytes captured, and the PDF structure parsed —
+0 `/DCTDecode`, 103 text operators, `longest single text run 107 chars` (the 400-character value became
+multiple wrapped lines), and `Attendees` / `Required` / `Optional` / `Actual` / `Page 1 of` / `DRAFT` /
+`None recorded` all present. ⚠️ **jsPDF puts `save` as an OWN property on each instance** and the
+instance prototype is not `C.prototype` — so the first harness's prototype override silently did
+nothing and really downloaded three files. The harness now wraps the constructor.
+
+CSS measured before and after in a browser against the shipped stylesheets: history note **797px of
+content in a 396px card → wrapped**, diff row **590 → wrapped**, no container or page overflow.
+`node --check` clean, inline `<script>` parses, braces 355/355 and 492/492, 0 NUL bytes,
+47 assets on one version each with 0 missing.
+
+⚠️ **Not verified signed in.** No meeting has been exported against a real project; the fixtures stand
+in for real rows.
+
+`module.css` / `module.js` → `?v=20260909u2`; `index.html` swapped its PDF libraries, so
+`MODULE_V` → `20260909u2`. Shared `dashboard.css` → `?v=20260909u2` across 29 pages.
+
 ## 2026-09-08 — The toolbar's four buttons were invisible, not broken; `+ Add meeting` wrapped inside a 34px square
 
 Owner: *"Toolbar needs UI rework, the UI for the minutes itself is bugged. I am not sure if one of the

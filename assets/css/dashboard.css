@@ -378,6 +378,38 @@ a:hover { text-decoration: underline; }
 .pd-btn { display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
   border: 1px solid var(--pd-line); background: var(--pd-card); color: var(--pd-ink);
   padding: 6px 13px; border-radius: 8px; font-size: var(--pd-fs-sm); font-weight: 500; }
+/* ⚠️⚠️ THE `hidden` ATTRIBUTE DID NOT WORK ON ANY .pd-btn IN THIS APP, ANYWHERE.
+   The rule above is specificity (0,1,0) — exactly equal to the user agent's own
+   `[hidden] { display: none }` — and an author rule always beats the UA default at
+   equal specificity. So every `btn.hidden = true` in every module set an attribute
+   that changed nothing, and the button stayed on screen.
+   MEASURED before this line existed: four `.pd-btn`s carrying the attribute all
+   computed `display:flex`. In Minutes of Meeting that put the filter funnel on
+   screens that draw no filter panel — clicking it silently toggled state you only
+   saw on returning to the list, which reads as "the button does nothing".
+   ⚠️ This is the SAME defect `minutes-of-meeting/module.css` documents at length for
+   `.il-icondd-menu` and fixed there with `:not([hidden])`. It was never generalised.
+   ⚠️ An attribute selector is (0,1,0) too, so this wins on SOURCE ORDER — it must stay
+   after `.pd-btn`. Any future `display` on `.pd-btn` declared below this re-breaks it. */
+.pd-btn[hidden] { display: none; }
+
+/* ---- Busy spinner (shared) ----------------------------------------------
+   ⚠️ There was NO spinner in assets/ at all — zero keyframes — so three modules had
+   each rolled a private, byte-for-byte identical copy (`.cc-spin`, `.dr-spin`,
+   `.ms-spin`). Promoted here rather than letting Minutes of Meeting add a fourth.
+   Works inside a button (the refresh control) and inside a card heading, which is
+   how the three private copies were each used. */
+.pd-spin {
+  display: inline-block; width: 13px; height: 13px; vertical-align: -2px;
+  border: 2px solid var(--pd-line); border-top-color: var(--pd-red); border-radius: 50%;
+  animation: pd-spin .7s linear infinite;
+}
+.pd-spin + * { margin-left: 6px; }   /* only when it actually precedes something */
+@keyframes pd-spin { to { transform: rotate(360deg); } }
+/* A spinner is the one control that must still READ as busy without motion. */
+@media (prefers-reduced-motion: reduce) {
+  .pd-spin { animation-duration: 2.4s; }
+}
 .pd-btn:hover { background: var(--pd-bg); border-color: var(--pd-red); color: var(--pd-red); text-decoration: none; }
 .pd-btn-primary { background: var(--pd-red); border-color: var(--pd-red); color: #fff; }
 .pd-btn-primary:hover { background: var(--pd-red-dark); border-color: var(--pd-red-dark); color: #fff; }
@@ -468,6 +500,20 @@ html.pd-dark .pd-seg-multi > button.on:hover { color: #FF8A80; }
   width: 100%; padding: 6px 10px; border: 1px solid var(--pd-line); border-radius: 7px;
   font-size: var(--pd-fs-sm); font-family: inherit; background: var(--pd-card); color: var(--pd-ink);
 }
+/* ⚠️⚠️ AN INPUT, A DATE INPUT AND A SELECT WITH IDENTICAL PADDING AND FONT-SIZE STILL
+   COME OUT AT THREE DIFFERENT HEIGHTS, because each control type adds its own intrinsic
+   box on top of what CSS asks for. MEASURED in the Add-meeting modal, dark, 900px:
+   text input 29px, <select> 31px, date input 31px — side by side in one form row, which
+   is the "the dropdown uses a different UI" the owner reported. (Colour, border and
+   radius all matched; the mismatch is purely the box.)
+   ⚠️ `min-height`, deliberately NOT `height`. There are many `<textarea class="pd-input">`
+   in this app — a fixed height would collapse every one of them to a single line — and
+   project-schedule has `<select multiple size="4">`. min-height raises the short controls
+   and leaves the tall ones alone.
+   ⚠️ Specificity (0,1,0) and declared BEFORE `.pd-input-sm`, so the 34px compact variant
+   still wins on source order, and every module-local `.xx-filters .pd-select` (0,2,0)
+   still wins outright. */
+.pd-input, .pd-select { min-height: 32px; }
 .pd-input:focus, .pd-select:focus, .pd-textarea:focus { outline: 2px solid var(--pd-red); outline-offset: -1px; }
 
 /* ---- Project selector (UI.enhanceProjectSelect) ----
