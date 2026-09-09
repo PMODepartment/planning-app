@@ -1,5 +1,130 @@
 # Module: contracts-claims
 
+## 2026-09-09 — Affected work: the wizard finally names which activities a CO / EOT touches
+
+**Run `migrations/2026-09-09-cc-affected-activities.sql`.** Owner: *"adding change orders and
+extension of time the planner should be able to easily select which activities are affected with the
+CO/EOT … in a bulk manner in case that the CO/EOT affects a lot … by selecting affected activities
+based on the location and optional to add other activities in the schedule as well."*
+
+### Where this started: the wizard had no schedule at all
+
+`finish()` wrote one `contracts_claims` row. **No step, no field and no payload key in `wizard.js`
+mentioned `project_schedule` or an activity id** — so from the register's side there was no way to
+say what a variation covered, and the only link that existed anywhere was
+`project_schedule.change_order_ref`, a free-text column the schedule reads and this module never
+wrote. This is greenfield, not a repair.
+
+### New file: `affected.js` (`window.CCAffected`)
+
+Its own file beside `boq.js` / `pmi.js` / `packages.js`, because there are **two** consumers — the
+wizard's new step and the record form — and a picker living inside one would have to be reached
+through it. Loaded **before** `wizard.js` and `module.js` in `index.html`; both read it as
+`window.CCAffected` and both optional-guard every call, so a browser holding a cached `index.html`
+from before the file existed degrades instead of throwing.
+
+**The picker** is two panes in the wizard's wide shell: the **places** at one location level, and the
+**activities** they hold. Ticking a place takes all of it; a typed query searches the **whole
+project** regardless of place, which is the owner's *"optional to add other activities in the
+schedule as well"*.
+
+- ⚠️⚠️ **VALUES ARE GROUPED BY NORMALISED KEY, and it is load-bearing rather than tidiness.** A real
+  schedule spells one floor several ways — Avesta carries `2ND FLOOR` and `2nd Floor`, Jab carries
+  `Roofdeck` and `Roof Deck`. Offering those as separate places means the planner ticks one, believes
+  they have taken the fifth floor, and **silently misses the activities spelled the other way** — on
+  a change order, that is scope left out of a claim. Measured in a browser: 7 raw spellings → **4
+  places**, the 2nd-floor family gathering all **18** of its activities behind a `×3` badge whose
+  tooltip names every variant.
+- ⚠️ `LOC_ORD` / `_normCalc` / `spellRank` are a **deliberate duplicate** of the schedule's
+  `locNormKey` / `locSpellRank` (no shared runtime across module boundaries — the same call already
+  made for the People Picker and the chart helpers). **They are asserted against each other** in the
+  suite over 14 spellings, because if they drift the wizard and the schedule would group the same
+  floor differently.
+- ⚠️⚠️ **NO GROUPING-VALUE VETO, and this is a deliberate departure from the schedule.** `_vsLevVal`
+  refuses a stored value when `locIsGroupingValue` calls the name a trade or a phase
+  ("Superstructure"), and it is right to — it is drawing a **building**, and a trade is not a storey.
+  A **selector** is the opposite case: these values are already stored on the activities, so ticking
+  one selects exactly what was filed under it. Applying the veto would **hide activities from a
+  change order because the stacking dislikes the name of the place they are in**.
+- ⚠️ **Three load states, never a truthy array.** `boq.js`'s `ensureCodes` read `if (CODES) return
+  CODES;` and `[]` is truthy, so one read before the migration cached the empty answer for the whole
+  session and told an owner who had already run it that the chart was empty. Every loader here
+  reports `pending` / `ok` / `error`, and only `ok` may claim there is genuinely nothing — so "this
+  project has no schedule", "it has no location breakdown" and "the read was refused" are three
+  different sentences. All three were rendered and checked.
+- ⚠️ **Its own activity loader rather than widening `boq.js`'s `ensureActs`.** It needs `wbs`, the
+  dates and `change_order_ref`, which that one does not select — and `boq.js` is being edited by a
+  concurrent session today. `PDb.selectAll`, never a bare `.select()`: PostgREST caps a read at 1000
+  rows and answers 200, so a 16k-activity schedule would have offered the first 1000 and a change
+  order would have been raised against a sixteenth of the programme.
+- **Saving is diff-based** — added and removed only, so re-saving the picker is not a
+  delete-and-reinsert and `created_at` on the untouched links survives. It is the only record of when
+  the scope was first identified. Chunked at 100: an `.in()` filter travels in the URL.
+
+### The wizard step
+
+`{ key: 'affected', label: 'Affected work', when: raisedAgainst() }`, between Dates and Review.
+
+- ⚠️ **Shown for Claim as well as CO and EOT.** Not scope creep: this wizard already treats Claim and
+  Change Order identically in every other step (same fields, same money columns, one shared branch in
+  `stepDetails`), and a claim's basis is activities exactly as a change order's scope is. Excluding it
+  would be the special case.
+- ⚠️ **No `hasSchedule()` gate, which departs from the plan for this work.** `when()` runs
+  synchronously on every paint, so it cannot await the schedule read; gating on a load that may not
+  have finished would make the step, the rail count and the Back/Next arithmetic appear and disappear
+  mid-flow. `open()` **prefetches** instead — three or four clicks' head start — and the step's own
+  picker names every empty case. A step that explains why it is empty beats a step that silently is
+  not there.
+- ⚠️ `st.affIds` is the state and `st.affPicker` only the live handle, which dies with the DOM on
+  every step change. The Trades step keeps only the handle, so walking Back off it and forward again
+  starts from nothing; this one re-mounts from `affIds`.
+- ⚠️ `WIDE_STEPS` replaces the literal `cur.key === 'codes'`, so a third wide step cannot disagree
+  with the toggle.
+
+### Ordering, and the one rule that follows from it
+
+⚠️⚠️ **The links are written AFTER the record, because they reference its id — which does not exist
+until the insert returns. That is forced, and it has a consequence: a failed link write must not fail
+the save, and must not roll the record back.** The record is what the planner came to create and it
+is already safely stored; the links are an optional annotation that can be re-picked in one click.
+Rolling a good record back to undo an annotation would be strictly worse. So it reports by name and
+leaves the record standing — **unlike `rollbackPackages`**, where the package is created FIRST and
+would otherwise be left orphaned.
+
+⚠️ **`res.row.id`, not `res.id`.** `persistRecord` returns `{ ok, row, dropped }`. The first cut of
+this read `res.id`, which is `undefined` — **every link write would have been skipped and the
+"returned no id" branch would have fired on every single save**. Caught by reading the function
+instead of assuming its shape, before it ran once.
+
+### The record form and the register list
+
+`openForm` gains an **Affected work** section, `data-not="Contract"` (a contract is not raised against
+activities, it defines them), with the per-type sentence carried by the same `data-only`/`data-not`
+spans the days hint already uses — an EOT's set is **evidence**, a change order's is **scope**. The
+register row shows an activity count, and ⚠️ **only when it is non-zero**: a "0 activities" chip on
+every row of a register whose migration has not been run reads as a defect, and the absence of a chip
+claims nothing. `affChip` reads the cache and **never fetches** — `render()` runs on every filter
+keystroke.
+
+### Verified
+
+54 assertions across the pass (see the root `CLAUDE.md`), of which this module owns the normalisation
+agreement (E1–E7) and the step arithmetic (F0–F8), both with contrast builds. Rendered at 1440px and
+918px; ⚠️ both recorded CSS traps measured rather than read — `.ccw-main input { width:100% }` leaves
+the 22 checkboxes at **13px**, and the two panes give activity names **314px** at 918px rather than
+the ~200px squeeze `.boq-wide` exists to fix. Interactions driven: ticking a place selects its 18
+activities, searching narrows the pane **without losing the selection**, clearing restores it.
+
+⚠️ **One clarity fix came from looking at the render, not the code:** the level control was labelled
+"Place" while its options are level *names* ("Tower", "Level") — a box reading "Level" under a label
+reading "Place". Now labelled "Level"; the pane heading carries the chosen level's own name.
+
+⚠️ **Not verified signed in, and the migration has not been run.** No link has been written or read
+against a real project, so `saveFor`'s diff, the RLS on the new table and the orphaned-link report
+are untested against PostgREST.
+
+`module.css` / `module.js` / `wizard.js` / the new `affected.js` `?v=20260909co`;
+`MODULE_V` → `20260909co`.
 ## Two columns that existed since August finally have an editor, and the second insert path is gone (2026-09-08b) — fmlozano
 
 Owner: *"Let's do the half-built and consistency gaps first."* Four items off this morning's audit.

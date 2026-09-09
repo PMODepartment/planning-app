@@ -13,6 +13,143 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### A CO Ref column that unlocks a bulk edit already written, select-by-location, and the bulk change-order insert (2026-09-09) — fmlozano
+
+Owner: *"There is already a function to add change order in the activities within the schedule module
+this just needs to be integrated in the wizard and in a bulk manner in case that the CO/EOT affects a
+lot … we can also expand that idea for both the wizard and in the schedule app by selecting affected
+activities based on the location and optional to add other activities in the schedule as well."*
+Reads the new `cc_affected_activities` table — see
+[`modules/contracts-claims/CLAUDE.md`](../contracts-claims/CLAUDE.md) for the register's half.
+
+### ⚠️⚠️ A bulk edit that was fully built and had no door
+
+`fillDown(field, srcRow)` has carried a dedicated `change_order_ref` branch since it was written: it
+filters the selection to `isExecPhase`, reports how many it skipped and explains the refusal with
+`_phaseWhy`. `_FIELD_LABELS` names the field. `_CELL_META_BY_LABEL`'s own comment says *"marking a run
+of activities as one change order is exactly the bulk edit these columns exist for."*
+
+**None of it had ever run.** `fillDown` is reachable only from a grid cell's `data-field`; the Scope
+cell emits `data-field="scope_type"` and renders the ref as a read-only `.ps-coref` span; and a
+repo-wide search for `data-field="change_order_ref"` returned nothing. So the feature existed, guarded
+its own edge cases, and was unreachable.
+
+**A `Change Order Ref` column is the door.** Right-click → *Fill Change Order Ref down (N)* and Ctrl+D
+now work on a multi-row selection, which is how one variation gets stamped across a whole floor.
+
+- ⚠️ **Setting a ref does NOT change the row's scope**, deliberately — the same contract `promptCoRef`
+  has always kept, writing `{ change_order_ref }` and nothing else. `scope_type` says whether the row
+  **is** change-order work; the ref says **which** variation it belongs to, and a main-contract
+  activity legitimately cites the CO that affected it. Inferring one from the other would silently
+  reclassify main-contract work as a variation on the strength of a bulk fill-down.
+- ⚠️ **Execution phase only, and not editable elsewhere** — the same rule `scopeCellHtml` applies, so
+  the column cannot quietly acquire a value that means nothing.
+- ⚠️ **Appended to `GRID_COLS`, not inserted** — a saved column sort/order is **positional**, and
+  inserting mid-list re-points it at a different column. Verified the row emits exactly 26 cells for
+  26 built-in columns, with `c-coref` 26th and emitted last, or every dynamic column would shift.
+- The enum reuses **`coSelOpts`** — the same builder the details panel and `promptCoRef` use — so the
+  registered change orders, the "not in the register" warning and the ordering cannot disagree
+  between the three places a ref can be set. `_colText` includes the register **description**, so
+  filtering the column on "plumbing" finds the activities under a CO numbered "CO 01": a planner
+  remembers what the variation was, not its number.
+
+### Select activities by location (Actions menu)
+
+⚠️⚠️ **A SELECTOR, NOT A SECOND BULK-EDIT ENGINE, and that is the whole design.** It resolves a place
+to activities and loads them into `_selSet` — the selection every bulk action in this file already
+reads through `_selectedTaskRows()`. So fill-down, copy, cut, actualize dates and delete all apply to
+the result with **no new apply path, no second set of permissions and no second set of bugs**.
+
+⚠️ Global Change could not have done this job: `GC_FIELDS` addresses plain row fields and `gcMatch`
+reads `r[field]` directly, while `location` is a jsonb map — it cannot see a place at all.
+
+- Values are grouped by `locNormKey`, so `2ND FLOOR` and `2nd Floor` are **one** place with a `×N`
+  badge. Measured: three spellings of one floor collapse to one entry gathering all 18 rows.
+- ⚠️ **It says how many are off screen.** `_selSet` resolves against `rows`, not the displayed list,
+  so a bulk action legitimately reaches an activity the current filter hides — correct, and alarming
+  to discover afterwards. The dialog counts them before you commit.
+- ⚠️ `selId` is set to the first selection so the context menu has an anchor: without it,
+  right-clicking to reach Fill-down resets the selection to the row under the cursor and throws the
+  whole set away.
+- ⚠️ Three different reasons there may be no levels, and only one is the planner's to fix — `LOC_LOAD`
+  is exactly that distinction, and claiming "no breakdown" while the read is pending or refused is a
+  failure this module has already shipped once.
+
+### The bulk change-order insert
+
+⚠️⚠️ **IT REUSES `splitPlan` AND `splitBuild` UNMODIFIED** — proven by the diff, which contains six
+`+` mentions of them and **zero** deletions. They are pure functions that return data and write
+nothing, which is precisely what makes a whole-run **preview** possible: 23 hosts can be planned,
+shown and then applied. Re-deriving those dates would be a second copy of the one calculation a
+change-order claim turns on.
+
+⚠️⚠️ **And it lives here, not in Contracts & Claims**, for the same reason: the arithmetic is here,
+and this app owns schedule writes. The register records **which** activities a variation touches;
+inserting the work is this module's job.
+
+- **One preview table for the whole run**, replacing `applySplit`'s per-host `confirm()`. Twenty-three
+  confirmations is not an interface, and a planner clicking through them cannot see the total time
+  impact they are agreeing to.
+- ⚠️ **All three refusal classes are LISTED with their reason, never skipped**: no dates, a 1-day
+  activity (there is no point inside it), and a host **already citing this reference** — so re-running
+  after a partial failure cannot give one host the same change order twice. A *different* ref on the
+  host is not refused: an activity genuinely can be hit by two variations.
+- The cut is a **rule**, not a date, because one date cannot fall inside 23 different spans. *At each
+  activity's midpoint* is the default and, being what `openSplitDialog` itself defaults to, is
+  **always valid** — asserted across every duration from 2 to 40 days, 0 refusals. *On one date* is
+  offered and refuses per host where it falls outside.
+- ⚠️ **Change-order rows first, host patches second** — the same recoverable order `applySplit` uses.
+  If the inserts fail every host still reads as it always did; if the patches fail the change orders
+  exist and are visible. The reverse leaves hosts finishing later with nothing in the gap to explain
+  why. `created_by` is stamped, because `project_schedule_ins` requires it. Host patches go through
+  `_batchUpdate`, whose `failedIds` are reported as *"somebody else imported this schedule, so their
+  rows are not yours to change"* rather than as a generic failure.
+
+### ⚠️⚠️ The defect that would have corrupted data: 23 activities sharing an Activity ID
+
+`splitBuild` uses `co.ref` as the new row's id when one is given, and `splitFreeId` checks the
+candidate against `rows` **only** — which never grows during a run, because nothing is written until
+the end. So every host under CO-014 would have been handed the id **`CO-014`**. Activity IDs are what
+predecessor strings reference, what the schedule↔document links key on and what these new
+affected-activity links key on, so it would have broken three separate things **silently**.
+
+`_bulkFreeId` threads a `taken` map through the run and checks both it and `rows`. **The contrast build
+proves the fix is what matters**: reverting that one condition fails exactly the three id-uniqueness
+assertions and nothing else. The suite also runs the shipped `splitFreeId` as a control and asserts it
+returns the same id five times — which is correct for one insert, and is why the allocator exists.
+
+### Affected marker and filter
+
+A quiet chip on a leaf row naming the records recorded against it (capped at two references plus a
+count — an activity re-touched by six variations over two years is real and would push the name off
+the row). ⚠️ **A marker, not a scope change**: the row is still main-contract work. `filters.aff`
+narrows the grid to one record's set, so *"what does CO-014 touch?"* is answerable from the Gantt;
+WBS and group rows pass through, the same rule the critical-path and scope filters use.
+
+⚠️ **`'Claim'` joined the register fetch**, since the wizard offers the step for all three
+raised-against types — harmless to everything else, because `coRegistered()` still filters to
+`record_type === 'Change Order'`.
+
+⚠️ `AFF_BY_ACT` is cached and depends on `CC_AFFECTED` and `CONTRACT_RECS` **only, not on `rows`** —
+it is keyed on `activity_id` and `affectedOf(r)` looks the row's own id up in it — so the single
+invalidation beside the fetch is sufficient. An earlier version of that comment claimed it depended on
+the rows, which was wrong and is corrected in place.
+
+### Verified
+
+`node --check` on the extracted 2.7MB inline script; **0 duplicate DOM ids introduced** — ⚠️ that gate
+caught the duration input carrying the same id in both branches of the cut-mode ternary (only one
+existed at runtime, but two branches sharing an id is how a `getElementById` starts reading the wrong
+box after an unrelated edit), now emitted once; the 26-column/26-cell alignment; and 54 slice-and-
+execute assertions with three contrast builds. Reads of the new table are tolerant in exactly the way
+the register fetch beside them is: no table, no grant or an un-run migration leaves an empty list and
+a schedule that behaves precisely as it did before.
+
+⚠️ **Not verified signed in.** No bulk insert has been applied, no ref filled down and no marker
+rendered against a real project; the migration has not been run, so `cc_affected_activities` reads as
+absent and every one of these surfaces reports "nothing recorded yet".
+
+`MODULE_V` → `20260909co`.
 ### Excel's selection model, and a grip instead of Move buttons (2026-09-08) — jasantos2
 
 Owner: *"for the multiple selection, can you adapt similar to excel wherein if multiple selection,

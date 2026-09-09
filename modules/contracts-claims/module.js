@@ -260,6 +260,18 @@ window.ContractsClaims = (function () {
     _boqIO.observe(el);
   }
 
+  /* The affected-activity count for one record, as a chip under its description.
+     ⚠️ Reads the cache only and NEVER fetches: render() runs on every filter keystroke, and a
+     round trip per row per keystroke is the trap this module's `projects()` dep already records.
+     An unloaded or un-migrated cache simply yields no chip. */
+  function affChip(r) {
+    if (!window.CCAffected) return '';
+    var n = CCAffected.countFor(r.id);
+    if (!n) return '';
+    return '<div class="cc-mini cc-affn" title="' + n + ' schedule activit' + (n === 1 ? 'y is' : 'ies are') +
+      ' recorded as affected by this record">' + n + ' activit' + (n === 1 ? 'y' : 'ies') + '</div>';
+  }
+
   function render() {
     var host = document.getElementById('cc-view');
     /* The BOQ tab is a different KIND of screen — the client's contract document
@@ -332,7 +344,11 @@ window.ContractsClaims = (function () {
       h += '<tr' + (sel[r.id] ? ' class="cc-selrow"' : '') + ' data-id="' + esc(r.id) + '">' +
         '<td class="cc-cb"><input type="checkbox" data-cb="' + esc(r.id) + '"' + (sel[r.id] ? ' checked' : '') + ' /></td>' +
         '<td class="cc-desc"><div class="cc-desc-txt" title="' + esc(descOf(r)) + '">' + esc(descOf(r)) + '</div>' +
-          (r.counterparty ? '<div class="cc-mini">' + esc(clean(r.counterparty)) + '</div>' : '') + '</td>' +
+          (r.counterparty ? '<div class="cc-mini">' + esc(clean(r.counterparty)) + '</div>' : '') +
+          /* How many schedule activities this record touches. ⚠️ ONLY WHEN THERE ARE SOME --
+             a "0 activities" chip on every row of a register whose migration has not been run
+             would read as a defect, and the absence of a chip is not a claim about anything. */
+          affChip(r) + '</td>' +
         (view === 'claims' ? '<td class="cc-nowrap cc-mini">' + esc(r.record_type || '') + '</td>' : '') +
         c.cols.map(function (col) { return '<td class="cc-r">' + num(r[col.key]) + '</td>'; }).join('') +
         (view === 'contract' ? '' :
@@ -637,6 +653,30 @@ window.ContractsClaims = (function () {
         })();
       },
       persist: function (payload) { return persistRecord(payload, null); },
+      /* AFFECTED ACTIVITIES (2026-09-09). ⚠️ Every one of these is GUARDED on window.CCAffected
+         rather than assumed: affected.js is a new file, and a browser holding a cached
+         index.html from before it existed would otherwise throw on the wizard's new step -- the
+         exact "broken import that was an old parser still executing" failure MODULE_V exists to
+         prevent, arriving through the one door MODULE_V cannot close. The wizard already
+         optional-guards each of these on its side too; both halves are cheap. */
+      affectedPickerHTML: function () {
+        return window.CCAffected ? CCAffected.pickerHTML()
+          : '<p class="cc-hint">The activity picker is unavailable — reload the page.</p>';
+      },
+      mountAffectedPicker: function (root, opts) {
+        return window.CCAffected ? CCAffected.mount(root, opts) : Promise.resolve(null);
+      },
+      saveAffected: function (ccId, ids) {
+        return window.CCAffected ? CCAffected.saveFor(ccId, ids)
+          : Promise.resolve({ err: 'the activity picker is unavailable' });
+      },
+      /* Starts the schedule read the moment the wizard opens, so the step is ready by the time
+         the planner clicks through to it. Never awaited -- see the note in wizard.js open(). */
+      prefetchAffected: function () {
+        if (!window.CCAffected) return;
+        CCAffected.setProject(pid);
+        CCAffected.ensureActs(); CCAffected.ensureLevels(); CCAffected.ensureLinks();
+      },
       failMsg: recordFailMsg,
       warnDropped: warnDropped,
       done: gotoTypeTab
@@ -772,6 +812,24 @@ window.ContractsClaims = (function () {
       f('Date evaluated', 'cc-f-evald', e.date_evaluated, 'date', '', 'data-not="Contract"') +
       f('Date approved', 'cc-f-apprd', e.date_approved, 'date', '', 'data-not="Contract"') +
       '<p class="cc-hint" data-not="Contract">Aging is calculated from <b>Date submitted</b> while the record is Pending — it is never stored.</p>' +
+      /* AFFECTED WORK (2026-09-09). ⚠️ `data-not="Contract"` -- a contract is not raised against
+         activities, it defines them; only a Claim, Change Order or EOT is argued from a set of
+         work. applyType() toggles this the same way it toggles the money and days pipelines.
+         ⚠️ The per-type sentence uses the SAME data-only/data-not spans the days hint above
+            already uses, rather than a second mechanism: an EOT selection is EVIDENCE (the days
+            stay one contract-level figure) while a change order's is SCOPE, and reading one as
+            the other is how a claim goes wrong. */
+      (window.CCAffected
+        ? '<div class="cc-sec" data-not="Contract">Affected work</div>' +
+          '<div class="cc-wide" data-not="Contract">' +
+            '<p class="cc-hint">' +
+              '<span data-only="EOT">The activities this delay ran through — the <b>basis</b> of the claim. ' +
+                'Nothing here carries days; the granted days stay the single figure above.</span>' +
+              '<span data-not="EOT">The activities this record affects. Recording them moves no dates — ' +
+                'inserting change-order work into them is a separate, previewed step in the Project Schedule.</span>' +
+            '</p>' + CCAffected.pickerHTML() +
+          '</div>'
+        : '') +
       '<label class="cc-wide">Remarks<textarea id="cc-f-rem">' + esc(e.remarks || '') + '</textarea></label>';
 
     var m = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">' + (r ? 'Edit' : 'Add') + ' record</h2>' +
@@ -793,6 +851,20 @@ window.ContractsClaims = (function () {
     }
     el('cc-f-rtype').addEventListener('change', function () { applyType(); applyPkgMode(); });
     applyType();
+
+    /* ⚠️ MOUNTED AFTER THE MODAL EXISTS, not built into the body string: the picker reads the
+       schedule and needs its container in the document to wire its rows. Same reason the wizard
+       mounts it in wireStep() rather than in the step's own HTML.
+       ⚠️ `affPicker` stays null on a Contract or an older build, and the save path below checks
+          it -- so nothing here can make an ordinary record edit fail. */
+    var affPicker = null;
+    if (window.CCAffected) {
+      CCAffected.setProject(pid);
+      CCAffected.mount(m.el, {
+        initial: r ? CCAffected.listFor(r.id) : [],
+        ccId: r ? r.id : null
+      }).then(function (p) { affPicker = p; }).catch(function () { affPicker = null; });
+    }
 
     /* The "create a package from this contract" block only makes sense while
        "— Create from this contract —" is chosen; linking to an existing package must
@@ -923,7 +995,28 @@ window.ContractsClaims = (function () {
       var btn = el('cc-m-save'); btn.disabled = true; btn.textContent = 'Saving…';
       var res = await persistRecord(payload, r);
       if (!res.ok) { btn.disabled = false; btn.textContent = 'Save'; UI.toast(recordFailMsg(res.error), 'error'); return; }
-      m.close(); UI.toast(r ? 'Record updated.' : 'Record added.', 'success');
+      /* ⚠️ AFTER the record, and NEVER allowed to fail it -- the same ordering and the same rule
+         as the wizard's finish(). On an edit the id already exists; on an insert it is the row
+         persistRecord just returned. A link write that fails is reported by name and the record
+         stands, because the record is what the planner came to save and the links can be
+         re-picked here in one click. */
+      var affMsg = '';
+      if (affPicker) {
+        var affId = (r && r.id) || (res.row && res.row.id);
+        if (affId) {
+          var ar = await CCAffected.saveFor(affId, affPicker.ids());
+          if (ar && ar.err) {
+            affMsg = String(ar.err).indexOf('no-migration:') === 0
+              ? ' ⚠️ Affected activities were NOT saved — run ' + String(ar.err).slice('no-migration:'.length) + '.'
+              : ' ⚠️ Affected activities were NOT saved: ' + ar.err;
+          } else if (ar && (ar.added || ar.removed)) {
+            affMsg = ' Affected work updated' +
+              (ar.added ? ', +' + ar.added : '') + (ar.removed ? ', −' + ar.removed : '') + '.';
+          }
+        }
+      }
+      m.close(); UI.toast((r ? 'Record updated.' : 'Record added.') + affMsg,
+        affMsg.indexOf('⚠️') >= 0 ? 'warn' : 'success');
       warnDropped(res.dropped);
       gotoTypeTab(t);
     };
@@ -1079,6 +1172,16 @@ window.ContractsClaims = (function () {
     var res;
     try { res = { data: await PDb.selectAll(TABLE, function (q) { return q.eq('project_id', pid); }) }; }
     catch (err) { res = { error: err }; }
+    /* ⚠️ NOT AWAITED INTO THE CRITICAL PATH, and not allowed to fail this load. The register must
+       render whether or not 2026-09-09-cc-affected-activities.sql has been run; the counts are an
+       annotation on it. Fired here rather than lazily because render() may not fetch (see
+       affChip), so something has to fill the cache once. A repaint follows when it lands. */
+    if (window.CCAffected) {
+      CCAffected.setProject(pid);
+      CCAffected.ensureLinks().then(function () {
+        if (document.getElementById('cc-view')) render();
+      }).catch(function () {});
+    }
     if (res.error) {
       if (window.PDSync) { var c = await PDSync.cacheGet(PID_PFX + ':' + pid); if (c && c.rows) { rows = c.rows.slice(); fillFilters(); render(); return; } }
       var missing = /column|schema cache|PGRST204|does not exist/i.test(res.error.message || '');
@@ -1143,6 +1246,10 @@ window.ContractsClaims = (function () {
       // project's contract document.
       if (window.CCPackages) CCPackages.reset();
     if (window.BOQ) BOQ.reset();
+    /* ⚠️ A PROJECT SWITCH MUST DROP THE CACHED ACTIVITIES AND LINKS. Keeping them would offer
+       the previous project's activities under the new project's name -- and `setProject` is a
+       no-op when the id has not changed, so this is safe to call on every switch. */
+    if (window.CCAffected) CCAffected.setProject(pid);
       if (window.PMI) PMI.reset();
       if (view === 'boq' && window.BOQ) { BOQ.show(pid, projName()); joinCollab(); return; }
       if (view === 'pmi' && window.PMI) { PMI.show(pid, projName()); joinCollab(); return; }
@@ -1182,6 +1289,7 @@ window.ContractsClaims = (function () {
     /* The BOQ screen reaches the wizard through module.js rather than building its own
        dependency object - one wizard, one set of deps, no drift. */
     if (window.BOQ) BOQ.init(Object.assign({}, deps, { openWizard: openNew }));
+    if (window.CCAffected) CCAffected.init(deps);
     if (window.PMI) PMI.init(pmiDeps);
     document.querySelectorAll('.cc-tab').forEach(function (t) { t.onclick = function () { switchTab(t.dataset.view); if (histView) histView.push(); }; });
     // Browser-history integration (UI.bindHistoryState, ui.js) for the top-level

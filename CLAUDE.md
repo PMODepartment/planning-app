@@ -95,6 +95,94 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-09 (co) — A change order says which activities it touches, and inserts into all of them at once
+
+**Run `migrations/2026-09-09-cc-affected-activities.sql`.** Owner: *"adding change orders and
+extension of time the planner should be able to easily select which activities are affected with the
+CO/EOT … in a bulk manner in case that the CO/EOT affects a lot … by selecting affected activities
+based on the location and optional to add other activities in the schedule as well."* Detail in
+[`modules/contracts-claims/CLAUDE.md`](modules/contracts-claims/CLAUDE.md) and
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+- ⚠️⚠️ **THE WIZARD WROTE ONE ROW AND NOTHING ELSE.** No step, field or payload key in `wizard.js`
+  mentioned `project_schedule` or an activity id, so the commercial record and the programme it
+  argues about could not see each other from the register's side at all. There is now an **Affected
+  work** step for Change Order / Claim / EOT: pick a **place** (tower, level, zone) to take all of
+  it, or search to add individual activities.
+- ⚠️⚠️ **AN EOT'S ACTIVITY SET CARRIES NO DAYS, and this is the decision the whole shape turns on.**
+  The owner asked directly whether EOT should get a per-activity model. It should not:
+  `approved_days` stays the single contract-level figure the schedule already sums (*"Contract finish
+  + granted days = Revised finish"*), and the activities are the delay **basis** — a set, not
+  numbers. Delay on parallel paths is **concurrent**: two activities each slipping 10 days on two
+  parallel paths is **10** days of project delay, not 20, because only the critical path carries. A
+  per-activity day column would invite the obvious roll-up and produce a figure nobody could defend
+  in a claim. Same trap the BOQ allocations recorded from the other side — *"the sum belongs on the
+  allocation, not on the tag."*
+- ⚠️ **Saving a change order reschedules NOTHING.** A Pending variation must not move forty finish
+  dates as a side effect of being recorded. Inserting the work is a separate, previewed action.
+- ⚠️⚠️ **A NEW TABLE RATHER THAN `change_order_ref`, for three reasons that are each fatal on their
+  own.** That column exists and already joins to `contracts_claims.reference_no` — but it is ONE
+  text column, so a second variation overwrites the first (real projects re-touch the same activity:
+  CO-014 in March, EOT-003 citing it in June); paired with `scope_type` it already means *"this row
+  IS change-order work"*, which is a different fact from *"this row is AFFECTED BY it"*; and EOT has
+  nowhere to go at all. `cc_affected_activities` is keyed on **`activity_id`, never the row uuid** —
+  an import deletes and reinserts every row, so a uuid link is destroyed by the next import while
+  the planner's Activity ID survives.
+- ⚠️⚠️ **NO SECURITY-DEFINER RPC WAS NEEDED, and establishing that is worth as much as the feature.**
+  `boq_tag_activities` had to be one because it UPDATEs `project_schedule`, which is gated on
+  `created_by = auth.uid() or is_admin()` — and PostgREST answers an RLS-filtered UPDATE with 200 and
+  zero rows. Verified from the policy source: `project_schedule` **INSERT** carries no ownership
+  clause (`is_writer() and created_by = auth.uid() and can_access_project(...)`). Because the links
+  live in their own table, nothing here updates an activity anybody else imported, so that
+  silent-success trap cannot arise.
+- ⚠️⚠️ **`fillDown('change_order_ref', …)` HAS EXISTED SINCE IT WAS WRITTEN AND HAD NEVER RUN.** It
+  filters the selection to `isExecPhase`, reports the skipped count and explains the refusal; its own
+  neighbouring comment says *"marking a run of activities as one change order is exactly the bulk
+  edit these columns exist for"*. But `fillDown` is reachable only from a grid cell's `data-field`,
+  the Scope cell emits `data-field="scope_type"` and renders the ref as a read-only span, and a
+  repo-wide search for `data-field="change_order_ref"` returned **nothing**. The feature was built
+  and had no door. A **Change Order Ref column** is the door — right-click → *Fill Change Order Ref
+  down (N)* and Ctrl+D now work on a multi-row selection. Smallest change in the whole pass, largest
+  payoff.
+- **Select activities by location** (Actions menu) resolves a place to activities and loads them into
+  the grid's existing `_selSet`, so every bulk action applies with **no new apply path**. Global
+  Change could not have done it: `GC_FIELDS` addresses plain row fields and `location` is a jsonb map.
+- **The bulk insert reuses `splitPlan` / `splitBuild` unmodified** — proven by the diff, which
+  contains six `+` mentions of them and **zero** deletions. They are pure functions returning data,
+  which is what makes a whole-run preview possible; and it lives in the schedule because that is
+  where the arithmetic is and which app owns schedule writes. One preview table replaces
+  `applySplit`'s per-host `confirm()` — twenty-three confirmations is not an interface — and all
+  three refusal classes are **listed with their reason**, never silently skipped.
+- ⚠️⚠️ **THE ONE DEFECT THAT WOULD HAVE CORRUPTED DATA: twenty-three activities sharing an Activity
+  ID.** `splitBuild` uses `co.ref` as the new row's id, and `splitFreeId` checks only against `rows`
+  — which never grows during a run, because nothing is written until the end. So every host under
+  CO-014 would have been handed the id `CO-014`. Activity IDs are what predecessor strings, the
+  schedule↔document links and these new links all reference, so it would have broken three things
+  silently. `_bulkFreeId` threads a `taken` map and checks both. **The contrast build proves it**:
+  reverting that one condition fails exactly the three id-uniqueness assertions.
+- **Verified: 54 assertions** executing `splitPlan` / `splitBuild` / `_bulkFreeId` / `bulkSplitPlan`
+  / `locSelValues` and the wizard's own `STEPS` **sliced out of the shipped files** — plus **three
+  contrast builds**, each reverting one thing and each failing only where it should (3, 5 and 6
+  assertions). `splitPlan`/`splitBuild` run as a **control**. **Rendered in a browser** at 1440px and
+  at **918px** (the owner's own screenshot width): 7 raw floor spellings collapse to **4 places**,
+  "2nd Floor" gathering all **18** of its activities under a ×3 badge naming every variant; both
+  recorded CSS traps measured absent (22 checkboxes at **13px**, activity names at **314px** not the
+  ~200px squeeze); no page or pane overflow; and both degrade paths — no location levels, and the
+  un-run migration — name what to do and leave the picker usable.
+- ⚠️ **Three of my own mistakes, caught and recorded rather than shipped:** `res.id` where
+  `persistRecord` returns `{ok, row, dropped}` (every link write would have been skipped silently);
+  a `p._open` flag read off freshly-derived objects (expanding a place would have shown nothing); and
+  two unsound test metrics — a `wrapped` check comparing height against a *set* height, and a
+  line-count from `top` offsets that `align-items:center` makes meaningless.
+- Assets contracts `module.css` / `module.js` / `wizard.js` + the new `affected.js` `?v=20260909co`;
+  **`MODULE_V` → `20260909co`** — ⚠️ deliberately not a letter in the daily sequence, since two
+  collisions this month came from two sessions picking the same next letter.
+- ⚠️ **Not verified signed in, and the migration has not been run.** No link has been written, no
+  bulk insert applied and no CO Ref filled down against a real project. Until the migration runs the
+  register saves normally and reports the unsaved links by name.
+- ⚠️ **Deliberately not built:** a deep link from the record into the schedule (the schedule reads
+  **no** URL parameters at all today — 0 occurrences of `URLSearchParams` — so it discovers the links
+  from the table itself), per-activity EOT days, and retro-linking existing `change_order_ref` values.
 ### 2026-09-08 (pv) — Three registers: a KPI strip that fits, four invisible buttons, and a present view put back
 
 No migration. Owner's items 1–3 of four; **item 4 (Progress Photos) was explicitly paused by the owner
