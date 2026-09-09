@@ -1,5 +1,129 @@
 # Module: contracts-claims
 
+## 2026-09-09 (cp) — The Affected-work picker: a ladder, a WBS tree, and a Gantt beside them
+
+Owner, on the step shipped that morning: *"UI is clashing let's fix … I want to have the level
+breakdown select to be like a ladder rather than selecting since it can span different towers and
+levels and zones … most of the activities have the same activity name even though they have
+different activity IDs its difficult for the planner to have memorized all of these activity IDs …
+I believe in a form of a WBS type would be appropriate. I want to be able to have a side-by-side
+preview as well when I select the affected activity how it would look like in the Gantt."*
+
+### ⚠️⚠️ The clash was mine, and so was the reason it measured clean
+Two wizard rules, and the second is the sibling of a trap documented directly above it:
+
+- **`module.css:520` — `.ccw-main select { width: 100% }` was unconditional.** The `input` half of
+  that same rule carefully excludes checkboxes and radios, with a long comment about the class-code
+  ladder it once destroyed. `select` got no such exclusion, so the picker's level dropdown took a
+  full row.
+- **`module.css:505` — `.ccw-main label { display: block }`** at specificity **0-1-1** beat
+  `.cca-lbl { display:inline-flex }` at **0-1-0**, so the label was never inline and landed on top
+  of the control beside it.
+
+⚠️ **My harness passed because it hand-copied the `.ccw` / `.ccw-main` shell instead of rendering the
+real one**, so neither wizard rule was ever in the cascade. That error class is what changed here:
+the harness now calls the **real `CCWizard.open()`** and clicks through to the step.
+
+⚠️ **The fix is not more specificity — it cannot be.** Three `:not()` arguments put that selector at
+**0-4-1**, above anything a class can reach without `!important`, and the previous fix *was* an
+`!important`, on one control, leaving the next to rediscover it. A control now opts out with
+**`.cca-ctl`**, the same shape the rule already uses for checkboxes and radios, and its own rules
+then apply normally. Verified both ways in the browser: a probe `<input>` with no `.cca-ctl` still
+stretches to the wizard's width, so ordinary form fields are untouched.
+
+### The ladder replaces one `<select>` per level
+Copied from `boq.js`'s class-code cascade, which solves the same problem: every rung is re-derived
+**top-down from the parent's already-resolved set**, so pane N+1 is definitionally a subset of pane N.
+
+- ⚠️⚠️ **THAT NARROWING IS WHAT MAKES A BARE VALUE KEY SAFE.** The location migration is explicit
+  that values are plain text and not a node tree — *"Zone 'Z1' under two different locations is the
+  same string"* — so a rung keyed on the value alone would merge Tower A's Z1 with Tower B's Z1 and
+  a change order would silently take both. It cannot happen while resolution stays strictly
+  top-down, and the suite asserts it: Tower 1 › Z1 holds 2 activities, Tower 2 › Z1 holds 1, and the
+  **contrast build** — reading the same level un-narrowed — merges them into one rung of 3.
+  ⚠️ Do not add a "show me every zone at once" mode without introducing a composite key.
+- ⚠️⚠️ **N rungs, not four.** `.boq-lad` can hardcode four columns because a class code is always
+  trade › division › group › item. Location levels are per project — SLN101 is Tower › Level ›
+  Orientation › Zone › Cluster. The count is a CSS custom property set from the data; measured, 2
+  and 3 rungs share the width, and **5 and 7 clamp at 150px and scroll** rather than becoming
+  unreadable slivers.
+- ⚠️ **A level with no values under the current path is SKIPPED, not shown as "Unassigned".**
+  Measured live: under Tower 2 › 5F the Zone rung disappears entirely.
+- ⚠️ **Re-ticking a partly-selected rung selects ALL of it**, because the handler reads the
+  checkbox's own new state rather than recomputing — the same bug class as `boq.js`'s leaf fix.
+  Measured: 13 → untick one → `12/13` and indeterminate → re-tick → 13.
+- `2ND FLOOR` and `2nd Floor` stay **one** rung with a `×2` badge. ⚠️ The label is the spelling used
+  **most often on this schedule**, not the prettiest: `spellRank` scores them identically because
+  `/^[A-Z]/` cannot tell ALL-CAPS from Title Case, so frequency decides. That is the schedule's own
+  rule copied verbatim, and it is now asserted so a future change to it has to be deliberate.
+
+### The activity tree replaces the flat list
+- ⚠️⚠️ **Ancestry comes from splitting the dotted `wbs` string, NEVER from `wbs_node_id`.**
+  `2026-09-01-wbs-link-rpc.sql` measured that column NULL on **4,393 of 4,393** and **16,393 of
+  16,393** activities after an import; the grid never noticed because `rebuild()` splits the code.
+- ⚠️⚠️ **`ensureActs` had to STOP discarding the `WBS Summary` rows.** They are the only code→name
+  map, so without them every branch renders nameless — which is the whole point of a tree. Same
+  single read; they are kept in a `nameByCode` map and stay **out** of the selectable set, because a
+  change order raised against a heading would double-count everything beneath it. The **contrast
+  build** discards them and every branch comes back unnamed.
+- ⚠️ **Two `wbs` conventions coexist in one table and both are normal.** An imported activity carries
+  its own leaf code one segment below its branch; a builder-pushed one carries the *branch's* code,
+  identical to its siblings. Keyed naively the first gives every row its own node and the second
+  collapses forty onto one. A code is a branch when a summary row names it **or** anything sits
+  below it, and a row filed on its own branch code is indented inside it — asserted both ways.
+- **The duplicate-name qualifier fires only on names that actually repeat**, preferring the deepest
+  location value — the owner's complaint, and `emitLeaf`'s own comment, verbatim. Measured on screen:
+  nine rows reading `Formworks · Z1` / `Formworks · Z2`, and a name appearing once is left alone.
+- ⚠️ **Selected-but-out-of-scope rows are always appended.** Move the ladder to another tower and the
+  13 already ticked are still listed, still counted, still correctable. A selection you cannot see is
+  a selection you cannot fix.
+
+### The Gantt preview
+Adapted from the schedule's `renderMobileGanttBody` — the only self-contained date-scaled bar
+renderer in the repo. ⚠️ Positioned divs, not SVG: this module draws no SVG at all today, and its
+`#6b7280` literal is replaced by a token so the strip is legible in both themes (verified — every
+colour resolves to `--pd-*` in dark mode).
+
+⚠️⚠️ **IT IS NOT A SECOND COPY OF `splitPlan`, AND THAT IS PINNED BY ASSERTION.** The commit that
+built the bulk insert refused to duplicate the insertion arithmetic — *"a second copy of the one
+calculation a CO claim turns on"* — and that still holds. A preview needs two facts: where the gap
+sits and where the bar now ends. So the suite **slices the real `splitPlan` out of
+`project-schedule/index.html`, executes it, and asserts `newEnd` and both gap edges match across 35
+span × duration combinations.** If the schedule's arithmetic ever changes, this fails and gets
+corrected — which a silent duplicate would not. The **contrast build** introduces a one-day error
+and the assertion catches it.
+
+⚠️ A 1-day activity is refused **with its reason on the row**, never drawn as a gapless bar implying
+the insertion worked — `splitPlan` refuses it too, and both are asserted.
+⚠️ The preview strip carries the **same qualifier the tree does**: a list of nine rows reading
+"Formworks" answers *"which ones did I pick?"* with *"some Formworks"*.
+
+### ⚠️ A real bug found by measuring, which reading the rule would never have caught
+The CO-duration box rendered **149px wide inside a header strip built for a 42px chip**. The
+declaration was right — `flex: 0 0 42px` — and it lost to a default it does not mention: a flex
+item's `min-width: auto` resolves to the automatic minimum size, and for a form control that is the
+browser's intrinsic ~20-character width. `min-width: 0` fixes it; measured 42px afterwards at both
+1440 and 918.
+
+### Verified
+- **41 assertions, 0 failures**, executing the shipped `ladderOf` / `valuesAt` / `treeOf` /
+  `visibleTree` / `stampSegs` / `previewOf` / `bestSpelling` sliced out of the file, plus the real
+  `splitPlan` sliced out of the schedule. **Three contrast builds, all three bite.**
+- **Driven in a real browser against the real `CCWizard.open()`** at 1440 and 918, both themes:
+  **zero overlapping elements in the control bar** (the reported defect, measured as pairwise
+  rect intersection, not eyeballed), no page horizontal scroll at either width, the ladder cascading
+  and skipping, the tree naming and qualifying, and the preview drawing 13 ghost rails and 13
+  notches at `+14d`.
+- Class audit: **emitted-but-undefined: none; defined-but-never-emitted: none.** `node --check`
+  clean; CSS braces **526/526**; 0 NUL bytes; no duplicate `cca-*` DOM id (the seven duplicates the
+  gate reports are pre-existing, in files this change does not touch, and are mutually-exclusive
+  render branches).
+- Harness deleted before commit, and `git status` confirmed clean of untracked files — this repo has
+  shipped a harness to production twice.
+- ⚠️ **NOT VERIFIED SIGNED IN.** Every measurement above is against fixture data through a stubbed
+  data layer. No real schedule has been read, and no link has been saved.
+- `affected.js` / `module.css` → `?v=20260909cp`; `MODULE_V` → `20260909cp`.
+
 ## 2026-09-09 — Affected work: the wizard finally names which activities a CO / EOT touches
 
 **Run `migrations/2026-09-09-cc-affected-activities.sql`.** Owner: *"adding change orders and

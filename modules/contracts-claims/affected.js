@@ -45,6 +45,11 @@ window.CCAffected = (function () {
      there is genuinely nothing. Same rule the schedule applies to `LOC_LOAD`. */
   var LEVELS = [], LVL_LOAD = 'pending', LVL_ERR = '';
   var ACTS = [], ACTS_LOAD = 'pending', ACTS_ERR = '';
+  /* dotted WBS code -> branch name, from the WBS Summary rows. See ensureActs. */
+  var NAME_BY_CODE = {};
+  /* The tree is SCANNED, not paged. A cap keeps a 16k-activity project from rendering 16k
+     rows into a modal; the header says `N+` when it bites. */
+  var ROW_CAP = 400;
   var LINKS = [], LINK_LOAD = 'pending', LINK_ERR = '';
 
   function isMissingTable(e) {
@@ -123,7 +128,7 @@ window.CCAffected = (function () {
   }
   function reset() {
     LEVELS = []; LVL_LOAD = 'pending'; LVL_ERR = '';
-    ACTS = []; ACTS_LOAD = 'pending'; ACTS_ERR = '';
+    ACTS = []; ACTS_LOAD = 'pending'; ACTS_ERR = ''; NAME_BY_CODE = {};
     LINKS = []; LINK_LOAD = 'pending'; LINK_ERR = '';
   }
 
@@ -153,10 +158,21 @@ window.CCAffected = (function () {
          a table with no `id` at all. */
       var rows = await PDb.selectAll(T_SCHED, function (q) { return q.eq('project_id', pid); },
         'id,activity_id,activity_name,wbs,start_date,end_date,duration_days,activity_type,scope_type,change_order_ref,location');
-      /* Leaves only. A WBS Summary is a heading -- it carries no work, and a change order raised
-         against a heading would double-count every activity beneath it. Same exclusion
-         `boq_tag_activities` makes in SQL. */
+      /* ⚠⚠ THE WBS SUMMARY ROWS ARE KEPT AS A CODE -> NAME MAP, and the first cut of this file
+         threw them away. They are the ONLY source for a branch's name -- the schedule builds its
+         own `nameByCode` from exactly these rows -- so without them every heading in the activity
+         tree renders nameless, which is the whole point of having a tree. Same single read; they
+         are simply not discarded.
+         ⚠ They stay OUT of the selectable set. A heading carries no work, and a change order
+           raised against one would double-count every activity beneath it -- the same exclusion
+           `boq_tag_activities` makes in SQL. */
+      NAME_BY_CODE = {};
+      (rows || []).forEach(function (r) {
+        if (r.activity_type === 'WBS Summary' && r.wbs) NAME_BY_CODE[String(r.wbs)] = r.activity_name || '';
+      });
       ACTS = (rows || []).filter(function (r) { return r.activity_type !== 'WBS Summary' && r.activity_id; });
+      // Ancestry is derived once, here, rather than per render -- see stampSegs.
+      ACTS.forEach(stampSegs);
       ACTS_LOAD = 'ok'; ACTS_ERR = '';
     } catch (e) {
       ACTS_LOAD = 'error'; ACTS_ERR = (e && e.message) ? e.message : String(e);
@@ -243,6 +259,231 @@ window.CCAffected = (function () {
     }
   }
 
+  // ---- dates ---------------------------------------------------------------
+  /* ⚠️ UTC THROUGHOUT, and it is not optional. `start_date` is a plain `YYYY-MM-DD`; parsing it
+     with `new Date(s)` uses the local zone, and in UTC+8 (this owner's zone) every such date lands
+     on the previous day at 16:00 — so a bar drawn from it starts a day early. Same convention, and
+     the same reason, as the schedule's own `pd` / `addDays`. */
+  function pd(s) {
+    if (!s) return null;
+    var m = String(s).slice(0, 10).split('-');
+    if (m.length !== 3) return null;
+    var d = new Date(Date.UTC(+m[0], +m[1] - 1, +m[2]));
+    return isNaN(d.getTime()) ? null : d;
+  }
+  function dayDiff(a, b) { return Math.round((b - a) / 86400000); }
+  function addDays(d, n) { var x = new Date(d.getTime()); x.setUTCDate(x.getUTCDate() + n); return x; }
+  var MON3 = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  function shortDate(d) { return d ? (MON3[d.getUTCMonth()] + ' ' + d.getUTCDate()) : '—'; }
+
+  // ---- the WBS code, as ancestry -------------------------------------------
+  /* ⚠️⚠️ ANCESTRY COMES FROM SPLITTING THE DOTTED `wbs` STRING, NEVER FROM `wbs_node_id`.
+     Measured in migrations/2026-09-01-wbs-link-rpc.sql: `wbs_node_id` is NULL on 4,393 of 4,393
+     activities (Avesta) and 16,393 of 16,393 (4PH Strevi) after an import, until a repair RPC is
+     run — and the schedule's grid never noticed, because `rebuild()` derives ancestry by splitting
+     the code. A tree built on the node id would be empty on exactly the projects that matter.
+     ⚠️ Segments are NOT always numeric — a custom code is spliced in as one SEGMENT, so real codes
+     look like `1.2.ST-F1.3`. Never infer depth from digits, only from the segment count. */
+  function stampSegs(r) {
+    var w = String(r.wbs == null ? '' : r.wbs);
+    if (r._segsFor === w && r._segs) return r;
+    var segs = w === '' ? [] : w.split('.');
+    var anc = [];
+    for (var i = 1; i < segs.length; i++) anc.push(segs.slice(0, i).join('.'));
+    r._segs = segs; r._anc = anc; r._segsFor = w;
+    return r;
+  }
+  // Natural, segment-wise comparison, so `10` sorts after `9` rather than after `1`.
+  function cmpCode(a, b) {
+    var x = String(a == null ? '' : a).split('.'), y = String(b == null ? '' : b).split('.');
+    for (var i = 0; i < Math.max(x.length, y.length); i++) {
+      var p = x[i], q = y[i];
+      if (p === undefined) return -1;
+      if (q === undefined) return 1;
+      var np = parseInt(p, 10), nq = parseInt(q, 10);
+      var bothNum = !isNaN(np) && !isNaN(nq) && String(np) === p && String(nq) === q;
+      var c = bothNum ? (np - nq) : String(p).localeCompare(String(q));
+      if (c !== 0) return c;
+    }
+    return 0;
+  }
+  // Every activity at or under `code`. Covers both `wbs` conventions — see treeOf.
+  function actsUnder(list, code) {
+    return list.filter(function (a) {
+      var w = String(a.wbs == null ? '' : a.wbs);
+      return w === code || (a._anc || []).indexOf(code) >= 0;
+    });
+  }
+  /* The deepest location value an activity carries. Deepest because it is the most specific:
+     "Formworks · Z1" says more than "Formworks · Tower 1". */
+  function locSuffix(a, levels) {
+    for (var i = (levels || []).length - 1; i >= 0; i--) {
+      var v = String((a.location && a.location[levels[i].id]) || '').trim();
+      if (v) return v;
+    }
+    return '';
+  }
+
+  // ---- THE LADDER (pure) ---------------------------------------------------
+  /* Values at one level over a GIVEN candidate set, grouped by normalised key.
+     ⚠️⚠️ THE CANDIDATE SET IS WHY NO COMPOSITE KEY IS NEEDED. The location migration is explicit
+     that values are plain text and NOT a node tree — *"Zone 'Z1' under two different locations is
+     the same string"* — so a rung keyed on the bare value would merge Tower A's Z1 with Tower B's
+     Z1, and a change order would silently take both. It cannot happen here because `cand` has
+     already been narrowed by every rung above, so the Z1 resolved in this pane IS Tower A's Z1.
+     That is the same property that makes boq.js's cascade safe, where division codes are likewise
+     not unique across trades — and it holds ONLY while resolution stays strictly top-down.
+     Do not add a "show me every zone at once" mode without introducing a composite key. */
+  function valuesAt(cand, levelId) {
+    var byKey = {};
+    cand.forEach(function (a) {
+      var v = String((a.location && a.location[levelId]) || '').trim();
+      if (!v) return;
+      var k = normKey(v); if (!k) return;
+      (byKey[k] = byKey[k] || { key: k, variants: [], acts: [] });
+      byKey[k].variants.push(v); byKey[k].acts.push(a);
+    });
+    return Object.keys(byKey).map(function (k) {
+      var g = byKey[k];
+      var uniq = g.variants.filter(function (v, i, arr) { return arr.indexOf(v) === i; });
+      return { key: k, label: bestSpelling(g.variants), spellings: uniq, acts: g.acts };
+    }).sort(function (x, y) {
+      if (y.acts.length !== x.acts.length) return y.acts.length - x.acts.length;
+      return String(x.label).localeCompare(String(y.label), undefined, { numeric: true });
+    });
+  }
+
+  /* The rungs, resolved strictly top-down. Returns `{ rungs, cand, cursor }` and MUTATES NOTHING —
+     the caller adopts the returned cursor.
+     ⚠️ EVERY CURSOR IS RE-DERIVED AGAINST THE VALUES THAT ACTUALLY EXIST on this pass, and falls
+     back to the first — never to null. boq.js's own note records what independent resolution did
+     there: *"a division from one trade showing beside the groups of another"*. A ladder has no
+     collapsed state, it has a position.
+     ⚠️ A LEVEL WITH NO VALUES UNDER THE CURRENT PATH IS SKIPPED, not rendered as "Unassigned". On a
+     project where only some towers have zones, an empty rung is noise that also costs a pane —
+     the same call `buildTree` makes with its skip sentinel. */
+  function ladderOf(base, levels, cursor) {
+    var rungs = [], cand = base, out = {};
+    for (var i = 0; i < (levels || []).length; i++) {
+      var lv = levels[i];
+      var vals = valuesAt(cand, lv.id);
+      if (!vals.length) continue;
+      var want = cursor ? cursor[lv.id] : null;
+      var chosen = vals.filter(function (v) { return v.key === want; })[0] || vals[0];
+      out[lv.id] = chosen.key;
+      rungs.push({ level: lv, values: vals, sel: chosen });
+      cand = chosen.acts;
+    }
+    return { rungs: rungs, cand: cand, cursor: out };
+  }
+
+  // ---- THE ACTIVITY TREE (pure) --------------------------------------------
+  /* Flat display entries carrying a depth, mirroring the schedule's own `emitLeaf`: collect every
+     ancestor code, prune the prefix they all share, then sort branches and activities as ONE list
+     so they interleave correctly.
+     ⚠️⚠️ TWO `wbs` CONVENTIONS COEXIST IN ONE TABLE AND BOTH ARE NORMAL. An IMPORTED activity
+     carries its own leaf code one segment below its branch (`4.2.3.1.5` under `4.2.3.1`); a
+     builder-pushed one carries the BRANCH's code, identical to every sibling. Keyed naively the
+     first gives every row its own node and the second collapses forty rows onto one heading. So a
+     code counts as a branch when a WBS Summary row NAMES it or anything sits below it, and an
+     activity whose own code is also a branch is indented one level beneath it. */
+  function treeOf(list, nameByCode, levels) {
+    if (!list.length) return [];
+    nameByCode = nameByCode || {};
+    var segsOf = list.map(function (a) { return (stampSegs(a)._segs || []); });
+    var minSegs = segsOf.reduce(function (m, s) { return Math.min(m, s.length); }, Infinity);
+    var cut = 0;
+    while (cut < minSegs - 1 && segsOf.every(function (s) { return s[cut] === segsOf[0][cut]; })) cut++;
+
+    var isBranch = {};
+    list.forEach(function (a) {
+      (a._anc || []).forEach(function (c) { isBranch[c] = 1; });
+      var own = String(a.wbs == null ? '' : a.wbs);
+      if (own && nameByCode[own] !== undefined) isBranch[own] = 1;   // the builder-pushed case
+    });
+
+    var entries = [];
+    Object.keys(isBranch).forEach(function (c) {
+      if (c.split('.').length > cut) entries.push({ code: c, branch: true });
+    });
+    list.forEach(function (a) {
+      entries.push({ code: String(a.wbs == null ? '' : a.wbs), branch: false, a: a });
+    });
+    entries.sort(function (x, y) {
+      var c = cmpCode(x.code, y.code);
+      if (c !== 0) return c;
+      if (x.branch !== y.branch) return x.branch ? -1 : 1;          // the heading before its rows
+      return String((x.a && x.a.activity_id) || '').localeCompare(String((y.a && y.a.activity_id) || ''));
+    });
+
+    /* ⚠️ QUALIFY ONLY THE NAMES THAT ACTUALLY REPEAT. The owner's complaint is that most activities
+       share a name and differ only by an id nobody memorises; the schedule's `emitLeaf` solves it
+       the same way, and its comment is the same case — *"Four rows all reading '1st Fix' is
+       unreadable … only their WBS parent says which"*. A qualifier on every row would be noise. */
+    var nameN = {};
+    list.forEach(function (a) { var k = String(a.activity_name || '').trim(); nameN[k] = (nameN[k] || 0) + 1; });
+
+    entries.forEach(function (e) {
+      var segN = e.code === '' ? 0 : e.code.split('.').length;
+      e.depth = Math.max(0, segN - 1 - cut);
+      if (e.branch) {
+        e.name = nameByCode[e.code] !== undefined ? nameByCode[e.code] : '';
+        e.acts = actsUnder(list, e.code);
+        e.n = e.acts.length;
+      } else {
+        if (isBranch[e.code]) e.depth = e.depth + 1;               // it sits INSIDE its own code
+        e.name = String(e.a.activity_name || '');
+        e.qual = (nameN[e.name.trim()] > 1) ? locSuffix(e.a, levels) : '';
+      }
+    });
+    return entries;
+  }
+
+  /* Which tree rows are on screen. A shut branch hides its subtree — including an activity whose
+     own code IS that branch, which is the builder-pushed case again. */
+  function visibleTree(entries, open) {
+    var branchAt = {};
+    entries.forEach(function (e) { if (e.branch) branchAt[e.code] = 1; });
+    return entries.filter(function (e) {
+      var code = e.code === '' ? '' : e.code;
+      var segs = code === '' ? [] : code.split('.');
+      // every strict ancestor must be open
+      for (var i = 1; i < segs.length; i++) {
+        var p = segs.slice(0, i).join('.');
+        if (branchAt[p] && !open[p]) return false;
+      }
+      // an activity filed ON a branch code is inside it
+      if (!e.branch && branchAt[code] && !open[code]) return false;
+      return true;
+    });
+  }
+
+  // ---- THE GANTT PREVIEW (pure) --------------------------------------------
+  /* ⚠️⚠️ THIS IS NOT A SECOND COPY OF `splitPlan`, AND THE DIFFERENCE IS THE POINT.
+     The authoritative insertion arithmetic lives in project-schedule (`splitPlan`), and the commit
+     that built the bulk insert refused to duplicate it: *"reimplementing that date arithmetic in
+     the contracts module would be a second copy of the one calculation a CO claim turns on."* That
+     still holds. A PREVIEW needs only two facts — where the gap sits, and where the bar now ends —
+     so this computes those two and nothing else.
+     ⚠️ AND IT IS PINNED BY ASSERTION, NOT BY GOOD INTENTIONS. The verification suite slices the
+     REAL `splitPlan` out of project-schedule/index.html, executes it, and asserts that `newEnd`
+     here equals its `seg2.end` and that the gap equals its `co` span, across a range of durations.
+     If the schedule's arithmetic ever changes, that assertion fails and this gets corrected —
+     which is the property a silent duplicate would not have.
+     ⚠️ The cut is the activity's MIDPOINT, which is exactly what `openSplitDialog` defaults to and
+     is always strictly inside the bar, so a preview never has to refuse on the date.
+     ⚠️ A 1-DAY ACTIVITY IS REFUSED, with the reason, rather than drawn as a gapless bar that would
+     imply the insertion worked — `splitPlan` refuses it too ("there is no point inside it"). */
+  function previewOf(a, dur) {
+    var s = pd(a.start_date), e = pd(a.end_date);
+    if (!s || !e) return { err: 'no dates' };
+    var span = dayDiff(s, e) + 1;
+    if (span < 2) return { err: 'cannot split — 1 day' };
+    if (!dur) return null;
+    var cut = addDays(s, Math.max(1, Math.floor(span / 2)));
+    return { cut: cut, gapStart: cut, gapEnd: addDays(cut, dur - 1), newEnd: addDays(e, dur), shift: dur };
+  }
+
   // ---- the picker ----------------------------------------------------------
   function pickerHTML() {
     return '<div class="cca" id="cca-root"><div class="cca-loading">Reading the schedule…</div></div>';
@@ -250,154 +491,169 @@ window.CCAffected = (function () {
 
   /* Mounts into `root` (which must already be in the document) and resolves to a handle:
        { ids(), count(), refresh() }
-     ⚠️ ASYNC AND MOUNTED AFTER PAINT, the same shape `D.mountBoqPicker` uses on the wizard's
-     Trades step. The wizard rebuilds its body with innerHTML on every step change, so a picker
-     that rendered synchronously from a step function would be handed a node that is about to be
-     replaced. */
+     ⚠️ THE HANDLE CONTRACT IS FIXED. Four call sites depend on it — wizard.js mirrors `ids()` into
+     `st.affIds` on every `onCount` (the handle dies with the DOM on a step change), `finish()`
+     reads it to save, module.js's `openForm` tolerates a null handle, and the register row calls
+     `countFor`.
+     ⚠️ ASYNC AND MOUNTED AFTER PAINT, the same shape `D.mountBoqPicker` uses on the Trades step:
+     the wizard replaces `#ccw-body` wholesale on every step change. */
   async function mount(root, opts) {
     opts = opts || {};
     var host = root.querySelector('#cca-root') || root;
     await Promise.all([ensureLevels(), ensureActs(), ensureLinks()]);
 
-    var sel = {};                             // activity_id -> 1
+    var sel = {};        // activity_id -> 1  — the selection, and the only state that is saved
     (opts.initial || []).forEach(function (i) { if (i) sel[String(i)] = 1; });
-    var lvlId = (LEVELS[0] && LEVELS[0].id) || '';
+    var cur = {};        // level id -> normalised value key — the ladder's POSITION
+    var open = {};       // branch code -> 1 — expanded in the tree
     var q = '';
+    var coDur = 0;       // change-order duration for the preview; 0 = bars only
 
-    /* Values at one level, grouped by normalised key. Returns
-       [{ key, label, variants, acts }] with the biggest place first -- on a real schedule the
-       planner is far more often after a whole tower than a single unit. */
-    function placesAt(levelId) {
-      if (!levelId) return [];
-      var byKey = {};
-      ACTS.forEach(function (a) {
-        var v = (a.location && a.location[levelId]) || '';
-        v = String(v).trim(); if (!v) return;
-        var k = normKey(v); if (!k) return;
-        (byKey[k] = byKey[k] || { key: k, variants: [], acts: [] });
-        byKey[k].variants.push(v); byKey[k].acts.push(a);
-      });
-      return Object.keys(byKey).map(function (k) {
-        var g = byKey[k];
-        return { key: k, label: bestSpelling(g.variants), variants: g.variants, acts: g.acts };
-      }).sort(function (x, y) {
-        if (y.acts.length !== x.acts.length) return y.acts.length - x.acts.length;
-        return String(x.label).localeCompare(String(y.label), undefined, { numeric: true });
-      });
+    function setMany(acts, on) {
+      acts.forEach(function (a) { if (on) sel[a.activity_id] = 1; else delete sel[a.activity_id]; });
     }
-
-    var openKeys = {};                        // normalised place key -> 1 (expanded into the pane)
-    var ROW_CAP = 400;                        // the pane is scanned, not paged; see the note below
-
-    /* The activities pane. ⚠️ A TYPED QUERY SEARCHES THE WHOLE PROJECT, not the chosen place --
-       that is the owner's *"optional to add other activities in the schedule as well"*. With no
-       query it shows the expanded places' activities, plus anything already selected from
-       elsewhere so a selection can never be invisible while it is still counted.
-       ⚠️ TAKES the places it was already given rather than re-deriving them. The first cut called
-       placesAt() a second time here, which returns FRESH objects -- so the `_open` flag paint()
-       had just stamped was always undefined on them and expanding a place showed nothing at all.
-       Caught by tracing the object identity, not by reading. */
-    function visibleActs(places) {
-      var ql = q.trim().toLowerCase();
-      if (ql) {
-        return ACTS.filter(function (a) {
-          return String(a.activity_id).toLowerCase().indexOf(ql) >= 0 ||
-                 String(a.activity_name || '').toLowerCase().indexOf(ql) >= 0 ||
-                 String(a.wbs || '').toLowerCase().indexOf(ql) >= 0;
-        }).slice(0, ROW_CAP);
-      }
-      var seen = {}, out = [];
-      places.forEach(function (p) {
-        if (!openKeys[p.key]) return;
-        p.acts.forEach(function (a) { if (!seen[a.activity_id]) { seen[a.activity_id] = 1; out.push(a); } });
-      });
-      /* ⚠️ Selected-but-not-shown activities are appended, always. Without this, unticking a place
-         would hide rows the planner had individually ticked while the footer went on counting
-         them -- a selection you cannot see is a selection you cannot correct. */
-      ACTS.forEach(function (a) { if (sel[a.activity_id] && !seen[a.activity_id]) { seen[a.activity_id] = 1; out.push(a); } });
-      return out.slice(0, ROW_CAP);
-    }
-
-    function placeState(p) {
+    function rungState(v) {
       var on = 0;
-      p.acts.forEach(function (a) { if (sel[a.activity_id]) on++; });
-      return on === 0 ? 'none' : (on === p.acts.length ? 'all' : 'some');
+      v.acts.forEach(function (a) { if (sel[a.activity_id]) on++; });
+      return { on: on, all: on > 0 && on === v.acts.length, part: on > 0 && on < v.acts.length };
+    }
+    function searchHits() {
+      var ql = q.trim().toLowerCase();
+      if (!ql) return null;
+      /* ⚠️ A typed query searches the WHOLE project, not the current rung — the owner's *"optional
+         to add other activities in the schedule as well"*. It matches the dotted code too, so a
+         planner who knows the WBS can jump straight to it. */
+      return ACTS.filter(function (a) {
+        return String(a.activity_id).toLowerCase().indexOf(ql) >= 0 ||
+               String(a.activity_name || '').toLowerCase().indexOf(ql) >= 0 ||
+               String(a.wbs || '').toLowerCase().indexOf(ql) >= 0 ||
+               locSuffix(a, LEVELS).toLowerCase().indexOf(ql) >= 0;
+      });
     }
 
-    function paint() {
-      var places = placesAt(lvlId);
-      var acts = visibleActs(places);
-      var nSel = Object.keys(sel).length;
-      var lvlName = (LEVELS.filter(function (l) { return l.id === lvlId; })[0] || {}).name || '';
+    function ganttHTML(list) {
+      if (!list.length) return '<div class="cca-empty">Nothing selected yet — the preview draws the activities you pick.</div>';
+      var rows = list.filter(function (a) { return pd(a.start_date) && pd(a.end_date); });
+      if (!rows.length) return '<div class="cca-empty">' + list.length + ' selected, but none carry both a start and a finish, so there is nothing to draw.</div>';
+      var mn = null, mx = null;
+      rows.forEach(function (a) {
+        var s = pd(a.start_date), e = pd(a.end_date), pv = previewOf(a, coDur);
+        if (pv && pv.newEnd) e = pv.newEnd;
+        if (!mn || s < mn) mn = s;
+        if (!mx || e > mx) mx = e;
+      });
+      var total = Math.max(1, dayDiff(mn, mx) + 1);
+      /* Auto-fit, clamped — a preview has no zoom, so the window must always fit what is selected. */
+      var dayw = Math.max(0.8, Math.min(6, 560 / total));
+      var W = Math.max(110, Math.round(total * dayw));
+      function xOf(d) { return Math.round(dayDiff(mn, d) * dayw); }
 
-      host.innerHTML =
-        noticeHTML() +
-        '<div class="cca-bar">' +
-          (LEVELS.length
-            /* ⚠️ Labelled "Level", not "Place" -- the OPTIONS are the project's location LEVEL
-               names ("Tower", "Level", "Zone"), so "Place" beside a box reading "Level" reads as
-               a contradiction. Caught by looking at the render, not the code. The pane heading
-               below carries the chosen level's own name. */
-            ? '<label class="cca-lbl">Level<select class="pd-select pd-input-sm" id="cca-lvl">' +
-                LEVELS.map(function (l) {
-                  return '<option value="' + esc(l.id) + '"' + (l.id === lvlId ? ' selected' : '') + '>' + esc(l.name) + '</option>';
-                }).join('') +
-              '</select></label>'
-            : '') +
-          '<input class="pd-input pd-input-sm cca-q" id="cca-q" placeholder="Search every activity — id, name or WBS" value="' + esc(q) + '">' +
-          '<span class="cca-count" id="cca-seln">' + nSel + ' selected</span>' +
-          (nSel ? '<button type="button" class="pd-btn pd-btn-sm" id="cca-clear">Clear</button>' : '') +
-        '</div>' +
-        '<div class="cca-panes">' +
-          '<div class="cca-col">' +
-            '<div class="cca-h"><span>' + (LEVELS.length ? esc(lvlName || 'Place') : 'Place') + '</span><span>' + places.length + '</span></div>' +
-            '<div class="cca-body">' + (places.length
-              ? places.map(function (p) {
-                  var st = placeState(p);
-                  return '<div class="cca-row' + (openKeys[p.key] ? ' on' : '') + '" data-place="' + esc(p.key) + '">' +
-                    '<input type="checkbox" data-pk="' + esc(p.key) + '"' + (st === 'all' ? ' checked' : '') +
-                      (st === 'some' ? ' data-part="1"' : '') + '>' +
-                    '<span class="cca-name" title="' + esc(p.variants.filter(uniq).join(' / ')) + '">' + esc(p.label) + '</span>' +
-                    (p.variants.filter(uniq).length > 1 ? '<span class="cca-alt" title="Spelled ' + esc(p.variants.filter(uniq).join(' / ')) + ' on this schedule — treated as one place">×' + p.variants.filter(uniq).length + '</span>' : '') +
-                    '<span class="cca-n">' + p.acts.length + '</span></div>';
-                }).join('')
-              : '<div class="cca-empty">' + placesEmptyText() + '</div>') +
-            '</div>' +
-          '</div>' +
-          '<div class="cca-col">' +
-            '<div class="cca-h"><span>Activities</span><span id="cca-shown">' + acts.length + (acts.length >= 400 ? '+' : '') + '</span></div>' +
-            '<div class="cca-body">' + (acts.length
-              ? acts.map(function (a) {
-                  return '<div class="cca-row" data-act="' + esc(a.activity_id) + '">' +
-                    '<input type="checkbox" data-ak="' + esc(a.activity_id) + '"' + (sel[a.activity_id] ? ' checked' : '') + '>' +
-                    '<span class="cca-code">' + esc(a.activity_id) + '</span>' +
-                    '<span class="cca-name" title="' + esc(a.wbs || '') + '">' + esc(a.activity_name || '') + '</span>' +
-                    (a.change_order_ref ? '<span class="cca-co" title="Already carries change order ' + esc(a.change_order_ref) + '">' + esc(a.change_order_ref) + '</span>' : '') +
-                    '<span class="cca-n">' + (a.start_date ? esc(Fmt.date(a.start_date)) : '—') + '</span></div>';
-                }).join('')
-              : '<div class="cca-empty">' + (q.trim() ? 'No activity matches “' + esc(q) + '”.' : 'Tick a place on the left, or search for an activity.') + '</div>') +
-            '</div>' +
-          '</div>' +
+      var out = '<div class="cca-mg"><div class="cca-mg-row cca-mg-head">' +
+        '<span class="cca-mg-lbl"></span><span class="cca-mg-track" style="width:' + W + 'px;">' +
+        '<b class="cca-mg-t0">' + esc(shortDate(mn)) + '</b><b class="cca-mg-t1">' + esc(shortDate(mx)) + '</b>' +
+        '</span><span class="cca-mg-fin">Finish</span></div>';
+
+      /* ⚠️ THE STRIP CARRIES THE SAME QUALIFIER THE TREE DOES, and it has to: the owner's whole
+         complaint is that most activities share a name, and a preview listing "Formworks" nine
+         times answers the question "which ones did I pick?" with "some Formworks". Qualified only
+         where the name actually repeats, exactly as treeOf does it. */
+      var mgN = {};
+      rows.forEach(function (a) { var k = String(a.activity_name || '').trim(); mgN[k] = (mgN[k] || 0) + 1; });
+
+      out += rows.slice(0, 120).map(function (a) {
+        var s = pd(a.start_date), e = pd(a.end_date), pv = previewOf(a, coDur);
+        var x = xOf(s), w = Math.max(3, Math.round((dayDiff(s, e) + 1) * dayw));
+        var bar = '';
+        if (pv && pv.newEnd) {
+          // the ghost rail runs to the NEW finish, so the added time is the visible thing
+          bar += '<i class="cca-mg-ghost" style="left:' + x + 'px;width:' + Math.max(3, Math.round((dayDiff(s, pv.newEnd) + 1) * dayw)) + 'px;"></i>';
+        }
+        bar += '<i class="cca-mg-bar" style="left:' + x + 'px;width:' + w + 'px;"></i>';
+        if (pv && pv.gapStart) {
+          /* ⚠️ BAR-LOCAL COORDINATES — the gap's origin is the bar's own start, not the timeline's,
+             which is how the schedule draws its own notch. A notch touching either edge is DROPPED
+             rather than drawn as a stub that reads like a rendering fault. */
+          var gx = dayDiff(s, pv.gapStart) * dayw;
+          var gw = Math.max(1, Math.round((dayDiff(pv.gapStart, pv.gapEnd) + 1) * dayw));
+          var full = (dayDiff(s, pv.newEnd) + 1) * dayw;
+          if (gx > 0 && gx + gw < full) bar += '<i class="cca-mg-cut" style="left:' + Math.round(x + gx) + 'px;width:' + gw + 'px;"></i>';
+        }
+        var nm = String(a.activity_name || '').trim();
+        var qual = (mgN[nm] > 1) ? (locSuffix(a, LEVELS) || a.activity_id) : '';
+        return '<div class="cca-mg-row"><span class="cca-mg-lbl" title="' +
+          esc(a.activity_id + ' · ' + (a.activity_name || '') + (qual ? ' · ' + qual : '')) + '">' +
+          esc(nm || a.activity_id) +
+          (qual ? '<span class="cca-qual"> · ' + esc(qual) + '</span>' : '') + '</span>' +
+          '<span class="cca-mg-track" style="width:' + W + 'px;">' + bar + '</span>' +
+          '<span class="cca-mg-fin">' + (pv && pv.err
+            ? '<span class="cca-mg-no" title="' + esc(pv.err) + '">' + esc(pv.err) + '</span>'
+            : pv && pv.newEnd
+            ? esc(shortDate(pv.newEnd)) + ' <b class="cca-mg-plus">+' + pv.shift + 'd</b>'
+            : esc(shortDate(e))) + '</span></div>';
+      }).join('');
+      out += '</div>';
+
+      if (rows.length > 120) out += '<div class="cca-mg-more">+' + (rows.length - 120) + ' more not drawn</div>';
+      var nodate = list.length - rows.length;
+      if (nodate) out += '<div class="cca-mg-more">' + nodate + ' selected activit' + (nodate === 1 ? 'y has' : 'ies have') + ' no dates and cannot be drawn.</div>';
+      return out;
+    }
+
+    function ladderHTML(lad) {
+      if (!lad.rungs.length) return '<div class="cca-warn cca-noladder">' + placesEmptyText() + '</div>';
+      return '<div class="cca-lad">' + lad.rungs.map(function (r) {
+        return '<div class="cca-col"><div class="cca-h"><span>' + esc(r.level.name) + '</span><span>' + r.values.length + '</span></div>' +
+          '<div class="cca-body cca-ladbody">' + r.values.map(function (v) {
+            var st = rungState(v);
+            return '<div class="cca-row' + (r.sel && v.key === r.sel.key ? ' on' : '') + '" data-lvl="' + esc(r.level.id) + '" data-v="' + esc(v.key) + '">' +
+              '<input type="checkbox" data-rk="' + esc(v.key) + '" data-rl="' + esc(r.level.id) + '"' + (st.all ? ' checked' : '') + (st.part ? ' data-part="1"' : '') + '>' +
+              '<span class="cca-name" title="' + esc(v.spellings.join(' / ')) + '">' + esc(v.label) + '</span>' +
+              (v.spellings.length > 1 ? '<span class="cca-alt" title="Spelled ' + esc(v.spellings.join(' / ')) + ' on this schedule — treated as one place">×' + v.spellings.length + '</span>' : '') +
+              '<span class="cca-n">' + (st.on ? st.on + '/' : '') + v.acts.length + '</span></div>';
+          }).join('') + '</div></div>';
+      }).join('') + '</div>';
+    }
+
+    function treeRowHTML(e) {
+      var pad = 'padding-left:' + (10 + e.depth * 14) + 'px;';
+      if (e.branch) {
+        var on = 0; (e.acts || []).forEach(function (a) { if (sel[a.activity_id]) on++; });
+        var all = on > 0 && on === e.n, part = on > 0 && on < e.n;
+        return '<div class="cca-row cca-tbranch" data-branch="' + esc(e.code) + '" style="' + pad + '">' +
+          '<span class="cca-caret">' + (open[e.code] ? '▾' : '▸') + '</span>' +
+          '<input type="checkbox" data-bk="' + esc(e.code) + '"' + (all ? ' checked' : '') + (part ? ' data-part="1"' : '') + '>' +
+          '<span class="cca-code">' + esc(e.code) + '</span>' +
+          '<span class="cca-name" title="' + esc(e.name) + '">' + esc(e.name || '(unnamed branch)') + '</span>' +
+          '<span class="cca-n">' + (on ? on + '/' : '') + e.n + '</span></div>';
+      }
+      var a = e.a;
+      return '<div class="cca-row" data-act="' + esc(a.activity_id) + '" style="' + pad + '">' +
+        '<input type="checkbox" data-ak="' + esc(a.activity_id) + '"' + (sel[a.activity_id] ? ' checked' : '') + '>' +
+        '<span class="cca-code">' + esc(a.activity_id) + '</span>' +
+        '<span class="cca-name" title="' + esc((a.activity_name || '') + (e.qual ? ' · ' + e.qual : '')) + '">' +
+          esc(a.activity_name || '') + (e.qual ? ' <span class="cca-qual">· ' + esc(e.qual) + '</span>' : '') + '</span>' +
+        (a.change_order_ref ? '<span class="cca-co" title="Already cites change order ' + esc(a.change_order_ref) + '">' + esc(a.change_order_ref) + '</span>' : '') +
         '</div>';
-      wire();
     }
 
-    function uniq(v, i, arr) { return arr.indexOf(v) === i; }
-
-    /* ⚠️ Each state gets its OWN sentence. "No places" is three different facts -- the location
-       migration is missing, the read was refused, or the project genuinely has no breakdown yet --
-       and only the last one is not something to act on. Saying "no locations defined" for all
-       three is the failure this module has already shipped once. */
+    function emptyTreeText(hits) {
+      if (hits) return 'No activity matches “' + esc(q) + '”.';
+      if (ACTS_LOAD === 'ok' && !ACTS.length) return 'This project has no schedule activities yet.';
+      return 'Nothing at this place. Move the ladder above, or search.';
+    }
+    /* ⚠️ Each state gets its OWN sentence. "No places" is three different facts — the location
+       migration is missing, the read was refused, or the project genuinely has no breakdown yet —
+       and only the last is not something to act on. Saying "no locations defined" for all three is
+       a failure this module has already shipped once. */
     function placesEmptyText() {
       if (LVL_LOAD === 'error') return 'The location levels could not be read. If this project has never had them, run <code>' + esc(MIGRATION_LOC) + '</code>. Searching still works.';
-      if (!LEVELS.length) return 'This project has no location breakdown defined yet, so there are no places to pick from. Search for activities instead, or define levels in Schedule Setup › Floors &amp; Zones.';
-      return 'No activity carries a value at this level. Try another place, or search.';
+      if (!LEVELS.length) return 'This project has no location breakdown defined yet, so there is no ladder to climb. Search for activities below, or define levels in Schedule Setup › Floors &amp; Zones.';
+      return 'No activity carries a location value yet. Search for activities below, or match the WBS to locations in the Project Schedule.';
     }
     function noticeHTML() {
       var out = '';
       if (ACTS_LOAD === 'error') {
-        out += '<p class="cca-warn">The schedule could not be read: ' + esc(ACTS_ERR) +
-          '. Nothing can be selected until that is fixed.</p>';
+        out += '<p class="cca-warn">The schedule could not be read: ' + esc(ACTS_ERR) + '. Nothing can be selected until that is fixed.</p>';
       } else if (ACTS_LOAD === 'ok' && !ACTS.length) {
         out += '<p class="cca-warn">This project has no schedule activities yet, so there is nothing to select. Import or build the schedule first.</p>';
       }
@@ -415,33 +671,106 @@ window.CCAffected = (function () {
       return out;
     }
 
+    function paint() {
+      var hits = searchHits();
+      var lad = ladderOf(ACTS, LEVELS, cur);
+      cur = lad.cursor;                                   // adopt the re-derived position
+      var scope = hits || lad.cand;
+      /* ⚠️ SELECTED-BUT-OUT-OF-SCOPE ROWS ARE ALWAYS APPENDED. Without this, moving the ladder
+         hides rows the planner ticked individually while the footer goes on counting them — and a
+         selection you cannot see is a selection you cannot correct. */
+      var seen = {}; scope.forEach(function (a) { seen[a.activity_id] = 1; });
+      var extra = ACTS.filter(function (a) { return sel[a.activity_id] && !seen[a.activity_id]; });
+      var listed = scope.concat(extra).slice(0, ROW_CAP);
+      var entries = treeOf(listed, NAME_BY_CODE, LEVELS);
+      // a search opens what it found, so hits are never hidden behind a shut branch
+      if (hits) entries.forEach(function (e) { if (e.branch) open[e.code] = 1; });
+      var vis = visibleTree(entries, open);
+      var nSel = Object.keys(sel).length;
+      var selActs = ACTS.filter(function (a) { return sel[a.activity_id]; });
+
+      host.style.setProperty('--cca-rungs', String(Math.max(1, lad.rungs.length)));
+      host.innerHTML =
+        noticeHTML() +
+        '<div class="cca-bar">' +
+          '<input class="pd-input pd-input-sm cca-q cca-ctl" id="cca-q" placeholder="Search every activity — id, name, WBS or place" value="' + esc(q) + '">' +
+          '<span class="cca-count" id="cca-seln">' + nSel + ' selected</span>' +
+          (nSel ? '<button type="button" class="pd-btn pd-btn-sm" id="cca-clear">Clear</button>' : '') +
+        '</div>' +
+        ladderHTML(lad) +
+        '<div class="cca-lower">' +
+          '<div class="cca-col">' +
+            '<div class="cca-h"><span>Activities' + (hits ? ' · search' : '') + '</span>' +
+              '<span>' + listed.length + (listed.length >= ROW_CAP ? '+' : '') + '</span></div>' +
+            '<div class="cca-body cca-treebody">' +
+              (vis.length ? vis.map(treeRowHTML).join('') : '<div class="cca-empty">' + emptyTreeText(hits) + '</div>') +
+            '</div>' +
+          '</div>' +
+          '<div class="cca-col">' +
+            '<div class="cca-h"><span>Preview</span>' +
+              '<span class="cca-durwrap">CO <input class="cca-dur cca-ctl" id="cca-dur" size="3" inputmode="numeric" value="' + (coDur || '') + '" placeholder="0"> days</span></div>' +
+            '<div class="cca-body cca-mgbody">' + ganttHTML(selActs) + '</div>' +
+          '</div>' +
+        '</div>';
+      wire();
+      if (opts.onCount) opts.onCount(nSel);
+    }
+
+    function keepCaret(id) { var n = host.querySelector('#' + id); if (n) { n.focus(); n.selectionStart = n.selectionEnd = n.value.length; } }
+
     function wire() {
-      var lv = host.querySelector('#cca-lvl');
-      if (lv) lv.onchange = function () { lvlId = lv.value; openKeys = {}; paint(); };
       var qi = host.querySelector('#cca-q');
-      if (qi) {
-        qi.oninput = function () { q = qi.value; paint(); var n = host.querySelector('#cca-q'); if (n) { n.focus(); n.selectionStart = n.selectionEnd = n.value.length; } };
-      }
+      if (qi) qi.oninput = function () { q = qi.value; paint(); keepCaret('cca-q'); };
       var cl = host.querySelector('#cca-clear');
       if (cl) cl.onclick = function () { sel = {}; paint(); };
+      var du = host.querySelector('#cca-dur');
+      if (du) du.oninput = function () {
+        coDur = Math.max(0, Math.min(999, parseInt(String(du.value).replace(/[^0-9]/g, ''), 10) || 0));
+        paint(); keepCaret('cca-dur');
+      };
 
-      // A place row: the label expands it into the right pane; the checkbox selects all of it.
-      host.querySelectorAll('.cca-row[data-place]').forEach(function (el) {
-        var cb = el.querySelector('input[data-pk]');
+      /* ⚠️ ROW CLICK NAVIGATES, CHECKBOX CLICK SELECTS — and this guard is what keeps them apart.
+         Without it, ticking a tower would also jump the ladder into it, the bug boq.js's own
+         handler documents. */
+      host.querySelectorAll('.cca-row[data-lvl]').forEach(function (el) {
         el.onclick = function (e) {
-          if (e.target === cb) return;
-          openKeys[el.dataset.place] = !openKeys[el.dataset.place];
+          if (e.target && e.target.tagName === 'INPUT') return;
+          /* Moving a rung CLEARS EVERY RUNG BELOW IT. `ladderOf` re-derives regardless, so this
+             makes the reset explicit rather than incidental — and stops a stale deep cursor
+             briefly resolving against another tower's values. */
+          var li = -1;
+          for (var i = 0; i < LEVELS.length; i++) if (LEVELS[i].id === el.dataset.lvl) li = i;
+          cur[el.dataset.lvl] = el.dataset.v;
+          for (var j = li + 1; j < LEVELS.length; j++) delete cur[LEVELS[j].id];
           paint();
         };
-        if (cb) cb.onchange = function () {
-          var p = placesAt(lvlId).filter(function (x) { return x.key === el.dataset.place; })[0];
-          if (!p) return;
-          /* ⚠️ Reads the checkbox's own new state rather than recomputing from `placeState`: a
-             PARTLY selected place must become fully selected on the first click, not clear the
-             few that were already ticked. */
-          if (cb.checked) p.acts.forEach(function (a) { sel[a.activity_id] = 1; });
-          else p.acts.forEach(function (a) { delete sel[a.activity_id]; });
-          openKeys[el.dataset.place] = true;
+      });
+      host.querySelectorAll('input[data-rk]').forEach(function (cb) {
+        cb.onchange = function () {
+          /* ⚠️ Reads the checkbox's own NEW state rather than recomputing from rungState: a partly
+             selected rung must become FULLY selected on the first click, not clear the few already
+             ticked. Same class of bug as boq.js's leaf/isOn fix. */
+          var want = cb.checked, lvl = cb.dataset.rl, key = cb.dataset.rk;
+          ladderOf(ACTS, LEVELS, cur).rungs.forEach(function (r) {
+            if (r.level.id !== lvl) return;
+            r.values.forEach(function (v) { if (v.key === key) setMany(v.acts, want); });
+          });
+          paint();
+        };
+      });
+
+      host.querySelectorAll('.cca-row[data-branch]').forEach(function (el) {
+        el.onclick = function (e) {
+          if (e.target && e.target.tagName === 'INPUT') return;
+          var c = el.dataset.branch;
+          if (open[c]) delete open[c]; else open[c] = 1;
+          paint();
+        };
+      });
+      host.querySelectorAll('input[data-bk]').forEach(function (cb) {
+        cb.onchange = function () {
+          setMany(actsUnder(ACTS, cb.dataset.bk), cb.checked);
+          open[cb.dataset.bk] = 1;
           paint();
         };
       });
@@ -451,7 +780,8 @@ window.CCAffected = (function () {
           paint();
         };
       });
-      if (opts.onCount) opts.onCount(Object.keys(sel).length);
+      // Partial ticks are a DOM PROPERTY, not an attribute — applied after every paint.
+      host.querySelectorAll('[data-part]').forEach(function (cb) { cb.indeterminate = true; });
     }
 
     paint();
@@ -468,8 +798,14 @@ window.CCAffected = (function () {
     listFor: listFor, countFor: countFor, countsByRecord: countsByRecord,
     missingFor: missingFor, linkState: linkState, migration: MIGRATION,
     saveFor: saveFor, pickerHTML: pickerHTML, mount: mount,
-    /* Exported for the render harness only — the normalisation is the one piece here with
-       non-obvious behaviour, and it must be testable without a database. */
-    _internals: { normKey: normKey, bestSpelling: bestSpelling, spellRank: spellRank }
+    /* Exported for the verification suite only. These are the pieces with non-obvious behaviour,
+       and every one of them is a PURE function so it can be executed without a database or a
+       browser — which is why the ladder, the tree and the preview were hoisted out of mount(). */
+    _internals: {
+      normKey: normKey, bestSpelling: bestSpelling, spellRank: spellRank,
+      stampSegs: stampSegs, cmpCode: cmpCode, actsUnder: actsUnder, locSuffix: locSuffix,
+      valuesAt: valuesAt, ladderOf: ladderOf, treeOf: treeOf, visibleTree: visibleTree,
+      previewOf: previewOf, pd: pd, addDays: addDays, dayDiff: dayDiff
+    }
   };
 })();

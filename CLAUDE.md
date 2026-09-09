@@ -95,6 +95,45 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-09 (cp) — The Affected-work picker: a ladder, a WBS tree, and a Gantt beside them
+
+Owner, on the step shipped that morning: *"UI is clashing let's fix … I want to have the level
+breakdown select to be like a ladder rather than selecting since it can span different towers and
+levels and zones … most of the activities have the same activity name even though they have
+different activity IDs … I believe in a form of a WBS type would be appropriate. I want to be able
+to have a side-by-side preview as well … how it would look like in the Gantt."* Detail in
+[`modules/contracts-claims/CLAUDE.md`](modules/contracts-claims/CLAUDE.md).
+
+- ⚠️⚠️ **The clash was two wizard rules, and my harness is why it measured clean.**
+  `.ccw-main select { width:100% }` was unconditional — the `input` half of that same rule excludes
+  checkboxes and radios, with a long comment about the ladder it once destroyed, and `select` got no
+  such exclusion — while `.ccw-main label { display:block }` (0-1-1) beat the picker's own
+  `.cca-lbl` (0-1-0). **My harness hand-copied the `.ccw-main` shell, so neither rule was ever in the
+  cascade.** It now drives the **real `CCWizard.open()`** and asserts computed styles.
+- ⚠️ **More specificity cannot win that fight and the fix does not try.** Three `:not()` arguments
+  put the rule at **0-4-1**; the previous fix was an `!important` on one control. A sub-component's
+  controls now opt out with `.cca-ctl` — the same shape the rule already uses for checkboxes — and
+  a probe input without it still stretches, so ordinary wizard fields are untouched.
+- ⚠️⚠️ **The ladder's rungs are re-derived strictly top-down, and that is what makes a bare value key
+  safe.** Location values are plain text, not a node tree — *"Zone 'Z1' under two different locations
+  is the same string"* — so a value-keyed rung would merge two towers' Z1 and a change order would
+  silently take both. Asserted, with a contrast build that reads the level un-narrowed and does
+  merge them. **N rungs, not four**, because levels are per project; 5 clamp and scroll.
+- ⚠️⚠️ **Ancestry comes from the dotted `wbs` string, never `wbs_node_id`** — measured NULL on
+  16,393 of 16,393 activities after an import — and **`ensureActs` had to stop discarding the
+  `WBS Summary` rows**, which are the only code→name map. They stay out of the selectable set.
+- ⚠️⚠️ **The preview is NOT a second copy of `splitPlan`, and it is pinned by assertion rather than
+  by good intentions:** the suite slices the real `splitPlan` out of `project-schedule/index.html`,
+  executes it, and asserts the preview's new finish and both gap edges match across 35 span ×
+  duration combinations. If that arithmetic ever changes, this fails.
+- ⚠️ **A real bug found only by measuring:** the CO-duration box rendered **149px** where
+  `flex:0 0 42px` says 42 — a flex item's `min-width:auto` resolves to a form control's intrinsic
+  width and silently outranks the flex basis. Reading the rule would never have shown it.
+- **41 assertions, 0 failures, 3 contrast builds all biting**; driven in a real browser at 1440 and
+  918 in both themes with **zero overlapping elements in the control bar**, measured as pairwise
+  rect intersection. ⚠️ **Not verified signed in** — fixture data through a stubbed data layer.
+- `affected.js` / contracts `module.css` → `?v=20260909cp`; `MODULE_V` → `20260909cp`.
+
 ### 2026-09-09 (co) — A change order says which activities it touches, and inserts into all of them at once
 
 **Run `migrations/2026-09-09-cc-affected-activities.sql`.** Owner: *"adding change orders and
