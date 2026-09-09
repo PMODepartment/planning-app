@@ -147,6 +147,14 @@ drop policy if exists stakeholders_del on stakeholders;
 create policy stakeholders_del on stakeholders
   for delete using (is_planner());
 
+-- ADDED 2026-09-09: the file had NO grant at all, and RLS does not supply one.
+--   A policy FILTERS rows for a role that already holds the table privilege; it
+--   never grants that privilege. Without this every app query against the new
+--   table fails with "permission denied for table stakeholders" -- which reads
+--   like an RLS problem and is not one. Every sibling migration in this folder
+--   carries the same line (see 2026-09-07-trade-map.sql).
+grant select, insert, update, delete on stakeholders to authenticated;
+
 -- ---------------------------------------------------------------------------
 -- 4) Backfill -- every person already on a register becomes a directory entry
 -- ---------------------------------------------------------------------------
@@ -184,7 +192,17 @@ select
      order by nullif(btrim(sm.photo_path), '') desc nulls last))[1],
   (array_agg(nullif(btrim(sm.photo_thumb_path), '')
      order by nullif(btrim(sm.photo_path), '') desc nulls last))[1],
-  max(sm.created_by)
+  -- FIX 2026-09-09: this was `max(sm.created_by)`, which fails outright --
+  --   ERROR 42883: function max(uuid) does not exist.
+  -- And the aggregate was wrong even in principle: uuids have no meaningful
+  -- order, so "the greatest creator" says nothing. The honest answer is WHO
+  -- FIRST RECORDED THIS PERSON, so this takes created_by from the earliest
+  -- row, preferring a non-null one -- the same (array_agg ... order by)[1]
+  -- idiom the photo_path/photo_thumb_path pair above already uses, and for
+  -- the same reason: the value must come from a specific row, not from an
+  -- independent aggregate that can pair fields across different rows.
+  (array_agg(sm.created_by
+     order by sm.created_by is null, sm.created_at nulls last))[1]
 from stakeholder_map sm
 where coalesce(btrim(sm.name), '') <> ''
 group by lower(btrim(sm.name)), lower(coalesce(btrim(sm.organization), '')), btrim(sm.name)

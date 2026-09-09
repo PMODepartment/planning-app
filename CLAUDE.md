@@ -95,6 +95,31 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-09 (m2) — The stakeholder-directory migration could not run, twice over
+
+Owner ran `migrations/2026-09-08-stakeholder-directory.sql` and got
+**`ERROR 42883: function max(uuid) does not exist`**. Two blocking defects, both in the file this
+session inherited unreviewed from the other clone — which is why it was flagged as the one piece
+neither of us had read.
+
+- ⚠⚠ **`max(sm.created_by)` on a uuid.** Postgres has no `max(uuid)`, so the backfill aborted
+  and the SQL editor's single transaction took the whole file with it. **The aggregate was wrong
+  in principle too**: uuids have no meaningful order, so "the greatest creator" states nothing.
+  Replaced with the creator of the EARLIEST row, non-null preferred — the same
+  `(array_agg(... order by ...))[1]` idiom the file already uses for `photo_path` /
+  `photo_thumb_path`, and for the reason its own comment gives there: the value must come from a
+  specific row, not from an independent aggregate that can pair fields across different rows.
+- ⚠⚠ **The file contained NO `grant` at all**, which the first error was hiding. RLS policies
+  FILTER rows for a role that already holds the table privilege; they never grant it. Every app
+  query would have failed with *"permission denied for table stakeholders"* — which reads like an
+  RLS problem and is not one. Every sibling migration in the folder carries the line.
+
+**Verified statically** (the migration has not been re-run here): code-only parens 110/110, `$$`
+paired, and the INSERT's **14 columns against 14 SELECT expressions** — a count that read 20 until
+the checker was corrected to strip comments, since the new comment prose contains commas.
+⚠❌ **Not run against the database.** The owner re-runs it; the file is idempotent
+(`if not exists` throughout, `on conflict do nothing`), so a partial first attempt is safe.
+
 ### 2026-09-09 (m) — The other session's 33-commit-old working tree, merged rather than discarded
 
 The clone had `.git/rebase-merge/` present but **completely empty** — no `head-name`, `onto`,
