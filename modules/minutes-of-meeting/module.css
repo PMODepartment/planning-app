@@ -50,7 +50,7 @@
    `flex`. Excluding hidden buttons here lets the shared rule decide, and is the same fix
    this file already applies to `.il-icondd-menu` further down. */
 .il-topbar-tools .pd-btn:not(.il-tb-labeled):not([hidden]) {
-  height: 34px; width: 34px; padding: 0; font-size: 13px;
+  height: 34px; width: 34px; padding: 0; font-size: var(--pd-fs-base);
   display: inline-flex; align-items: center; justify-content: center;
   background: transparent; border-color: transparent;
 }

@@ -156,7 +156,7 @@
      of the inherited size) are computed from this one number, so it is a
      foundation and not a choice a component gets to make.
      ⚠️ It has its own token BECAUSE the 2026-09-08 normalisation pass initially
-     folded `body { font-size: 14px }` into --pd-fs-md and made the ENTIRE app 7%
+     folded `body { font-size: var(--pd-fs-body) }` into --pd-fs-md and made the ENTIRE app 7%
      larger in one line -- measured live on the probe page: body computed 15px and
      a bare <h2> in a card went from 21px to 22.5px. A base and a heading rung
      that happen to be near each other are still different jobs. */
@@ -1649,33 +1649,33 @@ body { overflow-x: clip; }
       screens, neither of them titled. */
 .pd-dt-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   padding: 11px 14px; border-bottom: 1px solid var(--pd-line); background: var(--pd-card); }
-.pd-dt-head h3 { margin: 0; font-size: 13px; font-weight: 800; letter-spacing: .02em;
+.pd-dt-head h3 { margin: 0; font-size: var(--pd-fs-base); font-weight: 800; letter-spacing: .02em;
   color: var(--pd-ink); text-transform: none; }
-.pd-dt-count { font-size: 11px; font-weight: 700; color: var(--pd-muted); white-space: nowrap; }
+.pd-dt-count { font-size: var(--pd-fs-xs); font-weight: 700; color: var(--pd-muted); white-space: nowrap; }
 .pd-dt-spacer { flex: 1 1 auto; }
-.pd-dt-head .pd-btn { height: 30px; padding: 0 11px; font-size: 12px; }
+.pd-dt-head .pd-btn { height: 30px; padding: 0 11px; font-size: var(--pd-fs-sm); }
 
 /* Sortable headers — same affordance as the Procurement original, minus its
    inline onclick handler. */
 .pd-table th.pd-sort { cursor: pointer; user-select: none; }
 .pd-table th.pd-sort:hover { color: var(--pd-red); }
-.pd-table th.pd-sort::after { content: "\2195"; opacity: .28; margin-left: 5px; font-size: 10px; }
+.pd-table th.pd-sort::after { content: "\2195"; opacity: .28; margin-left: 5px; font-size: var(--pd-fs-micro); }
 .pd-table th.pd-sort.asc::after  { content: "\2191"; opacity: 1; color: var(--pd-red); }
 .pd-table th.pd-sort.desc::after { content: "\2193"; opacity: 1; color: var(--pd-red); }
 
 /* Group / section rows. */
-.pd-table tr.pd-grp > td { background: var(--pd-bg); font-weight: 800; font-size: 11px;
+.pd-table tr.pd-grp > td { background: var(--pd-bg); font-weight: 800; font-size: var(--pd-fs-xs);
   text-transform: uppercase; letter-spacing: .05em; color: var(--pd-ink);
   border-bottom: 1px solid var(--pd-line); }
 html.pd-dark .pd-table tr.pd-grp > td { background: rgba(255,255,255,.05); }
 .pd-grptog { border: 0; background: none; cursor: pointer; color: var(--pd-muted); font: inherit;
-  font-size: 11px; padding: 0 6px 0 0; }
+  font-size: var(--pd-fs-xs); padding: 0 6px 0 0; }
 .pd-grptog:hover { color: var(--pd-red); }
 .pd-table tr.pd-collapsed { display: none; }
 
 /* Footer — a note or a pager under the rows, inside the same card. */
 .pd-dt-foot { padding: 9px 14px; border-top: 1px solid var(--pd-line); background: var(--pd-card);
-  color: var(--pd-muted); font-size: 11px; display: flex; align-items: center; gap: 10px;
+  color: var(--pd-muted); font-size: var(--pd-fs-xs); display: flex; align-items: center; gap: 10px;
   flex-wrap: wrap; }
 .pd-dt-foot:empty { display: none; }
 @media (max-width: 900px) { .pd-dt-wrap { max-height: none; } }

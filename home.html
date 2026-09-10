@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="assets/img/icon.png?v=20260830b" />
   <script src="assets/js/theme.js?v=20260812b"></script>
   <title>Home — Planners Dashboard</title>
-  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260910v4" />
+  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260910v5" />
   <style>
     /* ---------------------------------------------------------------------
        Landing page, restyled to match the Procurement Dashboard's "Select
@@ -24,25 +24,25 @@
 
     .pd-home-brand { text-align: center; padding: 26px 20px 4px; }
     .pd-home-mark { display: block; height: 46px; width: auto; margin: 0 auto 10px; }
-    .pd-home-brandname { color: var(--pd-red); font-weight: 800; font-size: 19px; letter-spacing: .01em; }
-    .pd-home-brandsub { color: var(--pd-muted); font-size: 11.5px; margin-top: 2px; }
+    .pd-home-brandname { color: var(--pd-red); font-weight: 800; font-size: var(--pd-fs-stat); letter-spacing: .01em; }
+    .pd-home-brandsub { color: var(--pd-muted); font-size: var(--pd-fs-xs); margin-top: 2px; }
 
-    .pd-home-title { text-align: center; font-size: 21px; font-weight: 800; color: var(--pd-ink);
+    .pd-home-title { text-align: center; font-size: var(--pd-fs-stat); font-weight: 800; color: var(--pd-ink);
       margin: 18px 20px 2px; }
-    .pd-home-greet { text-align: center; font-size: 13.5px; color: var(--pd-ink); margin: 6px 20px 0;
+    .pd-home-greet { text-align: center; font-size: var(--pd-fs-base); color: var(--pd-ink); margin: 6px 20px 0;
       display: flex; align-items: center; justify-content: center; gap: 7px; flex-wrap: wrap; }
-    .pd-home-rolepill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 10.5px;
+    .pd-home-rolepill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: var(--pd-fs-xs);
       font-weight: 700; text-transform: capitalize; background: var(--pd-red-light); color: var(--pd-red); }
-    .pd-home-sub { text-align: center; color: var(--pd-muted); font-size: 12.5px; margin: 4px 20px 18px; }
+    .pd-home-sub { text-align: center; color: var(--pd-muted); font-size: var(--pd-fs-sm); margin: 4px 20px 18px; }
 
     .pd-home-choose { padding: 0 20px 14px; }
-    .pd-home-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+    .pd-home-label { font-size: var(--pd-fs-xs); font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
       color: var(--pd-muted); margin-bottom: 8px; }
     .pd-home-search input { width: 100%; box-sizing: border-box; padding: 9px 12px; font: inherit;
-      font-size: 13px; border: 1.5px solid var(--pd-red); border-radius: 8px;
+      font-size: var(--pd-fs-base); border: 1.5px solid var(--pd-red); border-radius: 8px;
       background: var(--pd-bg); color: var(--pd-ink); }
     .pd-home-search input:focus { outline: none; box-shadow: 0 0 0 3px var(--pd-red-light); }
-    .pd-home-count { text-align: right; font-size: 11.5px; color: var(--pd-muted); margin-top: 7px; }
+    .pd-home-count { text-align: right; font-size: var(--pd-fs-xs); color: var(--pd-muted); margin-top: 7px; }
 
     .pd-home-list { border-top: 1px solid var(--pd-line); }
 
@@ -60,25 +60,25 @@
 
     .pd-home-rowbody { min-width: 0; flex: 1; }
     .pd-home-rowtop { display: flex; align-items: center; gap: 8px; }
-    .pd-home-code { flex: none; font-size: 10.5px; font-weight: 700; padding: 1px 7px;
+    .pd-home-code { flex: none; font-size: var(--pd-fs-xs); font-weight: 700; padding: 1px 7px;
       border-radius: 999px; background: var(--pd-red-light); color: var(--pd-red);
       border: 1px solid var(--pd-red); }
-    .pd-home-name { font-weight: 700; font-size: 13.5px; color: var(--pd-ink);
+    .pd-home-name { font-weight: 700; font-size: var(--pd-fs-base); color: var(--pd-ink);
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .pd-home-loc { font-size: 11.5px; color: var(--pd-muted); margin-top: 2px;
+    .pd-home-loc { font-size: var(--pd-fs-xs); color: var(--pd-muted); margin-top: 2px;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-    .pd-home-portfolio .pd-home-name { font-size: 14px; }
+    .pd-home-portfolio .pd-home-name { font-size: var(--pd-fs-body); }
 
     .pd-home-ghhead { display: flex; align-items: center; justify-content: space-between;
-      padding: 9px 20px; background: var(--pd-bg); font-size: 10.5px; font-weight: 700;
+      padding: 9px 20px; background: var(--pd-bg); font-size: var(--pd-fs-xs); font-weight: 700;
       text-transform: uppercase; letter-spacing: .05em; color: var(--pd-muted);
       border-bottom: 1px solid var(--pd-line); }
     .pd-home-ghhead.none-gh { font-style: italic; text-transform: none; }
-    .pd-home-ghcount { flex: none; font-size: 10.5px; font-weight: 700; padding: 1px 7px;
+    .pd-home-ghcount { flex: none; font-size: var(--pd-fs-xs); font-weight: 700; padding: 1px 7px;
       border-radius: 999px; background: var(--pd-line); color: var(--pd-muted); }
 
-    .pd-home-empty { padding: 26px 20px; text-align: center; color: var(--pd-muted); font-size: 12.5px; }
+    .pd-home-empty { padding: 26px 20px; text-align: center; color: var(--pd-muted); font-size: var(--pd-fs-sm); }
   </style>
 </head>
 <body>

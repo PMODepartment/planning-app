@@ -96,6 +96,70 @@ developer, plug into one shared shell.
 ## Changelog
 
 
+### 2026-09-10 (v5) — The type scale stops being a suggestion: 892 font-sizes onto the eight rungs
+
+The third and last of the owner's UI-consistency items, taken as its own commit so it can be reverted
+on its own. The `--pd-fs-*` scale has existed since 2026-09-08 with the instruction *"Reach for a rung.
+Never write a fresh literal"* — and **892 declarations across 14 files still carried a literal**, in
+**25 distinct values**. Half a pixel is invisible alone and unmistakable in aggregate; it is most of
+what reads as "each module was built by a different person".
+
+**Measured after: 25 distinct values → 14, and 892 literal declarations → 43 — every one of the 43 an
+exemption, 0 real leftovers.**
+
+#### The mapping is explicit, and the three real ties are decided here rather than by a float compare
+
+| from | to | | from | to |
+|---|---|---|---|---|
+| 8, 8.5, 9, 9.5 | `--pd-fs-micro` 10px | | 13.5 | `--pd-fs-base` 13px |
+| 10.5, 11.5 | `--pd-fs-xs` 11px | | 15.5 | `--pd-fs-md` 15px |
+| 12 | `--pd-fs-sm` 12.5px | | 17, 18 | `--pd-fs-lg` 16px |
+| 14 | `--pd-fs-body` | | 19, 21, 22 | `--pd-fs-stat` 20px |
+| | | | 23, 26 | `--pd-fs-hero` 24px |
+
+⚠️ **10.5 goes UP to 11** — the more-used rung, and rounding small text down costs legibility.
+⚠️ **18 goes DOWN to 16**, which the token's own comment calls *"the largest heading in the app"*.
+⚠️ **22 goes DOWN to 20**, not up: `--pd-fs-hero` is reserved for *"the ONE biggest number on a screen"*.
+
+#### ⚠️⚠️ The 22px cluster is the whole argument for a scale, in one finding
+All **nine** `22px` declarations turned out to be `.eq-kpi-v`, `.mp-kpi-v`, `.pr-kpi-v`, `.rl-kpi-v`,
+`.sc-kpi-v`, `.boq-poc-v`, `.ps-ck-kpi .v` … — **nine modules independently inventing 22px for a KPI
+value**, while the shared `--pd-fs-stat` is 20px and its comment literally reads *"KPI / metric value"*.
+Nobody was being careless; there was simply nothing stopping them. **Measured in a browser afterwards:
+all eight KPI components render at 20px, one weight, zero overflow.**
+⚠️ Two of them (`productivity-rates`, `s-curve`) were also **weight 700 where the shared component and
+the other six are 800** — brought onto 800 in the same pass, since a KPI row that agrees on size and
+disagrees on weight has not actually converged.
+
+#### The two exemptions, detected rather than listed
+The token block already names them, and both are **different MEDIA, not different opinions**:
+- ⚠️ **A rule containing `fill:` is SVG**, where `font-size` is in **user units, not pixels**. That one
+  test generalises what the comment names case-by-case (progress-photos' 3.2px plan label,
+  project-schedule's 8px dependency tags) — **22 declarations left alone**, and it correctly caught
+  ones nobody had listed, e.g. cash-flow's `.cf-donut-c2`.
+- ⚠️ **A `<style>` block built by JS string concatenation is a print/export stylesheet**, laid out for
+  paper. Detected by `' +` inside the block — **21 declarations left alone**. These could not have been
+  converted even in principle: they are written into a fresh `document.write` window that has no
+  `:root`, so every `var(--pd-fs-*)` would have resolved to nothing and the sheet would have printed at
+  the browser default.
+
+#### Verified
+- **892 declarations converted; residual literals classified: 22 SVG, 21 print, `REAL LEFTOVER: 0`.**
+- **Every `var(--pd-fs-*)` used in the app resolves** — the 10 token names used are exactly the 10
+  defined in `dashboard.css`. A misspelt token drops the declaration silently at computed-value time,
+  which is the failure this check exists for.
+- **Rendered in a browser** against each module's real stylesheets: 8 KPI components, **one size
+  (20px), one weight (800), 0 overflowing**.
+- Brace balance holds; **0 NUL bytes**. ⚠️ project-schedule's `<script>` 16/14 is the documented
+  false positive, byte-identical to HEAD.
+- `?v=` → `20260910v5`, one version each, 0 splits. ⚠️ Four modules' `module.css` are bumped without
+  having changed — the bump list is derived by basename from `git diff`, and **over-bumping is the safe
+  direction** (one extra fetch) where under-bumping ships changed bytes under a cached version.
+- ⚠️ **Not verified signed in.** The KPI row is measured; the ±0.5px shifts across the other ~880
+  declarations are not individually rendered, and the screens most worth a glance are the dense ones —
+  the **Schedule grid** and the **BOQ table**, where a 12 → 12.5px row could change wrapping.
+
+
 ### 2026-09-10 (v4) — `font-weight: 600` folds into Bold, and the ten hierarchies it would have flattened
 
 Owner's decision, off the Brandbook question raised in the (uic) entry below: **map 600 → 700 (Bold)**.
