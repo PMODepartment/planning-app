@@ -3417,7 +3417,12 @@
     .sbld-actdur input { width:82px; height:38px; padding:4px 10px; font-size:var(--pd-fs-lg); font-weight:700; text-align:center; border:1px solid var(--pd-line); border-radius:6px; background:var(--pd-bg); color:var(--pd-ink); font-variant-numeric:tabular-nums; }
     .sbld-actdur input:focus { outline:none; border-color:var(--pd-red); box-shadow:0 0 0 2px var(--pd-red-light,rgba(238,49,36,.14)); }
     .sbld-scopetag { font-size:var(--pd-fs-xs); color:var(--pd-muted); font-style:italic; align-self:center; }
-    .sbld-libbtn { padding:3px 10px; font-size:var(--pd-fs-xs); font-weight:700; }
+    /* ⚠️ `white-space:nowrap` + a wrapping header, together. Adding a second button to this row
+       shredded both labels: measured at the pane's 320px default the header went 31 → 59px with
+       "+ From the BOQ" on two lines, and at its 180px drag minimum → 81px with the label on three.
+       nowrap alone would have overflowed instead; letting the HEADER wrap means a button that no
+       longer fits takes a clean second row. Same failure the labelled `+ Add meeting` button hit. */
+    .sbld-libbtn { padding:3px 10px; font-size:var(--pd-fs-xs); font-weight:700; white-space:nowrap; }
     /* predecessor / successor inspection (steps 3 & 4): click a bar to see what drives it / what it drives */
     .sbld-schedbar.prednode { stroke:#1f8f4e; stroke-width:3.5; }
     .sbld-schedbar.succnode { stroke:#e08a1e; stroke-width:3.5; }
@@ -3435,7 +3440,7 @@
     .sbld-shuttle { flex:0 0 auto; display:flex; flex-direction:column; justify-content:center; gap:8px; padding:0 8px; }
     .sbld-shuttle button { width:38px; height:34px; font-size:var(--pd-fs-lg); font-weight:700; }
     .sbld-hold { flex:0 0 260px; display:flex; flex-direction:column; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); max-height:58vh; overflow:hidden; }
-    .sbld-hold-h { padding:7px 10px; font-size:var(--pd-fs-sm); font-weight:700; border-bottom:1px solid var(--pd-line); background:var(--pd-bg); display:flex; align-items:center; justify-content:space-between; gap:6px; }
+    .sbld-hold-h { padding:7px 10px; font-size:var(--pd-fs-sm); font-weight:700; border-bottom:1px solid var(--pd-line); background:var(--pd-bg); display:flex; align-items:center; justify-content:space-between; gap:6px; flex-wrap:wrap; }
     .sbld-hold-list { overflow:auto; padding:6px; display:flex; flex-direction:column; gap:4px; }
     .sbld-hold-item { display:flex; flex-direction:column; align-items:flex-start; gap:1px; text-align:left; border:1px solid var(--pd-line); border-left:4px solid var(--zc,var(--pd-line)); border-radius:6px; background:var(--pd-card); color:var(--pd-ink); font:inherit; cursor:pointer; padding:5px 8px; }
     .sbld-hold-item:hover { background:var(--pd-bg); }
@@ -28502,6 +28507,162 @@
       else UI.toast('All ' + CLASS_CODE_DB.length + ' library class codes are already loaded.', 'info');
       render();
     }
+
+    /* ======================================================================
+       SEED FROM THE BOQ — the owner's step 1 → step 2 hand-off
+       ======================================================================
+       Owner's process: *"high level BOQ will be the basis -> detailed schedule will be developed ->
+       detailed BOQ will be based on the detailed schedule."* The third hand-off shipped in
+       Contracts & Claims (its "Add lines from the schedule…"); this is the FIRST one, and until now
+       nothing existed for it — a planner with a priced high-level BOQ re-typed its scope here.
+
+       It loads only the class codes THIS PROJECT'S BOQ actually carries, into the same holding list
+       `+ Library` fills, so the accept step is the shuttle the planner already uses. ⚠️ That is
+       deliberately not a new propose→preview→apply modal: the holding list IS a preview, ticking IS
+       the acceptance, and a second dialog doing the same job is a second thing to keep in step.
+
+       ⚠️⚠️ AND IT IS THE ONLY LOADER WHOSE CODES ARE VALID `project_schedule.class_code` VALUES.
+       The push writes `class_code: r.act.code`, and `class_codes` is keyed on the PADDED LEVEL-3
+       code ('03101'). `CLASS_CODE_DB` — the hardcoded `+ Library` list — is Finance's LEVEL-2 GROUP
+       chart with the leading zeros stripped: 197 entries, 154 of which match an L2 group exactly and
+       43 of which match only after zero-padding ('1050' vs '01050'). Measured, and zero of the 197
+       is a valid L3 code. So every activity pushed from the library carries a class code that
+       resolves to nothing (`ccIsUnknown` is true for all of them), while a code seeded from the BOQ
+       resolves — which means the activity arrives ALREADY TAGGED and the BOQ allocator's class-code
+       gate matches it with no manual tagging step at all. That is the whole payoff of this button.
+       ⚠️ De-zeroing is also the thing `docs/boq-and-pmi.md` forbids outright, because the de-zeroed
+       space is not unique ('015051' Gen Req › Earthmoving collides with '15051' Metal Works ›
+       Railings). Fixing `CLASS_CODE_DB` is NOT done here — padding it would make its codes correct
+       L2 groups and they would still not be L3, so it does not become a valid class code either. It
+       is reported instead, on screen, where the two lists sit side by side. */
+    async function loadBoqCodes(btn) {
+      var was = btn ? btn.textContent : '';
+      if (btn) { btn.disabled = true; btn.textContent = 'Reading…'; }
+      var restore = function () { if (btn) { btn.disabled = false; btn.textContent = was; } };
+      try {
+        // The chart is already loaded by the module for the grid's class-code picker.
+        if (typeof loadClassCodes === 'function') await loadClassCodes();
+        var byCode = {};
+        (CLASS_CODES || []).forEach(function (c) { byCode[String(c.code).trim()] = c; });
+
+        /* ⚠️ CURRENT REVISIONS ONLY. `boq_class_map` carries `project_id`, so reading by project
+           alone would sweep in every superseded revision — a code deleted in rev 02 would come back
+           from rev 01, and the BOQ's whole point is that a revision supersedes rather than merges.
+           A project may hold several BOQ documents (one per trade package), each with its own
+           current revision, so this is a list and not a single id. */
+        var rv = await sb().from('boq_revisions').select('id,rev_no,document_id')
+          .eq('project_id', curPid).eq('is_current', true);
+        if (rv.error) throw rv.error;
+        var revIds = (rv.data || []).map(function (r) { return r.id; });
+        if (!revIds.length) {
+          restore();
+          UI.toast('This project has no current BOQ revision. Build or import one in Contracts & Claims first.', 'warn');
+          return;
+        }
+        var cm = await sb().from('boq_class_map').select('boq_item_id,class_code').in('revision_id', revIds);
+        if (cm.error) throw cm.error;
+        var it = await sb().from('boq_items').select('id,amount,line_kind,exclusion_note').in('revision_id', revIds);
+        if (it.error) throw it.error;
+
+        var amtOf = {}, kindOf = {}, exclOf = {};
+        (it.data || []).forEach(function (r) { amtOf[r.id] = r.amount; kindOf[r.id] = r.line_kind; exclOf[r.id] = r.exclusion_note; });
+
+        /* One entry per CODE, not per line: a code covering 14 lines is one activity to schedule.
+           ⚠️ Headings and excluded lines are skipped for the same reason Cost Loading's `boqDerive`
+           skips them — a heading is layout, and an exclusion is a positive statement that the work
+           is somebody else's scope. Scheduling either would put work in the programme that this
+           contract is not doing. */
+        var agg = {}, order = [], skipped = 0;
+        (cm.data || []).forEach(function (m) {
+          var k = kindOf[m.boq_item_id];
+          if (k === 'heading' || exclOf[m.boq_item_id]) { skipped++; return; }
+          var code = String(m.class_code || '').trim(); if (!code) return;
+          var e = agg[code];
+          if (!e) { e = agg[code] = { code: code, lines: 0, amount: 0 }; order.push(e); }
+          e.lines++;
+          var a = Number(amtOf[m.boq_item_id]); if (isFinite(a)) e.amount += a;
+        });
+        if (!order.length) {
+          restore();
+          UI.toast('The BOQ on this project has no line mapped to a class code yet. Map some on its Class Codes tab first.', 'warn');
+          return;
+        }
+
+        // Chart order, so the list reads in Finance's own sequence like every other picker here.
+        order.sort(function (a, b) {
+          var x = byCode[a.code], y = byCode[b.code];
+          var sx = x ? (x.sort_order == null ? 1e9 : x.sort_order) : 2e9;
+          var sy = y ? (y.sort_order == null ? 1e9 : y.sort_order) : 2e9;
+          return sx - sy || String(a.code).localeCompare(String(b.code));
+        });
+
+        var have = {};
+        (cfg.activities || []).concat(cfg.catalog || []).forEach(function (a) { if (a.code) have[String(a.code).trim()] = 1; });
+
+        var added = 0, dup = 0, offChart = 0, toOthers = 0;
+        order.forEach(function (e) {
+          if (have[e.code]) { dup++; return; }
+          var c = byCode[e.code];
+          if (!c) offChart++;
+          var trade = c && c.trade;
+          if (!parseTrade(trade)) toOthers++;
+          cfg.catalog.push({
+            id: uidv(), code: e.code,
+            /* ⚠️ `desc_l3` is the activity name, which is the exact inverse of what the BOQ's own
+               `addAuthoredLines` does when it writes a line FROM a code. The two directions must
+               agree on the string or a round trip renames everything. A code the chart does not
+               carry keeps its own code as its name rather than arriving blank. */
+            name: (c && c.desc_l3) || e.code,
+            group: finTradeGroup(trade),
+            /* The Finance GROUP becomes the Construction Library's L2 grouping — again the inverse
+               of `addAuthoredLines`, which makes `desc_l2` the heading above its leaves. */
+            grp: (c && c.desc_l2) || '',
+            durInt: null, durExt: null, scope: 'zone'
+          });
+          have[e.code] = 1; added++;
+        });
+
+        // ⚠️ Reported, never silently absorbed: each of these means something different is wrong.
+        var notes = [];
+        if (dup) notes.push(dup + ' already in the build');
+        if (offChart) notes.push(offChart + ' not in the class-code chart');
+        if (toOthers) notes.push(toOthers + ' with no recognised trade → Others');
+        if (skipped) notes.push(skipped + ' heading/excluded line(s) skipped');
+
+        if (added) {
+          markDirty();
+          UI.toast('Loaded ' + added + ' class code(s) from the BOQ' + (notes.length ? ' (' + notes.join('; ') + ')' : '') +
+            '. Tick codes and press ← to add them to the build, then Save.', 'success');
+        } else {
+          UI.toast('Every class code on this BOQ is already in the build or the list' +
+            (notes.length ? ' (' + notes.join('; ') + ')' : '') + '.', 'info');
+        }
+        restore();
+        render();
+      } catch (e) {
+        restore();
+        var msg = (e && e.message) ? e.message : String(e);
+        /* ⚠️ Degrades with the REASON, and does not block. A project with no BOQ tables, no grants,
+           or an un-run migration must still be able to build a schedule by hand — the same
+           tolerance Cost Loading's BOQ reader already applies to the same tables. */
+        UI.toast('Could not read the BOQ: ' + msg + (/does not exist|schema cache|PGRST20/i.test(msg)
+          ? ' — run migrations/2026-08-24-boq.sql in Contracts & Claims.' : ''), 'error');
+      }
+    }
+
+    /* How many of the build's codes are NOT valid Finance L3 codes — i.e. would push a
+       `project_schedule.class_code` that resolves to nothing. See the block above.
+       ⚠️ Returns 0 while the chart has not loaded: claiming every code is unknown because the
+       lookup table is empty is the "[] is truthy" family of false alarm this repo keeps recording. */
+    function offChartCount() {
+      if (!CLASS_CODES || !CLASS_CODES.length) return 0;
+      var idx = {};
+      CLASS_CODES.forEach(function (c) { idx[String(c.code).trim()] = 1; });
+      return (cfg.activities || []).filter(function (a) {
+        var k = String(a.code == null ? '' : a.code).trim();
+        return k && !idx[k];
+      }).length;
+    }
     function scopeLabel(s) { var o = SCOPE_OPTS.filter(function (x) { return x[0] === (s || 'zone'); })[0]; return o ? o[1] : 'Per zone'; }
     function parseScope(text) {
       var t = String(text == null ? '' : text).trim().toLowerCase();
@@ -28510,12 +28671,29 @@
       if (/zone|unit|as-?is/.test(t)) return 'zone';
       return null;
     }
+    /* ⚠️⚠️ FOUR OF FINANCE'S SEVEN TRADE NAMES DID NOT PARSE, AND THEY ARE THE BIG FOUR.
+       `class_codes.trade` holds exactly seven values, and this map recognised only three of them:
+       'Site Works', 'General Requirement' and 'Others'. 'Structural Works', 'Architectural Works',
+       'MEPF Works' and 'Allied Services Works' all fell through to the GROUPS check, which cannot
+       match a multi-word name, and returned null — 458 of the chart's 702 codes.
+
+       It was self-consistent while the only vocabulary was this pane's own hint line ("Structural"
+       not "Structural Works"), but it also meant the canonical labels this module WRITES —
+       `GWORK`, i.e. `project_schedule.work_type` — could not be read back in. Pasting a Trade
+       column out of the schedule and into this grid silently cleared four trades out of eight.
+       Both are fixed by naming the vocabularies rather than adding synonyms one at a time. */
     function parseTrade(text) {
       var t = String(text == null ? '' : text).trim().toLowerCase();
-      var map = { 'general requirements': 'GR', 'general requirement': 'GR', 'gen req': 'GR', 'general': 'GR', 'gr': 'GR', 'site works': 'SW', 'sitework': 'SW', 'siteworks': 'SW', 'site work': 'SW', 'sw': 'SW', 'structural': 'ST', 'structure': 'ST', 'st': 'ST', 'architectural': 'AR', 'architecture': 'AR', 'ar': 'AR', 'mepf': 'MEPF', 'site development': 'SD', 'sitedevelopment': 'SD', 'site dev': 'SD', 'allied services': 'ALLIED', 'allied': 'ALLIED', 'others': 'OT', 'other': 'OT', 'ot': 'OT' };
+      var map = { 'general requirements': 'GR', 'general requirement': 'GR', 'gen req': 'GR', 'general': 'GR', 'gr': 'GR', 'site works': 'SW', 'sitework': 'SW', 'siteworks': 'SW', 'site work': 'SW', 'sw': 'SW', 'structural': 'ST', 'structure': 'ST', 'structural works': 'ST', 'st': 'ST', 'architectural': 'AR', 'architecture': 'AR', 'architectural works': 'AR', 'ar': 'AR', 'mepf': 'MEPF', 'mepf works': 'MEPF', 'site development': 'SD', 'sitedevelopment': 'SD', 'site dev': 'SD', 'site development works': 'SD', 'allied services': 'ALLIED', 'allied': 'ALLIED', 'allied services works': 'ALLIED', 'others': 'OT', 'other': 'OT', 'ot': 'OT' };
       if (map[t]) return map[t];
       var up = t.toUpperCase(); return GROUPS.indexOf(up) >= 0 ? up : null;
     }
+    /* Finance's trade → this builder's group. ⚠️ It goes through `parseTrade` rather than being a
+       second table: one vocabulary reader, so a name that works when typed into the grid also works
+       when it arrives from the chart. ⚠️ `OT` on an unknown or absent trade, and the loader COUNTS
+       those rather than letting them disappear into Others unremarked — 'Others' is a real Finance
+       trade (94 codes) and "we could not tell" must not be silently filed as if it were. */
+    function finTradeGroup(trade) { return parseTrade(trade) || 'OT'; }
     function xlGet(a, k) { if (!a) return ''; if (k === 'group') return GLABEL[a.group] || a.group || ''; if (k === 'scope') return scopeLabel(a.scope); if (k === 'contract') return contractLabel(a.contract) + (a.contract === 'change_order' && a.coRef ? ' · ' + a.coRef : ''); if (k === 'durInt' || k === 'durExt') return a[k] ? String(a[k]) : ''; return a[k] || ''; }
     function xlSetCell(r, c, text) {
       while (cfg.activities.length <= r) cfg.activities.push({ id: uidv(), code: '', name: '', group: 'ST', durInt: null, durExt: null, scope: 'zone', contract: 'main', coRef: '' });
@@ -31699,7 +31877,16 @@
           '<span class="sbld-hold-code">' + e2(a.code || '—') + ' · ' + e2(GLABEL[a.group] || '') + '</span></button>';
       }).join('');
       var holdPane = '<div class="sbld-holdgrip" id="b-holdgrip" title="Drag to resize the library"></div>' +
-        '<div class="sbld-hold" style="flex:0 0 ' + holdW + 'px"><div class="sbld-hold-h"><span>All class codes (' + cfg.catalog.length + ')</span>' + (catSel.length ? '<span style="font-size:10.5px;color:var(--pd-muted);">' + catSel.length + ' ticked</span>' : '') + '<button class="pd-btn sbld-libbtn" id="b-lib" title="Load the standard class-code library (' + CLASS_CODE_DB.length + ' codes) into this list">+ Library</button></div>' +
+        '<div class="sbld-hold" style="flex:0 0 ' + holdW + 'px"><div class="sbld-hold-h"><span>All class codes (' + cfg.catalog.length + ')</span>' + (catSel.length ? '<span style="font-size:10.5px;color:var(--pd-muted);">' + catSel.length + ' ticked</span>' : '') +
+        /* ⚠️ The BOQ button is FIRST and primary. It loads the codes this project is actually
+           priced on — a few dozen — where + Library loads the whole 197-entry chart; and its codes
+           are the ones that resolve as a `class_code` (see loadBoqCodes). Offering the general
+           list first invites a planner to scroll a chart for scope their own BOQ already states. */
+        /* ⚠️ "+ From BOQ", not "+ From the BOQ": measured, the longer label does not fit beside
+           "+ Library" and the ticked count at the pane's 320px default. The sentence that explains
+           it lives in the title, which is where the long form belongs. */
+        '<button class="pd-btn pd-btn-primary sbld-libbtn" id="b-boq" title="Load only the class codes this project&rsquo;s current BOQ carries, from Contracts &amp; Claims">+ From BOQ</button>' +
+        '<button class="pd-btn sbld-libbtn" id="b-lib" title="Load the standard class-code library (' + CLASS_CODE_DB.length + ' codes) into this list">+ Library</button></div>' +
         '<div class="sbld-hold-list">' + (cfg.catalog.length ? holdItems : '<div class="sbld-empty" style="padding:10px;font-size:11.5px;">Empty. Codes you send out of the build with <b>&rarr;</b> land here; tick them and press <b>&larr;</b> to load them back.</div>') + '</div></div>';
       var shuttle = '<div class="sbld-shuttle"><button class="pd-btn" id="b-load" title="Load the ticked class codes into the build">&larr;</button><button class="pd-btn" id="b-unload" title="Remove the selected grid rows from the build (send to the list)">&rarr;</button></div>';
       host.innerHTML = '<h2>' + _stepNo('Activities') + ' · Activities &amp; required duration</h2>' +
@@ -31715,7 +31902,20 @@
         '<input type="file" id="b-uplfile" accept=".csv,.xlsx,.xls" style="display:none" /></div>' +
         (cfg.activities.length ? '' : '<div class="sbld-empty" style="margin-bottom:8px;">No activities in the build yet — <b>Add row</b>, <b>Load typical set</b>, load from the list with <b>&larr;</b>, or paste rows from Excel into the grid.</div>') +
         '<div class="sbld-actsplit"><div class="sbld-xlwrap" tabindex="0" id="b-xl"><table class="sbld-xl" style="table-layout:fixed;width:' + totalW + 'px;">' + colgroup + '<thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>' + shuttle + holdPane + '</div>' +
-        '<p class="sbld-hint">Trade accepts the name or code (General Requirements/GR · Site Works/SW · Structural/ST · Architectural/AR · MEPF · Allied Services/ALLIED · Others/OT). Row order here is the fallback sequence; fine-tune links in step ' + _stepNo('Trade sequence') + '.</p>';
+        '<p class="sbld-hint">Trade accepts the name or code (General Requirements/GR · Site Works/SW · Structural/ST · Architectural/AR · MEPF · Allied Services/ALLIED · Others/OT). Row order here is the fallback sequence; fine-tune links in step ' + _stepNo('Trade sequence') + '.</p>' +
+        /* ⚠️ Stated rather than left to be discovered. A code that is not a Finance Level-3 code
+           still pushes — it just lands in `project_schedule.class_code` resolving to nothing, so the
+           grid's class-code cell reads it as unknown and the BOQ allocator cannot gate on it. That
+           is every code the + Library list supplies, and it is invisible until somebody looks for
+           it. Shown only when there are some, and it names the button that produces codes that do
+           resolve rather than only naming the problem. */
+        (function () {
+          var n = offChartCount(); if (!n) return '';
+          return '<p class="sbld-hint" style="color:var(--pd-warn-text,var(--pd-warn));">' + n +
+            ' of ' + cfg.activities.length + ' row(s) carry a code that is <b>not a Finance Level-3 class code</b>, ' +
+            'so a pushed activity will show it as unrecognised and the BOQ cannot match on it. ' +
+            'The <b>+ From the BOQ</b> list supplies codes that do resolve.</p>';
+        })();
       // toolbar
       host.querySelector('#b-add').onclick = function () { cfg.activities.push({ id: uidv(), code: '', name: '', group: 'ST', durInt: null, durExt: null, contract: 'main', coRef: '' }); xf = { r: cfg.activities.length - 1, c: 0 }; xa = { r: xf.r, c: 0 }; xWantFocus = true; markDirty(); render(); };
       host.querySelector('#b-tmpl').onclick = actTemplateCsv;
@@ -31727,6 +31927,8 @@
         markDirty(); render();
       };
       var libBtn = host.querySelector('#b-lib'); if (libBtn) libBtn.onclick = loadClassCodeLibrary;
+      var boqBtn = host.querySelector('#b-boq');
+      if (boqBtn) boqBtn.onclick = function () { loadBoqCodes(boqBtn); };
       // resizable grid columns — drag a header's right edge; widths persist in xColW across re-renders
       host.querySelectorAll('.xl-colgrip').forEach(function (g) {
         g.addEventListener('mousedown', function (ev) {
