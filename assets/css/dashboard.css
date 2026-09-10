@@ -469,10 +469,17 @@ a:hover { text-decoration: underline; }
 /* ---- Top bar ----
    Height + title sized to PRC's .topbar/.page-title (60px / 15px·700) — the
    Planners topbar used an 18px/800 <h1>, visibly heavier than the reference app. */
+/* ⚠️⚠️ `flex-shrink: 0` — THE CHROME IS NEVER CRUSHED TO MAKE ROOM FOR CONTENT. Three modules
+   turn `.pd-content` into a column flex container to dock a panel into the viewport
+   (project-schedule's `height:100vh`, drawing-register's `body.dr-fit`, material-submittal's
+   `body.ms-fit`). The topbar and the module bar then become flex ITEMS, and a flex item defaults
+   to `flex-shrink: 1` — so when the column's children do not fit, the browser shrinks these two
+   BELOW their content and `overflow: visible` paints the remainder over whatever follows.
+   See the note on `.pd-modulebar` for the measured case. */
 .pd-topbar {
   background: var(--pd-card); border-bottom: 1px solid var(--pd-line);
   padding: 10px 22px; min-height: 58px; display: flex; align-items: center; gap: 12px;
-  position: sticky; top: 0; z-index: 20;
+  position: sticky; top: 0; z-index: 20; flex-shrink: 0;
 }
 .pd-topbar h1 { font-size: var(--pd-fs-md); margin: 0; font-weight: 700; letter-spacing: -.01em; }
 .pd-topbar-mark { height: 26px; width: auto; display: block; object-fit: contain; flex-shrink: 0; }  /* PRC .topbar-logo */
@@ -1589,9 +1596,21 @@ body { overflow-x: clip; }
 }
 
 /* ---- Below the topbar: the module's own icon+title, tabs, and tools ---- */
+/* ⚠️⚠️ `flex-shrink: 0` IS THE LOAD-BEARING DECLARATION HERE, and the bug it fixes is the one
+   the owner reported as "UI is bugged for Project Schedule phone view" (2026-09-10): the module
+   bar's controls painted on top of the activity list.
+   Measured on the live signed-in page at 375px: this bar WRAPS to five rows — 244px of content —
+   but reported a used height of 52px, its `min-height`, with its children's bottom at y=302 while
+   the box ended at y=110. It was overflowing itself by 192px.
+   ⚠️ The cause is NOT the wrapping and NOT the min-height. Project Schedule sets
+   `.pd-content { height:100vh; display:flex; flex-direction:column }` to dock its details panel
+   into the viewport, which makes this bar a flex ITEM of a HEIGHT-CONSTRAINED column. A flex item
+   defaults to `flex-shrink: 1`, so once the column's children exceed 100vh the browser shrank the
+   bar to its `min-height` — and `overflow: visible` kept painting the other four rows downward,
+   over the content. Chrome must hold its own height and let the CONTENT area give way instead. */
 .pd-modulebar {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap; row-gap: 8px;
-  padding: 10px 22px; min-height: 52px;
+  padding: 10px 22px; min-height: 52px; flex-shrink: 0;
   border-bottom: 1px solid var(--pd-line); background: var(--pd-card);
 }
 .pd-modulebar:empty { display: none; }

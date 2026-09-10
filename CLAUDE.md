@@ -95,6 +95,77 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-10 (z5) — Project Schedule's phone bar painted itself over the activity list, because chrome is allowed to be crushed
+
+Owner, with a screenshot: *"UI is bugged for Project Schedule phone view."* The toolbar, the data-date
+badge, the project title and the avatar were all drawn **on top of** the activity cards. Not a
+z-index problem and not a wrapping problem — a flex-shrink one.
+
+#### ⚠️⚠️ THE MODULE BAR WAS BEING SQUASHED BELOW ITS OWN CONTENT
+Measured on the live signed-in page at 375px, before anything was changed:
+
+| | |
+|---|---|
+| `.pd-modulebar` used height | **52px** — exactly its `min-height` |
+| its `scrollHeight` | **244px** |
+| its children's bottom edge | **y = 302** — the box ended at y = 110 |
+| overflowing itself by | **192px** |
+
+The bar wraps to five rows at 375px (title switch · freshness pill + data-date badge · tools · view
+switcher) and reported a *used* height of one row.
+
+⚠️ **The cause is not the wrapping and not the `min-height`.** Project Schedule sets
+`.pd-content { height: 100vh; display: flex; flex-direction: column }` to dock its details panel into
+the viewport — a deliberate desktop design, with its own comment. That makes the topbar and the module
+bar **flex items of a height-constrained column**, and a flex item defaults to **`flex-shrink: 1`**. So
+once the column's children exceed 100vh the browser shrinks them, `min-height` stops it at 52px, and
+`overflow: visible` paints the other four rows downward over whatever follows. Exactly the screenshot.
+
+**Fix: `flex-shrink: 0` on `.pd-topbar` and `.pd-modulebar`.** Chrome holds its own height and the
+CONTENT area gives way instead — which is what the docking layout wanted all along.
+
+#### The blast radius, measured rather than reasoned
+Three modules turn `.pd-content` into a column flex container — project-schedule (`height:100vh`),
+drawing-register (`body.dr-fit`) and material-submittal (`body.ms-fit`). Only the first has a **hard
+height**, which is why only it shows the bug today; the other two are one `height` away from it.
+⚠️ For **the other 13 modules `flex-shrink` is inert**, because `.pd-content` is not a flex container
+there at all — and that is proven, not assumed (table below).
+
+#### Verified — with the BEFORE pinned to a SHA, not to `HEAD`
+⚠️ `git show HEAD:` silently becomes self-comparison the moment the fix is committed, so the contrast
+is built from **`601ac2a`** explicitly.
+
+| viewport | case | `flex-shrink` | bar box | bar content | children painting over content |
+|---|---|---|---|---|---|
+| 375 | **BEFORE**, project-schedule | 1 | **52** | 210 | **5** |
+| 375 | **AFTER**, project-schedule | 0 | **221** | 220 | **0** |
+| 375 | BEFORE / AFTER, no module css | 1 / 0 | 176 / **176** | 175 / 175 | 0 / 0 |
+| 1400 | BEFORE, project-schedule | 1 | 52 | 51 | 0 |
+| 1400 | **AFTER**, project-schedule | 0 | **55** | 54 | 0 |
+| 1400 | BEFORE / AFTER, no module css | 1 / 0 | 55 / **55** | 54 / 54 | 0 / 0 |
+
+- The five elements the harness names as painting over the content are the five in the owner's
+  screenshot: the title switch, the data-date badge, the tools cluster, the view switcher and the
+  freshness pill.
+- **The other 13 modules are byte-identical** at both widths — the regression case that mattered.
+- ⚠️ **Desktop project-schedule moves 52 → 55px, and that is a FIX, not a regression.** 55 is what
+  every non-docking module already measures; the 52 was the same shrink happening quietly, with a
+  wrapping flex container compressing its single line by 3px. The docking module now agrees with the
+  rest of the app.
+- ⚠️ **My first harness reproduced NOTHING** — it put a stub in `.pd-main`, so the column's children fit
+  100vh, the flex algorithm had no reason to shrink anything, and BEFORE looked healthy. The crush
+  needs a `.pd-main` that cannot give way, which is what the live page has (`clientHeight` 812 against
+  `scrollHeight` 15042). It is now tested with `.pd-main` both shrinkable and not; **both crush.**
+- 44 JS files + 30 inline blocks parse, 0 failures; dashboard.css 531/531 braces; 0 NUL bytes across
+  31 files.
+- `?v=` → `20260910z5` on dashboard.css (30 pages — `person.html` is new since `x1`).
+  ⚠️ `z5`, re-derived from the remote **after** integrating: a concurrent session took `z1`–`z4` while
+  this was in progress, and `x2` would have sorted *before* what a browser already holds.
+- ⚠️ **Not verified on the live page**, and the reason is worth recording: the browser session signed
+  out mid-investigation, and signing back in is not something I do. The measurements above are against
+  the real shipped stylesheets in a real browser; the confirming look at the deployed page is not done.
+
+
 ### 2026-09-10 (z4) — The class-code library stops being de-zeroed, and a group code stops reading as an error
 
 **Run `migrations/2026-09-10-class-code-group-names.sql`.** Owner: *"let's fix the CLASS_CODE_DB
