@@ -96,6 +96,46 @@ developer, plug into one shared shell.
 ## Changelog
 
 
+### 2026-09-10 (u2) — Directory Health, and a duplicate scan that stops being quadratic
+
+The dashboard half of the stakeholder-app adoption. Owner: *"And a dashboard page that can also be
+adopted"*, scoped to **directory health from our own data** — so the same idea pointed at the register
+we hold, not a copy of the other app's screen. Detail in
+[`modules/portfolio-overview/CLAUDE.md`](modules/portfolio-overview/CLAUDE.md). What reaches beyond
+the page:
+
+- ⚠️⚠️ **`assets/js/stakeholders.js` gains `duplicatePairs`, and it is BLOCKED because scoring every
+  pair was measurably too slow to ship: 900 people is 404,550 pairs and 2.3 SECONDS of blocked main
+  thread.** The blocking key is derived **from the matcher's own surname gate**, never invented beside
+  it — equality and the one-edit case both fall out of the deletion neighbourhood, and the
+  initial-of-a-surname case needs a one-character token, so those few people are compared against
+  everyone. It lives in the shared file rather than in the page because a whole-directory duplicate
+  scan is exactly the thing that gets hand-copied next.
+- ⚠️⚠️ **A wrong blocking key is INVISIBLE** — it drops duplicates and the screen reports *"none
+  found"*. So the suite does not test the blocking, it asserts the blocked scan returns the **exact
+  pair set an exhaustive scan returns**, over a directory built full of the near-misses blocking is
+  most likely to lose. **Three new contrast builds, all biting.**
+- ⚠️ **Two cuts of the cap were both wrong and measurement caught both.** The first enumerated every
+  pair and checked the cap afterwards — 11 seconds to answer *"not scanned"*; a cap that only reports
+  after paying the cost is not a cap. The second estimated cost from bucket sizes, which over-counts
+  about sevenfold, and refused a 300-person directory that was 267ms of honest work. Shipped: the
+  decision is exact and the enumeration aborts at the cap. **2,000 people now scan in 446ms.**
+- ⚠️ The Directory's map read **stopped filtering out unlinked rows** — one read now answers both
+  *"who is on which project"* and *"how many register rows predate the directory"*.
+
+**143 assertions** across three suites (41 matcher + 66 operations + 36 health, the last two sliced
+out of the shipped files), **11 of 11 contrast builds biting**. Rendered in a browser in both themes.
+⚠️⚠️ **My harness reported a clean render of INVISIBLE bars** — it never loaded `dashboard.css`, so
+every `--pd-*` token resolved to nothing and each fill computed transparent **with perfect widths**;
+the width checks passed and said nothing about whether anything was painted. Fixed, and the harness
+now asserts the fills are not transparent. ⚠️ The narrow-viewport check **did not run** (the pane
+refused 420px and reported 980), so the phone case rests on the `auto-fit` rule, not on a render.
+
+`stakeholders.js` → `?v=20260910u2`; `MODULE_V` → `20260910u2` (fallback literal included). 48 assets
+on one version each, 0 splits, 0 missing; 0 NUL bytes.
+⚠️ **Not verified signed in** — no health figure has been computed from the live directory, and
+`migrations/2026-09-10-stakeholder-profile-fields.sql` still needs running.
+
 ### 2026-09-10 (u1) — The stakeholder directory becomes a card Universe with clickable A–Z bands
 
 **Run `migrations/2026-09-10-stakeholder-profile-fields.sql`.** Owner, with screenshots of a separate

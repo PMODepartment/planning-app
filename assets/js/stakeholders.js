@@ -316,6 +316,131 @@
     return out.slice(0, limit);
   }
 
+  // ---- scanning the WHOLE directory for duplicates -------------------------
+  // ⚠️⚠️ SCORING EVERY PAIR IS O(N²) AND MEASURABLY TOO SLOW TO SHIP: 900 people is
+  //    404,550 pairs and **2.3 seconds** of blocked main thread, measured, not
+  //    estimated. So candidate pairs are BLOCKED first and only those are scored.
+  // ⚠️⚠️ THE BLOCKING KEY IS DERIVED FROM THE GATE IN `scoreTokens`, NEVER INVENTED
+  //    BESIDE IT. A non-zero score requires the two last tokens to be equal, within
+  //    ONE edit, or for one to be an initial of the other. Equality and the one-edit
+  //    case both fall out of the DELETION NEIGHBOURHOOD — two strings within one
+  //    edit always share a member of it — so those pairs cannot be missed. The
+  //    initial case needs a ONE-CHARACTER last token, which no blocking key can
+  //    cover, so those few people are compared against everyone.
+  // ⚠️ A blocking key that is wrong is invisible: it silently loses duplicates and
+  //    the screen reports "none found". `test_ops.js` therefore asserts this returns
+  //    the EXACT pair set an exhaustive scan returns, over a directory built to be
+  //    full of near-misses.
+  function lastTokensOf(p) {
+    var out = [];
+    nameVariants(p).forEach(function (v) {
+      var l = v.length ? v[v.length - 1] : '';
+      if (l && out.indexOf(l) === -1) out.push(l);
+    });
+    return out;
+  }
+
+  // {s} plus every one-character deletion of s. Two strings within one edit of each
+  // other always share at least one of these.
+  function delKeys(s) {
+    var out = [s];
+    for (var i = 0; i < s.length; i++) {
+      var d = s.slice(0, i) + s.slice(i + 1);
+      if (out.indexOf(d) === -1) out.push(d);
+    }
+    return out;
+  }
+
+  // Every pair in the directory that scores at or above the threshold, each pair
+  // once. `capped` means the candidate set was too large to score and NOTHING was
+  // scanned — deliberately not a partial answer, which would read as a whole one.
+  function duplicatePairs(directory, opts) {
+    opts = opts || {};
+    var rows = (directory || []).filter(Boolean);
+    var threshold = opts.threshold || THRESHOLD;
+    var maxPairs = opts.maxPairs || 120000;
+
+    var buckets = {}, shortIdx = [];
+    rows.forEach(function (p, i) {
+      var ls = lastTokensOf(p), isShort = false;
+      ls.forEach(function (s) {
+        if (s.length === 1) { isShort = true; return; }
+        delKeys(s).forEach(function (k) {
+          // ⚠️ A SET per bucket, not an array de-duplicated with indexOf afterwards.
+          //    One person contributes several deletion keys, so they can land in the
+          //    same bucket twice — and de-duplicating a 2,000-entry bucket with
+          //    indexOf is itself quadratic, which is the cost this whole function
+          //    exists to avoid.
+          (buckets[k] = buckets[k] || {})[i] = 1;
+        });
+      });
+      // a person with NO usable name still has to be reachable, or two blank rows
+      // would never be compared with each other
+      if (isShort || !ls.length) shortIdx.push(i);
+    });
+
+    // ⚠️⚠️ THE DECISION IS EXACT AND THE ENUMERATION ABORTS THE MOMENT IT PASSES
+    //    THE CAP. Two earlier cuts of this were both wrong, and only measuring showed
+    //    it: the first built the entire candidate list and checked the cap afterwards,
+    //    so a directory where everyone shares a surname spent **11 seconds**
+    //    enumerating 1,999,000 pairs and then reported "not scanned" — a cap that
+    //    only reports after paying the cost is not a cap. The second estimated the
+    //    cost from bucket sizes, which OVER-COUNTS about sevenfold (a pair sharing a
+    //    surname shares every one of its deletion keys), and refused a 300-person
+    //    directory that was 267ms of honest work.
+    // Offering a pair is O(1), so aborting at the cap costs at most `maxPairs` steps.
+    var seen = {}, cand = [], over = false;
+    function offer(i, j) {
+      if (i === j) return false;
+      var a = i < j ? i : j, b = i < j ? j : i;
+      var k = a + ':' + b;
+      if (seen[k]) return false;
+      seen[k] = 1;
+      cand.push([a, b]);
+      if (cand.length > maxPairs) { over = true; return true; }
+      return false;
+    }
+    var bkeys = Object.keys(buckets);
+    for (var bi = 0; bi < bkeys.length && !over; bi++) {
+      var idx = Object.keys(buckets[bkeys[bi]]);
+      for (var i = 0; i < idx.length && !over; i++) {
+        for (var j = i + 1; j < idx.length; j++) { if (offer(+idx[i], +idx[j])) break; }
+      }
+    }
+    for (var si = 0; si < shortIdx.length && !over; si++) {
+      for (var sj = 0; sj < rows.length; sj++) { if (offer(shortIdx[si], sj)) break; }
+    }
+
+    if (over) {
+      // ⚠️ The figure reported back is an UPPER BOUND derived from the bucket sizes,
+      //    not the exact count — the exact count is the thing we just refused to
+      //    compute. It is worded as "pairs worth comparing" on screen, never as a
+      //    precise total, because over-stating the work refused is the safe way round.
+      var bound = 0;
+      bkeys.forEach(function (k) {
+        var n = 0;
+        for (var _ in buckets[k]) n++;
+        bound += (n * (n - 1)) / 2;
+      });
+      bound += shortIdx.length * rows.length;
+      return { pairs: [], scanned: false, capped: true, considered: bound, total: rows.length };
+    }
+
+    var out = [];
+    cand.forEach(function (pr) {
+      var a = rows[pr[0]], b = rows[pr[1]];
+      var r = scorePair(a, b);
+      if (r.score >= threshold) {
+        out.push({ a: a, b: b, score: Math.round(r.score * 100) / 100, why: r.why });
+      }
+    });
+    out.sort(function (x, y) {
+      return y.score - x.score ||
+             String((x.a && x.a.name) || '').localeCompare(String((y.a && y.a.name) || ''));
+    });
+    return { pairs: out, scanned: true, capped: false, considered: cand.length, total: rows.length };
+  }
+
   // An EXACT identity hit — the unique index's own key, `lower(btrim(name))` +
   // `lower(coalesce(btrim(organization),''))`. ⚠️ Deliberately NOT the normalised
   // form above: this must agree with what the DATABASE will accept, or a "find"
@@ -491,6 +616,7 @@
     normName: normName, normOrg: normOrg, tokens: tokens,
     editWithin: editWithin, scorePair: scorePair, nameVariants: nameVariants,
     matchCandidates: matchCandidates, findExact: findExact, exactKey: exactKey,
+    duplicatePairs: duplicatePairs,
     missingTable: missingTable,
     createPerson: createPerson, assignToProjects: assignToProjects,
     mergePeople: mergePeople, personRow: personRow,
