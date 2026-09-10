@@ -343,8 +343,10 @@ ok('the empty state names the Execution Phase requirement, with no manual-entry 
    /Works must be established in the Project Schedule under the /.test(mjs));
 ok('a chosen Works value is resolved back to its schedule activity_id for traceability (worksActivityIdFor), never guessed when no match exists',
    /function worksActivityIdFor\(name\) \{[\s\S]{0,300}return \(act && act\.activity_id\) \|\| null;/.test(mjs));
-eq('both Add and Edit saves store the index-aligned works_activity_ids array alongside works_multi',
-   (mjs.match(/works_activity_ids: worksActivityIdsFor\(worksList\)/g) || []).length, 2);
+// Overnight batch item 3: open360Upload's save handler builds a THIRD
+// `row` literal with the same shape (Add/Edit/360), so the count goes 2 -> 3.
+eq('Add, Edit AND the 360 upload each store the index-aligned works_activity_ids array alongside works_multi',
+   (mjs.match(/works_activity_ids: worksActivityIdsFor\(worksList\)/g) || []).length, 3);
 ok('tolerantWrite degrades gracefully (strips works_activity_ids and warns) when that migration has not run yet',
    /job\.patch && \('works_activity_ids' in job\.patch\)\)/.test(mjs));
 
@@ -382,12 +384,12 @@ ok('the "Location label" free-text input is gone (item 2 — "redundant")', !/-l
 ok('locationFieldHTML now ALSO takes a required view-name field, seeded from the existing value', /function locationFieldHTML\(idPrefix, existingValues, existingViewName\)/.test(mjs));
 ok('the view-name input is REQUIRED and pre-filled from the existing value on Edit', /id="' \+ idPrefix \+ '-viewname" value="' \+ Fmt\.esc\(existingViewName \|\| ''\) \+ '" required \/>/.test(mjs));
 ok('Edit passes the photo\'s own view_name through to locationFieldHTML', /locationFieldHTML\('pp-e', r\.location_values \|\| \{\}, r\.view_name\)/.test(mjs));
-ok('location is derived purely from the breakdown breadcrumb on save (both Add and Edit)',
-   (mjs.match(/location: locBreadcrumb\(locVals\) \|\| null,/g) || []).length === 2);
+ok('location is derived purely from the breakdown breadcrumb on save (Add, Edit AND the 360 upload)',
+   (mjs.match(/location: locBreadcrumb\(locVals\) \|\| null,/g) || []).length === 3);
 ok('the insert/update payload now carries the UNION of every chosen Works value\'s derived trades + all chosen works in the array columns',
    /trades: tradeList,[\s\S]{0,60}works_multi: worksList,[\s\S]{0,60}trade: tradeList\[0\] \|\| null,[\s\S]{0,60}works: worksList\[0\] \|\| null,/.test(mjs));
-ok('the payload also carries view_name from the (now-mandatory) field, on both Add and Edit',
-   (mjs.match(/view_name: viewNameEl \? viewNameEl\.value\.trim\(\) : null,/g) || []).length === 2);
+ok('the payload also carries view_name from the (now-mandatory) field, on Add, Edit AND the 360 upload',
+   (mjs.match(/view_name: viewNameEl \? viewNameEl\.value\.trim\(\) : null,/g) || []).length === 3);
 ok('tolerantWrite gained a strip-rule for view_name, naming the migration file if it is missing',
    /'view_name' in job\.patch/.test(mjs) && /migrations\/2026-08-30-photos-round2\.sql/.test(mjs));
 ok('tolerantWrite also retries without trades/works_multi if that migration has not run yet',
@@ -668,7 +670,10 @@ console.log('\n[misc] insert().select() returns the new row id');
   // Gallery favorite star (2026-09-07): .pp-cardfav is the SAME fixed-dark-
   // scrim-over-an-arbitrary-photo family as .pp-cardsel -- a corner overlay
   // button, never a themeable light surface.
-  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.bim-pin\b|\.bim-pinstage-dot\b|#bim-place\.is-active|\.pp-plancluster\b|\.ppr-mktool\b|\.ppr-sortno\b|\.pp-mk-tool\.active|\.bim-regpt\b|\.bim-conehandle-el\b|\.bim-dirhandle-el\b|\.pp-livebtn\.is-live\b|\.pp-iconbtn\.is-active\b|\.pp-cardfav\b/;
+  // Overnight batch item 3: .pp-360badge is the same family again -- a
+  // fixed dark-scrim corner badge over an arbitrary photo, white text
+  // always legible regardless of theme.
+  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.bim-pin\b|\.bim-pinstage-dot\b|#bim-place\.is-active|\.pp-plancluster\b|\.ppr-mktool\b|\.ppr-sortno\b|\.pp-mk-tool\.active|\.bim-regpt\b|\.bim-conehandle-el\b|\.bim-dirhandle-el\b|\.pp-livebtn\.is-live\b|\.pp-iconbtn\.is-active\b|\.pp-cardfav\b|\.pp-360badge\b/;
   const stray = fffRules.filter((sel) => !ALLOWED_FFF_CONTEXT.test(sel));
   ok('every #fff use sits under a documented fixed-colour selector', stray.length === 0 && fffRules.length > 0,
      JSON.stringify(stray));
@@ -1112,20 +1117,24 @@ console.log('\n[misc] insert().select() returns the new row id');
   console.log('\n[28] Batches E-H: pin+direction, markup+sorter, map view, registration, video');
 
   // --- Add-media type selector + video (folded in alongside Batch C) -------
-  ok('mediaTypeSelectorHTML/wireMediaTypeSelector exist for the Photo/Video picker',
-     /function mediaTypeSelectorHTML\(idPrefix, cur\)/.test(mjs) && /function wireMediaTypeSelector\(idPrefix, initial, onChange\)/.test(mjs));
-  // Fifth round item 1: wireMediaTypeSelector now takes an initial value (so
-  // the new "+ Add media" dropdown can pre-select Photo/Video before the
-  // modal even opens), and switching types clears whatever was already
-  // staged — the real bug behind "I switched to Video and my photo was
-  // still there".
-  ok('wireMediaTypeSelector accepts a preset initial type, not always hardcoded to photo',
-     /var cur = initial \|\| 'photo';/.test(mjs));
-  ok('switching media type clears the staged batch — revokes object URLs, drops pending markup/adjustments, resets the file input and grid',
-     /var mtype = wireMediaTypeSelector\('pp', preset\.mtype, function \(t\) \{[\s\S]{0,400}revokeStaged\(\);[\s\S]{0,100}pendingMarkup = \{\}; pendingAdjust = \{\};[\s\S]{0,100}pp-stagedgrid/.test(mjs));
-  ok('"+ Add media" is a dropdown (Photo/Video only — 360/3D removed entirely)',
-     /pp-addmenu-wrap/.test(html) && /data-addtype="photo"/.test(html) && /data-addtype="video"/.test(html) &&
-     !/data-addtype="360"/.test(html) && !/data-addtype="3d"/.test(html));
+  // Overnight batch item 6: "since there is already a drop down to choose
+  // photo, video, or 360 when clicking add media, no need for the type
+  // choices inside add media form" -- mediaTypeSelectorHTML/
+  // wireMediaTypeSelector are RETIRED (superseded by openUpload reading a
+  // FIXED `mtype` off `preset.mtype`, decided once by the dropdown before
+  // the modal ever opens).
+  ok('mediaTypeSelectorHTML/wireMediaTypeSelector are gone — the dropdown decides the kind before the modal opens, not an in-form toggle',
+     !/function mediaTypeSelectorHTML\(/.test(mjs) && !/function wireMediaTypeSelector\(/.test(mjs) &&
+     /var mtype = preset\.mtype === 'video' \? 'video' : 'photo';/.test(mjs));
+  // Item 1: "provide separate buttons for take photo\/video and upload
+  // photo\/video" -- both feed the SAME staged array additively.
+  ok('openUpload renders separate Take/Upload buttons and both add to the same staged-file array',
+     /id="pp-take"/.test(mjs) && /id="pp-choosefiles"/.test(mjs) &&
+     /function addStagedFiles\(list\) \{\s*Array\.prototype\.forEach\.call\(list \|\| \[\], function \(f\) \{ stagedFiles\.push\(f\); \}\);/.test(mjs));
+  ok('the 360° add-media dropdown item is BACK (a fresh 360 feature was built this same round) — routes to open360Upload, not openUpload',
+     /pp-addmenu/.test(html) && /data-addtype="photo"/.test(html) && /data-addtype="video"/.test(html) &&
+     /data-addtype="360"/.test(html) &&
+     /if \(this\.dataset\.addtype === '360'\) \{ open360Upload\(\); return; \}/.test(mjs));
   ok('picking Photo/Video from the dropdown opens the upload modal pre-set to that type',
      /openUpload\(\{ mtype: this\.dataset\.addtype \}\);/.test(mjs));
   ok('the upload save payload records which kind was picked', /media_type: kind/.test(mjs));
@@ -1141,8 +1150,16 @@ console.log('\n[misc] insert().select() returns the new row id');
      /alter table floor_plan_pins add column if not exists direction_deg double precision;/.test(
        fs.readFileSync(path.join(__dirname, '..', '..', 'migrations', '2026-08-29-pin-direction.sql'), 'utf8')) &&
      /direction_deg double precision/.test(fs.readFileSync(schemaFile, 'utf8')));
-  ok('a pin only draws its cone when a direction was actually recorded',
-     /function pinConeHTML\(pin\)/.test(bmjs) && /pin\.direction_deg === null \|\| pin\.direction_deg === undefined/.test(bmjs));
+  // Item 10 (mid-Sept follow-up): pinConeHTML/coneWedgeSVG were unified so
+  // the Plans-tab marker, the lightbox overlay AND the 360° viewer's
+  // rotated cone (coneWedgeSVGAt) all resolve the same way — a direction-
+  // less/drone pin still draws nothing, now via the shared
+  // resolveConeParams() returning null rather than pinConeHTML's own inline
+  // guard.
+  ok('a pin only draws its cone when a direction was actually recorded (shared resolveConeParams, used by coneWedgeSVG AND coneWedgeSVGAt)',
+     /function pinConeHTML\(pin\) \{ return coneWedgeSVG\(pin\); \}/.test(bmjs) &&
+     /function resolveConeParams\(pin\) \{\s*if \(!pin \|\| pin\.direction_na\) return null;/.test(bmjs) &&
+     /function coneWedgeSVGAt\(pin, rotationOffsetDeg, ids\)/.test(bmjs));
   ok('directionWidgetHTML/wireDirectionWidget exist (the drag-to-set-direction control)',
      /function directionWidgetHTML\(idPrefix, curDeg\)/.test(bmjs) && /function wireDirectionWidget\(idPrefix\)/.test(bmjs));
   ok('openPinPickerFor exists — the Gallery-triggered pin flow that does not disturb the Plans screen state',
@@ -1782,19 +1799,33 @@ console.log('\n[misc] insert().select() returns the new row id');
 
   ok('a filtered <img> costs nothing for the overwhelming majority of unadjusted rows — thumb() emits no style attribute at all when adjustmentsAreDefault',
      /var filt = adjustmentsAreDefault\(r\.adjustments\) \? '' : ' style="filter:'/.test(mjs));
-  ok('the lightbox applies the SAME filter live and re-applies it the instant Save returns a new value — never a stale filter after editing',
-     /if \(imgEl\) imgEl\.style\.filter = isVideo \? '' : cssFilterFor\(adjustmentsOf\(r\)\);/.test(mjs) &&
-     /if \(imgEl\) imgEl\.style\.filter = cssFilterFor\(newAdj\);/.test(mjs));
-  ok('the Adjust button is hidden for a video (adjustments are photo-only) and for a read-only viewer, mirroring the Markup button\'s own gating',
-     /adjBtn\.style\.display = \(canWrite && !isVideo\) \? '' : 'none';/.test(mjs));
+  // Overnight batch item 5: "extend feature of adjusting photo to videos
+  // and 360" -- Adjust is no longer photo-only; it applies live to
+  // whichever media element is on screen (<video> for a video/360 row via
+  // adjFilterEl, resolved from isVideo/isPano) and re-applies the instant
+  // Save returns a new value.
+  ok('the lightbox applies the SAME filter live to whichever media element is on screen (img/video/pano) and re-applies it the instant Save returns a new value',
+     /var adjFilterEl = isVideo \? vidEl : \(isPano \? panoImg : imgEl\);/.test(mjs) &&
+     /if \(adjFilterEl\) adjFilterEl\.style\.filter = cssFilterFor\(adjustmentsOf\(r\)\);/.test(mjs) &&
+     /var filterEl = isVideo \? vidEl : \(isPano \? panoImg : imgEl\);\s*if \(filterEl\) filterEl\.style\.filter = cssFilterFor\(newAdj\);/.test(mjs));
+  ok('the Adjust button is now available for photo, video AND 360 -- only Markup stays photo-only',
+     /adjBtn\.style\.display = canWrite \? '' : 'none';/.test(mjs) &&
+     /var markupExcluded = isVideo \|\| isPano;/.test(mjs));
+  // openAdjustEditor gained an `isVideo` flag (item 5) that swaps its
+  // canvas+sharpen preview for a live <video style="filter:..."> preview.
+  ok('openAdjustEditor supports a live <video> preview mode (isVideo flag), dropping the Sharpness slider (no CSS filter equivalent) rather than silently doing nothing',
+     /function openAdjustEditor\(imageUrl, initialAdjustments, onSave, isVideo\)/.test(mjs) &&
+     /if \(!isVideo\) FIELDS\.push\(\{ key: 'sharpness', label: 'Sharpness' \}\);/.test(mjs) &&
+     /id="pp-adj-vid"/.test(mjs));
   // ⚠️ Stack view's own adjustments-in-cells assertion (it applied the same
   // filter in both its step-through and combined-photos cells) is retired
   // along with Stack view itself — Round-2 item 7. Adjustments still apply
   // everywhere Stack view is NOT the render path (thumb(), the lightbox,
   // the staged-file grid below), which the surrounding assertions cover.
-  ok('the staged-file grid (Add Media) offers Adjust beside Markup, wired the same way — available BEFORE the file is even uploaded',
+  ok('the staged-file grid (Add Media) offers Adjust for EVERY staged file (photo or video) and Markup only for a real image, wired via renderStagedGrid()',
      /data-adjuststage="' \+ i \+ '"/.test(mjs) &&
-     /openAdjustEditor\(stagedUrls\[i\], pendingAdjust\[i\] \|\| \{\}, function \(adj\) \{ pendingAdjust\[i\] = adj; \}\);/.test(mjs));
+     /openAdjustEditor\(stagedUrls\[i\], pendingAdjust\[i\] \|\| \{\}, function \(adj\) \{ pendingAdjust\[i\] = adj; \}, fIsVideo\);/.test(mjs) &&
+     /\(fIsVideo \? '' : '<button type="button" class="pd-btn" style="margin:6px;" data-markupstage="' \+ i \+ '">Markup<\/button>'\)/.test(mjs));
   ok('a default (untouched) adjustment is NEVER attached to the save payload — no accidental adjustments:{} column write for a photo nobody adjusted',
      /if \(pendingAdjust\[i\] && !adjustmentsAreDefault\(pendingAdjust\[i\]\)\) perFile\.adjustments = pendingAdjust\[i\];/.test(mjs));
   ok('tolerantWrite strips adjustments and retries on a pre-migration database, naming the round-3 migration file',
@@ -2182,8 +2213,12 @@ console.log('\n[misc] insert().select() returns the new row id');
   ok('…wirePlan() still has the one real, working binding (nothing was lost, only the dead duplicate)',
      /function wirePlan\(\) \{\s*if \(\$\('bim-plan-select'\)\) \$\('bim-plan-select'\)\.onchange = function \(\) \{/.test(bmjs));
 
-  ok('wireMediaTypeSelector: capture="environment" is preserved in Photo mode and only removed in Video mode (it used to be stripped unconditionally on every call, including the very first — so it never actually took effect even in Photo mode)',
-     /if \(cur === 'video'\) fileInput\.removeAttribute\('capture'\);\s*else fileInput\.setAttribute\('capture', 'environment'\);/.test(mjs));
+  // Superseded (overnight batch item 6): wireMediaTypeSelector — and the
+  // in-form Photo/Video switch it drove — is gone entirely. `capture`
+  // is now set once, correctly, at modal build time, straight off the
+  // fixed `mtype` this modal was opened for (never toggled after the fact).
+  ok('the file input\'s capture="environment" attribute is set directly from the fixed mtype at build time, never toggled by an in-form switch',
+     /'<input class="pd-input" type="file" id="pp-files" hidden accept="' \+ \(isVideoKind \? 'video\/\*' : 'image\/\*'\) \+ '"' \+\s*\(isVideoKind \? '' : ' capture="environment"'\) \+ ' multiple \/>'/.test(mjs));
   ok('…and the unused `lbl` variable (looked up, never referenced) is gone',
      !/var lbl = document\.querySelector\('label\[for="' \+ idPrefix \+ '-files"\]'\);/.test(mjs));
 
@@ -2608,14 +2643,20 @@ console.log('\n[misc] insert().select() returns the new row id');
   // that number (and [38]/[39]) for its own, unrelated, later sections.
   console.log('\n[40] Plan/Stack month steppers gain an explicit "Live" jump-back button (Project Schedule Vertical Stacking parity)');
 
-  ok('Plan view\'s month stepper renders a Live button, styled is-live exactly when planMonth is null (the existing "latest month" state)',
-     /'<button class="pd-btn pp-livebtn' \+ \(planMonth == null \? ' is-live' : ''\) \+ '" id="pp-plan-mlive" title="Back to the latest month">Live<\/button>' \+/.test(mjs));
-  ok('…and it sits in the SAME month bar as prev\\/next\\/play, after Play — one control cluster, not a second row',
-     /pp-plan-mnext"[\s\S]{0,100}pp-plan-mplay">[\s\S]{0,200}pp-plan-mlive"/.test(mjs));
-  ok('wirePlanView(): clicking Live stops any running month-play timer FIRST, then snaps planMonth back to null (never leaves a timer ticking toward a month that no longer matters) and re-renders',
-     /if \(\$\('pp-plan-mlive'\)\) \$\('pp-plan-mlive'\)\.onclick = function \(\) \{\s*if \(planMonth == null\) return;[^\n]*\s*stopPlanMonthPlay\(\);\s*planMonth = null; render\(\);\s*\};/.test(mjs));
-  ok('…and clicking Live while already live is a genuine no-op (guarded, doesn\'t stop a timer or force an unnecessary render)',
-     /if \(planMonth == null\) return;   \/\/ already live/.test(mjs));
+  // ⚠️ SUPERSEDED (item 9, overnight batch): "no need for the live view.
+  // play-stop button is enough. but aside from back and next to navigate
+  // month, add also first and last button." The Live button (and its
+  // Stack-view sibling, already retired below) is GONE — First («)/Last (»)
+  // jump straight to the earliest/latest available month instead, sitting
+  // in the same month bar as prev/next/play.
+  ok('Plan view\'s Live button is gone; First («) and Last (») buttons replace it, in the same month bar as prev/next/play',
+     !/pp-plan-mlive/.test(mjs) && !/pp-livebtn/.test(mjs) &&
+     /pp-plan-mfirst" title="First month">«<\/button>/.test(mjs) &&
+     /pp-plan-mlast" title="Last month">»<\/button>/.test(mjs) &&
+     /pp-plan-mnext"[\s\S]{0,120}pp-plan-mlast"[\s\S]{0,120}pp-plan-mplay"/.test(mjs));
+  ok('wirePlanView(): First stops any running month-play timer and jumps to the earliest month; Last does the same to the latest',
+     /if \(\$\('pp-plan-mfirst'\)\) \$\('pp-plan-mfirst'\)\.onclick = function \(\) \{\s*stopPlanMonthPlay\(\); planMonth = months\[0\]; render\(\);\s*\};/.test(mjs) &&
+     /if \(\$\('pp-plan-mlast'\)\) \$\('pp-plan-mlast'\)\.onclick = function \(\) \{\s*stopPlanMonthPlay\(\); planMonth = months\[months\.length - 1\]; render\(\);\s*\};/.test(mjs));
 
   // ⚠️ Stack view's own copy of this Live button (and its wireStackView()
   // wiring) is retired along with Stack view itself — Round-2 item 7
@@ -2623,18 +2664,6 @@ console.log('\n[misc] insert().select() returns the new row id');
   // part of section [49]'s own sweep, further down this file (no
   // data-view="stack", no renderStackView/wireStackView/stackGrid/
   // mostRecentAsOf/stackRowSort, no id="pp-stack-* anywhere).
-
-  ok('module.css: .pp-livebtn / .is-live are defined (a solid brand-red fill + white text — same fixed-background exemption from the dark-mode #fff audit as .pp-tab.active / .pd-btn-primary)',
-     // font-size is a --pd-fs-* token since the 2026-09-08 type-scale pass:
-     // the eight rungs in dashboard.css are the whole permitted set, so a test
-     // that pins a literal px here would fail the next time one is corrected
-     // centrally -- which is the point of having tokens. The rung is asserted,
-     // not the pixel.
-     /\.pp-livebtn \{ padding: 4px 12px; font-size: var\(--pd-fs-sm\); \}/.test(cssFile) &&
-     /\.pp-livebtn\.is-live \{ background: var\(--pd-red\); border-color: var\(--pd-red\); color: #fff;/.test(cssFile));
-
-  ok('pp-plan-mlive is referenced exactly 3 times in module.js — once rendered, twice in the wiring ($(id) guard + $(id).onclick, the same shape every sibling stepper button already uses) — never a stray 4th reference suggesting a leftover or a duplicate; its retired Stack-view sibling (pp-stack-mlive) is referenced zero times',
-     (mjs.match(/pp-plan-mlive/g) || []).length === 3 && (mjs.match(/pp-stack-mlive/g) || []).length === 0);
 
   console.log('\n[41] Old-photo thumbnail backfill ("manually add the thumbnail data… for the app to fetch")');
   ok('photosNeedingThumb() exists and scopes to real images missing thumb_url (never videos, which already get a free <video preload="metadata"> preview)',
@@ -2868,8 +2897,11 @@ console.log('\n[misc] insert().select() returns the new row id');
   // intentional change, not a regression.
   ok('index.html: #pp-lb-keyplan-overlay is a real <div> stage INSIDE .pp-lb-imgwrap (img + pin + cone), hidden by default',
      /pp-lb-imgwrap[\s\S]*?<div class="pp-lb-kpoverlay" id="pp-lb-keyplan-overlay" hidden>[\s\S]*?<img id="pp-lb-keyplan-overlay-img" alt="Key plan" \/>[\s\S]*?<span class="pp-lb-kpoverlay-pin" id="pp-lb-keyplan-overlay-pin" hidden><\/span>[\s\S]*?<span class="pp-lb-kpoverlay-cone" id="pp-lb-keyplan-overlay-cone" hidden><\/span>[\s\S]*?<\/div>[\s\S]*?<\/div>/.test(html));
-  ok('the key-plan toggle resolves the current row\'s pin via BIM.pinInfoFor(\'photo\', r.id)',
-     /var kpHasPin = window\.BIM && BIM\.pinInfoFor && !!BIM\.pinInfoFor\('photo', r\.id\);/.test(mjs) &&
+  // Item 5 (overnight batch): "no need also key plan for video, leave this
+  // only for photo and 360" -- kpHasPin now also gates on media type, not
+  // only on whether a pin exists.
+  ok('the key-plan toggle resolves the current row\'s pin via BIM.pinInfoFor(\'photo\', r.id), gated to exclude video',
+     /var kpHasPin = !isVideo && window\.BIM && BIM\.pinInfoFor && !!BIM\.pinInfoFor\('photo', r\.id\);/.test(mjs) &&
      /var info = window\.BIM && BIM\.pinInfoFor && BIM\.pinInfoFor\('photo', r\.id\);/.test(mjs));
   ok('the #pp-lb-keyplan button is shown ONLY when the current item actually has a pin, never speculatively',
      /kpBtn\.style\.display = kpHasPin \? '' : 'none';/.test(mjs));
@@ -2924,11 +2956,20 @@ console.log('\n[misc] insert().select() returns the new row id');
   // ⚠️ Owner feedback item 7: the pin + camera-facing cone are always drawn
   // on the overlay too, positioned by the pin's own x_norm/y_norm — never
   // just the bare plan image.
-  ok('paintKeyPlanOverlay() always positions the pin (and, when a direction was recorded and it isn\'t marked drone/top-view, the cone) from the resolved pin\'s own x_norm/y_norm',
+  // ⚠️ SUPERSEDED (10th item, mid-Sept correction): "when key plan is
+  // shown, the pin and the camera angle and direction does not display
+  // properly. display the pin and camera angle in the same way they were
+  // defined." The old CSS-rotated-wedge approach (a fixed-angle wedge
+  // merely rotated by direction_deg) could not represent a cone's real
+  // width/reach at all — it now delegates to BIM.coneWedgeSVGAt(pin,
+  // headingOffset), the SAME accurate edge-based geometry the Plans-tab
+  // marker and the capture widget itself use.
+  ok('paintKeyPlanOverlay() always positions the pin from the resolved pin\'s own x_norm/y_norm, and draws the cone via the shared, accurate BIM.coneWedgeSVGAt(pin, headingOffset) — never a fixed-angle wedge merely rotated by direction_deg',
      /pinEl\.style\.left = \(pin\.x_norm \* 100\) \+ '%';/.test(mjs) &&
      /pinEl\.style\.top = \(pin\.y_norm \* 100\) \+ '%';/.test(mjs) &&
-     /var hasDir = pin && !pin\.direction_na && pin\.direction_deg !== null && pin\.direction_deg !== undefined;/.test(mjs) &&
-     /coneEl\.style\.transform = 'translate\(-50%,-100%\) rotate\(' \+ pin\.direction_deg \+ 'deg\)';/.test(mjs));
+     /var headingOffset = \(r\.media_type === '360'\) \? lightboxPanoHeadingDeg : 0;/.test(mjs) &&
+     /var svg = \(pin && window\.BIM && BIM\.coneWedgeSVGAt\) \? BIM\.coneWedgeSVGAt\(pin, headingOffset\) : '';/.test(mjs) &&
+     /if \(svg\) \{ coneEl\.hidden = false; coneEl\.innerHTML = svg; \}/.test(mjs));
   ok('module.css: .pp-lb-kpoverlay is pinned to the photo\'s own top-right corner and sized to 1/8 (12.5%) of it — "overlays on top of the photo at the top right corner with the size 1/8 of the photo", literally',
      /\.pp-lb-kpoverlay \{[^}]*top: 10px; right: 10px;[^}]*width: 12\.5%;/.test(css.replace(/\n/g, ' ')));
   ok('.pp-lb-kpoverlay carries no #fff of its own (its only colour is a --pd-card background + rgba box-shadow) — nothing new for the #fff-context allow-list to have to cover',

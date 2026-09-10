@@ -340,6 +340,15 @@
   border-color: transparent transparent transparent rgba(255, 255, 255, .92);
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, .6));
 }
+/* Item 3: a 360° tile is a plain photo tile (its representative frame) plus
+   a small corner badge -- distinguishes it from an ordinary photo without
+   needing a whole second tile layout. */
+.pp-panothumbwrap { position: relative; display: block; }
+.pp-360badge {
+  position: absolute; bottom: 6px; left: 6px; background: rgba(0, 0, 0, .55); color: #fff;
+  font-size: 10px; font-weight: 700; letter-spacing: .02em; padding: 2px 6px;
+  border-radius: 999px; pointer-events: none;
+}
 /* Add-media type selector (Photo / Video) */
 .pp-mtypesel { display: flex; gap: 6px; }
 .pp-mtype {
@@ -465,6 +474,15 @@
    element's exact rendered box in pixels — the CSS only needs to keep it
    pinned to the wrapper's top-left and out of the way of clicks/drag. */
 .pp-lb-markup { position: absolute; top: 0; left: 0; pointer-events: none; display: none; }
+/* Item 4: the 360° pan strip — a fixed-height window with the wide stitched
+   panorama scrolling horizontally inside it. `overflow-x:auto` gives touch
+   swipe-to-pan for free; wirePanoDrag() adds click-and-drag for a mouse. */
+.pp-lb-panowrap {
+  max-width: 88vw; max-height: 78vh; overflow-x: auto; overflow-y: hidden;
+  border: 3px solid #fff; background: #000; cursor: grab; touch-action: pan-x;
+}
+.pp-lb-panowrap:active { cursor: grabbing; }
+.pp-lb-pano { display: block; height: 78vh; max-height: 78vh; width: auto; max-width: none; user-select: none; }
 /* Round-2 item 3 (2026-09-02): REPLACES the old zoom in/out buttons — "have a
    magnifier instead". A circular lens that follows the cursor while it's over
    the photo, showing a magnified crop of the SAME <img> via a background-
@@ -510,20 +528,21 @@
   background: linear-gradient(135deg, transparent 50%, rgba(255, 255, 255, .8) 50%);
 }
 .pp-lb-kpoverlay-resize:hover { background: linear-gradient(135deg, transparent 50%, var(--pd-red) 50%); }
-/* Scaled-down copies of bim.js's own .bim-pin/.bim-pincone — that stage is
-   sized for a much larger, full-window plan view; a 1/8-photo-width corner
-   overlay needs a proportionally smaller marker. Positioned in JS
-   (paintKeyPlanOverlay) from the pin's own x_norm/y_norm, same convention. */
+/* A scaled-down copy of bim.js's own .bim-pin — that stage is sized for a
+   much larger, full-window plan view; a 1/8-photo-width corner overlay needs
+   a proportionally smaller dot. Positioned in JS (paintKeyPlanOverlay) from
+   the pin's own x_norm/y_norm, same convention. The cone itself is NOT a
+   scaled-down copy of anything — paintKeyPlanOverlay injects the real
+   BIM.coneWedgeSVG(pin) markup here, the same accurate pie-slice geometry
+   the Plans-tab marker and the capture widget itself draw, full-bleed via
+   the shared .bim-conewedge-svg rule (module.css, bim.js's own section). */
 .pp-lb-kpoverlay-pin {
   position: absolute; transform: translate(-50%, -100%);
   width: 12px; height: 12px; border-radius: 50% 50% 50% 0; transform-origin: center;
   border: 1.5px solid #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .45); pointer-events: none;
 }
 .pp-lb-kpoverlay-pin.pp-lb-kppin-photo { background: var(--pd-ok); }
-.pp-lb-kpoverlay-cone {
-  position: absolute; width: 32px; height: 32px; pointer-events: none;
-  background: conic-gradient(from 0deg at 50% 100%, transparent 335deg, color-mix(in srgb, var(--pd-red) 40%, transparent) 335deg 360deg, color-mix(in srgb, var(--pd-red) 40%, transparent) 0deg 25deg, transparent 25deg);
-}
+.pp-lb-kpoverlay-cone { position: absolute; inset: 0; pointer-events: none; }
 .pp-lb-cap {
   margin-top: 12px; color: #fff; text-align: center;
   display: flex; flex-direction: column; gap: 3px; font-size: var(--pd-fs-base);
@@ -1036,14 +1055,16 @@
 }
 #bim-place.is-active { background: var(--pd-red); color: #fff; border-color: var(--pd-red); }
 
-/* Direction cone (Batch E) — a CSS conic-gradient wedge, rotated per pin via
-   an inline transform (see pinConeHTML). Positioned/anchored identically to
-   .bim-pin (left/top % + translate(-50%,-100%)) so the cone's tip always
-   sits exactly at the pin's own point. */
-.bim-pincone {
-  position: absolute; width: 70px; height: 70px; pointer-events: none;
-  background: conic-gradient(from 0deg at 50% 100%, transparent 335deg, color-mix(in srgb, var(--pd-red) 35%, transparent) 335deg 360deg, color-mix(in srgb, var(--pd-red) 35%, transparent) 0deg 25deg, transparent 25deg);
-}
+/* Direction cone — the ONE shared renderer (bim.js coneWedgeSVG/
+   coneWedgeSVGFromParams): a true pie slice built from the pin's own
+   edge1/edge2 (or a default cone for a legacy direction_deg-only pin), full-
+   bleed over whatever box it's placed in (the Plans-tab stage, the
+   lightbox's key-plan corner, a presentation pane's popup) — the
+   coordinates are already normalized 0..1 (×100 in the SVG viewBox), so this
+   never needs its own pixel-size tuning per context. */
+.bim-conewedge-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.bim-conewedge { cursor: grab; }
+.bim-conewedge:active { cursor: grabbing; }
 
 /* Direction-drag widget (pin picker + Gallery pin flow) */
 .bim-dirwidget { display: flex; align-items: center; gap: 14px; }
@@ -1086,14 +1107,6 @@
 .pp-planfloorlabel { font-size: var(--pd-fs-sm); font-weight: 700; color: var(--pd-muted); }
 .pp-planfloorbar .pd-select { width: auto; min-width: 140px; }
 .pp-planmonthbar strong { min-width: 64px; text-align: center; font-variant-numeric: tabular-nums; }
-/* "Live" jump-back button (Plan view's month stepper — Stack view's own
-   copy of this control was removed with Stack view, Round-2 item 7) — same
-   on/off shape as .pp-tab.active / .pd-btn-primary: a solid brand-red fill
-   with white text is always legible regardless of theme, so it's exempt
-   from the dark-mode #fff audit like those two. */
-.pp-livebtn { padding: 4px 12px; font-size: var(--pd-fs-sm); }
-.pp-livebtn.is-live { background: var(--pd-red); border-color: var(--pd-red); color: #fff; cursor: default; }
-.pp-livebtn.is-live:hover { background: var(--pd-red); border-color: var(--pd-red); }
 .pp-planstage { position: relative; }
 .pp-planimgwrap { position: relative; width: 100%; height: 0; }
 .pp-planimgwrap img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; user-select: none; -webkit-user-drag: none; }
@@ -1180,9 +1193,7 @@
    to match. */
 .bim-conestage { position: relative; max-width: 100%; touch-action: none; }
 .bim-conestage img { width: 100%; display: block; cursor: crosshair; border-radius: var(--pd-radius); user-select: none; -webkit-user-drag: none; }
-.bim-conestage svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-.bim-conewedge { cursor: grab; }
-.bim-conewedge:active { cursor: grabbing; }
+/* .bim-conewedge-svg (shared, above) already positions the svg full-bleed. */
 /* Fifth round item 8: "only 1/4 the size of the pin" — the pin dot
    (.bim-pinstage-dot below) is 22px as of item 3 (was 14px, before it needed
    to hold a person/drone icon), so this stays proportioned at 6px. A round

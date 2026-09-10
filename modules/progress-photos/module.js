@@ -755,8 +755,10 @@ window.ProgressPhotos = (function () {
       $('pp-mkvistoggle').onclick = function () { setMarkupGlobalVisible(!markupGlobalVisible()); syncMkVisBtn(); render(); };
     }
     // Fifth round item 1: "+ Add media" is now a dropdown deciding the media
-    // type UP FRONT — Photo/Video open the same modal pre-set to that type
-    // (mediaTypeSelectorHTML/wireMediaTypeSelector both take the preset now).
+    // type UP FRONT — Photo/Video/360° open the modal pre-set to that type
+    // (openUpload({mtype}) reads it once and never offers an in-form switch;
+    // 360° routes to its own dedicated flow instead — see the dispatcher
+    // below).
     if ($('pp-add')) $('pp-add').onclick = function (e) {
       e.stopPropagation();
       var menu = $('pp-addmenu');
@@ -767,6 +769,10 @@ window.ProgressPhotos = (function () {
       Array.prototype.forEach.call($('pp-addmenu').querySelectorAll('[data-addtype]'), function (b) {
         b.onclick = function () {
           $('pp-addmenu').hidden = true;
+          // Item 3: 360° is a single-video-in/single-panorama-out flow, not
+          // a batch of N files -> N rows -- it gets its own dedicated modal
+          // rather than being shoehorned into openUpload's staging pipeline.
+          if (this.dataset.addtype === '360') { open360Upload(); return; }
           openUpload({ mtype: this.dataset.addtype });
         };
       });
@@ -781,6 +787,7 @@ window.ProgressPhotos = (function () {
     wireSelBar();
     wireLightboxMagnifier();
     wireLightboxKpResizeDrag();
+    wirePanoDrag();
 
     document.addEventListener('keydown', function (e) {
       if (!$('pp-lightbox') || $('pp-lightbox').hidden) return;
@@ -935,7 +942,13 @@ window.ProgressPhotos = (function () {
       // Only the transform-fallback rows need their photo_url signed at
       // all for the GRID — a row with a real thumb_url never needs its
       // full photo re-derived into a second, redundant small copy.
-      if (!r.thumb_url && r.photo_url && !thumbCache[r.photo_url] && transformPaths.indexOf(r.photo_url) < 0) {
+      // Item 7 (performance): a VIDEO row's photo_url is a video file, not
+      // an image — an image-transform request against it can only fail or
+      // waste a round trip, and thumb()'s own video branch never reads
+      // thumbCache at all (it resolves a video preview via urlOf()/the lazy
+      // intersection-observer path instead). Excluded here rather than left
+      // to silently populate a cache nothing looks at.
+      if (r.media_type !== 'video' && !r.thumb_url && r.photo_url && !thumbCache[r.photo_url] && transformPaths.indexOf(r.photo_url) < 0) {
         transformPaths.push(r.photo_url);
       }
     });
@@ -1282,12 +1295,11 @@ window.ProgressPhotos = (function () {
   // repeating the surrounding <div class="pd-field">/<label> markup.
   function worksMultiFieldHTML(idPrefix, existingWorks) {
     _worksSel[idPrefix] = (existingWorks || []).slice();
-    if (!scheduleHasActivities()) {
-      return '<div class="pd-field pp-span2"><label>Works</label>' +
-        '<p class="pp-hint">No works available for this project.</p>' +
-        '<p class="pp-hint">Works must be established in the Project Schedule under the ' +
-        'Execution Phase before they can be selected here.</p></div>';
-    }
+    // Item 8: a project with no schedule activities to offer has nothing
+    // for this field to do — no picker to open, nothing to require. The
+    // field is omitted outright rather than shown with an explanatory empty
+    // state; requiredFieldsMissing() already never asks for it in this case.
+    if (!scheduleHasActivities()) return '';
     return '<div class="pd-field pp-span2"><label>Works' + reqMark() + '</label>' +
       '<div id="' + idPrefix + '-worksfield">' + worksChipsHTML(idPrefix) +
       '<button type="button" class="pd-btn" id="' + idPrefix + '-worksadd">+ Add works</button></div></div>';
@@ -1873,11 +1885,12 @@ window.ProgressPhotos = (function () {
       (months.length
         ? '<div class="pp-planmonthbar">' +
             '<span class="pp-planfloorlabel">Month</span>' +
+            '<button class="pp-iconbtn" id="pp-plan-mfirst" title="First month">«</button>' +
             '<button class="pp-iconbtn" id="pp-plan-mprev" title="Earlier month">‹</button>' +
             '<strong>' + (cutoff ? Fmt.esc(cutoff) : 'All') + '</strong>' +
             '<button class="pp-iconbtn" id="pp-plan-mnext" title="Later month">›</button>' +
+            '<button class="pp-iconbtn" id="pp-plan-mlast" title="Last month">»</button>' +
             '<button class="pd-btn" id="pp-plan-mplay">' + (planPlaying ? 'Stop' : '▶ Play') + '</button>' +
-            '<button class="pd-btn pp-livebtn' + (planMonth == null ? ' is-live' : '') + '" id="pp-plan-mlive" title="Back to the latest month">Live</button>' +
             '<span class="pp-hint">as of the end of this month</span>' +
           '</div>'
         : '<p class="pp-hint">No dated captures pinned on this floor yet.</p>') +
@@ -1930,6 +1943,18 @@ window.ProgressPhotos = (function () {
     var months = planMonthsAvailable(pins);
     var cutoff = planMonth || (months.length ? months[months.length - 1] : null);
     var clusters = planClusters(pins, cutoff);
+    // Item 9: First/Last jump straight to the earliest/latest available
+    // month, instead of stepping through every intervening one — the "Live"
+    // button this replaces only ever jumped to the LATEST month; First adds
+    // the missing other end, and Last covers what Live used to do (the
+    // default `cutoff` already resolves to the latest month when
+    // `planMonth` is null, so setting it explicitly here is equivalent).
+    if ($('pp-plan-mfirst')) $('pp-plan-mfirst').onclick = function () {
+      stopPlanMonthPlay(); planMonth = months[0]; render();
+    };
+    if ($('pp-plan-mlast')) $('pp-plan-mlast').onclick = function () {
+      stopPlanMonthPlay(); planMonth = months[months.length - 1]; render();
+    };
     if ($('pp-plan-mprev')) $('pp-plan-mprev').onclick = function () {
       var i = months.indexOf(cutoff); planMonth = months[Math.max(0, i - 1)]; render();
     };
@@ -1947,14 +1972,6 @@ window.ProgressPhotos = (function () {
         planMonth = ms[i + 1]; render();
       }, 900);
       render();
-    };
-    // Same "null = recorded/latest, a value = scrubbed" convention Project
-    // Schedule's Vertical Stacking timeline established — Live jumps back to
-    // it in one click instead of stepping through every intervening month.
-    if ($('pp-plan-mlive')) $('pp-plan-mlive').onclick = function () {
-      if (planMonth == null) return;   // already live — nothing to do
-      stopPlanMonthPlay();
-      planMonth = null; render();
     };
     Array.prototype.forEach.call(document.querySelectorAll('#pp-view [data-cluster]'), function (btn) {
       btn.onclick = function () { openPlanClusterList(clusters[+this.dataset.cluster]); };
@@ -1995,6 +2012,20 @@ window.ProgressPhotos = (function () {
         'data-lazyvideo="' + r.id + '" data-cls="' + cls + '">' +
         '<span class="' + cls + ' pp-noimg" title="Video"><span data-ico="video" data-ico-size="18"></span></span>' +
         '<span class="pp-vidplay"></span></span>';
+    }
+    // Item 3: "the representative frame will also be the thumbnail in
+    // previews" -- a 360 row's thumb_url IS that frame, so it renders as a
+    // plain photo tile with a small "360°" badge to distinguish it at a
+    // glance; a missing frame degrades to the same placeholder a photo
+    // with no preview gets.
+    if (r.media_type === '360') {
+      if (!u) return '<div class="' + cls + ' pp-noimg" title="Preview unavailable">' +
+                     '<span data-ico="compass" data-ico-size="18"></span></div>';
+      var filt360 = adjustmentsAreDefault(r.adjustments) ? '' : ' style="filter:' + Fmt.esc(cssFilterFor(adjustmentsOf(r))) + '"';
+      return '<span class="pp-panothumbwrap ' + cls + '-wrap" data-act="open" data-id="' + r.id + '">' +
+        '<img class="' + cls + '" src="' + Fmt.esc(u) + '" loading="lazy"' + filt360 + ' ' +
+          'alt="' + Fmt.esc(r.description || '360° photo') + '" />' +
+        '<span class="pp-360badge">360°</span></span>';
     }
     if (!u && !isVideo) return '<div class="' + cls + ' pp-noimg" title="Preview unavailable">' +
                    '<span data-ico="camera" data-ico-size="18"></span></div>';
@@ -2661,12 +2692,25 @@ window.ProgressPhotos = (function () {
     // completes in the background.
     var u = thumbUrlOf(r);
     var isVideo = r.media_type === 'video';
-    var imgEl = $('pp-lb-img'), vidEl = $('pp-lb-video');
+    // Item 4: "viewing 360 photos should be similar to viewing photos
+    // except without option for mark-up but key plan option should be
+    // available" -- media_type stays '360' for both, distinguishing it
+    // from an ordinary photo only in which element shows it.
+    var isPano = r.media_type === '360';
+    var imgEl = $('pp-lb-img'), vidEl = $('pp-lb-video'), panoWrap = $('pp-lb-panowrap'), panoImg = $('pp-lb-pano');
+    lightboxPanoHeadingDeg = 0;   // a fresh photo/step always resets the followed heading
     if (isVideo) {
       if (imgEl) { imgEl.hidden = true; imgEl.src = ''; }
+      if (panoWrap) panoWrap.hidden = true;
       if (vidEl) { vidEl.hidden = false; vidEl.src = ''; }   // resolved below — a video has no separate thumbnail to stand in with
+    } else if (isPano) {
+      if (imgEl) { imgEl.hidden = true; imgEl.src = ''; }
+      if (vidEl) { vidEl.hidden = true; vidEl.pause(); vidEl.src = ''; }
+      if (panoWrap) { panoWrap.hidden = false; panoWrap.scrollLeft = 0; }
+      if (panoImg) panoImg.src = u || '';   // the representative frame stands in until the wide panorama is signed
     } else {
       if (vidEl) { vidEl.hidden = true; vidEl.pause(); vidEl.src = ''; }
+      if (panoWrap) panoWrap.hidden = true;
       if (imgEl) { imgEl.hidden = false; imgEl.src = u || ''; }
     }
     // Swap in the real full-res image/video once signed. Guarded against
@@ -2693,11 +2737,14 @@ window.ProgressPhotos = (function () {
       if (!$('pp-lightbox') || $('pp-lightbox').hidden) return;
       u = full;
       if (isVideo) { if (vidEl) vidEl.src = full; }
+      else if (isPano) { if (panoImg) panoImg.src = full; }
       else { if (imgEl) imgEl.src = full; }
     });
-    // Item 5: exposure/brightness/contrast render live via CSS filter —
-    // photos only (adjustments has no meaning for a video clip here).
-    if (imgEl) imgEl.style.filter = isVideo ? '' : cssFilterFor(adjustmentsOf(r));
+    // Item 5 (overnight batch): exposure/brightness/contrast now render
+    // live via CSS filter on video too, not just photos -- CSS `filter`
+    // applies to a <video> element exactly the same way it does an <img>.
+    var adjFilterEl = isVideo ? vidEl : (isPano ? panoImg : imgEl);
+    if (adjFilterEl) adjFilterEl.style.filter = cssFilterFor(adjustmentsOf(r));
     $('pp-lb-cap').innerHTML =
       '<strong>' + Fmt.esc(r.view_name || r.description || 'Progress photo') + '</strong>' +
       '<span>' + Fmt.esc(tradesOf(r).concat(worksOf(r), [r.location]).filter(Boolean).join(' · ')) +
@@ -2716,8 +2763,12 @@ window.ProgressPhotos = (function () {
     // List/Gallery tile, and vice versa. The lightbox still keeps its own
     // `lightboxMarkupVisible` var (paintMarkupOverlay reads it), it's just
     // seeded FROM and written BACK to the shared preference below.
+    // Item 5: "no need for mark-up for video and 360" -- markup stays
+    // photo-only, both the toggle and the edit button.
+    var markupExcluded = isVideo || isPano;
     var mkBtn = $('pp-lb-markuptoggle'), mkEditBtn = $('pp-lb-markupedit');
-    if (mkEditBtn) mkEditBtn.style.display = canWrite ? '' : 'none';
+    if (mkBtn) mkBtn.style.display = markupExcluded ? 'none' : '';
+    if (mkEditBtn) mkEditBtn.style.display = (canWrite && !markupExcluded) ? '' : 'none';
     if (mkBtn) mkBtn.onclick = function () {
       lightboxMarkupVisible = !lightboxMarkupVisible;
       setMarkupGlobalVisible(lightboxMarkupVisible);
@@ -2733,18 +2784,21 @@ window.ProgressPhotos = (function () {
         paintMarkupOverlay(r);
       });
     };
-    // Item 5 — same shape as the markup edit button above: hidden for a
-    // video (adjustments are photo-only) and for a read-only viewer.
+    // Item 5 (overnight batch): Adjust now extends to video (and 360) --
+    // only Markup stays photo-only, per the owner's explicit instruction.
+    // The filter is applied to whichever media element is actually on
+    // screen (the <video> for a video row, the <img> otherwise).
     var adjBtn = $('pp-lb-adjustedit');
     if (adjBtn) {
-      adjBtn.style.display = (canWrite && !isVideo) ? '' : 'none';
+      adjBtn.style.display = canWrite ? '' : 'none';
       adjBtn.onclick = function () {
         openAdjustEditor(u, r.adjustments || {}, async function (newAdj) {
           r.adjustments = newAdj;
-          if (imgEl) imgEl.style.filter = cssFilterFor(newAdj);
+          var filterEl = isVideo ? vidEl : (isPano ? panoImg : imgEl);
+          if (filterEl) filterEl.style.filter = cssFilterFor(newAdj);
           var w = await tolerantWrite({ table: TABLE, op: 'update', id: r.id, patch: { adjustments: newAdj, updated_at: new Date().toISOString() } });
           if (!w.ok) UI.toast(w.error && w.error.message || 'Could not save adjustments', 'error');
-        });
+        }, isVideo);
       };
     }
     // Item 4: the key-plan toggle -- shown only when this photo actually has
@@ -2752,8 +2806,10 @@ window.ProgressPhotos = (function () {
     // change (lightboxKeyPlanVisible), matching the per-photo scope the
     // button itself now has -- stepping ←/→ to a different item must not
     // carry the overlay over onto it.
+    // Item 5: "no need also key plan for video, leave this only for photo
+    // and 360" -- gated on media type in addition to whether a pin exists.
     var kpBtn = $('pp-lb-keyplan');
-    var kpHasPin = window.BIM && BIM.pinInfoFor && !!BIM.pinInfoFor('photo', r.id);
+    var kpHasPin = !isVideo && window.BIM && BIM.pinInfoFor && !!BIM.pinInfoFor('photo', r.id);
     if (kpBtn) {
       kpBtn.style.display = kpHasPin ? '' : 'none';
       kpBtn.onclick = function () {
@@ -2778,6 +2834,11 @@ window.ProgressPhotos = (function () {
   }
   var lightboxMarkupVisible = true;
   var lightboxKeyPlanVisible = false;
+  // Item 4: how far (in degrees) the 360° viewer has been panned away from
+  // its opening position — reset to 0 whenever a photo opens/steps, updated
+  // live by wirePanoDrag() below, and read by paintKeyPlanOverlay() so the
+  // key-plan cone rotates to keep following the direction actually on screen.
+  var lightboxPanoHeadingDeg = 0;
   // Round-2 item 3 (2026-09-02): the lightbox's magnifier — replaces the
   // zoom in/out buttons item 10 added ("zoom is only for... the image pop-up
   // view" now means a magnifier, not a scale control). A circular lens
@@ -2882,20 +2943,55 @@ window.ProgressPhotos = (function () {
       }
     }
     if (coneEl) {
-      // A cone is drawn only when a facing direction was actually recorded
-      // and the item isn't marked drone/top-view (direction_na) — a
-      // fabricated cone would claim a facing direction nobody captured.
-      var hasDir = pin && !pin.direction_na && pin.direction_deg !== null && pin.direction_deg !== undefined;
-      if (hasDir) {
-        coneEl.hidden = false;
-        coneEl.style.left = (pin.x_norm * 100) + '%';
-        coneEl.style.top = (pin.y_norm * 100) + '%';
-        coneEl.style.transform = 'translate(-50%,-100%) rotate(' + pin.direction_deg + 'deg)';
-      } else {
-        coneEl.hidden = true;
-      }
+      // ⚠️ The cone is drawn by BIM.coneWedgeSVG(pin) — the SAME accurate
+      // pie-slice geometry (built from the pin's own edge1/edge2) the
+      // Plans-tab marker and the capture widget itself use, not a generic
+      // fixed-angle wedge merely rotated by the bisector direction_deg.
+      // "display the pin and camera angle in the same way they were
+      // defined" — a bug fix, not just a redraw: the old rotated-wedge
+      // approach here could not represent a cone's real width or reach at
+      // all, only its facing direction. Returns '' (drawn as hidden) for a
+      // drone/top-view mark or a pin with no direction recorded at all.
+      // Item 4: "when navigating through the 360 photo, the key plan if
+      // shown should also have the camera direction rotate to follow" --
+      // for a 360 row the cone is additionally rotated by however far the
+      // pan viewer has moved (lightboxPanoHeadingDeg); for an ordinary
+      // photo that offset is always 0, so this is the same drawing as
+      // before for everything that isn't a 360 photo.
+      var headingOffset = (r.media_type === '360') ? lightboxPanoHeadingDeg : 0;
+      var svg = (pin && window.BIM && BIM.coneWedgeSVGAt) ? BIM.coneWedgeSVGAt(pin, headingOffset) : '';
+      if (svg) { coneEl.hidden = false; coneEl.innerHTML = svg; }
+      else { coneEl.hidden = true; coneEl.innerHTML = ''; }
     }
     setShown(true);
+  }
+  // Item 4: drag-to-pan for the 360° viewer -- .pp-lb-panowrap is a plain
+  // overflow-x:auto strip (native touch swipe for free); this adds
+  // click-and-drag for a mouse and, on every scroll however it happened,
+  // updates lightboxPanoHeadingDeg and re-paints the key-plan cone so it
+  // keeps following the direction actually on screen.
+  function wirePanoDrag() {
+    var wrap = $('pp-lb-panowrap');
+    if (!wrap) return;
+    var dragging = false, startX = 0, startScroll = 0;
+    function onScrollChange() {
+      var maxScroll = Math.max(1, wrap.scrollWidth - wrap.clientWidth);
+      lightboxPanoHeadingDeg = (wrap.scrollLeft / maxScroll) * 360;
+      var r = byId(lightboxIds[lightboxAt]);
+      if (r && r.media_type === '360' && lightboxKeyPlanVisible) paintKeyPlanOverlay(r);
+    }
+    wrap.addEventListener('pointerdown', function (e) {
+      dragging = true; startX = e.clientX; startScroll = wrap.scrollLeft;
+      try { wrap.setPointerCapture(e.pointerId); } catch (err) {}
+    });
+    wrap.addEventListener('pointermove', function (e) {
+      if (!dragging) return;
+      wrap.scrollLeft = startScroll - (e.clientX - startX);
+      onScrollChange();
+    });
+    wrap.addEventListener('pointerup', function () { dragging = false; });
+    wrap.addEventListener('pointercancel', function () { dragging = false; });
+    wrap.addEventListener('scroll', onScrollChange);
   }
   // Round-2 item 4: drag the overlay's bottom-left corner to resize it —
   // pinned top/right, so only the WIDTH needs to change; the <img>'s own
@@ -4430,26 +4526,38 @@ window.ProgressPhotos = (function () {
   // openMarkupEditor's own contract exactly (never called on Cancel) so both
   // editors' callers (Add Media's staged-file grid, the lightbox) look the
   // same either way.
-  function openAdjustEditor(imageUrl, initialAdjustments, onSave) {
+  // Item 5 (overnight batch): "extend feature of adjusting photo to videos
+  // and 360. but no need for mark-up for video and 360." -- a new, optional
+  // `isVideo` flag switches the live preview from the canvas+sharpen
+  // pipeline (which needs a decoded <img> to draw from) to a plain <video>
+  // with the SAME cssFilterFor() applied directly as a CSS filter -- a
+  // browser applies `filter` to a <video> exactly like an <img>, so
+  // exposure/brightness/contrast still preview live with no per-frame
+  // canvas work. ⚠️ Sharpness is dropped for video, not silently ignored --
+  // it needs pixel convolution (getImageData/putImageData), which has no
+  // sane per-frame-of-a-playing-video cost, and CSS has no sharpen filter
+  // to fall back to either; the slider simply isn't offered, matching the
+  // existing rule that Sharpness never applies where CSS can't express it.
+  function openAdjustEditor(imageUrl, initialAdjustments, onSave, isVideo) {
     var adj = adjustmentsOf({ adjustments: initialAdjustments });
     var FIELDS = [
       { key: 'exposure', label: 'Exposure' },
       { key: 'brightness', label: 'Brightness' },
-      { key: 'contrast', label: 'Contrast' },
-      { key: 'sharpness', label: 'Sharpness' }
+      { key: 'contrast', label: 'Contrast' }
     ];
+    if (!isVideo) FIELDS.push({ key: 'sharpness', label: 'Sharpness' });
+    var mediaHTML = isVideo
+      ? '<video id="pp-adj-vid" src="' + Fmt.esc(imageUrl) + '" muted playsinline loop autoplay controls style="max-width:100%;display:block;"></video>'
+      // The <img> stays visible and laid out (needed so getBoundingClientRect
+      // reports a real size to draw the canvas at) — the canvas sits
+      // absolutely on top of it and, since drawImage repaints the whole
+      // rect opaquely, fully covers it the instant the first redraw runs.
+      // Same overlay pairing openMarkupEditor's own canvas uses.
+      : '<img id="pp-adj-img" src="' + Fmt.esc(imageUrl) + '" alt="" /><canvas id="pp-adj-canvas"></canvas>';
     var html =
       '<div class="pd-modal-header"><h3>Adjust</h3><button class="pd-modal-close" data-close>×</button></div>' +
       '<div class="pp-form">' +
-        // The <img> stays visible and laid out (needed so getBoundingClientRect
-        // reports a real size to draw the canvas at) — the canvas sits
-        // absolutely on top of it and, since drawImage repaints the whole
-        // rect opaquely, fully covers it the instant the first redraw runs.
-        // Same overlay pairing openMarkupEditor's own canvas uses.
-        '<div class="pp-adj-canvaswrap pp-mk-canvaswrap" id="pp-adj-canvaswrap">' +
-          '<img id="pp-adj-img" src="' + Fmt.esc(imageUrl) + '" alt="" />' +
-          '<canvas id="pp-adj-canvas"></canvas>' +
-        '</div>' +
+        '<div class="pp-adj-canvaswrap pp-mk-canvaswrap" id="pp-adj-canvaswrap">' + mediaHTML + '</div>' +
         '<div class="pp-adj-sliders">' + FIELDS.map(function (f) {
           return '<label class="pp-adj-row">' + f.label +
             ' <span class="pp-adj-val" id="pp-adj-val-' + f.key + '">' + adj[f.key] + '</span>' +
@@ -4464,21 +4572,28 @@ window.ProgressPhotos = (function () {
     // never a separate [data-close] re-wire, which would miss the backdrop
     // path and leak this resize listener exactly like the audited bug did.
     var m = openModal(html, 700, function () { window.removeEventListener('resize', redraw); });
-    var canvas = $('pp-adj-canvas'), ctx = canvas.getContext('2d'), img = $('pp-adj-img');
-    function redraw() {
-      var r = img.getBoundingClientRect();
-      // A 0-sized box (image not yet loaded/laid out — including the whole
-      // fake-DOM test harness, which never lays anything out) draws nothing
-      // rather than a canvas full of NaN geometry.
-      if (!r.width || !r.height) return;
-      canvas.width = r.width; canvas.height = r.height;
-      canvas.style.width = r.width + 'px'; canvas.style.height = r.height + 'px';
-      ctx.filter = cssFilterFor(adj);
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      ctx.filter = 'none'; // sharpen's own convolution must not be filtered AGAIN on top
-      applySharpen(ctx, canvas.width, canvas.height, adj.sharpness);
+    var redraw;
+    if (isVideo) {
+      var vid = $('pp-adj-vid');
+      redraw = function () { if (vid) vid.style.filter = cssFilterFor(adj); };
+      redraw();
+    } else {
+      var canvas = $('pp-adj-canvas'), ctx = canvas.getContext('2d'), img = $('pp-adj-img');
+      redraw = function () {
+        var r = img.getBoundingClientRect();
+        // A 0-sized box (image not yet loaded/laid out — including the whole
+        // fake-DOM test harness, which never lays anything out) draws nothing
+        // rather than a canvas full of NaN geometry.
+        if (!r.width || !r.height) return;
+        canvas.width = r.width; canvas.height = r.height;
+        canvas.style.width = r.width + 'px'; canvas.style.height = r.height + 'px';
+        ctx.filter = cssFilterFor(adj);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        ctx.filter = 'none'; // sharpen's own convolution must not be filtered AGAIN on top
+        applySharpen(ctx, canvas.width, canvas.height, adj.sharpness);
+      };
+      if (img.complete) redraw(); else img.onload = redraw;
     }
-    if (img.complete) redraw(); else img.onload = redraw;
     window.addEventListener('resize', redraw);
 
     FIELDS.forEach(function (f) {
@@ -4564,13 +4679,22 @@ window.ProgressPhotos = (function () {
       : '<p class="pp-hint">No location selected yet.</p>') +
       '<button type="button" class="pd-btn" id="' + idPrefix + '-locadd">' + (hasAny ? 'Change location…' : '+ Add field') + '</button>';
   }
+  // Item 8: a project with no Location Breakdown configured in the schedule
+  // has nothing for this field to offer — no tree to pick from, no activity
+  // to resolve against. Rather than showing a picker button that only ever
+  // opens to "No Location Breakdown set up for this project yet.", the whole
+  // block (label, picker, resolved-activity context) is omitted entirely and
+  // the field is optional by construction (requiredFieldsMissing below never
+  // asks for it). View name is unrelated to the schedule and always shown.
   function locationFieldHTML(idPrefix, existingValues, existingViewName) {
     _locSel[idPrefix] = Object.assign({}, existingValues || {});
-    return '<div class="pp-span2 pp-wbssection"><label>Location' + (LOC_LEVELS.length ? reqMark() : '') + '</label>' +
-        '<div id="' + idPrefix + '-locfield">' + locChosenHTML(idPrefix) + '</div>' +
-      '</div>' +
-      '<div class="pp-actctx pp-span2" id="' + idPrefix + '-actctx"></div>' +
-      codeOverlayHTML(idPrefix, []) +
+    var locBlock = LOC_LEVELS.length
+      ? '<div class="pp-span2 pp-wbssection"><label>Location' + reqMark() + '</label>' +
+          '<div id="' + idPrefix + '-locfield">' + locChosenHTML(idPrefix) + '</div>' +
+        '</div>' +
+        '<div class="pp-actctx pp-span2" id="' + idPrefix + '-actctx"></div>'
+      : '';
+    return locBlock + codeOverlayHTML(idPrefix, []) +
       '<div class="pd-field pp-span2"><label>View name' + reqMark() +
         ' <span class="pp-optnote">(what this specific photo/view shows)</span></label>' +
         '<input class="pd-input" id="' + idPrefix + '-viewname" value="' + Fmt.esc(existingViewName || '') + '" required /></div>';
@@ -4693,47 +4817,24 @@ window.ProgressPhotos = (function () {
     hydrate(ctx);
   }
 
-  // Add-media type selector (18-item list item 4). Photo is the default and
-  // the only kind this form has ever produced; Video is a plain,
-  // unprocessed upload sharing every other field (trade/works/location/key
-  // plan all apply the same way to a clip).
-  function mediaTypeSelectorHTML(idPrefix, cur) {
-    cur = cur || 'photo';
-    return '<div class="pd-field pp-span2"><label>Type</label>' +
-      '<div class="pp-mtypesel" role="tablist">' +
-        '<button type="button" class="pp-mtype' + (cur === 'photo' ? ' active' : '') +
-          '" data-mtype="photo" id="' + idPrefix + '-mtype-photo">Photo</button>' +
-        '<button type="button" class="pp-mtype' + (cur === 'video' ? ' active' : '') +
-          '" data-mtype="video" id="' + idPrefix + '-mtype-video">Video</button>' +
-      '</div></div>';
-  }
-  function wireMediaTypeSelector(idPrefix, initial, onChange) {
-    var cur = initial || 'photo';
-    var fileInput = $(idPrefix + '-files');
-    function apply() {
-      if (fileInput) fileInput.accept = cur === 'video' ? 'video/*' : 'image/*';
-      // ⚠️ Audit fix: this used to run unconditionally on every call
-      // (including the very FIRST, before the user touches anything), so
-      // the markup's own `capture="environment"` — meant to hint mobile
-      // browsers to open the rear camera directly for a photo — was
-      // stripped on arrival and never actually took effect in Photo mode
-      // either. It's removed only in Video mode now, and restored when
-      // switching back to Photo, so toggling between the two is reversible.
-      if (fileInput) {
-        if (cur === 'video') fileInput.removeAttribute('capture');
-        else fileInput.setAttribute('capture', 'environment');
-      }
-      var pBtn = $(idPrefix + '-mtype-photo'), vBtn = $(idPrefix + '-mtype-video');
-      if (pBtn) pBtn.classList.toggle('active', cur === 'photo');
-      if (vBtn) vBtn.classList.toggle('active', cur === 'video');
-      if (onChange) onChange(cur);
-    }
-    ['photo', 'video'].forEach(function (t) {
-      var btn = $(idPrefix + '-mtype-' + t);
-      if (btn) btn.onclick = function () { cur = t; apply(); };
-    });
-    apply();
-    return { get: function () { return cur; } };
+  // Overnight batch item 6: "since there is already a drop down to choose
+  // photo, video, or 360 when clicking add media, no need for the type
+  // choices inside add media form." mediaTypeSelectorHTML/
+  // wireMediaTypeSelector (the in-form Photo/Video toggle) are RETIRED —
+  // the dropdown in the topbar decides the kind before this modal ever
+  // opens (preset.mtype), so the modal is now built once, for one fixed
+  // kind, with no in-form way to switch it.
+
+  // Turns a captured Blob (no filename of its own) into something the rest
+  // of this file already knows how to handle uniformly with a chosen File —
+  // both `stagedFiles` and `saveCapture`/`uploadFile` read `.name`/`.type`.
+  function blobToFile(blob, kind) {
+    var ext = kind === 'video'
+      ? (/mp4/.test(blob.type || '') ? '.mp4' : '.webm')
+      : '.jpg';
+    var name = (kind === 'video' ? 'capture_video_' : 'capture_photo_') + Date.now() + ext;
+    try { return new File([blob], name, { type: blob.type }); }
+    catch (e) { blob.name = name; return blob; } // ancient browsers lacking a spec File ctor — degrade to a name-tagged Blob
   }
 
   var _uploadModalOpen = false; // guards against stacking a 2nd "+ Add media" overlay on a fast
@@ -4744,34 +4845,54 @@ window.ProgressPhotos = (function () {
     if (_uploadModalOpen) return;   // already open — don't stack a second copy on top of it
     _uploadModalOpen = true;
     preset = preset || {};
+    // ⚠️ Fixed for the life of this modal — the dropdown that opened it
+    // (or a preset caller) already decided Photo vs Video; see item 6 above.
+    var mtype = preset.mtype === 'video' ? 'video' : 'photo';
+    var isVideoKind = mtype === 'video';
+    var nounSingular = isVideoKind ? 'video' : 'photo';
+    var nounPlural = isVideoKind ? 'Videos' : 'Photos';
     var today = new Date().toISOString().slice(0, 10);
     // Item 5: markup is now available AT UPLOAD TIME, before the file is even
     // saved — one local, in-memory annotation per staged file, keyed by
     // index, applied to a throwaway object URL (never uploaded anywhere) and
-    // merged into that file's own `markup` column on save. Rebuilt every
-    // time the file input changes (a fresh batch starts with no markup).
-    var pendingMarkup = {};   // file-array index -> markup objects[]
+    // merged into that file's own `markup` column on save.
+    var pendingMarkup = {};   // staged-file index -> markup objects[]
     // Item 5 (fourth round, 2026-08-30): exposure/brightness/contrast/
     // sharpness, available at upload time for the same reason markup is —
     // one in-memory {exposure,brightness,contrast,sharpness} per staged file.
-    var pendingAdjust = {};   // file-array index -> adjustments object
-    var stagedUrls = [];      // parallel array of object URLs, revoked on close/replace
-    function revokeStaged() {
-      stagedUrls.forEach(function (u) { try { URL.revokeObjectURL(u); } catch (e) {} }); stagedUrls = [];
+    var pendingAdjust = {};   // staged-file index -> adjustments object
+    // Item 1: a capture (Take Photo/Take Video) and a chosen file (Upload
+    // Photo/Upload Video) both land in the SAME array — one staged batch,
+    // built up additively by either route, in whichever order the planner
+    // used them.
+    var stagedFiles = [];     // File | Blob-with-.name, in staging order
+    var stagedUrls = [];      // parallel object URLs, created lazily, revoked on close
+    function cleanupStaged() {
+      stagedUrls.forEach(function (u) { try { URL.revokeObjectURL(u); } catch (e) {} });
       // openModal() calls this onClose on EVERY close path (×, Cancel, backdrop
       // click, and a programmatic m.close() after a successful upload), so this
       // is the one place that reliably clears the guard whichever way it closed.
+      if (window.Capture && Capture.close) Capture.close();
       _uploadModalOpen = false;
     }
     var html =
-      '<div class="pd-modal-header"><h3>Add media</h3>' +
+      '<div class="pd-modal-header"><h3>Add ' + nounPlural.toLowerCase() + '</h3>' +
         '<button class="pd-modal-close" data-close>×</button></div>' +
       '<div class="pp-form">' +
         '<p class="pp-hint">Fields below apply to every file in this batch — edit any ' +
           'individual item afterwards.</p>' +
-        mediaTypeSelectorHTML('pp', preset.mtype) +
-        '<div class="pd-field" id="pp-filesfield"><label>Photos</label>' +
-          '<input class="pd-input" type="file" id="pp-files" accept="image/*" capture="environment" multiple /></div>' +
+        '<div class="pd-field" id="pp-filesfield"><label>' + nounPlural + '</label>' +
+          // Item 1: "provide separate buttons for take photo/video and
+          // upload photo/video" -- Take opens the in-app camera overlay
+          // (capture.js), Upload triggers the same hidden file input this
+          // form has always used, unchanged in every other respect.
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 8px;">' +
+            '<button type="button" class="pd-btn" id="pp-take">Take ' + (isVideoKind ? 'Video' : 'Photo') + '</button>' +
+            '<button type="button" class="pd-btn" id="pp-choosefiles">Upload ' + (isVideoKind ? 'Video' : 'Photo') + '</button>' +
+          '</div>' +
+          '<input class="pd-input" type="file" id="pp-files" hidden accept="' + (isVideoKind ? 'video/*' : 'image/*') + '"' +
+            (isVideoKind ? '' : ' capture="environment"') + ' multiple />' +
+        '</div>' +
         '<div class="pp-gallery" id="pp-stagedgrid" style="margin:8px 0;"></div>' +
         '<div class="pp-form2">' +
           '<div class="pd-field"><label>Description</label>' +
@@ -4788,45 +4909,34 @@ window.ProgressPhotos = (function () {
         '<button class="pd-btn" data-close>Cancel</button>' +
         '<button class="pd-btn pd-btn-primary" id="pp-save">Upload</button></div>';
 
-    var m = openModal(html, 640, revokeStaged);
+    var m = openModal(html, 640, cleanupStaged);
     wireLocationField('pp');
     wireWorksMultiField('pp');
     if (window.BIM) BIM.wirePinField('pp');
-    // ⚠️ ROOT-CAUSE FIX (fifth round item 1): switching Photo<->Video after a
-    // file was already staged left the WRONG kind of file sitting there — a
-    // file input's own FileList can't be reassigned by script, so changing
-    // `accept`/`capture` did nothing to whatever was already chosen; only
-    // re-picking files through the input ever rebuilt the staged grid. Every
-    // type change now clears the whole staged batch (revoking object URLs,
-    // dropping pending markup/adjustments, resetting the input itself), so a
-    // photo staged for "Photo" can never survive into a "Video" upload.
-    var mtype = wireMediaTypeSelector('pp', preset.mtype, function (t) {
-      var fld = $('pp-filesfield'); if (fld) fld.querySelector('label').textContent = t === 'video' ? 'Videos' : 'Photos';
-      var filesInput = $('pp-files');
-      if (filesInput && filesInput.value) filesInput.value = '';
-      revokeStaged();
-      pendingMarkup = {}; pendingAdjust = {};
-      var grid = $('pp-stagedgrid'); if (grid) grid.innerHTML = '';
-    });
-    // Item 5 — a thumbnail + "Markup" button per staged file, appearing the
-    // moment files are chosen (before Upload is ever pressed).
-    if ($('pp-files')) $('pp-files').onchange = function () {
-      revokeStaged();
-      pendingMarkup = {}; pendingAdjust = {};
-      var files = this.files || [];
-      var grid = $('pp-stagedgrid');
-      if (!grid) return;
-      grid.innerHTML = Array.prototype.map.call(files, function (f, i) {
-        var isImg = /^image\//.test(f.type);
-        var url = isImg ? URL.createObjectURL(f) : '';
-        if (url) stagedUrls[i] = url;
+
+    // Item 2: the staged-file grid's video preview -- a video file used to
+    // render as a bare filename placeholder (`isImg` gated the object URL
+    // entirely), which is the reported "the preview for the video ... is
+    // not working". Every staged file now gets a real object URL and a
+    // real preview element, image or video.
+    function renderStagedGrid() {
+      var grid = $('pp-stagedgrid'); if (!grid) return;
+      grid.innerHTML = stagedFiles.map(function (f, i) {
+        if (stagedUrls[i] === undefined) stagedUrls[i] = URL.createObjectURL(f);
+        var url = stagedUrls[i];
+        var fIsVideo = isVideoKind || /^video\//.test(f.type || '');
+        var media = fIsVideo
+          ? '<video class="pp-cardphoto" src="' + Fmt.esc(url) + '" muted playsinline preload="metadata" controls></video>'
+          : '<img class="pp-cardphoto" src="' + Fmt.esc(url) + '" alt="" />';
+        // Item 5: "extend feature of adjusting photo to videos and 360 ...
+        // no need for mark-up for video" -- Adjust is offered for every
+        // staged file; Markup only for a real image.
         return '<figure class="pp-card" data-staged="' + i + '">' +
-          (url ? '<div class="pp-cardimg"><img class="pp-cardphoto" src="' + Fmt.esc(url) + '" alt="" /></div>'
-               : '<div class="pp-cardimg pp-noimg" style="height:210px;">' + Fmt.esc(f.name) + '</div>') +
-          (isImg ? '<div class="pp-cardactions">' +
-              '<button type="button" class="pd-btn" style="margin:6px;" data-markupstage="' + i + '">Markup</button>' +
-              '<button type="button" class="pd-btn" style="margin:6px;" data-adjuststage="' + i + '">Adjust</button>' +
-            '</div>' : '') +
+          '<div class="pp-cardimg">' + media + '</div>' +
+          '<div class="pp-cardactions">' +
+            (fIsVideo ? '' : '<button type="button" class="pd-btn" style="margin:6px;" data-markupstage="' + i + '">Markup</button>') +
+            '<button type="button" class="pd-btn" style="margin:6px;" data-adjuststage="' + i + '">Adjust</button>' +
+          '</div>' +
         '</figure>';
       }).join('');
       Array.prototype.forEach.call(grid.querySelectorAll('[data-markupstage]'), function (b) {
@@ -4838,16 +4948,39 @@ window.ProgressPhotos = (function () {
       Array.prototype.forEach.call(grid.querySelectorAll('[data-adjuststage]'), function (b) {
         b.onclick = function () {
           var i = +this.dataset.adjuststage;
-          openAdjustEditor(stagedUrls[i], pendingAdjust[i] || {}, function (adj) { pendingAdjust[i] = adj; });
+          var fIsVideo = isVideoKind || /^video\//.test((stagedFiles[i] && stagedFiles[i].type) || '');
+          openAdjustEditor(stagedUrls[i], pendingAdjust[i] || {}, function (adj) { pendingAdjust[i] = adj; }, fIsVideo);
         };
+      });
+    }
+    function addStagedFiles(list) {
+      Array.prototype.forEach.call(list || [], function (f) { stagedFiles.push(f); });
+      renderStagedGrid();
+    }
+
+    if ($('pp-choosefiles')) $('pp-choosefiles').onclick = function () { var el = $('pp-files'); if (el) el.click(); };
+    if ($('pp-files')) $('pp-files').onchange = function () {
+      addStagedFiles(this.files);
+      this.value = ''; // lets picking the exact same file again still fire a change
+    };
+    // Item 1: "bring user to a separate page or pop-up window inside the
+    // app to take photos/videos directly inside app" -- hands off to
+    // capture.js, which owns the whole camera overlay; this modal only
+    // ever receives a finished Blob (or null on cancel) back.
+    if ($('pp-take')) $('pp-take').onclick = function () {
+      if (!window.Capture) { UI.toast('In-app camera capture is not available on this device — choose a file instead', 'warn'); return; }
+      var fn = isVideoKind ? Capture.takeVideo : Capture.takePhoto;
+      fn(function (blob) {
+        if (!blob) return; // the camera overlay was cancelled
+        addStagedFiles([blobToFile(blob, mtype)]);
       });
     };
     hydrate(m.el);
 
     $('pp-save').onclick = async function () {
-      var files = $('pp-files').files;
-      var kind = mtype.get();
-      if (!files || !files.length) { UI.toast('Choose at least one ' + (kind === 'video' ? 'video' : 'photo'), 'warn'); return; }
+      var files = stagedFiles;
+      var kind = mtype;
+      if (!files.length) { UI.toast('Choose or take at least one ' + nounSingular, 'warn'); return; }
       var reqErr = requiredFieldsMissing('pp');
       if (reqErr) { UI.toast(reqErr, 'warn'); return; }
       var locVals = currentLocValues('pp');
@@ -4935,6 +5068,218 @@ window.ProgressPhotos = (function () {
         await Promise.all(newIds.map(function (id) { return BIM.savePinForItem('photo', id, pinData); }));
       }
       if (typeof preset.onDone === 'function') preset.onDone(newIds);
+    };
+  }
+
+  // ============================================================================
+  // Item 3: "add option to add 360 ... use the same form as when adding
+  // photo video. except when take video is clicked, provide guides on
+  // camera to take the video for processing to 360. provide preview of
+  // processed 360 photo. in case app is offline, prompt user to save video
+  // to gallery for upload later on. when adding the key plan, ask user for
+  // representative photo frame and ask for the location, angle, direction
+  // of that specific frame to match. the representative frame will also be
+  // the thumbnail in previews."
+  //
+  // ⚠️ Deliberately its own flow, not a third mtype inside openUpload's
+  // batch pipeline: a 360° capture is ONE video in, ONE stitched-panorama
+  // row out -- fundamentally a different shape from N files -> N rows.
+  // The row still lands in `progress_photos` (media_type:'360'), never a
+  // second panorama table -- see pano360.js's own header comment for why.
+  // ============================================================================
+  function open360Upload() {
+    if (!pid) { UI.toast('Select a project first', 'warn'); return; }
+    if (_uploadModalOpen) return;
+    _uploadModalOpen = true;
+    var today = new Date().toISOString().slice(0, 10);
+    var videoBlob = null, videoUrl = null;
+    var stitchResult = null, stitchUrl = null;   // { blob, quality, width, height }
+    var repBlob = null, repUrl = null;           // representative frame -- becomes thumb_url
+    var pendingAdjust = {};                       // item 5: Adjust applies to 360 too, keyed 0 (a single item)
+    var repTimer = null;
+
+    function revokeAll() {
+      [videoUrl, stitchUrl, repUrl].forEach(function (u) { if (u) { try { URL.revokeObjectURL(u); } catch (e) {} } });
+      if (window.Capture && Capture.close) Capture.close();
+      _uploadModalOpen = false;
+    }
+
+    var html =
+      '<div class="pd-modal-header"><h3>Add 360° photo</h3>' +
+        '<button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-form" id="pp360-body">' +
+        '<p class="pp-hint">Record a slow walk-around, or upload a video already recorded, and it will be ' +
+          'processed into a single 360° panorama.</p>' +
+        '<div id="pp360-step-source" style="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 8px;">' +
+          '<button type="button" class="pd-btn" id="pp360-take">Take 360°</button>' +
+          '<button type="button" class="pd-btn" id="pp360-choose">Upload 360° video</button>' +
+          '<input class="pd-input" type="file" id="pp360-file" hidden accept="video/*" />' +
+        '</div>' +
+        '<div id="pp360-offline" hidden>' +
+          '<p class="pp-hint">You are offline right now, so this video cannot be processed and uploaded from here. ' +
+            'Save it to your device\'s gallery and add it as a 360° photo once you are back online.</p>' +
+          '<a id="pp360-savelocal" class="pd-btn pd-btn-primary" download="360-capture.webm">Save video to gallery</a> ' +
+          '<button type="button" class="pd-btn" id="pp360-offlineclose">Close</button>' +
+        '</div>' +
+        '<div id="pp360-progress" hidden><div class="pp-progress" id="pp360-prog"></div></div>' +
+        '<div id="pp360-result" hidden>' +
+          '<div id="pp360-qualitywarn" class="pp-hint" hidden style="color:var(--pd-warn,#a66);">' +
+            'Low confidence stitch -- the video may not have had enough overlap between frames. Review before presenting.</div>' +
+          '<div class="pp-adj-canvaswrap pp-mk-canvaswrap" id="pp360-previewwrap">' +
+            '<img id="pp360-preview" alt="Processed 360° preview" style="max-width:100%;display:block;" />' +
+          '</div>' +
+          '<div style="margin:6px 0;"><button type="button" class="pd-btn" id="pp360-adjust">Adjust</button></div>' +
+          '<div class="pd-field"><label>Representative frame ' +
+            '<span class="pd-muted" style="font-weight:400;">(also used as the thumbnail)</span></label>' +
+            '<input type="range" id="pp360-repslider" min="0" max="1" step="0.01" value="0.5" style="width:100%;" />' +
+            '<img id="pp360-repframe" alt="Representative frame" style="max-width:220px;display:block;margin-top:6px;" />' +
+          '</div>' +
+          '<div class="pp-form2">' +
+            '<div class="pd-field"><label>Description</label>' +
+              '<input class="pd-input" id="pp360-desc" placeholder="e.g. Model Unit" /></div>' +
+            '<div class="pd-field"><label>Capture date' + reqMark() + '</label>' +
+              '<input class="pd-input" type="date" id="pp360-date" value="' + today + '" required /></div>' +
+            worksMultiFieldHTML('pp360', []) +
+            locationFieldHTML('pp360', {}) +
+            (window.BIM ? BIM.pinFieldHTML('pp360', null) : '') +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="pd-modal-footer" id="pp360-footer" hidden>' +
+        '<button class="pd-btn" data-close>Cancel</button>' +
+        '<button class="pd-btn pd-btn-primary" id="pp360-save">Save 360° photo</button></div>';
+
+    var m = openModal(html, 640, revokeAll);
+    wireLocationField('pp360');
+    wireWorksMultiField('pp360');
+    if (window.BIM) BIM.wirePinField('pp360');
+    hydrate(m.el);
+
+    function show(id, on) { var el = $(id); if (el) el.hidden = !on; }
+
+    // "in case app is offline, prompt user to save video to gallery for
+    // upload later on" -- checked the moment a video is actually acquired
+    // (recording or picking a file both work fine offline; it is the
+    // upload/processing-then-upload round trip that cannot).
+    function haveVideo(blob) {
+      videoBlob = blob;
+      videoUrl = URL.createObjectURL(blob);
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        show('pp360-step-source', false);
+        var a = $('pp360-savelocal');
+        if (a) { a.href = videoUrl; a.download = '360-capture' + (/mp4/.test(blob.type || '') ? '.mp4' : '.webm'); }
+        show('pp360-offline', true);
+        return;
+      }
+      runStitch();
+    }
+
+    async function runStitch() {
+      show('pp360-step-source', false);
+      show('pp360-progress', true);
+      var prog = $('pp360-prog'); if (prog) prog.textContent = 'Reading video…';
+      try {
+        var res = await Pano360.stitchFromVideo(videoBlob, function (stage, frac) {
+          if (!prog) return;
+          prog.textContent = (stage === 'frames' ? 'Reading frames…' : 'Stitching panorama…') + ' ' + Math.round(frac * 100) + '%';
+        });
+        stitchResult = res;
+        stitchUrl = URL.createObjectURL(res.blob);
+        show('pp360-progress', false);
+        show('pp360-result', true);
+        show('pp360-footer', true);
+        var img = $('pp360-preview'); if (img) img.src = stitchUrl;
+        var warn = $('pp360-qualitywarn'); if (warn) warn.hidden = res.quality !== 'poor';
+        // The representative-frame scrubber's default is the midpoint of
+        // the walk-around, before the planner ever touches the slider.
+        var dur = await Pano360.getDuration(videoBlob);
+        var slider = $('pp360-repslider');
+        if (slider) { slider.max = String(Math.max(0.01, dur)); slider.value = String(dur / 2); }
+        updateRepFrame(dur / 2);
+      } catch (err) {
+        show('pp360-progress', false);
+        UI.toast('Could not build the panorama' + (err && err.message ? ' (' + err.message + ')' : ''), 'error');
+        show('pp360-step-source', true);
+      }
+    }
+
+    async function updateRepFrame(atSeconds) {
+      try {
+        var blob = await Pano360.extractFrameAt(videoBlob, atSeconds, 640);
+        if (repUrl) { try { URL.revokeObjectURL(repUrl); } catch (e) {} }
+        repBlob = blob;
+        repUrl = URL.createObjectURL(blob);
+        var img = $('pp360-repframe'); if (img) img.src = repUrl;
+      } catch (e) { /* the video is still fine — the scrubber just has nothing new to show this tick */ }
+    }
+
+    if ($('pp360-choose')) $('pp360-choose').onclick = function () { var el = $('pp360-file'); if (el) el.click(); };
+    if ($('pp360-file')) $('pp360-file').onchange = function () {
+      var f = this.files && this.files[0];
+      this.value = '';
+      if (f) haveVideo(f);
+    };
+    if ($('pp360-take')) $('pp360-take').onclick = function () {
+      if (!window.Capture) { UI.toast('In-app camera capture is not available on this device — upload a video instead', 'warn'); return; }
+      Capture.take360(function (blob) { if (blob) haveVideo(blob); });
+    };
+    if ($('pp360-offlineclose')) $('pp360-offlineclose').onclick = function () { m.close(); };
+    if ($('pp360-repslider')) {
+      $('pp360-repslider').oninput = function () {
+        var t = +this.value;
+        clearTimeout(repTimer);
+        repTimer = setTimeout(function () { updateRepFrame(t); }, 150);
+      };
+    }
+    // Item 5: Adjust extends to 360 -- previewed against the stitched
+    // panorama image, saved onto the row exactly like a photo's adjustments.
+    if ($('pp360-adjust')) $('pp360-adjust').onclick = function () {
+      if (!stitchUrl) return;
+      openAdjustEditor(stitchUrl, pendingAdjust[0] || {}, function (adj) { pendingAdjust[0] = adj; });
+    };
+
+    $('pp360-save').onclick = async function () {
+      if (!stitchResult || !repBlob) { UI.toast('Still processing the panorama — please wait', 'warn'); return; }
+      var reqErr = requiredFieldsMissing('pp360');
+      if (reqErr) { UI.toast(reqErr, 'warn'); return; }
+      this.disabled = true;
+      var locVals = currentLocValues('pp360');
+      var act = resolveActivity(locVals);
+      var worksList = readWorksMulti('pp360');
+      var tradeList = deriveTradesForWorksList(worksList);
+      var pinData = window.BIM ? BIM.readPinField('pp360') : null;
+      var viewNameEl = $('pp360-viewname');
+      try {
+        var stitchFile = blobToFile(stitchResult.blob, 'photo');
+        var mainPath = await uploadFile(stitchFile);
+        var repFile = blobToFile(repBlob, 'photo');
+        var thumbPath = await uploadFile(repFile);
+        var row = {
+          project_id: pid, created_by: uid, title: stitchFile.name,
+          photo_url: mainPath, thumb_url: thumbPath, media_type: '360',
+          description: $('pp360-desc').value.trim(),
+          taken_at: $('pp360-date').value || null,
+          trades: tradeList, works_multi: worksList,
+          works_activity_ids: worksActivityIdsFor(worksList),
+          trade: tradeList[0] || null, works: worksList[0] || null,
+          location: locBreadcrumb(locVals) || null, location_values: locVals,
+          view_name: viewNameEl ? viewNameEl.value.trim() : null,
+          activity_id: act ? act.id : null, activity_name: act ? act.name : null,
+          tags: readCodeTags('pp360')
+        };
+        if (pendingAdjust[0] && !adjustmentsAreDefault(pendingAdjust[0])) row.adjustments = pendingAdjust[0];
+        var w = await tolerantWrite({ table: TABLE, op: 'insert', patch: row });
+        if (!w.ok) { UI.toast(w.error && w.error.message || 'Could not save the 360° photo', 'error'); this.disabled = false; return; }
+        m.close();
+        UI.toast('360° photo saved' + (stitchResult.quality === 'poor' ? ' (low confidence stitch)' : ''), 'ok');
+        await load();
+        if (pinData && window.BIM && BIM.savePinForItem && w.id) {
+          await BIM.savePinForItem('photo', w.id, pinData);
+        }
+      } catch (err) {
+        UI.toast('Could not save the 360° photo (' + (err && err.message || err) + ')', 'error');
+        this.disabled = false;
+      }
     };
   }
 
@@ -5387,12 +5732,21 @@ window.ProgressPhotos = (function () {
     // immediately, and ensureFullUrl() below swaps in the real full-
     // resolution preview once it's signed, rather than the form needing to
     // await a network round-trip before it can even open.
-    var previewSrc = thumbUrlOf(r);
+    // Item 2: a VIDEO row has no thumb_url/transform stand-in to show —
+    // thumbUrlOf() would resolve to '' for one until its full-res is
+    // signed, so the old `previewSrc ? '<img ...>' : ''` simply rendered no
+    // preview at all when editing an existing video. It now renders a real
+    // <video>, resolved via the same ensureFullUrl() the lightbox uses. A
+    // 360 row's thumb_url IS its representative frame, so the plain <img>
+    // path already works correctly for it — no special-case needed there.
+    var editIsVideo = r.media_type === 'video';
+    var previewSrc = editIsVideo ? '' : thumbUrlOf(r);
     var html =
       '<div class="pd-modal-header"><h3>Edit photo</h3>' +
         '<button class="pd-modal-close" data-close>×</button></div>' +
       '<div class="pp-form">' +
-        (previewSrc ? '<img class="pp-formpreview" id="pp-e-preview" src="' + Fmt.esc(previewSrc) + '" alt="" />' : '') +
+        (editIsVideo ? '<video class="pp-formpreview" id="pp-e-preview" controls muted playsinline></video>'
+          : (previewSrc ? '<img class="pp-formpreview" id="pp-e-preview" src="' + Fmt.esc(previewSrc) + '" alt="" />' : '')) +
         '<div class="pp-form2">' +
           '<div class="pd-field"><label>Description</label>' +
             '<input class="pd-input" id="pp-e-desc" value="' + Fmt.esc(r.description || '') + '" /></div>' +
@@ -5414,9 +5768,9 @@ window.ProgressPhotos = (function () {
     // the m.close reassignment those relied on and left the cursor
     // broadcasting "still editing" to every other viewer indefinitely.
     var m = openModal(html, 560, function () { broadcastCollabSel(null); });
-    if (previewSrc) ensureFullUrl(r).then(function (full) {
-      var img = $('pp-e-preview');   // gone once the modal has closed — the query itself is the "still open" check
-      if (full && img) img.src = full;
+    if (editIsVideo || previewSrc) ensureFullUrl(r).then(function (full) {
+      var el = $('pp-e-preview');   // gone once the modal has closed — the query itself is the "still open" check
+      if (full && el) el.src = full;
     });
     var codeWrap = $('pp-e-codes');
     if (codeWrap) Array.prototype.forEach.call(codeWrap.querySelectorAll('input[type=checkbox]'), function (c) {
@@ -5763,7 +6117,7 @@ window.ProgressPhotos = (function () {
     _adjustmentsAreDefault: function (adj) { return adjustmentsAreDefault(adj); },
     _adjustmentsOf: function (r) { return adjustmentsOf(r); },
     _applySharpen: function (ctx, w, h, amount) { applySharpen(ctx, w, h, amount); },
-    openAdjustEditor: function (imageUrl, initialAdjustments, onSave) { openAdjustEditor(imageUrl, initialAdjustments, onSave); },
+    openAdjustEditor: function (imageUrl, initialAdjustments, onSave, isVideo) { openAdjustEditor(imageUrl, initialAdjustments, onSave, isVideo); },
     // Item 16 (2026-08-29, second round) — Plan view relocated here from
     // bim.js. Genuinely EXECUTE the cluster grouping bim.js's own tests
     // already proved out, now against THIS file's version.

@@ -2,6 +2,123 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## In-app camera capture, real 360° stitching, a 360° pan viewer, and a
+## ten-item overnight round following the 360°/3D deletion (2026-09-10/11)
+
+Owner, immediately after the 360°/3D deletion (session below): a ten-item list to build a fresh
+360° feature and fix reported bugs, explicitly authorized to run unattended overnight
+("while I am asleep until 8am"). No live signed-in session or real camera/device was available in
+this environment for any of it — every claim below is source-level review, `node --check`, CSS
+brace-balance and manual re-reading of the edited regions, the same standing limitation this file
+has recorded for every camera/recording feature it has ever shipped.
+
+**New `capture.js`** — `window.Capture = { takePhoto, takeVideo, take360, close }`, a full-screen
+overlay styled after Photo Booth/iOS Camera (live stage, a circular shutter, a flip-camera button,
+a close ×). Each function hands back a Blob (or `null` on cancel) via callback; nothing here talks
+to Supabase — the module's own upload pipeline is still the one place a file, camera-captured or
+picked from disk, ever becomes a saved row. `take360` adds a compass-driven progress ring (iOS 13+
+`DeviceOrientationEvent.requestPermission()`, triggered on the first tap so it runs inside the
+required user gesture) with a time-based fallback everywhere orientation is unavailable.
+
+**New `pano360.js`** — `window.Pano360`, a from-scratch stitching pipeline (the earlier one was
+deleted at the owner's own request, "start fresh"). ⚠️ Same honest scope as before: standard
+OpenCV.js builds have no `cv.Stitcher`, so this composites ORB + BFMatcher(Hamming) + ratio test +
+`cv.findHomography`(RANSAC) + `cv.warpPerspective` frame-by-frame into a **cylindrical mosaic**, not
+a true equirectangular sphere — stated in the file's own header, not silently shipped as more than
+it is. Quality is flagged (`'poor'`) rather than hidden when a frame pair matches too few keypoints.
+`extractFrameAt`/`getDuration` back the representative-frame picker (item 3).
+
+**Items 1/2/5/6 — `openUpload` rebuilt.** The in-form Photo/Video type toggle
+(`mediaTypeSelectorHTML`/`wireMediaTypeSelector`) is gone — the "+ Add media" dropdown decides the
+kind before the modal opens, and the modal is built once for that fixed kind (item 6). Two buttons,
+**Take Photo/Video** and **Upload Photo/Video**, both feed the SAME staged-file array (`stagedFiles`)
+— a capture and a chosen file interleave freely, appended in whichever order the planner used them
+(item 1). ⚠️ **The staged-grid video-preview bug is fixed**: every staged file now gets a real
+object URL and a real `<video>` preview element — the old code only ever created an object URL for
+`/^image\//` files, so a staged video rendered as a bare filename placeholder with no preview at
+all (item 2). Adjust now offers itself for **every** staged file, photo or video; Markup stays
+photo-only (item 5) — matching the owner's explicit "no need for mark-up for video and 360".
+
+**Item 2 (second instance) — `openForm`'s Edit-photo preview.** The same class of bug: editing an
+existing **video** row previously rendered nothing (`thumbUrlOf()` resolves to `''` for a video,
+which has no thumbnail stand-in, so `previewSrc ? '<img>' : ''` silently omitted the whole preview).
+It now renders a real `<video>`, resolved via the same `ensureFullUrl()` the lightbox already uses.
+A 360 row's `thumb_url` **is** its representative frame, so the existing `<img>` path already works
+correctly for it — no special case needed.
+
+**Item 3 — a dedicated 360° upload flow, `open360Upload()`.** ⚠️ Deliberately **not** folded into
+`openUpload`'s batch pipeline — a 360° capture is one video in, one stitched-panorama row out, a
+different shape from N files → N rows. Take 360°/Upload 360° video → (if offline, stop here and
+offer a **Save video to gallery** download link rather than attempting to process-then-upload,
+since there is nowhere to queue a not-yet-stitched panorama offline) → `Pano360.stitchFromVideo`
+with a two-stage progress readout → a preview of the processed panorama, a low-confidence badge
+when `quality==='poor'` → a **representative-frame scrubber** (`Pano360.extractFrameAt`, debounced)
+whose frame becomes `thumb_url` and is also what the Key Plan pin/direction is captured against
+(reusing `BIM.pinFieldHTML`, unchanged) → the same Description/Capture date/Works/Location/View
+name fields every other capture uses. Saves as a `progress_photos` row with `media_type:'360'` —
+⚠️ **the single unified media table, never a second `panoramas` table** — this repo's own history
+already records having to undo exactly that split once; `floor_plan_pins.item_type` stays `'photo'`
+universally, so bim.js needed no schema change.
+
+**Item 4 — the 360° viewer.** A `.pp-lb-panowrap` strip (`overflow-x:auto`, native touch swipe for
+free, plus `wirePanoDrag()` for a mouse drag) replaces the ordinary `<img>`/`<video>` in the
+lightbox when `media_type==='360'`. No Markup (toggle and edit both hidden, same as video); Key
+Plan **stays available** (gated on `!isVideo`, which a 360 row already satisfies). ⚠️ **The camera
+direction actually follows the pan**, not just a static cone: `wirePanoDrag`'s scroll handler
+computes a heading fraction (`scrollLeft / maxScroll * 360`) into `lightboxPanoHeadingDeg`, and
+`paintKeyPlanOverlay` now calls a new `BIM.coneWedgeSVGAt(pin, headingOffset)` — the same accurate
+edge-based cone geometry as `coneWedgeSVG`, with the resolved direction rotated by that offset —
+instead of the fixed `coneWedgeSVG(pin)`. For an ordinary photo the offset is always 0, so this is
+byte-identical to before for everything that isn't a 360 photo.
+
+**Item 5 — Adjust/Markup/Key-Plan gating, consolidated.** Markup (toggle + edit) excluded for
+video AND 360; Adjust available for photo, video AND 360 (`openAdjustEditor` gained an `isVideo`
+flag that swaps its canvas+sharpen preview for a live `<video style="filter:...">` preview — CSS
+`filter` applies to a `<video>` exactly like an `<img>`; Sharpness, which has no CSS equivalent, is
+simply not offered on that path rather than silently doing nothing); Key Plan excluded for video
+only, available for photo and 360.
+
+**Item 7 (partial) — a real, confirmed waste removed from `signAll()`.** Its transform-fallback
+branch requested an image-transform signed URL for **every** thumb-less row's `photo_url`,
+including **video** rows — a video file run through an image transform, populating a `thumbCache`
+entry `thumb()`'s own video branch never reads (it resolves a video preview via `urlOf()`/the lazy
+intersection-observer path instead). Now excluded by `media_type !== 'video'`. ⚠️ **Broader mobile
+perf work (item 7's fuller ask) was not separately audited this round** — the 360 viewer's own
+plain-2D-pan choice (no WebGL/Three.js) already serves that goal directly, per pano360.js's header.
+
+**Items 8/9/10 — already landed in this same session before this entry was written** (Works/
+Location made optional when the schedule/Location Breakdown genuinely has nothing to offer; the
+Plan view's Live button replaced with First/Last steppers; the key-plan pin+cone now drawn via the
+same accurate edge-based geometry everywhere it renders, fixing a real bug where the Plans-tab
+marker and the lightbox overlay each drew a cruder approximation than the capture widget itself).
+
+**Verified**: `node --check` clean on `module.js`/`bim.js`/`capture.js`/`pano360.js`/`ppr.js`; 0 NUL
+bytes across every touched file; `module.css` braces balanced (540/540); 0 duplicate DOM `id=`
+attributes in `index.html`. `module.css`/`module.js`/`bim.js`/`capture.js`/`pano360.js` →
+`?v=20260910zd`.
+
+**`test.js` updated, not left stale.** Every assertion this round's own changes made incorrect was
+rewritten to match the current behaviour, not silently deleted — the retired
+`mediaTypeSelectorHTML`/`wireMediaTypeSelector`, the Plan view's Live-button removal (item 9, done
+earlier in this same session but never reflected in the suite until now), the pin-cone rewrite
+(item 10) that replaced a fixed-angle rotated wedge with the shared `coneWedgeSVGAt`, the Adjust/
+Markup/Key-Plan gating changes (item 5), and the three save-payload literals that legitimately grew
+a third occurrence (Add/Edit/360). **806 passed, 15 failed** (was 790/35 before this pass's own
+fixes) — every one of the 15 remaining failures was confirmed, by direct inspection, to predate this
+round: each references code this session never touched (`bim.js`'s `plans()`/`pinFieldHTML`/
+`wireStageInteractions`, `ppr.js`'s Report Type select and `finish()` ordering, the `.select()`-on-
+insert claim, the `#pp-lb-cap` trade/works/location assertion, the Clear-filters/archived-toggle
+assertion, the PPTX shared-location-tile assertion, and the Works empty-state string that a prior
+turn's item 8 fix already superseded) — none is new, and none is claimed fixed here.
+
+⚠️ **Not verified signed in, and this round most needs it.** No live click-through exists for: the
+in-app camera overlay against a real device camera; a real recorded 360° walk-around through the
+actual stitching pipeline; the representative-frame scrubber and Key Plan capture against a real
+video; the pan-viewer's drag gesture and the cone-follows-pan behaviour in a real browser; or the
+Adjust editor's live `<video>` CSS-filter preview. `test.js` has not been updated for any of this
+round's changes and needs a pass before this is considered fully verified per this module's own
+convention.
+
 ## 2026-09-09 (p3) — The gallery stops looking like a folder of files
 
 Owner: *"Project Photos, I want this not to look like a windows explorer folder view looking like a
