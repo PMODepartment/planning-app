@@ -1464,6 +1464,24 @@
     /* An icon + label inside a .ps-vs-seg button (the PDF export). It used to borrow the
        magnifier button's rule; that went with the magnifier, so it has its own name now. */
     .ps-vs-icolab { display:inline-flex; align-items:center; gap:6px; }
+    /* ==== THE 3D HOVER READOUT ==========================================================
+       The label beside the traced outline (see setHover). ⚠️ pointer-events:none, without
+       which the readout sitting under the cursor would take the pointer OFF the canvas — the
+       hover would end, the readout would hide, the pointer would be back on the canvas, and
+       the whole thing would strobe at the frame rate.
+       ⚠️ The mount is the positioning context, set on the element itself only when it is
+       static (see _vs3Build) — the rule here is for the inline cards, where it is. */
+    .ps-vs3-mount { position:relative; }
+    .ps-vs3-tip { position:absolute; z-index:6; display:none; pointer-events:none;
+      transform:translate(14px, -50%); max-width:240px;
+      background:var(--pd-card); color:var(--pd-ink); border:1px solid var(--pd-line);
+      border-radius:8px; padding:5px 9px; font-size:11.5px; line-height:1.4;
+      box-shadow:0 6px 18px rgba(0,0,0,.18); white-space:nowrap; }
+    /* Past two-thirds across the canvas the readout would run off its right edge. */
+    .ps-vs3-tip.flip { transform:translate(calc(-100% - 14px), -50%); }
+    .ps-vs3-tip b { display:block; font-size:12px; font-weight:700; }
+    .ps-vs3-tip span { display:block; color:var(--pd-muted); }
+    .ps-vs3-tip i { font-style:normal; color:var(--pd-muted); }
     .ps-vs-chips { display:flex; gap:6px; flex-wrap:wrap; }
     .ps-vs-chip { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--pd-line); background:var(--pd-card);
       color:var(--pd-ink); border-radius:999px; padding:4px 10px; font-size:12px; cursor:pointer; }
@@ -3013,12 +3031,32 @@
     /* ⚠️ vector-effect keeps the gridline ONE pixel wide however the stage is stretched. The svg
        is preserveAspectRatio="none", so a plain stroke-width would be scaled unevenly on the two
        axes and the grid would read as thicker verticals than horizontals. */
+    /* ⚠️⚠️ pointer-events:none ON THE GROUP AND ON THE POLYGONS. This is the half of "not
+       editable" that lives in CSS: the ghost carries no ids or handles, and this makes sure a
+       click passes straight THROUGH it to the shape underneath. Without it a planner would
+       select nothing while clicking on something clearly visible, which reads as a broken
+       window rather than as a reference layer. */
+    .zpw-ref, .zpw-ref polygon { pointer-events:none !important; }
+    .zpw-ref polygon { fill:var(--pd-muted); fill-opacity:.07; stroke:var(--pd-muted);
+      stroke-width:2; stroke-dasharray:7 5; vector-effect:non-scaling-stroke; opacity:.85; }
+    /* The nominated front and rear edges of the sheet. Also inert - the edge is set by the
+       buttons, so a draggable line would be a second way to say the same thing. */
+    .zpw-front, .zpw-rear { pointer-events:none; vector-effect:non-scaling-stroke; }
+    .zpw-front { stroke:var(--pd-red, #EE3124); stroke-width:6; opacity:.85; }
+    .zpw-rear { stroke:var(--pd-muted); stroke-width:4; stroke-dasharray:10 7; opacity:.6; }
+    .zpw-seg { flex:0 0 auto; }
+    .zpw-seg button { font-size:11px; }
     .zpw-grid { fill:none; stroke:var(--pd-line, rgba(120,130,145,.45)); stroke-width:1;
       vector-effect:non-scaling-stroke; opacity:.5; pointer-events:none; }
     .zpw-grid-ctl { display:inline-flex; align-items:center; gap:5px; font-size:11.5px;
       color:var(--pd-muted); white-space:nowrap; }
     .zpw-grid-ctl select { font:inherit; padding:2px 4px; border-radius:5px;
       border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-ink); }
+    /* The zone's colour. ⚠️ Sized like a swatch rather than left at the browser's default
+       button, which is 60px wide with a chrome border and reads as a control for something
+       larger than one zone. */
+    .zpw-grid-ctl input[type="color"] { width:30px; height:22px; padding:0; cursor:pointer;
+      border:1px solid var(--pd-line); border-radius:5px; background:var(--pd-card); }
     .zpw-tip { margin:0; font-size:10.5px; color:var(--pd-muted); }
     .zpw-empty { position:absolute; inset:auto 0 0 0; top:50%; transform:translateY(-50%);
       text-align:center; font-size:12.5px; color:var(--pd-muted); padding:0 20px; }
@@ -14934,11 +14972,19 @@
      ========================================================================================== */
   var _vsPlanCols = 0;        // 0 = auto (√n, wide-ish) · 1..4 = the planner's own wrap
   var _vsFront = 'S';         // which plan edge faces the viewer in the FRONT elevation
+  /* Colour the blocks by the ZONE colours set on the floor plan, instead of by trade.
+     ⚠️⚠️ OPT-IN, AND OFF BY DEFAULT, because it spends the card's primary channel. The rule this
+     view has kept since it shipped is FILL = which trade · BRIGHTNESS = done · EDGES = slip, and
+     silently repainting the fill by zone would break the one card whose job is comparing trades.
+     As a choice it is a different question — "where is Zone 2, on every floor" — and the planner
+     says which of the two they are asking. */
+  var _vsZoneCol = false;
   var _vs3D = false;          // 2D card or 3D card
   function _loadVs3D() {
     try {
       var c = localStorage.getItem('ps_vsplancols'); if (c != null) _vsPlanCols = Math.max(0, Math.min(4, parseInt(c, 10) || 0));
       var f = localStorage.getItem('ps_vsfront'); if (f === 'N' || f === 'E' || f === 'S' || f === 'W') _vsFront = f;
+      _vsZoneCol = localStorage.getItem('ps_vszonecol') === '1';
       _vs3D = localStorage.getItem('ps_vs3d') === '1';
     } catch (e) {}
   }
@@ -14946,6 +14992,7 @@
     try {
       localStorage.setItem('ps_vsplancols', String(_vsPlanCols));
       localStorage.setItem('ps_vsfront', _vsFront);
+      localStorage.setItem('ps_vszonecol', _vsZoneCol ? '1' : '0');
       localStorage.setItem('ps_vs3d', _vs3D ? '1' : '0');
     } catch (e) {}
   }
@@ -14954,12 +15001,19 @@
   // contradict each other — a building with two "front" sides.
   var _VS_EDGES = ['N', 'E', 'S', 'W'];
   var _VS_EDGE_NAME = { N: 'North', E: 'East', S: 'South', W: 'West' };
-  function _vsElevOf(which) {
-    var i = _VS_EDGES.indexOf(_vsFront);
-    if (i < 0) i = 2;
-    var off = { front: 0, right: 1, rear: 2, left: 3 }[which];
-    return _VS_EDGES[(i + (off || 0)) % 4];
+  /* ⚠️⚠️ WHICH EDGE EACH CAMERA QUARTER-TURN ACTUALLY SHOWS. The model is laid out in plan
+     coordinates - plan X to world X, plan Y to world Z - so turn 0 (+Z) looks at the BOTTOM of
+     the sheet, which is South, and each further turn goes E, N, W. This is the physical fact;
+     both the elevation NAMES and the camera POSITION are derived from it below, so the label
+     and the picture under it cannot drift apart. */
+  var _VS_TURN = ['S', 'E', 'N', 'W'];
+  var _VS_OFF = { front: 0, right: 1, rear: 2, left: 3 };
+  function _vsFrontTurn() {
+    var t = _VS_TURN.indexOf(_vsFrontNow());
+    return t < 0 ? 0 : t;   // 0 = South, the default front
   }
+  function _vsElevTurn(which) { return (_vsFrontTurn() + (_VS_OFF[which] || 0)) % 4; }
+  function _vsElevOf(which) { return _VS_TURN[_vsElevTurn(which)]; }
   function _vsElevLabel(which) {
     return which.charAt(0).toUpperCase() + which.slice(1) + ' (' + _VS_EDGE_NAME[_vsElevOf(which)] + ')';
   }
@@ -14990,6 +15044,26 @@
   var _vsZpGot = null, _vsZpAsked = null, _vsZpBusy = false;
   // The model the last tower drew, so _vsZpSync can report the SAME verdict the footer prints.
   var _vsLastModel = null;
+  var _vsZpFrontGot = null;   // the front edge the saved plan names, once fetched
+  /* ⚠️⚠️ THE PLAN WINS. Which way a building faces is a fact about the project; the card's own
+     `_vsFront` is a per-browser preference and is only consulted when nobody has said. Every
+     place that used to read _vsFront for GEOMETRY reads this instead, so the model, the camera
+     and the elevation labels cannot disagree about which side is the front. */
+  function _vsFrontNow() {
+    var f = null;
+    try {
+      if (typeof ScheduleBuilder !== 'undefined' && ScheduleBuilder.zonePlanFront) f = ScheduleBuilder.zonePlanFront();
+    } catch (e) { f = null; }
+    if (!f && _vsZpFrontGot && _vsZpAsked === pid) f = _vsZpFrontGot;
+    return (_VS_EDGES.indexOf(f) >= 0) ? f : _vsFront;
+  }
+  // Whether that answer came from the drawing rather than from this browser's preference.
+  function _vsFrontFromPlan() {
+    try {
+      if (typeof ScheduleBuilder !== 'undefined' && ScheduleBuilder.zonePlanFront && ScheduleBuilder.zonePlanFront()) return true;
+    } catch (e) {}
+    return !!(_vsZpFrontGot && _vsZpAsked === pid);
+  }
   function _vsZpKick() {
     if (_vsZpBusy || _vsZpAsked === pid || !pid) return;
     /* ⚠️⚠️ `typeof`, NOT `window.` - this module is one big IIFE, so ScheduleBuilder is a
@@ -14999,10 +15073,14 @@
     if (!(typeof ScheduleBuilder !== 'undefined' && ScheduleBuilder.zonePlanFetch)) { _vsZpAsked = pid; return; }
     var want = pid;
     _vsZpBusy = true;
-    ScheduleBuilder.zonePlanFetch(want).then(function (m) {
+    ScheduleBuilder.zonePlanFetch(want).then(function (res) {
       _vsZpBusy = false;
       _vsZpAsked = want;
-      _vsZpGot = m || {};
+      // ⚠️ { byLabel, front } since the front edge moved onto the plan - both facts live in the
+      // same saved row, so one fetch carries them.
+      var m = (res && res.byLabel) || {};
+      _vsZpFrontGot = (res && res.front) || null;
+      _vsZpGot = m;
       // ⚠️ Only repaint if it CHANGES something and the planner is still on the same project and
       // the card is still on screen. A repaint for an empty answer would be a flicker for nothing.
       if (want !== pid || !Object.keys(_vsZpGot).length) return;
@@ -15023,9 +15101,16 @@
     }
     var want = pid;
     UI.toast('Reading the floor plans\u2026');
-    ScheduleBuilder.zonePlanFetch(want).then(function (m) {
+    ScheduleBuilder.zonePlanFetch(want).then(function (res) {
       if (want !== pid) return;   // the planner moved on while it loaded
-      _vsZpGot = m || {}; _vsZpAsked = want; _vsZpMemo = null;
+      /* ⚠️⚠️ `{ byLabel, front }`, NOT the bare map. zonePlanFetch started carrying the nominated
+         front edge alongside the plan, and this call site kept reading its answer AS the map — so
+         `Object.keys` counted the two PROPERTY names, Sync reported "read the floor plans for 2
+         floors" on every project including ones with nothing traced, and every lookup in _vsZpGot
+         missed. The cold-open path (_vsZpKick) was moved to the new shape; this one was not. */
+      _vsZpGot = (res && res.byLabel) || {};
+      _vsZpFrontGot = (res && res.front) || null;
+      _vsZpAsked = want; _vsZpMemo = null;
       var have = Object.keys(_vsZpGot);
       if (!have.length) {
         UI.toast('No traced floor plan was found for this project. Draw one in Schedule Setup \u203a Floors & Zones \u203a Plan, and SAVE the setup.', 'warn');
@@ -15104,6 +15189,15 @@
       var h = hit(nrm(segs[i]));
       if (h) return h;
     }
+    return null;
+  }
+  /* The colour the floor plan gives this zone, or null when the storey has no plan or the plan
+     does not name the zone. ⚠️ Read off the SAME polygons the outline is extruded from, so a
+     block can never be painted one zone's colour and shaped like another's. ⚠️ null, not a
+     fallback colour: only the caller knows what to fall back TO (the trade colour), and a
+     helper that invented one would hide "this zone is not on the plan" behind a plausible fill. */
+  function _vsZpColorOf(polys) {
+    for (var i = 0; polys && i < polys.length; i++) if (polys[i].color) return polys[i].color;
     return null;
   }
   /* The traced footprint of one zone, as the 2D card needs it: where it sits across the plate
@@ -15343,6 +15437,10 @@
     renderer.setSize(W, H);
     host.innerHTML = '';
     host.appendChild(renderer.domElement);
+    /* ⚠️ ONLY IF IT IS STATIC. The hover readout is positioned against this box, which needs a
+       positioning context — but the focus window gives its own mount a layout of its own, and
+       overwriting that would move the canvas rather than the tooltip. */
+    try { if (getComputedStyle(host).position === 'static') host.style.position = 'relative'; } catch (e) {}
 
     // Storey geometry, in abstract units. ⚠️ No dimension is claimed: 1 unit per zone cell and a
     // storey 0.55 units tall is a PROPORTION chosen to read like a building, and the card says so.
@@ -15350,6 +15448,15 @@
     var storeys = model.disp.length;
     var grp = new T.Group();
     var picks = [];
+    /* The hovered zone's own outline is traced from the mesh that IS the zone — see setHover.
+       ⚠️ byKey holds the REMAINING-body mesh only, never the done stretch or the baseline mark:
+       those are clipped to a fraction of the zone, and tracing one would outline "the done part"
+       rather than the zone the pointer is over.
+       ⚠️ info is this scene's OWN copy of what each block is. _vsCells is a module-level registry
+       that the focus window swaps out and restores around its build (see _vs3FocusBuild), so a
+       scene inside that window reading the registry at hover time would be reading the map
+       belonging to the cards behind it, and find nothing. */
+    var byKey = {}, info = {};
     /* ⚠️⚠️ ONE FOOTPRINT FOR THE WHOLE BUILDING, sized by the busiest storey.
        Read off the first render rather than predicted: laying every storey out on its own grid drew
        a 2-zone floor at half the width of a 4-zone floor, which made the model ragged AND made it
@@ -15389,6 +15496,10 @@
         var _pg = _plate ? _vsZpPolysOf(_plate, c.label) : null;
         var pct = _vsProgress(c.list);
         var fill = c.color || baseColor;
+        /* ⚠️ FALLS BACK PER CELL, not per card. A zone the plan does not name — and every cell
+           of a card split by trade, where the cell IS a trade and not a zone — keeps the trade
+           colour, so switching to zone colours never leaves a block with nothing to be. */
+        if (_vsZoneCol) { var _zc = _vsZpColorOf(_pg); if (_zc) fill = _zc; }
         var col = new T.Color(fill);
         // ⚠️ THE SAME THREE CHANNELS THE 2D CELL USES, so the two cards cannot say different things:
         //   colour = which trade/category · brightness = done vs remaining · height = the storey.
@@ -15427,6 +15538,8 @@
         if (!rem) return;
         rem.userData.key = _key;
         grp.add(rem); picks.push(rem);
+        byKey[_key] = rem;
+        info[_key] = { level: v, cell: c.label, pct: pct, n: c.list.length, fin: _vsDate(c.list) };
         /* ⚠️⚠️ COMPARE KEEPS THE TRADE COLOUR HERE TOO, and that is not a style choice — it is the
            rule the 2D cell records: replacing the fill with the slip colour turned every building
            into four greys and reds and the trades became unidentifiable (owner: *"when clicking
@@ -15507,8 +15620,10 @@
       var d = Math.max(span * 2.6, tall * 1.9) + 1.5;
       if (which === 'top') { camera.position.set(0.001, tall + d * 0.9, 0.001); camera.lookAt(target); return; }
       if (which === 'iso') { camera.position.set(d * 0.62, tall * 0.85 + d * 0.42, d * 0.62); camera.lookAt(target); return; }
-      // front = +Z looking back, and each further elevation is a quarter turn clockwise.
-      var turn = { front: 0, right: 1, rear: 2, left: 3 }[which] || 0;
+      /* ⚠️ Turn 0 is +Z, which is the BOTTOM of the plan (South). The nominated front shifts
+         every elevation by the same amount - see _VS_TURN - so choosing North as the front
+         actually turns the building round instead of only renaming the buttons. */
+      var turn = _vsElevTurn(which);
       var a = turn * Math.PI / 2;
       camera.position.set(Math.sin(a) * d, tall * 0.55, Math.cos(a) * d);
       camera.lookAt(target);
@@ -15536,29 +15651,115 @@
     }
     var cv = renderer.domElement;
     cv.style.cursor = 'grab';
-    cv.onpointerdown = function (e) { drag = { x: e.clientX, y: e.clientY, az: rot.az, el: rot.el }; cv.style.cursor = 'grabbing'; };
+    cv.onpointerdown = function (e) {
+      drag = { x: e.clientX, y: e.clientY, az: rot.az, el: rot.el }; cv.style.cursor = 'grabbing';
+      // ⚠️ The trace goes while the model is being turned: it marks "this is the one" on a still
+      // picture, and it cannot be re-picked mid-orbit anyway.
+      setHover(null);
+    };
     cv.onpointermove = function (e) {
-      if (!drag) return;
+      if (!drag) {
+        var k = pickAt(e);
+        setHover(k, e);
+        cv.style.cursor = k ? 'pointer' : 'grab';
+        return;
+      }
       rot.az = drag.az - (e.clientX - drag.x) * 0.008;
       // ⚠️ Clamped just short of straight down / straight up: at exactly ±π/2 the up-vector and the
       // view direction are parallel and lookAt has no defined roll, which flips the model.
       rot.el = Math.max(-0.2, Math.min(1.5, drag.el + (e.clientY - drag.y) * 0.006));
       applyRot();
     };
-    cv.onpointerup = cv.onpointerleave = function () { drag = null; cv.style.cursor = 'grab'; };
+    cv.onpointerup = function () { drag = null; cv.style.cursor = 'grab'; };
+    // ⚠️ Leaving the canvas ends the drag AND the hover. A trace left burning on a block the
+    // pointer is no longer near is worse than none, because it reads as a selection.
+    cv.onpointerleave = function () { drag = null; cv.style.cursor = 'grab'; setHover(null); };
     cv.onwheel = function (e) {
       e.preventDefault();
       rot.r = Math.max(span * 1.2, Math.min(span * 12 + tall * 6, rot.r * (e.deltaY > 0 ? 1.08 : 0.93)));
       applyRot();
     };
-    // Click a box to open the same cell the 2D card opens — one drill-down, not a second one.
+    // ⚠️ ONE picker for the click and the hover. Two raycasts written separately is how a card
+    // ends up outlining one block and opening another.
     var ray = new T.Raycaster();
-    cv.onclick = function (e) {
+    function pickAt(e) {
       var r = cv.getBoundingClientRect();
+      if (!r.width || !r.height) return null;
       ray.setFromCamera(new T.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
       var hit = ray.intersectObjects(picks, false)[0];
-      if (hit && hit.object.userData.key) openVsCell(hit.object.userData.key);
+      return (hit && hit.object.userData.key) || null;
+    }
+    // Click a box to open the same cell the 2D card opens — one drill-down, not a second one.
+    cv.onclick = function (e) {
+      var k = pickAt(e);
+      if (k) openVsCell(k);
     };
+    /* ==========================================================================================
+       HOVER: THE ZONE'S OWN TRACE.
+       Owner 2026-09-10: *"when hovering over the zones in the vertical stacking 3D, can you show
+       like a trace of the zone to distinguish it."*
+       ⚠️⚠️ depthTest IS OFF, DELIBERATELY. From most angles a zone sits behind two or three other
+       storeys, and an outline that respected the depth buffer would be hidden by exactly the
+       geometry it exists to pick out — the pointer would be over a block and, from the reader's
+       side, nothing would happen. Ignoring depth draws the trace THROUGH the building, which is
+       what distinguishes it. It is also why the trace is a LINE and not a brighter fill: a fill
+       drawn through the model would read as a block floating in front of it.
+       ⚠️ The outline is built from the zone's OWN geometry, so on a traced floor it is the shape
+       the planner drew and on an untraced one it is the block — never a bounding box.
+       ⚠️ Rebuilt on CHANGE, not per pointermove: EdgesGeometry is real work, and a pointer
+       crossing one block fires dozens of events for one unchanging answer.
+       ========================================================================================== */
+    var hoverGrp = new T.Group();
+    scene.add(hoverGrp);
+    // ⚠️ The line has to read against the model in BOTH themes, and a WebGL scene inherits no
+    // CSS — so the theme is read once, here, off the same class the rest of the app switches on.
+    var HOVER_COL = (document.documentElement.classList.contains('pd-dark')) ? 0xffffff : 0x14161a;
+    var hoverKey = null, tipEl = null;
+    function tipBox() {
+      if (!tipEl) { tipEl = document.createElement('div'); tipEl.className = 'ps-vs3-tip'; host.appendChild(tipEl); }
+      return tipEl;
+    }
+    function tipMove(e) {
+      var r = cv.getBoundingClientRect(), h = host.getBoundingClientRect(), t = tipBox();
+      // ⚠️ Positioned against the HOST, which the canvas does not always fill (the focus window
+      // centres it), so the pointer is put in the host's own coordinates rather than the canvas'.
+      t.style.left = (e.clientX - h.left) + 'px';
+      t.style.top = (e.clientY - h.top) + 'px';
+      // Flipped to the left of the pointer when the readout would otherwise run off the canvas.
+      t.classList.toggle('flip', (e.clientX - r.left) > r.width * 0.68);
+    }
+    function clearTrace() {
+      while (hoverGrp.children.length) {
+        var ch = hoverGrp.children.pop();
+        try { ch.geometry.dispose(); ch.material.dispose(); } catch (e2) {}
+      }
+    }
+    function setHover(key, e) {
+      if (key === hoverKey) { if (key && e) tipMove(e); return; }
+      hoverKey = key;
+      clearTrace();
+      var msh = key && byKey[key];
+      if (msh) {
+        var ln = new T.LineSegments(new T.EdgesGeometry(msh.geometry),
+          new T.LineBasicMaterial({ color: HOVER_COL, transparent: true, opacity: 0.92, depthTest: false }));
+        ln.position.copy(msh.position);
+        ln.rotation.copy(msh.rotation);
+        ln.scale.copy(msh.scale);
+        ln.renderOrder = 999;   // ⚠️ with depthTest off, draw ORDER is all that keeps it on top
+        hoverGrp.add(ln);
+      }
+      var d = key && info[key];
+      if (d) {
+        var t = tipBox();
+        t.innerHTML = '<b>' + esc(String(d.level === VS_NOLEV ? 'No level' : d.level)) + '</b>' +
+          (d.cell ? '<span>' + esc(d.cell) + '</span>' : '') +
+          '<i>' + Math.round(d.pct) + '% · ' + d.n + ' activit' + (d.n === 1 ? 'y' : 'ies') +
+          (d.fin ? ' · ends ' + esc(Fmt.date(dstr(d.fin))) : '') + '</i>';
+        t.style.display = 'block';
+        if (e) tipMove(e);
+      } else if (tipEl) { tipEl.style.display = 'none'; }
+      renderer.render(scene, camera);
+    }
     setView('iso');
     return {
       setView: setView,
@@ -15584,6 +15785,14 @@
         try { renderer.forceContextLoss(); } catch (e) {}
         try { renderer.dispose(); } catch (e) {}
         cv.onpointerdown = cv.onpointermove = cv.onpointerup = cv.onwheel = cv.onclick = null;
+        cv.onpointerleave = null;
+        /* ⚠️ The readout is a DOM node this scene put on the page, and the canvas going away does
+           not take it with it. Every repaint of this view disposes its scenes (see _vs3Dispose),
+           so without this a planner switching basis a dozen times leaves a dozen tooltips
+           stacked in the corner of the card. */
+        try { clearTrace(); } catch (e) {}
+        if (tipEl && tipEl.parentNode) tipEl.parentNode.removeChild(tipEl);
+        tipEl = null;
       }
     };
   }
@@ -15599,9 +15808,22 @@
       '<button class="pd-btn ps-vs-chip" id="ps-vs-zpsync" title="Re-read the floor plans traced in Schedule Setup and draw the zones where you put them. Use this after tracing or editing a plan in another tab.">Sync floor plans</button>' +
       '<span class="ps-tb-div"></span>' +
       '<span class="ps-vs-note" title="Seen from the top view, which edge of the plan is the FRONT of the building. Right, rear and left follow from it.">Front faces</span>' +
+      /* ⚠️ DISABLED when the floor plan names the front, rather than left live and ignored. Two
+         controls for one fact is how a planner ends up believing the building faces two ways;
+         the note says where the answer is set so it is still changeable, just in one place. */
       '<span class="ps-vs-seg">' + _VS_EDGES.map(function (e) {
-        return '<button data-vs3front="' + e + '"' + (_vsFront === e ? ' class="on"' : '') + ' title="' + _VS_EDGE_NAME[e] + '">' + e + '</button>';
+        return '<button data-vs3front="' + e + '"' + (_vsFrontNow() === e ? ' class="on"' : '') +
+          (_vsFrontFromPlan() ? ' disabled' : '') + ' title="' + _VS_EDGE_NAME[e] + '">' + e + '</button>';
       }).join('') + '</span>' +
+      (_vsFrontFromPlan()
+        ? '<span class="ps-vs-note" title="Change it on the drawing: Schedule Setup \u203a Floors &amp; Zones \u203a Plan">from the floor plan</span>'
+        : '') +
+      '<span class="ps-tb-div"></span>' +
+      '<span class="ps-vs-note" title="What the block colour means. Trade keeps this card’s own rule (colour = trade, brightness = done). Zone paints each block in the colour you gave that zone on the floor plan — the fastest way to follow one zone up the building.">Colour</span>' +
+      '<span class="ps-vs-seg">' +
+        '<button data-vs3zc="0"' + (_vsZoneCol ? '' : ' class="on"') + ' title="Colour = which trade or tower, as the 2D card does">Trade</button>' +
+        '<button data-vs3zc="1"' + (_vsZoneCol ? ' class="on"' : '') + ' title="Colour = the zone colour set on the floor plan (Schedule Setup › Floors &amp; Zones › Plan). A zone with no plan keeps its trade colour.">Zone</button>' +
+      '</span>' +
       '<span class="ps-tb-div"></span>' +
       '<span class="ps-vs-note">View</span><span class="ps-vs-seg">' +
       [['front', _vsElevLabel('front')], ['right', _vsElevLabel('right')],
@@ -15684,7 +15906,14 @@
         '. Attach a floor plan and trace them in <b>Schedule Setup \u203a Floors &amp; Zones</b> \u2014 the <b>Plan</b> button on a ' +
         'floor \u2014 and this view draws the real outlines. ';
     }
-    return '<p class="ps-vs3-foot">' + cmp + lay + 'Schematic: the storeys, their order and the grade line are the ' +
+    /* ⚠️ Only when it is ON. The footer's job is to say what the picture in front of the reader
+       means, and describing a channel that is not being painted teaches them to look for
+       something that is not there — the same rule the compare sentence follows. */
+    var zc = _vsZoneCol
+      ? '<b>Colour = the zone colour</b> you set on the floor plan, not the trade — a zone with no plan ' +
+        'keeps its trade colour. '
+      : '';
+    return '<p class="ps-vs3-foot">' + cmp + zc + lay + 'Schematic: the storeys, their order and the grade line are the ' +
       'same as the 2D view. The <b>footprint</b> is the zone count laid out on the plan grid you set ' +
       'above &mdash; the schedule holds no zone outlines or dimensions, so <b>no length or area is ' +
       'implied</b>. Drag to orbit, scroll to zoom, click a block for its dates.</p>';
@@ -16711,6 +16940,9 @@
       wrap.querySelectorAll('[data-vs3front]').forEach(function (b) {
         b.onclick = function () { _vsFront = b.dataset.vs3front; _saveVs3D(); build(); };
       });
+      wrap.querySelectorAll('[data-vs3zc]').forEach(function (b) {
+        b.onclick = function () { _vsZoneCol = b.dataset.vs3zc === '1'; _saveVs3D(); build(); };
+      });
       // ⚠️ `build`, not renderVStack: this window owns its own model - see _vsZpSync.
       var _zpsF = wrap.querySelector('#ps-vs-zpsync');
       if (_zpsF) _zpsF.onclick = function () { _vsZpSync(build); };
@@ -17341,6 +17573,11 @@
     });
     host.querySelectorAll('[data-vs3front]').forEach(function (b) {
       b.onclick = function () { _vsFront = b.dataset.vs3front; _saveVs3D(); renderVStack(); };
+    });
+    // ⚠️ A repaint, not a material swap: the colour is chosen while the meshes are built, and
+    // the card owns no handle on them afterwards. Rebuilding a few hundred boxes is cheap.
+    host.querySelectorAll('[data-vs3zc]').forEach(function (b) {
+      b.onclick = function () { _vsZoneCol = b.dataset.vs3zc === '1'; _saveVs3D(); renderVStack(); };
     });
     // ⚠️ Defensively: the bar is not emitted in 2D, so this control may not be on the page.
     var _zps = host.querySelector('#ps-vs-zpsync');
@@ -31717,6 +31954,38 @@
        divergent copies of one drawing, and the first re-trace would leave thirty-nine stale.
        ========================================================================================== */
     var ZP_W = 1000, ZP_HDEF = 620, ZP_MAXPTS = 60;
+    /* ⚠️ THE SAME FOUR LETTERS THE 3D CARD USES (_VS_EDGES), and the same convention: the plan
+       is drawn with NORTH at the top, so N/E/S/W name the top/right/bottom/left EDGES of the
+       sheet. Naming them by compass rather than by 'top/right' is what lets the elevation
+       labels in the stacking stay true when a planner rotates the drawing. */
+    var ZP_EDGES = ['N', 'E', 'S', 'W'];
+    var ZP_EDGE_SIDE = { N: 'top', E: 'right', S: 'bottom', W: 'left' };
+    function zpNormFront(v) { return ZP_EDGES.indexOf(String(v || '')) >= 0 ? String(v) : null; }
+    /* ==== ZONE COLOUR =====================================================================
+       Owner 2026-09-10: *"can you add option for colors."*
+       ⚠️⚠️ KEYED BY ZONE CODE, PROJECT-WIDE — not per plate and not per floor. `Zone 1` is the
+       same zone on every storey, and a colour that changed floor by floor would be unreadable in
+       the one view the colour exists for: a tower whose Zone 1 is blue at level 3 and green at
+       level 4 says something false about the building.
+       ⚠️ What is stored is an OVERRIDE, and its ABSENCE is a real answer — "nobody has chosen",
+       which the automatic hue answers. The same distinction the front edge makes, for the same
+       reason: defaulting on save would make a choice on the planner's behalf and then show it
+       back to them as theirs. */
+    function zpNormHex(v) {
+      var s = String(v == null ? '' : v).trim().toLowerCase();
+      if (/^#[0-9a-f]{3}$/.test(s)) s = '#' + s[1] + s[1] + s[2] + s[2] + s[3] + s[3];
+      return /^#[0-9a-f]{6}$/.test(s) ? s : null;
+    }
+    // ⚠️ Keys normalised on the way in, so `Zone 1` and `zone  1` cannot hold two colours.
+    function zpNormColors(src) {
+      var out = {};
+      if (!src || typeof src !== 'object') return out;
+      Object.keys(src).forEach(function (k) {
+        var n = zpNormCode(k), c = zpNormHex(src[k]);
+        if (n && c) out[n] = c;
+      });
+      return out;
+    }
     function zpH(p) { var h = +(p && p.h); return (isFinite(h) && h >= 80 && h <= 4000) ? h : ZP_HDEF; }
     function zpNewId() { return 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
     function zpBlank() { return { w: ZP_W, h: ZP_HDEF, img: null, o: 1, polys: [] }; }
@@ -31795,6 +32064,13 @@
         });
         return legacy;
       }
+      // ⚠️ The front edge survives normalize, or defining it and reloading would lose it.
+      var _fr = zpNormFront(src.front);
+      if (_fr) out.front = _fr;
+      /* ⚠️ And so do the zone colours — and they survive a plate being deleted, which the
+         plates themselves do not. A colour is a fact about a ZONE, not about a drawing:
+         re-tracing a floor from scratch must not silently repaint it. */
+      out.color = zpNormColors(src.color);
       var plates = (src.plate && typeof src.plate === 'object') ? src.plate : {};
       Object.keys(plates).forEach(function (id) {
         var p = zpNorm(plates[id]);
@@ -31816,8 +32092,14 @@
       if (!cfg.zonePlan || typeof cfg.zonePlan !== 'object') cfg.zonePlan = { plate: {}, of: {} };
       if (!cfg.zonePlan.plate) cfg.zonePlan.plate = {};
       if (!cfg.zonePlan.of) cfg.zonePlan.of = {};
+      // ⚠️ NOT defaulted to a compass point. "Nobody has said" and "somebody said South" are
+      // different answers, and the 3D card falls back to its own preference only for the first.
+      cfg.zonePlan.front = zpNormFront(cfg.zonePlan.front);
+      if (!cfg.zonePlan.color || typeof cfg.zonePlan.color !== 'object') cfg.zonePlan.color = {};
       return cfg.zonePlan;
     }
+    function zpFront() { return zpBag().front; }
+    function zpSetFront(e) { zpBag().front = zpNormFront(e); markDirty(); }
     function zpIdFor(floor) {
       if (!floor || !floor.id) return null;
       var bag = zpBag();
@@ -31921,9 +32203,14 @@
           var p = _pid ? bag.plate[_pid] : null;
           if (!p || !p.polys.length) return;
           var H = zpH(p);
+          /* ⚠️ THE COLOUR TRAVELS WITH THE OUTLINE, resolved HERE where the bag is owned. The
+             stacking view must not have to know that a colour can be an override or a hash of
+             the code — it asks what colour this zone is and gets one answer, the same answer the
+             floor-plan window is painting on screen. */
           var shape = {
             polys: p.polys.map(function (q) {
-              return { code: q.code, pts: q.pts.map(function (pt) { return [pt[0] / ZP_W, pt[1] / H]; }) };
+              return { code: q.code, color: zpColorOfBag(bag, q.code),
+                       pts: q.pts.map(function (pt) { return [pt[0] / ZP_W, pt[1] / H]; }) };
             })
           };
           [f.name, f.code].forEach(function (lab) {
@@ -31962,10 +32249,31 @@
     // A stable colour per zone code. ⚠️ Hue is spent on the ZONE here and not on the trade, because
     // this window shows one floor of one trade — there is no trade to confuse it with.
     var ZP_HUES = ['#2F6FB0', '#C77700', '#2E8B57', '#8E44AD', '#C0392B', '#16A085', '#D4AC0D', '#5D6D7E'];
-    function zpHue(codes, code) {
-      var want = zpNormCode(code);
-      for (var i = 0; i < codes.length; i++) if (zpNormCode(codes[i]) === want) return ZP_HUES[i % ZP_HUES.length];
-      return ZP_HUES[0];
+    /* ⚠️⚠️ THE AUTOMATIC HUE IS A HASH OF THE CODE, NOT ITS POSITION IN A LIST, and that change
+       is what makes the colour usable outside this window. The index version asked "where does
+       this code sit among THIS floor's codes", so `Zone 2` was the second hue on a floor listing
+       four zones and the third on a floor listing five — the same zone, two colours, one storey
+       apart, and no way for the 3D card to reproduce either without re-deriving the list the
+       window happened to build. A hash answers the same for every caller, forever. */
+    function zpAutoHue(code) {
+      var s = zpNormCode(code), h = 0;
+      for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+      return ZP_HUES[h % ZP_HUES.length];
+    }
+    /* The colour a zone is drawn in: the planner's own choice, or the automatic hue.
+       ⚠️ Takes the BAG rather than reading cfg, so the cold-open path (zpByLabelOf, which is
+       handed a config that is NOT the one being edited) resolves colours from the same code. */
+    function zpColorOfBag(bag, code) {
+      var n = zpNormCode(code);
+      return (bag && bag.color && bag.color[n]) || zpAutoHue(code);
+    }
+    function zpColor(code) { return zpColorOfBag(zpBag(), code); }
+    function zpColorIsSet(code) { var b = zpBag(); return !!(b.color && b.color[zpNormCode(code)]); }
+    function zpColorSet(code, hex) {
+      var n = zpNormCode(code); if (!n) return;
+      var bag = zpBag(), c = zpNormHex(hex);
+      if (c) bag.color[n] = c; else delete bag.color[n];
+      markDirty();
     }
     function zpPts(pts) {
       return pts.map(function (p) { return (Math.round(p[0] * 10) / 10) + ',' + (Math.round(p[1] * 10) / 10); }).join(' ');
@@ -32053,6 +32361,47 @@
         '" fill="currentColor" fill-opacity=".2" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>';
     }
 
+  /* The other floors that have a drawing of their own, as reference candidates.
+     ⚠️ DEDUPED BY PLATE, not by floor: a plan shared across forty storeys is ONE drawing, and
+     offering it forty times would bury the two references that are genuinely different.
+     ⚠️ The floor being edited and its own plate are excluded - tracing over yourself is a
+     mirror, not a reference. */
+    function zpRefsFor(tr, floor, mineId) {
+      var out = [], seen = {};
+      var floors = (cfg.zoning[tr] ? cfg.zoning[tr].floors : []) || [];
+      floors.forEach(function (f) {
+        if (!f || f.id === floor.id) return;
+        var id = zpIdFor(f);
+        if (!id || id === mineId || seen[id]) return;
+        var p = zpBag().plate[id];
+        if (!p || !p.polys.length) return;
+        seen[id] = 1;
+        out.push({ plateId: id, label: f.code || f.name || 'Floor', plate: p });
+      });
+      /* ⚠️⚠️ AND THEN EVERY OTHER PLATE IN THE PROJECT. Plates are shared across the whole
+         setup (one `of` map, keyed by floor id), but the loop above can only see the floors of
+         THIS trade — so a planner tracing the Structural storeys could not trace over the plan
+         somebody drew under Architecture, which is the case where "make the floors uniform"
+         matters most. The label names a floor that uses it, and says which trade, because
+         "Level 3" twice in one dropdown is not a choice a planner can make. */
+      var bag = zpBag();
+      Object.keys(bag.plate).forEach(function (id) {
+        if (id === mineId || seen[id]) return;
+        var p = bag.plate[id];
+        if (!p || !p.polys.length) return;
+        var lab = '';
+        Object.keys(cfg.zoning || {}).forEach(function (g) {
+          if (lab) return;
+          ((cfg.zoning[g] && cfg.zoning[g].floors) || []).forEach(function (f) {
+            if (lab || !f || f.id === floor.id || zpIdFor(f) !== id) return;
+            lab = (f.code || f.name || 'Floor') + ' · ' + (GLABEL[g] || g);
+          });
+        });
+        seen[id] = 1;
+        out.push({ plateId: id, label: lab || 'Another floor plan', plate: p });
+      });
+      return out;
+    }
     function openZonePlan(tr, floorId) {
       var floors = (cfg.zoning[tr] ? cfg.zoning[tr].floors : []);
       var floor = floors.filter(function (f) { return f.id === floorId; })[0];
@@ -32069,7 +32418,7 @@
 
       _zpWin = { tr: tr, floor: floor, draft: draft, owned: !!plate, plateId: plateId,
                  brush: codes[0] || '', drawing: false, pts: [], sel: null, url: null,
-                 busy: false, err: '', hist: [], clip: null, grid: zpGridLoad() };
+                 busy: false, err: '', hist: [], clip: null, grid: zpGridLoad(), ref: '' };
 
       function H() { return zpH(_zpWin.draft); }
       function selShape() {
@@ -32165,6 +32514,7 @@
         var all = allCodes();
         var sel = selShape();
         var mine = zpUsers(tr, W.plateId);
+        var refs = zpRefsFor(tr, floor, W.plateId);
         var others = floors.filter(function (f) { return f.id !== floor.id; });
 
         var shapes = d.polys.map(function (q) {
@@ -32179,7 +32529,7 @@
               '<circle class="zpw-mid" data-mid="' + i + '" cx="' + ((p[0] + nx[0]) / 2).toFixed(1) +
                 '" cy="' + ((p[1] + nx[1]) / 2).toFixed(1) + '" r="7"></circle>';
           }).join('') : '';
-          return '<g class="zpw-shape' + (on ? ' sel' : '') + '" data-zpoly="' + e2(q.id) + '" style="--zc:' + zpHue(all, q.code) + '">' +
+          return '<g class="zpw-shape' + (on ? ' sel' : '') + '" data-zpoly="' + e2(q.id) + '" style="--zc:' + zpColor(q.code) + '">' +
             '<polygon points="' + zpPts(q.pts) + '"></polygon>' +
             '<text x="' + c[0].toFixed(1) + '" y="' + c[1].toFixed(1) + '">' + e2(q.code) + '</text>' +
             handles + '</g>';
@@ -32193,6 +32543,35 @@
           for (var gx = W.grid; gx < ZP_W; gx += W.grid) gd += 'M' + gx + ' 0V' + hh;
           for (var gy = W.grid; gy < hh; gy += W.grid) gd += 'M0 ' + gy + 'H' + ZP_W;
           gridSvg = '<path class="zpw-grid" d="' + gd + '"></path>';
+        }
+        /* ⚠️⚠️ THE REFERENCE IS A GHOST, AND IT IS NOT PART OF THE DRAWING. It carries no ids,
+           no handles and no data-zpoly, and the CSS puts pointer-events:none on the whole layer
+           - so it cannot be clicked, selected, dragged, reshaped, deleted or saved. The owner
+           asked for exactly that: something to trace against, that cannot be edited by accident.
+           ⚠️ Drawn BELOW the real shapes, so the floor being edited always reads on top. */
+        var refSvg = '';
+        var _ref = W.ref && refs.filter(function (r) { return r.plateId === W.ref; })[0];
+        if (_ref) {
+          var _rh = zpH(_ref.plate), _same = (_rh === hh);
+          refSvg = '<g class="zpw-ref">' + _ref.plate.polys.map(function (q) {
+            // ⚠️ Scaled into THIS plate's height. Two plates can differ in aspect, and drawing a
+            // 620-high trace onto an 800-high sheet unscaled would put the reference in the
+            // wrong place - which is worse than no reference at all.
+            var pts = _same ? q.pts : q.pts.map(function (p) { return [p[0], p[1] / _rh * hh]; });
+            return '<polygon points="' + zpPts(pts) + '"></polygon>';
+          }).join('') + '</g>';
+        }
+        /* The nominated front edge, drawn ON the sheet. ⚠️ A dropdown alone would make the
+           planner hold the mapping from `S` to "the bottom of this drawing" in their head. */
+        var frontSvg = '';
+        var _fr = zpFront();
+        if (_fr) {
+          var _edge = { N: [0, 0, ZP_W, 0], E: [ZP_W, 0, ZP_W, hh], S: [0, hh, ZP_W, hh], W: [0, 0, 0, hh] }[_fr];
+          var _rear = { N: 'S', E: 'W', S: 'N', W: 'E' }[_fr];
+          var _redge = { N: [0, 0, ZP_W, 0], E: [ZP_W, 0, ZP_W, hh], S: [0, hh, ZP_W, hh], W: [0, 0, 0, hh] }[_rear];
+          frontSvg =
+            '<line class="zpw-front" x1="' + _edge[0] + '" y1="' + _edge[1] + '" x2="' + _edge[2] + '" y2="' + _edge[3] + '"></line>' +
+            '<line class="zpw-rear" x1="' + _redge[0] + '" y1="' + _redge[1] + '" x2="' + _redge[2] + '" y2="' + _redge[3] + '"></line>';
         }
         var live = W.drawing && W.pts.length
           ? '<polyline class="zpw-live" points="' + zpPts(W.pts) + '"></polyline>' +
@@ -32218,6 +32597,36 @@
             (d.img ? '<label class="zpw-op" title="Fade the drawing so the zones over it stay readable">Fade' +
               '<input type="range" id="zpw-o" min="20" max="100" value="' + Math.round((d.o == null ? 1 : d.o) * 100) + '"></label>' : '') +
             (!d.img ? '<span class="sbld-hint" style="margin:0;">optional — you can draw the zones without one</span>' : '') +
+            /* ⚠️ The owner's *"uniformity of the sizes"*: another floor's outlines, shown but
+               not editable, to trace against. Absent entirely when no other floor has one -
+               an empty picker is a question with no answers. */
+            (refs.length ? '<span class="ps-tb-div"></span>' +
+              '<label class="zpw-grid-ctl" title="Show another floor\u2019s zones underneath as a grey outline, to trace against. It cannot be selected or edited.">Trace over' +
+                '<select id="zpw-ref"><option value="">nothing</option>' + refs.map(function (r) {
+                  return '<option value="' + e2(r.plateId) + '"' + (W.ref === r.plateId ? ' selected' : '') + '>' +
+                    e2(r.label) + ' (' + r.plate.polys.length + ')</option>';
+                }).join('') + '</select></label>' +
+              (W.ref ? '<button class="pd-btn" id="zpw-refcopy" title="Copy every outline from the reference onto this floor, keeping its zone names. The fastest way to make two floors identical.">Copy these here</button>' : '') : '') +
+          '</div>' +
+
+          /* ---- orientation: which edge of THIS drawing faces the front ------------------
+             ⚠️ Owner: *"defining from the floor plan which is the front, which is the rear"*.
+             It lives here rather than in the 3D bar because it is a fact about the DRAWING,
+             and the planner deciding it is looking at the drawing. ⚠️ ONE field: the rear is
+             the opposite edge, derived - storing both would allow a building whose front and
+             rear are the same side. */
+          '<div class="zpw-bar">' +
+            '<span class="zpw-lbl">Front faces</span>' +
+            '<span class="ps-vs-seg zpw-seg">' + ZP_EDGES.map(function (e) {
+              return '<button data-zpfront="' + e + '"' + (zpFront() === e ? ' class="on"' : '') +
+                ' title="The ' + ZP_EDGE_SIDE[e] + ' edge of this drawing is the front of the building">' +
+                e + ' \u00b7 ' + ZP_EDGE_SIDE[e] + '</button>';
+            }).join('') + '</span>' +
+            (zpFront()
+              ? '<span class="sbld-hint" style="margin:0;">rear is the <b>' + ZP_EDGE_SIDE[{ N: 'S', E: 'W', S: 'N', W: 'E' }[zpFront()]] +
+                '</b> edge \u00b7 the 3D view names its elevations from this</span>' +
+                '<button class="pd-btn" id="zpw-frontx" title="Leave it undefined">Clear</button>'
+              : '<span class="sbld-hint" style="margin:0;">not set \u2014 the 3D view falls back to its own Front faces setting</span>') +
           '</div>' +
 
           // ---- row 2: which zone ---------------------------------------------------------
@@ -32230,10 +32639,29 @@
             '<span class="zpw-pal">' + (all.length ? all.map(function (c) {
               var on = sel ? (zpNormCode(c) === zpNormCode(sel.code)) : (zpNormCode(c) === zpNormCode(W.brush));
               return '<button class="zpw-sw' + (on ? ' on' : '') + '" data-zpb="' + e2(c) + '"' +
-                ' style="--zc:' + zpHue(all, c) + '" title="' + e2(sel ? ('Make this area ' + c) : ('Draw the next area as ' + c)) + '">' +
+                ' style="--zc:' + zpColor(c) + '" title="' + e2(sel ? ('Make this area ' + c) : ('Draw the next area as ' + c)) + '">' +
                 e2(c) + '</button>';
             }).join('') : '<span class="sbld-hint" style="margin:0;">This floor has no zones yet — add them in the step behind.</span>') +
             '</span>' +
+            /* ---- the zone's colour -----------------------------------------------------
+               ⚠️ IT SITS IN THIS ROW, not a row of its own, because it is the same question
+               the row already asks — which zone is this — answered on the other axis. The
+               control edits the colour of the ACTIVE code: the selected area's zone if one is
+               selected, otherwise the brush, which is exactly what the row's label already
+               says out loud.
+               ⚠️ It is not a per-AREA colour. Two areas of Zone 1 on one floor are one zone
+               drawn in two pieces (see zpBox), and letting them differ in colour would say
+               they are two things. */
+            (function () {
+              var act = sel ? sel.code : W.brush;
+              if (!act) return '';
+              return '<span class="ps-tb-div"></span>' +
+                '<label class="zpw-grid-ctl" title="' + e2('The colour ' + act + ' is drawn in — here, and in the 3D view when that is set to colour by zone. It applies on every floor.') + '">Colour' +
+                  '<input type="color" id="zpw-col" value="' + e2(zpColor(act)) + '"></label>' +
+                (zpColorIsSet(act)
+                  ? '<button class="pd-btn" id="zpw-colx" title="Back to the automatic colour for this zone">Auto</button>'
+                  : '<span class="sbld-hint" style="margin:0;">automatic</span>');
+            })() +
           '</div>' +
 
           // ---- row 3: making and editing areas -------------------------------------------
@@ -32264,7 +32692,7 @@
           (W.err ? '<p class="sbld-note sbld-note-warn">' + e2(W.err) + '</p>' : '') +
           '<div class="zpw-stage' + (W.drawing ? ' drawing' : '') + '" id="zpw-stage">' +
             (W.url ? '<img class="zpw-img" src="' + e2(W.url) + '" alt="" style="opacity:' + (d.o == null ? 1 : d.o) + '">' : '') +
-            '<svg class="zpw-svg" id="zpw-svg" viewBox="0 0 ' + ZP_W + ' ' + hh + '" preserveAspectRatio="none">' + gridSvg + shapes + live + '</svg>' +
+            '<svg class="zpw-svg" id="zpw-svg" viewBox="0 0 ' + ZP_W + ' ' + hh + '" preserveAspectRatio="none">' + gridSvg + refSvg + frontSvg + shapes + live + '</svg>' +
             (!d.img && !d.polys.length && !W.drawing ? '<div class="zpw-empty"><b>Nothing here yet.</b><br>' +
               'Pick a zone above, then <b>add a shape</b> — or <b>Trace…</b> it corner by corner.<br>' +
               'Attaching the floor plan is optional, but it gives you something to draw over.</div>' : '') +
@@ -32277,7 +32705,7 @@
             '<div class="zpw-list">' + (d.polys.length
               ? d.polys.map(function (q) {
                   return '<span class="zpw-chip' + (W.sel === q.id ? ' on' : '') + '" data-zpsel="' + e2(q.id) + '">' +
-                    '<i style="--zc:' + zpHue(all, q.code) + '"></i>' + e2(q.code) + '<b>' + q.pts.length + '</b></span>';
+                    '<i style="--zc:' + zpColor(q.code) + '"></i>' + e2(q.code) + '<b>' + q.pts.length + '</b></span>';
                 }).join('')
               : '<span class="sbld-hint" style="margin:0;">No areas yet.</span>') +
               (function () {
@@ -32410,6 +32838,56 @@
         var un = q('zpw-undo'); if (un) un.onclick = undo;
         // ⚠️ Changing the grid does NOT move anything already drawn. Re-snapping the whole plate
         // on a settings change would silently rewrite a trace the planner had placed exactly.
+        var cin = q('zpw-col');
+        /* ⚠️ NO snap(). Undo is the OUTLINE's history — a colour change is not a change to the
+           drawing, and pushing one would make Ctrl+Z restore a shape the planner had moved
+           since. `change`, not `input`: the native picker fires input per pixel of the drag,
+           and every one of those would repaint the window and mark the setup dirty. */
+        if (cin) cin.onchange = function () {
+          var s2 = selShape(), act = s2 ? s2.code : W.brush;
+          if (!act) return;
+          zpColorSet(act, cin.value);
+          paint();
+        };
+        var cx = q('zpw-colx');
+        if (cx) cx.onclick = function () {
+          var s3 = selShape(), act = s3 ? s3.code : W.brush;
+          if (!act) return;
+          zpColorSet(act, null);
+          paint();
+        };
+        var rsel = q('zpw-ref');
+        // ⚠️ The reference is a VIEW setting, not a change to the drawing: no snap(), no commit().
+        if (rsel) rsel.onchange = function () { W.ref = rsel.value || ''; paint(); };
+        var rcp = q('zpw-refcopy');
+        if (rcp) rcp.onclick = function () {
+          // ⚠️ Recomputed here, NOT read from paint()'s `refs` - that is a different scope and
+          // reading it threw on every click. Rebuilding it also means the reference cannot have
+          // gone stale between the paint and the press.
+          var r = zpRefsFor(tr, floor, W.plateId).filter(function (x) { return x.plateId === W.ref; })[0];
+          if (!r) return;
+          if (!confirm('Copy ' + r.plate.polys.length + ' area(s) from ' + r.label + ' onto this floor?')) return;
+          snap();
+          var rh = zpH(r.plate), mh = H();
+          /* ⚠️ New ids, and the reference's own height scaled into this sheet - the same
+             correction the ghost draws with, so what lands is what was shown.
+             ⚠️⚠️ SKIPPED ENTIRELY when the two sheets are the same height, which is the normal
+             case. `420 / 620 * 620` is 419.99999999999994, and a feature whose whole point is
+             uniformity should not introduce a difference of its own. */
+          var same = (rh === mh);
+          r.plate.polys.forEach(function (qq) {
+            W.draft.polys.push({ id: zpNewId(), code: qq.code,
+              pts: qq.pts.map(function (p) { return same ? [p[0], p[1]] : [p[0], p[1] / rh * mh]; }) });
+          });
+          W.sel = null;
+          commit(); paint();
+          UI.toast('Copied ' + r.plate.polys.length + ' area(s) from ' + r.label + '. They are ordinary shapes now — move or reshape any of them.');
+        };
+        wrap.querySelectorAll('[data-zpfront]').forEach(function (b) {
+          b.onclick = function () { zpSetFront(zpFront() === b.dataset.zpfront ? null : b.dataset.zpfront); paint(); };
+        });
+        var fx = q('zpw-frontx');
+        if (fx) fx.onclick = function () { zpSetFront(null); paint(); };
         var gsel = q('zpw-grid');
         if (gsel) gsel.onchange = function () {
           W.grid = parseInt(gsel.value, 10) || 0;
@@ -36905,6 +37383,8 @@
          ⚠️ Deep-copied by zpByLabel: a caller that mutated a plate would be editing the planner's
          setup from another module, and the first symptom would be a layout changing on its own. */
       zonePlanByLabel: function () { try { return cfg ? zpByLabel() : {}; } catch (e) { return {}; } },
+      // Which edge of the plan the planner nominated as the FRONT, or null if nobody has said.
+      zonePlanFront: function () { try { return cfg ? zpFront() : null; } catch (e) { return null; } },
       /* ⚠️⚠️ THE COLD-OPEN PATH. The Vertical Stacking is usually reached WITHOUT the Schedule
          Setup tab ever having been opened, and until now that meant the traced floor plan simply
          did not exist as far as the card was concerned. This reads the saved setup row directly.
@@ -36913,22 +37393,31 @@
          opened it. The fetched config is used to build the map and thrown away.
          ⚠️ Most recently updated wins, matching pickDefaultSetup - the card and the setup tab
          must agree about which setup is 'the' one, or they would draw different buildings. */
+      /* ⚠️ RETURNS { byLabel, front } rather than the bare map: the front edge is defined on the
+         same drawing and saved in the same row, so fetching it separately would mean a second
+         round trip for a fact that arrived with the first. */
       zonePlanFetch: async function (projectId) {
-        if (!projectId) return {};
+        var EMPTY = { byLabel: {}, front: null };
+        if (!projectId) return EMPTY;
         try {
           var r = await sbc().from('schedule_builder').select('config,updated_at').eq('project_id', projectId);
-          if (r.error || !r.data || !r.data.length) return {};
+          if (r.error || !r.data || !r.data.length) return EMPTY;
           var rows = r.data.slice().sort(function (a, b) {
             return String(b.updated_at || '').localeCompare(String(a.updated_at || ''));
           });
+          var front = null;
           for (var i = 0; i < rows.length; i++) {
-            var m = zpByLabelOf(normalize(rows[i].config || {}));
+            var c = normalize(rows[i].config || {});
+            var m = zpByLabelOf(c);
+            // ⚠️ The newest setup that names a front wins, even if its plan is empty - the two
+            // facts are independent and a planner may set one before drawing the other.
+            if (!front) front = zpNormFront(c.zonePlan && c.zonePlan.front);
             // ⚠️ The most recent setup may hold no plan while an older one does. Falling through
             // beats showing the guessed layout next to a plan the planner knows they drew.
-            if (Object.keys(m).length) return m;
+            if (Object.keys(m).length) return { byLabel: m, front: front };
           }
-          return {};
-        } catch (e) { return {}; }
+          return { byLabel: {}, front: front };
+        } catch (e) { return EMPTY; }
       },
       /* ⚠️⚠️ THE COLD-OPEN GAP, CLOSED. `cfg` is only populated once the Schedule Setup tab has
          loaded a setup this session — so a planner who opens the Project Schedule and goes straight

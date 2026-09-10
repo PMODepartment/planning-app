@@ -95,6 +95,40 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### Trace over another floor, front/rear on the drawing, zone colours, a 3D hover trace (2026-09-10) — jasantos2
+
+Owner: *"For uniformity of the sizes of the floor plans … show the overview of the other floor
+plans and trace it from there? but the overview from other floors should not be editable. Also …
+defining from the floor plan which is the front, which is the rear. Also can you add option for
+colors. As well as when hovering over the zones in the vertical stacking 3D, can you show like a
+trace of the zone to distinguish it."*
+
+**Trace over** in the floor-plan window shows another floor's outlines as a ghost — no ids, no
+handles, `pointer-events:none` on the group *and* the polygons, so a click passes **through** it to
+the real shape; ⚠️ deduped by plate, and it now offers **every plate in the project**, labelled by
+trade, not only the floors of the trade being edited. **Copy these here** makes them ordinary
+shapes.
+
+**Front faces**, on the drawing itself: one field (the rear is derived — two would allow a building
+whose front and rear are the same side), the edge drawn on the sheet, and ⚠️ the 3D card's own
+buttons go **inert** with a note saying where the answer lives, rather than staying live and
+ignored. It turns the camera, not just the labels.
+
+**Zone colours**: a swatch beside the zone palette, ⚠️ keyed by zone **code project-wide** (`Zone 1`
+is one zone, on every storey), with the automatic hue now a **hash of the code** instead of its
+index in one floor's list — the index made the same zone two colours one storey apart. In the 3D
+bar, **Colour · Trade | Zone**, ⚠️ opt-in and off by default: fill = trade is this card's primary
+channel, and it falls back per cell so an untraced zone keeps its trade colour.
+
+**Hovering a zone in 3D traces its outline** — ⚠️ with `depthTest` off, so the trace reads *through*
+the building instead of being hidden by the storeys in front of the zone it is meant to pick out —
+plus a readout of storey, zone, percent and finish. One raycaster serves hover and click.
+
+⚠️⚠️ And a bug in this batch's own first half: `zonePlanFetch` now returns `{ byLabel, front }`, and
+**Sync floor plans was still reading that envelope as the map** — so it reported "read the floor
+plans for 2 floors" on every project and every lookup missed. **86 assertions across five suites,
+0 failing**, executing sliced shipped code, with the pre-fix text run as the control.
+
 ### ⚠️⚠️ The floor plan never reached the Vertical Stacking at all, and a Sync button (2026-09-10) — jasantos2
 
 Owner: *"can't there be a button that allows syncing the floor plans to the 3D? and nothing is still

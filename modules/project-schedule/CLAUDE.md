@@ -13,6 +13,104 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### Tracing over another floor, front/rear on the drawing, zone colours, and a hover trace in 3D (2026-09-10) — jasantos2
+
+Owner: *"For uniformity of the sizes of the floor plans … when editing other floors, is there an
+option to show the overview of the other floor plans and trace it from there? but the overview from
+other floors should not be editable. Also pls add the option of defining from the floor plan which
+is the front, which is the rear. Also can you add option for colors. As well as when hovering over
+the zones in the vertical stacking 3D, can you show like a trace of the zone to distinguish it."*
+
+### 1. Trace over another floor — a ghost, not a layer you can edit
+A **Trace over** picker in the floor-plan window draws another floor's outlines underneath the one
+being edited, and **Copy these here** lands them as ordinary shapes when two floors should match.
+- ⚠️ **It cannot be edited, by construction, not by discipline.** The ghost carries no ids, no
+  handles, no `data-zpoly`, and `pointer-events:none` sits on the group *and* the polygons — so a
+  click passes through it to the real shape underneath rather than selecting something that is not
+  there. It is drawn **below** the real shapes, so the floor being edited always reads on top.
+- ⚠️ **Deduped by PLATE, not by floor.** A plan shared across forty storeys is one drawing; offering
+  it forty times would bury the two references that genuinely differ.
+- ⚠️⚠️ **Every plate in the project, not only this trade's.** Plates are shared through one `of` map
+  keyed by floor id, but the first cut only walked `cfg.zoning[tr].floors` — so a planner tracing
+  the Structural storeys could not see the plan drawn under Architecture, which is exactly the case
+  where "make the floors uniform" matters. Cross-trade entries are labelled with their trade.
+- ⚠️ Absent entirely when no other floor has a drawing: an empty picker is a question with no
+  answers. The copy skips the height correction when the two sheets are the same height — `420 /
+  620 * 620` is `419.99999999999994`, and a feature about uniformity must not introduce a
+  difference of its own.
+
+### 2. Front and rear, defined ON the drawing
+**Front faces** — N/E/S/W with the plain-language edge beside each (`N · top`), the nominated edge
+drawn in red on the sheet and the derived rear dashed opposite it.
+- ⚠️ **One field, not two.** The rear is the opposite edge, derived — storing both would allow a
+  building whose front and rear are the same side.
+- ⚠️ **Not defaulted to a compass point.** "Nobody has said" and "somebody said South" are different
+  answers; the 3D card falls back to its own preference only for the first.
+- ⚠️⚠️ **The plan wins, and the 3D card's own buttons go inert** with a note saying where the answer
+  lives. Two live controls for one fact is how a planner ends up believing the building faces two
+  ways. And it turns the building: `_VS_TURN` states which edge each camera quarter-turn actually
+  shows, and both the elevation NAMES and the camera POSITION derive from it, so choosing North
+  cannot rename the buttons without moving the camera.
+
+### 3. Zone colours
+A colour swatch in the row that already asks which zone this is, and a **Colour · Trade | Zone**
+toggle in the 3D bar.
+- ⚠️⚠️ **Keyed by zone CODE, project-wide** — not per plate and not per area. `Zone 1` is the same
+  zone on every storey, and a colour that changed floor by floor would be unreadable in the one
+  view the colour exists for.
+- ⚠️⚠️ **The automatic hue is now a HASH of the code, not its index in a list.** The index version
+  answered "where does this code sit among *this floor's* codes", so `Zone 2` was the second hue on
+  a floor listing four zones and the third on a floor listing five — same zone, two colours, one
+  storey apart, and nothing outside that window could reproduce either. A hash answers the same for
+  every caller.
+- ⚠️ What is stored is an **override**; its absence is a real answer, and **Auto** restores it.
+- ⚠️ **Colour by zone is opt-in and off by default**, because it spends this card's primary channel.
+  The rule since the card shipped is *fill = trade · brightness = done · edges = slip*, and quietly
+  repainting the fill would break the view whose job is comparing trades. It falls back **per
+  cell**: a zone the plan does not name, and every cell of a trade-split card, keeps its trade
+  colour.
+- ⚠️ The colour crosses the module boundary **with the outline**, resolved in the builder where the
+  bag is owned — the stacking view asks what colour a zone is and gets one answer.
+
+### 4. Hovering a zone in 3D traces it
+- ⚠️⚠️ **`depthTest` is off, deliberately.** From most angles a zone sits behind two or three other
+  storeys, and an outline that respected the depth buffer would be hidden by exactly the geometry
+  it exists to pick out. Ignoring depth draws the trace **through** the building. It is also why
+  the trace is a LINE and not a brighter fill — a fill drawn through the model reads as a block
+  floating in front of it.
+- ⚠️ Built from the zone's **own mesh geometry**, so on a traced floor it is the shape the planner
+  drew and on an untraced one it is the block — never a bounding box. Only the remaining-body mesh
+  is traced: the done stretch is clipped to a fraction of the zone, and outlining it would outline
+  "the done part" rather than the zone.
+- ⚠️ Rebuilt **on change**, not per `pointermove`; one raycaster serves the hover and the click, so
+  the card cannot outline one block and open another; the readout carries storey, zone, percent,
+  count and finish, and a drag drops the trace rather than fighting it.
+- ⚠️ The readout is a DOM node the scene appends, and **dispose removes it** — every repaint of
+  this view disposes its scenes, so without that a planner switching basis a dozen times would
+  collect a dozen tooltips.
+
+### 5. ⚠️⚠️ A bug in this batch's own first half, found by executing it
+`zonePlanFetch` began returning `{ byLabel, front }` so one fetch could carry both facts. The
+cold-open path was moved to the new shape; **`_vsZpSync` was not** — it kept reading the answer *as*
+the map. `Object.keys` then counted the two property names, so **Sync reported "read the floor
+plans for 2 floors" on every project, including ones with nothing traced**, and every lookup
+missed. The suite runs the same input through the pre-fix text and reproduces exactly that.
+
+### Verified
+**86 assertions across five suites, 0 failing**, every one of them executing lines sliced out of
+the shipped file — the colour model and what crosses the boundary, the Sync read (with the pre-fix
+text as the control), the reference picker, the elevation derivation, the 3D bar's markup, and
+`_vs3Build` itself run against a stub three.js: the pick, the trace, the readout, the drag, the
+click and the clean-up. ⚠️ Each suite carries a **sanity gate** — the no-colour config still
+answers automatically, a bare project offers no references, the three colour runs are not one
+answer — so a green run cannot be green for the wrong reason. ⚠️ The suites slice **by name**, not
+by line number: in a 43k-line file a line-numbered slice goes stale on the next edit, and it fails
+as a syntax error that reads as if the code under test were broken.
+⚠️ **Not clicked in a browser:** the anon key has no grants for this project's data, so the window
+and the model were verified by execution, not by opening them.
+
+---
+
 ### ⚠️⚠️ The floor plan never reached the Vertical Stacking at all, and a Sync button (2026-09-10) — jasantos2
 
 Owner: *"can't there be a button that allows syncing the floor plans to the 3D? and nothing is still
