@@ -102,6 +102,8 @@
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
   <!-- boq.js must load BEFORE module.js's init runs (it is read as window.BOQ). -->
+  <!-- locmatch.js first: boq.js and affected.js both call PDLoc, and the schedule loads it too. -->
+  <script src="../../assets/js/locmatch.js?v=20260910z1"></script>
   <script src="../../assets/js/co-insert.js?v=20260909r"></script>
   <script src="../../assets/js/xlgrid.js?v=20260907e"></script>
   <script src="boq.js?v=20260909s"></script>

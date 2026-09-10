@@ -62,6 +62,12 @@ window.BOQ = (function () {
         separately recorded", i.e. claimed = certified — never zero. */
   var CLAIM = {};
   var CODES = null, ACTS = null;            // lazy: class_codes chart, schedule activities
+  /* ⚠️ WBSNAME is a plain `{}` and NOT part of the `[]`-is-truthy family: it is filled by the
+     same read as ACTS and is meaningless without it, so ACTS's own load state governs both.
+     LOCMATCH is `null` until read, because an empty saved table and an unread one are different
+     facts and only the second should be retried. */
+  var WBSNAME = {};                         // dotted wbs code → branch name, from the WBS Summary rows
+  var LOCMATCH = null;                      // WBS branch name → place, from location_levels.match
   /* ⚠️ THE BOQ NO LONGER OWNS THE SCREEN. It used to write straight into `#cc-view`, which
      is the module's whole view area — fine for a full-screen sub-view, impossible for a
      section living inside the Contract tab. Owner, 2026-09-07: *"Can't the BOQ page be
@@ -143,20 +149,22 @@ window.BOQ = (function () {
   /* Normalised key for the suggestion library and for location matching:
      lowercase, punctuation dropped, whitespace collapsed. */
   function normKey(s) { return norm(s).replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim(); }
-  /* Ordinal folding, so "3rd floor" and "third floor" and "3/f" agree. The
-     schedule module has a richer locNormKey but it lives inside that module's
-     closure and is not reachable from here; this is the subset the BOQ leaves
-     actually need. Kept deliberately small — folding too much is how "8th" and
-     "18th" get merged. */
-  var ORD = { first:'1', second:'2', third:'3', fourth:'4', fifth:'5', sixth:'6', seventh:'7',
-              eighth:'8', eight:'8', ninth:'9', nineth:'9', tenth:'10', eleventh:'11', twelfth:'12',
-              ground:'g', roof:'roof', basement:'b' };
-  function locKey(s) {
-    var k = normKey(s);
-    k = k.replace(/(\d+)\s*(st|nd|rd|th)\b/g, '$1');
-    k = k.replace(/\b([a-z]+)\b/g, function (m, w) { return ORD[w] || w; });
-    return k.replace(/\b(floor|flr|level|lvl|storey|story)\b/g, 'floor').replace(/\s+/g, ' ').trim();
-  }
+  /* ⚠️⚠️ THE PRIVATE `locKey` IS GONE — location matching now goes through the SHARED
+     `PDLoc` (`assets/js/locmatch.js`), which is the schedule's own normaliser.
+
+     What was here was a third copy of that normaliser and the only one not cross-asserted
+     against the others, and measuring it against the schedule's found two real defects:
+
+       1. IT MISSED "Roof Deck" vs "Roofdeck" — a real pair on the Jab schedule. It kept the
+          spaces; the schedule strips every separator. So the stacking merged that floor and
+          the BOQ allocator did not, and a line measured on the roof deck matched nothing.
+       2. IT MATCHED A 13th-FLOOR LEAF TO "3rd Floor". `"…at 13 floor".indexOf("3 floor")` is a
+          hit, so a 3rd-floor quantity was offered the 13th floor's activities. Exactly the
+          "8th and 18th get merged" trap this function's own comment warned about, arriving
+          from the other direction. `PDLoc.contains` rejects a digit sitting outside a numeric
+          edge, which is why it is not a one-line `indexOf`.
+
+     Both are asserted in the suite with the old function executed as the contrast. */
   function money(n) {
     if (n == null || !isFinite(n)) return '';
     return Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -769,11 +777,62 @@ window.BOQ = (function () {
        :703 -- fixed there, left standing in this sibling 60 lines below it. */
     if (ACTS && ACTS.length) return ACTS;
     try {
+      /* ⚠️ `wbs` is selected so the matcher has a THIRD rung. The dotted code is the only
+         reliable ancestry on this table: `2026-09-01-wbs-link-rpc.sql` measured `wbs_node_id`
+         NULL on 16,393 of 16,393 activities after an import, and the schedule's own grid never
+         noticed because `rebuild()` splits the code instead. Never read `wbs_node_id` here. */
       var rows = await PDb.selectAll('project_schedule', function (q) { return q.eq('project_id', pid); },
-        'id,activity_id,activity_name,class_code,location,work_type,duration_days,activity_type,scope_type');
+        'id,activity_id,activity_name,class_code,location,work_type,duration_days,activity_type,scope_type,wbs');
+      /* ⚠️⚠️ THE `WBS Summary` ROWS ARE KEPT, AS A CODE→NAME MAP ONLY. They are the only place a
+         branch's NAME is stored, so discarding them (as this function did) left the WBS rung with
+         codes and no words to match against. `affected.js`'s own loader had to make exactly this
+         change for exactly this reason.
+         ⚠️ They stay OUT of `ACTS`: a BOQ line allocated to a summary row would double-count
+         everything beneath it, which is the trap `schedule_scurve_agg` excludes them for. */
+      WBSNAME = {};
+      rows.forEach(function (r) {
+        if (r.activity_type === 'WBS Summary' && r.wbs && r.activity_name) WBSNAME[String(r.wbs)] = r.activity_name;
+      });
       ACTS = rows.filter(function (r) { return r.activity_type !== 'WBS Summary' && r.activity_id; });
-    } catch (e) { ACTS = []; }
+    } catch (e) { ACTS = []; WBSNAME = {}; }
     return ACTS;
+  }
+
+  /* The branch names above an activity, nearest-last, derived by splitting the dotted `wbs`
+     code — '4.1.2' → ['4', '4.1', '4.1.2'] — and naming each prefix from WBSNAME. A prefix the
+     summary rows do not name contributes nothing rather than a bare number, which would match
+     any line whose item_no happened to contain that digit. */
+  function wbsNamesOf(a) {
+    var code = String((a && a.wbs) || '').trim();
+    if (!code) return [];
+    var segs = code.split('.'), out = [], acc = '';
+    for (var i = 0; i < segs.length; i++) {
+      acc = acc ? acc + '.' + segs[i] : segs[i];
+      var n = WBSNAME[acc];
+      if (n) out.push(n);
+    }
+    return out;
+  }
+
+  /* The saved WBS-branch → place table the schedule's Match-WBS-to-locations wizard writes
+     (`location_levels.match`, keyed by branch NAME). Read-only here, and the single most useful
+     thing this module can borrow: it is a planner's own confirmed statement that a branch IS a
+     given place, which no heuristic can beat.
+     ⚠️ Tolerant of the column being absent — `2026-08-05-location-level-match.sql` may not have
+     been run, and the schedule's own reader treats a missing column as "no saved matching". */
+  async function ensureLocMatch() {
+    if (LOCMATCH) return LOCMATCH;
+    var m = {};
+    try {
+      var r = await sb().from('location_levels').select('id,name,sort_order,match').eq('project_id', pid).order('sort_order');
+      if (r.error) throw r.error;
+      (r.data || []).forEach(function (l) {
+        var t = l && l.match;
+        if (t && typeof t === 'object') Object.keys(t).forEach(function (branch) { if (t[branch]) m[branch] = t[branch]; });
+      });
+    } catch (e) { /* no column, no grant, or no levels — all mean "no saved matching". */ }
+    LOCMATCH = m;
+    return LOCMATCH;
   }
 
   // ==========================================================================
@@ -1519,6 +1578,45 @@ window.BOQ = (function () {
 
   function allocOf(itemId) {
     return ALLOC.filter(function (a) { return a.boq_item_id === itemId; });
+  }
+
+  /* ==========================================================================
+     upsertAllocs — the ONE writer for boq_allocations, and the un-run-migration degrade
+     ==========================================================================
+     `matched_by` / `match_score` arrive with `2026-09-10-boq-match-rung.sql`. Until it is run
+     PostgREST answers a payload naming them with PGRST204 ("column not found in schema cache")
+     and REJECTS THE WHOLE BATCH — so without this the matcher would ship and every Apply would
+     fail on a database nobody had migrated yet.
+
+     ⚠️ It drops the two new keys and retries ONCE, then reports what it gave up. Same shape as
+     `module.js`'s `_dropMissingNull` on `contracts_claims`, and the same reason: this repo has
+     more than one live database and the module must work on the un-migrated one. The rung is an
+     audit annotation — losing it is a smaller harm than refusing to record the allocation.
+     ⚠️ It does NOT swallow other errors. An RLS refusal or a constraint violation must still
+     surface, or a failed write reads as a success. */
+  var _allocRungOk = true;
+  async function upsertAllocs(rows) {
+    if (!rows.length) return { ok: true, dropped: '' };
+    var strip = function (list) {
+      return list.map(function (p) { var c = Object.assign({}, p); delete c.matched_by; delete c.match_score; return c; });
+    };
+    var send = async function (list) {
+      for (var i = 0; i < list.length; i += 300) {
+        var res = await sb().from(T_ALLOC).upsert(list.slice(i, i + 300), { onConflict: 'boq_item_id,activity_id' });
+        if (res.error) return res.error;
+      }
+      return null;
+    };
+    var err = await send(_allocRungOk ? rows : strip(rows));
+    if (!err) return { ok: true, dropped: _allocRungOk ? '' : 'The match rung was not recorded — run migrations/2026-09-10-boq-match-rung.sql.' };
+    var msg = String(err.message || err);
+    if (_allocRungOk && /matched_by|match_score|PGRST204|schema cache/i.test(msg)) {
+      _allocRungOk = false;                                   // ⚠️ once per session, not per row
+      var err2 = await send(strip(rows));
+      if (!err2) return { ok: true, dropped: 'The match rung was not recorded — run migrations/2026-09-10-boq-match-rung.sql.' };
+      return { ok: false, msg: String(err2.message || err2) };
+    }
+    return { ok: false, msg: msg };
   }
   /* ⚠️ ALLOCATIONS MUST RECONCILE AND THE UI MUST SAY WHEN THEY DON'T.
      Σ allocated ≤ line qty, with the remainder shown. Silent over-allocation is
@@ -3697,7 +3795,9 @@ window.BOQ = (function () {
     UI.toast('Only ' + wrote + ' of ' + wanted + ' tagged — the rest were refused, usually because somebody else ' +
       'imported this schedule. Nothing was skipped silently.', 'error');
   }
-  async function refreshActs() { ACTS = null; await ensureActs(); }
+  // ⚠️ WBSNAME is rebuilt by the same read, so it must be cleared with ACTS or a re-read after an
+  //    import would keep naming branches the previous schedule's way.
+  async function refreshActs() { ACTS = null; WBSNAME = {}; await ensureActs(); }
 
   // ==========================================================================
   // TAB 2 — Class-code mapping (B1b)
@@ -3751,10 +3851,27 @@ window.BOQ = (function () {
     // unusable one, and it falls out of the document's own structure.
     var heads = ITEMS.filter(function (r) { return r.line_kind === 'heading'; });
 
+    /* ⚠️⚠️ THE NUMERATOR AND THE DENOMINATOR WERE COUNTING DIFFERENT THINGS. `Object.keys(CMAP)`
+       is every mapping on the revision INCLUDING headings, while `mappables` excludes them
+       (`mappable()` — and `addAuthoredLines` states the reason: on a bill we authored, a heading
+       is a group and a group is not a scope item). So on a bill mapped at the heading — the shape
+       this very tab invites, three lines below — "Mapped" could exceed "of N mappable lines" and
+       read as a defect. They are separated rather than merged, because both facts are real and
+       they are not the same fact: a mapped heading covers its leaves, it is not itself scope.
+       ⚠️ `mappable()` is deliberately NOT widened. It gates the suggestion and accept-all paths
+       and the authored-bill invariant above; the allocator reaches an inherited code through
+       `codeFor` instead, which is where that question actually belongs. */
+    var headsMapped = heads.filter(function (r) { return CMAP[r.id]; }).length;
+    var leavesMapped = mappables.filter(function (r) { return CMAP[r.id]; }).length;
+    /* What the allocator can actually act on: a leaf with its own code, or one inheriting a
+       heading's. This is the number that predicts whether the Match-to-schedule tab has work. */
+    var effective = mappables.filter(function (r) { return codeFor(r); }).length;
+
     var h = '<div class="cc-kpis">' +
-      kpi('Mapped', Object.keys(CMAP).length, 'of ' + mappables.length + ' mappable lines') +
+      kpi('Mapped', leavesMapped, 'of ' + mappables.length + ' mappable lines') +
       kpi('Unmapped', unmapped.length, 'the worklist', unmapped.length ? 'warn' : 'good') +
-      kpi('Headings', heads.length, 'map here where the sheet supports it') +
+      kpi('Headings mapped', headsMapped + ' / ' + heads.length,
+          headsMapped ? 'covering ' + (effective - leavesMapped) + ' more line(s)' : 'map here where the sheet supports it') +
       kpi('Suggestion library', SUGG ? SUGG.length : '—', 'learned across the portfolio') +
       '</div>';
 
@@ -3954,50 +4071,226 @@ window.BOQ = (function () {
        3. BY HAND — always available, and the only defensible option on a
           lump-sum line.
      'Unallocated' is a real, visible state and the planner's worklist. */
+  /* ==========================================================================
+     codeFor — a HEADING's class code reaches its leaves
+     ==========================================================================
+     ⚠️⚠️ HEADING MAPPING WAS HALF-BUILT AND BOUGHT NOTHING. The Class Codes tab lists headings
+     and its own KPI reads "Headings — map here where the sheet supports it", and
+     `docs/boq-and-pmi.md` §3.3 is an argument for mapping AT the heading: on the OPW101 fit-out
+     sheets one heading covers 2–16 location leaves, so ~40 headings cover ~190 lines. But
+     `candidatesFor` read `CMAP[r.id]` — the leaf's OWN map — so a mapped heading was invisible
+     to the allocator and the planner had to map all 190 anyway.
+
+     ⚠️ The DIRECT map always wins. An inherited code is a fallback, never an override: a leaf
+     mapped by hand to something other than its heading has been deliberately corrected, and
+     silently replacing that would undo a judgement.
+     ⚠️ Bounded at 8 hops, the same bound `pathOf` already uses, so a cyclic parent_id (which a
+     bad import can produce, the column being a plain self-reference) cannot hang the tab. */
+  function codeFor(r) {
+    if (!r) return null;
+    var direct = CMAP[r.id];
+    if (direct && direct.class_code) return { class_code: direct.class_code, from: null };
+    var cur = r, seen = 0;
+    while (cur && cur.parent_id && seen++ < 8) {
+      cur = ITEMS.find(function (x) { return x.id === cur.parent_id; });
+      if (!cur) break;
+      var cm = CMAP[cur.id];
+      if (cm && cm.class_code) return { class_code: cm.class_code, from: cur };
+    }
+    return null;
+  }
+
   function candidatesFor(r) {
-    var cm = CMAP[r.id];
-    if (!cm || !ACTS) return [];
-    return ACTS.filter(function (a) { return a.class_code === cm.class_code; });
+    var cf = codeFor(r);
+    if (!cf || !ACTS) return [];
+    return ACTS.filter(function (a) { return a.class_code === cf.class_code; });
+  }
+  /* ⚠️ The haystack is the leaf's text PLUS its heading chain. On three of the four OPW101
+     sheets the heading carries the spec and the leaf carries the place — but the place is
+     sometimes named on the heading instead ("WF-1.02C … at 3rd floor" over bare leaves), and
+     reading the leaf alone silently loses those. `pathOf` is the chain the class-code
+     suggestion library already keys on, so this adds no new notion of a line's ancestry. */
+  function locHaystack(r) {
+    var parts = [], seen = 0, cur = r;
+    while (cur && seen++ < 8) {
+      if (cur.description) parts.unshift(cur.description);
+      cur = cur.parent_id ? ITEMS.find(function (x) { return x.id === cur.parent_id; }) : null;
+    }
+    return parts.join(' ');
+  }
+  function locValsOf(a) {
+    var vals = [];
+    if (a && a.location && typeof a.location === 'object') {
+      Object.keys(a.location).forEach(function (k) { if (a.location[k]) vals.push(a.location[k]); });
+    }
+    return vals;
   }
   function locMatch(r, acts) {
-    var key = locKey(r.description || '');
-    if (!key) return [];
+    var hay = locHaystack(r);
+    if (!hay) return [];
     return acts.filter(function (a) {
-      var vals = [];
-      if (a.location && typeof a.location === 'object') Object.keys(a.location).forEach(function (k) { if (a.location[k]) vals.push(a.location[k]); });
-      return vals.some(function (v) { var lk = locKey(v); return lk && key.indexOf(lk) >= 0; });
+      return locValsOf(a).some(function (v) { return PDLoc.contains(hay, v); });
     });
+  }
+
+  /* ==========================================================================
+     scoreCandidates — the four rungs, and every match says which one found it
+     ==========================================================================
+     ⚠️⚠️ WHY THIS IS NOT JUST `candidatesFor`. A class code is a TAG: "Rebar Works" is one code
+     on forty floor-level activities. Returning all forty and splitting pro-rata by duration was
+     the whole of the old proposal — and it is not merely imprecise, it MOVES MONEY. Cost
+     Loading's `boqDerive` (project-schedule) splits a line's amount across exactly the
+     activities it is allocated to, and that lands in `project_schedule.planned_cost`, which is
+     the cost-basis S-curve and Cash Flow's cash-in. A 3rd-floor line spread over forty floors
+     puts 95% of its cost on floors it does not touch.
+
+     THE RUNGS, strongest first. The code is a GATE (it narrows); the other three SCORE.
+
+       location  0.90  the line's text + heading chain names the activity's own location value
+       wbs       0.70  a WBS branch above the activity is named by the line's heading chain,
+                       or is a branch the planner has already declared to be that place
+       name      ≤0.6  `matchAct`'s word overlap — the weakest signal and a TIEBREAK ONLY
+       code      0.10  carries the code and nothing else agrees; still a real candidate
+
+     ⚠️ ONLY THE BEST RUNG IS REPORTED per activity, not a blended score. "Matched on location"
+     and "matched on a 0.55 word overlap that also happened to share a floor" deserve different
+     trust, and a single number hides which one you have. The `why` string is what the planner
+     reads and what `matched_by` stores.
+
+     ⚠️ RETURNS A PROPOSAL AND WRITES NOTHING. Propose → preview → apply, unchanged. */
+  var RUNG_SCORE = { location: 0.90, wbs: 0.70, name: 0.60, code: 0.10 };
+  var RUNG_ORDER = ['location', 'wbs', 'name', 'code'];
+  var RUNG_LABEL = {
+    location: 'location match',
+    wbs: 'WBS branch',
+    name: 'name similarity',
+    code: 'class code only — split pro-rata by duration'
+  };
+
+  function scoreCandidates(r) {
+    var acts = candidatesFor(r);
+    var cf = codeFor(r);
+    /* ⚠️ NO CODE IS NOT NO ANSWER, but it is a different one. With nothing to narrow on, the
+       candidate set would be the whole schedule — 16k rows — so the weaker rungs are run over
+       it only when they can actually discriminate: location, which is a positive statement
+       about a place, and never the name rung, which at floor 0.35 would return hundreds. */
+    var gated = !!cf;
+    if (!gated) acts = locMatch(r, ACTS || []);
+    if (!acts.length) return { gated: gated, code: cf, list: [] };
+
+    var hay = locHaystack(r);
+    var pathKey = normKey(hay);
+    // ⚠️ The chart row is deliberately NOT read here — see the name rung below for why.
+
+    var list = acts.map(function (a) {
+      var best = null;
+      var bump = function (rung, why) {
+        if (!best || RUNG_SCORE[rung] > best.score) best = { rung: rung, score: RUNG_SCORE[rung], why: why };
+      };
+
+      // rung 4 — the code alone, the floor every gated candidate stands on.
+      if (gated) bump('code', 'carries ' + cf.class_code);
+
+      /* rung 3 — name similarity against THE LINE'S OWN TEXT, and deliberately NOT against the
+         class code's chart description.
+         ⚠️⚠️ Scoring against the chart was the first cut and it was worse than useless. An
+         activity carries a code BECAUSE its name resembles that code's description — that is
+         what `matchAct` does for the tagger, which is the right place for it. So inside a
+         code-gated set every candidate scores ~0.95 on the chart, the rung never discriminates,
+         and its only effect is to relabel a code match as a name match and switch the split
+         from pro-rata to equal. Measured on the fixture: a provisional-sum line naming nothing
+         came back as 20 activities on rung `name`. The line's OWN description is the signal
+         that varies within a code, so it is the only one read here. */
+      if (r.description) {
+        var md = matchAct(a, { desc_l3: r.description, desc_l2: '' });
+        if (md) bump('name', md.why);
+      }
+
+      // rung 2 — the WBS branch.
+      var branches = wbsNamesOf(a);
+      for (var i = 0; i < branches.length; i++) {
+        var bn = branches[i];
+        // (a) the line's heading chain names this branch outright
+        if (bn.length > 3 && pathKey.indexOf(normKey(bn)) >= 0) { bump('wbs', 'under WBS “' + bn + '”'); break; }
+        // (b) the planner has already declared this branch to BE a place, and the line names it
+        var declared = LOCMATCH && LOCMATCH[bn];
+        if (declared && PDLoc.contains(hay, declared)) { bump('wbs', 'WBS “' + bn + '” is ' + declared); break; }
+      }
+
+      // rung 1 — the location values stored on the activity itself.
+      var lv = locValsOf(a);
+      for (var j = 0; j < lv.length; j++) {
+        if (PDLoc.contains(hay, lv[j])) { bump('location', 'at ' + lv[j]); break; }
+      }
+
+      return { act: a, rung: best.rung, score: best.score, why: best.why };
+    });
+
+    list.sort(function (p, q2) {
+      return q2.score - p.score || String(p.act.activity_id).localeCompare(String(q2.act.activity_id));
+    });
+    return { gated: gated, code: cf, list: list };
+  }
+
+  /* The winning rung's members — the set a proposal is actually built from.
+     ⚠️ TOP RUNG ONLY, never "everything above a threshold". If three activities matched on
+     location and thirty-seven only on the code, the answer is those three: including the
+     thirty-seven at a lower weight is the pro-rata smear this whole change exists to remove.
+     A weaker rung is a FALLBACK for when the stronger one found nothing, not a supplement. */
+  function topRung(scored) {
+    var list = (scored && scored.list) || [];
+    if (!list.length) return { rung: null, list: [] };
+    var top = list[0].rung;
+    return { rung: top, list: list.filter(function (x) { return x.rung === top; }) };
   }
   /* Propose a split. ⚠️ RETURNS A PROPOSAL — it writes nothing. An auto-split
      written silently becomes indistinguishable from a planner's own figures,
      which defeats the point of an auditable allocation table. Same rule the
      schedule's location wizard already follows: propose → preview → apply. */
-  function proposeSplit(r, acts) {
+  /* ⚠️ It now takes the SCORED result, so the split is made over the winning rung's members
+     rather than over everything carrying the code. The old signature took a flat activity
+     array; an array is still accepted so nothing that has not been updated breaks. */
+  function proposeSplit(r, scored) {
+    var s = (scored && scored.list) ? scored
+          : { gated: true, code: codeFor(r),
+              list: (scored || []).map(function (a) { return { act: a, rung: 'code', score: RUNG_SCORE.code, why: 'candidate' }; }) };
+    var top = topRung(s);
+    var picked = top.list;
+    if (!picked.length) return { method: null, rung: null, parts: [], scored: s };
+
+    var part = function (x, qty) {
+      return { activity_id: x.act.activity_id, name: x.act.activity_name, qty: qty,
+               rung: x.rung, why: x.why };
+    };
     var q = Number(r.qty) || 0;
-    if (!acts.length) return { method: null, parts: [] };
+
     /* ⚠️ NO QUANTITY IS NOT NOTHING TO PROPOSE. It used to return an empty set, so a planner opening
        an un-measured line got a blank dialog and had to add every activity from an 800-entry select —
        which is friction precisely where the owner asked for none. The candidates ARE the proposal;
        only the split is unknown, so each part comes back at 0 and the link is one press of Apply.
        Method stays null: nothing has been split, and labelling this 'prorata' would claim an
        arithmetic that did not happen. */
-    if (!q) return { method: null, parts: acts.map(function (a2) {
-      return { activity_id: a2.activity_id, name: a2.activity_name, qty: 0 }; }) };
-    var loc = locMatch(r, acts);
-    if (loc.length) {
-      // A location match is a statement about WHERE, so an equal split across
-      // the matched locations is the honest reading — not a duration weighting,
-      // which would silently make a slower floor take more of the quantity.
-      var each = q / loc.length;
-      return { method: 'location', parts: loc.map(function (a) { return { activity_id: a.activity_id, name: a.activity_name, qty: each }; }) };
+    if (!q) return { method: null, rung: top.rung, scored: s,
+                     parts: picked.map(function (x) { return part(x, 0); }) };
+
+    /* ⚠️ A LOCATION OR WBS MATCH IS A STATEMENT ABOUT *WHERE*, SO THE SPLIT IS EQUAL. Weighting
+       those by duration would silently give a slower floor more of the quantity — the floors
+       were named, not measured, and the arithmetic must not invent a measurement the match did
+       not make. Only the un-discriminated code rung falls back to duration pro-rata, which is
+       what the old function did for every case. */
+    if (top.rung === 'location' || top.rung === 'wbs' || top.rung === 'name') {
+      var each = q / picked.length;
+      return { method: 'location', rung: top.rung, scored: s,
+               parts: picked.map(function (x) { return part(x, each); }) };
     }
-    var totalDur = acts.reduce(function (s, a) { return s + (Number(a.duration_days) || 0); }, 0);
+    var totalDur = picked.reduce(function (t, x) { return t + (Number(x.act.duration_days) || 0); }, 0);
     if (totalDur > 0) {
-      return { method: 'prorata', parts: acts.map(function (a) {
-        return { activity_id: a.activity_id, name: a.activity_name, qty: q * (Number(a.duration_days) || 0) / totalDur }; }) };
+      return { method: 'prorata', rung: top.rung, scored: s, parts: picked.map(function (x) {
+        return part(x, q * (Number(x.act.duration_days) || 0) / totalDur); }) };
     }
-    var e2 = q / acts.length;
-    return { method: 'prorata', parts: acts.map(function (a) { return { activity_id: a.activity_id, name: a.activity_name, qty: e2 }; }) };
+    var e2 = q / picked.length;
+    return { method: 'prorata', rung: top.rung, scored: s,
+             parts: picked.map(function (x) { return part(x, e2); }) };
   }
 
   /* ⚠️⚠️ THIS TAB USED TO SHOW FIVE ZEROS AND A WALL. Owner, 2026-09-07: *"match to schedule tab
@@ -4027,7 +4320,12 @@ window.BOQ = (function () {
 
   function allocHTML() {
     var lines = ITEMS.filter(linkLine);
-    var mapped = lines.filter(function (r) { return CMAP[r.id]; });
+    /* ⚠️ `codeFor`, not `CMAP[r.id]`. This count drives `allocStage`, which decides whether the
+       tab says "map some lines first" or shows the worklist — so on a bill mapped at the
+       HEADING (the shape `docs/boq-and-pmi.md` §3.3 recommends and the Class Codes tab already
+       invites) it used to report zero mapped lines and send the planner back to a tab where
+       the work was already done. */
+    var mapped = lines.filter(function (r) { return codeFor(r); });
     var done = mapped.filter(function (r) { return allocOf(r.id).length; });
     // ⚠️ Over-allocation is only meaningful against a quantity that EXISTS. A line with none
     // cannot be over-allocated, and testing `> 0 + 1e-6` would have flagged every link on every
@@ -4140,14 +4438,31 @@ window.BOQ = (function () {
         '<td class="cc-desc"><div class="cc-desc-txt">' + esc(r.description || '') + '</div>' +
           '<div class="cc-mini">' + esc(r.sheet) + ' · row ' + r.source_row + ' · ' + esc(r.unit || '') +
           (qOn ? '' : ' · <b>no qty yet</b>') + '</div></td>' +
-        '<td><span class="boq-code">' + esc(CMAP[r.id].class_code) + '</span></td>' +
+        /* ⚠️⚠️ `codeFor`, and it is a CRASH FIX as well as a feature. This read was
+           `CMAP[r.id].class_code` with no guard — safe only while the list above it filtered on
+           that same direct map. The moment a heading-mapped leaf reached this row it would have
+           thrown on `undefined.class_code` and taken the whole worklist with it.
+           ⚠️ An inherited code says so on the chip rather than passing itself off as the line's
+           own: which line carries the mapping is exactly what a planner needs to know to change it. */
+        '<td>' + (function () {
+          var cf = codeFor(r); if (!cf) return '<span class="cc-mut">—</span>';
+          return '<span class="boq-code"' + (cf.from ? ' title="inherited from heading ' +
+                   esc(cf.from.item_no || cf.from.description || '') + '"' : '') + '>' +
+                 esc(cf.class_code) + '</span>' +
+                 (cf.from ? ' <span class="cc-mini">inherited</span>' : '');
+        })() + '</td>' +
         // ⚠️ An em dash, not 0. A qty-less line showing "0" allocated "0" with "0" remaining reads
         // as a finished line, which is the opposite of what it is.
         '<td class="cc-r">' + (qOn ? qtyStr(q) : '<span class="cc-mut">—</span>') + '</td>' +
         '<td class="cc-r">' + (qOn ? qtyStr(s) : (al.length ? '<span class="cc-mut">linked</span>' : '<span class="cc-mut">—</span>')) + '</td>' +
         '<td class="cc-r' + (qOn && rem < -1e-6 ? ' boq-bad' : '') + '">' + (qOn ? qtyStr(rem) : '<span class="cc-mut">—</span>') + '</td>' +
         '<td class="cc-r">' + al.length + '</td>' +
-        '<td>' + esc(al.length ? al[0].method : '') + '</td>' +
+        /* ⚠️ The RUNG is what a planner needs here — "location" answers "can I trust this?" in a
+           way "prorata" does not. Falls back to the split method on rows written before
+           2026-09-10-boq-match-rung.sql, where `matched_by` is legitimately null. */
+        '<td>' + (al.length
+          ? '<span class="boq-why">' + esc(al[0].matched_by || al[0].method || '') + '</span>'
+          : '') + '</td>' +
         (canWrite ? '<td class="cc-actcol"><button class="pd-btn" data-split="' + esc(r.id) + '">' + (qOn ? 'Allocate…' : 'Link…') + '</button></td>' : '') +
         '</tr>';
     });
@@ -4185,11 +4500,19 @@ window.BOQ = (function () {
   function openSplit(itemId) {
     var r = ITEMS.find(function (x) { return x.id === itemId; });
     if (!r) return;
-    var acts = candidatesFor(r);
+    var scored = scoreCandidates(r);
+    var acts = scored.list.map(function (x) { return x.act; });
     var existing = allocOf(r.id);
+    /* ⚠️ A STORED allocation shows the rung it was SAVED with (`matched_by`), not the rung the
+       matcher would pick today. The row is a record of a decision, and re-deriving its reason
+       from current data would relabel a planner's hand-made link as whatever the heuristic now
+       thinks — the audit trail `boq_allocations` exists for. */
     var prop = existing.length
-      ? { method: existing[0].method, parts: existing.map(function (a) { var ac = acts.find(function (x) { return x.activity_id === a.activity_id; }); return { activity_id: a.activity_id, name: ac ? ac.activity_name : '', qty: Number(a.qty) }; }) }
-      : proposeSplit(r, acts);
+      ? { method: existing[0].method, rung: null, scored: scored, parts: existing.map(function (a) {
+          var ac = acts.find(function (x) { return x.activity_id === a.activity_id; });
+          return { activity_id: a.activity_id, name: ac ? ac.activity_name : '', qty: Number(a.qty),
+                   rung: a.matched_by || null, why: null }; }) }
+      : proposeSplit(r, scored);
 
     var qOn = hasQty(r);
     var m = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">' +
@@ -4203,20 +4526,36 @@ window.BOQ = (function () {
     function paint() {
       var q = Number(r.qty) || 0, s = prop.parts.reduce(function (a, p) { return a + (Number(p.qty) || 0); }, 0);
       var rem = q - s;
+      var cf = codeFor(r), cfc = cf ? cf.class_code : '';
       body.innerHTML =
         '<p class="cc-hint"><strong>' + esc(r.description || '') + '</strong><br>' +
         esc(r.sheet) + ' row ' + r.source_row + ' · ' + qtyStr(q) + ' ' + esc(r.unit || '') +
-        ' · class code <code>' + esc((CMAP[r.id] || {}).class_code || '') + '</code></p>' +
-        (prop.method ? '<p class="cc-hint">Proposed by <strong>' + esc(prop.method === 'location' ? 'location match' : prop.method) + '</strong>. ' +
+        ' · class code <code>' + esc(cfc) + '</code>' +
+        (cf && cf.from ? ' <span class="cc-mini">inherited from heading ' +
+          esc(cf.from.item_no || cf.from.description || '') + '</span>' : '') + '</p>' +
+        /* ⚠️ The RUNG is named, not just the split arithmetic. "Proposed by location match" and
+           "proposed by prorata" are the difference between a figure a planner can accept at a
+           glance and one they must check — and until now the screen only ever said the latter. */
+        (prop.rung ? '<p class="cc-hint">Matched on <strong>' + esc(RUNG_LABEL[prop.rung] || prop.rung) + '</strong>' +
+          (prop.method === 'location' ? ', split equally' : ', split pro-rata by duration') + '. ' +
           'Adjust any figure, then Apply. Nothing is stored until you do.</p>' : '') +
         (qOn ? '' : '<p class="cc-hint">Add the activities this line covers. <b>Qty can stay 0</b> — you are recording ' +
           'scope, not measurement, and the link is kept either way.</p>') +
         (acts.length ? '' : '<div class="boq-alert warn">No activity on this project carries class code <code>' +
-          esc((CMAP[r.id] || {}).class_code || '') + '</code>. Allocate by hand, or tag the activities first.</div>') +
+          esc(cfc) + '</code>. Allocate by hand, or tag the activities first.</div>') +
         '<table class="boq-splittab"><thead><tr><th>Activity</th><th class="cc-r">Qty</th><th></th></tr></thead><tbody>' +
         prop.parts.map(function (p, i) {
-          return '<tr><td><code>' + esc(p.activity_id) + '</code> <span class="cc-mini">' + esc(p.name || '') + '</span></td>' +
-            '<td class="cc-r"><input class="pd-input boq-qin" type="number" step="0.001" data-i="' + i + '" value="' + esc(p.qty) + '" /></td>' +
+          return '<tr><td><code>' + esc(p.activity_id) + '</code> <span class="cc-mini">' + esc(p.name || '') + '</span>' +
+            // ⚠️ Every proposed row says which rung found it. A bare list of activities is
+            //    unauditable: "at 3rd Floor" and "2 of 3 item words" deserve different trust.
+            (p.why ? ' <span class="boq-why">' + esc(p.why) + '</span>' : '') + '</td>' +
+            /* ⚠️⚠️ `type="text"`, NEVER `type="number"`. This is the documented data-loss trap and
+               it was live in this dialog: `input[type=number].value` returns "" for anything the
+               spec cannot parse — `1,000`, `1,397,462,269.86`, `₱1,200.50` — and the handler below
+               did `Number(inp.value) || 0`, so typing a quantity with thousands separators wrote a
+               silent ZERO into an allocation. `boq.js` fixed exactly this for the Lines grid in
+               August (see the column spec's note) and the allocator was never brought across. */
+            '<td class="cc-r"><input class="pd-input boq-qin" type="text" inputmode="decimal" data-i="' + i + '" value="' + esc(p.qty) + '" /></td>' +
             '<td><button class="pd-btn" data-rm="' + i + '" title="Remove">&times;</button></td></tr>';
         }).join('') +
         '</tbody></table>' +
@@ -4240,18 +4579,27 @@ window.BOQ = (function () {
             'spread it across these same activities.</p>');
 
       body.querySelectorAll('.boq-qin').forEach(function (inp) {
-        inp.onchange = function () { prop.parts[+inp.dataset.i].qty = Number(inp.value) || 0; prop.method = 'manual'; paint(); };
+        /* ⚠️ `numOf`, not `Number()` — the field is now text, so it can carry "1,000" and this is
+           the parser that already understands the shapes a planner types. `|| 0` stays: an
+           allocation part is `not null default 0` and a cleared box means "link, no quantity".
+           ⚠️ The edited part loses its rung: it is a hand figure now, not a proposal. */
+        inp.onchange = function () {
+          var p = prop.parts[+inp.dataset.i];
+          p.qty = numOf(inp.value) || 0; p.rung = null; p.why = null;
+          prop.method = 'manual'; prop.rung = null; paint();
+        };
       });
       body.querySelectorAll('[data-rm]').forEach(function (b) {
-        b.onclick = function () { prop.parts.splice(+b.dataset.rm, 1); prop.method = 'manual'; paint(); };
+        b.onclick = function () { prop.parts.splice(+b.dataset.rm, 1); prop.method = 'manual'; prop.rung = null; paint(); };
       });
       var add = body.querySelector('#sp-add');
       add.onchange = function () {
         var aid = add.value; if (!aid) return;
         if (prop.parts.some(function (p) { return p.activity_id === aid; })) { add.value = ''; return; }
         var a = (ACTS || []).find(function (x) { return x.activity_id === aid; });
-        prop.parts.push({ activity_id: aid, name: a ? a.activity_name : '', qty: Math.max(0, rem) });
-        prop.method = 'manual'; paint();
+        prop.parts.push({ activity_id: aid, name: a ? a.activity_name : '', qty: Math.max(0, rem),
+                          rung: null, why: null });
+        prop.method = 'manual'; prop.rung = null; paint();
       };
     }
     paint();
@@ -4270,11 +4618,16 @@ window.BOQ = (function () {
       var del = await sb().from(T_ALLOC).delete().eq('boq_item_id', r.id);
       if (del.error) { UI.toast(del.error.message, 'error'); return; }
       if (parts.length) {
-        var ins = await sb().from(T_ALLOC).insert(parts.map(function (p) {
+        /* ⚠️ A part the planner ADDED or RETYPED carries no rung — `manual` is the honest label,
+           and it must not inherit the rung of the proposal it was edited out of. `prop.method`
+           is already reset to 'manual' by every edit handler for the same reason. */
+        var ins = await upsertAllocs(parts.map(function (p) {
           return { project_id: pid, boq_item_id: r.id, activity_id: p.activity_id,
-                   qty: Number(p.qty), method: prop.method || 'manual', accepted_by: UID };
+                   qty: Number(p.qty), method: prop.method || 'manual', accepted_by: UID,
+                   matched_by: (prop.method === 'manual' ? 'manual' : (p.rung || null)),
+                   match_score: (prop.method === 'manual' ? null : (RUNG_SCORE[p.rung] || null)) };
         }));
-        if (ins.error) { UI.toast(ins.error.message, 'error'); return; }
+        if (!ins.ok) { UI.toast(ins.msg, 'error'); return; }
       }
       m.close();
       ALLOC = ALLOC.filter(function (a) { return a.boq_item_id !== r.id; })
@@ -4288,18 +4641,30 @@ window.BOQ = (function () {
      planner accepts. */
   async function bulkPropose() {
     await ensureActs();
-    var todo = ITEMS.filter(function (r) { return qtyLine(r) && CMAP[r.id] && !allocOf(r.id).length; });
-    var plans = todo.map(function (r) { return { r: r, p: proposeSplit(r, candidatesFor(r)) }; });
+    await ensureLocMatch();
+    // ⚠️ `codeFor`, not `CMAP[r.id]` — a leaf whose HEADING carries the code is allocatable now,
+    //    and it was this filter that kept those lines out of the bulk run entirely.
+    var todo = ITEMS.filter(function (r) { return qtyLine(r) && codeFor(r) && !allocOf(r.id).length; });
+    var plans = todo.map(function (r) { return { r: r, p: proposeSplit(r, scoreCandidates(r)) }; });
     var ok = plans.filter(function (x) { return x.p.parts.length; });
     var none = plans.length - ok.length;
-    var byLoc = ok.filter(function (x) { return x.p.method === 'location'; }).length;
+    var byRung = {};
+    ok.forEach(function (x) { byRung[x.p.rung] = (byRung[x.p.rung] || 0) + 1; });
     var m = UI.modal('<h2 style="margin-top:0;">Propose allocations</h2>' +
-      '<p class="cc-hint">' + plans.length + ' unallocated mapped line(s). <strong>' + ok.length + '</strong> can be split: ' +
-      byLoc + ' by location match, ' + (ok.length - byLoc) + ' pro-rata by activity duration. ' +
-      '<strong>' + none + '</strong> cannot — no activity on this project carries their class code, so they stay ' +
-      'unallocated rather than being spread over something arbitrary.</p>' +
-      '<p class="cc-hint">Applying records each split with its method, so a later audit can tell a proposal from a ' +
-      'hand-made decision.</p>' +
+      '<p class="cc-hint">' + plans.length + ' unallocated mapped line(s). <strong>' + ok.length + '</strong> can be split, ' +
+      'each on the strongest rung that found it:</p>' +
+      '<ul class="cc-hint" style="margin-top:0;">' +
+      RUNG_ORDER.map(function (k) {
+        return byRung[k] ? '<li><strong>' + byRung[k] + '</strong> by ' + RUNG_LABEL[k] + '</li>' : '';
+      }).join('') + '</ul>' +
+      '<p class="cc-hint"><strong>' + none + '</strong> cannot — no activity on this project carries their class code, ' +
+      'so they stay unallocated rather than being spread over something arbitrary.</p>' +
+      /* ⚠️ Says the quiet part out loud, because it is the change that moves money: a line
+         matched on location takes ONLY the activities at that location, where it used to take
+         every activity sharing the code and smear the quantity across them by duration. */
+      '<p class="cc-hint">A line matched on a place takes <strong>only the activities in that place</strong>, split ' +
+      'equally — never every activity sharing the code. Applying records the rung and the split method, so a later ' +
+      'audit can tell a proposal from a hand-made decision.</p>' +
       '<div style="text-align:right;margin-top:12px;"><button class="pd-btn" id="bp-x">Cancel</button> ' +
       '<button class="pd-btn pd-btn-primary" id="bp-go"' + (ok.length ? '' : ' disabled') + '>Apply ' + ok.length + ' split(s)</button></div>');
     m.el.querySelector('#bp-x').onclick = m.close;
@@ -4309,14 +4674,13 @@ window.BOQ = (function () {
       ok.forEach(function (x) {
         x.p.parts.forEach(function (p) {
           payload.push({ project_id: pid, boq_item_id: x.r.id, activity_id: p.activity_id,
-                         qty: Number(p.qty), method: x.p.method, accepted_by: UID });
+                         qty: Number(p.qty), method: x.p.method, accepted_by: UID,
+                         matched_by: p.rung || null, match_score: RUNG_SCORE[p.rung] || null });
         });
       });
-      for (var i = 0; i < payload.length; i += 300) {
-        var res = await sb().from(T_ALLOC).upsert(payload.slice(i, i + 300), { onConflict: 'boq_item_id,activity_id' });
-        if (res.error) { UI.toast(res.error.message, 'error'); return; }
-      }
-      UI.toast('Applied ' + ok.length + ' allocation(s).', 'success');
+      var wrote = await upsertAllocs(payload);
+      if (!wrote.ok) { UI.toast(wrote.msg, 'error'); return; }
+      UI.toast('Applied ' + ok.length + ' allocation(s).' + (wrote.dropped ? ' ' + wrote.dropped : ''), 'success');
       await load();
     };
   }
@@ -4818,7 +5182,7 @@ window.BOQ = (function () {
   /* WARNING ALLREVS and PROJTOTAL belong here too: a project switch that kept them would show
      the previous project's contract value under the new project's name. */
   function reset() { COLLAPSED = {}; SEL = {}; loaded = false; DOCS = []; DOCID = null; TRADEMAP = {};
-    ALLREVS = []; PROJTOTAL = null; REVS = []; ITEMS = []; CMAP = {}; ALLOC = []; PERIODS = []; PROG = {}; REVID = null; CODES = null; CODETREE = null; ACTS = null; SCHED = null; schedErr = null; PKGS = []; }
+    ALLREVS = []; PROJTOTAL = null; REVS = []; ITEMS = []; CMAP = {}; ALLOC = []; PERIODS = []; PROG = {}; REVID = null; CODES = null; CODETREE = null; ACTS = null; WBSNAME = {}; LOCMATCH = null; SCHED = null; schedErr = null; PKGS = []; }
 
   return {
     init: init, show: show, reset: reset, render: render,

@@ -58,53 +58,25 @@ window.CCAffected = (function () {
   }
 
   // ---- location value normalisation ---------------------------------------
-  /* ⚠️⚠️ A DELIBERATE DUPLICATE of the schedule's `LOC_ORD` / `_locNormKeyCalc` / `locSpellRank`
-     (modules/project-schedule/index.html:10321, :10332, :10348), copied rather than shared because
-     this app has no shared runtime across module boundaries -- the same call already made for the
-     People Picker and the dashboard chart helpers. KEEP THE TWO IN STEP.
+  /* ⚠️ LOAD-BEARING, NOT TIDINESS — the reason this normalisation exists at all. A real schedule
+     spells one floor several ways: Avesta carries "2ND FLOOR" and "2nd Floor", Jab carries
+     "Roofdeck" and "Roof Deck". Offering those as separate places means the planner ticks one,
+     believes they have selected the 5th floor, and silently misses the twelve activities spelled
+     the other way -- on a change order, that is scope left out of a claim. So values are GROUPED
+     by normalised key and shown under one spelling.
 
-     ⚠️ AND IT IS LOAD-BEARING, NOT TIDINESS. A real schedule spells one floor several ways:
-     Avesta carries "2ND FLOOR" and "2nd Floor", Jab carries "Roofdeck" and "Roof Deck". Offering
-     those as separate places means the planner ticks one, believes they have selected the 5th
-     floor, and silently misses the twelve activities spelled the other way -- on a change order,
-     that is scope left out of a claim. So values are GROUPED by normalised key and shown under one
-     spelling. */
-  var LOC_ORD = { first: 1, second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6, seventh: 7, eighth: 8,
-    eight: 8, ninth: 9, nineth: 9, tenth: 10, eleventh: 11, twelfth: 12, thirteenth: 13, fourteenth: 14,
-    fifteenth: 15, sixteenth: 16, seventeenth: 17, eighteenth: 18, nineteenth: 19, twentieth: 20 };
-  var _normMemo = Object.create(null);
-  function normKey(v) {
-    var k = String(v == null ? '' : v), c = _normMemo[k];
-    if (c !== undefined) return c;
-    return (_normMemo[k] = _normCalc(k));
-  }
-  function _normCalc(v) {
-    var s = String(v == null ? '' : v).toLowerCase().replace(/[‘’']/g, '');
-    s = s.replace(/[a-z]+/g, function (w) { return LOC_ORD[w] != null ? String(LOC_ORD[w]) : w; });
-    s = s.replace(/(\d+)(st|nd|rd|th)(?![a-z])/g, '$1');   // 2nd -> 2, 10th -> 10
-    return s.replace(/[^a-z0-9]+/g, '');                   // "Roof Deck" and "Roofdeck" -> roofdeck
-  }
-  /* One display spelling per normalised key: a digit first (unambiguous and it sorts), then more
-     word separators, then more Title-Cased words, then frequency / shortest / alphabetical so the
-     answer is deterministic whatever order the rows arrived in. Verbatim from the schedule. */
-  function spellRank(v) {
-    return [
-      /\d/.test(v) ? 0 : 1,
-      -(String(v).split(/\s+/).length),
-      -(String(v).split(/\s+/).filter(function (w) { return /^[A-Z]/.test(w); }).length)
-    ];
-  }
-  function bestSpelling(variants) {
-    var counts = {};
-    variants.forEach(function (v) { counts[v] = (counts[v] || 0) + 1; });
-    return Object.keys(counts).sort(function (a, b) {
-      var ra = spellRank(a), rb = spellRank(b);
-      for (var i = 0; i < ra.length; i++) if (ra[i] !== rb[i]) return ra[i] - rb[i];
-      if (counts[b] !== counts[a]) return counts[b] - counts[a];
-      if (a.length !== b.length) return a.length - b.length;
-      return a.localeCompare(b);
-    })[0];
-  }
+     ⚠️ THE DUPLICATE IS RETIRED. The copy that lived here is now `assets/js/locmatch.js`
+     (`window.PDLoc`), loaded by this page and by the schedule's, so there is one implementation
+     instead of three. The local names are KEPT as thin delegates rather than being renamed at
+     ~40 call sites and in the `_internals` export the suite reads — a rename would have made the
+     diff impossible to check for the one thing that matters, which is that behaviour is unchanged.
+
+     ⚠️ Resolved at CALL TIME, never captured into a local at load time: `locmatch.js` is a
+     separate <script> and capturing `window.PDLoc.normKey` while it was still undefined would
+     throw on the first grouping rather than degrade. */
+  function normKey(v) { return PDLoc.normKey(v); }
+  function spellRank(v) { return PDLoc.spellRank(v); }
+  function bestSpelling(variants) { return PDLoc.bestSpelling(variants || []); }
 
   /* ⚠️⚠️ NO GROUPING-VALUE VETO HERE, AND THAT IS A DELIBERATE DEPARTURE FROM THE SCHEDULE.
      `_vsLevVal` refuses a stored location value when `locIsGroupingValue` says the name is a trade
