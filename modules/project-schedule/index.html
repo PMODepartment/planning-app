@@ -15176,7 +15176,8 @@
       _vsZpGot = (res && res.byLabel) || {};
       _vsZpFrontGot = (res && res.front) || null;
       _vsZpAsked = want; _vsZpMemo = null;
-      var have = Object.keys(_vsZpGot);
+      // ⚠️ Distinct FLOORS, not map keys: the map holds one entry per trade per floor.
+      var have = _vsZpLabels(_vsZpGot);
       if (!have.length) {
         UI.toast('No traced floor plan was found for this project. Draw one in Schedule Setup \u203a Floors & Zones \u203a Plan, and SAVE the setup.', 'warn');
       }
@@ -15242,12 +15243,34 @@
     var out = plate.polys.filter(function (q) { return String(q.code || '').trim().toLowerCase() === _VS_ZP_ALL; });
     return out.length ? out : null;
   }
-  function _vsZpFor(levelValue) {
+  // The floor label as both sides normalise it. ⚠️ ONE function, used for the level and for the
+  // trade, because the keys the builder emits are built with the same rule (zpNormCode).
+  function _vsZpNorm(v) { return String(v == null ? '' : v).trim().toLowerCase().replace(/\s+/g, ' '); }
+  /* The distinct FLOOR labels a plan map covers. ⚠️ The map is keyed `trade|floor` now (see
+     zpByLabelOf), so counting its keys counts a floor once per trade that named it — which is what
+     the Sync toast and the footer would otherwise report as "plans for 9 floors" on a project with
+     three. */
+  function _vsZpLabels(map) {
+    var out = [], seen = {};
+    Object.keys(map || {}).forEach(function (k) {
+      var i = k.indexOf('|'), lab = i >= 0 ? k.slice(i + 1) : k;
+      if (lab && !seen[lab]) { seen[lab] = 1; out.push(lab); }
+    });
+    return out;
+  }
+  /* ⚠️⚠️ THE TRADE IS PART OF THE QUESTION. Zoning is per trade, so "the plan for Level 3" is
+     not a question with one answer — the Architectural card must be given Architectural's Level 3.
+     A card that spans trades (per tower, consolidated) passes none and falls back to the bare key,
+     which the builder only emits when every trade that named that floor agrees about it. */
+  function _vsZpFor(levelValue, trade) {
     var all = _vsZpAll();
+    var tk = _vsZpNorm(trade);
     // ⚠️ The band has no floor label to match on, so it is looked up by the protocol key.
-    if (levelValue === VS_NOLEV) return all[_VS_ZP_NOLEV] || null;
-    var k = String(levelValue == null ? '' : levelValue).trim().toLowerCase().replace(/\s+/g, ' ');
-    return (k && all[k]) || null;
+    if (levelValue === VS_NOLEV) return (tk && all[tk + '|' + _VS_ZP_NOLEV]) || all[_VS_ZP_NOLEV] || null;
+    var k = _vsZpNorm(levelValue);
+    if (!k) return null;
+    if (tk && all[tk + '|' + k]) return all[tk + '|' + k];
+    return all[k] || null;
   }
   // The polygons traced for one zone on that plan, or null. ⚠️ A zone traced in two pieces
   // keeps both: the 3D card extrudes each, so an area split by a core is drawn as it was traced.
@@ -15323,9 +15346,9 @@
      pixel-for-pixel unchanged.
      ⚠️ A zone the plan does not name keeps its cell at the MEAN traced width and sits after the
      traced ones, so a half-traced floor degrades instead of losing zones. */
-  function _vsPlanLay(cells, levelValue, plotW) {
+  function _vsPlanLay(cells, levelValue, plotW, trade) {
     if (!cells || cells.length < 2) return null;
-    var plate = _vsZpFor(levelValue);
+    var plate = _vsZpFor(levelValue, trade);
     if (!plate) return null;
     var met = cells.map(function (c) {
       var p = c && c.label ? _vsZpPolysOf(plate, c.label) : null;
@@ -15573,7 +15596,7 @@
       var plateW = PLATE.cols * CELL, plateD = PLATE.rows * CELL;
       // ⚠️ The storey's own traced plan, if it has one. A zone the plan does not name keeps its
       // wrap slot, which is why a half-traced plan degrades instead of losing zones.
-      var _plate = _vsZpFor(v);
+      var _plate = _vsZpFor(v, model.trade);
       var slots = _vsPlanSlots(n, PLATE);
       // The storey's Y: top of the list is the highest floor, so invert the index.
       var y = (storeys - 1 - li) * (SH + GAPY);
@@ -16103,21 +16126,36 @@
      ⚠️ Counted over the storeys this card is actually SHOWING, not over the setup, so a filtered
      or single-tower card reports what is in front of the planner. */
   function _vsPlanFit(model) {
-    var out = { state: 'none', hit: 0, n: 0, miss: [], have: [] };
+    var out = { state: 'none', hit: 0, n: 0, miss: [], have: [], other: [], trade: null };
     var all;
     try { all = _vsZpAll() || {}; } catch (e) { all = {}; }
-    out.have = Object.keys(all);
+    // ⚠️ FLOOR LABELS, not raw keys: the map is keyed `trade|floor`, and this list is printed
+    // to the planner as "the plan is filed under …" — a key with a trade prefix in it would send
+    // them looking for a floor called "architectural works|level 3".
+    out.have = _vsZpLabels(all);
     if (!out.have.length) return out;
+    // ⚠️ The card's own trade, so "does this storey resolve" is asked the way the renderer asks
+    // it — a fit computed against another trade's plan would print a verdict about a building
+    // that is not on screen.
+    var _tr = model && model.trade;
     var disp = (model && model.disp) || [];
     disp.forEach(function (v) {
       /* ⚠️ The un-levelled band counts ONLY once it has a plan of its own. It is not a storey, so
          it must not drag the "n of m storeys" verdict down while nobody has given it one — but a
          planner who HAS drawn it should not then be told their plan matches nothing on the card. */
-      if (v === VS_NOLEV && !_vsZpFor(v)) return;
+      if (v === VS_NOLEV && !_vsZpFor(v, _tr)) return;
       out.n++;
-      if (_vsZpFor(v)) out.hit++;
-      else if (out.miss.length < 4) out.miss.push(String(v));
+      if (_vsZpFor(v, _tr)) { out.hit++; return; }
+      if (out.miss.length < 4) out.miss.push(String(v));
+      /* ⚠️⚠️ "NOT TRACED" AND "TRACED, BUT UNDER ANOTHER TRADE" ARE DIFFERENT ANSWERS, and until
+         the map was keyed by trade the second one could not even be asked — it was silently
+         served as this card's plan, which is the bug the owner reported. A planner sent to draw
+         a plan they have already drawn (on the other trade's floors) is the same wasted trip the
+         name-mismatch message was written to prevent. */
+      var _lk = '|' + _vsZpNorm(v);
+      if (Object.keys(all).some(function (k) { return k.slice(-_lk.length) === _lk; })) out.other.push(String(v));
     });
+    out.trade = _tr || null;
     out.state = out.hit ? (out.hit < out.n ? 'partial' : 'all') : 'nomatch';
     return out;
   }
@@ -16143,6 +16181,15 @@
     } else if (_fit.state === 'partial') {
       lay = '<b>' + _fit.hit + ' of ' + _fit.n + ' storeys are drawn as you traced them</b>; the rest ' + _guess +
         ' \u2014 no plan resolves for ' + esc(_fit.miss.join(', ')) + (_fit.miss.length >= 4 ? '\u2026' : '') + '. ';
+    } else if (_fit.other.length && _fit.state !== 'all') {
+      /* ⚠️ This case is named BEFORE the name-mismatch one, because when both are true this is
+         the actionable half: the floor names line up fine, they are just filed under another
+         trade's zoning. */
+      lay = '<b>A floor plan is traced for ' + _fit.other.length + ' of these storeys, but under another trade</b>' +
+        (_fit.trade ? ' — this card is <b>' + esc(_fit.trade) + '</b>' : '') +
+        '. Floors and zones are kept <b>per trade</b> in <b>Schedule Setup › Floors &amp; Zones</b>, so a plan drawn on ' +
+        'one trade’s floors is not this trade’s plan. Open this trade and draw it there, or use ' +
+        '<b>Copy … floors/zones → all trades</b> and re-trace. Until then the positions are a guess ' + _guess + '. ';
     } else if (_fit.state === 'nomatch') {
       /* ⚠️ NAME BOTH SIDES OF THE JOIN. A plan filed under `GF, F2` cannot meet storeys called
          `Ground Floor, 2nd Floor`, and telling the planner to go and draw a plan they have
@@ -16276,8 +16323,19 @@
        ends), so leaving them behind in here is what made the 2D view throw
        "below is not defined" and refuse to draw at all. Anything the renderer still mentions has
        to come back out — see the harness check that now enumerates exactly that. */
+    /* ⚠️⚠️ WHOSE PLAN THIS CARD READS, derived here rather than passed in by four call sites.
+       A card whose activities are all one trade IS that trade — true of the per-trade cards by
+       construction, and of a per-tower or consolidated card that happens to hold one trade,
+       which should read that trade's plan too. A mixed card has no single answer and gets null,
+       which sends the lookup to the bare key. */
+    var _tr = null, _trOne = true;
+    for (var _ti = 0; _ti < list.length; _ti++) {
+      var _tv = _vsTradeOf(list[_ti]);
+      if (_tr === null) _tr = _tv; else if (_tr !== _tv) { _trOne = false; break; }
+    }
     return { byLevel: byLevel, levels: levels, disp: disp, groundAt: groundAt, detail: detail,
-      above: above, below: below, rowCells: rowCells, cellKey: cellKey };
+      above: above, below: below, rowCells: rowCells, cellKey: cellKey,
+      trade: _trOne ? _tr : null };
   }
   function _vsTowerSVG(list, baseColor, keyPrefix, tradeSplit) {
     // ⚠️ Bands by the AXIS level (the floor), never by LOC_LEVELS[0] — that is the tower on a
@@ -16324,7 +16382,7 @@
          what the owner hit: the zones were traced, the default view is 2D, and nothing about the
          layout showed up. ⚠️ Null on an untraced storey, and the equal-share path below is then
          byte-for-byte what it always was. */
-      var _lay = _vsPlanLay(cells, v, plotW);
+      var _lay = _vsPlanLay(cells, v, plotW, _m.trade);
       if (_lay) cells = _lay.order.map(function (i) { return cells[i]; });
       var fcwU = plotW / (cells.length || 1);
       cells.forEach(function (c, ci) {
@@ -32542,9 +32600,41 @@
                    pts: q.pts.map(function (pt) { return [pt[0] / ZP_W, pt[1] / H]; }) };
         }) };
       }
+      /* ==== KEYED BY TRADE AND FLOOR, NOT BY FLOOR ALONE ==================================
+         Owner 2026-09-10: *"the defined section for structural is coinciding the defined floor
+         plan and zoning shapes with other trades … I have defined a new floor plan for
+         architectural and yet this is being shown."*
+
+         ⚠️⚠️ THE MAP COLLAPSED EVERY TRADE ONTO ONE FLOOR NAME. Zoning is per trade — the setup
+         keeps a separate floors/zones tree for each, and a plate is pointed at a FLOOR ID, so
+         Architectural's Level 3 and Structural's Level 3 are two different floors that happen to
+         share a name. This map was keyed by that name alone with `if (!out[k])`, so the FIRST
+         trade in `cfg.zoning`'s key order won and every other trade's card drew its plan. The
+         Architectural building was showing Structural's outlines, and no amount of redrawing the
+         Architectural plan could change it.
+
+         ⚠️ ALIASES ARE EMITTED HERE, NOT MATCHED AT THE OTHER END. The stacking knows a trade
+         only as the label on an activity ("Architectural Works"); this side knows it as a key
+         (`AR`) with two names of its own (GWORK's canonical label and GLABEL's short one). One
+         normaliser and three keys per floor beats two sides each guessing how the other spells
+         it — which is the join that already went wrong once here.
+         ⚠️ The bare floor name is STILL emitted, but only when every trade that has a plan for
+         that floor points at the SAME plate. It is what a card spanning several trades (per
+         tower, consolidated) reads, and when the trades disagree there is no honest answer, so
+         it emits nothing and the card falls back to the wrap. */
+      function zpTradeKeys(g) {
+        var out2 = [], seen = {};
+        [GWORK[g], GLABEL[g], g].forEach(function (nm) {
+          var k = zpNormCode(nm);
+          if (k && !seen[k]) { seen[k] = 1; out2.push(k); }
+        });
+        return out2;
+      }
+      var bare = {};
       Object.keys(c.zoning || {}).forEach(function (g) {
         var z = c.zoning[g];
         if (!z || !z.floors) return;
+        var tks = zpTradeKeys(g);
         z.floors.forEach(function (f) {
           var _pid = bag.of[f.id] || bag.of['kind:' + floorKind(f)];
           var p = _pid ? bag.plate[_pid] : null;
@@ -32552,10 +32642,15 @@
           var shape = shapeOf(p);
           [f.name, f.code].forEach(function (lab) {
             var k = zpNormCode(lab);
-            if (k && !out[k]) out[k] = shape;
+            if (!k) return;
+            tks.forEach(function (tk) { if (!out[tk + '|' + k]) out[tk + '|' + k] = shape; });
+            // ⚠️ null means "two trades, two different plates" — a disagreement, not a plan.
+            if (!(k in bare)) bare[k] = { pid: _pid, shape: shape };
+            else if (bare[k] && bare[k].pid !== _pid) bare[k] = null;
           });
         });
       });
+      Object.keys(bare).forEach(function (k) { if (bare[k]) out[k] = bare[k].shape; });
       /* The un-levelled band's own plan, filed under the protocol key rather than a floor label —
          it has no floor, which is the whole point of it. ⚠️ Emitted from the same bag and the
          same builder as the storeys above; it is a plate like any other and may well be one a

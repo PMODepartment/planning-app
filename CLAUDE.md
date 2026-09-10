@@ -95,6 +95,32 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### ⚠️⚠️ Every trade was drawn with the first trade's floor plan (2026-09-10) — jasantos2
+
+Owner: *"the defined section for structural is coinciding the defined floor plan and zoning
+shapes with other trades … I have defined a new floor plan for architectural and yet this is
+being shown."*
+
+Zoning is **per trade** — a plate is pointed at a floor id, so Architectural's *Level 3* and
+Structural's *Level 3* are two different floors that share a name. The map that crosses the
+module boundary was keyed by that **name alone**, with `if (!out[k])`, so the project got one
+plan per floor name from whichever trade came first in `cfg.zoning`'s key order and **every card
+drew it**. Re-drawing the Architectural plan could not change what the Architectural card showed:
+it was never being asked for.
+
+The map is keyed **`trade|floor`** now, with the trade's aliases emitted at the source (the
+canonical work label, the short label, the key) rather than guessed at the far end. ⚠️ The bare
+floor key survives **only when every trade that named that floor points at the same plate** — it
+is what a per-tower or consolidated card reads, and when the trades disagree it emits nothing so
+that card falls back to the wrap instead of borrowing someone else's building. The card's trade
+is derived in `_vsTowerModel` (a card whose activities are all one trade IS that trade), and the
+footer now separates **"not traced"** from **"traced, but under another trade"** — a distinction
+that could not even be expressed before.
+
+**203 assertions across twelve suites, 0 failing.** ⚠️⚠️ HEAD is executed as the control: on the
+same two-trade setup it hands both cards the same outline — the bug, reproduced — and this file
+hands each card its own.
+
 ### Progress fills upward, the striped shading was z-fighting, every floor is named, the front is an object (2026-09-10) — jasantos2
 
 Owner: *"hopefully there is a label for all floors … make it that the progress for the 3D version

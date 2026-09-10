@@ -13,6 +13,65 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### ⚠️⚠️ Every trade was drawn with the FIRST trade's floor plan (2026-09-10) — jasantos2
+
+Owner: *"i think, the defined section for structural is coinciding the defined floor plan and
+zoning shapes with other trades … I have defined a new floor plan for architectural and yet this
+is being shown."* They are right, and the cause is one line.
+
+### The bug
+Zoning is **per trade**: the setup keeps a separate floors/zones tree for each, and a plate is
+pointed at a **floor id**, so Architectural's *Level 3* and Structural's *Level 3* are two
+different floors that happen to share a name. `zpByLabelOf` — the map that crosses the module
+boundary — was keyed by that **name alone**:
+
+```js
+[f.name, f.code].forEach(function (lab) {
+  var k = zpNormCode(lab);
+  if (k && !out[k]) out[k] = shape;      // ⚠️ first trade in cfg.zoning's key order wins
+});
+```
+
+So the whole project got **one plan per floor name**, taken from whichever trade came first in
+the object's key order, and every card drew it. Drawing a new Architectural plan could not change
+what the Architectural card showed — it was never being asked for.
+
+### The fix
+- The map is keyed **`trade|floor`**. ⚠️ **Aliases are emitted at the source, not matched at the
+  other end**: the stacking knows a trade only as the label on an activity ("Architectural
+  Works"), this side knows it as a key (`AR`) with two names of its own (GWORK's canonical label,
+  GLABEL's short one), so all three are emitted with one normaliser. Two sides each guessing how
+  the other spells a trade is the join that already went wrong once in this file.
+- ⚠️ **The bare floor key is still emitted — but only when every trade that named that floor
+  points at the SAME plate.** It is what a card spanning trades (per tower, consolidated) reads,
+  and when the trades disagree there is no honest answer, so it emits nothing and that card falls
+  back to the wrap rather than borrowing somebody else's building.
+- The card's trade is **derived in `_vsTowerModel`**, not passed in by four call sites: a card
+  whose activities are all one trade IS that trade. That is true of the per-trade cards by
+  construction, and of a per-tower or consolidated card that happens to hold one trade — which
+  should read that trade's plan too. Mixed cards get null.
+- ⚠️ **"Not traced" and "traced, but under another trade" are now different answers.** Until the
+  map was keyed by trade the second could not be asked — it was silently served as this card's
+  plan. The footer says which trade the card is and points at Schedule Setup, because sending a
+  planner to draw a plan they have already drawn is the same wasted trip the name-mismatch
+  message exists to prevent.
+- ⚠️ Counts collapse back to floors: the map now holds one entry per trade per floor, so the Sync
+  toast and the footer read distinct FLOOR labels (`_vsZpLabels`) rather than key counts — a
+  two-trade, three-floor project reported "plans for 18 floors" for about ten minutes while this
+  was being written.
+
+### Verified
+**203 assertions across twelve suites, 0 failing** — 22 new. ⚠️⚠️ **HEAD is executed as the
+control**: the same two-trade setup (Structural's Level 3 traced left, Architectural's traced
+right) is run through the shipped `zpByLabelOf` + `_vsZpFor` from HEAD and through this file's.
+HEAD hands **both** cards the same outline — the bug, reproduced — and this file hands each card
+its own. ⚠️ Sanity gates: two trades pointing at ONE plate must still answer a card that spans
+them; a single-trade project must be unchanged; a floor nobody has drawn must be a plain miss and
+not "under another trade"; and a mixed card must get nothing rather than borrowing.
+⚠️ **Not clicked in a browser**: the anon key has no grants for this project's data.
+
+---
+
 ### Progress fills upward, the striped shading was z-fighting, every storey is named, and the front is an object you place (2026-09-10) — jasantos2
 
 Owner: *"the labels are good, but hopefully there is a label for all floors. Next, for the
