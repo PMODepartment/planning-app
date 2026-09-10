@@ -95,6 +95,73 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-10 (za1) — "Use 0 activit ies": a word split across two flex items, and a consistency review in which my own checker was wrong twice
+
+Owner: *"I just noticed the Use x activit ies button has a UI error"*, then *"Let's follow the app
+UI consistency review for this code change"*.
+
+**The defect.** `.pd-btn` is `display:inline-flex; gap:6px`. A gap falls between **every** flex
+item, and a bare text node inside a flex container becomes an *anonymous* flex item — it is not
+exempt. The label was built as `Use <span id="sp-pn">0</span> activit<span id="sp-pys">ies</span>`,
+which is four items, so the button rendered `Use 0 activit ies` — the gap landed **inside the
+word**. Fixed by making the label a single text node (`useBtn.textContent = 'Use ' + n +
+' activit' + (n===1?'y':'ies')`), which also deletes the two id lookups the counter used.
+
+⚠️ **This repo had already recorded this exact trap**, on the sidebar brand: a bare text node
+between two images took a gap on *both* sides and measured 18px where the rule said 9px. Same
+mechanism, same stylesheet, and I walked into it anyway. The rule worth keeping: never split a word
+across elements inside a flex row — build the string and set `textContent`.
+
+`flexword.py` now sweeps for it (an opening tag glued to the end of a word inside a known
+flex-with-gap class). Across all 44 JS files and every HTML file: **one** real instance, the one
+above. The only other hit — `Months<span` in project-schedule — is a false positive of the sweep's
+400-char window, and is reported as one rather than "fixed".
+
+**The consistency review.** Of the 20 CSS rules this change added: **0** off-scale font sizes, **0**
+off-scale weights, **0** off-scale radii, **0** non-token shadows. Three colour literals, all
+judged and kept: `.boq-ma-n { color:#fff }` on `--pd-red` (the app's standing treatment — `.cc-tab.active`,
+`.pd-btn-primary`, `.sbld-step.on .sbld-step-n` and 8 more do the same), and two neutral
+`rgba(128,128,128,a)` separators, which composite identically on either theme and match the
+surrounding `.cca-*` rules.
+
+**Both themes, rendered against the real stylesheets, at 344px with the ≤700px block active.**
+Every surface this change introduced clears AA: the step text 16.30/12.22, the mini text 7.07/7.02,
+the scope option 14.25/13.45, the new ladder rows 7.07/7.02, the hint line 7.07/7.02. Within each
+row that actually exists, buttons match exactly — picker toolbar 36h/36h, modal footer 44h/44h,
+and the footer's primary button meets `--pd-tap` (44px) on the nose.
+
+⚠️ **The checker was wrong twice, and both would have caused a "fix" that made things worse.**
+(1) `bgOf` returned the first non-transparent `backgroundColor` and `lum()` then dropped the alpha
+channel, so ink on the selected row's `rgba(238,49,36,.14)` tint was measured against **fully
+saturated red** and reported 3.96 light / 3.59 dark. Composited properly it is **13.30 / 10.96** —
+the failure was the harness's, not the CSS's, and the row is pre-existing anyway.
+(2) The harness stood `Select all 9` (`.pd-btn-sm`) beside `Use 9 activities` (`.pd-btn`) in a row
+that **does not exist in the app** — the owner saw the page and said *"Buttons are not the sized the
+same"*, and he was right about the render and right that it was worth asking. They are 36h and 44h.
+But `#cca-selall`'s real neighbours are `.cca-count` and `#cca-clear`, both `.pd-btn-sm`, and the
+footer's real neighbour is `Back`, also `.pd-btn`. The harness now draws both real groupings, and a
+size is judged against the row it truly sits in.
+
+**Reported, not fixed — each is app-wide and pre-dates this change:**
+- White on `--pd-red` is **4.12:1**, under AA's 4.5 for small text. It is identical for
+  `.pd-btn-primary` everywhere, 11 `.*-tab.active` rules, and `.sbld-step-n` — so `.boq-ma-n`
+  matches the app exactly. Darkening it for this one badge would make the badge inconsistent
+  without making the app accessible; it is a brand decision (`--pd-red-dark` measures better) and
+  needs its own sweep.
+- `.cca-row` is **30px** tall on a phone against a 44px `--pd-tap`. Measured against a plain
+  pre-existing row: also 30px. Every row in every picker shares it; raising only the two rows this
+  change added would make them inconsistent with their 18 siblings, and raising all of them cuts how
+  many fit on screen. Its own change.
+
+Verified: 33 + 36 + 24 = **93 assertions, 0 failing**; `window.BOQ` assigns with 20 exported keys
+and 48 `_internals`, none undefined (the check that would have caught the z6 outage); 44 JS files +
+31 inline blocks parse; 0 brace mismatches; 0 NUL bytes. The match-all suite is pinned to
+**8be5101**, the parent of the lift commit, not to HEAD — comparing HEAD with itself is the trap
+this file already records. `?v=` → `20260910za1` on `boq.js` only, the one asset that changed.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+
 ### A progress-photos viewer on the dashboard, and the S-curve gets periodic bars, a trade filter and a manual mode (2026-09-10) — ethanrobles10
 
 Owner: *"can you input a progress photos viewer for the dashboard and make it visually pleasing."*
@@ -157,6 +224,7 @@ keep asking for 6); `MODULE_V` → `20260910za`. ⚠️ Re-derived from the remo
 the BOQ pass while this was in flight, and `za` sorts after it (`z10` would sort before). The fourth
 collision this log has recorded today.
 Detail: [`modules/s-curve/CLAUDE.md`](modules/s-curve/CLAUDE.md).
+
 
 ### 2026-09-10 (z9) — B: a line can be allocated to the PROJECT; and the picker was hiding activities, could not span floors, and made "Rebar everywhere" a manual deselect
 

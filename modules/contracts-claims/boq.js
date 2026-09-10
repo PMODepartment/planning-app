@@ -4829,9 +4829,24 @@ window.BOQ = (function () {
         window.CCAffected.pickerHTML();
       var foot = m.el.querySelector('.pd-modal-footer');
       var footWas = foot.innerHTML;
+      /* THE LABEL IS ONE TEXT NODE, and that is the fix rather than a style choice.
+         Owner, 2026-09-10: *"the Use x activit ies button has a UI error."* `.pd-btn` is
+         `display:inline-flex; gap:6px`, so every child - INCLUDING each bare text node, which
+         becomes an anonymous flex item - is separated by 6px. Writing
+         `Use <span>0</span> activit<span>ies</span>` therefore made FOUR flex items and rendered
+         "Use 0 activit ies", splitting the word itself.
+         This repo has recorded exactly this once before, on the sidebar brand: a bare text node
+         between two images took a gap on BOTH sides and measured 18px for a 9px rule. Same trap,
+         same file, and I walked into it. Never split a word across elements inside a flex row -
+         build the whole string and set textContent. */
       foot.innerHTML = '<button class="pd-btn" id="sp-pcancel">Back</button>' +
         '<span style="flex:1;"></span>' +
-        '<button class="pd-btn pd-btn-primary" id="sp-puse">Use <span id="sp-pn">0</span> activit<span id="sp-pys">ies</span></button>';
+        '<button class="pd-btn pd-btn-primary" id="sp-puse"></button>';
+      var useBtn = foot.querySelector('#sp-puse');
+      var setUseLabel = function (n) {
+        useBtn.textContent = 'Use ' + n + ' activit' + (n === 1 ? 'y' : 'ies');
+      };
+      setUseLabel((prop.parts || []).length);
 
       var handle = null;
       function done(commit) {
@@ -4858,11 +4873,9 @@ window.BOQ = (function () {
              one activity cannot silently drop the nine already there. */
           initial: prop.parts.map(function (p) { return p.activity_id; }),
           preview: false,
-          onCount: function (n) {
-            var el = m.el.querySelector('#sp-pn'), ys = m.el.querySelector('#sp-pys');
-            if (el) el.textContent = String(n);
-            if (ys) ys.textContent = n === 1 ? 'y' : 'ies';
-          }
+          /* Guarded: the planner can press Back while the picker is still mounting, and the
+             footer this writes into is replaced the moment they do. */
+          onCount: function (n) { if (useBtn && useBtn.isConnected) setUseLabel(n); }
         });
       } catch (e) {
         body.innerHTML = '<p class="cc-hint">The schedule could not be read — ' + esc(e && e.message || e) + '</p>';
