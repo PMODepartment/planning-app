@@ -132,6 +132,33 @@ signed-in** — the image upload still has never run against the real bucket.
 
 `MODULE_V` → `20260910u3`. Detail: [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
 
+### 2026-09-10 (u3) — Portfolio toolbar: the project filter stops clipping, and A–Z becomes a sticky rail
+
+Items 1 and 2 of six owner items on the stakeholder screens. Detail in
+[`modules/portfolio-overview/CLAUDE.md`](modules/portfolio-overview/CLAUDE.md).
+
+- ⚠️⚠️ **The clipping was the POSITIONING, not the width.** `.po-projfilter-menu` was
+  `position:absolute; left:0; width:260px` hanging off a **right-aligned** button, so it opened
+  rightwards from the right edge of the page and ran off it. It now expands **inline**, the idiom
+  every other filter in this app already uses (`.pd-filtergroup`, `.po-toolbar-fields`), which cannot
+  clip by construction — rather than being nudged to `right:0`, which fixes this one case and leaves
+  the next to be found.
+- ⚠️ **One filter button, one NODE.** Four of the thirteen views have a filter panel; `placeScope`
+  *moves* the scope control into it so those views have a single control, and falls back to its own
+  bar in the nine that do not. Moving the element carries its wiring, state and selection with it — a
+  copy per view is what would need keeping in step.
+- ⚠️ The **A–Z index is now a sticky vertical rail** beside the cards. `align-self:flex-start` is
+  required or a stretched flex item gives `position:sticky` nothing to travel within — correct in the
+  cascade and does not stick. On a phone it reverts to a horizontal strip: a 22px column of 27
+  letters is far under the 44px touch target.
+
+Measured in a browser with the toolbar markup lifted byte-for-byte from the shipped page and
+`placeScope` sliced out of it: the panel spans 60→771 in a 1265px viewport with **no overflow and no
+horizontal page scroll**, and the rail is **pinned at `top: 8px` after scrolling 1,200px**. The
+funnel's `has-active` state was measured off and on, so a narrowed scope is still visible at a glance
+with the panel shut. `MODULE_V` → `20260910u3`.
+⚠️ **Not verified signed in.**
+
 ### 2026-09-10 (u2) — Directory Health, and a duplicate scan that stops being quadratic
 
 The dashboard half of the stakeholder-app adoption. Owner: *"And a dashboard page that can also be

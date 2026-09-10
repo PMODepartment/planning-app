@@ -25,17 +25,32 @@
     .po-spacer { margin-left:auto; }
     .po-chk { display:inline-flex; align-items:center; gap:6px; font-size:13px; cursor:pointer; color:var(--pd-ink); }
     /* multi-select project filter */
-    .po-projfilter { position:relative; }
-    .po-projfilter-menu { position:absolute; top:calc(100% + 6px); left:0; z-index:30; display:none;
-      background:var(--pd-card); border:1px solid var(--pd-line); border-radius:10px;
-      box-shadow:var(--pd-shadow); width:260px; overflow:hidden; }
-    .po-projfilter-menu.open { display:block; }
+    /* ⚠️⚠️ NOT A DROPDOWN ANY MORE. It was `position:absolute; left:0; width:260px`
+       hanging off a RIGHT-ALIGNED button, so a 260px menu opened rightwards from a
+       button already at the right edge and ran off the page — the clipping the owner
+       reported. Every other filter in this app expands INLINE and reflows the page
+       (`.pd-filtergroup`, `.po-toolbar-fields`), which cannot clip by construction,
+       so this adopts that idiom rather than being nudged to `right:0`.
+       ⚠️ It also drops the z-index and the shadow with the absolute positioning: an
+       inline panel is in flow and has nothing to lift above. */
+    .po-projfilter { min-width:0; }
+    .po-projfilter-menu { display:none; }
+    .po-projfilter-menu.open {
+      display:block; flex:1 1 100%; margin-top:8px; width:100%;
+      background:var(--pd-card); border:1px solid var(--pd-line);
+      border-radius:var(--pd-radius); overflow:hidden;
+    }
     .po-projfilter-search { padding:8px; border-bottom:1px solid var(--pd-line); }
     .po-projfilter-search input { width:100%; }
     .po-projfilter-actions { display:flex; gap:8px; padding:6px 10px; border-bottom:1px solid var(--pd-line); }
     .po-projfilter-actions button { border:none; background:none; color:var(--pd-red); font-size:12px;
       font-weight:600; cursor:pointer; padding:2px 0; }
-    .po-projfilter-list { max-height:260px; overflow-y:auto; padding:4px 0; }
+    /* Two columns once there is room — the list is the whole point of the panel and a
+       single 260px column of 40 projects was most of the reason it wanted to be a
+       floating menu. ⚠️ `overflow-y` only: a horizontal scroller here would clip nothing
+       now, but the column rule keeps long project names ellipsised instead. */
+    .po-projfilter-list { max-height:300px; overflow-y:auto; padding:4px 0;
+      display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); }
     .po-projfilter-list label { display:flex; align-items:center; gap:8px; padding:7px 12px;
       font-size:13px; cursor:pointer; color:var(--pd-ink); }
     .po-projfilter-list label:hover { background:var(--pd-red-light); }
@@ -140,13 +155,20 @@
     .po-eq-flag { color:var(--pd-bad); font-weight:700; }
     @media (max-width: 700px) { .po-eq th.po-eq-c1, .po-eq td.po-eq-c1 { width:150px; min-width:150px; max-width:150px; } }
 
-    /* module tabs (Overview / S-Curve / Cash Flow / …) — wraps rather than scrolling, at every
-       width, now that there are 13 of them: #po-projfilter-wrap's dropdown is position:absolute,
-       so an overflow-x scroller here would clip it (the exact trap the module topbar hit). */
+    /* module tabs (Overview / S-Curve / Cash Flow / …) — wraps rather than scrolling.
+       ⚠️ The original reason was that #po-projfilter-wrap's dropdown was position:absolute
+       and an overflow-x scroller would clip it. That dropdown is now an inline panel and
+       cannot be clipped, but wrapping is still right at 13 items and is left alone. */
     /* The scope bar is what is left of `.po-tabs` once the 13 redundant tabs went: it
        carries the project filter, which scopes every view. Right-aligned, no bottom rule
        — there is no longer a tab row for a rule to underline. */
-    .po-scopebar { display:flex; justify-content:flex-end; margin-bottom:14px; }
+    /* ⚠️ A COLUMN, so the inline panel can be full width under a right-aligned button.
+       As a row, the panel was constrained to the button's own width. */
+    .po-scopebar { display:flex; flex-direction:column; align-items:flex-end; margin-bottom:14px; }
+    .po-scopebar .po-projfilter { width:100%; display:flex; flex-direction:column; align-items:flex-end; }
+    /* Inside a view's own filter panel the scope is just another field in the row, and
+       its list breaks onto its own line. */
+    .po-toolbar-fields .po-projfilter { display:contents; }
     /* cross-project S-Curve / Cash Flow views */
     .po-kpis2 { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:16px; }
     .po-kpi2 { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; padding:14px 16px; }
@@ -230,14 +252,35 @@
     .po-hl-dv { font-size:10.5px; color:var(--pd-muted); }
     .po-hl-dup em { grid-column:1/-1; font-style:normal; font-size:11px; color:var(--pd-muted); }
     .po-hl-ds { font-variant-numeric:tabular-nums; font-size:11px; font-weight:700; color:var(--pd-red); }
-    .po-dir-bands { display:flex; flex-wrap:wrap; gap:4px; margin:0 0 14px; align-items:center; }
+    /* ⚠️⚠️ A STICKY VERTICAL RAIL ON THE RIGHT, not a horizontal strip above the cards.
+       The owner's point is the one that matters at scale: with 1,000 stakeholders a strip
+       that scrolls away with the page is useless exactly when you need it, because you are
+       a long way down the list. Sticky and beside the content, it is reachable from any
+       scroll position — the iOS-contacts idiom, and the same reason `.pd-table thead` in
+       this app is sticky.
+       ⚠️ `align-self:flex-start` is required: a flex item stretches to the row height by
+       default, and `position:sticky` on a full-height item has nothing to travel within. */
+    .po-dir-uniwrap { display:flex; align-items:flex-start; gap:14px; }
+    .po-dir-unimain { flex:1 1 auto; min-width:0; }
+    .po-dir-bands { position:sticky; top:8px; align-self:flex-start; flex:none;
+      display:flex; flex-direction:column; gap:1px; padding:5px 4px; max-height:calc(100vh - 90px);
+      overflow-y:auto; background:var(--pd-card); border:1px solid var(--pd-line);
+      border-radius:999px; }
     .po-dir-band, .po-dir-bandall {
+      width:22px; height:19px; padding:0; justify-content:center;
       display:inline-flex; align-items:center; gap:4px; min-width:26px; justify-content:center;
       padding:4px 7px; border:1px solid var(--pd-line); border-radius:var(--pd-radius);
       background:var(--pd-card); color:var(--pd-ink); font-size:12px; font-weight:600; cursor:pointer;
     }
-    .po-dir-bandall { min-width:auto; }
-    .po-dir-band i { font-style:normal; font-size:10px; font-weight:600; color:var(--pd-muted); }
+    .po-dir-bandall { min-width:auto; height:22px; font-size:9px; letter-spacing:-.02em; }
+    /* ⚠️ The per-letter COUNT does not fit a 22px rail and is carried by the `title`
+       instead. It is not lost — losing it would remove the one thing that makes a
+       letter worth clicking — and the dot below marks the letters that have anyone. */
+    .po-dir-band i { display:none; }
+    .po-dir-band:not(.is-empty)::after { content:''; position:absolute; right:2px; top:50%;
+      width:3px; height:3px; margin-top:-1.5px; border-radius:50%; background:var(--pd-red); opacity:.5; }
+    .po-dir-band.on::after { background:#fff; opacity:.9; }
+    .po-dir-band { position:relative; }
     .po-dir-band:hover:not(:disabled), .po-dir-bandall:hover { border-color:var(--pd-red); color:var(--pd-red); }
     .po-dir-band.on, .po-dir-bandall.on { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
     .po-dir-band.on i { color:rgba(255,255,255,.85); }
@@ -338,10 +381,20 @@
          scroller here would establish a clipping context and cut the project
          filter's own menu off. Same trap the module topbar hit. The filter
          takes its own full-width row so the tabs keep theirs. */
+      /* ⚠️ The rail reverts to a horizontal strip on a phone. A 22px-wide column of 27
+         letters is far under the 44px touch target, and with one card per row there is no
+         side channel to put it in. Sticky to the TOP there instead. */
+      @media (max-width: 760px) {
+        .po-dir-uniwrap { display:block; }
+        .po-dir-bands { position:sticky; top:0; z-index:5; flex-direction:row; flex-wrap:wrap;
+          max-height:none; overflow:visible; border-radius:var(--pd-radius); margin-bottom:12px; }
+        .po-dir-band, .po-dir-bandall { width:auto; min-width:26px; height:26px; padding:0 5px; }
+      }
       @media (max-width: 900px) {
-        .po-scopebar { justify-content: stretch; }
+        .po-scopebar { align-items: stretch; }
         #po-projfilter-wrap { flex: 1 1 100%; }
         #po-projfilter-wrap > button { width: 100%; min-height: 44px; }
+        .po-scopebar .po-projfilter { align-items: stretch; }
       }
     
     /* ---- Portfolio milestone calendar ---------------------------------------
@@ -1804,13 +1857,14 @@
     // ⚠️ Every letter is rendered, present or not — a strip that only shows the
     //    letters in use jumps around as you search, and a disabled letter is the
     //    useful answer to "is there anyone under Q?".
-    return '<div class="po-dir-bands">' +
-      '<button type="button" class="po-dir-bandall' + (dirBand ? '' : ' on') + '" data-band="">All ' + total + '</button>' +
+    return '<div class="po-dir-bands" role="group" aria-label="Jump to a letter">' +
+      '<button type="button" class="po-dir-bandall' + (dirBand ? '' : ' on') +
+        '" data-band="" title="Show all ' + total + '">All</button>' +
       letters.map(function (L) {
         var c = have[L] || 0;
         return '<button type="button" class="po-dir-band' + (c ? '' : ' is-empty') +
           (dirBand === L ? ' on' : '') + '"' + (c ? '' : ' disabled') +
-          ' data-band="' + L + '" title="' + c + ' under ' + L + '">' + L +
+          ' data-band="' + L + '" title="' + (c ? c + ' under ' + L : 'nobody under ' + L) + '">' + L +
           (c ? '<i>' + c + '</i>' : '') + '</button>';
       }).join('') + '</div>';
   }
@@ -1828,7 +1882,10 @@
 
     if (dirLayout === 'list') { dirRenderList(shown); wrap.innerHTML = ''; return; }
 
-    wrap.innerHTML = dirBandStrip(groups, all.length) +
+    // ⚠️ The rail is a SIBLING of the cards inside one flex row, and comes AFTER them in
+    //   source order so the tab sequence reaches the people before the index — the index
+    //   is navigation, not content.
+    wrap.innerHTML = '<div class="po-dir-uniwrap"><div class="po-dir-unimain">' +
       (count ? shown.map(function (g) {
         return '<section class="po-dir-sec">' +
           (g.key === '' ? '' : '<h3 class="po-dir-sechead">' + esc(g.key) +
@@ -1838,7 +1895,8 @@
       : '<div class="po-empty">' + (dirRows && dirRows.length
           ? 'No one matches that search.'
           : 'The directory is empty. Add a person, or open a project’s Stakeholder Map — saving there adds them here.') +
-        '</div>');
+        '</div>') +
+      '</div>' + dirBandStrip(groups, all.length) + '</div>';
     dirWireCards(wrap);
   }
 
@@ -2853,6 +2911,31 @@
     if (v === 'contracts') loadContracts(false);
     if (v === 'photos') loadPhotos(false);
     if (v === 'productivity') loadProductivity(false);
+    placeScope(v);
+  }
+
+  // ⚠️⚠️ ONE NODE, MOVED — never a second copy. The owner asked for the project filter
+  //    and the view's own funnel to be one control. Four of the thirteen views have an
+  //    expanding filter panel; in those the scope moves INTO it, so there is genuinely
+  //    one filter button. The other nine have no panel, and the scope still has to be
+  //    reachable from every view, so it falls back to its own bar.
+  // ⚠️ Moving the element keeps its wiring, its state and its selection: it is the same
+  //    DOM node, so nothing is re-bound and nothing can drift between views. Rendering a
+  //    copy per view is what would need the two kept in step.
+  var SCOPE_PANEL = { stakeholders: 'po-sh-fields', risk: 'po-rk-fields',
+                      issues: 'po-is-fields', equipment: 'po-eq-fields' };
+  function placeScope(v) {
+    var wrap = document.getElementById('po-projfilter-wrap');
+    if (!wrap) return;
+    var bar = document.querySelector('.po-scopebar');
+    var panel = SCOPE_PANEL[v] ? document.getElementById(SCOPE_PANEL[v]) : null;
+    var host = panel || bar;
+    if (host && wrap.parentNode !== host) {
+      // first in the panel: it scopes everything the other fields then filter within
+      if (panel) host.insertBefore(wrap, host.firstChild); else host.appendChild(wrap);
+    }
+    // ⚠️ The bar would otherwise keep its 14px bottom margin as an empty strip.
+    if (bar) bar.style.display = panel ? 'none' : '';
   }
 
   function exportExcel() {
