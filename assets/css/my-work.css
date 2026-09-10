@@ -33,7 +33,7 @@
 .mw-table tbody tr { cursor:pointer; }
 .mw-table tbody tr:hover { background:var(--pd-bg); }
 .mw-proj { font-size:var(--pd-fs-xs); font-weight:700; color:var(--pd-muted); white-space:nowrap; }
-.mw-main { font-weight:600; color:var(--pd-ink); }
+.mw-main { font-weight:700; color:var(--pd-ink); }
 .mw-sub { font-size:var(--pd-fs-sm); color:var(--pd-muted); margin-top:2px; }
 .mw-pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:var(--pd-fs-xs); font-weight:700; border:1px solid var(--pd-line); background:var(--pd-bg); color:var(--pd-ink); white-space:nowrap; }
 .mw-pill.open { border-color:var(--pd-red); color:var(--pd-red); }

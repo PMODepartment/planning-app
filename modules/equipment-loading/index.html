@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Equipment Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910v3" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910v4" />
   <style>
     /* Uniform module chrome (matches every other module). 2026-08-30: modules
        gained a persistent sidebar (MODULE_CONTRACT.md) — .pd-content no longer
@@ -20,14 +20,14 @@
     .eq-title .eq-title-txt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .eq-title-ico { color:var(--pd-red); vertical-align:-3px; margin-right:6px; }
     .eq-projctx { display:flex; align-items:center; min-width:0; flex:0 1 auto; }
-    .eq-project { max-width:230px; min-width:120px; height:34px; font-weight:600; font-size:13px; background:transparent; border-color:transparent; }
+    .eq-project { max-width:230px; min-width:120px; height:34px; font-weight:700; font-size:13px; background:transparent; border-color:transparent; }
     .eq-project:hover, .eq-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
     .eq-topbar-tools { display:flex; align-items:center; gap:6px; margin-left:auto; flex-wrap:wrap; }
     .eq-topbar-tools .pd-btn.eq-tb-labeled { height:34px; padding:0 12px; gap:6px; }
     .eq-tb-sep { width:1px; align-self:stretch; margin:5px 3px; background:var(--pd-line); }
     @media (max-width:820px) { .eq-title-txt { display:none; } }
     .eq-tabs { display:flex; border-bottom:2px solid var(--pd-line); }
-    .eq-tab { padding:8px 16px; cursor:pointer; font-weight:600; font-size:13px; color:var(--pd-muted);
+    .eq-tab { padding:8px 16px; cursor:pointer; font-weight:700; font-size:13px; color:var(--pd-muted);
       border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none;
       display:inline-flex; align-items:center; gap:6px; }
     .eq-tab.active { color:var(--pd-red); border-bottom-color:var(--pd-red); }
@@ -51,7 +51,7 @@
     .eq-filt-ico { color:var(--pd-muted); flex:none; }
     .eq-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
     .eq-seg button { border:0; background:var(--pd-card); color:var(--pd-ink); padding:6px 13px;
-      font:inherit; font-size:12.5px; font-weight:600; cursor:pointer; }
+      font:inherit; font-size:12.5px; font-weight:700; cursor:pointer; }
     .eq-seg button + button { border-left:1px solid var(--pd-line); }
     .eq-seg button.active { background:var(--pd-red); color:#fff; }
 
@@ -140,7 +140,7 @@
     .eq-mx th.eq-c1, .eq-mx td.eq-c1 { position:sticky; left:0; z-index:1; text-align:left;
       background:var(--pd-card); font-weight:700; width:150px; min-width:150px; max-width:150px; padding-left:9px; padding-right:9px; }
     .eq-mx th.eq-c2, .eq-mx td.eq-c2 { position:sticky; left:150px; z-index:1; text-align:left;
-      background:var(--pd-card); font-weight:600; color:var(--pd-muted); width:84px; min-width:84px; max-width:84px; padding-left:9px; padding-right:9px; }
+      background:var(--pd-card); font-weight:700; color:var(--pd-muted); width:84px; min-width:84px; max-width:84px; padding-left:9px; padding-right:9px; }
     .eq-mx thead th.eq-c1, .eq-mx thead th.eq-c2 { z-index:3; background:var(--pd-bg); }
     /* "Planned / Actual" needs ~127px on one line but eq-c2 is fixed at 84px (that width is
        load-bearing for the chart-bar/matrix-column alignment above — see MX_C1/MX_C2/MX_CELL).
@@ -164,7 +164,7 @@
     .eq-table th.num, .eq-table td.num { text-align:right; }
     .eq-table td { padding:8px 12px; border-bottom:1px solid var(--pd-line); }
     .eq-table tr:hover td { background:var(--pd-bg); }
-    .eq-badge { font-size:11px; font-weight:600; padding:1px 8px; border-radius:999px; background:var(--pd-bg); }
+    .eq-badge { font-size:11px; font-weight:700; padding:1px 8px; border-radius:999px; background:var(--pd-bg); }
     .eq-badge.eq-rent { background:var(--pd-red-light); color:var(--pd-red); }
     .eq-actions { display:flex; gap:5px; }
     .eq-btn-sm { padding:3px 9px; font-size:11px; border-radius:5px; border:1px solid var(--pd-line);
@@ -213,9 +213,9 @@
     /* The backdrop panel — sliders live in the toolbar popover, not on the drawing. */
     .eq-img-pop { min-width:250px; padding:11px 12px; }
     .eq-img-pop .row { display:flex; align-items:center; gap:8px; margin-bottom:9px; font-size:12px; color:var(--pd-muted); }
-    .eq-img-pop .row > label { flex:0 0 58px; color:var(--pd-ink); font-weight:600; }
+    .eq-img-pop .row > label { flex:0 0 58px; color:var(--pd-ink); font-weight:700; }
     .eq-img-pop .row input[type=range] { flex:1 1 auto; min-width:0; accent-color:var(--pd-red); }
-    .eq-img-pop .row .val { flex:0 0 42px; text-align:right; font-variant-numeric:tabular-nums; color:var(--pd-ink); font-weight:600; }
+    .eq-img-pop .row .val { flex:0 0 42px; text-align:right; font-variant-numeric:tabular-nums; color:var(--pd-ink); font-weight:700; }
     .eq-img-nudge { display:grid; grid-template-columns:repeat(4,1fr); gap:5px; margin-bottom:9px; }
     .eq-img-nudge button, .eq-img-pop .act { border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-ink);
       font:inherit; font-size:12px; border-radius:6px; padding:5px 0; cursor:pointer; }
@@ -1751,7 +1751,7 @@
         '<p class="eq-note" style="margin:0 0 10px;">Months come from the project schedule (' + esc(SPAN.source) + '). Leave a month blank where nothing is reported — blank and zero mean different things.' +
           (isLinked(it) ? ' <b>This item is linked to ' + esc(it.link_label || '') + '</b>, so its planned months are re-derived on the next sync — type here only to record something the link cannot know.' : '') + '</p>' +
         '<div class="eq-controls" style="margin-bottom:10px;">' +
-          '<span style="font-size:12.5px;font-weight:600;">Fill</span>' +
+          '<span style="font-size:12.5px;font-weight:700;">Fill</span>' +
           '<select class="pd-select" id="fl-wh" style="max-width:120px;"><option value="planned">Planned</option><option value="actual">Actual</option></select>' +
           '<input class="pd-input" id="fl-v" type="number" step="any" min="0" placeholder="qty" style="width:80px;height:34px;">' +
           '<span style="font-size:12.5px;">from</span><select class="pd-select" id="fl-a" style="max-width:150px;">' + opts + '</select>' +

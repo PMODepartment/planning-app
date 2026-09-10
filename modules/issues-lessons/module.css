@@ -27,7 +27,7 @@
 /* Project context — borderless until hover */
 .il-projctx { display: flex; align-items: center; min-width: 0; flex: 0 1 auto; }
 .il-project {
-  max-width: 230px; min-width: 120px; height: 34px; font-weight: 600; font-size: var(--pd-fs-base);
+  max-width: 230px; min-width: 120px; height: 34px; font-weight: 700; font-size: var(--pd-fs-base);
   background: transparent; border-color: transparent;
 }
 .il-project:hover, .il-project:focus { background: var(--pd-card); border-color: var(--pd-line); }
@@ -39,7 +39,7 @@
 }
 .il-tab {
   border: 0; background: var(--pd-card); color: var(--pd-ink);
-  padding: 6px 14px; font-weight: 600; font-size: var(--pd-fs-base); cursor: pointer;
+  padding: 6px 14px; font-weight: 700; font-size: var(--pd-fs-base); cursor: pointer;
   font-family: var(--pd-font); transition: background .12s; white-space: nowrap;
 }
 .il-tab + .il-tab { border-left: 1px solid var(--pd-line); }
@@ -167,7 +167,7 @@
   box-shadow: var(--pd-shadow); padding: 10px 12px; cursor: pointer;
 }
 .il-kanban-card:hover { border-color: var(--pd-red-mid); }
-.il-kanban-card-title { font-size: var(--pd-fs-base); font-weight: 600; color: var(--pd-ink); line-height: 1.4; }
+.il-kanban-card-title { font-size: var(--pd-fs-base); font-weight: 700; color: var(--pd-ink); line-height: 1.4; }
 .il-kanban-card-meta {
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px;
   font-size: var(--pd-fs-xs); color: var(--pd-muted);
@@ -229,7 +229,7 @@
    and issDetailHTML renders it read-only there when canEditRow(r) is false.) */
 .il-raisedby { margin:6px 0 0; font-size:var(--pd-fs-sm); color:var(--pd-muted); }
 .il-momtag { display:inline-flex; align-items:center; gap:4px; margin-top:4px; margin-left:6px;
-  font-size:var(--pd-fs-micro); font-weight:600; color:var(--pd-muted); background:var(--pd-bg);
+  font-size:var(--pd-fs-micro); font-weight:700; color:var(--pd-muted); background:var(--pd-bg);
   border:1px solid var(--pd-line); border-radius:999px; padding:1px 8px; vertical-align:middle; }
 
 /* Status pill */
@@ -342,10 +342,10 @@
     white-space: normal; max-width: none; font-size: var(--pd-fs-base);
   }
   .il-table td[data-l]::before {
-    content: attr(data-l) ": "; color: var(--pd-muted); font-weight: 600; font-size: var(--pd-fs-sm);
+    content: attr(data-l) ": "; color: var(--pd-muted); font-weight: 700; font-size: var(--pd-fs-sm);
   }
   /* The issue text is the headline of the card, not a labelled field. */
-  .il-table td.il-cell-issue { font-size: var(--pd-fs-md); font-weight: 600; padding-bottom: 6px; }
+  .il-table td.il-cell-issue { font-size: var(--pd-fs-md); font-weight: 700; padding-bottom: 6px; }
   .il-table td.il-cell-issue::before { content: none; }
   /* ⚠️ The desktop `.il-clip` rule (above) dropped its clamp this round (item 6) —
      this mobile-card clamp now carries its OWN full definition rather than
@@ -602,7 +602,7 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
 .il-backlink {
   display: inline-flex; align-items: center; gap: 6px; margin-bottom: 10px;
   background: none; border: 0; padding: 0; cursor: pointer;
-  color: var(--pd-muted); font-size: var(--pd-fs-base); font-weight: 600;
+  color: var(--pd-muted); font-size: var(--pd-fs-base); font-weight: 700;
 }
 .il-backlink:hover { color: var(--pd-ink); }
 
@@ -622,7 +622,7 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   height: 30px; padding: 0 11px; margin-left: auto; white-space: nowrap;
 }
-.il-modetxt { font-size: var(--pd-fs-sm, 12px); font-weight: 600; }
+.il-modetxt { font-size: var(--pd-fs-sm, 12px); font-weight: 700; }
 .il-modebtn.is-active { border-color: var(--pd-red); color: var(--pd-red); }
 
 /* ⚠️ PRESENTATION ONLY — every read-only behaviour comes from `opts.present`
@@ -695,7 +695,7 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
   list-style: none; margin: 6px 0 0; padding: 6px 0 0; border-top: 1px dashed var(--pd-line);
   display: flex; flex-direction: column; gap: 3px; font-size: var(--pd-fs-sm); color: var(--pd-muted);
 }
-.il-history-diff strong { color: var(--pd-ink); font-weight: 600; }
+.il-history-diff strong { color: var(--pd-ink); font-weight: 700; }
 .il-history-diff em { font-style: normal; opacity: .6; }
 
 /* ---- Dashboard tab — ONE combined analytics screen for Issues & Concerns AND
@@ -899,7 +899,7 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
   display:inline-flex; align-items:center; gap:5px;
   padding:3px 6px 3px 9px; border-radius:999px;
   background:var(--pd-bg); border:1px solid var(--pd-line);
-  font-size:var(--pd-fs-sm); font-weight:600; color:var(--pd-ink); line-height:1.5;
+  font-size:var(--pd-fs-sm); font-weight:700; color:var(--pd-ink); line-height:1.5;
 }
 .il-pp-rm {
   border:0; background:transparent; cursor:pointer; padding:0 2px;
@@ -913,7 +913,7 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
   background:var(--pd-bg); border:1px dashed var(--pd-line);
   font-size:var(--pd-fs-xs); color:var(--pd-muted);
 }
-.il-pp-freenote strong { font-weight:600; color:var(--pd-ink); }
+.il-pp-freenote strong { font-weight:700; color:var(--pd-ink); }
 .il-pp-rmtext {
   border:0; background:transparent; cursor:pointer; padding:0 2px;
   font-size:var(--pd-fs-xs); line-height:1; color:var(--pd-muted); border-radius:50%;

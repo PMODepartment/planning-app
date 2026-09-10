@@ -36,12 +36,12 @@
 .ms-title-ico { color:var(--pd-red); vertical-align:-3px; }
 
 .ms-projctx { display:flex; align-items:center; min-width:0; flex:0 1 auto; }
-.ms-project { max-width:230px; min-width:120px; height:34px; font-weight:600; font-size:var(--ms-fs-base);
+.ms-project { max-width:230px; min-width:120px; height:34px; font-weight:700; font-size:var(--ms-fs-base);
   background:transparent; border-color:transparent; }
 .ms-project:hover, .ms-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
 
 .ms-tabs { display:inline-flex; border:1px solid var(--pd-line); border-radius:var(--pd-radius); overflow:hidden; flex:none; }
-.ms-tab { border:0; background:var(--pd-card); color:var(--pd-ink); padding:6px 14px; font-weight:600;
+.ms-tab { border:0; background:var(--pd-card); color:var(--pd-ink); padding:6px 14px; font-weight:700;
   cursor:pointer; font-size:var(--ms-fs-base); transition:background .12s; white-space:nowrap; }
 .ms-tab + .ms-tab { border-left:1px solid var(--pd-line); }
 .ms-tab:hover:not(.active) { background:var(--pd-bg); }
@@ -67,7 +67,7 @@
 /* Ghost clear — only rendered when a filter is actually set (Progress Photos lesson:
    a margin-left:auto button orphans itself onto a second line when the row wraps). */
 .ms-clearfilt { display:inline-flex; align-items:center; gap:5px; border:0; background:none; cursor:pointer;
-  color:var(--pd-muted); font-size:var(--ms-fs-sm); font-weight:600; padding:4px 6px; border-radius:var(--pd-radius); }
+  color:var(--pd-muted); font-size:var(--ms-fs-sm); font-weight:700; padding:4px 6px; border-radius:var(--pd-radius); }
 .ms-clearfilt:hover { background:var(--pd-bg); color:var(--pd-red); }
 .ms-clearfilt[hidden] { display:none; }
 .ms-count { color:var(--pd-muted); font-size:var(--ms-fs-base); margin-left:auto; white-space:nowrap; }
@@ -90,7 +90,7 @@
 /* "Sorted by X ▲ ×" chip — the one-click way back to the natural order. */
 .ms-sortchip { display:inline-flex; align-items:center; gap:5px; cursor:pointer;
   border:1px solid var(--pd-red); background:var(--pd-red); color:#fff;
-  font:inherit; font-size:var(--ms-fs-sm); font-weight:600; padding:4px 9px; border-radius:999px; flex:none; }
+  font:inherit; font-size:var(--ms-fs-sm); font-weight:700; padding:4px 9px; border-radius:999px; flex:none; }
 .ms-sortchip:hover { filter:brightness(1.08); }
 .ms-sortchip svg { display:block; }
 .ms-agchip { margin-left:10px; vertical-align:2px; }
@@ -124,7 +124,7 @@
    page — the KPI row + card header stay put; only the table body scrolls. */
 .ms-bk-scroll { max-height:min(62vh, 640px); overflow-y:auto; border:1px solid var(--pd-line); border-radius:var(--pd-radius); }
 .ms-bk-more { margin-top:10px; font-size:var(--ms-fs-sm); color:var(--pd-muted); text-align:center; }
-.ms-linklike { background:none; border:none; padding:0; color:var(--pd-red); font-weight:600; font-size:inherit;
+.ms-linklike { background:none; border:none; padding:0; color:var(--pd-red); font-weight:700; font-size:inherit;
   font-family:inherit; cursor:pointer; text-decoration:underline; }
 .ms-table thead th { position:sticky; top:0; z-index:2; background:var(--pd-card);
   border-bottom:2px solid var(--pd-line); font-size:var(--ms-fs-micro); letter-spacing:.03em; text-transform:uppercase;
@@ -136,7 +136,7 @@
 .ms-mini { color:var(--pd-muted); font-size:var(--ms-fs-micro); }
 .ms-r { text-align:right; white-space:nowrap; }
 .ms-code { font-family:var(--pd-mono); font-weight:700; font-size:var(--ms-fs-sm); white-space:nowrap; }
-.ms-item { font-weight:600; }
+.ms-item { font-weight:700; }
 .ms-sub { color:var(--pd-muted); font-size:var(--ms-fs-sm); margin-top:2px; max-width:340px;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .ms-actcol { width:76px; }
@@ -203,7 +203,7 @@ html.pd-dark .ms-pill.s-info      { background:rgba(30,78,140,.26);  color:#8fbd
 .ms-kpi.good::before { background:#12693A; opacity:1; } html.pd-dark .ms-kpi.good::before { background:#7fd6a2; }
 .ms-kpi.bad::before  { background:var(--pd-bad,#dc2626); opacity:1; }
 .ms-kpi.warn::before { background:#b45309; opacity:1; } html.pd-dark .ms-kpi.warn::before { background:#f0c469; }
-.ms-kpi-l { color:var(--pd-muted); font-size:var(--ms-fs-sm); text-transform:uppercase; letter-spacing:.05em; font-weight:600; }
+.ms-kpi-l { color:var(--pd-muted); font-size:var(--ms-fs-sm); text-transform:uppercase; letter-spacing:.05em; font-weight:700; }
 .ms-kpi-v { font-size:var(--ms-fs-kpi); font-weight:800; margin-top:9px; line-height:1.05; letter-spacing:-.01em; }
 .ms-kpi-s { color:var(--pd-muted); font-size:var(--ms-fs-sm); margin-top:5px; }
 .ms-kpi.good .ms-kpi-v { color:#12693a; } html.pd-dark .ms-kpi.good .ms-kpi-v { color:#7fd6a2; }
@@ -276,7 +276,7 @@ html.pd-dark .ms-pill.s-info      { background:rgba(30,78,140,.26);  color:#8fbd
 .ms-filenow { display:flex; align-items:center; gap:8px; background:var(--pd-bg);
   border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:7px 10px; font-size:var(--ms-fs-sm); }
 .ms-filenow > [data-ico], .ms-filenow > svg { color:var(--pd-red); flex:none; }
-.ms-filelink { border:0; background:none; cursor:pointer; color:var(--pd-red); font-weight:600;
+.ms-filelink { border:0; background:none; cursor:pointer; color:var(--pd-red); font-weight:700;
   font-size:var(--ms-fs-sm); text-align:left; padding:0; flex:1 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .ms-filelink:hover { text-decoration:underline; }
 .ms-filerm { border:0; background:none; cursor:pointer; color:var(--pd-muted); font-size:var(--ms-fs-lg);
@@ -286,7 +286,7 @@ html.pd-dark .ms-pill.s-info      { background:rgba(30,78,140,.26);  color:#8fbd
 
 /* ---- Modal / form ------------------------------------------------------- */
 .ms-form { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; }
-.ms-form label { display:flex; flex-direction:column; gap:4px; font-size:var(--ms-fs-sm); font-weight:600; color:var(--pd-muted); }
+.ms-form label { display:flex; flex-direction:column; gap:4px; font-size:var(--ms-fs-sm); font-weight:700; color:var(--pd-muted); }
 .ms-form label.ms-wide { grid-column:1/-1; }
 .ms-form input, .ms-form select, .ms-form textarea { font:inherit; font-size:var(--ms-fs-base); font-weight:400; color:var(--pd-ink);
   background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:7px 9px; }
@@ -316,7 +316,7 @@ html.pd-dark .ms-pill.s-info      { background:rgba(30,78,140,.26);  color:#8fbd
 /* ---- Loading skeleton (mirrors drawing-register's .dr-sk*) --------------- */
 .ms-skcard { padding:14px 16px; }
 .ms-sk-head { display:flex; align-items:center; gap:8px; color:var(--pd-muted);
-  font-size:var(--ms-fs-base); font-weight:600; margin-bottom:12px; }
+  font-size:var(--ms-fs-base); font-weight:700; margin-bottom:12px; }
 .ms-sk-head .ms-spin { margin-right:0; vertical-align:0; flex:none; }
 .ms-sk-row { display:flex; gap:12px; align-items:center; padding:9px 0;
   border-bottom:1px solid var(--pd-line); }

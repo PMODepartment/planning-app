@@ -95,6 +95,67 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+
+### 2026-09-10 (v4) — `font-weight: 600` folds into Bold, and the ten hierarchies it would have flattened
+
+Owner's decision, off the Brandbook question raised in the (uic) entry below: **map 600 → 700 (Bold)**.
+Brandbook 2026 p.29 names five Gotham cuts — **Thin / Regular / Italic / Medium / Bold / Black** — and
+there is **no Gotham Semibold**, so every `font-weight: 600` in this app addressed a cut of the primary
+face that does not exist. **262 declarations across 22 files.**
+
+⚠️ It was not visibly broken and that is worth stating plainly: Gotham is unlicensed here, so
+essentially every user renders **Montserrat**, which *does* ship a 600. This was a latent divergence
+that would have bitten the day a Gotham webfont licence landed — not a bug anyone could see.
+
+#### ⚠️⚠️ TEN OF THE 262 WOULD HAVE BEEN DESTROYED BY THE OBVIOUS SED, INCLUDING ONE THIS LOG BUILT ON PURPOSE
+A blanket `600 → 700` is a one-line change and it is **wrong**, because ten places use 600 and 700 as a
+deliberate **two-level hierarchy** — the light half and the heavy half of the same component. Folding
+both ends into 700 makes the two states **identical**:
+
+| the pair | what the distinction means |
+|---|---|
+| `.pd-nt-portfolio` / `.pd-nt-portfolio.sel` | **selected vs unselected** in the project dropdown |
+| `.ps-pkgtag.inherited` / `.ps-pkgtag.mixed` vs `.ps-pkgtag` | an inherited/mixed package tag vs an explicit one |
+| `.boq-alloc.none` vs `.boq-alloc` | nothing allocated vs a real allocation |
+| `.po-dir-band.is-empty` vs `.po-dir-band` | an empty A–Z band vs a populated one |
+| `.pd-pv-n small`, `.pd-sc-tbl th small`, `.po-dir-sechead span`, `.po-dir-listband td span` | a sub-label inside its own heading |
+| `.dr-stsel option` vs `.dr-stsel` | an option vs the closed select |
+
+⚠️⚠️ **`.pd-nt-portfolio.sel` is a feature this changelog added deliberately** — 2026-09-03 (i), *"Portfolio
+now renders bold when it's the selected row"*, bumped to 700 specifically so the selection was visible.
+The obvious fold would have silently reverted it, and the diff would have looked like tidy-up.
+
+**Those ten go to 500 (Medium), not 700.** The hierarchy survives, and it is now expressed as **500 vs
+700 — two real Gotham cuts** — where it used to be 600 vs 700, one real and one synthesised. The
+contrast is *wider* than before, not narrower.
+
+⚠️ **Found by asking which selectors EXTEND which**, not by a shared class prefix: `.pd-tab` and
+`.pd-avatar` share `pd-` and are unrelated, which is why a prefix-grouping first pass reported **56**
+false candidates. The test that matters is whether one selector is the other plus a compound or
+descendant part.
+
+#### The webfont stops requesting a weight nothing uses
+`@import` went `400;500;600;700;800` → **`400;500;700;800`**. One fewer face downloaded on every cold
+load, and the list now mirrors the brandbook's cuts exactly, so the next `600` has nowhere to render
+from. The app's weights are now **400 Regular · 500 Medium · 700 Bold · 800 Black** — measured: **813
+declarations, 4 distinct values**, down from 5.
+
+#### Verified
+- **0 occurrences of `font-weight: 600`** remain in any `.css`, `.html` or `.js`.
+- **All ten hierarchies asserted still two-level** — each reads `light=500 heavy=700`, **0 flattened**.
+- Brace balance holds on every changed stylesheet and inline `<style>`; **0 NUL bytes**.
+  ⚠️ Two `<script>` tag-count mismatches are reported and **both are byte-identical to HEAD** — the
+  documented false positives (progress-photos' CDN `build/three.min.js` src, project-schedule's
+  `<script` inside a JS string). Checked against HEAD rather than assumed.
+- `dashboard.css`, `my-work.css`, `ppr.js`, `modules-grid.js` + `MODULE_V`, and six modules'
+  `module.css` → `?v=20260910v4`. **One version each, 0 splits.** ⚠️ The bump list is derived from
+  `git diff --name-only`, not hand-kept — a hand-kept list is how an asset ships changed under a
+  version a browser already holds.
+- ⚠️ **Not verified signed in**, and ⚠️ **not re-rendered**: this is one property, statically proven,
+  and the only real risk (a flattened hierarchy) is asserted above rather than eyeballed. The screens
+  worth a glance on the next real login are the **project dropdown** (selected row) and the
+  **Schedule's package tags**.
+
 ### ⚠️⚠️ The floor plan never reached the Vertical Stacking at all, and a Sync button (2026-09-10) — jasantos2
 
 Owner: *"can't there be a button that allows syncing the floor plans to the 3D? and nothing is still

@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Cash Flow · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910v3" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910v4" />
   <style>
     /* top-bar icon cluster (Refresh/Export/Print) — matches project-schedule's .ps-topbar-tools */
     .cf-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; }
@@ -16,12 +16,12 @@
     .pd-topbar #pd-theme-toggle { width:34px; height:34px; padding:0; display:inline-flex; align-items:center; justify-content:center; margin-left:4px; }
     .pd-topbar #user-bar { margin-left:10px; padding-left:10px; border-left:1px solid var(--pd-line); }
     .cf-projctx { display:flex; align-items:center; min-width:0; flex:0 1 auto; }
-    .cf-project { max-width:230px; min-width:120px; height:34px; font-weight:600; font-size:13px; background:transparent; border-color:transparent; }
+    .cf-project { max-width:230px; min-width:120px; height:34px; font-weight:700; font-size:13px; background:transparent; border-color:transparent; }
     .cf-project:hover, .cf-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
     .cf-controls { display:flex; flex-wrap:nowrap; gap:10px 16px; align-items:center; margin-bottom:16px; overflow-x:auto;
       background:var(--pd-card); border:1px solid var(--pd-line); border-radius:10px; padding:9px 14px; }
     .cf-viewbar { display:flex; align-items:center; gap:14px; flex-wrap:nowrap; flex:none; }
-    .cf-viewbar .pd-select { border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-ink); font-weight:600; padding:6px 8px; max-width:230px; border-radius:6px; }
+    .cf-viewbar .pd-select { border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-ink); font-weight:700; padding:6px 8px; max-width:230px; border-radius:6px; }
     .cf-viewbar .pd-select option { background:var(--pd-card); color:var(--pd-ink); }
     .cf-actions { display:flex; align-items:center; gap:8px; flex-wrap:nowrap; margin-left:auto; flex:none; }
     .cf-actions .pd-btn { padding:7px 12px; white-space:nowrap; }
@@ -66,7 +66,7 @@
     .cf-hover { fill:transparent; cursor:pointer; }
     .cf-hover:hover { fill:rgba(127,127,127,.10); }
     .cf-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:6px; overflow:hidden; }
-    .cf-seg button { padding:5px 13px; font-size:12px; font-weight:600; text-transform:none; letter-spacing:0; border:0; background:var(--pd-card); color:var(--pd-muted); cursor:pointer; }
+    .cf-seg button { padding:5px 13px; font-size:12px; font-weight:700; text-transform:none; letter-spacing:0; border:0; background:var(--pd-card); color:var(--pd-muted); cursor:pointer; }
     .cf-seg button:hover:not(.active):not(.disabled) { color:var(--pd-ink); background:var(--pd-bg); }
     .cf-seg button.disabled { opacity:.4; cursor:not-allowed; }
     .cf-seg button.active { background:var(--pd-red); color:#fff; }
@@ -111,7 +111,7 @@
     .cf-bk-lab { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .cf-bk-track { background:var(--pd-bg); border-radius:4px; height:14px; overflow:hidden; }
     .cf-bk-fill { height:100%; border-radius:4px; min-width:2px; }
-    .cf-bk-amt { text-align:right; font-weight:600; white-space:nowrap; }
+    .cf-bk-amt { text-align:right; font-weight:700; white-space:nowrap; }
     .cf-bk-st { font-size:10px; padding:1px 6px; border-radius:999px; white-space:nowrap; }
     .cf-bk-st.a { background:rgba(238,49,36,0.12); color:var(--pd-red); }
     .cf-bk-st.f { background:var(--pd-bg); color:var(--pd-muted); }
@@ -141,7 +141,7 @@
     .cf-matrix thead th.lbl { background:var(--pd-bg); z-index:2; }
     .cf-sec td, .cf-sec th { background:var(--pd-red-light); font-weight:700; color:var(--pd-ink); }
     .cf-sec td.lbl, .cf-sec th.lbl { background:var(--pd-red-light); }
-    .cf-cum td, .cf-cum { font-weight:600; }
+    .cf-cum td, .cf-cum { font-weight:700; }
     .cf-cum td:not(.lbl) { border-top:1px solid var(--pd-line); }
     .cf-neg { color:var(--pd-bad-text); }
     .cf-net td { font-weight:700; }
@@ -152,7 +152,7 @@
     .cf-check { display:inline-flex; align-items:center; gap:8px; font-size:13px; color:var(--pd-ink); cursor:pointer; padding:7px 0; }
     .cf-check input { width:16px; height:16px; accent-color:var(--pd-red); cursor:pointer; }
     .cf-tabstrip { display:flex; gap:2px; flex-wrap:wrap; border-bottom:1px solid var(--pd-line); margin-bottom:14px; }
-    .cf-ftab { padding:8px 14px; font-size:13px; font-weight:600; color:var(--pd-muted); background:transparent; border:0; border-bottom:2px solid transparent; cursor:pointer; }
+    .cf-ftab { padding:8px 14px; font-size:13px; font-weight:700; color:var(--pd-muted); background:transparent; border:0; border-bottom:2px solid transparent; cursor:pointer; }
     .cf-ftab:hover { color:var(--pd-ink); }
     .cf-ftab.active { color:var(--pd-red); border-bottom-color:var(--pd-red); }
     .cf-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
@@ -162,7 +162,7 @@
     .cf-dp-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; }
     .cf-dp-row { display:grid; grid-template-columns:1.3fr 1fr 1fr 0.9fr 1.1fr 1.2fr 1fr auto; gap:6px; align-items:center; margin-bottom:6px; }
     .cf-dp-row .pd-input, .cf-dp-row .pd-select { padding:5px 7px; font-size:12px; }
-    .cf-dp-amt { font-size:11px; font-weight:600; color:var(--pd-muted); text-align:right; white-space:nowrap; }
+    .cf-dp-amt { font-size:11px; font-weight:700; color:var(--pd-muted); text-align:right; white-space:nowrap; }
     #cf-dp-sum { color:var(--pd-ink); }
     .cf-act-row { display:grid; grid-template-columns:1fr 1fr 1.1fr 1.1fr 1.6fr auto; gap:6px; align-items:center; margin-bottom:6px; }
     .cf-act-row .pd-input, .cf-act-row .pd-select { padding:5px 7px; font-size:12px; }
@@ -220,7 +220,7 @@
     /* sidebar-less shell (matches Project Schedule) */
 
     .cf-tabs { display:flex; gap:4px; margin-bottom:16px; border-bottom:1px solid var(--pd-line); }
-    .cf-tab { padding:8px 14px; font-size:13px; font-weight:600; color:var(--pd-muted); cursor:pointer; border-bottom:2px solid transparent; }
+    .cf-tab { padding:8px 14px; font-size:13px; font-weight:700; color:var(--pd-muted); cursor:pointer; border-bottom:2px solid transparent; }
     .cf-tab.active { color:var(--pd-red); border-bottom-color:var(--pd-red); }
   
       /* ---- Mobile & tablet (2026-07-23) --------------------------------

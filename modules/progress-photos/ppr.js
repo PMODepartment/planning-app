@@ -2299,11 +2299,11 @@ window.PPR = (function () {
     '.slide:not(:last-of-type){break-after:page;page-break-after:always}' +
     '.meta{display:flex;flex-wrap:wrap;gap:18px;font-size:13px;margin-bottom:10px;align-items:baseline}' +
     '.meta .no{font-weight:700;color:#EE3124}' +
-    '.meta b{color:#6b6b6b;font-weight:600;margin-right:4px}' +
+    '.meta b{color:#6b6b6b;font-weight:700;margin-right:4px}' +
     // Shared-location tile (follow-up feedback item 3/4): one line above the
     // pair when both photos are at the same place, instead of repeating it in
     // each figcaption below.
-    '.meta .sharedloc{font-weight:600;color:#4a4a4a}' +
+    '.meta .sharedloc{font-weight:700;color:#4a4a4a}' +
     '.phwrap{position:relative}' +
     '.kpimg{position:absolute;top:8px;right:8px;width:150px;border:1px solid #DCDBDB;display:block;box-shadow:0 1px 4px rgba(0,0,0,.25)}' +
     '.pair{display:grid;grid-template-columns:1fr 1fr;gap:14px}' +
@@ -2316,7 +2316,7 @@ window.PPR = (function () {
     // Sixth round items 10/11: the tags (.t) line is gone (no Trade/Works in
     // the caption); Location (.loc) is new, always present, styled like the
     // date line it now sits above.
-    'figcaption .loc{font-size:12px;font-weight:600;color:#231F20}' +
+    'figcaption .loc{font-size:12px;font-weight:700;color:#231F20}' +
     'figcaption .d{font-size:13px}' +
     'figcaption .c{font-style:italic;font-size:12.5px;color:#4a4a4a;margin-top:2px}' +
     'footer{text-align:center;font-size:11.5px;color:#6b6b6b;padding:6px 0 22px}' +

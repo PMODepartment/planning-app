@@ -7,10 +7,10 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910v3" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910v4" />
   <style>
     .ps-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
-    .ps-tab { padding:8px 20px; cursor:pointer; font-weight:600; font-size:13px; color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
+    .ps-tab { padding:8px 20px; cursor:pointer; font-weight:700; font-size:13px; color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
     .ps-tab.active { color:var(--pd-red); border-bottom-color:var(--pd-red); }
     /* Clickable title switcher (replaces the tab strip; frees vertical space) */
     .ps-title-switch { position:relative; }
@@ -21,9 +21,9 @@
     /* Brand-red module icon before the title, matching every other module's -title-ico.
        `span.ps-title-ico` (0,2,1) outspecifies `.ps-title-btn [data-ico]` (0,2,0) above. */
     .ps-title-btn span.ps-title-ico { color:var(--pd-red); }
-    #ps-title-menu button { font-size:14px; font-weight:600; }
+    #ps-title-menu button { font-size:14px; font-weight:700; }
     .ps-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
-    .ps-seg button { border:none; background:var(--pd-card); padding:6px 12px; cursor:pointer; color:var(--pd-muted); font-size:12px; font-weight:600; }
+    .ps-seg button { border:none; background:var(--pd-card); padding:6px 12px; cursor:pointer; color:var(--pd-muted); font-size:12px; font-weight:700; }
     .ps-seg button.active { background:var(--pd-red); color:#fff; }
 
     /* ---- Toolbar (grouped, consistent) ---- */
@@ -83,7 +83,7 @@
     /* One control height across the module chrome. The project trigger, the tool buttons and the
        theme toggle are all 34px; the data-date badge alone was ~26px, which is what made the band
        read as a row of differently-sized pills rather than one strip. */
-    .ps-datadate-badge { font:inherit; font-size:12px; font-weight:600; color:var(--pd-muted); background:var(--pd-bg);
+    .ps-datadate-badge { font:inherit; font-size:12px; font-weight:700; color:var(--pd-muted); background:var(--pd-bg);
       border:1px solid var(--pd-line); border-radius:999px; padding:0 12px; height:34px; display:inline-flex;
       align-items:center; white-space:nowrap; margin-left:6px; flex:none; cursor:pointer; }
     .ps-datadate-badge:hover { border-color:var(--pd-red); color:var(--pd-ink); }
@@ -119,7 +119,7 @@
        Workspace/Program/Group browser. `enhanceProjectSelect` copies the select's classes onto
        its trigger button, so this rule also styles that button. */
     .ps-projctx { display:flex; flex-direction:column; justify-content:center; gap:0; min-width:0; margin-left:6px; flex:0 1 auto; }
-    .ps-project { max-width:260px; min-width:120px; height:34px; font-weight:600; font-size:13px; background:transparent; border-color:transparent; }
+    .ps-project { max-width:260px; min-width:120px; height:34px; font-weight:700; font-size:13px; background:transparent; border-color:transparent; }
     .ps-project:hover, .ps-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
     /* ⚠️ THE SWITCHER WAS "EXTENDED UNNECESSARILY", and the cause was NOT this module's own CSS.
        UI.initModuleTopbar() restructures every module topbar into .pd-tb-split > .pd-tb-main, and
@@ -211,8 +211,8 @@
     .ps-net-key { padding:7px 12px; font-size:11.5px; line-height:1.5; color:var(--pd-muted);
       border-bottom:1px solid var(--pd-line); background:var(--pd-card); }
     .ps-net-key b { color:var(--pd-ink); }
-    .ps-net-key .k-pred { color:#1f8f4e; font-weight:600; }
-    .ps-net-key .k-succ { color:#e08a1e; font-weight:600; }
+    .ps-net-key .k-pred { color:#1f8f4e; font-weight:700; }
+    .ps-net-key .k-succ { color:#e08a1e; font-weight:700; }
     /* Activity Network header (auto-filter toggle) */
     .ps-net-head { display:flex; align-items:center; gap:14px; padding:8px 12px; border-bottom:1px solid var(--pd-line);
       background:var(--pd-bg); font-size:12px; color:var(--pd-muted); position:sticky; top:0; z-index:2; }
@@ -247,7 +247,7 @@
     .ps-rep-item { padding:11px 16px; border-bottom:1px solid var(--pd-line); cursor:pointer; }
     .ps-rep-item:hover { background:var(--pd-bg); }
     .ps-rep-item.sel { background:var(--pd-red-light); box-shadow:inset 3px 0 0 var(--pd-red); }
-    .ps-rep-item .nm { font-weight:600; font-size:13px; }
+    .ps-rep-item .nm { font-weight:700; font-size:13px; }
     .ps-rep-item .mt { font-size:11px; color:var(--pd-muted); margin-top:2px; }
     .ps-rep-side { flex:1; display:flex; flex-direction:column; min-width:0; }
     .ps-rep-prev { flex:1; overflow:auto; padding:16px; font-size:12px; }
@@ -258,7 +258,7 @@
     .ps-rep-acts { display:flex; gap:8px; padding:12px 16px; border-top:1px solid var(--pd-line); flex-wrap:wrap; }
     .ps-rep-form { padding:16px; display:grid; grid-template-columns:1fr 1fr; gap:12px; overflow:auto; }
     .ps-rep-form .full { grid-column:1 / -1; }
-    .ps-rep-form label { display:block; font-size:11px; font-weight:600; color:var(--pd-muted); margin-bottom:4px; text-transform:uppercase; letter-spacing:.03em; }
+    .ps-rep-form label { display:block; font-size:11px; font-weight:700; color:var(--pd-muted); margin-bottom:4px; text-transform:uppercase; letter-spacing:.03em; }
     /* Schedule dialog (OPC "Schedule" — Data Date + calc options + float paths) */
     .ps-sched-back { position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:200; display:none; }
     .ps-sched-back.open { display:flex; align-items:center; justify-content:center; }
@@ -267,7 +267,7 @@
     .ps-sched-hd h2 { margin:0; font-size:18px; flex:1; }
     .ps-sched-hd button { background:none; border:none; font-size:20px; cursor:pointer; color:var(--pd-muted); }
     .ps-sched-tabs { display:flex; gap:4px; padding:0 18px; border-bottom:1px solid var(--pd-line); }
-    .ps-sched-tabs button { border:none; background:none; padding:8px 12px; font-size:13px; font-weight:600; cursor:pointer;
+    .ps-sched-tabs button { border:none; background:none; padding:8px 12px; font-size:13px; font-weight:700; cursor:pointer;
       color:var(--pd-muted); border-bottom:2px solid transparent; margin-bottom:-1px; }
     .ps-sched-tabs button.active { color:var(--pd-red); border-bottom-color:var(--pd-red); }
     .ps-sched-body { padding:18px; overflow:auto; font-size:13px; }
@@ -376,7 +376,7 @@
     .ps-grid-foot { flex:none; display:flex; align-items:center; gap:12px; padding:5px 10px;
       border:1px solid var(--pd-line); border-top:none; border-radius:0 0 8px 8px; background:var(--pd-bg);
       font-size:12px; color:var(--pd-muted); }
-    .ps-grid-foot .pd-btn { height:26px; padding:0 10px; font-size:12px; background:transparent; border-color:transparent; color:var(--pd-red); font-weight:600; }
+    .ps-grid-foot .pd-btn { height:26px; padding:0 10px; font-size:12px; background:transparent; border-color:transparent; color:var(--pd-red); font-weight:700; }
     .ps-grid-foot .pd-btn:hover { background:var(--pd-red-light); }
     .ps-foot-chk { display:inline-flex; align-items:center; gap:5px; font-size:12px; color:var(--pd-muted); cursor:pointer; margin-left:auto; }
     .ps-search { position:relative; display:inline-flex; align-items:center; }
@@ -655,7 +655,7 @@
       background-repeat:no-repeat; background-position:right 6px center; }
     select.ps-status-pill:hover { box-shadow:0 0 0 1px var(--pd-red-mid) inset; }
     select.ps-status-pill:focus { outline:none; box-shadow:0 0 0 2px var(--pd-red-mid) inset; }
-    select.ps-status-pill option { color:var(--pd-ink); background:var(--pd-card); font-weight:600; }
+    select.ps-status-pill option { color:var(--pd-ink); background:var(--pd-card); font-weight:700; }
     .c-dur { width:var(--c-dur); justify-content:flex-end; } .c-pct { width:var(--c-pct); justify-content:flex-end; position:relative; }
     .c-durpct { width:var(--c-durpct); justify-content:flex-end; }
     /* In-cell A/C date badges + % Complete progress bar (OPC-style readability) */
@@ -687,7 +687,7 @@
     .ps-pkgtag { display:inline-block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
       vertical-align:middle; padding:1px 7px; border-radius:999px; font-size:11px; font-weight:700;
       background:var(--pd-bg); border:1px solid var(--pd-line); color:var(--pd-ink); }
-    .ps-pkgtag.inherited { font-weight:600; color:var(--pd-muted); }
+    .ps-pkgtag.inherited { font-weight:500; color:var(--pd-muted); }
     .ps-ds-rain { border:1px solid var(--pd-line); border-radius:8px; padding:10px 12px; margin-top:12px; background:var(--pd-bg); }
     .ps-ds-rain h4 { margin:0 0 4px; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--pd-muted); }
     .ps-ds-rain p { margin:0 0 8px; font-size:12px; color:var(--pd-muted); }
@@ -741,7 +741,7 @@
     .ps-ds-rulehead { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
     .ps-ds-rulehead input { flex:1; }
     .ps-ds-rulegrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
-    .ps-ds-rulegrid > label { display:flex; flex-direction:column; gap:4px; font-size:11px; color:var(--pd-muted); font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
+    .ps-ds-rulegrid > label { display:flex; flex-direction:column; gap:4px; font-size:11px; color:var(--pd-muted); font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
     .ps-ds-rulegrid small { font-weight:400; text-transform:none; letter-spacing:0; font-size:11px; }
     .ps-ds-months { display:flex; flex-wrap:wrap; gap:2px 8px; }
     .ps-ds-mo { display:inline-flex; align-items:center; gap:3px; font-size:11.5px; color:var(--pd-ink); font-weight:500; text-transform:none; letter-spacing:0; }
@@ -749,7 +749,7 @@
     .ps-ds-kpis > div { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:6px; padding:8px 10px; display:flex; flex-direction:column; gap:2px; }
     .ps-ds-kpis span { font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--pd-muted); }
     .ps-ds-kpis strong { font-size:16px; font-weight:800; }
-    .ps-pkgtag.mixed { background:transparent; font-weight:600; color:var(--pd-muted); font-style:italic; }
+    .ps-pkgtag.mixed { background:transparent; font-weight:500; color:var(--pd-muted); font-style:italic; }
     /* Constraint + Contract Scope in-cell tags. Deliberately quiet: these are classification, not
        alarm — the only loud one is the Change Order pill, which is the thing a planner scans for. */
     .ps-contag { display:inline-block; font-size:10px; font-weight:700; line-height:1.5; padding:0 5px; border-radius:3px;
@@ -803,7 +803,7 @@
     .ps-scope-n { font-weight:700; opacity:.75; margin-left:5px; font-size:11px; }
     .c-x { width:var(--c-x); }
     .ps-cp-tag { background:var(--pd-red); color:#fff; font-size:9px; font-weight:700; padding:1px 5px; border-radius:3px; letter-spacing:.03em; }
-    .ps-var-late { color:var(--pd-bad-text); font-weight:600; }
+    .ps-var-late { color:var(--pd-bad-text); font-weight:700; }
     .ps-var-early { color:var(--pd-ok-text); }
     .ps-bar.ps-near { outline:2px dashed #C77700; outline-offset:1px; }
     .ps-nearrow .c-name { color:#C77700; }
@@ -978,7 +978,7 @@
     .ps-bar.ps-cat-hl, .ps-mile.ps-cat-hl { outline:2px solid var(--pd-ink); outline-offset:1px; z-index:4; }
     .ps-bar.ps-cat-dim, .ps-mile.ps-cat-dim { opacity:.18; }
     .ps-alg-hl { display:inline-flex; align-items:center; gap:6px; padding:2px 8px; border-radius:4px;
-      background:var(--pd-red-light); color:var(--pd-red); font-weight:600; }
+      background:var(--pd-red-light); color:var(--pd-red); font-weight:700; }
     .ps-alg-hl button { border:none; background:none; color:inherit; cursor:pointer; font-size:13px; padding:0 2px; }
     /* ⚠️ Deliberately NOT scoped to `.ps-legend`. It used to be, and when the marks were flattened
        into the single legend row that wrapper stopped existing — so Activity / WBS summary /
@@ -1141,7 +1141,7 @@
     .ps-stk-legchip { cursor:pointer; border-radius:3px; padding:1px 4px; margin:-1px -4px; }
     .ps-stk-legchip:hover { background:var(--pd-bg); }
     .ps-stk-legchip.on { background:var(--pd-red-light); box-shadow:inset 0 0 0 1px var(--pd-red); }
-    .ps-stk-legclear { cursor:pointer; color:var(--pd-red); font-weight:600; }
+    .ps-stk-legclear { cursor:pointer; color:var(--pd-red); font-weight:700; }
     .ps-stk-hl .ps-stk-band { opacity:.22; transition:opacity .12s; }
     .ps-stk-hl .ps-stk-band.ps-stk-bandhl { opacity:1; box-shadow:0 0 0 2px var(--pd-red); }
     .ps-stk-txt { font-size:11.5px; color:var(--pd-ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -1178,7 +1178,7 @@
     .ps-stk-overall-hd small { display:block; font-weight:400; font-size:11px; color:var(--pd-muted); margin-top:2px; }
     .ps-stk-overall-items { display:flex; flex-wrap:wrap; gap:7px; margin-top:8px; }
     .ps-stk-ov { display:inline-flex; align-items:center; gap:6px; padding:5px 10px; border-radius:20px;
-      font-size:11.5px; font-weight:600; }
+      font-size:11.5px; font-weight:700; }
     .ps-stk-ov i { width:9px; height:9px; border-radius:50%; display:inline-block; flex:none; }
     .ps-stk-ov-none { opacity:.55; }
     /* "By tower" breakdown — one row per tower, one column per discipline. Answers which towers are
@@ -1190,7 +1190,7 @@
     .ps-stk-ovtable-wrap { overflow-x:auto; }
     .ps-stk-ovtable { border-collapse:collapse; font-size:11.5px; }
     .ps-stk-ovtable th, .ps-stk-ovtable td { padding:4px 9px; text-align:center; border:1px solid var(--pd-line); white-space:nowrap; }
-    .ps-stk-ovtable thead th { font-weight:600; color:var(--pd-ink); }
+    .ps-stk-ovtable thead th { font-weight:700; color:var(--pd-ink); }
     .ps-stk-ovtable thead th i { width:9px; height:9px; border-radius:50%; display:inline-block; }
     .ps-stk-ovtable tbody th { text-align:right; font-weight:700; color:var(--pd-ink); padding-right:10px; white-space:nowrap; }
 
@@ -1393,7 +1393,7 @@
     .pscl-lvl { display:grid; grid-template-columns:88px 1fr 104px; gap:8px; align-items:center; padding:5px 12px;
       border-bottom:1px solid var(--pd-line); font-size:12px; }
     .pscl-lvl:last-child { border-bottom:0; }
-    .pscl-lvl .nm { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
+    .pscl-lvl .nm { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:700; }
     .pscl-lvl .amt { text-align:right; font-variant-numeric:tabular-nums; }
     .pscl-lvl .track { height:12px; border-radius:6px; background:var(--pd-bg); border:1px solid var(--pd-line); overflow:hidden; }
     .pscl-lvl .track > i { display:block; height:100%; background:var(--pd-red); }
@@ -1490,7 +1490,7 @@
     .ps-vs-towerh { display:flex; align-items:center; gap:8px; justify-content:space-between; padding:10px 14px;
       background:var(--pd-bg); border-bottom:1px solid var(--pd-line); font-size:13.5px; font-weight:800; }
     .ps-vs-towerh .n { display:flex; align-items:center; gap:8px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .ps-vs-towerh .ct { font-size:11px; font-weight:600; color:var(--pd-muted); flex:none; }
+    .ps-vs-towerh .ct { font-size:11px; font-weight:700; color:var(--pd-muted); flex:none; }
     /* No per-tower scrollbar — the whole view scrolls as one (.ps-vs-viewport). */
     .ps-vs-scroll { padding:12px 14px 14px; }
     .ps-vs-scroll svg { display:block; height:auto; }
@@ -1570,7 +1570,7 @@
     .ps-vs-tlpct { margin-left:auto; font-size:12.5px; font-weight:700; font-variant-numeric:tabular-nums; }
     .ps-vs-tlbtns { display:inline-flex; gap:6px; }
     .ps-vs-tlbtns button { height:32px; min-width:36px; padding:0 11px; border:1px solid var(--pd-line);
-      background:var(--pd-card); color:var(--pd-ink); border-radius:8px; font:inherit; font-size:12px; font-weight:600; cursor:pointer; }
+      background:var(--pd-card); color:var(--pd-ink); border-radius:8px; font:inherit; font-size:12px; font-weight:700; cursor:pointer; }
     .ps-vs-tlbtns button:hover { border-color:var(--pd-red); }
     .ps-vs-tlbtns button.on { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
     /* The track scrolls: a 60-month programme squeezed into 300px is 5px a month, which is a ruler
@@ -1625,7 +1625,7 @@
     .ps-vs-towerh { display:flex; align-items:center; gap:8px; justify-content:space-between; padding:10px 14px;
       background:var(--pd-bg); border-bottom:1px solid var(--pd-line); font-size:13.5px; font-weight:800; }
     .ps-vs-towerh .n { display:flex; align-items:center; gap:8px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .ps-vs-towerh .ct { font-size:11px; font-weight:600; color:var(--pd-muted); flex:none; }
+    .ps-vs-towerh .ct { font-size:11px; font-weight:700; color:var(--pd-muted); flex:none; }
     .ps-vs-scroll { overflow-x:auto; max-width:100%; padding:12px 14px 14px; }
     .ps-vs-scroll svg { display:block; height:auto; }
     .ps-vs-cell { cursor:pointer; }
@@ -1706,7 +1706,7 @@
       background:linear-gradient(180deg, var(--pd-card), var(--pd-bg)); }
     .ps-vs-fz-title { display:flex; align-items:center; gap:9px; font-size:15px; font-weight:800;
       min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .ps-vs-fz-sub { font-size:11.5px; color:var(--pd-muted); font-weight:600; }
+    .ps-vs-fz-sub { font-size:11.5px; color:var(--pd-muted); font-weight:700; }
     .ps-vs-fz-x { margin-left:auto; }
     .ps-vs-fz-stage { flex:1 1 auto; min-height:0; display:flex; gap:0; background:var(--pd-bg); }
     .ps-vs-fz-pane { flex:1 1 0%; min-width:0; display:flex; flex-direction:column; position:relative;
@@ -2068,7 +2068,7 @@
     .ps-rel-tables h5 { margin:0 0 6px; font-size:12px; }
     .ps-mini { width:100%; border-collapse:collapse; font-size:12px; }
     .ps-mini th, .ps-mini td { text-align:left; padding:4px 6px; border-bottom:1px solid var(--pd-line); }
-    .ps-mini th { color:var(--pd-muted); font-weight:600; }
+    .ps-mini th { color:var(--pd-muted); font-weight:700; }
     /* Trace Logic: a horizontal chain of level columns. Scrolls both ways as levels/branches grow
        (the details panel is fixed-height), so deep predecessor/successor chains stay usable. */
     .ps-trace { display:flex; align-items:flex-start; gap:14px; overflow:auto; padding-bottom:6px; }
@@ -2215,7 +2215,7 @@
     .ps-layout-menu .ps-lm-chips button { display:inline-flex; align-items:center; width:auto;
       padding:5px 9px; border:1px solid var(--pd-line); border-radius:6px; font-size:12px;
       line-height:1.15; white-space:nowrap; }
-    .ps-layout-menu .ps-lm-chips button.on { border-color:var(--pd-red); background:var(--pd-red-light); color:var(--pd-red); font-weight:600; }
+    .ps-layout-menu .ps-lm-chips button.on { border-color:var(--pd-red); background:var(--pd-red-light); color:var(--pd-red); font-weight:700; }
     /* The remaining full-width rows tighten too — 8px → 6px is 2px x 7 rows. */
     .ps-layout-menu button { padding:6px 14px; }
     .ps-layout-menu .ps-lm-head, .ps-layout-menu .ps-gm-sec { padding-top:5px; padding-bottom:3px; }
@@ -2227,7 +2227,7 @@
     .ps-layout-menu { max-height:78vh; overflow-y:auto; overflow-x:hidden; }
     /* ⚠️ --pd-danger-text, not --pd-red. Brand red on card is 3.74:1 — under AA for 13px text.
        Sixth instance of that defect in this repo; the old Layouts menu shipped it. */
-    .ps-menu button.ps-lm-save { color:var(--pd-danger-text); font-weight:600; border-top:1px solid var(--pd-line); }
+    .ps-menu button.ps-lm-save { color:var(--pd-danger-text); font-weight:700; border-top:1px solid var(--pd-line); }
     .ps-menu button { display:block; width:100%; text-align:left; border:none; background:none; padding:8px 14px;
       cursor:pointer; color:var(--pd-ink); font-size:13px; }
     .ps-menu button:hover { background:var(--pd-red-light); }
@@ -2251,7 +2251,7 @@
     .ps-health-list { overflow:auto; flex:1; padding:4px 0; }
     .ps-health-row { padding:10px 16px; border-bottom:1px solid var(--pd-line); cursor:pointer; }
     .ps-health-row-head { display:flex; align-items:center; gap:8px; }
-    .ps-health-row-head .lbl { font-weight:600; font-size:13px; flex:1; }
+    .ps-health-row-head .lbl { font-weight:700; font-size:13px; flex:1; }
     .ps-health-row-head .pct { font-size:12px; color:var(--pd-muted); width:32px; text-align:right; }
     .ps-health-row-head .cnt { background:var(--pd-bg); color:var(--pd-ink); font-size:11px; font-weight:700;
       border-radius:999px; padding:2px 8px; min-width:20px; text-align:center; }
@@ -2270,7 +2270,7 @@
     .ps-usage-head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; flex:none; }
     .ps-usage-head .pd-select { height:30px; font-size:12px; width:auto; }
     .ps-usage-note { font-size:11px; color:var(--pd-muted); }
-    .ps-fte-toggle { display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:600; color:var(--pd-ink); cursor:pointer; user-select:none; }
+    .ps-fte-toggle { display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:700; color:var(--pd-ink); cursor:pointer; user-select:none; }
     .ps-fte-toggle input { cursor:pointer; }
     .ps-usage-chart { flex:1 1 auto; min-height:0; overflow:hidden; }
     .ps-usage-chart svg { display:block; }
@@ -2468,13 +2468,13 @@
     .ps-wbs-name { flex:1; font-size:13px; }
     .ps-wbs-name input { width:100%; font:inherit; padding:3px 6px; border:1px solid var(--pd-line); border-radius:5px; background:var(--pd-bg); color:var(--pd-ink); }
     .ps-wbs-badge { font-size:11px; color:var(--pd-muted); flex:none; white-space:nowrap; }
-    .ps-wbs-synced { color:var(--pd-red); font-weight:600; }
+    .ps-wbs-synced { color:var(--pd-red); font-weight:700; }
     /* Phase chip. Tokens only (never a hardcoded surface) so it survives the
        dark theme; inherited reads quieter than a phase set on this node itself. */
     .ps-wbs-phase { padding:1px 7px; border-radius:9px; border:1px solid var(--pd-line);
-                    background:var(--pd-bg); color:var(--pd-ink); font-weight:600; }
+                    background:var(--pd-bg); color:var(--pd-ink); font-weight:700; }
     .ps-wbs-phase.inherited { font-weight:400; color:var(--pd-muted); border-style:dashed; }
-    .ps-wbs-namefixed { font-weight:600; color:var(--pd-ink); padding:2px 4px; }
+    .ps-wbs-namefixed { font-weight:700; color:var(--pd-ink); padding:2px 4px; }
     .ps-wbs-acts { display:flex; gap:2px; flex:none; visibility:hidden; }
     .ps-wbs-acts button { width:26px; height:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; border:1px solid transparent; background:none; border-radius:5px; cursor:pointer; color:var(--pd-muted); font-size:13px; }
     .ps-wbs-acts button:hover { background:var(--pd-card); border-color:var(--pd-line); color:var(--pd-ink); }
@@ -2494,7 +2494,7 @@
        row is still main-contract work. Ink + border, never a fill -- a semantic background fails
        contrast in one theme or the other. */
     .ps-affchip { display:inline-block; margin-left:6px; padding:0 5px; border-radius:3px;
-      border:1px solid var(--pd-line); color:var(--pd-muted); font-weight:600; font-size:10px;
+      border:1px solid var(--pd-line); color:var(--pd-muted); font-weight:700; font-size:10px;
       font-variant-numeric:tabular-nums; vertical-align:1px; }
     .ps-gm-lbl { flex:1; font-size:12.5px; color:var(--pd-ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .ps-gm-x { flex:none; width:22px; height:22px; padding:0; border:1px solid transparent; background:none;
@@ -2517,7 +2517,7 @@
     /* Type-to-build keyboard legend under the card header */
     .ps-wbs-keys { display:flex; flex-wrap:wrap; gap:6px 16px; padding:7px 14px; font-size:11.5px;
       color:var(--pd-muted); border-bottom:1px solid var(--pd-line); }
-    .ps-wbs-keys .ps-kbd { font-weight:600; }
+    .ps-wbs-keys .ps-kbd { font-weight:700; }
     /* Paste-outline modal: source textarea beside a live parsed-tree preview */
     .ps-wbso-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; align-items:start; }
     .ps-wbso-grid textarea { width:100%; height:260px; resize:vertical; font-size:var(--pd-fs-sm); line-height:1.5; font-family:var(--pd-mono);
@@ -2534,7 +2534,7 @@
     .ps-ck-pill:hover { background:var(--pd-red-light); border-color:var(--pd-red-mid); }
     /* loading overlay */
     .ps-loading { position:fixed; inset:0; background:rgba(20,20,20,.45); display:flex; flex-direction:column;
-      align-items:center; justify-content:center; gap:14px; z-index:9999; color:#fff; font-weight:600; font-size:14px; }
+      align-items:center; justify-content:center; gap:14px; z-index:9999; color:#fff; font-weight:700; font-size:14px; }
     .ps-spin { width:40px; height:40px; border:4px solid rgba(255,255,255,.3); border-top-color:#fff; border-radius:50%; animation:ps-spin .8s linear infinite; }
     @keyframes ps-spin { to { transform:rotate(360deg); } }
     /* determinate progress bar (import) — shown under the message when a fraction is known */
@@ -2615,7 +2615,7 @@
       .ps-mstat.is-new  { background:var(--pd-muted); }
       .ps-mstat.is-wip  { background:var(--pd-warn); }
       .ps-mstat.is-done { background:var(--pd-ok); }
-      .ps-mname { font-size:14px; font-weight:600; line-height:1.3; margin-bottom:8px; }
+      .ps-mname { font-size:14px; font-weight:700; line-height:1.3; margin-bottom:8px; }
       .ps-mmeta { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
       .ps-mmeta > div { display:flex; flex-direction:column; min-width:0; }
       .ps-mmeta span { font-size:10px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
@@ -2690,7 +2690,7 @@
     .sbld-step.on { background:var(--pd-card); border-color:var(--pd-line); box-shadow:var(--pd-shadow); }
     .sbld-step-n { flex:none; width:22px; height:22px; border-radius:50%; background:var(--pd-bg); color:var(--pd-muted); font-size:12px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--pd-line); }
     .sbld-step.on .sbld-step-n { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
-    .sbld-step-t { font-size:13px; font-weight:600; line-height:1.25; }
+    .sbld-step-t { font-size:13px; font-weight:700; line-height:1.25; }
     .sbld-step-s { font-size:11px; color:var(--pd-muted); }
     /* ⚠️ min-width:0 is load-bearing — this is the 1fr grid child, and without it wide step content
        (the step-3 resulting-schedule SVG, the step-1 spreadsheet) forces the grid track past the
@@ -2843,7 +2843,7 @@
     @supports not (background: color-mix(in srgb, red 7%, transparent)) {
       .sbld-libitem.sbld-libpicked { background:var(--pd-bg); }
     }
-    .sbld-libpicked .sbld-libpick { font-weight:600; }
+    .sbld-libpicked .sbld-libpick { font-weight:700; }
     /* THE DROP EDGE. ⚠️⚠️ DECLARED HERE, AFTER THE PICKED RULE, AND THAT POSITION IS THE POINT.
        Two classes beat the single-class depth rules, but they only TIE with
        `.sbld-libitem.sbld-libpicked` — so placed before it (where it was first written) the marker
@@ -2876,7 +2876,7 @@
       font-size:12.5px; font-weight:700; letter-spacing:.01em; }
     /* The trade colour rides on the left edge, the same colour the rest of the builder uses for it. */
     .sbld-libL1[style*="--zc"] { box-shadow:inset 3px 0 0 var(--zc, var(--pd-line)); }
-    .sbld-libL2 { display:flex; align-items:baseline; gap:8px; padding:4px 11px 4px 24px; font-size:12.5px; font-weight:600;
+    .sbld-libL2 { display:flex; align-items:baseline; gap:8px; padding:4px 11px 4px 24px; font-size:12.5px; font-weight:700;
       box-shadow:inset 1px 0 0 var(--pd-line); }
     .sbld-libL3 { display:flex; align-items:center; gap:8px; padding:3px 11px 3px 40px; font-size:12px;
       color:var(--pd-ink); box-shadow:inset 1px 0 0 var(--pd-line); }
@@ -2917,7 +2917,7 @@
        bold, because the weight came from the L2 row style — so a SUB-grouping (L3, L4) rendered at
        the same weight as the items inside it, and the pane stopped showing which rows are headings
        at exactly the depths this change adds. A grouping is a heading at every rung. */
-    .sbld-libgrp { align-items:center; font-weight:600; }
+    .sbld-libgrp { align-items:center; font-weight:700; }
     /* Rename / + level. ⚠️ Dimmed but NEVER hidden: a control revealed only on hover is a control
        nobody finds, and restructuring the breakdown is the whole point of this pane. */
     .sbld-libtools { flex:none; display:inline-flex; gap:4px; opacity:.55; transition:opacity .12s; }
@@ -2955,7 +2955,7 @@
     .zpw-modal { width:min(1180px, 96vw); max-width:96vw; }
     .zpw { display:flex; flex-direction:column; gap:9px; }
     .zpw-head { display:flex; align-items:center; gap:10px; }
-    .zpw-title { font-size:15px; font-weight:600; display:flex; flex-direction:column; gap:1px; }
+    .zpw-title { font-size:15px; font-weight:700; display:flex; flex-direction:column; gap:1px; }
     .zpw-sub { font-size:11.5px; font-weight:400; color:var(--pd-muted); }
     .zpw-sp { flex:1 1 auto; }
     .zpw-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
@@ -8705,7 +8705,7 @@
       '<p style="color:var(--pd-muted);font-size:13px;margin-top:0;">For <b>' +
         esc(r.activity_name || r.activity_id || 'this activity') + '</b>.</p>' +
       (reg.length
-        ? '<label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px;">Recorded in Contracts &amp; Claims</label>' +
+        ? '<label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px;">Recorded in Contracts &amp; Claims</label>' +
           '<select class="pd-select" id="ps-co-sel" style="width:100%;">' +
             '<option value="">— none —</option>' +
             reg.map(function (x) {
@@ -8722,7 +8722,7 @@
         : '<p style="color:var(--pd-muted);font-size:12.5px;">⚠️ No change orders are recorded for this project in ' +
           '<b>Contracts &amp; Claims</b>. Record it there and it appears here — until then, type the reference.</p>') +
       '<div id="ps-co-freewrap"' + (reg.length && coIsRegistered(cur) ? ' style="display:none;"' : '') + '>' +
-        '<label style="display:block;font-size:12px;font-weight:600;margin:10px 0 4px;">Reference</label>' +
+        '<label style="display:block;font-size:12px;font-weight:700;margin:10px 0 4px;">Reference</label>' +
         '<input class="pd-input" id="ps-co-free" value="' + esc(cur) + '" placeholder="e.g. VO-014" style="width:100%;" />' +
         '<p style="color:var(--pd-muted);font-size:11.5px;margin:4px 0 0;">⚠️ A reference typed here is <b>not</b> in the ' +
         'commercial register. It will show as <i>not in the register</i> until a matching Change Order is recorded.</p>' +
@@ -10910,7 +10910,7 @@
         var on = treeSel === l.id;
         out += '<div class="lw-tnode" data-tree="' + esc(l.id) + '" style="cursor:pointer;padding:4px 6px;border-radius:5px;margin-bottom:2px;' +
           (on ? 'background:var(--pd-red-light);' : '') + '">' +
-          '<span style="font-weight:600;font-size:12.5px;">' + esc(l.name) + '</span>' +
+          '<span style="font-weight:700;font-size:12.5px;">' + esc(l.name) + '</span>' +
           '<span style="color:var(--pd-muted);font-size:11px;"> · L' + (li + 1) + ' · ' + vals.length + ' value' + (vals.length === 1 ? '' : 's') + '</span></div>';
         if (!vals.length) {
           out += '<div style="padding:1px 6px 6px ' + (12 + li * 10) + 'px;color:var(--pd-muted);font-size:11px;">nothing matched to this level yet</div>';
@@ -10927,7 +10927,7 @@
       var gon = treeSel === '__none__';
       out += '<div class="lw-tnode" data-tree="__none__" style="cursor:pointer;padding:4px 6px;border-radius:5px;margin-top:8px;border-top:1px solid var(--pd-line);' +
         (gon ? 'background:var(--pd-red-light);' : '') + '">' +
-        '<span style="font-weight:600;font-size:12.5px;">Grouping only</span>' +
+        '<span style="font-weight:700;font-size:12.5px;">Grouping only</span>' +
         '<span style="color:var(--pd-muted);font-size:11px;"> · ' + grp.length + ' branch' + (grp.length === 1 ? '' : 'es') + '</span></div>' +
         '<div style="padding:2px 6px 4px 12px;color:var(--pd-muted);font-size:11px;">Not a place — a grouping of activities (a phase, a trade, a work type). Nothing is written for these and they never draw a stacking band. Moving a branch here also <strong>clears</strong> any location value it wrote before.</div>';
       return out;
@@ -10960,7 +10960,7 @@
         '<div id="lw-tree" style="flex:0 0 clamp(220px,24%,330px);overflow:auto;border:1px solid var(--pd-line);border-radius:6px;padding:8px;background:var(--pd-bg);"></div>' +
       '</div>' +
       '<details id="lw-prev-wrap" style="flex:0 0 auto;font-size:12.5px;color:var(--pd-muted);border-top:1px solid var(--pd-line);margin-top:10px;padding-top:8px;">' +
-        '<summary style="cursor:pointer;color:var(--pd-ink);font-weight:600;">Preview what will change</summary>' +
+        '<summary style="cursor:pointer;color:var(--pd-ink);font-weight:700;">Preview what will change</summary>' +
         '<div id="lw-prev" style="max-height:18vh;overflow:auto;margin-top:6px;"></div>' +
       '</details>' +
       '<div style="flex:0 0 auto;text-align:right;margin-top:12px;"><button class="pd-btn" id="lw-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="lw-go">Apply to activities</button></div>' +
@@ -11366,7 +11366,7 @@
         '<th style="text-align:right;">Activities</th><th style="text-align:center;">Discipline?</th><th style="text-align:left;">Value to write</th>' +
         '</tr></thead><tbody id="lw-rows">' + rowsHtml() + '</tbody></table></div>' +
       '<details id="lw-prev-wrap" style="flex:0 0 auto;font-size:12.5px;color:var(--pd-muted);border-top:1px solid var(--pd-line);margin-top:10px;padding-top:8px;">' +
-        '<summary style="cursor:pointer;color:var(--pd-ink);font-weight:600;">Preview what will change</summary>' +
+        '<summary style="cursor:pointer;color:var(--pd-ink);font-weight:700;">Preview what will change</summary>' +
         '<div id="lw-prev" style="max-height:18vh;overflow:auto;margin-top:6px;"></div>' +
       '</details>' +
       '<div style="flex:0 0 auto;text-align:right;margin-top:12px;"><button class="pd-btn" id="lw-x">Cancel</button> <button class="pd-btn pd-btn-primary" id="lw-go">Apply to activities</button></div>' +
@@ -16866,10 +16866,10 @@
       'body{font:11.5px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;color:var(--pd-ink);margin:0;padding:14px 16px 16px;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact;}' +
       'header{border-bottom:2px solid var(--pd-red);padding-bottom:6px;margin-bottom:9px;}' +
       'h1{font-size:15px;letter-spacing:-.01em;margin:0 0 2px;font-weight:700;}' +
-      '.pj{font-size:13px;color:var(--pd-ink);font-weight:600;margin:0;}' +
+      '.pj{font-size:13px;color:var(--pd-ink);font-weight:700;margin:0;}' +
       '.mt{margin:6px 0 0;display:flex;flex-wrap:wrap;gap:3px 14px;font-size:9.5px;color:var(--pd-muted);}' +
       '.mt b{display:block;font-size:8.5px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:#8A9096;}' +
-      '.mt span{color:var(--pd-ink);font-weight:600;}' +
+      '.mt span{color:var(--pd-ink);font-weight:700;}' +
       '.lgs{display:flex;gap:10px;flex-wrap:wrap;font-size:9px;color:var(--pd-muted);margin:7px 0 9px;align-items:center;}' +
       '.lg{display:inline-flex;align-items:center;gap:5px;}' +
       '.lg i{width:11px;height:11px;border-radius:2.5px;background:var(--pd-muted);display:inline-block;}' +
@@ -17923,7 +17923,7 @@
       _gro('Target delivery', Fmt.date(w.target_delivery) || '—') +
       _gro('Target installation', Fmt.date(w.target_installation) || '—') +
       _gro('Schedule need-by', (Fmt.date(need) || '—') + (nb && nb.linked > 1 ? ' (earliest of ' + nb.linked + ' linked)' : '')) +
-      '<div style="grid-column:1/-1;font-size:11.5px;color:' + slipCol + ';font-weight:600;">Installation vs need-by: ' + esc(slipTxt) + '</div>' +
+      '<div style="grid-column:1/-1;font-size:11.5px;color:' + slipCol + ';font-weight:700;">Installation vs need-by: ' + esc(slipTxt) + '</div>' +
       '<div style="grid-column:1/-1;font-size:11px;color:var(--pd-muted);">Read-only — from the Procurement (WPM) app. Costs are reported in Cash Flow.</div>');
   }
   function detGeneralEdit(r) {
@@ -18235,7 +18235,7 @@
         '<input type="checkbox" id="ps-costrollup"' + (r.cost_rollup ? ' checked' : '') + '> Roll cost up from assignments/expenses</label>' +
       '<button class="pd-btn pd-btn-primary" id="ps-assign-add" style="margin-left:auto;height:30px;font-size:12px;padding:0 12px;"><span data-ico="plus" data-ico-size="14"></span> Assign resource</button></div>' +
       '<table class="ps-mini"><thead><tr><th>Resource</th><th>Role</th><th class="num">Budgeted</th><th class="num">Actual</th><th class="num">Remaining</th><th class="num">Cost</th><th>Cost account</th><th></th></tr></thead><tbody>' + rowsH +
-        (list.length ? '<tr><td colspan="5" style="text-align:right;font-weight:600;">Total assignment cost</td><td class="num" style="font-weight:600;">' + Fmt.money(totCost) + '</td><td colspan="2"></td></tr>' : '') +
+        (list.length ? '<tr><td colspan="5" style="text-align:right;font-weight:700;">Total assignment cost</td><td class="num" style="font-weight:700;">' + Fmt.money(totCost) + '</td><td colspan="2"></td></tr>' : '') +
       '</tbody></table>' +
       (RESRC.length ? '' : '<p class="ps-usage-note" style="margin-top:8px;">No resources defined yet — add them in the <a href="../resource-loading/index.html">Resource &amp; Role Master</a>, then assign here.</p>');
   }
@@ -18360,7 +18360,7 @@
       '<strong>' + esc(r.activity_id) + ' — ' + esc(r.activity_name || '') + '</strong>' +
       '<button class="pd-btn pd-btn-primary" id="ps-exp-add" style="margin-left:auto;height:30px;font-size:12px;padding:0 12px;"><span data-ico="plus" data-ico-size="14"></span> Add expense</button></div>' +
       '<table class="ps-mini"><thead><tr><th>Expense</th><th>Cost account</th><th class="num">Planned</th><th class="num">Actual</th><th></th></tr></thead><tbody>' + rowsH +
-        (list.length ? '<tr><td colspan="2" style="text-align:right;font-weight:600;">Total</td><td class="num" style="font-weight:600;">' + Fmt.money(tp) + '</td><td class="num" style="font-weight:600;">' + Fmt.money(ta) + '</td><td></td></tr>' : '') +
+        (list.length ? '<tr><td colspan="2" style="text-align:right;font-weight:700;">Total</td><td class="num" style="font-weight:700;">' + Fmt.money(tp) + '</td><td class="num" style="font-weight:700;">' + Fmt.money(ta) + '</td><td></td></tr>' : '') +
       '</tbody></table>' +
       (r.cost_rollup ? '<p class="ps-usage-note" style="margin-top:8px;">Cost roll-up is <strong>on</strong> — these expenses feed this activity’s Planned/Actual cost (with its resource assignments).</p>' : '<p class="ps-usage-note" style="margin-top:8px;">Tip: turn on “Roll cost up…” in Resource Assignments to have expenses feed the activity’s Planned/Actual cost.</p>');
   }
@@ -19344,7 +19344,7 @@
         esc(d.label) + '</label>';
     }
     function hdr(t) { return '<div style="padding:6px 12px 4px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--pd-muted);">' + t + '</div>'; }
-    m.innerHTML = '<label style="border-bottom:1px solid var(--pd-line);"><input type="checkbox" id="ps-colf-toggle"' + (_colFilterOn ? ' checked' : '') + '> <span style="font-weight:600;">Show column filter row</span></label>' +
+    m.innerHTML = '<label style="border-bottom:1px solid var(--pd-line);"><input type="checkbox" id="ps-colf-toggle"' + (_colFilterOn ? ' checked' : '') + '> <span style="font-weight:700;">Show column filter row</span></label>' +
       hdr('Schedule columns') + builtin.map(rowHTML).join('') +
       (extra.length ? hdr('Activity Codes &amp; User-Defined Fields') + extra.map(rowHTML).join('') : '') +
       '<div class="ps-cols-foot"><button data-colact="show">Show all</button><button data-colact="hide">Hide all</button><button data-colact="reset">Reset</button></div>';
@@ -19809,7 +19809,7 @@
   }
   function _fmtStyleStr(f) {
     var fg = f.fg || _fmtInk(f.bg);
-    return '--fmt-bg:' + f.bg + ';' + (fg ? '--fmt-fg:' + fg + ';' : '') + (f.bold ? 'font-weight:600;' : '');
+    return '--fmt-bg:' + f.bg + ';' + (fg ? '--fmt-fg:' + fg + ';' : '') + (f.bold ? 'font-weight:700;' : '');
   }
   // Suggested fill per condition when a rule is first added.
   var _FMT_DEFBG = { critical: '#FDECEA', near: '#FFF4E5', behind: '#FFF0D9', negfloat: '#FDECEA', complete: '#E8F6EF', inprogress: '#FFF9E6', notstarted: '#F1F1F1', milestone: '#EEF3FF', constraint: '#FFF4E5', overbudget: '#FDECEA' };
@@ -22589,7 +22589,7 @@
     body.innerHTML = tree.map(function (n) {
       var used = costAcctUsage(n.a.id), kids = costAcctChildren(n.a.id).length;
       return '<div class="ps-ca-row" style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--pd-line);">' +
-        '<span style="padding-left:' + (n.depth * 18) + 'px;font-weight:600;min-width:90px;">' + esc(n.a.code || '—') + '</span>' +
+        '<span style="padding-left:' + (n.depth * 18) + 'px;font-weight:700;min-width:90px;">' + esc(n.a.code || '—') + '</span>' +
         '<span style="flex:1;min-width:0;">' + esc(n.a.name || '') + '</span>' +
         '<span style="color:var(--pd-muted);font-size:11px;white-space:nowrap;">' + (kids ? kids + ' sub · ' : '') + used + ' use' + (used === 1 ? '' : 's') + '</span>' +
         '<button class="pd-btn pd-btn-sm" data-ca-add="' + esc(n.a.id) + '" title="Add child account">+ child</button>' +
@@ -24900,12 +24900,12 @@
       '<p style="color:var(--pd-muted);font-size:13px;margin-top:0;">Work planned before this project was ' +
       'split into contract packages belongs to no lot, so it appears in no package total. This files it, and ' +
       'moves its top-level branches under the package\'s own row so the grid reads contract-first.</p>' +
-      '<label style="display:block;font-size:12px;font-weight:600;margin:10px 0 4px;">Contract package</label>' +
+      '<label style="display:block;font-size:12px;font-weight:700;margin:10px 0 4px;">Contract package</label>' +
       '<select class="pd-select" id="fp-pkg" style="width:100%;">' +
         PACKAGES.map(function (k) {
           return '<option value="' + esc(k.id) + '">' + esc((k.code ? k.code + ' — ' : '') + k.name) + '</option>';
         }).join('') + '</select>' +
-      '<label style="display:block;font-size:12px;font-weight:600;margin:12px 0 4px;">What to file</label>' +
+      '<label style="display:block;font-size:12px;font-weight:700;margin:12px 0 4px;">What to file</label>' +
       '<select class="pd-select" id="fp-scope" style="width:100%;">' +
         '<option value="unassigned">Everything not yet in a package</option>' +
         '<option value="branch">One WBS branch and everything under it</option>' +
@@ -26211,7 +26211,7 @@
         head.map(function (h) { return '<th style="text-align:left;">' + esc(h) + '</th>'; }).join('') +
         '</tr></thead><tbody>' + body + '</tbody></table>';
     }
-    function warn(t) { return '<div style="background:#FDECEA;color:#A32013;border-radius:6px;padding:8px 10px;margin:6px 0;font-size:12.5px;font-weight:600;">' + t + '</div>'; }
+    function warn(t) { return '<div style="background:#FDECEA;color:#A32013;border-radius:6px;padding:8px 10px;margin:6px 0;font-size:12.5px;font-weight:700;">' + t + '</div>'; }
     function note(t) { return '<div style="color:var(--pd-muted);font-size:12px;margin:4px 0 12px;">' + t + '</div>'; }
 
     // The verdict — say which cause is biting, in the order that matters.
@@ -26223,7 +26223,7 @@
       ' filed under a WBS branch that does not match it — e.g. an activity tagged "' + esc(misfiled[0].loc) + '" sitting under "' + esc(misfiled[0].under) +
       '". They render after that branch\'s sub-branches instead of inside the one they belong to.'));
     if (hiddenByView.length && !orphan.length && !noCode.length) verdict.push(warn('⚠️ ' + hiddenByView.length + ' activit' + (hiddenByView.length === 1 ? 'y is' : 'ies are') + ' filed and dated but NOT in the current view — a filter, a search or the grouping is hiding them. Clear the filter (funnel) and the search box.'));
-    if (!verdict.length) verdict.push('<div style="background:#E8F6EF;color:#1B6E4F;border-radius:6px;padding:8px 10px;margin:6px 0;font-size:12.5px;font-weight:600;">Every activity is filed under a real WBS row, dated, and visible in the current view. If a branch still reads "—", capture this report and the grouping you are using.</div>');
+    if (!verdict.length) verdict.push('<div style="background:#E8F6EF;color:#1B6E4F;border-radius:6px;padding:8px 10px;margin:6px 0;font-size:12.5px;font-weight:700;">Every activity is filed under a real WBS row, dated, and visible in the current view. If a branch still reads "—", capture this report and the grouping you are using.</div>');
 
     var filterState = anyFilter()
       ? warn('⚠️ A filter or search is ACTIVE right now, so the grid is not showing everything. ' +
@@ -28986,7 +28986,7 @@
           var krows = kindsPresent.map(function (k) {
             var par = parallelKind(prev, k), bv = batchKind(prev, k);
             return '<div class="sbld-at-kind" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:3px 0;">' +
-              '<span style="min-width:132px;font-weight:600;">' + e2(KIND_LABEL[k]) + '</span>' +
+              '<span style="min-width:132px;font-weight:700;">' + e2(KIND_LABEL[k]) + '</span>' +
               '<label style="display:inline-flex;align-items:center;gap:5px;"><input type="checkbox" data-atkind="pkind" data-attr="' + e2(prev) + '" data-kind="' + k + '"' + (par ? ' checked' : '') + '> start together</label>' +
               '<label class="sbld-at-behind"' + (par ? ' style="opacity:.4;"' : '') + '>else <input class="pd-input" type="number" min="1" max="60" data-atkind="bkind" data-attr="' + e2(prev) + '" data-kind="' + k + '" value="' + bv + '" style="width:56px;height:30px;"> level(s) behind</label>' +
             '</div>';
@@ -32667,7 +32667,7 @@
         '<span class="sbld-quick">Quick: <input class="pd-input" id="q-base" type="number" min="0" max="20" value="' + qd.B + '" style="width:50px;height:30px;"> bsmt + <input class="pd-input" id="q-floors" type="number" min="1" max="80" value="' + qd.F + '" style="width:50px;height:30px;"> flr × <input class="pd-input" id="q-zones" type="number" min="0" max="20" value="' + qd.Z + '" style="width:50px;height:30px;"> zn × <input class="pd-input" id="q-units" type="number" min="0" max="20" value="' + qd.U + '" style="width:50px;height:30px;"> un <button class="pd-btn" id="b-quick">Generate</button></span></div>' +
         floorsHtml + '<p class="sbld-hint">Drag ⠇ to reorder. Floors auto-name F1, F2…; basements B1, B2… (B1 = topmost, deepest built first). Zones Z1…; units U1… (0 = none).</p></div>' +
         '<div class="sbld-tower" style="zoom:' + towerZoom + ';"><div class="sbld-towerh"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) +
-          (multiTower() ? ' <span style="font-weight:600;color:var(--pd-muted);">· ' + e2(towerLabel(_twAct)) + '</span>' : '') + '</div>' + towerSVG(tr, _twAct) + '</div>' +
+          (multiTower() ? ' <span style="font-weight:700;color:var(--pd-muted);">· ' + e2(towerLabel(_twAct)) + '</span>' : '') + '</div>' + towerSVG(tr, _twAct) + '</div>' +
         '</div>' +
         // ⚠️ AFTER the floors and the tower drawing, because it is a layout OF the zones typed
         // above it: put first, it would be an empty grid on a project with no floors yet.
@@ -35336,7 +35336,7 @@
       // clears the whole project and its inserts carry no package_id, so offering a package there
       // would promise scoping the import does not do.
       var pkgHtml = (imp.kind === 'xlsx' && (PACKAGES || []).length)
-        ? '<label style="display:block;font-size:12px;font-weight:600;margin:12px 0 4px;">Contract package</label>' +
+        ? '<label style="display:block;font-size:12px;font-weight:700;margin:12px 0 4px;">Contract package</label>' +
           '<select class="pd-select" id="b-imppkg" style="width:100%;max-width:420px;">' +
           '<option value="">— No package (assign later in the grid) —</option>' +
           (PACKAGES || []).map(function (k) { return '<option value="' + e2(k.id) + '"' + (imp.pkgId === k.id ? ' selected' : '') + '>' + e2((k.code ? k.code + ' — ' : '') + k.name) + '</option>'; }).join('') +
@@ -35641,7 +35641,7 @@
           if (!fl.length) return '';
           return '<div class="sbld-stacktower" style="--tc:' + gc(tr) + '">' +
             '<div class="sbld-towerh"><span class="sbld-stkh-name"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) +
-            (multiTower() ? '<span style="font-weight:600;color:var(--pd-muted);"> · ' + e2(towerLabel(tw.id)) + '</span>' : '') + '</span>' +
+            (multiTower() ? '<span style="font-weight:700;color:var(--pd-muted);"> · ' + e2(towerLabel(tw.id)) + '</span>' : '') + '</span>' +
             '<span class="sbld-stkh-ct">' + fl.length + ' floor' + (fl.length === 1 ? '' : 's') + '</span></div>' +
             stackTowerSVG(tr, finBy, tw.id) + '</div>';
         }).join('');
@@ -42634,7 +42634,7 @@
         (multi
           ? '<p style="color:var(--pd-muted);font-size:13px;">This project is built in <strong>contract packages</strong>. ' +
             'Choose what to delete — each package is cleared on its own, so re-building one leaves the others untouched.</p>' +
-            '<label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px;">Delete</label>' +
+            '<label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px;">Delete</label>' +
             '<select class="pd-select" id="ps-clr-scope" style="width:100%;margin-bottom:10px;">' + pkgOpts +
               '<option value="__none__">Only activities NOT in any package</option>' +
               '<option value="__all__">Everything — every package and the unassigned work</option>' +

@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Portfolio Dashboard · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910v3" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910v4" />
   <style>
     .po-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:14px; }
     .po-toolbar .pd-select, .po-toolbar .pd-input, .po-toolbar .pd-btn { height:36px; }
@@ -44,7 +44,7 @@
     .po-projfilter-search input { width:100%; }
     .po-projfilter-actions { display:flex; gap:8px; padding:6px 10px; border-bottom:1px solid var(--pd-line); }
     .po-projfilter-actions button { border:none; background:none; color:var(--pd-red); font-size:12px;
-      font-weight:600; cursor:pointer; padding:2px 0; }
+      font-weight:700; cursor:pointer; padding:2px 0; }
     /* Two columns once there is room — the list is the whole point of the panel and a
        single 260px column of 40 projects was most of the reason it wanted to be a
        floating menu. ⚠️ `overflow-y` only: a horizontal scroller here would clip nothing
@@ -92,7 +92,7 @@
     .po-sched { display:flex; align-items:center; gap:7px; }
     .po-sched .bar { flex:0 0 54px; height:7px; background:var(--pd-line); border-radius:4px; overflow:hidden; }
     .po-sched .bar > div { height:100%; background:var(--pd-red); }
-    .po-var-up { color:var(--pd-bad-text); font-weight:600; } .po-var-dn { color:var(--pd-ok-text); font-weight:600; }
+    .po-var-up { color:var(--pd-bad-text); font-weight:700; } .po-var-dn { color:var(--pd-ok-text); font-weight:700; }
     .po-health { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px; vertical-align:middle; }
     .po-tot-row td { font-weight:800; border-top:2px solid var(--pd-ink); background:var(--pd-bg); }
     .po-sort-ind { font-size:9px; color:var(--pd-red); margin-left:4px; }
@@ -105,7 +105,7 @@
     .po-eq-bar .pd-select, .po-eq-bar .pd-input { height:34px; font-size:13px; max-width:220px; }
     .po-eq-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
     .po-eq-seg button { border:0; background:var(--pd-card); color:var(--pd-ink); padding:7px 13px; font:inherit;
-      font-size:12.5px; font-weight:600; cursor:pointer; }
+      font-size:12.5px; font-weight:700; cursor:pointer; }
     .po-eq-seg button + button { border-left:1px solid var(--pd-line); }
     .po-eq-seg button.active { background:var(--pd-red); color:#fff; }
 
@@ -235,7 +235,7 @@
     .po-hl-k { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .po-hl-t { height:7px; border-radius:4px; background:var(--pd-line); overflow:hidden; }
     .po-hl-t i { display:block; height:100%; background:var(--pd-red); border-radius:4px; }
-    .po-hl-n { font-variant-numeric:tabular-nums; font-weight:600; font-size:11.5px;
+    .po-hl-n { font-variant-numeric:tabular-nums; font-weight:700; font-size:11.5px;
       color:var(--pd-muted); white-space:nowrap; }
     /* ⚠ A warned row is tinted, never recoloured to a literal — the 2026-09-03 (u)
        entry records a fill painted literally on both themes. */
@@ -249,7 +249,7 @@
       padding:7px 9px; border:1px solid var(--pd-line); border-radius:var(--pd-radius);
       background:var(--pd-card); color:var(--pd-ink); cursor:pointer; }
     .po-hl-dup:hover { border-color:var(--pd-red); }
-    .po-hl-dn { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
+    .po-hl-dn { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:700; }
     .po-hl-dv { font-size:10.5px; color:var(--pd-muted); }
     .po-hl-dup em { grid-column:1/-1; font-style:normal; font-size:11px; color:var(--pd-muted); }
     .po-hl-ds { font-variant-numeric:tabular-nums; font-size:11px; font-weight:700; color:var(--pd-red); }
@@ -308,14 +308,14 @@
        jumps around as you search, and a dimmed letter is the useful answer to "is there
        anyone under Q?". The opacity IS the "has anybody" signal — the earlier 3px dot was
        one more mark to read in a 20px column, and the letter already says it. */
-    .po-dir-band.is-empty { opacity:.26; cursor:default; font-weight:600; }
+    .po-dir-band.is-empty { opacity:.26; cursor:default; font-weight:500; }
 
     .po-dir-sec { margin-bottom:18px; }
     .po-dir-sechead {
       display:flex; align-items:center; gap:8px; margin:0 0 8px; font-size:13px; font-weight:700;
       color:var(--pd-ink); border-bottom:1px solid var(--pd-line); padding-bottom:5px;
     }
-    .po-dir-sechead span { font-size:11px; font-weight:600; color:var(--pd-muted); }
+    .po-dir-sechead span { font-size:11px; font-weight:500; color:var(--pd-muted); }
     .po-dir-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:10px; }
     .po-dir-card {
       position:relative; display:flex; gap:11px; align-items:flex-start; padding:12px 13px;
@@ -361,7 +361,7 @@
     .po-dir-listband td {
       background:var(--pd-bg); font-weight:700; font-size:12px; padding:6px 12px !important;
     }
-    .po-dir-listband td span { margin-left:8px; font-weight:600; color:var(--pd-muted); }
+    .po-dir-listband td span { margin-left:8px; font-weight:500; color:var(--pd-muted); }
     @media (max-width: 560px) { .po-dir-grid { grid-template-columns:1fr; } }
 
     /* The live duplicate warning while typing a new person. */
@@ -2294,7 +2294,7 @@
       return '<div style="display:flex;align-items:center;gap:10px;font-size:12.5px;">' +
         '<div style="width:170px;flex:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + esc(r.name) + '">' + esc(r.name) + '</div>' +
         '<div style="flex:1;background:var(--pd-line);border-radius:4px;height:16px;overflow:hidden;"><div style="width:' + pct + '%;height:100%;background:var(--pd-red);"></div></div>' +
-        '<div style="width:110px;flex:none;text-align:right;font-weight:600;">' + Fmt.moneyShort(r.bc) + '</div></div>';
+        '<div style="width:110px;flex:none;text-align:right;font-weight:700;">' + Fmt.moneyShort(r.bc) + '</div></div>';
     }).join('') + '</div>';
   }
   function rsRenderTable(list) {

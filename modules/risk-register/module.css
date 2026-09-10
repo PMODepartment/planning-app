@@ -15,10 +15,10 @@
 .rr-title .rr-title-txt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .rr-title-ico { color:var(--pd-red); vertical-align:-3px; margin-right:4px; }
 .rr-projctx { display:flex; align-items:center; min-width:0; flex:0 1 auto; }
-.rr-project { max-width:230px; min-width:120px; height:34px; font-weight:600; font-size:var(--pd-fs-base); background:transparent; border-color:transparent; }
+.rr-project { max-width:230px; min-width:120px; height:34px; font-weight:700; font-size:var(--pd-fs-base); background:transparent; border-color:transparent; }
 .rr-project:hover, .rr-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
 .rr-tabs { display:inline-flex; border:1px solid var(--pd-line); border-radius:var(--pd-radius); overflow:hidden; flex:none; }
-.rr-tab { border:0; background:var(--pd-card); color:var(--pd-ink); padding:6px 14px; font-weight:600; font-size:var(--pd-fs-base); cursor:pointer; font-family:var(--pd-font); transition:background .12s; white-space:nowrap; }
+.rr-tab { border:0; background:var(--pd-card); color:var(--pd-ink); padding:6px 14px; font-weight:700; font-size:var(--pd-fs-base); cursor:pointer; font-family:var(--pd-font); transition:background .12s; white-space:nowrap; }
 .rr-tab + .rr-tab { border-left:1px solid var(--pd-line); }
 .rr-tab:hover:not(.active) { background:var(--pd-bg); }
 .rr-tab.active { background:var(--pd-red); color:#fff; }
@@ -44,7 +44,7 @@
    visible Clear reads as "something is filtered" when nothing is. */
 .rr-clear { display:none; align-items:center; gap:5px; border:1px solid var(--pd-line); background:var(--pd-card);
   color:var(--pd-muted); border-radius:var(--pd-radius); height:34px; padding:0 10px; font-size:var(--pd-fs-sm);
-  font-weight:600; cursor:pointer; font-family:var(--pd-font); }
+  font-weight:700; cursor:pointer; font-family:var(--pd-font); }
 .rr-clear.show { display:inline-flex; }
 .rr-clear:hover { color:var(--pd-ink); border-color:var(--pd-red-mid); }
 
@@ -97,7 +97,7 @@ html.pd-dark .rr-bands-row th.rr-bandhead { color:#FF8A80; }
 .rr-clamp { display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical;
   overflow:hidden; line-height:1.45; }
 .rr-table td.rr-num, .rr-table th.rr-num, .rr-num { text-align:right; white-space:nowrap; }
-.rr-cat { font-weight:600; }
+.rr-cat { font-weight:700; }
 
 /* The band header row above the column names, so the register reads like the sheet. */
 .rr-bands-row th.rr-bandhead {
@@ -162,7 +162,7 @@ html.pd-dark .rr-bands-row th.rr-bandhead { color:#FF8A80; }
    token in dashboard.css rather than a fourth copy of this override. */
 html.pd-dark .rr-fsec { color:#FF8A80; }
 .rr-fsec:first-of-type { margin-top:10px; }
-.rr-fsec-hint { color:var(--pd-muted); font-weight:600; letter-spacing:0; text-transform:none; margin-left:6px; }
+.rr-fsec-hint { color:var(--pd-muted); font-weight:700; letter-spacing:0; text-transform:none; margin-left:6px; }
 .rr-lbl-hint { color:var(--pd-muted); font-weight:400; }
 .rr-frow { display:flex; gap:10px; flex-wrap:wrap; }
 .rr-frow > .pd-field { min-width:140px; }
@@ -213,7 +213,7 @@ html.pd-dark .rr-fsec { color:#FF8A80; }
     border-radius: var(--pd-radius); box-shadow: var(--pd-shadow); }
   .rr-table tr:hover td { background: none; }
   .rr-table td { display: block; border: 0; padding: 3px 0; white-space: normal; font-size: var(--pd-fs-base); max-width:none; }
-  .rr-table td[data-l]::before { content: attr(data-l) ": "; color: var(--pd-muted); font-weight: 600; font-size: var(--pd-fs-sm); }
+  .rr-table td[data-l]::before { content: attr(data-l) ": "; color: var(--pd-muted); font-weight: 700; font-size: var(--pd-fs-sm); }
   .rr-table td .rr-sub { white-space: normal; max-width:none; }
   /* A stacked card has the room the table row did not — show the whole control. */
   .rr-clamp { -webkit-line-clamp:none; display:block; }

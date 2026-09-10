@@ -5,13 +5,13 @@
 @media (max-width:1150px){ .dr-title-txt { display:none; } }   /* icon-only title on tighter widths */
 
 .dr-projctx { display:flex; align-items:center; min-width:0; flex:0 1 auto; }
-.dr-project { max-width:230px; min-width:120px; height:34px; font-weight:600; font-size:var(--dr-fs-base);
+.dr-project { max-width:230px; min-width:120px; height:34px; font-weight:700; font-size:var(--dr-fs-base);
   background:transparent; border-color:transparent; }
 .dr-project:hover, .dr-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
 
 /* View tabs (segmented) */
 .dr-tabs { display:inline-flex; border:1px solid var(--pd-line); border-radius:var(--pd-radius); overflow:hidden; flex:none; }
-.dr-tab { border:0; background:var(--pd-card); color:var(--pd-ink); padding:6px 14px; font-weight:600;
+.dr-tab { border:0; background:var(--pd-card); color:var(--pd-ink); padding:6px 14px; font-weight:700;
   cursor:pointer; font-size:var(--dr-fs-base); transition:background .12s; }
 .dr-tab + .dr-tab { border-left:1px solid var(--pd-line); }
 .dr-tab:hover:not(.active) { background:var(--pd-bg); }
@@ -50,7 +50,7 @@
 /* ---- Loading skeleton (fresh register load) ------------------------------ */
 .dr-skcard { padding:14px 16px; }
 .dr-sk-head { display:flex; align-items:center; gap:8px; color:var(--pd-muted);
-  font-size:var(--dr-fs-base); font-weight:600; margin-bottom:12px; }
+  font-size:var(--dr-fs-base); font-weight:700; margin-bottom:12px; }
 .dr-sk-spin { width:13px; height:13px; flex:none; border:2px solid var(--pd-line);
   border-top-color:var(--pd-red); border-radius:50%; animation:dr-spin .7s linear infinite; }
 @keyframes dr-spin { to { transform:rotate(360deg); } }
@@ -121,7 +121,7 @@ tr.dr-grp .dr-glabel { cursor:text; }      /* except the label: dblclick renames
 
 /* Row action buttons */
 .dr-rowbtn { border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-ink);
-  border-radius:6px; padding:3px 9px; font-size:var(--dr-fs-sm); font-weight:600; cursor:pointer; }
+  border-radius:6px; padding:3px 9px; font-size:var(--dr-fs-sm); font-weight:700; cursor:pointer; }
 .dr-rowbtn:hover { background:var(--pd-bg); border-color:var(--pd-muted); }
 .dr-rowbtn-del:hover { background:var(--pd-bad,#dc2626); border-color:var(--pd-bad,#dc2626); color:#fff; }
 
@@ -175,7 +175,7 @@ html.pd-dark {
 /* ---- Per-sheet tracking -------------------------------------------------
    A drawing broken out per sheet is still a drawing row (editable code/title),
    but its counters are a roll-up over its sheets, so it reads as a header. */
-.dr-sheetparent > td { background:rgba(43,44,43,.04); font-weight:600; }
+.dr-sheetparent > td { background:rgba(43,44,43,.04); font-weight:700; }
 html.pd-dark .dr-sheetparent > td { background:rgba(255,255,255,.035); }
 .dr-sheetparent .dr-code { font-weight:700; }
 .dr-scaret { cursor:pointer; margin-right:5px; }
@@ -191,7 +191,7 @@ html.pd-dark .dr-sheetparent > td { background:rgba(255,255,255,.035); }
 .dr-grp-disc td { background:rgba(43,44,43,.07); }
 .dr-grp-disc td strong { font-size:var(--dr-fs-sm); }
 .dr-grp-cat td { background:var(--pd-bg); }
-.dr-grp-cat td strong { font-weight:600; font-size:var(--dr-fs-sm); color:var(--pd-muted); text-transform:none; }
+.dr-grp-cat td strong { font-weight:700; font-size:var(--dr-fs-sm); color:var(--pd-muted); text-transform:none; }
 html.pd-dark .dr-grp-disc td { background:rgba(255,255,255,.05); }
 
 /* ============================ STATUS PALETTE ==============================
@@ -285,7 +285,7 @@ html.pd-dark {
    (and the explanation for why drag-reorder is currently disabled). */
 .dr-sortchip { display:inline-flex; align-items:center; gap:5px; cursor:pointer;
   border:1px solid var(--pd-red); background:var(--pd-red); color:#fff;
-  font:inherit; font-size:var(--dr-fs-sm); font-weight:600; padding:4px 9px; border-radius:999px; flex:none; }
+  font:inherit; font-size:var(--dr-fs-sm); font-weight:700; padding:4px 9px; border-radius:999px; flex:none; }
 .dr-sortchip:hover { background:var(--pd-red-mid, var(--pd-red)); }
 .dr-sortchip svg { display:block; }
 .dr-aging-late { color:var(--pd-red); font-weight:700; }
@@ -305,7 +305,7 @@ html.pd-dark {
    editor; the JS stops propagation, this just keeps them from looking like text. */
 .dr-bk-table .dr-bk-doc button, .dr-bk-table .dr-cb input { cursor:pointer; }
 .dr-bk-table tbody tr.dr-selrow > td { background:var(--pd-red-light, rgba(238,49,36,.07)); }
-.dr-linklike { background:none; border:none; padding:0; color:var(--pd-red); font-weight:600; font-size:inherit;
+.dr-linklike { background:none; border:none; padding:0; color:var(--pd-red); font-weight:700; font-size:inherit;
   font-family:inherit; cursor:pointer; text-decoration:underline; }
 
 /* Progress bar */
@@ -356,11 +356,11 @@ html.pd-dark {
 
 .dr-drillrow { cursor:pointer; }
 .dr-drillrow:hover > td { background:var(--pd-bg); }
-.dr-drillrow:hover > td:first-child { color:var(--pd-red); font-weight:600; }
+.dr-drillrow:hover > td:first-child { color:var(--pd-red); font-weight:700; }
 .dr-agchip { margin-left:10px; vertical-align:2px; }
 
 .dr-kpi-val { font-size:var(--dr-fs-kpi); font-weight:800; line-height:1.05; letter-spacing:-.01em; }
-.dr-kpi-label { color:var(--pd-muted); font-size:var(--dr-fs-sm); text-transform:uppercase; letter-spacing:.05em; margin-top:9px; font-weight:600; }
+.dr-kpi-label { color:var(--pd-muted); font-size:var(--dr-fs-sm); text-transform:uppercase; letter-spacing:.05em; margin-top:9px; font-weight:700; }
 .dr-kpi.dr-kpi-ok .dr-kpi-val { color:var(--pd-good,#16a34a); }
 .dr-kpi.dr-kpi-ok::before { background:var(--pd-good,#16a34a); }
 .dr-kpi.dr-kpi-warn .dr-kpi-val { color:var(--pd-warn-text); }
@@ -539,7 +539,7 @@ html.pd-dark .dr-grid .dr-selrow td.dr-freeze { background:#4a2b28 !important; }
 /* legend chip in the list bar (click to filter to duplicates) */
 .dr-duplegend { display:inline-flex; align-items:center; gap:6px; flex:0 0 auto; cursor:pointer;
   border:1px solid #d97706; color:#b45309; background:rgba(217,119,6,.10);
-  border-radius:999px; padding:3px 10px; font-size:var(--dr-fs-sm); font-weight:600; }
+  border-radius:999px; padding:3px 10px; font-size:var(--dr-fs-sm); font-weight:700; }
 .dr-duplegend:hover { background:rgba(217,119,6,.18); }
 .dr-duplegend.dr-on { background:#d97706; color:#fff; }
 .dr-duplegend .dr-dupmark { margin-left:0; width:14px; height:14px; }
@@ -565,7 +565,7 @@ td.dr-editing { padding:2px 4px; }
   -webkit-appearance:none; appearance:none; text-align:center;
   background:var(--st-bg, var(--pd-card)); color:var(--st-fg, var(--pd-ink));
   border:1px solid var(--st-bd, var(--pd-line)); }
-.dr-stsel option { color:var(--pd-ink); background:var(--pd-card); font-weight:600; }
+.dr-stsel option { color:var(--pd-ink); background:var(--pd-card); font-weight:500; }
 
 /* small icon action buttons */
 .dr-iconbtn { border:0; background:transparent; color:var(--pd-muted); cursor:pointer;
@@ -622,7 +622,7 @@ td.dr-editing { padding:2px 4px; }
 .dr-grp .dr-lvldel:hover { background:var(--pd-bad,#dc2626); color:#fff; }
 
 /* bulk set-status dropdown in the selection bar */
-.dr-selstatus { height:26px; padding:2px 8px; font-size:var(--dr-fs-sm); font-weight:600; max-width:170px; }
+.dr-selstatus { height:26px; padding:2px 8px; font-size:var(--dr-fs-sm); font-weight:700; max-width:170px; }
 
 /* jump-to-phase select in the list bar [feature 6] */
 .dr-jump { height:26px; padding:2px 8px; font-size:var(--dr-fs-sm); max-width:230px; flex:0 0 auto; }
@@ -640,7 +640,7 @@ td.dr-editing { padding:2px 4px; }
 .dr-view-empty { padding:8px 10px; color:var(--pd-muted); font-size:var(--dr-fs-sm); }
 .dr-view-sep { height:1px; background:var(--pd-line); margin:4px 0; }
 .dr-view-save { display:flex; align-items:center; gap:6px; width:100%; text-align:left; border:0; background:transparent; color:var(--pd-red);
-  padding:7px 10px; border-radius:6px; cursor:pointer; font-size:var(--dr-fs-base); font-weight:600; }
+  padding:7px 10px; border-radius:6px; cursor:pointer; font-size:var(--dr-fs-base); font-weight:700; }
 .dr-view-save:hover { background:var(--pd-bg); }
 
 /* ---- Print / PDF export ---------------------------------------------------
