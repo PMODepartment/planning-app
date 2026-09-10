@@ -1369,11 +1369,35 @@ body { overflow-x: clip; }
   .pd-main { padding: 12px; }
   .pd-card { padding: 14px; }
 
-  /* iOS zoom guard — see note 1 at the top of this section. */
+  /* ⚠️⚠️ iOS ZOOM GUARD — REWRITTEN 2026-09-10 BECAUSE IT WAS LOSING, TWO DIFFERENT WAYS.
+     Measured at 390px against the real stylesheets: **10 of 12 input contexts computed under
+     16px**, so iOS zoomed the page the moment any of them was focused.
+
+       bare <input> (no type)   13.33px      cc-form / boq-filters / eq-controls   13px
+       ccw-pkgs / cf-tr-row      12.5px      dr-subrow                             12px
+
+     1. THE OLD LIST COULD NOT MATCH A BARE `<input>`. `input[type="text"]` does not match
+        `<input>` — the attribute is absent, and a defaulted type is not a present attribute.
+        The app ships **39** of them. Selecting `input` and excluding the few types that must
+        NOT be 16px is the only form that cannot be outrun by new markup.
+     2. MODULE CSS LOADS AFTER THIS FILE, so at equal specificity the MODULE WINS — and those
+        rules are not inside a phone media query at all, so they applied here too. `.cc-form
+        input` (0,1,1) beat `input[type="text"]` (0,1,1) on source order alone.
+
+     ⚠️ Hence `!important`, which this file otherwise avoids. iOS's zoom is a PLATFORM
+     BEHAVIOUR, not a style preference: under 16px it zooms, and there is no value a module
+     could legitimately prefer instead. This is the one place a module does not get a vote.
+     ⚠️ checkbox/radio/range/color/hidden are excluded — font-size does not size their control
+     and forcing it distorts the box. */
   .pd-input, .pd-select, .pd-textarea, .pd-input-sm,
-  input[type="text"], input[type="number"], input[type="date"],
-  input[type="email"], input[type="password"], input[type="search"],
-  select, textarea { font-size: var(--pd-fs-tap); }
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="hidden"]),
+  select, textarea { font-size: var(--pd-fs-tap) !important; }
+  /* ⚠️ And the same fields measured 22–35px tall, under the 44px this block already enforces on
+     `.pd-btn`. A control you cannot reliably hit is not fixed by being legible. `min-height`,
+     never `height`: a textarea must still grow, which is why it is not in this list. */
+  .pd-input, .pd-select, .pd-input-sm,
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="hidden"]),
+  select { min-height: var(--pd-tap); }
   .pd-input, .pd-select, .pd-textarea { padding: 10px 12px; }
   .pd-input-sm { height: 40px; padding: 8px 10px; }
 
@@ -1391,9 +1415,20 @@ body { overflow-x: clip; }
      any smaller. Do not remove the min-height/min-width lines below 44px. */
   .pd-btn { padding: 8px 12px; min-height: var(--pd-tap); }
   .pd-btn-sm { min-height: 36px; }
-  .pd-vt, .pd-icon-btn, .pd-theme-toggle, .pd-sidebar-toggle {
+  /* ⚠️ `.pd-filttoggle` was MISSING from this list and is a fixed 34x34 square with no phone
+     override — measured at 390px in five modules (risk-register, stakeholder-map,
+     contracts-claims, resource-loading and, via their own copies, issues-lessons and
+     progress-photos). The filter funnel is one of the most-tapped controls on a phone and it
+     was the smallest. `.il-topfilttoggle` / `.pp-topfilttoggle` are those two modules' local
+     copies of the same button; they are named here rather than left to drift, because the
+     whole point of the list is that a tap target is not a per-module decision. */
+  .pd-vt, .pd-icon-btn, .pd-theme-toggle, .pd-sidebar-toggle,
+  .pd-filttoggle, .il-topfilttoggle, .pp-topfilttoggle {
     min-width: var(--pd-tap); min-height: var(--pd-tap); border-radius: var(--pd-radius-md);
   }
+  /* ⚠️ `height`/`width` are set as fixed 34px on those three, and a `min-*` cannot beat a
+     fixed `height`. Release it so the minimum above can actually take effect. */
+  .pd-filttoggle, .il-topfilttoggle, .pp-topfilttoggle { height: auto; width: auto; }
   .pd-avatar { width: 40px; height: 40px; }
   /* A modal's footer buttons no longer stretch to fill the row — Cancel/Save
      used to expand equally to half the modal's width each, which is most of

@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Project S-Curve · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910w6" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910w9" />
   <style>
     /* ---- Uniform module chrome (matches every other module). Keep in sync.
        2026-08-30: modules gained a persistent sidebar (MODULE_CONTRACT.md) —
@@ -93,6 +93,10 @@
          min-width — that restores the unreadable version.
          ------------------------------------------------------------------ */
       @media (max-width: 700px) {
+        /* ⚠️ `.sc-seg` is this module's own copy of the segmented control, so it never
+           inherited the 44px that dashboard.css gives `.pd-seg > button` at this width.
+           Measured at 390px: 32px. A tap target is not a per-module decision. */
+        .sc-seg button { min-height: var(--pd-tap); }
         .sc-card { overflow-x: auto; }
         .sc-svg { min-width: 560px; }
         .sc-table { min-width: 520px; }

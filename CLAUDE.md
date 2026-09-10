@@ -95,6 +95,80 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-10 (w9) — Phone sweep: every form in the app zoomed iOS, and the filter funnel was the smallest target on screen
+
+Owner: *"Let's now do a complete sweep for phone view UI."* ⚠️ The useful finding is not that the app
+lacks a phone story — it has a good one (`body{overflow-x:clip}`, `.pd-tablewrap`, `--pd-tap:44px`, an
+iOS zoom guard). It is **where that story was not being followed**, and two of my three suspicions
+turned out to be my own noise.
+
+#### ⚠️⚠️ THE REAL ONE: 10 OF 12 INPUT CONTEXTS ZOOMED THE PAGE ON iOS
+iOS Safari zooms the whole page whenever a **focused** input computes under 16px. Measured at 390px
+against the real shared + module stylesheets:
+
+| construction | font-size | height |
+|---|---|---|
+| shared `.pd-input` / `.pd-select` | **16px** | 44 — the guard working |
+| bare `<input>` (no `type`) | **13.33px** | 22 |
+| `cc-form` · `boq-filters` · `eq-controls` | **13px** | 31–35 |
+| `ccw-pkgs` · `cf-tr-row` · `eq-mx` | **12.5px** | 22–32 |
+| `dr-subrow` | **12px** | 24 |
+
+**Two independent causes, both proven, not guessed:**
+1. ⚠️⚠️ **`input[type="text"]` CANNOT MATCH `<input>`.** A defaulted type is not a *present attribute*,
+   so the guard's type list never applied to the **39 bare inputs** this app ships. The only form that
+   cannot be outrun by new markup is to select `input` and exclude the few types that must *not* be
+   16px (checkbox / radio / range / color / hidden).
+2. ⚠️⚠️ **module.css LOADS AFTER dashboard.css**, so at equal specificity the module wins — and those
+   module rules are not inside a phone media query at all, so they applied at phone width too.
+   `.cc-form input` (0,1,1) beat `input[type="text"]` (0,1,1) on source order alone.
+
+Hence **`!important`**, which this file otherwise avoids. iOS's zoom is a *platform behaviour*, not a
+style preference — under 16px it zooms, and there is no value a module could legitimately prefer
+instead. This is the one place a module does not get a vote. The same fields also measured **22–35px
+tall**, so they now take the 44px minimum this block already enforces on `.pd-btn` — via `min-height`,
+never `height`, so a textarea can still grow.
+
+#### The filter funnel was the smallest control on a phone
+`.pd-filttoggle` is a fixed **34×34** with no phone override — and the ≤700px block *already has* a
+list of icon buttons that get 44px (`.pd-vt, .pd-icon-btn, .pd-theme-toggle, .pd-sidebar-toggle`). It
+was simply never added to it. It is one of the most-tapped controls on a phone, in **six** modules
+counting the two local copies (`.il-topfilttoggle`, `.pp-topfilttoggle`), which are named in the same
+rule rather than left to drift.
+⚠️ A `min-height` cannot beat a fixed `height`, so the 34px `height`/`width` are released to `auto`
+first — otherwise the addition would have *looked* right and changed nothing.
+
+Three module-local one-offs went with it, each an established shared decision a module's own copy
+never inherited: `.sc-seg button` (32px, where dashboard.css already gives `.pd-seg > button` 44px),
+and project-schedule's `.ps-title-btn` (28px) and `.ps-datadate-badge` (34px). ⚠️ Both of those are
+real `<button>`s — the title is the **view switcher**, the badge **opens the Schedule dialog** —
+checked in the markup rather than assumed from their names. Each fix went into that module's own
+existing `@media (max-width: 700px)` block, not into the shared file.
+
+#### ⚠️ Two suspicions that were MY noise, recorded so they are not re-raised
+- **"90 tables with no scroll wrapper."** False. My detector looked back 240 characters for a wrapper
+  keyword. The app does handle wide tables consistently, just through **several** mechanisms:
+  `.mp-mxwrap` / `.eq-mxwrap` / `.cc-tablecard` / `.mw-tablewrap` — and `.rcm-tbl` is
+  `display:block; overflow-x:auto`, i.e. **the table is its own scroll container**. Checked one by one.
+- **`.cc-tablecard { overflow: visible }`** looked like an override that would make a wide table
+  unreachable under `overflow-x: clip`. It is inside **`@media print`**. Correct as written.
+
+#### Verified
+- **14 modules at 390px, running the real `initModuleTopbar` + `tabsToDropdown`: 0 page-level sideways
+  scroll, 0 elements past the viewport, 0 controls under 44px.** Before: 8 modules had small targets.
+- **12 input contexts at 390px: 0 zooming, 0 under 44px** — from 10 and 10.
+- ⚠️⚠️ **Desktop proved untouched, not assumed from the media query** — `!important` earns that check.
+  At 1200px every measurement is byte-identical to before: `.pd-filttoggle` **34×34**, inputs
+  12 / 12.5 / 13 / 13.33px at h=22–35, `.pd-seg` button 32px.
+- **42 JS files + 29 inline blocks parse (`node --check`), 0 failures**; dashboard.css 530/530 braces,
+  0 NUL bytes across all 31 changed files.
+- `?v=` → `20260910w9` on dashboard.css (29 pages) + modules-grid.js, `MODULE_V` fallback bumped.
+- ⚠️ **Not verified signed in, and not verified on a real device.** This is the *shell* — topbar,
+  modulebar, form controls — measured in an emulated 390px viewport. A module's own CONTENT area needs
+  data to render and is not covered; nor is real iOS Safari, whose zoom behaviour is the thing being
+  designed around.
+
+
 
 ### 2026-09-10 (w8) — Two follow-ups to (w6): a doubled module icon, and a tab called "Loading"
 
