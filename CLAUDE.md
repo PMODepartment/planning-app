@@ -95,6 +95,54 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+
+### 2026-09-10 (y4) — ⚠️⚠️ HOTFIX: the register came up empty. I called a function that did not exist.
+
+Owner, with a screenshot of a populated KPI strip over an empty page: *"A regression. The stakeholder
+isn't shown in the page."* Correct, and it was live.
+
+#### The bug
+(y2)'s selection markup calls `canWrite()` in two places — the row's checkbox cell and the header's
+select-all. **`canWrite` was never defined in that module.** It gates writes nowhere else; it relies
+on RLS. So `renderTable()` threw a `ReferenceError` on every paint, and because `render()` runs
+`renderKpis()` → `renderTable()` → `renderCards()` in that order, **the throw took the cards with
+it**: the KPI strip painted, and everything below it did not. Exactly the screenshot.
+
+#### ⚠️⚠️ Why the verification missed it, which is the part worth keeping
+`node --check` cannot see a `ReferenceError` — it is a runtime fact, and this log already records that
+lesson under *"below is not defined"*. Both harnesses were blind to it for **different** reasons:
+
+- the **view harness stubbed `renderTable` out** — it was testing `switchView`, so it replaced the
+  very function that throws;
+- the **mount harness runs on `person.html`**, where (y2) deliberately guards `render()` off with
+  `if (!document.getElementById('sm-table')) return;` — so the whole render path was skipped.
+
+Two green harnesses, one broken function, and neither could have failed. **A new harness now carries
+the register's real markup and runs `init()` end to end**, so `renderKpis` → `renderTable` →
+`renderCards` all execute against the shipped module with only its externals stubbed.
+
+⚠️⚠️ **And the contrast build BITES, which is what makes the green run mean anything.** The identical
+harness pointed at `git show HEAD:` — the broken bytes — reports **4 KPIs, 0 cards, 0 table rows, 0
+groups**: the owner's screenshot reproduced. Against the fix: **4 KPIs, 2 cards, 2 rows, 2 groups, 0
+page errors.**
+
+#### Also verified, now that the path actually runs
+Select one → the bar reads *1 selected · Clear · Delete 1*; select-all ticks **2 of 2**; the bulk
+delete issues **ONE statement carrying both ids** and toasts *"Deleted 2."*; a stubbed RLS shortfall
+(2 asked, 1 removed) toasts **"Deleted 1 of 2 — the rest were refused"** rather than a false success;
+and a **viewer** gets 0 checkboxes and no select-all while the cards still render.
+
+#### ⚠️ Two version mistakes in the same round, both caught before pushing
+- The (y2) bump rewrote `module.js` / `module.css` in **five unrelated modules** — every module has a
+  file of that basename, the false-sharing trap this log already records for the `?v=` audit. Reverted.
+- Then the (y3) attempt bumped `stakeholder-map/module.js` on **its own page only** and left
+  `person.html` — which now loads that same module — on the previous token, producing a genuine
+  **version split** the asset audit caught. Both pages are bumped together now.
+- ⚠️ `MODULE_V` is **y4**: the concurrent session took `y3` while this was in progress. Re-derived
+  from the remote **after** integrating, which is the rule this log arrived at the last four times.
+
+`MODULE_V` → `20260910y4`; stakeholder-map `module.js` → `?v=20260910y4` on **both** referencing pages.
+⚠️ **Not verified signed in** — the render path is executed against a stub, not a live project.
 ### Progress fills upward, the striped shading was z-fighting, every floor is named, the front is an object (2026-09-10) — jasantos2
 
 Owner: *"hopefully there is a label for all floors … make it that the progress for the 3D version

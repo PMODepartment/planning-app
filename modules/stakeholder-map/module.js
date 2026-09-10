@@ -987,6 +987,21 @@ window.StakeholderMap = (function () {
       };
     });
   }
+  // ⚠️⚠️ THIS DID NOT EXIST AND I CALLED IT ANYWAY — the selection markup referenced
+  //    `canWrite()`, which this module had never defined, so `renderTable` threw a
+  //    ReferenceError on every paint. `render()` calls renderTable BEFORE renderCards,
+  //    so the throw took the cards with it and the register came up empty under a
+  //    populated KPI strip. ⚠️ `node --check` cannot see this: a ReferenceError is a
+  //    runtime fact, and neither harness exercised renderTable — the view harness
+  //    stubbed it out and the mount harness runs on a page where render() is guarded
+  //    off entirely. The lesson this file already records for `below is not defined`.
+  // ⚠️ The module gates writes nowhere else — it relies on RLS, which still refuses
+  //    the delete regardless. This only decides whether the CONTROL is offered.
+  function canWrite() {
+    var r = profile && profile.role;
+    return r === 'planner' || r === 'admin' || r === 'super_admin';
+  }
+
   function selCount() { return Object.keys(selIds).length; }
 
   // ⚠️ Prune to what is actually on screen. A filter change can leave a selected id

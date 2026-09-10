@@ -1,5 +1,23 @@
 # Module: stakeholder-map
 
+## 2026-09-10 (y4) — HOTFIX: `canWrite` was never defined, and the register rendered nothing
+
+(y2) called `canWrite()` from the selection markup. **This module has no such function** — it gates
+writes nowhere and relies on RLS. `renderTable()` threw a `ReferenceError` on every paint, and since
+`render()` runs renderKpis → renderTable → renderCards, the throw **took the cards with it**: KPI
+strip populated, page empty below.
+
+⚠️⚠️ **Neither harness could have caught it.** The view harness **stubbed `renderTable` out** (it was
+testing `switchView`), and the mount harness runs on `person.html`, where `render()` is deliberately
+guarded off. `node --check` cannot see a ReferenceError. A new harness carries the register's real
+markup and runs `init()` end to end.
+
+⚠️ **The contrast build bites:** the same harness against the broken bytes reports **4 KPIs, 0 cards,
+0 rows** — the reported bug reproduced — against **4 / 2 / 2** on the fix, with 0 page errors.
+
+`canWrite()` is now defined locally from `profile.role` (planner and above), matching the ladder
+`person.js` uses. It decides only whether the control is OFFERED; RLS still refuses the delete.
+
 ## 2026-09-10 (y2) — The form moves to the person page; the row loses Edit and Delete, and gains bulk select
 
 ⚠️⚠️ **`openForm` is UNCHANGED — the modal became one of two hosts.** It uses its handle only as
