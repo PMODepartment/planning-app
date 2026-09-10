@@ -1479,6 +1479,42 @@
     /* An icon + label inside a .ps-vs-seg button (the PDF export). It used to borrow the
        magnifier button's rule; that went with the magnifier, so it has its own name now. */
     .ps-vs-icolab { display:inline-flex; align-items:center; gap:6px; }
+    /* ==== THE 3D CARD'S BAR =============================================================
+       ⚠️ The viewpoints get the room; everything else is one button. See _vs3Bar for why.
+       ⚠️ The panel is absolutely positioned so opening it does not push the model down the
+       page — a control that moves the thing you are looking at is a control you stop using. */
+    .ps-vs3-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:0 0 8px;
+      position:relative; z-index:5; }
+    .ps-vs3-sp { flex:1 1 auto; }
+    .ps-vs3-more { position:relative; }
+    .ps-vs3-more > summary { list-style:none; cursor:pointer; user-select:none;
+      display:inline-flex; align-items:center; gap:6px; height:30px; padding:0 11px;
+      border:1px solid var(--pd-line); border-radius:8px; background:var(--pd-card);
+      color:var(--pd-ink); font-size:var(--pd-fs-sm); font-weight:600; }
+    .ps-vs3-more > summary::-webkit-details-marker { display:none; }
+    .ps-vs3-more > summary::after { content:'▾'; font-size:10px; color:var(--pd-muted); }
+    .ps-vs3-more[open] > summary, .ps-vs3-more > summary:hover { border-color:var(--pd-red); color:var(--pd-red); }
+    /* How many settings are off their default. ⚠️ Nothing hidden is ever a surprise. */
+    .ps-vs3-more > summary i { font-style:normal; font-size:var(--pd-fs-micro); font-weight:800;
+      min-width:16px; height:16px; padding:0 4px; border-radius:9px; background:var(--pd-red);
+      color:#fff; display:inline-flex; align-items:center; justify-content:center; }
+    .ps-vs3-panel { position:absolute; top:calc(100% + 6px); right:0; z-index:8; width:max-content;
+      max-width:min(380px, 88vw); display:flex; flex-direction:column; gap:8px; padding:12px 13px;
+      background:var(--pd-card); border:1px solid var(--pd-line); border-radius:10px;
+      box-shadow:0 12px 32px rgba(0,0,0,.22); }
+    .ps-vs3-opt { display:flex; align-items:center; gap:10px; justify-content:space-between; }
+    .ps-vs3-opt .k { font-size:var(--pd-fs-xs); color:var(--pd-muted); white-space:nowrap; }
+    /* The note under the model: one line, and the standing explanation behind a summary. */
+    .ps-vs3-foot { margin:8px 0 0; }
+    .ps-vs3-foot .lead { margin:0; font-size:var(--pd-fs-xs); line-height:1.55; color:var(--pd-muted); }
+    .ps-vs3-foot .lead b { color:var(--pd-ink); font-weight:600; }
+    .ps-vs3-help { margin-top:4px; }
+    .ps-vs3-help > summary { cursor:pointer; width:max-content; font-size:var(--pd-fs-xs);
+      color:var(--pd-muted); text-decoration:underline; text-underline-offset:2px; }
+    .ps-vs3-help > summary:hover { color:var(--pd-red); }
+    .ps-vs3-help p { margin:6px 0 0; font-size:var(--pd-fs-xs); line-height:1.6; color:var(--pd-muted); }
+    .ps-vs3-help p b { color:var(--pd-ink); font-weight:600; }
+    .ps-vs3-optnote { margin:-2px 0 0; font-size:var(--pd-fs-micro); color:var(--pd-muted); line-height:1.45; }
     /* ==== THE 3D HOVER READOUT ==========================================================
        The label beside the traced outline (see setHover). ⚠️ pointer-events:none, without
        which the readout sitting under the cursor would take the pointer OFF the canvas — the
@@ -15442,12 +15478,24 @@
     base.getHSL(h);
     function at(s, l) { return new T.Color(0x000000).setHSL(h.h, s, Math.max(0, Math.min(1, l))); }
     function cl(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
-    if (!dark) return { don: base, rem: at(h.s, h.l * 0.45) };
+    /* ⚠️⚠️ A THIRD TONE, FOR THE LINE AT THE FILL LEVEL. Owner 2026-09-10, twice: *"how come
+       the progress per zone is removed? pls bring that back."* Nothing was removed from the
+       maths — every zone still fills on its own percentage — but the fill turned from a
+       horizontal split across a zone's WIDTH (tens of pixels) into a vertical one inside a
+       storey's HEIGHT, which on a twenty-storey tower is about twenty-five pixels. A 60/40 split
+       inside that is a few pixels of tone difference, so per-zone progress stopped being
+       READABLE, which for the person looking at it is the same as gone.
+       ⚠️ The answer is a line, not a bigger block: a hairline at the exact fill level survives
+       any storey height, and reading a level off a line is what a gauge does. It is a very light
+       tint of the trade's own hue so it reads against BOTH tones in both themes without becoming
+       a fourth colour in the model. */
+    if (!dark) return { don: base, rem: at(h.s, h.l * 0.45), line: at(h.s * 0.45, 0.93) };
     // ⚠️ The clamps are the point, not the multipliers: a trade colour that is already pale and
     // one that is already near-black must both end up on the two rungs, or the pair that needed
     // the help most is the pair that does not get it.
     return { don: at(h.s, cl(h.l * 1.35, 0.55, 0.76)),
-             rem: at(h.s * 0.92, cl(h.l * 0.70, 0.26, 0.38)) };
+             rem: at(h.s * 0.92, cl(h.l * 0.70, 0.26, 0.38)),
+             line: at(h.s * 0.35, 0.95) };
   }
   /* One zone — or one horizontal SLICE of one — as an extruded outline rather than a block.
      ⚠️ A HEIGHT AND A BASE, not a fraction of the plate's width. Progress fills upward now (see
@@ -15694,13 +15742,27 @@
            "the part that is not done", which is a different thing and reads as a selection of
            something the planner did not point at. */
         var parts = [];
-        if (_f > 0) { var _don = zoneMesh(0, _f, col, isNo ? 0.5 : 1); if (_don) parts.push(_don); }
-        if (_f < 1) { var _rem = zoneMesh(_f, 1, dim, isNo ? 0.35 : 1); if (_rem) parts.push(_rem); }
+        /* ⚠️ THE LINE IS CARVED OUT OF THE DONE SLICE, never laid over it. Overlapping geometry
+           is what produced the striped z-fighting this view had a week ago; the zone is still
+           cut into pieces that touch and do not intersect — done body, line, remaining. */
+        var _wl = (_f > 0 && _f < 1) ? Math.min(SH * 0.07, 0.016) : 0;
+        var _wlF = _wl / SH, _bodyF = Math.max(0, _f - _wlF);
+        var _line = null;
+        if (_f >= 1) { var _all = zoneMesh(0, 1, col, isNo ? 0.5 : 1); if (_all) parts.push(_all); }
+        else {
+          if (_bodyF > 0) { var _don = zoneMesh(0, _bodyF, col, isNo ? 0.5 : 1); if (_don) parts.push(_don); }
+          if (_wl > 0) { _line = zoneMesh(_bodyF, _f, _tone.line, isNo ? 0.6 : 1); if (_line) parts.push(_line); }
+          var _rem = zoneMesh(_f, 1, dim, isNo ? 0.35 : 1); if (_rem) parts.push(_rem);
+        }
         // ⚠️ A traced outline can fail to build (a degenerate trace); the block path never does.
         // Skipping the cell entirely is better than adding a null to the scene graph.
         if (!parts.length) return;
         parts.forEach(function (m) { m.userData.key = _key; grp.add(m); picks.push(m); });
-        byKey[_key] = parts;
+        /* ⚠️ The fill line is PICKABLE but not TRACED: clicking it must open the zone like any
+           other part of it, and the hover outline is the zone's shape — a ring drawn round the
+           line as well would put a second loop through the middle of the block and read as a
+           division the planner had made. */
+        byKey[_key] = parts.filter(function (m) { return m !== _line; });
         info[_key] = { level: v, cell: c.label, pct: pct, n: c.list.length, fin: _vsDate(c.list) };
         /* ⚠️⚠️ COMPARE KEEPS THE TRADE COLOUR HERE TOO, and that is not a style choice — it is the
            rule the 2D cell records: replacing the fill with the slip colour turned every building
@@ -16075,46 +16137,72 @@
   }
   // The plan/orientation controls, and the six viewpoints. Rendered as part of the 3D card so they
   // are never on screen for the 2D card, where they would do nothing.
+  /* ==========================================================================================
+     THE 3D CARD'S CONTROLS.
+     Owner 2026-09-10: *"can you simplify the UI, i think too much buttons and information,
+     propose a simplified UI yet still pleasing to the eye."*
+
+     ⚠️⚠️ WHAT WAS WRONG: twenty-one controls in one flat row, every one of them equally loud,
+     and the one a planner touches every few seconds — the viewpoint — was last. Four groups had
+     four labels, three dividers and no hierarchy, so the bar read as a wall rather than as a set
+     of choices.
+
+     ⚠️ WHAT IT IS NOW: the six VIEWPOINTS stay out in the open, because turning the building is
+     the gesture this card exists for. Everything that is set once and then left alone — the plan
+     wrap, the front edge, what the colour means, the floor markers, the sync — moves behind one
+     <b>Display</b> button that says how many of them are off their default, so nothing hidden is
+     ever a surprise.
+     ⚠️ A <details>, not a hand-built popover: it opens and closes itself, it is keyboard-
+     reachable and screen-reader-labelled for free, and there is no outside-click handler to leak.
+     ⚠️ Its open state is remembered across the repaint that every control inside it triggers —
+     without that, changing Colour to Zone would slam the panel shut under the planner's cursor.
+     ========================================================================================== */
+  var _vs3MoreOpen = false;
   function _vs3Bar() {
     var cols = [[0, 'Auto'], [1, '1'], [2, '2'], [3, '3'], [4, '4']];
+    // How many settings are away from their default — the number on the button.
+    var off = (_vsPlanCols !== 0 ? 1 : 0) + (_vsZoneCol ? 1 : 0) + (!_vsFloorMarks ? 1 : 0) +
+      ((!_vsFrontFromPlan() && _vsFront !== 'S') ? 1 : 0);
+    var seg = function (name, opts) {
+      return '<div class="ps-vs3-opt"><span class="k">' + name + '</span><span class="ps-vs-seg">' + opts + '</span></div>';
+    };
     return '<div class="ps-vs3-bar">' +
-      '<span class="ps-vs-note" title="How the zones on a floor are laid out in PLAN. The app knows their order, not their shape — this is what turns four zones into a 2×2 plan rather than a 1×4 strip.">Plan columns</span>' +
-      '<span class="ps-vs-seg">' + cols.map(function (o) {
-        return '<button data-vs3col="' + o[0] + '"' + (_vsPlanCols === o[0] ? ' class="on"' : '') + '>' + o[1] + '</button>';
-      }).join('') + '</span>' +
-      '<button class="pd-btn ps-vs-chip" id="ps-vs-zpsync" title="Re-read the floor plans traced in Schedule Setup and draw the zones where you put them. Use this after tracing or editing a plan in another tab.">Sync floor plans</button>' +
-      '<span class="ps-tb-div"></span>' +
-      '<span class="ps-vs-note" title="Seen from the top view, which edge of the plan is the FRONT of the building. Right, rear and left follow from it.">Front faces</span>' +
-      /* ⚠️ DISABLED when the floor plan names the front, rather than left live and ignored. Two
-         controls for one fact is how a planner ends up believing the building faces two ways;
-         the note says where the answer is set so it is still changeable, just in one place. */
-      '<span class="ps-vs-seg">' + _VS_EDGES.map(function (e) {
-        return '<button data-vs3front="' + e + '"' + (_vsFrontNow() === e ? ' class="on"' : '') +
-          (_vsFrontFromPlan() ? ' disabled' : '') + ' title="' + _VS_EDGE_NAME[e] + '">' + e + '</button>';
-      }).join('') + '</span>' +
-      (_vsFrontFromPlan()
-        ? '<span class="ps-vs-note" title="Change it on the drawing: Schedule Setup \u203a Floors &amp; Zones \u203a Plan">from the floor plan</span>'
-        : '') +
-      '<span class="ps-tb-div"></span>' +
-      '<span class="ps-vs-note" title="What the block colour means. Trade keeps this card’s own rule (colour = trade, brightness = done). Zone paints each block in the colour you gave that zone on the floor plan — the fastest way to follow one zone up the building.">Colour</span>' +
-      '<span class="ps-vs-seg">' +
-        '<button data-vs3zc="0"' + (_vsZoneCol ? '' : ' class="on"') + ' title="Colour = which trade or tower, as the 2D card does">Trade</button>' +
-        '<button data-vs3zc="1"' + (_vsZoneCol ? ' class="on"' : '') + ' title="Colour = the zone colour set on the floor plan (Schedule Setup › Floors &amp; Zones › Plan). A zone with no plan keeps its trade colour.">Zone</button>' +
-      '</span>' +
-      '<span class="ps-tb-div"></span>' +
-      '<span class="ps-vs-note" title="A slab under every storey and a label saying which storey it is. Turn it off to read the building as a shape.">Floors</span>' +
-      '<span class="ps-vs-seg">' +
-        '<button data-vs3fl="1"' + (_vsFloorMarks ? ' class="on"' : '') + ' title="Slab + name on every storey">Labelled</button>' +
-        '<button data-vs3fl="0"' + (_vsFloorMarks ? '' : ' class="on"') + ' title="Just the zones">Plain</button>' +
-      '</span>' +
-      '<span class="ps-tb-div"></span>' +
-      '<span class="ps-vs-note">View</span><span class="ps-vs-seg">' +
+      '<span class="ps-vs-seg ps-vs3-views">' +
       [['front', _vsElevLabel('front')], ['right', _vsElevLabel('right')],
        ['rear', _vsElevLabel('rear')], ['left', _vsElevLabel('left')],
-       ['top', 'Top (plan)'], ['iso', 'Iso']].map(function (o) {
-        return '<button data-vs3view="' + o[0] + '" title="' + esc(o[1]) + '">' +
+       ['top', 'Top (plan)'], ['iso', 'Iso \u2014 the reading view']].map(function (o) {
+        // ⚠️ Iso starts lit because that is where every scene starts (setView at the end of
+        // _vs3Build). Six buttons with none of them on says the camera is nowhere.
+        return '<button data-vs3view="' + o[0] + '"' + (o[0] === 'iso' ? ' class="on"' : '') +
+          ' title="' + esc(o[1]) + '">' +
           esc(o[0] === 'top' ? 'Top' : (o[0] === 'iso' ? 'Iso' : o[0].charAt(0).toUpperCase() + o[0].slice(1))) + '</button>';
       }).join('') + '</span>' +
+      '<span class="ps-vs3-sp"></span>' +
+      '<details class="ps-vs3-more"' + (_vs3MoreOpen ? ' open' : '') + '>' +
+        '<summary title="Plan wrap, front edge, colour, floor markers, and re-reading the floor plans">' +
+          'Display' + (off ? '<i>' + off + '</i>' : '') + '</summary>' +
+        '<div class="ps-vs3-panel">' +
+          seg('Colour by',
+            '<button data-vs3zc="0"' + (_vsZoneCol ? '' : ' class="on"') + ' title="Colour = which trade or tower, as the 2D card does">Trade</button>' +
+            '<button data-vs3zc="1"' + (_vsZoneCol ? ' class="on"' : '') + ' title="Colour = the zone colour set on the floor plan. A zone with no plan keeps its trade colour.">Zone</button>') +
+          seg('Floors',
+            '<button data-vs3fl="1"' + (_vsFloorMarks ? ' class="on"' : '') + ' title="A slab and a name on every storey">Labelled</button>' +
+            '<button data-vs3fl="0"' + (_vsFloorMarks ? '' : ' class="on"') + ' title="Just the zones">Plain</button>') +
+          seg('Front faces', _VS_EDGES.map(function (e) {
+            return '<button data-vs3front="' + e + '"' + (_vsFrontNow() === e ? ' class="on"' : '') +
+              (_vsFrontFromPlan() ? ' disabled' : '') + ' title="' + _VS_EDGE_NAME[e] + '">' + e + '</button>';
+          }).join('')) +
+          (_vsFrontFromPlan()
+            ? '<p class="ps-vs3-optnote">The front comes from the marker on the floor plan \u2014 Schedule Setup \u203a Floors &amp; Zones \u203a Plan.</p>'
+            : '') +
+          seg('Plan wrap', cols.map(function (o) {
+            return '<button data-vs3col="' + o[0] + '"' + (_vsPlanCols === o[0] ? ' class="on"' : '') +
+              ' title="How the zones on a floor wrap when no plan is traced for it">' + o[1] + '</button>';
+          }).join('')) +
+          '<div class="ps-vs3-opt"><span class="k"></span>' +
+            '<button class="pd-btn" id="ps-vs-zpsync" title="Re-read the floor plans traced in Schedule Setup and draw the zones where you put them. Use this after tracing or editing a plan in another tab.">Sync floor plans</button></div>' +
+        '</div>' +
+      '</details>' +
       '</div>';
   }
   /* ⚠️ THE CARD SAYS WHAT IT IS, ON SCREEN. This view is the one place in the module where a reader
@@ -16189,7 +16277,10 @@
     var _guess = '(they wrap ' + (_vsPlanCols > 0 ? 'in ' + _vsPlanCols + ' column(s)' : 'automatically') + ')';
     var lay;
     if (_fit.state === 'all') {
-      lay = '<b>Drawn as you traced them</b> on the floor plans (Schedule Setup \u203a Floors &amp; Zones \u203a Plan) \u2014 each storey is its zones\u2019 outlines, or the floor\u2019s own outline where it has no zones. ';
+      /* ⚠️ SHORT WHEN THERE IS NOTHING TO FIX. The long form of this line was telling a planner
+         where to go and what to do at a moment when they had already done it; the states below
+         keep their instructions, because those are the ones that need acting on. */
+      lay = '<b>Drawn as you traced them.</b> ';
     } else if (_fit.state === 'partial') {
       lay = '<b>' + _fit.hit + ' of ' + _fit.n + ' storeys are drawn as you traced them</b>; the rest ' + _guess +
         ' \u2014 no plan resolves for ' + esc(_fit.miss.join(', ')) + (_fit.miss.length >= 4 ? '\u2026' : '') + '. ';
@@ -16235,12 +16326,28 @@
         'switch <b>Detail</b> to 2 to read it zone by zone. '
       : '<b>One block = one zone</b>, and each fills on its own progress — switch <b>Detail</b> to 1 to read ' +
         'a whole storey as a single block. ';
-    return '<p class="ps-vs3-foot">' + cmp + zc + _grain + lay +
-      '<b>Each block fills from its floor upwards</b>: the bright part is done, the dim part above it is what ' +
-      'is left. Schematic: the storeys, their order and the grade line are the ' +
-      'same as the 2D view. The <b>footprint</b> is the zone count laid out on the plan grid you set ' +
-      'above &mdash; the schedule holds no zone outlines or dimensions, so <b>no length or area is ' +
-      'implied</b>. Drag to orbit, scroll to zoom, click a block for its dates.</p>';
+    /* ⚠️⚠️ ONE LINE ON SCREEN, THE REST ONE CLICK AWAY. Owner 2026-09-10: *"too much
+       buttons and information."* This paragraph had grown to six sentences and was under every
+       card on the page at once — which is how a note that matters (the layout is a guess; no
+       dimension is implied) stops being read at all.
+       ⚠️ WHAT STAYS OUT IS WHAT CHANGES THE READING: what one block is, and whether the
+       positions are real or guessed. The standing explanation — the channels, the schematic
+       warning, the gestures — moves into a <details> that keeps its own state per card.
+       ⚠️ The schematic warning is still ON SCREEN in short form. It is the one sentence this
+       module's own rules say may not be hidden, so it is abbreviated, not moved. */
+    var _short = _grain + lay;
+    return '<div class="ps-vs3-foot">' +
+      '<p class="lead">' + cmp + zc + _short + '<b>Schematic</b> \u2014 no length or area is implied.</p>' +
+      '<details class="ps-vs3-help"><summary>What am I looking at?</summary>' +
+        '<p><b>Each block fills from its floor upwards</b>: the bright part is done, the dim part above ' +
+        'it is what is left, and the fine line between them is the level progress has reached. ' +
+        'Colour says which trade (or which zone, if you switch <b>Display \u203a Colour by</b>); the ' +
+        'storeys, their order and the grade line are the same as the 2D view.</p>' +
+        '<p>The <b>footprint</b> is the outline you traced on the floor plan, or \u2014 where none is traced \u2014 ' +
+        'the zone count laid out on the plan wrap set in <b>Display</b>. The schedule itself holds no ' +
+        'zone outlines or dimensions, so <b>no length or area is implied</b> either way.</p>' +
+        '<p>Drag to orbit, scroll to zoom, hover a block to trace it, click one for its dates.</p>' +
+      '</details></div>';
   }
   // Called at the top of every renderVStack: free the WebGL contexts this repaint replaces, and
   // empty the queue so a card that is no longer on screen cannot be built into a stale mount.
@@ -17281,6 +17388,9 @@
       wrap.querySelectorAll('[data-vs3fl]').forEach(function (b) {
         b.onclick = function () { _vsFloorMarks = b.dataset.vs3fl === '1'; _saveVs3D(); build(); };
       });
+      wrap.querySelectorAll('.ps-vs3-more').forEach(function (d) {
+        d.ontoggle = function () { _vs3MoreOpen = d.open; };
+      });
       // ⚠️ `build`, not renderVStack: this window owns its own model - see _vsZpSync.
       var _zpsF = wrap.querySelector('#ps-vs-zpsync');
       if (_zpsF) _zpsF.onclick = function () { _vsZpSync(build); };
@@ -17919,6 +18029,12 @@
     });
     host.querySelectorAll('[data-vs3fl]').forEach(function (b) {
       b.onclick = function () { _vsFloorMarks = b.dataset.vs3fl === '1'; _saveVs3D(); renderVStack(); };
+    });
+    /* ⚠️ The panel's open state survives the repaint that every control inside it triggers.
+       Without this, choosing Colour › Zone rebuilds the bar and the panel slams shut under the
+       planner's cursor — which reads as the click having gone somewhere else. */
+    host.querySelectorAll('.ps-vs3-more').forEach(function (d) {
+      d.ontoggle = function () { _vs3MoreOpen = d.open; };
     });
     // ⚠️ Defensively: the bar is not emitted in 2D, so this control may not be on the page.
     var _zps = host.querySelector('#ps-vs-zpsync');
@@ -33123,6 +33239,36 @@
                 '<button class="pd-btn" id="zpw-mkx" title="Remove the marker and leave the front undefined">Remove</button>'
               : '<span class="sbld-hint" style="margin:0;">not set \u2014 the 3D view falls back to its own <b>Front faces</b> setting</span>') +
             (W.placing ? '<span class="sbld-hint" style="margin:0;">click anywhere on the drawing, nearest edge wins</span>' : '') +
+          /* ---- the FLOOR's own shape, which is not a zone -------------------------------
+             ⚠️⚠️ Owner 2026-09-10: *"how come when clicking level 1 detail, the floor plan size
+             disappears? To solve this … add an option of defining the shapes of the zones AND
+             for the floors, so that way we can distinguish the difference between them."*
+             Both halves are answered here: the outline has its own row rather than a swatch in
+             the zone palette, and when it is not drawn the floor's shape is taken from the zones
+             (see _vsZpOutlineOf) instead of falling back to a guessed box. */
+            '<span class="ps-tb-div"></span>' +
+            '<span class="zpw-lbl">Floor shape</span>' +
+            (function () {
+              var _out = outlinePolys(), _zon = zonePolys();
+              /* ⚠️ THE SAME DOUBLE DUTY THE ZONE PALETTE HAS, and the row above says which: with
+                 an area selected this MAKES that area the outline, otherwise it loads the brush.
+                 One rule for "what is this area", two places to say it, no third gesture. */
+              var _on = sel ? zpIsAll(sel.code) : zpIsAll(W.brush);
+              return '<button class="zpw-sw all' + (_on ? ' on' : '') + '" data-zpb="' + e2(ZP_ALL) + '"' +
+                  ' style="--zc:' + zpColor(ZP_ALL) + '" title="' + e2(sel
+                    ? 'Make this area the floor outline rather than a zone'
+                    : 'Draw the floor’s own outline — use it when the slab is bigger than the zones on it, or when the floor has no zones at all') +
+                  '">' + e2(ZP_ALL_LABEL) + '</button>' +
+                (_out.length
+                  ? '<button class="pd-btn" id="zpw-outx" title="Delete the outline. The floor’s shape goes back to being its zones.">Remove</button>' +
+                    '<span class="sbld-hint" style="margin:0;">drawn as <b>' + _out.length + ' area' + (_out.length === 1 ? '' : 's') +
+                      '</b> · this is what the 3D view extrudes when a storey is read as one block (Detail 1)</span>'
+                  : (_zon.length
+                      ? '<span class="sbld-hint" style="margin:0;">taken from the <b>' + _zon.length + ' zone area' + (_zon.length === 1 ? '' : 's') +
+                        '</b> you traced — draw one only if the floor plate is bigger than its zones</span>'
+                      : '<span class="sbld-hint" style="margin:0;">nothing traced yet — draw the outline, or trace the zones and the floor takes their shape</span>')) +
+              '';
+            })() +
           '</div>' +
 
           // ---- row 2: which zone ---------------------------------------------------------
@@ -33163,37 +33309,6 @@
             })() +
           '</div>' +
 
-          /* ---- the FLOOR's own shape, which is not a zone -------------------------------
-             ⚠️⚠️ Owner 2026-09-10: *"how come when clicking level 1 detail, the floor plan size
-             disappears? To solve this … add an option of defining the shapes of the zones AND
-             for the floors, so that way we can distinguish the difference between them."*
-             Both halves are answered here: the outline has its own row rather than a swatch in
-             the zone palette, and when it is not drawn the floor's shape is taken from the zones
-             (see _vsZpOutlineOf) instead of falling back to a guessed box. */
-          '<div class="zpw-bar">' +
-            '<span class="zpw-lbl">Floor shape</span>' +
-            (function () {
-              var _out = outlinePolys(), _zon = zonePolys();
-              /* ⚠️ THE SAME DOUBLE DUTY THE ZONE PALETTE HAS, and the row above says which: with
-                 an area selected this MAKES that area the outline, otherwise it loads the brush.
-                 One rule for "what is this area", two places to say it, no third gesture. */
-              var _on = sel ? zpIsAll(sel.code) : zpIsAll(W.brush);
-              return '<button class="zpw-sw all' + (_on ? ' on' : '') + '" data-zpb="' + e2(ZP_ALL) + '"' +
-                  ' style="--zc:' + zpColor(ZP_ALL) + '" title="' + e2(sel
-                    ? 'Make this area the floor outline rather than a zone'
-                    : 'Draw the floor’s own outline — use it when the slab is bigger than the zones on it, or when the floor has no zones at all') +
-                  '">' + e2(ZP_ALL_LABEL) + '</button>' +
-                (_out.length
-                  ? '<button class="pd-btn" id="zpw-outx" title="Delete the outline. The floor’s shape goes back to being its zones.">Remove</button>' +
-                    '<span class="sbld-hint" style="margin:0;">drawn as <b>' + _out.length + ' area' + (_out.length === 1 ? '' : 's') +
-                      '</b> · this is what the 3D view extrudes when a storey is read as one block (Detail 1)</span>'
-                  : (_zon.length
-                      ? '<span class="sbld-hint" style="margin:0;">taken from the <b>' + _zon.length + ' zone area' + (_zon.length === 1 ? '' : 's') +
-                        '</b> you traced — draw one only if the floor plate is bigger than its zones</span>'
-                      : '<span class="sbld-hint" style="margin:0;">nothing traced yet — draw the outline, or trace the zones and the floor takes their shape</span>')) +
-              '';
-            })() +
-          '</div>' +
 
           // ---- row 3: making and editing areas -------------------------------------------
           (all.length ? '<div class="zpw-bar">' +

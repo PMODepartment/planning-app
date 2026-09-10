@@ -95,6 +95,36 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### The 3D card's controls collapse to one Display button, and the fill level gets a line (2026-09-10) — jasantos2
+
+Owner: *"can you simplify the UI, i think too much buttons and information, propose a simplified
+UI yet still pleasing to the eye. In addition, how come the progress per zone is removed? pls
+bring that back."*
+
+⚠️⚠️ **Twenty-one controls in one flat row, and the one used every few seconds was last.** The six
+**viewpoints** stay out in the open (Iso lit, because that is where every scene starts) and
+everything set once and then left alone — plan wrap, front edge, colour meaning, floor markers,
+Sync — is behind one **Display** button that carries a count of how many are off their default,
+so nothing hidden is a surprise. It is a `<details>`, not a hand-built popover: no outside-click
+handler to leak, keyboard-reachable for free, and its open state survives the repaint every
+control inside it triggers. The **footer** was six sentences under every card at once; it is one
+line now — what a block is, whether the layout is real or guessed, and the schematic warning in
+short form — with the standing explanation behind *What am I looking at?*. In the floor-plan
+window, the two facts stated once per floor (which way it faces, and the floor's own shape) share
+one row instead of two.
+
+⚠️⚠️ **Per-zone progress: the maths never changed, the reading did.** Every zone has always filled
+on its own percentage — but a horizontal split across a zone's *width* is tens of pixels, while
+the vertical one inside a storey's *height* is about two on a twenty-storey tower, so per-zone
+progress stopped being legible, which for the person looking at it is the same as gone. There is
+now **a hairline at the fill level** — carved out of the done slice, never laid over it, so the
+z-fighting fix still holds — in a light tint of the trade's own hue, measured at 65.0 / 40.3 ΔE
+against remaining / done in the light theme and 53.4 / 28.3 in dark.
+
+**230 assertions across thirteen suites, 0 failing.** ⚠️ The bar was also *looked at*: rendered in
+a browser from the shipped `_vs3Bar` / `_vs3Foot` output against the app's real `dashboard.css`,
+in both themes, through a throwaway gitignored harness.
+
 ### At Detail 1 the floor plan disappeared; the floor's shape is now its own control (2026-09-10) — jasantos2
 
 Owner: *"how come when clicking level 1 detail, the floor plan size disappears? … can you add an

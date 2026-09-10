@@ -13,6 +13,67 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### The card's controls collapse to one Display button, and the fill level gets a line (2026-09-10) — jasantos2
+
+Owner: *"can you simplify the UI, i think too much buttons and information, propose a simplified
+UI yet still pleasing to the eye. In addition, how come the progress per zone is removed? pls
+bring that back."*
+
+### 1. Twenty-one controls in a row became six and a button
+⚠️⚠️ **The control used every few seconds was last, and everything was equally loud.** Four
+labelled groups, three dividers, no hierarchy — the bar read as a wall. Now:
+- The **six viewpoints stay out in the open**, because turning the building is the gesture this
+  card exists for, and **Iso starts lit** (six buttons with none on says the camera is nowhere).
+- Everything set once and then left alone — plan wrap, front edge, colour meaning, floor markers,
+  Sync — is behind one **Display** button, which ⚠️ **carries a count of how many of them are off
+  their default**, so nothing hidden is ever a surprise.
+- ⚠️ A `<details>`, not a hand-built popover: it opens and closes itself, is keyboard-reachable
+  and screen-reader-labelled for free, and there is no outside-click handler to leak. ⚠️ Its open
+  state survives the repaint every control inside it triggers — without that, choosing *Colour ›
+  Zone* would slam the panel shut under the planner's cursor. ⚠️ The panel is absolutely
+  positioned, so opening it does not push the model down the page.
+- The **footer** was six sentences under every card at once, which is how the note that matters
+  (positions are a guess; no dimension is implied) stops being read. One line now — what a block
+  is, whether the layout is real or guessed, and the schematic warning in short form, which is
+  the one sentence this module's rules say may not be hidden — with the standing explanation
+  behind **What am I looking at?**. The "everything resolved" line lost its instructions too: it
+  was telling a planner where to go at the moment they had already been there.
+- In the floor-plan window, the two facts a planner states **once per floor** — which way it
+  faces, and the floor's own shape — now share one row instead of owning two.
+
+### 2. ⚠️⚠️ Per-zone progress: the maths never changed, the READING did
+Every zone has always filled on its own percentage, and the suite pins it. What changed a week
+ago is where the fill goes: a horizontal split across a zone's **width** is tens of pixels wide,
+a vertical one inside a storey's **height** is about **two** on a twenty-storey tower. A 60/40
+split in two pixels of tone is not a reading — so for the person looking at it, per-zone progress
+was gone. That is a real complaint about a real regression, even though nothing in the arithmetic
+moved.
+
+**The answer is a line at the fill level**, not a bigger block: a hairline survives any storey
+height, and reading a level off a line is what a gauge does.
+- ⚠️ **Carved out of the done slice, never laid over it.** Overlapping geometry is what produced
+  the striped z-fighting this view had; the zone is still cut into pieces that touch and do not
+  intersect — done body, line, remaining.
+- ⚠️ A very light tint of the **trade's own hue**, so it is not a fourth colour in the model.
+  Measured against both neighbours: **65.0 / 40.3 ΔE** (light theme, vs remaining / done) and
+  **53.4 / 28.3** (dark).
+- ⚠️ **Pickable but not traced**: clicking it opens the zone like any other part of it, and the
+  hover outline stays the zone's shape — a ring round the line as well would read as a division
+  the planner had made.
+
+### Verified
+**230 assertions across thirteen suites, 0 failing** — 11 new. ⚠️ The bar's shape is asserted, not
+eyeballed: six viewpoints out in the open, every other control after the panel's opening tag, no
+count on the button at defaults and a count when there is one. ⚠️ The three slices are asserted on
+the geometry the builder produces — body, line, remaining, touching, not overlapping, same
+footprint, none nudged — and the line is the lightest of the three tones in both themes.
+⚠️ **Looked at, for once**: the new bar and footer were rendered in the browser from the SHIPPED
+`_vs3Bar` / `_vs3Foot` output against the app's real `dashboard.css`, in both themes, through a
+throwaway `_scratch-*` harness (gitignored, deleted after). ⚠️ Still **not clicked in the live
+app**: the anon key has no grants for this project's data.
+
+---
+
 ### At Detail 1 the floor plan disappeared, and the floor's shape is now a separate question from its zones' (2026-09-10) — jasantos2
 
 Owner: *"how come the progress per zone was removed? in order to show the progress per floor, the
