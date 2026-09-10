@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Manpower Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910w1" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910w2" />
   <style>
     /* Uniform module chrome (matches every other module). 2026-08-30: modules
        gained a persistent sidebar (MODULE_CONTRACT.md) — .pd-content no longer
@@ -36,8 +36,8 @@
     .mp-card { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius);
       box-shadow:var(--pd-shadow); padding:14px 16px; margin-bottom:16px; }
     .mp-card > h3 { margin:0 0 10px; font-size:var(--pd-fs-body); }
-    .mp-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:16px; }
-    .mp-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; padding:13px 16px; }
+    .mp-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:var(--pd-space-md); margin-bottom:16px; }
+    .mp-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius-lg); padding:var(--pd-space-lg) 18px; }
     .mp-kpi-v { font-size:var(--pd-fs-stat); font-weight:800; line-height:1; }
     .mp-kpi-v.mp-bad { color:var(--pd-bad-text); }
     .mp-kpi-v.mp-good { color:var(--pd-ok-text); }

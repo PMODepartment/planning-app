@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Productivity Rates · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910w1" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910w2" />
   <style>
     /* ---- Uniform module chrome (matches every other module). Keep the topbar
        rules in sync with those. 2026-08-30: modules gained a persistent
@@ -46,8 +46,8 @@
     .pr-ck { display:inline-flex; align-items:center; gap:6px; font-size:var(--pd-fs-base); color:var(--pd-ink); cursor:pointer; white-space:nowrap; }
 
     /* KPIs */
-    .pr-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:18px; }
-    .pr-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; padding:14px 16px; }
+    .pr-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:var(--pd-space-md); margin-bottom:18px; }
+    .pr-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius-lg); padding:var(--pd-space-lg) 18px; }
     .pr-kpi-l { font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); margin-bottom:5px; }
     .pr-kpi-v { font-size:var(--pd-fs-stat); font-weight:800; } .pr-kpi-s { font-size:var(--pd-fs-sm); color:var(--pd-muted); margin-top:2px; }
     .pr-ok { color:var(--pd-ok-text); } .pr-bad { color:var(--pd-bad-text); }

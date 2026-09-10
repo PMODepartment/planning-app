@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Project S-Curve · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910w1" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910w2" />
   <style>
     /* ---- Uniform module chrome (matches every other module). Keep in sync.
        2026-08-30: modules gained a persistent sidebar (MODULE_CONTRACT.md) —
@@ -34,8 +34,8 @@
     /* Forecast-finish control lives in the tool cluster */
     .sc-fc { display:inline-flex; align-items:center; gap:6px; font-size:var(--pd-fs-sm); color:var(--pd-muted); white-space:nowrap; flex:none; }
     .sc-fc .pd-input { height:34px; width:150px; font-size:var(--pd-fs-base); }
-    .sc-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:18px; }
-    .sc-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; padding:14px 16px; }
+    .sc-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:var(--pd-space-md); margin-bottom:18px; }
+    .sc-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius-lg); padding:var(--pd-space-lg) 18px; }
     .sc-kpi-l { font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); margin-bottom:5px; }
     .sc-kpi-v { font-size:var(--pd-fs-stat); font-weight:800; } .sc-kpi-s { font-size:var(--pd-fs-sm); color:var(--pd-muted); margin-top:2px; }
     .sc-ok { color:var(--pd-ok-text); } .sc-bad { color:var(--pd-bad-text); }

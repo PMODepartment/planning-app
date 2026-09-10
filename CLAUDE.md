@@ -96,6 +96,75 @@ developer, plug into one shared shell.
 ## Changelog
 
 
+### 2026-09-10 (w2) — A spacing scale, and the measurement that says NOT to sweep with it
+
+Fourth item of the second-pass audit, and the one where the audit changed the plan. **924 `gap`
+declarations in 42 distinct values**, plus 1,163 `padding` and 291 `margin`. The 42 looks like the type
+scale's 29. **It is not the same problem**, and acting as if it were would have been the expensive
+mistake here.
+
+#### ⚠️⚠️ WHY THERE IS A SCALE BUT NO MIGRATION
+- The app **already sits on a coherent 2px grid**: 8px ×207, 6px ×157, 10px ×137, 12px ×63, 5px ×71,
+  4px ×56. **665 of 881 single-value gaps are already on a sensible rung.**
+- Imposing a real 4-based scale would displace **535 declarations**, and **6px ×157 plus 10px ×137 are
+  294 of them on their own**.
+- And the payoff is not there. Half a pixel of type aggregates into a visible "built by different
+  people" feel — that is why the type sweep was worth it. **Two pixels of gap between two buttons is
+  imperceptible**, and every move risks re-wrapping a toolbar that only just fits.
+
+So `--pd-space-2xs/xs/sm/md/lg/xl` (2/4/8/12/16/24) lands as a **target for new code and for components
+being converged**, and the existing 6/10/14/18px values are left exactly where they are. ⚠️ 18px gets no
+rung on purpose: it is `.pd-card`'s padding and `.pd-kpi`'s inline padding, both inherited from the PRC
+reference app, and re-basing those is its own decision.
+
+#### The thing that WAS actually costing consistency: the KPI card is six components
+Same strip, one per module, measured:
+
+| | grid floor | gap | padding | radius |
+|---|---|---|---|---|
+| shared `.pd-kpi` | 170px | 12px | **16px 18px** | **12px** |
+| equipment · manpower · resource-loading | 160/150px | 12px | 13px 16px | 8px |
+| productivity · s-curve | 160/150px | 12px | 14px 16px | 8px |
+| cash-flow | flex | **14px** | 16px 18px | — |
+
+Its **font-size (20px) and weight (800) were only normalised two commits ago**; padding and radius were
+the remaining axis. All five grid modules now carry the shared `16px 18px` and `--pd-radius-lg`, and
+cash-flow's odd 14px gap joins the other five on 12px.
+
+⚠️⚠️ **`minmax` is deliberately NOT converged, and measuring is the only reason I know that.** Raising
+the floor 150/160 → 170px looked like part of the same convergence. Measured at 8 cards / 1440px: the
+shared 170px floor lays out **2 rows** where the modules' 150–160px floor gives **1**. `auto-fit` drops
+a column when the floor rises, so that change **re-wraps the strip** — it is a per-module decision about
+how many KPIs fit on a row, in the same category as the `repeat(2,1fr)` phone overrides, which are also
+left alone. Only the visual properties were converged.
+
+#### Verified
+- **Rendered at 1440 / 1200 / 980 / 820px, before and after.**
+  - **4 cards (the real case — these modules render 1–4):** all six strips now report **identical**
+    `padding 16px 18px`, `border-radius 12px`, `gap 12px`, card width 346px, 1 row. Before, padding and
+    radius differed in five of six.
+  - **8 cards:** row counts **byte-identical to before** at every width (1r/2r/2r/2r for the modules,
+    2r throughout for shared) — proof the wrapping behaviour was not touched.
+- ⚠️ **One residual difference, measured and left:** the shared `.pd-kpi` is **79px** tall against the
+  modules' **75px**, because it carries an inner `gap: 4px` between label and value that the module
+  cards do not. Adding it would make them identical, but a module card with three children would gain
+  more than 4px, so it is named rather than changed.
+- **42 JS files + 30 inline blocks across 29 pages parse, 0 failures** (bar the documented
+  progress-photos false positive). Braces balanced, 0 NUL bytes.
+- `?v=` → `20260910w2`.
+
+#### The second-pass audit is now closed. What remains, and why it is being left
+- **`border-radius`: 460 off-scale declarations in 24 values** — but ~165 are rung values merely written
+  as literals (a zero-visual-change cleanup), and the **2026-09-03 (r) decision to leave the small-chrome
+  radii alone still stands** for the rest. Only the dropdown menus were revisited, and that was because
+  their spread had grown to 4→12px, which is visible.
+- **`padding`: 257 distinct values.** Inflated by being a compound property, and — like `gap` — the
+  variation is per-component rather than systemic. The lesson from this entry applies: **fix components,
+  not pixels.**
+- `.pp-lightbox` shares `z-index: 900` with `.pd-modal-overlay`, so ties resolve by DOM order.
+- `--boq-*` in contracts-claims is still a private, correctly-themed parallel palette.
+
+
 ### 2026-09-10 (w1) — 42 elevation recipes become 4 rungs, and the shadow scale grows the one it was missing
 
 Third item of the second-pass audit. **174 box-shadow declarations, 97 distinct values** — but the

@@ -184,6 +184,32 @@
      deletes that override — the token remaps for dark like every other one. The radius scale
      already runs to -xl; the shadow scale now matches it. */
   --pd-shadow-xl: 0 20px 60px rgba(0,0,0,.30);
+
+  /* ⚠️⚠️ THE SPACING SCALE — AND IT IS A TARGET FOR NEW CODE, NOT A MANDATE TO SWEEP.
+     Measured 2026-09-10: **924 `gap` declarations in 42 distinct values**, plus 1,163 `padding`
+     and 291 `margin`. That 42 sounds like the type scale's 29 and it is NOT the same problem,
+     which is why this scale is introduced without a migration:
+
+       - the app already sits on a coherent 2px grid: 8px x207, 6px x157, 10px x137, 12px x63,
+         5px x71, 4px x56 - 665 of 881 single-value gaps are already on a sensible rung.
+       - imposing a real 4-based scale would displace **535 declarations**, and 6px x157 plus
+         10px x137 are 294 of them on their own.
+       - and unlike half a pixel of type, **2px of gap between two buttons is imperceptible**.
+         The type scale was worth sweeping because 22px vs 20px on a KPI value is visible in
+         aggregate; this is not, and every move risks re-wrapping a toolbar that only just fits.
+
+     ⚠️ So: reach for a token in NEW code and when converging a component, and leave the
+     existing 6/10/14/18px values alone. The consistency that was actually costing this app was
+     never the gap sizes - it was the same COMPONENT having different geometry per module (see
+     the KPI card, converged in this same pass). Fix components, not pixels.
+     ⚠️ 18px has no rung on purpose: it is `.pd-card`'s padding and `.pd-kpi`'s inline padding,
+     both inherited from the PRC reference app, and re-basing those is a separate decision. */
+  --pd-space-2xs: 2px;
+  --pd-space-xs:  4px;
+  --pd-space-sm:  8px;
+  --pd-space-md: 12px;
+  --pd-space-lg: 16px;
+  --pd-space-xl: 24px;
   --pd-sidebar-w: 240px;
   /* ⚠️ The sidebar surface is its OWN token, not --pd-ink. PRC paints its panel
      --mw-black (#231F20) and --pd-ink happens to be that same value in light
@@ -1809,13 +1835,13 @@ html.pd-dark .pd-table tr.pd-grp > td { background: rgba(255,255,255,.05); }
    five short values, and a fixed grid leaves a ragged empty cell on the widths
    where six would fit. */
 .pd-kpis {
-  display: grid; gap: 12px; margin-bottom: 20px;
+  display: grid; gap: var(--pd-space-md); margin-bottom: 20px;
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
 }
 .pd-kpi {
   background: var(--pd-card); border: 1px solid var(--pd-line);
   border-radius: var(--pd-radius-lg); padding: 16px 18px; box-shadow: var(--pd-shadow);
-  display: flex; flex-direction: column; gap: 4px; min-width: 0;
+  display: flex; flex-direction: column; gap: var(--pd-space-xs); min-width: 0;
   position: relative; overflow: hidden;
 }
 /* PRC's .metric-card signature: a permanent 4px full-height accent on the left
