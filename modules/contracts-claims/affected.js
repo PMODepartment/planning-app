@@ -534,6 +534,10 @@ window.CCAffected = (function () {
     var gopen = {};
     var q = '';
     var coDur = 0;       // change-order duration for the preview; 0 = bars only
+    /* ⚠️ Read ONCE, not per paint: `opts` is the caller's object and a caller that mutated it
+       mid-session would change the picker's shape under the planner. Defaults to true, so the
+       four existing call sites are untouched by their own silence. */
+    var showPreview = opts.preview !== false;
 
     function setMany(acts, on) {
       acts.forEach(function (a) { if (on) sel[a.activity_id] = 1; else delete sel[a.activity_id]; });
@@ -869,6 +873,10 @@ window.CCAffected = (function () {
       var selActs = ACTS.filter(function (a) { return sel[a.activity_id]; });
 
       host.style.setProperty('--cca-rungs', String(Math.max(1, lad.rungs.length)));
+      /* ⚠️ A CLASS, not an inline grid override: `.cca-lower` already collapses to one column
+         under 820px, and an inline style would beat that media query and re-create the two-column
+         squeeze on a phone. Setting it on the HOST lets the rule sit beside its sibling in CSS. */
+      host.classList.toggle('cca-nopreview', !showPreview);
       host.innerHTML =
         noticeHTML() +
         '<div class="cca-bar">' +
@@ -885,16 +893,26 @@ window.CCAffected = (function () {
               (vis.length ? vis.map(treeRowHTML).join('') : '<div class="cca-empty">' + emptyTreeText(hits) + '</div>') +
             '</div>' +
           '</div>' +
-          '<div class="cca-col">' +
-            '<div class="cca-h"><span>Preview</span>' +
-              '<span class="cca-durwrap">CO <input class="cca-dur cca-ctl" id="cca-dur" size="3" inputmode="numeric" value="' + (coDur || '') + '" placeholder="0"> days</span></div>' +
-            /* ⚠ THE GANTT IS NOT HIDDEN BEHIND A TOGGLE ANY MORE. It was a <details> while it
-               was a strip of 240 one-pixel bars -- correct then, wrong now: grouped under its WBS
-               branches and carrying the activities the variation creates, it IS the preview, and
-               the headline above it is the summary of what it shows. */
-            '<div class="cca-body cca-mgbody">' + impactHTML(selActs) +
-              (selActs.length ? ganttHTML(selActs) : '') + '</div>' +
-          '</div>' +
+          /* ⚠️⚠️ THE PREVIEW COLUMN IS CHANGE-ORDER-SPECIFIC, so a caller that is not raising one
+             suppresses it with `opts.preview === false`. The BOQ allocator reuses this picker to
+             answer "which activities does this bill line cover" — the identical gesture — and a
+             "CO ___ days" box with a schedule-slip Gantt beside it would be answering a question
+             nobody asked, on a screen about quantities.
+             ⚠️ SUPPRESSED, NOT REBUILT: one ladder, one tree, one search, four call sites. A second
+             picker for the BOQ is exactly the drift this module has already paid for twice (two
+             create dialogs, two import doors). `impactOf`/`ganttHTML` simply never run. */
+          (showPreview
+            ? '<div class="cca-col">' +
+                '<div class="cca-h"><span>Preview</span>' +
+                  '<span class="cca-durwrap">CO <input class="cca-dur cca-ctl" id="cca-dur" size="3" inputmode="numeric" value="' + (coDur || '') + '" placeholder="0"> days</span></div>' +
+                /* ⚠ THE GANTT IS NOT HIDDEN BEHIND A TOGGLE ANY MORE. It was a <details> while it
+                   was a strip of 240 one-pixel bars -- correct then, wrong now: grouped under its WBS
+                   branches and carrying the activities the variation creates, it IS the preview, and
+                   the headline above it is the summary of what it shows. */
+                '<div class="cca-body cca-mgbody">' + impactHTML(selActs) +
+                  (selActs.length ? ganttHTML(selActs) : '') + '</div>' +
+              '</div>'
+            : '') +
         '</div>';
       wire();
       if (opts.onCount) opts.onCount(nSel);

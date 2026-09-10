@@ -837,7 +837,13 @@ html.pd-dark .boq-tl1 > .boq-trow { background:rgba(255,255,255,.04); }
 .boq-how{margin:10px 0 4px;font-size:var(--pd-fs-sm)}
 .boq-how summary{cursor:pointer;color:var(--pd-muted);font-weight:700;list-style:revert}
 .boq-how summary:hover{color:var(--pd-ink)}
-.boq-how p{margin:8px 0 0;color:var(--pd-muted);line-height:1.6;max-width:900px}
+/* ⚠️ `ch`, NOT `px` — 900px was the wrap defect the owner reported. A pixel cap is a measure in
+   the wrong unit: it does not track the font size, and at this size 900px runs to ~120 characters
+   a line, roughly double a comfortable one, so the eye loses the line it is returning to. `ch` is
+   the width of a "0" in the current face, so 70ch stays ~70 characters at any type scale. */
+.boq-how p{margin:8px 0 0;color:var(--pd-muted);line-height:1.6;max-width:70ch}
+/* Each paragraph is now one idea, so they need to read as separate ones. */
+.boq-how p + p{margin-top:7px}
 
 /* ==========================================================================
    THE CLASS-CODE LADDER (boq.js openCodeBuilder)
@@ -929,6 +935,11 @@ html.pd-dark .boq-tl1 > .boq-trow { background:rgba(255,255,255,.04); }
 /* ⚠️ Tree LEFT, preview RIGHT, and the preview is given the wider track: a bar chart is unreadable
    below a few hundred pixels, while a tree row degrades gracefully by ellipsis. */
 .cca-lower { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.15fr); gap:8px; }
+/* ⚠️ `opts.preview:false` (the BOQ allocator) emits no second column, so the 1.15fr track would
+   otherwise sit empty and squeeze the tree into half the dialog. One column, full width. */
+.cca-nopreview .cca-lower { grid-template-columns:minmax(0,1fr); }
+/* The tree is the whole screen here rather than one of two panes, so it earns more height. */
+.cca-nopreview .cca-treebody { max-height:46vh; }
 
 .cca-col { border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); overflow:hidden;
   background:var(--pd-card); min-width:0; }

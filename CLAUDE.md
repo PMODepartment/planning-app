@@ -95,6 +95,106 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-10 (z8) — The activity picker could not reach 69% of the schedule, and "0 activities" was answering three different questions
+
+Owner, on OPW101 with the allocation dialog open: *"Right now the linking is still not easy."* Then,
+on the bar: *"There are two buttons for match to schedule."* Then, on the disclosure: *"is lengthy and
+wrap texts incorrectly."* Three reports, all correct, all fixed here.
+
+#### ⚠️⚠️ A · THE PICKER WAS A RAW `<select>` OF `ACTS.slice(0, 800)`
+On a project with **2,561 activities that is 1,761 — 69% — simply not in the list**, unreachable by
+any amount of scrolling. No search, no grouping, no predictable order, and `onchange` added **one**
+activity per interaction. Linking a line to a floor's worth of work meant forty passes through a list
+that could not see two thirds of the project. The (z1) entry had named this exact gap and left it.
+
+It is replaced by **`CCAffected`'s ladder + WBS tree + search** — the *same* picker the change-order
+wizard uses, with its change-order half suppressed by a new `opts.preview:false`.
+⚠️ **Suppressed, not rebuilt.** A second picker for the BOQ is the drift this module has already paid
+for twice (two create dialogs, two import doors); `impactOf`/`ganttHTML` simply never run, and
+`if (du)` already guarded the CO-duration wiring, so nothing could crash.
+⚠️ The selection **starts from the parts already on the line**, so opening it to add one activity
+cannot silently drop the nine already there.
+⚠️ It **takes over the dialog body** rather than opening a modal on top of one — the trap this file
+records — and widens to `boq-wide` while picking, because a ladder plus a tree inside `.pd-modal`'s
+520px is the ~200px squeeze that class was added to fix.
+⚠️ The footer's own handlers are **re-bound** on return: replacing `innerHTML` killed them, and
+Cancel/Apply would have looked right and done nothing.
+
+#### ⚠️⚠️ C · "0 ACTIVITIES" WAS THREE DIFFERENT FACTS WEARING ONE NUMBER
+The screenshot was fully coded on both sides — **122 of 122 lines mapped, 2,561 of 2,561 activities
+coded** — and every row still read `0`. That is not 122 failures. Mobilization, Demobilization,
+Rental of Skidloader, Barracks, Site Office are **time-related preliminaries**, and a structural
+programme has no activity called "Rental of Flat Bed Truck".
+
+⚠️ **The distinction is DERIVED, never taken from the trade's name.** A hard-coded "General
+Requirement" list would be a guess about Finance's chart and would rot the first time it was revised.
+`tradeActivityCounts()` instead measures, off the chart: does **any** activity carry a code in this
+line's trade? The column now says which of four situations a line is in:
+
+| | shown |
+|---|---|
+| allocated | the count, as before |
+| candidates exist | **`n` ready** |
+| no activity carries the code, **and the whole trade is absent** | **not scheduled** — normal for preliminaries |
+| no activity carries the code, but the trade IS on the programme | `0`, with *"14 of 320 activities are in Structural Works"* |
+
+⚠️ The memo is cleared in `refreshActs()` and `reset()`. Without the first, a stale count would report
+a trade as absent from a schedule **the planner had just tagged** — telling them their own work had no
+effect.
+
+#### The two buttons, and the caption that was also WRONG
+- **`Match to the schedule…` → `Code, tag and allocate…`.** (z7) shipped it a tab-width away from the
+  sub-tab **Match to schedule**. One is a place, one is an action over the whole bill, and two
+  controls reading the same is how a planner learns to distrust both. The dialog heading follows the
+  button, not the tab.
+- **"How matching works" was stale, not merely long.** It described **three** rungs — *"location match
+  first, then pro-rata by duration, then by hand"* — which is the behaviour **before** (z1)'s ladder.
+  There are four, and pro-rata is now the **last**, not the second. A caption naming the wrong order
+  teaches the planner to distrust the Method column, which reports the real one.
+  ⚠️ And the wrap defect was a **unit** error: `max-width: 900px` does not track the font size, so at
+  this scale a line ran ~115 characters, about double a comfortable measure. `70ch` does track it.
+  ⚠️ The old last sentence — *"there is deliberately no quantity column on the activity"* — is a schema
+  decision a planner never acts on; it lives in the migration and in `docs/`, not on screen.
+
+  | rendered, against the real stylesheets | before | after |
+  |---|---|---|
+  | paragraphs | 1 | 3 |
+  | characters | 344 | **262** |
+  | measure | 898px | **472px** |
+  | characters per line | ~115 | ~51 / 61 / 39 |
+
+#### Verified — 36 assertions, 0 failing, plus two renders
+- **The picker was MOUNTED, not just asserted**: the real `CCAffected` against stubbed loaders and the
+  **real `PDLoc`**, in a browser. Ladder **2 rungs** (Tower, Level) carrying real values with
+  indeterminate states, tree rows named, search present, `initial:['A1']` honoured and reported as
+  *"1 selected"* — and **0 preview columns, 0 CO-duration boxes**, `.cca-lower` computing to a
+  **single 840px column** with the tree taking 839 of it.
+- The **merge rule** is executed: adding a third activity **keeps the typed 60/40**, new parts split
+  only the remainder, de-selecting drops that part, a qty-less line links at 0, and an over-allocated
+  line never yields a negative.
+- The **four link states** are executed against a fixture shaped like OPW101 — the preliminary reports
+  `notInSchedule`, the Structural line with no activity on its code reports `0` **with its trade's
+  count**, and an allocated line reports `linked` whatever the trade says.
+- 44 JS files + 30 inline blocks parse; 552/552 braces; 0 NUL bytes.
+- `boq.js` / `affected.js` / `module.css` → `?v=20260910z8`; `MODULE_V` → `20260910z8`.
+
+⚠️ **Three of my own checks were wrong before the code was**, each left in the suite: a structural
+search found `slice(0, 800)` **in the comment explaining its removal** (the checker measuring the
+changelog, not the code — comments are stripped now); `[^}]*` could not cross the `{}` literals inside
+`reset()`'s own body and reported a call that is plainly there as missing; and `.cca-rung` was never a
+class, so the ladder read as absent when it had rendered two rungs.
+
+⚠️ **NOT verified signed in.** The picker is mounted against a fixture, not a real schedule, so the
+one thing still unproven is `CCAffected`'s own read against a 2,561-activity project — which is
+exactly where the old 800-cap hurt. **That is the first thing to try:** open a line, press *Choose
+activities…*, and check the tree holds more than 800.
+
+⚠️ **B is still not built** — a line still cannot be allocated to the project rather than an activity,
+so those 122 preliminaries contribute **₱0** to the cost-loaded S-curve (`boqDerive` returns early on
+a line with no allocations). The screen now says *why* they are unmatched; it does not yet let them
+carry cost. That needs a migration and the owner's call on whether preliminaries belong in the curve.
+
+
 ### 2026-09-10 (z7) — Batching the BOQ onto the schedule: one action for three passes, and the dead end that made the third look broken
 
 Owner: *"How would the planner easily batch the BOQ to the activities in the schedule?"* then *"Let's do

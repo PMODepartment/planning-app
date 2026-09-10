@@ -900,9 +900,16 @@ window.BOQ = (function () {
          passes live on Class Codes and one on Match to schedule, and a control that runs all three
          belongs to none of them. ⚠️ Writers only, and only once a revision exists: on an empty BOQ
          there is nothing to match and the button would open a modal reading zero, zero, zero. */
+      /* ⚠️ NAMED FOR THE ACT, NOT THE DESTINATION. It first shipped as "Match to the schedule…",
+         which is almost exactly the name of the sub-tab two inches to its left — owner, 2026-09-10:
+         *"There are two buttons for match to schedule."* One is a PLACE (the allocation worklist)
+         and one is an ACTION over the whole bill, and two controls a tab apart reading the same is
+         how a planner learns to distrust both. The three passes are the honest label, and they also
+         teach the model the preview then explains. */
       (canWrite && REVS.length
-        ? '<button class="pd-btn" id="boq-matchall" title="Code the lines, tag the activities and ' +
-          'allocate the quantities — one preview, nothing written until you confirm">Match to the schedule…</button>'
+        ? '<button class="pd-btn" id="boq-matchall" title="One run over the WHOLE bill: map the ' +
+          'lines to class codes, tag the schedule activities with them, then allocate the ' +
+          'quantities. One preview — nothing is written until you confirm.">Code, tag and allocate…</button>'
         : '') +
       revPickerHTML() +
       /* ⚠⚠ BUILDING BY HAND IS THE PRIMARY ACT; IMPORT IS THE CONVENIENCE — owner, 2026-09-07:
@@ -3828,7 +3835,10 @@ window.BOQ = (function () {
   }
   // ⚠️ WBSNAME is rebuilt by the same read, so it must be cleared with ACTS or a re-read after an
   //    import would keep naming branches the previous schedule's way.
-  async function refreshActs() { ACTS = null; WBSNAME = {}; await ensureActs(); }
+  /* ⚠️ `clearTradeActs()` here is load-bearing: this runs right after the tagger writes, so a
+     stale per-trade count would go on reporting a trade as absent from a schedule that was
+     just tagged — telling the planner their own work had no effect. */
+  async function refreshActs() { ACTS = null; WBSNAME = {}; clearTradeActs(); await ensureActs(); }
 
   // ==========================================================================
   // TAB 2 — Class-code mapping (B1b)
@@ -4459,11 +4469,23 @@ window.BOQ = (function () {
         'the links already there.</div>';
     }
 
+    /* ⚠️⚠️ THIS PARAGRAPH WAS ALSO WRONG, not merely long. Owner, 2026-09-10: *"is lengthy and wrap
+       texts incorrectly."* It described **three** rungs — "location match first, then pro-rata by
+       duration, then by hand" — which is the behaviour BEFORE the 2026-09-10 (z1) ladder. There are
+       four, and pro-rata is now the LAST of them rather than the second. A caption that names the
+       wrong order teaches the planner to distrust the Method column, which reports the real one.
+       ⚠️ The old last sentence — "there is deliberately no quantity column on the activity" — is a
+       SCHEMA decision, not something a planner acts on. It lives in `docs/vendor-performance-chain.md`
+       and in the migration; it is off the screen, not lost.
+       ⚠️ One idea per line, so it wraps at the line breaks the author chose instead of wherever a
+       900px measure happens to land. `.boq-how p` is capped at 70ch for the same reason. */
     h += '<details class="boq-how"><summary>How matching works</summary>' +
-      '<p>A class code is a <strong>tag</strong>, not a key — one code is carried by many activities — ' +
-      'so a BOQ line is allocated <em>across</em> them: by location match first, then pro-rata by duration, ' +
-      'then by hand. <strong>A proposal is never stored until you apply it.</strong> An activity\'s quantity is ' +
-      'derived from these allocations; there is deliberately no quantity column on the activity.</p></details>';
+      '<p>One class code is carried by <strong>many</strong> activities, so a line is spread ' +
+      '<em>across</em> them — never attached to one.</p>' +
+      '<p>The strongest rung that finds anything wins:<br>' +
+      '<strong>location</strong> → <strong>WBS branch</strong> → <strong>name</strong> → ' +
+      '<strong>class code alone</strong> (split pro-rata by duration).</p>' +
+      '<p><strong>Nothing is saved until you press Apply.</strong></p></details>';
 
     if (stage !== 'ready') {
       var S = {
@@ -4550,7 +4572,25 @@ window.BOQ = (function () {
         '<td class="cc-r">' + (qOn ? qtyStr(q) : '<span class="cc-mut">—</span>') + '</td>' +
         '<td class="cc-r">' + (qOn ? qtyStr(s) : (al.length ? '<span class="cc-mut">linked</span>' : '<span class="cc-mut">—</span>')) + '</td>' +
         '<td class="cc-r' + (qOn && rem < -1e-6 ? ' boq-bad' : '') + '">' + (qOn ? qtyStr(rem) : '<span class="cc-mut">—</span>') + '</td>' +
-        '<td class="cc-r">' + al.length + '</td>' +
+        /* ⚠️ "0" answered three different questions identically: not tried yet, tried and nothing
+           matched, and "this trade is not in the schedule at all". Only the last is not a worklist
+           item, and it was the majority of the owner's 122. The count is kept for the linked rows;
+           the rest say which case they are in. */
+        '<td class="cc-r">' + (function () {
+          if (al.length) return String(al.length);
+          var st = lineLinkState(r);
+          if (st.kind === 'nocode') return '<span class="cc-mut">no code</span>';
+          if (st.kind === 'ready') return '<span class="boq-why" title="' + st.n +
+            ' activit' + (st.n === 1 ? 'y carries' : 'ies carry') + ' this class code — press ' +
+            (qOn ? 'Allocate' : 'Link') + '">' + st.n + ' ready</span>';
+          if (st.notInSchedule) return '<span class="cc-mut boq-prelim" title="No activity on this ' +
+            'project carries a code in ' + esc(st.trade) + ' — that trade is not on the programme at ' +
+            'all. Normal for preliminaries (mobilisation, site offices, plant hire), which are not ' +
+            'scheduled work.">not scheduled</span>';
+          return '<span class="cc-mut" title="' + st.inTrade + ' activit' +
+            (st.inTrade === 1 ? 'y is' : 'ies are') + ' in ' + esc(st.trade) + ', but none carries ' +
+            'this line’s code. Tag more of the schedule, or link by hand.">0</span>';
+        })() + '</td>' +
         /* ⚠️ The RUNG is what a planner needs here — "location" answers "can I trust this?" in a
            way "prorata" does not. Falls back to the split method on rows written before
            2026-09-10-boq-match-rung.sql, where `matched_by` is legitimately null. */
@@ -4653,10 +4693,23 @@ window.BOQ = (function () {
             '<td><button class="pd-btn" data-rm="' + i + '" title="Remove">&times;</button></td></tr>';
         }).join('') +
         '</tbody></table>' +
-        '<div class="boq-splitadd"><select class="pd-select" id="sp-add"><option value="">Add an activity…</option>' +
-          (ACTS || []).slice(0, 800).map(function (a) {
-            return '<option value="' + esc(a.activity_id) + '">' + esc(a.activity_id + ' — ' + (a.activity_name || '')) + '</option>'; }).join('') +
-        '</select></div>' +
+        /* ⚠️⚠️ THIS WAS A RAW `<select>` OF `ACTS.slice(0, 800)`, AND ON A REAL PROJECT IT COULD NOT
+           REACH MOST OF THE SCHEDULE. Owner, 2026-09-10, on OPW101 (2,561 activities): *"Right now
+           the linking is still not easy."* Measured: **1,761 activities — 69% — were not in the list
+           at all**, it had no search, no grouping, no order anyone could predict, and `onchange`
+           added exactly ONE activity per interaction. Linking a line to a floor's worth of work was
+           forty passes through a list that could not reach two thirds of the project.
+           ⚠️ It is replaced by `CCAffected`'s ladder + WBS tree + search — the SAME picker the change
+           order wizard uses, with its change-order preview suppressed. That component already
+           answers this exact question ("which activities does this cover?"), is already verified,
+           and lets a place or a whole branch be taken in one click. Building a second one here is
+           the drift this module has already paid for twice. */
+        '<div class="boq-splitadd">' +
+          (window.CCAffected
+            ? '<button class="pd-btn pd-btn-primary" id="sp-pick">Choose activities…</button>' +
+              '<span class="cc-mini">Search, or take a whole place or WBS branch at once</span>'
+            : '<span class="cc-mini">The activity picker did not load — reload the page to link by hand.</span>') +
+        '</div>' +
         // ⚠️ The remainder is always shown, both ways. Silent over-allocation is
         // a wrong S-curve, and a silent shortfall is work nobody has planned.
         // ⚠️ A line with no quantity must NOT report "reconciles exactly": 0 of 0 satisfies the
@@ -4686,20 +4739,78 @@ window.BOQ = (function () {
       body.querySelectorAll('[data-rm]').forEach(function (b) {
         b.onclick = function () { prop.parts.splice(+b.dataset.rm, 1); prop.method = 'manual'; prop.rung = null; paint(); };
       });
-      var add = body.querySelector('#sp-add');
-      add.onchange = function () {
-        var aid = add.value; if (!aid) return;
-        if (prop.parts.some(function (p) { return p.activity_id === aid; })) { add.value = ''; return; }
-        var a = (ACTS || []).find(function (x) { return x.activity_id === aid; });
-        prop.parts.push({ activity_id: aid, name: a ? a.activity_name : '', qty: Math.max(0, rem),
-                          rung: null, why: null });
-        prop.method = 'manual'; prop.rung = null; paint();
-      };
+      var pk = body.querySelector('#sp-pick');
+      if (pk) pk.onclick = openPicker;
+    }
+
+    /* The picker takes over the dialog body rather than opening a modal on top of it — a modal
+       over a modal is the trap this file already records: the planner ends up clicking a pane they
+       cannot reach. ⚠️ The dialog also widens while picking (`boq-wide`), because a ladder plus a
+       WBS tree inside `.pd-modal`'s 520px is the ~200px squeeze `.boq-wide` was added to fix, and
+       narrows back on return so the quantity table keeps its own proportions. */
+    async function openPicker() {
+      var modal = m.el.querySelector('.pd-modal');
+      modal.classList.add('boq-wide');
+      body.innerHTML = '<p class="cc-hint" style="margin-top:0;">Pick the activities <strong>' +
+        esc(r.description || '') + '</strong> covers. Ticking a place or a branch takes all of it.</p>' +
+        window.CCAffected.pickerHTML();
+      var foot = m.el.querySelector('.pd-modal-footer');
+      var footWas = foot.innerHTML;
+      foot.innerHTML = '<button class="pd-btn" id="sp-pcancel">Back</button>' +
+        '<span style="flex:1;"></span>' +
+        '<button class="pd-btn pd-btn-primary" id="sp-puse">Use <span id="sp-pn">0</span> activit<span id="sp-pys">ies</span></button>';
+
+      var handle = null;
+      function done(commit) {
+        modal.classList.remove('boq-wide');
+        foot.innerHTML = footWas;
+        /* ⚠️ The footer's own handlers died with its innerHTML, so they are re-bound. Missing this
+           leaves Cancel and Apply inert — the dialog looks fine and does nothing. */
+        m.el.querySelector('#sp-cancel').onclick = m.close;
+        m.el.querySelector('#sp-go').onclick = applyAlloc;
+        if (commit && handle) mergePicked(handle.ids());
+        paint();
+      }
+      foot.querySelector('#sp-pcancel').onclick = function () { done(false); };
+      foot.querySelector('#sp-puse').onclick = function () { done(true); };
+
+      try {
+        /* ⚠️ Defensive, and free: `setProject` returns immediately when the id is unchanged, so
+           this costs nothing on the normal path and guarantees the picker cannot offer ANOTHER
+           project's activities if the BOQ was ever reached without module.js's own call running.
+           A picker showing the wrong project's schedule is the exact failure that comment guards. */
+        window.CCAffected.setProject(pid);
+        handle = await window.CCAffected.mount(body, {
+          /* ⚠️ The selection STARTS from what is already on the line, so opening the picker to add
+             one activity cannot silently drop the nine already there. */
+          initial: prop.parts.map(function (p) { return p.activity_id; }),
+          preview: false,
+          onCount: function (n) {
+            var el = m.el.querySelector('#sp-pn'), ys = m.el.querySelector('#sp-pys');
+            if (el) el.textContent = String(n);
+            if (ys) ys.textContent = n === 1 ? 'y' : 'ies';
+          }
+        });
+      } catch (e) {
+        body.innerHTML = '<p class="cc-hint">The schedule could not be read — ' + esc(e && e.message || e) + '</p>';
+      }
+    }
+
+    function mergePicked(ids) {
+      prop.parts = mergePickedParts(prop.parts, ids, Number(r.qty) || 0, ACTS || []);
+      /* ⚠️ Hand-picking retires the proposal's rung: the split is the planner's now, and leaving
+         "proposed by location match" on it would credit the matcher for a human decision — the
+         audit distinction `matched_by` exists for. */
+      prop.method = 'manual'; prop.rung = null;
     }
     paint();
     m.el.querySelector('#sp-x').onclick = m.close;
     m.el.querySelector('#sp-cancel').onclick = m.close;
-    m.el.querySelector('#sp-go').onclick = async function () {
+    m.el.querySelector('#sp-go').onclick = applyAlloc;
+    /* ⚠️ NAMED, because the picker replaces the modal footer wholesale and has to put this handler
+       back. An inline function here would be unreachable from there, and the re-bound Apply button
+       would look right and do nothing. */
+    async function applyAlloc() {
       // ⚠️⚠️ WAS `p.activity_id && Number(p.qty)` — which DISCARDED every zero-quantity part, so a
       // link recorded before the line was measured vanished on Apply with a success toast. That is
       // the second half of the owner's 2026-09-07 ask, and it was the half that lost data: the
@@ -4727,7 +4838,7 @@ window.BOQ = (function () {
       ALLOC = ALLOC.filter(function (a) { return a.boq_item_id !== r.id; })
         .concat(parts.map(function (p) { return { boq_item_id: r.id, activity_id: p.activity_id, qty: Number(p.qty), method: prop.method || 'manual', project_id: pid }; }));
       UI.toast('Allocation applied.', 'success'); render();
-    };
+    }
   }
 
   /* Bulk propose. ⚠️ Still propose → preview → APPLY: it shows what it would
@@ -4776,6 +4887,78 @@ window.BOQ = (function () {
     if (!total) return { kind: 'noacts', tagged: 0, total: 0 };
     if (!tagged) return { kind: 'untagged', tagged: 0, total: total };
     return { kind: 'mismatch', tagged: tagged, total: total };
+  }
+
+  /* ==========================================================================
+     WHY A LINE HAS NOTHING TO LINK TO — measured per TRADE, not guessed from its name
+     ==========================================================================
+     ⚠️⚠️ Owner, 2026-09-10, on OPW101: 122 General Requirement lines, every one coded, against a
+     schedule whose 2,561 activities are every one coded — and **zero** candidates for all 122. The
+     screen said "0 activities" and left it there, which reads as 122 failures.
+
+     It is not a failure. Mobilization, Demobilization, Rental of Skidloader, Barracks, Site Office
+     are TIME-RELATED PRELIMINARIES — a structural programme has no activity called "Rental of Flat
+     Bed Truck", and inventing a link to one would push a fabricated relationship into
+     `planned_cost` → the S-curve → Cash Flow.
+
+     ⚠️ So the distinction is DERIVED, never taken from the trade's name. A hard-coded
+     "General Requirement" list would be a guess about Finance's chart and would rot the first time
+     it was revised. Instead: does ANY activity on this project carry a code belonging to this
+     line's trade? If the whole trade is absent from the schedule, that is a measurement, and it is
+     the thing worth telling the planner. */
+  var _tradeActs = null;
+  function tradeActivityCounts() {
+    if (_tradeActs) return _tradeActs;
+    var byCode = {};
+    (CODES || []).forEach(function (c) { if (c && c.code) byCode[String(c.code).trim()] = c; });
+    var out = {};
+    (ACTS || []).forEach(function (a) {
+      var c = byCode[String(a.class_code || '').trim()];
+      var t = c && c.desc_l1 ? String(c.desc_l1).trim() : '';
+      if (t) out[t] = (out[t] || 0) + 1;
+    });
+    _tradeActs = out;
+    return out;
+  }
+  /* ⚠️ Cleared wherever the two inputs change — a stale count would report a trade as absent from a
+     schedule that has just been tagged, which is the opposite of helpful. */
+  function clearTradeActs() { _tradeActs = null; }
+
+  /* ⚠️⚠️ THE MERGE IS BY ACTIVITY, AND AN EXISTING PART KEEPS ITS QUANTITY. The picker answers
+     "which activities", never "how much" — so re-opening it to add one more activity must not reset
+     the nine figures the planner already typed. Newly-picked parts take an equal share of whatever
+     is still unallocated; on a line with no quantity that is 0, which is exactly the link-only case
+     the 2026-09-07 change made storable.
+     ⚠️ Pure and at module scope so the invariant above is executable rather than asserted in prose.
+     De-selecting in the picker DOES drop a part — that is the planner saying "not this one". */
+  function mergePickedParts(parts, ids, qty, acts) {
+    var keep = {}; (ids || []).forEach(function (i) { keep[String(i)] = 1; });
+    var kept = (parts || []).filter(function (p) { return keep[String(p.activity_id)]; });
+    var have = {}; kept.forEach(function (p) { have[String(p.activity_id)] = 1; });
+    var added = (ids || []).filter(function (i) { return !have[String(i)]; });
+    var used = kept.reduce(function (a, p) { return a + (Number(p.qty) || 0); }, 0);
+    var each = added.length ? Math.max(0, (Number(qty) || 0) - used) / added.length : 0;
+    added.forEach(function (aid) {
+      var a = (acts || []).find(function (x) { return String(x.activity_id) === String(aid); });
+      kept.push({ activity_id: aid, name: a ? a.activity_name : '',
+                  qty: Math.round(each * 100) / 100, rung: null, why: null });
+    });
+    return kept;
+  }
+
+  function lineLinkState(r) {
+    if (allocOf(r.id).length) return { kind: 'linked' };
+    var cf = codeFor(r);
+    if (!cf) return { kind: 'nocode' };
+    if (candidatesFor(r).length) return { kind: 'ready', n: candidatesFor(r).length };
+    var row = codeRow(cf.class_code);
+    var trade = row && row.desc_l1 ? String(row.desc_l1).trim() : '';
+    var counts = tradeActivityCounts();
+    var inTrade = trade ? (counts[trade] || 0) : 0;
+    /* ⚠️ `notInSchedule` is the measured claim — nothing in this trade is on the programme at all.
+       It is stated as a fact about the schedule, and the preliminaries reading is offered as the
+       usual EXPLANATION rather than asserted as the cause. The planner knows which it is. */
+    return { kind: 'nocand', trade: trade, inTrade: inTrade, notInSchedule: !!trade && inTrade === 0 };
   }
 
   async function bulkPropose() {
@@ -4900,8 +5083,10 @@ window.BOQ = (function () {
     if (!ITEMS.length) { UI.toast('This revision has no lines yet.', 'warn'); return; }
 
     var minConf = 0.8;
-    var m = UI.modal('<div class="pd-modal-header"><div><h2 style="margin:0;">Match this BOQ to the schedule</h2>' +
-      '<div class="pd-modal-sub">Code the lines, tag the activities, allocate the quantities — in that order</div></div>' +
+    /* ⚠️ The heading matches the BUTTON that opened it, not the sub-tab beside it — a dialog titled
+       after a tab leaves the planner unsure which of the two controls they just pressed. */
+    var m = UI.modal('<div class="pd-modal-header"><div><h2 style="margin:0;">Code, tag and allocate</h2>' +
+      '<div class="pd-modal-sub">The whole bill, in the order the three passes depend on each other</div></div>' +
       '<button class="pd-modal-close" id="ma-x">&times;</button></div>' +
       '<div style="padding:2px 16px 6px;" id="ma-body"></div>' +
       '<div class="pd-modal-footer" id="ma-foot"></div>');
@@ -5510,7 +5695,7 @@ window.BOQ = (function () {
   }
   /* WARNING ALLREVS and PROJTOTAL belong here too: a project switch that kept them would show
      the previous project's contract value under the new project's name. */
-  function reset() { COLLAPSED = {}; SEL = {}; loaded = false; DOCS = []; DOCID = null; TRADEMAP = {};
+  function reset() { COLLAPSED = {}; SEL = {}; loaded = false; DOCS = []; DOCID = null; TRADEMAP = {}; clearTradeActs();
     ALLREVS = []; PROJTOTAL = null; REVS = []; ITEMS = []; CMAP = {}; ALLOC = []; PERIODS = []; PROG = {}; REVID = null; CODES = null; CODETREE = null; ACTS = null; WBSNAME = {}; LOCMATCH = null; SCHED = null; schedErr = null; PKGS = []; }
 
   return {
@@ -5568,6 +5753,8 @@ window.BOQ = (function () {
       /* The three planners and the dry run that chains them — exported so a suite can assert the
          whole-BOQ preview equals what the three buttons would do, without a database. */
       planCodeMap: planCodeMap, planTags: planTags, planAllocs: planAllocs,
+      lineLinkState: lineLinkState, tradeActivityCounts: tradeActivityCounts,
+      clearTradeActs: clearTradeActs, mergePickedParts: mergePickedParts,
       matchAllDryRun: matchAllDryRun, allocBlockReason: allocBlockReason,
       /* Hand-off 2's proposal, so what the schedule becomes is testable without a database, and
          the dialog itself so it can be rendered in a browser rather than a copy of its markup. */
