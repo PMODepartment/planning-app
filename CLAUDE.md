@@ -95,6 +95,76 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-10 (za3) — A class code the schedule has never heard of stops being a dead end — and the measurement that says it will not rescue OPW101
+
+Owner: *"Let's make sure that the linking is easy as well. Put yourselves in the shoes of the
+planner and think of how much time and effort would it take."*
+
+**The dead end.** `candidatesFor` gates every proposal on the line's class code. On OPW101 the
+Structural lines carry `03051`, nothing on the schedule carries `03051`, so the candidate set came
+back **empty** — and an empty set is not a weak answer, it is *no* answer: the four rungs never ran.
+All 21 lines read "not scheduled", and the only advice the screen could give was "tag the activities
+first", which is 2,561 activities of manual work standing between the planner and any proposal at
+all. Now, when the gate is set but matches nothing, the line falls back to **its own name across the
+whole schedule**. Measured on an 18-floor fixture: **0 links before, 144 after, in 5ms**.
+
+The bar is `TAG_FLOOR` — the **same 0.8** at which the tagger already pre-ticks — not a new
+threshold, and not the 0.35 floor this file warns "would return hundreds". A preliminary keeps
+returning nothing: no activity is named "Rental of Flat Bed Truck", so the derived
+preliminary/mismatch distinction is untouched and **no fabricated link can reach `planned_cost`**.
+⚠️ The code rung is never bumped on this path — those activities do not carry the line's code, and
+writing "carries 03051" into `boq_allocations.matched_by` would be a false entry in an audit trail.
+The dialog says which it is, because a proposal built from a name is a weaker claim than one built
+from a code.
+
+**⚠️⚠️ AND IT WILL NOT FIX THE OWNER'S 21 LINES, which measurement showed and the fixture had
+hidden.** My suite used activities named "Rebar Works". The live schedule names them **"Rebar"**.
+Probed against the shipped `matchAct`:
+
+| activity | BOQ line | score |
+|---|---|---|
+| `Rebar` | Rebar Works | **no match** |
+| `Rebar Works` | Rebar Works | 0.95 |
+| `Formwork` | Formworks | 0.85 |
+| `Concrete` | Ready Mix Concrete | 0.85 |
+
+`Rebar` fails on one clause: rung 2 is `l3.indexOf(an) >= 0 && an.length > 6`, and "Rebar" is five
+characters. That single guard is why the tagger reports *"no name resembles it"* for all 21 codes,
+and why this fallback stays silent on the same data. The fixture agreed with the code because I
+built it from the BOQ's vocabulary rather than the schedule's — a test passing for the wrong reason,
+which is the trap this file already records three times.
+
+**Relaxing the guard is NOT the fix, and that is a finding rather than a deferral.** `Rebar` scores
+0.85 against *Rebar Works*, *Rebar Consumables* **and** *Rebar Coupler* — three different BOQ lines,
+one activity name. The ambiguity is real and lives in the data: the schedule is less specific than
+the bill. No threshold resolves it; only a human, or a more specific activity name, can. Lowering
+`an.length` would convert "found nothing" into "confidently allocated the same 72 activities to
+three different lines", which is worse.
+
+**Also ruled out, on this repo's own evidence.** The activities are badged `HAS 3050` while the
+lines carry `03051`, which looks like a leading-zero mismatch worth normalising. It is not:
+`2026-08-21-class-codes.sql` states that **de-zeroing collides genuinely different items** —
+`015051` (Earthmoving) with `15051` (Railings), `017151` with `17151` — and that the padded code is
+the key. So no code normalisation was written.
+
+Verified: **26 new assertions, 0 failing**, plus 34 + 36 + 24 + 29 — **149 total**. Pinned to
+**3897c0f**. ⚠️ Three of my own expectations were wrong before the code was, all corrected in place
+rather than deleted: I expected the plan count to be unchanged (it legitimately improves 1 → 2), I
+expected the winning rung to change (it does not — inside a gated set `name` at 0.60 already beat
+`code` at 0.10), and I expected `why` to read "carries 03051" (`why` carries the *winning* rung's
+reason only; the code rung is a floor, not a label). Two assertions in the match-all suite also
+encoded "un-chained C is 0"; it is 1 now, deliberately, and the contrast the test exists for is
+still there at 1 against 3. `?v=` → `20260910za3`.
+
+**Open, and now the critical path.** `matchAct`'s specificity gap is the real blocker for OPW101,
+and the answer is a screen that says *"'Rebar' matches three lines — which is it?"* rather than a
+threshold. The orchestrator is also the same three passes the individual buttons run, so the buttons
+and the dialog want centralising; and WBS branch names, BOQ sheet names and the chart's own item
+names come from three sources that nobody has reconciled. All three are next.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+
 ### 2026-09-10 (za2) — The picker was hiding activities two more ways, and both were opening filters nobody chose
 
 Five things reported off the live OPW101 screen in one sitting: *"Let's fix the .cca-row tap

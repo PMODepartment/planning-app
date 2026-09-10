@@ -4297,7 +4297,31 @@ window.BOQ = (function () {
        about a place, and never the name rung, which at floor 0.35 would return hundreds. */
     var gated = !!cf;
     if (!gated) acts = locMatch(r, ACTS || []);
-    if (!acts.length) return { gated: gated, code: cf, list: [] };
+    /* ⚠️⚠️ A CODE THE SCHEDULE HAS NEVER HEARD OF IS NOT THE SAME AS NO ANSWER, and this branch
+       is the difference between one click and an afternoon. Owner, 2026-09-10, on OPW101: all 21
+       Structural lines read "not scheduled" while 72 activities are named "Rebar Works". The line
+       is coded 03051, nothing on the schedule carries 03051, so `candidatesFor` returned an EMPTY
+       set - and an empty set is not a weak answer, it is no answer: the four rungs never ran at
+       all. The only advice the screen could give was "tag the activities first", which is 2,561
+       activities of manual work standing between the planner and any proposal whatsoever.
+       So: GATED, BUT THE GATE MATCHED NOTHING -> fall back to the line's own NAME across the whole
+       schedule. This is the one place the name rung may range over everything, and it is safe here
+       precisely because the alternative is zero — there is no stronger rung for it to smear, and
+       nothing is stored until the planner presses Apply.
+       ⚠️ The bar is `TAG_FLOOR`, the SAME 0.8 at which the tagger pre-ticks an activity — "names
+       the item", "item names it", "all item words". Not a new threshold, and not the 0.35 floor
+       this file already warns "would return hundreds". A preliminary keeps returning nothing:
+       no activity is named "Rental of Flat Bed Truck", so the derived preliminary/mismatch
+       distinction below is untouched and no fabricated link can reach `planned_cost`. */
+    var codeMissing = false;
+    if (gated && !acts.length && r.description) {
+      acts = (ACTS || []).filter(function (a) {
+        var md = matchAct(a, { desc_l3: r.description, desc_l2: '' });
+        return md && md.score >= TAG_FLOOR;
+      });
+      codeMissing = acts.length > 0;
+    }
+    if (!acts.length) return { gated: gated, code: cf, codeMissing: false, list: [] };
 
     var hay = locHaystack(r);
     var pathKey = normKey(hay);
@@ -4305,7 +4329,9 @@ window.BOQ = (function () {
     /* Did the gate fall back to the group? Read off the resolved set ONCE — `candidatesFor`
        returns exact matches or group matches, never a mixture, so one member answers for all of
        them and no second filter over ACTS is needed. */
-    var viaGroup = gated && !!acts.length && acts[0].class_code !== cf.class_code;
+    /* ⚠️ `!codeMissing`: on the name-fallback path the candidates carry no relevant code at all,
+       so "did the gate fall back to the group" is a question about a gate that did not hold. */
+    var viaGroup = gated && !codeMissing && !!acts.length && acts[0].class_code !== cf.class_code;
     var grpCode = viaGroup ? String(acts[0].class_code || '').trim() : '';
 
     var list = acts.map(function (a) {
@@ -4318,7 +4344,11 @@ window.BOQ = (function () {
          ⚠️ It SAYS when it matched at group level. "carries 03101" and "in group 03100, which holds
             03101" are different claims, and the second is the weaker one — a planner accepting a
             split needs to know which they are looking at. */
-      if (gated) {
+      /* ⚠️⚠️ NEVER on the name-fallback path. These activities do NOT carry the line's code —
+         that is the whole reason this path exists — so bumping rung 4 would print "carries 03051"
+         against an activity that carries nothing of the sort. `boq_allocations.matched_by` is an
+         audit trail, and writing a false reason into it is worse than writing none. */
+      if (gated && !codeMissing) {
         bump('code', viaGroup
           ? 'in group ' + grpCode + ', which holds ' + cf.class_code
           : 'carries ' + cf.class_code);
@@ -4362,7 +4392,7 @@ window.BOQ = (function () {
     list.sort(function (p, q2) {
       return q2.score - p.score || String(p.act.activity_id).localeCompare(String(q2.act.activity_id));
     });
-    return { gated: gated, code: cf, list: list };
+    return { gated: gated, code: cf, codeMissing: codeMissing, list: list };
   }
 
   /* The winning rung's members — the set a proposal is actually built from.
@@ -4737,8 +4767,18 @@ window.BOQ = (function () {
            already says, with the count filled in. Two boxes making one point, on a screen whose
            actual job is a list of activities. The foot keeps it, because it is the one that can
            state HOW MANY. */
-        (acts.length ? '' : '<div class="boq-alert warn">No activity on this project carries class code <code>' +
-          esc(cfc) + '</code>. Allocate by hand, or tag the activities first.</div>') +
+        /* ⚠️ A proposal built from a NAME is a weaker claim than one built from a code, and the
+           planner accepting a split has to know which they are looking at — so the screen states
+           it rather than quietly presenting the two as the same thing. */
+        (acts.length
+          ? (scored.codeMissing
+            ? '<div class="boq-alert warn">Nothing on this schedule carries class code <code>' +
+              esc(cfc) + '</code>, so these <strong>' + acts.length + '</strong> activities were ' +
+              'matched on <strong>name</strong> instead. Worth a look before you apply.</div>'
+            : '')
+          : '<div class="boq-alert warn">No activity on this project carries class code <code>' +
+          esc(cfc) + '</code>, and none is named like this line. Allocate by hand, or tag the ' +
+          'activities first.</div>') +
         '<table class="boq-splittab"><thead><tr><th>Activity</th><th class="cc-r">Qty</th><th></th></tr></thead><tbody>' +
         prop.parts.map(function (p, i) {
           return '<tr><td><code>' + esc(p.activity_id) + '</code> <span class="cc-mini">' + esc(p.name || '') + '</span>' +
@@ -5861,6 +5901,12 @@ window.BOQ = (function () {
       sheetTotals: sheetTotals, contractSum: contractSum, wtOf: wtOf, periodTotals: periodTotals,
       sheetPocs: sheetPocs, moneyLine: moneyLine, qtyLine: qtyLine, mappable: mappable,
       proposeSplit: proposeSplit, locMatch: locMatch, allocSum: allocSum, suggestFor: suggestFor,
+      /* ⚠️ `scoreCandidates` carries the gate AND the name fallback for a code the schedule
+         does not have, so the suite can prove a proposal is built from a name and never
+         claims the code the activity lacks. `matchAct` beside it because the fallback's bar
+         is that function's score, not a second opinion about names. */
+      scoreCandidates: scoreCandidates, candidatesFor: candidatesFor, matchAct: matchAct,
+      TAG_FLOOR: TAG_FLOOR,
       /* The three planners and the dry run that chains them — exported so a suite can assert the
          whole-BOQ preview equals what the three buttons would do, without a database. */
       planCodeMap: planCodeMap, planTags: planTags, planAllocs: planAllocs,
