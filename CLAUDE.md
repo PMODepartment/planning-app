@@ -95,6 +95,67 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-10 (x1) — Checking (w9) on the live signed-in page found three more targets and one dead line I had written
+
+⚠️ (w9) was measured in an offline harness that rendered **only the topbar**. Opening the deployed
+site signed in, at 375px, immediately produced things that harness could not see — plus a correction
+to a claim I made in (w9)'s own changelog. Recorded because the lesson is the harness's blind spot,
+not the pixels.
+
+#### ⚠️⚠️ A CLAIM IN (w9) WAS WRONG: `min-*` DOES BEAT A FIXED `height`
+(w9) added `.pd-filttoggle, .il-topfilttoggle, .pp-topfilttoggle { height: auto; width: auto; }` with
+a comment asserting *"a `min-*` cannot beat a fixed `height`"*. **That is false.** `min-height` and
+`min-width` always clamp the used size above `height`/`width` (CSS 2.1 §10.7). Measured on the live
+page: forcing `height:34px !important; width:34px !important` back onto a real `.pd-filttoggle` at
+375px still laid out **44×44**; stripping the `min-*` pair instead laid out **34×34**. The release was
+also **unreachable** regardless — the base `.pd-filttoggle` rule sits *below* the phone media block in
+the file, so at equal specificity it wins on source order. Line deleted, comment replaced with the
+measurement. The (w9) fix itself was never in doubt; the `min-*` pair was doing all of the work.
+
+#### Three real targets the topbar-only harness could not reach
+| | was | now | why it was missed |
+|---|---|---|---|
+| `.pd-nav-sibling` | 40px | 44 | in the sidebar **drawer** — harness had no sidebar |
+| `.pd-avatar` | 40px | 44 | phone block already grew it 36→40 and stopped 4px short |
+| checkbox / radio `<label>` | **19px** | 44 | in module CONTENT, which needs data to render |
+
+`.pd-sidebar nav a` already had `min-height: var(--pd-tap)` in the phone block; `.pd-nav-sibling` is
+the same kind of row (the sibling-app links in `.pd-nav-foot`) and was never added to it — **the exact
+omission pattern (w9) fixed for `.pd-filttoggle`**, one rule further up the same file.
+
+#### ⚠️⚠️ THE CHECKBOX LABELS NEEDED A `display`, NOT JUST A `min-height`
+A checkbox is ~13×13 and `font-size` cannot size it, so the **`<label>` is the tap target** — and those
+measured **19px** tall, under this file's own 44px bar and under WCAG 2.5.8's 24px. `:has()` is what
+makes them targetable at all (there is no parent selector otherwise) — verified supported before use.
+⚠️ **`min-height` alone did nothing**: it does not apply to a non-replaced **inline** box, and a
+`<label>` is inline by default. Measured: `min-height` computed as 44px while the label still laid out
+at **17px**. Adding `display: inline-flex; align-items: center` made it 44. `inline-flex`, not `flex`,
+so a row of labels still flows inline instead of each claiming its own line — and a label with **no**
+checkbox inside is not matched and stays inline at 19px, checked as a control case rather than assumed.
+
+#### Also confirmed on the live page, not just asserted
+- **`.mp-mxwrap` is `overflow-x: auto`, 353px wide over a 2446px table, and scrolls.** The matrix
+  columns *do* extend past the viewport — inside their own scroll container, which is why the page
+  itself does not move. This is independent confirmation that (w9)'s "90 unwrapped tables" was noise.
+- **The `NotFoundError` from `theme.js?v=…w4` in the console was a stale buffered entry** from the
+  tab's previous page load, not a live failure: the page fetched `theme.js?v=20260910w7` and
+  `.pd-theme-toggle` is present in the DOM. Checked `performance.getEntriesByType('resource')` rather
+  than trusting the console line.
+
+#### Verified
+- **12 cases × 2 widths against the edited stylesheet. At 375px, 11 of 12 at ≥44px**; the 12th is the
+  control (a plain `<label>` with no input, correctly left inline at 19px).
+- **At 1200px every case is byte-identical to before**: filttoggle 34×34, avatar 36, nav-sibling 38,
+  sidebar nav a 37, labels 19, bare input 22 @13.33px, `.pd-input` 32 @12.5px.
+- Live signed-in home at 375px: **0 sideways scroll, 0 elements past the viewport, 0 small taps**, and
+  the home search — a bare `<input>`, the exact case (w9) fixed — computes **16px / 44px**.
+- 42 JS files + 29 inline blocks parse, 0 failures; 530/530 braces; 0 NUL bytes across 30 files.
+- `?v=` → `20260910x1` on dashboard.css only (theme.js stays at `w7`, modules-grid.js at `w9` — neither
+  changed). ⚠️ `x1`, not `w10`: `w10` sorts *before* `w9`.
+- ⚠️ **Still not verified on a real device.** Real iOS Safari's zoom is the behaviour being designed
+  around and an emulated viewport cannot exercise it.
+
+
 ### 2026-09-10 (w9) — Phone sweep: every form in the app zoomed iOS, and the filter funnel was the smallest target on screen
 
 Owner: *"Let's now do a complete sweep for phone view UI."* ⚠️ The useful finding is not that the app
