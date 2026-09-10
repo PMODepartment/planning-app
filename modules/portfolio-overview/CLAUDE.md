@@ -1,5 +1,84 @@
 # Module: portfolio-overview
 
+## 2026-09-10 (s5) — The Stakeholders tab stops being read-only: a directory you can author
+
+Owner: *"By Portfolio Overview and accessing the stakeholder map, planners can create stakeholders
+from this and assign it to different projects."* The second half of Stage 4; the first half stopped
+new duplicates at the point of entry, this one is the portfolio-level master list itself.
+
+The tab had a search box and a table over the `stakeholder_map` **mirror** — no create, no assign,
+no row click. It now carries two views:
+
+- **Directory** — one row per `stakeholders` person: name, organisation, role, sector, and how many
+  projects they are on. ⚠️ That count reads the FULL map, never the project-filtered one: "on N
+  projects" is a fact about the person, and scoping it would make the same person read 3 on one
+  screen and 1 on another. The scope note is hidden in this view for the same reason.
+  ⚠️ A person on **0** projects shows `0`, not an em dash — it is a real and actionable state
+  (someone in the directory nobody has assigned yet), and a dash would read as "unknown".
+- **By project** — the existing mirror view, unchanged. It answers a different question.
+
+**+ Add person** creates a directory row. ⚠️ The duplicate warning fires **while typing**, not after
+saving: telling a planner they have made a duplicate once it exists is worse than useless, because by
+then somebody has to merge it. It uses the same shared matcher as the module's save path, so the two
+screens cannot propose different answers.
+
+**Assign to projects** ticks projects and writes `stakeholder_map` rows carrying the link, the
+`created_by` RLS needs, and the mirrored person fields. ⚠️ Projects the person is already on render
+disabled and are skipped rather than inserted twice. ⚠️ The toast reports the count that came BACK —
+`stakeholder_map_ins` requires `can_access_project`, so a project the planner cannot write to must
+not be counted as done.
+
+### ⚠️⚠️ Merge, and the two ways it refuses
+
+`mergePeople` re-points the loser's project rows, fills only the winner's EMPTY fields, and deletes
+the duplicate. It refuses in two situations rather than guessing:
+
+- **Both people are on the same project.** Re-pointing would put two rows for one person on one
+  project; deleting one would destroy that project's own assessment of them — influence, interest,
+  engagement plan — which is real, unrecoverable work and not a merge dialog's decision. The message
+  names the project.
+- ⚠️⚠️ **Fewer rows moved than expected.** `stakeholder_map_upd` is
+  `(created_by = auth.uid() or is_admin())`, and **PostgREST answers an RLS-filtered UPDATE with 200
+  and zero rows** — the silent-success trap this repo has recorded since `boq_tag_activities`. So
+  re-pointing rows another planner created returns success and changes nothing. Every write is
+  `.select('id')`ed and counted; a shortfall **stops the merge and deletes nothing**, because
+  deleting the loser then would orphan the rows that did not move (`on delete set null` turns them
+  into unlinked legacy rows). The message says how many of how many moved and why.
+
+⚠️ `photo_path` and `photo_thumb_path` are only ever taken **together, from one person** — a merge
+that filled them independently would pair one person's photo with another's thumbnail, the identical
+trap the backfill migration solves with `(array_agg(... order by ...))[1]`.
+⚠️ A delete the policy refuses (`stakeholders_del` is `is_planner()`) is **reported**, not claimed:
+the people are merged but the duplicate row survives, and the planner is told.
+
+### Verified
+
+**26 assertions on the shipped data operations**, executed against a Supabase-shaped stub that can be
+told to behave like RLS — accept the call, return 200, hand back fewer rows than were asked for.
+Plus the 41 matcher assertions, and **8 contrast builds, all biting**.
+
+⚠️ **One contrast did not bite at first and the fixture was at fault, not the code:** the
+"loser overwrites a field the winner has" build passed because the loser's `role_title` was `null`,
+so an overwrite had nothing to overwrite with. The fixture now gives it a real conflicting value, and
+the assertion checks the PATCH rather than only the report.
+⚠️ **My first Supabase stub made `.select()` terminal**, so shipped code threw *"ilike is not a
+function"* — a stub bug that reads exactly like a code bug. The real builder is chainable and
+thenable, and the stub now is too.
+
+**Driven in a browser** against the shipped stylesheet with the directory code sliced out of the
+page: the list renders with correct per-person project counts; the person panel disables the projects
+they are already on; assign writes exactly one row for the untouched project with the mirror fields;
+a clean merge repoints, fills `email` + the photo pair, leaves `role_title` alone and deletes the
+loser; the same-project refusal **writes nothing at all**; and the partial-repoint refusal leaves the
+loser **undeleted** and the winner **un-updated**. The live duplicate warning surfaces both Fernandos
+while typing and clears for an unrelated name — matching "Megawide Construction **Corp**" against
+"…**Corporation**", which is the corporate-suffix folding working.
+
+`stakeholders.js` → `?v=20260910s5`; `MODULE_V` → `20260910s5`.
+⚠️ **Not verified signed in** — no person has been created, assigned or merged against the live
+directory, and the RLS refusal paths above are reasoned from the policy text plus a stub, never
+observed. The first real merge is the thing most worth watching.
+
 ## 2026-09-09 (p3) — The 13 in-page tabs go, the Group Head column goes, and the S-curve becomes per-project
 
 Owner's three Portfolio Dashboard items.

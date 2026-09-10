@@ -250,11 +250,158 @@
     return /does not exist|schema cache|42P01|PGRST205/i.test(m);
   }
 
+
+  // ==========================================================================
+  // DATA OPERATIONS
+  // --------------------------------------------------------------------------
+  // ⚠️ Every one takes `sb` (the Supabase client) as an argument rather than
+  // reaching for a global. This file is loaded by two pages that each build their
+  // own client, and a shared module that captures one of them is a shared module
+  // that works on one page.
+  // ==========================================================================
+
+  function personRow(fields, uid) {
+    var row = {};
+    PERSON_FIELDS.forEach(function (f) {
+      if (fields[f] !== undefined) row[f] = fields[f] === '' ? null : fields[f];
+    });
+    row.name = String(fields.name || '').trim();
+    row.organization = String(fields.organization || '').trim() || null;
+    if (fields.notes !== undefined) row.notes = fields.notes || null;
+    if (uid) row.created_by = uid;                // REQUIRED by stakeholders_ins
+    row.updated_at = new Date().toISOString();
+    return row;
+  }
+
+  // Create a directory person. ⚠️ Returns the EXISTING row on a unique-violation
+  // rather than throwing — two planners racing on the same name is the situation
+  // this table exists to resolve, not an error to show them.
+  async function createPerson(sb, fields, uid) {
+    var row = personRow(fields, uid);
+    if (!row.name) throw new Error('A name is required.');
+    var ins = await sb.from(DIR).insert(row).select('*');
+    if (ins.error) {
+      if (String(ins.error.code) === '23505' || /duplicate key|already exists/i.test(ins.error.message || '')) {
+        var again = await sb.from(DIR).select('*').ilike('name', row.name).limit(50);
+        if (!again.error) {
+          var hit = (again.data || []).filter(function (x) { return exactKey(x) === exactKey(row); })[0];
+          if (hit) return { person: hit, existed: true };
+        }
+      }
+      throw ins.error;
+    }
+    return { person: (ins.data || [])[0] || null, existed: false };
+  }
+
+  // Put one directory person on to N projects, as stakeholder_map rows.
+  // ⚠️ The person fields are MIRRORED on to each row deliberately — the register
+  // table, the CSV export, the offline cache and the portfolio roll-up all read
+  // `row.name` directly, which is why the migration kept those columns.
+  // ⚠️ Projects the person is already on are SKIPPED, never inserted twice, and
+  // reported back so the caller can say so rather than silently doing less.
+  async function assignToProjects(sb, person, projectIds, uid, existingProjectIds) {
+    var already = {};
+    (existingProjectIds || []).forEach(function (p) { already[p] = 1; });
+    var todo = (projectIds || []).filter(function (p) { return p && !already[p]; });
+    if (!todo.length) return { inserted: 0, skipped: (projectIds || []).length, rows: [] };
+
+    var rows = todo.map(function (pid) {
+      var r = { project_id: pid, stakeholder_id: person.id, created_by: uid };
+      PERSON_FIELDS.forEach(function (f) { if (person[f] != null) r[f] = person[f]; });
+      return r;
+    });
+    var ins = await sb.from(MAP).insert(rows).select('id,project_id');
+    if (ins.error) throw ins.error;
+    // ⚠️ Count what came BACK, not what was sent. `stakeholder_map_ins` requires
+    //    can_access_project(project_id), and an insert the policy refuses does not
+    //    silently succeed here — but reporting the returned count keeps the caller
+    //    honest if that ever changes.
+    var got = (ins.data || []).length;
+    return { inserted: got, skipped: (projectIds || []).length - todo.length,
+             short: todo.length - got, rows: ins.data || [] };
+  }
+
+  // Fold `loser` into `winner`: re-point the loser's project rows, fill the winner's
+  // empty fields from the loser, then delete the loser.
+  //
+  // ⚠️⚠️ THIS CAN SILENTLY DO NOTHING, AND THAT IS WHY IT COUNTS ROWS.
+  //   `stakeholder_map_upd` is `is_writer() and can_access_project(project_id) and
+  //   (created_by = auth.uid() or is_admin())`, and PostgREST answers an RLS-filtered
+  //   UPDATE with **200 and zero rows**. So re-pointing rows another planner created
+  //   returns success and changes nothing. Every write below is `.select('id')`ed and
+  //   the count compared against what was asked for; a shortfall is REPORTED, never
+  //   rounded up to "merged".
+  //
+  // ⚠️⚠️ IT REFUSES when both people are on the SAME project, rather than resolving it.
+  //   Re-pointing would put two rows for one person on one project; deleting one would
+  //   destroy that project's own assessment of them (influence, interest, engagement
+  //   plan) — real, unrecoverable work, and not something a merge dialog should decide.
+  //   The caller is told which projects to settle by hand first.
+  async function mergePeople(sb, winner, loser, usage) {
+    if (!winner || !loser || winner.id === loser.id) throw new Error('Pick two different people.');
+    var wProj = (usage[winner.id] || []), lProj = (usage[loser.id] || []);
+    var clash = lProj.filter(function (p) { return wProj.indexOf(p) !== -1; });
+    if (clash.length) {
+      return { ok: false, reason: 'both-on-project', projects: clash };
+    }
+
+    var out = { ok: true, repointed: 0, expected: lProj.length, filled: [], deleted: false };
+
+    if (lProj.length) {
+      var up = await sb.from(MAP).update({ stakeholder_id: winner.id })
+                       .eq('stakeholder_id', loser.id).select('id');
+      if (up.error) throw up.error;
+      out.repointed = (up.data || []).length;
+      if (out.repointed < out.expected) {
+        // ⚠ Stop here. Deleting the loser now would orphan the rows that did not move
+        //   (`on delete set null`), quietly turning them into unlinked legacy rows.
+        out.ok = false; out.reason = 'partial-repoint';
+        return out;
+      }
+    }
+
+    // Fill only what the winner is MISSING. ⚠ The loser never overwrites a value the
+    // winner already has — a merge is not a replace.
+    var patch = {};
+    PERSON_FIELDS.concat(['notes']).forEach(function (f) {
+      var wv = winner[f], lv = loser[f];
+      if ((wv == null || wv === '') && lv != null && lv !== '') { patch[f] = lv; out.filled.push(f); }
+    });
+    // ⚠️ photo_path and photo_thumb_path must come from the SAME person or a merge
+    //    pairs one person's photo with another's thumbnail — the identical trap the
+    //    backfill migration documents and solves with (array_agg(... order by ...))[1].
+    if (patch.photo_path || patch.photo_thumb_path) {
+      if (winner.photo_path || winner.photo_thumb_path) {
+        delete patch.photo_path; delete patch.photo_thumb_path;
+        out.filled = out.filled.filter(function (f) { return f.indexOf('photo_') !== 0; });
+      } else {
+        patch.photo_path = loser.photo_path || null;
+        patch.photo_thumb_path = loser.photo_thumb_path || null;
+      }
+    }
+    if (Object.keys(patch).length) {
+      patch.updated_at = new Date().toISOString();
+      var wu = await sb.from(DIR).update(patch).eq('id', winner.id).select('id');
+      if (wu.error) throw wu.error;
+      if (!(wu.data || []).length) { out.ok = false; out.reason = 'winner-update-refused'; return out; }
+    }
+
+    var del = await sb.from(DIR).delete().eq('id', loser.id).select('id');
+    if (del.error) throw del.error;
+    // ⚠ `stakeholders_del` is `is_planner()`. A `user` gets 200 and zero rows, so the
+    //   people are merged but the duplicate row survives — say so rather than claim it.
+    out.deleted = (del.data || []).length > 0;
+    if (!out.deleted) { out.ok = false; out.reason = 'delete-refused'; }
+    return out;
+  }
+
   window.PDStakeholders = {
     DIR: DIR, MAP: MAP, PERSON_FIELDS: PERSON_FIELDS, THRESHOLD: THRESHOLD,
     normName: normName, normOrg: normOrg, tokens: tokens,
     editWithin: editWithin, scorePair: scorePair, nameVariants: nameVariants,
     matchCandidates: matchCandidates, findExact: findExact, exactKey: exactKey,
-    missingTable: missingTable
+    missingTable: missingTable,
+    createPerson: createPerson, assignToProjects: assignToProjects,
+    mergePeople: mergePeople, personRow: personRow
   };
 })();
