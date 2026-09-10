@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Cash Flow · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910v9" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910w1" />
   <style>
     /* top-bar icon cluster (Refresh/Export/Print) — matches project-schedule's .ps-topbar-tools */
     .cf-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; }
@@ -27,7 +27,7 @@
     .cf-actions .pd-btn { padding:7px 12px; white-space:nowrap; }
     .cf-ctl-div { width:1px; align-self:stretch; min-height:24px; background:var(--pd-line); flex:none; }
     .cf-src { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; font-size:var(--pd-fs-sm); }
-    .cf-chip { display:inline-flex; align-items:center; gap:7px; padding:6px 12px; border-radius:999px; border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-muted); box-shadow:0 1px 2px rgba(0,0,0,.03); }
+    .cf-chip { display:inline-flex; align-items:center; gap:7px; padding:6px 12px; border-radius:999px; border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-muted); box-shadow:var(--pd-shadow); }
     .cf-chip .dot { width:8px; height:8px; border-radius:50%; background:var(--pd-line); flex:none; }
     .cf-chip.ok .dot { background:var(--pd-ok); } .cf-chip.ok { color:var(--pd-ink); }
     .cf-chip.warn .dot { background:#d99100; } .cf-chip.warn { color:var(--pd-ink); }
@@ -35,16 +35,16 @@
 
     .cf-kpis { display:flex; flex-wrap:nowrap; gap:14px; margin-bottom:20px; overflow-x:auto; }
     .cf-kpi { flex:1 1 0; min-width:150px; position:relative; background:var(--pd-card); border:1px solid var(--pd-line); border-radius:10px; padding:16px 18px; min-height:96px;
-      box-shadow:0 1px 2px rgba(0,0,0,.04); transition:transform .12s ease, box-shadow .12s ease, border-color .12s ease; overflow:hidden; }
+      box-shadow:var(--pd-shadow); transition:transform .12s ease, box-shadow .12s ease, border-color .12s ease; overflow:hidden; }
     .cf-kpi::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--pd-line); transition:background .12s ease; }
-    .cf-kpi:hover { transform:translateY(-2px); box-shadow:0 6px 18px rgba(0,0,0,.10); border-color:var(--pd-red-mid,var(--pd-line)); }
+    .cf-kpi:hover { transform:translateY(-2px); box-shadow:var(--pd-shadow-lg); border-color:var(--pd-red-mid,var(--pd-line)); }
     .cf-kpi:hover::before { background:var(--pd-red); }
     .cf-kpi-l { font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--pd-muted); margin-bottom:7px; }
     .cf-kpi-v { font-size:var(--pd-fs-hero); font-weight:800; letter-spacing:-.01em; line-height:1.1; }
     .cf-kpi-s { font-size:var(--pd-fs-xs); color:var(--pd-muted); margin-top:5px; line-height:1.4; }
     .cf-ok { color:var(--pd-ok-text); } .cf-bad { color:var(--pd-bad-text); }
 
-    .cf-card { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:10px; padding:18px 20px; margin-bottom:18px; box-shadow:0 1px 2px rgba(0,0,0,.04); }
+    .cf-card { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:10px; padding:18px 20px; margin-bottom:18px; box-shadow:var(--pd-shadow); }
     .cf-card h3 { margin:0 0 4px; font-size:var(--pd-fs-md); font-weight:700; letter-spacing:-.01em; }
     .cf-card .sub { font-size:var(--pd-fs-sm); color:var(--pd-muted); margin:0 0 14px; line-height:1.5; }
     .cf-svg { width:100%; height:auto; display:block; }

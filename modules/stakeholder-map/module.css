@@ -178,7 +178,7 @@ html.pd-dark .sm-a-monitor { --sm-t:#d1d5db; }
 .sm-card { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius);
   box-shadow:var(--pd-shadow); padding:14px; cursor:pointer; transition:box-shadow .12s, transform .12s;
   display:flex; flex-direction:column; gap:10px; }
-.sm-card:hover { box-shadow:0 3px 14px rgba(0,0,0,.14); transform:translateY(-1px); }
+.sm-card:hover { box-shadow:var(--pd-shadow-md); transform:translateY(-1px); }
 .sm-card-top { display:flex; gap:12px; align-items:flex-start; }
 .sm-card-av { flex:none; line-height:0; }
 .sm-card-av.zoomable { cursor:zoom-in; }

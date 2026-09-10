@@ -853,7 +853,7 @@
    image with text floating above it directly on the page background. */
 .ppr-pane {
   margin: 0; background: var(--pd-card); border: 1px solid var(--pd-line);
-  border-radius: var(--pd-radius); padding: 12px; box-shadow: 0 1px 3px rgba(0, 0, 0, .06);
+  border-radius: var(--pd-radius); padding: 12px; box-shadow: var(--pd-shadow);
 }
 /* A small coloured chip instead of plain muted text — Current is the stage
    being reported on (brand-red, filled); Previous is context (outlined,

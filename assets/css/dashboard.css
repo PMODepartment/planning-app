@@ -177,6 +177,13 @@
   --pd-shadow: 0 1px 3px rgba(0,0,0,.07);       /* = PRC --shadow-sm */
   --pd-shadow-md: 0 4px 12px rgba(0,0,0,.08);
   --pd-shadow-lg: 0 8px 24px rgba(0,0,0,.10);
+  /* ⚠️ A FOURTH RUNG, and it is not invented: `.pd-modal` already carried EXACTLY these two
+     values (0 20px 60px at .30 light / .60 dark) as a hand-maintained pair. The shadow scale
+     stopped at -lg, so the top surface in the app had nowhere to point and kept its own
+     literal plus its own `html.pd-dark` override. Promoting it is zero visual change and
+     deletes that override — the token remaps for dark like every other one. The radius scale
+     already runs to -xl; the shadow scale now matches it. */
+  --pd-shadow-xl: 0 20px 60px rgba(0,0,0,.30);
   --pd-sidebar-w: 240px;
   /* ⚠️ The sidebar surface is its OWN token, not --pd-ink. PRC paints its panel
      --mw-black (#231F20) and --pd-ink happens to be that same value in light
@@ -806,7 +813,7 @@ button.pd-psel-btn { height: auto; min-height: 30px; padding-top: 4px; padding-b
 .pd-toast {
   position: fixed; bottom: 24px; left: 50%; transform: translate(-50%, 20px);
   background: var(--pd-dark); color: #fff; padding: 11px 18px; border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0,0,0,.2); opacity: 0; transition: all .25s ease; z-index: var(--pd-z-toast); font-size: var(--pd-fs-md);
+  box-shadow: var(--pd-shadow-lg); opacity: 0; transition: all .25s ease; z-index: var(--pd-z-toast); font-size: var(--pd-fs-md);
 }
 .pd-toast.show { opacity: 1; transform: translate(-50%, 0); }
 .pd-toast-ok { background: var(--pd-ok); }
@@ -817,7 +824,7 @@ button.pd-psel-btn { height: auto; min-height: 30px; padding-top: 4px; padding-b
 .pd-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45);
   display: flex; align-items: center; justify-content: center; z-index: var(--pd-z-modal); padding: 20px; }
 .pd-modal { background: var(--pd-card); color: var(--pd-ink); border-radius: 12px; max-width: 520px; width: 100%;
-  max-height: 90vh; overflow-y: auto; padding: 22px; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+  max-height: 90vh; overflow-y: auto; padding: 22px; box-shadow: var(--pd-shadow-xl); }
 /* Header/body/footer sub-structure (used by resource-loading, cash-flow, project-schedule's
    activity modal). Header/footer escape the modal's own 22px padding via negative margins so
    they can span full-width with their own border, while modals that dump raw HTML straight
@@ -920,7 +927,7 @@ button.pd-psel-btn { height: auto; min-height: 30px; padding-top: 4px; padding-b
 .pd-theme-toggle:hover { background: var(--pd-bg); }
 .pd-theme-toggle-float {
   position: fixed; top: 16px; right: 16px; z-index: 60; border-radius: 50%;
-  box-shadow: 0 1px 6px rgba(0,0,0,.18);
+  box-shadow: var(--pd-shadow-md);
 }
 
 /* ---- Responsive ---- */
@@ -964,10 +971,10 @@ html.pd-dark {
   --pd-shadow: 0 1px 3px rgba(0,0,0,.5);
   --pd-shadow-md: 0 4px 12px rgba(0,0,0,.55);
   --pd-shadow-lg: 0 8px 24px rgba(0,0,0,.6);
+  --pd-shadow-xl: 0 20px 60px rgba(0,0,0,.60);
   background: #1C1C1C;
 }
 /* Modal/overlay shadows read better darker */
-html.pd-dark .pd-modal { box-shadow: 0 20px 60px rgba(0,0,0,.6); }
 html.pd-dark .pd-module-card:hover { box-shadow: var(--pd-shadow-md); }
 
 /* ============================================================================

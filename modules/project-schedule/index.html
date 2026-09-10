@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910v9" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910w1" />
   <style>
     .ps-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
     .ps-tab { padding:8px 20px; cursor:pointer; font-weight:700; font-size:var(--pd-fs-base); color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
@@ -1970,7 +1970,7 @@
     .ps-chart-hint { font-size:var(--pd-fs-xs); color:var(--pd-muted); }
     /* Charts workspace — large, wrapping grid of independent, resizable chart cards */
     .ps-chart-ws { display:flex; flex-wrap:wrap; gap:16px; align-items:flex-start; padding:4px 2px 40px; }
-    .ps-chart-card { position:relative; border:1px solid var(--pd-line); border-radius:10px; background:var(--pd-card); box-shadow:0 1px 3px rgba(0,0,0,.06); display:flex; flex-direction:column; overflow:hidden; }
+    .ps-chart-card { position:relative; border:1px solid var(--pd-line); border-radius:10px; background:var(--pd-card); box-shadow:var(--pd-shadow); display:flex; flex-direction:column; overflow:hidden; }
     .ps-chart-tb { display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding:8px 10px; border-bottom:1px solid var(--pd-line); background:var(--pd-bg,transparent); }
     .ps-chart-tb .pd-select { font-size:var(--pd-fs-sm); padding:3px 6px; }
     .ps-chart-datatog { font-size:var(--pd-fs-xs); padding:3px 8px; }
@@ -2005,7 +2005,7 @@
     .ps-prog-table td.ps-prog-cc .ps-prog-phys { display:inline-block; }
     .ps-prog-no { display:block; text-align:center; color:var(--pd-muted); font-variant-numeric:tabular-nums; }
     /* Per-cell format popover */
-    .ps-cellfmt { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.18); padding:8px; min-width:210px; }
+    .ps-cellfmt { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; box-shadow:var(--pd-shadow-lg); padding:8px; min-width:210px; }
     .ps-cf-row { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
     .ps-cf-row:last-child { margin-bottom:0; }
     .ps-cf-row label { font-size:var(--pd-fs-xs); color:var(--pd-muted); display:flex; align-items:center; gap:5px; }
@@ -3441,7 +3441,7 @@
       padding:8px 10px; border:1px solid var(--pd-line); border-radius:9px; background:var(--pd-bg); }
     .sbld-towerbar-l { font-size:var(--pd-fs-xs); text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); font-weight:700; margin-right:2px; }
     /* relationship dialog */
-    .sbld-linkdlg { position:fixed; z-index:600; background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.2); padding:10px; width:224px; }
+    .sbld-linkdlg { position:fixed; z-index:600; background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; box-shadow:var(--pd-shadow-lg); padding:10px; width:224px; }
     .sbld-ld-h { font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); margin-bottom:6px; }
     .sbld-ld-row { display:flex; align-items:center; gap:6px; margin-bottom:8px; font-size:var(--pd-fs-sm); }
     .sbld-ld-row.sbld-ld-foot { justify-content:space-between; margin-bottom:0; }

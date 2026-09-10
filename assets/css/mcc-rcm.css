@@ -109,7 +109,7 @@ html.pd-dark .rcm-p4, html.pd-dark .rcm-res-low { --rcm-t: #4ade80; }
   background: color-mix(in srgb, var(--rcm-c, transparent) 14%, var(--pd-card));
   transition: box-shadow .12s, transform .12s;
 }
-.rcm-gcell:hover { box-shadow: 0 2px 10px rgba(0,0,0,.14); transform: translateY(-1px); }
+.rcm-gcell:hover { box-shadow: var(--pd-shadow-md); transform: translateY(-1px); }
 .rcm-gcell.rcm-cell-active { outline: 2px solid var(--pd-red); outline-offset: 1px; }
 .rcm-gcell-lab {
   display: block; font-size: var(--pd-fs-micro); font-weight: 800; letter-spacing: .02em;

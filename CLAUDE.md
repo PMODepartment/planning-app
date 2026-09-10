@@ -95,6 +95,77 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+
+### 2026-09-10 (w1) — 42 elevation recipes become 4 rungs, and the shadow scale grows the one it was missing
+
+Third item of the second-pass audit. **174 box-shadow declarations, 97 distinct values** — but the
+headline number is misleading, and that is the whole point of this entry.
+
+#### ⚠️⚠️ A BOX-SHADOW IN THIS APP IS DOING FIVE DIFFERENT JOBS, AND ONLY ONE OF THEM IS ELEVATION
+A blanket sweep onto `--pd-shadow*` would have deleted **every accent rail in the app**. Classified by
+what the shadow actually does rather than by how it reads:
+
+| job | shape | count | verdict |
+|---|---|---|---|
+| **elevation** | offset + blur, not inset | **50 decls / 42 values** | the only bucket the tokens are for |
+| rail (accent bar) | `inset 3px 0 0 …` | 52 / 32 | a left rail, not a shadow — untouched |
+| ring (outline substitute) | `0 0 0 Npx` | 14 / 10 | handled in the focus pass (v9) |
+| hairline (border as shadow) | `inset 0 0 0 1px` | 13 / 10 | a border — untouched |
+| already a token | | 45 | |
+
+**After: elevation is 29 declarations / 26 values, and token use goes 45 → 65.**
+
+#### The new rung is not invented
+`--pd-shadow-xl: 0 20px 60px` — **`.pd-modal` already carried exactly those values**, at `.30` light and
+`.60` dark, as a hand-maintained pair with its own `html.pd-dark` override. The scale stopped at `-lg`,
+so the top surface in the app had nowhere to point. Promoting it is **zero visual change** and deletes
+the override, because the token remaps for dark like every other one.
+⚠️ **Verified rather than assumed** — that deletion is the one edit here that could fail silently, so
+the modal was rendered in both themes: **`rgba(0,0,0,0.3) 0 20px 60px` light / `rgba(0,0,0,0.6)` dark**,
+byte-for-byte what the deleted rule used to provide. The radius scale already ran to `-xl`; the shadow
+scale now matches it.
+
+#### 21 elevation shadows deliberately NOT migrated, each for a reason
+Scoping this was most of the work. The excluded ones are not laziness — the token would be *wrong*:
+- ⚠️ **Shadows drawn on PHOTOGRAPHS or a dark lightbox** (`.bim-pin`, `.pp-plancluster`, `.bim-regpt`,
+  `.pp-lb-*`, `.ppr-kpoverlay`, `.ppr-keyplan`, `.ppr-stack*`, `.bim-*handle-el`). Their `.35–.50` alpha
+  is deliberate: `--pd-shadow`'s `.07` is **invisible over an image**. Same reasoning that kept the
+  white pin rings in the colour pass.
+- ⚠️⚠️ **DIRECTIONAL shadows on slide-in panels** — `.mw-drawer` `-12px 0 34px`, `.ps-health-panel`
+  `-8px 0 28px`, `.pd-sidebar` `0 0 40px`. Every token is vertical (`0 8px 24px`), so swapping them
+  **moves the light source** and throws the shadow to the wrong side of a panel that slides in from the
+  right. This is the one that would have looked like a rendering fault.
+- ⚠️ **Chart furniture doing legibility work, not elevation** (`.ps-bar`, `.ps-mile-bl`,
+  `.ps-vs-tlhandle`, `.ps-vs-fz-track .hd`) — separation against a busy gantt, where the token's alpha
+  is roughly half what the job needs.
+- Two-layer composites tuned to a specific look (`.ps-vs-tower`, `.sbld-stacktower`) and the
+  `dev-mobile` device mockup (`.dv-shell`).
+
+#### Verified
+- **Rendered in both themes**: all 8 sampled migrated surfaces resolve to a real shadow and **all 8
+  differ between light and dark**, so every one is going through the token rather than a stuck literal.
+- Each edit is located **by selector** and replaces only that rule's `box-shadow` value, so a moved
+  rule fails loudly instead of patching the wrong thing — **19 of 19 matched**.
+- **42 JS files + 30 inline blocks across 29 pages parse, 0 failures** (bar the documented
+  progress-photos false positive). Braces balanced, 0 NUL bytes.
+- ⚠️ **A bug in my own classifier, caught because the answer was implausible.** The first run reported
+  **zero** elevation shadows and 64 "other". Cause: in `0 8px 24px` the **first length is unitless**, so
+  a `/(-?[\d.]+)px/` findall returned only two numbers and every elevation shadow fell through the
+  `len(nums) >= 3` test. An audit that reports nothing in its main category is reporting on itself.
+- `?v=` → `20260910w1`. ⚠️ **Not `v10`** — `v10` sorts *before* `v9` lexically, which is the sorting
+  trap this log recorded two entries ago in its own right.
+- ⚠️ **Not verified signed in.** Shadows are measured against the shipped stylesheets in a harness; no
+  real card, menu or modal has been seen on a live page.
+
+#### Still open from the second-pass audit
+- **No spacing scale exists at all** — 924 `gap` declarations in **42 distinct values**, plus padding
+  and margin untouched. The system has type, colour, radius, shadow and z-index tokens and **nothing
+  for rhythm**, which is the largest remaining gap.
+- **460 off-scale `border-radius` declarations in 24 values** — though ~165 are rung values merely
+  written as literals, i.e. a no-visual-change cleanup, and the 2026-09-03 (r) decision to leave
+  small-chrome radii alone still stands for the rest.
+- `.pp-lightbox` shares `z-index: 900` with `.pd-modal-overlay`, so ties resolve by DOM order.
+
 ### Trace over another floor, front/rear on the drawing, zone colours, a 3D hover trace (2026-09-10) — jasantos2
 
 Owner: *"For uniformity of the sizes of the floor plans … show the overview of the other floor
