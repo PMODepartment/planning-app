@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Resource &amp; Role Master · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910w9" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910x1" />
   <style>
     /* Uniform module chrome (matches every other module). 2026-08-30: modules
        gained a persistent sidebar (MODULE_CONTRACT.md) — .pd-content no longer
@@ -133,6 +133,13 @@
         .rl-filters > * { flex: 1 1 100%; min-width: 0; }
         .rl-search-input { width: 100%; }
         .rl-form-grid { grid-template-columns: 1fr; }
+        /* ⚠️ `.rl-matrix` freezes `:first-child` with no width AND `white-space:nowrap` on every
+           cell, so a long resource name makes the frozen zone as wide as the name. Capped at the
+           app's 132px with an ellipsis. ⚠️ The table actually on screen here is `.rl-table`,
+           which measured 0 frozen columns at 375px (it just scrolls, correctly) — `.rl-matrix`
+           is a different view I could not reach signed in, so this is the pattern applied. */
+        .rl-matrix th:first-child, .rl-matrix td:first-child {
+          max-width: 132px; overflow: hidden; text-overflow: ellipsis; }
       }
     </style>
 </head>

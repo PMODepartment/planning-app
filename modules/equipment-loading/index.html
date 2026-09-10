@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Equipment Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910w9" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910x1" />
   <style>
     /* Uniform module chrome (matches every other module). 2026-08-30: modules
        gained a persistent sidebar (MODULE_CONTRACT.md) — .pd-content no longer
@@ -359,6 +359,16 @@
       .eq-chart { min-width: 620px; }
       .eq-kpis { grid-template-columns: repeat(2, 1fr); gap:8px; }
       .eq-form-grid { grid-template-columns:1fr; }
+      /* ⚠️⚠️ Same frozen-column problem as Manpower Loading, which this module shares its UI
+         with — measured live at 375px: `.eq-mx` froze 150px + 84px = 234px of a 353px wrapper,
+         leaving a 119px readable window, about two 46px month columns out of 47. `.eq-gt` uses
+         the same c1/c2 pair. Same fix, and it is the app's established one (material-submittal,
+         cash-flow, portfolio-overview all narrow col 1 and unfreeze col 2): keep ONE frozen
+         label column at 132px and let the second scroll with the body. */
+      .eq-mx th.eq-c1, .eq-mx td.eq-c1,
+      .eq-gt th.eq-c1, .eq-gt td.eq-c1 { width:132px; min-width:132px; max-width:132px; }
+      .eq-mx th.eq-c2, .eq-mx td.eq-c2,
+      .eq-gt th.eq-c2, .eq-gt td.eq-c2 { position:static; }
     }
   </style>
 </head>

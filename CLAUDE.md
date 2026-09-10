@@ -127,6 +127,135 @@ forty-storey tower (top and bottom always kept, overlaps dropped), the grade lin
 `Floors · Labelled | Plain` toggle. **140 assertions across eight suites, 0 failing** — the colour
 table above is the output of executing the old rule and the new one on the same palette, not a
 description of them.
+### 2026-09-10 (x2) — Frozen columns had eaten the phone table, and a sticky rail taller than the window cannot be scrolled to its end
+
+Two owner reports in one pass: *"the table in the phone view can't be read properly due to the frozen
+columns. Let's check for other modules as well"* and *"see side panel its short in the schedule setup
+page. Let's do global check for this if there are cases that this is happening on other modules."*
+Both asked for the same thing — the global check — and in both cases **the app already contained the
+correct answer in other modules**; the fix is adoption, not invention.
+
+#### ⚠️⚠️ THE FROZEN COLUMNS WERE CONSUMING THE DATA THEY EXIST TO LABEL
+Measured on the live signed-in page at 375px, wrapper 353px:
+
+| table | frozen | readable window | data columns visible |
+|---|---|---|---|
+| `.mp-mx` (Manpower) | 190 + 96 = **286px** | **67px** (19%) | **1 of 47** |
+| `.mp-gt` (Manpower totals) | 210 + 150 = **360px** | **negative** | the data starts past the right edge |
+| `.eq-mx` (Equipment) | 150 + 84 = **234px** | 119px | ~2 of 47 |
+
+A frozen column exists so the label stays beside the data. At these widths it was replacing it.
+
+⚠️ **Three modules had already solved this and these never adopted it** — material-submittal
+(`.ms-fz2 { position: static }` + fz1 190→132), cash-flow (`.lbl` 200→118), portfolio-overview
+(`.po-eq-c1` 236→150). All three do the same thing: **keep ONE frozen column, narrowed, and let the
+second scroll away with the body.** Applied here with material-submittal's 132px reused rather than a
+fourth number invented. Result at 375px: **frozen 286→132, readable window 89→243px** (harness), and
+`.eq-mx` **234→132 / 141→243**.
+
+Four more tables freeze `:first-child` with **no declared width**, so the frozen zone is as wide as its
+longest label — the same failure, data-dependent instead of hard-coded: `.sc-table`, `.pr-ttable`,
+`.pr-ed`, `.rl-matrix`. Capped at the same 132px with an ellipsis.
+⚠️ **Those four are NOT measured live** — each sits behind a view I could not reach signed in. They are
+the pattern applied, and a cap can only narrow, so it cannot make the current state worse. The
+Manpower and Equipment numbers above *are* measured. `.rl-table`, the one actually on screen in
+Resource Loading, measured **0 frozen columns** and correctly just scrolls — left alone.
+
+#### ⚠️⚠️ A TALL STICKY COLUMN IS UNREACHABLE AT ITS BOTTOM
+`position: sticky` does **not** scroll its own content. Once the element is taller than the window the
+browser simply lets the page scroll past it, so the last items are only reachable if the *sibling*
+column happens to be long enough to scroll that far. Schedule Setup's rail is 12 steps ≈ **578px**; on
+a laptop window with browser chrome (~480px of viewport) steps 11–12 sit **98px below the window with
+no way to reach them**. That is the "short side panel".
+
+The fix is the **pair**, never `max-height` alone: `max-height: calc(100vh - 24px)` (derived from the
+rail's own `top:12px`, not a magic number) **+ `overflow-y: auto`**, plus `overscroll-behavior: contain`
+so reaching the rail's end does not start scrolling the page behind it.
+
+#### The global check, and what it excluded
+16 rules use `position: sticky` with a `top` offset. ⚠️ **11 of them are one-row BARS** — sticky table
+headers, `.pd-topbar`, `.cca-gr-head`, `.pp-grid-head`, `.ps-net-head`, `.sbld-libL1` and the like —
+which are one row tall and *cannot* have this bug; sweeping them in would have been 11 pointless edits.
+**2 were already capped**, and they are the pattern: `.pd-sidebar` is `sticky; top:0; height:100vh;
+overflow-y:auto`, `.po-dir-bands` uses max-height. ⚠️ My first classifier reported `.pd-sidebar` as a
+defect because it only looked for `max-height` — `height:100vh` caps just as well. **The 3 genuine gaps
+were all in project-schedule**: `.sbld-railcol`, `.sbld-rail` (Cost Loading's rail is not wrapped in a
+railcol) and `.sbld-tower` (a tower card's zone list grows with the project).
+
+#### Verified
+- ⚠️ **The contrast case is built from `git show HEAD:`**, so the BEFORE genuinely fails: at a 480px
+  window the old rail is 578px, `fitsWindow:false`, no scrollbar, **last step unreachable**. After:
+  `max-height:456px`, `overflow-y:auto`, `clientHeight 456 ≤ 480`, `scrollHeight 578` → its own
+  scrollbar, **last step reachable**.
+- ⚠️ **My first rail test used a 600px window, where the 578px rail FITS — so BEFORE and AFTER both
+  passed and it proved nothing.** Re-run at 480px, which is what the owner's screenshot shows.
+- Frozen columns at 375px, both from the real module stylesheets: `.mp-mx` 286→132px frozen,
+  `.eq-mx` 234→132px, each leaving 243px readable.
+- 42 JS files + 29 inline blocks parse, 0 failures; 0 brace mismatches; 0 NUL bytes across 9 files.
+- `MODULE_V` → `20260910x2` (six module pages changed; dashboard.css did not, so it stays at `x1`).
+- ⚠️ **Not yet re-verified on the live site** — pushed and awaiting deploy at the time of writing.
+
+
+### 2026-09-10 (x1) — Checking (w9) on the live signed-in page found three more targets and one dead line I had written
+
+⚠️ (w9) was measured in an offline harness that rendered **only the topbar**. Opening the deployed
+site signed in, at 375px, immediately produced things that harness could not see — plus a correction
+to a claim I made in (w9)'s own changelog. Recorded because the lesson is the harness's blind spot,
+not the pixels.
+
+#### ⚠️⚠️ A CLAIM IN (w9) WAS WRONG: `min-*` DOES BEAT A FIXED `height`
+(w9) added `.pd-filttoggle, .il-topfilttoggle, .pp-topfilttoggle { height: auto; width: auto; }` with
+a comment asserting *"a `min-*` cannot beat a fixed `height`"*. **That is false.** `min-height` and
+`min-width` always clamp the used size above `height`/`width` (CSS 2.1 §10.7). Measured on the live
+page: forcing `height:34px !important; width:34px !important` back onto a real `.pd-filttoggle` at
+375px still laid out **44×44**; stripping the `min-*` pair instead laid out **34×34**. The release was
+also **unreachable** regardless — the base `.pd-filttoggle` rule sits *below* the phone media block in
+the file, so at equal specificity it wins on source order. Line deleted, comment replaced with the
+measurement. The (w9) fix itself was never in doubt; the `min-*` pair was doing all of the work.
+
+#### Three real targets the topbar-only harness could not reach
+| | was | now | why it was missed |
+|---|---|---|---|
+| `.pd-nav-sibling` | 40px | 44 | in the sidebar **drawer** — harness had no sidebar |
+| `.pd-avatar` | 40px | 44 | phone block already grew it 36→40 and stopped 4px short |
+| checkbox / radio `<label>` | **19px** | 44 | in module CONTENT, which needs data to render |
+
+`.pd-sidebar nav a` already had `min-height: var(--pd-tap)` in the phone block; `.pd-nav-sibling` is
+the same kind of row (the sibling-app links in `.pd-nav-foot`) and was never added to it — **the exact
+omission pattern (w9) fixed for `.pd-filttoggle`**, one rule further up the same file.
+
+#### ⚠️⚠️ THE CHECKBOX LABELS NEEDED A `display`, NOT JUST A `min-height`
+A checkbox is ~13×13 and `font-size` cannot size it, so the **`<label>` is the tap target** — and those
+measured **19px** tall, under this file's own 44px bar and under WCAG 2.5.8's 24px. `:has()` is what
+makes them targetable at all (there is no parent selector otherwise) — verified supported before use.
+⚠️ **`min-height` alone did nothing**: it does not apply to a non-replaced **inline** box, and a
+`<label>` is inline by default. Measured: `min-height` computed as 44px while the label still laid out
+at **17px**. Adding `display: inline-flex; align-items: center` made it 44. `inline-flex`, not `flex`,
+so a row of labels still flows inline instead of each claiming its own line — and a label with **no**
+checkbox inside is not matched and stays inline at 19px, checked as a control case rather than assumed.
+
+#### Also confirmed on the live page, not just asserted
+- **`.mp-mxwrap` is `overflow-x: auto`, 353px wide over a 2446px table, and scrolls.** The matrix
+  columns *do* extend past the viewport — inside their own scroll container, which is why the page
+  itself does not move. This is independent confirmation that (w9)'s "90 unwrapped tables" was noise.
+- **The `NotFoundError` from `theme.js?v=…w4` in the console was a stale buffered entry** from the
+  tab's previous page load, not a live failure: the page fetched `theme.js?v=20260910w7` and
+  `.pd-theme-toggle` is present in the DOM. Checked `performance.getEntriesByType('resource')` rather
+  than trusting the console line.
+
+#### Verified
+- **12 cases × 2 widths against the edited stylesheet. At 375px, 11 of 12 at ≥44px**; the 12th is the
+  control (a plain `<label>` with no input, correctly left inline at 19px).
+- **At 1200px every case is byte-identical to before**: filttoggle 34×34, avatar 36, nav-sibling 38,
+  sidebar nav a 37, labels 19, bare input 22 @13.33px, `.pd-input` 32 @12.5px.
+- Live signed-in home at 375px: **0 sideways scroll, 0 elements past the viewport, 0 small taps**, and
+  the home search — a bare `<input>`, the exact case (w9) fixed — computes **16px / 44px**.
+- 42 JS files + 29 inline blocks parse, 0 failures; 530/530 braces; 0 NUL bytes across 30 files.
+- `?v=` → `20260910x1` on dashboard.css only (theme.js stays at `w7`, modules-grid.js at `w9` — neither
+  changed). ⚠️ `x1`, not `w10`: `w10` sorts *before* `w9`.
+- ⚠️ **Still not verified on a real device.** Real iOS Safari's zoom is the behaviour being designed
+  around and an emulated viewport cannot exercise it.
+
 
 ### 2026-09-10 (w9) — Phone sweep: every form in the app zoomed iOS, and the filter funnel was the smallest target on screen
 

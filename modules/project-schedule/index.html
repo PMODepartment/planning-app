@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910w9" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910x1" />
   <style>
     .ps-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
     .ps-tab { padding:8px 20px; cursor:pointer; font-weight:700; font-size:var(--pd-fs-base); color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
@@ -2716,7 +2716,20 @@
        sequence with it. Each circle keeps the step's full title as its tooltip.
        ⚠️ One class on .sbld-wrap drives all of it, so the two rails that share these classes
        (Schedule Setup and Cost Loading) cannot end up in different states. */
-    .sbld-railcol { position:sticky; top:12px; display:flex; flex-direction:column; gap:6px; min-width:0; }
+    /* ⚠️⚠️ A TALL STICKY COLUMN IS UNREACHABLE AT ITS BOTTOM. Owner 2026-09-10: *"see side panel
+       its short in the schedule setup page."* `position:sticky` does NOT scroll its own content —
+       once the element is taller than the window the browser simply lets the page scroll past it,
+       so the last steps are only reachable if the SIBLING column happens to be long enough to
+       scroll that far. On a short step (and 12 steps at ~48px is already ~600px plus the toggle)
+       the rail is cut off at the viewport edge and steps 11-12 cannot be reached at all.
+       The fix is the pair, never `max-height` alone: cap it to the window and give it its own
+       scrollbar. `--pd-sidebar-w`-style magic numbers are avoided by deriving from the 12px `top`.
+       ⚠️ This is the app's OWN pattern, not an invention — `.pd-sidebar` is `position:sticky;
+       top:0; height:100vh; overflow-y:auto`, and `.po-dir-bands` caps with max-height. A global
+       audit of every `position:sticky` with a `top` found 16, of which 11 are one-row bars that
+       cannot have this bug and 2 were already capped; these 3 rails were the only gap. */
+    .sbld-railcol { position:sticky; top:12px; display:flex; flex-direction:column; gap:6px; min-width:0;
+      max-height:calc(100vh - 24px); overflow-y:auto; overscroll-behavior:contain; }
     .sbld-railcol > .sbld-rail { position:static; top:auto; }
     .sbld-mintog { align-self:flex-start; display:inline-flex; align-items:center; gap:6px;
       border:1px solid var(--pd-line); border-radius:7px; background:var(--pd-card); color:var(--pd-muted);
@@ -2729,7 +2742,12 @@
     .sbld-wrap.sbld-railmin .sbld-step > span:not(.sbld-step-n) { display:none; }
     .sbld-wrap.sbld-railmin .sbld-step-t, .sbld-wrap.sbld-railmin .sbld-step-s,
     .sbld-wrap.sbld-railmin .sbld-step2ct { display:none; }
-    .sbld-rail { position:sticky; top:12px; display:flex; flex-direction:column; gap:4px; }
+    /* Same cap for the rail when it is the sticky element itself (Cost Loading's `#ps-cl-rail`
+       is not wrapped in a `.sbld-railcol`). ⚠️ Nested inside one, the rule above already scrolls
+       and this one is made `position:static` a few lines up — so the two never both scroll. */
+    .sbld-rail { position:sticky; top:12px; display:flex; flex-direction:column; gap:4px;
+      max-height:calc(100vh - 24px); overflow-y:auto; overscroll-behavior:contain; }
+    .sbld-railcol > .sbld-rail { max-height:none; overflow-y:visible; }
     .sbld-step { display:flex; align-items:flex-start; gap:10px; text-align:left; padding:9px 11px; border:1px solid transparent; border-radius:var(--pd-radius-md); background:none; cursor:pointer; font:inherit; color:var(--pd-ink); }
     .sbld-step:hover { background:var(--pd-bg); }
     .sbld-step.on { background:var(--pd-card); border-color:var(--pd-line); box-shadow:var(--pd-shadow); }
@@ -3104,7 +3122,11 @@
     .sbld-znrow .pd-input { height:30px; font-size:var(--pd-fs-base); }
     .sbld-zntag { flex:none; font-size:var(--pd-fs-micro); font-weight:800; letter-spacing:.05em; border:1px solid; border-radius:var(--pd-radius); padding:2px 5px; }
     .sbld-znhint { font-size:var(--pd-fs-sm); color:var(--pd-muted); padding:2px 2px 4px; font-style:italic; }
-    .sbld-tower { border:1px solid var(--pd-line); border-radius:10px; padding:12px; background:var(--pd-bg); position:sticky; top:12px; }
+    /* ⚠️ Third of the three uncapped sticky columns the audit found. A tower card holds a header
+       plus its zone list, so on a project with many zones it outgrows the window exactly like the
+       step rail and its bottom zones become unreachable. Same pair, same derivation from `top`. */
+    .sbld-tower { border:1px solid var(--pd-line); border-radius:10px; padding:12px; background:var(--pd-bg); position:sticky; top:12px;
+      max-height:calc(100vh - 24px); overflow-y:auto; overscroll-behavior:contain; }
     .sbld-towerh { display:flex; align-items:center; gap:7px; font-size:var(--pd-fs-base); font-weight:700; margin-bottom:8px; }
     .sbld-scope-col, .sbld-scope-row { cursor:pointer; user-select:none; }
     .sbld-scope-col:hover, .sbld-scope-row:hover { color:var(--pd-red); text-decoration:underline; }

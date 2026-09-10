@@ -1349,8 +1349,11 @@ body { overflow-x: clip; }
     margin: 0; padding: max(22px, env(safe-area-inset-top)) 20px 18px;
   }
 
-  /* Nav rows are the primary touch targets on a phone. */
-  .pd-sidebar nav a { min-height: var(--pd-tap); }
+  /* Nav rows are the primary touch targets on a phone.
+     ⚠️ `.pd-nav-sibling` (the sibling-app links in `.pd-nav-foot`) is the SAME KIND OF ROW and
+     was not in this rule — measured 40px on the live drawer. Same omission pattern as
+     `.pd-filttoggle` below: a 44px list a later-added component never joined. */
+  .pd-sidebar nav a, .pd-nav-sibling { min-height: var(--pd-tap); }
 
   /* Scrim behind the open drawer (injected by ui.js). */
   .pd-scrim { display: block; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 60;
@@ -1426,10 +1429,31 @@ body { overflow-x: clip; }
   .pd-filttoggle, .il-topfilttoggle, .pp-topfilttoggle {
     min-width: var(--pd-tap); min-height: var(--pd-tap); border-radius: var(--pd-radius-md);
   }
-  /* ⚠️ `height`/`width` are set as fixed 34px on those three, and a `min-*` cannot beat a
-     fixed `height`. Release it so the minimum above can actually take effect. */
-  .pd-filttoggle, .il-topfilttoggle, .pp-topfilttoggle { height: auto; width: auto; }
-  .pd-avatar { width: 40px; height: 40px; }
+  /* ⚠️⚠️ I FIRST WROTE "a `min-*` cannot beat a fixed `height`" HERE AND RELEASED THE 34px TO
+     `auto`. THAT IS WRONG, and measuring on the live page is what caught it: `min-height` and
+     `min-width` ALWAYS clamp the used size above `height`/`width` (CSS 2.1 §10.7), so the
+     min-* pair above is sufficient on its own. Forcing `height:34px !important` back on a real
+     `.pd-filttoggle` at 375px still measured 44x44; stripping the min-* pair measured 34x34.
+     The release was also unreachable anyway — the base `.pd-filttoggle` rule lives BELOW this
+     media block in the file, so at equal specificity it wins on source order. Do not re-add it.
+
+     ⚠️ 40px was the previous value here, and the base rule is 36px — so this block was already
+     growing the avatar toward the target and stopped 4px short. It is a real button (it opens
+     the account menu) and measured 40px on the live topbar. */
+  .pd-avatar { width: var(--pd-tap); height: var(--pd-tap); }
+
+  /* ⚠️ A checkbox/radio is ~13x13 and font-size cannot size it, so the LABEL is the tap target
+     — and these measured 19px tall on the live filter panels, under this file's own 44px bar
+     and under WCAG 2.5.8's 24px. `:has()` is what makes this targetable at all (there is no
+     parent selector otherwise); verified supported, and the whole filter panel grew 75px.
+     ⚠️⚠️ `min-height` ALONE DOES NOTHING HERE — it does not apply to a non-replaced INLINE box,
+     and a `<label>` is inline by default. Measured: min-height computed 44px while the label
+     still laid out at 17px; adding the display made it 44. `inline-flex` rather than `flex` so
+     a row of labels still flows inline instead of each one claiming a full line. A label with
+     no checkbox inside it is not matched and stays inline — checked, not assumed. */
+  label:has(> input[type="checkbox"]), label:has(> input[type="radio"]) {
+    min-height: var(--pd-tap); display: inline-flex; align-items: center;
+  }
   /* A modal's footer buttons no longer stretch to fill the row — Cancel/Save
      used to expand equally to half the modal's width each, which is most of
      what read as "chunky" on a phone (a normal-sized label inside a huge
