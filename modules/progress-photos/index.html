@@ -42,10 +42,7 @@
              Presentations, Floor Plans (formerly "Plans") — internal
              data-screen values (photos/ppr/bim) are unchanged, only the
              user-facing labels renamed. Rounds removed per owner feedback
-             (Batch C, 2026-08-29); 360°/3D folded into Progress Photos as
-             media types rather than separate tabs — their screens/code stay
-             in the file, just no longer reachable as a top-level tab, since
-             a capture now lives in the unified feed. -->
+             (Batch C, 2026-08-29). -->
         <div class="pp-tabs pd-tabsrc" role="tablist">
           <button class="pp-tab active" data-screen="photos">Progress Photos</button>
           <button class="pp-tab" data-screen="ppr">Presentations</button>
@@ -65,17 +62,8 @@
         <!-- Tool cluster beside the profile: one labelled primary action per
              screen, everything else icon-only (Drawing Register / Cash Flow). -->
         <div class="pp-topbar-tools" id="pp-topbar-tools">
-          <!-- Photos-screen tools. One "+ Add media" button covers photo/video/
-               360°/3D (via its own type picker in the upload modal) — the
-               separate Capture 360° / Compare over time / Request 3D scan
-               buttons that used to sit here are REMOVED (owner feedback,
-               2026-08-29: "I only need the add media button... just one add
-               media to cover"). Their capture flows still exist in pano.js/
-               recon.js (openCaptureModal/openCompareModal/openRequestForm) —
-               they're simply unreachable from the UI now, the same "on hold"
-               treatment the Add-media type picker already gives 360°/3D.
-               Existing captures still show and open from the media strip
-               below the grid. -->
+          <!-- Photos-screen tools. One "+ Add media" button covers photo/
+               video (via its own type picker in the upload modal). -->
           <!-- Item 2: a compact search box + funnel toggle in the topbar,
                replacing the old always-open filter row. Clicking the funnel
                (or the search box, via focus) reveals the rest of the filters
@@ -87,30 +75,19 @@
           <button class="pp-topfilttoggle" id="pp-topfilttoggle" title="More filters">
             <span data-ico="filter" data-ico-size="16"></span></button>
           <!-- Fifth round item 1: "+ Add media" is now a dropdown choosing
-               the media type UP FRONT (Photo/Video/360°/3D-on-hold), rather
-               than deciding it inside the modal after files may already be
-               staged — the very ambiguity that let a staged photo survive a
-               later switch to Video. Picking Photo/Video opens the same
-               upload modal pre-set to that type.
-               ⚠️ 2026-09-02 owner feedback item 1: "the 360 photo feature is
-               quite buggy — let's discontinue it for now." 360° is disabled/
-               greyed out here the same way 3D already is, rather than removed
-               — the capture flow in pano.js is untouched (shelved, not
-               deleted), so re-enabling it later is a one-line change (drop
-               `disabled`, restore `data-addtype="360"`), matching how 3D
-               reconstruction was already put on hold in this same menu. -->
+               the media type UP FRONT (Photo/Video), rather than deciding it
+               inside the modal after files may already be staged — the very
+               ambiguity that let a staged photo survive a later switch to
+               Video. Picking Photo/Video opens the same upload modal pre-set
+               to that type. -->
           <div class="pp-addmenu-wrap" id="pp-addmenu-wrap">
-            <button class="pd-btn pd-btn-primary pp-tb-labeled" id="pp-add" title="Upload photos, video, or other media">
+            <button class="pd-btn pd-btn-primary pp-tb-labeled" id="pp-add" title="Upload photos or video">
               + Add media <span data-ico="chevronDown" data-ico-size="12"></span></button>
             <div class="pp-addmenu" id="pp-addmenu" hidden>
               <button type="button" class="pp-addmenu-item" data-addtype="photo">
                 <span data-ico="camera" data-ico-size="15"></span> Photo</button>
               <button type="button" class="pp-addmenu-item" data-addtype="video">
                 <span data-ico="video" data-ico-size="15"></span> Video</button>
-              <button type="button" class="pp-addmenu-item" disabled title="360° capture is on hold">
-                <span data-ico="compass" data-ico-size="15"></span> 360°</button>
-              <button type="button" class="pp-addmenu-item" disabled title="3D reconstruction is on hold">
-                <span data-ico="box" data-ico-size="15"></span> 3D</button>
             </div>
           </div>
           <span class="pp-tb-sep" id="pp-sep-photos"></span>
@@ -263,14 +240,6 @@
               <span data-ico="refresh" data-ico-size="14"></span> Generate thumbnails</button>
             <span class="pp-genthumbs-prog" id="pp-genthumbs-prog" style="display:none;"></span>
           </div>
-          <!-- 360° panoramas + 3D scans render INSIDE #pp-view now (items
-               6/8, current round) -- merged into the same date/trade/location
-               grouping as ordinary photos via mergedRows(), not a separate
-               strip below the grid. pano.js/recon.js's own capture flows are
-               unchanged and reached via the "+ Capture 360°"/"+ Request 3D
-               scan" buttons in the topbar above; opening/editing one from the
-               grid dispatches to PANO.open/RECON.openById or this module's
-               own openMediaKindEditor, per tile kind. -->
           <div id="pp-view"></div>
         </div>
 
@@ -299,16 +268,6 @@
                reached from the Presentations screen, since running one produces an
                ordinary presentation rather than being its own kind of record. -->
           <div id="ppr-tmpl-wrap" hidden><div id="ppr-tmpl-view"></div></div>
-        </div>
-
-        <!-- ================= Panoramic Capture (brief Section 6 / Phase 3) ================= -->
-        <div id="pp-screen-pano" hidden>
-          <div id="pano-view"></div>
-        </div>
-
-        <!-- ================= 3D Reconstruction Requests (brief 6A / Phase 4) ================= -->
-        <div id="pp-screen-recon" hidden>
-          <div id="recon-view"></div>
         </div>
 
         <!-- ================= Floor Plan overlay (brief 6B / Phase 5) ================= -->
@@ -388,16 +347,11 @@
        single pinned-version <script> tag, no build step. -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
-  <!-- Panoramic capture (brief Section 6 / Phase 3): OpenCV.js for client-side
-       feature-matching/stitching (WASM, ~10MB — loaded only on this module's
-       page, never blocks any other module), Three.js for the 360° viewer.
-       Both pinned versions, verified to resolve before committing to them. -->
+  <!-- OpenCV.js for client-side feature-matching (WASM, ~10MB — loaded only
+       on this module's page, never blocks any other module): used by bim.js's
+       floor-plan photo registration (warping a top-view photo onto a floor
+       plan drawing). Pinned version, verified to resolve before committing. -->
   <script src="https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.10.0-release.1/dist/opencv.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
-  <!-- 3D Reconstruction viewer (brief 6A / Phase 4): the official Three.js
-       r128 PLYLoader (classic global THREE.PLYLoader), same pinned Three.js
-       revision as the 360° viewer above — one version of THREE for the page. -->
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/PLYLoader.js"></script>
   <script src="../../assets/js/config.js?v=20260910za"></script>
   <script src="../../assets/js/auth.js?v=20260901b"></script>
   <script src="../../assets/js/db.js?v=20260909n"></script>
@@ -407,11 +361,9 @@
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
-  <script src="module.js?v=20260909v"></script>
+  <script src="module.js?v=20260910zb"></script>
   <script src="ppr.js?v=20260910v4"></script>
-  <script src="pano.js?v=20260904b"></script>
-  <script src="recon.js?v=20260904a"></script>
-  <script src="bim.js?v=20260909m"></script>
+  <script src="bim.js?v=20260910zb"></script>
   <script>
     // Item 6: Gallery/Presentations/Plans as a Project-Schedule-style dropdown
     // instead of a flat tab row. `icon: 'camera'` — this module dropped its
@@ -460,8 +412,6 @@
       }
       safeInit(function () { ProgressPhotos.init(user, profile); }, 'ProgressPhotos');
       safeInit(function () { PPR.init(user, profile); }, 'PPR');
-      safeInit(function () { PANO.init(user, profile); }, 'PANO');
-      safeInit(function () { RECON.init(user, profile); }, 'RECON');
       safeInit(function () { BIM.init(user, profile); }, 'BIM');
 
       if (document.getElementById('pp-lb-close')) document.getElementById('pp-lb-close').onclick = ProgressPhotos._closeLightbox;
@@ -487,14 +437,13 @@
       function setScreen(s) {
         curScreen = s;
         // Rounds is gone entirely (2026-08-29 feedback: "Rounds can be
-        // removed"), and 360°/3D no longer have their own tabs either
-        // ("360 and 3D should be incorporated in the Gallery") — Gallery is
-        // now the only screen besides Presentations and Plans, so a stale
-        // `pp_screen` value from before this change (e.g. 'rounds') must NOT
-        // reach here: ProgressPhotos.renderRounds() no longer exists, and
-        // calling it would throw and break the whole page load for anyone
-        // who had Rounds open when this shipped. The restore-list below
-        // filters that out before setScreen is ever called with it.
+        // removed") — Gallery is now the only screen besides Presentations
+        // and Plans, so a stale `pp_screen` value from before this change
+        // (e.g. 'rounds') must NOT reach here: ProgressPhotos.renderRounds()
+        // no longer exists, and calling it would throw and break the whole
+        // page load for anyone who had Rounds open when this shipped. The
+        // restore-list below filters that out before setScreen is ever
+        // called with it.
         var isPpr = s === 'ppr', isBim = s === 'bim';
         var isPhotos = !isPpr && !isBim;
         document.getElementById('pp-screen-photos').hidden = !isPhotos;
@@ -521,16 +470,6 @@
         safeSync(function () { show(PHOTO_TOOLS, isPhotos); }, 'Gallery tools');
         // Each module re-asserts its own tools' visibility (role + inner screen).
         safeSync(function () { PPR._syncTools(isPpr); }, 'PPR');
-        // pano.js/recon.js's own screens (#pp-screen-pano/#pp-screen-recon)
-        // stay in the DOM, permanently hidden — their load()/render() both
-        // bail out early if their host div is missing, and PANO.ensureLoaded/
-        // RECON.ensureLoaded (called from ProgressPhotos.load()) depend on
-        // that div existing to populate panoramas/requests for the media
-        // strip below. Their own capture-button toggling (PANO._syncTools/
-        // RECON._syncTools) is no longer called — the buttons it targets
-        // (#pano-new/#pano-compare-btn/#recon-new) were removed from this
-        // page (2026-08-29 feedback item 2); calling it would just be a
-        // harmless no-op, but there is nothing left for it to do.
         safeSync(function () { BIM._syncTools(isBim); }, 'BIM');
         // ⚠️ Audit fix: a batch selection made on Gallery used to survive a
         // tab switch — its selection-only toolbar (count/Download/Add to

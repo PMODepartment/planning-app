@@ -4,14 +4,9 @@
 // ⚠️ SCOPE NOTE, stated up front because "BIM Model Overlay" invites a much
 // bigger reading than what's built here. This is a 2D FLOOR-PLAN PIN
 // NAVIGATOR — upload a floor plan image, place pins on it that each point at
-// a panorama / 3D reconstruction / progress photo, click a pin to open that
-// capture. It does NOT import, register against, or overlay a real BIM/IFC
-// model, and it does NOT attempt true 3D-to-2D registration of a
-// reconstruction's point cloud onto the floor plan (that would need known
-// camera poses relative to the floor plan's own coordinate frame — a real,
-// separate computer-vision problem). This is the same kind of honest scope
-// reduction as Phase 3's cylinder-instead-of-true-equirectangular panorama —
-// stated here rather than silently shipped under the bigger name.
+// a progress photo, click a pin to open that photo. It does NOT import,
+// register against, or overlay a real BIM/IFC model — stated here rather
+// than silently shipped under the bigger name.
 // ============================================================================
 
 window.BIM = (function () {
@@ -587,7 +582,7 @@ window.BIM = (function () {
   }
 
   function pinIcon(type) {
-    return type === 'panorama' ? 'compass' : (type === 'reconstruction' ? 'box' : 'camera');
+    return 'camera';
   }
   // A cone showing field-of-view, drawn ONLY when direction_deg is set (Batch
   // E) — a pin with no recorded direction is a plain dot, never a fabricated
@@ -626,9 +621,7 @@ window.BIM = (function () {
   function openPin(pinId) {
     var pin = pins.filter(function (p) { return p.id === pinId; })[0];
     if (!pin) return;
-    if (pin.item_type === 'panorama') { if (window.PANO && PANO.open) PANO.open(pin.item_id); }
-    else if (pin.item_type === 'reconstruction') { if (window.RECON && RECON.openById) RECON.openById(pin.item_id); }
-    else if (pin.item_type === 'photo') { if (window.ProgressPhotos && ProgressPhotos.openPhotoById) ProgressPhotos.openPhotoById(pin.item_id); }
+    if (pin.item_type === 'photo') { if (window.ProgressPhotos && ProgressPhotos.openPhotoById) ProgressPhotos.openPhotoById(pin.item_id); }
   }
 
   // ⚠️ RETIRED IN PLACE (2026-08-30 feedback item 27): "Place pin should not
@@ -637,10 +630,10 @@ window.BIM = (function () {
   // removed from index.html, so `placeMode` can now never become true and
   // every branch below that checks it is dead code — left defined (not
   // deleted) per this module's own established convention for superseded
-  // code, since openPinPicker's "point a pin at an EXISTING panorama/3D scan"
-  // capability may still be worth a future button elsewhere. The real,
-  // per-photo pin+cone workflow now lives entirely in pinFieldHTML/
-  // wirePinField/readPinField below, driven from module.js's Add/Edit form.
+  // code, since openPinPicker's "point a pin at an existing photo" capability
+  // may still be worth a future button elsewhere. The real, per-photo
+  // pin+cone workflow now lives entirely in pinFieldHTML/wirePinField/
+  // readPinField below, driven from module.js's Add/Edit form.
   function togglePlaceMode() {
     placeMode = !placeMode;
     if ($('bim-place')) $('bim-place').classList.toggle('is-active', placeMode);
@@ -1483,14 +1476,11 @@ window.BIM = (function () {
   function isPdfPlan(plan) { return !!(plan && plan.image_url && /\.pdf(\?|$)/i.test(plan.image_url)); }
 
   function openPinPicker(xNorm, yNorm) {
-    var panos = (window.PANO && PANO.list) ? PANO.list() : [];
-    var recons = (window.RECON && RECON.doneList) ? RECON.doneList() : [];
     var photos = (window.ProgressPhotos && ProgressPhotos.allPhotos) ? ProgressPhotos.allPhotos() : [];
 
-    function itemOptionsHTML(type) {
-      var list = type === 'panorama' ? panos : (type === 'reconstruction' ? recons : photos);
-      if (!list.length) return '<option value="">— none available —</option>';
-      return list.map(function (r) {
+    function itemOptionsHTML() {
+      if (!photos.length) return '<option value="">— none available —</option>';
+      return photos.map(function (r) {
         var label = r.location || r.description || (r.id ? r.id.slice(0, 8) : 'Untitled');
         return '<option value="' + esc(r.id) + '">' + esc(label) + '</option>';
       }).join('');
@@ -1499,13 +1489,7 @@ window.BIM = (function () {
     var html =
       '<div class="pd-modal-header"><h3>Place a pin</h3><button class="pd-modal-close" data-close>×</button></div>' +
       '<div class="pp-form">' +
-        '<div class="pd-field"><label>What does this pin point to?</label>' +
-          '<select class="pd-select" id="bim-pin-type">' +
-            '<option value="panorama">360° panorama</option>' +
-            '<option value="reconstruction">3D reconstruction</option>' +
-            '<option value="photo">Progress photo</option>' +
-          '</select></div>' +
-        '<div class="pd-field"><label>Which one</label><select class="pd-select" id="bim-pin-item"></select></div>' +
+        '<div class="pd-field"><label>Which photo</label><select class="pd-select" id="bim-pin-item">' + itemOptionsHTML() + '</select></div>' +
         '<div class="pd-field"><label>Label <span class="pp-optnote">(optional)</span></label>' +
           '<input class="pd-input" id="bim-pin-label" /></div>' +
         directionWidgetHTML('bim-pin-dir', null) +
@@ -1513,9 +1497,6 @@ window.BIM = (function () {
       '<div class="pd-modal-footer"><button class="pd-btn" data-close>Cancel</button>' +
         '<button class="pd-btn pd-btn-primary" id="bim-pin-save">Place pin</button></div>';
     var m = openModal(html, 460);
-    function refreshItems() { $('bim-pin-item').innerHTML = itemOptionsHTML($('bim-pin-type').value); }
-    $('bim-pin-type').onchange = refreshItems;
-    refreshItems();
     wireDirectionWidget('bim-pin-dir');
 
     $('bim-pin-save').onclick = async function () {
@@ -1525,7 +1506,7 @@ window.BIM = (function () {
       var dirVal = $('bim-pin-dir-val').value;
       var row = {
         floor_plan_id: activePlanId, project_id: pid,
-        item_type: $('bim-pin-type').value, item_id: itemId,
+        item_type: 'photo', item_id: itemId,
         x_norm: xNorm, y_norm: yNorm,
         direction_deg: dirVal === '' ? null : +dirVal,
         label: $('bim-pin-label').value.trim() || null, created_by: uid
