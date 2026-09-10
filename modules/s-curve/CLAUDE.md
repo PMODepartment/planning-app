@@ -433,3 +433,123 @@ all three columns read `text` in one query.
 runner in this environment, so the owner's next run is the real test. The VERIFY block is written to
 be pasted separately and answers, in three queries, whether the types match, the shape is right and
 both the grants and the policies exist.
+
+## The manual sheet becomes a matrix, with the curve live above it (2026-09-10) — ethanrobles10
+
+Owner: *"i was thinking, what if it were the other way around. meaning the months are plotted as
+columns and the trades are plotted as rows. And then while inputting, there would still be an
+scurve displayed above the table."*
+
+### 1. ⚠️⚠️ This reverses the shape I argued for yesterday, and the argument was incomplete rather than wrong
+
+I refused a trades × months matrix in the entry above, and the reasoning was: eight trades over
+three years is 288 cells, and at three kinds per cell **864** — *"a grid nobody can fill in without
+losing their place"*. That arithmetic is right. What I missed is that **the third dimension does not
+have to be in the grid**: Planned / Actual / Forecast is now a **mode**, so the sheet is 8 × 36 for
+one kind at a time.
+
+That is the shape of the spreadsheet a planner is copying from, and of a monthly accomplishment
+submission. It is also **strictly better than the per-trade sheet it replaces** on a job the
+per-trade version could not do at all: comparing two trades in the same month was two separate
+screens there and is a glance here.
+
+- ⚠️ **The matrix is always MONTHLY**, whatever the Period control is set to. The stored grain is a
+  month; letting somebody type a *quarter* would mean splitting it back across three months and
+  there is no honest way to choose that split. The chart above it follows the Period control,
+  because reading is not entering. Said on screen, not just here.
+- ⚠️ **A frozen corner, and both halves are load-bearing**: 36 columns are wider than any screen, so
+  the trade name stays put while you scroll right (or you are typing into an unlabelled cell) and
+  the month stays put while you scroll down. Measured after scrolling 600px: trade column pinned
+  left, header pinned top, Total column pinned right, corner at `z-index: 3`.
+- ⚠️ **The column footer is the project's WEIGHTED figure, not the sum of the column.** Adding six
+  trades' percentages gives a number over 100 that means nothing — each is a share of a different
+  scope. Weighted, it is exactly the height of that month's bar on the chart above, which makes the
+  footer a cross-check between the sheet and the curve rather than a second opinion. Measured:
+  typing 25% into General Requirements moved the footer 22.7% → **29.5%**, which is its 27.2% share.
+- ⚠️ `manTrade` is **gone** rather than left unused — the sheet no longer has a "which trade" to
+  remember, and a live-looking variable nothing reads is the next reader's wrong turn.
+
+### 2. The curve above the sheet, and what "live" required
+
+- ⚠️⚠️ **`computeManual` had to stop reading the saved rows.** It read `MAN.rows` — the database's
+  copy — so a chart above the sheet would have sat still while the planner typed and jumped on Save.
+  New `manEffective()` lays the unsaved edits over the saved rows with the same precedence
+  `manValue` uses, and **every reader goes through it**, so the chart, the row totals and the column
+  totals all describe the sheet as it is on screen. Asserted: a dirty cell overwrites its saved twin
+  rather than being appended twice, a dirty cell with no saved row is added, and clearing the dirty
+  map falls back to the saved number.
+- ⚠️ **It is the SAME `renderChart` the Curve tab uses, pointed at a second host.** A second chart
+  builder would be ~150 lines of axis, bar and forecast geometry to keep in step, and the first
+  divergence would be a preview that disagrees with the chart it is previewing. `opts.interactive`
+  is false there because the click opens the trade breakdown, which is a card in the *other* pane —
+  so the hover readout is kept and its "click for the breakdown" line is dropped rather than left as
+  a dead promise.
+- ⚠️ Its note carries **"Includes N unsaved edits"** in the warning colour. A chart drawn from
+  numbers that are not in the database must say so; a screenshot of it would otherwise assert data
+  nobody has kept.
+- ⚠️⚠️ **A cell edit does NOT re-render the sheet, and the matrix is what forced that.** The
+  per-trade sheet re-rendered on every change because its running-cumulative column had to be
+  recomputed — harmless there, fatal here: rebuilding the table drops the focus out of the cell
+  being typed in and destroys PDGrid's listeners, so Tab, fill-down and paste would all die on the
+  first keystroke. `manRefresh()` writes the three things that changed and redraws the chart, which
+  lives outside the table. **Measured: after an edit the table node is the same object and
+  `document.activeElement` is still the cell.**
+
+### 3. ⚠️⚠️ A defect this found in what I shipped this morning: the Curve tab drew NO chart in Manual mode
+
+`renderChart`'s manual branch set the basis note and then **`return`ed from the function**, before
+any drawing. So since the manual mode shipped, selecting it left the Curve tab with the sentence
+explaining the curve and an **empty plot underneath it**. Nothing errored, and the note made it look
+as though something had happened — which is exactly why it survived a browser check: that check only
+ever ran the automatic mode. Confirmed present in `HEAD` before touching it, not assumed.
+
+Found by pointing the same renderer at the preview host and getting an empty element back. Now an
+`if/else`: the two notes are alternatives, the drawing below is common to both.
+
+### 4. The app's own spreadsheet layer, and a `type="number"` trap it exposed
+
+`PDGrid` (`assets/js/xlgrid.js`) is adopted rather than re-implemented — the module now loads it and
+the cells carry its two-attribute contract (`data-i` = trade, `data-f` = month). That buys
+Tab/Enter/arrows, Shift+arrow selection, Ctrl+D fill-down, Ctrl+Z and **a paste of a TSV block
+straight out of Excel**, which is where a monthly accomplishment sheet already lives. Measured: a
+`1\t2\t3\t4` paste filled four consecutive months of the target trade. ⚠️ Its `onSet` routes through
+the same `setCell` an ordinary edit takes, so a pasted value gets identical validation — a second
+write path would be a second set of rules.
+
+⚠️ It also loads it at the version the other page already uses (`?v=20260907e`), not a second one —
+a shared asset on two versions is a split this repo's own audits flag.
+
+⚠️⚠️ **And wiring the paste exposed the `type="number"` trap for the third time in this repo.** A
+number input refuses anything the spec cannot parse and reads back `""`, so typing `12,5` gave an
+empty string, `setCell`'s comma handling never saw a comma, and the value vanished with no error.
+Measured, then fixed the way the BOQ grid and the nine Contracts & Claims money fields were fixed:
+`type="text"` + `inputmode="decimal"`. ⚠️ `min`/`max`/`step` were dropped with it — they do nothing
+on a text input and would read as validation that is not happening; the range is enforced in
+`setCell`, the one path every edit and every paste goes through.
+
+⚠️ **And a comma is now REFUSED rather than stripped.** Stripping turns the European `12,5` (meaning
+12.5) into 125 — a guess about the writer's locale that produces a plausible wrong number. This repo
+settled the same question for Contracts & Claims on 2026-09-09: refuse, and say so. `parseFloat` on
+its own is no better; it reads `12,5` as 12 and `5abc` as 5, both silently. The two refusals now
+carry **two different messages**, because an unreadable value and an out-of-range one are different
+mistakes and one message for both sends a planner who typed `12,5` hunting for a range problem.
+
+Measured, seven cases: `7.5` `0` `100` accepted, `12.5%` → 12.5 (a trailing % is stripped, since the
+column *is* a percentage), and `12,5` / `150` / `5abc` each refused with the right one of the two
+messages.
+
+### 5. Verified
+
+**85 assertions across three suites, 0 failing** — 14 new on the dirty overlay, the live preview and
+the per-kind independence, plus the 37 and 34 from the two passes above, both re-run.
+
+**Driven in a real browser** against the shipped CSS and the real PDGrid, light and dark: 5 trades ×
+24 months = 120 cells; typing moved the row total 0 → 25%, the weighted footer 22.7 → 29.5% and the
+planned curve's first point from y=300 to y=280.67, **with the table node unchanged and the focus
+still in the cell**; the over-100 row total is flagged (120% in the bad colour); the frozen corner
+holds after a 600px horizontal scroll; the paste filled four months; every status token resolves in
+dark mode.
+
+⚠️ **Not verified signed in**, and the migration still has to be run — `scurve_manual` /
+`scurve_manual_meta`, `migrations/2026-09-10-scurve-manual-poc.sql`. Nothing here has written a row;
+Save is exercised against a stub.

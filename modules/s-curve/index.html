@@ -254,6 +254,78 @@
       .sc-tip { max-width:min(270px, 78vw); }
       .sc-bd { min-width:640px; }
     }
+    /* ---- The manual matrix: trades down, months across --------------------------------------
+       Owner 2026-09-10: *"the months are plotted as columns and the trades are plotted as rows."*
+
+       ⚠️⚠️ A FROZEN CORNER, and both halves are needed. Thirty-six month columns are wider than
+       any screen, so the trade name has to stay put while you scroll right (or you are typing
+       into an unlabelled cell), and the month has to stay put while you scroll down (or you are
+       typing into an unlabelled column). `position:sticky` on the first cell of every row and on
+       the header, with the corner cell sticky in BOTH axes and a higher z-index so it is not
+       painted over by either.
+       ⚠️ The wrapper scrolls, not the page: `overflow:auto` on the wrapper is what gives sticky
+       something to be sticky WITHIN. Without it the cells stick to the viewport and drift out of
+       the table entirely.
+       ------------------------------------------------------------------------------------------ */
+    .sc-matrixwrap { max-height:min(58vh, 520px); overflow:auto; border:1px solid var(--pd-line);
+      border-radius:var(--pd-radius-md); background:var(--pd-card); }
+    .sc-matrix { border-collapse:separate; border-spacing:0; font-size:var(--pd-fs-sm); }
+    .sc-matrix th, .sc-matrix td { padding:3px 6px; border-bottom:1px solid var(--pd-line);
+      border-right:1px solid var(--pd-line); white-space:nowrap; text-align:right; }
+    .sc-matrix thead th { position:sticky; top:0; z-index:2; background:var(--pd-bg);
+      font-size:var(--pd-fs-micro); font-weight:700; text-transform:uppercase;
+      letter-spacing:.04em; color:var(--pd-muted); border-bottom:2px solid var(--pd-line); }
+    .sc-matrix th.mo { min-width:52px; text-align:center; line-height:1.15; }
+    .sc-matrix th.mo small { display:block; font-size:9px; font-weight:500; opacity:.75; }
+    /* The trade column: sticky left, and the corner sticky in both axes. */
+    .sc-matrix .k { position:sticky; left:0; z-index:1; background:var(--pd-card);
+      text-align:left; min-width:186px; max-width:186px; font-weight:600;
+      border-right:2px solid var(--pd-line); overflow:hidden; text-overflow:ellipsis; }
+    .sc-matrix thead .k { z-index:3; background:var(--pd-bg); }
+    .sc-matrix tfoot .k { z-index:3; }
+    .sc-matrix .k .dot { display:inline-block; width:8px; height:8px; border-radius:50%;
+      background:var(--pd-red); margin-right:7px; }
+    .sc-matrix .k small { display:block; margin-left:15px; font-size:var(--pd-fs-micro);
+      color:var(--pd-muted); font-weight:500; }
+    /* The month the data date falls in, marked once down the whole column. */
+    .sc-matrix th.now, .sc-matrix td.now { background:var(--pd-red-light); }
+    .sc-matrix tbody tr:hover td:not(.k) { background:var(--pd-bg); }
+    .sc-matrix .tot { position:sticky; right:0; z-index:1; background:var(--pd-card);
+      font-weight:800; border-left:2px solid var(--pd-line); min-width:62px; }
+    .sc-matrix thead .tot { z-index:3; background:var(--pd-bg); }
+    /* ⚠️ The footer is the project figure, so it is sticky at the BOTTOM: on a six-trade sheet it
+       is on screen anyway, but it is the cross-check against the chart and a planner scrolling a
+       long trade list should not lose it. */
+    .sc-matrix tfoot td { position:sticky; bottom:0; z-index:2; background:var(--pd-card);
+      font-weight:800; border-top:2px solid var(--pd-line); border-bottom:0; }
+    .sc-matrix tfoot .tot { z-index:4; }
+    /* A cell in the matrix is tighter than the per-trade sheet's: 36 of them to a row. */
+    .sc-matrix .sc-in { width:52px; height:26px; padding:0 4px; text-align:right;
+      font-size:var(--pd-fs-sm); }
+    .sc-matrix .sc-ro { min-width:52px; padding:0 4px; text-align:right; }
+    .sc-kindbar { margin:12px 0 10px; }
+    /* The kind selector carries a count of what is entered under it. */
+    .sc-seg button i { font-style:normal; font-size:var(--pd-fs-micro); font-weight:800;
+      opacity:.7; margin-left:3px; }
+
+    /* ---- The live preview above the sheet ------------------------------------------------------
+       ⚠️ Given its own bordered block rather than dropped straight into the card: it is the same
+       chart the Curve tab shows, and without a frame around it the sheet below reads as part of
+       the chart's own furniture. */
+    .sc-manchartwrap { border:1px solid var(--pd-line); border-radius:var(--pd-radius-md);
+      padding:12px 14px 10px; margin-bottom:12px; background:var(--pd-card); }
+    .sc-manchartwrap .sc-note { margin-top:6px; }
+    /* ⚠️ Unsaved edits are marked in the BAD colour, not a neutral one: the curve above is drawn
+       from them, so the state is "this chart is not what the database holds" — which is a warning,
+       not a status. */
+    .sc-unsaved { font-size:var(--pd-fs-xs); font-weight:700; color:var(--pd-bad-text);
+      background:var(--pd-bad-bg); padding:2px 8px; border-radius:var(--pd-radius-pill);
+      border:1px solid var(--pd-bad-line); }
+    .sc-unsaved-inline { color:var(--pd-bad-text); }
+    @media (max-width:700px) {
+      .sc-matrix .k { min-width:132px; max-width:132px; }
+      .sc-matrixwrap { max-height:60vh; }
+    }
     .sc-note { font-size:var(--pd-fs-sm); color:var(--pd-muted); margin-top:8px; }
     .sc-loading { position:fixed; inset:0; background:rgba(20,20,20,.4); display:flex; align-items:center; justify-content:center; gap:12px; z-index:var(--pd-z-loading); color:#fff; font-weight:700; }
     .sc-spin { width:36px; height:36px; border:4px solid rgba(255,255,255,.3); border-top-color:#fff; border-radius:50%; animation:sc-spin .8s linear infinite; }
@@ -389,6 +461,9 @@
 <script src="../../assets/js/icons.js?v=20260909ui"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
+<!-- ⚠️ The app's own spreadsheet layer (Tab/Enter/arrows, Ctrl+D, Excel paste). The manual matrix
+     degrades to plain inputs without it, so the load order is not load-bearing. -->
+<script src="../../assets/js/xlgrid.js?v=20260907e"></script>
 <script>
 (function () {
   'use strict';
@@ -587,7 +662,8 @@
     try { view = localStorage.getItem(viewKey()) === 'manual' ? 'manual' : 'curve'; } catch (e) { view = 'curve'; }
     // ⚠️ Reset with the project — a breakdown open on the previous project's Q3 is meaningless here.
     bdOpen = null; _costCo = null; _costCoKey = ''; _trSeries = null; _trSeriesKey = '';
-    MAN = null; manMissing = false; manDirty = {}; manTrade = null;
+    MAN = null; manMissing = false; manDirty = {};
+    try { var _mk = localStorage.getItem('sc_mankind_' + pid); manKind = (_mk === 'actual' || _mk === 'forecast') ? _mk : 'planned'; } catch (e) { manKind = 'planned'; }
     trSel = []; trScope = 'all'; rowsLoaded = false;
     showLoading();
     rows = []; agg = null;
@@ -721,7 +797,10 @@
   function modeKey() { return 'sc_mode_' + pid; }
   var MAN = null;                 // { rows: [...], locked: bool, lockedAt, lockedBy } or null
   var manMissing = false;         // the migration has not been run on this database
-  var manTrade = null;            // which trade the editor is showing
+  /* ⚠️ `manTrade` IS GONE. The sheet showed one trade at a time, so it needed to remember which;
+     the matrix shows every trade as a row, so the thing that has to be remembered is which KIND is
+     being entered — see the note on the matrix in renderManual for why the kind is a mode. */
+  var manKind = 'planned';        // 'planned' | 'actual' | 'forecast' — which sheet is being typed
   var manDirty = {};              // 'trade|YYYY-MM|kind' -> pct, not yet saved
 
   function monthKey(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
@@ -872,7 +951,8 @@
     if (manMissing) return { empty: true, manNoTable: true };
     var W = tradeWeights();
     if (!W.tot) return { empty: true, manNoScope: true };
-    var mans = (MAN && MAN.rows) || [];
+    // ⚠️ EFFECTIVE, not saved — see manEffective. This is what makes the preview live.
+    var mans = manEffective();
     // Which trades and months the sheet is about: the schedule's span, so a manual curve and an
     // automatic one cover the same calendar and can be compared month for month.
     var sp = null;
@@ -1341,6 +1421,39 @@
   // ⚠️ The month names live in _MABBR, declared once beside the period lens. This function had
   // its own MABBR2 copy of the same twelve strings until the lens arrived and needed them too;
   // two arrays of month names in one file is one more than can be kept in agreement.
+  /* ==========================================================================================
+     THE SAVED ROWS WITH THE UNSAVED EDITS OVER THE TOP.
+     Owner 2026-09-10: *"while inputting, there would still be an scurve displayed above the
+     table."*
+
+     ⚠️⚠️ A PREVIEW THAT ONLY MOVES ON SAVE IS NOT A PREVIEW. `computeManual` read `MAN.rows` — the
+     rows as the database has them — so a curve above the sheet would have sat still while the
+     planner typed and jumped when they pressed Save. Every reader now goes through this, so the
+     chart, the row totals and the column totals all describe the sheet as it is ON SCREEN.
+     ⚠️ Same precedence as `manValue` (dirty wins over saved), because two different answers to
+     "what is in this cell" is how a total comes to disagree with the cells it is adding up.
+     ⚠️ IT DOES NOT WRITE ANYTHING. The dirty map is still the only record of an unsaved edit, and
+     the Save button still carries the count — the curve showing them is not the same as them
+     being kept, so the card says so in as many words.
+     ========================================================================================== */
+  function manEffective() {
+    var out = [], seen = {};
+    ((MAN && MAN.rows) || []).forEach(function (r) {
+      var mk = String(r.month || '').slice(0, 7);
+      var k = manCellKey(r.trade, mk, r.kind);
+      seen[k] = out.length;
+      out.push({ trade: r.trade, month: r.month, kind: r.kind, pct: +r.pct || 0 });
+    });
+    Object.keys(manDirty).forEach(function (k) {
+      var parts = k.split('|');
+      if (parts.length !== 3) return;
+      var row = { trade: parts[0], month: parts[1] + '-01', kind: parts[2], pct: +manDirty[k] || 0 };
+      if (seen[k] != null) out[seen[k]] = row; else { seen[k] = out.length; out.push(row); }
+    });
+    return out;
+  }
+  function manDirtyCount() { return Object.keys(manDirty).length; }
+
   function manValue(trade, mk, kind) {
     var k = manCellKey(trade, mk, kind);
     if (manDirty[k] != null) return manDirty[k];
@@ -1349,6 +1462,114 @@
     });
     return hit ? +hit.pct : null;
   }
+  /* ==========================================================================================
+     ONE WRITE PATH FOR A CELL, AND A REFRESH THAT DOES NOT REBUILD THE GRID.
+     ⚠️⚠️ Every route into a cell — typing, a paste from Excel, PDGrid's fill-down, an undo — goes
+     through `setCell`, so the validation is written once. A paste that skipped it would be a second
+     set of rules about what a POC may be.
+     ⚠️⚠️ AND IT MUST NOT RE-RENDER. Rebuilding the table takes the focus out of the cell being
+     typed in and destroys PDGrid's listeners, so Tab, fill-down and paste would all stop working
+     after the first edit. `manRefresh` writes the three things that actually changed — the row
+     total, the column total, the Save count — and redraws the chart, which lives outside the table.
+     ========================================================================================== */
+  function setCell(trade, mk, raw, el) {
+    var k = manCellKey(trade, mk, manKind);
+    var txt = String(raw == null ? '' : raw).trim();
+    if (txt === '') { manDirty[k] = 0; }
+    else {
+      /* ⚠️ A trailing % is stripped, because a column pasted out of Excel routinely carries one and
+         this column IS a percentage — that is a notation the header already states, not a guess
+         about what the number means. */
+      var clean = txt.replace(/%\s*$/, '').trim();
+      /* ⚠️⚠️ THE SHAPE IS VALIDATED, AND A COMMA IS REFUSED RATHER THAN STRIPPED. The first cut
+         stripped commas, which turns the European "12,5" (meaning 12.5) into 125 — and stripping
+         is a GUESS about the writer's locale that produces a plausible wrong number rather than an
+         error. This repo settled the same question for Contracts & Claims on 2026-09-09: refuse,
+         and say so, because "a wrong number that looks real" is the worse outcome. `parseFloat` on
+         its own is no better — it reads "12,5" as 12 and "5abc" as 5, both silently. */
+      var v = /^\d+(\.\d+)?$/.test(clean) ? parseFloat(clean) : NaN;
+      if (!isFinite(v)) {
+        // ⚠️ Two distinct refusals with two distinct messages: an unreadable value and an
+        // out-of-range one are different mistakes, and one message for both sends a planner who
+        // typed "12,5" hunting for a range problem they do not have.
+        UI.toast('"' + txt + '" is not a number this cell can read \u2014 type it as 12.5, not 12,5.', 'error');
+        if (el) el.value = '';
+        return false;
+      }
+      if (v < 0 || v > 100) {
+        UI.toast('A month\'s POC is a percentage of that trade, so it cannot be ' + v + '% \u2014 the range is 0 to 100.', 'error');
+        if (el) el.value = '';
+        return false;
+      }
+      manDirty[k] = Math.round(v * 1000) / 1000;
+      if (el) el.value = manDirty[k];
+    }
+    manRefresh();
+    return true;
+  }
+  // Redraw the preview curve into its own host. ⚠️ Recomputes from manEffective(), so it follows
+  // the unsaved edits; interactive:false because the breakdown card lives in the other pane.
+  function manChart() {
+    if (!document.getElementById('sc-manchart')) return;
+    var dm = computeManual();
+    renderChart(dm, { host: 'sc-manchart', note: 'sc-mannote', interactive: false });
+    var note = document.getElementById('sc-mannote');
+    var nd = manDirtyCount();
+    /* ⚠️ A chart drawn from numbers that are not in the database yet MUST say so — a screenshot of
+       it would otherwise assert data nobody has kept. Appended to renderChart's own note rather
+       than replacing it, so the source and the weighting are still stated. */
+    if (note && nd) {
+      note.innerHTML = (note.innerHTML || '') +
+        ' <b class="sc-unsaved-inline">Includes ' + nd + ' unsaved edit' + (nd === 1 ? '' : 's') + '.</b>';
+    }
+  }
+  /* Update only what an edit changes. ⚠️ Reads the SAME manValue / weights the renderer used, so a
+     refreshed total cannot disagree with a rebuilt one. */
+  function manRefresh() {
+    var card = document.getElementById('sc-mancard'); if (!card) return;
+    var tbl = document.getElementById('sc-matrix'); if (!tbl) return;
+    var W = tradeWeights(), all = tradesIn(rows);
+    var d = computeManual();
+    var months = (d && d.months) || [];
+    // Row totals: this trade's own months added up, in its own scope.
+    all.forEach(function (t) {
+      var cell = tbl.querySelector('[data-rowtot="' + (window.CSS && CSS.escape ? CSS.escape(t) : t) + '"]');
+      if (!cell) return;
+      var sum = 0;
+      months.forEach(function (m) { var v = manValue(t, monthKey(m), manKind); if (v != null) sum += v; });
+      cell.textContent = (Math.round(sum * 10) / 10) + '%';
+      // ⚠️ Only PLANNED is expected to reach 100 — an actual row at 62% is a trade 62% done, not
+      // an error, so it is never marked wrong. Same rule the per-trade sheet stated.
+      cell.className = 'tot' + (manKind !== 'planned' ? ' sc-tot-part'
+        : Math.abs(sum - 100) < 0.05 ? ' sc-tot-ok' : sum > 100 ? ' sc-tot-off' : ' sc-tot-part');
+    });
+    // Column totals: the project's own weighted figure for that month.
+    var grand = 0;
+    months.forEach(function (m) {
+      var mk = monthKey(m), tot = 0;
+      all.forEach(function (t) {
+        var v = manValue(t, mk, manKind);
+        if (v != null && W.tot) tot += v / 100 * (W.w[t] || 0) / W.tot * 100;
+      });
+      grand += tot;
+      var c = tbl.querySelector('[data-coltot="' + mk + '"]');
+      if (c) c.textContent = (Math.round(tot * 10) / 10) + '%';
+    });
+    var g = tbl.querySelector('[data-grandtot]');
+    if (g) g.textContent = (Math.round(grand * 10) / 10) + '%';
+    // The Save button and the unsaved badge.
+    var nd = manDirtyCount();
+    var sv = document.getElementById('sc-mansave');
+    if (sv) { sv.disabled = !nd; sv.textContent = 'Save' + (nd ? ' (' + nd + ')' : ''); }
+    var badge = card.querySelector('.sc-unsaved');
+    if (badge) { badge.textContent = nd + ' unsaved'; badge.hidden = !nd; }
+    else if (nd) {
+      var act = card.querySelector('.sc-man-act');
+      if (act) { var sp = document.createElement('span'); sp.className = 'sc-unsaved'; sp.textContent = nd + ' unsaved'; act.insertBefore(sp, act.firstChild); }
+    }
+    manChart();
+  }
+
   function renderManual() {
     var card = document.getElementById('sc-mancard'); if (!card) return;
     /* ⚠️⚠️ GATED ON THE TAB, NOT ON `mode` — that is the change the owner's *"add a tab wherein
@@ -1386,13 +1607,48 @@
         'A manual curve still needs the schedule to say <em>how much of the project each trade is</em>.</div>';
       return;
     }
-    if (!manTrade || all.indexOf(manTrade) < 0) manTrade = all[0];
     var months = (d && d.months && d.months.length) ? d.months : [];
     if (!months.length) { card.innerHTML = '<h3>Manual POC entry</h3><div class="sc-man-note">No months to enter.</div>'; return; }
     var ti = d.ti == null ? 0 : d.ti;
     var lock = plannedLocked();
-    var wt = W.w[manTrade] || 0;
-    var share = W.tot ? (Math.round(wt / W.tot * 1000) / 10) : 0;
+    var pw = (basis === 'cost' ? 'loaded cost' : 'duration');
+
+    /* ==========================================================================================
+       TRADES DOWN, MONTHS ACROSS — and one KIND at a time.
+       Owner 2026-09-10: *"what if it were the other way around. meaning the months are plotted as
+       columns and the trades are plotted as rows. And then while inputting, there would still be
+       an scurve displayed above the table."*
+
+       ⚠️⚠️ THIS REVERSES THE SHAPE I ARGUED FOR YESTERDAY, and the argument was not wrong — it was
+       incomplete. I refused a trades × months matrix because eight trades over three years is 288
+       cells and, at three kinds per cell, **864**. The owner's shape is the right one and the
+       resolution is to drop the third dimension out of the grid: **Planned / Actual / Forecast is a
+       MODE, not a column triple**, so the sheet is 8 × 36 for one kind at a time. That is exactly
+       what the spreadsheet a planner is copying from looks like, and it is the shape a monthly
+       accomplishment submission is already in.
+       ⚠️ It is also strictly better than the per-trade sheet it replaces: comparing two trades in
+       the same month was impossible there (they were two different screens) and is a glance here.
+
+       ⚠️ THE MATRIX IS ALWAYS MONTHLY, whatever the Period control above is set to. The stored
+       grain is a month; letting somebody type a QUARTER would mean splitting it back across three
+       months, and there is no honest way to choose that split — it would be invented data. The
+       chart above it follows the Period control, because reading is not entering.
+       ========================================================================================== */
+    var KINDS = [['planned', 'Planned'], ['actual', 'Actual'], ['forecast', 'Forecast']];
+    var kindLabel = (KINDS.filter(function (k) { return k[0] === manKind; })[0] || KINDS[0])[1];
+    // Is this month editable for the kind being entered? ⚠️ One rule, read by the cell, by the
+    // aria-label and by the refusal tooltip, so the three cannot disagree.
+    function cellEditable(i) {
+      return manKind === 'planned' ? !lock
+           : manKind === 'actual' ? (i <= ti)
+           : (i > ti);
+    }
+    function cellWhyNot(i) {
+      return manKind === 'planned'
+        ? (lock === 'locked' ? 'The planned curve is locked.' : 'The project is actualized, so the plan is history.')
+        : manKind === 'actual' ? 'This month has not happened yet — enter it in the Forecast sheet.'
+        : 'This month is in the past — enter what happened in the Actual sheet.';
+    }
 
     // ---- the lock banner, saying which rule is in force and offering the one action ----------
     var lockBar =
@@ -1400,8 +1656,7 @@
         /* ⚠️ 'signature' and 'pencil', NOT 'lock'/'unlock' — THERE ARE NO LOCK ICONS in
            assets/js/icons.js, and Icons.hydrate leaves an unknown key as an empty span. A 15px
            gap where an icon should be is the looks-live-does-nothing failure this repo keeps
-           recording, and it is invisible in a diff. Checked against the key list, not assumed:
-           a signature is what a locked baseline is, and a pencil is what an open one invites. */
+           recording, and it is invisible in a diff. */
         '<span data-ico="' + (lock ? 'signature' : 'pencil') + '" data-ico-size="15" style="flex:none;margin-top:2px;"></span>' +
         '<span>' + (lock === 'locked'
           ? '<b>The planned curve is locked.</b> It is the baseline this project reports against' +
@@ -1419,119 +1674,167 @@
           : '<button class="pd-btn pd-btn-sm" id="sc-lock">Lock the planned curve</button>') + '</span>' +
       '</div>';
 
-    // ---- the trade chips -------------------------------------------------------------------
-    var chips = '<span class="sc-chips" id="sc-mantrades">' + all.map(function (t) {
-      var tw = W.w[t] || 0, sh = W.tot ? Math.round(tw / W.tot * 1000) / 10 : 0;
-      var n = ((MAN && MAN.rows) || []).filter(function (r) { return r.trade === t; }).length;
-      return '<button class="sc-chip' + (t === manTrade ? ' on' : '') + '" data-mt="' + esc(t) + '"' +
-        ' title="' + esc(t + ' — ' + sh + '% of the project by ' + (basis === 'cost' ? 'loaded cost' : 'duration') +
-        (n ? ' · ' + n + ' months entered' : ' · nothing entered yet')) + '">' +
-        '<span class="dot"></span>' + esc(t) + '<span class="n">' + sh + '%</span></button>';
-    }).join('') + '</span>';
+    // ---- which kind is being entered ---------------------------------------------------------
+    var kindSeg = '<span class="sc-fl">Entering</span><span class="sc-seg" id="sc-mankind">' +
+      KINDS.map(function (k) {
+        var n = manEffective().filter(function (r) { return r.kind === k[0] && (+r.pct || 0) > 0; }).length;
+        return '<button data-k="' + k[0] + '"' + (manKind === k[0] ? ' class="on"' : '') +
+          ' title="' + esc(k[1] + ' — ' + (n ? n + ' cell(s) entered' : 'nothing entered yet')) + '">' +
+          k[1] + (n ? ' <i>' + n + '</i>' : '') + '</button>';
+      }).join('') + '</span>';
 
-    // ---- the sheet -------------------------------------------------------------------------
-    var cum = { planned: 0, actual: 0, forecast: 0 }, sum = { planned: 0, actual: 0, forecast: 0 };
-    var body = months.map(function (m, i) {
-      var mk = monthKey(m), isNow = (i === ti);
-      var cells = ['planned', 'actual', 'forecast'].map(function (kind) {
-        var v = manValue(manTrade, mk, kind);
-        var editable =
-          kind === 'planned' ? !lock :
-          kind === 'actual' ? (i <= ti) :
-          (i > ti);
-        if (v != null) { cum[kind] += v; sum[kind] += v; }
-        var cumTxt = (v != null || cum[kind] > 0) ? (Math.round(cum[kind] * 10) / 10) + '%' : '';
-        var input = editable
-          ? '<input class="sc-in" type="number" min="0" max="100" step="0.1" ' +
-            'data-mk="' + mk + '" data-kind="' + kind + '" value="' + (v == null ? '' : v) + '" ' +
-            'aria-label="' + esc(kind + ' % for ' + _MABBR[m.getMonth()] + ' ' + m.getFullYear()) + '">'
-          : '<span class="sc-ro" title="' + esc(
-              kind === 'planned' ? (lock === 'locked' ? 'The planned curve is locked.' : 'The project is actualized, so the plan is history.')
-              : kind === 'actual' ? 'This month has not happened yet — enter it in the forecast column.'
-              : 'This month is in the past — enter what happened in the actual column.') + '">' +
-            (v == null ? '—' : v) + '</span>';
-        return '<td>' + input + ' <span class="sc-cum">' + cumTxt + '</span></td>';
+    // ---- the matrix --------------------------------------------------------------------------
+    var head = '<tr><th class="k">Trade</th>' +
+      months.map(function (m, i) {
+        return '<th class="mo' + (i === ti ? ' now' : '') + '" title="' + esc(_MABBR[m.getMonth()] + ' ' + m.getFullYear() +
+          (i === ti ? ' — the data date falls here' : '')) + '">' +
+          _MABBR[m.getMonth()] + '<small>\u2019' + String(m.getFullYear()).slice(2) + '</small></th>';
+      }).join('') +
+      '<th class="tot" title="This trade\'s ' + esc(kindLabel.toLowerCase()) + ' months added up. A trade\'s PLANNED months should reach 100% of that trade.">Total</th></tr>';
+
+    var body = all.map(function (t) {
+      var sh = W.tot ? Math.round((W.w[t] || 0) / W.tot * 1000) / 10 : 0;
+      var rowSum = 0;
+      var cells = months.map(function (m, i) {
+        var mk = monthKey(m), v = manValue(t, mk, manKind);
+        if (v != null) rowSum += v;
+        var ed = cellEditable(i);
+        /* ⚠️ data-i / data-f is PDGrid's contract (assets/js/xlgrid.js) — the row is the trade and
+           the field is the month. Giving the cells those two attributes is the whole adoption: it
+           buys Tab/Enter/arrow navigation, Ctrl+D fill-down and a paste of a whole row straight
+           out of Excel, which is where a monthly accomplishment sheet already lives. */
+        return '<td class="' + (i === ti ? 'now' : '') + '">' + (ed
+          /* ⚠️⚠️ `type="text"` + `inputmode="decimal"`, NOT `type="number"`, AND THIS WAS MEASURED
+             RATHER THAN PREFERRED. A number input REFUSES anything the spec cannot parse and reads
+             back `""` — so typing "12,5" gave an empty string, `setCell`'s comma handling never saw a
+             comma, and the value vanished with no error. This repo has recorded the same trap twice
+             (the BOQ grid in August, nine Contracts & Claims money fields on 2026-09-09) and fixed
+             it the same way both times. The keypad is kept by `inputmode`; the spinner is lost,
+             which is the trade those two already made.
+             ⚠️ `min`/`max`/`step` are dropped with it — they do nothing on a text input, and leaving
+             them would read as validation that is not happening. The range IS enforced, in setCell,
+             which is the one path every edit and every paste goes through. */
+          ? '<input class="sc-in sc-mcell" type="text" inputmode="decimal" ' +
+            'data-i="' + esc(t) + '" data-f="' + mk + '" value="' + (v == null ? '' : v) + '" ' +
+            'aria-label="' + esc(t + ' — ' + manKind + ' % for ' + _MABBR[m.getMonth()] + ' ' + m.getFullYear()) + '">'
+          : '<span class="sc-ro" title="' + esc(cellWhyNot(i)) + '">' + (v == null ? '\u2014' : v) + '</span>') +
+          '</td>';
       }).join('');
-      return '<tr' + (isNow ? ' class="now"' : '') + '>' +
-        '<td class="k">' + _MABBR[m.getMonth()] + ' ' + m.getFullYear() +
-        (isNow ? '<small>data date</small>' : '') + '</td>' + cells + '</tr>';
+      return '<tr><td class="k"><span class="dot"' + (isGR(t) ? ' style="background:#C9A227"' : '') + '></span>' +
+        esc(t) + '<small>' + sh + '% of the project</small></td>' + cells +
+        '<td class="tot" data-rowtot="' + esc(t) + '">' + (Math.round(rowSum * 10) / 10) + '%</td></tr>';
     }).join('');
-    /* ⚠️ THE COLUMN TOTAL IS THE CHECK, and it is stated per column rather than as one verdict:
-       a planned column that sums to 100 and an actual column that sums to 62 is a project 62%
-       done, not a sheet with an error in it. Only PLANNED and FORECAST are expected to reach 100
-       (planned by itself; actual + forecast together), so actual is never marked wrong. */
-    function totCell(kind) {
-      var v = Math.round(sum[kind] * 10) / 10;
-      var cls = kind === 'actual' ? 'sc-tot-part'
-        : (Math.abs(v - 100) < 0.05 ? 'sc-tot-ok' : v > 100 ? 'sc-tot-off' : 'sc-tot-part');
-      var ttl = kind === 'actual' ? 'What has been achieved so far — not expected to reach 100 until the trade is done.'
-        : kind === 'forecast' ? 'Actual so far plus this forecast should reach 100.'
-        : 'A trade\'s planned months should add up to 100% of that trade.';
-      return '<td class="' + cls + '" title="' + esc(ttl) + '">' + v + '%</td>';
+
+    /* ⚠️⚠️ THE COLUMN TOTAL IS THE PROJECT'S OWN FIGURE FOR THAT MONTH, WEIGHTED — not the sum of
+       the column. Adding six trades' percentages together would give a number over 100 that means
+       nothing: each is a share of a different scope. Weighted, it is exactly the height of that
+       month's bar on the chart above, which makes the footer a cross-check between the sheet and
+       the curve rather than a second opinion. */
+    function colTotal(mk) {
+      var tot = 0;
+      all.forEach(function (t) {
+        var v = manValue(t, mk, manKind);
+        if (v != null && W.tot) tot += v / 100 * (W.w[t] || 0) / W.tot * 100;
+      });
+      return Math.round(tot * 10) / 10;
     }
-    var actPlusFc = Math.round((sum.actual + sum.forecast) * 10) / 10;
-    var sheet =
-      '<div class="sc-sheetwrap"><table class="sc-sheet">' +
-        '<thead><tr><th class="k">Month</th><th class="pl">Planned %</th><th class="ac">Actual %</th>' +
-        '<th class="fc">Forecast %</th></tr></thead>' +
-        '<tbody>' + body + '</tbody>' +
-        '<tfoot><tr><td class="k">Total</td>' + totCell('planned') + totCell('actual') + totCell('forecast') + '</tr></tfoot>' +
-      '</table></div>';
+    var foot = '<tr><td class="k">Project (weighted)</td>' +
+      months.map(function (m, i) {
+        var mk = monthKey(m);
+        return '<td class="' + (i === ti ? 'now' : '') + '" data-coltot="' + mk + '">' + colTotal(mk) + '%</td>';
+      }).join('') +
+      '<td class="tot" data-grandtot="1">' + (Math.round(months.reduce(function (acc, m) { return acc + colTotal(monthKey(m)); }, 0) * 10) / 10) + '%</td></tr>';
+
+    var sheet = '<div class="sc-matrixwrap"><table class="sc-matrix" id="sc-matrix">' +
+      '<thead>' + head + '</thead><tbody>' + body + '</tbody><tfoot>' + foot + '</tfoot></table></div>';
 
     /* ⚠️ THE SHEET SAYS WHETHER THE CURVE IS ACTUALLY READING IT. With the tab and the mode
        separate, a planner can fill this in for an hour while the Curve tab still draws the
-       schedule — which is a legitimate thing to do and a terrible thing to discover afterwards.
-       One line, and a button that switches the source. */
+       schedule — a legitimate thing to do and a terrible thing to discover afterwards. */
+    var nDirty = manDirtyCount();
     var srcLine = (mode === 'manual')
       ? '<span class="sc-srcon">The <b>Curve</b> tab is drawing from this sheet.</span>'
       : '<span class="sc-srcoff">The <b>Curve</b> tab is drawing from the <b>schedule</b>, not from this sheet. ' +
         '<button class="pd-btn pd-btn-sm" id="sc-usemanual">Use this sheet</button></span>';
+
     card.innerHTML =
-      '<div class="sc-man-head"><h3>Manual POC entry — ' + esc(manTrade) + '</h3>' +
-        '<span class="sc-note" style="margin:0;">' + share + '% of the project by ' +
-        (basis === 'cost' ? 'loaded cost' : 'duration') + '</span>' +
+      '<div class="sc-man-head"><h3>Manual POC entry</h3>' +
+        '<span class="sc-note" style="margin:0;">' + all.length + ' trades \u00b7 ' + months.length +
+        ' months \u00b7 weighted by ' + pw + '</span>' +
         '<span class="sc-man-act">' +
-          '<button class="pd-btn pd-btn-sm" id="sc-mansave"' + (Object.keys(manDirty).length ? '' : ' disabled') + '>' +
-            'Save' + (Object.keys(manDirty).length ? ' (' + Object.keys(manDirty).length + ')' : '') + '</button>' +
+          (nDirty ? '<span class="sc-unsaved">' + nDirty + ' unsaved</span>' : '') +
+          '<button class="pd-btn pd-btn-sm" id="sc-mansave"' + (nDirty ? '' : ' disabled') + '>' +
+            'Save' + (nDirty ? ' (' + nDirty + ')' : '') + '</button>' +
         '</span></div>' +
+      /* ==========================================================================================
+         THE CURVE ABOVE THE SHEET.
+         Owner: *"while inputting, there would still be an scurve displayed above the table."*
+         ⚠️ It is the SAME renderChart the Curve tab uses, pointed at this host — see the note on
+         that function. And it is LIVE: computeManual reads manEffective(), so it redraws from the
+         unsaved edits as they are typed rather than jumping on Save.
+         ⚠️ Its own note carries the unsaved count, because a chart drawn from numbers that are not
+         in the database yet must say so — a screenshot of it would otherwise assert data nobody
+         has kept.
+         ========================================================================================== */
+      '<div class="sc-manchartwrap"><div id="sc-manchart"></div><p class="sc-note" id="sc-mannote"></p></div>' +
       '<div class="sc-srcbar">' + srcLine + '</div>' +
-      lockBar + chips + '<div style="height:10px"></div>' + sheet +
+      lockBar +
+      '<div class="sc-filterbar sc-kindbar">' + kindSeg +
+        '<span class="sc-note" id="sc-manhint" style="margin:0;"></span></div>' +
+      sheet +
       '<div class="sc-man-note">' +
-        'Each figure is <b>this month\'s own share of ' + esc(manTrade) + '</b>, not of the project — so ' +
-        'this trade\'s planned months should add up to <b>100%</b>. The grey figure beside each entry ' +
-        'is the running cumulative, which is what the curve draws. ' +
-        'Actual + forecast currently reach <b>' + actPlusFc + '%</b> of this trade.' +
-        '<br>⚠️ The project curve weights each trade by its share of the schedule (' +
-        (basis === 'cost' ? 'loaded cost' : 'duration') + '), shown on each chip above — so a trade ' +
-        'worth 3% of the job moves the project curve by 3% of whatever you enter here, not by all of it.' +
+        'Every cell is <b>that month\'s own share of that trade</b>, not of the project — so a ' +
+        'trade\'s <b>Planned</b> row should add up to <b>100%</b> in the Total column. ' +
+        'The <b>Project (weighted)</b> footer is each month weighted by its trades\' share of the ' +
+        'schedule, which is the height of that month\'s bar on the chart above.' +
+        '<br>\u26a0\ufe0f The sheet is always <b>monthly</b> — that is the grain the figures are stored at. ' +
+        'The Period control changes the CHART only; entering a quarter would mean splitting it back ' +
+        'across three months, and there is no honest way to choose that split.' +
         (d.manUnmatched && d.manUnmatched.length
-          ? '<br>⚠️ <b>' + d.manUnmatched.length + ' trade' + (d.manUnmatched.length === 1 ? '' : 's') +
+          ? '<br>\u26a0\ufe0f <b>' + d.manUnmatched.length + ' trade' + (d.manUnmatched.length === 1 ? '' : 's') +
             ' in the saved sheet no longer match the schedule</b> (' + esc(d.manUnmatched.join(', ')) +
-            ') — they carry no weight and are not on the curve. A trade renamed in the schedule keeps ' +
+            ') \u2014 they carry no weight and are not on the curve. A trade renamed in the schedule keeps ' +
             'its entries here; re-enter them under the new name, or rename it back.'
           : '') +
       '</div>';
 
+    // ---- the live chart ----------------------------------------------------------------------
+    manChart();
+
     // ---- wiring ------------------------------------------------------------------------------
-    card.querySelectorAll('[data-mt]').forEach(function (b) {
-      b.onclick = function () { manTrade = b.dataset.mt; render(); };
-    });
-    /* ⚠️ ON change, NOT ON input: re-rendering per keystroke would rebuild the sheet and take the
-       focus out of the cell being typed in — and the running cumulative beside every row has to be
-       recomputed, so an edit IS a re-render. */
-    card.querySelectorAll('.sc-in').forEach(function (el) {
-      el.onchange = function () {
-        var raw = String(el.value).trim();
-        var k = manCellKey(manTrade, el.dataset.mk, el.dataset.kind);
-        if (raw === '') { manDirty[k] = 0; }
-        else {
-          var v = parseFloat(raw);
-          if (!isFinite(v) || v < 0 || v > 100) { UI.toast('A month\'s POC is a percentage between 0 and 100.', 'error'); el.value = ''; return; }
-          manDirty[k] = Math.round(v * 1000) / 1000;
-        }
-        render();
+    var kb = document.getElementById('sc-mankind');
+    if (kb) kb.querySelectorAll('[data-k]').forEach(function (bt) {
+      bt.onclick = function () {
+        if (manKind === bt.dataset.k) return;
+        manKind = bt.dataset.k;
+        try { localStorage.setItem('sc_mankind_' + pid, manKind); } catch (e) {}
+        renderManual();
       };
     });
+    /* ⚠️⚠️ A CELL EDIT DOES **NOT** RE-RENDER THE SHEET, and that is the change the matrix forced.
+       The per-trade sheet re-rendered on every change because its running-cumulative column had to
+       be recomputed — harmless there, fatal here: rebuilding the table drops the focus out of the
+       cell being typed in and destroys PDGrid's listeners, so Tab, fill-down and paste would all
+       die on the first keystroke. manRefresh() writes the totals and redraws the chart WITHOUT
+       touching the grid. */
+    card.querySelectorAll('.sc-mcell').forEach(function (el) {
+      el.onchange = function () { setCell(el.dataset.i, el.dataset.f, el.value, el); };
+    });
+    /* PDGrid is the app's own spreadsheet layer (assets/js/xlgrid.js): Tab/Enter/arrows,
+       Shift+arrow selection, Ctrl+D fill down, Ctrl+Z, and a paste of a TSV block straight from
+       Excel. ⚠️ Its onSet routes through the SAME setCell an ordinary edit takes, so a pasted value
+       gets identical validation — a second write path would be a second set of bugs.
+       ⚠️ Degrades silently: without the script the grid is still a grid of ordinary inputs. */
+    var mtable = document.getElementById('sc-matrix');
+    if (mtable && window.PDGrid && PDGrid.attach) {
+      try {
+        PDGrid.attach({ root: mtable, cell: '.sc-mcell', storageKey: 'scmanual',
+          onSet: function (rowId, field, value) { setCell(rowId, field, value, null); } });
+      } catch (e) {}
+    }
+    var hint = document.getElementById('sc-manhint');
+    if (hint) hint.innerHTML = (window.PDGrid && PDGrid.hintHTML) ? PDGrid.hintHTML()
+      : 'Tab / Enter to move \u00b7 paste a row straight from Excel';
     var sv = document.getElementById('sc-mansave'); if (sv) sv.onclick = function () { saveManual(); };
     var um = document.getElementById('sc-usemanual');
     if (um) um.onclick = function () {
@@ -1615,11 +1918,24 @@
         v >= 0 ? 'sc-ok' : 'sc-bad');
   }
 
-  function renderChart(d) {
-    var host = document.getElementById('sc-chart');
+  /* ⚠️⚠️ ONE RENDERER, TWO HOSTS — the Curve tab's chart and the live preview above the manual
+     sheet are the same function pointed at a different element. A second chart builder would be
+     ~150 lines of axis, bar and forecast geometry to keep in step with this one, and the first
+     divergence would be a preview that disagrees with the chart it is previewing.
+     ⚠️ `opts.interactive` is false for the preview: the click opens the trade breakdown, which is a
+     card in the OTHER pane. The hover readout is kept — it is the only place the amounts appear —
+     and its "click for the breakdown" line is dropped there rather than left as a dead promise.
+     ⚠️ The tip, the guide and the svg are found by CLASS through `host.querySelector`, never by id:
+     both panes exist in the DOM at once (they are hidden, not removed), so an id would be
+     duplicated and `getElementById` would return whichever came first. */
+  function renderChart(d, opts) {
+    opts = opts || {};
+    var host = document.getElementById(opts.host || 'sc-chart');
+    if (!host) return;
+    var interactive = (opts.interactive !== false);
     // ⚠️ NOT named `basis` — that is now the module-level weighting flag, and shadowing it here
     // would make the note element win inside this function.
-    var basisNote = document.getElementById('sc-basis');
+    var basisNote = document.getElementById(opts.note || 'sc-basis') || { textContent: '', innerHTML: '' };
     if (d.empty) {
       // The cost basis with no loading is its own message, with the way out named.
       host.innerHTML = '<div class="sc-empty">' + (
@@ -1657,8 +1973,16 @@
         (seenTxt.length ? 'Entered so far: <b>' + seenTxt.join(', ') + '</b>. '
                         : '<b>Nothing entered yet</b> — the curve is flat until the sheet below is filled in. ') +
         'Switch to <b>Automatic</b> to read the same project from the schedule instead.';
-      return;
-    }
+    } else {
+    /* ⚠️⚠️ THIS WAS AN EARLY `return`, AND IT MEANT THE CHART WAS NEVER DRAWN IN MANUAL MODE.
+       Shipped that way this morning: the branch sets the manual basis note and then returned from
+       renderChart entirely, so with the mode on Manual the Curve tab rendered the sentence
+       explaining the curve and an EMPTY plot underneath it. Nothing errored, and the note made it
+       look as though something had happened, which is why it survived a browser check — that check
+       only ever ran the automatic mode. Found by pointing the same renderer at the live preview
+       above the manual sheet and getting an empty host back.
+       ⚠️ An if/else, not a moved return: the two notes are alternatives, and the DRAWING below is
+       common to both. */
     basisNote.textContent = (d.money
       ? 'Progress weighted by the COST loaded on each activity (' + peso(d.TOT) + ' across ' + d.priced + ' of ' + d.activities +
         ' activities' + (d.priced < d.activities ? ' — the other ' + (d.activities - d.priced) + ' carry no cost and count for nothing here' : '') +
@@ -1667,6 +1991,7 @@
       'Solid = planned & actual (to data date). Red dashed = forecast to finish — ' +
       (d.manual ? 'pinned to ' + iso(d.fcFinish) : 'performance-based (SPI ' + (Math.round(d.spi * 100) / 100) + ', auto finish ' + iso(d.autoFc) + ')') +
       '; it follows the plan’s shape from the actual point up to 100%. Set a date to override, clear it to auto-forecast.';
+    }
     var W = 1000, H = 340, padL = 40, padR = 16, padT = 16, padB = 40, n = d.months.length, maxV = d.TOT || 1;
     /* ⚠️ A RIGHT-HAND PAD when the bars are drawn, because they get their own axis. Without it the
        periodic scale's labels sit outside the viewBox and are simply not there.
@@ -1840,18 +2165,18 @@
           '" width="' + Math.max(0.5, hi - lo) + '" height="' + (H - padT - padB) + '"></rect>';
       }
       // The guide line that follows the pointer, moved by style rather than rebuilt per frame.
-      hit = '<line id="sc-guide" class="sc-guide" x1="0" y1="' + padT + '" x2="0" y2="' + (H - padB) + '" style="display:none"></line>' + hit;
+      hit = '<line class="sc-guide" x1="0" y1="' + padT + '" x2="0" y2="' + (H - padB) + '" style="display:none"></line>' + hit;
     })();
     // ⚠️ ORDER IS THE READING ORDER: bars, then the grid and the data-date rule, then the curves
     // on top. A line hidden behind a bar is a line the planner cannot follow.
     host.innerHTML = '<div class="sc-plot">' +
-      '<svg viewBox="0 0 ' + W + ' ' + H + '" class="sc-svg" id="sc-svg">' + bars + grid + todayL +
+      '<svg viewBox="0 0 ' + W + ' ' + H + '" class="sc-svg">' + bars + grid + todayL +
       (showLines
         ? '<polyline class="sc-planned" points="' + pl + '"/>' + fc +
           (ac.length ? '<polyline class="sc-earned" points="' + ac.join(' ') + '"/>' : '')
-        : '') + xlab + hit + '</svg>' +
+        : '') + xlab + (interactive || opts.hover !== false ? hit : '') + '</svg>' +
       // The readout, positioned against the plot box on hover. Empty until then.
-      '<div class="sc-tip" id="sc-tip" hidden></div></div>' +
+      '<div class="sc-tip" hidden></div></div>' +
       '<div class="sc-legend">' +
       (showLines
         ? '<span class="sc-lg"><span class="sw sw-planned"></span> Planned (cumulative)</span>' +
@@ -1867,7 +2192,7 @@
       // ⚠️ Says the chart is interactive. A hover readout nobody knows about is a hover readout
       // nobody uses, and this one carries the only amounts on the screen.
       '<span class="sc-lg sc-lg-hint">Hover a ' + (L.per === 'year' ? 'year' : L.per === 'quarter' ? 'quarter' : 'month') +
-      ' for its figures · click for the trade breakdown</span></div>' +
+      ' for its figures' + (interactive ? ' · click for the trade breakdown' : '') + '</span></div>' +
       // ⚠️ Says what the bars' own axis is, because two y-axes on one chart is a thing a reader
       // has to be TOLD about — a bar read against the left-hand axis is out by an order of
       // magnitude, and nothing about the picture reveals that.
@@ -1894,8 +2219,8 @@
        ⚠️ The readout is positioned in the PLOT's coordinates (its offsetParent), not the page's, so
        it stays with the chart when the page scrolls and needs no scroll listener.
        ========================================================================================== */
-    var plot = host.querySelector('.sc-plot'), tip = host.querySelector('#sc-tip');
-    var svgEl = host.querySelector('#sc-svg'), guide = host.querySelector('#sc-guide');
+    var plot = host.querySelector('.sc-plot'), tip = host.querySelector('.sc-tip');
+    var svgEl = host.querySelector('.sc-svg'), guide = host.querySelector('.sc-guide');
     function tipHTML(i) {
       var b = LB[i], amt = bucketAmounts(b);
       var pct = function (v) { return v == null || !maxV ? null : Math.round(v / maxV * 1000) / 10; };
@@ -1938,7 +2263,8 @@
           ? 'No amount — nothing is cost-loaded on this schedule.'
           : 'Amounts need the activities. Click to load them.') + '</div>';
       }
-      out += '<div class="sc-tip-cta">Click for the trade breakdown</div>';
+      // ⚠️ Only where clicking actually does something — see opts.interactive.
+      if (interactive) out += '<div class="sc-tip-cta">Click for the trade breakdown</div>';
       return out;
     }
     function showTip(i, el) {
@@ -1966,15 +2292,15 @@
         var i = +r.dataset.b;
         r.addEventListener('mouseenter', function () { showTip(i, r); });
         r.addEventListener('mousemove', function () { if (tip && tip.hidden) showTip(i, r); });
-        r.addEventListener('click', function () { openBreakdown(i, L, d); });
+        if (interactive) r.addEventListener('click', function () { openBreakdown(i, L, d); });
         // ⚠️ Keyboard-reachable: the breakdown is the only route to the per-trade figures, and a
         // click-only control makes them unreachable without a mouse.
         r.setAttribute('tabindex', '0');
-        r.setAttribute('role', 'button');
-        r.setAttribute('aria-label', LB[i].label + ' — figures and trade breakdown');
+        r.setAttribute('role', interactive ? 'button' : 'img');
+        r.setAttribute('aria-label', LB[i].label + (interactive ? ' — figures and trade breakdown' : ' — figures'));
         r.addEventListener('focus', function () { showTip(i, r); });
         r.addEventListener('blur', hideTip);
-        r.addEventListener('keydown', function (e) {
+        if (interactive) r.addEventListener('keydown', function (e) {
           if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openBreakdown(i, L, d); }
         });
       });

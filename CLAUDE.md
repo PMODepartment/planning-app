@@ -95,6 +95,61 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### The manual sheet becomes a trades × months matrix, with the curve live above it (2026-09-10) — ethanrobles10
+
+Owner: *"i was thinking, what if it were the other way around. meaning the months are plotted as
+columns and the trades are plotted as rows. And then while inputting, there would still be an
+scurve displayed above the table."*
+
+⚠️⚠️ **This reverses the shape I argued for hours earlier, and the argument was incomplete rather
+than wrong.** I refused a trades × months matrix because eight trades over three years is 288 cells
+and, at three kinds per cell, **864**. That arithmetic holds; what I missed is that **the third
+dimension does not have to be in the grid** — Planned / Actual / Forecast is a **mode** now, so the
+sheet is 8 × 36 for one kind at a time. That is the shape of the spreadsheet a planner is copying
+from, and it does something the per-trade sheet could not do at all: comparing two trades in the
+same month was two screens there and is a glance here.
+
+⚠️ **The column footer is the project's WEIGHTED figure, not the sum of the column** — adding six
+trades' percentages gives a number over 100 that means nothing, since each is a share of a different
+scope. Weighted, it is exactly the height of that month's bar on the chart above, so the footer is a
+cross-check between the sheet and the curve. ⚠️ The matrix is always **monthly** whatever the Period
+control says: the stored grain is a month, and typing a quarter would mean inventing its split.
+
+**The curve above the sheet is live, and that required one change.** `computeManual` read the saved
+rows, so a chart above the sheet would have sat still while the planner typed and jumped on Save;
+`manEffective()` now lays the unsaved edits over the saved ones and *every* reader goes through it,
+so the chart, the row totals and the footer all describe the sheet as it is on screen. It is the
+**same `renderChart`** the Curve tab uses, pointed at a second host, with its note carrying
+*"Includes N unsaved edits"* — a chart drawn from numbers the database does not hold must say so.
+⚠️⚠️ And a cell edit deliberately does **not** re-render the sheet: rebuilding the table drops the
+focus out of the cell being typed in. Measured — after an edit the table node is unchanged and
+`document.activeElement` is still the cell.
+
+⚠️⚠️ **A defect this found in what shipped this morning: the Curve tab drew NO chart in Manual
+mode.** `renderChart`'s manual branch set the basis note and then **`return`ed before any drawing**,
+so selecting Manual left the sentence explaining the curve above an empty plot. Nothing errored and
+the note made it look as though something had happened — which is why a browser check missed it:
+that check only ever ran the automatic mode. Confirmed present in `HEAD` before touching it.
+
+**`PDGrid` (`assets/js/xlgrid.js`) is adopted rather than re-implemented** — the cells carry its
+`data-i` / `data-f` contract, which buys Tab/Enter/arrows, Ctrl+D fill-down, Ctrl+Z and **a paste
+straight out of Excel** (measured: a four-cell TSV paste filled four months). ⚠️ Loaded at the
+version the other page already uses, not a second one. ⚠️⚠️ Wiring that paste exposed the
+`type="number"` trap **for the third time in this repo**: a number input reads back `""` for `12,5`,
+so the value vanished with no error. Fixed as the BOQ grid and the nine Contracts & Claims money
+fields were — `type="text"` + `inputmode="decimal"` — and a comma is now **refused rather than
+stripped**, because stripping turns the European `12,5` into 125, a guess about locale that produces
+a plausible wrong number. Two refusals, two messages: unreadable and out-of-range are different
+mistakes.
+
+**85 assertions across three suites, 0 failing** (14 new; the earlier 37 and 34 re-run), and driven
+in a real browser in light and dark: 5 trades × 24 months, typing moved the row total 0 → 25%, the
+weighted footer 22.7 → 29.5% and the curve's first point with it; the frozen corner holds after a
+600px scroll; an over-100 row total is flagged. ⚠️ Not verified signed in, and
+`migrations/2026-09-10-scurve-manual-poc.sql` still has to be run.
+
+`MODULE_V` → `20260910zc`. Detail: [`modules/s-curve/CLAUDE.md`](modules/s-curve/CLAUDE.md).
+
 ### The manual-POC migration could not run: `projects.id` is text, not uuid (2026-09-10) — ethanrobles10
 
 Owner, running `migrations/2026-09-10-scurve-manual-poc.sql`: **`ERROR: 42804 … Key columns
