@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910v7" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910v9" />
   <style>
     .ps-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
     .ps-tab { padding:8px 20px; cursor:pointer; font-weight:700; font-size:var(--pd-fs-base); color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
@@ -654,7 +654,10 @@
       background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
       background-repeat:no-repeat; background-position:right 6px center; }
     select.ps-status-pill:hover { box-shadow:0 0 0 1px var(--pd-red-mid) inset; }
-    select.ps-status-pill:focus { outline:none; box-shadow:0 0 0 2px var(--pd-red-mid) inset; }
+    /* ⚠️ WAS `--pd-red-mid` inset, which measures 1.90:1 on white - under the 3:1 a focus
+       indicator needs, and it was the ONLY one because the outline was removed. Kept inset
+       (the pill sits in a dense grid cell) and moved onto --pd-focus, 4.12:1. */
+    select.ps-status-pill:focus-visible { outline:none; box-shadow:0 0 0 2px var(--pd-focus) inset; }
     select.ps-status-pill option { color:var(--pd-ink); background:var(--pd-card); font-weight:700; }
     .c-dur { width:var(--c-dur); justify-content:flex-end; } .c-pct { width:var(--c-pct); justify-content:flex-end; position:relative; }
     .c-durpct { width:var(--c-durpct); justify-content:flex-end; }
@@ -1369,10 +1372,16 @@
       background:var(--pd-bg); align-self:stretch; display:flex; align-items:center; border-right:1px solid var(--pd-line); }
     .pscl-in { width:100%; height:34px; padding:0 10px; font:inherit; font-size:var(--pd-fs-body); font-weight:700; text-align:right;
       font-variant-numeric:tabular-nums; border:0; background:transparent; color:var(--pd-ink); }
-    .pscl-in:focus { outline:none; }
+    /* ⚠️ WAS `outline:none` WITH NOTHING IN ITS PLACE, and this input is `border:0;
+       background:transparent` inside a cell — so a keyboard user tabbing into it saw
+       NOTHING AT ALL. Unlike `.ps-wbs-row` below, which suppresses its ring for a stated
+       reason and is `tabindex="-1"` (never reached by Tab), this is a real tab stop.
+       The offset is NEGATIVE so the ring is drawn inside the cell rather than overflowing
+       into the neighbouring one. */
+    .pscl-in:focus-visible { outline:2px solid var(--pd-focus); outline-offset:-2px; }
     .pscl-in.pct { max-width:96px; height:32px; font-size:var(--pd-fs-base); border:1px solid var(--pd-line); border-radius:7px;
       background:var(--pd-card); padding:0 8px; }
-    .pscl-in.pct:focus { outline:2px solid var(--pd-red); outline-offset:-2px; }
+    .pscl-in.pct:focus { outline:2px solid var(--pd-focus); outline-offset:-2px; }
     .pscl-bad { color:var(--pd-red); font-weight:700; }
     /* One KPI carries the number the whole exercise is about — the money assigned so far. It gets the
        accent border and a larger figure; the rest stay quiet counts. Same box as .sbld-kpi otherwise,
@@ -3340,7 +3349,11 @@
     .sbld-wbsmv { width:28px; height:26px; padding:0; font-size:var(--pd-fs-base); justify-content:center; line-height:1; }
     /* step 1 — Excel-style grid */
     .sbld-xlwrap { border:1px solid var(--pd-line); border-radius:8px; overflow:auto; max-height:58vh; outline:none; }
-    .sbld-xlwrap:focus { box-shadow:inset 0 0 0 2px var(--pd-red-light); }
+    /* This wrapper is tabindex="0", so it is a real tab stop, and this box-shadow was its
+       ONLY focus indicator - measured 1.14:1 light / 1.10:1 dark against the card. Invisible.
+       --pd-focus measures 4.12 / 3.40. Kept INSET so it is not clipped by the wrapper's own
+       `overflow:auto`. */
+    .sbld-xlwrap:focus-visible { box-shadow:inset 0 0 0 2px var(--pd-focus); }
     table.sbld-xl { border-collapse:collapse; font-size:var(--pd-fs-sm); width:100%; }
     table.sbld-xl th, table.sbld-xl td { border:1px solid var(--pd-line); padding:5px 8px; text-align:left; white-space:nowrap; }
     table.sbld-xl thead th { position:sticky; top:0; z-index:2; background:var(--pd-bg); font-weight:700; }
@@ -3356,6 +3369,10 @@
     table.sbld-xl td.xl-rowact { width:38px; text-align:center; }
     table.sbld-xl td.xl-rowact .sbld-del { padding:2px 6px; }
     table.sbld-xl input, table.sbld-xl select { width:100%; box-sizing:border-box; border:none; background:var(--pd-card); color:var(--pd-ink); font:inherit; padding:3px 4px; outline:none; }
+    /* ⚠️ The shared focus ring is `outline-offset:2px`, which OVERLAPS the neighbouring cell in a
+       table this dense. Pulled inside for grid cells only - the ring is still 2px and still the
+       same colour, it just draws within the cell it belongs to. */
+    table.sbld-xl input:focus-visible, table.sbld-xl select:focus-visible { outline-offset:-2px; }
     /* step-4 grid: link-select button + pending/focus row states (don't fight the cell selection tint) */
     table.sbld-xl .t4-link { width:26px; height:24px; padding:0; font-size:var(--pd-fs-base); line-height:1; justify-content:center; }
     table.sbld-xl tr.pend .t4-link { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }

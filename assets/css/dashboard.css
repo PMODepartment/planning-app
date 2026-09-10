@@ -84,6 +84,11 @@
      #93C5FD 7.77 / 5.48 dark. ⚠️ #2f6fed measured 3.84 on its own tint and was the
      spelling nearest to failing, which is the argument for one token over four. */
   --pd-info-bg: rgba(37,99,235,.12);   --pd-info-line: rgba(37,99,235,.28);   --pd-info-text: #1D4ED8;
+  /* ⚠️ The keyboard focus ring gets its OWN token even though it equals --pd-red today.
+     A focus indicator is a accessibility contract with a measured 3:1 floor (WCAG 2.2
+     SC 1.4.11); the brand accent is free to be re-tuned for looks. Tying one to the
+     other means a brand tweak could silently drop the ring under the bar. */
+  --pd-focus: var(--pd-red);
   /* Type + shape */
   --pd-font: 'Gotham', 'Montserrat', 'Segoe UI', system-ui, -apple-system, sans-serif;
   /* Brandbook 2026 names Gotham the PRIMARY face and Avenir Next Condensed the
@@ -664,7 +669,44 @@ html.pd-dark .pd-seg-multi > button.on:hover { color: #FF8A80; }
    still wins on source order, and every module-local `.xx-filters .pd-select` (0,2,0)
    still wins outright. */
 .pd-input, .pd-select { min-height: 32px; }
-.pd-input:focus, .pd-select:focus, .pd-textarea:focus { outline: 2px solid var(--pd-red); outline-offset: -1px; }
+.pd-input:focus, .pd-select:focus, .pd-textarea:focus { outline: 2px solid var(--pd-focus); outline-offset: -1px; }
+
+/* ⚠️⚠️ THE APP-WIDE KEYBOARD FOCUS RING — and until 2026-09-10 there wasn't one.
+   Established by resolving the cascade against the shipped stylesheet (see the note on
+   measuring this, below): the three form-field classes above carried a focus rule and
+   **every button, link, tab, avatar and icon button in the app had NO `:focus` rule at all**.
+   Not invisible — each browser draws its own default — but it meant the app had no focus
+   identity of its own, and what a keyboard user saw depended on their browser.
+
+   ⚠️ `:focus-visible`, never `:focus`. A ring that also fires on MOUSE clicks is the reason
+   people delete focus rings, and deleting them is how a control ends up with no indicator at
+   all — which is exactly what happened to `.pscl-in` below.
+
+   ⚠️⚠️ `:where()` IS LOAD-BEARING: it contributes ZERO specificity, so this rule sits at
+   (0,1,0) — the `:focus-visible` alone — and **every existing component rule still wins
+   without being touched.** `.pd-input:focus` (0,2,0) keeps its inset ring; `.ps-wbs-row:focus
+   { outline:none }` keeps its documented suppression. A blanket ring at normal specificity
+   would have silently overridden both.
+
+   ⚠️⚠️ `outline-offset: 2px` puts the ring OUTSIDE the control, and that is the whole reason
+   it works on `.pd-btn-primary`: a red ring drawn ON a red button is **1.00:1 — literally
+   invisible**. Two pixels out it lands on the surface behind instead. Measured against every
+   ground the app actually paints (WCAG 2.2 SC 1.4.11 wants 3:1 for a focus indicator):
+
+       white card #FFFFFF 4.12   app bg #F4F4F4 3.74   dark ground #1C1C1C 4.14
+       dark card  #2B2C2B 3.40   sidebar #231F20 3.96
+
+   The dark card at 3.40 is the tightest and still clears it. ⚠️ If --pd-focus is ever
+   re-tuned, re-measure THAT row first — it is the one with the least headroom.
+
+   ⚠️ `[tabindex="-1"]` is excluded deliberately: those elements are focusable only from
+   script and are never reached by Tab, so ringing them would flash an indicator on things
+   the keyboard cannot actually land on. */
+:where(a[href], button, input, select, textarea, summary,
+       [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid var(--pd-focus);
+  outline-offset: 2px;
+}
 
 /* ---- Project selector (UI.enhanceProjectSelect) ----
    Shared across every module: a button that opens the same Portfolio +
@@ -710,7 +752,7 @@ button.pd-psel-btn { height: auto; min-height: 30px; padding-top: 4px; padding-b
    flattens across every group. */
 .pd-nt-search { position: sticky; top: 0; background: var(--pd-card); padding: 8px; border-bottom: 1px solid var(--pd-line); z-index: 1; }
 .pd-nt-search input { width: 100%; box-sizing: border-box; padding: 6px 9px; border: 1px solid var(--pd-line); border-radius: 6px; font: inherit; background: var(--pd-bg); color: var(--pd-ink); }
-.pd-nt-search input:focus { outline: 2px solid var(--pd-red); outline-offset: -1px; }
+.pd-nt-search input:focus { outline: 2px solid var(--pd-focus); outline-offset: -1px; }
 .pd-nt-portfolio { display: flex; align-items: center; gap: 8px; padding: 10px; cursor: pointer;
   font-size: var(--pd-fs-base); font-weight: 500; color: var(--pd-ink); border-bottom: 2px solid var(--pd-line); background: var(--pd-bg); }
 .pd-nt-portfolio:hover { background: var(--pd-red-light); }
@@ -918,6 +960,7 @@ html.pd-dark {
   --pd-warn-bg: rgba(224,160,8,.16);   --pd-warn-line: rgba(224,160,8,.32);   --pd-warn-text: #E0A008;
   --pd-bad-bg:  rgba(239,83,80,.16);   --pd-bad-line:  rgba(239,83,80,.32);   --pd-bad-text:  #FF8A80;
   --pd-info-bg: rgba(147,197,253,.16); --pd-info-line: rgba(147,197,253,.32); --pd-info-text: #93C5FD;
+  --pd-focus: var(--pd-red);          /* #EE3124 on the #1C1C1C ground = 3.62:1 */
   --pd-shadow: 0 1px 3px rgba(0,0,0,.5);
   --pd-shadow-md: 0 4px 12px rgba(0,0,0,.55);
   --pd-shadow-lg: 0 8px 24px rgba(0,0,0,.6);

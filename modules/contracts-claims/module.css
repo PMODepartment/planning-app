@@ -1141,7 +1141,7 @@ html.pd-dark .cca-gr-bar { background:#6f767d; }
 .pmi-chtab .pmi-chd, .pmi-chtab .pmi-chby { height:28px; padding:0 6px; font-size:var(--pd-fs-sm);
   border:1px solid var(--pd-line); border-radius:6px; background:var(--pd-card); color:var(--pd-ink);
   width:100%; box-sizing:border-box; min-width:0; }
-.pmi-chtab .pmi-chd:focus, .pmi-chtab .pmi-chby:focus { outline:2px solid var(--pd-red); outline-offset:-2px; }
+.pmi-chtab .pmi-chd:focus, .pmi-chtab .pmi-chby:focus { outline:2px solid var(--pd-focus); outline-offset:-2px; }
 /* THE THREE STATES, and they must be distinguishable at a glance rather than read.
    cleared = done and quiet · with = the one row that wants attention · pending = not yet its turn. */
 .pmi-chtab tr.pmi-ch-cleared td { background:rgba(18,105,58,.07); }

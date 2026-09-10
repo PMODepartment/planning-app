@@ -351,7 +351,7 @@ html.pd-dark .sm-fsec { color:#FF8A80; }
 }
 .sm-ap-row:last-child { border-bottom: 0; }
 .sm-ap-row:hover:not(:disabled) { background: var(--pd-red-light); }
-.sm-ap-row:focus-visible { outline: 2px solid var(--pd-red); outline-offset: -2px; }
+.sm-ap-row:focus-visible { outline: 2px solid var(--pd-focus); outline-offset: -2px; }
 /* Already on this project: shown, not hidden. "Why can't I find him" is a worse
    failure than "he is already here", and the row answers the question. */
 .sm-ap-row:disabled { cursor: default; opacity: .55; }

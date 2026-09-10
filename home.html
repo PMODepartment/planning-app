@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="assets/img/icon.png?v=20260830b" />
   <script src="assets/js/theme.js?v=20260812b"></script>
   <title>Home — Planners Dashboard</title>
-  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260910v7" />
+  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260910v9" />
   <style>
     /* ---------------------------------------------------------------------
        Landing page, restyled to match the Procurement Dashboard's "Select
@@ -41,7 +41,9 @@
     .pd-home-search input { width: 100%; box-sizing: border-box; padding: 9px 12px; font: inherit;
       font-size: var(--pd-fs-base); border: 1.5px solid var(--pd-red); border-radius: 8px;
       background: var(--pd-bg); color: var(--pd-ink); }
-    .pd-home-search input:focus { outline: none; box-shadow: 0 0 0 3px var(--pd-red-light); }
+    /* the halo is DECORATION; the ring is the indicator. It used to be `outline:none` plus
+       this halo alone, which measures 1.14:1 on white - no visible focus at all. */
+    .pd-home-search input:focus { box-shadow: 0 0 0 3px var(--pd-red-light); }
     .pd-home-count { text-align: right; font-size: var(--pd-fs-xs); color: var(--pd-muted); margin-top: 7px; }
 
     .pd-home-list { border-top: 1px solid var(--pd-line); }

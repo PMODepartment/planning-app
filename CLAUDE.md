@@ -129,6 +129,94 @@ plus a readout of storey, zone, percent and finish. One raycaster serves hover a
 plans for 2 floors" on every project and every lookup missed. **86 assertions across five suites,
 0 failing**, executing sliced shipped code, with the pre-fix text run as the control.
 
+### 2026-09-10 (v9) — The app had no keyboard focus ring, and three of the ones it did have were invisible
+
+Second item of the second-pass audit. Focus visibility is the one UI inconsistency with a hard,
+measurable floor — **WCAG 2.2 SC 1.4.11 asks for 3:1** on a focus indicator — so this is checkable
+rather than arguable.
+
+#### ⚠️⚠️ NO BUTTON, LINK, TAB, AVATAR OR ICON BUTTON IN THIS APP HAD A `:focus` RULE
+Three classes carried one — `.pd-input` / `.pd-select` / `.pd-textarea`. **Everything else had
+nothing**, so what a keyboard user saw was whatever their browser happened to draw: Chrome's
+black-and-white double ring, Firefox's blue one, something else on Safari. Not invisible, but the app
+had no focus identity of its own and no control over it.
+
+New shared rule, and every part of it is load-bearing:
+
+```css
+:where(a[href], button, input, select, textarea, summary,
+       [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid var(--pd-focus); outline-offset: 2px;
+}
+```
+
+- ⚠️ **`:focus-visible`, never `:focus`.** A ring that also fires on mouse clicks is *why* people
+  delete focus rings, and deleting them is how a control ends up with no indicator at all — which is
+  precisely what had happened to three controls below.
+- ⚠️⚠️ **`:where()` is what makes this safe.** It contributes **zero** specificity, so the rule sits at
+  (0,1,0) and **every existing component rule still wins untouched**. Verified by resolving the real
+  cascade: `.pd-input` reports *two* rules applying and `.pd-input:focus` (0,2,0) winning, so form
+  fields keep their inset −1px ring; `.ps-wbs-row:focus { outline:none }` also still wins, so its
+  documented suppression survives. A blanket ring at ordinary specificity would have silently
+  overridden both.
+- ⚠️⚠️ **`outline-offset: 2px` is the reason it works on the red `+ Add` button.** A red ring drawn
+  *on* `--pd-red` is **1.00:1 — literally invisible**. Two pixels out it lands on the surface behind.
+  Measured on every ground the app paints: white card **4.12**, app bg **3.74**, dark ground **4.14**,
+  dark card **3.40**, sidebar **3.96**. The dark card is the tightest and still clears 3:1.
+- ⚠️ `[tabindex="-1"]` is excluded: those are script-focusable only and never reached by Tab.
+
+#### Three indicators that were there and could not be seen
+| control | was | measured | now |
+|---|---|---|---|
+| `.sbld-xlwrap` (the spreadsheet, `tabindex="0"`) | `inset 0 0 0 2px var(--pd-red-light)` — its **only** indicator | **1.14** light / **1.10** dark | `--pd-focus` inset, 4.12 / 3.40 |
+| `select.ps-status-pill` (schedule grid) | `outline:none` + `--pd-red-mid` inset | **1.90** | `--pd-focus` inset |
+| `.pd-home-search input` | `outline:none` + a `--pd-red-light` halo | **1.14** | halo kept as decoration, the ring restored |
+| `.pscl-in` | `outline:none`, nothing else — a transparent borderless input | **no indicator at all** | `--pd-focus`, inset |
+
+⚠️ The three pale-tint rings that **remain** were checked and left: each pairs its halo with a
+`border-color: var(--pd-red)` change, which is a visible 4.12:1 indicator in its own right. The tint is
+decoration there, not the indicator.
+
+⚠️ **`.ps-wbs-row:focus { outline:none }` is deliberately untouched, and checking it is the point.**
+Its comment claims focus always coincides with `.selected`, whose tint and red rail are the indicator.
+That claim is **true**: the rows are `tabindex="-1"` (never reached by Tab) and the only `.focus()` call
+sits immediately after the selection is set. A suppression with a reason that holds is not a defect.
+`.dr-grid:focus` likewise — drawing-register is `enabled:false` and its stub page does not even load
+its stylesheet.
+
+- **`--pd-focus` gets its own token** rather than reusing `--pd-red`: a focus indicator is an
+  accessibility contract with a measured floor, while the brand accent is free to be re-tuned for
+  looks. Tying them means a brand tweak could silently drop the ring under 3:1. Eleven rules now share
+  it; it was **six different treatments** before.
+- ⚠️ A ring at `outline-offset: 2px` **overlaps the neighbouring cell** in a table as dense as the
+  BOQ/step-4 grid, so grid inputs pull it inside (`-2px`). Same ring, same colour, drawn within its own
+  cell.
+
+#### Verified
+- **Cascade resolution against the shipped stylesheet**, control by control: **0 of 15 controls now
+  have no focus rule**, down from 10 of 15.
+- ⚠️⚠️ **The obvious harness DOES NOT WORK, and it lied confidently before I caught it.** `el.focus()`
+  sets `document.activeElement`, but an automated browser pane never gives the document real focus
+  (`document.hasFocus() === false`), so `:focus` never matches for style computation — **every control
+  reported `outline: NONE`, including `.pd-input`, which provably has one.** Fronting the tab and
+  calling `window.focus()` did not fix it. Hence resolving the cascade instead of trying to fake focus.
+- ⚠️ **And the first cascade harness was wrong too**: it split `selectorText` on every comma, which
+  shreds `:where(a, button, input)` into fragments and then reports that the new rule matches nothing —
+  a bug in the checker that reads exactly like a bug in the CSS. Fixed to split on top-level commas
+  only, and the specificity function fixed to treat `:where()` as zero.
+- ⚠️ **The contrast numbers in the first draft of the CSS comment were WRONG** — asserted from memory
+  (3.96 / 4.14 / 3.62) rather than computed. Re-measured and corrected in the file to 4.12 / 3.74 /
+  4.14 / 3.40 / 3.96. Stating a number is a claim; this repo's standard is to measure it.
+- **42 JS files + 30 inline blocks across 29 pages parse, 0 failures** (bar the documented
+  progress-photos false positive). Braces balanced, 0 NUL bytes.
+- `?v=` → `20260910v9`. ⚠️ **Not v8: the concurrent session had already taken it**, found by reading
+  the remote's `MODULE_V` before pushing rather than after — the collision this log has now recorded
+  five times.
+- ⚠️ **Not verified signed in, and not verified by actually tabbing a live page** — the pane cannot
+  give a document focus, which is the whole reason for the cascade approach. The rings are proved to
+  apply and to clear 3:1; they have not been *seen*.
+
+
 ### 2026-09-10 (v7) — A toast was painted behind the loading veil in three modules, and z-index gets a scale
 
 First item of the second-pass UI audit — the one the owner asked for *"since much of the UI fixes are
