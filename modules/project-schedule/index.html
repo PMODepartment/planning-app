@@ -3010,6 +3010,15 @@
     .zpw-mid:hover { opacity:1; }
     .zpw-lv { fill:var(--pd-red); stroke:#fff; stroke-width:2; }
     .zpw-shape.drag polygon { fill-opacity:.6; cursor:grabbing; }
+    /* ⚠️ vector-effect keeps the gridline ONE pixel wide however the stage is stretched. The svg
+       is preserveAspectRatio="none", so a plain stroke-width would be scaled unevenly on the two
+       axes and the grid would read as thicker verticals than horizontals. */
+    .zpw-grid { fill:none; stroke:var(--pd-line, rgba(120,130,145,.45)); stroke-width:1;
+      vector-effect:non-scaling-stroke; opacity:.5; pointer-events:none; }
+    .zpw-grid-ctl { display:inline-flex; align-items:center; gap:5px; font-size:11.5px;
+      color:var(--pd-muted); white-space:nowrap; }
+    .zpw-grid-ctl select { font:inherit; padding:2px 4px; border-radius:5px;
+      border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-ink); }
     .zpw-tip { margin:0; font-size:10.5px; color:var(--pd-muted); }
     .zpw-empty { position:absolute; inset:auto 0 0 0; top:50%; transform:translateY(-50%);
       text-align:center; font-size:12.5px; color:var(--pd-muted); padding:0 20px; }
@@ -14993,11 +15002,117 @@
   // keeps both: the 3D card extrudes each, so an area split by a core is drawn as it was traced.
   function _vsZpPolysOf(plate, label) {
     if (!plate || !plate.polys || !label) return null;
-    var want = String(label).trim().toLowerCase().replace(/\s+/g, ' ');
-    var out = plate.polys.filter(function (q) {
-      return String(q.code == null ? '' : q.code).trim().toLowerCase().replace(/\s+/g, ' ') === want;
+    function nrm(v) { return String(v == null ? '' : v).trim().toLowerCase().replace(/\s+/g, ' '); }
+    function hit(want) {
+      if (!want) return null;
+      var out = plate.polys.filter(function (q) { return nrm(q.code) === want; });
+      return out.length ? out : null;
+    }
+    // At detail 2 the cell IS the zone, so the whole label matches outright.
+    var whole = hit(nrm(label));
+    if (whole) return whole;
+    /* ⚠️⚠️ AT DETAIL 3 AND DEEPER THE CELL LABEL IS A LOCATION PATH - `Z1 · Unit A` - because
+       _vsRowCells joins every axis level below the storey. The plan stores BARE ZONE CODES, so
+       the whole-label match found nothing and every traced outline silently disappeared the
+       moment a planner went one level deeper. Owner: *"how come the zones defined are not shown
+       in the vertical stacking? meaning the layout?"*
+       ⚠️ Segments are tried LEFT TO RIGHT, which is the axis order - zone before unit - so a
+       unit that happens to share a zone's name can never win over the zone itself. */
+    var segs = String(label).split(' \u00b7 ');
+    for (var i = 0; i < segs.length; i++) {
+      var h = hit(nrm(segs[i]));
+      if (h) return h;
+    }
+    return null;
+  }
+  /* The traced footprint of one zone, as the 2D card needs it: where it sits across the plate
+     and how much floor it covers. ⚠️ Area is the SHOELACE area of the real outline, not the
+     bounding box - an L-shaped zone that wraps a core covers far less than its box suggests. */
+  function _vsZpMetrics(polys) {
+    var area = 0, wx = 0, lo = 1, hi = 0;
+    polys.forEach(function (q) {
+      var pts = q.pts, a = 0, cx = 0;
+      for (var i = 0; i < pts.length; i++) {
+        var p = pts[i], r = pts[(i + 1) % pts.length];
+        var cr = p[0] * r[1] - r[0] * p[1];
+        a += cr; cx += (p[0] + r[0]) * cr;
+      }
+      a = a / 2;
+      // ⚠️ The true centroid is undefined on a zero-area ring, so fall back to the box centre
+      // rather than dividing by zero and sorting that zone to NaN (which drops it to the end).
+      var c = Math.abs(a) > 1e-12 ? (cx / (6 * a)) : (pts.reduce(function (t, p2) { return t + p2[0]; }, 0) / pts.length);
+      pts.forEach(function (p2) { if (p2[0] < lo) lo = p2[0]; if (p2[0] > hi) hi = p2[0]; });
+      area += Math.abs(a); wx += Math.abs(a) * c;
     });
-    return out.length ? out : null;
+    return { area: area, cx: area > 1e-12 ? wx / area : (lo + hi) / 2, x0: lo, x1: hi };
+  }
+  // How thin a zone's 2D cell may get, as a fraction of the equal share. Every cell carries a
+  // date and a percentage; a genuinely tiny zone still has to be readable, so the plan sizes the
+  // cells but does not get to squeeze one into nothing.
+  var VS_LAY_MIN = 0.45;
+  /* ⚠️⚠️ WHAT AN ELEVATION CAN HONESTLY SAY ABOUT A PLAN.
+     The 2D card is a SECTION - storeys stacked up the page - so it cannot draw a floor plan; two
+     zones front and back of each other occupy the same place in an elevation. What it CAN do,
+     and now does, is take two real facts off the trace:
+       ORDER - the zones run left to right as they do on the drawing (by centroid), instead of
+               alphabetically, which is why `Z10` used to sit between `Z1` and `Z2`;
+       WIDTH - each zone is as wide as its share of the traced floor AREA, so a big zone reads
+               big and a service core reads small.
+     ⚠️ Returns null when the storey has no plan, or when the plan names none of its zones, and
+     the caller falls back to equal shares in the original order - so an untraced project is
+     pixel-for-pixel unchanged.
+     ⚠️ A zone the plan does not name keeps its cell at the MEAN traced width and sits after the
+     traced ones, so a half-traced floor degrades instead of losing zones. */
+  function _vsPlanLay(cells, levelValue, plotW) {
+    if (!cells || cells.length < 2) return null;
+    var plate = _vsZpFor(levelValue);
+    if (!plate) return null;
+    var met = cells.map(function (c) {
+      var p = c && c.label ? _vsZpPolysOf(plate, c.label) : null;
+      return p ? _vsZpMetrics(p) : null;
+    });
+    var traced = met.filter(Boolean);
+    if (!traced.length) return null;
+    var mean = traced.reduce(function (t, m) { return t + m.area; }, 0) / traced.length;
+    if (!(mean > 0)) mean = 1;
+    var order = cells.map(function (c, i) { return i; });
+    order.sort(function (a, b) {
+      var ma = met[a], mb = met[b];
+      if (ma && mb) return (ma.cx - mb.cx) || (a - b);
+      if (ma) return -1;
+      if (mb) return 1;
+      return a - b;   // untraced zones keep the order they came in, after the traced ones
+    });
+    var wt = order.map(function (i) { var m = met[i]; return (m && m.area > 0) ? m.area : mean; });
+    /* ⚠️⚠️ WATER-FILLING, NOT clamp-then-renormalise. Raising a thin cell to the minimum and
+       then rescaling the row back to the plot width pushes it under the minimum again - a
+       2%-of-floor service core came out a third narrower than the floor that was supposed to
+       protect it. Instead: pin every cell that would fall short AT the minimum, and share what
+       is left among the rest in proportion. Iterated, because pinning one cell shrinks the pool
+       and can push the next one under. ⚠️ minW * count is VS_LAY_MIN of the plot (< 1), so the
+       pool can never go negative however many cells pin. */
+    var nC = wt.length, minW = plotW * VS_LAY_MIN / nC;
+    var pin = wt.map(function () { return false; });
+    for (var guard = 0; guard < nC; guard++) {
+      var freeW = plotW, freeWt = 0;
+      for (var i2 = 0; i2 < nC; i2++) { if (pin[i2]) freeW -= minW; else freeWt += wt[i2]; }
+      var changed = false;
+      for (var i3 = 0; i3 < nC; i3++) {
+        if (pin[i3]) continue;
+        var share = freeWt > 0 ? (wt[i3] / freeWt) * freeW : freeW / Math.max(1, nC);
+        if (share < minW) { pin[i3] = true; changed = true; }
+      }
+      if (!changed) break;
+    }
+    var poolW = plotW, poolWt = 0;
+    for (var i4 = 0; i4 < nC; i4++) { if (pin[i4]) poolW -= minW; else poolWt += wt[i4]; }
+    var w = wt.map(function (v, i5) {
+      if (pin[i5]) return minW;
+      return poolWt > 0 ? (v / poolWt) * poolW : poolW / Math.max(1, nC);
+    });
+    var x = [], run = 0;
+    w.forEach(function (v) { x.push(run); run += v; });
+    return { order: order, w: w, x: x, traced: traced.length, total: cells.length };
   }
   /* Clip a polygon to the half-plane x <= t — Sutherland–Hodgman, one edge.
      ⚠️⚠️ THIS IS WHAT KEEPS THE PROGRESS SPLIT HONEST ON A TRACED SHAPE. The 2D cell draws the
@@ -15595,9 +15710,17 @@
       var y = pad + i * (fh + gap);
       svg += '<text x="' + (pad + labelW - 6) + '" y="' + (y + fh / 2 + 4) + '" text-anchor="end" font-size="11.5" font-weight="700" fill="var(--pd-muted)">' + esc(String(v).slice(0, 16)) + '</text>';
       var cells = rowCells(byLevel[v], detail);
-      var fcw = plotW / (cells.length || 1);
+      /* ⚠️⚠️ THE TRACED PLAN DECIDES THE ORDER AND THE WIDTHS on a storey that has one - see
+         _vsPlanLay. Before this the 2D card ignored the floor plan completely, which is exactly
+         what the owner hit: the zones were traced, the default view is 2D, and nothing about the
+         layout showed up. ⚠️ Null on an untraced storey, and the equal-share path below is then
+         byte-for-byte what it always was. */
+      var _lay = _vsPlanLay(cells, v, plotW);
+      if (_lay) cells = _lay.order.map(function (i) { return cells[i]; });
+      var fcwU = plotW / (cells.length || 1);
       cells.forEach(function (c, ci) {
-        var cx = pad + labelW + ci * fcw, mid = cx + (fcw - 3) / 2;
+        var fcw = _lay ? _lay.w[ci] : fcwU;
+        var cx = pad + labelW + (_lay ? _lay.x[ci] : ci * fcwU), mid = cx + (fcw - 3) / 2;
         var pct = _vsProgress(c.list), fin = _vsDate(c.list);   // progress + date both follow the basis
         var planPct = _vsPlanPct(c.list);   // for the Compare marker and the tooltip
         var slip = _vsSlip(c.list), cmp = (_vsBasis === 'compare');
@@ -31704,6 +31827,42 @@
     function zpPts(pts) {
       return pts.map(function (p) { return (Math.round(p[0] * 10) / 10) + ',' + (Math.round(p[1] * 10) / 10); }).join(' ');
     }
+    /* ==== SNAP TO GRID ==================================================================
+       Owner 2026-09-10: *"can you add snapping to grid."*
+       ⚠️ The grid is in PLAN UNITS (0..1000 across), not pixels, so a 20-unit grid is the same
+       grid at any zoom, on any screen, and after the plan image is re-uploaded at another
+       resolution. A pixel grid would drift against the drawing the moment the window resized.
+       ⚠️ Off is a real setting, not 1: a planner tracing an as-built survey needs the corners
+       exactly where the drawing puts them. */
+    var ZP_GRIDS = [0, 10, 20, 25, 50, 100];
+    var ZP_GRID_KEY = 'ps_zp_grid';
+    function zpGridLoad() {
+      try {
+        var v = parseInt(localStorage.getItem(ZP_GRID_KEY), 10);
+        return ZP_GRIDS.indexOf(v) >= 0 ? v : 20;
+      } catch (e) { return 20; }
+    }
+    function zpGridSave(g) { try { localStorage.setItem(ZP_GRID_KEY, String(g)); } catch (e) {} }
+    function zpSnapV(v, g) { return g > 0 ? Math.round(v / g) * g : v; }
+    // ⚠️ Snapped THEN clamped, never the other way round: clamping first and snapping after can
+    // push a corner back off the sheet by up to half a grid step.
+    function zpSnapPt(p, g, h) {
+      return [zpClamp(zpSnapV(p[0], g), 0, ZP_W), zpClamp(zpSnapV(p[1], g), 0, h)];
+    }
+    /* Is this still a drawable outline? ⚠️ Two tests, because they catch different damage:
+       coincident neighbours (a feature collapsed onto one gridline) and no area at all (every
+       corner snapped onto a single line). Either one reaching the plate is a zone that renders
+       as nothing and extrudes to nothing in 3D. */
+    function zpRingOk(pts) {
+      if (!pts || pts.length < 3) return false;
+      var a = 0;
+      for (var i = 0; i < pts.length; i++) {
+        var p = pts[i], r = pts[(i + 1) % pts.length];
+        if (p[0] === r[0] && p[1] === r[1]) return false;
+        a += p[0] * r[1] - r[0] * p[1];
+      }
+      return Math.abs(a / 2) > 1e-9;
+    }
     function zpBBoxOf(pts) {
       var x0 = pts[0][0], y0 = pts[0][1], x1 = x0, y1 = y0;
       pts.forEach(function (p) {
@@ -31767,7 +31926,7 @@
 
       _zpWin = { tr: tr, floor: floor, draft: draft, owned: !!plate, plateId: plateId,
                  brush: codes[0] || '', drawing: false, pts: [], sel: null, url: null,
-                 busy: false, err: '', hist: [], clip: null };
+                 busy: false, err: '', hist: [], clip: null, grid: zpGridLoad() };
 
       function H() { return zpH(_zpWin.draft); }
       function selShape() {
@@ -31835,8 +31994,24 @@
         var pts = zpPreset(kind, w, h);
         var bb = zpBBoxOf(pts);
         var ox = (ZP_W - bb.w) / 2 - bb.x, oy = (H() - bb.h) / 2 - bb.y;
-        var q = { id: zpNewId(), code: W.brush,
-                  pts: pts.map(function (p) { return [p[0] + ox, p[1] + oy]; }) };
+        // ⚠️ The BOX corner is snapped, not the centre: a planner lining a zone up against a
+        // gridline is looking at its edge. Snapping the centre would leave every edge off-grid
+        // by half the shape's odd remainder.
+        if (W.grid > 0) { ox = zpSnapV(bb.x + ox, W.grid) - bb.x; oy = zpSnapV(bb.y + oy, W.grid) - bb.y; }
+        var out = pts.map(function (p) { return [p[0] + ox, p[1] + oy]; });
+        /* ⚠️⚠️ GRID-SIZED, NOT JUST GRID-PLACED. Snapping only the origin left the far edge off
+           the grid - two zones added side by side did not meet, which is most of the point of
+           a grid. A NEW shape has no history to preserve, so every corner can snap; a MOVE
+           still snaps the origin alone, because deforming a shape as it travels is a different
+           and much worse bug.
+           ⚠️ A coarse grid can collapse a small shape's features onto one line, so the snapped
+           ring is taken only if it is still a real ring - otherwise the shape keeps its
+           proportions and only its position is snapped. */
+        if (W.grid > 0) {
+          var snapped = out.map(function (p) { return zpSnapPt(p, W.grid, H()); });
+          if (zpRingOk(snapped)) out = snapped;
+        }
+        var q = { id: zpNewId(), code: W.brush, pts: out };
         W.draft.polys.push(q);
         W.sel = q.id;
         commit(); paint();
@@ -31866,6 +32041,16 @@
             '<text x="' + c[0].toFixed(1) + '" y="' + c[1].toFixed(1) + '">' + e2(q.code) + '</text>' +
             handles + '</g>';
         }).join('');
+        /* ⚠️ ONE <path>, not eighty <line>s: at a 10-unit grid this is 160 lines, and eighty
+           elements per repaint on every pointermove is what makes a drag feel heavy. Drawn
+           FIRST so it sits under the trace and never over it. */
+        var gridSvg = '';
+        if (W.grid > 0) {
+          var gd = '';
+          for (var gx = W.grid; gx < ZP_W; gx += W.grid) gd += 'M' + gx + ' 0V' + hh;
+          for (var gy = W.grid; gy < hh; gy += W.grid) gd += 'M0 ' + gy + 'H' + ZP_W;
+          gridSvg = '<path class="zpw-grid" d="' + gd + '"></path>';
+        }
         var live = W.drawing && W.pts.length
           ? '<polyline class="zpw-live" points="' + zpPts(W.pts) + '"></polyline>' +
             W.pts.map(function (p) { return '<circle class="zpw-lv" cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="7"></circle>'; }).join('')
@@ -31924,6 +32109,11 @@
             '<button class="pd-btn" id="zpw-dup"' + (sel ? '' : ' disabled') + ' title="Copy and paste in one go">Duplicate</button>' +
             '<button class="pd-btn" id="zpw-del"' + (sel ? '' : ' disabled') + '>Delete</button>' +
             '<span class="ps-tb-div"></span>' +
+            '<label class="zpw-grid-ctl" title="Corners land on a grid of this many plan units (the sheet is ' + ZP_W + ' across)">Snap' +
+              '<select id="zpw-grid">' + ZP_GRIDS.map(function (g) {
+                return '<option value="' + g + '"' + (g === W.grid ? ' selected' : '') + '>' + (g ? g : 'Off') + '</option>';
+              }).join('') + '</select></label>' +
+            '<span class="ps-tb-div"></span>' +
             '<button class="pd-btn" id="zpw-undo"' + (W.hist.length ? '' : ' disabled') + ' title="' +
               (W.hist.length ? e2('Undo (' + W.hist.length + ' step' + (W.hist.length === 1 ? '' : 's') + ') · Ctrl+Z') : 'Nothing to undo') + '">Undo</button>' +
           '</div>' : '') +
@@ -31931,13 +32121,14 @@
           (W.err ? '<p class="sbld-note sbld-note-warn">' + e2(W.err) + '</p>' : '') +
           '<div class="zpw-stage' + (W.drawing ? ' drawing' : '') + '" id="zpw-stage">' +
             (W.url ? '<img class="zpw-img" src="' + e2(W.url) + '" alt="" style="opacity:' + (d.o == null ? 1 : d.o) + '">' : '') +
-            '<svg class="zpw-svg" id="zpw-svg" viewBox="0 0 ' + ZP_W + ' ' + hh + '" preserveAspectRatio="none">' + shapes + live + '</svg>' +
+            '<svg class="zpw-svg" id="zpw-svg" viewBox="0 0 ' + ZP_W + ' ' + hh + '" preserveAspectRatio="none">' + gridSvg + shapes + live + '</svg>' +
             (!d.img && !d.polys.length && !W.drawing ? '<div class="zpw-empty"><b>Nothing here yet.</b><br>' +
               'Pick a zone above, then <b>add a shape</b> — or <b>Trace…</b> it corner by corner.<br>' +
               'Attaching the floor plan is optional, but it gives you something to draw over.</div>' : '') +
           '</div>' +
           '<p class="zpw-tip">Drag an area to move it · drag a corner to reshape · the faint dot between two corners adds one · ' +
-            '<b>Alt</b>-click a corner removes it</p>' +
+            '<b>Alt</b>-click a corner removes it' +
+            (W.grid > 0 ? ' \u00b7 corners snap to a <b>' + W.grid + '</b>-unit grid' : '') + '</p>' +
 
           '<div class="zpw-foot">' +
             '<div class="zpw-list">' + (d.polys.length
@@ -32074,6 +32265,14 @@
           paint();
         };
         var un = q('zpw-undo'); if (un) un.onclick = undo;
+        // ⚠️ Changing the grid does NOT move anything already drawn. Re-snapping the whole plate
+        // on a settings change would silently rewrite a trace the planner had placed exactly.
+        var gsel = q('zpw-grid');
+        if (gsel) gsel.onchange = function () {
+          W.grid = parseInt(gsel.value, 10) || 0;
+          zpGridSave(W.grid);
+          paint();
+        };
         wrap.querySelectorAll('[data-zpsel]').forEach(function (b) {
           b.onclick = function () { W.sel = (W.sel === b.dataset.zpsel) ? null : b.dataset.zpsel; paint(); };
         });
@@ -32102,7 +32301,7 @@
             if (Math.sqrt(dx * dx + dy * dy) < 0.02) { finish(); return; }
           }
           if (W.pts.length >= ZP_MAXPTS) { UI.toast('That is as many corners as one area can take.', 'warn'); return; }
-          W.pts.push(p); paint();
+          W.pts.push(zpSnapPt(p, W.grid, H())); paint();
         };
         stage.ondblclick = function () { if (W.drawing && W.pts.length >= 3) finish(); };
 
@@ -32152,11 +32351,21 @@
               var next;
               if (vx) {
                 var i = +vx.dataset.vi;
-                next = pts0.map(function (r, k2) { return k2 === i ? [p[0], p[1]] : [r[0], r[1]]; });
+                var sp = zpSnapPt(p, W.grid, hh2);
+                next = pts0.map(function (r, k2) { return k2 === i ? [sp[0], sp[1]] : [r[0], r[1]]; });
               } else {
                 // ⚠️ Clamped by the BOUNDING BOX, so a drag can never push half a zone off the
                 // sheet while the rest stays on it.
-                var ddx = zpClamp(dx, -bb.x, ZP_W - bb.x - bb.w), ddy = zpClamp(dy, -bb.y, hh2 - bb.y - bb.h);
+                var ddx = dx, ddy = dy;
+                /* ⚠️ THE BOX ORIGIN IS SNAPPED, NOT EACH CORNER. Snapping every point
+                   independently would DEFORM the shape as it moved — an L-shape dragged across
+                   a coarse grid would slowly turn into a different L. Snapping the offset keeps
+                   the outline rigid and still lands its top-left on the grid. */
+                if (W.grid > 0) {
+                  ddx = zpSnapV(bb.x + dx, W.grid) - bb.x;
+                  ddy = zpSnapV(bb.y + dy, W.grid) - bb.y;
+                }
+                ddx = zpClamp(ddx, -bb.x, ZP_W - bb.x - bb.w); ddy = zpClamp(ddy, -bb.y, hh2 - bb.y - bb.h);
                 next = pts0.map(function (r) { return [r[0] + ddx, r[1] + ddy]; });
               }
               shape.pts = next;

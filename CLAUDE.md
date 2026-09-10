@@ -95,6 +95,43 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### Snap to grid, and the traced layout finally reaches the Vertical Stacking (2026-09-10) — jasantos2
+
+Owner: *"can you add snapping to grid. also how come the zones defined are not shown in the vertical
+stacking? meaning the layout?"*
+
+**Snap to grid** in the floor-plan window — Off / 10 / 20 / 25 / 50 / 100, remembered, drawn under
+the shapes. ⚠️ The grid is in **plan units**, not pixels, so it survives a zoom and a re-upload.
+⚠️ **Off is a real setting**: an as-built trace needs the corner where the drawing puts it.
+⚠️⚠️ **A move snaps the box origin, not each corner** — snapping every point would *deform* the
+outline as it travelled. ⚠️ A defect found by driving it: a new preset was grid-**placed** but not
+grid-**sized**, so two zones added side by side did not meet; every corner of a new shape now snaps,
+falling back to the rigid shape when a coarse grid would collapse it.
+
+⚠️⚠️ **The zones were not showing for two reasons, both proved by execution — neither a rendering
+problem.** The **2D card never read the floor plan at all**, and 2D is the default view. And even in
+3D the join only held at **Detail 2**: deeper, the cell label becomes a location path (`Z1 · Unit A`)
+while the plan stores bare zone codes, so every outline silently vanished. The matcher now tries the
+whole label then each segment, left to right — the axis order, so a unit cannot outrank a zone.
+
+**What an elevation can honestly say about a plan:** a section cannot draw a floor plan, so the 2D
+card takes the two facts that *are* real — zones **ordered** left to right as drawn (⚠️ which is why
+`Z10` used to sit between `Z1` and `Z2`) and **sized** by their share of traced floor **area**
+(⚠️ shoelace, not bounding box). ⚠️ It degrades: no plan means the old equal shares, byte for byte,
+and an untraced zone keeps its cell. ⚠️ A second defect found by testing — the minimum cell width
+did not actually hold, because clamping then renormalising pushes a thin cell back under; replaced
+with water-filling.
+
+**693 assertions across twelve suites plus the runtime and extrusion checks, 0 failing**; 67 new, and
+the controls run on HEAD and reproduce the reported bug. ⚠️ The window was **driven in a browser** —
+all nine presets on grid, a move that snapped *and* left the shape undeformed, Off landing a corner
+exactly. ⚠️ `vscheck` was taught to link module-level `var`s (the module's own declaration, never a
+stub) and re-proved against the outage control: broken 0/10, fixed 10/10. ⚠️ harness12's reversal
+proof is **retired on purpose** — it asserted this function never changes. ⚠️ **Not verified
+signed-in** — the image upload still has never run against the real bucket.
+
+`MODULE_V` → `20260910t1`. Detail: [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
 ### The floor plan window gets tools: shapes, undo, clipboard, and naming the zone (2026-09-10) — jasantos2
 
 Owner: *"if there is no floor plan, how do i add shapes or create shapes? and how come this is the

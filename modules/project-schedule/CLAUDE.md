@@ -13,6 +13,95 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### Snap to grid, and the traced layout finally reaches the Vertical Stacking (2026-09-10) — jasantos2
+
+Owner: *"can you add snapping to grid. also how come the zones defined are not shown in the vertical
+stacking? meaning the layout?"*
+
+### 1. Snap to grid
+A **Snap** control in the plan window — Off / 10 / 20 / 25 / 50 / 100 — with the grid drawn under the
+shapes, remembered between sessions.
+- ⚠️ **The grid is in PLAN UNITS** (the sheet is 1000 across), not pixels, so it is the same grid at
+  any zoom, on any screen, and after the drawing is re-uploaded at another resolution.
+- ⚠️ **Off is a real setting.** Tracing an as-built survey means putting the corner where the drawing
+  puts it, and a grid of 1 is not the same promise as no grid.
+- ⚠️ **Snapped *then* clamped.** Clamping first and snapping after can push a corner back off the
+  sheet by up to half a step — which is how a zone ends up hanging over the edge of its own plate.
+- ⚠️⚠️ **A MOVE snaps the box origin, not each corner.** Snapping every point independently would
+  **deform** the outline as it travelled: an L-shape dragged across a coarse grid slowly becomes a
+  different L. The offset is snapped instead, so the shape stays rigid and still lands on the grid.
+- ⚠️ Changing the grid does **not** re-snap what is already drawn — that would silently rewrite a
+  trace the planner had placed exactly.
+
+### 2. ⚠️ A defect found by driving it: grid-*placed* is not grid-*sized*
+Adding a preset with the grid on put its **origin** on a gridline and left the far edge at 527. Two
+zones added side by side did not meet, which is most of the reason to want a grid. A **new** shape
+has no history to preserve, so every corner is snapped — unlike a move. ⚠️ A coarse grid can collapse
+a small shape's features onto one line, so the snapped ring is taken **only if it is still a ring**
+(no coincident neighbours, real area); otherwise the shape keeps its proportions and only its
+position snaps. All nine presets now land fully on the grid with no feature lost, and the fallback is
+proved live, not dead code.
+
+### 3. ⚠️⚠️ Why the zones were not showing — two causes, both proved by execution
+**Neither was a rendering problem. The layout was being computed and then not found.**
+
+- ⚠️⚠️ **The 2D card never read the floor plan at all.** `_vsTowerSVG` had no reference to it of any
+  kind — and 2D is the **default view**. The zones were traced, and the card that almost everyone
+  looks at ignored them completely. That is the owner's question, exactly.
+- ⚠️⚠️ **Even in 3D the join only held at Detail 2.** At detail 3 and deeper `_vsRowCells` builds the
+  cell label as a location **path** — `Z1 · Unit A` — and the plan stores **bare zone codes**, so the
+  match found nothing and every outline silently vanished the moment a planner went one level
+  deeper. The matcher now tries the whole label, then each segment **left to right**, which is the
+  axis order — so a unit that happens to share a zone's name can never outrank the zone.
+
+### 4. What an elevation can honestly say about a plan
+The 2D card is a **section**, so it cannot draw a floor plan — two zones front and back of each other
+occupy the same place in an elevation. Claiming otherwise would be the worse error. What it now takes
+off the trace are two facts that *are* real in an elevation:
+- **ORDER** — zones run left to right as they do on the drawing (by area-weighted centroid), instead
+  of alphabetically. ⚠️ This is why `Z10` used to sit between `Z1` and `Z2`.
+- **WIDTH** — each zone is as wide as its share of the traced floor **area**, so a big zone reads big
+  and a service core reads small. ⚠️ Area is the **shoelace** area of the real outline, not the
+  bounding box: an L-shaped zone wrapping a core covers far less floor than its box claims.
+
+⚠️ **It degrades rather than losing zones.** No plan, or a plan naming none of this storey's zones →
+`null`, and the equal-share path below is byte-for-byte what it always was. A zone the plan does not
+name **keeps its cell** at the mean traced width, after the traced ones. A zone traced in two pieces
+is one cell with its areas summed. A zero-area trace cannot sort to `NaN`.
+
+### 5. ⚠️ A second defect found by testing: the minimum width did not hold
+Every cell carries a date, so a tiny zone still has to be readable. Raising a thin cell to the floor
+and **then** renormalising to fill the row pushes it straight back under — a 2%-of-floor service core
+came out at 74px where the floor was 90px. Replaced with **water-filling**: pin the cells that would
+fall short *at* the minimum and share what is left among the rest, iterated because pinning one cell
+shrinks the pool. The row still tiles the plot exactly, with no gap and no overflow.
+
+### Verified
+**693 assertions across twelve suites plus the runtime and extrusion checks, 0 failing** — 67 new, in
+a suite that **executes** the snapping, the ring test, the label join and the layout: the order that
+disagrees with the alphabet, the area proportions, the L-shape sized by real area, the two-piece
+zone, the pinned minimum, and every degenerate case returning `null` rather than a scrambled row.
+⚠️ **The controls run on HEAD and show the reported bug**: at detail 3 HEAD finds nothing, and HEAD's
+2D tower has no plan reference at all.
+⚠️ **And the window was driven in a browser** — the grid control and its 79 drawn lines, all nine
+presets landing fully on grid, a move that snapped **and** left the shape undeformed, a corner
+snapping to (140,100), and Off dropping the grid and landing the corner exactly where released.
+⚠️ **`vscheck` had to be taught to link module-level `var`s**, because the 2D tower now reaches
+`_vsZpMemo` through the new path. It links the module's **own declaration** — never a stub — and it
+is restricted to **module level**: allowing any indentation matched the function-internal
+`var above = …` inside `_vsTowerModel`, so the outage control still failed but for the wrong reason.
+Re-proved against that control: broken **0/10**, fixed **10/10**.
+⚠️ **The reversal proof in harness12 is retired, deliberately and not because it went red.** It
+asserted `_vsTowerSVG` was unchanged, which this change makes false on purpose. It was never the
+load-bearing check — reassembling a whole function makes every variable resolve by construction,
+which is why it once passed while the view threw `below is not defined`.
+⚠️ **I overwrote the module file with a render harness mid-turn** (it writes to `argv[2]`, and I
+passed the source). Nothing was lost — the pre-patch snapshot plus the patch scripts rebuilt it
+byte-identically — and the harness now **refuses** any output path that is not a `_scratch*` file.
+⚠️ **Not verified signed-in** — the image upload still has never run against the real bucket.
+
+`MODULE_V` → `20260910t1`.
+
 ### The floor plan window gets tools: shapes, undo, clipboard, and naming the zone (2026-09-10) — jasantos2
 
 Owner: *"if there is no floor plan, how do i add shapes or create shapes? and how come this is the
