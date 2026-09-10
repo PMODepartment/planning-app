@@ -100,6 +100,16 @@
         .sc-card { overflow-x: auto; }
         .sc-svg { min-width: 560px; }
         .sc-table { min-width: 520px; }
+        /* ⚠️ This module's frozen label column has NO declared width — it sizes to its content,
+           so a long label makes the frozen zone arbitrarily wide and the data columns start
+           off-screen. That is the same failure Manpower and Equipment hit with fixed 190/150px
+           columns, just data-dependent instead of hard-coded. Capped at the 132px the rest of
+           the app uses, with an ellipsis so the label still identifies its row.
+           ⚠️ NOT measured live: this table sits behind a view I could not reach signed in, so
+           unlike the Manpower/Equipment numbers this is the pattern applied, not a fix to an
+           observed width. A cap can only narrow, so it cannot make the current state worse. */
+        .sc-table th:first-child, .sc-table td:first-child {
+          max-width: 132px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .sc-kpis { grid-template-columns: repeat(2, 1fr); gap: 8px; }
         .sc-fc { flex-wrap: wrap; gap: 8px; }
         .sc-topbar-tools { flex-wrap: wrap; }

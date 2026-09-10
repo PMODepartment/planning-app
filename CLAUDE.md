@@ -95,6 +95,75 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-10 (x2) — Frozen columns had eaten the phone table, and a sticky rail taller than the window cannot be scrolled to its end
+
+Two owner reports in one pass: *"the table in the phone view can't be read properly due to the frozen
+columns. Let's check for other modules as well"* and *"see side panel its short in the schedule setup
+page. Let's do global check for this if there are cases that this is happening on other modules."*
+Both asked for the same thing — the global check — and in both cases **the app already contained the
+correct answer in other modules**; the fix is adoption, not invention.
+
+#### ⚠️⚠️ THE FROZEN COLUMNS WERE CONSUMING THE DATA THEY EXIST TO LABEL
+Measured on the live signed-in page at 375px, wrapper 353px:
+
+| table | frozen | readable window | data columns visible |
+|---|---|---|---|
+| `.mp-mx` (Manpower) | 190 + 96 = **286px** | **67px** (19%) | **1 of 47** |
+| `.mp-gt` (Manpower totals) | 210 + 150 = **360px** | **negative** | the data starts past the right edge |
+| `.eq-mx` (Equipment) | 150 + 84 = **234px** | 119px | ~2 of 47 |
+
+A frozen column exists so the label stays beside the data. At these widths it was replacing it.
+
+⚠️ **Three modules had already solved this and these never adopted it** — material-submittal
+(`.ms-fz2 { position: static }` + fz1 190→132), cash-flow (`.lbl` 200→118), portfolio-overview
+(`.po-eq-c1` 236→150). All three do the same thing: **keep ONE frozen column, narrowed, and let the
+second scroll away with the body.** Applied here with material-submittal's 132px reused rather than a
+fourth number invented. Result at 375px: **frozen 286→132, readable window 89→243px** (harness), and
+`.eq-mx` **234→132 / 141→243**.
+
+Four more tables freeze `:first-child` with **no declared width**, so the frozen zone is as wide as its
+longest label — the same failure, data-dependent instead of hard-coded: `.sc-table`, `.pr-ttable`,
+`.pr-ed`, `.rl-matrix`. Capped at the same 132px with an ellipsis.
+⚠️ **Those four are NOT measured live** — each sits behind a view I could not reach signed in. They are
+the pattern applied, and a cap can only narrow, so it cannot make the current state worse. The
+Manpower and Equipment numbers above *are* measured. `.rl-table`, the one actually on screen in
+Resource Loading, measured **0 frozen columns** and correctly just scrolls — left alone.
+
+#### ⚠️⚠️ A TALL STICKY COLUMN IS UNREACHABLE AT ITS BOTTOM
+`position: sticky` does **not** scroll its own content. Once the element is taller than the window the
+browser simply lets the page scroll past it, so the last items are only reachable if the *sibling*
+column happens to be long enough to scroll that far. Schedule Setup's rail is 12 steps ≈ **578px**; on
+a laptop window with browser chrome (~480px of viewport) steps 11–12 sit **98px below the window with
+no way to reach them**. That is the "short side panel".
+
+The fix is the **pair**, never `max-height` alone: `max-height: calc(100vh - 24px)` (derived from the
+rail's own `top:12px`, not a magic number) **+ `overflow-y: auto`**, plus `overscroll-behavior: contain`
+so reaching the rail's end does not start scrolling the page behind it.
+
+#### The global check, and what it excluded
+16 rules use `position: sticky` with a `top` offset. ⚠️ **11 of them are one-row BARS** — sticky table
+headers, `.pd-topbar`, `.cca-gr-head`, `.pp-grid-head`, `.ps-net-head`, `.sbld-libL1` and the like —
+which are one row tall and *cannot* have this bug; sweeping them in would have been 11 pointless edits.
+**2 were already capped**, and they are the pattern: `.pd-sidebar` is `sticky; top:0; height:100vh;
+overflow-y:auto`, `.po-dir-bands` uses max-height. ⚠️ My first classifier reported `.pd-sidebar` as a
+defect because it only looked for `max-height` — `height:100vh` caps just as well. **The 3 genuine gaps
+were all in project-schedule**: `.sbld-railcol`, `.sbld-rail` (Cost Loading's rail is not wrapped in a
+railcol) and `.sbld-tower` (a tower card's zone list grows with the project).
+
+#### Verified
+- ⚠️ **The contrast case is built from `git show HEAD:`**, so the BEFORE genuinely fails: at a 480px
+  window the old rail is 578px, `fitsWindow:false`, no scrollbar, **last step unreachable**. After:
+  `max-height:456px`, `overflow-y:auto`, `clientHeight 456 ≤ 480`, `scrollHeight 578` → its own
+  scrollbar, **last step reachable**.
+- ⚠️ **My first rail test used a 600px window, where the 578px rail FITS — so BEFORE and AFTER both
+  passed and it proved nothing.** Re-run at 480px, which is what the owner's screenshot shows.
+- Frozen columns at 375px, both from the real module stylesheets: `.mp-mx` 286→132px frozen,
+  `.eq-mx` 234→132px, each leaving 243px readable.
+- 42 JS files + 29 inline blocks parse, 0 failures; 0 brace mismatches; 0 NUL bytes across 9 files.
+- `MODULE_V` → `20260910x2` (six module pages changed; dashboard.css did not, so it stays at `x1`).
+- ⚠️ **Not yet re-verified on the live site** — pushed and awaiting deploy at the time of writing.
+
+
 ### 2026-09-10 (x1) — Checking (w9) on the live signed-in page found three more targets and one dead line I had written
 
 ⚠️ (w9) was measured in an offline harness that rendered **only the topbar**. Opening the deployed

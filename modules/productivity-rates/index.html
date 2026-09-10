@@ -134,6 +134,14 @@
         .pr-kpis { grid-template-columns: repeat(2, 1fr); gap: 8px; }
         .pr-controls { flex-wrap: wrap; gap: 8px; }
         .pr-controls > * { flex: 1 1 100%; min-width: 0; }
+        /* ⚠️ Same content-sized frozen column as s-curve: `.pr-ttable`/`.pr-ed` freeze
+           `:first-child` with no width, and `.pr-ed`'s is `white-space:nowrap`, so a long trade
+           name pushes every data column past the right edge. Capped at the app's 132px with an
+           ellipsis. ⚠️ Not measured live (table behind a view I could not reach signed in) —
+           this is the established pattern applied, not an observed width. */
+        .pr-ttable th:first-child, .pr-ttable td:first-child,
+        .pr-ed th:first-child, .pr-ed td:first-child {
+          max-width: 132px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       }
     
     /* ---- F1/F2/F6 vendor layer -------------------------------------------

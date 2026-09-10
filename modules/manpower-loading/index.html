@@ -260,6 +260,22 @@
       .mp-kpis { grid-template-columns: repeat(2, 1fr); gap:8px; }
       .mp-form-grid { grid-template-columns:1fr; }
       .mp-controls .pd-select, .mp-controls .pd-input { max-width:100%; }
+      /* ⚠️⚠️ FROZEN COLUMNS ATE THE TABLE. Owner: *"the table in the phone view can't be read
+         properly due to the frozen columns."* Measured on the live signed-in page at 375px:
+         `.mp-mx` froze 190px + 96px = 286px of a 353px wrapper, leaving a 67px READABLE WINDOW —
+         19% of the width, ONE 48px month column at a time out of 47. `.mp-gt` is worse: 210 +
+         150 = 360px frozen in the same 353px, i.e. the data starts past the right edge and the
+         readable window is NEGATIVE. A frozen column exists so the label stays with the data;
+         at these widths it was consuming the data instead.
+         ⚠️ THE APP ALREADY HAD AN ANSWER and these two never adopted it — material-submittal
+         (`.ms-fz2 { position: static }` + fz1 190->132), cash-flow (`.lbl` 200->118) and
+         portfolio-overview (`.po-eq-c1` 236->150) all do exactly this. Same shape here: keep
+         ONE frozen column, narrowed, and let the second scroll away with the body. 132px is
+         material-submittal's value, reused rather than invented. */
+      .mp-mx th.mp-c1, .mp-mx td.mp-c1,
+      .mp-gt th.mp-g1, .mp-gt td.mp-g1 { width:132px; min-width:132px; max-width:132px; }
+      .mp-mx th.mp-c2, .mp-mx td.mp-c2,
+      .mp-gt th.mp-g2, .mp-gt td.mp-g2 { position:static; width:104px; min-width:104px; max-width:104px; }
       /* ⚠️ The shared CSS raises inputs and .pd-btn to 44px on a phone but knows nothing about
          these three. Measured at 20px (row actions), 30px (segments) and 33px (tabs) before —
          a row action you cannot reliably hit is a row action that is not there. */
