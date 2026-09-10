@@ -95,6 +95,31 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### The stacking bar loses a row, and the Fit button it lost was already dead (2026-09-10) — ethanrobles10
+
+Owner: *"cleanup the UI just below the header. i think it is too much. you can remove the Fit
+button."*
+
+⚠️⚠️ **The Fit button had been doing nothing for two weeks.** It toggled a flag whose only effects
+were an `is-fit` class on the stage and a `--ps-vs-fith` property on the grid — measured by a
+careful two-pass routine — and **neither was read by any CSS rule in the file**. Its own tooltip
+still advertised the magnifier, deleted 2026-09-02, which is the clue nothing had exercised it
+since. Removing it changes no pixel of the drawing: what fits the stack is `--ps-vs-paneh`, which
+is live and untouched. The flag, both passes, the class and the `ps_vsfit` key all went with it;
+the focus window's own Fit, which is wired to a real transform, stays.
+
+**The legend was a paragraph parked in a row of buttons** — `flex:1 1 100%`, so it claimed a whole
+row and wrapped inside it. Nothing deleted, demoted: the glance-level part stays visible (and the
+DONE colours stay *in* their colours), the two long explanations move into its `title`. Visible
+legend text **176 → 66 characters** in Actual, **360 → 87** in Planned vs Actual.
+
+Measured in a browser against the app's real CSS, from the shipped builder sliced and executed:
+at an 1798px pane the bar goes **65px → 58px** in Actual and **3 rows / 110px → 2 rows / 58px** in
+Planned vs Actual; at 1200px, **4 rows / 97px → 3 rows / 71px**. Dividers 6 → 5. ⚠️ Not verified
+signed in (no grants on the anon key) — the claims are about the bar's markup and layout.
+
+`MODULE_V` → `20260910y9`. Detail: [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
 ### ⚠️⚠️ The floor was drawn at a quarter of its size at Detail 1: the wrap grid was sizing the plan (2026-09-10) — jasantos2
 
 Owner: *"the size of the floor is decreased when proceed with level 1 - detail. Like i said,

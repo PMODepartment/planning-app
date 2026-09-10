@@ -1677,15 +1677,19 @@
        as the border and the tint, which carry the state without being the text. 12.22:1 dark. */
     .ps-vs-chip.on { border-color:var(--pd-red); background:var(--pd-red-light); color:var(--pd-ink); font-weight:700; }
     .ps-vs-dot { width:9px; height:9px; border-radius:50%; flex:none; }
-    /* ⚠️ A flex item will NOT shrink below its own text (min-width defaults to auto), so the long
-       prose legend overflowed the toolbar row and its tail was clipped — flex-wrap on the parent
-       cannot save an item that refuses to shrink. It now claims its own row and wraps inside it. */
+    /* ⚠️ A flex item will NOT shrink below its own text (min-width defaults to auto), so a long
+       note overflowed the toolbar row and its tail was clipped — flex-wrap on the parent cannot
+       save an item that refuses to shrink. Every note in this bar may shrink and wrap. */
     .ps-vs-bar > .ps-vs-note { min-width:0; }
     /* The bar must never be stretched wider than the panel by anything beside it. */
     .ps-vs-bar { max-width:100%; }
     /* No !important needed: the inline display/align this used to carry was removed with the markup,
-       so ordinary specificity wins. Reserve !important for beating an inline style. */
-    .ps-vs-legendnote { display:flex; flex:1 1 100%; align-items:flex-start; gap:6px; line-height:1.45; }
+       so ordinary specificity wins. Reserve !important for beating an inline style.
+       ⚠️ `flex:0 1 auto`, NOT the `1 1 100%` it was (2026-09-10). A 100% basis forced this item onto
+       a row of its own — right while it held three sentences, wrong now it holds a short strip,
+       because a full-width basis makes even a 40-character legend push the activity count onto
+       another line. It still MAY shrink and wrap; it just no longer demands the whole width. */
+    .ps-vs-legendnote { display:flex; flex:0 1 auto; align-items:flex-start; gap:6px; line-height:1.45; }
     /* The swatch must not be squeezed by the wrapping text beside it. */
     .ps-vs-legendnote > svg { flex:0 0 auto; margin-top:1px; }
     .ps-vs-legendtxt { min-width:0; white-space:normal; overflow-wrap:break-word; }
@@ -14094,23 +14098,22 @@
   var _vsScope = 'trade';       // 'trade' = one tower per trade · 'all' = one consolidated tower
   var _vsDetail = 2;            // 1 = per level · 2 = per zone · 3 = per unit (capped at LOC_LEVELS)
   var _vsZoom = 1;
-  // Fit the WHOLE building into the pane, however small that makes the text. Owner 2026-08-27:
-  // *"the goal is to see the whole tower whether the texts are small and the purpose of the
-  // magnifying glass is to see the zones clearer."* So the two controls have separate jobs and
-  // neither should try to do the other's: the stack answers "how is the building doing", the
-  // magnifier answers "what does this zone say". Zooming the stack to make labels readable is what
-  // pushed the top of the building off screen.
-  // ⚠️ ON by default. The default view of a stacking is the whole stack; a planner who wants a
-  // bigger picture of one part turns Fit off (or hovers, which is cheaper).
   // ⚠️ The magnifier was REMOVED (owner 2026-09-02: *"remove the magnifier since there is a zoom in
   // already feature"*) — the focus window's scroll-to-zoom does the same job with the whole building
   // in view, so a second magnification mechanism was two controls for one question. Its four
   // localStorage keys are swept once, so a returning browser is not left carrying state for a
   // feature that no longer exists.
-  try { ['ps_vsloupe', 'ps_vsloupez', 'ps_vsloupew', 'ps_vsloupeh'].forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
-  var _vsFit = true;
-  try { var _vf = localStorage.getItem('ps_vsfit'); if (_vf === '0') _vsFit = false; } catch (e) {}
-  function _saveVsFit() { try { localStorage.setItem('ps_vsfit', _vsFit ? '1' : '0'); } catch (e) {} }
+  // ⚠️ `ps_vsfit` joins them (owner 2026-09-10: *"cleanup the UI just below the header … you can
+  // remove the Fit button"*). The bar's Fit toggle was ALREADY DEAD when it was removed, and that is
+  // worth writing down rather than trusting: it only wrote `is-fit` onto `.ps-vs-stage` and a
+  // `--ps-vs-fith` custom property onto `.ps-vs-grid`, and NEITHER was read by a single CSS rule —
+  // there was no `.is-fit` selector and no `var(--ps-vs-fith)` anywhere in this file. A planner who
+  // clicked it saw the button light up and the drawing not move. Its own tooltip still advertised
+  // "hover a zone and read it in the magnifier", a feature deleted a week earlier — which is the
+  // clue that nothing had exercised it since. What DOES fit the stack is the pane's own
+  // `--ps-vs-paneh` max-height, and that half is live and stays. Zoom −/+ remains the control over
+  // cell width, and the focus window keeps its own Fit for reading one building close up.
+  try { ['ps_vsloupe', 'ps_vsloupez', 'ps_vsloupew', 'ps_vsloupeh', 'ps_vsfit'].forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
   // How much height the fitted stack may claim. Measured from the pane's own top so the time bar
   // and the toolbar are never covered — a fit that hides the control you fit with is not a fit.
   // ⚠️ Measured from each element's own live position, never from a vh constant. This pane sits
@@ -14119,33 +14122,17 @@
   // projects that need it most.
   function _vsApplyPane(host) {
     if (!host) return;
-    var pane = host.querySelector('.ps-vs-pane'), body = host.querySelector('.ps-vs-body');
-    var tl = host.querySelector('.ps-vs-tl'), grid = host.querySelector('.ps-vs-grid');
+    var pane = host.querySelector('.ps-vs-pane');
     if (pane) {
       var top = pane.getBoundingClientRect().top;
       // 16px of breathing room below the pane. Floored at 320 so a short window still shows a
       // building AND its bar rather than two slivers.
       pane.style.setProperty('--ps-vs-paneh', Math.max(320, Math.round(window.innerHeight - top - 16)) + 'px');
     }
-    if (grid && body) {
-      // The fit cap is the height the BODY actually has, so a fitted building is whole without
-      // the body needing to scroll at all — which is the point of fitting it.
-      var bh = body.clientHeight || 0;
-      var tlh = tl ? Math.round(tl.getBoundingClientRect().height) : 0;
-      var cap = Math.max(240, (bh ? bh : Math.round(window.innerHeight - grid.getBoundingClientRect().top - tlh - 40)) - 28);
-      grid.style.setProperty('--ps-vs-fith', cap + 'px');
-      // ⚠️ Second pass, and it is not belt-and-braces: a tower CARD is its drawing plus a header,
-      // padding and a border, so a cap set from the body height alone still leaves the card taller
-      // than the body and the fitted building scrolls — which is the one thing Fit exists to stop.
-      // The overhead is MEASURED off the rendered card rather than assumed, because it changes with
-      // the header's own wrapping. Measured 469px fitted inside a 497px body and the body still
-      // scrolled; this is what closes that gap.
-      var card = grid.querySelector('.ps-vs-tower'), sv = card && card.querySelector('.ps-vs-scroll svg');
-      if (card && sv && bh) {
-        var over = Math.round(card.getBoundingClientRect().height - sv.getBoundingClientRect().height);
-        if (over > 0 && over < bh) grid.style.setProperty('--ps-vs-fith', Math.max(200, bh - over - 6) + 'px');
-      }
-    }
+    // ⚠️ The second half of this function measured a `--ps-vs-fith` cap onto `.ps-vs-grid` for the
+    // Fit button. Removed with the button (2026-09-10): no CSS rule ever read that property, so both
+    // passes — including the card-overhead correction that looks so carefully derived — were setting
+    // a variable nobody consumed. Do not restore it without a rule that reads it.
   }
   // Which trades are shown. Owner 2026-08-27: *"can't there be a filter to show which trades to be
   // shown. In addition, i want a view wherein all selected trades can be shown side by side."*
@@ -17806,8 +17793,6 @@
         '<button data-vsdt="start"' + (_vsDateMode === 'start' ? ' class="on"' : '') + ' title="Each cell shows when it BEGINS (its first activity\'s start)">Start</button>' +
       '</span>' +
       '<span class="ps-tb-div"></span>' +
-      '<span class="ps-vs-seg"><button id="ps-vs-fit"' + (_vsFit ? ' class="on"' : '') +
-        ' title="Fit the whole building in the pane. The labels get small on purpose — hover a zone and read it in the magnifier.">Fit</button></span>' +
       '<span class="ps-vs-note">Zoom</span><button class="pd-btn ps-icobtn" id="ps-vs-zout" title="Narrower cells">&#8722;</button>' +
       '<button class="pd-btn ps-icobtn" id="ps-vs-zin" title="Wider cells — more room for the dates">+</button>' +
       // \u26a0\ufe0f The PDF is built from the buildings ALREADY ON SCREEN (their svg is cloned), not re-derived.
@@ -17829,20 +17814,42 @@
             (_vsPlanLine.toUpperCase() === VS_PLAN_LINE_DEF ? '' : '<button class="pd-btn ps-vs-chip" id="ps-vs-planclrx" title="Back to the default colour">Reset</button>') +
           '</span>'
         : '') +
-      '<span class="ps-vs-note ps-vs-legendnote" title="Each cell is a progress bar: the solid part is what is complete, the hatched part is what remains.">' +
-        '<svg width="34" height="12" style="vertical-align:middle;"><rect x="0" y="0" width="34" height="12" rx="3" fill="var(--pd-muted)" opacity="0.16"></rect>' +
-        '<rect x="0" y="0" width="34" height="12" rx="3" fill="url(#psvs-legend-h)"></rect>' +
-        '<rect x="0.5" y="0.5" width="13" height="11" rx="2" fill="var(--pd-muted)" opacity="0.95"></rect></svg>' +
-        '<span class="ps-vs-legendtxt">' +
-          (_vsBasis === 'planned' ? 'solid = due by today · hatched = not yet due' : 'solid = done · hatched = remaining') +
-          (_vsBasis === 'compare' ? ' · line = planned POC · each cell reads <strong>BL</strong> = the baseline (<strong>' + esc(blPrimaryLabel()) + '</strong>) date &amp; %, then <strong>ACT</strong> = the actual date &amp; % in bold, then the slip in days and how far ahead or behind plan the progress is' : '') +
-          // The completion badge needs saying: a coloured pill is only self-explanatory once.
-          ' · a <strong>✓ DONE</strong> pill means every activity in that zone is complete, and it carries the finish variance against the baseline — ' +
-          '<span style="color:' + VS_SLIP_EARLY + ';font-weight:700;">early</span>, ' +
-          '<span style="color:' + VS_SLIP_ONTIME + ';font-weight:700;">on time</span>, ' +
-          '<span style="color:' + VS_SLIP_LATE + ';font-weight:700;">late</span>' +
-        '</span></span>' +
-      '<span class="ps-tb-div"></span>' +
+      // ---- The legend, now a strip and not a paragraph -----------------------------------------
+      // Owner 2026-09-10: *"cleanup the UI just below the header. i think it is too much."* This
+      // item used to carry three full sentences and, because `.ps-vs-legendnote` was `flex:1 1 100%`,
+      // it CLAIMED ITS OWN ROW and wrapped onto two lines — a paragraph of instructions sitting in a
+      // row of buttons, which is most of what made the bar feel heavy.
+      // ⚠️ NOTHING IS DELETED, it is demoted: what stays visible is the part you read at a glance
+      // (which fill means what, and what the three DONE colours mean — still shown IN those colours,
+      // because a colour key written in grey teaches nothing). The two long explanations — how to
+      // read a compare cell's BL/ACT text, and what the DONE pill asserts — move into the item's own
+      // `title`, one hover away. Do not put them back inline: the prose is the clutter.
+      (function () {
+        var fill = _vsBasis === 'planned' ? 'solid = due by today · hatched = not yet due'
+                                          : 'solid = done · hatched = remaining';
+        var tip = 'Each cell is a progress bar — ' + fill.replace(/ · /g, ', ') + '. ' +
+          (_vsBasis === 'compare'
+            ? 'The line across a cell is its planned POC. Each cell reads BL = the baseline (' +
+              blPrimaryLabel() + ') date and %, then ACT = the actual date and % in bold, then the ' +
+              'slip in days and how far ahead or behind plan the progress is. '
+            : '') +
+          'A DONE pill means every activity in that zone is complete; the pill carries that zone' +
+          "'s finish variance against the baseline, coloured early / on time / late.";
+        return '<span class="ps-vs-note ps-vs-legendnote" title="' + esc(tip) + '">' +
+          '<svg width="34" height="12" style="vertical-align:middle;"><rect x="0" y="0" width="34" height="12" rx="3" fill="var(--pd-muted)" opacity="0.16"></rect>' +
+          '<rect x="0" y="0" width="34" height="12" rx="3" fill="url(#psvs-legend-h)"></rect>' +
+          '<rect x="0.5" y="0.5" width="13" height="11" rx="2" fill="var(--pd-muted)" opacity="0.95"></rect></svg>' +
+          '<span class="ps-vs-legendtxt">' + fill +
+            (_vsBasis === 'compare' ? ' · line = planned POC' : '') +
+            ' · <strong>✓ DONE</strong> ' +
+            '<span style="color:' + VS_SLIP_EARLY + ';font-weight:700;">early</span> / ' +
+            '<span style="color:' + VS_SLIP_ONTIME + ';font-weight:700;">on time</span> / ' +
+            '<span style="color:' + VS_SLIP_LATE + ';font-weight:700;">late</span>' +
+          '</span></span>';
+      })() +
+      // ⚠️ No divider before the count any more. The legend no longer takes a row of its own, so the
+      // two notes now sit side by side at the trailing end, and a rule between two greyed captions
+      // was one more vertical line in a bar that still carries five.
       '<span class="ps-vs-note">' + acts.length + ' execution-phase activit' + (acts.length === 1 ? 'y' : 'ies') + ' stacked' +
         (anyFilter() ? ' · <strong>filtered</strong>' : '') + '</span></div>';
     var noTradeList = acts.filter(function (r) { return !workOf(r); });
@@ -18024,7 +18031,7 @@
       // ⚠️ The toolbar and the chips sit OUTSIDE the scroller on purpose — scrolling the buildings
       // must never take the controls that drive them off screen.
       '<div class="ps-vs-pane"><div class="ps-vs-body">' +
-      '<div class="ps-vs-stage' + (_vsFit ? ' is-fit' : '') + '"><div class="ps-vs-viewport"><div class="ps-vs-grid' + (_vsAnim === 'in' ? ' ps-vs-in' : _vsAnim === 'fade' ? ' ps-vs-fade' : '') + '">' + towers + '</div></div>' +
+      '<div class="ps-vs-stage"><div class="ps-vs-viewport"><div class="ps-vs-grid' + (_vsAnim === 'in' ? ' ps-vs-in' : _vsAnim === 'fade' ? ' ps-vs-fade' : '') + '">' + towers + '</div></div>' +
       // The magnifier panel is part of the same flex row, so the towers narrow to make room for it
       // rather than being covered by it.
       '</div></div>' + _vsTimelineHTML(acts) + '</div>';
@@ -18099,8 +18106,6 @@
         _vsApplyPane(host);
       };
     });
-    var fitB = host.querySelector('#ps-vs-fit');
-    if (fitB) fitB.onclick = function () { _vsFit = !_vsFit; _saveVsFit(); renderVStack(); };
     var pdfB = host.querySelector('#ps-vs-pdf');
     if (pdfB) pdfB.onclick = function () { _vsExportPDF(host); };
     _vsApplyPane(host);

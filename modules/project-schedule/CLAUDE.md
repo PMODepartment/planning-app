@@ -13,6 +13,82 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### The stacking bar loses a row, and the Fit button it lost was already dead (2026-09-10) — ethanrobles10
+
+Owner: *"cleanup the UI just below the header. i think it is too much. you can remove the Fit
+button."*
+
+### 1. The Fit button was not doing anything, and had not been for two weeks
+
+⚠️⚠️ **This is the part worth reading.** `#ps-vs-fit` toggled `_vsFit`, persisted it to
+`ps_vsfit`, and re-rendered. All that re-render did with the flag was write two things:
+
+- `is-fit` onto `.ps-vs-stage`, and
+- a `--ps-vs-fith` custom property onto `.ps-vs-grid`, measured by a careful two-pass routine in
+  `_vsApplyPane` — a body-height cap, then a second correction for the tower card's own header,
+  padding and border, with a measured comment explaining that 469px fitted inside a 497px body
+  and still scrolled.
+
+**Neither was read by a single CSS rule.** There was no `.is-fit` selector anywhere in this file
+and no `var(--ps-vs-fith)` anywhere in this file — grepped over the revision as shipped, not from
+memory. So a planner who pressed Fit saw the button light up and the drawing not move.
+
+The clue was in its own tooltip: *"hover a zone and read it in the magnifier"* — the magnifier was
+deleted on 2026-09-02. Nothing had exercised the control since, which is how a live-looking button
+sat on the bar for two weeks doing nothing. **What actually fits the stack is `--ps-vs-paneh`,
+the max-height `_vsApplyPane` writes onto `.ps-vs-pane`; that half IS read by CSS and is
+untouched.** Removing the button therefore changes no pixel of the drawing — which is the only
+reason it could be removed on a one-line instruction without asking what should replace it.
+
+Gone with it: `_vsFit`, `_saveVsFit`, the `is-fit` class, the whole second half of
+`_vsApplyPane`, and the `ps_vsfit` key — swept from `localStorage` on load beside the four
+magnifier keys, so a returning browser is not left carrying state for a control that no longer
+exists. The **focus window keeps its own Fit** (`#ps-vs-fzfit`): that one is wired to a real
+transform and answers a different question, reading one building close up.
+
+### 2. The legend was a paragraph parked in a row of buttons
+
+`.ps-vs-legendnote` was `flex:1 1 100%`, so it **claimed a whole row of the bar** and wrapped
+inside it — three sentences of instructions sitting among the segmented controls. Correct when it
+held three sentences; it is the reason the bar read as heavy.
+
+⚠️ **Nothing was deleted, it was demoted.** What stays visible is what you read at a glance: which
+fill means what, and the three DONE colours — still rendered *in* those colours, because a colour
+key written in grey teaches nothing. The two long explanations (how to read a compare cell's
+BL/ACT text; what the DONE pill asserts) moved into the item's own `title`, one hover away. The
+strip is `flex:0 1 auto` now, and the divider that used to separate it from the activity count is
+gone — a rule between two greyed captions, in a bar that still carries five.
+
+Visible legend text, measured on the shipped builder: **176 → 66 characters** in the *actual*
+basis, **360 → 87** in *Planned vs Actual*.
+
+### 3. Verified
+
+The `var bar = …` statement was **sliced out of the shipped file and executed** against stubs, in
+all three date bases, then the resulting markup dropped into a throwaway harness that loads the
+module's real inline `<style>` and the app's real `dashboard.css`, beside the same markup rendered
+from `HEAD`. Rows are the count of distinct item offsets, measured in the browser, not counted by
+eye:
+
+```
+pane width   basis                BEFORE          AFTER
+1798px       Actual               2 rows /  65px  2 rows / 58px
+1798px       Planned vs Actual    3 rows / 110px  2 rows / 58px
+1400px       Planned vs Actual    4 rows / 138px  2 rows / 59px
+1200px       Actual               4 rows /  97px  3 rows / 71px
+1200px       Planned vs Actual    5 rows / 149px  3 rows / 71px
+1000px       Actual               5 rows / 131px  3 rows / 71px
+```
+
+Also asserted on the rendered markup: **no Fit button in any basis**, dividers **6 → 5**, no
+divider before the count, and the demoted prose present in the `title`. The page parses (one
+inline script block, 0 syntax failures, 0 NUL bytes) and loads to the sign-in redirect with an
+empty console.
+
+⚠️ **Not verified signed in** — the anon key carries no grants, so the stacking cannot be reached
+with data from this session. The claims above are about the bar's markup and layout, which is what
+was changed; nothing here asserts anything about the drawing.
+
 ### ⚠️⚠️ The floor was drawn at a quarter of its size at Detail 1, because the WRAP GRID was sizing the plan (2026-09-10) — jasantos2
 
 Owner: *"the size of the floor is decreased when proceed with level 1 - detail. Like i said, allow
