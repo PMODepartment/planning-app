@@ -95,6 +95,37 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### ⚠️⚠️ The floor plan never reached the Vertical Stacking at all, and a Sync button (2026-09-10) — jasantos2
+
+Owner: *"can't there be a button that allows syncing the floor plans to the 3D? and nothing is still
+being shown in the vertical stacking 3D."*
+
+⚠️⚠️⚠️ **The guard could never pass.** The Project Schedule module is one IIFE, so
+`var ScheduleBuilder` is a **closure local** and `window.ScheduleBuilder` is never assigned — and
+`_vsZpAll` tested `window.ScheduleBuilder`. It returned `{}` unconditionally, so the traced floor
+plan **never reached the Vertical Stacking**, in 2D or 3D, from the day the feature shipped. The
+last two turns of work on this — the label join, the 2D layout, the cold-open fetch, the three-way
+footer — were all correct and all sat behind a condition that is false by construction. ⚠️ Every
+other consumer in that file already used `typeof ScheduleBuilder !== 'undefined'`.
+
+⚠️ **Why the suites missed it:** they run `_vsZpAll` in a context where the bridge is *provided*,
+which tests whether the map gets built, not whether the bridge is reachable. The new suite executes
+it in a context shaped like the real one — a `window` that exists and has no `ScheduleBuilder` — and
+**HEAD returns `{}` on the identical input**.
+
+**Sync floor plans**, in the 3D bar: it clears the memo *and* the asked-flag (or it would respect
+the cache it is meant to bypass), and it always reports what happened — synced, *n* of *m*, a plan
+that matches no storey, or nothing found, with the empty case naming where to draw one and to save.
+⚠️ The verdict is read from the **same fit function the footer prints**, so the two cannot
+contradict each other, and ⚠️ a card with no storeys is not accused of a name mismatch.
+
+**767 assertions across fourteen suites plus the runtime and extrusion checks, 0 failing**; 29 new.
+⚠️ A structural assertion now forbids any **code** reader going through `window.`, while still
+allowing the comment that explains the bug to quote it. ⚠️ **Not verified signed-in** — the database
+round trip still has not run.
+
+`MODULE_V` → `20260910v2`. Detail: [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
 ### The 3D card could not see the floor plan unless the Setup tab had been opened (2026-09-10) — jasantos2
 
 Owner: *"i want to use that defined floor plan and apply it to the vertical stacking 3D? it is not

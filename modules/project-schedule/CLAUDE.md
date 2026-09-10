@@ -13,6 +13,57 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### ⚠️⚠️ The floor plan never reached the Vertical Stacking at all, and a Sync button (2026-09-10) — jasantos2
+
+Owner: *"can't there be a button that allows syncing the floor plans to the 3D? and nothing is still
+being shown in the vertical stacking 3D."*
+
+### 1. ⚠️⚠️⚠️ The guard could never pass
+This module is **one IIFE** — `(function () {` at the top of the script, `})();` at the bottom — so
+`var ScheduleBuilder = (function () {…})()` is a **closure local**, and `window.ScheduleBuilder` is
+never assigned. `_vsZpAll` tested `window.ScheduleBuilder`.
+
+**So it returned `{}` unconditionally.** The traced floor plan has never reached the Vertical
+Stacking — not in 3D, not in 2D, not once since the feature shipped. Every fix in the last two turns
+(the detail-3 label join, the 2D order-and-width layout, the cold-open fetch, the three-way footer)
+was correct and sat behind a condition that is false by construction. ⚠️ Every **other** consumer of
+`ScheduleBuilder` in this file already used `typeof ScheduleBuilder !== 'undefined'`; these two
+readers were the odd ones out, and I wrote the second of them last turn without checking the first.
+
+⚠️ **Why the harnesses did not catch it:** they slice `_vsZpAll` and run it in a context where the
+bridge is *provided*, which answers "does the map get built" and not "is the bridge reachable from
+here". The new suite executes it in a context shaped like the real one — a `window` object that
+exists and does **not** carry `ScheduleBuilder` — and **HEAD returns `{}` on the identical input**,
+which is the whole bug, reproduced.
+
+### 2. Sync floor plans
+A **Sync floor plans** button in the 3D bar, next to Plan columns.
+- ⚠️ It clears the **memo and the asked-flag**, or it would respect the very cache the planner is
+  pressing it to bypass — a button that does nothing.
+- ⚠️ **It always says what happened.** Synced and drawn, *n* of *m* storeys, a plan found that
+  matches no storey, or nothing found at all — with the empty case naming where to draw one **and
+  to save the setup**. A silent button looks broken.
+- ⚠️ The verdict comes from **`_vsPlanFit`, the same function the footer prints**, read *after* the
+  repaint — so the toast and the note under the model cannot contradict each other.
+- ⚠️ **A card with no storeys is not accused of a name mismatch.** `_vsPlanFit` reports `nomatch`
+  for an empty card too (nothing matched, because there was nothing to match), and telling a planner
+  their floor names are wrong when the card simply has no rows sends them to fix nothing.
+- ⚠️ Wired in **both** places the 3D bar is drawn, and the full-screen window rebuilds **itself** —
+  repainting the card behind it would leave the model the planner is looking at untouched.
+
+### Verified
+**767 assertions across fourteen suites plus the runtime and extrusion checks, 0 failing** — 29 new.
+⚠️⚠️ **The control is the point**: the same `_vsZpAll`, the same inputs, executed against HEAD,
+returns `{}`; against this file it returns the plan. A structural assertion now also forbids any
+**code** reader going through `window.` — while deliberately still allowing the comment that
+explains the bug to quote it, because a test that banned the string would push the explanation out
+of the file.
+⚠️ **Not verified signed-in.** `zonePlanFetch` is a real query and the anon key has no grants, so the
+database round trip still has not run. What is proved is that the plan now reaches the card once the
+bridge answers.
+
+`MODULE_V` → `20260910v2`.
+
 ### The 3D card could not see the floor plan unless the Setup tab had been opened (2026-09-10) — jasantos2
 
 Owner: *"i want to use that defined floor plan and apply it to the vertical stacking 3D? it is not

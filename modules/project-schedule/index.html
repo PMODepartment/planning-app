@@ -14988,9 +14988,15 @@
      is set even when the answer is EMPTY - otherwise a project with no plan would fetch, repaint,
      find nothing, and fetch again on every single repaint. */
   var _vsZpGot = null, _vsZpAsked = null, _vsZpBusy = false;
+  // The model the last tower drew, so _vsZpSync can report the SAME verdict the footer prints.
+  var _vsLastModel = null;
   function _vsZpKick() {
     if (_vsZpBusy || _vsZpAsked === pid || !pid) return;
-    if (!(window.ScheduleBuilder && ScheduleBuilder.zonePlanFetch)) { _vsZpAsked = pid; return; }
+    /* ⚠️⚠️ `typeof`, NOT `window.` - this module is one big IIFE, so ScheduleBuilder is a
+       closure local and `window.ScheduleBuilder` is undefined forever. Testing it is how the
+       traced plan never once reached this card. Every other consumer in this file already
+       used the `typeof` form; these two were the odd ones out. */
+    if (!(typeof ScheduleBuilder !== 'undefined' && ScheduleBuilder.zonePlanFetch)) { _vsZpAsked = pid; return; }
     var want = pid;
     _vsZpBusy = true;
     ScheduleBuilder.zonePlanFetch(want).then(function (m) {
@@ -15004,11 +15010,57 @@
       if (document.getElementById('ps-vstack')) { try { renderVStack(); } catch (e) {} }
     }).catch(function () { _vsZpBusy = false; _vsZpAsked = want; });
   }
+  /* ⚠️ THE OWNER'S SYNC. Everything above is a cache with an async fill, and a planner should
+     not have to know that: they drew a plan in another tab and want it HERE, now. This drops
+     the memo AND the asked-flag so the next read genuinely re-fetches, and reports what it
+     found rather than repainting silently - a button that looks like it did nothing is worse
+     than no button. */
+  function _vsZpSync(after) {
+    _vsZpMemo = null; _vsZpGot = null; _vsZpAsked = null; _vsZpBusy = false;
+    if (!(typeof ScheduleBuilder !== 'undefined' && ScheduleBuilder.zonePlanFetch)) {
+      UI.toast('The Schedule Setup module is not loaded, so there is nothing to sync from.', 'warn');
+      return;
+    }
+    var want = pid;
+    UI.toast('Reading the floor plans\u2026');
+    ScheduleBuilder.zonePlanFetch(want).then(function (m) {
+      if (want !== pid) return;   // the planner moved on while it loaded
+      _vsZpGot = m || {}; _vsZpAsked = want; _vsZpMemo = null;
+      var have = Object.keys(_vsZpGot);
+      if (!have.length) {
+        UI.toast('No traced floor plan was found for this project. Draw one in Schedule Setup \u203a Floors & Zones \u203a Plan, and SAVE the setup.', 'warn');
+      }
+      // ⚠️ The full-screen window rebuilds ITSELF - repainting the card behind it would leave
+      // the model the planner is actually looking at untouched.
+      try { (after || renderVStack)(); } catch (e) {}
+      /* ⚠️ The verdict is read AFTER the repaint, from the same _vsPlanFit the footer uses, so
+         the toast and the footer can never disagree about whether the plan landed. */
+      if (have.length) {
+        var f = null;
+        try { f = _vsPlanFit(_vsLastModel); } catch (e) {}
+        /* ⚠️ NO STOREYS IS NOT A MISMATCH. _vsPlanFit reports 'nomatch' for an empty card too
+           (nothing matched, because there was nothing to match), and accusing the planner's
+           floor names of being wrong when the card simply has no rows would send them off to
+           fix something that is not broken. */
+        if (!f || !f.n) {
+          UI.toast('Read the floor plans for ' + have.length + ' floor' + (have.length === 1 ? '' : 's') + '.');
+        } else if (f.state === 'nomatch') {
+          UI.toast('Found a plan for ' + have.length + ' floor' + (have.length === 1 ? '' : 's') +
+            ', but no storey on this card matches it \u2014 see the note under the model.', 'warn');
+        } else if (f.state === 'partial') {
+          UI.toast(f.hit + ' of ' + f.n + ' storeys are now drawn from the floor plan.');
+        } else {
+          UI.toast('Floor plans synced \u2014 ' + f.n + ' storey' + (f.n === 1 ? '' : 's') + ' drawn as you traced them.');
+        }
+      }
+    }).catch(function () { UI.toast('The floor plans could not be read.', 'error'); });
+  }
   function _vsZpAll() {
     if (_vsZpMemo) return _vsZpMemo;
     var out = {};
     try {
-      if (window.ScheduleBuilder && ScheduleBuilder.zonePlanByLabel) out = ScheduleBuilder.zonePlanByLabel() || {};
+      // ⚠️⚠️ `typeof`, not `window.` - see _vsZpKick. This line returned {} unconditionally.
+      if (typeof ScheduleBuilder !== 'undefined' && ScheduleBuilder.zonePlanByLabel) out = ScheduleBuilder.zonePlanByLabel() || {};
     } catch (e) { out = {}; }
     /* ⚠️⚠️ THE SETUP TAB HAS USUALLY NEVER BEEN OPENED. `ScheduleBuilder` only holds a config
        once it has, so on a cold open the line above returns {} and the traced plan may as well
@@ -15544,6 +15596,7 @@
       '<span class="ps-vs-seg">' + cols.map(function (o) {
         return '<button data-vs3col="' + o[0] + '"' + (_vsPlanCols === o[0] ? ' class="on"' : '') + '>' + o[1] + '</button>';
       }).join('') + '</span>' +
+      '<button class="pd-btn ps-vs-chip" id="ps-vs-zpsync" title="Re-read the floor plans traced in Schedule Setup and draw the zones where you put them. Use this after tracing or editing a plan in another tab.">Sync floor plans</button>' +
       '<span class="ps-tb-div"></span>' +
       '<span class="ps-vs-note" title="Seen from the top view, which edge of the plan is the FRONT of the building. Right, rear and left follow from it.">Front faces</span>' +
       '<span class="ps-vs-seg">' + _VS_EDGES.map(function (e) {
@@ -15648,6 +15701,7 @@
     if (!_vs3D) return _vsTowerSVG(list, baseColor, keyPrefix, tradeSplit);
     var m = _vsTowerModel(list, tradeSplit);
     if (!m) return '<div class="ps-vs-empty">Nothing to stack for this selection.</div>';
+    _vsLastModel = m;
     _vs3Pending.push({ key: keyPrefix, model: m, color: baseColor });
     return _vs3Bar() + '<div class="ps-vs3-mount" data-vs3mount="' + esc(keyPrefix) + '">' +
       '<div class="ps-vs3-load">Loading the 3D view…</div></div>' + _vs3Foot(m);
@@ -16657,6 +16711,9 @@
       wrap.querySelectorAll('[data-vs3front]').forEach(function (b) {
         b.onclick = function () { _vsFront = b.dataset.vs3front; _saveVs3D(); build(); };
       });
+      // ⚠️ `build`, not renderVStack: this window owns its own model - see _vsZpSync.
+      var _zpsF = wrap.querySelector('#ps-vs-zpsync');
+      if (_zpsF) _zpsF.onclick = function () { _vsZpSync(build); };
       wrap.querySelector('#ps-vs-fzcmp').onclick = function () {
         cmp = !cmp;
         build();   // rebuilt rather than toggled: the second building has to be BUILT at its own basis
@@ -17285,6 +17342,9 @@
     host.querySelectorAll('[data-vs3front]').forEach(function (b) {
       b.onclick = function () { _vsFront = b.dataset.vs3front; _saveVs3D(); renderVStack(); };
     });
+    // ⚠️ Defensively: the bar is not emitted in 2D, so this control may not be on the page.
+    var _zps = host.querySelector('#ps-vs-zpsync');
+    if (_zps) _zps.onclick = function () { _vsZpSync(); };
     host.querySelectorAll('[data-vssc]').forEach(function (b) { b.onclick = function () { _vsScope = b.dataset.vssc; _vsAnim = 'in'; renderVStack(); }; });
     host.querySelectorAll('[data-vsdet]').forEach(function (b) { b.onclick = function () { _vsDetail = parseInt(b.dataset.vsdet, 10) || 1; _vsAnim = 'fade'; renderVStack(); }; });
     host.querySelectorAll('[data-vsdt]').forEach(function (b) { b.onclick = function () { _vsDateMode = b.dataset.vsdt; _vsAnim = 'fade'; renderVStack(); }; });

@@ -33,7 +33,7 @@
       var m = s && s.match(/[?&]v=([^&]+)/);
       if (m) return decodeURIComponent(m[1]);
     } catch (e) {}
-    return '20260910v1';
+    return '20260910v2';
   })();
 
   function href(m) {
