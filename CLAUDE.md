@@ -156,7 +156,13 @@ Measured in a browser with the toolbar markup lifted byte-for-byte from the ship
 `placeScope` sliced out of it: the panel spans 60→771 in a 1265px viewport with **no overflow and no
 horizontal page scroll**, and the rail is **pinned at `top: 8px` after scrolling 1,200px**. The
 funnel's `has-active` state was measured off and on, so a narrowed scope is still visible at a glance
-with the panel shut. `MODULE_V` → `20260910u3`.
+with the panel shut. `MODULE_V` → `20260910u4`.
+⚠️⚠️ **`MODULE_V` is `u4`, not `u3`: the concurrent session in this tree independently
+picked `20260910u3` and pushed it first — the SAME two-sessions-same-letter collision this
+log has already recorded twice.** ⚠️ It rebased **cleanly**, because both sides set the
+identical string and git had nothing to conflict on, and that is the dangerous shape: my changes
+would otherwise have shipped under a version a browser had already cached WITHOUT them. The
+other session’s own entry above still reads `u3`, which is what it shipped.
 ⚠️ **Not verified signed in.**
 
 ### 2026-09-10 (u2) — Directory Health, and a duplicate scan that stops being quadratic
