@@ -35,6 +35,91 @@
                        'category', 'stakeholder_group', 'email', 'contact',
                        'birthday', 'gift_tier', 'photo_path', 'photo_thumb_path'];
 
+
+  // ==========================================================================
+  // PROFILE FIELDS (2026-09-10) — directory-only columns
+  // --------------------------------------------------------------------------
+  // ⚠️⚠️ THESE ARE **NOT** ADDED TO `PERSON_FIELDS`, AND THAT DISTINCTION IS THE
+  //    WHOLE POINT. `PERSON_FIELDS` is the MIRROR contract: every one of those
+  //    columns exists on `stakeholder_map` too, and assignToProjects copies them
+  //    on to each project row. VERIFIED against the live database: none of the
+  //    five below exist on `stakeholder_map`, so mirroring them would make every
+  //    project-row insert fail with "column does not exist".
+  //    They belong to the person in the directory and stop there.
+  var PROFILE_ONLY = ['middle_initial', 'sub_sector', 'secondary_position', 'status', 'is_favorite'];
+  var PROFILE_FIELDS = PERSON_FIELDS.concat(PROFILE_ONLY).concat(['notes']);
+
+  // ⚠️ Which of them the live database actually has, learned from the rows that
+  // came back rather than assumed. A deployment that has not run
+  // 2026-09-10-stakeholder-profile-fields.sql simply does not return the keys.
+  // ⚠️ An EMPTY directory tells us nothing, so it reports "unknown" rather than
+  // "absent" — the caller then relies on the write-side retry below instead of
+  // silently dropping fields a planner typed.
+  function columnsFrom(rows) {
+    if (!rows || !rows.length) return null;
+    var seen = {};
+    rows.slice(0, 50).forEach(function (r) {
+      Object.keys(r || {}).forEach(function (k) { seen[k] = 1; });
+    });
+    return seen;
+  }
+  function hasCol(cols, name) { return !cols || Object.prototype.hasOwnProperty.call(cols, name); }
+
+  // Does this error mean "that column is not there"? PostgREST reports it two ways
+  // depending on whether the request died in Postgres or in its own schema cache.
+  function missingColumn(err) {
+    var m = String((err && (err.message || err.details || '')) || '');
+    var c = String((err && err.code) || '');
+    if (c === '42703' || c === 'PGRST204') return columnNameIn(m);
+    return /column .* does not exist|could not find the '.*' column/i.test(m) ? columnNameIn(m) : null;
+  }
+  function columnNameIn(msg) {
+    var m = msg.match(/column "?([a-z_]+)"? does not exist/i) ||
+            msg.match(/could not find the '([a-z_]+)' column/i) ||
+            msg.match(/'([a-z_]+)' column of/i);
+    return m ? m[1] : '__unknown__';
+  }
+
+  // Run a write, and if the database refuses a column this build knows about but
+  // that deployment does not have, DROP THAT COLUMN AND RETRY — reporting which
+  // ones were dropped so the caller can say so.
+  // ⚠️ It only ever strips from PROFILE_ONLY. A failure naming `name` or
+  //    `organization` is a real error and must surface, not be silently retried
+  //    into a row missing its identity.
+  async function writeTolerant(run, row) {
+    var dropped = [], attempt = Object.assign({}, row);
+    for (var i = 0; i <= PROFILE_ONLY.length; i++) {
+      var res = await run(attempt);
+      if (!res || !res.error) return { res: res, dropped: dropped };
+      var col = missingColumn(res.error);
+      if (!col || PROFILE_ONLY.indexOf(col) === -1) return { res: res, dropped: dropped };
+      delete attempt[col];
+      dropped.push(col);
+      // '__unknown__' means the message did not name the column; drop every
+      // optional one at once rather than looping without progress.
+      if (col === '__unknown__') {
+        PROFILE_ONLY.forEach(function (k) {
+          if (k in attempt) { delete attempt[k]; if (dropped.indexOf(k) === -1) dropped.push(k); }
+        });
+      }
+    }
+    return { res: await run(attempt), dropped: dropped };
+  }
+
+  // How complete one person's profile is, 0..1, over the fields a human fills in.
+  // ⚠️ `photo_thumb_path` is excluded — it is derived from `photo_path` by the
+  //    uploader, so counting both would score a photo twice.
+  var COMPLETENESS_FIELDS = ['name', 'organization', 'role_title', 'category',
+                             'email', 'contact', 'title', 'nickname', 'birthday', 'photo_path'];
+  function completeness(p) {
+    var have = 0;
+    COMPLETENESS_FIELDS.forEach(function (f) {
+      var v = p && p[f];
+      if (v != null && String(v).trim() !== '') have++;
+    });
+    return { have: have, of: COMPLETENESS_FIELDS.length, pct: have / COMPLETENESS_FIELDS.length };
+  }
+
   // ---- normalisation -------------------------------------------------------
   // ⚠️ Honorifics and suffixes are stripped as WHOLE TOKENS, never as substrings:
   // "Sr" as a substring would maul "Srinivasan", and "Jr" would maul "Jrue".
@@ -237,7 +322,7 @@
   // that misses inserts a row the index then refuses and the save fails with a
   // constraint error the planner cannot act on.
   function exactKey(p) {
-    return String(p && p.name || '').trim().toLowerCase() + ' ' +
+    return String(p && p.name || '').trim().toLowerCase() + '\u0000' +
            String(p && p.organization || '').trim().toLowerCase();
   }
   function findExact(input, directory) {
@@ -262,7 +347,10 @@
 
   function personRow(fields, uid) {
     var row = {};
-    PERSON_FIELDS.forEach(function (f) {
+    // ⚠ PROFILE_FIELDS, not PERSON_FIELDS: this row is going into `stakeholders`,
+    //   which owns the extra profile columns. The mirror on to stakeholder_map uses
+    //   PERSON_FIELDS and must NOT gain them.
+    PROFILE_FIELDS.forEach(function (f) {
       if (fields[f] !== undefined) row[f] = fields[f] === '' ? null : fields[f];
     });
     row.name = String(fields.name || '').trim();
@@ -279,7 +367,10 @@
   async function createPerson(sb, fields, uid) {
     var row = personRow(fields, uid);
     if (!row.name) throw new Error('A name is required.');
-    var ins = await sb.from(DIR).insert(row).select('*');
+    // ⚠ writeTolerant drops only the OPTIONAL profile columns a deployment has not
+    //   migrated yet, and reports which. A failure naming `name` still surfaces.
+    var w = await writeTolerant(function (r) { return sb.from(DIR).insert(r).select('*'); }, row);
+    var ins = w.res;
     if (ins.error) {
       if (String(ins.error.code) === '23505' || /duplicate key|already exists/i.test(ins.error.message || '')) {
         var again = await sb.from(DIR).select('*').ilike('name', row.name).limit(50);
@@ -290,7 +381,7 @@
       }
       throw ins.error;
     }
-    return { person: (ins.data || [])[0] || null, existed: false };
+    return { person: (ins.data || [])[0] || null, existed: false, dropped: w.dropped };
   }
 
   // Put one directory person on to N projects, as stakeholder_map rows.
@@ -402,6 +493,10 @@
     matchCandidates: matchCandidates, findExact: findExact, exactKey: exactKey,
     missingTable: missingTable,
     createPerson: createPerson, assignToProjects: assignToProjects,
-    mergePeople: mergePeople, personRow: personRow
+    mergePeople: mergePeople, personRow: personRow,
+    PROFILE_FIELDS: PROFILE_FIELDS, PROFILE_ONLY: PROFILE_ONLY,
+    columnsFrom: columnsFrom, hasCol: hasCol, missingColumn: missingColumn,
+    writeTolerant: writeTolerant, completeness: completeness,
+    COMPLETENESS_FIELDS: COMPLETENESS_FIELDS
   };
 })();

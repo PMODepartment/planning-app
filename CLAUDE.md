@@ -95,6 +95,40 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+
+### 2026-09-10 (u1) — The stakeholder directory becomes a card Universe with clickable A–Z bands
+
+**Run `migrations/2026-09-10-stakeholder-profile-fields.sql`.** Owner, with screenshots of a separate
+stakeholder app by another developer: *"I want to adopt the feature seeing the whole stakeholders
+rather than a table and seeing the clickable bands. And a dashboard page that can also be adopted."*
+Asked which to build first, the owner chose the **Universe view**; the dashboard follows. Detail in
+[`modules/portfolio-overview/CLAUDE.md`](modules/portfolio-overview/CLAUDE.md). What reaches beyond
+the page:
+
+- ⚠️⚠️ **A CORRECTION TO YESTERDAY'S (s4) AND (s5) ENTRIES, BOTH MINE: `assets/js/stakeholders.js`
+  SHIPPED WITH A NUL BYTE, AND BOTH ENTRIES CLAIMED "0 NUL bytes".** `exactKey` joins name and
+  organisation with a separator that cannot occur in either — correct in intent, and written into the
+  source as a **raw byte** rather than the escape `'\u0000'`. So the repo's own "0 NUL bytes" check was
+  reported green against a file that failed it, twice. The byte is now the two-character escape;
+  ⚠️ the runtime string is **unchanged, proved by executing both copies** — HEAD's `exactKey` and the
+  fixed one agree on 7/7 inputs, the separator is still U+0000, and the collision a printable
+  separator would create (`"A B" + ""` vs `"A" + " B"`) stays impossible.
+- ⚠️ **The new profile columns are DELIBERATELY OUT of the `stakeholder_map` mirror.** Verified
+  against the live database that `middle_initial`, `sub_sector`, `secondary_position`, `status` and
+  `is_favorite` exist on **neither** table, so mirroring them would break every `stakeholder_map`
+  insert. `PROFILE_ONLY` / `PROFILE_FIELDS` keep them on the directory alone, and `writeTolerant`
+  **drops a refused column and retries**, reporting what it gave up — so a deployment that has not
+  run the migration still creates people, minus the new fields, instead of failing.
+
+**84 assertions** (41 matcher + 43 operations) executing the shipped file, **8 of 8 contrast builds
+biting**. The Universe itself was **driven in a browser** against the real stylesheet — 27 bands, the
+empty ones disabled rather than hidden, band-click filtering, all four groupings, both layouts, and
+uniform card heights. `stakeholders.js` → `?v=20260910u1`; `MODULE_V` → `20260910u1` (fallback
+literal included). 48 assets on one version each, 0 splits, 0 missing; 0 NUL bytes across every
+tracked text file, this time actually measured - including the prose, because the same byte reappeared in
+the DRAFT OF THIS ENTRY and turned the changelog into a file grep calls binary.
+⚠️ **Not verified signed in** — no card drawn from the live directory, no favourite written, and the
+migration has not been run.
 ### The floor plan window gets tools: shapes, undo, clipboard, and naming the zone (2026-09-10) — jasantos2
 
 Owner: *"if there is no floor plan, how do i add shapes or create shapes? and how come this is the

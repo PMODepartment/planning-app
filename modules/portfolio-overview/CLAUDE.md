@@ -1,5 +1,59 @@
 # Module: portfolio-overview
 
+## 2026-09-10 (u1) — The directory becomes a Universe: cards over the whole register, and clickable A–Z bands
+
+Owner, pointing at a separate stakeholder app built by another developer: *"I want to adopt the
+feature seeing the whole stakeholders rather than a table and seeing the clickable bands."* Two
+things came across from those screenshots — a **card grid over the whole directory**, and an
+**alphabet strip with counts** you can click to jump. Both are now the Directory's default.
+
+- **Cards, not rows.** Initials avatar, name, organisation, role, project count, a status dot and a
+  favourite star. The table is still there behind a **grid / list** toggle, because a table is the
+  better answer to *"who is on more than one project"* and a card grid is the better answer to
+  *"who do we know at DPWH"* — the two questions this screen gets asked.
+- **The A–Z strip renders every letter, present or not.** A strip that shows only the letters in use
+  jumps around as you type in the search box, and a **disabled** letter is the useful answer to *"is
+  there anyone under Q?"*. Empty letters are disabled, never hidden. ⚠️ `#` (names not starting with
+  a letter) sorts **last**, or a handful of odd rows would head a list of 240 people.
+- ⚠️ **Bands are cut on the same NORMALISED name the matcher uses**, so `Engr. Ana Reyes` lands
+  under **A** with everyone else rather than under **E** on its honorific. One normaliser, so the
+  band strip and the duplicate warning cannot disagree about who a person is.
+- **Grouping is a choice** — A–Z, organisation, sector, or none. ⚠️ Switching it **clears the picked
+  band**: a letter selected under A–Z means nothing under "group by organisation", and carrying it
+  across would filter to an empty screen with a control that looks satisfied.
+- ⚠️⚠️ **The favourite star is OPTIMISTIC AND REVERTS ON REFUSAL.** `is_favorite` only exists once
+  `migrations/2026-09-10-stakeholder-profile-fields.sql` has been run, so on an un-migrated database
+  every click **will** be refused — and RLS answers a refused UPDATE with **200 and zero rows**, the
+  silent-success trap this log already records for the merge. Zero rows is treated as failure: the
+  star goes back and it says, once, which migration is missing. A star that appears to stick and
+  silently did not is worse than one that refuses.
+
+### The list view is the same grouping, not a second one
+`dirRender` became a dispatcher; the old table body is now `dirRenderList`, fed the **same band
+groups** the grid draws. ⚠️ It gets its own container rather than swapping `innerHTML` on one node —
+the two layouts share no structure, so one node would make each render pay for the other's markup.
+
+### New KPI: *On no project*
+A person added and never assigned is the actionable state this screen exists to surface, and nothing
+counted it. Counted, not hidden.
+
+### Verified
+The shipped directory code was **sliced out of `index.html` and driven in a browser** against the
+real stylesheet: **27 bands rendered, 26 with people**, empty ones **disabled rather than hidden**,
+`#` ordered last; clicking **F** filters to 3 cards and clicking an empty letter is refused;
+group-by-organisation reproduces the right counts; no grouping gives 0 sections, 0 bands, 32 cards;
+the list layout draws 26 band rows + 32 people = **58 rows**; and card heights are **uniform at
+102px**.
+
+⚠️ **Two of my own defects, both caught by measuring rather than reading.** Card heights came back
+ragged (`[85, 102]`) because an empty role line collapsed — fixed with `min-height`, ⚠️ **not** the
+`::after` escape I tried first, which wrote a **literal NUL byte** into this file and rendered as
+mojibake on the card. And my first harness asserted `capOverflows: ? false : false` — a claim that
+cannot fail — now a real clip-and-height check.
+
+⚠️ **Not verified signed in.** No card has been drawn from the live directory, and no favourite has
+been written.
+
 ## 2026-09-10 (s5) — The Stakeholders tab stops being read-only: a directory you can author
 
 Owner: *"By Portfolio Overview and accessing the stakeholder map, planners can create stakeholders
