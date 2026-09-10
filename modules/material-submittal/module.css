@@ -90,7 +90,7 @@
 /* "Sorted by X ▲ ×" chip — the one-click way back to the natural order. */
 .ms-sortchip { display:inline-flex; align-items:center; gap:5px; cursor:pointer;
   border:1px solid var(--pd-red); background:var(--pd-red); color:#fff;
-  font:inherit; font-size:var(--ms-fs-sm); font-weight:700; padding:4px 9px; border-radius:999px; flex:none; }
+  font:inherit; font-size:var(--ms-fs-sm); font-weight:700; padding:4px 9px; border-radius:var(--pd-radius-pill); flex:none; }
 .ms-sortchip:hover { filter:brightness(1.08); }
 .ms-sortchip svg { display:block; }
 .ms-agchip { margin-left:10px; vertical-align:2px; }
@@ -165,7 +165,7 @@ html.pd-dark tr.ms-grp td, html.pd-dark tr.ms-grp td.ms-fz1, html.pd-dark tr.ms-
 .ms-grp-count { color:var(--pd-muted); font-weight:500; font-size:var(--ms-fs-sm); margin-left:6px; }
 
 /* ---- Status pills ------------------------------------------------------- */
-.ms-pill { display:inline-block; padding:2px 9px; border-radius:999px; font-size:var(--ms-fs-micro); font-weight:700;
+.ms-pill { display:inline-block; padding:2px 9px; border-radius:var(--pd-radius-pill); font-size:var(--ms-fs-micro); font-weight:700;
   white-space:nowrap; border:1px solid transparent; }
 .ms-pill.s-approved   { background:#e7f6ec; color:#12693a; border-color:#bfe4cd; }
 .ms-pill.s-approvedc  { background:#eef7e8; color:#3f6b21; border-color:#cfe6bd; }
@@ -321,7 +321,7 @@ html.pd-dark .ms-pill.s-info      { background:rgba(30,78,140,.26);  color:#8fbd
 .ms-sk-row { display:flex; gap:12px; align-items:center; padding:9px 0;
   border-bottom:1px solid var(--pd-line); }
 .ms-sk-row:last-child { border-bottom:0; }
-.ms-sk { height:11px; border-radius:4px; background:var(--pd-line); opacity:.75;
+.ms-sk { height:11px; border-radius:var(--pd-radius); background:var(--pd-line); opacity:.75;
   animation:ms-sk-pulse 1.2s ease-in-out infinite; }
 @keyframes ms-sk-pulse { 0%,100% { opacity:.4; } 50% { opacity:.85; } }
 

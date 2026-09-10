@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910w2" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910w3" />
   <style>
     .ps-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
     .ps-tab { padding:8px 20px; cursor:pointer; font-weight:700; font-size:var(--pd-fs-base); color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
@@ -22,7 +22,7 @@
        `span.ps-title-ico` (0,2,1) outspecifies `.ps-title-btn [data-ico]` (0,2,0) above. */
     .ps-title-btn span.ps-title-ico { color:var(--pd-red); }
     #ps-title-menu button { font-size:var(--pd-fs-body); font-weight:700; }
-    .ps-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
+    .ps-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); overflow:hidden; }
     .ps-seg button { border:none; background:var(--pd-card); padding:6px 12px; cursor:pointer; color:var(--pd-muted); font-size:var(--pd-fs-sm); font-weight:700; }
     .ps-seg button.active { background:var(--pd-red); color:#fff; }
 
@@ -84,11 +84,11 @@
        theme toggle are all 34px; the data-date badge alone was ~26px, which is what made the band
        read as a row of differently-sized pills rather than one strip. */
     .ps-datadate-badge { font:inherit; font-size:var(--pd-fs-sm); font-weight:700; color:var(--pd-muted); background:var(--pd-bg);
-      border:1px solid var(--pd-line); border-radius:999px; padding:0 12px; height:34px; display:inline-flex;
+      border:1px solid var(--pd-line); border-radius:var(--pd-radius-pill); padding:0 12px; height:34px; display:inline-flex;
       align-items:center; white-space:nowrap; margin-left:6px; flex:none; cursor:pointer; }
     .ps-datadate-badge:hover { border-color:var(--pd-red); color:var(--pd-ink); }
     /* Freshness badge for the cache-first (stale-while-revalidate) load */
-    .ps-fresh { font-size:var(--pd-fs-xs); font-weight:700; border-radius:999px; padding:2px 9px; white-space:nowrap; margin-left:6px; display:inline-flex; align-items:center; gap:5px; }
+    .ps-fresh { font-size:var(--pd-fs-xs); font-weight:700; border-radius:var(--pd-radius-pill); padding:2px 9px; white-space:nowrap; margin-left:6px; display:inline-flex; align-items:center; gap:5px; }
     .ps-fresh::before { content:""; width:7px; height:7px; border-radius:50%; display:inline-block; }
     .ps-fresh-stale { color:var(--pd-warn-text); background:rgba(199,119,0,.12); }
     .ps-fresh-stale::before { background:var(--pd-warn); animation:ps-fresh-pulse 1s ease-in-out infinite; }
@@ -233,7 +233,7 @@
     /* Reports modal (OPC "Select Report to Run") */
     .ps-rep-back { position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:200; display:none; }
     .ps-rep-back.open { display:flex; align-items:center; justify-content:center; }
-    .ps-rep { background:var(--pd-card); border-radius:12px; box-shadow:var(--pd-shadow); width:760px; max-width:94vw;
+    .ps-rep { background:var(--pd-card); border-radius:var(--pd-radius-lg); box-shadow:var(--pd-shadow); width:760px; max-width:94vw;
       max-height:88vh; display:flex; flex-direction:column; overflow:hidden; }
     .ps-rep-hd { display:flex; align-items:center; gap:10px; padding:16px 18px; border-bottom:1px solid var(--pd-line); }
     .ps-rep-hd h2 { margin:0; font-size:var(--pd-fs-lg); flex:1; }
@@ -262,7 +262,7 @@
     /* Schedule dialog (OPC "Schedule" — Data Date + calc options + float paths) */
     .ps-sched-back { position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:200; display:none; }
     .ps-sched-back.open { display:flex; align-items:center; justify-content:center; }
-    .ps-sched-dlg { background:var(--pd-card); border-radius:12px; box-shadow:var(--pd-shadow); width:560px; max-width:94vw; max-height:88vh; display:flex; flex-direction:column; overflow:hidden; }
+    .ps-sched-dlg { background:var(--pd-card); border-radius:var(--pd-radius-lg); box-shadow:var(--pd-shadow); width:560px; max-width:94vw; max-height:88vh; display:flex; flex-direction:column; overflow:hidden; }
     .ps-sched-hd { display:flex; align-items:center; padding:16px 18px 12px; }
     .ps-sched-hd h2 { margin:0; font-size:var(--pd-fs-lg); flex:1; }
     .ps-sched-hd button { background:none; border:none; font-size:var(--pd-fs-stat); cursor:pointer; color:var(--pd-muted); }
@@ -362,7 +362,7 @@
     body.ps-reporting .ps-toolbar .ps-rv-exit { display:inline-flex; align-items:center; gap:6px;
       height:26px; padding:0 8px; font-size:var(--pd-fs-xs); text-transform:uppercase; letter-spacing:.05em;
       color:var(--pd-danger-text); font-weight:700; background:transparent;
-      border:1px solid var(--pd-red); border-radius:4px; white-space:nowrap; }
+      border:1px solid var(--pd-red); border-radius:var(--pd-radius); white-space:nowrap; }
     body.ps-reporting .ps-toolbar .ps-rv-exit:hover { background:var(--pd-red-light); border-color:var(--pd-red); color:var(--pd-danger-text); }
     .ps-topbar-tools .pd-btn { background:transparent; border-color:transparent; }
     .ps-topbar-tools .pd-btn:not(.ps-tb-labeled) { font-size:var(--pd-fs-base); }
@@ -602,7 +602,7 @@
     }
     /* ---- The guided calendar wizard (openCalendarWizard) ---------------------------------- */
     .calwiz-rail { display:flex; flex-wrap:wrap; gap:6px; padding:10px 16px 0; }
-    .calwiz-railstep { font-size:var(--pd-fs-xs); color:var(--pd-muted); border:1px solid var(--pd-line); border-radius:999px; padding:3px 10px; }
+    .calwiz-railstep { font-size:var(--pd-fs-xs); color:var(--pd-muted); border:1px solid var(--pd-line); border-radius:var(--pd-radius-pill); padding:3px 10px; }
     .calwiz-railstep.on { border-color:var(--pd-red); color:var(--pd-ink); font-weight:700; }
     .calwiz-railstep.done { color:var(--pd-ok-text); border-color:var(--pd-ok); }
     .calwiz-lede { font-size:var(--pd-fs-sm); color:var(--pd-ink); line-height:1.6; margin:0 0 12px; }
@@ -640,10 +640,10 @@
     .ps-filter-row { height:30px; background:var(--pd-bg); }
     .ps-filter-row > .ps-cell { padding:0 4px; }
     .ps-filter-row > .ps-cell.c-num, .ps-filter-row > .ps-cell.c-id, .ps-filter-row > .ps-cell.c-name { background:var(--pd-bg); }
-    .ps-colf-in { width:100%; box-sizing:border-box; height:22px; border:1px solid var(--pd-line); border-radius:4px; background:var(--pd-card); color:var(--pd-ink); font:inherit; font-size:var(--pd-fs-xs); padding:0 6px; }
+    .ps-colf-in { width:100%; box-sizing:border-box; height:22px; border:1px solid var(--pd-line); border-radius:var(--pd-radius); background:var(--pd-card); color:var(--pd-ink); font:inherit; font-size:var(--pd-fs-xs); padding:0 6px; }
     .ps-colf-in:focus { outline:none; border-color:var(--pd-red); }
     .ps-colf-on .ps-gantt-head { height:68px; }
-    .ps-status-pill { display:inline-block; padding:2px 9px; border-radius:999px; font-size:var(--pd-fs-xs); font-weight:700; white-space:nowrap; }
+    .ps-status-pill { display:inline-block; padding:2px 9px; border-radius:var(--pd-radius-pill); font-size:var(--pd-fs-xs); font-weight:700; white-space:nowrap; }
     .ps-status-notstarted { background:var(--pd-line); color:var(--pd-muted); }
     .ps-status-inprogress { background:rgba(199,119,0,.14); color:var(--pd-warn-text); }
     .ps-status-completed { background:rgba(31,143,78,.14); color:var(--pd-ok-text); }
@@ -688,14 +688,14 @@
     /* A package tag is neutral by design: unlike CO/MC it carries no judgement,
        it just names which contract lot the work belongs to. */
     .ps-pkgtag { display:inline-block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-      vertical-align:middle; padding:1px 7px; border-radius:999px; font-size:var(--pd-fs-xs); font-weight:700;
+      vertical-align:middle; padding:1px 7px; border-radius:var(--pd-radius-pill); font-size:var(--pd-fs-xs); font-weight:700;
       background:var(--pd-bg); border:1px solid var(--pd-line); color:var(--pd-ink); }
     .ps-pkgtag.inherited { font-weight:500; color:var(--pd-muted); }
-    .ps-ds-rain { border:1px solid var(--pd-line); border-radius:8px; padding:10px 12px; margin-top:12px; background:var(--pd-bg); }
+    .ps-ds-rain { border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); padding:10px 12px; margin-top:12px; background:var(--pd-bg); }
     .ps-ds-rain h4 { margin:0 0 4px; font-size:var(--pd-fs-xs); text-transform:uppercase; letter-spacing:.06em; color:var(--pd-muted); }
     .ps-ds-rain p { margin:0 0 8px; font-size:var(--pd-fs-sm); color:var(--pd-muted); }
     .ps-ds-rain small { display:block; margin-top:6px; font-size:var(--pd-fs-xs); color:var(--pd-muted); }
-    .ps-ds-prof { border:1px solid var(--pd-line); border-radius:8px; padding:10px 12px; margin-bottom:10px; background:var(--pd-card); }
+    .ps-ds-prof { border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); padding:10px 12px; margin-bottom:10px; background:var(--pd-card); }
     .ps-ds-presets { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:6px; }
     .ps-ds-presets small { font-size:var(--pd-fs-xs); color:var(--pd-muted); }
     .ps-ds-raingrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(64px,1fr)); gap:6px; }
@@ -722,10 +722,10 @@
     /* A yearly entry reads differently from a one-off date, so it looks different. */
     .ps-cal-hol.is-recur { border-color:var(--pd-red-mid); }
     .ps-cal-hol { display:inline-flex; align-items:center; gap:4px; background:var(--pd-bg); border:1px solid var(--pd-line);
-      border-radius:999px; padding:1px 4px 1px 9px; font-size:var(--pd-fs-xs); }
+      border-radius:var(--pd-radius-pill); padding:1px 4px 1px 9px; font-size:var(--pd-fs-xs); }
     .ps-cal-hol button { border:0; background:transparent; cursor:pointer; color:var(--pd-muted); font-size:var(--pd-fs-xs); padding:0 3px; }
     .ps-cal-hol button:hover { color:var(--pd-red); }
-    .ps-cal-season { border:1px solid var(--pd-line); border-radius:8px; padding:8px 10px; margin-bottom:6px; background:var(--pd-bg); }
+    .ps-cal-season { border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); padding:8px 10px; margin-bottom:6px; background:var(--pd-bg); }
     .ps-cal-season-hd { display:flex; gap:6px; align-items:center; margin-bottom:6px; }
     .ps-cal-mo { display:flex; gap:3px; flex-wrap:wrap; margin-bottom:6px; }
     .ps-cal-mo label { font-size:var(--pd-fs-xs); font-weight:700; padding:2px 6px; border:1px solid var(--pd-line); border-radius:5px; cursor:pointer; }
@@ -733,14 +733,14 @@
     .ps-cal-mo label.on { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
     .ps-cal-srow { display:flex; gap:10px; align-items:center; flex-wrap:wrap; font-size:var(--pd-fs-xs); }
     .ps-cal-warn { font-size:var(--pd-fs-xs); color:var(--pd-warn-text); margin:4px 0 0; }
-    .ps-cal-yr { max-height:240px; overflow:auto; border:1px solid var(--pd-line); border-radius:8px; }
+    .ps-cal-yr { max-height:240px; overflow:auto; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); }
     .ps-cal-yr table { border-collapse:collapse; width:100%; font-size:var(--pd-fs-xs); }
     .ps-cal-yr th, .ps-cal-yr td { padding:3px 7px; border-bottom:1px solid var(--pd-line); text-align:left; }
     .ps-cal-yr th { position:sticky; top:0; background:var(--pd-card); font-size:var(--pd-fs-micro); text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
     .ps-cal-yr td.num, .ps-cal-yr th.num { text-align:right; }
     .ps-cal-yr tr.wet td:first-child { box-shadow:inset 3px 0 0 #2563eb; }
     .ps-cal-yr tr.dry td:first-child { box-shadow:inset 3px 0 0 #f59e0b; }
-    .ps-ds-rule { border:1px solid var(--pd-line); border-radius:8px; padding:10px 12px; margin-bottom:10px; background:var(--pd-bg); }
+    .ps-ds-rule { border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); padding:10px 12px; margin-bottom:10px; background:var(--pd-bg); }
     .ps-ds-rulehead { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
     .ps-ds-rulehead input { flex:1; }
     .ps-ds-rulegrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
@@ -883,7 +883,7 @@
     /* "Task" column — the row's kind as a quiet pill (structure / work / milestone read apart at a
        glance without shouting over the data columns). */
     .ps-tk { font-size:var(--pd-fs-micro); font-weight:700; text-transform:uppercase; letter-spacing:.04em; padding:2px 7px;
-      border-radius:999px; border:1px solid var(--pd-line); color:var(--pd-muted); background:var(--pd-bg);
+      border-radius:var(--pd-radius-pill); border:1px solid var(--pd-line); color:var(--pd-muted); background:var(--pd-bg);
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
     .ps-tk-wbs { color:var(--pd-ink); font-weight:800; }
     .ps-tk-mile { color:var(--pd-red); border-color:var(--pd-red-mid, var(--pd-red)); background:var(--pd-red-light); }
@@ -980,7 +980,7 @@
     .ps-actlegend .lg { display:inline-flex; align-items:center; gap:6px; }
     .ps-bar.ps-cat-hl, .ps-mile.ps-cat-hl { outline:2px solid var(--pd-ink); outline-offset:1px; z-index:4; }
     .ps-bar.ps-cat-dim, .ps-mile.ps-cat-dim { opacity:.18; }
-    .ps-alg-hl { display:inline-flex; align-items:center; gap:6px; padding:2px 8px; border-radius:4px;
+    .ps-alg-hl { display:inline-flex; align-items:center; gap:6px; padding:2px 8px; border-radius:var(--pd-radius);
       background:var(--pd-red-light); color:var(--pd-red); font-weight:700; }
     .ps-alg-hl button { border:none; background:none; color:inherit; cursor:pointer; font-size:var(--pd-fs-base); padding:0 2px; }
     /* ⚠️ Deliberately NOT scoped to `.ps-legend`. It used to be, and when the marks were flattened
@@ -1180,7 +1180,7 @@
     .ps-stk-overall-hd { font-size:var(--pd-fs-sm); font-weight:700; color:var(--pd-ink); margin-bottom:2px; }
     .ps-stk-overall-hd small { display:block; font-weight:400; font-size:var(--pd-fs-xs); color:var(--pd-muted); margin-top:2px; }
     .ps-stk-overall-items { display:flex; flex-wrap:wrap; gap:7px; margin-top:8px; }
-    .ps-stk-ov { display:inline-flex; align-items:center; gap:6px; padding:5px 10px; border-radius:20px;
+    .ps-stk-ov { display:inline-flex; align-items:center; gap:6px; padding:5px 10px; border-radius:var(--pd-radius-pill);
       font-size:var(--pd-fs-xs); font-weight:700; }
     .ps-stk-ov i { width:9px; height:9px; border-radius:50%; display:inline-block; flex:none; }
     .ps-stk-ov-none { opacity:.55; }
@@ -1365,7 +1365,7 @@
     .pscl-scroll { max-height:52vh; overflow:auto; }
     /* The money input is the primary control of the whole screen, so it is the biggest thing on the
        row: a peso prefix, tabular figures, and a red focus ring that matches the primary button. */
-    .pscl-money { display:inline-flex; align-items:center; gap:0; border:1px solid var(--pd-line); border-radius:8px;
+    .pscl-money { display:inline-flex; align-items:center; gap:0; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md);
       background:var(--pd-card); overflow:hidden; height:36px; min-width:170px; }
     .pscl-money:focus-within { border-color:var(--pd-red); box-shadow:0 0 0 3px var(--pd-red-light); }
     .pscl-money .cur { flex:none; padding:0 8px; font-size:var(--pd-fs-sm); font-weight:800; color:var(--pd-muted);
@@ -1394,7 +1394,7 @@
     /* Step 4 — the cost stack. One row per location value, the bar sized by that location's SHARE
        of the selected activity's cost, so the tallest bar is where the money is. */
     .pscl-stk { display:flex; gap:16px; align-items:flex-start; overflow-x:auto; padding-bottom:6px; }
-    .pscl-tower { flex:0 0 auto; min-width:220px; border:1px solid var(--pd-line); border-radius:12px;
+    .pscl-tower { flex:0 0 auto; min-width:220px; border:1px solid var(--pd-line); border-radius:var(--pd-radius-lg);
       background:var(--pd-card); overflow:hidden; }
     .pscl-towerh { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 12px;
       border-bottom:1px solid var(--pd-line); background:var(--pd-bg); font-size:var(--pd-fs-sm); font-weight:800; }
@@ -1409,7 +1409,7 @@
     .pscl-lvl.zero .amt, .pscl-lvl.zero .nm { color:var(--pd-muted); }
     /* Step 2 — subtotal by trade. Attributed per OCCURRENCE, so it is a panel beside the
        name-keyed table rather than subtotal rows inside it. */
-    .pscl-trades { margin:0 0 14px; border:1px solid var(--pd-line); border-radius:12px; background:var(--pd-card); overflow:hidden; }
+    .pscl-trades { margin:0 0 14px; border:1px solid var(--pd-line); border-radius:var(--pd-radius-lg); background:var(--pd-card); overflow:hidden; }
     .pscl-tradesh { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 12px;
       border-bottom:1px solid var(--pd-line); background:var(--pd-bg); font-size:var(--pd-fs-sm); font-weight:800; }
     .pscl-tradesh .m { font-size:var(--pd-fs-xs); font-weight:700; color:var(--pd-muted); font-variant-numeric:tabular-nums; }
@@ -1435,7 +1435,7 @@
     .pscl-spark rect { fill:var(--pd-muted); opacity:.55; }
     .pscl-spark.on rect { fill:var(--pd-red); opacity:1; }
     /* The monthly cash-out the curves produce — a preview of what Apply makes the S-Curve draw. */
-    .pscl-phase { margin-top:14px; border:1px solid var(--pd-line); border-radius:12px; background:var(--pd-card); overflow:hidden; }
+    .pscl-phase { margin-top:14px; border:1px solid var(--pd-line); border-radius:var(--pd-radius-lg); background:var(--pd-card); overflow:hidden; }
     .pscl-phaseh { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 12px;
       border-bottom:1px solid var(--pd-line); background:var(--pd-bg); font-size:var(--pd-fs-sm); font-weight:800; }
     .pscl-phaseh .m { font-size:var(--pd-fs-xs); font-weight:700; color:var(--pd-muted); font-variant-numeric:tabular-nums; }
@@ -1459,7 +1459,7 @@
     .ps-vs-warnx { position:absolute; top:3px; right:4px; width:22px; height:22px; line-height:1;
       border:0; background:transparent; color:inherit; font-size:var(--pd-fs-lg); cursor:pointer; border-radius:5px; opacity:.7; }
     .ps-vs-warnx:hover, .ps-vs-warnx:focus-visible { opacity:1; background:rgba(0,0,0,.08); }
-    .ps-vs-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
+    .ps-vs-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); overflow:hidden; }
     .ps-vs-seg > button { border:0; background:var(--pd-card); color:var(--pd-ink); font:inherit; font-size:var(--pd-fs-sm);
       padding:6px 11px; cursor:pointer; border-right:1px solid var(--pd-line); }
     .ps-vs-seg > button:last-child { border-right:0; }
@@ -1474,7 +1474,7 @@
       cursor:not-allowed; border-right-style:dashed; font-style:italic; }
     .ps-vs-seg > button:disabled:hover { background:transparent; }
     /* The trade-vs-WBS disagreement badge in the "no level" list. */
-    .ps-vs-badge-warn { display:inline-block; margin-left:6px; padding:0 5px; border-radius:4px;
+    .ps-vs-badge-warn { display:inline-block; margin-left:6px; padding:0 5px; border-radius:var(--pd-radius);
       border:1px dashed var(--pd-line); color:var(--pd-muted); font-size:var(--pd-fs-xs); cursor:help; white-space:nowrap; }
     /* An icon + label inside a .ps-vs-seg button (the PDF export). It used to borrow the
        magnifier button's rule; that went with the magnifier, so it has its own name now. */
@@ -1490,7 +1490,7 @@
     .ps-vs3-tip { position:absolute; z-index:6; display:none; pointer-events:none;
       transform:translate(14px, -50%); max-width:240px;
       background:var(--pd-card); color:var(--pd-ink); border:1px solid var(--pd-line);
-      border-radius:8px; padding:5px 9px; font-size:var(--pd-fs-sm); line-height:1.4;
+      border-radius:var(--pd-radius-md); padding:5px 9px; font-size:var(--pd-fs-sm); line-height:1.4;
       box-shadow:0 6px 18px rgba(0,0,0,.18); white-space:nowrap; }
     /* Past two-thirds across the canvas the readout would run off its right edge. */
     .ps-vs3-tip.flip { transform:translate(calc(-100% - 14px), -50%); }
@@ -1499,7 +1499,7 @@
     .ps-vs3-tip i { font-style:normal; color:var(--pd-muted); }
     .ps-vs-chips { display:flex; gap:6px; flex-wrap:wrap; }
     .ps-vs-chip { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--pd-line); background:var(--pd-card);
-      color:var(--pd-ink); border-radius:999px; padding:4px 10px; font-size:var(--pd-fs-sm); cursor:pointer; }
+      color:var(--pd-ink); border-radius:var(--pd-radius-pill); padding:4px 10px; font-size:var(--pd-fs-sm); cursor:pointer; }
     /* ⚠️ INK on the red tint, not brand red as text. Measured 3.75:1 in dark mode (#EE3124 on
        #3D1A19) — under AA, and it matters far more now the chips are a multi-select: the lit state
        IS the filter, so a chip you cannot read is a filter you cannot check. Same fix and the same
@@ -1512,7 +1512,7 @@
     .ps-vs-grid { display:flex; gap:18px; align-items:flex-start; }
     .ps-vs-grid > .ps-vs-tower { flex:0 0 auto; }
     .ps-vs-grid > .ps-vs-empty { flex:1 1 auto; }
-    .ps-vs-tower { border:1px solid var(--pd-line); border-top:3px solid var(--tc,var(--pd-line)); border-radius:12px;
+    .ps-vs-tower { border:1px solid var(--pd-line); border-top:3px solid var(--tc,var(--pd-line)); border-radius:var(--pd-radius-lg);
       background:var(--pd-card); box-shadow:var(--pd-shadow); overflow:hidden; }
     .ps-vs-towerh { display:flex; align-items:center; gap:8px; justify-content:space-between; padding:10px 14px;
       background:var(--pd-bg); border-bottom:1px solid var(--pd-line); font-size:var(--pd-fs-base); font-weight:800; }
@@ -1590,22 +1590,22 @@
     .ps-vs-pane { display:flex; flex-direction:column; min-height:0; max-height:var(--ps-vs-paneh, none); }
     .ps-vs-body { flex:1 1 auto; min-height:0; overflow-y:auto; overflow-x:hidden; }
     .ps-vs-tl { flex:0 0 auto; margin-top:14px; border:1px solid var(--pd-line);
-      border-radius:12px; background:var(--pd-card); padding:10px 14px 12px; }
+      border-radius:var(--pd-radius-lg); background:var(--pd-card); padding:10px 14px 12px; }
     .ps-vs-tlhead { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:9px; }
     .ps-vs-tldate { font-size:var(--pd-fs-md); font-weight:800; font-variant-numeric:tabular-nums; }
     .ps-vs-tlsub { font-size:var(--pd-fs-xs); color:var(--pd-muted); }
     .ps-vs-tlpct { margin-left:auto; font-size:var(--pd-fs-sm); font-weight:700; font-variant-numeric:tabular-nums; }
     .ps-vs-tlbtns { display:inline-flex; gap:6px; }
     .ps-vs-tlbtns button { height:32px; min-width:36px; padding:0 11px; border:1px solid var(--pd-line);
-      background:var(--pd-card); color:var(--pd-ink); border-radius:8px; font:inherit; font-size:var(--pd-fs-sm); font-weight:700; cursor:pointer; }
+      background:var(--pd-card); color:var(--pd-ink); border-radius:var(--pd-radius-md); font:inherit; font-size:var(--pd-fs-sm); font-weight:700; cursor:pointer; }
     .ps-vs-tlbtns button:hover { border-color:var(--pd-red); }
     .ps-vs-tlbtns button.on { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
     /* The track scrolls: a 60-month programme squeezed into 300px is 5px a month, which is a ruler
        nobody can read or hit. It keeps a legible minimum and scrolls instead. */
     .ps-vs-tlscroll { overflow-x:auto; overflow-y:hidden; padding-bottom:2px; }
     .ps-vs-tltrack { position:relative; height:48px; cursor:pointer; touch-action:pan-y; user-select:none; }
-    .ps-vs-tlrail { position:absolute; left:0; right:0; top:28px; height:8px; border-radius:999px; background:var(--pd-bg); border:1px solid var(--pd-line); }
-    .ps-vs-tlfill { position:absolute; top:28px; height:8px; border-radius:999px; background:var(--pd-red); opacity:.85; }
+    .ps-vs-tlrail { position:absolute; left:0; right:0; top:28px; height:8px; border-radius:var(--pd-radius-pill); background:var(--pd-bg); border:1px solid var(--pd-line); }
+    .ps-vs-tlfill { position:absolute; top:28px; height:8px; border-radius:var(--pd-radius-pill); background:var(--pd-red); opacity:.85; }
     .ps-vs-tltick { position:absolute; top:22px; width:1px; height:20px; background:var(--pd-line); }
     .ps-vs-tltick.yr { top:16px; height:26px; background:var(--pd-muted); }
     .ps-vs-tllab { position:absolute; top:2px; font-size:var(--pd-fs-micro); color:var(--pd-muted); transform:translateX(-50%); white-space:nowrap; }
@@ -1620,7 +1620,7 @@
     .ps-vs-note { font-size:var(--pd-fs-sm); color:var(--pd-muted); }
     .ps-vs-chips { display:flex; gap:6px; flex-wrap:wrap; }
     .ps-vs-chip { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--pd-line); background:var(--pd-card);
-      color:var(--pd-ink); border-radius:999px; padding:4px 10px; font-size:var(--pd-fs-sm); cursor:pointer; }
+      color:var(--pd-ink); border-radius:var(--pd-radius-pill); padding:4px 10px; font-size:var(--pd-fs-sm); cursor:pointer; }
     /* ⚠️ INK on the red tint, not brand red as text. Measured 3.75:1 in dark mode (#EE3124 on
        #3D1A19) — under AA, and it matters far more now the chips are a multi-select: the lit state
        IS the filter, so a chip you cannot read is a filter you cannot check. Same fix and the same
@@ -1647,7 +1647,7 @@
        ellipsising its own name in the header. */
     .ps-vs-grid { display:flex; flex-wrap:wrap; gap:18px; align-items:flex-start; }
     .ps-vs-grid > .ps-vs-tower { flex:0 0 auto; min-width:min(100%,240px); max-width:100%; }
-    .ps-vs-tower { border:1px solid var(--pd-line); border-top:3px solid var(--tc,var(--pd-line)); border-radius:12px;
+    .ps-vs-tower { border:1px solid var(--pd-line); border-top:3px solid var(--tc,var(--pd-line)); border-radius:var(--pd-radius-lg);
       background:var(--pd-card); box-shadow:var(--pd-shadow); overflow:hidden; }
     .ps-vs-towerh { display:flex; align-items:center; gap:8px; justify-content:space-between; padding:10px 14px;
       background:var(--pd-bg); border-bottom:1px solid var(--pd-line); font-size:var(--pd-fs-base); font-weight:800; }
@@ -1755,7 +1755,7 @@
     .ps-vs-fz-canvas > svg { display:block; }
     .ps-vs-fz-hint { position:absolute; right:10px; bottom:10px; z-index:2; pointer-events:none;
       font-size:var(--pd-fs-xs); color:var(--pd-muted); background:var(--pd-card); border:1px solid var(--pd-line);
-      border-radius:999px; padding:4px 10px; opacity:.92; }
+      border-radius:var(--pd-radius-pill); padding:4px 10px; opacity:.92; }
     /* ⚠️ A REAL GUTTER, not a 1px border. Owner: *"can you enlargen the divider between the planned
        and actual"* — at one pixel the two buildings read as one wide picture, and the whole value of
        the split is knowing which building you are looking at.
@@ -1779,9 +1779,9 @@
     .ps-vs-fz-barwrap { flex:1 1 240px; min-width:200px; }
     .ps-vs-fz-bartop { display:flex; align-items:baseline; gap:8px; font-size:var(--pd-fs-xs); color:var(--pd-muted); margin-bottom:5px; }
     .ps-vs-fz-bartop strong { font-size:var(--pd-fs-base); color:var(--pd-ink); font-variant-numeric:tabular-nums; }
-    .ps-vs-fz-bar { position:relative; height:14px; border-radius:999px; background:var(--pd-bg);
+    .ps-vs-fz-bar { position:relative; height:14px; border-radius:var(--pd-radius-pill); background:var(--pd-bg);
       border:1px solid var(--pd-line); overflow:hidden; }
-    .ps-vs-fz-bar > .fill { position:absolute; left:0; top:0; bottom:0; border-radius:999px;
+    .ps-vs-fz-bar > .fill { position:absolute; left:0; top:0; bottom:0; border-radius:var(--pd-radius-pill);
       background:linear-gradient(90deg, var(--pd-red), var(--pd-red-dark, var(--pd-red))); transition:width .18s ease; }
     /* The planned marker rides the SAME bar rather than getting a second track: the gap between the
        fill edge and the marker IS the variance, and two stacked tracks make that a subtraction. */
@@ -1795,9 +1795,9 @@
     .ps-vs-fz-scrub .lab b { display:block; font-size:var(--pd-fs-base); color:var(--pd-ink); }
     .ps-vs-fz-track { flex:1 1 auto; position:relative; height:26px; cursor:pointer;
       touch-action:pan-y; user-select:none; min-width:160px; }
-    .ps-vs-fz-track .rail { position:absolute; left:0; right:0; top:11px; height:6px; border-radius:999px;
+    .ps-vs-fz-track .rail { position:absolute; left:0; right:0; top:11px; height:6px; border-radius:var(--pd-radius-pill);
       background:var(--pd-bg); border:1px solid var(--pd-line); }
-    .ps-vs-fz-track .fillx { position:absolute; left:0; top:11px; height:6px; border-radius:999px;
+    .ps-vs-fz-track .fillx { position:absolute; left:0; top:11px; height:6px; border-radius:var(--pd-radius-pill);
       background:var(--pd-red); opacity:.85; }
     .ps-vs-fz-track .tk { position:absolute; top:7px; width:1px; height:14px; background:var(--pd-line); }
     .ps-vs-fz-track .tk.yr { top:4px; height:20px; background:var(--pd-muted); }
@@ -1855,7 +1855,7 @@
        full screen actually use the display. */
     .ps-vs-fz-vp.is3d { display:flex; min-height:320px; }
     .ps-vs-fz-3d { flex:1 1 auto; min-height:320px; align-self:stretch; }
-    .ps-vs-fz-3d canvas { display:block; border-radius:8px; }
+    .ps-vs-fz-3d canvas { display:block; border-radius:var(--pd-radius-md); }
     .ps-vs-expand { flex:none; width:26px; height:26px; display:inline-flex; align-items:center; justify-content:center;
       border:1px solid var(--pd-line); border-radius:7px; background:var(--pd-card); color:var(--pd-muted);
       cursor:pointer; opacity:0; transition:opacity .15s ease, border-color .15s ease, color .15s ease; }
@@ -1930,7 +1930,7 @@
     .ps-prog-colres { position:absolute; top:0; right:-4px; width:9px; height:100%; cursor:col-resize; z-index:5; }
     .ps-prog-rowres { position:absolute; left:0; right:0; bottom:-3px; height:7px; cursor:row-resize; z-index:4; }
     .ps-prog-rowres:hover, .ps-prog-colres:hover { background:var(--pd-red-light); }
-    .ps-prog-bar { position:relative; height:16px; border-radius:4px; background:var(--pd-bg); border:1px solid var(--pd-line); overflow:visible; min-width:150px; }
+    .ps-prog-bar { position:relative; height:16px; border-radius:var(--pd-radius); background:var(--pd-bg); border:1px solid var(--pd-line); overflow:visible; min-width:150px; }
     .ps-prog-fill { position:absolute; left:0; top:0; bottom:0; background:var(--pd-red); border-radius:3px 0 0 3px; }
     .ps-prog-plan { position:absolute; top:-3px; bottom:-3px; width:2px; background:var(--pd-ink); border-radius:1px; }
     /* Dual bars — Planned (grey) over Actual (red), like the target/actual chart */
@@ -1944,7 +1944,7 @@
     .ps-prog-table th[draggable] { cursor:grab; }
     .ps-prog-table th.ps-prog-dragover { box-shadow:inset 3px 0 0 var(--pd-red); }
     .ps-prog-pct { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
-    .ps-prog-desc { width:100%; box-sizing:border-box; border:1px solid transparent; background:transparent; font:inherit; padding:3px 5px; border-radius:4px; color:var(--pd-ink); resize:vertical; min-height:26px; }
+    .ps-prog-desc { width:100%; box-sizing:border-box; border:1px solid transparent; background:transparent; font:inherit; padding:3px 5px; border-radius:var(--pd-radius); color:var(--pd-ink); resize:vertical; min-height:26px; }
     .ps-prog-desc:hover { border-color:var(--pd-line); }
     .ps-prog-desc:focus { border-color:var(--pd-red); background:var(--pd-card); outline:none; }
     .ps-prog-id { color:var(--pd-muted); font-variant-numeric:tabular-nums; white-space:nowrap; }
@@ -1957,7 +1957,7 @@
     .ps-prog-metric-l { font-size:var(--pd-fs-sm); color:var(--pd-muted); display:flex; align-items:center; gap:6px; }
     .ps-pie-wrap { display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap; padding:6px 2px; }
     .ps-pie-chart { flex:0 0 auto; }
-    .ps-pie-sel { flex:1 1 240px; min-width:220px; max-height:460px; overflow:auto; border:1px solid var(--pd-line); border-radius:8px; padding:8px 10px; }
+    .ps-pie-sel { flex:1 1 240px; min-width:220px; max-height:460px; overflow:auto; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); padding:8px 10px; }
     .ps-pie-sel-h { display:flex; align-items:center; justify-content:space-between; gap:8px; font-weight:700; font-size:var(--pd-fs-sm); margin-bottom:6px; padding-bottom:6px; border-bottom:1px solid var(--pd-line); }
     .ps-pie-sel-h button { font-size:var(--pd-fs-xs); padding:2px 8px; }
     .ps-pie-item { display:flex; align-items:center; gap:8px; padding:3px 2px; font-size:var(--pd-fs-sm); cursor:pointer; }
@@ -1995,9 +1995,9 @@
     .ps-cset { max-height:320px; overflow:auto; padding:8px 10px; }
     .ps-cset-grid { display:grid; grid-template-columns:1fr 1fr; gap:2px 12px; }
     .ps-cset-row { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:var(--pd-fs-sm); color:var(--pd-muted); padding:2px 0; }
-    .ps-cset-row input[type=text], .ps-cset-row .pd-input { flex:1 1 auto; min-width:0; font:inherit; font-size:var(--pd-fs-sm); padding:3px 6px; border:1px solid var(--pd-line); border-radius:4px; background:var(--pd-bg); color:var(--pd-ink); }
+    .ps-cset-row input[type=text], .ps-cset-row .pd-input { flex:1 1 auto; min-width:0; font:inherit; font-size:var(--pd-fs-sm); padding:3px 6px; border:1px solid var(--pd-line); border-radius:var(--pd-radius); background:var(--pd-bg); color:var(--pd-ink); }
     .ps-cset-chk { justify-content:flex-start; cursor:pointer; }
-    .ps-cset-col { width:38px; height:22px; padding:0; border:1px solid var(--pd-line); border-radius:4px; background:none; cursor:pointer; }
+    .ps-cset-col { width:38px; height:22px; padding:0; border:1px solid var(--pd-line); border-radius:var(--pd-radius); background:none; cursor:pointer; }
     .ps-chart-pierow { display:flex; flex-direction:column; gap:6px; height:100%; }
     .ps-chart-pierow svg { flex:1 1 auto; min-height:0; }
     .ps-chart-pieleg { display:flex; flex-direction:row; flex-wrap:wrap; gap:2px 12px; max-height:34%; overflow:auto; flex:0 0 auto; }
@@ -2005,7 +2005,7 @@
     .ps-prog-table td.ps-prog-cc .ps-prog-phys { display:inline-block; }
     .ps-prog-no { display:block; text-align:center; color:var(--pd-muted); font-variant-numeric:tabular-nums; }
     /* Per-cell format popover */
-    .ps-cellfmt { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; box-shadow:var(--pd-shadow-lg); padding:8px; min-width:210px; }
+    .ps-cellfmt { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); box-shadow:var(--pd-shadow-lg); padding:8px; min-width:210px; }
     .ps-cf-row { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
     .ps-cf-row:last-child { margin-bottom:0; }
     .ps-cf-row label { font-size:var(--pd-fs-xs); color:var(--pd-muted); display:flex; align-items:center; gap:5px; }
@@ -2040,7 +2040,7 @@
     .ps-sched-menu label { display:flex; align-items:flex-start; gap:8px; padding:5px 0; font-size:var(--pd-fs-base); cursor:pointer; }
     .ps-sched-menu label small { display:block; color:var(--pd-muted); font-size:var(--pd-fs-xs); }
     .ps-colors-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:5px 0; font-size:var(--pd-fs-base); }
-    .ps-colors-row input[type=color] { width:34px; height:24px; border:1px solid var(--pd-line); border-radius:4px; background:none; cursor:pointer; padding:0; }
+    .ps-colors-row input[type=color] { width:34px; height:24px; border:1px solid var(--pd-line); border-radius:var(--pd-radius); background:none; cursor:pointer; padding:0; }
     /* Link mode */
     #ps-linkmode.active { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
     #ps-linkmode.active .pd-ico { color:#fff; }
@@ -2049,7 +2049,7 @@
     .ps-bar.link-tgt, .ps-mile.link-tgt { outline:2px dashed var(--pd-red); outline-offset:2px; }
     .ps-linkline { stroke:var(--pd-red); stroke-width:2; stroke-dasharray:4 3; fill:none; pointer-events:none; }
     /* Activity Details / Project Usage panel */
-    .ps-details { margin-top:14px; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
+    .ps-details { margin-top:14px; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); overflow:hidden; }
     .ps-details-tabs { display:flex; flex-wrap:wrap; align-items:center; gap:4px; padding:8px 10px; background:var(--pd-bg); border-bottom:1px solid var(--pd-line); }
     .ps-dt-group { font-size:var(--pd-fs-xs); text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); font-weight:700;
       margin-right:4px; border:none; background:none; padding:4px 8px; border-radius:6px; cursor:pointer; }
@@ -2195,7 +2195,7 @@
     /* dropdown menus (Collapse to / Filter) */
     .ps-menu-wrap { position:relative; display:inline-block; }
     .ps-menu { position:absolute; top:calc(100% + 4px); left:0; z-index:50; display:none; min-width:180px;
-      background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; box-shadow:var(--pd-shadow); overflow:hidden; }
+      background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); box-shadow:var(--pd-shadow); overflow:hidden; }
     .ps-menu.open { display:block; }
     /* Tall popup menus must scroll rather than clip (.ps-menu sets overflow:hidden, which otherwise
        wins over the earlier .ps-cols-menu overflow:auto and clips the column chooser at its cap). */
@@ -2213,7 +2213,7 @@
     .ps-lm-lvls > span { font-size:var(--pd-fs-xs); color:var(--pd-muted); margin-right:2px; }
     .ps-menu .ps-lm-lvls button { display:inline-flex; align-items:center; justify-content:center;
       width:24px; min-width:24px; height:24px; padding:0; border:1px solid var(--pd-line);
-      border-radius:4px; font-size:var(--pd-fs-xs); font-variant-numeric:tabular-nums; }
+      border-radius:var(--pd-radius); font-size:var(--pd-fs-xs); font-variant-numeric:tabular-nums; }
     .ps-lm-lyt { display:flex; align-items:center; }
     .ps-menu .ps-lm-lyt button:first-child { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .ps-menu .ps-lm-lyt button:last-child { flex:0 0 30px; width:30px; padding:8px 0; text-align:center; color:var(--pd-muted); }
@@ -2281,7 +2281,7 @@
     .ps-health-row-head .lbl { font-weight:700; font-size:var(--pd-fs-base); flex:1; }
     .ps-health-row-head .pct { font-size:var(--pd-fs-sm); color:var(--pd-muted); width:32px; text-align:right; }
     .ps-health-row-head .cnt { background:var(--pd-bg); color:var(--pd-ink); font-size:var(--pd-fs-xs); font-weight:700;
-      border-radius:999px; padding:2px 8px; min-width:20px; text-align:center; }
+      border-radius:var(--pd-radius-pill); padding:2px 8px; min-width:20px; text-align:center; }
     .ps-health-row-desc { font-size:var(--pd-fs-xs); color:var(--pd-muted); margin-top:3px; }
     .ps-health-bar { height:3px; background:var(--pd-line); border-radius:2px; margin-top:7px; overflow:hidden; }
     .ps-health-bar > div { height:100%; }
@@ -2304,7 +2304,7 @@
     .ps-usage-empty { padding:26px; text-align:center; color:var(--pd-muted); font-size:var(--pd-fs-base); }
     .ps-usage-cfg { position:relative; margin-left:auto; }
     .ps-usage-cfg-menu { position:absolute; right:0; top:calc(100% + 4px); z-index:60; display:none; width:290px;
-      background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; box-shadow:var(--pd-shadow); padding:10px 12px; font-size:var(--pd-fs-sm); }
+      background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); box-shadow:var(--pd-shadow); padding:10px 12px; font-size:var(--pd-fs-sm); }
     .ps-usage-cfg-menu.open { display:block; }
     .ps-usage-cfg-menu h4 { margin:6px 0 4px; font-size:var(--pd-fs-xs); text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
     .ps-usage-cfg-row { display:flex; align-items:center; gap:6px; padding:2px 0; }
@@ -2354,7 +2354,7 @@
     /* Bulk update grid */
     .ps-bulk-back { position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:250; display:none; align-items:center; justify-content:center; }
     .ps-bulk-back.open { display:flex; }
-    .ps-bulk-panel { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:12px; width:940px; max-width:96vw; max-height:88vh; display:flex; flex-direction:column; overflow:hidden; }
+    .ps-bulk-panel { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius-lg); width:940px; max-width:96vw; max-height:88vh; display:flex; flex-direction:column; overflow:hidden; }
     .ps-bulk-head { display:flex; align-items:center; gap:6px; padding:14px 16px; border-bottom:1px solid var(--pd-line); }
     .ps-bulk-count { margin-left:auto; font-size:var(--pd-fs-sm); color:var(--pd-muted); }
     .ps-bulk-x { background:none; border:none; font-size:var(--pd-fs-stat); line-height:1; cursor:pointer; color:var(--pd-muted); margin-left:10px; }
@@ -2386,7 +2386,7 @@
     .ps-snap-tbl { width:100%; border-collapse:collapse; font-size:var(--pd-fs-sm); }
     .ps-snap-tbl th { text-align:left; padding:7px 10px; font-size:var(--pd-fs-xs); text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); border-bottom:1px solid var(--pd-line); }
     .ps-snap-tbl td { padding:6px 10px; border-bottom:1px solid var(--pd-line); }
-    .ps-bl-primary { font-size:var(--pd-fs-micro); text-transform:uppercase; letter-spacing:.03em; font-weight:700; padding:1px 6px; border-radius:999px; background:var(--pd-red); color:#fff; margin-left:6px; }
+    .ps-bl-primary { font-size:var(--pd-fs-micro); text-transform:uppercase; letter-spacing:.03em; font-weight:700; padding:1px 6px; border-radius:var(--pd-radius-pill); background:var(--pd-red); color:#fff; margin-left:6px; }
     .ps-bl-actions { display:flex; gap:6px; margin-top:6px; }
     .ps-bl-actions button { font-size:var(--pd-fs-xs); padding:3px 8px; border:1px solid var(--pd-line); border-radius:5px; background:var(--pd-card); cursor:pointer; color:var(--pd-ink); }
     .ps-bl-actions button:hover { background:var(--pd-bg); }
@@ -2451,7 +2451,7 @@
     .ps-ck-status { display:flex; align-items:center; gap:14px; padding:16px 18px; border-radius:10px;
       margin-bottom:14px; background:var(--pd-card); border:1px solid var(--pd-line); flex-wrap:wrap; }
     .ps-ck-status-chip { flex:none; font-size:var(--pd-fs-xs); font-weight:800; letter-spacing:.04em; text-transform:uppercase;
-      padding:6px 12px; border-radius:999px; color:#fff; white-space:nowrap; }
+      padding:6px 12px; border-radius:var(--pd-radius-pill); color:#fff; white-space:nowrap; }
     .ps-ck-status-chip.ok { background:#2D9B6F; }
     .ps-ck-status-chip.warn { background:#E08A3C; }
     .ps-ck-status-chip.bad { background:var(--pd-red); }
@@ -2478,7 +2478,7 @@
     .ps-wbs-spacer { position:relative; }
     .ps-wbs-win { position:absolute; left:0; right:0; top:0; }
     .ps-wbs-caret { flex:none; width:18px; height:18px; display:inline-flex; align-items:center; justify-content:center;
-      border:none; background:none; cursor:pointer; color:var(--pd-muted); border-radius:4px; padding:0; font-size:var(--pd-fs-xs); line-height:1; }
+      border:none; background:none; cursor:pointer; color:var(--pd-muted); border-radius:var(--pd-radius); padding:0; font-size:var(--pd-fs-xs); line-height:1; }
     .ps-wbs-caret:hover { background:var(--pd-card); color:var(--pd-ink); }
     .ps-wbs-caret.leaf { cursor:default; visibility:hidden; }
     .ps-wbs-matchcount { font-size:var(--pd-fs-sm); color:var(--pd-muted); margin-left:12px; }
@@ -2525,7 +2525,7 @@
       font-variant-numeric:tabular-nums; vertical-align:1px; }
     .ps-gm-lbl { flex:1; font-size:var(--pd-fs-sm); color:var(--pd-ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .ps-gm-x { flex:none; width:22px; height:22px; padding:0; border:1px solid transparent; background:none;
-      border-radius:4px; cursor:pointer; color:var(--pd-muted); font-size:var(--pd-fs-xs); }
+      border-radius:var(--pd-radius); cursor:pointer; color:var(--pd-muted); font-size:var(--pd-fs-xs); }
     /* ⚠️ `.ps-menu button` (0,1,1 — class + type) OUTRANKS `.ps-gm-x` (0,1,0) and sets
        display:block; width:100%; padding:8px 14px. So every row button was rendered a full row wide
        and un-shrinkable (flex:none), which pushed ▼ and ✕ past the menu's clipped right edge and
@@ -2556,7 +2556,7 @@
     @media (max-width:820px) { .ps-wbso-grid { grid-template-columns:1fr; } }
     /* Critical-path driver pills (compact, non-scrolling — replaces the old row list) */
     .ps-ck-pills { display:flex; flex-wrap:wrap; gap:6px; padding:12px 14px; }
-    .ps-ck-pill { background:var(--pd-bg); border:1px solid var(--pd-line); border-radius:999px; padding:4px 10px;
+    .ps-ck-pill { background:var(--pd-bg); border:1px solid var(--pd-line); border-radius:var(--pd-radius-pill); padding:4px 10px;
       font-size:var(--pd-fs-xs); cursor:pointer; }
     .ps-ck-pill:hover { background:var(--pd-red-light); border-color:var(--pd-red-mid); }
     /* loading overlay */
@@ -2565,14 +2565,14 @@
     .ps-spin { width:40px; height:40px; border:4px solid rgba(255,255,255,.3); border-top-color:#fff; border-radius:50%; animation:ps-spin .8s linear infinite; }
     @keyframes ps-spin { to { transform:rotate(360deg); } }
     /* determinate progress bar (import) — shown under the message when a fraction is known */
-    .ps-load-bar { width:260px; height:8px; background:rgba(255,255,255,.25); border-radius:999px; overflow:hidden; }
-    .ps-load-fill { height:100%; width:0; background:#fff; border-radius:999px; transition:width .2s ease; }
+    .ps-load-bar { width:260px; height:8px; background:rgba(255,255,255,.25); border-radius:var(--pd-radius-pill); overflow:hidden; }
+    .ps-load-fill { height:100%; width:0; background:#fff; border-radius:var(--pd-radius-pill); transition:width .2s ease; }
     /* Import summary "what came in" card */
     .ps-impsum-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:10px; margin:14px 0; }
-    .ps-impsum-tile { background:var(--pd-bg); border:1px solid var(--pd-line); border-radius:8px; padding:10px 12px; }
+    .ps-impsum-tile { background:var(--pd-bg); border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); padding:10px 12px; }
     .ps-impsum-tile .n { font-size:var(--pd-fs-stat); font-weight:800; color:var(--pd-ink); line-height:1.1; }
     .ps-impsum-tile .l { font-size:var(--pd-fs-xs); color:var(--pd-muted); text-transform:uppercase; letter-spacing:.03em; margin-top:2px; }
-    .ps-impsum-warn { background:rgba(199,119,0,.1); border:1px solid rgba(199,119,0,.35); border-radius:8px; padding:10px 12px; margin:10px 0; font-size:var(--pd-fs-sm); color:var(--pd-ink); }
+    .ps-impsum-warn { background:rgba(199,119,0,.1); border:1px solid rgba(199,119,0,.35); border-radius:var(--pd-radius-md); padding:10px 12px; margin:10px 0; font-size:var(--pd-fs-sm); color:var(--pd-ink); }
     .ps-impsum-warn ul { margin:6px 0 0; padding-left:18px; }
     /* Keyboard-shortcut help panel */
     .ps-sc-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:8px 22px; }
@@ -2581,7 +2581,7 @@
     .ps-sc-tbl td { padding:3px 0; vertical-align:top; color:var(--pd-ink); }
     .ps-sc-tbl td.k { white-space:nowrap; padding-right:12px; width:1%; }
     .ps-kbd { display:inline-block; font:600 11px/1.4 var(--pd-font,inherit); background:var(--pd-bg); border:1px solid var(--pd-line);
-      border-bottom-width:2px; border-radius:4px; padding:1px 5px; color:var(--pd-ink); }
+      border-bottom-width:2px; border-radius:var(--pd-radius); padding:1px 5px; color:var(--pd-ink); }
 
     /* ---- PHONE read-only list (<=700px) ---------------------------------
        This module is a desktop planning tool: an 18-column virtualized grid
@@ -2629,7 +2629,7 @@
         font-size:var(--pd-fs-base); color:var(--pd-muted); }
       .ps-m-ro { margin-left:auto; font-size:var(--pd-fs-micro); font-weight:700; text-transform:uppercase;
         letter-spacing:.05em; color:var(--pd-muted); background:var(--pd-bg);
-        border:1px solid var(--pd-line); border-radius:999px; padding:2px 9px; }
+        border:1px solid var(--pd-line); border-radius:var(--pd-radius-pill); padding:2px 9px; }
       .ps-mcard { background:var(--pd-card); border:1px solid var(--pd-line);
         border-left:3px solid var(--pd-line); border-radius:var(--pd-radius);
         padding:11px 12px; margin-bottom:9px; }
@@ -2638,7 +2638,7 @@
       .ps-mid { font-family:var(--pd-mono); font-size:var(--pd-fs-xs);
         font-weight:700; color:var(--pd-muted); }
       .ps-mstat { margin-left:auto; font-size:var(--pd-fs-xs); font-weight:700; color:#fff;
-        border-radius:999px; padding:2px 9px; white-space:nowrap; }
+        border-radius:var(--pd-radius-pill); padding:2px 9px; white-space:nowrap; }
       .ps-mstat.is-new  { background:var(--pd-muted); }
       .ps-mstat.is-wip  { background:var(--pd-warn); }
       .ps-mstat.is-done { background:var(--pd-ok); }
@@ -2647,7 +2647,7 @@
       .ps-mmeta > div { display:flex; flex-direction:column; min-width:0; }
       .ps-mmeta span { font-size:var(--pd-fs-micro); text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
       .ps-mmeta strong { font-size:var(--pd-fs-sm); font-variant-numeric:tabular-nums; }
-      .ps-mbar { height:5px; background:var(--pd-line); border-radius:999px; overflow:hidden; margin-top:9px; }
+      .ps-mbar { height:5px; background:var(--pd-line); border-radius:var(--pd-radius-pill); overflow:hidden; margin-top:9px; }
       .ps-mbar i { display:block; height:100%; background:var(--pd-red); }
       /* Below ~380px a 4-up meta row leaves under 64px per column, which is
          narrower than a DD-Mon-YY date (65px at 12.5px). Drop to 2x2 rather
@@ -2658,7 +2658,7 @@
         border-radius:var(--pd-radius); }
       .ps-m-more { margin-top:4px; }
       /* List/Gantt toggle */
-      .ps-m-seg { display:inline-flex; margin-left:auto; border:1px solid var(--pd-line); border-radius:999px; overflow:hidden; }
+      .ps-m-seg { display:inline-flex; margin-left:auto; border:1px solid var(--pd-line); border-radius:var(--pd-radius-pill); overflow:hidden; }
       .ps-m-seg button { border:0; background:var(--pd-card); color:var(--pd-muted); font:600 11.5px/1 inherit; padding:6px 13px; cursor:pointer; }
       .ps-m-seg button.on { background:var(--pd-red); color:#fff; }
       .ps-m-ro { margin-left:0; }
@@ -2712,7 +2712,7 @@
     .sbld-wrap.sbld-railmin .sbld-step-t, .sbld-wrap.sbld-railmin .sbld-step-s,
     .sbld-wrap.sbld-railmin .sbld-step2ct { display:none; }
     .sbld-rail { position:sticky; top:12px; display:flex; flex-direction:column; gap:4px; }
-    .sbld-step { display:flex; align-items:flex-start; gap:10px; text-align:left; padding:9px 11px; border:1px solid transparent; border-radius:8px; background:none; cursor:pointer; font:inherit; color:var(--pd-ink); }
+    .sbld-step { display:flex; align-items:flex-start; gap:10px; text-align:left; padding:9px 11px; border:1px solid transparent; border-radius:var(--pd-radius-md); background:none; cursor:pointer; font:inherit; color:var(--pd-ink); }
     .sbld-step:hover { background:var(--pd-bg); }
     .sbld-step.on { background:var(--pd-card); border-color:var(--pd-line); box-shadow:var(--pd-shadow); }
     .sbld-step-n { flex:none; width:22px; height:22px; border-radius:50%; background:var(--pd-bg); color:var(--pd-muted); font-size:var(--pd-fs-sm); font-weight:700; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--pd-line); }
@@ -2771,24 +2771,24 @@
     .sbld-del { width:32px; height:32px; flex:none; display:inline-flex; align-items:center; justify-content:center; color:var(--pd-bad-text); }
     .sbld-grab { cursor:grab; color:var(--pd-muted); flex:none; user-select:none; }
     /* step 2 — trade sequence rows */
-    .sbld-seqrow { align-items:center; padding:8px 10px; border:1px solid var(--pd-line); border-radius:8px; background:var(--pd-card); cursor:grab; }
+    .sbld-seqrow { align-items:center; padding:8px 10px; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); background:var(--pd-card); cursor:grab; }
     .sbld-seqrow:hover { border-color:var(--pd-red); }
     .sbld-seqn { flex:none; width:22px; height:22px; border-radius:50%; background:var(--pd-bg); border:1px solid var(--pd-line); color:var(--pd-muted); font-size:var(--pd-fs-sm); font-weight:700; display:inline-flex; align-items:center; justify-content:center; }
     .sbld-seqcode { flex:none; width:100px; font-weight:700; font-size:var(--pd-fs-base); }
     .sbld-seqname { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:var(--pd-fs-base); }
     .sbld-seqdur { flex:none; font-size:var(--pd-fs-xs); color:var(--pd-muted); font-variant-numeric:tabular-nums; }
-    .sbld-tag { display:inline-block; font-size:var(--pd-fs-micro); font-weight:700; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:999px; background:var(--pd-bg); border:1px solid var(--pd-line); color:var(--pd-muted); }
+    .sbld-tag { display:inline-block; font-size:var(--pd-fs-micro); font-weight:700; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:var(--pd-radius-pill); background:var(--pd-bg); border:1px solid var(--pd-line); color:var(--pd-muted); }
     .sbld-hint { font-size:var(--pd-fs-sm); color:var(--pd-muted); margin:6px 0 0; }
-    .sbld-empty { color:var(--pd-muted); font-size:var(--pd-fs-base); padding:22px; text-align:center; border:1px dashed var(--pd-line); border-radius:8px; }
+    .sbld-empty { color:var(--pd-muted); font-size:var(--pd-fs-base); padding:22px; text-align:center; border:1px dashed var(--pd-line); border-radius:var(--pd-radius-md); }
     .sbld-save-state { font-size:var(--pd-fs-sm); color:var(--pd-muted); white-space:nowrap; }
-    .sbld-tablewrap { overflow:auto; border:1px solid var(--pd-line); border-radius:8px; }
+    .sbld-tablewrap { overflow:auto; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); }
     table.sbld-tbl { border-collapse:collapse; width:100%; font-size:var(--pd-fs-sm); }
     table.sbld-tbl th, table.sbld-tbl td { border:1px solid var(--pd-line); padding:6px 9px; text-align:left; white-space:nowrap; }
     table.sbld-tbl thead th { background:var(--pd-bg); position:sticky; top:0; z-index:1; }
     table.sbld-tbl td.num { text-align:right; font-variant-numeric:tabular-nums; }
     table.sbld-tbl tr.grp td { background:var(--pd-bg); font-weight:700; }
     .sbld-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:16px; }
-    .sbld-kpi { background:var(--pd-bg); border:1px solid var(--pd-line); border-radius:8px; padding:12px 14px; }
+    .sbld-kpi { background:var(--pd-bg); border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); padding:12px 14px; }
     .sbld-kpi-l { font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); }
     .sbld-kpi-v { font-size:var(--pd-fs-stat); font-weight:700; margin-top:4px; }
     .sbld-bargrp { display:flex; align-items:center; gap:10px; margin:5px 0; font-size:var(--pd-fs-sm); }
@@ -2797,20 +2797,20 @@
     /* step 4 — level-type (basement / podium / typical / roof deck) sequence selector */
     /* step 2 — the project's Location Breakdown, stated before any floors are typed in */
     .sbld-locbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:9px 11px; margin-bottom:14px;
-      border:1px solid var(--pd-line); border-left:4px solid var(--pd-red); border-radius:8px; background:var(--pd-bg); }
+      border:1px solid var(--pd-line); border-left:4px solid var(--pd-red); border-radius:var(--pd-radius-md); background:var(--pd-bg); }
     .sbld-locbar-l { font-size:var(--pd-fs-xs); font-weight:800; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
     .sbld-locbar .sbld-hint { margin:0; flex:1 1 260px; min-width:0; }
     .sbld-seqkind { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:9px 11px; margin-bottom:14px;
-      border:1px solid var(--pd-line); border-left:4px solid var(--pd-red); border-radius:8px; background:var(--pd-bg); }
+      border:1px solid var(--pd-line); border-left:4px solid var(--pd-red); border-radius:var(--pd-radius-md); background:var(--pd-bg); }
     .sbld-seqkind-l { font-size:var(--pd-fs-xs); font-weight:800; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
     .sbld-seqkind .sbld-hint { margin:0; }
     .sbld-scbtn b.own { font-size:var(--pd-fs-micro); font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:var(--pd-red); margin-left:4px; }
     /* step 2 — trade chips + tower */
     .sbld-tradechips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:14px; }
-    .sbld-chip { display:inline-flex; align-items:center; gap:6px; padding:6px 11px; border:1px solid var(--pd-line); border-radius:999px; background:var(--pd-card); cursor:pointer; font:inherit; font-size:var(--pd-fs-sm); color:var(--pd-ink); }
+    .sbld-chip { display:inline-flex; align-items:center; gap:6px; padding:6px 11px; border:1px solid var(--pd-line); border-radius:var(--pd-radius-pill); background:var(--pd-card); cursor:pointer; font:inherit; font-size:var(--pd-fs-sm); color:var(--pd-ink); }
     .sbld-chip:hover { background:var(--pd-bg); }
     .sbld-chip.on { border-color:var(--pd-red); background:var(--pd-red-light); font-weight:700; }
-    .sbld-chip b { font-size:var(--pd-fs-xs); background:var(--pd-bg); border:1px solid var(--pd-line); border-radius:999px; padding:0 6px; }
+    .sbld-chip b { font-size:var(--pd-fs-xs); background:var(--pd-bg); border:1px solid var(--pd-line); border-radius:var(--pd-radius-pill); padding:0 6px; }
     .sbld-dot { width:10px; height:10px; border-radius:50%; display:inline-block; flex:none; }
     .sbld-quick { display:inline-flex; align-items:center; gap:6px; font-size:var(--pd-fs-sm); color:var(--pd-muted); flex-wrap:wrap; }
     .sbld-step2ct { font-size:var(--pd-fs-xs); color:var(--pd-muted); margin-left:4px; }
@@ -2848,7 +2848,7 @@
     .sbld-libgrip:active { cursor:grabbing; }
 
     .sbld-libselwarn { font-size:var(--pd-fs-xs); color:var(--pd-muted); border:1px dashed var(--pd-line);
-      border-radius:99px; padding:0 6px; cursor:help; }
+      border-radius:var(--pd-radius-pill); padding:0 6px; cursor:help; }
     .sbld-libselhint { font-size:var(--pd-fs-xs); color:var(--pd-muted); margin-left:auto; }
     /* An item name is a button now (it is the selection hit target), so every inherited button
        style has to be undone — it must still read as the row's text. */
@@ -2965,7 +2965,7 @@
     .sbld-liblvbtn:hover:not(:disabled) { color:var(--pd-ink); background:var(--pd-bg); }
     /* ⚠️ An end of the range is disabled AND visibly so, with the reason in its title. */
     .sbld-liblvbtn:disabled { opacity:.35; cursor:not-allowed; }
-    .sbld-libedit { font-size:var(--pd-fs-micro); color:var(--pd-muted); border:1px dashed var(--pd-line); border-radius:99px; padding:0 6px; }
+    .sbld-libedit { font-size:var(--pd-fs-micro); color:var(--pd-muted); border:1px dashed var(--pd-line); border-radius:var(--pd-radius-pill); padding:0 6px; }
     .sbld-libgin { flex:none; width:230px; font-size:var(--pd-fs-xs); padding:2px 6px; min-height:0;
       background:transparent; border-color:transparent; }
     .sbld-libgin:hover, .sbld-libgin:focus { background:var(--pd-card); border-color:var(--pd-line); }
@@ -3054,7 +3054,7 @@
       text-align:center; font-size:var(--pd-fs-sm); color:var(--pd-muted); padding:0 20px; }
     .zpw-foot { display:flex; flex-direction:column; gap:8px; }
     .zpw-list { display:flex; align-items:center; gap:6px; flex-wrap:wrap; font-size:var(--pd-fs-xs); }
-    .zpw-chip { display:inline-flex; align-items:center; gap:5px; padding:2px 8px; border-radius:99px;
+    .zpw-chip { display:inline-flex; align-items:center; gap:5px; padding:2px 8px; border-radius:var(--pd-radius-pill);
       border:1px solid var(--pd-line); cursor:pointer; }
     .zpw-chip.on { border-color:var(--pd-ink); background:var(--pd-bg); }
     .zpw-chip i { width:11px; height:11px; border-radius:3px; background:var(--zc, #888); }
@@ -3069,10 +3069,10 @@
     .zpw-fl.warn { border-style:dashed; }
     .zpw-fl em { font-style:normal; font-size:var(--pd-fs-micro); color:var(--pd-muted); }
     .sbld-lvlgrid { display:grid; grid-template-columns:minmax(0,1fr) minmax(400px,460px); gap:22px; align-items:start; margin-top:6px; }
-    .sbld-flr { border:1px solid var(--pd-line); border-radius:8px; background:var(--pd-card); margin-bottom:10px; overflow:hidden; }
+    .sbld-flr { border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); background:var(--pd-card); margin-bottom:10px; overflow:hidden; }
     .sbld-flr-sub { border-style:dashed; }
     .sbld-flr-sub .sbld-flr-h { background:var(--pd-red-light); }
-    .sbld-subtag { flex:none; font-size:var(--pd-fs-micro); font-weight:800; letter-spacing:.05em; color:var(--pd-red); border:1px solid var(--pd-red-mid); border-radius:4px; padding:2px 5px; }
+    .sbld-subtag { flex:none; font-size:var(--pd-fs-micro); font-weight:800; letter-spacing:.05em; color:var(--pd-red); border:1px solid var(--pd-red-mid); border-radius:var(--pd-radius); padding:2px 5px; }
     .sbld-flr-h { display:flex; align-items:center; gap:8px; padding:8px 10px; background:var(--pd-bg); border-bottom:1px solid var(--pd-line); }
     .sbld-flr-h .grow { flex:1 1 auto; min-width:0; }
     .sbld-flr-h .pd-input { height:32px; font-size:var(--pd-fs-base); }
@@ -3080,7 +3080,7 @@
     .sbld-znwrap { padding:6px 10px 8px; display:flex; flex-direction:column; gap:6px; }
     .sbld-znrow { display:flex; align-items:center; gap:6px; }
     .sbld-znrow .pd-input { height:30px; font-size:var(--pd-fs-base); }
-    .sbld-zntag { flex:none; font-size:var(--pd-fs-micro); font-weight:800; letter-spacing:.05em; border:1px solid; border-radius:4px; padding:2px 5px; }
+    .sbld-zntag { flex:none; font-size:var(--pd-fs-micro); font-weight:800; letter-spacing:.05em; border:1px solid; border-radius:var(--pd-radius); padding:2px 5px; }
     .sbld-znhint { font-size:var(--pd-fs-sm); color:var(--pd-muted); padding:2px 2px 4px; font-style:italic; }
     .sbld-tower { border:1px solid var(--pd-line); border-radius:10px; padding:12px; background:var(--pd-bg); position:sticky; top:12px; }
     .sbld-towerh { display:flex; align-items:center; gap:7px; font-size:var(--pd-fs-base); font-weight:700; margin-bottom:8px; }
@@ -3141,13 +3141,13 @@
        yourself, which is what the first two versions of this panel made you do. */
     .sbld-checkchips { display:flex; flex-wrap:wrap; gap:6px; align-items:center; padding-bottom:4px; }
     .sbld-checkchip { border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-ink);
-      border-radius:999px; padding:4px 11px; font:inherit; font-size:var(--pd-fs-xs); cursor:pointer; white-space:nowrap; }
+      border-radius:var(--pd-radius-pill); padding:4px 11px; font:inherit; font-size:var(--pd-fs-xs); cursor:pointer; white-space:nowrap; }
     .sbld-checkchip:hover:not(:disabled) { border-color:var(--pd-muted); }
     .sbld-checkchip.on { border-color:var(--pd-red); background:var(--pd-red-light); font-weight:700; }
     .sbld-checkchip.bad { color:var(--pd-red); }
     .sbld-checkchip.ok { color:var(--pd-muted); }
     .sbld-checkchip:disabled { opacity:.5; cursor:default; }
-    .sbld-issue { display:inline-block; border:1px solid var(--pd-red); color:var(--pd-red); border-radius:4px;
+    .sbld-issue { display:inline-block; border:1px solid var(--pd-red); color:var(--pd-red); border-radius:var(--pd-radius);
       padding:0 5px; margin:0 3px 0 0; font-size:var(--pd-fs-xs); white-space:nowrap; }
     /* ---- The import's Relationships step (see stImpRels) ---------------------------------- */
     .sbld-relmodes { display:grid; gap:7px; margin:10px 0 14px; }
@@ -3221,21 +3221,21 @@
       .sbld-phwin { display:none; } }
     /* step 6 — vertical stacking (building model per trade) */
     .sbld-stackgrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:18px; align-items:start; margin-top:10px; }
-    .sbld-stacktower { border:1px solid var(--pd-line); border-top:3px solid var(--tc,var(--pd-line)); border-radius:12px; background:var(--pd-card); box-shadow:0 1px 3px rgba(0,0,0,.07),0 4px 12px rgba(0,0,0,.04); overflow:hidden; }
+    .sbld-stacktower { border:1px solid var(--pd-line); border-top:3px solid var(--tc,var(--pd-line)); border-radius:var(--pd-radius-lg); background:var(--pd-card); box-shadow:0 1px 3px rgba(0,0,0,.07),0 4px 12px rgba(0,0,0,.04); overflow:hidden; }
     /* header restyle scoped to the stacking card (the step-2 tower shares .sbld-towerh) */
     .sbld-stacktower .sbld-towerh { justify-content:space-between; margin:0; padding:10px 14px; background:var(--pd-bg); border-bottom:1px solid var(--pd-line); font-size:var(--pd-fs-base); font-weight:800; letter-spacing:.01em; }
     .sbld-stacktower .sbld-towerh .sbld-dot { width:11px; height:11px; box-shadow:0 0 0 3px var(--pd-card); }
     .sbld-stacktower .sbld-towerh .sbld-stkh-name { flex:1 1 auto; display:flex; align-items:center; gap:8px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .sbld-stkh-ct { flex:none; font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); background:var(--pd-card); border:1px solid var(--pd-line); border-radius:999px; padding:2px 9px; }
+    .sbld-stkh-ct { flex:none; font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius-pill); padding:2px 9px; }
     .sbld-stackscroll { overflow-x:auto; max-width:100%; padding:12px 14px 14px; }
     .sbld-stackscroll svg { display:block; height:auto; }
     .sbld-stacktower .sbld-empty { margin:12px 14px 14px; }
     .sbld-stkcell:hover { opacity:1 !important; filter:brightness(1.06); }
     /* step 3 — link canvas */
-    .sbld-canvaswrap { overflow:auto; border:1px solid var(--pd-line); border-radius:8px; background:var(--pd-bg); max-height:62vh; }
+    .sbld-canvaswrap { overflow:auto; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); background:var(--pd-bg); max-height:62vh; }
     /* Resulting schedule with a FROZEN (sticky-left) row-label column so labels stay visible when the
        diagonal takt chart scrolls right. Outer box clips; inner scrolls both axes; labels stick left. */
-    .sbld-schedwrap { border:1px solid var(--pd-line); border-radius:8px; background:var(--pd-bg); overflow:hidden; }
+    .sbld-schedwrap { border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); background:var(--pd-bg); overflow:hidden; }
     .sbld-schedscroll { overflow:auto; max-height:62vh; }
     .sbld-schedscroll::-webkit-scrollbar { width:12px; height:12px; }
     .sbld-schedscroll::-webkit-scrollbar-thumb { background:var(--pd-line); border-radius:6px; border:3px solid var(--pd-bg); }
@@ -3260,7 +3260,7 @@
     .sbld-tmpline { stroke:var(--pd-red); stroke-width:1.8; stroke-dasharray:4 3; pointer-events:none; }
     /* step 3 v3 — resizable split: vertical tower (left) + schedule (right), draggable divider */
     .sbld-seq2 { display:flex; align-items:stretch; gap:0; }
-    .sbld-seq2-left { flex:0 0 auto; border:1px solid var(--pd-line); border-radius:8px; padding:10px; background:var(--pd-bg); overflow:auto; height:70vh; min-width:150px; display:flex; flex-direction:column; }
+    .sbld-seq2-left { flex:0 0 auto; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); padding:10px; background:var(--pd-bg); overflow:auto; height:70vh; min-width:150px; display:flex; flex-direction:column; }
     .sbld-seq2-grip { flex:none; width:10px; cursor:col-resize; align-self:stretch; display:flex; align-items:center; justify-content:center; }
     .sbld-seq2-grip::after { content:''; width:3px; height:44px; border-radius:2px; background:var(--pd-line); }
     .sbld-seq2-grip:hover::after, .sbld-seq2-grip.drag::after { background:var(--pd-red); }
@@ -3272,7 +3272,7 @@
     .sbld-twr { display:flex; flex-direction:column; gap:4px; flex:1 1 auto; min-height:0; }
     /* Stacked layout — building view on top, gantt on the bottom; trades laid out side-by-side up top */
     .sbld-seqstack { display:flex; flex-direction:column; gap:10px; }
-    .sbld-seqstack-top { border:1px solid var(--pd-line); border-radius:8px; padding:10px; background:var(--pd-bg); overflow:auto; max-height:52vh; }
+    .sbld-seqstack-top { border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); padding:10px; background:var(--pd-bg); overflow:auto; max-height:52vh; }
     .sbld-seqstack-bot { min-width:0; }
     .sbld-twr-hz { flex-direction:row; align-items:flex-start; gap:14px; flex-wrap:wrap; }
     .sbld-twr-hz .sbld-twr-col { flex:1 1 200px; min-width:170px; }
@@ -3290,7 +3290,7 @@
     .sbld-twr-trade.sbld-twr-empty { border-style:solid; border-color:transparent; }
     .sbld-twr-legend .sbld-twr-trade { border:none; align-items:center; min-height:16px; font-size:var(--pd-fs-sm); }
     /* nodes flex to fill the (resizable) trade cell in BOTH axes, so they grow with the pane */
-    .sbld-znode { flex:1 1 40px; min-width:34px; display:flex; align-items:center; justify-content:center; border:1.5px solid var(--zc); border-radius:4px; background:var(--pd-card); color:var(--pd-ink); font:inherit; font-size:var(--pd-fs-body); font-weight:700; cursor:pointer; padding:2px 4px; line-height:1; }
+    .sbld-znode { flex:1 1 40px; min-width:34px; display:flex; align-items:center; justify-content:center; border:1.5px solid var(--zc); border-radius:var(--pd-radius); background:var(--pd-card); color:var(--pd-ink); font:inherit; font-size:var(--pd-fs-body); font-weight:700; cursor:pointer; padding:2px 4px; line-height:1; }
     .sbld-znode:hover { background:var(--zc); color:#fff; }
     .sbld-znode.pend { background:var(--zc); color:#fff; outline:2px solid var(--pd-red); outline-offset:1px; }
     /* destination selection (2nd phase) — blue accent to distinguish from red sources */
@@ -3331,7 +3331,7 @@
     .sbld-actsplit .sbld-xlwrap { flex:1 1 auto; min-width:0; }
     .sbld-shuttle { flex:0 0 auto; display:flex; flex-direction:column; justify-content:center; gap:8px; padding:0 8px; }
     .sbld-shuttle button { width:38px; height:34px; font-size:var(--pd-fs-lg); font-weight:700; }
-    .sbld-hold { flex:0 0 260px; display:flex; flex-direction:column; border:1px solid var(--pd-line); border-radius:8px; max-height:58vh; overflow:hidden; }
+    .sbld-hold { flex:0 0 260px; display:flex; flex-direction:column; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); max-height:58vh; overflow:hidden; }
     .sbld-hold-h { padding:7px 10px; font-size:var(--pd-fs-sm); font-weight:700; border-bottom:1px solid var(--pd-line); background:var(--pd-bg); display:flex; align-items:center; justify-content:space-between; gap:6px; }
     .sbld-hold-list { overflow:auto; padding:6px; display:flex; flex-direction:column; gap:4px; }
     .sbld-hold-item { display:flex; flex-direction:column; align-items:flex-start; gap:1px; text-align:left; border:1px solid var(--pd-line); border-left:4px solid var(--zc,var(--pd-line)); border-radius:6px; background:var(--pd-card); color:var(--pd-ink); font:inherit; cursor:pointer; padding:5px 8px; }
@@ -3348,7 +3348,7 @@
     .sbld-wbslvl { display:inline-block; min-width:22px; text-align:center; font-size:var(--pd-fs-xs); font-weight:700; color:var(--pd-red); }
     .sbld-wbsmv { width:28px; height:26px; padding:0; font-size:var(--pd-fs-base); justify-content:center; line-height:1; }
     /* step 1 — Excel-style grid */
-    .sbld-xlwrap { border:1px solid var(--pd-line); border-radius:8px; overflow:auto; max-height:58vh; outline:none; }
+    .sbld-xlwrap { border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); overflow:auto; max-height:58vh; outline:none; }
     /* This wrapper is tabindex="0", so it is a real tab stop, and this box-shadow was its
        ONLY focus indicator - measured 1.14:1 light / 1.10:1 dark against the card. Invisible.
        --pd-focus measures 4.12 / 3.40. Kept INSET so it is not clipped by the wrapper's own
@@ -3389,7 +3389,7 @@
     .sbld-mini { width:62px; height:30px; padding:2px 6px; font-size:var(--pd-fs-sm); font-weight:700; }
     .sbld-at-q { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid var(--pd-line); font-size:var(--pd-fs-base); }
     .sbld-at-q:last-child { border-bottom:none; }
-    .sbld-at-sec { margin:0 0 14px; padding:10px 12px; border:1px solid var(--pd-line); border-radius:8px; background:var(--pd-bg); }
+    .sbld-at-sec { margin:0 0 14px; padding:10px 12px; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); background:var(--pd-bg); }
     .sbld-at-tr { display:flex; align-items:center; gap:7px; font-weight:800; font-size:var(--pd-fs-base); margin-bottom:2px; }
     .sbld-at-qcol { flex-direction:column; align-items:stretch; }
     .sbld-zord { display:flex; flex-direction:column; gap:4px; }
@@ -3399,7 +3399,7 @@
     .sbld-help-body h4 { margin:14px 0 6px; font-size:var(--pd-fs-base); color:var(--pd-ink); }
     .sbld-help-body p, .sbld-help-body li { font-size:var(--pd-fs-sm); color:var(--pd-muted); line-height:1.5; }
     .sbld-help-body ul { margin:4px 0 4px 18px; padding:0; }
-    .sbld-help-body kbd { display:inline-block; padding:1px 6px; border:1px solid var(--pd-line); border-bottom-width:2px; border-radius:4px; background:var(--pd-bg); font:600 11px/1.4 monospace; color:var(--pd-ink); }
+    .sbld-help-body kbd { display:inline-block; padding:1px 6px; border:1px solid var(--pd-line); border-bottom-width:2px; border-radius:var(--pd-radius); background:var(--pd-bg); font:600 11px/1.4 monospace; color:var(--pd-ink); }
     .sbld-tb-sep2 { width:1px; align-self:stretch; background:var(--pd-line); margin:2px 4px; }
     /* Copied cells — Excel's marching ants, so a Ctrl+C is visibly a Ctrl+C. Drawn as an inset
        box-shadow rather than an outline so it survives the cell's own borders and never shifts
@@ -3433,15 +3433,15 @@
     .sbld-tlsep { color:var(--pd-muted); font-weight:700; }
     .sbld-tllist { display:flex; flex-direction:column; gap:6px; margin:6px 0 12px; }
     .sbld-tlrow { display:flex; align-items:center; gap:10px; padding:9px 12px; border:1px solid var(--pd-line);
-      border-left:3px solid var(--pd-red); border-radius:8px; background:var(--pd-card); }
+      border-left:3px solid var(--pd-red); border-radius:var(--pd-radius-md); background:var(--pd-card); }
     .sbld-tltxt { flex:1 1 auto; font-size:var(--pd-fs-base); }
-    .sbld-tllag { font-size:var(--pd-fs-xs); font-weight:700; color:var(--pd-red); background:var(--pd-red-light); padding:1px 6px; border-radius:4px; }
+    .sbld-tllag { font-size:var(--pd-fs-xs); font-weight:700; color:var(--pd-red); background:var(--pd-red-light); padding:1px 6px; border-radius:var(--pd-radius); }
     /* Step-2 tower strip. With one tower it is a single quiet chip; with more it is the selector. */
     .sbld-towerbar { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin:2px 0 10px;
       padding:8px 10px; border:1px solid var(--pd-line); border-radius:9px; background:var(--pd-bg); }
     .sbld-towerbar-l { font-size:var(--pd-fs-xs); text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); font-weight:700; margin-right:2px; }
     /* relationship dialog */
-    .sbld-linkdlg { position:fixed; z-index:600; background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; box-shadow:var(--pd-shadow-lg); padding:10px; width:224px; }
+    .sbld-linkdlg { position:fixed; z-index:600; background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); box-shadow:var(--pd-shadow-lg); padding:10px; width:224px; }
     .sbld-ld-h { font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); margin-bottom:6px; }
     .sbld-ld-row { display:flex; align-items:center; gap:6px; margin-bottom:8px; font-size:var(--pd-fs-sm); }
     .sbld-ld-row.sbld-ld-foot { justify-content:space-between; margin-bottom:0; }

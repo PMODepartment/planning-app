@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Portfolio Dashboard · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910w2" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910w3" />
   <style>
     .po-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:14px; }
     .po-toolbar .pd-select, .po-toolbar .pd-input, .po-toolbar .pd-btn { height:36px; }
@@ -90,7 +90,7 @@
     .po-row { cursor:pointer; }
     .po-row:hover td { background:var(--pd-red-light); }
     .po-sched { display:flex; align-items:center; gap:7px; }
-    .po-sched .bar { flex:0 0 54px; height:7px; background:var(--pd-line); border-radius:4px; overflow:hidden; }
+    .po-sched .bar { flex:0 0 54px; height:7px; background:var(--pd-line); border-radius:var(--pd-radius); overflow:hidden; }
     .po-sched .bar > div { height:100%; background:var(--pd-red); }
     .po-var-up { color:var(--pd-bad-text); font-weight:700; } .po-var-dn { color:var(--pd-ok-text); font-weight:700; }
     .po-health { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px; vertical-align:middle; }
@@ -103,7 +103,7 @@
     .po-eq-bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:14px;
       background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:8px 12px; }
     .po-eq-bar .pd-select, .po-eq-bar .pd-input { height:34px; font-size:var(--pd-fs-base); max-width:220px; }
-    .po-eq-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
+    .po-eq-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); overflow:hidden; }
     .po-eq-seg button { border:0; background:var(--pd-card); color:var(--pd-ink); padding:7px 13px; font:inherit;
       font-size:var(--pd-fs-sm); font-weight:700; cursor:pointer; }
     .po-eq-seg button + button { border-left:1px solid var(--pd-line); }
@@ -144,7 +144,7 @@
     .po-eq-sub { font-size:var(--pd-fs-xs); color:var(--pd-muted); overflow:hidden; text-overflow:ellipsis; }
     .po-eq-legend { display:flex; flex-wrap:wrap; gap:12px; margin-top:10px; font-size:var(--pd-fs-xs); color:var(--pd-muted); }
     .po-eq-lg { display:inline-flex; align-items:center; gap:6px; }
-    .po-eq-lg .sw { width:13px; height:13px; border-radius:4px; display:inline-block; border:1px solid rgba(0,0,0,.12); }
+    .po-eq-lg .sw { width:13px; height:13px; border-radius:var(--pd-radius); display:inline-block; border:1px solid rgba(0,0,0,.12); }
     /* ⚠️ The measurement that used to live here (light #1F7A3D = 2.61:1 on the dark card,
        --pd-bad = 4.02:1, both under AA) is exactly what --pd-ok-text / --pd-bad-text were
        promoted for on 2026-09-10 — this page had solved it privately, for itself, with two
@@ -172,7 +172,7 @@
     .po-toolbar-fields .po-projfilter { display:contents; }
     /* cross-project S-Curve / Cash Flow views */
     .po-kpis2 { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:16px; }
-    .po-kpi2 { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; padding:14px 16px; }
+    .po-kpi2 { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); padding:14px 16px; }
     .po-kpi2-l { font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); margin-bottom:5px; }
     .po-kpi2-v { font-size:var(--pd-fs-stat); font-weight:700; }
     .po-svg { width:100%; height:auto; display:block; }
@@ -233,8 +233,8 @@
     .po-hl-bar { display:grid; grid-template-columns:minmax(0,1fr) 92px auto; align-items:center;
       gap:9px; font-size:var(--pd-fs-sm); }
     .po-hl-k { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .po-hl-t { height:7px; border-radius:4px; background:var(--pd-line); overflow:hidden; }
-    .po-hl-t i { display:block; height:100%; background:var(--pd-red); border-radius:4px; }
+    .po-hl-t { height:7px; border-radius:var(--pd-radius); background:var(--pd-line); overflow:hidden; }
+    .po-hl-t i { display:block; height:100%; background:var(--pd-red); border-radius:var(--pd-radius); }
     .po-hl-n { font-variant-numeric:tabular-nums; font-weight:700; font-size:var(--pd-fs-xs);
       color:var(--pd-muted); white-space:nowrap; }
     /* ⚠ A warned row is tinted, never recoloured to a literal — the 2026-09-03 (u)
@@ -465,7 +465,7 @@
       color:#fff; background:var(--pd-red); border-radius:3px; padding:1px 5px; }
 
     .po-cal-chip { display:block; width:100%; text-align:left; border:1px solid transparent;
-      border-radius:4px; padding:2px 5px; font:inherit; font-size:var(--pd-fs-xs); line-height:1.3;
+      border-radius:var(--pd-radius); padding:2px 5px; font:inherit; font-size:var(--pd-fs-xs); line-height:1.3;
       cursor:pointer; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .po-cal-chip-p { font-weight:800; opacity:.8; margin-right:4px; }
     .po-cal-chip.achieved { background:var(--po-ms-good-bg); color:var(--po-ms-good); border-color:var(--po-ms-good); }
@@ -520,7 +520,7 @@
     /* ---- Recent-photos strip (Photos tab) — a plain wrapping thumbnail grid ---- */
     .po-photo-grid { display:flex; flex-wrap:wrap; gap:10px; }
     .po-photo-item { width:150px; }
-    .po-photo-item img { width:150px; height:104px; object-fit:cover; border-radius:8px; border:1px solid var(--pd-line); background:var(--pd-bg); display:block; }
+    .po-photo-item img { width:150px; height:104px; object-fit:cover; border-radius:var(--pd-radius-md); border:1px solid var(--pd-line); background:var(--pd-bg); display:block; }
     .po-photo-cap { font-size:var(--pd-fs-xs); color:var(--pd-muted); margin-top:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   </style>
 </head>

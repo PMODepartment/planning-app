@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Resource &amp; Role Master · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910w2" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910w3" />
   <style>
     /* Uniform module chrome (matches every other module). 2026-08-30: modules
        gained a persistent sidebar (MODULE_CONTRACT.md) — .pd-content no longer
@@ -54,7 +54,7 @@
     .rl-table th.num, .rl-table td.num { text-align:right; }
     .rl-table td { padding:8px 12px; border-bottom:1px solid var(--pd-line); }
     .rl-table tr:hover td { background:var(--pd-bg); }
-    .rl-badge { font-size:var(--pd-fs-xs); font-weight:700; padding:1px 8px; border-radius:999px; background:var(--pd-bg); }
+    .rl-badge { font-size:var(--pd-fs-xs); font-weight:700; padding:1px 8px; border-radius:var(--pd-radius-pill); background:var(--pd-bg); }
     .rl-empty { text-align:center; padding:40px; color:var(--pd-muted); }
     .rl-actions { display:flex; gap:5px; }
     .rl-btn-sm { padding:3px 9px; font-size:var(--pd-fs-xs); border-radius:5px; border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-ink); cursor:pointer; }
@@ -62,7 +62,7 @@
 
     /* Loading (utilization matrix) */
     .rl-load-controls { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:14px; }
-    .rl-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
+    .rl-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); overflow:hidden; }
     .rl-seg button { border:0; background:var(--pd-card); color:var(--pd-ink); padding:6px 13px; font:inherit; font-size:var(--pd-fs-sm); font-weight:700; cursor:pointer; }
     .rl-seg button + button { border-left:1px solid var(--pd-line); }
     .rl-seg button.active { background:var(--pd-red); color:#fff; }
@@ -98,12 +98,12 @@
        in a form and very visible in a finish date.
        ---------------------------------------------------------------------- */
     .rl-tpl { grid-column:1 / -1; display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:8px; }
-    .rl-tpl button { text-align:left; padding:9px 11px; border:1px solid var(--pd-border); border-radius:8px;
+    .rl-tpl button { text-align:left; padding:9px 11px; border:1px solid var(--pd-border); border-radius:var(--pd-radius-md);
                      background:var(--pd-card); cursor:pointer; font:inherit; color:inherit; }
     .rl-tpl button:hover { border-color:var(--pd-accent); background:var(--pd-bg); }
     .rl-tpl b { display:block; font-size:var(--pd-fs-sm); margin-bottom:3px; }
     .rl-tpl span { font-size:var(--pd-fs-xs); color:var(--pd-muted); line-height:1.35; }
-    .rl-season { grid-column:1 / -1; border:1px solid var(--pd-border); border-radius:8px; padding:10px 12px; margin-bottom:8px; background:var(--pd-card); }
+    .rl-season { grid-column:1 / -1; border:1px solid var(--pd-border); border-radius:var(--pd-radius-md); padding:10px 12px; margin-bottom:8px; background:var(--pd-card); }
     .rl-season-hd { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
     .rl-season-hd input { flex:1; }
     .rl-mo { display:flex; gap:4px; flex-wrap:wrap; margin-bottom:8px; }

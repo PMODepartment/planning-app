@@ -174,6 +174,11 @@
   --pd-radius-md: 8px;
   --pd-radius-lg: 12px;
   --pd-radius-xl: 16px;
+  /* ⚠️ "Fully rounded" had THREE spellings — 999px x88, 99px x5, 20px x6 — plus 50%. They are not
+     interchangeable in principle (50% is an ellipse of the box; a large px radius is capped at half
+     the shorter side) but on a 18-22px tall chip they render identically, which is why nobody
+     noticed. This is the pill; `50%` stays for things that are genuinely CIRCLES (the avatar). */
+  --pd-radius-pill: 999px;
   --pd-shadow: 0 1px 3px rgba(0,0,0,.07);       /* = PRC --shadow-sm */
   --pd-shadow-md: 0 4px 12px rgba(0,0,0,.08);
   --pd-shadow-lg: 0 8px 24px rgba(0,0,0,.10);
@@ -352,7 +357,7 @@ a:hover { text-decoration: underline; }
 .pd-sidebar nav { margin: 0; padding: 10px 12px 4px; display: flex; flex-direction: column; gap: 2px; }
 .pd-sidebar nav a {
   /* PRC .nav-item, exactly: rgba white (not a blue-grey), 500 weight, 8px radius. */
-  color: rgba(255,255,255,.65); padding: 9px 12px; border-radius: 8px;
+  color: rgba(255,255,255,.65); padding: 9px 12px; border-radius: var(--pd-radius-md);
   font-size: var(--pd-fs-base); font-weight: 500;
   display: flex; align-items: center; gap: 10px; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis;
@@ -388,7 +393,7 @@ a:hover { text-decoration: underline; }
 .pd-nav-foot { margin-top: auto; padding: 14px 12px 4px; border-top: 1px solid rgba(255,255,255,.08); }
 .pd-nav-sibling {
   display: flex; align-items: center; gap: 10px; padding: 10px 12px;
-  border-radius: 8px; font-size: var(--pd-fs-sm); color: #96a0b0;
+  border-radius: var(--pd-radius-md); font-size: var(--pd-fs-sm); color: #96a0b0;
 }
 .pd-nav-sibling:hover { background: rgba(255,255,255,.08); color: #fff; text-decoration: none; }
 .pd-nav-sibling .pd-navico { opacity: .75; }
@@ -452,11 +457,11 @@ a:hover { text-decoration: underline; }
 .pd-userbar-name { font-weight: 700; }
 .pd-userbar-role {
   font-size: var(--pd-fs-xs); text-transform: uppercase; letter-spacing: .04em;
-  background: var(--pd-bg); color: var(--pd-muted); padding: 2px 8px; border-radius: 999px;
+  background: var(--pd-bg); color: var(--pd-muted); padding: 2px 8px; border-radius: var(--pd-radius-pill);
 }
 .pd-userbar-logout {
   border: 1px solid var(--pd-line); background: var(--pd-card); color: var(--pd-ink);
-  padding: 5px 12px; border-radius: 8px; cursor: pointer; font-size: var(--pd-fs-base);
+  padding: 5px 12px; border-radius: var(--pd-radius-md); cursor: pointer; font-size: var(--pd-fs-base);
 }
 .pd-userbar-logout:hover { background: var(--pd-bg); }
 
@@ -556,7 +561,7 @@ a:hover { text-decoration: underline; }
 .pd-module-card.disabled .pd-module-sub { color: var(--pd-muted); font-weight: 500; }
 .pd-badge-soon {
   font-size: var(--pd-fs-micro); text-transform: uppercase; letter-spacing: .05em;
-  background: var(--pd-bg); color: var(--pd-muted); padding: 3px 9px; border-radius: 999px;
+  background: var(--pd-bg); color: var(--pd-muted); padding: 3px 9px; border-radius: var(--pd-radius-pill);
 }
 
 /* ---- Buttons ----
@@ -565,7 +570,7 @@ a:hover { text-decoration: underline; }
    the reference app at every size (toolbars, modals, tables all inherit this). */
 .pd-btn { display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
   border: 1px solid var(--pd-line); background: var(--pd-card); color: var(--pd-ink);
-  padding: 6px 13px; border-radius: 8px; font-size: var(--pd-fs-sm); font-weight: 500; }
+  padding: 6px 13px; border-radius: var(--pd-radius-md); font-size: var(--pd-fs-sm); font-weight: 500; }
 /* ⚠️⚠️ THE `hidden` ATTRIBUTE DID NOT WORK ON ANY .pd-btn IN THIS APP, ANYWHERE.
    The rule above is specificity (0,1,0) — exactly equal to the user agent's own
    `[hidden] { display: none }` — and an author rule always beats the UA default at
@@ -685,7 +690,11 @@ html.pd-dark .pd-seg-multi > button.on:hover { color: #FF8A80; }
 .pd-field label { display: block; font-size: var(--pd-fs-xs); font-weight: 500; color: var(--pd-muted); margin-bottom: 5px;
   text-transform: uppercase; letter-spacing: .03em; }
 .pd-input, .pd-select, .pd-textarea {
-  width: 100%; padding: 6px 10px; border: 1px solid var(--pd-line); border-radius: 7px;
+  /* ⚠️⚠️ WAS 7px WHILE `.pd-btn` IS 8px, so a Filter button and the search box beside it in
+     every toolbar in this app had different corners. The phone override below used to pull
+     the BUTTON down to 7px to match, which is the same observation reached from the other
+     end — someone had already decided these should agree. Both are --pd-radius-md now. */
+  width: 100%; padding: 6px 10px; border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md);
   font-size: var(--pd-fs-sm); font-family: inherit; background: var(--pd-card); color: var(--pd-ink);
 }
 /* ⚠️⚠️ AN INPUT, A DATE INPUT AND A SELECT WITH IDENTICAL PADDING AND FONT-SIZE STILL
@@ -849,7 +858,7 @@ button.pd-psel-btn { height: auto; min-height: 30px; padding-top: 4px; padding-b
 /* ---- Modal ---- */
 .pd-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45);
   display: flex; align-items: center; justify-content: center; z-index: var(--pd-z-modal); padding: 20px; }
-.pd-modal { background: var(--pd-card); color: var(--pd-ink); border-radius: 12px; max-width: 520px; width: 100%;
+.pd-modal { background: var(--pd-card); color: var(--pd-ink); border-radius: var(--pd-radius-lg); max-width: 520px; width: 100%;
   max-height: 90vh; overflow-y: auto; padding: 22px; box-shadow: var(--pd-shadow-xl); }
 /* Header/body/footer sub-structure (used by resource-loading, cash-flow, project-schedule's
    activity modal). Header/footer escape the modal's own 22px padding via negative margins so
@@ -937,7 +946,7 @@ button.pd-psel-btn { height: auto; min-height: 30px; padding-top: 4px; padding-b
 .pd-label { display: block; font-size: var(--pd-fs-sm); font-weight: 500; color: var(--pd-muted); margin-bottom: 5px; }
 
 /* Autosave status badge (assets/js/autosave.js), placed beside an Edit modal's title. */
-.pd-autosave { font-size: var(--pd-fs-xs); font-weight: 500; padding: 3px 9px; border-radius: 20px;
+.pd-autosave { font-size: var(--pd-fs-xs); font-weight: 500; padding: 3px 9px; border-radius: var(--pd-radius-pill);
   white-space: nowrap; color: var(--pd-muted); background: var(--pd-bg); border: 1px solid var(--pd-line); }
 .pd-autosave-idle { opacity: .7; }
 .pd-autosave-busy { color: var(--pd-red); border-color: var(--pd-red); }
@@ -1014,7 +1023,7 @@ html.pd-dark .pd-module-card:hover { box-shadow: var(--pd-shadow-md); }
 .num { text-align: right !important; }
 
 /* status pills */
-.pd-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: var(--pd-fs-xs); font-weight: 500; }
+.pd-pill { display: inline-block; padding: 2px 10px; border-radius: var(--pd-radius-pill); font-size: var(--pd-fs-xs); font-weight: 500; }
 /* ⚠️ The label is --pd-*-text, NOT --pd-ok / --pd-warn. Those two measure 4.12:1
    and 3.46:1 on white and were this component's text colour until 2026-09-10 —
    see the measured note beside the tokens. The tint literals moved to tokens in
@@ -1031,7 +1040,7 @@ html.pd-dark .pd-module-card:hover { box-shadow: var(--pd-shadow-md); }
 /* Count badge on a grouped list's header row. (It began life in the group-head
    pane, hence the name — the pane is gone, the badge is not.) */
 .pd-tree-count { font-size: var(--pd-fs-xs); color: var(--pd-muted); background: var(--pd-bg);
-  border: 1px solid var(--pd-line); border-radius: 999px; padding: 0 7px; min-width: 18px; text-align: center; }
+  border: 1px solid var(--pd-line); border-radius: var(--pd-radius-pill); padding: 0 7px; min-width: 18px; text-align: center; }
 .pd-icon-btn { border: none; background: transparent; cursor: pointer; font-size: var(--pd-fs-lg); color: var(--pd-red); line-height: 1; }
 /* In the projects toolbar the gear sits between two 34px selects — without an
    explicit height it collapsed to its 18px glyph and rode high in the row. */
@@ -1049,7 +1058,7 @@ html.pd-dark .pd-module-card:hover { box-shadow: var(--pd-shadow-md); }
 .pd-toolbar-right { flex: 1 1 auto; min-width: 0; justify-content: flex-end; flex-wrap: wrap; }
 .pd-toolbar-right .pd-input-sm { flex: 0 1 220px; min-width: 0; }
 .pd-proj-count { color: var(--pd-muted); font-size: var(--pd-fs-base); white-space: nowrap; }
-.pd-viewtoggle { flex: 0 0 auto; display: inline-flex; border: 1px solid var(--pd-line); border-radius: 8px; overflow: hidden; }
+.pd-viewtoggle { flex: 0 0 auto; display: inline-flex; border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md); overflow: hidden; }
 .pd-vt { border: none; background: var(--pd-card); padding: 6px 14px; cursor: pointer; color: var(--pd-muted);
   font-size: var(--pd-fs-sm); font-weight: 700; }
 .pd-vt.active { background: var(--pd-red); color: #fff; }
@@ -1084,7 +1093,7 @@ html.pd-dark .pd-module-card:hover { box-shadow: var(--pd-shadow-md); }
 .pd-ghchip {
   display: inline-block; font-size: var(--pd-fs-micro); font-weight: 700; color: var(--pd-ink);
   background: var(--pd-red-light); border-left: 3px solid var(--pd-red);
-  padding: 2px 8px; border-radius: 4px; vertical-align: middle;
+  padding: 2px 8px; border-radius: var(--pd-radius); vertical-align: middle;
 }
 .pd-ghcount { font-size: var(--pd-fs-micro); color: var(--pd-muted); margin-left: 8px; }
 .pd-group-row td { background: var(--pd-bg); color: var(--pd-ink);
@@ -1124,7 +1133,7 @@ html.pd-dark .pd-module-card:hover { box-shadow: var(--pd-shadow-md); }
 .pd-ghm-name { flex: 1; min-width: 0; }
 .pd-ghm-name strong { display: block; font-size: var(--pd-fs-base); }
 .pd-ghm-name small { display: block; color: var(--pd-muted); font-size: var(--pd-fs-xs); margin-top: 1px; }
-.pd-ghm-name small code { background: var(--pd-bg); padding: 0 4px; border-radius: 4px; }
+.pd-ghm-name small code { background: var(--pd-bg); padding: 0 4px; border-radius: var(--pd-radius); }
 
 .pd-empty { padding: 40px; text-align: center; color: var(--pd-muted);
   background: var(--pd-card); border: 1px dashed var(--pd-line); border-radius: var(--pd-radius); }
@@ -1170,12 +1179,12 @@ html.pd-dark .pd-module-card:hover { box-shadow: var(--pd-shadow-md); }
 .pd-info-label { font-size: var(--pd-fs-xs); text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); margin-top: 8px; }
 .pd-info-val { font-size: var(--pd-fs-lg); font-weight: 700; margin-top: 2px; }
 .pd-note { margin-top: 16px; padding: 14px 16px; background: var(--pd-bg); border-left: 3px solid var(--pd-red);
-  border-radius: 8px; color: var(--pd-muted); font-size: var(--pd-fs-base); }
+  border-radius: var(--pd-radius-md); color: var(--pd-muted); font-size: var(--pd-fs-base); }
 
 /* portfolio rollup header (Program / Workspace tabs) */
 .pd-rollup-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
 .pd-rollup-kind { font-size: var(--pd-fs-xs); text-transform: uppercase; letter-spacing: .05em; font-weight: 700;
-  color: var(--pd-red); background: var(--pd-red-light); padding: 3px 10px; border-radius: 999px; }
+  color: var(--pd-red); background: var(--pd-red-light); padding: 3px 10px; border-radius: var(--pd-radius-pill); }
 .pd-rollup-head h3 { margin: 0; font-size: var(--pd-fs-stat); }
 .pd-rollup-gh { font-size: var(--pd-fs-base); color: var(--pd-muted); font-weight: 500; }
 .pd-proj-row.cur td { background: var(--pd-red-light); }
@@ -1355,10 +1364,10 @@ body { overflow-x: clip; }
      is trimming visual bulk (padding, corner radius) that was piling ON TOP
      of that minimum and reading as "chunky", not making the tap area itself
      any smaller. Do not remove the min-height/min-width lines below 44px. */
-  .pd-btn { padding: 8px 12px; min-height: var(--pd-tap); border-radius: 7px; }
+  .pd-btn { padding: 8px 12px; min-height: var(--pd-tap); }
   .pd-btn-sm { min-height: 36px; }
   .pd-vt, .pd-icon-btn, .pd-theme-toggle, .pd-sidebar-toggle {
-    min-width: var(--pd-tap); min-height: var(--pd-tap); border-radius: 8px;
+    min-width: var(--pd-tap); min-height: var(--pd-tap); border-radius: var(--pd-radius-md);
   }
   .pd-avatar { width: 40px; height: 40px; }
   /* A modal's footer buttons no longer stretch to fill the row — Cancel/Save
@@ -1398,7 +1407,7 @@ body { overflow-x: clip; }
      media query at equal specificity, it silently overrode the un-stretch
      fix every time. Removed rather than duplicated; do not re-add a footer-
      button rule here. */
-  .pd-modal-close { width: var(--pd-tap); height: var(--pd-tap); border-radius: 8px; }
+  .pd-modal-close { width: var(--pd-tap); height: var(--pd-tap); border-radius: var(--pd-radius-md); }
 
   /* Dropdown popovers: anchor to the viewport instead of running off-screen. */
   .pd-psel-pop, .pd-projsw-menu, .pd-add-menu {
@@ -1686,7 +1695,7 @@ body { overflow-x: clip; }
 .pd-tabsdrop { position: relative; display: flex; align-items: center; gap: 6px; flex: none; }
 .pd-tabsdrop-btn {
   display: inline-flex; align-items: center; gap: 8px; background: none; border: 1px solid transparent;
-  border-radius: 8px; padding: 6px 10px; cursor: pointer; font: inherit; font-weight: 700; font-size: var(--pd-fs-md);
+  border-radius: var(--pd-radius-md); padding: 6px 10px; cursor: pointer; font: inherit; font-weight: 700; font-size: var(--pd-fs-md);
   color: var(--pd-ink);
 }
 .pd-tabsdrop-btn:hover { background: var(--pd-bg); border-color: var(--pd-line); }
@@ -1926,7 +1935,7 @@ html.pd-dark .pd-table tr.pd-grp > td { background: rgba(255,255,255,.05); }
 .pd-cardgroup:first-child { margin-top: 2px; }
 .pd-cardgroup-rule { flex: 1 1 auto; height: 1px; background: var(--pd-line); }
 .pd-cardgroup-count { font-size: var(--pd-fs-xs); font-weight: 500; color: var(--pd-muted);
-  background: var(--pd-bg); border: 1px solid var(--pd-line); border-radius: 999px; padding: 0 7px; }
+  background: var(--pd-bg); border: 1px solid var(--pd-line); border-radius: var(--pd-radius-pill); padding: 0 7px; }
 
 /* Cards: give the metadata room to breathe and let it wrap instead of colliding. */
 .pd-proj-cards { grid-template-columns: repeat(auto-fill, minmax(248px, 1fr)); }

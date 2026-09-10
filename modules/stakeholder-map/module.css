@@ -139,7 +139,7 @@ html.pd-dark .sm-ovr { color:#fbbf24; }
   /* ⚠️ ink-on-card INVERTED, not white-on-muted. --pd-muted is a dark grey in light mode
      but a LIGHT grey in dark mode, so white on it measured 2.00:1 live. This pairing
      flips with the theme by construction: 16.3 light / 12.2 dark. */
-  color:var(--pd-card); background:var(--pd-ink); border-radius:4px; padding:1px 4px; margin-right:8px; }
+  color:var(--pd-card); background:var(--pd-ink); border-radius:var(--pd-radius); padding:1px 4px; margin-right:8px; }
 .sm-gname { font-weight:800; letter-spacing:.02em; text-transform:uppercase; font-size:var(--pd-fs-sm); }
 .sm-gcount { color:var(--pd-muted); font-size:var(--pd-fs-sm); margin:0 10px; }
 .sm-grow .rcm-pill-o { margin-right:5px; }
@@ -163,10 +163,10 @@ html.pd-dark .sm-a-manage  { --sm-t:#f87171; }
 html.pd-dark .sm-a-satisfy { --sm-t:#fbbf24; }
 html.pd-dark .sm-a-inform  { --sm-t:#93c5fd; }
 html.pd-dark .sm-a-monitor { --sm-t:#d1d5db; }
-.sm-appr { display:inline-block; padding:2px 9px; border-radius:999px; font-size:var(--pd-fs-xs); font-weight:700;
+.sm-appr { display:inline-block; padding:2px 9px; border-radius:var(--pd-radius-pill); font-size:var(--pd-fs-xs); font-weight:700;
   white-space:nowrap; color:#fff; background:var(--sm-c, var(--pd-muted)); }
 .sm-leg-sw { width:12px; height:12px; border-radius:3px; display:inline-block; background:var(--sm-c, var(--pd-line)); }
-.sm-strat { display:inline-block; padding:1px 7px; border-radius:4px; font-size:var(--pd-fs-xs); font-weight:700; white-space:nowrap; }
+.sm-strat { display:inline-block; padding:1px 7px; border-radius:var(--pd-radius); font-size:var(--pd-fs-xs); font-weight:700; white-space:nowrap; }
 .sm-s-Catchup  { background:var(--pd-bad-bg);  color:var(--pd-bad-text); }
 .sm-s-Enhance  { background:var(--pd-warn-bg); color:var(--pd-warn-text); }
 .sm-s-Maintain { background:var(--pd-ok-bg);   color:var(--pd-ok-text); }
@@ -273,7 +273,7 @@ html.pd-dark .sm-fsec { color:#FF8A80; }
 .sm-suggest { display:flex; flex-wrap:wrap; gap:5px; margin-top:6px; }
 .sm-sug-lab { color:var(--pd-muted); font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase; letter-spacing:.04em; align-self:center; }
 .sm-sug { border:1px dashed var(--pd-line); background:transparent; color:var(--pd-muted);
-  border-radius:4px; padding:3px 7px; font-size:var(--pd-fs-xs); cursor:pointer; font-family:var(--pd-font); }
+  border-radius:var(--pd-radius); padding:3px 7px; font-size:var(--pd-fs-xs); cursor:pointer; font-family:var(--pd-font); }
 .sm-sug:hover { border-style:solid; border-color:var(--pd-red-mid); color:var(--pd-ink); background:var(--pd-red-light); }
 
 /* (`.pd-kpis` is auto-fit -- the four cards reflow with no breakpoints here.
@@ -367,7 +367,7 @@ html.pd-dark .sm-fsec { color:#FF8A80; }
   flex: none; font-size: var(--pd-fs-micro); font-weight: 700;
   letter-spacing: .04em; text-transform: uppercase; color: var(--pd-muted);
   background: var(--pd-bg); border: 1px solid var(--pd-line);
-  border-radius: 999px; padding: 2px 8px; white-space: nowrap;
+  border-radius: var(--pd-radius-pill); padding: 2px 8px; white-space: nowrap;
 }
 .sm-ap-row.is-here .sm-ap-tag { color: var(--pd-red-dark); border-color: var(--pd-red-mid); background: var(--pd-red-light); }
 /* ⚠️ --pd-red-dark is not a text colour on the dark theme (2.64:1 on

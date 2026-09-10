@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Equipment Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910w2" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910w3" />
   <style>
     /* Uniform module chrome (matches every other module). 2026-08-30: modules
        gained a persistent sidebar (MODULE_CONTRACT.md) — .pd-content no longer
@@ -42,14 +42,14 @@
     .eq-kpi-l { font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); margin-top:6px; }
     .eq-note { font-size:var(--pd-fs-sm); color:var(--pd-muted); }
     .eq-warn { font-size:var(--pd-fs-sm); color:var(--pd-warn-text); background:var(--pd-warn-bg); border:1px solid var(--pd-warn-line);
-      border-radius:8px; padding:9px 12px; margin-bottom:14px; }
+      border-radius:var(--pd-radius-md); padding:9px 12px; margin-bottom:14px; }
     .eq-empty { text-align:center; padding:40px; color:var(--pd-muted); }
 
     .eq-controls { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:14px;
       background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:8px 12px; }
     .eq-controls .pd-select { height:34px; font-size:var(--pd-fs-base); max-width:220px; }
     .eq-filt-ico { color:var(--pd-muted); flex:none; }
-    .eq-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
+    .eq-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); overflow:hidden; }
     .eq-seg button { border:0; background:var(--pd-card); color:var(--pd-ink); padding:6px 13px;
       font:inherit; font-size:var(--pd-fs-sm); font-weight:700; cursor:pointer; }
     .eq-seg button + button { border-left:1px solid var(--pd-line); }
@@ -77,9 +77,9 @@
     .eq-mx td.eq-lock { color:var(--pd-muted); cursor:not-allowed; }
     .eq-mx td.eq-lock::after { content:''; }
     .eq-linkchip { display:inline-flex; align-items:center; gap:5px; font-size:var(--pd-fs-xs); font-weight:700;
-      border:1px solid var(--pd-line); border-radius:999px; padding:1px 8px; color:var(--pd-muted); }
+      border:1px solid var(--pd-line); border-radius:var(--pd-radius-pill); padding:1px 8px; color:var(--pd-muted); }
     .eq-linkchip.on { border-color:var(--pd-red); color:var(--pd-red); }
-    .eq-linkbox { border:1px solid var(--pd-line); border-radius:8px; padding:10px 12px; margin-top:4px; }
+    .eq-linkbox { border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); padding:10px 12px; margin-top:4px; }
     .eq-linkbox .eq-note { display:block; margin-top:6px; }
     .eq-linkrow { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
     .eq-linkrow .pd-input, .eq-linkrow .pd-select { height:34px; font-size:var(--pd-fs-base); }
@@ -155,7 +155,7 @@
     .eq-mx td.eq-edit { cursor:cell; }
     .eq-mx td.eq-edit:hover { outline:2px solid var(--pd-red); outline-offset:-2px; }
     .eq-mx input.eq-cellin { width:52px; height:24px; padding:0 4px; font:inherit; font-size:var(--pd-fs-sm);
-      text-align:center; border:1px solid var(--pd-red); border-radius:4px; background:var(--pd-card); color:var(--pd-ink); }
+      text-align:center; border:1px solid var(--pd-red); border-radius:var(--pd-radius); background:var(--pd-card); color:var(--pd-ink); }
 
     /* ---- Register ----------------------------------------------------------------------- */
     .eq-table { width:100%; border-collapse:collapse; font-size:var(--pd-fs-base); }
@@ -164,7 +164,7 @@
     .eq-table th.num, .eq-table td.num { text-align:right; }
     .eq-table td { padding:8px 12px; border-bottom:1px solid var(--pd-line); }
     .eq-table tr:hover td { background:var(--pd-bg); }
-    .eq-badge { font-size:var(--pd-fs-xs); font-weight:700; padding:1px 8px; border-radius:999px; background:var(--pd-bg); }
+    .eq-badge { font-size:var(--pd-fs-xs); font-weight:700; padding:1px 8px; border-radius:var(--pd-radius-pill); background:var(--pd-bg); }
     .eq-badge.eq-rent { background:var(--pd-red-light); color:var(--pd-red); }
     .eq-actions { display:flex; gap:5px; }
     .eq-btn-sm { padding:3px 9px; font-size:var(--pd-fs-xs); border-radius:5px; border:1px solid var(--pd-line);
@@ -234,7 +234,7 @@
     .eq-ico { display:inline-block; vertical-align:-3px; flex:none; }
     .eq-ico svg { display:block; }
     .eq-icobtn { display:flex; flex-direction:column; align-items:center; gap:3px; width:60px; padding:6px 2px;
-      border:1px solid var(--pd-line); border-radius:8px; background:var(--pd-card); color:var(--pd-ink);
+      border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); background:var(--pd-card); color:var(--pd-ink);
       cursor:pointer; font:inherit; font-size:var(--pd-fs-micro); line-height:1.15; text-align:center; }
     .eq-icobtn:hover { border-color:var(--pd-red); }
     /* ⚠️ The picked button keeps its LABEL in ink, not red: red on the red tint measured 3.60:1,
@@ -273,7 +273,7 @@
     .eq-chip[draggable="true"] { cursor:grab; }
     .eq-chip.dragging { opacity:.45; }
     .eq-chip-grip { color:var(--pd-muted); font-size:var(--pd-fs-sm); line-height:1; letter-spacing:-1px; flex:none; cursor:grab; }
-    .eq-zoom { display:inline-flex; align-items:center; gap:0; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
+    .eq-zoom { display:inline-flex; align-items:center; gap:0; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); overflow:hidden; }
     .eq-zoom button { border:0; background:var(--pd-card); color:var(--pd-ink); font:inherit; font-size:var(--pd-fs-base);
       font-weight:700; cursor:pointer; padding:6px 10px; min-width:32px; }
     .eq-zoom button + button, .eq-zoom .lvl + button { border-left:1px solid var(--pd-line); }

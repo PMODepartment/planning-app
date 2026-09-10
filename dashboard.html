@@ -7,8 +7,8 @@
   <link rel="apple-touch-icon" href="assets/img/icon.png?v=20260830b" />
   <script src="assets/js/theme.js?v=20260812b"></script>
   <title>Dashboard — Planners Dashboard</title>
-  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260910w2" />
-  <link rel="stylesheet" href="assets/css/my-work.css?v=20260910v4" />
+  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260910w3" />
+  <link rel="stylesheet" href="assets/css/my-work.css?v=20260910w3" />
 </head>
 <body>
   <div class="pd-app">
@@ -115,7 +115,7 @@
        The decisions chips that sat below them went on 2026-09-01 at the owner's request. */
     .pd-perf-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(196px, 1fr)); gap:12px; }
     .pd-perf {
-      position:relative; overflow:hidden; padding:13px 15px 12px; border-radius:12px;
+      position:relative; overflow:hidden; padding:13px 15px 12px; border-radius:var(--pd-radius-lg);
       background:var(--pd-card, var(--pd-bg)); border:1px solid var(--pd-line);
     }
     .pd-perf::before { content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--pc, var(--pd-muted)); }
@@ -153,7 +153,7 @@
     .pd-list-r { display:flex; align-items:center; gap:8px; font-size:var(--pd-fs-xs); min-width:0; }
     .pd-list-d { color:var(--pd-muted); flex:none; font-variant-numeric:tabular-nums; width:86px; }
     .pd-list-t { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .pd-tag { flex:none; font-size:var(--pd-fs-micro); font-weight:700; padding:2px 7px; border-radius:999px;
+    .pd-tag { flex:none; font-size:var(--pd-fs-micro); font-weight:700; padding:2px 7px; border-radius:var(--pd-radius-pill);
       border:1px solid var(--pd-line); color:var(--pd-muted); background:var(--pd-bg); }
     .pd-tag-ok { color:#2FA36B; border-color:#2FA36B55; }
     .pd-tag-warn { color:#E08A3C; border-color:#E08A3C55; }
@@ -215,7 +215,7 @@
     .pd-sc-tbl tr.fc td.k::before { border-top-color:#C9A227; border-top-style:dashed; }
     .pd-sc-tbl .now { color:var(--pd-ink); font-weight:800; }
     .pd-sc-tip { position:absolute; top:6px; z-index:3; pointer-events:none; min-width:150px;
-      background:var(--pd-card, var(--pd-bg)); border:1px solid var(--pd-line); border-radius:8px;
+      background:var(--pd-card, var(--pd-bg)); border:1px solid var(--pd-line); border-radius:var(--pd-radius-md);
       padding:7px 9px; font-size:var(--pd-fs-micro); color:var(--pd-muted); display:grid; gap:2px;
       box-shadow:0 6px 18px rgba(0,0,0,.28); }
     .pd-sc-tip b { color:var(--pd-ink); font-size:var(--pd-fs-xs); margin-bottom:2px; }
@@ -246,13 +246,13 @@
 
     /* ---- "My items" drawer -------------------------------------------------------------------- */
     .mw-fab { position:fixed; right:18px; bottom:18px; z-index:60; display:inline-flex; align-items:center;
-      gap:8px; padding:11px 15px; border-radius:999px; border:1px solid var(--pd-line);
+      gap:8px; padding:11px 15px; border-radius:var(--pd-radius-pill); border:1px solid var(--pd-line);
       background:var(--pd-card, var(--pd-bg)); color:var(--pd-ink); font-size:var(--pd-fs-sm); font-weight:700;
       cursor:pointer; box-shadow:0 8px 24px rgba(0,0,0,.32); }
     .mw-fab:hover { border-color:var(--pd-muted); }
     .mw-fab.has { border-color:var(--pd-red); }
     .mw-fab-ico { font-size:var(--pd-fs-md); line-height:1; }
-    .mw-fab-n { min-width:19px; height:19px; padding:0 5px; border-radius:999px; background:var(--pd-red);
+    .mw-fab-n { min-width:19px; height:19px; padding:0 5px; border-radius:var(--pd-radius-pill); background:var(--pd-red);
       color:#fff; font-size:var(--pd-fs-micro); line-height:19px; text-align:center; font-weight:800; }
     .mw-scrim { position:fixed; inset:0; z-index:70; background:rgba(0,0,0,.42);
       opacity:0; transition:opacity .18s ease; }
@@ -279,7 +279,7 @@
     @media (max-width:640px) { .mw-fab-txt { display:none; } .mw-fab { padding:12px; } }
 
     /* ---- Visual panels ---------------------------------------------------------------------- */
-    .pd-viz { margin-top:12px; padding:15px 17px 16px; border-radius:12px;
+    .pd-viz { margin-top:12px; padding:15px 17px 16px; border-radius:var(--pd-radius-lg);
       background:var(--pd-card, var(--pd-bg)); border:1px solid var(--pd-line); }
     .pd-viz-2col { display:grid; grid-template-columns:repeat(auto-fit, minmax(360px, 1fr)); gap:12px; }
     .pd-viz-2col > .pd-viz { margin-top:12px; }
@@ -349,7 +349,7 @@
   <script src="assets/js/scurve.js?v=20260901a"></script>
   <script src="assets/js/ui.js?v=20260909s"></script>
   <script src="assets/js/icons.js?v=20260909ui"></script>
-  <script src="assets/js/modules-grid.js?v=20260910w2"></script>
+  <script src="assets/js/modules-grid.js?v=20260910w3"></script>
   <script src="assets/js/my-work.js?v=20260902a"></script>
   <script>
   (function () {

@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Manpower Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910w2" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910w3" />
   <style>
     /* Uniform module chrome (matches every other module). 2026-08-30: modules
        gained a persistent sidebar (MODULE_CONTRACT.md) — .pd-content no longer
@@ -44,7 +44,7 @@
     .mp-kpi-l { font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); margin-top:6px; }
     .mp-note { font-size:var(--pd-fs-sm); color:var(--pd-muted); }
     .mp-warn { font-size:var(--pd-fs-sm); color:var(--pd-warn-text); background:var(--pd-warn-bg); border:1px solid var(--pd-warn-line);
-      border-radius:8px; padding:9px 12px; margin-bottom:14px; }
+      border-radius:var(--pd-radius-md); padding:9px 12px; margin-bottom:14px; }
     .mp-empty { text-align:center; padding:40px; color:var(--pd-muted); }
 
     .mp-controls { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:14px;
@@ -60,7 +60,7 @@
       display:flex; flex-wrap:wrap; gap:8px; align-items:center;
       background:none; border:0; padding:0; margin:0; flex:1 1 auto; min-width:0;
     }
-    .mp-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
+    .mp-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); overflow:hidden; }
     .mp-seg button { border:0; background:var(--pd-card); color:var(--pd-ink); padding:6px 13px;
       font:inherit; font-size:var(--pd-fs-sm); font-weight:700; cursor:pointer; }
     .mp-seg button + button { border-left:1px solid var(--pd-line); }
@@ -125,7 +125,7 @@
     .mp-drift { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
     .mp-dur { display:block; margin-top:6px; font-size:var(--pd-fs-sm); font-weight:700; color:var(--pd-ink); }
     .mp-dur small { display:block; font-weight:500; color:var(--pd-muted); margin-top:2px; }
-    .mp-derivebox { border:1px solid var(--pd-line); border-radius:8px; padding:10px 12px; margin-top:4px; }
+    .mp-derivebox { border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); padding:10px 12px; margin-top:4px; }
     .mp-derivebox ul { margin:6px 0 0; padding-left:18px; font-size:var(--pd-fs-sm); color:var(--pd-muted); }
     .mp-linkrow { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
 
@@ -169,7 +169,7 @@
     .mp-gtlegend .sw { display:inline-block; width:22px; height:9px; border-radius:5px; vertical-align:-1px; margin-right:5px; }
     .mp-free { font-weight:700; color:var(--pd-ok-text); }
     .mp-mx input.mp-cellin { width:56px; height:24px; padding:0 4px; font:inherit; font-size:var(--pd-fs-sm);
-      text-align:center; border:1px solid var(--pd-red); border-radius:4px; background:var(--pd-card); color:var(--pd-ink); }
+      text-align:center; border:1px solid var(--pd-red); border-radius:var(--pd-radius); background:var(--pd-card); color:var(--pd-ink); }
     .mp-mx input.mp-cellin.wide { width:80px; text-align:left; }
     .mp-mx td.mp-cost { font-size:var(--pd-fs-xs); }
 
@@ -182,7 +182,7 @@
     .mp-table tr:hover td { background:var(--pd-bg); }
     .mp-table tr.mp-grp td { background:var(--pd-bg); font-weight:800; font-size:var(--pd-fs-xs);
       text-transform:uppercase; letter-spacing:.04em; color:var(--pd-ink); }
-    .mp-badge { font-size:var(--pd-fs-xs); font-weight:700; padding:1px 8px; border-radius:999px; background:var(--pd-bg); display:inline-block; }
+    .mp-badge { font-size:var(--pd-fs-xs); font-weight:700; padding:1px 8px; border-radius:var(--pd-radius-pill); background:var(--pd-bg); display:inline-block; }
     /* ⚠️ THREE OF THESE FOUR BADGES ARE NOW SHARED TOKENS, and the reason is that this block
        used to be a private four-colour palette with its own dark half — eight declarations
        maintained here to say ok / warn-adjacent / bad / other. The measurements that produced
@@ -201,7 +201,7 @@
        distinction this row exists to draw. Measured: 8.09:1 light, 7.13:1 dark. */
     .mp-badge.mp-subcon { background:rgba(107,47,168,.12); color:#6B2FA8; }
     html.pd-dark .mp-badge.mp-subcon { background:rgba(208,169,245,.16); color:#D0A9F5; }
-    .mp-linktag { font-size:var(--pd-fs-xs); font-weight:700; padding:1px 8px; border-radius:999px;
+    .mp-linktag { font-size:var(--pd-fs-xs); font-weight:700; padding:1px 8px; border-radius:var(--pd-radius-pill);
       background:var(--pd-bg); color:var(--pd-muted); display:inline-block; }
 
     /* ---- Table of Organization ------------------------------------------------------------ */

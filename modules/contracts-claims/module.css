@@ -486,7 +486,7 @@ html.pd-dark {
 .ccw { max-width: 880px; width: 96vw; }
 .ccw-wrap { display: flex; gap: 0; align-items: stretch; }
 .ccw-rail { flex: 0 0 190px; border-right: 1px solid var(--pd-line); padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; }
-.ccw-rail-i { display: flex; align-items: center; gap: 9px; width: 100%; padding: 8px 9px; border: 0; border-radius: 8px;
+.ccw-rail-i { display: flex; align-items: center; gap: 9px; width: 100%; padding: 8px 9px; border: 0; border-radius: var(--pd-radius-md);
   background: transparent; color: var(--pd-muted); font: inherit; font-size: var(--pd-fs-sm); text-align: left; cursor: pointer; }
 .ccw-rail-i:hover:not(:disabled) { background: var(--pd-bg); }
 .ccw-rail-i:disabled { cursor: default; opacity: .5; }
@@ -522,7 +522,7 @@ html.pd-dark {
    form fields" once, and its own rules then apply normally. */
 .ccw-main input:not([type="checkbox"]):not([type="radio"]):not(.cca-ctl),
 .ccw-main select:not(.cca-ctl), .ccw-main textarea:not(.cca-ctl) { width: 100%; margin-top: 4px; padding: 9px 11px;
-  border: 1px solid var(--pd-line); border-radius: 8px; font: inherit; font-size: var(--pd-fs-body);
+  border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md); font: inherit; font-size: var(--pd-fs-body);
   background: var(--pd-card); color: var(--pd-ink); }
 .ccw-main textarea { min-height: 68px; resize: vertical; }
 .ccw-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
@@ -632,7 +632,7 @@ tr.cc-collapsed { display:none; }
 /* Badges — WPM's `.badge` pill set. `.boq-kind` already covers the outlined vocabulary,
    so these are the FILLED states a status column wants. */
 .cc-badge { display:inline-block; font-size:var(--pd-fs-micro); font-weight:800; letter-spacing:.03em;
-  padding:2px 8px; border-radius:20px; white-space:nowrap; }
+  padding:2px 8px; border-radius:var(--pd-radius-pill); white-space:nowrap; }
 .cc-badge.b-ok   { background:var(--pd-ok-bg);   color:var(--pd-ok-text); }
 .cc-badge.b-warn { background:var(--pd-warn-bg); color:var(--pd-warn-text); }
 .cc-badge.b-bad  { background:var(--pd-bad-bg);  color:var(--pd-bad-text); }
@@ -694,12 +694,12 @@ html.pd-dark .boq-tl1 > .boq-trow { background:rgba(255,255,255,.04); }
    finishes, which is most of why the importer exists at all. */
 .boq-cell { width:100%; min-width:64px; font:inherit; font-size:var(--pd-fs-sm); text-align:right;
   color:var(--pd-ink); background:transparent; border:1px solid transparent;
-  border-radius:4px; padding:3px 5px; }
+  border-radius:var(--pd-radius); padding:3px 5px; }
 .boq-cell:hover { border-color:var(--pd-line); }
 .boq-cell:focus { border-color:var(--pd-red); background:var(--pd-card); outline:none; }
 .boq-cell.boq-cell-t { text-align:left; min-width:120px; }
 .boq-cellsel { font:inherit; font-size:var(--pd-fs-xs); color:var(--pd-ink); background:transparent;
-  border:1px solid transparent; border-radius:4px; padding:2px 4px; }
+  border:1px solid transparent; border-radius:var(--pd-radius); padding:2px 4px; }
 .boq-cellsel:hover, .boq-cellsel:focus { border-color:var(--pd-line); background:var(--pd-card); }
 .boq-rowdel { border:0; background:none; color:var(--pd-muted); cursor:pointer; font-size:var(--pd-fs-body); padding:0 5px; }
 .boq-rowdel:hover { color:var(--boq-bad,#b3241a); }
@@ -740,7 +740,7 @@ html.pd-dark .boq-tl1 > .boq-trow { background:rgba(255,255,255,.04); }
 .boq-tagact-w { flex:none; }
 /* A match the proposer found, and WHY — never a bare highlight. */
 .boq-why { font-size:var(--pd-fs-micro); font-weight:700; text-transform:uppercase; letter-spacing:.03em;
-  color:var(--boq-good,#12693a); border:1px solid currentColor; border-radius:20px; padding:1px 6px; white-space:nowrap; }
+  color:var(--boq-good,#12693a); border:1px solid currentColor; border-radius:var(--pd-radius-pill); padding:1px 6px; white-space:nowrap; }
 
 .boq-taken { font-size:var(--pd-fs-micro); font-weight:700; text-transform:uppercase; letter-spacing:.03em;
   color:var(--boq-warn,#b45309); white-space:nowrap; }
@@ -786,7 +786,7 @@ html.pd-dark .boq-tl1 > .boq-trow { background:rgba(255,255,255,.04); }
 .boq-trades-lbl{font-size:var(--pd-fs-micro);font-weight:700;text-transform:uppercase;letter-spacing:.04em;
   color:var(--pd-muted);margin-right:2px;flex:0 0 auto}
 .boq-trade{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;padding:4px 9px;
-  border:1px solid var(--pd-line);border-radius:999px;background:transparent;color:var(--pd-ink);
+  border:1px solid var(--pd-line);border-radius:var(--pd-radius-pill);background:transparent;color:var(--pd-ink);
   font:inherit;font-size:var(--pd-fs-sm);cursor:pointer}
 .boq-trade:hover{border-color:var(--pd-muted);background:rgba(128,128,128,.10)}
 .boq-trade.on{border-color:var(--pd-red);background:rgba(238,49,36,.14);font-weight:700}
@@ -803,7 +803,7 @@ html.pd-dark .boq-tl1 > .boq-trow { background:rgba(255,255,255,.04); }
 
 /* Wizard: a two-option choice (build by hand vs import) and the field grid under it. */
 .ccw-choice{display:grid;gap:8px;margin:12px 0}
-.ccw-opt{display:block;padding:10px 12px;border:1px solid var(--pd-line);border-radius:8px;cursor:pointer}
+.ccw-opt{display:block;padding:10px 12px;border:1px solid var(--pd-line);border-radius:var(--pd-radius-md);cursor:pointer}
 .ccw-opt:hover{border-color:var(--pd-muted)}
 .ccw-opt.on{border-color:var(--pd-red);background:rgba(238,49,36,.08)}
 .ccw-optsub{display:block;margin-top:4px;font-size:var(--pd-fs-sm);color:var(--pd-muted);line-height:1.5}
@@ -831,7 +831,7 @@ html.pd-dark .boq-tl1 > .boq-trow { background:rgba(255,255,255,.04); }
 .boq-ladwrap { padding:0 16px 4px; }
 .boq-ladwrap .pd-input { margin-bottom:10px; }
 .boq-lad { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:8px; }
-.boq-lad-col { border:1px solid var(--pd-line); border-radius:8px; overflow:hidden;
+.boq-lad-col { border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); overflow:hidden;
   display:flex; flex-direction:column; min-width:0; }
 .boq-lad-h { display:flex; justify-content:space-between; align-items:center;
   padding:6px 10px; font-size:var(--pd-fs-micro); font-weight:700; text-transform:uppercase;
@@ -910,7 +910,7 @@ html.pd-dark .boq-tl1 > .boq-trow { background:rgba(255,255,255,.04); }
    below a few hundred pixels, while a tree row degrades gracefully by ellipsis. */
 .cca-lower { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.15fr); gap:8px; }
 
-.cca-col { border:1px solid var(--pd-line); border-radius:8px; overflow:hidden;
+.cca-col { border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); overflow:hidden;
   background:var(--pd-card); min-width:0; }
 .cca-h { display:flex; justify-content:space-between; align-items:center;
   gap:8px; padding:5px 10px; border-bottom:1px solid var(--pd-line);
@@ -941,7 +941,7 @@ html.pd-dark .boq-tl1 > .boq-trow { background:rgba(255,255,255,.04); }
   font-variant-numeric:tabular-nums; }
 .cca-row.on .cca-n { color:var(--pd-red); }
 /* `xN` -- this rung is spelled more than one way on the schedule and is treated as one place. */
-.cca-alt { flex:0 0 auto; font-size:var(--pd-fs-micro); font-weight:700; padding:1px 5px; border-radius:999px;
+.cca-alt { flex:0 0 auto; font-size:var(--pd-fs-micro); font-weight:700; padding:1px 5px; border-radius:var(--pd-radius-pill);
   background:rgba(128,128,128,.18); color:var(--pd-muted); }
 .cca-co { flex:0 0 auto; font-family:var(--pd-mono); font-size:var(--pd-fs-micro); padding:1px 5px;
   border-radius:3px; border:1px solid var(--pd-line); color:var(--pd-muted); }
@@ -962,7 +962,7 @@ html.pd-dark .boq-tl1 > .boq-trow { background:rgba(255,255,255,.04); }
    box rendered **149px** inside a header strip built for a chip. Reading the rule would never have
    caught it: the declaration is right, and it loses to a default it does not mention. */
 .cca-dur { flex:0 0 42px; min-width:0; padding:1px 4px; border:1px solid var(--pd-line);
-  border-radius:4px; background:var(--pd-bg); color:var(--pd-ink); font:inherit; font-size:var(--pd-fs-xs);
+  border-radius:var(--pd-radius); background:var(--pd-bg); color:var(--pd-ink); font:inherit; font-size:var(--pd-fs-xs);
   text-align:center; font-variant-numeric:tabular-nums; }
 
 /* ---- the PROGRAMME IMPACT panel -------------------------------------------
@@ -1006,7 +1006,7 @@ html.pd-dark .boq-tl1 > .boq-trow { background:rgba(255,255,255,.04); }
 /* The topbar export chooser: what goes in the workbook. */
 .ccx-body { display:flex; flex-direction:column; gap:8px; }
 .ccx-opt { display:flex; align-items:flex-start; gap:9px; padding:9px 11px; cursor:pointer;
-  border:1px solid var(--pd-line); border-radius:8px; background:var(--pd-card); }
+  border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); background:var(--pd-card); }
 .ccx-opt:hover { border-color:var(--pd-red); }
 .ccx-opt input { margin-top:2px; flex:0 0 auto; }
 .ccx-opt span { display:flex; flex-direction:column; gap:2px; min-width:0; }
@@ -1127,7 +1127,7 @@ html.pd-dark .cca-gr-bar { background:#6f767d; }
    ========================================================================== */
 .pmi-chwrap { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:8px; }
 @media (max-width:900px) { .pmi-chwrap { grid-template-columns:1fr; } }
-.pmi-chs { border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; min-width:0; }
+.pmi-chs { border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); overflow:hidden; min-width:0; }
 .pmi-chs-h { display:flex; align-items:center; justify-content:space-between; gap:8px;
   padding:7px 11px; font-size:var(--pd-fs-xs); font-weight:800; text-transform:uppercase; letter-spacing:.04em;
   color:var(--pd-muted); background:rgba(128,128,128,.10); border-bottom:1px solid var(--pd-line); }

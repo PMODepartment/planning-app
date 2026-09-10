@@ -57,7 +57,7 @@
 .dr-sk-row { display:flex; gap:12px; align-items:center; padding:9px 0;
   border-bottom:1px solid var(--pd-line); }
 .dr-sk-row:last-child { border-bottom:0; }
-.dr-sk { height:11px; border-radius:4px; background:var(--pd-line); opacity:.75;
+.dr-sk { height:11px; border-radius:var(--pd-radius); background:var(--pd-line); opacity:.75;
   animation:dr-sk-pulse 1.2s ease-in-out infinite; }
 @keyframes dr-sk-pulse { 0%,100% { opacity:.4; } 50% { opacity:.85; } }
 
@@ -66,7 +66,7 @@
 .dr-xall { flex:0 0 auto; }
 .dr-listcount { color:var(--pd-muted); font-size:var(--dr-fs-base); }
 .dr-selbar { display:flex; align-items:center; gap:10px; margin-left:auto;
-  background:rgba(238,49,36,.08); border:1px solid var(--pd-red); border-radius:999px; padding:4px 6px 4px 14px; }
+  background:rgba(238,49,36,.08); border:1px solid var(--pd-red); border-radius:var(--pd-radius-pill); padding:4px 6px 4px 14px; }
 .dr-selbar[hidden] { display:none; }
 .dr-selbar span { font-weight:700; font-size:var(--dr-fs-base); color:var(--pd-red); }
 
@@ -267,7 +267,7 @@ html.pd-dark {
 .dr-old    { --st-bg:var(--dr-old-bg);    --st-fg:var(--dr-old-fg);    --st-bd:var(--dr-old-bd); }
 .dr-ns     { --st-bg:var(--dr-ns-bg);     --st-fg:var(--dr-ns-fg);     --st-bd:var(--dr-ns-bd); }
 
-.dr-pill { display:inline-block; padding:2px 9px; border-radius:999px; font-weight:700;
+.dr-pill { display:inline-block; padding:2px 9px; border-radius:var(--pd-radius-pill); font-weight:700;
   font-size:var(--dr-fs-micro); line-height:1.5; white-space:nowrap;
   background:var(--st-bg); color:var(--st-fg); border:1px solid var(--st-bd); }
 
@@ -285,7 +285,7 @@ html.pd-dark {
    (and the explanation for why drag-reorder is currently disabled). */
 .dr-sortchip { display:inline-flex; align-items:center; gap:5px; cursor:pointer;
   border:1px solid var(--pd-red); background:var(--pd-red); color:#fff;
-  font:inherit; font-size:var(--dr-fs-sm); font-weight:700; padding:4px 9px; border-radius:999px; flex:none; }
+  font:inherit; font-size:var(--dr-fs-sm); font-weight:700; padding:4px 9px; border-radius:var(--pd-radius-pill); flex:none; }
 .dr-sortchip:hover { background:var(--pd-red-mid, var(--pd-red)); }
 .dr-sortchip svg { display:block; }
 .dr-aging-late { color:var(--pd-red); font-weight:700; }
@@ -309,8 +309,8 @@ html.pd-dark {
   font-family:inherit; cursor:pointer; text-decoration:underline; }
 
 /* Progress bar */
-.dr-prog { position:relative; height:16px; background:var(--pd-line); border-radius:999px; overflow:hidden; min-width:100px; max-width:220px; }
-.dr-prog-fill { position:absolute; inset:0 auto 0 0; background:linear-gradient(90deg,var(--pd-red),#f2683f); border-radius:999px; }
+.dr-prog { position:relative; height:16px; background:var(--pd-line); border-radius:var(--pd-radius-pill); overflow:hidden; min-width:100px; max-width:220px; }
+.dr-prog-fill { position:absolute; inset:0 auto 0 0; background:linear-gradient(90deg,var(--pd-red),#f2683f); border-radius:var(--pd-radius-pill); }
 .dr-prog-txt { position:relative; display:block; text-align:center; font-size:var(--dr-fs-micro); font-weight:700;
   line-height:16px; color:var(--pd-ink); }
 
@@ -499,7 +499,7 @@ html.pd-dark {
 .dr-c-lsub { width:var(--c-lsub,82px); } .dr-c-apprd { width:var(--c-apprd,82px); }
 .dr-c-resp { width:var(--c-resp,90px); }
 .dr-c-scope { width:var(--c-scope,100px); }
-.dr-scopetag { display:inline-block; padding:2px 8px; border-radius:999px; font-size:var(--dr-fs-micro);
+.dr-scopetag { display:inline-block; padding:2px 8px; border-radius:var(--pd-radius-pill); font-size:var(--dr-fs-micro);
   font-weight:700; background:var(--pd-line); color:var(--pd-ink); }
 .dr-scopetag.dr-co { background:#fde3c8; color:#7a3e00; }
 html.pd-dark .dr-scopetag.dr-co { background:#5a3a12; color:#ffcf9e; }
@@ -539,7 +539,7 @@ html.pd-dark .dr-grid .dr-selrow td.dr-freeze { background:#4a2b28 !important; }
 /* legend chip in the list bar (click to filter to duplicates) */
 .dr-duplegend { display:inline-flex; align-items:center; gap:6px; flex:0 0 auto; cursor:pointer;
   border:1px solid #d97706; color:#b45309; background:rgba(217,119,6,.10);
-  border-radius:999px; padding:3px 10px; font-size:var(--dr-fs-sm); font-weight:700; }
+  border-radius:var(--pd-radius-pill); padding:3px 10px; font-size:var(--dr-fs-sm); font-weight:700; }
 .dr-duplegend:hover { background:rgba(217,119,6,.18); }
 .dr-duplegend.dr-on { background:#d97706; color:#fff; }
 .dr-duplegend .dr-dupmark { margin-left:0; width:14px; height:14px; }
@@ -549,7 +549,7 @@ html.pd-dark .dr-duplegend { color:#f0b45e; }
 /* editable cell affordance */
 .dr-ed { cursor:text; }
 .dr-drow:hover td.dr-ed { background:color-mix(in srgb, var(--pd-red) 6%, transparent); }
-.dr-editin { width:100%; box-sizing:border-box; border:1px solid var(--pd-red); border-radius:4px;
+.dr-editin { width:100%; box-sizing:border-box; border:1px solid var(--pd-red); border-radius:var(--pd-radius);
   padding:2px 5px; font:inherit; background:var(--pd-card); color:var(--pd-ink); }
 td.dr-editing { padding:2px 4px; }
 
@@ -560,7 +560,7 @@ td.dr-editing { padding:2px 4px; }
 /* Inline status dropdown — the SAME chip as .dr-pill, but editable. It carries
    the identical status class, so it inherits the same --st-* slots and the two
    can never drift apart the way the old parallel .dr-st-dr-* rules did. */
-.dr-stsel { width:100%; box-sizing:border-box; border-radius:999px;
+.dr-stsel { width:100%; box-sizing:border-box; border-radius:var(--pd-radius-pill);
   padding:2px 6px; font-size:var(--dr-fs-micro); font-weight:700; cursor:pointer;
   -webkit-appearance:none; appearance:none; text-align:center;
   background:var(--st-bg, var(--pd-card)); color:var(--st-fg, var(--pd-ink));
@@ -569,7 +569,7 @@ td.dr-editing { padding:2px 4px; }
 
 /* small icon action buttons */
 .dr-iconbtn { border:0; background:transparent; color:var(--pd-muted); cursor:pointer;
-  font-size:var(--dr-fs-base); padding:2px 4px; border-radius:4px; line-height:1; }
+  font-size:var(--dr-fs-base); padding:2px 4px; border-radius:var(--pd-radius); line-height:1; }
 .dr-iconbtn:hover { background:var(--pd-bg); color:var(--pd-ink); }
 .dr-iconbtn.dr-rowbtn-del:hover { background:var(--pd-bad,#dc2626); color:#fff; }
 
@@ -603,7 +603,7 @@ td.dr-editing { padding:2px 4px; }
 
 /* structural-level code chip (A-100, AR-000, …) */
 .dr-gcode { font-family:var(--pd-mono); font-weight:700; font-size:var(--dr-fs-micro);
-  color:var(--pd-red); background:rgba(238,49,36,.10); border-radius:4px; padding:1px 6px; margin-right:2px; }
+  color:var(--pd-red); background:rgba(238,49,36,.10); border-radius:var(--pd-radius); padding:1px 6px; margin-right:2px; }
 .dr-grp-disc .dr-gcode, .dr-grp-cat .dr-gcode { color:var(--pd-muted); background:var(--pd-bg); }
 
 /* ============ Sidebar-less shell (matches Project Schedule / Cash Flow) === */
@@ -617,7 +617,7 @@ td.dr-editing { padding:2px 4px; }
 
 /* group-row delete affordance */
 .dr-grp .dr-lvldel { border:0; background:transparent; color:var(--pd-muted); cursor:pointer;
-  font-size:var(--dr-fs-sm); padding:2px 6px; border-radius:4px; opacity:0; transition:opacity .12s; }
+  font-size:var(--dr-fs-sm); padding:2px 6px; border-radius:var(--pd-radius); opacity:0; transition:opacity .12s; }
 .dr-grp:hover .dr-lvldel { opacity:1; }
 .dr-grp .dr-lvldel:hover { background:var(--pd-bad,#dc2626); color:#fff; }
 

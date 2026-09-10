@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="assets/img/icon.png?v=20260830b" />
   <script src="assets/js/theme.js?v=20260812b"></script>
   <title>Home — Planners Dashboard</title>
-  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260910w2" />
+  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260910w3" />
   <style>
     /* ---------------------------------------------------------------------
        Landing page, restyled to match the Procurement Dashboard's "Select
@@ -31,7 +31,7 @@
       margin: 18px 20px 2px; }
     .pd-home-greet { text-align: center; font-size: var(--pd-fs-base); color: var(--pd-ink); margin: 6px 20px 0;
       display: flex; align-items: center; justify-content: center; gap: 7px; flex-wrap: wrap; }
-    .pd-home-rolepill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: var(--pd-fs-xs);
+    .pd-home-rolepill { display: inline-block; padding: 1px 8px; border-radius: var(--pd-radius-pill); font-size: var(--pd-fs-xs);
       font-weight: 700; text-transform: capitalize; background: var(--pd-red-light); color: var(--pd-red); }
     .pd-home-sub { text-align: center; color: var(--pd-muted); font-size: var(--pd-fs-sm); margin: 4px 20px 18px; }
 
@@ -39,7 +39,7 @@
     .pd-home-label { font-size: var(--pd-fs-xs); font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
       color: var(--pd-muted); margin-bottom: 8px; }
     .pd-home-search input { width: 100%; box-sizing: border-box; padding: 9px 12px; font: inherit;
-      font-size: var(--pd-fs-base); border: 1.5px solid var(--pd-red); border-radius: 8px;
+      font-size: var(--pd-fs-base); border: 1.5px solid var(--pd-red); border-radius: var(--pd-radius-md);
       background: var(--pd-bg); color: var(--pd-ink); }
     /* the halo is DECORATION; the ring is the indicator. It used to be `outline:none` plus
        this halo alone, which measures 1.14:1 on white - no visible focus at all. */
@@ -63,7 +63,7 @@
     .pd-home-rowbody { min-width: 0; flex: 1; }
     .pd-home-rowtop { display: flex; align-items: center; gap: 8px; }
     .pd-home-code { flex: none; font-size: var(--pd-fs-xs); font-weight: 700; padding: 1px 7px;
-      border-radius: 999px; background: var(--pd-red-light); color: var(--pd-red);
+      border-radius: var(--pd-radius-pill); background: var(--pd-red-light); color: var(--pd-red);
       border: 1px solid var(--pd-red); }
     .pd-home-name { font-weight: 700; font-size: var(--pd-fs-base); color: var(--pd-ink);
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -78,7 +78,7 @@
       border-bottom: 1px solid var(--pd-line); }
     .pd-home-ghhead.none-gh { font-style: italic; text-transform: none; }
     .pd-home-ghcount { flex: none; font-size: var(--pd-fs-xs); font-weight: 700; padding: 1px 7px;
-      border-radius: 999px; background: var(--pd-line); color: var(--pd-muted); }
+      border-radius: var(--pd-radius-pill); background: var(--pd-line); color: var(--pd-muted); }
 
     .pd-home-empty { padding: 26px 20px; text-align: center; color: var(--pd-muted); font-size: var(--pd-fs-sm); }
   </style>

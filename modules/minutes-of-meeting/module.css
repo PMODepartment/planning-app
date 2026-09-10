@@ -76,7 +76,7 @@
 
 /* Status pill (reused for both a linked action item's live register status and
    the List view's Distributed state). */
-.il-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-weight: 700; font-size: var(--pd-fs-sm); color: #fff; white-space: nowrap; }
+.il-pill { display: inline-block; padding: 2px 10px; border-radius: var(--pd-radius-pill); font-weight: 700; font-size: var(--pd-fs-sm); color: #fff; white-space: nowrap; }
 .il-pill.is-open   { background: #dc2626; }
 .il-pill.is-hold   { background: #d97706; }
 .il-pill.is-closed { background: #16a34a; }
@@ -137,7 +137,7 @@
 }
 .il-mom-search { flex: 1 1 240px; min-width: 160px; }
 
-.il-viewtoggle { display: inline-flex; border: 1px solid var(--pd-line); border-radius: 8px; overflow: hidden; flex: none; }
+.il-viewtoggle { display: inline-flex; border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md); overflow: hidden; flex: none; }
 .il-viewtoggle button {
   border: 0; background: var(--pd-card); color: var(--pd-muted);
   font: 600 var(--pd-fs-sm)/1 var(--pd-font); padding: 0 12px; height: 34px; cursor: pointer;
@@ -174,7 +174,7 @@
    the plain card behind it. */
 .il-mom-calnav {
   display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
-  padding: 8px 10px; border-radius: 8px; background: var(--pd-bg);
+  padding: 8px 10px; border-radius: var(--pd-radius-md); background: var(--pd-bg);
 }
 .il-mom-calnav-l, .il-mom-calnav-r { flex: 1 1 0; min-width: 0; }
 .il-mom-calnav-r { display: flex; justify-content: flex-end; }
@@ -183,7 +183,7 @@
 /* Today, styled as the same kind of pill button as the Month/Week switcher's
    own segments — "use the same label/button format for both." */
 .il-mom-todaybtn {
-  border: 1px solid var(--pd-line); border-radius: 8px; background: var(--pd-card); color: var(--pd-muted);
+  border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md); background: var(--pd-card); color: var(--pd-muted);
   font: 600 var(--pd-fs-sm)/1 var(--pd-font); padding: 0 12px; height: 34px; cursor: pointer;
 }
 .il-mom-todaybtn:hover { background: var(--pd-card); border-color: var(--pd-red-mid); color: var(--pd-red); }
@@ -206,7 +206,7 @@
 .il-mom-caldate { font-size: var(--pd-fs-xs); font-weight: 700; color: var(--pd-muted); }
 .il-mom-calcell.is-today .il-mom-caldate { color: var(--pd-red); }
 .il-mom-calchip {
-  display: block; width: 100%; text-align: left; border: 0; border-radius: 4px;
+  display: block; width: 100%; text-align: left; border: 0; border-radius: var(--pd-radius);
   background: var(--pd-red-light); color: var(--pd-red); font-size: var(--pd-fs-micro); font-weight: 700;
   padding: 2px 5px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
@@ -369,7 +369,7 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
 .il-mom-wk-hourline { position: absolute; left: 0; right: 0; height: 0; border-top: 1px solid var(--pd-line); opacity: .6; }
 .il-mom-wk-event {
   position: absolute; left: 2px; right: 2px; z-index: 1; overflow: hidden;
-  border: 0; border-radius: 4px; text-align: left; cursor: pointer;
+  border: 0; border-radius: var(--pd-radius); text-align: left; cursor: pointer;
   background: var(--pd-red-light); color: var(--pd-red); font-size: var(--pd-fs-micro); font-weight: 700;
   padding: 2px 5px; line-height: 1.25;
 }
@@ -408,7 +408,7 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
    downloads or the mail client opens. */
 .il-em-chk { display: flex; align-items: center; gap: 6px; font-size: var(--pd-fs-base); font-weight: 400; margin-bottom: 6px; color: var(--pd-ink); }
 .il-em-chk input { width: auto; }
-#il-em-datewrap { margin-top: -4px; padding: 8px 10px; border: 1px dashed var(--pd-line); border-radius: 8px; }
+#il-em-datewrap { margin-top: -4px; padding: 8px 10px; border: 1px dashed var(--pd-line); border-radius: var(--pd-radius-md); }
 #il-em-datewrap .il-em-chk { margin-bottom: 4px; }
 
 /* ---- Back-to-meetings (Detail view) --------------------------------------- */
@@ -424,7 +424,7 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
    ========================================================================= */
 .il-mom-detail-card { background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: 10px; padding: 14px 16px; }
 .il-mom-actions {
-  border: 1px solid var(--pd-line); border-radius: 8px; padding: 10px 12px;
+  border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md); padding: 10px 12px;
   margin-top: 12px; background: var(--pd-bg);
 }
 .il-mom-actions h4 { margin: 0 0 4px; font-size: var(--pd-fs-xs); text-transform: uppercase; letter-spacing: .06em; color: var(--pd-muted); }
@@ -489,7 +489,7 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
 .il-mom-act { position: relative; }
 .il-mom-acres {
   position: absolute; z-index: 40; left: 0; right: 0; top: 100%; margin-top: 2px;
-  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: 8px;
+  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md);
   box-shadow: var(--pd-shadow-lg); max-height: 240px; overflow-y: auto;
 }
 .il-mom-acres button {
@@ -506,7 +506,7 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
 div.il-mom-acrow { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--pd-muted); }
 .il-mom-chip {
   display: inline-flex; align-items: center; gap: 6px; background: var(--pd-bg);
-  border: 1px solid var(--pd-line); border-radius: 999px; padding: 3px 6px 3px 10px;
+  border: 1px solid var(--pd-line); border-radius: var(--pd-radius-pill); padding: 3px 6px 3px 10px;
   font-size: var(--pd-fs-sm); margin-bottom: 4px;
 }
 .il-mom-chip code { font-size: var(--pd-fs-xs); }
@@ -536,7 +536,7 @@ div.il-mom-acrow { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--p
 .il-mom-report .il-mom-modebtn { border-color: var(--pd-red); color: var(--pd-red); }
 
 .il-mom-state {
-  font-size: var(--pd-fs-xs); font-weight: 700; padding: 3px 9px; border-radius: 20px;
+  font-size: var(--pd-fs-xs); font-weight: 700; padding: 3px 9px; border-radius: var(--pd-radius-pill);
   background: var(--pd-bg); color: var(--pd-muted); border: 1px solid var(--pd-line);
 }
 .il-mom-state.on { background: var(--pd-ok-bg); color: var(--pd-ok-text); border-color: var(--pd-ok-line); }
@@ -563,7 +563,7 @@ div.il-mom-acrow { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--p
 /* --- Action-item filter bar ---------------------------------------------- */
 .il-mom-filters {
   display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
-  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: 8px;
+  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md);
   padding: 8px 12px; margin-bottom: 10px;
 }
 .il-mom-filters .pd-input, .il-mom-filters .pd-select { min-height: 34px; width: auto; }
@@ -666,7 +666,7 @@ div.il-mom-acrow { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--p
 .il-pp-chips { display:flex; flex-wrap:wrap; gap:5px; }
 .il-pp-chip {
   display:inline-flex; align-items:center; gap:5px;
-  padding:3px 6px 3px 9px; border-radius:999px;
+  padding:3px 6px 3px 9px; border-radius:var(--pd-radius-pill);
   background:var(--pd-bg); border:1px solid var(--pd-line);
   font-size:var(--pd-fs-sm); font-weight:700; color:var(--pd-ink); line-height:1.5;
 }
@@ -738,7 +738,7 @@ div.il-mom-acrow { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--p
 .il-workflow-acts { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
 .il-mi-hist { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--pd-line); }
 .il-history { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.il-history-i { padding: 8px 10px; border-radius: 8px; background: var(--pd-bg); border: 1px solid var(--pd-line); }
+.il-history-i { padding: 8px 10px; border-radius: var(--pd-radius-md); background: var(--pd-bg); border: 1px solid var(--pd-line); }
 .il-history-top { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 /* ⚠️ min-width:0 — a flex item's default `min-width:auto` resolves to its content's
    intrinsic width, so an unbroken run of characters in the action label cannot shrink
@@ -843,10 +843,10 @@ div.il-mom-acrow { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--p
 .il-mom-schedbody { display: flex; gap: 14px; align-items: flex-start; }
 .il-mom-schedlist { display: flex; flex-direction: column; gap: 6px; flex: 1 1 260px; min-width: 220px; }
 .il-mom-schedbody.has-sel .il-mom-schedlist { flex: 0 0 260px; }
-.il-mom-schedright { flex: 1 1 320px; min-width: 0; padding: 12px 14px; border-radius: 8px; background: var(--pd-bg); border: 1px solid var(--pd-line); }
+.il-mom-schedright { flex: 1 1 320px; min-width: 0; padding: 12px 14px; border-radius: var(--pd-radius-md); background: var(--pd-bg); border: 1px solid var(--pd-line); }
 .il-mom-schedrow {
   display: flex; flex-direction: column; gap: 2px; text-align: left;
-  padding: 8px 10px; border-radius: 8px; border: 1px solid var(--pd-line);
+  padding: 8px 10px; border-radius: var(--pd-radius-md); border: 1px solid var(--pd-line);
   background: var(--pd-bg); cursor: pointer; font-family: var(--pd-font); width: 100%;
 }
 .il-mom-schedrow:hover { border-color: var(--pd-red); }
@@ -864,7 +864,7 @@ div.il-mom-acrow { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--p
 }
 .il-mom-schedpasti:hover { background: var(--pd-card); border-color: var(--pd-line); }
 .il-mom-schedform, .il-mom-occform {
-  margin-bottom: 10px; padding: 10px 12px; border-radius: 8px;
+  margin-bottom: 10px; padding: 10px 12px; border-radius: var(--pd-radius-md);
   background: var(--pd-bg); border: 1px dashed var(--pd-line);
 }
 .il-mom-schedform-acts { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
@@ -920,7 +920,7 @@ div.il-mom-acrow { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--p
    that one missing" is a worse question than "that one is already here". */
 .il-gi-row {
   display: grid; grid-template-columns: 18px 1fr; gap: 2px 10px; align-items: start;
-  padding: 8px 10px; border: 1px solid var(--pd-line); border-radius: 8px;
+  padding: 8px 10px; border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md);
   background: var(--pd-card); cursor: pointer;
 }
 .il-gi-row:hover { border-color: var(--pd-red-mid); background: var(--pd-red-light); }

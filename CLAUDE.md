@@ -96,6 +96,70 @@ developer, plug into one shared shell.
 ## Changelog
 
 
+### 2026-09-10 (w3) — A button and the input beside it had different corners, and "fully rounded" had three spellings
+
+Last item of the second-pass audit, done under the rule the spacing pass arrived at: **fix components,
+not pixels.** 460 off-scale `border-radius` declarations in 24 values sounds like a sweep; almost none
+of it was worth sweeping, and the part that mattered was not in that number at all.
+
+#### ⚠️⚠️ THE FINDING IS IN THE SHARED FILE, AND THE APP HAD ALREADY HALF-NOTICED IT
+`.pd-btn` is **8px**. `.pd-input` / `.pd-select` / `.pd-textarea` are **7px**. So a Filter button and
+the search box beside it — in every toolbar in this app — had different corners.
+
+⚠️ And the phone block carried `.pd-btn { border-radius: 7px }`, pulling the **button down to match the
+input** at ≤700px. Someone had already reached the same conclusion from the other end and fixed it in
+one breakpoint only. Both are `--pd-radius-md` now, and that override is deleted rather than restated.
+
+**Measured after, at 1440 and at 700:** button, input, select and `.pd-btn-sm` all report **8px at both
+widths**. Before: 8 vs 7 on desktop, and 7 vs 7 on the phone — inconsistent in two different directions.
+
+#### "Fully rounded" had three spellings
+`999px` ×88, `99px` ×5, `20px` ×6 — plus `50%`. New `--pd-radius-pill`, **97 declarations converged**.
+⚠️ `20px` is included because it is not really a different value here: all six uses are chips **18–22px
+tall**, where the browser caps the radius at half the shorter side, so `20px` and `999px` render the
+*same corner*. Measured on the two shipped chips: heights **20px and 23px**, both fully round before and
+after.
+⚠️ `50%` is deliberately NOT folded in — **67 declarations kept**. A percentage radius is an ellipse of
+the box, which is what the avatar wants; on a non-square element it is genuinely different from a large
+px radius, and collapsing the two would be wrong the first time someone uses it on a rectangle.
+
+#### 157 rung values written as literals
+`8px` ×92 → `--pd-radius-md`, `4px` ×53 → `--pd-radius`, `12px` ×13 → `--pd-radius-lg`. **Zero visual
+change** — the values are identical, they just stop being literals, which is what makes the scale
+enforceable rather than aspirational. Single-value declarations only: a compound `14px 14px 0 0` is a
+shape, not a rung, and is left alone.
+
+#### ⚠️⚠️ 278 off-scale declarations DELIBERATELY LEFT, and this is the third time that call has been made
+`3px` ×84, `6px` ×68, `5px` ×33, `2px` ×32, `10px` ×26, `9px` ×18, `7px` ×11. The **2026-09-03 (r)**
+entry decided this explicitly — *"pure diff noise with no visual effect, and PRC itself uses 8/10/20px
+for the equivalent chrome"* — and that judgement still holds for a 3px chip corner. The one place it was
+revisited (dropdown menus, earlier today) was because their spread had grown to **4→12px**, which is
+visible; **a single pixel of corner is not.** Same reasoning as the spacing pass: the cost of the sweep
+is real and the benefit is not.
+
+#### Verified
+- Rendered at **1440 and 700**: button / input / select / btn-sm all **8px, matching at both**.
+- Pills measured fully round at their real heights (20px, 23px), unchanged by the token.
+- **67 `50%` circle declarations survive** — checked explicitly, since the migration regex was
+  px-only and folding them in would have been the easy mistake.
+- Every `var(--pd-radius*)` used resolves to a token that exists.
+- **42 JS files + 30 inline blocks across 29 pages parse, 0 failures** (bar the documented
+  progress-photos false positive). Braces balanced, 0 NUL bytes.
+- `?v=` → `20260910w3`.
+- ⚠️ **Not verified signed in.**
+
+#### The second-pass audit is closed
+Everything found by looking rather than by being pointed at is now either fixed or recorded with a
+reason: the **loading-veil z-index** (a toast painted behind the veil in three modules), the **focus
+rings** (none on any button; three that existed and measured 1.10–1.90:1), the **box-shadow** scale, the
+**spacing** decision, and this. What is knowingly left:
+- `--boq-*` in contracts-claims — a fourth palette, private but **correct** (paired per theme and
+  measured). Aliasing it to the shared tokens is a real cleanup and its own commit.
+- `.pp-lightbox` shares `z-index: 900` with `.pd-modal-overlay`, so ties resolve by DOM order.
+- The shared `.pd-kpi` is 4px taller than the module copies, from an inner `gap: 4px` they lack.
+- `padding`'s 257 distinct values — per-component variation, and the same "fix components" rule applies.
+
+
 ### 2026-09-10 (w2) — A spacing scale, and the measurement that says NOT to sweep with it
 
 Fourth item of the second-pass audit, and the one where the audit changed the plan. **924 `gap`

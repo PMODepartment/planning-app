@@ -117,7 +117,7 @@ html.pd-dark .rr-bands-row th.rr-bandhead { color:#FF8A80; }
   /* ⚠️ ink-on-card INVERTED, not white-on-muted. --pd-muted is a dark grey in light mode
      but a LIGHT grey in dark mode, so white on it measured 2.00:1 live. This pairing
      flips with the theme by construction: 16.3 light / 12.2 dark. */
-  color:var(--pd-card); background:var(--pd-ink); border-radius:4px; padding:1px 4px; margin-right:8px; }
+  color:var(--pd-card); background:var(--pd-ink); border-radius:var(--pd-radius); padding:1px 4px; margin-right:8px; }
 .rr-gname { font-weight:800; letter-spacing:.02em; text-transform:uppercase; font-size:var(--pd-fs-sm); }
 .rr-gcount { color:var(--pd-muted); font-size:var(--pd-fs-sm); margin:0 10px; }
 .rr-grow .rcm-pill-o { margin-right:5px; }
@@ -131,7 +131,7 @@ html.pd-dark .rr-bands-row th.rr-bandhead { color:#FF8A80; }
    In Progress 3.46:1 and Closed 4.12:1. Ink on the card is 16.3 light / 12.2
    dark by construction, and the border keeps the status legible at a glance.
    Same fix and the same reason as the contracts-claims `claim` mark. */
-.rr-st { display:inline-block; padding:1px 8px; border-radius:999px; font-size:var(--pd-fs-xs); font-weight:700; white-space:nowrap;
+.rr-st { display:inline-block; padding:1px 8px; border-radius:var(--pd-radius-pill); font-size:var(--pd-fs-xs); font-weight:700; white-space:nowrap;
   border:1px solid var(--pd-line); color:var(--pd-ink); }
 .rr-st-open { border-color:var(--pd-bad); background:color-mix(in srgb, var(--pd-bad) 12%, transparent); }
 .rr-st-inprogress { border-color:var(--pd-warn); background:color-mix(in srgb, var(--pd-warn) 12%, transparent); }
@@ -183,7 +183,7 @@ html.pd-dark .rr-fsec { color:#FF8A80; }
 .rr-suggest { display:flex; flex-wrap:wrap; gap:5px; margin-top:6px; }
 .rr-sug-lab { color:var(--pd-muted); font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase; letter-spacing:.04em; align-self:center; }
 .rr-sug { border:1px dashed var(--pd-line); background:transparent; color:var(--pd-muted);
-  border-radius:4px; padding:3px 7px; font-size:var(--pd-fs-xs); cursor:pointer; font-family:var(--pd-font);
+  border-radius:var(--pd-radius); padding:3px 7px; font-size:var(--pd-fs-xs); cursor:pointer; font-family:var(--pd-font);
   max-width:100%; text-align:left; }
 .rr-sug:hover { border-style:solid; border-color:var(--pd-red-mid); color:var(--pd-ink); background:var(--pd-red-light); }
 

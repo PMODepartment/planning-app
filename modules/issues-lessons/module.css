@@ -158,7 +158,7 @@
   border-bottom: 1px solid var(--pd-line); flex: none;
 }
 .il-kanban-count {
-  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: 999px;
+  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius-pill);
   padding: 1px 8px; font-size: var(--pd-fs-xs); font-weight: 700; color: var(--pd-muted); flex: none;
 }
 .il-kanban-col-body { padding: 10px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; min-height: 40px; }
@@ -230,10 +230,10 @@
 .il-raisedby { margin:6px 0 0; font-size:var(--pd-fs-sm); color:var(--pd-muted); }
 .il-momtag { display:inline-flex; align-items:center; gap:4px; margin-top:4px; margin-left:6px;
   font-size:var(--pd-fs-micro); font-weight:700; color:var(--pd-muted); background:var(--pd-bg);
-  border:1px solid var(--pd-line); border-radius:999px; padding:1px 8px; vertical-align:middle; }
+  border:1px solid var(--pd-line); border-radius:var(--pd-radius-pill); padding:1px 8px; vertical-align:middle; }
 
 /* Status pill */
-.il-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-weight: 700; font-size: var(--pd-fs-sm); color: #fff; white-space: nowrap; }
+.il-pill { display: inline-block; padding: 2px 10px; border-radius: var(--pd-radius-pill); font-weight: 700; font-size: var(--pd-fs-sm); color: #fff; white-space: nowrap; }
 .il-pill.is-open   { background: #dc2626; }
 .il-pill.is-hold   { background: #d97706; }
 .il-pill.is-closed { background: #16a34a; }
@@ -394,7 +394,7 @@
 .il-mom-addrow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
 .il-mom-item {
   display: block; width: 100%; text-align: left; background: var(--pd-card);
-  border: 1px solid var(--pd-line); border-radius: 8px; padding: 8px 10px;
+  border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md); padding: 8px 10px;
   margin-bottom: 6px; cursor: pointer; font-size: var(--pd-fs-base); color: var(--pd-ink);
 }
 .il-mom-item:hover { border-color: var(--pd-red-mid); }
@@ -402,7 +402,7 @@
 .il-mom-item small { display: block; color: var(--pd-muted); font-size: var(--pd-fs-xs); margin-top: 2px; }
 .il-mom-detail-card { background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: 10px; padding: 14px 16px; }
 .il-mom-actions {
-  border: 1px solid var(--pd-line); border-radius: 8px; padding: 10px 12px;
+  border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md); padding: 10px 12px;
   margin-top: 12px; background: var(--pd-bg);
 }
 .il-mom-actions h4 { margin: 0 0 4px; font-size: var(--pd-fs-xs); text-transform: uppercase; letter-spacing: .06em; color: var(--pd-muted); }
@@ -478,7 +478,7 @@
    to its recorder and to planners (enforced by RLS), so the wording says who
    can see it rather than just naming the state. */
 .il-mom-state {
-  font-size: var(--pd-fs-xs); font-weight: 700; padding: 3px 9px; border-radius: 20px;
+  font-size: var(--pd-fs-xs); font-weight: 700; padding: 3px 9px; border-radius: var(--pd-radius-pill);
   background: var(--pd-bg); color: var(--pd-muted); border: 1px solid var(--pd-line);
 }
 .il-mom-state.on { background: var(--pd-ok-bg); color: var(--pd-ok-text); border-color: var(--pd-ok-line); }
@@ -685,7 +685,7 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
    would leave visible empty space in the shorter ones. */
 .il-history { list-style: none; margin: 0; padding: 0; display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; align-items: start; }
-.il-history-i { padding: 8px 10px; border-radius: 8px; background: var(--pd-bg); border: 1px solid var(--pd-line); }
+.il-history-i { padding: 8px 10px; border-radius: var(--pd-radius-md); background: var(--pd-bg); border: 1px solid var(--pd-line); }
 .il-history-top { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .il-history-action { font-weight: 700; font-size: var(--pd-fs-sm); color: var(--pd-ink); }
 .il-history-when { font-size: var(--pd-fs-xs); color: var(--pd-muted); }
@@ -897,7 +897,7 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
 .il-pp-chips { display:flex; flex-wrap:wrap; gap:5px; }
 .il-pp-chip {
   display:inline-flex; align-items:center; gap:5px;
-  padding:3px 6px 3px 9px; border-radius:999px;
+  padding:3px 6px 3px 9px; border-radius:var(--pd-radius-pill);
   background:var(--pd-bg); border:1px solid var(--pd-line);
   font-size:var(--pd-fs-sm); font-weight:700; color:var(--pd-ink); line-height:1.5;
 }
@@ -953,7 +953,7 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
    (drag) order, since a sorted view and a dragged position can't coexist. */
 .il-sortnote {
   font-size: var(--pd-fs-sm); color: var(--pd-muted); margin-bottom: 8px;
-  padding: 6px 10px; border-radius: 8px; background: var(--pd-bg); border: 1px solid var(--pd-line);
+  padding: 6px 10px; border-radius: var(--pd-radius-md); background: var(--pd-bg); border: 1px solid var(--pd-line);
 }
 .il-sortnote button {
   border: 0; background: none; color: var(--pd-red); cursor: pointer;

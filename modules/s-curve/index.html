@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Project S-Curve · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910w2" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910w3" />
   <style>
     /* ---- Uniform module chrome (matches every other module). Keep in sync.
        2026-08-30: modules gained a persistent sidebar (MODULE_CONTRACT.md) —
@@ -53,7 +53,7 @@
     .sc-forecast { fill:none; stroke:var(--pd-red); stroke-width:2; stroke-dasharray:7 5; }
     /* Weighting switch — what an activity is WORTH on the curve: its duration, or the money the
        Project Schedule's Cost Loading put on it. */
-    .sc-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
+    .sc-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); overflow:hidden; }
     .sc-seg button { border:0; background:var(--pd-card); color:var(--pd-ink); font:inherit; font-size:var(--pd-fs-sm);
       font-weight:700; padding:0 10px; height:32px; cursor:pointer; }
     .sc-seg button + button { border-left:1px solid var(--pd-line); }
