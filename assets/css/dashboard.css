@@ -1686,6 +1686,14 @@ body { overflow-x: clip; }
    (UI.tabsToDropdown). The original buttons stay in the DOM (still what
    drives the module's own view-switching JS) but are visually hidden; this
    single trigger + menu replaces them on screen. ---- */
+/* ⚠️⚠️ HIDES THE TAB STRIP BEFORE JS GETS TO IT. `.pd-tabsdrop-src` below is added by
+   UI.tabsToDropdown() and therefore only lands at DOMContentLoaded -- on a cold load that is
+   1.6s after the body has already painted the full-width raw tab row (measured on the live Risk
+   Register: CSS ready 66ms, DCL 135ms warm / 1601ms cold). `pd-js` is set by theme.js in <head>
+   BEFORE first paint, so this rule takes effect on the very first frame and the row never shows.
+   ⚠️ Gated on `pd-js` so a no-JS or failed-JS load still renders the tabs; theme.js also reveals
+   anything left unconverted once the page settles. */
+html.pd-js .pd-tabsrc { display: none; }
 .pd-tabsdrop-src { display: none !important; }
 /* ⚠️ REVISED (owner ask, 2026-09-04): `.pd-tabsdrop` is now a flex row itself
    — `wrap` is where `opts.icon`'s separate <span> lives (inserted before the

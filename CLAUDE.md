@@ -96,6 +96,75 @@ developer, plug into one shared shell.
 ## Changelog
 
 
+### 2026-09-10 (w4) — The flash when you open a module: the raw tab strip painting before JS collapses it
+
+Owner: *"When I open a module, for a split second it shows the previous UI."* Real, reproducible, and
+**made far more visible by my own work today.**
+
+#### What is actually on screen during that split second
+Six modules ship a flat `<div class="x-tabs">` — a full-width row of tab buttons — that
+`UI.tabsToDropdown()` collapses into the compact dropdown. It does that by adding
+`.pd-tabsdrop-src`, which is `display:none !important`.
+
+⚠️ **That class only lands at DOMContentLoaded.** Every module's scripts sit at the **end of
+`<body>`**, so the body paints the raw tab row first and the conversion removes it afterwards.
+Reproduced by rendering the module's own markup and stylesheets with the body scripts stripped: a
+full-width `Register | Heat Map | Risk Universe | …` strip and an unassembled topbar — which is
+exactly the frame being described.
+
+**Measured on the live Risk Register:**
+
+| | stylesheets ready | conversion runs (DCL) | raw row on screen for |
+|---|---|---|---|
+| warm cache | 66ms | 135ms | ~70ms |
+| **cold cache** | — | **1601ms** | **~1.5s** |
+
+⚠️⚠️ **And that is why it started being noticeable now.** Every `?v=` bump today invalidated every
+asset, so each module open has been a **cold** load — moving this from an imperceptible 70ms to over a
+second. The defect was always there; the cache-busting made it visible. Worth recording, because the
+obvious reading — "the last CSS change broke something" — is wrong.
+
+#### The fix
+`theme.js` already runs in `<head>` **before first paint** (it is what applies `pd-dark` without a
+flash), so it is the only place that can mark the document early enough. It now adds **`html.pd-js`**,
+and `dashboard.css` carries `html.pd-js .pd-tabsrc { display: none }`. The six strips gain a shared
+`pd-tabsrc` class. The row is therefore hidden on the **very first frame** and the dropdown simply
+appears in its place.
+
+⚠️⚠️ **The failsafe deliberately does NOT live in `ui.js`.** All six modules call the converter behind
+`if (window.UI && UI.tabsToDropdown)` — they degrade to the raw tabs **on purpose** when `ui.js` is
+missing. Hiding the strip from CSS would turn that graceful degradation into a module with no
+navigation at all. So `theme.js` — which does not depend on `ui.js` — reveals anything still
+unconverted on `window.load` and again on a 4s timer. **Verified by running the reproduction with the
+module scripts stripped: the strip comes back**, which is the degradation path working.
+⚠️ All six strips carry ≥2 buttons (4/3/2/3/3/3), and `tabsToDropdown` only bails below 2 — so none can
+sit hidden waiting for the failsafe in normal use.
+
+#### ⚠️⚠️ I nearly shipped a fix that could not work
+The first test showed `pd-dark` applied but **`pd-js` absent**: theme.js had run, from a **cached
+copy**. I had changed its contents without bumping `theme.js?v=`, which had sat on `20260812b` since
+August. The browser keyed the old bytes to the same URL and served them. **This repo's single
+most-recorded deploy failure, and I walked into it while fixing a caching-adjacent bug.**
+`theme.js` → `?v=20260910w4` across all **30** pages.
+
+#### Verified
+- `html.pd-js .pd-tabsrc` measured directly: with the class the strip computes **`display: none`**,
+  without it **`flex`** — the rule genuinely does the hiding.
+- `pd-js` confirmed on `<html>` at parse time (the marker is set by the head script).
+- The failsafe path exercised and confirmed to restore the strip.
+- **42 JS files + 30 inline blocks across 29 pages parse, 0 failures** (bar the documented
+  progress-photos false positive). Braces balanced, 0 NUL bytes.
+- ⚠️ **Not verified signed in** — `requireLogin` redirects, so the settled dropdown was not observed
+  on a live module; the mechanism is proved, the finished screen is not.
+
+#### ⚠️ What this does NOT fix, honestly
+The topbar's **contents** still populate after auth resolves — the project name and the user avatar are
+a Supabase round-trip, not a CSS problem, and they will still fill in a moment after the page appears.
+What is gone is the **layout jump**: a full-width row of buttons appearing and then vanishing. If the
+remaining fill-in is still distracting, the fix is a skeleton placeholder in that bar, which is its own
+piece of work.
+
+
 ### 2026-09-10 (w3) — A button and the input beside it had different corners, and "fully rounded" had three spellings
 
 Last item of the second-pass audit, done under the rule the spacing pass arrived at: **fix components,
