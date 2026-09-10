@@ -454,3 +454,51 @@ html.pd-dark .sm-ap-row.is-here .sm-ap-tag { color: #FF8A80; }
 .sm-selbar[hidden] { display: none; }
 .sm-selcount { font-size: var(--pd-fs-xs, 11px); font-weight: 700; color: var(--pd-ink);
   white-space: nowrap; }
+
+/* ---- the form follows the READ view's arrangement -------------------------
+   Owner, 2026-09-10: "Is it possible if the edit just follows the format of the
+   view so the user doesn't see a new arrangement of the fields."
+
+   ⚠️⚠️ ONE PRIMITIVE DOES IT. `.sm-frow` is the form's only layout element — 18 of
+      them — and it was `display:flex`, packing 2–3 controls per row. Stacking it
+      gives every field its own row with the label above it, which IS the person
+      page's `.pp-f` rhythm. Restyling the register's own form rather than building
+      a second one on the page is the owner's choice: one form, both callers.
+   ⚠️ The cost is a longer scroll in + Add — 39 controls in one column. Accepted
+      deliberately over two arrangements of the same fields. */
+.sm-frow { display: block; }
+.sm-frow > .pd-field { min-width: 0; width: 100%; }
+.sm-frow > .pd-field + .pd-field { margin-top: 0; }
+
+/* Each field takes the read view's shape: small muted label, value under it, a
+   hairline between. ⚠️ `:last-child` rather than a class, so a field hidden by the
+   scope rules leaves no dangling rule. */
+.pd-modal-body .pd-field,
+.pp-formhost .pd-field { padding: 9px 0; border-bottom: 1px solid var(--pd-line); }
+.pd-modal-body .sm-fsec + .sm-frow .pd-field:first-child,
+.pp-formhost .sm-fsec + .sm-frow .pd-field:first-child { padding-top: 0; }
+.pd-modal-body .pd-field > label,
+.pp-formhost .pd-field > label { font-size: var(--pd-fs-xs); font-weight: 600;
+  color: var(--pd-muted); margin-bottom: 4px; display: block; }
+
+/* ⚠️⚠️ A LOCKED FIELD MUST NOT READ AS AN EMPTY BOX YOU COULD TYPE IN — that is
+   exactly how the owner described it. It keeps its input (so the value is
+   selectable and the layout does not shift) and is unmistakably inert: no fill,
+   no border, a lock glyph on the label, and not focusable. */
+.pd-field:has(input:disabled) > label::after,
+.pd-field:has(select:disabled) > label::after {
+  content: "\1F512 portfolio"; margin-left: 7px; padding: 1px 5px; border-radius: 3px;
+  background: var(--pd-bg); border: 1px solid var(--pd-line);
+  font-size: 9.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--pd-muted);
+}
+.pd-field input:disabled,
+.pd-field select:disabled {
+  background: none; border-color: transparent; padding-left: 0; color: var(--pd-ink);
+  opacity: 1; cursor: default; -webkit-text-fill-color: var(--pd-ink);
+}
+.pd-field input:disabled::placeholder { color: transparent; }
+
+/* the two scoped saves */
+.sm-savebar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sm-savenote { font-size: var(--pd-fs-xs); color: var(--pd-muted); flex: 1 1 100%; margin: 0; }

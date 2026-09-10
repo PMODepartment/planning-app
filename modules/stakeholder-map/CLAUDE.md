@@ -1,5 +1,22 @@
 # Module: stakeholder-map
 
+## 2026-09-10 (y5) — The form takes the read view's shape; one Save becomes two scoped ones
+
+- ⚠️⚠️ **`.sm-frow` was the whole layout.** 18 of them, `display:flex`, two or three controls per row.
+  Stacking it gives the form the person page's own rhythm — **measured `fieldsPerRowMax` = 1**. The
+  owner chose to restyle THIS form rather than build a second one on the page, so + Add gets it too.
+- **Two scoped saves** replace Save, and **Edit person… is deleted** — its fields were these fields.
+  ⚠️ The scopes differ in which TABLE is written: `overlayPeople()` copies the directory over the row
+  on load, so a name saved "project only" would silently revert on the next read. Measured: all
+  projects → 2 updates; this project → 1, and a typed name never reaches the directory.
+- ⚠️ **Autosave is off when the form is hosted** (`fopts.host`). It clicks the real Save on a debounce,
+  which with two scopes would pick a table for the planner. The modal keeps it — one scope there.
+- ⚠️ A locked field keeps its input but loses its fill and border and gains a `🔒 PORTFOLIO` label mark.
+  Keyed on `.pd-field:has(input:disabled)` — threading a class through the markup would have been a
+  blanket replace across the file, **the same ReferenceError shape as (y4)**.
+- ⚠️ The identity write is guarded on `window.PDStakeholders`, matching `confirmPerson`'s treatment of
+  that optional script.
+
 ## 2026-09-10 (y4) — HOTFIX: `canWrite` was never defined, and the register rendered nothing
 
 (y2) called `canWrite()` from the selection markup. **This module has no such function** — it gates

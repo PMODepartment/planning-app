@@ -122,6 +122,63 @@ same two-trade setup it hands both cards the same outline — the bug, reproduce
 hands each card its own.
 
 
+### 2026-09-10 (y5) — The edit form takes the read view's shape, and one Save becomes two scoped ones
+
+Owner, four things at once: *"I don't think this pop up window is necessary anymore. We can have a
+save globally or save project only to scope the edit. Under this view, it is not apparent that the
+fields aren't editable. Check when I am editing the person it saves when I edit anything from the edit
+page. Is it possible if the edit just follows the format of the view so the user doesn't see a new
+arrangement of the fields."*
+
+#### ⚠️⚠️ ONE PRIMITIVE MADE THE FORM MATCH THE VIEW
+`.sm-frow` is the form's **only** layout element — 18 of them — and it was `display:flex`, packing
+two or three controls per row while the read view stacks one per row with the label above. Stacking it
+gives the whole form the read view's rhythm. **Measured: `fieldsPerRowMax` is 1**, and `.sm-frow`
+computes `block`. Asked which way to reconcile it with the register's own form, the owner chose to
+**restyle that form** rather than build a second one — so there is still one form and both callers get
+the new arrangement. ⚠️ The accepted cost is a longer scroll in **+ Add**: 39 controls in one column.
+
+#### Two scoped saves, and why "project only" cannot mean what it sounds like
+*Save this project* / *Save for all projects* replace the single Save, and **"Edit person…" is gone** —
+its fields were these fields.
+
+⚠️⚠️ **The two scopes differ in WHICH TABLE is written, never in which project an identity belongs
+to.** `overlayPeople()` copies every directory field over the row on load, so a name saved "to this
+project only" would be **overwritten on the next read** — it would look saved and silently revert.
+So: *this project* writes the assessment; *all projects* also writes the person.
+
+**Measured both:** *all projects* produces **2 updates** (the directory identity and the project row);
+*this project* produces **1**, and a name typed into the identity box **does not reach the directory** —
+the mirror carries the *person's* name, not the typed one. That is the existing `shared ? person.name
+: inputs` guard, and it is what stops a project save re-asserting a stale snapshot over somebody
+else's directory edit.
+
+⚠️ The identity write uses `.select('id')` **and a length check** — PostgREST answers an RLS-filtered
+UPDATE with 200 and zero rows — and is **guarded on `window.PDStakeholders`**, matching how
+`confirmPerson` already treats that helper as an optional script rather than assuming it loaded.
+
+#### Autosave is off on the person page only
+⚠️ It fires a debounced click of the real Save ~1.2s after any keystroke. With two scopes it would
+have to **choose one on the planner's behalf**, and the one it would choose writes a different table
+from the one they may have meant. **Measured: `autosaveWired` is false on the page.** The modal keeps
+it — there is one scope there.
+
+#### A locked field stops looking like an empty box
+⚠️ It keeps its input (the value stays selectable and the layout does not shift) and becomes
+unmistakably inert: no fill, **no border**, and a `🔒 PORTFOLIO` mark on the label. **Measured for a
+viewer: 3 of 3 identity fields disabled, the badge present, and the input's border computes
+`rgba(0,0,0,0)`.** ⚠️ Keyed on `.pd-field:has(input:disabled)` in CSS rather than a class threaded
+through the markup — that would have meant a blanket replace across a 2,400-line file, putting a
+variable into functions that never declare it, **which is exactly the ReferenceError shipped in (y4)
+an hour earlier.** The same mistake, refused the second time.
+
+`MODULE_V` → `20260910y5`; stakeholder-map `module.js`/`module.css` → `?v=20260910y5` on **both**
+referencing pages.
+⚠️ **Not verified signed in.**
+⚠️ **NOT DONE, and asked for in the same message:** splitting *Name of stakeholder* into first and
+last name. It needs its own migration, and a backfill rule that is genuinely ambiguous on Filipino
+names — `Marco Dela Cruz` and `Maria Santos Cruz` do not split on the last space. It is the next piece.
+
 ### 2026-09-10 (y4) — ⚠️⚠️ HOTFIX: the register came up empty. I called a function that did not exist.
 
 Owner, with a screenshot of a populated KPI strip over an empty page: *"A regression. The stakeholder

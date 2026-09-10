@@ -1002,6 +1002,10 @@ window.StakeholderMap = (function () {
     return r === 'planner' || r === 'admin' || r === 'super_admin';
   }
 
+  // The form's own permission check. ⚠️ Separate from `canWrite()` only so the two
+  //    can diverge later without one silently changing the other.
+  function canWriteForm() { return canWrite(); }
+
   function selCount() { return Object.keys(selIds).length; }
 
   // ⚠️ Prune to what is actually on screen. A filter change can leave a selected id
@@ -1752,7 +1756,16 @@ window.StakeholderMap = (function () {
     //    when shared -- see the save handler, which reads them only for the
     //    unlinked/new case. A disabled input's .value still reads fine, so the
     //    guard there is on `shared`, not on the DOM.
-    var dis = shared ? ' disabled' : '';
+    // ⚠️⚠️ THE IDENTITY FIELDS ARE EDITABLE NOW. Owner: "I don't think this pop up
+    //    window is necessary anymore. We can have a save globally or save project only
+    //    to scope the edit." So the scope is chosen at SAVE time by which button is
+    //    pressed, and "Edit person…" — a second dialog over the same fields — is gone.
+    // ⚠️ A planner who cannot write the directory still sees them locked rather than
+    //    absent: hiding them leaves you unable to see who you are assessing.
+    // ⚠️ `.is-locked` carries the look; `disabled` still carries the behaviour, because
+    //    a `readonly` input is still focusable and would take the app's focus ring.
+    var identLocked = !canWriteForm();
+    var dis = identLocked ? ' disabled' : '';
 
     function relSel(val) {
       var s = '<option value="">—</option>';
@@ -1810,7 +1823,7 @@ window.StakeholderMap = (function () {
             '<span class="sm-scope-tx"><strong>' + Fmt.esc(ident.name) + '</strong> comes from the shared stakeholder directory' +
               (onProjects > 1 ? ' and is registered on <strong>' + onProjects + ' projects</strong>' : '') +
               '. Their name, role, organisation, contact details and photo are the same everywhere.</span>' +
-            '<button type="button" class="pd-btn pd-btn-sm sm-scope-btn" id="f-editperson">Edit person…</button>' +
+
           '</div>'
         : '<div class="sm-scope" data-scope="new">' +
             '<span class="sm-scope-ic" data-ico="users" data-ico-size="15"></span>' +
@@ -1935,9 +1948,21 @@ window.StakeholderMap = (function () {
 
       dl('dl-people', people) + dl('dl-orgs', orgs) + '<datalist id="dl-subproc"></datalist>' +
       '</div>' +
-      '<div class="pd-modal-footer">' +
+      '<div class="pd-modal-footer sm-savebar">' +
         '<button class="pd-btn" id="f-cancel">Cancel</button>' +
-        '<button class="pd-btn pd-btn-primary" id="f-save">Save</button>' +
+        // ⚠️⚠️ TWO SAVES, AND THE DIFFERENCE IS WHICH TABLE IS WRITTEN — not which
+        //    project an identity belongs to. `overlayPeople()` copies every directory
+        //    field over the row on load, so a name saved "to this project only" would be
+        //    overwritten on the next read: it would look saved and silently revert.
+        //    So: this project = the assessment; all projects = the person as well.
+        (shared && canWriteForm() && !isNew
+          ? '<button class="pd-btn" id="f-save">Save this project</button>' +
+            '<button class="pd-btn pd-btn-primary" id="f-saveall">Save for all projects</button>'
+          : '<button class="pd-btn pd-btn-primary" id="f-save">Save</button>') +
+        (shared && canWriteForm() && !isNew
+          ? '<p class="sm-savenote">This project saves the assessment below. ' +
+            'All projects also writes the identity fields, which every project reads.</p>'
+          : '') +
       '</div>'
     );
 
@@ -2110,12 +2135,18 @@ window.StakeholderMap = (function () {
     // DOMContentLoaded — hydrate this modal's subtree or it renders empty.
     if (window.Icons) Icons.hydrate(m.el);
 
-    var epBtn = q('#f-editperson');
-    if (epBtn) {
-      epBtn.onclick = function () {
-        var id = person.id;
-        m.close();
-        openPersonForm(id);
+    // ⚠️ "Edit person…" is gone: its fields are these fields, and the scope is now the
+    //    Save button you press. `openPersonForm` is KEPT — the Portfolio Directory still
+    //    opens it as its own identity editor, where there is no project to scope to.
+
+    // ⚠️ Set by "Save for all projects" and read by the identity half below. A flag
+    //    rather than a second handler, so the two scopes cannot drift in what they write.
+    var saveIdentity = false;
+    var saBtn = q('#f-saveall');
+    if (saBtn) {
+      saBtn.onclick = async function () {
+        saveIdentity = true;
+        try { await q('#f-save').onclick(); } finally { saveIdentity = false; }
       };
     }
 
@@ -2132,6 +2163,41 @@ window.StakeholderMap = (function () {
       //    directory taken when the modal opened -- and would therefore overwrite
       //    any change another user made to that person in the meantime. The guard
       //    is `shared`, not the DOM.
+      // ⚠️⚠️ WHEN THE PLANNER ASKED FOR ALL PROJECTS, the identity comes from the INPUTS
+      //    and is written to the directory first. Otherwise it comes from `person` — the
+      //    guard the long note below describes, which stops a project save from
+      //    re-asserting a stale snapshot over somebody else's directory edit.
+      if (saveIdentity && shared && !identLocked) {
+        var idPatch = {
+          name: q('#f-name').value.trim(), nickname: q('#f-nick').value.trim(),
+          title: q('#f-title').value.trim(), role_title: q('#f-role').value.trim(),
+          organization: q('#f-org').value.trim(), category: q('#f-sector').value,
+          stakeholder_group: q('#f-group').value,
+          email: q('#f-email').value.trim(), contact: q('#f-contact').value.trim(),
+          birthday: q('#f-bday').value || null
+        };
+        if (!idPatch.name) { UI.toast('A name is required.', 'warn'); return; }
+        // ⚠️ `.select('id')` + a length check: PostgREST answers an RLS-filtered UPDATE
+        //    with 200 and zero rows, and reporting "Saved" over nothing is the silent
+        //    success this repo keeps recording.
+        // ⚠️ Guarded the way `confirmPerson` guards it — the shared directory helper is a
+        //    separate <script>, and this module already treats it as optional rather than
+        //    assuming it loaded. Without it the identity write degrades to a plain update
+        //    (no missing-column retry) instead of throwing.
+        var idRes = window.PDStakeholders
+          ? await PDStakeholders.writeTolerant(function (row) {
+              return sb().from('stakeholders').update(row).eq('id', person.id).select('id');
+            }, idPatch)
+          : { res: await sb().from('stakeholders').update(idPatch).eq('id', person.id).select('id'),
+              dropped: [] };
+        if (idRes.res && idRes.res.error) throw idRes.res.error;
+        if (!((idRes.res && idRes.res.data) || []).length) {
+          throw new Error('The shared directory refused the identity change — nothing was saved.');
+        }
+        Object.keys(idPatch).forEach(function (k) { person[k] = idPatch[k]; });
+        if (dirAll) dirAll = null;
+      }
+
       var ident2 = shared ? {
         name:      person.name,
         nickname:  person.nickname,
@@ -2311,7 +2377,12 @@ window.StakeholderMap = (function () {
     };
 
     // Autosave (edit only): debounced re-use of the Save button's own handler.
-    if (!isNew && window.Autosave) {
+    // ⚠️⚠️ NO AUTOSAVE WHEN THE FORM IS HOSTED ON THE PERSON PAGE. Owner: "check when I
+    //    am editing the person it saves when I edit anything from the edit page." With two
+    //    scoped saves, a debounce would have to CHOOSE a scope on the planner's behalf —
+    //    and the one it would choose writes a different table from the one they may have
+    //    meant. The modal keeps it: there is only one scope there.
+    if (!isNew && !fopts.host && window.Autosave) {
       var asInd = document.createElement('span');
       asInd.className = 'pd-autosave pd-autosave-idle';
       asInd.textContent = 'Autosave on';
