@@ -96,6 +96,62 @@ developer, plug into one shared shell.
 ## Changelog
 
 
+### 2026-09-10 (v6) — ⚠️⚠️ HOTFIX: I broke Project Schedule and Cash Flow in production. A quote did it.
+
+Owner, with a screenshot of a dead Schedule: *"Your fix has bugged the schedule module."* Correct, and
+it was live. **Both modules were completely non-functional** — empty grid, *Total: 0 activities*, no
+project context, nothing on the page working.
+
+#### The bug
+Yesterday's (uic) pass put the brandbook's document font into the two print/export stylesheets. Those
+stylesheets are **JS string literals**, single-quoted:
+
+```js
+'<style>body{font-family:Arial,Helvetica,sans-serif;color:#231F20;margin:28px;}' +   // before
+'<style>body{font-family:Calibri,'Segoe UI',Arial,Helvetica,sans-serif;...}' +       // after — BROKEN
+```
+
+⚠️⚠️ **`'Segoe UI'` TERMINATED THE SURROUNDING JS STRING.** CSS is happy with single quotes; JavaScript
+is not, when the string is already single-quoted. The result is not a broken font — it is a
+`SyntaxError`, and a syntax error anywhere in an inline `<script>` **kills the entire block**. In
+`project-schedule/index.html` that block is **~35,000 lines**, i.e. the whole module. Cash Flow, same
+edit, same outcome.
+
+**Fixed** by using double quotes for the font name inside the single-quoted JS string —
+`font-family:Calibri,"Segoe UI",Arial,Helvetica,sans-serif`. CSS accepts either; JS only accepts the
+one that is not already doing a job.
+
+#### ⚠️⚠️ Why my verification did not catch it, which is the part worth keeping
+The (uic) commit ran, and *passed*: CSS brace balance, `<style>`/`<script>` tag balance, NUL-byte scan,
+30 rendered contrast measurements, 10 rendered button measurements. **Every one of those was green on a
+file whose entire script failed to parse.** Brace-and-tag balance is a check on the *shape* of the
+document; it says nothing about whether the code inside it runs. And every browser measurement I took
+was against a **harness** that inlines the stylesheets — no harness ever loads the module's own script,
+so none of them could see it.
+
+⚠️ **This repo already knew.** Its own changelog lists *"inline `<script>` parses"* as a standard check
+in entry after entry. I did not run it. A `node --check` over every inline block takes seconds and is
+the single check that would have caught this.
+
+**Now enforced properly:** every inline `<script>` on all 29 pages plus all 42 `.js` files are parsed —
+**42 JS files + 30 inline blocks across 29 pages, 0 failures.**
+⚠️ One reported failure is the **documented pre-existing false positive** in
+`progress-photos/index.html` (a `<script>` written inside an HTML *comment*, which a regex extractor
+splits wrongly). Verified by running the same check against `b5d9aa5~1` — the commit *before* any of
+this work — where it fails identically. Named rather than silently filtered.
+
+#### The general trap, recorded
+**Editing CSS that lives inside a JS string is not editing CSS.** The print/export stylesheets in
+`cash-flow` and `project-schedule` are exactly this, and the type-scale pass (v5) already treats them
+as a no-go zone for a *different* reason (they resolve no `--pd-*` variable, having no `:root`). That
+same "js-built block" detector — a `<style>` block containing `' +` — should gate **every** edit to
+them, not just token substitution. The v5 script had it; the uic Calibri edit was a hand-written
+`.replace()` that bypassed it entirely.
+
+`MODULE_V` → `20260910v6`. ⚠️ **Not verified signed in** — the fix is proved by parsing the shipped
+bytes, which is precisely the check that was missing; the owner's own reload is the real confirmation.
+
+
 ### 2026-09-10 (v5) — The type scale stops being a suggestion: 892 font-sizes onto the eight rungs
 
 The third and last of the owner's UI-consistency items, taken as its own commit so it can be reverted

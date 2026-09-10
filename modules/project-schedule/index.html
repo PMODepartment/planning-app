@@ -39431,7 +39431,7 @@
     var body = model.rows.map(function (row) { return '<tr>' + row.map(function (c, i) { return '<td class="' + (model.align[i] === 'r' ? 'r' : '') + '">' + esc(String(c)) + '</td>'; }).join('') + '</tr>'; }).join('');
     if (model.totals) body += '<tr class="tot">' + model.totals.map(function (c, i) { return '<td class="' + (model.align[i] === 'r' ? 'r' : '') + '">' + esc(String(c)) + '</td>'; }).join('') + '</tr>';
     w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>' + esc(rep.name) + ' — ' + esc(projName()) + '</title>' +
-      '<style>body{font-family:Calibri,'Segoe UI',Arial,Helvetica,sans-serif;color:#231F20;margin:28px;}' +
+      '<style>body{font-family:Calibri,"Segoe UI",Arial,Helvetica,sans-serif;color:#231F20;margin:28px;}' +
       'h1{font-size:18px;margin:0 0 2px;}.sub{color:#666;font-size:12px;margin:0 0 4px;}.note{color:#666;font-size:12px;margin:6px 0 12px;}' +
       'table{border-collapse:collapse;width:100%;font-size:11px;}th,td{border:1px solid #ccc;padding:4px 7px;text-align:left;}' +
       'th{background:#EE3124;color:#fff;text-transform:uppercase;font-size:9.5px;letter-spacing:.03em;}.r{text-align:right;}tr.tot td{font-weight:700;background:#f0f0f0;}' +
