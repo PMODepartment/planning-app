@@ -4100,10 +4100,43 @@ window.BOQ = (function () {
     return null;
   }
 
+  /* ==========================================================================
+     THE CODE GATE HAS TWO LEVELS, BECAUSE AN ACTIVITY IS COARSER THAN A BILL LINE
+     ==========================================================================
+     ⚠️⚠️ A BOQ line carries a Finance LEVEL-3 item code ('03101'); a schedule activity built from
+     the Schedule Builder's library carries a LEVEL-2 GROUP code ('03100'). Both are valid — a
+     group ("Concrete Works") is the size of something you schedule, an item ("Rebar Works") the
+     size of something you bill — but they are different strings, so an exact-equality gate matched
+     NOTHING between them. On a schedule built that way the allocator had no candidates at all and
+     silently proposed nothing, for every line.
+
+     ⚠️ EXACT WINS AS A SET, AND THE GROUP GATE IS ONLY A FALLBACK. If any activity carries the
+     line's own item code, those are the candidates and the coarser ones are not offered at all —
+     mixing them would let a whole-group activity dilute a split that had an exact answer. The
+     group gate opens only when the exact one found nobody, which is exactly the schedule-builder
+     case it exists for.
+     ⚠️ `code_l2` comes off the chart row, never from string surgery on the code. Deriving a group
+     by truncating '03101' to '0310' would be the de-zeroing mistake in another costume — the code
+     is an opaque key and only the chart says what its group is. */
+  function groupOfCode(code) {
+    var c = codeRow(String(code == null ? '' : code).trim());
+    var g = c && c.code_l2 != null ? String(c.code_l2).trim() : '';
+    return g || null;
+  }
   function candidatesFor(r) {
     var cf = codeFor(r);
     if (!cf || !ACTS) return [];
-    return ACTS.filter(function (a) { return a.class_code === cf.class_code; });
+    var exact = ACTS.filter(function (a) { return a.class_code === cf.class_code; });
+    if (exact.length) return exact;
+    var grp = groupOfCode(cf.class_code);
+    if (!grp) return [];
+    /* ⚠️ Never match an activity whose own code IS the line's group when that code is also a real
+       item code — four of the 205 groups double as an L3 item, and there the activity means the
+       item, not the whole group. `codeRow` answering tells them apart. */
+    return ACTS.filter(function (a) {
+      var k = String(a.class_code || '').trim();
+      return k && k === grp && !codeRow(k);
+    });
   }
   /* ⚠️ The haystack is the leaf's text PLUS its heading chain. On three of the four OPW101
      sheets the heading carries the spec and the leaf carries the place — but the place is
@@ -4181,6 +4214,11 @@ window.BOQ = (function () {
     var hay = locHaystack(r);
     var pathKey = normKey(hay);
     // ⚠️ The chart row is deliberately NOT read here — see the name rung below for why.
+    /* Did the gate fall back to the group? Read off the resolved set ONCE — `candidatesFor`
+       returns exact matches or group matches, never a mixture, so one member answers for all of
+       them and no second filter over ACTS is needed. */
+    var viaGroup = gated && !!acts.length && acts[0].class_code !== cf.class_code;
+    var grpCode = viaGroup ? String(acts[0].class_code || '').trim() : '';
 
     var list = acts.map(function (a) {
       var best = null;
@@ -4188,8 +4226,15 @@ window.BOQ = (function () {
         if (!best || RUNG_SCORE[rung] > best.score) best = { rung: rung, score: RUNG_SCORE[rung], why: why };
       };
 
-      // rung 4 — the code alone, the floor every gated candidate stands on.
-      if (gated) bump('code', 'carries ' + cf.class_code);
+      /* rung 4 — the code alone, the floor every gated candidate stands on.
+         ⚠️ It SAYS when it matched at group level. "carries 03101" and "in group 03100, which holds
+            03101" are different claims, and the second is the weaker one — a planner accepting a
+            split needs to know which they are looking at. */
+      if (gated) {
+        bump('code', viaGroup
+          ? 'in group ' + grpCode + ', which holds ' + cf.class_code
+          : 'carries ' + cf.class_code);
+      }
 
       /* rung 3 — name similarity against THE LINE'S OWN TEXT, and deliberately NOT against the
          class code's chart description.

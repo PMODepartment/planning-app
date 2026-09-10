@@ -95,6 +95,55 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-10 (z4) — The class-code library stops being de-zeroed, and a group code stops reading as an error
+
+**Run `migrations/2026-09-10-class-code-group-names.sql`.** Owner: *"let's fix the CLASS_CODE_DB
+de-zeroing next"* — the item (z3) named as reported-but-not-fixed. Detail, and the two harness
+mistakes worth keeping:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+- **43 codes padded.** `CLASS_CODE_DB` is Finance's Level-2 group chart, and all 197 entries now
+  match a real `code_l2`. Applied by a script that edits only the first field of a line inside the
+  literal and refuses any code that does not then resolve; **0 duplicates before or after**, line
+  count unchanged, no name or trade altered.
+- ⚠️⚠️ **Padding alone would have bought nothing, and that was the real defect.** `class_codes` is
+  keyed on the ITEM code, so the resolver could never resolve a group however it was spelled —
+  **197 of 197 library codes read as unrecognised**, which is every activity the Schedule Builder
+  has ever pushed. An activity is coarser than a bill line by nature: a group ("Chilled Water AC
+  Works") is the size of something you schedule, an item ("Chilled Water Condenser Riser (B.I
+  Pipes)") the size of something you bill. `ccLevelOf` now answers **item | group | neither**,
+  resolving the group side from `code_l2` / `desc_l2` — columns already on every loaded row, so no
+  second fetch and no second source to keep in step.
+- ⚠️ **The item index always wins.** Four of the 205 groups also exist as an L3 code, where the
+  group's general item carries the group's own number; those read as the item, which is the more
+  specific true answer.
+- ⚠️ **A group code is toned, not coloured like an error** — the red is reserved for a code that
+  resolves at neither level. Measured on the row it sits on: item **16.30 / 12.22**, group
+  **7.07 / 7.02** light / dark, all three states distinguishable in both themes.
+- **The BOQ allocator meets it halfway.** A line carries an item code and a builder-made activity a
+  group code, so exact equality matched nothing between them and the allocator proposed nothing at
+  all on such a schedule. It now falls back to the group — ⚠️ but **exact wins as a set**: the
+  coarser candidates are never offered alongside an exact one, or a whole-group activity would
+  dilute a split that had a precise answer. ⚠️ The group comes from the chart's `code_l2`, never
+  from truncating the code, which would be de-zeroing in another costume.
+- **The migration corrects two chart errors** the audit found: `25200` is labelled *Chilled Water AC
+  Works* but holds only Fresh Air Duct items, `25550` is labelled *Stair Pressurization* but holds
+  Kitchen Exhaust items — each the name of the group above it. ⚠️ Written **by `code_l2`, never by
+  `code`**: `desc_l2` is denormalised across every item of the group, so a single-row update would
+  leave the group answering two different names. ⚠️ 11 trade disagreements are **left alone** —
+  choosing between the chart's *Others* and the library's *Site Works* is Finance's call.
+
+**42 new assertions (240 across five suites), 0 failing**, with the pre-change revision executed as
+the contrast — it leaves 43 codes unresolved, flags a group code as unknown, and returns **0
+candidates** for a group-coded schedule.
+⚠️ **Not verified signed in** — no activity has been pushed with a group code and read back, and the
+migration has not been run.
+⚠️ **Measured and deliberately not fixed:** `.ps-cctag.unknown` computes **3.40:1 on dark**, under
+AA — it uses the brand surface red where `--pd-bad-text` exists. But `color:var(--pd-red)` appears
+**120 times in project-schedule alone**, so fixing one is worse than fixing none. Its own sweep.
+
+`MODULE_V` → `20260910z4`; contracts-claims `boq.js` with it.
+
 ### 2026-09-10 (z3) — The Schedule Builder seeds its activities from the project's own BOQ
 
 Owner: *"let's do the schedule builder seeding from the high-level BOQ."* The last of the three

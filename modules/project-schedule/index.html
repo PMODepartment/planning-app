@@ -685,6 +685,10 @@
     .ps-coref-inh { opacity:.62; font-style:italic; }
     .ps-cctag { font-family:var(--pd-mono); font-size:var(--pd-fs-xs); }
     .ps-cctag.unknown { color:var(--pd-red); }
+    /* ⚠️ A GROUP-level code is valid, not a warning — so it is toned, never coloured like `.unknown`.
+       It is the level the Schedule Builder's library works at, which is the right granularity for an
+       activity; the red is reserved for a code that resolves at neither level. */
+    .ps-cctag.grp { color:var(--pd-muted); }
     /* A package tag is neutral by design: unlike CO/MC it carries no judgement,
        it just names which contract lot the work belongs to. */
     .ps-pkgtag { display:inline-block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
@@ -6884,16 +6888,66 @@
   }
   function ccByCode(code) { var k = String(code == null ? '' : code).trim(); return k ? (_ccIndex()[k] || null) : null; }
   function ccOf(r) { return ccByCode(r && r.class_code); }
-  // "015051 — Earthmoving". Falls back to the bare stored value so an unresolved code still shows
-  // what it was pointing at.
+
+  /* ==========================================================================
+     GROUP-LEVEL CODES ARE VALID TOO — an activity is coarser than a BOQ line
+     ==========================================================================
+     ⚠️⚠️ `class_codes` is keyed on the Level-3 ITEM code, so `_ccIndex` could only ever resolve an
+     item. But an activity is not a bill line: the Schedule Builder's own library is Finance's
+     Level-2 GROUP chart ("Chilled Water AC Works"), and that is the right granularity for something
+     you schedule — the L3 items under it are bill lines ("Chilled Water Condenser Riser (B.I
+     Pipes)"). The push writes the activity's code into `project_schedule.class_code`, so every
+     activity built that way was being reported as an unrecognised code purely because the resolver
+     only knew one of the chart's two levels.
+
+     ⚠️ This resolves the group from the SAME `CLASS_CODES` rows — `code_l2` / `desc_l2` are columns
+     on every one of them — so there is no second fetch and no second source to keep in step.
+     ⚠️ The ITEM index is consulted FIRST and always wins. Four of the 205 groups (`01700`, `26350`,
+     `50000`, `51000`) also exist as an L3 code, where the group's general item carries the group's
+     own number; those must read as the item, which is the more specific true answer. */
+  var _ccGrpMap = null, _ccGrpSrc = null;
+  function _ccGrpIndex() {
+    if (_ccGrpMap && _ccGrpSrc === CLASS_CODES) return _ccGrpMap;
+    _ccGrpMap = {}; _ccGrpSrc = CLASS_CODES;
+    (CLASS_CODES || []).forEach(function (c) {
+      var g = String(c.code_l2 == null ? '' : c.code_l2).trim();
+      if (g && !_ccGrpMap[g]) _ccGrpMap[g] = { code_l2: g, desc_l2: c.desc_l2 || '', desc_l1: c.desc_l1 || '', code_l1: c.code_l1 || '' };
+    });
+    return _ccGrpMap;
+  }
+  function ccGroupByCode(code) { var k = String(code == null ? '' : code).trim(); return k ? (_ccGrpIndex()[k] || null) : null; }
+  /* Which level a stored code resolves at: 'item' | 'group' | null. One function, so the label, the
+     unknown flag and anything downstream cannot disagree about what a code is. */
+  function ccLevelOf(code) {
+    var k = String(code == null ? '' : code).trim(); if (!k) return null;
+    if (_ccIndex()[k]) return 'item';
+    if (_ccGrpIndex()[k]) return 'group';
+    return null;
+  }
+  /* The GROUP a code belongs to, whichever level it is stored at — an item's own `code_l2`, or the
+     group code itself. This is what lets a BOQ line (an item) be compared against an activity (a
+     group) without either side pretending to be the other. */
+  function ccGroupOf(code) {
+    var k = String(code == null ? '' : code).trim(); if (!k) return null;
+    var it = _ccIndex()[k];
+    if (it) return String(it.code_l2 || '').trim() || null;
+    return _ccGrpIndex()[k] ? k : null;
+  }
+
+  // "015051 — Earthmoving", or "03100 — Concrete Works (group)" for a group-level code. Falls back
+  // to the bare stored value so a genuinely unresolved code still shows what it was pointing at.
   function ccLabel(code) {
     var k = String(code == null ? '' : code).trim(); if (!k) return '';
-    var c = ccByCode(k); if (!c) return k;
-    return c.code + ' — ' + (c.desc_l3 || '');
+    var c = ccByCode(k); if (c) return c.code + ' — ' + (c.desc_l3 || '');
+    var g = ccGroupByCode(k); if (g) return g.code_l2 + ' — ' + (g.desc_l2 || '') + ' (group)';
+    return k;
   }
+  // ⚠️ Unknown now means "neither an item nor a group", so a group-coded activity stops being
+  //    flagged. It still returns false while the chart has not loaded — calling every code unknown
+  //    because the lookup table is empty is the `[]`-is-truthy family of false alarm.
   function ccIsUnknown(r) {
     var k = String((r && r.class_code) || '').trim();
-    return !!k && !!CLASS_CODES.length && !_ccIndex()[k];
+    return !!k && !!CLASS_CODES.length && !ccLevelOf(k);
   }
   // The picker body: one <optgroup> per DIVISION (42), each option labelled with its group so the
   // Level-2 context is readable without 205 optgroups. Divisions follow Finance's chart order.
@@ -18946,9 +19000,14 @@
   // wiring, like every other field here.
   function _gfCc(r) {
     var unk = ccIsUnknown(r);
+    // ⚠️ A group-level code gets a NOTE, not a warning: it is valid and deliberate (the Schedule
+    //    Builder's library works at that level), but the picker below lists items only, so saying
+    //    nothing would leave the planner wondering why the select shows no match.
+    var isGrp = !unk && ccLevelOf(r && r.class_code) === 'group';
     var note = !CLASS_CODES.length
       ? '<div style="font-size:11px;color:var(--pd-muted);">Chart not loaded — run the class-codes migration.</div>'
-      : (unk ? '<div style="font-size:11px;color:var(--pd-red);">Not in the class-code chart — re-pick or clear.</div>' : '');
+      : (unk ? '<div style="font-size:11px;color:var(--pd-red);">Not in the class-code chart, at either level — re-pick or clear.</div>'
+             : (isGrp ? '<div style="font-size:11px;color:var(--pd-muted);">A <b>group</b>-level code — this activity covers the whole group. Picking below narrows it to one item.</div>' : ''));
     return '<div style="display:flex;flex-direction:column;gap:3px;">' +
       '<label style="font-size:11px;color:var(--pd-muted);">Class Code <span style="opacity:.8;">(Finance)</span></label>' +
       '<select class="pd-select ps-gedit" data-f="class_code" data-t="select" style="width:100%;box-sizing:border-box;font-size:12.5px;">' +
@@ -21012,9 +21071,20 @@
   function ccodeCellHtml(r) {
     var c = ccOf(r), raw = String(r.class_code || '').trim();
     var inner, ttl;
+    /* ⚠️ THREE outcomes, not two. A code can resolve as a Finance ITEM (the L3 chart), as a GROUP
+       (the L2 level the Schedule Builder's library works at — the right granularity for an
+       activity), or as neither. Collapsing the first two would lose which level the row is filed
+       at; collapsing group into "unknown" is what this cell used to do, and it flagged every
+       activity the builder has ever pushed. */
+    var g = c ? null : ccGroupByCode(raw);
     if (!raw) { inner = '<span style="color:var(--pd-muted);">—</span>'; ttl = 'No class code'; }
-    else if (!c) { inner = '<span class="ps-cctag unknown">⚠ ' + esc(raw) + '</span>'; ttl = raw + ' is not in the class-code chart'; }
-    else { inner = '<span class="ps-cctag">' + esc(c.code) + '</span> ' + esc(c.desc_l3 || ''); ttl = c.code + ' — ' + c.desc_l1 + ' › ' + c.desc_l2 + ' › ' + c.desc_l3; }
+    else if (c) { inner = '<span class="ps-cctag">' + esc(c.code) + '</span> ' + esc(c.desc_l3 || ''); ttl = c.code + ' — ' + c.desc_l1 + ' › ' + c.desc_l2 + ' › ' + c.desc_l3; }
+    else if (g) {
+      inner = '<span class="ps-cctag grp">' + esc(g.code_l2) + '</span> ' + esc(g.desc_l2 || '');
+      ttl = g.code_l2 + ' — ' + g.desc_l1 + ' › ' + g.desc_l2 +
+            '\nA GROUP-level code: this activity covers the whole group rather than one bill item.';
+    }
+    else { inner = '<span class="ps-cctag unknown">⚠ ' + esc(raw) + '</span>'; ttl = raw + ' is not in the class-code chart, at either level'; }
     return '<div class="ps-cell c-ccode ps-editable" data-id="' + r.id + '" data-field="class_code" data-type="enum" data-enum="ccode" title="' + esc(ttl) + '">' + inner + '</div>';
   }
   // Summary/group rows: state the code only when EVERY activity beneath agrees — a branch holding
@@ -27066,10 +27136,14 @@
       _ccSel.disabled = !CLASS_CODES.length && !(row && row.class_code);
       var _ccHint = document.getElementById('ps-f-ccode-hint');
       if (_ccHint) {
+        // ⚠️ Same three-way split as the grid cell: item / group / neither. Only the last is red.
+        var _ccUnk = row && ccIsUnknown(row);
+        var _ccGrp = !_ccUnk && row && ccLevelOf(row.class_code) === 'group';
         _ccHint.textContent = !CLASS_CODES.length
           ? 'Class-code chart not loaded — run migrations/2026-08-21-class-codes.sql.'
-          : (row && ccIsUnknown(row) ? 'This code is not in the chart (an older import, or a template revision).' : '');
-        _ccHint.style.color = (row && ccIsUnknown(row)) ? 'var(--pd-red)' : 'var(--pd-muted)';
+          : (_ccUnk ? 'This code is in the chart at neither level (an older import, or a template revision).'
+                    : (_ccGrp ? 'A group-level code — this activity covers the whole group. The list below is items only.' : ''));
+        _ccHint.style.color = _ccUnk ? 'var(--pd-red)' : 'var(--pd-muted)';
       }
     }
     document.getElementById('ps-f-progms').checked = !!(row && row.program_milestone);
@@ -28292,50 +28366,77 @@
     // Master class-code library (EPC. FIN. Class Code Mapping — Level 3 code + Description 3).
     // Loaded into the step-1 holding list on demand so a planner can pick from the standard
     // codes instead of retyping them; saved with the build once loaded + shuttled in.
+    /* ==========================================================================
+       CLASS_CODE_DB — Finance's LEVEL-2 GROUP chart, and why the codes are PADDED
+       ==========================================================================
+       197 entries, measured 197/197 against `class_codes.code_l2`. This is the GROUP level, not
+       the item level, and that is deliberate: a group ("Chilled Water AC Works") is the size of a
+       schedule activity, while the L3 items under it are bill lines ("Chilled Water Condenser
+       Riser (B.I Pipes)"). The BOQ works at L3; the programme works here.
+
+       ⚠️⚠️ **43 OF THESE CODES USED TO BE DE-ZEROED** — '1050' where Finance's group is '01050' —
+       copied from a template column that strips leading zeros. That is the one transformation
+       `docs/boq-and-pmi.md` forbids outright, because the de-zeroed space is NOT unique: '015051'
+       (Gen Req › Earthmoving) collides with '15051' (Metal Works › Railings). Padded 2026-09-10;
+       measured before and after — 0 duplicates either way, and all 43 resolve to a real group.
+       **Never strip a leading zero from a code in this table.**
+
+       ⚠️ TWO NAMES DELIBERATELY DISAGREE WITH THE CHART, AND THIS TABLE IS THE CORRECT ONE.
+       `25200` is 'Fresh Air Ducting Works' here and 'Chilled Water AC Works' in `class_codes`;
+       `25550` is 'Kitchen Exhaust Ducting Works' here and 'Stair Pressurization Ducting Works'
+       there. Checked against the L3 items each group actually holds — 25200 holds only Fresh Air
+       Duct items, 25550 only Kitchen Exhaust items — so the chart's `desc_l2` carries two
+       copy-down errors. `migrations/2026-09-10-class-code-group-names.sql` corrects them at
+       source; until it is run, do NOT "fix" these two to match the chart.
+
+       ⚠️ 11 trades also disagree (Site Development / LD works are 'SW' here, 'Others' in the
+       chart) and are LEFT ALONE. Both readings are defensible — the chart files them in its
+       catch-all, this table calls them site works — and silently rewriting either would be
+       choosing for Finance. */
     var CLASS_CODE_DB = [
-      ['1050','Mobilization / Demobilization','GR'],
-      ['1100','Temp. Facil. - Site Devt., Offices & Utilities','GR'],
-      ['1150','Temp. Facil. - Utilities Installed in Bldg','GR'],
-      ['1200','Office Equip & Supplies','GR'],
-      ['1250','Site Management Organization (HR) (No. of Staffs)','GR'],
-      ['1300','Support Crew -Admin workers','GR'],
-      ['1350','Utilities (Power/ Water/ Comm)','GR'],
-      ['1400','Security Services','GR'],
-      ['1450','Housekeeping & Sanitation Services','GR'],
-      ['1500','Support Equipment','GR'],
-      ['1550','Fuel and Oil','GR'],
-      ['1600','Safety Provisions, Safety Measures, and First Aid Support','GR'],
-      ['1650','Drawing Services','GR'],
-      ['1700','Bonds, Insurances, & Permits','GR'],
-      ['1750','Material Testing','GR'],
-      ['1800','Property Damage','GR'],
-      ['1850','Project, Owner, and Consultant Details','GR'],
-      ['2050','Excavation & Backfilling','SW'],
-      ['2100','Piling Works','SW'],
-      ['2150','Soil Protection','SW'],
-      ['2200','Chemical Treatment','SW'],
-      ['3050','Rebar','ST'],
-      ['4050','Formworks','ST'],
-      ['5050','Concrete','ST'],
-      ['6050','Precast Works','ST'],
-      ['7050','Structural Steel','ST'],
-      ['8050','Block Works','AR'],
-      ['8100','Spraycrete Wall','AR'],
-      ['8150','PC Exterior Walls','AR'],
-      ['8200','PC Interior Walls','AR'],
-      ['8250','Sealant Works - Backer Rod and Sealant','AR'],
-      ['8300','Straight To Finish w/ Concrete Hardener and Sealer','AR'],
-      ['8350','Concrete Topping','AR'],
-      ['8400','Plastering Window and Door Opening','AR'],
-      ['8450','Skimcoating Works','AR'],
-      ['8500','Grinding, Sanding and Mortar Jointing to Slab Soffit for Cast in Situ (Termination Only)','AR'],
-      ['8550','Mortar Jointing to Exposed PC Half Slab Soffit (Termination Only)','AR'],
-      ['8600','Masonry Concrete','AR'],
-      ['8650','Masonry Consumables','AR'],
-      ['8700','PC Toilet','AR'],
-      ['9050','Marble Stone','AR'],
-      ['9100','Granite Stone','AR'],
-      ['9150','Stone Works Consumables','AR'],
+      ['01050','Mobilization / Demobilization','GR'],
+      ['01100','Temp. Facil. - Site Devt., Offices & Utilities','GR'],
+      ['01150','Temp. Facil. - Utilities Installed in Bldg','GR'],
+      ['01200','Office Equip & Supplies','GR'],
+      ['01250','Site Management Organization (HR) (No. of Staffs)','GR'],
+      ['01300','Support Crew -Admin workers','GR'],
+      ['01350','Utilities (Power/ Water/ Comm)','GR'],
+      ['01400','Security Services','GR'],
+      ['01450','Housekeeping & Sanitation Services','GR'],
+      ['01500','Support Equipment','GR'],
+      ['01550','Fuel and Oil','GR'],
+      ['01600','Safety Provisions, Safety Measures, and First Aid Support','GR'],
+      ['01650','Drawing Services','GR'],
+      ['01700','Bonds, Insurances, & Permits','GR'],
+      ['01750','Material Testing','GR'],
+      ['01800','Property Damage','GR'],
+      ['01850','Project, Owner, and Consultant Details','GR'],
+      ['02050','Excavation & Backfilling','SW'],
+      ['02100','Piling Works','SW'],
+      ['02150','Soil Protection','SW'],
+      ['02200','Chemical Treatment','SW'],
+      ['03050','Rebar','ST'],
+      ['04050','Formworks','ST'],
+      ['05050','Concrete','ST'],
+      ['06050','Precast Works','ST'],
+      ['07050','Structural Steel','ST'],
+      ['08050','Block Works','AR'],
+      ['08100','Spraycrete Wall','AR'],
+      ['08150','PC Exterior Walls','AR'],
+      ['08200','PC Interior Walls','AR'],
+      ['08250','Sealant Works - Backer Rod and Sealant','AR'],
+      ['08300','Straight To Finish w/ Concrete Hardener and Sealer','AR'],
+      ['08350','Concrete Topping','AR'],
+      ['08400','Plastering Window and Door Opening','AR'],
+      ['08450','Skimcoating Works','AR'],
+      ['08500','Grinding, Sanding and Mortar Jointing to Slab Soffit for Cast in Situ (Termination Only)','AR'],
+      ['08550','Mortar Jointing to Exposed PC Half Slab Soffit (Termination Only)','AR'],
+      ['08600','Masonry Concrete','AR'],
+      ['08650','Masonry Consumables','AR'],
+      ['08700','PC Toilet','AR'],
+      ['09050','Marble Stone','AR'],
+      ['09100','Granite Stone','AR'],
+      ['09150','Stone Works Consumables','AR'],
       ['10050','Homogenous Tiles','AR'],
       ['10100','Ceramic Tiles','AR'],
       ['10150','Rustic Tiles','AR'],
@@ -28522,19 +28623,17 @@
        the acceptance, and a second dialog doing the same job is a second thing to keep in step.
 
        ⚠️⚠️ AND IT IS THE ONLY LOADER WHOSE CODES ARE VALID `project_schedule.class_code` VALUES.
-       The push writes `class_code: r.act.code`, and `class_codes` is keyed on the PADDED LEVEL-3
-       code ('03101'). `CLASS_CODE_DB` — the hardcoded `+ Library` list — is Finance's LEVEL-2 GROUP
-       chart with the leading zeros stripped: 197 entries, 154 of which match an L2 group exactly and
-       43 of which match only after zero-padding ('1050' vs '01050'). Measured, and zero of the 197
-       is a valid L3 code. So every activity pushed from the library carries a class code that
-       resolves to nothing (`ccIsUnknown` is true for all of them), while a code seeded from the BOQ
-       resolves — which means the activity arrives ALREADY TAGGED and the BOQ allocator's class-code
-       gate matches it with no manual tagging step at all. That is the whole payoff of this button.
-       ⚠️ De-zeroing is also the thing `docs/boq-and-pmi.md` forbids outright, because the de-zeroed
-       space is not unique ('015051' Gen Req › Earthmoving collides with '15051' Metal Works ›
-       Railings). Fixing `CLASS_CODE_DB` is NOT done here — padding it would make its codes correct
-       L2 groups and they would still not be L3, so it does not become a valid class code either. It
-       is reported instead, on screen, where the two lists sit side by side. */
+       ⚠️ THE TWO BUTTONS LOAD DIFFERENT LEVELS, AND BOTH ARE VALID.
+       `+ Library` loads Finance's LEVEL-2 GROUP chart (`CLASS_CODE_DB`, 197 entries) — the size of
+       a schedule activity. This one loads the LEVEL-3 ITEM codes the project's BOQ is actually
+       priced on. The push writes either into `project_schedule.class_code`, and since 2026-09-10
+       the resolver knows both levels, so neither reads as an unrecognised code.
+
+       What a BOQ-seeded code buys is the EXACT match: `boq_class_map` stores L3, so a line and an
+       activity that both carry '03101' meet on the allocator's strongest code rung, with no manual
+       tagging step. A group-coded activity still matches — on the coarser group rung — but only
+       when nothing carries the item code. That is the difference between the two buttons, and it
+       is why this one is primary. */
     async function loadBoqCodes(btn) {
       var was = btn ? btn.textContent : '';
       if (btn) { btn.disabled = true; btn.textContent = 'Reading…'; }
@@ -28650,17 +28749,27 @@
       }
     }
 
-    /* How many of the build's codes are NOT valid Finance L3 codes — i.e. would push a
-       `project_schedule.class_code` that resolves to nothing. See the block above.
-       ⚠️ Returns 0 while the chart has not loaded: claiming every code is unknown because the
-       lookup table is empty is the "[] is truthy" family of false alarm this repo keeps recording. */
+    /* How many of the build's codes resolve at NEITHER level of the Finance chart — i.e. would push
+       a `project_schedule.class_code` that means nothing at all.
+       ⚠️⚠️ THIS USED TO COUNT EVERY GROUP CODE, which was every row the `+ Library` list supplies —
+       so it lit a warning on a perfectly good build. A group code is valid (`ccLevelOf` → 'group');
+       it is simply coarser than a bill line. What remains genuinely unresolvable is a hand-typed
+       code, one from an older template, or a de-zeroed code predating the 2026-09-10 padding.
+       ⚠️ Returns 0 while the chart has not loaded: calling every code unknown because the lookup
+       table is empty is the "[] is truthy" family of false alarm this repo keeps recording. */
     function offChartCount() {
       if (!CLASS_CODES || !CLASS_CODES.length) return 0;
-      var idx = {};
-      CLASS_CODES.forEach(function (c) { idx[String(c.code).trim()] = 1; });
       return (cfg.activities || []).filter(function (a) {
         var k = String(a.code == null ? '' : a.code).trim();
-        return k && !idx[k];
+        return k && !ccLevelOf(k);
+      }).length;
+    }
+    // How many sit at GROUP level — valid, and worth stating because it decides how the BOQ can
+    // match them (a whole group, not one bill item).
+    function groupLevelCount() {
+      if (!CLASS_CODES || !CLASS_CODES.length) return 0;
+      return (cfg.activities || []).filter(function (a) {
+        return ccLevelOf(String(a.code == null ? '' : a.code).trim()) === 'group';
       }).length;
     }
     function scopeLabel(s) { var o = SCOPE_OPTS.filter(function (x) { return x[0] === (s || 'zone'); })[0]; return o ? o[1] : 'Per zone'; }
@@ -31903,18 +32012,18 @@
         (cfg.activities.length ? '' : '<div class="sbld-empty" style="margin-bottom:8px;">No activities in the build yet — <b>Add row</b>, <b>Load typical set</b>, load from the list with <b>&larr;</b>, or paste rows from Excel into the grid.</div>') +
         '<div class="sbld-actsplit"><div class="sbld-xlwrap" tabindex="0" id="b-xl"><table class="sbld-xl" style="table-layout:fixed;width:' + totalW + 'px;">' + colgroup + '<thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>' + shuttle + holdPane + '</div>' +
         '<p class="sbld-hint">Trade accepts the name or code (General Requirements/GR · Site Works/SW · Structural/ST · Architectural/AR · MEPF · Allied Services/ALLIED · Others/OT). Row order here is the fallback sequence; fine-tune links in step ' + _stepNo('Trade sequence') + '.</p>' +
-        /* ⚠️ Stated rather than left to be discovered. A code that is not a Finance Level-3 code
-           still pushes — it just lands in `project_schedule.class_code` resolving to nothing, so the
-           grid's class-code cell reads it as unknown and the BOQ allocator cannot gate on it. That
-           is every code the + Library list supplies, and it is invisible until somebody looks for
-           it. Shown only when there are some, and it names the button that produces codes that do
-           resolve rather than only naming the problem. */
+        /* ⚠️⚠️ THIS LINE USED TO ACCUSE EVERY `+ Library` ROW. It counted anything that was not a
+           Level-3 code, which is the whole group chart — so a perfectly good build lit a warning.
+           Group codes are valid (the resolver learned both levels on 2026-09-10); what is left is a
+           code that resolves at NEITHER level, which is a real defect worth naming. Stated only
+           when there is one, and it names the fix rather than only the problem. */
         (function () {
           var n = offChartCount(); if (!n) return '';
           return '<p class="sbld-hint" style="color:var(--pd-warn-text,var(--pd-warn));">' + n +
-            ' of ' + cfg.activities.length + ' row(s) carry a code that is <b>not a Finance Level-3 class code</b>, ' +
-            'so a pushed activity will show it as unrecognised and the BOQ cannot match on it. ' +
-            'The <b>+ From the BOQ</b> list supplies codes that do resolve.</p>';
+            ' of ' + cfg.activities.length + ' row(s) carry a code the Finance chart does not hold ' +
+            '<b>at either level</b> — hand-typed, from an older template, or missing a leading zero. ' +
+            'A pushed activity will show it as unrecognised and the BOQ cannot match on it. ' +
+            'Re-pick from <b>+ Library</b> (group level) or <b>+ From BOQ</b> (item level).</p>';
         })();
       // toolbar
       host.querySelector('#b-add').onclick = function () { cfg.activities.push({ id: uidv(), code: '', name: '', group: 'ST', durInt: null, durExt: null, contract: 'main', coRef: '' }); xf = { r: cfg.activities.length - 1, c: 0 }; xa = { r: xf.r, c: 0 }; xWantFocus = true; markDirty(); render(); };

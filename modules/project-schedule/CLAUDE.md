@@ -13,6 +13,108 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### CLASS_CODE_DB stops being de-zeroed, and a group code stops reading as an error (2026-09-10 z4) — fmlozano
+
+**Run `migrations/2026-09-10-class-code-group-names.sql`.** Owner: *"let's fix the CLASS_CODE_DB
+de-zeroing next."* Named in the `z3` entry below as reported-not-fixed; this is the fix, plus the
+two things measuring it turned up.
+
+### 1. The padding — 43 codes, and it is provably a no-op everywhere else
+`CLASS_CODE_DB` **is** Finance's Level-2 group chart: 197 entries, 197 of which match a
+`class_codes.code_l2` once the leading zeros are restored (154 did already, 43 did not). Padded by a
+script that edits only the first quoted field of a line inside the literal and refuses any code that
+does not then resolve to a real group. Asserted before and after: **0 duplicates either way**, line
+count unchanged, and no name or trade altered — the only difference between the old table and the
+new one is `zfill(5)`.
+
+⚠️ De-zeroing is the one transformation `docs/boq-and-pmi.md` forbids outright, because the
+de-zeroed space is not unique — `015051` (Gen Req › Earthmoving) collides with `15051` (Metal Works ›
+Railings). It bit here in the mundane way rather than the dramatic one: nothing collided, the codes
+simply joined to nothing.
+
+### 2. ⚠️⚠️ A GROUP CODE IS VALID, AND THE RESOLVER ONLY KNEW ONE LEVEL
+Padding alone would not have paid off, and the `z3` entry said so: `class_codes` is keyed on the
+**item** code, so `ccByCode` could never resolve a group however it was spelled. Every activity the
+Schedule Builder has ever pushed was therefore reported as an unrecognised class code — **197 of 197
+library codes**, measured.
+
+That was the resolver being wrong, not the data. An activity is coarser than a bill line by nature:
+a group ("Chilled Water AC Works") is the size of something you schedule, and the L3 items under it
+("Chilled Water Condenser Riser (B.I Pipes)") are the size of something you bill. So `ccLevelOf`
+answers **item | group | null**, `ccGroupByCode` and `ccGroupOf` resolve the group side from the
+`code_l2` / `desc_l2` columns **already on every `CLASS_CODES` row** — no second fetch, no second
+source — and `ccIsUnknown` now means *neither level*.
+
+- ⚠️ **The item index is consulted first and always wins.** Four of the 205 groups (`01700`,
+  `26350`, `50000`, `51000`) also exist as an L3 code, where the group's general item carries the
+  group's own number. Those must read as the item, which is the more specific true answer. Asserted
+  for all four.
+- ⚠️ **A group code is toned, never coloured like an error.** `.ps-cctag.grp` is `--pd-muted`; the
+  red stays for a code that resolves at neither level. Measured against the row it sits on:
+  item **16.30 / 12.22**, group **7.07 / 7.02** (light / dark), all three states distinguishable in
+  both themes.
+- The detail panel and the form hint gained the same three-way split, so a planner is told *"a
+  group-level code — the list below is items only"* instead of nothing, or worse, a warning.
+- ⚠️ `offChartCount` — added yesterday — **used to count every group code**, so it lit a warning on
+  a perfectly good build. It now counts only what resolves at neither level, which is a genuine
+  defect: a hand-typed code, an older template, or one still missing its leading zero.
+
+### 3. The BOQ allocator meets it halfway
+A BOQ line carries an **item** code and a builder-made activity carries a **group** code, so the
+allocator's exact-equality gate matched nothing between them — on a schedule built that way it
+proposed nothing at all, for every line. `candidatesFor` now falls back to the group.
+
+- ⚠️ **Exact wins as a set.** If any activity carries the line's own item code, those are the
+  candidates and the coarser ones are not offered alongside — mixing them would let a whole-group
+  activity dilute a split that had an exact answer. The group gate opens only when the exact one
+  found nobody.
+- ⚠️ The group comes from the chart row's `code_l2`, **never from string surgery on the code**.
+  Truncating `03101` to `0310` would be the de-zeroing mistake in another costume: the code is an
+  opaque key and only the chart says what its group is.
+- ⚠️ An activity coded with one of the four dual group/item codes is **not** taken as its own group —
+  there it means the item.
+- The rung says which it was: *"in group 03100, which holds 03101"* rather than *"carries 03101"*.
+
+### 4. The chart's own two errors
+`25200` reads *Chilled Water AC Works* in `class_codes` but holds only **Fresh Air Duct** items;
+`25550` reads *Stair Pressurization Ducting Works* but holds **Kitchen Exhaust** items. Both are the
+name of the group immediately above — a copy-down, twice. `CLASS_CODE_DB` has them right, and the
+evidence is the items themselves, not the other list.
+⚠️ The migration writes **by `code_l2`, never by `code`**: `desc_l2` is denormalised across every
+item of the group, so updating one row would leave the group with two names depending on which item
+you read. Idempotent, and it reports 0/0 on a second run rather than looking identical to a first.
+⚠️ **11 trade disagreements are left alone** — Site Development and the LD Roadworks family are `SW`
+here and `Others` in the chart. Both readings are defensible; choosing is Finance's call, not a data
+repair.
+
+### Verified
+**42 new assertions (240 across five suites), 0 failing**, every function sliced out of its shipped
+file and executed, with the pre-change revision as the contrast: it leaves 43 codes unresolved,
+flags a group code as unknown, has no `ccLevelOf` at all, and returns **0 candidates** for a
+group-coded schedule.
+⚠️ **Two of my own harnesses were wrong in ways worth recording.** `t3`'s slice anchor pointed at the
+old `candidatesFor` body and failed as a syntax error that reads like the code under test is broken —
+the hazard of slicing by text in a 45k-line file. And `t4`'s fixture chart **had no `code_l2` column**,
+so the group index built empty and every group assertion passed while testing nothing; a fixture
+missing a column the code reads is a silent no-op test.
+⚠️ `offChartCount` calls the module-level `ccLevelOf` from inside the ScheduleBuilder closure. The
+suite **links the real function rather than stubbing it**, and the scope chain is separately asserted
+(declared at module level, before the builder's IIFE opens) — this file has shipped a
+`below is not defined` before.
+⚠️ **NOT verified signed in.** No activity has been pushed with a group code and read back, and the
+migration has not been run — until it is, the two group names simply stay as they are in the chart
+while the builder's list shows the correct ones.
+
+### ⚠️ Measured and deliberately NOT fixed
+`.ps-cctag.unknown` is `var(--pd-red)`, which computes **3.40:1 on the dark card** — under AA. It is
+a brand *surface* colour doing text duty, and `--pd-bad-text` exists for exactly this (the 2026-09-10
+uic pass). But `color:var(--pd-red)` appears **120 times in this file alone**, so fixing one of them
+is worse than fixing none. It needs its own sweep, and it is recorded here rather than half-done.
+
+`MODULE_V` → `20260910z4`.
+
+---
+
 ### The Activities step seeds itself from the project's own BOQ (2026-09-10 z3) — fmlozano
 
 Owner: *"let's do the schedule builder seeding from the high-level BOQ."* The first of the three
