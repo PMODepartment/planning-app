@@ -13,6 +13,63 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### ⚠️⚠️ The floor was drawn at a quarter of its size at Detail 1, because the WRAP GRID was sizing the plan (2026-09-10) — jasantos2
+
+Owner: *"the size of the floor is decreased when proceed with level 1 - detail. Like i said, allow
+users to define in the floor plan the size of the floor, and allow users to add shapes for the
+different zones."*
+
+### 1. Measured before it was touched
+The plate's size in world units was `cols × rows` of the **wrap grid** — the layout used for cells
+that have *no* plan — and that grid is derived from the cell COUNT. Four zones at Detail 2 make a
+2×2 grid, so the plate was 2 × 2; one cell at Detail 1 makes 1×1, so the same building was drawn
+half as wide and half as deep. Executing the shipped builder both ways on the same traced plate:
+
+```
+Detail 2 (4 zones): plate 2 x 2
+Detail 1 (1 cell) : plate 1 x 1     ← the same plan at 25% of its area
+```
+
+The traced plan had nothing to do with that number and was scaled by it anyway. ⚠️ It is the same
+class of mistake as the two before it: a value that describes the GUESS was being applied to the
+STATEMENT.
+
+**A traced card's plate is a constant now**, and the footprint depends on the plan and nothing
+else — not the Detail, not the zone count. ⚠️ An untraced card keeps the wrap sizing, because
+there the footprint honestly *is* the zone count on a grid, which is what the footer says it is.
+
+### 2. The floor's proportions, defined where the floor is drawn
+⚠️⚠️ **The sheet was fixed at 1000 × 620 and nothing could change it.** Every plan, portrait or
+landscape, was traced on the same landscape rectangle — and since outlines cross the module
+boundary normalised to 0..1, that rectangle *is* the floor's proportions as far as the 3D is
+concerned. A tall site was drawn wide, and no control existed to say otherwise. Now:
+- A **Sheet** control in the plan window: *Wide 3:2 · Square · Tall 2:3*, and **Fit to the image**
+  when a plan is attached.
+- ⚠️ **Attaching an image sets the sheet to the image's own shape** — but only while nothing is
+  drawn. Rescaling somebody's trace without being asked is not a convenience.
+- ⚠️⚠️ **Changing the sheet RESCALES what is already drawn.** Points are stored in plan units with
+  y running 0..h, so raising h without touching them would leave every traced zone bunched
+  against the top of the sheet: the drawing would silently stop matching the drawing.
+- ⚠️ The stage's aspect is the sheet's, replacing a hard-coded `aspect-ratio:1000/620` that would
+  have squashed a re-shaped sheet back into a landscape box and moved every corner with it.
+- ⚠️ The sheet's ratio (`ar`) crosses the boundary with the outline, so the 3D plate is as deep as
+  the drawing says. A plan traced on a tall sheet now builds a deep plate rather than a square one.
+
+**Adding shapes for the different zones** already works — the zone palette loads the brush, the
+nine presets drop a shape, Trace draws one corner by corner — and it is unchanged here. The
+**Floor shape** control beside it states the floor's own outline, separately from the zones.
+
+### Verified
+**240 assertions across fourteen suites, 0 failing** — 10 new. ⚠️⚠️ The size bug is asserted
+against **the revision before the fix, executed**: it draws the same plate at 25% of the area at
+Detail 1, and this file draws it identically at both Details. ⚠️ Sanity gates: a tall sheet must
+produce a DEEP plate and not merely a different number, a nonsense aspect must fall back rather
+than collapse the building, an untraced card must still take the wrap path, and the normalised
+points must stay 0..1 on both axes after the aspect is carried alongside them.
+⚠️ **Not clicked in the live app**: the anon key has no grants for this project's data.
+
+---
+
 ### The card's controls collapse to one Display button, and the fill level gets a line (2026-09-10) — jasantos2
 
 Owner: *"can you simplify the UI, i think too much buttons and information, propose a simplified

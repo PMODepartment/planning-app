@@ -95,6 +95,31 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### ⚠️⚠️ The floor was drawn at a quarter of its size at Detail 1: the wrap grid was sizing the plan (2026-09-10) — jasantos2
+
+Owner: *"the size of the floor is decreased when proceed with level 1 - detail. Like i said,
+allow users to define in the floor plan the size of the floor."*
+
+Measured before it was touched, by executing the shipped builder both ways on one traced plate:
+**Detail 2 gave a 2 × 2 plate, Detail 1 gave 1 × 1 — the same plan at 25% of its area.** The
+plate's size in world units was `cols × rows` of the **wrap grid**, the layout meant for cells
+that have no plan, and that grid comes from the cell COUNT: four zones make 2×2, one cell makes
+1×1. The traced plan had nothing to do with that number and was scaled by it anyway — the same
+class of mistake as the two before it, a value describing the GUESS applied to the STATEMENT. A
+traced card's plate is a constant now; an untraced one keeps the wrap sizing, which is what the
+footer has always said it is.
+
+And the **sheet was fixed at 1000 × 620 with no way to change it** — every plan, portrait or
+landscape, traced on the same landscape rectangle, which *is* the floor's proportions as far as
+the 3D is concerned. There is a **Sheet** control now (Wide 3:2 · Square · Tall 2:3 · Fit to the
+image), attaching an image adopts its shape while nothing is drawn, ⚠️ changing it **rescales what
+is already drawn** (points are stored in plan units, so raising the height without touching them
+would bunch every zone against the top), and the sheet's ratio crosses the module boundary so the
+3D plate is as deep as the drawing says.
+
+**240 assertions across fourteen suites, 0 failing** — the size bug is asserted against the
+revision before the fix, executed on the same input.
+
 ### The 3D card's controls collapse to one Display button, and the fill level gets a line (2026-09-10) — jasantos2
 
 Owner: *"can you simplify the UI, i think too much buttons and information, propose a simplified

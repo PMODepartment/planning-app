@@ -15648,12 +15648,37 @@
        "only if every storey agrees" rule existed because grids carried their own cols/rows; a
        fraction of the plate needs no agreement, so that whole class of fallback is gone. */
     var PLATE = _vsPlanGrid(_maxCells);
-    var maxCols = PLATE.cols, maxRows = PLATE.rows;
+    /* ==========================================================================================
+       HOW BIG THE FLOOR PLATE IS.
+       Owner 2026-09-10: *"the size of the floor is decreased when proceed with level 1 - detail."*
+
+       ⚠️⚠️ MEASURED, NOT GUESSED AT: the same traced plan was being drawn at 25% of its area at
+       Detail 1. The plate's size in world units was `cols x rows` of the WRAP GRID — a layout
+       for cells that have no plan — and that grid is derived from the cell COUNT. Four zones at
+       Detail 2 make a 2x2 grid, so the plate was 2 x 2; one cell at Detail 1 makes 1x1, so the
+       same building was drawn half as wide and half as deep. The traced plan had nothing to do
+       with it and was scaled by it anyway.
+
+       ⚠️ SO A TRACED CARD'S PLATE IS A CONSTANT, shaped by the DRAWING: VS_PLATE across, and as
+       deep as the sheet's own proportions say (see `ar`, which now crosses the boundary). The
+       footprint then depends on the plan and nothing else — not the Detail, not the zone count.
+       ⚠️ An UNTRACED card keeps the old wrap sizing, because there the footprint honestly IS the
+       zone count on a grid, which is what the footer has always said it is.
+       ========================================================================================== */
+    var VS_PLATE = 2;
+    var _arAt = null;
+    for (var _ai = 0; _ai < model.disp.length && _arAt == null; _ai++) {
+      var _ap = _vsZpFor(model.disp[_ai], model.trade);
+      if (_ap) _arAt = (+_ap.ar > 0.05 && +_ap.ar < 20) ? +_ap.ar : (1000 / 620);
+    }
+    var PW = _arAt ? VS_PLATE : PLATE.cols * CELL;
+    var PD = _arAt ? (VS_PLATE / _arAt) : PLATE.rows * CELL;
+    var maxCols = PW / CELL, maxRows = PD / CELL;
     model.disp.forEach(function (v, li) {
       var cells = model.rowCells(model.byLevel[v], model.detail);
       var n = cells.length || 1;
       // The plate's own size, and where this storey's cells sit on it.
-      var plateW = PLATE.cols * CELL, plateD = PLATE.rows * CELL;
+      var plateW = PW, plateD = PD;
       // ⚠️ The storey's own traced plan, if it has one. A zone the plan does not name keeps its
       // wrap slot, which is why a half-traced plan degrades instead of losing zones.
       var _plate = _vsZpFor(v, model.trade);
@@ -15835,7 +15860,7 @@
        ⚠️ NOT in `picks`: a slab is not a zone, and clicking one must not open a cell — nor may
        it swallow the click meant for the zone behind it. */
     if (_vsFloorMarks) {
-      var _slabG = new T.BoxGeometry(PLATE.cols * CELL * 1.04, GAPY * 0.5, PLATE.rows * CELL * 1.04);
+      var _slabG = new T.BoxGeometry(PW * 1.04, GAPY * 0.5, PD * 1.04);
       var _slabM = new T.MeshLambertMaterial({ color: _vsDarkTheme() ? 0x39404a : 0xc2c8d2,
         transparent: true, opacity: 0.9 });
       model.disp.forEach(function (v, li) {
@@ -15900,7 +15925,7 @@
        planner zooms in or turns the model. Overlapping labels are worse than none — they misname
        floors — but hiding one at this zoom is not the same as never drawing it. */
     var labWrap = null, labs = [];
-    var _plW = PLATE.cols * CELL, _plD = PLATE.rows * CELL;
+    var _plW = PW, _plD = PD;
     function buildLabels() {
       if (!_vsFloorMarks || !storeys) return;
       labWrap = document.createElement('div');
@@ -32735,7 +32760,11 @@
          end up carrying its outline in a different shape from every other floor's. */
       function shapeOf(p) {
         var H = zpH(p);
-        return { polys: p.polys.map(function (q) {
+        /* ⚠️⚠️ THE SHEET'S PROPORTIONS TRAVEL WITH THE OUTLINE. The points are normalised to
+           0..1 on both axes, which throws the aspect away — so a plan traced on a 1000 x 620
+           sheet arrives as a square unless the ratio comes with it. The stacking sizes its
+           plate from this; without it, a landscape floor plate was drawn square. */
+        return { ar: ZP_W / H, polys: p.polys.map(function (q) {
           return { code: q.code, color: zpColorOfBag(bag, q.code),
                    pts: q.pts.map(function (pt) { return [pt[0] / ZP_W, pt[1] / H]; }) };
         }) };
@@ -33044,6 +33073,31 @@
           paint();
         }).catch(function () { _zpWin.err = 'The plan image could not be loaded from storage.'; paint(); });
       }
+      /* ==== THE SHEET'S SHAPE — "the size of the floor" ==================================
+         Owner 2026-09-10: *"allow users to define in the floor plan the size of the floor."*
+         ⚠️⚠️ THE SHEET WAS FIXED AT 1000 x 620 AND NOTHING COULD CHANGE IT. Every plan, portrait
+         or landscape, was traced on the same landscape rectangle — and since the outline crosses
+         the module boundary normalised to 0..1, that rectangle IS the floor's proportions as far
+         as the 3D model is concerned. A tall building on a square site was drawn wide.
+         ⚠️⚠️ CHANGING IT RESCALES WHAT IS ALREADY DRAWN. Points are stored in PLAN UNITS with y
+         running 0..h, so raising h without touching them would leave every traced zone bunched
+         against the top of the sheet — the drawing would silently stop matching the drawing.
+         The ratio is applied to every y, so the trace keeps its proportions and its place. */
+      function zpSetSheetH(nh) {
+        var W2 = _zpWin, old = zpH(W2.draft);
+        nh = Math.round(zpClamp(nh, 120, 4000));
+        if (!isFinite(nh) || nh === old) return;
+        snap();
+        var k = nh / old;
+        W2.draft.polys.forEach(function (q) {
+          q.pts = q.pts.map(function (p) { return [p[0], Math.round(p[1] * k * 10) / 10]; });
+        });
+        W2.draft.h = nh;
+        commit(); paint();
+      }
+      // The sheet shapes offered, as height for a 1000-wide sheet. ⚠️ Named by what a planner
+      // sees, not by the number: nobody thinks of a floor plate as "620 tall".
+      var ZP_SHEETS = [['620', 'Wide 3:2'], ['1000', 'Square'], ['1500', 'Tall 2:3']];
       function commit() {
         var W = _zpWin, bag = zpBag();
         if (!W.owned) {
@@ -33208,6 +33262,16 @@
             (d.img ? '<label class="zpw-op" title="Fade the drawing so the zones over it stay readable">Fade' +
               '<input type="range" id="zpw-o" min="20" max="100" value="' + Math.round((d.o == null ? 1 : d.o) * 100) + '"></label>' : '') +
             (!d.img ? '<span class="sbld-hint" style="margin:0;">optional — you can draw the zones without one</span>' : '') +
+            /* ⚠️ ONE select, in the row that already owns the drawing. The floor's proportions
+               are a fact about the sheet, and this is the sheet's row. */
+            '<label class="zpw-grid-ctl" title="The shape of the floor plate. The 3D view builds its footprint from this, so a tall site should not be traced on a wide sheet.">Sheet' +
+              '<select id="zpw-sheet">' + ZP_SHEETS.map(function (s2) {
+                return '<option value="' + s2[0] + '"' + (String(hh) === s2[0] ? ' selected' : '') + '>' + s2[1] + '</option>';
+              }).join('') +
+              (ZP_SHEETS.some(function (s2) { return String(hh) === s2[0]; })
+                ? '' : '<option value="' + hh + '" selected>' + (Math.round(1000 / hh * 100) / 100) + ':1</option>') +
+              (d.img ? '<option value="fit">Fit to the image</option>' : '') +
+            '</select></label>' +
             /* ⚠️ The owner's *"uniformity of the sizes"*: another floor's outlines, shown but
                not editable, to trace against. Absent entirely when no other floor has one -
                an empty picker is a question with no answers. */
@@ -33336,7 +33400,9 @@
           '</div>' : '') +
 
           (W.err ? '<p class="sbld-note sbld-note-warn">' + e2(W.err) + '</p>' : '') +
-          '<div class="zpw-stage' + (W.drawing ? ' drawing' : '') + '" id="zpw-stage">' +
+          // ⚠️ The stage's aspect is the SHEET's, or a re-shaped sheet would be squashed back
+          // into the 1000 x 620 box the CSS used to hard-code and every corner would move.
+          '<div class="zpw-stage' + (W.drawing ? ' drawing' : '') + '" id="zpw-stage" style="aspect-ratio:' + ZP_W + ' / ' + hh + ';">' +
             (W.url ? '<img class="zpw-img" src="' + e2(W.url) + '" alt="" style="opacity:' + (d.o == null ? 1 : d.o) + '">' : '') +
             '<svg class="zpw-svg" id="zpw-svg" viewBox="0 0 ' + ZP_W + ' ' + hh + '" preserveAspectRatio="none">' + gridSvg + refSvg + frontSvg + shapes + live + markSvg + '</svg>' +
             (!d.img && !d.polys.length && !W.drawing ? '<div class="zpw-empty"><b>Nothing here yet.</b><br>' +
@@ -33513,6 +33579,18 @@
           if (!act) return;
           zpColorSet(act, null);
           paint();
+        };
+        var sh = q('zpw-sheet');
+        if (sh) sh.onchange = function () {
+          if (sh.value !== 'fit') { zpSetSheetH(parseInt(sh.value, 10) || zpH(W.draft)); return; }
+          /* ⚠️ The image's OWN proportions, read off the loaded <img>, not off the file: the
+             element is already on screen at its natural size, and asking it costs nothing. A
+             plan uploaded portrait then traced on a landscape sheet is the case this exists for. */
+          var im = wrap.querySelector('.zpw-img');
+          var iw = im && im.naturalWidth, ih = im && im.naturalHeight;
+          if (!iw || !ih) { UI.toast('The plan image has not finished loading yet.', 'warn'); paint(); return; }
+          zpSetSheetH(ZP_W / (iw / ih));
+          UI.toast('The sheet now matches the plan image.', 'success');
         };
         var rsel = q('zpw-ref');
         // ⚠️ The reference is a VIEW setting, not a change to the drawing: no snap(), no commit().
@@ -33762,6 +33840,23 @@
               _zpWin.draft.img = path;
               commit();
               if (old) { try { sb().storage.from(ZP_BUCKET).remove([old]); } catch (e) {} }
+              /* ⚠️ THE SHEET TAKES THE IMAGE'S SHAPE, but only while nothing is drawn. Fitting
+                 it under an existing trace would rescale that trace without being asked; once
+                 there are areas on the sheet the planner asks for it (Sheet › Fit to the image).
+                 ⚠️ Read from a throwaway Image, not from the <img> on the stage, which has not
+                 loaded the new file yet at this point. */
+              if (!_zpWin.draft.polys.length) {
+                try {
+                  var _probe = new Image();
+                  _probe.onload = function () {
+                    if (!_zpWin || _zpWin.draft.img !== path) return;      // the window moved on
+                    if (_probe.naturalWidth && _probe.naturalHeight) {
+                      zpSetSheetH(ZP_W / (_probe.naturalWidth / _probe.naturalHeight));
+                    }
+                  };
+                  _probe.src = URL.createObjectURL(f);
+                } catch (e) {}
+              }
               loadImg();
             })
             .catch(function (e) {
