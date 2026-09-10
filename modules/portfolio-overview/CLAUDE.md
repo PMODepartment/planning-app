@@ -1,5 +1,77 @@
 # Module: portfolio-overview
 
+## 2026-09-10 (u3) — The project filter stops clipping, and A–Z becomes a sticky rail
+
+Owner, items 1 and 2 of six: *"The filter all projects can be combined with the other filter button
+where its UI is clipping and bugging… let's just apply the existing UI from other modules so its
+consistent"*, and *"when there are 1000+ stakeholders… the A-Z isn't sticky. I want to locate this at
+the right side as well."*
+
+### ⚠️⚠️ The clipping had one cause, and it was the positioning, not the width
+`.po-projfilter-menu` was `position:absolute; left:0; width:260px` hanging off a **right-aligned**
+button — so a 260px menu opened *rightwards* from a button already at the right edge of the page and
+ran off it. Every other filter in this app expands **inline** and reflows the page
+(`.pd-filtergroup`, `.po-toolbar-fields`), which cannot clip by construction. So it adopts that
+idiom rather than being nudged to `right:0`, which would have fixed this one case and left the next
+one to be discovered. The z-index and the drop shadow went with the absolute positioning — an inline
+panel is in flow and has nothing to lift above.
+
+⚠️ The list is now a `repeat(auto-fill, minmax(240px,1fr))` grid. A single 260px column of 40
+projects was most of the reason it wanted to be a floating menu in the first place.
+
+### ⚠️⚠️ One filter button where a view has one, and ONE NODE — never a copy
+Four of the thirteen views have an expanding filter panel (Stakeholders, Risk, Issues, Equipment).
+`placeScope` **moves** `#po-projfilter-wrap` into that panel, so in those views there is genuinely one
+filter control, as asked. The other nine have no panel and the scope still has to be reachable from
+every view, so it falls back to its own bar — which is then hidden rather than left as an empty
+14px strip.
+
+⚠️ It **moves the element**, so the wiring, the state and the selection travel with it: it is the
+same DOM node, and nothing is re-bound. A copy per view is the thing that would need keeping in step.
+
+⚠️ **The at-a-glance scope indication survives, and is the app's own convention.** `projSel` is empty
+when every project is in scope, so nothing is ticked and `UI.wireFilterToggle`'s `has-active` state
+is off; tick anything and the funnel goes red. **Measured both ways:** inactive with nothing checked,
+active the moment one project is. The per-view scope note (*"3 of 40 projects"*) still spells it out.
+
+### The A–Z index is a sticky vertical rail on the right
+The owner's point is the one that matters at scale: with 1,000 stakeholders a strip that scrolls away
+is useless exactly when you need it, because you are a long way down the list. It is now a 36px rail
+beside the cards, `position:sticky`, and it is the iOS-contacts idiom rather than an invention.
+
+- ⚠️ `align-self:flex-start` is **required** — a flex item stretches to the row height by default, and
+  `position:sticky` on a full-height item has nothing to travel within. Without it the rail is
+  correct in the cascade and does not stick.
+- ⚠️ The per-letter **count** does not fit a 20px column, so it moves into the `title`.
+  Dropping it outright would have removed the one thing that makes a letter worth clicking.
+- ⚠️⚠️ **Restyled after the owner asked for it to look better, and the fault was layering.**
+  The first cut bolted rail rules on top of the old horizontal-strip BUTTON styling, so every
+  letter kept a border, a fill and 4px/7px padding — 27 stacked bordered boxes in a 34px column,
+  which is what read as unfinished. The base rules are now written FOR a rail: no per-letter
+  chrome at all, with weight and colour carrying the state. An "All" pill heads the column above
+  a divider, and the scrollbar is suppressed because inside a 34px rail it would take a third of
+  the width and reflow the letters.
+- ⚠️ The 3px "has anybody" dot went with that: in a 20px column it was one more mark to read,
+  and the letter already says it. **Measured** — a letter with people computes opacity 1 at
+  weight 700, an empty one 0.26 and is disabled.
+- ⚠️ The rail is a **sibling after** the cards in source order, so the tab sequence reaches the people
+  before the index — the index is navigation, not content.
+- ⚠️ **On a phone it reverts to a horizontal strip**, sticky to the top. A 22px column of 27 letters is
+  far under the 44px touch target and there is no side channel when the page is one column.
+
+### Verified
+Driven in a browser against the real stylesheet, with the toolbar and scope-bar markup lifted
+**byte-for-byte** out of the shipped page and `placeScope` **sliced out of it**, over a 224-person
+fixture: the panel computes `position:static` and spans 60→771 in a 1265px viewport with **no
+overflow either side and no horizontal page scroll** (it ran off the edge before); `placeScope` puts
+the node in `po-sh-fields` on Stakeholders and back in `.po-scopebar` on Overview; the rail computes
+`sticky`, sits to the right of the cards, and **after scrolling 1,200px it is pinned at `top: 8px`
+and still on screen**.
+
+⚠️ A first measurement pass reported `viewportW: 0` — the hidden-tab artefact again. Forced a paint
+before re-measuring; the numbers above are from the second pass.
+⚠️ **Not verified signed in.**
+
 ## 2026-09-10 (u2) — Directory Health: the dashboard half of the adoption
 
 Owner: *"And a dashboard page that can also be adopted."* Asked what it should report, the choice was

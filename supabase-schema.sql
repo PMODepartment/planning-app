@@ -448,7 +448,6 @@ create table if not exists stakeholder_map (
   target_rel          smallint,      -- Target Relationship 1-4
   primary_responsible text,
   alternate           text,
-  gift_tier           text,
   created_by    uuid references users(id),
   created_at    timestamptz default now(),
   updated_at    timestamptz default now()

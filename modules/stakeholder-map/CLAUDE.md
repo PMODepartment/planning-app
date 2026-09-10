@@ -1,5 +1,82 @@
 # Module: stakeholder-map
 
+## 2026-09-10 (u7) — The module opens on cards, the screen is called Register, and the bands move into the table
+
+Owner, item 6 of six: *"first load of stakeholder map it should be the cards but we shall call it
+Register. There should only be a view changer button among the toolbars to change whether card view
+or register view. Let's also just follow the table features available in the Contracts & Claims
+Module… I believe the bands RCM column-group toggle will be removed/integrated in the table already."*
+
+### ⚠️⚠️ SCREEN and LAYOUT were the same list, which is why one register had two names
+`.sm-tabs` offered **Register / Cards / Impact / Criteria** — so the card view and the table view of
+the *same* register were two entries in the screen dropdown, and neither was "the register". They are
+now two different things: `curView` is the **screen** (Register / Impact / Criteria) and `smLayout` is
+how the Register **draws itself** (cards / table). One view changer, `#sm-layout`, in the toolbar.
+
+- **Cards is the default** and the layout is remembered in `localStorage`.
+- ⚠️ **Every bookmark ever issued still resolves.** The hash carried `{view:"list"}` or
+  `{view:"cards"}`; those normalise to the Register screen **and set the layout**, so an old link to
+  the table lands on the table rather than silently on the cards. **Measured both.**
+- ⚠️ The hash now carries the layout too, so Back steps through a layout change — the toggle rewrites
+  what is on screen just as much as the dropdown does.
+- ⚠️ The Impact/Influence grid's cell click jumps to the Register **screen** and no longer forces the
+  table. Which layout the planner left it in is their choice, and forcing it would undo that on every
+  cell click.
+
+### The bands are integrated, not removed
+⚠️ The owner expected the RCM column-group toggles to disappear into the table. They are **integrated**
+rather than deleted: they choose which of the register's columns are on screen, and the OPS register
+has **31 columns in 6 bands** — one horizontal scroller holding all of them is not a register anybody
+reads. They now live in the table's own `.pd-dt-head` strip, on the thing they act on.
+
+- ⚠️ `#sm-bands` is **static markup inside the strip**, not written by `renderTable()`. The strip
+  re-renders on every filter keystroke, and an element rebuilt under `renderBandToggles()` would lose
+  its handlers — only the count is re-written.
+- ⚠️ It keeps the same id and the same shared `.pd-seg.pd-seg-multi`, so `renderBandToggles()` is
+  untouched and the Risk Register's matching control still makes the choice the same way.
+- The per-view show/hide of the bands and their separator is **deleted rather than adjusted**: living
+  inside the table card, they are on screen exactly when the table is.
+
+### The table adopts the shared layer
+New `.pd-dt` in `dashboard.css` — header strip with the title and row count, sortable headers, group
+rows, footer. ⚠️ It is a **promotion, not a new component**: the idiom is the Procurement app's
+`.data-table`, ported into Contracts & Claims as `.cc-dt*` with the note *"divergent table styles is
+exactly what the UI-uniformity pass keeps having to rework"*. A third hand-copy is how three tables
+end up disagreeing. ⚠️ `.cc-dt*` is **unchanged** — migrating Contracts & Claims onto the shared rules
+is its own change with its own verification, and doing it here would put a module I was not asked to
+touch into this commit.
+
+### Verified
+The shipped `switchView` / `setLayout` / `VIEWS` / `LEGACY_VIEW` were **sliced out of `module.js`** and
+driven against the **real toolbar and pane markup lifted byte-for-byte** out of `index.html`:
+on load `register` + `cards` with the cards pane showing and the table hidden; the toggle flips both
+ways and the seg's `on` class follows; **exactly one pane** is visible in every state including an
+unrecognised view, which falls back to Register; Impact and Criteria hide the layout switcher and the
+filters; both legacy hashes resolve to the right layout; and the bands render **inside the table card
+and not in the topbar**, 6 buttons. The head strip measures 49px with a `--pd-card` background, a 1px
+bottom rule, the title *Register* and the bands right-aligned inside it.
+
+⚠️⚠️ **The first measurement of that strip reported it transparent with no border — and the CSS was
+correct the whole time.** The harness linked `dashboard.css` with no `?v=` and was served the
+browser's stale copy. This is the second harness in this session to report correct rules as missing,
+after one that never loaded the stylesheet at all. Harness stylesheets are now cache-busted.
+
+⚠️ **Not verified signed in** — no project's register has been loaded, so the table has not been drawn
+from real rows.
+
+## 2026-09-10 (u6) — Gift Tier removed
+
+Owner: *"Let's drop the Gift Tier as well."* Removed from the register's add/edit form and from the
+directory identity form, and dropped from `PERSON_FIELDS` — the 13-field mirror between
+`stakeholders` and `stakeholder_map` is now 12.
+
+⚠️ **`migrations/2026-09-10-drop-gift-tier.sql` drops the columns and DESTROYS the values.** The
+owner chose that over a UI-only removal after the data loss was stated. The migration reports the
+count it is about to destroy before the drop takes effect, so there is a moment to roll back.
+
+⚠️ Nothing displayed it — it was write-only, present in two forms and in the mirror list and rendered
+on no card, row or export. That is worth recording, because it is why removing it is this small.
+
 ## 2026-09-08 — Four KPI cards, and the row rule that had to change with them
 
 Owner: *"The kpi warnings in the stakeholder map isn't necessary let's remove the total number of

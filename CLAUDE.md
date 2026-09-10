@@ -127,6 +127,74 @@ fetch is a real query and the anon key has no grants, so the round trip has neve
 
 `MODULE_V` → `20260910v1`. Detail: [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
 
+### 2026-09-10 (u7) — A shared data-table layer, and the Stakeholder Map opens on cards
+
+Item 6 of six owner items on the stakeholder screens. Detail in
+[`modules/stakeholder-map/CLAUDE.md`](modules/stakeholder-map/CLAUDE.md). What reaches beyond the
+module:
+
+- ⚠️⚠️ **`dashboard.css` gains `.pd-dt`, and it is a PROMOTION rather than a new component.** The
+  idiom is the Procurement app's `.data-table`, ported into Contracts & Claims on 2026-09-07 as
+  `.cc-dt*` under its own note — *"divergent table styles is exactly what the UI-uniformity pass keeps
+  having to rework"*. Stakeholder Map needed the same header strip, sortable headers, group rows and
+  footer, and a **third hand-copy is how three tables end up disagreeing**. It layers over the shared
+  `.pd-table`, and every value is a `--pd-*` token: the Procurement original hard-codes its colours and
+  re-states them under `body.dark-mode`, so carrying the literals across gives a table that is right
+  in light mode and unreadable in dark.
+- ⚠️ **`.cc-dt*` is deliberately UNCHANGED.** Migrating Contracts & Claims onto the shared rules is its
+  own change with its own verification; doing it here would put a module I was not asked to touch into
+  this commit. Until then the two coexist, and the shared one is the successor.
+- ⚠️ **Screen and layout stop being the same list.** The module's dropdown offered *Register* and
+  *Cards* as two screens, so the card view and the table view of the same register were siblings and
+  neither was "the register". Now one Register screen with a card/table switcher, cards by default —
+  and **every hash ever issued still resolves**, because the old `list`/`cards` values normalise to the
+  Register screen *and set the layout*.
+
+**Verified** by slicing the shipped view logic out of `module.js` and driving it against the real
+markup lifted byte-for-byte from `index.html`: exactly one pane visible in every state including an
+unrecognised view, both legacy hashes landing on the right layout, and the band toggles rendering
+inside the table card rather than the topbar. ⚠️⚠️ The first measurement of the new header strip
+reported it transparent and border-less **while the CSS was correct** — the harness linked
+`dashboard.css` with no `?v=` and got the browser's stale copy. That is the **second** harness this
+session to report correct rules as missing; harness stylesheets are now cache-busted.
+
+`dashboard.css` → `?v=20260910u7` (29 pages); stakeholder-map `module.js`/`module.css` and
+`stakeholders.js` → `?v=20260910u7`; `MODULE_V` → `20260910u7`. ⚠️ Every one of the other 28 pages was
+checked to carry **version-only** changes, so no concurrent session's work is swept in.
+⚠️ **Not verified signed in.**
+
+### 2026-09-10 (u6) — Gift Tier is removed from the app, and a migration drops the columns
+
+Owner, on the project-level Stakeholder Map: *"Let's drop the Gift Tier as well."* Asked whether to
+remove it from the UI only or to drop the columns outright, the owner chose to drop them.
+
+**Run `migrations/2026-09-10-drop-gift-tier.sql`.**
+
+- ⚠️⚠️ **IT DESTROYS DATA AND CANNOT BE UNDONE.** Every gift tier recorded on any stakeholder, on any
+  project, is gone the moment it runs; re-adding the column afterwards gives you an empty one. The
+  migration **counts the values it is about to destroy and `raise notice`s the number before the
+  drop takes effect**, inside the transaction, so there is a moment to `rollback` — and its header
+  carries a ready-made archive query for anyone who wants the values kept. This environment's key has
+  no grants, so I could not read that count for the owner in advance.
+- ⚠️ **Both tables are dropped in ONE transaction.** `gift_tier` was one of the 13 `PERSON_FIELDS`
+  mirrored between `stakeholders` (the directory) and `stakeholder_map` (the per-project register);
+  dropping one side alone leaves the mirror asymmetric and every insert naming the column fails
+  against whichever table lost it.
+- ⚠️ **The schema files are updated too** (`supabase-schema.sql`, `supabase-build.sql`,
+  `supabase-setup.sql`, `migrations/VERIFY-schema.sql`). Dropping a column in a migration while the
+  canonical schema still declares it means the next fresh deployment resurrects it — and the two then
+  disagree silently. ⚠️ `migrations/2026-07-20-stakeholder-map-full.sql` is **history and is left
+  alone**: it records what that migration did, and the drop is its own migration.
+- The field is gone from both forms that carried it (the directory identity form and the register's
+  own add/edit), from both copies of `PERSON_FIELDS`, and from the directory test's expectations.
+
+**Verified by execution:** `PERSON_FIELDS` is 12, the two copies are **identical** (they are compared
+element-wise, because a mirror that disagrees is the failure this contract exists to prevent), no
+live file outside the migration history names the column, and the shared suites still pass — **41
+matcher + 66 operations, 0 failing.** `stakeholders.js` → `?v=20260910u6`; stakeholder-map
+`module.js`/`module.css` → `?v=20260910u6`; `MODULE_V` → `20260910u6`.
+⚠️ **Not verified signed in, and the migration has not been run from here.**
+
 ### Snap to grid, and the traced layout finally reaches the Vertical Stacking (2026-09-10) — jasantos2
 
 Owner: *"can you add snapping to grid. also how come the zones defined are not shown in the vertical
@@ -163,6 +231,39 @@ proof is **retired on purpose** — it asserted this function never changes. ⚠
 signed-in** — the image upload still has never run against the real bucket.
 
 `MODULE_V` → `20260910u3`. Detail: [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+### 2026-09-10 (u3) — Portfolio toolbar: the project filter stops clipping, and A–Z becomes a sticky rail
+
+Items 1 and 2 of six owner items on the stakeholder screens. Detail in
+[`modules/portfolio-overview/CLAUDE.md`](modules/portfolio-overview/CLAUDE.md).
+
+- ⚠️⚠️ **The clipping was the POSITIONING, not the width.** `.po-projfilter-menu` was
+  `position:absolute; left:0; width:260px` hanging off a **right-aligned** button, so it opened
+  rightwards from the right edge of the page and ran off it. It now expands **inline**, the idiom
+  every other filter in this app already uses (`.pd-filtergroup`, `.po-toolbar-fields`), which cannot
+  clip by construction — rather than being nudged to `right:0`, which fixes this one case and leaves
+  the next to be found.
+- ⚠️ **One filter button, one NODE.** Four of the thirteen views have a filter panel; `placeScope`
+  *moves* the scope control into it so those views have a single control, and falls back to its own
+  bar in the nine that do not. Moving the element carries its wiring, state and selection with it — a
+  copy per view is what would need keeping in step.
+- ⚠️ The **A–Z index is now a sticky vertical rail** beside the cards. `align-self:flex-start` is
+  required or a stretched flex item gives `position:sticky` nothing to travel within — correct in the
+  cascade and does not stick. On a phone it reverts to a horizontal strip: a 22px column of 27
+  letters is far under the 44px touch target.
+
+Measured in a browser with the toolbar markup lifted byte-for-byte from the shipped page and
+`placeScope` sliced out of it: the panel spans 60→771 in a 1265px viewport with **no overflow and no
+horizontal page scroll**, and the rail is **pinned at `top: 8px` after scrolling 1,200px**. The
+funnel's `has-active` state was measured off and on, so a narrowed scope is still visible at a glance
+with the panel shut. `MODULE_V` → `20260910u4`.
+⚠️⚠️ **`MODULE_V` is `u4`, not `u3`: the concurrent session in this tree independently
+picked `20260910u3` and pushed it first — the SAME two-sessions-same-letter collision this
+log has already recorded twice.** ⚠️ It rebased **cleanly**, because both sides set the
+identical string and git had nothing to conflict on, and that is the dangerous shape: my changes
+would otherwise have shipped under a version a browser had already cached WITHOUT them. The
+other session’s own entry above still reads `u3`, which is what it shipped.
+⚠️ **Not verified signed in.**
 
 ### 2026-09-10 (u2) — Directory Health, and a duplicate scan that stops being quadratic
 

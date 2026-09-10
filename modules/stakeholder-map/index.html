@@ -7,9 +7,9 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Stakeholder Register · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260909y" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910u7" />
   <link rel="stylesheet" href="../../assets/css/mcc-rcm.css?v=20260909m" />
-  <link rel="stylesheet" href="module.css?v=20260910s4" />
+  <link rel="stylesheet" href="module.css?v=20260910u7" />
 </head>
 <body>
   <div class="pd-app">
@@ -37,9 +37,14 @@
         <div class="sm-projctx">
           <select class="pd-select sm-project" id="sm-project" title="Project"></select>
         </div>
+        <!-- ⚠️⚠️ CARDS IS NO LONGER A SCREEN, IT IS A LAYOUT. Owner: "first load of
+             stakeholder map it should be the cards but we shall call it Register. There
+             should only be a view changer button among the toolbars to change whether card
+             view or register view." So this dropdown lists the three genuine screens and
+             #sm-layout below switches how the Register draws itself. The two used to be the
+             same list, which is why one register had two names in it. -->
         <div class="sm-tabs" role="tablist">
-          <button class="sm-tab active" data-view="list">Register</button>
-          <button class="sm-tab" data-view="cards">Cards</button>
+          <button class="sm-tab active" data-view="register">Register</button>
           <button class="sm-tab" data-view="grid">Impact / Influence</button>
           <button class="sm-tab" data-view="criteria">Criteria</button>
         </div>
@@ -50,13 +55,21 @@
                even while the panel is collapsed. Hidden outside Register/Cards
                (switchView) since neither Impact/Influence nor Criteria read
                `filters`. -->
-          <!-- RCM band (column-group) toggles — the shared `.pd-seg` segmented control
-               (dashboard.css), multi-select variant, exactly as the Risk Register does it.
-               See the longer note in modules/risk-register/index.html: these were a row of
-               bespoke pills in a slot nothing else in the app uses, and the two registers
-               MUST make this choice the same way or the shared RCM furniture stops being
-               shared. Six bands here, five there — that is the only difference. -->
-          <span class="pd-seg pd-seg-multi sm-bands" id="sm-bands" role="group" aria-label="Column bands shown in the register"></span>
+          <!-- ⚠️⚠️ THE RCM BAND TOGGLES MOVED INTO THE TABLE'S OWN HEADER STRIP (below).
+               Owner: "with the adoption of the table UI, I believe the bands RCM
+               column-group toggle will be removed/integrated in the table already."
+               Integrated rather than removed: they choose which of the 31 register columns
+               are on screen, and 31 columns in one horizontal scroller is not a register
+               anybody reads. In the strip they sit on the thing they act on, which is the
+               whole point of `.pd-dt-head`.
+               ⚠️ Still the shared `.pd-seg` multi-select, and still the same id, so
+               `renderBandToggles()` is unchanged — see the note in risk-register's
+               index.html about the two registers having to make this choice the same way. -->
+          <!-- The one view changer the owner asked for: how the Register draws itself. -->
+          <div class="pd-seg" id="sm-layout" role="group" aria-label="Register layout">
+            <button type="button" class="pd-seg-ico on" data-lay="cards" title="Cards"><span data-ico="gridView" data-ico-size="15"></span></button>
+            <button type="button" class="pd-seg-ico" data-lay="table" title="Register table"><span data-ico="listView" data-ico-size="15"></span></button>
+          </div>
           <span class="sm-tb-sep"></span>
           <button class="pd-filttoggle" id="sm-filttoggle" title="Filters"><span data-ico="filter" data-ico-size="16"></span></button>
           <span class="sm-tb-sep"></span>
@@ -93,15 +106,28 @@
         <!-- KPIs -->
         <div class="pd-kpis" id="sm-kpis"></div>
 
-        <!-- Register view -->
-        <div id="sm-view-list">
-          <div class="pd-card" style="padding:0;overflow:auto;">
-            <table class="pd-table sm-table" id="sm-table"></table>
+        <!-- Register — TABLE layout. The shared `.pd-dt` data-table layer
+             (dashboard.css): a header strip carrying the title, the row count and the
+             table's own controls, then the scrolling rows.
+             ⚠️ `#sm-bands` is STATIC markup inside the strip, not written by
+             `renderTable()`. The strip is re-rendered on every filter keystroke, and an
+             element rebuilt under `renderBandToggles()` would lose its handlers — only the
+             count is re-written. -->
+        <div id="sm-view-list" style="display:none;">
+          <div class="pd-card pd-dt">
+            <div class="pd-dt-head">
+              <h3>Register</h3>
+              <span class="pd-dt-count" id="sm-dtcount"></span>
+              <span class="pd-dt-spacer"></span>
+              <span class="pd-seg pd-seg-multi sm-bands" id="sm-bands" role="group" aria-label="Column bands shown in the register"></span>
+            </div>
+            <div class="pd-dt-wrap"><table class="pd-table sm-table" id="sm-table"></table></div>
+            <div class="pd-dt-foot" id="sm-dtfoot"></div>
           </div>
         </div>
 
-        <!-- Cards view — the faces -->
-        <div id="sm-view-cards" style="display:none;">
+        <!-- Register — CARD layout, and the one the module opens on. -->
+        <div id="sm-view-cards">
           <div id="sm-cards"></div>
         </div>
 
@@ -137,13 +163,13 @@
   <script src="../../assets/js/ui.js?v=20260909s"></script>
   <!-- Shared stakeholder directory: identity matching + find-or-create, used by
        BOTH this page and the Stakeholder Map module. Not hand-copied into each. -->
-  <script src="../../assets/js/stakeholders.js?v=20260910u2"></script>
+  <script src="../../assets/js/stakeholders.js?v=20260910u7"></script>
   <script src="../../assets/js/icons.js?v=20260909ui"></script>
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
   <script src="../../assets/js/mcc-rcm.js?v=20260902a"></script>
-  <script src="module.js?v=20260910s4"></script>
+  <script src="module.js?v=20260910u7"></script>
   <script>
     // Item 1 (2026-09-02) — see the note in minutes-of-meeting/index.html:
     // the topbar tabs become one dropdown and the static module label beside

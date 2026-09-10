@@ -47,7 +47,7 @@ const PERSON_FIELDS = pfMatch
 eq('PERSON_FIELDS is the 13 person facts, in the order the migration lists them',
    PERSON_FIELDS,
    ['name', 'title', 'nickname', 'role_title', 'organization', 'category',
-    'stakeholder_group', 'email', 'contact', 'birthday', 'gift_tier',
+    'stakeholder_group', 'email', 'contact', 'birthday',
     'photo_path', 'photo_thumb_path']);
 
 // ⚠️ THE MOST IMPORTANT ASSERTION IN THIS FILE. Every one of these names a

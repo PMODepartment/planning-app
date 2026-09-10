@@ -49,7 +49,12 @@ window.StakeholderMap = (function () {
   var rows = [];
   var urlCache = {};                    // object path -> signed URL
   var filters = { activity: '', category: '', sub: '', priority: '', approach: '', flag: '', search: '', cell: null };
-  var curView = 'list';                 // list | cards | grid | criteria
+  // ⚠️⚠️ SCREEN and LAYOUT are two different things now. `curView` is the screen the
+  //    title dropdown selects; `smLayout` is how the Register draws itself. They used to
+  //    be one list, which is how one register ended up with two names in the dropdown.
+  var curView = 'register';             // register | grid | criteria
+  var smLayout = 'cards';               // cards | table  — the owner's "first load" default
+  try { var _sl = localStorage.getItem('sm_layout'); if (_sl === 'table' || _sl === 'cards') smLayout = _sl; } catch (e) {}
   var histView = null;
   var collapsed = {};
   var bands = { id: true, as: true, en: true, rs: false, res: false, au: false };
@@ -79,7 +84,7 @@ window.StakeholderMap = (function () {
   var DIR = 'stakeholders';
   var PERSON_FIELDS = ['name', 'title', 'nickname', 'role_title', 'organization',
                        'category', 'stakeholder_group', 'email', 'contact',
-                       'birthday', 'gift_tier', 'photo_path', 'photo_thumb_path'];
+                       'birthday', 'photo_path', 'photo_thumb_path'];
   var people = {};        // stakeholder id -> directory row (the ones this project links)
   var dirAll = null;      // the whole directory, lazily loaded for the picker; null = not yet
   var dirUsage = {};      // stakeholder id -> project_id[]  (for "already on N projects")
@@ -487,16 +492,33 @@ window.StakeholderMap = (function () {
     document.querySelectorAll('.sm-tabs [data-view]').forEach(function (a) {
       a.onclick = function (e) { e.preventDefault(); switchView(a.dataset.view, a); histView.push(); };
     });
+    // The one view changer: card layout or register table.
+    document.querySelectorAll('#sm-layout [data-lay]').forEach(function (b) {
+      b.onclick = function () { setLayout(b.dataset.lay); histView.push(); };
+    });
 
     // Browser-history integration — see UI.bindHistoryState in ui.js. Without
     // this, switching views never touches the URL, so the browser's native Back
     // button jumps straight past every view to the module launcher.
+    // ⚠️ The hash now carries the LAYOUT as well, so Back steps through a layout change
+    //    the way it steps through a screen change — the toggle rewrites what is on screen
+    //    just as much as the dropdown does.
+    // ⚠️ A hash written before today reads `{view:"list"}` or `{view:"cards"}` and carries
+    //    no layout at all; `switchView` maps those through LEGACY_VIEW, so an old bookmark
+    //    to the table still lands on the table rather than silently on the cards.
     histView = UI.bindHistoryState({
       key: 'sm_view',
-      get: function () { return { view: curView }; },
-      apply: function (s) { switchView(s.view, document.querySelector('.sm-tabs [data-view="' + s.view + '"]')); }
+      get: function () { return { view: curView, layout: smLayout }; },
+      apply: function (s) {
+        if (s && s.layout) setLayout(s.layout, true);
+        switchView(s.view, document.querySelector('.sm-tabs [data-view="' + s.view + '"]'));
+      }
     });
 
+    // ⚠️ Paint the stored layout before the first render: `smLayout` may have come from
+    //    localStorage, and the seg's `on` class is markup that does not know about it.
+    setLayout(smLayout, true);
+    switchView(curView);
     if (pid) load();
     joinCollab();
   }
@@ -677,6 +699,9 @@ window.StakeholderMap = (function () {
 
   function render() {
     renderKpis();
+    // ⚠️ Both Register layouts are still rendered. They share `filtered()` and the cost is
+    //    a string build, but the reason is correctness rather than cost: switching layout
+    //    must not need a data pass, or the toggle would be a spinner on a big project.
     renderTable();
     renderCards();
     renderGrid();
@@ -862,6 +887,13 @@ window.StakeholderMap = (function () {
 
   function renderTable() {
     var t = $('sm-table');
+    var cnt = $('sm-dtcount');
+    if (cnt) {
+      var shown = rows.length ? filtered().length : 0;
+      cnt.textContent = shown === rows.length
+        ? shown + (shown === 1 ? ' stakeholder' : ' stakeholders')
+        : shown + ' of ' + rows.length + ' shown';
+    }
     if (!rows.length) {
       t.innerHTML = '<tr><td style="padding:24px;color:var(--pd-muted);">No stakeholders yet for this project. Click “Add stakeholder”.</td></tr>';
       return;
@@ -1062,7 +1094,10 @@ window.StakeholderMap = (function () {
         var f = +cell.dataset.x, i = +cell.dataset.y;
         if (filters.cell && filters.cell.i === i && filters.cell.f === f) filters.cell = null;
         else filters.cell = { i: i, f: f };
-        switchView('list', document.querySelector('.sm-tabs [data-view="list"]'));
+        // ⚠️ The Register SCREEN, not a layout. Clicking a priority cell filters the
+        //    register to it; which layout the planner left it in is their choice, and
+        //    forcing the table here would undo it on every cell click.
+        switchView('register');
         render();
         if (histView) histView.push();
       };
@@ -1152,37 +1187,49 @@ window.StakeholderMap = (function () {
       e.universeTableHTML() + '</div>';
   }
 
-  var VIEWS = ['list', 'cards', 'grid', 'criteria'];
+  var VIEWS = ['register', 'grid', 'criteria'];
+  // ⚠️ Every bookmark ever issued by this module points at `list` or `cards`. They are not
+  //    dropped: they normalise to the Register screen and SET THE LAYOUT, so an old link to
+  //    the table still lands on the table.
+  var LEGACY_VIEW = { list: 'table', cards: 'cards' };
 
   function switchView(view, link) {
-    // ⚠️ Normalise first. Every view this module has ever shipped is still in
-    // VIEWS, so no bookmark is stale today — but an unrecognised value hides
-    // all four panes and renders a blank page with no error, which is a silent
-    // failure a future rename would reintroduce. Fall back to the register.
-    if (VIEWS.indexOf(view) === -1) view = 'list';
+    // ⚠️ Normalise first. An unrecognised value hides every pane and renders a blank page
+    // with no error — a silent failure a future rename would reintroduce.
+    if (LEGACY_VIEW[view]) { setLayout(LEGACY_VIEW[view], true); view = 'register'; }
+    if (VIEWS.indexOf(view) === -1) view = 'register';
     if (!link) link = document.querySelector('.sm-tabs [data-view="' + view + '"]');
     curView = view;
-    VIEWS.forEach(function (v) {
+    var reg = view === 'register';
+    // ⚠️ The Register owns TWO panes and shows exactly one of them.
+    $('sm-view-list').style.display = (reg && smLayout === 'table') ? '' : 'none';
+    $('sm-view-cards').style.display = (reg && smLayout === 'cards') ? '' : 'none';
+    ['grid', 'criteria'].forEach(function (v) {
       var el = $('sm-view-' + v); if (el) el.style.display = view === v ? '' : 'none';
     });
-    // Filters apply to the register AND the cards (both are lists of people);
-    // the band toggles are columns, so they belong to the register alone.
-    $('sm-filters').style.display = (view === 'list' || view === 'cards') ? '' : 'none';
-    // ⚠️ Hide the seg's own trailing separator WITH it. The bands moved into the
-    // module bar's tool cluster (2026-09-08), where every group is fenced by a
-    // 1px `.sm-tb-sep`; hiding only the control left its fence behind, so the
-    // three non-Register views showed two dividers with nothing between them.
-    (function () {
-      var el = $('sm-bands'), show = view === 'list';
-      el.style.display = show ? '' : 'none';
-      var sep = el.nextElementSibling;
-      if (sep && sep.classList.contains('sm-tb-sep')) sep.style.display = show ? '' : 'none';
-    }());
-    if ($('sm-filttoggle')) $('sm-filttoggle').style.display = (view === 'list' || view === 'cards') ? '' : 'none';
+    var lay = $('sm-layout');
+    if (lay) lay.style.display = reg ? '' : 'none';
+    // Filters apply to both Register layouts (both are lists of people).
+    // ⚠️ The band toggles no longer need hiding per view: they live inside the table's own
+    //    header strip, so they are on screen exactly when the table is and not otherwise.
+    $('sm-filters').style.display = reg ? '' : 'none';
+    if ($('sm-filttoggle')) $('sm-filttoggle').style.display = reg ? '' : 'none';
     if (link) {
       document.querySelectorAll('.sm-tabs [data-view]').forEach(function (a) { a.classList.remove('active'); });
       link.classList.add('active');
     }
+  }
+
+  // ⚠️ `quiet` is what keeps the legacy-hash path from recursing: switchView calls this
+  //    for an old `list`/`cards` link, and re-entering switchView from here would loop.
+  function setLayout(lay, quiet) {
+    if (lay !== 'cards' && lay !== 'table') return;
+    smLayout = lay;
+    try { localStorage.setItem('sm_layout', lay); } catch (e) {}
+    document.querySelectorAll('#sm-layout [data-lay]').forEach(function (b) {
+      b.classList.toggle('on', b.dataset.lay === lay);
+    });
+    if (!quiet) switchView(curView);
   }
 
   // ========================================================================
@@ -1330,7 +1377,6 @@ window.StakeholderMap = (function () {
           '<div class="pd-field" style="flex:1;"><label>Email</label><input class="pd-input" type="email" id="ep-email" value="' + Fmt.esc(cur.email) + '"></div>' +
           '<div class="pd-field" style="flex:1;"><label>Contact no.</label><input class="pd-input" id="ep-contact" value="' + Fmt.esc(cur.contact) + '"></div>' +
           '<div class="pd-field" style="flex:0 0 160px;"><label>Birthday</label><input class="pd-input" type="date" id="ep-bday" value="' + (cur.birthday || '') + '"></div>' +
-          '<div class="pd-field" style="flex:0 0 120px;"><label>Gift tier</label><input class="pd-input" id="ep-gift" value="' + Fmt.esc(cur.gift_tier) + '"></div>' +
         '</div>' +
         '<div class="pd-field"><label>Notes about this person</label>' +
           '<textarea class="pd-textarea" id="ep-notes" rows="2" placeholder="Anything true of them wherever they appear — not this project\'s engagement plan.">' + Fmt.esc(cur.notes) + '</textarea></div>' +
@@ -1357,7 +1403,6 @@ window.StakeholderMap = (function () {
         email: q('#ep-email').value.trim(),
         contact: q('#ep-contact').value.trim(),
         birthday: q('#ep-bday').value || null,
-        gift_tier: q('#ep-gift').value.trim(),
       };
       if (!fields.name) { UI.toast('Name is required', 'warn'); return; }
       try {
@@ -1690,7 +1735,6 @@ window.StakeholderMap = (function () {
         '<div class="pd-field" style="flex:1;"><label>Email</label><input class="pd-input" type="email" id="f-email" value="' + Fmt.esc(ident.email) + '"' + dis + '></div>' +
         '<div class="pd-field" style="flex:1;"><label>Contact no.</label><input class="pd-input" id="f-contact" value="' + Fmt.esc(ident.contact) + '"' + dis + '></div>' +
         '<div class="pd-field" style="flex:0 0 160px;"><label>Birthday</label><input class="pd-input" type="date" id="f-bday" value="' + (ident.birthday || '') + '"' + dis + '></div>' +
-        '<div class="pd-field" style="flex:0 0 120px;"><label>Gift tier</label><input class="pd-input" id="f-gift" value="' + Fmt.esc(ident.gift_tier) + '"' + dis + '></div>' +
       '</div>' +
 
       '<div class="sm-fsec">2 · Register placement</div>' +
@@ -1971,7 +2015,6 @@ window.StakeholderMap = (function () {
         email:    person.email,
         contact:  person.contact,
         birthday: person.birthday || null,
-        gift_tier: person.gift_tier,
         // ⚠️ THE PHOTO PATHS TOO. Without these a person picked from the
         //    directory saves a project row with a null photo_path, so the register
         //    and the Cards view show initials for someone whose photograph is
@@ -1993,7 +2036,6 @@ window.StakeholderMap = (function () {
         email:    q('#f-email').value.trim(),
         contact:  q('#f-contact').value.trim(),
         birthday: q('#f-bday').value || null,
-        gift_tier: q('#f-gift').value.trim(),
       };
 
       var data = Object.assign({

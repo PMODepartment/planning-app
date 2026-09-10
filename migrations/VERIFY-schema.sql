@@ -191,7 +191,6 @@ with expected(migration, kind, obj, col) as (values
     ('2026-07-20-stakeholder-map-full.sql','column','stakeholder_map','birthday'),
     ('2026-07-20-stakeholder-map-full.sql','column','stakeholder_map','current_rel'),
     ('2026-07-20-stakeholder-map-full.sql','column','stakeholder_map','email'),
-    ('2026-07-20-stakeholder-map-full.sql','column','stakeholder_map','gift_tier'),
     ('2026-07-20-stakeholder-map-full.sql','column','stakeholder_map','nickname'),
     ('2026-07-20-stakeholder-map-full.sql','column','stakeholder_map','primary_responsible'),
     ('2026-07-20-stakeholder-map-full.sql','column','stakeholder_map','stakeholder_group'),

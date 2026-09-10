@@ -33,7 +33,7 @@
   // `row.name` / `row.organization` directly off a stakeholder_map row.
   var PERSON_FIELDS = ['name', 'title', 'nickname', 'role_title', 'organization',
                        'category', 'stakeholder_group', 'email', 'contact',
-                       'birthday', 'gift_tier', 'photo_path', 'photo_thumb_path'];
+                       'birthday', 'photo_path', 'photo_thumb_path'];
 
 
   // ==========================================================================

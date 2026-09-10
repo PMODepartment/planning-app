@@ -1538,6 +1538,67 @@ body { overflow-x: clip; }
    class (its own rules — column widths, etc. — still apply, untouched), add a
    `pd-filttoggle` button with a `filter` icon in the topbar tools, then call
    `UI.wireFilterToggle(toggleEl, panelEl)` once at init. ---------------------- */
+/* ==========================================================================
+   .pd-dt — THE SHARED DATA-TABLE LAYER
+   ==========================================================================
+   A layer over `.pd-table`, NOT a second table class. It adds the four things a
+   register needs and the bare table does not — a card HEADER STRIP with the row
+   count and the table's own actions, SORTABLE headers, GROUP rows, and a FOOTER —
+   and inherits everything else from `.pd-table`.
+
+   ⚠️⚠️ THIS IS A PROMOTION, NOT A NEW COMPONENT. The idiom is the Procurement
+      app's `.data-table`, ported into Contracts & Claims on 2026-09-07 as
+      `.cc-dt*` with the note "divergent table styles is exactly what the
+      UI-uniformity pass keeps having to rework". Stakeholder Map needed the same
+      thing, and a third hand-copy is how three tables end up disagreeing. Callers
+      add `pd-dt` beside `pd-card`.
+   ⚠️ `.cc-dt*` still exists and is UNCHANGED — migrating Contracts & Claims onto
+      these rules is its own change, with its own verification, and doing it here
+      would put a module I was not asked to touch into this commit.
+   ⚠️ Every value is a `--pd-*` token. The Procurement original hard-codes
+      #EE3124 / #f0f0f0 / #fff and re-states each under `body.dark-mode`; carrying
+      the literals across gives you a table that is right in light mode and
+      unreadable in dark. */
+.pd-dt { padding: 0; overflow: hidden; }          /* the strip must not scroll with the rows */
+.pd-dt-wrap { overflow: auto; max-height: calc(100vh - 330px); }
+
+/* The header strip: what this table is, how many rows, and its own actions.
+   ⚠️ THE ACTIONS LIVE HERE, scoped to the table they act on, rather than as a row
+      of buttons above the page — that is what makes a screen read as two competing
+      screens, neither of them titled. */
+.pd-dt-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 11px 14px; border-bottom: 1px solid var(--pd-line); background: var(--pd-card); }
+.pd-dt-head h3 { margin: 0; font-size: 13px; font-weight: 800; letter-spacing: .02em;
+  color: var(--pd-ink); text-transform: none; }
+.pd-dt-count { font-size: 11px; font-weight: 600; color: var(--pd-muted); white-space: nowrap; }
+.pd-dt-spacer { flex: 1 1 auto; }
+.pd-dt-head .pd-btn { height: 30px; padding: 0 11px; font-size: 12px; }
+
+/* Sortable headers — same affordance as the Procurement original, minus its
+   inline onclick handler. */
+.pd-table th.pd-sort { cursor: pointer; user-select: none; }
+.pd-table th.pd-sort:hover { color: var(--pd-red); }
+.pd-table th.pd-sort::after { content: "\2195"; opacity: .28; margin-left: 5px; font-size: 10px; }
+.pd-table th.pd-sort.asc::after  { content: "\2191"; opacity: 1; color: var(--pd-red); }
+.pd-table th.pd-sort.desc::after { content: "\2193"; opacity: 1; color: var(--pd-red); }
+
+/* Group / section rows. */
+.pd-table tr.pd-grp > td { background: var(--pd-bg); font-weight: 800; font-size: 11px;
+  text-transform: uppercase; letter-spacing: .05em; color: var(--pd-ink);
+  border-bottom: 1px solid var(--pd-line); }
+html.pd-dark .pd-table tr.pd-grp > td { background: rgba(255,255,255,.05); }
+.pd-grptog { border: 0; background: none; cursor: pointer; color: var(--pd-muted); font: inherit;
+  font-size: 11px; padding: 0 6px 0 0; }
+.pd-grptog:hover { color: var(--pd-red); }
+.pd-table tr.pd-collapsed { display: none; }
+
+/* Footer — a note or a pager under the rows, inside the same card. */
+.pd-dt-foot { padding: 9px 14px; border-top: 1px solid var(--pd-line); background: var(--pd-card);
+  color: var(--pd-muted); font-size: 11px; display: flex; align-items: center; gap: 10px;
+  flex-wrap: wrap; }
+.pd-dt-foot:empty { display: none; }
+@media (max-width: 900px) { .pd-dt-wrap { max-height: none; } }
+
 .pd-filtergroup { display: none; }
 .pd-filtergroup.open {
   display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px;
