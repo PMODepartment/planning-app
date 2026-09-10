@@ -233,3 +233,148 @@ defects above were found by looking at that render, not by testing it.
 written a row: the two new tables, the upsert, the lock write and the 42P01 fallback are
 code-and-migration, not observed behaviour. Until `migrations/2026-09-10-scurve-manual-poc.sql` is
 run, **Manual mode says so and names the file**, and Automatic is untouched.
+
+## A Manual data tab, a period lens, and a chart you can interrogate (2026-09-10) — ethanrobles10
+
+Owner: *"add a tab wherein users are able to put the data manually. And also for the landing page of
+the s-curve, allow users the option to view monthly, quarterly, yearly etc. and when hovering over
+data, pls show the contents like POC, amount. And then when clicked, what are the details in terms
+of gen req, site works, structural works, etc."*
+
+### 1. The sheet becomes a screen
+
+The manual sheet shipped earlier today as a card **stacked under the chart**, gated on the chart's
+own `mode`. Two consequences the owner is right about: it was a scroll away from the control that
+opened it, and entering next quarter's forecast meant first switching what the chart was claiming.
+
+It is a tab now — `Curve` | `Manual data` — through **`UI.tabsToDropdown`, the app's own
+convention**, so above 700px it collapses into the same compact dropdown fourteen other modules
+use and `pd-tabsrc` puts it under the shared pre-JS boot-flash rule. A hand-rolled pair of buttons
+would have been a fifteenth navigation idiom.
+
+- ⚠️ **The tab and the mode are deliberately independent.** The tab is where the planner is; the
+  mode is where the curve's numbers come from. Coupling them would silently change what the chart
+  asserts the moment somebody opened the sheet.
+- ⚠️ **So the sheet says whether the curve is actually reading it** — *"The Curve tab is drawing
+  from the schedule, not from this sheet"*, with a button that switches the source. Independent
+  controls are only safe if the screen states the combination; filling this in for an hour and
+  discovering afterwards that the chart never moved is the failure that line prevents.
+- ⚠️ The sheet computes its **own** view rather than taking the caller's `d`: on the Curve tab that
+  argument is the automatic curve, and laying a manual sheet over automatic months would put the
+  right rows against the wrong data-date boundary.
+- ⚠️ The registration follows risk-register's documented **third-`DOMContentLoaded`** pattern, and
+  `initModuleTopbar()` is deliberately *not* called early — that was tried there and reverted
+  because it breaks `theme.js`'s own topbar injection.
+
+### 2. Monthly / quarterly / yearly
+
+⚠️⚠️ **The engine stays monthly and is not touched.** `PDScurve.compute` walks the schedule once;
+re-running it per granularity would be three walks of a 16k-row schedule to answer one question and
+three chances for the three views to disagree. `lens()` is a **lens over that one result**, so a
+quarter is by construction the sum of its own three months.
+
+- ⚠️⚠️ **Cumulative takes the LAST month of the bucket, periodic SUMS them.** Getting those the same
+  way round is the whole correctness of the file: a quarter's cumulative is where the curve has
+  *reached* by the end of March, not Jan+Feb+Mar added up — which would be about triple and would
+  sail past 100%. Asserted both ways on a linear fixture (Q1 cumulative 300, Q1 periodic 300,
+  Q2 cumulative 600, Q2 periodic 300), plus the invariant that the periodic buckets sum back to the
+  final cumulative.
+- ⚠️ **The bucket holding the data date reads its actual at `ti`**, not at the bucket's last month:
+  the engine anchors that one month to the true recorded total and zeroes everything after it, so
+  the bucket's last month would report **0% for the quarter we are standing in**.
+- ⚠️ **A bucket entirely in the future carries `null`, not 0** — the engine's zeroes there mean "not
+  yet", and a 0 would read as a quarter of no work.
+- ⚠️ **Partial buckets are honest, not padded**: a November start gives a two-month Q4 and a
+  two-month first year. Asserted, because padding to three would invent a month of nil progress.
+- ⚠️⚠️ **The x-axis stays in MONTH space at every granularity**, and that decision is what kept this
+  small and the forecast correct. A quarterly view draws fewer points on the same continuous
+  timeline. So `x(i)` is still one mapping and the SPI forecast S-curve — plotted from *dates* —
+  needed no change at all. Re-basing the axis per granularity would have meant a second date
+  mapping, and the first disagreement between them is a forecast line that misses the finish it is
+  drawn to.
+- **The data table reads the same lens**, never its own bucketing: a quarterly chart over a monthly
+  table is the shape of bug that gets believed, because both look plausible. It also gained the two
+  periodic rows, which are the figures a monthly table could not show.
+
+### 3. Hover: POC and amount
+
+One transparent **band per period** spanning the full plot height, not the marks themselves —
+hovering a 2px polyline means hunting for the pixel, and the readout is about the *period*, which is
+no single mark's property. Boundaries are the midpoints between bucket centres so the bands tile
+with no dead gaps.
+
+⚠️⚠️ **POC and amount are the same curve on two different weightings, and that is the difficulty.**
+On the cost basis `d.TOT` is already pesos; on the **duration** basis it is days, and 40% of the
+duration is not 40% of the money. So a **companion cost series** is computed alongside — the same
+`PDScurve.compute` on the same rows at `basis:'cost'`, not a second engine.
+
+- ⚠️⚠️ **Aligned by month key, never by index.** The two results can have *different lengths*: the
+  forecast finish is SPI-derived per basis, so a project behind on duration and ahead on cost
+  produces two domains and index *i* is two different months in each. Reading it positionally would
+  put March's money under June's progress and look entirely plausible. Asserted: a month outside the
+  companion reads `null`, never index 0.
+- ⚠️ **Absent, not faked.** No rows loaded (the RPC fast path holds none) or nothing cost-loaded →
+  the readout shows the POC and says which of those two it is, rather than printing pesos derived
+  from days.
+- ⚠️ The variance is shown **only where both sides exist** — a future period has a plan and no
+  actual, and "0.0 pp behind" there reads as a project on track.
+
+### 4. Click: the trade breakdown
+
+⚠️⚠️ **Each trade is its own curve, and it has to be.** A trade's % complete is a share of *its own*
+scope; taking the project's figure and splitting it by weight would report every trade at the same
+percentage, which is the one answer that is always wrong.
+
+⚠️⚠️ **Two columns that are routinely confused, and the header says so.** *Own %* is how far along
+that trade is; *Points of project* is how much of the project's percentage it contributes. General
+Requirements at 100% of itself on a job where it is 6% of the scope contributes **6 points, not
+100** — and a reader given only the first number reads a nearly-finished project. **The points
+column sums to the project's own figure, which is the check**, and it does: measured in a browser,
+20.0 against the project's planned 20%, and 10.8 against its actual 10.8%.
+
+- ⚠️⚠️ **A REAL DEFECT CAUGHT BY LOOKING AT THE RENDER, not by testing.** The amount column first
+  reported `projectAmount × durationShare`. Wrong in the way that looks right: a trade can be a
+  tenth of the programme's *duration* and a third of its *money*. Measured on the fixture, Structural
+  Works came out at **₱585.3K where its own cost curve says ₱1.9M** — a 3× error, with the column
+  total still reconciling, so nothing on screen would have given it away. Each trade now gets its
+  own cost-basis series; the amounts sum to the project's ₱2.8M as they should.
+- ⚠️ **A bucket past a trade's own programme carries its last value, not 0** — a trade that finished
+  in Q1 must not read 0% in Q4 — and a bucket before it starts is genuinely 0. Both asserted.
+- ⚠️ A trade with nothing priced shows **no amount rather than an estimate**.
+- ⚠️ It is a panel **under** the chart, not a modal: the question is "what is inside *that* period",
+  and covering the chart hides the period being asked about. The band is the toggle, so clicking the
+  open period closes it and there is no second control to find.
+- ⚠️ Keyboard-reachable (`tabindex`, Enter/Space) — the breakdown is the only route to the per-trade
+  figures, and a click-only control puts them out of reach without a mouse.
+
+### 5. Verified
+
+**37 assertions, 0 failing**, sliced out of the shipped file and executed: the bucket calendar and
+its partial buckets, cumulative-vs-periodic both ways round, the data-date and future-bucket rules,
+the companion's date alignment and its two absences, the per-trade shares, and the own-%-vs-points
+distinction. The previous pass's 34 still pass — no regression to the manual mode or the filters.
+
+**Rendered and driven in a real browser** against this module's own inline style block and the app's
+real `dashboard.css`, light and dark, on a five-trade cost-loaded fixture:
+
+```
+period    bands  table cols  bar width  axis title   x-axis labels
+month       27       28         16px     per month    2026 / 2027 / 2028
+quarter      9       10         34px     per quarter  Q1 2026 … Q1 2028
+year         3        4         54px     per year     2026 / 2027 / 2028
+```
+
+Hovering Q2 2026 returned planned 20%, actual 10.8%, variance −9.2 pp, in-quarter 12.5%/6.7% and
+₱2.8M / ₱1.5M / ₱2.4M / ₱1.2M; a future quarter returned *"not yet"* for the actual, a forecast, no
+variance and no earned amount. ⚠️ **The chart and the readout were checked against each other**: the
+data-date quarter draws no actual bar *and* the readout omits the actual row — no contradiction
+between what is drawn and what is said.
+
+⚠️ **Not verified signed in.** The page parses and loads to the sign-in redirect; the tab conversion,
+the hover and the breakdown were driven against a fixture through the shipped renderers, never
+against a real project's schedule. The manual tables still need
+`migrations/2026-09-10-scurve-manual-poc.sql`.
+
+⚠️ Also fixed in passing, and found because a harness could not resolve it: this file had **two
+arrays of month names** (`_MABBR` for the lens, `MABBR2` in the sheet). Consolidated onto one —
+twelve strings in two places is one more than can be kept in agreement.

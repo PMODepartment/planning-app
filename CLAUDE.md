@@ -95,6 +95,60 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### The S-curve gets a Manual data tab, a monthly/quarterly/yearly lens, and a chart you can interrogate (2026-09-10) — ethanrobles10
+
+Owner: *"add a tab wherein users are able to put the data manually. And also for the landing page of
+the s-curve, allow users the option to view monthly, quarterly, yearly etc. and when hovering over
+data, pls show the contents like POC, amount. And then when clicked, what are the details in terms
+of gen req, site works, structural works, etc."*
+
+**The manual sheet becomes a screen.** It shipped this morning as a card stacked under the chart and
+gated on the chart's own mode — so it was a scroll away from the control that opened it, and
+entering next quarter's forecast meant first switching what the chart was claiming. It is a `Curve`
+| `Manual data` tab now, through **`UI.tabsToDropdown`, the app's own convention** (fourteen other
+modules use it, and `pd-tabsrc` puts it under the shared pre-JS boot-flash rule) rather than a
+fifteenth navigation idiom. ⚠️ The tab and the mode stay **independent** — the tab is where you are,
+the mode is where the curve's numbers come from — so the sheet states the combination out loud:
+*"The Curve tab is drawing from the schedule, not from this sheet"*, with a button that switches it.
+
+**Monthly / quarterly / yearly is a LENS, not a third engine run.** ⚠️⚠️ Cumulative takes the *last*
+month of a bucket, periodic *sums* them — getting those the same way round is the whole correctness
+of it, since Jan+Feb+Mar added up is roughly triple where the curve has actually reached and sails
+past 100%. ⚠️ The bucket holding the data date reads its actual at `ti` (the engine anchors that one
+month and zeroes the rest, so the bucket's last month would report **0% for the quarter we are
+standing in**); a bucket entirely in the future carries `null`, not 0; a November start gives an
+honest two-month Q4. ⚠️⚠️ The x-axis **stays in month space** at every granularity, which is what let
+the SPI forecast S-curve — plotted from dates — go untouched. The data table reads the same lens,
+never its own bucketing.
+
+**Hover gives POC and amount.** ⚠️⚠️ On the duration basis there is no peso figure in the result at
+all, and 40% of the duration is not 40% of the money — so a **companion cost series** is computed
+alongside, aligned **by month key, never by index**: the two results can have different lengths
+(the forecast finish is SPI-derived per basis), so reading it positionally would put March's money
+under June's progress and look entirely plausible. Absent rather than faked when nothing is
+cost-loaded.
+
+**Click gives the trade breakdown.** Each trade is its own curve — splitting the project's figure by
+weight would report every trade at the same percentage. ⚠️⚠️ Two columns that are routinely confused,
+and the header says so: **Own %** is how far along that trade is, **Points of project** is what it
+contributes. General Requirements at 100% of itself on a job where it is 6% of the scope contributes
+6 points, not 100. The points column sums to the project's own figure, and measured in a browser it
+does: 20.0 against planned 20%, 10.8 against actual 10.8%.
+
+⚠️⚠️ **A real defect caught by looking at the render rather than by testing:** the amount column
+first reported `projectAmount × durationShare`, and Structural Works came out at **₱585.3K where its
+own cost curve says ₱1.9M** — a 3× error, with the column total still reconciling, so nothing on
+screen would have given it away. Each trade now gets its own cost-basis series.
+
+**Verified by execution** (37 assertions, 0 failing; the previous pass's 34 still pass) and **driven
+in a real browser** in light and dark on a five-trade cost-loaded fixture — 27 bands / 9 / 3 across
+the three granularities with the bar widths, axis titles and table columns following, and the chart
+checked *against* the readout: the data-date quarter draws no actual bar and the readout omits that
+row, so what is drawn and what is said agree. ⚠️ Not verified signed in; the manual tables still
+need `migrations/2026-09-10-scurve-manual-poc.sql`.
+
+`MODULE_V` → `20260910zb`. Detail: [`modules/s-curve/CLAUDE.md`](modules/s-curve/CLAUDE.md).
+
 ### 2026-09-10 (za3) — A class code the schedule has never heard of stops being a dead end — and the measurement that says it will not rescue OPW101
 
 Owner: *"Let's make sure that the linking is easy as well. Put yourselves in the shoes of the
