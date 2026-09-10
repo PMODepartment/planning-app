@@ -13,6 +13,105 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### The focus window plays itself, at a speed you pick, and says which week you are looking at (2026-09-10 zd) — ethanrobles10
+
+Owner: *"For the vertical stacking full screen, allow a play button to see the progress over time,
+and allow users to set the playback speed (daily, weekly, monthly, quarterly etc.). But can you also
+include a legend of the number of timeline on the upper right (example: week 1, week 2, week 3
+etc...)"*
+
+Three things in the **Vertical Stacking → expand a tower → focus window** (the one with the Full
+screen button). The scrubber already walked the programme; you had to walk it by hand, a month at a
+time, and nothing on screen said how far into the job the picture was.
+
+### 1. Play, and the speed IS the step
+A play/pause button left of the step arrows, and a **Daily / Weekly / Monthly / Quarterly / Yearly**
+select next to it. One tick advances the as-of date by one of those, so "faster" and "coarser" are
+the same dial — which is what makes it read as a playback speed rather than a second date filter.
+The same dial re-labels the two step arrows, which used to be hard-coded to a month: there is one
+step size in this window, not a playback speed and an arrow that could disagree with it.
+
+- **Play from Live starts at the beginning.** Live is the end of the programme, and a film played
+  from there has one frame in it. Play from a scrubbed date carries on from where you are; play
+  from the end restarts. The end is a **stop, not a loop** — it leaves you looking at the finished
+  building rather than snapping back to an empty site.
+- Grabbing the handle, pressing a step arrow, pressing **Live**, clicking a legend row or closing
+  the window all stop the run. Two things writing `_vsAsOf` is the scrubber fighting the person
+  holding it.
+
+⚠️⚠️ **Playback does NOT go through `_vsFocusSchedulePaint`.** That scheduler exists for a *drag*:
+it coalesces pointer moves the buildings cannot keep up with and **drops the ones in between**. A
+playback that dropped frames would skip the very periods it was asked to show. So each frame
+repaints through `_vsFocusRunPaint` — which measures its own cost — and only *then* schedules the
+next one, at `max(300ms, cost × 1.15)`. On a 2,500-activity tower the film runs slower than the
+nominal rate; it can never run ahead of what has actually been drawn, and it can never queue two
+repaints at once.
+
+⚠️ The chosen speed lives at module level, so it survives closing and reopening the window inside a
+session, and is deliberately **not persisted** past that — a remembered daily walk is how someone
+opens this next week and reports the step arrows crawling.
+
+### 2. The timeline legend, upper right
+A panel pinned to the top-right of the stage: five period rows with the current one lit, its date
+range beside it, and `Week 91 of 105` underneath. Clicking a row jumps the programme to that period.
+
+⚠️⚠️ **Every number counts from THIS BUILDING'S OWN START, never from the calendar.** "Week 1" is
+the week this tower starts — not ISO week 1 — and "Month 3" is the third month of this programme,
+not March. Someone reading the legend is asking how far into *this* job the picture is; a calendar
+number cannot answer that, and would silently answer a different question.
+
+- Days and weeks count from the programme's start **date**; months, quarters and years from its
+  start **month** — each unit on its own natural boundary, which is how a planner counts both
+  ("week 1 is the week we started", "month 1 is the month we started"). Month 1 can therefore begin
+  before the programme does, and the range shown is clamped to the programme at both ends.
+- ⚠️ Days/weeks step through `setDate`, months/quarters/years through `setMonth` — never by adding a
+  fixed number of milliseconds. A 24h constant drifts an hour at every DST boundary and a daily run
+  across a year of them lands on the wrong **day**. `_vsDaysBetween` rounds for the same reason.
+- ⚠️ **The rows are written, never built.** `_vsFocusLegendHTML` emits five fixed rows once; `chrome`
+  only sets their text, their `.on` class and their `data-p` — because `chrome` runs on every frame
+  of a drag and of a playback, and a legend that rebuilt its own markup there would re-enter the DOM
+  sixty times a second and drop the click handler delegated to it. Same contract the footer bar has
+  had since the two-speed scrub landed.
+- ⚠️ Pinned to the **stage**, not to a pane: in *Planned vs Actual* there are two panes and the
+  period is one number for both. Inside a pane it would print twice, and be clipped by the pane's
+  own overflow the moment the building was panned. It takes the top-right corner; the pan hint has
+  the bottom-right, and the two overlays must never share one.
+- ⚠️ The window **slides**: the current period is kept in the middle where there is room on both
+  sides and pinned to the ends where there is not, so row 3 is not always "now" — the `.on` class is
+  what says which one is.
+- ⚠️ The range is **not** two `Fmt.date`s. `Fmt.date` is a locale format (`Sep 27, 2027` under
+  en-PH); two of them plus a dash is 26 characters in a 186px panel and the tail is ellipsed away —
+  and which end gets ellipsed is the locale's business, not ours. `_vsPeriodRange` prints one year
+  for a range that stays inside one (`27 Sep – 3 Oct 2027`). It is the only compact date in the
+  window: the scrubber's own label still prints the as-of date through `Fmt.date`, so the app's
+  format is never off the screen.
+- Below 700px the legend keeps the count and drops the neighbouring rows — on a 375px stage five
+  rows eat a third of the picture, and the **number** is what was asked for.
+
+### 3. Verified
+Measured in a throwaway harness (gitignored, deleted) that loads the **shipped** slices —
+`_vsFocusScrubHTML`, `_vsFocusWireScrub`, the period helpers and the legend branch of `chrome`, cut
+out of `index.html` verbatim — over a synthetic 5 Jan 2026 → 4 Jan 2028 programme, plus the real CSS
+block. ⚠️ The one stub that is *not* the shipped code is `Fmt.date`, which is exactly the trap this
+repo has already been bitten by; that is why the legend's range does not go through it at all.
+
+| Checked | Result |
+|---|---|
+| Period numbering | start = Week/Day/Month/Quarter/Year **1**; +6d = Week 1, +7d = Week 2; 31 Jan = Month 1, 1 Feb = Month 2; 31 Mar = Q1, 1 Apr = Q2; a date before the start clamps to 1 |
+| Totals | 2-year programme → **105 weeks / 25 months / 3 years**; 3-year → 157 / 37 / 1096 days |
+| Stepping | 400 daily steps from 5 Jan 2026 → **9 Feb 2027** (no DST drift); 10 weekly → 16 Mar 2026; 4 quarterly → 5 Jan 2027; back one month → 5 Dec 2025 |
+| Play from Live | started at Week 1 and advanced one week per tick |
+| Play from a scrubbed date | carried on from it, clamped at the finish, **stopped** — button off, timer cleared |
+| Speed change mid-view | `Week 91 of 105` → `Month 25 of 25`, arrows re-titled "Back/Forward one month", as-of date unmoved |
+| Legend row click | jumped to that period's first day; **Live** returned to recorded progress |
+| Forward arrow at the finish | no movement (clamped), no stray repaint |
+| Light + dark, 1280px and ≤700px | legend reads in both themes; the phone rule drops the neighbour rows and the range as designed |
+
+⚠️ **Not verified against real data.** The anon key has no grants, so none of this has been run
+against a real tower's activities — what is proven is the period arithmetic, the control wiring and
+the paint pacing, not how a 2,500-activity building feels under a daily run. The adaptive floor is
+there for exactly that case and is the thing to watch first.
+
 ### CLASS_CODE_DB stops being de-zeroed, and a group code stops reading as an error (2026-09-10 z4) — fmlozano
 
 **Run `migrations/2026-09-10-class-code-group-names.sql`.** Owner: *"let's fix the CLASS_CODE_DB

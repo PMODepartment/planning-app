@@ -95,6 +95,35 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### The vertical stacking's full-screen window plays itself, and says which week it is showing (2026-09-10) — ethanrobles10
+
+Owner: *"For the vertical stacking full screen, allow a play button to see the progress over time,
+and allow users to set the playback speed (daily, weekly, monthly, quarterly etc.). But can you also
+include a legend of the number of timeline on the upper right (example: week 1, week 2, week 3
+etc...)"*
+
+Project Schedule → **Vertical Stacking → expand a tower** (the window with the Full screen button).
+Its scrubber already walked the programme; you had to walk it by hand, a month at a time, and
+nothing said how far into the job the picture was.
+
+- **Play / pause**, plus a **Daily / Weekly / Monthly / Quarterly / Yearly** speed. The speed *is*
+  the step, so it also re-labels the two step arrows — one dial, not a playback speed and an arrow
+  size that could disagree. Play from Live starts at the beginning; the finish is a stop, not a
+  loop; and touching the handle, the arrows, Live or a legend row stops the run.
+- A **timeline legend** in the stage's top-right: five period rows, the current one lit with its
+  date range, `Week 91 of 105` beneath, each row clickable to jump there. ⚠️ Every number counts
+  from **this building's own start** — "Week 1" is the week this tower starts, not ISO week 1.
+- ⚠️ Playback deliberately bypasses the drag scheduler, which *drops* coalesced frames: a film that
+  dropped frames would skip the periods it was asked to show. Each frame repaints, measures itself,
+  then schedules the next.
+
+⚠️ **Not verified against real data** — the anon key has no grants. The period arithmetic, the
+control wiring and the paint pacing were measured in a gitignored harness running the shipped code
+slices; how a 2,500-activity tower feels under a daily run has not been seen.
+
+`MODULE_V` → `20260910zd`. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
 ### The manual sheet becomes a trades × months matrix, with the curve live above it (2026-09-10) — ethanrobles10
 
 Owner: *"i was thinking, what if it were the other way around. meaning the months are plotted as

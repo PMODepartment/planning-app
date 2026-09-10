@@ -1798,7 +1798,8 @@
       min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .ps-vs-fz-sub { font-size:var(--pd-fs-xs); color:var(--pd-muted); font-weight:700; }
     .ps-vs-fz-x { margin-left:auto; }
-    .ps-vs-fz-stage { flex:1 1 auto; min-height:0; display:flex; gap:0; background:var(--pd-bg); }
+    /* ⚠️ position:relative for the timeline legend, which is pinned to the STAGE (see .ps-vs-fz-leg). */
+    .ps-vs-fz-stage { position:relative; flex:1 1 auto; min-height:0; display:flex; gap:0; background:var(--pd-bg); }
     .ps-vs-fz-pane { flex:1 1 0%; min-width:0; display:flex; flex-direction:column; position:relative;
       border-right:1px solid var(--pd-line); }
     .ps-vs-fz-pane:last-child { border-right:0; }
@@ -1870,6 +1871,55 @@
       box-shadow:0 1px 4px rgba(0,0,0,.35); cursor:grab; }
     .ps-vs-fz-track .hd:active { cursor:grabbing; }
     .ps-vs-fz-scrub .ps-vs-seg button { min-height:28px; }
+    /* ---- PLAYBACK: the scrubber walks itself ------------------------------------------------
+       Owner 2026-09-10: *"allow a play button to see the progress over time, and allow users to
+       set the playback speed (daily, weekly, monthly, quarterly etc.)"*.
+       The speed IS the step: one tick advances the as-of date by one day / week / month / quarter /
+       year, so "faster" and "coarser" are the same dial — which is what makes the control read as a
+       playback speed rather than a second date filter. */
+    .ps-vs-fz-speed { width:auto; min-width:104px; max-width:140px; height:auto; min-height:28px;
+      font-size:var(--pd-fs-xs); padding:4px 7px; flex:0 0 auto; }
+    .ps-vs-fz-scrub .ps-vs-seg button.on { background:var(--pd-red); color:#fff; }
+    /* The play/pause glyph is drawn, not typed: ▶/⏸ render at wildly different sizes across the
+       fonts this app ships with, and one of them is a colour emoji on Windows. */
+    .ps-vs-fz-play svg { display:block; }
+    /* ---- The TIMELINE LEGEND (upper right of the stage) -------------------------------------
+       Owner 2026-09-10: *"can you also include a legend of the number of timeline on the upper
+       right (example: week 1, week 2, week 3 etc...)"*.
+       ⚠️ Every number here counts FROM THIS BUILDING'S OWN START — "Week 1" is the week this tower
+       starts, never ISO week 1. A planner reading it is asking how far into THIS programme they
+       are, and a calendar week number cannot answer that.
+       ⚠️ Pinned to the STAGE, not to a pane: in compare there are two panes and the period is one
+       number for both, so a per-pane legend would print the same figure twice.
+       ⚠️ It sits over the top-right of the drawing, where the pan hint does not (that is bottom
+       right) — the two overlays must never share a corner. */
+    .ps-vs-fz-leg { position:absolute; top:9px; right:10px; z-index:3; width:186px;
+      padding:7px 8px 6px; border-radius:var(--pd-radius-md);
+      border:1px solid var(--pd-line); background:var(--pd-card);
+      box-shadow:0 2px 10px rgba(0,0,0,.14); font-variant-numeric:tabular-nums; }
+    .ps-vs-fz-leg .k { font-size:var(--pd-fs-micro); font-weight:800; letter-spacing:.06em;
+      text-transform:uppercase; color:var(--pd-muted); padding:0 3px 4px; }
+    /* One row per period. A button, because clicking one jumps the programme to it — the legend is
+       navigable, or it is a caption pretending to be a control. */
+    .ps-vs-fz-leg .r { display:flex; align-items:baseline; gap:6px; width:100%; border:0;
+      background:transparent; color:var(--pd-muted); font:inherit; font-size:var(--pd-fs-xs);
+      text-align:left; padding:2px 5px; border-radius:5px; cursor:pointer; }
+    .ps-vs-fz-leg .r:hover { background:var(--pd-bg); color:var(--pd-ink); }
+    .ps-vs-fz-leg .r .lb { flex:0 0 auto; font-weight:700; }
+    .ps-vs-fz-leg .r .dt { flex:1 1 auto; text-align:right; font-size:var(--pd-fs-micro); opacity:.85;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .ps-vs-fz-leg .r.on { background:var(--pd-red); color:#fff; }
+    .ps-vs-fz-leg .r.on .lb { font-weight:800; }
+    .ps-vs-fz-leg .r.on:hover { background:var(--pd-red); color:#fff; }
+    .ps-vs-fz-leg .of { border-top:1px solid var(--pd-line); margin-top:5px; padding:4px 5px 0;
+      font-size:var(--pd-fs-micro); color:var(--pd-muted); font-weight:700; }
+    /* Phones: the legend would eat a third of a 375px stage, so it keeps the count and drops the
+       neighbouring rows — the number is the part that was asked for. */
+    @media (max-width: 700px) {
+      .ps-vs-fz-leg { width:auto; min-width:104px; top:6px; right:6px; padding:5px 6px; }
+      .ps-vs-fz-leg .r:not(.on) { display:none; }
+      .ps-vs-fz-leg .r .dt { display:none; }
+    }
     .ps-vs-fz-read { flex:1 1 260px; min-width:220px; font-size:var(--pd-fs-xs); line-height:1.5;
       color:var(--pd-muted); border-left:1px solid var(--pd-line); padding-left:14px; }
     .ps-vs-fz-read .h { font-weight:800; font-size:var(--pd-fs-sm); color:var(--pd-ink); }
@@ -17287,6 +17337,154 @@
     _vsFocusBuiltAt = _now();
     _vsFocusCost = _vsFocusBuiltAt - t0;
   }
+  /* ---- PERIODS: what "Week 3" means in this window -------------------------------------------
+     Owner 2026-09-10: *"allow a play button to see the progress over time, and allow users to set
+     the playback speed (daily, weekly, monthly, quarterly etc.). But can you also include a legend
+     of the number of timeline on the upper right (example: week 1, week 2, week 3 etc...)"*
+
+     ⚠️⚠️ EVERY PERIOD IS COUNTED FROM THE PROGRAMME'S OWN START, NEVER FROM THE CALENDAR. "Week 1"
+     is the week this building starts; it is not ISO week 1, and "Month 3" is the third month of
+     THIS tower, not March. Someone reading the legend is asking how far into this programme the
+     picture is — a calendar number cannot answer that question, and would silently answer a
+     different one.
+     ⚠️ Days and weeks step through setDate, months/quarters/years through setMonth — never by
+     adding a fixed number of milliseconds. A 24h constant drifts an hour at every DST boundary, and
+     a daily run across a year's worth of them lands on the wrong DAY. `_vsDaysBetween` rounds for
+     the same reason. */
+  var VS_PLAY_STEPS = [
+    { k: 'day',     lab: 'Daily',     unit: 'Day',     d: 1 },
+    { k: 'week',    lab: 'Weekly',    unit: 'Week',    d: 7 },
+    { k: 'month',   lab: 'Monthly',   unit: 'Month',   mo: 1 },
+    { k: 'quarter', lab: 'Quarterly', unit: 'Quarter', mo: 3 },
+    { k: 'year',    lab: 'Yearly',    unit: 'Year',    mo: 12 }
+  ];
+  function _vsStepDef(k) {
+    for (var i = 0; i < VS_PLAY_STEPS.length; i++) if (VS_PLAY_STEPS[i].k === k) return VS_PLAY_STEPS[i];
+    return VS_PLAY_STEPS[2];   // monthly — what the step arrows did before there was a choice
+  }
+  function _vsMid(ms) { var d = new Date(ms); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+  function _vsDaysBetween(a, b) { return Math.round((+_vsMid(b) - +_vsMid(a)) / 86400000); }
+  function _vsMonthsBetween(a, b) {
+    var x = new Date(a), y = new Date(b);
+    return (y.getFullYear() - x.getFullYear()) * 12 + (y.getMonth() - x.getMonth());
+  }
+  // 1-based index of the period `at` falls in, counted from `mn`.
+  function _vsPeriodIdx(mn, at, k) {
+    var s = _vsStepDef(k);
+    var n = s.d ? Math.floor(_vsDaysBetween(mn, at) / s.d) : Math.floor(_vsMonthsBetween(mn, at) / s.mo);
+    return Math.max(1, n + 1);
+  }
+  /* The first day of period `i`. ⚠️ Day/week periods run from the programme's start DATE, month and
+     up from its start MONTH — each unit on its own natural boundary, which is how a planner counts
+     both ("week 1 is the week we started", "month 1 is the month we started"). The caller clamps:
+     the start of Month 1 can legitimately fall before the programme itself does. */
+  function _vsPeriodStart(mn, i, k) {
+    var s = _vsStepDef(k), d = _vsMid(mn);
+    if (s.d) { d.setDate(d.getDate() + (i - 1) * s.d); return d; }
+    return new Date(d.getFullYear(), d.getMonth() + (i - 1) * s.mo, 1);
+  }
+  /* The legend's date range. ⚠️ NOT `Fmt.date` twice. Fmt.date is a LOCALE format ("Sep 27, 2027"
+     under en-PH), so two of them plus a dash is 26 characters in a 186px panel and the tail is
+     ellipsed away — and which end gets ellipsed is the locale's business, not ours. This prints one
+     year for a range that stays inside one, which is the common case and the one that has to fit.
+     ⚠️ It is deliberately the ONLY compact date in this window: the scrubber's own label still
+     prints the as-of date through Fmt.date, so the app's format is never off the screen. */
+  function _vsPeriodRange(ps, pe) {
+    var a = ps.getDate() + ' ' + _MONTHS[ps.getMonth()];
+    if (+ps === +pe) return a + ' ' + ps.getFullYear();
+    var b = pe.getDate() + ' ' + _MONTHS[pe.getMonth()] + ' ' + pe.getFullYear();
+    return (ps.getFullYear() === pe.getFullYear() ? a : a + ' ' + ps.getFullYear()) + ' – ' + b;
+  }
+  function _vsStepFrom(ms, dir, k) {
+    var s = _vsStepDef(k), d = new Date(ms);
+    if (s.d) d.setDate(d.getDate() + dir * s.d); else d.setMonth(d.getMonth() + dir * s.mo);
+    return +d;
+  }
+  /* ---- PLAYBACK -------------------------------------------------------------------------------
+     ⚠️⚠️ IT DOES NOT GO THROUGH `_vsFocusSchedulePaint`. That scheduler exists for a DRAG: it
+     coalesces a stream of pointer moves the buildings cannot keep up with, and DROPS the ones in
+     between. A playback that dropped frames would skip the very periods it was asked to show. So
+     each frame repaints through `_vsFocusRunPaint` — which measures its own cost — and only THEN
+     schedules the next one. The film can run slower than the nominal rate on a 2,500-activity
+     tower; it can never run ahead of what has actually been drawn, and it can never queue two
+     repaints at once.
+     ⚠️ The step (the "speed") lives at module level, so it survives closing and reopening the
+     window inside a session. It is deliberately not persisted past that: it is a way of LOOKING at
+     one building, and a remembered daily walk is how someone opens this next week and reports the
+     step arrows crawling. */
+  var VS_PLAY_FRAME = 300;                                   // nominal ms per step
+  var _vsPlay = { on: false, step: 'week', timer: 0 };
+  function _vsPlaySeg() {
+    var F = _vsFocus;
+    return (F && F.wrap) ? F.wrap.querySelector('.ps-vs-fz-scrub') : null;
+  }
+  function _vsPlayStop() {
+    if (_vsPlay.timer) { clearTimeout(_vsPlay.timer); _vsPlay.timer = 0; }
+    _vsPlay.on = false;
+    _vsPlayBtnSync();
+  }
+  // Drawn, not typed: the play/pause characters render at wildly different sizes across the fonts
+  // this app ships with, and one of them is a colour emoji on Windows.
+  var VS_PLAY_ICON = '<svg width="11" height="11" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><path d="M2.5 1.3 10 6 2.5 10.7z"/></svg>';
+  var VS_PAUSE_ICON = '<svg width="11" height="11" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><rect x="2" y="1.5" width="3" height="9" rx="1"/><rect x="7" y="1.5" width="3" height="9" rx="1"/></svg>';
+  function _vsPlayBtnSync() {
+    var F = _vsFocus; if (!F || !F.wrap) return;
+    var b = F.wrap.querySelector('[data-fzplay]'); if (!b) return;
+    b.classList.toggle('on', _vsPlay.on);
+    b.innerHTML = (_vsPlay.on ? VS_PAUSE_ICON : VS_PLAY_ICON);
+    b.title = _vsPlay.on ? 'Pause' : ('Play the programme from the start, one ' +
+      _vsStepDef(_vsPlay.step).unit.toLowerCase() + ' at a time');
+    b.setAttribute('aria-label', _vsPlay.on ? 'Pause playback' : 'Play the programme');
+  }
+  function _vsPlayToggle() {
+    if (_vsPlay.on) { _vsPlayStop(); return; }
+    var F = _vsFocus, sc = _vsPlaySeg(); if (!F || !sc) return;
+    var mn = +sc.dataset.min, mx = +sc.dataset.max;
+    // ⚠️ From the START when nothing is scrubbed, or when we are already sitting on the end —
+    // "see the progress over time" played from Live is a film with one frame in it.
+    if (_vsAsOf == null || _vsAsOf >= mx) _vsAsOf = mn;
+    // A drag's trailing repaint would land in the middle of the run and fight it for the budget.
+    if (_vsFocusTimer) { clearTimeout(_vsFocusTimer); _vsFocusTimer = 0; }
+    _vsPlay.on = true; _vsPlayBtnSync();
+    _vsPlayFrame(mn, mx, true);
+  }
+  function _vsPlayFrame(mn, mx, first) {
+    var F = _vsFocus; if (!F || !_vsPlay.on) return;
+    if (!first) _vsAsOf = Math.min(mx, _vsStepFrom(_vsAsOf == null ? mn : _vsAsOf, 1, _vsPlay.step));
+    if (F.chrome) F.chrome();
+    if (F.paint) _vsFocusRunPaint(F);
+    // The end is a stop, not a loop: it leaves you looking at the finished building.
+    if (_vsAsOf >= mx) { _vsPlayStop(); return; }
+    _vsPlay.timer = setTimeout(function () {
+      _vsPlay.timer = 0;
+      // ⚠️ The scrubber is re-read every frame rather than closed over: toggling compare rebuilds
+      // the whole window, and a run holding the old node would walk a detached element to the end.
+      var sc2 = _vsPlaySeg(); if (!sc2 || !_vsPlay.on) { _vsPlayStop(); return; }
+      _vsPlayFrame(+sc2.dataset.min, +sc2.dataset.max, false);
+    }, Math.max(VS_PLAY_FRAME, _vsFocusCost * 1.15));
+  }
+  // The step arrows and the play button both speak in whatever unit the speed is set to, so their
+  // labels are written from it rather than hard-coded to the month they used to assume.
+  function _vsPlayLabels(wrap) {
+    if (!wrap) return;
+    var u = _vsStepDef(_vsPlay.step).unit.toLowerCase();
+    wrap.querySelectorAll('[data-fzstep]').forEach(function (b) {
+      b.title = (b.dataset.fzstep === '1' ? 'Forward one ' : 'Back one ') + u;
+    });
+    _vsPlayBtnSync();
+  }
+  // The legend's own markup. ⚠️ Five FIXED rows, emitted once and only ever written to afterwards —
+  // see the note on `chrome`, which runs per frame and must create and destroy nothing.
+  function _vsFocusLegendHTML() {
+    var rows = '';
+    for (var i = 0; i < 5; i++) {
+      rows += '<button class="r" id="ps-vs-fz-pip' + i + '" type="button">' +
+        '<span class="lb"></span><span class="dt"></span></button>';
+    }
+    return '<div class="ps-vs-fz-leg" id="ps-vs-fz-leg" aria-live="off">' +
+      '<div class="k">Timeline</div>' + rows +
+      '<div class="of" id="ps-vs-fz-legof"></div></div>';
+  }
   // The track, drawn from the same numbers the main view's bar uses.
   function _vsFocusScrubHTML(list) {
     var sp = _vsFocusSpan(list);
@@ -17307,6 +17505,7 @@
     var dd = today(), ddm = '';
     if (dd && +dd >= mn && +dd <= mx) ddm = '<div class="dd" title="Data date" style="left:' + (((+dd - mn) / span) * 100).toFixed(2) + '%"></div>';
     var live = (_vsAsOf == null);
+    var stepU = _vsStepDef(_vsPlay.step).unit.toLowerCase();
     return '<div class="ps-vs-fz-scrub" data-min="' + mn + '" data-max="' + mx + '">' +
       '<span class="lab"><b>' + esc(Fmt.date(dstr(new Date(at)))) + '</b>' +
         (live ? 'Live — recorded progress' : 'Modelled from the dates') + '</span>' +
@@ -17314,9 +17513,22 @@
         '<div class="rail"></div><div class="fillx" style="width:' + (frac * 100).toFixed(2) + '%"></div>' + ddm +
         '<div class="hd" id="ps-vs-fz-hd" style="left:' + (frac * 100).toFixed(2) + '%" title="Drag to walk the programme"></div>' +
       '</div>' +
+      // ⚠️ Play sits in its OWN segment, left of the steps. Grouped with them it reads as a third
+      // arrow, and the one control that starts something running must not look like the two that
+      // move by one.
+      '<span class="ps-vs-seg"><button data-fzplay type="button"' + (_vsPlay.on ? ' class="on"' : '') + '>' +
+        (_vsPlay.on ? VS_PAUSE_ICON : VS_PLAY_ICON) + '</button></span>' +
+      // The speed. ⚠️ It is the STEP, so it also re-labels the two arrows below — one dial, not a
+      // playback speed and a separate step size that could disagree with each other.
+      '<select class="pd-select ps-vs-sel ps-vs-fz-speed" id="ps-vs-fz-speed" ' +
+        'title="How much time each play step (and each arrow) advances">' +
+        VS_PLAY_STEPS.map(function (s) {
+          return '<option value="' + s.k + '"' + (s.k === _vsPlay.step ? ' selected' : '') + '>' + esc(s.lab) + '</option>';
+        }).join('') +
+      '</select>' +
       '<span class="ps-vs-seg">' +
-        '<button data-fzstep="-1" title="Back one month">&#8249;</button>' +
-        '<button data-fzstep="1" title="Forward one month">&#8250;</button>' +
+        '<button data-fzstep="-1" title="Back one ' + esc(stepU) + '">&#8249;</button>' +
+        '<button data-fzstep="1" title="Forward one ' + esc(stepU) + '">&#8250;</button>' +
         '<button data-fzlive' + (live ? ' class="on"' : '') + ' title="Back to recorded progress">Live</button>' +
       '</span></div>';
   }
@@ -17328,6 +17540,10 @@
     // measured per-move against the live element would jump the instant the first frame landed.
     function drag(e) {
       var rect = track.getBoundingClientRect(); if (!rect.width) return;
+      // ⚠️ Grabbing the handle STOPS the film. Two things writing _vsAsOf — the pointer and the
+      // timer — is the scrubber fighting the person holding it, and the frame that lands after the
+      // drag is released would drag them back to wherever the run had got to.
+      _vsPlayStop();
       var move = function (ev) {
         _vsFocusScrubTo(mn + Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width)) * (mx - mn), mn, mx);
       };
@@ -17345,13 +17561,36 @@
     if (hd) hd.addEventListener('pointerdown', function (e) { e.stopPropagation(); e.preventDefault(); drag(e); });
     wrap.querySelectorAll('[data-fzstep]').forEach(function (b) {
       b.onclick = function () {
-        var cur = new Date(_vsAsOf == null ? mx : _vsAsOf);
-        cur.setMonth(cur.getMonth() + (parseInt(b.dataset.fzstep, 10) || 0));
-        _vsFocusScrubTo(+cur, mn, mx);
+        _vsPlayStop();
+        _vsFocusScrubTo(_vsStepFrom(_vsAsOf == null ? mx : _vsAsOf, parseInt(b.dataset.fzstep, 10) || 0, _vsPlay.step), mn, mx);
       };
     });
     var lv = wrap.querySelector('[data-fzlive]');
-    if (lv) lv.onclick = function () { _vsAsOf = null; _vsFocusRepaint(); };   // a click is not a drag: repaint at once
+    if (lv) lv.onclick = function () { _vsPlayStop(); _vsAsOf = null; _vsFocusRepaint(); };   // a click is not a drag: repaint at once
+    var pb = wrap.querySelector('[data-fzplay]');
+    if (pb) pb.onclick = function () { _vsPlayToggle(); };
+    var sp2 = wrap.querySelector('#ps-vs-fz-speed');
+    if (sp2) sp2.onchange = function () {
+      var was = _vsPlay.on;
+      _vsPlayStop();                       // the running timer is pacing the OLD unit
+      _vsPlay.step = sp2.value;
+      _vsPlayLabels(wrap);
+      // ⚠️ chrome(), not a repaint: changing the speed renumbers the legend (a week becomes a
+      // month) but does not move the as-of date, so the buildings are already correct.
+      if (_vsFocus && _vsFocus.chrome) _vsFocus.chrome();
+      if (was) _vsPlayToggle();             // it was playing: carry on, in the new unit
+    };
+    // Clicking a row of the legend jumps to that period. ⚠️ Delegated to the container, which
+    // chrome() never replaces — the rows themselves are only ever written to.
+    var lg = wrap.querySelector('#ps-vs-fz-leg');
+    if (lg) lg.onclick = function (e) {
+      var r = e.target.closest ? e.target.closest('.r') : null;
+      if (!r || !r.dataset.p) return;
+      _vsPlayStop();
+      var d = _vsPeriodStart(mn, parseInt(r.dataset.p, 10) || 1, _vsPlay.step);
+      _vsFocusScrubTo(+d, mn, mx);
+    };
+    _vsPlayLabels(wrap);
   }
   // ---- Full screen -----------------------------------------------------------------------------
   // ⚠️ The API is tried first and `.is-maxed` is the fallback, because an embedded/iframed context or
@@ -17489,6 +17728,10 @@
                    '</div>')) +
               '</div>';
           }).join('') +
+          // ⚠️ The legend is a child of the STAGE, after both panes — one period number for the
+          // whole window. Inside a pane it would print twice in compare, and be clipped by the
+          // pane's own overflow the moment the building was panned.
+          (_vsFocusSpan(card.list) ? _vsFocusLegendHTML() : '') +
         '</div>' +
         // ---- The frozen row -----------------------------------------------------------------
         // ⚠️ Outside the panning stage, so it is still on screen at every pan and zoom — which is
@@ -17522,7 +17765,10 @@
       _vsFocus = {
         cmp: cmp, z: 1, px: 0, py: 0, w: W, h: H, name: card.name,
         cells: built.length ? built[built.length - 1].cells : {}, hoverKey: undefined, panes: [],
-        zlab: wrap.querySelector('#ps-vs-fzz'), readEl: wrap.querySelector('#ps-vs-fz-read')
+        zlab: wrap.querySelector('#ps-vs-fzz'), readEl: wrap.querySelector('#ps-vs-fz-read'),
+        // ⚠️ Held so the playback helpers, which live OUTSIDE this closure, can find the scrubber
+        // and the legend without every one of them being handed the wrap.
+        wrap: wrap
       };
       if (_vs3D) {
         /* ⚠️⚠️ `_vsFocus.panes` IS LEFT EMPTY IN 3D, AND THAT IS THE MECHANISM. Every SVG-only
@@ -17670,6 +17916,41 @@
           var fx = sc.querySelector('.fillx'); if (fx) fx.style.width = (frac * 100).toFixed(2) + '%';
           var hd2 = sc.querySelector('.hd'); if (hd2) hd2.style.left = (frac * 100).toFixed(2) + '%';
           var lv2 = sc.querySelector('[data-fzlive]'); if (lv2) lv2.classList.toggle('on', !scrubbed);
+          /* ---- The timeline legend, upper right ---------------------------------------------
+             ⚠️ WRITTEN, NEVER BUILT. The five rows are emitted once by _vsFocusLegendHTML and this
+             only sets their text, their .on class and their data-p — because chrome() runs on every
+             frame of a drag and of a playback, and a legend that rebuilt its own markup there would
+             re-enter the DOM sixty times a second and drop the click handler delegated to it.
+             ⚠️ The window SLIDES: the current period is kept in the middle where there is room on
+             both sides, and pinned to the ends where there is not — so row 3 is not always "now",
+             and the .on class is what says which one is. */
+          var lg = wrap.querySelector('#ps-vs-fz-leg');
+          if (lg) {
+            var sd = _vsStepDef(_vsPlay.step);
+            var pIdx = _vsPeriodIdx(mn, at, _vsPlay.step);
+            var pTot = _vsPeriodIdx(mn, mx, _vsPlay.step);
+            var firstRow = Math.max(1, Math.min(pIdx - 2, pTot - 4));
+            for (var pz = 0; pz < 5; pz++) {
+              var row = wrap.querySelector('#ps-vs-fz-pip' + pz); if (!row) continue;
+              var idx = firstRow + pz;
+              if (idx > pTot) { row.style.display = 'none'; row.removeAttribute('data-p'); continue; }
+              row.style.display = '';
+              row.dataset.p = idx;
+              var isNow = (idx === pIdx);
+              row.classList.toggle('on', isNow);
+              row.querySelector('.lb').textContent = sd.unit + ' ' + idx;
+              // Only the current row carries dates: five date ranges is a table, and the legend was
+              // asked for as a number.
+              if (!isNow) { row.querySelector('.dt').textContent = ''; continue; }
+              var ps = _vsPeriodStart(mn, idx, _vsPlay.step);
+              var pe = new Date(+_vsPeriodStart(mn, idx + 1, _vsPlay.step) - 86400000);
+              if (+ps < mn) ps = new Date(mn);      // Month 1 can start before the programme does
+              if (+pe > mx) pe = new Date(mx);
+              row.querySelector('.dt').textContent = _vsPeriodRange(ps, pe);
+            }
+            var ofEl = wrap.querySelector('#ps-vs-fz-legof');
+            if (ofEl) ofEl.textContent = sd.unit + ' ' + pIdx + ' of ' + pTot;
+          }
         }
       };
       _vsFocus.chrome();
@@ -17719,6 +18000,10 @@
     var _close = m.close;
     m.close = function () {
       document.removeEventListener('keydown', onKey);
+      // ⚠️ FIRST. The playback timer holds a reference to _vsFocus and repaints through it; left
+      // running past the close it would paint into a window that is no longer on screen, and in 3D
+      // it would rebuild scenes _vs3FocusDispose has just freed.
+      _vsPlayStop();
       // Leaving full screen with the modal still open would strand the page in it.
       if (document.fullscreenElement === boxEl && document.exitFullscreen) { try { document.exitFullscreen(); } catch (e) {} }
       var moved = (_vsAsOf !== _asOfOnOpen);
