@@ -39161,19 +39161,58 @@
     // ⚠️ The counts are their OWN variables, not keys on the id→amount map: an activity whose
     // activity_id happened to be '_lines' would otherwise be handed the line count as its cost.
     var _boqMap = null, _boqLines = 0, _boqLinked = 0, _boqState = 'idle', _boqErr = '', _boqPid = null;
+    /* Project-scoped BOQ money (2026-09-10-boq-project-scope.sql): reported separately from the
+       per-activity map because once it is spread into that map it is invisible. */
+    var _boqProjTotal = 0, _boqProjLines = 0, _boqProjSpread = 0, _boqSpreadOver = 0;
     /* The share arithmetic, as a PURE function of the two tables — so it can be EXECUTED without a
        database, which is the only way any of this gets checked (the anon key has no grants on the
        BOQ tables either). loadBoq() does the reading and nothing else. */
-    function boqDerive(items, allocs) {
+    /* ⚠️⚠️ `leaves` IS REQUIRED FOR PROJECT-SCOPED LINES and optional otherwise. A line allocated
+       to the PROJECT (2026-09-10-boq-project-scope.sql) names no activity, so it has to be spread
+       across the programme — and this is the only place that can do it, because the money must
+       reach `planned_cost` per activity or it reaches nothing at all: `schedule_scurve_agg` reads
+       `coalesce(planned_cost, bl_cost, 0)` over LEAF ACTIVITIES, and Cost Loading's Apply writes
+       that column per activity. There is nowhere else for a project-wide cost to live. */
+    function boqDerive(items, allocs, leaves) {
       var byItem = {};
       (allocs || []).forEach(function (a) { (byItem[a.boq_item_id] = byItem[a.boq_item_id] || []).push(a); });
-      var out = {}, lines = 0, linked = 0;
+
+      /* ⚠️ The spread is PRO-RATA BY DURATION, which is what "time-related preliminary" means: a
+         site office costs money for as long as the job runs. A zero-duration activity (a milestone)
+         therefore takes nothing, which falls out of the weighting rather than needing a rule.
+         ⚠️ Computed ONCE, not per line — a project with 122 preliminaries and 2,561 activities
+         would otherwise walk the schedule 122 times. */
+      var wTot = 0, wList = [];
+      (leaves || []).forEach(function (r) {
+        var d = Number(r.duration_days);
+        if (!(d > 0)) return;
+        wTot += d; wList.push({ id: String(r.activity_id), w: d });
+      });
+
+      var out = {}, lines = 0, linked = 0, projectTotal = 0, projectLines = 0, projectSpread = 0;
       (items || []).forEach(function (i) {
         // A heading is layout; an exclusion is a positive statement that the work is another
         // party's scope; an amount-less line has no money to share out.
         if (i.line_kind === 'heading' || i.exclusion_note || i.amount == null) return;
         lines++;
         var list = byItem[i.id] || []; if (!list.length) return;
+
+        /* ⚠️ The scope is read off the ROW, and a row written before the migration has none — so
+           the fallback is 'activity', which is exactly what those rows have always meant. */
+        var proj = list.filter(function (a) { return String(a.scope || 'activity') === 'project'; });
+        if (proj.length) {
+          linked++; projectLines++; projectTotal = r2(projectTotal + (+i.amount));
+          /* ⚠️ A project-scoped line with NO leaf carrying a duration is counted in projectTotal
+             and spread nowhere — reported, never silently dropped into activity totals it does not
+             belong to, and never divided by zero. */
+          if (!wTot) return;
+          projectSpread = r2(projectSpread + (+i.amount));
+          wList.forEach(function (x) {
+            out[x.id] = r2((out[x.id] || 0) + (+i.amount) * (x.w / wTot));
+          });
+          return;
+        }
+
         linked++;
         var denom = list.reduce(function (t, a) { return t + (Number(a.qty) || 0); }, 0);
         list.forEach(function (a) {
@@ -39185,7 +39224,12 @@
           out[k] = r2((out[k] || 0) + (+i.amount) * share);
         });
       });
-      return { map: out, lines: lines, linked: linked };
+      /* ⚠️ `projectTotal` is reported SEPARATELY as well as being spread, because once it is inside
+         the per-activity map it is invisible — a planner reading "Rebar Works · from the BOQ ₱X"
+         cannot tell how much of X is the site office. The Cost Loading note names it. */
+      return { map: out, lines: lines, linked: linked,
+               projectTotal: projectTotal, projectLines: projectLines, projectSpread: projectSpread,
+               spreadOver: wList.length };
     }
     function boqAmountOf(r) { return (_boqMap && r && r.activity_id) ? (_boqMap[String(r.activity_id)] || null) : null; }
     function boqTotalOf(g) {
@@ -39200,15 +39244,34 @@
       try {
         var it = await sbc().from('boq_items').select('id,amount,line_kind,exclusion_note').eq('project_id', curPid);
         if (it.error) throw it.error;
-        var al = await sbc().from('boq_allocations').select('boq_item_id,activity_id,qty').eq('project_id', curPid);
+        /* ⚠️ `scope` is selected explicitly, and its absence must NOT fail the read: on a database
+           where 2026-09-10-boq-project-scope.sql has not been run, PostgREST answers an unknown
+           column by rejecting the whole request — which would take the entire BOQ basis down over a
+           column that only matters to preliminaries. Retry once without it; every row then reads as
+           an activity allocation, which is what they all are on that database. */
+        var cols = 'boq_item_id,activity_id,qty,scope';
+        var al = await sbc().from('boq_allocations').select(cols).eq('project_id', curPid);
+        if (al.error && /scope|PGRST204|schema cache|does not exist/i.test(String(al.error.message || al.error))) {
+          al = await sbc().from('boq_allocations').select('boq_item_id,activity_id,qty').eq('project_id', curPid);
+        }
         if (al.error) throw al.error;
-        var d = boqDerive(it.data || [], al.data || []);
-        _boqMap = d.map; _boqLines = d.lines; _boqLinked = d.linked; _boqState = 'ok';
+        /* ⚠️ The LEAVES are handed in so a project-scoped line can be spread over them. `rows` is
+           the schedule already in memory — this adds no read. */
+        var leaves = (rows || []).filter(function (r) { return !isWbs(r) && r.activity_id; });
+        var d = boqDerive(it.data || [], al.data || [], leaves);
+        _boqMap = d.map; _boqLines = d.lines; _boqLinked = d.linked;
+        _boqProjTotal = d.projectTotal; _boqProjLines = d.projectLines;
+        _boqProjSpread = d.projectSpread; _boqSpreadOver = d.spreadOver;
+        _boqState = 'ok';
       } catch (e) {
         // ⚠️ DEGRADES, never blocks. No BOQ tables, no grants, or no BOQ on this project all land
         // here, and in every one of those cases the planner must still be able to load cost by
         // hand rather than be told the tab is broken.
-        _boqMap = null; _boqLines = 0; _boqLinked = 0; _boqState = 'err'; _boqErr = (e && e.message) ? e.message : String(e);
+        _boqMap = null; _boqLines = 0; _boqLinked = 0;
+        /* ⚠️ Reset too — a failed reload that kept the previous project's project-wide total
+           would report another job's preliminaries against this one. */
+        _boqProjTotal = 0; _boqProjLines = 0; _boqProjSpread = 0; _boqSpreadOver = 0;
+        _boqState = 'err'; _boqErr = (e && e.message) ? e.message : String(e);
       }
     }
     function instKey(r) {
@@ -39775,7 +39838,24 @@
             ? '<b>' + (_boqLines - _boqLinked) + '</b> priced line' +
               ((_boqLines - _boqLinked) === 1 ? ' is' : 's are') +
               ' not matched to any activity yet, so their money reaches nothing here — match them on the BOQ’s <b>Match to schedule</b> tab.'
-            : 'Every priced line is matched.') + '</p>';
+            : 'Every priced line is matched.') + '</p>' +
+          /* ⚠️⚠️ THE PROJECT-WIDE MONEY IS NAMED, because it is inside every figure above and
+             invisible there. A preliminary spread across the programme lands in each cost line's
+             "from the BOQ" total, so a planner reading "Rebar Works ₱X" cannot tell how much of X
+             is the site office. Saying the number is what keeps the absorption honest.
+             ⚠️ The un-spread case is reported SEPARATELY rather than folded in: money counted and
+             not spread is a different fact from money spread, and only one of them is in the curve. */
+          (_boqProjLines
+            ? '<p class="pscl-note"><b>' + money(_boqProjTotal) + '</b> of that is <b>project-wide</b> — ' +
+              _boqProjLines + ' line' + (_boqProjLines === 1 ? '' : 's') +
+              ' allocated to the project rather than to any activity (preliminaries: mobilisation, ' +
+              'site offices, plant hire). ' +
+              (_boqSpreadOver
+                ? 'It is spread pro-rata by duration across <b>' + _boqSpreadOver + '</b> activit' +
+                  (_boqSpreadOver === 1 ? 'y' : 'ies') + ', so it is included in the totals above.'
+                : '⚠️ No activity carries a duration, so it is <b>not</b> spread and reaches nothing here.') +
+              '</p>'
+            : '');
       } else if (_boqState === 'ok') {
         body = '<p class="pscl-note">This project’s BOQ carries <b>no priced lines</b> yet. Build or import it in Contracts &amp; ' +
           'Claims and the totals appear here — or type them below, which is then recorded as an override.</p>';

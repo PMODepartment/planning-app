@@ -1613,10 +1613,20 @@ window.BOQ = (function () {
      ⚠️ It does NOT swallow other errors. An RLS refusal or a constraint violation must still
      surface, or a failed write reads as a success. */
   var _allocRungOk = true;
+  var _allocScopeOk = true;   // cleared once per session by the degrade above
   async function upsertAllocs(rows) {
     if (!rows.length) return { ok: true, dropped: '' };
     var strip = function (list) {
       return list.map(function (p) { var c = Object.assign({}, p); delete c.matched_by; delete c.match_score; return c; });
+    };
+    /* ⚠️⚠️ A PROJECT-SCOPED ROW CANNOT DEGRADE, and this is the one place in this file where
+       dropping a column would be WRONG. Without `scope` the row is indistinguishable from an
+       activity allocation, and `activity_id` is still NOT NULL on that database — so the insert
+       would either fail anyway or, worse, land as an activity allocation naming no activity. It is
+       refused with the migration named instead. Everything else still degrades as before. */
+    var wantsScope = rows.some(function (p) { return String(p.scope || 'activity') === 'project'; });
+    var stripScope = function (list) {
+      return list.map(function (p) { var c = Object.assign({}, p); delete c.scope; return c; });
     };
     var send = async function (list) {
       for (var i = 0; i < list.length; i += 300) {
@@ -1625,9 +1635,20 @@ window.BOQ = (function () {
       }
       return null;
     };
-    var err = await send(_allocRungOk ? rows : strip(rows));
+    var err = await send(_allocScopeOk ? (_allocRungOk ? rows : strip(rows))
+                                       : stripScope(_allocRungOk ? rows : strip(rows)));
     if (!err) return { ok: true, dropped: _allocRungOk ? '' : 'The match rung was not recorded — run migrations/2026-09-10-boq-match-rung.sql.' };
     var msg = String(err.message || err);
+    if (_allocScopeOk && /\bscope\b/i.test(msg) && /PGRST204|schema cache|column/i.test(msg)) {
+      _allocScopeOk = false;
+      if (wantsScope) {
+        return { ok: false, msg: 'This line is allocated to the project, which needs ' +
+                 'migrations/2026-09-10-boq-project-scope.sql. Run it, then apply again — nothing was saved.' };
+      }
+      var err0 = await send(stripScope(_allocRungOk ? rows : strip(rows)));
+      if (!err0) return { ok: true, dropped: '' };
+      return { ok: false, msg: String(err0.message || err0) };
+    }
     if (_allocRungOk && /matched_by|match_score|PGRST204|schema cache/i.test(msg)) {
       _allocRungOk = false;                                   // ⚠️ once per session, not per row
       var err2 = await send(strip(rows));
@@ -4577,8 +4598,14 @@ window.BOQ = (function () {
            item, and it was the majority of the owner's 122. The count is kept for the linked rows;
            the rest say which case they are in. */
         '<td class="cc-r">' + (function () {
-          if (al.length) return String(al.length);
           var st = lineLinkState(r);
+          /* ⚠️ Checked BEFORE the count, because a project-scoped line HAS an allocation and would
+             otherwise read "1" — a number that means "one activity", which is the one thing it is
+             not. */
+          if (st.kind === 'project') return '<span class="boq-why" title="Allocated to the project ' +
+            'as a whole — a preliminary. Its cost is spread across the programme pro-rata by ' +
+            'duration.">project-wide</span>';
+          if (al.length) return String(al.length);
           if (st.kind === 'nocode') return '<span class="cc-mut">no code</span>';
           if (st.kind === 'ready') return '<span class="boq-why" title="' + st.n +
             ' activit' + (st.n === 1 ? 'y carries' : 'ies carry') + ' this class code — press ' +
@@ -4649,6 +4676,15 @@ window.BOQ = (function () {
       : proposeSplit(r, scored);
 
     var qOn = hasQty(r);
+    /* B · SCOPE. A line is allocated ACROSS ACTIVITIES or to the PROJECT AS A WHOLE
+       (migrations/2026-09-10-boq-project-scope.sql). The second is what preliminaries need:
+       mobilisation, site offices, plant hire are time-related costs that belong to no activity,
+       and until now the only way to record one was to attach it to an activity it does not belong
+       to - which flows into planned_cost, the S-curve and Cash Flow as a fact.
+       Seeded from what is already stored, so re-opening a project-scoped line shows it as one. */
+    var projScope = existing.length
+      ? existing.some(function (a) { return String(a.scope || 'activity') === 'project'; })
+      : false;
     var m = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">' +
       (qOn ? 'Allocate quantity' : 'Link to activities') + '</h2>' +
       '<button class="pd-modal-close" id="sp-x">&times;</button></div>' +
@@ -4667,6 +4703,20 @@ window.BOQ = (function () {
         ' · class code <code>' + esc(cfc) + '</code>' +
         (cf && cf.from ? ' <span class="cc-mini">inherited from heading ' +
           esc(cf.from.item_no || cf.from.description || '') + '</span>' : '') + '</p>' +
+        /* The choice sits ABOVE everything, because it decides what the rest of the dialog even
+           means - a parts table under a project-scoped line would be answering a question that no
+           longer applies. */
+        '<div class="boq-scope">' +
+          '<label class="boq-scopeopt' + (projScope ? '' : ' on') + '">' +
+            '<input type="radio" name="sp-scope" value="activity"' + (projScope ? '' : ' checked') + '>' +
+            '<span><strong>Across activities</strong><br><span class="cc-mini">The work is on the ' +
+            'programme. Its quantity and money follow the activities it covers.</span></span></label>' +
+          '<label class="boq-scopeopt' + (projScope ? ' on' : '') + '">' +
+            '<input type="radio" name="sp-scope" value="project"' + (projScope ? ' checked' : '') + '>' +
+            '<span><strong>The project as a whole</strong><br><span class="cc-mini">A preliminary — ' +
+            'mobilisation, site office, plant hire. It belongs to no single activity, and its cost ' +
+            'is spread across the programme pro-rata by duration.</span></span></label>' +
+        '</div>' +
         /* ⚠️ The RUNG is named, not just the split arithmetic. "Proposed by location match" and
            "proposed by prorata" are the difference between a figure a planner can accept at a
            glance and one they must check — and until now the screen only ever said the latter. */
@@ -4704,12 +4754,23 @@ window.BOQ = (function () {
            answers this exact question ("which activities does this cover?"), is already verified,
            and lets a place or a whole branch be taken in one click. Building a second one here is
            the drift this module has already paid for twice. */
+        (projScope
+          /* Everything below answers "which activities", which is the question project scope
+             removes. Replaced by what the choice MEANS, in the terms the planner will see it in
+             again on the schedule's Cost Loading tab. */
+          ? '<p class="cc-hint boq-projnote">This line is allocated to <strong>the project</strong>. ' +
+            'It names no activity, and its ' + (qOn ? 'quantity stays with the line while its ' : '') +
+            'cost is spread across the programme <strong>pro-rata by duration</strong> — so it ' +
+            'reaches the cost-loaded S-curve without being attributed to work it does not belong to. ' +
+            'Project Schedule → Cost Loading names the total.</p>'
+          : '') +
+        (projScope ? '' :
         '<div class="boq-splitadd">' +
           (window.CCAffected
             ? '<button class="pd-btn pd-btn-primary" id="sp-pick">Choose activities…</button>' +
               '<span class="cc-mini">Search, or take a whole place or WBS branch at once</span>'
             : '<span class="cc-mini">The activity picker did not load — reload the page to link by hand.</span>') +
-        '</div>' +
+        '</div>') +
         // ⚠️ The remainder is always shown, both ways. Silent over-allocation is
         // a wrong S-curve, and a silent shortfall is work nobody has planned.
         // ⚠️ A line with no quantity must NOT report "reconciles exactly": 0 of 0 satisfies the
@@ -4741,6 +4802,18 @@ window.BOQ = (function () {
       });
       var pk = body.querySelector('#sp-pick');
       if (pk) pk.onclick = openPicker;
+      body.querySelectorAll('input[name="sp-scope"]').forEach(function (rd) {
+        rd.onchange = function () {
+          projScope = rd.value === 'project';
+          /* The two shapes cannot coexist — the database refuses a line holding both (the trigger
+             in 2026-09-10-boq-project-scope.sql), and more importantly the same money would be in
+             the per-activity map AND the project-wide spread. Switching TO project drops the parts;
+             switching back leaves none, which is the honest starting point for re-picking. */
+          prop.parts = [];
+          prop.method = 'manual'; prop.rung = null;
+          paint();
+        };
+      });
     }
 
     /* The picker takes over the dialog body rather than opening a modal on top of it — a modal
@@ -4817,7 +4890,12 @@ window.BOQ = (function () {
       // dialog would have listed the activities, the planner would have pressed Apply, and nothing
       // would have been stored. A part now needs only an ACTIVITY — qty 0 is a link awaiting its
       // quantity, which is a decision worth keeping.
-      var parts = prop.parts.filter(function (p) { return p.activity_id; });
+      /* ⚠️ ONE ROW, no activity, carrying the whole line. The quantity is NOT divided — there is
+         nothing to divide it across — and `boqDerive` reads the line's own amount rather than this
+         qty, so it is stored for completeness and never used as a weight. */
+      var parts = projScope
+        ? [{ activity_id: null, scope: 'project', qty: Number(r.qty) || 0 }]
+        : prop.parts.filter(function (p) { return p.activity_id; });
       // Replace-then-insert: an allocation set is one decision, so a partial
       // overwrite would leave a mixture of two planners' splits on one line.
       var del = await sb().from(T_ALLOC).delete().eq('boq_item_id', r.id);
@@ -4828,6 +4906,7 @@ window.BOQ = (function () {
            is already reset to 'manual' by every edit handler for the same reason. */
         var ins = await upsertAllocs(parts.map(function (p) {
           return { project_id: pid, boq_item_id: r.id, activity_id: p.activity_id,
+                   scope: p.scope || 'activity',
                    qty: Number(p.qty), method: prop.method || 'manual', accepted_by: UID,
                    matched_by: (prop.method === 'manual' ? 'manual' : (p.rung || null)),
                    match_score: (prop.method === 'manual' ? null : (RUNG_SCORE[p.rung] || null)) };
@@ -4836,7 +4915,9 @@ window.BOQ = (function () {
       }
       m.close();
       ALLOC = ALLOC.filter(function (a) { return a.boq_item_id !== r.id; })
-        .concat(parts.map(function (p) { return { boq_item_id: r.id, activity_id: p.activity_id, qty: Number(p.qty), method: prop.method || 'manual', project_id: pid }; }));
+        /* ⚠️ `scope` is mirrored, or the worklist would repaint the line as an ordinary activity
+           allocation until the next full load — the screen disagreeing with what was just saved. */
+        .concat(parts.map(function (p) { return { boq_item_id: r.id, activity_id: p.activity_id, scope: p.scope || 'activity', qty: Number(p.qty), method: prop.method || 'manual', project_id: pid }; }));
       UI.toast('Allocation applied.', 'success'); render();
     }
   }
@@ -4947,7 +5028,11 @@ window.BOQ = (function () {
   }
 
   function lineLinkState(r) {
-    if (allocOf(r.id).length) return { kind: 'linked' };
+    var al0 = allocOf(r.id);
+    if (al0.length) {
+      return al0.some(function (a) { return String(a.scope || 'activity') === 'project'; })
+        ? { kind: 'project' } : { kind: 'linked' };
+    }
     var cf = codeFor(r);
     if (!cf) return { kind: 'nocode' };
     if (candidatesFor(r).length) return { kind: 'ready', n: candidatesFor(r).length };

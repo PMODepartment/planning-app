@@ -95,6 +95,105 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-10 (z9) — B: a line can be allocated to the PROJECT; and the picker was hiding activities, could not span floors, and made "Rebar everywhere" a manual deselect
+
+**Run `migrations/2026-09-10-boq-project-scope.sql`.** Owner: *"Let's do B as well"*, then three
+reports off the live picker — *"Structural works doesn't appear on some floors"*, *"Is there a way to
+select all floors but select specific activities only from the selection"*, and *"Right now I have to
+expand all WBS and manually deselect activities… its very tedious work."* All four fixed.
+
+#### ⚠️⚠️ B · A PRELIMINARY HAD NOWHERE TO BE RECORDED, SO IT CONTRIBUTED ₱0
+`boq_allocations.activity_id` was `not null`, so the only way to record Mobilization or a site office
+was to attach it to an activity it does not belong to. Planners left them unallocated instead — and
+`boqDerive` drops a line with no allocations outright (`if (!list.length) return;`). **Measured on the
+fixture: today the preliminary contributes nothing and the basis is ₱3,000; with B it is ₱3,600.**
+
+`scope in ('activity','project')`, `activity_id` nullable, and three guards:
+- a CHECK making the two shapes exclusive, so a NULL can never read as "not filled in yet";
+- ⚠️ a **partial unique index** — the existing unique is `(boq_item_id, activity_id)` and Postgres
+  treats NULLs as **distinct**, so without it "the project as a whole" could be recorded twice and
+  counted twice;
+- ⚠️⚠️ a **trigger** against mixing activity and project rows on one line. A CHECK sees one row; the
+  rule is about the set. Mixing would put the same money in the per-activity map *and* the
+  project-wide spread, and the contract total would silently exceed itself.
+
+⚠️ **`'wbs'` is deliberately NOT in the CHECK** — nothing in the UI can produce one, and this module's
+own history records the trap of adding a pointer before the screen that sets it.
+
+**The spread is pro-rata by duration**, which is what "time-related preliminary" means, and it is the
+only way the money can reach the curve at all: `schedule_scurve_agg` reads
+`coalesce(planned_cost, bl_cost, 0)` over **leaf activities**, and Cost Loading's Apply writes that
+column per activity. There is nowhere else for a project-wide cost to live.
+⚠️ **A synthetic "project-wide" cost line over all activities was the obvious design and it is wrong:
+Apply writes `planned_cost = amount`, an OVERWRITE per activity, not a sum** — it would have wiped
+every direct cost. Established by reading the write, before building on the assumption.
+⚠️ The total is **reported separately as well as spread**, because once inside the per-activity map it
+is invisible — a planner reading "Rebar Works · from the BOQ ₱X" cannot tell how much of X is the site
+office. Cost Loading now names it.
+⚠️ A project-scoped row **refuses rather than degrades** when the migration is absent: without `scope`
+it is indistinguishable from an activity allocation, and `activity_id` is still NOT NULL there.
+
+#### ⚠️⚠️ THE PICKER WAS HIDING ACTIVITIES, AND THE COUNTS SAID SO
+*"Structural works doesn't appear on some floors."* `valuesAt` did `if (!v) return;` — an activity with
+**no value at a level was dropped from every bucket**, and `ladderOf` then narrows with
+`cand = chosen.acts`, so it vanished from every rung below and from the tree. Structural work on the
+7th floor carries a Zone and **no Unit**, so all 24 activities disappeared the moment the Unit rung
+auto-positioned on U1. The screenshot showed it if you added up: the floor held **240** and its zone
+values summed to **236**. There is now a **`— no <level> recorded —`** bucket, last, labelled from the
+level so it reads as a fact about the data rather than a place called "none".
+
+#### All floors at once, and "Rebar everywhere" in one click
+- **`All <level>s`** on every rung. ⚠️⚠️ **The rungs below an All are not rendered**, and that is the
+  point rather than a limitation: `valuesAt`'s own note forbids a "every zone at once" mode without a
+  composite key, and it is right — with Level on All, the 5th floor's Z1 and the 7th floor's Z1 are
+  the same string and two different places. Resolution stays strictly top-down; the screen says why.
+  ⚠️ The default is still the first value: a ladder opening on "everything" is a filter nobody chose,
+  the mirror of the bug above.
+- **`Select all N`** beside the search. A search already spans the whole project
+  (`scope = hits || lad.cand`), so *"Rebar"* lists every Rebar activity on every floor — what was
+  missing was a way to take them. It states the **count** (the tree is capped, so "all" alone could
+  select more than is on screen), **toggles**, and is **additive** across searches.
+  ⚠️ Ticking `All` includes the no-value bucket — those activities *are* part of "all of them", and
+  excluding them would rebuild the hole the bucket was added to close.
+
+#### ⚠️⚠️ TWO BUGS OF MY OWN, BOTH FOUND ONLY BY RENDERING
+1. **A raw NUL byte shipped into `affected.js`.** I wrote the sentinel as a control character instead
+   of the escape — the identical mistake this repo records for `exactKey` — and `grep` answered
+   *"Binary file matches"*. Caught within a minute, but `verify.py` would have caught it at commit and
+   I had not run it since the edit.
+2. **⚠️⚠️ AND THE SENTINEL COULD NOT WORK ANYWAY: an HTML parser substitutes U+FFFD for U+0000**, so
+   `data-v` read back `"�all"`, never matched, and the ladder fell through to the first value —
+   **both new gestures rendered perfectly and did nothing when clicked.** Structural assertions would
+   have passed. `normKey` ends `.replace(/[^a-z0-9]+/g,'')`, so every real key is `[a-z0-9]` only and
+   `'*all*'` / `'*none*'` cannot collide while surviving an attribute.
+
+#### Verified — 24 + 36 + 33 assertions, 0 failing, plus the picker driven in a browser
+- **The money:** basis 3,000 → 3,600; spread **1200/2400** on durations 10:20 (**not** equal — a
+  same-length fixture could not tell those apart); the zero-duration milestone takes none; the
+  **money invariant** holds (basis == priced lines exactly, heading and exclusion never counted); a
+  row with **no** `scope` reads as an activity allocation, so every pre-migration row is unchanged;
+  no leaf with a duration → counted, spread nowhere, never divided by zero.
+- **Driven, not asserted:** the floor-level activity is **invisible by default and reachable** through
+  the new bucket; `All levels` collapses the rungs to `[Tower, Level]` and the tree holds **21**;
+  search *"Rebar"* → **Select all 9** → 1 → **10 selected** in one click; it toggles back; and adding
+  *"Concrete"* accumulates to **16**.
+- 44 JS files + 30 inline blocks parse; 563/563 braces; **0 NUL bytes across 299 text files**;
+  migration parens 12/12, `$$` paired.
+- `boq.js` / `affected.js` / `module.css` → `?v=20260910z9`; `MODULE_V` → `20260910z9`.
+
+⚠️ **Three of my own assertions were wrong before the code was**, each left in the suite: a 400-char
+regex window failed on a correct handler because the explaining comment is longer than that; `.cca-rung`
+was never a class; and a structural search matched the comment quoting the code it had removed.
+
+⚠️ **NOT verified signed in, and the migration has not been run.** Until it does, the scope control
+saves nothing and says so. The spread has never run against a real 2,561-activity schedule, and **the
+first project-scoped line is the test** — the figure to watch is Cost Loading's new "of that is
+project-wide" line against the BOQ's own General Requirements total.
+⚠️ **A front-loaded preliminary is still not expressible.** Mobilization is spent in month one, but a
+project-scoped line inherits each activity's own dates, so it spreads across the whole programme.
+Recorded rather than guessed at.
+
+
 ### 2026-09-10 (z8) — The activity picker could not reach 69% of the schedule, and "0 activities" was answering three different questions
 
 Owner, on OPW101 with the allocation dialog open: *"Right now the linking is still not easy."* Then,

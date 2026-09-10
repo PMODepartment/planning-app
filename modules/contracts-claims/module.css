@@ -334,6 +334,20 @@ html.pd-dark {
 /* ---- Allocation split + progress editors ------------------------------ */
 .boq-split, .boq-prog { max-height:62vh; overflow-y:auto; }
 .boq-qin, .boq-rel { width:110px; height:30px; font-size:var(--pd-fs-sm); text-align:right; }
+/* ---- The allocation SCOPE (2026-09-10-boq-project-scope.sql) --------------------------------
+   ⚠️ Two full-width options rather than a `<select>`: each carries a sentence explaining what the
+   choice MEANS for the money, and this is the one decision in the dialog that changes which table
+   column the row lands in. A dropdown would hide both readings behind one closed line. */
+.boq-scope { display:flex; flex-direction:column; gap:6px; margin:10px 0 4px; }
+.boq-scopeopt { display:flex; align-items:flex-start; gap:9px; padding:9px 11px; cursor:pointer;
+  border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); background:var(--pd-card); }
+.boq-scopeopt.on { border-color:var(--pd-red); background:var(--pd-red-light); }
+/* ⚠️ The radio must NOT be stretched by `.ccw-main input { width:100% }` — the same rule that made
+   the class-code ladder unusable in the wizard. Scoped here so it holds wherever the dialog opens. */
+.boq-scopeopt input[type="radio"] { width:auto; flex:none; margin-top:2px; }
+.boq-scopeopt .cc-mini { display:block; margin-top:2px; }
+/* The project-scope explanation replaces the whole activity half, so it is given room to read. */
+.boq-projnote { border-left:3px solid var(--pd-red); padding-left:10px; max-width:70ch; }
 .boq-splitadd { margin:8px 0; }
 .boq-splitadd .pd-select { width:100%; max-width:none; }
 .boq-recon { font-size:var(--pd-fs-sm); padding:8px 11px; border-radius:var(--pd-radius); border:1px solid var(--pd-line); }
@@ -962,6 +976,16 @@ html.pd-dark .boq-tl1 > .boq-trow { background:rgba(255,255,255,.04); }
   border-bottom:1px solid rgba(128,128,128,.10); }
 .cca-row:hover { background:rgba(128,128,128,.12); }
 .cca-row.on { background:rgba(238,49,36,.14); }
+/* ⚠️ "All <level>s" and the no-value bucket are NOT places, so they are set in italic and toned
+   down — a planner scanning a column of tower names must not read either as one more tower. Both
+   still take the `.on` highlight, because either can be the ladder's position. */
+.cca-rowall .cca-name, .cca-rownone .cca-name { color:var(--pd-muted); }
+.cca-rowall { border-bottom:1px solid rgba(128,128,128,.24); }
+/* The no-value bucket sits last and is a statement about the DATA, so it is separated from the
+   real values above it rather than blending into the list. */
+.cca-rownone { border-top:1px solid rgba(128,128,128,.18); }
+/* Why the rungs below an "All" are not on screen. A pane that silently disappears reads as a bug. */
+.cca-hintline { margin:6px 0 0; font-size:var(--pd-fs-xs); color:var(--pd-muted); max-width:70ch; }
 .cca-row input { flex:0 0 auto; cursor:pointer; }
 /* A partial tick is set as a DOM property (`indeterminate`), which has no CSS selector of its own;
    the paint writes `data-part` beside it purely so the state can be seen at a glance. */

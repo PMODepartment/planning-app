@@ -308,16 +308,40 @@ window.CCAffected = (function () {
      That is the same property that makes boq.js's cascade safe, where division codes are likewise
      not unique across trades — and it holds ONLY while resolution stays strictly top-down.
      Do not add a "show me every zone at once" mode without introducing a composite key. */
+  /* ⚠️⚠️ ACTIVITIES WITH NO VALUE AT THIS LEVEL GET THEIR OWN BUCKET, and before 2026-09-10 they
+     were DROPPED — `if (!v) return;` and nothing else. Because `ladderOf` then narrows with
+     `cand = chosen.acts`, an activity that stops short of the deepest level became invisible in
+     every rung below it and in the tree.
+
+     Owner, 2026-09-10, on OPW101: *"Structural works doesn't appear on some floors."* Exactly
+     that. Structural work on the 7th floor is filed to the ZONE and carries no UNIT, so the moment
+     the Unit rung auto-positioned on U1 all 24 structural activities were gone — with nothing on
+     screen saying anything had been filtered out. The counts showed it if you added them up: the
+     floor held 240 activities and its zone values summed to 236.
+
+     ⚠️ THIS IS NOT THE "every zone at once" MODE THE NOTE ABOVE FORBIDS. The bucket lives inside
+     `cand`, which every rung above has already narrowed, so it is still strictly top-down — it is
+     "the activities HERE that name no <level>", not a value gathered across towers. No composite
+     key is needed and none is introduced.
+     ⚠️ The sentinel cannot collide with a real key: `normKey` strips to letters and digits, so a
+     control character is unreachable by any spelling of a real place. */
+  /* The sentinels are ATTRIBUTE-SAFE, and that is not cosmetic. They were control characters
+     (\u0000) and it cost a silent failure: an HTML parser substitutes U+FFFD for a NUL, so
+     `el.dataset.v` read back '\ufffdall', never matched, and the ladder fell through to the
+     first value — both new gestures rendered perfectly and did nothing when clicked.
+     `normKey` ends `.replace(/[^a-z0-9]+/g, '')`, so EVERY real key is [a-z0-9] only and any
+     sentinel carrying another character cannot collide with a spelling of a real place. */
+  var NO_VALUE = '*none*';
   function valuesAt(cand, levelId) {
-    var byKey = {};
+    var byKey = {}, none = [];
     cand.forEach(function (a) {
       var v = String((a.location && a.location[levelId]) || '').trim();
-      if (!v) return;
-      var k = normKey(v); if (!k) return;
+      var k = v ? normKey(v) : '';
+      if (!k) { none.push(a); return; }
       (byKey[k] = byKey[k] || { key: k, variants: [], acts: [] });
       byKey[k].variants.push(v); byKey[k].acts.push(a);
     });
-    return Object.keys(byKey).map(function (k) {
+    var out = Object.keys(byKey).map(function (k) {
       var g = byKey[k];
       var uniq = g.variants.filter(function (v, i, arr) { return arr.indexOf(v) === i; });
       return { key: k, label: bestSpelling(g.variants), spellings: uniq, acts: g.acts };
@@ -325,6 +349,15 @@ window.CCAffected = (function () {
       if (y.acts.length !== x.acts.length) return y.acts.length - x.acts.length;
       return String(x.label).localeCompare(String(y.label), undefined, { numeric: true });
     });
+    /* ⚠️ LAST, and only when there are any — it is not a place, so it must not outrank one however
+       many activities are in it, and an empty bucket on a fully-filed project would be noise.
+       ⚠️ It is also never emitted as the ONLY entry: a level where nothing carries a value is the
+       "skip this rung" case `ladderOf` already handles, and a lone "— none —" rung would be a pane
+       that says nothing and costs a column. */
+    if (none.length && out.length) {
+      out.push({ key: NO_VALUE, label: '', spellings: [], acts: none, none: true });
+    }
+    return out;
   }
 
   /* The rungs, resolved strictly top-down. Returns `{ rungs, cand, cursor }` and MUTATES NOTHING —
@@ -336,6 +369,18 @@ window.CCAffected = (function () {
      ⚠️ A LEVEL WITH NO VALUES UNDER THE CURRENT PATH IS SKIPPED, not rendered as "Unassigned". On a
      project where only some towers have zones, an empty rung is noise that also costs a pane —
      the same call `buildTree` makes with its skip sentinel. */
+  /* ALL_VALUES - "every value at this level", so a line can be linked ACROSS the floors.
+     Owner, 2026-09-10: *"Is there a way to select all floors but select specific activities only
+     from the selection?"* Yes, and it is the ordinary case for a Structural bill: "Rebar Works"
+     covers the rebar on EVERY floor, and picking floors one at a time is eighteen passes.
+
+     AND IT IS WHY THE RUNGS BELOW AN "ALL" ARE NOT RENDERED. The note on valuesAt forbids a
+     "show me every zone at once" mode without a composite key, and it is right: with Level on All,
+     a Zone rung would merge the 5th floor's Z1 with the 7th floor's Z1 - the same string, two
+     different places - and ticking it would silently take both. So resolution stays strictly
+     top-down: the ladder stops at the first All, and the tree plus the search take over, which is
+     exactly the "then select specific activities only" half of the ask. */
+  var ALL_VALUES = '*all*';
   function ladderOf(base, levels, cursor) {
     var rungs = [], cand = base, out = {};
     for (var i = 0; i < (levels || []).length; i++) {
@@ -343,9 +388,21 @@ window.CCAffected = (function () {
       var vals = valuesAt(cand, lv.id);
       if (!vals.length) continue;
       var want = cursor ? cursor[lv.id] : null;
+      if (want === ALL_VALUES) {
+        /* cand is NOT narrowed, and the loop STOPS. Both halves matter: the first is what makes
+           "all floors" mean all of them, the second is what keeps a deeper rung from being
+           resolved against an ambiguous parent. */
+        out[lv.id] = ALL_VALUES;
+        rungs.push({ level: lv, values: vals, sel: null, all: true, total: cand.length });
+        break;
+      }
+      /* The DEFAULT is still the first value, not All. A ladder that opened on "everything" would
+         show the whole project in the tree on every open, and the rung that answers "which floor
+         am I on" would answer "all of them" - a filter nobody chose, which is the mirror of the
+         bug the no-value bucket fixes. All is a deliberate click. */
       var chosen = vals.filter(function (v) { return v.key === want; })[0] || vals[0];
       out[lv.id] = chosen.key;
-      rungs.push({ level: lv, values: vals, sel: chosen });
+      rungs.push({ level: lv, values: vals, sel: chosen, all: false, total: cand.length });
       cand = chosen.acts;
     }
     return { rungs: rungs, cand: cand, cursor: out };
@@ -784,17 +841,46 @@ window.CCAffected = (function () {
 
     function ladderHTML(lad) {
       if (!lad.rungs.length) return '<div class="cca-warn cca-noladder">' + placesEmptyText() + '</div>';
+      var stopped = lad.rungs.length && lad.rungs[lad.rungs.length - 1].all;
       return '<div class="cca-lad">' + lad.rungs.map(function (r) {
+        /* The whole candidate set at this rung, so "All" can be TICKED as well as positioned on -
+           the two gestures the rest of the ladder already separates (clicking a row moves the
+           position, clicking its box selects). */
+        var allActs = [];
+        r.values.forEach(function (v) { allActs = allActs.concat(v.acts); });
+        var allSt = rungState({ acts: allActs });
         return '<div class="cca-col"><div class="cca-h"><span>' + esc(r.level.name) + '</span><span>' + r.values.length + '</span></div>' +
-          '<div class="cca-body cca-ladbody">' + r.values.map(function (v) {
+          '<div class="cca-body cca-ladbody">' +
+          /* ALL, first and always. It answers "every floor", which for a trade bill is the normal
+             reading - one Structural line covers the rebar on all eighteen of them. */
+          '<div class="cca-row cca-rowall' + (r.all ? ' on' : '') + '" data-lvl="' + esc(r.level.id) + '" data-v="' + esc(ALL_VALUES) + '">' +
+            '<input type="checkbox" data-rk="' + esc(ALL_VALUES) + '" data-rl="' + esc(r.level.id) + '"' +
+              (allSt.all ? ' checked' : '') + (allSt.part ? ' data-part="1"' : '') + '>' +
+            '<span class="cca-name"><em>All ' + esc(String(r.level.name).toLowerCase()) + 's</em></span>' +
+            '<span class="cca-n">' + (allSt.on ? allSt.on + '/' : '') + allActs.length + '</span></div>' +
+          r.values.map(function (v) {
             var st = rungState(v);
-            return '<div class="cca-row' + (r.sel && v.key === r.sel.key ? ' on' : '') + '" data-lvl="' + esc(r.level.id) + '" data-v="' + esc(v.key) + '">' +
+            /* The no-value bucket is labelled from the LEVEL, so it reads as a fact about the data
+               ("no Zone recorded") rather than as a place called "none". */
+            var lbl = v.none
+              ? '<em>\u2014 no ' + esc(r.level.name) + ' recorded \u2014</em>'
+              : esc(v.label);
+            var ttl = v.none
+              ? 'These activities carry no ' + esc(r.level.name) + '. They are filed one level up - normal where a trade is planned per floor rather than per zone. Before 2026-09-10 they were hidden entirely.'
+              : esc(v.spellings.join(' / '));
+            return '<div class="cca-row' + (r.sel && v.key === r.sel.key ? ' on' : '') + (v.none ? ' cca-rownone' : '') + '" data-lvl="' + esc(r.level.id) + '" data-v="' + esc(v.key) + '">' +
               '<input type="checkbox" data-rk="' + esc(v.key) + '" data-rl="' + esc(r.level.id) + '"' + (st.all ? ' checked' : '') + (st.part ? ' data-part="1"' : '') + '>' +
-              '<span class="cca-name" title="' + esc(v.spellings.join(' / ')) + '">' + esc(v.label) + '</span>' +
+              '<span class="cca-name" title="' + ttl + '">' + lbl + '</span>' +
               (v.spellings.length > 1 ? '<span class="cca-alt" title="Spelled ' + esc(v.spellings.join(' / ')) + ' on this schedule — treated as one place">×' + v.spellings.length + '</span>' : '') +
               '<span class="cca-n">' + (st.on ? st.on + '/' : '') + v.acts.length + '</span></div>';
           }).join('') + '</div></div>';
-      }).join('') + '</div>';
+      }).join('') + '</div>' +
+      /* Says WHY the deeper rungs are gone, because a pane that silently disappears reads as a
+         defect - and the reason is the one thing that stops a planner asking for it back. */
+      (stopped
+        ? '<p class="cca-hintline">Showing every ' + esc(String(lad.rungs[lad.rungs.length - 1].level.name).toLowerCase()) +
+          '. The levels below it are hidden while it is on <em>All</em> — the same zone name means a different place on each one — so narrow with the search or pick from the tree.</p>'
+        : '');
     }
 
     function treeRowHTML(e) {
@@ -881,6 +967,26 @@ window.CCAffected = (function () {
         noticeHTML() +
         '<div class="cca-bar">' +
           '<input class="pd-input pd-input-sm cca-q cca-ctl" id="cca-q" placeholder="Search every activity — id, name, WBS or place" value="' + esc(q) + '">' +
+          /* SELECT EVERY MATCH IN ONE CLICK. Owner, 2026-09-10: *"I am picking Activities covering
+             Rebar Works so I will link them to Rebar activities across multiple floors, zones, and
+             units. Right now its very tedious work."* Ticking the Structural branch takes Formworks,
+             Concrete and Precast with it, so the only route was to expand every zone of every floor
+             and deselect three rows in each - 18 floors x 6 zones.
+             A search ALREADY spans the whole project (`scope = hits || lad.cand`), so typing
+             "Rebar" lists every Rebar activity on every floor. What was missing was a way to take
+             them. This is that, and it is why the button states the COUNT rather than saying "all":
+             the tree is capped at ROW_CAP, so a planner could otherwise select more than is on
+             screen without knowing how many.
+             It TOGGLES - once every match is selected it clears them - matching the rung
+             checkboxes, and it is ADDITIVE otherwise, so "Rebar" then "Rebar Coupler" accumulates
+             rather than replacing. */
+          (hits && hits.length
+            ? (function () {
+                var on = hits.filter(function (a) { return sel[a.activity_id]; }).length;
+                return '<button type="button" class="pd-btn pd-btn-sm' + (on === hits.length ? '' : ' pd-btn-primary') +
+                  '" id="cca-selall">' + (on === hits.length ? 'Deselect' : 'Select') + ' all ' + hits.length + '</button>';
+              })()
+            : '') +
           '<span class="cca-count" id="cca-seln">' + nSel + ' selected</span>' +
           (nSel ? '<button type="button" class="pd-btn pd-btn-sm" id="cca-clear">Clear</button>' : '') +
         '</div>' +
@@ -925,6 +1031,15 @@ window.CCAffected = (function () {
       if (qi) qi.oninput = function () { q = qi.value; paint(); keepCaret('cca-q'); };
       var cl = host.querySelector('#cca-clear');
       if (cl) cl.onclick = function () { sel = {}; paint(); };
+      var sa = host.querySelector('#cca-selall');
+      /* Re-runs searchHits() rather than closing over paint()'s copy: the query can change between
+         renders, and a stale hit list would select what the planner searched for a moment ago. */
+      if (sa) sa.onclick = function () {
+        var h = searchHits() || [];
+        var on = h.filter(function (a) { return sel[a.activity_id]; }).length;
+        setMany(h, on !== h.length);
+        paint();
+      };
       var du = host.querySelector('#cca-dur');
       if (du) du.oninput = function () {
         coDur = Math.max(0, Math.min(999, parseInt(String(du.value).replace(/[^0-9]/g, ''), 10) || 0));
@@ -955,6 +1070,13 @@ window.CCAffected = (function () {
           var want = cb.checked, lvl = cb.dataset.rl, key = cb.dataset.rk;
           ladderOf(ACTS, LEVELS, cur).rungs.forEach(function (r) {
             if (r.level.id !== lvl) return;
+            if (key === ALL_VALUES) {
+              /* Every value on the rung, the no-value bucket included - which is the point: the
+                 activities carrying no value at this level ARE part of "all of them", and leaving
+                 them out would rebuild the very hole that bucket was added to close. */
+              r.values.forEach(function (v) { setMany(v.acts, want); });
+              return;
+            }
             r.values.forEach(function (v) { if (v.key === key) setMany(v.acts, want); });
           });
           paint();
