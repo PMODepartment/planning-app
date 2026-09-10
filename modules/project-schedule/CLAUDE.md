@@ -96,7 +96,7 @@ in harness3 stay outside its scope filter for the same change-order reason.
 ⚠️ **Not verified signed-in.** Storage is stubbed, so **the image upload still has never run against
 the real `site-plans` bucket** — unchanged from yesterday, and still the first thing to try.
 
-`MODULE_V` → `20260910b`.
+`MODULE_V` → `20260910s5`.
 
 ### The floor plan: attach the drawing, trace the zones on it (2026-09-10) — jasantos2
 
