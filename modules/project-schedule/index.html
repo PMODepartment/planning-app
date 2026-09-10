@@ -2965,51 +2965,56 @@
     .sbld-znplus, .sbld-znminus, .sbld-unplus, .sbld-unminus { width:30px; height:30px; padding:0; flex:none; font-size:17px; font-weight:700; line-height:1; display:inline-flex; align-items:center; justify-content:center; }
     .sbld-zncount { min-width:22px; text-align:center; font-variant-numeric:tabular-nums; font-weight:700; font-size:14px; }
     /* step 2 — nested floor → zone → unit editor */
-    /* THE ZONE-LAYOUT EDITOR. ⚠️ The cell colour is the TRADE colour at a per-zone opacity, set
-       through --zsw / --zop: hue means trade everywhere else in this module, so zones are told
-       apart by shade and by their printed code instead of by borrowing a second meaning for hue. */
-    .sbld-zp { margin:14px 0 0; padding:12px; border:1px solid var(--pd-line); border-radius:10px; background:var(--pd-card); }
-    .sbld-zph { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:0 0 8px; font-size:13px; }
-    .sbld-zptabs { display:flex; gap:6px; flex-wrap:wrap; margin:0 0 8px; }
-    .sbld-zptab { display:flex; flex-direction:column; align-items:flex-start; gap:1px; padding:5px 11px;
-      border:1px solid var(--pd-line); border-radius:8px; background:var(--pd-card); color:var(--pd-muted);
-      font:inherit; font-size:12.5px; cursor:pointer; }
-    .sbld-zptab span { font-size:10px; }
-    .sbld-zptab.on { background:var(--pd-bg); border-color:var(--pd-red); box-shadow:inset 3px 0 0 var(--pd-red); color:var(--pd-ink); cursor:default; }
-    .sbld-zpbar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:0 0 8px; }
-    .sbld-zpsp { flex:1 1 auto; }
-    .sbld-zppal { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin:0 0 10px; }
-    .sbld-zpsw { min-width:44px; padding:3px 9px; border:1px solid var(--pd-line); border-radius:6px;
-      font:inherit; font-size:11.5px; font-weight:700; cursor:pointer; color:#fff;
-      background:color-mix(in srgb, var(--zsw, #888) calc(var(--zop, 1) * 100%), transparent); }
-    @supports not (background: color-mix(in srgb, red 50%, transparent)) {
-      .sbld-zpsw { background:var(--zsw, #888); opacity:var(--zop, 1); }
-    }
-    .sbld-zpsw.on { outline:2px solid var(--pd-red); outline-offset:1px; }
-    .sbld-zperase { background:var(--pd-bg); color:var(--pd-muted); }
-    .sbld-zpwrap { display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap; }
-    /* ⚠️ The grid is the PLAN seen from above, so its rows run front-to-back down the screen and
-       a cell is square — a stretched cell would misreport the shape of the plate. */
-    .sbld-zpgrid { display:inline-flex; flex-direction:column; gap:3px; padding:6px; border-radius:8px;
-      background:var(--pd-bg); border:1px solid var(--pd-line); }
-    .sbld-zprow { display:flex; gap:3px; }
-    .sbld-zpcell { width:40px; height:40px; flex:none; border:1px dashed var(--pd-line); border-radius:5px;
-      background:var(--pd-card); color:var(--pd-muted); font:inherit; font-size:10.5px; font-weight:700;
-      cursor:cell; padding:0; overflow:hidden; }
-    .sbld-zpcell.set { border-style:solid; border-color:transparent; color:#fff;
-      background:color-mix(in srgb, var(--zsw, #888) calc(var(--zop, 1) * 100%), transparent); }
-    @supports not (background: color-mix(in srgb, red 50%, transparent)) {
-      .sbld-zpcell.set { background:var(--zsw, #888); }
-    }
-    .sbld-zpcell:hover { outline:2px solid var(--pd-red); outline-offset:-2px; }
-    .sbld-zpside { flex:1 1 240px; min-width:0; }
-    .sbld-zplegs { display:flex; flex-direction:column; gap:4px; font-size:11.5px; }
-    .sbld-zpleg { display:flex; align-items:center; gap:6px; }
-    .sbld-zpleg i { width:13px; height:13px; border-radius:3px; flex:none;
-      background:color-mix(in srgb, var(--zsw, #888) calc(var(--zop, 1) * 100%), transparent); }
-    .sbld-zpleg b { color:var(--pd-muted); font-weight:400; font-variant-numeric:tabular-nums; }
-    .sbld-zpleg em { font-style:normal; font-size:10px; color:var(--pd-muted);
-      border:1px dashed var(--pd-line); border-radius:99px; padding:0 5px; cursor:help; }
+    /* THE FLOOR-PLAN WINDOW. ⚠️ Modelled on the equipment site plan's stage: an <img> backdrop
+       with an SVG in plan units stretched over it, so a trace is resolution-independent. */
+    .sbld-zpbtn { font-size:11.5px; padding:2px 9px; min-height:0; }
+    .sbld-zpbtn.has { border-color:var(--pd-red); color:var(--pd-red); }
+    .zpw-modal { width:min(1180px, 96vw); max-width:96vw; }
+    .zpw { display:flex; flex-direction:column; gap:9px; }
+    .zpw-head { display:flex; align-items:center; gap:10px; }
+    .zpw-title { font-size:15px; font-weight:600; display:flex; flex-direction:column; gap:1px; }
+    .zpw-sub { font-size:11.5px; font-weight:400; color:var(--pd-muted); }
+    .zpw-sp { flex:1 1 auto; }
+    .zpw-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .zpw-pal { display:flex; align-items:center; gap:5px; flex-wrap:wrap; }
+    .zpw-sw { min-width:42px; padding:3px 9px; border:1px solid var(--pd-line); border-radius:6px;
+      font:inherit; font-size:11.5px; font-weight:700; color:#fff; cursor:pointer; background:var(--zc, #888); }
+    .zpw-sw.on { outline:2px solid var(--pd-ink); outline-offset:1px; }
+    .zpw-op { display:inline-flex; align-items:center; gap:6px; font-size:11.5px; color:var(--pd-muted); }
+    .zpw-op input { width:90px; }
+    /* ⚠️ The stage keeps a fixed aspect so the plan units and the pixels stay proportional; the
+       svg stretches to it with preserveAspectRatio="none", which is what makes ptOf() correct. */
+    .zpw-stage { position:relative; width:100%; aspect-ratio:1000 / 620; background:var(--pd-bg);
+      border:1px solid var(--pd-line); border-radius:10px; overflow:hidden; }
+    .zpw-stage.drawing { cursor:crosshair; }
+    .zpw-img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; pointer-events:none; }
+    .zpw-svg { position:absolute; inset:0; width:100%; height:100%; }
+    .zpw-shape polygon { fill:var(--zc, #888); fill-opacity:.34; stroke:var(--zc, #888); stroke-width:3;
+      cursor:pointer; }
+    .zpw-shape:hover polygon { fill-opacity:.5; }
+    .zpw-shape.sel polygon { fill-opacity:.58; stroke-width:6; }
+    .zpw-shape text { fill:#fff; font-size:26px; font-weight:800; text-anchor:middle; paint-order:stroke;
+      stroke:rgba(0,0,0,.45); stroke-width:5; pointer-events:none; }
+    .zpw-live { fill:rgba(238,49,36,.18); stroke:var(--pd-red); stroke-width:3; stroke-dasharray:9 6; }
+    .zpw-vx { fill:var(--pd-red); stroke:#fff; stroke-width:2; }
+    .zpw-empty { position:absolute; inset:auto 0 0 0; top:50%; transform:translateY(-50%);
+      text-align:center; font-size:12.5px; color:var(--pd-muted); padding:0 20px; }
+    .zpw-foot { display:flex; flex-direction:column; gap:8px; }
+    .zpw-list { display:flex; align-items:center; gap:6px; flex-wrap:wrap; font-size:11.5px; }
+    .zpw-chip { display:inline-flex; align-items:center; gap:5px; padding:2px 8px; border-radius:99px;
+      border:1px solid var(--pd-line); cursor:pointer; }
+    .zpw-chip.on { border-color:var(--pd-ink); background:var(--pd-bg); }
+    .zpw-chip i { width:11px; height:11px; border-radius:3px; background:var(--zc, #888); }
+    .zpw-chip b { color:var(--pd-muted); font-weight:400; }
+    .zpw-miss { color:var(--pd-muted); }
+    .zpw-miss b { color:var(--pd-ink); }
+    .zpw-apply summary { cursor:pointer; font-size:12.5px; }
+    .zpw-floors { display:flex; gap:6px; flex-wrap:wrap; margin:8px 0 0; }
+    .zpw-fl { display:inline-flex; align-items:center; gap:5px; font-size:11.5px; padding:3px 9px;
+      border:1px solid var(--pd-line); border-radius:7px; cursor:pointer; }
+    /* ⚠️ A floor that already has its OWN plan is flagged, because ticking it replaces that. */
+    .zpw-fl.warn { border-style:dashed; }
+    .zpw-fl em { font-style:normal; font-size:10px; color:var(--pd-muted); }
     .sbld-lvlgrid { display:grid; grid-template-columns:minmax(0,1fr) minmax(400px,460px); gap:22px; align-items:start; margin-top:6px; }
     .sbld-flr { border:1px solid var(--pd-line); border-radius:8px; background:var(--pd-card); margin-bottom:10px; overflow:hidden; }
     .sbld-flr-sub { border-style:dashed; }
@@ -14962,29 +14967,97 @@
     _vsZpMemo = out;
     return out;
   }
-  // The plate for one storey, matched on the level's own label the way the builder indexed it.
+  // The traced plan for one storey, matched on the level's own label the way the builder indexed
+  // it. Coordinates are 0..1 of the plate (see zpByLabel), so nothing here knows the setup's own
+  // 1000-unit convention.
   function _vsZpFor(levelValue) {
     var all = _vsZpAll();
     var k = String(levelValue == null ? '' : levelValue).trim().toLowerCase().replace(/\s+/g, ' ');
     return (k && all[k]) || null;
   }
-  // A zone's box on that plate, or null when the plate does not name it.
-  function _vsZpBox(plate, label) {
-    if (!plate || !label) return null;
+  // The polygons traced for one zone on that plan, or null. ⚠️ A zone traced in two pieces
+  // keeps both: the 3D card extrudes each, so an area split by a core is drawn as it was traced.
+  function _vsZpPolysOf(plate, label) {
+    if (!plate || !plate.polys || !label) return null;
     var want = String(label).trim().toLowerCase().replace(/\s+/g, ' ');
-    var r0 = null, c0 = null, r1 = null, c1 = null, hit = 0;
-    Object.keys(plate.cells || {}).forEach(function (key) {
-      if (String(plate.cells[key]).trim().toLowerCase().replace(/\s+/g, ' ') !== want) return;
-      var m = /^(\d+),(\d+)$/.exec(key); if (!m) return;
-      var r = +m[1], c = +m[2];
-      hit++;
-      if (r0 === null || r < r0) r0 = r;
-      if (c0 === null || c < c0) c0 = c;
-      if (r1 === null || r > r1) r1 = r;
-      if (c1 === null || c > c1) c1 = c;
+    var out = plate.polys.filter(function (q) {
+      return String(q.code == null ? '' : q.code).trim().toLowerCase().replace(/\s+/g, ' ') === want;
     });
-    if (!hit) return null;
-    return { row: r0, col: c0, rows: r1 - r0 + 1, cols: c1 - c0 + 1 };
+    return out.length ? out : null;
+  }
+  /* Clip a polygon to the half-plane x <= t — Sutherland–Hodgman, one edge.
+     ⚠️⚠️ THIS IS WHAT KEEPS THE PROGRESS SPLIT HONEST ON A TRACED SHAPE. The 2D cell draws the
+     done stretch as a hard-edged bar growing from the left, and the box path does the same; on an
+     arbitrary outline the equivalent is the polygon actually CUT at that fraction. Colouring the
+     whole zone by percentage instead would replace a hard edge with a tint and lose the channel.
+     ⚠️ Returns [] when nothing survives, which the caller reads as "draw no done mesh". */
+  function _vsClipX(pts, t) {
+    var out = [], nPts = pts.length;
+    for (var i = 0; i < nPts; i++) {
+      var a = pts[i], b = pts[(i + 1) % nPts];
+      var ain = a[0] <= t, bin = b[0] <= t;
+      if (ain) out.push(a);
+      if (ain !== bin) {
+        var dx = b[0] - a[0];
+        // ⚠️ A vertical edge cannot cross a vertical line; guarding the divide keeps a NaN out
+        // of the geometry, which would silently drop the whole mesh.
+        var f = dx === 0 ? 0 : (t - a[0]) / dx;
+        out.push([t, a[1] + (b[1] - a[1]) * f]);
+      }
+    }
+    return out;
+  }
+  /* One zone, as an EXTRUDED OUTLINE rather than a block. `t` is the fraction of the plate's
+     width to keep, so t=1 is the whole zone and t=pct/100 is the done stretch.
+     ⚠️ The shape is built in XY and laid down with rotation.x = -PI/2, because ExtrudeGeometry
+     always extrudes along +Z; rotating the finished mesh is the only way to get a floor slab. */
+  // The box around a zone's polygons, in 0..1 of the plate. Used only to place the compare mark;
+  // the zone itself is drawn as its real outline.
+  function _vsZpBBox(polys) {
+    var x0 = null, y0 = null, x1 = null, y1 = null;
+    (polys || []).forEach(function (q) {
+      q.pts.forEach(function (p) {
+        if (x0 === null || p[0] < x0) x0 = p[0];
+        if (y0 === null || p[1] < y0) y0 = p[1];
+        if (x1 === null || p[0] > x1) x1 = p[0];
+        if (y1 === null || p[1] > y1) y1 = p[1];
+      });
+    });
+    if (x0 === null) return null;
+    return { x: x0, y: y0, w: Math.max(0.001, x1 - x0), h: Math.max(0.001, y1 - y0) };
+  }
+  function _vs3PolyMesh(polys, t, colr, opacity, T, plateW, plateD, SH, y) {
+    var shapes = [];
+    /* ⚠️ A COUNT OF THREE IS NOT ENOUGH — the shape must enclose some AREA. Clipping a square at
+       t = 0 returns four points, all of them on x = 0: a valid-looking ring with no interior, which
+       ExtrudeGeometry turns into a degenerate mesh. The shoelace is the cheap exact test, and it
+       also catches a planner who traced three points in a straight line. */
+    function area2(pts) {
+      var a = 0;
+      for (var i = 0, L2 = pts.length; i < L2; i++) {
+        var p = pts[i], q2 = pts[(i + 1) % L2];
+        a += p[0] * q2[1] - q2[0] * p[1];
+      }
+      return Math.abs(a) / 2;
+    }
+    polys.forEach(function (q) {
+      var cut = (t >= 1) ? q.pts : _vsClipX(q.pts, t);
+      if (cut.length < 3 || area2(cut) < 1e-9) return;
+      var s = new T.Shape();
+      cut.forEach(function (p, i) {
+        var X = (p[0] - 0.5) * plateW, Z = (p[1] - 0.5) * plateD;
+        if (i === 0) s.moveTo(X, Z); else s.lineTo(X, Z);
+      });
+      shapes.push(s);
+    });
+    if (!shapes.length) return null;
+    var g = new T.ExtrudeGeometry(shapes, { depth: SH, bevelEnabled: false });
+    var mesh = new T.Mesh(g, new T.MeshLambertMaterial({
+      color: colr, transparent: opacity < 1, opacity: opacity
+    }));
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.y = y;
+    return mesh;
   }
   function _vsPlanGrid(n) {
     var cols = _vsPlanCols > 0 ? _vsPlanCols : Math.max(1, Math.ceil(Math.sqrt(Math.max(1, n))));
@@ -15002,23 +15075,6 @@
      1/rows of its depth — which sums to the plate, exactly, whatever n is.
      ⚠️ At most n rows: one cell must not be asked to sit in a two-row plate and leave the other
      row empty. */
-  /* Does every storey in this model share one defined plate? ⚠️ A tower is drawn on ONE plate,
-     so a mixed answer has to fall back rather than pick a winner: a podium at 4 x 3 and typical
-     floors at 2 x 2 cannot both be right, and squashing one onto the other's grid would misreport
-     both. Returns the shared {cols, rows}, or null — which is the wrap, unchanged. */
-  function _vs3PlateOf(model) {
-    var got = null, mixed = false, any = false;
-    (model && model.disp ? model.disp : []).forEach(function (v) {
-      var p = _vsZpFor(v);
-      if (!p) { mixed = true; return; }        // a storey with no plate is a disagreement too
-      any = true;
-      var sig = p.cols + 'x' + p.rows;
-      if (got === null) got = sig; else if (got !== sig) mixed = true;
-    });
-    if (!any || mixed || !got) return null;
-    var m = /^(\d+)x(\d+)$/.exec(got);
-    return { cols: +m[1], rows: +m[2] };
-  }
   function _vsPlanSlots(n, plate) {
     // ⚠️ ALWAYS AT LEAST ONE SLOT. The renderer clamps its cell count to 1 before calling, so 0
     // is unreachable today - but a layout function that can hand back nothing to draw is a trap
@@ -15092,29 +15148,22 @@
     var _maxCells = model.disp.reduce(function (m, v) {
       return Math.max(m, (model.rowCells(model.byLevel[v], model.detail) || []).length || 1);
     }, 1);
-    /* ⚠️⚠️ THE PLANNER'S PLATE SETS THE PLATE, when every storey drawn agrees on one. The wrap
-       (√n, or the chosen 1..4) is a GUESS about how zones sit side by side; a defined layout is a
-       statement. Only used when the storeys agree, because one plate is drawn for the whole tower
-       and taking the first storey's size would silently squash the others onto it. */
-    var _zpOne = _vs3PlateOf(model);
-    var PLATE = _zpOne || _vsPlanGrid(_maxCells);
+    /* ⚠️⚠️ THE WRAP STILL SIZES THE PLATE, EVEN WHEN A PLAN IS TRACED, and that is the point of
+       normalising the trace to 0..1: every floor's plan is laid on the SAME plate, so a tower whose
+       podium and typical floors were drawn on different sheets still stacks squarely. The old
+       "only if every storey agrees" rule existed because grids carried their own cols/rows; a
+       fraction of the plate needs no agreement, so that whole class of fallback is gone. */
+    var PLATE = _vsPlanGrid(_maxCells);
     var maxCols = PLATE.cols, maxRows = PLATE.rows;
     model.disp.forEach(function (v, li) {
       var cells = model.rowCells(model.byLevel[v], model.detail);
       var n = cells.length || 1;
       // The plate's own size, and where this storey's cells sit on it.
       var plateW = PLATE.cols * CELL, plateD = PLATE.rows * CELL;
-      /* ⚠️ Per cell, by its own zone LABEL — so Zone 2 sits where the planner put Zone 2 rather
-         than second in the wrap. A cell the plate does not name keeps its wrap slot, which is why
-         a half-painted plate degrades instead of losing zones. */
-      var _plate = _zpOne ? _vsZpFor(v) : null;
+      // ⚠️ The storey's own traced plan, if it has one. A zone the plan does not name keeps its
+      // wrap slot, which is why a half-traced plan degrades instead of losing zones.
+      var _plate = _vsZpFor(v);
       var slots = _vsPlanSlots(n, PLATE);
-      if (_plate) {
-        cells.forEach(function (c, ci) {
-          var b = _vsZpBox(_plate, c.label);
-          if (b) slots[ci] = { row: b.row, col: b.col, rows: PLATE.rows, cols: PLATE.cols, span: b };
-        });
-      }
       // The storey's Y: top of the list is the highest floor, so invert the index.
       var y = (storeys - 1 - li) * (SH + GAPY);
       var isNo = (v === VS_NOLEV);
@@ -15122,11 +15171,12 @@
         var p = slots[ci] || { row: 0, col: 0, cols: 1, rows: 1 };
         // The cell's share of the plate, less a hairline so neighbouring zones read as separate.
         var shW = plateW / p.cols, shD = plateD / p.rows;
-        // ⚠️ A zone painted across several cells is drawn across them. `span` is the bounding box
-        // (see zpBox): an L-shaped zone becomes the rectangle around it, which the editor says in
-        // as many words rather than leaving it to be discovered here.
-        var _sp = p.span || null;
-        var exW = shW * (_sp ? _sp.cols : 1) * 0.94, exD = shD * (_sp ? _sp.rows : 1) * 0.94;
+        var _sp = null;
+        var exW = shW * 0.94, exD = shD * 0.94;
+        // ⚠️⚠️ THE ZONE'S OWN TRACED OUTLINE, when the floor has one. This is the whole point of
+        // the floor-plan window: the block stops being a share of a grid and becomes the shape
+        // somebody drew on the drawing.
+        var _pg = _plate ? _vsZpPolysOf(_plate, c.label) : null;
         var pct = _vsProgress(c.list);
         var fill = c.color || baseColor;
         var col = new T.Color(fill);
@@ -15135,9 +15185,8 @@
         // The done fraction is a SECOND, brighter box in front of the dimmer one, which is the 3D
         // equivalent of the 2D cell's hard-edged progress split rather than a new visual language.
         var dim = col.clone().multiplyScalar(0.42);
-        // Centred on the zone's own footprint, so a 2-cell-wide zone straddles both its cells.
-        var x = (p.col + ((_sp ? _sp.cols : 1) - 1) / 2 - (p.cols - 1) / 2) * shW;
-        var z = (p.row + ((_sp ? _sp.rows : 1) - 1) / 2 - (p.rows - 1) / 2) * shD;
+        var x = (p.col - (p.cols - 1) / 2) * shW;
+        var z = (p.row - (p.rows - 1) / 2) * shD;
         // ⚠️ The done stretch grows from the cell's LEFT edge, exactly as the 2D cell's solid bar
         // does — so a half-done zone reads the same way in both cards. Centring it instead would
         // make 50% look like a block floating in the middle of its own zone.
@@ -15155,7 +15204,17 @@
         var _key = model.cellKey(keyPrefix, v, c), _done = _vsDone(c.list);
         _vsCells[_key] = { level: v, cell: c.label, list: c.list, pct: pct, fin: _vsDate(c.list),
           done: _done, fslip: _done ? _vsFinSlip(c.list) : null };
-        var rem = box(exW, dim, isNo ? 0.35 : 1);
+        /* ⚠️ ONE builder for both paths, so everything downstream — the compare edges, the
+           baseline mark, the registry, the picking — is written once and cannot drift between a
+           traced floor and an untraced one. `f` is the fraction of the plate to keep. */
+        function zoneMesh(f, colr, opacity) {
+          if (_pg) return _vs3PolyMesh(_pg, f, colr, opacity, T, plateW, plateD, SH, y);
+          return box(Math.max(0.04, exW * f), colr, opacity);
+        }
+        var rem = zoneMesh(1, dim, isNo ? 0.35 : 1);
+        // ⚠️ A traced outline can fail to build (a degenerate trace); the block path never does.
+        // Skipping the cell entirely is better than adding a null to the scene graph.
+        if (!rem) return;
         rem.userData.key = _key;
         grp.add(rem); picks.push(rem);
         /* ⚠️⚠️ COMPARE KEEPS THE TRADE COLOUR HERE TOO, and that is not a style choice — it is the
@@ -15174,7 +15233,11 @@
           var _eg = new T.LineSegments(
             new T.EdgesGeometry(rem.geometry),
             new T.LineBasicMaterial({ color: new T.Color(_vsSlipColor(_sl)) }));
+          // ⚠️ Copy the ROTATION too. A traced zone's mesh is laid down with rotation.x = -PI/2,
+          // and edges built from its geometry but left unrotated would float above the tower at
+          // ninety degrees to it.
           _eg.position.copy(rem.position);
+          _eg.rotation.copy(rem.rotation);
           _eg.userData.key = _key;
           grp.add(_eg);
           /* ⚠️ AND THE BASELINE'S OWN MARK. The 2D compare cell shows where the baseline says
@@ -15186,19 +15249,28 @@
           var _pp = _vsPlanPct(c.list);
           if (_pp != null) {
             var _at = Math.max(0, Math.min(1, _pp / 100));
-            var _mk = new T.Mesh(new T.BoxGeometry(exW * 0.02 + 0.012, SH * 1.02, exD * 1.04),
+            // ⚠️ On a traced zone the mark spans the zone's own bounding box, not a grid cell:
+            // exW/x describe the wrap slot, which a traced zone does not occupy.
+            var _bb = _pg ? _vsZpBBox(_pg) : null;
+            var _mw = _bb ? _bb.w * plateW : exW, _md = _bb ? _bb.h * plateD : exD;
+            var _mx = _bb ? (_bb.x - 0.5) * plateW : (x - exW / 2);
+            var _mz = _bb ? (_bb.y + _bb.h / 2 - 0.5) * plateD : z;
+            var _mk = new T.Mesh(new T.BoxGeometry(_mw * 0.02 + 0.012, SH * 1.02, _md * 1.04),
               new T.MeshBasicMaterial({ color: 0xf4f5f6 }));
-            _mk.position.set(x - exW / 2 + exW * _at, y + SH / 2, z);
+            _mk.position.set(_mx + _mw * _at, y + SH / 2, _mz);
             _mk.userData.key = _key;
             grp.add(_mk); picks.push(_mk);
           }
         }
         if (pct > 0) {
-          var dw = Math.max(0.04, exW * Math.min(100, pct) / 100);
-          var don = box(dw, col, isNo ? 0.5 : 1);
-          don.position.z = z + 0.001;
-          don.userData.key = _key;
-          grp.add(don); picks.push(don);
+          var don = zoneMesh(Math.min(100, pct) / 100, col, isNo ? 0.5 : 1);
+          if (don) {
+            // ⚠️ Lifted a hair so it wins the depth test against the dim body it sits inside.
+            // The box path nudges z; an extruded slab is coplanar in Y, so it nudges y instead.
+            if (_pg) don.position.y = y + 0.002; else don.position.z = z + 0.001;
+            don.userData.key = _key;
+            grp.add(don); picks.push(don);
+          }
         }
       });
     });
@@ -15353,9 +15425,10 @@
        arrangement is a guess or a statement. Claiming the planner's layout when none is defined
        would be the worse error, so the default is the cautious one. */
     var lay = _vsPlanDefined()
-      ? '<b>Zone positions are the ones you defined</b> in Schedule Setup \u203a Floors &amp; Zones \u2014 per floor type. '
+      ? '<b>Zones are drawn as you traced them</b> on the floor plan (Schedule Setup \u203a Floors &amp; Zones \u203a Plan). '
       : '<b>Zone positions are a guess</b> (they wrap ' + (_vsPlanCols > 0 ? 'in ' + _vsPlanCols + ' column(s)' : 'automatically') +
-        '). Define them in <b>Schedule Setup \u203a Floors &amp; Zones \u203a Zone layout</b> and this view reads them. ';
+        '). Attach a floor plan and trace them in <b>Schedule Setup \u203a Floors &amp; Zones</b> \u2014 the <b>Plan</b> button on a ' +
+        'floor \u2014 and this view draws the real outlines. ';
     return '<p class="ps-vs3-foot">' + cmp + lay + 'Schematic: the storeys, their order and the grade line are the ' +
       'same as the 2D view. The <b>footprint</b> is the zone count laid out on the plan grid you set ' +
       'above &mdash; the schedule holds no zone outlines or dimensions, so <b>no length or area is ' +
@@ -31345,137 +31418,220 @@
       };
     }
     /* ==========================================================================================
-       THE ZONE PLAN — where each zone actually SITS on the floor plate.
-       Owner 2026-09-09: *"the pre-requisites for the 3D to be established is to define the location
-       of the zones and areas. in the schedule setup, in the step of defining the floors… the setup
-       of the zones and floors should be established there per floor or type (type is the basement,
-       podium / commercial, typical, roof deck)."*
+       THE FLOOR PLAN — a real plan image, with the zones TRACED on it.
+       Owner 2026-09-09: *"instead of doing this method for defining the zones / areas, i want a pop
+       up window or space dedicated for attaching images (like the floor plan) and tracing the zones
+       or areas, similar to the one in the equipment loading. and then that floor plan will be
+       identified for a specific floor. Now there will be options if that floor plan can also be
+       applied to other floors."*
 
-       Until now the app knew a floor's zones as an ORDERED LIST and nothing more, which is why both
-       stacking cards draw them as equal slices: that is genuinely all there was. This is the
-       missing half — a coarse plan grid per floor TYPE, with a per-floor override, saying which
-       cells of the plate each zone occupies.
+       ⚠️ THIS REPLACES THE CELL GRID SHIPPED YESTERDAY, and the owner is right that it should. A
+       grid could say "Zone 1 is the left third"; a traced plan says where Zone 1 actually is, on the
+       drawing everyone on site already works from. Nothing is thrown away: a grid plate saved before
+       today is MIGRATED to polygons on read (see zpNorm), one rectangle per painted cell, so the
+       layout survives the change of representation.
 
-       ⚠️⚠️ PER TYPE FIRST, PER FLOOR ONLY WHERE IT DIFFERS, and that is the owner's own framing. A
-       forty-storey tower has four or five distinct plates, not forty: `kind` (basement / podium /
-       typical / roof) already groups them, and it is the grouping every other per-level setting in
-       this module uses (see actLinksKind). Asking for a layout per floor would be asking for the
-       same drawing forty times.
+       ⚠️⚠️ MODELLED ON THE EQUIPMENT LOADING SITE PLAN, deliberately and closely:
+         • polygons in VIRTUAL PLAN UNITS (0..1000 across, 0..h down), never pixels — so the trace
+           survives a re-upload at a different resolution, a different screen and a zoom;
+         • the IMAGE is a path in the existing `site-plans` bucket, and only the path is in the
+           setup; the picture itself never goes near the jsonb;
+         • the shapes DO NOT MOVE WITH THE IMAGE — the opacity control fades the backdrop under a
+           trace that is already correct.
+       Following that module's model rather than inventing one means the two screens behave the same
+       way, and it is why the bucket needs no new migration: `site-plans` already exists.
 
-       ⚠️⚠️ IT IS A GRID, NOT A POLYGON, AND THAT IS DELIBERATE. A polygon needs a plan image, a
-       scale calibration and a drawing tool; a grid needs two numbers and some clicking, and it
-       answers the question the stacking view actually asks — WHICH ZONE IS WHERE, and roughly how
-       big. It gives relative position and relative area. It does NOT give dimensions, and nothing
-       downstream is allowed to imply it does.
-
-       ⚠️ STORED BY ZONE CODE, NOT BY ZONE ID. `cfg.zoning` is per TRADE, so a zone id exists only
-       inside one trade's copy of the building — but a floor has one physical shape. Keying on the
-       CODE (matched normalised) is what lets one plate serve every trade that names its zones the
-       same way, which is the normal case; a trade that zones differently can still give that floor
-       its own override. The alternative, a plan per trade, would be the same drawing eight times
-       and would let two trades disagree about the shape of one slab.
+       ⚠️⚠️ ONE PLATE, MANY FLOORS, BY REFERENCE — not by copying. `plate` holds the drawings and
+       `of` maps a floor id onto one of them, so "apply to these floors too" is a pointer and
+       re-tracing updates every floor that shares it. Copying would give a forty-storey tower forty
+       divergent copies of one drawing, and the first re-trace would leave thirty-nine stale.
        ========================================================================================== */
-    var ZP_MAX = 12;            // the widest / deepest grid worth clicking out by hand
-    function zpBlank(cols, rows) {
-      return { cols: Math.max(1, Math.min(ZP_MAX, cols || 2)), rows: Math.max(1, Math.min(ZP_MAX, rows || 2)), cells: {} };
-    }
-    function zpKey(r, c) { return r + ',' + c; }
-    // ⚠️ The same normaliser the zone codes are compared with everywhere else in this file.
+    var ZP_W = 1000, ZP_HDEF = 620, ZP_MAXPTS = 60;
+    function zpH(p) { var h = +(p && p.h); return (isFinite(h) && h >= 80 && h <= 4000) ? h : ZP_HDEF; }
+    function zpNewId() { return 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+    function zpBlank() { return { w: ZP_W, h: ZP_HDEF, img: null, o: 1, polys: [] }; }
+    // ⚠️ The same normaliser zone codes are compared with everywhere else in this file.
     function zpNormCode(v) { return String(v == null ? '' : v).trim().toLowerCase().replace(/\s+/g, ' '); }
-    /* Sanitise one stored plate. ⚠️ Cells OUTSIDE the grid are dropped rather than kept: shrinking
-       the grid and growing it again would otherwise resurrect assignments the planner had removed
-       from view, which is the kind of thing that makes a saved setup untrustworthy. */
+    function zpClamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+    /* Sanitise one traced polygon. ⚠️ Fewer than three points is not a shape, and is dropped rather
+       than kept as a degenerate one that would render as a line and box to nothing. */
+    function zpNormPoly(q, h) {
+      if (!q || typeof q !== 'object') return null;
+      var code = String(q.code == null ? '' : q.code).trim();
+      if (!code) return null;
+      var pts = [];
+      (Array.isArray(q.pts) ? q.pts : []).forEach(function (p) {
+        if (!p || p.length < 2) return;
+        var x = +p[0], y = +p[1];
+        if (!isFinite(x) || !isFinite(y)) return;
+        if (pts.length >= ZP_MAXPTS) return;
+        pts.push([zpClamp(x, 0, ZP_W), zpClamp(y, 0, h)]);
+      });
+      if (pts.length < 3) return null;
+      return { id: String(q.id || zpNewId()), code: code, pts: pts };
+    }
+    /* One plate, sanitised. ⚠️ AND MIGRATED: a plate saved in yesterday's cell-grid form is turned
+       into one rectangle per painted cell, so a planner who used the grid keeps their layout instead
+       of opening the step to an empty drawing. The migration is one-way and lossless in the only
+       sense that matters — every cell becomes an area of the same position and size. */
     function zpNorm(p) {
       if (!p || typeof p !== 'object') return null;
-      var out = zpBlank(+p.cols, +p.rows), src = (p.cells && typeof p.cells === 'object') ? p.cells : {};
-      Object.keys(src).forEach(function (k) {
-        var m = /^(\d+),(\d+)$/.exec(k); if (!m) return;
-        var r = +m[1], c = +m[2];
-        if (r < 0 || c < 0 || r >= out.rows || c >= out.cols) return;
-        var code = String(src[k] == null ? '' : src[k]).trim();
-        if (code) out.cells[zpKey(r, c)] = code;
-      });
+      var out = zpBlank();
+      out.h = zpH(p);
+      out.img = (typeof p.img === 'string' && p.img) ? p.img : null;
+      var o = +p.o; out.o = (isFinite(o) && o >= 0.1 && o <= 1) ? o : 1;
+      if (Array.isArray(p.polys)) {
+        p.polys.forEach(function (q) { var n2 = zpNormPoly(q, out.h); if (n2) out.polys.push(n2); });
+      } else if (p.cells && typeof p.cells === 'object') {
+        // ---- the legacy cell grid ----------------------------------------------------------
+        var cols = zpClamp(+p.cols || 2, 1, 24), rows = zpClamp(+p.rows || 2, 1, 24);
+        var cw = ZP_W / cols, ch = out.h / rows;
+        Object.keys(p.cells).forEach(function (k) {
+          var m = /^(\d+),(\d+)$/.exec(k); if (!m) return;
+          var r = +m[1], c = +m[2];
+          if (r < 0 || c < 0 || r >= rows || c >= cols) return;
+          var code = String(p.cells[k] == null ? '' : p.cells[k]).trim();
+          if (!code) return;
+          var x0 = c * cw, y0 = r * ch;
+          out.polys.push({ id: zpNewId(), code: code,
+            pts: [[x0, y0], [x0 + cw, y0], [x0 + cw, y0 + ch], [x0, y0 + ch]] });
+        });
+      }
       return out;
     }
+    /* The whole bag. ⚠️ A plate nothing points at is DROPPED, and a pointer to a plate that is not
+       there is dropped too: an orphan on either side is a layout that can never be seen or edited
+       again, and keeping it would grow the setup blob forever. */
     function zpNormAll(src) {
-      var out = { kind: {}, floor: {} };
+      var out = { plate: {}, of: {} };
       if (!src || typeof src !== 'object') return out;
-      ['kind', 'floor'].forEach(function (bag) {
-        var s = src[bag];
-        if (!s || typeof s !== 'object') return;
-        Object.keys(s).forEach(function (k) {
-          // ⚠️ An unknown KIND is dropped; an unknown FLOOR ID is kept. A kind is a closed
-          // vocabulary, but a floor id belongs to a floor that may simply not be loaded yet (the
-          // setup is normalised before the towers are resolved), and dropping it would delete a
-          // planner's layout on a round-trip.
-          if (bag === 'kind' && KIND_ORDER.indexOf(k) < 0) return;
-          var p = zpNorm(s[k]);
-          if (p && Object.keys(p.cells).length) out[bag][k] = p;
+      // ---- yesterday's shape: { kind: {...}, floor: {...} } ---------------------------------
+      // ⚠️ Migrated rather than discarded. The kind bags become one plate each, and the floors of
+      // that kind are pointed at it — which is exactly what the new model expresses natively.
+      if (!src.plate && (src.kind || src.floor)) {
+        var legacy = { plate: {}, of: {} };
+        ['kind', 'floor'].forEach(function (bag) {
+          var s = src[bag]; if (!s || typeof s !== 'object') return;
+          Object.keys(s).forEach(function (k) {
+            var p = zpNorm(s[k]);
+            if (!p || !p.polys.length) return;
+            var id = zpNewId();
+            legacy.plate[id] = p;
+            // ⚠️ A KIND key cannot be mapped to floor ids here — normalize runs before the floors
+            // are resolved. It is parked under a reserved pointer the editor resolves on open, so
+            // the drawing is not lost while it waits.
+            legacy.of[(bag === 'kind' ? 'kind:' : '') + k] = id;
+          });
         });
+        return legacy;
+      }
+      var plates = (src.plate && typeof src.plate === 'object') ? src.plate : {};
+      Object.keys(plates).forEach(function (id) {
+        var p = zpNorm(plates[id]);
+        if (p && p.polys.length) out.plate[id] = p;
+      });
+      var of = (src.of && typeof src.of === 'object') ? src.of : {};
+      Object.keys(of).forEach(function (fid) {
+        var pid = String(of[fid] || '');
+        if (pid && out.plate[pid]) out.of[fid] = pid;
+      });
+      // Drop a plate nothing points at.
+      Object.keys(out.plate).forEach(function (id) {
+        var used = Object.keys(out.of).some(function (fid) { return out.of[fid] === id; });
+        if (!used) delete out.plate[id];
       });
       return out;
     }
     function zpBag() {
-      if (!cfg.zonePlan || typeof cfg.zonePlan !== 'object') cfg.zonePlan = { kind: {}, floor: {} };
-      if (!cfg.zonePlan.kind) cfg.zonePlan.kind = {};
-      if (!cfg.zonePlan.floor) cfg.zonePlan.floor = {};
+      if (!cfg.zonePlan || typeof cfg.zonePlan !== 'object') cfg.zonePlan = { plate: {}, of: {} };
+      if (!cfg.zonePlan.plate) cfg.zonePlan.plate = {};
+      if (!cfg.zonePlan.of) cfg.zonePlan.of = {};
       return cfg.zonePlan;
     }
-    /* The plate a given floor uses. ⚠️ The floor's OWN override wins, then its type — and nothing
-       is invented when neither exists. Returning null rather than a default grid is what lets every
-       consumer say "no layout defined" instead of drawing a made-up one. */
+    function zpIdFor(floor) {
+      if (!floor || !floor.id) return null;
+      var bag = zpBag();
+      // ⚠️ The parked kind pointer (see zpNormAll) is honoured here, where floorKind CAN be
+      // resolved — so a plate migrated from yesterday's per-type grid finds its floors.
+      if (bag.of[floor.id]) return bag.of[floor.id];
+      var byKind = bag.of['kind:' + floorKind(floor)];
+      return byKind || null;
+    }
     function zpFor(floor) {
-      if (!floor) return null;
-      var bag = zpBag();
-      if (floor.id && bag.floor[floor.id]) return bag.floor[floor.id];
-      if (floor.kind && bag.kind[floor.kind]) return bag.kind[floor.kind];
-      return null;
+      var id = zpIdFor(floor);
+      return (id && zpBag().plate[id]) || null;
     }
-    function zpSourceOf(floor) {
-      if (!floor) return null;
-      var bag = zpBag();
-      if (floor.id && bag.floor[floor.id]) return 'floor';
-      if (floor.kind && bag.kind[floor.kind]) return 'kind';
-      return null;
+    // Which floors of this trade share a plate — what "applied to N floors" counts.
+    function zpUsers(tr, plateId) {
+      if (!plateId) return [];
+      return (cfg.zoning[tr] ? cfg.zoning[tr].floors : []).filter(function (f) { return zpIdFor(f) === plateId; });
     }
-    // Distinct codes on a plate, in reading order (top-left first) so a legend matches the drawing.
+    // Point a floor at a plate, or at nothing. ⚠️ The ONLY writer of `of`, so the parked kind
+    // pointer is resolved to a real floor id the first time a floor is given a plate explicitly.
+    function zpAssign(floorId, plateId) {
+      var bag = zpBag();
+      if (!floorId) return false;
+      if (plateId) bag.of[floorId] = plateId; else delete bag.of[floorId];
+      return true;
+    }
+    /* ⚠️⚠️ A PLATE WITH NOTHING ON IT IS NOT A PLATE, and this is the rule the grid version had
+       and the first cut of this one lost. Deleting the last traced area left `{ polys: [] }` in the
+       setup with floors still pointing at it, so "no plan" and "a plan holding nothing" became two
+       states that look identical to a reader and different to every consumer — the floor row said
+       "Plan 0/2", zpUsers counted it, and zpByLabel skipped it.
+       ⚠️ AN IMAGE-ONLY PLATE SURVIVES. Attaching the drawing and tracing it later is the normal
+       order of work, so emptiness means no polygons AND no image. Found by deleting the last area
+       in a browser, not by reading the code. */
+    function zpDropIfEmpty(plateId) {
+      var bag = zpBag(), p = plateId && bag.plate[plateId];
+      if (!p || p.polys.length || p.img) return false;
+      delete bag.plate[plateId];
+      Object.keys(bag.of).forEach(function (k) { if (bag.of[k] === plateId) delete bag.of[k]; });
+      return true;
+    }
+    // ⚠️ Called after any un-assign: a plate nothing points at can never be reached again.
+    function zpGc() {
+      var bag = zpBag();
+      Object.keys(bag.plate).forEach(function (id) {
+        var used = Object.keys(bag.of).some(function (k) { return bag.of[k] === id; });
+        if (!used) delete bag.plate[id];
+      });
+    }
     function zpCodesOf(p) {
       var out = [], seen = {};
-      if (!p) return out;
-      for (var r = 0; r < p.rows; r++) for (var c = 0; c < p.cols; c++) {
-        var v = p.cells[zpKey(r, c)];
-        if (!v) continue;
-        var k = zpNormCode(v);
-        if (seen[k]) continue;
-        seen[k] = 1; out.push(v);
-      }
+      (p && p.polys ? p.polys : []).forEach(function (q) {
+        var k = zpNormCode(q.code);
+        if (!k || seen[k]) return;
+        seen[k] = 1; out.push(q.code);
+      });
       return out;
     }
-    /* One zone's footprint on the plate, as a bounding box in grid units.
-       ⚠️ A BOUNDING BOX, not the exact cells, and the limit is stated where it is used: an L-shaped
-       zone is reported as the rectangle around it. The stacking view draws a box per zone, so a box
-       is the honest thing to hand it; the cells stay in the data for a later view that can use them. */
+    /* One zone's footprint, as a box in 0..1 of the plate. ⚠️ Normalised, not in plan units: the
+       consumer (the 3D card) knows nothing about this module's 1000-unit convention, and handing it
+       raw units would leak that choice into another module's geometry.
+       ⚠️ The UNION of every polygon with that code — a zone traced in two pieces is one zone. */
     function zpBox(p, code) {
       if (!p || !code) return null;
-      var want = zpNormCode(code), r0 = null, c0 = null, r1 = null, c1 = null, n = 0;
-      for (var r = 0; r < p.rows; r++) for (var c = 0; c < p.cols; c++) {
-        if (zpNormCode(p.cells[zpKey(r, c)]) !== want) continue;
-        n++;
-        if (r0 === null || r < r0) r0 = r;
-        if (c0 === null || c < c0) c0 = c;
-        if (r1 === null || r > r1) r1 = r;
-        if (c1 === null || c > c1) c1 = c;
-      }
+      var want = zpNormCode(code), H = zpH(p);
+      var x0 = null, y0 = null, x1 = null, y1 = null, n = 0;
+      (p.polys || []).forEach(function (q) {
+        if (zpNormCode(q.code) !== want) return;
+        q.pts.forEach(function (pt) {
+          n++;
+          if (x0 === null || pt[0] < x0) x0 = pt[0];
+          if (y0 === null || pt[1] < y0) y0 = pt[1];
+          if (x1 === null || pt[0] > x1) x1 = pt[0];
+          if (y1 === null || pt[1] > y1) y1 = pt[1];
+        });
+      });
       if (!n) return null;
-      return { r0: r0, c0: c0, r1: r1, c1: c1, rows: r1 - r0 + 1, cols: c1 - c0 + 1, cells: n };
+      return { x: x0 / ZP_W, y: y0 / H, w: (x1 - x0) / ZP_W, h: (y1 - y0) / H };
     }
-    /* Everything a consumer outside this closure needs, resolved BY FLOOR LABEL.
-       ⚠️ The matching lives HERE, on the side that owns `cfg`, rather than being re-derived by every
-       reader: the Vertical Stacking view knows a floor only as the label on an activity's location,
-       and it must not have to guess how that maps onto a setup floor. Both the name and the code are
-       indexed, normalised, because either can be what the push wrote.
-       ⚠️ Deep-copied on the way out. A caller that mutated a plate would be editing the planner's
-       setup from another module, and the first symptom would be a layout changing on its own. */
+    /* What crosses the module boundary, keyed by FLOOR LABEL and in 0..1 units.
+       ⚠️ The matching lives here, where `cfg` is owned: the stacking view knows a floor only as the
+       label on an activity's location. Deep-copied, so a caller cannot edit the planner's setup.
+       ⚠️ The polygons go too, not only the boxes — the 3D card extrudes the real outline, and
+       handing it a box would throw away the whole point of tracing. */
     function zpByLabel() {
       var out = {};
       Object.keys(cfg.zoning || {}).forEach(function (g) {
@@ -31483,292 +31639,330 @@
         if (!z || !z.floors) return;
         z.floors.forEach(function (f) {
           var p = zpFor(f);
-          if (!p) return;
+          if (!p || !p.polys.length) return;
+          var H = zpH(p);
+          var shape = {
+            polys: p.polys.map(function (q) {
+              return { code: q.code, pts: q.pts.map(function (pt) { return [pt[0] / ZP_W, pt[1] / H]; }) };
+            })
+          };
           [f.name, f.code].forEach(function (lab) {
             var k = zpNormCode(lab);
-            // ⚠️ First writer wins, so a FLOOR override beats a kind plate for the same label
-            // rather than whichever trade happened to be walked last.
-            if (k && !out[k]) out[k] = { cols: p.cols, rows: p.rows, cells: JSON.parse(JSON.stringify(p.cells)) };
+            if (k && !out[k]) out[k] = shape;
           });
         });
       });
       return out;
     }
     /* ==========================================================================================
-       THE ZONE-LAYOUT EDITOR, inside Floors & Zones.
-       ⚠️ It lives in THIS step and not in a screen of its own because the zones it places are the
-       ones being typed six inches above it. A layout editor somewhere else would be a second place
-       to hold the same building, which is the failure this module keeps recording.
+       THE FLOOR-PLAN WINDOW. One floor, its plan image, and the zones traced on it.
+       ⚠️ A MODAL, as asked, and it earns being one: tracing needs the drawing as large as the
+       screen allows, and the step behind it is a dense list of floors and zone rows.
        ========================================================================================== */
-    var _zpKind = 'typical';    // which plate is on the easel
-    var _zpFloorId = '';        // '' = the TYPE's plate · a floor id = that floor's own override
-    var _zpBrush = null;        // the zone code the brush carries; '' = erase; null = nothing picked
-    // Zones are told apart by SHADE of the trade colour, never by hue. ⚠️ Hue means TRADE
-    // everywhere else in this module, and spending it on zones here would make one channel say two
-    // things. The code is printed in the cell as well, so the shade never has to carry it alone.
-    var ZP_SHADE = [1, 0.8, 0.63, 0.5, 0.4, 0.32, 0.26, 0.21];
-    function zpShadeOf(codes, code) {
-      var i = 0, want = zpNormCode(code);
-      for (var k = 0; k < codes.length; k++) if (zpNormCode(codes[k]) === want) { i = k; break; }
-      return ZP_SHADE[Math.min(i, ZP_SHADE.length - 1)];
+    var ZP_BUCKET = 'site-plans';       // ⚠️ the EXISTING bucket the equipment site plan uses
+    var _zpWin = null;                  // live state while the window is open
+    function zpImgPath(floorId) {
+      return 'zoneplan/' + curPid + '/' + floorId + '-' + Date.now().toString(36) + '.png';
     }
-    // The floors of this trade+tower that the chosen plate applies to.
-    function zpFloorsFor(tr, kind) {
-      return floorsOfTower(tr, activeTower()).filter(function (f) { return (f.kind || null) === kind; });
+    // A stable colour per zone code, so one zone reads the same on the plan and in the list.
+    // ⚠️ Hue is spent on the ZONE here and not on the trade, because a floor plan shows one floor
+    // of one trade at a time — there is no trade to confuse it with inside this window.
+    var ZP_HUES = ['#2F6FB0', '#C77700', '#2E8B57', '#8E44AD', '#C0392B', '#16A085', '#D4AC0D', '#5D6D7E'];
+    function zpHue(codes, code) {
+      var want = zpNormCode(code);
+      for (var i = 0; i < codes.length; i++) if (zpNormCode(codes[i]) === want) return ZP_HUES[i % ZP_HUES.length];
+      return ZP_HUES[0];
     }
-    // Every zone code those floors use, in first-seen order — the palette, and the legend.
-    function zpPaletteFor(tr, kind, floorId) {
-      var fl = floorId ? zpFloorsFor(tr, kind).filter(function (f) { return f.id === floorId; }) : zpFloorsFor(tr, kind);
-      var out = [], seen = {};
-      fl.forEach(function (f) {
-        (f.zones || []).forEach(function (z) {
-          var code = String(z.code || z.name || '').trim();
-          if (!code) return;
-          var k = zpNormCode(code);
-          if (!seen[k]) { seen[k] = 1; out.push(code); }
-        });
-      });
-      return out;
+    function zpPts(pts) {
+      return pts.map(function (p) { return (Math.round(p[0] * 10) / 10) + ',' + (Math.round(p[1] * 10) / 10); }).join(' ');
     }
-    // The plate being edited, created on demand only when something is actually painted (see the
-    // paint handler) — an empty plate saved on arrival would claim the planner had defined one.
-    function zpEditing() {
-      var bag = zpBag();
-      return _zpFloorId ? bag.floor[_zpFloorId] : bag.kind[_zpKind];
-    }
-    function stLevelsPlanHTML(tr, zn) {
-      var kinds = KIND_ORDER.filter(function (k) { return zpFloorsFor(tr, k).length; });
-      if (!kinds.length) {
-        return '<div class="sbld-zp"><div class="sbld-zph"><b>Zone layout</b>' +
-          '<span class="sbld-hint" style="margin:0;">Give a floor a <b>type</b> (Basement / Podium / Typical / Roof Deck) above, and its plate can be laid out here.</span></div></div>';
-      }
-      if (kinds.indexOf(_zpKind) < 0) _zpKind = kinds[0];
-      var fl = zpFloorsFor(tr, _zpKind);
-      if (_zpFloorId && !fl.some(function (f) { return f.id === _zpFloorId; })) _zpFloorId = '';
-      var bag = zpBag();
-      var plan = zpEditing();
-      /* ⚠️⚠️ EDITING ONE FLOOR STARTS FROM WHAT THAT FLOOR ALREADY USES. Measured in a browser:
-         picking a floor with no override of its own drew an EMPTY grid, even though the type's
-         plate was in force for it — which reads as "my layout is gone". The type's plate is shown
-         as the starting point instead, and the override is still not created until a cell is
-         actually painted (see the paint handler, which copies this same plate). */
-      var inherited = null;
-      if (!plan && _zpFloorId) {
-        var _fl = fl.filter(function (f) { return f.id === _zpFloorId; })[0];
-        inherited = _fl ? zpFor(_fl) : null;
-        if (inherited) plan = inherited;
-      }
-      var pal = zpPaletteFor(tr, _zpKind, _zpFloorId);
-      if (_zpBrush === null && pal.length) _zpBrush = pal[0];
-      var codes = plan ? zpCodesOf(plan) : [];
-      var cols = plan ? plan.cols : 2, rows = plan ? plan.rows : 2;
+    /* Open the window for one floor of one trade. */
+    function openZonePlan(tr, floorId) {
+      var floors = (cfg.zoning[tr] ? cfg.zoning[tr].floors : []);
+      var floor = floors.filter(function (f) { return f.id === floorId; })[0];
+      if (!floor) return;
+      // The plate this floor uses, or a fresh one it does not own yet. ⚠️ NOT written into the bag
+      // here: an opened-and-closed window must leave the setup exactly as it found it.
+      var plateId = zpIdFor(floor);
+      var plate = (plateId && zpBag().plate[plateId]) || null;
+      var draft = plate || zpBlank();
+      var owned = !!plate;
 
-      var tabs = kinds.map(function (k) {
-        var has = !!bag.kind[k], n = zpFloorsFor(tr, k).length;
-        return '<button class="sbld-zptab' + (k === _zpKind ? ' on' : '') + '" data-zpkind="' + k + '"' +
-          ' title="' + e2(n + ' floor' + (n === 1 ? '' : 's') + ' of this type' + (has ? ' · a plate is defined' : ' · no plate yet')) + '">' +
-          e2(KIND_LABEL[k] || k) + '<span>' + n + (has ? ' · ✓' : '') + '</span></button>';
-      }).join('');
+      var codes = (floor.zones || []).map(function (z) { return String(z.code || z.name || '').trim(); })
+        .filter(Boolean);
+      var m = UI.modal('<div class="zpw" id="zpw"></div>', { noBackdropClose: true });
+      var wrap = m.el.querySelector('#zpw');
+      var box = m.el.querySelector('.pd-modal');
+      if (box) box.classList.add('zpw-modal');
 
-      // The scope: the type's plate, or one floor's override. ⚠️ Each floor says whether it already
-      // has an override, so switching to one is never a surprise.
-      var scope = '<label class="sbld-hint" style="display:inline-flex;align-items:center;gap:6px;margin:0;">Applies to' +
-        '<select class="pd-select" id="zp-scope" style="width:auto;">' +
-        '<option value=""' + (_zpFloorId ? '' : ' selected') + '>All ' + fl.length + ' ' + e2(KIND_LABEL[_zpKind] || _zpKind) + ' floor' + (fl.length === 1 ? '' : 's') + '</option>' +
-        fl.map(function (f) {
-          return '<option value="' + e2(f.id) + '"' + (_zpFloorId === f.id ? ' selected' : '') + '>' +
-            e2((f.code || f.name || 'Floor')) + ' only' + (bag.floor[f.id] ? ' — has its own plate' : '') + '</option>';
-        }).join('') + '</select></label>';
+      _zpWin = { tr: tr, floor: floor, draft: draft, owned: owned, plateId: plateId,
+                 brush: codes[0] || '', drawing: false, pts: [], sel: null, url: null, busy: false };
 
-      var palette = '<div class="sbld-zppal">' + (pal.length ? pal.map(function (code) {
-        var on = (_zpBrush != null && zpNormCode(_zpBrush) === zpNormCode(code));
-        return '<button class="sbld-zpsw' + (on ? ' on' : '') + '" data-zpbrush="' + e2(code) + '"' +
-          ' style="--zsw:' + gc(tr) + ';--zop:' + zpShadeOf(pal, code) + '">' + e2(code) + '</button>';
-      }).join('') : '<span class="sbld-hint" style="margin:0;">This type’s floors have no zones yet.</span>') +
-        (pal.length ? '<button class="sbld-zpsw sbld-zperase' + (_zpBrush === '' ? ' on' : '') + '" data-zpbrush="" title="Click cells to clear them">Erase</button>' : '') +
-        '</div>';
-
-      var grid = '';
-      for (var r = 0; r < rows; r++) {
-        grid += '<div class="sbld-zprow">';
-        for (var c = 0; c < cols; c++) {
-          var code = plan ? (plan.cells[zpKey(r, c)] || '') : '';
-          grid += '<button class="sbld-zpcell' + (code ? ' set' : '') + '" data-zpr="' + r + '" data-zpc="' + c + '"' +
-            (code ? ' style="--zsw:' + gc(tr) + ';--zop:' + zpShadeOf(pal.length ? pal : codes, code) + '"' : '') +
-            ' title="' + e2('row ' + (r + 1) + ', column ' + (c + 1) + (code ? ' — ' + code : ' — empty')) + '">' +
-            e2(code) + '</button>';
-        }
-        grid += '</div>';
+      function H() { return zpH(_zpWin.draft); }
+      // ---- the image, through a signed URL ------------------------------------------------
+      /* ⚠️ Straight into an <img>, NOT fetched to a blob first. The equipment site plan does the
+         blob round-trip because it reads pixels back out of a canvas to detect towers, and a
+         cross-origin image taints one. Nothing here reads pixels, so the extra fetch would be a
+         second download of a large scan for no benefit. */
+      function loadImg() {
+        var p = _zpWin.draft.img;
+        if (!p) { _zpWin.url = null; paint(); return; }
+        sb().storage.from(ZP_BUCKET).createSignedUrl(p, 3600).then(function (r) {
+          _zpWin.url = (r && r.data && r.data.signedUrl) || null;
+          if (!_zpWin.url) _zpWin.err = 'The plan image could not be loaded from storage.';
+          paint();
+        }).catch(function () { _zpWin.err = 'The plan image could not be loaded from storage.'; paint(); });
       }
 
-      // What is actually covered, so "I have drawn this" is a fact on screen and not a feeling.
-      var painted = plan ? Object.keys(plan.cells).length : 0, total = cols * rows;
-      var missing = pal.filter(function (code) { return !plan || !zpBox(plan, code); });
-      var legend = codes.length ? codes.map(function (code) {
-        var b = zpBox(plan, code);
-        return '<span class="sbld-zpleg"><i style="--zsw:' + gc(tr) + ';--zop:' + zpShadeOf(pal.length ? pal : codes, code) + '"></i>' +
-          e2(code) + '<b>' + b.cells + '/' + total + '</b>' +
-          (b.cells !== b.rows * b.cols ? '<em title="This zone is not a rectangle. The 3D view draws the box around it — see the note below.">L-shaped</em>' : '') +
-          '</span>';
-      }).join('') : '';
+      function paint() {
+        var W = _zpWin, d = W.draft, hh = H();
+        var used = zpCodesOf(d);
+        var all = codes.slice();
+        used.forEach(function (c) { if (!all.some(function (x) { return zpNormCode(x) === zpNormCode(c); })) all.push(c); });
+        var mine = zpUsers(tr, W.plateId);
+        var others = floors.filter(function (f) { return f.id !== floor.id; });
 
-      return '<div class="sbld-zp">' +
-        '<div class="sbld-zph"><b>Zone layout</b>' +
-          '<span class="sbld-tag">' + (plan ? painted + ' of ' + total + ' cells placed' : 'no plate yet') + '</span>' +
-          (zpSourceOf(fl[0]) === 'floor' && !_zpFloorId ? '' : '') +
-          (inherited ? '<span class="sbld-tag" title="Painting a cell gives this floor its own plate, starting from this copy">' +
-            'showing the ' + e2(KIND_LABEL[_zpKind] || _zpKind) + ' plate — paint to give this floor its own</span>' : '') +
-          '<span class="sbld-hint" style="margin:0;flex:1 1 auto;">Where each zone <b>sits</b> on the plate ' +
-            '— this is what the <b>3D</b> Vertical Stacking reads. Without it, zones are drawn as equal slices.</span>' +
-        '</div>' +
-        '<div class="sbld-zptabs">' + tabs + '</div>' +
-        '<div class="sbld-zpbar">' + scope +
-          '<span class="sbld-tb-div"></span>' +
-          '<label class="sbld-hint" style="display:inline-flex;align-items:center;gap:5px;margin:0;">Grid' +
-            '<input class="pd-input sbld-mini" id="zp-cols" type="number" min="1" max="' + ZP_MAX + '" value="' + cols + '" title="Columns across the plate">' +
-            '<span style="color:var(--pd-muted);">×</span>' +
-            '<input class="pd-input sbld-mini" id="zp-rows" type="number" min="1" max="' + ZP_MAX + '" value="' + rows + '" title="Rows front to back">' +
-          '</label>' +
-          '<span class="sbld-zpsp"></span>' +
-          (plan ? '<button class="pd-btn" id="zp-clear">Clear plate</button>' : '') +
-          (_zpFloorId && bag.floor[_zpFloorId] ? '<button class="pd-btn" id="zp-unoverride" title="Delete this floor’s own plate and fall back to its type’s">Use the type’s plate</button>' : '') +
-        '</div>' +
-        palette +
-        '<div class="sbld-zpwrap"><div class="sbld-zpgrid">' + grid + '</div>' +
-          '<div class="sbld-zpside">' +
-            (legend ? '<div class="sbld-zplegs">' + legend + '</div>' : '') +
-            (missing.length ? '<p class="sbld-note sbld-note-warn" style="margin:6px 0 0;">Not placed yet: <b>' +
-              e2(missing.join(', ')) + '</b>. The 3D view falls back to equal slices for any zone with no cells.</p>' : '') +
+        var shapes = d.polys.map(function (q) {
+          var on = (W.sel === q.id);
+          return '<g class="zpw-shape' + (on ? ' sel' : '') + '" data-zpoly="' + e2(q.id) + '">' +
+            '<polygon points="' + zpPts(q.pts) + '" style="--zc:' + zpHue(all, q.code) + '"></polygon>' +
+            '<text x="' + (q.pts.reduce(function (s, p) { return s + p[0]; }, 0) / q.pts.length).toFixed(1) +
+              '" y="' + (q.pts.reduce(function (s, p) { return s + p[1]; }, 0) / q.pts.length).toFixed(1) +
+              '">' + e2(q.code) + '</text></g>';
+        }).join('');
+        var live = W.drawing && W.pts.length
+          ? '<polyline class="zpw-live" points="' + zpPts(W.pts) + '"></polyline>' +
+            W.pts.map(function (p) { return '<circle class="zpw-vx" cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="7"></circle>'; }).join('')
+          : '';
+
+        wrap.innerHTML =
+          '<div class="zpw-head">' +
+            '<span class="zpw-title">Floor plan — <b>' + e2(floor.name || floor.code || 'Floor') + '</b>' +
+              '<span class="zpw-sub">' + e2(GLABEL[tr] || tr) + ' · ' + (floor.zones || []).length + ' zone' +
+              ((floor.zones || []).length === 1 ? '' : 's') +
+              (mine.length > 1 ? ' · this plan is shared by ' + mine.length + ' floors' : '') + '</span></span>' +
+            '<span class="zpw-sp"></span>' +
+            '<button class="pd-btn" id="zpw-x">Close</button>' +
           '</div>' +
-        '</div>' +
-        _sbldHow('<b>Per type, not per floor.</b> A tower has four or five distinct plates, not forty — so the layout is held against ' +
-          'the floor <b>type</b>, and every floor of that type uses it. Where one floor genuinely differs, pick it in <b>Applies to</b> and ' +
-          'it gets its own plate; <b>Use the type’s plate</b> gives the override back.<br>' +
-          '<b>A grid, not a drawing.</b> It gives each zone its <b>position</b> and its <b>relative size</b> — which is what the stacking ' +
-          'views ask for. ⚠️ It is <b>not</b> a survey: there are no dimensions here, and nothing downstream reports any. ' +
-          'A plate 3 × 2 with Zone 1 on the left half says "Zone 1 is the left half of this floor", nothing more.<br>' +
-          '<b>Shared across trades, by zone code.</b> A floor has one shape, so one plate serves every trade that names its zones the same ' +
-          'way — the normal case. A trade that zones a floor differently can give that floor its own plate.<br>' +
-          '⚠️ <b>An L-shaped zone is drawn as the box around it</b> in 3D, because that view draws one block per zone. The cells are ' +
-          'kept as you painted them, so a later view can use the true shape.') +
-        '</div>';
-    }
-    // ⚠️ `tr` is used by the paint handler now (it resolves the floor being overridden), so it is
-    // no longer only a signature for symmetry with stLevelsPlanHTML.
-    function stLevelsPlanWire(host, tr, zn) {
-      host.querySelectorAll('[data-zpkind]').forEach(function (b) {
-        b.onclick = function () { _zpKind = b.dataset.zpkind; _zpFloorId = ''; _zpBrush = null; render(); };
-      });
-      var sc = host.querySelector('#zp-scope');
-      if (sc) sc.onchange = function () { _zpFloorId = sc.value || ''; _zpBrush = null; render(); };
-      host.querySelectorAll('[data-zpbrush]').forEach(function (b) {
-        b.onclick = function () { _zpBrush = b.dataset.zpbrush; render(); };
-      });
-      /* Resizing the plate. ⚠️ It edits an EXISTING plate and does not create one: a grid size on
-         its own is not a layout, and saving one would make "no plate yet" untrue the moment somebody
-         nudged a number. zpNorm drops out-of-range cells, so shrinking really does forget them. */
-      function resize(nc, nr) {
-        var p = zpEditing();
-        if (!p) return;
-        p.cols = Math.max(1, Math.min(ZP_MAX, nc));
-        p.rows = Math.max(1, Math.min(ZP_MAX, nr));
-        var kept = zpNorm(p);
-        p.cells = kept.cells;
-        markDirty(); render();
+          '<div class="zpw-bar">' +
+            '<button class="pd-btn' + (d.img ? '' : ' pd-btn-primary') + '" id="zpw-up"' + (W.busy ? ' disabled' : '') + '>' +
+              (d.img ? 'Replace plan…' : 'Attach floor plan…') + '</button>' +
+            (d.img ? '<button class="pd-btn" id="zpw-rm"' + (W.busy ? ' disabled' : '') + '>Remove plan</button>' : '') +
+            (d.img ? '<label class="zpw-op" title="Fade the drawing so a trace over it stays readable">Fade' +
+              '<input type="range" id="zpw-o" min="20" max="100" value="' + Math.round((d.o == null ? 1 : d.o) * 100) + '"></label>' : '') +
+            '<span class="ps-tb-div"></span>' +
+            '<span class="zpw-pal">' + (all.length ? all.map(function (c) {
+              return '<button class="zpw-sw' + (zpNormCode(c) === zpNormCode(W.brush) ? ' on' : '') + '" data-zpb="' + e2(c) + '"' +
+                ' style="--zc:' + zpHue(all, c) + '">' + e2(c) + '</button>';
+            }).join('') : '<span class="sbld-hint" style="margin:0;">This floor has no zones yet — add them in the step behind.</span>') + '</span>' +
+            '<span class="zpw-sp"></span>' +
+            (all.length ? '<button class="pd-btn' + (W.drawing ? ' pd-btn-primary' : '') + '" id="zpw-draw">' +
+              (W.drawing ? (W.pts.length >= 3 ? 'Finish area' : 'Cancel') : 'Trace area') + '</button>' : '') +
+            (W.sel ? '<button class="pd-btn" id="zpw-del">Delete area</button>' : '') +
+          '</div>' +
+          (W.err ? '<p class="sbld-note sbld-note-warn">' + e2(W.err) + '</p>' : '') +
+          '<div class="zpw-stage' + (W.drawing ? ' drawing' : '') + '" id="zpw-stage">' +
+            (W.url ? '<img class="zpw-img" src="' + e2(W.url) + '" alt="" style="opacity:' + (d.o == null ? 1 : d.o) + '">' : '') +
+            '<svg class="zpw-svg" viewBox="0 0 ' + ZP_W + ' ' + hh + '" preserveAspectRatio="none">' + shapes + live + '</svg>' +
+            /* ⚠️ Only while there is NOTHING to look at. Read off a rendered window: with three areas
+               traced and no image, this prompt showed THROUGH the shapes, so a screen that was
+               plainly being used still told the planner it was empty. */
+            (!d.img && !d.polys.length ? '<div class="zpw-empty"><b>No plan attached.</b><br>Attach the floor plan, then trace each zone on it. ' +
+              'You can trace without a plan too — the drawing is just easier to aim at.</div>' : '') +
+          '</div>' +
+          '<div class="zpw-foot">' +
+            '<div class="zpw-list">' + (d.polys.length
+              ? d.polys.map(function (q) {
+                  return '<span class="zpw-chip' + (W.sel === q.id ? ' on' : '') + '" data-zpsel="' + e2(q.id) + '">' +
+                    '<i style="--zc:' + zpHue(all, q.code) + '"></i>' + e2(q.code) +
+                    '<b>' + q.pts.length + ' pts</b></span>';
+                }).join('')
+              : '<span class="sbld-hint" style="margin:0;">Nothing traced yet.</span>') +
+              (function () {
+                var miss = codes.filter(function (c) { return !zpBox(d, c); });
+                return miss.length ? '<span class="zpw-miss">not traced: <b>' + e2(miss.join(', ')) + '</b></span>' : '';
+              })() +
+            '</div>' +
+            '<details class="zpw-apply"' + (others.length ? '' : ' hidden') + '>' +
+              '<summary>Also use this plan on other floors… <b>' + (mine.length > 1 ? mine.length + ' using it' : '') + '</b></summary>' +
+              '<div class="zpw-floors">' + others.map(function (f) {
+                var on = W.plateId && zpIdFor(f) === W.plateId;
+                var hasOwn = !on && !!zpIdFor(f);
+                return '<label class="zpw-fl' + (hasOwn ? ' warn' : '') + '"><input type="checkbox" data-zpfl="' + e2(f.id) + '"' +
+                  (on ? ' checked' : '') + '>' + e2(f.code || f.name || 'Floor') +
+                  (hasOwn ? '<em title="This floor already has a plan of its own. Ticking it replaces that.">has its own</em>' : '') +
+                  '</label>';
+              }).join('') + '</div>' +
+              '<p class="sbld-hint" style="margin:6px 0 0;">One drawing, shared by reference — re-trace it once and every ticked floor follows.</p>' +
+            '</details>' +
+          '</div>';
+        wire();
       }
-      var ci = host.querySelector('#zp-cols'), ri = host.querySelector('#zp-rows');
-      if (ci) ci.onchange = function () { resize(parseInt(ci.value, 10) || 1, zpEditing() ? zpEditing().rows : 2); };
-      if (ri) ri.onchange = function () { resize(zpEditing() ? zpEditing().cols : 2, parseInt(ri.value, 10) || 1); };
-      var clr = host.querySelector('#zp-clear');
-      if (clr) clr.onclick = function () {
-        var bag = zpBag();
-        if (!confirm('Clear this plate? The zones stay; only their positions are forgotten.')) return;
-        if (_zpFloorId) delete bag.floor[_zpFloorId]; else delete bag.kind[_zpKind];
-        markDirty(); render();
-      };
-      var un = host.querySelector('#zp-unoverride');
-      if (un) un.onclick = function () {
-        var bag = zpBag();
-        delete bag.floor[_zpFloorId];
-        // ⚠️⚠️ AND GO BACK TO THE TYPE'S SCOPE. Measured in a browser, not guessed: leaving the
-        // scope on that floor left `zpEditing()` looking for an override that had just been
-        // deleted, so the editor said "no plate yet" and showed an empty grid — while the type's
-        // plate was sitting there intact. "Use the type's plate" has to SHOW the type's plate.
-        _zpFloorId = '';
-        markDirty(); render();
-      };
-      /* Painting. ⚠️ THE PLATE IS CREATED HERE, on the first cell that is actually painted, at the
-         size the inputs are showing. That is what keeps "no plate yet" honest: arriving at the step,
-         switching type, or nudging the grid all leave the setup untouched. */
-      var gridEl = host.querySelector('.sbld-zpgrid');
-      if (!gridEl) return;
-      var drag = false;
-      function paint(cell) {
-        if (_zpBrush === null) return;
-        var bag = zpBag(), p = zpEditing();
-        if (!p) {
-          /* ⚠️ A NEW FLOOR OVERRIDE IS A COPY of the plate that floor uses today, not a blank grid:
-             the editor has been SHOWING that plate (see `inherited`), so the first click must
-             diverge from it rather than wipe it. Deep-copied, or the override and the type's plate
-             would be the same object and editing one would edit both. */
-          var _inh = null;
-          if (_zpFloorId) {
-            var _f2 = (floorsOfTower(tr, activeTower()) || []).filter(function (f) { return f.id === _zpFloorId; })[0];
-            var _src = _f2 ? zpFor(_f2) : null;
-            if (_src) _inh = { cols: _src.cols, rows: _src.rows, cells: JSON.parse(JSON.stringify(_src.cells)) };
-          }
-          if (_inh) p = _inh;
-          else {
-            var ci2 = host.querySelector('#zp-cols'), ri2 = host.querySelector('#zp-rows');
-            p = zpBlank(parseInt(ci2 && ci2.value, 10) || 2, parseInt(ri2 && ri2.value, 10) || 2);
-          }
-          if (_zpFloorId) bag.floor[_zpFloorId] = p; else bag.kind[_zpKind] = p;
+
+      // ---- turning a click into plan units --------------------------------------------------
+      // ⚠️ Off the STAGE's own box, not the svg's: the svg is stretched to the stage
+      // (preserveAspectRatio="none") so the two agree, and the stage is the element the pointer
+      // events are actually bound to.
+      function ptOf(ev, stage) {
+        var r = stage.getBoundingClientRect();
+        if (!r.width || !r.height) return null;
+        return [zpClamp((ev.clientX - r.left) / r.width * ZP_W, 0, ZP_W),
+                zpClamp((ev.clientY - r.top) / r.height * H(), 0, H())];
+      }
+
+      function commit() {
+        /* ⚠️ THE PLATE IS WRITTEN INTO THE SETUP HERE AND NOWHERE ELSE, on the first real change.
+           Opening the window, looking and closing must leave the setup untouched — and it is what
+           keeps "no plan" an honest state rather than one every visit quietly ends. */
+        var W = _zpWin, bag = zpBag();
+        if (!W.owned) {
+          W.plateId = zpNewId();
+          bag.plate[W.plateId] = W.draft;
+          zpAssign(floor.id, W.plateId);
+          W.owned = true;
         }
-        var r = +cell.dataset.zpr, c = +cell.dataset.zpc;
-        if (!(r >= 0 && c >= 0 && r < p.rows && c < p.cols)) return;
-        var k = zpKey(r, c), was = p.cells[k] || '';
-        if (_zpBrush === '') { if (!was) return; delete p.cells[k]; }
-        else { if (zpNormCode(was) === zpNormCode(_zpBrush)) return; p.cells[k] = _zpBrush; }
-        // ⚠️ A plate emptied to nothing is REMOVED, not kept as an empty object: "no plate" and "a
-        // plate with no cells painted" would otherwise be two states that look identical and read
-        // differently to every consumer.
-        if (!Object.keys(p.cells).length) { if (_zpFloorId) delete bag.floor[_zpFloorId]; else delete bag.kind[_zpKind]; }
         markDirty();
-        return true;
       }
-      // ⚠️ Repaint ONCE at the end of a drag, not per cell: this step re-renders the whole floors
-      // list, and doing that on every mouseover of a 12 × 12 grid is unusable.
-      var touched = false;
-      gridEl.addEventListener('mousedown', function (ev) {
-        var cell = ev.target.closest ? ev.target.closest('[data-zpr]') : null;
-        if (!cell) return;
-        ev.preventDefault();
-        drag = true; touched = !!paint(cell) || touched;
-        // Paint the cell straight away so the drag has feedback before the re-render.
-        if (_zpBrush !== null) {
-          cell.textContent = _zpBrush;
-          cell.classList.toggle('set', !!_zpBrush);
-        }
-      });
-      gridEl.addEventListener('mouseover', function (ev) {
-        if (!drag) return;
-        var cell = ev.target.closest ? ev.target.closest('[data-zpr]') : null;
-        if (!cell) return;
-        if (paint(cell)) {
-          touched = true;
-          cell.textContent = _zpBrush;
-          cell.classList.toggle('set', !!_zpBrush);
-        }
-      });
-      // ⚠️ On the DOCUMENT, so releasing outside the grid still ends the drag and still repaints —
-      // otherwise the next hover anywhere over the grid would keep painting.
-      var up = function () {
-        if (!drag) return;
-        drag = false;
-        document.removeEventListener('mouseup', up, true);
-        if (touched) { touched = false; render(); }
+      function wire() {
+        var W = _zpWin;
+        var q = function (id) { return wrap.querySelector('#' + id); };
+        var x = q('zpw-x'); if (x) x.onclick = function () { m.close(); };
+        var up = q('zpw-up'); if (up) up.onclick = pick;
+        var rm = q('zpw-rm');
+        if (rm) rm.onclick = function () {
+          if (!confirm('Remove the plan image? The traced areas stay.')) return;
+          var old = W.draft.img;
+          W.draft.img = null; W.url = null;
+          commit();
+          // ⚠️ Removing the drawing from a plate with nothing traced on it leaves nothing at all.
+          if (zpDropIfEmpty(W.plateId)) { W.owned = false; W.plateId = null; }
+          // ⚠️ The file is deleted AFTER the setup no longer points at it, and a failure is
+          // swallowed: an orphaned object in a bucket is untidy, a dangling path is a broken screen.
+          if (old) { try { sb().storage.from(ZP_BUCKET).remove([old]); } catch (e) {} }
+          paint();
+        };
+        var op = q('zpw-o');
+        if (op) op.oninput = function () {
+          W.draft.o = zpClamp((parseInt(op.value, 10) || 100) / 100, 0.1, 1);
+          var im = wrap.querySelector('.zpw-img');
+          if (im) im.style.opacity = W.draft.o;      // live, without a repaint
+        };
+        if (op) op.onchange = function () { commit(); };
+        wrap.querySelectorAll('[data-zpb]').forEach(function (b) {
+          b.onclick = function () { W.brush = b.dataset.zpb; paint(); };
+        });
+        var dr = q('zpw-draw');
+        if (dr) dr.onclick = function () {
+          if (W.drawing) {
+            if (W.pts.length >= 3) finish(); else { W.drawing = false; W.pts = []; paint(); }
+          } else {
+            if (!W.brush) { UI.toast('Pick the zone you are tracing first.', 'warn'); return; }
+            W.drawing = true; W.pts = []; W.sel = null; paint();
+          }
+        };
+        var del = q('zpw-del');
+        if (del) del.onclick = function () {
+          var i = W.draft.polys.map(function (p) { return p.id; }).indexOf(W.sel);
+          if (i < 0) return;
+          W.draft.polys.splice(i, 1);
+          W.sel = null;
+          commit();
+          // ⚠️ The last area going means the plate goes, unless a drawing is still attached.
+          if (zpDropIfEmpty(W.plateId)) { W.owned = false; W.plateId = null; }
+          paint();
+        };
+        wrap.querySelectorAll('[data-zpsel]').forEach(function (b) {
+          b.onclick = function () { W.sel = (W.sel === b.dataset.zpsel) ? null : b.dataset.zpsel; paint(); };
+        });
+        wrap.querySelectorAll('[data-zpoly]').forEach(function (g2) {
+          g2.onclick = function (ev) {
+            if (W.drawing) return;
+            ev.stopPropagation();
+            W.sel = (W.sel === g2.dataset.zpoly) ? null : g2.dataset.zpoly; paint();
+          };
+        });
+        /* Applying the plan to other floors. ⚠️ Ticking one COMMITS first: a floor cannot be
+           pointed at a plate that does not exist yet, and the plate does not exist until the
+           window has something worth saving. */
+        wrap.querySelectorAll('[data-zpfl]').forEach(function (c) {
+          c.onchange = function () {
+            if (!W.draft.polys.length && !W.draft.img) {
+              c.checked = false;
+              UI.toast('Attach a plan or trace an area first — there is nothing to share yet.', 'warn');
+              return;
+            }
+            commit();
+            if (c.checked) zpAssign(c.dataset.zpfl, W.plateId);
+            else { zpAssign(c.dataset.zpfl, null); zpGc(); }
+            markDirty(); paint();
+          };
+        });
+        var stage = q('zpw-stage');
+        if (!stage) return;
+        stage.onclick = function (ev) {
+          if (!W.drawing) return;
+          var p = ptOf(ev, stage); if (!p) return;
+          /* ⚠️ CLOSE BY CLICKING THE FIRST POINT, the same gesture the equipment site plan uses.
+             The tolerance is a fraction of the plate, not pixels, so it behaves the same on a
+             laptop and on a wall display. */
+          if (W.pts.length >= 3) {
+            var f0 = W.pts[0], dx = (p[0] - f0[0]) / ZP_W, dy = (p[1] - f0[1]) / H();
+            if (Math.sqrt(dx * dx + dy * dy) < 0.02) { finish(); return; }
+          }
+          if (W.pts.length >= ZP_MAXPTS) { UI.toast('That is as many corners as one area can take.', 'warn'); return; }
+          W.pts.push(p); paint();
+        };
+        stage.ondblclick = function () { if (W.drawing && W.pts.length >= 3) finish(); };
+      }
+      function finish() {
+        var W = _zpWin;
+        if (W.pts.length < 3) { UI.toast('An area needs at least three corners.', 'warn'); return; }
+        W.draft.polys.push({ id: zpNewId(), code: W.brush, pts: W.pts.slice() });
+        W.pts = []; W.drawing = false;
+        commit(); paint();
+      }
+      // ---- attaching the drawing ------------------------------------------------------------
+      function pick() {
+        var inp = document.createElement('input');
+        inp.type = 'file'; inp.accept = 'image/*';
+        inp.onchange = function () {
+          var f = inp.files && inp.files[0];
+          if (!f) return;
+          // ⚠️ A hard ceiling, checked BEFORE the upload: a 40 MB architectural export would upload
+          // for a minute and then be re-downloaded by everyone who opens the floor.
+          if (f.size > 12 * 1024 * 1024) { UI.toast('That image is over 12 MB — export the plan smaller and try again.', 'error'); return; }
+          _zpWin.busy = true; _zpWin.err = ''; paint();
+          var path = zpImgPath(floor.id), old = _zpWin.draft.img;
+          sb().storage.from(ZP_BUCKET).upload(path, f, { upsert: false, contentType: f.type || 'image/png' })
+            .then(function (r) {
+              _zpWin.busy = false;
+              if (r && r.error) {
+                _zpWin.err = /bucket/i.test(r.error.message || '')
+                  ? 'The site-plans storage bucket is missing — run migrations/2026-08-24-site-plan-bucket.sql.'
+                  : ('The plan could not be uploaded: ' + (r.error.message || r.error));
+                paint(); return;
+              }
+              _zpWin.draft.img = path;
+              commit();
+              if (old) { try { sb().storage.from(ZP_BUCKET).remove([old]); } catch (e) {} }
+              loadImg();
+            })
+            .catch(function (e) {
+              _zpWin.busy = false;
+              _zpWin.err = 'The plan could not be uploaded: ' + (e && e.message ? e.message : e);
+              paint();
+            });
+        };
+        inp.click();
+      }
+      var _close = m.close;
+      m.close = function () {
+        _zpWin = null;
+        _close();
+        render();   // the step behind shows the plan state per floor
       };
-      gridEl.addEventListener('mousedown', function () { document.addEventListener('mouseup', up, true); });
+      paint();
+      loadImg();
     }
     function stLevels(host) {
       var used = usedGroups();
@@ -31834,6 +32028,20 @@
           '<select class="pd-select sbld-kind" data-kf="' + i + '" title="Floor category — drives how trades hand off on this kind of level in step ' + _stepNo('Zone sequence') + '" style="height:34px;">' +
             KIND_ORDER.map(function (k) { return '<option value="' + k + '"' + (floorKind(f) === k ? ' selected' : '') + '>' + e2(KIND_LABEL[k]) + '</option>'; }).join('') + '</select>' +
           (showZones ? '<button class="pd-btn sbld-addzone" data-f="' + i + '">+ Zone</button>' : '') +
+          /* ⚠️⚠️ THE PLAN LIVES ON THE FLOOR ROW, because that is what it belongs to. Owner
+             2026-09-09: *"that floor plan will be identified for a specific floor"*. The button
+             says whether this floor HAS one and how much of it is traced, so a forty-storey list
+             can be read down for gaps without opening anything. */
+          (showZones ? (function () {
+            var _p = zpFor(f), _n = _p ? zpCodesOf(_p).length : 0;
+            var _z = (f.zones || []).length;
+            var _sh = _p ? zpUsers(tr, zpIdFor(f)).length : 0;
+            return '<button class="pd-btn sbld-zpbtn' + (_p ? ' has' : '') + '" data-zpopen="' + e2(f.id) + '" title="' +
+              e2(_p ? ('Floor plan ' + (_p.img ? 'attached' : 'not attached') + ' · ' + _n + ' of ' + _z + ' zone' +
+                (_z === 1 ? '' : 's') + ' traced' + (_sh > 1 ? ' · shared by ' + _sh + ' floors' : ''))
+                : 'Attach the floor plan and trace this floor\u2019s zones on it') + '">' +
+              (_p ? 'Plan ' + _n + '/' + _z : 'Plan\u2026') + '</button>';
+          })() : '') +
           '<button class="pd-btn sbld-del sbld-delfloor" data-f="' + i + '" title="Remove floor"><span data-ico="trash" data-ico-size="15"></span></button></div>' +
           (showZones ? '<div class="sbld-znwrap">' + zonesHtml + '</div>' : '<div class="sbld-znwrap"><div class="sbld-znhint">Floor level — zones &amp; units are ignored. Switch <b>Activity level</b> to Zone/Unit to split this floor.</div></div>') + '</div>';
       }).join('') : '<div class="sbld-empty">No floors for ' + e2(GLABEL[tr]) + ' in ' + e2(towerLabel(_twAct)) +
@@ -31865,7 +32073,7 @@
         '</div>' +
         // ⚠️ AFTER the floors and the tower drawing, because it is a layout OF the zones typed
         // above it: put first, it would be an empty grid on a project with no floors yet.
-        stLevelsPlanHTML(tr, zn);
+        '';
       host.querySelectorAll('[data-trade]').forEach(function (b) { b.onclick = function () { uiTrade = b.dataset.trade; render(); }; });
       var applyAll = host.querySelector('#b-applyall'); if (applyAll) applyAll.onclick = function () {
         if (!confirm('Copy ' + GLABEL[tr] + '\'s floors/zones/units to all ' + otherTr.length + ' other trade(s)? This REPLACES their current zoning.')) return;
@@ -31877,7 +32085,10 @@
         if (zn.floors.length && !confirm('Replace ' + GLABEL[tr] + '\'s current zoning with a copy of ' + GLABEL[g] + '\'s?')) { copyFrom.value = ''; return; }
         zn.floors = cloneFloors(cfg.zoning[g].floors); pruneLinks(); markDirty(); render();
       };
-      stLevelsPlanWire(host, tr, zn);
+      // The floor-plan window, opened from the button on each floor row.
+      host.querySelectorAll('[data-zpopen]').forEach(function (b) {
+        b.onclick = function () { openZonePlan(tr, b.dataset.zpopen); };
+      });
       _locBarWire(host);
       var lvlSel = host.querySelector('#b-loclevel'); if (lvlSel) lvlSel.onchange = function () {
         // Changing the activity level changes every leaf uid, so links can't survive it — confirm first.

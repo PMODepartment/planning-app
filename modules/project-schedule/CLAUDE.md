@@ -13,6 +13,91 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### The floor plan: attach the drawing, trace the zones on it (2026-09-10) — jasantos2
+
+Owner: *"instead of doing this method for defining the zones / areas, i want a pop up window or space
+dedicated for attaching images (like the floor plan) and tracing the zones or areas, similar to the
+one in the equipment loading. and then that floor plan will be identified for a specific floor. Now
+there will be options if that floor plan can also be applied to other floors."*
+
+The cell grid shipped yesterday is replaced, and the owner is right that it should be. A grid could
+say *"Zone 1 is the left third"*; a traced plan says where Zone 1 **is**, on the drawing everyone on
+site already works from.
+
+### 1. Modelled on the equipment site plan, closely and on purpose
+⚠️ Following that module rather than inventing something means the two screens behave the same way,
+and it is why **no new migration is needed** — the `site-plans` bucket already exists:
+- polygons in **virtual plan units** (0..1000 across), never pixels, so a trace survives a re-upload
+  at another resolution, another screen and a zoom;
+- the **image is a path** in that bucket; only the path goes in the setup, never the picture;
+- the shapes **do not move with the image** — the fade slider dims a backdrop under a trace that is
+  already right.
+⚠️ One deliberate difference: the image goes **straight into an `<img>`**, not fetched to a blob
+first. The equipment plan does that round-trip because it reads pixels back out of a canvas to detect
+towers, and a cross-origin image taints one. Nothing here reads pixels, so the extra fetch would be a
+second download of a large scan for nothing.
+
+### 2. One plate, many floors, BY REFERENCE
+`plate` holds the drawings and `of` maps a floor id onto one — so *"also use this plan on other
+floors"* is a **pointer**, and re-tracing updates every floor that shares it. ⚠️ Copying would give a
+forty-storey tower forty divergent copies of one drawing, and the first re-trace would leave
+thirty-nine stale. A floor that already has its own plan is flagged before ticking replaces it.
+
+### 3. Nothing is lost from yesterday
+⚠️ A grid plate is **migrated** on read: one rectangle per painted cell, same position, same size.
+The per-**kind** bag survives too — its floors cannot be resolved at normalize time (that runs before
+the towers do), so it is parked under a reserved `kind:` pointer that `zpIdFor` resolves on open.
+
+### 4. ⚠️⚠️ Three defects found by DRIVING it, not by reading it
+- **Deleting the last traced area left an empty plate** in the setup with floors still pointing at
+  it. That is the exact rule I wrote down for the grid version and failed to carry over: *"no plan"*
+  and *"a plan holding nothing"* became two states that look identical to a reader and different to
+  every consumer — the floor row said `Plan 0/2`, `zpUsers` counted it, `zpByLabel` skipped it. An
+  empty plate is now dropped, and its pointers with it. ⚠️ An **image-only** plate survives, because
+  attaching the drawing and tracing it later is the normal order of work.
+- **The "No plan attached" prompt showed through the traced shapes** — a screen plainly in use still
+  telling the planner it was empty. It appears only when there is nothing at all to look at.
+- **A zero-area clip reached `ExtrudeGeometry`.** Clipping a square at t=0 returns four points, all
+  on x=0: a valid-looking ring with no interior. The mesh builder tests the **shoelace area**, not
+  the point count — which also catches a planner who traced three points in a straight line.
+
+### 5. The 3D card extrudes the real outline
+⚠️⚠️ **And the progress split stays hard-edged on a traced shape.** The 2D cell draws the done
+stretch as a bar growing from the left; on an arbitrary outline the equivalent is the polygon
+actually **cut** at that fraction — Sutherland–Hodgman against one vertical edge, ~15 lines, exact.
+Colouring the whole zone by percentage instead would have replaced a hard edge with a tint and lost
+the channel.
+- ⚠️ **One builder (`zoneMesh`) serves both paths**, so the compare edges, the baseline mark, the
+  registry and the picking are written once and cannot drift between a traced floor and an untraced
+  one. A zone the plan does not name keeps its wrap slot — a half-traced plan degrades.
+- ⚠️ A zone **traced in two pieces** becomes two shapes in one extrusion: an area split by a core is
+  drawn as it was traced.
+- ⚠️ The compare **edges copy the rotation** too. A traced slab is laid down with `rotation.x = -π/2`,
+  and edges built from its geometry but left unrotated would float above the tower at ninety degrees.
+- ⚠️ **`_vs3PlateOf` is deleted, not left dead.** It compared per-storey grid sizes and would have
+  thrown on the new shape (`/^(\d+)x(\d+)$/.exec('undefinedxundefined')` → null → `m[1]`). A trace
+  normalised to 0..1 needs no agreement between storeys, so that whole class of fallback is gone.
+
+### Verified
+**779 assertions across thirteen suites plus the runtime check, all passing** — 77 + 12 new.
+The plan suite executes the model, the grid migration, the share-by-reference and the garbage
+collection; a separate suite executes `_vs3PolyMesh` against a recording stand-in for three.js and
+checks the geometry it builds: the outline mapped to world XZ and centred on the plate, the extrude
+depth, the lay-down rotation, the done stretch as a real cut, two pieces in one extrusion, and every
+degenerate case building **no** mesh.
+⚠️ **And the window was driven in a browser** — attach, trace (closing both by *Finish* and by
+clicking the first point again), select, delete, share, and the refusal when there is nothing to
+share. All three defects above came from that, not from the code.
+⚠️ **Five assertions across harness12 / harness13 needed retargeting**, where this change rewrote the
+exact lines they described (the plate sizing, the cell share, the centres, the done stretch, the
+compare mark). The properties are unchanged; named rather than quietly adjusted.
+⚠️ **harness2 and two assertions in harness3 remain broken by the concurrent change-order refactor.**
+⚠️ **Not verified signed-in** — Supabase storage is stubbed in the harness, so **the upload path has
+never run against the real bucket**. That is the one thing to try first: attach a plan on a real
+floor and confirm the image comes back on reopen.
+
+`MODULE_V` → `20260910a`.
+
 ### The zone layout: where each zone SITS, defined per floor type (2026-09-09) — jasantos2
 
 Owner: *"the pre-requisites for the 3D to be established is to define the location of the zones and

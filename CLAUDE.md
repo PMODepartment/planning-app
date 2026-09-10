@@ -95,6 +95,45 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### Floor plans you can trace: attach the drawing, outline the zones on it (2026-09-10) — jasantos2
+
+Owner: *"instead of doing this method for defining the zones / areas, i want a pop up window or space
+dedicated for attaching images (like the floor plan) and tracing the zones or areas, similar to the
+one in the equipment loading… that floor plan will be identified for a specific floor. Now there will
+be options if that floor plan can also be applied to other floors."*
+
+Yesterday's cell grid is replaced. A grid could say *"Zone 1 is the left third"*; a traced plan says
+where Zone 1 **is**. Each floor row in **Floors & Zones** now has a **Plan** button — showing at a
+glance how much of that floor is traced — which opens a window holding the drawing.
+
+- **Modelled on the equipment site plan, deliberately**: polygons in virtual plan units (never
+  pixels, so a trace survives a re-upload at another resolution), the image as a path in the
+  **existing `site-plans` bucket** — so ⚠️ **no new migration** — and a fade slider for tracing over
+  a busy drawing.
+- ⚠️ **One plate, many floors, by reference.** "Also use this plan on other floors" is a pointer, so
+  re-tracing once updates every floor sharing it. Copying would leave a forty-storey tower with
+  thirty-nine stale copies after the first re-trace.
+- ⚠️ **Nothing from yesterday is lost**: a grid plate is migrated to polygons on read, one rectangle
+  per painted cell, and the per-type bag is carried across too.
+- **The 3D card extrudes the real outline** — and ⚠️ the progress split stays *hard-edged* on a traced
+  shape, because the polygon is genuinely **cut** at the done fraction rather than tinted. A zone
+  traced in two pieces is drawn as two pieces.
+
+⚠️⚠️ **Three defects came out of driving the window rather than reading it**: deleting the last area
+left an empty plate in the setup (the exact rule the grid version had and this one lost); the "No plan
+attached" prompt showed *through* the traced shapes; and a zero-area clip reached the geometry
+builder, now guarded by a shoelace-area test rather than a point count. A fourth was caught by
+inspection — the old per-storey plate comparison would have **thrown** on the new shape, so it is
+deleted rather than left dead.
+
+**779 assertions across thirteen suites plus the runtime check, all passing** (89 new, including a
+suite that executes the extrusion against a recording stand-in for three.js). ⚠️ Five assertions
+needed *retargeting* where this change rewrote the lines they described. ⚠️ Two suites remain broken
+by the concurrent change-order refactor. ⚠️ **Not verified signed-in** — storage is stubbed in the
+harness, so **the upload has never run against the real bucket**; that is the first thing to try.
+
+`MODULE_V` → `20260910a`. Detail: [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
 ### 2026-09-09 (y) — The brand mark grows 29%, the caption goes white, and the block does not get taller
 
 Owner: *"Make the logo bigger and the Planning Suite color white. Optimize the space as well and make
