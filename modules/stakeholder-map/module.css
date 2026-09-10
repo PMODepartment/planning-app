@@ -13,18 +13,16 @@
 .sm-title .sm-title-txt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .sm-title-ico { color:var(--pd-red); vertical-align:-3px; margin-right:4px; }
 .sm-projctx { display:flex; align-items:center; min-width:0; flex:0 1 auto; }
-.sm-project { max-width:230px; min-width:120px; height:34px; font-weight:600; font-size:var(--pd-fs-base); background:transparent; border-color:transparent; }
+.sm-project { max-width:230px; min-width:120px; height:34px; font-weight:700; font-size:var(--pd-fs-base); background:transparent; border-color:transparent; }
 .sm-project:hover, .sm-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
 .sm-tabs { display:inline-flex; border:1px solid var(--pd-line); border-radius:var(--pd-radius); overflow:hidden; flex:none; }
-.sm-tab { border:0; background:var(--pd-card); color:var(--pd-ink); padding:6px 14px; font-weight:600; font-size:var(--pd-fs-base); cursor:pointer; font-family:var(--pd-font); transition:background .12s; white-space:nowrap; }
+.sm-tab { border:0; background:var(--pd-card); color:var(--pd-ink); padding:6px 14px; font-weight:700; font-size:var(--pd-fs-base); cursor:pointer; font-family:var(--pd-font); transition:background .12s; white-space:nowrap; }
 .sm-tab + .sm-tab { border-left:1px solid var(--pd-line); }
 .sm-tab:hover:not(.active) { background:var(--pd-bg); }
 .sm-tab.active { background:var(--pd-red); color:#fff; }
 .sm-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; }
 .sm-topbar-tools .pd-btn { height:34px; display:inline-flex; align-items:center; justify-content:center; }
 .sm-topbar-tools .pd-btn.sm-tb-labeled { padding:0 12px; gap:6px; }
-.sm-topbar-tools .pd-btn.pd-btn-primary { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
-.sm-topbar-tools .pd-btn.pd-btn-primary:hover { filter:brightness(.94); }
 .sm-tb-sep { width:1px; align-self:stretch; margin:5px 3px; background:var(--pd-line); }
 @media (max-width:900px) { .sm-title-txt { display:none; } }
 
@@ -42,7 +40,7 @@
 .sm-filters .sm-search { flex:1 1 200px; min-width:150px; }
 .sm-clear { display:none; align-items:center; gap:5px; border:1px solid var(--pd-line); background:var(--pd-card);
   color:var(--pd-muted); border-radius:var(--pd-radius); height:34px; padding:0 10px; font-size:var(--pd-fs-sm);
-  font-weight:600; cursor:pointer; font-family:var(--pd-font); }
+  font-weight:700; cursor:pointer; font-family:var(--pd-font); }
 .sm-clear.show { display:inline-flex; }
 .sm-clear:hover { color:var(--pd-ink); border-color:var(--pd-red-mid); }
 
@@ -116,13 +114,13 @@ html.pd-dark .sm-k-satisfy { --pd-kpi-vc: #fbbf24; --pd-kpi-accent: #fbbf24; }
 .sm-person { display:flex; gap:9px; align-items:center; }
 .sm-person-t { min-width:0; }
 .sm-nick { color:var(--pd-muted); font-weight:400; font-size:var(--pd-fs-sm); }
-.sm-cat { font-weight:600; }
+.sm-cat { font-weight:700; }
 /* The "this value was overridden by hand" marker. Deliberately quiet but
    present: a derived column that someone has overruled must not look derived. */
 /* ⚠️ Per-theme, because the colour IS the signal here — a single ± glyph, so it cannot
    be demoted to muted text with the flag moved to a border. --pd-warn measured 3.46:1
    in light at 14px/800 (below the 18.66px large-text threshold, so 4.5 applies). */
-.sm-ovr { color:#8a5300; font-weight:800; cursor:help; }
+.sm-ovr { color:var(--pd-warn-text); font-weight:800; cursor:help; }
 html.pd-dark .sm-ovr { color:#fbbf24; }
 
 .sm-bands-row th.sm-bandhead {
@@ -169,9 +167,9 @@ html.pd-dark .sm-a-monitor { --sm-t:#d1d5db; }
   white-space:nowrap; color:#fff; background:var(--sm-c, var(--pd-muted)); }
 .sm-leg-sw { width:12px; height:12px; border-radius:3px; display:inline-block; background:var(--sm-c, var(--pd-line)); }
 .sm-strat { display:inline-block; padding:1px 7px; border-radius:4px; font-size:var(--pd-fs-xs); font-weight:700; white-space:nowrap; }
-.sm-s-Catchup  { background:#fee2e2; color:#991b1b; }
-.sm-s-Enhance  { background:#fef3c7; color:#92400e; }
-.sm-s-Maintain { background:#dcfce7; color:#166534; }
+.sm-s-Catchup  { background:var(--pd-bad-bg);  color:var(--pd-bad-text); }
+.sm-s-Enhance  { background:var(--pd-warn-bg); color:var(--pd-warn-text); }
+.sm-s-Maintain { background:var(--pd-ok-bg);   color:var(--pd-ok-text); }
 
 /* ---- Cards view -------------------------------------------------------- */
 .sm-cgroup { margin-bottom:24px; }
@@ -209,7 +207,7 @@ html.pd-dark .sm-a-monitor { --sm-t:#d1d5db; }
   padding:0 0 0 8px; border-left:2px solid var(--pd-warn); }
 .sm-card-foot { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:auto;
   padding-top:8px; border-top:1px solid var(--pd-line); }
-.sm-card-cp { font-size:var(--pd-fs-xs); color:var(--pd-muted); font-weight:600; }
+.sm-card-cp { font-size:var(--pd-fs-xs); color:var(--pd-muted); font-weight:700; }
 .sm-card-mail { font-size:var(--pd-fs-xs); }
 .sm-card-edit { margin-left:auto; height:28px; padding:0 10px; font-size:var(--pd-fs-sm); }
 
@@ -234,7 +232,7 @@ html.pd-dark .sm-a-monitor { --sm-t:#d1d5db; }
    token in dashboard.css rather than a fourth copy of this override. */
 html.pd-dark .sm-fsec { color:#FF8A80; }
 .sm-fsec:first-of-type { margin-top:10px; }
-.sm-fsec-hint { color:var(--pd-muted); font-weight:600; letter-spacing:0; text-transform:none; margin-left:6px; }
+.sm-fsec-hint { color:var(--pd-muted); font-weight:700; letter-spacing:0; text-transform:none; margin-left:6px; }
 .sm-lbl-hint { color:var(--pd-muted); font-weight:400; }
 .sm-frow { display:flex; gap:10px; flex-wrap:wrap; }
 .sm-frow > .pd-field { min-width:130px; }
@@ -266,7 +264,7 @@ html.pd-dark .sm-fsec { color:#FF8A80; }
   border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-muted);
   font-size:var(--pd-fs-lg); line-height:1; cursor:pointer; font-family:var(--pd-font); }
 .sm-photo-x:hover { color:#fff; background:var(--pd-bad); border-color:var(--pd-bad); }
-.sm-photowell-hint { color:var(--pd-muted); font-size:var(--pd-fs-xs); margin-top:8px; font-weight:600; }
+.sm-photowell-hint { color:var(--pd-muted); font-size:var(--pd-fs-xs); margin-top:8px; font-weight:700; }
 
 .sm-actinfo { background:var(--pd-bg); border:1px solid var(--pd-line); border-radius:var(--pd-radius);
   padding:9px 11px; font-size:var(--pd-fs-sm); color:var(--pd-ink); line-height:1.5; margin:0 0 10px; }
@@ -304,7 +302,7 @@ html.pd-dark .sm-fsec { color:#FF8A80; }
     border-radius:var(--pd-radius); box-shadow:var(--pd-shadow); }
   .sm-table tr:hover td { background:none; }
   .sm-table td { display:block; border:0; padding:3px 0; white-space:normal; font-size:var(--pd-fs-base); max-width:none; }
-  .sm-table td[data-l]::before { content:attr(data-l) ": "; color:var(--pd-muted); font-weight:600; font-size:var(--pd-fs-sm); }
+  .sm-table td[data-l]::before { content:attr(data-l) ": "; color:var(--pd-muted); font-weight:700; font-size:var(--pd-fs-sm); }
   .sm-table td .sm-sub { white-space:normal; max-width:none; }
   /* A stacked card has the room the table row did not — show the whole plan. */
   .sm-clamp { -webkit-line-clamp:none; display:block; }
@@ -399,7 +397,7 @@ html.pd-dark .sm-ap-row.is-here .sm-ap-tag { color: #FF8A80; }
 .sm-scope[data-scope="global"] { border-left-color: var(--pd-red); }
 .sm-scope[data-scope="global"] .sm-scope-ic { color: var(--pd-red); }
 .sm-scope[data-scope="warn"] { border-left-color: var(--pd-warn); }
-.sm-scope[data-scope="warn"] .sm-scope-ic { color: var(--pd-warn); }
+.sm-scope[data-scope="warn"] .sm-scope-ic { color: var(--pd-warn-text); }
 @media (max-width: 700px) {
   .sm-scope { flex-wrap: wrap; }
   .sm-scope-btn { width: 100%; justify-content: center; min-height: var(--pd-tap); }
@@ -425,7 +423,7 @@ html.pd-dark .sm-ap-row.is-here .sm-ap-tag { color: #FF8A80; }
 .sm-dup-row:hover { background: var(--pd-bg); }
 .sm-dup-row input { width: auto; min-height: 0; margin-top: 2px; flex: none; }
 .sm-dup-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1 1 auto; }
-.sm-dup-main b { font-weight: 600; overflow-wrap: anywhere; }
+.sm-dup-main b { font-weight: 700; overflow-wrap: anywhere; }
 .sm-dup-main small { font-size: var(--pd-fs-xs); color: var(--pd-muted); overflow-wrap: anywhere; }
 /* Why this row was proposed. ⚠ Shown, not hidden behind a tooltip: a match the planner
    cannot see the reason for is a match they cannot judge. */

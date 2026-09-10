@@ -27,7 +27,7 @@
 /* Project context — borderless until hover (Drawing Register's .dr-project) */
 .pp-projctx { display: flex; align-items: center; min-width: 0; flex: 0 1 auto; }
 .pp-project {
-  max-width: 230px; min-width: 120px; height: 34px; font-weight: 600; font-size: var(--pd-fs-base);
+  max-width: 230px; min-width: 120px; height: 34px; font-weight: 700; font-size: var(--pd-fs-base);
   background: transparent; border-color: transparent;
 }
 .pp-project:hover, .pp-project:focus { background: var(--pd-card); border-color: var(--pd-line); }
@@ -45,7 +45,7 @@
 }
 .pp-tab {
   border: 0; background: var(--pd-card); color: var(--pd-ink);
-  height: 100%; padding: 0 14px; font-weight: 600; font-size: var(--pd-fs-base); cursor: pointer;
+  height: 100%; padding: 0 14px; font-weight: 700; font-size: var(--pd-fs-base); cursor: pointer;
   font-family: var(--pd-font); transition: background .12s;
   display: inline-flex; align-items: center; justify-content: center; line-height: 1;
 }
@@ -55,17 +55,13 @@
 
 /* Tool cluster beside the profile */
 .pp-topbar-tools { display: flex; align-items: center; gap: 4px; margin-left: auto; }
-.pp-topbar-tools .pd-btn {
+.pp-topbar-tools .pd-btn:not(.pp-tb-labeled) {
   height: 34px; width: 34px; padding: 0; font-size: var(--pd-fs-base);
   display: inline-flex; align-items: center; justify-content: center;
   background: transparent; border-color: transparent;
 }
 .pp-topbar-tools .pd-btn:hover { background: var(--pd-bg); border-color: var(--pd-line); }
-.pp-topbar-tools .pd-btn.pp-tb-labeled { width: auto; padding: 0 12px; gap: 6px; }
-.pp-topbar-tools .pd-btn.pd-btn-primary {
-  background: var(--pd-red); border-color: var(--pd-red); color: #fff;
-}
-.pp-topbar-tools .pd-btn.pd-btn-primary:hover { filter: brightness(.94); }
+.pp-topbar-tools .pd-btn.pp-tb-labeled { height: 34px; width: auto; padding: 0 12px; gap: 6px; white-space: nowrap; }
 .pp-tb-sep { width: 1px; align-self: stretch; margin: 5px 3px; background: var(--pd-line); }
 /* Sixth round item 7: a quiet, breadcrumb-style "back to the list" link,
    deliberately NOT styled like the bordered .pd-btn action buttons it used
@@ -75,7 +71,7 @@
 .pp-crumbback {
   display: inline-flex; align-items: center; gap: 5px; height: 34px; padding: 0 10px;
   background: transparent; border: 1px solid transparent; border-radius: var(--pd-radius);
-  color: var(--pd-muted); font-size: var(--pd-fs-sm); font-weight: 600; cursor: pointer;
+  color: var(--pd-muted); font-size: var(--pd-fs-sm); font-weight: 700; cursor: pointer;
 }
 .pp-crumbback:hover { background: var(--pd-bg); border-color: var(--pd-line); color: var(--pd-ink); }
 
@@ -250,7 +246,7 @@
 }
 .pp-iconbtn:hover { background: var(--pd-bg); border-color: var(--pd-line); color: var(--pd-ink); }
 /* Destructive actions use --pd-bad, matching Drawing Register's .dr-clearbtn */
-.pp-iconbtn.pp-del { color: var(--pd-bad); }
+.pp-iconbtn.pp-del { color: var(--pd-bad-text); }
 .pp-iconbtn.pp-del:hover { background: var(--pd-bad); border-color: var(--pd-bad); color: #fff; }
 /* Items 10/11 (current round): a header icon button's "on" state (the
    photo-markup / key-plan toggles) — solid brand-red fill, same family as
@@ -325,7 +321,7 @@
 .pp-cardcap b, .pp-cardcap span {
   display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.pp-cardcap b { color: var(--pd-ink); font-weight: 600; margin-bottom: 1px; }
+.pp-cardcap b { color: var(--pd-ink); font-weight: 700; margin-bottom: 1px; }
 .pp-cardphoto {
   width: 100%; height: var(--pp-tile-h, 210px); object-fit: cover; display: block; cursor: zoom-in;
 }
@@ -349,7 +345,7 @@
 .pp-mtype {
   flex: 1 1 0; padding: 8px 10px; text-align: center; cursor: pointer;
   background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
-  color: var(--pd-ink); font-size: var(--pd-fs-base); font-weight: 600;
+  color: var(--pd-ink); font-size: var(--pd-fs-base); font-weight: 700;
 }
 .pp-mtype.active { border-color: var(--pd-red); color: var(--pd-red); background: color-mix(in srgb, var(--pd-red) 8%, var(--pd-card)); }
 .pp-mtype:disabled { cursor: not-allowed; color: var(--pd-muted); opacity: .6; }
@@ -360,8 +356,8 @@
 .pp-addmenu-wrap { position: relative; }
 .pp-addmenu {
   position: absolute; top: calc(100% + 4px); left: 0; z-index: 40; min-width: 150px;
-  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, .18); padding: 4px; display: flex; flex-direction: column; gap: 2px;
+  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md);
+  box-shadow: var(--pd-shadow-lg); padding: 4px; display: flex; flex-direction: column; gap: 2px;
 }
 /* ⚠️ Owner-reported round 2 item 1, and the SAME bug class this file has
    already hit twice (.pp-clear/.pp-lightbox below, and .pp-selbar's own
@@ -639,7 +635,7 @@
 .pp-delwarn {
   margin-top: 10px; padding: 8px 10px; border-radius: var(--pd-radius);
   background: color-mix(in srgb, var(--pd-warn) 16%, var(--pd-card));
-  color: var(--pd-warn); font-size: var(--pd-fs-sm); display: flex; align-items: flex-start; gap: 6px;
+  color: var(--pd-warn-text); font-size: var(--pd-fs-sm); display: flex; align-items: flex-start; gap: 6px;
 }
 
 /* ---- Offline queue button (topbar, always visible — Rounds captures queue too) */
@@ -670,10 +666,10 @@
    the free-text Location label below is never auto-filled from this. */
 .pp-wbscrumb {
   margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--pd-line);
-  font-size: var(--pd-fs-base); color: var(--pd-ink); font-weight: 600;
+  font-size: var(--pd-fs-base); color: var(--pd-ink); font-weight: 700;
 }
 .pp-optnote { font-weight: 400; color: var(--pd-muted); font-size: var(--pd-fs-xs); }
-.pp-req { color: var(--pd-bad); font-weight: 700; }
+.pp-req { color: var(--pd-bad-text); font-weight: 700; }
 .pp-actctx { font-size: var(--pd-fs-sm); color: var(--pd-muted); margin-top: -2px; }
 .pp-actline { margin-top: 4px; }
 .pp-actline strong { color: var(--pd-ink); }
@@ -698,7 +694,7 @@
    an explicit style.display in syncChrome() instead of the `hidden`
    attribute — see wireSelBar()'s own comment in module.js.
    ============================================================================ */
-.pp-selcount-tb { font-size: var(--pd-fs-sm); font-weight: 600; color: var(--pd-muted); padding: 0 4px; }
+.pp-selcount-tb { font-size: var(--pd-fs-sm); font-weight: 700; color: var(--pd-muted); padding: 0 4px; }
 
 /* ============================================================================
    PPR Presentations (the "View PPRs" screens)
@@ -734,7 +730,7 @@
   padding: 8px 10px; font-size: var(--pd-fs-base); color: var(--pd-ink);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.ppr-date { font-weight: 600; font-variant-numeric: tabular-nums; }
+.ppr-date { font-weight: 700; font-variant-numeric: tabular-nums; }
 .ppr-num { text-align: center; }
 .ppr-acts { display: flex; gap: 3px; align-items: center; padding-left: 10px; }
 
@@ -964,7 +960,7 @@
    each pane's own tags line below. */
 .ppr-sharedloc {
   display: inline-flex; align-items: center; gap: 6px;
-  font-size: var(--pd-fs-sm); font-weight: 600; color: var(--pd-ink); margin: 0 0 12px;
+  font-size: var(--pd-fs-sm); font-weight: 700; color: var(--pd-ink); margin: 0 0 12px;
   background: var(--pd-bg); border: 1px solid var(--pd-line); border-radius: 999px;
   padding: 5px 12px; left: 50%; position: relative; transform: translateX(-50%);
 }
@@ -1021,7 +1017,7 @@
 .ppr-pickchosen:hover { border-color: var(--pd-red); }
 .ppr-pickchosen img { width: 78px; height: 58px; object-fit: cover; border-radius: 3px; flex: 0 0 auto; background: var(--pd-bg); }
 .ppr-pickchosen span { font-size: var(--pd-fs-sm); color: var(--pd-muted); line-height: 1.4; }
-.ppr-pickchosen em { color: var(--pd-red); font-style: normal; font-weight: 600; }
+.ppr-pickchosen em { color: var(--pd-red); font-style: normal; font-weight: 700; }
 
 /* Copy-presentation wizard (item 6) */
 .ppr-wizstep { font-size: var(--pd-fs-sm); color: var(--pd-muted); margin: 0 0 10px; text-align: center; }
@@ -1043,7 +1039,7 @@
 }
 .pano-badge-warn { background: var(--pd-warn); color: #fff; }
 .pano-meta { padding: 10px 12px 4px; }
-.pano-loc { font-size: var(--pd-fs-base); font-weight: 600; color: var(--pd-ink); }
+.pano-loc { font-size: var(--pd-fs-base); font-weight: 700; color: var(--pd-ink); }
 .pano-date { font-size: var(--pd-fs-sm); color: var(--pd-muted); margin-top: 2px; }
 .pano-acts { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 10px 12px 12px; }
 
@@ -1063,7 +1059,7 @@
 .pano-recind {
   position: absolute; top: 10px; left: 10px; display: flex; align-items: center; gap: 7px;
   padding: 4px 10px 4px 8px; border-radius: 999px; background: rgba(0,0,0,.6); color: #fff;
-  font-size: var(--pd-fs-sm); font-weight: 600; font-variant-numeric: tabular-nums;
+  font-size: var(--pd-fs-sm); font-weight: 700; font-variant-numeric: tabular-nums;
 }
 /* ⚠️ Same bug class as .pp-addmenu above: `display: flex` unconditionally
    beats the UA's `[hidden] { display: none }`, so stopRecTimer()'s
@@ -1091,21 +1087,21 @@
   padding: 10px 12px; margin-bottom: 8px;
 }
 .recon-rowmain { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-.recon-loc { font-size: var(--pd-fs-base); font-weight: 600; color: var(--pd-ink); }
+.recon-loc { font-size: var(--pd-fs-base); font-weight: 700; color: var(--pd-ink); }
 .recon-date { font-size: var(--pd-fs-sm); color: var(--pd-muted); margin-left: auto; }
 .recon-src { font-size: var(--pd-fs-xs); padding: 2px 7px; border-radius: 3px; background: var(--pd-bg); color: var(--pd-muted); border: 1px solid var(--pd-line); }
 .recon-note { font-size: var(--pd-fs-sm); color: var(--pd-muted); margin-top: 6px; }
-.recon-note-bad { color: var(--pd-bad); }
+.recon-note-bad { color: var(--pd-bad-text); }
 .recon-acts { display: flex; gap: 8px; margin-top: 10px; }
 .recon-badge { font-size: var(--pd-fs-xs); font-weight: 700; padding: 3px 9px; border-radius: 3px; letter-spacing: .02em; }
 /* Each pairs the token's own OWN colour as text with a tint of that SAME
    token as background (the proven .pd-pill-ok pattern from dashboard.css) —
    every one of --pd-warn/--pd-red/--pd-ok/--pd-bad already carries a paired
    dark-mode remap, so this re-themes correctly with no extra work here. */
-.recon-badge-pending { background: color-mix(in srgb, var(--pd-warn) 18%, var(--pd-card)); color: var(--pd-warn); }
+.recon-badge-pending { background: color-mix(in srgb, var(--pd-warn) 18%, var(--pd-card)); color: var(--pd-warn-text); }
 .recon-badge-mid { background: color-mix(in srgb, var(--pd-red) 12%, var(--pd-card)); color: var(--pd-red); }
-.recon-badge-ok { background: color-mix(in srgb, var(--pd-ok) 16%, var(--pd-card)); color: var(--pd-ok); }
-.recon-badge-bad { background: color-mix(in srgb, var(--pd-bad) 14%, var(--pd-card)); color: var(--pd-bad); }
+.recon-badge-ok { background: color-mix(in srgb, var(--pd-ok) 16%, var(--pd-card)); color: var(--pd-ok-text); }
+.recon-badge-bad { background: color-mix(in srgb, var(--pd-bad) 14%, var(--pd-card)); color: var(--pd-bad-text); }
 
 /* ---- Floor Plan overlay (brief 6B / Phase 5) ------------------------------
    Pin-navigator over a 2D image, not a true BIM/IFC viewer — see bim.js's own
@@ -1198,7 +1194,7 @@
    Month bars, so the two rows read as one consistent toolbar shape (label,
    then the stepper/control cluster, then one short trailing hint) instead
    of a labelled <select> on one row and a bare, unlabelled stepper on the other. */
-.pp-planfloorlabel { font-size: var(--pd-fs-sm); font-weight: 600; color: var(--pd-muted); }
+.pp-planfloorlabel { font-size: var(--pd-fs-sm); font-weight: 700; color: var(--pd-muted); }
 .pp-planfloorbar .pd-select { width: auto; min-width: 140px; }
 .pp-planmonthbar strong { min-width: 64px; text-align: center; font-variant-numeric: tabular-nums; }
 /* "Live" jump-back button (Plan view's month stepper — Stack view's own
@@ -1321,7 +1317,7 @@
 .bim-dirhandle-el:active { cursor: grabbing; }
 .bim-conehint { font-size: var(--pd-fs-sm); color: var(--pd-muted); margin: 6px 0 0; }
 .bim-conena-badge {
-  display: inline-flex; align-items: center; gap: 5px; font-size: var(--pd-fs-xs); font-weight: 600;
+  display: inline-flex; align-items: center; gap: 5px; font-size: var(--pd-fs-xs); font-weight: 700;
   color: var(--pd-muted); margin-top: 4px;
 }
 /* Fifth round item 8: "does not apply" now hides the wedge ENTIRELY (bim.js
@@ -1401,7 +1397,7 @@
 }
 .ppr-panehead-loc {
   display: flex; align-items: center; justify-content: center; gap: 5px;
-  font-size: var(--pd-fs-sm); font-weight: 600; color: var(--pd-ink); margin-bottom: 3px;
+  font-size: var(--pd-fs-sm); font-weight: 700; color: var(--pd-ink); margin-bottom: 3px;
 }
 .ppr-panehead-loc span[data-ico] { color: var(--pd-red); }
 .ppr-panehead .ppr-capdate { font-size: var(--pd-fs-base); color: var(--pd-ink); }
@@ -1423,7 +1419,7 @@
 }
 .pp-workschip {
   display: inline-flex; align-items: center; gap: 5px; font-size: var(--pd-fs-sm);
-  padding: 3px 8px 3px 10px; border-radius: 999px; font-weight: 600;
+  padding: 3px 8px 3px 10px; border-radius: 999px; font-weight: 700;
   background: color-mix(in srgb, var(--pd-red) 12%, var(--pd-card)); color: var(--pd-ink);
   border: 1px solid color-mix(in srgb, var(--pd-red) 30%, var(--pd-line));
 }
@@ -1431,7 +1427,7 @@
   border: 0; background: transparent; cursor: pointer; color: var(--pd-muted);
   display: flex; align-items: center; padding: 0;
 }
-.pp-workschip button:hover { color: var(--pd-bad); }
+.pp-workschip button:hover { color: var(--pd-bad-text); }
 .pp-worksgroup + .pp-worksgroup { margin-top: 4px; }
 .pp-worksgroup-name {
   font-size: var(--pd-fs-xs); font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
@@ -1470,13 +1466,13 @@
   letter-spacing: 0; color: var(--pd-ink); margin-bottom: 0; display: block;
 }
 .pp-worksgroup-count {
-  flex: none; font-size: var(--pd-fs-xs); font-weight: 600; color: var(--pd-muted);
+  flex: none; font-size: var(--pd-fs-xs); font-weight: 700; color: var(--pd-muted);
   background: var(--pd-bg); border-radius: 999px; padding: 1px 7px;
 }
 .pp-worksgroup-items { padding-left: 22px; }
 .pp-worksempty { text-align: center; padding: 24px 8px; }
 .pp-worksfooter { justify-content: space-between; align-items: center; }
-.pp-workscount { font-size: var(--pd-fs-sm); color: var(--pd-muted); font-weight: 600; }
+.pp-workscount { font-size: var(--pd-fs-sm); color: var(--pd-muted); font-weight: 700; }
 .pp-worksfooter-btns { display: flex; gap: 10px; }
 
 /* ---- Item 7: single-node Location picker + required view name ------------ */
@@ -1692,7 +1688,7 @@
 
 .pd-linkbtn {
   background: none; border: 0; padding: 0; margin: 0; color: var(--pd-red);
-  font-size: var(--pd-fs-sm); font-weight: 600; cursor: pointer; text-decoration: underline;
+  font-size: var(--pd-fs-sm); font-weight: 700; cursor: pointer; text-decoration: underline;
 }
 .pd-linkbtn:hover { color: var(--pd-red-dark, var(--pd-red)); }
 
@@ -1805,9 +1801,9 @@
     white-space: normal; overflow: visible; text-overflow: clip;
   }
   .pp-row .pp-cell[data-l]::before {
-    content: attr(data-l) ": "; color: var(--pd-muted); font-weight: 600;
+    content: attr(data-l) ": "; color: var(--pd-muted); font-weight: 700;
   }
-  .pp-row .pp-desc { font-size: var(--pd-fs-base); font-weight: 600; line-height: 1.3; }
+  .pp-row .pp-desc { font-size: var(--pd-fs-base); font-weight: 700; line-height: 1.3; }
   .pp-iconbtn { width: 40px; height: 40px; border-color: var(--pd-line); }
 
   /* Works picker (2026-09-07): Expand/Collapse all and Apply/Cancel are real

@@ -7,8 +7,8 @@
   <link rel="apple-touch-icon" href="assets/img/icon.png?v=20260830b" />
   <script src="assets/js/theme.js?v=20260812b"></script>
   <title>Dashboard — Planners Dashboard</title>
-  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260910u7" />
-  <link rel="stylesheet" href="assets/css/my-work.css?v=20260909m" />
+  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260910v7" />
+  <link rel="stylesheet" href="assets/css/my-work.css?v=20260910v4" />
 </head>
 <body>
   <div class="pd-app">
@@ -189,7 +189,7 @@
     .pd-sc-tbl th, .pd-sc-tbl td { width:46px; text-align:center; padding:3px 0; color:var(--pd-muted);
       white-space:nowrap; font-variant-numeric:tabular-nums; }
     .pd-sc-tbl th { font-weight:700; border-bottom:1px solid var(--pd-line); }
-    .pd-sc-tbl th small { display:block; font-size:var(--pd-fs-micro); opacity:.75; font-weight:600; }
+    .pd-sc-tbl th small { display:block; font-size:var(--pd-fs-micro); opacity:.75; font-weight:500; }
     /* ⚠️ th.k AND td.k, both. Under `table-layout:fixed` the FIRST row sets every column width,
        and that row is the header — so styling only `td.k` left the header's corner cell at the
        month width, the whole table 46px narrower than it declared, and every month column sitting
@@ -233,7 +233,7 @@
     /* ---- list extras shared by the deadline / MoM / Issues panels ---------------------------- */
     .pd-list-top { margin-top:0; padding-top:0; border-top:0; }
     .pd-list-h { font-size:var(--pd-fs-micro); color:var(--pd-muted); margin-top:12px; padding-top:10px;
-      border-top:1px solid var(--pd-line); font-weight:600; }
+      border-top:1px solid var(--pd-line); font-weight:700; }
     .pd-list-h + .pd-list { margin-top:7px; padding-top:0; border-top:0; }
     .pd-list-t small { display:block; font-size:var(--pd-fs-micro); color:var(--pd-muted); font-weight:500;
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -323,7 +323,7 @@
     /* Its own grid cell, never inside the clipped track — a % that can be sliced mid-digit into a
        different number is worse than no %. */
     .pd-pv-n { font-size:var(--pd-fs-xs); font-weight:700; text-align:right; line-height:1.25; }
-    .pd-pv-n small { display:block; font-size:var(--pd-fs-micro); font-weight:600; color:var(--pd-muted); }
+    .pd-pv-n small { display:block; font-size:var(--pd-fs-micro); font-weight:500; color:var(--pd-muted); }
     .pd-viz-legend i.pd-lg-span { background:var(--pd-card); border:1px solid var(--pd-line); }
     .pd-viz-legend i.pd-lg-gap { background:repeating-linear-gradient(135deg, #E5534B 0 3px, transparent 3px 6px); }
     .pd-viz-legend i.pd-lg-now { background:var(--pd-ink); opacity:.55; width:3px; border-radius:1px; }
@@ -349,7 +349,7 @@
   <script src="assets/js/scurve.js?v=20260901a"></script>
   <script src="assets/js/ui.js?v=20260909s"></script>
   <script src="assets/js/icons.js?v=20260909ui"></script>
-  <script src="assets/js/modules-grid.js?v=20260910v3"></script>
+  <script src="assets/js/modules-grid.js?v=20260910v8"></script>
   <script src="assets/js/my-work.js?v=20260902a"></script>
   <script>
   (function () {

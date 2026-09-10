@@ -26,7 +26,7 @@
 /* Project context — borderless until hover */
 .il-projctx { display: flex; align-items: center; min-width: 0; flex: 0 1 auto; }
 .il-project {
-  max-width: 230px; min-width: 120px; height: 34px; font-weight: 600; font-size: var(--pd-fs-base);
+  max-width: 230px; min-width: 120px; height: 34px; font-weight: 700; font-size: var(--pd-fs-base);
   background: transparent; border-color: transparent;
 }
 .il-project:hover, .il-project:focus { background: var(--pd-card); border-color: var(--pd-line); }
@@ -50,7 +50,7 @@
    `flex`. Excluding hidden buttons here lets the shared rule decide, and is the same fix
    this file already applies to `.il-icondd-menu` further down. */
 .il-topbar-tools .pd-btn:not(.il-tb-labeled):not([hidden]) {
-  height: 34px; width: 34px; padding: 0; font-size: 13px;
+  height: 34px; width: 34px; padding: 0; font-size: var(--pd-fs-base);
   display: inline-flex; align-items: center; justify-content: center;
   background: transparent; border-color: transparent;
 }
@@ -76,7 +76,7 @@
 
 /* Status pill (reused for both a linked action item's live register status and
    the List view's Distributed state). */
-.il-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-weight: 600; font-size: var(--pd-fs-sm); color: #fff; white-space: nowrap; }
+.il-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-weight: 700; font-size: var(--pd-fs-sm); color: #fff; white-space: nowrap; }
 .il-pill.is-open   { background: #dc2626; }
 .il-pill.is-hold   { background: #d97706; }
 .il-pill.is-closed { background: #16a34a; }
@@ -158,7 +158,7 @@
 .il-mom-lrow { cursor: pointer; }
 .il-mom-lrow:hover td { background: var(--pd-bg); }
 .il-mom-draft {
-  display: inline-block; font-size: var(--pd-fs-micro); font-weight: 600; letter-spacing: .06em;
+  display: inline-block; font-size: var(--pd-fs-micro); font-weight: 700; letter-spacing: .06em;
   padding: 2px 7px; border-radius: 3px;
   background: var(--pd-red-light); color: var(--pd-red);
 }
@@ -179,7 +179,7 @@
 .il-mom-calnav-l, .il-mom-calnav-r { flex: 1 1 0; min-width: 0; }
 .il-mom-calnav-r { display: flex; justify-content: flex-end; }
 .il-mom-calnavmid { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }
-.il-mom-calmonth { font-weight: 600; font-size: var(--pd-fs-md); min-width: 140px; text-align: center; }
+.il-mom-calmonth { font-weight: 700; font-size: var(--pd-fs-md); min-width: 140px; text-align: center; }
 /* Today, styled as the same kind of pill button as the Month/Week switcher's
    own segments — "use the same label/button format for both." */
 .il-mom-todaybtn {
@@ -193,7 +193,7 @@
    than plain text sitting over the grid. */
 .il-mom-calhead { margin-bottom: 4px; }
 .il-mom-calhead > div {
-  font-size: var(--pd-fs-xs); font-weight: 600; color: var(--pd-red); text-align: center;
+  font-size: var(--pd-fs-xs); font-weight: 700; color: var(--pd-red); text-align: center;
   text-transform: uppercase; letter-spacing: .04em;
   background: var(--pd-red-light); border-radius: 6px; padding: 5px 0;
 }
@@ -203,11 +203,11 @@
 }
 .il-mom-calcell.is-blank { border-color: transparent; background: transparent; }
 .il-mom-calcell.is-today { border-color: var(--pd-red); }
-.il-mom-caldate { font-size: var(--pd-fs-xs); font-weight: 600; color: var(--pd-muted); }
+.il-mom-caldate { font-size: var(--pd-fs-xs); font-weight: 700; color: var(--pd-muted); }
 .il-mom-calcell.is-today .il-mom-caldate { color: var(--pd-red); }
 .il-mom-calchip {
   display: block; width: 100%; text-align: left; border: 0; border-radius: 4px;
-  background: var(--pd-red-light); color: var(--pd-red); font-size: var(--pd-fs-micro); font-weight: 600;
+  background: var(--pd-red-light); color: var(--pd-red); font-size: var(--pd-fs-micro); font-weight: 700;
   padding: 2px 5px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .il-mom-calchip:hover { filter: brightness(.95); }
@@ -236,7 +236,7 @@
   border: 0; background: transparent; cursor: pointer; font-size: var(--pd-fs-lg); line-height: 1;
   color: var(--pd-line); padding: 2px 4px;
 }
-.il-mom-favbtn:hover { color: var(--pd-warn, #C77700); }
+.il-mom-favbtn:hover { color: var(--pd-warn-text); }
 .il-mom-favbtn.on { color: #D4A017; }
 /* The series page's own labelled pd-btn copy ("★ Favorited" / "☆ Favorite"
    text) — the Detail toolbar's own star is icon-only now, see .il-mom-favbig
@@ -252,7 +252,7 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
   border: 0; background: transparent; padding: 0 4px; font-size: var(--pd-fs-stat);
   line-height: 1; height: 34px; display: inline-flex; align-items: center; justify-content: center;
 }
-.il-mom-favbig:hover { color: var(--pd-warn, #C77700); }
+.il-mom-favbig:hover { color: var(--pd-warn-text); }
 .il-mom-favbig.on { color: #D4A017; }
 /* Item 5 — "if the meeting is recurring, the meeting title and favorite
    button should be fixed/sticky." Sticks to the top of whatever scrolls the
@@ -265,9 +265,9 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
   margin: -14px -16px 12px; padding: 10px 16px;
   background: var(--pd-card); border-bottom: 1px solid var(--pd-line);
 }
-.il-mom-stickytitle { font-size: var(--pd-fs-md); font-weight: 600; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.il-mom-stickytitle { font-size: var(--pd-fs-md); font-weight: 700; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .il-mom-recur {
-  display: inline-block; font-size: var(--pd-fs-micro); font-weight: 600; letter-spacing: .06em;
+  display: inline-block; font-size: var(--pd-fs-micro); font-weight: 700; letter-spacing: .06em;
   padding: 2px 7px; border-radius: 3px; background: var(--pd-bg); color: var(--pd-muted);
   border: 1px solid var(--pd-line);
 }
@@ -348,7 +348,7 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
 .il-mom-wk { display: flex; flex-direction: column; }
 .il-mom-wk-head, .il-mom-wk-allday { display: flex; }
 .il-mom-wk-gutter {
-  flex: 0 0 56px; font-size: var(--pd-fs-micro); color: var(--pd-muted); font-weight: 600;
+  flex: 0 0 56px; font-size: var(--pd-fs-micro); color: var(--pd-muted); font-weight: 700;
   padding: 4px 6px 0 0; text-align: right; box-sizing: border-box;
 }
 .il-mom-wk-daycol { flex: 1 1 0; min-width: 0; position: relative; }
@@ -356,9 +356,9 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
   text-align: center; padding: 4px 2px; border-bottom: 1px solid var(--pd-line);
 }
 .il-mom-wk-head .il-mom-wk-daycol.is-today { color: var(--pd-red); }
-.il-mom-wk-dayname { font-size: var(--pd-fs-micro); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); }
+.il-mom-wk-dayname { font-size: var(--pd-fs-micro); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); }
 .il-mom-wk-head .il-mom-wk-daycol.is-today .il-mom-wk-dayname { color: var(--pd-red); }
-.il-mom-wk-daydate { font-size: var(--pd-fs-md); font-weight: 600; }
+.il-mom-wk-daydate { font-size: var(--pd-fs-md); font-weight: 700; }
 .il-mom-wk-allday { border-bottom: 1px solid var(--pd-line); padding-bottom: 4px; margin-bottom: 4px; }
 .il-mom-wk-allday .il-mom-wk-daycol { padding: 2px; display: flex; flex-direction: column; gap: 2px; }
 .il-mom-wk-scroll { max-height: 560px; overflow-y: auto; }
@@ -370,12 +370,12 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
 .il-mom-wk-event {
   position: absolute; left: 2px; right: 2px; z-index: 1; overflow: hidden;
   border: 0; border-radius: 4px; text-align: left; cursor: pointer;
-  background: var(--pd-red-light); color: var(--pd-red); font-size: var(--pd-fs-micro); font-weight: 600;
+  background: var(--pd-red-light); color: var(--pd-red); font-size: var(--pd-fs-micro); font-weight: 700;
   padding: 2px 5px; line-height: 1.25;
 }
 .il-mom-wk-event:hover { filter: brightness(.95); }
 .il-mom-wk-event.is-draft { background: var(--pd-bg); color: var(--pd-muted); border: 1px dashed var(--pd-line); }
-.il-mom-wk-eventtime { font-weight: 600; }
+.il-mom-wk-eventtime { font-weight: 700; }
 @media (max-width: 700px) {
   .il-mom-wk-gutter { flex-basis: 40px; }
   .il-mom-wk-daydate { font-size: var(--pd-fs-sm); }
@@ -414,7 +414,7 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
 /* ---- Back-to-meetings (Detail view) --------------------------------------- */
 .il-mom-back {
   background: transparent; border-color: transparent; padding: 0 0 10px; height: auto;
-  color: var(--pd-muted); font-weight: 600;
+  color: var(--pd-muted); font-weight: 700;
 }
 .il-mom-back:hover { color: var(--pd-red); }
 
@@ -459,7 +459,7 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
 .il-mi-f + .il-mi-f { margin-top: 8px; }
 .il-mi-meta .il-mi-f + .il-mi-f { margin-top: 0; }
 .il-mi-f > label {
-  display: block; font-size: var(--pd-fs-micro); font-weight: 600; letter-spacing: .05em;
+  display: block; font-size: var(--pd-fs-micro); font-weight: 700; letter-spacing: .05em;
   text-transform: uppercase; color: var(--pd-muted); margin-bottom: 3px;
 }
 .il-mi-f > label span { font-weight: 500; text-transform: none; letter-spacing: 0; opacity: .75; }
@@ -499,7 +499,7 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
 }
 .il-mom-acres button:last-child { border-bottom: 0; }
 .il-mom-acres button:hover { background: var(--pd-bg); }
-.il-mom-acres button b { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.il-mom-acres button b { font-family: var(--pd-mono); }
 .il-mom-acres .il-mom-acnote { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--pd-muted); }
 /* The per-minute activity modal reuses .il-mom-acres for its result pane; a
    plain (non-button) .il-mom-acrow is its "Searching…" / "no match" line. */
@@ -530,20 +530,20 @@ div.il-mom-acrow { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--p
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   height: 34px; padding: 0 11px; white-space: nowrap;
 }
-.il-mom-modetxt { font-size: var(--pd-fs-sm, 12px); font-weight: 600; }
+.il-mom-modetxt { font-size: var(--pd-fs-sm, 12px); font-weight: 700; }
 /* ⚠ Reporting mode hides nothing in this toolbar -- the Exit button IS the way
    back out, so it must stay legible in the mode it turns off. */
 .il-mom-report .il-mom-modebtn { border-color: var(--pd-red); color: var(--pd-red); }
 
 .il-mom-state {
-  font-size: var(--pd-fs-xs); font-weight: 600; padding: 3px 9px; border-radius: 20px;
+  font-size: var(--pd-fs-xs); font-weight: 700; padding: 3px 9px; border-radius: 20px;
   background: var(--pd-bg); color: var(--pd-muted); border: 1px solid var(--pd-line);
 }
-.il-mom-state.on { background: #d4f5d4; color: #1a8f3a; border-color: #b6e8b6; }
+.il-mom-state.on { background: var(--pd-ok-bg); color: var(--pd-ok-text); border-color: var(--pd-ok-line); }
 
 .il-mom-addrow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
 .il-mom-carried {
-  display: inline-block; font-size: var(--pd-fs-micro); font-weight: 600; margin-top: 3px;
+  display: inline-block; font-size: var(--pd-fs-micro); font-weight: 700; margin-top: 3px;
   padding: 1px 5px; border-radius: 3px; background: var(--pd-bg); color: var(--pd-muted);
 }
 .pd-btn.is-active { background: var(--pd-red); border-color: var(--pd-red); color: #fff; }
@@ -557,7 +557,7 @@ div.il-mom-acrow { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--p
 }
 .il-mom-geti:hover { border-color: var(--pd-red-mid); background: var(--pd-red-light); }
 .il-mom-geti:disabled { opacity: .5; cursor: default; }
-.il-mom-geti-txt { font-size: var(--pd-fs-base); font-weight: 600; }
+.il-mom-geti-txt { font-size: var(--pd-fs-base); font-weight: 700; }
 .il-mom-geti-meta { font-size: var(--pd-fs-xs); color: var(--pd-muted); }
 
 /* --- Action-item filter bar ---------------------------------------------- */
@@ -668,7 +668,7 @@ div.il-mom-acrow { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--p
   display:inline-flex; align-items:center; gap:5px;
   padding:3px 6px 3px 9px; border-radius:999px;
   background:var(--pd-bg); border:1px solid var(--pd-line);
-  font-size:var(--pd-fs-sm); font-weight:600; color:var(--pd-ink); line-height:1.5;
+  font-size:var(--pd-fs-sm); font-weight:700; color:var(--pd-ink); line-height:1.5;
 }
 .il-pp-rm {
   border:0; background:transparent; cursor:pointer; padding:0 2px;
@@ -682,7 +682,7 @@ div.il-mom-acrow { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--p
   background:var(--pd-bg); border:1px dashed var(--pd-line);
   font-size:var(--pd-fs-xs); color:var(--pd-muted);
 }
-.il-pp-freenote strong { font-weight:600; color:var(--pd-ink); }
+.il-pp-freenote strong { font-weight:700; color:var(--pd-ink); }
 .il-pp-rmtext {
   border:0; background:transparent; cursor:pointer; padding:0 2px;
   font-size:var(--pd-fs-xs); line-height:1; color:var(--pd-muted); border-radius:50%;
@@ -713,7 +713,7 @@ div.il-mom-acrow { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--p
 }
 .il-tab {
   border: 0; background: var(--pd-card); color: var(--pd-ink);
-  padding: 6px 14px; font-weight: 600; font-size: var(--pd-fs-base); cursor: pointer;
+  padding: 6px 14px; font-weight: 700; font-size: var(--pd-fs-base); cursor: pointer;
   font-family: var(--pd-font); transition: background .12s; white-space: nowrap;
 }
 .il-tab + .il-tab { border-left: 1px solid var(--pd-line); }
@@ -721,7 +721,7 @@ div.il-mom-acrow { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--p
 .il-tab.active { background: var(--pd-red); color: #fff; }
 
 /* ---- Required-field mark (items #20/#22 forms) ---------------------------- */
-.il-req { color: var(--pd-red); font-weight: 600; }
+.il-req { color: var(--pd-red); font-weight: 700; }
 
 /* ---- Item #23: per-action-item Put On Hold / Close workflow + history —
    inline reveal panels, not a modal, matching this app's established
@@ -732,7 +732,7 @@ div.il-mom-acrow { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--p
   display: flex; flex-direction: column; gap: 8px;
 }
 .il-workflow-panel label {
-  font-size: var(--pd-fs-xs); font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
+  font-size: var(--pd-fs-xs); font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
   color: var(--pd-muted); margin-bottom: -2px;
 }
 .il-workflow-acts { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
@@ -743,7 +743,7 @@ div.il-mom-acrow { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--p
 /* ⚠️ min-width:0 — a flex item's default `min-width:auto` resolves to its content's
    intrinsic width, so an unbroken run of characters in the action label cannot shrink
    and pushes the timestamp out of the card. */
-.il-history-action { font-weight: 600; font-size: var(--pd-fs-sm); color: var(--pd-ink); min-width: 0; overflow-wrap: anywhere; }
+.il-history-action { font-weight: 700; font-size: var(--pd-fs-sm); color: var(--pd-ink); min-width: 0; overflow-wrap: anywhere; }
 .il-history-when { font-size: var(--pd-fs-xs); color: var(--pd-muted); }
 /* ⚠️⚠️ `white-space: pre-wrap` DOES NOT BREAK AN UNBROKEN RUN OF CHARACTERS. It was
    already here and the note still overflowed — MEASURED at 797px of content in a 396px
@@ -830,7 +830,7 @@ div.il-mom-acrow { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--p
   cursor: pointer;
 }
 .il-mom-mgrouphead:hover { background: var(--pd-red-light); }
-.il-mom-mgroupt { font-size: var(--pd-fs-base); font-weight: 600; }
+.il-mom-mgroupt { font-size: var(--pd-fs-base); font-weight: 700; }
 .il-mom-mgroupm { font-size: var(--pd-fs-xs); color: var(--pd-muted); }
 .il-mom-mgrouptbl { width: 100%; font-size: var(--pd-fs-sm); }
 .il-mom-mgrouptbl tr[data-openmom] { cursor: pointer; }
@@ -851,7 +851,7 @@ div.il-mom-acrow { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--p
 }
 .il-mom-schedrow:hover { border-color: var(--pd-red); }
 .il-mom-schedrow.active { border-color: var(--pd-red); background: var(--pd-red-light); }
-.il-mom-schedrow-title { font-weight: 600; font-size: var(--pd-fs-base); color: var(--pd-ink); }
+.il-mom-schedrow-title { font-weight: 700; font-size: var(--pd-fs-base); color: var(--pd-ink); }
 .il-mom-schedrow-meta, .il-mom-schedrow-next { font-size: var(--pd-fs-xs); color: var(--pd-muted); }
 .il-mom-schedright-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
 .il-mom-schedright-acts { display: flex; gap: 6px; flex: none; }
@@ -897,7 +897,7 @@ div.il-mom-acrow { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--p
 /* ITEM 1 — the per-minute activity link. The chip carries the id and (once
    resolved) the activity name; the button beside it opens the shared picker. */
 .il-mi-actchip { max-width: 100%; }
-.il-mi-actchip code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.il-mi-actchip code { font-family: var(--pd-mono); }
 .il-mi-actchip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px; }
 .il-mi-actclear { background: none; border: 0; cursor: pointer; color: var(--pd-muted); font-size: var(--pd-fs-base); line-height: 1; padding: 2px 4px; }
 .il-mi-actclear:hover { color: var(--pd-red); }
@@ -905,14 +905,14 @@ div.il-mom-acrow { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--p
 /* ITEM 7 — the history is always on screen now, so it needs its own quiet
    heading; without one it reads as loose list items hanging off the card. */
 .il-mi-histlab {
-  display: block; font-size: var(--pd-fs-micro); font-weight: 600; letter-spacing: .05em;
+  display: block; font-size: var(--pd-fs-micro); font-weight: 700; letter-spacing: .05em;
   text-transform: uppercase; color: var(--pd-muted); margin-bottom: 6px;
 }
 /* The field-by-field before → after, mirroring the Issues register's own. */
 .il-history-diff { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 /* ⚠️ This prints BOTH sides of a before → after, so one long value overflows twice. */
 .il-history-diff li { font-size: var(--pd-fs-sm); color: var(--pd-ink); overflow-wrap: anywhere; }
-.il-history-diff strong { font-weight: 600; color: var(--pd-muted); }
+.il-history-diff strong { font-weight: 700; color: var(--pd-muted); }
 .il-history-diff em { color: var(--pd-muted); font-style: normal; }
 
 /* ITEM 4 — the Get-from-issue modal's tick list. A row already on the agenda,
@@ -933,4 +933,4 @@ div.il-mom-acrow { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--p
    inline <b>/<strong> the JS emits follow, so emphasis still reads as emphasis
    without the whole screen shouting. Scoped to this module's own root so it
    cannot reach the shared shell. */
-#il-mom-view b, #il-mom-view strong { font-weight: 600; }
+#il-mom-view b, #il-mom-view strong { font-weight: 700; }

@@ -8,7 +8,14 @@
    dashboard stays on-brand and consistent.
    ========================================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap');
+/* ⚠️ THE WEIGHT LIST MIRRORS THE BRANDBOOK'S GOTHAM CUTS, AND 600 IS DELIBERATELY ABSENT.
+   Brandbook 2026 p.29 names Thin / Regular / Italic / Medium / Bold / Black — there is no
+   Gotham Semibold, so a `font-weight: 600` maps to no cut of the primary face at all. The app
+   carried 262 of them until 2026-09-10; they are now 700, and the ten that were the LIGHT half
+   of a deliberate 600-vs-700 pair are 500. Requesting 600 here would re-download a face nothing
+   uses and quietly invite the next 600 back in.
+   400 Regular · 500 Medium · 700 Bold · 800 Black — and those are the only four the app uses. */
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,400;0,500;0,700;0,800;1,400&display=swap');
 
 :root {
   /* Brand palette */
@@ -33,6 +40,50 @@
      measures 5.84 light / 6.14 dark. Same trap, same fix, as the contracts
      `claim` mark (2026-08-25) and the issues aging value (2026-08-28). */
   --pd-danger-text: #C42127;
+  /* ⚠️⚠️ STATUS SURFACES — a tint / border / text TRIPLE per status, and the
+     reason they exist is that --pd-ok and --pd-warn CANNOT BE TEXT COLOURS.
+     Measured 2026-09-10 against the card surfaces (#FFFFFF light, #2B2C2B dark):
+
+         --pd-ok   #1f8f4e on white = 4.12:1   ← under AA
+         --pd-warn #C77700 on white = 3.46:1   ← well under AA
+
+     and `.pd-pill-ok` / `.pd-pill-warn` below painted their label in exactly
+     those two. So the shared status pill — the component every module was
+     supposed to reuse — was itself below AA, which is a large part of why NINE
+     modules hand-rolled their own green/amber/red instead. Fixing the token and
+     the component together is what makes reuse the easy path.
+
+     The -text values are NOT invented. They are the ones the modules already
+     converged on by hand (#12693a in contracts-claims / material-submittal /
+     cash-flow, #8A5300 in project-schedule), so migrating a module moves it
+     TOWARD the rest of the app rather than into a new look — the same rule the
+     type scale above follows. Measured on card, then on the .12 tint:
+
+         ok    #12693A  6.76 card / 5.85 tint  |  dark #34D27B  7.11 / 5.16
+         warn  #8A5300  6.33 card / 5.55 tint  |  dark #E0A008  6.14 / 4.57
+         bad   #C42127  5.84 card / 4.79 tint  |  dark #FF8A80  6.14 / 5.13
+
+     Every one clears AA on BOTH surfaces in BOTH themes.
+     ⚠️ --pd-bad-text is deliberately the SAME pair as --pd-danger-text and not a
+     second copy of it: `bad` is a status, `danger` is a destructive ACTION, and
+     they are free to diverge later. They agree today because the measurement
+     says so, not by coincidence.
+     ⚠️ The tints are rgba, not opaque hex, ON PURPOSE — an rgba tint composites
+     over whatever card it lands on, so one value is correct in both themes and a
+     module cannot get a white pill on a dark card by forgetting an override. */
+  --pd-ok-bg:   rgba(31,143,78,.12);   --pd-ok-line:   rgba(31,143,78,.28);   --pd-ok-text:   #12693A;
+  --pd-warn-bg: rgba(199,119,0,.12);   --pd-warn-line: rgba(199,119,0,.28);   --pd-warn-text: #8A5300;
+  --pd-bad-bg:  rgba(196,33,39,.12);   --pd-bad-line:  rgba(196,33,39,.28);   --pd-bad-text:  #C42127;
+  /* ⚠️ INFO is a FOURTH status, and it is here because the app already had it —
+     measured 2026-09-10: 24 blue declarations across five files in FOUR different
+     spellings (#2F6FBF ×11, #2f6fed ×5, #2563EB ×6, #1d4ed8 ×1). That is the
+     "each module was built by a different person" tell, in one hue. It marks the
+     neutral-informational states this app actually has — a linked/skill/spot row,
+     a planned-not-actual mark — which are not ok, warn or bad.
+     -text is #1D4ED8, one of the four already in use: 6.70 card / 5.66 tint light,
+     #93C5FD 7.77 / 5.48 dark. ⚠️ #2f6fed measured 3.84 on its own tint and was the
+     spelling nearest to failing, which is the argument for one token over four. */
+  --pd-info-bg: rgba(37,99,235,.12);   --pd-info-line: rgba(37,99,235,.28);   --pd-info-text: #1D4ED8;
   /* Type + shape */
   --pd-font: 'Gotham', 'Montserrat', 'Segoe UI', system-ui, -apple-system, sans-serif;
   /* Brandbook 2026 names Gotham the PRIMARY face and Avenir Next Condensed the
@@ -46,6 +97,24 @@
      entry is the primary stack so a machine with none of them degrades to the
      normal face rather than to a browser default serif. */
   --pd-font-cond: 'Avenir Next Condensed', 'Roboto Condensed', 'Segoe UI Semibold', var(--pd-font);
+  /* ⚠️⚠️ THE MONOSPACE FAMILY, AND IT IS A REAL RENDERING BUG ON WINDOWS, not a tidy-up.
+     Measured 2026-09-10: 12 hand-written monospace stacks across 7 files, in FIVE spellings —
+     and they do not render the same. Five of them are
+         ui-monospace, SFMono-Regular, Menlo, monospace
+     which names an Apple system font, an Apple font and a generic: **there is no Windows font
+     in that list at all**, so on Windows it falls through to the browser's default monospace,
+     while the stacks that name Consolas get Consolas. Two different faces, same app, same
+     screen — the Activity ID in the Meetings chip against the one in the Contracts table.
+     ⚠️ This token is NOT new. Contracts & Claims defined it correctly in its own `:root`,
+     under a comment warning that "a second definition is exactly how the two drift apart
+     again" — which was right, and which a module file cannot enforce, because module.css only
+     loads on its own page. Any other module writing var(--pd-mono) got nothing. Promoted here,
+     unchanged, so the warning is finally enforceable. "Liberation Mono" carries Linux. */
+  --pd-mono: ui-monospace, SFMono-Regular, 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
+  /* Brandbook 2026 p.29 names Calibri the DOCUMENT font — the face for things that are read as
+     a document rather than as the app. That is exactly what the print/export stylesheets emit,
+     and they were on Arial. Arial stays as the fallback for a machine without Calibri. */
+  --pd-font-doc: Calibri, 'Segoe UI', Arial, Helvetica, sans-serif;
 
   /* ⚠️ TYPE SCALE — EIGHT RUNGS, AND THEY ARE THE WHOLE SET.
      Measured 2026-09-08 before this block existed: **29 distinct font-size
@@ -87,7 +156,7 @@
      of the inherited size) are computed from this one number, so it is a
      foundation and not a choice a component gets to make.
      ⚠️ It has its own token BECAUSE the 2026-09-08 normalisation pass initially
-     folded `body { font-size: 14px }` into --pd-fs-md and made the ENTIRE app 7%
+     folded `body { font-size: var(--pd-fs-body) }` into --pd-fs-md and made the ENTIRE app 7%
      larger in one line -- measured live on the probe page: body computed 15px and
      a bare <h2> in a card went from 21px to 22.5px. A base and a heading rung
      that happen to be near each other are still different jobs. */
@@ -110,6 +179,39 @@
      which turned the whole panel near-white. Caught in a dark-mode measurement.
      A surface never borrows a text token. */
   --pd-sidebar-bg: #231F20;
+
+  /* ⚠️⚠️ Z-INDEX — THE BODY-LEVEL LAYERS, AND THE ORDER IS A BEHAVIOUR, NOT A PREFERENCE.
+     Measured 2026-09-10: **26 distinct z-index values, 0 to 9999**, with four escape-hatch
+     numbers (999, 1000, 9000, 9999) that show layering was settled by escalation rather than
+     design. The bug that came out of it is real and was live:
+
+       .ps-loading / .mp-loading / .eq-loading   z-index: 9999   (above the toast)
+       .pr-loading / .sc-loading                 z-index:  999   (below the toast)
+
+     All five are the SAME component — the full-page busy veil — and all five are direct
+     `body` children with `position: fixed`, so those numbers compete head-on with the toast
+     (1000) and the modal overlay (900). Established with an ancestor-chain parse, not by
+     reading the numbers: a z-index only competes inside its own stacking context.
+     The consequence: **in three modules a toast was painted BEHIND the loading veil.** A
+     toast is how this app reports that a load FAILED, so the message the planner most needs
+     is the one that was hidden, and only in some modules.
+
+     ⚠️ The order below is fixed by what each layer is FOR:
+       modal   — a dialog over the page
+       escape  — a body-level menu that must clear the modal it was opened from
+       loading — a page-wide veil; it deliberately covers the modal
+       toast   — ALWAYS on top. It reports what the user has to see, including the error
+                 that ended the loading, so nothing may ever cover it.
+
+     ⚠️ Only the BODY-LEVEL layers are tokenised. The in-page ones (topbar 20, dropdowns
+     30/40, sidebar 50/70, scrim 60) are inside stacking contexts where their numbers are
+     local and mostly meaningless — `.pd-usermenu` carried 9999 while sitting inside a
+     `position:sticky; z-index:20` topbar, so it could never rise above 20 no matter what it
+     asked for. Renumbering those is a separate change with its own verification. */
+  --pd-z-modal:   900;
+  --pd-z-escape:  920;
+  --pd-z-loading: 950;
+  --pd-z-toast:  1000;
 }
 
 * { box-sizing: border-box; }
@@ -309,7 +411,7 @@ a:hover { text-decoration: underline; }
 .pd-topbar h1 { font-size: var(--pd-fs-md); margin: 0; font-weight: 700; letter-spacing: -.01em; }
 .pd-topbar-mark { height: 26px; width: auto; display: block; object-fit: contain; flex-shrink: 0; }  /* PRC .topbar-logo */
 #user-bar { display: flex; align-items: center; gap: 10px; margin-left: auto; }
-.pd-userbar-name { font-weight: 600; }
+.pd-userbar-name { font-weight: 700; }
 .pd-userbar-role {
   font-size: var(--pd-fs-xs); text-transform: uppercase; letter-spacing: .04em;
   background: var(--pd-bg); color: var(--pd-muted); padding: 2px 8px; border-radius: 999px;
@@ -330,12 +432,12 @@ a:hover { text-decoration: underline; }
 .pd-avatar:hover { background: var(--pd-red-dark); }
 .pd-usermenu {
   display: none; position: absolute; right: 0; top: 46px; width: 224px; z-index: 9999;
-  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0,0,0,.18); overflow: hidden;
+  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md);
+  box-shadow: var(--pd-shadow-lg); overflow: hidden;
 }
 .pd-usermenu.open { display: block; }
 .pd-usermenu-head { padding: 14px 16px; border-bottom: 1px solid var(--pd-line); }
-.pd-usermenu-name { font-size: var(--pd-fs-base); font-weight: 600; color: var(--pd-ink); }
+.pd-usermenu-name { font-size: var(--pd-fs-base); font-weight: 700; color: var(--pd-ink); }
 .pd-usermenu-role { font-size: var(--pd-fs-xs); color: var(--pd-muted); margin-top: 2px; text-transform: capitalize; }
 /* System destinations (Projects / My Work / Admin). These live in the account
    menu because it is the only chrome present on every page — see the note in
@@ -350,7 +452,7 @@ a:hover { text-decoration: underline; }
 .pd-usermenu-link svg { flex: none; opacity: .7; }
 .pd-usermenu-signout {
   display: flex; align-items: center; gap: 8px; width: 100%; padding: 12px 16px;
-  font-size: var(--pd-fs-base); font-weight: 600; font-family: inherit; color: var(--pd-danger-text);
+  font-size: var(--pd-fs-base); font-weight: 700; font-family: inherit; color: var(--pd-danger-text);
   background: none; border: none; cursor: pointer; text-align: left;
 }
 .pd-usermenu-signout:hover { background: var(--pd-bg); }
@@ -412,7 +514,7 @@ a:hover { text-decoration: underline; }
 }
 .pd-module-body { margin-top: auto; }
 .pd-module-title { font-weight: 700; font-size: var(--pd-fs-md); color: var(--pd-ink); margin-bottom: 3px; line-height: 1.3; }
-.pd-module-sub { color: var(--pd-red); font-size: var(--pd-fs-xs); font-weight: 600; }
+.pd-module-sub { color: var(--pd-red); font-size: var(--pd-fs-xs); font-weight: 700; }
 .pd-module-card.disabled .pd-module-sub { color: var(--pd-muted); font-weight: 500; }
 .pd-badge-soon {
   font-size: var(--pd-fs-micro); text-transform: uppercase; letter-spacing: .05em;
@@ -461,7 +563,7 @@ a:hover { text-decoration: underline; }
 .pd-btn:hover { background: var(--pd-bg); border-color: var(--pd-red); color: var(--pd-red); text-decoration: none; }
 .pd-btn-primary { background: var(--pd-red); border-color: var(--pd-red); color: #fff; }
 .pd-btn-primary:hover { background: var(--pd-red-dark); border-color: var(--pd-red-dark); color: #fff; }
-.pd-btn-danger { background: transparent; border-color: var(--pd-bad); color: var(--pd-bad); }
+.pd-btn-danger { background: transparent; border-color: var(--pd-bad); color: var(--pd-bad-text); }
 .pd-btn-danger:hover { background: var(--pd-bad); border-color: var(--pd-bad); color: #fff; }
 
 /* ---- Segmented control (`.pd-seg`) ----
@@ -596,8 +698,8 @@ button.pd-psel-btn { height: auto; min-height: 30px; padding-top: 4px; padding-b
 .pd-psel-pop {
   position: absolute; top: calc(100% + 4px); left: 0; z-index: 1000;
   min-width: 320px; max-width: 460px; max-height: 72vh; overflow: auto;
-  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
-  box-shadow: 0 10px 28px rgba(0,0,0,.16); padding: 0;
+  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md);
+  box-shadow: var(--pd-shadow-lg); padding: 0;
 }
 /* Shared nav-tree list body — built by UI.renderNavListInto and reused
    verbatim by three call sites: this popover, the topbar UI.renderSwitcher
@@ -610,13 +712,13 @@ button.pd-psel-btn { height: auto; min-height: 30px; padding-top: 4px; padding-b
 .pd-nt-search input { width: 100%; box-sizing: border-box; padding: 6px 9px; border: 1px solid var(--pd-line); border-radius: 6px; font: inherit; background: var(--pd-bg); color: var(--pd-ink); }
 .pd-nt-search input:focus { outline: 2px solid var(--pd-red); outline-offset: -1px; }
 .pd-nt-portfolio { display: flex; align-items: center; gap: 8px; padding: 10px; cursor: pointer;
-  font-size: var(--pd-fs-base); font-weight: 600; color: var(--pd-ink); border-bottom: 2px solid var(--pd-line); background: var(--pd-bg); }
+  font-size: var(--pd-fs-base); font-weight: 500; color: var(--pd-ink); border-bottom: 2px solid var(--pd-line); background: var(--pd-bg); }
 .pd-nt-portfolio:hover { background: var(--pd-red-light); }
 .pd-nt-portfolio.sel { background: var(--pd-red); color: #fff; font-weight: 700; }
 .pd-nt-portfolio [data-ico], .pd-nt-portfolio svg { color: var(--pd-red); flex: none; }
 .pd-nt-portfolio.sel [data-ico], .pd-nt-portfolio.sel svg { color: #fff; }
 .pd-nt-list { padding: 4px 0; }
-.pd-nt-ghlabel { padding: 9px 10px 4px; font-size: var(--pd-fs-xs); font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: var(--pd-muted); }
+.pd-nt-ghlabel { padding: 9px 10px 4px; font-size: var(--pd-fs-xs); font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--pd-muted); }
 .pd-nt-ghlabel-none { font-style: italic; text-transform: none; }
 .pd-nt-ghkids { padding-bottom: 2px; }
 /* Owner (2026-09-03): each row now carries "CODE — Name" (bold) plus an address/
@@ -662,7 +764,7 @@ button.pd-psel-btn { height: auto; min-height: 30px; padding-top: 4px; padding-b
 .pd-toast {
   position: fixed; bottom: 24px; left: 50%; transform: translate(-50%, 20px);
   background: var(--pd-dark); color: #fff; padding: 11px 18px; border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0,0,0,.2); opacity: 0; transition: all .25s ease; z-index: 1000; font-size: var(--pd-fs-md);
+  box-shadow: 0 8px 24px rgba(0,0,0,.2); opacity: 0; transition: all .25s ease; z-index: var(--pd-z-toast); font-size: var(--pd-fs-md);
 }
 .pd-toast.show { opacity: 1; transform: translate(-50%, 0); }
 .pd-toast-ok { background: var(--pd-ok); }
@@ -671,7 +773,7 @@ button.pd-psel-btn { height: auto; min-height: 30px; padding-top: 4px; padding-b
 
 /* ---- Modal ---- */
 .pd-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45);
-  display: flex; align-items: center; justify-content: center; z-index: 900; padding: 20px; }
+  display: flex; align-items: center; justify-content: center; z-index: var(--pd-z-modal); padding: 20px; }
 .pd-modal { background: var(--pd-card); color: var(--pd-ink); border-radius: 12px; max-width: 520px; width: 100%;
   max-height: 90vh; overflow-y: auto; padding: 22px; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
 /* Header/body/footer sub-structure (used by resource-loading, cash-flow, project-schedule's
@@ -764,7 +866,7 @@ button.pd-psel-btn { height: auto; min-height: 30px; padding-top: 4px; padding-b
   white-space: nowrap; color: var(--pd-muted); background: var(--pd-bg); border: 1px solid var(--pd-line); }
 .pd-autosave-idle { opacity: .7; }
 .pd-autosave-busy { color: var(--pd-red); border-color: var(--pd-red); }
-.pd-autosave-ok { color: #1a7f37; border-color: #1a7f37; }
+.pd-autosave-ok { color: var(--pd-ok-text); border-color: var(--pd-ok-line); }
 .pd-autosave-err { color: var(--pd-red); background: rgba(238,49,36,.08); border-color: var(--pd-red); }
 
 /* ---- Theme toggle button (injected by theme.js) ---- */
@@ -809,6 +911,13 @@ html.pd-dark {
   --pd-red-mid: #6E2A25;
   --pd-ok: #34D27B; --pd-warn: #E0A008; --pd-bad: #EF5350;
   --pd-danger-text: #FF8A80;          /* see the light-mode note: 6.14:1 here */
+  /* Status surfaces — see the measured block in :root. The tints go a little
+     stronger on dark (.16/.32 vs .12/.28) because a 12% tint over #2B2C2B is
+     nearly invisible, where the same 12% over white is already a clear wash. */
+  --pd-ok-bg:   rgba(52,210,123,.16);  --pd-ok-line:   rgba(52,210,123,.32);  --pd-ok-text:   #34D27B;
+  --pd-warn-bg: rgba(224,160,8,.16);   --pd-warn-line: rgba(224,160,8,.32);   --pd-warn-text: #E0A008;
+  --pd-bad-bg:  rgba(239,83,80,.16);   --pd-bad-line:  rgba(239,83,80,.32);   --pd-bad-text:  #FF8A80;
+  --pd-info-bg: rgba(147,197,253,.16); --pd-info-line: rgba(147,197,253,.32); --pd-info-text: #93C5FD;
   --pd-shadow: 0 1px 3px rgba(0,0,0,.5);
   --pd-shadow-md: 0 4px 12px rgba(0,0,0,.55);
   --pd-shadow-lg: 0 8px 24px rgba(0,0,0,.6);
@@ -830,10 +939,15 @@ html.pd-dark .pd-module-card:hover { box-shadow: var(--pd-shadow-md); }
 
 /* status pills */
 .pd-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: var(--pd-fs-xs); font-weight: 500; }
-.pd-pill-ok { background: rgba(31,143,78,.12); color: var(--pd-ok); }
+/* ⚠️ The label is --pd-*-text, NOT --pd-ok / --pd-warn. Those two measure 4.12:1
+   and 3.46:1 on white and were this component's text colour until 2026-09-10 —
+   see the measured note beside the tokens. The tint literals moved to tokens in
+   the same pass so a module can build its own status chip out of the same three
+   values instead of inventing a fourth green. */
+.pd-pill-ok { background: var(--pd-ok-bg); color: var(--pd-ok-text); }
 .pd-pill-muted { background: var(--pd-line); color: var(--pd-muted); }
-.pd-pill-bad { background: rgba(196,33,39,.12); color: var(--pd-bad); }
-.pd-pill-warn { background: rgba(199,119,0,.12); color: var(--pd-warn); }
+.pd-pill-bad { background: var(--pd-bad-bg); color: var(--pd-bad-text); }
+.pd-pill-warn { background: var(--pd-warn-bg); color: var(--pd-warn-text); }
 
 /* Projects list. The group-head pane that used to sit beside it is gone —
    group heads are a toolbar filter now, not a folder column (see A2). */
@@ -861,14 +975,14 @@ html.pd-dark .pd-module-card:hover { box-shadow: var(--pd-shadow-md); }
 .pd-proj-count { color: var(--pd-muted); font-size: var(--pd-fs-base); white-space: nowrap; }
 .pd-viewtoggle { flex: 0 0 auto; display: inline-flex; border: 1px solid var(--pd-line); border-radius: 8px; overflow: hidden; }
 .pd-vt { border: none; background: var(--pd-card); padding: 6px 14px; cursor: pointer; color: var(--pd-muted);
-  font-size: var(--pd-fs-sm); font-weight: 600; }
+  font-size: var(--pd-fs-sm); font-weight: 700; }
 .pd-vt.active { background: var(--pd-red); color: #fff; }
 
 /* add dropdown */
 .pd-add-wrap { position: relative; }
 .pd-add-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; display: none;
-  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: 10px;
-  box-shadow: var(--pd-shadow); min-width: 220px; overflow: hidden; }
+  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md);
+  box-shadow: var(--pd-shadow-lg); min-width: 220px; overflow: hidden; }
 .pd-add-menu.open { display: block; }
 .pd-add-menu button { display: block; width: 100%; text-align: left; border: none; background: none;
   padding: 10px 14px; cursor: pointer; color: var(--pd-ink); font-size: var(--pd-fs-base); }
@@ -958,19 +1072,19 @@ html.pd-dark .pd-module-card:hover { box-shadow: var(--pd-shadow-md); }
 .pd-projsw-txt small:empty { display: none; }
 .pd-projsw-caret { color: var(--pd-muted); }
 .pd-projsw-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 40; display: none;
-  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: 10px;
-  box-shadow: var(--pd-shadow); min-width: 320px; max-height: 60vh; overflow: auto; }
+  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md);
+  box-shadow: var(--pd-shadow-lg); min-width: 320px; max-height: 60vh; overflow: auto; }
 .pd-projsw-menu.open { display: block; }
 /* The list body inside .pd-projsw-menu is the shared .pd-nt-* nav tree (see
    above) mounted into a .pd-nt-mount div, so the switcher's own CSS only
    needs to style the static "All projects" link that sits below it. */
-.pd-projsw-all { display: block; padding: 11px 14px; color: var(--pd-red); font-weight: 600; font-size: var(--pd-fs-base); border-top: 1px solid var(--pd-line); }
+.pd-projsw-all { display: block; padding: 11px 14px; color: var(--pd-red); font-weight: 700; font-size: var(--pd-fs-base); border-top: 1px solid var(--pd-line); }
 .pd-projsw-all:hover { background: var(--pd-bg); }
 
 .pd-tabbar { display: flex; gap: 2px; padding: 0 20px; background: var(--pd-card);
   border-bottom: 1px solid var(--pd-line); }
 .pd-tab { border: none; background: none; padding: 10px 16px; cursor: pointer; font-size: var(--pd-fs-sm);
-  font-weight: 600; color: var(--pd-muted); border-bottom: 2px solid transparent; }
+  font-weight: 700; color: var(--pd-muted); border-bottom: 2px solid transparent; }
 .pd-tab:hover { color: var(--pd-ink); }
 .pd-tab.active { color: var(--pd-red); border-bottom-color: var(--pd-red); }
 
@@ -978,13 +1092,13 @@ html.pd-dark .pd-module-card:hover { box-shadow: var(--pd-shadow-md); }
 .pd-info-card { background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius-lg); padding: 16px; }
 .pd-info-ic { font-size: var(--pd-fs-stat); }
 .pd-info-label { font-size: var(--pd-fs-xs); text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); margin-top: 8px; }
-.pd-info-val { font-size: var(--pd-fs-lg); font-weight: 600; margin-top: 2px; }
+.pd-info-val { font-size: var(--pd-fs-lg); font-weight: 700; margin-top: 2px; }
 .pd-note { margin-top: 16px; padding: 14px 16px; background: var(--pd-bg); border-left: 3px solid var(--pd-red);
   border-radius: 8px; color: var(--pd-muted); font-size: var(--pd-fs-base); }
 
 /* portfolio rollup header (Program / Workspace tabs) */
 .pd-rollup-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
-.pd-rollup-kind { font-size: var(--pd-fs-xs); text-transform: uppercase; letter-spacing: .05em; font-weight: 600;
+.pd-rollup-kind { font-size: var(--pd-fs-xs); text-transform: uppercase; letter-spacing: .05em; font-weight: 700;
   color: var(--pd-red); background: var(--pd-red-light); padding: 3px 10px; border-radius: 999px; }
 .pd-rollup-head h3 { margin: 0; font-size: var(--pd-fs-stat); }
 .pd-rollup-gh { font-size: var(--pd-fs-base); color: var(--pd-muted); font-weight: 500; }
@@ -1297,7 +1411,7 @@ body { overflow-x: clip; }
    rules still load after this file and set the same values, so nothing changes for them. */
 .pd-topbar [class$="-projctx"] > .pd-select {
   max-width: 230px; min-width: 120px; height: 34px;
-  font-weight: 600; font-size: var(--pd-fs-base);
+  font-weight: 700; font-size: var(--pd-fs-base);
   background: transparent; border-color: transparent;
 }
 .pd-topbar [class$="-projctx"] > .pd-select:hover,
@@ -1507,8 +1621,8 @@ body { overflow-x: clip; }
 .pd-tabsdrop-caret { color: var(--pd-muted); flex: none; }
 .pd-tabsdrop-menu {
   position: absolute; top: calc(100% + 4px); left: 0; z-index: 40; display: none;
-  min-width: 220px; background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: 10px;
-  box-shadow: var(--pd-shadow); overflow: hidden;
+  min-width: 220px; background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md);
+  box-shadow: var(--pd-shadow-lg); overflow: hidden;
 }
 .pd-tabsdrop-menu.open { display: block; }
 .pd-tabsdrop-menu button {
@@ -1568,33 +1682,33 @@ body { overflow-x: clip; }
       screens, neither of them titled. */
 .pd-dt-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   padding: 11px 14px; border-bottom: 1px solid var(--pd-line); background: var(--pd-card); }
-.pd-dt-head h3 { margin: 0; font-size: 13px; font-weight: 800; letter-spacing: .02em;
+.pd-dt-head h3 { margin: 0; font-size: var(--pd-fs-base); font-weight: 800; letter-spacing: .02em;
   color: var(--pd-ink); text-transform: none; }
-.pd-dt-count { font-size: 11px; font-weight: 600; color: var(--pd-muted); white-space: nowrap; }
+.pd-dt-count { font-size: var(--pd-fs-xs); font-weight: 700; color: var(--pd-muted); white-space: nowrap; }
 .pd-dt-spacer { flex: 1 1 auto; }
-.pd-dt-head .pd-btn { height: 30px; padding: 0 11px; font-size: 12px; }
+.pd-dt-head .pd-btn { height: 30px; padding: 0 11px; font-size: var(--pd-fs-sm); }
 
 /* Sortable headers — same affordance as the Procurement original, minus its
    inline onclick handler. */
 .pd-table th.pd-sort { cursor: pointer; user-select: none; }
 .pd-table th.pd-sort:hover { color: var(--pd-red); }
-.pd-table th.pd-sort::after { content: "\2195"; opacity: .28; margin-left: 5px; font-size: 10px; }
+.pd-table th.pd-sort::after { content: "\2195"; opacity: .28; margin-left: 5px; font-size: var(--pd-fs-micro); }
 .pd-table th.pd-sort.asc::after  { content: "\2191"; opacity: 1; color: var(--pd-red); }
 .pd-table th.pd-sort.desc::after { content: "\2193"; opacity: 1; color: var(--pd-red); }
 
 /* Group / section rows. */
-.pd-table tr.pd-grp > td { background: var(--pd-bg); font-weight: 800; font-size: 11px;
+.pd-table tr.pd-grp > td { background: var(--pd-bg); font-weight: 800; font-size: var(--pd-fs-xs);
   text-transform: uppercase; letter-spacing: .05em; color: var(--pd-ink);
   border-bottom: 1px solid var(--pd-line); }
 html.pd-dark .pd-table tr.pd-grp > td { background: rgba(255,255,255,.05); }
 .pd-grptog { border: 0; background: none; cursor: pointer; color: var(--pd-muted); font: inherit;
-  font-size: 11px; padding: 0 6px 0 0; }
+  font-size: var(--pd-fs-xs); padding: 0 6px 0 0; }
 .pd-grptog:hover { color: var(--pd-red); }
 .pd-table tr.pd-collapsed { display: none; }
 
 /* Footer — a note or a pager under the rows, inside the same card. */
 .pd-dt-foot { padding: 9px 14px; border-top: 1px solid var(--pd-line); background: var(--pd-card);
-  color: var(--pd-muted); font-size: 11px; display: flex; align-items: center; gap: 10px;
+  color: var(--pd-muted); font-size: var(--pd-fs-xs); display: flex; align-items: center; gap: 10px;
   flex-wrap: wrap; }
 .pd-dt-foot:empty { display: none; }
 @media (max-width: 900px) { .pd-dt-wrap { max-height: none; } }
@@ -1724,7 +1838,7 @@ html.pd-dark .pd-table tr.pd-grp > td { background: rgba(255,255,255,.05); }
   margin-top: 2px; font-size: var(--pd-fs-xs); color: var(--pd-muted); }
 .pd-module-figs .pd-fig b { color: var(--pd-ink); font-size: var(--pd-fs-base); font-weight: 700; margin-right: 3px; }
 /* Amber, not red: an open item is normal work in progress, not an error. */
-.pd-module-figs .pd-fig.warn b { color: var(--pd-warn); }
+.pd-module-figs .pd-fig.warn b { color: var(--pd-warn-text); }
 .pd-fig-when { font-size: var(--pd-fs-xs); }
 .pd-fig-load, .pd-fig-none { font-size: var(--pd-fs-sm); font-style: italic; }
 
@@ -1732,7 +1846,7 @@ html.pd-dark .pd-table tr.pd-grp > td { background: rgba(255,255,255,.05); }
    view used to ignore it entirely and render one flat run of cards, silently
    discarding the grouping the user had just chosen. Same headers, both views. */
 .pd-cardgroup { display: flex; align-items: center; gap: 10px; margin: 20px 0 10px;
-  font-weight: 600; font-size: var(--pd-fs-base); color: var(--pd-ink); }
+  font-weight: 700; font-size: var(--pd-fs-base); color: var(--pd-ink); }
 .pd-cardgroup:first-child { margin-top: 2px; }
 .pd-cardgroup-rule { flex: 1 1 auto; height: 1px; background: var(--pd-line); }
 .pd-cardgroup-count { font-size: var(--pd-fs-xs); font-weight: 500; color: var(--pd-muted);
@@ -1743,7 +1857,7 @@ html.pd-dark .pd-table tr.pd-grp > td { background: rgba(255,255,255,.05); }
 .pd-proj-card { display: flex; flex-direction: column; }
 .pd-proj-card-meta { flex-wrap: wrap; gap: 10px 16px; margin-top: auto; padding-top: 12px; }
 .pd-proj-card-meta > div { min-width: 0; }
-.pd-proj-card-meta > div > b { display: block; font-weight: 600; white-space: nowrap;
+.pd-proj-card-meta > div > b { display: block; font-weight: 700; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis; }
 .pd-proj-card-loc { display: flex; align-items: center; gap: 5px; }
 .pd-proj-card-loc svg { flex: 0 0 auto; }

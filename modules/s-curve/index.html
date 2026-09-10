@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Project S-Curve · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910u7" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910v7" />
   <style>
     /* ---- Uniform module chrome (matches every other module). Keep in sync.
        2026-08-30: modules gained a persistent sidebar (MODULE_CONTRACT.md) —
@@ -22,25 +22,25 @@
     .sc-title-ico { color:var(--pd-red); vertical-align:-3px; margin-right:4px; }
     /* Project context — borderless until hover */
     .sc-projctx { display:flex; align-items:center; min-width:0; flex:0 1 auto; }
-    .sc-project { max-width:260px; min-width:120px; height:34px; font-weight:600; font-size:13px; background:transparent; border-color:transparent; }
+    .sc-project { max-width:260px; min-width:120px; height:34px; font-weight:700; font-size:var(--pd-fs-base); background:transparent; border-color:transparent; }
     .sc-project:hover, .sc-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
     /* Tool cluster beside the profile */
     .sc-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; flex-wrap:wrap; }
-    .sc-topbar-tools .pd-btn { height:34px; width:34px; padding:0; font-size:13px; display:inline-flex; align-items:center; justify-content:center; background:transparent; border-color:transparent; }
+    .sc-topbar-tools .pd-btn { height:34px; width:34px; padding:0; font-size:var(--pd-fs-base); display:inline-flex; align-items:center; justify-content:center; background:transparent; border-color:transparent; }
     .sc-topbar-tools .pd-btn:hover { background:var(--pd-bg); border-color:var(--pd-line); }
     .sc-topbar-tools .pd-btn.is-active { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
     .sc-topbar-tools .pd-btn.sc-tb-labeled { width:auto; padding:0 12px; gap:6px; }
     .sc-tb-sep { width:1px; align-self:stretch; margin:5px 3px; background:var(--pd-line); }
     /* Forecast-finish control lives in the tool cluster */
-    .sc-fc { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--pd-muted); white-space:nowrap; flex:none; }
-    .sc-fc .pd-input { height:34px; width:150px; font-size:13px; }
+    .sc-fc { display:inline-flex; align-items:center; gap:6px; font-size:var(--pd-fs-sm); color:var(--pd-muted); white-space:nowrap; flex:none; }
+    .sc-fc .pd-input { height:34px; width:150px; font-size:var(--pd-fs-base); }
     .sc-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:18px; }
     .sc-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; padding:14px 16px; }
-    .sc-kpi-l { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); margin-bottom:5px; }
-    .sc-kpi-v { font-size:22px; font-weight:700; } .sc-kpi-s { font-size:12px; color:var(--pd-muted); margin-top:2px; }
-    .sc-ok { color:var(--pd-ok); } .sc-bad { color:var(--pd-bad); }
+    .sc-kpi-l { font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); margin-bottom:5px; }
+    .sc-kpi-v { font-size:var(--pd-fs-stat); font-weight:800; } .sc-kpi-s { font-size:var(--pd-fs-sm); color:var(--pd-muted); margin-top:2px; }
+    .sc-ok { color:var(--pd-ok-text); } .sc-bad { color:var(--pd-bad-text); }
     .sc-card { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:16px; margin-bottom:18px; }
-    .sc-card h3 { margin:0 0 12px; font-size:15px; }
+    .sc-card h3 { margin:0 0 12px; font-size:var(--pd-fs-md); }
     .sc-svg { width:100%; height:auto; display:block; }
     .sc-grid { stroke:var(--pd-line); stroke-width:1; }
     .sc-ylab { fill:var(--pd-muted); font-size:11px; text-anchor:end; }
@@ -54,20 +54,20 @@
     /* Weighting switch — what an activity is WORTH on the curve: its duration, or the money the
        Project Schedule's Cost Loading put on it. */
     .sc-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
-    .sc-seg button { border:0; background:var(--pd-card); color:var(--pd-ink); font:inherit; font-size:12px;
-      font-weight:600; padding:0 10px; height:32px; cursor:pointer; }
+    .sc-seg button { border:0; background:var(--pd-card); color:var(--pd-ink); font:inherit; font-size:var(--pd-fs-sm);
+      font-weight:700; padding:0 10px; height:32px; cursor:pointer; }
     .sc-seg button + button { border-left:1px solid var(--pd-line); }
     .sc-seg button:hover { background:var(--pd-bg); }
     .sc-seg button.on { background:var(--pd-red); color:#fff; }
     .sw-forecast { width:18px; height:0; border-top:2px dashed var(--pd-red); }
-    .sc-legend { display:flex; flex-wrap:wrap; gap:18px; margin-top:12px; font-size:12px; color:var(--pd-muted); }
+    .sc-legend { display:flex; flex-wrap:wrap; gap:18px; margin-top:12px; font-size:var(--pd-fs-sm); color:var(--pd-muted); }
     .sc-lg { display:inline-flex; align-items:center; }
     .sw { display:inline-block; width:18px; height:3px; margin-right:6px; }
     .sw-planned { background:var(--pd-dark); } html.pd-dark .sw-planned { background:#c7ccd1; }
     .sw-earned { background:var(--pd-red); } .sw-today { background:var(--pd-red); width:3px; height:12px; }
     .sc-empty { text-align:center; padding:40px; color:var(--pd-muted); }
-    .sc-table { width:100%; border-collapse:collapse; font-size:13px; }
-    .sc-table th { background:var(--pd-bg); padding:8px 12px; text-align:right; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); border-bottom:2px solid var(--pd-line); }
+    .sc-table { width:100%; border-collapse:collapse; font-size:var(--pd-fs-base); }
+    .sc-table th { background:var(--pd-bg); padding:8px 12px; text-align:right; font-size:var(--pd-fs-xs); text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); border-bottom:2px solid var(--pd-line); }
     .sc-table th, .sc-table td { white-space:nowrap; }
     .sc-table th:first-child, .sc-table td:first-child { text-align:left; position:sticky; left:0; z-index:1; font-weight:700; }
     .sc-table td:first-child { background:var(--pd-card); }
@@ -75,8 +75,8 @@
     .sc-table td { padding:7px 12px; border-bottom:1px solid var(--pd-line); text-align:right; }
     .sc-fc-row td { color:var(--pd-red); font-style:italic; }
     .sc-fc-row td:first-child { color:var(--pd-red); }
-    .sc-note { font-size:12px; color:var(--pd-muted); margin-top:8px; }
-    .sc-loading { position:fixed; inset:0; background:rgba(20,20,20,.4); display:flex; align-items:center; justify-content:center; gap:12px; z-index:999; color:#fff; font-weight:600; }
+    .sc-note { font-size:var(--pd-fs-sm); color:var(--pd-muted); margin-top:8px; }
+    .sc-loading { position:fixed; inset:0; background:rgba(20,20,20,.4); display:flex; align-items:center; justify-content:center; gap:12px; z-index:var(--pd-z-loading); color:#fff; font-weight:700; }
     .sc-spin { width:36px; height:36px; border:4px solid rgba(255,255,255,.3); border-top-color:#fff; border-radius:50%; animation:sc-spin .8s linear infinite; }
     @keyframes sc-spin { to { transform:rotate(360deg); } }
     @media (max-width:820px) { .sc-title-txt { display:none; } .sc-fc { font-size:0; } .sc-fc .pd-input { width:130px; } }

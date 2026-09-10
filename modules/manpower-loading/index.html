@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Manpower Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910u7" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910v7" />
   <style>
     /* Uniform module chrome (matches every other module). 2026-08-30: modules
        gained a persistent sidebar (MODULE_CONTRACT.md) — .pd-content no longer
@@ -16,41 +16,40 @@
     .pd-topbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; row-gap:8px; }
     .pd-topbar #user-bar { margin-left:10px; padding-left:10px; border-left:1px solid var(--pd-line); flex:none; }
     .pd-topbar #pd-theme-toggle { width:34px; height:34px; padding:0; margin-left:4px; flex:none; display:inline-flex; align-items:center; justify-content:center; }
-    .mp-title { flex:0 1 auto; min-width:0; display:flex; align-items:center; overflow:hidden; font-size:17px; margin:0; }
+    .mp-title { flex:0 1 auto; min-width:0; display:flex; align-items:center; overflow:hidden; font-size:var(--pd-fs-lg); margin:0; }
     .mp-title .mp-title-txt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .mp-title-ico { color:var(--pd-red); vertical-align:-3px; margin-right:6px; }
     .mp-projctx { display:flex; align-items:center; min-width:0; flex:0 1 auto; }
-    .mp-project { max-width:230px; min-width:120px; height:34px; font-weight:600; font-size:13px; background:transparent; border-color:transparent; }
+    .mp-project { max-width:230px; min-width:120px; height:34px; font-weight:700; font-size:var(--pd-fs-base); background:transparent; border-color:transparent; }
     .mp-project:hover, .mp-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
     .mp-topbar-tools { display:flex; align-items:center; gap:6px; margin-left:auto; flex-wrap:wrap; }
-    .mp-topbar-tools .pd-btn.mp-tb-labeled { height:34px; padding:0 12px; gap:6px; background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
-    .mp-topbar-tools .pd-btn.mp-tb-labeled:hover { filter:brightness(.94); }
+    .mp-topbar-tools .pd-btn.mp-tb-labeled { height:34px; padding:0 12px; gap:6px; }
     .mp-tb-sep { width:1px; align-self:stretch; margin:5px 3px; background:var(--pd-line); }
     @media (max-width:900px) { .mp-title-txt { display:none; } }
 
     .mp-tabs { display:flex; border-bottom:2px solid var(--pd-line); }
-    .mp-tab { padding:8px 16px; cursor:pointer; font-weight:600; font-size:13px; color:var(--pd-muted);
+    .mp-tab { padding:8px 16px; cursor:pointer; font-weight:700; font-size:var(--pd-fs-base); color:var(--pd-muted);
       border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none;
       display:inline-flex; align-items:center; gap:6px; }
     .mp-tab.active { color:var(--pd-red); border-bottom-color:var(--pd-red); }
 
     .mp-card { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius);
       box-shadow:var(--pd-shadow); padding:14px 16px; margin-bottom:16px; }
-    .mp-card > h3 { margin:0 0 10px; font-size:14px; }
+    .mp-card > h3 { margin:0 0 10px; font-size:var(--pd-fs-body); }
     .mp-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:16px; }
     .mp-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; padding:13px 16px; }
-    .mp-kpi-v { font-size:22px; font-weight:800; line-height:1; }
-    .mp-kpi-v.mp-bad { color:var(--pd-bad); }
-    .mp-kpi-v.mp-good { color:var(--pd-ok); }
-    .mp-kpi-l { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); margin-top:6px; }
-    .mp-note { font-size:12px; color:var(--pd-muted); }
-    .mp-warn { font-size:12.5px; color:#8A5300; background:#FFF0D9; border:1px solid #F0D9A8;
+    .mp-kpi-v { font-size:var(--pd-fs-stat); font-weight:800; line-height:1; }
+    .mp-kpi-v.mp-bad { color:var(--pd-bad-text); }
+    .mp-kpi-v.mp-good { color:var(--pd-ok-text); }
+    .mp-kpi-l { font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); margin-top:6px; }
+    .mp-note { font-size:var(--pd-fs-sm); color:var(--pd-muted); }
+    .mp-warn { font-size:var(--pd-fs-sm); color:var(--pd-warn-text); background:var(--pd-warn-bg); border:1px solid var(--pd-warn-line);
       border-radius:8px; padding:9px 12px; margin-bottom:14px; }
     .mp-empty { text-align:center; padding:40px; color:var(--pd-muted); }
 
     .mp-controls { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:14px;
       background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:8px 12px; }
-    .mp-controls .pd-select, .mp-controls .pd-input { height:34px; font-size:13px; max-width:230px; }
+    .mp-controls .pd-select, .mp-controls .pd-input { height:34px; font-size:var(--pd-fs-base); max-width:230px; }
     .mp-filt-ico { color:var(--pd-muted); flex:none; }
     /* The Roster/Portfolio "Find" search box collapses behind the shared
        .pd-filttoggle funnel (UI.wireFilterToggle, ui.js) instead of sitting
@@ -63,10 +62,10 @@
     }
     .mp-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
     .mp-seg button { border:0; background:var(--pd-card); color:var(--pd-ink); padding:6px 13px;
-      font:inherit; font-size:12.5px; font-weight:600; cursor:pointer; }
+      font:inherit; font-size:var(--pd-fs-sm); font-weight:700; cursor:pointer; }
     .mp-seg button + button { border-left:1px solid var(--pd-line); }
     .mp-seg button.active { background:var(--pd-red); color:#fff; }
-    .mp-checks { display:inline-flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:12.5px; }
+    .mp-checks { display:inline-flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:var(--pd-fs-sm); }
     .mp-checks label { display:inline-flex; align-items:center; gap:5px; cursor:pointer; }
     .mp-checks .sw { width:12px; height:12px; border-radius:3px; display:inline-block; border:1px solid rgba(0,0,0,.14); }
 
@@ -79,7 +78,7 @@
        equipment chart hit and measured. */
     .mp-chartwrap { overflow-x:auto; margin-left:-16px; margin-right:-16px; }
     .mp-chart { display:block; }
-    .mp-legend { display:flex; flex-wrap:wrap; gap:16px; margin-top:8px; font-size:12px; color:var(--pd-muted); }
+    .mp-legend { display:flex; flex-wrap:wrap; gap:16px; margin-top:8px; font-size:var(--pd-fs-sm); color:var(--pd-muted); }
     .mp-lg { display:inline-flex; align-items:center; gap:6px; }
     .mp-lg .sw { width:14px; height:14px; border-radius:3px; display:inline-block; border:1px solid rgba(0,0,0,.12); }
     .mp-lg .ln { width:18px; height:0; border-top:2.5px solid currentColor; display:inline-block; }
@@ -92,10 +91,10 @@
        at render time (the table may not be laid out on the first paint). Change one, change
        the other. */
     .mp-mxwrap { overflow:auto; max-height:70vh; }
-    .mp-mx { border-collapse:collapse; font-size:12px; table-layout:fixed; width:max-content; }
+    .mp-mx { border-collapse:collapse; font-size:var(--pd-fs-sm); table-layout:fixed; width:max-content; }
     .mp-mx th, .mp-mx td { padding:5px 0; border-bottom:1px solid var(--pd-line); text-align:center; white-space:nowrap; }
     .mp-mx th:not(.mp-c1):not(.mp-c2), .mp-mx td:not(.mp-c1):not(.mp-c2) { width:48px; min-width:48px; max-width:48px; }
-    .mp-mx thead th { position:sticky; top:0; z-index:2; background:var(--pd-bg); font-size:10.5px;
+    .mp-mx thead th { position:sticky; top:0; z-index:2; background:var(--pd-bg); font-size:var(--pd-fs-xs);
       text-transform:uppercase; letter-spacing:.03em; color:var(--pd-muted); }
     .mp-mx thead tr.mp-mx-yr th { font-weight:800; color:var(--pd-ink); border-bottom:1px solid var(--pd-line); }
     .mp-mx thead tr.mp-mx-mo th { border-bottom:2px solid var(--pd-line); }
@@ -103,20 +102,20 @@
       background:var(--pd-card); font-weight:700; width:190px; min-width:190px; max-width:190px;
       padding-left:9px; padding-right:9px; overflow:hidden; text-overflow:ellipsis; }
     .mp-mx th.mp-c2, .mp-mx td.mp-c2 { position:sticky; left:190px; z-index:1; text-align:left;
-      background:var(--pd-card); font-weight:600; color:var(--pd-muted); width:96px; min-width:96px; max-width:96px;
-      padding-left:9px; padding-right:9px; font-size:11px; }
+      background:var(--pd-card); font-weight:700; color:var(--pd-muted); width:96px; min-width:96px; max-width:96px;
+      padding-left:9px; padding-right:9px; font-size:var(--pd-fs-xs); }
     .mp-mx thead th.mp-c1, .mp-mx thead th.mp-c2 { z-index:3; background:var(--pd-bg); }
     .mp-mx tr.mp-r-actual td:not(.mp-c1):not(.mp-c2) { background:var(--pd-red-light); }
     .mp-mx tr.mp-r-total td { font-weight:800; border-top:2px solid var(--pd-line); }
     .mp-mx tr.mp-r-total td.mp-c1, .mp-mx tr.mp-r-total td.mp-c2 { background:var(--pd-card); }
     .mp-mx tr.mp-r-grp td.mp-c1 { color:var(--pd-ink); }
     .mp-mx td.mp-out { background:var(--pd-bg); color:var(--pd-muted); }
-    .mp-mx td.mp-neg { color:var(--pd-bad); font-weight:700; }
-    .mp-mx td.mp-pos { color:var(--pd-ok); font-weight:700; }
+    .mp-mx td.mp-neg { color:var(--pd-bad-text); font-weight:700; }
+    .mp-mx td.mp-pos { color:var(--pd-ok-text); font-weight:700; }
     .mp-mx .mp-cut { box-shadow:inset 2px 0 0 var(--pd-red), inset -2px 0 0 var(--pd-red); }
     .mp-mx td.mp-edit { cursor:cell; }
     .mp-mx td.mp-edit:hover { outline:2px solid var(--pd-red); outline-offset:-2px; }
-    .mp-mx td.mp-phase { font-size:10.5px; color:var(--pd-muted); overflow:hidden; text-overflow:ellipsis; }
+    .mp-mx td.mp-phase { font-size:var(--pd-fs-xs); color:var(--pd-muted); overflow:hidden; text-overflow:ellipsis; }
     /* A month the contract-duration derivation wrote. Marked, never locked: a planner may
        correct a reported month, and taking the cell over is how they say so — the next derive
        then leaves it alone. Locking it would refuse an edit the data legitimately needs. */
@@ -124,10 +123,10 @@
     .mp-mx td.mp-derived::after { content:''; position:absolute; left:3px; top:3px; width:4px; height:4px;
       border-radius:50%; background:var(--pd-red); opacity:.55; }
     .mp-drift { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-    .mp-dur { display:block; margin-top:6px; font-size:12px; font-weight:700; color:var(--pd-ink); }
+    .mp-dur { display:block; margin-top:6px; font-size:var(--pd-fs-sm); font-weight:700; color:var(--pd-ink); }
     .mp-dur small { display:block; font-weight:500; color:var(--pd-muted); margin-top:2px; }
     .mp-derivebox { border:1px solid var(--pd-line); border-radius:8px; padding:10px 12px; margin-top:4px; }
-    .mp-derivebox ul { margin:6px 0 0; padding-left:18px; font-size:12.5px; color:var(--pd-muted); }
+    .mp-derivebox ul { margin:6px 0 0; padding-left:18px; font-size:var(--pd-fs-sm); color:var(--pd-muted); }
     .mp-linkrow { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
 
     /* ---- Portfolio: curve + people Gantt --------------------------------------------------
@@ -139,21 +138,21 @@
     .mp-pcurvewrap { overflow-x:auto; }
     .mp-pcurve { display:block; }
     .mp-gtwrap { overflow:auto; max-height:66vh; }
-    .mp-gt { border-collapse:collapse; font-size:12px; table-layout:fixed; width:max-content; }
+    .mp-gt { border-collapse:collapse; font-size:var(--pd-fs-sm); table-layout:fixed; width:max-content; }
     .mp-gt th, .mp-gt td { padding:0; border-bottom:1px solid var(--pd-line); text-align:center; white-space:nowrap; }
     .mp-gt th:not(.mp-g1):not(.mp-g2), .mp-gt td:not(.mp-g1):not(.mp-g2) { width:44px; min-width:44px; max-width:44px; }
-    .mp-gt thead th { position:sticky; top:0; z-index:2; background:var(--pd-bg); font-size:10.5px;
+    .mp-gt thead th { position:sticky; top:0; z-index:2; background:var(--pd-bg); font-size:var(--pd-fs-xs);
       font-weight:700; color:var(--pd-muted); padding:5px 0; }
     .mp-gt thead tr.mp-gt-yr th { font-weight:800; color:var(--pd-ink); border-bottom:1px solid var(--pd-line); }
     .mp-gt thead tr.mp-gt-mo th { border-bottom:2px solid var(--pd-line); }
     .mp-gt th.mp-g1, .mp-gt td.mp-g1 { position:sticky; left:0; z-index:1; text-align:left; padding:5px 9px;
       width:210px; min-width:210px; max-width:210px; background:var(--pd-card); overflow:hidden; text-overflow:ellipsis; }
     .mp-gt th.mp-g2, .mp-gt td.mp-g2 { position:sticky; left:210px; z-index:1; text-align:left; padding:5px 8px;
-      width:150px; min-width:150px; max-width:150px; background:var(--pd-card); color:var(--pd-muted); font-size:11px;
+      width:150px; min-width:150px; max-width:150px; background:var(--pd-card); color:var(--pd-muted); font-size:var(--pd-fs-xs);
       overflow:hidden; text-overflow:ellipsis; }
     .mp-gt thead th.mp-g1, .mp-gt thead th.mp-g2 { z-index:3; background:var(--pd-bg); }
     .mp-gt tr.mp-gt-grp td { background:var(--pd-bg); font-weight:800; text-align:left; padding:6px 9px;
-      border-top:2px solid var(--pd-line); font-size:11.5px; }
+      border-top:2px solid var(--pd-line); font-size:var(--pd-fs-xs); }
     .mp-gt td.mp-gt-cell { position:relative; height:26px; }
     .mp-gt .gbar { position:absolute; left:0; right:0; height:11px; top:50%; transform:translateY(-50%); background:#2F6FBF; }
     /* ⚠️ The rounded cap is drawn on the END cells only, so a contract running past the axis stays
@@ -164,59 +163,61 @@
     .mp-gt .gbar.free { background:var(--pd-ok); }
     .mp-gt td.mp-gt-cell.mp-gap { background:var(--pd-red-light); }
     .mp-gt td.mp-gt-cell .gq { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
-      font-size:10px; font-weight:800; color:var(--pd-bad); }
+      font-size:var(--pd-fs-micro); font-weight:800; color:var(--pd-bad-text); }
     .mp-gt td.mp-now { box-shadow:inset 2px 0 0 var(--pd-red), inset -2px 0 0 var(--pd-red); }
-    .mp-gtlegend { display:flex; gap:14px; flex-wrap:wrap; padding:10px 12px; font-size:11.5px; color:var(--pd-muted); }
+    .mp-gtlegend { display:flex; gap:14px; flex-wrap:wrap; padding:10px 12px; font-size:var(--pd-fs-xs); color:var(--pd-muted); }
     .mp-gtlegend .sw { display:inline-block; width:22px; height:9px; border-radius:5px; vertical-align:-1px; margin-right:5px; }
-    .mp-free { font-weight:700; color:var(--pd-ok); }
-    .mp-mx input.mp-cellin { width:56px; height:24px; padding:0 4px; font:inherit; font-size:12px;
+    .mp-free { font-weight:700; color:var(--pd-ok-text); }
+    .mp-mx input.mp-cellin { width:56px; height:24px; padding:0 4px; font:inherit; font-size:var(--pd-fs-sm);
       text-align:center; border:1px solid var(--pd-red); border-radius:4px; background:var(--pd-card); color:var(--pd-ink); }
     .mp-mx input.mp-cellin.wide { width:80px; text-align:left; }
-    .mp-mx td.mp-cost { font-size:11px; }
+    .mp-mx td.mp-cost { font-size:var(--pd-fs-xs); }
 
     /* ---- Tables (register / roster / portfolio) ------------------------------------------ */
-    .mp-table { width:100%; border-collapse:collapse; font-size:13px; }
-    .mp-table th { background:var(--pd-bg); padding:9px 12px; text-align:left; font-size:11px; font-weight:700;
+    .mp-table { width:100%; border-collapse:collapse; font-size:var(--pd-fs-base); }
+    .mp-table th { background:var(--pd-bg); padding:9px 12px; text-align:left; font-size:var(--pd-fs-xs); font-weight:700;
       text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); border-bottom:2px solid var(--pd-line); white-space:nowrap; }
     .mp-table th.num, .mp-table td.num { text-align:right; }
     .mp-table td { padding:8px 12px; border-bottom:1px solid var(--pd-line); vertical-align:top; }
     .mp-table tr:hover td { background:var(--pd-bg); }
-    .mp-table tr.mp-grp td { background:var(--pd-bg); font-weight:800; font-size:11.5px;
+    .mp-table tr.mp-grp td { background:var(--pd-bg); font-weight:800; font-size:var(--pd-fs-xs);
       text-transform:uppercase; letter-spacing:.04em; color:var(--pd-ink); }
-    .mp-badge { font-size:11px; font-weight:600; padding:1px 8px; border-radius:999px; background:var(--pd-bg); display:inline-block; }
-    .mp-badge.mp-skill { background:#EAF2FF; color:#2F6FBF; }
-    /* ⚠️ NOT var(--pd-red) on var(--pd-red-light). That pairing measures 3.60:1 — the very
-       number the equipment module's picked-icon button was fixed for — and this badge carries
-       11px text, which needs 4.5:1. Darkened to 6.4:1. */
-    .mp-badge.mp-vac { background:var(--pd-red-light); color:#A81F17; }
-    .mp-badge.mp-fill { background:#E7F7EE; color:#1B7F4B; }
-    /* Subcontractors — a third category badge, distinct from the skilled-trade blue. */
-    .mp-badge.mp-subcon { background:#F3EAFB; color:#6B2FA8; }
-    /* ⚠️ The dark rules MUST restate the text colour, not only the tint. Darkening the
-       background while leaving the light theme's ink measured 2.98:1 (skilled) and 2.86:1
-       (filled) on an 11px badge — under the 4.5:1 that size needs. Same defect the equipment
-       module's picked-icon button had at 3.60:1. Measured after: 6.7:1 and 8.1:1. */
-    html.pd-dark .mp-badge.mp-skill { background:#16273D; color:#7FB0F0; }
-    html.pd-dark .mp-badge.mp-fill { background:#12301F; color:#6FD79B; }
-    html.pd-dark .mp-badge.mp-vac { color:#FF9A93; }
-    html.pd-dark .mp-badge.mp-subcon { background:#2A1B3D; color:#C79EF0; }
-    .mp-linktag { font-size:11px; font-weight:600; padding:1px 8px; border-radius:999px;
+    .mp-badge { font-size:var(--pd-fs-xs); font-weight:700; padding:1px 8px; border-radius:999px; background:var(--pd-bg); display:inline-block; }
+    /* ⚠️ THREE OF THESE FOUR BADGES ARE NOW SHARED TOKENS, and the reason is that this block
+       used to be a private four-colour palette with its own dark half — eight declarations
+       maintained here to say ok / warn-adjacent / bad / other. The measurements that produced
+       them were right and are not lost: they are why --pd-*-text exists at all (see the token
+       block in dashboard.css, which records the same finding app-wide on 2026-09-10).
+       ⚠️ The old note here — NOT var(--pd-red) on var(--pd-red-light), which measures 3.60:1 —
+       still holds and is now enforced by the token: --pd-bad-text on --pd-bad-bg measures
+       4.79:1 light and 5.13:1 dark, clearing the 4.5:1 an 11px badge needs in both themes. */
+    .mp-badge.mp-skill { background:var(--pd-info-bg); color:var(--pd-info-text); }
+    .mp-badge.mp-vac   { background:var(--pd-bad-bg);  color:var(--pd-bad-text); }
+    .mp-badge.mp-fill  { background:var(--pd-ok-bg);   color:var(--pd-ok-text); }
+    /* ⚠️ Subcontractor stays MODULE-LOCAL and keeps its own pair, deliberately. It is the only
+       purple in the app (measured: 2 declarations, this rule and its dark twin), so promoting
+       it would put a token in the shared file with exactly one caller — and folding it into
+       --pd-info would make subcontractor and skilled-trade the same badge, which is the one
+       distinction this row exists to draw. Measured: 8.09:1 light, 7.13:1 dark. */
+    .mp-badge.mp-subcon { background:rgba(107,47,168,.12); color:#6B2FA8; }
+    html.pd-dark .mp-badge.mp-subcon { background:rgba(208,169,245,.16); color:#D0A9F5; }
+    .mp-linktag { font-size:var(--pd-fs-xs); font-weight:700; padding:1px 8px; border-radius:999px;
       background:var(--pd-bg); color:var(--pd-muted); display:inline-block; }
 
     /* ---- Table of Organization ------------------------------------------------------------ */
-    .mp-org-dept-hdr { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.04em;
+    .mp-org-dept-hdr { font-size:var(--pd-fs-xs); font-weight:800; text-transform:uppercase; letter-spacing:.04em;
       color:var(--pd-muted); margin:14px 0 4px; }
     .mp-org-box { display:flex; align-items:center; gap:10px; padding:7px 10px; margin:3px 0;
       border:1px solid var(--pd-line); border-left:4px solid var(--pd-line); border-radius:6px;
-      background:var(--pd-card); font-size:12.5px; }
+      background:var(--pd-card); font-size:var(--pd-fs-sm); }
     .mp-org-box.mp-org-crit { border-left-color:var(--pd-bad); }
     .mp-org-box.mp-org-warn { border-left-color:var(--pd-warn); }
     .mp-org-box.mp-org-ok   { border-left-color:var(--pd-ok); }
-    .mp-org-title { font-weight:600; flex:1; min-width:0; }
-    .mp-org-dept { color:var(--pd-muted); font-size:11px; flex:none; }
+    .mp-org-title { font-weight:700; flex:1; min-width:0; }
+    .mp-org-dept { color:var(--pd-muted); font-size:var(--pd-fs-xs); flex:none; }
     .mp-org-fig { font-weight:700; flex:none; min-width:70px; text-align:right; }
     .mp-actions { display:flex; gap:5px; }
-    .mp-btn-sm { padding:3px 9px; font-size:11px; border-radius:5px; border:1px solid var(--pd-line);
+    .mp-btn-sm { padding:3px 9px; font-size:var(--pd-fs-xs); border-radius:5px; border:1px solid var(--pd-line);
       background:var(--pd-card); color:var(--pd-ink); cursor:pointer; }
     .mp-btn-sm:hover { border-color:var(--pd-red); color:var(--pd-red); }
     .mp-dot { width:9px; height:9px; border-radius:50%; display:inline-block; margin-right:6px; vertical-align:-1px; }
@@ -225,29 +226,29 @@
     .mp-bar { position:relative; height:8px; border-radius:5px; background:var(--pd-line); overflow:hidden; min-width:70px; }
     .mp-bar > i { position:absolute; left:0; top:0; bottom:0; border-radius:5px; }
     .mp-sev { font-weight:800; }
-    .mp-sev.crit { color:var(--pd-bad); }
-    .mp-sev.warn { color:var(--pd-warn); }
-    .mp-sev.ok   { color:var(--pd-ok); }
+    .mp-sev.crit { color:var(--pd-bad-text); }
+    .mp-sev.warn { color:var(--pd-warn-text); }
+    .mp-sev.ok   { color:var(--pd-ok-text); }
 
     /* Modal form */
     .mp-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px 16px; align-content:start; }
     .mp-form-full { grid-column:1 / -1; }
-    .mp-form-sec { grid-column:1 / -1; font-size:11px; font-weight:700; text-transform:uppercase;
+    .mp-form-sec { grid-column:1 / -1; font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase;
       letter-spacing:.05em; color:var(--pd-red); margin:12px 0 -2px; padding-top:10px; border-top:1px solid var(--pd-line); }
-    .mp-mon-tbl { width:100%; border-collapse:collapse; font-size:12.5px; }
-    .mp-mon-tbl th { text-align:left; font-size:10.5px; text-transform:uppercase; color:var(--pd-muted);
+    .mp-mon-tbl { width:100%; border-collapse:collapse; font-size:var(--pd-fs-sm); }
+    .mp-mon-tbl th { text-align:left; font-size:var(--pd-fs-xs); text-transform:uppercase; color:var(--pd-muted);
       padding:6px 8px; border-bottom:2px solid var(--pd-line); position:sticky; top:0; background:var(--pd-card); }
     .mp-mon-tbl td { padding:4px 8px; border-bottom:1px solid var(--pd-line); }
-    .mp-mon-tbl input { width:72px; height:28px; padding:0 6px; font:inherit; font-size:12.5px;
+    .mp-mon-tbl input { width:72px; height:28px; padding:0 6px; font:inherit; font-size:var(--pd-fs-sm);
       border:1px solid var(--pd-line); border-radius:5px; background:var(--pd-card); color:var(--pd-ink); }
     .mp-seedgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:6px 14px;
       max-height:320px; overflow:auto; padding:4px 2px; }
-    .mp-seedgrid label { display:flex; align-items:center; gap:7px; font-size:12.5px; }
-    .mp-seedgrid .dept { grid-column:1 / -1; font-size:10.5px; font-weight:800; text-transform:uppercase;
+    .mp-seedgrid label { display:flex; align-items:center; gap:7px; font-size:var(--pd-fs-sm); }
+    .mp-seedgrid .dept { grid-column:1 / -1; font-size:var(--pd-fs-xs); font-weight:800; text-transform:uppercase;
       letter-spacing:.05em; color:var(--pd-muted); margin-top:8px; }
 
     .mp-loading { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center;
-      justify-content:center; gap:10px; color:#fff; font-size:14px; z-index:9999; }
+      justify-content:center; gap:10px; color:#fff; font-size:var(--pd-fs-body); z-index:var(--pd-z-loading); }
     .mp-spin { width:22px; height:22px; border:3px solid rgba(255,255,255,.35); border-top-color:#fff;
       border-radius:50%; animation:mp-spin .8s linear infinite; }
     @keyframes mp-spin { to { transform:rotate(360deg); } }
