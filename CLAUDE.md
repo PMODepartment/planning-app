@@ -128,6 +128,34 @@ one **obsolete** (it tests the zone grid replaced yesterday). ⚠️ **Not verif
 image upload still has never run against the real bucket.
 
 `MODULE_V` → `20260910s5`. Detail: [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+### 2026-09-10 (s5) — The Portfolio Stakeholders tab stops being read-only
+
+Second half of Stage 4. The tab had a search box and a read-only table over the `stakeholder_map`
+mirror; it now carries a **Directory** view over `stakeholders` itself with **+ Add person**,
+**Assign to projects** and **Merge**. Detail in
+[`modules/portfolio-overview/CLAUDE.md`](modules/portfolio-overview/CLAUDE.md). What reaches beyond
+the page:
+
+- ⚠️⚠️ **`assets/js/stakeholders.js` gains the data operations, and merge REFUSES rather than
+  guessing.** `stakeholder_map_upd` is `(created_by = auth.uid() or is_admin())`, and PostgREST
+  answers an RLS-filtered UPDATE with **200 and zero rows** — the silent-success trap recorded here
+  since `boq_tag_activities`. Re-pointing rows another planner created would report success and
+  change nothing. Every write is counted; a shortfall stops the merge and **deletes nothing**,
+  because deleting the loser then would orphan the rows that did not move.
+- ⚠️ It also refuses when both people are on the **same project** — resolving that means destroying
+  one project's own assessment of them, which is not a merge dialog's decision.
+- ⚠️ The duplicate warning in **+ Add person** fires *while typing*, not after saving, through the
+  same shared matcher the module's save path uses — so the two screens cannot disagree.
+
+**26 new assertions** on the shipped operations against a stub that behaves like RLS, plus the 41
+matcher assertions and **8 contrast builds, all biting**. ⚠️ One contrast did not bite until the
+fixture was fixed (the loser's field was null, so an overwrite build had nothing to overwrite), and
+my first Supabase stub made `.select()` terminal, which threw out of shipped code that was fine.
+Driven in a browser: assign, clean merge, and **both** refusal paths, with the same-project refusal
+writing nothing at all. `stakeholders.js` → `?v=20260910s5`; `MODULE_V` → `20260910s5`.
+⚠️ **Not verified signed in** — the RLS refusal paths are reasoned from the policy text and a stub,
+never observed; the first real merge is the thing most worth watching.
+
 ### 2026-09-10 (s4) — A stakeholder typed twice under two spellings now gets caught, and asks before it links
 
 **New `assets/js/stakeholders.js`.** Owner: *"there will be cases that at one point a stakeholder isn't

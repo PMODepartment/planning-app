@@ -167,6 +167,37 @@
     .po-sc-note { margin-top:8px; font-size:12px; color:var(--pd-muted); line-height:1.5; }
     /* The project legend can be long, so it wraps and sits under the style legend. */
     .po-legend-proj { margin-top:6px; }
+    /* ---- Stakeholder directory (portfolio-level authoring) ---- */
+    .po-dir-nick { color:var(--pd-muted); font-weight:400; }
+    .po-dir-act { text-align:right; white-space:nowrap; }
+    .po-dir-lead { margin:0 0 14px; font-size:13px; line-height:1.5; color:var(--pd-muted); }
+    .po-dir-h { margin:16px 0 8px; font-size:11px; font-weight:700; letter-spacing:.06em;
+      text-transform:uppercase; color:var(--pd-muted); }
+    .po-dir-form { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:10px; }
+    .po-dir-projs { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:4px;
+      max-height:230px; overflow-y:auto; padding:2px; }
+    .po-dir-proj { display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:var(--pd-radius);
+      border:1px solid transparent; font-size:13px; cursor:pointer; }
+    .po-dir-proj:hover { background:var(--pd-bg); }
+    .po-dir-proj input { width:auto; min-height:0; flex:none; }
+    .po-dir-proj.is-on { color:var(--pd-muted); cursor:default; }
+    .po-dir-proj em { margin-left:auto; font-style:normal; font-size:11px; color:var(--pd-muted); }
+    .po-dir-merge { display:flex; flex-direction:column; gap:5px; }
+    .po-dir-mrow { display:flex; align-items:center; gap:9px; padding:7px 9px; font-size:13px;
+      border:1px solid var(--pd-line); border-radius:var(--pd-radius); cursor:pointer; }
+    .po-dir-mrow:hover { background:var(--pd-bg); }
+    .po-dir-mrow input { width:auto; min-height:0; flex:none; }
+    .po-dir-mrow small { color:var(--pd-muted); }
+    .po-dir-mrow em { margin-left:auto; font-style:normal; font-size:11px; color:var(--pd-muted);
+      text-align:right; max-width:180px; }
+    .po-dir-note { display:block; margin-top:8px; font-size:11.5px; color:var(--pd-muted); line-height:1.5; }
+    /* The live duplicate warning while typing a new person. */
+    .po-dir-dup { margin-top:12px; padding:10px 12px; border-radius:var(--pd-radius);
+      border:1px solid var(--pd-line); background:var(--pd-bg); font-size:12.5px; }
+    .po-dir-dup b { display:block; margin-bottom:6px; }
+    .po-dir-dup-row { display:flex; gap:10px; align-items:baseline; padding:2px 0; }
+    .po-dir-dup-row em { margin-left:auto; font-style:normal; font-size:11px; color:var(--pd-muted); }
+    .po-dir-dup small { display:block; margin-top:7px; color:var(--pd-muted); line-height:1.5; }
     /* ⚠ `.po-planned2` / `.po-actual2` are DELETED, not left dead: they styled the two
        polylines of the old single combined curve, and the per-project overlay strokes each
        line inline (colour is per PROJECT now, so it cannot come from a static class). */
@@ -512,9 +543,18 @@
             <span class="po-spacer"></span>
             <div class="po-search"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="po-sh-q" placeholder="Search name, organization…" /></div>
           </div>
+          <div class="pd-seg" id="po-sh-view" role="tablist">
+            <button type="button" class="on" data-shv="directory">Directory</button>
+            <button type="button" data-shv="byproject">By project</button>
+          </div>
+          <button class="pd-btn pd-btn-primary" id="po-sh-add" style="height:36px;">+ Add person</button>
           <button class="pd-btn" id="po-sh-refresh" style="height:36px;"><span data-ico="refresh" data-ico-size="14"></span></button>
         </div>
-        <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Scoped to the <strong>project filter</strong> above (<span id="po-sh-scope">all projects</span>).</p>
+        <!-- ⚠ The scope note belongs to the BY-PROJECT view only. The Directory is the
+             portfolio-level master list: "on N projects" is a fact about the person, not
+             about the current filter, so narrowing it would make one person read 3 here
+             and 1 there. Hidden while the Directory is showing. -->
+        <p id="po-sh-scopenote" style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Scoped to the <strong>project filter</strong> above (<span id="po-sh-scope">all projects</span>).</p>
         <div class="po-kpis2" id="po-sh-kpis"></div>
         <div class="po-card" style="padding:0;overflow:hidden;">
           <div style="overflow-x:auto;"><table class="po-table" id="po-sh-table"></table></div>
@@ -591,7 +631,7 @@
 <script src="../../assets/js/ui.js?v=20260909s"></script>
 <!-- Shared stakeholder directory: identity matching + find-or-create, used by
      BOTH this page and the Stakeholder Map module. Not hand-copied into each. -->
-<script src="../../assets/js/stakeholders.js?v=20260910s4"></script>
+<script src="../../assets/js/stakeholders.js?v=20260910s5"></script>
 <script src="../../assets/js/icons.js?v=20260909ui"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
@@ -1250,6 +1290,284 @@
       UI.toast('Could not load schedules: ' + (e.message || e), 'error');
       chartHost.innerHTML = '<div class="po-empty">Load failed.</div>';
     }
+  }
+
+  // ================= Stakeholder DIRECTORY (portfolio-level authoring) ========
+  // Owner: "By Portfolio Overview and accessing the stakeholder map, planners can
+  // create stakeholders from this and assign it to different projects."
+  // ⚠️ This tab used to be READ-ONLY — a search box and a table over the
+  //    stakeholder_map MIRROR, with no way to create or assign anything. The mirror
+  //    view is kept (it answers "who is on which project"); the Directory view is
+  //    the portfolio-level master list the owner asked for.
+  // ⚠️ Every identity decision goes through the SHARED PDStakeholders, never a copy.
+  var shView = 'directory';          // 'directory' | 'byproject'
+  var dirRows = null, dirUse = {}, dirErr = '', dirSel = null;
+
+  function dirOn() { return !!window.PDStakeholders; }
+
+  async function loadDirectory(force) {
+    if (dirRows && !force) return dirRows;
+    dirErr = '';
+    try {
+      dirRows = await PDb.selectAll('stakeholders', function (q) { return q.order('name'); });
+    } catch (e) {
+      // ⚠️ A missing table is not an error to shout about — it means the migration
+      //    has not been run on this deployment, and the mirror view still works.
+      dirRows = [];
+      dirErr = PDStakeholders.missingTable(e)
+        ? 'The shared directory table is not present on this database yet.'
+        : ((e && e.message) || String(e));
+    }
+    // usage: which projects each person is on. ⚠️ Read from the FULL map, not the
+    // project-filtered one — "on N projects" is a fact about the person, and
+    // narrowing it to the current filter would make the same person read 3 on one
+    // screen and 1 on another.
+    dirUse = {};
+    try {
+      var all = await PDb.selectAll('stakeholder_map', function (q) { return q.not('stakeholder_id', 'is', null); });
+      (all || []).forEach(function (r) {
+        if (!r.stakeholder_id) return;
+        (dirUse[r.stakeholder_id] = dirUse[r.stakeholder_id] || []).push(r.project_id);
+      });
+      Object.keys(dirUse).forEach(function (k) {
+        dirUse[k] = dirUse[k].filter(function (v, i, a) { return v && a.indexOf(v) === i; });
+      });
+    } catch (e) { /* usage is a nicety; the list is the point */ }
+    return dirRows;
+  }
+
+  function dirVisible() {
+    var q = shQuery.trim().toLowerCase();
+    return (dirRows || []).filter(function (p) {
+      if (!q) return true;
+      return ((p.name || '') + ' ' + (p.organization || '') + ' ' + (p.role_title || '') + ' ' +
+              (p.nickname || '') + ' ' + (p.email || '')).toLowerCase().indexOf(q) !== -1;
+    });
+  }
+
+  function dirRender() {
+    var host = document.getElementById('po-sh-table');
+    var list = dirVisible();
+    var multi = list.filter(function (p) { return (dirUse[p.id] || []).length > 1; }).length;
+    document.getElementById('po-sh-kpis').innerHTML =
+      kpi2('People', String((dirRows || []).length)) +
+      kpi2('On more than one project', String(multi)) +
+      kpi2('Showing', String(list.length));
+
+    if (dirErr) {
+      host.innerHTML = '<tbody><tr><td class="po-empty">' + esc(dirErr) + '</td></tr></tbody>';
+      return;
+    }
+    var head = '<thead><tr><th>Name</th><th>Organization</th><th>Role</th><th>Sector</th>' +
+               '<th class="num">Projects</th><th></th></tr></thead>';
+    var body = list.length ? list.map(function (p) {
+      var n = (dirUse[p.id] || []).length;
+      return '<tr class="po-row" data-person="' + esc(p.id) + '">' +
+        '<td><b>' + esc(p.name || '(unnamed)') + '</b>' +
+          (p.nickname ? ' <span class="po-dir-nick">“' + esc(p.nickname) + '”</span>' : '') + '</td>' +
+        '<td>' + esc(p.organization || '—') + '</td>' +
+        '<td>' + esc(p.role_title || '—') + '</td>' +
+        '<td>' + esc(p.category || '—') + '</td>' +
+        // ⚠ 0 is a real, actionable state — a person in the directory on no project —
+        //   so it is shown as 0 rather than an em dash that reads as "unknown".
+        '<td class="num">' + n + '</td>' +
+        '<td class="po-dir-act"><button type="button" class="pd-btn pd-btn-sm" data-open="' + esc(p.id) + '">Open</button></td>' +
+      '</tr>';
+    }).join('') : '<tr><td colspan="6" class="po-empty">' +
+        (dirRows && dirRows.length ? 'No one matches that search.'
+          : 'The directory is empty. Add a person, or open a project’s Stakeholder Map — saving there adds them here.') +
+      '</td></tr>';
+    host.innerHTML = head + '<tbody>' + body + '</tbody>';
+    host.querySelectorAll('[data-open]').forEach(function (b) {
+      b.onclick = function (e) { e.stopPropagation(); openPersonPanel(b.dataset.open); };
+    });
+    host.querySelectorAll('.po-row[data-person]').forEach(function (r) {
+      r.onclick = function () { openPersonPanel(r.dataset.person); };
+    });
+  }
+
+  // ---- add a person ---------------------------------------------------------
+  function openDirAdd() {
+    var m = UI.modal(
+      '<div class="pd-modal-header"><h2>Add a person to the directory</h2></div>' +
+      '<div class="pd-modal-body">' +
+        '<p class="po-dir-lead">This creates a portfolio-level person. Assign them to projects next.</p>' +
+        '<div class="po-dir-form">' +
+          '<div class="pd-field"><label>Name *</label><input class="pd-input" id="po-dp-name"></div>' +
+          '<div class="pd-field"><label>Organization</label><input class="pd-input" id="po-dp-org"></div>' +
+          '<div class="pd-field"><label>Role / position</label><input class="pd-input" id="po-dp-role"></div>' +
+          '<div class="pd-field"><label>Sector</label><select class="pd-select" id="po-dp-cat">' +
+            '<option value="">—</option><option>Government</option><option>Private</option></select></div>' +
+          '<div class="pd-field"><label>Nickname</label><input class="pd-input" id="po-dp-nick"></div>' +
+          '<div class="pd-field"><label>Email</label><input class="pd-input" id="po-dp-email"></div>' +
+        '</div>' +
+        '<div id="po-dp-dup"></div>' +
+      '</div>' +
+      '<div class="pd-modal-foot">' +
+        '<button class="pd-btn" data-act="cancel">Cancel</button>' +
+        '<button class="pd-btn pd-btn-primary" data-act="save">Create person</button>' +
+      '</div>', { noBackdropClose: true });
+
+    function fields() {
+      return { name: (document.getElementById('po-dp-name').value || '').trim(),
+               organization: (document.getElementById('po-dp-org').value || '').trim(),
+               role_title: (document.getElementById('po-dp-role').value || '').trim(),
+               category: document.getElementById('po-dp-cat').value,
+               nickname: (document.getElementById('po-dp-nick').value || '').trim(),
+               email: (document.getElementById('po-dp-email').value || '').trim() };
+    }
+    // ⚠️ The duplicate warning appears WHILE TYPING, not after saving. Telling a
+    //    planner they have made a duplicate once it exists is worse than useless —
+    //    by then somebody has to merge it.
+    function checkDup() {
+      var box = document.getElementById('po-dp-dup');
+      var f = fields();
+      if (!f.name || !dirOn()) { box.innerHTML = ''; return; }
+      var hits = PDStakeholders.matchCandidates(f, dirRows || [], { limit: 3 });
+      if (!hits.length) { box.innerHTML = ''; return; }
+      box.innerHTML = '<div class="po-dir-dup"><b>Already in the directory?</b>' +
+        hits.map(function (h) {
+          return '<div class="po-dir-dup-row"><span>' + esc(h.person.name) +
+            (h.person.organization ? ' · ' + esc(h.person.organization) : '') + '</span>' +
+            '<em>' + esc(h.why) + '</em></div>';
+        }).join('') +
+        '<small>Creating this person anyway will leave two records for the same person. ' +
+        'Cancel and open the existing one instead if it is the same.</small></div>';
+    }
+    ['po-dp-name', 'po-dp-org'].forEach(function (id) {
+      document.getElementById(id).oninput = checkDup;
+    });
+
+    m.el.querySelector('[data-act="cancel"]').onclick = m.close;
+    m.el.querySelector('[data-act="save"]').onclick = async function (e) {
+      var btn = e.currentTarget, f = fields();
+      if (!f.name) { UI.toast('A name is required.', 'warn'); return; }
+      btn.disabled = true; btn.textContent = 'Creating…';
+      try {
+        var r = await PDStakeholders.createPerson(sb(), f, (profile && profile.id) || null);
+        UI.toast(r.existed ? 'That person was already in the directory — opening them.' : 'Person created', 'ok');
+        m.close();
+        await loadDirectory(true); dirRender();
+        if (r.person) openPersonPanel(r.person.id);
+      } catch (err) {
+        UI.toast('Could not create: ' + ((err && err.message) || err), 'error');
+        btn.disabled = false; btn.textContent = 'Create person';
+      }
+    };
+  }
+
+  // ---- one person: assign to projects, or merge ----------------------------
+  function openPersonPanel(id) {
+    var p = (dirRows || []).filter(function (x) { return String(x.id) === String(id); })[0];
+    if (!p) return;
+    var on = dirUse[p.id] || [];
+    var nameById = {}; PROJ.forEach(function (x) { nameById[x.id] = x.name || x.id; });
+
+    var projList = PROJ.map(function (x) {
+      var already = on.indexOf(x.id) !== -1;
+      return '<label class="po-dir-proj' + (already ? ' is-on' : '') + '">' +
+        '<input type="checkbox" value="' + esc(x.id) + '"' + (already ? ' checked disabled' : '') + '>' +
+        '<span>' + esc(nameById[x.id]) + '</span>' +
+        (already ? '<em>already on</em>' : '') + '</label>';
+    }).join('');
+
+    // ⚠ Merge candidates come from the same shared matcher, so the dialog cannot
+    //   propose a different set from the one the save path warns about.
+    var cands = dirOn() ? PDStakeholders.matchCandidates(p, dirRows || [], { limit: 5, excludeIds: [p.id], threshold: 0.6 }) : [];
+
+    var m = UI.modal(
+      '<div class="pd-modal-header"><h2>' + esc(p.name || '(unnamed)') + '</h2></div>' +
+      '<div class="pd-modal-body">' +
+        '<p class="po-dir-lead">' +
+          esc([p.role_title, p.organization].filter(Boolean).join(' · ') || 'No organisation recorded') +
+          ' — on <b>' + on.length + '</b> project' + (on.length === 1 ? '' : 's') + '.</p>' +
+        '<h4 class="po-dir-h">Assign to projects</h4>' +
+        '<div class="po-dir-projs">' + (projList || '<span class="po-empty">No projects available.</span>') + '</div>' +
+        (cands.length
+          ? '<h4 class="po-dir-h">Possible duplicates</h4>' +
+            '<div class="po-dir-merge">' +
+              cands.map(function (h) {
+                return '<label class="po-dir-mrow"><input type="radio" name="po-mrg" value="' + esc(h.person.id) + '">' +
+                  '<span>' + esc(h.person.name) + (h.person.organization ? ' · ' + esc(h.person.organization) : '') +
+                  ' <small>on ' + ((dirUse[h.person.id] || []).length) + ' project(s)</small></span>' +
+                  '<em>' + esc(h.why) + '</em></label>';
+              }).join('') +
+              // ⚠ Direction stated plainly. A merge is not symmetric and the dialog
+              //   must not leave which record survives to be inferred.
+              '<small class="po-dir-note">Merging keeps <b>' + esc(p.name) + '</b> and folds the selected ' +
+              'person into them: their projects move across, blank fields are filled in, and the duplicate ' +
+              'record is deleted. It is refused if both are on the same project — settle that one by hand first.</small>' +
+            '</div>'
+          : '') +
+      '</div>' +
+      '<div class="pd-modal-foot">' +
+        '<button class="pd-btn" data-act="close">Close</button>' +
+        (cands.length ? '<button class="pd-btn" data-act="merge">Merge selected into this person</button>' : '') +
+        '<button class="pd-btn pd-btn-primary" data-act="assign">Assign to ticked projects</button>' +
+      '</div>', { noBackdropClose: true });
+
+    m.el.querySelector('[data-act="close"]').onclick = m.close;
+
+    m.el.querySelector('[data-act="assign"]').onclick = async function (e) {
+      var btn = e.currentTarget;
+      var picked = [].filter.call(m.el.querySelectorAll('.po-dir-projs input:checked:not(:disabled)'),
+                                  function (i) { return true; }).map(function (i) { return i.value; });
+      if (!picked.length) { UI.toast('Tick at least one project.', 'warn'); return; }
+      btn.disabled = true; btn.textContent = 'Assigning…';
+      try {
+        var r = await PDStakeholders.assignToProjects(sb(), p, picked, (profile && profile.id) || null, on);
+        // ⚠ Report the real number. `stakeholder_map_ins` requires can_access_project,
+        //   so a project the planner cannot write to must not be counted as done.
+        if (r.short) UI.toast('Added to ' + r.inserted + ' project(s); ' + r.short + ' were refused — check your access.', 'warn');
+        else UI.toast('Added to ' + r.inserted + ' project(s).', 'ok');
+        m.close();
+        shLoadedIds = null;
+        await loadDirectory(true); dirRender();
+      } catch (err) {
+        UI.toast('Could not assign: ' + ((err && err.message) || err), 'error');
+        btn.disabled = false; btn.textContent = 'Assign to ticked projects';
+      }
+    };
+
+    var mb = m.el.querySelector('[data-act="merge"]');
+    if (mb) mb.onclick = async function (e) {
+      var sel = m.el.querySelector('input[name="po-mrg"]:checked');
+      if (!sel) { UI.toast('Pick the duplicate to fold in.', 'warn'); return; }
+      var loser = (dirRows || []).filter(function (x) { return String(x.id) === sel.value; })[0];
+      if (!loser) return;
+      if (!confirm('Fold "' + (loser.name || '') + '" into "' + (p.name || '') + '"?\n\n' +
+                   'Their projects move across and the duplicate record is deleted. This cannot be undone here.')) return;
+      var btn = e.currentTarget; btn.disabled = true; btn.textContent = 'Merging…';
+      try {
+        var r = await PDStakeholders.mergePeople(sb(), p, loser, dirUse);
+        if (r.ok) {
+          UI.toast('Merged. ' + r.repointed + ' project link(s) moved' +
+                   (r.filled.length ? ', ' + r.filled.length + ' field(s) filled in.' : '.'), 'ok');
+          m.close(); shLoadedIds = null;
+          await loadDirectory(true); dirRender();
+          return;
+        }
+        // ⚠ Every refusal names WHAT stopped it and what to do — none of them are
+        //   reported as a generic failure, and none is rounded up to success.
+        var msg = r.reason === 'both-on-project'
+            ? 'Both are on ' + r.projects.map(function (x) { return nameById[x] || x; }).join(', ') +
+              '. Remove one of them from that project first, then merge.'
+          : r.reason === 'partial-repoint'
+            ? 'Only ' + r.repointed + ' of ' + r.expected + ' project links could be moved — the rest belong to ' +
+              'other planners, and only their owner or an admin can move them. Nothing was deleted.'
+          : r.reason === 'delete-refused'
+            ? 'The records were merged, but deleting the duplicate needs a planner or admin role.'
+          : r.reason === 'winner-update-refused'
+            ? 'The directory refused the update — you may not have write access.'
+          : 'Merge did not complete.';
+        UI.toast(msg, 'warn');
+        btn.disabled = false; btn.textContent = 'Merge selected into this person';
+        shLoadedIds = null; await loadDirectory(true); dirRender();
+      } catch (err) {
+        UI.toast('Merge failed: ' + ((err && err.message) || err), 'error');
+        btn.disabled = false; btn.textContent = 'Merge selected into this person';
+      }
+    };
   }
 
   // ================= Portfolio Cash Flow (cross-project) =================
@@ -2145,6 +2463,17 @@
     return (i && f && window.MCCRCM && MCCRCM.stkApproach) ? (MCCRCM.stkApproach(i, f) || '') : '';
   }
   async function loadStakeholders(force) {
+    // ⚠ The Directory does not depend on the project filter, so it is loaded and
+    //   rendered on its own path rather than being squeezed through the scoped one.
+    document.getElementById('po-sh-scopenote').style.display = shView === 'directory' ? 'none' : '';
+    document.getElementById('po-sh-add').hidden = shView !== 'directory';
+    if (shView === 'directory') {
+      var host = document.getElementById('po-sh-table');
+      if (!dirRows || force) host.innerHTML = '<tbody><tr><td class="po-empty">Loading the directory\u2026</td></tr></tbody>';
+      await loadDirectory(force);
+      dirRender();
+      return;
+    }
     var ids = scopedProjectIds();
     if (!force && shLoadedIds && shLoadedIds.join(',') === ids.join(',')) return;
     document.getElementById('po-sh-scope').textContent = scopeLabel(ids);
@@ -2536,7 +2865,22 @@
     document.getElementById('po-rk-q').oninput = function (e) { rkQuery = e.target.value; rkRender(); };
     UI.wireFilterToggle(document.getElementById('po-rk-filttoggle'), document.getElementById('po-rk-fields'));
     document.getElementById('po-sh-refresh').onclick = function () { loadStakeholders(true); };
-    document.getElementById('po-sh-q').oninput = function (e) { shQuery = e.target.value; shRender(); };
+    // ⚠ One search box drives both views, so it must dispatch on the current view
+    //   rather than always calling the mirror renderer.
+    document.getElementById('po-sh-q').oninput = function (e) {
+      shQuery = e.target.value;
+      if (shView === 'directory') dirRender(); else shRender();
+    };
+    document.getElementById('po-sh-add').onclick = openDirAdd;
+    document.querySelectorAll('#po-sh-view [data-shv]').forEach(function (b) {
+      b.onclick = function () {
+        shView = b.dataset.shv;
+        document.querySelectorAll('#po-sh-view [data-shv]').forEach(function (x) {
+          x.classList.toggle('on', x === b);
+        });
+        loadStakeholders(false);
+      };
+    });
     UI.wireFilterToggle(document.getElementById('po-sh-filttoggle'), document.getElementById('po-sh-fields'));
     document.getElementById('po-is-refresh').onclick = function () { loadIssues(true); };
     document.getElementById('po-is-status').onchange = function (e) { isStatus = e.target.value; isRender(); };
