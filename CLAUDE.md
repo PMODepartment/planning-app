@@ -95,6 +95,53 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-10 (z3) — The Schedule Builder seeds its activities from the project's own BOQ
+
+Owner: *"let's do the schedule builder seeding from the high-level BOQ."* The last of the three
+hand-offs, and the one that had nothing. Detail, the two pre-existing defects it exposed and the
+layout defect measurement caught:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md). What reaches beyond the
+module:
+
+- **`+ From BOQ`** in the Activities step's holding pane loads only the class codes this project's
+  **current** BOQ revisions carry, reading `boq_revisions` + `boq_class_map` + `boq_items` under the
+  caller's own RLS and writing nothing. It fills the same list `+ Library` does, so ticking and `←`
+  are the accept step already there — ⚠️ deliberately not a second propose→preview→apply modal, since
+  the holding list is the preview and ticking is the acceptance.
+- ⚠️ The mapping is the **exact inverse of Contracts & Claims' `addAuthoredLines`** — `desc_l3` →
+  activity name, `desc_l2` → the Construction Library grouping, Finance trade → builder group. The
+  two directions have to agree on the string or a round trip renames everything.
+- ⚠️⚠️ **`parseTrade` recognised three of Finance's seven trade values — 458 of 702 chart codes would
+  have landed in Others.** `'Structural Works'`, `'Architectural Works'`, `'MEPF Works'` and
+  `'Allied Services Works'` all returned null. It also meant this module could not read back the
+  `work_type` labels it writes itself, so pasting a Trade column out of the schedule into this grid
+  silently cleared four of eight trades. Both fixed by naming the vocabularies.
+- ⚠️⚠️ **And the `+ Library` list cannot produce a valid class code at all.** `CLASS_CODE_DB` is
+  Finance's **Level-2 group** chart with the leading zeros stripped — 197 entries, 43 of which match
+  an L2 group only after zero-padding, and **zero** of which are valid Level-3 codes. The push writes
+  `class_code = a.code`, so every library-seeded activity carries a code that resolves to nothing and
+  the BOQ allocator can never gate on it. **Not fixed here** (padding makes them correct L2 codes and
+  still not L3 — a different, larger decision); **reported on screen** instead, beside the button
+  whose codes do resolve.
+- **That is the payoff and it closes this morning's loop:** a BOQ-seeded activity arrives already
+  carrying a resolvable Finance L3 code, so the four-rung matcher shipped in Contracts & Claims at
+  `z1` matches it with no manual tagging step at all.
+
+⚠️ **A correction to the 2026-09-08 (a) §4 audit table**, which lists *"detailed schedule → detailed
+BOQ: ❌ nothing"*. That has not been true since 2026-09-07h. With this commit **all three of the
+owner's hand-offs exist**; the middle one (tagging) has since August.
+
+**56 assertions, 0 failing**, sliced out of the shipped file with the pre-change revision executed as
+the contrast. ⚠️ A real layout defect caught by measuring: a second button in the `nowrap` header
+shredded both labels (header 36 → 59px at the pane's 320px default, 81px with the label on **three**
+lines at its 180px minimum). Fixed with nowrap + a wrapping header + a shorter label; the resting
+state is back to one row at 36px, no overflow at any width, both themes.
+⚠️ **Not verified signed in** — the loader's three reads have never run against a real BOQ.
+
+`MODULE_V` → `20260910z3`, re-derived from the remote's `z2` **after** rebasing onto it — that commit
+touched the same 44k-line file and the two sets of edits auto-merged, checked afterwards by asserting
+both sides are present.
+
 ### The camera survives the scrubber, both compare panes turn together, and the per-zone question is answered (2026-09-10) — ethanrobles10
 
 Owner: *"return the progress per zone, aligned with the schedule … whenever the progress bar is

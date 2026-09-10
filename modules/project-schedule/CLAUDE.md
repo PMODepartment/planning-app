@@ -13,6 +13,100 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### The Activities step seeds itself from the project's own BOQ (2026-09-10 z3) — fmlozano
+
+Owner: *"let's do the schedule builder seeding from the high-level BOQ."* The first of the three
+hand-offs in their own process — *"high level BOQ will be the basis → detailed schedule will be
+developed → detailed BOQ will be based on the detailed schedule"* — and the only one with nothing
+built for it. (The third has shipped since 2026-09-07h, as Contracts & Claims' *Add lines from the
+schedule…*; the 2026-09-08 (a) §4 audit table calling it *"❌ nothing"* is stale.)
+
+### It is a second loader, not a new dialog
+`+ From BOQ` sits beside `+ Library` in the holding pane and fills the **same list**, so ticking and
+`←` are the accept step the planner already uses. ⚠️ Deliberately **not** a propose→preview→apply
+modal: the holding list *is* the preview and ticking *is* the acceptance, and a modal doing the same
+job is a second thing to keep in step. It reads three tables and writes none.
+
+⚠️ **Current revisions only.** `boq_class_map` carries `project_id`, so reading by project alone
+sweeps in every superseded revision — a code deleted in rev 02 would come back from rev 01, against
+the whole point of supersession. A project may hold several BOQ documents (one per trade package),
+so it is a list of current revisions, not one id.
+⚠️ **One entry per CODE, not per line**, and headings and `exclusion_note` lines are skipped — the
+same rule Cost Loading's `boqDerive` applies, for the same reason: a heading is layout and an
+exclusion is a positive statement that the work is somebody else's scope.
+⚠️ The mapping is the **exact inverse of `addAuthoredLines`** — `desc_l3` → activity name, `desc_l2`
+→ the Construction Library's L2 grouping, the Finance trade → the builder group. The two directions
+must agree on the string or a round trip renames everything.
+
+### ⚠️⚠️ parseTrade recognised THREE of Finance's SEVEN trade values
+Measured against the migration that assigns them, not read: `'Structural Works'`,
+`'Architectural Works'`, `'MEPF Works'` and `'Allied Services Works'` all returned **null**, because
+the map held the short forms (`'structural'`, `'mepf'`) and the fallback can only match a bare
+GROUPS code. That is **458 of the chart's 702 codes** — they would every one have arrived in Others.
+
+It was self-consistent with this pane's own hint line ("Structural", not "Structural Works"), and it
+had a second consequence nobody had hit yet: `GWORK` — the canonical labels this module **writes** to
+`project_schedule.work_type` — could not be read back in, so pasting a Trade column out of the
+schedule and into this grid silently cleared **four of the eight** trades.
+⚠️ Three of eight on the round trip but four of seven on the chart, and the gap is instructive:
+`GWORK`'s ALLIED label is `'Allied Services'` (procurement's wording, per `trade_map`) while
+Finance's own value is `'Allied Services Works'`. The vocabularies overlap unevenly, which is why
+`finTradeGroup` goes through `parseTrade` rather than being a second table.
+
+### ⚠️⚠️ And the `+ Library` list cannot produce a valid class code at all
+`CLASS_CODE_DB` is a hardcoded 197-entry list, and measuring it against the Finance chart shows what
+it actually is: **Finance's LEVEL-2 group chart with the leading zeros stripped.** 154 of 197 match
+an L2 group exactly; the other **43 match only after zero-padding** (`'1050'` vs `'01050'`). **Zero
+of the 197 is a valid Level-3 code**, and `class_codes` is keyed on the padded L3 code.
+
+The push writes `class_code: r.act.code` — so **every activity ever pushed from the library carries
+a class code that resolves to nothing**, `ccIsUnknown` is true for all of them, and the BOQ
+allocator's class-code gate can never match one. A BOQ-seeded code does resolve, so those activities
+arrive **already tagged**. That is the real payoff of the button, and it is what closes the loop to
+the four-rung matcher shipped in Contracts & Claims this morning.
+
+⚠️ **`CLASS_CODE_DB` is NOT fixed here.** Padding it would make its codes correct L2 groups and they
+would still not be L3, so it does not become a valid class code either — the fix is a different,
+larger decision about what that list is for. De-zeroing is also what `docs/boq-and-pmi.md` forbids
+outright (the de-zeroed space is not unique: `015051` Gen Req › Earthmoving collides with `15051`
+Metal Works › Railings). It is **reported on screen instead**, by `offChartCount`, in the step where
+the two lists sit side by side. ⚠️ That count returns **0 while the chart has not loaded** — claiming
+every code is unknown because the lookup table is empty is the `[]`-is-truthy family of false alarm.
+
+### ⚠️ A layout defect found by measuring, not by reading
+Adding a second button to `.sbld-hold-h` — a `nowrap` flex row — **shredded both labels**. Measured
+against the module's own stylesheet in a browser at a real desktop width:
+
+| pane width | before (1 button) | after, unfixed | after, fixed |
+|---|---|---|---|
+| **320px (default), resting** | 36px · one row | 59px, label on 2 lines | **36px · one row** |
+| 320px while codes are ticked | 36 | 59 | 63 · two rows |
+| 180px (drag minimum) | **59 · already two rows** | 81px, label on **3 lines** | 86 |
+
+Fixed with `white-space:nowrap` on the button **plus** `flex-wrap` on the header — nowrap alone would
+have overflowed instead — and a shorter label (`+ From BOQ`), the long form living in the `title`.
+No overflow at any width, in either theme. Same failure the labelled `+ Add meeting` button hit.
+
+⚠️ **Two of my own measurements were wrong before the code was**, both recorded because the mistake
+is reusable: the first probe ran in a **399px-wide hidden pane**, so the phone media query was live
+and every button measured 44px; and counting rows by distinct child `top` values reported 4 rows in a
+36px header, because `align-items:center` gives items of different heights different tops — the
+false positive this log already records for the module-bar audit. Height is the honest measure here.
+
+### Verified
+**56 assertions, 0 failing**, every function sliced out of the shipped file and executed, with the
+pre-change revision run as the contrast (it drops the four trades, and 458 of 702 chart codes). The
+loader runs against a stubbed Supabase covering the heading, the exclusion, an off-chart code, a code
+with no trade, the dedupe against the build, and all three empty/broken cases — which say three
+different things and, on a missing table, name the migration and **do not mark the setup dirty**.
+⚠️ **NOT verified signed in** — the loader's three reads have never run against a real BOQ, and no
+seeded activity has been pushed. That is the first thing to try: build a BOQ, press `+ From BOQ`,
+tick, `←`, Save, push, and check the grid's Class Code column resolves rather than reading unknown.
+
+`MODULE_V` → `20260910z3` (re-derived from the remote's `z2` after rebasing onto it).
+
+---
+
 ### The camera survives the scrubber, both compare panes turn together, and the per-zone question is answered (2026-09-10) — ethanrobles10
 
 Owner: *"Also for the progress, return the progress per zone, aligned with the schedule. In
