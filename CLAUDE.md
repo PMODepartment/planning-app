@@ -96,6 +96,59 @@ developer, plug into one shared shell.
 ## Changelog
 
 
+### 2026-09-10 (w7) — The theme toggle has been missing on every logged-in module page
+
+Found while verifying (w6) on the live site: the console carried
+`NotFoundError: Failed to execute 'insertBefore' on 'Node'` at `theme.js`, on **every** module —
+including ones that commit never touched.
+
+#### ⚠️⚠️ IT IS A DESCENDANT vs DIRECT-CHILD MISMATCH, AND IT ONLY BITES WHEN LOGGED IN
+```js
+var ub = topbar.querySelector('#user-bar');      // DESCENDANT search - finds it however deep
+if (ub) topbar.insertBefore(btn, ub);            // demands a DIRECT CHILD - throws otherwise
+```
+`UI.initModuleTopbar()` moves `#user-bar` down into `.pd-tb-main`. Whether it has done so before
+`theme.js`'s `inject()` runs decides whether this line throws:
+
+- **Logged out** — `AppAuth.requireLogin` redirects, `initModuleTopbar()` never runs, `#user-bar`
+  is still a direct child, no throw. **This is every test I have run all session.**
+- **Logged in with a cached session** — `requireLogin`'s callback resolves in a **microtask**, and
+  microtasks flush *before* the `DOMContentLoaded` **task** that runs `inject()`. So the bar is
+  already restructured, the insert throws, and **the throw kills the rest of `inject()` — the page
+  ends up with no theme toggle at all.**
+
+⚠️ That matches the owner's screenshots exactly: no sun/moon button beside the avatar, on both.
+It is also why my own harnesses never saw it — they render the shell without a session.
+
+#### It is NOT from this session's work
+The offending line is **byte-identical** in the pre-(w4) `theme.js` (`git show aa3d19a~1`) — checked,
+because `theme.js` is a file I edited today and the error surfaced right after that deploy, which
+makes "I broke it" the obvious and wrong conclusion. What changed is that the `?v=` bump finally
+delivered a *fresh* `theme.js` to a browser that had been serving the August bytes since August;
+the bug was always in them.
+
+**Fix:** insert relative to the node itself — `ub.parentNode.insertBefore(btn, ub)` — which is
+correct whether `#user-bar` sits directly in `.pd-topbar` or inside `.pd-tb-main`, and puts the
+toggle beside it either way.
+
+#### Verified by a contrast build
+The crash needs the logged-in ORDER, so the harness forces it: build the topbar, run the real
+`UI.initModuleTopbar()`, *then* try both insertion strategies.
+
+| | old code | fix |
+|---|---|---|
+| `#user-bar` still a direct child? | **false** | — |
+| threw | **NotFoundError** | `null` |
+| toggle in the DOM | **false** | **true** |
+| placed next to `#user-bar` | — | **true** |
+
+- `theme.js` → `?v=20260910w7` across all pages that load it; one version, 0 splits.
+- **42 JS files + 30 inline blocks parse, 0 failures.**
+- ⚠️ **Still not verified signed in** — the ordering is forced in a harness rather than observed on
+  a real login. The owner's next module open is the real confirmation, and the tell is simply
+  whether the sun/moon button is there.
+
+
 ### 2026-09-10 (w6) — Manpower's top bar was on two rows, the footer is renamed, and the rail's collapse stops snapping
 
 Three owner items, one of them a real clipping bug the owner caught in a screenshot.

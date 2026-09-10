@@ -83,7 +83,14 @@
     if (topbar) {
       btn.className = 'pd-theme-toggle';
       var ub = topbar.querySelector('#user-bar');
-      if (ub) topbar.insertBefore(btn, ub); else topbar.appendChild(btn);
+      // ⚠️⚠️ INSERT RELATIVE TO `ub`, NOT TO `topbar` — this threw and cost the theme toggle.
+      // `topbar.querySelector('#user-bar')` is a DESCENDANT search, but `insertBefore` demands a
+      // direct child, and UI.initModuleTopbar() moves #user-bar down into `.pd-tb-main`. With a
+      // CACHED SESSION AppAuth.requireLogin's callback resolves in a microtask — before the
+      // DOMContentLoaded task that runs this — so on a logged-in load initModuleTopbar had
+      // already moved it and this threw NotFoundError, killing the rest of inject() and leaving
+      // the page with NO theme toggle. Invisible when logged out, which is why it survived.
+      if (ub) ub.parentNode.insertBefore(btn, ub); else topbar.appendChild(btn);
     } else {
       btn.className = 'pd-theme-toggle pd-theme-toggle-float';
       document.body.appendChild(btn);
