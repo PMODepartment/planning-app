@@ -95,6 +95,32 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### At Detail 1 the floor plan disappeared; the floor's shape is now its own control (2026-09-10) — jasantos2
+
+Owner: *"how come when clicking level 1 detail, the floor plan size disappears? … can you add an
+option of defining the shapes of the zones AND for the floors, so that way we can distinguish the
+difference between them"* — and *"how come the progress per zone was removed?"*
+
+⚠️⚠️ Detail 1 draws a storey as ONE cell with an empty label, so no zone can match it, and the
+only thing that answered for a whole floor was an explicitly drawn outline — a control that had
+shipped as a swatch at the end of the **zone** palette, where it reads as another zone. A planner
+who traced four zones and no outline got a guessed box the moment they switched to Detail 1. **A
+floor with zones and no outline now takes its shape from those zones**; an explicit outline still
+wins, because a podium slab bigger than the zones on it can only be stated by drawing it.
+
+The two shapes are now two controls: the outline is out of the zone palette and has its own
+**Floor shape** row, which states which of three cases the floor is in (drawn as *n* areas, taken
+from the *n* zone areas traced, or nothing traced yet) and carries the same double duty the zone
+palette has — with an area selected it makes that area the outline, otherwise it loads the brush.
+
+⚠️ On the progress: per-zone was not lost — the suite now pins it (Detail 2, a two-zone storey at
+25% and 75%, builds two blocks filled to 0.138 and 0.413 of the storey height, each from its own
+traced outline; Detail 1 is one block at the floor's own progress). What was missing is that the
+card never SAID which grain it was drawing, and the footer now names it.
+
+**219 assertions across thirteen suites, 0 failing** — the Detail-1 loss is asserted against a
+control: the same plate through the previous revision returns no shape at all.
+
 ### ⚠️⚠️ Every trade was drawn with the first trade's floor plan (2026-09-10) — jasantos2
 
 Owner: *"the defined section for structural is coinciding the defined floor plan and zoning

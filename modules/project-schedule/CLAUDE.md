@@ -13,6 +13,62 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### At Detail 1 the floor plan disappeared, and the floor's shape is now a separate question from its zones' (2026-09-10) — jasantos2
+
+Owner: *"how come the progress per zone was removed? in order to show the progress per floor, the
+user should make the detail to level 1 so the progress will show per level. In addition, how come
+when clicking level 1 detail, the floor plan size disappears? To solve this, in the schedule
+setup, can you add an options of defining the shapes of the zones AND for the floors. so that way
+we can distinguish the difference between them."*
+
+### 1. ⚠️⚠️ At Detail 1 the traced plan vanished, and the reason is a definition
+Detail 1 draws a storey as ONE cell whose label is empty, so no zone can match it. The only thing
+that answered for a whole floor was an explicitly drawn `*floor*` outline — a control that shipped
+this morning as a swatch at the end of the ZONE palette, which is exactly where a planner reads it
+as "another zone". A planner who had traced four zones and no outline got a **guessed box**: the
+floor plan's size disappeared the moment they switched to Detail 1.
+
+**A floor with zones and no outline now takes its shape from those zones.** Nobody should have to
+draw the same shape twice to see it.
+- ⚠️ Every zone polygon, not a union: adjacent traced zones share their edges, and two coincident
+  faces pointing opposite ways are back-face culled, so the extrusion reads as one floor plate
+  without a polygon-boolean library — and a zone traced away from the others still contributes.
+- ⚠️ **The explicit outline still wins.** A podium slab bigger than the zones drawn on it can only
+  be stated by drawing it, and that statement must not be overridden by a derivation.
+
+### 2. The two shapes are now two controls
+Owner: *"so that way we can distinguish the difference between them."* Right — they are different
+in kind, so the outline is **out of the zone palette** and has its own **Floor shape** row, which
+says which of the three states this floor is in: *drawn as n areas*, *taken from the n zone areas
+you traced*, or *nothing traced yet*.
+- ⚠️ The row's swatch carries **the same double duty the zone palette has** — with an area
+  selected it makes THAT area the outline, otherwise it loads the brush. One rule for "what is
+  this area", two places to say it, and no third gesture to learn.
+- ⚠️ **Remove** deletes the outline and says what happens next: the floor's shape goes back to
+  being its zones. It cannot leave the plate empty-but-owned — the same `zpDropIfEmpty` every
+  other deletion in this window goes through.
+
+### 3. Progress per zone: the rule was right and unstated
+I could not reproduce per-zone progress being lost, and the suite now pins it: at **Detail 2** a
+two-zone storey at 25% and 75% builds two blocks filled to 0.138 and 0.413 of the storey height,
+each extruded from its OWN traced outline; at **Detail 1** the same storey is one block filled to
+the floor's own progress. What was missing is that the card never SAID which grain it was drawing
+— and an unstated rule is the same thing as a wrong one for the person reading it. The footer now
+names it: *"One block = one zone, and each fills on its own progress — switch Detail to 1 to read
+a whole storey as a single block"*, and the converse at Detail 1.
+
+### Verified
+**219 assertions across thirteen suites, 0 failing** — 16 new. ⚠️ The Detail-1 loss is asserted
+against a **control**: the same plate (two zones, no outline) through the last revision of this
+file without the change returns **null** — no shape, the box fallback, the bug — and through this
+one returns both zones. ⚠️ Sanity gates: the explicit outline must WIN rather than join the zones,
+an empty plate must still have no shape, the zone palette must not list the outline, and the two
+Details must draw genuinely different things.
+⚠️ **Not clicked in a browser**: the anon key has no grants for this project's data, so the window
+and the model were verified by execution.
+
+---
+
 ### ⚠️⚠️ Every trade was drawn with the FIRST trade's floor plan (2026-09-10) — jasantos2
 
 Owner: *"i think, the defined section for structural is coinciding the defined floor plan and

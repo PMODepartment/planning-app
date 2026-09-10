@@ -15239,9 +15239,21 @@
      floor split into four zones, extruding this four times would stack four identical slabs in
      the same place and call them four different zones. */
   function _vsZpOutlineOf(plate) {
-    if (!plate || !plate.polys) return null;
+    if (!plate || !plate.polys || !plate.polys.length) return null;
     var out = plate.polys.filter(function (q) { return String(q.code || '').trim().toLowerCase() === _VS_ZP_ALL; });
-    return out.length ? out : null;
+    /* ⚠️⚠️ A FLOOR WITH ZONES BUT NO OUTLINE STILL HAS A SHAPE: ITS ZONES, TOGETHER. Owner
+       2026-09-10: *"how come when clicking level 1 detail, the floor plan size disappears?"* —
+       and it did. Detail 1 draws a storey as ONE cell whose label is empty, so no zone matched,
+       the outline was only ever the explicitly drawn `*floor*` areas, and a planner who had
+       traced four zones and no outline got a guessed box. The zones ARE the floor's footprint;
+       nobody should have to draw the same shape twice to see it.
+       ⚠️ Every zone polygon, not a union of them: adjacent traced zones share their edges, and
+       two coincident faces pointing opposite ways are back-face culled — so the extrusion reads
+       as one floor plate without a polygon-boolean library, and a zone traced away from the
+       others still contributes its own piece.
+       ⚠️ The explicit outline still WINS when there is one: a podium floor whose slab is bigger
+       than the zones drawn on it can only be stated by drawing it. */
+    return out.length ? out : plate.polys;
   }
   // The floor label as both sides normalise it. ⚠️ ONE function, used for the level and for the
   // trade, because the keys the builder emits are built with the same rule (zpNormCode).
@@ -16211,8 +16223,20 @@
       ? '<b>Colour = the zone colour</b> you set on the floor plan, not the trade — a zone with no plan ' +
         'keeps its trade colour. '
       : '';
-    return '<p class="ps-vs3-foot">' + cmp + zc + lay +
-      '<b>Each zone fills from its floor upwards</b>: the bright part is done, the dim part above it is what ' +
+    /* ⚠️ WHAT ONE BLOCK IS, at the Detail the planner is actually on. Owner 2026-09-10: *"how
+       come the progress per zone was removed? in order to show the progress per floor, the user
+       should make the detail to level 1"* — the rule was right and unstated, which is the same
+       thing as wrong: at Detail 1 a storey IS one block and its fill is the floor's progress, at
+       Detail 2 and deeper every zone fills on its own. Saying so is cheaper than a planner
+       counting blocks to work out which they are looking at. */
+    var det = (model && model.detail) || 1;
+    var _grain = (det <= 1)
+      ? '<b>One block = one storey</b> at this Detail, so the fill is the whole floor’s progress — ' +
+        'switch <b>Detail</b> to 2 to read it zone by zone. '
+      : '<b>One block = one zone</b>, and each fills on its own progress — switch <b>Detail</b> to 1 to read ' +
+        'a whole storey as a single block. ';
+    return '<p class="ps-vs3-foot">' + cmp + zc + _grain + lay +
+      '<b>Each block fills from its floor upwards</b>: the bright part is done, the dim part above it is what ' +
       'is left. Schematic: the storeys, their order and the grade line are the ' +
       'same as the 2D view. The <b>footprint</b> is the zone count laid out on the plan grid you set ' +
       'above &mdash; the schedule holds no zone outlines or dimensions, so <b>no length or area is ' +
@@ -32914,24 +32938,31 @@
         }
         markDirty();
       }
-      /* Every zone code in play: the floor's own, plus anything already drawn that is not in it,
-         plus the whole-floor outline.
-         ⚠️ THE OUTLINE IS LAST, ALWAYS PRESENT, AND NOT A ZONE. Last because a planner's own
-         zones must keep the positions they have on screen; always because the shape of a floor
-         is a question every floor can answer, zoned or not; not-a-zone because nothing that
-         counts zones — the "not drawn" list, the Plan n/m button, zpCodesOf's callers — should
-         count it as one. */
+      /* Every ZONE code in play: the floor's own, plus anything already drawn that is not in it.
+         ⚠️⚠️ THE FLOOR OUTLINE IS NOT IN THIS LIST ANY MORE. Owner 2026-09-10: *"can you add an
+         option of defining the shapes of the zones AND for the floors, so that way we can
+         distinguish the difference between them."* It was a swatch at the end of the zone
+         palette, which is precisely the place a planner reads as "another zone" — the two things
+         are different in kind, so they now have different controls. The outline lives in its own
+         row (see the Floor outline bar) and is excluded from everything that counts zones. */
       function allCodes() {
         var out = codes.slice();
         zpCodesOf(_zpWin.draft).forEach(function (c) {
           if (!out.some(function (x) { return zpNormCode(x) === zpNormCode(c); })) out.push(c);
         });
-        return out.filter(function (c) { return !zpIsAll(c); }).concat([ZP_ALL]);
+        return out.filter(function (c) { return !zpIsAll(c); });
       }
-      // Drop a preset in the middle of the plate, as the zone the brush carries.
+      // The areas drawn AS the floor's own outline, and the zones' own areas — two questions.
+      function outlinePolys() {
+        return _zpWin.draft.polys.filter(function (q) { return zpIsAll(q.code); });
+      }
+      function zonePolys() {
+        return _zpWin.draft.polys.filter(function (q) { return !zpIsAll(q.code); });
+      }
+      // Drop a preset in the middle of the plate, as the zone — or the outline — the brush carries.
       function addPreset(kind) {
         var W = _zpWin;
-        if (!W.brush) { UI.toast('Pick the zone this shape is first.', 'warn'); return; }
+        if (!W.brush) { UI.toast('Pick the zone this shape is, or draw the floor outline, first.', 'warn'); return; }
         snap();
         var w = ZP_W * 0.34, h = H() * 0.34;
         var pts = zpPreset(kind, w, h);
@@ -33110,7 +33141,7 @@
                 e2(zpLabelOf(c)) + '</button>';
             }).join('') : '') +
             '</span>' +
-            (codes.length ? '' : '<span class="sbld-hint" style="margin:0;">This floor has no zones — draw its <b>outline</b>, or add zones in the step behind.</span>') +
+            (codes.length ? '' : '<span class="sbld-hint" style="margin:0;">This floor has no zones — draw its <b>outline</b> in the row below, or add zones in the step behind.</span>') +
             /* ---- the zone's colour -----------------------------------------------------
                ⚠️ IT SITS IN THIS ROW, not a row of its own, because it is the same question
                the row already asks — which zone is this — answered on the other axis. The
@@ -33129,6 +33160,38 @@
                 (zpColorIsSet(act)
                   ? '<button class="pd-btn" id="zpw-colx" title="Back to the automatic colour for this zone">Auto</button>'
                   : '<span class="sbld-hint" style="margin:0;">automatic</span>');
+            })() +
+          '</div>' +
+
+          /* ---- the FLOOR's own shape, which is not a zone -------------------------------
+             ⚠️⚠️ Owner 2026-09-10: *"how come when clicking level 1 detail, the floor plan size
+             disappears? To solve this … add an option of defining the shapes of the zones AND
+             for the floors, so that way we can distinguish the difference between them."*
+             Both halves are answered here: the outline has its own row rather than a swatch in
+             the zone palette, and when it is not drawn the floor's shape is taken from the zones
+             (see _vsZpOutlineOf) instead of falling back to a guessed box. */
+          '<div class="zpw-bar">' +
+            '<span class="zpw-lbl">Floor shape</span>' +
+            (function () {
+              var _out = outlinePolys(), _zon = zonePolys();
+              /* ⚠️ THE SAME DOUBLE DUTY THE ZONE PALETTE HAS, and the row above says which: with
+                 an area selected this MAKES that area the outline, otherwise it loads the brush.
+                 One rule for "what is this area", two places to say it, no third gesture. */
+              var _on = sel ? zpIsAll(sel.code) : zpIsAll(W.brush);
+              return '<button class="zpw-sw all' + (_on ? ' on' : '') + '" data-zpb="' + e2(ZP_ALL) + '"' +
+                  ' style="--zc:' + zpColor(ZP_ALL) + '" title="' + e2(sel
+                    ? 'Make this area the floor outline rather than a zone'
+                    : 'Draw the floor’s own outline — use it when the slab is bigger than the zones on it, or when the floor has no zones at all') +
+                  '">' + e2(ZP_ALL_LABEL) + '</button>' +
+                (_out.length
+                  ? '<button class="pd-btn" id="zpw-outx" title="Delete the outline. The floor’s shape goes back to being its zones.">Remove</button>' +
+                    '<span class="sbld-hint" style="margin:0;">drawn as <b>' + _out.length + ' area' + (_out.length === 1 ? '' : 's') +
+                      '</b> · this is what the 3D view extrudes when a storey is read as one block (Detail 1)</span>'
+                  : (_zon.length
+                      ? '<span class="sbld-hint" style="margin:0;">taken from the <b>' + _zon.length + ' zone area' + (_zon.length === 1 ? '' : 's') +
+                        '</b> you traced — draw one only if the floor plate is bigger than its zones</span>'
+                      : '<span class="sbld-hint" style="margin:0;">nothing traced yet — draw the outline, or trace the zones and the floor takes their shape</span>')) +
+              '';
             })() +
           '</div>' +
 
@@ -33362,6 +33425,19 @@
           W.sel = null;
           commit(); paint();
           UI.toast('Copied ' + r.plate.polys.length + ' area(s) from ' + r.label + '. They are ordinary shapes now — move or reshape any of them.');
+        };
+        var ox2 = q('zpw-outx');
+        if (ox2) ox2.onclick = function () {
+          var n2 = outlinePolys().length;
+          if (!n2) return;
+          if (!confirm('Delete the floor outline (' + n2 + ' area' + (n2 === 1 ? '' : 's') + ')? The zones stay, and the floor’s shape goes back to being those zones.')) return;
+          snap();
+          W.draft.polys = zonePolys();
+          W.sel = null;
+          if (zpIsAll(W.brush)) W.brush = (allCodes()[0] || ZP_ALL);
+          commit();
+          if (zpDropIfEmpty(W.plateId)) { W.owned = false; W.plateId = null; }
+          paint();
         };
         var mkB = q('zpw-mk');
         if (mkB) mkB.onclick = function () {
