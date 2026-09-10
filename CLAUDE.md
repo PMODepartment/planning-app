@@ -96,6 +96,78 @@ developer, plug into one shared shell.
 ## Changelog
 
 
+### 2026-09-10 (v7) — A toast was painted behind the loading veil in three modules, and z-index gets a scale
+
+First item of the second-pass UI audit — the one the owner asked for *"since much of the UI fixes are
+from my hints"*, i.e. found by looking rather than by being pointed at.
+
+#### ⚠️⚠️ THE BUG: THE SAME COMPONENT SAT AT TWO DIFFERENT LAYERS, AND IT HID ERROR MESSAGES
+Measured across the app: **26 distinct z-index values, 0 to 9999**, including four escape-hatch numbers
+(999, 1000, 9000, 9999) — the signature of layering settled by escalation rather than by design. The
+consequence was not cosmetic:
+
+| | z-index | toast behaviour |
+|---|---|---|
+| `.ps-loading` · `.mp-loading` · `.eq-loading` | **9999** | toast painted **BEHIND** the veil |
+| `.pr-loading` · `.sc-loading` | **999** | toast on top, correctly |
+
+All five are the **same component** — the full-page busy veil — and ⚠️ **all five are direct `body`
+children with `position: fixed`**, established with an ancestor-chain parse rather than by reading the
+numbers, because a z-index only competes inside its own stacking context. So those values go head to
+head with `.pd-toast` (1000) and `.pd-modal-overlay` (900).
+
+⚠️ **A toast is how this app reports that a load FAILED.** So in three of five modules the message the
+planner most needed was the one covered up, and which modules those were came down to nothing but which
+number a developer happened to type.
+
+#### The scale, and why the order is a behaviour rather than a preference
+`--pd-z-modal: 900` · `--pd-z-escape: 920` · `--pd-z-loading: 950` · `--pd-z-toast: 1000`
+
+- **loading is above modal** — a page-wide veil is meant to cover a dialog.
+- **escape** is for a body-level menu that must clear the modal it was opened from
+  (`.sbld-libmenu`, which `document.body.appendChild`s itself and carried **9000**, above the toast).
+- **toast is always top.** Nothing may ever cover it.
+
+⚠️ **Only the BODY-LEVEL layers are tokenised, deliberately.** The in-page ones (topbar 20, dropdowns
+30/40, sidebar 50/70, scrim 60) live inside stacking contexts where their numbers are local and largely
+inert — **`.pd-usermenu` carried `z-index: 9999` while sitting inside a `position:sticky; z-index:20`
+topbar, so it could never rise above 20 no matter what it asked for.** It is left exactly as it is:
+the number is misleading but harmless, and changing the one control that appears on all 29 pages
+without a reason is how the *next* regression happens. Named here instead.
+
+#### Verified by HIT-TESTING, not by reading z-index
+The real question is not what the CSS says, it is which element owns the pixel. So the harness renders
+the modal overlay, that module's own veil and a toast as **body children** (where all three genuinely
+live) against `dashboard.css` + the module's real CSS, then asks `document.elementFromPoint` what is on
+top at the toast's own centre.
+
+**After: all five modules report `top-at-toast = toast`.** modal 900 < veil 950 < toast 1000.
+
+⚠️⚠️ **And the contrast build BITES** — the identical harness built from `git show HEAD:` (the pre-fix
+bytes) reports **`top-at-toast = LOADING VEIL` for project-schedule, manpower-loading and
+equipment-loading**, and `toast` for the other two. That is the reported bug reproduced exactly, which
+is what makes the green run afterwards mean something. A test that cannot fail is not evidence.
+
+- ⚠️ **`node --check` over every inline `<script>` and every `.js` file was run this time** — 42 JS
+  files + 30 inline blocks across 29 pages, **0 failures** (bar the documented progress-photos false
+  positive, a `<script>` inside an HTML comment). That is the check whose absence let the (v6) outage
+  ship, and it is now part of the routine rather than something remembered.
+- Brace balance holds; 0 NUL bytes. `dashboard.css` → `?v=20260910v7` across all 29 pages, `MODULE_V`
+  with it. One version each, 0 splits.
+- ⚠️ **Not verified signed in** — the layering is proved by hit-test against the shipped stylesheets;
+  no real load was made to fail in order to watch a real toast appear over a real veil.
+
+#### Named, not fixed — the rest of the second-pass audit
+- **`.pp-lightbox` is `z-index: 900`, the same layer as `.pd-modal-overlay`.** Ties resolve by DOM
+  order, so this is decided by accident. Not a proven bug, so not touched blind.
+- **57 distinct `box-shadow` recipes** across 69 non-token declarations, including inconsistent focus
+  rings — an accessibility question as much as a visual one.
+- **No spacing scale exists at all:** 924 `gap` declarations in **42 distinct values**. The system has
+  type, colour, radius and shadow tokens and nothing for rhythm.
+- **460 off-scale `border-radius` declarations in 24 values** — though ~165 of those are rung values
+  merely written as literals, which is a no-visual-change cleanup.
+
+
 ### 2026-09-10 (v6) — ⚠️⚠️ HOTFIX: I broke Project Schedule and Cash Flow in production. A quote did it.
 
 Owner, with a screenshot of a dead Schedule: *"Your fix has bugged the schedule module."* Correct, and

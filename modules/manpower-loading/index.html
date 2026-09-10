@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Manpower Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910v5" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910v7" />
   <style>
     /* Uniform module chrome (matches every other module). 2026-08-30: modules
        gained a persistent sidebar (MODULE_CONTRACT.md) — .pd-content no longer
@@ -248,7 +248,7 @@
       letter-spacing:.05em; color:var(--pd-muted); margin-top:8px; }
 
     .mp-loading { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center;
-      justify-content:center; gap:10px; color:#fff; font-size:var(--pd-fs-body); z-index:9999; }
+      justify-content:center; gap:10px; color:#fff; font-size:var(--pd-fs-body); z-index:var(--pd-z-loading); }
     .mp-spin { width:22px; height:22px; border:3px solid rgba(255,255,255,.35); border-top-color:#fff;
       border-radius:50%; animation:mp-spin .8s linear infinite; }
     @keyframes mp-spin { to { transform:rotate(360deg); } }

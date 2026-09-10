@@ -179,6 +179,39 @@
      which turned the whole panel near-white. Caught in a dark-mode measurement.
      A surface never borrows a text token. */
   --pd-sidebar-bg: #231F20;
+
+  /* ⚠️⚠️ Z-INDEX — THE BODY-LEVEL LAYERS, AND THE ORDER IS A BEHAVIOUR, NOT A PREFERENCE.
+     Measured 2026-09-10: **26 distinct z-index values, 0 to 9999**, with four escape-hatch
+     numbers (999, 1000, 9000, 9999) that show layering was settled by escalation rather than
+     design. The bug that came out of it is real and was live:
+
+       .ps-loading / .mp-loading / .eq-loading   z-index: 9999   (above the toast)
+       .pr-loading / .sc-loading                 z-index:  999   (below the toast)
+
+     All five are the SAME component — the full-page busy veil — and all five are direct
+     `body` children with `position: fixed`, so those numbers compete head-on with the toast
+     (1000) and the modal overlay (900). Established with an ancestor-chain parse, not by
+     reading the numbers: a z-index only competes inside its own stacking context.
+     The consequence: **in three modules a toast was painted BEHIND the loading veil.** A
+     toast is how this app reports that a load FAILED, so the message the planner most needs
+     is the one that was hidden, and only in some modules.
+
+     ⚠️ The order below is fixed by what each layer is FOR:
+       modal   — a dialog over the page
+       escape  — a body-level menu that must clear the modal it was opened from
+       loading — a page-wide veil; it deliberately covers the modal
+       toast   — ALWAYS on top. It reports what the user has to see, including the error
+                 that ended the loading, so nothing may ever cover it.
+
+     ⚠️ Only the BODY-LEVEL layers are tokenised. The in-page ones (topbar 20, dropdowns
+     30/40, sidebar 50/70, scrim 60) are inside stacking contexts where their numbers are
+     local and mostly meaningless — `.pd-usermenu` carried 9999 while sitting inside a
+     `position:sticky; z-index:20` topbar, so it could never rise above 20 no matter what it
+     asked for. Renumbering those is a separate change with its own verification. */
+  --pd-z-modal:   900;
+  --pd-z-escape:  920;
+  --pd-z-loading: 950;
+  --pd-z-toast:  1000;
 }
 
 * { box-sizing: border-box; }
@@ -731,7 +764,7 @@ button.pd-psel-btn { height: auto; min-height: 30px; padding-top: 4px; padding-b
 .pd-toast {
   position: fixed; bottom: 24px; left: 50%; transform: translate(-50%, 20px);
   background: var(--pd-dark); color: #fff; padding: 11px 18px; border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0,0,0,.2); opacity: 0; transition: all .25s ease; z-index: 1000; font-size: var(--pd-fs-md);
+  box-shadow: 0 8px 24px rgba(0,0,0,.2); opacity: 0; transition: all .25s ease; z-index: var(--pd-z-toast); font-size: var(--pd-fs-md);
 }
 .pd-toast.show { opacity: 1; transform: translate(-50%, 0); }
 .pd-toast-ok { background: var(--pd-ok); }
@@ -740,7 +773,7 @@ button.pd-psel-btn { height: auto; min-height: 30px; padding-top: 4px; padding-b
 
 /* ---- Modal ---- */
 .pd-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45);
-  display: flex; align-items: center; justify-content: center; z-index: 900; padding: 20px; }
+  display: flex; align-items: center; justify-content: center; z-index: var(--pd-z-modal); padding: 20px; }
 .pd-modal { background: var(--pd-card); color: var(--pd-ink); border-radius: 12px; max-width: 520px; width: 100%;
   max-height: 90vh; overflow-y: auto; padding: 22px; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
 /* Header/body/footer sub-structure (used by resource-loading, cash-flow, project-schedule's

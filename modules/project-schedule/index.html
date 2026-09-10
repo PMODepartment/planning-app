@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910v5" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910v7" />
   <style>
     .ps-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
     .ps-tab { padding:8px 20px; cursor:pointer; font-weight:700; font-size:var(--pd-fs-base); color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
@@ -2534,7 +2534,7 @@
     .ps-ck-pill:hover { background:var(--pd-red-light); border-color:var(--pd-red-mid); }
     /* loading overlay */
     .ps-loading { position:fixed; inset:0; background:rgba(20,20,20,.45); display:flex; flex-direction:column;
-      align-items:center; justify-content:center; gap:14px; z-index:9999; color:#fff; font-weight:700; font-size:var(--pd-fs-body); }
+      align-items:center; justify-content:center; gap:14px; z-index:var(--pd-z-loading); color:#fff; font-weight:700; font-size:var(--pd-fs-body); }
     .ps-spin { width:40px; height:40px; border:4px solid rgba(255,255,255,.3); border-top-color:#fff; border-radius:50%; animation:ps-spin .8s linear infinite; }
     @keyframes ps-spin { to { transform:rotate(360deg); } }
     /* determinate progress bar (import) — shown under the message when a fraction is known */
@@ -2854,7 +2854,7 @@
     .sbld-libtooldel:hover:not(:disabled) { color:var(--pd-red); border-color:var(--pd-red); }
     /* The right-click menu. Lives on document.body (see libMenu), so it needs its own stacking
        context and a z-index above the sticky L1 headings inside the pane. */
-    .sbld-libmenu { position:fixed; z-index:9000; min-width:210px; padding:4px;
+    .sbld-libmenu { position:fixed; z-index:var(--pd-z-escape); min-width:210px; padding:4px;
       background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius-md);
       box-shadow:var(--pd-shadow-lg); font-size:var(--pd-fs-sm); }
     .sbld-libmenui { display:block; width:100%; text-align:left; border:0; background:none;
