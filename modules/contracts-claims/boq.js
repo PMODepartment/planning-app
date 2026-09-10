@@ -895,7 +895,16 @@ window.BOQ = (function () {
       '<div class="boq-subtabs">' + subs.map(function (s) {
         return '<button class="boq-subtab' + (sub === s.key ? ' active' : '') + '" data-sub="' + s.key + '">' + esc(s.label) + '</button>';
       }).join('') + '</div>' +
-      '<span class="boq-spacer"></span>' + revPickerHTML() +
+      '<span class="boq-spacer"></span>' +
+      /* ⚠️ The whole-BOQ run sits in the BAR, not on a tab, because it spans three of them — two
+         passes live on Class Codes and one on Match to schedule, and a control that runs all three
+         belongs to none of them. ⚠️ Writers only, and only once a revision exists: on an empty BOQ
+         there is nothing to match and the button would open a modal reading zero, zero, zero. */
+      (canWrite && REVS.length
+        ? '<button class="pd-btn" id="boq-matchall" title="Code the lines, tag the activities and ' +
+          'allocate the quantities — one preview, nothing written until you confirm">Match to the schedule…</button>'
+        : '') +
+      revPickerHTML() +
       /* ⚠⚠ BUILDING BY HAND IS THE PRIMARY ACT; IMPORT IS THE CONVENIENCE — owner, 2026-09-07:
          *"Let's make sure that the manual add of BOQ is a priority and the import feature is
          only a convenience."* This REVERSES the weighting shipped that morning, which argued
@@ -1000,6 +1009,8 @@ window.BOQ = (function () {
     host.querySelectorAll('[data-sub]').forEach(function (b) {
       b.onclick = function () { sub = b.dataset.sub; render(); };
     });
+    var ma = host.querySelector('#boq-matchall');
+    if (ma) ma.onclick = openMatchAll;
     var rv = host.querySelector('#boq-rev');
     if (rv) rv.onchange = function () { REVID = rv.value; load(); };
     var dv = host.querySelector('#boq-doc');
@@ -3555,6 +3566,45 @@ window.BOQ = (function () {
     return (ACTS || []).filter(function (a) { return a.class_code === code; });
   }
 
+  /* ==========================================================================
+     PASS B's PLAN, at module scope — every code on this revision, matched at once.
+     ==========================================================================
+     ⚠️ Lifted out of the tag dialog so the whole-BOQ run can PROPOSE the same tags without
+     opening it. One planner, two callers: a second copy would let the orchestrator's preview
+     and the dialog's own preview disagree about the same project. It reads only ACTS, the
+     chart and CMAP (through `codesInBoq`), and writes nothing — which is also what makes the
+     dry run below able to overlay state and simulate it. */
+  function planTags() {
+    return codesInBoq().map(function (e) {
+      var c = codeRow(e.code); if (!c) return null;
+      var hits = (ACTS || []).map(function (a) { return { a: a, m: matchAct(a, c) }; })
+        .filter(function (x) { return x.m && x.m.score >= TAG_FLOOR; })
+        /* ⚠️ UNTAGGED ACTIVITIES ONLY. One already carrying THIS code needs nothing, and
+           one carrying ANOTHER must not be moved in bulk — a class code drives the cost
+           roll-up, so retagging forty activities at once is a reconciliation nobody would
+           know to go looking for. Both cases fall out of the same test. */
+        .filter(function (x) { return !x.a.class_code; });
+      return { code: e.code, c: c, hits: hits, lines: e.lines };
+    }).filter(Boolean);
+  }
+
+  /* The write half of pass B. ⚠️ Chunked and shortfall-aware through `tagRpc`, and it
+     REPORTS rather than returns silently — see `reportTagged`. `onStep` drives the caller's
+     own progress label; the loop is identical whichever button started it. */
+  async function applyTagPlan(plan, onStep) {
+    var wrote = 0, wanted = 0, failed = [];
+    for (var i = 0; i < plan.length; i++) {
+      var p = plan[i];
+      if (!p.hits.length) continue;
+      var ids = p.hits.map(function (x) { return x.a.activity_id; });
+      wanted += ids.length;
+      if (onStep) onStep(i + 1, plan.length);
+      try { wrote += await tagRpc(p.code, ids, false); }
+      catch (e) { failed.push(p.code + ': ' + (e.message || e)); }
+    }
+    return { wrote: wrote, wanted: wanted, failed: failed };
+  }
+
   async function openTagActivities() {
     await ensureCodes();
     await ensureActs();
@@ -3580,20 +3630,10 @@ window.BOQ = (function () {
     function curCode() { return codeRow(cur) || { code: cur, desc_l1: '', desc_l2: '', desc_l3: cur }; }
 
     /* Mode B — the per-trade bulk run. One matcher, one RPC, every code at once, with a
-       preview that says how many activities each code would take and how it found them. */
-    function bulkPlan() {
-      return codes.map(function (e) {
-        var c = codeRow(e.code); if (!c) return null;
-        var hits = (ACTS || []).map(function (a) { return { a: a, m: matchAct(a, c) }; })
-          .filter(function (x) { return x.m && x.m.score >= TAG_FLOOR; })
-          /* ⚠️ UNTAGGED ACTIVITIES ONLY. One already carrying THIS code needs nothing, and
-             one carrying ANOTHER must not be moved in bulk — a class code drives the cost
-             roll-up, so retagging forty activities at once is a reconciliation nobody would
-             know to go looking for. Both cases fall out of the same test. */
-          .filter(function (x) { return !x.a.class_code; });
-        return { code: e.code, c: c, hits: hits, lines: e.lines };
-      }).filter(Boolean);
-    }
+       preview that says how many activities each code would take and how it found them.
+       ⚠️ The PLAN is `planTags()` at module scope — this dialog and the whole-BOQ run
+       ("Match to the schedule…") must propose the same tags or the preview lies. */
+    function bulkPlan() { return planTags(); }
 
     function paintBulk() {
       var plan = bulkPlan();
@@ -3629,21 +3669,12 @@ window.BOQ = (function () {
 
     async function applyBulk(plan, btn) {
       btn.disabled = true;
-      var wrote = 0, wanted = 0, failed = [];
-      for (var i = 0; i < plan.length; i++) {
-        var p = plan[i];
-        if (!p.hits.length) continue;
-        var ids = p.hits.map(function (x) { return x.a.activity_id; });
-        wanted += ids.length;
-        btn.textContent = 'Applying ' + (i + 1) + ' of ' + plan.length + '…';
-        try {
-          var n = await tagRpc(p.code, ids, false);
-          wrote += n;
-        } catch (e) { failed.push(p.code + ': ' + (e.message || e)); }
-      }
+      var res = await applyTagPlan(plan, function (i, n) {
+        btn.textContent = 'Applying ' + i + ' of ' + n + '…';
+      });
       await refreshActs();
       m.close();
-      reportTagged(wrote, wanted, failed);
+      reportTagged(res.wrote, res.wanted, res.failed);
       render();
     }
 
@@ -4022,10 +4053,34 @@ window.BOQ = (function () {
      ⚠️ Stored as source='bulk_accepted', so a later audit can tell a considered
      mapping from a bulk accept. That distinction is the whole reason the column
      exists. */
+  /* ==========================================================================
+     PASS A's PLAN — which unmapped lines currently carry a code proposal.
+     ==========================================================================
+     ⚠️ Lifted for the same reason as `planTags`: the whole-BOQ run has to propose exactly what
+     this dialog proposes. `minConf` is applied by the caller, not here, because this dialog
+     lets the planner move the floor and watch the count change. */
+  function planCodeMap() {
+    return ITEMS.filter(function (r) { return mappable(r) && !CMAP[r.id]; })
+      .map(function (r) { return { r: r, s: suggestFor(r) }; }).filter(function (x) { return x.s; });
+  }
+
+  /* The write half of pass A. ⚠️ `source:'bulk_accepted'` is the whole reason that column
+     exists — a later audit must be able to tell a bulk accept from a considered mapping. */
+  async function applyCodeMap(take) {
+    var rowsIns = take.map(function (x) {
+      return { project_id: pid, revision_id: REVID, boq_item_id: x.r.id, class_code: x.s.code,
+               source: 'bulk_accepted', confidence: x.s.confidence, created_by: UID };
+    });
+    for (var i = 0; i < rowsIns.length; i += 300) {
+      var res = await sb().from(T_MAP).upsert(rowsIns.slice(i, i + 300), { onConflict: 'boq_item_id' });
+      if (res.error) return { ok: false, msg: res.error.message, wrote: 0 };
+    }
+    return { ok: true, wrote: rowsIns.length };
+  }
+
   async function acceptAllProposals() {
     await ensureSugg();
-    var cands = ITEMS.filter(function (r) { return mappable(r) && !CMAP[r.id]; })
-      .map(function (r) { return { r: r, s: suggestFor(r) }; }).filter(function (x) { return x.s; });
+    var cands = planCodeMap();
     if (!cands.length) { UI.toast('No proposals to accept — run “Propose codes” first.', 'error'); return; }
     var m = UI.modal('<h2 style="margin-top:0;">Accept proposals</h2>' +
       '<p class="cc-hint">' + cands.length + ' unmapped line(s) currently carry a proposal. Accept only those at or above:</p>' +
@@ -4044,15 +4099,9 @@ window.BOQ = (function () {
     m.el.querySelector('#aa-go').onclick = async function () {
       var min = Number(sel2.value), take = cands.filter(function (x) { return x.s.confidence >= min; });
       m.close();
-      var rowsIns = take.map(function (x) {
-        return { project_id: pid, revision_id: REVID, boq_item_id: x.r.id, class_code: x.s.code,
-                 source: 'bulk_accepted', confidence: x.s.confidence, created_by: UID };
-      });
-      for (var i = 0; i < rowsIns.length; i += 300) {
-        var res = await sb().from(T_MAP).upsert(rowsIns.slice(i, i + 300), { onConflict: 'boq_item_id' });
-        if (res.error) { UI.toast(res.error.message, 'error'); return; }
-      }
-      UI.toast('Mapped ' + rowsIns.length + ' line(s).', 'success');
+      var res = await applyCodeMap(take);
+      if (!res.ok) { UI.toast(res.msg, 'error'); return; }
+      UI.toast('Mapped ' + res.wrote + ' line(s).', 'success');
       await load();
     };
   }
@@ -4684,26 +4733,84 @@ window.BOQ = (function () {
   /* Bulk propose. ⚠️ Still propose → preview → APPLY: it shows what it would
      write and how many lines it cannot resolve, and writes nothing until the
      planner accepts. */
-  async function bulkPropose() {
-    await ensureActs();
-    await ensureLocMatch();
+  /* ==========================================================================
+     PASS C's PLAN — every unallocated, coded, measured line, split on its strongest rung.
+     ==========================================================================
+     ⚠️ Lifted alongside `planCodeMap` / `planTags` so the whole-BOQ run proposes exactly what
+     this button proposes. Returns the counts the preview needs as well as the plans, because
+     "how many cannot, and why" is the half a planner acts on. */
+  function planAllocs() {
     // ⚠️ `codeFor`, not `CMAP[r.id]` — a leaf whose HEADING carries the code is allocatable now,
     //    and it was this filter that kept those lines out of the bulk run entirely.
     var todo = ITEMS.filter(function (r) { return qtyLine(r) && codeFor(r) && !allocOf(r.id).length; });
     var plans = todo.map(function (r) { return { r: r, p: proposeSplit(r, scoreCandidates(r)) }; });
     var ok = plans.filter(function (x) { return x.p.parts.length; });
-    var none = plans.length - ok.length;
     var byRung = {};
     ok.forEach(function (x) { byRung[x.p.rung] = (byRung[x.p.rung] || 0) + 1; });
+    return { todo: plans.length, ok: ok, none: plans.length - ok.length, byRung: byRung };
+  }
+
+  /* The write half of pass C — one upsert for the whole run, not one per line.
+     ⚠️ The RUNG and the split METHOD are recorded on every part, so a later audit can tell a
+     proposal from a hand-made decision. */
+  async function applyAllocPlans(ok) {
+    var payload = [];
+    ok.forEach(function (x) {
+      x.p.parts.forEach(function (p) {
+        payload.push({ project_id: pid, boq_item_id: x.r.id, activity_id: p.activity_id,
+                       qty: Number(p.qty), method: x.p.method, accepted_by: UID,
+                       matched_by: p.rung || null, match_score: RUNG_SCORE[p.rung] || null });
+      });
+    });
+    return await upsertAllocs(payload);
+  }
+
+  /* ⚠️⚠️ WHY PASS C FOUND NOTHING — the message a planner can act on.
+     `candidatesFor()` needs the ACTIVITY to already carry the line's class code, so on a schedule
+     nobody has tagged, EVERY line reports "cannot" and the screen used to give no hint that the
+     fix is one button on the previous tab. Distinguish the two cases by measurement: no activity
+     tagged at all is a missing PREREQUISITE; some tagged but not these is a genuine mismatch. */
+  function allocBlockReason() {
+    var tagged = (ACTS || []).filter(function (a) { return a.class_code; }).length;
+    var total = (ACTS || []).length;
+    if (!total) return { kind: 'noacts', tagged: 0, total: 0 };
+    if (!tagged) return { kind: 'untagged', tagged: 0, total: total };
+    return { kind: 'mismatch', tagged: tagged, total: total };
+  }
+
+  async function bulkPropose() {
+    await ensureActs();
+    await ensureLocMatch();
+    var pl = planAllocs();
+    var ok = pl.ok, none = pl.none, byRung = pl.byRung;
     var m = UI.modal('<h2 style="margin-top:0;">Propose allocations</h2>' +
-      '<p class="cc-hint">' + plans.length + ' unallocated mapped line(s). <strong>' + ok.length + '</strong> can be split, ' +
+      '<p class="cc-hint">' + pl.todo + ' unallocated mapped line(s). <strong>' + ok.length + '</strong> can be split, ' +
       'each on the strongest rung that found it:</p>' +
       '<ul class="cc-hint" style="margin-top:0;">' +
       RUNG_ORDER.map(function (k) {
         return byRung[k] ? '<li><strong>' + byRung[k] + '</strong> by ' + RUNG_LABEL[k] + '</li>' : '';
       }).join('') + '</ul>' +
-      '<p class="cc-hint"><strong>' + none + '</strong> cannot — no activity on this project carries their class code, ' +
-      'so they stay unallocated rather than being spread over something arbitrary.</p>' +
+      /* ⚠️ The reason is MEASURED, not a fixed sentence. "No activity carries their class code" is
+         true either way, but on an untagged schedule it is a missing prerequisite with a button
+         attached, and saying only the general form is what made this a dead end. */
+      (function () {
+        if (!none) return '';
+        var why = allocBlockReason();
+        if (why.kind === 'untagged') {
+          return '<p class="cc-hint boq-blocked"><strong>' + none + '</strong> cannot — and the reason is the ' +
+            'same for all of them: <strong>not one of this project\'s ' + why.total + ' activities carries a class ' +
+            'code yet</strong>, so there is nothing for a line to attach to. Tag the schedule first — it is one ' +
+            'bulk run on the Class Codes tab.</p>' +
+            '<p style="margin:6px 0 0;"><button class="pd-btn" id="bp-tag">Tag schedule activities…</button></p>';
+        }
+        if (why.kind === 'noacts') {
+          return '<p class="cc-hint boq-blocked"><strong>' + none + '</strong> cannot — this project has no ' +
+            'schedule activities loaded, so there is nothing to allocate to.</p>';
+        }
+        return '<p class="cc-hint"><strong>' + none + '</strong> cannot — no activity carries their class code ' +
+          '(' + why.tagged + ' of ' + why.total + ' activities are tagged), so they stay unallocated rather than ' +
+          'being spread over something arbitrary. Tagging more of the schedule is what brings them in.</p>';
+      })() +
       /* ⚠️ Says the quiet part out loud, because it is the change that moves money: a line
          matched on location takes ONLY the activities at that location, where it used to take
          every activity sharing the code and smear the quantity across them by duration. */
@@ -4713,21 +4820,198 @@ window.BOQ = (function () {
       '<div style="text-align:right;margin-top:12px;"><button class="pd-btn" id="bp-x">Cancel</button> ' +
       '<button class="pd-btn pd-btn-primary" id="bp-go"' + (ok.length ? '' : ' disabled') + '>Apply ' + ok.length + ' split(s)</button></div>');
     m.el.querySelector('#bp-x').onclick = m.close;
+    /* ⚠️ Closes this modal BEFORE opening the tag dialog — that one is a modal too, and stacking
+       it under this overlay leaves the planner clicking a pane they cannot reach. Same rule the
+       wizard's own hand-off follows. */
+    var bt = m.el.querySelector('#bp-tag');
+    if (bt) bt.onclick = function () { m.close(); openTagActivities(); };
     m.el.querySelector('#bp-go').onclick = async function () {
       m.close();
-      var payload = [];
-      ok.forEach(function (x) {
-        x.p.parts.forEach(function (p) {
-          payload.push({ project_id: pid, boq_item_id: x.r.id, activity_id: p.activity_id,
-                         qty: Number(p.qty), method: x.p.method, accepted_by: UID,
-                         matched_by: p.rung || null, match_score: RUNG_SCORE[p.rung] || null });
-        });
-      });
-      var wrote = await upsertAllocs(payload);
+      var wrote = await applyAllocPlans(ok);
       if (!wrote.ok) { UI.toast(wrote.msg, 'error'); return; }
       UI.toast('Applied ' + ok.length + ' allocation(s).' + (wrote.dropped ? ' ' + wrote.dropped : ''), 'success');
       await load();
     };
+  }
+
+
+  // ==========================================================================
+  // MATCH THE WHOLE BOQ TO THE SCHEDULE — the three passes as one action
+  // ==========================================================================
+  /* Owner, 2026-09-10: *"How would the planner easily batch the BOQ to the activities in the
+     schedule?"* Every engine for it already existed, in three places, in a load-bearing order
+     that was written down nowhere on screen:
+
+       A · map BOQ lines to class codes      (Class Codes tab → Propose codes → Accept all)
+       B · tag schedule activities with them (Class Codes tab → Tag schedule activities…)
+       C · allocate the lines to activities  (Match to schedule tab → Propose splits…)
+
+     ⚠️⚠️ B IS A HARD PREREQUISITE FOR C and nothing said so. `candidatesFor()` returns nothing
+     unless the ACTIVITY already carries the line's code, so on an untagged schedule pass C
+     reports "0 can be split" — accurate, and a dead end. This runs the three in order behind ONE
+     preview.
+
+     ⚠️ It adds NO matching logic. Every number below comes from `planCodeMap` / `planTags` /
+     `planAllocs`, the same planners the three buttons use, so this preview and those dialogs
+     cannot disagree about the same project. */
+
+  /* ⚠️⚠️ THE PREVIEW IS EXACT, NOT AN ESTIMATE — and that is only possible because the three
+     planners are SYNCHRONOUS and PURE over module state. B's plan depends on what A would write
+     and C's on what B would write, so a preview computed against today's state would be wrong
+     about two of the three passes. Instead the overlays are applied in memory, the planners are
+     run, and the state is restored in `finally`. Nothing is written and nothing can interleave.
+     ⚠️ The overlays COPY — `CMAP` gets a fresh object and each tagged activity a fresh row —
+     because mutating the real `ACTS` entries would leave the module quietly holding codes that
+     are not in the database if any of this threw. */
+  function matchAllDryRun(minConf) {
+    var snapCmap = CMAP, snapActs = ACTS;
+    try {
+      var a = planCodeMap().filter(function (x) { return x.s.confidence >= minConf; });
+      CMAP = Object.assign({}, CMAP);
+      a.forEach(function (x) {
+        CMAP[x.r.id] = { boq_item_id: x.r.id, class_code: x.s.code, confidence: x.s.confidence,
+                         source: 'bulk_accepted' };
+      });
+
+      var b = planTags();
+      var tagged = {};
+      b.forEach(function (p) { p.hits.forEach(function (h) { tagged[h.a.activity_id] = p.code; }); });
+      ACTS = (ACTS || []).map(function (act) {
+        return tagged[act.activity_id]
+          ? Object.assign({}, act, { class_code: tagged[act.activity_id] })
+          : act;
+      });
+
+      var c = planAllocs();
+      return {
+        a: a,
+        b: b, bTags: b.reduce(function (s, p) { return s + p.hits.length; }, 0),
+        c: c,
+        parts: c.ok.reduce(function (s, x) { return s + x.p.parts.length; }, 0)
+      };
+    } finally { CMAP = snapCmap; ACTS = snapActs; }
+  }
+
+  async function openMatchAll() {
+    await ensureCodes();
+    await ensureActs();
+    await ensureSugg();
+    await ensureLocMatch();
+    if (!ITEMS.length) { UI.toast('This revision has no lines yet.', 'warn'); return; }
+
+    var minConf = 0.8;
+    var m = UI.modal('<div class="pd-modal-header"><div><h2 style="margin:0;">Match this BOQ to the schedule</h2>' +
+      '<div class="pd-modal-sub">Code the lines, tag the activities, allocate the quantities — in that order</div></div>' +
+      '<button class="pd-modal-close" id="ma-x">&times;</button></div>' +
+      '<div style="padding:2px 16px 6px;" id="ma-body"></div>' +
+      '<div class="pd-modal-footer" id="ma-foot"></div>');
+    m.el.querySelector('.pd-modal').classList.add('boq-wide');
+    var body = m.el.querySelector('#ma-body'), foot = m.el.querySelector('#ma-foot');
+    m.el.querySelector('#ma-x').onclick = m.close;
+
+    function paint() {
+      var d = matchAllDryRun(minConf);
+      var total = d.a.length + d.bTags + d.c.ok.length;
+      var rungs = RUNG_ORDER.filter(function (k) { return d.c.byRung[k]; })
+        .map(function (k) { return '<span class="boq-why">' + d.c.byRung[k] + ' by ' + esc(RUNG_LABEL[k]) + '</span>'; })
+        .join(' ');
+
+      body.innerHTML =
+        '<p class="cc-hint" style="margin-top:0;">Nothing is written until you press Run. Each pass feeds the next, ' +
+        'so the second and third counts already account for what the passes above them would do.</p>' +
+        '<div class="boq-ma">' +
+          step(1, 'Code the BOQ lines', d.a.length, 'line(s) will be mapped',
+               d.a.length ? 'From the suggestion library, at or above the confidence floor below.'
+                          : 'Every mappable line already carries a code — nothing to do.') +
+          step(2, 'Tag the schedule activities', d.bTags, 'activity tag(s) will be written',
+               d.bTags ? 'Across ' + d.b.filter(function (p) { return p.hits.length; }).length +
+                         ' code(s), at ≥' + (TAG_FLOOR * 100).toFixed(0) + '% name confidence. ' +
+                         'Activities already carrying a code are never moved in bulk.'
+                       : 'No untagged activity resembles any code on this BOQ — nothing to do.') +
+          step(3, 'Allocate the quantities', d.c.ok.length, 'line(s) will be split into ' + d.parts + ' allocation(s)',
+               d.c.ok.length ? rungs : 'Nothing can be split, even after the passes above.') +
+        '</div>' +
+        (d.c.none ? '<p class="cc-hint"><strong>' + d.c.none + '</strong> line(s) still could not be allocated ' +
+          'afterwards — they stay unallocated rather than being spread over something arbitrary, and the ' +
+          'Match to schedule tab lists them.</p>' : '') +
+        '<label class="cc-hint" style="display:block;margin-top:10px;">Minimum confidence for pass 1 ' +
+          '<select class="pd-select" id="ma-c" style="width:auto;">' +
+          [90, 80, 60, 50].map(function (v) {
+            return '<option value="' + (v / 100) + '"' + (Math.abs(v / 100 - minConf) < 1e-9 ? ' selected' : '') +
+              '>' + v + '%</option>';
+          }).join('') + '</select></label>';
+
+      foot.innerHTML = '<button class="pd-btn" id="ma-c2">Cancel</button><span style="flex:1;"></span>' +
+        '<button class="pd-btn pd-btn-primary" id="ma-go"' + (total ? '' : ' disabled') + '>' +
+        (total ? 'Run all three passes' : 'Nothing to do') + '</button>';
+      foot.querySelector('#ma-c2').onclick = m.close;
+      body.querySelector('#ma-c').onchange = function () { minConf = Number(this.value); paint(); };
+      var go = foot.querySelector('#ma-go');
+      if (go) go.onclick = function () { run(go); };
+    }
+
+    function step(n, title, count, unit, note) {
+      var on = count > 0;
+      return '<div class="boq-ma-step' + (on ? '' : ' off') + '">' +
+        '<span class="boq-ma-n">' + n + '</span>' +
+        '<span class="boq-ma-t"><strong>' + esc(title) + '</strong>' +
+          '<span class="cc-mini">' + note + '</span></span>' +
+        '<span class="boq-ma-c">' + (on ? '<strong>' + count + '</strong> ' + esc(unit)
+                                        : '<span class="cc-mut">skipped</span>') + '</span></div>';
+    }
+
+    /* ⚠️⚠️ THE RUN RE-PLANS FROM REAL STATE BETWEEN PASSES rather than replaying the simulation.
+       A pass can write fewer rows than it asked for — RLS refuses activities the planner did not
+       import, and PostgREST answers a filtered UPDATE with 200 and zero rows — so pass C must be
+       built from what pass B actually achieved, not from what it hoped to. Replaying the plan
+       would allocate against tags that do not exist. */
+    async function run(btn) {
+      btn.disabled = true;
+      var done = [];
+      try {
+        // ---- pass A
+        var a = planCodeMap().filter(function (x) { return x.s.confidence >= minConf; });
+        if (a.length) {
+          btn.textContent = 'Coding ' + a.length + ' line(s)…';
+          var ra = await applyCodeMap(a);
+          if (!ra.ok) { UI.toast('Pass 1 failed — ' + ra.msg, 'error'); m.close(); return; }
+          done.push(ra.wrote + ' line(s) coded');
+          await reloadMaps();
+        }
+
+        // ---- pass B
+        var b = planTags();
+        var want = b.reduce(function (s, p) { return s + p.hits.length; }, 0);
+        if (want) {
+          btn.textContent = 'Tagging activities…';
+          var rb = await applyTagPlan(b, function (i, n) { btn.textContent = 'Tagging ' + i + ' of ' + n + '…'; });
+          await refreshActs();
+          done.push(rb.wrote + ' activity tag(s)' + (rb.wrote < rb.wanted ? ' of ' + rb.wanted + ' asked' : ''));
+          if (rb.failed.length) UI.toast('Some codes failed to tag — ' + rb.failed.join(' | '), 'error');
+        }
+
+        // ---- pass C
+        var pc = planAllocs();
+        if (pc.ok.length) {
+          btn.textContent = 'Allocating ' + pc.ok.length + ' line(s)…';
+          var rc = await applyAllocPlans(pc.ok);
+          if (!rc.ok) { UI.toast('Pass 3 failed — ' + rc.msg, 'error'); m.close(); await load(); return; }
+          done.push(pc.ok.length + ' line(s) allocated');
+          if (rc.dropped) done.push(rc.dropped);
+        }
+
+        m.close();
+        UI.toast(done.length ? 'Matched — ' + done.join(' · ') + '.' : 'Nothing needed doing.', 'success');
+        await load();
+      } catch (e) {
+        m.close();
+        UI.toast('Stopped — ' + (e && e.message ? e.message : e) +
+                 (done.length ? ' (already applied: ' + done.join(' · ') + ')' : ''), 'error');
+        await load();
+      }
+    }
+
+    paint();
   }
 
   // ==========================================================================
@@ -5281,6 +5565,10 @@ window.BOQ = (function () {
       sheetTotals: sheetTotals, contractSum: contractSum, wtOf: wtOf, periodTotals: periodTotals,
       sheetPocs: sheetPocs, moneyLine: moneyLine, qtyLine: qtyLine, mappable: mappable,
       proposeSplit: proposeSplit, locMatch: locMatch, allocSum: allocSum, suggestFor: suggestFor,
+      /* The three planners and the dry run that chains them — exported so a suite can assert the
+         whole-BOQ preview equals what the three buttons would do, without a database. */
+      planCodeMap: planCodeMap, planTags: planTags, planAllocs: planAllocs,
+      matchAllDryRun: matchAllDryRun, allocBlockReason: allocBlockReason,
       /* Hand-off 2's proposal, so what the schedule becomes is testable without a database, and
          the dialog itself so it can be rendered in a browser rather than a copy of its markup. */
       scheduleSeedPlan: scheduleSeedPlan, openSeedFromSchedule: openSeedFromSchedule,

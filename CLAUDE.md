@@ -95,6 +95,95 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-10 (z7) — Batching the BOQ onto the schedule: one action for three passes, and the dead end that made the third look broken
+
+Owner: *"How would the planner easily batch the BOQ to the activities in the schedule?"* then *"Let's do
+both."* ⚠️ **No matching logic is added here.** Every engine already existed; what did not exist was a way
+to run them in the order they depend on, and a way to find out why the last one found nothing.
+
+#### ⚠️⚠️ THE THIRD PASS WAS A DEAD END, AND THE SCREEN COULD NOT SAY WHY
+`candidatesFor()` returns nothing unless the **activity** already carries the line's class code. So on a
+schedule nobody has tagged, *every* line reports "cannot", and the modal said only:
+
+> *N cannot — no activity on this project carries their class code.*
+
+True, and useless: the fix is one button on the **previous tab**, and nothing on screen pointed at it.
+`allocBlockReason()` now measures which of three situations it is and says the right one:
+
+| measured | what the planner is told |
+|---|---|
+| **0 of N activities tagged** | it is a missing **prerequisite** — with a **Tag schedule activities…** button right there |
+| no activities at all | there is nothing to allocate to |
+| some tagged, not these | the general case, **with the count** (`14 of 320 tagged`) so "tag more" is actionable |
+
+⚠️ The button **closes this modal before opening the tag dialog** — that one is a modal too, and stacking
+it leaves the planner clicking a pane they cannot reach. Same rule the wizard's own hand-off follows.
+
+#### The three passes as one action: **Match to the schedule…**
+In the BOQ bar, not on a tab, because it spans three of them — two passes live on Class Codes and one on
+Match to schedule, so a control that runs all three belongs to none of them. Writers only, and only once a
+revision exists.
+
+    A · code the BOQ lines        (from the suggestion library, above a confidence floor)
+    B · tag the schedule activities  (≥80% name confidence, never moving an already-coded activity)
+    C · allocate the quantities      (on the strongest rung that finds anything)
+
+#### ⚠️⚠️ THE PREVIEW IS EXACT, NOT AN ESTIMATE — and that is the whole engineering problem
+B's plan depends on what A would write, and C's on what B would write. A preview computed against
+*today's* state would be **wrong about two of the three passes** — and would report **0** for pass C on
+exactly the project this feature exists for. So `matchAllDryRun()` overlays the passes in memory, runs the
+real planners, and restores in a `finally`. Nothing is written.
+
+It is only possible because the three planners are **synchronous and pure over module state** — so nothing
+can interleave between the overlay and the restore. ⚠️ The overlays **copy** (`CMAP` gets a fresh object,
+each tagged activity a fresh row): mutating the real `ACTS` would leave the module holding codes that are
+not in the database if anything threw.
+
+⚠️ **The RUN re-plans from real state between passes rather than replaying the simulation.** A pass can
+write fewer rows than it asked for — RLS refuses activities the planner did not import, and PostgREST
+answers a filtered UPDATE with 200 and zero rows — so pass C is built from what pass B *achieved*.
+Replaying the plan would allocate against tags that do not exist. Each pass reports what it actually did,
+and a shortfall is named (`38 activity tag(s) of 41 asked`).
+
+#### ⚠️ The engines are LIFTED, not copied
+`planCodeMap` / `planTags` / `planAllocs` and `applyCodeMap` / `applyTagPlan` / `applyAllocPlans` are now
+module-scope, and the three dialogs call them. A second copy would let the orchestrator's preview and a
+dialog's own preview disagree about the same project — which is the failure this module has already paid
+for twice (two create dialogs, two import doors).
+
+#### Verified — **33 assertions, 0 failing**, executing the shipped file
+The load-bearing one is not "the dry run returns numbers", it is:
+
+> **dry-run pass C === the pass C you get after ACTUALLY applying A and B.**
+
+Asserted on `ok`, `none`, the rung breakdown and the part count. Also:
+- ⚠️ **The dry run restores state** — A, B and C all re-plan identically afterwards, and no activity object
+  was mutated.
+- ⚠️ **CONTRAST that bites:** un-chained, pass C plans **0** on this fixture while the chained preview
+  plans **3**. If that ever stops differing, the dry run has stopped simulating.
+- ⚠️ **The refactor is proved a MOVE:** HEAD is loaded in its own sandbox and its own inline expressions
+  are evaluated against the same fixture using HEAD's own helpers — same lines, same codes, same
+  confidences, same considered set. Two implementations compared, not one with itself.
+- ⚠️ The fixture exercises **both rungs**: a line naming a place resolves on **location** and takes only
+  the 3rd-floor activity, not both activities sharing its code — the money property the z1 entry records.
+- The blocked-reason measurement across all three cases.
+- 44 JS files + 30 inline blocks parse; 549/549 braces; 0 NUL bytes; all six new `boq-ma*` / `boq-blocked`
+  classes resolve (`boq-clm` is undefined at HEAD too — pre-existing, already recorded).
+
+⚠️ **Three of my own assertions were wrong before the code was**, each recorded in the suite: I expected
+every split on the **location** rung when my fixture's descriptions named no place (the name rung is
+correct there); I expected one activity per line when two activities legitimately shared a name; and I
+compared what pass C *splits* against what HEAD *considers*, which differ when nothing is tagged. Asserting
+the behaviour I assumed rather than the behaviour that occurs would have reported three bugs that do not
+exist.
+
+`boq.js` / `module.css` → `?v=20260910z7`; `MODULE_V` → `20260910z7`.
+⚠️ **NOT verified signed in.** No pass has been run against a real project, so the three writes, the RLS
+shortfall path and the between-pass re-plan are proved by execution against module state, never against
+PostgREST. The first real run is the test — and the honest thing to watch is whether pass B's reported
+count matches what it asked for.
+
+
 ### 2026-09-10 (z6) — ⚠️⚠️ HOTFIX: Contracts & Claims' entire BOQ has been dead in production since (z1). One deleted function, one line that still named it.
 
 Owner, with a screenshot of the wizard's Trades step empty and a red toast: *"BOQ errors. Let's fix."*

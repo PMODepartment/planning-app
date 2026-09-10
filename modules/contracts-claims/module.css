@@ -744,6 +744,26 @@ html.pd-dark .boq-tl1 > .boq-trow { background:rgba(255,255,255,.04); }
 
 .boq-taken { font-size:var(--pd-fs-micro); font-weight:700; text-transform:uppercase; letter-spacing:.03em;
   color:var(--boq-warn,#b45309); white-space:nowrap; }
+
+/* ---- The whole-BOQ run's three-step preview ------------------------------------------------
+   ⚠️ A step that WOULD DO NOTHING is dimmed and reads "skipped" rather than being hidden. The
+   planner is being asked to trust a run that writes to three tables; seeing that pass 1 has
+   nothing to do is part of understanding what pass 3's number rests on. Hiding it would make the
+   preview shorter and the decision harder. */
+.boq-ma { display:flex; flex-direction:column; gap:6px; margin:10px 0 4px; }
+.boq-ma-step { display:flex; align-items:flex-start; gap:10px; padding:9px 11px;
+  border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); background:var(--pd-card); }
+.boq-ma-step.off { opacity:.6; }
+.boq-ma-n { flex:none; width:20px; height:20px; border-radius:50%; background:var(--pd-red); color:#fff;
+  font-size:var(--pd-fs-micro); font-weight:800; display:inline-flex; align-items:center;
+  justify-content:center; margin-top:1px; }
+.boq-ma-step.off .boq-ma-n { background:var(--pd-line); color:var(--pd-muted); }
+.boq-ma-t { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:2px; }
+/* ⚠️ min-width:0 above and text-align:right here — the count column must not be pushed off by a
+   long note, and a flex item's automatic minimum size would otherwise refuse to let the text wrap. */
+.boq-ma-c { flex:0 0 auto; text-align:right; font-size:var(--pd-fs-sm); }
+/* The blocked-pass note in the allocation preview — a stated prerequisite, not an error. */
+.boq-blocked { border-left:3px solid var(--boq-warn,#b45309); padding-left:9px; }
 @media (max-width:820px) { .boq-tag { grid-template-columns:1fr; }
   .boq-taglist { max-height:200px; } }
 
