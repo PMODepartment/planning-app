@@ -95,6 +95,39 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### Progress fills upward, the striped shading was z-fighting, every floor is named, the front is an object (2026-09-10) — jasantos2
+
+Owner: *"hopefully there is a label for all floors … make it that the progress for the 3D version
+is from bottom to top … the shades are like unstable or not uniform … remove the front faces etc.
+I just want you to add a feature wherein users are just able to place an object and then you
+would be able to identify which is the front face of the project."*
+
+⚠️⚠️ **The "unstable shades" were Z-FIGHTING, and the vertical fill is the same fix.** The done
+stretch was a second, narrower block sitting **inside** the dim one, lifted by a thousandth of a
+unit to win the depth test — four of its six faces coplanar with the block around it. At this
+camera's range the depth buffer cannot separate two surfaces that close, so which one is in front
+is decided per pixel and changes as the model turns: that is the mottled, striped shading in the
+owner's screenshot. A zone is now **two disjoint slices stacked in height** — done from the floor
+of the storey up to its percentage, remaining above it. Nothing overlaps, no nudge is needed, and
+the progress reads bottom to top. `_vsClipX`, which cut a traced outline at the progress fraction,
+is deleted; the compare mark, a vertical blade at a fraction of the zone's *width*, became a
+horizontal band at the baseline's *height*.
+
+**A label for every floor**: the first cut dropped all but ~14 at build time, so a floor could not
+be named however far you zoomed. Every storey has one now, and the only thinning is per frame —
+⚠️ at a 17px threshold taken from the label's own height in the CSS, not guessed.
+
+**The front is an object you place.** The four N/E/S/W buttons are gone from the floor-plan
+window; the planner drops a marker on the frontage and the nearest edge of the sheet is the front,
+derived and drawn back on the drawing. ⚠️ Stored and compared in fractions of the sheet, so
+replacing the plan image cannot move it to another edge; ⚠️ setups that named their front on the
+old screen are still read, the marker wins when there is one, and **Remove clears both** — "removed
+but still facing east" is the one state the pair must never produce.
+
+**181 assertions across ten suites, 0 failing** — the z-fighting fix is asserted on the geometry
+the builder actually produces: two boxes, touching but not overlapping, same footprint, neither
+nudged.
+
 
 ### 2026-09-10 (y1) — A stakeholder has a page: one profile, two scopes, and identity locked to the portfolio
 

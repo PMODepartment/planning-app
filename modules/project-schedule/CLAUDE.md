@@ -13,6 +13,84 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### Progress fills upward, the striped shading was z-fighting, every storey is named, and the front is an object you place (2026-09-10) — jasantos2
+
+Owner: *"the labels are good, but hopefully there is a label for all floors. Next, for the
+progress can you make it that the progress for the 3D version is from bottom to top? not like
+horizontal direction. In addition, for the progress, the shades are like unstable or not uniform.
+look at the second picture. fix that pls. Also, in the floor plan, remove the front faces etc. I
+just want you to add a feature wherein users are just able to place an object and then you would
+be able to identify which is the front face of the project."*
+
+### 1. ⚠️⚠️ The "unstable shades" were Z-FIGHTING, and the vertical fill is the same fix
+The done stretch was a **second, narrower block sitting INSIDE the dim one**, lifted by a
+thousandth of a unit (`+0.002` in y for a traced zone, `+0.001` in z for a block) so it would win
+the depth test. Two surfaces that close is the textbook condition for z-fighting: at this camera's
+near/far range the depth buffer cannot separate them, so **which one is in front is decided per
+pixel and changes as the model turns**. That is the mottled, striped shading in the owner's second
+screenshot — not a lighting fault, two surfaces arguing. Four of the six faces of every done block
+were coplanar with the block it sat inside.
+
+A zone is now **two disjoint slices stacked in height**: done from the floor of the storey up to
+its percentage, remaining above it. Nothing is inside anything, no nudge is needed, no two faces
+are coplanar — and the progress reads bottom-to-top, which is what the owner asked for and what a
+storey being built actually looks like.
+- ⚠️ Both slices carry the **same footprint**, so how far along a zone is no longer distorts the
+  plan shape somebody traced. `_vs3PolyMesh` takes a **height and a base** now instead of a width
+  fraction, and `_vsClipX` — the Sutherland–Hodgman clip that cut a traced outline at the progress
+  fraction — is **deleted**: nothing cuts a zone horizontally any more.
+- ⚠️ **A sliver rounds away.** A cell at 0.4% would contribute a slice two thousandths of a unit
+  tall: invisible, but it still puts a seam across the zone and costs a mesh. Below 0.006 units it
+  rounds to nothing (or, at the other end, to a whole storey).
+- ⚠️ **The compare mark turned with the fill.** It was a vertical blade at a fraction of the
+  zone's WIDTH — the right reading while progress grew sideways, a meaningless line now. It is a
+  horizontal band at the baseline's **height**, so the gap to the top of the bright slice is still
+  the slip, measured with the eye.
+- ⚠️ The hover trace and the compare edges outline **every slice**, or they would draw a line
+  round "the part that is done" and call it the zone.
+
+### 2. A label for every floor
+The first cut built ~14 labels and dropped the rest **at build time**, so a floor could not be
+named however far you zoomed in. The layer now holds **one label per storey**; the only thinning
+is per FRAME, and a hidden label comes back the moment the planner zooms or turns the model.
+⚠️ The collision threshold is **17px — the label's own height plus a hairline**, taken from the
+CSS rather than guessed: a threshold smaller than the label lets two of them touch, which is the
+thing the rule exists to stop.
+
+### 3. The front is an object you place, not a compass you pick
+The four N/E/S/W buttons are **gone from the floor-plan window**. The planner drops a marker on
+the frontage — the road, the main entrance, the side the building presents — and the **nearest
+edge of the sheet is the front**, derived and drawn back on the drawing.
+- ⚠️⚠️ **The marker is the input; the compass edge is derived.** Four buttons asked the planner to
+  hold a mapping in their head — from "S" to "the bottom of this drawing" to "the side with the
+  road on it" — and to keep it straight on a plan the architect may have rotated any way at all.
+  Dropping an object asks nothing.
+- ⚠️ Stored in **0..1 of the sheet**, and compared as **fractions**: sheets differ in height, so a
+  marker in raw units would jump to a different edge when the plan image is replaced, and a raw
+  distance comparison would make the short axis win every time.
+- ⚠️⚠️ **The legacy field is still read.** Setups saved before the marker exists name their front
+  in `front`; ignoring it would silently turn every one of those buildings round. The marker wins
+  when there is one, and ⚠️ **Remove clears BOTH** — "removed but still facing east" is the one
+  state this pair of fields must never produce.
+- ⚠️ Placing is a one-click mode that turns itself off, and it cancels tracing: two pointer modes
+  live at once means one click drops a marker *and* a corner. Dragging the marker writes no undo
+  step — the marker is not part of the drawing, and Ctrl+Z must step through shapes.
+
+### Verified
+**181 assertions across ten suites, 0 failing** — 41 new, all executing lines sliced out of the
+shipped file. ⚠️ The z-fighting fix is asserted on the **geometry the builder actually produces**:
+at 50% the zone is two boxes, the lower one from the storey's floor to half its height and the
+upper one from there to the ceiling, `hi <= lo` between them, the same width and depth, and
+neither nudged in x or z. ⚠️ Sanity gates throughout — 0% and 100% must be a single full-height
+piece, 3% must still be two, the compare band must move when the baseline does, a marker dropped
+at (0.45, 0.35) must resolve by fraction rather than by plan units, and clearing must leave the
+front genuinely unset.
+⚠️ **Not clicked in a browser**: the anon key has no grants for this project's data, so the model
+and the window were verified by execution. The z-fighting itself is diagnosed from the geometry —
+two coplanar surfaces a thousandth apart — and fixed by removing the overlap, not by tuning it.
+
+---
+
 ### The floor with no zones, the band with no floor, the progress tones, and floor markers (2026-09-10) — jasantos2
 
 Owner: *"how about for floors without levels, there should also be an option for users to edit the

@@ -1501,7 +1501,7 @@
     .ps-vs3-labs { position:absolute; inset:0; pointer-events:none; z-index:4; overflow:hidden; }
     .ps-vs3-lab { position:absolute; display:none; transform:translate(-100%, -50%);
       white-space:nowrap; max-width:150px; overflow:hidden; text-overflow:ellipsis;
-      font-size:var(--pd-fs-micro); font-weight:700; line-height:1.5;
+      font-size:var(--pd-fs-micro); font-weight:700; line-height:1.4;
       color:var(--pd-ink); background:var(--pd-card); border:1px solid var(--pd-line);
       border-radius:var(--pd-radius, 5px); padding:0 5px; opacity:.94; }
     /* The band that is not a storey, and the line that is not a floor. */
@@ -3073,6 +3073,19 @@
       stroke-width:2; stroke-dasharray:7 5; vector-effect:non-scaling-stroke; opacity:.85; }
     /* The nominated front and rear edges of the sheet. Also inert - the edge is set by the
        buttons, so a draggable line would be a second way to say the same thing. */
+    /* ==== THE FRONT MARKER ==============================================================
+       The object the planner drops on the frontage. ⚠️ A HALO plus a dot: the halo is the drag
+       target (26 plan units is a comfortable grab at any window size, where the 11-unit dot is
+       not) and it is nearly invisible, so the marker reads as a pin rather than as a zone
+       somebody traced. ⚠️ cursor:grab says it can be moved — the first cut looked like a label. */
+    .zpw-mark { cursor:grab; }
+    .zpw-mark:active { cursor:grabbing; }
+    .zpw-mark-h { fill:var(--pd-red); fill-opacity:.14; stroke:var(--pd-red); stroke-opacity:.35;
+      stroke-width:2; vector-effect:non-scaling-stroke; }
+    .zpw-mark-d { fill:var(--pd-red); stroke:#fff; stroke-width:3; vector-effect:non-scaling-stroke; }
+    .zpw-mark text { fill:var(--pd-red); font-size:22px; font-weight:800; text-anchor:middle;
+      letter-spacing:.06em; paint-order:stroke; stroke:var(--pd-card); stroke-width:5;
+      pointer-events:none; }
     .zpw-front, .zpw-rear { pointer-events:none; vector-effect:non-scaling-stroke; }
     .zpw-front { stroke:var(--pd-red, #EE3124); stroke-width:6; opacity:.85; }
     .zpw-rear { stroke:var(--pd-muted); stroke-width:4; stroke-dasharray:10 7; opacity:.6; }
@@ -15361,28 +15374,6 @@
     w.forEach(function (v) { x.push(run); run += v; });
     return { order: order, w: w, x: x, traced: traced.length, total: cells.length };
   }
-  /* Clip a polygon to the half-plane x <= t — Sutherland–Hodgman, one edge.
-     ⚠️⚠️ THIS IS WHAT KEEPS THE PROGRESS SPLIT HONEST ON A TRACED SHAPE. The 2D cell draws the
-     done stretch as a hard-edged bar growing from the left, and the box path does the same; on an
-     arbitrary outline the equivalent is the polygon actually CUT at that fraction. Colouring the
-     whole zone by percentage instead would replace a hard edge with a tint and lose the channel.
-     ⚠️ Returns [] when nothing survives, which the caller reads as "draw no done mesh". */
-  function _vsClipX(pts, t) {
-    var out = [], nPts = pts.length;
-    for (var i = 0; i < nPts; i++) {
-      var a = pts[i], b = pts[(i + 1) % nPts];
-      var ain = a[0] <= t, bin = b[0] <= t;
-      if (ain) out.push(a);
-      if (ain !== bin) {
-        var dx = b[0] - a[0];
-        // ⚠️ A vertical edge cannot cross a vertical line; guarding the divide keeps a NaN out
-        // of the geometry, which would silently drop the whole mesh.
-        var f = dx === 0 ? 0 : (t - a[0]) / dx;
-        out.push([t, a[1] + (b[1] - a[1]) * f]);
-      }
-    }
-    return out;
-  }
   /* ==========================================================================================
      THE TWO TONES A ZONE IS DRAWN IN — remaining, and done.
      Owner 2026-09-10: *"look at the colors of the progress of the levels / zones, pls improve
@@ -15423,26 +15414,14 @@
     return { don: at(h.s, cl(h.l * 1.35, 0.55, 0.76)),
              rem: at(h.s * 0.92, cl(h.l * 0.70, 0.26, 0.38)) };
   }
-  /* One zone, as an EXTRUDED OUTLINE rather than a block. `t` is the fraction of the plate's
-     width to keep, so t=1 is the whole zone and t=pct/100 is the done stretch.
+  /* One zone — or one horizontal SLICE of one — as an extruded outline rather than a block.
+     ⚠️ A HEIGHT AND A BASE, not a fraction of the plate's width. Progress fills upward now (see
+     the cell builder), so what differs between the done part and the remaining part is how tall
+     each is and where it starts; the outline itself is the same for both.
      ⚠️ The shape is built in XY and laid down with rotation.x = -PI/2, because ExtrudeGeometry
-     always extrudes along +Z; rotating the finished mesh is the only way to get a floor slab. */
-  // The box around a zone's polygons, in 0..1 of the plate. Used only to place the compare mark;
-  // the zone itself is drawn as its real outline.
-  function _vsZpBBox(polys) {
-    var x0 = null, y0 = null, x1 = null, y1 = null;
-    (polys || []).forEach(function (q) {
-      q.pts.forEach(function (p) {
-        if (x0 === null || p[0] < x0) x0 = p[0];
-        if (y0 === null || p[1] < y0) y0 = p[1];
-        if (x1 === null || p[0] > x1) x1 = p[0];
-        if (y1 === null || p[1] > y1) y1 = p[1];
-      });
-    });
-    if (x0 === null) return null;
-    return { x: x0, y: y0, w: Math.max(0.001, x1 - x0), h: Math.max(0.001, y1 - y0) };
-  }
-  function _vs3PolyMesh(polys, t, colr, opacity, T, plateW, plateD, SH, y) {
+     always extrudes along +Z; rotating the finished mesh is the only way to get a floor slab —
+     and it is what turns `depth` into the slice's HEIGHT in the world. */
+  function _vs3PolyMesh(polys, colr, opacity, T, plateW, plateD, h, y) {
     var shapes = [];
     /* ⚠️ A COUNT OF THREE IS NOT ENOUGH — the shape must enclose some AREA. Clipping a square at
        t = 0 returns four points, all of them on x = 0: a valid-looking ring with no interior, which
@@ -15457,7 +15436,10 @@
       return Math.abs(a) / 2;
     }
     polys.forEach(function (q) {
-      var cut = (t >= 1) ? q.pts : _vsClipX(q.pts, t);
+      // ⚠️ The ring is used whole. It used to be cut at the progress fraction, which is what the
+      // horizontal fill needed; a vertical fill slices the EXTRUSION instead and leaves the
+      // footprint alone — so a half-done zone is still the zone's real outline, half as tall.
+      var cut = q.pts;
       if (cut.length < 3 || area2(cut) < 1e-9) return;
       var s = new T.Shape();
       cut.forEach(function (p, i) {
@@ -15467,7 +15449,7 @@
       shapes.push(s);
     });
     if (!shapes.length) return null;
-    var g = new T.ExtrudeGeometry(shapes, { depth: SH, bevelEnabled: false });
+    var g = new T.ExtrudeGeometry(shapes, { depth: h, bevelEnabled: false });
     var mesh = new T.Mesh(g, new T.MeshLambertMaterial({
       color: colr, transparent: opacity < 1, opacity: opacity
     }));
@@ -15560,10 +15542,10 @@
     var storeys = model.disp.length;
     var grp = new T.Group();
     var picks = [];
-    /* The hovered zone's own outline is traced from the mesh that IS the zone — see setHover.
-       ⚠️ byKey holds the REMAINING-body mesh only, never the done stretch or the baseline mark:
-       those are clipped to a fraction of the zone, and tracing one would outline "the done part"
-       rather than the zone the pointer is over.
+    /* The hovered zone's own outline is traced from the meshes that ARE the zone — see setHover.
+       ⚠️ byKey holds the zone's SLICES (done, remaining) and nothing else — never the baseline
+       mark, which is a statement about the schedule rather than part of the shape, and would put
+       a traced line round a band floating in the middle of the zone.
        ⚠️ info is this scene's OWN copy of what each block is. _vsCells is a module-level registry
        that the focus window swaps out and restores around its build (see _vs3FocusBuild), so a
        scene inside that window reading the registry at hover time would be reading the map
@@ -15620,20 +15602,34 @@
         var col = _tone.don;
         // ⚠️ THE SAME THREE CHANNELS THE 2D CELL USES, so the two cards cannot say different things:
         //   colour = which trade/category · brightness = done vs remaining · height = the storey.
-        // The done fraction is a SECOND, brighter box in front of the dimmer one, which is the 3D
-        // equivalent of the 2D cell's hard-edged progress split rather than a new visual language.
         var dim = _tone.rem;
         var x = (p.col - (p.cols - 1) / 2) * shW;
         var z = (p.row - (p.rows - 1) / 2) * shD;
-        // ⚠️ The done stretch grows from the cell's LEFT edge, exactly as the 2D cell's solid bar
-        // does — so a half-done zone reads the same way in both cards. Centring it instead would
-        // make 50% look like a block floating in the middle of its own zone.
-        function box(w, colr, opacity) {
+        /* ==== PROGRESS FILLS UPWARD, AND THE TWO PARTS DO NOT OVERLAP ======================
+           Owner 2026-09-10: *"for the progress can you make it that the progress for the 3D
+           version is from bottom to top? not like horizontal direction"* and *"the shades are
+           like unstable or not uniform … fix that"*.
+
+           ⚠️⚠️ THOSE ARE ONE REQUEST AND ONE BUG, AND THE SAME CHANGE ANSWERS BOTH. The done
+           stretch used to be a SECOND, narrower block sitting INSIDE the dim one, lifted by a
+           thousandth of a unit to win the depth test. Two surfaces that close together is the
+           textbook condition for Z-FIGHTING: at this camera's near/far range the depth buffer
+           cannot separate them, so which one is in front is decided per pixel and changes as the
+           model turns. That is the mottled, striped, "unstable" shading in the screenshot — not
+           a lighting fault, two surfaces arguing.
+
+           So a zone is now cut into TWO DISJOINT SLICES stacked in height: done from the floor of
+           the storey up to its percentage, remaining above it. Nothing is inside anything, no
+           nudge is needed, no two faces are coplanar — and a filling building is what progress
+           on a storey actually looks like.
+           ⚠️ Both slices carry the SAME footprint, so the zone's plan shape is not distorted by
+           how far along it is. */
+        function box(h2, base, colr, opacity) {
           var m = new T.Mesh(
-            new T.BoxGeometry(w, SH, exD),
+            new T.BoxGeometry(exW, h2, exD),
             new T.MeshLambertMaterial({ color: colr, transparent: opacity < 1, opacity: opacity })
           );
-          m.position.set(x - (exW - w) / 2, y + SH / 2, z);
+          m.position.set(x, y + base + h2 / 2, z);
           return m;
         }
         // ⚠️ EACH RENDERER REGISTERS WHAT IT DREW, into the same registry openVsCell reads, with
@@ -15644,18 +15640,32 @@
           done: _done, fslip: _done ? _vsFinSlip(c.list) : null };
         /* ⚠️ ONE builder for both paths, so everything downstream — the compare edges, the
            baseline mark, the registry, the picking — is written once and cannot drift between a
-           traced floor and an untraced one. `f` is the fraction of the plate to keep. */
-        function zoneMesh(f, colr, opacity) {
-          if (_pg) return _vs3PolyMesh(_pg, f, colr, opacity, T, plateW, plateD, SH, y);
-          return box(Math.max(0.04, exW * f), colr, opacity);
+           traced floor and an untraced one. The slice runs from `f0` to `f1` of the storey's
+           height, both fractions of SH. */
+        function zoneMesh(f0, f1, colr, opacity) {
+          var h2 = SH * (f1 - f0), base = SH * f0;
+          if (_pg) return _vs3PolyMesh(_pg, colr, opacity, T, plateW, plateD, h2, y + base);
+          return box(h2, base, colr, opacity);
         }
-        var rem = zoneMesh(1, dim, isNo ? 0.35 : 1);
+        /* ⚠️ A SLIVER IS ROUNDED AWAY, in whichever direction it is a sliver. A cell at 0.4%
+           would otherwise contribute a slice 2 thousandths of a unit tall: invisible, but it
+           still puts a seam across the zone and costs a mesh. Rounding it to 0 (or, at the other
+           end, to a full storey) keeps the model honest to the eye and cheap to draw. */
+        var _f = Math.max(0, Math.min(1, pct / 100));
+        if (_f * SH < 0.006) _f = 0;
+        if ((1 - _f) * SH < 0.006) _f = 1;
+        /* ⚠️⚠️ BOTH SLICES ARE THE ZONE. `byKey` holds every piece, because the hover trace has
+           to outline the WHOLE zone: tracing only the remaining part would draw a line round
+           "the part that is not done", which is a different thing and reads as a selection of
+           something the planner did not point at. */
+        var parts = [];
+        if (_f > 0) { var _don = zoneMesh(0, _f, col, isNo ? 0.5 : 1); if (_don) parts.push(_don); }
+        if (_f < 1) { var _rem = zoneMesh(_f, 1, dim, isNo ? 0.35 : 1); if (_rem) parts.push(_rem); }
         // ⚠️ A traced outline can fail to build (a degenerate trace); the block path never does.
         // Skipping the cell entirely is better than adding a null to the scene graph.
-        if (!rem) return;
-        rem.userData.key = _key;
-        grp.add(rem); picks.push(rem);
-        byKey[_key] = rem;
+        if (!parts.length) return;
+        parts.forEach(function (m) { m.userData.key = _key; grp.add(m); picks.push(m); });
+        byKey[_key] = parts;
         info[_key] = { level: v, cell: c.label, pct: pct, n: c.list.length, fin: _vsDate(c.list) };
         /* ⚠️⚠️ COMPARE KEEPS THE TRADE COLOUR HERE TOO, and that is not a style choice — it is the
            rule the 2D cell records: replacing the fill with the slip colour turned every building
@@ -15670,22 +15680,31 @@
            equivalent of a 2.5px stroke, and it survives every camera angle. */
         if (_vsBasis === 'compare') {
           var _sl = _vsSlip(c.list);
-          var _eg = new T.LineSegments(
-            new T.EdgesGeometry(rem.geometry),
-            new T.LineBasicMaterial({ color: new T.Color(_vsSlipColor(_sl)) }));
-          // ⚠️ Copy the ROTATION too. A traced zone's mesh is laid down with rotation.x = -PI/2,
-          // and edges built from its geometry but left unrotated would float above the tower at
-          // ninety degrees to it.
-          _eg.position.copy(rem.position);
-          _eg.rotation.copy(rem.rotation);
-          _eg.userData.key = _key;
-          grp.add(_eg);
+          var _slc = new T.Color(_vsSlipColor(_sl));
+          // ⚠️ EVERY slice, not just one: the zone is two pieces now, and outlining one of them
+          // would put the slip colour round the done part alone.
+          parts.forEach(function (pm) {
+            var _eg = new T.LineSegments(new T.EdgesGeometry(pm.geometry),
+              new T.LineBasicMaterial({ color: _slc }));
+            // ⚠️ Copy the ROTATION too. A traced zone's mesh is laid down with rotation.x = -PI/2,
+            // and edges built from its geometry but left unrotated would float above the tower at
+            // ninety degrees to it.
+            _eg.position.copy(pm.position);
+            _eg.rotation.copy(pm.rotation);
+            _eg.userData.key = _key;
+            grp.add(_eg);
+          });
           /* ⚠️ AND THE BASELINE'S OWN MARK. The 2D compare cell shows where the baseline says
              progress should be, so "behind by this much" is a GAP you can see rather than two
              numbers to subtract. A thin slab at that fraction is the 3D reading of the same mark;
-             it protrudes very slightly (exD * 1.04) so it is visible from the elevations, not only
-             from above. Absent when there is no baseline — a mark at 0 would read as "nothing was
-             planned by now", which is a different claim from "nobody has baselined this". */
+             Absent when there is no baseline — a mark at 0 would read as "nothing was planned by
+             now", which is a different claim from "nobody has baselined this".
+             ⚠️⚠️ IT TURNED WITH THE FILL. The mark was a vertical blade standing at a fraction of
+             the zone's WIDTH, which was the right reading while progress grew sideways and is a
+             meaningless line now that it grows upward. It is a horizontal band at the baseline's
+             HEIGHT instead — the level the work should have reached — so the gap to the top of
+             the bright slice is the slip, still measured with the eye rather than by subtracting
+             two numbers. */
           var _pp = _vsPlanPct(c.list);
           if (_pp != null) {
             var _at = Math.max(0, Math.min(1, _pp / 100));
@@ -15693,25 +15712,15 @@
             // exW/x describe the wrap slot, which a traced zone does not occupy.
             var _bb = _pg ? _vsZpBBox(_pg) : null;
             var _mw = _bb ? _bb.w * plateW : exW, _md = _bb ? _bb.h * plateD : exD;
-            var _mx = _bb ? (_bb.x - 0.5) * plateW : (x - exW / 2);
+            var _mx = _bb ? (_bb.x + _bb.w / 2 - 0.5) * plateW : x;
             var _mz = _bb ? (_bb.y + _bb.h / 2 - 0.5) * plateD : z;
-            var _mk = new T.Mesh(new T.BoxGeometry(_mw * 0.02 + 0.012, SH * 1.02, _md * 1.04),
+            var _mk = new T.Mesh(new T.BoxGeometry(_mw * 1.04, SH * 0.03 + 0.008, _md * 1.04),
               // ⚠️ Theme-aware: a near-white slab is a mark on the light theme and a light
               // source on the dark one, where it was the brightest thing in the scene.
               new T.MeshBasicMaterial({ color: _vsDarkTheme() ? 0xdfe4ea : 0x2b3038 }));
-            _mk.position.set(_mx + _mw * _at, y + SH / 2, _mz);
+            _mk.position.set(_mx, y + SH * _at, _mz);
             _mk.userData.key = _key;
             grp.add(_mk); picks.push(_mk);
-          }
-        }
-        if (pct > 0) {
-          var don = zoneMesh(Math.min(100, pct) / 100, col, isNo ? 0.5 : 1);
-          if (don) {
-            // ⚠️ Lifted a hair so it wins the depth test against the dim body it sits inside.
-            // The box path nudges z; an extruded slab is coplanar in Y, so it nudges y instead.
-            if (_pg) don.position.y = y + 0.002; else don.position.z = z + 0.001;
-            don.userData.key = _key;
-            grp.add(don); picks.push(don);
           }
         }
       });
@@ -15786,9 +15795,13 @@
        ⚠️ Placed from the PROJECTED geometry, not from a fixed corner of the canvas: the model
        orbits, so the label follows the storey it names. It is pinned to whichever plate corner is
        currently LEFTMOST on screen, which is the one nothing is drawn to the left of.
-       ⚠️ THINNED, never stacked: a forty-storey tower gets ~14 labels, always including the top
-       floor and the bottom one, and any label that would land within 14px of the one above it is
-       dropped for that frame. Labels that overlap are worse than no labels — they misname floors. */
+       ⚠️⚠️ EVERY STOREY GETS ONE. Owner 2026-09-10: *"the labels are good, but hopefully there
+       is a label for all floors."* The first cut built ~14 and dropped the rest at BUILD time,
+       which meant a floor could not be named however far you zoomed in. Now the layer holds one
+       label per storey and the only thinning is per FRAME: a label that would land within 13px
+       of the one already placed above it is hidden for that frame and comes back as soon as the
+       planner zooms in or turns the model. Overlapping labels are worse than none — they misname
+       floors — but hiding one at this zoom is not the same as never drawing it. */
     var labWrap = null, labs = [];
     var _plW = PLATE.cols * CELL, _plD = PLATE.rows * CELL;
     function buildLabels() {
@@ -15796,11 +15809,7 @@
       labWrap = document.createElement('div');
       labWrap.className = 'ps-vs3-labs';
       host.appendChild(labWrap);
-      var step = Math.max(1, Math.ceil(storeys / 14));
       model.disp.forEach(function (v, li) {
-        // ⚠️ The last storey is kept whatever the step lands on: the bottom of the building is a
-        // landmark, and a thinning rule that drops it makes the stack look like it continues.
-        if (li % step !== 0 && li !== storeys - 1) return;
         var el = document.createElement('div');
         el.className = 'ps-vs3-lab' + (v === VS_NOLEV ? ' nolev' : '');
         el.textContent = (v === VS_NOLEV ? 'No level' : String(v));
@@ -15838,7 +15847,13 @@
           if (bx === null || x < bx) { bx = x; by = y2; }
         });
         var hide = !ok || bx === null;
-        if (!hide) hide = shown.some(function (s) { return Math.abs(s - by) < 14; });
+        /* ⚠️ Against what is already ON SCREEN this frame, not against the neighbouring storey:
+           at a steep angle the storeys nearest the camera are far apart and the ones behind are
+           packed, and the rule has to follow what the planner is actually looking at.
+           ⚠️ 17px is the label's own height (10px text at 1.4, plus its two borders) plus a
+           hairline — measured against the CSS rather than guessed, because a threshold smaller
+           than the label lets two of them touch, which is the thing this rule exists to stop. */
+        if (!hide) hide = shown.some(function (s) { return Math.abs(s - by) < 17; });
         L2.el.style.display = hide ? 'none' : 'block';
         if (hide) return;
         shown.push(by);
@@ -15960,8 +15975,9 @@
       if (key === hoverKey) { if (key && e) tipMove(e); return; }
       hoverKey = key;
       clearTrace();
-      var msh = key && byKey[key];
-      if (msh) {
+      // ⚠️ EVERY slice of the zone, so the trace outlines the whole zone and not the part of it
+      // that happens to be done — the seam between them stays, and that is where progress is.
+      (key && byKey[key] ? byKey[key] : []).forEach(function (msh) {
         var ln = new T.LineSegments(new T.EdgesGeometry(msh.geometry),
           new T.LineBasicMaterial({ color: HOVER_COL, transparent: true, opacity: 0.92, depthTest: false }));
         ln.position.copy(msh.position);
@@ -15969,7 +15985,7 @@
         ln.scale.copy(msh.scale);
         ln.renderOrder = 999;   // ⚠️ with depthTest off, draw ORDER is all that keeps it on top
         hoverGrp.add(ln);
-      }
+      });
       var d = key && info[key];
       if (d) {
         var t = tipBox();
@@ -16110,9 +16126,9 @@
     // being painted teaches a planner to look for something that is not there.
     var cmp = (_vsBasis === 'compare')
       ? '<b>Planned vs actual:</b> the block\u2019s <b>edges</b> carry the slip (early / on time / late / no ' +
-        'baseline) and the pale slab is where the <b>baseline</b> says the work should be \u2014 the gap to the ' +
-        'bright stretch is how far behind or ahead it is. The trade colour is kept, so the trades stay ' +
-        'identifiable. '
+        'baseline) and the pale band is the <b>level the baseline says the work should have reached</b> \u2014 ' +
+        'the gap between it and the top of the bright part is how far behind or ahead it is. The trade colour ' +
+        'is kept, so the trades stay identifiable. '
       : '';
     /* ⚠️⚠️ IT SAYS WHOSE LAYOUT THIS IS. With a plate defined the zones sit where the planner put
        them, and the honest claim changes — but only for the POSITIONS. There are still no
@@ -16148,7 +16164,9 @@
       ? '<b>Colour = the zone colour</b> you set on the floor plan, not the trade — a zone with no plan ' +
         'keeps its trade colour. '
       : '';
-    return '<p class="ps-vs3-foot">' + cmp + zc + lay + 'Schematic: the storeys, their order and the grade line are the ' +
+    return '<p class="ps-vs3-foot">' + cmp + zc + lay +
+      '<b>Each zone fills from its floor upwards</b>: the bright part is done, the dim part above it is what ' +
+      'is left. Schematic: the storeys, their order and the grade line are the ' +
       'same as the 2D view. The <b>footprint</b> is the zone count laid out on the plan grid you set ' +
       'above &mdash; the schedule holds no zone outlines or dimensions, so <b>no length or area is ' +
       'implied</b>. Drag to orbit, scroll to zoom, click a block for its dates.</p>';
@@ -32231,6 +32249,43 @@
        text ("— No level —") and is free to be rewritten; the two sides would then silently stop
        meeting. Each side names this constant and points at the other — see _VS_ZP_NOLEV. */
     var ZP_NOLEV_ID = 'nolev', ZP_NOLEV_KEY = '*nolevel*';
+    /* ==== WHICH WAY THE BUILDING FACES — AN OBJECT ON THE DRAWING ========================
+       Owner 2026-09-10: *"in the floor plan, remove the front faces etc. I just want you to add
+       a feature wherein users are just able to place an object and then you would be able to
+       identify which is the front face of the project."*
+
+       ⚠️⚠️ THE MARKER IS THE INPUT; THE COMPASS EDGE IS DERIVED FROM IT. Four buttons asked the
+       planner to hold a mapping in their head — from "S" to "the bottom of this drawing" to "the
+       side with the road on it" — and to keep it straight while looking at a plan that may be
+       rotated any way the architect drew it. Dropping a marker on the frontage asks nothing: the
+       nearest edge of the sheet IS the front, and the drawing shows the answer back.
+       ⚠️ Stored in 0..1 of the sheet, not in plan units: sheets differ in height, and a marker
+       in raw units would move to a different edge when the plan image is replaced.
+       ⚠️ Compared as FRACTIONS for the same reason — the sheet is 1000 wide and its height
+       varies, so raw distances would make the short axis always win. */
+    function zpNormMark(m) {
+      if (!m || typeof m !== 'object') return null;
+      var x = +m.x, y = +m.y;
+      if (!isFinite(x) || !isFinite(y)) return null;
+      return { x: zpClamp(x, 0, 1), y: zpClamp(y, 0, 1) };
+    }
+    function zpEdgeOfMark(m) {
+      if (!m) return null;
+      var d = { N: m.y, S: 1 - m.y, W: m.x, E: 1 - m.x }, best = 'N';
+      // ⚠️ Ties go to the earlier compass point rather than to whichever key iterates first —
+      // a marker dropped dead centre must not change its answer between two saves.
+      ZP_EDGES.forEach(function (e) { if (d[e] < d[best]) best = e; });
+      return best;
+    }
+    /* The front edge for a bag: the marker's, or the edge a previous version of this window
+       stored directly. ⚠️ THE LEGACY FIELD IS STILL READ. Setups saved before the marker
+       existed name their front in `front`, and dropping that on the floor would silently turn
+       every one of those buildings round. */
+    function zpFrontOfBag(bag) {
+      if (!bag) return null;
+      var m = zpNormMark(bag.frontAt);
+      return m ? zpEdgeOfMark(m) : zpNormFront(bag.front);
+    }
     /* ==== ZONE COLOUR =====================================================================
        Owner 2026-09-10: *"can you add option for colors."*
        ⚠️⚠️ KEYED BY ZONE CODE, PROJECT-WIDE — not per plate and not per floor. `Zone 1` is the
@@ -32334,9 +32389,12 @@
         });
         return legacy;
       }
-      // ⚠️ The front edge survives normalize, or defining it and reloading would lose it.
+      // ⚠️ The front edge survives normalize, or defining it and reloading would lose it —
+      // both the marker and the edge older setups stored on its own.
       var _fr = zpNormFront(src.front);
       if (_fr) out.front = _fr;
+      var _fm = zpNormMark(src.frontAt);
+      if (_fm) out.frontAt = _fm;
       /* ⚠️ And so do the zone colours — and they survive a plate being deleted, which the
          plates themselves do not. A colour is a fact about a ZONE, not about a drawing:
          re-tracing a floor from scratch must not silently repaint it. */
@@ -32365,11 +32423,17 @@
       // ⚠️ NOT defaulted to a compass point. "Nobody has said" and "somebody said South" are
       // different answers, and the 3D card falls back to its own preference only for the first.
       cfg.zonePlan.front = zpNormFront(cfg.zonePlan.front);
+      cfg.zonePlan.frontAt = zpNormMark(cfg.zonePlan.frontAt);
       if (!cfg.zonePlan.color || typeof cfg.zonePlan.color !== 'object') cfg.zonePlan.color = {};
       return cfg.zonePlan;
     }
-    function zpFront() { return zpBag().front; }
-    function zpSetFront(e) { zpBag().front = zpNormFront(e); markDirty(); }
+    function zpFront() { return zpFrontOfBag(zpBag()); }
+    function zpMark() { return zpBag().frontAt; }
+    function zpSetMark(m) { zpBag().frontAt = zpNormMark(m); markDirty(); }
+    /* ⚠️ Clearing clears BOTH. Leaving the legacy edge behind when the planner removes the
+       marker would answer "not set" with the old direction, which is the one state this pair of
+       fields must never produce. */
+    function zpClearFront() { var b = zpBag(); b.frontAt = null; b.front = null; markDirty(); }
     function zpIdFor(floor) {
       if (!floor || !floor.id) return null;
       var bag = zpBag();
@@ -32699,7 +32763,8 @@
                  // ⚠️ On a floor with no zones the brush is the WHOLE-FLOOR outline, so the
                  // window opens ready to draw rather than opening with nothing selectable.
                  brush: codes[0] || ZP_ALL, drawing: false, pts: [], sel: null, url: null,
-                 busy: false, err: '', hist: [], clip: null, grid: zpGridLoad(), ref: '' };
+                 busy: false, err: '', hist: [], clip: null, grid: zpGridLoad(), ref: '',
+                 placing: false };
 
       function H() { return zpH(_zpWin.draft); }
       /* ⚠️ READ STRAIGHT OFF THE BAG, never through zpIdFor: that resolves a floor, and a
@@ -32864,6 +32929,19 @@
             '<line class="zpw-front" x1="' + _edge[0] + '" y1="' + _edge[1] + '" x2="' + _edge[2] + '" y2="' + _edge[3] + '"></line>' +
             '<line class="zpw-rear" x1="' + _redge[0] + '" y1="' + _redge[1] + '" x2="' + _redge[2] + '" y2="' + _redge[3] + '"></line>';
         }
+        /* The marker itself. ⚠️ AN OBJECT ON THE SHEET, with the edge it resolves to drawn from
+           the same value — so the pin and the red edge can never disagree. It sits ABOVE the
+           shapes (last in the svg) because it is the one thing here that is not part of the
+           drawing and must stay findable on a busy plan. */
+        var markSvg = '';
+        var _mk = zpMark();
+        if (_mk) {
+          var _mx = _mk.x * ZP_W, _my = _mk.y * hh;
+          markSvg = '<g class="zpw-mark" data-zpmark="1">' +
+            '<circle class="zpw-mark-h" cx="' + _mx.toFixed(1) + '" cy="' + _my.toFixed(1) + '" r="26"></circle>' +
+            '<circle class="zpw-mark-d" cx="' + _mx.toFixed(1) + '" cy="' + _my.toFixed(1) + '" r="11"></circle>' +
+            '<text x="' + _mx.toFixed(1) + '" y="' + (_my - 22).toFixed(1) + '">FRONT</text></g>';
+        }
         var live = W.drawing && W.pts.length
           ? '<polyline class="zpw-live" points="' + zpPts(W.pts) + '"></polyline>' +
             W.pts.map(function (p) { return '<circle class="zpw-lv" cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="7"></circle>'; }).join('')
@@ -32900,24 +32978,25 @@
               (W.ref ? '<button class="pd-btn" id="zpw-refcopy" title="Copy every outline from the reference onto this floor, keeping its zone names. The fastest way to make two floors identical.">Copy these here</button>' : '') : '') +
           '</div>' +
 
-          /* ---- orientation: which edge of THIS drawing faces the front ------------------
-             ⚠️ Owner: *"defining from the floor plan which is the front, which is the rear"*.
-             It lives here rather than in the 3D bar because it is a fact about the DRAWING,
-             and the planner deciding it is looking at the drawing. ⚠️ ONE field: the rear is
-             the opposite edge, derived - storing both would allow a building whose front and
-             rear are the same side. */
+          /* ---- orientation: the object that says which way the building faces -----------
+             ⚠️⚠️ Owner 2026-09-10: *"remove the front faces etc. I just want you to add a
+             feature wherein users are just able to place an object and then you would be able
+             to identify which is the front face of the project."* The four compass buttons are
+             gone. The planner drops a marker on the frontage - the road, the entrance, the side
+             the building presents - and the nearest edge of the sheet IS the front, derived
+             (see zpEdgeOfMark) and shown back on the drawing so the answer is never a guess. */
           '<div class="zpw-bar">' +
-            '<span class="zpw-lbl">Front faces</span>' +
-            '<span class="ps-vs-seg zpw-seg">' + ZP_EDGES.map(function (e) {
-              return '<button data-zpfront="' + e + '"' + (zpFront() === e ? ' class="on"' : '') +
-                ' title="The ' + ZP_EDGE_SIDE[e] + ' edge of this drawing is the front of the building">' +
-                e + ' \u00b7 ' + ZP_EDGE_SIDE[e] + '</button>';
-            }).join('') + '</span>' +
+            '<span class="zpw-lbl">Front</span>' +
+            '<button class="pd-btn' + (W.placing ? ' pd-btn-primary' : '') + '" id="zpw-mk" title="Drop a marker on the side the building faces \u2014 a road, the main entrance, the site frontage. The nearest edge of the drawing becomes the front.">' +
+              (W.placing ? 'Click the drawing\u2026' : (zpMark() ? 'Move the marker' : 'Place the front marker')) + '</button>' +
             (zpFront()
-              ? '<span class="sbld-hint" style="margin:0;">rear is the <b>' + ZP_EDGE_SIDE[{ N: 'S', E: 'W', S: 'N', W: 'E' }[zpFront()]] +
-                '</b> edge \u00b7 the 3D view names its elevations from this</span>' +
-                '<button class="pd-btn" id="zpw-frontx" title="Leave it undefined">Clear</button>'
-              : '<span class="sbld-hint" style="margin:0;">not set \u2014 the 3D view falls back to its own Front faces setting</span>') +
+              ? '<span class="sbld-hint" style="margin:0;">front is the <b>' + ZP_EDGE_SIDE[zpFront()] + '</b> edge' +
+                  ' \u00b7 rear is the <b>' + ZP_EDGE_SIDE[{ N: 'S', E: 'W', S: 'N', W: 'E' }[zpFront()]] + '</b>' +
+                  ' \u00b7 the 3D view names its elevations from this' +
+                  (zpMark() ? '' : ' \u00b7 <b>set on an older screen</b> \u2014 place a marker to see it on the drawing') + '</span>' +
+                '<button class="pd-btn" id="zpw-mkx" title="Remove the marker and leave the front undefined">Remove</button>'
+              : '<span class="sbld-hint" style="margin:0;">not set \u2014 the 3D view falls back to its own <b>Front faces</b> setting</span>') +
+            (W.placing ? '<span class="sbld-hint" style="margin:0;">click anywhere on the drawing, nearest edge wins</span>' : '') +
           '</div>' +
 
           // ---- row 2: which zone ---------------------------------------------------------
@@ -32986,7 +33065,7 @@
           (W.err ? '<p class="sbld-note sbld-note-warn">' + e2(W.err) + '</p>' : '') +
           '<div class="zpw-stage' + (W.drawing ? ' drawing' : '') + '" id="zpw-stage">' +
             (W.url ? '<img class="zpw-img" src="' + e2(W.url) + '" alt="" style="opacity:' + (d.o == null ? 1 : d.o) + '">' : '') +
-            '<svg class="zpw-svg" id="zpw-svg" viewBox="0 0 ' + ZP_W + ' ' + hh + '" preserveAspectRatio="none">' + gridSvg + refSvg + frontSvg + shapes + live + '</svg>' +
+            '<svg class="zpw-svg" id="zpw-svg" viewBox="0 0 ' + ZP_W + ' ' + hh + '" preserveAspectRatio="none">' + gridSvg + refSvg + frontSvg + shapes + live + markSvg + '</svg>' +
             (!d.img && !d.polys.length && !W.drawing ? '<div class="zpw-empty"><b>Nothing here yet.</b><br>' +
               'Pick a zone above, then <b>add a shape</b> — or <b>Trace…</b> it corner by corner.<br>' +
               'Attaching the floor plan is optional, but it gives you something to draw over.</div>' : '') +
@@ -33189,11 +33268,16 @@
           commit(); paint();
           UI.toast('Copied ' + r.plate.polys.length + ' area(s) from ' + r.label + '. They are ordinary shapes now — move or reshape any of them.');
         };
-        wrap.querySelectorAll('[data-zpfront]').forEach(function (b) {
-          b.onclick = function () { zpSetFront(zpFront() === b.dataset.zpfront ? null : b.dataset.zpfront); paint(); };
-        });
-        var fx = q('zpw-frontx');
-        if (fx) fx.onclick = function () { zpSetFront(null); paint(); };
+        var mkB = q('zpw-mk');
+        if (mkB) mkB.onclick = function () {
+          W.placing = !W.placing;
+          // ⚠️ Placing and tracing are two pointer modes and cannot both be live: the same click
+          // would drop a marker and a corner.
+          if (W.placing && W.drawing) { W.drawing = false; W.pts = []; }
+          paint();
+        };
+        var mkX = q('zpw-mkx');
+        if (mkX) mkX.onclick = function () { zpClearFront(); W.placing = false; paint(); };
         var gsel = q('zpw-grid');
         if (gsel) gsel.onchange = function () {
           W.grid = parseInt(gsel.value, 10) || 0;
@@ -33235,8 +33319,50 @@
 
         var stage = q('zpw-stage'), svg = q('zpw-svg');
         if (!stage || !svg) return;
+        /* Dragging the marker. ⚠️ NO snap() AND NO UNDO ENTRY: the marker is not part of the
+           outline, and putting it in the drawing's history would make Ctrl+Z step through
+           where somebody had dropped a pin instead of through the shapes they drew.
+           ⚠️ The group is MOVED live by rewriting its coordinates, and painted once on release:
+           a full repaint per pointermove rebuilds the whole window under the cursor. */
+        var mkG = wrap.querySelector('[data-zpmark]');
+        if (mkG) mkG.onpointerdown = function (ev) {
+          if (W.drawing || ev.button) return;
+          ev.preventDefault(); ev.stopPropagation();
+          try { svg.setPointerCapture(ev.pointerId); } catch (e) {}
+          var hh3 = H();
+          function put(e2) {
+            var p = ptOf(e2, stage); if (!p) return null;
+            mkG.querySelectorAll('circle').forEach(function (c2) {
+              c2.setAttribute('cx', p[0].toFixed(1)); c2.setAttribute('cy', p[1].toFixed(1));
+            });
+            var tx = mkG.querySelector('text');
+            if (tx) { tx.setAttribute('x', p[0].toFixed(1)); tx.setAttribute('y', (p[1] - 22).toFixed(1)); }
+            return { x: p[0] / ZP_W, y: p[1] / hh3 };
+          }
+          function move(e2) { put(e2); }
+          function up(e2) {
+            svg.removeEventListener('pointermove', move);
+            svg.removeEventListener('pointerup', up);
+            var at = put(e2);
+            if (at) zpSetMark(at);
+            paint();
+          }
+          svg.addEventListener('pointermove', move);
+          svg.addEventListener('pointerup', up);
+        };
         // ---- tracing ---------------------------------------------------------------------
         stage.onclick = function (ev) {
+          /* ⚠️ Placing wins over tracing, and turns itself off after one click: a mode that
+             stays on until you find the button again is how a planner ends up moving the marker
+             every time they mean to draw. */
+          if (W.placing) {
+            var pm = ptOf(ev, stage); if (!pm) return;
+            zpSetMark({ x: pm[0] / ZP_W, y: pm[1] / H() });
+            W.placing = false;
+            paint();
+            UI.toast('Front set: the ' + ZP_EDGE_SIDE[zpFront()] + ' edge of this drawing.', 'success');
+            return;
+          }
           if (!W.drawing) return;
           var p = ptOf(ev, stage); if (!p) return;
           if (W.pts.length >= 3) {
@@ -37747,7 +37873,7 @@
             var m = zpByLabelOf(c);
             // ⚠️ The newest setup that names a front wins, even if its plan is empty - the two
             // facts are independent and a planner may set one before drawing the other.
-            if (!front) front = zpNormFront(c.zonePlan && c.zonePlan.front);
+            if (!front) front = zpFrontOfBag(c.zonePlan);
             // ⚠️ The most recent setup may hold no plan while an older one does. Falling through
             // beats showing the guessed layout next to a plan the planner knows they drew.
             if (Object.keys(m).length) return { byLabel: m, front: front };
