@@ -1,5 +1,26 @@
 # Module: stakeholder-map
 
+## 2026-09-10 (y1) — A person opens their profile page, scoped to this project
+
+Owner, item 4: *"when clicking on a person in here would open a pop-up, instead let's make use of the
+personal page as well. Information presented will be project-level only and view-only for those items
+that are only should be editable in the portfolio level."*
+
+A card click now goes to the shared `person.html` with **this project in the URL**, so the page shows
+this project's ownership and its six OPS bands, with the 13 identity fields **locked and badged
+`PORTFOLIO`** — they belong to the shared directory, and editing them here would let two projects
+disagree about somebody's name.
+
+- ⚠️ It needs the **directory id**, not the register row id: `stakeholder_map.id` names one project's
+  row *about* a person, not the person.
+- ⚠️ A row with **no `stakeholder_id`** predates the directory and has no profile to open, so it falls
+  back to `openForm` rather than navigating to a dead page.
+- ⚠️ **Project fields are read-only there.** This module's own form owns writing those 31 columns,
+  with its derivations and its autosave; the profile page's action is *Open register*. Folding that
+  form onto the page is the remaining half of this item.
+
+Detail and the verification are in the root [`CLAUDE.md`](../../CLAUDE.md) entry for (y1).
+
 ## 2026-09-10 (u7) — The module opens on cards, the screen is called Register, and the bands move into the table
 
 Owner, item 6 of six: *"first load of stakeholder map it should be the cards but we shall call it

@@ -1012,10 +1012,25 @@ window.StakeholderMap = (function () {
     wrap.querySelectorAll('.sm-card').forEach(function (el) {
       el.onclick = function (e) {
         if (e.target.closest('button') || e.target.closest('a') || e.target.closest('[data-zoom]')) return;
-        openForm(rows.filter(function (x) { return x.id === el.dataset.id; })[0]);
+        openPersonPage(rows.filter(function (x) { return x.id === el.dataset.id; })[0]);
       };
     });
   }
+  // ⚠️⚠️ A PERSON OPENS THEIR PAGE, SCOPED TO THIS PROJECT. Owner: "when clicking on
+  //    a person in here would open a pop-up, instead let's make use of the personal page
+  //    as well. Information presented will be project-level only and view-only for those
+  //    items that are only should be editable in the portfolio level."
+  // ⚠️ It needs the DIRECTORY id, not the register row id: the page is a profile, and
+  //    `stakeholder_map.id` names one project's row about a person rather than the
+  //    person. A row that predates the directory has no `stakeholder_id` at all, so it
+  //    falls back to the register's own form — there is no profile to open.
+  function openPersonPage(r) {
+    if (!r) return;
+    if (!r.stakeholder_id) { openForm(r); return; }
+    location.href = '../../person.html#person=' + encodeURIComponent(r.stakeholder_id) +
+                    '&project=' + encodeURIComponent(r.project_id || pid);
+  }
+
   function cardHTML(r) {
     var p = priorityOf(r), act = r.activity_no ? E().activityByNo(r.activity_no) : null;
     var s = strategyOf(gapOf(r));

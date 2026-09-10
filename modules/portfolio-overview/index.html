@@ -323,6 +323,12 @@
       background:var(--pd-card); cursor:pointer; min-width:0;
     }
     .po-dir-card:hover { border-color:var(--pd-red); }
+    /* ⚠️ Under the star, not beside it: the star is the frequent action and must keep
+       the corner it has always had. */
+    .po-dir-manage { position:absolute; top:26px; right:6px; width:20px; height:18px;
+      display:flex; align-items:center; justify-content:center; border:0; background:none;
+      color:var(--pd-muted); font-size:14px; line-height:1; cursor:pointer; border-radius:4px; }
+    .po-dir-manage:hover { color:var(--pd-red); background:var(--pd-red-light); }
     .po-dir-card.is-inactive { opacity:.62; }
     .po-dir-ava {
       position:relative; flex:none; width:42px; height:42px; border-radius:50%;
@@ -1606,10 +1612,13 @@
       '</td></tr>';
     host.innerHTML = head + '<tbody>' + body + '</tbody>';
     host.querySelectorAll('[data-open]').forEach(function (b) {
+      // ⚠️ This button is the MANAGE route (assign to projects, merge a duplicate).
+      //    It stays a dialog on purpose: both act on the directory around the person
+      //    rather than on the person, so leaving the list to do them is the wrong shape.
       b.onclick = function (e) { e.stopPropagation(); openPersonPanel(b.dataset.open); };
     });
     host.querySelectorAll('.po-row[data-person]').forEach(function (r) {
-      r.onclick = function () { openPersonPanel(r.dataset.person); };
+      r.onclick = function () { openPerson(r.dataset.person); };
     });
   }
 
@@ -1872,6 +1881,8 @@
         '<div class="po-dir-role">' + esc(p.role_title || '') + '</div>' +
         '<div class="po-dir-meta">' + (n ? n + ' project' + (n === 1 ? '' : 's') : 'No project yet') + '</div>' +
       '</div>' +
+      '<button type="button" class="po-dir-manage" data-open="' + esc(p.id) +
+        '" title="Assign to projects, or merge a duplicate">⋯</button>' +
       '<button type="button" class="po-dir-star' + (p.is_favorite ? ' on' : '') +
         '" data-fav="' + esc(p.id) + '" title="' + (p.is_favorite ? 'Remove from favourites' : 'Mark as favourite') +
         '" aria-pressed="' + (p.is_favorite ? 'true' : 'false') + '">' + (p.is_favorite ? '★' : '☆') + '</button>' +
@@ -1932,11 +1943,14 @@
     root.querySelectorAll('[data-band]').forEach(function (b) {
       b.onclick = function () { dirBand = b.dataset.band; dirRenderUniverse(); };
     });
+    root.querySelectorAll('[data-open]').forEach(function (b) {
+      b.onclick = function (e) { e.stopPropagation(); openPersonPanel(b.dataset.open); };
+    });
     root.querySelectorAll('[data-fav]').forEach(function (b) {
       b.onclick = function (e) { e.stopPropagation(); dirToggleFav(b.dataset.fav); };
     });
     root.querySelectorAll('.po-dir-card[data-person]').forEach(function (c) {
-      c.onclick = function () { openPersonPanel(c.dataset.person); };
+      c.onclick = function () { openPerson(c.dataset.person); };
     });
   }
 
@@ -2039,6 +2053,18 @@
   }
 
   // ---- one person: assign to projects, or merge ----------------------------
+  // ⚠️⚠️ CLICKING A PERSON OPENS THEIR PAGE, NOT A DIALOG. Owner: "when clicking on
+  //    the stakeholder from the Portfolio View it just opens a pop-up for assigning a
+  //    project. I need to have the page where I will see the personal page of that
+  //    stakeholder with details."
+  // ⚠️ `openPersonPanel` is KEPT and still reachable — it is where assigning to projects
+  //    and merging duplicates live, and the Health view's duplicate list opens it
+  //    directly. What changed is that it is no longer what a plain click does.
+  function personHref(id) {
+    return '../../person.html#person=' + encodeURIComponent(id);
+  }
+  function openPerson(id) { location.href = personHref(id); }
+
   function openPersonPanel(id) {
     var p = (dirRows || []).filter(function (x) { return String(x.id) === String(id); })[0];
     if (!p) return;

@@ -95,6 +95,61 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+
+### 2026-09-10 (y1) — A stakeholder has a page: one profile, two scopes, and identity locked to the portfolio
+
+**New `person.html`, `assets/js/person.js`, `assets/css/person.css`.** Owner, items 3 and 4 of six:
+*"When clicking on the stakeholder from the Portfolio View it just opens a pop-up for assigning a
+project. I need to have the page where I will see the personal page of that stakeholder with details
+and with user permissions I can edit that stakeholder"*, and on the project register *"instead let's
+make use of the personal page as well. Information presented will be project-level only and view-only
+for those items that are only should be editable in the portfolio level."*
+
+Modelled on the separate Megawide Stakeholders app the owner pointed at — breadcrumb, a header card
+carrying the face and one primary action, then **Personal details** beside an ownership panel, every
+field label-above-value with an em dash where there is nothing.
+
+- ⚠️⚠️ **ONE PAGE, TWO SCOPES, AND THE SCOPE IS IN THE URL** —
+  `person.html#person=<id>` is the portfolio profile, `…&project=<PID>` is that project's view of the
+  same person. A profile view built inside each module would exist twice and drift, which is the
+  failure this log records for the S-curve maths and again for the identity matcher. One renderer;
+  the scope decides only which blocks appear and which are editable.
+- ⚠️⚠️ **WHAT IS EDITABLE WHERE IS A DATA FACT, NOT A UI PREFERENCE.** `stakeholders` is who a person
+  *is*; `stakeholder_map` is one project's assessment of them. So identity is editable at portfolio
+  scope only, and a project page renders those 13 fields **locked with a `PORTFOLIO` badge**. That is
+  the owner's "view-only" ask, and it is also what stops two projects disagreeing about a name.
+- ⚠️ **The save uses `.select('id')` and a LENGTH CHECK.** PostgREST answers an RLS-filtered UPDATE
+  with **200 and zero rows** — the silent success recorded here since `boq_tag_activities`. **Measured:
+  a refused save leaves the name unchanged on screen and warns, rather than reporting "Saved".**
+- ⚠️ It writes through `PDStakeholders.writeTolerant`, so on a database without
+  `2026-09-10-stakeholder-profile-fields.sql` the refused column is dropped and the rest still saves —
+  **measured: two attempts, and the toast names what it gave up.**
+- ⚠️ **A click now navigates; `openPersonPanel` is kept, not deleted.** Assigning to projects and
+  merging duplicates act on the directory *around* a person rather than on the person, so they stay a
+  dialog — reached from a new `⋯` button on the card and from the Health view's duplicate list.
+- ⚠️ A register row with **no `stakeholder_id`** (written before the directory existed) has no profile
+  to open, so it falls back to the register's own form rather than navigating to a dead page.
+
+⚠️⚠️ **A defect the harness found and reading would not have:** `editing` is module state and the
+project chips navigate to another scope of the *same* page, replacing no document — so leaving a
+profile mid-edit opened the **next** person already in edit mode, over a form built from the previous
+person's values. Reset on every load.
+
+**Verified** by executing the shipped `person.js` against a stub that behaves like RLS: portfolio
+scope renders 13 fields with **0 locked** and an *Edit profile* action for a planner and **none for a
+viewer**; project scope renders **17 fields with 13 locked**, the Ownership panel and **6 OPS bands**,
+and **0 inputs**; the editor gives 12 inputs and a 12-key patch; the refusal and the un-migrated
+degrade both behave as above; two columns at 741/390px, the status dot resolving to `--pd-ok`, and no
+horizontal page scroll.
+
+⚠️ **Project-level fields are READ-ONLY on this page.** The register's own 31-column form already owns
+writing them, with its derivations and autosave, and a second editor is a second set of rules to keep
+in step — so the project page's primary action is *Open register*. Folding that form onto the page is
+the remaining half of item 4 and is deliberately not in this commit.
+
+New assets at `?v=20260910y1`; stakeholder-map `module.js`/`module.css` → `?v=20260910y1`;
+`MODULE_V` → `20260910y1`. 30 pages, 50 assets, one version each.
+⚠️ **Not verified signed in** — no real profile has been read or written.
 ### A floor with no zones can be shaped, the progress tones are measured, and the storeys are named (2026-09-10) — jasantos2
 
 Owner: *"for floors without levels, there should also be an option for users to edit the shape of
