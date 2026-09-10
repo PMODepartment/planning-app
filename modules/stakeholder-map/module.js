@@ -79,7 +79,7 @@ window.StakeholderMap = (function () {
   var DIR = 'stakeholders';
   var PERSON_FIELDS = ['name', 'title', 'nickname', 'role_title', 'organization',
                        'category', 'stakeholder_group', 'email', 'contact',
-                       'birthday', 'gift_tier', 'photo_path', 'photo_thumb_path'];
+                       'birthday', 'photo_path', 'photo_thumb_path'];
   var people = {};        // stakeholder id -> directory row (the ones this project links)
   var dirAll = null;      // the whole directory, lazily loaded for the picker; null = not yet
   var dirUsage = {};      // stakeholder id -> project_id[]  (for "already on N projects")
@@ -1330,7 +1330,6 @@ window.StakeholderMap = (function () {
           '<div class="pd-field" style="flex:1;"><label>Email</label><input class="pd-input" type="email" id="ep-email" value="' + Fmt.esc(cur.email) + '"></div>' +
           '<div class="pd-field" style="flex:1;"><label>Contact no.</label><input class="pd-input" id="ep-contact" value="' + Fmt.esc(cur.contact) + '"></div>' +
           '<div class="pd-field" style="flex:0 0 160px;"><label>Birthday</label><input class="pd-input" type="date" id="ep-bday" value="' + (cur.birthday || '') + '"></div>' +
-          '<div class="pd-field" style="flex:0 0 120px;"><label>Gift tier</label><input class="pd-input" id="ep-gift" value="' + Fmt.esc(cur.gift_tier) + '"></div>' +
         '</div>' +
         '<div class="pd-field"><label>Notes about this person</label>' +
           '<textarea class="pd-textarea" id="ep-notes" rows="2" placeholder="Anything true of them wherever they appear — not this project\'s engagement plan.">' + Fmt.esc(cur.notes) + '</textarea></div>' +
@@ -1357,7 +1356,6 @@ window.StakeholderMap = (function () {
         email: q('#ep-email').value.trim(),
         contact: q('#ep-contact').value.trim(),
         birthday: q('#ep-bday').value || null,
-        gift_tier: q('#ep-gift').value.trim(),
       };
       if (!fields.name) { UI.toast('Name is required', 'warn'); return; }
       try {
@@ -1690,7 +1688,6 @@ window.StakeholderMap = (function () {
         '<div class="pd-field" style="flex:1;"><label>Email</label><input class="pd-input" type="email" id="f-email" value="' + Fmt.esc(ident.email) + '"' + dis + '></div>' +
         '<div class="pd-field" style="flex:1;"><label>Contact no.</label><input class="pd-input" id="f-contact" value="' + Fmt.esc(ident.contact) + '"' + dis + '></div>' +
         '<div class="pd-field" style="flex:0 0 160px;"><label>Birthday</label><input class="pd-input" type="date" id="f-bday" value="' + (ident.birthday || '') + '"' + dis + '></div>' +
-        '<div class="pd-field" style="flex:0 0 120px;"><label>Gift tier</label><input class="pd-input" id="f-gift" value="' + Fmt.esc(ident.gift_tier) + '"' + dis + '></div>' +
       '</div>' +
 
       '<div class="sm-fsec">2 · Register placement</div>' +
@@ -1971,7 +1968,6 @@ window.StakeholderMap = (function () {
         email:    person.email,
         contact:  person.contact,
         birthday: person.birthday || null,
-        gift_tier: person.gift_tier,
         // ⚠️ THE PHOTO PATHS TOO. Without these a person picked from the
         //    directory saves a project row with a null photo_path, so the register
         //    and the Cards view show initials for someone whose photograph is
@@ -1993,7 +1989,6 @@ window.StakeholderMap = (function () {
         email:    q('#f-email').value.trim(),
         contact:  q('#f-contact').value.trim(),
         birthday: q('#f-bday').value || null,
-        gift_tier: q('#f-gift').value.trim(),
       };
 
       var data = Object.assign({

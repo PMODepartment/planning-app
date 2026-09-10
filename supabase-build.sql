@@ -489,7 +489,6 @@ create table if not exists stakeholder_map (
   target_rel          smallint,      -- Target Relationship 1-4
   primary_responsible text,
   alternate           text,
-  gift_tier           text,
   created_by    uuid references users(id),
   created_at    timestamptz default now(),
   updated_at    timestamptz default now()
@@ -3701,7 +3700,6 @@ alter table stakeholder_map add column if not exists current_rel         smallin
 alter table stakeholder_map add column if not exists target_rel          smallint;  -- Target Relationship 1-4
 alter table stakeholder_map add column if not exists primary_responsible text;
 alter table stakeholder_map add column if not exists alternate           text;
-alter table stakeholder_map add column if not exists gift_tier           text;
 
 -- Helpful index for the project-scoped list (ordered by name).
 create index if not exists stakeholder_map_project_name_idx

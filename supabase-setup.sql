@@ -76,7 +76,7 @@ create table if not exists stakeholder_map (
   -- category=Sector, organization=Institution, role_title=Position,
   -- influence=Impact 1-4, interest=Interest 1-4 (both text); derived fields not stored.
   stakeholder_group text, title text, nickname text, birthday date, email text,
-  current_rel smallint, target_rel smallint, primary_responsible text, alternate text, gift_tier text,
+  current_rel smallint, target_rel smallint, primary_responsible text, alternate text,
   created_by uuid references users(id), created_at timestamptz default now(), updated_at timestamptz default now());
 
 create table if not exists drawing_register (

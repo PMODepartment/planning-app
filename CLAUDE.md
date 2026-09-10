@@ -95,6 +95,38 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+
+### 2026-09-10 (u6) — Gift Tier is removed from the app, and a migration drops the columns
+
+Owner, on the project-level Stakeholder Map: *"Let's drop the Gift Tier as well."* Asked whether to
+remove it from the UI only or to drop the columns outright, the owner chose to drop them.
+
+**Run `migrations/2026-09-10-drop-gift-tier.sql`.**
+
+- ⚠️⚠️ **IT DESTROYS DATA AND CANNOT BE UNDONE.** Every gift tier recorded on any stakeholder, on any
+  project, is gone the moment it runs; re-adding the column afterwards gives you an empty one. The
+  migration **counts the values it is about to destroy and `raise notice`s the number before the
+  drop takes effect**, inside the transaction, so there is a moment to `rollback` — and its header
+  carries a ready-made archive query for anyone who wants the values kept. This environment's key has
+  no grants, so I could not read that count for the owner in advance.
+- ⚠️ **Both tables are dropped in ONE transaction.** `gift_tier` was one of the 13 `PERSON_FIELDS`
+  mirrored between `stakeholders` (the directory) and `stakeholder_map` (the per-project register);
+  dropping one side alone leaves the mirror asymmetric and every insert naming the column fails
+  against whichever table lost it.
+- ⚠️ **The schema files are updated too** (`supabase-schema.sql`, `supabase-build.sql`,
+  `supabase-setup.sql`, `migrations/VERIFY-schema.sql`). Dropping a column in a migration while the
+  canonical schema still declares it means the next fresh deployment resurrects it — and the two then
+  disagree silently. ⚠️ `migrations/2026-07-20-stakeholder-map-full.sql` is **history and is left
+  alone**: it records what that migration did, and the drop is its own migration.
+- The field is gone from both forms that carried it (the directory identity form and the register's
+  own add/edit), from both copies of `PERSON_FIELDS`, and from the directory test's expectations.
+
+**Verified by execution:** `PERSON_FIELDS` is 12, the two copies are **identical** (they are compared
+element-wise, because a mirror that disagrees is the failure this contract exists to prevent), no
+live file outside the migration history names the column, and the shared suites still pass — **41
+matcher + 66 operations, 0 failing.** `stakeholders.js` → `?v=20260910u6`; stakeholder-map
+`module.js`/`module.css` → `?v=20260910u6`; `MODULE_V` → `20260910u6`.
+⚠️ **Not verified signed in, and the migration has not been run from here.**
 ### Snap to grid, and the traced layout finally reaches the Vertical Stacking (2026-09-10) — jasantos2
 
 Owner: *"can you add snapping to grid. also how come the zones defined are not shown in the vertical

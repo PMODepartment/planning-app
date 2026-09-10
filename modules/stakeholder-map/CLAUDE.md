@@ -1,5 +1,18 @@
 # Module: stakeholder-map
 
+## 2026-09-10 (u6) — Gift Tier removed
+
+Owner: *"Let's drop the Gift Tier as well."* Removed from the register's add/edit form and from the
+directory identity form, and dropped from `PERSON_FIELDS` — the 13-field mirror between
+`stakeholders` and `stakeholder_map` is now 12.
+
+⚠️ **`migrations/2026-09-10-drop-gift-tier.sql` drops the columns and DESTROYS the values.** The
+owner chose that over a UI-only removal after the data loss was stated. The migration reports the
+count it is about to destroy before the drop takes effect, so there is a moment to roll back.
+
+⚠️ Nothing displayed it — it was write-only, present in two forms and in the mirror list and rendered
+on no card, row or export. That is worth recording, because it is why removing it is this small.
+
 ## 2026-09-08 — Four KPI cards, and the row rule that had to change with them
 
 Owner: *"The kpi warnings in the stakeholder map isn't necessary let's remove the total number of
