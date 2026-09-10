@@ -91,6 +91,9 @@
   --pd-focus: var(--pd-red);
   /* Boot skeletons - a neutral wash, not a brand colour: a shimmer means "not loaded yet",
      and tinting it red would read as a state. Paired per theme like every other surface. */
+  /* One easing curve for the shell's own motion. `ease` starts too fast and lands too
+     softly, which is what makes a 240->64px slide read as a snap followed by a drift. */
+  --pd-ease: cubic-bezier(.4, 0, .2, 1);
   --pd-skel-base: rgba(0,0,0,.06);
   --pd-skel-hi:   rgba(0,0,0,.11);
   /* Type + shape */
@@ -281,7 +284,7 @@ a:hover { text-decoration: underline; }
   background: var(--pd-sidebar-bg); color: #fff; padding: 0;
   position: sticky; top: 0; height: 100vh; overflow-y: auto; overflow-x: hidden;
   display: flex; flex-direction: column;
-  transition: width .2s ease, flex-basis .2s ease, padding .2s ease;
+  transition: width .22s var(--pd-ease), flex-basis .22s var(--pd-ease), padding .22s var(--pd-ease);
 }
 /* Brand block — PRC's .sidebar-logo, widened top/bottom and centered. The sidebar
    itself carries no padding (see above), so this needs no negative margins: it is
@@ -368,6 +371,10 @@ a:hover { text-decoration: underline; }
   transition: background .15s, color .15s;
 }
 .pd-sidebar nav a:hover { background: rgba(255,255,255,.06); color: rgba(255,255,255,.9); text-decoration: none; }
+/* ⚠️ The collapse sets `font-size:0` on these rows. Without font-size in the transition the
+   labels vanish on the FIRST frame while the panel is still travelling, which is most of
+   what read as a snap. Animating it lets the text shrink WITH the rail. */
+.pd-sidebar nav a, .pd-nav-sibling { transition: background .15s, color .15s, font-size .22s var(--pd-ease); }
 .pd-sidebar nav a:hover { background: rgba(255,255,255,.08); color: #fff; text-decoration: none; }
 /* Owner (2026-09-03): the red box alone is enough to highlight the active item — the
    label stays at the same 500 weight every other nav row uses, not bumped to 600. */
@@ -422,12 +429,24 @@ a:hover { text-decoration: underline; }
 .pd-app.pd-collapsed .pd-sidebar { width: 64px; flex-basis: 64px; }
 .pd-app.pd-collapsed .pd-sidebar nav { padding-left: 8px; padding-right: 8px; }
 .pd-app.pd-collapsed .pd-nav-foot { padding-left: 8px; padding-right: 8px; }
-.pd-app.pd-collapsed .pd-sidebar-foot { display: none; }   /* no room for prose on a 64px rail */
+/* ⚠️ `display:none` cannot be transitioned, so the footer and the section labels used to
+   disappear instantly while the rail was still moving. Folding their height to 0 gives the
+   identical END state (no prose on a 64px rail) and an animated way of getting there. */
+.pd-sidebar-foot, .pd-sidebar .pd-navsec {
+  transition: opacity .12s var(--pd-ease), height .22s var(--pd-ease),
+              padding .22s var(--pd-ease), margin .22s var(--pd-ease);
+}
+.pd-app.pd-collapsed .pd-sidebar-foot {
+  opacity: 0; height: 0; padding-top: 0; padding-bottom: 0;
+  overflow: hidden; border-top-width: 0;   /* ⚠️ WIDTH, not just colour: a transparent 1px
+     border still measures 1px, so the folded footer came out h=1 where `display:none` gave
+     0. Measured, not assumed. */
+}
 .pd-app.pd-collapsed .pd-sidebar nav a,
 .pd-app.pd-collapsed .pd-nav-sibling { justify-content: center; padding: 11px 0; gap: 0; font-size: 0; }
 .pd-app.pd-collapsed .pd-navtxt { display: none; }   /* wrapped labels (with sub-captions whose own font-size ignores the font-size:0 trick) */
 .pd-app.pd-collapsed .pd-navico { margin-right: 0; }
-.pd-app.pd-collapsed .pd-navsec { display: none; }
+.pd-app.pd-collapsed .pd-navsec { opacity: 0; height: 0; padding-top: 0; padding-bottom: 0; overflow: hidden; }
 /* ⚠ The icon rail drops the WORDS and keeps the mark. `.pd-brand-logo` is already `none`
    globally; it is named here so the rail's intent survives if that default ever changes. */
 .pd-app.pd-collapsed .pd-brand-logo, .pd-app.pd-collapsed .pd-brand small { display: none; }
@@ -2007,3 +2026,10 @@ html.pd-dark .pd-table tr.pd-grp > td { background: rgba(255,255,255,.05); }
 .pd-clear { display: inline-flex; align-items: center; gap: 5px; border: none; background: transparent;
   color: var(--pd-muted); cursor: pointer; font-size: var(--pd-fs-sm); padding: 6px 8px; border-radius: 6px; }
 .pd-clear:hover { color: var(--pd-red); background: var(--pd-bg); }
+
+/* ⚠️ The sidebar's collapse is motion; honour the same preference .pd-spin and the boot
+   skeleton do. The end states are identical, they are just reached instantly. */
+@media (prefers-reduced-motion: reduce) {
+  .pd-sidebar, .pd-sidebar nav a, .pd-nav-sibling,
+  .pd-sidebar-foot, .pd-sidebar .pd-navsec { transition: none; }
+}

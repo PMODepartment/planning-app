@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w4"></script>
   <title>Manpower Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910w5" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910w6" />
   <style>
     /* Uniform module chrome (matches every other module). 2026-08-30: modules
        gained a persistent sidebar (MODULE_CONTRACT.md) — .pd-content no longer
@@ -298,7 +298,7 @@
         <span class="pd-navico" data-ico="appProcurement"></span><span class="pd-navtxt">Procurement App</span>
       </a>
     </div>
-    <div class="pd-sidebar-foot">Megawide Construction Corporation<br>EPC &middot; PMO</div>
+    <div class="pd-sidebar-foot">Megawide Construction Corporation<br>PMO Department</div>
   </aside>
   <div class="pd-content">
     <div class="pd-topbar">
@@ -309,7 +309,7 @@
       <div class="mp-projctx">
         <select class="pd-select mp-project" id="mp-project" title="Project"></select>
       </div>
-      <div class="mp-tabs" role="tablist">
+      <div class="mp-tabs pd-tabsrc" role="tablist">
         <button class="mp-tab active" data-view="loading">Loading</button>
         <button class="mp-tab" data-view="register">Positions</button>
         <button class="mp-tab" data-view="org">Org Chart</button>
@@ -3730,6 +3730,18 @@
     await load(true);
   }
 
+    // ⚠️ Converts this module's flat tab strip into the shared compact dropdown, which is what
+    // lets `.pd-modulebar` stay on ONE row (see its `flex-wrap:nowrap` comment in dashboard.css).
+    // Registered as a THIRD DOMContentLoaded listener, deliberately: theme.js's topbar injection
+    // must run before UI.initModuleTopbar() restructures the bar, and both are DOMContentLoaded
+    // listeners fired in registration order. Registering last means both have already run — the
+    // same reasoning risk-register documents, where calling initModuleTopbar() early was tried
+    // and reverted.
+    (function () {
+      function go() { if (window.UI && UI.tabsToDropdown) UI.tabsToDropdown('.mp-tabs', { icon: 'users' }); }
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go);
+      else go();
+    })();
   AppAuth.requireLogin(init);
 })();
 </script>

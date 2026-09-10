@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w4"></script>
   <title>Productivity Rates · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910w5" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910w6" />
   <style>
     /* ---- Uniform module chrome (matches every other module). Keep the topbar
        rules in sync with those. 2026-08-30: modules gained a persistent
@@ -182,7 +182,7 @@
         <span class="pd-navico" data-ico="appProcurement"></span><span class="pd-navtxt">Procurement App</span>
       </a>
     </div>
-    <div class="pd-sidebar-foot">Megawide Construction Corporation<br>EPC &middot; PMO</div>
+    <div class="pd-sidebar-foot">Megawide Construction Corporation<br>PMO Department</div>
   </aside>
   <div class="pd-content">
     <div class="pd-topbar">
@@ -193,7 +193,7 @@
       <div class="pr-projctx">
         <select class="pd-select pr-project" id="pr-project" title="Project"></select>
       </div>
-      <div class="pr-tabs" role="tablist">
+      <div class="pr-tabs pd-tabsrc" role="tablist">
         <button class="pr-tab active" data-view="monitor">Monitoring</button>
         <button class="pr-tab" data-view="data">Data</button>
         <button class="pr-tab" data-view="rates">Rates</button>
@@ -1221,6 +1221,18 @@
     } catch (e) { hideLoading(); UI.toast('Import failed: ' + (e.message || e), 'error'); load(); }
   }
 
+    // ⚠️ Converts this module's flat tab strip into the shared compact dropdown, which is what
+    // lets `.pd-modulebar` stay on ONE row (see its `flex-wrap:nowrap` comment in dashboard.css).
+    // Registered as a THIRD DOMContentLoaded listener, deliberately: theme.js's topbar injection
+    // must run before UI.initModuleTopbar() restructures the bar, and both are DOMContentLoaded
+    // listeners fired in registration order. Registering last means both have already run — the
+    // same reasoning risk-register documents, where calling initModuleTopbar() early was tried
+    // and reverted.
+    (function () {
+      function go() { if (window.UI && UI.tabsToDropdown) UI.tabsToDropdown('.pr-tabs', { icon: 'barChart' }); }
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go);
+      else go();
+    })();
   AppAuth.requireLogin(function (user, profile) {
     UI.renderUserBar(profile);
     UI.initShell();

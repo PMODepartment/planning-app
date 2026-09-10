@@ -96,6 +96,80 @@ developer, plug into one shared shell.
 ## Changelog
 
 
+### 2026-09-10 (w6) — Manpower's top bar was on two rows, the footer is renamed, and the rail's collapse stops snapping
+
+Three owner items, one of them a real clipping bug the owner caught in a screenshot.
+
+#### ⚠️⚠️ THE CLIPPING: SEVEN LABELLED TABS IN A `nowrap` BAR — EXACTLY WHAT THE CSS COMMENT PREDICTED
+`.pd-modulebar` is `flex-wrap: nowrap` above 701px, and its own comment says why that is safe:
+
+> *"This is only safe now that the tab strip is a single compact dropdown trigger rather than a row of
+> N labelled buttons — before that, nowrap on a 4-tab module would have overflowed at laptop widths."*
+
+**Three modules never made that move.** manpower-loading carries **seven** labelled tabs — 632px of
+them — so its tools cluster was squeezed until it wrapped, taking the bar to two rows and pushing
+"Portfolio" under the `+ Add manpower` button. Measured across every module at five widths, sidebar
+open and collapsed:
+
+| | @1600 | @1440 | @1366 | @1280 | @1152 |
+|---|---|---|---|---|---|
+| **manpower-loading** (7 tabs) | 55px | **75px** | **75px** · cut 48 | **75px** · cut 105 | **75px** · cut 183 |
+| equipment-loading (4 tabs) | 55 | 55 | 55 | 55 | 55 |
+| productivity-rates (3 tabs) | 56 | 56 | 56 | 56 | 56 |
+| the other 11 (dropdown) | 52–55 everywhere | | | | |
+
+⚠️ **The owner asked me to check Equipment Loading too, "since these two share the same UI" — and it
+shares the construction but not the symptom.** Its 4 tabs are 353px and fit at every width tested,
+down to a 912px content area. It is not broken today; it is one tab away from it. Same for
+productivity-rates. All three are converted, so the answer is "fixed, and the other two were latent".
+
+**All three now use `UI.tabsToDropdown()`**, matching the eleven modules that already did — 14 of 14.
+The wiring is copied verbatim from risk-register **including its reasoning**: a *third*
+`DOMContentLoaded` listener, because theme.js's topbar injection must run before
+`initModuleTopbar()` restructures the bar, and registering last is what guarantees both have already
+run. Calling `initModuleTopbar()` early was tried and reverted there.
+⚠️ Their strips also gain `pd-tabsrc`, so the (w4) boot-flash rule covers them.
+
+**Measured after: every module, every width, `barH` is 52 or 55 — one row — and zero squeezed
+children.** manpower goes 75 → 55 at all five widths.
+
+#### The sidebar footer
+`Megawide Construction Corporation / EPC · PMO` → `Megawide Construction Corporation / PMO Department`,
+across all **21** pages that carry it. ⚠️ The `<br>` is kept: the owner's text used a `·` as the
+separator, and on a 240px rail the line break is what that separator has to be.
+
+#### The collapse stops snapping
+The rail animated `width`/`flex-basis`/`padding` over .2s — but **everything inside it vanished on
+frame 1**, which is what read as a snap followed by a drift:
+- `font-size: 0` on the nav rows was not in any transition list, so the labels disappeared instantly.
+  `font-size` is now animated, so the text shrinks *with* the rail.
+- `display: none` **cannot be transitioned at all**. The footer and the section labels now fold to
+  `height: 0` instead, which reaches the identical end state animatedly.
+- One easing curve for the shell (`--pd-ease`), `.22s`, replacing `ease` — which starts too fast and
+  lands too softly for a 176px slide.
+- ⚠️ `prefers-reduced-motion` turns the whole thing off, the rule the rest of this file already follows.
+
+⚠️⚠️ **Swapping `display:none` for `height:0` is the kind of change that looks equivalent and is not
+— an element folded to zero height still participates in layout.** So the end states were measured in
+both states with transitions disabled (reading geometry mid-transition returns the START value, a trap
+on file here twice): rail **240 / 64**, brand block **58 / 58** (the documented value, unchanged),
+footer **61 / 0**, opacity **1 / 0**.
+⚠️ And the first measurement caught a real slip: the folded footer came out **h = 1**, not 0, because
+I had made its top border *transparent* rather than removing it — a transparent 1px border still
+measures 1px. Fixed to `border-top-width: 0` and re-measured.
+
+#### Verified
+- **14 modules × 5 widths after the change: 0 multi-row bars, 0 squeezed children.**
+- Sidebar end states measured in both states, transitions disabled — all match the documented values.
+- **42 JS files + 30 inline blocks across 29 pages parse, 0 failures**; braces 523/523, 0 NUL bytes.
+- ⚠️ A false positive in my own detector, worth recording: the first pass reported "wrapped" for
+  **every** module, because it compared child `top` values — and a `|` separator with
+  `align-self: stretch`, or an icon beside text, differ in `top` without anything having wrapped.
+  Re-done against centre-Y with a 12px threshold, which left exactly one real offender.
+- ⚠️ **Not verified signed in.** The tab dropdown is exercised through the real `UI.tabsToDropdown`
+  against the real markup, but no module has been navigated with it on a live login.
+
+
 ### 2026-09-10 (w5) — A boot skeleton for the topbar's two JS-filled slots
 
 Follow-on to (w4), which killed the tab-strip flash but explicitly did **not** fix the second half: the
