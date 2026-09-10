@@ -1,5 +1,137 @@
 # Module: contracts-claims
 
+## 2026-09-10 (z1) — BOQ→schedule matching gets four rungs, and the location key was wrong twice
+
+**Run `migrations/2026-09-10-boq-match-rung.sql`.** Owner: *"How should we match the BOQ to the
+schedule?"* Answered as: layered — class code narrows, location picks, WBS branch next, name
+similarity as a tiebreak — with **heading maps, leaf allocates**.
+
+### ⚠️⚠️ First: hand-off (b) was ALREADY BUILT, and the audit that said otherwise is stale
+`openSeedFromSchedule()` / `scheduleSeedPlan()` (`boq.js:2761`, reachable from **Add lines from the
+schedule…** on a draft) already reads the tagged programme, writes `boq_class_map`
+(`source='authored'`) and writes `boq_allocations` at `qty = 0`. The 2026-09-08 (a) §4 table lists
+*"detailed schedule → detailed BOQ: ❌ nothing"*; that has not been true since 2026-09-07h/2026-09-08.
+Nothing was built for it here. It needs exercising, not writing.
+
+### ⚠️⚠️ THE ONE RUNG WAS A MONEY DEFECT, NOT AN IMPRECISION
+`candidatesFor()` returned every activity carrying the line's code and stopped. A code is a **tag**
+— *Rebar Works* is one code on forty floor-level activities — so a 3rd-floor line was matched to all
+forty and `proposeSplit` smeared its quantity by duration pro-rata.
+
+That is not cosmetic. `boqDerive` (`project-schedule/index.html:38164`) splits a line's `amount`
+across **exactly** its allocations → `project_schedule.planned_cost` → `schedule_scurve_agg`'s
+`w_cost` → Cash Flow's cash-in. A line spread over forty floors puts ~95% of its cost on floors it
+never touches, and every screen downstream reports it as fact.
+
+### The shared normaliser, and the two defects measuring it found
+**New `assets/js/locmatch.js` (`window.PDLoc`).** There were **three** copies of the location
+normaliser — the schedule's `_locNormKeyCalc`, `affected.js`'s deliberate cross-asserted duplicate,
+and `boq.js`'s `locKey`. The third was the odd one out, and executing it against the schedule's
+found two real faults, both reproduced on HEAD in the suite:
+
+| | HEAD | now |
+|---|---|---|
+| a `"to Roof Deck"` leaf vs a `Roofdeck` activity | **missed** | matched |
+| a **13th-floor** leaf vs a `3rd Floor` activity | **matched** (wrongly) | refused |
+
+The second is the sharper one and it is arithmetic: `locKey` kept the spaces, so
+`"…at 13 floor".indexOf("3 floor")` is a hit. Measured on the fixture, HEAD hands a 13th-floor line
+**three** activities, two of them on the wrong floor.
+
+⚠️ **`PDLoc.contains` is therefore NOT a one-line `indexOf`.** `normKey` strips every separator
+(which is what fixes Roofdeck), so it rejects a hit with a **digit immediately outside a numeric
+edge** of the needle. That is the "8th and 18th get merged" trap `locKey`'s own comment warned
+about, arriving from the other direction.
+⚠️ `normKey` is byte-for-byte the schedule's. It is the merge key every stored
+`project_schedule.location` value already agrees on; changing it would silently regroup a real
+project's floors. New behaviour goes in a new function.
+⚠️ **`project-schedule`'s own copy is NOT rewritten here** — it is a 43k-line file under concurrent
+edit and that swap is its own commit. The suite asserts `PDLoc` agrees with it over a spelling
+corpus instead, the precedent `affected.js` already set for the same pair.
+
+### The rungs
+`scoreCandidates(r)` → `[{act, rung, score, why}]`. The code is a **gate**; the other three score.
+**Only the best rung is reported per activity, never a blend** — "matched on location" and "matched
+on a 0.55 word overlap" deserve different trust and one number hides which you have. `topRung`
+allocates over the **winning rung only**: if three activities matched on location and thirty-seven
+on the code alone, the answer is the three. A weaker rung is a *fallback*, never a supplement.
+
+⚠️⚠️ **A design flaw of mine, caught by the fixture and not by reading.** The name rung first scored
+against the class code's **chart description** as well as the line's own text. Inside a code-gated
+set that discriminates nothing — an activity carries a code *because* its name resembles that code's
+description, which is exactly what `matchAct` does for the tagger. Its only effect was to relabel a
+code match as a name match and switch the split from pro-rata to equal. Measured: a provisional-sum
+line naming nothing came back as 20 activities on rung `name`. The chart read is gone; only the
+line's own description is scored, because that is the signal that varies **within** a code.
+
+⚠️ A location or WBS match is a statement about **where**, so its split is **equal**. Duration-
+weighting it would give a slower floor more of a quantity the match never measured. Only the
+un-discriminated code rung falls back to pro-rata — which is what the old function did for every case.
+
+### Heading maps, leaf allocates
+`codeFor(r)` walks `parent_id` (bounded at 8, as `pathOf` already is) to the nearest mapped ancestor.
+⚠️ **The direct map always wins** — a leaf mapped by hand away from its heading has been deliberately
+corrected. ⚠️ **`mappable()` is deliberately NOT widened**: it gates the suggestion and accept-all
+paths and `addAuthoredLines`' invariant that a heading is a group, not a scope item. The allocator
+reaches an inherited code through `codeFor`, which is where that question belongs.
+
+⚠️ The Class Codes KPI counted a numerator including headings against a denominator excluding them,
+so a heading-mapped bill could read *"41 of 38 mappable lines"*. Split into **Mapped** (leaves) and
+**Headings mapped**, the second naming how many extra lines it covers.
+
+### Two bugs fixed on the way, both live
+- ⚠️⚠️ **`allocHTML`'s class-code cell was an unguarded `CMAP[r.id].class_code`.** Safe only while
+  the list above it filtered on that same direct map — the moment a heading-mapped leaf reached the
+  row it would have thrown on `undefined.class_code` and taken the whole worklist with it. My own
+  change to `mapped` is what would have delivered that row.
+- ⚠️⚠️ **The allocation dialog's qty field was `type="number"`.** `.value` returns `""` for `1,000`
+  / `₱1,200.50` / `1,397,462,269.86`, and the handler did `Number(inp.value) || 0` — so typing a
+  quantity with thousands separators wrote a **silent zero** into an allocation. This is the trap
+  `boq.js` documented and fixed for the Lines grid in August and never carried across. Now
+  `type="text" inputmode="decimal"` + `numOf`.
+
+### The migration
+`matched_by` + `match_score`, additive and idempotent. ⚠️ **`method` is untouched and its CHECK is
+not relaxed**: `method` is how the quantity was **split**, `matched_by` is how the activity was
+**found**. The code already strained against conflating them — `addAuthoredLines` writes
+`method:'manual'` with a comment saying neither other value describes what happened.
+⚠️ `upsertAllocs` is now the one writer and **drops the two keys and retries once** on a schema-cache
+error, then says so in the toast. Without that the matcher would fail every Apply on an un-migrated
+database. It does **not** swallow other errors — an RLS refusal must still surface.
+⚠️ NULL `matched_by` stays legal: every existing row has no recorded rung, and back-filling one would
+invent a provenance. "Unknown" and "manual" are different claims.
+
+### Verified
+**138 assertions across three suites, 0 failing**, every function sliced out of the shipped file and
+executed; **HEAD executed as the contrast** in all three, and it reproduces both location defects and
+the unallocatable-inherited-leaf case.
+- The money invariant is asserted on all five fixture lines: Σ derived cost = the line's amount.
+  Changing *which* activities a line matches must never change the total, only its distribution.
+- Rendered against the real stylesheets at **1440 and 918**, both themes: rung chip **6.76:1 light /
+  8.04:1 dark**, no page horizontal scroll, the table scrolling inside its own card at 918.
+- ⚠️ **Two of my own assertions were wrong before the code was**, both recorded in the suite: the
+  digit-boundary contrast pointed at the wrong leaf (the defect runs longer-leaf → shorter-value), and
+  the inherited-leaf contrast expected a 20-way smear when HEAD in fact produces *nothing at all*.
+  Asserting the failure I expected instead of the one that occurs would have reported a bug the code
+  does not have and missed the one it does.
+- `node --check` clean; 0 NUL bytes; all pure LF. ⚠️ The first NUL check used `grep -c $'\x00'`,
+  which degenerates to an empty pattern and reported every line as a hit — the same false positive
+  this repo already recorded for `$'\r'`. Re-counted bytes.
+- ⚠️ **NOT verified signed in.** No allocation has been written against a real project, the migration
+  has not been run, and `location_levels.match` has never been read from a live row.
+
+`boq.js` / `affected.js` / the new `locmatch.js` → `?v=20260910z1`; `MODULE_V` → `20260910z1`
+(re-derived from the remote's `y9` **after** rebasing onto its 7 commits, not guessed).
+
+### Not built here, and named rather than silently skipped
+- The allocation dialog's **`slice(0, 800)` raw `<select>`** for adding an activity by hand — a
+  truncated list on a 16k-activity schedule. `CCAffected` already has the ladder + WBS tree for it.
+- **Hand-off (c)**, seeding the schedule from a high-level BOQ. It belongs in the Schedule Builder
+  (the two modules are separate pages with no shared runtime; `ScheduleBuilder` is a closure local),
+  so it is the other module's commit.
+- The BOQ **export**'s Class Code column still shows the direct map only, so an inherited-code line
+  exports blank while the allocator treats it as coded. Changing what a workbook says is its own call.
+
 ## 2026-09-09 (cq) — The Affected-work intro drops from four lines to one
 
 Owner: *"Let's reduce the text in the step intro."* The third time the wizard's prose has been

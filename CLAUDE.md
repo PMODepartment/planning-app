@@ -95,6 +95,61 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-10 (z1) — Matching the BOQ to the schedule: four rungs instead of one, and a location key that was wrong twice
+
+**Run `migrations/2026-09-10-boq-match-rung.sql`.** Owner: *"How should we match the BOQ to the
+schedule?"* Full detail, every ⚠️ decision and the two of my own assertions that were wrong before
+the code was: [`modules/contracts-claims/CLAUDE.md`](modules/contracts-claims/CLAUDE.md). What
+reaches beyond the module:
+
+- ⚠️⚠️ **New `assets/js/locmatch.js` (`PDLoc`) — there were THREE copies of the location normaliser
+  and one of them was wrong.** The schedule's `_locNormKeyCalc`, `affected.js`'s deliberate
+  cross-asserted duplicate, and `boq.js`'s own `locKey`. Executing the third against the first found
+  two real defects: it **missed** `"Roof Deck"` vs `"Roofdeck"` (a real pair on the Jab schedule),
+  and it **matched a 13th-floor leaf to `"3rd Floor"`** — it kept the spaces, so
+  `"…at 13 floor".indexOf("3 floor")` is a hit. Measured on the fixture, HEAD hands a 13th-floor
+  line **three** activities, two of them on the wrong floor. Both reproduced on HEAD in the suite.
+- ⚠️⚠️ **That was a MONEY defect, which is why it is worth a shared file.** `boqDerive`
+  (`project-schedule/index.html:38164`) splits a BOQ line's `amount` across exactly its allocations
+  → `project_schedule.planned_cost` → `schedule_scurve_agg`'s `w_cost` → Cash Flow's cash-in. The
+  old allocator offered ONE rung — every activity carrying the line's class code, a **tag** carried
+  by forty floor-level activities — so a 3rd-floor line was smeared over forty floors by duration
+  pro-rata and every screen downstream reported it as fact.
+- ⚠️ **`PDLoc.contains` is not a one-line `indexOf`**, and that is the whole reason it is a function.
+  `normKey` strips every separator (which is what fixes Roofdeck), so a plain containment test
+  re-creates the digit-boundary bug in the other direction. It rejects a hit with a digit
+  immediately outside a numeric edge of the needle — the "8th and 18th get merged" trap `locKey`'s
+  own comment warned about.
+- ⚠️ **`project-schedule`'s copy is deliberately NOT rewritten here.** It is a 43k-line file under
+  concurrent edit and swapping the function that decides every location grouping in the Vertical
+  Stacking is its own commit with its own verification. The suite asserts `PDLoc` agrees with it
+  over a spelling corpus instead — the precedent `affected.js` already set for the same pair.
+  ⚠️ So `locmatch.js` is loaded by **one** page today, not two. It is a shared asset by intent, not
+  yet by use, and the schedule's adoption is the follow-up.
+- **`affected.js`'s duplicate is retired** to thin delegates, keeping the local names so the
+  `_internals` export its suite reads is untouched and the diff stays checkable.
+
+Also fixed, both live and both found by measuring rather than reading: the allocation dialog's qty
+field was **`type="number"`**, so `1,000` read back as `""` and wrote a silent **zero** into an
+allocation (the trap fixed for the Lines grid in August and never carried across); and
+`allocHTML`'s class-code cell was an unguarded `CMAP[r.id].class_code` that would have thrown on the
+first heading-mapped row.
+
+⚠️ **A correction to the 2026-09-08 (a) §4 audit table:** it lists *"detailed schedule → detailed
+BOQ: ❌ nothing"*. That has not been true since 2026-09-07h — `openSeedFromSchedule()` /
+`scheduleSeedPlan()` reads the tagged programme and writes the lines **born matched**. Nothing was
+built for it here; it needs exercising, not writing.
+
+**138 assertions across three suites, 0 failing**, every function sliced out of the shipped file and
+**HEAD executed as the contrast** in all three. Rendered against the real stylesheets at 1440 and
+918 in both themes: rung chip **6.76:1 light / 8.04:1 dark**, no page horizontal scroll.
+⚠️ **Not verified signed in** — no allocation written against a real project and the migration has
+not been run.
+
+`boq.js` / `affected.js` / new `locmatch.js` → `?v=20260910z1`; `MODULE_V` → `20260910z1`.
+⚠️ `z1`, not `y10` — `y10` sorts *before* `y9`. Re-derived from the remote **after** rebasing onto
+its 7 commits, which is the rule this log has now arrived at five times.
+
 ### The stacking bar loses a row, and the Fit button it lost was already dead (2026-09-10) — ethanrobles10
 
 Owner: *"cleanup the UI just below the header. i think it is too much. you can remove the Fit
