@@ -260,32 +260,54 @@
        this app is sticky.
        ⚠️ `align-self:flex-start` is required: a flex item stretches to the row height by
        default, and `position:sticky` on a full-height item has nothing to travel within. */
-    .po-dir-uniwrap { display:flex; align-items:flex-start; gap:14px; }
+    /* ⚠️⚠️ A STICKY VERTICAL INDEX RAIL ON THE RIGHT, not a horizontal strip above the
+       cards. The owner's point is the one that matters at scale: with 1,000 stakeholders a
+       strip that scrolls away with the page is useless exactly when you need it, because you
+       are a long way down the list. Sticky and beside the content it is reachable from any
+       scroll position — the iOS-contacts idiom, and the same reason `.pd-table thead` in this
+       app is sticky.
+       ⚠️ `align-self:flex-start` is REQUIRED: a flex item stretches to the row height by
+       default, and `position:sticky` on a full-height item has nothing to travel within. */
+    .po-dir-uniwrap { display:flex; align-items:flex-start; gap:18px; }
     .po-dir-unimain { flex:1 1 auto; min-width:0; }
-    .po-dir-bands { position:sticky; top:8px; align-self:flex-start; flex:none;
-      display:flex; flex-direction:column; gap:1px; padding:5px 4px; max-height:calc(100vh - 90px);
-      overflow-y:auto; background:var(--pd-card); border:1px solid var(--pd-line);
-      border-radius:999px; }
-    .po-dir-band, .po-dir-bandall {
-      width:22px; height:19px; padding:0; justify-content:center;
-      display:inline-flex; align-items:center; gap:4px; min-width:26px; justify-content:center;
-      padding:4px 7px; border:1px solid var(--pd-line); border-radius:var(--pd-radius);
-      background:var(--pd-card); color:var(--pd-ink); font-size:12px; font-weight:600; cursor:pointer;
+    .po-dir-bands {
+      position:sticky; top:8px; align-self:flex-start; flex:none;
+      display:flex; flex-direction:column; gap:1px; padding:7px 6px;
+      max-height:calc(100vh - 96px); overflow-y:auto;
+      background:var(--pd-card); border:1px solid var(--pd-line);
+      border-radius:13px; box-shadow:var(--pd-shadow);
+      /* ⚠️ The rail is 32px wide; a scrollbar inside it would take a third of that and the
+         letters would reflow. It scrolls with the wheel, and the max-height only bites on a
+         short window. */
+      scrollbar-width:none;
     }
-    .po-dir-bandall { min-width:auto; height:22px; font-size:9px; letter-spacing:-.02em; }
-    /* ⚠️ The per-letter COUNT does not fit a 22px rail and is carried by the `title`
-       instead. It is not lost — losing it would remove the one thing that makes a
-       letter worth clicking — and the dot below marks the letters that have anyone. */
-    .po-dir-band i { display:none; }
-    .po-dir-band:not(.is-empty)::after { content:''; position:absolute; right:2px; top:50%;
-      width:3px; height:3px; margin-top:-1.5px; border-radius:50%; background:var(--pd-red); opacity:.5; }
-    .po-dir-band.on::after { background:#fff; opacity:.9; }
-    .po-dir-band { position:relative; }
-    .po-dir-band:hover:not(:disabled), .po-dir-bandall:hover { border-color:var(--pd-red); color:var(--pd-red); }
-    .po-dir-band.on, .po-dir-bandall.on { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
-    .po-dir-band.on i { color:rgba(255,255,255,.85); }
-    /* ⚠ Dimmed and un-clickable, NOT hidden -- see the note above. */
-    .po-dir-band.is-empty { opacity:.35; cursor:default; }
+    .po-dir-bands::-webkit-scrollbar { width:0; height:0; }
+    /* ⚠️⚠️ NO PER-LETTER BORDER OR FILL. These rules replace the old horizontal-strip
+       button styling rather than overriding it: an index is a column of LETTERS, and 27
+       stacked bordered boxes is what made the first cut of this rail read as unfinished.
+       Weight and colour carry the state instead of chrome. */
+    .po-dir-band, .po-dir-bandall {
+      display:flex; align-items:center; justify-content:center;
+      width:20px; height:16px; padding:0; border:0; background:none;
+      border-radius:5px; font:inherit; font-size:10.5px; font-weight:700; line-height:1;
+      color:var(--pd-ink); cursor:pointer;
+    }
+    /* "All" heads the rail and is separated by a rule, so the letters read as one run. */
+    .po-dir-bandall {
+      height:auto; padding:0 0 5px; margin-bottom:4px; font-size:8.5px; letter-spacing:.06em;
+      color:var(--pd-muted); border-bottom:1px solid var(--pd-line); border-radius:0;
+    }
+    .po-dir-band i { display:none; }   /* the count rides in the title — see below */
+    .po-dir-band:hover:not(:disabled), .po-dir-bandall:hover {
+      background:var(--pd-red-light); color:var(--pd-red);
+    }
+    .po-dir-band.on, .po-dir-bandall.on { background:var(--pd-red); color:#fff; }
+    .po-dir-bandall.on { border-bottom-color:var(--pd-red); }
+    /* ⚠️ Faint and un-clickable, NOT hidden. A strip that shows only the letters in use
+       jumps around as you search, and a dimmed letter is the useful answer to "is there
+       anyone under Q?". The opacity IS the "has anybody" signal — the earlier 3px dot was
+       one more mark to read in a 20px column, and the letter already says it. */
+    .po-dir-band.is-empty { opacity:.26; cursor:default; font-weight:600; }
 
     .po-dir-sec { margin-bottom:18px; }
     .po-dir-sechead {
@@ -387,8 +409,13 @@
       @media (max-width: 760px) {
         .po-dir-uniwrap { display:block; }
         .po-dir-bands { position:sticky; top:0; z-index:5; flex-direction:row; flex-wrap:wrap;
-          max-height:none; overflow:visible; border-radius:var(--pd-radius); margin-bottom:12px; }
-        .po-dir-band, .po-dir-bandall { width:auto; min-width:26px; height:26px; padding:0 5px; }
+          gap:2px; max-height:none; overflow:visible; border-radius:var(--pd-radius);
+          margin-bottom:12px; box-shadow:none; }
+        /* 30px square: the rail's 20x16 is a pointer target, not a finger one. */
+        .po-dir-band, .po-dir-bandall { width:auto; min-width:30px; height:30px; padding:0 6px;
+          font-size:12px; border-radius:var(--pd-radius); }
+        .po-dir-bandall { margin:0 4px 0 0; padding:0 8px; border-bottom:0;
+          border-right:1px solid var(--pd-line); border-radius:var(--pd-radius) 0 0 var(--pd-radius); }
       }
       @media (max-width: 900px) {
         .po-scopebar { align-items: stretch; }

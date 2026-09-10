@@ -42,9 +42,18 @@ beside the cards, `position:sticky`, and it is the iOS-contacts idiom rather tha
 - ⚠️ `align-self:flex-start` is **required** — a flex item stretches to the row height by default, and
   `position:sticky` on a full-height item has nothing to travel within. Without it the rail is
   correct in the cascade and does not stick.
-- ⚠️ The per-letter **count** does not fit a 22px rail, so it moves into the `title` and each letter
-  that has anyone carries a 3px dot. Dropping the count outright would have removed the one thing
-  that makes a letter worth clicking.
+- ⚠️ The per-letter **count** does not fit a 20px column, so it moves into the `title`.
+  Dropping it outright would have removed the one thing that makes a letter worth clicking.
+- ⚠️⚠️ **Restyled after the owner asked for it to look better, and the fault was layering.**
+  The first cut bolted rail rules on top of the old horizontal-strip BUTTON styling, so every
+  letter kept a border, a fill and 4px/7px padding — 27 stacked bordered boxes in a 34px column,
+  which is what read as unfinished. The base rules are now written FOR a rail: no per-letter
+  chrome at all, with weight and colour carrying the state. An "All" pill heads the column above
+  a divider, and the scrollbar is suppressed because inside a 34px rail it would take a third of
+  the width and reflow the letters.
+- ⚠️ The 3px "has anybody" dot went with that: in a 20px column it was one more mark to read,
+  and the letter already says it. **Measured** — a letter with people computes opacity 1 at
+  weight 700, an empty one 0.26 and is disabled.
 - ⚠️ The rail is a **sibling after** the cards in source order, so the tab sequence reaches the people
   before the index — the index is navigation, not content.
 - ⚠️ **On a phone it reverts to a horizontal strip**, sticky to the top. A 22px column of 27 letters is
