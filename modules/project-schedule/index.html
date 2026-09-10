@@ -2990,13 +2990,27 @@
     .zpw-img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; pointer-events:none; }
     .zpw-svg { position:absolute; inset:0; width:100%; height:100%; }
     .zpw-shape polygon { fill:var(--zc, #888); fill-opacity:.34; stroke:var(--zc, #888); stroke-width:3;
-      cursor:pointer; }
+      cursor:grab; }
     .zpw-shape:hover polygon { fill-opacity:.5; }
     .zpw-shape.sel polygon { fill-opacity:.58; stroke-width:6; }
     .zpw-shape text { fill:#fff; font-size:26px; font-weight:800; text-anchor:middle; paint-order:stroke;
       stroke:rgba(0,0,0,.45); stroke-width:5; pointer-events:none; }
     .zpw-live { fill:rgba(238,49,36,.18); stroke:var(--pd-red); stroke-width:3; stroke-dasharray:9 6; }
-    .zpw-vx { fill:var(--pd-red); stroke:#fff; stroke-width:2; }
+    .zpw-lbl { font-size:11.5px; color:var(--pd-muted); min-width:38px; }
+    .zpw-shapes { display:inline-flex; gap:3px; flex-wrap:wrap; }
+    .zpw-shbtn { display:inline-flex; align-items:center; justify-content:center; width:26px; height:24px;
+      padding:0; border:1px solid var(--pd-line); border-radius:6px; background:var(--pd-card);
+      color:var(--pd-ink); cursor:pointer; }
+    .zpw-shbtn:hover { border-color:var(--pd-red); color:var(--pd-red); background:var(--pd-bg); }
+    /* ⚠️ The corner handles belong to the SELECTED shape only — see paint(). They are drawn
+       larger than they look: a 9-unit radius on a 1000-unit plate is a comfortable target at any
+       window size, and the visible dot is the stroke. */
+    .zpw-vx { fill:var(--pd-red); stroke:#fff; stroke-width:2; cursor:grab; }
+    .zpw-mid { fill:#fff; stroke:var(--pd-red); stroke-width:2; opacity:.55; cursor:copy; }
+    .zpw-mid:hover { opacity:1; }
+    .zpw-lv { fill:var(--pd-red); stroke:#fff; stroke-width:2; }
+    .zpw-shape.drag polygon { fill-opacity:.6; cursor:grabbing; }
+    .zpw-tip { margin:0; font-size:10.5px; color:var(--pd-muted); }
     .zpw-empty { position:absolute; inset:auto 0 0 0; top:50%; transform:translateY(-50%);
       text-align:center; font-size:12.5px; color:var(--pd-muted); padding:0 20px; }
     .zpw-foot { display:flex; flex-direction:column; gap:8px; }
@@ -31655,18 +31669,32 @@
       return out;
     }
     /* ==========================================================================================
-       THE FLOOR-PLAN WINDOW. One floor, its plan image, and the zones traced on it.
-       ⚠️ A MODAL, as asked, and it earns being one: tracing needs the drawing as large as the
-       screen allows, and the step behind it is a dense list of floors and zone rows.
+       THE FLOOR-PLAN WINDOW. One floor, its plan image, and the zones drawn on it.
+       Owner 2026-09-10: *"if there is no floor plan, how do i add shapes or create shapes? and how
+       come this is the only interactable things to do in the window. please add options where i can
+       add different shapes, undo, copy paste of shapes, defining which is zone 1 2 etc."*
+
+       ⚠️ THE FIRST CUT COULD ONLY TRACE, and tracing needs something to trace over. On a floor with
+       no drawing attached the window was a blank rectangle and a Trace button, which is a screen
+       that technically works and practically does not. Everything below exists because a zone has
+       to be creatable, movable, reshapeable, copyable, re-assignable and undoable — with or without
+       a plan behind it.
+
+       ⚠️⚠️ THE PRESETS, THE THUMBNAILS AND THE DRAG MODEL ARE THE EQUIPMENT SITE PLAN'S, deliberately.
+       That screen already solved this exact problem for tower footprints, and a planner who has used
+       it should not have to learn a second set of gestures. A preset is a PLAIN POLYGON: the moment
+       one is dropped it is an ordinary shape, draggable and reshapeable corner by corner, saved by
+       the same path — which is why the circle is a 24-gon rather than an <ellipse>. A second
+       geometry type would need its own editing, hit-testing and serialisation for a footprint
+       nobody traces exactly anyway.
        ========================================================================================== */
     var ZP_BUCKET = 'site-plans';       // ⚠️ the EXISTING bucket the equipment site plan uses
     var _zpWin = null;                  // live state while the window is open
     function zpImgPath(floorId) {
       return 'zoneplan/' + curPid + '/' + floorId + '-' + Date.now().toString(36) + '.png';
     }
-    // A stable colour per zone code, so one zone reads the same on the plan and in the list.
-    // ⚠️ Hue is spent on the ZONE here and not on the trade, because a floor plan shows one floor
-    // of one trade at a time — there is no trade to confuse it with inside this window.
+    // A stable colour per zone code. ⚠️ Hue is spent on the ZONE here and not on the trade, because
+    // this window shows one floor of one trade — there is no trade to confuse it with.
     var ZP_HUES = ['#2F6FB0', '#C77700', '#2E8B57', '#8E44AD', '#C0392B', '#16A085', '#D4AC0D', '#5D6D7E'];
     function zpHue(codes, code) {
       var want = zpNormCode(code);
@@ -31676,34 +31704,101 @@
     function zpPts(pts) {
       return pts.map(function (p) { return (Math.round(p[0] * 10) / 10) + ',' + (Math.round(p[1] * 10) / 10); }).join(' ');
     }
-    /* Open the window for one floor of one trade. */
+    function zpBBoxOf(pts) {
+      var x0 = pts[0][0], y0 = pts[0][1], x1 = x0, y1 = y0;
+      pts.forEach(function (p) {
+        if (p[0] < x0) x0 = p[0]; if (p[0] > x1) x1 = p[0];
+        if (p[1] < y0) y0 = p[1]; if (p[1] > y1) y1 = p[1];
+      });
+      return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+    }
+    /* The preset library, verbatim from the equipment site plan so the two screens cannot drift. */
+    function zpPreset(kind, w, h) {
+      w = w || 220; h = h || 160;
+      var pts = [];
+      function P(fx, fy) { pts.push([fx * w, fy * h]); }
+      switch (kind) {
+        case 'rect': P(0, 0); P(1, 0); P(1, 1); P(0, 1); break;
+        case 'square': h = w; P(0, 0); P(1, 0); P(1, 1); P(0, 1); break;
+        case 'lshape': P(0, 0); P(0.55, 0); P(0.55, 0.55); P(1, 0.55); P(1, 1); P(0, 1); break;
+        case 'tshape': P(0, 0); P(1, 0); P(1, 0.4); P(0.68, 0.4); P(0.68, 1); P(0.32, 1); P(0.32, 0.4); P(0, 0.4); break;
+        case 'ushape': P(0, 0); P(0.3, 0); P(0.3, 0.68); P(0.7, 0.68); P(0.7, 0); P(1, 0); P(1, 1); P(0, 1); break;
+        case 'triangle': P(0.5, 0); P(1, 1); P(0, 1); break;
+        case 'trapezoid': P(0.2, 0); P(0.8, 0); P(1, 1); P(0, 1); break;
+        case 'hexagon': P(0.25, 0); P(0.75, 0); P(1, 0.5); P(0.75, 1); P(0.25, 1); P(0, 0.5); break;
+        case 'circle':
+          h = w;
+          for (var i = 0; i < 24; i++) {
+            var a = i / 24 * Math.PI * 2;
+            pts.push([(0.5 + Math.cos(a) * 0.5) * w, (0.5 + Math.sin(a) * 0.5) * h]);
+          }
+          break;
+        default: P(0, 0); P(1, 0); P(1, 1); P(0, 1);
+      }
+      return pts;
+    }
+    var ZP_SHAPES = [
+      { k: 'rect', label: 'Rectangle' }, { k: 'square', label: 'Square' }, { k: 'lshape', label: 'L-shape' },
+      { k: 'tshape', label: 'T-shape' }, { k: 'ushape', label: 'U-shape' }, { k: 'triangle', label: 'Triangle' },
+      { k: 'trapezoid', label: 'Trapezoid' }, { k: 'hexagon', label: 'Hexagon' }, { k: 'circle', label: 'Circle' }
+    ];
+    // ⚠️ Drawn by the SAME function that builds the shape, so the menu can never advertise an
+    // outline the button does not produce.
+    function zpThumb(kind) {
+      var pts = zpPreset(kind, 18, 14);
+      return '<svg width="19" height="15" viewBox="-1 -1 20 16"><polygon points="' +
+        pts.map(function (p) { return p[0].toFixed(1) + ',' + p[1].toFixed(1); }).join(' ') +
+        '" fill="currentColor" fill-opacity=".2" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>';
+    }
+
     function openZonePlan(tr, floorId) {
       var floors = (cfg.zoning[tr] ? cfg.zoning[tr].floors : []);
       var floor = floors.filter(function (f) { return f.id === floorId; })[0];
       if (!floor) return;
-      // The plate this floor uses, or a fresh one it does not own yet. ⚠️ NOT written into the bag
-      // here: an opened-and-closed window must leave the setup exactly as it found it.
       var plateId = zpIdFor(floor);
       var plate = (plateId && zpBag().plate[plateId]) || null;
       var draft = plate || zpBlank();
-      var owned = !!plate;
+      var codes = (floor.zones || []).map(function (z) { return String(z.code || z.name || '').trim(); }).filter(Boolean);
 
-      var codes = (floor.zones || []).map(function (z) { return String(z.code || z.name || '').trim(); })
-        .filter(Boolean);
       var m = UI.modal('<div class="zpw" id="zpw"></div>', { noBackdropClose: true });
       var wrap = m.el.querySelector('#zpw');
       var box = m.el.querySelector('.pd-modal');
       if (box) box.classList.add('zpw-modal');
 
-      _zpWin = { tr: tr, floor: floor, draft: draft, owned: owned, plateId: plateId,
-                 brush: codes[0] || '', drawing: false, pts: [], sel: null, url: null, busy: false };
+      _zpWin = { tr: tr, floor: floor, draft: draft, owned: !!plate, plateId: plateId,
+                 brush: codes[0] || '', drawing: false, pts: [], sel: null, url: null,
+                 busy: false, err: '', hist: [], clip: null };
 
       function H() { return zpH(_zpWin.draft); }
-      // ---- the image, through a signed URL ------------------------------------------------
-      /* ⚠️ Straight into an <img>, NOT fetched to a blob first. The equipment site plan does the
-         blob round-trip because it reads pixels back out of a canvas to detect towers, and a
-         cross-origin image taints one. Nothing here reads pixels, so the extra fetch would be a
-         second download of a large scan for no benefit. */
+      function selShape() {
+        var W = _zpWin;
+        return W.draft.polys.filter(function (q) { return q.id === W.sel; })[0] || null;
+      }
+      /* ==== UNDO ==========================================================================
+         ⚠️ A SNAPSHOT OF THE WHOLE PLATE, not a log of inverse operations. A plate is a handful
+         of short point lists, so a deep copy costs nothing measurable, and an operation log
+         would need an inverse for every gesture — move, reshape, add-corner, remove-corner,
+         re-assign, paste — each of which is a chance to get one wrong and corrupt the drawing.
+         ⚠️ Pushed BEFORE the change, so undo restores the state the planner was looking at. */
+      var ZP_UNDO_MAX = 50;
+      function snap() {
+        var W = _zpWin;
+        W.hist.push(JSON.stringify({ polys: W.draft.polys, img: W.draft.img, o: W.draft.o }));
+        if (W.hist.length > ZP_UNDO_MAX) W.hist.shift();
+      }
+      function undo() {
+        var W = _zpWin;
+        if (!W.hist.length) return;
+        var s = JSON.parse(W.hist.pop());
+        W.draft.polys = s.polys; W.draft.img = s.img; W.draft.o = s.o;
+        W.sel = null; W.drawing = false; W.pts = [];
+        commit();
+        // ⚠️ Undoing back to nothing removes the plate, or an undone first trace would leave an
+        // empty plate behind and the floor would still read as having a plan.
+        if (zpDropIfEmpty(W.plateId)) { W.owned = false; W.plateId = null; }
+        loadImg();      // the image may have come back or gone
+      }
+
       function loadImg() {
         var p = _zpWin.draft.img;
         if (!p) { _zpWin.url = null; paint(); return; }
@@ -31713,107 +31808,7 @@
           paint();
         }).catch(function () { _zpWin.err = 'The plan image could not be loaded from storage.'; paint(); });
       }
-
-      function paint() {
-        var W = _zpWin, d = W.draft, hh = H();
-        var used = zpCodesOf(d);
-        var all = codes.slice();
-        used.forEach(function (c) { if (!all.some(function (x) { return zpNormCode(x) === zpNormCode(c); })) all.push(c); });
-        var mine = zpUsers(tr, W.plateId);
-        var others = floors.filter(function (f) { return f.id !== floor.id; });
-
-        var shapes = d.polys.map(function (q) {
-          var on = (W.sel === q.id);
-          return '<g class="zpw-shape' + (on ? ' sel' : '') + '" data-zpoly="' + e2(q.id) + '">' +
-            '<polygon points="' + zpPts(q.pts) + '" style="--zc:' + zpHue(all, q.code) + '"></polygon>' +
-            '<text x="' + (q.pts.reduce(function (s, p) { return s + p[0]; }, 0) / q.pts.length).toFixed(1) +
-              '" y="' + (q.pts.reduce(function (s, p) { return s + p[1]; }, 0) / q.pts.length).toFixed(1) +
-              '">' + e2(q.code) + '</text></g>';
-        }).join('');
-        var live = W.drawing && W.pts.length
-          ? '<polyline class="zpw-live" points="' + zpPts(W.pts) + '"></polyline>' +
-            W.pts.map(function (p) { return '<circle class="zpw-vx" cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="7"></circle>'; }).join('')
-          : '';
-
-        wrap.innerHTML =
-          '<div class="zpw-head">' +
-            '<span class="zpw-title">Floor plan — <b>' + e2(floor.name || floor.code || 'Floor') + '</b>' +
-              '<span class="zpw-sub">' + e2(GLABEL[tr] || tr) + ' · ' + (floor.zones || []).length + ' zone' +
-              ((floor.zones || []).length === 1 ? '' : 's') +
-              (mine.length > 1 ? ' · this plan is shared by ' + mine.length + ' floors' : '') + '</span></span>' +
-            '<span class="zpw-sp"></span>' +
-            '<button class="pd-btn" id="zpw-x">Close</button>' +
-          '</div>' +
-          '<div class="zpw-bar">' +
-            '<button class="pd-btn' + (d.img ? '' : ' pd-btn-primary') + '" id="zpw-up"' + (W.busy ? ' disabled' : '') + '>' +
-              (d.img ? 'Replace plan…' : 'Attach floor plan…') + '</button>' +
-            (d.img ? '<button class="pd-btn" id="zpw-rm"' + (W.busy ? ' disabled' : '') + '>Remove plan</button>' : '') +
-            (d.img ? '<label class="zpw-op" title="Fade the drawing so a trace over it stays readable">Fade' +
-              '<input type="range" id="zpw-o" min="20" max="100" value="' + Math.round((d.o == null ? 1 : d.o) * 100) + '"></label>' : '') +
-            '<span class="ps-tb-div"></span>' +
-            '<span class="zpw-pal">' + (all.length ? all.map(function (c) {
-              return '<button class="zpw-sw' + (zpNormCode(c) === zpNormCode(W.brush) ? ' on' : '') + '" data-zpb="' + e2(c) + '"' +
-                ' style="--zc:' + zpHue(all, c) + '">' + e2(c) + '</button>';
-            }).join('') : '<span class="sbld-hint" style="margin:0;">This floor has no zones yet — add them in the step behind.</span>') + '</span>' +
-            '<span class="zpw-sp"></span>' +
-            (all.length ? '<button class="pd-btn' + (W.drawing ? ' pd-btn-primary' : '') + '" id="zpw-draw">' +
-              (W.drawing ? (W.pts.length >= 3 ? 'Finish area' : 'Cancel') : 'Trace area') + '</button>' : '') +
-            (W.sel ? '<button class="pd-btn" id="zpw-del">Delete area</button>' : '') +
-          '</div>' +
-          (W.err ? '<p class="sbld-note sbld-note-warn">' + e2(W.err) + '</p>' : '') +
-          '<div class="zpw-stage' + (W.drawing ? ' drawing' : '') + '" id="zpw-stage">' +
-            (W.url ? '<img class="zpw-img" src="' + e2(W.url) + '" alt="" style="opacity:' + (d.o == null ? 1 : d.o) + '">' : '') +
-            '<svg class="zpw-svg" viewBox="0 0 ' + ZP_W + ' ' + hh + '" preserveAspectRatio="none">' + shapes + live + '</svg>' +
-            /* ⚠️ Only while there is NOTHING to look at. Read off a rendered window: with three areas
-               traced and no image, this prompt showed THROUGH the shapes, so a screen that was
-               plainly being used still told the planner it was empty. */
-            (!d.img && !d.polys.length ? '<div class="zpw-empty"><b>No plan attached.</b><br>Attach the floor plan, then trace each zone on it. ' +
-              'You can trace without a plan too — the drawing is just easier to aim at.</div>' : '') +
-          '</div>' +
-          '<div class="zpw-foot">' +
-            '<div class="zpw-list">' + (d.polys.length
-              ? d.polys.map(function (q) {
-                  return '<span class="zpw-chip' + (W.sel === q.id ? ' on' : '') + '" data-zpsel="' + e2(q.id) + '">' +
-                    '<i style="--zc:' + zpHue(all, q.code) + '"></i>' + e2(q.code) +
-                    '<b>' + q.pts.length + ' pts</b></span>';
-                }).join('')
-              : '<span class="sbld-hint" style="margin:0;">Nothing traced yet.</span>') +
-              (function () {
-                var miss = codes.filter(function (c) { return !zpBox(d, c); });
-                return miss.length ? '<span class="zpw-miss">not traced: <b>' + e2(miss.join(', ')) + '</b></span>' : '';
-              })() +
-            '</div>' +
-            '<details class="zpw-apply"' + (others.length ? '' : ' hidden') + '>' +
-              '<summary>Also use this plan on other floors… <b>' + (mine.length > 1 ? mine.length + ' using it' : '') + '</b></summary>' +
-              '<div class="zpw-floors">' + others.map(function (f) {
-                var on = W.plateId && zpIdFor(f) === W.plateId;
-                var hasOwn = !on && !!zpIdFor(f);
-                return '<label class="zpw-fl' + (hasOwn ? ' warn' : '') + '"><input type="checkbox" data-zpfl="' + e2(f.id) + '"' +
-                  (on ? ' checked' : '') + '>' + e2(f.code || f.name || 'Floor') +
-                  (hasOwn ? '<em title="This floor already has a plan of its own. Ticking it replaces that.">has its own</em>' : '') +
-                  '</label>';
-              }).join('') + '</div>' +
-              '<p class="sbld-hint" style="margin:6px 0 0;">One drawing, shared by reference — re-trace it once and every ticked floor follows.</p>' +
-            '</details>' +
-          '</div>';
-        wire();
-      }
-
-      // ---- turning a click into plan units --------------------------------------------------
-      // ⚠️ Off the STAGE's own box, not the svg's: the svg is stretched to the stage
-      // (preserveAspectRatio="none") so the two agree, and the stage is the element the pointer
-      // events are actually bound to.
-      function ptOf(ev, stage) {
-        var r = stage.getBoundingClientRect();
-        if (!r.width || !r.height) return null;
-        return [zpClamp((ev.clientX - r.left) / r.width * ZP_W, 0, ZP_W),
-                zpClamp((ev.clientY - r.top) / r.height * H(), 0, H())];
-      }
-
       function commit() {
-        /* ⚠️ THE PLATE IS WRITTEN INTO THE SETUP HERE AND NOWHERE ELSE, on the first real change.
-           Opening the window, looking and closing must leave the setup untouched — and it is what
-           keeps "no plan" an honest state rather than one every visit quietly ends. */
         var W = _zpWin, bag = zpBag();
         if (!W.owned) {
           W.plateId = zpNewId();
@@ -31823,6 +31818,188 @@
         }
         markDirty();
       }
+      // Every zone code in play: the floor's own, plus anything already drawn that is not in it.
+      function allCodes() {
+        var out = codes.slice();
+        zpCodesOf(_zpWin.draft).forEach(function (c) {
+          if (!out.some(function (x) { return zpNormCode(x) === zpNormCode(c); })) out.push(c);
+        });
+        return out;
+      }
+      // Drop a preset in the middle of the plate, as the zone the brush carries.
+      function addPreset(kind) {
+        var W = _zpWin;
+        if (!W.brush) { UI.toast('Pick the zone this shape is first.', 'warn'); return; }
+        snap();
+        var w = ZP_W * 0.34, h = H() * 0.34;
+        var pts = zpPreset(kind, w, h);
+        var bb = zpBBoxOf(pts);
+        var ox = (ZP_W - bb.w) / 2 - bb.x, oy = (H() - bb.h) / 2 - bb.y;
+        var q = { id: zpNewId(), code: W.brush,
+                  pts: pts.map(function (p) { return [p[0] + ox, p[1] + oy]; }) };
+        W.draft.polys.push(q);
+        W.sel = q.id;
+        commit(); paint();
+      }
+
+      function paint() {
+        var W = _zpWin, d = W.draft, hh = H();
+        var all = allCodes();
+        var sel = selShape();
+        var mine = zpUsers(tr, W.plateId);
+        var others = floors.filter(function (f) { return f.id !== floor.id; });
+
+        var shapes = d.polys.map(function (q) {
+          var on = (W.sel === q.id);
+          var c = q.pts.reduce(function (s, p) { return [s[0] + p[0] / q.pts.length, s[1] + p[1] / q.pts.length]; }, [0, 0]);
+          // ⚠️ The corner handles exist only on the SELECTED shape. Every shape wearing them at
+          // once turns a floor of six zones into a field of eighty dots.
+          var handles = on ? q.pts.map(function (p, i) {
+            var nx = q.pts[(i + 1) % q.pts.length];
+            return '<circle class="zpw-vx" data-vi="' + i + '" cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="9"></circle>' +
+              // A faded midpoint handle ADDS a corner there — the equipment plan's gesture.
+              '<circle class="zpw-mid" data-mid="' + i + '" cx="' + ((p[0] + nx[0]) / 2).toFixed(1) +
+                '" cy="' + ((p[1] + nx[1]) / 2).toFixed(1) + '" r="7"></circle>';
+          }).join('') : '';
+          return '<g class="zpw-shape' + (on ? ' sel' : '') + '" data-zpoly="' + e2(q.id) + '" style="--zc:' + zpHue(all, q.code) + '">' +
+            '<polygon points="' + zpPts(q.pts) + '"></polygon>' +
+            '<text x="' + c[0].toFixed(1) + '" y="' + c[1].toFixed(1) + '">' + e2(q.code) + '</text>' +
+            handles + '</g>';
+        }).join('');
+        var live = W.drawing && W.pts.length
+          ? '<polyline class="zpw-live" points="' + zpPts(W.pts) + '"></polyline>' +
+            W.pts.map(function (p) { return '<circle class="zpw-lv" cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="7"></circle>'; }).join('')
+          : '';
+
+        wrap.innerHTML =
+          '<div class="zpw-head">' +
+            '<span class="zpw-title">Floor plan — <b>' + e2(floor.name || floor.code || 'Floor') + '</b>' +
+              '<span class="zpw-sub">' + e2(GLABEL[tr] || tr) + ' · ' + (floor.zones || []).length + ' zone' +
+              ((floor.zones || []).length === 1 ? '' : 's') +
+              (mine.length > 1 ? ' · shared by ' + mine.length + ' floors' : '') + '</span></span>' +
+            '<span class="zpw-sp"></span>' +
+            '<button class="pd-btn" id="zpw-x">Close</button>' +
+          '</div>' +
+
+          // ---- row 1: the drawing underneath -------------------------------------------
+          '<div class="zpw-bar">' +
+            '<span class="zpw-lbl">Plan</span>' +
+            '<button class="pd-btn" id="zpw-up"' + (W.busy ? ' disabled' : '') + '>' +
+              (d.img ? 'Replace…' : 'Attach image…') + '</button>' +
+            (d.img ? '<button class="pd-btn" id="zpw-rm"' + (W.busy ? ' disabled' : '') + '>Remove</button>' : '') +
+            (d.img ? '<label class="zpw-op" title="Fade the drawing so the zones over it stay readable">Fade' +
+              '<input type="range" id="zpw-o" min="20" max="100" value="' + Math.round((d.o == null ? 1 : d.o) * 100) + '"></label>' : '') +
+            (!d.img ? '<span class="sbld-hint" style="margin:0;">optional — you can draw the zones without one</span>' : '') +
+          '</div>' +
+
+          // ---- row 2: which zone ---------------------------------------------------------
+          /* ⚠️ THE PALETTE DOES DOUBLE DUTY, and the label says which: with a shape selected it
+             RE-ASSIGNS that shape, otherwise it loads the brush for the next one. That is the
+             owner's *"defining which is zone 1 2 etc."* — before this, a shape's zone was fixed at
+             the moment it was drawn and the only fix was to delete it and draw it again. */
+          '<div class="zpw-bar">' +
+            '<span class="zpw-lbl">' + (sel ? 'This area is' : 'Draw as') + '</span>' +
+            '<span class="zpw-pal">' + (all.length ? all.map(function (c) {
+              var on = sel ? (zpNormCode(c) === zpNormCode(sel.code)) : (zpNormCode(c) === zpNormCode(W.brush));
+              return '<button class="zpw-sw' + (on ? ' on' : '') + '" data-zpb="' + e2(c) + '"' +
+                ' style="--zc:' + zpHue(all, c) + '" title="' + e2(sel ? ('Make this area ' + c) : ('Draw the next area as ' + c)) + '">' +
+                e2(c) + '</button>';
+            }).join('') : '<span class="sbld-hint" style="margin:0;">This floor has no zones yet — add them in the step behind.</span>') +
+            '</span>' +
+          '</div>' +
+
+          // ---- row 3: making and editing areas -------------------------------------------
+          (all.length ? '<div class="zpw-bar">' +
+            '<span class="zpw-lbl">Add</span>' +
+            '<span class="zpw-shapes">' + ZP_SHAPES.map(function (s) {
+              return '<button class="zpw-shbtn" data-zpadd="' + s.k + '" title="' + e2('Add a ' + s.label.toLowerCase()) + '">' +
+                zpThumb(s.k) + '</button>';
+            }).join('') + '</span>' +
+            '<button class="pd-btn' + (W.drawing ? ' pd-btn-primary' : '') + '" id="zpw-draw" title="Click corner by corner; click the first corner again, or double-click, to close">' +
+              (W.drawing ? (W.pts.length >= 3 ? 'Finish' : 'Cancel') : 'Trace…') + '</button>' +
+            '<span class="ps-tb-div"></span>' +
+            '<button class="pd-btn" id="zpw-copy"' + (sel ? '' : ' disabled') + ' title="Copy the selected area">Copy</button>' +
+            '<button class="pd-btn" id="zpw-paste"' + (W.clip ? '' : ' disabled') + ' title="' +
+              (W.clip ? e2('Paste the copied ' + W.clip.code + ' area, offset a little') : 'Nothing copied yet') + '">Paste</button>' +
+            '<button class="pd-btn" id="zpw-dup"' + (sel ? '' : ' disabled') + ' title="Copy and paste in one go">Duplicate</button>' +
+            '<button class="pd-btn" id="zpw-del"' + (sel ? '' : ' disabled') + '>Delete</button>' +
+            '<span class="ps-tb-div"></span>' +
+            '<button class="pd-btn" id="zpw-undo"' + (W.hist.length ? '' : ' disabled') + ' title="' +
+              (W.hist.length ? e2('Undo (' + W.hist.length + ' step' + (W.hist.length === 1 ? '' : 's') + ') · Ctrl+Z') : 'Nothing to undo') + '">Undo</button>' +
+          '</div>' : '') +
+
+          (W.err ? '<p class="sbld-note sbld-note-warn">' + e2(W.err) + '</p>' : '') +
+          '<div class="zpw-stage' + (W.drawing ? ' drawing' : '') + '" id="zpw-stage">' +
+            (W.url ? '<img class="zpw-img" src="' + e2(W.url) + '" alt="" style="opacity:' + (d.o == null ? 1 : d.o) + '">' : '') +
+            '<svg class="zpw-svg" id="zpw-svg" viewBox="0 0 ' + ZP_W + ' ' + hh + '" preserveAspectRatio="none">' + shapes + live + '</svg>' +
+            (!d.img && !d.polys.length && !W.drawing ? '<div class="zpw-empty"><b>Nothing here yet.</b><br>' +
+              'Pick a zone above, then <b>add a shape</b> — or <b>Trace…</b> it corner by corner.<br>' +
+              'Attaching the floor plan is optional, but it gives you something to draw over.</div>' : '') +
+          '</div>' +
+          '<p class="zpw-tip">Drag an area to move it · drag a corner to reshape · the faint dot between two corners adds one · ' +
+            '<b>Alt</b>-click a corner removes it</p>' +
+
+          '<div class="zpw-foot">' +
+            '<div class="zpw-list">' + (d.polys.length
+              ? d.polys.map(function (q) {
+                  return '<span class="zpw-chip' + (W.sel === q.id ? ' on' : '') + '" data-zpsel="' + e2(q.id) + '">' +
+                    '<i style="--zc:' + zpHue(all, q.code) + '"></i>' + e2(q.code) + '<b>' + q.pts.length + '</b></span>';
+                }).join('')
+              : '<span class="sbld-hint" style="margin:0;">No areas yet.</span>') +
+              (function () {
+                var miss = codes.filter(function (c) { return !zpBox(d, c); });
+                return miss.length ? '<span class="zpw-miss">not drawn: <b>' + e2(miss.join(', ')) + '</b></span>' : '';
+              })() +
+            '</div>' +
+            '<details class="zpw-apply"' + (others.length ? '' : ' hidden') + '>' +
+              '<summary>Also use this plan on other floors…' + (mine.length > 1 ? ' <b>' + mine.length + ' using it</b>' : '') + '</summary>' +
+              '<div class="zpw-floors">' + others.map(function (f) {
+                var on = W.plateId && zpIdFor(f) === W.plateId;
+                var hasOwn = !on && !!zpIdFor(f);
+                return '<label class="zpw-fl' + (hasOwn ? ' warn' : '') + '"><input type="checkbox" data-zpfl="' + e2(f.id) + '"' +
+                  (on ? ' checked' : '') + '>' + e2(f.code || f.name || 'Floor') +
+                  (hasOwn ? '<em title="This floor already has a plan of its own. Ticking it replaces that.">has its own</em>' : '') +
+                  '</label>';
+              }).join('') + '</div>' +
+              '<p class="sbld-hint" style="margin:6px 0 0;">One drawing, shared by reference — re-draw it once and every ticked floor follows.</p>' +
+            '</details>' +
+          '</div>';
+        wire();
+      }
+
+      // ⚠️ Off the STAGE's own box: the svg is stretched to it (preserveAspectRatio="none"), so the
+      // two agree, and the stage is what the pointer events are bound to.
+      function ptOf(ev, stage) {
+        var r = stage.getBoundingClientRect();
+        if (!r.width || !r.height) return null;
+        return [zpClamp((ev.clientX - r.left) / r.width * ZP_W, 0, ZP_W),
+                zpClamp((ev.clientY - r.top) / r.height * H(), 0, H())];
+      }
+      function finish() {
+        var W = _zpWin;
+        if (W.pts.length < 3) { UI.toast('An area needs at least three corners.', 'warn'); return; }
+        snap();
+        var q = { id: zpNewId(), code: W.brush, pts: W.pts.slice() };
+        W.draft.polys.push(q);
+        W.pts = []; W.drawing = false; W.sel = q.id;
+        commit(); paint();
+      }
+      function pasteAt(src) {
+        var W = _zpWin;
+        if (!src) return;
+        snap();
+        // ⚠️ Offset, so the copy is not hidden exactly under the original and clicking selects the
+        // one the planner just made rather than the one underneath it.
+        var off = ZP_W * 0.04;
+        var bb = zpBBoxOf(src.pts);
+        var dx = Math.min(off, ZP_W - (bb.x + bb.w)), dy = Math.min(off, H() - (bb.y + bb.h));
+        var q = { id: zpNewId(), code: src.code,
+                  pts: src.pts.map(function (p) { return [zpClamp(p[0] + dx, 0, ZP_W), zpClamp(p[1] + dy, 0, H())]; }) };
+        W.draft.polys.push(q);
+        W.sel = q.id;
+        commit(); paint();
+      }
+
       function wire() {
         var W = _zpWin;
         var q = function (id) { return wrap.querySelector('#' + id); };
@@ -31830,65 +32007,81 @@
         var up = q('zpw-up'); if (up) up.onclick = pick;
         var rm = q('zpw-rm');
         if (rm) rm.onclick = function () {
-          if (!confirm('Remove the plan image? The traced areas stay.')) return;
+          if (!confirm('Remove the plan image? The areas you have drawn stay.')) return;
+          snap();
           var old = W.draft.img;
           W.draft.img = null; W.url = null;
           commit();
-          // ⚠️ Removing the drawing from a plate with nothing traced on it leaves nothing at all.
           if (zpDropIfEmpty(W.plateId)) { W.owned = false; W.plateId = null; }
-          // ⚠️ The file is deleted AFTER the setup no longer points at it, and a failure is
-          // swallowed: an orphaned object in a bucket is untidy, a dangling path is a broken screen.
           if (old) { try { sb().storage.from(ZP_BUCKET).remove([old]); } catch (e) {} }
           paint();
         };
         var op = q('zpw-o');
-        if (op) op.oninput = function () {
-          W.draft.o = zpClamp((parseInt(op.value, 10) || 100) / 100, 0.1, 1);
-          var im = wrap.querySelector('.zpw-img');
-          if (im) im.style.opacity = W.draft.o;      // live, without a repaint
-        };
-        if (op) op.onchange = function () { commit(); };
+        if (op) {
+          op.oninput = function () {
+            W.draft.o = zpClamp((parseInt(op.value, 10) || 100) / 100, 0.1, 1);
+            var im = wrap.querySelector('.zpw-img');
+            if (im) im.style.opacity = W.draft.o;      // live, without a repaint
+          };
+          op.onchange = function () { commit(); };
+        }
+        /* The palette: re-assign the selected shape, or set the brush. */
         wrap.querySelectorAll('[data-zpb]').forEach(function (b) {
-          b.onclick = function () { W.brush = b.dataset.zpb; paint(); };
+          b.onclick = function () {
+            var s = selShape();
+            if (s) {
+              if (zpNormCode(s.code) === zpNormCode(b.dataset.zpb)) return;   // a no-op is not an edit
+              snap();
+              s.code = b.dataset.zpb;
+              W.brush = s.code;
+              commit();
+            } else { W.brush = b.dataset.zpb; }
+            paint();
+          };
+        });
+        wrap.querySelectorAll('[data-zpadd]').forEach(function (b) {
+          b.onclick = function () { addPreset(b.dataset.zpadd); };
         });
         var dr = q('zpw-draw');
         if (dr) dr.onclick = function () {
           if (W.drawing) {
             if (W.pts.length >= 3) finish(); else { W.drawing = false; W.pts = []; paint(); }
           } else {
-            if (!W.brush) { UI.toast('Pick the zone you are tracing first.', 'warn'); return; }
+            if (!W.brush) { UI.toast('Pick the zone you are drawing first.', 'warn'); return; }
             W.drawing = true; W.pts = []; W.sel = null; paint();
           }
         };
+        var cp = q('zpw-copy');
+        if (cp) cp.onclick = function () {
+          var s = selShape(); if (!s) return;
+          // ⚠️ A DEEP copy taken at the moment of copying, so editing the original afterwards does
+          // not change what is on the clipboard.
+          W.clip = JSON.parse(JSON.stringify({ code: s.code, pts: s.pts }));
+          UI.toast('Copied the ' + s.code + ' area.', 'success');
+          paint();
+        };
+        var ps = q('zpw-paste'); if (ps) ps.onclick = function () { pasteAt(W.clip); };
+        var du = q('zpw-dup'); if (du) du.onclick = function () { var s = selShape(); if (s) pasteAt(s); };
         var del = q('zpw-del');
         if (del) del.onclick = function () {
           var i = W.draft.polys.map(function (p) { return p.id; }).indexOf(W.sel);
           if (i < 0) return;
+          snap();
           W.draft.polys.splice(i, 1);
           W.sel = null;
           commit();
-          // ⚠️ The last area going means the plate goes, unless a drawing is still attached.
           if (zpDropIfEmpty(W.plateId)) { W.owned = false; W.plateId = null; }
           paint();
         };
+        var un = q('zpw-undo'); if (un) un.onclick = undo;
         wrap.querySelectorAll('[data-zpsel]').forEach(function (b) {
           b.onclick = function () { W.sel = (W.sel === b.dataset.zpsel) ? null : b.dataset.zpsel; paint(); };
         });
-        wrap.querySelectorAll('[data-zpoly]').forEach(function (g2) {
-          g2.onclick = function (ev) {
-            if (W.drawing) return;
-            ev.stopPropagation();
-            W.sel = (W.sel === g2.dataset.zpoly) ? null : g2.dataset.zpoly; paint();
-          };
-        });
-        /* Applying the plan to other floors. ⚠️ Ticking one COMMITS first: a floor cannot be
-           pointed at a plate that does not exist yet, and the plate does not exist until the
-           window has something worth saving. */
         wrap.querySelectorAll('[data-zpfl]').forEach(function (c) {
           c.onchange = function () {
             if (!W.draft.polys.length && !W.draft.img) {
               c.checked = false;
-              UI.toast('Attach a plan or trace an area first — there is nothing to share yet.', 'warn');
+              UI.toast('Draw an area or attach a plan first — there is nothing to share yet.', 'warn');
               return;
             }
             commit();
@@ -31897,14 +32090,13 @@
             markDirty(); paint();
           };
         });
-        var stage = q('zpw-stage');
-        if (!stage) return;
+
+        var stage = q('zpw-stage'), svg = q('zpw-svg');
+        if (!stage || !svg) return;
+        // ---- tracing ---------------------------------------------------------------------
         stage.onclick = function (ev) {
           if (!W.drawing) return;
           var p = ptOf(ev, stage); if (!p) return;
-          /* ⚠️ CLOSE BY CLICKING THE FIRST POINT, the same gesture the equipment site plan uses.
-             The tolerance is a fraction of the plate, not pixels, so it behaves the same on a
-             laptop and on a wall display. */
           if (W.pts.length >= 3) {
             var f0 = W.pts[0], dx = (p[0] - f0[0]) / ZP_W, dy = (p[1] - f0[1]) / H();
             if (Math.sqrt(dx * dx + dy * dy) < 0.02) { finish(); return; }
@@ -31913,23 +32105,83 @@
           W.pts.push(p); paint();
         };
         stage.ondblclick = function () { if (W.drawing && W.pts.length >= 3) finish(); };
+
+        /* ---- moving and reshaping -------------------------------------------------------
+           ⚠️ THE EQUIPMENT SITE PLAN'S POINTER MODEL, gesture for gesture: drag the body to move,
+           drag a corner to reshape, click a midpoint dot to add a corner, alt-click a corner to
+           remove one. Pointer capture on the svg is what keeps a fast drag from being lost when
+           the cursor leaves the shape.
+           ⚠️ ONE snapshot per gesture, taken on pointerdown — not per mousemove, which would fill
+           the undo stack with a hundred steps for one drag. */
+        wrap.querySelectorAll('[data-zpoly]').forEach(function (g2) {
+          g2.onpointerdown = function (ev) {
+            if (W.drawing || ev.button) return;
+            var id = g2.dataset.zpoly;
+            var shape = W.draft.polys.filter(function (p) { return p.id === id; })[0];
+            if (!shape) return;
+            ev.preventDefault(); ev.stopPropagation();
+            // Selecting is enough on a shape that was not already selected: the planner is
+            // reaching for it, not moving it yet.
+            if (W.sel !== id) { W.sel = id; paint(); return; }
+            var t = ev.target, vx = (t.classList && t.classList.contains('zpw-vx')) ? t : null;
+            var mid = (t.classList && t.classList.contains('zpw-mid')) ? t : null;
+            if (mid) {
+              var k = +mid.dataset.mid, a = shape.pts[k], b2 = shape.pts[(k + 1) % shape.pts.length];
+              if (shape.pts.length >= ZP_MAXPTS) { UI.toast('That is as many corners as one area can take.', 'warn'); return; }
+              snap();
+              shape.pts.splice(k + 1, 0, [(a[0] + b2[0]) / 2, (a[1] + b2[1]) / 2]);
+              commit(); paint(); return;
+            }
+            if (vx && ev.altKey) {
+              if (shape.pts.length <= 3) { UI.toast('An area needs at least three corners.', 'warn'); return; }
+              snap();
+              shape.pts.splice(+vx.dataset.vi, 1);
+              commit(); paint(); return;
+            }
+            var start = ptOf(ev, stage); if (!start) return;
+            var pts0 = shape.pts.map(function (p) { return [p[0], p[1]]; });
+            var bb = zpBBoxOf(pts0), moved = false, hh2 = H();
+            var poly = g2.querySelector('polygon');
+            try { svg.setPointerCapture(ev.pointerId); } catch (e) {}
+            g2.classList.add('drag');
+            function move(e2) {
+              var p = ptOf(e2, stage); if (!p) return;
+              var dx = p[0] - start[0], dy = p[1] - start[1];
+              if (!moved && Math.abs(dx) + Math.abs(dy) < 4) return;
+              if (!moved) { snap(); moved = true; }
+              var next;
+              if (vx) {
+                var i = +vx.dataset.vi;
+                next = pts0.map(function (r, k2) { return k2 === i ? [p[0], p[1]] : [r[0], r[1]]; });
+              } else {
+                // ⚠️ Clamped by the BOUNDING BOX, so a drag can never push half a zone off the
+                // sheet while the rest stays on it.
+                var ddx = zpClamp(dx, -bb.x, ZP_W - bb.x - bb.w), ddy = zpClamp(dy, -bb.y, hh2 - bb.y - bb.h);
+                next = pts0.map(function (r) { return [r[0] + ddx, r[1] + ddy]; });
+              }
+              shape.pts = next;
+              if (poly) poly.setAttribute('points', zpPts(next));
+            }
+            function done() {
+              svg.onpointermove = svg.onpointerup = svg.onpointercancel = null;
+              g2.classList.remove('drag');
+              try { svg.releasePointerCapture(ev.pointerId); } catch (e) {}
+              if (moved) { commit(); paint(); }
+              else { W.sel = null; paint(); }   // a click with no movement de-selects
+            }
+            svg.onpointermove = move;
+            svg.onpointerup = done;
+            svg.onpointercancel = done;
+          };
+        });
       }
-      function finish() {
-        var W = _zpWin;
-        if (W.pts.length < 3) { UI.toast('An area needs at least three corners.', 'warn'); return; }
-        W.draft.polys.push({ id: zpNewId(), code: W.brush, pts: W.pts.slice() });
-        W.pts = []; W.drawing = false;
-        commit(); paint();
-      }
-      // ---- attaching the drawing ------------------------------------------------------------
+
       function pick() {
         var inp = document.createElement('input');
         inp.type = 'file'; inp.accept = 'image/*';
         inp.onchange = function () {
           var f = inp.files && inp.files[0];
           if (!f) return;
-          // ⚠️ A hard ceiling, checked BEFORE the upload: a 40 MB architectural export would upload
-          // for a minute and then be re-downloaded by everyone who opens the floor.
           if (f.size > 12 * 1024 * 1024) { UI.toast('That image is over 12 MB — export the plan smaller and try again.', 'error'); return; }
           _zpWin.busy = true; _zpWin.err = ''; paint();
           var path = zpImgPath(floor.id), old = _zpWin.draft.img;
@@ -31942,6 +32194,7 @@
                   : ('The plan could not be uploaded: ' + (r.error.message || r.error));
                 paint(); return;
               }
+              snap();
               _zpWin.draft.img = path;
               commit();
               if (old) { try { sb().storage.from(ZP_BUCKET).remove([old]); } catch (e) {} }
@@ -31955,11 +32208,21 @@
         };
         inp.click();
       }
+
+      // ⚠️ Ctrl+Z reaches the window wherever the focus is, and is removed with it — a listener
+      // left on the document would undo into a closed window's state on the next screen.
+      function onKey(ev) {
+        if (!_zpWin) return;
+        if ((ev.ctrlKey || ev.metaKey) && String(ev.key).toLowerCase() === 'z') { ev.preventDefault(); undo(); return; }
+        if (ev.key === 'Escape' && _zpWin.drawing) { ev.preventDefault(); _zpWin.drawing = false; _zpWin.pts = []; paint(); }
+      }
+      document.addEventListener('keydown', onKey, true);
       var _close = m.close;
       m.close = function () {
+        document.removeEventListener('keydown', onKey, true);
         _zpWin = null;
         _close();
-        render();   // the step behind shows the plan state per floor
+        render();
       };
       paint();
       loadImg();

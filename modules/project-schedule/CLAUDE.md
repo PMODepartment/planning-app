@@ -13,6 +13,91 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### The floor plan window gets tools: shapes, undo, clipboard, and naming the zone (2026-09-10) — jasantos2
+
+Owner: *"if there is no floor plan, how do i add shapes or create shapes? and how come this is the
+only interactable things to do in the window. please add options where i can add different shapes,
+undo, copy paste of shapes, defining which is zone 1 2 etc."*
+
+⚠️ **The question is the defect.** Yesterday's window could do exactly one thing: trace a polygon
+corner by corner over an attached image. With no image there was nothing to click, and the answer to
+*"how do I add a shape"* was *"you can't"*. Tracing is the right tool for a scanned plan and the
+wrong one for everything else — a planner who knows the plate is a rectangle should not have to
+click four corners to say so, and one who has no drawing yet should not be locked out.
+
+### 1. Nine presets, drawn by the same function that draws the menu
+Rectangle, square, L, T, U, triangle, trapezoid, hexagon, circle — placed at 34% of the plate,
+centred, and selected on arrival so the next gesture acts on the thing just added.
+- ⚠️ **Verbatim from the equipment site plan**, like the rest of this window, so the two screens
+  cannot drift into offering different shapes under the same names.
+- ⚠️ **`zpThumb` calls `zpPreset`**, so the menu icon is *the shape*. A menu that draws its own
+  icons can advertise an outline the button does not produce; this one cannot.
+- ⚠️ A kind listed in `ZP_SHAPES` with no `case` in the switch falls to the default and silently
+  draws a **rectangle**. The suite compares every kind against the rectangle, so adding a name
+  without adding its outline fails a test instead of shipping a lie.
+
+### 2. Undo is a SNAPSHOT, and the suite derives what it must cover
+⚠️ A handful of short point lists costs nothing to deep-copy, and an operation log would need a
+correct inverse for **move, reshape, add-corner, remove-corner, re-assign, paste, delete** — seven
+chances to corrupt a drawing. Snapshots have one. Pushed *before* the change, capped at 50, reachable
+by **Ctrl+Z** wherever the focus is.
+- ⚠️⚠️ **The test is derived, not quoted.** It scans the window's own `W.draft.X =` assignments and
+  requires every field found to be inside the snapshot. Quoting the snapshot line would pass forever;
+  this fails the day someone adds a mutable field and forgets it — which is the day a planner's work
+  starts vanishing on undo.
+- ⚠️ The keydown listener is **removed on close**. Left on the document it would undo into a closed
+  window's state on the next screen.
+- ⚠️ **Undoing back to nothing drops the plate** — a third `zpDropIfEmpty` site. Without it, undoing
+  your very first shape leaves an empty plate behind and the floor row still reads *"has a plan"*.
+  That is the same rule that already covers deleting the last area and removing the image.
+
+### 3. Clipboard, and naming the zone
+Copy / Paste / Duplicate / Delete, each dead when it cannot act.
+- ⚠️ The clipboard is a **deep copy**, so editing the original cannot reach through and change what
+  is pasted, and a paste **lands offset** rather than hiding exactly under its source with no visible
+  effect. A pasted shape takes a **new id**, or the copy and the original would be one shape.
+- The zone palette does **double duty**: with nothing selected it reads *"Draw as"* and sets what the
+  next shape will be; with a shape selected it reads *"This area is"* and **re-assigns** it. That is
+  the owner's *"defining which is zone 1 2 etc."* — and re-labelling a shape no longer means deleting
+  and re-drawing it.
+
+### 4. The gestures that have no button, now stated
+Drag an area to move it, drag a corner to reshape, the faint dot between two corners **adds** one,
+**Alt**-click a corner removes it. All four existed; none was written down. ⚠️ The empty state also
+now says the image is **optional** — *"you can draw the zones without one"* — which is the sentence
+whose absence produced the owner's question.
+
+### Verified
+**104 assertions in the plan suite, 27 new, all passing**, plus the runtime check (10) and the
+extrusion suite (12). The presets are **executed**, not read: nine kinds against their bounding
+boxes, the square and circle ignoring the height they are handed, the circle's 24 segments, the
+unknown kind degrading rather than throwing, and every thumbnail rebuilt from `zpPreset` directly.
+⚠️⚠️ **And the gestures were driven in a browser, which is the only reason they are claimed here** —
+a preset added with **no plan image at all** (the owner's case), a move that translated by exactly the
+drag delta, a reshape that moved one corner and left the others untouched, a midpoint dot that took a
+rectangle to five corners, an Alt-click that took it back to four, copy/paste at a real offset, and
+four undos stepping back through duplicate → paste → re-assign → the plate disappearing entirely with
+Undo then disabled.
+⚠️ **Five assertions needed retargeting**, named rather than quietly adjusted: the share refusal moved
+from a rendered message to a toast that also **un-ticks** the box, the `zpDropIfEmpty` count went 2→3,
+the remove-image confirm now says *"drawn"* rather than *"traced"* (areas need not be traced any
+more), the empty prompt gained a `!W.drawing` condition, and the tip line bolds `<b>Alt</b>`. Every
+property is unchanged or stricter.
+⚠️ A second window cannot stack on the first — the modal backdrop is `position:fixed; inset:0`, so the
+Plan button behind it is unreachable. Checked because a harness that called the opener twice *did*
+produce two toolbars.
+**Whole set: 627 assertions across eleven suites plus the runtime and extrusion checks, 0 failing**
+— each suite run against the baseline it was written for, which for two of them meant exporting the
+real parent commit rather than reusing a kept snapshot. ⚠️ Three suites did not run, and the reasons
+differ: **harness2** is broken by the concurrent change-order refactor (`_CO`), **harness6** needs a
+BOQ file this repo does not contain, and ⚠️ **harness14 is OBSOLETE** — it tests the zone-plan *grid*
+that harness15 replaced yesterday, and I left it lying around instead of retiring it. Two assertions
+in harness3 stay outside its scope filter for the same change-order reason.
+⚠️ **Not verified signed-in.** Storage is stubbed, so **the image upload still has never run against
+the real `site-plans` bucket** — unchanged from yesterday, and still the first thing to try.
+
+`MODULE_V` → `20260910b`.
+
 ### The floor plan: attach the drawing, trace the zones on it (2026-09-10) — jasantos2
 
 Owner: *"instead of doing this method for defining the zones / areas, i want a pop up window or space

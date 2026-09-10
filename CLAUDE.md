@@ -95,6 +95,40 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### The floor plan window gets tools: shapes, undo, clipboard, and naming the zone (2026-09-10) — jasantos2
+
+Owner: *"if there is no floor plan, how do i add shapes or create shapes? and how come this is the
+only interactable things to do in the window."*
+
+⚠️ **The question is the defect.** Yesterday's window could do one thing — trace a polygon corner by
+corner over an attached image — so with no image there was nothing to click at all.
+
+- **Nine shape presets** (rectangle, square, L, T, U, triangle, trapezoid, hexagon, circle), so a
+  rectangular plate takes one click instead of four corners, and a floor with **no drawing yet** can
+  still be laid out. ⚠️ The menu icon is drawn by the **same function that builds the shape**, so it
+  cannot advertise an outline the button does not produce.
+- ⚠️ **Undo (Ctrl+Z, 50 deep) is a snapshot, not an operation log** — one thing to get right instead
+  of a correct inverse for each of seven gestures. ⚠️ The test is **derived from the window's own
+  assignments**, so a new mutable field left out of the snapshot fails a test rather than quietly
+  losing a planner's work.
+- **Copy / paste / duplicate / delete**, with a deep-copied clipboard and an offset paste, and the
+  zone palette doing **double duty**: it names the *next* shape, or **re-names the selected one** —
+  the owner's *"defining which is zone 1 2 etc."*, which previously meant delete and re-draw.
+- ⚠️ **Undoing back to nothing now drops the plate**, or an undone first shape would leave the floor
+  still reading *"has a plan"*.
+
+**104 assertions in the plan suite, 27 new, all passing**, plus the runtime and extrusion checks. The
+presets are executed, not read. ⚠️⚠️ **The gestures were driven in a browser** — a preset added with
+no plan image, a move by exactly the drag delta, a reshape touching one corner, the midpoint dot
+adding a corner and Alt-click removing it, and four undos stepping back to an empty plate. ⚠️ Five
+assertions were **retargeted** where this change rewrote the lines they described, each named and
+each property unchanged or stricter. Whole set: **627 assertions, 0 failing**; ⚠️ three suites did
+not run — one broken by the change-order refactor, one needing a BOQ file absent from this repo, and
+one **obsolete** (it tests the zone grid replaced yesterday). ⚠️ **Not verified signed-in** — the
+image upload still has never run against the real bucket.
+
+`MODULE_V` → `20260910b`. Detail: [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
 ### Floor plans you can trace: attach the drawing, outline the zones on it (2026-09-10) — jasantos2
 
 Owner: *"instead of doing this method for defining the zones / areas, i want a pop up window or space
