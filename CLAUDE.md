@@ -95,6 +95,82 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-10 (s4) — A stakeholder typed twice under two spellings now gets caught, and asks before it links
+
+**New `assets/js/stakeholders.js`.** Owner: *"there will be cases that at one point a stakeholder isn't
+in the general database and two different planners of their respective projects will add the same
+stakeholder and would have duplicate stakeholder register of the same person"* — and, when asked how
+strict to be: *"let's also make sure that the warning can identify similarity in names. e.g. Fernando
+Miguel Lozano vs Fernando Lozano etc."* Stage 4 of a five-stage pass.
+
+#### ⚠️ Most of the directory already existed. What was missing was the matching.
+`stakeholders`, `stakeholder_map.stakeholder_id`, the 13-field mirror, `findOrCreatePerson`, the
+picker and "Save for all projects" all shipped on 2026-09-08 — and **the migration HAS been run**,
+which this log said it had not. Established by probing the live database: PostgREST resolves column
+names *before* the permission check, so every column of `stakeholders` and `stakeholder_map
+.stakeholder_id` answers `42501` (exists, blocked by grants) against controls returning `PGRST205`
+for a missing table and `42703` for a missing column. The gap was that matching was **exact**:
+`lower(btrim(name))` + `lower(coalesce(btrim(organization),''))`, which cannot see the owner's case.
+
+#### ⚠️⚠️ The matcher RANKS. It never links on its own.
+An **exact** name+organisation hit still resolves silently, because the unique index makes it the only
+possible outcome. A **fuzzy** hit is different in kind — "Fernando Miguel Lozano" and "Fernando
+Lozano" are probably one person and might be two, and only the planner knows. Linking silently would
+merge two real people into one record with no undo in the UI, which is strictly worse than the
+duplicate it was preventing. So the save pauses and asks, once, with the reason on screen.
+
+- ⚠️⚠️ **THE SURNAME GATE is what keeps it honest.** Every name rule requires the LAST token to agree
+  (or be an initial of the other). Without it, "Juan Santos" and "Maria Santos" read as a near-miss on
+  a shared surname, and a directory of Filipino names would surface false matches constantly.
+- Rules: token-subset with a shared surname (the owner's case, 0.92), initial expansion, a
+  single-token typo at edit distance ≤2 on tokens of ≥4 characters, and nickname **substituted for the
+  given name** — the directory holds `Ana Reyes` nicknamed `Anne`, and the person gets typed as `Anne
+  Reyes`. ⚠️ My first nickname rule only fired when the nickname equalled the *whole* other name, so
+  that case scored zero. The suite caught it, not a reading.
+- ⚠️ Organisation **adjusts, never decides**: agreement boosts, disagreement demotes but still
+  surfaces — people change employer, and that is exactly the duplicate worth catching.
+- ⚠️ `exactKey` deliberately does **not** normalise. It must agree with the DATABASE's index, not with
+  the matcher, or a "find" that misses inserts a row the index then refuses and the save fails with a
+  constraint error the planner cannot act on.
+- ⚠️⚠️ **The prompt is gated on `isNew`, and that gate is load-bearing:** `Autosave.wire` clicks the
+  same Save button on a debounce for existing rows, so prompting on edit would throw a modal up
+  mid-keystroke.
+
+#### ⚠️ A shared file, because this page has already made the other mistake
+`portfolio-overview` carried a hand-copied duplicate of the S-curve maths until yesterday. Both it and
+the Stakeholder Map need identity matching, so the logic lives in one file both load.
+
+#### Verified
+**41 assertions** executing the shipped file, including the owner's own case both directions, and a
+**negative set** that must NOT match (two unrelated Santoses, `Jose Cruz` vs `Jose Cruzado`,
+`Michael`/`Michelle Tan`, `Peter`/`Paul Lim`). **4 contrast builds, all biting.**
+⚠️⚠️ **Two of them did NOT bite at first, and that was a real gap in the suite rather than proof the
+code was fine.** Removing the surname gate entirely, and widening typo tolerance to two-letter tokens,
+both left every assertion green — the negatives were passing for *other* reasons, so those two guards
+were untested and I would have claimed them verified. Three cases were added that fail the moment
+either guard is removed (`Maria Santos` vs `Maria Santos Cruz`; `Jo`/`Bo Cruz`; `Al`/`Ed Reyes`).
+
+The dialog was **driven in a browser** against the shipped stylesheet with `confirmPerson` sliced out
+of the module: Link returns the existing person, "someone else" creates, Cancel aborts the save, an
+**exact** match and an **unrelated** name both raise no prompt at all, and — the safety property —
+clicking Link with nothing selected **keeps the dialog open and warns** instead of silently creating.
+
+- New `assets/js/stakeholders.js?v=20260910s4`, loaded by the two pages that need it; stakeholder-map
+  `module.js`/`module.css` → `?v=20260910s4`; `MODULE_V` → `20260910s4`. 48 assets on one version
+  each, 0 splits, 0 missing.
+- ⚠️ **Not verified signed in** — no person has been linked or created against the live directory.
+- ⚠️ **Deliberately NOT in this commit:** the portfolio-level Directory view (create a person and
+  assign them to projects from the Portfolio Dashboard) and the merge tool for duplicates that already
+  exist. The Stakeholders tab there is still read-only. Stopping the NEW duplicates is the half that
+  prevents the problem getting worse; cleaning up existing ones is its own piece of work.
+
+⚠️ **A correction to yesterday's (p3) entry, which was mine:** the row-level `.pd-perf-basis` line I
+added to the dashboard KPI row carried `grid-column: 1/-1`, which **occupies every track** of a
+`repeat(auto-fit, minmax(196px,1fr))` grid and so prevented auto-fit from collapsing the empty ones —
+squeezing the four cards from 454px to 221px. Found and removed by another session three hours later
+(`82e03f1`). I verified the card text and the projects table's cell arithmetic and never re-measured
+the KPI grid itself, which is the one thing that change could break.
+
 ### Floor plans you can trace: attach the drawing, outline the zones on it (2026-09-10) — jasantos2
 
 Owner: *"instead of doing this method for defining the zones / areas, i want a pop up window or space

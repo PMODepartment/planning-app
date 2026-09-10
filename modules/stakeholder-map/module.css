@@ -411,3 +411,30 @@ html.pd-dark .sm-ap-row.is-here .sm-ap-tag { color: #FF8A80; }
    inviting a click that would upload a file the save split then discards. */
 .sm-photowell.is-locked { cursor: default; pointer-events: none; opacity: .75; }
 .sm-photowell.is-locked .sm-photowell-hint { display: none; }
+
+
+/* ---- "Is this someone already in the directory?" (2026-09-10) --------------
+   The confirm that stands between a fuzzy name match and a directory link. See
+   confirmPerson() in module.js for why a fuzzy hit is never resolved silently. */
+.sm-dup-lead { margin: 0 0 12px; font-size: var(--pd-fs-base); line-height: 1.5; }
+.sm-dup-list { display: flex; flex-direction: column; gap: 6px; }
+.sm-dup-row {
+  display: flex; align-items: flex-start; gap: 10px; padding: 9px 11px;
+  border: 1px solid var(--pd-line); border-radius: var(--pd-radius); cursor: pointer;
+}
+.sm-dup-row:hover { background: var(--pd-bg); }
+.sm-dup-row input { width: auto; min-height: 0; margin-top: 2px; flex: none; }
+.sm-dup-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1 1 auto; }
+.sm-dup-main b { font-weight: 600; overflow-wrap: anywhere; }
+.sm-dup-main small { font-size: var(--pd-fs-xs); color: var(--pd-muted); overflow-wrap: anywhere; }
+/* Why this row was proposed. ⚠ Shown, not hidden behind a tooltip: a match the planner
+   cannot see the reason for is a match they cannot judge. */
+.sm-dup-why {
+  flex: none; align-self: center; font-size: var(--pd-fs-micro); color: var(--pd-muted);
+  text-align: right; max-width: 190px; line-height: 1.35;
+}
+.sm-dup-note { margin: 12px 0 0; font-size: var(--pd-fs-xs); color: var(--pd-muted); line-height: 1.5; }
+@media (max-width: 620px) {
+  .sm-dup-row { flex-wrap: wrap; }
+  .sm-dup-why { max-width: none; text-align: left; align-self: flex-start; width: 100%; }
+}

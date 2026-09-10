@@ -160,6 +160,84 @@ window.StakeholderMap = (function () {
   //    organisation to '' -- the SAME key as the unique index, or a "find" that
   //    misses would insert a duplicate the index then refuses, and the save would
   //    fail with a constraint error the planner cannot act on.
+  // ⚠️⚠️ THE FUZZY MATCH ASKS. IT NEVER LINKS ON ITS OWN, AND THAT IS THE WHOLE DESIGN.
+  //    `findOrCreatePerson` resolves EXACT identity automatically — name + organisation,
+  //    the same key `stakeholders_name_org_uidx` enforces — because the database would
+  //    refuse a second row anyway, so there is nothing to decide.
+  //    A FUZZY hit is different in kind. "Fernando Miguel Lozano" and "Fernando Lozano"
+  //    are probably one person and might be two, and only the planner knows. Linking them
+  //    silently would merge two real people into one directory row with no undo in the UI
+  //    — strictly worse than the duplicate it was trying to prevent. So the save pauses
+  //    and asks, once, with the evidence on screen.
+  // Resolves to: { person }  link to this existing row
+  //              { create: true }  a genuinely new person
+  //              { cancel: true }  planner backed out; the save must stop
+  async function confirmPerson(data) {
+    if (dirOff || !window.PDStakeholders) return { create: true };
+    var name = String(data.name || '').trim();
+    if (!name) return { create: true };
+
+    var dir;
+    try { dir = await loadDirAll(); } catch (e) { return { create: true }; }
+    if (!dir || !dir.length) return { create: true };
+
+    // Exact identity needs no question — findOrCreatePerson will find the same row.
+    if (PDStakeholders.findExact(data, dir)) return { create: true };
+
+    var hits = PDStakeholders.matchCandidates(data, dir, { limit: 4 });
+    if (!hits.length) return { create: true };
+
+    var typed = Fmt.esc(name) + (data.organization ? ' · ' + Fmt.esc(data.organization) : '');
+    var rows = hits.map(function (h, i) {
+      var p = h.person;
+      var sub = [p.role_title, p.organization].filter(Boolean).join(' · ');
+      var used = (dirUsage[p.id] || []).length;
+      return '<label class="sm-dup-row">' +
+          '<input type="radio" name="sm-dup" value="' + Fmt.esc(p.id) + '"' + (i === 0 ? ' checked' : '') + '>' +
+          '<span class="sm-dup-main"><b>' + Fmt.esc(p.name) + '</b>' +
+            (sub ? '<small>' + Fmt.esc(sub) + '</small>' : '') +
+            (used ? '<small>Already on ' + used + ' project' + (used === 1 ? '' : 's') + '</small>' : '') +
+          '</span>' +
+          '<span class="sm-dup-why">' + Fmt.esc(h.why) + '</span>' +
+        '</label>';
+    }).join('');
+
+    return new Promise(function (resolve) {
+      var m = UI.modal(
+        '<div class="pd-modal-header"><h2>Is this someone already in the directory?</h2></div>' +
+        '<div class="pd-modal-body">' +
+          '<p class="sm-dup-lead">You typed <b>' + typed + '</b>. ' +
+            'The shared directory already holds ' + (hits.length === 1 ? 'someone' : 'people') +
+            ' with a very similar name.</p>' +
+          '<div class="sm-dup-list">' + rows + '</div>' +
+          // ⚠ The consequence is stated, because it is not obvious and it is not undoable
+          //   from this screen: linking makes ONE person shared across projects.
+          '<p class="sm-dup-note">Linking adds this project to that person\'s record — their ' +
+            'name, organisation and photo become shared. Creating a new person keeps them separate.</p>' +
+        '</div>' +
+        '<div class="pd-modal-foot">' +
+          '<button class="pd-btn" data-act="cancel">Cancel</button>' +
+          '<button class="pd-btn" data-act="new">No, this is someone else</button>' +
+          '<button class="pd-btn pd-btn-primary" data-act="link">Link to selected</button>' +
+        '</div>', { noBackdropClose: true });
+      var done = false;
+      function finish(v) { if (done) return; done = true; m.close(); resolve(v); }
+      m.el.querySelectorAll('[data-act]').forEach(function (b) {
+        b.onclick = function () {
+          var a = b.dataset.act;
+          if (a === 'cancel') return finish({ cancel: true });
+          if (a === 'new') return finish({ create: true });
+          var sel = m.el.querySelector('input[name="sm-dup"]:checked');
+          var hit = sel && hits.filter(function (h) { return String(h.person.id) === sel.value; })[0];
+          // ⚠ No selection cannot silently become "create" — that is the one outcome the
+          //   planner did not choose. Refuse and leave the dialog open.
+          if (!hit) { UI.toast('Pick a person to link to, or choose "someone else".', 'warn'); return; }
+          finish({ person: hit.person });
+        };
+      });
+    });
+  }
+
   async function findOrCreatePerson(fields) {
     var name = String(fields.name || '').trim();
     var org  = String(fields.organization || '').trim();
@@ -1998,7 +2076,17 @@ window.StakeholderMap = (function () {
           data.stakeholder_id = person.id;
         } else if (!dirOff) {
           try {
-            var pr = await findOrCreatePerson(data);
+            // ⚠⚠ ASK FIRST -- but ONLY when adding. See confirmPerson() above for why a
+            //    fuzzy hit may never resolve itself. An EXACT name+organisation match still
+            //    resolves silently, because the unique index makes it the only outcome.
+            // ⚠⚠ GATED ON `isNew`, AND THAT GATE IS LOAD-BEARING: `Autosave.wire` CLICKS
+            //    THIS SAME SAVE BUTTON on a debounce for existing rows, so prompting on edit
+            //    would throw a modal up mid-keystroke. Adding a person to a project is also
+            //    exactly the moment the duplicate is created -- editing one that already
+            //    exists is a different act, and directory edits go through "Edit person".
+            var choice = isNew ? await confirmPerson(data) : { create: true };
+            if (choice.cancel) return;      // planner backed out; `finally` restores the button
+            var pr = choice.person || await findOrCreatePerson(data);
             if (pr) {
               data.stakeholder_id = pr.id;
               people[pr.id] = pr;
