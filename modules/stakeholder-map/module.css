@@ -436,3 +436,21 @@ html.pd-dark .sm-ap-row.is-here .sm-ap-tag { color: #FF8A80; }
   .sm-dup-row { flex-wrap: wrap; }
   .sm-dup-why { max-width: none; text-align: left; align-self: flex-start; width: 100%; }
 }
+
+/* ---- bulk selection in the register table ---------------------------------
+   Owner, 2026-09-10: Edit and Delete leave the row (all editing is on the person
+   page now), and delete becomes a bulk action.
+   ⚠️ The checkbox column is the SAME trailing cell the two buttons used, so the
+      band header's colspan arithmetic is untouched — moving selection to a leading
+      column would have shifted every band by one and is a change to the thing this
+      table is most sensitive about. */
+.sm-selbox { display: inline-flex; align-items: center; justify-content: center;
+  width: var(--pd-tap, 44px); height: var(--pd-tap, 44px); margin: -10px 0; cursor: pointer; }
+.sm-selbox input { width: 16px; height: 16px; cursor: pointer; }
+/* ⚠️ The label is the tap target, not the 16px box — the same finding the phone
+   sweep recorded for every other checkbox in this app. */
+
+.sm-selbar { display: inline-flex; align-items: center; gap: 8px; }
+.sm-selbar[hidden] { display: none; }
+.sm-selcount { font-size: var(--pd-fs-xs, 11px); font-weight: 700; color: var(--pd-ink);
+  white-space: nowrap; }

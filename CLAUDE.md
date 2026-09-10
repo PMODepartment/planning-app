@@ -129,6 +129,77 @@ the builder actually produces: two boxes, touching but not overlapping, same foo
 nudged.
 
 
+### 2026-09-10 (y2) — The register's form is folded onto the person page, and the row loses Edit and Delete
+
+Owner: *"Fold the register form onto the person page… I also need an edit button from this page as
+well. Remove the edit stakeholder from the register page. All edits should only be available at the
+person page. Delete button shouldn't be here as well but we should consider bulk delete."*
+
+#### ⚠️⚠️ THE FORM IS NOT EXTRACTED AND NOT COPIED — the modal became one of two hosts
+`openForm` is **619 lines** carrying the photo well, six RCM bands, every derived preview and the
+autosave wiring, and it reads ~38 things from the module around it. Lifting it into a shared file
+would be a large rewrite of the most complex form in the app, verified against nothing; copying it
+would leave two editors to keep in step — the failure this log keeps recording. But `openForm` uses
+its modal handle **only as `{ el, close }`**: every field lookup goes through `m.el.querySelector`,
+and `Autosave` takes `{ root, modal }`. So an element on another page satisfies the same contract.
+`inlineHost()` is nine lines, the 619 are untouched, and the person page renders the **identical**
+form. **Measured: mounting it opens 0 modals and 0 overlays**, and produces 39 inputs across all 8
+bands with the identity fields disabled 3 of 3.
+
+- ⚠️ `mountForm` deliberately does **not** call `init()` — that wires the register's toolbar, filters,
+  collaboration presence and project picker, none of which exist on `person.html`. It sets the two
+  pieces of state the form reads and loads the rows.
+- ⚠️ `render()` gained a guard on `#sm-table`: `load()` ends in `render()`, which would reach
+  `$('sm-clear').classList` and throw on a page with no toolbar. Guarded on the register markup
+  itself rather than on a flag, because that markup **is** what render() needs.
+- ⚠️ The host is told **before** the form closes — the page repaints from the saved row, and closing
+  first would empty the element it is about to render into. **Measured: 1 UPDATE of 46 fields,
+  `onSaved` fired, and Cancel empties the host and fires `onClose`.**
+
+#### Editing leaves the register entirely
+Row **Edit** and **Delete** are gone, and so is the card's Edit. ⚠️ `wireRowActions` is **deleted
+rather than left dead** — a wiring function that matches nothing reads as a feature that exists, and
+the next `data-edit` anyone adds would silently re-open a second editor. ⚠️ `+ Add stakeholder` still
+uses the modal: adding is not editing, and the picker flow around it is the register's own.
+
+#### Bulk delete, and where it goes
+In the table's **own `.pd-dt-head` strip**, beside the row count. That component's note already says
+a table's actions belong there rather than floating above the page, and a destructive action needs to
+sit next to the number it will destroy.
+
+- ⚠️ **Selection is table-only.** A card is a person; picking thirty of them by clicking cards is not
+  a bulk gesture. The layout toggle is one click away.
+- ⚠️ **"Select all" means the rows currently SHOWN**, never the whole register — anything else arms a
+  delete over work the planner is not looking at. The selection is also **pruned on every render** and
+  **not persisted**: one restored from localStorage a day later would arm a delete over invisible rows.
+- ⚠️ **One statement, not N.** `.in('id', ids)` is a single round trip and a single RLS decision, and
+  it **counts what came back** — PostgREST returns the rows it actually removed, so a shortfall is
+  reported rather than rounded up to "Deleted 12". Deleting in a loop leaves a half-finished job on
+  the first refusal with no way to say which half.
+- ⚠️ The checkbox reuses the **same trailing cell** the two buttons had, so the band header's colspan
+  arithmetic is untouched — a leading column would have shifted every band by one.
+
+#### ⚠️ A pre-existing defect the fold exposed
+The form printed **"1 · Identity & photo" twice**, with the scope banner sandwiched between the two.
+**2 occurrences in HEAD before this change** — not introduced here, but found by rendering the form on
+the page where it is now the first thing read. Removed; the band list measures 8, was 9.
+
+#### The person page
+An **Edit** button at project scope (writers only, and only when the person is actually on that
+project), and ⚠️ `editing` and `projEditing` are separate flags because they edit different tables and
+are gated differently. While the form is open the read view is **not drawn** — two copies of every
+value on one page, one of them stale the moment you type, with the taller of the two on top.
+
+⚠️⚠️ **The wide gutter with the sidebar collapsed was `.pp-wrap` being capped AND left-aligned.**
+Collapsing the rail 240 → 64px handed all 176px of recovered width to one empty gutter on the right.
+**Measured before: left 24 / right 172 at a collapsed rail, and 24 / 496 at 1700px. After: 28/28 and
+190/190.** Centred, and the cap raised 1180 → 1320 since centring alone would have left two 88px
+gutters.
+
+`person.js`/`person.css` and stakeholder-map `module.js`/`module.css` → `?v=20260910y2`;
+`MODULE_V` → `20260910y2` (re-derived from the remote after integrating, not guessed).
+⚠️ **Not verified signed in** — the form is mounted and saved against a stub, never a real row.
+
 ### 2026-09-10 (y1) — A stakeholder has a page: one profile, two scopes, and identity locked to the portfolio
 
 **New `person.html`, `assets/js/person.js`, `assets/css/person.css`.** Owner, items 3 and 4 of six:
