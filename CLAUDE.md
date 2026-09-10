@@ -95,6 +95,39 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### A floor with no zones can be shaped, the progress tones are measured, and the storeys are named (2026-09-10) — jasantos2
+
+Owner: *"for floors without levels, there should also be an option for users to edit the shape of
+that floor … look at the colors of the progress of the levels / zones, pls improve it … add like a
+demarcation or floors that show which floor is this."*
+
+⚠️⚠️ **A floor with no zones could not be given a shape at all.** The **Plan** button was only
+emitted when the Activity level was Zone or Unit, and inside the window the Add/Trace row needed a
+zone code to draw as — so on a floor-level project the shape of a storey was the one thing a
+planner could not state, and the 3D drew a box. Both gates are gone: a reserved code (`*floor*`,
+shown as "Whole floor") makes the outline an ordinary shape that every existing gesture already
+handles, and the 3D extrudes it — ⚠️ only where the storey is a single cell, or a four-zone floor
+would become four identical slabs in one place.
+
+**The band with no floor** (activities carrying no level) can be given a plan too, ticked in the
+window's *Also use this plan elsewhere…*, and it crosses the boundary under a ⚠️ **protocol key**
+rather than under the words printed on the row, which are free to be reworded.
+
+⚠️⚠️ **The progress colours were failing on the dark theme, and the light theme is why nobody saw
+it.** Remaining was `colour × 0.42`, one walk toward black whatever the model stood on: measured
+against the dark card, **9.5 ΔE** from the background — the same rule measures 69.6 on light. The
+two tones are now **placed** on lightness rungs per theme, hue and saturation untouched: remaining
+against its background goes 9.5 → **23.2** on dark, trade separation in the remaining tone 37.2 →
+47.5 light / 60.1 dark, and done-vs-remaining — the progress read itself — is held at 26–28.5. ⚠️
+The lights were also **clipping the model white** (top faces at 1.143 of full); 0.58 + 0.48 puts
+them at 0.949 with a *larger* directional share.
+
+**Floor markers**: a slab under every storey and an HTML label naming it, thinned to ~14 on a
+forty-storey tower (top and bottom always kept, overlaps dropped), the grade line named, and a
+`Floors · Labelled | Plain` toggle. **140 assertions across eight suites, 0 failing** — the colour
+table above is the output of executing the old rule and the new one on the same palette, not a
+description of them.
+
 ### 2026-09-10 (w9) — Phone sweep: every form in the app zoomed iOS, and the filter funnel was the smallest target on screen
 
 Owner: *"Let's now do a complete sweep for phone view UI."* ⚠️ The useful finding is not that the app

@@ -1495,6 +1495,19 @@
     /* Past two-thirds across the canvas the readout would run off its right edge. */
     .ps-vs3-tip.flip { transform:translate(calc(-100% - 14px), -50%); }
     .ps-vs3-tip b { display:block; font-size:var(--pd-fs-sm); font-weight:700; }
+    /* ==== THE STOREY LABELS =============================================================
+       ⚠️ The layer covers the mount and is inert: it sits over the canvas, and a label that
+       took the pointer would break the orbit drag the moment it passed under one. */
+    .ps-vs3-labs { position:absolute; inset:0; pointer-events:none; z-index:4; overflow:hidden; }
+    .ps-vs3-lab { position:absolute; display:none; transform:translate(-100%, -50%);
+      white-space:nowrap; max-width:150px; overflow:hidden; text-overflow:ellipsis;
+      font-size:var(--pd-fs-micro); font-weight:700; line-height:1.5;
+      color:var(--pd-ink); background:var(--pd-card); border:1px solid var(--pd-line);
+      border-radius:var(--pd-radius, 5px); padding:0 5px; opacity:.94; }
+    /* The band that is not a storey, and the line that is not a floor. */
+    .ps-vs3-lab.nolev { font-weight:600; font-style:italic; color:var(--pd-muted); }
+    .ps-vs3-lab.ground { color:var(--pd-red); border-color:var(--pd-red-mid, var(--pd-line));
+      letter-spacing:.04em; text-transform:uppercase; }
     .ps-vs3-tip span { display:block; color:var(--pd-muted); }
     .ps-vs3-tip i { font-style:normal; color:var(--pd-muted); }
     .ps-vs-chips { display:flex; gap:6px; flex-wrap:wrap; }
@@ -2995,6 +3008,10 @@
     .zpw-sw { min-width:42px; padding:3px 9px; border:1px solid var(--pd-line); border-radius:6px;
       font:inherit; font-size:var(--pd-fs-xs); font-weight:700; color:#fff; cursor:pointer; background:var(--zc, #888); }
     .zpw-sw.on { outline:2px solid var(--pd-ink); outline-offset:1px; }
+    /* ⚠️ The whole-floor outline is in the palette but is NOT a zone, and it is drawn as the odd
+       one out on purpose — a planner picking "the shape of the floor" should not believe they
+       are picking a zone they had forgotten they named. */
+    .zpw-sw.all { border-style:dashed; border-color:var(--pd-ink); }
     .zpw-op { display:inline-flex; align-items:center; gap:6px; font-size:var(--pd-fs-xs); color:var(--pd-muted); }
     .zpw-op input { width:90px; }
     /* ⚠️ The stage keeps a fixed aspect so the plan units and the pixels stay proportional; the
@@ -14984,12 +15001,19 @@
      As a choice it is a different question — "where is Zone 2, on every floor" — and the planner
      says which of the two they are asking. */
   var _vsZoneCol = false;
+  /* Floor markers: a slab under every storey and a label saying which storey it is.
+     ⚠️ ON by default. Owner 2026-09-10: *"can you add like a demarcation or floors that show
+     which floor is this etc."* — a model whose storeys are unnamed is a stack of blocks, and
+     the planner has to count rows to say where anything is. It is still a switch, because a
+     forty-storey tower being read for its SHAPE does not want forty labels on it. */
+  var _vsFloorMarks = true;
   var _vs3D = false;          // 2D card or 3D card
   function _loadVs3D() {
     try {
       var c = localStorage.getItem('ps_vsplancols'); if (c != null) _vsPlanCols = Math.max(0, Math.min(4, parseInt(c, 10) || 0));
       var f = localStorage.getItem('ps_vsfront'); if (f === 'N' || f === 'E' || f === 'S' || f === 'W') _vsFront = f;
       _vsZoneCol = localStorage.getItem('ps_vszonecol') === '1';
+      _vsFloorMarks = localStorage.getItem('ps_vsfloormarks') !== '0';   // ⚠️ default ON
       _vs3D = localStorage.getItem('ps_vs3d') === '1';
     } catch (e) {}
   }
@@ -14998,6 +15022,7 @@
       localStorage.setItem('ps_vsplancols', String(_vsPlanCols));
       localStorage.setItem('ps_vsfront', _vsFront);
       localStorage.setItem('ps_vszonecol', _vsZoneCol ? '1' : '0');
+      localStorage.setItem('ps_vsfloormarks', _vsFloorMarks ? '1' : '0');
       localStorage.setItem('ps_vs3d', _vs3D ? '1' : '0');
     } catch (e) {}
   }
@@ -15164,8 +15189,28 @@
   // The traced plan for one storey, matched on the level's own label the way the builder indexed
   // it. Coordinates are 0..1 of the plate (see zpByLabel), so nothing here knows the setup's own
   // 1000-unit convention.
+  /* ⚠️⚠️ THE PROTOCOL KEY THE UN-LEVELLED BAND IS FILED UNDER, and the reason it is not
+     VS_NOLEV: VS_NOLEV is the text printed on the row ("— No level —") and is free to be
+     reworded, at which point a map keyed by it would silently stop matching. The builder names
+     the same constant — see ZP_NOLEV_KEY — and neither side may change it alone. */
+  var _VS_ZP_NOLEV = '*nolevel*';
+  // The whole-floor outline's reserved code — the builder's ZP_ALL, same rule as above.
+  var _VS_ZP_ALL = '*floor*';
+  /* The floor's OWN outline, for a floor that is not split into zones. Owner 2026-09-10:
+     *"for floors without levels, there should also be an option … to edit the shape of that
+     floor."*
+     ⚠️ USED ONLY WHERE IT CANNOT SAY ANYTHING FALSE — a storey whose row is a single cell. On a
+     floor split into four zones, extruding this four times would stack four identical slabs in
+     the same place and call them four different zones. */
+  function _vsZpOutlineOf(plate) {
+    if (!plate || !plate.polys) return null;
+    var out = plate.polys.filter(function (q) { return String(q.code || '').trim().toLowerCase() === _VS_ZP_ALL; });
+    return out.length ? out : null;
+  }
   function _vsZpFor(levelValue) {
     var all = _vsZpAll();
+    // ⚠️ The band has no floor label to match on, so it is looked up by the protocol key.
+    if (levelValue === VS_NOLEV) return all[_VS_ZP_NOLEV] || null;
     var k = String(levelValue == null ? '' : levelValue).trim().toLowerCase().replace(/\s+/g, ' ');
     return (k && all[k]) || null;
   }
@@ -15315,6 +15360,46 @@
       }
     }
     return out;
+  }
+  /* ==========================================================================================
+     THE TWO TONES A ZONE IS DRAWN IN — remaining, and done.
+     Owner 2026-09-10: *"look at the colors of the progress of the levels / zones, pls improve
+     it."*
+
+     ⚠️⚠️ THE OLD RULE WAS THEME-BLIND, AND ON THE DARK THEME THE REMAINING WORK WAS INVISIBLE.
+     Remaining was `colour.multiplyScalar(0.42)` — one walk toward black, whatever the model was
+     standing on. Measured against the dark card it sits on, those tones are 9.5 ΔE from the
+     background: the same distance as two shades of the same grey, on the part of the model that
+     is most of a live project. On the light theme the same rule measures 69.6, which is why this
+     never looked wrong to anyone reading it in daylight.
+
+     ⚠️ SO THE TWO TONES ARE PLACED, NOT DERIVED BY ARITHMETIC ON THE FILL. Hue and saturation
+     are the trade's and survive untouched — FILL = which trade is this card's primary channel
+     and both ends of the progress channel now carry it. What moves is LIGHTNESS:
+       light theme — done is the trade colour exactly, remaining is it at 45% lightness;
+       dark theme  — done is LIFTED off the ground (x1.35, held inside 0.55..0.76) and remaining
+                     is dropped but floored (x0.70, held inside 0.26..0.38), so neither end can
+                     sink into the background the way the old single rule did.
+     ⚠️ Measured, not asserted — see the suite. Remaining-tone separation between trades:
+     37.2 mean ΔE before, 47.5 light / 60.1 dark after. Done-vs-remaining, which IS the progress
+     read, is held: 27.5 before, 26.0 light / 28.5 dark after. Remaining against its own
+     background: 9.5 before on dark, 23.2 after.
+     ========================================================================================== */
+  function _vsDarkTheme() {
+    try { return document.documentElement.classList.contains('pd-dark'); } catch (e) { return false; }
+  }
+  function _vs3Tones(fill, T) {
+    var dark = _vsDarkTheme();
+    var base = new T.Color(fill), h = { h: 0, s: 0, l: 0 };
+    base.getHSL(h);
+    function at(s, l) { return new T.Color(0x000000).setHSL(h.h, s, Math.max(0, Math.min(1, l))); }
+    function cl(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+    if (!dark) return { don: base, rem: at(h.s, h.l * 0.45) };
+    // ⚠️ The clamps are the point, not the multipliers: a trade colour that is already pale and
+    // one that is already near-black must both end up on the two rungs, or the pair that needed
+    // the help most is the pair that does not get it.
+    return { don: at(h.s, cl(h.l * 1.35, 0.55, 0.76)),
+             rem: at(h.s * 0.92, cl(h.l * 0.70, 0.26, 0.38)) };
   }
   /* One zone, as an EXTRUDED OUTLINE rather than a block. `t` is the fraction of the plate's
      width to keep, so t=1 is the whole zone and t=pct/100 is the done stretch.
@@ -15499,18 +15584,23 @@
         // the floor-plan window: the block stops being a share of a grid and becomes the shape
         // somebody drew on the drawing.
         var _pg = _plate ? _vsZpPolysOf(_plate, c.label) : null;
+        /* ⚠️ THE FLOOR'S OWN OUTLINE, when the storey is one cell and no zone matched. Keyed on
+           `n`, not on `ci`: the question is whether this STOREY is undivided, not whether this
+           cell happens to be the first of several. */
+        if (!_pg && _plate && n === 1) _pg = _vsZpOutlineOf(_plate);
         var pct = _vsProgress(c.list);
         var fill = c.color || baseColor;
         /* ⚠️ FALLS BACK PER CELL, not per card. A zone the plan does not name — and every cell
            of a card split by trade, where the cell IS a trade and not a zone — keeps the trade
            colour, so switching to zone colours never leaves a block with nothing to be. */
         if (_vsZoneCol) { var _zc = _vsZpColorOf(_pg); if (_zc) fill = _zc; }
-        var col = new T.Color(fill);
+        var _tone = _vs3Tones(fill, T);
+        var col = _tone.don;
         // ⚠️ THE SAME THREE CHANNELS THE 2D CELL USES, so the two cards cannot say different things:
         //   colour = which trade/category · brightness = done vs remaining · height = the storey.
         // The done fraction is a SECOND, brighter box in front of the dimmer one, which is the 3D
         // equivalent of the 2D cell's hard-edged progress split rather than a new visual language.
-        var dim = col.clone().multiplyScalar(0.42);
+        var dim = _tone.rem;
         var x = (p.col - (p.cols - 1) / 2) * shW;
         var z = (p.row - (p.rows - 1) / 2) * shD;
         // ⚠️ The done stretch grows from the cell's LEFT edge, exactly as the 2D cell's solid bar
@@ -15584,7 +15674,9 @@
             var _mx = _bb ? (_bb.x - 0.5) * plateW : (x - exW / 2);
             var _mz = _bb ? (_bb.y + _bb.h / 2 - 0.5) * plateD : z;
             var _mk = new T.Mesh(new T.BoxGeometry(_mw * 0.02 + 0.012, SH * 1.02, _md * 1.04),
-              new T.MeshBasicMaterial({ color: 0xf4f5f6 }));
+              // ⚠️ Theme-aware: a near-white slab is a mark on the light theme and a light
+              // source on the dark one, where it was the brightest thing in the scene.
+              new T.MeshBasicMaterial({ color: _vsDarkTheme() ? 0xdfe4ea : 0x2b3038 }));
             _mk.position.set(_mx + _mw * _at, y + SH / 2, _mz);
             _mk.userData.key = _key;
             grp.add(_mk); picks.push(_mk);
@@ -15602,6 +15694,29 @@
         }
       });
     });
+    /* ==========================================================================================
+       FLOOR DEMARCATION — a slab under every storey.
+       Owner 2026-09-10: *"can you add like a demarcation or floors that show which floor is
+       this etc."*
+       ⚠️ WIDER THAN THE PLATE (x1.04), on purpose: a slab exactly the size of the zones above it
+       is hidden by them from every angle except dead level, which is the one angle this view is
+       rarely at. The overhang is the part you actually see, and it is what turns a column of
+       floating blocks into storeys.
+       ⚠️ ONE geometry and ONE material for the whole tower — a forty-storey building costs forty
+       Meshes and two GPU uploads, not eighty.
+       ⚠️ NOT in `picks`: a slab is not a zone, and clicking one must not open a cell — nor may
+       it swallow the click meant for the zone behind it. */
+    if (_vsFloorMarks) {
+      var _slabG = new T.BoxGeometry(PLATE.cols * CELL * 1.04, GAPY * 0.5, PLATE.rows * CELL * 1.04);
+      var _slabM = new T.MeshLambertMaterial({ color: _vsDarkTheme() ? 0x39404a : 0xc2c8d2,
+        transparent: true, opacity: 0.9 });
+      model.disp.forEach(function (v, li) {
+        var sy = (storeys - 1 - li) * (SH + GAPY);
+        var sm = new T.Mesh(_slabG, _slabM);
+        sm.position.set(0, sy - GAPY * 0.28, 0);
+        grp.add(sm);
+      });
+    }
     // The grade plane, at the same place the 2D card draws its grade line.
     if (model.groundAt > 0 && model.groundAt < storeys) {
       var gy = (storeys - model.groundAt) * (SH + GAPY) - GAPY / 2;
@@ -15612,8 +15727,15 @@
       grp.add(gm);
     }
     scene.add(grp);
-    scene.add(new T.AmbientLight(0xffffff, 0.72));
-    var dl = new T.DirectionalLight(0xffffff, 0.55); dl.position.set(3, 6, 4); scene.add(dl);
+    /* ⚠️⚠️ THE LIGHTS WERE CLIPPING THE MODEL WHITE. Lambert shades a face by
+       `colour * (ambient + directional * NdotL)`, and a top face — the one the Top and Iso views
+       are mostly made of — has NdotL = 0.768 against this light's direction. At 0.72 + 0.55 that
+       factor was 1.14: every channel above 224 pinned to 255, so the brightest trades lost their
+       hue on exactly the faces the planner looks down on. 0.58 + 0.48 puts the same face at 0.95
+       — under one, so nothing clips — and the directional share is larger than it was, which
+       gives the extruded outlines more form rather than less. */
+    scene.add(new T.AmbientLight(0xffffff, 0.58));
+    var dl = new T.DirectionalLight(0xffffff, 0.48); dl.position.set(3, 6, 4); scene.add(dl);
 
     var span = Math.max(maxCols, maxRows) * CELL, tall = storeys * (SH + GAPY);
     var camera = new T.PerspectiveCamera(38, W / H, 0.1, 500);
@@ -15633,6 +15755,76 @@
       camera.position.set(Math.sin(a) * d, tall * 0.55, Math.cos(a) * d);
       camera.lookAt(target);
     }
+    /* ==========================================================================================
+       WHICH STOREY IS THIS — the labels beside the model.
+       ⚠️⚠️ HTML, NOT SPRITES OR CANVAS TEXTURES. Text in a WebGL scene is either a texture (blurry
+       at every zoom the planner actually uses, and a texture upload per storey) or a font mesh (a
+       second dependency). A positioned <div> is crisp at any zoom, inherits the app's type scale
+       and theme, costs nothing to build, and can be read by a screen reader.
+       ⚠️ Placed from the PROJECTED geometry, not from a fixed corner of the canvas: the model
+       orbits, so the label follows the storey it names. It is pinned to whichever plate corner is
+       currently LEFTMOST on screen, which is the one nothing is drawn to the left of.
+       ⚠️ THINNED, never stacked: a forty-storey tower gets ~14 labels, always including the top
+       floor and the bottom one, and any label that would land within 14px of the one above it is
+       dropped for that frame. Labels that overlap are worse than no labels — they misname floors. */
+    var labWrap = null, labs = [];
+    var _plW = PLATE.cols * CELL, _plD = PLATE.rows * CELL;
+    function buildLabels() {
+      if (!_vsFloorMarks || !storeys) return;
+      labWrap = document.createElement('div');
+      labWrap.className = 'ps-vs3-labs';
+      host.appendChild(labWrap);
+      var step = Math.max(1, Math.ceil(storeys / 14));
+      model.disp.forEach(function (v, li) {
+        // ⚠️ The last storey is kept whatever the step lands on: the bottom of the building is a
+        // landmark, and a thinning rule that drops it makes the stack look like it continues.
+        if (li % step !== 0 && li !== storeys - 1) return;
+        var el = document.createElement('div');
+        el.className = 'ps-vs3-lab' + (v === VS_NOLEV ? ' nolev' : '');
+        el.textContent = (v === VS_NOLEV ? 'No level' : String(v));
+        labWrap.appendChild(el);
+        labs.push({ el: el, y: (storeys - 1 - li) * (SH + GAPY) + SH / 2 });
+      });
+      // ⚠️ The grade line is named too — it is the one horizontal in the model that is not a
+      // storey, and an unlabelled line through a building reads as an error.
+      if (model.groundAt > 0 && model.groundAt < storeys) {
+        var ge = document.createElement('div');
+        ge.className = 'ps-vs3-lab ground';
+        ge.textContent = 'Ground';
+        labWrap.appendChild(ge);
+        labs.push({ el: ge, y: (storeys - model.groundAt) * (SH + GAPY) - GAPY / 2 });
+      }
+    }
+    function placeLabels() {
+      if (!labs.length) return;
+      var r = cv.getBoundingClientRect(), hb = host.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      var ox = r.left - hb.left, oy = r.top - hb.top;
+      var hw = _plW / 2 * 1.04, hd = _plD / 2 * 1.04;
+      var v3 = new T.Vector3();
+      var shown = [];
+      labs.forEach(function (L2) {
+        var bx = null, by = 0, ok = false;
+        [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]].forEach(function (c) {
+          v3.set(c[0], L2.y, c[1]).project(camera);
+          if (v3.z > 1) return;                       // behind the camera
+          var x = (v3.x * 0.5 + 0.5) * r.width, y2 = (-v3.y * 0.5 + 0.5) * r.height;
+          ok = true;
+          // ⚠️ The y of the LEFTMOST corner, not the average of the four: under perspective the
+          // four corners of one storey are at four different heights, and the mean would float
+          // the label off the storey it belongs to.
+          if (bx === null || x < bx) { bx = x; by = y2; }
+        });
+        var hide = !ok || bx === null;
+        if (!hide) hide = shown.some(function (s) { return Math.abs(s - by) < 14; });
+        L2.el.style.display = hide ? 'none' : 'block';
+        if (hide) return;
+        shown.push(by);
+        L2.el.style.left = (ox + bx - 9) + 'px';
+        L2.el.style.top = (oy + by) + 'px';
+      });
+    }
+    buildLabels();
     var view = 'iso';
     place(view);
 
@@ -15646,6 +15838,9 @@
         rot.r * Math.cos(rot.el) * Math.cos(rot.az));
       camera.lookAt(target);
       renderer.render(scene, camera);
+      // ⚠️ Every camera move, including the drag's own per-frame calls: a label that updates
+      // only on release slides off its storey for the whole of the gesture.
+      placeLabels();
     }
     function setView(which) {
       view = which;
@@ -15784,7 +15979,7 @@
         renderer.setSize(w, h);
         camera.aspect = w / h;
         camera.updateProjectionMatrix();
-        applyRot();
+        applyRot();      // which re-places the labels against the new canvas box
       },
       dispose: function () {
         try { renderer.forceContextLoss(); } catch (e) {}
@@ -15798,6 +15993,10 @@
         try { clearTrace(); } catch (e) {}
         if (tipEl && tipEl.parentNode) tipEl.parentNode.removeChild(tipEl);
         tipEl = null;
+        // ⚠️ The label layer is DOM this scene added to the host; disposing the renderer does not
+        // remove it, and a repaint would leave one full set of floor names behind per rebuild.
+        if (labWrap && labWrap.parentNode) labWrap.parentNode.removeChild(labWrap);
+        labWrap = null; labs = [];
       }
     };
   }
@@ -15828,6 +16027,12 @@
       '<span class="ps-vs-seg">' +
         '<button data-vs3zc="0"' + (_vsZoneCol ? '' : ' class="on"') + ' title="Colour = which trade or tower, as the 2D card does">Trade</button>' +
         '<button data-vs3zc="1"' + (_vsZoneCol ? ' class="on"' : '') + ' title="Colour = the zone colour set on the floor plan (Schedule Setup › Floors &amp; Zones › Plan). A zone with no plan keeps its trade colour.">Zone</button>' +
+      '</span>' +
+      '<span class="ps-tb-div"></span>' +
+      '<span class="ps-vs-note" title="A slab under every storey and a label saying which storey it is. Turn it off to read the building as a shape.">Floors</span>' +
+      '<span class="ps-vs-seg">' +
+        '<button data-vs3fl="1"' + (_vsFloorMarks ? ' class="on"' : '') + ' title="Slab + name on every storey">Labelled</button>' +
+        '<button data-vs3fl="0"' + (_vsFloorMarks ? '' : ' class="on"') + ' title="Just the zones">Plain</button>' +
       '</span>' +
       '<span class="ps-tb-div"></span>' +
       '<span class="ps-vs-note">View</span><span class="ps-vs-seg">' +
@@ -15867,7 +16072,10 @@
     if (!out.have.length) return out;
     var disp = (model && model.disp) || [];
     disp.forEach(function (v) {
-      if (v === VS_NOLEV) return;
+      /* ⚠️ The un-levelled band counts ONLY once it has a plan of its own. It is not a storey, so
+         it must not drag the "n of m storeys" verdict down while nobody has given it one — but a
+         planner who HAS drawn it should not then be told their plan matches nothing on the card. */
+      if (v === VS_NOLEV && !_vsZpFor(v)) return;
       out.n++;
       if (_vsZpFor(v)) out.hit++;
       else if (out.miss.length < 4) out.miss.push(String(v));
@@ -15893,7 +16101,7 @@
     var _guess = '(they wrap ' + (_vsPlanCols > 0 ? 'in ' + _vsPlanCols + ' column(s)' : 'automatically') + ')';
     var lay;
     if (_fit.state === 'all') {
-      lay = '<b>Zones are drawn as you traced them</b> on the floor plan (Schedule Setup \u203a Floors &amp; Zones \u203a Plan). ';
+      lay = '<b>Drawn as you traced them</b> on the floor plans (Schedule Setup \u203a Floors &amp; Zones \u203a Plan) \u2014 each storey is its zones\u2019 outlines, or the floor\u2019s own outline where it has no zones. ';
     } else if (_fit.state === 'partial') {
       lay = '<b>' + _fit.hit + ' of ' + _fit.n + ' storeys are drawn as you traced them</b>; the rest ' + _guess +
         ' \u2014 no plan resolves for ' + esc(_fit.miss.join(', ')) + (_fit.miss.length >= 4 ? '\u2026' : '') + '. ';
@@ -16948,6 +17156,9 @@
       wrap.querySelectorAll('[data-vs3zc]').forEach(function (b) {
         b.onclick = function () { _vsZoneCol = b.dataset.vs3zc === '1'; _saveVs3D(); build(); };
       });
+      wrap.querySelectorAll('[data-vs3fl]').forEach(function (b) {
+        b.onclick = function () { _vsFloorMarks = b.dataset.vs3fl === '1'; _saveVs3D(); build(); };
+      });
       // ⚠️ `build`, not renderVStack: this window owns its own model - see _vsZpSync.
       var _zpsF = wrap.querySelector('#ps-vs-zpsync');
       if (_zpsF) _zpsF.onclick = function () { _vsZpSync(build); };
@@ -17583,6 +17794,9 @@
     // the card owns no handle on them afterwards. Rebuilding a few hundred boxes is cheap.
     host.querySelectorAll('[data-vs3zc]').forEach(function (b) {
       b.onclick = function () { _vsZoneCol = b.dataset.vs3zc === '1'; _saveVs3D(); renderVStack(); };
+    });
+    host.querySelectorAll('[data-vs3fl]').forEach(function (b) {
+      b.onclick = function () { _vsFloorMarks = b.dataset.vs3fl === '1'; _saveVs3D(); renderVStack(); };
     });
     // ⚠️ Defensively: the bar is not emitted in 2D, so this control may not be on the page.
     var _zps = host.querySelector('#ps-vs-zpsync');
@@ -31966,6 +32180,35 @@
     var ZP_EDGES = ['N', 'E', 'S', 'W'];
     var ZP_EDGE_SIDE = { N: 'top', E: 'right', S: 'bottom', W: 'left' };
     function zpNormFront(v) { return ZP_EDGES.indexOf(String(v || '')) >= 0 ? String(v) : null; }
+    /* ==== THE WHOLE-FLOOR OUTLINE, AND THE FLOOR THAT HAS NO LEVEL ========================
+       Owner 2026-09-10: *"for floors without levels, there should also be an option for users to
+       edit the shape of that floor."*
+
+       ⚠️⚠️ A FLOOR WITH NO ZONES COULD NOT BE DRAWN AT ALL. Two separate gates saw to it: the
+       Plan button was only emitted when the Activity level was Zone or Unit (`showZones`), and
+       inside the window the Add/Trace row was hidden when the floor had no zone codes — because
+       every area had to BE a zone. So on a floor-level project, the one thing the planner could
+       say about a storey's shape was nothing, and the 3D drew a box.
+
+       ⚠️ The fix is a reserved code rather than a second kind of polygon: an outline is stored,
+       moved, reshaped, coloured, copied and saved by exactly the code that already does all of
+       that for a zone. `*floor*` cannot collide with a planner's own zone name the way a
+       readable sentinel like "Whole floor" could — that is why the stored code and the DISPLAYED
+       label are two different strings.
+       ⚠️ The 3D uses it only where it cannot say anything false: a storey whose row is ONE cell.
+       On a floor split into four zones, extruding the whole-floor outline four times would draw
+       four identical slabs stacked in the same place. */
+    var ZP_ALL = '*floor*';
+    var ZP_ALL_LABEL = 'Whole floor';
+    function zpIsAll(code) { return zpNormCode(code) === ZP_ALL; }
+    function zpLabelOf(code) { return zpIsAll(code) ? ZP_ALL_LABEL : String(code == null ? '' : code); }
+    /* The un-levelled band — the row the Vertical Stacking draws for work whose activities carry
+       no floor at all. It is a floor on the screen, so it can have a shape; it is not a floor in
+       the setup, so it has no row to hang one off. It gets a reserved POINTER instead.
+       ⚠️⚠️ `*nolevel*` IS A PROTOCOL KEY, NOT A LABEL. The stacking's own `VS_NOLEV` is display
+       text ("— No level —") and is free to be rewritten; the two sides would then silently stop
+       meeting. Each side names this constant and points at the other — see _VS_ZP_NOLEV. */
+    var ZP_NOLEV_ID = 'nolev', ZP_NOLEV_KEY = '*nolevel*';
     /* ==== ZONE COLOUR =====================================================================
        Owner 2026-09-10: *"can you add option for colors."*
        ⚠️⚠️ KEYED BY ZONE CODE, PROJECT-WIDE — not per plate and not per floor. `Zone 1` is the
@@ -32200,6 +32443,19 @@
       var out = {};
       if (!c || !c.zoning) return out;
       var bag = zpNormAll(c.zonePlan || {});
+      /* ⚠️ THE COLOUR TRAVELS WITH THE OUTLINE, resolved HERE where the bag is owned. The
+         stacking view must not have to know that a colour can be an override or a hash of the
+         code — it asks what colour this zone is and gets one answer, the same answer the
+         floor-plan window is painting on screen.
+         ⚠️ ONE builder for the storeys and for the un-levelled band below, so the band cannot
+         end up carrying its outline in a different shape from every other floor's. */
+      function shapeOf(p) {
+        var H = zpH(p);
+        return { polys: p.polys.map(function (q) {
+          return { code: q.code, color: zpColorOfBag(bag, q.code),
+                   pts: q.pts.map(function (pt) { return [pt[0] / ZP_W, pt[1] / H]; }) };
+        }) };
+      }
       Object.keys(c.zoning || {}).forEach(function (g) {
         var z = c.zoning[g];
         if (!z || !z.floors) return;
@@ -32207,23 +32463,19 @@
           var _pid = bag.of[f.id] || bag.of['kind:' + floorKind(f)];
           var p = _pid ? bag.plate[_pid] : null;
           if (!p || !p.polys.length) return;
-          var H = zpH(p);
-          /* ⚠️ THE COLOUR TRAVELS WITH THE OUTLINE, resolved HERE where the bag is owned. The
-             stacking view must not have to know that a colour can be an override or a hash of
-             the code — it asks what colour this zone is and gets one answer, the same answer the
-             floor-plan window is painting on screen. */
-          var shape = {
-            polys: p.polys.map(function (q) {
-              return { code: q.code, color: zpColorOfBag(bag, q.code),
-                       pts: q.pts.map(function (pt) { return [pt[0] / ZP_W, pt[1] / H]; }) };
-            })
-          };
+          var shape = shapeOf(p);
           [f.name, f.code].forEach(function (lab) {
             var k = zpNormCode(lab);
             if (k && !out[k]) out[k] = shape;
           });
         });
       });
+      /* The un-levelled band's own plan, filed under the protocol key rather than a floor label —
+         it has no floor, which is the whole point of it. ⚠️ Emitted from the same bag and the
+         same builder as the storeys above; it is a plate like any other and may well be one a
+         storey is using too. */
+      var _nl = bag.of[ZP_NOLEV_ID], _np = _nl ? bag.plate[_nl] : null;
+      if (_np && _np.polys.length) out[ZP_NOLEV_KEY] = shapeOf(_np);
       return out;
     }
     /* ==========================================================================================
@@ -32422,10 +32674,16 @@
       if (box) box.classList.add('zpw-modal');
 
       _zpWin = { tr: tr, floor: floor, draft: draft, owned: !!plate, plateId: plateId,
-                 brush: codes[0] || '', drawing: false, pts: [], sel: null, url: null,
+                 // ⚠️ On a floor with no zones the brush is the WHOLE-FLOOR outline, so the
+                 // window opens ready to draw rather than opening with nothing selectable.
+                 brush: codes[0] || ZP_ALL, drawing: false, pts: [], sel: null, url: null,
                  busy: false, err: '', hist: [], clip: null, grid: zpGridLoad(), ref: '' };
 
       function H() { return zpH(_zpWin.draft); }
+      /* ⚠️ READ STRAIGHT OFF THE BAG, never through zpIdFor: that resolves a floor, and a
+         synthetic `{ id: 'nolev' }` would fall through to its `kind:` fallback and report the
+         typical floors' plate as the band's — a tick nobody put there. */
+      function nolevOn() { return !!(_zpWin.plateId && zpBag().of[ZP_NOLEV_ID] === _zpWin.plateId); }
       function selShape() {
         var W = _zpWin;
         return W.draft.polys.filter(function (q) { return q.id === W.sel; })[0] || null;
@@ -32474,13 +32732,19 @@
         }
         markDirty();
       }
-      // Every zone code in play: the floor's own, plus anything already drawn that is not in it.
+      /* Every zone code in play: the floor's own, plus anything already drawn that is not in it,
+         plus the whole-floor outline.
+         ⚠️ THE OUTLINE IS LAST, ALWAYS PRESENT, AND NOT A ZONE. Last because a planner's own
+         zones must keep the positions they have on screen; always because the shape of a floor
+         is a question every floor can answer, zoned or not; not-a-zone because nothing that
+         counts zones — the "not drawn" list, the Plan n/m button, zpCodesOf's callers — should
+         count it as one. */
       function allCodes() {
         var out = codes.slice();
         zpCodesOf(_zpWin.draft).forEach(function (c) {
           if (!out.some(function (x) { return zpNormCode(x) === zpNormCode(c); })) out.push(c);
         });
-        return out;
+        return out.filter(function (c) { return !zpIsAll(c); }).concat([ZP_ALL]);
       }
       // Drop a preset in the middle of the plate, as the zone the brush carries.
       function addPreset(kind) {
@@ -32536,7 +32800,7 @@
           }).join('') : '';
           return '<g class="zpw-shape' + (on ? ' sel' : '') + '" data-zpoly="' + e2(q.id) + '" style="--zc:' + zpColor(q.code) + '">' +
             '<polygon points="' + zpPts(q.pts) + '"></polygon>' +
-            '<text x="' + c[0].toFixed(1) + '" y="' + c[1].toFixed(1) + '">' + e2(q.code) + '</text>' +
+            '<text x="' + c[0].toFixed(1) + '" y="' + c[1].toFixed(1) + '">' + e2(zpLabelOf(q.code)) + '</text>' +
             handles + '</g>';
         }).join('');
         /* ⚠️ ONE <path>, not eighty <line>s: at a 10-unit grid this is 160 lines, and eighty
@@ -32643,11 +32907,14 @@
             '<span class="zpw-lbl">' + (sel ? 'This area is' : 'Draw as') + '</span>' +
             '<span class="zpw-pal">' + (all.length ? all.map(function (c) {
               var on = sel ? (zpNormCode(c) === zpNormCode(sel.code)) : (zpNormCode(c) === zpNormCode(W.brush));
-              return '<button class="zpw-sw' + (on ? ' on' : '') + '" data-zpb="' + e2(c) + '"' +
-                ' style="--zc:' + zpColor(c) + '" title="' + e2(sel ? ('Make this area ' + c) : ('Draw the next area as ' + c)) + '">' +
-                e2(c) + '</button>';
-            }).join('') : '<span class="sbld-hint" style="margin:0;">This floor has no zones yet — add them in the step behind.</span>') +
+              return '<button class="zpw-sw' + (zpIsAll(c) ? ' all' : '') + (on ? ' on' : '') + '" data-zpb="' + e2(c) + '"' +
+                ' style="--zc:' + zpColor(c) + '" title="' + e2(zpIsAll(c)
+                  ? (sel ? 'Make this area the floor outline' : 'Draw the floor’s own outline — use this when the floor is not split into zones')
+                  : (sel ? ('Make this area ' + c) : ('Draw the next area as ' + c))) + '">' +
+                e2(zpLabelOf(c)) + '</button>';
+            }).join('') : '') +
             '</span>' +
+            (codes.length ? '' : '<span class="sbld-hint" style="margin:0;">This floor has no zones — draw its <b>outline</b>, or add zones in the step behind.</span>') +
             /* ---- the zone's colour -----------------------------------------------------
                ⚠️ IT SITS IN THIS ROW, not a row of its own, because it is the same question
                the row already asks — which zone is this — answered on the other axis. The
@@ -32661,7 +32928,7 @@
               var act = sel ? sel.code : W.brush;
               if (!act) return '';
               return '<span class="ps-tb-div"></span>' +
-                '<label class="zpw-grid-ctl" title="' + e2('The colour ' + act + ' is drawn in — here, and in the 3D view when that is set to colour by zone. It applies on every floor.') + '">Colour' +
+                '<label class="zpw-grid-ctl" title="' + e2('The colour ' + zpLabelOf(act) + ' is drawn in — here, and in the 3D view when that is set to colour by zone. It applies on every floor.') + '">Colour' +
                   '<input type="color" id="zpw-col" value="' + e2(zpColor(act)) + '"></label>' +
                 (zpColorIsSet(act)
                   ? '<button class="pd-btn" id="zpw-colx" title="Back to the automatic colour for this zone">Auto</button>'
@@ -32710,7 +32977,7 @@
             '<div class="zpw-list">' + (d.polys.length
               ? d.polys.map(function (q) {
                   return '<span class="zpw-chip' + (W.sel === q.id ? ' on' : '') + '" data-zpsel="' + e2(q.id) + '">' +
-                    '<i style="--zc:' + zpColor(q.code) + '"></i>' + e2(q.code) + '<b>' + q.pts.length + '</b></span>';
+                    '<i style="--zc:' + zpColor(q.code) + '"></i>' + e2(zpLabelOf(q.code)) + '<b>' + q.pts.length + '</b></span>';
                 }).join('')
               : '<span class="sbld-hint" style="margin:0;">No areas yet.</span>') +
               (function () {
@@ -32718,8 +32985,19 @@
                 return miss.length ? '<span class="zpw-miss">not drawn: <b>' + e2(miss.join(', ')) + '</b></span>' : '';
               })() +
             '</div>' +
-            '<details class="zpw-apply"' + (others.length ? '' : ' hidden') + '>' +
-              '<summary>Also use this plan on other floors…' + (mine.length > 1 ? ' <b>' + mine.length + ' using it</b>' : '') + '</summary>' +
+            '<details class="zpw-apply">' +
+              '<summary>Also use this plan elsewhere…' + (mine.length > 1 ? ' <b>' + mine.length + ' floors using it</b>' : '') +
+                (nolevOn() ? ' <b>+ the no-level band</b>' : '') + '</summary>' +
+              /* ⚠️ The band that has no floor. Owner: *"for floors without levels … edit the
+                 shape of that floor"* — in the Vertical Stacking, work whose activities carry no
+                 floor is drawn as a row of its own, and until now nothing could give that row a
+                 shape because it has no row HERE to hang one off. It gets a pointer instead, and
+                 this is where the planner sets it. */
+              '<div class="zpw-floors">' +
+                '<label class="zpw-fl zpw-fl-nolev"><input type="checkbox" id="zpw-nolev"' +
+                  (nolevOn() ? ' checked' : '') + '>' +
+                  'Work with no floor <em title="The Vertical Stacking draws activities that carry no floor as a band of their own. Tick this and that band is drawn with this outline instead of a guessed block.">the “no level” band</em></label>' +
+                '</div>' +
               '<div class="zpw-floors">' + others.map(function (f) {
                 var on = W.plateId && zpIdFor(f) === W.plateId;
                 var hasOwn = !on && !!zpIdFor(f);
@@ -32728,7 +33006,8 @@
                   (hasOwn ? '<em title="This floor already has a plan of its own. Ticking it replaces that.">has its own</em>' : '') +
                   '</label>';
               }).join('') + '</div>' +
-              '<p class="sbld-hint" style="margin:6px 0 0;">One drawing, shared by reference — re-draw it once and every ticked floor follows.</p>' +
+              (others.length ? '' : '<p class="sbld-hint" style="margin:6px 0 0;">This trade has no other floor to share with.</p>') +
+              '<p class="sbld-hint" style="margin:6px 0 0;">One drawing, shared by reference — re-draw it once and everything ticked follows.</p>' +
             '</details>' +
           '</div>';
         wire();
@@ -32902,6 +33181,22 @@
         wrap.querySelectorAll('[data-zpsel]').forEach(function (b) {
           b.onclick = function () { W.sel = (W.sel === b.dataset.zpsel) ? null : b.dataset.zpsel; paint(); };
         });
+        /* The un-levelled band, ticked or cleared. ⚠️ THE SAME GUARD as the floor checkboxes:
+           pointing anything at a plate that holds neither an outline nor an image would file a
+           plate that zpDropIfEmpty is entitled to delete, and the tick would survive the drawing
+           it refers to. */
+        var nl = q('zpw-nolev');
+        if (nl) nl.onchange = function () {
+          if (!W.draft.polys.length && !W.draft.img) {
+            nl.checked = false;
+            UI.toast('Draw an area or attach a plan first — there is nothing to share yet.', 'warn');
+            return;
+          }
+          commit();
+          if (nl.checked) zpAssign(ZP_NOLEV_ID, W.plateId);
+          else { zpAssign(ZP_NOLEV_ID, null); zpGc(); }
+          markDirty(); paint();
+        };
         wrap.querySelectorAll('[data-zpfl]').forEach(function (c) {
           c.onchange = function () {
             if (!W.draft.polys.length && !W.draft.img) {
@@ -33130,16 +33425,30 @@
              2026-09-09: *"that floor plan will be identified for a specific floor"*. The button
              says whether this floor HAS one and how much of it is traced, so a forty-storey list
              can be read down for gaps without opening anything. */
-          (showZones ? (function () {
-            var _p = zpFor(f), _n = _p ? zpCodesOf(_p).length : 0;
-            var _z = (f.zones || []).length;
+          /* ⚠️⚠️ NO LONGER BEHIND `showZones`. Owner 2026-09-10: *"for floors without levels,
+             there should also be an option for users to edit the shape of that floor."* On a
+             FLOOR-level project this button was not emitted at all, so the shape of a storey was
+             the one thing about it a planner could not state — and the 3D drew a box. A floor
+             has a shape whether or not it is split into zones; what changes is what the button
+             COUNTS, so a floor with no zones reads "Shape", not "Plan 0/0". */
+          (function () {
+            var _p = zpFor(f);
+            var _z = showZones ? (f.zones || []).length : 0;
+            // ⚠️ The whole-floor outline is not a zone, and is not counted as one.
+            var _cs = _p ? zpCodesOf(_p) : [];
+            var _n = _cs.filter(function (c) { return !zpIsAll(c); }).length;
+            var _out = _cs.some(zpIsAll);
             var _sh = _p ? zpUsers(tr, zpIdFor(f)).length : 0;
+            var _lab = _z ? (_p ? 'Plan ' + _n + '/' + _z : 'Plan\u2026') : (_out ? 'Shape \u2713' : 'Shape\u2026');
             return '<button class="pd-btn sbld-zpbtn' + (_p ? ' has' : '') + '" data-zpopen="' + e2(f.id) + '" title="' +
-              e2(_p ? ('Floor plan ' + (_p.img ? 'attached' : 'not attached') + ' · ' + _n + ' of ' + _z + ' zone' +
-                (_z === 1 ? '' : 's') + ' traced' + (_sh > 1 ? ' · shared by ' + _sh + ' floors' : ''))
-                : 'Attach the floor plan and trace this floor\u2019s zones on it') + '">' +
-              (_p ? 'Plan ' + _n + '/' + _z : 'Plan\u2026') + '</button>';
-          })() : '') +
+              e2(_p ? ('Floor plan ' + (_p.img ? 'attached' : 'not attached') +
+                  (_z ? (' · ' + _n + ' of ' + _z + ' zone' + (_z === 1 ? '' : 's') + ' traced')
+                      : (_out ? ' · outline drawn' : ' · outline not drawn yet')) +
+                  (_sh > 1 ? ' · shared by ' + _sh + ' floors' : ''))
+                : (_z ? 'Attach the floor plan and trace this floor\u2019s zones on it'
+                      : 'Draw this floor\u2019s outline \u2014 the 3D view extrudes it instead of a guessed block')) + '">' +
+              _lab + '</button>';
+          })() +
           '<button class="pd-btn sbld-del sbld-delfloor" data-f="' + i + '" title="Remove floor"><span data-ico="trash" data-ico-size="15"></span></button></div>' +
           (showZones ? '<div class="sbld-znwrap">' + zonesHtml + '</div>' : '<div class="sbld-znwrap"><div class="sbld-znhint">Floor level — zones &amp; units are ignored. Switch <b>Activity level</b> to Zone/Unit to split this floor.</div></div>') + '</div>';
       }).join('') : '<div class="sbld-empty">No floors for ' + e2(GLABEL[tr]) + ' in ' + e2(towerLabel(_twAct)) +

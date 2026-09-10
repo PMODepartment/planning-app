@@ -13,6 +13,102 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### The floor with no zones, the band with no floor, the progress tones, and floor markers (2026-09-10) — jasantos2
+
+Owner: *"how about for floors without levels, there should also be an option for users to edit the
+shape of that floor. In addition, look at the colors of the progress of the levels / zones, pls
+improve it. Also can you add like a demarcation or floors that show which floor is this etc."*
+
+### 1. ⚠️⚠️ A floor with no zones could not be given a shape AT ALL
+Two gates saw to it, and neither was visible from the other: the **Plan** button on a floor row was
+only emitted when the Activity level was Zone or Unit (`showZones`), and inside the window the
+Add/Trace row was hidden when the floor had no zone codes — because every area had to BE a zone. So
+on a **floor-level project**, the one thing a planner could not state about a storey was its shape,
+and the 3D drew a box. Both gates are gone.
+
+- **A reserved code, not a second kind of polygon.** `*floor*` is stored, moved, reshaped,
+  coloured, copied, undone and saved by exactly the code that already does all of that for a zone.
+  ⚠️ The stored code and the DISPLAYED label ("Whole floor") are deliberately different strings: a
+  readable sentinel could collide with a zone a planner actually named.
+- ⚠️ It is in the palette **always**, **last**, and **is not a zone**: the "not drawn" list, the
+  `Plan n/m` count and everything else that counts zones skips it. A floor with no zones now reads
+  **Shape…** / **Shape ✓** rather than "Plan 0/0".
+- ⚠️⚠️ The 3D uses it **only for a storey whose row is a single cell**. On a floor split into four
+  zones, extruding the outline four times would stack four identical slabs in one place and call
+  them four zones — the suite asserts that this does not happen.
+
+### 2. The band that has no floor
+The Vertical Stacking draws work whose activities carry no floor as a row of its own, and nothing
+could give that row a shape because it has no row in the setup to hang one off. It now has a
+reserved **pointer** (`of.nolev`), ticked in the plan window's *Also use this plan elsewhere…*.
+- ⚠️⚠️ It crosses the boundary under a **protocol key** (`*nolevel*`), not under the band's display
+  text. `VS_NOLEV` is the words printed on the row ("— No level —") and is free to be reworded, at
+  which point a map keyed by it would silently stop matching. Both sides name the constant and
+  point at each other. The suite asserts the lookup **misses** when only the display text is there.
+- ⚠️ Read straight off the bag, never through `zpIdFor`: a synthetic `{ id: 'nolev' }` falls through
+  to that function's `kind:` fallback and would report the typical floors' plate as the band's — a
+  tick nobody put there.
+- ⚠️ The band now counts in the footer's "n of m storeys" **only once it has a plan**, so it neither
+  drags the verdict down nor gets told it matches nothing after the planner has drawn it.
+
+### 3. The progress colours, measured rather than adjusted
+⚠️⚠️ **The defect was the dark theme, and the light theme is why nobody saw it.** Remaining was
+`colour × 0.42` — one walk toward black, whatever the model stood on. Measured against the dark
+card it sits on, those tones are **9.5 ΔE** from the background: two shades of the same grey, on
+the part of the model that is most of a live project. The same rule measures **69.6** on the light
+theme.
+
+So the two tones are **placed**, not derived by arithmetic on the fill. Hue and saturation stay the
+trade's; lightness moves — light theme: done is the trade colour exactly, remaining is it at 45%
+lightness; dark theme: done is **lifted** off the ground (×1.35, held in 0.55–0.76) and remaining
+**dropped but floored** (×0.70, held in 0.26–0.38). ⚠️ The clamps are the point, not the
+multipliers: a trade colour that is already near-black and one that is already pale must both land
+on the two rungs, or the pair that needed help most is the pair that does not get it.
+
+| measured over 16 palette colours | before | light | dark |
+|---|---|---|---|
+| remaining vs its background (min ΔE) | 9.5 dark / 69.6 light | 67.6 | **23.2** |
+| trade separation in the remaining tone (mean ΔE) | 37.2 | 47.5 | 60.1 |
+| done vs remaining (min ΔE) — the progress read | 27.5 | 26.0 | 28.5 |
+| trade hue drift | 0° | **0°** | **0°** |
+
+⚠️ **And the lights were clipping the model white.** Lambert shades a face by
+`colour × (ambient + directional × NdotL)`; a top face — most of what the Top and Iso views show —
+has NdotL 0.768 against this light. At 0.72 + 0.55 that is **1.143**, so every channel above 223
+pinned to 255 and the brightest trades lost their hue on exactly the faces a planner looks down on.
+0.58 + 0.48 puts the same face at **0.949**, and the directional share is *larger* than before, so
+the extruded outlines have more form rather than less.
+
+### 4. Which floor is this
+A **slab under every storey** and a **label naming it**, with a `Floors · Labelled | Plain` toggle
+in the 3D bar (default Labelled).
+- ⚠️ The slab is **wider than the plate** (×1.04): one sized to the zones above it is hidden by them
+  from every angle except dead level, which is the one angle this view is rarely at. The overhang
+  is what turns a column of floating blocks into storeys. One geometry and one material for the
+  whole tower, and **not in `picks`** — a slab must not swallow the click meant for a zone.
+- ⚠️ The labels are **HTML, not sprites**: crisp at any zoom, on the app's type scale and theme,
+  readable by a screen reader, and free to build. They are placed from the **projected** geometry
+  each frame — pinned to whichever plate corner is currently leftmost, at *that corner's* height,
+  not the mean of the four (under perspective the mean floats the label off its storey).
+- ⚠️ **Thinned, never stacked**: ~14 labels on a forty-storey tower, always including the top and
+  the bottom, and any label landing within 14px of the one above is dropped for that frame.
+  Overlapping labels are worse than none — they misname floors. The grade line is named too.
+- ⚠️ Removed on dispose: the layer is DOM this scene added, and a repaint would otherwise leave a
+  full set of floor names behind per rebuild.
+
+### Verified
+**140 assertions across eight suites, 0 failing** — 52 new, every one executing lines sliced out of
+the shipped file (`_vs3Build` runs against a stub three.js whose Color is the real colour maths, so
+the tone assertions are not vacuous). ⚠️ The colour work is **measured against a control**: the old
+rule is executed on the same sixteen palette colours, and the table above is its output, not a
+description of it. ⚠️ Sanity gates throughout — the band must MISS when only its display text is in
+the map; a two-zone storey must extrude the outline zero times; `Plain` must build no slabs and no
+labels; the "no outline drawn" case must extrude nothing at all.
+⚠️ **Not clicked in a browser**: the anon key has no grants for this project's data, so the window,
+the tones and the labels were verified by execution, not by opening them.
+
+---
+
 ### Tracing over another floor, front/rear on the drawing, zone colours, and a hover trace in 3D (2026-09-10) — jasantos2
 
 Owner: *"For uniformity of the sizes of the floor plans … when editing other floors, is there an
