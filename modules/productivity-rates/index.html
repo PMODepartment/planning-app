@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Productivity Rates · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910u7" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910v3" />
   <style>
     /* ---- Uniform module chrome (matches every other module). Keep the topbar
        rules in sync with those. 2026-08-30: modules gained a persistent
@@ -30,9 +30,9 @@
     .pr-tab.active { background:var(--pd-red); color:#fff; }
     /* tool cluster beside the profile */
     .pr-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; flex-wrap:wrap; }
-    .pr-topbar-tools .pd-btn { height:34px; width:34px; padding:0; font-size:13px; display:inline-flex; align-items:center; justify-content:center; background:transparent; border-color:transparent; }
+    .pr-topbar-tools .pd-btn:not(.pr-tb-labeled) { height:34px; width:34px; padding:0; font-size:var(--pd-fs-base); display:inline-flex; align-items:center; justify-content:center; background:transparent; border-color:transparent; }
     .pr-topbar-tools .pd-btn:hover { background:var(--pd-bg); border-color:var(--pd-line); }
-    .pr-topbar-tools .pd-btn.pr-tb-labeled { width:auto; padding:0 12px; gap:6px; }
+    .pr-topbar-tools .pd-btn.pr-tb-labeled { height:34px; width:auto; padding:0 12px; gap:6px; white-space:nowrap; }
     .pr-topbar-tools .pd-btn-primary { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
     .pr-topbar-tools .pd-btn.is-active { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
     .pr-tb-sep { width:1px; align-self:stretch; margin:5px 3px; background:var(--pd-line); }
@@ -50,7 +50,7 @@
     .pr-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; padding:14px 16px; }
     .pr-kpi-l { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); margin-bottom:5px; }
     .pr-kpi-v { font-size:22px; font-weight:700; } .pr-kpi-s { font-size:12px; color:var(--pd-muted); margin-top:2px; }
-    .pr-ok { color:var(--pd-ok); } .pr-bad { color:var(--pd-bad); }
+    .pr-ok { color:var(--pd-ok-text); } .pr-bad { color:var(--pd-bad-text); }
 
     /* cards + chart */
     .pr-card { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:16px; margin-bottom:18px; }
@@ -106,7 +106,7 @@
     .pr-ed input:focus { outline:none; border-color:var(--pd-red); }
     .pr-ed .pr-derived { color:var(--pd-muted); font-variant-numeric:tabular-nums; }
     .pr-ed-del { cursor:pointer; color:var(--pd-muted); border:0; background:none; padding:2px 6px; }
-    .pr-ed-del:hover { color:var(--pd-bad); }
+    .pr-ed-del:hover { color:var(--pd-bad-text); }
     .pr-ed-foot { display:flex; align-items:center; gap:10px; margin-top:12px; flex-wrap:wrap; }
     .pr-ed-foot .pr-spacer { margin-left:auto; }
     .pr-hint { font-size:12px; color:var(--pd-muted); }

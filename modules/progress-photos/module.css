@@ -55,17 +55,13 @@
 
 /* Tool cluster beside the profile */
 .pp-topbar-tools { display: flex; align-items: center; gap: 4px; margin-left: auto; }
-.pp-topbar-tools .pd-btn {
+.pp-topbar-tools .pd-btn:not(.pp-tb-labeled) {
   height: 34px; width: 34px; padding: 0; font-size: var(--pd-fs-base);
   display: inline-flex; align-items: center; justify-content: center;
   background: transparent; border-color: transparent;
 }
 .pp-topbar-tools .pd-btn:hover { background: var(--pd-bg); border-color: var(--pd-line); }
-.pp-topbar-tools .pd-btn.pp-tb-labeled { width: auto; padding: 0 12px; gap: 6px; }
-.pp-topbar-tools .pd-btn.pd-btn-primary {
-  background: var(--pd-red); border-color: var(--pd-red); color: #fff;
-}
-.pp-topbar-tools .pd-btn.pd-btn-primary:hover { filter: brightness(.94); }
+.pp-topbar-tools .pd-btn.pp-tb-labeled { height: 34px; width: auto; padding: 0 12px; gap: 6px; white-space: nowrap; }
 .pp-tb-sep { width: 1px; align-self: stretch; margin: 5px 3px; background: var(--pd-line); }
 /* Sixth round item 7: a quiet, breadcrumb-style "back to the list" link,
    deliberately NOT styled like the bordered .pd-btn action buttons it used
@@ -250,7 +246,7 @@
 }
 .pp-iconbtn:hover { background: var(--pd-bg); border-color: var(--pd-line); color: var(--pd-ink); }
 /* Destructive actions use --pd-bad, matching Drawing Register's .dr-clearbtn */
-.pp-iconbtn.pp-del { color: var(--pd-bad); }
+.pp-iconbtn.pp-del { color: var(--pd-bad-text); }
 .pp-iconbtn.pp-del:hover { background: var(--pd-bad); border-color: var(--pd-bad); color: #fff; }
 /* Items 10/11 (current round): a header icon button's "on" state (the
    photo-markup / key-plan toggles) — solid brand-red fill, same family as
@@ -360,8 +356,8 @@
 .pp-addmenu-wrap { position: relative; }
 .pp-addmenu {
   position: absolute; top: calc(100% + 4px); left: 0; z-index: 40; min-width: 150px;
-  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, .18); padding: 4px; display: flex; flex-direction: column; gap: 2px;
+  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md);
+  box-shadow: var(--pd-shadow-lg); padding: 4px; display: flex; flex-direction: column; gap: 2px;
 }
 /* ⚠️ Owner-reported round 2 item 1, and the SAME bug class this file has
    already hit twice (.pp-clear/.pp-lightbox below, and .pp-selbar's own
@@ -639,7 +635,7 @@
 .pp-delwarn {
   margin-top: 10px; padding: 8px 10px; border-radius: var(--pd-radius);
   background: color-mix(in srgb, var(--pd-warn) 16%, var(--pd-card));
-  color: var(--pd-warn); font-size: var(--pd-fs-sm); display: flex; align-items: flex-start; gap: 6px;
+  color: var(--pd-warn-text); font-size: var(--pd-fs-sm); display: flex; align-items: flex-start; gap: 6px;
 }
 
 /* ---- Offline queue button (topbar, always visible — Rounds captures queue too) */
@@ -673,7 +669,7 @@
   font-size: var(--pd-fs-base); color: var(--pd-ink); font-weight: 600;
 }
 .pp-optnote { font-weight: 400; color: var(--pd-muted); font-size: var(--pd-fs-xs); }
-.pp-req { color: var(--pd-bad); font-weight: 700; }
+.pp-req { color: var(--pd-bad-text); font-weight: 700; }
 .pp-actctx { font-size: var(--pd-fs-sm); color: var(--pd-muted); margin-top: -2px; }
 .pp-actline { margin-top: 4px; }
 .pp-actline strong { color: var(--pd-ink); }
@@ -1095,17 +1091,17 @@
 .recon-date { font-size: var(--pd-fs-sm); color: var(--pd-muted); margin-left: auto; }
 .recon-src { font-size: var(--pd-fs-xs); padding: 2px 7px; border-radius: 3px; background: var(--pd-bg); color: var(--pd-muted); border: 1px solid var(--pd-line); }
 .recon-note { font-size: var(--pd-fs-sm); color: var(--pd-muted); margin-top: 6px; }
-.recon-note-bad { color: var(--pd-bad); }
+.recon-note-bad { color: var(--pd-bad-text); }
 .recon-acts { display: flex; gap: 8px; margin-top: 10px; }
 .recon-badge { font-size: var(--pd-fs-xs); font-weight: 700; padding: 3px 9px; border-radius: 3px; letter-spacing: .02em; }
 /* Each pairs the token's own OWN colour as text with a tint of that SAME
    token as background (the proven .pd-pill-ok pattern from dashboard.css) —
    every one of --pd-warn/--pd-red/--pd-ok/--pd-bad already carries a paired
    dark-mode remap, so this re-themes correctly with no extra work here. */
-.recon-badge-pending { background: color-mix(in srgb, var(--pd-warn) 18%, var(--pd-card)); color: var(--pd-warn); }
+.recon-badge-pending { background: color-mix(in srgb, var(--pd-warn) 18%, var(--pd-card)); color: var(--pd-warn-text); }
 .recon-badge-mid { background: color-mix(in srgb, var(--pd-red) 12%, var(--pd-card)); color: var(--pd-red); }
-.recon-badge-ok { background: color-mix(in srgb, var(--pd-ok) 16%, var(--pd-card)); color: var(--pd-ok); }
-.recon-badge-bad { background: color-mix(in srgb, var(--pd-bad) 14%, var(--pd-card)); color: var(--pd-bad); }
+.recon-badge-ok { background: color-mix(in srgb, var(--pd-ok) 16%, var(--pd-card)); color: var(--pd-ok-text); }
+.recon-badge-bad { background: color-mix(in srgb, var(--pd-bad) 14%, var(--pd-card)); color: var(--pd-bad-text); }
 
 /* ---- Floor Plan overlay (brief 6B / Phase 5) ------------------------------
    Pin-navigator over a 2D image, not a true BIM/IFC viewer — see bim.js's own
@@ -1431,7 +1427,7 @@
   border: 0; background: transparent; cursor: pointer; color: var(--pd-muted);
   display: flex; align-items: center; padding: 0;
 }
-.pp-workschip button:hover { color: var(--pd-bad); }
+.pp-workschip button:hover { color: var(--pd-bad-text); }
 .pp-worksgroup + .pp-worksgroup { margin-top: 4px; }
 .pp-worksgroup-name {
   font-size: var(--pd-fs-xs); font-weight: 700; text-transform: uppercase; letter-spacing: .04em;

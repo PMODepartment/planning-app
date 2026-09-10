@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Equipment Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910u7" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910v3" />
   <style>
     /* Uniform module chrome (matches every other module). 2026-08-30: modules
        gained a persistent sidebar (MODULE_CONTRACT.md) — .pd-content no longer
@@ -23,8 +23,7 @@
     .eq-project { max-width:230px; min-width:120px; height:34px; font-weight:600; font-size:13px; background:transparent; border-color:transparent; }
     .eq-project:hover, .eq-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
     .eq-topbar-tools { display:flex; align-items:center; gap:6px; margin-left:auto; flex-wrap:wrap; }
-    .eq-topbar-tools .pd-btn.eq-tb-labeled { height:34px; padding:0 12px; gap:6px; background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
-    .eq-topbar-tools .pd-btn.eq-tb-labeled:hover { filter:brightness(.94); }
+    .eq-topbar-tools .pd-btn.eq-tb-labeled { height:34px; padding:0 12px; gap:6px; }
     .eq-tb-sep { width:1px; align-self:stretch; margin:5px 3px; background:var(--pd-line); }
     @media (max-width:820px) { .eq-title-txt { display:none; } }
     .eq-tabs { display:flex; border-bottom:2px solid var(--pd-line); }
@@ -39,10 +38,10 @@
     .eq-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:16px; }
     .eq-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; padding:13px 16px; }
     .eq-kpi-v { font-size:22px; font-weight:800; line-height:1; }
-    .eq-kpi-v.eq-bad { color:var(--pd-bad); }
+    .eq-kpi-v.eq-bad { color:var(--pd-bad-text); }
     .eq-kpi-l { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); margin-top:6px; }
     .eq-note { font-size:12px; color:var(--pd-muted); }
-    .eq-warn { font-size:12.5px; color:#8A5300; background:#FFF0D9; border:1px solid #F0D9A8;
+    .eq-warn { font-size:var(--pd-fs-sm); color:var(--pd-warn-text); background:var(--pd-warn-bg); border:1px solid var(--pd-warn-line);
       border-radius:8px; padding:9px 12px; margin-bottom:14px; }
     .eq-empty { text-align:center; padding:40px; color:var(--pd-muted); }
 
@@ -249,7 +248,7 @@
     .eq-icorow .pd-select { max-width:190px; height:32px; font-size:12.5px; }
     .eq-menu { position:relative; display:inline-flex; }
     .eq-menu-pop { position:absolute; top:calc(100% + 4px); left:0; z-index:40; min-width:180px;
-      background:var(--pd-card); border:1px solid var(--pd-line); border-radius:9px; box-shadow:var(--pd-shadow);
+      background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); box-shadow:var(--pd-shadow-lg);
       padding:5px; display:none; }
     .eq-menu.open .eq-menu-pop { display:block; }
     .eq-menu-pop button { display:flex; align-items:center; gap:9px; width:100%; border:0; background:none;
@@ -300,8 +299,8 @@
     .eq-share { font-size:12px; line-height:1.55; }
     .eq-share-row { padding:7px 0; border-top:1px solid var(--pd-line); }
     .eq-share-row:first-child { border-top:0; }
-    .eq-share-ok { color:#1F7A3D; font-weight:700; }
-    .eq-share-bad { color:var(--pd-bad); font-weight:700; }
+    .eq-share-ok { color:var(--pd-ok-text); font-weight:700; }
+    .eq-share-bad { color:var(--pd-bad-text); font-weight:700; }
     .eq-share-unk { color:var(--pd-muted); font-weight:700; }
     .eq-twsel { width:100%; height:30px; font-size:12px; margin-top:4px; }
     .eq-site-hint { font-size:12px; color:var(--pd-muted); margin:0 0 8px; line-height:1.5; }
@@ -1442,7 +1441,7 @@
         (mo.length ? ' · ' + MON3[pd(mo[0]).getMonth()] + ' ' + pd(mo[0]).getFullYear() + ' – ' +
           MON3[pd(mo[mo.length - 1]).getMonth()] + ' ' + pd(mo[mo.length - 1]).getFullYear() : '')
         : 'never synced') +
-      (drifted ? ' · <b style="color:var(--pd-bad)">schedule moved</b>' : '') + '</div>';
+      (drifted ? ' · <b style="color:var(--pd-bad-text)">schedule moved</b>' : '') + '</div>';
   }
 
   function itemById(id) { for (var i = 0; i < ITEMS.length; i++) if (String(ITEMS[i].id) === String(id)) return ITEMS[i]; return null; }

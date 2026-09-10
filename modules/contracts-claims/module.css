@@ -13,8 +13,9 @@
    never falls through to the generic default.
    WARNING The sans family is NOT redefined here - it comes from the shell's --pd-font,
    and a second definition is exactly how the two drift apart again. */
-:root { --pd-mono: ui-monospace, SFMono-Regular, "SF Mono", Consolas,
-  "Liberation Mono", Menlo, monospace; }
+/* ⚠️ --pd-mono MOVED to dashboard.css (2026-09-10), unchanged. The warning above was
+   right and could never be enforced from here: module.css loads only on this page, so
+   every other module that wrote var(--pd-mono) resolved it to nothing. */
 
 /* Contracts & Claims Register — module styles (all classes prefixed .cc-)
    Chrome (topbar / tabs / tools / filter bar) is copied from drawing-register /
@@ -53,14 +54,12 @@
 .cc-tab.active { background:var(--pd-red); color:#fff; }
 
 .cc-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; }
-.cc-topbar-tools .pd-btn { height:34px; width:34px; padding:0; display:inline-flex; align-items:center; justify-content:center;
-  background:transparent; border-color:transparent; font-size:13px; }
+.cc-topbar-tools .pd-btn:not(.cc-tb-labeled) { height:34px; width:34px; padding:0; display:inline-flex; align-items:center; justify-content:center;
+  background:transparent; border-color:transparent; font-size:var(--pd-fs-base); }
 .cc-topbar-tools .pd-btn:hover { background:var(--pd-bg); border-color:var(--pd-line); }
-.cc-topbar-tools .pd-btn.cc-tb-labeled { width:auto; padding:0 12px; gap:6px; }
-.cc-topbar-tools .pd-btn.pd-btn-primary { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
-.cc-topbar-tools .pd-btn.pd-btn-primary:hover { filter:brightness(.94); }
+.cc-topbar-tools .pd-btn.cc-tb-labeled { height:34px; width:auto; padding:0 12px; gap:6px; white-space:nowrap; }
 .cc-tb-sep { width:1px; align-self:stretch; margin:5px 3px; background:var(--pd-line); }
-.cc-clearbtn { color:var(--pd-bad,#dc2626); }
+.cc-clearbtn { color:var(--pd-bad-text); }
 .cc-clearbtn:hover { background:var(--pd-bad,#dc2626) !important; border-color:var(--pd-bad,#dc2626) !important; color:#fff; }
 
 /* ---- Filter bar — collapsed by default, revealed via the topbar funnel
@@ -116,18 +115,15 @@ html.pd-dark tr.cc-total td { background:rgba(255,255,255,.06); }
 /* ---- Status ------------------------------------------------------------- */
 /* The app shows Pending in RED (it's the actionable state) and the rest plain. */
 .cc-st { font-weight:600; white-space:nowrap; }
-.cc-st.st-pending     { color:var(--pd-bad,#dc2626); }
-.cc-st.st-approved    { color:#12693a; }
-.cc-st.st-disapproved { color:#9b1c1c; }
+.cc-st.st-pending     { color:var(--pd-bad-text); }
+.cc-st.st-approved    { color:var(--pd-ok-text); }
+.cc-st.st-disapproved { color:var(--pd-bad-text); }
 .cc-st.st-cancelled   { color:var(--pd-muted); font-weight:500; }
-html.pd-dark .cc-st.st-approved    { color:#7fd6a2; }
-html.pd-dark .cc-st.st-disapproved { color:#f19a9a; }
 .cc-st-date { display:block; color:var(--pd-muted); font-weight:400; font-size:11px; margin-top:1px; }
 /* Aging is only meaningful while Pending; long waits escalate. */
 .cc-age { font-weight:700; }
-.cc-age.warn { color:#b45309; }
-.cc-age.bad  { color:var(--pd-bad,#dc2626); }
-html.pd-dark .cc-age.warn { color:#f0c469; }
+.cc-age.warn { color:var(--pd-warn-text); }
+.cc-age.bad  { color:var(--pd-bad-text); }
 
 /* ---- KPI strip ---------------------------------------------------------- */
 .cc-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:14px; }
@@ -137,9 +133,9 @@ html.pd-dark .cc-age.warn { color:#f0c469; }
 .cc-kpi-l { color:var(--pd-muted); font-size:11px; text-transform:uppercase; letter-spacing:.04em; font-weight:700; }
 .cc-kpi-v { font-size:21px; font-weight:800; margin-top:4px; line-height:1.15; word-break:break-word; }
 .cc-kpi-s { color:var(--pd-muted); font-size:11px; margin-top:3px; }
-.cc-kpi.good .cc-kpi-v { color:#12693a; } html.pd-dark .cc-kpi.good .cc-kpi-v { color:#7fd6a2; }
-.cc-kpi.bad  .cc-kpi-v { color:var(--pd-bad,#dc2626); }
-.cc-kpi.warn .cc-kpi-v { color:#b45309; } html.pd-dark .cc-kpi.warn .cc-kpi-v { color:#f0c469; }
+.cc-kpi.good .cc-kpi-v { color:var(--pd-ok-text); }
+.cc-kpi.bad  .cc-kpi-v { color:var(--pd-bad-text); }
+.cc-kpi.warn .cc-kpi-v { color:var(--pd-warn-text); }
 
 /* ---- Modal / form ------------------------------------------------------- */
 .cc-form { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; }
@@ -637,13 +633,10 @@ tr.cc-collapsed { display:none; }
    so these are the FILLED states a status column wants. */
 .cc-badge { display:inline-block; font-size:10px; font-weight:800; letter-spacing:.03em;
   padding:2px 8px; border-radius:20px; white-space:nowrap; }
-.cc-badge.b-ok   { background:rgba(18,105,58,.12);  color:#12693a; }
-.cc-badge.b-warn { background:rgba(180,83,9,.14);   color:#b45309; }
-.cc-badge.b-bad  { background:rgba(220,38,38,.12);  color:#b3241a; }
+.cc-badge.b-ok   { background:var(--pd-ok-bg);   color:var(--pd-ok-text); }
+.cc-badge.b-warn { background:var(--pd-warn-bg); color:var(--pd-warn-text); }
+.cc-badge.b-bad  { background:var(--pd-bad-bg);  color:var(--pd-bad-text); }
 .cc-badge.b-mut  { background:var(--pd-bg);         color:var(--pd-muted); }
-html.pd-dark .cc-badge.b-ok   { background:rgba(127,214,162,.16); color:#7fd6a2; }
-html.pd-dark .cc-badge.b-warn { background:rgba(240,196,105,.16); color:#f0c469; }
-html.pd-dark .cc-badge.b-bad  { background:rgba(241,154,154,.16); color:#f19a9a; }
 
 /* A section rule between the two stacked tables on the Contract tab, so "records" and
    "lots" read as two things rather than one long scroll. */
@@ -748,7 +741,7 @@ html.pd-dark .boq-tl1 > .boq-trow { background:rgba(255,255,255,.04); }
 /* A match the proposer found, and WHY — never a bare highlight. */
 .boq-why { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.03em;
   color:var(--boq-good,#12693a); border:1px solid currentColor; border-radius:20px; padding:1px 6px; white-space:nowrap; }
-html.pd-dark .boq-why { color:#7fd6a2; }
+
 .boq-taken { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.03em;
   color:var(--boq-warn,#b45309); white-space:nowrap; }
 @media (max-width:820px) { .boq-tag { grid-template-columns:1fr; }
@@ -1158,12 +1151,10 @@ html.pd-dark .pmi-chtab tr.pmi-ch-cleared td { background:rgba(78,209,139,.08); 
 .pmi-chtab tr.pmi-ch-pending td { color:var(--pd-muted); }
 /* An ORPHAN is data whose role no longer exists in the profile. Amber, not red: nothing is
    broken and nothing is lost — it needs re-keying, which is a chore, not an error. */
-.pmi-chtab tr.pmi-ch-orphan td { background:#FFF0D9; }
-html.pd-dark .pmi-chtab tr.pmi-ch-orphan td { background:#3A2E17; }
+.pmi-chtab tr.pmi-ch-orphan td { background:var(--pd-warn-bg); }
 .pmi-chtab tr.pmi-ch-orphan td:first-child { box-shadow:inset 3px 0 0 var(--pd-warn, #B8860B); }
 /* The register's holder line. Quiet — it sits under an aging figure that already carries the
    colour, and two loud things in one cell means neither is read. */
 .pmi-holder { color:var(--pd-muted); font-weight:600; }
 /* "Cleared" as a positive statement. Same green the cost build-up uses for a closing figure. */
-.cc-ok { color:#0E7A4A; font-weight:700; }
-html.pd-dark .cc-ok { color:#4ED18B; }
+.cc-ok { color:var(--pd-ok-text); font-weight:700; }

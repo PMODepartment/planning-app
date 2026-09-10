@@ -158,6 +158,147 @@ fetch is a real query and the anon key has no grants, so the round trip has neve
 
 `MODULE_V` → `20260910v1`. Detail: [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
 
+### 2026-09-10 (uic) — A global UI consistency pass: status surfaces, the `+ Add` button, and one monospace family
+
+Owner: *"Let's globally check the UI of all app and perform consistency fix"*, then *"Check also font
+styles not just font sizes"*, *"I am pretty sure the +Add across all modules have different font styles
+let's check globally"*, and *"Let's follow the brandbook."* Audited by measurement across all 27
+stylesheet sources (12 `.css` files + the inline `<style>` of every page), never by eye.
+
+#### ⚠️⚠️ THE SHARED STATUS PILL WAS ITSELF BELOW AA, WHICH IS WHY NINE MODULES REFUSED TO USE IT
+Measured against the card surfaces before changing anything: **`--pd-ok` (#1f8f4e) is 4.12:1 on white
+and `--pd-warn` (#C77700) is 3.46:1** — and `.pd-pill-ok` / `.pd-pill-warn` painted their label in
+exactly those two. So the component every module was told to reuse failed the bar, and nine of them
+hand-rolled a green/amber/red instead. **A reuse problem with a contrast cause.**
+
+- **New status-surface tokens — a tint / border / text TRIPLE per status**, `--pd-{ok,warn,bad}-*`,
+  remapped under `html.pd-dark`. ⚠️ The `-text` values are **not invented**: they are the ones the
+  modules had already converged on by hand (`#12693a` in three modules, `#8A5300` in project-schedule),
+  so migrating moves a module *toward* the rest of the app — the same rule the type scale follows.
+- ⚠️ **The tints are `rgba`, not opaque hex, on purpose.** An rgba tint composites over whatever card it
+  lands on, so one value is correct in both themes and a module cannot get a white pill on a dark card
+  by forgetting an override. That forgotten override was the actual defect in six modules.
+- ⚠️ **`--pd-info` is a FOURTH status and it is here because the app already had it** — measured **24
+  blue declarations across five files in four spellings** (`#2F6FBF`×11, `#2f6fed`×5, `#2563EB`×6,
+  `#1d4ed8`×1). `#2f6fed` measured **3.84:1** on its own tint, which is the argument for one token over
+  four.
+- **74 declarations swapped** from `--pd-{ok,warn,bad}` to their `-text` pair, across 15 files —
+  `color:` only. `border-color`, `background` and every `color-mix()` surface keep the base token,
+  because those are surfaces and the base value is right for them.
+- **Nine modules' hand-rolled pills migrated.** ⚠️ Contracts & Claims and Manpower were **not broken** —
+  both paired every literal with its own `html.pd-dark` override and both had done the measurement.
+  What they had was a *private parallel palette*; the override pairs are deleted, not the reasoning.
+
+#### The `+ Add` button, which the owner was right about
+Measured, per module, with each module's real stylesheets inlined: the primary Add label computed
+**12.5px in seven modules and 13px in four**, and the button hovered **two different ways**.
+⚠️ **The sharpest case: issues-lessons and minutes-of-meeting use the SAME class names** and still
+disagreed, because minutes-of-meeting excludes the labelled button from its 34×34 icon rule with
+`:not(.il-tb-labeled)` and issues-lessons does not. **The fix already existed in this repo and had
+never been applied to its own sibling.**
+
+- ⚠️⚠️ **The hover is settled by the brandbook, not by taste.** Ten modules overrode the shared
+  `.pd-btn-primary:hover` with `filter: brightness(.94)` at (0,4,0) against the shared rule's (0,2,0).
+  That filter computes **#DF2E22 on #EE3124 — a colour that appears nowhere in Brandbook 2026.**
+  `--pd-red-dark` (#C42127) is named there outright as a **Secondary** brand colour (p.14): a secondary
+  brand colour for a secondary state. All ten overrides deleted, plus the ten
+  `background/border/color` re-declarations beside them that only existed to raise specificity.
+- ⚠️⚠️ **A REGRESSION I INTRODUCED, CAUGHT BY MEASURING AND NOT BY READING.** Adding `:not()` to the icon
+  rule also removed the only source of `height:34px` for those buttons: three of them collapsed to
+  **16px**. The font-size was right and the button was ruined. The labelled button now carries its own
+  height — again copying minutes-of-meeting, which had it correct all along.
+- **Measured after: all ten identical** — 12.5px / weight 500 / 8px radius / `0 12px` padding / 34px,
+  with **10/10 painted `rgb(238,49,36)`** so the stylesheets are provably in the cascade.
+
+#### ⚠️⚠️ A monospace bug that only shows up on Windows — which is what this app is used on
+**12 hand-written monospace stacks across 7 files, in five spellings.** Five of them are
+`ui-monospace, SFMono-Regular, Menlo, monospace` — an Apple system font, an Apple font and a generic,
+with **no Windows font in the list at all**, so on Windows they fall through to the browser default
+while the stacks naming Consolas get Consolas. Two faces, same screen.
+⚠️ `--pd-mono` was **already defined and already correct** — inside `contracts-claims/module.css`, under
+a comment warning that "a second definition is exactly how the two drift apart again". That warning was
+right and was unenforceable from there: module.css loads only on its own page, so any other module
+writing `var(--pd-mono)` got **nothing**. Promoted to `dashboard.css` unchanged; all 12 converged.
+- **Brandbook p.29 names Calibri the *document* font.** Both print/export stylesheets were on Arial;
+  they now lead with Calibri and keep Arial as the fallback. ⚠️ They take the literal stack, not
+  `var(--pd-font-doc)` — a string written into a fresh `document.write` window cannot see this app's
+  `:root`.
+
+#### Dropdowns
+Measured across every popover: **radius 4→12px in seven values, five literal shadows**, and
+⚠️ **`var(--pd-shadow)` — the flat `0 1px 3px` CARD shadow — on four floating menus**, which reads as
+glued to the page rather than above it. All converged to `--pd-radius-md` + `--pd-shadow-lg` (themed;
+every literal was light-mode-only).
+⚠️⚠️ **This deliberately revisits the 2026-09-03 (r) decision** to leave small-chrome radii alone as
+"pure diff noise with no visual effect". That was correct for the 9-vs-10px it was judging; it is not
+correct now, because `--pd-radius` (4px, the *smallest* rung) has since been applied to three menus and
+4px against 12px on the same kind of surface is visible.
+- **Three `<select>`s and three `<input>`s carried no class at all** — the bulk-update modal's whole row
+  was raw browser chrome. ⚠️ Classing only the select would have made it disagree with its own
+  siblings, so all four in that row were classed together.
+- ⚠️ **A correction to my own first count:** I reported "32 unclassed selects". The real number is
+  **three** — 29 of those were the literal text `<select>` inside code comments, which the grep counted.
+
+#### One duplicated block, removed
+`modules/project-schedule/index.html` carried **23 byte-identical lines twice** (`.ps-vs-warn`,
+`.ps-vs-warnx`, `.ps-vs-seg`, `.ps-vs-badge-warn`). Safe to drop the later copy: the only rules between
+the two set `transition`, which the block never declares. ⚠️ Located by **content, not line number** —
+earlier edits in the same script collapse four lines into two, so any hardcoded index was already stale.
+File 43,038 → 43,020 lines: −23 dedupe, +7 comment, −2 collapsed overrides, which is exactly −18.
+
+#### Verified
+- **30 contrast measurements, 15 pills × both themes, rendered against the real stylesheets: 0 below
+  AA, minimum 4.57:1.** Every value matches the token arithmetic (ok 5.85/5.16, warn 5.55/4.57,
+  bad 4.79/5.13, info 5.66/5.48).
+- **10 `+ Add` buttons measured identical**, from each module's own shipped markup and CSS.
+- `.ps-scopetag.co-strong` was `#fff` on `#E08A3C` = **2.56:1**, wrong in both themes because the fill is
+  a fixed literal. Now `#231F20`, **measured 6.11:1**. ⚠️ The ink is a literal on purpose and must not
+  become `var(--pd-ink)`, which remaps to `#F0EFEF` on dark and would reinstate the 2.56.
+- Brace balance holds on all 9 changed stylesheets and every inline `<style>`; **0 NUL bytes**.
+  ⚠️ project-schedule's `<script>` count is 16/14 — **identical to HEAD**, the documented
+  `<script` -in-a-JS-string false positive, not something this change caused.
+- font-family went **9 distinct values → 4**, all four legitimate.
+- `dashboard.css` → `?v=20260910v3` across **all 29 pages**, `modules-grid.js` across 2 + its fallback
+  literal, and the six edited modules' `module.css`. **One version each, 0 splits.**
+- ⚠⚠ **THE VERSION IS `v3`, NOT THE `uic` THIS ENTRY WAS FIRST WRITTEN WITH, AND THAT IS THE COLLISION
+  THIS LOG KEEPS RECORDING — the fourth time.** I picked a deliberately non-sequential token (`uic`) to
+  avoid exactly this, and it did not help: the concurrent session pushed `20260910v2` while this work was
+  in progress, and `uic` sorts BEFORE `v2`. A version that sorts *earlier* than one already served is worse
+  than a collision — a browser holding `v2` would never fetch `uic`. Rebased and bumped past **both** sides
+  to `v3`. ⚠️ The rule that actually works is not "pick an unusual letter", it is **re-derive the version
+  AFTER integrating, from what the remote already has**.
+- ⚠️ **20 of the 40 changed files are version-only, checked individually**, so no concurrent session's
+  work is swept in.
+- ⚠️ **Not verified signed in.** Everything above is a real browser measurement against the shipped
+  stylesheets with auth/DB absent; no live project was loaded.
+
+⚠️ **Rebased onto three commits from the concurrent project-schedule session** (floor-plan sync).
+`CLAUDE.md` and `modules/project-schedule/index.html` **auto-merged**; the only conflicts were the three
+version strings above. Checked after resolving: changelog **3,226 + 130 = 3,356 lines, 91 headings, 91
+unique — no doubling**; my dedupe still holds (one `.ps-vs-warn` rule) and their Sync work is present.
+
+#### Deliberately NOT done, each with a reason
+- ⚠️ **`--boq-*` (Contracts & Claims) is left alone.** It is a *fourth* parallel palette and it is
+  **correct** — paired per theme and measured, with its own note saying so. Aliasing it to the shared
+  tokens is a real cleanup but it is a change to a working, documented system and belongs in its own
+  commit with its own verification.
+- ⚠️ **The type scale is NOT normalised here.** 485 declarations still sit off the eight rungs
+  (12px×202, 11.5×86, 10.5×74, 9.5×23 …). That is the single largest remaining inconsistency and it
+  changes rendering on every screen, so it needs its own measured pass — not the tail of this one.
+- ⚠️⚠️ **`font-weight: 600` is flagged, not changed — and it needs an owner decision.** Brandbook p.29
+  names five Gotham cuts: **Thin / Regular / Medium / Bold / Black**. There is **no Gotham Semibold**,
+  and the app carries **233 declarations at 600**. It is not currently broken — the web fallback is
+  Montserrat, which *does* have a 600, and essentially every user sees Montserrat because Gotham is
+  unlicensed here — so this is a latent divergence that bites only if Gotham is ever installed.
+  Resolving it means moving 233 declarations to **500 (Medium)** or **700 (Bold)**, which visibly
+  changes the weight of the whole app in one direction or the other. That is the owner's call.
+- ⚠️ `modules/material-submittal` and `modules/drawing-register` keep 36 of the 70 remaining colour
+  literals: both are `enabled:false`, retired to the Engineering App, and their `index.html` stubs do
+  not even load their `module.css`. The remaining 34 are the print stylesheets (paper is not themed),
+  progress-photos' white pin rings on photographs (correct in both themes), and the one deliberate
+  literal above.
+
+
 ### 2026-09-10 (u7) — A shared data-table layer, and the Stakeholder Map opens on cards
 
 Item 6 of six owner items on the stakeholder screens. Detail in

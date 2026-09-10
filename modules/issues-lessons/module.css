@@ -48,17 +48,13 @@
 
 /* Tool cluster */
 .il-topbar-tools { display: flex; align-items: center; gap: 4px; margin-left: auto; }
-.il-topbar-tools .pd-btn {
+.il-topbar-tools .pd-btn:not(.il-tb-labeled) {
   height: 34px; width: 34px; padding: 0; font-size: var(--pd-fs-base);
   display: inline-flex; align-items: center; justify-content: center;
   background: transparent; border-color: transparent;
 }
 .il-topbar-tools .pd-btn:hover { background: var(--pd-bg); border-color: var(--pd-line); }
-.il-topbar-tools .pd-btn.il-tb-labeled { width: auto; padding: 0 12px; gap: 6px; }
-.il-topbar-tools .pd-btn.pd-btn-primary {
-  background: var(--pd-red); border-color: var(--pd-red); color: #fff;
-}
-.il-topbar-tools .pd-btn.pd-btn-primary:hover { filter: brightness(.94); }
+.il-topbar-tools .pd-btn.il-tb-labeled { height: 34px; width: auto; padding: 0 12px; gap: 6px; white-space: nowrap; }
 .il-tb-sep { width: 1px; align-self: stretch; margin: 5px 3px; background: var(--pd-line); }
 
 /* ITEM 8: the Export dropdown — Excel / PDF / HTML, in the topbar tool
@@ -244,7 +240,7 @@
 
 /* Aging emphasis */
 .il-aging { font-variant-numeric: tabular-nums; white-space: nowrap; }
-.il-aging.is-hot { color: var(--pd-bad); font-weight: 700; }
+.il-aging.is-hot { color: var(--pd-bad-text); font-weight: 700; }
 
 /* ITEM #4: the whole log row opens the issue now (hover highlight already comes from
    the shared .pd-table tr:hover rule — this only needs the cursor). */
@@ -256,7 +252,7 @@
   color: var(--pd-ink); font-size: var(--pd-fs-md); line-height: 1;
 }
 .il-iconbtn:hover { background: var(--pd-bg); }
-.il-iconbtn.is-danger:hover { color: var(--pd-bad); border-color: var(--pd-bad); }
+.il-iconbtn.is-danger:hover { color: var(--pd-bad-text); border-color: var(--pd-bad); }
 
 /* ---- Lessons library ----------------------------------------------------- */
 .il-lead {
@@ -485,7 +481,7 @@
   font-size: var(--pd-fs-xs); font-weight: 700; padding: 3px 9px; border-radius: 20px;
   background: var(--pd-bg); color: var(--pd-muted); border: 1px solid var(--pd-line);
 }
-.il-mom-state.on { background: #d4f5d4; color: #1a8f3a; border-color: #b6e8b6; }
+.il-mom-state.on { background: var(--pd-ok-bg); color: var(--pd-ok-text); border-color: var(--pd-ok-line); }
 /* Marks an unissued minute in the meetings list. Absolute so it cannot push the
    title's own layout around on a narrow list column. */
 .il-mom-draft {

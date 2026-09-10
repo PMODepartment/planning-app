@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Portfolio Dashboard · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910u7" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910v3" />
   <style>
     .po-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:14px; }
     .po-toolbar .pd-select, .po-toolbar .pd-input, .po-toolbar .pd-btn { height:36px; }
@@ -92,7 +92,7 @@
     .po-sched { display:flex; align-items:center; gap:7px; }
     .po-sched .bar { flex:0 0 54px; height:7px; background:var(--pd-line); border-radius:4px; overflow:hidden; }
     .po-sched .bar > div { height:100%; background:var(--pd-red); }
-    .po-var-up { color:var(--pd-bad); font-weight:600; } .po-var-dn { color:var(--pd-ok); font-weight:600; }
+    .po-var-up { color:var(--pd-bad-text); font-weight:600; } .po-var-dn { color:var(--pd-ok-text); font-weight:600; }
     .po-health { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px; vertical-align:middle; }
     .po-tot-row td { font-weight:800; border-top:2px solid var(--pd-ink); background:var(--pd-bg); }
     .po-sort-ind { font-size:9px; color:var(--pd-red); margin-left:4px; }
@@ -138,21 +138,22 @@
       outline:2px solid var(--pd-bad); outline-offset:-2px; }
     .po-eq-now { box-shadow:inset 2px 0 0 var(--pd-red); }
     .po-eq-name { font-weight:700; overflow:hidden; text-overflow:ellipsis; }
-    .po-eq-code { display:inline-block; font-weight:800; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    .po-eq-code { display:inline-block; font-weight:800; font-family:var(--pd-mono);
       background:var(--pd-red-light); color:var(--pd-ink); border-radius:0 4px 4px 0; padding:0 6px;
       margin-right:7px; border-left:2px solid var(--pd-red); }
     .po-eq-sub { font-size:10.5px; color:var(--pd-muted); overflow:hidden; text-overflow:ellipsis; }
     .po-eq-legend { display:flex; flex-wrap:wrap; gap:12px; margin-top:10px; font-size:11.5px; color:var(--pd-muted); }
     .po-eq-lg { display:inline-flex; align-items:center; gap:6px; }
     .po-eq-lg .sw { width:13px; height:13px; border-radius:4px; display:inline-block; border:1px solid rgba(0,0,0,.12); }
-    /* ⚠️ Measured, not chosen by eye: the light-mode green (#1F7A3D) reads 2.61:1 on the dark card
-       and --pd-bad 4.02:1 — both under AA for this weight. The dark overrides below are the same
-       semantics at 7.02 / 6.20. A single colour for both themes cannot satisfy either properly. */
-    .po-eq-free { color:#1F7A3D; font-weight:700; }
-    html.pd-dark .po-eq-free { color:#5FD08A; }
-    html.pd-dark .po-eq-flag { color:#FF8A7A; }
+    /* ⚠️ The measurement that used to live here (light #1F7A3D = 2.61:1 on the dark card,
+       --pd-bad = 4.02:1, both under AA) is exactly what --pd-ok-text / --pd-bad-text were
+       promoted for on 2026-09-10 — this page had solved it privately, for itself, with two
+       dark overrides. The tokens carry the same semantics at 6.76/7.11 and 5.84/6.14, so the
+       two overrides are DELETED rather than kept: a per-page pair is how the app ends up with
+       four greens again. */
+    .po-eq-free { color:var(--pd-ok-text); font-weight:700; }
     .po-eq-busy { color:var(--pd-muted); }
-    .po-eq-flag { color:var(--pd-bad); font-weight:700; }
+    .po-eq-flag { color:var(--pd-bad-text); font-weight:700; }
     @media (max-width: 700px) { .po-eq th.po-eq-c1, .po-eq td.po-eq-c1 { width:150px; min-width:150px; max-width:150px; } }
 
     /* module tabs (Overview / S-Curve / Cash Flow / …) — wraps rather than scrolling.

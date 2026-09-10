@@ -23,8 +23,6 @@
 .sm-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; }
 .sm-topbar-tools .pd-btn { height:34px; display:inline-flex; align-items:center; justify-content:center; }
 .sm-topbar-tools .pd-btn.sm-tb-labeled { padding:0 12px; gap:6px; }
-.sm-topbar-tools .pd-btn.pd-btn-primary { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
-.sm-topbar-tools .pd-btn.pd-btn-primary:hover { filter:brightness(.94); }
 .sm-tb-sep { width:1px; align-self:stretch; margin:5px 3px; background:var(--pd-line); }
 @media (max-width:900px) { .sm-title-txt { display:none; } }
 
@@ -122,7 +120,7 @@ html.pd-dark .sm-k-satisfy { --pd-kpi-vc: #fbbf24; --pd-kpi-accent: #fbbf24; }
 /* ⚠️ Per-theme, because the colour IS the signal here — a single ± glyph, so it cannot
    be demoted to muted text with the flag moved to a border. --pd-warn measured 3.46:1
    in light at 14px/800 (below the 18.66px large-text threshold, so 4.5 applies). */
-.sm-ovr { color:#8a5300; font-weight:800; cursor:help; }
+.sm-ovr { color:var(--pd-warn-text); font-weight:800; cursor:help; }
 html.pd-dark .sm-ovr { color:#fbbf24; }
 
 .sm-bands-row th.sm-bandhead {
@@ -169,9 +167,9 @@ html.pd-dark .sm-a-monitor { --sm-t:#d1d5db; }
   white-space:nowrap; color:#fff; background:var(--sm-c, var(--pd-muted)); }
 .sm-leg-sw { width:12px; height:12px; border-radius:3px; display:inline-block; background:var(--sm-c, var(--pd-line)); }
 .sm-strat { display:inline-block; padding:1px 7px; border-radius:4px; font-size:var(--pd-fs-xs); font-weight:700; white-space:nowrap; }
-.sm-s-Catchup  { background:#fee2e2; color:#991b1b; }
-.sm-s-Enhance  { background:#fef3c7; color:#92400e; }
-.sm-s-Maintain { background:#dcfce7; color:#166534; }
+.sm-s-Catchup  { background:var(--pd-bad-bg);  color:var(--pd-bad-text); }
+.sm-s-Enhance  { background:var(--pd-warn-bg); color:var(--pd-warn-text); }
+.sm-s-Maintain { background:var(--pd-ok-bg);   color:var(--pd-ok-text); }
 
 /* ---- Cards view -------------------------------------------------------- */
 .sm-cgroup { margin-bottom:24px; }
@@ -399,7 +397,7 @@ html.pd-dark .sm-ap-row.is-here .sm-ap-tag { color: #FF8A80; }
 .sm-scope[data-scope="global"] { border-left-color: var(--pd-red); }
 .sm-scope[data-scope="global"] .sm-scope-ic { color: var(--pd-red); }
 .sm-scope[data-scope="warn"] { border-left-color: var(--pd-warn); }
-.sm-scope[data-scope="warn"] .sm-scope-ic { color: var(--pd-warn); }
+.sm-scope[data-scope="warn"] .sm-scope-ic { color: var(--pd-warn-text); }
 @media (max-width: 700px) {
   .sm-scope { flex-wrap: wrap; }
   .sm-scope-btn { width: 100%; justify-content: center; min-height: var(--pd-tap); }

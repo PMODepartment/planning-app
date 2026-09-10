@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Manpower Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910u7" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910v3" />
   <style>
     /* Uniform module chrome (matches every other module). 2026-08-30: modules
        gained a persistent sidebar (MODULE_CONTRACT.md) — .pd-content no longer
@@ -23,8 +23,7 @@
     .mp-project { max-width:230px; min-width:120px; height:34px; font-weight:600; font-size:13px; background:transparent; border-color:transparent; }
     .mp-project:hover, .mp-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
     .mp-topbar-tools { display:flex; align-items:center; gap:6px; margin-left:auto; flex-wrap:wrap; }
-    .mp-topbar-tools .pd-btn.mp-tb-labeled { height:34px; padding:0 12px; gap:6px; background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
-    .mp-topbar-tools .pd-btn.mp-tb-labeled:hover { filter:brightness(.94); }
+    .mp-topbar-tools .pd-btn.mp-tb-labeled { height:34px; padding:0 12px; gap:6px; }
     .mp-tb-sep { width:1px; align-self:stretch; margin:5px 3px; background:var(--pd-line); }
     @media (max-width:900px) { .mp-title-txt { display:none; } }
 
@@ -40,11 +39,11 @@
     .mp-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:16px; }
     .mp-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; padding:13px 16px; }
     .mp-kpi-v { font-size:22px; font-weight:800; line-height:1; }
-    .mp-kpi-v.mp-bad { color:var(--pd-bad); }
-    .mp-kpi-v.mp-good { color:var(--pd-ok); }
+    .mp-kpi-v.mp-bad { color:var(--pd-bad-text); }
+    .mp-kpi-v.mp-good { color:var(--pd-ok-text); }
     .mp-kpi-l { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); margin-top:6px; }
     .mp-note { font-size:12px; color:var(--pd-muted); }
-    .mp-warn { font-size:12.5px; color:#8A5300; background:#FFF0D9; border:1px solid #F0D9A8;
+    .mp-warn { font-size:var(--pd-fs-sm); color:var(--pd-warn-text); background:var(--pd-warn-bg); border:1px solid var(--pd-warn-line);
       border-radius:8px; padding:9px 12px; margin-bottom:14px; }
     .mp-empty { text-align:center; padding:40px; color:var(--pd-muted); }
 
@@ -111,8 +110,8 @@
     .mp-mx tr.mp-r-total td.mp-c1, .mp-mx tr.mp-r-total td.mp-c2 { background:var(--pd-card); }
     .mp-mx tr.mp-r-grp td.mp-c1 { color:var(--pd-ink); }
     .mp-mx td.mp-out { background:var(--pd-bg); color:var(--pd-muted); }
-    .mp-mx td.mp-neg { color:var(--pd-bad); font-weight:700; }
-    .mp-mx td.mp-pos { color:var(--pd-ok); font-weight:700; }
+    .mp-mx td.mp-neg { color:var(--pd-bad-text); font-weight:700; }
+    .mp-mx td.mp-pos { color:var(--pd-ok-text); font-weight:700; }
     .mp-mx .mp-cut { box-shadow:inset 2px 0 0 var(--pd-red), inset -2px 0 0 var(--pd-red); }
     .mp-mx td.mp-edit { cursor:cell; }
     .mp-mx td.mp-edit:hover { outline:2px solid var(--pd-red); outline-offset:-2px; }
@@ -164,11 +163,11 @@
     .mp-gt .gbar.free { background:var(--pd-ok); }
     .mp-gt td.mp-gt-cell.mp-gap { background:var(--pd-red-light); }
     .mp-gt td.mp-gt-cell .gq { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
-      font-size:10px; font-weight:800; color:var(--pd-bad); }
+      font-size:10px; font-weight:800; color:var(--pd-bad-text); }
     .mp-gt td.mp-now { box-shadow:inset 2px 0 0 var(--pd-red), inset -2px 0 0 var(--pd-red); }
     .mp-gtlegend { display:flex; gap:14px; flex-wrap:wrap; padding:10px 12px; font-size:11.5px; color:var(--pd-muted); }
     .mp-gtlegend .sw { display:inline-block; width:22px; height:9px; border-radius:5px; vertical-align:-1px; margin-right:5px; }
-    .mp-free { font-weight:700; color:var(--pd-ok); }
+    .mp-free { font-weight:700; color:var(--pd-ok-text); }
     .mp-mx input.mp-cellin { width:56px; height:24px; padding:0 4px; font:inherit; font-size:12px;
       text-align:center; border:1px solid var(--pd-red); border-radius:4px; background:var(--pd-card); color:var(--pd-ink); }
     .mp-mx input.mp-cellin.wide { width:80px; text-align:left; }
@@ -184,22 +183,24 @@
     .mp-table tr.mp-grp td { background:var(--pd-bg); font-weight:800; font-size:11.5px;
       text-transform:uppercase; letter-spacing:.04em; color:var(--pd-ink); }
     .mp-badge { font-size:11px; font-weight:600; padding:1px 8px; border-radius:999px; background:var(--pd-bg); display:inline-block; }
-    .mp-badge.mp-skill { background:#EAF2FF; color:#2F6FBF; }
-    /* ⚠️ NOT var(--pd-red) on var(--pd-red-light). That pairing measures 3.60:1 — the very
-       number the equipment module's picked-icon button was fixed for — and this badge carries
-       11px text, which needs 4.5:1. Darkened to 6.4:1. */
-    .mp-badge.mp-vac { background:var(--pd-red-light); color:#A81F17; }
-    .mp-badge.mp-fill { background:#E7F7EE; color:#1B7F4B; }
-    /* Subcontractors — a third category badge, distinct from the skilled-trade blue. */
-    .mp-badge.mp-subcon { background:#F3EAFB; color:#6B2FA8; }
-    /* ⚠️ The dark rules MUST restate the text colour, not only the tint. Darkening the
-       background while leaving the light theme's ink measured 2.98:1 (skilled) and 2.86:1
-       (filled) on an 11px badge — under the 4.5:1 that size needs. Same defect the equipment
-       module's picked-icon button had at 3.60:1. Measured after: 6.7:1 and 8.1:1. */
-    html.pd-dark .mp-badge.mp-skill { background:#16273D; color:#7FB0F0; }
-    html.pd-dark .mp-badge.mp-fill { background:#12301F; color:#6FD79B; }
-    html.pd-dark .mp-badge.mp-vac { color:#FF9A93; }
-    html.pd-dark .mp-badge.mp-subcon { background:#2A1B3D; color:#C79EF0; }
+    /* ⚠️ THREE OF THESE FOUR BADGES ARE NOW SHARED TOKENS, and the reason is that this block
+       used to be a private four-colour palette with its own dark half — eight declarations
+       maintained here to say ok / warn-adjacent / bad / other. The measurements that produced
+       them were right and are not lost: they are why --pd-*-text exists at all (see the token
+       block in dashboard.css, which records the same finding app-wide on 2026-09-10).
+       ⚠️ The old note here — NOT var(--pd-red) on var(--pd-red-light), which measures 3.60:1 —
+       still holds and is now enforced by the token: --pd-bad-text on --pd-bad-bg measures
+       4.79:1 light and 5.13:1 dark, clearing the 4.5:1 an 11px badge needs in both themes. */
+    .mp-badge.mp-skill { background:var(--pd-info-bg); color:var(--pd-info-text); }
+    .mp-badge.mp-vac   { background:var(--pd-bad-bg);  color:var(--pd-bad-text); }
+    .mp-badge.mp-fill  { background:var(--pd-ok-bg);   color:var(--pd-ok-text); }
+    /* ⚠️ Subcontractor stays MODULE-LOCAL and keeps its own pair, deliberately. It is the only
+       purple in the app (measured: 2 declarations, this rule and its dark twin), so promoting
+       it would put a token in the shared file with exactly one caller — and folding it into
+       --pd-info would make subcontractor and skilled-trade the same badge, which is the one
+       distinction this row exists to draw. Measured: 8.09:1 light, 7.13:1 dark. */
+    .mp-badge.mp-subcon { background:rgba(107,47,168,.12); color:#6B2FA8; }
+    html.pd-dark .mp-badge.mp-subcon { background:rgba(208,169,245,.16); color:#D0A9F5; }
     .mp-linktag { font-size:11px; font-weight:600; padding:1px 8px; border-radius:999px;
       background:var(--pd-bg); color:var(--pd-muted); display:inline-block; }
 
@@ -225,9 +226,9 @@
     .mp-bar { position:relative; height:8px; border-radius:5px; background:var(--pd-line); overflow:hidden; min-width:70px; }
     .mp-bar > i { position:absolute; left:0; top:0; bottom:0; border-radius:5px; }
     .mp-sev { font-weight:800; }
-    .mp-sev.crit { color:var(--pd-bad); }
-    .mp-sev.warn { color:var(--pd-warn); }
-    .mp-sev.ok   { color:var(--pd-ok); }
+    .mp-sev.crit { color:var(--pd-bad-text); }
+    .mp-sev.warn { color:var(--pd-warn-text); }
+    .mp-sev.ok   { color:var(--pd-ok-text); }
 
     /* Modal form */
     .mp-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px 16px; align-content:start; }

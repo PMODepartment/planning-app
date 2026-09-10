@@ -7,11 +7,11 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Cash Flow · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910u7" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910v3" />
   <style>
     /* top-bar icon cluster (Refresh/Export/Print) — matches project-schedule's .ps-topbar-tools */
     .cf-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; }
-    .cf-topbar-tools .pd-btn { width:34px; height:34px; padding:0; display:inline-flex; align-items:center; justify-content:center; background:transparent; border-color:transparent; }
+    .cf-topbar-tools .pd-btn { width:34px; height:34px; padding:0; font-size:var(--pd-fs-base); display:inline-flex; align-items:center; justify-content:center; background:transparent; border-color:transparent; }
     .cf-topbar-tools .pd-btn:hover { background:var(--pd-bg); border-color:var(--pd-line); }
     .pd-topbar #pd-theme-toggle { width:34px; height:34px; padding:0; display:inline-flex; align-items:center; justify-content:center; margin-left:4px; }
     .pd-topbar #user-bar { margin-left:10px; padding-left:10px; border-left:1px solid var(--pd-line); }
@@ -42,7 +42,7 @@
     .cf-kpi-l { font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--pd-muted); margin-bottom:7px; }
     .cf-kpi-v { font-size:23px; font-weight:800; letter-spacing:-.01em; line-height:1.1; }
     .cf-kpi-s { font-size:11px; color:var(--pd-muted); margin-top:5px; line-height:1.4; }
-    .cf-ok { color:var(--pd-ok); } .cf-bad { color:var(--pd-bad); }
+    .cf-ok { color:var(--pd-ok-text); } .cf-bad { color:var(--pd-bad-text); }
 
     .cf-card { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:10px; padding:18px 20px; margin-bottom:18px; box-shadow:0 1px 2px rgba(0,0,0,.04); }
     .cf-card h3 { margin:0 0 4px; font-size:15.5px; font-weight:700; letter-spacing:-.01em; }
@@ -143,7 +143,7 @@
     .cf-sec td.lbl, .cf-sec th.lbl { background:var(--pd-red-light); }
     .cf-cum td, .cf-cum { font-weight:600; }
     .cf-cum td:not(.lbl) { border-top:1px solid var(--pd-line); }
-    .cf-neg { color:var(--pd-bad); }
+    .cf-neg { color:var(--pd-bad-text); }
     .cf-net td { font-weight:700; }
     .cf-net td, .cf-net th { background:var(--pd-dark); color:#fff; }
     .cf-net td.lbl, .cf-net th.lbl { background:var(--pd-dark); color:#fff; }
@@ -2313,7 +2313,7 @@
         '<table class="tp"><thead><tr><th>Trade / DP tranche</th><th>Value</th><th>Downpayment</th><th>Retention</th><th>Terms (mo)</th></tr></thead><tbody>' + trows + '</tbody></table>';
     }
     var doc = '<!doctype html><html><head><meta charset="utf-8"><title>Cashflow — ' + esc2(projName || pid) + '</title><style>' +
-      '@page{size:A4 landscape;margin:12mm;} *{font-family:Arial,Helvetica,sans-serif;box-sizing:border-box;}' +
+      '@page{size:A4 landscape;margin:12mm;} *{font-family:Calibri,'Segoe UI',Arial,Helvetica,sans-serif;box-sizing:border-box;}' +
       'body{margin:0;color:#231F20;} h1{font-size:16px;margin:0 0 2px;} .hd{border-bottom:3px solid #EE3124;padding-bottom:8px;margin-bottom:12px;}' +
       '.meta{font-size:11px;color:#555;} .kpis{display:flex;flex-wrap:wrap;gap:14px;margin:12px 0;} .kpis div{font-size:11px;} .kpis span{color:#666;display:block;} .kpis b{font-size:13px;}' +
       'table{border-collapse:collapse;width:100%;font-size:8.5px;} th,td{border:1px solid #ddd;padding:3px 5px;text-align:right;white-space:nowrap;} th:first-child,tr>th:first-child{text-align:left;}' +
@@ -2365,7 +2365,7 @@
     var wc = 0; try { var r = await sb().from('wpm_work_packages').select('wp_no', { count: 'exact', head: true }); wc = r.count || 0; } catch (e) {}
     items.push({ label: 'WPM mirror rows (all projects)', res: wc > 0 ? { ok: true, reason: wc + ' rows' } : { ok: 'warn', reason: 'empty — deploy sync-wpm + Sync from WPM' } });
 
-    function icon(r) { return r.ok === true ? '<span style="color:var(--pd-ok)">&#10003;</span>' : r.ok === 'warn' ? '<span style="color:#d99100">&#9888;</span>' : '<span style="color:var(--pd-bad)">&#10007;</span>'; }
+    function icon(r) { return r.ok === true ? '<span style="color:var(--pd-ok-text)">&#10003;</span>' : r.ok === 'warn' ? '<span style="color:#d99100">&#9888;</span>' : '<span style="color:var(--pd-bad-text)">&#10007;</span>'; }
     var okN = items.filter(function (x) { return x.res.ok === true; }).length;
     host.innerHTML = '<div class="cf-hint" style="margin-bottom:8px;"><b>' + okN + ' / ' + items.length + '</b> checks passed.</div>' +
       '<table class="cf-table"><tbody>' + items.map(function (x) {

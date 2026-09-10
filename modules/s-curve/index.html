@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Project S-Curve · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910u7" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910v3" />
   <style>
     /* ---- Uniform module chrome (matches every other module). Keep in sync.
        2026-08-30: modules gained a persistent sidebar (MODULE_CONTRACT.md) —
@@ -26,7 +26,7 @@
     .sc-project:hover, .sc-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
     /* Tool cluster beside the profile */
     .sc-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; flex-wrap:wrap; }
-    .sc-topbar-tools .pd-btn { height:34px; width:34px; padding:0; font-size:13px; display:inline-flex; align-items:center; justify-content:center; background:transparent; border-color:transparent; }
+    .sc-topbar-tools .pd-btn { height:34px; width:34px; padding:0; font-size:var(--pd-fs-base); display:inline-flex; align-items:center; justify-content:center; background:transparent; border-color:transparent; }
     .sc-topbar-tools .pd-btn:hover { background:var(--pd-bg); border-color:var(--pd-line); }
     .sc-topbar-tools .pd-btn.is-active { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
     .sc-topbar-tools .pd-btn.sc-tb-labeled { width:auto; padding:0 12px; gap:6px; }
@@ -38,7 +38,7 @@
     .sc-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; padding:14px 16px; }
     .sc-kpi-l { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); margin-bottom:5px; }
     .sc-kpi-v { font-size:22px; font-weight:700; } .sc-kpi-s { font-size:12px; color:var(--pd-muted); margin-top:2px; }
-    .sc-ok { color:var(--pd-ok); } .sc-bad { color:var(--pd-bad); }
+    .sc-ok { color:var(--pd-ok-text); } .sc-bad { color:var(--pd-bad-text); }
     .sc-card { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:16px; margin-bottom:18px; }
     .sc-card h3 { margin:0 0 12px; font-size:15px; }
     .sc-svg { width:100%; height:auto; display:block; }

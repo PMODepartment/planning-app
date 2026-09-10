@@ -38,7 +38,7 @@
 .mw-pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:var(--pd-fs-xs); font-weight:700; border:1px solid var(--pd-line); background:var(--pd-bg); color:var(--pd-ink); white-space:nowrap; }
 .mw-pill.open { border-color:var(--pd-red); color:var(--pd-red); }
 .mw-age { font-weight:700; white-space:nowrap; }
-.mw-age.is-hot { color:var(--pd-bad); }
+.mw-age.is-hot { color:var(--pd-bad-text); }
 
 /* ---- Tasks page (my-tasks.html) — the "what I owe" half of My Work, as one
    unified, filterable worklist. Filter bar sits OUTSIDE the rebuilt results

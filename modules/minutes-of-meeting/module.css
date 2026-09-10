@@ -236,7 +236,7 @@
   border: 0; background: transparent; cursor: pointer; font-size: var(--pd-fs-lg); line-height: 1;
   color: var(--pd-line); padding: 2px 4px;
 }
-.il-mom-favbtn:hover { color: var(--pd-warn, #C77700); }
+.il-mom-favbtn:hover { color: var(--pd-warn-text); }
 .il-mom-favbtn.on { color: #D4A017; }
 /* The series page's own labelled pd-btn copy ("★ Favorited" / "☆ Favorite"
    text) — the Detail toolbar's own star is icon-only now, see .il-mom-favbig
@@ -252,7 +252,7 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
   border: 0; background: transparent; padding: 0 4px; font-size: var(--pd-fs-stat);
   line-height: 1; height: 34px; display: inline-flex; align-items: center; justify-content: center;
 }
-.il-mom-favbig:hover { color: var(--pd-warn, #C77700); }
+.il-mom-favbig:hover { color: var(--pd-warn-text); }
 .il-mom-favbig.on { color: #D4A017; }
 /* Item 5 — "if the meeting is recurring, the meeting title and favorite
    button should be fixed/sticky." Sticks to the top of whatever scrolls the
@@ -499,7 +499,7 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
 }
 .il-mom-acres button:last-child { border-bottom: 0; }
 .il-mom-acres button:hover { background: var(--pd-bg); }
-.il-mom-acres button b { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.il-mom-acres button b { font-family: var(--pd-mono); }
 .il-mom-acres .il-mom-acnote { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--pd-muted); }
 /* The per-minute activity modal reuses .il-mom-acres for its result pane; a
    plain (non-button) .il-mom-acrow is its "Searching…" / "no match" line. */
@@ -539,7 +539,7 @@ div.il-mom-acrow { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--p
   font-size: var(--pd-fs-xs); font-weight: 600; padding: 3px 9px; border-radius: 20px;
   background: var(--pd-bg); color: var(--pd-muted); border: 1px solid var(--pd-line);
 }
-.il-mom-state.on { background: #d4f5d4; color: #1a8f3a; border-color: #b6e8b6; }
+.il-mom-state.on { background: var(--pd-ok-bg); color: var(--pd-ok-text); border-color: var(--pd-ok-line); }
 
 .il-mom-addrow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
 .il-mom-carried {
@@ -897,7 +897,7 @@ div.il-mom-acrow { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--p
 /* ITEM 1 — the per-minute activity link. The chip carries the id and (once
    resolved) the activity name; the button beside it opens the shared picker. */
 .il-mi-actchip { max-width: 100%; }
-.il-mi-actchip code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.il-mi-actchip code { font-family: var(--pd-mono); }
 .il-mi-actchip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px; }
 .il-mi-actclear { background: none; border: 0; cursor: pointer; color: var(--pd-muted); font-size: var(--pd-fs-base); line-height: 1; padding: 2px 4px; }
 .il-mi-actclear:hover { color: var(--pd-red); }

@@ -33,6 +33,50 @@
      measures 5.84 light / 6.14 dark. Same trap, same fix, as the contracts
      `claim` mark (2026-08-25) and the issues aging value (2026-08-28). */
   --pd-danger-text: #C42127;
+  /* ⚠️⚠️ STATUS SURFACES — a tint / border / text TRIPLE per status, and the
+     reason they exist is that --pd-ok and --pd-warn CANNOT BE TEXT COLOURS.
+     Measured 2026-09-10 against the card surfaces (#FFFFFF light, #2B2C2B dark):
+
+         --pd-ok   #1f8f4e on white = 4.12:1   ← under AA
+         --pd-warn #C77700 on white = 3.46:1   ← well under AA
+
+     and `.pd-pill-ok` / `.pd-pill-warn` below painted their label in exactly
+     those two. So the shared status pill — the component every module was
+     supposed to reuse — was itself below AA, which is a large part of why NINE
+     modules hand-rolled their own green/amber/red instead. Fixing the token and
+     the component together is what makes reuse the easy path.
+
+     The -text values are NOT invented. They are the ones the modules already
+     converged on by hand (#12693a in contracts-claims / material-submittal /
+     cash-flow, #8A5300 in project-schedule), so migrating a module moves it
+     TOWARD the rest of the app rather than into a new look — the same rule the
+     type scale above follows. Measured on card, then on the .12 tint:
+
+         ok    #12693A  6.76 card / 5.85 tint  |  dark #34D27B  7.11 / 5.16
+         warn  #8A5300  6.33 card / 5.55 tint  |  dark #E0A008  6.14 / 4.57
+         bad   #C42127  5.84 card / 4.79 tint  |  dark #FF8A80  6.14 / 5.13
+
+     Every one clears AA on BOTH surfaces in BOTH themes.
+     ⚠️ --pd-bad-text is deliberately the SAME pair as --pd-danger-text and not a
+     second copy of it: `bad` is a status, `danger` is a destructive ACTION, and
+     they are free to diverge later. They agree today because the measurement
+     says so, not by coincidence.
+     ⚠️ The tints are rgba, not opaque hex, ON PURPOSE — an rgba tint composites
+     over whatever card it lands on, so one value is correct in both themes and a
+     module cannot get a white pill on a dark card by forgetting an override. */
+  --pd-ok-bg:   rgba(31,143,78,.12);   --pd-ok-line:   rgba(31,143,78,.28);   --pd-ok-text:   #12693A;
+  --pd-warn-bg: rgba(199,119,0,.12);   --pd-warn-line: rgba(199,119,0,.28);   --pd-warn-text: #8A5300;
+  --pd-bad-bg:  rgba(196,33,39,.12);   --pd-bad-line:  rgba(196,33,39,.28);   --pd-bad-text:  #C42127;
+  /* ⚠️ INFO is a FOURTH status, and it is here because the app already had it —
+     measured 2026-09-10: 24 blue declarations across five files in FOUR different
+     spellings (#2F6FBF ×11, #2f6fed ×5, #2563EB ×6, #1d4ed8 ×1). That is the
+     "each module was built by a different person" tell, in one hue. It marks the
+     neutral-informational states this app actually has — a linked/skill/spot row,
+     a planned-not-actual mark — which are not ok, warn or bad.
+     -text is #1D4ED8, one of the four already in use: 6.70 card / 5.66 tint light,
+     #93C5FD 7.77 / 5.48 dark. ⚠️ #2f6fed measured 3.84 on its own tint and was the
+     spelling nearest to failing, which is the argument for one token over four. */
+  --pd-info-bg: rgba(37,99,235,.12);   --pd-info-line: rgba(37,99,235,.28);   --pd-info-text: #1D4ED8;
   /* Type + shape */
   --pd-font: 'Gotham', 'Montserrat', 'Segoe UI', system-ui, -apple-system, sans-serif;
   /* Brandbook 2026 names Gotham the PRIMARY face and Avenir Next Condensed the
@@ -46,6 +90,24 @@
      entry is the primary stack so a machine with none of them degrades to the
      normal face rather than to a browser default serif. */
   --pd-font-cond: 'Avenir Next Condensed', 'Roboto Condensed', 'Segoe UI Semibold', var(--pd-font);
+  /* ⚠️⚠️ THE MONOSPACE FAMILY, AND IT IS A REAL RENDERING BUG ON WINDOWS, not a tidy-up.
+     Measured 2026-09-10: 12 hand-written monospace stacks across 7 files, in FIVE spellings —
+     and they do not render the same. Five of them are
+         ui-monospace, SFMono-Regular, Menlo, monospace
+     which names an Apple system font, an Apple font and a generic: **there is no Windows font
+     in that list at all**, so on Windows it falls through to the browser's default monospace,
+     while the stacks that name Consolas get Consolas. Two different faces, same app, same
+     screen — the Activity ID in the Meetings chip against the one in the Contracts table.
+     ⚠️ This token is NOT new. Contracts & Claims defined it correctly in its own `:root`,
+     under a comment warning that "a second definition is exactly how the two drift apart
+     again" — which was right, and which a module file cannot enforce, because module.css only
+     loads on its own page. Any other module writing var(--pd-mono) got nothing. Promoted here,
+     unchanged, so the warning is finally enforceable. "Liberation Mono" carries Linux. */
+  --pd-mono: ui-monospace, SFMono-Regular, 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
+  /* Brandbook 2026 p.29 names Calibri the DOCUMENT font — the face for things that are read as
+     a document rather than as the app. That is exactly what the print/export stylesheets emit,
+     and they were on Arial. Arial stays as the fallback for a machine without Calibri. */
+  --pd-font-doc: Calibri, 'Segoe UI', Arial, Helvetica, sans-serif;
 
   /* ⚠️ TYPE SCALE — EIGHT RUNGS, AND THEY ARE THE WHOLE SET.
      Measured 2026-09-08 before this block existed: **29 distinct font-size
@@ -330,8 +392,8 @@ a:hover { text-decoration: underline; }
 .pd-avatar:hover { background: var(--pd-red-dark); }
 .pd-usermenu {
   display: none; position: absolute; right: 0; top: 46px; width: 224px; z-index: 9999;
-  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0,0,0,.18); overflow: hidden;
+  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md);
+  box-shadow: var(--pd-shadow-lg); overflow: hidden;
 }
 .pd-usermenu.open { display: block; }
 .pd-usermenu-head { padding: 14px 16px; border-bottom: 1px solid var(--pd-line); }
@@ -461,7 +523,7 @@ a:hover { text-decoration: underline; }
 .pd-btn:hover { background: var(--pd-bg); border-color: var(--pd-red); color: var(--pd-red); text-decoration: none; }
 .pd-btn-primary { background: var(--pd-red); border-color: var(--pd-red); color: #fff; }
 .pd-btn-primary:hover { background: var(--pd-red-dark); border-color: var(--pd-red-dark); color: #fff; }
-.pd-btn-danger { background: transparent; border-color: var(--pd-bad); color: var(--pd-bad); }
+.pd-btn-danger { background: transparent; border-color: var(--pd-bad); color: var(--pd-bad-text); }
 .pd-btn-danger:hover { background: var(--pd-bad); border-color: var(--pd-bad); color: #fff; }
 
 /* ---- Segmented control (`.pd-seg`) ----
@@ -596,8 +658,8 @@ button.pd-psel-btn { height: auto; min-height: 30px; padding-top: 4px; padding-b
 .pd-psel-pop {
   position: absolute; top: calc(100% + 4px); left: 0; z-index: 1000;
   min-width: 320px; max-width: 460px; max-height: 72vh; overflow: auto;
-  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
-  box-shadow: 0 10px 28px rgba(0,0,0,.16); padding: 0;
+  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md);
+  box-shadow: var(--pd-shadow-lg); padding: 0;
 }
 /* Shared nav-tree list body — built by UI.renderNavListInto and reused
    verbatim by three call sites: this popover, the topbar UI.renderSwitcher
@@ -764,7 +826,7 @@ button.pd-psel-btn { height: auto; min-height: 30px; padding-top: 4px; padding-b
   white-space: nowrap; color: var(--pd-muted); background: var(--pd-bg); border: 1px solid var(--pd-line); }
 .pd-autosave-idle { opacity: .7; }
 .pd-autosave-busy { color: var(--pd-red); border-color: var(--pd-red); }
-.pd-autosave-ok { color: #1a7f37; border-color: #1a7f37; }
+.pd-autosave-ok { color: var(--pd-ok-text); border-color: var(--pd-ok-line); }
 .pd-autosave-err { color: var(--pd-red); background: rgba(238,49,36,.08); border-color: var(--pd-red); }
 
 /* ---- Theme toggle button (injected by theme.js) ---- */
@@ -809,6 +871,13 @@ html.pd-dark {
   --pd-red-mid: #6E2A25;
   --pd-ok: #34D27B; --pd-warn: #E0A008; --pd-bad: #EF5350;
   --pd-danger-text: #FF8A80;          /* see the light-mode note: 6.14:1 here */
+  /* Status surfaces — see the measured block in :root. The tints go a little
+     stronger on dark (.16/.32 vs .12/.28) because a 12% tint over #2B2C2B is
+     nearly invisible, where the same 12% over white is already a clear wash. */
+  --pd-ok-bg:   rgba(52,210,123,.16);  --pd-ok-line:   rgba(52,210,123,.32);  --pd-ok-text:   #34D27B;
+  --pd-warn-bg: rgba(224,160,8,.16);   --pd-warn-line: rgba(224,160,8,.32);   --pd-warn-text: #E0A008;
+  --pd-bad-bg:  rgba(239,83,80,.16);   --pd-bad-line:  rgba(239,83,80,.32);   --pd-bad-text:  #FF8A80;
+  --pd-info-bg: rgba(147,197,253,.16); --pd-info-line: rgba(147,197,253,.32); --pd-info-text: #93C5FD;
   --pd-shadow: 0 1px 3px rgba(0,0,0,.5);
   --pd-shadow-md: 0 4px 12px rgba(0,0,0,.55);
   --pd-shadow-lg: 0 8px 24px rgba(0,0,0,.6);
@@ -830,10 +899,15 @@ html.pd-dark .pd-module-card:hover { box-shadow: var(--pd-shadow-md); }
 
 /* status pills */
 .pd-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: var(--pd-fs-xs); font-weight: 500; }
-.pd-pill-ok { background: rgba(31,143,78,.12); color: var(--pd-ok); }
+/* ⚠️ The label is --pd-*-text, NOT --pd-ok / --pd-warn. Those two measure 4.12:1
+   and 3.46:1 on white and were this component's text colour until 2026-09-10 —
+   see the measured note beside the tokens. The tint literals moved to tokens in
+   the same pass so a module can build its own status chip out of the same three
+   values instead of inventing a fourth green. */
+.pd-pill-ok { background: var(--pd-ok-bg); color: var(--pd-ok-text); }
 .pd-pill-muted { background: var(--pd-line); color: var(--pd-muted); }
-.pd-pill-bad { background: rgba(196,33,39,.12); color: var(--pd-bad); }
-.pd-pill-warn { background: rgba(199,119,0,.12); color: var(--pd-warn); }
+.pd-pill-bad { background: var(--pd-bad-bg); color: var(--pd-bad-text); }
+.pd-pill-warn { background: var(--pd-warn-bg); color: var(--pd-warn-text); }
 
 /* Projects list. The group-head pane that used to sit beside it is gone —
    group heads are a toolbar filter now, not a folder column (see A2). */
@@ -867,8 +941,8 @@ html.pd-dark .pd-module-card:hover { box-shadow: var(--pd-shadow-md); }
 /* add dropdown */
 .pd-add-wrap { position: relative; }
 .pd-add-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; display: none;
-  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: 10px;
-  box-shadow: var(--pd-shadow); min-width: 220px; overflow: hidden; }
+  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md);
+  box-shadow: var(--pd-shadow-lg); min-width: 220px; overflow: hidden; }
 .pd-add-menu.open { display: block; }
 .pd-add-menu button { display: block; width: 100%; text-align: left; border: none; background: none;
   padding: 10px 14px; cursor: pointer; color: var(--pd-ink); font-size: var(--pd-fs-base); }
@@ -958,8 +1032,8 @@ html.pd-dark .pd-module-card:hover { box-shadow: var(--pd-shadow-md); }
 .pd-projsw-txt small:empty { display: none; }
 .pd-projsw-caret { color: var(--pd-muted); }
 .pd-projsw-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 40; display: none;
-  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: 10px;
-  box-shadow: var(--pd-shadow); min-width: 320px; max-height: 60vh; overflow: auto; }
+  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md);
+  box-shadow: var(--pd-shadow-lg); min-width: 320px; max-height: 60vh; overflow: auto; }
 .pd-projsw-menu.open { display: block; }
 /* The list body inside .pd-projsw-menu is the shared .pd-nt-* nav tree (see
    above) mounted into a .pd-nt-mount div, so the switcher's own CSS only
@@ -1507,8 +1581,8 @@ body { overflow-x: clip; }
 .pd-tabsdrop-caret { color: var(--pd-muted); flex: none; }
 .pd-tabsdrop-menu {
   position: absolute; top: calc(100% + 4px); left: 0; z-index: 40; display: none;
-  min-width: 220px; background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: 10px;
-  box-shadow: var(--pd-shadow); overflow: hidden;
+  min-width: 220px; background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md);
+  box-shadow: var(--pd-shadow-lg); overflow: hidden;
 }
 .pd-tabsdrop-menu.open { display: block; }
 .pd-tabsdrop-menu button {
@@ -1724,7 +1798,7 @@ html.pd-dark .pd-table tr.pd-grp > td { background: rgba(255,255,255,.05); }
   margin-top: 2px; font-size: var(--pd-fs-xs); color: var(--pd-muted); }
 .pd-module-figs .pd-fig b { color: var(--pd-ink); font-size: var(--pd-fs-base); font-weight: 700; margin-right: 3px; }
 /* Amber, not red: an open item is normal work in progress, not an error. */
-.pd-module-figs .pd-fig.warn b { color: var(--pd-warn); }
+.pd-module-figs .pd-fig.warn b { color: var(--pd-warn-text); }
 .pd-fig-when { font-size: var(--pd-fs-xs); }
 .pd-fig-load, .pd-fig-none { font-size: var(--pd-fs-sm); font-style: italic; }
 

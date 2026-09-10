@@ -52,10 +52,8 @@
   background:transparent; border-color:transparent; font-size:var(--ms-fs-base); }
 .ms-topbar-tools .pd-btn:hover { background:var(--pd-bg); border-color:var(--pd-line); }
 .ms-topbar-tools .pd-btn.ms-tb-labeled { width:auto; padding:0 12px; gap:6px; }
-.ms-topbar-tools .pd-btn.pd-btn-primary { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
-.ms-topbar-tools .pd-btn.pd-btn-primary:hover { filter:brightness(.94); }
 .ms-tb-sep { width:1px; align-self:stretch; margin:5px 3px; background:var(--pd-line); }
-.ms-clearbtn { color:var(--pd-bad,#dc2626); }
+.ms-clearbtn { color:var(--pd-bad-text); }
 .ms-clearbtn:hover { background:var(--pd-bad,#dc2626) !important; border-color:var(--pd-bad,#dc2626) !important; color:#fff; }
 
 /* ---- Filter bar --------------------------------------------------------- */
@@ -137,7 +135,7 @@
 .ms-mut { color:var(--pd-muted); }
 .ms-mini { color:var(--pd-muted); font-size:var(--ms-fs-micro); }
 .ms-r { text-align:right; white-space:nowrap; }
-.ms-code { font-family:ui-monospace,"SF Mono",Consolas,monospace; font-weight:700; font-size:var(--ms-fs-sm); white-space:nowrap; }
+.ms-code { font-family:var(--pd-mono); font-weight:700; font-size:var(--ms-fs-sm); white-space:nowrap; }
 .ms-item { font-weight:600; }
 .ms-sub { color:var(--pd-muted); font-size:var(--ms-fs-sm); margin-top:2px; max-width:340px;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -183,7 +181,7 @@ html.pd-dark .ms-pill.s-forsub    { background:rgba(120,130,145,.24);color:#c2cc
 html.pd-dark .ms-pill.s-resubmit  { background:rgba(154,74,21,.26);  color:#f0a877; border-color:rgba(154,74,21,.55); }
 html.pd-dark .ms-pill.s-rejected  { background:rgba(155,28,28,.26);  color:#f19a9a; border-color:rgba(155,28,28,.55); }
 html.pd-dark .ms-pill.s-info      { background:rgba(30,78,140,.26);  color:#8fbdf0; border-color:rgba(30,78,140,.55); }
-.ms-od { color:var(--pd-bad,#dc2626); font-weight:700; }
+.ms-od { color:var(--pd-bad-text); font-weight:700; }
 
 /* ---- Schedule link: Need-by column + float chip ------------------------ */* ---- Schedule-activity picker (searchable by ID *and* name) ------------ */* ---- Dashboard ---------------------------------------------------------- */
 .ms-dash { display:flex; flex-direction:column; gap:14px; }
@@ -209,7 +207,7 @@ html.pd-dark .ms-pill.s-info      { background:rgba(30,78,140,.26);  color:#8fbd
 .ms-kpi-v { font-size:var(--ms-fs-kpi); font-weight:800; margin-top:9px; line-height:1.05; letter-spacing:-.01em; }
 .ms-kpi-s { color:var(--pd-muted); font-size:var(--ms-fs-sm); margin-top:5px; }
 .ms-kpi.good .ms-kpi-v { color:#12693a; } html.pd-dark .ms-kpi.good .ms-kpi-v { color:#7fd6a2; }
-.ms-kpi.bad  .ms-kpi-v { color:var(--pd-bad,#dc2626); }
+.ms-kpi.bad  .ms-kpi-v { color:var(--pd-bad-text); }
 .ms-kpi.warn .ms-kpi-v { color:#b45309; } html.pd-dark .ms-kpi.warn .ms-kpi-v { color:#f0c469; }
 
 .ms-grid2 { display:grid; grid-template-columns:minmax(320px,1fr) minmax(340px,1.25fr); gap:14px; align-items:start; }
@@ -283,7 +281,7 @@ html.pd-dark .ms-pill.s-info      { background:rgba(30,78,140,.26);  color:#8fbd
 .ms-filelink:hover { text-decoration:underline; }
 .ms-filerm { border:0; background:none; cursor:pointer; color:var(--pd-muted); font-size:var(--ms-fs-lg);
   line-height:1; padding:0 4px; flex:none; }
-.ms-filerm:hover { color:var(--pd-bad,#dc2626); }
+.ms-filerm:hover { color:var(--pd-bad-text); }
 .ms-filefield input[type=file] { font-size:var(--ms-fs-sm); }
 
 /* ---- Modal / form ------------------------------------------------------- */
@@ -298,7 +296,7 @@ html.pd-dark .ms-pill.s-info      { background:rgba(30,78,140,.26);  color:#8fbd
 .ms-sec:first-child { margin-top:0; }
 /* Live preview of the composed 7-part submittal number */
 .ms-codeprev { grid-column:1/-1; background:var(--pd-bg); border:1px dashed var(--pd-line); border-radius:var(--pd-radius);
-  padding:8px 10px; font-family:ui-monospace,"SF Mono",Consolas,monospace; font-size:var(--ms-fs-base); font-weight:700; }
+  padding:8px 10px; font-family:var(--pd-mono); font-size:var(--ms-fs-base); font-weight:700; }
 .ms-codeprev span { color:var(--pd-muted); font-weight:400; font-family:var(--pd-font); font-size:var(--ms-fs-sm); }
 .ms-codeparts { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:8px; grid-column:1/-1; }
 

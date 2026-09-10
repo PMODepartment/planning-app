@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Resource &amp; Role Master · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910u7" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910v3" />
   <style>
     /* Uniform module chrome (matches every other module). 2026-08-30: modules
        gained a persistent sidebar (MODULE_CONTRACT.md) — .pd-content no longer
@@ -24,8 +24,7 @@
     .rl-project:hover, .rl-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
     .rl-topbar-tools { display:flex; align-items:center; gap:6px; margin-left:auto; flex-wrap:wrap; }
     .rl-search-input { height:34px; width:200px; font-size:13px; }
-    .rl-topbar-tools .pd-btn.rl-tb-labeled { height:34px; padding:0 12px; gap:6px; background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
-    .rl-topbar-tools .pd-btn.rl-tb-labeled:hover { filter:brightness(.94); }
+    .rl-topbar-tools .pd-btn.rl-tb-labeled { height:34px; padding:0 12px; gap:6px; }
     .rl-tb-sep { width:1px; align-self:stretch; margin:5px 3px; background:var(--pd-line); }
     @media (max-width:820px) { .rl-title-txt { display:none; } .rl-search-input { width:140px; } }
     .rl-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
@@ -35,7 +34,7 @@
     /* KPI cards */
     .rl-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:16px; }
     .rl-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; padding:13px 16px; }
-    .rl-kpi-v { font-size:22px; font-weight:800; line-height:1; } .rl-kpi-v.rl-bad { color:var(--pd-bad); }
+    .rl-kpi-v { font-size:22px; font-weight:800; line-height:1; } .rl-kpi-v.rl-bad { color:var(--pd-bad-text); }
     .rl-kpi-l { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); margin-top:6px; }
 
     /* Filter bar — collapsed by default, revealed via the topbar funnel toggle
@@ -76,8 +75,8 @@
     .rl-matrix tfoot td { font-weight:800; border-top:2px solid var(--pd-line); background:var(--pd-card); }
     .rl-u-ok   { background:rgba(22,163,74,.14); }
     .rl-u-warn { background:rgba(217,119,6,.20); }
-    .rl-u-over { background:rgba(220,38,38,.22); color:var(--pd-bad); font-weight:700; }
-    .rl-over-tag { font-size:10px; font-weight:700; color:var(--pd-bad); margin-left:6px; }
+    .rl-u-over { background:rgba(220,38,38,.22); color:var(--pd-bad-text); font-weight:700; }
+    .rl-over-tag { font-size:10px; font-weight:700; color:var(--pd-bad-text); margin-left:6px; }
     .rl-legend { display:flex; flex-wrap:wrap; gap:16px; margin-top:10px; font-size:12px; color:var(--pd-muted); }
     .rl-lg { display:inline-flex; align-items:center; gap:6px; } .rl-lg .sw { width:14px; height:14px; border-radius:3px; display:inline-block; }
 
@@ -112,7 +111,7 @@
     .rl-mo input { display:none; }
     .rl-mo label.on { background:var(--pd-accent); color:#fff; border-color:var(--pd-accent); }
     .rl-season-row { display:flex; gap:14px; align-items:center; flex-wrap:wrap; font-size:12px; }
-    .rl-warn { grid-column:1 / -1; font-size:11.5px; color:#b45309; margin:0; }
+    .rl-warn { grid-column:1 / -1; font-size:11.5px; color:var(--pd-warn-text); margin:0; }
     .rl-yr { grid-column:1 / -1; overflow:auto; max-height:260px; }
     .rl-yr table { border-collapse:collapse; width:100%; min-width:520px; font-size:12px; }
     .rl-yr th, .rl-yr td { padding:5px 8px; border-bottom:1px solid var(--pd-border); text-align:left; white-space:nowrap; }

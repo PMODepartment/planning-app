@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260812b"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910u7" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910v3" />
   <style>
     .ps-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
     .ps-tab { padding:8px 20px; cursor:pointer; font-weight:600; font-size:13px; color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
@@ -90,9 +90,9 @@
     /* Freshness badge for the cache-first (stale-while-revalidate) load */
     .ps-fresh { font-size:11px; font-weight:700; border-radius:999px; padding:2px 9px; white-space:nowrap; margin-left:6px; display:inline-flex; align-items:center; gap:5px; }
     .ps-fresh::before { content:""; width:7px; height:7px; border-radius:50%; display:inline-block; }
-    .ps-fresh-stale { color:var(--pd-warn); background:rgba(199,119,0,.12); }
+    .ps-fresh-stale { color:var(--pd-warn-text); background:rgba(199,119,0,.12); }
     .ps-fresh-stale::before { background:var(--pd-warn); animation:ps-fresh-pulse 1s ease-in-out infinite; }
-    .ps-fresh-live { color:var(--pd-ok); background:rgba(31,143,78,.12); }
+    .ps-fresh-live { color:var(--pd-ok-text); background:rgba(31,143,78,.12); }
     .ps-fresh-live::before { background:var(--pd-ok); }
     @keyframes ps-fresh-pulse { 0%,100% { opacity:1; } 50% { opacity:.3; } }
     /* ⚠️ No flex-wrap here originally — every control (undo/redo/File▾/Reports/Health/filter/
@@ -364,7 +364,8 @@
       color:var(--pd-danger-text); font-weight:700; background:transparent;
       border:1px solid var(--pd-red); border-radius:4px; white-space:nowrap; }
     body.ps-reporting .ps-toolbar .ps-rv-exit:hover { background:var(--pd-red-light); border-color:var(--pd-red); color:var(--pd-danger-text); }
-    .ps-topbar-tools .pd-btn { background:transparent; border-color:transparent; font-size:13px; }
+    .ps-topbar-tools .pd-btn { background:transparent; border-color:transparent; }
+    .ps-topbar-tools .pd-btn:not(.ps-tb-labeled) { font-size:var(--pd-fs-base); }
     .ps-topbar-tools .pd-btn:hover { background:var(--pd-bg); border-color:var(--pd-line); }
     .ps-topbar-tools .pd-btn:disabled { opacity:.35; cursor:not-allowed; }
     .ps-topbar-tools .pd-btn:disabled:hover { background:transparent; border-color:transparent; }
@@ -603,7 +604,7 @@
     .calwiz-rail { display:flex; flex-wrap:wrap; gap:6px; padding:10px 16px 0; }
     .calwiz-railstep { font-size:11px; color:var(--pd-muted); border:1px solid var(--pd-line); border-radius:999px; padding:3px 10px; }
     .calwiz-railstep.on { border-color:var(--pd-red); color:var(--pd-ink); font-weight:700; }
-    .calwiz-railstep.done { color:var(--pd-ok); border-color:var(--pd-ok); }
+    .calwiz-railstep.done { color:var(--pd-ok-text); border-color:var(--pd-ok); }
     .calwiz-lede { font-size:12.5px; color:var(--pd-ink); line-height:1.6; margin:0 0 12px; }
     .calwiz-opts { display:grid; gap:7px; }
     .calwiz-opts-tight { gap:5px; margin-top:6px; }
@@ -644,8 +645,8 @@
     .ps-colf-on .ps-gantt-head { height:68px; }
     .ps-status-pill { display:inline-block; padding:2px 9px; border-radius:999px; font-size:10.5px; font-weight:700; white-space:nowrap; }
     .ps-status-notstarted { background:var(--pd-line); color:var(--pd-muted); }
-    .ps-status-inprogress { background:rgba(199,119,0,.14); color:var(--pd-warn); }
-    .ps-status-completed { background:rgba(31,143,78,.14); color:var(--pd-ok); }
+    .ps-status-inprogress { background:rgba(199,119,0,.14); color:var(--pd-warn-text); }
+    .ps-status-completed { background:rgba(31,143,78,.14); color:var(--pd-ok-text); }
     /* Inline status dropdown — the pill IS a <select> so status changes in one click (no right-click → edit).
        Keeps the pill's colour by status; a small chevron signals it's changeable. */
     select.ps-status-pill { border:none; cursor:pointer; font-family:inherit; line-height:1.4; max-width:100%;
@@ -679,7 +680,7 @@
     .ps-coref-bad { color:var(--pd-red); border-color:var(--pd-red); }
     /* Inherited from a WBS branch rather than set on the row -- shown, but visibly not owned. */
     .ps-coref-inh { opacity:.62; font-style:italic; }
-    .ps-cctag { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11px; }
+    .ps-cctag { font-family:var(--pd-mono); font-size:11px; }
     .ps-cctag.unknown { color:var(--pd-red); }
     /* A package tag is neutral by design: unlike CO/MC it carries no judgement,
        it just names which contract lot the work belongs to. */
@@ -728,7 +729,7 @@
     .ps-cal-mo input { display:none; }
     .ps-cal-mo label.on { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
     .ps-cal-srow { display:flex; gap:10px; align-items:center; flex-wrap:wrap; font-size:11.5px; }
-    .ps-cal-warn { font-size:11.5px; color:#b45309; margin:4px 0 0; }
+    .ps-cal-warn { font-size:var(--pd-fs-xs); color:var(--pd-warn-text); margin:4px 0 0; }
     .ps-cal-yr { max-height:240px; overflow:auto; border:1px solid var(--pd-line); border-radius:8px; }
     .ps-cal-yr table { border-collapse:collapse; width:100%; font-size:11.5px; }
     .ps-cal-yr th, .ps-cal-yr td { padding:3px 7px; border-bottom:1px solid var(--pd-line); text-align:left; }
@@ -753,11 +754,18 @@
        alarm — the only loud one is the Change Order pill, which is the thing a planner scans for. */
     .ps-contag { display:inline-block; font-size:10px; font-weight:700; line-height:1.5; padding:0 5px; border-radius:3px;
                  background:var(--pd-line); color:var(--pd-ink); letter-spacing:.02em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
-    .ps-contag.hard { background:#FDECEA; color:#A32013; }         /* Mandatory / On — pins the date, overrides logic */
+    .ps-contag.hard { background:var(--pd-bad-bg); color:var(--pd-bad-text); }         /* Mandatory / On — pins the date, overrides logic */
     .ps-scopetag { display:inline-block; font-size:10px; font-weight:700; line-height:1.5; padding:0 6px; border-radius:9px; white-space:nowrap; }
     .ps-scopetag.mc { background:var(--pd-line); color:var(--pd-muted); }
-    .ps-scopetag.co { background:#FFF0D9; color:#8A5300; }
-    .ps-scopetag.co-strong { background:#E08A3C; color:#fff; }
+    .ps-scopetag.co { background:var(--pd-warn-bg); color:var(--pd-warn-text); }
+    /* ⚠️ co-strong is a SOLID amber fill and STAYS solid - being louder than .co is the
+       whole point of it. What changed is the ink. #fff on #E08A3C measures 2.56:1, under AA
+       at any size, and it was wrong in BOTH themes because the fill is a fixed literal that
+       never adapts. #231F20 on the same amber measures 6.32:1.
+       ⚠️ The ink is a LITERAL, deliberately, and must not become var(--pd-ink): that token
+       remaps to #F0EFEF on dark, which would put near-white back on this fixed amber and
+       reinstate the 2.56:1 this line exists to fix. A literal fill takes a literal ink. */
+    .ps-scopetag.co-strong { background:#E08A3C; color:#231F20; }
     .ps-coref { font-size:10.5px; color:var(--pd-muted); margin-left:5px; }
     /* A change-order activity is tinted across the whole row so it reads as "not in the original
        deal" wherever it sits in the sequence — which, by design, is in among main-contract work. */
@@ -795,8 +803,8 @@
     .ps-scope-n { font-weight:700; opacity:.75; margin-left:5px; font-size:11px; }
     .c-x { width:var(--c-x); }
     .ps-cp-tag { background:var(--pd-red); color:#fff; font-size:9px; font-weight:700; padding:1px 5px; border-radius:3px; letter-spacing:.03em; }
-    .ps-var-late { color:var(--pd-bad); font-weight:600; }
-    .ps-var-early { color:var(--pd-ok); }
+    .ps-var-late { color:var(--pd-bad-text); font-weight:600; }
+    .ps-var-early { color:var(--pd-ok-text); }
     .ps-bar.ps-near { outline:2px dashed #C77700; outline-offset:1px; }
     .ps-nearrow .c-name { color:#C77700; }
     .ps-colgrip { position:absolute; right:0; top:0; bottom:0; width:7px; cursor:col-resize; z-index:2; }
@@ -1119,8 +1127,8 @@
     /* "N more, not on screen" -> hover reveals WHICH ones, instead of a tooltip. */
     .ps-alg-more { position:relative; cursor:help; text-decoration:underline dotted; text-underline-offset:2px; }
     .ps-alg-morepop { display:none; position:absolute; bottom:calc(100% + 6px); left:0; z-index:60;
-      width:min(460px,80vw); max-height:46vh; overflow:auto; padding:10px 12px; border-radius:8px;
-      background:var(--pd-card); border:1px solid var(--pd-line); box-shadow:0 10px 28px rgba(0,0,0,.28);
+      width:min(460px,80vw); max-height:46vh; overflow:auto; padding:10px 12px; border-radius:var(--pd-radius-md);
+      background:var(--pd-card); border:1px solid var(--pd-line); box-shadow:var(--pd-shadow-lg);
       font-size:12px; line-height:1.5; color:var(--pd-ink); text-align:left; cursor:default; }
     /* Hover the label OR the panel itself, so the list stays open long enough to read/scroll. */
     .ps-alg-more:hover .ps-alg-morepop, .ps-alg-morepop:hover { display:block; }
@@ -1295,7 +1303,7 @@
     /* Progress Spotlight: highlight activities that should have progressed in the advanced window */
     .ps-bar.ps-spot { outline:2px solid #2563EB; outline-offset:1px; box-shadow:0 0 0 1px #2563EB; }
     .ps-mile.ps-spot { outline:2px solid #2563EB; }
-    .ps-spotrow .c-name { color:#2563EB; font-weight:700; }
+    .ps-spotrow .c-name { color:var(--pd-info-text); font-weight:700; }
     .ps-gantt-pane.ps-spotmode .ps-bar:not(.ps-spot),
     .ps-gantt-pane.ps-spotmode .ps-sum,
     .ps-gantt-pane.ps-spotmode .ps-mile:not(.ps-spot) { opacity:.22; }
@@ -1331,8 +1339,7 @@
        to the line above it so the two levels of the choice cannot be confused. */
     .pscl-tbl tr.pscl-sub > td { background:rgba(0,0,0,.02); border-top:0; }
     html.pd-dark .pscl-tbl tr.pscl-sub > td { background:rgba(255,255,255,.03); }
-    .pscl-warn { font-size:12px; color:#8A5300; background:#FFF0D9; border:1px solid #F0D9A8; border-radius:8px; padding:8px 10px; margin-bottom:14px; }
-    html.pd-dark .pscl-warn { color:#FFD79A; background:#3A2E17; border-color:#5A4620; }
+    .pscl-warn { font-size:var(--pd-fs-sm); color:var(--pd-warn-text); background:var(--pd-warn-bg); border:1px solid var(--pd-warn-line); border-radius:var(--pd-radius-md); padding:8px 10px; margin-bottom:14px; }
     .pscl-tbl { width:100%; border-collapse:collapse; font-size:13px; }
     .pscl-tbl th { position:sticky; top:0; z-index:1; background:var(--pd-bg); text-align:left; font-size:10.5px;
       font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:var(--pd-muted); padding:8px 12px;
@@ -1374,8 +1381,7 @@
     .sbld-kpi.pscl-hero .sbld-kpi-v { font-size:26px; letter-spacing:-.01em; }
     .sbld-kpi.pscl-warnk { border-left:3px solid var(--pd-warn); }
     .sbld-kpi-v.num { font-variant-numeric:tabular-nums; }
-    .pscl-ok { color:#0E7A4A; font-weight:700; }
-    html.pd-dark .pscl-ok { color:#4ED18B; }
+    .pscl-ok { color:var(--pd-ok-text); font-weight:700; }
     /* Step 4 — the cost stack. One row per location value, the bar sized by that location's SHARE
        of the selected activity's cost, so the tallest bar is where the money is. */
     .pscl-stk { display:flex; gap:16px; align-items:flex-start; overflow-x:auto; padding-bottom:6px; }
@@ -1440,7 +1446,7 @@
     .ps-vs-sel:disabled { opacity:.62; cursor:not-allowed; background:var(--pd-bg); }
     /* ⚠️ 30px of right padding, not a float: the text must wrap CLEAR of the ×. A floated or
        absolutely-positioned button over unpadded text overlaps the last line on a narrow pane. */
-    .ps-vs-warn { position:relative; font-size:12px; color:#8A5300; background:#FFF0D9; border-radius:6px; padding:6px 30px 6px 9px; }
+    .ps-vs-warn { position:relative; font-size:var(--pd-fs-sm); color:var(--pd-warn-text); background:var(--pd-warn-bg); border-radius:var(--pd-radius-md); padding:6px 30px 6px 9px; }
     .ps-vs-warnx { position:absolute; top:3px; right:4px; width:22px; height:22px; line-height:1;
       border:0; background:transparent; color:inherit; font-size:17px; cursor:pointer; border-radius:5px; opacity:.7; }
     .ps-vs-warnx:hover, .ps-vs-warnx:focus-visible { opacity:1; background:rgba(0,0,0,.08); }
@@ -1577,7 +1583,7 @@
     .ps-vs-tltick.yr { top:16px; height:26px; background:var(--pd-muted); }
     .ps-vs-tllab { position:absolute; top:2px; font-size:10px; color:var(--pd-muted); transform:translateX(-50%); white-space:nowrap; }
     .ps-vs-tlnow { position:absolute; top:16px; width:2px; height:26px; background:var(--pd-ok); }
-    .ps-vs-tlnowl { position:absolute; top:2px; font-size:9.5px; font-weight:700; color:var(--pd-ok); transform:translateX(-50%); }
+    .ps-vs-tlnowl { position:absolute; top:2px; font-size:9.5px; font-weight:700; color:var(--pd-ok-text); transform:translateX(-50%); }
     /* A 26px round grip — a 2px line cannot be grabbed with a finger. */
     .ps-vs-tlhandle { position:absolute; top:14px; width:26px; height:26px; margin-left:-13px; border-radius:50%;
       background:var(--pd-red); border:2px solid var(--pd-card); box-shadow:0 1px 5px rgba(0,0,0,.3); cursor:grab; touch-action:none; }
@@ -1585,29 +1591,6 @@
     body.ps-tl-drag { cursor:grabbing; user-select:none; }
     .ps-vs-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
     .ps-vs-note { font-size:12px; color:var(--pd-muted); }
-    /* ⚠️ 30px of right padding, not a float: the text must wrap CLEAR of the ×. A floated or
-       absolutely-positioned button over unpadded text overlaps the last line on a narrow pane. */
-    .ps-vs-warn { position:relative; font-size:12px; color:#8A5300; background:#FFF0D9; border-radius:6px; padding:6px 30px 6px 9px; }
-    .ps-vs-warnx { position:absolute; top:3px; right:4px; width:22px; height:22px; line-height:1;
-      border:0; background:transparent; color:inherit; font-size:17px; cursor:pointer; border-radius:5px; opacity:.7; }
-    .ps-vs-warnx:hover, .ps-vs-warnx:focus-visible { opacity:1; background:rgba(0,0,0,.08); }
-    .ps-vs-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
-    .ps-vs-seg > button { border:0; background:var(--pd-card); color:var(--pd-ink); font:inherit; font-size:12.5px;
-      padding:6px 11px; cursor:pointer; border-right:1px solid var(--pd-line); }
-    .ps-vs-seg > button:last-child { border-right:0; }
-    .ps-vs-seg > button.on { background:var(--pd-red); border-color:var(--pd-red); color:#fff; font-weight:700; }
-    /* HOLLOW, not merely inert. Owner 2026-09-07: *"if the per tower or consolidate option is
-       chosen, can you at least hollow the options for the other levels of details."* Right - the
-       `disabled` attribute stops the click but leaves the button looking live, and a control that
-       looks live and does nothing is the silent failure this module keeps recording. So a Detail
-       level a combined model cannot honestly draw is drawn hollow: no fill, dimmed ink, a dashed
-       divider and cursor:not-allowed. The tooltip still carries the reason. */
-    .ps-vs-seg > button:disabled { background:transparent; color:var(--pd-muted); opacity:.55;
-      cursor:not-allowed; border-right-style:dashed; font-style:italic; }
-    .ps-vs-seg > button:disabled:hover { background:transparent; }
-    /* The trade-vs-WBS disagreement badge in the "no level" list. */
-    .ps-vs-badge-warn { display:inline-block; margin-left:6px; padding:0 5px; border-radius:4px;
-      border:1px dashed var(--pd-line); color:var(--pd-muted); font-size:11px; cursor:help; white-space:nowrap; }
     .ps-vs-chips { display:flex; gap:6px; flex-wrap:wrap; }
     .ps-vs-chip { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--pd-line); background:var(--pd-card);
       color:var(--pd-ink); border-radius:999px; padding:4px 10px; font-size:12px; cursor:pointer; }
@@ -2108,7 +2091,7 @@
     .ps-table td { padding:8px 12px; border-bottom:1px solid var(--pd-line); }
     .ps-totals-row > td { font-weight:700; border-top:2px solid var(--pd-line); background:var(--pd-bg); }
     .ps-empty { text-align:center; padding:40px; color:var(--pd-muted); }
-    .ps-red { color:var(--pd-bad); } .ps-green { color:var(--pd-ok); }
+    .ps-red { color:var(--pd-bad-text); } .ps-green { color:var(--pd-ok-text); }
     /* ── Add/Edit Activity modal ────────────────────────────────────────────────
        ⚠️ `.pd-modal` is ITSELF the scroll container (max-height:90vh; overflow-y:auto in the shared
        dashboard.css) and the header/footer are its direct children — so on this form, which is ~2400px
@@ -2248,7 +2231,7 @@
     .ps-menu button { display:block; width:100%; text-align:left; border:none; background:none; padding:8px 14px;
       cursor:pointer; color:var(--pd-ink); font-size:13px; }
     .ps-menu button:hover { background:var(--pd-red-light); }
-    .ps-menu button.ps-menu-danger { color:var(--pd-bad); }
+    .ps-menu button.ps-menu-danger { color:var(--pd-bad-text); }
 
     /* ---- Schedule Health panel (DCMA-14-style quality checklist, OPC-inspired) ---- */
     .ps-health-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:200; display:none; }
@@ -2537,7 +2520,7 @@
     .ps-wbs-keys .ps-kbd { font-weight:600; }
     /* Paste-outline modal: source textarea beside a live parsed-tree preview */
     .ps-wbso-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; align-items:start; }
-    .ps-wbso-grid textarea { width:100%; height:260px; resize:vertical; font:12.5px/1.5 ui-monospace,Menlo,Consolas,monospace;
+    .ps-wbso-grid textarea { width:100%; height:260px; resize:vertical; font-size:var(--pd-fs-sm); line-height:1.5; font-family:var(--pd-mono);
       padding:8px 10px; border:1px solid var(--pd-line); border-radius:6px; background:var(--pd-bg); color:var(--pd-ink); }
     .ps-wbso-prev { height:260px; overflow:auto; border:1px solid var(--pd-line); border-radius:6px;
       background:var(--pd-bg); padding:8px 10px; font-size:12.5px; }
@@ -2625,7 +2608,7 @@
         padding:11px 12px; margin-bottom:9px; }
       .ps-mcard.is-cp { border-left-color:var(--pd-red); }
       .ps-mtop { display:flex; align-items:center; gap:8px; margin-bottom:3px; }
-      .ps-mid { font-family:ui-monospace,"SF Mono",Consolas,monospace; font-size:11.5px;
+      .ps-mid { font-family:var(--pd-mono); font-size:11.5px;
         font-weight:700; color:var(--pd-muted); }
       .ps-mstat { margin-left:auto; font-size:10.5px; font-weight:700; color:#fff;
         border-radius:999px; padding:2px 9px; white-space:nowrap; }
@@ -2667,7 +2650,7 @@
         background:var(--pd-card); border-right:1px solid var(--pd-line); display:flex; align-items:center;
         gap:5px; padding:0 6px; font-size:11px; white-space:nowrap; overflow:hidden; }
       .ps-mg-label.wbs { font-weight:700; }
-      .ps-mg-label .id { font-family:ui-monospace,Consolas,monospace; color:var(--pd-muted); font-size:10px; }
+      .ps-mg-label .id { font-family:var(--pd-mono); color:var(--pd-muted); font-size:10px; }
       .ps-mg-label .nm { overflow:hidden; text-overflow:ellipsis; }
       .ps-mg-track { position:relative; flex:0 0 auto; }
       .ps-mg-b { position:absolute; top:7px; height:12px; border-radius:3px; background:#6b7280; overflow:hidden; }
@@ -2758,7 +2741,7 @@
     .sbld-genpanel { border:1px solid var(--pd-line); border-radius:10px; padding:12px; background:var(--pd-card); min-width:0; }
     .sbld-genh { font-size:13px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; border-left:4px solid; padding-left:8px; margin-bottom:10px; }
     @media (max-width:900px){ .sbld-gen2 { grid-template-columns:1fr; } }
-    .sbld-del { width:32px; height:32px; flex:none; display:inline-flex; align-items:center; justify-content:center; color:var(--pd-bad); }
+    .sbld-del { width:32px; height:32px; flex:none; display:inline-flex; align-items:center; justify-content:center; color:var(--pd-bad-text); }
     .sbld-grab { cursor:grab; color:var(--pd-muted); flex:none; user-select:none; }
     /* step 2 — trade sequence rows */
     .sbld-seqrow { align-items:center; padding:8px 10px; border:1px solid var(--pd-line); border-radius:8px; background:var(--pd-card); cursor:grab; }
@@ -2872,8 +2855,8 @@
     /* The right-click menu. Lives on document.body (see libMenu), so it needs its own stacking
        context and a z-index above the sticky L1 headings inside the pane. */
     .sbld-libmenu { position:fixed; z-index:9000; min-width:210px; padding:4px;
-      background:var(--pd-card); border:1px solid var(--pd-line); border-radius:9px;
-      box-shadow:0 8px 26px rgba(0,0,0,.18); font-size:12.5px; }
+      background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius-md);
+      box-shadow:var(--pd-shadow-lg); font-size:var(--pd-fs-sm); }
     .sbld-libmenui { display:block; width:100%; text-align:left; border:0; background:none;
       font:inherit; color:var(--pd-ink); padding:6px 9px; border-radius:6px; cursor:pointer; }
     .sbld-libmenui:hover:not(:disabled) { background:var(--pd-bg); }
@@ -2944,7 +2927,7 @@
     .sbld-libtool:hover:not(:disabled) { color:var(--pd-ink); background:var(--pd-bg); }
     .sbld-libtool:disabled { opacity:.45; cursor:not-allowed; }
     .sbld-libnm { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .sbld-libcode { flex:none; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .sbld-libcode { flex:none; font-family:var(--pd-mono); }
     /* The one editable field on the screen, kept visually quiet until it is used or hovered so the
        pane reads as a structure rather than as a form. */
     /* The rung picker: two small buttons, the current rung inert. Sized to sit inside a 3px-tall
@@ -9641,7 +9624,7 @@
           vals.slice(0, 6).map(function (v) { return esc(v) + ' (' + p.srcVals[v] + ')'; }).join(' &middot; ') +
           (vals.length > 6 ? ' &middot; +' + (vals.length - 6) + ' more' : '') + '</div>' : '') +
         (p.conflicts.length
-          ? '<div style="color:var(--pd-warn,#b26a00);margin-top:6px;">&#9888; ' + p.conflicts.length +
+          ? '<div style="color:var(--pd-warn-text);margin-top:6px;">&#9888; ' + p.conflicts.length +
             ' activit' + (p.conflicts.length === 1 ? 'y already has' : 'ies already have') + ' a value at &ldquo;' + esc(t.name) +
             '&rdquo;. Those keep the value they have &mdash; nothing is overwritten &mdash; and their &ldquo;' + esc(src.name) + '&rdquo; value is dropped.</div>'
           : '<div style="color:var(--pd-muted);margin-top:6px;">No activity holds a value at both levels, so nothing is overwritten.</div>') +
@@ -10818,8 +10801,8 @@
     function vmarkHtml(s) {
       if (!s.lvl || !CAT_N) return '';
       var st = catState(s.lvl, s.val);
-      if (st === 'exact') return '<span class="lw-vmark" title="A place defined in your Schedule Setup." style="font-size:10px;font-weight:700;color:var(--pd-ok,#1a7f37);white-space:nowrap;">✓ defined</span>';
-      if (st) return '<span class="lw-vmark" title="Your Schedule Setup defines this place as ' + esc(st) + '. Two spellings of one place become two floors — use the button above the table to adopt the defined spelling." style="font-size:10px;font-weight:700;color:var(--pd-warn,#9a6700);white-space:nowrap;">≈ ' + esc(st) + '</span>';
+      if (st === 'exact') return '<span class="lw-vmark" title="A place defined in your Schedule Setup." style="font-size:10px;font-weight:700;color:var(--pd-ok-text);white-space:nowrap;">✓ defined</span>';
+      if (st) return '<span class="lw-vmark" title="Your Schedule Setup defines this place as ' + esc(st) + '. Two spellings of one place become two floors — use the button above the table to adopt the defined spelling." style="font-size:10px;font-weight:700;color:var(--pd-warn-text);white-space:nowrap;">≈ ' + esc(st) + '</span>';
       if (!catFor(s.lvl).length) return '';
       return '<span class="lw-vmark" title="Not one of the places defined in your Schedule Setup. That is allowed — it simply will not line up with the setup breakdown." style="font-size:10px;font-weight:700;color:var(--pd-muted);white-space:nowrap;">+ new</span>';
     }
@@ -21310,10 +21293,10 @@
         var f = pd(r.end_date), late = f && f < dd, stOpts = STATUS.indexOf(st) === -1 ? [st].concat(STATUS) : STATUS;
         return '<tr data-id="' + esc(r.id) + '"' + (e && Object.keys(e).length ? ' class="dirty"' : '') + '><td>' + esc(r.activity_id || '') + '</td><td>' + esc(r.activity_name || '') + '</td>' +
           '<td' + (late ? ' class="ps-bulk-late"' : '') + '>' + (r.end_date ? Fmt.date(r.end_date) : '—') + '</td>' +
-          '<td><select data-f="status">' + stOpts.map(function (o) { return '<option' + (o === st ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('') + '</select></td>' +
-          '<td><input class="pct" type="number" min="0" max="100" step="1" data-f="percent_complete" value="' + pct + '"></td>' +
-          '<td><input type="date" data-f="actual_start" value="' + as + '"></td>' +
-          '<td><input type="date" data-f="actual_finish" value="' + af + '"></td></tr>';
+          '<td><select class="pd-select" data-f="status">' + stOpts.map(function (o) { return '<option' + (o === st ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('') + '</select></td>' +
+          '<td><input class="pct pd-input" type="number" min="0" max="100" step="1" data-f="percent_complete" value="' + pct + '"></td>' +
+          '<td><input class="pd-input" type="date" data-f="actual_start" value="' + as + '"></td>' +
+          '<td><input class="pd-input" type="date" data-f="actual_finish" value="' + af + '"></td></tr>';
       }).join('') + '</tbody></table>';
     host.querySelectorAll('tr[data-id]').forEach(function (tr) {
       var id = tr.dataset.id;
@@ -32253,7 +32236,7 @@
             '<button class="pd-btn" id="zpw-del"' + (sel ? '' : ' disabled') + '>Delete</button>' +
             '<span class="ps-tb-div"></span>' +
             '<label class="zpw-grid-ctl" title="Corners land on a grid of this many plan units (the sheet is ' + ZP_W + ' across)">Snap' +
-              '<select id="zpw-grid">' + ZP_GRIDS.map(function (g) {
+              '<select class="pd-select" id="zpw-grid">' + ZP_GRIDS.map(function (g) {
                 return '<option value="' + g + '"' + (g === W.grid ? ' selected' : '') + '>' + (g ? g : 'Off') + '</option>';
               }).join('') + '</select></label>' +
             '<span class="ps-tb-div"></span>' +
@@ -39448,7 +39431,7 @@
     var body = model.rows.map(function (row) { return '<tr>' + row.map(function (c, i) { return '<td class="' + (model.align[i] === 'r' ? 'r' : '') + '">' + esc(String(c)) + '</td>'; }).join('') + '</tr>'; }).join('');
     if (model.totals) body += '<tr class="tot">' + model.totals.map(function (c, i) { return '<td class="' + (model.align[i] === 'r' ? 'r' : '') + '">' + esc(String(c)) + '</td>'; }).join('') + '</tr>';
     w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>' + esc(rep.name) + ' — ' + esc(projName()) + '</title>' +
-      '<style>body{font-family:Arial,Helvetica,sans-serif;color:#231F20;margin:28px;}' +
+      '<style>body{font-family:Calibri,'Segoe UI',Arial,Helvetica,sans-serif;color:#231F20;margin:28px;}' +
       'h1{font-size:18px;margin:0 0 2px;}.sub{color:#666;font-size:12px;margin:0 0 4px;}.note{color:#666;font-size:12px;margin:6px 0 12px;}' +
       'table{border-collapse:collapse;width:100%;font-size:11px;}th,td{border:1px solid #ccc;padding:4px 7px;text-align:left;}' +
       'th{background:#EE3124;color:#fff;text-transform:uppercase;font-size:9.5px;letter-spacing:.03em;}.r{text-align:right;}tr.tot td{font-weight:700;background:#f0f0f0;}' +
@@ -41738,7 +41721,7 @@
     var wbsList = rows.filter(function (r) { return isWbs(r) && r.wbs; }).sort(function (a, b) { return cmpCodeStr(a.wbs, b.wbs); });
     if (!wbsList.length) { html += '<p style="font-size:12px;color:var(--pd-muted);">Load a schedule to color WBS branches.</p>'; }
     else {
-      html += '<div class="ps-colors-row"><select id="ps-wbc-sel" style="flex:1;min-width:0;max-width:160px;">' +
+      html += '<div class="ps-colors-row"><select class="pd-select" id="ps-wbc-sel" style="flex:1;min-width:0;max-width:160px;">' +
         wbsList.map(function (w) { return '<option value="' + esc(w.wbs) + '">' + esc(w.wbs) + ' — ' + esc((w.activity_name || '').slice(0, 28)) + '</option>'; }).join('') +
         '</select><input type="color" id="ps-wbc-clr" value="#EE3124"><button class="pd-btn" id="ps-wbc-add">Add</button></div>';
       var wm = wbsColorMap(); var codes = Object.keys(wm).sort(cmpCodeStr);
