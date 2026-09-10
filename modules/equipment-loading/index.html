@@ -389,7 +389,7 @@
         <select class="pd-select eq-project" id="eq-project" title="Project"></select>
       </div>
       <div class="eq-tabs pd-tabsrc" role="tablist">
-        <button class="eq-tab active" data-view="loading">Loading</button>
+        <button class="eq-tab active" data-view="loading">Overview</button>
         <button class="eq-tab" data-view="register">Equipment</button>
         <button class="eq-tab" data-view="gantt">Gantt</button>
         <button class="eq-tab" data-view="site">Site Plan</button>
@@ -3271,13 +3271,17 @@
 
     // ⚠️ Converts this module's flat tab strip into the shared compact dropdown, which is what
     // lets `.pd-modulebar` stay on ONE row (see its `flex-wrap:nowrap` comment in dashboard.css).
+    // ⚠️ NO `opts.icon`: this module's <h1> stays in the bar and keeps its own icon beside the
+    // trigger, so passing one draws it TWICE. Only issues-lessons and progress-photos pass an
+    // icon, and only because their <h1> is hidden outright — the same split the 2026-09-04
+    // entry describes. Four other modules call this with no options for exactly this reason.
     // Registered as a THIRD DOMContentLoaded listener, deliberately: theme.js's topbar injection
     // must run before UI.initModuleTopbar() restructures the bar, and both are DOMContentLoaded
     // listeners fired in registration order. Registering last means both have already run — the
     // same reasoning risk-register documents, where calling initModuleTopbar() early was tried
     // and reverted.
     (function () {
-      function go() { if (window.UI && UI.tabsToDropdown) UI.tabsToDropdown('.eq-tabs', { icon: 'box' }); }
+      function go() { if (window.UI && UI.tabsToDropdown) UI.tabsToDropdown('.eq-tabs'); }
       if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go);
       else go();
     })();

@@ -96,6 +96,56 @@ developer, plug into one shared shell.
 ## Changelog
 
 
+### 2026-09-10 (w8) — Two follow-ups to (w6): a doubled module icon, and a tab called "Loading"
+
+Both reported by the owner off the live site, and both are (w6)'s doing.
+
+#### ⚠️⚠️ THE DOUBLED ICON — I PASSED `opts.icon` TO MODULES THAT STILL SHOW THEIR `<h1>`
+`UI.tabsToDropdown(sel, {icon})` inserts a module icon beside the trigger. That is correct **only
+when the module's own `<h1>` is hidden**, and the split is documented in the 2026-09-04 entry:
+
+- **`<h1>` hidden outright** → pass `opts.icon`: `issues-lessons` (its `module.js:884` sets
+  `.il-title` to `display:none`), `progress-photos` (no standalone `<h1>` at all). **2 modules.**
+- **`<h1>` stays in the bar** → pass **nothing**; its own icon rides beside the trigger.
+  `risk-register`, `stakeholder-map`, `contracts-claims`, `minutes-of-meeting`. **4 modules.**
+
+(w6) added the three new callers to the *first* group by passing an icon — but all three keep their
+`<h1>`, so the bar drew the module mark **twice**. `opts.icon` removed from all three; they now match
+the four-module pattern they belong to.
+
+**Measured, with the real `initModuleTopbar` + `tabsToDropdown` + `Icons.hydrate` run per module:
+every module renders exactly ONE module icon.** ⚠️ `issues-lessons` reports 2 in the harness because
+`module.js` — which is what hides its `<h1>` — is not loaded there; verified against the shipped source
+rather than waved away.
+
+#### "Loading" reads as a spinner
+Owner: *"the name 'Loading' should be renamed properly since it makes it seem that is loading."* The
+first tab of Manpower and Equipment was literally `Loading`, and once (w6) collapsed the strip into a
+dropdown the bar read **"⬛ Loading ▾"** — which looks exactly like a page that has not finished.
+Renamed to **Overview**: it is the module's landing view, the sibling tabs are nouns (Positions, Org
+Chart, Roster), and the module title already carries the word *Loading*.
+
+⚠️⚠️ **`data-view="loading"` IS UNCHANGED — only the label moved.** That value is what the URL hash
+carries (`#mp_view={"v":"loading"}`) and what `module.js` queries by
+(`.mp-tab[data-view="loading"]`), so renaming it would break every link anyone has saved and the
+module's own tab-activation. The visible word changed; the identifier did not.
+
+#### Verified
+- **9 modules, exactly 1 module icon each** (issues-lessons confirmed from source, see above).
+- `data-view="loading"` still present in both modules; only the button text differs.
+- **42 JS files + 30 inline blocks across 29 pages parse, 0 failures**; braces balanced, 0 NUL bytes.
+- `MODULE_V` → `20260910w8`.
+- ⚠️ **Three defects in my own harness on the way to this number**, all of which reported success or
+  nonsense before being fixed — worth recording because each is a different shape:
+  1. `eval`-ing `tabsToDropdown` across from the host lost its closure (`ReferenceError: esc is not
+     defined`), which produced an **empty result array — and `[].every()` is `true`**. An audit that
+     measures nothing reports a pass. Now ui.js is loaded *inside* the frame.
+  2. Counting every `svg` in the bar swept up Export/refresh/filter and reported 4–10 icons.
+  3. Counting `h1 [data-ico]` **and** `h1 svg` counted one icon twice — `Icons.hydrate()` puts the
+     svg *inside* the placeholder.
+- ⚠️ **Not verified signed in.**
+
+
 ### 2026-09-10 (w7) — The theme toggle has been missing on every logged-in module page
 
 Found while verifying (w6) on the live site: the console carried
