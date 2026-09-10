@@ -14980,13 +14980,42 @@
      drawing the schematic wrap rather than reporting an error about a step they never used.
      ========================================================================================== */
   var _vsZpMemo = null;
+  // ⚠️ The MEMO only. The fetched map is keyed by project and checked against `pid` at every
+  // read, so a repaint must not throw away a load that is still valid - that would re-fetch the
+  // same rows on every basis switch, zoom and filter change.
   function _vsZpClear() { _vsZpMemo = null; }
+  /* The saved plan, fetched once per project when the builder has none in memory. ⚠️ `_vsZpAsked`
+     is set even when the answer is EMPTY - otherwise a project with no plan would fetch, repaint,
+     find nothing, and fetch again on every single repaint. */
+  var _vsZpGot = null, _vsZpAsked = null, _vsZpBusy = false;
+  function _vsZpKick() {
+    if (_vsZpBusy || _vsZpAsked === pid || !pid) return;
+    if (!(window.ScheduleBuilder && ScheduleBuilder.zonePlanFetch)) { _vsZpAsked = pid; return; }
+    var want = pid;
+    _vsZpBusy = true;
+    ScheduleBuilder.zonePlanFetch(want).then(function (m) {
+      _vsZpBusy = false;
+      _vsZpAsked = want;
+      _vsZpGot = m || {};
+      // ⚠️ Only repaint if it CHANGES something and the planner is still on the same project and
+      // the card is still on screen. A repaint for an empty answer would be a flicker for nothing.
+      if (want !== pid || !Object.keys(_vsZpGot).length) return;
+      _vsZpMemo = null;
+      if (document.getElementById('ps-vstack')) { try { renderVStack(); } catch (e) {} }
+    }).catch(function () { _vsZpBusy = false; _vsZpAsked = want; });
+  }
   function _vsZpAll() {
     if (_vsZpMemo) return _vsZpMemo;
     var out = {};
     try {
       if (window.ScheduleBuilder && ScheduleBuilder.zonePlanByLabel) out = ScheduleBuilder.zonePlanByLabel() || {};
     } catch (e) { out = {}; }
+    /* ⚠️⚠️ THE SETUP TAB HAS USUALLY NEVER BEEN OPENED. `ScheduleBuilder` only holds a config
+       once it has, so on a cold open the line above returns {} and the traced plan may as well
+       not exist - which is exactly what the owner hit: the zones were drawn, saved, and the 3D
+       card still guessed. The saved setup is loaded once per project instead. */
+    if (!Object.keys(out).length && _vsZpGot && _vsZpAsked === pid) out = _vsZpGot;
+    if (!Object.keys(out).length) _vsZpKick();
     _vsZpMemo = out;
     return out;
   }
@@ -15539,7 +15568,34 @@
   function _vsPlanDefined() {
     try { return Object.keys(_vsZpAll()).length > 0; } catch (e) { return false; }
   }
-  function _vs3Foot() {
+  /* ⚠️⚠️ WHICH OF THE THREE THINGS IS WRONG. A plan can fail to reach this card in three ways,
+     and they are not interchangeable:
+       none    - nothing traced anywhere, or nothing SAVED yet -> attach and trace one;
+       nomatch - a plan exists, but not one storey on this card resolves to it. Almost always
+                 the floor's Code/Name in the setup is not what the ACTIVITIES carry as their
+                 level, so the two never join. This is the one a planner can fix in a minute,
+                 and it was being reported as 'no plan attached' - which sends them to redraw a
+                 drawing that was already right;
+       partial - some storeys matched. The rest keep their wrap slots, so it degrades.
+     ⚠️ Counted over the storeys this card is actually SHOWING, not over the setup, so a filtered
+     or single-tower card reports what is in front of the planner. */
+  function _vsPlanFit(model) {
+    var out = { state: 'none', hit: 0, n: 0, miss: [], have: [] };
+    var all;
+    try { all = _vsZpAll() || {}; } catch (e) { all = {}; }
+    out.have = Object.keys(all);
+    if (!out.have.length) return out;
+    var disp = (model && model.disp) || [];
+    disp.forEach(function (v) {
+      if (v === VS_NOLEV) return;
+      out.n++;
+      if (_vsZpFor(v)) out.hit++;
+      else if (out.miss.length < 4) out.miss.push(String(v));
+    });
+    out.state = out.hit ? (out.hit < out.n ? 'partial' : 'all') : 'nomatch';
+    return out;
+  }
+  function _vs3Foot(model) {
     // ⚠️ The compare sentence appears only under Planned vs Actual. Naming a channel that is not
     // being painted teaches a planner to look for something that is not there.
     var cmp = (_vsBasis === 'compare')
@@ -15553,11 +15609,28 @@
        dimensions, so the schematic warning stays either way; what varies is whether the plan
        arrangement is a guess or a statement. Claiming the planner's layout when none is defined
        would be the worse error, so the default is the cautious one. */
-    var lay = _vsPlanDefined()
-      ? '<b>Zones are drawn as you traced them</b> on the floor plan (Schedule Setup \u203a Floors &amp; Zones \u203a Plan). '
-      : '<b>Zone positions are a guess</b> (they wrap ' + (_vsPlanCols > 0 ? 'in ' + _vsPlanCols + ' column(s)' : 'automatically') +
-        '). Attach a floor plan and trace them in <b>Schedule Setup \u203a Floors &amp; Zones</b> \u2014 the <b>Plan</b> button on a ' +
+    var _fit = _vsPlanFit(model);
+    var _guess = '(they wrap ' + (_vsPlanCols > 0 ? 'in ' + _vsPlanCols + ' column(s)' : 'automatically') + ')';
+    var lay;
+    if (_fit.state === 'all') {
+      lay = '<b>Zones are drawn as you traced them</b> on the floor plan (Schedule Setup \u203a Floors &amp; Zones \u203a Plan). ';
+    } else if (_fit.state === 'partial') {
+      lay = '<b>' + _fit.hit + ' of ' + _fit.n + ' storeys are drawn as you traced them</b>; the rest ' + _guess +
+        ' \u2014 no plan resolves for ' + esc(_fit.miss.join(', ')) + (_fit.miss.length >= 4 ? '\u2026' : '') + '. ';
+    } else if (_fit.state === 'nomatch') {
+      /* ⚠️ NAME BOTH SIDES OF THE JOIN. A plan filed under `GF, F2` cannot meet storeys called
+         `Ground Floor, 2nd Floor`, and telling the planner to go and draw a plan they have
+         already drawn is the least useful thing this line could say. */
+      lay = '<b>A floor plan is traced, but it does not match these storeys</b>, so positions are a guess ' + _guess +
+        '. The plan is filed under <b>' + esc(_fit.have.slice(0, 4).join(', ')) + (_fit.have.length > 4 ? '\u2026' : '') +
+        '</b> and this card\u2019s storeys are <b>' + esc(_fit.miss.join(', ')) + (_fit.miss.length >= 4 ? '\u2026' : '') +
+        '</b>. A floor\u2019s <b>Code</b> or <b>Name</b> in <b>Schedule Setup \u203a Floors &amp; Zones</b> has to be what the ' +
+        'activities carry as their level \u2014 match them and this view draws the real outlines. ';
+    } else {
+      lay = '<b>Zone positions are a guess</b> ' + _guess +
+        '. Attach a floor plan and trace them in <b>Schedule Setup \u203a Floors &amp; Zones</b> \u2014 the <b>Plan</b> button on a ' +
         'floor \u2014 and this view draws the real outlines. ';
+    }
     return '<p class="ps-vs3-foot">' + cmp + lay + 'Schematic: the storeys, their order and the grade line are the ' +
       'same as the 2D view. The <b>footprint</b> is the zone count laid out on the plan grid you set ' +
       'above &mdash; the schedule holds no zone outlines or dimensions, so <b>no length or area is ' +
@@ -15577,7 +15650,7 @@
     if (!m) return '<div class="ps-vs-empty">Nothing to stack for this selection.</div>';
     _vs3Pending.push({ key: keyPrefix, model: m, color: baseColor });
     return _vs3Bar() + '<div class="ps-vs3-mount" data-vs3mount="' + esc(keyPrefix) + '">' +
-      '<div class="ps-vs3-load">Loading the 3D view…</div></div>' + _vs3Foot();
+      '<div class="ps-vs3-load">Loading the 3D view…</div></div>' + _vs3Foot(m);
   }
   function _vs3Mount(host) {
     if (!_vs3D || !_vs3Pending.length) return;
@@ -31769,13 +31842,23 @@
        label on an activity's location. Deep-copied, so a caller cannot edit the planner's setup.
        ⚠️ The polygons go too, not only the boxes — the 3D card extrudes the real outline, and
        handing it a box would throw away the whole point of tracing. */
-    function zpByLabel() {
+    // The live config's map. ⚠️ A THIN WRAPPER, so the stacking's cold-open path below and the
+    // in-memory path here can never index the plan two different ways.
+    function zpByLabel() { return zpByLabelOf(cfg); }
+    /* The same map for a config that is NOT the one being edited - the setup as it was saved,
+       fetched by the Vertical Stacking when the Schedule Setup tab has never been opened.
+       ⚠️ Resolves the floor -> plate pointer from the PASSED bag, never from cfg, so loading a
+       plan for a card cannot read or disturb a setup the planner has open elsewhere. */
+    function zpByLabelOf(c) {
       var out = {};
-      Object.keys(cfg.zoning || {}).forEach(function (g) {
-        var z = cfg.zoning[g];
+      if (!c || !c.zoning) return out;
+      var bag = zpNormAll(c.zonePlan || {});
+      Object.keys(c.zoning || {}).forEach(function (g) {
+        var z = c.zoning[g];
         if (!z || !z.floors) return;
         z.floors.forEach(function (f) {
-          var p = zpFor(f);
+          var _pid = bag.of[f.id] || bag.of['kind:' + floorKind(f)];
+          var p = _pid ? bag.plate[_pid] : null;
           if (!p || !p.polys.length) return;
           var H = zpH(p);
           var shape = {
@@ -36762,6 +36845,31 @@
          ⚠️ Deep-copied by zpByLabel: a caller that mutated a plate would be editing the planner's
          setup from another module, and the first symptom would be a layout changing on its own. */
       zonePlanByLabel: function () { try { return cfg ? zpByLabel() : {}; } catch (e) { return {}; } },
+      /* ⚠️⚠️ THE COLD-OPEN PATH. The Vertical Stacking is usually reached WITHOUT the Schedule
+         Setup tab ever having been opened, and until now that meant the traced floor plan simply
+         did not exist as far as the card was concerned. This reads the saved setup row directly.
+         ⚠️ It does NOT touch `cfg`: assigning it here would give the builder a config nobody
+         loaded, which `isDirty()` and `save()` would then reason about as if the planner had
+         opened it. The fetched config is used to build the map and thrown away.
+         ⚠️ Most recently updated wins, matching pickDefaultSetup - the card and the setup tab
+         must agree about which setup is 'the' one, or they would draw different buildings. */
+      zonePlanFetch: async function (projectId) {
+        if (!projectId) return {};
+        try {
+          var r = await sbc().from('schedule_builder').select('config,updated_at').eq('project_id', projectId);
+          if (r.error || !r.data || !r.data.length) return {};
+          var rows = r.data.slice().sort(function (a, b) {
+            return String(b.updated_at || '').localeCompare(String(a.updated_at || ''));
+          });
+          for (var i = 0; i < rows.length; i++) {
+            var m = zpByLabelOf(normalize(rows[i].config || {}));
+            // ⚠️ The most recent setup may hold no plan while an older one does. Falling through
+            // beats showing the guessed layout next to a plan the planner knows they drew.
+            if (Object.keys(m).length) return m;
+          }
+          return {};
+        } catch (e) { return {}; }
+      },
       /* ⚠️⚠️ THE COLD-OPEN GAP, CLOSED. `cfg` is only populated once the Schedule Setup tab has
          loaded a setup this session — so a planner who opens the Project Schedule and goes straight
          to the WBS matcher got an EMPTY catalogue, which is exactly when it would have helped most

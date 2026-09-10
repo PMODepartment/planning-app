@@ -95,6 +95,38 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### The 3D card could not see the floor plan unless the Setup tab had been opened (2026-09-10) — jasantos2
+
+Owner: *"i want to use that defined floor plan and apply it to the vertical stacking 3D? it is not
+reflecting? how do you make it reflect."*
+
+⚠️⚠️ **The plan lives in the Schedule Setup config, and `ScheduleBuilder` only holds a config once
+that tab has loaded one** — a caveat already written down for the schedule grid's default grouping
+and never carried across to the stacking. Trace the zones, save, reload, open Vertical Stacking:
+`cfg` is `null`, the bridge returns `{}`, and the card falls back to the guessed layout without
+erroring or saying why.
+
+- **The stacking now loads the saved setup itself** (`zonePlanFetch`), reading the setup row
+  directly. ⚠️ It never assigns the builder's live `cfg` — that would hand it a setup nobody opened,
+  which `isDirty()` and `save()` would then reason about. ⚠️ Most recently updated wins, matching the
+  setup tab, or the two would draw different buildings. ⚠️ One implementation of the label map
+  serves both paths, so they cannot index the plan two different ways.
+- ⚠️⚠️ **A project with no plan is marked as asked**, or it would fetch, repaint, find nothing and
+  fetch again on every repaint forever.
+- ⚠️⚠️ **The footer now says which of three things is wrong.** It printed *"attach a floor plan"* for
+  all of them — including when the plan exists and **no storey matches it**, which is almost always
+  the floor's Code/Name not being what the activities carry as their level. That case now says the
+  plan **is** traced, prints **both sides** of the join, and names the field to fix.
+
+**738 assertions across thirteen suites plus the runtime and extrusion checks, 0 failing**; 45 new,
+executed against a deliberately empty live config — the cold open itself. ⚠️ Controls run on HEAD:
+no fallback at all, and one footer line for every case. ⚠️ Three suites needed their **slice lists**
+extended rather than their expectations changed, and two **stubs were replaced with the real
+functions** while I was in there. ⚠️ **Not verified signed-in, and this change most needs it** — the
+fetch is a real query and the anon key has no grants, so the round trip has never run.
+
+`MODULE_V` → `20260910v1`. Detail: [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
 ### Snap to grid, and the traced layout finally reaches the Vertical Stacking (2026-09-10) — jasantos2
 
 Owner: *"can you add snapping to grid. also how come the zones defined are not shown in the vertical

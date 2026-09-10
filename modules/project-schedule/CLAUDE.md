@@ -13,6 +13,69 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### The 3D card could not see the floor plan unless the Setup tab had been opened (2026-09-10) — jasantos2
+
+Owner: *"i want to use that defined floor plan and apply it to the vertical stacking 3D? it is not
+reflecting? how do you make it reflect."*
+
+⚠️⚠️ **The plan lives in the Schedule Setup config, and `ScheduleBuilder` only holds a config once
+the Schedule Setup tab has loaded one.** That caveat was already written down — at
+`_adoptSetupGrouping`, for the grid's default grouping — and I never carried it across to the
+stacking. So the normal way of working broke it: trace the zones, save, reload, open Vertical
+Stacking. `cfg` is `null`, the bridge returns `{}`, and the card quietly falls back to the guessed
+layout. Nothing errored and nothing said why.
+
+### 1. The stacking loads the saved setup itself
+A new `ScheduleBuilder.zonePlanFetch(projectId)` reads the `schedule_builder` row directly when the
+builder holds nothing.
+- ⚠️ **It does not touch `cfg`.** Assigning the fetched config would hand the builder a setup nobody
+  opened, which `isDirty()` and `save()` would then reason about as if the planner had been editing
+  it. The config is used to build the map and thrown away.
+- ⚠️ **Most recently updated wins**, matching `pickDefaultSetup` — the card and the setup tab have to
+  agree which setup is *the* one, or they would draw different buildings. ⚠️ An older setup is tried
+  when the newest holds no plan, which beats guessing next to a plan the planner knows they drew.
+- ⚠️ **One implementation of the map.** `zpByLabel()` is now a one-line wrapper over `zpByLabelOf(c)`,
+  so the in-memory path and the cold-open path cannot index the plan two different ways.
+  `zpByLabelOf` resolves the floor→plate pointer from the **passed** bag, never from `cfg`.
+- ⚠️⚠️ **Asked is recorded even when the answer is empty.** Marking the project only on success would
+  make a project with no plan fetch, repaint, find nothing and fetch again — on every repaint,
+  forever. An empty answer also does **not** repaint: that would be a flicker for nothing.
+- ⚠️ A repaint clears the **memo** only, never the fetched map, or every basis switch, zoom and
+  filter change would re-read the same rows.
+
+### 2. ⚠️⚠️ And the footer now says WHICH of three things is wrong
+There are three ways the plan fails to reach the card, and the footer was printing *"attach a floor
+plan"* for all of them — including the case where the plan exists and is fine:
+- **none** — nothing traced, or nothing saved → attach and trace one.
+- ⚠️⚠️ **nomatch** — a plan exists, but **not one storey resolves to it**. Almost always the floor's
+  Code/Name in the setup is not what the activities carry as their level, so the two never join.
+  The footer now says the plan **is** traced, prints **both sides** of the join — *"filed under
+  `GF, F2`… this card's storeys are `Ground Floor, 2nd Floor`"* — and names the field to fix. Telling
+  a planner to draw a plan they have already drawn is the least useful thing that line could say.
+- **partial** — some storeys matched; it says how many and names the rest.
+
+### Verified
+**738 assertions across thirteen suites plus the runtime and extrusion checks, 0 failing** — 45 new.
+The map is **executed against a deliberately empty live `cfg`** (the cold open itself): keyed by
+floor name *and* code, polygons back in 0..1, the per-**kind** plate resolving on this path too, and
+a config whose plate is missing yielding `{}` rather than reading the live one. The three footer
+states are executed, including the un-levelled band not counting as a failed match and the
+four-name cap.
+⚠️ **The controls run on HEAD**: it had no fallback at all, and its footer printed the same "attach a
+plan" line for every case.
+⚠️ **Three suites needed their slice lists extended, not their expectations changed** — splitting
+`zpByLabel` and adding `_vsPlanFit` meant harness12, harness13 and harness15 were slicing half a
+call graph. ⚠️ While doing it I **replaced two stubs with the real functions**: both suites had been
+stubbing `_vsPlanDefined`, and now link the real `_vsPlanFit`/`_vsZpFor` with only `_vsZpAll` — the
+leaf that reads the builder — controlled.
+⚠️ **Not verified signed-in, and this change is the one that most needs it**: `zonePlanFetch` issues
+a real query against `schedule_builder`, and the anon key has no grants, so **the fetch itself has
+never run**. The map it builds is proved by execution; the round trip to the database is not.
+**That is the first thing to try** — trace a plan, reload the page, open Vertical Stacking in 3D,
+and check the footer says *"drawn as you traced them"* rather than either guess sentence.
+
+`MODULE_V` → `20260910v1`.
+
 ### Snap to grid, and the traced layout finally reaches the Vertical Stacking (2026-09-10) — jasantos2
 
 Owner: *"can you add snapping to grid. also how come the zones defined are not shown in the vertical
