@@ -13,6 +13,113 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### Consolidated drew a box on a fully traced project — two faults, both of them "the trades disagree" (2026-09-11 a1) — ethanrobles10
+
+Owner: *"how come when pressing the consolidated and combining 2 trades that have the same floor
+plan per floor but just different zones, the overall shape just resorts to a default rectangle. pls
+fix that."*
+
+They are right, and it was not one bug. Consolidated is the ONE card that cannot name a trade, and
+both halves of the plan pipeline treated that as "no plan" rather than as "all of them".
+
+### 1. ⚠️⚠️ THE BARE FLOOR KEY WAS EMITTED ONLY WHEN THE TRADES POINTED AT THE SAME PLATE
+`zpByLabelOf` keys the plan map `trade|floor`, and writes a bare `floor` key for the cards that span
+trades (per tower, Consolidated). That bare key was written only when every trade naming a floor
+pointed at the **same plate id** — and it cannot be. **Every trade keeps its own floors tree**, so
+two trades that traced *the very same outline* still point at two different floors, hence two
+different plates. The rule read that as a contradiction and emitted nothing.
+
+So on a project where every floor had been traced, twice, Consolidated was told there was no plan at
+all: `_arAt` stayed null, the plate fell back to `PLATE.cols × CELL` (the **wrap grid** — a layout
+for cells that have no plan), and the whole tower came out a box. The owner's report is exactly this
+case: same plan per floor, different zones drawn on it.
+
+**Now it picks the LARGEST traced footprint** (`zpBareShape`), and it does **not** union them:
+
+- ⚠️ A union needs polygon booleans this app does not carry. And simply concatenating two tilings of
+  the SAME floor puts two sets of coplanar caps inside one `ExtrudeGeometry` — the z-fighting this
+  view spent a week removing. The dodge that makes `_vsZpOutlineOf` work (adjacent zones share an
+  *edge*, and coincident opposite faces back-face cull) does not survive two overlapping *areas*.
+- ⚠️ The largest plate is the honest single answer: the slab is at least as big as the biggest thing
+  anyone traced on it, and a trade that traced only a core is a **subset** of that floor, not a rival
+  claim about it. What is lost is a wing only one trade traced that the largest plate does not cover;
+  the per-trade cards still draw each trade's own plan exactly, untouched.
+- ⚠️ Area is compared in **plate-proportioned** units (y ÷ `ar`), never raw 0..1 — normalising both
+  axes throws the sheet's aspect away, so without it a plan traced on a tall sheet measures the same
+  as a wide one covering twice the floor.
+- ⚠️ Ties keep the **first**, so the answer cannot depend on `cfg.zoning`'s key order.
+- ⚠️ `sources` travels on a **copy**. Tagging the original would make that one trade's own card claim
+  it was drawn from several plans.
+
+### 2. ⚠️⚠️ AND A TRADE CELL MATCHED NO ZONE, SO IT KEPT ITS GRID BOX
+Fixing the map alone would only have squared the box off. A Consolidated **card** splits each level
+row by TRADE (`_vsRowTradeCells`), so the cell label is `Structural Works`; it matches no zone on the
+plan, and the whole-floor fallback in `_vs3Build` was keyed on `n === 1` — true only where a single
+trade touched that storey. Every multi-trade storey drew wrap-grid boxes with a plan in hand.
+
+**A trade IS the whole floor** — not one place on the storey, all of them — so every cell of a
+trade-split row now takes the floor's outline.
+
+⚠️⚠️ **And that is precisely why they had to be banded in height.** A traced outline is positioned by
+its own coordinates (`_vs3PolyMesh` never reads the wrap slot), so handing the same outline to two
+trades would extrude two identical solids in the same place: coincident caps, z-fighting, one trade
+invisible behind the other. The storey's height is split between the trades present on it instead —
+the footprint stays true, every trade stays visible, and no trade is ever placed in a corner of the
+floor it does not occupy.
+
+- `bandN` is 1 everywhere else, and the band maths is then the identity — **untraced cards, per-trade
+  cards and every 2D card are unchanged**. The 2D card keeps its trade columns; a section cannot draw
+  a plan and was never wrong here.
+- The **fill line**, the **sliver rounding** and the **compare baseline mark** all measure against
+  `SHb = SH / bandN`. Left at `SH` a banded trade's baseline mark floats above its own slab, over the
+  trade stacked on top of it, and its fill line is sized for a slab n times taller than the one drawn.
+- ⚠️ **The zone-colour channel is guarded** (`_pgZone`). With `_pg` now set for trade cells,
+  `_vsZpColorOf` would have returned the floor outline's colour for every trade and repainted the
+  whole building one colour — deleting the channel that says which trade is which, which is the exact
+  failure the note beside `fill` was written to prevent. A one-cell storey still takes it: there the
+  cell IS the floor.
+- ⚠️ The band order is the trades **present on that storey**, not a fixed slot per trade — a storey
+  with no architectural work closes the gap rather than leaving a floating slab, so a trade's band can
+  sit lower on some floors than others.
+
+### 3. The footer says whose plan it is
+A Consolidated card drawn from the largest of several trades' plans now says so, in both the `all`
+and `partial` states. It is a real footprint but it is not "this card's plan", and a planner
+comparing it against a trade whose plan is smaller has to be able to see why. Silence would be the
+card quietly claiming a drawing it does not have.
+
+### 4. ⚠️ Regression fixed from `zd`: the timeline legend sat on the viewpoint bar
+Visible in the owner's screenshot — the legend covering the model's own **Display** control, with its
+date range behind it. The legend is pinned to the STAGE (one period for both panes in compare), but
+the stage's first rows belong to the panes: the pane label, and in 3D the viewpoint bar under it.
+`top:9px` was a constant; it is now **measured** from the viewport's offset inside the stage
+(`_vsFocusPlaceLegend`), which is the only thing that knows how tall that chrome is — it differs
+between 2D, 3D, single and compare. Called inside the same rAF as the fit/resize, because both rects
+read zero before layout.
+
+### Verified
+Two node harnesses driving the **shipped** code, sliced verbatim out of `index.html` (gitignored,
+deleted), plus a browser check of the legend against real pane chrome.
+
+| Checked | Result |
+|---|---|
+| `zpBareShape`, one trade | the shape is handed back **by identity**, untagged |
+| Owner's case: 2 trades, same outline, different zones | a shape is emitted (**was null**), `sources = 2`, equal area → the first wins deterministically, sheet proportions carried, per-trade shapes left untagged |
+| A trade that traced only a core | loses to the trade that traced the floor, in **either** argument order |
+| Aspect weighting | the deeper sheet measures larger and is picked; raw 0..1 would have tied |
+| Degenerate input | no polys / undefined polys → 0; `ar: 0` falls back to 1; an L-shape measures 0.75, not its box |
+| `bandN = 1` | **identity** — slices land at exactly the pre-change heights and offsets |
+| `bandN = 2` | trade 0 fills the lower half, trade 1 the upper; nothing overlaps; the two exactly fill the storey; each fills upward inside its own band; both go through the polygon path |
+| `bandN = 4` | four contiguous equal bands ending exactly at the storey top |
+| Band-scaled chrome | a 4× shorter band gets a proportionally thinner fill line; 0.4% still rounds away, 99.9% still rounds up |
+| Legend placement | with a pane label **and** a viewpoint bar above the viewport, `top` measured to 84px and the legend clears the chrome (`legendTop 99 ≥ viewportTop 90`) |
+
+⚠️ **Not verified against real data.** The anon key has no grants, so this has not been run against
+OPW101's own traced plans — what is proven is the plate-selection rule, the band geometry and the
+placement, not that the owner's two zoning trees resolve to the plates I expect. The footer's own
+verdict line (`_vsPlanFit`) is the thing to read first on the real project: on Consolidated it should
+now say **drawn as you traced them**, followed by the several-trades sentence.
+
 ### The focus window plays itself, at a speed you pick, and says which week you are looking at (2026-09-10 zd) — ethanrobles10
 
 Owner: *"For the vertical stacking full screen, allow a play button to see the progress over time,

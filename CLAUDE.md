@@ -95,6 +95,39 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### Consolidated drew a box on a project whose every floor was traced (2026-09-11) — ethanrobles10
+
+Owner: *"how come when pressing the consolidated and combining 2 trades that have the same floor
+plan per floor but just different zones, the overall shape just resorts to a default rectangle. pls
+fix that."*
+
+Two faults, and both are the plan pipeline reading "this card spans trades" as **no plan** rather
+than as **all of them**.
+
+- ⚠️⚠️ The plan map wrote a bare floor key only when every trade pointed at the **same plate id** —
+  and it never can: each trade keeps its own floors tree, so two trades that traced the identical
+  outline still point at two different plates. Consolidated, which can only read that key, was told
+  there was no plan and fell back to the wrap grid. It now takes the **largest** traced footprint —
+  not a union, which needs polygon booleans this app does not carry and would stack coplanar caps
+  inside one extrusion.
+- ⚠️⚠️ And a Consolidated row is split by **trade**, so the cell matched no zone and the whole-floor
+  fallback (keyed on `n === 1`) never fired. A trade IS the whole floor, so it now takes the floor's
+  outline — and the trades are **banded in height**, because a traced outline is positioned by its
+  own coordinates and two trades handed the same one would extrude two solids in the same place.
+- Untraced cards, per-trade cards and every 2D card are unchanged: the band maths is the identity at
+  `bandN = 1`. The footer now says when a footprint came from several trades' plans.
+- ⚠️ Regression fixed from `zd`: the new timeline legend sat on top of the 3D viewpoint bar (visible
+  in the owner's screenshot, covering the Display control). Its offset is measured from the
+  viewport's position inside the stage instead of being a constant.
+
+⚠️ **Not verified against real data** — the anon key has no grants. The plate-selection rule, the
+band geometry and the legend placement were measured against the shipped code in gitignored
+harnesses; that the owner's two zoning trees resolve to the plates expected has not been seen. Read
+the footer line under the model on Consolidated first.
+
+`MODULE_V` → `20260911a1`. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
 ### The vertical stacking's full-screen window plays itself, and says which week it is showing (2026-09-10) — ethanrobles10
 
 Owner: *"For the vertical stacking full screen, allow a play button to see the progress over time,

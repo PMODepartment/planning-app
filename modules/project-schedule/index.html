@@ -15882,16 +15882,55 @@
         // the floor-plan window: the block stops being a share of a grid and becomes the shape
         // somebody drew on the drawing.
         var _pg = _plate ? _vsZpPolysOf(_plate, c.label) : null;
+        /* ⚠️⚠️ WHETHER THESE POLYGONS ARE A ZONE, or the floor standing in for one. It decides the
+           ZONE-COLOUR channel below, and the two outline fallbacks answer it differently: on a
+           one-cell storey the cell IS the floor, so the floor's colour is that cell's colour; on a
+           trade-split row the cell is a TRADE, and painting every trade the floor outline's colour
+           would repaint the whole building one colour and delete the channel that says which trade
+           is which — the exact failure the note beside `fill` was written to prevent. */
+        var _pgZone = !!_pg;
         /* ⚠️ THE FLOOR'S OWN OUTLINE, when the storey is one cell and no zone matched. Keyed on
            `n`, not on `ci`: the question is whether this STOREY is undivided, not whether this
            cell happens to be the first of several. */
-        if (!_pg && _plate && n === 1) _pg = _vsZpOutlineOf(_plate);
+        if (!_pg && _plate && n === 1) { _pg = _vsZpOutlineOf(_plate); _pgZone = true; }
+        /* ==== CONSOLIDATED: A TRADE CELL IS THE WHOLE FLOOR ================================
+           Owner 2026-09-11: *"how come when pressing the consolidated and combining 2 trades
+           that have the same floor plan per floor but just different zones, the overall shape
+           just resorts to a default rectangle."*
+
+           ⚠️⚠️ TWO FAULTS MADE THAT BOX, and fixing the map alone would only have squared it off.
+           The second one is here: a Consolidated row is split by TRADE (see _vsRowTradeCells), so
+           the cell label is "Structural Works", it matches no zone on the plan, and the whole-floor
+           fallback above was keyed on `n === 1` — true only when a single trade touched that
+           storey. Every multi-trade storey therefore drew wrap-grid boxes even with a plan in hand.
+           A trade IS the whole floor: it is not one place on the storey, it is all of them.
+
+           ⚠️⚠️ AND THAT IS WHY THEY MUST BE BANDED IN HEIGHT. A traced outline is positioned by its
+           OWN coordinates (see _vs3PolyMesh — it never reads the wrap slot), so handing the same
+           outline to two trades would extrude two identical solids in the same place: coincident
+           caps, z-fighting, and one trade invisible behind the other. Splitting the storey's height
+           between the trades keeps the footprint true AND keeps every trade visible, without ever
+           claiming a trade occupies a corner of the floor it does not.
+           ⚠️ The order is the canonical trade order the cells already arrive in, so the trades
+           read the same way up the whole building. It is the order of the trades PRESENT on that
+           storey, not a fixed slot per trade: a storey nobody has architectural work on closes the
+           gap rather than leaving a floating slab with nothing under it, so a trade's band can sit
+           lower on some floors than on others.
+           ⚠️ UNTRACED CARDS ARE UNTOUCHED: no plate, no outline, `bandN` stays 1 and the wrap grid
+           is exactly what it was — the footprint there honestly IS the cell count on a grid. */
+        if (!_pg && _plate && model.tradeSplit) _pg = _vsZpOutlineOf(_plate);
+        var bandN = (model.tradeSplit && _pg && n > 1) ? n : 1;
+        var bandI = bandN > 1 ? ci : 0;
+        // ⚠️ The storey height THIS cell actually gets. Every fraction below is a fraction of the
+        // BAND, not of the storey, or a banded cell's fill line and sliver test would be sized for
+        // a slab n times taller than the one being drawn.
+        var SHb = SH / bandN;
         var pct = _vsProgress(c.list);
         var fill = c.color || baseColor;
         /* ⚠️ FALLS BACK PER CELL, not per card. A zone the plan does not name — and every cell
            of a card split by trade, where the cell IS a trade and not a zone — keeps the trade
            colour, so switching to zone colours never leaves a block with nothing to be. */
-        if (_vsZoneCol) { var _zc = _vsZpColorOf(_pg); if (_zc) fill = _zc; }
+        if (_vsZoneCol && _pgZone) { var _zc = _vsZpColorOf(_pg); if (_zc) fill = _zc; }
         var _tone = _vs3Tones(fill, T);
         var col = _tone.don;
         // ⚠️ THE SAME THREE CHANNELS THE 2D CELL USES, so the two cards cannot say different things:
@@ -15937,7 +15976,11 @@
            traced floor and an untraced one. The slice runs from `f0` to `f1` of the storey's
            height, both fractions of SH. */
         function zoneMesh(f0, f1, colr, opacity) {
-          var h2 = SH * (f1 - f0), base = SH * f0;
+          // ⚠️ f0/f1 are fractions of this cell's BAND. One band per cell when the row is split by
+          // trade over a traced floor, one band for the whole storey otherwise (bandN === 1, so
+          // this is the identity and every untraced card is byte-for-byte what it was).
+          var g0 = (bandI + f0) / bandN, g1 = (bandI + f1) / bandN;
+          var h2 = SH * (g1 - g0), base = SH * g0;
           if (_pg) return _vs3PolyMesh(_pg, colr, opacity, T, plateW, plateD, h2, y + base);
           return box(h2, base, colr, opacity);
         }
@@ -15946,8 +15989,8 @@
            still puts a seam across the zone and costs a mesh. Rounding it to 0 (or, at the other
            end, to a full storey) keeps the model honest to the eye and cheap to draw. */
         var _f = Math.max(0, Math.min(1, pct / 100));
-        if (_f * SH < 0.006) _f = 0;
-        if ((1 - _f) * SH < 0.006) _f = 1;
+        if (_f * SHb < 0.006) _f = 0;
+        if ((1 - _f) * SHb < 0.006) _f = 1;
         /* ⚠️⚠️ BOTH SLICES ARE THE ZONE. `byKey` holds every piece, because the hover trace has
            to outline the WHOLE zone: tracing only the remaining part would draw a line round
            "the part that is not done", which is a different thing and reads as a selection of
@@ -15956,8 +15999,8 @@
         /* ⚠️ THE LINE IS CARVED OUT OF THE DONE SLICE, never laid over it. Overlapping geometry
            is what produced the striped z-fighting this view had a week ago; the zone is still
            cut into pieces that touch and do not intersect — done body, line, remaining. */
-        var _wl = (_f > 0 && _f < 1) ? Math.min(SH * 0.07, 0.016) : 0;
-        var _wlF = _wl / SH, _bodyF = Math.max(0, _f - _wlF);
+        var _wl = (_f > 0 && _f < 1) ? Math.min(SHb * 0.07, 0.016) : 0;
+        var _wlF = _wl / SHb, _bodyF = Math.max(0, _f - _wlF);
         var _line = null;
         if (_f >= 1) { var _all = zoneMesh(0, 1, col, isNo ? 0.5 : 1); if (_all) parts.push(_all); }
         else {
@@ -16022,11 +16065,13 @@
             var _mw = _bb ? _bb.w * plateW : exW, _md = _bb ? _bb.h * plateD : exD;
             var _mx = _bb ? (_bb.x + _bb.w / 2 - 0.5) * plateW : x;
             var _mz = _bb ? (_bb.y + _bb.h / 2 - 0.5) * plateD : z;
-            var _mk = new T.Mesh(new T.BoxGeometry(_mw * 1.04, SH * 0.03 + 0.008, _md * 1.04),
+            var _mk = new T.Mesh(new T.BoxGeometry(_mw * 1.04, SHb * 0.03 + 0.008, _md * 1.04),
               // ⚠️ Theme-aware: a near-white slab is a mark on the light theme and a light
               // source on the dark one, where it was the brightest thing in the scene.
               new T.MeshBasicMaterial({ color: _vsDarkTheme() ? 0xdfe4ea : 0x2b3038 }));
-            _mk.position.set(_mx, y + SH * _at, _mz);
+            // ⚠️ Inside this cell's own BAND. Left at SH the baseline mark of a banded trade
+            // would float above its slab, over the trade stacked on top of it.
+            _mk.position.set(_mx, y + SH * ((bandI + _at) / bandN), _mz);
             _mk.userData.key = _key;
             grp.add(_mk); picks.push(_mk);
           }
@@ -16499,7 +16544,7 @@
      ⚠️ Counted over the storeys this card is actually SHOWING, not over the setup, so a filtered
      or single-tower card reports what is in front of the planner. */
   function _vsPlanFit(model) {
-    var out = { state: 'none', hit: 0, n: 0, miss: [], have: [], other: [], trade: null };
+    var out = { state: 'none', hit: 0, n: 0, miss: [], have: [], other: [], trade: null, merged: 0 };
     var all;
     try { all = _vsZpAll() || {}; } catch (e) { all = {}; }
     // ⚠️ FLOOR LABELS, not raw keys: the map is keyed `trade|floor`, and this list is printed
@@ -16516,9 +16561,13 @@
       /* ⚠️ The un-levelled band counts ONLY once it has a plan of its own. It is not a storey, so
          it must not drag the "n of m storeys" verdict down while nobody has given it one — but a
          planner who HAS drawn it should not then be told their plan matches nothing on the card. */
-      if (v === VS_NOLEV && !_vsZpFor(v, _tr)) return;
+      /* ⚠️ Resolved ONCE. It used to be called twice per storey — a lookup that now has to report
+         whether the answer came from several trades' plans, and a second call would throw that
+         away. */
+      var _pl = _vsZpFor(v, _tr);
+      if (v === VS_NOLEV && !_pl) return;
       out.n++;
-      if (_vsZpFor(v, _tr)) { out.hit++; return; }
+      if (_pl) { out.hit++; if (+_pl.sources > 1) out.merged++; return; }
       if (out.miss.length < 4) out.miss.push(String(v));
       /* ⚠️⚠️ "NOT TRACED" AND "TRACED, BUT UNDER ANOTHER TRADE" ARE DIFFERENT ANSWERS, and until
          the map was keyed by trade the second one could not even be asked — it was silently
@@ -16547,15 +16596,25 @@
        arrangement is a guess or a statement. Claiming the planner's layout when none is defined
        would be the worse error, so the default is the cautious one. */
     var _fit = _vsPlanFit(model);
+    /* ⚠️⚠️ A CARD THAT SPANS TRADES SAYS WHOSE PLAN IT IS DRAWING. Consolidated and per-tower
+       cards read the bare floor key, and when several trades traced the same floor that key now
+       answers with the LARGEST of their plans rather than refusing (see zpBareShape). That is a
+       real footprint, but it is not "the plan for this card" — it is one trade's plan standing for
+       all of them, and a planner comparing it against a trade whose plan is smaller has to be able
+       to see why. Silence here would be the card quietly claiming a drawing it does not have. */
+    var _multi = (_fit.merged && _fit.hit)
+      ? 'Several trades have traced these floors; this card is one building, so it is drawn from the ' +
+        '<b>largest</b> of their plans. Open a single trade to see that trade’s own outlines. '
+      : '';
     var _guess = '(they wrap ' + (_vsPlanCols > 0 ? 'in ' + _vsPlanCols + ' column(s)' : 'automatically') + ')';
     var lay;
     if (_fit.state === 'all') {
       /* ⚠️ SHORT WHEN THERE IS NOTHING TO FIX. The long form of this line was telling a planner
          where to go and what to do at a moment when they had already done it; the states below
          keep their instructions, because those are the ones that need acting on. */
-      lay = '<b>Drawn as you traced them.</b> ';
+      lay = '<b>Drawn as you traced them.</b> ' + _multi;
     } else if (_fit.state === 'partial') {
-      lay = '<b>' + _fit.hit + ' of ' + _fit.n + ' storeys are drawn as you traced them</b>; the rest ' + _guess +
+      lay = _multi + '<b>' + _fit.hit + ' of ' + _fit.n + ' storeys are drawn as you traced them</b>; the rest ' + _guess +
         ' \u2014 no plan resolves for ' + esc(_fit.miss.join(', ')) + (_fit.miss.length >= 4 ? '\u2026' : '') + '. ';
     } else if (_fit.other.length && _fit.state !== 'all') {
       /* ⚠️ This case is named BEFORE the name-mismatch one, because when both are true this is
@@ -16758,6 +16817,11 @@
     }
     return { byLevel: byLevel, levels: levels, disp: disp, groundAt: groundAt, detail: detail,
       above: above, below: below, rowCells: rowCells, cellKey: cellKey,
+      /* ⚠️ THE RENDERERS HAVE TO KNOW A ROW IS SPLIT BY TRADE, not just how many cells it has. A
+         trade cell is not a PLACE — every trade works across the whole storey — so the 3D card
+         gives each of them the floor's own outline and separates them in height instead of
+         putting them in plan slots they do not occupy. See the band in _vs3Build. */
+      tradeSplit: !!tradeSplit,
       trade: _trOne ? _tr : null };
   }
   function _vsTowerSVG(list, baseColor, keyPrefix, tradeSplit) {
@@ -17475,6 +17539,25 @@
   }
   // The legend's own markup. ⚠️ Five FIXED rows, emitted once and only ever written to afterwards —
   // see the note on `chrome`, which runs per frame and must create and destroy nothing.
+  /* The timeline legend clears the pane's own chrome.
+     ⚠️⚠️ MEASURED, NEVER A CONSTANT. The legend is pinned to the STAGE (one period for both panes
+     in compare), but the stage's first rows belong to the panes: the pane label, and in 3D the
+     viewpoint bar under it. At a fixed `top:9px` the legend sat straight on top of them — the
+     owner's screenshot caught it covering the model's own Display control, with the date range
+     behind it. The viewport's offset inside the stage is the only thing that knows how tall that
+     chrome is, and it differs between 2D, 3D, single and compare.
+     ⚠️ Called after LAYOUT (inside the same rAF as the fit/resize): read any earlier, both rects
+     are zero and the legend would be pinned to the top of a stage that had not been laid out. */
+  function _vsFocusPlaceLegend() {
+    var F = _vsFocus; if (!F || !F.wrap) return;
+    var lg = F.wrap.querySelector('#ps-vs-fz-leg'); if (!lg) return;
+    var st = F.wrap.querySelector('#ps-vs-fz-stage');
+    var vp = F.wrap.querySelector('.ps-vs-fz-vp');
+    if (!st || !vp) return;
+    var a = st.getBoundingClientRect(), b = vp.getBoundingClientRect();
+    if (!a.height || !b.height) return;
+    lg.style.top = (Math.max(0, Math.round(b.top - a.top)) + 9) + 'px';
+  }
   function _vsFocusLegendHTML() {
     var rows = '';
     for (var i = 0; i < 5; i++) {
@@ -17608,6 +17691,7 @@
       requestAnimationFrame(function () {
         requestAnimationFrame(function () {
           if (_vsFocus && _vsFocus.threed) _vs3FocusResize(); else _vsFocusFit();
+          _vsFocusPlaceLegend();
         });
       });
     };
@@ -17797,7 +17881,7 @@
           // ⚠️ Sized on the frame AFTER the modal has been laid out: a canvas measured before
           // that reports a 0-wide host and draws nothing, which is the 3D twin of the fit bug
           // recorded on the SVG path below.
-          requestAnimationFrame(function () { _vs3FocusResize(); });
+          requestAnimationFrame(function () { _vs3FocusResize(); _vsFocusPlaceLegend(); });
         }).catch(function (e) {
           wrap.querySelectorAll('[data-fz3d]').forEach(function (mt) {
             mt.innerHTML = '<div class="ps-vs-empty">The 3D view needs its drawing library from the network, and it did not load (' +
@@ -17816,7 +17900,7 @@
         _vsFocusReadout();
         // Measured after layout: a getBoundingClientRect taken before the modal has been laid out
         // reports 0 and the fit silently does nothing.
-        requestAnimationFrame(function () { _vsFocusFit(); });
+        requestAnimationFrame(function () { _vsFocusFit(); _vsFocusPlaceLegend(); });
       }
       // ---- The two speeds --------------------------------------------------------------------
       // ⚠️ `paint` swaps ONLY the svg in each pane. The first cut rewrote `wrap.innerHTML`, which
@@ -33706,6 +33790,55 @@
         });
         return out2;
       }
+      /* ==== WHAT A CARD THAT SPANS TRADES IS TOLD ==========================================
+         Owner 2026-09-11: *"how come when pressing the consolidated and combining 2 trades that
+         have the same floor plan per floor but just different zones, the overall shape just
+         resorts to a default rectangle. pls fix that."*
+
+         ⚠️⚠️ THE BARE KEY USED TO EMIT NOTHING THE MOMENT TWO TRADES DISAGREED, and "disagree"
+         was measured by PLATE IDENTITY. Every trade keeps its own floors tree, so two trades that
+         traced the very same outline still point at two DIFFERENT plates — which that rule read as
+         a contradiction. Consolidated (which passes no trade and can only read this key) was then
+         told there was no plan at all: the plate fell back to the wrap grid and the whole tower
+         came out a box, on a project whose every floor had been traced. The owner's report is
+         exactly that case — same plan per floor, different zones on it.
+
+         ⚠️⚠️ SO IT PICKS THE LARGEST TRACED FOOTPRINT. It does NOT union them, and that is
+         deliberate: a union needs polygon booleans this app does not carry, and simply
+         concatenating two tilings of the SAME floor stacks two sets of coplanar caps inside one
+         extrusion — the z-fighting this view spent a week removing. The largest plate is the
+         honest single answer. The slab is at least as big as the biggest thing anyone traced on
+         it, and a trade that traced only a core is a SUBSET of that floor, not a rival claim about
+         it. What is lost is a wing that only one trade traced and the largest plate does not
+         cover; the per-trade cards still draw each trade's own plan exactly.
+         ⚠️ Area is compared in PLATE-PROPORTIONED units (y divided by `ar`), never in raw
+         normalised ones — 0..1 on both axes throws the sheet's aspect away, so without it a plan
+         traced on a tall sheet measures the same as a wide one covering twice the floor.
+         ⚠️ Ties keep the FIRST, so the answer cannot depend on `cfg.zoning`'s key order.
+         ⚠️ `sources` travels with the shape so the card can SAY the footprint came from several
+         trades' plans, rather than presenting it as one drawing. It is set on a COPY: tagging the
+         original would make that one trade's own card claim the same thing. */
+      function zpShapeArea(sh) {
+        var a = 0, sc = (+sh.ar > 0.05 && +sh.ar < 20) ? (1 / +sh.ar) : 1;
+        (sh.polys || []).forEach(function (q) {
+          var p = q.pts || [], s = 0;
+          for (var i = 0, L = p.length; i < L; i++) {
+            var u = p[i], w = p[(i + 1) % L];
+            s += u[0] * (w[1] * sc) - w[0] * (u[1] * sc);
+          }
+          a += Math.abs(s) / 2;
+        });
+        return a;
+      }
+      function zpBareShape(shapes) {
+        if (shapes.length === 1) return shapes[0];
+        var best = shapes[0], bestA = zpShapeArea(shapes[0]);
+        for (var i = 1; i < shapes.length; i++) {
+          var a2 = zpShapeArea(shapes[i]);
+          if (a2 > bestA) { best = shapes[i]; bestA = a2; }
+        }
+        return { ar: best.ar, polys: best.polys, sources: shapes.length };
+      }
       var bare = {};
       Object.keys(c.zoning || {}).forEach(function (g) {
         var z = c.zoning[g];
@@ -33720,13 +33853,16 @@
             var k = zpNormCode(lab);
             if (!k) return;
             tks.forEach(function (tk) { if (!out[tk + '|' + k]) out[tk + '|' + k] = shape; });
-            // ⚠️ null means "two trades, two different plates" — a disagreement, not a plan.
-            if (!(k in bare)) bare[k] = { pid: _pid, shape: shape };
-            else if (bare[k] && bare[k].pid !== _pid) bare[k] = null;
+            // ⚠️ Every distinct plate this floor name resolves to, across trades — see zpBareShape.
+            if (!bare[k]) bare[k] = { pids: [], shapes: [] };
+            if (bare[k].pids.indexOf(_pid) < 0) { bare[k].pids.push(_pid); bare[k].shapes.push(shape); }
           });
         });
       });
-      Object.keys(bare).forEach(function (k) { if (bare[k]) out[k] = bare[k].shape; });
+      Object.keys(bare).forEach(function (k) {
+        var b = bare[k];
+        if (b && b.shapes.length) out[k] = zpBareShape(b.shapes);
+      });
       /* The un-levelled band's own plan, filed under the protocol key rather than a floor label —
          it has no floor, which is the whole point of it. ⚠️ Emitted from the same bag and the
          same builder as the storeys above; it is a plate like any other and may well be one a
