@@ -35,6 +35,91 @@
                        'category', 'stakeholder_group', 'email', 'contact',
                        'birthday', 'gift_tier', 'photo_path', 'photo_thumb_path'];
 
+
+  // ==========================================================================
+  // PROFILE FIELDS (2026-09-10) — directory-only columns
+  // --------------------------------------------------------------------------
+  // ⚠️⚠️ THESE ARE **NOT** ADDED TO `PERSON_FIELDS`, AND THAT DISTINCTION IS THE
+  //    WHOLE POINT. `PERSON_FIELDS` is the MIRROR contract: every one of those
+  //    columns exists on `stakeholder_map` too, and assignToProjects copies them
+  //    on to each project row. VERIFIED against the live database: none of the
+  //    five below exist on `stakeholder_map`, so mirroring them would make every
+  //    project-row insert fail with "column does not exist".
+  //    They belong to the person in the directory and stop there.
+  var PROFILE_ONLY = ['middle_initial', 'sub_sector', 'secondary_position', 'status', 'is_favorite'];
+  var PROFILE_FIELDS = PERSON_FIELDS.concat(PROFILE_ONLY).concat(['notes']);
+
+  // ⚠️ Which of them the live database actually has, learned from the rows that
+  // came back rather than assumed. A deployment that has not run
+  // 2026-09-10-stakeholder-profile-fields.sql simply does not return the keys.
+  // ⚠️ An EMPTY directory tells us nothing, so it reports "unknown" rather than
+  // "absent" — the caller then relies on the write-side retry below instead of
+  // silently dropping fields a planner typed.
+  function columnsFrom(rows) {
+    if (!rows || !rows.length) return null;
+    var seen = {};
+    rows.slice(0, 50).forEach(function (r) {
+      Object.keys(r || {}).forEach(function (k) { seen[k] = 1; });
+    });
+    return seen;
+  }
+  function hasCol(cols, name) { return !cols || Object.prototype.hasOwnProperty.call(cols, name); }
+
+  // Does this error mean "that column is not there"? PostgREST reports it two ways
+  // depending on whether the request died in Postgres or in its own schema cache.
+  function missingColumn(err) {
+    var m = String((err && (err.message || err.details || '')) || '');
+    var c = String((err && err.code) || '');
+    if (c === '42703' || c === 'PGRST204') return columnNameIn(m);
+    return /column .* does not exist|could not find the '.*' column/i.test(m) ? columnNameIn(m) : null;
+  }
+  function columnNameIn(msg) {
+    var m = msg.match(/column "?([a-z_]+)"? does not exist/i) ||
+            msg.match(/could not find the '([a-z_]+)' column/i) ||
+            msg.match(/'([a-z_]+)' column of/i);
+    return m ? m[1] : '__unknown__';
+  }
+
+  // Run a write, and if the database refuses a column this build knows about but
+  // that deployment does not have, DROP THAT COLUMN AND RETRY — reporting which
+  // ones were dropped so the caller can say so.
+  // ⚠️ It only ever strips from PROFILE_ONLY. A failure naming `name` or
+  //    `organization` is a real error and must surface, not be silently retried
+  //    into a row missing its identity.
+  async function writeTolerant(run, row) {
+    var dropped = [], attempt = Object.assign({}, row);
+    for (var i = 0; i <= PROFILE_ONLY.length; i++) {
+      var res = await run(attempt);
+      if (!res || !res.error) return { res: res, dropped: dropped };
+      var col = missingColumn(res.error);
+      if (!col || PROFILE_ONLY.indexOf(col) === -1) return { res: res, dropped: dropped };
+      delete attempt[col];
+      dropped.push(col);
+      // '__unknown__' means the message did not name the column; drop every
+      // optional one at once rather than looping without progress.
+      if (col === '__unknown__') {
+        PROFILE_ONLY.forEach(function (k) {
+          if (k in attempt) { delete attempt[k]; if (dropped.indexOf(k) === -1) dropped.push(k); }
+        });
+      }
+    }
+    return { res: await run(attempt), dropped: dropped };
+  }
+
+  // How complete one person's profile is, 0..1, over the fields a human fills in.
+  // ⚠️ `photo_thumb_path` is excluded — it is derived from `photo_path` by the
+  //    uploader, so counting both would score a photo twice.
+  var COMPLETENESS_FIELDS = ['name', 'organization', 'role_title', 'category',
+                             'email', 'contact', 'title', 'nickname', 'birthday', 'photo_path'];
+  function completeness(p) {
+    var have = 0;
+    COMPLETENESS_FIELDS.forEach(function (f) {
+      var v = p && p[f];
+      if (v != null && String(v).trim() !== '') have++;
+    });
+    return { have: have, of: COMPLETENESS_FIELDS.length, pct: have / COMPLETENESS_FIELDS.length };
+  }
+
   // ---- normalisation -------------------------------------------------------
   // ⚠️ Honorifics and suffixes are stripped as WHOLE TOKENS, never as substrings:
   // "Sr" as a substring would maul "Srinivasan", and "Jr" would maul "Jrue".
@@ -231,13 +316,138 @@
     return out.slice(0, limit);
   }
 
+  // ---- scanning the WHOLE directory for duplicates -------------------------
+  // ⚠️⚠️ SCORING EVERY PAIR IS O(N²) AND MEASURABLY TOO SLOW TO SHIP: 900 people is
+  //    404,550 pairs and **2.3 seconds** of blocked main thread, measured, not
+  //    estimated. So candidate pairs are BLOCKED first and only those are scored.
+  // ⚠️⚠️ THE BLOCKING KEY IS DERIVED FROM THE GATE IN `scoreTokens`, NEVER INVENTED
+  //    BESIDE IT. A non-zero score requires the two last tokens to be equal, within
+  //    ONE edit, or for one to be an initial of the other. Equality and the one-edit
+  //    case both fall out of the DELETION NEIGHBOURHOOD — two strings within one
+  //    edit always share a member of it — so those pairs cannot be missed. The
+  //    initial case needs a ONE-CHARACTER last token, which no blocking key can
+  //    cover, so those few people are compared against everyone.
+  // ⚠️ A blocking key that is wrong is invisible: it silently loses duplicates and
+  //    the screen reports "none found". `test_ops.js` therefore asserts this returns
+  //    the EXACT pair set an exhaustive scan returns, over a directory built to be
+  //    full of near-misses.
+  function lastTokensOf(p) {
+    var out = [];
+    nameVariants(p).forEach(function (v) {
+      var l = v.length ? v[v.length - 1] : '';
+      if (l && out.indexOf(l) === -1) out.push(l);
+    });
+    return out;
+  }
+
+  // {s} plus every one-character deletion of s. Two strings within one edit of each
+  // other always share at least one of these.
+  function delKeys(s) {
+    var out = [s];
+    for (var i = 0; i < s.length; i++) {
+      var d = s.slice(0, i) + s.slice(i + 1);
+      if (out.indexOf(d) === -1) out.push(d);
+    }
+    return out;
+  }
+
+  // Every pair in the directory that scores at or above the threshold, each pair
+  // once. `capped` means the candidate set was too large to score and NOTHING was
+  // scanned — deliberately not a partial answer, which would read as a whole one.
+  function duplicatePairs(directory, opts) {
+    opts = opts || {};
+    var rows = (directory || []).filter(Boolean);
+    var threshold = opts.threshold || THRESHOLD;
+    var maxPairs = opts.maxPairs || 120000;
+
+    var buckets = {}, shortIdx = [];
+    rows.forEach(function (p, i) {
+      var ls = lastTokensOf(p), isShort = false;
+      ls.forEach(function (s) {
+        if (s.length === 1) { isShort = true; return; }
+        delKeys(s).forEach(function (k) {
+          // ⚠️ A SET per bucket, not an array de-duplicated with indexOf afterwards.
+          //    One person contributes several deletion keys, so they can land in the
+          //    same bucket twice — and de-duplicating a 2,000-entry bucket with
+          //    indexOf is itself quadratic, which is the cost this whole function
+          //    exists to avoid.
+          (buckets[k] = buckets[k] || {})[i] = 1;
+        });
+      });
+      // a person with NO usable name still has to be reachable, or two blank rows
+      // would never be compared with each other
+      if (isShort || !ls.length) shortIdx.push(i);
+    });
+
+    // ⚠️⚠️ THE DECISION IS EXACT AND THE ENUMERATION ABORTS THE MOMENT IT PASSES
+    //    THE CAP. Two earlier cuts of this were both wrong, and only measuring showed
+    //    it: the first built the entire candidate list and checked the cap afterwards,
+    //    so a directory where everyone shares a surname spent **11 seconds**
+    //    enumerating 1,999,000 pairs and then reported "not scanned" — a cap that
+    //    only reports after paying the cost is not a cap. The second estimated the
+    //    cost from bucket sizes, which OVER-COUNTS about sevenfold (a pair sharing a
+    //    surname shares every one of its deletion keys), and refused a 300-person
+    //    directory that was 267ms of honest work.
+    // Offering a pair is O(1), so aborting at the cap costs at most `maxPairs` steps.
+    var seen = {}, cand = [], over = false;
+    function offer(i, j) {
+      if (i === j) return false;
+      var a = i < j ? i : j, b = i < j ? j : i;
+      var k = a + ':' + b;
+      if (seen[k]) return false;
+      seen[k] = 1;
+      cand.push([a, b]);
+      if (cand.length > maxPairs) { over = true; return true; }
+      return false;
+    }
+    var bkeys = Object.keys(buckets);
+    for (var bi = 0; bi < bkeys.length && !over; bi++) {
+      var idx = Object.keys(buckets[bkeys[bi]]);
+      for (var i = 0; i < idx.length && !over; i++) {
+        for (var j = i + 1; j < idx.length; j++) { if (offer(+idx[i], +idx[j])) break; }
+      }
+    }
+    for (var si = 0; si < shortIdx.length && !over; si++) {
+      for (var sj = 0; sj < rows.length; sj++) { if (offer(shortIdx[si], sj)) break; }
+    }
+
+    if (over) {
+      // ⚠️ The figure reported back is an UPPER BOUND derived from the bucket sizes,
+      //    not the exact count — the exact count is the thing we just refused to
+      //    compute. It is worded as "pairs worth comparing" on screen, never as a
+      //    precise total, because over-stating the work refused is the safe way round.
+      var bound = 0;
+      bkeys.forEach(function (k) {
+        var n = 0;
+        for (var _ in buckets[k]) n++;
+        bound += (n * (n - 1)) / 2;
+      });
+      bound += shortIdx.length * rows.length;
+      return { pairs: [], scanned: false, capped: true, considered: bound, total: rows.length };
+    }
+
+    var out = [];
+    cand.forEach(function (pr) {
+      var a = rows[pr[0]], b = rows[pr[1]];
+      var r = scorePair(a, b);
+      if (r.score >= threshold) {
+        out.push({ a: a, b: b, score: Math.round(r.score * 100) / 100, why: r.why });
+      }
+    });
+    out.sort(function (x, y) {
+      return y.score - x.score ||
+             String((x.a && x.a.name) || '').localeCompare(String((y.a && y.a.name) || ''));
+    });
+    return { pairs: out, scanned: true, capped: false, considered: cand.length, total: rows.length };
+  }
+
   // An EXACT identity hit — the unique index's own key, `lower(btrim(name))` +
   // `lower(coalesce(btrim(organization),''))`. ⚠️ Deliberately NOT the normalised
   // form above: this must agree with what the DATABASE will accept, or a "find"
   // that misses inserts a row the index then refuses and the save fails with a
   // constraint error the planner cannot act on.
   function exactKey(p) {
-    return String(p && p.name || '').trim().toLowerCase() + ' ' +
+    return String(p && p.name || '').trim().toLowerCase() + '\u0000' +
            String(p && p.organization || '').trim().toLowerCase();
   }
   function findExact(input, directory) {
@@ -262,7 +472,10 @@
 
   function personRow(fields, uid) {
     var row = {};
-    PERSON_FIELDS.forEach(function (f) {
+    // ⚠ PROFILE_FIELDS, not PERSON_FIELDS: this row is going into `stakeholders`,
+    //   which owns the extra profile columns. The mirror on to stakeholder_map uses
+    //   PERSON_FIELDS and must NOT gain them.
+    PROFILE_FIELDS.forEach(function (f) {
       if (fields[f] !== undefined) row[f] = fields[f] === '' ? null : fields[f];
     });
     row.name = String(fields.name || '').trim();
@@ -279,7 +492,10 @@
   async function createPerson(sb, fields, uid) {
     var row = personRow(fields, uid);
     if (!row.name) throw new Error('A name is required.');
-    var ins = await sb.from(DIR).insert(row).select('*');
+    // ⚠ writeTolerant drops only the OPTIONAL profile columns a deployment has not
+    //   migrated yet, and reports which. A failure naming `name` still surfaces.
+    var w = await writeTolerant(function (r) { return sb.from(DIR).insert(r).select('*'); }, row);
+    var ins = w.res;
     if (ins.error) {
       if (String(ins.error.code) === '23505' || /duplicate key|already exists/i.test(ins.error.message || '')) {
         var again = await sb.from(DIR).select('*').ilike('name', row.name).limit(50);
@@ -290,7 +506,7 @@
       }
       throw ins.error;
     }
-    return { person: (ins.data || [])[0] || null, existed: false };
+    return { person: (ins.data || [])[0] || null, existed: false, dropped: w.dropped };
   }
 
   // Put one directory person on to N projects, as stakeholder_map rows.
@@ -400,8 +616,13 @@
     normName: normName, normOrg: normOrg, tokens: tokens,
     editWithin: editWithin, scorePair: scorePair, nameVariants: nameVariants,
     matchCandidates: matchCandidates, findExact: findExact, exactKey: exactKey,
+    duplicatePairs: duplicatePairs,
     missingTable: missingTable,
     createPerson: createPerson, assignToProjects: assignToProjects,
-    mergePeople: mergePeople, personRow: personRow
+    mergePeople: mergePeople, personRow: personRow,
+    PROFILE_FIELDS: PROFILE_FIELDS, PROFILE_ONLY: PROFILE_ONLY,
+    columnsFrom: columnsFrom, hasCol: hasCol, missingColumn: missingColumn,
+    writeTolerant: writeTolerant, completeness: completeness,
+    COMPLETENESS_FIELDS: COMPLETENESS_FIELDS
   };
 })();

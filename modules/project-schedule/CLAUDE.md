@@ -100,7 +100,7 @@ passed the source). Nothing was lost — the pre-patch snapshot plus the patch s
 byte-identically — and the harness now **refuses** any output path that is not a `_scratch*` file.
 ⚠️ **Not verified signed-in** — the image upload still has never run against the real bucket.
 
-`MODULE_V` → `20260910t1`.
+`MODULE_V` → `20260910u3`.
 
 ### The floor plan window gets tools: shapes, undo, clipboard, and naming the zone (2026-09-10) — jasantos2
 

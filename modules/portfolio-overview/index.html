@@ -191,6 +191,113 @@
     .po-dir-mrow em { margin-left:auto; font-style:normal; font-size:11px; color:var(--pd-muted);
       text-align:right; max-width:180px; }
     .po-dir-note { display:block; margin-top:8px; font-size:11.5px; color:var(--pd-muted); line-height:1.5; }
+    /* ---- The Universe: banded card grid (adopted 2026-09-10) ---- */
+    /* A-Z jump strip. Every letter is rendered, present or not: a strip that only
+       shows letters in use jumps around as you type, and a dimmed letter is the
+       useful answer to "is there anyone under Q?". */
+    /* ---- Directory Health ------------------------------------------------
+       Bars rather than a chart library: this file draws its S-curve with hand-rolled
+       inline SVG and pulls in no chart library anywhere, and a proportion bar is the
+       one shape that needs no axis to be read. */
+    .po-hl-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(330px,1fr)); gap:12px; }
+    .po-hl-panel { background:var(--pd-card); border:1px solid var(--pd-line);
+      border-radius:var(--pd-radius-md); padding:14px 15px; }
+    .po-hl-panel h3 { margin:0 0 11px; font-size:11px; font-weight:700; letter-spacing:.06em;
+      text-transform:uppercase; color:var(--pd-muted); display:flex; align-items:baseline; gap:8px; }
+    .po-hl-panel h3 em { font-style:normal; letter-spacing:0; text-transform:none;
+      font-weight:400; font-size:11px; margin-left:auto; }
+    .po-hl-bars { display:flex; flex-direction:column; gap:6px; }
+    .po-hl-bar { display:grid; grid-template-columns:minmax(0,1fr) 92px auto; align-items:center;
+      gap:9px; font-size:12px; }
+    .po-hl-k { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .po-hl-t { height:7px; border-radius:4px; background:var(--pd-line); overflow:hidden; }
+    .po-hl-t i { display:block; height:100%; background:var(--pd-red); border-radius:4px; }
+    .po-hl-n { font-variant-numeric:tabular-nums; font-weight:600; font-size:11.5px;
+      color:var(--pd-muted); white-space:nowrap; }
+    /* ⚠ A warned row is tinted, never recoloured to a literal — the 2026-09-03 (u)
+       entry records a fill painted literally on both themes. */
+    .po-hl-bar.is-warn .po-hl-t i { background:var(--pd-muted); }
+    .po-hl-bar.is-warn .po-hl-k { color:var(--pd-muted); }
+    .po-hl-none, .po-hl-note { margin:0; font-size:11.5px; color:var(--pd-muted); line-height:1.5; }
+    .po-hl-note { margin-top:9px; }
+    .po-hl-dups { display:flex; flex-direction:column; gap:5px; }
+    .po-hl-dup { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) auto;
+      align-items:center; gap:7px; width:100%; text-align:left; font:inherit; font-size:12px;
+      padding:7px 9px; border:1px solid var(--pd-line); border-radius:var(--pd-radius);
+      background:var(--pd-card); color:var(--pd-ink); cursor:pointer; }
+    .po-hl-dup:hover { border-color:var(--pd-red); }
+    .po-hl-dn { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
+    .po-hl-dv { font-size:10.5px; color:var(--pd-muted); }
+    .po-hl-dup em { grid-column:1/-1; font-style:normal; font-size:11px; color:var(--pd-muted); }
+    .po-hl-ds { font-variant-numeric:tabular-nums; font-size:11px; font-weight:700; color:var(--pd-red); }
+    .po-dir-bands { display:flex; flex-wrap:wrap; gap:4px; margin:0 0 14px; align-items:center; }
+    .po-dir-band, .po-dir-bandall {
+      display:inline-flex; align-items:center; gap:4px; min-width:26px; justify-content:center;
+      padding:4px 7px; border:1px solid var(--pd-line); border-radius:var(--pd-radius);
+      background:var(--pd-card); color:var(--pd-ink); font-size:12px; font-weight:600; cursor:pointer;
+    }
+    .po-dir-bandall { min-width:auto; }
+    .po-dir-band i { font-style:normal; font-size:10px; font-weight:600; color:var(--pd-muted); }
+    .po-dir-band:hover:not(:disabled), .po-dir-bandall:hover { border-color:var(--pd-red); color:var(--pd-red); }
+    .po-dir-band.on, .po-dir-bandall.on { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
+    .po-dir-band.on i { color:rgba(255,255,255,.85); }
+    /* ⚠ Dimmed and un-clickable, NOT hidden -- see the note above. */
+    .po-dir-band.is-empty { opacity:.35; cursor:default; }
+
+    .po-dir-sec { margin-bottom:18px; }
+    .po-dir-sechead {
+      display:flex; align-items:center; gap:8px; margin:0 0 8px; font-size:13px; font-weight:700;
+      color:var(--pd-ink); border-bottom:1px solid var(--pd-line); padding-bottom:5px;
+    }
+    .po-dir-sechead span { font-size:11px; font-weight:600; color:var(--pd-muted); }
+    .po-dir-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:10px; }
+    .po-dir-card {
+      position:relative; display:flex; gap:11px; align-items:flex-start; padding:12px 13px;
+      border:1px solid var(--pd-line); border-radius:var(--pd-radius-md, 8px);
+      background:var(--pd-card); cursor:pointer; min-width:0;
+    }
+    .po-dir-card:hover { border-color:var(--pd-red); }
+    .po-dir-card.is-inactive { opacity:.62; }
+    .po-dir-ava {
+      position:relative; flex:none; width:42px; height:42px; border-radius:50%;
+      background:var(--pd-bg); color:var(--pd-muted); display:flex; align-items:center;
+      justify-content:center; font-size:13px; font-weight:700;
+    }
+    .po-dir-dot {
+      position:absolute; right:-1px; bottom:-1px; width:10px; height:10px; border-radius:50%;
+      background:#2FA36B; border:2px solid var(--pd-card);
+    }
+    .po-dir-dot.off { background:var(--pd-muted); }
+    .po-dir-body { min-width:0; flex:1 1 auto; padding-right:18px; }
+    /* ⚠ Every line clips rather than wraps: a card that grows to fit a long agency
+       name breaks the grid rhythm, which is the whole reason this reads as a wall
+       of people instead of a table. */
+    .po-dir-name, .po-dir-org, .po-dir-role, .po-dir-meta {
+      overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    }
+    .po-dir-name { font-size:13.5px; font-weight:700; }
+    .po-dir-org  { font-size:12px; color:var(--pd-ink); margin-top:2px; }
+    .po-dir-role { font-size:11.5px; color:var(--pd-muted); }
+    /* ⚠ An EMPTY role line still reserves its row. Measured: without this a card
+       whose person has no position came out 85px against 102px for one who does, so a
+       section mixing the two rendered ragged. The wall only reads as a wall if every
+       card is the same height. Done with min-height, not a ::after escape:
+       the escape rendered as a literal mojibake glyph on the card. */
+    .po-dir-role:empty { min-height:1.35em; }
+    .po-dir-meta { font-size:11px; color:var(--pd-muted); margin-top:4px; }
+    .po-dir-star {
+      position:absolute; top:9px; right:9px; border:0; background:none; cursor:pointer;
+      font-size:15px; line-height:1; color:var(--pd-line); padding:2px;
+    }
+    .po-dir-star:hover { color:var(--pd-red); }
+    .po-dir-star.on { color:#C9A227; }
+    /* Band header inside the LIST layout, so both layouts group identically. */
+    .po-dir-listband td {
+      background:var(--pd-bg); font-weight:700; font-size:12px; padding:6px 12px !important;
+    }
+    .po-dir-listband td span { margin-left:8px; font-weight:600; color:var(--pd-muted); }
+    @media (max-width: 560px) { .po-dir-grid { grid-template-columns:1fr; } }
+
     /* The live duplicate warning while typing a new person. */
     .po-dir-dup { margin-top:12px; padding:10px 12px; border-radius:var(--pd-radius);
       border:1px solid var(--pd-line); background:var(--pd-bg); font-size:12.5px; }
@@ -546,6 +653,17 @@
           <div class="pd-seg" id="po-sh-view" role="tablist">
             <button type="button" class="on" data-shv="directory">Directory</button>
             <button type="button" data-shv="byproject">By project</button>
+            <button type="button" data-shv="health">Health</button>
+          </div>
+          <select class="pd-select pd-input-sm" id="po-sh-group" style="width:auto;" title="How the directory is grouped">
+            <option value="letter">Group A–Z</option>
+            <option value="org">Group by organisation</option>
+            <option value="sector">Group by sector</option>
+            <option value="none">No grouping</option>
+          </select>
+          <div class="pd-seg" id="po-sh-layout" role="group" aria-label="Directory layout">
+            <button type="button" class="pd-seg-ico on" data-lay="grid" title="Cards"><span data-ico="gridView" data-ico-size="15"></span></button>
+            <button type="button" class="pd-seg-ico" data-lay="list" title="List"><span data-ico="listView" data-ico-size="15"></span></button>
           </div>
           <button class="pd-btn pd-btn-primary" id="po-sh-add" style="height:36px;">+ Add person</button>
           <button class="pd-btn" id="po-sh-refresh" style="height:36px;"><span data-ico="refresh" data-ico-size="14"></span></button>
@@ -556,6 +674,11 @@
              and 1 there. Hidden while the Directory is showing. -->
         <p id="po-sh-scopenote" style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Scoped to the <strong>project filter</strong> above (<span id="po-sh-scope">all projects</span>).</p>
         <div class="po-kpis2" id="po-sh-kpis"></div>
+        <!-- The card "Universe". Its own container rather than the table's, because the
+             two layouts have nothing in common structurally and swapping innerHTML on one
+             node would make each render pay for the other's markup. -->
+        <div id="po-dir-universe"></div>
+        <div id="po-dir-health" style="display:none;"></div>
         <div class="po-card" style="padding:0;overflow:hidden;">
           <div style="overflow-x:auto;"><table class="po-table" id="po-sh-table"></table></div>
         </div>
@@ -631,7 +754,7 @@
 <script src="../../assets/js/ui.js?v=20260909s"></script>
 <!-- Shared stakeholder directory: identity matching + find-or-create, used by
      BOTH this page and the Stakeholder Map module. Not hand-copied into each. -->
-<script src="../../assets/js/stakeholders.js?v=20260910s5"></script>
+<script src="../../assets/js/stakeholders.js?v=20260910u2"></script>
 <script src="../../assets/js/icons.js?v=20260909ui"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
@@ -1300,8 +1423,8 @@
   //    view is kept (it answers "who is on which project"); the Directory view is
   //    the portfolio-level master list the owner asked for.
   // ⚠️ Every identity decision goes through the SHARED PDStakeholders, never a copy.
-  var shView = 'directory';          // 'directory' | 'byproject'
-  var dirRows = null, dirUse = {}, dirErr = '', dirSel = null;
+  var shView = 'directory';          // 'directory' | 'byproject' | 'health'
+  var dirRows = null, dirUse = {}, dirErr = '', dirSel = null, dirUnlinked = 0;
 
   function dirOn() { return !!window.PDStakeholders; }
 
@@ -1324,7 +1447,11 @@
     // screen and 1 on another.
     dirUse = {};
     try {
-      var all = await PDb.selectAll('stakeholder_map', function (q) { return q.not('stakeholder_id', 'is', null); });
+      // ⚠ Read the WHOLE map, not only the linked rows: the rows with a NULL
+      //   stakeholder_id are register entries made before the directory existed, and
+      //   counting them is the Health view's "loose ends". One read answers both.
+      var all = await PDb.selectAll('stakeholder_map');
+      dirUnlinked = (all || []).filter(function (r) { return !r.stakeholder_id; }).length;
       (all || []).forEach(function (r) {
         if (!r.stakeholder_id) return;
         (dirUse[r.stakeholder_id] = dirUse[r.stakeholder_id] || []).push(r.project_id);
@@ -1349,18 +1476,36 @@
     var host = document.getElementById('po-sh-table');
     var list = dirVisible();
     var multi = list.filter(function (p) { return (dirUse[p.id] || []).length > 1; }).length;
+    var unassigned = (dirRows || []).filter(function (p) { return !(dirUse[p.id] || []).length; }).length;
     document.getElementById('po-sh-kpis').innerHTML =
       kpi2('People', String((dirRows || []).length)) +
       kpi2('On more than one project', String(multi)) +
+      // ⚠ A person on no project is the actionable state this screen exists to
+      //   surface — they were added and never assigned. Counted, not hidden.
+      kpi2('On no project', String(unassigned), unassigned ? '--pd-bad' : null) +
       kpi2('Showing', String(list.length));
 
     if (dirErr) {
-      host.innerHTML = '<tbody><tr><td class="po-empty">' + esc(dirErr) + '</td></tr></tbody>';
+      document.getElementById('po-dir-universe').innerHTML =
+        '<div class="po-empty">' + esc(dirErr) + '</div>';
+      host.parentNode.style.display = 'none';
       return;
     }
+    dirRenderUniverse();
+  }
+
+  // The LIST layout: the same banded groups, drawn as table sections.
+  function dirRenderList(groups) {
+    var host = document.getElementById('po-sh-table');
+    var flat = groups.reduce(function (a, g) { return a.concat(g.items); }, []);
     var head = '<thead><tr><th>Name</th><th>Organization</th><th>Role</th><th>Sector</th>' +
                '<th class="num">Projects</th><th></th></tr></thead>';
-    var body = list.length ? list.map(function (p) {
+    var body = flat.length ? groups.map(function (g) {
+      // ⚠ One header row per band, with the SAME colspan as the table has columns (6).
+      return (g.key === '' ? '' :
+        '<tr class="po-dir-listband"><td colspan="6">' + esc(g.key) +
+        '<span>' + g.items.length + '</span></td></tr>') +
+      g.items.map(function (p) {
       var n = (dirUse[p.id] || []).length;
       return '<tr class="po-row" data-person="' + esc(p.id) + '">' +
         '<td><b>' + esc(p.name || '(unnamed)') + '</b>' +
@@ -1373,6 +1518,7 @@
         '<td class="num">' + n + '</td>' +
         '<td class="po-dir-act"><button type="button" class="pd-btn pd-btn-sm" data-open="' + esc(p.id) + '">Open</button></td>' +
       '</tr>';
+      }).join('');
     }).join('') : '<tr><td colspan="6" class="po-empty">' +
         (dirRows && dirRows.length ? 'No one matches that search.'
           : 'The directory is empty. Add a person, or open a project’s Stakeholder Map — saving there adds them here.') +
@@ -1384,6 +1530,356 @@
     host.querySelectorAll('.po-row[data-person]').forEach(function (r) {
       r.onclick = function () { openPersonPanel(r.dataset.person); };
     });
+  }
+
+  // ---- Directory HEALTH -----------------------------------------------------
+  // The second half of the adoption: "a dashboard page that can also be adopted."
+  // ⚠️⚠️ IT IS BUILT FROM OUR OWN DATA AND ADDS NO QUERY. Every figure below is
+  //    derived from `dirRows` (the directory) and `dirUse` (the map) that the
+  //    Directory view has already loaded, so switching to this view costs nothing
+  //    and can never disagree with the list beside it.
+  // ⚠️ It reports; it does not clean. Nothing here writes — a duplicate is opened
+  //    through the SAME person panel that already owns merging, rather than this
+  //    view growing a second merge path that could drift from it.
+
+  function dirTop(list, keyOf, blank, limit) {
+    var by = {};
+    list.forEach(function (p) {
+      var k = (keyOf(p) || '').trim() || blank;
+      by[k] = (by[k] || 0) + 1;
+    });
+    var out = Object.keys(by).map(function (k) { return { key: k, n: by[k] }; });
+    // ⚠️ Ties break on the NAME, so two organisations with the same count do not
+    //    swap places between renders and read as data changing under the planner.
+    out.sort(function (a, b) { return b.n - a.n || a.key.localeCompare(b.key); });
+    return limit ? out.slice(0, limit) : out;
+  }
+
+  // Pure: rows in, figures out. No DOM, no globals, so it can be executed.
+  function dirHealth(rows, use, unlinked) {
+    rows = rows || [];
+    var S = window.PDStakeholders;
+    var total = rows.length;
+    var onNo = 0, onMulti = 0, haveTotal = 0, ofEach = 0;
+    var fieldHave = {};
+    (S ? S.COMPLETENESS_FIELDS : []).forEach(function (f) { fieldHave[f] = 0; });
+
+    rows.forEach(function (p) {
+      var n = ((use || {})[p.id] || []).length;
+      if (!n) onNo++; else if (n > 1) onMulti++;
+      if (S) {
+        var c = S.completeness(p);
+        haveTotal += c.have; ofEach = c.of;
+        S.COMPLETENESS_FIELDS.forEach(function (f) {
+          var v = p[f];
+          if (v != null && String(v).trim() !== '') fieldHave[f]++;
+        });
+      }
+    });
+
+    // per project, from the map we already hold
+    var perProj = {};
+    Object.keys(use || {}).forEach(function (sid) {
+      (use[sid] || []).forEach(function (pid) { perProj[pid] = (perProj[pid] || 0) + 1; });
+    });
+    var projects = Object.keys(perProj).map(function (id) {
+      return { key: projNameOf(id), id: id, n: perProj[id] };
+    }).sort(function (a, b) { return b.n - a.n || a.key.localeCompare(b.key); });
+
+    // ⚠️ The scan itself lives in the SHARED PDStakeholders, blocked so it does not
+    //    score every pair — my first cut here scored all of them and measured **2.3
+    //    seconds** of blocked main thread at 900 people. It refuses rather than
+    //    answering partially when even the blocked candidate set is too large.
+    var dup = S ? S.duplicatePairs(rows) : { pairs: [], scanned: false, considered: 0 };
+
+    return {
+      total: total,
+      onNo: onNo,
+      onMulti: onMulti,
+      pct: total && ofEach ? haveTotal / (total * ofEach) : 0,
+      fields: (S ? S.COMPLETENESS_FIELDS : []).map(function (f) {
+        return { key: f, n: fieldHave[f], pct: total ? fieldHave[f] / total : 0 };
+      }).sort(function (a, b) { return a.n - b.n || a.key.localeCompare(b.key); }),
+      sectors: dirTop(rows, function (p) { return p.category; }, 'No sector'),
+      orgs: dirTop(rows, function (p) { return p.organization; }, 'No organisation', 8),
+      // ⚠ the TRUE distinct count, so the panel can say "5 distinct" when it is
+      //   showing all five rather than claiming a "top 5" that truncates nothing.
+      orgTotal: dirTop(rows, function (p) { return p.organization; }, 'No organisation').length,
+      projects: projects,
+      dupes: dup.pairs,
+      dupScanned: dup.scanned,
+      dupConsidered: dup.considered,
+      unlinked: unlinked || 0
+    };
+  }
+
+  function dirBars(items, max, opts) {
+    opts = opts || {};
+    if (!items.length) return '<p class="po-hl-none">' + esc(opts.empty || 'Nothing to show.') + '</p>';
+    return '<div class="po-hl-bars">' + items.map(function (it) {
+      var w = max ? Math.max(2, Math.round((it.n / max) * 100)) : 0;
+      return '<div class="po-hl-bar' + (opts.warn && opts.warn(it) ? ' is-warn' : '') + '">' +
+        '<span class="po-hl-k" title="' + esc(it.key) + '">' + esc(it.key) + '</span>' +
+        '<span class="po-hl-t"><i style="width:' + w + '%"></i></span>' +
+        '<span class="po-hl-n">' + (opts.fmt ? opts.fmt(it) : it.n) + '</span>' +
+      '</div>';
+    }).join('') + '</div>';
+  }
+
+  function dirPanel(title, sub, body) {
+    return '<section class="po-hl-panel"><h3>' + esc(title) +
+      (sub ? '<em>' + esc(sub) + '</em>' : '') + '</h3>' + body + '</section>';
+  }
+
+  function dirRenderHealth() {
+    var wrap = document.getElementById('po-dir-health');
+    if (dirErr) { wrap.innerHTML = '<div class="po-empty">' + esc(dirErr) + '</div>'; return; }
+    var h = dirHealth(dirRows, dirUse, dirUnlinked);
+    if (!h.total) {
+      wrap.innerHTML = '<div class="po-empty">The directory is empty, so there is no health to report. ' +
+        'Add a person, or open a project’s Stakeholder Map — saving there adds them here.</div>';
+      return;
+    }
+    var pctTxt = Math.round(h.pct * 100) + '%';
+
+    document.getElementById('po-sh-kpis').innerHTML =
+      kpi2('People', String(h.total)) +
+      kpi2('Profile completeness', pctTxt, h.pct < 0.5 ? '--pd-bad' : null) +
+      kpi2('On no project', String(h.onNo), h.onNo ? '--pd-bad' : null) +
+      kpi2('Possible duplicates', h.dupScanned ? String(h.dupes.length) : '—',
+           h.dupScanned && h.dupes.length ? '--pd-bad' : null);
+
+    var maxField = h.total;
+    var maxSec = h.sectors.length ? h.sectors[0].n : 0;
+    var maxOrg = h.orgs.length ? h.orgs[0].n : 0;
+    var maxPrj = h.projects.length ? h.projects[0].n : 0;
+
+    var dupBody;
+    if (!h.dupScanned) {
+      dupBody = '<p class="po-hl-none">' + h.total + ' people leaves ' +
+        h.dupConsidered.toLocaleString() + ' pairs still worth comparing, which is more than this ' +
+        'scan will do in one go — so it has not been run, rather than freezing the tab or ' +
+        'answering over part of the directory. The duplicate warning still fires while you type ' +
+        'in <strong>+ Add person</strong>.</p>';
+    } else if (!h.dupes.length) {
+      dupBody = '<p class="po-hl-none">No two people in the directory score as the same person.</p>';
+    } else {
+      dupBody = '<div class="po-hl-dups">' + h.dupes.slice(0, 25).map(function (d) {
+        return '<button type="button" class="po-hl-dup" data-dup="' + esc(d.a.id) + '">' +
+          '<span class="po-hl-dn">' + esc(d.a.name || '(unnamed)') + '</span>' +
+          '<span class="po-hl-dv">vs</span>' +
+          '<span class="po-hl-dn">' + esc(d.b.name || '(unnamed)') + '</span>' +
+          '<em>' + esc(d.why || '') + '</em>' +
+          '<span class="po-hl-ds">' + d.score.toFixed(2) + '</span>' +
+        '</button>';
+      }).join('') +
+      (h.dupes.length > 25 ? '<p class="po-hl-none">' + (h.dupes.length - 25) +
+        ' more below these.</p>' : '') + '</div>' +
+      '<p class="po-hl-note">Opens the person, where <strong>Merge</strong> lives. ' +
+      'Nothing on this screen changes a record.</p>';
+    }
+
+    wrap.innerHTML =
+      '<p class="po-dir-lead">Everything here is read from the directory already on screen — ' +
+      'no extra query, and nothing on this view writes.</p>' +
+      '<div class="po-hl-grid">' +
+        dirPanel('Possible duplicates', h.dupScanned ? h.dupes.length + ' found' : 'not scanned', dupBody) +
+        dirPanel('Profile completeness', pctTxt + ' overall · least-filled first',
+          dirBars(h.fields, maxField, {
+            fmt: function (it) { return it.n + ' / ' + h.total; },
+            warn: function (it) { return it.pct < 0.34; }
+          })) +
+        dirPanel('By sector', h.sectors.length + ' distinct',
+          dirBars(h.sectors, maxSec, { warn: function (it) { return it.key === 'No sector'; } })) +
+        dirPanel('Organisations',
+          h.orgTotal > h.orgs.length ? 'top ' + h.orgs.length + ' of ' + h.orgTotal
+                                     : h.orgTotal + ' distinct',
+          dirBars(h.orgs, maxOrg, { warn: function (it) { return it.key === 'No organisation'; } })) +
+        dirPanel('People per project', h.projects.length + ' with anyone mapped',
+          dirBars(h.projects, maxPrj, { empty: 'Nobody is assigned to a project yet.' })) +
+        dirPanel('Loose ends', 'what to fix next',
+          '<div class="po-hl-bars">' +
+            '<div class="po-hl-bar' + (h.onNo ? ' is-warn' : '') + '">' +
+              '<span class="po-hl-k">On no project</span>' +
+              '<span class="po-hl-t"><i style="width:' + (h.total ? Math.round(h.onNo / h.total * 100) : 0) + '%"></i></span>' +
+              '<span class="po-hl-n">' + h.onNo + '</span></div>' +
+            '<div class="po-hl-bar">' +
+              '<span class="po-hl-k">On more than one</span>' +
+              '<span class="po-hl-t"><i style="width:' + (h.total ? Math.round(h.onMulti / h.total * 100) : 0) + '%"></i></span>' +
+              '<span class="po-hl-n">' + h.onMulti + '</span></div>' +
+            '<div class="po-hl-bar' + (h.unlinked ? ' is-warn' : '') + '">' +
+              '<span class="po-hl-k" title="stakeholder_map rows written before the directory existed">Map rows not linked to a person</span>' +
+              '<span class="po-hl-t"><i style="width:' + (h.unlinked ? 100 : 0) + '%"></i></span>' +
+              '<span class="po-hl-n">' + h.unlinked + '</span></div>' +
+          '</div>' +
+          // ⚠️ An unlinked row is NOT breakage — it is a register entry made before the
+          //    shared directory existed. Saying so stops it reading as data loss.
+          '<p class="po-hl-note">Unlinked rows are register entries made before the shared ' +
+          'directory existed. They still show under <strong>By project</strong>; re-saving one ' +
+          'in its project’s Stakeholder Map links it.</p>') +
+      '</div>';
+
+    wrap.querySelectorAll('[data-dup]').forEach(function (b) {
+      b.onclick = function () { openPersonPanel(b.dataset.dup); };
+    });
+  }
+
+  // ---- the Universe: banded grid / list -------------------------------------
+  // Adopted from the separate Megawide Stakeholders app at the owner's request:
+  // "seeing the whole stakeholders rather than a table and seeing the clickable
+  // bands." Two things came across — a CARD grid over the whole directory, and
+  // A-Z bands with counts that you can click to jump.
+  // ⚠️ `sm-bands` in the Stakeholder Map module is a DIFFERENT thing with a
+  //    confusingly similar name: RCM column-group toggles on the register table.
+  //    These are alphabet bands over people. Named `po-dir-band*` so nothing in
+  //    either file reads as the other.
+  var dirLayout = 'grid';          // 'grid' | 'list'
+  var dirGroup = 'letter';         // 'letter' | 'org' | 'sector' | 'none'
+  var dirBand = '';                // a clicked letter, or '' for all
+
+  function dirLetter(p) {
+    var n = (p && p.name || '').trim();
+    if (!n) return '#';
+    // ⚠️ Band on the same NORMALISED name the matcher uses, so "Engr. Ana Reyes"
+    //    lands under A with everyone else rather than under E on its honorific.
+    var norm = PDStakeholders ? PDStakeholders.normName(n) : n.toLowerCase();
+    var c = (norm || n).charAt(0).toUpperCase();
+    return /[A-Z]/.test(c) ? c : '#';
+  }
+  function dirGroupKey(p) {
+    if (dirGroup === 'org') return (p.organization || '').trim() || 'No organisation';
+    if (dirGroup === 'sector') return (p.category || '').trim() || 'No sector';
+    if (dirGroup === 'none') return '';
+    return dirLetter(p);
+  }
+
+  function dirGrouped(list) {
+    if (dirGroup === 'none') return [{ key: '', items: list }];
+    var by = {}, order = [];
+    list.forEach(function (p) {
+      var k = dirGroupKey(p);
+      if (!by[k]) { by[k] = []; order.push(k); }
+      by[k].push(p);
+    });
+    // ⚠️ '#' (names that do not start with a letter) sorts LAST, never first —
+    //    otherwise a handful of odd rows head a list of 240 people.
+    order.sort(function (a, b) {
+      if (a === '#') return 1; if (b === '#') return -1;
+      return a.localeCompare(b);
+    });
+    return order.map(function (k) { return { key: k, items: by[k] }; });
+  }
+
+  function dirStatusOf(p) {
+    // ⚠️ Absent column reads Active, matching the migration's own default, so a
+    //    deployment that has not run it shows every person as active rather than
+    //    as an unknown state.
+    return (p && p.status) || 'Active';
+  }
+
+  function dirCard(p) {
+    var n = (dirUse[p.id] || []).length;
+    var initials = (p.name || '?').split(/\s+/).filter(Boolean).slice(0, 2)
+      .map(function (w) { return w.charAt(0).toUpperCase(); }).join('') || '?';
+    var inactive = dirStatusOf(p) !== 'Active';
+    return '<div class="po-dir-card' + (inactive ? ' is-inactive' : '') + '" data-person="' + esc(p.id) + '">' +
+      '<div class="po-dir-ava">' + esc(initials) +
+        '<span class="po-dir-dot' + (inactive ? ' off' : '') + '" title="' + esc(dirStatusOf(p)) + '"></span></div>' +
+      '<div class="po-dir-body">' +
+        '<div class="po-dir-name">' + esc(p.name || '(unnamed)') + '</div>' +
+        '<div class="po-dir-org">' + esc(p.organization || '—') + '</div>' +
+        '<div class="po-dir-role">' + esc(p.role_title || '') + '</div>' +
+        '<div class="po-dir-meta">' + (n ? n + ' project' + (n === 1 ? '' : 's') : 'No project yet') + '</div>' +
+      '</div>' +
+      '<button type="button" class="po-dir-star' + (p.is_favorite ? ' on' : '') +
+        '" data-fav="' + esc(p.id) + '" title="' + (p.is_favorite ? 'Remove from favourites' : 'Mark as favourite') +
+        '" aria-pressed="' + (p.is_favorite ? 'true' : 'false') + '">' + (p.is_favorite ? '★' : '☆') + '</button>' +
+    '</div>';
+  }
+
+  function dirBandStrip(groups, total) {
+    if (dirGroup !== 'letter') return '';
+    var have = {}; groups.forEach(function (g) { have[g.key] = g.items.length; });
+    var letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').concat(have['#'] ? ['#'] : []);
+    // ⚠️ Every letter is rendered, present or not — a strip that only shows the
+    //    letters in use jumps around as you search, and a disabled letter is the
+    //    useful answer to "is there anyone under Q?".
+    return '<div class="po-dir-bands">' +
+      '<button type="button" class="po-dir-bandall' + (dirBand ? '' : ' on') + '" data-band="">All ' + total + '</button>' +
+      letters.map(function (L) {
+        var c = have[L] || 0;
+        return '<button type="button" class="po-dir-band' + (c ? '' : ' is-empty') +
+          (dirBand === L ? ' on' : '') + '"' + (c ? '' : ' disabled') +
+          ' data-band="' + L + '" title="' + c + ' under ' + L + '">' + L +
+          (c ? '<i>' + c + '</i>' : '') + '</button>';
+      }).join('') + '</div>';
+  }
+
+  function dirRenderUniverse() {
+    var host = document.getElementById('po-sh-table');
+    var wrap = document.getElementById('po-dir-universe');
+    var all = dirVisible();
+    var groups = dirGrouped(all);
+    var shown = dirBand ? groups.filter(function (g) { return g.key === dirBand; }) : groups;
+    var count = shown.reduce(function (a, g) { return a + g.items.length; }, 0);
+
+    host.parentNode.style.display = dirLayout === 'list' ? '' : 'none';
+    wrap.style.display = dirLayout === 'list' ? 'none' : '';
+
+    if (dirLayout === 'list') { dirRenderList(shown); wrap.innerHTML = ''; return; }
+
+    wrap.innerHTML = dirBandStrip(groups, all.length) +
+      (count ? shown.map(function (g) {
+        return '<section class="po-dir-sec">' +
+          (g.key === '' ? '' : '<h3 class="po-dir-sechead">' + esc(g.key) +
+            '<span>' + g.items.length + '</span></h3>') +
+          '<div class="po-dir-grid">' + g.items.map(dirCard).join('') + '</div></section>';
+      }).join('')
+      : '<div class="po-empty">' + (dirRows && dirRows.length
+          ? 'No one matches that search.'
+          : 'The directory is empty. Add a person, or open a project’s Stakeholder Map — saving there adds them here.') +
+        '</div>');
+    dirWireCards(wrap);
+  }
+
+  function dirWireCards(root) {
+    root.querySelectorAll('[data-band]').forEach(function (b) {
+      b.onclick = function () { dirBand = b.dataset.band; dirRenderUniverse(); };
+    });
+    root.querySelectorAll('[data-fav]').forEach(function (b) {
+      b.onclick = function (e) { e.stopPropagation(); dirToggleFav(b.dataset.fav); };
+    });
+    root.querySelectorAll('.po-dir-card[data-person]').forEach(function (c) {
+      c.onclick = function () { openPersonPanel(c.dataset.person); };
+    });
+  }
+
+  // ⚠️⚠️ OPTIMISTIC, THEN REVERTED ON REFUSAL. A star that appears to stick and
+  //    silently did not is the worst of both — and `is_favorite` only exists once
+  //    2026-09-10-stakeholder-profile-fields.sql has been run, so on an
+  //    un-migrated database this WILL be refused. It says so, once, rather than
+  //    failing quietly on every click.
+  async function dirToggleFav(id) {
+    var p = (dirRows || []).filter(function (x) { return String(x.id) === String(id); })[0];
+    if (!p) return;
+    var was = !!p.is_favorite;
+    p.is_favorite = !was;
+    dirRenderUniverse();
+    try {
+      var res = await sb().from('stakeholders').update({ is_favorite: p.is_favorite })
+                          .eq('id', p.id).select('id');
+      if (res.error) throw res.error;
+      // ⚠ RLS answers a refused UPDATE with 200 and zero rows — the same silent
+      //   success the merge counts for. Zero rows means it did not happen.
+      if (!(res.data || []).length) throw new Error('The directory refused the change.');
+    } catch (e) {
+      p.is_favorite = was;
+      dirRenderUniverse();
+      var col = PDStakeholders.missingColumn(e);
+      UI.toast(col
+        ? 'Favourites need migrations/2026-09-10-stakeholder-profile-fields.sql to be run first.'
+        : 'Could not update: ' + ((e && e.message) || e), 'warn');
+    }
   }
 
   // ---- add a person ---------------------------------------------------------
@@ -2467,6 +2963,29 @@
     //   rendered on its own path rather than being squeezed through the scoped one.
     document.getElementById('po-sh-scopenote').style.display = shView === 'directory' ? 'none' : '';
     document.getElementById('po-sh-add').hidden = shView !== 'directory';
+    document.getElementById('po-sh-group').hidden = shView !== 'directory';
+    document.getElementById('po-sh-layout').style.display = shView === 'directory' ? '' : 'none';
+    // ⚠ Health draws in its own container, so BOTH the universe and the table are put
+    //   away for it — otherwise whichever the Directory left showing stays on screen
+    //   under the dashboard.
+    var hl = document.getElementById('po-dir-health');
+    hl.style.display = shView === 'health' ? '' : 'none';
+    if (shView !== 'health') hl.innerHTML = '';
+    if (shView !== 'directory') {
+      var uni = document.getElementById('po-dir-universe');
+      if (uni) { uni.innerHTML = ''; uni.style.display = 'none'; }
+      document.getElementById('po-sh-table').parentNode.style.display =
+        shView === 'health' ? 'none' : '';
+    }
+    if (shView === 'health') {
+      // ⚠ Health is a read of the DIRECTORY, so it loads the same rows the Directory
+      //   loads — and reuses them when they are already in hand.
+      hl.innerHTML = '<div class="po-empty">Reading the directory\u2026</div>';
+      document.getElementById('po-sh-kpis').innerHTML = '';
+      await loadDirectory(force);
+      dirRenderHealth();
+      return;
+    }
     if (shView === 'directory') {
       var host = document.getElementById('po-sh-table');
       if (!dirRows || force) host.innerHTML = '<tbody><tr><td class="po-empty">Loading the directory\u2026</td></tr></tbody>';
@@ -2869,9 +3388,27 @@
     //   rather than always calling the mirror renderer.
     document.getElementById('po-sh-q').oninput = function (e) {
       shQuery = e.target.value;
-      if (shView === 'directory') dirRender(); else shRender();
+      if (shView === 'directory') dirRender();
+      // ⚠ Health is a portfolio-wide read of the whole directory, so the search box
+      //   does not narrow it — a completeness figure over the rows matching a search
+      //   is not the directory's completeness.
+      else if (shView !== 'health') shRender();
     };
     document.getElementById('po-sh-add').onclick = openDirAdd;
+    document.getElementById('po-sh-group').onchange = function (e) {
+      dirGroup = e.target.value;
+      dirBand = '';           // ⚠ a band from the old grouping means nothing in the new one
+      dirRenderUniverse();
+    };
+    document.querySelectorAll('#po-sh-layout [data-lay]').forEach(function (b) {
+      b.onclick = function () {
+        dirLayout = b.dataset.lay;
+        document.querySelectorAll('#po-sh-layout [data-lay]').forEach(function (x) {
+          x.classList.toggle('on', x === b);
+        });
+        dirRenderUniverse();
+      };
+    });
     document.querySelectorAll('#po-sh-view [data-shv]').forEach(function (b) {
       b.onclick = function () {
         shView = b.dataset.shv;

@@ -1,5 +1,135 @@
 # Module: portfolio-overview
 
+## 2026-09-10 (u2) — Directory Health: the dashboard half of the adoption
+
+Owner: *"And a dashboard page that can also be adopted."* Asked what it should report, the choice was
+**directory health, from our own data** — so this is not a copy of the other app's dashboard, it is
+the same idea pointed at the register we actually hold. A third view beside Directory and By project.
+
+⚠️⚠️ **IT ADDS NO QUERY AND WRITES NOTHING.** Every figure is derived from the `dirRows` and `dirUse`
+the Directory view has already loaded, so switching to it costs nothing and it cannot disagree with
+the list beside it. A duplicate is opened through the **same person panel that already owns Merge**,
+rather than this view growing a second merge path that could drift from it — confirmed in a browser:
+clicking a pair opens the person with **0 writes**.
+
+Six panels: **Possible duplicates**, **Profile completeness** (per field, least-filled first),
+**By sector**, **Organisations**, **People per project**, and **Loose ends**. KPIs above them: people,
+completeness, on no project, possible duplicates.
+
+- ⚠️ **The map read stopped filtering out the unlinked rows.** It read `stakeholder_map` with
+  `stakeholder_id is not null`; it now reads the whole table and partitions, because rows with a NULL
+  `stakeholder_id` are the *"loose ends"* worth counting. **One read answers both questions.**
+- ⚠️ An unlinked row is **not breakage** and the panel says so — it is a register entry made before
+  the shared directory existed. Left unexplained it reads as data loss.
+- ⚠️ **The search box does not narrow this view.** Completeness over the rows matching a search is not
+  the directory's completeness.
+- ⚠️ Ties in every ranked list break on the **name**, so two organisations on the same count do not
+  swap places between renders and read as data changing.
+
+### ⚠️⚠️ Scoring every pair was too slow to ship, and I only knew because I measured it
+The first cut compared every pair. **900 people is 404,550 pairs and 2.3 seconds of blocked main
+thread** — measured, not estimated. The scan now lives in the shared `PDStakeholders.duplicatePairs`
+and is **blocked**: only pairs that could possibly clear the matcher's surname gate are scored.
+
+⚠️⚠️ **The blocking key is derived FROM that gate, never invented beside it.** A non-zero score needs
+the two last tokens to be equal, within one edit, or one to be an initial of the other. Equality and
+the one-edit case both fall out of the **deletion neighbourhood** (two strings within one edit always
+share a member of it); the initial case needs a one-character last token, which no key can cover, so
+those few people are compared against everyone.
+
+**Two further cuts of the cap were both wrong, and both were caught by measuring rather than reading:**
+
+| | 900 people, distinct surnames | 900 people, all one surname |
+|---|---|---|
+| every pair scored | 2,346 ms | 2,346 ms |
+| cap checked *after* enumerating | 132 ms | **11,030 ms** to say *"not scanned"* |
+| cost estimated from bucket sizes | 195 ms | 2 ms — but **refused 300 people that were 267ms of honest work** (a ~7× over-count) |
+| **shipped:** exact decision, early abort | **208 ms** | **51 ms** |
+
+A cap that only reports after paying the cost is not a cap; an estimate that over-counts sevenfold
+refuses work it should do. The decision is now exact and the enumeration aborts the moment it passes
+the cap, so **2,000 people with distinct surnames scan in 446ms** where 900 used to take 2.3s.
+
+### Verified
+**36 assertions** executing `dirHealth` **sliced out of this file**, plus **19** on `duplicatePairs` in
+the shared suite — including the one that matters: ⚠️ **a wrong blocking key is invisible, it drops
+duplicates and the screen reports "none found"**, so the suite asserts the blocked scan returns the
+**exact pair set an exhaustive scan returns** over a directory built full of near-misses (a surname
+typo in the *first* character, typos by insertion and deletion, a one-character surname, a match
+reachable only through a nickname). **Three new contrast builds, all biting**; 11 of 11 overall.
+
+Rendered in a browser against the real stylesheet, light and dark: six panels, 24 bars, correct
+counts, no fill exceeding its track, no label widening a panel, no horizontal page scroll, and every
+colour resolving through `--pd-*` in dark (warn fill → the dark `--pd-muted`, red → `#EE3124`).
+Empty-directory and missing-table states both render their own message.
+
+⚠️⚠️ **My harness reported a clean render of invisible bars.** It never loaded `dashboard.css`, so
+every `--pd-*` token resolved to nothing and each fill computed to `rgba(0,0,0,0)` — with **perfect
+widths**. The width checks passed and said nothing at all about whether a bar was painted. The
+harness now loads the shared stylesheet and asserts the fills are **not transparent**. This is the
+third time a harness in this repo has reported an unstyled page as a finding.
+
+⚠️ The narrow-viewport check **did not run** — the pane refused to emulate 420px and reported
+`clientWidth 980`, so what was measured is a 980px viewport (two columns, no horizontal scroll). The
+one-column phone case rests on `repeat(auto-fit, minmax(330px,1fr))` collapsing by construction:
+a cascade fact, not a rendered result.
+
+⚠️ **Not verified signed in** — no health figure has been computed from the live directory.
+
+## 2026-09-10 (u1) — The directory becomes a Universe: cards over the whole register, and clickable A–Z bands
+
+Owner, pointing at a separate stakeholder app built by another developer: *"I want to adopt the
+feature seeing the whole stakeholders rather than a table and seeing the clickable bands."* Two
+things came across from those screenshots — a **card grid over the whole directory**, and an
+**alphabet strip with counts** you can click to jump. Both are now the Directory's default.
+
+- **Cards, not rows.** Initials avatar, name, organisation, role, project count, a status dot and a
+  favourite star. The table is still there behind a **grid / list** toggle, because a table is the
+  better answer to *"who is on more than one project"* and a card grid is the better answer to
+  *"who do we know at DPWH"* — the two questions this screen gets asked.
+- **The A–Z strip renders every letter, present or not.** A strip that shows only the letters in use
+  jumps around as you type in the search box, and a **disabled** letter is the useful answer to *"is
+  there anyone under Q?"*. Empty letters are disabled, never hidden. ⚠️ `#` (names not starting with
+  a letter) sorts **last**, or a handful of odd rows would head a list of 240 people.
+- ⚠️ **Bands are cut on the same NORMALISED name the matcher uses**, so `Engr. Ana Reyes` lands
+  under **A** with everyone else rather than under **E** on its honorific. One normaliser, so the
+  band strip and the duplicate warning cannot disagree about who a person is.
+- **Grouping is a choice** — A–Z, organisation, sector, or none. ⚠️ Switching it **clears the picked
+  band**: a letter selected under A–Z means nothing under "group by organisation", and carrying it
+  across would filter to an empty screen with a control that looks satisfied.
+- ⚠️⚠️ **The favourite star is OPTIMISTIC AND REVERTS ON REFUSAL.** `is_favorite` only exists once
+  `migrations/2026-09-10-stakeholder-profile-fields.sql` has been run, so on an un-migrated database
+  every click **will** be refused — and RLS answers a refused UPDATE with **200 and zero rows**, the
+  silent-success trap this log already records for the merge. Zero rows is treated as failure: the
+  star goes back and it says, once, which migration is missing. A star that appears to stick and
+  silently did not is worse than one that refuses.
+
+### The list view is the same grouping, not a second one
+`dirRender` became a dispatcher; the old table body is now `dirRenderList`, fed the **same band
+groups** the grid draws. ⚠️ It gets its own container rather than swapping `innerHTML` on one node —
+the two layouts share no structure, so one node would make each render pay for the other's markup.
+
+### New KPI: *On no project*
+A person added and never assigned is the actionable state this screen exists to surface, and nothing
+counted it. Counted, not hidden.
+
+### Verified
+The shipped directory code was **sliced out of `index.html` and driven in a browser** against the
+real stylesheet: **27 bands rendered, 26 with people**, empty ones **disabled rather than hidden**,
+`#` ordered last; clicking **F** filters to 3 cards and clicking an empty letter is refused;
+group-by-organisation reproduces the right counts; no grouping gives 0 sections, 0 bands, 32 cards;
+the list layout draws 26 band rows + 32 people = **58 rows**; and card heights are **uniform at
+102px**.
+
+⚠️ **Two of my own defects, both caught by measuring rather than reading.** Card heights came back
+ragged (`[85, 102]`) because an empty role line collapsed — fixed with `min-height`, ⚠️ **not** the
+`::after` escape I tried first, which wrote a **literal NUL byte** into this file and rendered as
+mojibake on the card. And my first harness asserted `capOverflows: ? false : false` — a claim that
+cannot fail — now a real clip-and-height check.
+
+⚠️ **Not verified signed in.** No card has been drawn from the live directory, and no favourite has
+been written.
+
 ## 2026-09-10 (s5) — The Stakeholders tab stops being read-only: a directory you can author
 
 Owner: *"By Portfolio Overview and accessing the stakeholder map, planners can create stakeholders
