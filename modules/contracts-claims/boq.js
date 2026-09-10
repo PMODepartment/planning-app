@@ -5267,7 +5267,16 @@ window.BOQ = (function () {
        three-step detour. `finish()` now calls this. */
     openImport: function () { openImport(); },
     _internals: {
-      numOf: numOf, normKey: normKey, locKey: locKey, findHeader: findHeader, colMapOf: colMapOf,
+      /* ⚠️⚠️ `locKey` WAS EXPORTED HERE AND THE FUNCTION WAS DELETED (2026-09-10 z1), WHICH KILLED
+         THE WHOLE MODULE. This object literal is evaluated when the IIFE returns, so a name that
+         no longer exists throws `ReferenceError: locKey is not defined` right there — `window.BOQ`
+         is never assigned, and every BOQ feature reports "BOQ did not load."
+         ⚠️ It is REMOVED, not re-pointed at `PDLoc.normKey`: that is a different function (it
+         strips every separator, which is the whole reason the private one was retired), so keeping
+         the old name would hand a reader the retired semantics under the retired spelling.
+         `affected.js` kept thin delegates for exactly this reason; this file deleted outright and
+         missed the export. Anything testing location matching goes to `PDLoc` directly. */
+      numOf: numOf, normKey: normKey, findHeader: findHeader, colMapOf: colMapOf,
       markerIn: markerIn, MARKER_RE: MARKER_RE, parseSheet: parseSheet, reconcile: reconcile,
       sheetTotals: sheetTotals, contractSum: contractSum, wtOf: wtOf, periodTotals: periodTotals,
       sheetPocs: sheetPocs, moneyLine: moneyLine, qtyLine: qtyLine, mappable: mappable,

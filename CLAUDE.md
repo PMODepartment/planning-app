@@ -95,6 +95,68 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-10 (z6) — ⚠️⚠️ HOTFIX: Contracts & Claims' entire BOQ has been dead in production since (z1). One deleted function, one line that still named it.
+
+Owner, with a screenshot of the wizard's Trades step empty and a red toast: *"BOQ errors. Let's fix."*
+Both symptoms, one cause, and it was live.
+
+#### The bug
+```
+ReferenceError: locKey is not defined
+  at boq.js?v=20260910z4:5270
+```
+`boq.js` is `window.BOQ = (function () { … })()`. Line 5270 sits in the `_internals` export — an
+**object literal evaluated when the IIFE returns** — and still read `locKey: locKey`. (z1) deleted
+that private function, replacing it with the shared `PDLoc`, and left the export naming it. So the
+IIFE threw on the way out, **`window.BOQ` was never assigned**, and every feature that reads it went
+down together:
+
+| symptom in the screenshot | the line that produces it |
+|---|---|
+| red toast *"BOQ did not load."* | `createBoqDraft`: `if (!window.BOQ \|\| !BOQ.createDraft) throw` |
+| **Trades step empty** | `addBoqTrades`: `if (window.BOQ && BOQ.addTrades)` — silently no-ops |
+| the step could not tell which path it was on | `boqDraft()` returns null, so `boqPath()` cannot resolve |
+
+⚠️ **Fixed by REMOVING the export, not by re-pointing it at `PDLoc.normKey`** — that is a different
+function (it strips every separator, which is the whole reason the private one was retired for
+missing *"Roof Deck"* vs *"Roofdeck"*), so keeping the old spelling would hand the next reader the
+retired semantics under the retired name. Nothing in the repo reads `_internals.locKey`; checked.
+⚠️ `affected.js` kept **thin delegates** through exactly this refactor, and its own (z1) entry says
+why — *"keeping the local names so the `_internals` export its suite reads is untouched."* This file
+deleted outright and missed the export. Same refactor, two files, one of them checked.
+
+#### ⚠️⚠️ WHY THREE PASSES SHIPPED ON TOP OF A DEAD MODULE WITHOUT NOTICING
+(z1), (z3) and (z4) all touched this file and all reported themselves verified. Every one of them
+verified by **slicing a function out of the file and executing it** — which loads the slice, never
+the module. And `node --check` **parses**; it cannot see a ReferenceError. This repo has recorded
+that exact sentence twice before (the schedule's *"below is not defined"*, and stakeholder-map's
+`canWrite`), and this is the third time it has cost a live module.
+
+So the missing check is now written and run: **it EXECUTES each shipped browser script against a
+minimal window stub and asserts the file's global actually gets assigned.**
+- ⚠️ It does not stop at the first throw. It also reports **undefined-valued keys** in the public
+  export and in `_internals`, which is what proves no *second* stale name is hiding behind the first.
+  For boq.js: **20 exported keys, 39 `_internals` keys, 0 undefined.**
+- ⚠️ One of my own stubs produced a false failure worth recording: `externals` is `Object.assign`'d
+  over the window **last**, so listing `PDSync: {}` there silently overwrote the working stub above
+  it and theme.js reported `sync.pendingCount is not a function` as if it were an app defect. A thin
+  stub that shadows a good one is how a harness invents its own failures.
+
+#### Verified
+- **The bug reproduced twice before being touched** — in the browser off the deployed page, and
+  outside it, both naming line 5270. Fixed, both clean.
+- **38 shipped browser scripts executed: 0 throw at load.** (Three `test*.js` are Node files using
+  `require` and are correctly excluded; `auth.js` and `theme.js` needed real stubs for
+  `supabase.createClient` and `PDSync.pendingCount` and are clean with them.) **The defect is
+  isolated to this one line** — that is measured across the app, not assumed.
+- 44 JS files + 30 inline blocks parse, 0 failures; 0 brace mismatches; 0 NUL bytes.
+- `boq.js` → `?v=20260910z6`, `MODULE_V` → `20260910z6`. ⚠️ `z6`, not `z5`: `z5` is dashboard.css's
+  current token from the pass before this one.
+- ⚠️ **Not verified signed in.** The load-time failure is fixed and proved by execution; whether the
+  Trades ladder then *populates* depends on the class-code read behind it, which needs a real session.
+  That is the thing to check first: open the wizard and confirm the trades list has rows.
+
+
 ### 2026-09-10 (z5) — Project Schedule's phone bar painted itself over the activity list, because chrome is allowed to be crushed
 
 Owner, with a screenshot: *"UI is bugged for Project Schedule phone view."* The toolbar, the data-date
