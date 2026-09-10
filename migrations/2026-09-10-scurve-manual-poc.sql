@@ -3,8 +3,25 @@
 -- =============================================================================
 -- Run this in the Supabase SQL editor. It is additive and idempotent, and the
 -- S-Curve module works unchanged on a database where it has NOT been run: the
--- mode switch stays on AUTOMATIC, the Manual tab says the migration is
--- outstanding and names this file, and nothing else in the module changes.
+-- Manual data tab says the migration is outstanding and names this file, and
+-- nothing else in the module changes.
+--
+-- ⚠️⚠️ CORRECTED 2026-09-10 — the first cut of this file FAILED TO RUN:
+--
+--     ERROR: 42804: foreign key constraint "scurve_manual_project_id_fkey"
+--     cannot be implemented
+--     DETAIL: Key columns "project_id" and "id" are of incompatible types:
+--             uuid and text.
+--
+--     `projects.id` is **text** — it is the project CODE ('AVR101', 'OPW101'),
+--     not a surrogate uuid (supabase-schema.sql:33). Every project-scoped table
+--     in this schema therefore declares `project_id text references
+--     projects(id)`, and this file declared `uuid` on both new tables. The
+--     module's own JS was already correct: it writes `project_id: pid`, and
+--     `pid` is that text code. Only the DDL was wrong.
+--     ⚠️ Nothing was created by the failed run — the FK is inline in the CREATE
+--     TABLE, so the statement fails atomically, and the SQL editor wraps the
+--     whole file in one transaction. This file is safe to run now.
 --
 -- WHY
 -- ---
@@ -59,9 +76,26 @@
 --    collapsing them would make entering a forecast overwrite the plan.
 -- =============================================================================
 
+-- ⚠️⚠️ GUARD FIRST, BECAUSE `if not exists` IS A SILENT NO-OP ON A WRONG-TYPED
+--    TABLE. If an earlier hand-edited attempt left `scurve_manual.project_id`
+--    as uuid, every statement below would be skipped without complaint and the
+--    module would keep failing with no explanation. Say so instead.
+do $$
+declare t text;
+begin
+  select data_type into t
+    from information_schema.columns
+   where table_schema = 'public' and table_name = 'scurve_manual' and column_name = 'project_id';
+  if t is not null and t <> 'text' then
+    raise exception
+      'scurve_manual.project_id is % but projects.id is text. Drop the two tables and re-run this file: drop table if exists scurve_manual; drop table if exists scurve_manual_meta;', t;
+  end if;
+end $$;
+
 create table if not exists scurve_manual (
   id          uuid primary key default gen_random_uuid(),
-  project_id  uuid not null references projects(id) on delete cascade,
+  -- ⚠️ text, matching projects.id — see the corrected-error note at the top.
+  project_id  text not null references projects(id) on delete cascade,
   trade       text not null,
   month       date not null,
   kind        text not null check (kind in ('planned', 'actual', 'forecast')),
@@ -71,7 +105,10 @@ create table if not exists scurve_manual (
   pct         numeric(6,3) not null default 0 check (pct >= 0 and pct <= 100),
   note        text,
   updated_at  timestamptz not null default now(),
-  updated_by  uuid,
+  -- ⚠️ `references users(id)`, the same shape every other table in this schema
+  --    uses for a `created_by` / `updated_by`. Nullable, so a write with no
+  --    session id still lands rather than failing.
+  updated_by  uuid references users(id),
   constraint scurve_manual_uniq unique (project_id, trade, month, kind)
 );
 
@@ -106,10 +143,10 @@ create index if not exists scurve_manual_proj_idx on scurve_manual (project_id, 
 --    baseline that can be unlocked is only trustworthy if unlocking leaves a
 --    mark. The module shows both on the card.
 create table if not exists scurve_manual_meta (
-  project_id        uuid primary key references projects(id) on delete cascade,
+  project_id        text primary key references projects(id) on delete cascade,
   planned_locked    boolean not null default false,
   planned_locked_at timestamptz,
-  planned_locked_by uuid,
+  planned_locked_by uuid references users(id),
   updated_at        timestamptz not null default now()
 );
 
@@ -117,8 +154,16 @@ create table if not exists scurve_manual_meta (
 -- RLS — the same shape every other project-scoped table in this schema uses:
 -- any signed-in member may read and write their own project's rows.
 -- -----------------------------------------------------------------------------
+-- ⚠️ A POLICY IS NOT A GRANT. RLS filters rows for a role that already holds the
+--    table privilege; without the grant every query fails with "permission
+--    denied for table scurve_manual", which reads like an RLS problem and is
+--    not one. Every sibling migration in this folder carries these two lines,
+--    and the one that forgot them is recorded in the root changelog (2026-09-09 m2).
 alter table scurve_manual      enable row level security;
 alter table scurve_manual_meta enable row level security;
+
+grant select, insert, update, delete on scurve_manual      to authenticated;
+grant select, insert, update, delete on scurve_manual_meta to authenticated;
 
 do $$
 begin
@@ -135,10 +180,27 @@ end $$;
 -- =============================================================================
 -- VERIFY (paste separately; it writes nothing)
 -- =============================================================================
+-- -- 1. the types match projects.id
+-- select table_name, column_name, data_type
+--   from information_schema.columns
+--  where table_schema = 'public'
+--    and (table_name in ('scurve_manual','scurve_manual_meta') and column_name = 'project_id')
+--     or (table_name = 'projects' and column_name = 'id')
+--  order by table_name;
+--   -- expect: all three rows read `text`
+--
+-- -- 2. the shape
 -- select count(*) as cols from information_schema.columns
---  where table_name = 'scurve_manual';                      -- expect 8
+--  where table_schema = 'public' and table_name = 'scurve_manual';   -- expect 8
 -- select conname from pg_constraint
 --  where conrelid = 'scurve_manual'::regclass order by conname;
 --   -- expect scurve_manual_month_first, scurve_manual_pct_check,
---   --        scurve_manual_kind_check, scurve_manual_uniq, + pkey/fkey
--- select count(*) from scurve_manual_meta;                  -- expect 0 on a fresh run
+--   --        scurve_manual_kind_check, scurve_manual_uniq, + pkey/fkeys
+--
+-- -- 3. the grants and the policies both exist
+-- select grantee, privilege_type from information_schema.role_table_grants
+--  where table_name = 'scurve_manual' and grantee = 'authenticated';  -- expect 4 rows
+-- select tablename, policyname from pg_policies
+--  where tablename in ('scurve_manual','scurve_manual_meta');         -- expect 2 rows
+--
+-- select count(*) from scurve_manual_meta;                            -- expect 0 on a fresh run

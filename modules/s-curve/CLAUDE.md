@@ -378,3 +378,58 @@ against a real project's schedule. The manual tables still need
 ⚠️ Also fixed in passing, and found because a harness could not resolve it: this file had **two
 arrays of month names** (`_MABBR` for the lens, `MABBR2` in the sheet). Consolidated onto one —
 twelve strings in two places is one more than can be kept in agreement.
+
+## The manual-POC migration could not run: `projects.id` is text, not uuid (2026-09-10) — ethanrobles10
+
+Owner, running `migrations/2026-09-10-scurve-manual-poc.sql`:
+
+```
+ERROR: 42804: foreign key constraint "scurve_manual_project_id_fkey"
+cannot be implemented
+DETAIL: Key columns "project_id" and "id" are of incompatible types: uuid and text.
+```
+
+⚠️⚠️ **`projects.id` is `text` — it is the project CODE (`AVR101`, `OPW101`), not a surrogate uuid**
+(`supabase-schema.sql:33`). I declared `project_id uuid` on both new tables. Every project-scoped
+table in this schema already says `project_id text references projects(id)` — **26 of them** — so
+this was a convention that was there to be read, and I wrote the type I expected instead of the one
+the schema has.
+
+⚠️ **The module's own JS was already correct**: `pid` comes from `sessionStorage.getItem('pd_project')`
+or `projects[0].id`, which is that text code, and it writes `project_id: pid`. Only the DDL was
+wrong, so nothing in the module needed changing — which is also why no verification I ran could have
+caught it. Every check was against the shipped JS; the SQL is only exercised by being run.
+
+⚠️ **Nothing was created by the failed run.** The FK is inline in the `create table`, so the
+statement fails atomically, and the SQL editor wraps the file in one transaction. The corrected file
+is safe to run as-is.
+
+### Three things fixed while in there, two of them the same class of omission
+
+- ⚠️⚠️ **A GUARD, because `if not exists` IS A SILENT NO-OP ON A WRONG-TYPED TABLE.** If any attempt
+  had left `scurve_manual.project_id` as uuid, every statement below it would have been skipped
+  without complaint and the module would have gone on failing with nothing to explain why. It now
+  reads the column's type out of `information_schema` and `raise exception`s with the two `drop`
+  statements to run. A migration that cannot apply should say so, not do nothing quietly.
+- ⚠️⚠️ **THE GRANTS WERE MISSING, which is the exact defect the root changelog records for the
+  stakeholder-directory migration on 2026-09-09.** A policy is not a grant: RLS *filters* rows for a
+  role that already holds the table privilege, so without `grant select, insert, update, delete …
+  to authenticated` every query would have failed with *"permission denied for table
+  scurve_manual"* — which reads like an RLS problem and is not one. I wrote the RLS half and the
+  policies and left out the two lines every sibling migration in the folder carries. **The next
+  error the owner would have hit after fixing the type.**
+- `updated_by` / `planned_locked_by` now carry `references users(id)`, matching the `created_by`
+  shape the other 26 tables use. Nullable, so a write with no session id still lands.
+
+### Verified
+
+Structurally, since a migration is only really verified by running it: code parens **24/24**, `$$`
+delimiters **6, paired**, 2 tables, 2 grants, 2 policies, **0 occurrences of `project_id uuid`**, 2
+of `project_id text`, 2 `references projects(id)`, 2 `references users(id)`, 0 NUL bytes. The
+project-id type is asserted against `projects.id` in the file's own VERIFY block, which now checks
+all three columns read `text` in one query.
+
+⚠️ **Still not run against a database from here** — the anon key has no grants and there is no SQL
+runner in this environment, so the owner's next run is the real test. The VERIFY block is written to
+be pasted separately and answers, in three queries, whether the types match, the shape is right and
+both the grants and the policies exist.

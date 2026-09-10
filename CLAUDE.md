@@ -95,6 +95,34 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### The manual-POC migration could not run: `projects.id` is text, not uuid (2026-09-10) — ethanrobles10
+
+Owner, running `migrations/2026-09-10-scurve-manual-poc.sql`: **`ERROR: 42804 … Key columns
+"project_id" and "id" are of incompatible types: uuid and text.`**
+
+⚠️⚠️ **`projects.id` is `text`** — it is the project CODE (`AVR101`, `OPW101`), not a surrogate
+uuid (`supabase-schema.sql:33`), and **26 tables in this schema already declare `project_id text
+references projects(id)`**. I wrote the type I expected instead of the one the schema has.
+⚠️ The module’s own JS was already right — `pid` is that text code — so nothing in the module
+changed, which is also why no check I ran could have caught it: every one was against the shipped
+JS, and the SQL is only exercised by being run. ⚠️ Nothing was created by the failed run (the FK is
+inline, so the statement fails atomically), so the corrected file is safe to run as-is.
+
+⚠️⚠️ **And the GRANTS were missing — the same omission this log records for the stakeholder-directory
+migration on 2026-09-09.** A policy is not a grant: RLS filters rows for a role that already holds
+the table privilege, so every query would have failed with *“permission denied for table
+scurve_manual”* — which reads like an RLS problem and is not one. **That was the next error the
+owner would have hit after fixing the type.** Also added: a guard that `raise exception`s when an
+existing table has the wrong column type, because **`if not exists` is a silent no-op there** and
+would have left the module broken with nothing to explain it.
+
+Verified structurally (parens 24/24, `$` paired, 2 tables / 2 grants / 2 policies, **0**
+occurrences of `project_id uuid`, 0 NUL bytes); the VERIFY block now checks all three project-id
+columns read `text` in one query. ⚠️ **Not run against a database from here** — no SQL runner and no
+grants, so the owner’s next run is the real test. ⚠️ **No `MODULE_V` bump**: only a `.sql` file and
+the changelogs changed, and no module page is cache-busted by a migration.
+Detail: [`modules/s-curve/CLAUDE.md`](modules/s-curve/CLAUDE.md).
+
 ### The S-curve gets a Manual data tab, a monthly/quarterly/yearly lens, and a chart you can interrogate (2026-09-10) — ethanrobles10
 
 Owner: *"add a tab wherein users are able to put the data manually. And also for the landing page of
