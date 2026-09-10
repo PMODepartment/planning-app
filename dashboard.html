@@ -332,24 +332,102 @@
       .pd-pv-l small.dim { display:none; }
     }
 
-    /* Photo strip */
-    .pd-ph { display:grid; grid-template-columns:repeat(auto-fill, minmax(112px, 1fr)); gap:8px; }
-    .pd-ph-i { border-radius:9px; overflow:hidden; border:1px solid var(--pd-line); background:var(--pd-bg); }
-    .pd-ph-i img { display:block; width:100%; height:74px; object-fit:cover; }
-    .pd-ph-x { height:74px; display:flex; align-items:center; justify-content:center; color:var(--pd-muted); font-size:var(--pd-fs-micro); }
-    .pd-ph-c { padding:5px 7px 6px; font-size:var(--pd-fs-micro); color:var(--pd-muted); line-height:1.35; }
-    .pd-ph-c b { display:block; color:var(--pd-ink); font-size:var(--pd-fs-micro); font-weight:700;
-      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    /* ==========================================================================================
+       PROGRESS PHOTOS — a viewer, not a contact sheet.
+       Owner 2026-09-10: *"can you input a progress photos viewer for the dashboard and make it
+       visually pleasing."*
+
+       ⚠️ WHAT WAS THERE: six 112×74 thumbnails in a grid, each with a caption under it. At that
+       size a site photo is a smudge — you could see THAT photos existed, not what was in one —
+       and nothing was clickable, so the only way to look at the work was to leave the dashboard
+       for the module.
+       ⚠️ WHAT IT IS NOW: one frame big enough to read, a rail of the rest under it, and a full
+       lightbox on click. The hero carries its caption OVER the image rather than under it, so the
+       picture gets the whole panel width instead of sharing it with a text column.
+       ⚠️ 16:9, fixed by aspect-ratio: site photos arrive portrait and landscape from a dozen
+       phones, and a frame that resized per photo would make the panel jump on every rail click —
+       this panel sits above the module grid, so its height moving is felt down the whole page.
+       ⚠️⚠️ The image is `contain`, NOT `cover`. A progress photo cropped to fill a frame is a photo
+       with the thing being reported cut out of it. The letterbox is the panel's own ground, so it
+       reads as a frame rather than as a gap.
+       ========================================================================================== */
+    .pd-ph-v { display:grid; gap:9px; }
+    .pd-ph-hero { position:relative; aspect-ratio:16/9; border-radius:var(--pd-radius-lg); overflow:hidden;
+      background:var(--pd-bg); border:1px solid var(--pd-line); cursor:zoom-in; padding:0; width:100%;
+      display:block; text-align:left; }
+    .pd-ph-hero img { display:block; width:100%; height:100%; object-fit:contain; }
+    /* ⚠️ Only the caption BAND is tinted, never the picture: a scrim over the whole frame dims the
+       one thing the panel exists to show. The gradient is what keeps white text legible over a
+       photo whose bottom edge might be pale concrete or dark shadow — both are common here. */
+    .pd-ph-cap { position:absolute; left:0; right:0; bottom:0; padding:26px 14px 11px; color:#fff;
+      background:linear-gradient(to top, rgba(0,0,0,.80) 0%, rgba(0,0,0,.55) 45%, rgba(0,0,0,0) 100%);
+      pointer-events:none; }
+    .pd-ph-cap b { display:block; font-size:var(--pd-fs-sm); font-weight:700; line-height:1.3;
+      overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-shadow:0 1px 3px rgba(0,0,0,.55); }
+    .pd-ph-cap small { display:block; margin-top:2px; font-size:var(--pd-fs-micro); opacity:.9;
+      text-shadow:0 1px 3px rgba(0,0,0,.55); }
+    /* The frame says it opens, without a button sitting on top of the photograph. */
+    .pd-ph-hint { position:absolute; top:9px; right:9px; padding:3px 8px; border-radius:var(--pd-radius-pill);
+      background:rgba(0,0,0,.55); color:#fff; font-size:var(--pd-fs-micro); font-weight:700;
+      opacity:0; transition:opacity .16s ease; pointer-events:none; }
+    .pd-ph-hero:hover .pd-ph-hint, .pd-ph-hero:focus-visible .pd-ph-hint { opacity:1; }
+    .pd-ph-hero:focus-visible { outline:2px solid var(--pd-red); outline-offset:2px; }
+    /* The rail. ⚠️ Scrolls rather than wrapping, for the same height reason as the hero. */
+    .pd-ph-rail { display:flex; gap:7px; overflow-x:auto; padding-bottom:3px; scrollbar-width:thin; }
+    .pd-ph-t { flex:0 0 auto; width:84px; height:56px; border-radius:7px; overflow:hidden; padding:0;
+      border:1px solid var(--pd-line); background:var(--pd-bg); cursor:pointer; position:relative;
+      transition:border-color .14s ease, opacity .14s ease; opacity:.62; }
+    .pd-ph-t img { display:block; width:100%; height:100%; object-fit:cover; }
+    .pd-ph-t:hover { opacity:1; }
+    /* ⚠️ A BORDER as well as full opacity marks the current tile. Opacity alone is a difference
+       you have to compare to notice; a red edge is one you see. */
+    .pd-ph-t.on { opacity:1; border-color:var(--pd-red); box-shadow:0 0 0 1px var(--pd-red); }
+    .pd-ph-t:focus-visible { outline:2px solid var(--pd-red); outline-offset:1px; }
+    /* Kept from the strip this replaced: a signed URL can fail or expire, and the caption still
+       carries the information, so a tile degrades to words rather than to a broken-image icon. */
+    .pd-ph-x { display:flex; align-items:center; justify-content:center; width:100%; height:100%;
+      color:var(--pd-muted); font-size:var(--pd-fs-micro); text-align:center; padding:4px; }
+    /* ---- The lightbox ------------------------------------------------------------------------
+       ⚠️ position:fixed on the PAGE, not inside the panel: a viewer clipped by its own card's
+       overflow is a viewer the size of the card. z-index clears the My-items drawer (71). */
+    .pd-lb { position:fixed; inset:0; z-index:90; display:flex; flex-direction:column;
+      background:rgba(8,9,11,.94); opacity:0; transition:opacity .16s ease; }
+    .pd-lb.open { opacity:1; }
+    .pd-lb-top { flex:none; display:flex; align-items:center; justify-content:space-between; gap:12px;
+      padding:12px 16px; color:#fff; }
+    .pd-lb-n { font-size:var(--pd-fs-xs); opacity:.75; font-variant-numeric:tabular-nums; }
+    .pd-lb-x { background:none; border:0; color:#fff; font-size:26px; line-height:1; cursor:pointer;
+      padding:0 6px; opacity:.75; }
+    .pd-lb-x:hover { opacity:1; }
+    .pd-lb-stage { flex:1 1 auto; min-height:0; position:relative; display:flex; align-items:center;
+      justify-content:center; padding:0 8px; }
+    .pd-lb-stage img { max-width:100%; max-height:100%; object-fit:contain; border-radius:6px; }
+    .pd-lb-nav { position:absolute; top:50%; transform:translateY(-50%); width:44px; height:44px;
+      border-radius:50%; border:1px solid rgba(255,255,255,.28); background:rgba(0,0,0,.45);
+      color:#fff; font-size:20px; line-height:1; cursor:pointer; display:flex; align-items:center;
+      justify-content:center; }
+    .pd-lb-nav:hover { background:rgba(0,0,0,.7); }
+    .pd-lb-nav.prev { left:12px; } .pd-lb-nav.next { right:12px; }
+    .pd-lb-nav:disabled { opacity:.25; cursor:default; }
+    .pd-lb-foot { flex:none; padding:12px 18px 20px; color:#fff; text-align:center; }
+    .pd-lb-foot b { display:block; font-size:var(--pd-fs-md); font-weight:700; }
+    .pd-lb-foot small { display:block; margin-top:3px; font-size:var(--pd-fs-xs); opacity:.72; }
+    @media (prefers-reduced-motion:reduce) { .pd-lb, .pd-ph-t, .pd-ph-hint { transition:none; } }
+    @media (max-width:640px) {
+      .pd-ph-t { width:66px; height:44px; }
+      .pd-lb-nav { width:38px; height:38px; }
+      .pd-lb-foot { padding:10px 14px 16px; }
+    }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="assets/js/config.js?v=20260902a"></script>
+  <script src="assets/js/config.js?v=20260910za"></script>
   <script src="assets/js/auth.js?v=20260901b"></script>
   <script src="assets/js/db.js?v=20260909n"></script>
   <script src="assets/js/program.js?v=20260827a"></script>
   <script src="assets/js/scurve.js?v=20260901a"></script>
   <script src="assets/js/ui.js?v=20260909s"></script>
   <script src="assets/js/icons.js?v=20260909ui"></script>
-  <script src="assets/js/modules-grid.js?v=20260910z9"></script>
+  <script src="assets/js/modules-grid.js?v=20260910za"></script>
   <script src="assets/js/my-work.js?v=20260902a"></script>
   <script>
   (function () {
@@ -1173,23 +1251,148 @@
         (sub ? '<small class="pd-mini-s">' + Fmt.esc(sub) + '</small>' : '') + '</div>';
     }
 
+    /* ==========================================================================================
+       THE PROGRESS PHOTOS VIEWER.
+       Owner 2026-09-10: *"can you input a progress photos viewer for the dashboard and make it
+       visually pleasing."*
+
+       A hero frame, a rail of the rest, and a lightbox. ⚠️ ONE list drives all three (`PH`), so
+       the rail, the hero and the lightbox can never be showing different photos — the index is the
+       only state, and every control moves that index.
+       ⚠️ NOTHING IS FETCHED HERE. The photos are the `recent` block the shell already loads for
+       every module that declares one (see APP_CONFIG's progress-photos `dash.recent`), signed
+       once by PDb. A viewer that re-queried would be a second source for the same six rows.
+       ========================================================================================== */
+    var PH = [], PHi = 0;
+    // What a photo is called, and what is known about when and where. Used by the hero, the rail's
+    // tooltips and the lightbox, so the three cannot describe the same photo differently.
+    function phTitle(r) { return r.title || r.works || 'Untitled'; }
+    function phSub(r) {
+      return [r.taken_at ? Fmt.date(r.taken_at) : '', r.location || '', r.works && r.title ? r.works : '']
+        .filter(Boolean).join(' · ');
+    }
     function renderPhotos() {
       var ph = MET['progress-photos'] || {}, rec = ph.recent || [];
       var mod = (APP_CONFIG.MODULES || []).find(function (m) { return m.key === 'progress-photos'; });
-      if (!rec.length) return vizEmpty('viz-photos', 'Latest Progress Photos',
-        'No photos uploaded for this project yet.');
+      var link = mod ? '<a class="pd-viz-s" href="' + ModulesGrid.href(mod) + '">Open the module</a>' : '';
+      if (!rec.length) return vizEmpty('viz-photos', 'Progress Photos',
+        'No photos uploaded for this project yet.' + (mod ? ' ' + link : ''));
+      PH = rec; PHi = 0;
       document.getElementById('viz-photos').innerHTML =
-        vizHead('Latest Progress Photos', rec.length + ' most recent of ' + ph.__rows,
-          mod ? '<a class="pd-viz-s" href="' + ModulesGrid.href(mod) + '">View all</a>' : '') +
-        '<div class="pd-ph">' + rec.map(function (r) {
-          // ⚠️ A signed URL can fail or expire; the caption still carries the information, so the
-          // tile degrades to text rather than a broken image icon.
-          return '<div class="pd-ph-i">' +
-            (r.__url ? '<img src="' + Fmt.esc(r.__url) + '" alt="" loading="lazy">' : '<div class="pd-ph-x">No preview</div>') +
-            '<div class="pd-ph-c"><b>' + Fmt.esc(r.title || r.works || 'Untitled') + '</b>' +
-            Fmt.esc([r.taken_at ? Fmt.date(r.taken_at) : '', r.location || ''].filter(Boolean).join(' · ')) +
-            '</div></div>';
-        }).join('') + '</div>';
+        vizHead('Progress Photos',
+          // ⚠️ States the window, not just the count: "6 most recent of 340" made a planner ask
+          // which 6, and the answer — the newest by date taken — is the thing worth saying.
+          rec.length + ' newest of ' + (ph.__rows == null ? rec.length : ph.__rows) +
+            ' &middot; click to enlarge', link) +
+        '<div class="pd-ph-v">' +
+          '<div id="ph-hero"></div>' +
+          (rec.length > 1 ? '<div class="pd-ph-rail" id="ph-rail"></div>' : '') +
+        '</div>';
+      /* ⚠️⚠️ THE RAIL IS BUILT BEFORE THE FIRST phPaint, and that order is the fix for a real
+         defect: phPaint marks the current thumbnail by querying [data-phi], so called first it
+         found an empty rail and NOTHING was ever marked until the planner clicked something.
+         Caught by measuring, not by looking: the index of the tile carrying the .on class came
+         back as -1 on a freshly rendered panel, which looks exactly like a panel whose first photo
+         simply is not the current one. */
+      var rail = document.getElementById('ph-rail');
+      if (rail) {
+        rail.innerHTML = rec.map(function (r, i) {
+          return '<button type="button" class="pd-ph-t" data-phi="' + i + '"' +
+            ' title="' + Fmt.esc(phTitle(r) + (phSub(r) ? ' — ' + phSub(r) : '')) + '"' +
+            ' aria-label="' + Fmt.esc('Show photo ' + (i + 1) + ' of ' + rec.length + ': ' + phTitle(r)) + '">' +
+            (r.__url ? '<img src="' + Fmt.esc(r.__url) + '" alt="" loading="lazy">' : '<span class="pd-ph-x">No preview</span>') +
+            '</button>';
+        }).join('');
+        rail.querySelectorAll('[data-phi]').forEach(function (b) {
+          b.onclick = function () { PHi = +b.dataset.phi; phPaint(); };
+        });
+      }
+      phPaint();
+    }
+    // Repaints the hero and re-marks the rail. ⚠️ Style and text only on the rail — the tiles are
+    // never rebuilt, so clicking one does not restart six image loads.
+    function phPaint() {
+      var host = document.getElementById('ph-hero'); if (!host || !PH.length) return;
+      var r = PH[PHi] || PH[0], sub = phSub(r);
+      host.innerHTML =
+        '<button type="button" class="pd-ph-hero" id="ph-open" aria-label="' +
+          Fmt.esc('Enlarge: ' + phTitle(r)) + '">' +
+          (r.__url ? '<img src="' + Fmt.esc(r.__url) + '" alt="' + Fmt.esc(phTitle(r)) + '">'
+                   : '<span class="pd-ph-x">No preview available for this photo</span>') +
+          '<span class="pd-ph-hint">' + (PHi + 1) + ' / ' + PH.length + ' &middot; click to enlarge</span>' +
+          '<span class="pd-ph-cap"><b>' + Fmt.esc(phTitle(r)) + '</b>' +
+            (sub ? '<small>' + Fmt.esc(sub) + '</small>' : '') + '</span>' +
+        '</button>';
+      var op = document.getElementById('ph-open');
+      if (op) op.onclick = function () { phLightbox(PHi); };
+      var rail = document.getElementById('ph-rail');
+      if (rail) rail.querySelectorAll('[data-phi]').forEach(function (b) {
+        var on = +b.dataset.phi === PHi;
+        b.classList.toggle('on', on);
+        b.setAttribute('aria-current', on ? 'true' : 'false');
+      });
+    }
+    /* The lightbox. ⚠️ Built and destroyed per opening rather than parked in the page: it holds a
+       full-size image, and leaving one in the DOM behind an `opacity:0` keeps that decode alive on
+       a dashboard nobody has asked to look at photos on.
+       ⚠️ The keydown listener is removed by close(), and close() is the ONLY way out — every exit
+       (Esc, the ×, the backdrop) goes through it, so the listener cannot outlive the overlay. */
+    function phLightbox(start) {
+      if (!PH.length) return;
+      var i = Math.max(0, Math.min(PH.length - 1, start || 0));
+      var box = document.createElement('div');
+      box.className = 'pd-lb';
+      box.setAttribute('role', 'dialog');
+      box.setAttribute('aria-modal', 'true');
+      box.setAttribute('aria-label', 'Progress photo viewer');
+      box.innerHTML =
+        '<div class="pd-lb-top"><span class="pd-lb-n" id="lb-n"></span>' +
+          '<button type="button" class="pd-lb-x" id="lb-x" aria-label="Close">&times;</button></div>' +
+        '<div class="pd-lb-stage" id="lb-stage">' +
+          '<button type="button" class="pd-lb-nav prev" id="lb-prev" aria-label="Previous photo">&#10094;</button>' +
+          '<img id="lb-img" alt="">' +
+          '<button type="button" class="pd-lb-nav next" id="lb-next" aria-label="Next photo">&#10095;</button>' +
+        '</div>' +
+        '<div class="pd-lb-foot"><b id="lb-t"></b><small id="lb-s"></small></div>';
+      document.body.appendChild(box);
+      // One frame later, so the opacity transition has a start state to move from.
+      requestAnimationFrame(function () { box.classList.add('open'); });
+      var img = box.querySelector('#lb-img');
+      function paint() {
+        var r = PH[i], sub = phSub(r);
+        // ⚠️ A photo with no signed URL is skipped rather than shown as a broken frame — but only
+        // in the lightbox, where there is nothing else on screen to explain the blank.
+        img.style.display = r.__url ? '' : 'none';
+        if (r.__url) { img.src = r.__url; img.alt = phTitle(r); }
+        box.querySelector('#lb-n').textContent = (i + 1) + ' of ' + PH.length;
+        box.querySelector('#lb-t').textContent = phTitle(r);
+        box.querySelector('#lb-s').textContent = sub || (r.__url ? '' : 'No preview available');
+        box.querySelector('#lb-prev').disabled = (i <= 0);
+        box.querySelector('#lb-next').disabled = (i >= PH.length - 1);
+      }
+      function go(d) { var n = i + d; if (n < 0 || n >= PH.length) return; i = n; paint(); }
+      function close() {
+        document.removeEventListener('keydown', onKey);
+        box.classList.remove('open');
+        // ⚠️ The index the planner navigated to becomes the panel's hero, so closing the viewer
+        // does not throw away where they got to.
+        PHi = i; phPaint();
+        setTimeout(function () { if (box.parentNode) box.parentNode.removeChild(box); }, 180);
+      }
+      function onKey(e) {
+        if (e.key === 'Escape') { e.preventDefault(); close(); }
+        else if (e.key === 'ArrowRight') { e.preventDefault(); go(1); }
+        else if (e.key === 'ArrowLeft') { e.preventDefault(); go(-1); }
+      }
+      box.querySelector('#lb-x').onclick = close;
+      box.querySelector('#lb-prev').onclick = function () { go(-1); };
+      box.querySelector('#lb-next').onclick = function () { go(1); };
+      // ⚠️ The BACKDROP closes, the stage does not: a click meant for the next arrow that lands a
+      // few pixels off should not dismiss the photo being read.
+      box.onclick = function (e) { if (e.target === box || e.target.id === 'lb-stage') close(); };
+      document.addEventListener('keydown', onKey);
+      paint();
+      box.querySelector('#lb-next').focus();
     }
 
     function renderViz() {
@@ -1201,7 +1404,7 @@
       try { renderProgram(); } catch (e) { vizEmpty('viz-program', 'Project Schedule & Milestones', 'Could not draw this panel.'); }
       try { renderMom(); } catch (e) { vizEmpty('viz-mom', 'Minutes of Meeting', 'Could not draw this panel.'); }
       try { renderIssues(); } catch (e) { vizEmpty('viz-issues', 'Issues &amp; Concerns', 'Could not draw this panel.'); }
-      try { renderPhotos(); } catch (e) { vizEmpty('viz-photos', 'Latest Progress Photos', 'Could not draw this panel.'); }
+      try { renderPhotos(); } catch (e) { vizEmpty('viz-photos', 'Progress Photos', 'Could not draw this panel.'); }
     }
 
     // Load every module's declared metrics in parallel, then draw once. A module that fails or

@@ -95,6 +95,69 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### A progress-photos viewer on the dashboard, and the S-curve gets periodic bars, a trade filter and a manual mode (2026-09-10) — ethanrobles10
+
+Owner: *"can you input a progress photos viewer for the dashboard and make it visually pleasing."*
+Then, for the S-Curve: *"currently there is cumulative. I want you to add a periodic bar chart, and
+then a mode at the top to filter the trades being displayed. And then later on a filter for General
+Requirements vs Measured Works."* Then: *"provide 2 options … Manual intervention or automatic
+detecting … For the planned, this should be defined in the planning phase … and will be locked as
+the project is actualized. For the actuals, allow users for manual intervention. For the forecast,
+allow users to input POCs manually for the following months per trade."*
+
+**The dashboard's photo panel was a contact sheet, not a viewer.** Six 112×74 thumbnails in a grid,
+nothing clickable — at that size a site photo is a smudge, so you could see *that* photos existed
+and not what was in one, and the only way to look at the work was to leave the dashboard. It is now
+a 16:9 hero with its caption over the image, a rail of the rest, and a full lightbox (prev/next,
+←/→, Esc, and the index you navigated to becomes the panel's hero on close). ⚠️ The image is
+`contain`, never `cover`: a progress photo cropped to fill a frame is a photo with the thing being
+reported cut out of it. ⚠️ **A real defect was caught by measuring, not looking**: `phPaint()` ran
+before the rail existed, so the current thumbnail was never marked until the planner clicked
+something — the index of the lit tile came back as −1 on a freshly rendered panel, which looks
+exactly like a panel whose first photo simply is not current. The `recent` window went 6 → 12 so
+there is something to browse.
+
+**The S-curve gained periodic bars, a trade filter, and a manual mode.** The bars are *derived* —
+period *n* = cumulative *n* − cumulative *n−1* — so they always add back up to the line, on their
+own right-hand axis because a monthly increment on a 3-year programme is a few percent of the total
+and plotting it on the 0–100% axis leaves unreadable stubs. ⚠️⚠️ **Looking at the chart caught a
+wrong claim**: the data-date month's actual bar reached 97% of the axis on a project that had done
+35%, because the engine deliberately *anchors* that point to the true recorded total while earlier
+months are *modelled* — so the step absorbs the whole model-vs-reality discrepancy, which is right
+for the cumulative line and is not one month's production. It is no longer drawn as one, and the
+note says why.
+
+The trade filter uses `work_type`, which is **the shell's own convention** (the dashboard's
+programme panel already groups this table that way) rather than a second rule; Project Schedule's
+WBS-walking fallback is deliberately *not* copied, and the cost is stated on screen instead of
+hidden. ⚠️ Untraded activities pass neither General Requirements nor Measured Works — unknown is not
+measured — and the count is stated so the split can be reconciled. ⚠️ The RPC monthly aggregate is
+refused whenever a filter is on: it carries no trade, so it would draw the whole project under a
+one-trade heading.
+
+**Manual mode** is the planner's own monthly POC per trade, in a new table (`scurve_manual`,
+`scurve_manual_meta` — `migrations/2026-09-10-scurve-manual-poc.sql`, additive and idempotent).
+⚠️⚠️ **A trade is weighted by its share of the schedule, never an equal share** — a 2%-of-the-job
+trade must not move the project as much as a 40% one, and the wrong version looks entirely
+plausible. Planned is read-only once locked *or* once the schedule carries recorded progress
+(*"locked as the project is actualized"*); actual is editable to the data date; forecast only after
+it; every refusal is explained where it is refused. The two sources are never merged and the mode
+travels into the card heading, because a manual curve read as a schedule-derived one is a claim
+nobody made.
+
+**Verified by execution** (34 assertions, 0 failing) and **in a real browser** against the app's own
+CSS in light and dark — the shipped renderers on a six-trade fixture produced a sheet with 24
+editable and 48 read-only cells, exactly what the editability rule predicts. ⚠️ **Not verified
+against the database**: the anon key has no grants, so no row was written and the 42P01 fallback is
+code, not observed. Until the migration is run, Manual mode says so and names the file; Automatic
+is untouched.
+
+`config.js` → `?v=20260910za` on **28 pages** (the photo window lives in it, and a cached copy would
+keep asking for 6); `MODULE_V` → `20260910za`. ⚠️ Re-derived from the remote TWICE — it took `z9` for
+the BOQ pass while this was in flight, and `za` sorts after it (`z10` would sort before). The fourth
+collision this log has recorded today.
+Detail: [`modules/s-curve/CLAUDE.md`](modules/s-curve/CLAUDE.md).
+
 ### 2026-09-10 (z9) — B: a line can be allocated to the PROJECT; and the picker was hiding activities, could not span floors, and made "Rebar everywhere" a manual deselect
 
 **Run `migrations/2026-09-10-boq-project-scope.sql`.** Owner: *"Let's do B as well"*, then three
