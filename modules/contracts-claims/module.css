@@ -318,6 +318,11 @@ html.pd-dark {
 .boq-prevtab th, .boq-splittab th, .boq-progtab th { text-align:left; font-size:var(--pd-fs-micro); text-transform:uppercase;
   letter-spacing:.04em; color:var(--pd-muted); border-bottom:1px solid var(--pd-line); padding:5px 6px; }
 .boq-prevtab td, .boq-splittab td, .boq-progtab td { padding:5px 6px; border-bottom:1px solid var(--pd-line); vertical-align:top; }
+/* ⚠️ The narrow columns are pinned so the DESCRIPTION gets every pixel left over. Without this
+   the browser shares width by content, and a five-column table inside `.pd-modal` gave the one
+   column carrying a sentence about 90px - eleven lines, one word per line, in red. */
+.boq-sscol-code { width:88px; } .boq-sscol-n { width:66px; } .boq-sscol-trade { width:118px; }
+.boq-splittab td code { white-space:nowrap; }
 .boq-prevtab .boq-prevnote td { font-size:var(--pd-fs-xs); color:var(--pd-muted); background:var(--pd-bg); }
 .boq-sm { height:28px; font-size:var(--pd-fs-sm); width:auto; min-width:92px; }
 
@@ -348,7 +353,10 @@ html.pd-dark {
 .boq-scopeopt .cc-mini { display:block; margin-top:2px; }
 /* The project-scope explanation replaces the whole activity half, so it is given room to read. */
 .boq-projnote { border-left:3px solid var(--pd-red); padding-left:10px; max-width:70ch; }
-.boq-splitadd { margin:8px 0; }
+/* ⚠️ A button and its hint, laid out. They were an inline-flex button followed by a bare inline
+   span, so the hint sat on the button's BASELINE rather than its centre and the only gap between
+   them was a collapsed text space. */
+.boq-splitadd { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:8px 0; }
 .boq-splitadd .pd-select { width:100%; max-width:none; }
 .boq-recon { font-size:var(--pd-fs-sm); padding:8px 11px; border-radius:var(--pd-radius); border:1px solid var(--pd-line); }
 .boq-recon.ok   { border-color:var(--boq-good); background:var(--boq-good-bg); }
@@ -987,6 +995,10 @@ html.pd-dark .boq-tl1 > .boq-trow { background:rgba(255,255,255,.04); }
 /* Why the rungs below an "All" are not on screen. A pane that silently disappears reads as a bug. */
 .cca-hintline { margin:6px 0 0; font-size:var(--pd-fs-xs); color:var(--pd-muted); max-width:70ch; }
 .cca-row input { flex:0 0 auto; cursor:pointer; }
+/* ⚠️ 13x13 was the real tap target on every row in this picker - measured, not assumed - while
+   the class-code tree in the same module already sizes its box to 15px and gives it the brand
+   accent. Same control, same module, so the same treatment rather than a second convention. */
+.cca-row input[type="checkbox"] { width:15px; height:15px; accent-color:var(--pd-red); }
 /* A partial tick is set as a DOM property (`indeterminate`), which has no CSS selector of its own;
    the paint writes `data-part` beside it purely so the state can be seen at a glance. */
 .cca-row input[data-part] { outline:2px solid var(--pd-red); outline-offset:1px; }
@@ -1119,14 +1131,25 @@ html.pd-dark .cca-gr-bar { background:#6f767d; }
    rather than being silently absent from a list the planner thought was complete. */
 .cca-gr-err .cca-gr-lbl { color:var(--pd-muted); font-style:italic; font-size:var(--pd-fs-micro); }
 .cca-mg-more { padding:6px 10px; font-size:var(--pd-fs-xs); color:var(--pd-muted); }
+/* The row cap, in words. Sticky so it stays visible while the planner scrolls the branch they
+   opened - a notice that scrolls away answers the question only if you happen to be at the bottom. */
+.cca-cut { position:sticky; bottom:0; padding:6px 10px; font-size:var(--pd-fs-xs);
+  color:var(--pd-muted); background:var(--pd-card); border-top:1px solid var(--pd-line); }
 
 @media (max-width:820px) {
   /* ⚠️ The ladder keeps its rung count and scrolls; collapsing it to one column would hide the
      cascade, which is the one thing the control is for. The LOWER pair stacks instead. */
   .cca-lad { grid-template-columns:repeat(var(--cca-rungs,3), minmax(140px,1fr)); }
   .cca-lower { grid-template-columns:1fr; }
-  .cca-ladbody { height:120px; }
-  .cca-treebody { height:220px; }
+  /* ⚠️ The ROW is the tap target on the leaf rows now (affected.js wires a row-level click), so
+     the row is what has to reach `--pd-tap` - measured at 30px against 44px. The bodies grow with
+     it so the same FOUR and SEVEN rows stay on screen; leaving them fixed would have paid for the
+     bigger target by turning the list into a keyhole, which is the trade this file already refused
+     once for `.cca-mgbody`. */
+  .cca-row { min-height:var(--pd-tap); }
+  .cca-row input[type="checkbox"] { width:18px; height:18px; }
+  .cca-ladbody { height:176px; }
+  .cca-treebody { height:308px; }
   .cca-mgbody { height:200px; }
 }
 

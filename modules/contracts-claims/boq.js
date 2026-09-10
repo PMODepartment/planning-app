@@ -2970,6 +2970,12 @@ window.BOQ = (function () {
       '<div class="pd-modal-footer"><span class="cc-mini" id="ss-cnt"></span> ' +
       '<button class="pd-btn" id="ss-c">Cancel</button> ' +
       '<button class="pd-btn pd-btn-primary" id="ss-go">Add lines</button></div>');
+    /* ⚠️ `.pd-modal` is 520px and this is a FIVE column table. Owner, 2026-09-10, with a
+       screenshot: the Description column measured about 90px and "not in the class-code chart - it
+       will be filed under Others" wrapped to one word per line in red, which reads as an error
+       state rather than the note it is. `.boq-widish` already exists in this module for screens
+       that need more than 520px; this one simply never opted in. */
+    m.el.querySelector('.pd-modal').classList.add('boq-widish');
     var el = function (id) { return m.el.querySelector('#' + id); };
     el('ss-x').onclick = m.close; el('ss-c').onclick = m.close;
 
@@ -2989,8 +2995,10 @@ window.BOQ = (function () {
         'activities at <b>quantity 0</b> — matched, not yet measured. Nothing rolls up until you ' +
         'enter the figures; then <b>Match to schedule</b> spreads each quantity over the links that ' +
         'are already there.</p>' +
-        '<table class="boq-splittab"><thead><tr><th style="width:28px;"></th><th>Class code</th>' +
-        '<th>Description</th><th class="cc-r">Activities</th><th>Trade</th></tr></thead><tbody>';
+        '<table class="boq-splittab"><thead><tr><th style="width:28px;"></th>' +
+        '<th class="boq-sscol-code">Class code</th>' +
+        '<th>Description</th><th class="cc-r boq-sscol-n">Activities</th>' +
+        '<th class="boq-sscol-trade">Trade</th></tr></thead><tbody>';
       plan.forEach(function (e) {
         var c = e.chart;
         h += '<tr' + (e.onBill ? ' class="cc-mut"' : '') + '>' +
@@ -4709,13 +4717,13 @@ window.BOQ = (function () {
         '<div class="boq-scope">' +
           '<label class="boq-scopeopt' + (projScope ? '' : ' on') + '">' +
             '<input type="radio" name="sp-scope" value="activity"' + (projScope ? '' : ' checked') + '>' +
-            '<span><strong>Across activities</strong><br><span class="cc-mini">The work is on the ' +
-            'programme. Its quantity and money follow the activities it covers.</span></span></label>' +
+            '<span><strong>Across activities</strong><br><span class="cc-mini">Quantity and money ' +
+            'follow the activities it covers.</span></span></label>' +
           '<label class="boq-scopeopt' + (projScope ? ' on' : '') + '">' +
             '<input type="radio" name="sp-scope" value="project"' + (projScope ? ' checked' : '') + '>' +
             '<span><strong>The project as a whole</strong><br><span class="cc-mini">A preliminary — ' +
-            'mobilisation, site office, plant hire. It belongs to no single activity, and its cost ' +
-            'is spread across the programme pro-rata by duration.</span></span></label>' +
+            'mobilisation, site office. Its cost spreads across the programme pro-rata by ' +
+            'duration.</span></span></label>' +
         '</div>' +
         /* ⚠️ The RUNG is named, not just the split arithmetic. "Proposed by location match" and
            "proposed by prorata" are the difference between a figure a planner can accept at a
@@ -4723,8 +4731,12 @@ window.BOQ = (function () {
         (prop.rung ? '<p class="cc-hint">Matched on <strong>' + esc(RUNG_LABEL[prop.rung] || prop.rung) + '</strong>' +
           (prop.method === 'location' ? ', split equally' : ', split pro-rata by duration') + '. ' +
           'Adjust any figure, then Apply. Nothing is stored until you do.</p>' : '') +
-        (qOn ? '' : '<p class="cc-hint">Add the activities this line covers. <b>Qty can stay 0</b> — you are recording ' +
-          'scope, not measurement, and the link is kept either way.</p>') +
+        /* ⚠️ THIS PARAGRAPH IS GONE, not moved. Owner, 2026-09-10: *"Pop-up for the UI needs
+           fix as well and simplicity."* It said a line carries no quantity and the link is kept
+           anyway - which is precisely what the `.boq-recon` line at the foot of the same dialog
+           already says, with the count filled in. Two boxes making one point, on a screen whose
+           actual job is a list of activities. The foot keeps it, because it is the one that can
+           state HOW MANY. */
         (acts.length ? '' : '<div class="boq-alert warn">No activity on this project carries class code <code>' +
           esc(cfc) + '</code>. Allocate by hand, or tag the activities first.</div>') +
         '<table class="boq-splittab"><thead><tr><th>Activity</th><th class="cc-r">Qty</th><th></th></tr></thead><tbody>' +
@@ -4781,10 +4793,11 @@ window.BOQ = (function () {
             'Allocated ' + qtyStr(s) + ' of ' + qtyStr(q) + ' — ' +
             (Math.abs(rem) < 1e-6 ? 'reconciles exactly.' : rem > 0 ? qtyStr(rem) + ' ' + esc(r.unit || '') + ' still unallocated.' :
               '<strong>over-allocated by ' + qtyStr(-rem) + '</strong>.') + '</p>'
-          : '<p class="boq-recon warn">This line carries <strong>no quantity</strong> yet, so this stores the ' +
+          /* Still says the two things that matter - nothing is measured yet, and the link is kept
+             regardless - but in one line instead of three. */
+          : '<p class="boq-recon warn"><strong>No quantity</strong> yet, so this stores the ' +
             '<strong>link only</strong> — ' + prop.parts.length + ' activit' + (prop.parts.length === 1 ? 'y' : 'ies') +
-            ', each contributing 0 to any derived quantity. Enter <b>Qty</b> on the Lines tab and come back here to ' +
-            'spread it across these same activities.</p>');
+            '. Enter <b>Qty</b> on the Lines tab to spread it across them.</p>');
 
       body.querySelectorAll('.boq-qin').forEach(function (inp) {
         /* ⚠️ `numOf`, not `Number()` — the field is now text, so it can carry "1,000" and this is

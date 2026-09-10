@@ -95,6 +95,76 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-10 (za2) — The picker was hiding activities two more ways, and both were opening filters nobody chose
+
+Five things reported off the live OPW101 screen in one sitting: *"Let's fix the .cca-row tap
+targets"*, *"This should be fixed as well"*, *"Pop-up for the UI needs fix as well and simplicity"*,
+*"Structural works isn't viewing properly"*, *"Why can't I see rebar works now?"*
+
+**⚠️⚠️ The ladder opened on a filter the planner never set.** `ladderOf` defaulted every rung to
+its own first value, and the rungs cascade — so the picker opened on Tower 1 → 5TH Floor → Z1 → U1,
+which on this project is **18 of 2,561 activities**. Structural Works was absent from the tree
+entirely, because Structural is planned per zone and carries no Unit at all, so every one of its
+activities was filtered out by a rung that had positioned itself. Measured on an 18-floor fixture:
+before, **0 of 216** Structural activities and **0 of 72** Rebar Works survived the opening cursor;
+after, all of them do. The default is now **All**, the rung below appears once a value is picked,
+and the ladder is a drill-down instead of a guess. Nothing is selected either way — the ladder
+positions the view, it never ticks a box. My own note in this file argued the opposite ("a ladder
+opening on everything is a filter nobody chose"); it had it backwards, and the live screen is what
+showed it: an opening *narrowing* is the filter nobody chose, and it reads as missing data.
+
+**⚠️⚠️ The row cap deleted structure, not rows.** `slice(0, ROW_CAP)` was applied to the ACTIVITY
+LIST before `treeOf` ran, and a branch only exists if some activity in the list puts it there. So
+past activity 400 the floors did not exist in the tree at all — not scrolled off, absent — and no
+amount of expanding could reach them. That is the whole of *"Why can't I see rebar works now?"*,
+with the header reading `400+`. Measured: the top floor's Rebar Works rows were **not in the tree**
+before, and are now. The cap moved to the **painted rows**, after the open/closed filter; branches
+start closed, so the opening paint is **3 rows** — the three top-level WBS branches — against a
+cap of 400. Fully expanded the same fixture is 705 rows, so the cap does still bite, and now says
+so: **305 more rows not shown**. And the notice says what it
+is holding back — a cap whose entire signal is a `+` is one a planner cannot act on, and it was read
+as "there is no Rebar Works".
+
+**The tap target was 13px, not the 30px I reported yesterday.** Re-measured with the markup
+`affected.js` actually emits: every checkbox is **13×13** against a 44px `--pd-tap`, and
+`.cca-row[data-act]` carried **no handler at all** — so the row's 30px bought nothing, and the one
+row type a planner clicks hundreds of times was the smallest target in the dialog. The leaf rows now
+answer a row click, as the ladder and branch rows always have. The box follows the class-code tree
+next door (15px + brand accent) rather than inventing a second convention, and on a phone the row
+meets `--pd-tap` with the bodies grown to match, so the same four and seven rows stay on screen
+instead of the list becoming a keyhole.
+
+**"Add lines from the schedule" was a five-column table in a 520px modal.** The Description column
+came out about 90px and "not in the class-code chart — it will be filed under Others" wrapped to one
+word per line in red, which reads as an error rather than the note it is. `.boq-widish` already
+existed in this module for screens needing more than 520px; this dialog simply never opted in. The
+three narrow columns are now pinned so the sentence gets the remainder.
+
+**"Link to activities" said the same thing twice.** A paragraph explaining that a line with no
+quantity still keeps its link sat above a `.boq-recon` line saying exactly that, with the count
+filled in. The paragraph is deleted, not moved — the foot keeps it because it is the one that can
+state **how many**. The two scope descriptions lost a clause each. The `Choose activities…` button
+and its hint were an inline-flex button followed by a bare inline span, so the hint sat on the
+button's baseline rather than its centre with only a collapsed text space between them; that row is
+a flex row now.
+
+Verified: **29 new assertions, 0 failing**, plus 33 + 36 + 24 unchanged. The new suite is pinned to
+**17c3e8c** and asserts the BEFORE state as well as the after — that Structural really was absent,
+that Rebar really was unreachable, that whole floors really were missing from the tree — so it fails
+on the old file rather than passing on both. It loads the **real** `locmatch.js` rather than stubbing
+`bestSpelling`, which would have made the suite test my stub's ordering instead of the app's. 44 JS
+files + 32 inline blocks parse; 571/571 braces; 0 NUL bytes. `?v=` → `20260910za2` on `boq.js`,
+`affected.js` and `module.css`.
+
+**Not fixed, and it is the big one.** `candidatesFor` gates every proposal on the line's class code:
+no activity carries `03051`, so the candidate set is empty, the four rungs never run, and all 21
+Structural lines read "not scheduled" — while the schedule holds 72 activities literally named
+"Rebar Works". The app's current answer is "tag the activities first", which is the manual work the
+owner is asking about. A name-rung fallback for the gated-but-empty case is the next change.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+
 ### 2026-09-10 (za1) — "Use 0 activit ies": a word split across two flex items, and a consistency review in which my own checker was wrong twice
 
 Owner: *"I just noticed the Use x activit ies button has a UI error"*, then *"Let's follow the app

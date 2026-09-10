@@ -387,7 +387,18 @@ window.CCAffected = (function () {
       var lv = levels[i];
       var vals = valuesAt(cand, lv.id);
       if (!vals.length) continue;
+      /* ⚠️⚠️ THE DEFAULT IS "ALL", AND IT USED TO BE `vals[0]`. Owner, 2026-09-10, on
+         OPW101: *"Structural works isn't viewing properly."* Every rung defaulting to its own first
+         value CASCADED - the picker opened on Tower 1 -> 5TH Floor -> Z1 -> U1, which is 18 of
+         2,561 activities, and Structural Works was missing from the tree entirely because its work
+         on that floor carries no Unit and so lives in the no-value bucket, not under U1.
+         The planner chose none of that. An opening FILTER nobody asked for does not read as a
+         filter; it reads as missing data, which is exactly how it was reported.
+         Opening on All shows everything, and the rung below appears only once a value is picked -
+         so the ladder is a drill-down instead of a guess. Nothing is SELECTED either way: the
+         ladder positions the view, it never ticks a box. */
       var want = cursor ? cursor[lv.id] : null;
+      if (want == null) want = ALL_VALUES;
       if (want === ALL_VALUES) {
         /* cand is NOT narrowed, and the loop STOPS. Both halves matter: the first is what makes
            "all floors" mean all of them, the second is what keeps a deeper rung from being
@@ -950,11 +961,23 @@ window.CCAffected = (function () {
          selection you cannot see is a selection you cannot correct. */
       var seen = {}; scope.forEach(function (a) { seen[a.activity_id] = 1; });
       var extra = ACTS.filter(function (a) { return sel[a.activity_id] && !seen[a.activity_id]; });
-      var listed = scope.concat(extra).slice(0, ROW_CAP);
+      /* ⚠️⚠️ THE CAP IS ON THE ROWS PAINTED, NOT ON THE ACTIVITIES THE TREE IS BUILT FROM,
+         and that distinction was the whole bug. Owner, 2026-09-10, looking at Tower 1 / All levels
+         with the header reading "400+": *"Why can't I see rebar works now?"*
+         `slice(0, ROW_CAP)` was applied to the ACTIVITY LIST, so `treeOf` never saw activity 401
+         onward - and a branch only exists if some activity in the list puts it there. The tree was
+         therefore not merely scrolled short: 2ND and 3RD Floor were the only floors IN it, and no
+         amount of expanding could reach Rebar Works. A cap on rows is a scroll; a cap on the
+         source list silently deletes structure.
+         Branches start CLOSED, so building from the full scope paints a few dozen rows, not 2,560 -
+         the cap now trims what is actually visible, after the open/closed filter. */
+      var listed = scope.concat(extra);
       var entries = treeOf(listed, NAME_BY_CODE, LEVELS);
       // a search opens what it found, so hits are never hidden behind a shut branch
       if (hits) entries.forEach(function (e) { if (e.branch) open[e.code] = 1; });
-      var vis = visibleTree(entries, open);
+      var visAll = visibleTree(entries, open);
+      var vis = visAll.slice(0, ROW_CAP);
+      var visCut = visAll.length - vis.length;
       var nSel = Object.keys(sel).length;
       var selActs = ACTS.filter(function (a) { return sel[a.activity_id]; });
 
@@ -994,9 +1017,14 @@ window.CCAffected = (function () {
         '<div class="cca-lower">' +
           '<div class="cca-col">' +
             '<div class="cca-h"><span>Activities' + (hits ? ' · search' : '') + '</span>' +
-              '<span>' + listed.length + (listed.length >= ROW_CAP ? '+' : '') + '</span></div>' +
+              '<span>' + listed.length + '</span></div>' +
             '<div class="cca-body cca-treebody">' +
               (vis.length ? vis.map(treeRowHTML).join('') : '<div class="cca-empty">' + emptyTreeText(hits) + '</div>') +
+              /* ⚠️ A cap whose entire notice is a "+" is a cap the planner cannot act on - it was
+                 read as "there is no Rebar Works", not as "there is more". It now names the number
+                 being held back and the two controls that reach it. */
+              (visCut ? '<div class="cca-cut">' + visCut + ' more row' + (visCut === 1 ? '' : 's') +
+                ' not shown — close a branch, or search to jump straight to them.</div>' : '') +
             '</div>' +
           '</div>' +
           /* ⚠️⚠️ THE PREVIEW COLUMN IS CHANGE-ORDER-SPECIFIC, so a caller that is not raising one
@@ -1104,6 +1132,22 @@ window.CCAffected = (function () {
       host.querySelectorAll('input[data-ak]').forEach(function (cb) {
         cb.onchange = function () {
           if (cb.checked) sel[cb.dataset.ak] = 1; else delete sel[cb.dataset.ak];
+          paint();
+        };
+      });
+      /* ⚠️ THE WHOLE ROW IS THE TARGET, not the checkbox inside it. Measured at 344px with the
+         phone block live: the box is 13x13 against a 44px `--pd-tap`, and `.cca-row[data-act]`
+         carried NO handler at all - so the row's 30px bought nothing, and the one row type a
+         planner clicks hundreds of times was the smallest target in the dialog.
+         The ladder rows and the branch rows have answered a row click all along (they move the
+         rung / open the branch); the leaf rows simply had nothing else to do and were never wired.
+         `sel` is toggled directly rather than the checkbox being clicked, because `paint()` rebuilds
+         the row from `sel` anyway - driving the input would be a state that lives for one frame. */
+      host.querySelectorAll('.cca-row[data-act]').forEach(function (el) {
+        el.onclick = function (e) {
+          if (e.target && e.target.tagName === 'INPUT') return;
+          var id = el.dataset.act;
+          if (sel[id]) delete sel[id]; else sel[id] = 1;
           paint();
         };
       });
