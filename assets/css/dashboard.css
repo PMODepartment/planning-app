@@ -89,6 +89,10 @@
      SC 1.4.11); the brand accent is free to be re-tuned for looks. Tying one to the
      other means a brand tweak could silently drop the ring under the bar. */
   --pd-focus: var(--pd-red);
+  /* Boot skeletons - a neutral wash, not a brand colour: a shimmer means "not loaded yet",
+     and tinting it red would read as a state. Paired per theme like every other surface. */
+  --pd-skel-base: rgba(0,0,0,.06);
+  --pd-skel-hi:   rgba(0,0,0,.11);
   /* Type + shape */
   --pd-font: 'Gotham', 'Montserrat', 'Segoe UI', system-ui, -apple-system, sans-serif;
   /* Brandbook 2026 names Gotham the PRIMARY face and Avenir Next Condensed the
@@ -1003,6 +1007,8 @@ html.pd-dark {
   --pd-bad-bg:  rgba(239,83,80,.16);   --pd-bad-line:  rgba(239,83,80,.32);   --pd-bad-text:  #FF8A80;
   --pd-info-bg: rgba(147,197,253,.16); --pd-info-line: rgba(147,197,253,.32); --pd-info-text: #93C5FD;
   --pd-focus: var(--pd-red);          /* #EE3124 on the #1C1C1C ground = 3.62:1 */
+  --pd-skel-base: rgba(255,255,255,.07);
+  --pd-skel-hi:   rgba(255,255,255,.14);
   --pd-shadow: 0 1px 3px rgba(0,0,0,.5);
   --pd-shadow-md: 0 4px 12px rgba(0,0,0,.55);
   --pd-shadow-lg: 0 8px 24px rgba(0,0,0,.6);
@@ -1693,6 +1699,46 @@ body { overflow-x: clip; }
    BEFORE first paint, so this rule takes effect on the very first frame and the row never shows.
    ⚠️ Gated on `pd-js` so a no-JS or failed-JS load still renders the tabs; theme.js also reveals
    anything left unconverted once the page settles. */
+/* ==========================================================================
+   BOOT SKELETONS — the topbar's two JS-filled slots
+   --------------------------------------------------------------------------
+   ⚠️⚠️ These key off `:empty`, WHICH IS THE WHOLE TRICK: a slot is a skeleton
+   exactly while it has no children, and the moment JS writes into it the
+   selector stops matching and the skeleton disappears. **No class to add, no
+   class to remove, nothing to coordinate, and nothing left behind if a render
+   path changes.** The alternative — an `.is-loading` class someone has to
+   remember to clear — is how a skeleton ends up stuck on screen forever.
+
+   What fills them, and why they were noticeable:
+     • `#user-bar` is written by UI.renderUserBar() only after
+       AppAuth.requireLogin() resolves — TWO network round-trips. While empty it
+       is `width: 0`, so the avatar did not merely arrive late, it SHIFTED the
+       whole topbar when it landed. The skeleton reserves its exact 36px.
+     • the project `<select>` already has `min-width: 120px`, so its box was
+       reserved — what it lacked was any sign it was still loading, so it read
+       as an empty control rather than a pending one.
+
+   ⚠️ Gated on `html.pd-js` (set by theme.js before first paint) so a no-JS load
+   shows the real, empty controls rather than a shimmer that can never resolve.
+   ========================================================================== */
+@keyframes pd-skel-sweep { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+html.pd-js #user-bar:empty,
+html.pd-js .pd-topbar [class$="-projctx"] > .pd-select:empty {
+  background-image: linear-gradient(90deg,
+    var(--pd-skel-base) 25%, var(--pd-skel-hi) 37%, var(--pd-skel-base) 63%);
+  background-size: 400% 100%;
+  animation: pd-skel-sweep 1.4s ease-in-out infinite;
+}
+/* the avatar's own footprint, so nothing moves when the real one arrives */
+html.pd-js #user-bar:empty { width: 36px; height: 36px; border-radius: 50%; flex: none; }
+html.pd-js .pd-topbar [class$="-projctx"] > .pd-select:empty { border-radius: var(--pd-radius-md); }
+/* ⚠️ The repo's own convention (see .pd-spin): a shimmer is decoration and motion
+   sensitivity outranks it. The block still reserves the space. */
+@media (prefers-reduced-motion: reduce) {
+  html.pd-js #user-bar:empty,
+  html.pd-js .pd-topbar [class$="-projctx"] > .pd-select:empty { animation: none; }
+}
+
 html.pd-js .pd-tabsrc { display: none; }
 .pd-tabsdrop-src { display: none !important; }
 /* ⚠️ REVISED (owner ask, 2026-09-04): `.pd-tabsdrop` is now a flex row itself

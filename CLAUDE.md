@@ -96,6 +96,70 @@ developer, plug into one shared shell.
 ## Changelog
 
 
+### 2026-09-10 (w5) — A boot skeleton for the topbar's two JS-filled slots
+
+Follow-on to (w4), which killed the tab-strip flash but explicitly did **not** fix the second half: the
+topbar's *contents* still arrive after the auth round-trip. This is that half.
+
+#### What was still popping in
+- **`#user-bar`** is written by `UI.renderUserBar()` only after `AppAuth.requireLogin()` resolves —
+  **two network round-trips**. ⚠️ While empty it is `width: 0`, so the avatar did not merely arrive
+  late, **it shifted the whole topbar** when it landed.
+- **The project `<select>`** already carries `min-width: 120px`, so its box was reserved — what it
+  lacked was any sign it was still loading, so it read as an empty control rather than a pending one.
+
+#### ⚠️⚠️ The skeleton keys off `:empty`, and that is the whole design
+```css
+html.pd-js #user-bar:empty { … shimmer … }
+```
+A slot is a skeleton **exactly while it has no children**, and the moment JS writes into it the
+selector stops matching and the skeleton is gone. **No class to add, no class to remove, nothing to
+coordinate, and nothing left behind if a render path changes later.** The alternative — an
+`.is-loading` class someone has to remember to clear — is how a skeleton ends up stuck on screen
+forever, and this app already has one bug of exactly that family on file (`ensureCodes` caching an
+empty array because `[]` is truthy).
+
+- ⚠️ Gated on **`html.pd-js`**, the marker (w4) that `theme.js` sets before first paint. Without JS the
+  real, empty controls render — a shimmer that can never resolve would be worse than a blank box.
+- ⚠️ `--pd-skel-base` / `--pd-skel-hi` are a **neutral wash, not brand red**: a shimmer means "not
+  loaded yet", and tinting it with the brand would read as a *state*. Paired per theme like every
+  other surface token.
+- ⚠️ `prefers-reduced-motion` turns the sweep off and keeps the block, following the same rule
+  `.pd-spin` already sets in this file.
+
+#### Verified — rendered in both themes, empty and filled
+| | empty | after JS fills it | |
+|---|---|---|---|
+| `#user-bar` (light + dark) | **36×36**, `pd-skel-sweep`, gradient present | **36×36**, animation `none`, gradient gone | **shift = 0px** |
+| project `<select>` (light + dark) | gradient + sweep | gradient gone, animation `none` | |
+| **no-JS control** (no `pd-js`) | **no gradient, no animation** | — | degradation correct |
+
+**The 0px is the point**: the avatar's footprint is now reserved, so the topbar no longer jumps when
+auth resolves. And the `:empty` self-clearing is measured rather than assumed — the same element is
+read before and after `innerHTML` is written.
+
+#### ⚠️ A flaw in my own version-bump script, caught here
+The bump helper derives its asset list from `git diff --name-only` **and then edits
+`assets/js/modules-grid.js`** (the `MODULE_V` fallback literal). On a round where that file was not
+otherwise touched, it therefore changed the file's CONTENT while leaving its own `?v=` on the previous
+token — **the exact stale-bytes trap that (w4) was written up for, reproduced by the tool meant to
+prevent it.** Caught by reading the bump output (`modules-grid.js` absent from the asset list while
+`MODULE_V fallback 1` was reported) and fixed by re-running once the file was dirty.
+⚠️ The durable fix is to compute the list *after* every edit, or to always include `modules-grid.js`;
+noted here because the next person will hit it the same way.
+
+- `dashboard.css` + `modules-grid.js` → `?v=20260910w5` (29 / 2 pages), `MODULE_V` with them.
+  `theme.js` correctly stays on `w4` — it did not change this round.
+- **42 JS files + 30 inline blocks across 29 pages parse, 0 failures**; braces balanced 519/519,
+  0 NUL bytes.
+- ⚠️ **Not verified signed in** — the skeleton is proved by driving the same DOM the app produces
+  (empty slot → `innerHTML` → re-measure), not by watching a real login resolve.
+
+⚠️ **Deliberately not skeletoned:** the module `<h1>` and its icon are static markup and paint
+immediately, and the module's own content area is the module's business — a shell skeleton that
+guessed at a module's layout would be wrong on most of them.
+
+
 ### 2026-09-10 (w4) — The flash when you open a module: the raw tab strip painting before JS collapses it
 
 Owner: *"When I open a module, for a split second it shows the previous UI."* Real, reproducible, and
