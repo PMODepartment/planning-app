@@ -1,5 +1,27 @@
 # Module: stakeholder-map
 
+## 2026-09-10 (y2) — The form moves to the person page; the row loses Edit and Delete, and gains bulk select
+
+⚠️⚠️ **`openForm` is UNCHANGED — the modal became one of two hosts.** It uses its handle only as
+`{ el, close }`, so `inlineHost()` (nine lines) lets `person.html` render the identical 619-line form
+inline. `mountForm` is the entry point and deliberately skips `init()`; `render()` is guarded on
+`#sm-table` because `load()` ends in it and would throw on a page with no toolbar.
+
+- Row **Edit**/**Delete** and the card's Edit are gone. ⚠️ `wireRowActions` is **deleted, not left
+  dead** — a wiring function matching nothing reads as a live feature.
+- ⚠️ **`+ Add stakeholder` still opens the modal.** Adding is not editing.
+- **Bulk delete** lives in the table's `.pd-dt-head` strip, beside the count. Selection is
+  **table-only**, "select all" means **the rows shown**, the set is pruned each render and never
+  persisted, and `delMany` deletes in **one statement** and **counts what came back** rather than
+  reporting a success it did not get.
+- ⚠️ A **pre-existing** duplicate "1 · Identity & photo" heading (2 in HEAD) is removed — found by
+  rendering the form where it is now read first.
+
+**Measured** with the real module loaded and only its externals stubbed: mounting opens **0 modals and
+0 overlays**, 39 inputs across 8 bands, identity disabled 3/3, autosave bound to the host; Save writes
+**one UPDATE of 46 fields** and calls back; Cancel empties the host and fires `onClose`.
+⚠️ **Not verified signed in.**
+
 ## 2026-09-10 (y1) — A person opens their profile page, scoped to this project
 
 Owner, item 4: *"when clicking on a person in here would open a pop-up, instead let's make use of the

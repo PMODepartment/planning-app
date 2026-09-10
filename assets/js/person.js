@@ -36,6 +36,10 @@ window.PDPerson = (function () {
 
   var personId = '', projectId = '', person = null, mapRow = null, usage = [];
   var profile = null, editing = false, dirCols = null;
+  // ⚠️ `editing` is the IDENTITY editor (portfolio scope). `projEditing` is the
+  //    register's own form mounted on this page (project scope). They are separate
+  //    because they edit different tables and are gated differently.
+  var projEditing = false;
 
   function sb() { return AppAuth.getSB(); }
   function $(id) { return document.getElementById(id); }
@@ -131,11 +135,17 @@ window.PDPerson = (function () {
              (editing ? 'Cancel' : 'Edit profile') + '</button>';
       if (editing) acts += '<button class="pd-btn pd-btn-primary" id="pp-save">Save</button>';
     } else if (projectId) {
-      // ⚠️ On a project page the primary action is the REGISTER, not an editor: the
-      //    project's own 31-column form already exists there, and a second editor
-      //    for the same row is two places to keep correct.
-      acts = '<a class="pd-btn" href="modules/stakeholder-map/index.html?project=' +
-             encodeURIComponent(projectId) + '">Open register</a>';
+      // ⚠️⚠️ THE REGISTER'S OWN FORM IS MOUNTED HERE, not reimplemented. Owner:
+      //    "Fold the register form onto the person page… All edits should only be
+      //    available at the person page." `StakeholderMap.mountForm` renders the
+      //    identical 619-line form into an element on this page — see the note on
+      //    `inlineHost` in that module. There is one editor, and it lives here.
+      if (canWrite() && mapRow) {
+        acts = '<button class="pd-btn pd-btn-primary" id="pp-pedit">' +
+               (projEditing ? 'Close editor' : 'Edit') + '</button>';
+      }
+      acts += '<a class="pd-btn" href="modules/stakeholder-map/index.html?project=' +
+              encodeURIComponent(projectId) + '">Open register</a>';
     }
     return '<div class="pp-head">' +
       '<div class="pp-ava">' + (thumb ? '<img id="pp-photo" alt="">' : esc(initials(person.name))) +
@@ -328,10 +338,16 @@ window.PDPerson = (function () {
       return;
     }
     host.innerHTML = renderCrumb() + renderHead() +
-      '<div class="pp-cols">' +
-        (editing ? renderEditor() : renderDetails()) +
-        renderOwner() +
-      '</div>' + renderBands();
+      // ⚠️ While the project form is open the READ view is not drawn. Showing both
+      //    puts two copies of every value on one page, one of them stale the moment
+      //    the planner types — and the form is the taller of the two, so the read
+      //    view would sit under it looking like the saved state.
+      (projEditing
+        ? '<div class="pp-formhost pd-card" id="pp-form"></div>'
+        : '<div class="pp-cols">' +
+            (editing ? renderEditor() : renderDetails()) +
+            renderOwner() +
+          '</div>' + renderBands());
 
     if (window.Icons && Icons.hydrate) Icons.hydrate(host);
     document.title = (person.name || 'Profile') + ' — Planners Dashboard';
@@ -340,7 +356,39 @@ window.PDPerson = (function () {
     if (e) e.onclick = function () { editing = !editing; paint(); };
     var s = $('pp-save');
     if (s) s.onclick = save;
+    var pe = $('pp-pedit');
+    if (pe) pe.onclick = function () { projEditing = !projEditing; paint(); };
+    if (projEditing) mountProjectForm();
     paintPhoto();
+  }
+
+  // ⚠️⚠️ The register's form, rendered into this page. It is the SAME function the
+  //    register's "+ Add stakeholder" uses — not a copy — so the derived previews,
+  //    the photo well, the six RCM bands and the autosave all behave identically and
+  //    cannot drift from it.
+  async function mountProjectForm() {
+    var host = $('pp-form');
+    if (!host) return;
+    if (!window.StakeholderMap || !StakeholderMap.mountForm) {
+      host.innerHTML = '<div class="pp-empty">The register module did not load, ' +
+        'so the editor is unavailable. Open the register instead.</div>';
+      return;
+    }
+    host.innerHTML = '<div class="pp-empty">Opening the editor…</div>';
+    var res = await StakeholderMap.mountForm({
+      host: host, projectId: projectId, stakeholderId: personId, profile: profile,
+      // ⚠️ Re-read before repainting: the form writes the row, and this page's own
+      //    copy of it is stale the moment it does.
+      onSaved: async function () {
+        projEditing = false;
+        try { await load(); } catch (e) {}
+        paint();
+      },
+      onClose: function () { projEditing = false; paint(); }
+    });
+    if (res && res.error) {
+      host.innerHTML = '<div class="pp-empty">' + esc(res.error) + '</div>';
+    }
   }
 
   // The photo lives in a private bucket, so it needs a signed URL.

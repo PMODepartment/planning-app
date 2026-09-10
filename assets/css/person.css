@@ -12,7 +12,15 @@
       mode, unreadable in dark" failure this repo keeps recording.
    =========================================================================== */
 
-.pp-wrap { max-width: 1180px; }
+/* ⚠️⚠️ CENTRED, and that is the whole fix for the collapsed rail. The cap was here
+   from the start — a profile is label/value prose and a 1,700px measure is
+   unreadable — but with the wrap left-aligned, collapsing the 240px rail to 64px
+   handed all 176px of the recovered width to a single empty gutter on the right.
+   `margin-inline: auto` splits it, so the page looks deliberate in both states
+   instead of only in the one it was designed at.
+   ⚠️ The cap is raised 1180 → 1320 at the same time: centring alone would have kept
+   two 88px gutters, and the two columns have the room for it. */
+.pp-wrap { max-width: 1320px; margin-inline: auto; }
 
 /* ---- breadcrumb ---------------------------------------------------------- */
 .pp-crumb { display: flex; align-items: center; gap: 10px; margin: 0 0 14px; font-size: 13px; }

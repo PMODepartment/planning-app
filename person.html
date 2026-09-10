@@ -8,7 +8,13 @@
   <script src="assets/js/theme.js?v=20260910w7"></script>
   <title>Stakeholder profile &mdash; Planners Dashboard</title>
   <link rel="stylesheet" href="assets/css/dashboard.css?v=20260910x1" />
-  <link rel="stylesheet" href="assets/css/person.css?v=20260910y1" />
+  <link rel="stylesheet" href="assets/css/mcc-rcm.css?v=20260910w3" />
+  <!-- ⚠️ The register's own stylesheet, because the project form rendered on this
+       page IS that module's form — the same markup, so it needs the same rules.
+       Loaded AFTER dashboard.css and BEFORE person.css, which is the order the
+       module's own page uses. -->
+  <link rel="stylesheet" href="modules/stakeholder-map/module.css?v=20260910y2" />
+  <link rel="stylesheet" href="assets/css/person.css?v=20260910y2" />
 </head>
 <body>
   <div class="pd-app">
@@ -49,7 +55,17 @@
   <script src="assets/js/ui.js?v=20260909s"></script>
   <script src="assets/js/icons.js?v=20260909ui"></script>
   <script src="assets/js/stakeholders.js?v=20260910u7"></script>
-  <script src="assets/js/person.js?v=20260910y1"></script>
+  <!-- ⚠️⚠️ The Stakeholder Map module is loaded HERE so the project form on this page
+       is the register's own form, not a copy of it. `mountForm` is its entry point and
+       deliberately does not call `init()` — none of the register's chrome exists here.
+       Its dependencies come with it: offline/collab/autosave/mcc-rcm are what the form
+       body reads, and omitting one fails only when a planner reaches that band. -->
+  <script src="assets/js/offline.js?v=20260812b"></script>
+  <script src="assets/js/collab.js?v=20260812b"></script>
+  <script src="assets/js/autosave.js?v=20260812b"></script>
+  <script src="assets/js/mcc-rcm.js?v=20260902a"></script>
+  <script src="modules/stakeholder-map/module.js?v=20260910y2"></script>
+  <script src="assets/js/person.js?v=20260910y2"></script>
   <script>
   (function () {
     AppAuth.requireLogin(function (user, profile) {

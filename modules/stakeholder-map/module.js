@@ -57,6 +57,10 @@ window.StakeholderMap = (function () {
   try { var _sl = localStorage.getItem('sm_layout'); if (_sl === 'table' || _sl === 'cards') smLayout = _sl; } catch (e) {}
   var histView = null;
   var collapsed = {};
+  // ⚠️ Keyed by row id and NOT persisted: a selection is a gesture in progress, and
+  //    one restored from localStorage a day later would arm a delete over rows the
+  //    planner cannot see.
+  var selIds = {};
   var bands = { id: true, as: true, en: true, rs: false, res: false, au: false };
   var filterToggle = null;   // UI.wireFilterToggle() handle for #sm-filters
 
@@ -698,6 +702,12 @@ window.StakeholderMap = (function () {
   }
 
   function render() {
+    // ⚠️⚠️ THE MODULE IS NOW LOADED BY A PAGE THAT HAS NO REGISTER. person.html
+    //    mounts the same form (see `mountForm`), and `load()` ends in render() —
+    //    which would reach `$('sm-clear').classList` and throw on a page that has
+    //    no toolbar. Guarded on the table rather than on a flag, because the thing
+    //    render() actually needs IS the register markup.
+    if (!document.getElementById('sm-table')) return;
     renderKpis();
     // ⚠️ Both Register layouts are still rendered. They share `filtered()` and the cost is
     //    a string build, but the reason is correctness rather than cost: switching layout
@@ -912,7 +922,10 @@ window.StakeholderMap = (function () {
     bandRow += '<th class="sm-bandhead sm-bandhead-x"></th>';
 
     var head = '<thead><tr class="sm-bands-row">' + bandRow + '</tr><tr>' +
-      cols.map(function (c) { return '<th>' + c.label + '</th>'; }).join('') + '<th></th></tr></thead>';
+      cols.map(function (c) { return '<th>' + c.label + '</th>'; }).join('') +
+      '<th class="sm-rowacts">' + (canWrite()
+        ? '<label class="sm-selbox"><input type="checkbox" id="sm-selall" aria-label="Select every row shown"></label>'
+        : '') + '</th></tr></thead>';
 
     var groups = [], byNo = {};
     data.forEach(function (r) {
@@ -946,15 +959,24 @@ window.StakeholderMap = (function () {
           // stacks each row into a card where every value needs its own label.
           return '<td' + (c.cls ? ' class="' + c.cls + '"' : '') + ' data-l="' + c.label + '">' + c.v(r) + '</td>';
         }).join('') +
-        '<td class="sm-rowacts"><button class="pd-btn" data-edit="' + r.id + '">Edit</button> ' +
-        '<button class="pd-btn" data-del="' + r.id + '">Delete</button></td></tr>';
+        // ⚠️ Edit and Delete are GONE from the row. Editing lives on the person page
+        //    (one editor, see person.js), and a per-row Delete beside 30 other rows is
+        //    the destructive control most easily hit by accident. What replaces them is
+        //    a selection box, which is what makes the bulk action possible.
+        '<td class="sm-rowacts">' + (canWrite()
+          ? '<label class="sm-selbox"><input type="checkbox" data-sel="' + r.id + '"' +
+            (selIds[r.id] ? ' checked' : '') + ' aria-label="Select ' + Fmt.esc(r.name || 'row') + '"></label>'
+          : '') + '</td></tr>';
       }).join('');
     }).join('');
 
     t.innerHTML = head + '<tbody>' + (body ||
       '<tr><td colspan="' + (cols.length + 1) + '" style="padding:24px;color:var(--pd-muted);">No stakeholders match the current filters.</td></tr>') + '</tbody>';
 
+    pruneSel();
     wireRowActions(t);
+    wireSel(t);
+    paintSelBar();
     t.querySelectorAll('.sm-grow').forEach(function (tr) {
       tr.onclick = function (e) {
         if (e.target.closest('button')) return;
@@ -965,14 +987,68 @@ window.StakeholderMap = (function () {
       };
     });
   }
-  function wireRowActions(scope) {
-    scope.querySelectorAll('[data-edit]').forEach(function (b) {
-      b.onclick = function (e) { e.stopPropagation(); openForm(rows.filter(function (x) { return x.id === b.dataset.edit; })[0]); };
-    });
-    scope.querySelectorAll('[data-del]').forEach(function (b) {
-      b.onclick = function (e) { e.stopPropagation(); del(b.dataset.del); };
-    });
+  function selCount() { return Object.keys(selIds).length; }
+
+  // ⚠️ Prune to what is actually on screen. A filter change can leave a selected id
+  //    with no row, and deleting rows a planner can no longer see is the failure this
+  //    guard exists for.
+  function pruneSel() {
+    var live = {};
+    filtered().forEach(function (r) { if (selIds[r.id]) live[r.id] = true; });
+    selIds = live;
   }
+
+  function paintSelBar() {
+    var bar = $('sm-selbar');
+    if (!bar) return;
+    var n = selCount();
+    bar.hidden = !n;
+    if (!n) return;
+    bar.innerHTML = '<span class="sm-selcount">' + n + ' selected</span>' +
+      '<button type="button" class="pd-btn" id="sm-selclear">Clear</button>' +
+      '<button type="button" class="pd-btn pd-btn-danger" id="sm-seldel">Delete ' + n + '</button>';
+    $('sm-selclear').onclick = function () { selIds = {}; renderTable(); };
+    $('sm-seldel').onclick = function () { delMany(Object.keys(selIds)); };
+  }
+
+  function wireSel(scope) {
+    scope.querySelectorAll('[data-sel]').forEach(function (cb) {
+      cb.onclick = function (e) { e.stopPropagation(); };
+      cb.onchange = function () {
+        if (cb.checked) selIds[cb.dataset.sel] = true; else delete selIds[cb.dataset.sel];
+        paintSelBar();
+        var all = $('sm-selall');
+        if (all) {
+          var shown = filtered().length, n = selCount();
+          all.checked = shown > 0 && n === shown;
+          all.indeterminate = n > 0 && n < shown;
+        }
+      };
+    });
+    var all = $('sm-selall');
+    if (all) {
+      var shown = filtered().length, n = selCount();
+      all.checked = shown > 0 && n === shown;
+      all.indeterminate = n > 0 && n < shown;
+      all.onchange = function () {
+        selIds = {};
+        // ⚠️ Only the rows currently SHOWN — never the whole register. "Select all"
+        //    inside a filtered table means the filter's rows, and anything else would
+        //    arm a delete over work the planner is not looking at.
+        if (all.checked) filtered().forEach(function (r) { selIds[r.id] = true; });
+        renderTable();
+      };
+    }
+  }
+
+  // ⚠️⚠️ DELETED RATHER THAN LEFT DEAD. No row or card emits `data-edit` or
+  //    `data-del` any more: editing moved to the person page and per-row Delete
+  //    became the bulk action in the table's header strip. A wiring function that
+  //    matches nothing reads as a feature that exists, and the next person to add a
+  //    `data-edit` anywhere would silently re-open a second editor.
+  //    ⚠️ `del(id)` itself is KEPT — `delMany` is the only caller today, but the
+  //    single-row path is still the one the confirm text is written for.
+  function wireRowActions() {}
 
   // ---- Cards view -------------------------------------------------------
   // The faces. Grouped by engagement approach, because that is the question a
@@ -1055,7 +1131,6 @@ window.StakeholderMap = (function () {
         (r.megawide_counterpart ? '<span class="sm-card-cp" title="Megawide counterpart">' + Fmt.esc(r.megawide_counterpart) + '</span>' : '') +
         (s && s !== 'N/A' ? '<span class="sm-strat sm-s-' + s.replace(/\s/g, '') + '">' + Fmt.esc(s) + '</span>' : '') +
         (r.email ? '<a class="sm-card-mail" href="mailto:' + Fmt.esc(r.email) + '" title="' + Fmt.esc(r.email) + '">email</a>' : '') +
-        '<button class="pd-btn sm-card-edit" data-edit="' + r.id + '">Edit</button>' +
       '</div></div>';
   }
   function meter(label, v) {
@@ -1595,6 +1670,22 @@ window.StakeholderMap = (function () {
   // ========================================================================
   // Add / Edit
   // ========================================================================
+  // ⚠️⚠️ THE FORM HAS TWO HOSTS AND ONE IMPLEMENTATION. `openForm` uses its modal
+  //    handle only as `{ el, close }` — every field lookup goes through
+  //    `m.el.querySelector`, and Autosave takes `{ root, modal }`. So an element on
+  //    another page satisfies the same contract, and the person page renders the
+  //    IDENTICAL form inline rather than a second copy of it.
+  // ⚠️ `close()` empties the host instead of removing it: the host belongs to the
+  //    page, not to the form, and removing it would leave the page with nowhere to
+  //    render the next one.
+  function inlineHost(host, html) {
+    host.innerHTML = html;
+    return {
+      el: host,
+      close: function () { host.innerHTML = ''; if (host.__onClose) host.__onClose(); }
+    };
+  }
+
   function openForm(r, fopts) {
     if (!pid) { UI.toast('Select a project first', 'warn'); return; }
     var isNew = !r; r = r || {};
@@ -1667,7 +1758,7 @@ window.StakeholderMap = (function () {
       return '<option value="' + a.no + '"' + (+r.activity_no === a.no ? ' selected' : '') + '>' + a.no + '. ' + Fmt.esc(a.name) + '</option>';
     }).join('');
 
-    var m = UI.modal(
+    var _formHtml = (
       // ⚠️ HEADER / BODY / FOOTER, not a raw dump into `.pd-modal`.
       // `.pd-modal` is itself the scroller (max-height:90vh; overflow-y:auto), so
       // the previous shape -- a bare <h2>, then ~40 fields across six RCM bands,
@@ -1713,7 +1804,11 @@ window.StakeholderMap = (function () {
               : 'This row predates the shared directory. Saving adds this person to it and links them, so a correction here reaches every project from then on.') +
             '</span>' +
           '</div>') +
-'<div class="sm-fsec">1 · Identity &amp; photo</div>' +
+      // ⚠️ The band-1 heading is NOT repeated here. It is emitted once above, with its
+      //    scope hint, and the scope banner sits between the two — so this second bare
+      //    copy printed "1 · Identity & photo" twice with a banner sandwiched in the
+      //    middle. Pre-existing (2 occurrences in HEAD before this change); found by
+      //    rendering the form on the person page, where it is now the first thing read.
       '<div class="sm-idrow">' +
         // The photo well IS the drop target and the file picker — a separate
         // "Choose file" button beside a preview is two controls for one job.
@@ -1830,6 +1925,9 @@ window.StakeholderMap = (function () {
         '<button class="pd-btn pd-btn-primary" id="f-save">Save</button>' +
       '</div>'
     );
+
+    // ⚠️ The person page passes a host; the register passes none and gets the modal.
+    var m = fopts.host ? inlineHost(fopts.host, _formHtml) : UI.modal(_formHtml);
 
     function q(sel) { return m.el.querySelector(sel); }
 
@@ -2183,7 +2281,12 @@ window.StakeholderMap = (function () {
           // then failing the update leaves a row referencing a missing object.
           await removeObjects(oldPaths);
           if (data.photo_path) await signPaths([data.photo_thumb_path, data.photo_path]);
-          UI.toast('Saved', 'ok'); m.close(); sortRows(); render();
+          UI.toast('Saved', 'ok');
+          // ⚠️ The host is told BEFORE the form closes: the person page repaints
+          //    itself from the saved row, and closing first would empty the host
+          //    it is about to render into.
+          if (fopts.onSaved) { try { fopts.onSaved(); } catch (e) {} }
+          m.close(); sortRows(); render();
         }
       } catch (err) {
         UI.toast(photoHint(err), 'error');
@@ -2285,6 +2388,35 @@ window.StakeholderMap = (function () {
     UI.toast('Exported ' + body.length + ' row' + (body.length === 1 ? '' : 's'), 'ok');
   }
 
+  // ⚠️⚠️ ONE STATEMENT, NOT N. `.in('id', ids)` is a single round trip and a single
+  //    RLS decision; deleting in a loop leaves a half-finished job on the first
+  //    refusal, with no way to say which half.
+  // ⚠️ It counts what came back. PostgREST answers an RLS-filtered DELETE with 200
+  //    and the rows it actually removed — so a shortfall means some rows were refused
+  //    (this register's delete policy is planner-or-owner), and reporting "Deleted 12"
+  //    over 5 removals is the silent success this repo keeps recording.
+  async function delMany(ids) {
+    ids = (ids || []).filter(Boolean);
+    if (!ids.length) return;
+    if (!confirm('Delete ' + ids.length + ' stakeholder' + (ids.length === 1 ? '' : 's') +
+                 ' from this project? Their directory profile is not affected.')) return;
+    try {
+      var res = await sb().from(TABLE).delete().in('id', ids).select('id');
+      if (res.error) throw res.error;
+      var got = (res.data || []).length;
+      selIds = {};
+      if (got < ids.length) {
+        UI.toast('Deleted ' + got + ' of ' + ids.length +
+                 ' — the rest were refused, most likely because another planner created them.', 'warn');
+      } else {
+        UI.toast('Deleted ' + got + '.', 'ok');
+      }
+      await load();
+    } catch (e) {
+      UI.toast('Could not delete: ' + ((e && e.message) || e), 'error');
+    }
+  }
+
   async function del(id) {
     var r = rows.filter(function (x) { return x.id === id; })[0];
     if (!confirm('Delete this stakeholder from THIS project? The person stays in the shared directory and on any other project. This cannot be undone.')) return;
@@ -2317,5 +2449,34 @@ window.StakeholderMap = (function () {
     UI.toast('Deleted', 'ok'); load();
   }
 
-  return { init: init };
+  // ⚠️⚠️ THE PERSON PAGE'S DOOR INTO THIS MODULE. It deliberately does NOT call
+  //    `init()`: that wires the register's toolbar, its filters, the collaboration
+  //    presence channel and the project picker, none of which exist on person.html.
+  //    It sets the two pieces of state the form reads — the project and the profile
+  //    — loads the rows (which is also what fills the datalists and the directory
+  //    overlay), and renders the form into the caller's element.
+  // ⚠️ It resolves the row by STAKEHOLDER id, not by row id: the person page knows
+  //    who the person is, and `stakeholder_map.id` names one project's row about
+  //    them rather than the person.
+  async function mountForm(o) {
+    o = o || {};
+    if (!o.host) return { error: 'No host element.' };
+    profile = o.profile || null;
+    pid = o.projectId || null;
+    if (!pid) return { error: 'No project.' };
+    await load();
+    var r = null;
+    if (o.stakeholderId) {
+      r = rows.filter(function (x) { return String(x.stakeholder_id) === String(o.stakeholderId); })[0] || null;
+    }
+    if (!r && o.rowId) {
+      r = rows.filter(function (x) { return String(x.id) === String(o.rowId); })[0] || null;
+    }
+    if (!r) return { error: 'That person is not on this project.' };
+    o.host.__onClose = o.onClose || null;
+    openForm(r, { host: o.host, onSaved: o.onSaved });
+    return { ok: true, row: r };
+  }
+
+  return { init: init, mountForm: mountForm };
 })();
