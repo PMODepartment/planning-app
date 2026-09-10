@@ -96,6 +96,42 @@ developer, plug into one shared shell.
 ## Changelog
 
 
+### 2026-09-10 (u7) — A shared data-table layer, and the Stakeholder Map opens on cards
+
+Item 6 of six owner items on the stakeholder screens. Detail in
+[`modules/stakeholder-map/CLAUDE.md`](modules/stakeholder-map/CLAUDE.md). What reaches beyond the
+module:
+
+- ⚠️⚠️ **`dashboard.css` gains `.pd-dt`, and it is a PROMOTION rather than a new component.** The
+  idiom is the Procurement app's `.data-table`, ported into Contracts & Claims on 2026-09-07 as
+  `.cc-dt*` under its own note — *"divergent table styles is exactly what the UI-uniformity pass keeps
+  having to rework"*. Stakeholder Map needed the same header strip, sortable headers, group rows and
+  footer, and a **third hand-copy is how three tables end up disagreeing**. It layers over the shared
+  `.pd-table`, and every value is a `--pd-*` token: the Procurement original hard-codes its colours and
+  re-states them under `body.dark-mode`, so carrying the literals across gives a table that is right
+  in light mode and unreadable in dark.
+- ⚠️ **`.cc-dt*` is deliberately UNCHANGED.** Migrating Contracts & Claims onto the shared rules is its
+  own change with its own verification; doing it here would put a module I was not asked to touch into
+  this commit. Until then the two coexist, and the shared one is the successor.
+- ⚠️ **Screen and layout stop being the same list.** The module's dropdown offered *Register* and
+  *Cards* as two screens, so the card view and the table view of the same register were siblings and
+  neither was "the register". Now one Register screen with a card/table switcher, cards by default —
+  and **every hash ever issued still resolves**, because the old `list`/`cards` values normalise to the
+  Register screen *and set the layout*.
+
+**Verified** by slicing the shipped view logic out of `module.js` and driving it against the real
+markup lifted byte-for-byte from `index.html`: exactly one pane visible in every state including an
+unrecognised view, both legacy hashes landing on the right layout, and the band toggles rendering
+inside the table card rather than the topbar. ⚠️⚠️ The first measurement of the new header strip
+reported it transparent and border-less **while the CSS was correct** — the harness linked
+`dashboard.css` with no `?v=` and got the browser's stale copy. That is the **second** harness this
+session to report correct rules as missing; harness stylesheets are now cache-busted.
+
+`dashboard.css` → `?v=20260910u7` (29 pages); stakeholder-map `module.js`/`module.css` and
+`stakeholders.js` → `?v=20260910u7`; `MODULE_V` → `20260910u7`. ⚠️ Every one of the other 28 pages was
+checked to carry **version-only** changes, so no concurrent session's work is swept in.
+⚠️ **Not verified signed in.**
+
 ### 2026-09-10 (u6) — Gift Tier is removed from the app, and a migration drops the columns
 
 Owner, on the project-level Stakeholder Map: *"Let's drop the Gift Tier as well."* Asked whether to
