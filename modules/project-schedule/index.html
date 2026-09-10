@@ -1692,6 +1692,12 @@
     .ps-vs-legendnote { display:flex; flex:0 1 auto; align-items:flex-start; gap:6px; line-height:1.45; }
     /* The swatch must not be squeezed by the wrapping text beside it. */
     .ps-vs-legendnote > svg { flex:0 0 auto; margin-top:1px; }
+    /* The one viewpoint bar that drives both buildings in Planned vs Actual (3D). It sits between
+       the window's head and the two panes, so it reads as belonging to both rather than to either.
+       ⚠️ `flex:0 0 auto` in the modal's own column flow — without it the bar shares the stage's
+       remaining height and the models lose the room. */
+    .ps-vs-fz-3dbar { flex:0 0 auto; padding:8px 14px 0; }
+    .ps-vs-fz-3dbar .ps-vs3-bar { margin-bottom:0; }
     .ps-vs-legendtxt { min-width:0; white-space:normal; overflow-wrap:break-word; }
     /* ⚠️ FLEX with a 0-basis, not an `auto-fit … 1fr` grid. A `1fr` track STRETCHES a tower to fill
        the row, so a short building (one zone wide) sat in a card ~660px of which ~590px was dead
@@ -14235,6 +14241,55 @@
       html + '</div>';
   }
   function _vsMaxDetail() { return Math.max(1, _vsAxis().length); }
+  /* ==========================================================================================
+     ⚠️⚠️ HOW DEEP THE DATA ACTUALLY GOES — and this is the answer to a question that has now
+     been asked three times.
+
+     Owner 2026-09-10: *"return the progress per zone, aligned with the schedule"*, and when
+     pressed: *"when adjusting the progress bar, the whole floor's accomplishment is being updated
+     not per zone."* Twice before, this was answered with "it already works — switch Detail to 2",
+     and twice that answer was wrong in the way that matters: it cannot be followed.
+
+     MEASURED on the shipped code, two storeys of two activities each:
+       zones recorded    · Detail 2 → 2 cells · as-of Feb: Zone A 50%, Zone B 0%   ✓ per zone
+       NO zone recorded  · Detail 2 → 1 cell labelled '—' · as-of Feb: 25%          ✗ the FLOOR
+
+     `_vsRowCells` groups by `locValOf(r, id) || '—'`, so when NO activity carries a value at that
+     level every row collapses into ONE bucket named '—' — byte-for-byte the Detail 1 drawing,
+     reporting the whole floor's number, with nothing on screen saying why. The planner switches
+     to Detail 2, sees the same building, scrubs, and watches the whole floor rise as one. The
+     progress was per zone and aligned with the schedule all along; the ZONE COLUMN WAS EMPTY, and
+     the view hid that.
+
+     So the depth is derived from the data, not from how many levels the LBS defines. Deeper
+     buttons stay on screen, disabled, carrying the reason — the same rule this bar already applies
+     to a combined model, and for the same reason: *a button that looks live and is overridden is
+     the silent failure this module keeps recording.*
+     ⚠️ Computed ONCE per render (renderVStack sets it from the activities on screen) rather than
+     inside _vsDetailNow, which is called per row, per cell, per card.
+     ⚠️ Defaults to null = "not measured yet", which reads as no clamp — so nothing changes before
+     the first render, and a caller outside the render path is never silently narrowed.
+     ========================================================================================== */
+  var _vsFilledDepth = null;
+  function _vsSetFilledDepth(list) {
+    var ax = _vsAxis();
+    // Level 1 (the axis's own first level) is the storey band and is always "filled": an activity
+    // with no value there is reported separately, in the No level band.
+    var d = 1;
+    for (var i = 1; i < ax.length; i++) {
+      var id = ax[i].id;
+      var any = list.some(function (r) { return !!locValOf(r, id); });
+      if (!any) break;
+      d = i + 1;
+    }
+    _vsFilledDepth = d;
+    return d;
+  }
+  // The axis levels BELOW the filled depth — the ones a Detail button cannot honestly draw.
+  function _vsEmptyAxisNames() {
+    var ax = _vsAxis(), d = _vsFilledDepth == null ? ax.length : _vsFilledDepth;
+    return ax.slice(d).map(function (l) { return l.name; });
+  }
   /* MIXING TRADES FORCES LEVEL 1 - A DATA-COHERENCE RULE, NOT A DISPLAY PREFERENCE.
      Owner 2026-09-04: *"whenever the option of mixing the different trades of a certain tower is
      chosen, pls illustrate the vertical stacking in terms of level 1. Bc the zoning of trades may
@@ -14256,7 +14311,14 @@
     // when they switch back to Per trade. Dropping them from the loop would both hide that the
     // choice exists and silently reset it.
     if (_vsMixTrades) return 1;
-    return Math.max(1, Math.min(_vsDetail, _vsMaxDetail()));
+    /* ⚠️ Clamped to the depth the DATA supports as well as to the depth the LBS defines. Without
+       this the model would still be asked for Detail 2 on a project with no zone values and would
+       return one '—' cell per storey — the Detail 1 drawing under a Detail 2 label, which is the
+       confusion this clamp exists to remove. The button for that level is disabled and says so,
+       so the planner's own choice is never silently overridden without a statement. */
+    var cap = _vsMaxDetail();
+    if (_vsFilledDepth != null) cap = Math.min(cap, Math.max(1, _vsFilledDepth));
+    return Math.max(1, Math.min(_vsDetail, cap));
   }
   function _vsTradeOf(r) { return workOf(r) || NO_TRADE; }
   /* THE TRADE ON A ROW CAN DISAGREE WITH THE BRANCH IT IS FILED UNDER, and that disagreement - not
@@ -15584,7 +15646,35 @@
     return _vs3Load;
   }
   var _vs3Scenes = [];   // { renderer, dispose } for every live canvas, so a repaint frees its GPU context
+  /* ==========================================================================================
+     THE CAMERA SURVIVES THE REPAINT.
+     Owner 2026-09-10: *"whenever the progress bar is moved, please retain the view being
+     displayed. Whenever i move the progress timeline bar, the view is always returned to
+     default."*
+
+     ⚠️⚠️ WHY IT WAS LOST: dragging the scrubber calls renderVStack(), which sets host.innerHTML
+     and rebuilds every scene from nothing. _vs3Build ends with setView('iso') and _vs3Bar lit
+     'iso' unconditionally, so EVERY frame of the drag threw the planner's angle away and started
+     the camera over. Turning a building to the elevation you care about and then walking the
+     programme — the two gestures this card exists for — could not be done in the same breath.
+     ⚠️ Keyed by the card's own key prefix (the trade, the tower, or ALL), so five cards side by
+     side each keep their own angle rather than the last one built winning.
+     ⚠️ NOT persisted to localStorage. A camera is where you are looking right now, not a
+     setting; reopening the module tomorrow should start at Iso, which is what the card documents.
+     ⚠️ Kept across a basis or detail change too, deliberately: it is the same building turned the
+     same way, and re-orbiting after every toggle is the same complaint one control further out.
+     ========================================================================================== */
+  var _vs3Cam = {};
+  function _vs3CamSave() {
+    _vs3Scenes.forEach(function (s) {
+      if (!s || !s.camKey || !s.cam) return;
+      try { _vs3Cam[s.camKey] = s.cam(); } catch (e) {}
+    });
+  }
   function _vs3Dispose() {
+    // ⚠️ HARVEST BEFORE FREE. A disposed renderer's camera is not readable, so reading it after
+    // the loop below would store nothing and the scrub would snap back to Iso exactly as before.
+    _vs3CamSave();
     // ⚠️ EVERY repaint of this view must free its WebGL contexts. A browser caps them (~16) and
     // silently kills the OLDEST when the cap is passed — so without this, switching basis a dozen
     // times leaves a screen of blank canvases and no error anywhere.
@@ -15976,7 +16066,16 @@
 
     // Orbit by drag, without pulling in OrbitControls: two angles and a radius is the whole of what
     // this view needs, and the r128 examples loader is a second script to keep pinned.
-    var rot = { az: Math.PI / 4, el: 0.5, r: Math.max(span * 2.6, tall * 1.9) + 1.5 }, drag = null;
+    /* ⚠️ `r0` is the DEFAULT radius for this model, kept so a restored camera can carry the
+       planner's zoom across a rebuild as a RATIO rather than as an absolute. A stored r of 9.4
+       means "twice as far out as this building's default" on the model it was taken from; applied
+       raw to a taller building it is a different framing entirely. See setCam. */
+    var r0 = Math.max(span * 2.6, tall * 1.9) + 1.5;
+    var rot = { az: Math.PI / 4, el: 0.5, r: r0 }, drag = null;
+    // Told when the camera moves, so a linked scene can adopt the same one. ⚠️ Fired from
+    // applyRot, which every gesture and every setView funnels through — a hook on the drag alone
+    // would leave the viewpoint buttons and the wheel unlinked.
+    var onCam = null, muted = false;
     function applyRot() {
       camera.position.set(
         rot.r * Math.cos(rot.el) * Math.sin(rot.az),
@@ -15987,13 +16086,38 @@
       // ⚠️ Every camera move, including the drag's own per-frame calls: a label that updates
       // only on release slides off its storey for the whole of the gesture.
       placeLabels();
+      // ⚠️ `muted` is the re-entrancy guard, and it is not optional: A tells B, B's applyRot
+      // tells A, and two linked panes would recurse until the stack blew on the first drag.
+      if (onCam && !muted) { try { onCam(cam()); } catch (e) {} }
     }
-    function setView(which) {
+    // The whole camera: the named viewpoint AND the orbit the planner turned it to.
+    function cam() { return { view: view, az: rot.az, el: rot.el, r: rot.r, r0: r0 }; }
+    /* Adopt a camera. ⚠️ The zoom comes back as a RATIO of the model's own default radius, so a
+       camera lifted off a 14-storey card and applied to a 3-storey one frames the smaller
+       building the same way instead of putting it in the distance. A camera with no r0 (an older
+       stored value) keeps its absolute r, clamped to this model's own wheel limits. */
+    function setCam(c, silent) {
+      if (!c) return;
+      if (typeof c === 'string') { setView(c, silent); return; }
+      var was = muted; if (silent) muted = true;
+      view = c.view || view;
+      if (typeof c.az === 'number') rot.az = c.az;
+      if (typeof c.el === 'number') rot.el = Math.max(-0.2, Math.min(1.5, c.el));
+      if (typeof c.r === 'number') {
+        var want = (typeof c.r0 === 'number' && c.r0 > 0) ? c.r * (r0 / c.r0) : c.r;
+        rot.r = Math.max(span * 1.2, Math.min(span * 12 + tall * 6, want));
+      }
+      applyRot();
+      muted = was;
+    }
+    function setView(which, silent) {
+      var was = muted; if (silent) muted = true;
       view = which;
       if (which === 'top') { rot.az = 0; rot.el = 1.45; }
       else if (which === 'iso') { rot.az = Math.PI / 4; rot.el = 0.5; }
       else { rot.az = ({ front: 0, right: 1, rear: 2, left: 3 }[which] || 0) * Math.PI / 2; rot.el = 0.12; }
       applyRot();
+      muted = was;
     }
     var cv = renderer.domElement;
     cv.style.cursor = 'grab';
@@ -16014,6 +16138,13 @@
       // ⚠️ Clamped just short of straight down / straight up: at exactly ±π/2 the up-vector and the
       // view direction are parallel and lookAt has no defined roll, which flips the model.
       rot.el = Math.max(-0.2, Math.min(1.5, drag.el + (e.clientY - drag.y) * 0.006));
+      /* ⚠️ THE CAMERA STOPS CLAIMING A PRESET. A drag moves the angle off whichever of the six
+         viewpoints was last pressed, so `view` would otherwise keep naming it — and the bar,
+         which now lights itself from the remembered camera, would light a button the model is not
+         at. Empty means "somewhere of the planner's own choosing", which is the truth and lights
+         nothing. ⚠️ NOT cleared by the wheel below: a preset sets the two ANGLES and says nothing
+         about distance, so dollying in on the Front elevation is still the Front elevation. */
+      view = '';
       applyRot();
     };
     cv.onpointerup = function () { drag = null; cv.style.cursor = 'grab'; };
@@ -16113,6 +16244,16 @@
       // ⚠️ Readable, so a rebuild can put the camera back where the planner left it (see the
       // focus window's scrub path). Without it every scrub frame would snap back to Iso.
       view: function () { return view; },
+      /* ⚠️⚠️ `view()` ALONE WAS NOT ENOUGH, and that is the bug behind *"whenever i move the
+         progress timeline bar, the view is always returned to default"*. It reports the last
+         viewpoint BUTTON pressed, so a camera the planner had dragged to their own angle came
+         back as the nearest preset — and on the main stack nothing read it at all, so every
+         scrub frame snapped to Iso. `cam`/`setCam` carry the orbit and the zoom too. */
+      cam: cam,
+      setCam: setCam,
+      // Told when this camera moves, so a second scene can follow it — the linked panes in
+      // Planned vs Actual. Pass null to unlink.
+      onCam: function (fn) { onCam = fn; },
       /* ⚠️⚠️ RESIZE IS A CAPABILITY, NOT AN EVENT LISTENER IN HERE. A WebGL canvas does not reflow:
          its drawing buffer and the camera's aspect are numbers set once, so a card that goes full
          screen keeps drawing at the old size and the model sits in a corner of a black rectangle.
@@ -16170,7 +16311,10 @@
      without that, changing Colour to Zone would slam the panel shut under the planner's cursor.
      ========================================================================================== */
   var _vs3MoreOpen = false;
-  function _vs3Bar() {
+  /* `camKey` names the card whose camera this bar drives, so the lit button is the viewpoint
+     THAT CARD is actually at. ⚠️ Omitted by the focus window, which builds its own scenes and
+     lights them itself — see _vsOpenFocus. */
+  function _vs3Bar(camKey) {
     var cols = [[0, 'Auto'], [1, '1'], [2, '2'], [3, '3'], [4, '4']];
     // How many settings are away from their default — the number on the button.
     var off = (_vsPlanCols !== 0 ? 1 : 0) + (_vsZoneCol ? 1 : 0) + (!_vsFloorMarks ? 1 : 0) +
@@ -16183,9 +16327,17 @@
       [['front', _vsElevLabel('front')], ['right', _vsElevLabel('right')],
        ['rear', _vsElevLabel('rear')], ['left', _vsElevLabel('left')],
        ['top', 'Top (plan)'], ['iso', 'Iso \u2014 the reading view']].map(function (o) {
-        // ⚠️ Iso starts lit because that is where every scene starts (setView at the end of
-        // _vs3Build). Six buttons with none of them on says the camera is nowhere.
-        return '<button data-vs3view="' + o[0] + '"' + (o[0] === 'iso' ? ' class="on"' : '') +
+        /* ⚠️ Iso is lit only when this card has no remembered camera — that is where every new
+           scene starts (setView at the end of _vs3Build). Six buttons with none of them on says
+           the camera is nowhere.
+           ⚠️⚠️ IT USED TO BE HARDCODED TO 'iso', which is half of why the scrub looked like it
+           reset the view: even on the frames where the camera had been restored, the bar said
+           Iso. A control that disagrees with what is on screen is the same bug as one that does
+           nothing. */
+        /* ⚠️ Three states, not two: no memory for this card → Iso (where a new scene starts);
+           a remembered PRESET → that button; a remembered hand-orbit (view '') → nothing lit. */
+        var _lit = (camKey && _vs3Cam[camKey]) ? (_vs3Cam[camKey].view || '') : 'iso';
+        return '<button data-vs3view="' + o[0] + '"' + (o[0] === _lit ? ' class="on"' : '') +
           ' title="' + esc(o[1]) + '">' +
           esc(o[0] === 'top' ? 'Top' : (o[0] === 'iso' ? 'Iso' : o[0].charAt(0).toUpperCase() + o[0].slice(1))) + '</button>';
       }).join('') + '</span>' +
@@ -16333,9 +16485,18 @@
        Detail 2 and deeper every zone fills on its own. Saying so is cheaper than a planner
        counting blocks to work out which they are looking at. */
     var det = (model && model.detail) || 1;
+    /* ⚠️⚠️ THE ADVICE IS ONLY OFFERED WHEN IT CAN BE TAKEN. "Switch Detail to 2 to read it zone by
+       zone" was printed unconditionally, including on a project where no activity carries a zone —
+       where Detail 2 draws the identical building. That sentence is why *"the whole floor's
+       accomplishment is being updated not per zone"* was reported three times: the card kept
+       promising a grain the data could not produce. See _vsSetFilledDepth. */
+    var _deeper = _vsEmptyAxisNames();
     var _grain = (det <= 1)
       ? '<b>One block = one storey</b> at this Detail, so the fill is the whole floor’s progress — ' +
-        'switch <b>Detail</b> to 2 to read it zone by zone. '
+        (_deeper.length
+          ? 'and it cannot be read zone by zone yet, because no activity on screen carries a ' +
+            esc(_deeper[0]) + '. Set one in <b>Schedule Setup › Floors &amp; Zones</b>. '
+          : 'switch <b>Detail</b> to 2 to read it zone by zone. ')
       : '<b>One block = one zone</b>, and each fills on its own progress — switch <b>Detail</b> to 1 to read ' +
         'a whole storey as a single block. ';
     /* ⚠️⚠️ ONE LINE ON SCREEN, THE REST ONE CLICK AWAY. Owner 2026-09-10: *"too much
@@ -16375,7 +16536,7 @@
     if (!m) return '<div class="ps-vs-empty">Nothing to stack for this selection.</div>';
     _vsLastModel = m;
     _vs3Pending.push({ key: keyPrefix, model: m, color: baseColor });
-    return _vs3Bar() + '<div class="ps-vs3-mount" data-vs3mount="' + esc(keyPrefix) + '">' +
+    return _vs3Bar(keyPrefix) + '<div class="ps-vs3-mount" data-vs3mount="' + esc(keyPrefix) + '">' +
       '<div class="ps-vs3-load">Loading the 3D view…</div></div>' + _vs3Foot(m);
   }
   function _vs3Mount(host) {
@@ -16390,6 +16551,12 @@
         if (!el) return;
         try {
           var s = _vs3Build(el, j.model, j.color, j.key, T);
+          // ⚠️ The scene has to know which card it is, or the harvest above cannot file it.
+          s.camKey = j.key;
+          // ⚠️ REPLAYED HERE, not inside _vs3Build: the build owns "where a new scene starts"
+          // (Iso, which the card documents), and this owns "where this card was left". Putting
+          // the memory inside the build would make a genuinely new card open at a stale angle.
+          if (_vs3Cam[j.key] && s.setCam) { try { s.setCam(_vs3Cam[j.key], true); } catch (e2) {} }
           _vs3Scenes.push(s);
           // The viewpoint buttons belong to THIS card, so they are found within its own card box.
           var card = el.closest ? el.closest('.ps-vs-tower') : el.parentNode;
@@ -16398,8 +16565,12 @@
               (card || el.parentNode).querySelectorAll('[data-vs3view]').forEach(function (x) { x.classList.remove('on'); });
               b.classList.add('on');
               s.setView(b.dataset.vs3view);
+              _vs3Cam[j.key] = s.cam ? s.cam() : null;
             };
           });
+          // An orbit or a wheel is a camera change like any other, so the memory follows it —
+          // without this, a hand-turned angle survives only until the next repaint.
+          if (s.onCam) s.onCam(function (c) { _vs3Cam[j.key] = c; });
         } catch (e) {
           // ⚠️ Names the card that failed and why, and leaves the others alone. A blank canvas with
           // a clean console is the worst outcome for a view whose whole job is to be looked at.
@@ -16847,6 +17018,53 @@
   // ⚠️ Scenes owned by the focus window, kept apart from the cards' own: closing the window frees
   // these and must not touch the ones still on screen behind it.
   var _vs3FocusScenes = [];
+  /* ==========================================================================================
+     ONE CAMERA ACROSS EVERY PANE IN THE FOCUS WINDOW.
+     Owner 2026-09-10: *"in planned vs actual, whenever there are view changes on the right,
+     please also change the left (planned) pane."*
+
+     Every viewpoint button in the window drives EVERY scene, and an orbit or a wheel on either
+     model is mirrored onto the other. The bar's lit state is written across the whole window, so
+     the control never disagrees with either building.
+     ⚠️⚠️ THE `silent` FLAG IS LOAD-BEARING. setCam(c, true) applies the camera WITHOUT firing
+     that scene's own onCam — so mirroring A onto B does not immediately mirror B back onto A.
+     Without it the first drag is an infinite ping-pong between the two panes; the scene's own
+     `muted` guard is what implements it.
+     ⚠️ Wired over the whole `wrap`, not per pane: in compare there is ONE bar above both panes,
+     and in a single pane there is one bar inside it. Both are found by the same query.
+     ========================================================================================== */
+  function _vsFocusWire3DViews(wrap) {
+    if (!wrap) return;
+    var scenes = _vs3FocusScenes.slice();
+    var btns = wrap.querySelectorAll('[data-vs3view]');
+    function lit(which) {
+      btns.forEach(function (x) { x.classList.toggle('on', x.dataset.vs3view === which); });
+    }
+    btns.forEach(function (btn) {
+      btn.onclick = function () {
+        lit(btn.dataset.vs3view);
+        // ⚠️ silent: the FIRST scene would otherwise mirror its own change onto the others a
+        // second time, which is harmless but is one wasted render per pane per click.
+        scenes.forEach(function (sc) { if (sc && sc.setView) sc.setView(btn.dataset.vs3view, true); });
+      };
+    });
+    scenes.forEach(function (sc, i) {
+      if (!sc || !sc.onCam) return;
+      sc.onCam(function (c) {
+        scenes.forEach(function (other, j) {
+          if (j === i || !other || !other.setCam) return;
+          other.setCam(c, true);
+        });
+        /* ⚠️ A hand-orbit leaves NO viewpoint button lit, and that is honest rather than untidy:
+           the camera is no longer at any of the six presets, and leaving `Iso` lit while the
+           planner has turned the model somewhere else is the looks-live-does-nothing failure this
+           module keeps recording. Pressing a button lights it again.
+           ⚠️ Unconditional: the drag clears `view` to '', so a `if (c.view)` guard here would
+           skip exactly the case this line exists for. */
+        lit(c && c.view ? c.view : null);
+      });
+    });
+  }
   function _vs3FocusDispose() {
     _vs3FocusScenes.forEach(function (s) { try { s.dispose(); } catch (e) {} });
     _vs3FocusScenes = [];
@@ -17171,6 +17389,27 @@
             '<path d="M5.5 1.5h-4v4M10.5 14.5h4v-4M1.5 10.5v4h4M14.5 5.5v-4h-4"/></svg> Full screen</button></span>' +
           '<span class="ps-vs-fz-x"><button class="pd-btn" id="ps-vs-fzx">Close</button></span>' +
         '</div>' +
+        /* ==================================================================================
+           ⚠️⚠️ IN COMPARE + 3D THE VIEWPOINT BAR IS ABOVE BOTH PANES, NOT INSIDE EACH.
+           Owner 2026-09-10: *"in planned vs actual, whenever there are view changes on the right,
+           please also change the left (planned) pane."*
+
+           It used to be emitted per pane, and the comment where it was said that was deliberate —
+           *"so in compare each building can be turned to a different elevation"*. The owner has
+           now said the opposite, and they are right, for a reason the SVG path already knew: in
+           2D compare, hovering, panning and zooming either pane ALREADY drives both, because two
+           buildings you are comparing have to be seen from the same place. Two independent
+           cameras made 3D the one view in which the comparison could silently be between a
+           baseline seen from the north and an actual seen from the west.
+
+           So there is ONE bar, it sits above the gutter, and it drives both scenes — and with the
+           cameras locked, two identical bars would have been two controls for one state, which is
+           the clutter this module keeps recording. `_vs3Bar()` takes no camKey here: the focus
+           window lights the bar itself, from the scene it just built.
+           ⚠️ Only in compare. A single pane keeps its bar inside it, where it lines up over the
+           model it turns.
+           ================================================================================== */
+        ((_vs3D && cmp) ? '<div class="ps-vs-fz-3dbar">' + _vs3Bar() + '</div>' : '') +
         '<div class="ps-vs-fz-stage" id="ps-vs-fz-stage">' +
           // ⚠️ A real gutter between the two windows, not the 1px border the first cut had — see the
           // note on .ps-vs-fz-div for why it is decorative rather than draggable.
@@ -17179,10 +17418,10 @@
               '<div class="ps-vs-fz-pane"><div class="ps-vs-fz-panelab">' +
               '<span class="sw" style="background:' + (cmp ? (i === 0 ? 'var(--pd-muted)' : card.color) : card.color) + '"></span>' + esc(p.lab) + '</div>' +
               (_vs3D
-                // ⚠️ The viewpoint bar is PER PANE, so in compare each building can be turned to a
-                // different elevation — which is exactly how a planner checks whether the baseline
-                // and the actual differ on the side they care about.
-                ? (_vs3Bar() + '<div class="ps-vs-fz-vp is3d" data-fzvp="' + i + '">' +
+                // ⚠️ In compare the bar is ABOVE both panes and drives both cameras — see the note
+                // on .ps-vs-fz-3dbar above. A single pane keeps its own bar, where it lines up over
+                // the model it turns.
+                ? ((cmp ? '' : _vs3Bar()) + '<div class="ps-vs-fz-vp is3d" data-fzvp="' + i + '">' +
                    '<div class="ps-vs3-mount ps-vs-fz-3d" data-fz3d="' + i + '"></div>' +
                    (i === 0 ? '<div class="ps-vs-fz-hint">drag = orbit · scroll = zoom · click a block for its dates</div>' : '') +
                    '</div>')
@@ -17245,16 +17484,11 @@
             _vs3FocusScenes.push(b3.scene);
             // The last pane's map wins, exactly as the SVG path does — see the note above.
             _vsFocus.cells = b3.cells;
-            var bar = mount.parentNode && mount.parentNode.parentNode
-              ? mount.parentNode.parentNode.querySelector('.ps-vs3-bar') : null;
-            if (bar) bar.querySelectorAll('[data-vs3view]').forEach(function (btn) {
-              btn.onclick = function () {
-                bar.querySelectorAll('[data-vs3view]').forEach(function (x) { x.classList.remove('on'); });
-                btn.classList.add('on');
-                b3.scene.setView(btn.dataset.vs3view);
-              };
-            });
           });
+          /* ⚠️ WIRED AFTER THE LOOP, over every scene at once. Bound per pane inside the loop it
+             could only ever reach the scene built on that pass — the first pane's handler would
+             have been installed before the second scene existed. */
+          _vsFocusWire3DViews(wrap);
           // ⚠️ Sized on the frame AFTER the modal has been laid out: a canvas measured before
           // that reports a 0-wide host and draws nothing, which is the 3D twin of the fit bug
           // recorded on the SVG path below.
@@ -17297,17 +17531,24 @@
         if (F.threed) {
           var T = (typeof THREE !== 'undefined') ? THREE : null;
           if (!T) return;
-          var keep = _vs3FocusScenes.map(function (s) { return s.view && s.view(); });
+          /* ⚠️ THE WHOLE CAMERA, not `view()`. `view()` reports the last viewpoint BUTTON
+             pressed, so a camera the planner had DRAGGED to their own angle came back as the
+             nearest preset and every scrub frame quietly straightened the building out. Same
+             root cause as the main stack's *"the view is always returned to default"*. */
+          var keep = _vs3FocusScenes.map(function (s) { return s.cam ? s.cam() : (s.view && s.view()); });
           _vs3FocusDispose();
           panes.forEach(function (p, i) {
             var mount = wrap.querySelector('[data-fz3d="' + i + '"]');
             if (!mount) return;
             var b3 = _vs3FocusBuild(mount, card.list, card.color, card.prefix + '|FZ', p.basis, T);
             if (!b3 || !b3.scene) return;
-            if (keep[i] && b3.scene.setView) b3.scene.setView(keep[i]);
+            if (keep[i] && b3.scene.setCam) b3.scene.setCam(keep[i], true);
+            else if (keep[i] && b3.scene.setView) b3.scene.setView(keep[i]);
             _vs3FocusScenes.push(b3.scene);
             F.cells = b3.cells;
           });
+          // ⚠️ Re-linked: the scenes these handlers pointed at were just disposed.
+          _vsFocusWire3DViews(wrap);
           _vs3FocusResize();
           return;
         }
@@ -17623,6 +17864,16 @@
     // discard holds a WebGL context, and a browser caps them (~16) then silently kills the OLDEST
     // — so without this, a dozen basis switches leave a screen of blank models and a clean console.
     _vs3Reset();
+    /* ⚠️ WHERE THE PLANNER HAD SCROLLED TO is part of "the view being displayed" — the other half
+       of the owner's report, and it applies to the 2D card as much as to the 3D one. Six trades
+       side by side is wider than any window, so a scrub that resets the horizontal scroll takes
+       the building being watched off screen. Read here because host.innerHTML below destroys the
+       scroller; re-applied straight after the insert. */
+    var _keepScroll = null;
+    try {
+      var _vp0 = host.querySelector('.ps-vs-viewport');
+      if (_vp0) _keepScroll = { l: _vp0.scrollLeft, t: _vp0.scrollTop };
+    } catch (e) {}
     if (!pid) { host.innerHTML = '<div class="ps-vs-empty">Select a project to see its vertical stacking.</div>'; return; }
     /* ⚠️⚠️ THREE DIFFERENT ANSWERS, WHERE THERE USED TO BE ONE ACCUSATION. An empty LOC_LEVELS was
        reported as "this project has no Location Breakdown Structure" no matter WHY it was empty, and
@@ -17678,6 +17929,11 @@
     var acts = (_vsTower === 'ALL') ? _actsAll : _actsAll.filter(function (r) {
       return (_vsTower === VS_NOTOWER) ? !_vsTowerOf(r) : _vsTowerOf(r) === _vsTower;
     });
+    /* ⚠️ BEFORE anything reads _vsDetailNow() — the toolbar, the models and the footers all do,
+       and they must all agree about how deep this project's locations go.
+       ⚠️ Measured from _actsAll, not from the trade-filtered `acts`: hiding a trade must not
+       disable a Detail level for the trades still on screen. */
+    _vsSetFilledDepth(_actsAll);
     // "Per tower" is only a meaningful view when there is more than one tower to compare.
     if (_vsScope === 'tower' && towerNames.length < 2) _vsScope = 'trade';
     var trades = [], seen = {};
@@ -17707,13 +17963,23 @@
     detail = _vsDetailNow();
 
     var detailBtns = '';
+    var _axAll = _vsAxis();
     for (var dlv = 1; dlv <= _vsMaxDetail(); dlv++) {
       // A button that looks live and is overridden is the silent failure this module keeps
       // recording - so a level a combined model cannot honestly draw is disabled and says why.
       var _dOff = _vsMixTrades && dlv > 1;
+      /* ⚠️⚠️ AND a level NO ACTIVITY IS FILED UNDER is disabled for the same reason — see
+         _vsSetFilledDepth. This is the control that has been lying: it offered Detail 2 on a
+         project with no zone values, drew the Detail 1 building, and left the planner reporting
+         that the whole floor updates instead of the zones. */
+      var _dEmpty = !_dOff && _vsFilledDepth != null && dlv > _vsFilledDepth;
+      var _dName = _axAll[dlv - 1] ? _axAll[dlv - 1].name : ('level ' + dlv);
       detailBtns += '<button data-vsdet="' + dlv + '"' + (detail === dlv ? ' class="on"' : '') +
-        (_dOff ? ' disabled' : '') +
-        ' title="' + esc(_dOff ? VS_MIX_NOTE : _vsAxis().slice(0, dlv).map(function (l) { return l.name; }).join(' › ')) + '">' + dlv + '</button>';
+        ((_dOff || _dEmpty) ? ' disabled' : '') +
+        ' title="' + esc(_dOff ? VS_MIX_NOTE
+          : _dEmpty ? ('Not one activity on screen carries a ' + _dName + ', so this Detail would draw exactly what Detail ' +
+                       _vsFilledDepth + ' draws. Set a ' + _dName + ' on the activities — Schedule Setup › Floors & Zones, or Actions › Match WBS to locations… — and this level draws itself.')
+          : _axAll.slice(0, dlv).map(function (l) { return l.name; }).join(' › ')) + '">' + dlv + '</button>';
     }
     // ⚠️ Multi-select. Clicking a trade TOGGLES it, so several can be shown side by side; "All
     // trades" clears the selection rather than ticking every box (see the note on _vsTradeSel).
@@ -17963,6 +18229,37 @@
         '<br>• or, on a schedule pushed from <em>Schedule Setup</em>, the trade was given no floors in ' +
         'step 2 and went in as whole-trade work — give it floors there and re-push.');
     }
+    /* ==========================================================================================
+       ⚠️⚠️ THE ZONE COLUMN IS EMPTY — say it, because the symptom points somewhere else entirely.
+       Owner 2026-09-10, three times over: *"return the progress per zone"* … *"when adjusting the
+       progress bar, the whole floor's accomplishment is being updated not per zone."*
+
+       Nothing is wrong with the progress. Measured on the shipped code: where a zone IS recorded,
+       Detail 2 draws one block per zone and each fills on its OWN schedule (Zone A 50% while
+       Zone B is still 0% at the same as-of date). Where no zone is recorded, _vsRowCells folds
+       every activity into one '—' bucket, so Detail 2 draws the Detail 1 building and reports the
+       floor's number. The planner then scrubs and, correctly, reports that the floor moves as one.
+
+       ⚠️ This is a DATA gap stated as a data gap, and it names the level rather than saying
+       "locations": the LBS may call it Zone, Area, Sector or Unit, and advice that uses the wrong
+       word sends a planner to the wrong column. It is only raised when the level EXISTS in the
+       breakdown and nothing is filed under it — a project that has no zone level at all is not
+       missing anything, and _vsMaxDetail already stops at what it defines.
+       ========================================================================================== */
+    var _emptyAx = _vsEmptyAxisNames();
+    if (_emptyAx.length && acts.length) {
+      warn += _vsWarnWrap(_vsWarnKey('nozone', _emptyAx.join('|')),
+        '<strong>Progress cannot be read per ' + esc(_emptyAx[0]) + ' yet</strong> — this project defines ' +
+        (_emptyAx.length === 1 ? 'a <strong>' + esc(_emptyAx[0]) + '</strong> level' :
+          'the levels <strong>' + esc(_emptyAx.join(' › ')) + '</strong>') +
+        ', but not one of the ' + acts.length.toLocaleString() + ' activities on screen carries a value there. ' +
+        'So every storey is one block whose fill is the WHOLE FLOOR\'s progress, and walking the ' +
+        'timeline moves that one figure — which is exactly what a floor doing all its zones at once ' +
+        'would look like. Each zone already fills on its own schedule the moment it HAS a zone: give ' +
+        'the activities a ' + esc(_emptyAx[0]) + ' in <strong>Schedule Setup › Floors &amp; Zones</strong> (or ' +
+        '<strong>Actions › Match WBS to locations…</strong> if the zone is already in the WBS branch names), ' +
+        'then Detail ' + ((_vsFilledDepth || 1) + 1) + ' draws it zone by zone.');
+    }
     // Every activity with a WBS node now resolves a trade from its branch, so a leftover here means
     // the row has no WBS node at all — a different problem, and worth naming rather than bucketing.
     if (noTradeList.length) warn += _vsWarnWrap(_vsWarnKey('notrade', noTradeList.length), '<strong>' + noTradeList.length + ' activit' +
@@ -18041,7 +18338,16 @@
       var _tw = host.querySelectorAll('.ps-vs-grid > .ps-vs-tower');
       for (var _ti = 0; _ti < _tw.length; _ti++) _tw[_ti].style.setProperty('--i', Math.min(_ti, 8));
     }
+    var _vsAnimPrev = _vsAnim;   // ⚠️ read by the scroll restore below, which runs after this reset
     _vsAnim = null;   // one-shot: the next repaint is silent unless a handler asks again
+    /* ⚠️ Re-applied BEFORE _vs3Mount, so the scroller is already where it belongs when the canvases
+       size themselves — and clamped by the browser on its own if the new content is narrower.
+       ⚠️ Skipped while the entrance animation is running: the towers are still sliding in, so the
+       scroller's width is not final and a scroll set now would be clamped to the wrong maximum. */
+    if (_keepScroll && _vsAnimPrev !== 'in') {
+      var _vp1 = host.querySelector('.ps-vs-viewport');
+      if (_vp1) { _vp1.scrollLeft = _keepScroll.l; _vp1.scrollTop = _keepScroll.t; }
+    }
     // ⚠️ AFTER the insert, never before: a WebGL canvas has to be in the document to size itself,
     // and _vs3Dispose above has already freed the contexts this repaint replaced.
     _vs3Mount(host);

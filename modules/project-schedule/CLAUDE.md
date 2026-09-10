@@ -13,6 +13,157 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### The camera survives the scrubber, both compare panes turn together, and the per-zone question is answered (2026-09-10) — ethanrobles10
+
+Owner: *"Also for the progress, return the progress per zone, aligned with the schedule. In
+addition, whenever the progress bar is moved, please retain the view being displayed. Whenever i
+move the progress timeline bar, the view is always returned to default. In addition, in planned vs
+actual, whenever there are view changes on the right, please also change the left (planned)
+pane."*
+
+## 1. ⚠️⚠️ Per-zone progress: the answer given twice before was un-followable
+
+This has now been asked three times — *"how come the progress per zone is removed"* (twice) and
+*"return the progress per zone, aligned with the schedule"* — and twice it was closed with "it
+already works, switch **Detail** to 2." **That answer was wrong in the way that matters: on this
+project it cannot be followed.** Pressed on the symptom, the owner said exactly what they see:
+*"when adjusting the progress bar, the whole floor's accomplishment is being updated not per
+zone."*
+
+**Measured on the shipped code**, one storey of two activities on different schedules (Zone A
+Jan–Mar, Zone B Jul–Sep), walked through four as-of dates:
+
+```
+zones RECORDED, Detail 2 → 2 cells
+  as-of 2026-02-14 : Zone A=50%   Zone B=0%      ← per zone, on its own schedule
+  as-of 2026-08-15 : Zone A=100%  Zone B=50%
+
+NO zone recorded, Detail 2 → 1 cell, labelled '—'
+  as-of 2026-02-14 : —=25%                        ← the WHOLE FLOOR
+  as-of 2026-08-15 : —=75%
+```
+
+**Nothing is wrong with the progress.** `_vsRowCells` groups by `locValOf(r, id) || '—'`, so when
+NO activity carries a value at that level every row folds into ONE bucket named `'—'` — the
+Detail 1 drawing, reporting the floor's number, **under a Detail 2 label, with nothing on screen
+saying why.** The planner switches to Detail 2, sees the identical building, drags the scrubber,
+and correctly reports that the floor moves as one. The progress was per zone and aligned with the
+schedule the whole time; **the zone column was empty, and the view hid that.**
+
+Three things now say so, and the module's own rule decides how:
+
+- **The Detail buttons for empty levels are disabled and carry the reason.** The bar already
+  applies exactly this rule to a combined model — *"a button that looks live and is overridden is
+  the silent failure this module keeps recording"* — and a Detail level nothing is filed under is
+  the same button. The reason **names the level** (Zone, Area, Sector, whatever this LBS calls it)
+  rather than saying "locations", because advice with the wrong word sends a planner to the wrong
+  column: *"Not one activity on screen carries a Zone, so this Detail would draw exactly what
+  Detail 1 draws. Set a Zone on the activities — Schedule Setup › Floors & Zones, or Actions ›
+  Match WBS to locations… — and this level draws itself."*
+- ⚠️ **The buttons stay on screen**, disabled, never dropped: hiding them would hide that the
+  choice exists. `_vsDetailNow()` clamps to the measured depth so the model is never asked for a
+  grain it cannot draw, the same shape as the existing `_vsMixTrades` clamp.
+- **A banner in the existing warn stack** states it as the data gap it is, and connects the
+  symptom to the cause in the owner's own terms — that a floor moving as one *is* what a floor
+  doing all its zones at once looks like.
+- **The footer stops advising a switch that would change nothing.** *"Switch Detail to 2 to read
+  it zone by zone"* was printed unconditionally, including where Detail 2 draws the identical
+  building. That sentence is why this was reported three times.
+
+⚠️ Derived from the DATA, not from how many levels the LBS defines — `_vsSetFilledDepth`, computed
+once per render from `_actsAll` (not the trade-filtered set: hiding a trade must not disable a
+Detail level for the trades still on screen).
+
+## 2. The camera stopped being thrown away on every frame of a drag
+
+Owner: *"whenever i move the progress timeline bar, the view is always returned to default."*
+They are right, and it was two faults compounding.
+
+**`renderVStack()` rebuilds every scene from nothing** — the scrubber calls it per frame — and
+`_vs3Build` ends with `setView('iso')`. So turning a building to the elevation you care about and
+then walking the programme, the two gestures this card exists for, could not be done in the same
+breath. There is now a camera memory keyed by the card's own key prefix, **harvested before the
+dispose** (a freed renderer's camera is not readable, so reading it after would store nothing and
+change nothing) and replayed after the build.
+
+⚠️⚠️ **And `view()` alone was not enough** — this is the half the focus window got wrong too. It
+reports the last viewpoint BUTTON pressed, so a camera the planner had *dragged* to their own
+angle came back as the nearest preset: the focus window's scrub comment claimed *"the angle the
+planner chose survives the scrub"* and it only ever survived for the six presets. `cam()`/
+`setCam()` carry the orbit and the zoom.
+
+- ⚠️ **The zoom crosses a rebuild as a RATIO of the model's own default radius**, not as an
+  absolute. A stored `r` of 13.8 means "twice as far out as *that* building's default"; applied
+  raw to a taller one it is a different framing. Asserted: a camera off a model with `r0` 6.9 at
+  2× distance lands at 2× on a model whose `r0` is 16.7.
+- ⚠️ **A drag now clears `view`**, so the camera stops claiming a preset it has been moved off —
+  otherwise the bar, which now lights itself from the remembered camera, would light a button the
+  model is not at. The wheel does *not* clear it: a preset sets the two angles and says nothing
+  about distance, so dollying in on the Front elevation is still the Front elevation.
+- ⚠️ **The bar's lit button was hardcoded to `iso`**, which is half of why this looked like a
+  reset even on frames where the camera had been restored. Three states now: no memory → Iso,
+  a remembered preset → that button, a remembered hand-orbit → nothing lit.
+- ⚠️ **Not persisted.** A camera is where you are looking right now, not a setting; the module
+  documents that a scene starts at Iso and reopening it tomorrow still does.
+- **The horizontal scroll is the other half of "the view being displayed"** and applies to the 2D
+  card too: six trades side by side are wider than any window, so a scrub that reset the scroller
+  took the building being watched off screen. Captured before the `innerHTML`, re-applied after —
+  ⚠️ skipped while the entrance animation runs, when the scroller's width is not yet final.
+
+## 3. Planned vs Actual is one camera now, not two
+
+Owner: *"whenever there are view changes on the right, please also change the left (planned)
+pane."* The viewpoint bar was emitted **per pane**, and the comment where it sat said that was
+deliberate — *"so in compare each building can be turned to a different elevation."* The owner has
+overruled that, and they are right for a reason the SVG path already knew: **in 2D compare,
+hovering, panning and zooming either pane already drives both.** Two independent cameras made 3D
+the one view where the comparison could silently be between a baseline seen from the north and an
+actual seen from the west.
+
+So there is **one bar above both panes** — with the cameras locked, two identical bars would have
+been two controls for one state — and every gesture on either model drives the other: the six
+viewpoints, the orbit, and the wheel.
+
+⚠️⚠️ **`setCam(c, true)` — the silent flag — is load-bearing.** It applies a camera without firing
+that scene's own `onCam`, so mirroring A onto B does not immediately mirror B back onto A. Without
+it the first drag is an infinite ping-pong between the panes; the scene's `muted` guard implements
+it. ⚠️ The handlers are wired **after** the build loop, over every scene at once: bound inside the
+loop, the first pane's handler would have been installed before the second scene existed.
+
+## Verified
+
+**Executed, not read.** The depth, the clamp, the empty-level names and the Detail buttons were
+sliced out of the shipped file and run: 17 assertions, 0 failing — including that all three
+buttons are still emitted when only one is usable, that the disabled button's reason names *Zone*
+rather than "locations", and that `_vsDetailNow()` returns 1 (not 2) when no zone is recorded.
+`setCam`'s ratio maths was executed the same way, including both clamps.
+
+**The pane linking was run in a real browser**, the shipped `_vsFocusWire3DViews` against two
+instrumented scenes and the real two-pane markup:
+
+```
+CLICK "Rear" on the shared bar:
+   LEFT/planned.setView(rear, silent=true)
+   RIGHT/actual.setView(rear, silent=true)      both scenes told: YES
+ORBIT the RIGHT (actual) model to az=2.50:
+   LEFT/planned.setCam({view:rear,az:2.50}, silent=true)
+   LEFT pane adopted az: 2.50
+   the right pane was NOT told again (no echo): true
+   every mirror call is silent (the re-entrancy guard): true
+   lit after a hand-orbit: []
+ORBIT the LEFT (planned) model to az=-1.10:
+   RIGHT/actual.setCam({view:rear,az:-1.10}, silent=true)   RIGHT adopted az: -1.10
+```
+
+The page parses (one inline script block, 0 syntax failures, 0 NUL bytes) and loads to the
+sign-in redirect with an empty console. The toolbar was re-rendered in all three bases as a
+regression check on the previous entry's cleanup.
+
+⚠️ **Not verified signed in** — the anon key carries no grants, so no WebGL scene was built
+against this project's data in this session. What is asserted above is the camera bookkeeping, the
+linking logic, the depth derivation and the markup; nothing here claims to have watched a real
+building keep its angle through a drag.
+
 ### The stacking bar loses a row, and the Fit button it lost was already dead (2026-09-10) — ethanrobles10
 
 Owner: *"cleanup the UI just below the header. i think it is too much. you can remove the Fit

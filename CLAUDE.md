@@ -95,6 +95,44 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### The camera survives the scrubber, both compare panes turn together, and the per-zone question is answered (2026-09-10) — ethanrobles10
+
+Owner: *"return the progress per zone, aligned with the schedule … whenever the progress bar is
+moved, please retain the view being displayed … in planned vs actual, whenever there are view
+changes on the right, please also change the left (planned) pane."*
+
+⚠️⚠️ **Per-zone progress had been asked about three times and closed twice with an answer that
+cannot be followed.** Measured on the shipped code: where a zone IS recorded, Detail 2 draws one
+block per zone and each fills on its own schedule (Zone A 100% while Zone B is still 0% at the
+same as-of date). Where **no** zone is recorded, `_vsRowCells` folds every activity into one `'—'`
+bucket — the Detail 1 drawing, reporting the floor's number, under a Detail 2 label, with nothing
+saying why. So "switch Detail to 2" changed nothing and the planner watched the whole floor move
+as one. Nothing was wrong with the progress; **the zone column was empty and the view hid it.**
+Detail levels nothing is filed under are now disabled and carry the reason, naming the level
+(*Zone*, not "locations"); `_vsDetailNow()` clamps to the depth the data supports; a banner states
+the gap; and the footer stops recommending a switch that would draw the identical building.
+
+**The camera was thrown away on every frame of a scrub** — `renderVStack()` rebuilds each scene
+and `_vs3Build` ends with `setView('iso')`. There is a camera memory per card now, harvested
+before the dispose and replayed after the build, and `view()` was not enough on its own: it names
+the last viewpoint *button*, so a hand-dragged angle came back as the nearest preset (the focus
+window had the same half-fix). `cam()`/`setCam()` carry the orbit and the zoom — the zoom as a
+**ratio** of each model's own default radius. The horizontal scroll is kept too.
+
+**Planned vs Actual is one camera.** The viewpoint bar was per pane, deliberately; the owner
+overruled it and is right, because 2D compare already drives both panes on hover, pan and zoom.
+One bar above both panes, and every orbit or click on either model drives the other. ⚠️ The
+`silent` flag on `setCam` is the re-entrancy guard — without it the first drag ping-pongs between
+the panes forever.
+
+**Verified by execution** (17 assertions, 0 failing) and, for the pane linking, in a real browser
+against the shipped wiring: clicking the shared bar tells both scenes; orbiting the right pane
+moves the left to the same azimuth with no echo back. ⚠️ Not verified signed in (no grants on the
+anon key) — no WebGL scene was built against this project's data.
+
+`MODULE_V` → `20260910z2` (⚠️ re-derived from the remote after a concurrent session took `z1`
+mid-work — the exact collision this log records). Detail: [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
 ### 2026-09-10 (z1) — Matching the BOQ to the schedule: four rungs instead of one, and a location key that was wrong twice
 
 **Run `migrations/2026-09-10-boq-match-rung.sql`.** Owner: *"How should we match the BOQ to the
