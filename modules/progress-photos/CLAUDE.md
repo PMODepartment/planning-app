@@ -2,6 +2,62 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## The 15 pre-existing test failures, resolved: 12 stale assertions fixed
+## in place, 2 real gaps found in the harness itself, 0 app-code bugs (2026-09-11)
+
+Owner: "can you also resolve the 15 failed tests" — the ones the previous entry documented as
+pre-existing and out of scope. Investigated every one individually rather than patching regexes to
+make them pass; the honest split turned out to be:
+
+- **12 were stale exact-string/exact-count assertions** against source that had genuinely, correctly
+  moved on since the test was written — none of them a real defect. Root causes, each confirmed by
+  reading the actual current code before touching the test: `insertPresentation()`/`finish()` moved
+  their `.insert(...).select()` call into a shared helper (also carrying the Report Type
+  migration-tolerant retry) that a later refactor introduced; the Report Type `<option>` tags gained
+  a conditional `selected` attribute; `pane()` no longer reads Trade/Works at all — a **later, separate**
+  owner ask removed that whole caption line on purpose ("no need to include as caption all the
+  activities performed"); the PPTX shared-location text is now wrapped in `sanitizePptxText()` (the
+  2026-09-03 PowerPoint-corruption fix, applied to every PPTX string); `bim.js`'s `plans()`/
+  `pinFieldHTML()` read through `currentPlansList()`/`curPlans` (the floor-plan-revisions feature,
+  2026-09-03) instead of the raw `plans` array; ppr.js's Clear-filters reset gained `reportType: ''`;
+  the Works empty-state string was deleted outright when item 8 (this same week) made the whole field
+  omit itself rather than show an empty picker; and two legitimate `#fff`-on-`--pd-red` badges
+  (`.ppr-panelabel.is-current`, `.bim-revbadge`) had simply never been added to the allow-list regex.
+  Each fix is a comment explaining what changed and why the new pattern is correct, not just a
+  wider regex.
+- **2 were counting assertions that needed to grow from 2 to 3** — `works_activity_ids`/
+  `location`/`view_name` are now written by Add, Edit, **and** the new `open360Upload()` save path
+  (yesterday's own work), so the exact occurrence counts genuinely increased.
+- **1 was a real gap in the test harness, not the app** — the three `wireStageInteractions()`
+  window-listener assertions (`bim.js`) had gone permanently unreachable after the 2026-08-30
+  "Project Schedule is the only source of truth for Tower/Floor" business rule made `render()` stop
+  at `hasEstablishedLocations()` before ever reaching the stage HTML those listeners attach to. The
+  harness deliberately never calls `PP.init()`/`load()` (a documented, load-bearing choice elsewhere
+  in this file), so `window.ProgressPhotos.locLevels()`/`distinctLocValuesFor()` always read empty
+  here — no amount of seeding `store.location_levels`/`store.project_schedule` could have satisfied
+  it, since `bim.js` only ever asks the OTHER module's live object for that data. Fixed by stubbing
+  `PP.locLevels`/`PP.distinctLocValuesFor` directly for the duration of this one test block
+  (save/restore, the same convention this file already uses for `PP._setCanWrite`), and tagging the
+  section's own seeded floor plan with matching `location_values` so `currentPlanFor()` actually
+  resolves it — confirmed necessary by direct instrumentation (`bim-view`'s rendered HTML read "No
+  floor plan uploaded" until both were in place, `wireStageInteractions()` never having a stage to
+  wire against).
+
+⚠️ **The "bim.js's render() replays toolsVisible" assertion also needed re-scoping, not
+re-writing** — its `{0,60}`/`{0,400}`-style character budgets between two known-good literal strings
+were measured against the WRONG occurrence of a common early-return guard (`if (!host) return;`
+appears in more than one function in this file) or against a comment block wider than the budget
+allowed; re-anchored to `render()`'s own function body specifically, with the real measured gap.
+
+**Verified:** every fix confirmed by locating the exact current line in the shipped source first
+(never by widening a regex blind), then re-running the full suite. **822 passed, 0 failed** — up
+from 806/15 the previous entry left it at. `node --check` clean on `test.js`/`module.js`/`bim.js`;
+no application code changed in this pass — every fix above lives in `test.js` alone (or, for the
+harness gap, in the fixture the failing test itself builds).
+
+⚠️ **Not verified signed in** — same standing caveat as every other entry in this file; this was a
+test-suite correctness pass, not a live click-through.
+
 ## In-app camera capture, real 360° stitching, a 360° pan viewer, and a
 ## ten-item overnight round following the 360°/3D deletion (2026-09-10/11)
 

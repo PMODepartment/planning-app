@@ -338,9 +338,17 @@ ok('no manual-entry escape hatch anywhere in the Works picker (section 15 — no
    !/Type a new/.test(mjs) && !/Add custom Works value/.test(mjs));
 ok('scheduleHasActivities is now "does the Works picker have anything to show" (worksGroupedOptions), not merely "does a schedule exist"',
    /function scheduleHasActivities\(\) \{ return worksGroupedOptions\(\)\.length > 0; \}/.test(mjs));
-ok('the empty state names the Execution Phase requirement, with no manual-entry fallback',
-   /No works available for this project\./.test(mjs) &&
-   /Works must be established in the Project Schedule under the /.test(mjs));
+// ⚠️ SUPERSEDED (item 8, 2026-08-30): the picker-internal empty-state
+// string ("No works available…") is gone — worksMultiFieldHTML now omits
+// the WHOLE field (no "+ Add works" button, nothing to click into an
+// empty picker) the moment the project's schedule has nothing to offer,
+// per its own comment: "no picker to open, nothing to require." A field
+// that doesn't render can't show an empty state inside itself.
+ok('a project with nothing for Works to offer gets NO Works field at all (not an empty-state message inside one) — worksMultiFieldHTML returns \'\' outright',
+   /if \(!scheduleHasActivities\(\)\) return '';/.test(mjs) &&
+   !/No works available for this project\./.test(mjs));
+ok('openWorksPicker is belt-and-braces defensive even so — it no-ops if somehow called with nothing to show, rather than opening an empty picker',
+   /function openWorksPicker\(idPrefix\) \{\s*var groups = worksGroupedOptions\(\);\s*if \(!groups\.length\) return;/.test(mjs));
 ok('a chosen Works value is resolved back to its schedule activity_id for traceability (worksActivityIdFor), never guessed when no match exists',
    /function worksActivityIdFor\(name\) \{[\s\S]{0,300}return \(act && act\.activity_id\) \|\| null;/.test(mjs));
 // Overnight batch item 3: open360Upload's save handler builds a THIRD
@@ -386,8 +394,13 @@ ok('the view-name input is REQUIRED and pre-filled from the existing value on Ed
 ok('Edit passes the photo\'s own view_name through to locationFieldHTML', /locationFieldHTML\('pp-e', r\.location_values \|\| \{\}, r\.view_name\)/.test(mjs));
 ok('location is derived purely from the breakdown breadcrumb on save (Add, Edit AND the 360 upload)',
    (mjs.match(/location: locBreadcrumb\(locVals\) \|\| null,/g) || []).length === 3);
+// ⚠️ The gap between works_multi and trade widened when works_activity_ids
+// (2026-09-07, Project Schedule integration) was inserted between them —
+// the old {0,60} bound was too tight to span it (69 chars), which made
+// this test fail even though the payload shape it's checking is correct
+// and untouched. Widened to fit that real, intentional field.
 ok('the insert/update payload now carries the UNION of every chosen Works value\'s derived trades + all chosen works in the array columns',
-   /trades: tradeList,[\s\S]{0,60}works_multi: worksList,[\s\S]{0,60}trade: tradeList\[0\] \|\| null,[\s\S]{0,60}works: worksList\[0\] \|\| null,/.test(mjs));
+   /trades: tradeList,[\s\S]{0,120}works_multi: worksList,[\s\S]{0,120}trade: tradeList\[0\] \|\| null,[\s\S]{0,60}works: worksList\[0\] \|\| null,/.test(mjs));
 ok('the payload also carries view_name from the (now-mandatory) field, on Add, Edit AND the 360 upload',
    (mjs.match(/view_name: viewNameEl \? viewNameEl\.value\.trim\(\) : null,/g) || []).length === 3);
 ok('tolerantWrite gained a strip-rule for view_name, naming the migration file if it is missing',
@@ -450,7 +463,12 @@ ok('no user-facing "PPR list" left', !/>PPR list</.test(html) && !/'PPR list'/.t
 
 console.log('\n[4] After creating a meeting, go to its editor');
 ok('openPpr called after insert', /if \(isNew && newId\) openPpr\(newId\)/.test(pjs));
-ok('insert uses .select() to return the id', /\.insert\(Object\.assign\(data, \{ project_id: pid, created_by: uid \}\)\)\.select\(\)/.test(pjs));
+// ⚠️ The literal insert call moved into a shared insertPresentation(data)
+// helper (which ALSO handles the report_type migration-tolerant retry) —
+// `.select()` is still there, just on a non-mutating Object.assign({}, ...)
+// rather than the old exact string this test looked for.
+ok('insert uses .select() to return the id (now inside insertPresentation(), shared with the report_type-missing-column retry)',
+   /async function insertPresentation\(data\) \{\s*var res = await sb\(\)\.from\(T_PPR\)\.insert\(Object\.assign\(\{\}, data, \{ project_id: pid, created_by: uid \}\)\)\.select\(\);/.test(pjs));
 
 console.log('\n[5] Meeting list icons hydrate');
 ok('renderList hydrates its own output', /renderPreview\(\);[\s\S]{0,600}hydrate\(\);\n  \}/.test(pjs));
@@ -497,7 +515,15 @@ ok('picked photo shows as a thumbnail button, not a plain <select>', /function p
 ok('the old plain <select> photo list is gone', !/function photoOptions\(sel\)/.test(pjs));
 
 console.log('\n[9] Before/after may be different locations');
-ok('pane() reads each photo\'s own trade/works/location', /var fields = ph \? \[ph\.trade, ph\.works, hideLocation \? null : ph\.location\]/.test(pjs));
+// ⚠️ SUPERSEDED: the Trade/Works tags line under the caption was removed
+// entirely by a later owner ask ("no need to include as caption all the
+// activities performed or assigned to the photo") — pane() now reads only
+// each photo's own LOCATION (still per-pane, since the two photos are not
+// required to share one; hideLocation still suppresses it when the shared
+// tile above the pair already covers it).
+ok('pane() reads each photo\'s own location (Trade/Works were deliberately dropped from the caption by a later feedback round)',
+   /var loc = hideLocation \? null : \(ph \? ph\.location : sl\.location\) \|\| '';/.test(pjs) &&
+   !/ppr-panetags/.test(pjs));
 ok('slide-level meta row no longer shows location', !/ppr-meta[\s\S]{0,400}<label>Location<\/label>/.test(pjs));
 ok('panes are labelled Previous/Current (2026-08-29 feedback item 7 — was Before/After)',
    /ppr-panelabel/.test(pjs) && /'Previous' : 'Current'/.test(pjs));
@@ -537,8 +563,13 @@ ok('buildCopyDrafts promotes after into before, the same rule copySlidesFrom use
 ok('new after slot left empty in the draft', /after_photo_id: null,\n        after_caption: ''/.test(pjs));
 ok('Finish is disabled until every draft has a current photo',
    /drafts\.some\(function \(d\) \{ return !d\.after_photo_id; \}\)/.test(pjs));
+// ⚠️ The raw `.insert` call moved into the shared insertPresentation()
+// helper (also used by the plain New-Presentation save path, so both
+// share the report_type migration-tolerant retry) — finish() now calls
+// THAT, rather than inlining `T_PPR).insert` itself. Still only inside
+// finish(), still only once the wizard completes.
 ok('the presentation row is created inside finish() — never before the wizard completes',
-   /async function finish\(\) \{[\s\S]{0,400}T_PPR\)\s*\n?\s*\.insert/.test(pjs));
+   /async function finish\(\) \{[\s\S]{0,400}var ir = await insertPresentation\(newData\);/.test(pjs));
 
 console.log('\n[14] Tile view = photo only, actions in the lightbox');
 ok('gallery card has no caption table', !/pp-cardtable/.test(mjs));
@@ -673,7 +704,13 @@ console.log('\n[misc] insert().select() returns the new row id');
   // Overnight batch item 3: .pp-360badge is the same family again -- a
   // fixed dark-scrim corner badge over an arbitrary photo, white text
   // always legible regardless of theme.
-  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.bim-pin\b|\.bim-pinstage-dot\b|#bim-place\.is-active|\.pp-plancluster\b|\.ppr-mktool\b|\.ppr-sortno\b|\.pp-mk-tool\.active|\.bim-regpt\b|\.bim-conehandle-el\b|\.bim-dirhandle-el\b|\.pp-livebtn\.is-live\b|\.pp-iconbtn\.is-active\b|\.pp-cardfav\b|\.pp-360badge\b/;
+  // Two more pre-existing, correct uses that had never been added to this
+  // list (found resolving the failed-test batch, 2026-09-11): both are the
+  // identical "white text on a solid var(--pd-red) fill" pattern as
+  // .pp-tab.active/.pd-btn-primary two entries up -- .ppr-panelabel.is-current
+  // is the Current-slide pill in a presentation pane, .bim-revbadge is the
+  // "current revision" pill in the floor-plan revision-history list.
+  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.bim-pin\b|\.bim-pinstage-dot\b|#bim-place\.is-active|\.pp-plancluster\b|\.ppr-mktool\b|\.ppr-sortno\b|\.pp-mk-tool\.active|\.bim-regpt\b|\.bim-conehandle-el\b|\.bim-dirhandle-el\b|\.pp-livebtn\.is-live\b|\.pp-iconbtn\.is-active\b|\.pp-cardfav\b|\.pp-360badge\b|\.ppr-panelabel\.is-current\b|\.bim-revbadge\b/;
   const stray = fffRules.filter((sel) => !ALLOWED_FFF_CONTEXT.test(sel));
   ok('every #fff use sits under a documented fixed-colour selector', stray.length === 0 && fffRules.length > 0,
      JSON.stringify(stray));
@@ -946,8 +983,13 @@ console.log('\n[misc] insert().select() returns the new row id');
      /if \(!filters\.archived && r\.archived\) return false;/.test(mjs) && !/!!r\.archived !== !!filters\.archived/.test(mjs));
   ok('index.html has a "Show archived" toggle on both the Presentations and Gallery filter bars', (html.match(/Show archived/g) || []).length === 2);
   ok('toggling archive is tolerant of the migration not having run yet', /migrations\/2026-08-29-archive-flag\.sql/.test(pjs) && /migrations\/2026-08-29-archive-flag\.sql/.test(mjs));
+  // ⚠️ ppr.js's reset gained `reportType: ''` since this was written (the
+  // Report Type filter is a genuine search filter, unlike archived, so
+  // Clear filters correctly resets it too) — the exact-string match needed
+  // to grow with it. `archived: filters.archived` (never reset) is what
+  // this test actually cares about, in both files.
   ok('Clear filters does NOT reset the archived toggle — it is a separate view, not a search filter',
-     /filters = \{ from: '', to: '', archived: filters\.archived \};/.test(pjs) &&
+     /filters = \{ from: '', to: '', archived: filters\.archived, reportType: '' \};/.test(pjs) &&
      /filters = \{ from: '', to: '', trade: '', works: '', locValues: \{\}, search: '', archived: filters\.archived \};/.test(mjs));
 
   // --- Edit/Delete presentation relocated (item 1) ------------------------
@@ -1000,8 +1042,13 @@ console.log('\n[misc] insert().select() returns the new row id');
   ok('slideFigureHTML (HTML+PDF export) takes the same hideLocation flag', /function slideFigureHTML\(sl, which, imgs, hideLocation\)/.test(pjs));
   ok('slidesBodyHTML computes the shared location per slide for the exported files too',
      /var sharedLoc = hasBefore \? sharedLocationOf\(sl\) : '';/.test(pjs) && /class="sharedloc"/.test(pjs));
-  ok('PPTX renders the same shared-location tile (item 4: "apply to all formats")',
-     /var sharedLoc = hasBefore \? sharedLocationOf\(sl\) : '';[\s\S]{0,400}slide\.addText\(sharedLoc,/.test(pjs));
+  // ⚠️ The PPTX text is now wrapped in sanitizePptxText() (the 2026-09-03
+  // "PowerPoint export was silently corrupting on real captions" fix,
+  // which strips XML-1.0-illegal control characters from every text value
+  // handed to PptxGenJS) — `slide.addText(sharedLoc,` never existed as a
+  // literal call once that fix landed; it's `addText(sanitizePptxText(...))`.
+  ok('PPTX renders the same shared-location tile (item 4: "apply to all formats"), its text sanitized like every other PPTX string',
+     /var sharedLoc = hasBefore \? sharedLocationOf\(sl\) : '';[\s\S]{0,400}slide\.addText\(sanitizePptxText\(sharedLoc\),/.test(pjs));
 
   // --- PPTX vertical centering (item 4) ------------------------------------
   ok('pane vertical position is now COMPUTED (paneTopFor), not a hardcoded y:0.35/0.75/5.45',
@@ -1326,8 +1373,15 @@ console.log('\n[misc] insert().select() returns the new row id');
   // --- Item 15: bim.js keeps only Plan browsing/pinning ---------------------
   ok('bim.js\'s render() no longer has a Map/Stack branch — just plans/no-plans (item 15)',
      !/function renderMapBody/.test(bmjs) && !/function renderStackBody/.test(bmjs) && !/viewToggleHTML/.test(bmjs));
-  ok('bim.js exports read accessors for module.js\'s Plan view instead: plans()/planUrl()/pinsForPlan()',
-     /plans: function \(\) \{ return plans\.slice\(\)/.test(bmjs) &&
+  // ⚠️ `plans()` was widened (2026-09-03, floor-plan revisions) to read
+  // through currentPlansList() rather than the raw `plans` array -- the
+  // raw array now holds EVERY historical revision of every floor, and the
+  // Gallery's Plan view must only ever see the CURRENT one per Tower+Floor
+  // (else a re-uploaded floor plan would show as two separate floors to
+  // step through). This is a correctness fix on top of the original
+  // accessor, not a regression.
+  ok('bim.js exports read accessors for module.js\'s Plan view instead: plans()/planUrl()/pinsForPlan() — plans() reads only the CURRENT revision per floor via currentPlansList()',
+     /plans: function \(\) \{ return currentPlansList\(\)\.sort\(/.test(bmjs) &&
      /planUrl: function \(plan\) \{ return planUrl\(plan\); \}/.test(bmjs) &&
      /pinsForPlan: function \(planId\) \{ return allPins\.filter/.test(bmjs));
 
@@ -1514,8 +1568,11 @@ console.log('\n[misc] insert().select() returns the new row id');
      /readPinField: readPinField/.test(bmjs) && /savePinForItem: savePinForItem/.test(bmjs));
   ok('the field is labelled "Key Plan" (renamed from "Camera position", item 8) and marked required',
      /<label>Key Plan' \+ reqMarkHTML\(\) \+/.test(bmjs));
+  // ⚠️ pinFieldHTML checks curPlans (= currentPlansList(), the floor-plan-
+  // revisions-aware accessor), not the raw `plans` array directly, since
+  // that revision refactor (2026-09-03) landed after this test was written.
   ok('with no floor plans, an inline upload mini-form appears INSIDE the Add/Edit form itself (item 8), not just a link to the Plans tab',
-     /function pinFieldHTML[\s\S]{0,400}if \(!plans\.length\)[\s\S]{0,600}pp-inlineplanform/.test(bmjs));
+     /function pinFieldHTML[\s\S]{0,400}if \(!curPlans\.length\)[\s\S]{0,600}pp-inlineplanform/.test(bmjs));
   ok('readPinField returns null (a no-op) rather than a half-filled object when nothing is picked, in BOTH the no-plans and has-plans shapes',
      /function readPinField\(idPrefix\) \{[\s\S]{0,120}if \(inlineWrap\) return null;[\s\S]{0,400}if \(!planId \|\| x === '' \|\| y === ''\) return null;/.test(bmjs));
   ok('savePinForItem is a no-op on null pinData — it can never delete a pin the planner did not ask to touch',
@@ -2083,7 +2140,31 @@ console.log('\n[misc] insert().select() returns the new row id');
   // path in the real app) and prove the count does NOT grow — before this
   // fix, EVERY one of these calls added one more permanent mousemove and
   // one more permanent mouseup listener to `window`, none ever removed.
+  //
+  // ⚠️ 2026-09-11: render() now stops BEFORE the plan stage at all
+  // (hasEstablishedLocations()) unless the Project Schedule App has a real
+  // Tower value on record — a 2026-08-30 business-rule tightening this
+  // section predates. `towerLevel()`/`towerOptions()` both delegate to
+  // window.ProgressPhotos.locLevels()/distinctLocValuesFor(), and this
+  // harness deliberately never calls PP.init()/load() (see the comment
+  // a few hundred lines up), so those always read empty here regardless
+  // of what's seeded in the shared `store` — this is NOT something
+  // module.js's own fixtures can satisfy without pulling the whole
+  // cross-module schedule-loading path into a bim.js-only test. Stubbed
+  // directly, save/restore, so this one block can reach the render path
+  // wireStageInteractions() actually lives in.
   await (async function () {
+    const savedLocLevels = PP.locLevels, savedDistinctLocValuesFor = PP.distinctLocValuesFor;
+    PP.locLevels = function () { return [{ id: 'lvl-tower', name: 'Tower' }]; };
+    PP.distinctLocValuesFor = function () { return ['Tower A']; };
+    // The plan seeded near the top of this section carries no
+    // location_values, so currentPlanFor('Tower A', ...) (selTowerVal
+    // auto-selects the first — and only — tower option above) would still
+    // resolve to null and render() would stop at "No floor plan uploaded"
+    // rather than ever reaching the stage HTML wireStageInteractions()
+    // lives in. Tag it so it actually matches.
+    const auditPlan = store.floor_plans.find((p) => p.id === 'plan-audit-1');
+    if (auditPlan) auditPlan.location_values = { 'lvl-tower': 'Tower A' };
     await BIM._load('DEMO01');
     const before = {
       mousemove: winListeners.filter((l) => l.type === 'mousemove').length,
@@ -2100,6 +2181,8 @@ console.log('\n[misc] insert().select() returns the new row id');
     };
     ok('…and STILL exactly one after three more loads/re-renders — before this fix each one added a fresh, never-removed pair',
        after.mousemove === 1 && after.mouseup === 1);
+    PP.locLevels = savedLocLevels; PP.distinctLocValuesFor = savedDistinctLocValuesFor;
+    await BIM._load('DEMO01');   // leave BIM's own state back on the un-established-locations path for every test after this one
   })();
 
   // --- bim.js OpenCV cv.Mat leaks — structural only. Genuinely proving this
@@ -2408,9 +2491,20 @@ console.log('\n[misc] insert().select() returns the new row id');
   ok('ppr.js\'s render() replays toolsVisible, not a hardcoded true (source-level regression guard alongside the execution proof above)',
      /syncTools\(toolsVisible\);\s*\n\s*if \(screen === 'slides'\) renderSlides/.test(pjs) &&
      !/\$\('ppr-tmpl-wrap'\)\)\.hidden = screen === 'templates';\s*\n\s*syncTools\(true\)/.test(pjs));
-  ok('bim.js\'s render() replays toolsVisible, not a hardcoded true (source-level regression guard alongside the execution proof above)',
-     /syncTools\(toolsVisible\);\s*\n\s*\n\s*if \(!plans\.length\)/.test(bmjs) &&
-     !/if \(!host\) return;\s*\n\s*syncTools\(true\)/.test(bmjs));
+  // ⚠️ A `var bar = towerFloorBarHTML();` + hasEstablishedLocations() check
+  // (2026-08-30 business rule) was inserted between syncTools(toolsVisible)
+  // and the old `if (!plans.length)` this regex expected right after it —
+  // still exactly one line, `syncTools(toolsVisible);`, still the very
+  // first statement in render(), still never re-hardcoded to `true`. Scoped
+  // to render()'s own body (not a bare global search — `if (!host) return;`
+  // is a common early-return guard reused by other functions in this file).
+  (function () {
+    const start = bmjs.indexOf('function render() {');
+    const body = bmjs.slice(start, start + 1000);
+    ok('bim.js\'s render() replays toolsVisible, not a hardcoded true (source-level regression guard alongside the execution proof above)',
+       /if \(!host\) return;[\s\S]{0,900}syncTools\(toolsVisible\);\s*\n\s*\n\s*var bar = towerFloorBarHTML\(\);/.test(body) &&
+       !/if \(!host\) return;\s*\n\s*syncTools\(true\)/.test(body));
+  })();
 
   // [37] Gallery tiles on phone — a dense small-square grid (iOS Photos'
   // own look), not a single full-width column (2026-08-30 owner feedback:
@@ -3118,10 +3212,14 @@ console.log('\n[misc] insert().select() returns the new row id');
      /\.ppr-tmpl-table \.ppr-head, \.ppr-tmpl-table \.ppr-row \{\s*\n\s*grid-template-columns: minmax\(140px, 1\.4fr\) 90px 100px 160px 210px;/.test(css));
 
   // --- Report Type in the Add/Edit Presentation form -------------------------
+  // ⚠️ Both <option> tags now carry a conditional `selected` attribute
+  // (so the picker actually reflects `curType`, not just names the two
+  // choices) — the old exact-string match couldn't survive that, correct,
+  // addition.
   ok('the Add/Edit form shows a Report Type <select> defaulting to Internal for both a brand-new presentation and a legacy (unset) one being edited — visible/changeable, never a silent backend backfill',
      /var curType = p\.report_type \|\| 'internal';/.test(pjs) &&
-     /<option value="internal">Internal<\/option>/.test(pjs) &&
-     /<option value="client">External \(Client\)<\/option>/.test(pjs));
+     /<option value="internal"' \+ \(curType === 'internal' \? ' selected' : ''\) \+ '>Internal<\/option>/.test(pjs) &&
+     /<option value="client"' \+ \(curType === 'client' \? ' selected' : ''\) \+ '>External \(Client\)<\/option>/.test(pjs));
   ok('the form reads the picked Report Type on Save and threads it through BOTH the direct-save path and the copy-wizard hand-off',
      /var reportType = \$\('ppr-frm-reporttype'\) \? \$\('ppr-frm-reporttype'\)\.value : '';/.test(pjs) &&
      /openCopyWizard\(\{ ppr_date: date, description: desc, report_type: reportType \}, copyFrom\);/.test(pjs) &&
