@@ -8,7 +8,14 @@
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Progress Photos · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260911uc" />
-  <link rel="stylesheet" href="module.css?v=20260911z2" />
+  <link rel="stylesheet" href="module.css?v=20260912b" />
+  <!-- Item 5 (2026-09-11, third round): "use open source Pannellum for 360
+       viewer" — a real, MIT-licensed panorama viewer, pinned exact version,
+       loaded the same way every other feature library on this page is
+       (html2pdf.js/pptxgenjs/opencv-js, all a single pinned CDN <script>
+       tag, no build step). Its stylesheet is required for the viewer's own
+       controls/compass chrome to render correctly. -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/pannellum/2.5.6/pannellum.min.css" />
 </head>
 <body>
   <div class="pd-app">
@@ -319,12 +326,16 @@
     <div class="pp-lb-imgwrap" id="pp-lb-imgwrap">
       <img class="pp-lb-img" id="pp-lb-img" alt="" />
       <video class="pp-lb-img" id="pp-lb-video" controls playsinline hidden></video>
-      <!-- Item 4: 360° viewing -- a plain drag-to-pan strip over the wide
-           stitched panorama (module.js's wirePanoDrag), no WebGL/Three.js —
-           deliberately, per item 7's mobile-performance goal and pano360.js's
-           own scope note. -->
+      <!-- Item 5 (2026-09-11, third round): 360° viewing is now a real
+           Pannellum panorama viewer (module.js's mountPannellumViewer),
+           mounted into #pp-lb-pano-viewer once the full-resolution image
+           resolves. #pp-lb-pano-standin is the plain thumbnail-backed <img>
+           that stands in the instant the lightbox opens, exactly like the
+           ordinary-photo path already does, and is hidden once the real
+           viewer has mounted. -->
       <div class="pp-lb-panowrap" id="pp-lb-panowrap" hidden>
-        <img class="pp-lb-pano" id="pp-lb-pano" alt="" draggable="false" />
+        <img id="pp-lb-pano-standin" alt="" draggable="false" />
+        <div id="pp-lb-pano-viewer" class="pp-lb-panoviewer"></div>
       </div>
       <canvas class="pp-lb-markup" id="pp-lb-markup-canvas"></canvas>
       <!-- Round-2 item 3: the magnifier lens — hidden until the pointer moves
@@ -361,6 +372,12 @@
        floor-plan photo registration (warping a top-view photo onto a floor
        plan drawing). Pinned version, verified to resolve before committing. -->
   <script src="https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.10.0-release.1/dist/opencv.js"></script>
+  <!-- Item 5 (2026-09-11, third round): Pannellum — real WebGL panorama
+       viewing (proper perspective projection, drag-to-look-around,
+       pinch/scroll zoom) for both the saved-360°-photo lightbox and the
+       upload-time preview, replacing the earlier plain drag-to-pan strip
+       image. Pinned exact version, matching this page's own convention. -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pannellum/2.5.6/pannellum.min.js"></script>
   <script src="../../assets/js/config.js?v=20260910za"></script>
   <script src="../../assets/js/auth.js?v=20260901b"></script>
   <script src="../../assets/js/db.js?v=20260909n"></script>
@@ -375,9 +392,9 @@
        Add Media flow calls into window.Capture/window.Pano360. pano.js/
        recon.js are retired (superseded by capture.js/pano360.js) — merged in
        from origin/main's own parallel session, 2026-09-12. -->
-  <script src="capture.js?v=20260912a"></script>
-  <script src="pano360.js?v=20260912a"></script>
-  <script src="module.js?v=20260911uc"></script>
+  <script src="capture.js?v=20260912b"></script>
+  <script src="pano360.js?v=20260912b"></script>
+  <script src="module.js?v=20260912b"></script>
   <script src="ppr.js?v=20260912a"></script>
   <script src="bim.js?v=20260912a"></script>
   <script>

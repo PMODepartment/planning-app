@@ -2,6 +2,232 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Third capture-flow round: the Add Media modal actually hides its own
+## buttons now, a real close-during-recording race fixed, flash on/off/
+## auto, a proportional key-plan pin, Pannellum replaces the drag-strip
+## viewer, and Hugin ruled out with a reason (2026-09-11)
+
+Owner, off the just-shipped second capture-flow round:
+```
+1. only 1 photo or video is allowed when adding media. do not allow multiple uploads per add media.
+   when a photo or video is already uploaded, the take and upload photo/video/360 should be hidden.
+   there should be an X button on the top right of the media preview to remove the upload. once
+   removed, the take and upload buttons should reappear
+2. when taking video, the mute button and close button is not working. the camera preview also
+   seems to be shades darker. provide also button for on/off/auto flash.
+3. when photo is opened or in presentation and the key plan is shown, the pin should be
+   proportionally smaller. also provide option to drag bottom left corner to resize size of keyplan.
+4. when adding 360, stitching of video frames is not good. explore using the open source Hugin to
+   stitch frames.
+5. viewing of 360 is also not good. use open source Panellum for 360 viewer
+6. improve also workflow of uploading 360. once 360 photo is processed, user to use 360 viewer as
+   both a preview and to select the thumbnail frame. (for thumbnail, use standard 3:4 landscape
+   ratio). no need to have separate preview and thumbnail selector
+```
+
+### Item 1 — the single-item cap already existed; hide/show + a remove-× did not
+
+The previous round capped `stagedFiles` at one, but Take/Upload stayed visible and clickable next to
+whatever was already staged, and the only way to replace it was to take/choose again (a silent
+replace-with-a-toast). `#pp-addbtnsrow` (the Take/Upload row) now hides the instant a file is staged
+(`syncAddButtonsRow()`, called from the top of every `renderStagedGrid()`) and each staged card gets
+a corner **×** (`.pp-stagermv`, the same fixed-dark-scrim-corner-overlay language as `.pp-cardsel`/
+`.pp-mkeditbtn`, mirrored to the opposite corner). Removing it (`removeStaged`) revokes the object
+URL, clears any pending markup/adjustments for that index, and re-renders — which is what brings the
+row back via the same `syncAddButtonsRow()` call. ⚠️ The auto-replace toast from the previous round
+is kept as a defensive fallback (a picker handing back >1 file in one go, or a future regression that
+reintroduces `multiple`), but is now unreachable through the UI in the ordinary case, since there's
+nothing left to click that could trigger it.
+
+### Item 2 — the real close-during-recording race, a resolution-hint fix for "darker", and flash
+
+⚠️⚠️ **The actual bug, distinct from the getUserMedia race the previous round fixed.** Tapping ×
+**while a video was recording** called `close()`, which stops the `MediaRecorder` and fires
+`opts.onCancel` → `onDone(null)` immediately — but the recorder's own **async** `'stop'` event still
+caught up afterward and ran the callback wired at record-start (`function (blob) { var b = blob;
+close(); onDone(b); }`), calling `onDone` a **second** time with a real file. From the planner's
+side: the overlay visibly closed, and the recording got added anyway — exactly "I closed it and it
+didn't work". Fixed by threading the SAME `stale()` guard the getUserMedia race already established
+through to every caller (`startSession` now hands `onReady(videoEl, stale)`): `close()` bumps the
+module's `sessionToken` as its very first action, so by the time the delayed `onstop` fires, `stale()`
+correctly reports "something already closed this session" and the stray `onDone` is skipped. The
+ordinary completion path (tapping the shutter a SECOND time, nobody closed anything) checks `stale()`
+too, and correctly still fires — `close()` there is called from *inside* that same callback, after the
+check, not before it. `takePhoto`'s async `canvas.toBlob` callback gets the identical guard for the
+same reason (a tap on × between the shutter press and the callback firing is the same race, one step
+earlier).
+
+**"Camera preview seems shades darker"** — `openStream()` now requests `width:{ideal:1920},
+height:{ideal:1080}` instead of no resolution hint at all. ⚠️ With no hint, some phone browsers fall
+back to a lower-resolution/binned sensor profile whose default auto-exposure reads dimmer than the
+same device's native camera app; asking for a proper HD frame (never a hard `min`/exact constraint, so
+a device that can't provide it isn't refused) is a real, if partial, answer — it cannot fully close the
+gap between a browser's `getUserMedia` pipeline and a native camera app's own exposure/AE tuning, and
+this is stated rather than oversold.
+
+**Flash on/off/auto**, a new `.pp-cap-flash` button joining the mic toggle in one right-side cluster
+(`.pp-cap-rightcluster`), offered for every mode (photo included — flash isn't audio-specific the way
+the mic toggle is). ⚠️⚠️ **"Auto" is a labelled degrade, not a real third mode.** The W3C Image
+Capture spec's `torch` capability on a live `MediaStreamTrack` is a plain on/off switch — there is no
+platform API for a continuously auto-decided flash the way a native camera app has — so `flashMode:
+'auto'` applies `torch:false`, exactly like `'off'`, and the button's own tooltip says so rather than
+silently pretending to work like a real auto-flash. `applyFlash()` re-checks the live video track's
+own `getCapabilities().torch` on every attach (initial open AND after a camera flip — a front camera
+commonly has no torch at all even when the rear one does) and disables the button entirely, with a
+named reason, when the capability is absent — the same "never a control that looks live but does
+nothing" convention `syncAudioBtn` already follows.
+
+### Item 3 — the key-plan pin, made proportional (the drag-to-resize handle already existed)
+
+⚠️ **Half of this item was already shipped** — both the lightbox's (`#pp-lb-keyplan-resize`) and the
+presentation pane's (`.ppr-kpoverlay-resize`) bottom-left drag-to-resize handles were built in earlier
+rounds (`kpResizeFrac`/`wireLightboxKpResizeDrag`, `wireKpResizeDrag`) — confirmed present before
+touching anything, not re-built. What was missing: `.pp-kpmini-pin` (the shared small marker both
+callers draw, via `BIM.keyPlanMiniMarkerHTML`) was a **fixed 16px** dot regardless of how big the
+overlay itself was drawn — the overlay ranges 6%–60% of the photo's own width and is now
+drag-resizable, so a fixed pin read as oversized at the common small end of that range and
+increasingly wrong-sized as the overlay grew. `.pp-kpmini-pin` is now sized as a **percentage of its
+own containing block** (`width:10%`, `aspect-ratio:1` deriving the height from the resolved width,
+rather than a percentage `height`, which cannot reliably resolve against an absolutely-positioned
+parent whose own height is auto) — it now scales automatically with every resize, live, with no JS
+repaint required. The icon glyph inside (`Icons.svg(...,9)`, a fixed 9px SVG) is overridden to `width:
+60%; height:60%` so it shrinks/grows in step with the pin rather than staying a constant size inside
+one that now ranges 8px–20px.
+
+### Item 4 — Hugin: investigated, and ruled out for a stated reason, not a preference
+
+⚠️⚠️ Hugin is a native, desktop C++ application (wxWidgets UI, `nona`/`enblend`/`align_image_stack`
+under the hood) with **no WebAssembly build and no JS bindings anywhere** — there is nothing to load
+into a browser tab. Integrating it would mean standing up a server that runs Hugin's own binaries, a
+different architecture from this module's "all processing happens client-side" design and a
+materially larger undertaking than this pass's scope. Documented plainly in `pano360.js`'s own header
+rather than silently left unaddressed. What IS done instead: **seam feathering**, a real, verifiable
+quality improvement inside the existing OpenCV.js-primitives pipeline, targeting the specific defect a
+from-scratch stitcher (this one, and the one it replaced) is prone to that a tool like Hugin's
+`enblend` exists to fix — a visible hard edge where one frame's contribution stops and the next one's
+starts.
+
+⚠️⚠️ **The compositing loop drew every warped frame at full opacity and let `'destination-over'`
+decide, per pixel, which one whole frame wins in an overlap** — a hard cut at the exact boundary
+between two source images. New `featheredFrame(canvas, featherLeft, featherRight, marginFrac)` fades a
+frame's own left/right edges to transparent (via a linear-gradient mask + `'destination-in'`) before
+it's warped and drawn; every frame is then painted in order with plain `'source-over'`, so a later
+frame's feathered edge blends smoothly into whatever the mosaic already has instead of snapping to it.
+⚠️ **The very first frame's LEFT edge and the very last frame's RIGHT edge are never feathered** —
+there is nothing on the far side of the mosaic for that particular edge to blend into, and fading it
+would leave a transparent void at the panorama's own extremity rather than a seam. ⚠️ Feature matching
+(`homographyBetween`, via `rawMats`) still runs against the **pristine** frames — feathering is applied
+only to a separate copy used for the final draw, never to what ORB/BFMatcher see, so the alignment
+math is completely unaffected by this change.
+
+### Item 5 — Pannellum replaces the drag-to-pan strip, for both the saved-photo viewer and the upload preview
+
+New pinned-version CDN tags (`pannellum.min.js`/`pannellum.min.css`, cdnjs — matching this page's own
+established "one pinned `<script>` tag, no build step" convention for html2pdf.js/pptxgenjs/
+opencv-js). New shared `mountPannellumViewer(container, imageUrl, heightOverWidth)` (module.js),
+used by BOTH the saved-360°-photo lightbox and the 360°-upload preview, so the two can never
+independently drift in how they configure the same library — replacing `wireDragPan`/`wirePanoDrag`
+(both **deleted**, not left dormant; a second panorama viewer is exactly the kind of drift this
+module's own history warns about).
+
+⚠️⚠️ **Our stitched mosaic is a cylindrical panorama (pano360.js's own header), not a true
+equirectangular sphere.** Pannellum's `'equirectangular'` viewer type still handles this correctly for
+a **partial** panorama via its own documented `haov`/`vaov` config — exactly the mechanism it offers
+for an image that doesn't cover the full sphere. `haov: 360` assumes the capture guide's own
+instruction (a full walk-around) was followed; `vaov` is derived from the image's own real aspect
+ratio (`360 * height/width`, clamped to `[20,140]`), read off the lightbox's own thumbnail stand-in
+`<img>` once it's decoded (`naturalWidth`/`naturalHeight`) for the saved-photo path, and off
+`stitchResult.width/height` for the fresh-upload path — never a guessed constant.
+
+- **Lightbox**: `#pp-lb-pano-standin` (a plain `<img>`, the instant thumbnail stand-in, matching the
+  ordinary-photo path) sits beside `#pp-lb-pano-viewer` (the Pannellum mount target) inside
+  `.pp-lb-panowrap`. `teardownLbPano()` runs at the START of every `paintLightbox()` call
+  (idempotent), so stepping ←/→ between two 360 photos, or from a 360 photo to any other kind, can
+  never leave a stale viewer instance running behind what's now shown; it also runs on
+  `closeLightbox()`.
+- ⚠️⚠️ **The key-plan cone still follows wherever the viewer is looking, via a polling loop, not a
+  scroll event.** Pannellum's stable API has no subscribable "view changed" event, so
+  `startPanoYawPoll(viewer, onYawChange)` reads `viewer.getYaw()` once per animation frame — but only
+  calls the DOM-touching callback when the yaw **actually changed** since the last tick, the same
+  "dirty flag, never an unconditional repaint" discipline the earlier `wirePanoDrag` rAF-coalescing
+  fix already established for this exact cone repaint. An idle, unmoved view costs one cheap getter
+  read per frame, nothing more.
+- **Adjustments (exposure/brightness/contrast)** now apply as a CSS `filter` to the whole panorama
+  **wrap** (`panoWrap`) rather than the retired `<img>` — a CSS filter composites everything rendered
+  inside an element, WebGL canvas included, so this reaches the Pannellum viewer exactly as it did the
+  old `<img>`, with no change to `cssFilterFor`/`adjustmentsOf` themselves.
+- **The 360°-upload preview** (`#pp360-panowrap`/`#pp360-pano-viewer`) reuses the identical
+  `.pp-lb-panowrap`/`.pp-lb-panoviewer` pair, sized down via the existing `#pp360-panowrap` id
+  override (240px, unchanged from the previous round's own fixed modal-appropriate height).
+
+### Item 6 — the 360° upload workflow: the viewer IS the thumbnail selector now
+
+The separate "Thumbnail frame" scrubber (`#pp360-repslider`/`#pp360-repframe`, driven by
+`Pano360.extractFrameAt` against the ORIGINAL VIDEO) is **gone**. A new **"Use this view as
+thumbnail"** button (`#pp360-usethumb`) captures whatever the Pannellum viewer is **currently
+rendering** — the same interactive preview the planner is already looking around in — via a new
+shared `captureViewerThumbnail(containerEl, cb)`. ⚠️ A default thumbnail is captured automatically the
+first time the panorama actually renders (`pp360Viewer.on('load', ...)`), so Save is never blocked on
+remembering to press the button; pressing it again at any point updates the thumbnail to whatever's
+currently on screen. `setThumbFromBlob()` is the one place that updates `repBlob`/`repUrl`/the preview
+`<img>`, shared by both the automatic capture and the manual button, so the two can never disagree
+about what "updating the thumbnail" means.
+
+⚠️⚠️ **"Standard 3:4 landscape ratio" is self-contradictory** — 3:4 is a **portrait** ratio (narrower
+than tall). Read as the standard **4:3 landscape** ratio the word "landscape" actually names, since a
+thumbnail cropped from a landscape panorama view has no sensible reason to come out portrait-shaped;
+`THUMB_ASPECT = 4/3` is a named constant with this reasoning in its own comment, not a silent guess.
+`captureViewerThumbnail` reads the Pannellum viewer's own `<canvas>` (`containerEl.querySelector
+('canvas')`), centre-crops it to that ratio, downsizes to a fixed 640×480 output, and hands back a
+real JPEG Blob — degrading to `null` (never throwing) if the viewer hasn't rendered a canvas yet.
+⚠️ `Pano360.extractFrameAt`/`getDuration` are left in `pano360.js`, unchanged — they're generic,
+still-exported public utilities (grab a frame from a video at time T), not orphaned implementation
+detail; removing them would be speculative cleanup unrelated to what this item asked for.
+
+### Verified
+
+**897 passed, 0 failed** (up from 875) — every item above covered by genuine execution, not only
+structural reads: `startPanoYawPoll`'s dirty-check against a real, queue-based rAF stub (an unchanged
+yaw between two ticks fires nothing; a changed one fires with the new value; `stop()` genuinely halts
+further callbacks); `mountPannellumViewer` against an injected `window.pannellum` stub (the real
+`pannellum.viewer(...)` call, its `haov`/`vaov` config including the clamp on an extreme aspect ratio,
+auto-generating a container id, and degrading to `null` when the library itself is unavailable);
+`captureViewerThumbnail` against a fake canvas-bearing container (a real 640×480 JPEG Blob out, `null`
+when no canvas exists yet); the close-during-recording race — a fake, controllable `MediaRecorder`
+proves closing mid-recording fires `onCancel` with `null` exactly once and the recorder's own delayed
+`onstop` is silently skipped afterward, **and** the inverse case (stopping via the shutter, nobody
+closed anything) still hands back the real blob, so the fix doesn't overcorrect into swallowing a
+genuine completion; the flash button's full off→on→auto→off cycle against a torch-capable fake video
+track (the exact `applyConstraints` calls asserted, including that "auto" applies `torch:false`) and
+the disabled state against a track with no torch capability at all; `featherStops`' clamp (an ordinary
+frame gets a plain 12% margin, a very narrow frame's margin is clamped to half its own width so the
+two edge gradients can never overlap/invert, a tiny frame still gets a 4px floor).
+
+`node --check` clean on `module.js`/`capture.js`/`pano360.js`/`test.js`; 0 NUL bytes across every
+touched file; CSS braces balanced (540/540); 0 duplicate DOM ids in `index.html` (90 unique).
+
+⚠️ **Not verified signed in or on a real device** — same standing caveat as every entry in this file.
+In particular: Pannellum has never been loaded in a real browser here (no network access to the CDN
+in this environment, and no live camera/WebGL stack) — its config keys (`haov`/`vaov`/`type`) and
+method names (`getYaw`, `on('load', ...)`, `destroy`) are used per its documented public API and
+covered here only by genuine execution against an injected stub, never against the real library; the
+close-during-recording race and the flash button are proven against fake `MediaRecorder`/
+`MediaStreamTrack` objects, never a real camera; and the "camera preview shades darker" fix is a
+resolution hint whose actual effect on real device auto-exposure has not been observed.
+
+`module.js`/`capture.js`/`pano360.js` → `?v=20260912b`; `module.css` → `?v=20260912b`; the shared
+`MODULE_V` fallback (`assets/js/modules-grid.js`, `dashboard.html`, `modules.html`) → `20260912b` to
+match, since this module's `index.html` itself changed (new CDN tags, new markup). `bim.js`/`ppr.js`
+are untouched and stay at their existing `?v=20260912a` from the concurrent session's own merge.
+
+⚠️ **Rebased onto `origin/main` on 2026-09-12 after PR #80 (which carried this round's earlier
+commits) had already merged.** A concurrent session's own work — the retirement of `pano.js`/
+`recon.js` in favour of `capture.js`/`pano360.js`, and this same day's PDF/PPTX/HTML export QA
+passes recorded below — had already landed on `main` in the meantime. `capture.js`, `pano360.js`
+and `module.js` auto-merged cleanly (the two threads touched different regions of each file); the
+only real collisions were cache-bust version-string and changelog-prepend seams, resolved per this
+file's own standing rule for that exact shape: take the union, never pick a side, and bump every
+touched asset's `?v=` past whichever token either side already held.
 > ⚠️ **Merge note (2026-09-12):** two independent sessions had each prepended their own new
 > entries above the same shared history at once — this branch's HTML/PDF/PPTX export overhaul
 > (below) and a concurrent session's capture-flow work already landed on `main` (Add Media,

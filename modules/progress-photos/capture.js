@@ -53,6 +53,16 @@ window.Capture = (function () {
   // (turn the mic off once, it stays off next time you record). Photo mode
   // never reads this at all — it never requested audio in the first place.
   var wantAudio = true;
+  // Item 2 (2026-09-11, third round): "provide button for on/off/auto
+  // flash" — kept across opens the same way curFacing/wantAudio are.
+  // ⚠️ 'auto' is an HONEST DEGRADE, not a real third mode: the W3C Image
+  // Capture spec's `torch` capability on a live MediaStreamTrack is a
+  // plain on/off switch — there is no platform API for a continuously
+  // auto-decided flash the way a native camera app has. 'auto' therefore
+  // behaves exactly like 'off' (torch left off, ordinary auto-exposure
+  // does what it can) — stated in the button's own tooltip rather than
+  // silently pretended into working like a real camera app's auto flash.
+  var flashMode = 'off';   // 'off' | 'on' | 'auto'
 
   function $(id) { return document.getElementById(id); }
 
@@ -83,6 +93,16 @@ window.Capture = (function () {
         'cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;}' +
       '.pp-cap-audiotoggle.is-muted{background:rgba(255,59,48,.55);}' +
       '.pp-cap-audiotoggle:disabled{opacity:.4;cursor:not-allowed;}' +
+      // Item 2 (2026-09-11, third round): flash on/off/auto — same round
+      // 38px button family as close/mic, positioned relative so the
+      // small "A" auto-mode badge (below) can sit at its own corner.
+      '.pp-cap-flash{position:relative;width:38px;height:38px;border-radius:50%;background:rgba(0,0,0,.45);border:0;color:#fff;' +
+        'cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;}' +
+      '.pp-cap-flash.is-on{background:rgba(255,204,0,.55);}' +
+      '.pp-cap-flash:disabled{opacity:.35;cursor:not-allowed;}' +
+      '.pp-cap-flash .pp-cap-flash-auto{position:absolute;bottom:-1px;right:-1px;font-size:9px;font-weight:700;' +
+        'background:#fff;color:#000;border-radius:50%;width:13px;height:13px;line-height:13px;text-align:center;}' +
+      '.pp-cap-rightcluster{display:flex;align-items:center;gap:8px;}' +
       '.pp-cap-timer{color:#fff;font-variant-numeric:tabular-nums;font-size:15px;font-weight:700;' +
         'background:rgba(0,0,0,.45);padding:4px 12px;border-radius:999px;display:none;align-items:center;gap:6px;}' +
       '.pp-cap-timer.on{display:flex;}' +
@@ -162,7 +182,16 @@ window.Capture = (function () {
   }
 
   async function openStream(withAudio) {
-    var constraints = { video: { facingMode: { ideal: curFacing } }, audio: !!withAudio };
+    // Item 2 (2026-09-11, third round): "camera preview also seems to be
+    // shades darker" — with no resolution hint at all, some phone browsers
+    // fall back to a lower-resolution/binned sensor profile whose default
+    // auto-exposure reads noticeably dimmer than the same device's native
+    // camera app. `ideal` (not `min`/exact) asks for a proper HD frame
+    // without refusing a device that can't provide one.
+    var constraints = {
+      video: { facingMode: { ideal: curFacing }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+      audio: !!withAudio
+    };
     return navigator.mediaDevices.getUserMedia(constraints);
   }
   // ⚠️ 2026-09-11 fix, second round ("the mute button ... is not working"):
@@ -201,6 +230,18 @@ window.Capture = (function () {
       '</svg>';
   }
 
+  // Item 2 (2026-09-11, third round) — same hand-drawn, dependency-free
+  // convention as micSVG: a bolt glyph, solid-filled for 'on', outlined for
+  // 'off'/'auto', with a small "A" badge for 'auto' (see flashMode's own
+  // comment for why 'auto' is a labelled degrade, not a real third mode).
+  function flashSVG(mode) {
+    var bolt = '<path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z"/>';
+    return '<svg width="18" height="18" viewBox="0 0 24 24" ' +
+      (mode === 'on' ? 'fill="#ffcc00" stroke="none"' : 'fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"') +
+      '>' + bolt + '</svg>' +
+      (mode === 'auto' ? '<span class="pp-cap-flash-auto">A</span>' : '');
+  }
+
   function buildOverlay(opts) {
     ensureStyle();
     var el = document.createElement('div');
@@ -209,9 +250,17 @@ window.Capture = (function () {
       '<div class="pp-cap-topbar">' +
         '<button type="button" class="pp-cap-close" id="pp-cap-close" title="Close" aria-label="Close">×</button>' +
         '<span class="pp-cap-timer" id="pp-cap-timer"><span class="dot"></span><span id="pp-cap-timertxt">00:00</span></span>' +
-        (opts.mode !== 'photo'
-          ? '<button type="button" class="pp-cap-audiotoggle" id="pp-cap-audio" title="Toggle microphone" aria-label="Toggle microphone"></button>'
-          : '<span class="pp-cap-side"></span>') +
+        // Item 2 (2026-09-11, third round): flash joins the mic toggle in
+        // one right-side cluster — offered for every mode (photo/video/360),
+        // since flash isn't audio-specific the way the mic toggle is;
+        // disabled with a named reason (syncFlashBtn) on a device/track
+        // with no torch capability, same convention as the mic button.
+        '<div class="pp-cap-rightcluster">' +
+          '<button type="button" class="pp-cap-flash" id="pp-cap-flash" title="Flash" aria-label="Flash"></button>' +
+          (opts.mode !== 'photo'
+            ? '<button type="button" class="pp-cap-audiotoggle" id="pp-cap-audio" title="Toggle microphone" aria-label="Toggle microphone"></button>'
+            : '') +
+        '</div>' +
       '</div>' +
       (opts.guideHTML || '') +
       '<div class="pp-cap-stage">' +
@@ -270,6 +319,7 @@ window.Capture = (function () {
       stream = s;
       videoEl.srcObject = s;
       applyAudioEnabled();
+      applyFlash();
     }
     // Flips the actual audio TRACK's `.enabled` flag to match `wantAudio` —
     // never tears the stream down. A disabled track still exists and still
@@ -278,6 +328,44 @@ window.Capture = (function () {
     function applyAudioEnabled() {
       if (!stream) return;
       stream.getAudioTracks().forEach(function (t) { t.enabled = wantAudio; });
+    }
+
+    // Item 2 (2026-09-11, third round): torch on/off against whichever
+    // video track is currently live — re-run from `attach()` on every open
+    // AND every camera flip, since a front camera commonly has no torch at
+    // all even when the rear one does, so capability has to be re-checked
+    // per track, not assumed to persist across a flip.
+    var flashBtn = $('pp-cap-flash');
+    var flashSupported = false;
+    function syncFlashBtn() {
+      if (!flashBtn) return;
+      flashBtn.disabled = !flashSupported;
+      flashBtn.innerHTML = flashSVG(flashMode);
+      flashBtn.classList.toggle('is-on', flashMode === 'on');
+      flashBtn.setAttribute('aria-pressed', String(flashMode === 'on'));
+      flashBtn.title = !flashSupported
+        ? 'Flash is not available on this camera'
+        : (flashMode === 'off' ? 'Flash: Off (tap for On)'
+          : flashMode === 'on' ? 'Flash: On (tap for Auto)'
+            : 'Flash: Auto — this device has no continuous auto-flash, so Auto behaves like Off (tap for Off)');
+    }
+    function applyFlash() {
+      var track = stream && stream.getVideoTracks()[0];
+      if (!track) { flashSupported = false; syncFlashBtn(); return; }
+      var caps = (track.getCapabilities && track.getCapabilities()) || {};
+      flashSupported = !!caps.torch;
+      syncFlashBtn();
+      if (!flashSupported) return;
+      // 'auto' has no platform equivalent for a live track (see flashMode's
+      // own comment) — only 'on' actually turns the torch on.
+      try { track.applyConstraints({ advanced: [{ torch: flashMode === 'on' }] }); } catch (e) {}
+    }
+    if (flashBtn) {
+      syncFlashBtn();
+      flashBtn.onclick = function () {
+        flashMode = flashMode === 'off' ? 'on' : (flashMode === 'on' ? 'auto' : 'off');
+        applyFlash();
+      };
     }
 
     // Item 5: the mic toggle only exists (buildOverlay) for video/360 —
@@ -328,7 +416,12 @@ window.Capture = (function () {
         attach(s2);
         syncAudioBtn();
       };
-      onReady(videoEl);
+      // Item 2 (2026-09-11, third round): `stale` is handed to every caller
+      // so a recording's own async stop-event handler can tell "did close()
+      // already run (× tapped, or the modal was torn down) before this
+      // recording's stop event resolved?" — see takeVideo/take360's own use
+      // of it, which is the actual fix for "the close button doesn't work".
+      onReady(videoEl, stale);
     }).catch(function (err) {
       if (stale()) return;
       // ⚠️ No camera, no permission, or an insecure (non-HTTPS) context —
@@ -345,7 +438,7 @@ window.Capture = (function () {
 
   // ------------------------------------------------------------------ photo --
   function takePhoto(onDone) {
-    startSession('photo', { hint: 'Tap the shutter to take a photo', onCancel: function () { onDone(null); } }, function (videoEl) {
+    startSession('photo', { hint: 'Tap the shutter to take a photo', onCancel: function () { onDone(null); } }, function (videoEl, stale) {
       $('pp-cap-shutter').onclick = function () {
         var canvas = $('pp-cap-canvas');
         canvas.width = videoEl.videoWidth || 1280;
@@ -360,6 +453,11 @@ window.Capture = (function () {
         requestAnimationFrame(function () { flash.style.opacity = '0'; });
         setTimeout(function () { if (flash.parentNode) flash.parentNode.removeChild(flash); }, 260);
         canvas.toBlob(function (blob) {
+          // `toBlob` is genuinely async — a tap on × between the shutter
+          // press and this callback would otherwise still hand back a
+          // photo after the overlay already closed. Same `stale()` guard
+          // as the video/360 stop race below.
+          if (stale()) return;
           close();
           onDone(blob);
         }, 'image/jpeg', 0.92);
@@ -414,7 +512,7 @@ window.Capture = (function () {
   }
   function takeVideo(onDone) {
     var mimeType = pickMimeType();
-    startSession('video', { hint: 'Tap to start recording, tap again to stop', onCancel: function () { onDone(null); } }, function () {
+    startSession('video', { hint: 'Tap to start recording, tap again to stop', onCancel: function () { onDone(null); } }, function (videoEl, stale) {
       var shutter = $('pp-cap-shutter');
       shutter.onclick = function () {
         if (recorder && recorder.state === 'recording') {
@@ -425,6 +523,19 @@ window.Capture = (function () {
         } else {
           shutter.classList.add('is-recording');
           startRecording(mimeType, function (blob) {
+            // ⚠️ 2026-09-11 fix, third round ("the close button ... is not
+            // working"): tapping × WHILE recording used to call close()
+            // (which stops the recorder) and IMMEDIATELY fire
+            // opts.onCancel → onDone(null) — but this callback, wired at
+            // record-START, still ran afterwards when the recorder's own
+            // async 'stop' event caught up, calling onDone(blob) a SECOND
+            // time with a real file. From the planner's side that reads as
+            // "I closed it, but the recording still got added" — the
+            // overlay visibly closed, then the video showed up anyway.
+            // close() bumps sessionToken as its very first action, so by
+            // the time this fires, `stale()` correctly reports "something
+            // already closed this session" and the stray onDone is skipped.
+            if (stale()) return;
             var b = blob; close(); onDone(b);
           });
         }
@@ -513,7 +624,7 @@ window.Capture = (function () {
     '</div>';
   }
   function take360(onDone) {
-    startSession('360', { hint: 'Tap to start recording your 360° walk-around', guideHTML: ringGuideHTML(), onCancel: function () { onDone(null); } }, function () {
+    startSession('360', { hint: 'Tap to start recording your 360° walk-around', guideHTML: ringGuideHTML(), onCancel: function () { onDone(null); } }, function (videoEl, stale) {
       var shutter = $('pp-cap-shutter');
       var mimeType = pickMimeType();
       var usingCompass = false, startHeading = null, lastBucket = -1;
@@ -598,6 +709,9 @@ window.Capture = (function () {
           startRecording(mimeType, function (blob) {
             clearInterval(fallbackTimer);
             stopOrientation();
+            // Same close-during-recording race fix as takeVideo — see its
+            // own comment on `stale()`.
+            if (stale()) return;
             var b = blob; close(); onDone(b);
           });
         }

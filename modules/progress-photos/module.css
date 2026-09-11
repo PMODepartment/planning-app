@@ -464,24 +464,30 @@
    element's exact rendered box in pixels — the CSS only needs to keep it
    pinned to the wrapper's top-left and out of the way of clicks/drag. */
 .pp-lb-markup { position: absolute; top: 0; left: 0; pointer-events: none; display: none; }
-/* Item 4: the 360° pan strip — a fixed-height window with the wide stitched
-   panorama scrolling horizontally inside it. `overflow-x:auto` gives touch
-   swipe-to-pan for free; wirePanoDrag() adds click-and-drag for a mouse. */
+/* Item 5 (2026-09-11, third round): the 360° viewer is now a real Pannellum
+   instance (mountPannellumViewer, module.js) mounted into a plain sized
+   container — REPLACES the earlier drag-to-pan strip (wireDragPan/
+   wirePanoDrag, both deleted), which is why this is a fixed-size box
+   (`position:relative`, so its Pannellum-managed children and the
+   thumbnail stand-in <img> can be absolutely positioned to fill it)
+   instead of an `overflow-x:auto` scrolling window. */
 .pp-lb-panowrap {
-  max-width: 88vw; max-height: 78vh; overflow-x: auto; overflow-y: hidden;
-  border: 3px solid #fff; background: #000; cursor: grab; touch-action: pan-x;
+  position: relative; max-width: 88vw; width: 88vw; max-height: 78vh; height: 78vh;
+  border: 3px solid #fff; background: #000; overflow: hidden;
 }
-.pp-lb-panowrap:active { cursor: grabbing; }
-.pp-lb-pano { display: block; height: 78vh; max-height: 78vh; width: auto; max-width: none; user-select: none; }
-/* Item 5 (2026-09-11, second round): the 360°-upload modal reuses this same
-   pan strip for its OWN preview ("navigable ... not just a panoramic still
-   photo") — but that preview sits inside a ~600px-wide modal, not the
-   full-viewport lightbox, so the lightbox's own 78vh height would blow the
-   modal out. #pp360-panowrap/#pp360-pano override it with a fixed, modal-
-   appropriate size; an id selector wins over the shared .pp-lb-pano/
-   .pp-lb-panowrap class rules regardless of source order. */
-#pp360-panowrap { max-width: 100%; max-height: 240px; height: 240px; }
-#pp360-pano { height: 240px; max-height: 240px; }
+/* The stand-in <img> (lightbox only — shows the thumbnail instantly while
+   the full-res panorama is being signed and the real viewer mounts) and the
+   Pannellum mount target both fill the wrap exactly the same way. */
+.pp-lb-panowrap img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.pp-lb-panoviewer { position: absolute; inset: 0; }
+/* Item 6 (2026-09-11, third round): the 360°-upload modal's own preview
+   reuses this same wrap/viewer pair ("use the 360 viewer as both a preview
+   and to select the thumbnail frame") — but it sits inside a ~600px-wide
+   modal, not the full-viewport lightbox, so the lightbox's own 78vh height
+   would blow the modal out. #pp360-panowrap overrides it with a fixed,
+   modal-appropriate size; an id selector wins over the shared
+   .pp-lb-panowrap class rule regardless of source order. */
+#pp360-panowrap { width: 100%; max-width: 100%; height: 240px; max-height: 240px; }
 /* Round-2 item 3 (2026-09-02): REPLACES the old zoom in/out buttons — "have a
    magnifier instead". A circular lens that follows the cursor while it's over
    the photo, showing a magnified crop of the SAME <img> via a background-
@@ -549,13 +555,30 @@
    the point (matching .bim-pinstage-dot's own centring, not a teardrop
    anchored at its base) and recoloured red, so it reads as the same pin
    the capture-time widget drew, just smaller. */
+/* Item 3 (2026-09-11, third round): "the pin should be proportionally
+   smaller" — it was a FIXED 16px dot regardless of how big the key-plan
+   overlay itself was drawn (the overlay ranges 6%-60% of the photo's own
+   width, both in the lightbox and the presentation pane, and is now
+   drag-resizable — see wireLightboxKpResizeDrag/wireKpResizeDrag). A fixed
+   16px pin reads as oversized on the SMALL end of that range (the common
+   default, ~60-100px wide) and increasingly undersized as the overlay is
+   dragged larger. Sized as a PERCENTAGE of its own containing block (the
+   overlay box) instead — `aspect-ratio:1` derives the height from the
+   resolved width so a percentage `height` (which percentage sizing cannot
+   reliably resolve against an auto-height absolutely-positioned parent)
+   is never needed at all. Scales automatically with every resize, live,
+   with no JS repaint required. */
 .pp-kpmini-pin {
   position: absolute; transform: translate(-50%, -50%);
-  width: 16px; height: 16px; border-radius: 50%;
+  width: 10%; aspect-ratio: 1; min-width: 8px; max-width: 20px; border-radius: 50%;
   border: 1.5px solid #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .45); pointer-events: none;
   display: flex; align-items: center; justify-content: center; color: #fff;
 }
-.pp-kpmini-pin svg { width: 9px; height: 9px; }
+/* The icon glyph inside the pin scales WITH it — the SVG's own width/height
+   attributes (set by Icons.svg(name, 9) at draw time) are overridden here so
+   the icon shrinks/grows in step with the pin rather than staying a fixed 9px
+   inside a pin that's now anywhere from 8px to 20px. */
+.pp-kpmini-pin svg { width: 60%; height: 60%; }
 .pp-kpmini-pin.pp-kpmini-pin-photo { background: var(--pd-red); }
 .pp-lb-kpoverlay-cone { position: absolute; inset: 0; pointer-events: none; }
 .pp-lb-cap {
@@ -1563,6 +1586,18 @@
 
 /* ---- Staged-file grid (Add Media): a Markup AND an Adjust button per file  */
 .pp-cardactions { display: flex; flex-wrap: wrap; }
+
+/* Item 1 (2026-09-11, third round): remove-staged-item ×, top-right of the
+   staged card — same fixed dark-scrim corner-overlay language as .pp-cardsel
+   (top-left checkbox) and .pp-mkeditbtn, mirrored to the opposite corner so
+   the two can never be mistaken for one another. */
+.pp-stagermv {
+  position: absolute; top: 6px; right: 6px; z-index: 1;
+  width: 24px; height: 24px; padding: 0; display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, .55); color: #fff; border: none; border-radius: 50%;
+  font-size: 16px; line-height: 1; cursor: pointer;
+}
+.pp-stagermv:hover { background: var(--pd-bad); }
 
 /* ---- Item 8: inline "upload a floor plan now" mini-form (Add Media) ------ */
 .pp-inlineplanform {
