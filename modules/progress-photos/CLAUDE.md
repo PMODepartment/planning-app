@@ -2,6 +2,139 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Six-item capture-flow round: one input attribute was two bugs, a real
+## close-button race, an audio toggle, and a 360° guide that actually tracks
+## coverage instead of double-counting a pan (2026-09-11)
+
+Owner, off the in-app camera work shipped the same day:
+```
+1. when uploading photos or videos, only 1 photo or video is allowed per instance
+2. there are still some bugs in the take photo/video a the close button does not close
+3. when clicking upload photo, it goes to camera. this should go to gallery
+4. when clicking upload video, it still gives me three choices, take video/photo library/
+   choose files. bring me to gallery directly
+5. for video, provide option to include or exclude audio
+6. for 360 photo, when taking video, improve 360 guide. show preview of 360 while video.
+   see attached photo for concept of 360 guide
+```
+
+### ⚠️⚠️ Items 1 and 3 were ONE bug: `capture="environment"` on the Upload-photo input
+
+`#pp-files`'s photo variant carried `accept="image/*" capture="environment"`. `capture` is a
+request to open the device's live camera directly, and on real mobile browsers it does two
+things at once, neither of them documented as obviously connected: it sends "Upload Photo"
+straight to the camera instead of the photo library (item 3), **and** it silently caps the
+picker to exactly one shot — a live camera capture has nothing to be plural about, so
+`multiple` is ignored the moment `capture` is present (item 1). Removed entirely; "Upload"
+now opens the ordinary file/photo-library picker for both photo and video (video never
+carried the attribute, which is why only photo showed the symptom), where `multiple`
+genuinely works. "Take Photo/Video" (`capture.js`, shipped the same day) is the one
+deliberately single-shot path, and it stays that way on purpose — a live in-app capture
+producing "several photos" at once wouldn't mean anything.
+
+### Item 4 — the native three-way chooser on video upload is a platform limit, not a bug
+
+⚠️ **Not fixed, because it can't be from here.** Once `capture="environment"` is gone, what a
+mobile browser does with a bare `<input type="file" accept="video/*">` is entirely up to the
+OS/browser — Android and iOS both offer their own multi-way sheet (record video / photo
+library / files) for video specifically, and there is no HTML attribute that forces straight
+to the gallery tab of that sheet the way there is for a hard camera-only request. Checked
+directly rather than assumed: the one attribute that *could* narrow it (`capture`) is exactly
+the one just removed for causing items 1 and 3, and re-adding it for video would reproduce
+this round's own bug in the other direction. Recorded here as an honest platform limit rather
+than silently left unaddressed.
+
+### ⚠️⚠️ Item 2 — the real bug: an async race between `getUserMedia` and the close button
+
+Reported again after the overnight round's own in-app camera shipped. `getUserMedia`'s
+permission prompt is asynchronous — a fast tap on × while it's still pending used to race the
+overlay's own teardown: `close()` ran first (removing the DOM, nulling `overlay`), and the
+still-pending stream promise resolved *afterwards* and tried to attach a live camera stream to
+a `<video>` element that no longer existed, and wire a flip-camera click handler onto a `null`
+lookup — throwing inside an unawaited async continuation (a silent unhandled rejection, no
+toast, nothing in the visible UI), **leaking the just-opened `MediaStream`** (nothing had ever
+stopped its tracks), and leaving the device's camera indicator lit with no overlay left to
+close it from. That is the "close doesn't close" report: the button visibly did nothing
+because the code trying to notice it had already thrown.
+
+Fixed with a session token (`capture.js:50`): `sessionToken` increments on every `close()`;
+every continuation after an `await` (four separate `.then()` sites — the stream opening,
+each of the three re-opens the flip-camera and new mic-toggle buttons trigger) captures its
+own token at the start and checks `stale()` before touching the DOM or attaching anything.
+A stream that resolves after the overlay already closed is stopped immediately
+(`getTracks().forEach(t => t.stop())`) rather than attached to a removed element.
+
+⚠️ **Contrast-checked, not just read**: temporarily disabled the `sessionToken++` in `close()`
+and reran the suite — the new race test (`a stream that resolves AFTER close() is stopped
+immediately, never attached to the (removed) video element`) genuinely fails against the
+pre-fix shape (`got 0 want 1`), confirming the test isn't vacuous. Restored and reconfirmed
+green.
+
+### Item 5 — a mic on/off toggle, held across opens
+
+A new `#pp-cap-audio` button (mic icon, red-tinted when muted) sits in the capture overlay's
+topbar for video and 360° modes only — never for photo, which has no audio track to toggle in
+the first place. `wantAudio` (default on) persists across opens the same way `curFacing`
+already does, so turning the mic off once keeps it off next time. `audioNow()` = `mode !==
+'photo' && wantAudio`, read by every `openStream()` call so the toggle actually changes what
+`getUserMedia` requests. ⚠️ **Refused mid-recording**, the same rule flip-camera already
+enforces and for the identical reason: a live `MediaRecorder` has already fixed the track it's
+recording from, so flipping the mic under it would silently do nothing to the file being
+produced — toggling it re-opens the stream via stop-then-reopen, which is exactly what a live
+recording can't tolerate.
+
+### Item 6 — the 360° guide now tracks *coverage of the ring*, not accumulated rotation
+
+⚠️⚠️ **A real bug in the OLD guide, found while building the replacement**: the previous
+`accumTurned` approach summed the absolute value of every heading delta without cancelling
+direction, so panning back and forth (as any real hand-held walk-around does) inflated the
+reported percentage past 100% without ever completing an actual turn — the "progress" bar was
+lying upward, not just imprecise.
+
+New model: the ring is divided into 24 fixed 15° buckets (`ringGuideHTML()`, modelled on the
+attached Facebook-style 360° reference — a static ring of tick segments, a rotating
+"facing" marker, and a live percentage label at the centre), and each new heading reading
+marks every bucket **crossed since the last reading** as covered — `coverageSteps(lastBucket,
+idx, total)`, a small pure function that walks the *shorter* direction around the ring between
+the two bucket indices. ⚠️ **My first draft of this always walked forward**, which for a
+backward pan (e.g. lastBucket 2 → idx 1) would have swept almost the entire ring the wrong way
+(2→3→…→23→0→1) instead of the correct one-step move backward — caught in my own review before
+it ever ran against a test, and covered explicitly now (`coverageSteps: moving BACKWARD by one
+bucket walks the SHORT way`, plus the two wrap-boundary cases at 23→0 and 0→23 in both
+directions, and the exact-half-ring tie). Percentage is `covered-bucket-count / 24`, so it can
+never exceed 100% regardless of how much the camera pans back and forth.
+
+⚠️ **Scope, stated rather than silently reduced**: this is direction-*coverage* tracking, not a
+live-stitched panorama preview. A true "show the 360 forming as you record" preview would need
+to warp and composite each new frame into the mosaic in real time during capture — a
+materially larger piece of work than a coverage ring, and not attempted here. What's built
+answers "have I turned enough, and which direction is still missing" — the concept in the
+reference photo — without claiming to show the panorama itself mid-recording.
+
+### Verified
+
+**854 passed, 0 failed** (up from 839) — `capture.js` gained test coverage for the first time
+in this pass (it previously had none at all): the removed `capture=` attribute (structural, on
+both photo and video); the close-button race, via a hand-built fake DOM (tracked `onclick`
+slots per element id) and a controllable `getUserMedia` Promise — tap × while the permission
+prompt is still pending, confirm the cancel callback fires immediately with `null`, then
+resolve the delayed stream and confirm its track was stopped (`stopped === 1`) rather than
+attached; the mic toggle's conditional rendering (video/360 get the button, photo gets a plain
+spacer, never both), `audioNow()`'s exact gating, and the mid-recording refusal; and six
+genuine-execution cases for `coverageSteps` (forward one, backward one, no movement, both wrap
+directions, the exact-half-ring tie) via a new `Capture._coverageSteps` test hook. `node
+--check` clean on `capture.js`/`module.js`/`test.js`; 0 NUL bytes.
+
+⚠️ **Not verified signed in or on a real device** — same standing caveat as every camera/
+recording entry in this file. In particular: item 4's platform-limit claim (that no HTML
+attribute can force video-upload straight to the gallery tab) is stated from documented
+browser/OS behaviour, not observed on a real phone; the mic toggle's actual effect on a
+recorded file's audio track, and the 360° guide's ring/percentage readout against a real
+hand-held walk-around, have not been seen on a real device either.
+
+`module.js`/`capture.js` → `?v=20260911d4`; `MODULE_V` → `20260911d4` (bumped because
+`index.html`'s own asset `?v=` references changed).
+
 ## Fixed: the key-plan pin/camera-angle overlay drew the wrong-sized pin in the
 ## presentation pane — a real display bug, not a re-description (2026-09-11)
 

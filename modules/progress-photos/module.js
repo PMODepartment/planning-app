@@ -4921,12 +4921,23 @@ window.ProgressPhotos = (function () {
           // upload photo/video" -- Take opens the in-app camera overlay
           // (capture.js), Upload triggers the same hidden file input this
           // form has always used, unchanged in every other respect.
+          // ⚠️ 2026-09-11 fix: this input carried `capture="environment"`
+          // for photos, which is a request to go STRAIGHT to the camera —
+          // on real mobile browsers that also silently caps the picker to
+          // exactly one shot, ignoring `multiple` entirely, since a single
+          // live camera capture has nothing to be plural about. That is
+          // both reported bugs at once: "Upload Photo opens the camera"
+          // and "only 1 photo/video is allowed" — `capture` was doing the
+          // first and causing the second as a side effect. Removed for
+          // photos, matching video (which never carried it): "Upload" now
+          // opens the ordinary file/photo picker for both kinds, where
+          // `multiple` genuinely lets several files be picked in one go.
+          // "Take" (capture.js) is the one deliberately single-shot path.
           '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 8px;">' +
             '<button type="button" class="pd-btn" id="pp-take">Take ' + (isVideoKind ? 'Video' : 'Photo') + '</button>' +
             '<button type="button" class="pd-btn" id="pp-choosefiles">Upload ' + (isVideoKind ? 'Video' : 'Photo') + '</button>' +
           '</div>' +
-          '<input class="pd-input" type="file" id="pp-files" hidden accept="' + (isVideoKind ? 'video/*' : 'image/*') + '"' +
-            (isVideoKind ? '' : ' capture="environment"') + ' multiple />' +
+          '<input class="pd-input" type="file" id="pp-files" hidden accept="' + (isVideoKind ? 'video/*' : 'image/*') + '" multiple />' +
         '</div>' +
         '<div class="pp-gallery" id="pp-stagedgrid" style="margin:8px 0;"></div>' +
         '<div class="pp-form2">' +

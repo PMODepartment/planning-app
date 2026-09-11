@@ -257,7 +257,7 @@ const ctx = {
   AppAuth: { getSB: () => sbStub, requireLogin() {} },
   UI: { toast: (m, k) => { (ctx.__toasts = ctx.__toasts || []).push([k, m]); }, modal: (html) => { const el = makeEl('div'); el.innerHTML = html; return { el, close() { ctx.__closed = true; } }; }, renderUserBar() {} },
   Fmt: { esc: (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])), date: (d) => String(d), money: (n) => String(n), moneyShort: (n) => String(n) },
-  Icons: { hydrate() { ctx.__hydrated = (ctx.__hydrated || 0) + 1; } },
+  Icons: { hydrate() { ctx.__hydrated = (ctx.__hydrated || 0) + 1; }, svg(name) { return '<svg data-name="' + name + '"></svg>'; } },
   // Item 7 (performance, this round): a QUEUE, not an immediate call — real
   // requestAnimationFrame never fires synchronously, and a naive
   // "call cb() right away" stub would make every coalescing test pass
@@ -284,6 +284,10 @@ vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(here('module.js'), 'utf8'), ctx, { filename: 'module.js' });
 vm.runInContext(fs.readFileSync(here('ppr.js'), 'utf8'), ctx, { filename: 'ppr.js' });
 vm.runInContext(fs.readFileSync(here('bim.js'), 'utf8'), ctx, { filename: 'bim.js' });
+// capture.js has no top-level side effects beyond defining window.Capture
+// (everything DOM/camera-touching is inside functions, called lazily) —
+// safe to load into the same sandbox as the other three.
+vm.runInContext(fs.readFileSync(here('capture.js'), 'utf8'), ctx, { filename: 'capture.js' });
 
 // Item 7 (performance): drains the fake rAF queue, running whatever is
 // still pending (skipping anything cancelAnimationFrame nulled out) —
@@ -292,10 +296,11 @@ vm.runInContext(fs.readFileSync(here('bim.js'), 'utf8'), ctx, { filename: 'bim.j
 function flushRaf() { const q = ctx.__rafQueue; ctx.__rafQueue = []; q.forEach((cb) => { if (cb) cb(); }); }
 function rafPending() { return ctx.__rafQueue.filter(Boolean).length; }
 
-const PP = ctx.ProgressPhotos, PPR = ctx.PPR, BIM = ctx.BIM;
+const PP = ctx.ProgressPhotos, PPR = ctx.PPR, BIM = ctx.BIM, CAP = ctx.Capture;
 ok('module.js exposes ProgressPhotos', !!PP);
 ok('ppr.js exposes PPR', !!PPR);
 ok('bim.js exposes BIM', !!BIM);
+ok('capture.js exposes Capture', !!CAP);
 ok('openUploadForPicker exported (inline add-photo hook)', typeof PP.openUploadForPicker === 'function');
 
 // ---------------------------------------------------------- source assertions --
@@ -304,6 +309,7 @@ ok('openUploadForPicker exported (inline add-photo hook)', typeof PP.openUploadF
 const mjs = fs.readFileSync(here('module.js'), 'utf8');
 const pjs = fs.readFileSync(here('ppr.js'), 'utf8');
 const bmjs = fs.readFileSync(here('bim.js'), 'utf8');
+const cjs = fs.readFileSync(here('capture.js'), 'utf8');
 const html = fs.readFileSync(here('index.html'), 'utf8');
 const css = fs.readFileSync(here('module.css'), 'utf8');
 
@@ -2326,11 +2332,19 @@ console.log('\n[misc] insert().select() returns the new row id');
      /function wirePlan\(\) \{\s*if \(\$\('bim-plan-select'\)\) \$\('bim-plan-select'\)\.onchange = function \(\) \{/.test(bmjs));
 
   // Superseded (overnight batch item 6): wireMediaTypeSelector — and the
-  // in-form Photo/Video switch it drove — is gone entirely. `capture`
-  // is now set once, correctly, at modal build time, straight off the
-  // fixed `mtype` this modal was opened for (never toggled after the fact).
-  ok('the file input\'s capture="environment" attribute is set directly from the fixed mtype at build time, never toggled by an in-form switch',
-     /'<input class="pd-input" type="file" id="pp-files" hidden accept="' \+ \(isVideoKind \? 'video\/\*' : 'image\/\*'\) \+ '"' \+\s*\(isVideoKind \? '' : ' capture="environment"'\) \+ ' multiple \/>'/.test(mjs));
+  // in-form Photo/Video switch it drove — is gone entirely. The file input
+  // read its `accept` straight off the fixed `mtype` this modal was opened
+  // for (never toggled after the fact) — still true below.
+  //
+  // ⚠️ 2026-09-11 follow-up fix ("Upload Photo opens the camera" / "only 1
+  // photo/video allowed"): `capture="environment"` is REMOVED entirely, not
+  // just fixed-at-build-time — real mobile browsers treat that attribute as
+  // "open the live camera only", which both forces straight to the camera
+  // AND silently caps the picker to exactly one shot regardless of
+  // `multiple`. Superseding the assertion above rather than deleting it.
+  ok('the "Upload" file input carries NO capture="environment" — it opens the ordinary photo/file picker (where `multiple` actually works), never the live camera; "Take" (capture.js) is the deliberately single-shot path',
+     /'<input class="pd-input" type="file" id="pp-files" hidden accept="' \+ \(isVideoKind \? 'video\/\*' : 'image\/\*'\) \+ '" multiple \/>'/.test(mjs) &&
+     !/id="pp-files"[\s\S]{0,80}capture="environment"/.test(mjs));
   ok('…and the unused `lbl` variable (looked up, never referenced) is gone',
      !/var lbl = document\.querySelector\('label\[for="' \+ idPrefix \+ '-files"\]'\);/.test(mjs));
 
@@ -3812,6 +3826,95 @@ console.log('\n[misc] insert().select() returns the new row id');
     var miniNoDir = BIM.keyPlanMiniMarkerHTML(noDir);
     ok('a pin with no recorded facing direction (direction_na) draws the pin dot with no cone at all, in the mini marker too',
        /<span class="pp-kpmini-pin pp-kpmini-pin-photo" style="left:20%;top:20%;"><\/span>/.test(miniNoDir) && !/<svg/.test(miniNoDir));
+  })();
+
+  console.log('\n[54] Overnight-round follow-up feedback (2026-09-11): upload picker, close-button race, mic toggle, 360 guide');
+
+  // Items 1 & 3: "Upload Photo" opens the camera instead of the gallery, and
+  // only one photo/video makes it through — both traced to one attribute.
+  // (Full assertion + the healthy-churn note is in section [36] above,
+  // rewritten in place rather than duplicated here.)
+  ok('module.js: "Upload Video" never carried capture="environment" either — both kinds now behave identically (a plain file/photo picker, `multiple` genuinely honoured)',
+     !/id="pp-files"[\s\S]{0,120}capture=/.test(mjs));
+
+  // Item 2: the close-button/getUserMedia race — genuinely executed against
+  // a controllable, DELAYED getUserMedia stub (never an immediate-resolve
+  // fake, which would make this pass whether the guard existed or not).
+  await (async function () {
+    var fakeEl = { style: {}, classList: { add() {}, remove() {}, toggle() {} }, srcObject: null, onclick: null,
+      setAttribute() {}, getAttribute() { return null; }, querySelector: () => null, appendChild() {}, remove() {},
+      dataset: {}, hidden: false, disabled: false, title: '' };
+    var builtEl = { className: '', innerHTML: '', parentNode: { removeChild() {} }, appendChild() {} };
+    var idEls = {};
+    ctx.document.getElementById = function (id) {
+      if (id === 'pp-capture-style') return null;   // ensureStyle() should (re)create it once
+      if (!idEls[id]) idEls[id] = Object.assign({}, fakeEl, { id: id });
+      return idEls[id];
+    };
+    ctx.document.createElement = function (tag) {
+      if (tag === 'style') return { id: '', textContent: '' };
+      return Object.assign({}, builtEl);
+    };
+    ctx.document.head = { appendChild() {} };
+    ctx.document.body = { appendChild() {} };
+
+    var stopped = 0;
+    var fakeTrack = { stop() { stopped++; } };
+    var resolveGetUserMedia;
+    ctx.navigator = { mediaDevices: { getUserMedia: () => new Promise((res) => { resolveGetUserMedia = res; }) } };
+
+    var doneArgs = [];
+    CAP.takePhoto(function (blob) { doneArgs.push(blob); });   // starts the session; getUserMedia is now pending
+
+    // Tap × WHILE the permission prompt is still "pending" — this is the
+    // exact race: close() must run to completion (removing the overlay,
+    // invalidating the session) BEFORE the stream promise ever resolves.
+    idEls['pp-cap-close'].onclick();
+    eq('the close button\'s onCancel fires immediately, without waiting for getUserMedia to resolve', doneArgs.length, 1);
+    eq('...and hands back null (a cancel, not a captured photo)', doneArgs[0], null);
+
+    // NOW the delayed permission prompt resolves — a stream arrives for a
+    // session that's already been closed.
+    resolveGetUserMedia({ getTracks: () => [fakeTrack] });
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();   // let the .then() microtask run
+
+    eq('a stream that resolves AFTER close() is stopped immediately, never attached to the (removed) video element',
+       stopped, 1);
+  })();
+
+  // Item 5: the mic toggle exists for video/360 and never for photo, and
+  // openStream()'s audio argument tracks it.
+  ok('capture.js: buildOverlay renders #pp-cap-audio for video/360, a plain spacer for photo — never both',
+     /opts\.mode !== 'photo'[\s\S]{0,120}id="pp-cap-audio"/.test(cjs) &&
+     /: '<span class="pp-cap-side"><\/span>'/.test(cjs));
+  ok('capture.js: audioNow() is mode-gated (photo never requests audio) AND reads the live wantAudio toggle, not a fixed mode-only check',
+     /function audioNow\(\) \{ return mode !== 'photo' && wantAudio; \}/.test(cjs));
+  ok('capture.js: the mic button is refused mid-recording, the same rule flip-camera already enforces, and for the identical reason (the live track is fixed once MediaRecorder starts)',
+     /if \(recorder && recorder\.state === 'recording'\) \{\s*UI && UI\.toast && UI\.toast\('Turn the mic on\/off before you start recording', 'warn'\);/.test(cjs));
+
+  // Item 6: the 360 guide — genuine execution of the pure coverage-walk
+  // math (coverageSteps / Capture._coverageSteps), the one piece of this
+  // fix that's silently wrong in a specific, easy-to-miss way if it walks
+  // the ring the WRONG direction (see the function's own comment).
+  (function () {
+    eq('coverageSteps: moving forward by one bucket (11 -> 12 of 24) walks just the two endpoints',
+       JSON.stringify(CAP._coverageSteps(11, 12, 24)), JSON.stringify([11, 12]));
+    eq('coverageSteps: moving BACKWARD by one bucket (12 -> 11) walks the SHORT way (just [12,11]), never forward all the way around through 23 buckets',
+       JSON.stringify(CAP._coverageSteps(12, 11, 24)), JSON.stringify([12, 11]));
+    eq('coverageSteps: no movement at all (same bucket) walks exactly that one bucket',
+       JSON.stringify(CAP._coverageSteps(5, 5, 24)), JSON.stringify([5]));
+    eq('coverageSteps: crossing the 0/23 wrap boundary forward (23 -> 1) walks [23,0,1], not the long way round',
+       JSON.stringify(CAP._coverageSteps(23, 1, 24)), JSON.stringify([23, 0, 1]));
+    eq('coverageSteps: crossing the wrap boundary backward (1 -> 23) walks [1,0,23]',
+       JSON.stringify(CAP._coverageSteps(1, 23, 24)), JSON.stringify([1, 0, 23]));
+    // Exactly half way around (12 of 24 buckets) is a genuine tie between
+    // going forward and backward — either is a valid "shorter" direction,
+    // so this only asserts the INVARIANT that must hold regardless of which
+    // way the tie resolves: exactly 13 buckets walked (both endpoints plus
+    // 11 in between), and both endpoints are included.
+    var half = CAP._coverageSteps(0, 12, 24);
+    eq('coverageSteps: an exact half-ring tie still walks exactly 13 buckets (both endpoints inclusive)', half.length, 13);
+    ok('...and includes both endpoints', half[0] === 0 && half[half.length - 1] === 12);
   })();
 
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
