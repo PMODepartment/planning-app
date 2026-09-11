@@ -95,6 +95,58 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-11 (a6) — The import wizard: read first, and the reading changed the answer
+
+Owner: *"Let's do the import wizard too."*
+
+(a5) deferred these four steps — 401 words by the old count, the heaviest left — on the grounds that
+an import is rare and **destructive if it goes wrong**, so they wanted reading rather than a word
+count. Reading them: **most of it stays.** The count was pointing at the right screens for the wrong
+reason; what is heavy about them is mostly what makes them safe.
+
+**Kept, deliberately — every one is a consequence, not an explanation.** Verified present on the
+deployed file after the change:
+- *"pressing **Import** is the first and only thing that changes the schedule"* — the single most
+  important sentence in the wizard;
+- *"**Replace** then clears only that package, leaving the others alone"*;
+- *"**Replace** on this path clears the **whole project**, not one package"*;
+- the red *no location mapping* warning, already gated on the state that makes it true;
+- every live count — file name, activities, branches, relationships by type, pending edits;
+- the *"a **Tower** rule that also swept up 'Tower Handover'"* example, which is the actual failure
+  mode that step exists to catch.
+
+**Cut — architecture asides that change nothing the planner does.** A parenthetical joke about the
+project root; how a nested branch inherits its parent's phase (discovered by using the control — the
+**consequence**, that construction must sit under Execution or the next step finds no locations,
+stays in one line); what the location breakdown is used for elsewhere in the module; and an
+orientation comparing this step to the build path's Zone/Trade sequence steps, which a planner
+importing a file has not used.
+
+**⚠️⚠️ NO WORD COUNT IS QUOTED FOR THIS CHANGE, AND THE REASON IS A DEFECT IN MY OWN TOOL.**
+`stepwords.py` strips JS concatenation with a regex over the paragraph, which makes it sensitive to
+the **shape** of that concatenation rather than its content: replacing `' + _stepNo(x) + '` with
+`'. '` pushed `stImpRels`' reported count **UP by 27** while the text on screen went **down**. A
+rewrite counting only string literals under-captured instead, and also reported increases where
+there were none. A measure that moves when you refactor an expression is not measuring the prose,
+and it nearly had me "fix" a cut that had already worked. Both are recorded as unreliable across a
+refactor. The build-path figures in (a4)/(a5) stand, because those cuts deleted whole paragraphs
+rather than reshaping expressions — but the lesson is that the number was never the evidence; the
+reading was.
+
+⚠️ One of my own verification checks was also a false positive: it reported the cut joke still
+present, because the phrase survives at line 12539 as a **code comment**. The check was matching the
+source rather than the UI.
+
+**Not browser-verified, and cannot cheaply be.** Reaching these four steps needs a real file walked
+through a real import, which would write to a project. What IS verified on the deployed build: every
+kept sentence and every cut is confirmed by string check against the live file, and the **shared**
+build path — which runs the same `stStructure` renderer — loads with 8 rail steps, the pending strip
+populated, the panel rendered, and **no console errors or unhandled rejections**.
+`MODULE_V` → `20260911a6`.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+
 ### 2026-09-11 (a5) — Schedule Setup: twelve steps become eight, "not pushed yet" becomes a number, and text has to earn its place
 
 Owner: *"Let's do all three."*
