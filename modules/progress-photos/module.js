@@ -2970,15 +2970,28 @@ window.ProgressPhotos = (function () {
   // click-and-drag for a mouse and, on every scroll however it happened,
   // updates lightboxPanoHeadingDeg and re-paints the key-plan cone so it
   // keeps following the direction actually on screen.
+  // Item 7 (performance): the cone repaint is coalesced to at most once per
+  // animation frame, the same "raw high-frequency input event -> a dirty
+  // flag + a single rAF-driven repaint" discipline this app's own 360°
+  // cylindrical-viewer history already established -- a touch-scrolled
+  // strip firing its native 'scroll' event doesn't need a full
+  // BIM.coneWedgeSVGAt()+innerHTML rebuild for every one of them. The
+  // pointermove handler only WRITES scrollLeft; it never calls the repaint
+  // itself, since that write already fires the 'scroll' listener below.
   function wirePanoDrag() {
     var wrap = $('pp-lb-panowrap');
     if (!wrap) return;
-    var dragging = false, startX = 0, startScroll = 0;
+    var dragging = false, startX = 0, startScroll = 0, repaintRaf = null;
+    function repaintCone() {
+      repaintRaf = null;
+      var r = byId(lightboxIds[lightboxAt]);
+      if (r && r.media_type === '360' && lightboxKeyPlanVisible) paintKeyPlanOverlay(r);
+    }
     function onScrollChange() {
       var maxScroll = Math.max(1, wrap.scrollWidth - wrap.clientWidth);
       lightboxPanoHeadingDeg = (wrap.scrollLeft / maxScroll) * 360;
-      var r = byId(lightboxIds[lightboxAt]);
-      if (r && r.media_type === '360' && lightboxKeyPlanVisible) paintKeyPlanOverlay(r);
+      if (repaintRaf) return;
+      repaintRaf = requestAnimationFrame(repaintCone);
     }
     wrap.addEventListener('pointerdown', function (e) {
       dragging = true; startX = e.clientX; startScroll = wrap.scrollLeft;
@@ -2987,7 +3000,6 @@ window.ProgressPhotos = (function () {
     wrap.addEventListener('pointermove', function (e) {
       if (!dragging) return;
       wrap.scrollLeft = startScroll - (e.clientX - startX);
-      onScrollChange();
     });
     wrap.addEventListener('pointerup', function () { dragging = false; });
     wrap.addEventListener('pointercancel', function () { dragging = false; });
@@ -4065,8 +4077,13 @@ window.ProgressPhotos = (function () {
     // ⚠️ Audit fix: onClose now covers × / Cancel AND a backdrop click alike
     // (previously only the [data-close] re-wiring further down did, so
     // dismissing via backdrop click left this listener on `window` forever
-    // — see openModal's own comment for the mechanism).
-    var m = openModal(html, 900, function () { window.removeEventListener('resize', sizeCanvas); });
+    // — see openModal's own comment for the mechanism). Also cancels any
+    // still-pending coalesced redraw (item 7) rather than letting one last
+    // rAF callback fire against a canvas that's about to be detached.
+    var m = openModal(html, 900, function () {
+      window.removeEventListener('resize', sizeCanvas);
+      if (mkRedrawRaf) { cancelAnimationFrame(mkRedrawRaf); mkRedrawRaf = null; }
+    });
 
     var canvas = $('pp-mk-canvas'), ctx = canvas.getContext('2d'), img = $('pp-mk-img'), textEl = $('pp-mk-textedit');
     function sizeCanvas() {
@@ -4076,6 +4093,24 @@ window.ProgressPhotos = (function () {
       redraw();
     }
     function redraw() { drawMarkupObjects(ctx, objs, canvas.width, canvas.height, selectedIdx); }
+    // Item 7 (performance, mobile): a continuous drag/resize/rotate/free-draw
+    // gesture used to call the synchronous redraw() above directly off EVERY
+    // raw pointermove event — a full canvas clear + redraw of every object on
+    // each one, with no coalescing, the exact "renderer.render() on every raw
+    // input event" pattern this app's own 360° cylindrical-viewer history
+    // already diagnosed and fixed once ("a textbook cause of perceived
+    // stutter... independent of any listener leak"). A touchscreen can
+    // dispatch several pointermove events between two real screen refreshes,
+    // so this collapses any number landing within one animation frame into a
+    // single repaint. Only the CONTINUOUS pointermove path uses this — every
+    // discrete, click-driven redraw() elsewhere in this editor (creating a
+    // shape, picking a colour, toggling fill…) stays synchronous/instant,
+    // unchanged.
+    var mkRedrawRaf = null;
+    function scheduleRedraw() {
+      if (mkRedrawRaf) return;
+      mkRedrawRaf = requestAnimationFrame(function () { mkRedrawRaf = null; redraw(); });
+    }
     function pushHistory() { history.push(objs.map(function (o) { return Object.assign({}, o); })); undone = []; }
     if (img.complete) sizeCanvas(); else img.onload = sizeCanvas;
     window.addEventListener('resize', sizeCanvas);
@@ -4450,7 +4485,7 @@ window.ProgressPhotos = (function () {
       if (tool === 'polygon' && polyPoints !== null) {
         // Live preview of the NEXT edge, before it's clicked into place.
         objs[polyObjIdx].points = polyPoints.concat([toNorm(e)]);
-        redraw();
+        scheduleRedraw();
         return;
       }
       if (!drawing) return;
@@ -4458,7 +4493,7 @@ window.ProgressPhotos = (function () {
       var px = p[0] * canvas.width, py = p[1] * canvas.height;
       if (rotating) {
         objs[selectedIdx] = Object.assign({}, rotateOrig, { rotation: rotationFromPointer(px - rotateCenter.cx, py - rotateCenter.cy) });
-        redraw(); return;
+        scheduleRedraw(); return;
       }
       if (resizing) {
         if (resizeOrig.type === 'text' || resizeOrig.type === 'icon') {
@@ -4468,7 +4503,7 @@ window.ProgressPhotos = (function () {
           var local = markupToLocal(px, py, resizeOrig, canvas.width, canvas.height, ctx);
           objs[selectedIdx] = resizeBoxObj(resizeOrig, resizeCorner, local[0], local[1], canvas.width, canvas.height);
         }
-        redraw(); return;
+        scheduleRedraw(); return;
       }
       if (tool === 'select') {
         if (selectedIdx < 0 || !dragOrig) return;
@@ -4478,7 +4513,7 @@ window.ProgressPhotos = (function () {
       } else {
         var last = objs[objs.length - 1]; last.x1 = p[0]; last.y1 = p[1];
       }
-      redraw();
+      scheduleRedraw();
     });
     ['pointerup', 'pointercancel'].forEach(function (ev) {
       canvas.addEventListener(ev, function () {
@@ -6239,6 +6274,13 @@ window.ProgressPhotos = (function () {
     // matching ppr.js's/bim.js's own established `_setCanWrite` hook.
     _setCanWrite: function (v) { canWrite = v; },
     _favBtnHTML: function (r) { return favBtnHTML(r); },
-    _toggleFavorite: function (r) { return toggleFavorite(r); }
+    _toggleFavorite: function (r) { return toggleFavorite(r); },
+    // Test-only hook for the 360 pano-drag rAF coalescing fix (2026-09-11
+    // performance pass) — genuinely EXECUTES wirePanoDrag() so a test can
+    // prove the scroll-driven cone repaint really coalesces into at most
+    // one requestAnimationFrame callback per burst, rather than only
+    // reading the source. Reads `$('pp-lb-panowrap')` exactly as the real
+    // call site does; a test wires a fake element into that id first.
+    _wirePanoDrag: function () { return wirePanoDrag(); }
   };
 })();

@@ -349,16 +349,6 @@
   font-size: 10px; font-weight: 700; letter-spacing: .02em; padding: 2px 6px;
   border-radius: 999px; pointer-events: none;
 }
-/* Add-media type selector (Photo / Video) */
-.pp-mtypesel { display: flex; gap: 6px; }
-.pp-mtype {
-  flex: 1 1 0; padding: 8px 10px; text-align: center; cursor: pointer;
-  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
-  color: var(--pd-ink); font-size: var(--pd-fs-base); font-weight: 700;
-}
-.pp-mtype.active { border-color: var(--pd-red); color: var(--pd-red); background: color-mix(in srgb, var(--pd-red) 8%, var(--pd-card)); }
-.pp-mtype:disabled { cursor: not-allowed; color: var(--pd-muted); opacity: .6; }
-
 /* Fifth round item 1: "+ Add media" as a dropdown choosing the media type up
    front (Photo/Video), instead of deciding it inside the modal after files
    may already be staged. */

@@ -2,6 +2,77 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Re-review of the overnight 10-item round: all 9 confirmed still correct, two
+## real mobile-performance fixes (rAF-coalesced repaints), a dead-CSS sweep (2026-09-11)
+
+Owner re-posted the original 9-item overnight list verbatim and asked: *"can you review again if
+these have been applied, optimize code and performance, and clean-up code."* Three parts, taken in
+order.
+
+**Review.** Re-checked all 9 items against the shipped `module.js`/`bim.js`/`capture.js`/
+`pano360.js` — every one is present and unchanged since the previous entry (Take/Upload split with
+in-app capture; the staged-video-preview and Edit-video-preview fixes; `open360Upload()`'s capture
+flow; the 360° pan viewer with the pin-cone rotating to follow it; Adjust extended to video/360 with
+Markup and Key Plan gated correctly per kind; the in-form media-type toggle removed in favour of the
+dropdown; Works/Location made optional when the schedule has nothing to offer; the Plan view's
+First/Last steppers). No regression found; nothing needed re-doing.
+
+**Performance — two real, previously-uncoalesced repaint paths, both on the mobile-heaviest gestures
+in this module.**
+
+- ⚠️⚠️ **`wirePanoDrag()`'s scroll handler repainted the key-plan cone on every `scroll` event,
+  uncoalesced** — a pan drag across the 360° strip fires many `scroll` events per frame on a real
+  device, and each one called `paintKeyPlanOverlay()` (a real DOM rebuild of the pin/cone SVG)
+  synchronously, with no relation to the screen's own refresh rate. This is the exact
+  drag-repaints-too-often shape this module's own history already fixed once, for the now-deleted
+  cylindrical 360° viewer (2026-09-01), and the fix is the same established pattern: a dirty flag
+  plus one `requestAnimationFrame`-queued repaint. `onScrollChange()` now only updates
+  `lightboxPanoHeadingDeg` and schedules `repaintCone()` if nothing is already queued; the direct
+  `onScrollChange()` call inside `pointermove` was also removed as redundant — the `scrollLeft`
+  write it drives already triggers the native `scroll` event, which is enough.
+- **`openMarkupEditor`'s canvas redraw was called synchronously from every `pointermove`** during a
+  polygon-preview drag, a rotate, a resize, and the general select/stroke/shape-drag path — four
+  call sites, each invoking the full `drawMarkupObjects()` repaint on every raw pointer event. Added
+  `scheduleRedraw()` (a `mkRedrawRaf` dirty flag, same shape as the pano fix) and replaced those four
+  call sites; the ~26 other `redraw()` calls elsewhere in the editor are discrete click actions and
+  were deliberately left synchronous. The modal's `onClose` now also cancels any pending
+  `mkRedrawRaf`, so closing mid-drag can't leave a stale `requestAnimationFrame` callback pointing at
+  a canvas that's about to be removed.
+
+⚠️ **Both fixes are proven to coalesce, not just described as coalescing.** The test harness's
+`requestAnimationFrame`/`cancelAnimationFrame` stub is queue-based (`ctx.__rafQueue` +
+`flushRaf()`/`rafPending()`), not an immediate-call stub — the "a test that cannot fail is not
+evidence" trap this repo's own history repeatedly warns about. A new genuine-execution test drives
+the real, shipped `wirePanoDrag()` (via a new `PP._wirePanoDrag()` test hook) against a fake
+`#pp-lb-panowrap` element with a capturing `addEventListener`, fires three rapid `scroll` events, and
+asserts exactly **one** rAF callback is queued — not three. Reverting the coalescing guard (checked
+directly, then restored) makes that same assertion fail 3-vs-1, confirming it genuinely bites.
+Flushing the queue drains it to 0, and a further scroll afterward schedules a fresh callback — the
+guard resets per burst rather than latching permanently. `scheduleRedraw()`'s guard and its four
+call sites are covered by structural assertions (the same convention this file already accepts for
+pointer-gesture code the fake DOM's no-op `addEventListener` can't genuinely drive).
+
+**Clean-up.** Removed `.pp-mtypesel`/`.pp-mtype`/`.pp-mtype.active`/`.pp-mtype:disabled` from
+`module.css` — dead CSS left behind when `mediaTypeSelectorHTML`/`wireMediaTypeSelector` (the
+in-form Photo/Video toggle) were retired in the overnight round; confirmed orphaned by grepping both
+class names against every JS/HTML file in the module before deleting. A broader class-usage sweep
+across the rest of `module.css` turned up nothing else safely removable — the remaining
+"unreferenced" hits are either comments naming Drawing Register's own class names (a documented
+borrowed-convention note, not dead code here) or classes built by string concatenation
+(`'ppr-kp' + which`, `'bim-pin-' + type`), which a static grep can't resolve and which this file's
+own history already warns against blind-deleting.
+
+**Verified:** `node --check` clean on `module.js`/`test.js`/`modules-grid.js`; CSS braces balanced
+(536/536); 0 NUL bytes. **830 passed, 0 failed** (up from 822 — 8 new checks, all executing real
+shipped code or asserting the exact CSS/JS shape of the two fixes). `module.js`/`module.css` →
+`?v=20260911b1`; `MODULE_V` → `20260911b1` (bumped because `index.html`'s own asset `?v=` lines
+changed, which is itself a change to `index.html`'s bytes — the standing rule this repo's history
+records repeatedly).
+
+⚠️ **Not verified signed in or on a real device** — same standing caveat as every entry in this
+file. The coalescing itself is proven by genuine execution against a real, queue-based rAF stub; how
+the 360° pan and markup-editor drag actually *feel* on a real phone has not been observed.
+
 ## The 15 pre-existing test failures, resolved: 12 stale assertions fixed
 ## in place, 2 real gaps found in the harness itself, 0 app-code bugs (2026-09-11)
 

@@ -227,6 +227,7 @@ function winRemoveEventListener(type, fn) {
   if (i !== -1) winListeners.splice(i, 1);
 }
 const ctx = {
+  __rafQueue: [],
   console, Promise, JSON, Math, Date, String, Number, Object, Array, Boolean,
   setTimeout, clearTimeout, isNaN, parseInt, parseFloat, encodeURIComponent,
   document: documentStub,
@@ -257,6 +258,16 @@ const ctx = {
   UI: { toast: (m, k) => { (ctx.__toasts = ctx.__toasts || []).push([k, m]); }, modal: (html) => { const el = makeEl('div'); el.innerHTML = html; return { el, close() { ctx.__closed = true; } }; }, renderUserBar() {} },
   Fmt: { esc: (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])), date: (d) => String(d), money: (n) => String(n), moneyShort: (n) => String(n) },
   Icons: { hydrate() { ctx.__hydrated = (ctx.__hydrated || 0) + 1; } },
+  // Item 7 (performance, this round): a QUEUE, not an immediate call — real
+  // requestAnimationFrame never fires synchronously, and a naive
+  // "call cb() right away" stub would make every coalescing test pass
+  // whether the app actually coalesced anything or not (the exact "a test
+  // that cannot fail is not evidence" trap this file's own history already
+  // warns about). Flushed explicitly via flushRaf() below, so a test can
+  // assert how many callbacks were STILL PENDING (i.e. coalesced together)
+  // before choosing to run them.
+  requestAnimationFrame(cb) { ctx.__rafQueue.push(cb); return ctx.__rafQueue.length; },
+  cancelAnimationFrame(id) { ctx.__rafQueue[id - 1] = null; },
   PDb: {
     getProjects: async () => [{ id: 'DEMO01', name: 'Demo Project' }],
     getProject: async (id) => ({ id, name: 'Demo Project' }),
@@ -273,6 +284,13 @@ vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(here('module.js'), 'utf8'), ctx, { filename: 'module.js' });
 vm.runInContext(fs.readFileSync(here('ppr.js'), 'utf8'), ctx, { filename: 'ppr.js' });
 vm.runInContext(fs.readFileSync(here('bim.js'), 'utf8'), ctx, { filename: 'bim.js' });
+
+// Item 7 (performance): drains the fake rAF queue, running whatever is
+// still pending (skipping anything cancelAnimationFrame nulled out) —
+// pairs with rafPending() below to prove a burst of scheduling calls
+// collapsed into ONE queued callback, not one queue entry per call.
+function flushRaf() { const q = ctx.__rafQueue; ctx.__rafQueue = []; q.forEach((cb) => { if (cb) cb(); }); }
+function rafPending() { return ctx.__rafQueue.filter(Boolean).length; }
 
 const PP = ctx.ProgressPhotos, PPR = ctx.PPR, BIM = ctx.BIM;
 ok('module.js exposes ProgressPhotos', !!PP);
@@ -2027,8 +2045,11 @@ console.log('\n[misc] insert().select() returns the new row id');
      // the old, backdrop-blind [data-close] re-wire must actually be gone,
      // not just superseded-but-left-behind duplicating the cleanup
      !/Clear the "editing this photo" cursor on every close path \(× \/ Cancel\)\./.test(mjs));
-  ok('openMarkupEditor passes onClose = remove the window resize listener — same fix, same reasoning; its own old [data-close] re-wire is likewise gone rather than left duplicating the cleanup',
-     /var m = openModal\(html, 900, function \(\) \{ window\.removeEventListener\('resize', sizeCanvas\); \}\);/.test(mjs) &&
+  // ⚠️ onClose grew a second statement (item 7, performance) that also
+  // cancels any still-pending coalesced redraw rAF on close — same
+  // reasoning, one more line.
+  ok('openMarkupEditor passes onClose = remove the window resize listener (+ cancel any pending coalesced redraw) — same fix, same reasoning; its own old [data-close] re-wire is likewise gone rather than left duplicating the cleanup',
+     /var m = openModal\(html, 900, function \(\) \{\s*window\.removeEventListener\('resize', sizeCanvas\);\s*if \(mkRedrawRaf\) \{ cancelAnimationFrame\(mkRedrawRaf\); mkRedrawRaf = null; \}\s*\}\);/.test(mjs) &&
      !/b\.onclick = function \(\) \{ window\.removeEventListener\('resize', sizeCanvas\); m\.close\(\); \};/.test(mjs));
   ok('the markup editor\'s Save button no longer needs its own removeEventListener either — m.close() already runs onClose',
      /\$\('pp-mk-save'\)\.onclick = function \(\) \{\s*cancelPolygon\(\);\s*if \(editingTextIdx >= 0\) closeTextEdit\(true\);\s*m\.close\(\);\s*if \(onSave\) onSave\(objs\);\s*\};/.test(mjs));
@@ -3674,6 +3695,57 @@ console.log('\n[misc] insert().select() returns the new row id');
     } finally { sbStub.rpc = noopRpc; PP._setCanWrite(true); }
 
     store.progress_photos = store.progress_photos.filter(function (r) { return r.id !== 'fav-row-1'; });
+  })();
+
+  console.log('\n[52] Performance pass (2026-09-11): rAF-coalesced 360 pano-drag repaint + markup-editor redraw');
+  // Structural: the markup editor's per-pointermove redraw is coalesced
+  // through scheduleRedraw() (a dirty-flag + single queued rAF, the same
+  // established convention this app already used for the deleted
+  // cylindrical 360 viewer), not called synchronously on every event.
+  ok('openMarkupEditor: scheduleRedraw guards against scheduling a second rAF while one is already pending',
+     /function scheduleRedraw\(\) \{\s*if \(mkRedrawRaf\) return;\s*mkRedrawRaf = requestAnimationFrame\(function \(\) \{ mkRedrawRaf = null; redraw\(\); \}\);\s*\}/.test(mjs));
+  ok('…and every pointermove-driven redraw call site (live polygon preview, rotate, resize, and the select/stroke/shape-drag fallthrough) uses scheduleRedraw(), not a direct synchronous redraw()',
+     (mjs.match(/scheduleRedraw\(\);/g) || []).length >= 4);
+  ok('the plain, synchronous redraw() definition itself is untouched — only discrete click actions elsewhere in the editor still call it directly',
+     /function redraw\(\) \{ drawMarkupObjects\(ctx, objs, canvas\.width, canvas\.height, selectedIdx\); \}/.test(mjs));
+
+  // Genuine execution: wirePanoDrag()'s scroll-driven key-plan cone repaint
+  // really coalesces a burst of rapid scroll events into AT MOST ONE queued
+  // requestAnimationFrame callback, using the real production function (not
+  // a re-description of it) against the harness's real, queue-based rAF
+  // stub — never an immediate-call stub, which would make this pass
+  // whether the app coalesced anything or not.
+  (function () {
+    var listeners = {};
+    var wrapEl = {
+      scrollLeft: 0, scrollWidth: 1000, clientWidth: 200,
+      addEventListener: function (type, fn) { listeners[type] = fn; },
+      removeEventListener: function () {},
+      setPointerCapture: function () {}
+    };
+    byId['pp-lb-panowrap'] = wrapEl;
+    try {
+      PP._wirePanoDrag();
+      ok('wirePanoDrag() wires a real scroll listener onto #pp-lb-panowrap', typeof listeners.scroll === 'function');
+
+      eq('before any scroll: 0 queued rAF callbacks', rafPending(), 0);
+      wrapEl.scrollLeft = 100; listeners.scroll();
+      wrapEl.scrollLeft = 200; listeners.scroll();
+      wrapEl.scrollLeft = 300; listeners.scroll();
+      eq('three rapid scroll events in the same burst coalesce into exactly ONE queued rAF callback, not three',
+         rafPending(), 1);
+
+      flushRaf();
+      eq('flushing the frame drains the queue back to 0 — the callback resets its own "pending" flag rather than leaving it stuck forever',
+         rafPending(), 0);
+
+      listeners.scroll();
+      eq('a scroll AFTER the frame has already run schedules a FRESH rAF — the coalescing guard is per-burst, not a permanent "never repaint again" latch',
+         rafPending(), 1);
+      flushRaf();
+    } finally {
+      delete byId['pp-lb-panowrap'];
+    }
   })();
 
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
