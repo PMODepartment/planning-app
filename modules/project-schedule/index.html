@@ -22817,7 +22817,7 @@
   }
   function _lsmDecl() {
     if (_lsmDeclMemo) return _lsmDeclMemo;
-    var m = {}, n = 0, kind = {};
+    var m = {}, n = 0, kind = {}, place = {}, placed = 0;
     try {
       /* ⚠️⚠️ TWO CATALOGUES, DELIBERATELY, AND THE ORDER DOES **NOT** COME FROM THE WARM ONE.
          `catalogueFrom`'s own contract is *"floors bottom-up PER TRADE"* — so concatenating the
@@ -22844,30 +22844,83 @@
         (catOrder[lid] || []).forEach(function (e) {
           if (!e || e.dim !== 'floor' || !e.value) return;
           var k = locNormKey(e.value);
-          if (m[k] == null) { m[k] = n++; }      /* first-seen order IS the setup's order */
-          /* ⚠️⚠️ THE FLOOR CATEGORY RIDES ON THE MATCH THAT IS ALREADY BEING MADE.
-             `catalogueFrom` has always put `kind: floorKind(f)` on every floor entry, and this
-             loop already resolves a storey's words to a declared floor — so basement / podium /
-             typical / roof costs one line here and NO second matching mechanism. A separate
-             storey-to-floor matcher would be a third place that can disagree about which floor
-             "5th Floor" is, after the WBS match table and this. */
+          if (m[k] == null) { m[k] = n++; }      /* kept for the strip's count, NOT for the axis */
         });
       });
-    } catch (e) { m = {}; n = 0; kind = {}; }
+      /* ⚠️⚠️ THE DECLARATION PLACES WHAT THE HEURISTIC CANNOT RANK, AND NOTHING ELSE.
+         It used to REPLACE the axis whenever a setup was loaded, and that was wrong in a way this
+         module could not see until the live app was driven: on OPW101 the concatenated catalogue
+         reads **F1, B3, B2, B1, Ground Floor, 2ND…** because `F1` belongs to a trade listed
+         before the one carrying the basements — so the "declared axis" put the first floor
+         BELOW the third basement. Meanwhile `levelRank` reads every one of those names correctly
+         (`F1` → 1, `B3` → -3, `Ground Floor` → 0).
+         ⚠️⚠️ So the heuristic is the ONE SCALE, which also keeps the rule this file already
+         states — *"one basis for the whole chart, never a mixture"* — and the setup is
+         used only where the heuristic answers null: "Podium 2", "Amenity Deck", names no regex will
+         ever cover. Those are placed BETWEEN THEIR DECLARED NEIGHBOURS, within the one list that is
+         genuinely ordered: the trade's own.
+         ⚠️ Nothing the heuristic already ranks can move. That is the property that makes this
+         safe to turn on for every project at once. */
+      var byTrade = {};
+      Object.keys(catKind).forEach(function (lid) {
+        (catKind[lid] || []).forEach(function (e) {
+          if (!e || e.dim !== 'floor' || !e.value) return;
+          var t = e.tr || '?';
+          (byTrade[t] = byTrade[t] || []).push(e.value);
+        });
+      });
+      /* Every rank the heuristic DOES produce, so an interpolated value never lands on one. */
+      var taken = {};
+      Object.keys(byTrade).forEach(function (t) {
+        byTrade[t].forEach(function (v) { var r = levelRank(v); if (r != null) taken[r] = 1; });
+      });
+      function freeAt(x) {
+        for (var g = 0; g < 60; g++) {
+          var c = Math.round((x + g * 0.0009) * 1e6) / 1e6;
+          if (!taken[c]) { taken[c] = 1; return c; }
+        }
+        return null;
+      }
+      Object.keys(byTrade).forEach(function (t) {
+        var list = byTrade[t], ranks = list.map(function (v) { return levelRank(v); }), i, a, b;
+        for (i = 0; i < list.length; i++) {
+          if (ranks[i] != null) continue;
+          var k3 = locNormKey(list[i]);
+          if (place[k3] != null) continue;
+          var lo = null, hi = null, ai = -1, bi = -1;
+          for (a = i - 1; a >= 0; a--) if (ranks[a] != null) { lo = ranks[a]; ai = a; break; }
+          for (b = i + 1; b < list.length; b++) if (ranks[b] != null) { hi = ranks[b]; bi = b; break; }
+          var val = null;
+          if (lo != null && hi != null) val = lo + (hi - lo) * ((i - ai) / (bi - ai));
+          else if (lo != null) val = lo + (i - ai) * 0.01;
+          else if (hi != null) val = hi - (bi - i) * 0.01;
+          /* ⚠️ Neither neighbour rankable means the declaration says nothing about where this
+             storey sits either. It stays unplaced and the flowline names it in its footnote, which
+             is the behaviour that was already right. */
+          if (val == null) continue;
+          var f2 = freeAt(val);
+          if (f2 != null) { place[k3] = f2; placed++; }
+        }
+      });
+    } catch (e) { m = {}; n = 0; kind = {}; place = {}; placed = 0; }
     if (!n) _lsmDeclWarm();          /* empty means "not read yet" far more often than "none" */
-    return (_lsmDeclMemo = { map: m, n: n, kind: kind });
+    return (_lsmDeclMemo = { map: m, n: n, kind: kind, place: place, placed: placed });
   }
   /* The rank used by BOTH the row order and the rate fit, so the slope always describes the chart
      that is on screen rather than a differently-ordered one. */
   function _lsmRankOf(v) {
+    /* ⚠️⚠️ THE HEURISTIC FIRST, ALWAYS. See the long note in `_lsmDecl`: the declared list is a
+       per-trade concatenation, not a building order, and using it as the axis put OPW101's first
+       floor below its third basement. */
+    var r = levelRank(v);
+    if (r != null) return r;
     var d = _lsmDecl();
-    if (d.n > 1) {
-      var k = locNormKey(v == null ? '' : v);
-      return (d.map[k] == null) ? null : d.map[k];
-    }
-    return levelRank(v);
+    var k = locNormKey(v == null ? '' : v);
+    return (d.place && d.place[k] != null) ? d.place[k] : null;
   }
-  function _lsmRankBasis() { return _lsmDecl().n > 1 ? 'declared' : 'heuristic'; }
+  /* 'assisted' = the heuristic, with at least one storey placed from the Schedule Setup. The two
+     tooltips that print this are the only consumers. */
+  function _lsmRankBasis() { return _lsmDecl().placed > 0 ? 'assisted' : 'heuristic'; }
 
   /* ---- THE PRODUCTION RATE, which is what LSM is FOR ------------------------------------------
      The deck's whole argument for this chart over a Gantt: "They show a clear understanding of the
@@ -23518,7 +23571,10 @@
                   (fm != null ? ', ' + fm + ' floors per calendar month' : '') + '.')
                : '. Too irregular to state a rate \u2014 the starts do not climb at a steady pace, so one figure would misdescribe it.') +
         (d.series > 1 ? ' Fitted on the best-supported of ' + d.series + ' series; towers are never averaged together.' : '') +
-        ' Storeys ordered by ' + (R.basis === 'declared' ? 'the location breakdown you defined in Schedule Setup' : 'the floor-name heuristic \u2014 define the floors in Schedule Setup \u203a Floors & Zones for an exact axis') + '.' +
+        ' Storeys ordered by the floor-name heuristic' +
+        (R.basis === 'assisted'
+          ? ', with ' + _lsmDecl().placed + ' of them placed from your Schedule Setup floor list because no floor name rule covers them.'
+          : ' \u2014 a storey whose name no rule covers is left off the axis and named in the flowline\u2019s footnote; naming it in Schedule Setup \u203a Floors & Zones places it.') +
         (R.wd ? '' : ' \u26a0 No working calendar in play, so the cycle is in CALENDAR days.');
       h += '<span class="ps-lsmrate-chip' + (solid ? '' : ' weak') + '" title="' + esc(tip) + '">' +
         '<i style="' + catStyle(lanes[i].color, lanes[i].tex) + '"></i>' +
@@ -31578,7 +31634,12 @@
             var v = (value == null) ? '' : String(value).trim(); if (!v) return;
             var arr = out[id] || (out[id] = []);
             for (var i = 0; i < arr.length; i++) if (arr[i].value === v) return;
-            arr.push({ value: v, dim: dim, kind: (extra && extra.kind) || '', tower: (extra && extra.tower) || '' });
+            /* ⚠️ `tr` = the trade whose floor list this entry came from. The per-trade list is
+               the only thing in the setup that IS ordered ("floors bottom-up PER TRADE"), so a
+               consumer that needs a floor's NEIGHBOURS has to know which list it belongs to. The
+               concatenation across trades is not an order and must never be read as one. */
+            arr.push({ value: v, dim: dim, kind: (extra && extra.kind) || '', tower: (extra && extra.tower) || '',
+                       tr: (extra && extra.tr) || '' });
           }
           // ⚠️ The tower helpers (towerList / towerLabel / towerIdOf) read the LOADED cfg, so they
           // cannot be used here — on a cold open the towers being named are not the loaded ones.
@@ -31592,7 +31653,7 @@
           GROUPS.forEach(function (tr) {
             ((c.zoning[tr] && c.zoning[tr].floors) || []).forEach(function (f) {
               var tw = _twLabel((f && f.towerId) || (_tw[0] && _tw[0].id));
-              add('floor', f.name || f.code, { kind: floorKind(f), tower: tw });
+              add('floor', f.name || f.code, { kind: floorKind(f), tower: tw, tr: tr });
               (f.zones || []).forEach(function (z) {
                 add('zone', z.code || z.name, { tower: tw });
                 (z.units || []).forEach(function (u) { add('unit', u.code || u.name, { tower: tw }); });
@@ -44576,7 +44637,7 @@
       '<div class="ps-fl-head"><span class="ps-fl-title">Flowline</span>' +
         '<span class="ps-fl-sub">' + R.floors + ' storey' + (R.floors === 1 ? '' : 's') + ' · ' +
         lanes.length + ' keyed trade' + (lanes.length === 1 ? '' : 's') + ' · storeys ordered by ' +
-        (R.basis === 'declared' ? 'your location breakdown' : 'the floor-name heuristic') +
+        (R.basis === 'assisted' ? 'the floor-name heuristic, assisted by your Schedule Setup' : 'the floor-name heuristic') +
         ' · ' + (_lsmTopFirst ? 'roof at the top' : 'ground at the top') +
         ' · slope = production rate</span></div>' +
       _lsmRateHTML() + _lsmClashHTML() + out +

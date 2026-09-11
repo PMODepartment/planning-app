@@ -98,6 +98,29 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-12 (a) — One scale for the LSM storey axis, and a live bug it removes
+
+Overnight audit, agenda item 1. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+- ⚠️⚠️ **The declared floor order was the axis, and it is wrong.** `_lsmRankOf` used the Schedule
+  Setup's order outright whenever a setup was loaded — but `catalogueFrom` concatenates the
+  **per-trade** lists, so on OPW101 it reads *F1, B3, B2, B1, Ground Floor, 2ND…* and **the first
+  floor sat below the third basement**. Anyone who opened the Setup tab before the chart saw that.
+- **Fixed to one scale.** `levelRank` is the axis always; the setup is consulted only where the
+  heuristic answers `null`, and such a storey is placed between its declared neighbours **within its
+  own trade's list**. Nothing the heuristic already ranks can move — the property that makes it
+  safe everywhere at once. Basis is now `heuristic` or `assisted`.
+- **What it gains:** the demo's "Podium 2" used to fall off the axis entirely; all 19 storeys are now
+  on the chart.
+- ⚠️⚠️ **Three faults in the checker, all found by negative builds** — the harness silently
+  **stubbing** `_clearLsmDeclCat` with a no-op (so a cache leaked between scenarios), a fixture that
+  could not tell per-trade from cross-trade interpolation, and a fixture that hand-wrote the very
+  field under test. `catalogueFrom` is now sliced and executed.
+
+**617 assertions on the working tree, 27 against the pinned base, 0 failing; 30 negative builds, all
+bite.** `MODULE_V` → `20260912a`. ⚠️ **Not verified signed in** — Chrome bridge still down.
+
 ### 2026-09-12 — A demo project, end to end through the whole LSM chain
 
 Owner: *"Let's test it on a demo project"*. Built offline in the shape the Schedule Setup pushes one

@@ -13,6 +13,69 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### ONE SCALE for the storey axis — and a live bug it removes (2026-09-12 a) — fmlozano
+
+Overnight audit, agenda item 1. It turned out to be bigger than "make the declared order
+trustworthy": the declared order was **being used as the axis today, and it is wrong**.
+
+### ⚠️⚠️ THE BUG THAT WAS LIVE
+`_lsmRankOf` read: *if the setup declares more than one floor, the declared order IS the axis;
+otherwise use `levelRank`.* All or nothing. And `catalogueFrom` concatenates the **per-trade** floor
+lists, so on OPW101 the "declared axis" reads
+
+    F1, B3, B2, B1, Ground Floor, 2ND…
+
+— `F1` belongs to a trade listed before the one carrying the basements, so **the first floor sat
+below the third basement**. Any planner who opened the Schedule Setup tab and then went to the LSM
+got that axis; anyone who did not got the correct one. Measured, not deduced: `levelRank` reads
+every one of those names right (`F1` → 1, `B3` → -3, `Ground Floor` → 0).
+
+### The fix: one scale, and the declaration only PLACES
+`levelRank` is now the axis, always. The Schedule Setup is consulted **only** where the heuristic
+answers `null` — "Podium 2", "Amenity Deck", names no regex will cover — and such a storey is
+placed **between its declared neighbours**, interpolated onto the same scale.
+
+- ⚠️⚠️ **Within the trade's own list, never the concatenation.** The per-trade list is the only
+  ordered thing in the setup ("floors bottom-up PER TRADE"), so catalogue entries now carry `tr`,
+  the trade whose list they came from.
+- ⚠️ **Nothing the heuristic already ranks can move.** That property is what makes this safe to
+  turn on for every project at once, and it is asserted directly.
+- ⚠️ **No interpolated value may land on a real rank**, or two storeys collapse to one ordinal.
+- ⚠️ A storey with **no rankable neighbour either side** stays off the axis: the declaration says
+  nothing about where it sits either, and the flowline's footnote is the honest answer.
+- The basis is now `heuristic` or **`assisted`**, and the Rate strip says *"N of them placed from
+  your Schedule Setup floor list because no floor name rule covers them."*
+
+### What it gains
+The demo project's **"Podium 2"** used to drop off the axis entirely — out of the rate fit and
+out of the flowline. It is now placed between Ground Floor and the 3rd, and **all 19 storeys** are
+on the chart. That assertion in the suite now says the OPPOSITE of what it said yesterday, which is
+the honest record of a contract that changed.
+
+### ⚠️⚠️ THREE FAULTS IN THE CHECKER, ALL FOUND BY NEGATIVE BUILDS
+1. **The harness was silently STUBBING a real function.** `_clearLsmDeclCat` is called only by
+   `psSetupChanged`, which no probe runs, so the link pass never pulled it in — and the EXPORTS
+   line falls back to `function () {}` when a name is missing. `M.clearDeclCat()` did **nothing**,
+   the warmed catalogue leaked between scenarios, and a fixture reported `null` for a storey it had
+   just declared. **A no-op fallback in a harness is the same fault as a stub.**
+2. **A fixture that could not discriminate.** With the unrankable storey sitting between its right
+   neighbours, per-trade and cross-trade interpolation give the same answer, so two negative builds
+   passed. The discriminating shape puts it at the END of its trade's list, where the next entry in
+   the concatenation is a different building level.
+3. **A fixture that bypassed the code under test.** The catalogue fixtures hand-write `tr`, so
+   dropping the tag from `catalogueFrom` changed nothing. `catalogueFrom` is now **sliced and run**.
+
+### Verified
+**617 assertions against the working tree, 27 against the pinned base, 0 failing. 30 negative
+builds, all bite** — including the declared order restored as the axis (**9** fail), placement
+removed (**11**), the collision guard removed, interpolation across the concatenation, and the trade
+tag dropped.
+`node --check` PARSE OK, 0 functions lost, 81 insertions / 20 deletions.
+`MODULE_V` → `20260912a`, sort-checked against `20260911zj`.
+
+⚠️ **Not verified signed in** — the Chrome bridge is still down. The OPW101 axis fix is the
+one thing here I would most want to see on the real project.
+
 ### A demo project, end to end through the whole LSM chain (2026-09-12) — fmlozano
 
 Owner: *"Let's test it on a demo project"*. The Chrome bridge was still down, so the demo is built
