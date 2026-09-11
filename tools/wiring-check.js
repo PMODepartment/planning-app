@@ -17,6 +17,15 @@
  * proves module A can actually reach the function it calls in module B.
  */
 const fs = require('fs'), path = require('path');
+const scan = require('./scan.js');
+
+// ⚠️ The scanner proves itself before this file reports anything. Findings from an untrustworthy
+//    scanner are worse than no findings — one false one teaches people to skip the report.
+const _scanBad = scan.selfTest();
+if (_scanBad.length) {
+  console.log('scan.js self-test FAILED — aborting:\n  ' + _scanBad.join('\n  '));
+  process.exit(2);
+}
 
 const ROOT = '.';
 const SKIP_DIR = new Set(['.git', 'node_modules', 'docs', 'migrations', 'supabase', 'services']);
@@ -159,8 +168,13 @@ for (const f of SRC_FILES) {
      cross-module call. It occurs exactly once in the whole repo — inside an <!-- … --> block
      explaining the selection chrome. Stripping only JS comments turns documentation into a
      finding, which is how a checker trains people to ignore it. */
-  if (f.endsWith('.html')) src = src.replace(/<!--[\s\S]*?-->/g, ' ');
-  src = src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
+  /* ⚠️⚠️ AND COMMENTS ARE NOW STRIPPED BY scan.js, NOT BY A LINE REGEX. This file shipped with a
+     line-comment regex that eats every line containing a double slash INSIDE A STRING — an https
+     URL, a regex, a path — deleting real source with it. Measured on equipment-loading: four live
+     classes vanished from a sibling check built the same way. The direction of that error HERE is a
+     FALSE NEGATIVE — fewer references seen, so a genuinely broken one could slip through — which is
+     exactly the flaw a green result hides. scan.js self-tests before anything runs. */
+  src = scan.clean(f, src);
   for (const g of PROVIDERS) {
     if (PROVIDER_FILE[g] === f) continue;                                    // its own definition
     const re = new RegExp('(?:window\\.)?\\b' + g + '\\.([A-Za-z_$][\\w$]*)', 'g');
@@ -173,6 +187,9 @@ for (const f of SRC_FILES) {
   }
 }
 const uniq = [...new Map(missing.map(x => [x.file + '|' + x.ref, x])).values()];
+// ⚠️ Printed even when it passes. "0 failed" over 40 references and over 4,000 are very different
+//    statements, and a checker that hides its own coverage cannot be audited.
+console.log('  ' + checked + ' references checked across ' + SRC_FILES.length + ' files');
 ok(checked + ' cross-module references all resolve', uniq.length === 0);
 for (const x of uniq) console.log('        ' + x.ref.padEnd(34) + x.file);
 

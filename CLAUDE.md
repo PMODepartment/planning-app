@@ -79,6 +79,8 @@ developer, plug into one shared shell.
 | `admin.html` | User approval/roles/project-assignment + project & workspace management |
 | `supabase-schema.sql` / `supabase-setup.sql` | All shared + module tables, RLS, grants, helpers, bootstrap |
 | `tools/wiring-check.js` | **Run `node tools/wiring-check.js` before any commit that touches a shared asset or a cross-module call.** Loads every shipped browser script against a window stub and proves: each assigns its global, no export (incl. `_internals`) is undefined, every cross-module reference names a key its provider really exports, every referenced asset exists and is on ONE version, and every enabled module's page is real. ⚠️ It **self-tests first** by reproducing the 2026-09-10 (z6) outage in memory — a checker that has never failed proves nothing. |
+| `tools/scan.js` | The string/comment/regex-aware source scanner both checkers use. ⚠️ Self-tests on ten shapes before any caller trusts it — a line-comment regex eats every line with a double slash inside a string, which silently deleted 62 references from wiring-check's own sweep. |
+| `tools/dead-hooks.js` | `node tools/dead-hooks.js` — a class a module QUERIES that nothing ever EMITS (the `#pk-boq` shape: a handler bound to markup that does not exist). ⚠️ The inverse check, "a class with no CSS rule", is noise — query hooks have no style by design. |
 | `MODULE_CONTRACT.md` | Rules every module developer must follow |
 
 ## Roles
@@ -95,6 +97,69 @@ developer, plug into one shared shell.
 ---
 
 ## Changelog
+
+### 2026-09-11 (uh) — The checker I shipped this evening was hiding 62 references from itself
+
+Autonomous cycle, picking up the one thing the previous pass deliberately left unfinished: a
+dead-hook check whose findings were thrown away because its comment-stripper could not be trusted.
+
+**⚠️⚠️ A LINE-COMMENT REGEX DESTROYS THIS SOURCE.** Stripping comments by matching a double slash to
+end-of-line eats every line where that sequence appears **inside a string** — an `https://` URL, a
+regex, a path — and deletes the real source on it. Measured on `equipment-loading/index.html`: with
+naive stripping, `class="eq-plan-zoom"`, `.eq-shape`, `.eq-site` and `.eq-blk-row` **all vanish**;
+without it, all four are found. A dead-hook check built on that reported four live, styled, emitted
+classes as dead.
+
+**New `tools/scan.js`** is that algorithm done properly, in the shape `uicopy.py`'s tokeniser had to
+arrive at: it walks the source once, tracks the three quote styles, both comment styles and **regex
+literals** — including the keyword case, because `return /[",]/` ends in `n` and the last
+*character* cannot tell you a regex is starting. Comments are blanked to spaces so offsets survive;
+string bodies are **kept**, because a class attribute lives inside one. ⚠️ It **self-tests on ten
+shapes before any caller trusts it**, and every one of those shapes is something that broke an
+earlier version.
+
+⚠️ Writing the header comment broke the file: quoting the regex put a comment terminator inside the
+comment describing it. The trap is not hypothetical even here.
+
+**⚠️⚠️ AND IT FOUND A FLAW IN `tools/wiring-check.js`, WHICH I COMMITTED THREE HOURS EARLIER.** That
+file shipped with the same naive stripper. Re-pointed at `scan.js`, its cross-module pass goes from
+**3,457 references to 3,519** — it had been hiding **62** from itself. ⚠️ The direction of that error
+is a **false negative**: fewer references seen, so a genuinely broken one could have slipped through
+a green run. That is exactly the flaw a passing result hides, and it is why the count is now
+**printed even when the check passes** — "0 failed" over 40 references and over 3,500 are very
+different statements.
+
+**`tools/dead-hooks.js`** is then the check that was wanted: a class a module *queries* that nothing
+in the app ever *emits*. ⚠️ The inverse — "a class with no CSS rule" — is the useless one: `.boq-clm`,
+`.ec-in`, `.ec-basis` and `.ec-tot` exist purely as query hooks and have no style by design. The real
+defect is the other direction, and this repo has shipped it — 2026-09-07 (b) found `#pk-boq`, a
+correct handler bound to an id no markup carried, leaving the BOQ with **no entry point at all**.
+
+Getting it to a credible list took three corrections, each recorded in the file: a class attribute
+built by **concatenation** (`class="a' + v + ' b"`) needs the double-quote boundary, not a
+quote-excluding one; a **trailing-hyphen selector** is a prefix (`'.c-' + key`), not a class; and a
+class list built in an **array** (`cls.push('eq-edit')`) is invisible to every attribute pattern.
+That last one over-accepts on purpose — for a checker, missing a real finding is far cheaper than
+crying wolf, because one false finding teaches people to skip the report.
+
+**Result: 9 dead hooks, and none is both real and actionable right now**, which is stated rather than
+massaged into a fix:
+
+| where | count | verdict |
+|---|---|---|
+| `drawing-register`, `material-submittal` | 4 | **retired modules** (`enabled: false`) — dead code |
+| `project-schedule/index.html` | 4 | real, but that file holds another session's uncommitted work |
+| `minutes-of-meeting` `.il-mom-detail` | 1 | queried as `querySelector('.il-mom-detail') \|\| host` — the fallback always fires, so it works; whether the fallback **is** the intent is not mine to guess |
+
+⚠️ **One of the four blocked ones is worth naming: `.ps-back`.** The Esc/overlay handler queries
+`.pd-modal-overlay, .ps-back.open, .ps-rep-back.open` — and those dialogs actually carry
+**`ps-bulk-back`**, measured live in this session's own DOM probe (`ps-codes-back` renders
+`class="ps-bulk-back open"`). So that selector matches nothing and those dialogs are not covered by
+whatever the handler does. Reported, not fixed — the file is blocked.
+
+Verified: `scan.js` self-test 10/10; `tools/wiring-check.js` **123 passed, 0 failed** over **3,519**
+references; `tools/dead-hooks.js` runs clean against its own self-tested scanner.
+
 
 ### 2026-09-11 (ug) — The UI sweep: a weight the brand has no cut for, crept back after being driven to zero
 
