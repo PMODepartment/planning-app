@@ -2193,6 +2193,15 @@
     /* Dock the schedule + details into the viewport so the details panel is
        ALWAYS visible; the grip then trades height between schedule and details. */
     .pd-content { height:100vh; display:flex; flex-direction:column; }
+    /* ⚠️⚠️ THE VIEWS THAT SCROLL THE PAGE RATHER THAN A PANE GET THEIR HEIGHT BACK.
+       `height:100vh` above is what lets the Schedule grid+Gantt be a full-height flex layout with
+       its own internal scrollers, and it must stay for that view. Schedule Setup and Cost Loading
+       are ordinary long documents: with the height pinned, their content overflows every ancestor
+       while `.pd-app` stays exactly one viewport tall — and `.pd-sidebar` is `position:sticky`,
+       which cannot travel outside its containing block. Measured at `scrollY 400`: the sidebar sat
+       at `top:-400`, i.e. it had scrolled away entirely, leaving the page showing through below it.
+       `height:auto` lets the column grow, `.pd-app` grows with it, and the sidebar has travel. */
+    .pd-app.ps-longdoc .pd-content { height:auto; min-height:100vh; }
     .pd-main { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; }
     #ps-view-schedule { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; }
     #ps-view-schedule .ps-split { flex:1 1 auto; min-height:200px; height:auto; }
@@ -5914,9 +5923,16 @@
           '<label class="pd-label" style="margin-top:12px;">Working days</label>' + weekRow(d, 'wd') +
           '<label class="pd-label" style="margin-top:12px;">Hours per day</label>' +
           '<input class="pd-input" id="cw-hours" type="number" min="1" max="24" step="0.5" value="' + (d.hours_per_day || 8) + '" style="width:110px;">' +
-          '<label class="calwiz-check" style="margin-top:12px;"><input type="checkbox" id="cw-special"' + (d.observe_special_days ? ' checked' : '') + '> ' +
-            'Also take the <b>special non-working days</b> off' +
-            '<i>Black Saturday, Ninoy Aquino Day, All Saints’, Immaculate Conception, Dec 31. Common for office and design work; site works often work them.</i></label>' +
+          /* ⚠️⚠️ THE SENTENCE IS ONE FLEX ITEM NOW. `.calwiz-check` is `display:flex; gap:8px`, so
+             every child is its own column — including each BARE TEXT NODE, which becomes an
+             anonymous flex item. "Also take the" + <b>…</b> + "off" + <i>…</i> was four columns
+             beside the checkbox, each wrapping on its own, and it rendered as a broken stack:
+             "Also take the / special non-working days / off". Owner spotted it on the live dialog.
+             Same family as the "Use 0 activit ies" button and the sidebar brand before it: never
+             split a sentence across elements inside a flex row — wrap it in one box. */
+          '<label class="calwiz-check" style="margin-top:12px;"><input type="checkbox" id="cw-special"' + (d.observe_special_days ? ' checked' : '') + '>' +
+            '<span>Also take the <b>special non-working days</b> off' +
+            '<i>Black Saturday, Ninoy Aquino Day, All Saints’, Immaculate Conception, Dec 31. Common for office and design work; site works often work them.</i></span></label>' +
           (wd != null ? '<p class="calwiz-stat">That is <b>' + wd + '</b> working days this year, before seasons.</p>' : '');
       }
       if (step === 2) {
@@ -37695,7 +37711,11 @@
              orientation for somebody who has used the OTHER path. A planner importing a file has
              not, and the gestures are spelled out immediately after it anyway. */
           '. ' +
-          '<b>drag one bar onto another to connect them</b>, click a line to change its type or lag, and switch to <b>View</b> to see what drives what.</p>' +
+          /* ⚠️ CAPITALISED BECAUSE THE CLAUSE BEFORE IT WAS CUT. This used to follow "…work on the
+             build path:" — a colon, so lowercase was right. Removing that clause left ". drag one
+             bar", a sentence starting mid-word, which is only visible on the rendered page and was
+             caught by walking a real file through the wizard. */
+          '<b>Drag one bar onto another to connect them</b>, click a line to change its type or lag, and switch to <b>View</b> to see what drives what.</p>' +
         '<div class="sbld-relmodes">' + modes + '</div>' +
         '<div class="sbld-sec-actions">' +
           '<button class="pd-btn' + (impEditing ? ' pd-btn-primary' : '') + '" id="b-impmode" title="' +
@@ -40852,6 +40872,10 @@
     // ⚠️ Leaving the setup returns the borrowed WBS tree to its park slot. Without this it would sit
     // inside a hidden view, and the next thing to repaint that panel would take it out of the document.
     if (tab !== 'builder') sbWbsPark();
+    /* ⚠️ Setup and Cost Loading scroll the PAGE; the Schedule scrolls its own panes. The class says
+       which, so the 100vh above can stay where it is needed and get out of the way where it is not. */
+    var _app = document.querySelector('.pd-app');
+    if (_app) _app.classList.toggle('ps-longdoc', tab === 'builder' || tab === 'costload');
     // (#ps-view-calendars is a hidden host now, not a view — Working Calendars is a Setup step.)
     // Add activity / Group / Zoom / Expand / Views / Layout / Columns / Colors / Critical path /
     // Link mode only apply to the Schedule grid+Gantt — not meaningful on the Setup or Cost table.
