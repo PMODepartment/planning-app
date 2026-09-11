@@ -1,5 +1,80 @@
 # Module: minutes-of-meeting
 
+## 2026-09-11 — A Card/Table switcher for the Minutes list, real section dividers, and the minute number stops being typed
+
+Owner's three items: (1) "when opening a meeting, the minutes are usually in tiles, provide also
+switcher to convert to table"; (2) "provide cleaner breaker between input groups of details,
+schedule, venue, attendees, agenda, and minutes"; (3) "for the minutes number, make this
+non-editable. define this automatically based on order of minutes."
+
+### 1 — Card stays the editor; Table is a new, honest alternate
+
+⚠️⚠️ **The card list carries a standing warning not to become a table** ("THIS IS A CARD LIST, NOT
+A TABLE, AND IT MUST STAY ONE" — an 11-column table on this data hid Owner/Due/Status/File/the
+register link behind a horizontal scrollbar, because an action item has more fields — a workflow
+panel, attachments, a lesson link, its own audit history — than any table row can hold). That
+warning is about the ONE layout being a table; it says nothing against offering a second,
+narrower VIEW alongside it. New `momItemsTableHTML(vis)` is exactly that: a plain, six-column
+scan table (No. / Status / Responsible / Target date / Issue-Agenda / Action item), through the
+shared `.pd-tablewrap`/`.pd-table` convention this app already uses for a wide table (scroll
+horizontally, never reflow), with no editing control of its own — every cell is text. Clicking a
+row switches back to Card view and scrolls to that minute (a short flash outline marks it), which
+is where the workflow buttons, attachments, lesson link and history actually live.
+
+- A small `.il-viewtoggle`/`.il-vt-btn` pair (this module's own existing List/Calendar toggle
+  chrome, reused rather than inventing a third pattern in one file) sits beside the "Minutes"
+  heading, gated on there being at least one minute.
+- ⚠️⚠️ **Hidden while presenting.** `momApplySlides()` steps through `.il-mi-card` elements
+  directly, one per slide — there is no `.il-mi-card` in the DOM at all while the Table view is
+  showing, so the toggle disappears during Present and the render forces Card regardless of the
+  stored preference (`!_momReport && _minutesView === 'table'`), or the slide deck would have
+  nothing to step through.
+- ⚠️ The heading's `<h4>` is now wrapped in `.il-mom-minhead` (a flex row holding the heading and
+  the toggle). `.il-mom-slides .il-mom-actions > h4` — the rule that hides this heading's row
+  while presenting — was a **direct-child** selector, so wrapping the `<h4>` silently broke it;
+  fixed to target `.il-mom-minhead` instead. Caught by re-reading every combinator using
+  `.il-mom-actions >` in the stylesheet, not by rendering it.
+
+### 2 — The Detail view's own section headings get the divider the Add-meeting modal always had
+
+⚠️⚠️ **The comment above the Add-meeting modal's divider rule already claimed the Detail view had
+"the same weight" — it did not.** `.il-am-form .il-mom-sechead:not(:first-child)` (the dashed
+break between Details/Schedule/Venue/Attendees/Agenda) was scoped to `.il-am-form` alone; the
+Detail view's own identical headings live inside `.il-mom-detail-card`, which was never covered,
+so the six named sections there had nothing but the base rule's plain 8px bottom margin between
+them. Extended the same selector to also match `.il-mom-detail-card .il-mom-sechead:not(:first-
+child)` — one rule, one visual language, both forms. Agenda and Minutes already draw their own
+divider/box (`.il-mom-agenda`, `.il-mom-actions`) and are unaffected either way.
+
+### 3 — the minute No. is derived from order, never typed
+
+Owner: "for the minutes number, make this non-editable. define this automatically based on order
+of minutes." The No. field was a free-text `<input data-f="item_no">`; it is now a static
+`<div class="il-mi-val">`, in both edit and report mode, showing the exact same fallback
+expression every other reader of this number already uses (the list view, the PDF/export
+builders, the slide label): `it.item_no || String((it.seq == null ? i : it.seq) + 1)`. ⚠️ A
+hand-typed `item_no` from before this change still reads back — legacy data is never silently
+discarded — but nothing can type a new one; the only way a minute's number changes now is
+reordering it (drag-to-reorder, `persistMinuteOrder`, already the module's own mechanism for
+`seq`).
+
+### Verified
+
+`momItemsTableHTML` executed against a fixture (a Blank/legacy/linked-issue row apiece) sliced
+straight out of the shipped file: 3 rows, the carried badge, the Linked marker reading the
+register's live status, and the `il-mt-blank` placeholder all present and correctly gated.
+`node --check` clean on both `module.js`; braces balanced (371/371); 0 NUL bytes across every
+touched file. Grepped every `.il-mom-actions >` combinator in the stylesheet before editing, to
+make sure wrapping the heading did not silently break a sibling rule (it did — see item 1 above,
+fixed in the same commit rather than left for the next person to find).
+
+⚠️ **Not verified signed in** — no live login is possible in this environment, the standing
+constraint for every UI pass in this repo. No live click-through of the Card/Table toggle, the
+row-click-to-edit jump, or the new section dividers against a real meeting.
+
+`module.css`/`module.js?v=` → `20260911c`. No `MODULE_V` bump — `index.html`'s structure is
+unchanged, only the two module-local asset versions moved.
+
 ## 2026-09-09 (u2) — The PDF stops being a screenshot; `hidden` starts working; text wraps
 
 Owner's six Minutes-of-Meeting items. Stage 2 of a five-stage pass.

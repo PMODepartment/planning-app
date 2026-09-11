@@ -1,5 +1,53 @@
 # Module: issues-lessons
 
+## 2026-09-11 — Mobile no longer turns the Issues/Lessons tables into tiles
+
+Owner: "for issues and concerns and lessons learned list, in mobile view, the table turns into
+tiles. maintain table view even in mobile view and just allow scroll."
+
+⚠️⚠️ **That reflow was a deliberate, named piece of CSS, not a fallback nobody noticed** —
+`module.css`'s own 2026-07-23 comment explained it: below 700px the table hid `thead`, stacked
+each `<td>` as a labelled block and relabelled every cell from its `data-l` attribute, "since the
+issues register is an 11-column table with `min-width:980px` — side-scrolling a table that wide
+on a phone is unusable." That reasoning has since been overtaken by the app's own shared
+convention: `.pd-table`'s phone rule (`assets/css/dashboard.css`) already gives every table in
+this app a horizontal scroller at the identical 700px breakpoint, and both this module's tables
+(`#il-table` for Issues & Concerns, `#il-lessons-table` for Lessons Learned — both share the one
+`il-table` class) already sit inside a `<div class="pd-card" style="padding:0;overflow:auto;">`
+wrapper, so the scroll container was already there.
+
+The module-local override — `.pd-table.il-table` forced to `display:block` with `thead` hidden
+and every `<td>` stacked — is removed. The comment's own note explains why the selector was
+written `.pd-table.il-table` rather than plain `.il-table`: *"the table also carries the shared
+`.pd-table` class, whose phone rule makes it a nowrap horizontal scroller… dropping the `.pd-table`
+qualifier here silently restores side-scrolling."* That is now exactly the wanted behaviour, so the
+override is deleted rather than neutralised in place — leaving a dead, never-matching selector
+around is how the next person "helpfully" restores it.
+
+⚠️ `data-l` attributes are left in the markup untouched (`module.js` still emits them on every
+`<td>`) — harmless once nothing reads them, and removing them would be a second, unrelated change
+for no benefit. `.il-iconbtn`'s 42px phone touch-target rule is kept: the row action buttons
+(edit/delete) are still real controls on a horizontally-scrolled table and still need a bigger
+tap target than desktop.
+
+Since both the Issues and Lessons tables share the `il-table` class and the same 700px breakpoint,
+one fix covers both lists — confirmed by reading `renderLessonsLogView`'s own table markup, which
+reuses `class="pd-table il-table" id="il-lessons-table"` verbatim.
+
+### Verified
+
+CSS brace balance holds (270/270, unchanged proportionally after the removal); 0 NUL bytes.
+Re-read the surrounding mobile block (filter-panel wrap, Kanban column width, the `.pd-kpis`
+reflow note) to confirm none of those rules depended on anything inside the removed block — they
+did not, and are untouched.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment, the standing
+constraint for every UI pass in this repo. No live phone-width render of either table scrolling
+horizontally against real rows.
+
+`module.css?v=` → `20260911c`. No `MODULE_V` bump — `index.html`'s structure is unchanged, only
+the module-local stylesheet version moved.
+
 ## 2026-09-08 — The present view is back, and this reverses a decision whose note is still in this module's CSS
 
 Owner: *"Issues & Concerns: what happened to the present view?"*
