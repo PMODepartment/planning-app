@@ -9031,6 +9031,32 @@
     _editSeq++; _cacheSaveSoon();   // keep the IndexedDB cache in sync + guard the bg refresh from clobbering this edit
     if (before) pushUndo({ type: 'update', id: id, before: before, after: patch });
     logAudit(r, 'update', _auditChanges(prev, patch));
+    /* ⚠️ Placed AFTER `_myWrites` is armed: an `await` above it leaves a window in which the
+       Realtime echo of THIS write arrives unsuppressed and is handled as somebody else's edit.
+       ⚠️⚠️ A WBS SUMMARY ROW'S NAME IS A MIRROR, AND RENAMING IT HERE USED TO CHANGE ONLY THE
+       MIRROR. The name cell is `ps-editable` on every row with no `isWbs` guard, so renaming a
+       branch in the grid is not only possible, it is the obvious gesture — and it wrote
+       `project_schedule.activity_name` while `wbs_nodes.name` kept the old text. `_wbsSyncMissing`
+       re-seeds summary rows from the nodes, so the planner's rename was one heal away from
+       silently REVERTING, and in the meantime the WBS Manager and the schedule disagreed.
+       ⚠️ This file already states the principle a few thousand lines down, for the Drawing
+       Register mirror: *"Letting it be edited here would show a number the next sync silently
+       overwrites — worse than not offering the edit at all."* A branch name is the same shape. It
+       is written BACK rather than forbidden, because the grid is where planners work and sending
+       them to another screen to rename the thing they are looking at is the friction, not the fix.
+       ⚠️ Through PDSync when it is present, exactly like the write above — a rename made offline
+       must not be the half of the pair that goes missing. */
+    if (r && patch && patch.activity_name !== undefined && isWbs(r)) {
+      var _nid = _wbsNodeIdForRow(r);
+      if (_nid) {
+        var _nm = patch.activity_name == null ? '' : String(patch.activity_name);
+        try {
+          if (window.PDSync) await PDSync.write({ table: 'wbs_nodes', op: 'update', id: _nid, patch: { name: _nm } });
+          else await sb().from('wbs_nodes').update({ name: _nm }).eq('id', _nid);
+          var _nd = wbsById(_nid); if (_nd) _nd.name = _nm;
+        } catch (e) { /* the schedule row is saved; a failed mirror is reported by the next heal */ }
+      }
+    }
     // Incremental rebuild: only recompute what the edit can actually affect.
     //  • structural (WBS/Activity ID/Type) → re-sort;
     //  • any field feeding the WBS rollups or the CPM → rebuild (recompute rollups + CPM);
@@ -9127,6 +9153,32 @@
   }
 
   function isWbs(r) { return r.activity_type === 'WBS Summary'; }
+  /* ⚠️ WHICH NODE DOES THIS SUMMARY ROW BELONG TO? The link is `wbs_node_id` — except this file
+     documents at length that an import leaves it NULL when `wbs_link_codes` times out (measured at
+     8,173ms against an ~8s statement_timeout), and the rows are all still there having simply lost
+     the link. So the dotted CODE is the fallback, which is not a new idea: `_wbsSyncMissing`
+     already adopts an orphan row by its code, and this is the same rule read the other way round. */
+  var _wbsNodeByCodeMemo = null, _wbsNodeByCodeSeq = -1;
+  function _wbsNodeIdForRow(r) {
+    if (!r || !isWbs(r)) return null;
+    if (r.wbs_node_id) return r.wbs_node_id;
+    var code = String(r.wbs == null ? '' : r.wbs).trim();
+    if (!code) return null;
+    if (_wbsNodeByCodeMemo === null || _wbsNodeByCodeSeq !== WBS_NODES.length) {
+      var codeOf = computeWbsCodes(WBS_NODES), m = Object.create(null), dup = Object.create(null);
+      Object.keys(codeOf).forEach(function (nid) {
+        var c = codeOf[nid]; if (c == null || c === '') return;
+        c = String(c);
+        /* ⚠️ A code carried by two nodes answers for NEITHER. Renaming the wrong branch is worse
+           than not renaming one, and the skeleton dedupe is the place that resolves collisions. */
+        if (m[c] !== undefined) { dup[c] = 1; return; }
+        m[c] = nid;
+      });
+      Object.keys(dup).forEach(function (c) { delete m[c]; });
+      _wbsNodeByCodeMemo = m; _wbsNodeByCodeSeq = WBS_NODES.length;
+    }
+    return _wbsNodeByCodeMemo[code] || null;
+  }
   function isMile(r) { return r.activity_type === 'Milestone' || r.activity_type === 'Start Milestone' || r.activity_type === 'Finish Milestone'; }
   // A Finish Milestone marks a finish (anchored on the finish date); everything else marks a start.
   function isFinishMile(r) { return r.activity_type === 'Finish Milestone'; }
@@ -24481,8 +24533,33 @@
     if (v === (n.name || '')) return;
     n.name = v;
     await sb().from('wbs_nodes').update({ name: v }).eq('id', id);
-    var sr = rows.find(function (r) { return isWbs(r) && r.wbs_node_id === id; });
-    if (sr && sr.activity_name !== v) { sr.activity_name = v; await sb().from(TABLE).update({ activity_name: v }).eq('id', sr.id); }
+    /* ⚠️⚠️ THE PROJECTION IS UPDATED ON THE SERVER, not through `rows`. The previous line renamed
+       the summary row only when it happened to be IN MEMORY and carried `wbs_node_id` — and this
+       file documents that an import leaves that link NULL whenever `wbs_link_codes` times out. So
+       on precisely the big projects where a rename matters most, it silently did not propagate:
+       `wbs_nodes` said the new name, every consumer of the projection — the schedule's own phase
+       map, the BOQ's `WBSNAME`, the activity picker's `NAME_BY_CODE` — went on saying the old one.
+       ⚠️ The fallback adopts the orphan row AT THIS NODE'S CODE, which is the rule
+       `_wbsSyncMissing` already uses to re-link one; it is not a second notion of identity. */
+    var _up = await sb().from(TABLE).update({ activity_name: v })
+      .eq('project_id', pid).eq('activity_type', 'WBS Summary').eq('wbs_node_id', id).select('id');
+    var _hit = (_up && !_up.error && (_up.data || []).length) ? _up.data.length : 0;
+    if (!_hit) {
+      var _code = computeWbsCodes(WBS_NODES)[id];
+      if (_code != null && _code !== '') {
+        /* ⚠️ `is('wbs_node_id', null)` is not optional: without it this would rename whatever row
+           sits at that code, including one that belongs to a DIFFERENT, correctly linked node. */
+        var _o = await sb().from(TABLE).update({ activity_name: v })
+          .eq('project_id', pid).eq('activity_type', 'WBS Summary').eq('wbs', String(_code))
+          .is('wbs_node_id', null).select('id');
+        _hit = (_o && !_o.error && (_o.data || []).length) ? _o.data.length : 0;
+      }
+    }
+    /* Keep whatever IS in memory in step, so the grid repaints without a reload. */
+    rows.forEach(function (r) {
+      if (isWbs(r) && (r.wbs_node_id === id) && r.activity_name !== v) r.activity_name = v;
+    });
+    _phaseCodeNames = null; _phaseCodeMemo = {};   // the name map is memoised — it must not outlive the name
   }
   // Delegated listeners on the (persistent) tree container — attached once, so they survive every
   // window re-paint (per-row onclick handlers can't, since the window's rows are recreated on scroll).
@@ -25900,8 +25977,16 @@
     if (!n || n.is_locked || (n.name || '').trim() || wbsChildren(id).length || wbsActivityCount(id)) { _wbsFocusName(id); return; }
     var prev = _wbsNeighbourId(id, -1, true);
     await sb().from('wbs_nodes').delete().eq('id', id);
+    /* ⚠️ THE PROJECTION IS DELETED ON THE SERVER, BY LINK — the in-memory lookup alone left an
+       ORPHANED WBS Summary row whenever `rows` did not happen to hold it, and a branch row whose
+       node is gone goes on showing its name in the schedule, the BOQ's `WBSNAME` and the activity
+       picker. Same root cause as the rename beside it: trusting `rows` for a write.
+       ⚠️ Keyed on `wbs_node_id` ONLY. The rename can fall back to the dotted code because renaming
+       the wrong row is recoverable; deleting one is not, so an unlinked row is left for the dedupe
+       pass rather than guessed at. */
+    await sb().from(TABLE).delete().eq('project_id', pid).eq('activity_type', 'WBS Summary').eq('wbs_node_id', id);
     var sr = rows.find(function (r) { return isWbs(r) && r.wbs_node_id === id; });
-    if (sr) { await sb().from(TABLE).delete().eq('id', sr.id); rows = rows.filter(function (r) { return r.id !== sr.id; }); }
+    if (sr) rows = rows.filter(function (r) { return r.id !== sr.id; });
     WBS_NODES = WBS_NODES.filter(function (x) { return x.id !== id; });
     if (_wbsSel === id) _wbsSel = prev || null;
     await _wbsCommit();
@@ -26243,8 +26328,16 @@
     if (nAct) { UI.toast('This WBS has ' + nAct + ' activit' + (nAct === 1 ? 'y' : 'ies') + ' — move or delete them first.', 'warn'); return; }
     if (!confirm('Delete WBS “' + n.name + '”?')) return;
     await sb().from('wbs_nodes').delete().eq('id', id);
+    /* ⚠️ THE PROJECTION IS DELETED ON THE SERVER, BY LINK — the in-memory lookup alone left an
+       ORPHANED WBS Summary row whenever `rows` did not happen to hold it, and a branch row whose
+       node is gone goes on showing its name in the schedule, the BOQ's `WBSNAME` and the activity
+       picker. Same root cause as the rename beside it: trusting `rows` for a write.
+       ⚠️ Keyed on `wbs_node_id` ONLY. The rename can fall back to the dotted code because renaming
+       the wrong row is recoverable; deleting one is not, so an unlinked row is left for the dedupe
+       pass rather than guessed at. */
+    await sb().from(TABLE).delete().eq('project_id', pid).eq('activity_type', 'WBS Summary').eq('wbs_node_id', id);
     var sr = rows.find(function (r) { return isWbs(r) && r.wbs_node_id === id; });
-    if (sr) { await sb().from(TABLE).delete().eq('id', sr.id); rows = rows.filter(function (r) { return r.id !== sr.id; }); }
+    if (sr) rows = rows.filter(function (r) { return r.id !== sr.id; });
     WBS_NODES = WBS_NODES.filter(function (x) { return x.id !== id; });
     await _wbsCommit();
     UI.toast('WBS deleted.', 'success');

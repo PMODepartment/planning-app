@@ -95,6 +95,77 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-11 (a2) — The naming pass: one branch name, not two copies that drift apart
+
+Owner: *"Check the naming of these from the schedule setup and the WBS so everything is
+consistent"*, then *"Let's do the naming pass as well"*.
+
+**First, what is NOT wrong, established by reading rather than assumed.** The picker's rung names
+(Tower / Level / Zone / Unit) come from the project's own `location_levels` — the same table Schedule
+Setup writes — so those are consistent by construction. And every consumer of a WBS branch name
+reads the *same* source: the schedule's own `_phaseCodeNameMap`, boq.js's `WBSNAME` and
+affected.js's `NAME_BY_CODE` all build from `activity_type = 'WBS Summary'` rows. There is **one
+vocabulary**, not three. Two of the three things I had listed as unreconciled were not.
+
+**What is wrong is that the vocabulary has two copies, and they drift — both ways.** This file
+already says it out loud: `WBS_NODES` is commented *"authoring source of truth; projected to
+WBS-Summary rows"*. Every reader takes the **projection**. Nothing kept the projection equal to the
+source.
+
+**⚠️⚠️ Renaming a branch in the grid changed only the mirror.** The name cell is `ps-editable` on
+every row with **no `isWbs` guard**, so renaming a branch in the schedule is not merely possible, it
+is the obvious gesture — and it wrote `project_schedule.activity_name` while `wbs_nodes.name` kept
+the old text. `_wbsSyncMissing` re-seeds summary rows from the nodes, so the planner's rename was
+one heal away from **silently reverting**, and until then the WBS Manager and the schedule
+disagreed. This file already states the principle for the Drawing Register mirror — *"Letting it be
+edited here would show a number the next sync silently overwrites — worse than not offering the edit
+at all"* — and a branch name is the same shape. It is written **back** rather than forbidden,
+because the grid is where planners work; sending them to another screen to rename the thing they are
+looking at is the friction, not the fix. Through `PDSync` when present, so a rename made offline is
+not the half of the pair that goes missing.
+
+**⚠️⚠️ Renaming in the WBS Manager reached the projection only by luck.** The old line found the
+summary row in the **in-memory `rows`** array and only if it carried `wbs_node_id` — and this file
+documents at length that an import leaves that link **NULL** when `wbs_link_codes` times out
+(measured at 8,173ms against an ~8s `statement_timeout`), the rows all still present, simply
+unlinked. So on exactly the big projects where a rename matters most it silently did not propagate:
+`wbs_nodes` said the new name and every reader went on saying the old one. It is now a **server-side
+update** keyed on the link, with a fallback that adopts the orphan row **at this node's code** —
+which is not a second notion of identity, it is the rule `_wbsSyncMissing` already uses, read the
+other way round. `is('wbs_node_id', null)` on that fallback is not optional: without it the update
+would rename whatever row sits at that code, including one belonging to a different, correctly
+linked node. The memoised phase-name map is invalidated, or it would outlive the name.
+
+**⚠️ And a failing test found two more, which I had not looked at.** My assertion "the in-memory
+write is gone" failed because that `rows.find` line appears **three** times — once in the rename and
+twice in the **delete** paths, which carry the same bug in a worse form: a deleted branch left an
+**orphaned summary row** that goes on showing its name in the schedule, the BOQ and the picker
+forever. Both now delete the projection on the server. ⚠️ Keyed on the **link only** — the rename
+can fall back to the dotted code because renaming the wrong row is recoverable and deleting one is
+not, so an unlinked row is left to the dedupe pass rather than guessed at.
+
+Verified: **38 new assertions, 0 failing**, plus 34 + 36 + 24 + 29 + 26 + 43 — **230 total**. Pinned
+to **d992e59**. ⚠️ `node --check` parses a file whose script is dead — the failure that killed the
+whole BOQ module on (z6) — so every identifier the new code names is checked for a declaration in
+the **same** script block (all four touched sites are inside the one 4427–45659 block, confirmed by
+brace-counting rather than by eye). `_wbsNodeIdForRow` is not merely inspected: its **real source
+text** is lifted from the file and executed against a node fixture — linked row resolves by link, an
+unlinked row resolves by code (the post-import state), a row with neither resolves to nothing, a
+task is never a branch, `null` survives, and the memo re-derives when the tree changes.
+
+⚠️ **One defect of my own, caught before it shipped**: the write-back originally sat *above*
+`_myWrites[id]`, so an `await` ran before the Realtime echo guard was armed — leaving a window in
+which the echo of this very write arrives unsuppressed and is handled as somebody else's edit. Moved
+below it.
+
+**Not browser-verified.** These are database write paths; exercising them needs a signed-in session
+against a real project, and nothing here has been driven through one. The pure resolution logic is
+executed and the call shapes are asserted, but the round-trip is not. `?v=` → `MODULE_V 20260911a2`,
+because a module **page** changed.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+
 ### 2026-09-11 (a) — Match names to the bill: the tagger's question asked the other way round, and three entry points become one
 
 Owner: *"Let's do 1 and 2"* — the specificity screen, and centralising the duplicate buttons.
