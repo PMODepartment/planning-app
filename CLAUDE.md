@@ -95,6 +95,59 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-11 (sc) — Columns not aligned: two different bugs wearing the same face
+
+Owner: *"Bug inside the grid columns do not refer correctly to its content. Columns are not aligned."*
+
+Every cell in this grid is positioned by a CSS `order` rule keyed on `nth-child`, so the body's cell
+**sequence** is the only thing tying a value to its heading. Two unrelated faults were both breaking
+that sequence, and they look identical on screen.
+
+**Half one — a summary row a cell short.** Live DOM on OPW101: header **39** cells, body **38**,
+diverging at index 26. The task chain emits `corefCellHtml`; the summary chain
+(`sumConScopeHtml → sumPkgHtml → sumCcodeHtml`) simply stopped at the class code, so every column
+after it shifted left by one and *"Structural Works"* — a trade roll-up — printed beneath **CHANGE
+ORDER REF**. It now emits the blank change-order lane, the same device `sumConScopeHtml` already
+uses for the constraint lanes, and whose own comment states the invariant this broke: *"keeps the
+cell count identical, which the nth-child column machinery needs"*. `cellcount.py` guards it by
+walking both chains. ⚠️ Counted per **return path**, not per function body — the first version summed
+branches that can never both run and reported `c-scope c-scope` for correct code, and a checker that
+cannot be right about correct code cannot be trusted about wrong code.
+
+**Half two — a header that discovered columns without the body.** Re-measuring after that fix
+confirmed it (`c-coref` at index 26 in both) and exposed a bigger, separate gap underneath: header
+**39** cells against **29** in every body row — **eleven** `c-x` extra columns to the body's one. The
+header carried TOWER / LEVEL / ZONE; the body had been serialised before `location_levels` came back
+and still carried only Trade. `extraColDefs()` reads `LOC_LEVELS` / `CODE_TYPES` / `UDF_DEFS`, all of
+which arrive asynchronously, and `renderHeader()` is called **alone** from four places that have just
+discovered columns — `refreshLocLevels()` and the three import/push paths all run
+`populateGroupSelect(); seedExtraHidden(); renderHeader();` and stop. `syncGridColumns()` only closes
+this along the `renderGrid()` path, so none of the four went through it. The body now keeps **its
+own** signature, written in `renderWindow()` at the line past which the rows below are definitely
+rebuilt, and `renderHeader()` reconciles against it.
+
+**⚠️⚠️ The first version of that repair could never run, and the tab I was measuring in is why.** It
+queued `renderGrid()` on a timeout. `renderGrid()` is `scheduleRender()`, which is
+`requestAnimationFrame`-debounced behind `if (_rafP) return` — **and a rAF never fires in a hidden
+tab**. Driving the deployed build in a backgrounded Chrome tab, the grid stayed at 39/29 through
+`renderGrid()`, `renderAll()` **and a full reload**, while a direct `renderWindow(true)` rebuilt it to
+39 on the spot; the tab reported `visibilityState: "hidden"` and a rAF callback that never ran. So
+`_rafP` latches true on the first swallowed request and every render after it returns immediately —
+which also means part of what I had been measuring as "the body is stale" was the tab's own doing.
+The repair is now a **direct, synchronous `renderWindow(true)`**, which is the right call on the
+merits anyway: a column-set change does not change the display **list**, only the cells in it.
+⚠️ And `_hdrRepair` is lowered for the one `renderHeader()` that `doRender()` makes, because
+`doRender()` renders the window itself on the next line — measured: **exactly one** body rebuild on
+each path, not two.
+
+Driven end-to-end on the deployed build against OPW101, and the defect reproduced deliberately
+rather than waited for: emptying `LOC_LEVELS` and re-serialising takes the body to **35** against a
+39-cell header; `renderHeader()` **alone** — the entire call `refreshLocLevels()` makes — brings it
+back to **39**, with **0 of 22 rows** disagreeing. A natural load now arrives at 39/39.
+
+`MODULE_V` → `20260911sc6`.
+
+
 ### The manual sheet's preview curve gets its own compact size (2026-09-11) — ethanrobles10
 
 Owner: *"can you make the curve smaller for the manual POC entry. And make it aesthetically
