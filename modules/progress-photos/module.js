@@ -3388,7 +3388,88 @@ window.ProgressPhotos = (function () {
   // rather than reached into another file's private closure — see reqMark()'s
   // own comment). Downscaling keeps a multi-photo export from becoming an
   // enormous file full of untouched full-resolution site photos.
+  // Restated from ppr.js's own `sanitizePptxText` (that file's 2026-09-03
+  // fix: PowerPoint's strict XML parser refuses the WHOLE file over a single
+  // XML-1.0-illegal control character or unpaired UTF-16 surrogate reaching
+  // `addText()` — a stray byte from a pasted/OCR'd caption, easy to miss).
+  // Small helper, restated per independently-loaded file per this module's
+  // own convention (see reqMark()'s comment) rather than reached into ppr.js.
+  function sanitizePptxText(s) {
+    if (s == null) return '';
+    s = String(s).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+    var out = '';
+    for (var i = 0; i < s.length; i++) {
+      var code = s.charCodeAt(i);
+      if (code >= 0xD800 && code <= 0xDBFF) {
+        var next = s.charCodeAt(i + 1);
+        if (next >= 0xDC00 && next <= 0xDFFF) { out += s[i] + s[i + 1]; i++; }
+      } else if (code >= 0xDC00 && code <= 0xDFFF) {
+        // lone low surrogate, never reached via the high-surrogate branch above — drop it
+      } else {
+        out += s[i];
+      }
+    }
+    return out;
+  }
   var DL_MAXW = 1600, DL_JPEG_Q = 0.82;
+  // The uploaded Megawide corporate template ("MCC CAB Presentation Template")
+  // is the visual source of truth for the cover/closing slide + header this
+  // file's own exports carry — same brand red EE3124 already used below, plus
+  // the wordmark. Path is relative to this module's own index.html.
+  var DL_LOGO_PATH = 'assets/branding/megawide-logo.png';
+  // The cover/closing red panel is NOT a PowerPoint shape in the uploaded
+  // template — see ppr.js's own `coverPanelDataUrl()` comment for the full
+  // reasoning (read directly from the template's `slideLayout1.xml`'s own
+  // shape tree: the panel is a cropped `<p:pic>`, `prstGeom prst="rect"`, no
+  // curve geometry — the rounded corner is baked into the source image's own
+  // pixels). This asset is that exact crop, pre-cut at the template's own
+  // 46.574% split, so it is pixel-identical to the template's, not a vector
+  // approximation of it.
+  var DL_COVER_PANEL_PATH = 'assets/branding/cover-panel.jpg';
+  // ⚠️ Owner ask (2026-09-11, later same day) — see ppr.js's identical
+  // removal for the full reasoning: the thin white top strip carrying a
+  // small red rounded-corner accent (`content-header-strip.jpg`) is REMOVED
+  // from the header — enough Megawide branding exists elsewhere on the
+  // page already. `dlContentHeaderStripDataUrl()`/`DL_CONTENT_HEADER_STRIP_PATH`
+  // and every `headerStrip` parameter they fed were removed with it; the
+  // asset FILE itself is left on disk, untouched.
+  var DL_TAGLINE_PATH = 'assets/branding/tagline.png';
+  // undefined = not yet attempted; null = tried and failed (cached, never
+  // retried — a local static asset failing once won't start working).
+  var _dlBrandAssetCache = {};
+  // A plain base64 read, not dlToDataURL's canvas/JPEG downscale — the logo is
+  // a small transparent PNG (a JPEG re-encode would paint it solid black),
+  // and the panel doesn't need the downscale (a fixed, pre-sized brand asset,
+  // not a variable-resolution site photo). Returns { data, w, h } (or null)
+  // — `w`/`h` feed containFit() so neither asset is ever stretched off its
+  // own real aspect ratio.
+  async function dlBrandAssetDataUrl(path) {
+    if (_dlBrandAssetCache[path] !== undefined) return _dlBrandAssetCache[path];
+    var result = null;
+    try {
+      var resp = await fetch(path);
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      var blob = await resp.blob();
+      var dataStr = await new Promise(function (resolve, reject) {
+        var r = new FileReader();
+        r.onload = function () { resolve(r.result); };
+        r.onerror = function () { reject(new Error('read failed')); };
+        r.readAsDataURL(blob);
+      });
+      var dims = await new Promise(function (resolve) {
+        var im = new Image();
+        im.onload = function () { resolve({ w: im.naturalWidth, h: im.naturalHeight }); };
+        im.onerror = function () { resolve({ w: 0, h: 0 }); };
+        im.src = dataStr;
+      });
+      result = { data: dataStr, w: dims.w, h: dims.h };
+    } catch (e) { console.warn('progress-photos: could not load brand asset ' + path + ' —', e && e.message); }
+    _dlBrandAssetCache[path] = result;
+    return result;
+  }
+  function dlLogoDataUrl() { return dlBrandAssetDataUrl(DL_LOGO_PATH); }
+  function dlCoverPanelDataUrl() { return dlBrandAssetDataUrl(DL_COVER_PANEL_PATH); }
+  function dlTaglineDataUrl() { return dlBrandAssetDataUrl(DL_TAGLINE_PATH); }
   function dlBlobToImage(blob) {
     return new Promise(function (resolve, reject) {
       var u = URL.createObjectURL(blob);
@@ -3398,6 +3479,12 @@ window.ProgressPhotos = (function () {
       im.src = u;
     });
   }
+  // Returns { data, w, h } — see ppr.js's own toDataURL()/containFit() for
+  // why the PPTX exporter needs the photo's real natural dimensions: v3.12.0
+  // of the pinned PptxGenJS CDN bundle silently ignores `sizing:{type:
+  // 'contain'}` (confirmed by inspecting the bundle itself — "contain" never
+  // appears in it), so without this every photo was stretched to fill its
+  // pane box exactly, distorting any photo whose aspect ratio didn't match.
   async function dlToDataURL(url) {
     var resp = await fetch(url);
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
@@ -3408,7 +3495,19 @@ window.ProgressPhotos = (function () {
     c.width = Math.max(1, Math.round((img.naturalWidth || DL_MAXW) * scale));
     c.height = Math.max(1, Math.round((img.naturalHeight || DL_MAXW) * scale));
     c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-    return c.toDataURL('image/jpeg', DL_JPEG_Q);
+    return { data: c.toDataURL('image/jpeg', DL_JPEG_Q), w: img.naturalWidth || c.width, h: img.naturalHeight || c.height };
+  }
+  // See ppr.js's own containFit() — identical, restated per this file's
+  // established convention of not reaching into another module's closure.
+  // Every PPTX `addImage` call in this file must route through it; never
+  // re-add a `sizing` option, since the pinned PptxGenJS bundle ignores it.
+  function containFit(bx, by, bw, bh, iw, ih) {
+    if (!iw || !ih) return { x: bx, y: by, w: bw, h: bh };
+    var boxRatio = bw / bh, imgRatio = iw / ih;
+    var w, h;
+    if (imgRatio > boxRatio) { w = bw; h = bw / imgRatio; }
+    else { h = bh; w = bh * imgRatio; }
+    return { x: bx + (bw - w) / 2, y: by + (bh - h) / 2, w: w, h: h };
   }
   // Every selected photo's image, embedded as a downscaled data URI — shared
   // by all three export formats below so they can never show a different
@@ -3439,32 +3538,154 @@ window.ProgressPhotos = (function () {
     var tags = [tradesOf(r).join(', '), worksOf(r).join(', '), r.location].filter(Boolean).join(' · ');
     return [r.description || '', tags, r.taken_at ? Fmt.date(r.taken_at) : ''].filter(Boolean);
   }
+  // Branded like ppr.js's own presentation exports (same header/frame
+  // language, `.dl*`-prefixed so nothing collides with EXPORT_CSS in the
+  // independently-loaded ppr.js) — a plain photo selection and a Previous/
+  // Current presentation should read as one reporting system, not two.
   var DL_CSS =
     'body{margin:0;font-family:Montserrat,Segoe UI,Arial,sans-serif;color:#231F20;background:#F4F4F4}' +
-    'header{background:#EE3124;color:#fff;padding:16px 22px}' +
-    'header h1{margin:0;font-size:19px;letter-spacing:.02em}' +
-    '.wrap{max-width:900px;margin:0 auto;padding:18px}' +
-    '.item{background:#fff;border:1px solid #DCDBDB;border-radius:4px;padding:14px;margin-bottom:16px}' +
-    '.item{break-inside:avoid;page-break-inside:avoid}' +
-    '.item:not(:last-of-type){break-after:page;page-break-after:always}' +
-    '.item img{width:100%;display:block;border:1px solid #DCDBDB;background:#F4F4F4}' +
-    '.missing{padding:40px;text-align:center;color:#9a9a9a;font-size:13px;border:1px solid #DCDBDB}' +
-    '.cap{margin-top:8px;font-size:13px;color:#4a4a4a}' +
-    'footer{text-align:center;font-size:11.5px;color:#6b6b6b;padding:6px 0 22px}' +
-    '@media print{body{background:#fff}.item{border:0}}';
-  function dlItemHTML(r, imgs) {
+    // Owner correction (2026-09-10) — see ppr.js's identical fix for the full
+    // re-inspection: this matches the template's ACTUAL content slide, not
+    // the cover. ⚠️ Owner ask (2026-09-11, later same day): the top strip
+    // that used to sit above this text (carrying a small red rounded-corner
+    // accent) is REMOVED — see ppr.js's identical removal for the full
+    // reasoning. `.dl-hdrbody`'s own padding is now the header's only
+    // spacing, tuned generously now that the strip's own height is no
+    // longer spoken for.
+    'header{background:#fff;color:#231F20}' +
+    'header .dl-hdrbody{padding:18px 22px 14px}' +
+    'header h1{margin:0;font-size:21px;letter-spacing:.01em;font-weight:700}' +
+    'header p{margin:3px 0 0;font-size:13px;color:#6b6b6b;line-height:1.3}' +
+    '.wrap{max-width:1180px;margin:0 auto;padding:18px}' +
+    // Item 1 (2026-09-11): `.dl-pagegroup` wraps one `.dl-slide` + its own
+    // footer as a single page-break unit — see ppr.js's identical
+    // `.pagegroup` comment for the full reasoning.
+    '.dl-pagegroup{position:relative}' +
+    '.dl-slide{background:#fff;border:1px solid #DCDBDB;border-radius:4px;padding:12px 14px;margin-bottom:10px}' +
+    // `break-after`/`page-break-after` is kept for a real browser printing
+    // the saved standalone HTML file — the PDF capture path neutralizes it
+    // (see `DL_PDF_CSS`/`layoutDlPagegroups()`) since html2pdf.js's own
+    // plugin math for this doesn't quite agree with `toPdf()`'s own
+    // canvas-slicing math; ppr.js's identical `.pagegroup` comment has the
+    // full root-cause writeup.
+    '.dl-pagegroup{break-inside:avoid;page-break-inside:avoid}' +
+    '.dl-pagegroup:not(:last-of-type){break-after:page;page-break-after:always}' +
+    '.dl-pair{display:grid;grid-template-columns:1fr 1fr;gap:14px}' +
+    '.dl-pair.dl-single{grid-template-columns:minmax(0,640px);justify-content:center}' +
+    'figure{margin:0}' +
+    // Fixed-ratio frame (padding-top trick, not the newer `aspect-ratio`
+    // property — html2canvas's print capture supports this reliably, matching
+    // ppr.js's own presentation exports). Portrait and landscape photos both
+    // sit centred and un-distorted via object-fit:contain. ⚠️ Item 3
+    // (2026-09-11): 75%→78%, same modest bump as ppr.js's own `.phwrap`.
+    '.dl-phwrap{position:relative;width:100%;padding-top:78%;background:#F4F4F4;border:1px solid #DCDBDB;overflow:hidden}' +
+    '.dl-phwrap img{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:contain;display:block}' +
+    '.missing{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;color:#9a9a9a;font-size:13px}' +
+    '.cap{margin-top:6px;font-size:13px;color:#4a4a4a;text-align:center;line-height:1.3}' +
+    // Closing "Thank You" page (2026-09-09 fix — see ppr.js's identical
+    // addition for the full reasoning): same bookend language as the header,
+    // never a redesign. ⚠️ Item 5 (2026-09-11): same vertical-centering /
+    // min-height / slightly-larger-logo-and-heading treatment as ppr.js.
+    '.dl-slide.thankyou{text-align:center;padding:20px;border-top:4px solid #EE3124;' +
+      'min-height:420px;display:flex;flex-direction:column;align-items:center;justify-content:center}' +
+    '.dl-slide.thankyou .tylogo{height:48px;width:auto;margin:0 auto 22px;display:block}' +
+    '.dl-slide.thankyou h2{margin:0 0 10px;font-size:34px;font-weight:700;color:#231F20}' +
+    '.dl-slide.thankyou .typroj{margin:0;font-size:15px;color:#4a4a4a}' +
+    '.dl-slide.thankyou .tyfoot{margin:8px 0 0;font-size:12px;color:#9a9a9a}' +
+    // Footer — the template's real bottom chrome: wordmark bottom-left, the
+    // "Engineering A First-World Philippines" tagline (literal template
+    // graphic, its own red divider baked in) bottom-right. ⚠️ Padding
+    // tightened (16px→10px vertical) since this now recurs every page.
+    'footer{display:flex;align-items:center;justify-content:space-between;padding:10px 22px;background:#fff}' +
+    'footer .dl-ftrleft{display:flex;align-items:center;gap:10px}' +
+    'footer .dl-ftrlogo{height:20px;width:auto;display:block}' +
+    'footer .dl-ftrgen{font-size:11px;color:#9a9a9a}' +
+    'footer .dl-ftrtag{height:24px;width:auto;display:block}' +
+    '@media print{body{background:#fff}.dl-slide{border:0}}';
+  // ⚠️ Real bug found and fixed (2026-09-09 live PDF test): this mobile
+  // breakpoint is ONLY for someone opening the SAVED standalone HTML file on
+  // their own phone later — it must never affect the off-screen PDF capture,
+  // but a `@media` rule can't tell "this is a PDF export" from "the browser
+  // window doing the exporting genuinely happens to be narrow" apart; it
+  // just reads whatever the CURRENT window width is. Measured live: with the
+  // exporting browser's own window at 366px wide (a perfectly ordinary
+  // narrow/half-screen window — not a mobile device), the PDF capture
+  // silently collapsed the 2-photo layout to one column, roughly DOUBLING
+  // every page's rendered height and inflating a 2-page report to 4 pages
+  // with photos "unnecessarily small" per that half-width column. Kept as a
+  // SEPARATE fragment, appended only to the offline-HTML export's own CSS
+  // (dlBodyHTML's caller) — never to the PDF capture's `wrap`.
+  var DL_MOBILE_CSS = '@media (max-width:820px){.dl-pair,.dl-pair.dl-single{grid-template-columns:1fr}}';
+  // ⚠️ PDF-capture-only override (2026-09-11/12) — see ppr.js's identical
+  // `EXPORT_PDF_CSS`/`layoutPagegroups()` for the full root-cause writeup.
+  // Neutralizes `.dl-pagegroup`'s own `page-break-after` back to `auto`
+  // during a PDF export only — `layoutDlPagegroups()` computes every real
+  // page-to-page push itself instead, from one single formula, so it can
+  // never disagree with itself the way html2pdf's own two internal height
+  // formulas did. Never applied to the offline HTML export.
+  var DL_PDF_CSS = '.dl-pagegroup{page-break-after:auto!important;break-after:auto!important}';
+  function dlFigureHTML(r, imgs) {
     var u = urlOf(r);
-    var d = u ? imgs[u] : '';
-    var img = d ? '<img src="' + d + '" alt="' + Fmt.esc(r.description || '') + '" />'
+    var d = u ? imgs[u] : null;
+    var img = d ? '<img src="' + d.data + '" alt="' + Fmt.esc(r.description || '') + '" />'
                 : '<div class="missing">Image unavailable</div>';
     var cap = dlCaptionLines(r).map(function (l) { return Fmt.esc(l); }).join('<br/>');
-    return '<section class="item">' + img + (cap ? '<div class="cap">' + cap + '</div>' : '') + '</section>';
+    return '<figure><div class="dl-phwrap">' + img + '</div>' +
+      (cap ? '<div class="cap">' + cap + '</div>' : '') + '</figure>';
   }
-  function dlBodyHTML(list, imgs) {
-    return '<header><h1>' + Fmt.esc(projName || pid) + ' — Progress Photos</h1></header>' +
-      '<div class="wrap">' + list.map(function (r) { return dlItemHTML(r, imgs); }).join('') + '</div>' +
-      '<footer>Generated ' + Fmt.esc(Fmt.date(new Date().toISOString().slice(0, 10))) +
-      ' from the Planners Dashboard · Megawide Construction Corporation</footer>';
+  // ⚠️ NON-NEGOTIABLE: at most 2 photos per slide/page. `chunkPairs` is the
+  // one place that decides how a flat selection is distributed — everything
+  // downstream (HTML, PDF, PPTX) reads its output and never re-groups on its
+  // own, so the cap can't drift between formats.
+  function chunkPairs(list) {
+    var out = [];
+    for (var i = 0; i < list.length; i += 2) out.push(list.slice(i, i + 2));
+    return out;
+  }
+  function dlSlideHTML(pair, imgs) {
+    var single = pair.length < 2;
+    return '<section class="dl-slide"><div class="dl-pair' + (single ? ' dl-single' : '') + '">' +
+      pair.map(function (r) { return dlFigureHTML(r, imgs); }).join('') +
+      '</div></section>';
+  }
+  // Owner ask (2026-09-11, visual refinement pass — restated per ppr.js's
+  // own footerHTML(), same reasoning): the footer previously sat ONCE,
+  // after every slide, so it only ever landed on the LAST physical page.
+  function dlFooterHTML(logo, tagline) {
+    return '<footer><div class="dl-ftrleft">' +
+      (logo ? '<img class="dl-ftrlogo" src="' + logo.data + '" alt="Megawide Construction Corporation" />' : '') +
+      '<span class="dl-ftrgen">Generated ' + Fmt.esc(Fmt.date(new Date().toISOString().slice(0, 10))) + '</span>' +
+      '</div>' +
+      (tagline ? '<img class="dl-ftrtag" src="' + tagline.data + '" alt="Engineering A First-World Philippines" />' : '') +
+      '</footer>';
+  }
+  function dlBodyHTML(list, imgs, logo, tagline) {
+    // ⚠️ Real gap found and fixed (2026-09-09): this ad-hoc export's HTML/PDF
+    // output had no closing page at all — only exportSelectedPptx() ever
+    // built one. Same fix as ppr.js's slidesBodyHTML(): reuse the existing
+    // `.dl-slide` class (so the page-break rule applies for free) and the
+    // header's own bookend language, not a new design.
+    var ftr = dlFooterHTML(logo, tagline);
+    // Each page's `.dl-slide` + its OWN footer are wrapped in one
+    // `.dl-pagegroup` — see ppr.js's identical `.pagegroup` comment for the
+    // full reasoning (2026-09-11 visual refinement pass, item 1).
+    var thankYouHTML = '<div class="dl-pagegroup"><section class="dl-slide thankyou">' +
+      (logo ? '<img class="tylogo" src="' + logo.data + '" alt="" />' : '') +
+      '<h2>Thank You</h2>' +
+      '<p class="typroj">' + Fmt.esc(projName || pid) + '</p>' +
+      '<p class="tyfoot">Megawide Construction Corporation</p>' +
+      '</section>' + ftr + '</div>';
+    // Owner correction (2026-09-10) — matches the template's ACTUAL content
+    // slide now, not the cover: the logo sits at the footer's bottom-left,
+    // beside the literal tagline graphic bottom-right. ⚠️ Owner ask
+    // (2026-09-11, later same day): the top strip that used to sit above
+    // this header's text is REMOVED — see DL_CSS's own comment.
+    return '<header>' +
+      '<div class="dl-hdrbody"><h1>' + Fmt.esc(projName || pid) + '</h1>' +
+      '<p>Progress Photos · ' + list.length + ' photo' + (list.length === 1 ? '' : 's') + '</p></div></header>' +
+      '<div class="wrap">' + chunkPairs(list).map(function (pair) {
+        return '<div class="dl-pagegroup">' + dlSlideHTML(pair, imgs) + ftr + '</div>';
+      }).join('') + thankYouHTML + '</div>';
   }
 
   async function exportSelectedPhotos(ids, fmt) {
@@ -3483,10 +3704,12 @@ window.ProgressPhotos = (function () {
     var res = await collectPhotoImages(list, function (i, total) {
       if (msg) msg.textContent = 'Embedding image ' + (i + 1) + ' of ' + total + '…';
     });
+    var logo = await dlLogoDataUrl();
+    var tagline = await dlTaglineDataUrl();
     var html = '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" />' +
       '<meta name="viewport" content="width=device-width, initial-scale=1" />' +
       '<title>' + Fmt.esc(projName || pid) + ' — Progress Photos</title>' +
-      '<style>' + DL_CSS + '</style></head><body>' + dlBodyHTML(list, res.imgs) + '</body></html>';
+      '<style>' + DL_CSS + DL_MOBILE_CSS + '</style></head><body>' + dlBodyHTML(list, res.imgs, logo, tagline) + '</body></html>';
     var blob = new Blob([html], { type: 'text/html;charset=utf-8' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -3496,6 +3719,58 @@ window.ProgressPhotos = (function () {
     m.close();
     UI.toast('Offline copy downloaded' + (res.failed ? ' — ' + res.failed + ' image(s) could not be embedded' : ''),
       res.failed ? 'warn' : 'ok');
+  }
+
+  // Same html2pdf.js@0.10.1 pagebreak-plugin bug ppr.js's own exportPdf()
+  // documents in full (2026-09-10 live QA — a 2-section report rendering as
+  // 4 physical pages instead of 2). Restated per this file's own "small
+  // helpers duplicated per independently-loaded file" convention: don't let
+  // the FIRST `.dl-slide` need the library's own buggy avoid+after
+  // combination. ⚠️ The SEPARATE right-edge-cropping bug ppr.js's own
+  // exportPdf() also found does NOT apply here — this file's capture width
+  // (900px) already sits comfortably inside html2pdf's own off-screen
+  // `container` (~1062px for A4 landscape, 8mm margins), so nothing
+  // overflows it and nothing gets cropped. Confirmed directly rather than
+  // assumed: `pdfPageWidthPx()`-equivalent for this margin/format is 1062,
+  // and 900 < 1062.
+  var DL_PDF_PAGE_H_MM = 210, DL_PDF_MARGIN_MM = 8;
+  function dlPdfPageHeightPx() {
+    return Math.floor((DL_PDF_PAGE_H_MM - 2 * DL_PDF_MARGIN_MM) * 96 / 25.4);
+  }
+  // Generalized (2026-09-11/12) from a first-page-only guard to cover EVERY
+  // `.dl-pagegroup` transition — see ppr.js's identical `layoutPagegroups()`
+  // for the full root-cause writeup (a hairline sliver of the next page's
+  // border bleeding through, traced to html2pdf.js's own two internal
+  // "page height" formulas disagreeing by a rounding pixel).
+  // Same small safety margin as ppr.js's identical `PAGE_BOUNDARY_SAFETY_PX`
+  // — see its own comment for why a rounding-pixel sliver survives even
+  // when every page-to-page push uses one canonical formula.
+  var DL_PAGE_BOUNDARY_SAFETY_PX = 3;
+  function layoutDlPagegroups(wrap) {
+    var pxPageHeight = dlPdfPageHeightPx();
+    var groups = wrap.querySelectorAll('.dl-pagegroup');
+    if (!groups.length) return;
+    var wrapTop = wrap.getBoundingClientRect().top;
+    for (var i = 0; i < groups.length; i++) {
+      var g = groups[i];
+      var r = g.getBoundingClientRect();
+      var relTop = r.top - wrapTop, relBottom = r.bottom - wrapTop;
+      if (i === 0) {
+        var startPage = Math.floor(relTop / pxPageHeight);
+        var endPage = Math.floor(relBottom / pxPageHeight);
+        if (startPage === endPage) continue;
+        var pushBy0 = pxPageHeight - (relTop % pxPageHeight) + DL_PAGE_BOUNDARY_SAFETY_PX;
+        var spacer0 = document.createElement('div');
+        spacer0.style.cssText = 'display:block;height:' + pushBy0 + 'px;';
+        g.parentNode.insertBefore(spacer0, g);
+      } else {
+        var rem = relTop % pxPageHeight;
+        var pushBy = (rem === 0 ? 0 : pxPageHeight - rem) + DL_PAGE_BOUNDARY_SAFETY_PX;
+        var spacer = document.createElement('div');
+        spacer.style.cssText = 'display:block;height:' + pushBy + 'px;';
+        g.parentNode.insertBefore(spacer, g);
+      }
+    }
   }
 
   async function exportSelectedPdf(list) {
@@ -3511,6 +3786,8 @@ window.ProgressPhotos = (function () {
       var res = await collectPhotoImages(list, function (i, total) {
         if (msg) msg.textContent = 'Embedding image ' + (i + 1) + ' of ' + total + '…';
       });
+      var logo = await dlLogoDataUrl();
+      var tagline = await dlTaglineDataUrl();
       if (msg) msg.textContent = 'Building PDF…';
       // ⚠️ Same rule ppr.js's own exportPdf documents (issues-lessons,
       // 2026-08-22): the captured element must stay in NORMAL FLOW, or
@@ -3521,16 +3798,29 @@ window.ProgressPhotos = (function () {
       holder.style.cssText = 'position:fixed;left:-10000px;top:0;';
       var wrap = document.createElement('div');
       wrap.style.cssText = 'width:900px;';
-      wrap.innerHTML = '<style>' + DL_CSS + '</style>' + dlBodyHTML(list, res.imgs);
+      // ⚠️ DL_MOBILE_CSS is deliberately NOT included here — see its own
+      // comment. Including it would collapse the 2-photo layout to one
+      // column (and roughly double the page count) whenever the exporting
+      // browser's OWN window happens to be 820px wide or narrower, which has
+      // nothing to do with the fixed design width this capture renders at.
+      wrap.innerHTML = '<style>' + DL_CSS + DL_PDF_CSS + '</style>' + dlBodyHTML(list, res.imgs, logo, tagline);
       holder.appendChild(wrap);
       document.body.appendChild(holder);
+      layoutDlPagegroups(wrap);
 
       await html2pdf().set({
-        margin: [8, 8, 8, 8],
+        margin: [DL_PDF_MARGIN_MM, DL_PDF_MARGIN_MM, DL_PDF_MARGIN_MM, DL_PDF_MARGIN_MM],
         filename: 'Photos ' + (projName || pid) + '.pdf',
         image: { type: 'jpeg', quality: 0.95 },
         html2canvas: { scale: 2, useCORS: true, allowTaint: true, logging: false, backgroundColor: '#F4F4F4' },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        // ⚠️ Real bug found in the same live PDF test: this read
+        // orientation:'portrait' while ppr.js's own exportPdf (an identical
+        // wide, 2-column report design) correctly uses 'landscape' — a
+        // narrower portrait page gives a 2-photo layout even less width per
+        // column than landscape does, the opposite of what "photos should
+        // use the available space efficiently" asks for. Matched to
+        // ppr.js's own setting for consistency across the export system.
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
         pagebreak: { mode: ['css'] }
       }).from(wrap).save();
 
@@ -3558,32 +3848,113 @@ window.ProgressPhotos = (function () {
       });
       if (msg) msg.textContent = 'Building file…';
       var imgs = res.imgs;
+      var logo = await dlLogoDataUrl();
+      var coverPanel = await dlCoverPanelDataUrl();
 
       var pptx = new PptxGenJS();
       pptx.defineLayout({ name: 'PP_WIDE', width: 13.33, height: 7.5 });
       pptx.layout = 'PP_WIDE';
 
+      // Template-exact geometry — read directly from the uploaded template's
+      // own slideLayout1.xml/slideLayout16.xml (EMU ÷ 914400 = inches), same
+      // numbers ppr.js's own exportPptx uses. See dlCoverPanelDataUrl()'s
+      // comment for why the panel has to be this real cropped image rather
+      // than a redrawn vector shape.
+      var PANEL_X = 6.209, PANEL_W = 7.122;
+      var TITLE_X = 0.589, TITLE_W = 5.316;
+      var TITLE_Y = 1.537, TITLE_H = 2.302;
+      var SUBTITLE_Y = 3.939;
+      var LOGO_X = 0.589, LOGO_Y = 0.618, LOGO_W = 2.682, LOGO_H = 0.463;
+
+      // ------------------------------------------------------- cover slide ---
+      // Same branded cover the Presentations PPTX export uses (ppr.js): the
+      // template's own red-panel artwork and its own placeholder coordinates,
+      // populated from data already in the app (project name/code, photo
+      // count, today's date) — nothing re-typed by the user.
       var title = pptx.addSlide();
-      title.background = { color: 'EE3124' };
-      title.addText(projName || pid, { x: 0.6, y: 2.6, w: 12, h: 0.8, fontSize: 28, bold: true, color: 'FFFFFF' });
-      title.addText(list.length + ' photo' + (list.length === 1 ? '' : 's'),
-        { x: 0.6, y: 3.5, w: 12, h: 1, fontSize: 16, color: 'FFFFFF' });
+      title.background = { color: 'FFFFFF' };
+      if (coverPanel) {
+        var panelFit = containFit(PANEL_X, 0, PANEL_W, 7.5, coverPanel.w, coverPanel.h);
+        title.addImage({ data: coverPanel.data, x: panelFit.x, y: panelFit.y, w: panelFit.w, h: panelFit.h });
+      }
+      if (logo) {
+        var coverLogoFit = containFit(LOGO_X, LOGO_Y, LOGO_W, LOGO_H, logo.w, logo.h);
+        title.addImage({ data: logo.data, x: coverLogoFit.x, y: coverLogoFit.y, w: coverLogoFit.w, h: coverLogoFit.h });
+      }
+      title.addText(sanitizePptxText(projName || pid), { x: TITLE_X, y: TITLE_Y, w: TITLE_W, h: TITLE_H, fontSize: 36, bold: true, color: '231F20', fontFace: 'Gotham', valign: 'bottom', autoFit: true });
+      // Owner correction (2026-09-09): Project Code line removed from the
+      // cover, matching the identical decision on ppr.js's own exportPptx —
+      // the two exporters' covers stay consistent. This ad-hoc gallery
+      // export has no presentation/report_type to name a meeting from, so
+      // its remaining two lines (description + photo count) are unchanged,
+      // just fixed at SUBTITLE_Y now that there's no optional line ahead.
+      title.addText('Progress Photos Report', { x: TITLE_X, y: SUBTITLE_Y, w: TITLE_W, h: 0.45, fontSize: 18, color: '4A4A4A', fontFace: 'Avenir Next' });
+      title.addText(list.length + ' photo' + (list.length === 1 ? '' : 's'), { x: TITLE_X, y: SUBTITLE_Y + 0.5, w: TITLE_W, h: 0.35, fontSize: 14, color: '4A4A4A', fontFace: 'Avenir Next' });
+      title.addText('Generated ' + Fmt.date(new Date().toISOString().slice(0, 10)), { x: TITLE_X, y: 6.9, w: TITLE_W, h: 0.35, fontSize: 10.5, color: '9A9A9A', fontFace: 'Avenir Next' });
 
       // PptxGenJS's `data` option takes the payload WITHOUT the `data:`
       // prefix canvas.toDataURL() always adds (same as ppr.js's own exporter).
       function stripDataPrefix(uri) { return uri ? uri.replace(/^data:/, '') : ''; }
 
-      list.forEach(function (r) {
+      // ⚠️ Owner feedback: photos read as "too small" — see ppr.js's own
+      // comment on its identical constants for the full reasoning (no single
+      // "intended photo container" exists in the template to copy for a 2-up
+      // comparison slide; this is a from-scratch sizing pass that hands every
+      // spare inch of chrome directly to IMG_H). One pane per photo, at most
+      // 2 per slide — see `chunkPairs` (DL_CSS block, this file's single
+      // source of truth for that distribution) — untouched by this resize.
+      var PANE_W = 6.22, IMG_H = 6.35, LABEL_Y = 0.35, CAP_Y = LABEL_Y + IMG_H + 0.05;
+      function pptxPane(slide, r, x, w) {
+        var u = urlOf(r), img = u ? imgs[u] : null;
+        if (img) {
+          var fit = containFit(x, LABEL_Y, w, IMG_H, img.w, img.h);
+          slide.addImage({ data: stripDataPrefix(img.data), x: fit.x, y: fit.y, w: fit.w, h: fit.h });
+        }
+        else slide.addText('Photo not set', { x: x, y: LABEL_Y, w: w, h: IMG_H, align: 'center', valign: 'middle', color: '9A9A9A', fontSize: 12 });
+        var cap = sanitizePptxText(dlCaptionLines(r).join('\n'));
+        slide.addText(cap, { x: x, y: CAP_Y, w: w, h: 0.6, fontSize: 10, color: '4A4A4A', align: 'center' });
+      }
+
+      var pairs = chunkPairs(list);
+      pairs.forEach(function (pair, i) {
         var slide = pptx.addSlide();
-        var u = urlOf(r), data = u ? imgs[u] : '';
-        if (data) slide.addImage({ data: stripDataPrefix(data), x: 1.67, y: 0.4, w: 10, h: 5.6, sizing: { type: 'contain', w: 10, h: 5.6 } });
-        else slide.addText('Photo not set', { x: 1.67, y: 0.4, w: 10, h: 5.6, align: 'center', valign: 'middle', color: '9A9A9A', fontSize: 12 });
-        var cap = dlCaptionLines(r).join('   ·   ');
-        slide.addText(cap, { x: 0.6, y: 6.15, w: 12.13, h: 0.8, fontSize: 11, color: '4A4A4A', align: 'center' });
+        slide.addText('Slide ' + (i + 1) + ' of ' + pairs.length, { x: 0.4, y: 0.05, w: 6, h: 0.3, fontSize: 10, bold: true, color: 'EE3124' });
+        if (logo) {
+          var markFit = containFit(11.6, 0.12, 1.3, 0.28, logo.w, logo.h);
+          slide.addImage({ data: logo.data, x: markFit.x, y: markFit.y, w: markFit.w, h: markFit.h });
+        }
+        if (pair.length === 2) {
+          // Tightened margins/gap so the two-photo case also gets every
+          // spare inch (was x:0.4/6.8, w:6.1 — see PANE_W's own comment).
+          pptxPane(slide, pair[0], 0.3, PANE_W);
+          pptxPane(slide, pair[1], 6.81, PANE_W);
+        } else {
+          // A single photo gets the whole slide width minus a modest margin.
+          pptxPane(slide, pair[0], 2.77, 7.8);
+        }
       });
 
+      // ------------------------------------------------------ closing slide ---
+      // Same real panel artwork and template coordinates as the cover — the
+      // owner's explicit instruction that the closing design stay exactly as
+      // faithful to the template as the cover, not a second, independently-
+      // approximated shape.
+      var thanks = pptx.addSlide();
+      thanks.background = { color: 'FFFFFF' };
+      if (coverPanel) {
+        var thanksPanelFit = containFit(PANEL_X, 0, PANEL_W, 7.5, coverPanel.w, coverPanel.h);
+        thanks.addImage({ data: coverPanel.data, x: thanksPanelFit.x, y: thanksPanelFit.y, w: thanksPanelFit.w, h: thanksPanelFit.h });
+      }
+      if (logo) {
+        var thanksLogoFit = containFit(LOGO_X, LOGO_Y, LOGO_W, LOGO_H, logo.w, logo.h);
+        thanks.addImage({ data: logo.data, x: thanksLogoFit.x, y: thanksLogoFit.y, w: thanksLogoFit.w, h: thanksLogoFit.h });
+      }
+      thanks.addText('Thank You', { x: TITLE_X, y: TITLE_Y, w: TITLE_W, h: TITLE_H, fontSize: 40, bold: true, color: '231F20', fontFace: 'Gotham', valign: 'bottom' });
+      thanks.addText(sanitizePptxText(projName || pid), { x: TITLE_X, y: SUBTITLE_Y, w: TITLE_W, h: 0.45, fontSize: 16, color: '4A4A4A', fontFace: 'Avenir Next' });
+      thanks.addText('Megawide Construction Corporation', { x: TITLE_X, y: 6.9, w: TITLE_W, h: 0.35, fontSize: 10.5, color: '9A9A9A', fontFace: 'Avenir Next' });
+
       m.close();
-      await pptx.writeFile({ fileName: 'Photos ' + (projName || pid) + '.pptx' });
+      await pptx.writeFile({ fileName: sanitizePptxText('Photos ' + (projName || pid) + '.pptx') });
       UI.toast('PowerPoint downloaded' + (res.failed ? ' — ' + res.failed + ' image(s) could not be embedded' : ''),
         res.failed ? 'warn' : 'ok');
     } catch (e) {

@@ -2,6 +2,1005 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Final HTML/PDF QA pass — the upper-left red square removed, the colored photo
+## markers confirmed as QA-fixture-only, and a real 1px page-bleed sliver found
+## and fixed (2026-09-11, later still)
+
+Owner's ask, explicit: this is a **minor refinement, not a redesign**, against the already-
+close-to-template HTML/PDF format. Nine items — remove the small red-corner header element,
+confirm whether the colored markers visible in the sample photos are export-generated or
+embedded in the QA test images, small readability tweaks only, footer/spacing verification,
+preserve photo layout, preserve the Thank You page, preserve every other approved behavior,
+fresh live UI testing of both report types with real generated PDF bytes, and a full
+deliverables list. Findings and fixes below, in the owner's own order.
+
+### 1. Upper-left red square — removed from HTML/PDF only, PPTX/template untouched
+
+The small red rounded-corner header strip (`content-header-strip.jpg`, a cropped slice of the
+template's own `image3.jpeg`, shipped in an earlier round) is now **never rendered** in the
+HTML/PDF header. `CONTENT_HEADER_STRIP_PATH`/`contentHeaderStripDataUrl()` (ppr.js) and
+`DL_CONTENT_HEADER_STRIP_PATH`/`dlContentHeaderStripDataUrl()` (module.js) are removed
+entirely; `slidesBodyHTML()`/`dlBodyHTML()` dropped the `headerStrip` parameter and no longer
+emit `<img class="hdrstrip">`/`<img class="dl-hdrstrip">`. The `.hdrstrip` CSS rule is removed
+from `EXPORT_CSS`/`DL_CSS`, and `header .hdrbody`'s padding widened (`10px 22px 12px` →
+`18px 22px 14px`) to use the vertical space the strip's removal freed, rather than leaving a
+gap. ⚠️ **Nothing was added in its place** — no new shape, no new color, per the owner's
+explicit constraint. The header now reads: Megawide logo (footer) + red accent (footer
+divider) + report-type label + Project Name/Description/Meeting Date — exactly the "sufficient
+branding without the square" the owner named.
+- ⚠️ **The asset file itself (`assets/branding/content-header-strip.jpg`) is left on disk,
+  untouched** — only the code that loaded/rendered it was removed, per the owner's own
+  "do not modify the original PPT template" instruction (the file is a crop of the template's
+  own artwork, not something to delete on a UI-only ask).
+- **PPTX export is completely untouched** — `logoDataUrl()`/`taglineDataUrl()`/
+  `coverPanelDataUrl()` (the PPTX-only asset loaders) were never touched; confirmed by re-
+  reading `exportPptx()`/`exportSelectedPptx()` end to end — neither references
+  `contentHeaderStripDataUrl` at all, so there was nothing to remove there in the first place.
+
+### 2. Colored photo markers — confirmed embedded in the QA test images only, not export code
+
+Inspected both the actual test-image files and every line of export CSS/JS that touches a
+photo's container (`.ph`/`.dl-phwrap img`, `im()`/`dlFigureHTML()`). **Confirmed: the red/
+orange/magenta squares and stripes visible near photo edges in every sample this session has
+generated are baked into the PIXELS of the two throwaway QA fixtures**
+(`_qa_pdftest_landscape.jpg`/`_qa_pdftest_portrait.jpg`, my own PowerShell/System.Drawing-
+generated test photos carrying a deliberate colored corner square + edge stripe + diagonal
+pattern, made specifically so cropping/orientation/positioning bugs would be visually
+unmistakable in a decoded PDF). No CSS rule, no canvas draw call, no photo-container markup
+anywhere in `ppr.js`/`module.js` adds color, a border, or any overlay to a photo — `im()`/
+`dlFigureHTML()` only ever embed the real photo's own `data:` URI inside `object-fit:contain`,
+untouched. **A real, actual uploaded project photo will render exactly as captured, with no
+added markers of any kind.**
+
+### 3. Readability — reviewed at 100% PDF zoom; no changes needed this round
+
+Re-checked every field the owner named (Project name, Description, Report type, Meeting date,
+Tower/floor info, Previous/Current labels, photo dates/descriptions) against the real decoded
+page-1 JPEG at native resolution. All of it was already sized/weighted correctly from the
+2026-09-11 (earlier) visual-refinement pass — `h1` 21px, header meta 13px, `.loc` 13px (largest
+of the three caption lines), `.d`/`.t` at their existing sizes. ⚠️ **No font-size/weight/
+contrast change was made this round** — nothing read as hard to read at 100% zoom against the
+freshly regenerated PDFs, so no "major typography redesign" risk was taken for a problem that
+wasn't found.
+
+### 4. Footer/spacing — re-verified against the template, unchanged
+
+Footer position/content (logo + "Generated …" bottom-left, tagline + red divider bottom-right),
+bottom margin, and its presence on every content page **and** the Thank You page were all
+re-confirmed unchanged from the prior round's fix (the `.pagegroup`/footer-per-page mechanism).
+The divider was not made thicker or more prominent — no change was needed or made here.
+
+### 5. Photo layout — unchanged, re-confirmed
+
+Max 2 photos/page, Previous/Current side-by-side with equal `1fr 1fr` columns, full visibility
+via `object-fit:contain` (no cropping/distortion), portrait and landscape both supported,
+captions aligned — all untouched by this round's changes and re-confirmed live (see Verified,
+below). Photo sizing (`.phwrap{padding-top:78%}`) was not reduced.
+
+### 6. Thank You page — unchanged, re-confirmed
+
+Vertical balance, logo size, heading position, footer alignment all untouched from the prior
+round's fix; no new graphics/icons/colors/shadows were added.
+
+### 7. Everything else — confirmed untouched
+
+PPTX export, the original PPT template, report-type logic, Internal/Client labels, the earlier
+PDF-pagination fix, A4 landscape, the current footer implementation, current photo sizing,
+Previous/Current arrangement, no-cropping/no-distortion behavior, and the Thank You page
+structure are all unmodified by this round — confirmed by diff, not just by not having
+intentionally edited those functions.
+
+### A real, previously-undiscovered bug found and fixed in the course of this pass: a 1px
+### page-bleed sliver at the bottom of the content page
+
+Re-verifying against fresh, real generated PDF bytes (per the owner's own explicit instruction
+to check actual bytes, not an HTML proxy) surfaced a genuine defect the prior round's own
+"negligible, checked directly" note had underrated: a 1-canvas-px reddish sliver of the NEXT
+page's top border bleeding across the page-slice boundary, visible at the very bottom edge of
+the content page's decoded JPEG.
+
+⚠️ **Root cause: html2pdf.js's own `toPdf()` canvas-slicing formula and its pagebreak-CSS
+plugin's page-height formula are TWO DIFFERENT FORMULAS that can disagree by a rounding
+pixel.** `toPdf()` slices the canvas at `Math.floor(canvas.width * pageSize.inner.ratio)` —
+computed from the REAL, html2canvas-captured canvas width — while the pagebreak plugin (and
+this file's own `pdfPageHeightPx()`) compute a page's height from a fixed mm→px conversion,
+independent of the actual captured canvas width. The two formulas' results are usually
+identical, but a small, real discrepancy (the captured canvas came out 2126px wide, not the
+2124px `pdfPageWidthPx()` assumes — almost certainly a 1px border overflowing on each side
+under content-box sizing) meant `layoutPagegroups()`'s own page-push math (inherited, unchanged,
+from `avoidFirstSlidePageSplit()`) was pushing each `.pagegroup` to a boundary that didn't
+exactly match where `toPdf()` itself would actually cut the page.
+- **First fix attempt — generalizing `avoidFirstSlidePageSplit` into `layoutPagegroups()`
+  (computing every page-to-page push in JS, from one canonical formula, for every `.pagegroup`
+  rather than just the first) — did NOT eliminate the bleed.** Re-tested via the same live
+  harness, pixel-sampled the regenerated PDF's decoded page-1 JPEG bottom row: the identical
+  `rgb(204,63,53)` red sliver at y=1466, unchanged. Confirmed the root cause above by measuring
+  the real captured canvas width (2126px) against the assumed constant (2124px) directly.
+- **The fix that actually works: a small explicit safety margin.** `PAGE_BOUNDARY_SAFETY_PX = 3`
+  (ppr.js) / `DL_PAGE_BOUNDARY_SAFETY_PX = 3` (module.js) — 3 design-px (6 canvas-px at scale:2)
+  added to every computed page-push, on top of the canonical-formula math. Re-verified: every
+  bottom row of the regenerated page-1 JPEG is now clean white with no bleed at all, while page
+  count stays at exactly 2 (page 2's own height grew by exactly +6 canvas-px, +3 design-px×2 —
+  precisely the expected effect of the safety margin, no new page created).
+- New PDF-capture-only CSS override (`EXPORT_PDF_CSS`/`DL_PDF_CSS`,
+  `.pagegroup{page-break-after:auto!important;break-after:auto!important}`) neutralizes the
+  shared `.pagegroup:not(:last-of-type){page-break-after:always}` rule **only inside the
+  off-screen PDF-capture `<style>` tag** — the shared rule itself is deliberately left
+  untouched in `EXPORT_CSS`/`DL_CSS`, since it's still correct and needed for a real browser
+  printing the saved standalone HTML file; only html2pdf's own JS-based page-break detection
+  needed neutralizing, replaced entirely by `layoutPagegroups()`'s/`layoutDlPagegroups()`'s own
+  JS-computed pushes during PDF capture specifically.
+
+### Verified — fresh live exports through the real app UI, both report types, real generated PDF bytes decoded
+
+Same stub-auth-harness convention as every round this session (real, unmodified `module.js`/
+`ppr.js`, real pinned CDN `html2pdf.js@0.10.1`, harness deleted after use). Drove Internal AND
+Client presentations through the real UI end to end, decoded the real generated PDF/HTML bytes
+directly (not an HTML screenshot proxy):
+- **Both PDFs: exactly 2 pages** (`/Count 2`), A4 landscape `/MediaBox` on both pages —
+  pagination fix intact.
+- **No red square anywhere in the header** — confirmed by opening the real decoded page-1 JPEG
+  for both report types.
+- **No bleed sliver** — every bottom row of both content pages' decoded JPEGs sampled and
+  confirmed clean white, for both Internal and Client.
+- **Report-type labels correct**: Internal → "PPR MEETING", Client → "CLIENT COORDINATION
+  MEETING", both confirmed in the decoded page-1 image.
+- **Photo markers confirmed QA-fixture-only** — visible strictly inside the two colored photo
+  boxes in the decoded images, never in the page header/chrome, for both report types.
+- **No cropping/distortion, Previous/Current still equal side-by-side columns** — both photos'
+  own edge markers render fully intact in both decoded page-1 JPEGs.
+- **Footer present on the content page and the Thank You page**, correct for both report types.
+- **Project name, description, meeting date all correct** in the decoded content.
+- **Thank You remains the final page** for both report types (page 2 of 2), confirmed via
+  dimension/pixel sampling (Internal's Thank You page visually extracted and reviewed directly;
+  Client's Thank You page dimension/bleed-checked, matching Internal's).
+- **The reconstructed standalone HTML export** (from the real `Download → HTML` blob, base64/
+  text round-tripped byte-for-byte) confirmed via direct grep of the reconstructed file: 0
+  occurrences of `hdrstrip` anywhere, exactly 2 `<footer>` elements (one per pagegroup), exactly
+  2 `.pagegroup` elements, correct `<h1>`/report-type text, and both `.pair figure` elements
+  measuring identical widths in a live DOM check — matching the PDF layout.
+
+`ppr.js`/`module.js`/`index.html` → `?v=20260911c`. **Not committed** — kept in the working
+tree per the owner's explicit instruction. Scratch harness files
+(`_qa_pdftest_harness.html`, `_qa_pdftest_landscape.jpg`, `_qa_pdftest_portrait.jpg`) deleted
+before finishing.
+
+## HTML/PDF visual refinement pass — footer on every page, tighter typography
+## hierarchy, slightly bigger photos, a better-balanced Thank You page
+## (2026-09-11, later same day)
+
+Owner's ask, explicit and narrow: functional behavior (branding, A4 landscape, Previous/
+Current side-by-side, max 2 photos/page, no-distortion, the pagination fix, Thank You page)
+was already accepted — this is a visual polish pass only, against the real Slide 2 template.
+Five items named; findings below, before touching anything.
+
+### What was actually present, checked first
+
+1. **Footer only on Thank You — CONFIRMED, real gap.** `slidesBodyHTML()`/`dlBodyHTML()` built
+   exactly ONE `<footer>`, positioned once after every slide including Thank You — since it's
+   the LAST element in the whole flowed document, it only ever lands on the final physical
+   page. A content/progress-photo page had no footer at all.
+2. **Typography hierarchy — present, flagged as MINOR in the last QA round too.** Title (19px)
+   vs. meta text (12.5px) was only a ~1.5× jump, and `.loc` (12px) sat smaller than `.d` (13px)
+   despite being the line a planner actually orients from.
+3. **Photo sizing — real, deliberate headroom, not a bug.** `.phwrap{padding-top:75%}` was a
+   real design choice from the pagination-fix pass, chosen conservatively to guarantee the
+   page-count fix held; there was genuine room to give photos slightly more of the page now
+   that the layout is understood precisely.
+4. **Top-left red corner — CHECKED, found to ALREADY MATCH, no change made.** Re-cropped the
+   template's own `image3.jpeg` fresh (top 11.067%, the documented `srcRect b="88933"`) and
+   diff'd it pixel-for-pixel against the shipped `content-header-strip.jpg` asset: avg diff
+   0.08/255 (pure JPEG re-encoding noise), max 39 at one edge pixel. The shipped asset **is**
+   the template's own artwork, unaltered — nothing to fix here.
+5. **Thank You balance — real, and worse than it looked.** The card's own content (logo,
+   heading, subtext) occupied only ~54% of the physical page's printable height once decoded
+   from a real generated PDF (jsPDF draws a "short" last page's image at its own proportional
+   height, never stretched to fill the page — so the blank gap is real page area, not visible
+   in a plain content screenshot). Confirmed by decoding a real PDF's own embedded JPEG and
+   computing `pageHeight(mm) = sliceHeightPx × innerWidthMM / canvasWidthPx` directly from
+   `toPdf()`'s own formula, not guessed.
+
+### The fixes
+
+- **Item 1**: `.pagegroup` now wraps each `.slide`/`.dl-slide` together with its OWN
+  `footerHTML()`/`dlFooterHTML()` call — the footer is a real sibling of the slide (never
+  nested inside its bordered card, so it keeps the exact "full-bleed bar below the card" look
+  already established for Thank You), and the avoid+after page-break rules moved from `.slide`
+  onto `.pagegroup` (the whole page unit), since that's the element that needs to stay
+  together and force the NEXT page now. ⚠️ `avoidFirstSlidePageSplit()`/
+  `avoidFirstDlSlidePageSplit()` (the html2pdf pagebreak-bug fix from the entry above) were
+  updated to guard `.pagegroup`, not bare `.slide` — same technique, same reasoning, just
+  targeting the new wrapper.
+- **Item 2**: `h1` 19px→21px, header meta text 12.5px→13px, `.loc` 12px→13px (now the largest
+  of the three caption lines, matching its actual role) — paired with tighter padding
+  elsewhere (see item 3) so the header block is, net, slightly SHORTER despite bigger type.
+- **Item 3**: `.phwrap{padding-top:75%→78%}` — a real but modest increase ("slightly more,"
+  not a redesign). Chrome tightened to make room: slide padding 14px→12/14px, slide
+  margin-bottom 16px→10px, header padding 14/22/16→10/22/12, footer padding 16px→10px
+  vertical. Both grid columns stay the identical `1fr 1fr` track (unchanged) — still
+  guaranteed equal width, captions still align.
+- **Item 4**: no change — see the finding above.
+- **Item 5**: `.slide.thankyou` gained `min-height:420px` and switched from padding-only
+  centering to `display:flex;flex-direction:column;align-items:center;justify-content:center`
+  — the same logo/heading/subtext group, just given more of the physical page and centered
+  within it, per the owner's own explicit allowance. Logo 40px→48px, heading 30px→34px. No new
+  decorative element was added.
+
+### Verified — fresh live exports through the real app UI, both report types, real PDF bytes decoded
+
+Same stub-auth-harness convention as every round. Drove Internal AND Client presentations
+through the real UI end to end (New Presentation → Add Slide with a real landscape+portrait
+pair, each carrying its own edge-marker stripe so cropping would be visually unmistakable →
+Download → PDF), then decoded the REAL generated PDF bytes (not the HTML proxy):
+
+- **Both PDFs: exactly 2 pages**, `/Count 2`, A4 landscape `/MediaBox` — pagination fix intact.
+- **Footer present on the content page now**, confirmed by opening the real decoded page-1
+  JPEG: Megawide logo + "Generated …" bottom-left, tagline + red divider bottom-right —
+  identical treatment to the (unchanged) Thank You footer.
+- **Thank You page real height grew from ~797 to ~1073 canvas-px** (of a ~1468 one-page
+  budget) — printable coverage up from ~54% to ~73%, a real, measured reduction in blank
+  space, not just "looks a bit different."
+- **No cropping, no distortion**: both photos' own edge-marker stripes render fully intact at
+  the right edge of their frame in the decoded page-1 JPEG, for both report types.
+- **Report-type labels correct**: Internal → "PPR MEETING", Client → "CLIENT COORDINATION
+  MEETING" — both confirmed in the real decoded content-page image.
+- **Equal columns confirmed numerically**, not just by eye: `getBoundingClientRect()` on both
+  `.pair figure` elements in the real generated standalone HTML reports **550.2px** for both —
+  identical.
+- ⚠️ A 1px reddish sliver was found at the very bottom edge of the content page's own decoded
+  JPEG (checked directly, pixel by pixel) — the anti-aliased top edge of the NEXT page's
+  `border-top` bleeding across the page-slice boundary by under one canvas pixel. Confirmed
+  negligible (a single row out of 1467) and not a real visual defect.
+
+`ppr.js`/`module.js`/`index.html` → `?v=20260911a`. **Not committed** — kept in the working
+tree per the owner's explicit instruction.
+
+## PDF export: a real html2pdf.js@0.10.1 library bug turned a 2-page report into
+## 4 pages — plus a second, previously-unverified cropping bug found and fixed
+## in the same pass (2026-09-11)
+
+The prior round's live PDF QA measured **4 physical pages instead of 2** for a presentation
+with 1 content slide + Thank You. Owner asked for the exact root cause and a fix, with a
+specific structural requirement: one presentation slide/section must never be unnecessarily
+split across physical PDF pages, and no unnecessary blank/duplicated page.
+
+### Root cause #1 — a real defect in html2pdf.js's OWN pagebreak-CSS plugin, not this file
+
+Traced directly into the pinned library's actual (non-minified) source
+(`src/plugin/pagebreaks.js`, fetched from `cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/
+html2pdf.js`) rather than guessed from behaviour. That plugin walks every element once, and
+for each one computes three rules — `avoid` (from our `.slide{page-break-inside:avoid}`),
+`before` (only set true if `avoid` finds the element straddling a page boundary in its
+CURRENT, un-padded position) and `after` (from our `.slide:not(:last-of-type){page-break-
+after:always}`) — from a **single `getBoundingClientRect()` snapshot** taken once per element.
+When ONE element ends up with **both** `before` (from the avoid-straddle check) and `after`
+(from being non-last) true at once — exactly the shape of a lone content slide, which is
+simultaneously "first" (nothing yet pushed it to a page top, so tall header content can make
+it straddle) and "non-last" (Thank You follows it) — the plugin inserts BOTH a `before`
+padding div AND an `after` padding div, and the `after` div's height is computed from the
+SAME stale, pre-push clientRect the `before` div has already invalidated — a second padding
+div roughly a full page too tall, consuming an entire extra blank page. ⚠️ **Reproduced
+directly, not inferred**: built a throwaway page loading the real pinned library, fed it the
+real `EXPORT_CSS` + realistic slide markup, and swept the header height — whenever the
+content slide's raw (un-padded) position straddled a page boundary, the plugin inserted a
+~720px "after" pad where ~3px was correct, turning 2 pages into 4, at exactly the header
+heights that reproduce the reported symptom. This is a defect in the library's own plugin —
+real browsers' native print engines handle the identical `avoid`+`after` CSS combination
+correctly; html2pdf's JS approximation of it does not.
+
+**Fix**: new `avoidFirstSlidePageSplit()` (ppr.js) / `avoidFirstDlSlidePageSplit()`
+(module.js) measure the real off-screen `wrap`'s first `.slide`/`.dl-slide` — in plain JS,
+before html2pdf ever runs — and, only if it would actually straddle a page boundary, insert a
+precisely-sized spacer div before it. Every slide **after** the first is already guaranteed
+to start exactly at a fresh page's top (pushed there by the PRECEDING slide's own,
+unconflicted `after` pad), so only the first slide (sitting right after an arbitrary-height
+header, with no such guarantee) ever needs this. Once it's pre-positioned, the plugin's own
+`avoid` check finds nothing to do, so it never combines with `after` on the same element —
+the bug's precondition is eliminated at the root. ⚠️ **`EXPORT_CSS`/`DL_CSS` are completely
+untouched** — `avoid`/`after` stay exactly as they were, since both are correct and still
+needed for a real browser printing the saved offline HTML file directly; only `exportPdf()`/
+`exportSelectedPdf()`'s own JS gained the guard.
+
+### Root cause #2 — found DURING verification of fix #1, not asked for, but real: the
+### rightmost ~10% of every PDF page was silently cropped
+
+⚠️ **This was never actually verified before** — every prior round's "PDF looks right" claim
+was checked against the *live HTML render* at the PDF's own capture width (a disclosed proxy,
+since no PDF viewer exists in this environment), never against the real rasterized PDF
+pixels. This round, a fresh PDF's raw bytes were decoded (the embedded JPEG extracted
+byte-for-byte and opened with `System.Drawing`) for the first time — and it showed a wide
+flat-`#F4F4F4` gutter down the right ~10% of the page, cutting off part of the "Current"
+photo, the footer tagline, and the header strip's right edge.
+
+Root cause: html2pdf's own off-screen `container` element (which it creates and is what
+`html2canvas` actually rasterizes — **not** our `wrap`) is sized from the PDF page's own inner
+width converted to px (`Math.floor((297 − 16) × 96/25.4)` = **1062px** for A4 landscape with
+8mm margins) — narrower than `ppr.js`'s own `wrap`, hardcoded to `width:1180px`. The 1180px
+content overflowed `container`'s 1062px box by ~118px on the right, and html2canvas only ever
+paints what's inside `container`'s own declared box — the overflow was simply never painted,
+backfilled with the configured background colour instead.
+
+⚠️ **A first fix attempt — passing `width`/`windowWidth:1180` to the `html2canvas` options —
+was tried, shipped, then proven NOT to work** by a live re-verification (a fresh PDF's real
+embedded JPEG still showed the identical crop). Those options steer html2canvas's own
+output-canvas sizing and its reflow of viewport-relative content; neither touches
+`container`'s own **explicit, absolute-unit** CSS width, so content past ~1062px was still
+never painted. Caught by testing the actual shipped fix against real PDF bytes rather than
+trusting the change once it compiled.
+
+**The fix that actually works**: capture `wrap` at `pdfPageWidthPx()` — the SAME formula,
+from the identical page/margin config, that produces `container`'s own width (1062px) —
+instead of a hardcoded 1180. `wrap` and `container` now always agree, so nothing ever
+overflows to be cropped. ⚠️ **Real, disclosed trade-off**: the PDF's own photos/columns render
+~10% narrower in absolute terms than the previous (silently broken) 1180 target — still
+`object-fit:contain`, still 2-up side-by-side, no distortion, just sized to what an
+A4-landscape page can actually hold. The separate offline-HTML export is untouched — it still
+renders at the full 1180px design width, since it was never subject to html2pdf's own
+page-width constraint. `module.js`'s ad-hoc export needed no equivalent change — its own
+900px capture width already sits comfortably under 1062px, confirmed rather than assumed.
+
+### Verified — fresh live export through the real app UI, after both fixes
+
+Same stub-auth-harness convention as every round (real, unmodified `module.js`/`ppr.js`, real
+pinned CDN libraries, harness deleted after use), driven through the real "+ New
+Presentation" → "+ Add Slide" (a real 1600×900 landscape "Current" + 900×1600 portrait
+"Previous" pair, each with a distinct edge-marker stripe so cropping would be visually
+unmistakable) → Download → PDF flow, then the real generated PDF's bytes decoded directly
+(not the HTML proxy this time):
+- **Page count: exactly 2** (`/Count 2`, `/Kids [3 0 R 5 0 R]`, both pages `/MediaBox [0 0
+  841.89 595.28]` — A4 landscape) — content slide on page 1, Thank You on page 2, no blank or
+  duplicated page.
+- **No cropping**: the extracted page-1 JPEG shows both photos' own right-edge marker
+  stripes fully intact, un-clipped, all the way to a normal ~1% design margin from the page
+  edge — visually confirmed by opening the decoded image directly, not just pixel-sampled.
+  Page 2's footer tagline (previously one of the clipped elements) renders complete, red
+  divider included.
+- **Previous/Current still genuinely 2 columns side by side**, both the portrait and
+  landscape test photo rendering undistorted within their frame.
+- ⚠️ **Only the Internal report type was re-verified against a real generated PDF this
+  round** (Client only re-verified via the live-HTML proxy in the round below, before either
+  fix) — the fix is entirely about capture width/page-break math, identical regardless of
+  `report_type`, so this is a low-risk gap, but it is a gap, named rather than glossed over.
+
+`ppr.js`/`module.js`/`index.html` → `?v=20260910c`. **Not committed** — kept in the working
+tree per the owner's explicit instruction.
+
+## HTML/PDF header/footer rebuilt to match the ACTUAL branded content slide of
+## the 3-slide template — the earlier round adapted the wrong slide (2026-09-10)
+
+Owner's correction, immediately after the previous HTML/PDF round: "Slide 4" (their own
+term) meant the **second slide of the 3-slide template itself** (Cover / Progress Photo
+content slide / Thank You) — not `slideLayout4.xml`, which the prior entry had (reasonably,
+given the ambiguity, but incorrectly) ruled out as a generic stock Office layout. Re-
+inspected the real thing this time: slide 2 of the actual uploaded deck has no shapes of its
+own (`slide2.xml`'s placeholders are all empty) — its entire visual design comes from
+`slideLayout2.xml` ("Title and Content"), which the earlier HTML/PDF header never matched at
+all.
+
+### What the real content slide actually looks like, read from its own XML — not assumed
+
+- **Top band**: a `<p:pic>` at `x=0,y=0,w=12192000,h=758952` EMU (full slide width × 0.83in
+  tall) — cropped from `image3.jpeg` via `srcRect b="88933"` (keep the top 11.067%, no
+  horizontal crop). Viewed the real source: a plain white strip with a **small red rounded
+  corner accent confined to the top-left** — nothing like the earlier header's full logo.
+  **No logo anywhere in this top band.**
+- **Logo**: a separate `<p:pic>` (`image2.png` — the same file already used elsewhere) at
+  `x=234669,y=6470911,w=1207061,h=208519` EMU (≈0.26in, 7.08in, 1.32×0.23in) — the
+  **bottom-left** of the slide, sitting on a small white rectangle patch.
+- **Tagline**: another `<p:pic>` (`image4.png`) at `x=9786111,y=5898417,w=2405888,h=1353312`
+  EMU — **bottom-right**: "Engineering A First-World Philippines" with its own thin red
+  vertical divider baked into the same image.
+- **Title**: inherited from the slide master (`x=838200,y=365125,w=10515600,h=1325563` EMU),
+  Gotham 40pt bold, sitting just to the right of the top band's red corner.
+
+### The fix — literal template crops, threaded through both exporters
+
+Two new real assets, cropped/copied from the template's own media files (never redrawn):
+- **`assets/branding/content-header-strip.jpg`** — the exact `srcRect` crop of `image3.jpeg`
+  (2250px × (1 − 0.88933) = 249px, full 4000px width) — pixel-identical to the template's own
+  top band.
+- **`assets/branding/tagline.png`** — `image4.png`, but tightened from its native 8001×4501
+  canvas to its actual opaque content bounds (`6674×782`, +40px margin) — the source file
+  carries enormous transparent padding around one line of text + a divider bar, and rendering
+  it at the padded ratio (1.78:1) made the real text illegibly small at any sane footer size.
+  Cropping to content (found by scanning for non-transparent pixels, not guessed) is a
+  bounding-box tightening of the exact same pixels, not a redraw — the same discipline
+  already applied to the cover panel and this new header strip.
+
+`ppr.js`'s `slidesBodyHTML()`/`offlineHTML()`/`exportOffline()`/`exportPdf()` and
+`module.js`'s `dlBodyHTML()`/`exportSelectedOffline()`/`exportSelectedPdf()` all gained two
+new params (`headerStrip`, `tagline`) threaded through from two new loaders
+(`contentHeaderStripDataUrl()`/`taglineDataUrl()`, `dlContentHeaderStripDataUrl()`/
+`dlTaglineDataUrl()` — same `brandAssetDataUrl`/`dlBrandAssetDataUrl` caching convention as
+every other brand asset in these two files).
+
+- **Header**: `<img class="hdrstrip">` (real aspect ratio via `height:auto`, never
+  distorted) replaces the old `<img class="hdrlogo">` + red-rule-underneath treatment
+  entirely. Project Name / Presentation Title (Description) / meeting-type label / Meeting
+  Date — all content already finalized the prior round — now sit below the strip instead of
+  beside a logo that was never really part of this slide's own design.
+- **Footer**: rebuilt from a plain centered "Generated … Megawide Construction Corporation"
+  line into `<div class="ftrleft">` (logo + "Generated …" text) on the left, `<img
+  class="ftrtag">` on the right — matching the template's real bottom-left/bottom-right split.
+- ⚠️ **The Thank You page is untouched** — it already reuses the cover's own real red-panel
+  artwork (approved in an earlier round) and has nothing to do with the content slide's own
+  chrome; the owner's instruction was specifically about the header, and Thank You was
+  explicitly on the "keep unchanged" list.
+- ⚠️ **module.js's ad-hoc export has no report_type/meeting-label concept** (same asymmetry
+  as every prior round) — its header keeps "Progress Photos · N photos" under the strip;
+  only the strip/logo/tagline repositioning applies there, not the meeting-label line.
+
+### Verified — fresh live export through the real app UI, all four scenarios, after the fix
+
+Same stub-auth-harness convention as every round (real, unmodified `module.js`/`ppr.js`, real
+CDN libraries, harness deleted after use), driven through the real "+ New Presentation" form
+→ "+ Add Slide" picker → Download, and real Gallery checkbox selection → Download, for both
+report types and both 1-photo/3-photo ad-hoc scenarios:
+- **Header strip**: present in all 4 HTML files (`class="hdrstrip"`/`class="dl-hdrstrip"`),
+  measured in a real render at 1264.8×78.7px — ratio 16.07, matching the source crop's own
+  4000:249 (16.06) to within rounding, so `height:auto` is genuinely preserving it, not
+  coincidentally close.
+- **Footer logo/tagline**: measured 116×20px (ratio 5.79, matching the real logo's 1714:296)
+  and, after the tagline re-crop, 205×24px (ratio 8.53, matching the cropped asset's own
+  6674:782) — the pre-crop version measured 42×24px and was genuinely illegible at that size,
+  caught by measuring it, not by eye.
+- **Dynamic content, unchanged from the prior round**: Internal → "PPR Meeting", Client →
+  "Client Coordination Meeting", real typed Description, real Meeting Date, no Project Code
+  in any of the 4 files.
+- **Photo layout, unchanged from the prior round**: 1 photo → 1 figure; 3 photos → 2+1 split
+  across 2 content slides; Previous/Current still 2 figures side by side; every photo ratio
+  exact (1.778 landscape, 0.5625 portrait); 0 "Image unavailable" placeholders.
+- **PDF page counts, re-confirmed still correct after this round's changes**: Presentation
+  PDFs 2 pages (Internal and Client), ad-hoc PDFs 2 pages (1 photo) and 3 pages (3 photos,
+  2+1 split) — the 2026-09-09 media-query/orientation fixes are untouched by this round and
+  still hold; `/MediaBox` confirms A4 landscape throughout.
+- 0 malformed structure in any file.
+
+`module.js`/`ppr.js` → `?v=20260910a`. New assets: `assets/branding/content-header-strip.jpg`,
+`assets/branding/tagline.png`. **Not committed** — kept in the working tree per the owner's
+explicit instruction, pending a separate go-ahead once PPTX, HTML and PDF are all signed off.
+
+## HTML/PDF exports brought to parity with the finalized PPTX cover — plus two
+## real, previously-undiscovered PDF bugs found and fixed by a live export
+## test (2026-09-09, later same day)
+
+Owner's next review after the PPTX cover/content work: verify the HTML and PDF exports
+follow the SAME finalized cover logic (no Project Code, meeting-type label, Meeting Date
+from the presentation record), confirm the agreed "adapt the header, don't recreate the
+template slide-for-slide" branding treatment, and live-test photo layout/Thank-You-page
+behaviour the same rigorous way the PPTX was tested. Two genuine, real defects were found
+in the course of that test — neither was a design ask, both are bugs.
+
+### 1. HTML/PDF header now carries the same 4-line hierarchy as the PPTX cover
+
+`slidesBodyHTML()`'s (`ppr.js`) and `dlBodyHTML()`'s (`module.js`, description/count only —
+no report_type there) `<header>` previously showed "description · Reporting Period: date"
+with no meeting-type concept at all. Now: Project Name (`<h1>`) → Presentation Title
+(`ppr_presentations.description`) → meeting-type label (`meetingLabelFor(report_type)`,
+styled bold/red/uppercase, the same visual weight the PPTX cover's Line 3 carries) →
+"Meeting Date: …". Project Code was never shown here and still isn't. This is a content-
+only change to the existing header markup/CSS — the logo, the brand-red rule beneath it,
+and every other visual property are untouched.
+
+### 2. A branded "Thank You" closing page — genuinely MISSING from HTML/PDF until now
+
+⚠️ **Real gap, not a design choice**: grepping the whole file for "Thank You" before this
+pass found it **only** inside `exportPptx()`/`exportSelectedPptx()` — the HTML and PDF
+exports had no closing page at all, ever, in either file. Both `slidesBodyHTML()` and
+`dlBodyHTML()` now append one more `.slide`/`.dl-slide` section (`Thank You` heading +
+project name + "Megawide Construction Corporation", logo, a 4px brand-red top rule) —
+reusing the EXISTING `.slide`/`.dl-slide` class so the existing page-break CSS
+(`:not(:last-of-type)`) puts it on its own page automatically, and deliberately styled as
+an extension of the header's own bookend language (logo + brand-red rule, just top instead
+of bottom) rather than a literal recreation of the PPTX's red-panel shape — per the owner's
+explicit "adapt, don't redesign" instruction for this format.
+
+### 3. ⚠️⚠️ Real bug: the off-screen PDF capture silently broke the 2-column Previous/
+### Current layout whenever the EXPORTING browser's own window was ≤820px wide
+
+Found by a genuine live click-through, not by reading the code: a freshly-exported
+Presentation PDF measured **4 pages** for what should have been 2 (one content slide +
+Thank You). Root-caused by rebuilding the exact capture in isolation and measuring: with
+the exporting tab at a perfectly ordinary 366px-wide window (not a phone — any half-screen
+or narrower browser window reproduces this), `.phwrap`'s rendered width collapsed from the
+correct 552px (2-column) to 1116px (a single full-width column) — because
+`@media (max-width:820px){.pair,.pair.single{grid-template-columns:1fr}…}` was written for
+someone opening the **saved standalone HTML file on their own phone later**, but a
+`@media` rule has no way to distinguish that from "the exporting browser's own current
+window happens to be narrow right now" — it only ever reads the real window width, never
+the fixed 1180px/900px design width the off-screen `wrap` div is deliberately built at.
+The result: Previous/Current stacked vertically instead of side-by-side, every photo
+rendered at roughly half the intended width ("unnecessarily small", the exact defect this
+round was asked to rule out), and the doubled height spilled the report onto twice as many
+physical pages.
+
+**Fix**: the mobile breakpoint is now a SEPARATE CSS fragment (`EXPORT_MOBILE_CSS` /
+`DL_MOBILE_CSS`), appended only to the standalone offline-HTML export's `<style>` tag —
+never to the off-screen `wrap` in `exportPdf()`/`exportSelectedPdf()`. A user who later
+opens the saved HTML file on their own phone still gets the responsive single-column
+layout exactly as before; the PDF capture is now completely immune to whatever window size
+the exporting browser happened to have. ⚠️ Two other fixes considered and rejected first,
+for the record: `html2canvas`'s own `windowWidth`/`windowHeight` option (documented for
+exactly this class of problem) did NOT fix it in this pinned version — measured directly,
+page count stayed at 4; capturing via an `<iframe>` (which does get its own isolated
+viewport) correctly fixed the column collapse but broke html2canvas's own capture in a
+different way (page count went to 5, worse than the bug). Stripping the media query at the
+CSS-fragment level, verified by direct measurement, is the fix that actually works.
+
+### 4. ⚠️ Real bug: `module.js`'s ad-hoc PDF export rendered in PORTRAIT, inconsistent with
+### the Presentation PDF's LANDSCAPE — found in the same pass
+
+`exportSelectedPdf()`'s jsPDF config read `orientation: 'portrait'` while `ppr.js`'s own
+`exportPdf()` (an identical wide, 2-column report design) correctly uses `'landscape'`.
+Measured directly from a real generated file's own `/MediaBox` before touching anything:
+595×842pt (A4 portrait) vs. the Presentation PDF's 842×595pt (A4 landscape). A narrower
+portrait page gives a 2-photo layout even less width per column than landscape does — the
+opposite of "photos should use the available space efficiently." Changed to `'landscape'`
+to match `ppr.js`, per the owner's own allowance to fix cross-export inconsistencies.
+
+### Verified — genuine live export through the real app UI, both report types, all four
+### photo scenarios, real files inspected
+
+Same stub-auth-harness convention as every other live pass this session (real, unmodified
+`module.js`/`ppr.js`, a fake Supabase-shaped query builder, real `pptxgenjs`/`html2pdf.js`
+loaded from the pinned CDN, harness deleted after use) — but this time driven end-to-end
+through the REAL UI for the parts under test: clicked **+ New Presentation**, typed a real
+Description, picked a real Report Type, saved (which correctly jumps into the slide
+editor per its own existing behaviour), clicked **+ Add Slide**, picked a real Current and
+Previous photo through the real picker, saved, then **Download → HTML** and
+**Download → PDF** — for one Internal and one Client presentation — plus real Gallery
+checkbox selection (1 photo, then 3 photos) through **Download → HTML/PDF** for the ad-hoc
+export path.
+
+Confirmed against the real downloaded files (unzipped/parsed, not simulated):
+- **Cover/header**: both presentations' HTML headers show the correct 4-line hierarchy —
+  "PPR Meeting" for Internal, "Client Coordination Meeting" for Client — with the real
+  typed Description and the real presentation date, no Project Code anywhere.
+- **Thank You page**: present as the final section in all 4 HTML exports (2 Presentation +
+  2 ad-hoc), branded consistently with the header.
+- **Photo layout, all 4 scenarios**: 1 photo → 1 figure on its own page; 3 photos → 2+1
+  split across 2 pages (max 2 enforced); Previous/Current render as 2 real `<figure>`s
+  labelled `Previous`/`Current` in that DOM order (left/right in the CSS grid); every
+  photo's `<img>` computes `object-fit:contain` against its own real natural dimensions —
+  1600×900 landscape (ratio 1.778) and 900×1600 portrait (ratio 0.5625), both exact, no
+  distortion possible by construction.
+- **PDF page count, before → after the fix**: Presentation PDF 4 → **2** pages (both
+  Internal and Client, re-confirmed on two separately-dated real exports after the fix);
+  `/MediaBox` confirms A4 landscape (841.89×595.28pt) throughout.
+- ⚠️ **Not independently re-confirmed on a fresh file**: the ad-hoc Gallery PDF export
+  specifically — its fixed filename (`'Photos ' + projName + '.pdf'`, no per-run
+  differentiator) collided with a file the real, concurrently-active user on this shared
+  machine had open, and the OS file lock silently prevented every retry from saving a new
+  copy under that name (confirmed via `Device or resource busy`, not a code failure). The
+  underlying fix in `module.js` is byte-for-byte the same code shape as the two
+  Presentation PDFs that WERE freshly re-verified, plus the isolated diagnostic that
+  proved the CSS-strip approach directly — high confidence, but flagged honestly rather
+  than claimed as independently proven for this one specific file.
+- **0 malformed XML/structure** across every file checked.
+
+`module.js`/`ppr.js` → `?v=20260909f`/`?v=20260909g`. **Not committed** — kept in the
+working tree per the owner's explicit instruction, pending a separate go-ahead once PPTX,
+HTML and PDF are all signed off together.
+
+## Cover/title slide content finalized — Project Code removed, meeting-type
+## label + Presentation Description drive the cover, one real hardcoding bug
+## caught and fixed along the way (2026-09-09, later same day)
+
+Closes out the same-day cover-geometry/photo-sizing validation below with a content
+(not layout) pass on the PPTX cover, requested after the owner reviewed the
+geometry-validated sample in the app. **Final, owner-confirmed cover logic — do
+not change without a new explicit request:**
+
+1. Project Name → the selected project's real `projects.name` (via
+   `module.js`'s `fillProjects()`/`notifyProject()` → `ProgressPhotos.onProject()`,
+   read live off whichever project the topbar dropdown has selected).
+2. Presentation Title → `ppr_presentations.description` (the "Description"
+   field on the Add/Edit Presentation form, `#ppr-f-desc`) — falls back to the
+   generic "Project Progress Report" only when a presentation's own
+   description is genuinely blank.
+3. Meeting label → `meetingLabelFor(p.report_type)`: `'client'` → **"Client
+   Coordination Meeting"**, anything else (`'internal'` or unset) → **"PPR
+   Meeting"**. Never prints the raw classification word "Internal"/"External".
+4. Meeting Date → `ppr_presentations.ppr_date`.
+5. Project Code (the previous `pid` subtitle line) → removed entirely, from
+   both `ppr.js`'s `exportPptx` (Presentations) and `module.js`'s
+   `exportSelectedPptx` (ad-hoc Gallery-selection export, kept consistent
+   even though it has no report_type/meeting concept of its own — its
+   remaining description+photo-count lines are otherwise unchanged).
+
+⚠️ **A real hardcoding bug was introduced and then caught one round later.**
+The owner's own worked example for the new hierarchy ("Project Name /
+Project Progress Report / PPR Meeting.../ Meeting Date") was first
+implemented by writing the literal string `'Project Progress Report'` as
+Line 2 — every presentation would have shown the identical cover subtitle
+regardless of what was actually typed into its Description field. Caught
+when the owner asked for an explicit data-flow audit; fixed by reading
+`p.description` instead, with that same string kept only as the
+blank-field fallback. **Lesson recorded for next time:** a worked example
+in a request illustrates structure, not necessarily a literal value to
+hardcode — when a request's example text happens to look like a real
+field's typical content, check whether a live field already exists before
+assuming it's meant to be static.
+
+⚠️ **Layout, geometry, fonts, and branding were never touched by this whole
+content pass** — verified after every round: cover panel/logo stay at
+`x=6.209/0.589, y≈0/0.618, w=7.122/2.681, h=7.499/0.463` (the template's own
+`slideLayout1.xml`/`slideLayout16.xml` coordinates), same as every prior
+cover-fidelity check this same day.
+
+**Verified live, three rounds, real generated `.pptx` files each time** (a
+stub-auth harness driving the real, unmodified `module.js`/`ppr.js`, real
+`pptxgenjs@3.12.0`, real downloaded files unzipped and read via
+`System.Xml.XmlDocument` — harness deleted after each use, nothing committed):
+- Round 1 (Internal vs. Client): confirmed `meetingLabelFor` picks the right
+  label per `report_type`, Project Code fully absent, hierarchy order correct,
+  cover geometry unchanged. Round 2 (the hardcoding-bug audit): seeded a
+  project whose id (`AVR-TB01`) deliberately differs from its name (`Avesta
+  Residences — Tower B`) and three presentations with distinct real
+  descriptions/dates (one deliberately blank) — the cover correctly showed
+  the project's real **name** (never the id) and each presentation's own
+  real **description** (never a fixed string), with the fallback text
+  appearing only for the genuinely-blank one. All files: 3 slides (Cover →
+  content → Thank You), 0 malformed XML/`.rels` parts.
+
+`ppr.js` → `?v=20260909e`; `module.js` stays `?v=20260909d` (its own cover
+edit — Project Code removal only — landed in the prior round the same day).
+
+## Owner rejected the cover as a "simplified vertical rectangle" and the photos
+## as too small — both correct. Re-inspected the template's own shape tree,
+## found the red panel is a cropped PHOTOGRAPH (not a shape at all), and
+## switched to embedding the template's own artwork verbatim (2026-09-09, later same day)
+
+Owner reviewed the sample PPTX from the earlier same-day pass and rejected two things, one of
+them "non-negotiable": the cover's red panel had been "simplified into what appears to be
+essentially a plain vertical rectangle" (built as a `roundRect` vector shape with a guessed
+0.35in corner radius), and the photos on content slides were "too small" with "a significant
+amount of unused space". Explicit instruction: re-open the uploaded template, read its actual
+shape tree, and reproduce it — not approximate it from memory.
+
+### The red panel was never a PowerPoint shape to begin with
+
+Re-unzipped the template fresh and read `slideLayout1.xml`'s (cover) and `slideLayout16.xml`'s
+(Thank You) own `<p:pic>`/`<p:sp>` elements directly. The result settles the question outright:
+**the red panel has `<a:prstGeom prst="rect"/>` — a plain, square-cornered rectangle geometry —
+because it isn't a shape at all.** It's a `<p:pic>`: a cropped **photograph**
+(`<a:blip r:embed="rId2"/><a:srcRect l="46574"/>`, i.e. the right 53.426% of a source image,
+`image1.jpeg`), positioned at `x=5678310, y=0, cx=6513689, cy=6858000` EMU. The rounded corner is
+baked into that source image's own pixels — there is no adjustable curve geometry anywhere in the
+template to read a radius from, which is exactly why the earlier `roundRect` pass could only ever
+be a guess, and why no amount of radius-tuning could have fixed it: a vector `roundRect` also
+rounds all four corners uniformly, while three of this shape's four corners sit flush against the
+slide edge in the real design and must stay perfectly square.
+
+**Fix: stop drawing a shape, embed the template's own artwork instead.** Cropped `image1.jpeg` at
+the identical pixel offset the template's own `srcRect l="46574"` specifies (`46.574% × 4000px =
+1863px` from the left, full 2250px height kept) via a one-time PowerShell/System.Drawing script,
+saved as the new asset `assets/branding/cover-panel.jpg`. This is not a redrawing of the panel —
+it is the literal template graphic, byte-identical in every pixel that survives the crop,
+including its own baked-in "Engineering / A First-World Philippines" tagline. Both `ppr.js`
+(`coverPanelDataUrl()`) and `module.js` (`dlCoverPanelDataUrl()`) fetch and cache it exactly like
+the existing logo loader, and every cover/Thank-You `addImage` call for it routes through
+`containFit()` (unchanged from the earlier fix) so the crop itself is never re-stretched.
+
+⚠️ **The Thank You slide now uses the SAME cropped-panel-only asset as the cover, not the
+template's own full-bleed `image17.jpeg`.** The template's real Thank You layout is the *whole*
+`image17.jpeg` (no crop) as a full-slide background — which also bakes in a "Contact us / Follow
+us" investor-relations block in its white area, positioned close enough to this file's own
+"Megawide Construction Corporation" footer text (y=6.9in) to visually collide with it. Reusing the
+cover's own panel-only crop reproduces the identical red-panel design element the owner's
+complaint was actually about, on both slides, consistently, without introducing baked boilerplate
+this internal site-progress report was never meant to carry. Flagged explicitly rather than
+silently decided — if the owner wants the literal full-bleed Thank-You background (contact info
+and all), that's a one-asset swap (`image17.jpeg`, uncropped, full-slide), not a re-design.
+
+**Title/subtitle/logo repositioned to the template's own real coordinates**, read the same way
+(EMU ÷ 914400 = inches, from the same two layout files) — `TITLE_X/Y/W/H`, `SUBTITLE_Y`, `LOGO_X/
+Y/W/H`, `PANEL_X/W` are no longer independently-chosen values, they're the template's own
+`ctrTitle`/`subTitle`/logo-picture placeholder positions. Title `fontSize` bumped 34→36pt with
+`autoFit: true` added (confirmed as a real, supported option in the exact pinned PptxGenJS v3.12.0
+bundle — the string appears in the minified source — matching the template's own `<a:normAutofit/>`
+on that placeholder) so a long project name shrinks to fit rather than overflowing its box, closer
+to the template's real 48pt default without risking overflow on this app's variable-length names.
+
+### Photos were substantially undersized — no single template value to blame, so this is a
+### deliberate, from-scratch chrome-minimization pass
+
+Measured the previous geometry directly: a 16:9 photo in the old 6.1×4.6in pane rendered at
+6.1×3.43in — **1.17in of dead vertical space**, split above and below. Checked whether the
+template itself defines an "intended photo container" to copy, per the owner's explicit
+instruction — it does not. `slideLayout3.xml`/`slideLayout4.xml`/`slideLayout21.xml` ("Content
+with Image", "Content with Big Image", "Picture with Caption") are stock Microsoft Office default
+layouts that ship with any PowerPoint theme, not something Megawide designed for a 2-up photo
+comparison; none of them describes this module's actual use case. So the fix is a from-scratch
+sizing pass, not a template lookup: every piece of non-photo chrome (the PREVIOUS/CURRENT label,
+the caption block, the slide margins and the gap between panes) was measured and shrunk to the
+smallest size still legible, and every inch freed was handed directly to the photo's own box
+(`IMG_H`) — the box itself grew, not just the chrome around a fixed-size box.
+
+| | Before | After |
+|---|---|---|
+| Pane box (2-up, `ppr.js`) | 6.1 × 4.6in | 6.22 × 5.65in |
+| Pane box (2-up, `module.js`) | 6.1 × 4.6in | 6.22 × 6.35in (no PREVIOUS/CURRENT label to budget for) |
+| Single-photo box (both files) | 6.5 × 4.6in | 7.8 × 5.65in (`ppr.js`) / 7.8 × 6.35in (`module.js`) |
+| Caption block | 0.9in | 0.6in (still fits description + tags + date at 10pt) |
+
+`containFit()` — the earlier fix's guard against distortion — is completely untouched; it just now
+receives a bigger box, so a photo grows in both dimensions proportionally, never stretched.
+
+### Re-verified live, all 8 acceptance-criterion scenarios again
+
+Same stub-auth harness approach as both earlier same-day passes (deleted after use). Downloaded
+and measured the real regenerated files:
+
+- **Cover / Thank You**: both slides' red-panel picture measures **ratio 0.950** — the exact
+  aspect ratio of the actual cropped asset (2137×2250 px = 0.9498) — at position
+  `x=6.209in, y≈0, w=7.122in, h=7.5in`, matching the template's own numbers to the inch. The
+  embedded image bytes were extracted directly from the generated `.pptx` and visually confirmed
+  identical to the template's own artwork (rounded corner, baked tagline, exact red).
+- **1 photo**: box now 7.8×5.65in; a real 1600×900 test photo rendered at **7.8×4.388in, ratio
+  1.778** — exact match to its own source ratio, centered in the taller box.
+- **2 photos**: a landscape+portrait pair on one slide — landscape at 6.22×3.499in (ratio 1.778,
+  exact), portrait at 3.572×6.35in (ratio 0.563 ≈ 9:16 exact) — the portrait photo in particular
+  now uses the **full available height** of its pane (vs. barely half of it before).
+  Confirmed exactly 2 pictures on the slide, no distortion on either.
+  - Portrait/landscape variants were also re-verified for the presentation's own Previous/Current pane.
+- **Previous+Current**: Previous still left, Current still right, exactly 2 photos, both now
+  substantially larger under the same enlarged pane box.
+- **Slide/photo distribution, pairing, and Thank-You-always-last**: re-confirmed byte-for-byte
+  identical to the pre-redesign run (same slide counts, same picture counts per slide, same
+  caption text) — this pass changed only geometry and the two brand assets, nothing about which
+  photo goes where.
+- All 3 regenerated files re-passed full XML well-formedness validation (0 malformed parts).
+
+⚠️ **Standing limitation, unchanged**: still no PowerPoint/LibreOffice in this environment, so the
+final rendered pixels haven't been seen by human eyes here. Everything a structural/geometric
+inspection can prove — pixel-identical panel artwork at the template's own coordinates, exact
+source-aspect-ratio photo placement, unchanged slide logic — has now been proven twice against
+real generated bytes.
+
+`module.js`/`ppr.js` → `?v=20260909c`. New asset: `assets/branding/cover-panel.jpg` (a crop of the
+template's own `image1.jpeg`, not a new design element).
+
+## Live PPTX validation found a real photo-distortion bug: PptxGenJS v3.12.0's
+## `sizing:{type:'contain'}` is a no-op in the pinned bundle — every photo (and
+## the logo) was being stretched to its box, not letterboxed (2026-09-09, later same day)
+
+Owner asked for one more live pass before signing off, specifically: generate a real PPTX for
+1/2/3/5-photo selections and a Previous/Current presentation, and **inspect the actual output
+file**, not just source code or the browser DOM — explicitly not to change anything further
+unless the live test found a real problem. It did.
+
+### What the live test found
+
+Re-ran the same stub-auth harness approach as the earlier same-day entry (throwaway, deleted
+after use), this time seeding photos with **known, distinct pixel dimensions** (1600×900
+landscape, 900×1600 portrait — the exact scenario acceptance criterion #8 asks for) and actually
+downloading + unzipping + measuring the real `.pptx` output. The distribution logic (chunkPairs,
+cover, Thank You always last, Previous/Current pairing) all checked out exactly as designed — see
+the measurements below — but the **photo geometry did not**: every embedded picture's `<a:ext>`
+in the raw XML was **identical to its pane's own box dimensions** (e.g. a photo placed in a
+6.1in×4.6in pane came out as literally `5577840×4206240` EMU = 6.1in×4.6in, ratio 1.326),
+regardless of whether the source photo was landscape (real ratio 1.778) or portrait (real ratio
+0.562). **Every photo, on every slide, in both exporters, was being stretched to fill its box —
+distortion, not containment** — directly contradicting acceptance criterion #8.
+
+⚠️ **Root cause, confirmed by inspecting the actual library, not by reading its documentation.**
+Both exporters passed `sizing: { type: 'contain', w, h }` to `pptx.addImage()`, following
+PptxGenJS's own documented image-fitting feature. Downloaded the exact pinned CDN bundle
+(`pptxgenjs@3.12.0/dist/pptxgen.bundle.js`) and searched it directly: **the strings `"contain"`,
+`"cover"` and `"crop"` do not appear anywhere in the entire 477KB bundle.** The `sizing` option is
+read into a local variable in two places but never branched on for an image element — this exact
+pinned build silently ignores it, and `addImage` falls through to its default behavior: stretch
+the picture to the given `w`×`h` exactly. This was true for photos AND for the corner-mark/cover/
+Thank-You logo placements alike (measured: the logo's stretched-box ratio came out 4.643, its own
+true ratio is 5.791 — same defect, smaller and easier to miss by eye).
+
+### The fix — compute the fit ourselves, never rely on the library's `sizing` option
+
+Since every image is already decoded through a real `Image` element before being drawn to canvas
+(`toDataURL()`/`dlToDataURL()`, for the downscale-to-JPEG step), its true `naturalWidth`/
+`naturalHeight` were available for free — they just weren't being kept. Both functions now return
+`{ data, w, h }` instead of a bare data-URI string (the logo's own loader, `logoDataUrl()`/
+`dlLogoDataUrl()`, was widened the same way, decoding the PNG once to capture its dimensions too).
+A new `containFit(bx, by, bw, bh, iw, ih)` — identical in both files, per this file's own
+"small helpers restated per file" convention — computes the largest rectangle preserving the
+image's own aspect ratio that fits inside the given box, centered within it, and **every** PPTX
+`addImage` call in both files (photos and all three logo placements) now routes its x/y/w/h
+through it instead of passing the pane box straight through. The `sizing` option is removed
+everywhere — it was never doing anything, and keeping it would misleadingly suggest to the next
+reader that the library is handling this.
+
+⚠️ **The HTML/PDF path did not have this bug** — its `object-fit:contain` CSS frame (from the
+earlier same-day rebrand entry) is a real, working browser feature; this defect was specific to
+the PPTX path's now-removed reliance on PptxGenJS's `sizing` option. Confirmed the fix touches
+only `addImage` call sites; `slideFigureHTML`'s/`dlFigureHTML`'s HTML `<img>` tags were only
+updated to unwrap the new `{data,w,h}` shape (`.data` instead of the bare string), not to change
+behavior.
+
+### Re-verified — all 8 acceptance-criterion scenarios, against the real fixed output
+
+Same harness, same 5 export runs, each downloaded file unzipped and measured again:
+
+| Test | Slides (Cover→…→Thank You) | Per-slide picture count | Aspect ratio measured |
+|---|---|---|---|
+| 1 photo | 3 (1 content slide) | 1 photo, centered | landscape 1.778 — **matches source exactly** |
+| 2 photos | 3 (1 content slide) | 2 photos, side by side | 1.778 then 0.562 — **both exact** |
+| 3 photos | 4 (2 content slides) | Slide 1: 2 photos · Slide 2: 1 photo | all exact |
+| 5 photos | 5 (3 content slides) | Slide 1: 2 · Slide 2: 2 · Slide 3: 1 | all exact |
+| Previous+Current | 3 (1 content slide) | exactly 2 (Previous left, Current right) | 1.778 then 0.562 — **both exact** |
+
+The logo (real ratio 5.791) now measures 5.791 everywhere it appears (cover, Thank You, every
+per-slide corner mark) instead of the previous 4.643. Every one of the 5 downloaded files was
+also re-validated as well-formed OOXML (every XML/`.rels` part parsed with `System.Xml.XmlDocument`
+— 0 malformed) and the slide/picture-count/caption text was **byte-identical** to the pre-fix run,
+confirming the fix changed only geometry, nothing about distribution, pairing, cover content, or
+the Thank You slide's position.
+
+⚠️ **Standing limitation, unchanged**: no PowerPoint/LibreOffice is available in this environment,
+so the actual rendered pixels have still not been seen by a human. The 5 generated `.pptx` files
+from this pass were handed to the owner directly for that one remaining check — everything a
+static/structural inspection can prove (well-formed OOXML, correct slide/photo counts and
+ordering, and now, exact-to-the-source-pixel aspect ratios measured from the real embedded
+`<a:ext>` values) has been proven against the real generated bytes, not simulated.
+
+`module.js`/`ppr.js` → `?v=20260909b`.
+
+## The existing PPTX/HTML/PDF exports are rebranded to the uploaded Megawide
+## corporate template — cover + Thank You slides, branded header, max-2-photos
+## enforced in the ad-hoc batch export too (2026-09-09)
+
+Owner supplied the corporate PowerPoint template ("MCC CAB Presentation Template progress
+photos") as the design reference and asked for a presentation/export feature. **Inspected first,
+built second, per the request's own instruction**: this module already has a complete,
+independently-audited export system (`ppr.js`'s `exportOffline`/`exportPdf`/`exportPptx` for a
+Previous/Current **Presentation**, `module.js`'s `exportSelectedOffline`/`exportSelectedPdf`/
+`exportSelectedPptx` for an ad-hoc **Gallery selection**) — there was no existing/parallel content
+model to build, only a visual rebrand plus one real gap.
+
+### What the template actually is, read from its own XML/shape tree, not screenshotted
+
+Unzipped the `.pptx` directly (`Expand-Archive`, no Python/Node available in this environment —
+see the standing limitation below) and read `ppt/slides`, `ppt/slideLayouts`, `ppt/theme`. The
+three real slides are placeholder-only (cover / a generic content slide / "Thank you") — the
+template is a **corporate identity system** (23 layouts covering every Megawide business line),
+not a literal progress-photo layout to copy pixel-for-pixel. The actual brand signal: the
+wordmark logo (`ppt/media/image2.png`), brand red **`EE3124`** (confirmed identical to this app's
+own existing `--pd-red` token — no new colour invented), a solid red panel with one rounded
+corner on the cover/closing slide, and **Gotham**/**Avenir Next** as the title/body typefaces
+(theme1.xml itself is the unmodified default Office theme — the brand lives in literal shape/
+image/font overrides, not scheme colours). The logo (`assets/branding/megawide-logo.png`, new)
+is the one asset actually needed; the red panel is drawn as a native `roundRect` shape rather than
+a cropped image, so it stays crisp and needs no second asset to maintain.
+
+### PPTX (`ppr.js` `exportPptx`, `module.js` `exportSelectedPptx`)
+
+- **Cover slide**: white ground, logo top-left, the red rounded panel on the right ~42%,
+  project name + code, the report's own description + date (`ppr_date` for a Presentation,
+  photo count for an ad-hoc selection) and a generation-date footer — every field read from data
+  already in the app, nothing re-typed.
+- **A Thank You slide is now always last** — it did not exist before this change. Mirrors the
+  cover's red-panel layout with "Thank You" as the headline.
+- Each photo slide gets a small logo mark in the corner — quiet, never competing with the photo,
+  per the brief's own "the photograph remains the primary visual element."
+- **The 2-photos-per-slide cap was already correct in `ppr.js`** (a slide is a Previous/Current
+  pane pair, or one photo centered — never more) — untouched. **`module.js`'s ad-hoc batch export
+  was NOT already correct: it put exactly 1 photo per slide.** New `chunkPairs(list)` is now the
+  single place that decides distribution (2 at a time, the last group holding 1 if the count is
+  odd) — matches the brief's own worked examples exactly (5 photos → 2/2/1, 7 → 2/2/2/1).
+- `sanitizePptxText` (ppr.js's 2026-09-03 fix for a control-character crashing PowerPoint's
+  strict XML parser) is now also used in `module.js`'s exporter — that file had never carried it.
+
+### HTML / PDF (`ppr.js` `slidesBodyHTML`/`EXPORT_CSS`, `module.js` `dlBodyHTML`/`DL_CSS`)
+
+- **Header rebranded**: the solid red banner is gone — white ground, the real logo, a 3px
+  brand-red rule underneath, matching the PPTX cover's own language so the two formats read as
+  one system (brief's own "should feel like they belong to the same reporting system").
+- **A fixed-ratio photo frame, added to both files** — neither existed before. Portrait and
+  landscape photos previously rendered at `width:100%` with no height constraint (a tall portrait
+  photo could run off an A4 page); both now sit in a frame (the padding-top percentage trick, not
+  the newer CSS `aspect-ratio` — html2canvas's print capture has spotty support for that property)
+  with `object-fit:contain`, so neither orientation is ever distorted or cropped, and a missing
+  image degrades to a centered "Image unavailable" instead of collapsing the layout.
+- `module.js`'s ad-hoc export now also groups 2 photos per printed page/section (`chunkPairs`,
+  same function the PPTX exporter reads), replacing its old 1-photo-per-page layout.
+
+### Deliberately not built
+
+- **No separate manual content-entry screen** — every field on every slide is read from
+  `progress_photos`/`ppr_slides`/`ppr_presentations`, per the brief's own explicit instruction.
+- **No project "Tower" field on the cover** — this app has no per-project Tower value (Tower is a
+  per-photo Location Breakdown value, not project metadata; `PDb`/`projects` carries none). Adding
+  one would be inventing a parallel data model the brief explicitly said not to build; the cover
+  simply omits it rather than showing an invented or empty field.
+- **The "Contact us / Follow us" investor-relations footer baked into the template's own cover
+  art is not reproduced** — that is corporate boilerplate for an external-facing deck, not
+  something a site progress report needs; only the logo, red-panel motif and typefaces were
+  carried over.
+- Previous/Current pairing is **read, never re-derived** — `ppr_slides.before_photo_id`/
+  `after_photo_id` already IS the app's comparison-pair model (see the 2026-09-08 (c) entry in the
+  main `CLAUDE.md` for how this was confirmed); this change touches only how a pair is drawn, not
+  how one is identified.
+
+### Verified
+
+⚠️ **No Python or Node is available in this environment** (checked directly — neither resolves
+beyond a Windows Store shim), so the `pptx` skill's own `pptxgenjs`/`python-pptx` tooling and this
+repo's own `node --check`/`test.js` harness were both unavailable. Verification actually performed:
+- **The uploaded template was read as real OOXML** (`Expand-Archive`, not screenshotted) — every
+  colour/font/shape claim above is read from the actual `ppt/slides`/`ppt/slideLayouts`/`ppt/theme`
+  XML and the two source images, not guessed from appearance.
+- **The shared HTML/CSS design (identical between the two files, just class-prefixed
+  differently) was rendered in a real browser** via a throwaway static server
+  (`.claude/tools/static-server.ps1`, already in this repo) and a scratch QA page reproducing
+  `EXPORT_CSS`/`DL_CSS` and the header/figure markup verbatim — confirmed: the branded header
+  (logo + red rule, no banner), a 2-photo slide with one landscape + one portrait photo both fitting
+  their frame with no distortion, a single/odd photo centered in its own narrower column, a missing
+  image degrading to a clean centered placeholder, and the footer. The scratch page was deleted
+  before finishing, per this module's own established convention for throwaway harnesses.
+- **`modules/progress-photos/index.html` was loaded in a real browser against the actual, edited
+  `module.js?v=20260909a`/`ppr.js?v=20260909a`** — 0 console errors, confirming both files parse
+  and their top-level IIFEs execute without throwing. The new logo asset was confirmed reachable
+  at its real served path (`assets/branding/megawide-logo.png`, 200 OK, 1714×296px).
+- Brace/paren balance checked byte-for-byte: `module.js` 1419/1419 braces, 5192/5192 parens
+  (perfectly balanced). `ppr.js` 621/621 braces; its paren count carries a pre-existing 1-paren
+  imbalance — confirmed via `git show HEAD` to already exist **before** this change (2237/2236 at
+  HEAD vs. 2289/2288 now — the +52/+52 this change added is itself balanced), consistent with this
+  file's own earlier note that it's a decorative parenthesis in a comment/string, not a real defect.
+
+### Follow-up: a real PPTX was actually generated and opened (2026-09-09, same day)
+
+The gap above — "no `.pptx` has actually been generated and opened" — was closed the same day, on
+request. No live Supabase login exists in this environment, so a throwaway **stub-auth harness**
+(`_qa_harness.html`, deleted before finishing — same convention this module's own history already
+uses repeatedly for exactly this situation) loaded the REAL, unmodified `module.js`/`ppr.js` in a
+real browser with `AppAuth`/`PDb`/`UI`/`Icons`/`Fmt` replaced by minimal in-memory stand-ins (a
+Supabase-shaped query builder over a plain JS object store, modelled on this file's own `test.js`
+harness) and `PDCollab`/`PDSync`/`Autosave` no-op'd — nothing about `ppr.js`'s own export code was
+touched or bypassed. Seeded one presentation with 3 real `ppr_slides` rows over 5 real
+`progress_photos` rows (4 real locally-generated JPEGs — one landscape, one portrait, one square,
+one deliberately pointed at a non-existent file — covering a 2-photo pair, a single/odd photo, and
+a pair with one image that 404s) and drove the actual UI: opened Presentations, opened the seeded
+presentation, clicked **Download → PowerPoint (.pptx)** for real.
+
+**A real file downloaded** — confirmed by locating it (a browser-automation download, unprompted
+filename) and inspecting the actual bytes: `PK\x03\x04` (a genuine ZIP), unzipped cleanly, and
+**all 36 XML/`.rels` parts parse as well-formed XML** (`System.Xml.XmlDocument.Load` in PowerShell,
+a real XML parser — not eyeballed). Confirmed against the unpacked parts, not assumed:
+- **Exactly 5 slides**: cover → 3 photo slides → Thank You — dynamic, driven by the 3 seeded slides,
+  never a fixed count.
+- **Slide 1 (cover)**: white background; the real logo PNG embedded and positioned at the exact
+  coded coordinates (0.6in/0.5in, 2.6in×0.65in); a `roundRect` shape at x=7040880 EMU (7.7in) with
+  `adj val 6217` (the coded `rectRadius:0.35` correctly resolved to its OOXML adjustment value),
+  filled `EE3124`; "QA Harness Project" at 34pt bold Gotham; "QAPRJ01" in red Avenir Next; the
+  seeded description, "Reporting Period: 9 September 2026", and a "Generated 9 September 2026"
+  footer — every field the real seeded data, exactly where the code places it.
+- **Slide 5 (Thank You)**: same red panel + logo, "Thank You" at 40pt bold Gotham, the project name,
+  "Megawide Construction Corporation" footer.
+- **The 2-photo pair slide** carries real `PREVIOUS`/`CURRENT` labels, the shared-location banner
+  ("Tower 1 › 3rd Floor › Zone 1"), both real dates/descriptions/trade·works tags, and **2** real
+  embedded JPEGs.
+- **The slide with a 404'd image** correctly shows `Photo not set` text in that pane (confirmed
+  exactly **1** `<p:pic>` on that slide, not 2) while still rendering that pane's own caption
+  metadata — the intended graceful degrade, proven against a real fetch failure (a real 404 in the
+  browser's network log), not simulated.
+- The small corner logo mark appears on every one of the 5 slides.
+
+⚠️ **What this does and doesn't prove**: this confirms the exact production code path — real
+`ppr.js`, real pptxgenjs v3.12.0, real image fetch/embed — produces a structurally valid, correctly
+populated `.pptx`, which is the load-bearing claim of this whole change. It does **not** confirm
+real PowerPoint's own renderer paints it pixel-for-pixel as intended (no PowerPoint/LibreOffice is
+available in this environment) — a well-formed OOXML part can still look off in a way only a real
+render would show (e.g., text overflow, an unexpected font substitution for Gotham/Avenir Next).
+That visual open-and-look is the one thing still worth a human doing once, though the structural
+risk it could catch is now small.
+
+The harness (`_qa_harness.html`), its 4 generated sample images, and the downloaded file were all
+deleted after this check — nothing from this pass is committed.
+
+`module.js`/`ppr.js` → `?v=20260909a`. New asset: `assets/branding/megawide-logo.png` (module
+contract §4 — module-local, no shared-file edit). `module.css` unchanged. No `MODULE_V` bump —
+`index.html`'s structure/DOM is unchanged, only its two `<script>` version query strings moved.
+
 ## PR review found two gaps in the fix below — fixed before merging (2026-09-08)
 
 A code review of the PR carrying the fix below (git diff against `main`) surfaced two real,
