@@ -1003,6 +1003,23 @@
       background-image:repeating-linear-gradient(45deg,var(--ps-trackln) 0 1px,transparent 1px 3px),
                        repeating-linear-gradient(-45deg,var(--ps-trackln) 0 1px,transparent 1px 3px);
       box-shadow:0 0 0 .5px var(--pd-ink) inset; opacity:.85; pointer-events:none; }
+    /* The Rate strip. Geometry and type only — the swatch takes its colour inline from the
+       legend entry, so this cannot drift from the lane it describes. */
+    .ps-lsmrate { display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; padding:6px 2px 2px;
+      border-top:1px dashed var(--pd-line); margin-top:6px; }
+    .ps-lsmrate-lbl { font-size:var(--pd-fs-micro); font-weight:700; text-transform:uppercase;
+      letter-spacing:.06em; color:var(--pd-muted); cursor:help; }
+    .ps-lsmrate-none { font-size:var(--pd-fs-xs); color:var(--pd-muted); }
+    .ps-lsmrate-chip { display:inline-flex; align-items:center; gap:5px; font-size:var(--pd-fs-xs);
+      cursor:help; }
+    .ps-lsmrate-chip > i { width:9px; height:9px; border-radius:2px; display:inline-block; flex:none;
+      box-shadow:0 0 0 .5px rgba(0,0,0,.22) inset; }
+    .ps-lsmrate-chip > b { font-weight:700; color:var(--pd-ink); }
+    .ps-lsmrate-chip > u { text-decoration:none; color:var(--pd-muted); font-variant-numeric:tabular-nums; }
+    .ps-lsmrate-chip > s { text-decoration:none; color:var(--pd-warn-text); font-size:var(--pd-fs-micro); }
+    /* ⚠️ An irregular trade is dimmed and italic and its figure is REPLACED by the word,
+       never shown beside it — a greyed-out number still gets read as a number. */
+    .ps-lsmrate-chip.weak > b, .ps-lsmrate-chip.weak > u { opacity:.6; font-style:italic; font-weight:400; }
     .ps-bar.dragging { cursor:grabbing; opacity:.85; z-index:8; }
     .ps-handle { position:absolute; top:0; bottom:0; width:6px; cursor:ew-resize; z-index:4; }
     .ps-handle.l { left:0; } .ps-handle.r { right:0; }
@@ -12256,10 +12273,19 @@
          "Podium Amenities" — things that are not a storey) to the top of the building. The
          ranked levels are reversed among THEMSELVES and everything else keeps its place below,
          which is the same rule, reused rather than re-derived. */
-      if (_lsmRows && _isLoc && _lsmTopFirst) {
+      if (_lsmRows && _isLoc) {
+        /* ⚠️⚠️ ONE RANK FUNCTION FOR THE ROWS AND FOR THE RATE. `_lsmRankOf`
+           prefers the project's DECLARED floor order (Schedule Setup › Floors & Zones) over
+           `levelRank`'s regexes, so a storey the heuristic cannot read still takes its real place.
+           If the row order and the slope's y-axis came from different functions, the Rate strip
+           would be describing a chart nobody is looking at.
+           ⚠️ With no declaration `_lsmRankOf` IS `levelRank`, and sorting ascending by it
+           is what `cmpLevelValue` above already did — so bottom-first stays byte-for-byte the
+           build order on a project that has never opened the setup. */
         var _rk = [], _un = [];
-        _keys.forEach(function (k) { (levelRank(k) == null ? _un : _rk).push(k); });
-        _rk.reverse();
+        _keys.forEach(function (k) { (_lsmRankOf(k) == null ? _un : _rk).push(k); });
+        _rk.sort(function (a, b) { return _lsmRankOf(a) - _lsmRankOf(b); });
+        if (_lsmTopFirst) _rk.reverse();
         _keys = _rk.concat(_un);
       }
       // ⚠️ The grid keeps its natural BUILD order (bottom-up), always. It used to be reversible to
@@ -21840,6 +21866,10 @@
     // gaps are ordinary rows, so an edit, a drag or a reload can move one, and a stale map would
     // draw a hole where no change order is any more.
     _clearCoGapMemo();
+    /* Same reasoning one line up: the rate and the declared floor order are derived from DL and
+       from the Schedule Setup's config, both of which this frame is about to re-read, so a cached
+       slope would describe the previous filter, grouping or setup. */
+    _clearLsmRateMemo();
     // The stacking panel is derived from the same filtered rows as the grid, so it repaints with it.
     if (vstackMode) renderVStack();   // defer full repaint while an inline editor is open
     // Safety net: scheduleRender()/doRender() is the single choke point every
@@ -22450,6 +22480,191 @@
   // outline-and-nothing, indistinguishable from the hatched inert track behind it, and at fractional
   // device-pixel offsets it aliases to a half-tone. See the CSS on .ps-sum-more for what happens
   // when a branch has more activities than the strip has lanes.
+  /* ---- Where a storey SITS on the axis ---------------------------------------------------------
+     ⚠️⚠️ THE PROJECT ALREADY DECLARES ITS FLOOR ORDER, so ask it before
+     guessing. `ScheduleBuilder.locCatalogue()` returns the places the Schedule Setup defines, in
+     the setup's own order (bottom-up, per `catalogueFrom`) — which means a floor named
+     "Podium 3" or "Amenity Deck" has a real position even though `levelRank`'s regexes cannot rank
+     it. Using the declaration puts more storeys on the axis AND removes a guess.
+     ⚠️ ONE BASIS FOR THE WHOLE CHART, never a mixture: declared indices are 0,1,2... and
+     `levelRank` answers -50, 0, 900 — different scales, so interleaving them would produce a
+     slope describing neither. If the setup declares floors, the declaration is the axis; otherwise
+     the heuristic is, and the Rate strip says which.
+     ⚠️ `typeof ScheduleBuilder`, NEVER `window.ScheduleBuilder` — this module is one
+     IIFE and that global is never assigned, a guard that "could never pass" and silently disabled
+     the floor plans for the whole life of that feature. Same reader shape as the WBS matcher's. */
+  var _lsmDeclMemo = null;
+  function _clearLsmDeclMemo() { _lsmDeclMemo = null; }
+  function _lsmDecl() {
+    if (_lsmDeclMemo) return _lsmDeclMemo;
+    var m = {}, n = 0;
+    try {
+      var cat = (typeof ScheduleBuilder !== 'undefined' && ScheduleBuilder.locCatalogue)
+        ? (ScheduleBuilder.locCatalogue() || {}) : {};
+      Object.keys(cat).forEach(function (lid) {
+        (cat[lid] || []).forEach(function (e) {
+          if (!e || e.dim !== 'floor' || !e.value) return;
+          var k = locNormKey(e.value);
+          if (m[k] == null) { m[k] = n++; }      /* first-seen order IS the setup's order */
+        });
+      });
+    } catch (e) { m = {}; n = 0; }
+    return (_lsmDeclMemo = { map: m, n: n });
+  }
+  /* The rank used by BOTH the row order and the rate fit, so the slope always describes the chart
+     that is on screen rather than a differently-ordered one. */
+  function _lsmRankOf(v) {
+    var d = _lsmDecl();
+    if (d.n > 1) {
+      var k = locNormKey(v == null ? '' : v);
+      return (d.map[k] == null) ? null : d.map[k];
+    }
+    return levelRank(v);
+  }
+  function _lsmRankBasis() { return _lsmDecl().n > 1 ? 'declared' : 'heuristic'; }
+
+  /* ---- THE PRODUCTION RATE, which is what LSM is FOR ------------------------------------------
+     The deck's whole argument for this chart over a Gantt: "They show a clear understanding of the
+     effect of the rate of production (by the slope of the line)", quoted as "2 floors per month"
+     and "12 working day cycle per floor". Neither figure is typed anywhere — both are read off
+     the staircase the schedule already draws.
+     ⚠️⚠️ TWO FITS, NOT ONE CONVERTED. A cycle in WORKING days and a rate in
+     CALENDAR months are different regressions over the same points; dividing one by 30.44 to get
+     the other silently assumes a seven-day week. The deck says "working day" explicitly, and a
+     productivity figure on the wrong day basis is worse than none — so each is fitted in its
+     own x and the readout says which is which.
+     ⚠️⚠️ AND THERE IS NO DECLARED CYCLE TO SHOW BESIDE IT, which was checked
+     rather than assumed. The Schedule Setup asks takt questions — `zoneSimul`, `unitSimul`,
+     `tradeBatch`/`tradeBatchKind`, `floorLead` — but a trade's per-floor cycle is not stored
+     anywhere: it EMERGES from the activity durations plus those settings when `generate()` runs.
+     Re-deriving it here would be a second copy of the sequencing engine, which is the one thing
+     this file's history says never to do.
+     ⚠️ `cfg.floorLag` ("cure/lag days between a floor and the floor above") looks like the
+     missing declaration and is NOT one: it occurs exactly twice in this file, in `blank()` and in
+     `normalize()`, and is **never read** — no caller subscripts it. So it holds no planner
+     input to compare a measured cycle against. Third instance of the declared-but-unwired shape in
+     this module, after `openLocAdopt` and `fillDown`'s change-order branch. Wire it and a
+     planned-vs-achieved column becomes possible; until then the measured figure is the only
+     honest one, and the strip does not imply otherwise. */
+  var LSM_MIN_FLOORS = 3;      /* below this a "trend" is two points and a straight line */
+  var LSM_R2_OK = 0.7;         /* under this the trade is reported as irregular, with no figure */
+  /* Ordinary least squares of y on x, with r².
+     ⚠️ Returns null when the points carry no slope to find — every x identical (all
+     floors starting the same day) or every y identical. An r² of 1 on a degenerate fit is the
+     most confident possible statement about nothing. */
+  function _lsmFit(xs, ys) {
+    var n = xs.length, sx = 0, sy = 0, sxx = 0, sxy = 0, syy = 0, i;
+    for (i = 0; i < n; i++) { sx += xs[i]; sy += ys[i]; sxx += xs[i] * xs[i]; sxy += xs[i] * ys[i]; syy += ys[i] * ys[i]; }
+    var dx = n * sxx - sx * sx, dy = syy - sy * sy / n;
+    if (!dx || dy <= 0) return null;
+    var b = (n * sxy - sx * sy) / dx, a = (sy - b * sx) / n, ssRes = 0;
+    for (i = 0; i < n; i++) { var e = ys[i] - (a + b * xs[i]); ssRes += e * e; }
+    return { a: a, b: b, r2: Math.max(0, Math.min(1, 1 - ssRes / dy)) };
+  }
+  var _lsmRateMemo = null;
+  function _clearLsmRateMemo() { _lsmRateMemo = null; _clearLsmDeclMemo(); }
+  /* Per keyed trade: how fast it climbs the building, plus the per-floor step for the bar tooltips.
+     Read off `DL` — the rows actually on the chart — so the number describes what is in
+     front of the planner rather than the whole project. */
+  function _lsmRate() {
+    if (_lsmRateMemo) return _lsmRateMemo;
+    var out = { byTrade: {}, steps: {}, floors: 0, wd: false, basis: _lsmRankBasis() };
+    if (!_lsmRows || !DL || !DL.length) return (_lsmRateMemo = out);
+    var pts = {}, min = null, max = null, i, j, seen = {}, allRanks = {};
+    for (i = 0; i < DL.length; i++) {
+      var r = DL[i]; if (!r || !r._glsm) continue;
+      /* ⚠️⚠️ THE RANK FILTER IS ALSO THE ROW FILTER, and that is deliberate.
+         A Tower group row carries lanes too (it is a location level), but a tower has no position
+         on a storey axis — `_lsmRankOf` answers null — so it drops out here without a
+         second rule about which location level is "the floors". */
+      var rank = _lsmRankOf(r._graw || r.activity_name || '');
+      if (rank == null) continue;
+      /* ⚠️⚠️ SERIES = THE ANCESTRY ABOVE THE FLOOR, so TOWERS DO NOT MIX. On a
+         multi-tower project "5th Floor" occurs once per tower with different dates; fitting them
+         as one series would average two buildings into a slope describing neither. */
+      var ser = (r._danc || []).join('\u0001');
+      if (!seen[ser + '\u0002' + rank]) { seen[ser + '\u0002' + rank] = 1; out.floors++; }
+      (allRanks[ser] = allRanks[ser] || {})[rank] = 1;
+      for (j = 0; j < r._glsm.length; j++) {
+        var b = r._glsm[j];
+        if (b.over || !b.value) continue;     /* the overflow marker stands for several trades */
+        var k = ser + '\u0002' + b.value;
+        var p = pts[k] || (pts[k] = { ser: ser, value: b.value, cal: b.cal, byRank: {} });
+        /* ⚠️ EARLIEST START PER RANK. Two zones of one floor are ONE position on this
+           axis; counting them twice would claim more evidence than there is, and would weight a
+           four-zone floor four times as heavily as a single-cell one. */
+        if (!p.byRank[rank] || +b.s < +p.byRank[rank]) p.byRank[rank] = b.s;
+        if (!min || +b.s < +min) min = b.s;
+        if (!max || +b.s > +max) max = b.s;
+      }
+    }
+    if (!min) return (_lsmRateMemo = out);
+    /* ⚠️⚠️ THE WORKING-DAY AXIS ALREADY EXISTS — `makeAxis` precomputes
+       "how many working days lie strictly BEFORE offset o" over a window, which is precisely the
+       x this fit needs, and `ALLAX` is its calendar-day counterpart. Writing a second index here
+       would have been a third day-walking loop in this file.
+       ⚠️ `makeAxis` DIRECTLY, NOT `axisFor`: axisFor caches on `_axCache`/`_axBaseKey`
+       for the CPM, keyed by ITS base and window, and calling it with a different base
+       ("_axBaseKey !== key") WIPES that cache — so the rate strip would have thrown away the
+       CPM's axes on every repaint. Own cache, shared implementation. */
+    var lo = 0, hi = dayDiff(min, max) + 1, axc = {};
+    var axOf = function (cal) {
+      var id = (cal && cal.id) || '_default';
+      if (!axc[id]) axc[id] = (window.PDCal && cal) ? makeAxis(cal, min, lo, hi) : ALLAX;
+      return axc[id];
+    };
+    /* ⚠️⚠️ THE FIT'S y IS THE ORDINAL STOREY POSITION, NOT THE RANK VALUE, and
+       getting this wrong made the whole strip useless on any real building. `levelRank` is an
+       ORDERING key, not a measure: the roof answers **900**, a basement -2, substructure -50. So a
+       tower running Ground..25th plus a Roof Deck produced y = 0,1,...,25,900 — one outlier
+       900 storeys "above" the top floor, which flattens the regression and drops r² to 0.43.
+       Measured in the browser: EVERY trade read "irregular" on a six-storey fixture with a roof.
+       "Floors per month" counts STOREYS, so y must be the storey's index in the building.
+       ⚠️ The ordinals come from EVERY storey on the chart for that series, not from the
+       trade's own points — so a trade that skips a floor still shows the skip as a gap in its
+       climb rather than having it silently compressed away.
+       ⚠️ On the DECLARED basis the ranks are already 0,1,2..., so this is a no-op there;
+       it is the heuristic basis it rescues. */
+    var ordOf = {};
+    Object.keys(allRanks).forEach(function (s2) {
+      var rs = Object.keys(allRanks[s2]).map(Number).sort(function (a, b2) { return a - b2; });
+      var m2 = {};
+      for (var q2 = 0; q2 < rs.length; q2++) m2[rs[q2]] = q2;
+      ordOf[s2] = m2;
+    });
+    var nSeries = {};
+    Object.keys(pts).forEach(function (k2) { nSeries[pts[k2].value] = (nSeries[pts[k2].value] || 0) + 1; });
+    Object.keys(pts).forEach(function (k2) {
+      var p = pts[k2], ax = axOf(p.cal);
+      if (ax && ax.wd) out.wd = true;
+      var ranks = Object.keys(p.byRank).map(Number).sort(function (a, b2) { return a - b2; });
+      var xw = [], xc = [], ys = [], q;
+      for (q = 0; q < ranks.length; q++) {
+        var o = dayDiff(min, p.byRank[ranks[q]]);
+        xw.push(ax.diff(0, o));               /* working days from the window's start */
+        xc.push(o);
+        ys.push(ordOf[p.ser][ranks[q]]);      /* the storey's position, not its rank value */
+      }
+      /* The per-floor step, for the bar tooltips. Recorded even when the series is too short to
+         fit: one floor's own cycle is a fact about that floor, not a claim about a trend. */
+      for (q = 1; q < ranks.length; q++) {
+        out.steps[p.ser + '\u0002' + p.value + '\u0002' + ranks[q]] = xw[q] - xw[q - 1];
+      }
+      if (ranks.length < LSM_MIN_FLOORS) return;
+      var fw = _lsmFit(xw, ys), fc = _lsmFit(xc, ys);
+      if (!fw) return;
+      var rec = { value: p.value, n: ranks.length, r2: fw.r2, up: fw.b > 0,
+        wdPerFloor: Math.abs(1 / fw.b),
+        floorsPerMonth: fc ? Math.abs(fc.b) * 30.44 : null,
+        series: nSeries[p.value] || 1 };
+      /* ⚠️ BEST-SUPPORTED SERIES WINS, never an average across towers — and the
+         readout says how many series there were, so one tower's rate is never mistaken for the
+         whole project's. */
+      var cur = out.byTrade[p.value];
+      if (!cur || rec.n > cur.n) out.byTrade[p.value] = rec;
+    });
+    return (_lsmRateMemo = out);
+  }
   /* Is the stretch between two runs a REAL break, or just the weekend?
      ⚠️⚠️ A TRADE THAT WORKS FRIDAY AND RETURNS MONDAY HAS NOT LEFT THE FLOOR.
      The first cut tested calendar days, so every weekend became a notch — and on a schedule
@@ -22470,10 +22685,11 @@
     if (+d >= +stop) return false;                  /* contiguous, or overlapping */
     if (dayDiff(d, stop) > 14) return true;
     if (!(window.PDCal && cal)) return true;        /* no calendar: any clear day is a gap */
-    for (var g = 0; +d < +stop && g < 32; g++, d.setDate(d.getDate() + 1)) {
-      if (PDCal.isWorkDay(cal, d)) return true;
-    }
-    return false;
+    /* ⚠️ `PDCal.workingDaysInRange` rather than a walk of my own: it is the shared,
+       already-tested counter, and a second day-walking loop in this file is one more place for the
+       inclusive/exclusive boundary to be got wrong. Inclusive both ends, so the range handed to it
+       is the CLEAR days only — the day after the run ends to the day before the next begins. */
+    return PDCal.workingDaysInRange(cal, d, addDays(stop, -1)) > 0;
   }
   /* ---- One bar per keyed trade, for ONE location row ------------------------------------------
      Built from the activities in that location's bucket, and built in buildNodes while the bucket
@@ -22501,12 +22717,15 @@
       var key = folded ? OVER : v;
       var b = by[key] || (by[key] = { value: folded ? null : v, lane: folded ? lm.overLane : ln.lane,
         color: folded ? null : ln.color, tex: folded ? 0 : ln.tex, over: folded,
-        /* ⚠️ ONE CALENDAR PER BAR, taken from the first activity that lands in it.
-           `dsCalendarFor(null, a)` is reused rather than re-derived — its own comment
-           describes exactly the chain wanted here: "the activity's, else the project default, else
-           PDCal's". Two activities of one trade on one floor under different calendars is possible
-           and rare; the bar is one mark and has to pick one, and the first is the honest choice. */
-        cal: (typeof dsCalendarFor === 'function') ? dsCalendarFor(null, a) : null,
+        /* ⚠️⚠️ ONE CALENDAR PER BAR, and it is `cpmCalOf` — the resolver
+           the SCHEDULING code uses (activity's calendar, else the project default, else PDCal's).
+           The first cut called `dsCalendarFor(null, a)`, which answers the same chain but belongs
+           to the duration-scenario screen. Two resolvers reaching the same answer today is exactly
+           how they drift apart tomorrow, and a working-day question is a scheduling question.
+           ⚠️ Two activities of one trade on one floor under different calendars is
+           possible and rare; the bar is one mark and must pick one, and the first is the honest
+           choice. */
+        cal: (typeof cpmCalOf === 'function') ? cpmCalOf(a) : null,
         names: {}, iv: [], wd: 0, we: 0, n: 0, bs: null, bf: null });
       if (folded) b.names[v] = true;
       b.iv.push([+s, +f]); b.n++;
@@ -22545,6 +22764,44 @@
      lanes ARE the reading; a roll-up bracket drawn over them would be a second, coarser answer to
      the same question in the same space. The branch's span and roll-up % are still in the grid's
      own cells for that row, so nothing is lost. */
+  /* The Rate strip: one chip per keyed trade that has enough floors to support a slope.
+     ⚠️ A trade whose climb is irregular gets NO FIGURE, only its r² and the word.
+     A confident "2.1 floors/month" over a scatter is the kind of number that ends up in a report,
+     and the chart cannot take it back. */
+  function _lsmRateHTML() {
+    if (!_lsmRows) return '';
+    var R = _lsmRate(), lanes = _lsmLanes(), h = '', any = false;
+    var unit = R.wd ? 'working' : 'calendar', ushort = R.wd ? 'wd' : 'cd';
+    for (var i = 0; i < lanes.length; i++) {
+      var v = lanes[i].value, d = R.byTrade[v];
+      if (!d) continue;
+      any = true;
+      var wd = Math.round(d.wdPerFloor * 10) / 10;
+      var fm = d.floorsPerMonth == null ? null : Math.round(d.floorsPerMonth * 10) / 10;
+      var solid = d.r2 >= LSM_R2_OK;
+      var tip = v + ' \u2014 ' + d.n + ' storeys, ' + (d.up ? 'upward' : 'downward') +
+        ', r\u00b2 ' + (Math.round(d.r2 * 100) / 100) +
+        (solid ? ('. ' + wd + ' ' + unit + ' days per floor' +
+                  (fm != null ? ', ' + fm + ' floors per calendar month' : '') + '.')
+               : '. Too irregular to state a rate \u2014 the starts do not climb at a steady pace, so one figure would misdescribe it.') +
+        (d.series > 1 ? ' Fitted on the best-supported of ' + d.series + ' series; towers are never averaged together.' : '') +
+        ' Storeys ordered by ' + (R.basis === 'declared' ? 'the location breakdown you defined in Schedule Setup' : 'the floor-name heuristic \u2014 define the floors in Schedule Setup \u203a Floors & Zones for an exact axis') + '.' +
+        (R.wd ? '' : ' \u26a0 No working calendar in play, so the cycle is in CALENDAR days.');
+      h += '<span class="ps-lsmrate-chip' + (solid ? '' : ' weak') + '" title="' + esc(tip) + '">' +
+        '<i style="' + catStyle(lanes[i].color, lanes[i].tex) + '"></i>' +
+        '<b>' + esc(v) + '</b>' +
+        (solid ? ('<u>' + wd + ' ' + ushort + '/floor</u>' + (fm != null ? '<u>' + fm + ' fl/mo</u>' : ''))
+               : '<u>irregular</u>') +
+        (d.series > 1 ? '<s>' + d.series + ' series</s>' : '') + '</span>';
+    }
+    if (!any) {
+      return '<div class="ps-lsmrate"><span class="ps-lsmrate-none">No production rate yet \u2014 a trade needs starts on at least ' +
+        LSM_MIN_FLOORS + ' ranked storeys before its slope means anything' +
+        (R.floors ? (' (this chart has ' + R.floors + ').') : ', and none of these rows resolve to a storey \u2014 check the location values, or define the floors in Schedule Setup \u203a Floors & Zones.') +
+        '</span></div>';
+    }
+    return '<div class="ps-lsmrate"><span class="ps-lsmrate-lbl" title="Read off the staircase: how fast each trade climbs the building \u2014 the deck\u2019s &quot;12 working day cycle per floor&quot; and &quot;2 floors per month&quot;. Hover a chip for the fit.">Rate</span>' + h + '</div>';
+  }
   function _lsmBarsHTML(r, min, dayw, top) {
     var agg = r._glsm; if (!agg || !agg.length) return '';
     var pitch = LSM_LANE_H + LSM_LANE_GAP, y0 = top + Math.round(LSM_PAD / 2), out = '';
@@ -22574,8 +22831,18 @@
           '" style="left:' + x + 'px;width:' + w + 'px;top:' + ly + 'px;"></div>';
         continue;
       }
+      /* ⚠️ THIS FLOOR'S OWN CYCLE, which is the figure a planner can actually check. The
+         Rate strip states a trend over the whole tower; this says what THIS storey cost against
+         the one below it, so a floor that broke the rhythm is visible where it happened. */
+      var _step = null, _R = _lsmRows ? _lsmRate() : null;
+      if (_R) {
+        var _rk = _lsmRankOf(loc);
+        if (_rk != null) _step = _R.steps[(r._danc || []).join('\u0001') + '\u0002' + b.value + '\u0002' + _rk];
+      }
       var tip = b.value + ' \u2014 ' + loc + ': ' + span + ', ' + b.pct + '%, ' +
-        b.n + ' activit' + (b.n === 1 ? 'y' : 'ies') + brk;
+        b.n + ' activit' + (b.n === 1 ? 'y' : 'ies') + brk +
+        (_step != null ? (' \u2014 started ' + _step + ' ' + (_R.wd ? 'working' : 'calendar') +
+                          ' day' + (_step === 1 ? '' : 's') + ' after the storey below') : '');
       out += '<div class="ps-lsmbar" data-lsmcat="' + esc(b.value) + '" title="' + esc(tip) +
         '" style="left:' + x + 'px;width:' + w + 'px;top:' + ly + 'px;' + catTint(b.color) + '">' +
         ((b.pct > 0) ? '<i style="width:' + b.pct + '%;' + catStyle(b.color, b.tex) + '"></i>' : '') +
@@ -43568,7 +43835,8 @@
       // belongs only when one of those is actually on screen. Shipping it unconditionally put an
       // unexplained second Activity chip in a legend that had no plain bar in it.
       '<div class="ps-actlegend-items">' + plainActChipHTML(cfg.on, _hasPlainBars) + MARKS_LEGEND_HTML +
-        (items ? '<span class="ps-alg-sep"></span>' + items : '') + BAR_NOTE_HTML + '</div>';
+        (items ? '<span class="ps-alg-sep"></span>' + items : '') + BAR_NOTE_HTML + '</div>' +
+      _lsmRateHTML();
     // ⚠️ The fold chevron is INJECTED markup, so Icons.hydrate does not reach it on its own --
     // the DOMContentLoaded pass only covers static markup. Without this the button renders empty.
     if (window.Icons) Icons.hydrate(host);

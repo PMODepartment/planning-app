@@ -95,6 +95,53 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-11 (z2) — The LSM production rate, and four things it should not have re-invented
+
+Owner: *"build the slope readout next"* — then four cross-check instructions while it was being
+built, every one of which found something. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md). Module-only, no
+migration. Slice 2 of 5.
+
+The deck's own argument for LSM over a Gantt: the **slope of the line is the rate of production**,
+quoted as "2 floors per month" and "12 working day cycle per floor". Neither is typed anywhere; both
+are now read off the staircase.
+
+- ⚠️⚠️ **Four duplications avoided because the owner asked.** `makeAxis` already precomputes a
+  working-day axis ("working days strictly BEFORE offset o") with `ALLAX` as its calendar-day
+  counterpart; `PDCal.workingDaysInRange` already counts working days; and
+  `ScheduleBuilder.locCatalogue()` already holds **the floor order the planner declared in Schedule
+  Setup**. All three are reused instead of rewritten. ⚠️ `makeAxis` **directly, never `axisFor`** —
+  that one caches for the CPM and wipes its cache when the base differs, so the rate strip would have
+  thrown away the CPM's axes on every repaint.
+- ⚠️⚠️ **And one duplication already shipped in slice 1, now corrected:** `_lsmAgg` resolved a bar's
+  calendar with `dsCalendarFor` (the duration-scenario screen's resolver) instead of `cpmCalOf` (the
+  scheduling one).
+- ⚠️⚠️ **The fit's y is the storey's POSITION, not its rank — caught by rendering it.**
+  `levelRank` is an ordering key: the roof answers **900**. Fitting on raw values put a Roof Deck 900
+  storeys above the top floor, and **every trade read "irregular" at r² 0.43**. On a real
+  high-rise the strip would have been useless. Reverting that one line reproduces 0.432396 exactly.
+- ⚠️⚠️ **There is no declared cycle to compare against, and that was checked.** The setup asks takt
+  questions but a per-floor cycle is stored nowhere — it emerges from durations plus those
+  settings when `generate()` runs. ⚠️ `cfg.floorLag` looks like the missing field and occurs
+  **twice** in the file, in `blank()` and `normalize()`, **read nowhere** — the third
+  declared-but-unwired field in this module. So the measured figure is the only honest one.
+- ⚠️ **Two fits, not one converted:** 12 calendar days between storeys reads **8.6 working days per
+  floor** *and* **2.5 floors per calendar month**. Dividing one by 30.44 would assume a seven-day
+  week. Under r² 0.7 the chip shows the **word** "irregular" and no figure — a greyed-out
+  number still gets read as a number.
+- ⚠️ **Nothing ends in a dead end**, made permanent: **50 structural assertions** check every new
+  function has a caller, every constant is read, all three controls are emitted *and* wired, and the
+  six existing helpers are genuinely reused.
+
+**199 assertions against the working tree, 11 against the pinned base, 0 failing**; rendered at
+1440×900 with both stylesheets inlined — 8 chips, 0 irregular, swatch computing
+`rgb(47, 111, 191)`. ⚠️⚠️ Three more harness defects recorded, including a probe that **again** could
+not link a branch it never ran — `_lsmDecl`'s `try/catch` degraded silently to the heuristic
+basis and hid the cause.
+⚠️ **Not verified signed in.**
+
+`MODULE_V` → `20260911z2`, sort-checked against every token a browser might hold.
+
 ### 2026-09-11 (z1) — The LSM Gantt: one row per floor, one bar per trade
 
 Owner, with a training deck (*Linear Scheduling Method for High-Rise Building Construction*, Engr.

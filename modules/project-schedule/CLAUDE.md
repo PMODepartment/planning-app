@@ -13,6 +13,141 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### The production rate, read off the staircase — and four things it should not have re-invented (2026-09-11 z2) — fmlozano
+
+Owner: *"build the slope readout next"*, then, while it was being built, three corrections in a row:
+*"Cross check with existing functions in the module and make sure no duplicates occur"*, *"Cross
+check as well since we already have a location breakdown that defines the locations in the
+schedule"*, *"Cross check the working cycle as well since I believe this already available in the
+schedule setup"*, and *"check those items that were built and cross check for existing functions so
+that everything is connected and nothing ends in a dead end"*. Every one of them found something.
+
+Slice 2 of 5. The deck's own argument for LSM over a Gantt — *"They show a clear understanding
+of the effect of the rate of production (by the slope of the line)"*, quoted as **"2 floors per
+month"** and **"12 working day cycle per floor"**. Neither figure is typed anywhere; both are read
+off the staircase the schedule already draws.
+
+### 1. ⚠️⚠️ FOUR THINGS THE FIRST CUT WAS ABOUT TO DUPLICATE, AND ONE IT ALREADY HAD
+The owner's cross-check instruction was right four times over:
+
+| I was going to write | What already existed |
+|---|---|
+| `_lsmWIndex` — a working-day index | **`makeAxis`**, which precomputes *"how many working days lie strictly BEFORE offset o"*, with **`ALLAX`** as its calendar-day counterpart |
+| a day-walking loop in `_lsmIdleGap` | **`PDCal.workingDaysInRange`** |
+| my own floor ordering | **`ScheduleBuilder.locCatalogue()`** — the floors the planner declared in Schedule Setup, in the setup's own order |
+| a "declared cycle" derived from takt settings | nothing — see 4 |
+
+And one already shipped in slice 1 and had to be corrected: `_lsmAgg` resolved a bar's calendar with
+**`dsCalendarFor(null, a)`**, which answers the same chain but belongs to the duration-scenario
+screen. A working-day question is a scheduling question, so it is **`cpmCalOf`** now. Two resolvers
+reaching the same answer today is exactly how they disagree tomorrow.
+
+⚠️⚠️ **`makeAxis` DIRECTLY, NEVER `axisFor`.** `axisFor` caches on `_axCache`/`_axBaseKey` **for the
+CPM**, keyed by its base and window — and its own first line wipes that cache when the key
+differs. Calling it with the rate's base would have thrown away the CPM's axes on every repaint.
+Own cache, shared implementation.
+
+### 2. ⚠️⚠️ THE FIT'S y IS THE STOREY'S POSITION, NOT ITS RANK — caught by rendering it
+`levelRank` is an **ordering key, not a measure**: the roof answers **900**, substructure **-50**, B2
+**-2**. Fitting on those raw values put a Roof Deck **900 storeys above** the top floor, and one
+outlier flattens a regression. **Measured in the browser on a six-storey fixture with a roof: r²
+0.43, and every single trade read "irregular".** On a real high-rise the strip would have said
+"irregular" always, which is worse than not shipping it.
+
+"Floors per month" counts **storeys**, so y is the storey's ordinal position. ⚠️ The ordinals come
+from **every storey on the chart for that series**, not from the trade's own points, so a trade that
+skips a floor still shows the skip as a gap in its climb rather than having it compressed away.
+⚠️ On the declared basis the ranks are already 0,1,2… so this is a no-op there; it is the
+heuristic basis it rescues.
+
+### 3. ⚠️⚠️ ONE RANK FUNCTION FOR THE ROWS AND FOR THE RATE
+`_lsmRankOf` prefers the **declared** breakdown and falls back to `levelRank`, and **slice 1's
+row-ordering block now calls it too**. If the row order and the slope's y-axis came from different
+functions the strip would be describing a chart nobody is looking at. Consequence worth stating: a
+storey the regexes cannot read — *"Podium Amenities"* — now takes its real place in both.
+⚠️ **One basis for the whole chart, never a mixture**: declared indices are 0,1,2… and
+`levelRank` answers -50/0/900, so interleaving them would produce a slope describing neither. The
+strip says which axis it used, and points at Floors & Zones when it is guessing.
+⚠️ `typeof ScheduleBuilder`, never `window.ScheduleBuilder` — this module is one IIFE and that
+global is never assigned; that guard *"could never pass"* and silently disabled the floor plans for
+the whole life of that feature.
+
+### 4. ⚠️⚠️ THERE IS NO DECLARED CYCLE TO COMPARE AGAINST, and that was checked rather than assumed
+The owner believed the working cycle was already in the Schedule Setup. It asks takt questions —
+`zoneSimul`, `unitSimul`, `tradeBatch`/`tradeBatchKind`, `floorLead` — but **a trade's per-floor
+cycle is stored nowhere**: it *emerges* from the activity durations plus those settings when
+`generate()` runs. Re-deriving it here would be a second copy of the sequencing engine.
+
+⚠️⚠️ **And `cfg.floorLag` — "cure/lag days between a floor and the floor above" — looks
+like the missing declaration and is not one: it occurs exactly TWICE in this file, in `blank()` and
+in `normalize()`, and is never read.** No caller subscripts it. So it holds no planner input at all.
+**Third instance of the declared-but-unwired shape in this module**, after `openLocAdopt` and
+`fillDown`'s change-order branch. Wire it and a planned-vs-achieved column becomes possible; until
+then the measured figure is the only honest one, and the strip does not imply otherwise.
+
+### 5. Two fits, not one converted
+A cycle in **working** days and a rate in **calendar** months are different regressions over the
+same points; dividing one by 30.44 to get the other silently assumes a seven-day week. Each is
+fitted in its own x. Verified on the rendered fixture: 12 calendar days between storeys reads
+**8.6 working days per floor** *and* **2.5 floors per calendar month** — both correct, and
+neither derivable from the other.
+⚠️ **≥ 3 storeys and r² reported.** Under 0.7 the chip shows the **word** "irregular" and
+**no figure at all** — not a greyed-out number, because a greyed-out number still gets read as a
+number, and a confident "2.1 floors/month" over a scatter is what ends up in a report. Degenerate
+fits (every storey the same day, every point the same storey) return **null** rather than r² 1,
+which is the most confident possible statement about nothing.
+
+### 6. Nothing ends in a dead end
+The owner's last instruction, made permanent: **50 structural assertions** now check that every
+`_lsm*` function has a caller, every constant is read, and each of the three controls is both
+emitted and wired — plus the reverse direction, that `makeAxis`, `workingDaysInRange`,
+`expandToLevel`, the curated key set, `locCatalogue` and `cpmCalOf` are all actually reused. This
+module has shipped "built with no door" three times; a structural assertion is the only thing that
+keeps it from being four.
+
+Also connected: the **bar tooltip** now carries that storey's own cycle (*"started 12 working days
+after the storey below"*) from the same `steps` map the fit builds — the local figure a planner
+can check, where the strip states the trend.
+
+### Verified
+**199 assertions against the working tree, 11 against the pinned base, 0 failing.**
+⚠️⚠️ **The roof-deck assertion BITES:** reverting the single ordinal line reproduces **r²
+0.432396** — the same 0.43 the browser reported — and a cycle of **0**, failing exactly 5
+assertions. The consecutive-floor fixtures could never have caught it, which is why that case is now
+its own suite section.
+⚠️ **Rendered at 1440×900** with both stylesheets inlined, transitions forced off, gated on
+`visibilityState` + `clientWidth`: 8 chips, **0** marked irregular, swatch computing
+**`rgb(47, 111, 191)`** (a colour, not a width), strip 47px, no horizontal scroll, and the tooltip
+reading *"6 storeys, upward, r² 1. 8.6 working days per floor, 2.5 floors per calendar month."*
+
+⚠️⚠️ **Three more of my own harness defects, all of which read like module bugs:**
+- the **probe could not link a branch it never ran** — again. `_lsmDecl` is wrapped in
+  `try/catch`, so a missing `_locNormMemo` degraded **silently** to the heuristic basis and four
+  assertions reported "heuristic" with no cause visible. The probe now calls `locNormKey` past the
+  catch. ⚠️ Worth keeping: that catch is correct in production (a project with no setup must fall
+  back) and it means a genuinely broken read is invisible.
+- `emitbars.js` kept the **old single-line `sliceVar`**, so slicing the multi-line `ALLAX` object
+  returned an unbalanced fragment and broke the next statement. Its slicer is now lifted from the
+  suite so the two cannot disagree.
+- two of my expectations were **wrong rather than the code**: a fixture running Ground(0) →
+  2nd(2) skipped rank 1, so a 12-working-day-per-storey climb correctly fitted **10** days per rank
+  (a building with no 1st floor); and my "irregular" fixture was two tidy clusters, which a line
+  fits at r² **0.73** — above the floor, so it was not irregular at all. Both fixtures are
+  now what they claimed to be.
+⚠️ A structural check also had to learn to **strip comments**: it forbade `dsCalendarFor(` in
+`_lsmAgg` and was matching the comment that explains the change. The module's own precedent — a
+check that bans a code pattern must still let the prose quote it.
+
+⚠️ **Not verified signed in.** No real project's locations, trades or working calendar have been
+through this; the declared-breakdown path has never read a real `schedule_builder` row.
+
+`MODULE_V` → `20260911z2`, sort-checked against `e3`/`sc1`/`sc6`/`z1`.
+
+### Still to come
+Slices 3–5: clash detection, the draggable data-date line (mostly reuse — `_stkState`
+already answers *"the state of one (location, category) bucket at the cut-off date"*), and the
+flowline chart.
+
 ### The LSM Gantt: one row per floor, one bar per trade, and the staircase that shows the rate (2026-09-11) — fmlozano
 
 Owner, with a training deck — *Linear Scheduling Method for High-Rise Building Construction*,
