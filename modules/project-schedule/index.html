@@ -20892,14 +20892,19 @@
      three import/push paths all run `populateGroupSelect(); seedExtraHidden(); renderHeader();` and
      stop — so syncGridColumns(), which only runs inside renderGrid(), never sees those. Measured
      live on OPW101: head 39 cells (11 extra columns), every body row 29 (1). */
-  var _bodySig = null, _bodyRepaintQ = 0;
+  var _bodySig = null;
+  /* Lowered for the one renderHeader() that doRender() makes through syncGridColumns(): that caller
+     renders the window itself on the next line, so repairing here would serialise every visible row
+     twice on every column change. */
+  var _hdrRepair = true;
   function gridColSig() { return gridCols().map(colKey).join('|'); }
   // Re-assert the header + the order/hide CSS when the column set has moved under the body.
   function syncGridColumns() {
     var sig = gridColSig();
     if (sig === _colSig) return false;
     _colSig = sig;
-    renderHeader();
+    _hdrRepair = false;
+    try { renderHeader(); } finally { _hdrRepair = true; }
     if (typeof applyColOrder === 'function') applyColOrder();
     if (typeof applyColHidden === 'function') applyColHidden();
     return true;
@@ -20945,16 +20950,15 @@
     applyColHidden();
     applyColOrder();
     syncHeadHeights();
-    /* ⚠️ AND THE BODY, IF THE HEADER JUST MOVED WITHOUT IT — see the note on _bodySig. Deferred by a
-       tick, and the flag is cleared AFTER the repaint, so the renderHeader() that renderGrid() runs
-       through syncGridColumns() cannot queue a second pass: at most one repaint per header change. */
+    /* ⚠️ AND THE BODY, IF THE HEADER JUST MOVED WITHOUT IT — see the note on _bodySig.
+       ⚠️ renderWindow(true), NOT renderGrid(). renderGrid() is scheduleRender(), which is
+       requestAnimationFrame-debounced, and a rAF NEVER FIRES IN A HIDDEN TAB: measured with the tab
+       backgrounded, `_rafP` latches true on the first swallowed request and every renderGrid() after
+       it returns immediately — the repair never ran. It is also the right call on the merits: a
+       column-set change does not change the display LIST, only the cells in it, so re-serialising
+       the window is the whole repair. Synchronous, so nothing can swallow it. */
     _colSig = gridColSig();
-    if (_bodySig !== null && _bodySig !== _colSig && !_bodyRepaintQ) {
-      _bodyRepaintQ = 1;
-      setTimeout(function () {
-        try { renderGrid(); } finally { _bodyRepaintQ = 0; }
-      }, 0);
-    }
+    if (_hdrRepair && _bodySig !== null && _bodySig !== _colSig) renderWindow(true);
   }
   // OPC-style column header menu (Sort / Adjust to fit / Rename / Hide).
   function openColMenu(idx, anchor) {
@@ -46095,6 +46099,10 @@
       load: load,
       rebuild: rebuild,
       renderAll: renderAll,
+      // Exposed for the header/body invariant: gridColSig() is what both are built from, and
+      // renderHeader() is the call the four column-discovering paths make on its own.
+      renderHeader: renderHeader,
+      gridColSig: gridColSig,
       scheduleRender: scheduleRender,
       doRender: doRender,
       renderWindow: renderWindow,
