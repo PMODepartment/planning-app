@@ -13,6 +13,40 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### A correction to zi: the warmed catalogue supplies the CATEGORY, not the ORDER (2026-09-12 zj) — fmlozano
+
+⚠️⚠️ **A REGRESSION I ALMOST SHIPPED IN THE FIX ONE ENTRY ABOVE, caught by reading my own diff
+against the live data I had just measured.** Recorded in full because the near-miss is the lesson.
+
+`zi` made `_lsmDecl` read the cold-open catalogue for everything — including the **declared floor
+order**. But `catalogueFrom`'s own contract is *"floors bottom-up **per trade**"*, and `_lsmDecl`
+treats **first-seen across trades** as the building order. Measured on OPW101, the catalogue reads:
+
+    F1, B3, B2, B1, Ground Floor, 2ND Floor, 3RD Floor, …
+
+`F1` belongs to a trade listed before the one carrying the basements, so it lands **below B3**. That
+order was unreachable on a cold open before `zi`, so the fault was latent; `zi` would have activated
+it on **every project at once** and silently reordered charts that are correct today.
+
+**Narrowed.** The warm now supplies the **category** — which is what the per-category handoff
+needs and which has no ordering question — while the **order** keeps exactly the source it had.
+Two separate reads inside `_lsmDecl`, and the warm no longer drops the rate memo, because the axis
+does not move.
+
+⚠️ **Making the declared order trustworthy is its own change and its own decision**, and it is
+NOT taken here. It would want the spine to come from the trade whose floor list actually covers the
+building, rather than from whichever trade happens to be first in `GROUPS`.
+
+### Verified
+**542 assertions against the working tree, 27 against the pinned base, 0 failing.**
+⚠️⚠️ **25 negative builds, all 25 bite** — including two written specifically to guard this
+decision: taking the order from the warmed catalogue fails, and letting the warm drop the rate memo
+fails.
+`node --check` PARSE OK, 0 functions lost. `MODULE_V` → `20260911zj`.
+
+⚠️ **Still not re-measured live**: the Chrome bridge dropped part-way through the end-to-end
+session, after the `zh` row-height fix was verified signed-in but before `zi`/`zj` were deployed.
+
 ### The declaration was never READ on a cold open (2026-09-11 zi) — fmlozano
 
 Owner: *"let's test the LSM end-to-end... let's see how the clashes originated"*. Driving the

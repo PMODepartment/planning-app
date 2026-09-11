@@ -98,6 +98,21 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-12 (zj) — Correction to zi: the warmed catalogue supplies the category, not the order
+
+⚠️⚠️ **A regression almost shipped inside the previous fix.** `zi` had `_lsmDecl` read the
+cold-open catalogue for everything, including the declared floor ORDER — but `catalogueFrom`'s
+contract is *"floors bottom-up per trade"*, and `_lsmDecl` treats first-seen across trades as the
+building order. On OPW101 that reads **F1, B3, B2, B1, Ground Floor, 2ND…**, putting `F1` below
+the basements. Latent while the declared basis was unreachable on a cold open; `zi` would have
+activated it on every project at once.
+
+Narrowed so the warm supplies the **category** only and the **order** keeps its old source. Making
+the declared order trustworthy is its own change and is deliberately not taken here.
+
+**542 assertions on the working tree, 27 against the pinned base, 0 failing; 25 negative builds, all
+bite**, two of them written to guard this decision specifically. `MODULE_V` → `20260911zj`.
+
 ### 2026-09-11 (zi) — The LSM declaration was never read on a cold open
 
 End-to-end test of the LSM on the **live, signed-in** app (OPW101, 2,561 activities) found two

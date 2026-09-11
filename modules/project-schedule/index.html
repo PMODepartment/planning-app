@@ -22756,9 +22756,10 @@
       ScheduleBuilder.locCatalogueFor(pid).then(function (cat) {
         if (!cat || !Object.keys(cat).length) return;
         _lsmDeclCat = cat;
-        /* Everything downstream of the declaration is now stale: the floor ORDER (so the rate's
-           ordinals), and the categories the handoff is measured in. */
-        _clearLsmDeclMemo(); _lsmRateMemo = null; _lsmClashMemo = null;
+        /* ⚠️ The CATEGORIES are what just arrived, and only the clash detector reads them —
+           the floor order is deliberately not taken from here (see `_lsmDecl`), so the rate's
+           ordinals do not move and its memo does not need dropping. */
+        _clearLsmDeclMemo(); _lsmClashMemo = null;
         if (_lsmAggOn()) { try { renderGrid(); renderGantt(); renderActLegend(); } catch (e) {} }
         if (flowlineMode) { try { renderFlowline(); } catch (e) {} }
       }, function () {});
@@ -22818,12 +22819,29 @@
     if (_lsmDeclMemo) return _lsmDeclMemo;
     var m = {}, n = 0, kind = {};
     try {
-      /* ⚠️ The warmed catalogue wins: on a cold open the synchronous one is empty, and on a
-         session where the setup tab IS open the two are the same read. */
-      var cat = _lsmDeclCat || ((typeof ScheduleBuilder !== 'undefined' && ScheduleBuilder.locCatalogue)
-        ? (ScheduleBuilder.locCatalogue() || {}) : {});
-      Object.keys(cat).forEach(function (lid) {
-        (cat[lid] || []).forEach(function (e) {
+      /* ⚠️⚠️ TWO CATALOGUES, DELIBERATELY, AND THE ORDER DOES **NOT** COME FROM THE WARM ONE.
+         `catalogueFrom`'s own contract is *"floors bottom-up PER TRADE"* — so concatenating the
+         trades is not globally bottom-up, and the loop below treats first-seen as the building
+         order. On OPW101 that produces **F1, B3, B2, B1, Ground Floor, 2ND…**: `F1` belongs to a
+         trade listed before the one carrying the basements, so it lands BELOW them.
+         ⚠️⚠️ That was latent while the declared basis was unreachable on a cold open. Feeding the
+         warmed catalogue into the ORDER would have activated it for every project at once and
+         silently reordered charts that are correct today — a regression introduced by a fix.
+         So the warm supplies the **category** (which the per-category handoff needs and which has
+         no ordering question) and the order keeps exactly the source it had. Making the declared
+         order trustworthy is its own change and its own decision. */
+      var catOrder = (typeof ScheduleBuilder !== 'undefined' && ScheduleBuilder.locCatalogue)
+        ? (ScheduleBuilder.locCatalogue() || {}) : {};
+      var catKind = _lsmDeclCat || catOrder;
+      Object.keys(catKind).forEach(function (lid) {
+        (catKind[lid] || []).forEach(function (e) {
+          if (!e || e.dim !== 'floor' || !e.value || !e.kind) return;
+          var kk = locNormKey(e.value);
+          if (kind[kk] == null) kind[kk] = e.kind;
+        });
+      });
+      Object.keys(catOrder).forEach(function (lid) {
+        (catOrder[lid] || []).forEach(function (e) {
           if (!e || e.dim !== 'floor' || !e.value) return;
           var k = locNormKey(e.value);
           if (m[k] == null) { m[k] = n++; }      /* first-seen order IS the setup's order */
@@ -22833,7 +22851,6 @@
              typical / roof costs one line here and NO second matching mechanism. A separate
              storey-to-floor matcher would be a third place that can disagree about which floor
              "5th Floor" is, after the WBS match table and this. */
-          if (kind[k] == null && e.kind) kind[k] = e.kind;
         });
       });
     } catch (e) { m = {}; n = 0; kind = {}; }
