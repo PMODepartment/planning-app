@@ -81,6 +81,7 @@ developer, plug into one shared shell.
 | `tools/wiring-check.js` | **Run `node tools/wiring-check.js` before any commit that touches a shared asset or a cross-module call.** Loads every shipped browser script against a window stub and proves: each assigns its global, no export (incl. `_internals`) is undefined, every cross-module reference names a key its provider really exports, every referenced asset exists and is on ONE version, and every enabled module's page is real. ⚠️ It **self-tests first** by reproducing the 2026-09-10 (z6) outage in memory — a checker that has never failed proves nothing. |
 | `tools/scan.js` | The string/comment/regex-aware source scanner both checkers use. ⚠️ Self-tests on ten shapes before any caller trusts it — a line-comment regex eats every line with a double slash inside a string, which silently deleted 62 references from wiring-check's own sweep. |
 | `tools/dead-hooks.js` | `node tools/dead-hooks.js` — a class a module QUERIES that nothing ever EMITS (the `#pk-boq` shape: a handler bound to markup that does not exist). ⚠️ The inverse check, "a class with no CSS rule", is noise — query hooks have no style by design. |
+| `tools/dead-exports.js` | `node tools/dead-exports.js` — a key on a module's public object that NOTHING in the repo reads (the inverse of wiring-check). ⚠️⚠️ It VERIFIES each parse and prints an UNPARSED list for surfaces its tokenizer could not read — `ScheduleBuilder` is currently one of them, so a clean run does not cover it. |
 | `MODULE_CONTRACT.md` | Rules every module developer must follow |
 
 ## Roles
@@ -97,6 +98,38 @@ developer, plug into one shared shell.
 ---
 
 ## Changelog
+
+### 2026-09-12 — `tools/dead-exports.js`: an export nothing reads, and three attempts to find one
+
+Overnight audit, agenda item 1 — the tooling gap that let `ScheduleBuilder.setupOrderLabels`
+(exported, **zero callers repo-wide**) survive every checker. `wiring-check` proves every cross-module
+CALL names a key its provider exports; the inverse — an export nothing calls — had no check at
+all, and this repo has shipped that shape five times in one module.
+
+- **What it does:** reads the source for `NAME = (function(){… return {…}; })()` surfaces
+  and reports keys no file ever reads. It covers **closure-local** surfaces, which `wiring-check`
+  cannot reach at all — it loads scripts and enumerates globals, and `ScheduleBuilder` is a `var`
+  inside another IIFE, never on `window`.
+- ⚠️⚠️ **THE FIRST TWO VERSIONS WERE CONFIDENTLY WRONG, AND THE THIRD REFUSES TO BE.**
+  "The last `return {` in the body" picked a nested helper's object: on `ScheduleBuilder` it reported
+  six keys (`code, rows, inExec…`) **none of which are exports**, missed all ~20 real ones, and
+  then declared two of the wrong object's keys dead. Tracking brace depth instead found **nothing at
+  all** — over ~800 KB the counter drifts and never returns to zero. So the export object is now
+  identified by an exact local signature, **and every parse is verified**: if the body's closing brace
+  is not followed by the IIFE's own `)()`, the tokenizer drifted and that surface goes on an
+  **UNPARSED list that is printed with the findings**.
+- ⚠️⚠️ **It therefore does NOT yet cover the case that prompted it, and says so on every run** —
+  `ScheduleBuilder` is named as unread. A checker that says *"I could not read this one"* is usable;
+  one that quietly reads the wrong thing is the fault `dead-hooks.js` was rewritten to avoid.
+- ⚠️ **Surfaces come from shipped source, reads from every file including tests and harnesses.**
+  Scanning one set for both reported ~40 live Progress Photos test hooks as dead.
+- **Self-tests before reporting**, on the shapes that broke it: a nested return inside an exported
+  method, a nested key, and a regex holding both quote characters.
+
+**Result: 44 findings across 25 surfaces / 261 keys, 3 surfaces named unread.** ⚠️ **Nothing was
+deleted** — removing an export is a design decision and other sessions edit this repo live.
+`wiring-check` 123/123, `dead-hooks` unchanged, `scan` clean, LSM suite 617/0. No shipped file
+changed, so no `MODULE_V` bump.
 
 ### 2026-09-12 — Audit sweep: the cold-open class, and a harness that could hide it
 
