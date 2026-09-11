@@ -95,6 +95,58 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-11 (a3) — The rename, driven end-to-end against the live database — and one claim from (a2) corrected
+
+Owner: *"Let's verify the rename end-to-end."* (a2) shipped the naming pass with the honest caveat
+that it was **not** browser-verified. It is now, signed in, against **BAU101-TEST** — a test copy,
+chosen so no live project was touched. Every value was restored and the project was swept clean
+afterwards: **94 nodes, 94 summary rows, 0 unlinked, 0 name mismatches, 0 duplicates.**
+
+**⚠️ FIRST, A CORRECTION TO (a2).** That entry said *"the name cell is `ps-editable` on every row
+with no `isWbs` guard, so renaming a branch in the grid is not merely possible, it is the obvious
+gesture."* That is true of `rowHtml`, and it is **wrong about what the planner sees**: in the
+WBS-grouped view the branch rows are rendered as **group headers** — no `data-rowid`, no
+`data-field`, not editable. Measured in the live DOM. The reachable path is the **detail form**
+(`#ps-f-name`), which does edit a `WBS Summary` row's name and does route through `persist()`. So
+the write-back is real and reachable, but the route I described was not the route.
+
+**What the three paths actually did, driven through the real UI.**
+
+| path | before | after |
+|---|---|---|
+| detail form → `wbs_nodes` | only the projection changed | **both** changed |
+| WBS Manager → projection, linked | in-memory only | PATCH observed, **both** in sync |
+| WBS Manager → projection, orphaned link | silently nothing | fallback PATCH, **both** in sync |
+
+The orphan case is the one (a2) was written for, and it was reproduced properly: the summary row's
+`wbs_node_id` was nulled to recreate the post-import state this file documents, then the branch was
+renamed through the Manager's own input and handler.
+
+**⚠️⚠️ AND THE FIRST ORPHAN ATTEMPT FAILED, WHICH IS THE FINDING.** Source renamed, projection did
+not. Chasing it through the network layer: the two requests I assumed were mine were in fact
+`_wbsSyncMissing`'s own `GET`s — their filter sets match it exactly — and **my updates issued no
+request at all** on that pass. On a clean retry both PATCHes appear and both copies converge. So the
+fallback is not broken; it **raced the heal pass**, which was mid-flight re-linking rows at that
+moment and had already changed the `is('wbs_node_id', null)` set out from under the query. Narrow —
+it needs a rename in the same seconds as a heal — but real, and recorded rather than smoothed over.
+
+⚠️ I nearly mis-diagnosed this twice: first concluding `.select()` on an update was being turned
+into a `GET` (it is not — the same chain PATCHes correctly from a console client), then that the
+handler had thrown (it had not — no error, and the PATCH appears on a clean run). Reading the
+network instead of the code is what settled it, and both wrong hypotheses came from trusting a
+single observation of a racy path.
+
+**Not changed here.** No fix for the race is shipped. The right shape is probably to re-read once
+when the fallback finds nothing, but that is a guess about a window I have observed exactly once,
+and writing a retry loop against a heal pass on the strength of one sighting is how the "missing WBS
+rows" incident this file already records began. It wants its own reproduction first.
+
+Verified live: the deployed page is `MODULE_V 20260911a2` and carries the new code; the test drove
+the real detail form, the real WBS Manager input and their real handlers, not a stub.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+
 ### 2026-09-11 (a2) — The naming pass: one branch name, not two copies that drift apart
 
 Owner: *"Check the naming of these from the schedule setup and the WBS so everything is
