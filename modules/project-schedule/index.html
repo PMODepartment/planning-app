@@ -40999,6 +40999,16 @@
     if (app && window.MutationObserver) {
       new MutationObserver(_tbFitSoon).observe(app, { attributes: true, attributeFilter: ['class'] });
     }
+    /* ⚠️⚠️ AND AGAIN WHEN THE SIDEBAR HAS FINISHED MOVING. `.pd-sidebar` carries
+       `transition: width .22s`, so the class flip fires the observer while the rail is still
+       ANIMATING — the fit was being computed against the OLD width and came out exactly backwards:
+       measured on the deployed build, collapsing (which gives 176px BACK) shed five controls, and
+       expanding (which takes them away) shed none and wrapped. A rAF is not enough; the width is
+       not final until the transition ends. */
+    var sb = document.querySelector('.pd-sidebar');
+    if (sb) sb.addEventListener('transitionend', function (e) {
+      if (e.propertyName === 'width' || e.propertyName === 'flex-basis') _tbFitSoon();
+    });
     _tbFit();
   }
 
