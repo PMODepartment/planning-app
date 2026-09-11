@@ -98,6 +98,28 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-12 — Audit sweep: the cold-open class, and a harness that could hide it
+
+Overnight audit, agenda item 2. **No shipped file changed.** Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+- ⚠️⚠️ **The checker is hardened.** Its EXPORTS block fell back to `function () {}` for two cache
+  clearers, and `_clearLsmDeclCat` was never linked — so `M.clearDeclCat()` did nothing and a
+  cache leaked between scenarios. Both now throw, naming what was missing; self-tested by
+  un-linking it, which used to pass 617 assertions clean.
+- **Every cross-closure read swept.** `locCatalogue`, `zonePlan*` and `tradeHandoff` all have
+  cold-open readers. `tradeLabels` and `invalidateLocCache` do not touch `cfg`.
+- ⚠️ **`setupGroupDims` is not a silent failure** — `_adoptSetupGrouping()` already exists for
+  it with three guards and the fallback is stated in the code. It COULD now be closed properly, but
+  that re-groups the grid after first paint, which is the owner's call rather than an overnight fix.
+- ⚠️⚠️ **`setupOrderLabels` is a dead end** — exported, zero callers repo-wide. Left in place
+  (other sessions edit live). Fifth instance of the declared-but-unwired shape in this module.
+  `tools/dead-hooks.js` finds dead CSS classes but not dead cross-closure exports, which is how it
+  survived; extending it is the next tooling job.
+
+**617 assertions, 27 base, 0 failing; 30 negative builds all bite.** wiring-check 123/123,
+dead-hooks identical to base, scan clean.
+
 ### 2026-09-12 (a) — One scale for the LSM storey axis, and a live bug it removes
 
 Overnight audit, agenda item 1. Detail:

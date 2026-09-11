@@ -13,6 +13,61 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### Audit sweep: the cold-open class, and a harness that could hide it (2026-09-12) — fmlozano
+
+Overnight audit, agenda item 2 — hunting the defect CLASS behind tonight's two biggest finds.
+**No shipped file changed.**
+
+### ⚠️⚠️ THE CHECKER IS HARDENED, BECAUSE IT WAS HIDING EXACTLY THIS
+The suite's EXPORTS block used `typeof X === 'function' ? X : function () {}` for two cache
+clearers. `_clearLsmDeclCat` is called only by `psSetupChanged`, which no probe runs, so the link
+pass never pulled it in — and `M.clearDeclCat()` was a **no-op**. The warmed catalogue leaked
+between scenarios and a fixture reported `null` for a storey it had just declared.
+
+Both fallbacks now go through `_mustFn(name, fn)`, which returns the real function or one that
+**throws, naming what was never linked**. Self-tested: un-linking `_clearLsmDeclCat` now produces
+`HARNESS: _clearLsmDeclCat was never linked, so this call would have been a silent no-op` where it
+previously passed 617 assertions clean.
+⚠️ A no-op fallback in a harness is a stub wearing a different hat.
+
+### The cold-open sweep — every cross-closure read, checked
+| Export | reads `cfg` | cold-open reader | verdict |
+|---|---|---|---|
+| `locCatalogue` | yes | `locCatalogueFor` | closed |
+| `zonePlanByLabel` / `zonePlanFront` | yes | `zonePlanFetch` | closed |
+| `tradeHandoff` | yes | `tradeHandoffFor` | closed (tonight) |
+| `tradeLabels` | no — constants | n/a | safe |
+| `invalidateLocCache` | no | n/a | safe |
+| **`setupGroupDims`** | yes | **none** | **documented + guarded, see below** |
+| **`setupOrderLabels`** | yes | none | **dead end, see below** |
+
+### ⚠️ `setupGroupDims` is NOT a silent failure, and that is the finding
+It has no `...For(pid)` reader, so on a cold open the grid's default grouping does not follow the
+setup's structure. But this is **already known to the code**: `_adoptSetupGrouping()` exists for it,
+carries three guards (planner has not chosen, dims differ, grouping is still the plain `wbs` tree),
+and the comment states the fallback outright — *"Until then the plain WBS tree stands, which is
+the same behaviour as before."*
+
+It could now be closed properly, because `locCatalogueFor` already proves a cfg-free read of the
+same row is possible. **Deliberately not done autonomously:** it would re-group the grid a moment
+after first paint, and whether that is better than a stable-but-plain default is the owner's call,
+not a defect to be fixed overnight.
+
+### ⚠️⚠️ `setupOrderLabels` IS A DEAD END
+Exported by `ScheduleBuilder`, **zero callers anywhere in the repo**. It returns the setup's
+structure as labels (`cfg.wbsOrder.map(dimLabelOf)`) — the makings of a "your setup says
+Tower → Trade → Level" hint in the Group menu, which is the one place that would want it.
+Left in place rather than removed: other sessions edit this repo live and may be mid-flight on it.
+Fifth instance of the declared-but-unwired shape here, after `openLocAdopt`, `fillDown`'s
+change-order branch, `cfg.floorLag` and `cfg.tradeLeads` — the last of which was wired yesterday.
+
+### Verified
+**617 assertions against the working tree, 27 against the pinned base, 0 failing. 30 negative
+builds, all bite.** `wiring-check` 123/123 (3,527 cross-module references across 74 files),
+`dead-hooks` identical to the pinned base, `scan` self-test clean.
+⚠️ `tools/dead-hooks.js` finds dead CSS classes but not dead cross-closure EXPORTS, which is how
+`setupOrderLabels` survived. Extending it is the obvious next tooling job.
+
 ### ONE SCALE for the storey axis — and a live bug it removes (2026-09-12 a) — fmlozano
 
 Overnight audit, agenda item 1. It turned out to be bigger than "make the declared order
