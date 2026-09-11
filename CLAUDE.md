@@ -98,6 +98,32 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-11 (zd) — The Group menu's "LSM" preset is the LSM layout, and the mode leaves with the grouping
+
+Owner asked *"Should we toggle the LSM through the group → LSM preset?"*, I recommended **no**, and
+was **overruled**. Detail: [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+Module-only, no migration.
+
+- The preset is now **location-led** (`dims: locDims, lsm: true`) instead of the `['act'] + locDims`
+  transpose it has carried since long before this work, and picking it calls **`setLsmRows(true)`**
+  so the colour key, the keyed lanes and the floor-level collapse are arranged by the one writer
+  that already does it.
+- ⚠️⚠️ **The mode leaves with the grouping**, guarded **once** inside `setGroupBys` so all twelve
+  callers are covered. It cannot fight `_lsmArrange` (which sets a location-led grouping), and it is
+  never reached on a project with no location levels.
+- ⚠️⚠️ **The old dims are renamed, not deleted** — "Activity › Location". Somebody may be using
+  that grouping; freeing up a name is not worth taking it away.
+- ⚠️ One of my three objections was **already solved in the code** by `_lsmShaped()` and I had not
+  checked before arguing. Said so, then built it.
+- ⚠️⚠️ **The suite caught its own test being worthless.** The assertions first re-typed the guard's
+  condition and asserted on the copy — a negative build with `if (!_locLed)` turned into
+  `if (false)` passed all fifteen. The block is now cut out of the shipped `setGroupBys` and
+  executed; that negative build now fails **7**, and a second one reverting the preset fails **3**.
+
+**397 assertions against the working tree, 15 against the pinned base, 0 failing.** `node --check`
+PARSE OK, 0 functions lost, 50 insertions / 4 deletions. ⚠️ **Not verified signed in** — a menu
+path needing a loaded project. `MODULE_V` → `20260911zd`.
+
 ### 2026-09-11 (zc) — The LSM flowline chart: the deck's own form, and one model behind both views
 
 Owner: *"Let's proceed with slice 5"*. The last of five. Detail:

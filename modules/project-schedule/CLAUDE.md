@@ -13,6 +13,66 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### The Group menu's "LSM" preset IS the LSM layout now (2026-09-11 zd) — fmlozano
+
+Owner: *"Should we toggle the LSM through the group → LSM preset?"* I recommended **no** and was
+**overruled** — *"Make the preset the toggle"*. Recording both, because the reasoning that
+survived contact is the useful part.
+
+### Why I said no, and what was actually true
+1. The preset's dims were `['act'] + locDims` — the **transpose** of what the layout needs.
+2. A preset that sets a grouping cannot arrange the other three prerequisites (colour key on, lanes
+   keyed, collapse to the **floor** level), so it would look like the LSM and not be it.
+3. `setGroupBys` has **twelve** call sites; coupling a mode to it means every one of them can now
+   turn the mode off.
+
+⚠️⚠️ **(2) was already mostly solved and I had not checked before answering.** The
+`_lsmShaped()` guard from the row-height hotfix already withholds the tall row height the moment
+the grouping stops being location-led. That made the owner's call **cheaper than I estimated**, and
+I said so before implementing. Check the code before arguing from it.
+
+### What shipped
+- The preset is now `{ name: 'LSM', dims: locDims, lsm: true }` — **location-led**, so the hint
+  printed under it is true again. `lsm: true` is read by the click handler; it is not a dimension.
+- Picking it calls **`setLsmRows(true)`**, which arranges the grouping itself through `_lsmArrange`.
+  ⚠️ The preset **hands over** rather than setting dims and leaving the mode to catch up — one
+  writer for that arrangement, which is why `_lsmArrange` was extracted in slice 5.
+- ⚠️⚠️ **The mode leaves with the grouping.** Now that a preset can turn LSM on, every other
+  grouping action has to be able to turn it off — done **once** inside `setGroupBys`, which catches
+  all twelve callers (presets, the level up/down/remove/add editors, the LBS wizard) instead of each
+  of them remembering. It clears the flag, the persisted key and the lit toolbar button, and
+  re-derives the row height.
+  ⚠️ It cannot fight `_lsmArrange`, which sets a **location-led** grouping: turning the mode on can
+  never turn it off. And with **no location levels** `_lsmArrange` toasts and never reaches
+  `setGroupBys`, so the mode is not switched off underneath its own empty state. Both asserted.
+- ⚠️⚠️ **The old dims are renamed, not deleted.** `['act'] + locDims` is a real grouping somebody
+  may be using today — Activity over its locations — and silently removing it to free up a name
+  would be a worse trade than one more row in this menu. It is now called
+  **"Activity › Location"**, which is what it is.
+- The LSM-rows tooltip no longer warns about a collision between two controls called LSM. There
+  isn't one any more.
+
+### ⚠️⚠️ The suite caught its own test being worthless
+The first cut of these assertions **re-typed** the guard's condition into the checker and asserted on
+that. A negative build with the shipped `if (!_locLed)` replaced by `if (false)` **passed all
+fifteen** — the statements were still in the source and the arithmetic under test was the suite's
+own copy. The block is now **cut out of `setGroupBys` and executed**, with a stubbed
+`localStorage` / `getElementById` / `applyRowZoom` recording what it touched. The same negative build
+now fails **7** assertions; a second negative that reverts the preset to its old dims fails **3**.
+*A test that cannot fail is not evidence* — and it had to be demonstrated, not assumed.
+
+### Verified
+**397 assertions against the working tree, 15 against the pinned base `4d82fd4`, 0 failing.**
+The base contrast bites on this change specifically: the base's preset **is** the activity-led
+transpose, has no `lsm: true`, no "Activity › Location" entry, and its `setGroupBys` knows nothing
+about an LSM mode.
+`node --check` on the extracted inline script: **PARSE OK**. Function set vs base: **0 lost**,
+31 added. NUL 0, CR 0, braces balanced. Diff: **50 insertions, 4 deletions**.
+
+⚠️ **Not verified signed in.** This is a menu path that needs a loaded project; the guard is proved
+by executing the shipped block, not by clicking it. `MODULE_V` → `20260911zd`, sort-checked
+against `zc`.
+
 ### The flowline chart: the deck's own form, and one model behind both views (2026-09-11 zc) — fmlozano
 
 Owner: *"Let's proceed with slice 5"*. The last of the five, and the shape the deck's earlier slides

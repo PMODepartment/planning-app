@@ -4031,7 +4031,7 @@
                — the transpose of this layout, and a name collision worth resolving: that preset
                is the owner's own naming and is left alone rather than silently renamed. -->
           <button class="pd-btn ps-icobtn" id="ps-flowbtn" aria-label="Flowline" title="Flowline — the time-location chart: time across, storeys up, each trade a diagonal band whose slope is its production rate. The deck's own form; the LSM rows are the same model laid out as a Gantt."><span data-ico="trendingUp" data-ico-size="15"></span></button>
-          <button class="pd-btn ps-icobtn" id="ps-lsmbtn" aria-label="LSM rows" title="LSM rows — the time-location layout: one row per storey, one bar per trade, the slope of the staircase being the production rate. Groups by location and collapses to one row per floor. (Not the same as the Group menu's &quot;LSM&quot; preset, which is Activity › Location.)"><span data-ico="layers" data-ico-size="15"></span></button>
+          <button class="pd-btn ps-icobtn" id="ps-lsmbtn" aria-label="LSM rows" title="LSM rows — the time-location layout: one row per storey, one bar per trade, the slope of the staircase being the production rate. Groups by location and collapses to one row per floor. The Group menu's &quot;LSM&quot; preset is the same thing; the Flowline button draws the same model as a time-location chart."><span data-ico="layers" data-ico-size="15"></span></button>
           <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-outlinebtn" aria-label="Outline" title="Outline — expand all, or collapse the whole schedule to one WBS level"><span data-ico="layers" data-ico-size="15"></span></button><div class="ps-menu" id="ps-outline-menu"></div></div>
           <!-- Outline and Saved layouts used to be two more toolbar buttons here. They are sections of
                the View ▾ menu now: both answer "how am I looking at this schedule", the same question
@@ -9902,6 +9902,30 @@
     // what stops _adoptSetupGrouping from later overwriting a deliberate pick.
     _gbChosen = true;
     groupBys = list.slice(); normalizeGroupBys();
+    /* ⚠️⚠️ THE MODE LEAVES WITH THE GROUPING. Now that a preset can turn LSM on, every
+       other grouping action has to be able to turn it off — and doing that HERE catches all
+       twelve `setGroupBys` callers at once (the presets, the level up/down/remove/add editors, the
+       LBS wizard) instead of each of them remembering.
+       ⚠️ Nothing is visually broken without this: `_lsmShaped` already withholds the
+       tall row height the moment the grouping stops being location-led, which is what the
+       2,561-stretched-rows hotfix fixed. What this prevents is subtler and worse for trust — the
+       flag and the lit toolbar button claiming an LSM chart is on screen when it is not.
+       ⚠️ It cannot fight `_lsmArrange`, which sets a location-led grouping: turning the
+       mode ON can never turn it off. */
+    if (_lsmRows) {
+      var _locLed = groupBys.length > 0;
+      for (var _lq = 0; _lq < groupBys.length; _lq++) {
+        if (String(groupBys[_lq]).indexOf('loc:') !== 0) { _locLed = false; break; }
+      }
+      if (!_locLed) {
+        _lsmRows = false;
+        try { localStorage.setItem('ps_lsmrows', '0'); } catch (e) {}
+        var _lbtn = document.getElementById('ps-lsmbtn');
+        if (_lbtn) _lbtn.classList.remove('active');
+        applyRowZoom(false);
+        if (typeof _paintViewBtn === 'function') _paintViewBtn();
+      }
+    }
     try { localStorage.setItem(_gbKey(), JSON.stringify(groupBys)); } catch (e) {}
     restoreCollapsedFor(_gbSig(), false); // was: collapsed = {} — now restores this grouping's tree
     populateGroupSelect(); renderGrid(); renderGantt();
@@ -9971,13 +9995,27 @@
          so spelling the path out in the NAME too was the row saying the same thing twice — and it
          made the menu read as four long sentences rather than four choices.
          Owner, 2026-09-11, named these: *"WBS tree (default) · LSM · By Activity"*. */
-      { name: 'LSM', dims: ['act'].concat(locDims) },
+      /* ⚠️⚠️ THE "LSM" PRESET IS THE LSM LAYOUT, AND PICKING IT TURNS THE MODE ON.
+         Owner's call (2026-09-11) over a recommendation to keep the two apart, asked as *"Should we
+         toggle the LSM through the group -> LSM preset?"* — so the preset's dims are now what
+         the layout actually needs: LOCATION-LED, not the activity-led transpose it carried before.
+         That also makes the hint printed underneath it true again, which it would not be if the
+         preset kept its old dims and produced a different grouping.
+         ⚠️ `lsm: true` is read by the click handler below; it is not a dimension.
+         ⚠️⚠️ AND THE OLD DIMS ARE RENAMED, NOT DELETED. `['act'] + locDims` is a real
+         grouping somebody may be using today — Activity over its locations — and silently
+         removing it to free up a name would be a worse trade than one more row in this menu. It is
+         now called what it is. */
+      { name: 'LSM', dims: locDims, lsm: true },
+      { name: 'Activity › Location', dims: ['act'].concat(locDims) },
       { name: 'By Activity', dims: ['work', 'act'].concat(locDims) }
     ].filter(function (p) { return p.dims.length; });
     var h = '<div class="ps-gm-sec">Presets</div>';
     presets.forEach(function (p, i) {
       var on = JSON.stringify(p.dims) === JSON.stringify(groupBys);
-      h += '<button data-gpreset="' + i + '"' + (on ? ' class="on"' : '') + '>' + esc(p.name) +
+      h += '<button data-gpreset="' + i + '"' + (on ? ' class="on"' : '') +
+        (p.lsm ? ' title="' + esc('Turns the LSM layout on: one row per storey, one bar per trade, the slope of the staircase being the production rate. It groups by location and collapses to one row per floor for you. The Flowline button draws the same model as a time-location chart.') + '"' : '') +
+        '>' + esc(p.name) +
         (p.dims.length > 1 ? '<span class="ps-gm-hint">' + esc(p.dims.map(dimLabel).join(' › ')) + '</span>' : '') + '</button>';
     });
     // ⚠️ THE MENU NO LONGER OFFERS THE EDITOR, ONLY THE WAY TO IT. Owner 2026-09-02: the location
@@ -10015,7 +10053,15 @@
       '<button data-gact="discwizard"><span data-ico="layout" data-ico-size="14"></span> Match WBS to Discipline/Trade…</button>';
     m.innerHTML = h;
     if (window.Icons && Icons.hydrate) Icons.hydrate(m);
-    m.querySelectorAll('button[data-gpreset]').forEach(function (b) { b.onclick = function () { setGroupBys(presets[+b.dataset.gpreset].dims); renderGroupMenu(); }; });
+    m.querySelectorAll('button[data-gpreset]').forEach(function (b) { b.onclick = function () {
+      var p = presets[+b.dataset.gpreset];
+      /* ⚠️ `setLsmRows` arranges the grouping ITSELF — location-led, collapsed at
+         the floor level, trades curated, and it says what it changed. So the preset HANDS OVER
+         rather than setting the dims and leaving the mode to catch up: one writer for that
+         arrangement, which is the whole reason `_lsmArrange` was extracted. */
+      if (p.lsm) setLsmRows(true); else setGroupBys(p.dims);
+      renderGroupMenu();
+    }; });
     m.querySelectorAll('button[data-gup]').forEach(function (b) { b.onclick = function () { var i = +b.dataset.gup, l = groupBys.slice(); var t2 = l[i - 1]; l[i - 1] = l[i]; l[i] = t2; setGroupBys(l); renderGroupMenu(); }; });
     m.querySelectorAll('button[data-gdown]').forEach(function (b) { b.onclick = function () { var i = +b.dataset.gdown, l = groupBys.slice(); var t2 = l[i + 1]; l[i + 1] = l[i]; l[i] = t2; setGroupBys(l); renderGroupMenu(); }; });
     m.querySelectorAll('button[data-grm]').forEach(function (b) { b.onclick = function () { var l = groupBys.slice(); l.splice(+b.dataset.grm, 1); setGroupBys(l.length ? l : ['wbs']); renderGroupMenu(); }; });
