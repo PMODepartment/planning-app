@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910z5" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260911uc" />
   <style>
     .ps-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
     .ps-tab { padding:8px 20px; cursor:pointer; font-weight:700; font-size:var(--pd-fs-base); color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
@@ -1052,6 +1052,58 @@
     .ps-lsmclash-chip > s { text-decoration:none; color:var(--pd-bad-text); font-weight:700;
       font-variant-numeric:tabular-nums; }
     .ps-lsmclash-more { font-size:var(--pd-fs-xs); color:var(--pd-muted); cursor:help; }
+    /* ---- The flowline / time-location view --------------------------------------------------
+       Same "panel replaces the split" behaviour as Activity Progress and Vertical Stacking. */
+    #ps-view-schedule.ps-flowline-mode .ps-split,
+    #ps-view-schedule.ps-flowline-mode .ps-network,
+    #ps-view-schedule.ps-flowline-mode .ps-legend,
+    #ps-view-schedule.ps-flowline-mode .ps-progress,
+    #ps-view-schedule.ps-flowline-mode .ps-vstack,
+    #ps-view-schedule.ps-flowline-mode .ps-grid-foot { display:none !important; }
+    .ps-flowline { padding:12px 14px 20px; }
+    .ps-fl-head { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 12px; margin-bottom:8px; }
+    .ps-fl-title { font-size:var(--pd-fs-md); font-weight:800; color:var(--pd-ink); }
+    .ps-fl-sub { font-size:var(--pd-fs-xs); color:var(--pd-muted); }
+    .ps-fl-empty { padding:18px; font-size:var(--pd-fs-sm); color:var(--pd-muted);
+      border:1px dashed var(--pd-line); border-radius:var(--pd-radius-md); line-height:1.55; }
+    .ps-fl-sec { margin-top:10px; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md);
+      background:var(--pd-card); overflow:hidden; }
+    .ps-fl-sechead { padding:6px 12px; font-size:var(--pd-fs-xs); font-weight:800;
+      text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted);
+      background:var(--pd-bg); border-bottom:1px solid var(--pd-line); }
+    /* ⚠️⚠️ TWO COLUMNS, ALIGNED BY ARITHMETIC, which is the same thing the grid and the
+       timeline already do at `--ps-rowh`. The labels must stay put while the dates pan, and an SVG
+       child cannot be `position:sticky` — so the axis is its own non-scrolling column and both
+       sides are laid out from the SAME row height and the same top spacer. If those two numbers
+       ever disagree the labels slide off their storeys, so the render harness measures them. */
+    .ps-fl-wrap { display:flex; align-items:flex-start; }
+    .ps-fl-axis { flex:0 0 auto; width:148px; border-right:1px solid var(--pd-line); }
+    .ps-fl-axlab { font-size:var(--pd-fs-micro); color:var(--pd-ink); padding:0 8px;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex;
+      align-items:center; border-bottom:1px solid var(--pd-line); }
+    .ps-fl-axlab:last-child { border-bottom:0; }
+    .ps-fl-axspacer { border-bottom:2px solid var(--pd-line); }
+    .ps-fl-scroll { flex:1 1 auto; min-width:0; overflow-x:auto; overflow-y:hidden; }
+    .ps-fl-grid { stroke:var(--pd-line); stroke-width:1; }
+    .ps-fl-gridy { stroke:var(--pd-line); stroke-width:1; opacity:.6; }
+    .ps-fl-mo { font-size:9px; fill:var(--pd-muted); }
+    .ps-fl-yr { font-size:10px; font-weight:700; fill:var(--pd-ink); }
+    /* The band between a trade's start line and its finish line IS the work; the centre line is
+       what carries the slope. Both take the trade's own colour inline. */
+    .ps-fl-band { opacity:.20; }
+    .ps-fl-line { fill:none; stroke-width:2; stroke-linejoin:round; stroke-linecap:round; }
+    /* ⚠️ Baseline DASHED and muted, actual solid — the BL/ACT convention the
+       Vertical Stacking settled, so the two views read the same way. */
+    .ps-fl-bl { fill:none; stroke-width:1.5; stroke-dasharray:4 3; opacity:.55; }
+    .ps-fl-dot { stroke:var(--pd-card); stroke-width:1; }
+    /* ⚠️ A BLOCK TASK is a trade that never leaves one storey — the deck's
+       "non-linear activities, where the crew is stationary, are represented by block tasks". A
+       near-vertical polyline would misrepresent it, so it is a rectangle. */
+    .ps-fl-block { opacity:.55; }
+    .ps-fl-slope { font-size:9px; font-weight:700; }
+    .ps-fl-clash { fill:none; stroke:var(--pd-bad); stroke-width:2.5; opacity:.9; }
+    .ps-fl-dd { stroke:var(--ps-dd,var(--pd-red)); stroke-width:2; }
+    .ps-fl-note { margin-top:8px; font-size:var(--pd-fs-xs); color:var(--pd-muted); line-height:1.5; }
     /* The data-date grip: a small tab at the top of the line, and the ONLY draggable part of it.
        ⚠️ The line itself keeps `pointer-events:none` — see the note at its markup. */
     .ps-datedate-grip { position:absolute; top:0; width:11px; height:14px; margin-left:-5px;
@@ -1456,8 +1508,8 @@
        ever a silent toggle with no lit state — which is precisely why the toolbar could not say
        where you were. Now they are top-level again (owner 2026-09-02) the lit state is the whole
        point: it is what stops a standalone shortcut re-becoming a control you cannot read. */
-    #ps-progressbtn.active, #ps-vstackbtn.active, #ps-lsmbtn.active { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
-    #ps-progressbtn.active .pd-ico, #ps-vstackbtn.active .pd-ico, #ps-lsmbtn.active .pd-ico { color:#fff; }
+    #ps-progressbtn.active, #ps-vstackbtn.active, #ps-lsmbtn.active, #ps-flowbtn.active { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
+    #ps-progressbtn.active .pd-ico, #ps-vstackbtn.active .pd-ico, #ps-lsmbtn.active .pd-ico, #ps-flowbtn.active .pd-ico { color:#fff; }
     /* ---- Vertical Stacking view (toolbar) ------------------------------------------------
        Same "panel replaces the split" behaviour as Activity Progress. Card + cell styling is
        deliberately close to the Schedule Setup's Stacking step so the two read as one idea. */
@@ -3978,6 +4030,7 @@
                ⚠️ It is NOT the Group menu's "LSM" preset, which is Activity › Location
                — the transpose of this layout, and a name collision worth resolving: that preset
                is the owner's own naming and is left alone rather than silently renamed. -->
+          <button class="pd-btn ps-icobtn" id="ps-flowbtn" aria-label="Flowline" title="Flowline — the time-location chart: time across, storeys up, each trade a diagonal band whose slope is its production rate. The deck's own form; the LSM rows are the same model laid out as a Gantt."><span data-ico="trendingUp" data-ico-size="15"></span></button>
           <button class="pd-btn ps-icobtn" id="ps-lsmbtn" aria-label="LSM rows" title="LSM rows — the time-location layout: one row per storey, one bar per trade, the slope of the staircase being the production rate. Groups by location and collapses to one row per floor. (Not the same as the Group menu's &quot;LSM&quot; preset, which is Activity › Location.)"><span data-ico="layers" data-ico-size="15"></span></button>
           <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-outlinebtn" aria-label="Outline" title="Outline — expand all, or collapse the whole schedule to one WBS level"><span data-ico="layers" data-ico-size="15"></span></button><div class="ps-menu" id="ps-outline-menu"></div></div>
           <!-- Outline and Saved layouts used to be two more toolbar buttons here. They are sections of
@@ -4067,6 +4120,7 @@
         <div class="ps-progress" id="ps-progress" style="display:none;"></div>
         <!-- Vertical Stacking (toolbar button). Separate from the #ps-stack-back pane. -->
         <div class="ps-vstack" id="ps-vstack" style="display:none;"></div>
+        <div class="ps-flowline" id="ps-flowline" style="display:none;"></div>
 
         <!-- OPC-style grid footer: activity count + Download (mirrors OPC's strip under its grid) -->
         <div class="ps-grid-foot">
@@ -4613,7 +4667,7 @@
 <script src="../../assets/js/program.js?v=20260827a"></script>
 <script src="../../assets/js/ui.js?v=20260909s"></script>
 <script src="../../assets/js/icons.js?v=20260909ui"></script>
-<script src="../../assets/js/calendar.js?v=20260903a"></script>
+<script src="../../assets/js/calendar.js?v=20260911uc"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
 <script src="../../assets/js/co-insert.js?v=20260909r"></script>
@@ -4761,10 +4815,13 @@
   // OVER the layout, so two could be on at once. These reduce the three to the one answer the
   // "View: …" button shows. Module scope on purpose — setProgressMode() and setVStackMode() live far
   // from the toolbar wiring and both have to repaint the button.
-  var _VIEW_LABEL = { split: 'Split', grid: 'Grid', gantt: 'Gantt', network: 'Network', progress: 'Progress', stacking: 'Stacking', lsm: 'LSM' };
+  var _VIEW_LABEL = { split: 'Split', grid: 'Grid', gantt: 'Gantt', network: 'Network', progress: 'Progress', stacking: 'Stacking', lsm: 'LSM', flowline: 'Flowline' };
   function _viewKey() {
     if (typeof vstackMode !== 'undefined' && vstackMode) return 'stacking';
     if (typeof progressMode !== 'undefined' && progressMode) return 'progress';
+    /* ⚠️ BEFORE the LSM test: the flowline arranges the same location grouping, so both
+       would answer true and the face would name the row layout while a chart was on screen. */
+    if (typeof flowlineMode !== 'undefined' && flowlineMode) return 'flowline';
     /* ⚠️ LSM reports itself only when the grouping still SHAPES it — the same test the
        row height uses. A face reading "LSM" over a plain WBS tree would be naming a layout that is
        not on screen, which is the exact failure `_viewName` exists to prevent. */
@@ -5203,7 +5260,7 @@
       if (code.trim() === k) seen = true;
       opts.push({ v: code, l: code + ' — ' + (c.desc_l3 || '') + '  (' + (c.code_l1 || '') + ' ' + (c.desc_l1 || '') + ')' });
     });
-    if (k && !seen) opts.splice(1, 0, { v: k, l: '⚠ ' + k + ' — not in the class-code chart' });
+    if (k && !seen) opts.splice(1, 0, { v: k, l: '' + k + ' — not in the class-code chart' });
     return opts;
   }
   var _pkgMemo = {};
@@ -6532,7 +6589,7 @@
           '<div><span>Latest finish in scenario</span><strong>' + (pv.finishNew ? Fmt.date(dstr(pv.finishNew)) : '—') + '</strong></div>' +
           '<div><span>Slip</span><strong class="' + (slip > 0 ? 'ps-var-late' : 'ps-var-early') + '">' + (slip > 0 ? '+' : '') + slip + 'd</strong></div>' +
         '</div>' +
-        '<p style="color:var(--pd-muted);font-size:12px;margin:8px 0 6px;">⚠️ This is the <b>direct</b> impact on each activity, re-derived through the calendar. It does <b>not</b> push the change through predecessor logic — the knock-on slip along the network will be at least this much, never less.</p>' +
+        '<p style="color:var(--pd-muted);font-size:12px;margin:8px 0 6px;">This is the <b>direct</b> impact on each activity, re-derived through the calendar. It does <b>not</b> push the change through predecessor logic — the knock-on slip along the network will be at least this much, never less.</p>' +
         '<div style="max-height:220px;overflow:auto;"><table class="pd-table"><thead><tr><th>Activity</th><th>Rules</th><th>Exposure</th><th class="num">Days</th><th>Finish now</th><th>Scenario finish</th><th class="num">Slip</th></tr></thead><tbody>' +
         pv.items.slice(0, 200).map(function (it) {
           return '<tr><td>' + esc((it.aid ? it.aid + ' · ' : '') + (it.name || '')) + '</td>' +
@@ -7227,7 +7284,7 @@
     });
     var html = '<option value="">— None —</option>';
     if (curK && !seen) {
-      html += '<option value="' + esc(curK) + '" selected>⚠ ' + esc(curK) + ' — not in the class-code chart</option>';
+      html += '<option value="' + esc(curK) + '" selected>' + esc(curK) + ' — not in the class-code chart</option>';
     }
     order.forEach(function (d) {
       html += '<optgroup label="' + esc(d) + '">' + byDiv[d].map(function (c) {
@@ -7380,7 +7437,7 @@
     });
     var html = '<option value="">— None —</option>';
     if (curK && !seen) {
-      html += '<option value="' + esc(String(cur).trim()) + '" selected>⚠ ' + esc(String(cur).trim()) +
+      html += '<option value="' + esc(String(cur).trim()) + '" selected>' + esc(String(cur).trim()) +
         ' — not in the Procurement app</option>';
     }
     order.forEach(function (t) {
@@ -9198,12 +9255,12 @@
             }).join('') +
             '<option value="__other__">Other — type a reference…</option>' +
           '</select>'
-        : '<p style="color:var(--pd-muted);font-size:12.5px;">⚠️ No change orders are recorded for this project in ' +
+        : '<p style="color:var(--pd-muted);font-size:12.5px;">No change orders are recorded for this project in ' +
           '<b>Contracts &amp; Claims</b>. Record it there and it appears here — until then, type the reference.</p>') +
       '<div id="ps-co-freewrap"' + (reg.length && coIsRegistered(cur) ? ' style="display:none;"' : '') + '>' +
         '<label style="display:block;font-size:12px;font-weight:700;margin:10px 0 4px;">Reference</label>' +
         '<input class="pd-input" id="ps-co-free" value="' + esc(cur) + '" placeholder="e.g. VO-014" style="width:100%;" />' +
-        '<p style="color:var(--pd-muted);font-size:11.5px;margin:4px 0 0;">⚠️ A reference typed here is <b>not</b> in the ' +
+        '<p style="color:var(--pd-muted);font-size:11.5px;margin:4px 0 0;">A reference typed here is <b>not</b> in the ' +
         'commercial register. It will show as <i>not in the register</i> until a matching Change Order is recorded.</p>' +
       '</div>' +
       '<div style="text-align:right;margin-top:12px;"><button class="pd-btn" id="ps-co-x">Cancel</button> ' +
@@ -10017,7 +10074,7 @@
       var wpv = (r.work_package || '').trim();
       if (!wpv) return '— No work package —';
       var sc = _wpmScopeOf(r);
-      return wpByNo(wpv, sc) ? wpLabel(wpv, sc) : ('⚠ ' + wpv + ' — not in the Procurement app');
+      return wpByNo(wpv, sc) ? wpLabel(wpv, sc) : ('' + wpv + ' — not in the Procurement app');
     }
     // Contract package resolves through the WBS, so an activity under an assigned branch groups
     // with its branch rather than falling into "— No package —".
@@ -10033,7 +10090,7 @@
       var ccv = String(r.class_code || '').trim();
       if (!ccv) return '— No class code —';
       var cc = ccByCode(ccv);
-      if (!cc) return '⚠ ' + ccv + ' — not in the class-code chart';
+      if (!cc) return '' + ccv + ' — not in the class-code chart';
       if (dim === 'cc1') return cc.code_l1 + ' — ' + cc.desc_l1;
       if (dim === 'cc2') return cc.code_l2 + ' — ' + cc.desc_l2;
       return cc.code + ' — ' + cc.desc_l3;
@@ -12050,7 +12107,7 @@
     /* ⚠️ Built ONCE per node build, never per group: catCfg() parses localStorage on
        every call, and this would otherwise run for every floor of every tower. Null when the LSM
        layout is off, which is what keeps that mode's whole cost at zero when nobody is using it. */
-    var _lsmIdx = _lsmRows ? _lsmLaneIndex() : null;
+    var _lsmIdx = _lsmAggOn() ? _lsmLaneIndex() : null;
     var groupBy = groupBys.length === 1 ? groupBys[0] : '__multi';
     if (groupBy === 'wbs') {
       _dspan = _spanMap; _dblspan = null; _dcost = null; _duni = null;
@@ -13720,7 +13777,7 @@
       // so the "not in the Procurement app" bucket is reachable even on a project whose mirror
       // has since been emptied.
       ((WPM_WPS.length || rows.some(wpIsUnlinked)) ? '<h4>Procurement work package</h4><select id="ps-f-wp-filter" class="pd-select pd-input-sm" style="width:100%;">' +
-        [['', 'All work packages'], ['__none__', '— Not linked to a work package —'], ['__unlinked__', '⚠ Linked to a package the Procurement app does not have']]
+        [['', 'All work packages'], ['__none__', '— Not linked to a work package —'], ['__unlinked__', 'Linked to a package the Procurement app does not have']]
           .concat(WPM_WPS.map(function (w) { return [String(w.wp_no), wpLabel(w.wp_no, w.wpm_project_id)]; }))
           .map(function (o) { return '<option value="' + esc(o[0]) + '"' + ((filters.wp || '') === o[0] ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('') +
         '</select>' : '') +
@@ -19032,7 +19089,7 @@
       var _anyPhase = _unph.some(function (r) { return phaseOf(r); });
       towers = '<div class="ps-vs-empty">No execution-phase activities match the current filters. Vertical stacking covers the <strong>Execution Phase</strong> only — activities under Initiation, Planning or Close-out are not stacked.' +
         ((_unph.length && !_anyPhase)
-          ? '<br><br>⚠️ <strong>Not one of this project’s ' + _unph.length.toLocaleString() + ' activities resolves ANY phase</strong>, so this is not a filter problem. ' +
+          ? '<br><br><strong>Not one of this project’s ' + _unph.length.toLocaleString() + ' activities resolves ANY phase</strong>, so this is not a filter problem. ' +
             'A phase is read from the activity’s own Phase field, then its WBS node, then its dotted WBS code — if the grid shows a correct tree but nothing resolves, the activities are not linked to the WBS nodes ' +
             'and their branch names carry no phase word. Re-run <em>Schedule Setup → WBS → Adopt existing WBS</em> to link them, or tag the top-level branches in the WBS step.'
           : '') + '</div>';
@@ -19633,7 +19690,7 @@
       if (v === k) seen = true;
       opts.push({ v: v, l: v + (x.description ? ' — ' + String(x.description).slice(0, 50) : '') });
     });
-    if (k && !seen) opts.splice(1, 0, { v: k, l: '⚠ ' + k + ' — not in the register' });
+    if (k && !seen) opts.splice(1, 0, { v: k, l: '' + k + ' — not in the register' });
     return opts;
   }
 
@@ -21306,6 +21363,14 @@
      not a decoration. Off is a real setting though — on a wide chart at year zoom the chips
      land on top of future bars, and somebody reading dates rather than states wants them gone. */
   var _lsmStatus = true; try { _lsmStatus = localStorage.getItem('ps_lsm_status') !== '0'; } catch (e) {}
+  /* The flowline chart (slice 5) is a different VIEW of the same aggregation, so the per-storey
+     per-trade bars have to be built for it as well as for the rows.
+     ⚠️⚠️ ONE PREDICATE, NOT A SECOND `_lsmRows ||` SPELLED OUT AT EVERY GATE. There are
+     five of them — buildNodes' `_lsmIdx`, `_lsmRate`, `_lsmClash` and the two strips — and a
+     sixth reader added later would be one more chance to forget one. `_lsmShaped` stays a separate
+     question: it is about the ROW HEIGHT, which the flowline does not use. */
+  var flowlineMode = false;
+  function _lsmAggOn() { return _lsmRows || flowlineMode; }
   /* The LSM row must hold one lane per keyed trade, so its height is DERIVED from the lane count
      rather than picked. ⚠️ It is a FLOOR UNDER THE ZOOM, not a replacement for it: row
      zoom can still make the row taller, never shorter than the lanes need. ⚠️ And it
@@ -21791,7 +21856,7 @@
       'data-type="enum" data-enum="coref" title="' + esc(ref
         ? (bad ? ref + ' — not in the Contracts & Claims register' : ref)
         : (inh ? inh + ' (inherited from this activity\'s WBS branch)' : 'No change order cited')) + '">' +
-      (ref ? '<span class="ps-coref' + (bad ? ' ps-coref-bad' : '') + '">' + esc(bad ? '⚠ ' + ref : ref) + '</span>'
+      (ref ? '<span class="ps-coref' + (bad ? ' ps-coref-bad' : '') + '">' + esc(bad ? '' + ref : ref) + '</span>'
            : (inh ? '<span class="ps-coref ps-coref-inh">' + esc(inh) + '</span>' : '')) + '</div>';
   }
   function pkgCellHtml(r) {
@@ -21845,7 +21910,7 @@
       ttl = g.code_l2 + ' — ' + g.desc_l1 + ' › ' + g.desc_l2 +
             '\nA GROUP-level code: this activity covers the whole group rather than one bill item.';
     }
-    else { inner = '<span class="ps-cctag unknown">⚠ ' + esc(raw) + '</span>'; ttl = raw + ' is not in the class-code chart, at either level'; }
+    else { inner = '<span class="ps-cctag unknown pd-caution-inline">' + esc(raw) + '</span>'; ttl = raw + ' is not in the class-code chart, at either level'; }
     return '<div class="ps-cell c-ccode ps-editable" data-id="' + r.id + '" data-field="class_code" data-type="enum" data-enum="ccode" title="' + esc(ttl) + '">' + inner + '</div>';
   }
   // Summary/group rows: state the code only when EVERY activity beneath agrees — a branch holding
@@ -21955,6 +22020,8 @@
     _clearLsmRateMemo();
     // The stacking panel is derived from the same filtered rows as the grid, so it repaints with it.
     if (vstackMode) renderVStack();   // defer full repaint while an inline editor is open
+    /* Same reasoning: the flowline is derived from the same filtered rows as the grid. */
+    if (flowlineMode) renderFlowline();
     // Safety net: scheduleRender()/doRender() is the single choke point every
     // grid+Gantt build funnels through, and it is also poked by scroll, edit and
     // load-reconcile paths. At phone width the split is hidden and only the
@@ -22677,11 +22744,15 @@
      front of the planner rather than the whole project. */
   function _lsmRate() {
     if (_lsmRateMemo) return _lsmRateMemo;
-    var out = { byTrade: {}, steps: {}, floors: 0, wd: false, basis: _lsmRankBasis() };
-    if (!_lsmRows || !DL || !DL.length) return (_lsmRateMemo = out);
+    var out = { byTrade: {}, steps: {}, floors: 0, wd: false, basis: _lsmRankBasis(),
+                label: {}, name: {}, serAnc: {} };
+    if (!_lsmAggOn() || !DL || !DL.length) return (_lsmRateMemo = out);
     var pts = {}, min = null, max = null, i, j, seen = {}, allRanks = {};
     for (i = 0; i < DL.length; i++) {
       var r = DL[i]; if (!r || !r._glsm) continue;
+      /* ⚠️ Captured BEFORE the rank filter, so a tower row is in the map too: the
+         flowline names each series by its ancestry, and the ancestry is gcodes. */
+      if (r._dcode) out.name[r._dcode] = r.activity_name || r._graw || '';
       /* ⚠️⚠️ THE RANK FILTER IS ALSO THE ROW FILTER, and that is deliberate.
          A Tower group row carries lanes too (it is a location level), but a tower has no position
          on a storey axis — `_lsmRankOf` answers null — so it drops out here without a
@@ -22694,6 +22765,9 @@
       var ser = (r._danc || []).join('\u0001');
       if (!seen[ser + '\u0002' + rank]) { seen[ser + '\u0002' + rank] = 1; out.floors++; }
       (allRanks[ser] = allRanks[ser] || {})[rank] = 1;
+      /* The storey's own words, for the chart's axis. Keyed the same way everything else is. */
+      out.label[ser + '\u0002' + rank] = r._graw || r.activity_name || '';
+      if (out.serAnc[ser] === undefined) out.serAnc[ser] = (r._danc || []).slice();
       for (j = 0; j < r._glsm.length; j++) {
         var b = r._glsm[j];
         if (b.over || !b.value) continue;     /* the overflow marker stands for several trades */
@@ -22701,8 +22775,20 @@
         var p = pts[k] || (pts[k] = { ser: ser, value: b.value, cal: b.cal, byRank: {} });
         /* ⚠️ EARLIEST START PER RANK. Two zones of one floor are ONE position on this
            axis; counting them twice would claim more evidence than there is, and would weight a
-           four-zone floor four times as heavily as a single-cell one. */
-        if (!p.byRank[rank] || +b.s < +p.byRank[rank]) p.byRank[rank] = b.s;
+           four-zone floor four times as heavily as a single-cell one.
+           ⚠️ THE WHOLE SPAN IS KEPT, not just the start: the fit only needs the start,
+           but the flowline draws a BAND between the start and the finish line, and the baseline
+           band beside it. One model, two renderers — the `_vsTowerModel` rule, because two
+           renderers deriving their own storey order is how a project ends up with two charts of
+           the same data that disagree. */
+        var _pr = p.byRank[rank];
+        if (!_pr) _pr = p.byRank[rank] = { s: b.s, f: b.f, bs: b.bs, bf: b.bf };
+        else {
+          if (+b.s < +_pr.s) _pr.s = b.s;
+          if (+b.f > +_pr.f) _pr.f = b.f;
+          if (b.bs && (!_pr.bs || +b.bs < +_pr.bs)) _pr.bs = b.bs;
+          if (b.bf && (!_pr.bf || +b.bf > +_pr.bf)) _pr.bf = b.bf;
+        }
         if (!min || +b.s < +min) min = b.s;
         if (!max || +b.s > +max) max = b.s;
       }
@@ -22744,7 +22830,7 @@
       var ranks = Object.keys(p.byRank).map(Number).sort(function (a, b2) { return a - b2; });
       var xw = [], xc = [], ys = [], q;
       for (q = 0; q < ranks.length; q++) {
-        var o = dayDiff(min, p.byRank[ranks[q]]);
+        var o = dayDiff(min, p.byRank[ranks[q]].s);
         xw.push(ax.diff(0, o));               /* working days from the window's start */
         xc.push(o);
         ys.push(ordOf[p.ser][ranks[q]]);      /* the storey's position, not its rank value */
@@ -22767,6 +22853,16 @@
       var cur = out.byTrade[p.value];
       if (!cur || rec.n > cur.n) out.byTrade[p.value] = rec;
     });
+    /* ⚠️⚠️ THE MODEL GOES OUT WITH THE FIT. The flowline needs the same storey ordinals
+       and the same per-storey spans this function already built; deriving them again in the
+       renderer is precisely the mistake `_vsTowerModel` was extracted to prevent (a 3D view that
+       put the 5th floor somewhere else than the 2D view of the same data, with no way to tell
+       which was right). `ord` maps a series' rank → its position, `byKey` is the per
+       series-and-trade point list, and `min`/`max` are the window they were measured in. */
+    out.ord = ordOf;
+    out.byKey = pts;
+    out.min = min;
+    out.max = max;
     return (_lsmRateMemo = out);
   }
   /* Is the stretch between two runs a REAL break, or just the weekend?
@@ -22902,7 +22998,7 @@
   function _lsmClash() {
     if (_lsmClashMemo) return _lsmClashMemo;
     var out = { list: [], marks: {}, n: 0, basis: 'inferred', wd: false };
-    if (!_lsmRows || !DL || !DL.length) return (_lsmClashMemo = out);
+    if (!_lsmAggOn() || !DL || !DL.length) return (_lsmClashMemo = out);
     var seq = _lsmSeq();
     out.basis = seq.basis;
     var min = null, max = null, rowsOf = [], i, j, k;
@@ -22953,7 +23049,7 @@
   /* The Clashes strip. ⚠️ It states the BASIS in the label, because an inferred sequence
      makes every row below it a suggestion rather than a finding. */
   function _lsmClashHTML() {
-    if (!_lsmRows) return '';
+    if (!_lsmAggOn()) return '';
     var C = _lsmClash();
     if (!C.n) return '';
     var unit = C.wd ? 'wd' : 'cd', CAP = 8, h = '';
@@ -23027,7 +23123,7 @@
      A confident "2.1 floors/month" over a scatter is the kind of number that ends up in a report,
      and the chart cannot take it back. */
   function _lsmRateHTML() {
-    if (!_lsmRows) return '';
+    if (!_lsmAggOn()) return '';
     var R = _lsmRate(), lanes = _lsmLanes(), h = '', any = false;
     var unit = R.wd ? 'working' : 'calendar', ushort = R.wd ? 'wd' : 'cd';
     for (var i = 0; i < lanes.length; i++) {
@@ -23629,7 +23725,7 @@
     var tlHost = document.getElementById('ps-ck-milestones-tl');
     if (tlHost) tlHost.innerHTML = _ckMilestoneTimeline(tasks);
     var behindMax = behind.length ? behind[0].slip : 0;
-    fill('ps-ck-behind', behind.slice(0, 5), function (x) { return barRow(x, behindMax); }, 'Nothing is behind its baseline finish. 🎯',
+    fill('ps-ck-behind', behind.slice(0, 5), function (x) { return barRow(x, behindMax); }, 'Nothing is behind its baseline finish.',
       behind.length > 5 ? '<div class="ps-ck-empty" style="padding:8px 14px;">+' + (behind.length - 5) + ' more — see “Update progress…” or “Export lookahead” above.</div>' : '');
     fillPills('ps-ck-crit', crit, 'No critical path found — add relationships or dates.');
     if (bk) bk.innerHTML = _ckFloatBuckets(tasks);
@@ -24601,7 +24697,7 @@
     var breachHTML = '';
     if (breaches) {
       breachHTML = '<h4 style="margin:16px 0 6px;font-size:13px;">Breaches ' + '<span style="font-weight:400;color:var(--pd-muted);font-size:11.5px;">(' + breaches.length + ' found)</span></h4>';
-      if (!breaches.length) breachHTML += '<div class="ps-ck-empty">No activities breach the enabled thresholds. 🎯</div>';
+      if (!breaches.length) breachHTML += '<div class="ps-ck-empty">No activities breach the enabled thresholds.</div>';
       else breachHTML += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;"><button class="pd-btn pd-btn-primary pd-btn-sm" id="ps-thr-gen">Generate ' + breaches.length + ' issues</button><span style="color:var(--pd-muted);font-size:12px;">Creates Issues (skips ones already open for the same activity + rule).</span></div>' +
         '<table class="ps-snap-tbl"><thead><tr><th>Activity</th><th>Threshold</th><th>Severity</th><th style="text-align:right;">Value</th></tr></thead><tbody>' +
         breaches.slice(0, 300).map(function (b) { return '<tr><td>' + esc((b.r.activity_id ? b.r.activity_id + ' · ' : '') + (b.r.activity_name || '')) + '</td><td>' + esc(b.desc) + '</td><td>' + esc(b.severity) + '</td><td style="text-align:right;" class="ps-bulk-late">' + esc(b.valStr) + '</td></tr>'; }).join('') +
@@ -24736,7 +24832,7 @@
     }
     var report = levelScan();
     if (cnt) cnt.textContent = report.length + ' resource' + (report.length === 1 ? '' : 's') + ' over-allocated';
-    if (!report.length) { body.innerHTML = '<div class="ps-ck-empty">No over-allocations found — every resource is within its calendar capacity each period. 🎯</div>'; return; }
+    if (!report.length) { body.innerHTML = '<div class="ps-ck-empty">No over-allocations found — every resource is within its calendar capacity each period.</div>'; return; }
     body.innerHTML = '<p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Demand is planned units spread across each activity’s dates; capacity is the resource’s max units/time × working days (its calendar). Delaying an activity here shifts it within its own <strong>total float</strong>, so the project finish never moves. Each delay is undoable.</p>' +
       report.map(function (e) {
         var pk = e.peak, over = Math.round((pk.demand - pk.cap) * 10) / 10;
@@ -25363,7 +25459,7 @@
   function renderLPReasons() {
     var host = document.getElementById('ps-lp-reasons'); if (!host) return;
     var notComplete = LP_ALL.filter(function (c) { return c.status === 'Not Complete'; });
-    if (!notComplete.length) { host.innerHTML = '<div class="ps-ck-empty">No “Not Complete” commitments yet — nothing to analyze. 🎯</div>'; return; }
+    if (!notComplete.length) { host.innerHTML = '<div class="ps-ck-empty">No “Not Complete” commitments yet — nothing to analyze.</div>'; return; }
     var counts = {}; notComplete.forEach(function (c) { var rc = c.reason_code || 'Uncategorized'; counts[rc] = (counts[rc] || 0) + 1; });
     var ranked = Object.keys(counts).map(function (k) { return { label: k, n: counts[k] }; }).sort(function (a, b) { return b.n - a.n; });
     var max = ranked[0].n;
@@ -28846,17 +28942,17 @@
 
     // The verdict — say which cause is biting, in the order that matters.
     var verdict = [];
-    if (orphan.length) verdict.push(warn('⚠️ ' + orphan.length + ' activit' + (orphan.length === 1 ? 'y has a WBS code' : 'ies have WBS codes') + ' that match NO WBS row on this project. Nothing rolls them up, so every branch above them shows "—" however many activities are really there. This is the most likely cause of what you are seeing.'));
-    if (noCode.length) verdict.push(warn('⚠️ ' + noCode.length + ' activit' + (noCode.length === 1 ? 'y has' : 'ies have') + ' NO WBS code at all — they cannot roll up into any branch.'));
-    if (noDates.length) verdict.push(warn('⚠️ ' + noDates.length + ' activit' + (noDates.length === 1 ? 'y has' : 'ies have') + ' no Start/Finish, so they contribute nothing to a branch span even when correctly filed.'));
-    if (misfiled.length) verdict.push(warn('⚠️ ' + misfiled.length + ' activit' + (misfiled.length === 1 ? 'y carries a location but is' : 'ies carry a location but are') +
+    if (orphan.length) verdict.push(warn('' + orphan.length + ' activit' + (orphan.length === 1 ? 'y has a WBS code' : 'ies have WBS codes') + ' that match NO WBS row on this project. Nothing rolls them up, so every branch above them shows "—" however many activities are really there. This is the most likely cause of what you are seeing.'));
+    if (noCode.length) verdict.push(warn('' + noCode.length + ' activit' + (noCode.length === 1 ? 'y has' : 'ies have') + ' NO WBS code at all — they cannot roll up into any branch.'));
+    if (noDates.length) verdict.push(warn('' + noDates.length + ' activit' + (noDates.length === 1 ? 'y has' : 'ies have') + ' no Start/Finish, so they contribute nothing to a branch span even when correctly filed.'));
+    if (misfiled.length) verdict.push(warn('' + misfiled.length + ' activit' + (misfiled.length === 1 ? 'y carries a location but is' : 'ies carry a location but are') +
       ' filed under a WBS branch that does not match it — e.g. an activity tagged "' + esc(misfiled[0].loc) + '" sitting under "' + esc(misfiled[0].under) +
       '". They render after that branch\'s sub-branches instead of inside the one they belong to.'));
-    if (hiddenByView.length && !orphan.length && !noCode.length) verdict.push(warn('⚠️ ' + hiddenByView.length + ' activit' + (hiddenByView.length === 1 ? 'y is' : 'ies are') + ' filed and dated but NOT in the current view — a filter, a search or the grouping is hiding them. Clear the filter (funnel) and the search box.'));
+    if (hiddenByView.length && !orphan.length && !noCode.length) verdict.push(warn('' + hiddenByView.length + ' activit' + (hiddenByView.length === 1 ? 'y is' : 'ies are') + ' filed and dated but NOT in the current view — a filter, a search or the grouping is hiding them. Clear the filter (funnel) and the search box.'));
     if (!verdict.length) verdict.push('<div style="background:#E8F6EF;color:#1B6E4F;border-radius:6px;padding:8px 10px;margin:6px 0;font-size:12.5px;font-weight:700;">Every activity is filed under a real WBS row, dated, and visible in the current view. If a branch still reads "—", capture this report and the grouping you are using.</div>');
 
     var filterState = anyFilter()
-      ? warn('⚠️ A filter or search is ACTIVE right now, so the grid is not showing everything. ' +
+      ? warn('A filter or search is ACTIVE right now, so the grid is not showing everything. ' +
           (search.trim() ? 'Search: "' + esc(search.trim()) + '". ' : '') +
           (filters.scope ? 'Contract scope: ' + esc(scopeTypeLabel(filters.scope)) + ' only. ' : '') +
           (filters.pkg ? 'Package: ' + esc(filters.pkg === '__none__' ? 'not assigned' : packageLabel(filters.pkg)) + ' only. ' : '') +
@@ -30970,7 +31066,7 @@
             '<td style="text-align:right;"><button class="pd-btn" data-restore="' + esc2(pu.id) + '">Load this version</button></td></tr>';
         });
         html += '</tbody></table>' +
-          '<p class="sbld-hint">⚠️ Loading a version puts that recipe back in the editor. It does <strong>not</strong> ' +
+          '<p class="sbld-hint pd-caution">Loading a version puts that recipe back in the editor. It does <strong>not</strong> ' +
           'remove the activities that push created — correct the setup and push again, or clear that package first ' +
           '(Actions → Clear schedule).</p>';
       }
@@ -36783,7 +36879,7 @@
       // ⚠️ Warn IN THE PREVIEW when a used trade produced no rows for this basis (all its activities are
       // zero-length here), so "only <one trade> will be pushed" is visible before the push, not after.
       var miss = (g.missingTrades && g.missingTrades.length)
-        ? '<div class="sbld-warn" style="margin:6px 0;padding:6px 9px;border:1px solid var(--pd-red);border-radius:6px;background:var(--pd-red-light);font-size:11.5px;">⚠️ No ' + e2(label) + ' duration for: <b>' +
+        ? '<div class="sbld-warn" style="margin:6px 0;padding:6px 9px;border:1px solid var(--pd-red);border-radius:6px;background:var(--pd-red-light);font-size:11.5px;">No ' + e2(label) + ' duration for: <b>' +
           g.missingTrades.map(function (t) { return e2(GLABEL[t] || t); }).join(', ') + '</b> — these trades will NOT be pushed with the ' + e2(label) + ' basis. Enter their durations in step ' + _stepNo('Activities') + '.</div>'
         : '';
       return '<div class="sbld-genpanel"><div class="sbld-genh" style="border-color:' + accent + ';color:' + accent + ';">' + e2(label) + ' schedule</div>' +
@@ -39374,10 +39470,10 @@
         })();
         if (hint) {
           if (!val) {
-            hint.innerHTML = '⚠️ These activities will belong to <b>no package</b> and will not appear in any package total.' +
+            hint.innerHTML = 'These activities will belong to <b>no package</b> and will not appear in any package total.' +
               ((PACKAGES || []).length ? ' You can file them later with <b>Actions → File under a package…</b>.' : '');
           } else if (curPkgId && String(val) !== String(curPkgId)) {
-            hint.innerHTML = '⚠️ This setup is saved against <b>' + e2(packageShort(curPkgId) || 'another package') +
+            hint.innerHTML = 'This setup is saved against <b>' + e2(packageShort(curPkgId) || 'another package') +
               '</b>. Pushing into <b>' + e2(packageShort(val) || 'this package') + '</b> files the activities there and does <b>not</b> change the setup.';
           } else {
             hint.innerHTML = 'From this setup. The build lands under this package\'s own top-level row.';
@@ -41518,7 +41614,7 @@
               (_boqSpreadOver
                 ? 'It is spread pro-rata by duration across <b>' + _boqSpreadOver + '</b> activit' +
                   (_boqSpreadOver === 1 ? 'y' : 'ies') + ', so it is included in the totals above.'
-                : '⚠️ No activity carries a duration, so it is <b>not</b> spread and reaches nothing here.') +
+                : 'No activity carries a duration, so it is <b>not</b> spread and reaches nothing here.') +
               '</p>'
             : '');
       } else if (_boqState === 'ok') {
@@ -41850,7 +41946,7 @@
      ⚠️ Shed order is LOWEST PRIORITY FIRST and explicit. Shedding from the end of the DOM would
      drop the SEARCH box first, which is the one control a planner uses on every visit. */
   var _TB_KEEP = { 'ps-actionsbtn': 1, 'ps-add': 1, 'ps-schedbtn': 1, 'ps-groupbtn': 1 };
-  var _TB_SHED = ['ps-help-btn', 'ps-fmtbtn-top', 'ps-outlinebtn', 'ps-lsmbtn', 'ps-vstackbtn', 'ps-progressbtn',
+  var _TB_SHED = ['ps-help-btn', 'ps-fmtbtn-top', 'ps-outlinebtn', 'ps-flowbtn', 'ps-lsmbtn', 'ps-vstackbtn', 'ps-progressbtn',
                   'ps-zoombtn', 'ps-layoutbtn', 'ps-scopebtn', 'ps-openbtn', 'ps-analyzebtn'];
   var _TB_ORDER = null, _tbRaf = 0;
 
@@ -42963,7 +43059,7 @@
     var staleActs = rows.filter(function (r) { return !isWbs(r) && wpIsUnlinked(r); }).length;
     var note = (WPM_WPS.length || 0) + ' work package(s) mirrored from the Procurement app · ' +
       linked + ' with linked activities · ' + late + ' installing AFTER the schedule needs them' +
-      (staleActs ? ' · ⚠️ ' + staleActs + ' activit' + (staleActs === 1 ? 'y points' : 'ies point') +
+      (staleActs ? ' · ' + staleActs + ' activit' + (staleActs === 1 ? 'y points' : 'ies point') +
         ' at a work package that is not in the Procurement app' : '') +
       (WPM_WPS.length ? '' : ' — nothing is mirrored yet; run Sync Procurement in Schedule Setup › WBS.') +
       ' Need-by = earliest start of the linked activities; slip = Target Installation − need-by.';
@@ -43190,25 +43286,25 @@
       '"Own / total" counts activities carrying the package themselves; the rest inherit it from a WBS branch. ' +
       'Planned % is straight-line elapsed at the data date, and variance is actual minus planned — negative is behind.';
     if (!(PACKAGES || []).length) {
-      note += '  ⚠️ This project has NO contract packages defined. They come off the contract documents and are ' +
+      note += '  This project has NO contract packages defined. They come off the contract documents and are ' +
         'created on the project Dashboard; everything below is one unassigned bucket until then.';
     } else if (noPkg) {
-      note += '  ⚠️ ' + noPkg + ' activity/activities belong to no package, so the package rows below do NOT add up ' +
+      note += '  ' + noPkg + ' activity/activities belong to no package, so the package rows below do NOT add up ' +
         'to the project. Assign them, or read the project total as the only complete figure.';
     }
     /* The EOT half of the report explains itself, because "revised finish" is a
        contractual assertion and a reader must know exactly what produced it. */
     var anyEot = (CONTRACT_RECS || []).some(function (x) { return x.record_type === 'EOT'; });
     if (anyEot) {
-      note += '  Contract finish is the package\'s own end date; ⚠️ only EOTs marked <b>Approved</b> move it — ' +
+      note += '  Contract finish is the package\'s own end date; only EOTs marked <b>Approved</b> move it — ' +
         'a pending claim is exposure, not entitlement, and is shown in brackets. Exposure compares the ' +
         'programme\'s forecast finish with the REVISED date, so granted time is already credited. ' +
-        '⚠️ EOT days are treated as CALENDAR days; if your contract grants working days, apply the project ' +
-        'calendar to the granted figure before quoting it. ⚠️ Nothing here moves an activity — an EOT changes ' +
+        'EOT days are treated as CALENDAR days; if your contract grants working days, apply the project ' +
+        'calendar to the granted figure before quoting it. Nothing here moves an activity — an EOT changes ' +
         'the date lateness is measured against, never how long the work takes.';
       var loose = (CONTRACT_RECS || []).filter(function (x) { return x.record_type === 'EOT' && !x.package_id; }).length;
       if (loose) {
-        note += '  ⚠️ ' + loose + ' EOT(s) are not assigned to a package, so they are read as project-wide and ' +
+        note += '  ' + loose + ' EOT(s) are not assigned to a package, so they are read as project-wide and ' +
           'counted against the unassigned row only. Tag them in Contracts & Claims to credit the right lot.';
       }
     }
@@ -43354,7 +43450,7 @@
         // it moves live dates across the whole project the moment it is enabled —
         // including for other planners looking at the same schedule. That is a
         // decision to take deliberately, not a default to inherit from a deploy.
-        '<label><input type="checkbox" id="ps-calcpm"' + (calCpmOn ? ' checked' : '') + '><span>Schedule on working calendars<small>Durations count WORKING days and finishes skip non-working ones, per each activity’s calendar (Working Calendars view). Float is then in working days too. ⚠️ Moves dates across the project — review before you Reschedule.</small></span></label></div>' +
+        '<label><input type="checkbox" id="ps-calcpm"' + (calCpmOn ? ' checked' : '') + '><span>Schedule on working calendars<small>Durations count WORKING days and finishes skip non-working ones, per each activity’s calendar (Working Calendars view). Float is then in working days too. Moves dates across the project — review before you Reschedule.</small></span></label></div>' +
         '<div class="fld"><span>Progress intelligence</span>' +
         '<label><input type="checkbox" id="ps-progdriven"' + (progressDriven ? ' checked' : '') + '><span>Progress-driven dates<small>Editing Duration POC recomputes remaining duration &amp; finish from the data date.</small></span></label>' +
         '<label><input type="checkbox" id="ps-ddretain"' + (ddRetainOn ? ' checked' : '') + '><span>Retain un-started work at the data date<small>On Schedule, move activities with 0% POC to the data date, keeping their duration. No predecessor → placed on the data date; with predecessors → only pulled forward out of the past.</small></span></label></div>';
@@ -43689,6 +43785,21 @@
     try { localStorage.setItem('ps_lsmrows', _lsmRows ? '1' : '0'); } catch (e) {}
     var said = [];
     if (_lsmRows) {
+      _lsmArrange(said);
+    } else if (_lsmPrevGroup && _lsmPrevGroup.length) {
+      setGroupBys(_lsmPrevGroup);
+      said.push('put your grouping back');
+      _lsmPrevGroup = null;
+    }
+    _lsmFinish(said);
+  }
+  /* The three things an LSM reading needs arranged, whichever view is asking: the colour key on,
+     a curated set of trades, and the grouping BY LOCATION collapsed to one row per floor.
+     ⚠️⚠️ EXTRACTED SO THE FLOWLINE USES THE SAME ONE. Two copies would drift, and the
+     second copy is always the one that forgets the floor-level collapse — which is the bug the
+     owner reported an hour ago. */
+  function _lsmArrange(said) {
+    {
       /* The lanes ARE the colour key, so the key cannot be off in this mode. */
       var cfg = catCfg();
       if (!cfg.on) { cfg.on = true; saveCatCfg(cfg); said.push('turned the colour key on'); }
@@ -43726,17 +43837,16 @@
         said.push('collapsed to one row per ' +
           (locLevelName((_fi >= 0 ? locDims[_fi] : locDims[locDims.length - 1]).slice(4)) || 'level'));
       }
-    } else if (_lsmPrevGroup && _lsmPrevGroup.length) {
-      setGroupBys(_lsmPrevGroup);
-      said.push('put your grouping back');
-      _lsmPrevGroup = null;
     }
+    return said;
+  }
+  function _lsmFinish(said) {
     /* ⚠️ applyRowZoom is THE ONE PLACE row height is set, in both the CSS and the JS —
        so the lane budget reaches `--ps-rowh` through it rather than being written here. */
     applyRowZoom(false);
     var _lb2 = document.getElementById('ps-lsmbtn');
     if (_lb2) _lb2.classList.toggle('active', !!_lsmRows);
-    /* \u26a0\ufe0f `_paintViewBtn` only \u2014 NOT `renderLayoutMenu`, which is declared in the
+    /* ⚠️ `_paintViewBtn` only — NOT `renderLayoutMenu`, which is declared in the
        init/wiring scope and not at module scope. Calling it from here is the exact ReferenceError
        this file already records for `closeMenus`, and a try/catch round it would hide the fault
        rather than avoid it. The menu rebuilds itself on open. */
@@ -43751,6 +43861,227 @@
         'px \u2014 use "Key trades\u2026" to show fewer)');
     }
     if (said.length) UI.toast('LSM rows ' + (_lsmRows ? 'on' : 'off') + ' \u2014 ' + said.join(', ') + '.', 'success');
+  }
+  var FL_ROWH = 22, FL_PADT = 34, FL_PADR = 90;
+  /* ---- THE FLOWLINE CHART ----------------------------------------------------------------------
+     Time across, LOCATION up, one diagonal band per trade. The deck's earlier slides are drawn
+     exactly this way, and its whole argument for the form is the slope: *"They show a clear
+     understanding of the effect of the rate of production (by the slope of the line)"*.
+     ⚠️⚠️ IT DERIVES NOTHING OF ITS OWN. Storey ordinals, per-storey spans, the trade
+     sequence, the rates and the clashes all come from `_lsmRate` / `_lsmSeq` / `_lsmClash` —
+     the same model the LSM rows read. Two renderers computing their own storey order is exactly
+     how this module once shipped a 3D view that disagreed with the 2D view of the same data.
+     ⚠️ Hand-rolled SVG strings, like every other chart in this file. No library. */
+  function renderFlowline() {
+    var host = document.getElementById('ps-flowline'); if (!host) return;
+    if (!flowlineMode) { host.style.display = 'none'; return; }
+    host.style.display = 'block';
+    var R = _lsmRate(), seq = _lsmSeq(), lanes = _lsmLanes(), C = _lsmClash();
+    var laneOf = {}; lanes.forEach(function (x) { laneOf[x.value] = x; });
+    var keys = Object.keys(R.byKey || {});
+    if (!keys.length || !R.min) {
+      /* ⚠️ THREE REASONS IT CAN BE EMPTY, and they need different sentences — the
+         same rule the stacking's own empty state arrived at after four reports. */
+      host.innerHTML = '<div class="ps-fl-head"><span class="ps-fl-title">Flowline</span></div>' +
+        '<div class="ps-fl-empty">' +
+        (!LOC_LEVELS.length
+          ? 'This project has no <strong>Location Breakdown Structure</strong> yet, so there is no vertical axis to draw. Define the levels in <strong>Schedule Setup › Floors &amp; Zones</strong>.'
+          : (!R.floors
+              ? 'None of the rows on screen resolve to a <strong>storey</strong>. The chart needs activities carrying a value at the ' +
+                esc(locLevelName(_locFloorLevelId()) || 'floor') + ' level — check <em>Match WBS to locations</em>, or the location values themselves.'
+              : 'No keyed trade has work on a ranked storey yet. Use <strong>Key trades…</strong> in the Legend to choose the trades worth drawing.')) +
+        '</div>';
+      return;
+    }
+    /* The same day-width the Gantt is on, so this chart pans and zooms with the same controls
+       rather than inventing a second time scale. */
+    var rg = range(), min = rg.min, max = rg.max;
+    var dayw = DAYW[zoom] * ganttScale;
+    var totalDays = dayDiff(min, max) + 1, W2 = Math.max(Math.round(totalDays * dayw), 320) + FL_PADR;
+    function X(d) { return Math.round(dayDiff(min, d) * dayw); }
+
+    /* One section per series, because the ordinals are per series — towers are not averaged
+       together here any more than they are in the rate. */
+    var bySer = {};
+    keys.forEach(function (k) {
+      var p = R.byKey[k];
+      (bySer[p.ser] = bySer[p.ser] || []).push(p);
+    });
+    var out = '';
+    var unranked = [];
+    Object.keys(bySer).forEach(function (ser) {
+      var ordMap = R.ord[ser] || {};
+      var ranks = Object.keys(ordMap).map(Number).sort(function (a, b) { return a - b; });
+      if (!ranks.length) return;
+      var maxOrd = ranks.length - 1;
+      function Y(ord) {
+        var row = _lsmTopFirst ? (maxOrd - ord) : ord;
+        return FL_PADT + row * FL_ROWH + Math.round(FL_ROWH / 2);
+      }
+      var H = FL_PADT + ranks.length * FL_ROWH + 8;
+
+      /* --- the axis column, laid out from the SAME two numbers as the svg --- */
+      /* ⚠️⚠️ FULL FL_PADT, NOT `FL_PADT - 2`. This app is `box-sizing:border-box`,
+         so the spacer's 2px bottom border sits INSIDE its height — subtracting it as well made
+         the column 32px where the svg's header band is 34, and every storey label rode 2px above
+         its own row. Measured in the harness: centres 43/65/87... against the svg's 45/67/89...
+         The CSS note beside `.ps-fl-wrap` promises these two numbers agree; this is the line that
+         has to keep that promise. */
+      var ax = '<div class="ps-fl-axspacer" style="height:' + FL_PADT + 'px;"></div>';
+      var ordered = ranks.slice().sort(function (a, b) {
+        return _lsmTopFirst ? (ordMap[b] - ordMap[a]) : (ordMap[a] - ordMap[b]);
+      });
+      ordered.forEach(function (rk) {
+        var lab = R.label[ser + '\u0002' + rk] || '';
+        ax += '<div class="ps-fl-axlab" style="height:' + FL_ROWH + 'px;" title="' + esc(lab) + '">' + esc(lab) + '</div>';
+      });
+
+      /* --- month gridlines + the date header --- */
+      var g = '', mo = new Date(min.getFullYear(), min.getMonth(), 1);
+      while (mo <= max) {
+        var gx = X(mo);
+        g += '<line class="ps-fl-grid" x1="' + gx + '" y1="' + FL_PADT + '" x2="' + gx + '" y2="' + (H - 8) + '"/>';
+        g += '<text class="ps-fl-mo" x="' + (gx + 3) + '" y="' + (FL_PADT - 4) + '">' +
+             ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][mo.getMonth()] + '</text>';
+        if (mo.getMonth() === 0 || +mo === +new Date(min.getFullYear(), min.getMonth(), 1)) {
+          g += '<text class="ps-fl-yr" x="' + (gx + 3) + '" y="' + (FL_PADT - 17) + '">' + mo.getFullYear() + '</text>';
+        }
+        mo = new Date(mo.getFullYear(), mo.getMonth() + 1, 1);
+      }
+      /* horizontal storey rules, so a diagonal can be read back to its floor */
+      for (var q = 0; q < ranks.length; q++) {
+        var yy = FL_PADT + q * FL_ROWH;
+        g += '<line class="ps-fl-gridy" x1="0" y1="' + yy + '" x2="' + (W2 - FL_PADR) + '" y2="' + yy + '"/>';
+      }
+      /* the data date, the same line the Gantt draws */
+      if (_gset.ddline) {
+        var ddx = X(today());
+        g += '<line class="ps-fl-dd" x1="' + ddx + '" y1="' + (FL_PADT - 2) + '" x2="' + ddx + '" y2="' + (H - 8) + '"/>';
+      }
+
+      /* --- one band + one line per trade, in sequence order --- */
+      var body = '';
+      bySer[ser].sort(function (a, b) {
+        var ia = seq.idx[a.value], ib = seq.idx[b.value];
+        return (ia == null ? 1e9 : ia) - (ib == null ? 1e9 : ib);
+      });
+      bySer[ser].forEach(function (p) {
+        var ln = laneOf[p.value]; if (!ln) return;
+        var col = ln.color;
+        var rs = Object.keys(p.byRank).map(Number).sort(function (a, b) { return ordMap[a] - ordMap[b]; });
+        if (!rs.length) return;
+        var startPts = [], finPts = [], blPts = [], anyBl = false;
+        rs.forEach(function (rk) {
+          var v = p.byRank[rk], y = Y(ordMap[rk]);
+          startPts.push(X(v.s) + ',' + y);
+          finPts.push((X(v.f) + Math.max(1, Math.round(dayw))) + ',' + y);
+          if (v.bs) { anyBl = true; blPts.push(X(v.bs) + ',' + y); }
+        });
+        if (rs.length === 1) {
+          /* ⚠️ A BLOCK TASK. One storey, so there is no slope to draw and a line would
+             be a dot; the deck draws these as blocks and so does this. */
+          var rk0 = rs[0], v0 = p.byRank[rk0], y0 = Y(ordMap[rk0]);
+          var bx = X(v0.s), bw = Math.max(2, X(v0.f) + Math.round(dayw) - bx);
+          body += '<rect class="ps-fl-block" x="' + bx + '" y="' + (y0 - 6) + '" width="' + bw +
+            '" height="12" rx="2" fill="' + col + '"><title>' +
+            esc(p.value + ' — ' + (R.label[ser + '\u0002' + rk0] || '') + ' only (a block task: one storey, so no slope): ' +
+              Fmt.date(dstr(v0.s)) + ' → ' + Fmt.date(dstr(v0.f))) + '</title></rect>';
+          return;
+        }
+        /* The band is the work: down the starts, back up the finishes. */
+        body += '<polygon class="ps-fl-band" fill="' + col + '" points="' +
+          startPts.join(' ') + ' ' + finPts.slice().reverse().join(' ') + '"/>';
+        if (anyBl && _gset.baseline && blPts.length > 1) {
+          body += '<polyline class="ps-fl-bl" stroke="' + col + '" points="' + blPts.join(' ') + '"/>';
+        }
+        body += '<polyline class="ps-fl-line" stroke="' + col + '" points="' + startPts.join(' ') + '"/>';
+        rs.forEach(function (rk) {
+          var v = p.byRank[rk], y = Y(ordMap[rk]);
+          body += '<circle class="ps-fl-dot" cx="' + X(v.s) + '" cy="' + y + '" r="2.5" fill="' + col + '"><title>' +
+            esc(p.value + ' — ' + (R.label[ser + '\u0002' + rk] || '') + ': ' +
+              Fmt.date(dstr(v.s)) + ' → ' + Fmt.date(dstr(v.f))) + '</title></circle>';
+        });
+        /* ⚠️ THE SLOPE LABEL IS THE RATE STRIP'S OWN FIGURE, not a second calculation. */
+        var rec = R.byTrade[p.value];
+        var lastRk = rs[rs.length - 1], lx = X(p.byRank[lastRk].s) + 6, ly = Y(ordMap[lastRk]) - 5;
+        var txt = p.value + (rec && rec.r2 >= LSM_R2_OK
+          ? ' · ' + (Math.round(rec.wdPerFloor * 10) / 10) + (R.wd ? ' wd' : ' cd') + '/floor'
+          : '');
+        body += '<text class="ps-fl-slope" fill="' + col + '" x="' + lx + '" y="' + ly + '">' + esc(txt) + '</text>';
+      });
+
+      /* --- clash marks: the overlapping stretch, on the storey it happens on --- */
+      var cm = '';
+      (C.list || []).forEach(function (x) {
+        if (x.ser !== ser || ordMap[x.rank] == null) return;
+        var y = Y(ordMap[x.rank]);
+        cm += '<line class="ps-fl-clash" x1="' + X(x.s) + '" y1="' + y + '" x2="' + (X(x.f) + Math.round(dayw)) + '" y2="' + y + '"><title>' +
+          esc(x.b + ' before ' + x.a + ' on ' + x.loc + ' — ' + x.days + ' ' + (C.wd ? 'working' : 'calendar') + ' days') +
+          '</title></line>';
+      });
+
+      var anc = (R.serAnc[ser] || []).map(function (c) { return R.name[c] || ''; })
+        .filter(function (s2) { return s2; });
+      out += '<div class="ps-fl-sec">' +
+        (anc.length ? '<div class="ps-fl-sechead">' + esc(anc.join(' › ')) + '</div>' : '') +
+        '<div class="ps-fl-wrap">' +
+          '<div class="ps-fl-axis">' + ax + '</div>' +
+          '<div class="ps-fl-scroll"><svg width="' + W2 + '" height="' + H + '" viewBox="0 0 ' + W2 + ' ' + H + '">' +
+            g + body + cm +
+          '</svg></div>' +
+        '</div></div>';
+    });
+
+    /* ⚠️⚠️ UNRANKABLE LOCATIONS HAVE NO y AND ARE NOT PLOTTED AT ZERO. "Ground
+       Reservoir" and "Podium Amenities" are not storeys; drawing them at the bottom of the
+       building would invent a position for them. They are named instead. */
+    for (var i2 = 0; i2 < DL.length; i2++) {
+      var r2 = DL[i2];
+      if (!r2 || !r2._glsm) continue;
+      if (_lsmRankOf(r2._graw || r2.activity_name || '') != null) continue;
+      var nm = r2._graw || r2.activity_name || '';
+      if (nm && unranked.indexOf(nm) === -1) unranked.push(nm);
+    }
+    host.innerHTML =
+      '<div class="ps-fl-head"><span class="ps-fl-title">Flowline</span>' +
+        '<span class="ps-fl-sub">' + R.floors + ' storey' + (R.floors === 1 ? '' : 's') + ' · ' +
+        lanes.length + ' keyed trade' + (lanes.length === 1 ? '' : 's') + ' · storeys ordered by ' +
+        (R.basis === 'declared' ? 'your location breakdown' : 'the floor-name heuristic') +
+        ' · ' + (_lsmTopFirst ? 'roof at the top' : 'ground at the top') +
+        ' · slope = production rate</span></div>' +
+      _lsmRateHTML() + _lsmClashHTML() + out +
+      (unranked.length
+        ? '<div class="ps-fl-note">' + W + ' Not on this axis (not a storey): <strong>' +
+          esc(unranked.slice(0, 12).join(', ')) + '</strong>' +
+          (unranked.length > 12 ? ' and ' + (unranked.length - 12) + ' more' : '') +
+          '. They carry work but have no position in the building, so the chart names them rather than drawing them at ground level.</div>'
+        : '');
+  }
+  /* ---- The flowline / time-location view -------------------------------------------------------
+     The deck's other chart, and the one its earlier slides are drawn as: time across, LOCATION up,
+     and each trade a diagonal whose SLOPE is its production rate. Modelled on `setVStackMode`,
+     which is this module's established shape for a full-width panel that replaces the split.
+     ⚠️⚠️ IT ARRANGES THE SAME THINGS THE ROWS DO, through `_lsmArrange` — the chart
+     reads `_glsm`, which only exists on location group rows, so a flowline over a WBS grouping
+     would be an empty pane with no explanation. What it does NOT do is turn `_lsmRows` on: the row
+     layout and this chart are two readings of one model, not one feature. */
+  function setFlowlineMode(on) {
+    flowlineMode = !!on;
+    if (flowlineMode) {
+      if (vstackMode) setVStackMode(false);          /* one full-width panel at a time */
+      if (progressMode) setProgressMode(false);
+    }
+    var v = document.getElementById('ps-view-schedule');
+    if (v) v.classList.toggle('ps-flowline-mode', flowlineMode);
+    var btn = document.getElementById('ps-flowbtn');
+    if (btn) btn.classList.toggle('active', flowlineMode);
+    var host = document.getElementById('ps-flowline');
+    if (host) host.style.display = flowlineMode ? 'block' : 'none';
+    var said = [];
+    if (flowlineMode) _lsmArrange(said);
+    _paintViewBtn();
+    renderGrid(); renderGantt();
+    if (flowlineMode) { renderFlowline(); if (said.length) UI.toast('Flowline — ' + said.join(', ') + '.', 'success'); }
   }
   function _lsmLaneIndex() {
     var L = _lsmLanes(), m = {}, i, ov = L.over || [];
@@ -46062,10 +46393,11 @@
     // toggles layered over the layout, so it was possible to be in two at once and the toolbar had no
     // way to say which one you were looking at.
     function _setView(v) {
-      var wantProg = v === 'progress', wantStack = v === 'stacking';
+      var wantProg = v === 'progress', wantStack = v === 'stacking', wantFlow = v === 'flowline';
+      if (typeof flowlineMode !== 'undefined' && flowlineMode !== wantFlow) setFlowlineMode(wantFlow);
       if (typeof vstackMode !== 'undefined' && vstackMode !== wantStack) setVStackMode(wantStack);
       if (typeof progressMode !== 'undefined' && progressMode !== wantProg) setProgressMode(wantProg);
-      if (!wantProg && !wantStack) {
+      if (!wantProg && !wantStack && !wantFlow) {
         layoutMode = v;
         try { localStorage.setItem('ps_layout', layoutMode); } catch (e) {}
         applyLayout();
@@ -46231,6 +46563,10 @@
          View button, so the face still names it. */
       var lb = document.getElementById('ps-lsmbtn');
       if (lb) lb.onclick = function (e) { e.stopPropagation(); closeMenus(); setLsmRows(!_lsmRows); };
+      /* The flowline IS a full-width panel, so it goes through `_setView` like Progress and
+         Stacking — and toggles back to the saved layout the same way. */
+      var fb = document.getElementById('ps-flowbtn');
+      if (fb) fb.onclick = function (e) { e.stopPropagation(); closeMenus(); _setView(_viewKey() === 'flowline' ? layoutMode : 'flowline'); };
     })();
     // Outline: the same section the View menu used to carry, in its own menu.
     // ⚠️ Rebuilt on every open, because the level chips run 1..maxDepth() and that changes with the
@@ -46697,7 +47033,7 @@
         what.innerHTML = 'This permanently deletes ' + label() + ' — <strong>' + n + ' activity/activities</strong> — ' +
           'together with their <strong>resource assignments</strong>, and cannot be undone. ' +
           'The standard Milestones / Initiation / Planning / Execution Phase skeleton is ' +
-          'auto-seeded and stays in place. ⚠️ So do the <strong>Design Development</strong> and ' +
+          'auto-seeded and stays in place. So do the <strong>Design Development</strong> and ' +
           '<strong>Procurement</strong> branches — those are mirrors of the Engineering and ' +
           'Procurement apps, not schedule data, and they re-project on the next load.' +
           (target === '__all__' ? '' : ' Other packages are <strong>not</strong> touched.');

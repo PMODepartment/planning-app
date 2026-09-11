@@ -13,6 +13,109 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### The flowline chart: the deck's own form, and one model behind both views (2026-09-11 zc) — fmlozano
+
+Owner: *"Let's proceed with slice 5"*. The last of the five, and the shape the deck's earlier slides
+are actually drawn in — time across, **location up**, each trade a diagonal whose slope is its
+production rate.
+
+### 1. ⚠️⚠️ IT DERIVES NOTHING OF ITS OWN
+Storey ordinals, per-storey spans, the trade sequence, the rates and the clashes all come from
+`_lsmRate` / `_lsmSeq` / `_lsmClash` — **the same model the LSM rows read**. `_lsmRate` now
+hands out `ord`, `byKey`, `label`, `name`, `serAnc` and the window it measured in, alongside the fit
+it already produced.
+
+This is the `_vsTowerModel` rule, applied before it could be broken: this module has already
+shipped a 3D view that put a floor somewhere else than the 2D view of the same data, *"with no way
+to tell which is right"*. The suite now **forbids** the renderer from containing `levelRank(`,
+`_lsmFit(` or `_lsmAgg(` at all.
+
+⚠️ One consequence worth stating: `p.byRank` keeps the **whole span** now, not just the earliest
+start. The fit only needs the start; the chart needs both edges for the band and both baseline
+edges beside it.
+
+### 2. What the deck asks for, and what it gets
+- **A band per trade**, down the starts and back up the finishes — the work itself — with
+  the centre line carrying the slope and the slope figure printed at its head. ⚠️ That figure is
+  **the Rate strip's own**, not a second calculation.
+- ⚠️⚠️ **BLOCK TASKS.** *"Non-linear activities, where the crew is stationary, are represented by
+  block tasks."* A trade that never leaves one storey has no slope, and a near-vertical polyline
+  would claim one — so it draws as a rectangle.
+- ⚠️⚠️ **UNRANKABLE LOCATIONS ARE NOT PLOTTED AT ZERO.** *"Ground Reservoir"*, *"Podium Amenities"*
+  — these carry work but are not storeys, and drawing them at the foot of the building would
+  invent a position for them. They are **named in a footnote** instead.
+- **Baseline dashed, actual solid**, the BL/ACT convention the Vertical Stacking settled, so the two
+  views read the same way. Clash marks land on the storey they happen on. The data-date line is the
+  same one the Gantt draws.
+- ⚠️ It shares the Gantt's **own day width** (`DAYW[zoom] * ganttScale`), so the existing zoom and
+  Ctrl+wheel drive it rather than a second time scale.
+- ⚠️ **One section per tower.** The ordinals are per series, so two buildings are never drawn on
+  one axis — the same rule the rate fits under.
+- ⚠️ Three distinct **empty states** (no breakdown / no storey resolves / no keyed trade), the rule
+  the stacking arrived at after four reports.
+
+### 3. ⚠️⚠️ THE 2px MISALIGNMENT THE HARNESS CAUGHT
+The storey labels are their own non-scrolling column beside the SVG — they must stay put while
+the dates pan, and an SVG child cannot be `position:sticky`. So the two sides are laid out from the
+same row height and the same top spacer, and the CSS note beside `.ps-fl-wrap` promises they agree.
+
+They did not. This app is `box-sizing:border-box`, so the spacer's 2px bottom border sits **inside**
+its height — and I had subtracted it as well, making the column 32px where the SVG's header
+band is 34. **Measured: label centres 43/65/87… against the SVG's 45/67/89…** Every storey
+label rode 2px above its own row.
+⚠️ Fixed, and re-measured to **maxDrift 0** — and the check is now the stronger one: the
+polyline **dots** sit on exactly the same six y values as the labels, so the axis and the plotted
+points are proved to agree rather than merely both looking plausible.
+
+### 4. The door, and the two things called "LSM"
+A **Flowline** button in the Gantt toolbar, beside LSM rows, going through `_setView` like Progress
+and Stacking and toggling back to the saved layout the same way; it sheds with them on a narrow bar.
+⚠️⚠️ It arranges the same prerequisites the rows do, **through the same `_lsmArrange`** —
+extracted in this slice precisely so there is not a second copy that forgets the floor-level
+collapse. What it does **not** do is turn `_lsmRows` on: the row layout and this chart are two
+readings of one model, not one feature.
+
+⚠️⚠️ **AND THE GROUP MENU'S "LSM" PRESET IS A DIFFERENT THING.** It is `['act'] + locDims` —
+*Activity › Location*, the transpose — and it predates any of this work. Two controls
+called LSM that do different things is a genuine trap; the LSM-rows button's tooltip now says so
+outright. **Renaming that preset is the owner's call and is deliberately not taken here.**
+
+### Verified
+**368 assertions against the working tree, 11 against the pinned base, 0 failing.**
+
+⚠️⚠️ **A CORRECTION TO THE CONTRAST ITSELF, WHICH IS THE MOST IMPORTANT LINE HERE.** The pinned
+`BASE_SHA` had been **overwritten** at some point during the five slices and pointed at
+`621a33bc` — a commit that already contained slices 1–4. So the contrast had quietly become
+**partly self-comparison**: three assertions that should have proved slice 1's work was new were
+passing against a base that already had it. Re-pinned to `4d82fd4`, the commit before slice 1, and
+the contrast is honest again: the base is missing **30 LSM functions and 14 constants**.
+This is the [[contrast-build-pin-the-base]] trap in a form the memory did not anticipate — not
+`HEAD` drifting, but the pin file itself being rewritten.
+
+Rendered at 1440×900 with both stylesheets inlined, transitions off, gated on `visibilityState`
++ `clientWidth`: one section, a 148px axis, **six storey labels roof-first**, an 1623×174 SVG,
+**8 bands / 8 centre lines / 8 dashed baselines**, 4 clash marks, the data-date line, slope labels
+reading *"Structural · 8.6 wd/floor"*, band fill `#2F6FBF` at opacity **0.20**, baseline dash
+`4px, 3px`, and no horizontal page scroll.
+
+⚠️ **Not verified signed in.** No real project has been through the flowline; the chart is
+rendered by executing the shipped `renderFlowline` against a stub document and a fabricated tower.
+⚠️ The **block-task** and **unrankable-footnote** paths are asserted on the shipped source but were
+not exercised in the browser — the fixture has neither.
+
+`MODULE_V` → `20260911zc`, sort-checked against `za`/`zb`.
+⚠️ Integrated by committing the module file FIRST and rebasing before touching the version or the
+logs, so the two incoming commits (which do not touch this module at all) could not conflict with
+them. `index.html` is byte-identical across the rebase.
+
+### The five slices are done
+Layout, production rate, clash detection, the data-date line, and the flowline. What is still not
+built, and was named as out of scope at the start: the deck's **restricted time-location windows**
+(*"restricted areas do not allow the planning of tasks in a given time and distance window"*), which
+need a new store and a new authoring surface. ⚠️ And the standing invitation from slice 3:
+`cfg.tradeLeads` is still declared and unread — wire it and a clash could be measured against
+the planner's declared floors-behind rather than only against trade order.
+
 ### ⚠️⚠️ HOTFIX: ticking LSM stretched 2,561 rows, and the layout had almost no door (2026-09-11 z5) — fmlozano
 
 Owner, from the live site on OPW101: *"Ticking LSM widens the with of the rows why is that"*, and

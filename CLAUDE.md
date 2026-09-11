@@ -98,6 +98,50 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-11 (zc) — The LSM flowline chart: the deck's own form, and one model behind both views
+
+Owner: *"Let's proceed with slice 5"*. The last of five. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md). Module-only, no
+migration. Time across, **location up**, each trade a diagonal whose slope is its production rate.
+
+- ⚠️⚠️ **It derives nothing of its own.** Storey ordinals, per-storey spans, the trade sequence, the
+  rates and the clashes all come from `_lsmRate` / `_lsmSeq` / `_lsmClash` — the same model the
+  LSM rows read. The suite **forbids** the renderer containing `levelRank(`, `_lsmFit(` or
+  `_lsmAgg(`. This module has already shipped a 3D view that disagreed with the 2D view of the same
+  data; `_vsTowerModel` exists because of it.
+- ⚠️⚠️ **Block tasks and unrankable locations, both from the deck.** A trade that never leaves one
+  storey draws as a **rectangle**, not a near-vertical line that would claim a slope it does not
+  have. *"Ground Reservoir"* and *"Podium Amenities"* are **named in a footnote**, never plotted at
+  ground level — they carry work but have no position in the building.
+- ⚠️⚠️ **A 2px misalignment the harness caught.** The storey labels are their own non-scrolling
+  column (an SVG child cannot be `position:sticky`), so both sides are laid out from the same
+  numbers — and `box-sizing:border-box` put the spacer's 2px border *inside* its height, so
+  every label rode 2px above its row. Measured 43/65/87 against 45/67/89; fixed to **maxDrift 0**,
+  and the check is now the stronger one: the polyline **dots** sit on exactly the same y values as
+  the labels.
+- ⚠️ **A Flowline toolbar button**, going through `_setView` like Progress and Stacking, arranging
+  the same prerequisites through the **same** `_lsmArrange` — extracted this slice so there is
+  no second copy to forget the floor-level collapse.
+- ⚠️⚠️ **The Group menu's "LSM" preset is a different thing** — `['act'] + locDims`, the
+  transpose, and it predates this work. Two controls called LSM is a real trap; the LSM-rows
+  tooltip now says so. **Renaming the preset is the owner's call and is not taken here.**
+
+**368 assertions against the working tree, 11 against the pinned base, 0 failing.**
+⚠️⚠️ **A correction to the contrast itself:** the pinned `BASE_SHA` had been **overwritten** during
+the five slices and pointed at a commit that already contained slices 1–4 — so three
+assertions had quietly become self-comparison. Re-pinned to the commit before slice 1; the base is
+now missing **30 LSM functions and 14 constants**. That is
+[[contrast-build-pin-the-base]] in a form the note did not anticipate: not `HEAD` drifting, but the
+pin file being rewritten.
+Rendered at 1440×900 with both stylesheets inlined: 148px axis, six storey labels roof-first,
+8 bands / 8 lines / 8 dashed baselines, 4 clash marks, slope labels reading *"Structural · 8.6
+wd/floor"*, no horizontal scroll.
+⚠️ **Not verified signed in**; the block-task and footnote paths are asserted on source but not
+rendered.
+
+`MODULE_V` → `20260911zc`. ⚠️ Integrated by committing the module file first and rebasing
+before touching the version or the logs, so the two incoming commits could not conflict with them.
+
 ### 2026-09-11 (ui) — Final cycle: everything verified against the deployed build, and one refactor deliberately not done
 
 Second and last of an unattended cycle. **No code changed.** That is the finding, not a gap in it.
