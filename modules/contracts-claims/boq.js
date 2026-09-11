@@ -1923,7 +1923,7 @@ window.BOQ = (function () {
         '<div class="boq-imp"><p class="cc-hint">Nothing is wrong: assigning a package <strong>narrows</strong> a BOQ ' +
         'to one lot, it is never required. This BOQ already belongs to the project, and the billing reads it either ' +
         'way. Most projects are a single lot and need no package.</p>' +
-        '<p class="cc-hint">⚠️ This tool will not create one from a sheet name. The workbook\'s sheets are the ' +
+        '<p class="cc-hint pd-caution">This tool will not create one from a sheet name. The workbook\'s sheets are the ' +
         'client\'s billing breakdown <em>within</em> a package (by trade here, by something else elsewhere) — they are ' +
         'not the packages themselves, and a lot minted from a tab name would later be cited in a claim nobody agreed ' +
         'to.</p></div>' +
@@ -1981,7 +1981,7 @@ window.BOQ = (function () {
             '<strong>' + money(chosen.reduce(function (a, x) { return a + x.total; }, 0)) + '</strong> will be ' +
             (target ? 'assigned to <strong>' + esc(pkgName(target)) + '</strong>.' : '<strong>unassigned</strong>.')
           : 'Nothing selected.') +
-        ' ⚠️ Re-assigning overwrites whatever those lines carry now — a sheet reading <em>mixed</em> is currently split ' +
+        ' Re-assigning overwrites whatever those lines carry now — a sheet reading <em>mixed</em> is currently split ' +
         'across lots, and applying here collapses it into one.</p>';
 
       body.querySelector('#ap-pkg').onchange = function () { target = this.value; paint(); };
@@ -3918,7 +3918,7 @@ window.BOQ = (function () {
         '<span class="cc-mini">Every code on this BOQ, matched at once</span></div>' +
         '<p class="cc-hint" style="margin-top:0;">' + plan.length + ' code(s) · <strong>' + total + '</strong> tag(s) ' +
         'at ≥' + (TAG_FLOOR * 100).toFixed(0) + '% confidence · <strong>' + withNone + '</strong> match nothing, left alone.<br>' +
-        '⚠️ Activities carrying another code are excluded — re-tagging is a per-code decision.</p>' +
+        'Activities carrying another code are excluded — re-tagging is a per-code decision.</p>' +
         '<div class="cc-tablewrap" style="max-height:38vh;overflow:auto;border:1px solid var(--pd-line);border-radius:var(--pd-radius);">' +
         '<table class="cc-table" style="min-width:0;"><thead><tr><th>Class code</th><th class="cc-desc">Item</th>' +
         '<th class="cc-r">BOQ lines</th><th class="cc-r">Would tag</th><th>How</th></tr></thead><tbody>' +
@@ -4274,7 +4274,7 @@ window.BOQ = (function () {
       '<div class="boq-pick"><p class="cc-hint">' + esc(r.description || r.item_no || '') + '</p>' +
       '<input class="pd-input" id="pk-q" placeholder="Search code, division, group or item…" autocomplete="off" />' +
       '<div class="boq-picklist" id="pk-list"></div>' +
-      '<p class="cc-hint">⚠️ Never de-zero a code. <code>015051</code> (Gen Req › Earthmoving) is a different code ' +
+      '<p class="cc-hint pd-caution">Never de-zero a code. <code>015051</code> (Gen Req › Earthmoving) is a different code ' +
       'from <code>15051</code> (Metal Works › Railings) — the padded code is the key, which is why this is a ' +
       'picker and not a text box.</p></div>' +
       '<div class="pd-modal-footer"><button class="pd-btn" id="pk-cancel">Cancel</button></div>');
@@ -5698,7 +5698,7 @@ window.BOQ = (function () {
         '<td class="cc-r">100.00%</td><td class="cc-r"><strong>' + pct(tot.poc, 4) + '</strong></td>' +
         '<td class="cc-r"><strong>' + money(tot.revenue) + '</strong></td></tr>';
       h += '</tbody></table>' +
-        '<p class="cc-hint">⚠️ These are the <em>certified</em> percentages — what the client has already paid ' +
+        '<p class="cc-hint pd-caution">These are the <em>certified</em> percentages — what the client has already paid ' +
         'against. The schedule\'s S-curve is <em>reported</em> progress, and the two must not be silently merged: ' +
         'their difference is the accrual shown above, never an error to correct in either direction.</p></div>';
     }
@@ -5751,7 +5751,7 @@ window.BOQ = (function () {
         'progress would push the other POC (decision #7) into a revenue figure — the one merge this module refuses.</p>';
     }
     if (mr.undated.length) {
-      h += '<p class="cc-hint">⚠️ <strong>' + mr.undated.length + ' billing period(s) fall in no month</strong> — ' +
+      h += '<p class="cc-hint pd-caution"><strong>' + mr.undated.length + ' billing period(s) fall in no month</strong> — ' +
         esc(mr.undated.map(function (u) { return u.p.billing_no; }).join(', ')) +
         ' — because the period end date is missing. Their revenue is excluded from the table above rather than guessed into a ' +
         'month, so the Total here is below Revenue to date until those dates are set.</p>';
@@ -5824,7 +5824,7 @@ window.BOQ = (function () {
       'Work is reported on the programme, certified by the client, then paid. The distance between the first two is ' +
       '<strong>accrued revenue</strong> — earned, not yet invoiceable. ' +
       (accrPct != null && accrPct < 0
-        ? '⚠️ Here it runs the <em>other</em> way: certification is ahead of reported progress, which is either ' +
+        ? 'Here it runs the <em>other</em> way: certification is ahead of reported progress, which is either ' +
           'front-loaded measurement, an advance, or a programme that has not been updated. Worth resolving before the ' +
           'next billing.'
         : 'Carry it as an unbilled receivable in the accrual, and it converts to AR at the next certification.') + '</p>';
@@ -5845,25 +5845,25 @@ window.BOQ = (function () {
         '<div class="boq-poc-cell"><span class="cc-mini">Not yet claimed</span>' +
           '<div class="boq-poc-v">' + (unclaimed == null ? '—' : money(unclaimed)) + '</div>' +
           '<span class="cc-mini">' + (unclaimed == null ? 'no accrual to split' : 'reported done, never submitted') + '</span></div>' +
-        '<div class="boq-poc-cell ' + (dsp.over ? 'bad' : '') + '"><span class="cc-mini">⚠️ Certified above claimed</span>' +
+        '<div class="boq-poc-cell ' + (dsp.over ? 'bad' : '') + '"><span class="cc-mini pd-caution-inline">Certified above claimed</span>' +
           '<div class="boq-poc-v">' + money(dsp.over) + '</div>' +
           '<span class="cc-mini">' + (dsp.nOver ? dsp.nOver + ' line(s) — check the entry' : 'none') + '</span></div>' +
         '</div>' +
         '<p class="cc-hint"><strong>Dispute is claimed minus certified, per line, on billing ' + esc(cur.billing_no) + '.</strong> ' +
         'Lines with no claimed figure recorded are read as <em>claimed = certified</em>, never as claimed-zero, so they ' +
         'add nothing to the dispute. ' + dsp.nClaims + ' line(s) carry a claimed figure. ' +
-        '⚠️ The two are <strong>not netted</strong>: certification above what was claimed is almost always a keying ' +
+        'The two are <strong>not netted</strong>: certification above what was claimed is almost always a keying ' +
         'error, and cancelling it against genuine disputes elsewhere would hide both.</p>';
     } else if (accrPct != null && accrPct > 0) {
       h += '<p class="cc-hint"><strong>No claimed figures recorded on this billing</strong>, so the accrual above cannot ' +
         'yet be split into <em>disputed</em> and <em>not yet submitted</em>. Enter Claimed % beside Certified % in the ' +
-        'Progress dialog and both appear here. ⚠️ Absent claims are read as <em>claimed = certified</em> — never as a ' +
+        'Progress dialog and both appear here. Absent claims are read as <em>claimed = certified</em> — never as a ' +
         'dispute of the whole amount.</p>';
     }
 
     /* ⚠️ THE HONEST LIMIT, ON SCREEN. Overstating what the number proves is how
        an accrual figure ends up in a report nobody can defend. */
-    h += '<p class="cc-hint">⚠️ <strong>The reported figure is the contractor\'s own.</strong> It is ' +
+    h += '<p class="cc-hint pd-caution"><strong>The reported figure is the contractor\'s own.</strong> It is ' +
       '<code>percent_complete</code> entered on the programme; nothing in this app records the client\'s verification ' +
       'of a schedule activity. So this accrual is <em>work claimed as done and not yet certified</em>, which includes ' +
       'anything the client would still knock off on inspection. ' +
@@ -5872,7 +5872,7 @@ window.BOQ = (function () {
       'simply unclaimed.</p>';
 
     h += (contract && Math.abs(contract - contractSum(ITEMS)) > 1
-        ? '<p class="cc-hint">⚠️ The certified figure is computed on the revision\'s stated contract total, which ' +
+        ? '<p class="cc-hint pd-caution">The certified figure is computed on the revision\'s stated contract total, which ' +
           'differs from the sum of its lines — see the reconciliation warning on the Items tab.</p>' : '') +
       '</div>';
     return h;
@@ -5894,7 +5894,7 @@ window.BOQ = (function () {
       '<label>Period end<input class="pd-input" id="np-e" type="date" /></label>' +
       '<label>PO no.<input class="pd-input" id="np-po" value="' + esc(rev.po_no || '') + '" /></label>' +
       '</div>' +
-      '<p class="cc-hint">⚠️ A billing period is <strong>not a calendar month</strong> — the real ones run 26th to 25th. ' +
+      '<p class="cc-hint pd-caution">A billing period is <strong>not a calendar month</strong> — the real ones run 26th to 25th. ' +
       'Cash Flow and the S-curve are monthly, so the mapping from a period to a month stays explicit rather than assumed.<br>' +
       'This period is billed against <strong>revision ' + esc(rev.rev_no || '?') + '</strong> and keeps that snapshot even if a ' +
       'later remeasure changes the BOQ.' +
@@ -5977,7 +5977,7 @@ window.BOQ = (function () {
       });
       sumEl.innerHTML = 'POC <strong>' + pct(t.poc, 4) + '</strong> · revenue <strong>' + money(t.revenue) + '</strong>' +
         (dsp ? ' · in dispute <strong>' + money(dsp) + '</strong> (' + dspN + ' line' + (dspN === 1 ? '' : 's') + ')' : '') +
-        (ovr ? ' · ⚠️ certified above claimed <strong>' + money(ovr) + '</strong>' : '');
+        (ovr ? ' · certified above claimed <strong>' + money(ovr) + '</strong>' : '');
       var list = lines.filter(function (r) { return !q || normKey([r.item_no, r.description, r.sheet].join(' ')).indexOf(normKey(q)) >= 0; });
       body.innerHTML =
         '<p class="cc-hint">Enter each line\'s <strong>cumulative</strong> relative % complete (0–100). %Wt. and Amt. below ' +

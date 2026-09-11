@@ -265,7 +265,7 @@ window.CCPackages = (function () {
        contract sitting outside the lots of a project that has lots. */
     var loose = CONTRACTS.filter(function (r) { return !r.package_id; });
     if (hasPkgs && loose.length) {
-      h += '<div class="cc-dtfoot"><p>⚠️ ' + loose.length + ' of these sit outside every lot, so they are ' +
+      h += '<div class="cc-dtfoot"><p>' + loose.length + ' of these sit outside every lot, so they are ' +
         'missing from any lot-filtered view — though the schedule, BOQ, procurement and engineering still read ' +
         'them at project level. Open one and link it to the lot it belongs to if that is wrong.</p></div>';
     }
@@ -286,7 +286,7 @@ window.CCPackages = (function () {
     if (!c.package_id || c.amount == null) return '';
     var p = PKG.filter(function (x) { return String(x.id) === String(c.package_id); })[0];
     if (!p || p.contract_amount == null || Number(p.contract_amount) === Number(c.amount)) return '';
-    return '⚠ lot ' + esc(p.code || p.name) + ' says ' + esc(money(p.contract_amount));
+    return 'lot ' + esc(p.code || p.name) + ' says ' + esc(money(p.contract_amount));
   }
 
   /* ---- Table 2: the contract lots (packages) ----------------------------- */
@@ -366,7 +366,7 @@ window.CCPackages = (function () {
     });
     h += '</tbody></table></div>' +
       '<div class="cc-dtfoot"><p>These are what the schedule files its top-level rows under, what the BOQ is ' +
-      'assigned to, and what procurement and engineering read once shared. ⚠️ <b>Finish</b> is the contractual ' +
+      'assigned to, and what procurement and engineering read once shared. <b>Finish</b> is the contractual ' +
       'completion date the schedule\'s EOT arithmetic revises — a lot without one shows no revised finish and no ' +
       'exposure.</p></div></div>';
     return h;
@@ -463,7 +463,7 @@ window.CCPackages = (function () {
         '" placeholder="' + esc(pid || '') + '" /></label>' +
       '<label class="cc-wide">This lot\'s own Planners project<input id="pk-plan" value="' + esc(k.planners_project_id || '') +
         '" placeholder="e.g. AVR102 — where its contract, claims and billing are filed" /></label>' +
-      '<p class="cc-hint cc-wide">⚠️ <b>Finish</b> is the contractual completion date. The schedule reads it ' +
+      '<p class="cc-hint cc-wide pd-caution"><b>Finish</b> is the contractual completion date. The schedule reads it ' +
       'to compute a revised finish once approved EOT days are granted, so a package without one reports no ' +
       'revised finish and no liquidated-damages exposure.</p>' +
       '</div>' +
@@ -520,7 +520,7 @@ window.CCPackages = (function () {
       'activity or WBS branch is still assigned</b> to this package, and the error says how many - reassign ' +
       'them first, or set the package to <b>archived</b> instead, which retires it without touching the ' +
       'schedule.</p>' +
-      '<p class="cc-hint">⚠️ Claims, change orders and BOQ lines raised against it are <b>not</b> deleted - ' +
+      '<p class="cc-hint pd-caution">Claims, change orders and BOQ lines raised against it are <b>not</b> deleted - ' +
       'they keep the commercial record and simply stop pointing at a lot.</p></div>' +
       '<div class="pd-modal-footer"><button class="pd-btn" id="pd-c">Cancel</button> ' +
       '<button class="pd-btn pd-btn-danger" id="pd-go">Delete package</button></div>');

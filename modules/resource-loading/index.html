@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Resource &amp; Role Master · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910z5" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260911uc" />
   <style>
     /* Uniform module chrome (matches every other module). 2026-08-30: modules
        gained a persistent sidebar (MODULE_CONTRACT.md) — .pd-content no longer
@@ -243,7 +243,7 @@
 <script src="../../assets/js/program.js?v=20260827a"></script>
 <script src="../../assets/js/ui.js?v=20260909s"></script>
 <script src="../../assets/js/icons.js?v=20260909ui"></script>
-<script src="../../assets/js/calendar.js?v=20260903a"></script>
+<script src="../../assets/js/calendar.js?v=20260911uc"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
 <script>
@@ -619,7 +619,7 @@
     }
     var m = loadingModel();
     var list = overOnly ? m.resList.filter(function (b) { return b.over; }) : m.resList;
-    if (!list.length) { mx.innerHTML = '<tbody><tr><td class="rl-empty">No over-allocated resources. 🎉</td></tr></tbody>'; note.textContent = ''; return; }
+    if (!list.length) { mx.innerHTML = '<tbody><tr><td class="rl-empty">No over-allocated resources.</td></tr></tbody>'; note.textContent = ''; return; }
     var head = '<thead><tr><th>Resource</th>' + m.months.map(function (mk) { var p = mk.split('-'); return '<th>' + MABBR[+p[1] - 1] + " '" + p[0].slice(2) + '</th>'; }).join('') + '<th>Total</th></tr></thead>';
     var body = list.map(function (b) {
       var cells = m.months.map(function (mk) {

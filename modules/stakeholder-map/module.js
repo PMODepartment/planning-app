@@ -1248,7 +1248,7 @@ window.StakeholderMap = (function () {
       '<p class="sm-help">Transcribed from “Criteria for Assessment” in <em>CSF101. OPS. Stakeholder Register</em>. Both axes are 1–4 — narrower than the risk register\'s 1–5, and deliberately so: a stakeholder is placed, not measured.</p>' +
       scaleTable('Table 1A — Impact rating', STK_IMPACT, null) +
       scaleTable('Table 1B — Influence rating', STK_INFLUENCE,
-        '⚠️ The controlled document numbers the influence scale 1–4 but leaves its descriptors blank. The wording above is the parallel phrasing of the impact scale, supplied here so two planners score the same way — it is not a transcription.') +
+        'The controlled document numbers the influence scale 1–4 but leaves its descriptors blank. The wording above is the parallel phrasing of the impact scale, supplied here so two planners score the same way — it is not a transcription.') +
       '</div>' +
 
       '<div class="pd-card"><h2>Priority level and response category</h2>' +
@@ -1267,7 +1267,7 @@ window.StakeholderMap = (function () {
 
       '<div class="pd-card"><h2>Impact / Influence map — the engagement approach</h2>' +
       '<p class="sm-help">Table 2 of the criteria sheet, and the classic Mendelow grid. ' +
-      '<strong>⚠️ It disagrees with the Response Category lookup on some cells, and the workbook keeps both.</strong> ' +
+      '<strong>It disagrees with the Response Category lookup on some cells, and the workbook keeps both.</strong> ' +
       'Impact 3 × Influence 3 is 2nd Priority → <em>Keep Informed</em> by the lookup, and <em>Keep Satisfied</em> by this map. They are two different columns of the register (Q and AF), computed two different ways; this module shows both rather than inventing a single answer the source does not give. The Approach field can be overridden per stakeholder when a planner\'s judgement differs.</p>' +
       '<div class="sm-refgrid">' + e.gridHTML({
         xMax: 4, yMax: 4, xLabel: 'Influence →', yLabel: 'Impact →',
@@ -1288,7 +1288,7 @@ window.StakeholderMap = (function () {
       e.tbl('Gap → strategy → minimum frequency', ['Gap (target − current)', 'Strategy', 'Minimum frequency'],
         [['2 – 3', 'Catch up', 'Monthly'], ['1', 'Enhance', 'Every two months'],
          ['0', 'Maintain', 'Quarterly'], ['negative', 'N/A — target already met', '—']],
-        '⚠️ The BD workbook contradicts itself: its Guide sheet says Maintain = semi-annually and Enhance = quarterly, while the live cell formula — which the data actually follows — says the above. The live formula governs.') +
+        'The BD workbook contradicts itself: its Guide sheet says Maintain = semi-annually and Enhance = quarterly, while the live cell formula — which the data actually follows — says the above. The live formula governs.') +
       '</div>' +
 
       '<div class="pd-card"><h2>MCC Stakeholder Universe</h2>' +
@@ -2090,7 +2090,7 @@ window.StakeholderMap = (function () {
           '<span class="rcm-d-k">Priority level</span><span class="rcm-d-v"><span class="rcm-pill ' + e.priorityClass(pri) + '">' + pri + '</span></span>' +
           '<span class="rcm-d-k">Response (derived)</span><span class="rcm-d-v">' + Fmt.esc(derivedResp) + '</span>' +
           '<span class="rcm-d-k">Approach (derived)</span><span class="rcm-d-v">' + Fmt.esc(derivedAppr) + '</span>' +
-          (derivedResp !== derivedAppr ? '<span class="rcm-muted">⚠️ the workbook\'s two lookups disagree on this cell — both are shown, see Criteria</span>' : '')
+          (derivedResp !== derivedAppr ? '<span class="rcm-muted pd-caution-inline">the workbook\'s two lookups disagree on this cell — both are shown, see Criteria</span>' : '')
         : '<span class="rcm-muted">Set Impact and Influence to derive the priority level, response category and engagement approach.</span>';
       // Show the placeholder the blank override will fall back to.
       var rs = q('#f-resp'), ap = q('#f-appr');

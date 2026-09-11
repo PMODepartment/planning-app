@@ -95,6 +95,69 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-11 (uc) — 81 warning signs move out of the sentence and into the design system
+
+Owner: *"Some of the tooltips are self explanatory and doesn't really make the app professional.
+Let's make a global scan for this to make sure that the UI in the app is professional looking."* —
+then, offered the scope, chose **restyle and shorten**. This is the restyle half.
+
+The trigger was a helper paragraph under Contract Lots reading *"These are what the schedule files
+its top-level rows under … ⚠️ **Finish** is the contractual completion date the schedule's EOT
+arithmetic revises"* — a design note that escaped into shipped UI, warning sign and all.
+
+**⚠️⚠️ GREP CANNOT ANSWER THIS, AND THAT IS THE WHOLE DIFFICULTY.** This repo writes ⚠️ in code
+comments **on purpose** — 2,262 in the schedule module alone — and those are not a defect; they are
+the house style for explaining a trap to the next reader. Only the ones inside **string literals**
+reach a planner. So `uicopy.py` tokenises every file, tracking `'` `"` `` ` `` strings against `//`
+and `/* */`, and reports only what survives as code.
+
+**⚠️⚠️ THE TOKENISER WAS WRONG TWICE, AND BOTH TIMES IT ACCUSED CORRECT CODE.** First it had no
+notion of a **regex literal**, so an apostrophe inside `/can\'t/` opened a phantom string that
+swallowed every comment after it — it reported regex source and `//` comments as shipped UI copy.
+Fixed, and then wrong again in a subtler way: a `/` after a **keyword** is a regex, and judging by
+the last *character* (`n` of `return`) calls it division. `risk-register`'s CSV escaper is
+`return /[",\r\n]/.test(s) ? …`, so the `"` inside the class opened a second phantom string — and
+**the converter was about to rewrite a CSV quoting routine**. Caught by reading the dry run rather
+than trusting the count. The tokeniser now proves itself on nine known-good shapes before printing a
+single finding, and aborts if it cannot.
+
+**What the scan found, after that:** **83 pictographs** in shipped copy, **4** tooltips restating
+their own label, **99** helper strings over 220 characters. ⚠️ Only **2** of the 4 tooltips are real
+(the others are dynamic templates), so the literal *"tooltip repeats the button"* pattern is rare
+here — the substance of the complaint is the other two categories.
+
+**⚠️ THE SIGN IS NOT SIMPLY DELETED, because most of these are real cautions** — *"Never de-zero a
+code"*, *"Affected activities were NOT saved"*, *"certified above claimed"*. Deleting the marker
+without replacing it trades an unprofessional screen for a misleading one. So a new **`.pd-caution`**
+in `dashboard.css` carries it through the design system instead: a warn-tinted left rule, on
+`--pd-warn-line` / `--pd-warn-bg` / `--pd-warn-text`. ⚠️ Never `--pd-warn` as the text colour —
+#C77700 is **3.46:1** on white, and this file is not going to be the place it ships as body copy.
+**81 strings across 12 files** converted: a hint paragraph opening with the sign gets `pd-caution`, a
+chip gets `pd-caution-inline`, copy already inside an alert box just loses the marker, and a
+mid-sentence sign goes because the sentence already carries it.
+
+**⚠️ ICONOGRAPHY IS NOT THE PROBLEM, and a checker that cannot tell the difference cries wolf.** The
+first run flagged ✕ on a close button, ✓ on Accept, ⚙ on chart options, ✎ on Edit and ★ as a row
+marker. Those are standard UI glyphs doing an icon's job and they stay. What went are the four **🎯**
+appended to empty states (*"Nothing is behind its baseline finish. 🎯"*) and one **🎉** in Resource
+Loading — a pictograph used as punctuation is the finding, not one used as an icon.
+
+**Result: 83 → 0 in shipped copy.** The three remaining are in `progress-photos/test.js`, which is a
+test file and not user-facing.
+
+Verified: **44 JS files + 33 inline blocks parse, 0 failures**; the BOQ suites re-run green
+(**13 + 44 + 36 + 34**); 0 NUL bytes.
+⚠️ **The shorten half is NOT in this commit** — 99 strings of judgement-heavy rewriting, and two
+categories inside it must be left alone: `assets/js/mcc-rcm.js` is transcribed **verbatim from a
+controlled document**, and `test.js` is not UI.
+⚠️ `modules/project-schedule/index.html` is **deliberately unstaged**: it holds 37 of these fixes
+*and* another session's in-progress flowline work, and I can neither commit theirs nor revert it
+without destroying it. Those 37 land when that work does.
+
+Shared `dashboard.css` / `calendar.js` / `mcc-rcm.js` → `?v=20260911uc` across 30 pages;
+`MODULE_V` → `20260911z7`.
+
+
 ### 2026-09-11 (sc3) — 77 rows that all said "Formworks", and two buttons with one name
 
 Owner, testing the BOQ link on OPW101: *"The planner would have no idea if the similar activities

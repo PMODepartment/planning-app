@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="assets/img/icon.png?v=20260830b" />
   <script src="assets/js/theme.js?v=20260910w7"></script>
   <title>Dashboard — Planners Dashboard</title>
-  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260910z5" />
+  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260911uc" />
   <link rel="stylesheet" href="assets/css/my-work.css?v=20260910w3" />
 </head>
 <body>
@@ -427,7 +427,7 @@
   <script src="assets/js/scurve.js?v=20260901a"></script>
   <script src="assets/js/ui.js?v=20260909s"></script>
   <script src="assets/js/icons.js?v=20260909ui"></script>
-  <script src="assets/js/modules-grid.js?v=20260911z6"></script>
+  <script src="assets/js/modules-grid.js?v=20260911z7"></script>
   <script src="assets/js/my-work.js?v=20260902a"></script>
   <script>
   (function () {
@@ -685,7 +685,7 @@
       if (!list.length) {
         return vizEmpty('viz-due', 'Approaching Deadlines',
           'Nothing unfinished falls due in the next 30 days, and nothing is overdue from the last 30. ' +
-          '⚠️ Activities with <b>no finish date</b> are not counted here — they cannot be late if nobody said when they were due.');
+          'Activities with <b>no finish date</b> are not counted here — they cannot be late if nobody said when they were due.');
       }
       // ⚠️ The overdue figure is the DECLARED `overdue` list's total, not a count of the rows on
       //    screen. Counting the visible slice would have said "1 already overdue" over a schedule
@@ -1186,7 +1186,7 @@
       //    a second time and the panel rendered the literal text "Issues &amp; Concerns".
       if (!m.__rows) {
         return vizEmpty('viz-issues', 'Issues & Concerns',
-          'Nothing on this register yet. ⚠️ An empty register is not the same as a clear one — ' +
+          'Nothing on this register yet. An empty register is not the same as a clear one — ' +
           'if issues are being raised in meetings, they belong here too.');
       }
       var total = m.__rows || 0, open = _n(m.open) || 0, closed = _n(m.closed) || 0;

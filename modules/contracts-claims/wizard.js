@@ -295,13 +295,13 @@ window.CCWizard = (function () {
       return '<p class="ccw-hint">A package is a scope division <i>below</i> a project — a lot inside one ' +
         'contract that has <b>no project code of its own</b>. They come off the contract documents; record ' +
         'one here when you have the lot before the signed contract.</p>' +
-        '<p class="ccw-hint">⚠️ <b>Not</b> for two projects of one development. ' +
+        '<p class="ccw-hint pd-caution"><b>Not</b> for two projects of one development. ' +
         '<b>' + esc(String(D.pid() || 'AVR101')) + '</b> and a sibling like <b>AVR102</b> are separate ' +
         'projects — Procurement and Engineering hold them that way too — and they are consolidated for ' +
         'reporting on the <b>Portfolio Overview</b> under <b>Group by → Parent project</b>, which needs ' +
         'no package and changes no data.</p>' +
         pkgRowsHTML() +
-        '<p class="ccw-hint">⚠️ <b>Finish</b> is the contractual completion date. The schedule adds approved ' +
+        '<p class="ccw-hint pd-caution"><b>Finish</b> is the contractual completion date. The schedule adds approved ' +
         'EOT days to it to get a revised finish, so a package without one reports no revised finish and no ' +
         'liquidated-damages exposure.</p>';
     }
@@ -321,7 +321,7 @@ window.CCWizard = (function () {
         '(<b>' + esc(String(D.pid() || 'AVR101')) + '</b>) already names one contract lot, and the schedule, ' +
         'BOQ, procurement and engineering all file against the project directly.</p>' +
         '<p class="ccw-hint">A <b>package</b> is only for a division <i>below</i> a project — a lot inside ' +
-        '<i>this</i> contract that has no project code of its own. ⚠️ If the division you have in mind ' +
+        '<i>this</i> contract that has no project code of its own. If the division you have in mind ' +
         'already has its own code (<b>AVR102</b>), it is a <b>separate project</b>, not a package: create it ' +
         'in the projects list, and consolidate the two on the <b>Portfolio Overview</b> with ' +
         '<b>Group by → Parent project</b>.</p>' +
@@ -333,9 +333,9 @@ window.CCWizard = (function () {
         '<div id="ccw-pkgnew"' + (st.pkgId === NEWPKG ? '' : ' style="display:none;"') + '>' +
           pkgRowsHTML() +
           '<p class="ccw-hint">One contract can buy several lots — add a row for each, in one run. ' +
-          '⚠️ The contract record itself can cite only <b>one</b> package, so the row marked <b>★</b> is the one ' +
+          'The contract record itself can cite only <b>one</b> package, so the row marked <b>★</b> is the one ' +
           'it links to; the rest are created beside it.</p>' +
-          '<p class="ccw-hint">⚠️ Created only when you press <b>Save</b> on the last step — never before, so ' +
+          '<p class="ccw-hint pd-caution">Created only when you press <b>Save</b> on the last step — never before, so ' +
           'abandoning the wizard leaves no half-made package behind. If the contract then fails to save, ' +
           '<b>every</b> package this run created is rolled back.</p>' +
         '</div>';
@@ -601,7 +601,7 @@ window.CCWizard = (function () {
       '<p class="ccw-hint"><b>Progress billings.</b> The BOQ is imported <b>once</b>. Each progress billing is ' +
       'then a <b>billing period</b> on the BOQ tab — its own number, dates, PO and status — where you enter each ' +
       'line\'s <b>cumulative</b> % complete. Previous, this-period and to-date are derived from the period before ' +
-      'it, so they can never disagree, and POC and revenue fall out of the same figures. ⚠️ Each period records ' +
+      'it, so they can never disagree, and POC and revenue fall out of the same figures. Each period records ' +
       'which BOQ <b>revision</b> it was billed against, so a later remeasure cannot retroactively rewrite a ' +
       'billing already submitted.</p>' +
       (scope
@@ -640,7 +640,7 @@ window.CCWizard = (function () {
       '</tbody></table>';
     if (creating) {
       h += clashHTML() +
-        '<p class="ccw-hint">⚠️ Saving creates ' + mk.length + ' package(s) and the record together. ' +
+        '<p class="ccw-hint pd-caution">Saving creates ' + mk.length + ' package(s) and the record together. ' +
         'If the package cannot be created — a duplicate code, most often — <b>nothing</b> is saved and you stay here.</p>';
     }
     if (st.type === 'BOQ') {
@@ -1075,9 +1075,9 @@ window.CCWizard = (function () {
       var ar = await D.saveAffected(newId, affIds);
       if (ar && ar.err) {
         affMsg = String(ar.err).indexOf('no-migration:') === 0
-          ? ' ⚠️ The ' + affIds.length + ' affected activit' + (affIds.length === 1 ? 'y was' : 'ies were') +
+          ? ' The ' + affIds.length + ' affected activit' + (affIds.length === 1 ? 'y was' : 'ies were') +
             ' NOT saved — run ' + String(ar.err).slice('no-migration:'.length) + ', then re-pick them on the record.'
-          : ' ⚠️ The ' + affIds.length + ' affected activit' + (affIds.length === 1 ? 'y was' : 'ies were') +
+          : ' The ' + affIds.length + ' affected activit' + (affIds.length === 1 ? 'y was' : 'ies were') +
             ' NOT saved: ' + ar.err;
       } else if (ar && ar.added) {
         affMsg = ' ' + ar.added + ' affected activit' + (ar.added === 1 ? 'y' : 'ies') + ' linked.';
@@ -1085,13 +1085,13 @@ window.CCWizard = (function () {
     } else if (affIds.length && !newId) {
       /* Defensive and honest: persistRecord returns the inserted row, but if a future change ever
          stops returning its id there is nothing to link to and the planner must be told. */
-      affMsg = ' ⚠️ The ' + affIds.length + ' affected activities could not be linked — the saved ' +
+      affMsg = ' The ' + affIds.length + ' affected activities could not be linked — the saved ' +
         'record returned no id. Re-pick them on the record.';
     }
     close();
     UI.toast((madeIds.length
       ? 'Contract saved, and ' + madeIds.length + ' package(s) created.' : 'Record added.') + affMsg,
-      affMsg.indexOf('⚠️') >= 0 ? 'warn' : 'success');
+      affMsg.indexOf('') >= 0 ? 'warn' : 'success');
     if (D.warnDropped) D.warnDropped(res.dropped);
     D.done(t);
   }

@@ -553,7 +553,7 @@ window.PMI = (function () {
       '</select></label>' +
       f("Client's reference", 'pf-cref', e.client_ref, 'text', prof && prof.ref_pattern ? 'e.g. ' + prof.ref_pattern : 'the number on their form, e.g. MEL.CON.PMI-029') +
       f('Our reference', 'pf-oref', e.our_ref, 'text', 'our own sequence, e.g. MST347. OPS. VO-PMI 29.2 (rev1)') +
-      '<p class="cc-hint">⚠️ Both references are stored and both are searched. A single reference forces a choice, and the ' +
+      '<p class="cc-hint pd-caution">Both references are stored and both are searched. A single reference forces a choice, and the ' +
         'number you drop is the one the other party will cite.</p>' +
       f('Title', 'pf-title', e.title) +
       '<label class="cc-wide">Scope as instructed<textarea id="pf-scope">' + esc(e.scope || '') + '</textarea></label>' +
@@ -856,7 +856,7 @@ window.PMI = (function () {
     if (canWrite && (chainSummary(r, 'internal').rows.length || chainSummary(r, 'client').rows.length)) {
       h += '<div class="pmi-up"><button class="pd-btn pd-btn-primary" id="cf-chsave">Save approval chain</button>' +
         '<span class="cc-mini" id="cf-chst"></span></div>' +
-        '<p class="cc-hint">⚠️ The chain saves only when you press this — the case file repaints itself after an ' +
+        '<p class="cc-hint pd-caution">The chain saves only when you press this — the case file repaints itself after an ' +
         'upload or a priced line, and an unsaved date would go with it.</p>';
     }
     return h;

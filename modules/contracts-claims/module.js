@@ -752,7 +752,7 @@ window.ContractsClaims = (function () {
         f('Package finish', 'cc-f-pkgend', '', 'date') +
         '</div>' +
         '<div id="cc-pkgwarn"></div>' +
-        '<p class="cc-hint">⚠️ Only for a division <b>below</b> this project — a lot inside <i>this</i> contract ' +
+        '<p class="cc-hint pd-caution">Only for a division <b>below</b> this project — a lot inside <i>this</i> contract ' +
         'with no project code of its own. A division that already has its own code is a <b>separate project</b>: ' +
         'create it in the projects list and consolidate the two on the Portfolio Overview ' +
         '(<b>Group by → Parent project</b>).</p>' +
@@ -1041,8 +1041,8 @@ window.ContractsClaims = (function () {
           var ar = await CCAffected.saveFor(affId, affPicker.ids());
           if (ar && ar.err) {
             affMsg = String(ar.err).indexOf('no-migration:') === 0
-              ? ' ⚠️ Affected activities were NOT saved — run ' + String(ar.err).slice('no-migration:'.length) + '.'
-              : ' ⚠️ Affected activities were NOT saved: ' + ar.err;
+              ? ' Affected activities were NOT saved — run ' + String(ar.err).slice('no-migration:'.length) + '.'
+              : ' Affected activities were NOT saved: ' + ar.err;
           } else if (ar && (ar.added || ar.removed)) {
             affMsg = ' Affected work updated' +
               (ar.added ? ', +' + ar.added : '') + (ar.removed ? ', −' + ar.removed : '') + '.';
@@ -1050,7 +1050,7 @@ window.ContractsClaims = (function () {
         }
       }
       m.close(); UI.toast((r ? 'Record updated.' : 'Record added.') + affMsg,
-        affMsg.indexOf('⚠️') >= 0 ? 'warn' : 'success');
+        affMsg.indexOf('') >= 0 ? 'warn' : 'success');
       warnDropped(res.dropped);
       gotoTypeTab(t);
     };

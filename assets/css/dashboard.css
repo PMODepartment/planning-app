@@ -1213,6 +1213,20 @@ html.pd-dark .pd-module-card:hover { box-shadow: var(--pd-shadow-md); }
 .pd-note { margin-top: 16px; padding: 14px 16px; background: var(--pd-bg); border-left: 3px solid var(--pd-red);
   border-radius: var(--pd-radius-md); color: var(--pd-muted); font-size: var(--pd-fs-base); }
 
+/* A caution the planner has to read — carried by the DESIGN SYSTEM, not by a warning sign typed
+   into the middle of the sentence. Owner, 2026-09-11: *"Some of the tooltips are self explanatory
+   and doesn't really make the app professional."* A scan found 83 pictographs sitting inside
+   shipped copy: that is the voice of a code comment, and this repo writes those on purpose — but in
+   comments, where the next developer reads them, never in the product.
+   ⚠️ --pd-warn IS NOT THE TEXT COLOUR (#C77700 = 3.46:1 on white, under AA). --pd-warn-text is the
+   accessible one; the raw token is only ever the rule and the tint. */
+.pd-caution { border-left: 3px solid var(--pd-warn-line); background: var(--pd-warn-bg);
+  color: var(--pd-warn-text); border-radius: var(--pd-radius); padding: 8px 12px; margin: 8px 0;
+  font-size: var(--pd-fs-sm); line-height: 1.5; }
+.pd-caution code, .pd-caution b, .pd-caution strong, .pd-caution em, .pd-caution i { color: inherit; }
+/* For a chip or a table cell, where a block would break the row it sits in. */
+.pd-caution-inline { color: var(--pd-warn-text); font-weight: 700; }
+
 /* portfolio rollup header (Program / Workspace tabs) */
 .pd-rollup-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
 .pd-rollup-kind { font-size: var(--pd-fs-xs); text-transform: uppercase; letter-spacing: .05em; font-weight: 700;

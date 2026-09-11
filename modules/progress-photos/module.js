@@ -2491,7 +2491,7 @@ window.ProgressPhotos = (function () {
     if (usage.photoIds.length) {
       var pluralPhoto = usage.photoIds.length === 1;
       var pluralPpr = usage.pprIds.length === 1;
-      warnHtml = '<div class="pp-delwarn"><span aria-hidden="true">⚠</span><span>' +
+      warnHtml = '<div class="pp-delwarn"><span aria-hidden="true"></span><span>' +
         (pluralPhoto ? 'This photo is' : usage.photoIds.length + ' of ' + (ids.length === 1 ? 'this photo' : ids.length + ' selected photos') + ' are') +
         ' used in ' + usage.pprIds.length + ' presentation' + (pluralPpr ? '' : 's') + '. Deleting ' +
         (pluralPhoto ? 'it' : 'them') + ' will remove ' + (pluralPhoto ? 'it' : 'them') +
@@ -2571,7 +2571,7 @@ window.ProgressPhotos = (function () {
     if (usage.photoIds.length) {
       var pluralPhoto = usage.photoIds.length === 1;
       var pluralPpr = usage.pprIds.length === 1;
-      warnHtml = '<div class="pp-delwarn"><span aria-hidden="true">⚠</span><span>' +
+      warnHtml = '<div class="pp-delwarn"><span aria-hidden="true"></span><span>' +
         (pluralPhoto ? 'One of the photos is' : usage.photoIds.length + ' of the photos are') +
         ' used in ' + usage.pprIds.length + ' presentation' + (pluralPpr ? '' : 's') + '. Deleting ' +
         (pluralPhoto ? 'it' : 'them') + ' will remove ' + (pluralPhoto ? 'it' : 'them') +

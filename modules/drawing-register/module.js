@@ -1269,7 +1269,7 @@ window.DrawingRegister = (function () {
     var dupLegend = nDup ?
       '<button class="dr-duplegend'+(filters.dupsOnly?' dr-on':'')+'" id="dr-duplegend" ' +
         'title="A drawing code that appears more than once within the same drawing type. Click to '+(filters.dupsOnly?'show all':'show only duplicates')+'.">' +
-        '<span class="dr-dupmark">⚠</span> '+nDup+' duplicate code'+(nDup>1?'s':'')+'</button>' : '';
+        '<span class="dr-dupmark pd-caution-inline"></span> '+nDup+' duplicate code'+(nDup>1?'s':'')+'</button>' : '';
     // When a column sort is active, say so and offer one click back — otherwise
     // "why can't I drag rows any more?" is a mystery (reorderEnabled() is off).
     var sortChip = regSort.col ?
@@ -1405,7 +1405,7 @@ window.DrawingRegister = (function () {
     // would be silently overwritten on the next sheet change.
     var edN = (CB && !kids) ? ' dr-ed' : '';
     var isDup = !sheet && !!dupSet[dupKey(r)];
-    var dupMark = isDup ? ' <span class="dr-dupmark" title="Duplicate code within this drawing type — reconcile">⚠</span>' : '';
+    var dupMark = isDup ? ' <span class="dr-dupmark" title="Duplicate code within this drawing type — reconcile"></span>' : '';
     var caret = kids
       ? '<span class="dr-caret dr-scaret'+(isCollapsed(item.skey)?' dr-caret-col':'')+'" data-sgrp="'+item.skey+'" title="Show / hide this drawing’s sheets">'+ico('chevronDown',12)+'</span>'
       : '';
