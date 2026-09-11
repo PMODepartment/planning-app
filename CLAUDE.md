@@ -98,6 +98,35 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-11 (zg) — The LSM handoff check becomes per floor category
+
+Owner: *"Wire the per-floor-kind handoff next"*. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md). Module-only.
+
+- ⚠️⚠️ **No second matcher was added, which was the whole question.** `catalogueFrom` has always
+  tagged every floor with `floorKind(f)`, and `_lsmDecl` already matches a storey's words to that
+  entry — so the category costs one line in a loop that was already running, rather than a third
+  place that can disagree about which floor "5th Floor" is.
+- ⚠️⚠️ **The arithmetic changed, not just the number.** `autoTrace` counts the lead **within the
+  category** and **clamps to that category's top floor**. Yesterday's pass counted across the whole
+  building and **skipped** the top storeys — a second reading of the planner's declaration, where
+  the generator's is the one that ships. Corrected to follow `autoTrace` exactly; the previous
+  version under-reported.
+- ⚠️⚠️ **"Start together" is an answer and it suppresses the finding** — `cfg.tradeParallelKind` /
+  `cfg.tradeParallel` are now read through a `parallelKindOf` split out of `parallelKind`, the same
+  way `declaredBatchOf` was split out of `batchKind`. Both splits proved behaviour-identical by
+  execution over all 80 (cfg, trade, category) combinations.
+- ⚠️ **The kindless answers stay where they were** (typical only), and a storey with **no**
+  declared category is **not checked and is counted**, with the strip saying so.
+
+**507 assertions on the working tree, 27 against the pinned base, 0 failing.** ⚠️⚠️ **Fifteen
+negative builds, each reverting one decision, all bite.** ⚠️⚠️ **Two faults in the CHECKER that
+those builds exposed:** a raw-dot read of the nested shape **crashed** instead of failing, and the
+kindless-pair fixture **did not discriminate**, so one negative passed. Both fixed.
+Rendered and measured: the same trade pair shows as *"1 basement level behind"* and *"3 typical
+levels behind"*, the setup's own phrasing.
+⚠️ **Not verified signed in.** `MODULE_V` → `20260911zg`.
+
 ### 2026-09-11 (zf) — The declared cross-trade handoff, wired into the LSM clash detection
 
 Owner: *"Wire cfg.tradeLeads into the clash detection"*. Detail:

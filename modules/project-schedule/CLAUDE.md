@@ -13,6 +13,95 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### The handoff becomes PER FLOOR CATEGORY (2026-09-11 zg) — fmlozano
+
+Owner: *"Wire the per-floor-kind handoff next"* — the limitation named at the end of the previous
+entry, where only `tradeBatchKind`'s **typical** value was applied.
+
+### 1. ⚠️⚠️ NO SECOND MATCHER WAS ADDED, AND THAT WAS THE WHOLE QUESTION
+Matching an LSM storey to a Schedule Setup floor is the hard part, and this module already has two
+places that do it (the WBS match table and `_lsmDecl`'s rank basis). A third would be a third thing
+that can disagree about which floor *"5th Floor"* is.
+
+It turned out not to be needed: **`catalogueFrom` has always put `kind: floorKind(f)` on every floor
+entry**, and `_lsmDecl` already resolves a storey's words to one of those entries. So the category
+costs **one line** in a loop that was already running. The base contrast asserts both halves of
+that: the base already carries `kind: floorKind(f)`, and has nothing on the Gantt side reading it.
+
+### 2. ⚠️⚠️ THE ARITHMETIC CHANGED, NOT JUST THE NUMBER
+`autoTrace` counts the lead **within the category**: `ord` is the following trade's ordinal among
+**its own floors of that category**, and it indexes into the leading trade's floors of that same
+category — so a basement is never counted among the typical floors. Yesterday's pass counted across
+the whole building, which was wrong the moment two categories existed.
+
+⚠️⚠️ **And it CLAMPS to the top of the category** — `si = pk[Math.min(ord + L - 1, pk.length - 1)]`.
+Yesterday's pass **skipped** the top L-1 storeys, on the reasoning that the leading trade "runs out
+of floors to be ahead on". That was a second reading of the planner's declaration, and the schedule
+`autoTrace` actually generates uses the first: B's top floor really does wait for A's top floor of
+that category. **Corrected to follow `autoTrace` exactly**, because the generator is the definition
+of what the answer means — the `_vsTowerModel` rule, and the previous version under-reported.
+
+### 3. ⚠️⚠️ "START TOGETHER" IS AN ANSWER, AND IT SUPPRESSES THE FINDING
+The setup's handoff question is a **checkbox and a number** per category: *start together*, else
+*N level(s) behind*. `autoTrace` draws **no** trailing link for a category marked parallel, and none
+at all for a leading trade marked parallel outright. Reporting a handoff the planner explicitly said
+does not exist is the same fault as inventing one — so `cfg.tradeParallelKind` / `cfg.tradeParallel`
+are read, through a `parallelKindOf` split out of `parallelKind` exactly as `declaredBatchOf` was
+split out of `batchKind`. **Both splits are proved behaviour-identical by execution**, over all 80
+(cfg, trade, category) combinations: 0 differ.
+
+### 4. ⚠️ THE KINDLESS ANSWERS STAY WHERE THEY WERE
+`cfg.tradeBatch` and the legacy `cfg.tradeLeads` predate floor categories, and `batchKind` has always
+folded them into **typical** alone (every other category defaults to 1). Lifting them across all four
+would silently rewrite what those projects declared, so they are applied to typical and nowhere else
+— in `declaredBatchOf` and again in the pass, both asserted, and both with a negative build.
+
+### 5. ⚠️⚠️ A STOREY WITH NO DECLARED CATEGORY IS NOT CHECKED, AND IS COUNTED
+A storey in the schedule but not in the setup's floor list has no category, so no rule applies.
+Guessing *typical* would measure a basement against the tower's number; silence would let
+*"0 handoff findings"* read as *"nothing is early"* when part of the building was never examined.
+So the strip says: *"2 storeys are not in your Schedule Setup's floor list, so no floor category
+applies to them and the handoff was not checked there."* Same principle as the flowline's footnote
+for unrankable locations.
+
+### 6. What the planner sees
+The chip now names the category and uses the setup's own words —
+*"Architectural Works **1 basement level behind** Structural Works"* beside
+*"Architectural Works **3 typical levels behind** Structural Works"*, the **same pair** on the same
+chart, reading differently because the planner answered them differently. The tooltip adds
+*"Counted among the basement floors only, the way the setup traces it."*
+
+### Verified
+**507 assertions against the working tree, 27 against the pinned base `4d82fd4`, 0 failing.**
+
+⚠️⚠️ **Fifteen negative builds, each reverting ONE decision, and every one bites:**
+pass unreachable (**14** fail), `floorLead` as evidence (**6**), `batchKind` drifted (**1**),
+`parallelKind` drifted (**1**), lead applied to any pair (**1**), the leading trade marked (**1**),
+one spelling only (**3**), legacy pair ignored (**3**), **counted across the building** (**8**),
+**typical's number for every category** (**4**), **"start together" ignored** (**2**),
+**whole-trade parallel ignored** (**2**), **unknown category guessed as typical** (**3**),
+**kindless pair crossing categories** (**2**), **kindless batch lifted to every category** (**3**).
+
+⚠️⚠️ **Two faults in the CHECKER, both found by those negative builds and both worth recording:**
+- The nested handoff shape was read with raw dots, so a negative build that drops a trade's entry
+  **crashed** the suite on `undefined.kind` instead of failing it — hiding every assertion after it
+  and reporting a detected regression as a broken checker. Second time in this feature.
+- The kindless-per-pair fixture **did not discriminate**: with the basements starting late, lifting
+  the per-pair number onto them produced no finding either way, so `n14` **passed**. The fixture now
+  starts the basements early enough that the bug shows.
+
+**Rendered and measured** (gated on `visibilityState` + `clientWidth`): three chips, two of them the
+same trade pair on different categories, computing `dashed 3px rgb(196, 33, 39)` against the plain
+chip's `solid 1px rgba(196, 33, 39, .28)`; the flowline's handoff mark `stroke-dasharray 5px, 3px`
+against the four plain marks' `none`; no horizontal page scroll.
+⚠️ The strip and flowline were rendered from the shipped renderers over a **fabricated** clash
+model — the arithmetic is proved by the suite, the browser proves the categories are legible.
+
+⚠️ **Not verified signed in.** No real project has been measured against its own Schedule Setup.
+
+`node --check` PARSE OK; 0 functions lost; NUL 0, CR 0, braces and comment markers balanced;
+166 insertions / 62 deletions. `MODULE_V` → `20260911zg`, sort-checked against `zf`.
+
 ### The declared cross-trade handoff, wired into the clash detection (2026-09-11 zf) — fmlozano
 
 Owner: *"Wire cfg.tradeLeads into the clash detection"* — taking up the standing invitation left at

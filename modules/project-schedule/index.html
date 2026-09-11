@@ -22767,7 +22767,7 @@
   }
   function _lsmDecl() {
     if (_lsmDeclMemo) return _lsmDeclMemo;
-    var m = {}, n = 0;
+    var m = {}, n = 0, kind = {};
     try {
       var cat = (typeof ScheduleBuilder !== 'undefined' && ScheduleBuilder.locCatalogue)
         ? (ScheduleBuilder.locCatalogue() || {}) : {};
@@ -22776,10 +22776,17 @@
           if (!e || e.dim !== 'floor' || !e.value) return;
           var k = locNormKey(e.value);
           if (m[k] == null) { m[k] = n++; }      /* first-seen order IS the setup's order */
+          /* ⚠️⚠️ THE FLOOR CATEGORY RIDES ON THE MATCH THAT IS ALREADY BEING MADE.
+             `catalogueFrom` has always put `kind: floorKind(f)` on every floor entry, and this
+             loop already resolves a storey's words to a declared floor — so basement / podium /
+             typical / roof costs one line here and NO second matching mechanism. A separate
+             storey-to-floor matcher would be a third place that can disagree about which floor
+             "5th Floor" is, after the WBS match table and this. */
+          if (kind[k] == null && e.kind) kind[k] = e.kind;
         });
       });
-    } catch (e) { m = {}; n = 0; }
-    return (_lsmDeclMemo = { map: m, n: n });
+    } catch (e) { m = {}; n = 0; kind = {}; }
+    return (_lsmDeclMemo = { map: m, n: n, kind: kind });
   }
   /* The rank used by BOTH the row order and the rate fit, so the slope always describes the chart
      that is on screen rather than a differently-ordered one. */
@@ -23109,7 +23116,7 @@
   function _lsmClash() {
     if (_lsmClashMemo) return _lsmClashMemo;
     var out = { list: [], marks: {}, n: 0, nOverlap: 0, nLead: 0, basis: 'inferred', wd: false,
-                leadBasis: false };
+                leadBasis: false, nUnkinded: 0 };
     if (!_lsmAggOn() || !DL || !DL.length) return (_lsmClashMemo = out);
     var seq = _lsmSeq();
     out.basis = seq.basis;
@@ -23170,16 +23177,37 @@
       var nextOf = {};
       for (k = 0; k < seq.order.length - 1; k++) nextOf[seq.order[k]] = seq.order[k + 1];
       var lnorm = function (v) { return String(v == null ? '' : v).trim().toLowerCase(); };
-      var kk = Object.keys(byKey);
+      /* ⚠️⚠️ THE STOREY'S FLOOR CATEGORY, FROM `_lsmDecl`'S OWN MATCH. The handoff is declared
+         per category, so the storey has to carry one; `_lsmDecl` already resolves a storey's words
+         to a declared floor for the rank basis, and `catalogueFrom` already puts `floorKind` on
+         that entry. No second matcher. */
+      var DK = _lsmDecl().kind || {};
+      var kindAt = function (ser, rk) {
+        return DK[locNormKey(R2.label[ser + '\u0002' + rk] || '')] || '';
+      };
+      /* ⚠️⚠️ A STOREY WITH NO DECLARED CATEGORY IS NOT CHECKED, AND IS COUNTED. It is in the
+         schedule but not in the Schedule Setup's floor list, so which rule applies is unknown —
+         and guessing "typical" would measure a basement against the tower's number. Silence would
+         be worse than either: the strip says how many were skipped. */
+      var unkinded = {};
+      /* One trade's storeys of one category, in build order - `floorsOf(trade)` filtered by kind,
+         which is exactly what `autoTrace` groups by. */
+      var byKindOf = function (X, ser) {
+        var m2 = {};
+        Object.keys(X.byRank).map(Number).sort(function (p2, q2) { return p2 - q2; })
+          .forEach(function (rk) {
+            var fk = kindAt(ser, rk);
+            if (!fk) { unkinded[ser + '\u0002' + rk] = 1; return; }
+            (m2[fk] = m2[fk] || []).push(rk);
+          });
+        return m2;
+      };
+      var kk = Object.keys(byKey), bkCache = {};
+      var bkOf = function (key, X, ser) { return bkCache[key] || (bkCache[key] = byKindOf(X, ser)); };
       kk.forEach(function (ka) {
         var A = byKey[ka], ordM = ordAll[A.ser];
         if (!ordM || seq.idx[A.value] == null) return;
-        /* A's storeys BY ORDINAL, so "L floors up" is a lookup and not a search. */
-        var aBy = {};
-        Object.keys(A.byRank).forEach(function (rk) {
-          var o = ordM[rk];
-          if (o != null) aBy[o] = { rank: +rk, v: A.byRank[rk] };
-        });
+        var aK = bkOf(ka, A, A.ser);
         kk.forEach(function (kb) {
           var B = byKey[kb];
           if (B.ser !== A.ser || B.value === A.value) return;
@@ -23189,43 +23217,65 @@
              statement about A and its immediate successor, not about every trade after it.
              Applying it to Structural→Tiles would invent a constraint nobody stated. The per-PAIR
              `tradeLeads` answer names both trades, so it applies to that pair whatever the gap. */
-          var L = LD.pair[lnorm(A.value) + '>' + lnorm(B.value)], how = 'pair';
-          if (L == null && nextOf[A.value] === B.value) { L = LD.lead[lnorm(A.value)]; how = 'trade'; }
-          if (!(L >= 1)) return;
-          out.leadBasis = true;
-          Object.keys(B.byRank).forEach(function (rk) {
-            var oB = ordM[rk];
-            if (oB == null) return;
-            var hit = aBy[oB + L - 1];
-            /* ⚠️⚠️ A STOREY THAT IS NOT IN THE PLAN IS NOT A VIOLATION. Near the top of the
-               building the leading trade simply runs out of floors to be ahead on — B on the roof
-               cannot wait for A to finish four floors above it. Reporting those would put a clash
-               on the last L-1 storeys of every pair on every project, which is noise that would
-               teach the planner to ignore the strip. */
-            if (!hit) return;
-            var bs = B.byRank[rk].s, af = hit.v.f;
-            if (+bs > +af) return;                   /* B waited: the declaration is satisfied */
-            var ax2 = _lsmAxOf(A.cal || B.cal, min, max);
-            if (ax2 && ax2.wd) out.wd = true;
-            var early = ax2.span(dayDiff(min, bs), dayDiff(min, af));
-            if (early <= LSM_CLASH_MIN) return;
-            var row2 = rowAt[A.ser + '\u0002' + rk] || null;
-            out.n++; out.nLead++;
-            out.list.push({ kind: 'lead', ser: A.ser, rank: +rk, i: row2 ? row2.i : 0,
-              loc: R2.label[A.ser + '\u0002' + rk] || '',
-              rowId: row2 ? row2.r.id : '',
-              aloc: R2.label[A.ser + '\u0002' + hit.rank] || '',
-              a: A.value, b: B.value, days: early, s: bs, f: af, need: L, how: how });
-            /* ⚠️ ONLY THE FOLLOWING TRADE IS MARKED, an explicit departure from the same-storey
-               rule above (which marks both because either could be the one out of place). Here the
-               pair is on DIFFERENT storeys and the finding is specifically "B started before the
-               declared handoff" — putting a red stretch on A's bar would mark a trade that is
-               exactly where the planner said it would be. */
-            var key2 = A.ser + '\u0002' + B.value + '\u0002' + rk;
-            (out.marks[key2] = out.marks[key2] || []).push({ s: bs, f: af });
+          var pairL = LD.pair[lnorm(A.value) + '>' + lnorm(B.value)];
+          var rec = (pairL == null && nextOf[A.value] === B.value) ? LD.lead[lnorm(A.value)] : null;
+          if (pairL == null && !rec) return;
+          /* ⚠️⚠️ "START TOGETHER" IS AN ANSWER, AND IT SUPPRESSES THE FINDING. `autoTrace` skips
+             every cross-trade link for a leading trade marked parallel, and skips the trailing link
+             for any category marked parallel. Reporting a handoff the planner explicitly said does
+             not exist is the same fault as inventing one. */
+          if (rec && rec.par) return;
+          var bK = bkOf(kb, B, B.ser);
+          Object.keys(bK).forEach(function (fk) {
+            var kr = rec ? rec.kind[fk] : null;
+            if (rec && kr && kr.p) return;                      /* this category starts together */
+            /* ⚠️ The legacy per-PAIR number has no category. `batchKind` has always folded a
+               kindless answer into `typical` alone, so it is applied there and nowhere else —
+               see declaredBatchOf. */
+            var L = (pairL != null) ? (fk === 'typical' ? pairL : null) : (kr ? kr.v : null);
+            var how = (pairL != null) ? 'pair' : 'trade';
+            if (!(L >= 1)) return;
+            var pk = (aK[fk] || []);
+            if (!pk.length) return;        /* the leader has no floor of this category at all */
+            out.leadBasis = true;
+            bK[fk].forEach(function (rk, ordK) {
+              /* ⚠️⚠️ COUNTED WITHIN THE CATEGORY, AND CLAMPED TO ITS TOP — `autoTrace`'s own
+                 arithmetic, character for character:
+                   `si = pk[Math.min(ord + L - 1, pk.length - 1)]`
+                 where `ord` is B's ordinal among ITS floors of this category and `pk` is A's.
+                 ⚠️⚠️ THIS REPLACES THE "skip the top L-1 storeys" RULE SHIPPED YESTERDAY, and the
+                 correction matters: `autoTrace` CLAMPS, so the schedule this setup generates really
+                 does require B's top floor to wait for A's top floor of that category. Skipping
+                 there reported fewer findings than the planner's own declaration implies. Two
+                 readings of one declaration is the `_vsTowerModel` fault; autoTrace is the reading
+                 that ships, so it is the reading that is measured. */
+              var tr = pk[Math.min(ordK + L - 1, pk.length - 1)];
+              var bs = B.byRank[rk].s, af = A.byRank[tr].f;
+              if (+bs > +af) return;                 /* B waited: the declaration is satisfied */
+              var ax2 = _lsmAxOf(A.cal || B.cal, min, max);
+              if (ax2 && ax2.wd) out.wd = true;
+              var early = ax2.span(dayDiff(min, bs), dayDiff(min, af));
+              if (early <= LSM_CLASH_MIN) return;
+              var row2 = rowAt[A.ser + '\u0002' + rk] || null;
+              out.n++; out.nLead++;
+              out.list.push({ kind: 'lead', ser: A.ser, rank: +rk, i: row2 ? row2.i : 0,
+                loc: R2.label[A.ser + '\u0002' + rk] || '',
+                rowId: row2 ? row2.r.id : '',
+                aloc: R2.label[A.ser + '\u0002' + tr] || '',
+                a: A.value, b: B.value, days: early, s: bs, f: af, need: L, how: how,
+                fkind: fk });
+              /* ⚠️ ONLY THE FOLLOWING TRADE IS MARKED, an explicit departure from the
+                 same-storey rule above (which marks both because either could be the one out of
+                 place). Here the pair is on DIFFERENT storeys and the finding is specifically "B
+                 started before the declared handoff" — putting a red stretch on A's bar would mark
+                 a trade that is exactly where the planner said it would be. */
+              var key2 = A.ser + '\u0002' + B.value + '\u0002' + rk;
+              (out.marks[key2] = out.marks[key2] || []).push({ s: bs, f: af });
+            });
           });
         });
       });
+      out.nUnkinded = Object.keys(unkinded).length;
     }
     /* Worst first: the strip shows a handful and the count carries the rest. */
     out.list.sort(function (p, q) { return q.days - p.days || p.rank - q.rank; });
@@ -23233,6 +23283,13 @@
   }
   /* The Clashes strip. ⚠️ It states the BASIS in the label, because an inferred sequence
      makes every row below it a suggestion rather than a finding. */
+  /* ⚠️ The Schedule Setup's own words for a floor category (its `KIND_LABEL`), repeated here
+     because that map lives inside the ScheduleBuilder closure and this is one string per key, not
+     a second source of truth about what the categories ARE — `floorKind` remains the only thing
+     that decides which one a floor is. An unknown key prints itself rather than vanishing. */
+  var LSM_KIND_LABEL = { basement: 'basement', podium: 'podium / commercial', typical: 'typical',
+                         roof: 'roof' };
+  function _lsmKindWord(k) { return LSM_KIND_LABEL[k] || String(k || '').trim() || 'floor'; }
   function _lsmClashHTML() {
     if (!_lsmAggOn()) return '';
     var C = _lsmClash();
@@ -23250,11 +23307,19 @@
           (x.aloc || (x.need + ' floors up')) + ' \u2014 ' + x.days + ' ' +
           (C.wd ? 'working' : 'calendar') + ' days early (' +
           Fmt.date(dstr(x.s)) + ' \u2192 ' + Fmt.date(dstr(x.f)) + '). ' +
-          'Your Schedule Setup declares ' + x.need + ' floor' + (x.need === 1 ? '' : 's') +
-          ' of ' + x.a + ' done before ' + x.b + ' follows' +
+          'Your Schedule Setup declares ' + x.need + ' ' + _lsmKindWord(x.fkind) + ' floor' +
+          (x.need === 1 ? '' : 's') + ' of ' + x.a + ' done before ' + x.b + ' follows' +
           (x.how === 'pair' ? ' (a per-pair handoff)' : ' (declared for ' + x.a + ')') + '. ' +
+          /* ⚠️ NAMING THE CATEGORY IS NOT DECORATION. The same pair can carry 1 level behind on
+             the basements and 6 on the typical floors, so a chip that says only "6 floors behind"
+             is unreadable on a basement storey — and unfalsifiable, since the planner cannot tell
+             which of their four answers it used. The count is WITHIN that category, too. */
+          'Counted among the ' + _lsmKindWord(x.fkind) + ' floors only, the way the setup traces it. ' +
           'Click to go to that storey.';
-        lbl = esc(x.b) + ' ' + x.need + ' floors behind ' + esc(x.a);
+        /* ⚠️ The Schedule Setup asks this as *"N level(s) behind"*, so the chip says it
+           the same way - a planner reading "3 typical behind" has to work out what a typical is. */
+        lbl = esc(x.b) + ' ' + x.need + ' ' + esc(_lsmKindWord(x.fkind)) + ' level' +
+          (x.need === 1 ? '' : 's') + ' behind ' + esc(x.a);
       } else {
         tip = x.b + ' starts on ' + x.loc + ' before ' + x.a + ' finishes there \u2014 ' +
           x.days + ' ' + (C.wd ? 'working' : 'calendar') + ' days of overlap (' +
@@ -23275,7 +23340,7 @@
        trade ORDER (declared or inferred); handoff findings rest on a NUMBER the planner typed.
        One count covering both without saying so would let the weaker evidence borrow the
        stronger's authority. */
-    var lead = C.nLead || 0, over = C.nOverlap || 0;
+    var lead = C.nLead || 0, over = C.nOverlap || 0, unk = C.nUnkinded || 0;
     return '<div class="ps-lsmclash-strip"><span class="ps-lsmclash-lbl" title="' +
       esc('Where two trades are on the same storey at the same time, against ' +
         (C.basis === 'declared' ? 'your declared construction sequence' : 'an order INFERRED from when each trade first starts') +
@@ -23283,7 +23348,15 @@
         (lead ? ' ' + over + ' of them ' + (over === 1 ? 'is that' : 'are that') + '; the other ' +
                 (lead === 1 ? 'one is' : lead + ' are') + ' a different finding — the following trade climbed closer than the floors-behind handoff declared in your Schedule Setup.'
               : (C.leadBasis ? ' Your Schedule Setup\u2019s floors-behind handoff was checked too, and nothing violates it.'
-                             : ' No cross-trade handoff is declared in this project\u2019s Schedule Setup, so only same-storey overlaps are checked.'))) +
+                             : ' No cross-trade handoff is declared in this project\u2019s Schedule Setup, so only same-storey overlaps are checked.')) +
+        /* ⚠️⚠️ WHAT WAS NOT CHECKED, SAID OUT LOUD. A storey that is not in the Schedule Setup's
+           floor list has no declared category, so no handoff rule applies to it. Leaving that
+           silent would let a planner read "0 handoff findings" as "nothing is early" when half the
+           building was never examined — the same reason the flowline names its unrankable
+           locations in a footnote instead of dropping them. */
+        (unk ? ' ' + unk + ' storey' + (unk === 1 ? ' is' : 's are') +
+               ' not in your Schedule Setup\u2019s floor list, so no floor category applies to ' +
+               (unk === 1 ? 'it' : 'them') + ' and the handoff was not checked there.' : '')) +
       '">' + C.n + ' clash' + (C.n === 1 ? '' : 'es') +
       (lead ? ' <em>(' + lead + ' vs declared handoff)</em>'
             : (C.basis === 'inferred' ? ' <em>(inferred order)</em>' : '')) + '</span>' + h +
@@ -32041,14 +32114,27 @@
        ⚠️ The auto-trace dialog writes `cfg.tradeBatch[t]` alongside
        `cfg.tradeBatchKind[t].typical`, so these normally agree; the per-kind value wins if they
        ever drift, which is the order `batchKind` itself reads them in. */
-    function declaredBatchOf(c, prev) {
+    function declaredBatchOf(c, prev, k) {
       var m = c && c.tradeBatchKind && c.tradeBatchKind[prev];
-      var v = (m && m.typical != null) ? m.typical : null;
-      if (v == null && c && c.tradeBatch) v = c.tradeBatch[prev];
+      var kk = k || 'typical';
+      var v = (m && m[kk] != null) ? m[kk] : null;
+      /* ⚠️⚠️ THE KINDLESS ANSWERS ARE THE *TYPICAL* ANSWER, AND ONLY THAT. `cfg.tradeBatch[t]`
+         (and the legacy `cfg.tradeLeads`) predate floor categories, and `batchKind` has always
+         folded them into `typical` alone — a basement gets 1 by default, not the global number.
+         Lifting them across every kind here would silently rewrite what those projects declared. */
+      if (v == null && kk === 'typical' && c && c.tradeBatch) v = c.tradeBatch[prev];
       return v == null ? null : Math.max(1, +v || 1);
     }
-    function declaredBatch(prev) { return declaredBatchOf(cfg, prev); }
-    function batchKind(prev, k) { var m = cfg.tradeBatchKind && cfg.tradeBatchKind[prev]; var v = m ? m[k] : null; if (v == null && k === 'typical') v = declaredBatch(prev); if (v == null) v = (k === 'typical' ? (cfg.floorLead || 4) : 1); return Math.max(1, +v || 1); }
+    function declaredBatch(prev, k) { return declaredBatchOf(cfg, prev, k); }
+    function batchKind(prev, k) { var v = declaredBatch(prev, k); if (v == null) v = (k === 'typical' ? (cfg.floorLead || 4) : 1); return Math.max(1, +v || 1); }
+    /* ⚠️ Same split as the batch, for the same reason: "start together" is an ANSWER, and the
+       clash detector must not report a handoff the planner explicitly said does not exist. */
+    function parallelKindOf(c, prev, k) {
+      var m = c && c.tradeParallelKind && c.tradeParallelKind[prev];
+      if (m && (k in m)) return !!m[k];
+      if (k === 'typical') return !!(c && c.tradeParallel && c.tradeParallel[prev]);
+      return false;
+    }
     /* ⚠️⚠️ THE DECLARED CROSS-TRADE HANDOFF, KEYED BY TRADE LABEL — for the LSM clash detector.
        ⚠️ THE MATCHING LIVES ON THIS SIDE, WHERE `cfg` IS OWNED, exactly as `zonePlanByLabel`
        does: `cfg` keys everything by GROUP CODE ('ST', 'AR'), and the Gantt knows a trade only as
@@ -32075,11 +32161,26 @@
         });
         return ks;
       }
+      /* ⚠️⚠️ PER FLOOR CATEGORY, because that is the question the setup actually asks:
+         *"Handoff from <trade> (per floor category — how far behind this trade follows)"*, with a
+         **start together** checkbox and a **levels behind** number for each of basement / podium /
+         typical / roof. Reporting only the typical number against a basement measured a storey
+         against a rule that was never meant for it.
+         ⚠️ `par` is the WHOLE-TRADE "start at the same time", which `autoTrace` honours by
+         skipping every cross-trade link for that leading trade — so it suppresses the finding
+         entirely, not just for one kind. */
       GROUPS.forEach(function (g) {
-        var v = declaredBatchOf(c, g);
-        if (v == null) return;
-        keysFor(g).forEach(function (k) { out.lead[k] = v; });
-        out.any = true;
+        var rec = { par: !!(c.tradeParallel && c.tradeParallel[g]), kind: {} }, got = false;
+        KIND_ORDER.forEach(function (fk) {
+          var v = declaredBatchOf(c, g, fk);
+          var p = parallelKindOf(c, g, fk);
+          if (v == null && !p) return;
+          rec.kind[fk] = { v: v, p: p };
+          if (v != null) got = true;
+        });
+        if (!got && !rec.par && !Object.keys(rec.kind).length) return;
+        keysFor(g).forEach(function (k) { out.lead[k] = rec; });
+        if (got) out.any = true;
       });
       /* ⚠️ THE LEGACY PER-PAIR FIELD, KEY SHAPE `prev + '>' + next` — read off the last version
          that consumed it (a404f83), not guessed. `autoTrace` stopped reading it when the question
@@ -32099,7 +32200,7 @@
       });
       return out;
     }
-    function parallelKind(prev, k) { var m = cfg.tradeParallelKind && cfg.tradeParallelKind[prev]; if (m && (k in m)) return !!m[k]; if (k === 'typical') return !!cfg.tradeParallel[prev]; return false; }
+    function parallelKind(prev, k) { return parallelKindOf(cfg, prev, k); }
     // Takt / location-based logic: each trade climbs its own floors cell-by-cell (matched by zone+unit
     // code), and a following trade stays a configurable number of floors BEHIND the one before it.
     function autoTrace() {
@@ -40970,8 +41071,11 @@
       },
       tradeLabels: function () { return GROUPS.map(function (g) { return GWORK[g] || GLABEL[g] || g; }); },
       /* The declared cross-trade handoff — see handoffFrom. Returns { pair, lead, any } keyed by
-         lowercased trade label. ⚠️ `any === false` means NOBODY HAS DECLARED ONE (or no setup is
-         loaded), which the caller must treat as "no claim", never as "zero floors behind". */
+         lowercased trade label; `lead[t]` is `{ par, kind: { <floor kind>: { v, p } } }`, where `v`
+         is the declared levels-behind (null if only "start together" was answered) and `p` is that
+         "start together". `pair[a>b]` is the legacy KINDLESS per-pair number.
+         ⚠️ `any === false` means NOBODY HAS DECLARED A LEVELS-BEHIND (or no setup is loaded),
+         which the caller must treat as "no claim", never as "zero floors behind". */
       tradeHandoff: function () { try { return handoffFrom(cfg); } catch (e) { return { pair: {}, lead: {}, any: false }; } },
       /* ⚠️⚠️ THE COLD-OPEN PATH, the same rule as `locCatalogueFor`: `cfg` is only populated once
          the Schedule Setup TAB has been opened this session, and the LSM chart is normally reached
