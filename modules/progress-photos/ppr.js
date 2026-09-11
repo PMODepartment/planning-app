@@ -511,6 +511,14 @@ window.PPR = (function () {
     if (rt === 'internal') return '<span class="pd-pill pd-pill-muted"' + title + '>Internal</span>';
     return '<span class="pd-pill pd-pill-muted"' + title + '>—</span>';
   }
+  // Owner (2026-09-09): the PPTX cover must never print the internal
+  // classification word ("Internal"/"External") — it must name the actual
+  // meeting a recipient would recognize. Blank/unset defaults to the PPR
+  // Meeting label, matching the Add/Edit form's own "defaults to Internal"
+  // convention (see the 2026-09-03 changelog entry establishing that default).
+  function meetingLabelFor(rt) {
+    return rt === 'client' ? 'Client Coordination Meeting' : 'PPR Meeting';
+  }
 
   function visiblePprs() {
     return pprs.filter(function (p) {
@@ -2147,6 +2155,11 @@ window.PPR = (function () {
   // no network and no dependency on Supabase being reachable.
   var MAXW = 1600, JPEG_Q = 0.82;
 
+  // Returns { data, w, h } — `w`/`h` are the photo's OWN natural pixel
+  // dimensions (not the downscaled canvas size, though the ratio is
+  // identical either way), captured here because this is the one place the
+  // image is already decoded. The PPTX exporter needs them to letterbox a
+  // photo into its pane itself — see containFit()'s own comment for why.
   async function toDataURL(url) {
     var resp = await fetch(url);
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
@@ -2159,7 +2172,31 @@ window.PPR = (function () {
     c.width = Math.max(1, Math.round((img.naturalWidth || MAXW) * scale));
     c.height = Math.max(1, Math.round((img.naturalHeight || MAXW) * scale));
     c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-    return c.toDataURL('image/jpeg', JPEG_Q);
+    return { data: c.toDataURL('image/jpeg', JPEG_Q), w: img.naturalWidth || c.width, h: img.naturalHeight || c.height };
+  }
+  // ⚠️ PptxGenJS v3.12.0's own `sizing:{type:'contain'}` option is a NO-OP in
+  // the exact pinned CDN bundle this file loads — confirmed by inspecting the
+  // bundle itself: the strings "contain"/"cover"/"crop" do not appear
+  // anywhere in it. Passing that option (as earlier code here did) silently
+  // does nothing, and `addImage` stretches the photo to fill the given w×h
+  // exactly — a landscape or portrait photo placed in a pane box of a
+  // different aspect ratio came out visibly distorted. Found by generating a
+  // real .pptx and inspecting its actual `<a:ext>` values, not by reading the
+  // library's documentation.
+  //
+  // `containFit` computes the fix ourselves: the largest rectangle that
+  // preserves the photo's own aspect ratio while fitting inside (bx,by,bw,bh),
+  // centered within it. Every PPTX `addImage` call in this file must route
+  // its x/y/w/h through this — never pass a bare pane box straight to
+  // `addImage`, and never re-add a `sizing` option to "fix" this, since the
+  // library doesn't act on it.
+  function containFit(bx, by, bw, bh, iw, ih) {
+    if (!iw || !ih) return { x: bx, y: by, w: bw, h: bh };
+    var boxRatio = bw / bh, imgRatio = iw / ih;
+    var w, h;
+    if (imgRatio > boxRatio) { w = bw; h = bw / imgRatio; }
+    else { h = bh; w = bh * imgRatio; }
+    return { x: bx + (bw - w) / 2, y: by + (bh - h) / 2, w: w, h: h };
   }
   function blobToImage(blob) {
     return new Promise(function (resolve, reject) {
@@ -2170,6 +2207,78 @@ window.PPR = (function () {
       im.src = u;
     });
   }
+
+  // ------------------------------------------------------------ branding ---
+  // The uploaded Megawide corporate template ("MCC CAB Presentation Template")
+  // is the visual source of truth for every export this file produces: brand
+  // red EE3124 (already this file's own header/PPTX color, unchanged), the
+  // wordmark logo, and the red-panel cover/closing-slide motif. LOGO_PATH is
+  // relative to this module's own index.html — the same convention every
+  // other module-local asset in this repo already uses (module.css, module.js…).
+  var LOGO_PATH = 'assets/branding/megawide-logo.png';
+  // The cover/closing red panel is NOT a PowerPoint shape in the uploaded
+  // template — confirmed by reading the template's own layout XML directly
+  // (slideLayout1.xml/slideLayout16.xml): the panel is a `<p:pic>` (a plain
+  // `prstGeom prst="rect"` picture, no curve geometry at all), cropped from a
+  // raster cover-art asset (`srcRect l="46574"`, i.e. the right 53.426% of
+  // the source image). The rounded corner is baked into that source image's
+  // own pixels. A vector "roundRect" approximation (what an earlier pass
+  // here used) can only ever guess at the curve's real radius and, worse,
+  // rounds all four corners uniformly — three of which are flush against the
+  // slide edge in the real template and must read as perfectly square. This
+  // asset (`cover-panel.jpg`) is that exact crop, pre-cut from the template's
+  // own `image1.jpeg` at the identical 46.574% split, so the shape rendered
+  // here is pixel-identical to the template's, not an approximation of it.
+  var COVER_PANEL_PATH = 'assets/branding/cover-panel.jpg';
+  // ⚠️ Owner ask (2026-09-11, later same day): remove the small red rounded-
+  // corner accent from the HTML/PDF content-page header — the page already
+  // carries enough Megawide branding (logo, red accent text, report-type
+  // label, footer logo, red footer divider, tagline) without it. This used
+  // to be `content-header-strip.jpg` (a literal crop of the template's own
+  // `image3.jpeg` top band — see the 2026-09-10 entry in this module's
+  // CLAUDE.md for the full re-inspection that produced it), rendered as
+  // `<img class="hdrstrip">` above the header text. The LOADER
+  // (`contentHeaderStripDataUrl()`), its constant and every `headerStrip`
+  // parameter this fed were removed with it, rather than left fetched-but-
+  // unused — the asset FILE itself (`assets/branding/content-header-
+  // strip.jpg`) is left on disk, untouched, in case this is ever revisited.
+  // The literal `image4.png` from the same layout — never redrawn text.
+  var TAGLINE_PATH = 'assets/branding/tagline.png';
+  // Both are small base64 reads, NOT toDataURL()'s canvas/JPEG re-encode —
+  // re-encoding the logo (a transparent PNG) through a canvas would paint
+  // every transparent pixel solid black, and the panel doesn't need the
+  // downscale (it is already a fixed, pre-sized brand asset, not a
+  // variable-resolution site photo). Returns { data, w, h } (or null on
+  // failure) — `w`/`h` feed containFit() so neither asset is ever stretched
+  // off its own real aspect ratio.
+  var _brandAssetCache = {};
+  async function brandAssetDataUrl(path) {
+    if (_brandAssetCache[path] !== undefined) return _brandAssetCache[path];
+    var result = null;
+    try {
+      var resp = await fetch(path);
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      var blob = await resp.blob();
+      var dataStr = await new Promise(function (resolve, reject) {
+        var r = new FileReader();
+        r.onload = function () { resolve(r.result); };
+        r.onerror = function () { reject(new Error('read failed')); };
+        r.readAsDataURL(blob);
+      });
+      var dims = await new Promise(function (resolve) {
+        var im = new Image();
+        im.onload = function () { resolve({ w: im.naturalWidth, h: im.naturalHeight }); };
+        im.onerror = function () { resolve({ w: 0, h: 0 }); };
+        im.src = dataStr;
+      });
+      result = { data: dataStr, w: dims.w, h: dims.h };
+    } catch (e) { console.warn('PPR: could not load brand asset ' + path + ' —', e && e.message); }
+    _brandAssetCache[path] = result;
+    return result;
+  }
+  function logoDataUrl() { return brandAssetDataUrl(LOGO_PATH); }
+  function taglineDataUrl() { return brandAssetDataUrl(TAGLINE_PATH); }
+  function coverPanelDataUrl() { return brandAssetDataUrl(COVER_PANEL_PATH); }
 
   // Every image a presentation's slides reference (photos + per-pane key plans),
   // embedded as a downscaled data URI — shared by the offline HTML export,
@@ -2214,9 +2323,11 @@ window.PPR = (function () {
       msg.textContent = 'Embedding image ' + (i + 1) + ' of ' + total + '…';
     });
     var imgs = res.imgs, failed = res.failed;
+    var logo = await logoDataUrl();
+    var tagline = await taglineDataUrl();
 
     msg.textContent = 'Building file…';
-    var html = offlineHTML(p, s, imgs);
+    var html = offlineHTML(p, s, imgs, logo, tagline);
     var blob = new Blob([html], { type: 'text/html;charset=utf-8' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -2253,8 +2364,8 @@ window.PPR = (function () {
     var kp = urlOfPath(keyPlanPathFor(sl, which));
     var phUrl = urlOfPhoto(ph && ph.id);
     function im(url, cls, alt) {
-      var d = url ? imgs[url] : '';
-      return d ? '<img class="' + cls + '" src="' + d + '" alt="' + esc(alt || '') + '" />'
+      var d = url ? imgs[url] : null;
+      return d ? '<img class="' + cls + '" src="' + d.data + '" alt="' + esc(alt || '') + '" />'
                : '<div class="' + cls + ' missing">Image unavailable</div>';
     }
     return '<figure>' +
@@ -2268,90 +2379,412 @@ window.PPR = (function () {
       '</figcaption></figure>';
   }
 
-  function slidesBodyHTML(p, s, imgs) {
+  // Owner ask (2026-09-11, visual refinement pass): the branded footer
+  // (logo / Generated date / tagline) previously sat ONCE, after every slide
+  // — which meant it only ever landed on the LAST physical page (Thank
+  // You), never on a content/progress-photo page. Split out so every page
+  // gets one. Kept as its own function (not inlined) so the content-slide
+  // loop and the Thank You slide can both call it identically.
+  function footerHTML(logo, tagline) {
+    return '<footer><div class="ftrleft">' +
+      (logo ? '<img class="ftrlogo" src="' + logo.data + '" alt="Megawide Construction Corporation" />' : '') +
+      '<span class="ftrgen">Generated ' + esc(longDate(new Date().toISOString().slice(0, 10))) + '</span>' +
+      '</div>' +
+      (tagline ? '<img class="ftrtag" src="' + tagline.data + '" alt="Engineering A First-World Philippines" />' : '') +
+      '</footer>';
+  }
+
+  function slidesBodyHTML(p, s, imgs, logo, tagline) {
+    var ftr = footerHTML(logo, tagline);
+    // ⚠️ Each page's `.slide` + its OWN `footerHTML()` are wrapped in one
+    // `.pagegroup` — the footer is a real sibling of the slide (never nested
+    // inside its bordered card), preserving the exact "full-bleed bar below
+    // the card" look this already had on the Thank You page; wrapping the
+    // pair is what lets ONE div carry the page-break rules (see EXPORT_CSS's
+    // own comment: this is the same avoid+after pairing
+    // `layoutPagegroups()` already guards against splitting badly, just
+    // moved from `.slide` itself onto `.pagegroup` now that `.slide` is no
+    // longer the last element on its own page).
     var slidesHTML = s.map(function (sl, i) {
       var hasBefore = !!sl.before_photo_id;
       var sharedLoc = hasBefore ? sharedLocationOf(sl) : '';
-      return '<section class="slide">' +
+      return '<div class="pagegroup"><section class="slide">' +
         '<div class="meta"><span class="no">Slide ' + (i + 1) + ' of ' + s.length + '</span>' +
         (sharedLoc ? '<span class="sharedloc">' + esc(sharedLoc) + '</span>' : '') + '</div>' +
         '<div class="pair' + (hasBefore ? '' : ' single') + '">' +
           (hasBefore ? slideFigureHTML(sl, 'before', imgs, !!sharedLoc) : '') +
           slideFigureHTML(sl, 'after', imgs, !!sharedLoc) +
-        '</div></section>';
+        '</div></section>' + ftr + '</div>';
     }).join('');
-    return '<header><h1>' + esc(projName || pid) + ' — Progress Photos</h1>' +
-      '<p>' + esc(p.description || '') + ' · Presentation Date: ' + esc(longDate(p.ppr_date)) +
-      '</p></header>' +
-      '<div class="wrap">' + slidesHTML + '</div>' +
-      '<footer>Generated ' + esc(longDate(new Date().toISOString().slice(0, 10))) +
-      ' from the Planners Dashboard · Megawide Construction Corporation</footer>';
+    // ⚠️ Real gap found and fixed (2026-09-09): the HTML/PDF exports had NO
+    // closing page at all — only exportPptx() ever built a "Thank You"
+    // slide. Both formats now end on one, styled as an extension of the
+    // SAME header language (logo + brand-red rule) rather than a literal
+    // recreation of the PPTX's red-panel shape — a top rule instead of the
+    // header's bottom one, so the report visually "bookends" itself. `.slide`
+    // is reused (not a new element type); the page-break rule now lives on
+    // its `.pagegroup` wrapper (see above), same as every content page.
+    var thankYouHTML = '<div class="pagegroup"><section class="slide thankyou">' +
+      (logo ? '<img class="tylogo" src="' + logo.data + '" alt="" />' : '') +
+      '<h2>Thank You</h2>' +
+      '<p class="typroj">' + esc(projName || pid) + '</p>' +
+      '<p class="tyfoot">Megawide Construction Corporation</p>' +
+      '</section>' + ftr + '</div>';
+    // Owner correction (2026-09-10): rebuilt to match the template's ACTUAL
+    // content-slide header — not the cover's. Project Name / Presentation
+    // Title (Description) / meeting-type label / Meeting Date is unchanged
+    // from the 2026-09-09 content fix.
+    // ⚠️ Owner ask (2026-09-11, later same day): the thin white top strip
+    // that used to sit above this text (carrying only a small red rounded-
+    // corner accent) is REMOVED — see this function's own header comment.
+    // The header is now just this text block, directly on the header's own
+    // white background.
+    return '<header>' +
+      '<div class="hdrbody"><h1>' + esc(projName || pid) + '</h1>' +
+      '<p class="hdrdesc">' + esc(p.description || 'Project Progress Report') + '</p>' +
+      '<p class="hdrmeta"><span class="mtype">' + esc(meetingLabelFor(p.report_type)) + '</span> · Meeting Date: ' + esc(longDate(p.ppr_date)) +
+      '</p></div></header>' +
+      '<div class="wrap">' + slidesHTML + thankYouHTML + '</div>';
   }
 
   // Shared by the offline HTML export (in a real <style> tag) and the PDF
   // export (injected into the same detached DOM node html2pdf rasterises).
   var EXPORT_CSS =
     'body{margin:0;font-family:Montserrat,Segoe UI,Arial,sans-serif;color:#231F20;background:#F4F4F4}' +
-    'header{background:#EE3124;color:#fff;padding:16px 22px}' +
-    'header h1{margin:0;font-size:19px;letter-spacing:.02em}' +
-    'header p{margin:4px 0 0;font-size:13px;opacity:.92}' +
+    // Branded header — plain white, just the project/title/meeting text.
+    // ⚠️ Owner ask (2026-09-11, later same day): the top strip that used to
+    // sit above this text (a literal template crop carrying a small red
+    // rounded-corner accent) is REMOVED — the page already carries plenty
+    // of Megawide branding elsewhere (logo, red accent text, report-type
+    // label, footer logo, red footer divider, tagline), and the owner
+    // judged it unnecessary. `.hdrbody`'s own padding (not a strip) is now
+    // the header's only spacing, tuned generously now that the strip's
+    // ~66px is no longer spoken for — net header height is still
+    // substantially SHORTER than before this removal.
+    'header{background:#fff;color:#231F20}' +
+    'header .hdrbody{padding:18px 22px 14px}' +
+    'header h1{margin:0;font-size:21px;letter-spacing:.01em;font-weight:700}' +
+    'header p{margin:3px 0 0;font-size:13px;color:#6b6b6b;line-height:1.3}' +
+    // Meeting-type accent — same role as the PPTX cover's bold red
+    // meeting-name line (Line 3), just inline here rather than its own row.
+    'header .mtype{font-weight:700;color:#EE3124;text-transform:uppercase;letter-spacing:.03em}' +
     '.wrap{max-width:1180px;margin:0 auto;padding:18px}' +
-    '.slide{background:#fff;border:1px solid #DCDBDB;border-radius:4px;padding:14px;margin-bottom:16px;position:relative}' +
-    // ⚠️ page-break-after/inside must NOT sit inside @media print: html2pdf's
-    // pagebreak:{mode:['css']} reads getComputedStyle() during a NORMAL
-    // (screen-context) html2canvas capture, which never matches @media print
-    // — so a rule scoped there is silently inert during export. It has no
-    // effect on-screen either way (browsers ignore page-break properties
-    // outside print/pagination contexts), so moving it out changes nothing
-    // visually and fixes the export. `:not(:last-of-type)` avoids a trailing
-    // blank page after the final slide; break-inside:avoid stops one slide's
-    // pane from ever being sliced across two pages by height alone (the CSS
-    // page-break-after rule only starts the NEXT page — it can't shrink a
-    // slide that's already taller than one).
-    '.slide{break-inside:avoid;page-break-inside:avoid}' +
-    '.slide:not(:last-of-type){break-after:page;page-break-after:always}' +
-    '.meta{display:flex;flex-wrap:wrap;gap:18px;font-size:13px;margin-bottom:10px;align-items:baseline}' +
+    // ⚠️ Item 1 (2026-09-11): every page now gets its OWN footer (see
+    // `footerHTML()`/`slidesBodyHTML()`) — previously there was exactly one,
+    // positioned after every slide, which only ever landed on the LAST
+    // physical page (Thank You). `.pagegroup` wraps one `.slide` + its own
+    // footer as a single page-break unit; the footer stays a real SIBLING of
+    // `.slide` (never nested inside its bordered card), so it keeps the
+    // identical "full-bleed bar below the card" look this already had.
+    '.pagegroup{position:relative}' +
+    '.slide{background:#fff;border:1px solid #DCDBDB;border-radius:4px;padding:12px 14px;margin-bottom:10px;position:relative}' +
+    // `break-inside:avoid` is a backstop against a `.pagegroup` ever being
+    // sliced mid-content by height alone. `break-after`/`page-break-after`
+    // is KEPT here (not removed) — a real browser printing the SAVED
+    // standalone HTML file still needs it for its own native pagination,
+    // and real browsers handle this combination correctly (see the
+    // html2pdf-specific note just below). ⚠️ It has no effect on-screen
+    // either way (browsers ignore page-break properties outside a real
+    // print/pagination context), so it's free to leave in for that case.
+    '.pagegroup{break-inside:avoid;page-break-inside:avoid}' +
+    '.pagegroup:not(:last-of-type){break-after:page;page-break-after:always}' +
+    '.meta{display:flex;flex-wrap:wrap;gap:18px;font-size:13px;margin-bottom:8px;align-items:baseline}' +
     '.meta .no{font-weight:700;color:#EE3124}' +
     '.meta b{color:#6b6b6b;font-weight:700;margin-right:4px}' +
     // Shared-location tile (follow-up feedback item 3/4): one line above the
     // pair when both photos are at the same place, instead of repeating it in
     // each figcaption below.
+    // ⚠️ font-weight:700 (was 600) — folded in from main's app-wide
+    // "font-weight 600 -> 700" consistency sweep during the 2026-09-12
+    // merge; this line's own weight wasn't part of that sweep's stated
+    // exceptions, so it's honored here rather than silently dropped.
     '.meta .sharedloc{font-weight:700;color:#4a4a4a}' +
-    '.phwrap{position:relative}' +
+    // A fixed-ratio frame (the classic padding-top trick, not the CSS
+    // `aspect-ratio` property — html2pdf's html2canvas capture has spotty
+    // support for that newer property, and the padding-top box is exactly as
+    // reliable there as everywhere else). Portrait and landscape photos both
+    // sit centred and un-distorted inside it via `object-fit:contain`; the
+    // frame's own light fill shows on whichever side letterboxes. ⚠️ Item 3
+    // (2026-09-11): 75% → 78% — a real, but deliberately modest, increase
+    // ("slightly more vertical space", not a redesign); the chrome around it
+    // (padding/margins/caption spacing throughout this file) was tightened
+    // to make room so the content page still fits one physical PDF page —
+    // re-verified live after this change, see this module's CLAUDE.md.
+    '.phwrap{position:relative;width:100%;padding-top:78%;background:#F4F4F4;border:1px solid #DCDBDB;overflow:hidden}' +
     '.kpimg{position:absolute;top:8px;right:8px;width:150px;border:1px solid #DCDBDB;display:block;box-shadow:0 1px 4px rgba(0,0,0,.25)}' +
+    // Both columns are always the SAME explicit track (`1fr 1fr`), so
+    // Previous and Current are guaranteed equal width and their captions
+    // align on every line — unchanged by this pass, restated because item 3
+    // explicitly asks for it to be verified, not just assumed.
     '.pair{display:grid;grid-template-columns:1fr 1fr;gap:14px}' +
     '.pair.single{grid-template-columns:minmax(0,760px);justify-content:center}' +
     'figure{margin:0}' +
-    '.lbl{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6b6b6b;margin-bottom:4px}' +
-    '.ph{width:100%;display:block;border:1px solid #DCDBDB;background:#F4F4F4}' +
-    '.missing{padding:40px;text-align:center;color:#9a9a9a;font-size:13px}' +
-    'figcaption{text-align:center;margin-top:6px}' +
+    '.lbl{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#6b6b6b;margin-bottom:3px}' +
+    '.ph{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:contain;display:block;border:0;background:transparent}' +
+    '.missing{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;color:#9a9a9a;font-size:13px}' +
+    'figcaption{text-align:center;margin-top:5px}' +
     // Sixth round items 10/11: the tags (.t) line is gone (no Trade/Works in
     // the caption); Location (.loc) is new, always present, styled like the
-    // date line it now sits above.
-    'figcaption .loc{font-size:12px;font-weight:700;color:#231F20}' +
-    'figcaption .d{font-size:13px}' +
-    'figcaption .c{font-style:italic;font-size:12.5px;color:#4a4a4a;margin-top:2px}' +
-    'footer{text-align:center;font-size:11.5px;color:#6b6b6b;padding:6px 0 22px}' +
-    '@media print{body{background:#fff}.slide{border:0}}' +
-    '@media (max-width:820px){.pair,.pair.single{grid-template-columns:1fr}.kpimg{width:110px}}';
+    // date line it now sits above. ⚠️ Item 2 (2026-09-11): `.loc` bumped
+    // 12px→13px (it's the line a planner actually orients from) and given a
+    // touch more line-height so the three caption lines don't read as one
+    // dense block; `.d`/`.c` sizes unchanged — the hierarchy is location >
+    // date = description, matching how the live editor's own pane already
+    // reads. ⚠️ font-weight:700 (was 600) folded in from main's app-wide
+    // "font-weight 600 -> 700" sweep during the 2026-09-12 merge — the size/
+    // line-height bump above is this branch's own, unrelated change.
+    'figcaption .loc{font-size:13px;font-weight:700;color:#231F20;line-height:1.3}' +
+    'figcaption .d{font-size:13px;line-height:1.3}' +
+    'figcaption .c{font-style:italic;font-size:12.5px;color:#4a4a4a;margin-top:2px;line-height:1.3}' +
+    // Closing "Thank You" page — the same bookend language as the header
+    // (logo + brand-red rule), never a redesign: a top rule instead of the
+    // header's bottom one, the wordmark, then the same wordmark/typography
+    // scale the header itself uses. ⚠️ Item 5 (2026-09-11): this card now
+    // carries a `min-height` and vertically CENTERS its content (flex)
+    // instead of relying on fixed top/bottom padding alone — the same logo/
+    // heading/subtext group, just given more of the physical page to sit in
+    // rather than floating in a small box above a large blank area. The
+    // logo/heading were also bumped slightly (40px→48px, 30px→34px) per the
+    // owner's explicit allowance ("may be increased slightly"). No new
+    // decorative element was added.
+    '.slide.thankyou{text-align:center;padding:20px;border-top:4px solid #EE3124;' +
+      'min-height:420px;display:flex;flex-direction:column;align-items:center;justify-content:center}' +
+    '.slide.thankyou .tylogo{height:48px;width:auto;margin:0 auto 22px;display:block}' +
+    '.slide.thankyou h2{margin:0 0 10px;font-size:34px;font-weight:700;color:#231F20}' +
+    '.slide.thankyou .typroj{margin:0;font-size:15px;color:#4a4a4a}' +
+    '.slide.thankyou .tyfoot{margin:8px 0 0;font-size:12px;color:#9a9a9a}' +
+    // Footer — the template's real bottom chrome for this slide: the
+    // wordmark bottom-left, the "Engineering A First-World Philippines"
+    // tagline (the literal template graphic, its own red divider baked in)
+    // bottom-right. Heights only, widths auto — real aspect ratio, no
+    // distortion, matching every other brand asset placement in this file.
+    // ⚠️ Padding tightened (16px→10px vertical) as part of item 1 — this
+    // now recurs on every page instead of once, so its own footprint had to
+    // shrink a little to keep the content page inside one physical PDF page.
+    'footer{display:flex;align-items:center;justify-content:space-between;padding:10px 22px;background:#fff}' +
+    'footer .ftrleft{display:flex;align-items:center;gap:10px}' +
+    'footer .ftrlogo{height:20px;width:auto;display:block}' +
+    'footer .ftrgen{font-size:11px;color:#9a9a9a}' +
+    'footer .ftrtag{height:24px;width:auto;display:block}' +
+    '@media print{body{background:#fff}.slide{border:0}}';
+  // ⚠️ Real bug found and fixed (2026-09-09 live PDF test): this mobile
+  // breakpoint is ONLY for someone opening the SAVED standalone HTML file on
+  // their own phone later — it must never affect the off-screen PDF capture
+  // in exportPdf() below, but a `@media` rule can't distinguish "this is a
+  // PDF export" from "the exporting browser's OWN window genuinely happens
+  // to be narrow right now"; it only ever reads the CURRENT window width.
+  // Measured live: with the exporting tab at 366px wide (an ordinary narrow/
+  // half-screen window, not a phone), the PDF capture silently collapsed the
+  // Previous/Current pair to one column, roughly DOUBLING the rendered
+  // height of every slide and inflating a 2-page report (1 content slide +
+  // Thank You) into 4 pages, with both photos "unnecessarily small" in a
+  // half-width column — confirmed by measuring `.phwrap`'s own rendered
+  // width collapse from 552px to 1116px (full row) and back. Kept as a
+  // SEPARATE fragment, appended only to the offline-HTML export's own CSS —
+  // never to the PDF capture's `wrap` in exportPdf().
+  var EXPORT_MOBILE_CSS = '@media (max-width:820px){.pair,.pair.single{grid-template-columns:1fr}.kpimg{width:110px}}';
+
+  // ⚠️ PDF-capture-only override (2026-09-11/12) — see `layoutPagegroups()`'s
+  // own comment for the root cause: html2pdf.js@0.10.1's pagebreak-CSS
+  // plugin acting on `.pagegroup`'s own `page-break-after` (kept in
+  // EXPORT_CSS for real-browser printing of the saved HTML file) computes
+  // "one page's height" from a slightly different formula than `toPdf()`'s
+  // own canvas slicer does — the mismatch is what let a hairline sliver of
+  // the next page bleed through. Appended ONLY to the PDF capture's own
+  // `<style>` tag (never to the offline HTML export's), this neutralizes
+  // `page-break-after` back to `auto` so the plugin never acts on it during
+  // a PDF export — `layoutPagegroups()` computes every real page-to-page
+  // push itself instead, from one single formula. A real browser printing
+  // the saved standalone HTML never sees this fragment, so its own native
+  // pagination (which does not have this bug) is completely unaffected.
+  var EXPORT_PDF_CSS = '.pagegroup{page-break-after:auto!important;break-after:auto!important}';
 
   // A standalone page: inline CSS, inline images, no scripts, no external refs.
-  function offlineHTML(p, s, imgs) {
+  function offlineHTML(p, s, imgs, logo, tagline) {
     return '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" />' +
       '<meta name="viewport" content="width=device-width, initial-scale=1" />' +
       '<title>' + esc(projName || pid) + ' — ' + esc(longDate(p.ppr_date)) + '</title>' +
-      '<style>' + EXPORT_CSS + '</style></head><body>' +
-      slidesBodyHTML(p, s, imgs) +
+      '<style>' + EXPORT_CSS + EXPORT_MOBILE_CSS + '</style></head><body>' +
+      slidesBodyHTML(p, s, imgs, logo, tagline) +
       '</body></html>';
   }
 
   // ------------------------------------------------------------- PDF export ---
+  // Real bug found by a live QA pass (2026-09-10): a 2-section report (1
+  // content slide + Thank You) was rendering as 4 physical PDF pages instead
+  // of 2, even though neither section's own content overflows a page.
+  //
+  // ⚠️⚠️ ROOT CAUSE, traced into html2pdf.js v0.10.1's OWN pagebreak-CSS
+  // plugin (src/plugin/pagebreaks.js), not this file's markup or CSS. That
+  // plugin walks every element ONCE, in document order, and for each one
+  // computes THREE rules from a SINGLE `getBoundingClientRect()` snapshot
+  // taken at the top of that element's turn: `avoid` (from
+  // `page-break-inside:avoid` — ours, on every `.slide`), `before` (only set
+  // true here if `avoid` finds the element straddles a page boundary in its
+  // CURRENT, un-padded position) and `after` (from
+  // `page-break-after:always` — ours, on every non-last `.slide`). When ONE
+  // element ends up with BOTH `before` (from the avoid-straddle check) AND
+  // `after` (from being non-last) true at once — exactly the shape of a lone
+  // content slide, which is simultaneously "first" (nothing yet pushed it to
+  // a page top, so a sufficiently tall header can make it straddle) and
+  // "non-last" (Thank You follows it) — the plugin inserts BOTH a `before`
+  // padding div (pushing the slide down to the next page boundary) AND an
+  // `after` padding div, and the `after` div's height is computed from the
+  // SAME stale, pre-push clientRect the `before` div has already made wrong.
+  // The result is a second padding div roughly a FULL PAGE too tall,
+  // consuming an entire extra blank page. Reproduced directly: built a
+  // throwaway page loading the real pinned html2pdf.js@0.10.1, fed it the
+  // real EXPORT_CSS + realistic slide markup, and swept the header height —
+  // whenever the content slide's raw (un-padded) position straddled a page
+  // boundary, the plugin inserted a ~720px "after" pad where ~3px was
+  // correct, turning 2 pages into 4. This is a defect in the library's own
+  // plugin, not something EXPORT_CSS can be reworded to avoid — the same
+  // `avoid`+`after` combination is exactly what CSS pagination is supposed
+  // to express, and real browsers' native print engines handle it correctly;
+  // html2pdf's own JS approximation of it does not.
+  //
+  // FIX (as of 2026-09-11/12 — see `layoutPagegroups()`'s own comment for a
+  // second root cause found later and folded into the same mechanism):
+  // prevent the plugin's own page-break math from ever running during a PDF
+  // export at all. `EXPORT_PDF_CSS` neutralizes `page-break-after` back to
+  // `auto` for the PDF capture only, and `layoutPagegroups()` computes EVERY
+  // page-to-page push itself, in plain JS, from the one canonical
+  // `pdfPageHeightPx()` — so the plugin's `avoid` check always finds a
+  // `.pagegroup` already sitting cleanly within one page (nothing left for
+  // it to do) and never fires a conflicting `before` push. EXPORT_CSS's own
+  // `avoid`/`after` declarations are otherwise untouched — both are still
+  // exactly what a real browser needs to paginate the saved offline HTML
+  // file correctly if it's printed directly, which is unaffected by any of
+  // this (the override CSS above is never present in that file).
+  //
+  // A SECOND, independent defect was found (and fixed) in the same pass: the
+  // off-screen capture's `container` (an element html2pdf itself creates,
+  // sized from the PDF page's own inner width converted to px — ~1062px for
+  // A4 landscape with 8mm margins) is NARROWER than this file's own 1180px
+  // design width. `wrap` (explicit `width:1180px`) overflowed that container
+  // on the right by ~118px, and `html2canvas` only ever paints what's inside
+  // `container`'s own declared box — silently CROPPING roughly the rightmost
+  // 10% of every page (part of the "Current" photo, the tagline, the right
+  // edge of the header strip). Confirmed by pixel-sampling the real captured
+  // canvas, and by decoding the actual JPEG a real exported PDF embeds.
+  // ⚠️ A first attempt at fixing this — passing `width`/`windowWidth:1180` to
+  // html2canvas — does NOT work and was reverted: those options steer
+  // html2canvas's own output-canvas sizing and its reflow of viewport-
+  // relative content, neither of which touches `container`'s own EXPLICIT,
+  // absolute-unit CSS width, so content past ~1062px was still never
+  // painted, just backfilled with the configured background colour —
+  // verified against the real captured PDF bytes, not just the DOM. The
+  // actual fix: capture `wrap` at `pdfPageWidthPx()` (the SAME formula,
+  // derived from the identical page/margin config, that produces
+  // `container`'s own width) instead of a hardcoded 1180 — so `wrap` and
+  // `container` always agree and nothing ever overflows to be cropped. The
+  // trade-off is real and disclosed: the PDF's own photos/columns render
+  // ~10% narrower in absolute terms than the previous (broken) 1180 target —
+  // still `object-fit:contain`, still 2-up side-by-side, still no
+  // distortion, just accurately sized to what an A4-landscape page can
+  // actually hold. The separate offline-HTML export is untouched — it still
+  // renders at the full 1180px design width, since it isn't subject to
+  // html2pdf's own page-width constraint at all.
+  //
   // Brief Section 5: "exportable as a slide deck (PPTX) or PDF suitable for
   // presenting directly in a presentation." Reuses the SAME slidesBodyHTML/EXPORT_CSS
   // as the offline HTML export, rasterised by html2pdf — so the on-screen
   // slides, the offline copy and the PDF can never show three different layouts
   // of one presentation.
+
+  // A4 landscape (297x210mm) with the SAME [8,8,8,8]mm margin exportPdf()
+  // passes to html2pdf below. Mirrors html2pdf.js's own internal formula
+  // (src/utils.js `toPx`: `floor(mm * (72/25.4) / 72 * 96)`, which reduces to
+  // `floor(mm * 96/25.4)`) so this always agrees with the page height the
+  // library itself computes — verified directly against a live run: both
+  // resolve to 733px for this exact margin/format pair.
+  var PDF_PAGE_H_MM = 210, PDF_PAGE_W_MM = 297, PDF_MARGIN_MM = 8;
+  function pdfPageHeightPx() {
+    return Math.floor((PDF_PAGE_H_MM - 2 * PDF_MARGIN_MM) * 96 / 25.4);
+  }
+  // The exact width html2pdf's own off-screen `container` renders at for
+  // this page format/margin — capturing `wrap` at this SAME width (instead
+  // of a hardcoded design width wider than a real A4-landscape page can
+  // hold) is what actually stops content from being silently cropped; see
+  // exportPdf()'s own comment for the full story and the approach that
+  // didn't work.
+  function pdfPageWidthPx() {
+    return Math.floor((PDF_PAGE_W_MM - 2 * PDF_MARGIN_MM) * 96 / 25.4);
+  }
+
+  // See exportPdf()'s own comment for the full root-cause writeup. Measures
+  // the FIRST `.slide` inside `wrap` (already in normal flow, off-screen, at
+  // its real export width) and — only if it would straddle a page boundary
+  // in its current position — inserts an exact-height spacer immediately
+  // before it, so it starts cleanly on the next page instead. A no-op (and
+  // safe to call unconditionally) whenever the first slide already fits.
+  // ⚠️ Owner ask (2026-09-11/12): a 1px reddish sliver was visible at the
+  // very bottom of the content page — traced to html2pdf.js@0.10.1 using
+  // TWO DIFFERENT internal formulas for "one page's height" that don't
+  // quite agree: its own pagebreak-CSS plugin uses `pageSize.inner.px.height`
+  // (a fixed mm→px conversion, computed once, in DESIGN px), while
+  // `toPdf()`'s own canvas-slicing uses `floor(canvas.width × inner.ratio)`
+  // (derived from the ACTUAL captured canvas width, in CANVAS px) — the two
+  // can differ by a rounding pixel or two, and when the CSS plugin's own
+  // `page-break-after` push lands even 1px short of where `toPdf()` will
+  // actually slice, the slice includes a hairline of whatever comes right
+  // after (here: the next page's `.thankyou{border-top}` red rule).
+  //
+  // FIX: stop relying on the plugin's own page-break-after push for ANY
+  // page transition (not just the first, which `avoidFirstSlidePageSplit`
+  // already guarded) — compute EVERY subsequent `.pagegroup`'s push
+  // ourselves, from the ONE canonical `pdfPageHeightPx()`, so there is only
+  // ever one source of truth for "where a page starts". `page-break-after`
+  // is left OFF `.pagegroup` in CSS now (see EXPORT_CSS); `page-break-inside:
+  // avoid` stays as a harmless backstop.
+  // ⚠️ Small deliberate safety margin (design px) added to every "push to
+  // next page" below. Even with one canonical `pdfPageHeightPx()` used for
+  // ALL page math (see this function's own comment), `getBoundingClientRect()`
+  // reports sub-pixel CSS positions that html2canvas's own rasterization at
+  // `scale:2` doesn't preserve exactly — measured directly: content pushed
+  // to land precisely at the computed boundary still left a literal ONE
+  // canvas-pixel sliver of the next page's own top border bleeding into the
+  // bottom of the previous one. A few px of intentional slack (harmless —
+  // it only adds a little blank space at the very top of the next page,
+  // nothing a reader would notice) reliably clears it; re-verified this
+  // does not push the report to a 3rd physical page.
+  var PAGE_BOUNDARY_SAFETY_PX = 3;
+  function layoutPagegroups(wrap) {
+    var pxPageHeight = pdfPageHeightPx();
+    var groups = wrap.querySelectorAll('.pagegroup');
+    if (!groups.length) return;
+    var wrapTop = wrap.getBoundingClientRect().top;
+    for (var i = 0; i < groups.length; i++) {
+      var g = groups[i];
+      var r = g.getBoundingClientRect();
+      var relTop = r.top - wrapTop, relBottom = r.bottom - wrapTop;
+      if (i === 0) {
+        // First page-group: only push if it would otherwise straddle a
+        // boundary (nothing guarantees it starts on one — it sits right
+        // after an arbitrary-height header).
+        var startPage = Math.floor(relTop / pxPageHeight);
+        var endPage = Math.floor(relBottom / pxPageHeight);
+        if (startPage === endPage) continue;
+        var pushBy0 = pxPageHeight - (relTop % pxPageHeight) + PAGE_BOUNDARY_SAFETY_PX;
+        var spacer0 = document.createElement('div');
+        spacer0.style.cssText = 'display:block;height:' + pushBy0 + 'px;';
+        g.parentNode.insertBefore(spacer0, g);
+      } else {
+        // Every later page-group: ALWAYS push to the exact next page
+        // boundary (plus the safety margin above) — this is what used to
+        // be delegated to CSS `page-break-after`, now done with the same
+        // single formula this whole function already uses, so it can never
+        // disagree with itself by a rounding pixel the way the library's
+        // own two formulas did.
+        var rem = relTop % pxPageHeight;
+        var pushBy = (rem === 0 ? 0 : pxPageHeight - rem) + PAGE_BOUNDARY_SAFETY_PX;
+        var spacer = document.createElement('div');
+        spacer.style.cssText = 'display:block;height:' + pushBy + 'px;';
+        g.parentNode.insertBefore(spacer, g);
+      }
+    }
+  }
+
   async function exportPdf(p) {
     var s = slides(p.id);
     if (!s.length) { UI.toast('This presentation has no slides to export', 'warn'); return; }
@@ -2367,6 +2800,8 @@ window.PPR = (function () {
       var res = await collectSlideImages(s, function (i, total) {
         msg.textContent = 'Embedding image ' + (i + 1) + ' of ' + total + '…';
       });
+      var logo = await logoDataUrl();
+      var tagline = await taglineDataUrl();
       msg.textContent = 'Building PDF…';
 
       // ⚠️ THE CAPTURED ELEMENT MUST STAY IN NORMAL FLOW (issues-lessons
@@ -2378,14 +2813,25 @@ window.PPR = (function () {
       holder = document.createElement('div');
       holder.style.cssText = 'position:fixed;left:-10000px;top:0;';
       var wrap = document.createElement('div');
-      wrap.style.cssText = 'width:1180px;';
-      wrap.innerHTML = '<style>' + EXPORT_CSS + '</style>' + slidesBodyHTML(p, s, res.imgs);
+      // ⚠️ Capture width is `pdfPageWidthPx()` (~1062px for A4 landscape,
+      // 8mm margins), NOT a hardcoded 1180 — see exportPdf()'s own comment.
+      // A wider capture here would overflow html2pdf's own off-screen
+      // `container` and get silently cropped on the right.
+      wrap.style.cssText = 'width:' + pdfPageWidthPx() + 'px;';
+      // ⚠️ EXPORT_MOBILE_CSS is deliberately NOT included here — see its own
+      // comment. Including it would collapse the Previous/Current pair to
+      // one column (and roughly double the page count) whenever the
+      // exporting browser's OWN window happens to be 820px wide or
+      // narrower, which has nothing to do with the fixed design width this
+      // capture always renders at.
+      wrap.innerHTML = '<style>' + EXPORT_CSS + EXPORT_PDF_CSS + '</style>' + slidesBodyHTML(p, s, res.imgs, logo, tagline);
       holder.appendChild(wrap);
       document.body.appendChild(holder);
+      layoutPagegroups(wrap);
 
       var filename = 'Presentation ' + (projName || pid) + ' ' + (p.ppr_date || '') + '.pdf';
       await html2pdf().set({
-        margin: [8, 8, 8, 8],
+        margin: [PDF_MARGIN_MM, PDF_MARGIN_MM, PDF_MARGIN_MM, PDF_MARGIN_MM],
         filename: filename,
         image: { type: 'jpeg', quality: 0.95 },
         html2canvas: { scale: 2, useCORS: true, allowTaint: true, logging: false, backgroundColor: '#F4F4F4' },
@@ -2430,25 +2876,91 @@ window.PPR = (function () {
       pptx.defineLayout({ name: 'PP_WIDE', width: 13.33, height: 7.5 });
       pptx.layout = 'PP_WIDE';
 
+      var logo = await logoDataUrl();
+      var coverPanel = await coverPanelDataUrl();
+      // -------------------------------------------- template-exact geometry ---
+      // Every number below is read directly from the uploaded template's own
+      // `slideLayout1.xml`/`slideLayout16.xml` (EMU ÷ 914400 = inches) — not
+      // approximated. This is the one authoring surface where "adapt the
+      // template" means literally reusing its own coordinates, not
+      // redesigning around them.
+      var PANEL_X = 6.209, PANEL_W = 7.122;          // the red picture's own <a:off>/<a:ext>
+      var TITLE_X = 0.589, TITLE_W = 5.316;           // ctrTitle placeholder
+      var TITLE_Y = 1.537, TITLE_H = 2.302;
+      var SUBTITLE_Y = 3.939;                         // subTitle placeholder
+      var LOGO_X = 0.589, LOGO_Y = 0.618, LOGO_W = 2.682, LOGO_H = 0.463;
+
+      // ------------------------------------------------------- cover slide ---
+      // The template's cover, reproduced with its own real assets rather than
+      // a redrawn approximation: `coverPanel` IS the template's own red-panel
+      // artwork (see coverPanelDataUrl()'s comment for why this can't be a
+      // vector shape), placed at the template's own coordinates; the wordmark
+      // and the title/subtitle text sit at the template's own placeholder
+      // coordinates too. Only the TEXT is dynamic — project name/code, this
+      // presentation's own description + date — never re-typed by the user.
       var title = pptx.addSlide();
-      title.background = { color: 'EE3124' };
-      title.addText(sanitizePptxText(projName || pid), { x: 0.6, y: 2.6, w: 12, h: 0.8, fontSize: 28, bold: true, color: 'FFFFFF' });
-      title.addText(sanitizePptxText((p.description || 'Progress Photos') + '\n' + longDate(p.ppr_date)),
-        { x: 0.6, y: 3.5, w: 12, h: 1, fontSize: 16, color: 'FFFFFF' });
+      title.background = { color: 'FFFFFF' };
+      if (coverPanel) {
+        var panelFit = containFit(PANEL_X, 0, PANEL_W, 7.5, coverPanel.w, coverPanel.h);
+        title.addImage({ data: coverPanel.data, x: panelFit.x, y: panelFit.y, w: panelFit.w, h: panelFit.h });
+      }
+      if (logo) {
+        var coverLogoFit = containFit(LOGO_X, LOGO_Y, LOGO_W, LOGO_H, logo.w, logo.h);
+        title.addImage({ data: logo.data, x: coverLogoFit.x, y: coverLogoFit.y, w: coverLogoFit.w, h: coverLogoFit.h });
+      }
+      title.addText(sanitizePptxText(projName || pid), {
+        x: TITLE_X, y: TITLE_Y, w: TITLE_W, h: TITLE_H, fontSize: 36, bold: true, color: '231F20',
+        fontFace: 'Gotham', valign: 'bottom', autoFit: true
+      });
+      // Owner correction (2026-09-09): the Project Code line is gone — a
+      // planner or client reading the cover already has the project name;
+      // the code read as clutter, not identity. In its place, the cover now
+      // states the MEETING itself (never the internal report_type
+      // classification word "Internal"/"External" — meetingLabelFor()
+      // above translates that into the actual meeting name), then the
+      // meeting date. Position is now fixed at SUBTITLE_Y rather than
+      // conditionally shifting, since there's no longer an optional line
+      // ahead of it.
+      // ⚠️ Second correction, same day: `p.description` — the presentation's
+      // own "Description" field (openPprForm's #ppr-f-desc, e.g. "September
+      // Progress Report" / "Client Update") — is this cover's real Line 2
+      // ("Presentation/Report Title"), and a first pass here wrongly
+      // replaced it with the LITERAL string 'Project Progress Report' taken
+      // from the owner's own worked example. That example was illustrating
+      // the STRUCTURE, not a value to hardcode — every presentation would
+      // otherwise have shown the identical cover subtitle regardless of what
+      // was actually typed into its Description field. Restored to read the
+      // real field, falling back to the same generic wording only when a
+      // presentation's own Description is genuinely blank.
+      title.addText(sanitizePptxText(p.description || 'Project Progress Report'), {
+        x: TITLE_X, y: SUBTITLE_Y, w: TITLE_W, h: 0.45, fontSize: 18, color: '4A4A4A', fontFace: 'Avenir Next'
+      });
+      title.addText(sanitizePptxText(meetingLabelFor(p.report_type)), {
+        x: TITLE_X, y: SUBTITLE_Y + 0.4, w: TITLE_W, h: 0.35, fontSize: 13, bold: true, color: 'EE3124', fontFace: 'Avenir Next', charSpacing: 1
+      });
+      title.addText(sanitizePptxText('Meeting Date: ' + longDate(p.ppr_date)), {
+        x: TITLE_X, y: SUBTITLE_Y + 0.8, w: TITLE_W, h: 0.35, fontSize: 14, color: '4A4A4A', fontFace: 'Avenir Next'
+      });
+      title.addText(sanitizePptxText('Generated ' + longDate(new Date().toISOString().slice(0, 10))), {
+        x: TITLE_X, y: 6.9, w: TITLE_W, h: 0.35, fontSize: 10.5, color: '9A9A9A', fontFace: 'Avenir Next'
+      });
 
       // PptxGenJS's `data` option takes the payload WITHOUT the `data:` prefix
       // that canvas.toDataURL() (collectSlideImages' own source) always adds.
       function stripDataPrefix(uri) { return uri ? uri.replace(/^data:/, '') : ''; }
 
-      // Vertical centering (follow-up feedback item 4: "center the items
-      // vertically and horizontally" — horizontal was already centered, since
-      // the two 6.1"-wide panes plus their gap sum to the slide width; nothing
-      // there needed to change). LABEL_H/IMG_H/CAP_H are the same three block
-      // heights the old fixed y:0.35/0.75/5.45 offsets used — only the STARTING
-      // y moves, computed so the whole pane block sits centered in whatever
-      // vertical space is left below the top band (slide number, + the shared-
-      // location line on the slides that have one).
-      var SLIDE_H = 7.5, LABEL_H = 0.35, IMG_H = 4.6, CAP_H = 0.9;
+      // ⚠️ Owner feedback: photos read as "too small" — measured, the previous
+      // IMG_H (4.6in) left a real ~1.2in of dead vertical space above/below a
+      // 16:9 photo in its own pane. There is no single "intended photo
+      // container" in the uploaded template to copy for this — its own
+      // Content-with-Image/Picture-with-Caption layouts are stock Office
+      // defaults (generic half-slide picture placeholders, not a 2-up
+      // comparison layout Megawide actually designed), confirmed by reading
+      // their own layout XML. So this is a deliberate, from-scratch sizing
+      // pass: shrink every piece of non-photo chrome to the minimum that's
+      // still legible, and hand every inch it frees to IMG_H directly — the
+      // pane still centers in whatever's left below the top band, unchanged.
+      var SLIDE_H = 7.5, LABEL_H = 0.28, IMG_H = 5.65, CAP_H = 0.6;
       var PANE_H = LABEL_H + IMG_H + CAP_H;
       function paneTopFor(topBand) { return topBand + Math.max(0, (SLIDE_H - topBand - PANE_H) / 2); }
 
@@ -2458,11 +2970,14 @@ window.PPR = (function () {
         var tagFields = ph ? [ph.trade, ph.works, hideLocation ? null : ph.location] : [];
         var tags = tagFields.filter(Boolean).join(' · ');
         var url = urlOfPhoto(ph && ph.id);
-        var data = url ? imgs[url] : '';
+        var img = url ? imgs[url] : null;
         var labelY = paneTop, imgY = paneTop + LABEL_H, capY = imgY + IMG_H;
         slide.addText(which === 'before' ? 'PREVIOUS' : 'CURRENT',
           { x: x, y: labelY, w: w, h: LABEL_H, fontSize: 11, bold: true, color: '6B6B6B', charSpacing: 1 });
-        if (data) slide.addImage({ data: stripDataPrefix(data), x: x, y: imgY, w: w, h: IMG_H, sizing: { type: 'contain', w: w, h: IMG_H } });
+        if (img) {
+          var fit = containFit(x, imgY, w, IMG_H, img.w, img.h);
+          slide.addImage({ data: stripDataPrefix(img.data), x: fit.x, y: fit.y, w: fit.w, h: fit.h });
+        }
         else slide.addText('Photo not set', { x: x, y: imgY, w: w, h: IMG_H, align: 'center', valign: 'middle', color: '9A9A9A', fontSize: 12 });
         var capLines = [ph && ph.taken_at ? capDate(ph.taken_at) : '—', cap, tags].filter(Boolean).join('\n');
         slide.addText(sanitizePptxText(capLines), { x: x, y: capY, w: w, h: CAP_H, fontSize: 10, color: '4A4A4A', align: 'center' });
@@ -2471,24 +2986,56 @@ window.PPR = (function () {
       s.forEach(function (sl, i) {
         var slide = pptx.addSlide();
         slide.addText('Slide ' + (i + 1) + ' of ' + s.length, { x: 0.4, y: 0.05, w: 6, h: 0.3, fontSize: 10, bold: true, color: 'EE3124' });
+        // Quiet corner mark, never competing with the photo for attention —
+        // the brief's own "photograph remains the primary visual element".
+        if (logo) {
+          var markFit = containFit(11.6, 0.12, 1.3, 0.28, logo.w, logo.h);
+          slide.addImage({ data: logo.data, x: markFit.x, y: markFit.y, w: markFit.w, h: markFit.h });
+        }
         var hasBefore = !!sl.before_photo_id;
         var sharedLoc = hasBefore ? sharedLocationOf(sl) : '';
-        var topBand = 0.4;
+        var topBand = 0.35;
         if (sharedLoc) {
           // Same shared-location tile as the live editor / HTML+PDF exports
           // (follow-up feedback items 3/4) — one centered line, whole slide
           // width, above both panes.
-          slide.addText(sanitizePptxText(sharedLoc), { x: 0.4, y: 0.4, w: 12.53, h: 0.3, fontSize: 11, bold: true, color: '4A4A4A', align: 'center' });
-          topBand = 0.75;
+          slide.addText(sanitizePptxText(sharedLoc), { x: 0.4, y: 0.35, w: 12.53, h: 0.3, fontSize: 11, bold: true, color: '4A4A4A', align: 'center' });
+          topBand = 0.65;
         }
         var paneTop = paneTopFor(topBand);
         if (hasBefore) {
-          pptxPane(slide, sl, 'before', 0.4, 6.1, paneTop, !!sharedLoc);
-          pptxPane(slide, sl, 'after', 6.8, 6.1, paneTop, !!sharedLoc);
+          // Tightened margins/gap (0.3/0.3/0.3 → the pane itself is ~0.11in
+          // wider each side) so the two-photo case also gets every spare inch.
+          pptxPane(slide, sl, 'before', 0.3, 6.22, paneTop, !!sharedLoc);
+          pptxPane(slide, sl, 'after', 6.81, 6.22, paneTop, !!sharedLoc);
         } else {
-          pptxPane(slide, sl, 'after', 3.4, 6.5, paneTop, false);
+          // A single photo gets the whole slide width minus a modest margin —
+          // substantially larger than the paired-photo pane, since there's no
+          // second pane to share the row with.
+          pptxPane(slide, sl, 'after', 2.77, 7.8, paneTop, false);
         }
       });
+
+      // ------------------------------------------------------ closing slide ---
+      // The template's own Thank You slide — always last, whatever the photo
+      // count turned out to be (Cover → N photo slides → Thank You, never a
+      // fixed slide total). Same real panel artwork and the same template
+      // coordinates as the cover, per the owner's explicit instruction that
+      // the closing design stay faithful to the template exactly like the
+      // cover does — not a second, independently-approximated shape.
+      var thanks = pptx.addSlide();
+      thanks.background = { color: 'FFFFFF' };
+      if (coverPanel) {
+        var thanksPanelFit = containFit(PANEL_X, 0, PANEL_W, 7.5, coverPanel.w, coverPanel.h);
+        thanks.addImage({ data: coverPanel.data, x: thanksPanelFit.x, y: thanksPanelFit.y, w: thanksPanelFit.w, h: thanksPanelFit.h });
+      }
+      if (logo) {
+        var thanksLogoFit = containFit(LOGO_X, LOGO_Y, LOGO_W, LOGO_H, logo.w, logo.h);
+        thanks.addImage({ data: logo.data, x: thanksLogoFit.x, y: thanksLogoFit.y, w: thanksLogoFit.w, h: thanksLogoFit.h });
+      }
+      thanks.addText('Thank You', { x: TITLE_X, y: TITLE_Y, w: TITLE_W, h: TITLE_H, fontSize: 40, bold: true, color: '231F20', fontFace: 'Gotham', valign: 'bottom' });
+      thanks.addText(sanitizePptxText(projName || pid), { x: TITLE_X, y: SUBTITLE_Y, w: TITLE_W, h: 0.45, fontSize: 16, color: '4A4A4A', fontFace: 'Avenir Next' });
+      thanks.addText('Megawide Construction Corporation', { x: TITLE_X, y: 6.9, w: TITLE_W, h: 0.35, fontSize: 10.5, color: '9A9A9A', fontFace: 'Avenir Next' });
 
       m.close();
       await pptx.writeFile({ fileName: sanitizePptxText('Presentation ' + (projName || pid) + ' ' + (p.ppr_date || '') + '.pptx') });

@@ -372,12 +372,14 @@
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
   <!-- In-app camera capture (item 1) + the fresh 360° stitching pipeline
        (item 3) — both self-contained, loaded before module.js since its own
-       Add Media flow calls into window.Capture/window.Pano360. -->
-  <script src="capture.js?v=20260911z2"></script>
-  <script src="pano360.js?v=20260911z2"></script>
-  <script src="module.js?v=20260911z2"></script>
-  <script src="ppr.js?v=20260911c1"></script>
-  <script src="bim.js?v=20260911z2"></script>
+       Add Media flow calls into window.Capture/window.Pano360. pano.js/
+       recon.js are retired (superseded by capture.js/pano360.js) — merged in
+       from origin/main's own parallel session, 2026-09-12. -->
+  <script src="capture.js?v=20260912a"></script>
+  <script src="pano360.js?v=20260912a"></script>
+  <script src="module.js?v=20260912a"></script>
+  <script src="ppr.js?v=20260912a"></script>
+  <script src="bim.js?v=20260912a"></script>
   <script>
     // Item 6: Gallery/Presentations/Plans as a Project-Schedule-style dropdown
     // instead of a flat tab row. `icon: 'camera'` — this module dropped its
