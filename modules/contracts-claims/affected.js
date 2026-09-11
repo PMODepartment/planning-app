@@ -907,12 +907,29 @@ window.CCAffected = (function () {
           '<span class="cca-n">' + (on ? on + '/' : '') + e.n + '</span></div>';
       }
       var a = e.a;
+      /* ⚠️ HOW MANY OTHERS CARRY THIS NAME, counted over the WHOLE project rather than the current
+         rung — "all the Rebar" is the question being asked, and it does not stop at this floor. */
+      var _nk = normKey(a.activity_name || '');
+      var _unpicked = 0;
+      if (_nk) {
+        for (var _si = 0; _si < ACTS.length; _si++) {
+          var _sa = ACTS[_si];
+          if (!sel[_sa.activity_id] && normKey(_sa.activity_name || '') === _nk) _unpicked++;
+        }
+      }
       return '<div class="cca-row" data-act="' + esc(a.activity_id) + '" style="' + pad + '">' +
         '<input type="checkbox" data-ak="' + esc(a.activity_id) + '"' + (sel[a.activity_id] ? ' checked' : '') + '>' +
         '<span class="cca-code">' + esc(a.activity_id) + '</span>' +
         '<span class="cca-name" title="' + esc((a.activity_name || '') + (e.qual ? ' · ' + e.qual : '')) + '">' +
           esc(a.activity_name || '') + (e.qual ? ' <span class="cca-qual">· ' + esc(e.qual) + '</span>' : '') + '</span>' +
         (a.change_order_ref ? '<span class="cca-co" title="Already cites change order ' + esc(a.change_order_ref) + '">' + esc(a.change_order_ref) + '</span>' : '') +
+        /* Only when it would actually do something: on the last unpicked namesake there is nothing
+           left to add, and an affordance that does nothing is worse than none. */
+        (_unpicked > 1
+          ? '<button type="button" class="cca-takeall" data-takename="' + esc(_nk) + '" ' +
+            'title="Also select the other ' + (_unpicked - 1) + ' activities named &quot;' +
+            esc(a.activity_name || '') + '&quot;, anywhere on this project">+' + (_unpicked - 1) + '</button>'
+          : '') +
         '</div>';
     }
 
@@ -986,6 +1003,17 @@ window.CCAffected = (function () {
          under 820px, and an inline style would beat that media query and re-create the two-column
          squeeze on a phone. Setting it on the HOST lets the rule sit beside its sibling in CSS. */
       host.classList.toggle('cca-nopreview', !showPreview);
+      /* ⚠️⚠️ CAPTURED BEFORE THE WRITE BELOW DESTROYS THE ELEMENT. `innerHTML` replaces the
+         scrollers wholesale and a fresh element starts at scrollTop 0, so expanding a branch threw
+         the planner back to the top of the tree — on an 18-floor project that is the whole cost of
+         the job. Keyed by CLASS rather than by index: the ladder is rebuilt with a different number
+         of rungs depending on where the cursor sits, so a positional key would restore one pane's
+         offset onto another. */
+      var _keepScroll = {};
+      ['.cca-treebody', '.cca-ladbody', '.cca-mgbody'].forEach(function (sel) {
+        var el = host.querySelector(sel);
+        if (el && el.scrollTop) _keepScroll[sel] = el.scrollTop;
+      });
       host.innerHTML =
         noticeHTML() +
         '<div class="cca-bar">' +
@@ -1048,6 +1076,12 @@ window.CCAffected = (function () {
               '</div>'
             : '') +
         '</div>';
+      /* ⚠️ Restored synchronously, before the browser paints — a `requestAnimationFrame` here
+         would show the top of the list for one frame and read as a flicker on every tick. */
+      Object.keys(_keepScroll).forEach(function (sel) {
+        var el = host.querySelector(sel);
+        if (el) el.scrollTop = _keepScroll[sel];
+      });
       wire();
       if (opts.onCount) opts.onCount(nSel);
     }
@@ -1143,9 +1177,20 @@ window.CCAffected = (function () {
          rung / open the branch); the leaf rows simply had nothing else to do and were never wired.
          `sel` is toggled directly rather than the checkbox being clicked, because `paint()` rebuilds
          the row from `sel` anyway - driving the input would be a state that lives for one frame. */
+      host.querySelectorAll('[data-takename]').forEach(function (b) {
+        b.onclick = function (e) {
+          /* ⚠️ The row underneath also answers a click. Without this the "+N" would tick the row
+             AND take the namesakes, which reads as the button doing the wrong thing by one. */
+          e.stopPropagation();
+          var k = b.dataset.takename;
+          ACTS.forEach(function (x) { if (normKey(x.activity_name || '') === k) sel[x.activity_id] = 1; });
+          paint();
+        };
+      });
       host.querySelectorAll('.cca-row[data-act]').forEach(function (el) {
         el.onclick = function (e) {
           if (e.target && e.target.tagName === 'INPUT') return;
+          if (e.target && e.target.closest && e.target.closest('[data-takename]')) return;
           var id = el.dataset.act;
           if (sel[id]) delete sel[id]; else sel[id] = 1;
           paint();

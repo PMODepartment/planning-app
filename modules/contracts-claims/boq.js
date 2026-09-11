@@ -3643,12 +3643,22 @@ window.BOQ = (function () {
     var codes = codesInBoq().map(function (e) { return { e: e, c: codeRow(e.code) }; })
       .filter(function (x) { return x.c; });
     if (!codes.length) return [];
+    /* The codes THIS bill uses — an activity already carrying one of them is already answered. */
+    var onBill = {};
+    codes.forEach(function (x) { onBill[String(x.e.code)] = 1; });
     var by = {};
     (ACTS || []).forEach(function (a) {
-      /* ⚠️ UNTAGGED ONLY — the same rule `planTags` follows, and for the same reason: a class code
-         drives the cost roll-up, so moving forty already-tagged activities in bulk is a
-         reconciliation nobody would know to go looking for. */
-      if (a.class_code) return;
+      /* ⚠️⚠️ NOT "UNTAGGED ONLY" ANY MORE, AND THE CHANGE IS THE POINT. That guard was written to
+         stop forty activities being retagged behind the planner's back — a class code drives the
+         cost roll-up. But on a project where every activity is already coded in a DIFFERENT
+         vocabulary from the bill (OPW101: 2,561 of 2,561 coded, not one of them with a code this
+         bill uses) it blocked the only screen that could reconcile them, and the orchestrator
+         reported "nothing to do" three times over.
+         An activity qualifies when it carries no code, or a code this bill does not use. One that
+         already carries a code FROM THIS BILL is still left alone — it is already answered. */
+      var _cc = String(a.class_code || '').trim();
+      if (_cc && onBill[_cc]) return;
+      a._retag = _cc || '';
       var nm = String(a.activity_name || '').trim();
       var k = nm ? normKey(nm) : '';
       if (!k) return;
@@ -3666,9 +3676,15 @@ window.BOQ = (function () {
       });
       /* ⚠️ PRE-SELECTED ONLY WHEN EXACTLY ONE CANDIDATE IS CONFIDENT. Two confident candidates is
          precisely the ambiguity this screen exists to surface; choosing for the planner there would
-         reintroduce the failure the whole design avoids. */
+         reintroduce the failure the whole design avoids.
+         ⚠️⚠️ AND NEVER FOR A RETAG. Writing a first code onto an activity that has none is additive;
+         REPLACING one moves money between cost codes, and it must not happen because a name looked
+         similar enough. The planner picks it or it does not happen. */
+      g.retag = g.acts.some(function (a) { return a._retag; });
+      g.hadCodes = {};
+      g.acts.forEach(function (a) { if (a._retag) g.hadCodes[a._retag] = (g.hadCodes[a._retag] || 0) + 1; });
       var sure = g.cands.filter(function (c2) { return c2.sure; });
-      g.pick = sure.length === 1 ? sure[0].code : null;
+      g.pick = (!g.retag && sure.length === 1) ? sure[0].code : null;
       return g;
     }).filter(function (g) { return g.cands.length; });
     /* Biggest first: the decision that tags the most rows is the one worth making first. */
@@ -3763,7 +3779,15 @@ window.BOQ = (function () {
         '</tr></thead><tbody>' +
         groups.map(function (g, i) {
           return '<tr' + (g.pick ? ' class="on"' : '') + '>' +
-            '<td class="boq-nm-name">' + esc(g.name) + '</td>' +
+            '<td class="boq-nm-name">' + esc(g.name) +
+              /* ⚠️ The code being REPLACED is named, not implied. "Swap 03050 for 03051" is a
+                 decision; "tick this" is not the same question. */
+              (g.retag
+                ? '<span class="boq-nm-had">now ' +
+                  Object.keys(g.hadCodes).sort().map(function (k) { return esc(k); }).join(', ') +
+                  '</span>'
+                : '') +
+            '</td>' +
             '<td class="cc-r boq-nm-n">' + g.acts.length + '</td>' +
             '<td class="boq-nm-opts">' +
               g.cands.slice(0, 6).map(function (c) {
@@ -3786,7 +3810,10 @@ window.BOQ = (function () {
       });
 
       var c = counts();
-      foot.innerHTML = '<span class="cc-mini">' + c.decided + ' of ' + groups.length + ' answered</span>' +
+      var _rt = groups.filter(function (g) { return g.retag && g.pick; })
+        .reduce(function (t, g) { return t + g.acts.length; }, 0);
+      foot.innerHTML = '<span class="cc-mini">' + c.decided + ' of ' + groups.length + ' answered' +
+        (_rt ? ' \u00b7 <b>' + _rt + '</b> would be re-coded' : '') + '</span>' +
         '<span style="flex:1;"></span>' +
         '<button class="pd-btn" id="nm-c">Cancel</button>' +
         '<button class="pd-btn pd-btn-primary" id="nm-go"' + (c.acts ? '' : ' disabled') + '></button>';

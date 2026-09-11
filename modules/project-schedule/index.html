@@ -2321,8 +2321,18 @@
     .ps-divider:hover, .ps-divider.drag { background:var(--pd-red); }
     /* dropdown menus (Collapse to / Filter) */
     .ps-menu-wrap { position:relative; display:inline-block; }
+    /* ⚠️⚠️ BOUNDED. This had `overflow:hidden` and no max-height, so a menu grew until it ran off
+       the bottom of the window — which is exactly what the comment below it already warned about,
+       having fixed only two other menus. Owner, 2026-09-11: *"Actions button is too lengthy that it
+       extends the page."* `overflow-x:hidden` keeps the corner radius clipping the rows. */
     .ps-menu { position:absolute; top:calc(100% + 4px); left:0; z-index:50; display:none; min-width:180px;
-      background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); box-shadow:var(--pd-shadow); overflow:hidden; }
+      background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); box-shadow:var(--pd-shadow);
+      max-height:78vh; overflow-y:auto; overflow-x:hidden; }
+    /* The section labels these menus group by. Sticky, so the heading of the group you are reading
+       stays visible once the list scrolls. */
+    .ps-menu-h { position:sticky; top:0; z-index:1; background:var(--pd-card);
+      padding:6px 12px 3px; font-size:var(--pd-fs-micro); text-transform:uppercase;
+      letter-spacing:.04em; color:var(--pd-muted); }
     .ps-menu.open { display:block; }
     /* Tall popup menus must scroll rather than clip (.ps-menu sets overflow:hidden, which otherwise
        wins over the earlier .ps-cols-menu overflow:auto and clips the column chooser at its cap). */
@@ -3730,26 +3740,35 @@
                    way into these four; deleting the view without moving them would have removed
                    bulk progress entry, snapshots and the audit trail from the module altogether.
                    They are actions over the whole schedule, which is what this menu is for. -->
+              <div class="ps-menu-h">Progress</div>
               <button id="ps-act-update"><span data-ico="check" data-ico-size="14"></span> Update progress…</button>
               <button id="ps-act-snap"><span data-ico="camera" data-ico-size="14"></span> Take snapshot</button>
               <button id="ps-act-snaps"><span data-ico="layers" data-ico-size="14"></span> Snapshots…</button>
               <button id="ps-act-audit"><span data-ico="clipboard" data-ico-size="14"></span> Change history…</button>
-              <div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>
-              <button id="ps-baselines"><span data-ico="layers" data-ico-size="14"></span> Baselines…</button>
-              <button id="ps-scenarios"><span data-ico="layers" data-ico-size="14"></span> What-if scenarios…</button>
-              <button id="ps-risk"><span data-ico="risk" data-ico-size="14"></span> Schedule risk (Monte Carlo)…</button>
-              <button id="ps-codesbtn"><span data-ico="palette" data-ico-size="14"></span> Activity Codes…</button>
-              <button id="ps-udfbtn"><span data-ico="listView" data-ico-size="14"></span> User-Defined Fields…</button>
-              <button id="ps-costacctbtn"><span data-ico="cash" data-ico-size="14"></span> Cost Accounts…</button>
+              <!-- ⚠️ `Baselines…` and `What-if scenarios…` LIVED HERE AND ARE GONE. They called
+                   `openBaselines()` / `openScenarios()` — the identical functions `Open ▾ → Manage
+                   baselines… / Manage what-if scenarios…` already call, verified by reading both
+                   handlers. `Open ▾` carries no width media-query, so nothing became less reachable.
+                   Two entries in a nineteen-item menu that were a second door to one room. -->
+              <div class="ps-menu-h">Bulk edit</div>
               <button id="ps-globalchange"><span data-ico="listView" data-ico-size="14"></span> Global Change (bulk edit)…</button>
               <button id="ps-selloc" title="Select every activity at one or more places (tower, level, zone), then use any bulk action on them"><span data-ico="layers" data-ico-size="14"></span> Select activities by location…</button>
               <button id="ps-cobulk" title="The activities each change order or EOT is recorded against, and inserting the change-order work into all of them at once"><span data-ico="box" data-ico-size="14"></span> Change orders &amp; EOT…</button>
               <button id="ps-filepkg" title="File work planned before this project was split into contract packages under one of them"><span data-ico="box" data-ico-size="14"></span> File under a package…</button>
-              <button id="ps-diagnose" title="Where did my activities go? Read-only report on this project's data"><span data-ico="risk" data-ico-size="14"></span> Diagnose data…</button>
-              <button id="ps-help-item" title="The full list of keyboard shortcuts (or press ?)"><span data-ico="listView" data-ico-size="14"></span> Keyboard shortcuts…</button>
               <button id="ps-leveling"><span data-ico="users" data-ico-size="14"></span> Resource leveling…</button>
-              <button id="ps-thresholds"><span data-ico="risk" data-ico-size="14"></span> Threshold monitoring…</button>
+              <div class="ps-menu-h">Project data</div>
+              <button id="ps-codesbtn"><span data-ico="palette" data-ico-size="14"></span> Activity Codes…</button>
+              <button id="ps-udfbtn"><span data-ico="listView" data-ico-size="14"></span> User-Defined Fields…</button>
+              <button id="ps-costacctbtn"><span data-ico="cash" data-ico-size="14"></span> Cost Accounts…</button>
+              <button id="ps-diagnose" title="Where did my activities go? Read-only report on this project's data"><span data-ico="risk" data-ico-size="14"></span> Diagnose data…</button>
+              <div class="ps-menu-h">Display</div>
               <button id="ps-fmtbtn"><span data-ico="palette" data-ico-size="14"></span> Conditional formatting…</button>
+              <div class="ps-menu-h">Help</div>
+              <!-- ⚠️ STAYS, though it looks like a duplicate of the toolbar's `?`. That button is
+                   `display:none` below 1400px (see its media query), so this is the permanent home,
+                   not a copy — the comment on its handler says so, and it was right. -->
+              <button id="ps-help-item" title="The full list of keyboard shortcuts (or press ?)"><span data-ico="listView" data-ico-size="14"></span> Keyboard shortcuts…</button>
+              <div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>
               <button id="ps-clear" class="ps-menu-danger" title="Delete all activities for this project">Clear schedule…</button>
             </div>
           </div>
@@ -3828,6 +3847,13 @@
               <button id="ps-crit"><span data-ico="risk" data-ico-size="14"></span> Critical path (highlight)</button>
               <button id="ps-deps"><span data-ico="arrowRight" data-ico-size="14"></span> Show dependencies</button>
               <button id="ps-linkmode"><span data-ico="link" data-ico-size="14"></span> Link mode (drag to link)</button>
+              <!-- ⚠️ MOVED FROM `Actions ▾` (2026-09-11). Both answer "what does this schedule tell
+                   me", which is this menu's job — Actions is for things you DO to the schedule. The
+                   ids are unchanged, so every handler still finds them. -->
+              <div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>
+              <div class="ps-menu-h">Forecast</div>
+              <button id="ps-risk"><span data-ico="risk" data-ico-size="14"></span> Schedule risk (Monte Carlo)…</button>
+              <button id="ps-thresholds"><span data-ico="risk" data-ico-size="14"></span> Threshold monitoring…</button>
               <div style="border-top:1px solid var(--pd-line);margin:4px 0;"></div>
               <div style="padding:4px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--pd-muted);">Progress Spotlight</div>
               <div id="ps-spotlight-menu">
@@ -45226,7 +45252,12 @@
     document.getElementById('ps-act-audit').onclick = function () { aMenu.classList.remove('open'); openAudit(); };
     document.getElementById('ps-audit-x').onclick = closeAudit;
     document.getElementById('ps-audit-back').onclick = function (e) { if (e.target === this) closeAudit(); };
-    document.getElementById('ps-baselines').onclick = function () { aMenu.classList.remove('open'); openBaselines(); };
+    /* ⚠️ `ps-baselines` / `ps-scenarios` NO LONGER EXIST — the menu entries were removed as
+       duplicates of `Open ▾`. `getElementById(...).onclick` on a missing node throws
+       "Cannot set properties of null", which would kill the rest of this wiring function and
+       every control below it. That is the shape of the outage this repo recorded on 2026-09-10
+       (a deleted function still named in an export), so the buttons and their wiring went in the
+       same change. `openBaselines` / `openScenarios` stay — `Open ▾` calls them. */
     document.getElementById('ps-bl-capture').onclick = captureBaseline;
     document.getElementById('ps-bl-clear').onclick = clearBaselineDates;
     (function () {
@@ -45244,7 +45275,7 @@
     })();
     document.getElementById('ps-bl-x').onclick = closeBaselines;
     document.getElementById('ps-bl-back').onclick = function (e) { if (e.target === this) closeBaselines(); };
-    document.getElementById('ps-scenarios').onclick = function () { aMenu.classList.remove('open'); openScenarios(); };
+    /* see the note above `ps-bl-capture` — this entry moved to `Open ▾` */
     document.getElementById('ps-scn-capture').onclick = captureScenario;
     document.getElementById('ps-scn-x').onclick = closeScenarios;
     document.getElementById('ps-scn-back').onclick = function (e) { if (e.target === this) closeScenarios(); };

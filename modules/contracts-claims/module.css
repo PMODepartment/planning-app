@@ -752,6 +752,9 @@ html.pd-dark .boq-tl1 > .boq-trow { background:rgba(255,255,255,.04); }
    blank, and a row that has been dealt with should stop asking for attention. */
 .boq-nmtab tr.on td { background:var(--pd-red-light); }
 .boq-nm-name { font-weight:700; color:var(--pd-ink); }
+/* The code an activity carries TODAY, on a row that would replace it. */
+.boq-nm-had { display:block; font-weight:400; font-size:var(--pd-fs-micro); color:var(--pd-muted);
+  font-family:var(--pd-mono); }
 /* The count is the argument for spending the click, so it is the one figure set to read at a
    glance — tabular so the column scans as a column. */
 .boq-nm-n { font-variant-numeric:tabular-nums; font-weight:700; color:var(--pd-muted);
@@ -1042,6 +1045,13 @@ html.pd-dark .boq-tl1 > .boq-trow { background:rgba(255,255,255,.04); }
 /* Why the rungs below an "All" are not on screen. A pane that silently disappears reads as a bug. */
 .cca-hintline { margin:6px 0 0; font-size:var(--pd-fs-xs); color:var(--pd-muted); max-width:70ch; }
 .cca-row input { flex:0 0 auto; cursor:pointer; }
+/* "+N" — the rest of this activity's namesakes, across the whole project. Quiet until hovered:
+   it sits on every leaf row, so at full strength it would out-shout the names themselves. */
+.cca-takeall { flex:0 0 auto; cursor:pointer; font:inherit; font-size:var(--pd-fs-micro);
+  font-weight:700; line-height:1; padding:2px 6px; border-radius:var(--pd-radius-pill);
+  border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-muted); }
+.cca-takeall:hover { border-color:var(--pd-red); color:var(--pd-red); }
+@media (max-width:700px) { .cca-takeall { min-height:var(--pd-tap); padding:2px 10px; } }
 /* ⚠️ 13x13 was the real tap target on every row in this picker - measured, not assumed - while
    the class-code tree in the same module already sizes its box to 15px and gives it the brand
    accent. Same control, same module, so the same treatment rather than a second convention. */
