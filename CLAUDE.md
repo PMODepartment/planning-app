@@ -98,6 +98,43 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-11 (ui) — Final cycle: everything verified against the deployed build, and one refactor deliberately not done
+
+Second and last of an unattended cycle. **No code changed.** That is the finding, not a gap in it.
+
+**Every checker green, and the deployed build carries all of it.** Verified over HTTP against the
+live site rather than asserted from the working tree:
+
+| | |
+|---|---|
+| `tools/wiring-check.js` | **3,519 references across 74 files · 123 passed, 0 failed** |
+| `tools/dead-hooks.js` | 431 queried classes · 9 findings, all triaged (see (uh)) |
+| inline + file parse | 47 JS files + 33 inline blocks, **0 failures** |
+| grid header/body | 151 `<thead>` structurally immune; the 5 split ones re-checked and unchanged |
+| BOQ suites | route 22 · where 13 · link 36 · b 24 · matchall 34 · namematch 44 · namefall 26 · retag 15 · picker 29 — **243, 0 failures** |
+
+Live on `pmodepartment.github.io`: `whereLabels` present, `_nameAlt` ×5, the `sp-names` route button,
+the Method column's `>auto</span>`, **`boq-a-all` gone (0)**, `.pd-caution` ×3 in `dashboard.css`, and
+resource-loading carrying **0** party emoji with its long climate hint replaced.
+
+**⚠️ THE `--boq-*` PALETTE MIGRATION WAS DELIBERATELY NOT DONE, and the reason is worth recording so
+it is not re-raised as an oversight.** It has been carried as a deferred item since (uic), which
+also established what it *is*: a fourth private palette that is **correct** — paired per theme and
+measured, with its own note saying so. So migrating it fixes **no defect**; it is a cosmetic
+refactor of a working, documented system. It also cannot be verified from here: judging it needs
+contrast measured in a rendered browser, and the automation tab has been unresponsive all session
+(the hidden-tab artefact this repo has a long file on). Changing colours on a working screen, while
+the owner is asleep, with no way to measure the result, is the wrong trade. It waits for a session
+where it can be measured.
+
+**Still blocked, unchanged:** `modules/project-schedule/index.html` holds another session's
+uncommitted flowline work — re-checked this cycle, still uncommitted and still absent from HEAD — so
+**71 copy fixes, 4 font weights and 4 dead-hook findings** remain edited in the working tree,
+waiting. ⚠️ Among them, the one worth acting on first when it frees up is **`.ps-back`**: the
+Esc/overlay handler queries `.ps-back.open` while those dialogs actually carry `ps-bulk-back`
+(measured live in this session's own DOM probe), so it matches nothing and they are not covered.
+
+
 ### 2026-09-11 (uh) — The checker I shipped this evening was hiding 62 references from itself
 
 Autonomous cycle, picking up the one thing the previous pass deliberately left unfinished: a
