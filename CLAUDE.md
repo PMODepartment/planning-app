@@ -95,6 +95,60 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-11 (sc2) — Every other grid checked for the same mismatch: one dead-code candidate, nothing live
+
+Owner: *"Let's check the other grid views for the same mismatch."*
+
+**The question had to be sharpened first.** The schedule grid's fault was not "the counts differ" — it
+was that the header and the body are built by **two different functions**, from a column set
+(`LOC_LEVELS` / `CODE_TYPES` / `UDF_DEFS`) that arrives asynchronously, so the two calls could see
+different snapshots. A grid whose header and rows are emitted inside **one** function from **one**
+local snapshot cannot drift however late the data lands; the worst it can do is render early and look
+empty. So the sweep asks that of every table in the app, then measures what it can reach.
+
+**Static, whole repo — 155 `<thead>`s.** `headbody.py` finds the smallest function containing each
+`<thead>` and asks whether that same function emits the `<td>` beneath it. **150 do** — structurally
+immune, across all 16 modules. **Five do not**, and all five were opened:
+
+- **`detRelsEdit` ×2** (schedule details → Relationships) — fixed 5- and 4-column tables, bodies from
+  `relRowHtmlEdit` / `relRowHtml`. Static columns cannot drift; measured live at **5×1 and 4×1**.
+- **`tbl(head, body)`** (Diagnose report) — a generic helper, so the pairing lives at each call site.
+  All four checked: heads of **6 / 5 / 5 / 4** against bodies of **6 / 5 / 5 / 4** `<td>`; two of them
+  measured live at **6×6** and **5×5**.
+- **`portMonthHead`** (Manpower Loading) — a header *helper*; both callers pass the **same local
+  `months`** array that every body row maps. One snapshot, one function.
+- **`renderRegister`** (Drawing Register) — the only true split, and it is **dead code in this repo**:
+  `config.js` has the module `enabled: false`, `retiredTo: 'the Engineering App'`. Its live home is
+  another app; `modules/drawing-register/` here is a leftover.
+
+**Live — 18 grids on 8 pages, 0 mismatches.** Schedule grid **39×21** (still aligned after the sc6
+fix and a full tour of the module), progress table 7×26, stacking overview 10×4 and 10×5, Cost
+Loading steps 1-4 (5×25, 5×25, 2×25 + **8×125**, 4×25), details tabs (8×1, 5×1, 5×1 + 4×1, 4×1, 9×1),
+Activity Codes 3×25, UDFs 4×5, Diagnose 6×6 and 5×5, Manpower matrix **47×5**, Cash Flow matrix
+**58×13**, Equipment matrix 39×6, BOQ items **13×139**, Resource master 10×20, Portfolio 8×27.
+
+**⚠️⚠️ THE PROBE WAS WRONG FIRST, AND IT ACCUSED MANPOWER LOADING.** It reported the matrix's
+**Actual** row as one cell short of a 47-column header — the exact shape of the bug being hunted.
+It is correct code: `bandRows()` emits the department label **once** with `rowspan="live.length"`, so
+the rows beneath it carry one `<td>` fewer because that column is already occupied from above. The
+probe counted cells per row and never modelled **rowspan**. It now lays the table out the way a
+browser does — an occupancy grid with carry-downs — and a row is short only when a **column** ends up
+with nothing in it. Same lesson as `cellcount.py`: a checker that cannot be right about correct code
+cannot be trusted about wrong code. (The error is one-directional — ignoring rowspan makes rows look
+*shorter*, so it over-reports and never hides a real mismatch. Every clean result taken before the fix
+still stands.)
+
+**What this pass did NOT reach, stated rather than counted as a pass:** the import wizard's Excel
+preview grid (needs a file walked through it), the Snapshots / Change-history / Risk dialogs (they sat
+on *"Loading…"* — the tab was backgrounded and its timers are throttled), the stacking overview's
+`showPath` branch (needs a band with no value on its level), and most Manpower / Positions / Roster
+views, which rendered no table at all for the loaded project.
+
+No code changed: nothing live is broken.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+
 ### 2026-09-11 (sc) — Columns not aligned: two different bugs wearing the same face
 
 Owner: *"Bug inside the grid columns do not refer correctly to its content. Columns are not aligned."*
