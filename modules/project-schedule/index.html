@@ -1456,8 +1456,8 @@
        ever a silent toggle with no lit state — which is precisely why the toolbar could not say
        where you were. Now they are top-level again (owner 2026-09-02) the lit state is the whole
        point: it is what stops a standalone shortcut re-becoming a control you cannot read. */
-    #ps-progressbtn.active, #ps-vstackbtn.active { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
-    #ps-progressbtn.active .pd-ico, #ps-vstackbtn.active .pd-ico { color:#fff; }
+    #ps-progressbtn.active, #ps-vstackbtn.active, #ps-lsmbtn.active { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
+    #ps-progressbtn.active .pd-ico, #ps-vstackbtn.active .pd-ico, #ps-lsmbtn.active .pd-ico { color:#fff; }
     /* ---- Vertical Stacking view (toolbar) ------------------------------------------------
        Same "panel replaces the split" behaviour as Activity Progress. Card + cell styling is
        deliberately close to the Schedule Setup's Stacking step so the two read as one idea. */
@@ -3969,6 +3969,16 @@
                and Stacking light red while you are in them. -->
           <button class="pd-btn ps-icobtn" id="ps-progressbtn" aria-label="Activity Progress" title="Activity Progress — physical vs planned, as a table"><span data-ico="trendingUp" data-ico-size="15"></span></button>
           <button class="pd-btn ps-icobtn" id="ps-vstackbtn" aria-label="Vertical Stacking" title="Vertical Stacking — the building model, one cell per zone"><span data-ico="box" data-ico-size="15"></span></button>
+          <!-- ⚠️⚠️ THE LSM LAYOUT'S DOOR. It was only reachable through a checkbox in
+               the Legend, which is itself hidden until "Colour activities by" is ticked and can be
+               folded away — the owner asked "how does the planner access the LSM?" and the honest
+               answer was "almost nobody would find it". The toolbar is where this module's other
+               view switches live (Progress, Stacking), the owner moved them there deliberately, and
+               a direct control beats a nested one.
+               ⚠️ It is NOT the Group menu's "LSM" preset, which is Activity › Location
+               — the transpose of this layout, and a name collision worth resolving: that preset
+               is the owner's own naming and is left alone rather than silently renamed. -->
+          <button class="pd-btn ps-icobtn" id="ps-lsmbtn" aria-label="LSM rows" title="LSM rows — the time-location layout: one row per storey, one bar per trade, the slope of the staircase being the production rate. Groups by location and collapses to one row per floor. (Not the same as the Group menu's &quot;LSM&quot; preset, which is Activity › Location.)"><span data-ico="layers" data-ico-size="15"></span></button>
           <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-outlinebtn" aria-label="Outline" title="Outline — expand all, or collapse the whole schedule to one WBS level"><span data-ico="layers" data-ico-size="15"></span></button><div class="ps-menu" id="ps-outline-menu"></div></div>
           <!-- Outline and Saved layouts used to be two more toolbar buttons here. They are sections of
                the View ▾ menu now: both answer "how am I looking at this schedule", the same question
@@ -4751,10 +4761,14 @@
   // OVER the layout, so two could be on at once. These reduce the three to the one answer the
   // "View: …" button shows. Module scope on purpose — setProgressMode() and setVStackMode() live far
   // from the toolbar wiring and both have to repaint the button.
-  var _VIEW_LABEL = { split: 'Split', grid: 'Grid', gantt: 'Gantt', network: 'Network', progress: 'Progress', stacking: 'Stacking' };
+  var _VIEW_LABEL = { split: 'Split', grid: 'Grid', gantt: 'Gantt', network: 'Network', progress: 'Progress', stacking: 'Stacking', lsm: 'LSM' };
   function _viewKey() {
     if (typeof vstackMode !== 'undefined' && vstackMode) return 'stacking';
     if (typeof progressMode !== 'undefined' && progressMode) return 'progress';
+    /* ⚠️ LSM reports itself only when the grouping still SHAPES it — the same test the
+       row height uses. A face reading "LSM" over a plain WBS tree would be naming a layout that is
+       not on screen, which is the exact failure `_viewName` exists to prevent. */
+    if (typeof _lsmShaped === 'function' && _lsmShaped()) return 'lsm';
     return _VIEW_LABEL[layoutMode] ? layoutMode : 'split';
   }
   function _viewName() { return _VIEW_LABEL[_viewKey()]; }
@@ -21298,9 +21312,23 @@
      goes through rowHFor so `applyRowZoom` stays THE ONE PLACE row height is set — see its
      note just below. */
   function _lsmRowH() { return LSM_PAD + _lsmLaneCount() * (LSM_LANE_H + LSM_LANE_GAP); }
+  /* ⚠️⚠️ THE HEIGHT IS ONLY EARNED BY AN LSM-SHAPED GROUPING. `ROWH` is uniform
+     by construction (renderWindow slices on `floor(scrollTop / ROWH)` and every bar sits at
+     `i * ROWH`), so the lane budget cannot be given to the floor rows alone. That is fine when the
+     rows ARE floors and wrong the moment they are not — which is exactly what the owner saw:
+     the mode on, the grouping location-led but only partly collapsed, and thousands of ordinary
+     activity rows each stretched to hold eight lanes they do not have.
+     So the height is conditional on the grouping still being location-led. Change the grouping and
+     the rows go back to their normal height even with the mode on, which is the honest behaviour:
+     the lanes are only drawn on location group rows anyway. */
+  function _lsmShaped() {
+    if (!_lsmRows || !groupBys || !groupBys.length) return false;
+    for (var i = 0; i < groupBys.length; i++) if (String(groupBys[i]).indexOf('loc:') !== 0) return false;
+    return true;
+  }
   function rowHFor(z) {
     var h = Math.max(16, Math.round(_baseRowH() * z));
-    return _lsmRows ? Math.max(h, _lsmRowH()) : h;
+    return _lsmShaped() ? Math.max(h, _lsmRowH()) : h;
   }
   /* ⚠️ THE ONE PLACE ROW HEIGHT IS SET, in both the CSS and the JS. `ROWH` and `--ps-rowh` must not
      be able to disagree: the grid rows are laid out by CSS and the Gantt bars by JS arithmetic, so a
@@ -41822,7 +41850,7 @@
      ⚠️ Shed order is LOWEST PRIORITY FIRST and explicit. Shedding from the end of the DOM would
      drop the SEARCH box first, which is the one control a planner uses on every visit. */
   var _TB_KEEP = { 'ps-actionsbtn': 1, 'ps-add': 1, 'ps-schedbtn': 1, 'ps-groupbtn': 1 };
-  var _TB_SHED = ['ps-help-btn', 'ps-fmtbtn-top', 'ps-outlinebtn', 'ps-vstackbtn', 'ps-progressbtn',
+  var _TB_SHED = ['ps-help-btn', 'ps-fmtbtn-top', 'ps-outlinebtn', 'ps-lsmbtn', 'ps-vstackbtn', 'ps-progressbtn',
                   'ps-zoombtn', 'ps-layoutbtn', 'ps-scopebtn', 'ps-openbtn', 'ps-analyzebtn'];
   var _TB_ORDER = null, _tbRaf = 0;
 
@@ -43683,8 +43711,20 @@
           setGroupBys(locDims);
           said.push('grouped by location');
         }
-        expandToLevel(locDims.length);
-        said.push('collapsed to one row per ' + (locLevelName(locDims[locDims.length - 1].slice(4)) || 'level'));
+        /* ⚠️⚠️ TO THE FLOOR LEVEL, NOT THE DEEPEST ONE. `expandToLevel(n)`
+           collapses every node at `ddepth >= n-1`, so on a Tower › Level › Zone › Unit
+           breakdown `expandToLevel(locDims.length)` collapsed only the UNITS — leaving the
+           Tower, Level and Zone rows open AND every activity that carries no Unit value on screen
+           as a leaf. Each of those then took the tall LSM row height, which is what the owner
+           reported as "ticking LSM widens the rows": 2,561 rows at ~96px instead of ~30 floors.
+           The floor rows must be the DEEPEST VISIBLE ones, so the level to collapse at is the
+           floor's own depth: `ddepth >= fi` ⇒ `n = fi + 1`.
+           ⚠️ An activity with no value at the floor level is lifted to the tower by the
+           dissolve and stays visible — correctly, since it genuinely sits on no storey. */
+        var _fl = _locFloorLevelId(), _fi = _fl ? locDims.indexOf('loc:' + _fl) : -1;
+        expandToLevel(_fi >= 0 ? _fi + 1 : locDims.length);
+        said.push('collapsed to one row per ' +
+          (locLevelName((_fi >= 0 ? locDims[_fi] : locDims[locDims.length - 1]).slice(4)) || 'level'));
       }
     } else if (_lsmPrevGroup && _lsmPrevGroup.length) {
       setGroupBys(_lsmPrevGroup);
@@ -43694,8 +43734,23 @@
     /* ⚠️ applyRowZoom is THE ONE PLACE row height is set, in both the CSS and the JS —
        so the lane budget reaches `--ps-rowh` through it rather than being written here. */
     applyRowZoom(false);
+    var _lb2 = document.getElementById('ps-lsmbtn');
+    if (_lb2) _lb2.classList.toggle('active', !!_lsmRows);
+    /* \u26a0\ufe0f `_paintViewBtn` only \u2014 NOT `renderLayoutMenu`, which is declared in the
+       init/wiring scope and not at module scope. Calling it from here is the exact ReferenceError
+       this file already records for `closeMenus`, and a try/catch round it would hide the fault
+       rather than avoid it. The menu rebuilds itself on open. */
+    _paintViewBtn();
     renderActLegend(); renderGrid(); renderGantt();
-    if (said.length) UI.toast('LSM rows ' + (_lsmRows ? 'on' : 'off') + ' — ' + said.join(', ') + '.', 'success');
+    if (_lsmRows) {
+      /* ⚠️ NAME THE LANE COUNT. The row height is `pad + lanes × pitch`, so "the rows
+         got taller" is always answered by "because there are N trades keyed" — and the lever
+         is the Key trades… button two controls away. Saying it here is what connects the two. */
+      var _ln = _lsmLaneCount();
+      said.push(_ln + ' trade lane' + (_ln === 1 ? '' : 's') + ' per storey (row height ' + _lsmRowH() +
+        'px \u2014 use "Key trades\u2026" to show fewer)');
+    }
+    if (said.length) UI.toast('LSM rows ' + (_lsmRows ? 'on' : 'off') + ' \u2014 ' + said.join(', ') + '.', 'success');
   }
   function _lsmLaneIndex() {
     var L = _lsmLanes(), m = {}, i, ov = L.over || [];
@@ -44286,10 +44341,18 @@
     if (_stkTopFirst) ranked.reverse();
     return ranked.concat(other);
   }
-  function stkDefaultLevel() {
-    if (_stkLevel && LOC_LEVELS.some(function (l) { return l.id === _stkLevel; })) return _stkLevel;
+  /* Which location level is "the storeys".
+     ⚠️⚠️ ONE RULE, TWO CALLERS. `stkDefaultLevel` picks the stacking axis with
+     it and the LSM collapse needs the same answer — if the two disagreed, the rows would
+     collapse to one level while the rate and the clashes were computed on another, and nothing on
+     screen would say so. Extracted rather than copied. */
+  function _locFloorLevelId() {
     var m = LOC_LEVELS.filter(function (l) { return /floor|level|storey|story/i.test(l.name || ''); })[0];
     return (m && m.id) || (LOC_LEVELS.length ? LOC_LEVELS[LOC_LEVELS.length - 1].id : null);
+  }
+  function stkDefaultLevel() {
+    if (_stkLevel && LOC_LEVELS.some(function (l) { return l.id === _stkLevel; })) return _stkLevel;
+    return _locFloorLevelId();
   }
   function stkLevelName(id) {
     var l = LOC_LEVELS.filter(function (x) { return x.id === id; })[0];
@@ -46163,6 +46226,11 @@
       if (pb) pb.onclick = function (e) { e.stopPropagation(); closeMenus(); _setView(_viewKey() === 'progress' ? layoutMode : 'progress'); };
       var vb = document.getElementById('ps-vstackbtn');
       if (vb) vb.onclick = function (e) { e.stopPropagation(); closeMenus(); _setView(_viewKey() === 'stacking' ? layoutMode : 'stacking'); };
+      /* ⚠️ LSM is NOT one of the full-width panels: it is a ROW LAYOUT inside the split, so
+         it toggles its own flag rather than going through `_setView`. `setLsmRows` repaints the
+         View button, so the face still names it. */
+      var lb = document.getElementById('ps-lsmbtn');
+      if (lb) lb.onclick = function (e) { e.stopPropagation(); closeMenus(); setLsmRows(!_lsmRows); };
     })();
     // Outline: the same section the View menu used to carry, in its own menu.
     // ⚠️ Rebuilt on every open, because the level chips run 1..maxDepth() and that changes with the

@@ -95,6 +95,51 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-11 (z5) — ⚠️⚠️ HOTFIX: ticking LSM stretched 2,561 rows, and the layout had almost no door
+
+Owner, from the live site: *"Ticking LSM widens the with of the rows why is that"*, and *"How does
+the planner access the LSM? Is it by selecting the 'LSM' in the presets?"* Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md). Module-only.
+
+- ⚠️⚠️ **The collapse went to the wrong level, and that is the whole of the "wider rows".**
+  `expandToLevel(n)` collapses `ddepth >= n-1`, and `setLsmRows` passed `locDims.length` — so on
+  a **Tower › Level › Zone › Unit** breakdown it collapsed only the UNITS, leaving the
+  Tower/Level/Zone rows open plus every activity with no Unit value. The row height then did as it
+  was told: `pad + lanes × pitch` ≈ 96px, applied to **2,561 rows** instead of ~30 floors.
+  The floor rows must be the deepest VISIBLE ones, so the level is the floor's own depth —
+  **2, not 4**.
+- ⚠️⚠️ **And the height is now only earned by an LSM-shaped grouping.** `ROWH` is uniform by
+  construction, so the budget cannot go to floor rows alone; `_lsmShaped()` requires the mode ON and
+  every grouping dimension to be a location one. Change the grouping and the rows go back to normal
+  even with the mode on — honest, since lanes are only drawn on location group rows. ⚠️ It
+  gates `_viewKey()` too, so the View face never reads "LSM" over a WBS tree. ⚠️ The toast now
+  names the lane count and the row height, and points at *Key trades…*.
+- ⚠️⚠️ **The door was a checkbox inside the Legend** — itself hidden until "Colour activities by"
+  is ticked, and foldable. The built-with-no-door shape this module has recorded four times, walked
+  into again. `#ps-lsmbtn` now sits on the toolbar beside Vertical Stacking and Activity Progress,
+  where the owner moved those switches deliberately, and it toggles like they do. ⚠️ Not routed
+  through `_setView` — LSM is a row layout inside the split, not a panel that replaces it. ⚠️
+  And `_paintViewBtn()` only, never `renderLayoutMenu()`, which lives in the init scope: that is the
+  exact ReferenceError this file records for `closeMenus`.
+- ⚠️ **The name collision is named, not silently resolved.** The Group menu's preset called "LSM"
+  is `['act'] + locDims` — the transpose of this layout, and the owner's own naming from
+  earlier today. Left alone; the new button's tooltip states the difference. The owner's call.
+- ⚠️ One floor-level rule, two callers: `stkDefaultLevel`'s name test is extracted to
+  `_locFloorLevelId()` so the collapse and the rate cannot resolve different storeys.
+
+**323 assertions, 0 failing.** ⚠️⚠️ **Two contrast bases, and the pinning trap bit immediately:** the
+natural base had moved past slices 1–4, so "BASE has no LSM lane CSS" started failing —
+correctly. Against the **pre-LSM** `4d82fd4`: 11 assertions, none of it exists. Against the
+**immediate predecessor** `621a33b`: 9 checks specific to this fix — it has the buggy
+`expandToLevel(locDims.length)` and gates the height on the mode alone. The collapse arithmetic is
+executed: floor = Level, index 1, n = 2, Tower open and Level collapsed; and the old value is
+asserted to have left the Level rows EXPANDED.
+⚠️ **Not verified signed in** — the report came off the live site, and what is proven here is
+the arithmetic and the gate, not OPW101's row count after the fix.
+
+`MODULE_V` → `20260911z5`. ⚠️ Slice 5 (the flowline chart) is deliberately **not** in this
+commit: shipping a new view on top of a layout that stretched every row would have compounded it.
+
 ### 2026-09-11 (z4) — The LSM data-date line: a grip you can drag, a state per storey, and a line that stops eating clicks
 
 Owner: *"build the data-date line next"*. Slice 4 of 5. Detail:
