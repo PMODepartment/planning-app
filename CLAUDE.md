@@ -95,6 +95,50 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-11 (z3) — LSM clash detection: two trades on one storey, against an order somebody stated
+
+Owner: *"build the clash detection next"*. Slice 3 of 5. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md). Module-only, no
+migration. The deck's first named advantage of LSM: *"Overlapping activities (clashes) can be
+detected easily"*.
+
+- ⚠️⚠️ **The project already declares the order, so it is reused.** `cmpWorkName` sorts by
+  `WORK_ORDER` — the owner-specified construction sequence — and already handles both
+  spellings a trade reaches the grid under (the canonical "Structural Works" and the Schedule Setup's
+  short "Structural"). ⚠️⚠️ On any other colour field the order is **INFERRED**, and it is labelled
+  inferred on the strip and in every tooltip: *"Tiles before Plastering"* is only a finding if
+  somebody said Plastering comes first.
+- ⚠️⚠️ **A shared finish day is a HANDOFF, not a clash.** `dispFin` is inclusive, so a successor
+  starting the day its predecessor finishes overlaps by one — ordinary FS practice. Without that
+  threshold every clean handoff in the programme would be reported.
+- ⚠️ **Different storeys are not a clash, and nor are two towers** — trades overlapping in time
+  on different floors is exactly how a takt programme runs. Both asserted; they are the false
+  positives that would discredit the feature on sight.
+- ⚠️⚠️ **Reported, never blocked or hidden.** Nothing is filtered or moved: the strip names the pair,
+  the storey and the working days; both bars carry a hatched mark over the overlapping stretch (both,
+  because marking one side reads as "this trade is wrong"). ⚠️ The chip **navigates** rather than
+  filtering — a filter would need a two-pass build, since the clash set is derived from
+  `buildNodes`' own output.
+- ⚠️ **One axis cache for every LSM reader**, lifted out of the rate into `_lsmAxOf`: one walk of
+  the span per frame, one boundary convention. Asserted at exactly three `makeAxis(` call sites.
+- ⚠️⚠️ **A fourth declared-but-unwired field:** `cfg.tradeLeads` ("floors of the leading trade done
+  before the following one starts") occurs twice — `blank()` and `normalize()` — and is read
+  nowhere. After `openLocAdopt`, `fillDown`'s change-order branch and `cfg.floorLag`. Wire it and
+  clashes could be measured against the declared handoff, not just trade order.
+
+**252 assertions against the working tree, 11 against the pinned base, 0 failing.** Executed rather
+than described: `_lsmSeq` handed its trades in the wrong order returns `WORK_ORDER`; a 5-working-day
+overlap counts 5; a same-day handoff, a clean gap, two storeys and two towers all count 0.
+Rendered at 1440×900 with both stylesheets inlined: 4 clashes → **8 marks**, 6 bars flagged,
+each mark inside its bar and ringed `rgb(196, 33, 39)` = `--pd-bad`.
+⚠️⚠️ A harness ordering bug worth keeping: the first render produced **0 marks** because it drew bars
+before `DL` was set, and `_lsmClash` reads `DL`. The real module is safe — `doRender` assigns DL
+before `renderWindow` — but the harness had to imitate that order rather than assume it.
+⚠️ The chip's click is wired and asserted structurally but **has not been clicked**; **not verified
+signed in**.
+
+`MODULE_V` → `20260911z3`, sort-checked against every token a browser might hold.
+
 ### 2026-09-11 (z2) — The LSM production rate, and four things it should not have re-invented
 
 Owner: *"build the slope readout next"* — then four cross-check instructions while it was being

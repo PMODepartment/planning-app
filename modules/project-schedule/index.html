@@ -1020,6 +1020,31 @@
     /* ⚠️ An irregular trade is dimmed and italic and its figure is REPLACED by the word,
        never shown beside it — a greyed-out number still gets read as a number. */
     .ps-lsmrate-chip.weak > b, .ps-lsmrate-chip.weak > u { opacity:.6; font-style:italic; font-weight:400; }
+    /* The clash overlay: a dense warning hatch over the overlapping STRETCH of a lane bar.
+       ⚠️ Not a trade colour and not a solid fill — it must read as an annotation on
+       the bar rather than as part of it, and it must survive sitting on top of any of the sixteen
+       palette colours. */
+    .ps-lsmclash { position:absolute; top:0; bottom:0; z-index:3; pointer-events:none;
+      background-image:repeating-linear-gradient(45deg,var(--pd-bad) 0 1.5px,transparent 1.5px 4px);
+      box-shadow:0 0 0 1px var(--pd-bad) inset; }
+    .ps-lsmbar-clash { box-shadow:0 0 0 .5px rgba(0,0,0,.22) inset, 0 0 0 1px var(--pd-bad); }
+    .ps-lsmclash-strip { display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px;
+      padding:6px 2px 2px; border-top:1px dashed var(--pd-line); margin-top:6px; }
+    .ps-lsmclash-lbl { font-size:var(--pd-fs-micro); font-weight:700; text-transform:uppercase;
+      letter-spacing:.06em; color:var(--pd-bad-text); cursor:help; }
+    .ps-lsmclash-lbl em { font-style:normal; font-weight:400; text-transform:none;
+      letter-spacing:0; color:var(--pd-muted); }
+    /* A real button: it navigates, so it must be reachable by keyboard. Every inherited button
+       style is undone so it still reads as a chip. */
+    .ps-lsmclash-chip { display:inline-flex; align-items:center; gap:5px; font:inherit;
+      font-size:var(--pd-fs-xs); background:var(--pd-bad-bg); border:1px solid var(--pd-bad-line);
+      border-radius:var(--pd-radius); padding:1px 6px; cursor:pointer; color:var(--pd-ink); }
+    .ps-lsmclash-chip:hover { background:var(--pd-card); }
+    .ps-lsmclash-chip > b { font-weight:700; }
+    .ps-lsmclash-chip > u { text-decoration:none; color:var(--pd-muted); }
+    .ps-lsmclash-chip > s { text-decoration:none; color:var(--pd-bad-text); font-weight:700;
+      font-variant-numeric:tabular-nums; }
+    .ps-lsmclash-more { font-size:var(--pd-fs-xs); color:var(--pd-muted); cursor:help; }
     .ps-bar.dragging { cursor:grabbing; opacity:.85; z-index:8; }
     .ps-handle { position:absolute; top:0; bottom:0; width:6px; cursor:ew-resize; z-index:4; }
     .ps-handle.l { left:0; } .ps-handle.r { right:0; }
@@ -22561,8 +22586,25 @@
     for (i = 0; i < n; i++) { var e = ys[i] - (a + b * xs[i]); ssRes += e * e; }
     return { a: a, b: b, r2: Math.max(0, Math.min(1, 1 - ssRes / dy)) };
   }
+  /* ---- ONE axis cache for every LSM reader ------------------------------------------------------
+     The rate fit and the clash pass both need "how many working days between these two dates", over
+     the same window, for the same handful of calendars. ⚠️ Two caches would mean two walks
+     of the project span per frame and two chances to disagree about a boundary.
+     ⚠️ Keyed on the calendar AND the window, because the window is the chart's own span and
+     moves with the filter — a cached axis measured from a different base silently offsets every
+     date, which is the trap `axisFor`'s own note records. */
+  var _lsmAxes = null;
+  function _lsmAxOf(cal, min, max) {
+    var key = dstr(min) + '|' + dstr(max);
+    if (!_lsmAxes || _lsmAxes.key !== key) _lsmAxes = { key: key, by: {} };
+    var id = (cal && cal.id) || '_default';
+    if (!_lsmAxes.by[id]) {
+      _lsmAxes.by[id] = (window.PDCal && cal) ? makeAxis(cal, min, 0, dayDiff(min, max) + 1) : ALLAX;
+    }
+    return _lsmAxes.by[id];
+  }
   var _lsmRateMemo = null;
-  function _clearLsmRateMemo() { _lsmRateMemo = null; _clearLsmDeclMemo(); }
+  function _clearLsmRateMemo() { _lsmRateMemo = null; _lsmClashMemo = null; _lsmAxes = null; _clearLsmDeclMemo(); }
   /* Per keyed trade: how fast it climbs the building, plus the per-floor step for the bar tooltips.
      Read off `DL` — the rows actually on the chart — so the number describes what is in
      front of the planner rather than the whole project. */
@@ -22607,12 +22649,7 @@
        for the CPM, keyed by ITS base and window, and calling it with a different base
        ("_axBaseKey !== key") WIPES that cache — so the rate strip would have thrown away the
        CPM's axes on every repaint. Own cache, shared implementation. */
-    var lo = 0, hi = dayDiff(min, max) + 1, axc = {};
-    var axOf = function (cal) {
-      var id = (cal && cal.id) || '_default';
-      if (!axc[id]) axc[id] = (window.PDCal && cal) ? makeAxis(cal, min, lo, hi) : ALLAX;
-      return axc[id];
-    };
+    var axOf = function (cal) { return _lsmAxOf(cal, min, max); };
     /* ⚠️⚠️ THE FIT'S y IS THE ORDINAL STOREY POSITION, NOT THE RANK VALUE, and
        getting this wrong made the whole strip useless on any real building. `levelRank` is an
        ORDERING key, not a measure: the roof answers **900**, a basement -2, substructure -50. So a
@@ -22764,6 +22801,118 @@
      lanes ARE the reading; a roll-up bracket drawn over them would be a second, coarser answer to
      the same question in the same space. The branch's span and roll-up % are still in the grid's
      own cells for that row, so nothing is lost. */
+  /* ---- THE INTENDED TRADE SEQUENCE ------------------------------------------------------------
+     A clash only means something against an order. ⚠️⚠️ Where the project
+     DECLARES one, that is the order: `cmpWorkName` sorts by `WORK_ORDER`, the owner-specified
+     construction sequence (Gen Req → Site Works → Structural → Architectural →
+     MEPF → Allied → Others), and it already handles BOTH spellings a trade can reach the
+     grid under — the canonical "Structural Works" and the Schedule Setup's short "Structural".
+     Reused, never re-derived.
+     ⚠️⚠️ OTHERWISE THE ORDER IS INFERRED from when each category first starts,
+     and it is LABELLED inferred everywhere it is used. Flagging a violation of an order nobody
+     stated is how a screen loses trust — "Tiles before Plastering" is only a finding if
+     somebody said Plastering comes first. Activity name / type / code have no declared sequence,
+     so on those fields every clash is a suggestion, and the strip says so. */
+  function _lsmSeq() {
+    var lanes = _lsmLanes(), vals = lanes.map(function (x) { return x.value; });
+    var declared = catCfg().field === 'work';
+    if (declared) vals = vals.slice().sort(cmpWorkName);
+    var idx = {};
+    for (var i = 0; i < vals.length; i++) idx[vals[i]] = i;
+    return { basis: declared ? 'declared' : 'inferred', idx: idx, order: vals };
+  }
+  /* ⚠️ A SHARED FINISH-DAY IS A HANDOFF, NOT A CLASH. `dispFin` is inclusive, so a
+     successor starting the very day its predecessor finishes overlaps by one day — which is
+     ordinary FS practice here, not a pitfall. The overlap has to EXCEED this to be reported. */
+  var LSM_CLASH_MIN = 1;
+  var _lsmClashMemo = null;
+  /* Where two trades are on the same storey at the same time, against the sequence above.
+     ⚠️⚠️ REPORTED, NEVER BLOCKED, and the wording follows the deck: "Task lines
+     that overlap indicate POSSIBLE PITFALLS and show that the construction plan does not work."
+     Some overlap is deliberate — a second-fix trade legitimately follows into a floor before
+     the first is quite done — so this counts days and names the pair, and leaves the judgement
+     to the planner. Nothing is hidden, moved or refused. */
+  function _lsmClash() {
+    if (_lsmClashMemo) return _lsmClashMemo;
+    var out = { list: [], marks: {}, n: 0, basis: 'inferred', wd: false };
+    if (!_lsmRows || !DL || !DL.length) return (_lsmClashMemo = out);
+    var seq = _lsmSeq();
+    out.basis = seq.basis;
+    var min = null, max = null, rowsOf = [], i, j, k;
+    for (i = 0; i < DL.length; i++) {
+      var r = DL[i]; if (!r || !r._glsm) continue;
+      var rank = _lsmRankOf(r._graw || r.activity_name || '');
+      if (rank == null) continue;              /* the same rank filter the rate uses */
+      rowsOf.push({ r: r, i: i, rank: rank, ser: (r._danc || []).join('\u0001') });
+      for (j = 0; j < r._glsm.length; j++) {
+        var b = r._glsm[j];
+        if (!min || +b.s < +min) min = b.s;
+        if (!max || +b.f > +max) max = b.f;
+      }
+    }
+    if (!min) return (_lsmClashMemo = out);
+    rowsOf.forEach(function (row) {
+      var bars = row.r._glsm.filter(function (b) { return !b.over && b.value && seq.idx[b.value] != null; });
+      for (var a = 0; a < bars.length; a++) {
+        for (var c = 0; c < bars.length; c++) {
+          var A = bars[a], B = bars[c];
+          if (seq.idx[A.value] >= seq.idx[B.value]) continue;   /* A must PRECEDE B in the sequence */
+          /* B is supposed to follow A on this storey. It clashes if it starts before A finishes. */
+          if (+B.s > +A.f) continue;
+          var s = B.s, f = (+A.f < +B.f) ? A.f : B.f;
+          var ax = _lsmAxOf(A.cal || B.cal, min, max);
+          if (ax && ax.wd) out.wd = true;
+          /* Inclusive span, in the axis's own days - the same `span` the CPM uses to turn a
+             start/end pair into a duration. */
+          var days = ax.span(dayDiff(min, s), dayDiff(min, f));
+          if (days <= LSM_CLASH_MIN) continue;
+          out.n++;
+          out.list.push({ ser: row.ser, rank: row.rank, i: row.i,
+            loc: row.r._graw || row.r.activity_name || '', rowId: row.r.id,
+            a: A.value, b: B.value, days: days, s: s, f: f });
+          /* BOTH bars carry the mark: a clash is a property of the pair, and marking only the
+             late one would read as "this trade is wrong". */
+          [A, B].forEach(function (X) {
+            var key = row.ser + '\u0002' + X.value + '\u0002' + row.rank;
+            (out.marks[key] = out.marks[key] || []).push({ s: s, f: f });
+          });
+        }
+      }
+    });
+    /* Worst first: the strip shows a handful and the count carries the rest. */
+    out.list.sort(function (p, q) { return q.days - p.days || p.rank - q.rank; });
+    return (_lsmClashMemo = out);
+  }
+  /* The Clashes strip. ⚠️ It states the BASIS in the label, because an inferred sequence
+     makes every row below it a suggestion rather than a finding. */
+  function _lsmClashHTML() {
+    if (!_lsmRows) return '';
+    var C = _lsmClash();
+    if (!C.n) return '';
+    var unit = C.wd ? 'wd' : 'cd', CAP = 8, h = '';
+    for (var i = 0; i < C.list.length && i < CAP; i++) {
+      var x = C.list[i];
+      var tip = x.b + ' starts on ' + x.loc + ' before ' + x.a + ' finishes there \u2014 ' +
+        x.days + ' ' + (C.wd ? 'working' : 'calendar') + ' days of overlap (' +
+        Fmt.date(dstr(x.s)) + ' \u2192 ' + Fmt.date(dstr(x.f)) + '). ' +
+        (C.basis === 'declared'
+          ? 'The order is your declared construction sequence, so this is out of sequence.'
+          : 'The order is INFERRED from when each trade first starts \u2014 nobody declared it, so treat this as a question rather than a fault.') +
+        ' Click to go to that storey.';
+      h += '<button type="button" class="ps-lsmclash-chip" data-lsmclash="' + esc(x.rowId || '') +
+        '" title="' + esc(tip) + '"><b>' + esc(x.loc) + '</b><u>' + esc(x.b) + ' before ' + esc(x.a) +
+        '</u><s>' + x.days + ' ' + unit + '</s></button>';
+    }
+    var more = C.n - Math.min(C.n, CAP);
+    return '<div class="ps-lsmclash-strip"><span class="ps-lsmclash-lbl" title="' +
+      esc('Where two trades are on the same storey at the same time, against ' +
+        (C.basis === 'declared' ? 'your declared construction sequence' : 'an order INFERRED from when each trade first starts') +
+        '. The deck calls these "possible pitfalls" - some overlap is deliberate, so these are reported and never blocked or hidden.') +
+      '">' + C.n + ' clash' + (C.n === 1 ? '' : 'es') +
+      (C.basis === 'inferred' ? ' <em>(inferred order)</em>' : '') + '</span>' + h +
+      (more > 0 ? '<span class="ps-lsmclash-more" title="' + esc('The strip shows the ' + CAP + ' longest overlaps.') + '">+' + more + ' more</span>' : '') +
+      '</div>';
+  }
   /* The Rate strip: one chip per keyed trade that has enough floors to support a slope.
      ⚠️ A trade whose climb is irregular gets NO FIGURE, only its r² and the word.
      A confident "2.1 floors/month" over a scatter is the kind of number that ends up in a report,
@@ -22843,10 +22992,29 @@
         b.n + ' activit' + (b.n === 1 ? 'y' : 'ies') + brk +
         (_step != null ? (' \u2014 started ' + _step + ' ' + (_R.wd ? 'working' : 'calendar') +
                           ' day' + (_step === 1 ? '' : 's') + ' after the storey below') : '');
-      out += '<div class="ps-lsmbar" data-lsmcat="' + esc(b.value) + '" title="' + esc(tip) +
+      /* Clash marks, in BAR-LOCAL pixels like the gap notches. ⚠️ Drawn as a hatched
+         overlay INSIDE the bar rather than as an outline around it: an outline would compete with
+         the critical-path and change-order rings the same bar can already carry, and the thing
+         being marked is a STRETCH of the bar, not the whole of it. */
+      var _cl = '';
+      if (_lsmRows) {
+        var _ck = (r._danc || []).join('\u0001') + '\u0002' + b.value + '\u0002' + _rk;
+        var _cm = (_rk == null) ? null : _lsmClash().marks[_ck];
+        if (_cm) {
+          for (var _q = 0; _q < _cm.length; _q++) {
+            var _cx = Math.round(dayDiff(b.s, _cm[_q].s) * dayw);
+            var _cw = Math.max(Math.round((dayDiff(_cm[_q].s, _cm[_q].f) + 1) * dayw), 2);
+            if (_cx + _cw <= 0 || _cx >= w) continue;
+            if (_cx < 0) { _cw += _cx; _cx = 0; }
+            if (_cx + _cw > w) _cw = w - _cx;
+            _cl += '<div class="ps-lsmclash" style="left:' + _cx + 'px;width:' + _cw + 'px;"></div>';
+          }
+        }
+      }
+      out += '<div class="ps-lsmbar' + (_cl ? ' ps-lsmbar-clash' : '') + '" data-lsmcat="' + esc(b.value) + '" title="' + esc(tip) +
         '" style="left:' + x + 'px;width:' + w + 'px;top:' + ly + 'px;' + catTint(b.color) + '">' +
         ((b.pct > 0) ? '<i style="width:' + b.pct + '%;' + catStyle(b.color, b.tex) + '"></i>' : '') +
-        cuts + '</div>';
+        cuts + _cl + '</div>';
       if (showBl && b.bs && b.bf) {
         var bx = Math.round(dayDiff(min, b.bs) * dayw);
         var bw = Math.max(Math.round((dayDiff(b.bs, b.bf) + 1) * dayw), 2);
@@ -43836,7 +44004,7 @@
       // unexplained second Activity chip in a legend that had no plain bar in it.
       '<div class="ps-actlegend-items">' + plainActChipHTML(cfg.on, _hasPlainBars) + MARKS_LEGEND_HTML +
         (items ? '<span class="ps-alg-sep"></span>' + items : '') + BAR_NOTE_HTML + '</div>' +
-      _lsmRateHTML();
+      _lsmRateHTML() + _lsmClashHTML();
     // ⚠️ The fold chevron is INJECTED markup, so Icons.hydrate does not reach it on its own --
     // the DOMContentLoaded pass only covers static markup. Without this the button renders empty.
     if (window.Icons) Icons.hydrate(host);
@@ -43855,6 +44023,28 @@
     }
     if (_lsmTopB) _lsmTopB.onclick = function () { _setLsmTop(true); };
     if (_lsmBotB) _lsmBotB.onclick = function () { _setLsmTop(false); };
+    /* ⚠️ A clash chip NAVIGATES rather than filtering. A filter would have to narrow the
+       rows before buildNodes runs, and the clash set is derived FROM buildNodes' own output — so
+       it would need a two-pass build. Selecting and revealing the storey answers the same question
+       ("show me that floor") with the machinery that already exists, and leaves every other floor on
+       screen for comparison, which is the whole point of the chart. */
+    host.querySelectorAll('button[data-lsmclash]').forEach(function (b2) {
+      b2.onclick = function () {
+        var id = b2.dataset.lsmclash; if (!id) return;
+        selId = id;
+        renderGrid(); renderGantt();
+        /* After the repaint: the grid is windowed, so the row only exists once DL is rebuilt. */
+        requestAnimationFrame(function () {
+          var idx = -1;
+          for (var q2 = 0; q2 < DL.length; q2++) { if (DL[q2].id === id) { idx = q2; break; } }
+          if (idx < 0) return;
+          var top = Math.max(0, idx * ROWH - 120);
+          var gs = document.getElementById('ps-grid-scroll'), gz = document.getElementById('ps-gantt-scroll');
+          if (gs) gs.scrollTop = top;
+          if (gz) gz.scrollTop = top;
+        });
+      };
+    });
     host.querySelector('#ps-alg-field').onchange = function () { var c = catCfg(); c.field = this.value; c.colors = {}; saveCatCfg(c); renderActLegend(); renderGantt(); };
     var tex = host.querySelector('#ps-alg-tex');
     if (tex) tex.onchange = function () { var c = catCfg(); c.tex = this.checked; saveCatCfg(c); renderActLegend(); renderGantt(); };

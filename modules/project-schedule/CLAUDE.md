@@ -13,6 +13,115 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### Clash detection: two trades on one storey at the same time, against an order somebody actually stated (2026-09-11 z3) — fmlozano
+
+Owner: *"build the clash detection next"*. Slice 3 of 5, and the deck's first named advantage of LSM:
+*"They show a direct connection to the layout of the site … Overlapping activities (clashes) can
+be detected easily"*, and later *"Task lines that overlap indicate possible pitfalls and show that
+the construction plan does not work."*
+
+### 1. ⚠️⚠️ A CLASH MEANS NOTHING WITHOUT AN ORDER, AND THE PROJECT ALREADY DECLARES ONE
+`cmpWorkName` sorts trades by **`WORK_ORDER`** — the owner-specified construction sequence
+(Gen Req → Site Works → Structural → Architectural → MEPF → Allied →
+Others) — and it already handles **both spellings** a trade can reach the grid under: the
+canonical `"Structural Works"` an import writes, and the Schedule Setup's short `"Structural"`.
+Reused, not re-derived. `_lsmSeq()` returns that order whenever the colour field is **Trade**.
+
+⚠️⚠️ **On any other field the order is INFERRED, and it is labelled inferred everywhere it is
+used** — on the strip, in every chip's tooltip. Activity name, activity type and activity code
+have no declared sequence, so *"Tiles before Plastering"* is only a finding if somebody said
+Plastering comes first. Flagging a violation of an order nobody stated is how a screen loses trust,
+and this module's log already records two features that lost it that way.
+
+### 2. What counts, and what deliberately does not
+A clash is: trade **B**, which the sequence puts after trade **A**, starting on the **same storey**
+before **A** finishes there.
+
+- ⚠️⚠️ **A SHARED FINISH DAY IS A HANDOFF, NOT A CLASH.** `dispFin` is inclusive, so a successor
+  starting the very day its predecessor finishes overlaps by one day — ordinary FS practice
+  here. `LSM_CLASH_MIN = 1` and the overlap must **exceed** it. Without that threshold every clean
+  handoff in the programme would be reported, which is the fastest way to make a warning worthless.
+- ⚠️ **Different storeys are not a clash**, and that is the entire point of the chart: two trades
+  overlapping in time on different floors is exactly how a takt programme is supposed to run.
+  Asserted, because it is the one false positive that would discredit the feature immediately.
+- ⚠️ **Two towers are not a clash either** — the series key (`_danc`) keeps `"1st Floor"` in
+  Tower A apart from `"1st Floor"` in Tower B, the same way the rate's fits do.
+- ⚠️ The **overflow marker** stands for several folded trades and can never be one side of a pair.
+- Overlap is counted in **working days**, through the same axis the rate uses.
+
+### 3. ⚠️⚠️ REPORTED, NEVER BLOCKED — and never hidden
+Nothing is filtered, moved, refused or recoloured away. The strip names the pair, the storey and the
+days; the bars carry a hatched mark over the overlapping **stretch**; the planner decides. Some
+overlap is deliberate — a second-fix trade legitimately follows into a floor before the first
+is quite done — and the deck's own word is *"possible"*.
+
+⚠️ **Both bars are marked**, not just the late one: a clash is a property of the pair, and marking
+one side reads as *"this trade is wrong"*. ⚠️ A hatched overlay **inside** the bar rather than an
+outline around it — an outline would compete with the critical-path and change-order rings the
+same bar can already carry, and what is being marked is a stretch, not the whole bar.
+
+### 4. ⚠️ The chip NAVIGATES rather than filtering, and that is a considered limit
+A "floors with clashes" filter would have to narrow the rows **before** `buildNodes` runs — and
+the clash set is derived **from** `buildNodes`' own output, so it would need a two-pass build.
+Selecting the storey and revealing it answers the same question with machinery that already exists
+(`selId` + the two-pane scroll idiom), and it leaves every other floor on screen for comparison,
+which is what the chart is for. Worst overlap first, eight chips, the count carries the rest.
+
+### 5. ⚠️ One axis cache for every LSM reader
+The rate fit and the clash pass both need *"working days between these two dates"* over the same
+window for the same handful of calendars. The axis cache is lifted out of `_lsmRate` into
+`_lsmAxOf`, so there is **one** walk of the span per frame and one boundary convention.
+⚠️ Still `makeAxis` directly, never `axisFor` — that one caches for the CPM and wipes its cache
+when the base differs. **Asserted: exactly three `makeAxis(` call sites in the file** (its
+declaration, `axisFor`, and `_lsmAxOf`).
+
+### 6. ⚠️⚠️ A FOURTH DECLARED-BUT-UNWIRED FIELD
+Looking for a declared handoff to measure against turned up **`cfg.tradeLeads`** — *"per
+cross-trade transition: floors of the leading trade done before the following one starts"*. It
+occurs **exactly twice** in the file, in `blank()` and in `normalize()`, and is **read nowhere**. So
+the setup records the planner's intended handoff and nothing consumes it. That is the fourth of
+these, after `openLocAdopt`, `fillDown`'s change-order branch and `cfg.floorLag`. Wire it and this
+detector could compare a clash against the *declared* floors-behind rather than only against trade
+order — which is the obvious next step and is deliberately not guessed at here.
+
+### Verified
+**252 assertions against the working tree, 11 against the pinned base, 0 failing** — the
+contrast is missing all 19 LSM functions and 9 constants.
+
+Executed, not described: the declared order is asserted by handing `_lsmSeq` its trades in the
+**wrong** order and requiring `WORK_ORDER` back (`Site Works > Structural Works > Architectural
+Works > MEPF Works`), and again in the short-GLABEL spelling; a 5-working-day overlap is counted as
+**5**; a same-day handoff is **0**; a clean gap is **0**; the same window on two different storeys is
+**0**; the same storey name in two towers is **0**; the sequence violated the other way round still
+names Structural as the predecessor; both bars carry a mark; worst-first ordering holds; and the
+strip drops the *"(inferred order)"* caveat only when the basis is declared.
+
+⚠️ **Rendered at 1440×900** with both stylesheets inlined, transitions off, gated on
+`visibilityState` + `clientWidth`: **4 clashes → 8 marks** (two per clash), 6 distinct bars
+flagged, each mark 6px tall, **inside** its bar, hatched, ringed `rgb(196, 33, 39)` = `--pd-bad`;
+chips are real `<button>`s on `--pd-bad-bg` with `--pd-bad-line`; label reads *"4 clashes (inferred
+order)"*; no horizontal scroll.
+
+⚠️⚠️ **A harness ordering bug that is worth keeping, because it names a real dependency:** the first
+render produced **0 marks**. `_lsmBarsHTML` asks `_lsmClash()` for a bar's marks and `_lsmClash`
+reads `DL` — and the harness was rendering bars in the same loop that built the rows, before
+`DL` was set. The real module is safe (`doRender` assigns `DL = displayList()` before `renderWindow`
+ever reaches `ganttRowHTML`), but the harness had to **imitate that order rather than assume it**,
+so it is two passes now.
+⚠️ One fixture bug too: `grpRow` hardcoded the `'name'` category field, so the declared-sequence
+clash test aggregated by activity name and silently found nothing. The field is a parameter now.
+
+⚠️ **The chip's click is wired but not driven.** The wiring is asserted structurally (the
+`data-lsmclash` attribute is emitted and `querySelectorAll('button[data-lsmclash]')` binds it), and
+the scroll reuses the existing two-pane idiom — but `renderActLegend` has not been run in a
+browser, so no chip has actually been clicked. ⚠️ **Not verified signed in.**
+
+`MODULE_V` → `20260911z3`, sort-checked against `e3`/`sc6`/`z1`/`z2`.
+
+### Still to come
+Slices 4–5: the draggable data-date line (mostly reuse — `_stkState` already answers *"the
+state of one (location, category) bucket at the cut-off date"*) and the flowline chart.
+
 ### The production rate, read off the staircase — and four things it should not have re-invented (2026-09-11 z2) — fmlozano
 
 Owner: *"build the slope readout next"*, then, while it was being built, three corrections in a row:
