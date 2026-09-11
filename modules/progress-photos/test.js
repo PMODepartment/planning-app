@@ -288,6 +288,9 @@ vm.runInContext(fs.readFileSync(here('bim.js'), 'utf8'), ctx, { filename: 'bim.j
 // (everything DOM/camera-touching is inside functions, called lazily) —
 // safe to load into the same sandbox as the other three.
 vm.runInContext(fs.readFileSync(here('capture.js'), 'utf8'), ctx, { filename: 'capture.js' });
+// pano360.js, likewise — its only top-level effect is assigning
+// window.Pano360; every cv/DOM-touching call is inside a function.
+vm.runInContext(fs.readFileSync(here('pano360.js'), 'utf8'), ctx, { filename: 'pano360.js' });
 
 // Item 7 (performance): drains the fake rAF queue, running whatever is
 // still pending (skipping anything cancelAnimationFrame nulled out) —
@@ -296,11 +299,12 @@ vm.runInContext(fs.readFileSync(here('capture.js'), 'utf8'), ctx, { filename: 'c
 function flushRaf() { const q = ctx.__rafQueue; ctx.__rafQueue = []; q.forEach((cb) => { if (cb) cb(); }); }
 function rafPending() { return ctx.__rafQueue.filter(Boolean).length; }
 
-const PP = ctx.ProgressPhotos, PPR = ctx.PPR, BIM = ctx.BIM, CAP = ctx.Capture;
+const PP = ctx.ProgressPhotos, PPR = ctx.PPR, BIM = ctx.BIM, CAP = ctx.Capture, P360 = ctx.Pano360;
 ok('module.js exposes ProgressPhotos', !!PP);
 ok('ppr.js exposes PPR', !!PPR);
 ok('bim.js exposes BIM', !!BIM);
 ok('capture.js exposes Capture', !!CAP);
+ok('pano360.js exposes Pano360', !!P360);
 ok('openUploadForPicker exported (inline add-photo hook)', typeof PP.openUploadForPicker === 'function');
 
 // ---------------------------------------------------------- source assertions --
@@ -310,6 +314,7 @@ const mjs = fs.readFileSync(here('module.js'), 'utf8');
 const pjs = fs.readFileSync(here('ppr.js'), 'utf8');
 const bmjs = fs.readFileSync(here('bim.js'), 'utf8');
 const cjs = fs.readFileSync(here('capture.js'), 'utf8');
+const p3js = fs.readFileSync(here('pano360.js'), 'utf8');
 const html = fs.readFileSync(here('index.html'), 'utf8');
 const css = fs.readFileSync(here('module.css'), 'utf8');
 
@@ -1206,10 +1211,18 @@ console.log('\n[misc] insert().select() returns the new row id');
      !/function mediaTypeSelectorHTML\(/.test(mjs) && !/function wireMediaTypeSelector\(/.test(mjs) &&
      /var mtype = preset\.mtype === 'video' \? 'video' : 'photo';/.test(mjs));
   // Item 1: "provide separate buttons for take photo\/video and upload
-  // photo\/video" -- both feed the SAME staged array additively.
-  ok('openUpload renders separate Take/Upload buttons and both add to the same staged-file array',
+  // photo\/video" -- both feed the SAME staged array.
+  // ⚠️ 2026-09-11, second round: "only 1 photo or video is allowed when
+  // adding media" REVERSES the additive-batch design this assertion used
+  // to check — addStagedFiles() now REPLACES the staged file rather than
+  // pushing onto a growing array. Rewritten to assert the new behaviour,
+  // not the retired one.
+  ok('openUpload renders separate Take/Upload buttons, both feeding the same staged-file slot',
      /id="pp-take"/.test(mjs) && /id="pp-choosefiles"/.test(mjs) &&
-     /function addStagedFiles\(list\) \{\s*Array\.prototype\.forEach\.call\(list \|\| \[\], function \(f\) \{ stagedFiles\.push\(f\); \}\);/.test(mjs));
+     /function addStagedFiles\(list\) \{/.test(mjs));
+  ok('addStagedFiles caps the batch at ONE file — it clears the previous staged files/urls/markup/adjust before pushing the latest pick, never appends to a growing array',
+     /stagedFiles = \[\];\s*stagedUrls = \[\];\s*pendingMarkup = \{\};\s*pendingAdjust = \{\};\s*stagedFiles\.push\(incoming\[incoming\.length - 1\]\);/.test(mjs) &&
+     !/multiple \/>/.test(mjs));
   ok('the 360° add-media dropdown item is BACK (a fresh 360 feature was built this same round) — routes to open360Upload, not openUpload',
      /pp-addmenu/.test(html) && /data-addtype="photo"/.test(html) && /data-addtype="video"/.test(html) &&
      /data-addtype="360"/.test(html) &&
@@ -2342,9 +2355,13 @@ console.log('\n[misc] insert().select() returns the new row id');
   // "open the live camera only", which both forces straight to the camera
   // AND silently caps the picker to exactly one shot regardless of
   // `multiple`. Superseding the assertion above rather than deleting it.
-  ok('the "Upload" file input carries NO capture="environment" — it opens the ordinary photo/file picker (where `multiple` actually works), never the live camera; "Take" (capture.js) is the deliberately single-shot path',
-     /'<input class="pd-input" type="file" id="pp-files" hidden accept="' \+ \(isVideoKind \? 'video\/\*' : 'image\/\*'\) \+ '" multiple \/>'/.test(mjs) &&
-     !/id="pp-files"[\s\S]{0,80}capture="environment"/.test(mjs));
+  // ⚠️ 2026-09-11, second round: `multiple` is ALSO removed now (item 1 —
+  // "only 1 photo or video is allowed") — updated in place rather than
+  // left asserting an attribute the input no longer carries.
+  ok('the "Upload" file input carries NO capture="environment" AND no multiple — it opens the ordinary photo/file picker for exactly one item, never the live camera; "Take" (capture.js) is the deliberately single-shot path',
+     /'<input class="pd-input" type="file" id="pp-files" hidden accept="' \+ \(isVideoKind \? 'video\/\*' : 'image\/\*'\) \+ '" \/>'/.test(mjs) &&
+     !/id="pp-files"[\s\S]{0,80}capture="environment"/.test(mjs) &&
+     !/id="pp-files"[\s\S]{0,80}multiple/.test(mjs));
   ok('…and the unused `lbl` variable (looked up, never referenced) is gone',
      !/var lbl = document\.querySelector\('label\[for="' \+ idPrefix \+ '-files"\]'\);/.test(mjs));
 
@@ -3452,9 +3469,14 @@ console.log('\n[misc] insert().select() returns the new row id');
   ok('bim.js: keyPlanMiniMarkerHTML is exported and draws coneWedgeSVG(pin) + a .pp-kpmini-pin span (never .bim-pin, the full-size Plans-tab marker)',
      /keyPlanMiniMarkerHTML: function \(pin\) \{ return keyPlanMiniMarkerHTML\(pin\); \}/.test(bmjs) &&
      /function keyPlanMiniMarkerHTML\(pin\) \{\s*return coneWedgeSVG\(pin\) \+\s*'<span class="pp-kpmini-pin pp-kpmini-pin-' \+ esc\(pin\.item_type \|\| 'photo'\) \+ '" '/.test(bmjs));
-  ok('module.css: .pp-kpmini-pin (the shared scaled-down pin, ~12px) exists; the old lightbox-only-named .pp-lb-kpoverlay-pin/.pp-lb-kppin-photo classes are gone (renamed, not duplicated)',
-     /\.pp-kpmini-pin \{[^}]*width: 12px; height: 12px;/.test(css) &&
-     /\.pp-kpmini-pin\.pp-kpmini-pin-photo \{ background: var\(--pd-ok\); \}/.test(css) &&
+  // ⚠️ 2026-09-11, second round (item 4 — "the same pin as when adding,
+  // the red circle with corresponding icon, don't use the green pin"):
+  // the mini pin is now 16px/circular/red with an icon inside, not a
+  // bare 12px teardrop coloured --pd-ok. Updated in place.
+  ok('module.css: .pp-kpmini-pin (the shared scaled-down pin) is now a CIRCLE (not a teardrop) sized to hold an icon, and coloured RED — matching .bim-pinstage-dot, "the same pin as when adding"; the old lightbox-only-named .pp-lb-kpoverlay-pin/.pp-lb-kppin-photo classes are still gone (renamed, not duplicated)',
+     /\.pp-kpmini-pin \{[^}]*width: 16px; height: 16px; border-radius: 50%;/.test(css) &&
+     /\.pp-kpmini-pin\.pp-kpmini-pin-photo \{ background: var\(--pd-red\); \}/.test(css) &&
+     !/\.pp-kpmini-pin\.pp-kpmini-pin-photo \{ background: var\(--pd-ok\); \}/.test(css) &&
      !/\.pp-lb-kpoverlay-pin\s*\{/.test(css) && !/\.pp-lb-kppin-photo/.test(css));
   ok('index.html/module.js: the lightbox\'s own corner-overlay pin span uses the shared .pp-kpmini-pin class in both its static markup and its live className assignment — no stray old class name left in either place',
      /<span class="pp-kpmini-pin" id="pp-lb-keyplan-overlay-pin" hidden><\/span>/.test(html) &&
@@ -3810,8 +3832,11 @@ console.log('\n[misc] insert().select() returns the new row id');
     var mini = BIM.keyPlanMiniMarkerHTML(pin);
     var full = BIM.keyPlanMarkerHTML(pin);
 
-    ok('BIM.keyPlanMiniMarkerHTML draws the small, correctly-positioned marker span (pp-kpmini-pin, matched to x_norm/y_norm) rather than the full-size .bim-pin button',
-       /<span class="pp-kpmini-pin pp-kpmini-pin-photo" style="left:40%;top:60%;"><\/span>/.test(mini));
+    // ⚠️ 2026-09-11, second round: the mini pin now carries an icon glyph
+    // inside it (item 4), so it's no longer a self-closing span — updated
+    // to match the new shape rather than the old empty one.
+    ok('BIM.keyPlanMiniMarkerHTML draws the small, correctly-positioned marker span (pp-kpmini-pin, matched to x_norm/y_norm) rather than the full-size .bim-pin button, now carrying a real icon glyph inside it',
+       /<span class="pp-kpmini-pin pp-kpmini-pin-photo" style="left:40%;top:60%;">[\s\S]*?<svg data-name="person">[\s\S]*?<\/span>/.test(mini));
     ok('…and still draws the SAME accurate cone geometry (coneWedgeSVG) — only the pin dot\'s markup/size changed, never the camera-angle geometry itself',
        /<svg class="bim-conewedge-svg"/.test(mini) && /class="bim-conewedge"/.test(mini));
     ok('the mini marker NEVER contains the full-size .bim-pin button — the two are visually distinct markup, not the same button under two names',
@@ -3824,8 +3849,15 @@ console.log('\n[misc] insert().select() returns the new row id');
     // camera angle any more than the full-size one does.
     var noDir = { id: 'pin2', item_type: 'photo', x_norm: 0.2, y_norm: 0.2, direction_na: true };
     var miniNoDir = BIM.keyPlanMiniMarkerHTML(noDir);
-    ok('a pin with no recorded facing direction (direction_na) draws the pin dot with no cone at all, in the mini marker too',
-       /<span class="pp-kpmini-pin pp-kpmini-pin-photo" style="left:20%;top:20%;"><\/span>/.test(miniNoDir) && !/<svg/.test(miniNoDir));
+    // ⚠️ 2026-09-11, second round: the pin now always carries an icon
+    // <svg>, including a direction_na one (it gets the DRONE icon, per
+    // pinFieldHTML's own person/drone rule) — so "no <svg> at all" is no
+    // longer the right check. What must still be genuinely absent is the
+    // CONE svg specifically (bim-conewedge/-svg), never fabricated for a
+    // pin with no recorded direction.
+    ok('a pin with no recorded facing direction (direction_na) draws the pin dot with NO CONE at all (no bim-conewedge svg), though it does carry its own drone icon glyph now',
+       /<span class="pp-kpmini-pin pp-kpmini-pin-photo" style="left:20%;top:20%;">[\s\S]*?<\/span>/.test(miniNoDir) &&
+       !/bim-conewedge/.test(miniNoDir));
   })();
 
   console.log('\n[54] Overnight-round follow-up feedback (2026-09-11): upload picker, close-button race, mic toggle, 360 guide');
@@ -3834,7 +3866,7 @@ console.log('\n[misc] insert().select() returns the new row id');
   // only one photo/video makes it through — both traced to one attribute.
   // (Full assertion + the healthy-churn note is in section [36] above,
   // rewritten in place rather than duplicated here.)
-  ok('module.js: "Upload Video" never carried capture="environment" either — both kinds now behave identically (a plain file/photo picker, `multiple` genuinely honoured)',
+  ok('module.js: "Upload Video" never carried capture="environment" either — both kinds behave identically (a plain file/photo picker, capped to one item by addStagedFiles, not by `multiple`)',
      !/id="pp-files"[\s\S]{0,120}capture=/.test(mjs));
 
   // Item 2: the close-button/getUserMedia race — genuinely executed against
@@ -3846,40 +3878,63 @@ console.log('\n[misc] insert().select() returns the new row id');
       dataset: {}, hidden: false, disabled: false, title: '' };
     var builtEl = { className: '', innerHTML: '', parentNode: { removeChild() {} }, appendChild() {} };
     var idEls = {};
-    ctx.document.getElementById = function (id) {
-      if (id === 'pp-capture-style') return null;   // ensureStyle() should (re)create it once
-      if (!idEls[id]) idEls[id] = Object.assign({}, fakeEl, { id: id });
-      return idEls[id];
-    };
-    ctx.document.createElement = function (tag) {
-      if (tag === 'style') return { id: '', textContent: '' };
-      return Object.assign({}, builtEl);
-    };
-    ctx.document.head = { appendChild() {} };
-    ctx.document.body = { appendChild() {} };
+    // ⚠️ 2026-09-11 fix: this block monkey-patches ctx.document.getElementById/
+    // createElement/head/body for a controllable capture.js harness — and,
+    // as originally written, NEVER RESTORED them afterward. Every test that
+    // ran later in this same file (any real DOM/render assertion touching
+    // module.js's shared `byId`-backed document stub, not just capture.js's
+    // own) was silently reading through THIS patched stub instead, which
+    // auto-vivifies a bare `fakeEl` (no `addEventListener` at all) for any
+    // id it hasn't seen — a real, load-bearing harness bug, caught only
+    // because a later test (wireDragPan, reused for the 360°-upload
+    // preview) needed a REAL addEventListener and got a TypeError instead.
+    // Captured and restored in a finally so this test's own monkey-patch
+    // can never leak into anything that runs after it again.
+    var origGetElementById = ctx.document.getElementById;
+    var origCreateElement = ctx.document.createElement;
+    var origHead = ctx.document.head;
+    var origBody = ctx.document.body;
+    try {
+      ctx.document.getElementById = function (id) {
+        if (id === 'pp-capture-style') return null;   // ensureStyle() should (re)create it once
+        if (!idEls[id]) idEls[id] = Object.assign({}, fakeEl, { id: id });
+        return idEls[id];
+      };
+      ctx.document.createElement = function (tag) {
+        if (tag === 'style') return { id: '', textContent: '' };
+        return Object.assign({}, builtEl);
+      };
+      ctx.document.head = { appendChild() {} };
+      ctx.document.body = { appendChild() {} };
 
-    var stopped = 0;
-    var fakeTrack = { stop() { stopped++; } };
-    var resolveGetUserMedia;
-    ctx.navigator = { mediaDevices: { getUserMedia: () => new Promise((res) => { resolveGetUserMedia = res; }) } };
+      var stopped = 0;
+      var fakeTrack = { stop() { stopped++; } };
+      var resolveGetUserMedia;
+      ctx.navigator = { mediaDevices: { getUserMedia: () => new Promise((res) => { resolveGetUserMedia = res; }) } };
 
-    var doneArgs = [];
-    CAP.takePhoto(function (blob) { doneArgs.push(blob); });   // starts the session; getUserMedia is now pending
+      var doneArgs = [];
+      CAP.takePhoto(function (blob) { doneArgs.push(blob); });   // starts the session; getUserMedia is now pending
 
-    // Tap × WHILE the permission prompt is still "pending" — this is the
-    // exact race: close() must run to completion (removing the overlay,
-    // invalidating the session) BEFORE the stream promise ever resolves.
-    idEls['pp-cap-close'].onclick();
-    eq('the close button\'s onCancel fires immediately, without waiting for getUserMedia to resolve', doneArgs.length, 1);
-    eq('...and hands back null (a cancel, not a captured photo)', doneArgs[0], null);
+      // Tap × WHILE the permission prompt is still "pending" — this is the
+      // exact race: close() must run to completion (removing the overlay,
+      // invalidating the session) BEFORE the stream promise ever resolves.
+      idEls['pp-cap-close'].onclick();
+      eq('the close button\'s onCancel fires immediately, without waiting for getUserMedia to resolve', doneArgs.length, 1);
+      eq('...and hands back null (a cancel, not a captured photo)', doneArgs[0], null);
 
-    // NOW the delayed permission prompt resolves — a stream arrives for a
-    // session that's already been closed.
-    resolveGetUserMedia({ getTracks: () => [fakeTrack] });
-    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();   // let the .then() microtask run
+      // NOW the delayed permission prompt resolves — a stream arrives for a
+      // session that's already been closed.
+      resolveGetUserMedia({ getTracks: () => [fakeTrack] });
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();   // let the .then() microtask run
 
-    eq('a stream that resolves AFTER close() is stopped immediately, never attached to the (removed) video element',
-       stopped, 1);
+      eq('a stream that resolves AFTER close() is stopped immediately, never attached to the (removed) video element',
+         stopped, 1);
+    } finally {
+      ctx.document.getElementById = origGetElementById;
+      ctx.document.createElement = origCreateElement;
+      ctx.document.head = origHead;
+      ctx.document.body = origBody;
+    }
   })();
 
   // Item 5: the mic toggle exists for video/360 and never for photo, and
@@ -3887,10 +3942,34 @@ console.log('\n[misc] insert().select() returns the new row id');
   ok('capture.js: buildOverlay renders #pp-cap-audio for video/360, a plain spacer for photo — never both',
      /opts\.mode !== 'photo'[\s\S]{0,120}id="pp-cap-audio"/.test(cjs) &&
      /: '<span class="pp-cap-side"><\/span>'/.test(cjs));
-  ok('capture.js: audioNow() is mode-gated (photo never requests audio) AND reads the live wantAudio toggle, not a fixed mode-only check',
-     /function audioNow\(\) \{ return mode !== 'photo' && wantAudio; \}/.test(cjs));
-  ok('capture.js: the mic button is refused mid-recording, the same rule flip-camera already enforces, and for the identical reason (the live track is fixed once MediaRecorder starts)',
-     /if \(recorder && recorder\.state === 'recording'\) \{\s*UI && UI\.toast && UI\.toast\('Turn the mic on\/off before you start recording', 'warn'\);/.test(cjs));
+  // ⚠️ 2026-09-11, second round ("the mute button ... is not working"):
+  // the mic toggle no longer reopens the whole stream, and no longer
+  // refuses mid-recording — both assertions below are rewritten to match,
+  // not silently dropped, since the old "refused mid-recording" behaviour
+  // is exactly what most plausibly read as "does not work".
+  ok('capture.js: audioNow() is retired — wantsAudioTrack() is mode-only (photo never requests audio; video/360 always DO, regardless of wantAudio, so a track always exists to toggle)',
+     !/function audioNow\(\)/.test(cjs) &&
+     /function wantsAudioTrack\(\) \{ return mode !== 'photo'; \}/.test(cjs));
+  ok('capture.js: the mic button is a PLAIN, SYNCHRONOUS toggle now — no async, no stream reopen, no "recorder.state === recording" refusal anywhere near it',
+     /audioBtn\.onclick = function \(\) \{[\s\S]{0,300}wantAudio = !wantAudio;\s*applyAudioEnabled\(\);\s*syncAudioBtn\(\);\s*\};/.test(cjs) &&
+     !/Turn the mic on\/off before you start recording/.test(cjs));
+  ok('capture.js: mute/unmute flips the actual audio TRACK\'s .enabled flag — a disabled track still exists and still feeds a live recorder, so this works before, during and after a recording',
+     /function applyAudioEnabled\(\) \{\s*if \(!stream\) return;\s*stream\.getAudioTracks\(\)\.forEach\(function \(t\) \{ t\.enabled = wantAudio; \}\);\s*\}/.test(cjs));
+  ok('capture.js: openStreamWithAudioFallback requests audio up front for non-photo modes and retries video-only if the combined request fails (a device with no microphone must not lose camera access outright)',
+     /async function openStreamWithAudioFallback\(\) \{\s*try \{ return await openStream\(true\); \}/.test(cjs));
+  ok('capture.js: syncAudioBtn disables the mic button and shows it muted when the stream genuinely has no audio track — never a button that looks live but does nothing',
+     /var hasTrack = !!\(stream && stream\.getAudioTracks\(\)\.length\);\s*audioBtn\.disabled = !hasTrack;/.test(cjs));
+  // ⚠️ 2026-09-11 fix: the async `recorder.onstop` handler used to close
+  // over the MODULE-LEVEL `recorder` var, which close() nulls out
+  // SYNCHRONOUSLY the instant recorder.stop() is called — well before the
+  // async 'stop' event this handler answers actually fires. Reading
+  // `recorder.mimeType` at that point threw `Cannot read properties of
+  // null` inside the browser's own event dispatch on every close (or
+  // shutter-stop) while recording. Fixed by capturing the recorder
+  // instance in a LOCAL (`rec`) the closure reads instead.
+  ok('capture.js: startRecording\'s onstop closure reads a LOCAL `rec`, never the module-level `recorder` var that close() nulls out asynchronously',
+     /var rec;[\s\S]{0,200}recorder = rec;\s*rec\.ondataavailable/.test(cjs) &&
+     /rec\.onstop = function \(\) \{\s*var blob = new Blob\(recordedChunks, \{ type: rec\.mimeType \|\| mimeType \|\| 'video\/webm' \}\);/.test(cjs));
 
   // Item 6: the 360 guide — genuine execution of the pure coverage-walk
   // math (coverageSteps / Capture._coverageSteps), the one piece of this
@@ -3916,6 +3995,122 @@ console.log('\n[misc] insert().select() returns the new row id');
     eq('coverageSteps: an exact half-ring tie still walks exactly 13 buckets (both endpoints inclusive)', half.length, 13);
     ok('...and includes both endpoints', half[0] === 0 && half[half.length - 1] === 12);
   })();
+
+  console.log('\n[54] 2026-09-11 second round: single-item Add Media, mic always-on toggle, mini-pin colour, corrected 360 stitching, 360-upload fields shown up front');
+
+  // Item 1: single-item Add Media, structural (the DOM/save-flow assertions
+  // live in section [36]/[28] above, updated in place rather than
+  // duplicated) — this just re-confirms the two halves compose: no
+  // `multiple` on the input, AND addStagedFiles enforces the cap even if a
+  // future change reintroduced it.
+  ok('module.js: the Add Media modal caps at one item from BOTH ends — no multiple attribute AND addStagedFiles replaces rather than appends',
+     !/id="pp-files"[\s\S]{0,80}multiple/.test(mjs) &&
+     /var hadPrevious = stagedFiles\.length > 0;/.test(mjs));
+
+  // Item 4: the key-plan mini marker — genuine execution against a real
+  // pin (never a stub), proving it draws the SAME red the capture-time
+  // widget uses and carries a real icon glyph, not a bare coloured dot.
+  (function () {
+    var pin = { id: 'p1', item_type: 'photo', x_norm: 0.5, y_norm: 0.5, direction_na: false };
+    var htmlOut = BIM.keyPlanMiniMarkerHTML(pin);
+    ok('BIM.keyPlanMiniMarkerHTML: the mini pin carries a real icon glyph now (an inline <svg>), not a bare coloured dot',
+       /pp-kpmini-pin pp-kpmini-pin-photo/.test(htmlOut) && /<svg/.test(htmlOut));
+    var droneOut = BIM.keyPlanMiniMarkerHTML(Object.assign({}, pin, { direction_na: true }));
+    ok('…and picks the drone icon specifically when the pin was recorded with no facing direction, matching pinFieldHTML\'s own person/drone rule',
+       /Icons\.svg\(pin\.direction_na \? 'drone' : 'person', 9\)/.test(bmjs));
+  })();
+  ok('module.css: the mini pin is now RED (--pd-red, matching .bim-pinstage-dot — "the same pin as when adding"), not the old green (--pd-ok)',
+     /\.pp-kpmini-pin\.pp-kpmini-pin-photo \{ background: var\(--pd-red\); \}/.test(css) &&
+     !/\.pp-kpmini-pin\.pp-kpmini-pin-photo \{ background: var\(--pd-ok\); \}/.test(css));
+
+  // Item 5: the 360°-upload modal shows its metadata fields from the
+  // moment it opens, not only once processing finishes — structural,
+  // since this is a DOM/layout claim (whether .pp-form2 sits inside the
+  // #pp360-result block that stays `hidden` until the stitch completes).
+  (function () {
+    var i = mjs.indexOf("function open360Upload()");
+    var j = mjs.indexOf("\n  function ", i + 10);
+    var body = mjs.slice(i, j > i ? j : i + 14000);
+    var resultStart = body.indexOf('id="pp360-result"');
+    var resultEnd = body.indexOf("'</div>' +\n        '<div class=\"pp-form2\">'".replace(/\s+/g, ' '));
+    var form2Idx = body.indexOf('class="pp-form2"');
+    ok('open360Upload: the metadata fields (.pp-form2 — Description/Date/Works/Location/Pin) render OUTSIDE #pp360-result, so they are visible immediately, matching the ordinary photo/video Add Media form',
+       resultStart > -1 && form2Idx > resultStart && !/id="pp360-result"[\s\S]{0,50}class="pp-form2"/.test(body.slice(resultStart, resultStart + 60)));
+    ok('open360Upload: the footer (Cancel/Save) is no longer gated behind processing — no id="pp360-footer", no hidden attribute on it',
+       !/pp360-footer/.test(mjs) &&
+       /<div class="pd-modal-footer">'\s*\+\s*'<button class="pd-btn" data-close>Cancel<\/button>'\s*\+\s*'<button class="pd-btn pd-btn-primary" id="pp360-save">Save 360° photo/.test(body));
+    ok('open360Upload: the thumbnail-frame scrubber defaults to the END of the walk-around (the LAST frame), not the midpoint — "the last frame will be used as thumbnail"',
+       /slider\.max = String\(Math\.max\(0\.01, dur\)\); slider\.value = String\(dur\);/.test(body) &&
+       !/slider\.value = String\(dur \/ 2\);/.test(body));
+    ok('open360Upload: the preview is the shared drag-to-pan strip (.pp-lb-panowrap/.pp-lb-pano), not a plain static <img> — "navigable ... not just a panoramic still photo"',
+       /class="pp-lb-panowrap" id="pp360-panowrap"/.test(body) && /class="pp-lb-pano" id="pp360-pano"/.test(body) &&
+       /wireDragPan\(\$\('pp360-panowrap'\)\);/.test(mjs));
+  })();
+
+  // wireDragPan/wirePanoDrag — the lightbox's pan-drag mechanism was
+  // factored into a generic, reusable helper (wireDragPan) so the 360°
+  // upload preview above could reuse it rather than duplicating the drag
+  // gesture. Re-confirms the EXACT rAF-coalescing contract section [51]'s
+  // test already proved for wirePanoDrag() still holds after the refactor
+  // — same real, queue-based rAF stub, never an immediate-call one.
+  (function () {
+    var listeners = {};
+    var wrapEl = {
+      scrollLeft: 0, scrollWidth: 1000, clientWidth: 200,
+      addEventListener: function (type, fn) { listeners[type] = fn; },
+      removeEventListener: function () {},
+      setPointerCapture: function () {}
+    };
+    byId['pp-lb-panowrap'] = wrapEl;
+    try {
+      PP._wirePanoDrag();
+      eq('wireDragPan (via wirePanoDrag): a burst of 3 rapid scroll events still coalesces to exactly ONE queued rAF callback after the refactor',
+         (function () {
+           wrapEl.scrollLeft = 50; listeners.scroll();
+           wrapEl.scrollLeft = 100; listeners.scroll();
+           wrapEl.scrollLeft = 150; listeners.scroll();
+           return rafPending();
+         })(), 1);
+      flushRaf();
+    } finally {
+      delete byId['pp-lb-panowrap'];
+    }
+  })();
+
+  // Item 5 (processing failures) — pano360.js's stitching math, genuinely
+  // executed. mat3Mul/applyH3 are the two primitives the whole fix turns
+  // on (composing pairwise homographies into one cumulative transform per
+  // frame); a sign/order mistake here silently misplaces every frame after
+  // the first, which is exactly the bug this fix corrects, so these are
+  // run against real inputs rather than only read.
+  (function () {
+    var I = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+    eq('Pano360._mat3Mul: identity * identity = identity', JSON.stringify(P360._mat3Mul(I, I)), JSON.stringify(I));
+    var T50 = [1, 0, 50, 0, 1, 0, 0, 0, 1];
+    var T30 = [1, 0, 30, 0, 1, 0, 0, 0, 1];
+    var composed = P360._mat3Mul(T50, T30);
+    eq('Pano360._mat3Mul: composing two pure-translation matrices (T_i = T_(i-1) * H_i) accumulates them — translate(50) then translate(30) moves the origin by 80, not 30 or 50 alone',
+       JSON.stringify(P360._applyH3(composed, 0, 0)), JSON.stringify([80, 0]));
+    eq('Pano360._applyH3: a plain translation matrix applied to a point adds its own tx/ty',
+       JSON.stringify(P360._applyH3(T50, 10, 5)), JSON.stringify([60, 5]));
+    // The actual bug this fix corrects: composing 3 consecutive frame-width
+    // shifts (as the "no usable homography" fallback now does) must place
+    // frame 3 at 3x the shift, not back near 0 — which is what the OLD
+    // stitcher effectively did once accumulation stopped happening.
+    var step = [1, 0, 100, 0, 1, 0, 0, 0, 1];
+    var p1 = P360._mat3Mul(I, step);
+    var p2 = P360._mat3Mul(p1, step);
+    var p3 = P360._mat3Mul(p2, step);
+    eq('Pano360: three composed 100px shifts place the fourth frame at x=300, not back near x=0 (the exact class of bug "processing has been failing" traces to)',
+       JSON.stringify(P360._applyH3(p3, 0, 0)), JSON.stringify([300, 0]));
+  })();
+  ok('pano360.js: the old warpOnto (pairwise-only, no accumulation across frames) is GONE — stitchFrames now composes a cumulative placement per frame',
+     !/function warpOnto\(/.test(p3js) &&
+     /var placements = \[\[1, 0, 0, 0, 1, 0, 0, 0, 1\]\];/.test(p3js) &&
+     /placements\.push\(mat3Mul\(placements\[i - 1\], step\)\);/.test(p3js));
+  ok('pano360.js: the mosaic canvas is sized from the REAL bounding box of every frame\'s warped corners, never a fixed-width guess',
+     /var minX = 0, maxX = 0, minY = 0, maxY = 0;/.test(p3js) &&
+     /var MAX_DIM = 8000;/.test(p3js));
 
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
   process.exit(fails ? 1 : 0);

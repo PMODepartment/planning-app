@@ -91,6 +91,13 @@ window.Capture = (function () {
       '.pp-cap-guide{position:absolute;left:0;right:0;top:56px;display:flex;flex-direction:column;align-items:center;' +
         'gap:10px;z-index:2;pointer-events:none;padding:0 20px;text-align:center;}' +
       '.pp-cap-guide-text{color:#fff;font-size:14px;background:rgba(0,0,0,.5);padding:8px 14px;border-radius:10px;max-width:340px;}' +
+      // Item 5: hidden until checkPace() decides the actual turn is too
+      // fast for the stitcher to handle cleanly — never shown by default,
+      // and never shown at all on the elapsed-time fallback (which sweeps
+      // too slowly to ever cross the threshold).
+      '.pp-cap-pacewarn{display:none;color:#fff;font-size:13px;font-weight:700;background:rgba(255,59,48,.75);' +
+        'padding:6px 12px;border-radius:10px;max-width:340px;}' +
+      '.pp-cap-pacewarn.on{display:block;}' +
       // Item 6 (2026-09-11): the 360 guide — a fixed ring of 24 heading
       // segments (dim until the camera has actually swept past that
       // bucket) plus a facing marker that moves around the ring live,
@@ -157,6 +164,26 @@ window.Capture = (function () {
   async function openStream(withAudio) {
     var constraints = { video: { facingMode: { ideal: curFacing } }, audio: !!withAudio };
     return navigator.mediaDevices.getUserMedia(constraints);
+  }
+  // ⚠️ 2026-09-11 fix, second round ("the mute button ... is not working"):
+  // the mic toggle used to REOPEN THE WHOLE STREAM to add/drop the audio
+  // track, and refused outright while a recording was in progress (a live
+  // MediaRecorder can't have its stream swapped under it). That refusal —
+  // a toast and nothing else — is very likely what read as "does not
+  // work": tapping mute mid-recording visibly did nothing. Audio is now
+  // requested UP FRONT for every non-photo capture and muted/unmuted by
+  // flipping the audio TRACK's own `.enabled` flag — a disabled track
+  // still exists and keeps the recorder running, it just contributes
+  // silence — so the toggle now works before, during and after a
+  // recording, with no reopen and nothing to race.
+  async function openStreamWithAudioFallback() {
+    try { return await openStream(true); }
+    catch (e) {
+      // A device with no microphone at all fails the WHOLE combined
+      // request (getUserMedia is all-or-nothing) — retry video-only so a
+      // missing mic can't break camera access outright.
+      try { return await openStream(false); } catch (e2) { throw e; }
+    }
   }
 
   // Item 5's mic glyph — hand-drawn rather than a shared icons.js addition:
@@ -234,11 +261,23 @@ window.Capture = (function () {
     var mySession = ++sessionToken;
     function stale() { return mySession !== sessionToken; }
     $('pp-cap-close').onclick = function () { close(); if (opts.onCancel) opts.onCancel(); };
-    function audioNow() { return mode !== 'photo' && wantAudio; }
+    // Audio is now requested up front for every non-photo capture (see
+    // openStreamWithAudioFallback's own comment) — `wantAudio` no longer
+    // decides WHETHER a track is requested, only whether it starts enabled.
+    function wantsAudioTrack() { return mode !== 'photo'; }
 
     function attach(s) {
       stream = s;
       videoEl.srcObject = s;
+      applyAudioEnabled();
+    }
+    // Flips the actual audio TRACK's `.enabled` flag to match `wantAudio` —
+    // never tears the stream down. A disabled track still exists and still
+    // feeds a live MediaRecorder; it just contributes silence, so this is
+    // exactly as valid mid-recording as it is before or after.
+    function applyAudioEnabled() {
+      if (!stream) return;
+      stream.getAudioTracks().forEach(function (t) { t.enabled = wantAudio; });
     }
 
     // Item 5: the mic toggle only exists (buildOverlay) for video/360 —
@@ -246,35 +285,30 @@ window.Capture = (function () {
     var audioBtn = $('pp-cap-audio');
     function syncAudioBtn() {
       if (!audioBtn) return;
-      audioBtn.innerHTML = micSVG(!wantAudio);
-      audioBtn.classList.toggle('is-muted', !wantAudio);
-      audioBtn.setAttribute('aria-pressed', String(!wantAudio));
-      audioBtn.title = wantAudio ? 'Turn microphone off' : 'Turn microphone on';
+      var hasTrack = !!(stream && stream.getAudioTracks().length);
+      audioBtn.disabled = !hasTrack;
+      var showMuted = !hasTrack || !wantAudio;
+      audioBtn.innerHTML = micSVG(showMuted);
+      audioBtn.classList.toggle('is-muted', showMuted);
+      audioBtn.setAttribute('aria-pressed', String(!showMuted));
+      audioBtn.title = !hasTrack ? 'No microphone available' : (wantAudio ? 'Turn microphone off' : 'Turn microphone on');
     }
     if (audioBtn) {
       syncAudioBtn();
-      audioBtn.onclick = async function () {
-        // ⚠️ Same restriction as flip-camera, and for the identical reason:
-        // an already-recording MediaRecorder is bound to the audio track
-        // its stream had at record-start; there's no clean way to add or
-        // drop a track mid-clip without corrupting it.
-        if (recorder && recorder.state === 'recording') {
-          UI && UI.toast && UI.toast('Turn the mic on/off before you start recording', 'warn');
-          return;
-        }
+      audioBtn.onclick = function () {
+        // Plain, synchronous, and works at ANY point in the session —
+        // recording or not — since it only ever flips `.enabled` on the
+        // track this session already holds, never reopens anything.
         wantAudio = !wantAudio;
+        applyAudioEnabled();
         syncAudioBtn();
-        stopStream();
-        var s3;
-        try { s3 = await openStream(audioNow()); } catch (e) { return; }
-        if (stale()) { try { s3.getTracks().forEach(function (t) { t.stop(); }); } catch (e2) {} return; }
-        attach(s3);
       };
     }
 
-    openStream(audioNow()).then(function (s) {
+    (wantsAudioTrack() ? openStreamWithAudioFallback() : openStream(false)).then(function (s) {
       if (stale()) { try { s.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {} return; }
       attach(s);
+      syncAudioBtn();
       $('pp-cap-flip').onclick = async function () {
         curFacing = curFacing === 'environment' ? 'user' : 'environment';
         var wasRecording = recorder && recorder.state === 'recording';
@@ -285,13 +319,14 @@ window.Capture = (function () {
         if (wasRecording) { UI && UI.toast && UI.toast('Switch camera before you start recording', 'warn'); return; }
         stopStream();
         var s2;
-        try { s2 = await openStream(audioNow()); }
+        try { s2 = wantsAudioTrack() ? await openStreamWithAudioFallback() : await openStream(false); }
         catch (e) {
           curFacing = curFacing === 'environment' ? 'user' : 'environment';
-          try { s2 = await openStream(audioNow()); } catch (e2) { return; }
+          try { s2 = wantsAudioTrack() ? await openStreamWithAudioFallback() : await openStream(false); } catch (e2) { return; }
         }
         if (stale()) { try { s2.getTracks().forEach(function (t) { t.stop(); }); } catch (e3) {} return; }
         attach(s2);
+        syncAudioBtn();
       };
       onReady(videoEl);
     }).catch(function (err) {
@@ -343,15 +378,27 @@ window.Capture = (function () {
   function startRecording(mimeType, onStopped) {
     recordedChunks = [];
     var opts = mimeType ? { mimeType: mimeType } : {};
-    try { recorder = new MediaRecorder(stream, opts); }
-    catch (e) { recorder = new MediaRecorder(stream); }   // constructor itself can reject an unsupported opts object
-    recorder.ondataavailable = function (e) { if (e.data && e.data.size) recordedChunks.push(e.data); };
-    recorder.onstop = function () {
-      var blob = new Blob(recordedChunks, { type: recorder.mimeType || mimeType || 'video/webm' });
+    var rec;
+    try { rec = new MediaRecorder(stream, opts); }
+    catch (e) { rec = new MediaRecorder(stream); }   // constructor itself can reject an unsupported opts object
+    recorder = rec;
+    rec.ondataavailable = function (e) { if (e.data && e.data.size) recordedChunks.push(e.data); };
+    // ⚠️ 2026-09-11 fix: this closure captures `rec` (a local), never the
+    // module-level `recorder` var — close() nulls that var SYNCHRONOUSLY
+    // right after calling recorder.stop(), well before the async 'stop'
+    // event this handler answers actually fires. Reading `recorder.mimeType`
+    // here used to throw `Cannot read properties of null` at that point,
+    // an uncaught exception inside the browser's own event dispatch for
+    // every close-while-recording — exactly the shape of bug that can read
+    // as "the close button doesn't work" even though the overlay itself
+    // (torn down synchronously in close(), before this ever fires) was
+    // already gone.
+    rec.onstop = function () {
+      var blob = new Blob(recordedChunks, { type: rec.mimeType || mimeType || 'video/webm' });
       recordedChunks = [];
       onStopped(blob);
     };
-    recorder.start();
+    rec.start();
     recStartedAt = Date.now();
     var timerEl = $('pp-cap-timer'), txt = $('pp-cap-timertxt');
     if (timerEl) timerEl.classList.add('on');
@@ -405,7 +452,21 @@ window.Capture = (function () {
   // completed a real walk-around), plus a facing marker that moves around
   // the fixed ring live, the same "window moving over a fixed backdrop"
   // shape as the reference image.
-  var ROTATION_TARGET_MS = 18000;   // the elapsed-time fallback's assumed "one slow full turn"
+  // Item 5 (2026-09-11, second round): "improve 360 taking guide by
+  // moderating speed" — 18s → 24s. A faster assumed pace here (used only
+  // when there's no real compass to measure the actual turn against) had
+  // the progress ring finish before a genuinely careful walk-around would,
+  // which reads as "the guide wants you to hurry." Slowing the assumed
+  // pace down is also the more defensible default: panning too fast is
+  // exactly what starves pano360.js's frame-matching of overlap between
+  // consecutive frames (see PACE_TOO_FAST_DEG_PER_SEC below, which warns
+  // against the SAME thing on a real device that does report a compass).
+  var ROTATION_TARGET_MS = 24000;   // the elapsed-time fallback's assumed "one slow full turn"
+  // When a real compass IS reporting, actual angular speed is measured and
+  // a "slow down" hint shown above this rate — a full turn in under ~4s is
+  // fast enough to blur consecutive frames and starve the stitcher of the
+  // overlap it needs between them (see pano360.js's own MIN_GOOD_MATCHES).
+  var PACE_TOO_FAST_DEG_PER_SEC = 90;
   var COVERAGE_BUCKETS = 24, BUCKET_DEG = 360 / COVERAGE_BUCKETS;
   // Pure, and exported (Capture._coverageSteps) purely so it can be
   // genuinely executed by a test — a flipped `dir` here silently marks
@@ -440,6 +501,7 @@ window.Capture = (function () {
     }
     return '<div class="pp-cap-guide">' +
       '<div class="pp-cap-guide-text">Hold the phone level and slowly turn all the way around while recording — the ring lights up where you’ve already covered.</div>' +
+      '<div class="pp-cap-pacewarn" id="pp-cap-pacewarn">Slow down — turning too fast blurs the frames</div>' +
       '<div class="pp-cap-ringwrap">' +
         '<svg class="pp-cap-ringsvg" viewBox="0 0 120 120" width="120" height="120">' +
           '<circle class="pp-cap-ringbg" cx="60" cy="60" r="52" />' +
@@ -457,8 +519,30 @@ window.Capture = (function () {
       var usingCompass = false, startHeading = null, lastBucket = -1;
       var covered = new Array(COVERAGE_BUCKETS).fill(false);
       var orientHandler = null;
+      // Item 5: real angular speed, tracked purely from consecutive
+      // headingRel readings — meaningful only on the real compass path
+      // (the elapsed-time fallback sweeps at a fixed, deliberately-modest
+      // rate that never crosses this threshold, so running the same check
+      // on it is harmless rather than something that needs excluding).
+      // `paceWarnUntil` gives the hint a short hold time rather than
+      // flickering on/off with every noisy sensor reading.
+      var lastMarkAt = null, lastHeadingForSpeed = null, paceWarnUntil = 0;
+      function checkPace(headingRel, now) {
+        if (lastMarkAt != null) {
+          var dt = now - lastMarkAt;
+          if (dt > 0) {
+            var delta = Math.abs(((headingRel - lastHeadingForSpeed + 540) % 360) - 180);
+            var speedDegPerSec = delta / (dt / 1000);
+            if (speedDegPerSec > PACE_TOO_FAST_DEG_PER_SEC) paceWarnUntil = now + 1200;
+          }
+        }
+        lastMarkAt = now; lastHeadingForSpeed = headingRel;
+        var warnEl = $('pp-cap-pacewarn');
+        if (warnEl) warnEl.classList.toggle('on', now < paceWarnUntil);
+      }
       function markCovered(headingRel) {
         headingRel = ((headingRel % 360) + 360) % 360;
+        checkPace(headingRel, Date.now());
         var facing = $('pp-cap-facing');
         if (facing) facing.setAttribute('transform', 'rotate(' + headingRel + ' 60 60)');
         var idx = Math.floor(headingRel / BUCKET_DEG) % COVERAGE_BUCKETS;

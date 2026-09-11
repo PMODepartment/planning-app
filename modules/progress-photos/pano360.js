@@ -206,37 +206,49 @@ window.Pano360 = (function () {
     }
   }
 
-  // Warps `curCanvas` by `H` onto a mosaic canvas already `mosaicW` wide,
-  // compositing at the same vertical position (frames are horizontal pans,
-  // so only X needs to grow) and returns the new, possibly-wider canvas.
-  function warpOnto(mosaicCanvas, curCanvas, H, growBy) {
-    var newW = mosaicCanvas.width + growBy;
-    var out = document.createElement('canvas');
-    out.width = newW; out.height = mosaicCanvas.height;
-    var octx = out.getContext('2d');
-    octx.drawImage(mosaicCanvas, 0, 0);
-
-    var srcMat = null, dstMat = null, Hmat = null;
-    try {
-      srcMat = cv.imread(curCanvas);
-      Hmat = H;
-      dstMat = new cv.Mat();
-      var dsize = new cv.Size(newW, out.height);
-      cv.warpPerspective(srcMat, dstMat, Hmat, dsize, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar(0, 0, 0, 0));
-      var tmp = document.createElement('canvas');
-      tmp.width = newW; tmp.height = out.height;
-      cv.imshow(tmp, dstMat);
-      // Composite the warped frame UNDER the existing mosaic pixels — the
-      // already-placed frames are the ones already agreed with their own
-      // neighbours; the new frame only fills in the fresh strip to the right.
-      octx.globalCompositeOperation = 'destination-over';
-      octx.drawImage(tmp, 0, 0);
-      octx.globalCompositeOperation = 'source-over';
-    } finally {
-      if (srcMat) srcMat.delete();
-      if (dstMat) dstMat.delete();
+  // ⚠️⚠️ 2026-09-11 fix ("improve the processing of video to 360, processing
+  // has been failing"): the ORIGINAL stitcher (kept in git history) warped
+  // every frame using ONLY its own PAIRWISE homography against the raw,
+  // un-warped previous frame — correct for frame 1, silently WRONG for every
+  // frame after that. Frame i-1's own local pixel grid only lines up with
+  // the growing mosaic's coordinate system for i=1; from i=2 on, frame i-1
+  // had ALREADY been shifted within the mosaic by every homography applied
+  // before it, and the code never accounted for that — so frame i kept
+  // landing back near the mosaic's own left edge instead of progressively
+  // further along it. That is not a crash, it is a mosaic that LOOKS
+  // stitched (a real image comes back) and is actually broken — overlapping
+  // garbage past the first pair, most of the canvas past ~one frame's width
+  // staying blank — which reads exactly as "processing has been failing"
+  // without ever throwing an error to say so.
+  //
+  // Fixed by COMPOSING pairwise homographies into one cumulative transform
+  // per frame (frame i's own local coordinates -> the mosaic's coordinate
+  // system, anchored on frame 0), then warping every frame with its OWN
+  // cumulative transform into one canvas sized to the true bounding box of
+  // every frame's warped corners — never a fixed width guess.
+  function mat3Mul(a, b) {
+    var r = new Array(9);
+    for (var i = 0; i < 3; i++) {
+      for (var j = 0; j < 3; j++) {
+        var s = 0;
+        for (var k = 0; k < 3; k++) s += a[i * 3 + k] * b[k * 3 + j];
+        r[i * 3 + j] = s;
+      }
     }
-    return out;
+    return r;
+  }
+  function mat3Translate(tx, ty) { return [1, 0, tx, 0, 1, ty, 0, 0, 1]; }
+  // Applies a row-major 3x3 homography `m` to point (x,y), returning the
+  // dehomogenized [X, Y] — exported (Pano360._applyH3) so a sign/order
+  // mistake here (which would silently place every frame at the wrong
+  // spot, exactly the class of bug this whole fix exists to catch) can be
+  // genuinely executed and checked, not just read.
+  function applyH3(m, x, y) {
+    var X = m[0] * x + m[1] * y + m[2];
+    var Y = m[3] * x + m[4] * y + m[5];
+    var W = m[6] * x + m[7] * y + m[8];
+    if (!W) W = 1;
+    return [X / W, Y / W];
   }
 
   // Frame-by-frame progress, reported via `onProgress(fraction)` — a 12-
@@ -244,46 +256,84 @@ window.Pano360 = (function () {
   // upload modal) needs something to show while it runs.
   async function stitchFrames(frames, onProgress) {
     await ensureOpenCV();
-    var mosaic = frames[0];
     var poor = false;
-    var prevMat = cv.imread(frames[0]);
+    var rawMats = frames.map(function (f) { return cv.imread(f); });
     try {
+      // placements[i] = the 3x3 row-major homography mapping frame i's OWN
+      // local pixel coordinates directly into the mosaic's coordinate
+      // system. placements[0] is the identity — frame 0 anchors the mosaic.
+      var placements = [[1, 0, 0, 0, 1, 0, 0, 0, 1]];
       for (var i = 1; i < frames.length; i++) {
-        var curCanvas = frames[i];
-        var curMat = cv.imread(curCanvas);
-        var res;
-        try { res = homographyBetween(prevMat, curMat); }
-        finally { /* prevMat is reassigned below, curMat below too */ }
+        var res = homographyBetween(rawMats[i - 1], rawMats[i]);
         if (res.matches < MIN_GOOD_MATCHES) poor = true;
+        var step;
         if (res.H) {
-          // Advance the mosaic by roughly this frame's own width, minus a
-          // generous overlap estimate — exact overlap varies with how fast
-          // the phone was panned, so this is deliberately approximate; a
-          // wrong estimate here shows as slightly more/less overlap, never
-          // a crash or a torn image, since warpOnto composites under the
-          // existing mosaic rather than assuming a hard seam.
-          var growBy = Math.round(curCanvas.width * 0.6);
-          mosaic = warpOnto(mosaic, curCanvas, res.H, growBy);
+          step = Array.prototype.slice.call(res.H.data64F);
+          res.H.delete();
         } else {
           poor = true;
-          // No usable homography for this pair — fall back to a plain
-          // side-by-side append so the frame is not simply dropped.
-          var appended = document.createElement('canvas');
-          appended.width = mosaic.width + curCanvas.width; appended.height = mosaic.height;
-          var actx = appended.getContext('2d');
-          actx.drawImage(mosaic, 0, 0);
-          actx.drawImage(curCanvas, mosaic.width, 0);
-          mosaic = appended;
+          // No usable homography for this pair — approximate with a pure
+          // horizontal shift of one frame-width, so the frame still lands
+          // BESIDE what came before it instead of vanishing or landing on
+          // top of it (the previous version's side-by-side-append fallback,
+          // expressed as a transform so it composes the same way).
+          step = [1, 0, frames[i - 1].width, 0, 1, 0, 0, 0, 1];
         }
-        if (res.H) res.H.delete();
-        prevMat.delete();
-        prevMat = curMat;
-        if (onProgress) onProgress(i / (frames.length - 1));
+        // T_i = T_(i-1) * H_i — H_i maps frame i into frame i-1's own local
+        // space; T_(i-1) then carries that into the mosaic's space, which is
+        // exactly the composition this fix was missing.
+        placements.push(mat3Mul(placements[i - 1], step));
+        if (onProgress) onProgress((i / (frames.length - 1)) * 0.5);
       }
+
+      // The real bounding box of every frame's warped corners — never a
+      // fixed-width guess — decides both the canvas size and the shift
+      // needed to keep it entirely on-canvas (a pan can drift the mosaic's
+      // own origin negative just as easily as it can grow it rightward).
+      var minX = 0, maxX = 0, minY = 0, maxY = 0;
+      frames.forEach(function (f, idx) {
+        [[0, 0], [f.width, 0], [0, f.height], [f.width, f.height]].forEach(function (c) {
+          var p = applyH3(placements[idx], c[0], c[1]);
+          if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0];
+          if (p[1] < minY) minY = p[1]; if (p[1] > maxY) maxY = p[1];
+        });
+      });
+      // A runaway/garbage homography must never try to allocate an
+      // unbounded canvas — clamp rather than let the browser OOM.
+      var MAX_DIM = 8000;
+      var outW = Math.min(MAX_DIM, Math.max(1, Math.round(maxX - minX)));
+      var outH = Math.min(MAX_DIM, Math.max(1, Math.round(maxY - minY)));
+      var shift = mat3Translate(-minX, -minY);
+
+      var mosaic = document.createElement('canvas');
+      mosaic.width = outW; mosaic.height = outH;
+      var mctx = mosaic.getContext('2d');
+      for (var idx2 = 0; idx2 < frames.length; idx2++) {
+        var placed = mat3Mul(shift, placements[idx2]);
+        var dstMat = null, Hmat = null;
+        try {
+          Hmat = cv.matFromArray(3, 3, cv.CV_64F, placed);
+          dstMat = new cv.Mat();
+          cv.warpPerspective(rawMats[idx2], dstMat, Hmat, new cv.Size(outW, outH), cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar(0, 0, 0, 0));
+          var tmp = document.createElement('canvas');
+          tmp.width = outW; tmp.height = outH;
+          cv.imshow(tmp, dstMat);
+          // Earlier frames stay authoritative where they overlap a later
+          // one — destination-over only fills pixels the mosaic doesn't
+          // already have, matching the original stitcher's own rule.
+          mctx.globalCompositeOperation = idx2 === 0 ? 'source-over' : 'destination-over';
+          mctx.drawImage(tmp, 0, 0);
+          mctx.globalCompositeOperation = 'source-over';
+        } finally {
+          if (Hmat) Hmat.delete();
+          if (dstMat) dstMat.delete();
+        }
+        if (onProgress) onProgress(0.5 + (idx2 / (frames.length - 1)) * 0.5);
+      }
+      return { canvas: mosaic, quality: poor ? 'poor' : 'ok' };
     } finally {
-      if (prevMat) prevMat.delete();
+      rawMats.forEach(function (m) { try { m.delete(); } catch (e) {} });
     }
-    return { canvas: mosaic, quality: poor ? 'poor' : 'ok' };
   }
 
   // Public entry point: video Blob in, stitched-panorama Blob + quality out.
@@ -307,7 +357,8 @@ window.Pano360 = (function () {
     stitchFromVideo: stitchFromVideo,
     // Test-only hooks — genuinely execute the pure/near-pure pieces.
     _fixInfiniteDuration: fixInfiniteDuration,
-    _warpOnto: warpOnto,
-    _homographyBetween: homographyBetween
+    _homographyBetween: homographyBetween,
+    _mat3Mul: mat3Mul,
+    _applyH3: applyH3
   };
 })();

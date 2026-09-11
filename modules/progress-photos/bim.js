@@ -613,10 +613,23 @@ window.BIM = (function () {
   // pie-slice geometry (coneWedgeSVG) pinMarkerHTML draws — nothing about
   // the cone's shape/angle/reach changes at this smaller scale, only the
   // dot's own CSS size (.pp-kpmini-pin, module.css) is different.
+  // ⚠️ 2026-09-11 fix (second round): "when photo is opened and the key
+  // plan is shown, use the same pin as when adding — the red circle with
+  // corresponding icon, don't use the green pin." The mini marker used to
+  // draw a bare, unlabelled green teardrop (`pp-kpmini-pin-photo` ->
+  // --pd-ok) — a different colour AND a different shape from the actual
+  // capture-time pin (`.bim-pinstage-dot`, a red circle holding a
+  // person/drone icon). It now carries the same icon, chosen the same
+  // way pinFieldHTML's own widget does (drone when the pin was recorded
+  // with no facing direction, person otherwise); the colour comes from
+  // CSS (module.css's `.pp-kpmini-pin-photo` is now `--pd-red`, matching
+  // `.bim-pinstage-dot` rather than the full Plans-tab marker's `--pd-ok`).
   function keyPlanMiniMarkerHTML(pin) {
     return coneWedgeSVG(pin) +
       '<span class="pp-kpmini-pin pp-kpmini-pin-' + esc(pin.item_type || 'photo') + '" ' +
-      'style="left:' + (pin.x_norm * 100) + '%;top:' + (pin.y_norm * 100) + '%;"></span>';
+      'style="left:' + (pin.x_norm * 100) + '%;top:' + (pin.y_norm * 100) + '%;">' +
+      (window.Icons ? Icons.svg(pin.direction_na ? 'drone' : 'person', 9) : '') +
+      '</span>';
   }
 
   function wirePlan() {
