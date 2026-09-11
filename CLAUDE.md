@@ -95,6 +95,67 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-11 (ud) — The shorten half, and the 99 that were really 13
+
+Second half of the owner's *"restyle and shorten"*. The restyle shipped in (uc); this is the prose.
+
+**⚠️⚠️ THE HEADLINE NUMBER WAS NEVER THE WORK.** The scan reported **99** helper strings over 220
+characters, which reads like a week of rewriting. Broken down, it is not:
+
+| | count | verdict |
+|---|---|---|
+| `modules/progress-photos/test.js` | 35 | **not UI** — a test file's assertion descriptions |
+| `modules/project-schedule/index.html` | 34 | **blocked** — see below |
+| `assets/js/mcc-rcm.js` | 17 | **must not be touched** — transcribed verbatim from a controlled document |
+| genuinely shortenable and shippable | **13** | done |
+
+**THE RULE APPLIED, which the earlier Schedule Setup passes arrived at:** a sentence stating a
+**consequence** the planner acts on stays; a sentence explaining **why the design is that way** goes
+to the code comment, where the next developer reads it. Every cut is a worked example restating the
+rule above it, an internal detail (which workbook column, which report), or a justification for a
+decision already taken.
+
+- **Resource Loading, 4** — the climate hint loses its Mindanao-vs-Luzon example but keeps *"use
+  where the **site** is, not the office"*; special days keep the list, the default and the
+  regular-holiday contrast; the seasonal note keeps the **rain-day contrast**, because confusing
+  those two mis-plans a monsoon, and loses *"this is a decision the project has made"*.
+- **Stakeholder Map, 2** — the Mendelow grid keeps the disagreement, the worked cell and the
+  override; it loses *"two different columns of the register (Q and AF)"*, which is workbook
+  internals. ⚠️ The influence scale's *"it is **not** a transcription"* claim is kept in bold — that
+  is a provenance disclaimer about a controlled document, and cutting it would imply the opposite.
+- **Cash Flow, 2** — both keep their **replaces** warning in bold, because getting it wrong
+  double-counts a contract.
+- **Manpower, 2** — see below.
+
+**⚠️⚠️ AND FIVE WARNING SIGNS THE (uc) SCAN COULD NOT SEE: `&#9888;`.** The character-based pass
+matched the codepoint, so the sign written as an **HTML entity** survived it untouched — four
+shippable, one in the blocked file. ⚠️ **Two are deliberately KEPT**: cash-flow's sit in a status
+triad beside `&#10003;` and `&#10007;`, which is iconography doing an icon's job — the same line
+drawn for ✕ ✓ ⚙ ✎ ★ in (uc). **A sign opening a sentence is a caution; a sign in a status column is
+an icon.** Manpower's two open sentences and are converted.
+
+**Three shippable strings are over the threshold and are LEFT, each with a reason.** Risk Register's
+residual-scoring note is **221** — one character — and is good copy. Cash Flow's trade-package hint
+is **224** after its cut. Equipment Loading's **368** is a legend of nine direct-manipulation
+gestures on a canvas that has **no other affordance** for any of them; shortening it would delete
+discoverability, not verbosity. It earns its length, in the same way the controlled-document text
+does.
+
+⚠️ The scanner also stopped reporting **stylesheets as prose** — cash-flow's print stylesheet and
+`theme.js`'s inline banner style are mostly letters, so the alpha-ratio test admitted both on every
+run. `prop:value;` pairs are the tell.
+
+Verified: **44 JS files + 33 inline blocks parse, 0 failures**; the scanner's nine-case tokeniser
+self-test clean; 0 NUL bytes.
+
+⚠️ **`modules/project-schedule/index.html` is still unstaged and still holds 34 of these**, plus 37
+of (uc)'s pictograph fixes. It also carries another session's in-progress flowline work, and I can
+neither commit theirs nor revert the file without destroying it. Those 71 fixes land when that work
+does — they are edited in the working tree and waiting, not lost.
+
+`modules/stakeholder-map/module.js` → `?v=20260911ud`; `MODULE_V` → `20260911z8`.
+
+
 ### 2026-09-11 (uc) — 81 warning signs move out of the sentence and into the design system
 
 Owner: *"Some of the tooltips are self explanatory and doesn't really make the app professional.

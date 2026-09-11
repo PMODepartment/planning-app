@@ -1953,7 +1953,7 @@
         '</div>' +
         '<div id="mp-s-staff">' + block('Project Staff — direct staffing', STAFF_SEED, 'Project Staff', '') + '</div>' +
         '<div id="mp-s-skilled" style="display:none;">' + block('Skilled Self-Performed trades', SKILLED_SEED, 'Skilled Self-Performed',
-          '&#9888; <b>Provisional list.</b> The skilled-worker reference report has not been supplied yet, so these trades are taken from the staff report&rsquo;s own demobilisation summary plus the usual rest of a building job. Correct them here, or delete and re-seed once the real list arrives.') + '</div>' +
+          '<span class="pd-caution"><b>Provisional list.</b> The skilled-worker report has not been supplied, so these trades come from the staff report&rsquo;s demobilisation summary. Correct them here, or re-seed when the real list arrives.</span>') + '</div>' +
         '<p class="mp-note">Shared Staff, Skilled Admin and Subcontractors have no seed — there is no standard headcount to propose for them. Add those with <b>+ Add position</b>.</p>' +
       '</div>' +
       '<div class="pd-modal-footer">' +
@@ -2685,7 +2685,7 @@
       .sort(function (a, b) { return pd_(a.contract_end) - pd_(b.contract_end); });
     var fdate = function (v) { return Fmt && Fmt.date ? Fmt.date(v) : v; };
     var names = soon.slice(0, 4).map(function (r) { return esc(r.employee_name) + ' (' + esc(fdate(r.contract_end)) + ')'; }).join(', ');
-    el.innerHTML = '&#9888; <b>' + count30 + ' contract' + (count30 === 1 ? '' : 's') + ' end' + (count30 === 1 ? 's' : '') + ' within 30 days:</b> ' +
+    el.innerHTML = '<b>' + count30 + ' contract' + (count30 === 1 ? '' : 's') + ' end' + (count30 === 1 ? 's' : '') + ' within 30 days:</b> ' +
       names + (soon.length > 4 ? ', +' + (soon.length - 4) + ' more' : '') +
       ' — <a href="#" id="mp-mobbanner-go">see the Mobilization tab</a>.';
     el.style.display = '';

@@ -731,17 +731,17 @@
         return '<label><input type="checkbox" data-day="' + d[0] + '"' + (c[d[0]] ? ' checked' : '') + '> ' + d[1] + '</label>';
       }).join('') + '</div>', true) +
       (ct ? hint(esc(ct.name) + ' &mdash; ' + esc(ct.areas) + '.')
-          : hint('Setting the climate type seeds the season presets below and the rain-day allowance in a duration scenario. It is where the SITE is, not where the office is &mdash; a Mindanao project planned against a Luzon wet season is the mistake this prevents.')) +
+          : hint('Seeds the season presets below and a duration scenario&rsquo;s rain-day allowance. Use where the <b>site</b> is, not the office.')) +
 
       sec('Holidays') +
       fld('Philippine special (non-working) days',
         '<div class="rl-days"><label><input type="checkbox" id="f-spec"' + (c.observe_special_days ? ' checked' : '') + '> Treat as non-working</label></div>', true) +
-      hint('Black Saturday, Ninoy Aquino Day, All Saints&rsquo;, Immaculate Conception and Dec 31. Off by default: a special day is &ldquo;no work, no pay&rdquo; rather than a regular holiday and many sites work them. The 10 PH <em>regular</em> holidays are always applied and are listed in the preview below.') +
+      hint('Black Saturday, Ninoy Aquino Day, All Saints&rsquo;, Immaculate Conception, Dec 31. Off by default &mdash; these are &ldquo;no work, no pay&rdquo; and many sites work them. The 10 <em>regular</em> holidays always apply.') +
       fld('Extra / proclaimed dates', '<textarea class="pd-input" id="f-hol" rows="3" placeholder="2026-03-20">' + esc((c.extra_holidays || []).join('\n')) + '</textarea>', true) +
-      hint('One YYYY-MM-DD per line &mdash; Eid&rsquo;l Fitr, Eid&rsquo;l Adha, Chinese New Year, or a proclamation-moved date. These are announced yearly and cannot be computed offline, which is why they are typed rather than derived.') +
+      hint('One YYYY-MM-DD per line &mdash; Eid&rsquo;l Fitr, Eid&rsquo;l Adha, Chinese New Year, or a proclaimed date. Announced yearly, so they cannot be derived.') +
 
       sec('Seasonal work patterns') +
-      hint('A season changes the <em>week itself</em> for the months it covers &mdash; a shorter week or shorter days through the monsoon. This is a decision the project has made, so it applies to the live schedule and to every scenario alike. It is not the same as rain days, which are weather <em>taken</em> from you and belong to a duration scenario&rsquo;s rain profile; the two compose.') +
+      hint('A season changes the <em>week itself</em> for the months it covers, and applies to the live schedule and every scenario. Not the same as rain days, which belong to a duration scenario&rsquo;s rain profile &mdash; the two compose.') +
       (ct ? '<div class="rl-form-full"><button type="button" class="rl-btn-sm" id="f-seed">Seed wet/dry seasons from ' + esc(ct.short) + '</button></div>'
           : hint('Pick a climate type above to seed wet/dry season months automatically.')) +
       c.seasons.map(seasonHtml).join('') +

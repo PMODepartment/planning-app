@@ -1856,12 +1856,12 @@
     var billingPane =
       '<div class="cf-form-full"><div class="cf-dp-head"><label class="pd-label" style="margin:0;">Progress Billing Basis</label>' +
         '<select class="pd-select" id="s-billing-basis" style="max-width:220px;"><option value="poc"' + (s.billing_basis !== 'milestone' ? ' selected' : '') + '>% POC (schedule S-curve)</option><option value="milestone"' + (s.billing_basis === 'milestone' ? ' selected' : '') + '>Milestone (lump sums)</option></select></div>' +
-        '<div class="cf-hint">Milestone billing certifies a fixed amount when a schedule milestone is reached — e.g. "Structural Foundation ₱33M". <b>When selected, it replaces both the S-curve and trade packages above.</b> Amounts should sum to Contract IBB. <b id="cf-bm-sum"></b></div>' +
+        '<div class="cf-hint">Certifies a fixed amount when a schedule milestone is reached. <b>Replaces both the S-curve and the trade packages above.</b> Amounts should sum to Contract IBB. <b id="cf-bm-sum"></b></div>' +
         '<div class="cf-dp-head" style="justify-content:flex-end;"><button type="button" class="cf-btn-sm" id="cf-bm-add">+ Add milestone</button></div>' +
         '<div id="cf-bm-list"></div></div>' +
       '<div class="cf-form-full"><div class="cf-dp-head"><label class="pd-label" style="margin:0;">Cash-In Trade Packages</label>' +
         '<button type="button" class="cf-btn-sm" id="cf-tr-add">+ Add package</button></div>' +
-        '<div class="cf-hint">Split the contract into trades (ST / AR / MEPF …), each billing its own share over the schedule S-curve with its own DP / retention / terms. <b>When any package exists it replaces the contract-level cash-in and the DP tranches above are ignored.</b> Shares should sum to Contract IBB. <b id="cf-tr-sum"></b></div>' +
+        '<div class="cf-hint">Split the contract into trades (ST / AR / MEPF …), each with its own share, DP, retention and terms. <b>Any package replaces the contract-level cash-in, and the DP tranches above are ignored.</b> Shares should sum to Contract IBB. <b id="cf-tr-sum"></b></div>' +
         '<div id="cf-tr-list"></div></div>';
 
     form.innerHTML =

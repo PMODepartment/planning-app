@@ -1248,7 +1248,7 @@ window.StakeholderMap = (function () {
       '<p class="sm-help">Transcribed from “Criteria for Assessment” in <em>CSF101. OPS. Stakeholder Register</em>. Both axes are 1–4 — narrower than the risk register\'s 1–5, and deliberately so: a stakeholder is placed, not measured.</p>' +
       scaleTable('Table 1A — Impact rating', STK_IMPACT, null) +
       scaleTable('Table 1B — Influence rating', STK_INFLUENCE,
-        'The controlled document numbers the influence scale 1–4 but leaves its descriptors blank. The wording above is the parallel phrasing of the impact scale, supplied here so two planners score the same way — it is not a transcription.') +
+        'The controlled document leaves this scale&rsquo;s descriptors blank. The wording above is supplied so two planners score alike &mdash; it is <b>not</b> a transcription.') +
       '</div>' +
 
       '<div class="pd-card"><h2>Priority level and response category</h2>' +
@@ -1268,7 +1268,7 @@ window.StakeholderMap = (function () {
       '<div class="pd-card"><h2>Impact / Influence map — the engagement approach</h2>' +
       '<p class="sm-help">Table 2 of the criteria sheet, and the classic Mendelow grid. ' +
       '<strong>It disagrees with the Response Category lookup on some cells, and the workbook keeps both.</strong> ' +
-      'Impact 3 × Influence 3 is 2nd Priority → <em>Keep Informed</em> by the lookup, and <em>Keep Satisfied</em> by this map. They are two different columns of the register (Q and AF), computed two different ways; this module shows both rather than inventing a single answer the source does not give. The Approach field can be overridden per stakeholder when a planner\'s judgement differs.</p>' +
+      'Impact 3 × Influence 3 is <em>Keep Informed</em> by the lookup and <em>Keep Satisfied</em> by this map — two columns computed two ways, so both are shown. Override Approach per stakeholder where your judgement differs.</p>' +
       '<div class="sm-refgrid">' + e.gridHTML({
         xMax: 4, yMax: 4, xLabel: 'Influence →', yLabel: 'Impact →',
         cls: function (x, y) { return 'sm-gm ' + approachClass(e.MENDELOW[y][x]); },
