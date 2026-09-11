@@ -96,6 +96,56 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-11 (ug) — The UI sweep: a weight the brand has no cut for, crept back after being driven to zero
+
+Part of the debug-and-sweep cycle. Every static audit re-run; two produced findings and one of those
+was a false positive already on file.
+
+**`font-weight: 600` is back.** Brandbook 2026 p.29 names five Gotham cuts — Thin / Regular /
+Medium / Bold / Black. There is **no Gotham Semibold**, so a 600 addresses a cut of the primary face
+that does not exist. (v4) converged **262 declarations** on 2026-09-10 and reported zero remaining;
+**eleven** are back, from work shipped since. Six are fixed here.
+
+**⚠️ (v4)'S RULE APPLIED, NOT A FRESH OPINION:** 600 → 700, *except* where that flattens a 600/700
+pair or **inverts a hierarchy** — the inversion that entry caught itself creating. And each case
+here resolves against a decision the app has **already made** rather than my taste:
+
+| | was | now | why |
+|---|---|---|---|
+| `.pp-l` (person page label) | 600 | **500** | a muted label above a value; at 700 the label outweighs the value it labels |
+| `.pp-formhost .pd-field > label` | 600 | **500** | this **is** the shared `.pd-label`, which is **500** — convergence, not a choice |
+| `.sc-chip .n` | 600 | **500** | ⚠️ `.sc-chip` carries no weight and `.sc-chip.on` is 700, so at 700 the count inside an **unselected** chip would outweigh the chip's own label |
+| `.sc-per-row td:first-child` | 600 | **500** | muted label among muted 400 siblings |
+| `.sc-sheet td.k` | 600 | **700** | a row key — the heaviest thing in its row, and its own `small` child is already 500 |
+| `.sc-matrix .k` | 600 | **700** | the sticky trade column **is** the row's identity, matching `.pd-table th` |
+
+**⚠️ And the cache-bust that goes with it is the trap I had just been caught by.**
+`modules/stakeholder-map/module.css` is loaded by **two** pages — its own and `person.html` — so both
+were bumped together. `tools/wiring-check.js` verified it: **123 passed, 0 failed**, no asset on two
+versions.
+
+**Two non-findings, recorded so they are not re-raised:**
+- **`flexword` reports `Months<span` in project-schedule.** Already on file as a false positive of
+  that sweep's 400-character window (2026-09-10 za1), which explicitly reported it as one rather than
+  "fixing" it. Unchanged.
+- **`grep` counts `font-weight: 600` in `dashboard.css`.** It is the **comment** stating the rule,
+  not a declaration. The same comment-versus-code distinction `cellcount.py` and this session's own
+  suite both had to be corrected for.
+
+Also checked and clean: the three `*-harness.html` files on disk are **untracked** and correctly
+ignored — this repo has shipped harness files to production twice, so it is worth re-confirming
+rather than assuming.
+
+⚠️ **Four more 600s remain, in `modules/project-schedule/index.html`** (`.ps-vs3-*`, the 3D stacking
+added after the v4 pass). That file holds another session's uncommitted flowline work and is
+deliberately untouched; they land when it does.
+
+Verified: 45 JS files + 33 inline blocks parse, 0 failures; brace balance holds on every changed
+stylesheet (48/48, 221/221, 213/213); `tools/wiring-check.js` 123/0.
+
+`person.css` + `stakeholder-map/module.css` → `?v=20260911ug`; `MODULE_V` → `20260911za`.
+
+
 ### 2026-09-11 (uf) — "Are the modules connected?" becomes a thing the repo can prove
 
 Owner: *"Make sure every module connected with each other properly … perform a debugging process …

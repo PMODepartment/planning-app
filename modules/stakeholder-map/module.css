@@ -478,7 +478,7 @@ html.pd-dark .sm-ap-row.is-here .sm-ap-tag { color: #FF8A80; }
 .pd-modal-body .sm-fsec + .sm-frow .pd-field:first-child,
 .pp-formhost .sm-fsec + .sm-frow .pd-field:first-child { padding-top: 0; }
 .pd-modal-body .pd-field > label,
-.pp-formhost .pd-field > label { font-size: var(--pd-fs-xs); font-weight: 600;
+.pp-formhost .pd-field > label { font-size: var(--pd-fs-xs); font-weight: 500;
   color: var(--pd-muted); margin-bottom: 4px; display: block; }
 
 /* ⚠️⚠️ A LOCKED FIELD MUST NOT READ AS AN EMPTY BOX YOU COULD TYPE IN — that is

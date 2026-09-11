@@ -108,7 +108,7 @@
        vertical stacking's chips record (#EE3124 on #3D1A19 is 3.75:1, under AA). The lit state IS
        the filter, so a chip you cannot read is a filter you cannot check. */
     .sc-chip.on { border-color:var(--pd-red); background:var(--pd-red-light); color:var(--pd-ink); font-weight:700; }
-    .sc-chip .n { font-size:var(--pd-fs-micro); color:var(--pd-muted); font-weight:600; }
+    .sc-chip .n { font-size:var(--pd-fs-micro); color:var(--pd-muted); font-weight:500; }
     .sc-chip.on .n { color:var(--pd-ink); opacity:.7; }
     .sc-chip .dot { width:8px; height:8px; border-radius:50%; flex:none; background:var(--pd-muted); }
     .sc-chip.gr .dot { background:#C9A227; } .sc-chip.mw .dot { background:#4F8EF7; }
@@ -148,7 +148,7 @@
        rather than explained twice. */
     .sc-sheet tr.now td { background:var(--pd-red-light); }
     .sc-sheet tr.now td.k { font-weight:800; }
-    .sc-sheet td.k { font-weight:600; }
+    .sc-sheet td.k { font-weight:700; }
     .sc-sheet td.k small { display:block; font-size:var(--pd-fs-micro); color:var(--pd-muted); font-weight:500; }
     .sc-in { width:64px; height:30px; padding:0 7px; text-align:right; font:inherit;
       font-size:var(--pd-fs-sm); font-variant-numeric:tabular-nums; border:1px solid var(--pd-line);
@@ -242,7 +242,7 @@
     .sc-bd td.is-act { color:var(--pd-red); font-weight:700; }
     .sc-bd tbody tr.sc-bd-empty td { color:var(--pd-muted); font-style:italic; }
     .sc-per-row td { color:var(--pd-muted); }
-    .sc-per-row td:first-child { color:var(--pd-muted); font-weight:600; }
+    .sc-per-row td:first-child { color:var(--pd-muted); font-weight:500; }
 
     /* Does the curve read this sheet? ⚠️ Stated, because the tab and the mode are separate and a
        planner can otherwise fill this in for an hour without the chart moving. */
@@ -279,7 +279,7 @@
     .sc-matrix th.mo small { display:block; font-size:9px; font-weight:500; opacity:.75; }
     /* The trade column: sticky left, and the corner sticky in both axes. */
     .sc-matrix .k { position:sticky; left:0; z-index:1; background:var(--pd-card);
-      text-align:left; min-width:186px; max-width:186px; font-weight:600;
+      text-align:left; min-width:186px; max-width:186px; font-weight:700;
       border-right:2px solid var(--pd-line); overflow:hidden; text-overflow:ellipsis; }
     .sc-matrix thead .k { z-index:3; background:var(--pd-bg); }
     .sc-matrix tfoot .k { z-index:3; }
