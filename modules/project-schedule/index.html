@@ -40988,7 +40988,21 @@
     }
     var any = more.children.length > 0;
     moreBtn.hidden = !any;
-    if (!any) { more.hidden = true; moreBtn.classList.remove('on'); moreBtn.setAttribute('aria-expanded', 'false'); }
+    /* Nothing overflowed: there is no row to show and no toggle to offer. Otherwise the planner's
+       remembered choice decides, so a repaint never folds a row they had opened. */
+    _tbSetOpen(any && _tbWantOpen());
+  }
+
+  function _tbWantOpen() {
+    try { return localStorage.getItem('ps_tb_more_open') === '1'; } catch (e) { return false; }
+  }
+  function _tbSetOpen(open) {
+    var more = document.getElementById('ps-tb-overflow');
+    var moreBtn = document.getElementById('ps-tb-more');
+    if (!more || !moreBtn) return;
+    more.hidden = !open;
+    moreBtn.classList.toggle('on', !!open);
+    moreBtn.setAttribute('aria-expanded', String(!!open));
   }
 
   function _tbFitSoon() {
@@ -41005,10 +41019,14 @@
     var more = document.createElement('div');
     more.className = 'ps-tb-overflow'; more.id = 'ps-tb-overflow'; more.hidden = true;
     row.parentNode.insertBefore(more, row.nextSibling);
+    /* ⚠️ THE REVEAL IS REMEMBERED. Owner: *"is the ellipsis permanent? I want to be able to access
+       the buttons without the ellipsis."* A control you have to re-open on every repaint is one you
+       have to keep re-finding, so opening it once is a preference, not a gesture: it persists per
+       browser and is re-applied on every fit. The `⋯` is then only ever a way to fold the row away
+       again, never a gate you must pass each time. */
     moreBtn.onclick = function () {
-      more.hidden = !more.hidden;
-      moreBtn.classList.toggle('on', !more.hidden);
-      moreBtn.setAttribute('aria-expanded', String(!more.hidden));
+      _tbSetOpen(more.hidden);
+      try { localStorage.setItem('ps_tb_more_open', more.hidden ? '0' : '1'); } catch (e) {}
     };
     window.addEventListener('resize', _tbFitSoon);
     /* ⚠️ The sidebar is the reason this exists: expanding it takes ~270px off the content and is
