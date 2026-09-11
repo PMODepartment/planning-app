@@ -25705,10 +25705,24 @@
     // Avesta has ~1,600 WBS nodes against 4,393 rows, so a single WBS commit cost ~14M row visits
     // and locked the UI; a rename near the top of the tree changes every descendant's code, so the
     // expensive branch is the COMMON one, not the rare one.
-    var sumByNode = {}, actsByNode = {};
+    var sumByNode = {}, actsByNode = {}, sumByCode = {};
     for (var _ri = 0; _ri < rows.length; _ri++) {
       var _rr = rows[_ri], _nid = _rr.wbs_node_id;
-      if (!_nid) continue;
+      if (!_nid) {
+        /* ⚠️⚠️ AN UNLINKED SUMMARY ROW IS NOT A ROW WITHOUT A NODE — it is a row that has LOST its
+           link, which this file documents at length: an import writes the rows first and links
+           them afterwards, and `wbs_link_codes` times out against an ~8s statement_timeout, leaving
+           every row present and `wbs_node_id` NULL. `continue` then skipped it here, so renaming
+           that branch changed `wbs_nodes` and left the schedule, the BOQ's `WBSNAME` and the
+           activity picker all saying the old name.
+           ⚠️ Reproduced deliberately on BAU101-TEST, 2026-09-11, through the real input and the
+           real handler: **2 trials out of 2 diverged**. Not a race — I had guessed race in (a3) and
+           that was wrong; it is deterministic, and it is the path a planner actually uses (typing a
+           name and clicking away fires `change` → `wbsRename` → here). (a2) had patched
+           `_wbsCommitName`, which is wired only to Enter / Tab / the arrow keys. */
+        if (isWbs(_rr) && _rr.wbs) { var _k = String(_rr.wbs); if (!sumByCode[_k]) sumByCode[_k] = _rr; }
+        continue;
+      }
       // `find` returned the FIRST matching summary row — keep that exact tie-break.
       if (isWbs(_rr)) { if (!sumByNode[_nid]) sumByNode[_nid] = _rr; }
       else (actsByNode[_nid] || (actsByNode[_nid] = [])).push(_rr);
@@ -25722,11 +25736,29 @@
         var seg = ownCodeSeg(n.code);
         if (seg && seg !== n.code) { n.code = seg; nodeUp.push({ id: n.id, patch: { code: seg } }); }
       } else if (n.code !== newCode) { n.code = newCode; nodeUp.push({ id: n.id, patch: { code: newCode } }); }
-      var sr = sumByNode[n.id];
+      var sr = sumByNode[n.id], _adopted = false;
+      /* ⚠️ The orphan is matched on the code the row CARRIES, which for a rename is unchanged, and
+         on the node's previous code for the case where this commit is also re-numbering it. Claimed
+         out of the map so two nodes resolving to one code cannot both adopt the same row — the
+         second finds nothing and the dedupe/heal pass sorts the collision out, which is the
+         division of labour this file already sets out for `_wbsSyncMissing`. */
+      if (!sr) {
+        var _ck = newCode != null ? String(newCode) : '';
+        var _ok2 = n.code != null ? String(n.code) : '';
+        sr = (_ck && sumByCode[_ck]) || (_ok2 && sumByCode[_ok2]) || null;
+        if (sr) { _adopted = true; delete sumByCode[String(sr.wbs)]; }
+      }
       // The summary row's stored code is the reliable record of the PATH this node last had —
       // n.code no longer is, for custom nodes. Captured before it is overwritten just below.
       var pathChanged = !sr || sr.wbs !== newCode;
-      if (sr && (sr.wbs !== newCode || sr.activity_name !== n.name)) { sr.wbs = newCode; sr.activity_name = n.name; schedUp.push({ id: sr.id, patch: { wbs: newCode, activity_name: n.name } }); }
+      if (sr && (sr.wbs !== newCode || sr.activity_name !== n.name || _adopted)) {
+        sr.wbs = newCode; sr.activity_name = n.name;
+        var _p = { wbs: newCode, activity_name: n.name };
+        /* ⚠️ Re-linked as part of the same write. Renaming an orphan and leaving it orphaned would
+           fix this rename and lose the next one; the link is the thing that was missing. */
+        if (_adopted) { sr.wbs_node_id = n.id; _p.wbs_node_id = n.id; }
+        schedUp.push({ id: sr.id, patch: _p });
+      }
       if (pathChanged) (actsByNode[n.id] || []).forEach(function (r) { if (r.wbs !== newCode) { r.wbs = newCode; schedUp.push({ id: r.id, patch: { wbs: newCode } }); } });
     });
     await _batchUpdate('wbs_nodes', nodeUp);
