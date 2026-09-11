@@ -98,6 +98,25 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-11 (zh) — A restored LSM mode came back at the plain row height
+
+Owner, with a screenshot: *"the rows are too big ... the gantt bars do not align with the WBS row"*.
+⚠️⚠️ **Not intended.** Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+⚠️⚠️ **The first defect found by driving the LIVE, SIGNED-IN app.** Measured on OPW101 on a cold
+load: `ps_lsmrows` = 1, grouping location-led, 58 LSM bars drawn, `ROWH` **31** where the lanes need
+**74**, and **20 of 58 bars sitting outside their own row**. `applyRowZoom` is called once by init,
+before any project has loaded — `groupBys` empty, no rows for `catList()` — and nothing
+re-derives it afterwards, because restoring the flag from localStorage runs no toggle.
+
+Re-derived at `doRender`, the choke point every grid+Gantt build funnels through, guarded so an
+unchanged frame touches nothing. The toolbar button now also says the mode is on, through a single
+`_lsmPaintBtn` writer.
+
+**518 assertions on the working tree, 27 against the pinned base, 0 failing;** the guard is cut out
+and executed, and **three negative builds bite**. `MODULE_V` → `20260911zh`.
+
 ### 2026-09-11 (zg) — The LSM handoff check becomes per floor category
 
 Owner: *"Wire the per-floor-kind handoff next"*. Detail:

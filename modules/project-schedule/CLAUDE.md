@@ -13,6 +13,59 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### A restored LSM mode came back at the PLAIN row height (2026-09-11 zh) — fmlozano
+
+Owner, with a screenshot: *"the width of the rows is too big that the gantt bars in the WBS do not
+align properly with the WBS row in the grid itself. Is this intended?"* ⚠️⚠️ **No.** The height is
+intended; the fact that it never arrives is not. First defect found by driving the LIVE, SIGNED-IN
+app rather than a harness.
+
+### Measured on OPW101, signed in, on a cold load
+`ps_lsmrows` = `1`, the grouping location-led, **58 LSM bars drawn** — and:
+
+| | |
+|---|---|
+| `ROWH` | **31** (the plain height) |
+| what the lanes need | **74** |
+| bars sitting outside their own row | **20 of 58** |
+| toolbar button lit | **no** |
+
+Calling `applyRowZoom(false)` by hand corrected it to 74 with **0 spills** and perfect grid/Gantt
+row tops (0, 74, 148, 222, 296), which is what proved the geometry was never wrong — only stale.
+
+### Why
+`applyRowZoom` is called **once** by init, and at that moment no project has loaded: `groupBys` is
+empty so `_lsmShaped()` is false, and there are no rows for `catList()` to find lanes in. So the
+height is computed for a mode that is on and a chart that does not exist yet — and **nothing
+re-derives it** once the rows and the grouping arrive. Every other path that changes the height
+(density, zoom, the toggle) calls `applyRowZoom` itself; **restoring the flag from localStorage
+calls nothing**, because no toggle ever ran.
+
+### The fix
+Re-derived at **`doRender`**, the one choke point every grid+Gantt build funnels through, one line
+after `DL = displayList()` so the grouping and the rows are both settled:
+
+    if (typeof rowHFor === 'function' && rowHFor(_rowZoom) !== ROWH) applyRowZoom(false);
+    _lsmPaintBtn();
+
+⚠️ **Guarded**, so a frame that changes nothing does not touch the CSS variables; `catList` is
+memoised on a cheap key, so the test itself is nearly free.
+⚠️ **And the toolbar now says the mode is on.** A restored `_lsmRows` lit nothing, so the chart
+was in LSM while the button that turns it off looked idle. `_lsmPaintBtn` is now the **one writer**
+for that class and `_lsmFinish` keeps no inline copy.
+
+### Verified
+**518 assertions against the working tree, 27 against the pinned base, 0 failing.** The guard is
+**cut out of `doRender` and executed**: a stale 31→74 calls `applyRowZoom` once, an unchanged
+74→74 calls it zero times. **Three negative builds bite** — guard removed (**5** fail),
+guard made unconditional (**5**), button paint dropped (**1**).
+`node --check` PARSE OK, 0 functions lost, 25 insertions / 2 deletions.
+`MODULE_V` → `20260911zh`.
+
+⚠️ **What is still by design:** the row really is `pad + lanes × pitch`, so eight keyed
+trades really do make a ~96px row. The lever is **"Key trades…"**, and `_lsmFinish` already says
+so in its toast. What this fixes is the row not being that height in the first place.
+
 ### The handoff becomes PER FLOOR CATEGORY (2026-09-11 zg) — fmlozano
 
 Owner: *"Wire the per-floor-kind handoff next"* — the limitation named at the end of the previous

@@ -22093,6 +22093,23 @@
     // debounced hook persists the tree without touching the ~8 individual toggle handlers.
     _collapseSaveSoon();
     DL = displayList();
+    /* ⚠️⚠️ THE ROW HEIGHT IS RE-DERIVED HERE, NOT ONLY WHEN THE PLANNER CHANGES SOMETHING.
+       `ROWH` is set by `applyRowZoom`, which init calls ONCE before any project has loaded — at
+       which point `groupBys` is empty, so `_lsmShaped()` is false and there are no rows for
+       `catList()` to find lanes in. A mode restored from `ps_lsmrows` therefore came back with the
+       PLAIN row height while `ganttRowHTML` drew its lanes at full pitch.
+       ⚠️⚠️ MEASURED ON OPW101, SIGNED IN, ON A COLD LOAD: `ROWH` 31 where the lanes need 74, and
+       **20 of 58 bars sitting outside their own row** — which is the owner's report, *"the rows
+       are too big ... the gantt bars do not align with the WBS row"*. It is not the height that is
+       wrong, it is that the height never caught up with the mode.
+       ⚠️ Here rather than at the end of `load()`: this is the one choke point every grid+Gantt
+       build funnels through, and `DL` one line up means the grouping and the rows are both settled.
+       Guarded so a frame that changes nothing does not touch the CSS variables; `catList` (which
+       decides the lane count) is memoised on a cheap key, so the test itself is nearly free. */
+    if (typeof rowHFor === 'function' && rowHFor(_rowZoom) !== ROWH) applyRowZoom(false);
+    /* ⚠️ And the toolbar has to say the mode is on. Restoring `_lsmRows` from localStorage lit
+       nothing, so the chart was in LSM and the button that turns it off looked idle. */
+    _lsmPaintBtn();
     var _gbh = document.getElementById('ps-gb-hidden');
     if (_gbh) {
       _gbh.style.display = _gbHidden ? '' : 'none';
@@ -44265,12 +44282,18 @@
     }
     return said;
   }
+  /* ⚠️ ONE WRITER FOR THE LIT STATE, because there are now two callers: the toggle itself and
+     the render choke point, which has to paint it for a mode RESTORED from localStorage that no
+     toggle ever ran for. See the note in `doRender`. */
+  function _lsmPaintBtn() {
+    var b = document.getElementById('ps-lsmbtn');
+    if (b) b.classList.toggle('active', !!_lsmRows);
+  }
   function _lsmFinish(said) {
     /* ⚠️ applyRowZoom is THE ONE PLACE row height is set, in both the CSS and the JS —
        so the lane budget reaches `--ps-rowh` through it rather than being written here. */
     applyRowZoom(false);
-    var _lb2 = document.getElementById('ps-lsmbtn');
-    if (_lb2) _lb2.classList.toggle('active', !!_lsmRows);
+    _lsmPaintBtn();
     /* ⚠️ `_paintViewBtn` only — NOT `renderLayoutMenu`, which is declared in the
        init/wiring scope and not at module scope. Calling it from here is the exact ReferenceError
        this file already records for `closeMenus`, and a try/catch round it would hide the fault
