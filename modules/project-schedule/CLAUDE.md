@@ -13,6 +13,112 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### The data-date line gains a grip, each storey says where it had got to — and the line stops eating clicks (2026-09-11 z4) — fmlozano
+
+Owner: *"build the data-date line next"*. Slice 4 of 5, and the deck's headline read: a vertical line
+at a date with every floor's state beside it — *"PLANNED STATUS AS OF END DECEMBER 2015"*,
+*"Active Floor"*, *"New Cleared Floor"*, *"Exterior Wall Complete"*, *"SEALED LEVEL"*.
+
+### 1. ⚠️⚠️ MOST OF IT ALREADY EXISTED, AND ONE THING I "FOUND" WAS NOT A BUG
+The line is there: `.ps-datedate`, gated on `_gset.ddline`, drawn at `var dd = today()`.
+`dataDate` is persisted per project, set from the Schedule dialog, and read by the CPM, the S-curve
+and EVM.
+
+⚠️⚠️ I flagged `var dd = today()` as a bug — the line drawing at the wall clock while the
+schedule computed as of a pinned date — and **that was wrong**. `today()` IS the effective data
+date:
+```js
+// call means "the data date", so today() returns dataDate (falling back to wall clock).
+function today() { return dataDate || wallToday(); }
+```
+Recorded because the wrong conclusion was one grep away from being "fixed", and the fix would have
+broken the one thing that was already right.
+
+So the genuine gaps were: the line could not be **dragged**, and nothing put a storey's **state** on
+the chart.
+
+### 2. ⚠️⚠️ THE LINE WAS EATING CLICKS, AND NOBODY HAD NOTICED
+`.ps-datedate` carried no `pointer-events`, and it is a top-level child of `.ps-tl` at **z-index 6**
+while the bars sit at **3** — so it was already on top of every bar it crosses and already
+swallowing their clicks. Two pixels wide, at one date, down the whole chart: easy to miss, which is
+presumably why it has been there all along. **Measured on the base file: no `pointer-events`
+declaration at all.**
+
+Adding a drag is what made it matter, so the line is now **`pointer-events:none`** and only a grip
+takes the pointer. ⚠️ **Measured after: a click at the line's own x, over a bar that crosses it,
+lands on the BAR** (`elementFromPoint` returns the bar's progress fill), where before it hit the
+line.
+
+### 3. ⚠️⚠️ THE GRIP IS A TAB AT THE TOP, NOT THE LINE
+Making the full-height line draggable would have re-created the same problem deliberately — and
+worse: at month zoom a 2-day activity is about 8px wide, so a short bar sitting under the data date
+would have become completely ungrabbable. An 11×14px tab at the top of the line is the only
+draggable part.
+⚠️ The honest cost: it scrolls with the chart, so it is reachable at the top of the list rather than
+from anywhere. The Schedule dialog remains the way to set the date from any scroll position, and it
+is unchanged.
+
+### 4. ⚠️⚠️ ONE DATA DATE, WRITTEN THROUGH THE SAME SETTER THE DIALOG USES
+The drag calls **`setDataDate`** — not a second as-of date for this chart. Two of those would be
+far worse than no drag at all: the Rate strip, the S-curve, EVM and the remaining-work floor would
+each be reading a different *"now"*. It follows the spotlight's own precedent exactly:
+`setDataDate` → `computeCPM()` → `renderAll()`.
+- ⚠️ **Nothing is written to the database.** The date lives in localStorage and the CPM is a
+  read-time computation, so a drag is reversible — drag it back, or use the dialog.
+- ⚠️ **It says what it changed, naming the old value.** A gesture that silently moves a
+  project-wide setting is how a planner loses track of which *"now"* a report was run against.
+- ⚠️ A **transient** label follows the cursor and is taken down on release. The permanent one was
+  removed at the owner's request (*"Text label removed per request; the line alone marks the data
+  date"*) and that still holds — this exists only for the duration of the gesture.
+
+### 5. ⚠️⚠️ THE STOREY STATE COMES FROM `_stkState`, THE PANEL'S OWN FUNCTION
+Not a second rule. `_stkState` reduces a bucket to two comparisons — **done** when every finish
+is at or before D, **started** when any start is — and a lane bar's `s`/`f` **are** that
+bucket's min-start and max-finish, so handing it the bar's span is exactly equivalent to handing it
+the activities.
+⚠️⚠️ **That equivalence is PROVEN, not assumed:** the suite runs both paths — the bar span
+through `_lsmStateOf`, and `_stkState` over the real activity lists — across four bucket shapes
+× 40 dates, and requires all **160** to agree. It also asserts that all three states occur in
+that grid, so the agreement cannot be vacuous.
+
+The label follows the deck's shape rather than its words, which are that project's vocabulary:
+- ⚠️ the **frontier** is the furthest-along DONE trade *in sequence order*, not a count and not the
+  last to finish. *"through Exterior Masonry"* is what a planner reads off the deck's chart; *"3 of 8
+  done"* is not, and would be wrong the moment a late trade finishes early.
+- *"Plastering · through MEPF 1st Fix"* — the active work, then the finished front.
+  *"Complete"* when every keyed trade on the storey is done, *"Not started"* before the first start,
+  and **nothing at all** for a storey with no bars (rather than a misleading "Not started").
+
+⚠️ Gated on its own switch **and** on `_gset.ddline`: a status pinned to an x the planner cannot
+see is a riddle, so if the line is hidden the readings go with it.
+
+### Verified
+**295 assertions against the working tree, 11 against the pinned base, 0 failing** — the
+contrast is missing all 23 LSM functions and 10 constants, and its `.ps-datedate` has no
+`pointer-events`.
+
+⚠️⚠️ **AND THE GESTURE WAS ACTUALLY DRIVEN — the first one in this feature that has been.**
+The shipped `startDDDrag` is sliced into a harness page and real `mousedown`/`mousemove`/`mouseup`
+events are dispatched at the grip. Measured: the grip moves **858 → 1078px**, which at 11px/day
+is 20 days, and the date goes **2026-03-20 → 2026-04-09** — exactly 20; the transient label
+tracks mid-drag (*2026-03-30* at 110px, *2026-04-09* at 220px); the line follows the grip;
+`computeCPM` and `renderAll` each fire **once**; the toast reads *"Data date → 2026-04-09 (was
+2026-03-20)"*; the label is removed and both `dragging` classes are cleaned off.
+
+Rendered at 1440×900 with both stylesheets inlined: grip **11×14px** at the top of the
+timeline, `cursor:ew-resize`, `pointer-events:auto`; the line **2px** and `pointer-events:none`;
+**6 status chips**, one per storey, reading *"Exterior Masonry · through Structural"*, *"through
+MEPF 1st Fix"*, *"Plastering · through MEPF 1st Fix"*…; work-in-progress chips on
+`rgba(199, 119, 0, 0.12)` = `--pd-warn-bg` (a colour, not a width); no horizontal scroll.
+
+⚠️ **Not verified signed in.** No real project's data date has been dragged, and the status chips
+have never been read off real activities.
+
+`MODULE_V` → `20260911z4`, sort-checked against `e3`/`sc6`/`z1`/`z2`/`z3`.
+
+### Still to come
+Slice 5: the flowline / time-location chart, as a second view on the `setVStackMode` template.
+
 ### Clash detection: two trades on one storey at the same time, against an order somebody actually stated (2026-09-11 z3) — fmlozano
 
 Owner: *"build the clash detection next"*. Slice 3 of 5, and the deck's first named advantage of LSM:

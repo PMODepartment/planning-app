@@ -946,7 +946,14 @@
        different pitch and the two panes visibly drift apart down a long list. */
     .ps-row-bg { position:absolute; left:0; right:0; height:var(--ps-rowh,34px); border-bottom:1px solid var(--pd-line); }
     .ps-row-bg.alt { background:rgba(0,0,0,.015); }
-    .ps-datedate { position:absolute; top:0; bottom:0; width:2px; background:var(--ps-dd,var(--pd-red)); z-index:6; }
+    /* ⚠️⚠️ `pointer-events:none` IS NEW, AND IT FIXES A PRE-EXISTING PAPERCUT.
+       This line is a top-level child of `.ps-tl` at z-index 6 while the bars sit at 3, so it was
+       already ON TOP of every bar it crosses and already swallowing their clicks — two pixels
+       wide, at one date, across the whole chart. Nobody had reported it because two pixels is easy
+       to miss, but adding a drag made it matter: the grip below is now the only part meant to take
+       a pointer, and the line must not compete with it or with the bars. */
+    .ps-datedate { position:absolute; top:0; bottom:0; width:2px; background:var(--ps-dd,var(--pd-red)); z-index:6;
+      pointer-events:none; }
     /* Pinned to the top of the Gantt viewport (JS keeps `top` = scrollTop) so the data-date stays
        labelled while scrolling vertically. Pill background keeps it readable over bars/gridlines. */
     .ps-datedate-lbl { position:absolute; top:2px; transform:translateX(4px); font-size:var(--pd-fs-micro); color:var(--ps-dd,var(--pd-red));
@@ -1045,6 +1052,25 @@
     .ps-lsmclash-chip > s { text-decoration:none; color:var(--pd-bad-text); font-weight:700;
       font-variant-numeric:tabular-nums; }
     .ps-lsmclash-more { font-size:var(--pd-fs-xs); color:var(--pd-muted); cursor:help; }
+    /* The data-date grip: a small tab at the top of the line, and the ONLY draggable part of it.
+       ⚠️ The line itself keeps `pointer-events:none` — see the note at its markup. */
+    .ps-datedate-grip { position:absolute; top:0; width:11px; height:14px; margin-left:-5px;
+      background:var(--ps-dd,var(--pd-red)); border-radius:0 0 3px 3px; z-index:7;
+      cursor:ew-resize; }
+    .ps-datedate-grip::after { content:''; position:absolute; left:4px; right:4px; top:4px; bottom:4px;
+      border-left:1px solid var(--pd-card); border-right:1px solid var(--pd-card); }
+    .ps-datedate-grip.dragging { opacity:.85; }
+    .ps-datedate.dragging { opacity:.85; }
+    /* Each storey's state beside the line. ⚠️ `pointer-events:none`: it sits over future
+       bars by construction, and it must never take a click meant for one. */
+    .ps-lsmstat { position:absolute; z-index:5; pointer-events:none; white-space:nowrap;
+      font-size:var(--pd-fs-micro); font-weight:700; line-height:14px; padding:0 5px;
+      border-radius:3px; background:var(--pd-card); color:var(--pd-muted);
+      border:1px solid var(--pd-line); max-width:260px; overflow:hidden; text-overflow:ellipsis; }
+    .ps-lsmstat.wip { color:var(--pd-warn-text); border-color:var(--pd-warn-line);
+      background:var(--pd-warn-bg); }
+    .ps-lsmstat.done { color:var(--pd-ok-text); border-color:var(--pd-ok-line);
+      background:var(--pd-ok-bg); }
     .ps-bar.dragging { cursor:grabbing; opacity:.85; z-index:8; }
     .ps-handle { position:absolute; top:0; bottom:0; width:6px; cursor:ew-resize; z-index:4; }
     .ps-handle.l { left:0; } .ps-handle.r { right:0; }
@@ -21262,6 +21288,10 @@
      Vertical Stacking's display order and its own checkbox promises "Display order of THIS view
      only", so sharing it would make changing one screen silently reorder the other. */
   var _lsmTopFirst = true; try { _lsmTopFirst = localStorage.getItem('ps_lsm_topfirst') !== '0'; } catch (e) {}
+  /* The per-storey status beside the data-date line. On by default: it is the deck's headline read,
+     not a decoration. Off is a real setting though — on a wide chart at year zoom the chips
+     land on top of future bars, and somebody reading dates rather than states wants them gone. */
+  var _lsmStatus = true; try { _lsmStatus = localStorage.getItem('ps_lsm_status') !== '0'; } catch (e) {}
   /* The LSM row must hold one lane per keyed trade, so its height is DERIVED from the lane count
      rather than picked. ⚠️ It is a FLOOR UNDER THE ZOOM, not a replacement for it: row
      zoom can still make the row taller, never shorter than the lanes need. ⚠️ And it
@@ -21977,7 +22007,16 @@
     // previously it lived inside the static layer and the highlight band drew over it ("broken").
     // Text label removed per request; the line alone marks the data date.
     tl.innerHTML = '<div class="ps-tl-static">' + stat + '</div><div id="ps-tl-bars"></div>' +
-      (_gset.ddline ? '<div class="ps-datedate" style="left:' + ddx + 'px;"></div>' : '');
+      (_gset.ddline ? '<div class="ps-datedate" style="left:' + ddx + 'px;"></div>' +
+        /* ⚠️⚠️ THE GRIP IS A TAB AT THE TOP, NOT THE LINE ITSELF. Giving the
+           full-height line `pointer-events:auto` would make it swallow clicks on every bar it
+           crosses — and at month zoom a 2-day activity is ~8px wide, so a short bar sitting
+           under the data date would become completely ungrabbable. The line stays inert; only this
+           tab is draggable. ⚠️ It scrolls with the chart, so it is reachable at the top of
+           the list; the Schedule dialog remains the way to set the date from anywhere. */
+        '<div class="ps-datedate-grip" title="' + esc('Data date: ' + Fmt.date(dstr(dd)) +
+          ' \u2014 drag to move it. This is the same data date the Schedule dialog sets: progress, remaining work and the S-curve all read it.') +
+          '" style="left:' + ddx + 'px;"></div>' : '');
     // grid spacer
     var host = document.getElementById('ps-grid-rows');
     if (!DL.length) {
@@ -22913,6 +22952,48 @@
       (more > 0 ? '<span class="ps-lsmclash-more" title="' + esc('The strip shows the ' + CAP + ' longest overlaps.') + '">+' + more + ' more</span>' : '') +
       '</div>';
   }
+  /* ---- WHERE EACH STOREY HAD GOT TO AT THE DATA DATE -----------------------------------------
+     The deck's own headline read: a vertical line at a date, and every floor's state beside it
+     ("Active Floor", "New Cleared Floor", "Exterior Wall Complete", "SEALED LEVEL"). Those exact
+     words are that project's vocabulary; what generalises is the SHAPE — which trades are
+     finished on this storey, and which are working on it right now.
+     ⚠️⚠️ THE STATE COMES FROM `_stkState`, THE FUNCTION THE "Planned status as
+     of…" PANEL ALREADY USES, so the two screens cannot disagree about the same storey. It
+     reduces a bucket to two comparisons — done when every finish is at or before D, started
+     when any start is — and a lane bar's `s`/`f` ARE that bucket's min-start and max-finish,
+     so handing it the bar's own span is exactly equivalent to handing it the activities. The suite
+     asserts that equivalence against the real activity lists rather than assuming it. */
+  function _lsmStateOf(b, D) {
+    return _stkState([{ start_date: dstr(b.s), end_date: dstr(b.f) }], D);
+  }
+  /* One storey's reading: the trades working on it, and how far the finished front has reached.
+     ⚠️ The completed FRONTIER is the furthest-along trade that is done, in sequence order
+     — not a count. "Through Exterior Masonry" is what a planner reads off the deck's chart;
+     "3 of 8 done" is not, and would be wrong the moment a late trade finishes early. */
+  function _lsmStoreyStatus(r, D, seq) {
+    var wip = [], done = [], agg = r._glsm || [];
+    for (var i = 0; i < agg.length; i++) {
+      var b = agg[i];
+      if (b.over || !b.value || seq.idx[b.value] == null) continue;
+      var st = _lsmStateOf(b, D);
+      if (st === 'done') done.push(b.value);
+      else if (st === 'wip') wip.push(b.value);
+    }
+    if (!agg.length) return null;
+    var order = function (a, b2) { return seq.idx[a] - seq.idx[b2]; };
+    wip.sort(order); done.sort(order);
+    var frontier = done.length ? done[done.length - 1] : null;
+    return { wip: wip, done: done, frontier: frontier,
+             all: done.length > 0 && !wip.length && done.length === agg.filter(function (b2) {
+               return !b2.over && b2.value && seq.idx[b2.value] != null; }).length };
+  }
+  function _lsmStatusLabel(st) {
+    if (!st) return '';
+    if (st.all) return 'Complete';
+    if (st.wip.length) return st.wip.join(' + ') + (st.frontier ? ' \u00b7 through ' + st.frontier : '');
+    if (st.frontier) return 'through ' + st.frontier;
+    return 'Not started';
+  }
   /* The Rate strip: one chip per keyed trade that has enough floors to support a slope.
      ⚠️ A trade whose climb is irregular gets NO FIGURE, only its r² and the word.
      A confident "2.1 floors/month" over a scatter is the kind of number that ends up in a report,
@@ -22955,6 +23036,22 @@
     var agg = r._glsm; if (!agg || !agg.length) return '';
     var pitch = LSM_LANE_H + LSM_LANE_GAP, y0 = top + Math.round(LSM_PAD / 2), out = '';
     var showBl = !!_gset.baseline, loc = r._graw || r.activity_name || '';
+    /* The storey's state AT THE DATA DATE, printed beside the line.
+       ⚠️ Gated on `_gset.ddline` as well as on its own switch: a status pinned to an
+       x the planner cannot see is a riddle, so if the line is hidden the readings go with it. */
+    if (_lsmStatus && _gset.ddline) {
+      var _D = today(), _st = _lsmStoreyStatus(r, _D, _lsmSeq()), _lab = _lsmStatusLabel(_st);
+      if (_lab) {
+        var _dx = Math.round(dayDiff(min, _D) * dayw);
+        out += '<div class="ps-lsmstat' + (_st.all ? ' done' : (_st.wip.length ? ' wip' : '')) +
+          '" style="left:' + (_dx + 5) + 'px;top:' + (top + Math.round(LSM_PAD / 2) - 1) + 'px;" title="' +
+          esc(loc + ' at ' + Fmt.date(dstr(_D)) + ' \u2014 ' +
+            (_st.wip.length ? 'working: ' + _st.wip.join(', ') + '. ' : '') +
+            (_st.done.length ? 'finished: ' + _st.done.join(', ') + '.' : 'nothing finished yet.') +
+            ' Read with the same rule as the "Planned status as of" panel.') +
+          '">' + esc(_lab) + '</div>';
+      }
+    }
     for (var i = 0; i < agg.length; i++) {
       var b = agg[i], ly = y0 + b.lane * pitch;
       var x = Math.round(dayDiff(min, b.s) * dayw);
@@ -23302,6 +23399,65 @@
       var r = rows.find(function (x) { return x.id === m.dataset.id; });
       if (r) m.addEventListener('mousedown', function (e) { if (linkMode) { startLink(e, r, m, dayw); return; } startDrag(e, r, m, dayw, 'mile'); });
     });
+    /* Bound here with the bar handles rather than delegated: `.ps-tl`'s innerHTML is rebuilt on
+       every frame, so anything bound to the grip itself has to be re-bound with it — which is
+       exactly what this function already exists to do. */
+    var _ddg = document.querySelector('#ps-tl .ps-datedate-grip');
+    if (_ddg) _ddg.addEventListener('mousedown', function (e) { startDDDrag(e, min, dayw); });
+  }
+  /* Drag the data date.
+     ⚠️⚠️ IT WRITES THE ONE REAL DATA DATE — the same `setDataDate` the
+     Schedule dialog calls, not a second as-of date for this chart. Two of those would be far worse
+     than no drag at all: the strip, the S-curve, EVM and the remaining-work floor would each be
+     reading a different "now". So this follows the spotlight's own precedent exactly:
+     `setDataDate` → `computeCPM()` → `renderAll()`.
+     ⚠️ Nothing is written to the database. The date lives in localStorage and the CPM is
+     a read-time computation, so a drag is reversible — drag it back, or use the dialog.
+     ⚠️ And it SAYS what it changed, naming the old value: a gesture that silently moves a
+     project-wide setting is how a planner loses track of which "now" a report was run against. */
+  function startDDDrag(e, min, dayw) {
+    e.preventDefault(); e.stopPropagation();
+    var line = document.querySelector('#ps-tl .ps-datedate');
+    var grip = e.currentTarget, x0 = e.clientX, l0 = parseFloat(grip.style.left) || 0;
+    var was = today(), cur = was, lbl = null;
+    if (line) line.classList.add('dragging');
+    grip.classList.add('dragging');
+    function at(px) {
+      var d = addDays(min, Math.round(px / dayw));
+      return d;
+    }
+    function move(ev) {
+      var px = Math.max(0, l0 + (ev.clientX - x0));
+      cur = at(px);
+      var snapped = Math.round(dayDiff(min, cur) * dayw);
+      grip.style.left = snapped + 'px';
+      if (line) line.style.left = snapped + 'px';
+      /* A TRANSIENT label only. ⚠️ The permanent one was removed at the owner's request
+         ("Text label removed per request; the line alone marks the data date"), and that still
+         holds — this exists for the duration of the gesture and is taken down on release. */
+      if (!lbl) {
+        lbl = document.createElement('div');
+        lbl.className = 'ps-datedate-lbl';
+        (document.getElementById('ps-tl') || document.body).appendChild(lbl);
+      }
+      lbl.style.left = snapped + 'px';
+      lbl.textContent = Fmt.date(dstr(cur));
+    }
+    function up() {
+      document.removeEventListener('mousemove', move);
+      document.removeEventListener('mouseup', up);
+      if (lbl && lbl.parentNode) lbl.parentNode.removeChild(lbl);
+      if (line) line.classList.remove('dragging');
+      grip.classList.remove('dragging');
+      if (!cur || dstr(cur) === dstr(was)) { renderGantt(); return; }
+      setDataDate(cur);
+      computeCPM();
+      renderAll();
+      UI.toast('Data date \u2192 ' + Fmt.date(dstr(cur)) + ' (was ' + Fmt.date(dstr(was)) +
+        '). Progress, remaining work and the S-curve all read it.', 'success');
+    }
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
   }
   function startDrag(e, r, el, dayw, mode) {
     e.preventDefault(); e.stopPropagation();
@@ -43988,6 +44144,7 @@
            rather than another nested menu, which is the owner's stated preference. */
         (cfg.on ? '<label title="The LSM (time-location) layout: one row per location, time across, and one bar per keyed trade on each row \u2014 the slope of the staircase is the production rate. Groups by location and collapses to one row per floor."><input type="checkbox" id="ps-alg-lsmrows"' + (_lsmRows ? ' checked' : '') + '> <strong>LSM rows</strong></label>' : '') +
         (cfg.on && _lsmRows ? '<span class="ps-seg2" title="Which way the floors run. The deck reverses them (highest at the top) because a building reads roof-down; this affects the LSM layout only."><button type="button" id="ps-alg-lsmtop"' + (_lsmTopFirst ? ' class="on"' : '') + '>Roof first</button><button type="button" id="ps-alg-lsmbot"' + (!_lsmTopFirst ? ' class="on"' : '') + '>Ground first</button></span>' : '') +
+        (cfg.on && _lsmRows ? '<label title="Print each storey\u2019s state beside the data-date line \u2014 which trades are working on it and how far the finished front has reached. The deck\u2019s &quot;planned status as of&quot; read, using the same rule as that panel. Drag the tab at the top of the line to move the date."><input type="checkbox" id="ps-alg-lsmstat"' + (_lsmStatus ? ' checked' : '') + '> Status at the line</label>' : '') +
         (_hlCat ? '<span class="ps-alg-hl">Highlighting: ' + esc(_hlCat) + '<button type="button" id="ps-alg-hlclear" title="Clear the highlight">✕</button></span>' : '') +
         // Tip line removed — it was a permanent paragraph of instructions competing with the legend
         // it sat next to. Both behaviours it described are already discoverable (a bar and a month
@@ -44023,6 +44180,12 @@
     }
     if (_lsmTopB) _lsmTopB.onclick = function () { _setLsmTop(true); };
     if (_lsmBotB) _lsmBotB.onclick = function () { _setLsmTop(false); };
+    var _lsmStatChk = host.querySelector('#ps-alg-lsmstat');
+    if (_lsmStatChk) _lsmStatChk.onchange = function () {
+      _lsmStatus = this.checked;
+      try { localStorage.setItem('ps_lsm_status', _lsmStatus ? '1' : '0'); } catch (e) {}
+      renderGantt();
+    };
     /* ⚠️ A clash chip NAVIGATES rather than filtering. A filter would have to narrow the
        rows before buildNodes runs, and the clash set is derived FROM buildNodes' own output — so
        it would need a two-pass build. Selecting and revealing the storey answers the same question

@@ -95,6 +95,46 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-11 (z4) — The LSM data-date line: a grip you can drag, a state per storey, and a line that stops eating clicks
+
+Owner: *"build the data-date line next"*. Slice 4 of 5. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md). Module-only, no
+migration. The deck's headline read — a vertical line at a date with every floor's state beside
+it.
+
+- ⚠️⚠️ **Most of it existed, and one thing I "found" was not a bug.** I flagged the line drawing at
+  `today()` instead of the pinned `dataDate` — wrong: `today()` **is** the effective data date
+  (`return dataDate || wallToday()`). Recorded because the fix would have broken the one thing that
+  was already right.
+- ⚠️⚠️ **The line WAS eating clicks, though, and nobody had noticed.** It carried no
+  `pointer-events` and sits at z-index 6 over bars at 3, so it was already swallowing clicks on every
+  bar it crosses — two pixels, at one date, down the whole chart. It is `pointer-events:none`
+  now, and **measured after: a click at its own x over a crossing bar lands on the BAR.**
+- ⚠️⚠️ **The grip is a tab at the top, not the line.** Making the full-height line draggable would
+  have re-created that problem on purpose, and at month zoom a 2-day bar is ~8px wide — a short
+  activity under the data date would have become ungrabbable. ⚠️ The honest cost: the tab scrolls
+  with the chart; the Schedule dialog is still the way to set the date from anywhere.
+- ⚠️⚠️ **One data date.** The drag calls the same `setDataDate` the dialog does, then
+  `computeCPM()` → `renderAll()`, following the spotlight's precedent. Two as-of dates would
+  leave the Rate strip, the S-curve and EVM each reading a different "now". Nothing is written to the
+  database, so it is reversible — and it **names the old value** in the toast.
+- ⚠️⚠️ **The storey state comes from `_stkState`, the "Planned status as of" panel's own function**,
+  so the two screens cannot disagree. A lane bar's s/f ARE the bucket's min-start and max-finish, and
+  **that equivalence is proven over 160 date/shape combinations**, not assumed. The label reads
+  *"Plastering · through MEPF 1st Fix"* — ⚠️ the frontier being the furthest DONE trade in
+  sequence order, not a count, which would be wrong the moment a late trade finishes early.
+
+**295 assertions against the working tree, 11 against the pinned base, 0 failing.**
+⚠️⚠️ **And the gesture was actually DRIVEN — the first in this feature that has been.** Real
+mouse events on the shipped handler: the grip moves 858 → 1078px, which at 11px/day is 20 days,
+and the date goes 2026-03-20 → 2026-04-09 — exactly 20; the label tracks mid-drag;
+`computeCPM` and `renderAll` fire once each; the transient label and both `dragging` classes are
+cleaned up. Rendered at 1440×900: grip 11×14px `ew-resize`, line 2px inert, 6 status chips on
+`--pd-warn-bg`, no horizontal scroll.
+⚠️ **Not verified signed in.**
+
+`MODULE_V` → `20260911z4`, sort-checked against every token a browser might hold.
+
 ### 2026-09-11 (z3) — LSM clash detection: two trades on one storey, against an order somebody stated
 
 Owner: *"build the clash detection next"*. Slice 3 of 5. Detail:
