@@ -21640,7 +21640,17 @@
     if (!cc || !cc.n) cell = '<span style="color:var(--pd-muted);">—</span>';
     else if (cc.mixed) cell = '<span style="color:var(--pd-muted);" title="' + esc(cc.names.slice(0, 12).join(' · ')) + '">Mixed (' + cc.n + ')</span>';
     else cell = '<span class="ps-cctag" title="' + esc(ccLabel(cc.code)) + '">' + esc(cc.code) + '</span>';
-    return '<div class="ps-cell c-ccode">' + cell + '</div>';
+    /* ⚠️⚠️ AND THE CHANGE-ORDER-REF LANE, BLANK. A summary row cites no variation of its own, but
+       the task row emits `corefCellHtml` here and this chain used to stop at the class code — one
+       cell short. The column machinery positions every cell by `nth-child`, so a single missing
+       lane shifts EVERY column after it left by one, and the grid then prints values under the
+       wrong heading: measured on OPW101, the header read 39 cells and the body 38, diverging at
+       index 26, which is why "Structural Works" appeared beneath CHANGE ORDER REF.
+       ⚠️ This is the invariant `sumConScopeHtml` states four functions up — *"keeps the cell count
+       identical, which the nth-child column machinery needs"* — and this chain was the one place
+       that broke it. */
+    return '<div class="ps-cell c-ccode">' + cell + '</div>' +
+           '<div class="ps-cell c-coref"></div>';
   }
   // The trailing lane the column-chooser "+" lives in — see the .c-plus note in the CSS. Emitted on
   // EVERY row kind so the header and the body stay cell-for-cell identical.
