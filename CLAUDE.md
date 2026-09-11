@@ -82,6 +82,7 @@ developer, plug into one shared shell.
 | `tools/scan.js` | The string/comment/regex-aware source scanner both checkers use. ⚠️ Self-tests on ten shapes before any caller trusts it — a line-comment regex eats every line with a double slash inside a string, which silently deleted 62 references from wiring-check's own sweep. |
 | `tools/dead-hooks.js` | `node tools/dead-hooks.js` — a class a module QUERIES that nothing ever EMITS (the `#pk-boq` shape: a handler bound to markup that does not exist). ⚠️ The inverse check, "a class with no CSS rule", is noise — query hooks have no style by design. |
 | `tools/dead-exports.js` | `node tools/dead-exports.js` — a key on a module's public object that NOTHING in the repo reads (the inverse of wiring-check). ⚠️⚠️ It VERIFIES each parse and prints an UNPARSED list for surfaces its tokenizer could not read — `ScheduleBuilder` is currently one of them, so a clean run does not cover it. |
+| `tools/dark-remap.js` | `node tools/dark-remap.js` — a COLOUR token whose only definition sits in a light-mode block, so it keeps its light value on a dark ground. ⚠️⚠️ It knows the two patterns that look identical to that bug and are not: a brand colour, and the FILL half of this repo's fill/text split (`--sm-c`/`--rcm-c` stay fixed, `--sm-t`/`--rcm-t` remap). Tokens only — a raw colour literal with no dark rule is out of scope. |
 | `MODULE_CONTRACT.md` | Rules every module developer must follow |
 
 ## Roles
@@ -98,6 +99,43 @@ developer, plug into one shared shell.
 ---
 
 ## Changelog
+
+### 2026-09-12 — `tools/dark-remap.js`: a colour that only exists in light mode
+
+Overnight audit, agenda item 4. The loop's own rule for the UI audit — *"a colour whose ONLY
+definition is inside a light-mode block is a bug"* — was a thing I could only check by eye. It is
+a checker now. **No shipped file changed.**
+
+- **What it does:** dark mode here is a **pure token remap**, so a custom property with no
+  `html.pd-dark` counterpart keeps its LIGHT value on a dark ground. It reads every `.css` file
+  **and every inline `<style>` block**, and reports colour-valued tokens defined only in light.
+- ⚠️⚠️ **The hard part is NOT crying wolf, and two deliberate patterns look exactly like the bug.**
+  A **brand** colour must be one colour in both themes. And this repo uses a **fill/text split** —
+  `--sm-c` / `--rcm-c` are the FILL (white sits on them; measured 5.0–7.6), `--sm-t` / `--rcm-t`
+  are the same meaning as TEXT and **do** remap per theme, because *"a fill light enough to read as
+  text on dark cannot carry white."* Both would be reported by a naive check. The rule that
+  separates them: **if any sibling token on the same host is remapped, the host is theme-aware and
+  this token is fixed on purpose.** That one test suppresses the brand reds and both splits, and
+  still catches a palette where nothing remaps.
+- ⚠️⚠️ **THE FIRST RUN LOST 87 OF 87 TOKENS AND REPORTED ITSELF CLEAN.** `dashboard.css` opens with
+  an `@import`, which is a statement at-rule — no braces — so it glued itself to the next
+  selector, the rule parsed as an at-rule, and the walker recursed into the `:root` **token body** as
+  if it held rules. It found **3** tokens against **32** dark ones and announced zero findings. The
+  tell was the arithmetic, not the verdict: 32 remaps of 3 tokens is impossible.
+- ⚠️ **Two more, both in the port and both caught the same way:** the selector was sliced from the
+  **unmasked** source, so a `/* comment */` before a rule joined the selector and broke every host
+  comparison; and `hostsOf` did not split a selector **list**, so
+  `html.pd-dark .rcm-p1, html.pd-dark .rcm-res-high` matched neither of the two rules it remaps.
+  Both shapes are now in the self-test — they were not, which is why it passed while wrong.
+- **Self-tests before reporting, 11 of them**, every one a shape that broke an earlier version.
+
+**Result: 180 light tokens, 104 remapped for dark across 30 theme-aware hosts, 0 findings.** Also
+re-counted and still zero: `--pd-ok` / `--pd-warn` / `--pd-bad` used as a text colour.
+⚠️⚠️ **And the green run is proved to mean something:** deleting the four real
+`html.pd-dark .rcm-*` lines from `mcc-rcm.css` makes it report **14**, and restoring them returns it
+to 0.
+`wiring-check` 123/123, `dead-hooks` unchanged, every `tools/*.js` parses. No shipped file changed,
+so no `MODULE_V` bump.
 
 ### 2026-09-12 — The last four `font-weight: 600` in the app
 
