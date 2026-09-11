@@ -62,7 +62,14 @@
        itself shows it in full — the face only has to say which grouping is live, not recite it. */
     #ps-groupbtn-txt { display:inline-block; max-width:190px; overflow:hidden;
       text-overflow:ellipsis; white-space:nowrap; vertical-align:bottom; }
-    .ps-tb-row .ps-search { flex:1 1 100px; min-width:100px; }
+    /* ⚠️ THE SEARCH IS GREEDY AND THAT IS WHY THE SECOND ROW LOOKED BROKEN. `flex:1 1 100px` has
+       no ceiling, so it GROWS into whatever space is going — measured at **1127px** once it wrapped,
+       a search box spanning the entire window. Capped: it now ends where a search box should end,
+       and a wrapped row reads as a deliberate second row rather than a stretched input.
+       ⚠️ This does NOT stop the wrap — at 1168px the buttons alone nearly fill the row, and no
+       label trimming changes that (measured: even a 95px grouping cap still wraps). One row at
+       narrow widths needs an overflow menu, which is a separate and bigger call. */
+    .ps-tb-row .ps-search { flex:1 1 100px; min-width:100px; max-width:340px; }
     .ps-tb-row .ps-search .pd-input { width:100%; }
     /* The <input> inside .ps-search has no CSS width, so its default min-width:auto resolves to
        its min-content (intrinsic) size — which can exceed the wrapper's declared min-width and
