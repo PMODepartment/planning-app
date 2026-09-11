@@ -1684,7 +1684,7 @@
     .ps-vs3-more > summary { list-style:none; cursor:pointer; user-select:none;
       display:inline-flex; align-items:center; gap:6px; height:30px; padding:0 11px;
       border:1px solid var(--pd-line); border-radius:8px; background:var(--pd-card);
-      color:var(--pd-ink); font-size:var(--pd-fs-sm); font-weight:600; }
+      color:var(--pd-ink); font-size:var(--pd-fs-sm); font-weight:500; }
     .ps-vs3-more > summary::-webkit-details-marker { display:none; }
     .ps-vs3-more > summary::after { content:'▾'; font-size:10px; color:var(--pd-muted); }
     .ps-vs3-more[open] > summary, .ps-vs3-more > summary:hover { border-color:var(--pd-red); color:var(--pd-red); }
@@ -1701,13 +1701,13 @@
     /* The note under the model: one line, and the standing explanation behind a summary. */
     .ps-vs3-foot { margin:8px 0 0; }
     .ps-vs3-foot .lead { margin:0; font-size:var(--pd-fs-xs); line-height:1.55; color:var(--pd-muted); }
-    .ps-vs3-foot .lead b { color:var(--pd-ink); font-weight:600; }
+    .ps-vs3-foot .lead b { color:var(--pd-ink); font-weight:700; }
     .ps-vs3-help { margin-top:4px; }
     .ps-vs3-help > summary { cursor:pointer; width:max-content; font-size:var(--pd-fs-xs);
       color:var(--pd-muted); text-decoration:underline; text-underline-offset:2px; }
     .ps-vs3-help > summary:hover { color:var(--pd-red); }
     .ps-vs3-help p { margin:6px 0 0; font-size:var(--pd-fs-xs); line-height:1.6; color:var(--pd-muted); }
-    .ps-vs3-help p b { color:var(--pd-ink); font-weight:600; }
+    .ps-vs3-help p b { color:var(--pd-ink); font-weight:700; }
     .ps-vs3-optnote { margin:-2px 0 0; font-size:var(--pd-fs-micro); color:var(--pd-muted); line-height:1.45; }
     /* ==== THE 3D HOVER READOUT ==========================================================
        The label beside the traced outline (see setHover). ⚠️ pointer-events:none, without
@@ -1734,8 +1734,14 @@
       font-size:var(--pd-fs-micro); font-weight:700; line-height:1.4;
       color:var(--pd-ink); background:var(--pd-card); border:1px solid var(--pd-line);
       border-radius:var(--pd-radius, 5px); padding:0 5px; opacity:.94; }
-    /* The band that is not a storey, and the line that is not a floor. */
-    .ps-vs3-lab.nolev { font-weight:600; font-style:italic; color:var(--pd-muted); }
+    /* The band that is not a storey, and the line that is not a floor.
+       ⚠️⚠️ 500, NOT 700. `.ps-vs3-lab` is **700**, so this is the LIGHT half of a deliberate
+       pair: an ordinary storey label is bold, the band that is not a storey is lighter, italic
+       and muted. Folding it up to Bold with the other three would make the two states
+       identical — the flattening the 2026-09-10 (v4) sweep caught itself creating in ten
+       other places. At 500 the distinction is wider than it was at 600, and both ends are now
+       real Gotham cuts. */
+    .ps-vs3-lab.nolev { font-weight:500; font-style:italic; color:var(--pd-muted); }
     .ps-vs3-lab.ground { color:var(--pd-red); border-color:var(--pd-red-mid, var(--pd-line));
       letter-spacing:.04em; text-transform:uppercase; }
     .ps-vs3-tip span { display:block; color:var(--pd-muted); }

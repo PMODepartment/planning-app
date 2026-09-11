@@ -13,6 +13,64 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### The last four font-weight 600 in the app (2026-09-12) — fmlozano
+
+Overnight audit, agenda item 3 — the UI audit. Two values this repo has previously driven to
+zero were re-counted. `--pd-ok` / `--pd-warn` / `--pd-bad` used as a TEXT colour: **0**, so that fix
+held. `font-weight: 600`: **four declarations, all in this file**, all `.ps-vs3-*`.
+
+⚠️⚠️ **These are exactly the four the 2026-09-10 (ug) entry deferred**, with the reason stated
+there: *"That file holds another session's uncommitted flowline work and is deliberately untouched;
+they land when it does."* It landed. There is no Gotham Semibold (Brandbook 2026 p.29 names Thin /
+Regular / Medium / Bold / Black), so a 600 addresses a cut of the primary face that does not exist.
+
+### Each one decided against a decision the app has ALREADY made, not against taste
+The (v4) rule is 600 → 700, **except** where that flattens a 600/700 pair — the inversion
+that sweep caught itself creating in ten places.
+
+| | was | now | why |
+|---|---|---|---|
+| `.ps-vs3-more > summary` | 600 | **500** | it is styled as a button, and `.pd-btn` is **500**. Convergence, not a choice. |
+| `.ps-vs3-foot .lead b` | 600 | **700** | emphasis inside a parent that declares no weight |
+| `.ps-vs3-help p b` | 600 | **700** | same |
+| `.ps-vs3-lab.nolev` | 600 | **500** | ⚠️⚠️ base `.ps-vs3-lab` is **700**. Folding this up would make the two states **identical** — an ordinary storey label is bold, the band that is not a storey is lighter, italic and muted. At 500 the distinction is WIDER than it was at 600, and both ends are now real Gotham cuts. |
+
+### ⚠️ Measured in a browser, not eyeballed — and a colour, not only a weight
+A render harness at the repo root (gitignored, and **deleted afterwards**) inlined `dashboard.css`
+plus this file's own `<style>` blocks and reported:
+
+```
+summary 500 | footLeadB 700 | helpPB 700 | labBase 700 | labNolev 500
+hierarchyPreserved: true | nolevItalic: "italic"
+```
+
+Then the dark-mode remap, which is where a colour whose only definition sits in a light-mode block
+shows up:
+
+```
+coloursThatDidNotRemap: []   weightsUnchangedByTheme: true
+light  labBase rgb(35,31,32)    labNolev rgb(90,88,88)     bg rgb(255,255,255)
+dark   labBase rgb(240,239,239) labNolev rgb(185,183,183)  bg rgb(43,44,43)
+```
+
+And the contrast ratios, since a weight change that quietly lands on an unreadable pair is not a fix:
+
+| | light | dark |
+|---|---|---|
+| `.ps-vs3-lab` | **16.30** | **12.22** |
+| `.ps-vs3-lab.nolev` | **7.07** | **7.02** |
+| `.ps-vs3-more > summary` | **16.30** | **12.22** |
+
+**Lowest reading 7.02 — all six clear AA (4.5) and AAA (7.0).**
+
+### Verified
+`node --check` PARSE OK on the inline block; **0 functions lost, 0 added**; **0 `font-weight: 600`
+declarations anywhere in the app** — every remaining grep hit is prose (the `dashboard.css`
+comment stating the rule, two code comments, four changelog lines). `MODULE_V` → `20260912b`,
+sort-checked against `20260912a`.
+⚠️ **Not verified signed in** — the Chrome bridge has been down since the `zh` fix; these are
+real browser measurements against the shipped stylesheets, not a loaded project.
+
 ### Audit sweep: the cold-open class, and a harness that could hide it (2026-09-12) — fmlozano
 
 Overnight audit, agenda item 2 — hunting the defect CLASS behind tonight's two biggest finds.

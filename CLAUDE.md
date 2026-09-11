@@ -99,6 +99,28 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-12 — The last four `font-weight: 600` in the app
+
+Overnight audit, agenda item 3 (the UI audit). Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+- ⚠️⚠️ **These are the four the 2026-09-10 (ug) entry deferred**, and it said why: that file held
+  another session's uncommitted flowline work. It landed, so they land. There is no Gotham Semibold,
+  so a 600 addresses a cut of the primary face that does not exist.
+- **Each decided against an existing app decision, not taste.** `.ps-vs3-more > summary` → **500**
+  because it is styled as a button and `.pd-btn` is 500; two `b` rules → **700**; and
+  ⚠️⚠️ `.ps-vs3-lab.nolev` → **500, not 700**, because base `.ps-vs3-lab` is **700** and folding
+  it up would make the two states identical — the flattening the (v4) sweep caught itself creating
+  in ten other places. At 500 the pair is further apart than it was at 600.
+- ⚠️ **Measured in a browser, and a COLOUR was asserted, not only a weight.** All five weights read
+  back as intended, `hierarchyPreserved: true`, `coloursThatDidNotRemap: []` across the light/dark
+  remap, and the six contrast ratios run **7.02 to 16.30** — every one clears AA and AAA.
+- **Also re-counted and still zero:** `--pd-ok` / `--pd-warn` / `--pd-bad` used as a text colour.
+
+**0 `font-weight: 600` declarations remain anywhere in the app** (every grep hit is prose).
+`node --check` PARSE OK, 0 functions lost. `MODULE_V` → `20260912b`.
+⚠️ **Not verified signed in** — the Chrome bridge is still down.
+
 ### 2026-09-12 — `tools/dead-exports.js`: an export nothing reads, and three attempts to find one
 
 Overnight audit, agenda item 1 — the tooling gap that let `ScheduleBuilder.setupOrderLabels`
