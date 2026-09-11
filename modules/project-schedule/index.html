@@ -3238,6 +3238,15 @@
     /* ⚠️ Third of the three uncapped sticky columns the audit found. A tower card holds a header
        plus its zone list, so on a project with many zones it outgrows the window exactly like the
        step rail and its bottom zones become unreachable. Same pair, same derivation from `top`. */
+    /* The Repetition step's five sub-views. A segmented row, not a second rail: they are peers. */
+    .sbld-reptabs { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 12px; }
+    .sbld-reptab { font-size:var(--pd-fs-xs); }
+    .sbld-reptab.on { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
+    @media (max-width:700px) { .sbld-reptab { min-height:var(--pd-tap); } }
+    .sbld-pending { font-size:var(--pd-fs-xs); color:var(--pd-muted); display:inline-flex;
+      align-items:center; gap:6px; }
+    .sbld-pending b { color:var(--pd-ink); font-variant-numeric:tabular-nums; }
+    .sbld-pending.on { color:var(--pd-ink); }
     .sbld-tower { border:1px solid var(--pd-line); border-radius:10px; padding:12px; background:var(--pd-bg); position:sticky; top:12px;
       max-height:calc(100vh - 24px); overflow-y:auto; overscroll-behavior:contain; }
     .sbld-towerh { display:flex; align-items:center; gap:7px; font-size:var(--pd-fs-base); font-weight:700; margin-bottom:8px; }
@@ -4004,6 +4013,10 @@
                Sits at the head of the builder because it is the first thing a planner
                on a multi-package project needs to be sure of. -->
           <button class="pd-btn" id="ps-bld-setups" title="Saved setups, one per contract package, and the push history"><span data-ico="layers" data-ico-size="14"></span> <span id="ps-bld-setupname">Setups</span></button>
+          <!-- ⚠️ WHAT IS PENDING, AS A NUMBER, ON EVERY STEP. Half the wizard's prose existed to
+               say that what you are looking at is not in the schedule until you push; a count says
+               it once, in the same place, and stops every step having to explain itself. -->
+          <span class="sbld-pending" id="ps-bld-pending"></span>
           <span class="sbld-save-state" id="ps-bld-savestate" style="margin-left:auto;"></span>
           <button class="pd-btn sbld-help-btn" id="ps-bld-help" title="Instructions & shortcuts">?</button>
           <button class="pd-btn pd-btn-primary" id="ps-bld-save"><span data-ico="check" data-ico-size="14"></span> Save setup</button>
@@ -30966,7 +30979,19 @@
 
     // The 1-based number of a step, by its rail title — see the note above. Returns '' for an
     // unknown title rather than a wrong number, so a typo shows up as a missing digit, not as a lie.
-    function _stepNo(t) { var i = STEPS.map(function (x) { return x.t; }).indexOf(t); return i < 0 ? '' : (i + 1); }
+    /* ⚠️ The five titles folded into `Repetition` still answer with a number, because 27 places in
+       this file say "step N · Zone sequence" and a blank there is worse than a merged step: it
+       reads as a broken reference rather than a renamed one. They resolve to the step that now
+       CONTAINS them, which is where the planner will find them. */
+    var STEP_ALIAS = { 'Tower links': 'Repetition', 'Zone sequence': 'Repetition',
+                       'Trade sequence': 'Repetition', 'Scope per zone': 'Repetition',
+                       'Stacking': 'Repetition' };
+    function _stepNo(t) {
+      var names = STEPS.map(function (x) { return x.t; });
+      var i = names.indexOf(t);
+      if (i < 0 && STEP_ALIAS[t]) i = names.indexOf(STEP_ALIAS[t]);
+      return i < 0 ? '' : (i + 1);
+    }
     // The step's mechanics, collapsed. Owner: the instructions took too much space — so a step's
     // lede now states its PURPOSE in a sentence or two and every keystroke / click sequence it used
     // to spell out inline lives in here instead. Nothing was dropped; see the .sbld-how CSS note.
@@ -31035,11 +31060,16 @@
          why the merged step sits HERE and not at position 2: of its two views, only 5PMLC could
          have led. */
       { t: 'Structure', s: '5PMLC and Construction Library', fn: stStructure },
-      { t: 'Tower links', s: 'How towers interface', fn: stTowerLinks },
-      { t: 'Zone sequence', s: 'Order of locations', fn: stSequence },
-      { t: 'Trade sequence', s: 'Order codes per level type', fn: stTradeSeq },
-      { t: 'Scope per zone', s: 'Activities per location', fn: stScope },
-      { t: 'Stacking', s: 'Vertical stacking by trade', fn: stStacking },
+      /* ⚠️⚠️ FIVE STEPS BECAME ONE. Tower links, Zone sequence, Trade sequence, Scope per zone and
+         Stacking all answer the same question — how does the building REPEAT — and four of the five
+         are inert on a project with one tower and no zones. They were five rail entries of nothing,
+         and the rail's LENGTH is what makes this wizard look big before a word of it is read: 12
+         steps down to 8.
+         ⚠️ They are TABS, not a merge: each keeps its own renderer, its own heading and its own
+         empty state, untouched. The only thing that changed is where the planner clicks to reach
+         them. `_stepNo` aliases their titles onto this step, so the 27 cross-references elsewhere
+         ("set in step 7 · Zone sequence") keep resolving to a real number — they are inside it. */
+      { t: 'Repetition', s: 'Towers, zones, trades, stacking', fn: stRepetition },
       { t: 'Project phases', s: 'Initiation → Close-out', fn: stPhases },
       { t: 'Generate', s: 'Build & preview', fn: stGenerate },
     ];
@@ -31268,6 +31298,33 @@
        when it is true. Counts WBS_NODES rather than DOM rows: the tree is virtualised, so the rows
        on screen are a window, not the total. */
     function _sbldWbsCount() { return (WBS_NODES || []).filter(Boolean).length; }
+    /* ==========================================================================================
+       REPETITION — the five views that describe how the building repeats.
+       ⚠️ Each sub-view renders its OWN heading (they all open with `_stepNo(<their title>)`), which
+       the alias resolves to this step's number — so the heading reads "6 · Zone sequence" and the
+       planner is never told a number that does not exist. Nothing below this line was rewritten. */
+    var REP_TABS = [
+      { k: 'towers', t: 'Tower links', fn: function (h) { return stTowerLinks(h); } },
+      { k: 'zones', t: 'Zone sequence', fn: function (h) { return stSequence(h); } },
+      { k: 'trades', t: 'Trade sequence', fn: function (h) { return stTradeSeq(h); } },
+      { k: 'scope', t: 'Scope per zone', fn: function (h) { return stScope(h); } },
+      { k: 'stack', t: 'Stacking', fn: function (h) { return stStacking(h); } }
+    ];
+    var _repView = 'towers';
+    function stRepetition(host) {
+      var cur = REP_TABS.filter(function (x) { return x.k === _repView; })[0] || REP_TABS[0];
+      host.innerHTML =
+        '<div class="sbld-reptabs">' +
+          REP_TABS.map(function (x) {
+            return '<button type="button" class="pd-btn sbld-reptab' + (x.k === cur.k ? ' on' : '') +
+              '" data-rep="' + x.k + '">' + e2(x.t) + '</button>';
+          }).join('') +
+        '</div><div id="sbld-repbody"></div>';
+      host.querySelectorAll('[data-rep]').forEach(function (b) {
+        b.onclick = function () { _repView = b.dataset.rep; render(); };
+      });
+      cur.fn(host.querySelector('#sbld-repbody'));
+    }
     function stStructure(host) {
       var v = strView();
       host.innerHTML = '<h2>' + _stepNo('Structure') + ' · Structure — ' +
@@ -32501,7 +32558,8 @@
         _sbldHow('The grid works like Excel: <b>click</b> a cell, <b>drag</b> or <b>Shift-click</b> to select a range, <b>double-click</b> or type to edit, <b>Ctrl+C / Ctrl+V</b> to copy &amp; paste (paste one cell into a selection to fill it), <b>Ctrl+D</b> to fill down, <b>Delete</b> to clear — or paste a block straight from Excel.' +
           '<ul><li><b>&larr;</b> loads ticked codes from the holding list into the build; <b>&rarr;</b> sends selected grid rows back out.</li>' +
           '<li><b>+ Library</b> loads the standard class-code library into the holding list.</li>' +
-          '<li><b>Scope</b> says whether a duration covers a zone, a floor or the whole project. Anything coarser than a zone is auto-split down to per-zone; refine it in step ' + _stepNo('Trade sequence') + '.</li></ul>') +
+          '<li><b>Scope</b> says whether a duration covers a zone, a floor or the whole project. Anything coarser than a zone is auto-split down to per-zone; refine it in step ' + _stepNo('Trade sequence') + '.</li>' +
+          '<li><b>Trade</b> accepts the name or the code: General Requirements/GR · Site Works/SW · Structural/ST · Architectural/AR · MEPF · Allied Services/ALLIED · Others/OT.</li></ul>') +
         '<div class="sbld-sec-actions"><button class="pd-btn pd-btn-primary" id="b-add">+ Add row</button><button class="pd-btn" id="b-seed">Load typical set</button>' +
         '<button class="pd-btn" id="b-delrows">Delete selected rows</button>' +
         '<span class="sbld-tb-sep2"></span><button class="pd-btn" id="b-tmpl"><span data-ico="download" data-ico-size="14"></span> Download template</button>' +
@@ -32509,7 +32567,13 @@
         '<input type="file" id="b-uplfile" accept=".csv,.xlsx,.xls" style="display:none" /></div>' +
         (cfg.activities.length ? '' : '<div class="sbld-empty" style="margin-bottom:8px;">No activities in the build yet — <b>Add row</b>, <b>Load typical set</b>, load from the list with <b>&larr;</b>, or paste rows from Excel into the grid.</div>') +
         '<div class="sbld-actsplit"><div class="sbld-xlwrap" tabindex="0" id="b-xl"><table class="sbld-xl" style="table-layout:fixed;width:' + totalW + 'px;">' + colgroup + '<thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>' + shuttle + holdPane + '</div>' +
-        '<p class="sbld-hint">Trade accepts the name or code (General Requirements/GR · Site Works/SW · Structural/ST · Architectural/AR · MEPF · Allied Services/ALLIED · Others/OT). Row order here is the fallback sequence; fine-tune links in step ' + _stepNo('Trade sequence') + '.</p>' +
+        /* ⚠️ The accepted-code list moved into this step's existing "How to use this step"
+           collapsible, beside the other per-column notes — NOT onto the column header, which is
+           what I first wrote here: this grid builds its headers from a column spec and there was no
+           cheap place to hang a title. Corrected rather than left claiming a thing that is not
+           there. What stays in the body is the one fact about the ROWS rather than a single cell. */
+        '<p class="sbld-hint">Row order is the fallback sequence; fine-tune in step ' +
+        _stepNo('Trade sequence') + '.</p>' +
         /* ⚠️⚠️ THIS LINE USED TO ACCUSE EVERY `+ Library` ROW. It counted anything that was not a
            Level-3 code, which is the whole group chart — so a perfectly good build lit a warning.
            Group codes are valid (the resolver learned both levels on 2026-09-10); what is left is a
@@ -35069,7 +35133,12 @@
            itself recommends). Returning early on the empty state left a brand-new project with no
            route to the editor at all. */
         host.innerHTML = '<h2>' + _stepNo('Floors & Zones') + ' · Substructure &amp; Superstructure — per trade</h2>' +
-          '<p class="sbld-lede">Name the levels this project breaks location down by first — they are what every later step, the push and all location grouping use.</p>' +
+          '<p class="sbld-lede">Name the levels this project breaks location down by.</p>' +
+          /* ⚠️ "what every later step uses" is a consequence, not an instruction — and the
+             step-by-step that followed it is exactly what `_sbldHow` exists for. */
+          _sbldHow('<p>Pick a trade, add its floors and any basements, then split each into zones ' +
+            'and units as needed. Every later step, the push and all location grouping read what ' +
+            'you name here.</p>') +
           _locBreakdownBar() +
           '<div class="sbld-empty">No trades yet — add activities in step ' + _stepNo('Activities') + ' and assign each one a trade. The trades you use there will show up here, ready for their floors and zones.</div>';
         _locBarWire(host);
@@ -36855,7 +36924,10 @@
       var def = null;
       try { def = (CALS || []).filter(function (c) { return c.is_default; })[0] || null; } catch (e) {}
       host.innerHTML = '<h2>' + _stepNo('Working calendars') + ' · Which days the work can happen on</h2>' +
-        '<p class="sbld-lede">Every duration in this setup is a count of <b>working days</b>, and this is what turns that count into a date — for the generated preview, for the live schedule and for every duration scenario. That is why it comes before the activities: set it now and the numbers you type next mean what you think they mean.</p>' +
+        /* ⚠️ The second half argued for the step's POSITION in the rail. The rail already shows
+           the position, and a planner who has not questioned it does not need the defence. */
+        '<p class="sbld-lede">Durations are counted in <b>working days</b>. This is the calendar ' +
+        'that turns them into dates.</p>' +
         '<div class="sbld-locbar"><span class="sbld-locbar-l">Project default</span>' +
           (def ? '<span class="sbld-hint">Unassigned activities use <b>' + e2(def.name) + '</b> — ' +
                  (def.hours_per_day || 8) + 'h/day' +
@@ -36937,7 +37009,10 @@
 
       host.innerHTML = '<h2>' + _stepNo('Start') + ' · Where does this schedule come from?</h2>' + state + staged +
         '<div class="ps-ck-grid">' + readCard + impCard + newCard + '</div>' +
-        '<p class="sbld-hint" style="margin-top:12px;">All three paths end in the same place — activities under this project’s standard phases, with a WBS the rest of the module can read. Importing does not stop you generating more work later, and reading the schedule in does not change it.</p>';
+        /* ⚠️ Cut: nothing on the screen changes as a result of reading it. The three paths are
+           each labelled with what they do, and "they all end in the same place" is only reassuring
+           to someone already worried — which the labels are there to prevent. */
+        '';
 
       var gb = host.querySelector('#b-impgo'); if (gb) gb.onclick = function () { mode = 'import'; step = 1; render(); };
       var db = host.querySelector('#b-impdrop');
@@ -38000,14 +38075,14 @@
         // ⚠️ Stated before the tree, not after it: the count on every row is what the LIVE schedule
         // holds, which is 0 on a project that has never been pushed to — and that is not a report
         // about the programme the Generate step previews.
-        '<p class="sbld-note' + (_gen && !_liveActs ? ' sbld-note-warn' : '') + '">' +
-        'The <b>N activities</b> on each branch below counts what is <b>already in the Project Schedule</b> — ' +
-        (_liveActs
-          ? '<b>' + _liveActs + '</b> activit' + (_liveActs === 1 ? 'y' : 'ies') + ' so far.'
-          : 'this project has <b>none</b> yet, so every branch correctly reads 0.') +
-        (_gen ? ' The <b>' + _gen + '</b> activities this setup generates are not there until you ' +
-          '<b>' + _stepNo('Generate') + ' · Push to Project Schedule</b>.' : '') +
-        '</p>' +
+        /* ⚠️ THIS PARAGRAPH IS NOW THE BAR AT THE TOP. It said the same thing on one step that the
+           pending strip now says on all of them, and the strip says it as a number. What is kept is
+           the one case the count alone cannot explain: a tree whose rows all read 0 because nothing
+           has ever been pushed, which without a word reads as a fault. */
+        (_gen && !_liveActs
+          ? '<p class="sbld-note sbld-note-warn">Every branch reads <b>0</b> because nothing has ' +
+            'been pushed yet.</p>'
+          : '') +
         /* ⚠️ FOUR PARAGRAPHS BECAME ONE LINE. What went and why:
              • the push’s branch order (trade › grouping › tower › floor › zone) and which location
                levels it uses — both belong to the push DIALOG, which is where the planner sets them;
@@ -39286,6 +39361,20 @@
         : (mode === 'new'
           ? 'Set up the execution programme \u2014 activities, locations, sequencing, the lifecycle phases around it and the <b>WBS</b> \u2014 then push it into the Project Schedule. The generated preview stays here until you do.'
           : 'Start here: bring in an existing programme from Excel or P6, or build a new one step by step.');
+      /* ⚠️ Computed ONCE per render and shown on every step, replacing the per-step sentences that
+         each said the same thing. `generate('int')` is the same call the 5PMLC view already made
+         every render, so this costs nothing new; it is wrapped because a half-built setup can
+         legitimately fail to generate and that must not take the whole panel down. */
+      var _pend = document.getElementById('ps-bld-pending');
+      if (_pend) {
+        var _pg = 0, _pl = 0;
+        try { _pg = generate('int').rows.length; } catch (e) {}
+        try { _pl = (rows || []).filter(function (r) { return !isWbs(r) && r._dkind !== 'group'; }).length; } catch (e) {}
+        _pend.className = 'sbld-pending' + (_pg ? ' on' : '');
+        _pend.innerHTML = _pg
+          ? '<b>' + _pg + '</b> activit' + (_pg === 1 ? 'y' : 'ies') + ' ready to push \u00b7 <b>' + _pl + '</b> in the schedule now'
+          : (_pl ? '<b>' + _pl + '</b> activit' + (_pl === 1 ? 'y' : 'ies') + ' in the schedule' : '');
+      }
       // capture scroll positions of any scrollable panes before the panel is rebuilt
       var _scroll = null;
       if (_prevStep === step) { _scroll = {}; SCROLL_SEL.forEach(function (sel) { _scroll[sel] = Array.prototype.map.call(panel.querySelectorAll(sel), function (el) { return [el.scrollTop, el.scrollLeft]; }); }); }
