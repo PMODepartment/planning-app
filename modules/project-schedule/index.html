@@ -4675,6 +4675,13 @@
   function _paintViewBtn() {
     var t = document.getElementById('ps-viewbtn-txt');
     if (t) t.textContent = _viewName();
+    /* ⚠️ THE TOOLTIP NAMES THE VALUE, because the FACE no longer always does. Compact mode hides
+       this label to buy room, and the title still read "the face shows the current one" — which
+       became false the moment the face was hidden. A tooltip that describes a state the screen is
+       not in is worse than no tooltip: it is the control lying about itself. */
+    var b = document.getElementById('ps-layoutbtn');
+    if (b) b.title = 'View: ' + _viewName() + ' — Gantt, Grid, Split, Activity Network. ' +
+      'Progress and Stacking have their own buttons.';
   }
   var RESRC = [], ASSIGN = [], CALS = [];   // resource master + assignments + calendars for this project
   var CODE_TYPES = [], CODE_VALUES = [], STEPS = [], UDF_DEFS = [];   // activity codes + weighted steps + UDF defs for this project
@@ -9363,6 +9370,10 @@
   function _paintZoomBtn() {
     var t = document.getElementById('ps-zoombtn-txt');
     if (t) t.textContent = _zoomLabel(zoom);   // value only — see _paintViewBtn
+    // ⚠️ Same reason as _paintViewBtn: compact mode can hide the face, so the title carries the value.
+    var b = document.getElementById('ps-zoombtn');
+    if (b) b.title = 'Timeline scale: ' + _zoomLabel(zoom) + ' — or drag a column edge in the date ' +
+      'header / Ctrl + scroll over the chart to fine-tune column width.';
   }
   function renderZoomMenu() {
     var menu = document.getElementById('ps-zoom-menu'); if (!menu) return;
