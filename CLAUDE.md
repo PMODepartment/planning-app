@@ -98,6 +98,20 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-11 (ze) — Keep the Activity › Location preset, and fix the comment that had become false
+
+Owner: **"Keep the Activity › Location preset"**. It stays. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+⚠️⚠️ Confirming that surfaced a defect from the previous commit: the toolbar comment above the
+Flowline button still claimed the Group menu's "LSM" preset was **not** the LSM layout. The previous
+commit made that **false**. A comment that confidently describes the opposite of the code is worse
+than none. Corrected, and the suite now **fails** if either old collision warning reappears — a
+negative build restoring the sentence fails 1.
+
+**399 assertions on the working tree, 15 against the pinned base, 0 failing.** Comments only, no
+behaviour change. `MODULE_V` → `20260911ze`.
+
 ### 2026-09-11 (zd) — The Group menu's "LSM" preset is the LSM layout, and the mode leaves with the grouping
 
 Owner asked *"Should we toggle the LSM through the group → LSM preset?"*, I recommended **no**, and

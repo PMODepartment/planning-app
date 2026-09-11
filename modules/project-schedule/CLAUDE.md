@@ -13,6 +13,25 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### "Keep the Activity › Location preset" — and the comment that had become false (2026-09-11 ze) — fmlozano
+
+Owner, on the preset I offered to drop: **"Keep the Activity › Location preset"**. It stays, and
+the suite now says so in the assertion's own words rather than leaving it to be re-litigated.
+
+⚠️⚠️ **Confirming that surfaced a real defect of my own making.** The comment above the Flowline
+button in the toolbar markup still read *"It is NOT the Group menu's 'LSM' preset, which is
+Activity › Location — the transpose of this layout"*. That was true when it was written and the
+previous commit made it **false**: the preset now carries `lsm: true` and calls `setLsmRows(true)`,
+so both doors open the same layout. A comment that confidently describes the opposite of what the
+code does is worse than no comment — it is what the next reader trusts.
+
+Corrected, and **asserted so it cannot come back**: the suite now fails if the source contains
+either of the two old collision warnings. A negative build restoring the old sentence fails 1.
+
+**399 assertions against the working tree, 15 against the pinned base, 0 failing.** `node --check`
+PARSE OK; comment markers balanced 75/75; 6 insertions / 3 deletions, comments only — **no
+behaviour change**. `MODULE_V` → `20260911ze`.
+
 ### The Group menu's "LSM" preset IS the LSM layout now (2026-09-11 zd) — fmlozano
 
 Owner: *"Should we toggle the LSM through the group → LSM preset?"* I recommended **no** and was
