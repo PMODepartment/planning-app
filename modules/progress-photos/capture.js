@@ -34,6 +34,25 @@ window.Capture = (function () {
   var recTimer = null, recStartedAt = 0;
   var curFacing = 'environment';   // 'environment' = rear camera, 'user' = front — matches facingMode's own vocabulary
   var closing = false;             // re-entrancy guard: a fast double-close must only clean up once
+  // ⚠️ 2026-09-11 fix ("the close button does not close"): getUserMedia's
+  // permission prompt is asynchronous, so a fast tap on × WHILE it's still
+  // pending used to race the overlay's own teardown — close() would run
+  // first (removing the DOM, nulling `overlay`), and the STREAM promise
+  // would still resolve afterwards and try to attach a live camera stream
+  // to a video element that no longer exists, and wire a flip-camera click
+  // handler onto a `null` (getElementById of a removed node) — throwing,
+  // leaking the just-opened MediaStream (nothing ever stopped its tracks),
+  // and leaving the camera indicator lit with no overlay left to close it
+  // from. `sessionToken` is bumped on every close/open; a pending
+  // continuation checks its OWN token against the current one before
+  // touching anything, and stops a stream that arrived too late instead of
+  // attaching it.
+  var sessionToken = 0;
+  // Item 5: "for video, provide option to include or exclude audio" — a
+  // real preference, kept across opens the same way curFacing already is
+  // (turn the mic off once, it stays off next time you record). Photo mode
+  // never reads this at all — it never requested audio in the first place.
+  var wantAudio = true;
 
   function $(id) { return document.getElementById(id); }
 
@@ -54,6 +73,16 @@ window.Capture = (function () {
         'padding:max(10px,env(safe-area-inset-top)) 14px 10px;z-index:2;}' +
       '.pp-cap-close{width:38px;height:38px;border-radius:50%;background:rgba(0,0,0,.45);border:0;color:#fff;' +
         'font-size:20px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;}' +
+      // Item 5: the mic toggle sits where the topbar's empty balancing
+      // span used to (video/360 modes only — see buildOverlay). Same
+      // 38px round-button shape as close, so the row reads as one family;
+      // .is-muted reddens it, the same "this is off" signal .pp-cap-shutter
+      // already uses for the recording dot, so a muted recording session
+      // can never look identical to a normal one at a glance.
+      '.pp-cap-audiotoggle{width:38px;height:38px;border-radius:50%;background:rgba(0,0,0,.45);border:0;color:#fff;' +
+        'cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;}' +
+      '.pp-cap-audiotoggle.is-muted{background:rgba(255,59,48,.55);}' +
+      '.pp-cap-audiotoggle:disabled{opacity:.4;cursor:not-allowed;}' +
       '.pp-cap-timer{color:#fff;font-variant-numeric:tabular-nums;font-size:15px;font-weight:700;' +
         'background:rgba(0,0,0,.45);padding:4px 12px;border-radius:999px;display:none;align-items:center;gap:6px;}' +
       '.pp-cap-timer.on{display:flex;}' +
@@ -62,11 +91,19 @@ window.Capture = (function () {
       '.pp-cap-guide{position:absolute;left:0;right:0;top:56px;display:flex;flex-direction:column;align-items:center;' +
         'gap:10px;z-index:2;pointer-events:none;padding:0 20px;text-align:center;}' +
       '.pp-cap-guide-text{color:#fff;font-size:14px;background:rgba(0,0,0,.5);padding:8px 14px;border-radius:10px;max-width:340px;}' +
-      '.pp-cap-ring{width:76px;height:76px;border-radius:50%;position:relative;' +
-        'background:conic-gradient(#fff var(--pp-cap-pct,0%), rgba(255,255,255,.25) 0);' +
-        'display:flex;align-items:center;justify-content:center;}' +
-      '.pp-cap-ring::after{content:"";position:absolute;inset:5px;border-radius:50%;background:rgba(0,0,0,.55);}' +
-      '.pp-cap-ring span{position:relative;z-index:1;color:#fff;font-weight:700;font-size:13px;}' +
+      // Item 6 (2026-09-11): the 360 guide — a fixed ring of 24 heading
+      // segments (dim until the camera has actually swept past that
+      // bucket) plus a facing marker that moves around the ring live,
+      // replacing the old single conic-gradient percentage wedge (see
+      // ringGuideHTML()'s own comment for why).
+      '.pp-cap-ringwrap{position:relative;width:120px;height:120px;}' +
+      '.pp-cap-ringsvg{width:120px;height:120px;overflow:visible;}' +
+      '.pp-cap-ringbg{fill:rgba(0,0,0,.4);stroke:rgba(255,255,255,.3);stroke-width:2;}' +
+      '.pp-cap-seg{stroke:rgba(255,255,255,.32);stroke-width:4;stroke-linecap:round;transition:stroke .15s;}' +
+      '.pp-cap-seg.is-covered{stroke:#fff;}' +
+      '.pp-cap-facing{fill:#ff3b30;transition:transform .12s linear;}' +
+      '.pp-cap-ringpct{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;' +
+        'color:#fff;font-weight:700;font-size:16px;}' +
       '.pp-cap-bottombar{position:relative;z-index:2;padding:18px 20px max(18px,env(safe-area-inset-bottom));' +
         'display:flex;align-items:center;justify-content:center;gap:0;}' +
       '.pp-cap-shutter-row{display:flex;align-items:center;justify-content:center;width:100%;max-width:420px;}' +
@@ -107,6 +144,7 @@ window.Capture = (function () {
   function close() {
     if (closing) return;
     closing = true;
+    sessionToken++;   // invalidate any in-flight startSession() continuation
     try { if (recorder && recorder.state !== 'inactive') recorder.stop(); } catch (e) {}
     recorder = null;
     stopTimer();
@@ -121,6 +159,21 @@ window.Capture = (function () {
     return navigator.mediaDevices.getUserMedia(constraints);
   }
 
+  // Item 5's mic glyph — hand-drawn rather than a shared icons.js addition:
+  // this file already keeps itself dependency-free of the app's own icon
+  // set (its own header note: "no CSS dependency ... works anywhere it's
+  // loaded"), and .pp-cap-flip already falls back to a plain glyph when
+  // Icons isn't loaded, so a second icon here would need the same fallback
+  // anyway. A slash through the mic body is the universal "muted" mark.
+  function micSVG(muted) {
+    return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+      'stroke-linecap="round" stroke-linejoin="round">' +
+      '<path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z"/>' +
+      '<path d="M19 11a7 7 0 0 1-14 0"/><line x1="12" y1="18" x2="12" y2="22"/>' +
+      (muted ? '<line x1="3" y1="3" x2="21" y2="21" stroke="#fff"/>' : '') +
+      '</svg>';
+  }
+
   function buildOverlay(opts) {
     ensureStyle();
     var el = document.createElement('div');
@@ -129,7 +182,9 @@ window.Capture = (function () {
       '<div class="pp-cap-topbar">' +
         '<button type="button" class="pp-cap-close" id="pp-cap-close" title="Close" aria-label="Close">×</button>' +
         '<span class="pp-cap-timer" id="pp-cap-timer"><span class="dot"></span><span id="pp-cap-timertxt">00:00</span></span>' +
-        '<span class="pp-cap-side"></span>' +
+        (opts.mode !== 'photo'
+          ? '<button type="button" class="pp-cap-audiotoggle" id="pp-cap-audio" title="Toggle microphone" aria-label="Toggle microphone"></button>'
+          : '<span class="pp-cap-side"></span>') +
       '</div>' +
       (opts.guideHTML || '') +
       '<div class="pp-cap-stage">' +
@@ -173,14 +228,52 @@ window.Capture = (function () {
     opts = opts || {};
     overlay = buildOverlay({ mode: mode, hint: opts.hint, guideHTML: opts.guideHTML });
     var videoEl = $('pp-cap-video');
+    // This session's own token — checked against the shared counter after
+    // every await below, so a close() that runs while one of these is still
+    // pending is detected instead of racing it. See the field's own comment.
+    var mySession = ++sessionToken;
+    function stale() { return mySession !== sessionToken; }
     $('pp-cap-close').onclick = function () { close(); if (opts.onCancel) opts.onCancel(); };
+    function audioNow() { return mode !== 'photo' && wantAudio; }
 
     function attach(s) {
       stream = s;
       videoEl.srcObject = s;
     }
 
-    openStream(mode !== 'photo').then(function (s) {
+    // Item 5: the mic toggle only exists (buildOverlay) for video/360 —
+    // photo mode never requests audio at all, so there's nothing to toggle.
+    var audioBtn = $('pp-cap-audio');
+    function syncAudioBtn() {
+      if (!audioBtn) return;
+      audioBtn.innerHTML = micSVG(!wantAudio);
+      audioBtn.classList.toggle('is-muted', !wantAudio);
+      audioBtn.setAttribute('aria-pressed', String(!wantAudio));
+      audioBtn.title = wantAudio ? 'Turn microphone off' : 'Turn microphone on';
+    }
+    if (audioBtn) {
+      syncAudioBtn();
+      audioBtn.onclick = async function () {
+        // ⚠️ Same restriction as flip-camera, and for the identical reason:
+        // an already-recording MediaRecorder is bound to the audio track
+        // its stream had at record-start; there's no clean way to add or
+        // drop a track mid-clip without corrupting it.
+        if (recorder && recorder.state === 'recording') {
+          UI && UI.toast && UI.toast('Turn the mic on/off before you start recording', 'warn');
+          return;
+        }
+        wantAudio = !wantAudio;
+        syncAudioBtn();
+        stopStream();
+        var s3;
+        try { s3 = await openStream(audioNow()); } catch (e) { return; }
+        if (stale()) { try { s3.getTracks().forEach(function (t) { t.stop(); }); } catch (e2) {} return; }
+        attach(s3);
+      };
+    }
+
+    openStream(audioNow()).then(function (s) {
+      if (stale()) { try { s.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {} return; }
       attach(s);
       $('pp-cap-flip').onclick = async function () {
         curFacing = curFacing === 'environment' ? 'user' : 'environment';
@@ -191,11 +284,18 @@ window.Capture = (function () {
         // truncating the clip already in progress.
         if (wasRecording) { UI && UI.toast && UI.toast('Switch camera before you start recording', 'warn'); return; }
         stopStream();
-        try { attach(await openStream(mode !== 'photo')); }
-        catch (e) { curFacing = curFacing === 'environment' ? 'user' : 'environment'; try { attach(await openStream(mode !== 'photo')); } catch (e2) {} }
+        var s2;
+        try { s2 = await openStream(audioNow()); }
+        catch (e) {
+          curFacing = curFacing === 'environment' ? 'user' : 'environment';
+          try { s2 = await openStream(audioNow()); } catch (e2) { return; }
+        }
+        if (stale()) { try { s2.getTracks().forEach(function (t) { t.stop(); }); } catch (e3) {} return; }
+        attach(s2);
       };
       onReady(videoEl);
     }).catch(function (err) {
+      if (stale()) return;
       // ⚠️ No camera, no permission, or an insecure (non-HTTPS) context —
       // every one of these must still leave a way forward: uploading an
       // existing file never depends on getUserMedia at all.
@@ -286,38 +386,96 @@ window.Capture = (function () {
   }
 
   // ------------------------------------------------------------------- 360° --
-  // Item 3: "provide guides on camera to take the video for processing to
-  // 360." A real compass-driven progress ring when the device exposes
-  // orientation (iOS 13+ needs an explicit user gesture + permission
-  // prompt — DeviceOrientationEvent.requestPermission() — which this
-  // function triggers on the FIRST tap of the record button, since it must
-  // run inside a user gesture); everywhere else (desktop, a browser that
-  // refuses orientation, permission denied) the ring instead advances on a
-  // simple elapsed-time estimate for one full slow rotation, so the guide is
-  // still there — just a time-based approximation rather than a true compass
-  // reading — and the recording itself is never blocked by its absence.
+  // Item 3 (original): "provide guides on camera to take the video for
+  // processing to 360." Item 6 (2026-09-11): "improve 360 guide... show
+  // preview of 360 while video" — reworked from a single conic-gradient
+  // percentage ring into a real coverage guide, closer to the referenced
+  // Facebook-style capture (a fixed backdrop the camera pans across, a
+  // highlighted band marking what's already been covered).
+  // ⚠️ SCOPE: this is coverage-by-DIRECTION, not a live stitched panorama.
+  // Actually compositing frames into a preview WHILE still recording would
+  // mean running pano360.js's ORB/homography pipeline concurrently with
+  // MediaRecorder against live frames — real, substantial work with its own
+  // performance/threading questions, and it is NOT attempted here. What IS
+  // real and shipped: the ring now tracks which of 24 heading buckets the
+  // camera has actually swept past (never un-marking one you turn away
+  // from, and — the actual bug in the OLD ring — never over-counting one
+  // you pan back and forth across either, since the old `accumTurned` just
+  // summed absolute movement and happily passed 100% on a phone that never
+  // completed a real walk-around), plus a facing marker that moves around
+  // the fixed ring live, the same "window moving over a fixed backdrop"
+  // shape as the reference image.
   var ROTATION_TARGET_MS = 18000;   // the elapsed-time fallback's assumed "one slow full turn"
+  var COVERAGE_BUCKETS = 24, BUCKET_DEG = 360 / COVERAGE_BUCKETS;
+  // Pure, and exported (Capture._coverageSteps) purely so it can be
+  // genuinely executed by a test — a flipped `dir` here silently marks
+  // nearly the WHOLE ring covered on a single small step back the way you
+  // came, which nothing short of running it against real inputs would
+  // catch. Returns every bucket index from `lastBucket` to `idx` inclusive,
+  // walked the SHORTER way around a `total`-bucket ring.
+  function coverageSteps(lastBucket, idx, total) {
+    var fwd = (idx - lastBucket + total) % total;
+    var bwd = (lastBucket - idx + total) % total;
+    var dir = fwd <= bwd ? 1 : -1, steps = Math.min(fwd, bwd);
+    var out = [], cur = lastBucket;
+    for (var s = 0; s <= steps; s++) { out.push(cur); cur = (cur + dir + total) % total; }
+    return out;
+  }
   function requestOrientationPermission() {
     if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function') {
       return DeviceOrientationEvent.requestPermission().then(function (r) { return r === 'granted'; }).catch(function () { return false; });
     }
     return Promise.resolve(!!window.DeviceOrientationEvent);
   }
+  // The ring's own markup — a fixed circle of 24 tick segments (one per
+  // 15° heading bucket, drawn once) plus a facing marker that rotates live
+  // and a centred percentage label. Segments are addressed by id
+  // (`pp-cap-seg-0`..`pp-cap-seg-23`) rather than rebuilt, so lighting one
+  // up as its bucket is covered is a single classList.add — no re-render.
+  function ringGuideHTML() {
+    var segs = '';
+    for (var i = 0; i < COVERAGE_BUCKETS; i++) {
+      segs += '<line class="pp-cap-seg" id="pp-cap-seg-' + i + '" x1="60" y1="7" x2="60" y2="19" ' +
+        'transform="rotate(' + (i * BUCKET_DEG) + ' 60 60)" />';
+    }
+    return '<div class="pp-cap-guide">' +
+      '<div class="pp-cap-guide-text">Hold the phone level and slowly turn all the way around while recording — the ring lights up where you’ve already covered.</div>' +
+      '<div class="pp-cap-ringwrap">' +
+        '<svg class="pp-cap-ringsvg" viewBox="0 0 120 120" width="120" height="120">' +
+          '<circle class="pp-cap-ringbg" cx="60" cy="60" r="52" />' +
+          segs +
+          '<polygon class="pp-cap-facing" id="pp-cap-facing" points="60,10 55,24 65,24" transform="rotate(0 60 60)" />' +
+        '</svg>' +
+        '<span class="pp-cap-ringpct" id="pp-cap-ringpct">0%</span>' +
+      '</div>' +
+    '</div>';
+  }
   function take360(onDone) {
-    var guideHTML =
-      '<div class="pp-cap-guide">' +
-        '<div class="pp-cap-guide-text">Hold the phone level and slowly turn all the way around while recording — try to keep the horizon centred.</div>' +
-        '<div class="pp-cap-ring" id="pp-cap-ring"><span id="pp-cap-ringpct">0%</span></div>' +
-      '</div>';
-    startSession('360', { hint: 'Tap to start recording your 360° walk-around', guideHTML: guideHTML, onCancel: function () { onDone(null); } }, function () {
+    startSession('360', { hint: 'Tap to start recording your 360° walk-around', guideHTML: ringGuideHTML(), onCancel: function () { onDone(null); } }, function () {
       var shutter = $('pp-cap-shutter');
       var mimeType = pickMimeType();
-      var usingCompass = false, startHeading = null, accumTurned = 0, lastHeading = null;
+      var usingCompass = false, startHeading = null, lastBucket = -1;
+      var covered = new Array(COVERAGE_BUCKETS).fill(false);
       var orientHandler = null;
-      function setPct(p) {
-        p = Math.max(0, Math.min(100, p));
-        var ring = $('pp-cap-ring'); if (ring) ring.style.setProperty('--pp-cap-pct', p + '%');
-        var lbl = $('pp-cap-ringpct'); if (lbl) lbl.textContent = Math.round(p) + '%';
+      function markCovered(headingRel) {
+        headingRel = ((headingRel % 360) + 360) % 360;
+        var facing = $('pp-cap-facing');
+        if (facing) facing.setAttribute('transform', 'rotate(' + headingRel + ' 60 60)');
+        var idx = Math.floor(headingRel / BUCKET_DEG) % COVERAGE_BUCKETS;
+        // Mark every bucket crossed since the last reading, not just the
+        // one landed on — a fast turn between two ticks would otherwise
+        // silently skip whatever buckets it swept past. coverageSteps()
+        // walks whichever direction is SHORTER around the ring; walking
+        // the wrong way round would mark nearly the whole ring covered for
+        // one small step back the way you came.
+        if (lastBucket === -1) lastBucket = idx;
+        coverageSteps(lastBucket, idx, COVERAGE_BUCKETS).forEach(function (cur) {
+          covered[cur] = true;
+          var seg = $('pp-cap-seg-' + cur); if (seg) seg.classList.add('is-covered');
+        });
+        lastBucket = idx;
+        var pct = Math.round((covered.filter(Boolean).length / COVERAGE_BUCKETS) * 100);
+        var lbl = $('pp-cap-ringpct'); if (lbl) lbl.textContent = pct + '%';
       }
       function stopOrientation() {
         if (orientHandler) { window.removeEventListener('deviceorientationabsolute', orientHandler); window.removeEventListener('deviceorientation', orientHandler); orientHandler = null; }
@@ -337,25 +495,21 @@ window.Capture = (function () {
               orientHandler = function (e) {
                 var h = (e.webkitCompassHeading != null) ? e.webkitCompassHeading : e.alpha;
                 if (h == null) return;
-                if (lastHeading != null) {
-                  var d = h - lastHeading;
-                  if (d > 180) d -= 360; else if (d < -180) d += 360;
-                  accumTurned += Math.abs(d);
-                }
-                lastHeading = h;
-                setPct((accumTurned / 360) * 100);
+                if (startHeading == null) startHeading = h;
+                markCovered(h - startHeading);
               };
               window.addEventListener('deviceorientationabsolute', orientHandler);
               window.addEventListener('deviceorientation', orientHandler);
             }
           });
           // Elapsed-time fallback runs regardless — if the compass IS
-          // reporting, its own accumulated-turn percentage overwrites this
-          // on the next tick anyway, so there's no fight between the two;
-          // if it never fires (no permission/no sensor), this is the only
-          // progress the ring ever shows.
+          // reporting, its own bucket coverage overwrites this on the next
+          // tick anyway, so there's no fight between the two; if it never
+          // fires (no permission/no sensor), this is the only progress the
+          // ring ever shows — a synthetic heading sweeping at a steady rate
+          // rather than a real one, same honest approximation as before.
           var fallbackTimer = setInterval(function () {
-            if (!usingCompass) setPct(((Date.now() - recStart) / ROTATION_TARGET_MS) * 100);
+            if (!usingCompass) markCovered(((Date.now() - recStart) / ROTATION_TARGET_MS) * 360);
           }, 300);
           startRecording(mimeType, function (blob) {
             clearInterval(fallbackTimer);
@@ -367,5 +521,11 @@ window.Capture = (function () {
     });
   }
 
-  return { takePhoto: takePhoto, takeVideo: takeVideo, take360: take360, close: close };
+  return {
+    takePhoto: takePhoto, takeVideo: takeVideo, take360: take360, close: close,
+    // Test-only hook — genuinely executes the real coverage-walk function
+    // (never a re-description of it) without needing a camera/orientation
+    // stack at all, since it's pure.
+    _coverageSteps: function (lastBucket, idx, total) { return coverageSteps(lastBucket, idx, total); }
+  };
 })();
