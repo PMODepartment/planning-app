@@ -2938,6 +2938,15 @@ window.ProgressPhotos = (function () {
         pinEl.className = 'pp-kpmini-pin pp-kpmini-pin-' + (pin.item_type || 'photo');
         pinEl.style.left = (pin.x_norm * 100) + '%';
         pinEl.style.top = (pin.y_norm * 100) + '%';
+        // ⚠️ 2026-09-11 fix (second round): this is the "when photo is
+        // opened and the key plan is shown" pin — item 4's exact wording.
+        // It manages the static #pp-lb-keyplan-overlay-pin span directly
+        // (className + position) rather than regenerating HTML from
+        // BIM.keyPlanMiniMarkerHTML, so that function's own icon addition
+        // never reached it on its own; wired in here too, same rule
+        // (person/drone by direction_na), so the lightbox's own overlay
+        // matches the mini marker everywhere else it's drawn.
+        pinEl.innerHTML = window.Icons ? Icons.svg(pin.direction_na ? 'drone' : 'person', 9) : '';
       } else {
         pinEl.hidden = true;
       }
@@ -2978,20 +2987,29 @@ window.ProgressPhotos = (function () {
   // BIM.coneWedgeSVGAt()+innerHTML rebuild for every one of them. The
   // pointermove handler only WRITES scrollLeft; it never calls the repaint
   // itself, since that write already fires the 'scroll' listener below.
-  function wirePanoDrag() {
-    var wrap = $('pp-lb-panowrap');
+  // Generic drag-to-pan for an overflow-x:auto strip — pulled out of
+  // wirePanoDrag() below (2026-09-11, second round item 5: "preview should
+  // be navigable or operable as 360") so the 360°-upload modal's own
+  // stitched-panorama preview can reuse the EXACT same pan gesture the
+  // saved-photo lightbox viewer already has, rather than a second,
+  // independently-behaved widget. `onScrollFrac(frac)` is optional and, when
+  // given, is called at most once per animation frame with the strip's
+  // current scroll position as a 0..1 fraction — the same "raw high-frequency
+  // input -> a dirty flag + a single rAF-driven callback" discipline this
+  // app's own 360° viewer history already established, now shared rather
+  // than reimplemented per caller.
+  function wireDragPan(wrap, onScrollFrac) {
     if (!wrap) return;
-    var dragging = false, startX = 0, startScroll = 0, repaintRaf = null;
-    function repaintCone() {
-      repaintRaf = null;
-      var r = byId(lightboxIds[lightboxAt]);
-      if (r && r.media_type === '360' && lightboxKeyPlanVisible) paintKeyPlanOverlay(r);
+    var dragging = false, startX = 0, startScroll = 0, rafId = null;
+    function fire() {
+      rafId = null;
+      if (!onScrollFrac) return;
+      var maxScroll = Math.max(1, wrap.scrollWidth - wrap.clientWidth);
+      onScrollFrac(wrap.scrollLeft / maxScroll);
     }
     function onScrollChange() {
-      var maxScroll = Math.max(1, wrap.scrollWidth - wrap.clientWidth);
-      lightboxPanoHeadingDeg = (wrap.scrollLeft / maxScroll) * 360;
-      if (repaintRaf) return;
-      repaintRaf = requestAnimationFrame(repaintCone);
+      if (rafId) return;
+      rafId = requestAnimationFrame(fire);
     }
     wrap.addEventListener('pointerdown', function (e) {
       dragging = true; startX = e.clientX; startScroll = wrap.scrollLeft;
@@ -3004,6 +3022,17 @@ window.ProgressPhotos = (function () {
     wrap.addEventListener('pointerup', function () { dragging = false; });
     wrap.addEventListener('pointercancel', function () { dragging = false; });
     wrap.addEventListener('scroll', onScrollChange);
+  }
+  // Item 4: drag-to-pan for the LIGHTBOX's 360° viewer specifically — wires
+  // the shared wireDragPan() onto #pp-lb-panowrap and, on every scroll
+  // however it happened, updates lightboxPanoHeadingDeg and re-paints the
+  // key-plan cone so it keeps following the direction actually on screen.
+  function wirePanoDrag() {
+    wireDragPan($('pp-lb-panowrap'), function (frac) {
+      lightboxPanoHeadingDeg = frac * 360;
+      var r = byId(lightboxIds[lightboxAt]);
+      if (r && r.media_type === '360' && lightboxKeyPlanVisible) paintKeyPlanOverlay(r);
+    });
   }
   // Round-2 item 4: drag the overlay's bottom-left corner to resize it —
   // pinned top/right, so only the WIDTH needs to change; the <img>'s own
@@ -4896,11 +4925,14 @@ window.ProgressPhotos = (function () {
     // sharpness, available at upload time for the same reason markup is —
     // one in-memory {exposure,brightness,contrast,sharpness} per staged file.
     var pendingAdjust = {};   // staged-file index -> adjustments object
-    // Item 1: a capture (Take Photo/Take Video) and a chosen file (Upload
-    // Photo/Upload Video) both land in the SAME array — one staged batch,
-    // built up additively by either route, in whichever order the planner
-    // used them.
-    var stagedFiles = [];     // File | Blob-with-.name, in staging order
+    // Item 1 (2026-09-11, second round): "only 1 photo or video is allowed
+    // when adding media" — REVERSES the earlier "batch upload" design a
+    // few lines below this comment used to describe. A capture (Take
+    // Photo/Take Video) and a chosen file (Upload Photo/Upload Video) both
+    // still land in the SAME array, but that array is now capped at ONE —
+    // see addStagedFiles(), which REPLACES whatever was staged rather than
+    // appending to it.
+    var stagedFiles = [];     // File | Blob-with-.name — at most one, see addStagedFiles()
     var stagedUrls = [];      // parallel object URLs, created lazily, revoked on close
     function cleanupStaged() {
       stagedUrls.forEach(function (u) { try { URL.revokeObjectURL(u); } catch (e) {} });
@@ -4911,11 +4943,10 @@ window.ProgressPhotos = (function () {
       _uploadModalOpen = false;
     }
     var html =
-      '<div class="pd-modal-header"><h3>Add ' + nounPlural.toLowerCase() + '</h3>' +
+      '<div class="pd-modal-header"><h3>Add a ' + nounSingular + '</h3>' +
         '<button class="pd-modal-close" data-close>×</button></div>' +
       '<div class="pp-form">' +
-        '<p class="pp-hint">Fields below apply to every file in this batch — edit any ' +
-          'individual item afterwards.</p>' +
+        '<p class="pp-hint">One ' + nounSingular + ' per add — take or choose another to replace it.</p>' +
         '<div class="pd-field" id="pp-filesfield"><label>' + nounPlural + '</label>' +
           // Item 1: "provide separate buttons for take photo/video and
           // upload photo/video" -- Take opens the in-app camera overlay
@@ -4937,7 +4968,14 @@ window.ProgressPhotos = (function () {
             '<button type="button" class="pd-btn" id="pp-take">Take ' + (isVideoKind ? 'Video' : 'Photo') + '</button>' +
             '<button type="button" class="pd-btn" id="pp-choosefiles">Upload ' + (isVideoKind ? 'Video' : 'Photo') + '</button>' +
           '</div>' +
-          '<input class="pd-input" type="file" id="pp-files" hidden accept="' + (isVideoKind ? 'video/*' : 'image/*') + '" multiple />' +
+          // ⚠️ 2026-09-11 fix, second round: `multiple` is REMOVED — item 1
+          // now caps this whole modal at one photo/video at a time, and a
+          // native multi-select picker offering more than the modal will
+          // ever keep is worse than one that can't over-select in the
+          // first place. addStagedFiles() below is the actual enforcement
+          // (it also guards the Take-photo/video and 360 paths); this is
+          // just not inviting the picker to hand back more to begin with.
+          '<input class="pd-input" type="file" id="pp-files" hidden accept="' + (isVideoKind ? 'video/*' : 'image/*') + '" />' +
         '</div>' +
         '<div class="pp-gallery" id="pp-stagedgrid" style="margin:8px 0;"></div>' +
         '<div class="pp-form2">' +
@@ -5000,7 +5038,27 @@ window.ProgressPhotos = (function () {
       });
     }
     function addStagedFiles(list) {
-      Array.prototype.forEach.call(list || [], function (f) { stagedFiles.push(f); });
+      var incoming = Array.prototype.slice.call(list || []);
+      if (!incoming.length) return;
+      // Item 1 (2026-09-11, second round): "only 1 photo or video is
+      // allowed when adding media — do not allow multiple uploads per add
+      // media." This used to push every incoming file onto a growing
+      // batch; it now REPLACES whatever was staged with just the latest
+      // pick, whichever route it came from (Take or Upload) — so the
+      // modal can never hold more than one item, however many times
+      // either button is used or how many files a picker hands back in
+      // one go. Reusing this single function is what makes the cap catch
+      // BOTH entry points at once rather than needing two separate checks.
+      var hadPrevious = stagedFiles.length > 0;
+      stagedUrls.forEach(function (u) { if (u) { try { URL.revokeObjectURL(u); } catch (e) {} } });
+      stagedFiles = [];
+      stagedUrls = [];
+      pendingMarkup = {};
+      pendingAdjust = {};
+      stagedFiles.push(incoming[incoming.length - 1]);
+      if (hadPrevious || incoming.length > 1) {
+        UI.toast('Only one ' + nounSingular + ' can be added at a time — replaced the previous selection', 'warn');
+      }
       renderStagedGrid();
     }
 
@@ -5168,30 +5226,43 @@ window.ProgressPhotos = (function () {
           '<button type="button" class="pd-btn" id="pp360-offlineclose">Close</button>' +
         '</div>' +
         '<div id="pp360-progress" hidden><div class="pp-progress" id="pp360-prog"></div></div>' +
+        // Item 5 (2026-09-11, second round): "show already all the input
+        // fields as with adding photos or videos" -- the previous version
+        // nested Description/Date/Works/Location/Pin inside #pp360-result,
+        // hidden until the stitch finished. They are now their own block,
+        // rendered from the moment the modal opens, exactly like the
+        // ordinary photo/video Add Media form -- only the PREVIEW itself
+        // (which obviously cannot exist before processing) still waits.
         '<div id="pp360-result" hidden>' +
           '<div id="pp360-qualitywarn" class="pp-hint" hidden style="color:var(--pd-warn,#a66);">' +
             'Low confidence stitch -- the video may not have had enough overlap between frames. Review before presenting.</div>' +
-          '<div class="pp-adj-canvaswrap pp-mk-canvaswrap" id="pp360-previewwrap">' +
-            '<img id="pp360-preview" alt="Processed 360° preview" style="max-width:100%;display:block;" />' +
+          // Item 5: "preview should be navigable or operable as 360, dont
+          // just show a panoramic still photo" -- reuses the SAME
+          // drag-to-pan strip the saved-360°-photo lightbox viewer already
+          // uses (wireDragPan, factored out of wirePanoDrag below), rather
+          // than a second, differently-behaved preview widget.
+          '<div class="pp-lb-panowrap" id="pp360-panowrap" style="border-radius:var(--pd-radius);">' +
+            '<img class="pp-lb-pano" id="pp360-pano" alt="Processed 360° preview" />' +
           '</div>' +
+          '<p class="pp-hint">Drag to look around the stitched panorama.</p>' +
           '<div style="margin:6px 0;"><button type="button" class="pd-btn" id="pp360-adjust">Adjust</button></div>' +
-          '<div class="pd-field"><label>Representative frame ' +
-            '<span class="pd-muted" style="font-weight:400;">(also used as the thumbnail)</span></label>' +
-            '<input type="range" id="pp360-repslider" min="0" max="1" step="0.01" value="0.5" style="width:100%;" />' +
-            '<img id="pp360-repframe" alt="Representative frame" style="max-width:220px;display:block;margin-top:6px;" />' +
-          '</div>' +
-          '<div class="pp-form2">' +
-            '<div class="pd-field"><label>Description</label>' +
-              '<input class="pd-input" id="pp360-desc" placeholder="e.g. Model Unit" /></div>' +
-            '<div class="pd-field"><label>Capture date' + reqMark() + '</label>' +
-              '<input class="pd-input" type="date" id="pp360-date" value="' + today + '" required /></div>' +
-            worksMultiFieldHTML('pp360', []) +
-            locationFieldHTML('pp360', {}) +
-            (window.BIM ? BIM.pinFieldHTML('pp360', null) : '') +
+          '<div class="pd-field"><label>Thumbnail frame ' +
+            '<span class="pd-muted" style="font-weight:400;">(defaults to the last frame of your walk-around)</span></label>' +
+            '<input type="range" id="pp360-repslider" min="0" max="1" step="0.01" value="1" style="width:100%;" />' +
+            '<img id="pp360-repframe" alt="Thumbnail frame" style="max-width:220px;display:block;margin-top:6px;" />' +
           '</div>' +
         '</div>' +
+        '<div class="pp-form2">' +
+          '<div class="pd-field"><label>Description</label>' +
+            '<input class="pd-input" id="pp360-desc" placeholder="e.g. Model Unit" /></div>' +
+          '<div class="pd-field"><label>Capture date' + reqMark() + '</label>' +
+            '<input class="pd-input" type="date" id="pp360-date" value="' + today + '" required /></div>' +
+          worksMultiFieldHTML('pp360', []) +
+          locationFieldHTML('pp360', {}) +
+          (window.BIM ? BIM.pinFieldHTML('pp360', null) : '') +
+        '</div>' +
       '</div>' +
-      '<div class="pd-modal-footer" id="pp360-footer" hidden>' +
+      '<div class="pd-modal-footer">' +
         '<button class="pd-btn" data-close>Cancel</button>' +
         '<button class="pd-btn pd-btn-primary" id="pp360-save">Save 360° photo</button></div>';
 
@@ -5233,15 +5304,19 @@ window.ProgressPhotos = (function () {
         stitchUrl = URL.createObjectURL(res.blob);
         show('pp360-progress', false);
         show('pp360-result', true);
-        show('pp360-footer', true);
-        var img = $('pp360-preview'); if (img) img.src = stitchUrl;
+        var img = $('pp360-pano'); if (img) img.src = stitchUrl;
+        wireDragPan($('pp360-panowrap'));
         var warn = $('pp360-qualitywarn'); if (warn) warn.hidden = res.quality !== 'poor';
-        // The representative-frame scrubber's default is the midpoint of
-        // the walk-around, before the planner ever touches the slider.
+        // Item 5 (2026-09-11, second round): "the 360 preview should also
+        // be the basis of the thumbnail where in last frame will be used
+        // as thumbnail" -- the scrubber now defaults to the END of the
+        // walk-around (was the midpoint) rather than requiring the planner
+        // to pick one; it stays adjustable in case the very last instant is
+        // blurry (the camera still moving as recording stopped).
         var dur = await Pano360.getDuration(videoBlob);
         var slider = $('pp360-repslider');
-        if (slider) { slider.max = String(Math.max(0.01, dur)); slider.value = String(dur / 2); }
-        updateRepFrame(dur / 2);
+        if (slider) { slider.max = String(Math.max(0.01, dur)); slider.value = String(dur); }
+        updateRepFrame(dur);
       } catch (err) {
         show('pp360-progress', false);
         UI.toast('Could not build the panorama' + (err && err.message ? ' (' + err.message + ')' : ''), 'error');

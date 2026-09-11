@@ -473,6 +473,15 @@
 }
 .pp-lb-panowrap:active { cursor: grabbing; }
 .pp-lb-pano { display: block; height: 78vh; max-height: 78vh; width: auto; max-width: none; user-select: none; }
+/* Item 5 (2026-09-11, second round): the 360°-upload modal reuses this same
+   pan strip for its OWN preview ("navigable ... not just a panoramic still
+   photo") — but that preview sits inside a ~600px-wide modal, not the
+   full-viewport lightbox, so the lightbox's own 78vh height would blow the
+   modal out. #pp360-panowrap/#pp360-pano override it with a fixed, modal-
+   appropriate size; an id selector wins over the shared .pp-lb-pano/
+   .pp-lb-panowrap class rules regardless of source order. */
+#pp360-panowrap { max-width: 100%; max-height: 240px; height: 240px; }
+#pp360-pano { height: 240px; max-height: 240px; }
 /* Round-2 item 3 (2026-09-02): REPLACES the old zoom in/out buttons — "have a
    magnifier instead". A circular lens that follows the cursor while it's over
    the photo, showing a magnified crop of the SAME <img> via a background-
@@ -533,12 +542,21 @@
    accurate pie-slice geometry the Plans-tab marker and the capture widget
    itself draw, full-bleed via the shared .bim-conewedge-svg rule
    (module.css, bim.js's own section) regardless of the box's own size. */
+/* ⚠️ 2026-09-11 fix (second round): was a bare teardrop (translate -50%,-100%;
+   border-radius 50% 50% 50% 0), coloured green (--pd-ok) with no icon at all —
+   "use the same pin as when adding... the red circle with corresponding
+   icon, don't use the green pin." Reshaped into a small circle CENTRED on
+   the point (matching .bim-pinstage-dot's own centring, not a teardrop
+   anchored at its base) and recoloured red, so it reads as the same pin
+   the capture-time widget drew, just smaller. */
 .pp-kpmini-pin {
-  position: absolute; transform: translate(-50%, -100%);
-  width: 12px; height: 12px; border-radius: 50% 50% 50% 0; transform-origin: center;
+  position: absolute; transform: translate(-50%, -50%);
+  width: 16px; height: 16px; border-radius: 50%;
   border: 1.5px solid #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .45); pointer-events: none;
+  display: flex; align-items: center; justify-content: center; color: #fff;
 }
-.pp-kpmini-pin.pp-kpmini-pin-photo { background: var(--pd-ok); }
+.pp-kpmini-pin svg { width: 9px; height: 9px; }
+.pp-kpmini-pin.pp-kpmini-pin-photo { background: var(--pd-red); }
 .pp-lb-kpoverlay-cone { position: absolute; inset: 0; pointer-events: none; }
 .pp-lb-cap {
   margin-top: 12px; color: #fff; text-align: center;

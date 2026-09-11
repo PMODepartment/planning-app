@@ -2,6 +2,247 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Second capture-flow round: single-item Add Media, a mic toggle that
+## finally works at any point in a recording, a real 360° stitching bug
+## found and fixed, a navigable panorama preview, and one honest platform
+## limitation (2026-09-11)
+
+Owner, off the just-shipped capture-flow round and a screenshot of the Add
+Media modal:
+```
+1. only 1 photo or video is allowed when adding media. do not allow multiple uploads per add media
+2. when taking video, the mute button and close button is not working
+3. when clicking upload photo or upload video, it still gives me three choices as shown in
+   attached. i want to go direct to choose from gallery
+4. when photo is opened and the key plan is shown, use the same pin as when adding. the red
+   circle with corresponding icon. don't use the green pin.
+5. when clicking add media > 360, show already all the input fields as with adding photos or
+   videos. improve 360 taking guide by moderating speed. once the video for 360 is processed,
+   preview should be navigable or operable as 360, dont just show a panoramic still photo. the
+   360 preview should also be the basis of the thumbnail where in last frame will be used as
+   thumbnail. improve also the processing of video to 360. processing has been failing.
+6. again, if location and works are not set-up in schedule, make the two fields optional
+```
+
+### Item 6 was already done — re-checked, not re-built
+
+`requiredFieldsMissing()` already reads `scheduleHasActivities()` (Works) and
+`LOC_LEVELS.length` (Location) before demanding either field, both already
+guard against a schedule with nothing to offer, and both were shipped and
+verified in the 2026-08-30 round. Re-read line by line against the shipped
+file before touching anything else in this round — still correct, nothing
+regressed it. No change.
+
+### ⚠️⚠️ Item 1 REVERSES the multi-upload allowance the previous round shipped
+
+That round removed `capture="environment"` specifically because it silently
+capped the picker to one file — fixing it made a batch of several photos
+possible again. This round's ask is the opposite: **at most one photo or
+video per "Add media"**. `#pp-files` drops `multiple` outright (a picker that
+can't even offer more than one is safer than one that can and gets trimmed
+after the fact), and `addStagedFiles(list)` — the one function both Take and
+Upload funnel through — no longer **appends** to a growing `stagedFiles`
+array; it **replaces** it: revokes any already-staged object URL, clears
+`pendingMarkup`/`pendingAdjust`, and stages only the latest pick, with a toast
+naming what happened when there was already something staged. Reusing this
+one function is what makes the cap catch Take, Upload *and* a picker that
+somehow still hands back more than one file in a single call, without three
+separate checks.
+
+### Item 3 — the native three-way chooser is a platform limit, and it turns out to cover BOTH kinds
+
+The prior round's fix removed `capture=` from photo specifically because
+that attribute forces the camera and, as a side effect, caps the picker to
+one file. What it left unaddressed — flagged at the time as an "honest
+platform limit" for **video** only — turns out to also describe **photo** on
+a real device: with no `capture` attribute at all, both iOS Safari and
+Android Chrome still present their own native chooser (Camera / Photo
+Library / Files, or the platform's equivalent three-way sheet) for a bare
+`<input type="file" accept="image/*">`. ⚠️ **There is no cross-browser HTML/
+JS mechanism that skips straight to the gallery tab of that sheet** — this
+was checked again this round, not assumed from the earlier entry, and the
+conclusion is the same: nothing here can be fixed by this app's own code.
+Recorded plainly rather than left as a silently-reopened bug report.
+
+### ⚠️⚠️ Item 2 — the mic toggle now works at ANY point, because it stopped tearing the stream down to do its job
+
+The previous round's mic button reopened the **whole camera+mic stream**
+every time it was toggled, and refused outright — a toast, nothing else —
+while a recording was in progress (the same restriction flip-camera already
+has, and for the same underlying reason: a live `MediaRecorder` is bound to
+whatever tracks its stream had at record-start). That refusal is almost
+certainly what read as "not working": tapping mute mid-recording visibly did
+nothing.
+
+Audio is now requested **up front** for every non-photo capture
+(`openStreamWithAudioFallback`, retrying video-only if the combined request
+fails — a device with no microphone must not lose camera access outright
+over an unrelated missing mic), and the toggle no longer reopens anything at
+all: it flips the live stream's own audio **track's `.enabled` flag**. A
+disabled track still exists and still feeds a live `MediaRecorder` — it just
+contributes silence for that stretch — so muting/unmuting now works
+identically before, during and after a recording, with nothing to race and
+nothing to refuse. `syncAudioBtn()` disables the button and shows it muted
+only when the stream genuinely has no audio track at all (the fallback
+path), so a button that looks live never silently does nothing.
+
+⚠️⚠️ **A second, real bug found while working on the same code, fixed
+alongside it:** `startRecording`'s `recorder.onstop` handler closed over the
+**module-level** `recorder` variable — and `close()` sets that variable to
+`null` **synchronously**, the instant `recorder.stop()` is called, well
+before the async `'stop'` event this handler answers actually fires. Reading
+`recorder.mimeType` at that point threw `Cannot read properties of null`
+**inside the browser's own event dispatch**, on every close (or shutter-stop)
+that happened while recording — exactly the kind of failure that can read as
+"the close button doesn't work" even though the overlay itself (torn down
+synchronously in `close()`, well before this ever fires) was already gone.
+Fixed by capturing the recorder instance in a **local** (`rec`) the closure
+reads instead of the module-level var.
+
+### ⚠️⚠️ Item 4 — the key-plan pin was green in TWO places, not the one place fixed last time
+
+The previous round's fix (2026-09-11, first round of this same day) unified
+the Gallery lightbox's corner overlay and the Presentation pane's overlay
+onto one `BIM.keyPlanMiniMarkerHTML`, replacing a cruder duplicate — but it
+never touched the actual **colour**, and it turns out "when photo is opened"
+is answered by a THIRD code path this file hadn't looked at: module.js's
+`paintKeyPlanOverlay()` manages the lightbox's own static
+`#pp-lb-keyplan-overlay-pin` span **directly** (className + position), never
+by regenerating HTML from `keyPlanMiniMarkerHTML` — so fixing that function
+alone would have left the actual reported screen unchanged.
+
+- **`.pp-kpmini-pin.pp-kpmini-pin-photo`** goes from `var(--pd-ok)` (green)
+  to `var(--pd-red)` — matching `.bim-pinstage-dot`, the capture-time
+  widget's own red circle, which is literally what "the same pin as when
+  adding" means. The shape changed too: a 12px teardrop anchored at its
+  base (`translate(-50%,-100%)`, `border-radius:50% 50% 50% 0`) becomes a
+  16px **circle** centred on the point (`translate(-50%,-50%)`,
+  `border-radius:50%`) — the teardrop was never what the capture widget
+  drew, so matching it meant matching the shape too, not just the colour.
+- **Both drawing paths now carry a real icon** — `Icons.svg(pin.direction_na
+  ? 'drone' : 'person', 9)` — the identical rule `pinFieldHTML`'s own
+  capture-time widget already uses. `keyPlanMiniMarkerHTML` (bim.js, used by
+  `ppr.js`'s presentation pane) gained it in its returned HTML string;
+  `paintKeyPlanOverlay` (module.js, the lightbox's own direct-DOM path)
+  gained the identical `pinEl.innerHTML = ...` assignment, wired in
+  separately since it never calls the shared function at all.
+- ⚠️ The full-size Plans-tab marker (`.bim-pin`/`pinMarkerHTML`, a different
+  screen entirely) is untouched — it still colours a photo pin green with a
+  plain camera icon, which is that screen's own established convention and
+  was not what this report was about.
+
+### ⚠️⚠️ Item 5 — five separate pieces, one of them a real, previously-shipped stitching bug
+
+**Fields shown up front.** `open360Upload`'s Description/Capture date/Works/
+Location/Pin block used to live inside `#pp360-result`, hidden until the
+stitch finished — the exact opposite of the ordinary photo/video Add Media
+form, which shows all its fields immediately. That block now sits outside
+`#pp360-result`, rendered the moment the modal opens; only the stitched
+**preview** itself (which obviously cannot exist before processing) still
+waits. The footer (Cancel/Save) is likewise no longer hidden behind
+processing — Save already checked `if (!stitchResult || !repBlob)` and
+toasts "still processing" rather than erroring, so showing it early costs
+nothing.
+
+**Pace moderation.** Two changes: the elapsed-time fallback's assumed "one
+slow full turn" duration goes from 18s to 24s (used only when there's no
+real compass to measure the actual turn against — a faster assumed pace had
+the ring finish before a genuinely careful walk-around would); and, when a
+real compass **is** reporting, actual angular speed is now measured between
+consecutive readings and a "Slow down — turning too fast blurs the frames"
+hint appears above `PACE_TOO_FAST_DEG_PER_SEC` (90°/s, roughly a full turn
+in under 4 seconds) with a short hold time so it doesn't flicker on noisy
+sensor data. Both target the same real problem: panning too fast starves
+consecutive frames of the overlap `pano360.js`'s feature matcher needs.
+
+**A navigable preview, not a static image.** The processed panorama used to
+render as a plain `<img>`. It now reuses the **exact same** drag-to-pan strip
+(`.pp-lb-panowrap`/`.pp-lb-pano`) the saved-360°-photo lightbox viewer
+already has — `wireDragPan`, pulled out of `wirePanoDrag()` as a small
+generic helper so both callers share one drag gesture instead of two
+independently-behaved ones. `#pp360-panowrap`/`#pp360-pano` override the
+lightbox's own 78vh sizing (correct for a full-viewport lightbox, far too
+tall for a ~600px-wide modal) with a fixed 240px box via id-specific rules.
+
+**Thumbnail defaults to the last frame.** The representative-frame scrubber
+used to default to the walk-around's midpoint; it now defaults to the END
+("the last frame will be used as thumbnail"), while staying adjustable in
+case the very last instant is blurry (the camera still moving as recording
+stopped).
+
+**⚠️⚠️ THE REAL FIND: the stitching pipeline never accumulated its
+homographies, and that is why processing was failing.** Reading
+`pano360.js`'s `stitchFrames`/`warpOnto` before touching anything: every
+frame past the first was warped using only its own **pairwise** homography
+against the raw, un-warped previous frame — correct for frame 1, silently
+wrong for every frame after it. Frame i−1's local pixel grid only coincides
+with the growing mosaic's coordinate system for i=1; from i=2 on, frame i−1
+had already been shifted within the mosaic by every homography applied
+before it, and nothing accounted for that. The practical effect is not a
+thrown error — a real image comes back — it is a mosaic that looks stitched
+and is actually broken: frames past the first pair landing back near the
+mosaic's own left edge instead of progressively further along it, with most
+of the canvas past roughly one frame's width staying blank. That is exactly
+"processing has been failing" with nothing on screen to explain why.
+
+Fixed by **composing** pairwise homographies into one cumulative transform
+per frame (`placements[i] = mat3Mul(placements[i-1], step)` — frame i's own
+local coordinates mapped all the way into the mosaic's coordinate system,
+anchored on frame 0's identity), then warping every frame with its own
+cumulative transform into a canvas sized from the **real bounding box** of
+every frame's warped corners (never a fixed-width guess, and clamped to
+8000px so a runaway/garbage homography can't try to allocate an unbounded
+canvas). A frame pair with no usable homography still gets a step (a pure
+horizontal shift of the previous frame's own width) so it composes into the
+same pipeline rather than needing a separately-shaped side-by-side fallback.
+`warpOnto` (the old, buggy, non-accumulating function) is deleted, not left
+dormant — nothing else in the app called it.
+
+### Verified
+
+**875 passed, 0 failed** (up from 854) — `pano360.js` is now loaded into the
+test harness for the first time (it previously had no coverage at all
+despite existing since the prior round); `mat3Mul`/`applyH3` are genuinely
+executed against real inputs, including the exact shape of bug this fix
+corrects (three composed 100px shifts must place the fourth frame at x=300,
+not back near x=0 — the previous stitcher's actual failure mode). `capture.js`'s
+new mic/audio-track logic, `recorder.onstop`'s local-var fix, `addStagedFiles`'s
+single-item cap, `keyPlanMiniMarkerHTML`'s icon+colour, and the `wireDragPan`
+refactor (re-confirmed to still coalesce a burst of scroll events into
+exactly one queued rAF callback after being pulled out of `wirePanoDrag`)
+are all covered by genuine execution or precise structural assertions, not
+loosened regexes. `node --check` clean on all five touched JS files; CSS
+braces balanced (539/539); 0 NUL bytes.
+
+⚠️⚠️ **A real, pre-existing bug in the test harness itself was found and
+fixed in the course of this**: an earlier test (the close-button/
+`getUserMedia`-race check) monkey-patches `ctx.document.getElementById`/
+`createElement`/`head`/`body` for its own controllable capture.js fixture
+and never restored them — so every test that ran later in the same file
+was silently reading through that patched stub instead of the shared
+`byId`-backed one, auto-vivifying a bare fake element (no `addEventListener`
+at all) for any id it hadn't seen. This went unnoticed until a new test
+needed a real `addEventListener` and got a `TypeError` instead. Fixed by
+capturing the four original values and restoring them in a `finally` —
+worth recording because it means every test that happened to run after that
+one in previous rounds was less trustworthy than its "PASS" suggested,
+though none of the assertions in this codebase actually depended on real
+DOM lookups after that point.
+
+⚠️ **Not verified signed in or on a real device** — same standing caveat as
+every entry in this file. In particular: the mic-mute fix's actual effect on
+a recorded file's audio track, the pace-warning hint against a real
+hand-held walk-around, the corrected stitching pipeline against a real
+recorded video (the math is proven; a real photo has not been produced by
+it), and the navigable preview's drag gesture in a real browser are all
+unverified beyond genuine execution of the underlying pure logic.
+
+`module.js`/`capture.js`/`pano360.js`/`bim.js`/`module.css` →
+`?v=20260911z2`; the shared `MODULE_V` fallback (`assets/js/modules-grid.js`,
+`dashboard.html`, `modules.html`) → `20260911z2` to match, since this
+module's `index.html` itself changed. `ppr.js` is untouched and stays at its
+existing `?v=`.
+
 ## Six-item capture-flow round: one input attribute was two bugs, a real
 ## close-button race, an audio toggle, and a 360° guide that actually tracks
 ## coverage instead of double-counting a pan (2026-09-11)
