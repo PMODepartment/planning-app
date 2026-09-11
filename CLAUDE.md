@@ -95,6 +95,66 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-11 (z1) — The LSM Gantt: one row per floor, one bar per trade
+
+Owner, with a training deck (*Linear Scheduling Method for High-Rise Building Construction*, Engr.
+Arnie L. Sy, Feb 2015): *"Read the PDF and how we can properly implement the Gantt view of the LSM
+in the schedule module."* Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md). Module-only; no
+migration. **Slice 1 of 5** — the layout; slope, clash detection, the data-date line and the
+flowline chart are named there and deliberately not built yet.
+
+The deck's P6 method: WBS level 1 = **location**, **collapse** to one row per floor, **one bar
+format per trade** with *"Show bar when collapsed"*, **bar rows** adjusted so overlaps stay visible,
+floors **reversed** so the roof is on top. The slope of the staircase **is** the production rate.
+
+- ⚠️⚠️ **The enabler was already in the file and is NOT touched.** `_sumSegsHTML` already lane-packs
+  N bars into one row — P6's "bar rows" exactly — but it bails on group rows and uses one
+  lane per ACTIVITY. Loosening its guard would have changed every grouped row in the app; a new
+  `_lsmBarsHTML` short-circuits ahead of it instead, gated on the row's own aggregation so every
+  other row kind renders unchanged while the mode is on.
+- ⚠️⚠️ **A weekend is not a break — found by testing, not by reading.** The first cut notched
+  every Friday→Monday, which on a weekly schedule is a notch in nearly every bar and empties the
+  one mark that means "this floor stood idle". A gap now needs a **working** day, through
+  `PDCal.isWorkDay` and the activity's own calendar. The deck names this exactly: *"it is very
+  difficult to integrate a working calendar on the LSM schedules drawn on spreadsheet or CADD."*
+- ⚠️⚠️ **Reversing the floors contradicted a documented decision**, so it is scoped: its own flag,
+  LSM mode only, plain Gantt byte-for-byte unchanged — and the Vertical Stacking checkbox that
+  promised *"the grid and Gantt always keep their own build order"* is corrected, because left alone
+  it becomes a false statement on screen. ⚠️ And it is **not** a plain `.reverse()`: that drags
+  non-storeys ("Ground Reservoir") to the top of the building, which `stkDisplayOrder` already
+  learned the hard way; its rule is reused.
+- ⚠️ **The curated key-trade set already existed for this**, quoting the same slide — so the
+  lane roster IS that set, not a second mechanism. The mode **proposes** one rather than drawing 438
+  lanes, and says so.
+- ⚠️ **The legend becomes the lane key** in this mode. It normally keys only the leaf rows on
+  screen ("collapsed means collapsed"), and everything here is collapsed by design. This does not
+  re-arm the old whole-project fallback: it is the explicit, capped roster.
+- ⚠️ **And it has a door.** `setLsmRows` sets the location grouping, collapses via the existing
+  `expandToLevel`, proposes the trades, and reports what it changed — reversibly. A mode whose
+  three prerequisites are left to the planner to discover is the "built with no door" defect this
+  module has shipped twice.
+
+**81 assertions against the working tree, 11 against the pinned base**, all executing functions
+sliced out of the shipped file **by name**; the contrast has none of the new code and its
+`rowHFor(1)` is the plain 34. Rendered at 1440×900 with both stylesheets **inlined**: 48 bars,
+8 per row, 6 rows, 11px lane pitch, 1 notch, 0 horizontal scroll, and a bar background computing
+`rgba(47, 111, 191, 0.2)` — a colour, not a width. Structural's staircase measures
+370/298/227/155/84/13px down the floors.
+⚠️⚠️ **Two harness bugs that read exactly like module bugs**, both recorded in the module log: a
+slicer that did not understand regex literals (`levelRank` holds one containing both quote
+characters) and so returned 217,897 characters; and a link pass that could not link a branch its
+probe never ran.
+⚠️ **Not verified signed in** — no real project's locations, trades or calendar have been
+through this.
+
+`MODULE_V` → `20260911z1`. ⚠️⚠️ **Not the next letter:** the remote had `20260911e3` while this
+tree held `20260911sc6`, and `e3` sorts **before** `sc6`, so a browser holding `sc6` would never
+fetch it. `z1` is past both, verified by sorting all three rather than assumed.
+⚠️ Integrated by **re-applying the content-anchored patch scripts onto the fast-forwarded base**
+rather than merging a 46k-line file — byte-identical result, every anchor matched exactly once.
+The other session's five commits did not touch this module.
+
 ### 2026-09-11 (c1) — Minutes get a Card/Table switch and a non-editable number; mobile tables stop turning into tiles
 
 Owner's four items, two per module. Detail in

@@ -13,6 +13,186 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### The LSM Gantt: one row per floor, one bar per trade, and the staircase that shows the rate (2026-09-11) — fmlozano
+
+Owner, with a training deck — *Linear Scheduling Method for High-Rise Building Construction*,
+Engr. Arnie L. Sy, First Pacific Leadership Academy, Feb 2015: *"Read the PDF and how we can properly
+implement the Gantt view of the LSM in the schedule module."*
+
+The deck's method is the Primavera P6 workaround, steps 1–19: make WBS level 1 the **location**,
+**collapse** to one row per floor, define **one bar format per trade** each filtered by an activity
+code and each with **"Show bar when collapsed"** ticked (step 11), **adjust the bar rows** so
+overlapping bars stay visible (step 15), and **reverse the floor order** so the roof is at the top.
+The point is not tidiness: **the slope of the resulting staircase IS the production rate** ("2 floors
+per month", "12 working day cycle per floor"), which is the one reading a plain Gantt cannot give.
+
+This is **slice 1 of 5** — the layout. Slope, clash detection, the data-date line and the
+flowline chart are named at the bottom and are deliberately not in this commit.
+
+### 1. It is a MODE OF THE GANTT, and the enabler was already written
+`_sumSegsHTML` already lane-packs N bars into one row — `.ps-sum-seg` divs with inline
+`top:<lane*lh>%` — which is precisely P6's "bar rows". Three things stopped it being this
+layout: it bails on `r._dkind === 'group'` (so a collapsed row drew nothing), it only runs on a true
+leaf branch, and it is **one lane per ACTIVITY**, which is why its cap is 4.
+
+⚠️⚠️ **`_sumSegsHTML` IS NOT TOUCHED.** Loosening its group guard would hand every grouped row in
+the app per-activity lanes — a behaviour change nobody asked for, in the view planners read
+daily. New `_lsmBarsHTML` short-circuits ahead of it instead, gated on `r._glsm` rather than on the
+mode, so a WBS branch, a Trade group and the Execution Phase head all keep their normal bracket +
+strip + rail while the mode is on. That is what makes the mode safe to leave on. The suite asserts
+that guard is still there.
+
+### 2. ⚠️⚠️ THE LANE IS FIXED PER TRADE FOR THE WHOLE CHART
+`lane` = the category's index in `catList()`, held constant on every location row. That is what makes
+one trade read as a continuous diagonal down the floors rather than a scatter of bars.
+
+⚠️ `_sumSegsHTML` **rejected greedy interval packing on purpose** — *"a shared lane says
+'these are the same track of work' when nothing of the sort is meant"*. That objection was about
+per-ACTIVITY lanes and it **argues for** fixed lanes here, where a lane genuinely IS one trade. The
+index counts KEYED entries only, the same counter `catList` uses for the palette, so **lane N and
+colour N are the same entry** and the legend doubles as the lane key.
+
+⚠️ **And the curated key-trade set already existed for exactly this reason.** `catKeySet` /
+`catKeyList` / `saveCatKeys` were built in August and their own comment already quotes this very
+slide: *"choose only those activities that are with great importance and impact."* The lane roster
+is that set. Nothing new was invented; a project with more trades than lanes gets the busiest
+proposed and a toast saying so, editable through the **Key trades…** button that was already
+sitting next to the new checkbox.
+
+### 3. ⚠️⚠️ A WEEKEND IS NOT A BREAK — the defect the tests found
+A trade can work a floor, leave, and come back, so the bar is **contiguous runs with a notch per
+gap** (the `.ps-bar-cut` idiom, i.e. P6's suspended-activity convention) rather than one span from
+first start to last finish, which would claim continuous work on a floor that stood idle.
+
+The first cut tested **calendar** days. So a trade working Friday and returning Monday got a notch
+— and on a schedule whose activities are weekly that is a notch in very nearly every bar, which
+would make the one mark that means *"this floor stood idle"* mean nothing at all. `_lsmIdleGap` now
+counts a gap only when it contains a **working** day, read through `PDCal.isWorkDay` and the
+activity's own calendar via **`dsCalendarFor(null, a)`** — reused, not re-derived, because its
+own comment describes exactly the chain wanted here.
+⚠️ This is the deck's own point, not an embellishment: it lists *"it is very difficult to integrate
+a working calendar on the LSM schedules drawn on spreadsheet or CADD"* as a disadvantage of drawing
+these by hand. ⚠️ Over 14 clear days it is a break whatever the calendar says, which also bounds
+the walk; and it degrades to the calendar-day rule when PDCal is absent.
+
+### 4. Row height goes through the ONE place row height is set
+`renderWindow` slices by `floor(scrollTop / ROWH)` and bars sit at `i * ROWH`, so per-row heights
+would break both the virtualization and every bar's `top`. Instead `rowHFor(z)` gains an LSM floor:
+`max(plain height, LSM_PAD + lanes * (LSM_LANE_H + LSM_LANE_GAP))`. ⚠️ A **floor under the zoom**,
+not a replacement — row zoom can still make the row taller, never shorter than the lanes need.
+⚠️ And it reaches `--ps-rowh` through `applyRowZoom`, which that function's own note calls THE ONE
+PLACE row height is set, in both the CSS and the JS.
+
+### 5. ⚠️⚠️ Reversing the floors contradicts a decision this file had already made
+`buildNodes` says the grid keeps its build order *"always"*, and the stacking view's own checkbox
+promised *"the grid and Gantt **always** keep their own build order (bottom-up)"*. So:
+- a **separate flag** (`_lsmTopFirst`, its own localStorage key), never `_stkTopFirst` — sharing
+  it would make changing one screen silently reorder the other;
+- **LSM mode only**: turn the mode off and the order is byte-for-byte what it was (asserted);
+- **that tooltip is corrected**, because left alone it becomes a false statement on screen.
+
+What the removed coupling was protecting against is the order changing *behind* the planner. This is
+a mode they switch on deliberately, and the deck reverses the floors as its own step.
+
+⚠️⚠️ **AND IT IS NOT A PLAIN `.reverse()`.** `stkDisplayOrder` learned that the hard way: reversing
+the whole list drags the **unrankable** values (*"Ground Reservoir"*, *"Podium Amenities"* —
+things that are not a storey) to the top of the building. The ranked levels are reversed among
+**themselves** and the rest keeps its place below. Same rule, reused via `levelRank`, not re-derived.
+
+### 6. ⚠️⚠️ In this layout the LEGEND IS THE LANE KEY
+`renderActLegend` keys only the leaf rows on screen, under a long note explaining that *"collapsed
+means collapsed"* — correct, and hard-won over four reports. But in the LSM layout **everything
+is collapsed by design**, so that rule left eight coloured lanes on screen with nothing to say which
+trade was which. The legend now keys the **lane roster** in this mode.
+
+⚠️ This does **not** re-arm the bug that note is about. That was a fallback to *every category in
+the project* whenever the strict set came back empty. This is the explicit, capped lane roster —
+the same shape as the curated-set branch one line above it, which already bypasses `_vis`.
+
+### 7. The door
+⚠️ A mode is not just a flag: the chart needs the grouping to BE the location, the tree collapsed
+to one row per floor, and a curated set of trades. `setLsmRows` arranges all three — reusing
+**`expandToLevel(locDims.length)`**, so no new collapse code — and **says what it changed**.
+Making the planner do those three by hand and only then discover the mode is how a feature ends up
+built with no door, which this module has shipped twice (`fillDown`'s change-order branch, and
+`openLocAdopt`). ⚠️ It is reversible: the outgoing grouping is remembered and restored, and
+`setGroupBys` already saves and restores each grouping's own collapse tree.
+
+The controls sit in the Legend head beside **Key trades…** — a direct control rather than
+another nested menu, and next to the button that edits the lane roster, because the two are one
+subject.
+
+### Verified
+**81 assertions passing against the working tree, 11 against the pinned base**, every one executing
+functions **sliced out of the shipped file by NAME** (a line-numbered slice in a 46k-line file under
+concurrent edit goes stale within hours). The contrast bites: the base has none of the seven new
+functions, none of the six constants, no top-first block, no `_glsm`, no lane CSS, its `rowHFor(1)`
+is the plain 34, and its `ganttRowHTML` still draws the composition strip.
+
+Asserted rather than eyeballed: **the lane index is constant for a trade across floors** (the
+property that makes the diagonal); every keyed category is either a lane or inside the **counted**
+overflow marker, with unique contiguous lane indices — never `% cap`, the silent-overpaint
+defect on file; `renderWindow`'s window still brackets the visible rows at the taller ROWH, at four
+scroll positions; **the JS lane constants equal their CSS counterparts** (bar 6 + 1 air + rail 2 =
+`LSM_LANE_H` 9); progress is duration-weighted (10d@100% + 30d@0% = **25%**, not 50); a reversed
+date pair cannot make a negative-width bar; and `levelRank`'s two recorded traps still hold
+(*"Ground Reservoir"* is not level 0).
+
+⚠️⚠️ **Two bugs in my own harness, both of which read exactly like bugs in the module:**
+- the slicer did not understand **regex literals**, and `levelRank` contains `/[’'".,()\-_]/g`
+  — a regex holding both quote characters. It entered string mode on that apostrophe and
+  returned **217,897 characters** of the file, failing to parse. This repo's changelog keeps
+  recording this shape; it is now a third instance.
+- the link pass **could not link a branch it never ran**. The probe used a single interval, so the
+  run-merge loop never executed and `_lsmIdleGap` reached the assertions unlinked and threw there
+  instead of being resolved. The probe now carries two intervals with a gap. ⚠️ The refusal is
+  intact: a name the module does not define as a function or module-level var is **refused, not
+  stubbed** — auto-stubbing would make the suite go green against a broken file.
+- ⚠️ And two of my first expectations were **wrong rather than the code**: the Friday→Monday
+  case (see 3, which turned into a real fix) and a baseline-rail assertion whose fixture carried no
+  baseline, so the rail was correctly absent.
+
+**Rendered in a browser** at 1440×900, both stylesheets **inlined** (the pane renders a file
+outside the project as a static snapshot, so a relative `<link>` resolves to nothing and the harness
+reports perfect widths on invisible elements — the trap on file three times), transitions forced
+off before measuring, and gated on `visibilityState` + `clientWidth`: a fabricated six-storey tower
+draws **48 bars, 8 per row, 6 rows**, bar height **6px**, **minimum lane pitch 11px** (= 9 + 2, so
+lanes never overlap), 48 baseline rails, **exactly 1 notch** for the one deliberate break, **0
+horizontal page scroll**, and the bar background computes **`rgba(47, 111, 191, 0.2)`** — the
+colour assertion, not merely a width. Structural's left edge across the six floors measures
+**370 / 298 / 227 / 155 / 84 / 13 px**, monotone: the staircase, and its slope is the cycle.
+⚠️ My first run measured **height 0 on everything** — not a CSS fault: the pane was 399px wide,
+where the phone media query sets `.ps-split { display:none }`. Resolved by reading the ancestor
+chain rather than by guessing.
+
+⚠️ **Not verified signed in, and that is the thing most worth doing next.** Every number above comes
+from executing the shipped functions against fabricated rows; no real project's locations, trades or
+calendar have been through this. The first real open should check the staircase against a
+hand-computed floor cycle. ⚠️ If floors land in *"— No level —"*, check the match table
+(`location_levels.match`, *Group ▾ → Match WBS to locations…*) before blaming the
+layout — a missing alias is the usual cause.
+
+### Deliberately not in this commit
+Named so they are not mistaken for oversights: the **production-rate / slope** readout (least-squares
+`levelRank` vs start day, in floors per month and working days per floor cycle, with r² so a
+non-linear trade gets no confident number); **clash detection** (report, never block — the deck
+calls overlaps *"possible pitfalls"*, and the intended order should come from the Schedule Setup's
+Trade sequence where a project has one, labelling a `catList`-derived order as inferred); a
+**draggable data-date line** (mostly reuse — `_stkState` already answers *"the state of one
+(location, category) bucket at the cut-off date"*, which is the deck's *"planned status as of end
+December 2015"*); and the **flowline / time-location chart** as a second view on the
+`setVStackMode` template. Also not built: the deck's **restricted time-location windows**, which need
+a new store and a new authoring surface and are their own proposal.
+
+`MODULE_V` → `20260911z1`. ⚠️⚠️ **Not the next letter:** the remote had moved to `20260911e3`
+while this tree held `20260911sc6`, and `e3` sorts **before** `sc6` — so a browser holding `sc6`
+would never have fetched `e3`. `z1` is past both, checked by sorting all three rather than assumed.
+⚠️ Integrated by **re-applying the content-anchored patch scripts onto the fast-forwarded base**
+rather than merging a 46k-line file: every anchor matched exactly once and the result is
+byte-identical to the pre-integration file. The other session's five commits did not touch this
+module.
+
+
 ### Consolidated drew a box on a fully traced project — two faults, both of them "the trades disagree" (2026-09-11 a1) — ethanrobles10
 
 Owner: *"how come when pressing the consolidated and combining 2 trades that have the same floor

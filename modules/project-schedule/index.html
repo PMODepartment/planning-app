@@ -971,6 +971,38 @@
       pointer-events:none; }
     .ps-bar-cut::after { content:''; position:absolute; left:0; right:0; top:50%; height:0;
       border-top:1px dotted var(--pd-muted); opacity:.75; }
+    /* ---- LSM lanes (the time-location row) ----------------------------------------------------
+       One bar per keyed trade on a collapsed LOCATION row. Colour comes from the legend entry and
+       is written INLINE (catTint / catStyle), so these rules carry GEOMETRY ONLY — which is
+       why no new `--ps-*` token is needed here. ⚠️ A token would have to be declared on
+       `#ps-view-schedule` itself, the element applyColors() writes user recolours to and where the
+       dark override lives; declared anywhere else it gets neither.
+       ⚠️⚠️ LSM_LANE_H / LSM_LANE_GAP / LSM_PAD ARE DUPLICATED IN THE JS, the
+       same way `_compH` is duplicated against .ps-sum-comp. Change one and you must change the
+       other, or the lanes and the row height stop agreeing and every bar walks off its lane
+       further down the list. The suite asserts the pair. */
+    .ps-lsmbar { position:absolute; height:6px; border-radius:2px; z-index:3; overflow:hidden;
+      box-shadow:0 0 0 .5px rgba(0,0,0,.22) inset; cursor:pointer; }
+    .ps-lsmbar > i { position:absolute; left:0; top:0; bottom:0; display:block; }
+    /* The idle gap, drawn exactly like .ps-bar-cut: a notch in the card colour with a dotted
+       midline — the P6 suspended-activity convention, which says the pieces are ONE trade's
+       work on this floor rather than two unrelated bars. */
+    .ps-lsmbar-gap { position:absolute; top:-1px; bottom:-1px; background:var(--pd-card); z-index:2;
+      pointer-events:none; }
+    .ps-lsmbar-gap::after { content:''; position:absolute; left:0; right:0; top:50%; height:0;
+      border-top:1px dotted var(--pd-muted); opacity:.75; }
+    /* The per-lane baseline rail, at the FOOT of the lane. ⚠️ The lane's geometry does
+       NOT change when the baseline is toggled off — the bar stays 6px at the lane top either
+       way — so lanes cannot shift under the planner when they flip that switch. */
+    .ps-lsmbl { position:absolute; height:2px; border-radius:1px; background:var(--ps-bl);
+      opacity:.55; z-index:2; pointer-events:none; }
+    /* The overflow lane. It must never be mistaken for a trade: no trade colour, a dense neutral
+       cross-hatch, and a dashed outline where every real lane has a solid inset one. */
+    .ps-lsmbar-more { position:absolute; height:6px; border-radius:2px; z-index:3; overflow:hidden;
+      background:var(--ps-track);
+      background-image:repeating-linear-gradient(45deg,var(--ps-trackln) 0 1px,transparent 1px 3px),
+                       repeating-linear-gradient(-45deg,var(--ps-trackln) 0 1px,transparent 1px 3px);
+      box-shadow:0 0 0 .5px var(--pd-ink) inset; opacity:.85; pointer-events:none; }
     .ps-bar.dragging { cursor:grabbing; opacity:.85; z-index:8; }
     .ps-handle { position:absolute; top:0; bottom:0; width:6px; cursor:ew-resize; z-index:4; }
     .ps-handle.l { left:0; } .ps-handle.r { right:0; }
@@ -11933,6 +11965,10 @@
     // Hoisted: the group-category roll-up below resolves one value PER ACTIVITY, and catCfg()
     // re-reads storage on every call — reading it per row would make this O(rows) storage hits.
     var _catField = catCfg().field;
+    /* ⚠️ Built ONCE per node build, never per group: catCfg() parses localStorage on
+       every call, and this would otherwise run for every floor of every tower. Null when the LSM
+       layout is off, which is what keeps that mode's whole cost at zero when nobody is using it. */
+    var _lsmIdx = _lsmRows ? _lsmLaneIndex() : null;
     var groupBy = groupBys.length === 1 ? groupBys[0] : '__multi';
     if (groupBy === 'wbs') {
       _dspan = _spanMap; _dblspan = null; _dcost = null; _duni = null;
@@ -12208,6 +12244,24 @@
           if (!fa && fb) return 1;
           return cmpGroupName(a, b);
         } : (dims[di] === 'work' ? cmpWorkName : (_isLoc ? cmpLevelValue : cmpGroupName)));
+      /* ⚠️⚠️ TOP-FIRST, AND ONLY IN THE LSM LAYOUT. The note below says the
+         grid keeps its build order "always", and that rule still holds everywhere else — what
+         it was protecting against is the order changing BEHIND the planner, which is exactly what
+         the removed stacking-pane coupling did. The LSM layout is a mode the planner turns on
+         deliberately, and the deck it implements reverses the floors as its own step ("reverse the
+         order of Floor"), because a building reads roof-down. Turn the mode off and the order is
+         byte-for-byte what it was.
+         ⚠️⚠️ AND IT IS NOT A PLAIN `.reverse()`. stkDisplayOrder learned this
+         the hard way: reversing the whole list drags the UNRANKABLE values ("Ground Reservoir",
+         "Podium Amenities" — things that are not a storey) to the top of the building. The
+         ranked levels are reversed among THEMSELVES and everything else keeps its place below,
+         which is the same rule, reused rather than re-derived. */
+      if (_lsmRows && _isLoc && _lsmTopFirst) {
+        var _rk = [], _un = [];
+        _keys.forEach(function (k) { (levelRank(k) == null ? _un : _rk).push(k); });
+        _rk.reverse();
+        _keys = _rk.concat(_un);
+      }
       // ⚠️ The grid keeps its natural BUILD order (bottom-up), always. It used to be reversible to
       // line up with the docked stacking pane; that pane is gone, and the toolbar Vertical Stacking
       // view has its own display order, so nothing reorders the grid behind the planner's back.
@@ -12310,7 +12364,12 @@
           // code for the hover title.
           activity_name: (dims[di].indexOf('loc:') === 0 ? locPretty(g, locLevelName(dims[di].slice(4))) : g),
           _graw: (dims[di].indexOf('loc:') === 0 ? g : null),
-          _gcount: buckets[g].length, _gdim: dims[di], id: 'grp:' + gcode });
+          _gcount: buckets[g].length, _gdim: dims[di], id: 'grp:' + gcode,
+          /* ⚠️ LOCATION levels only. The LSM chart's y-axis is the location breakdown,
+             so a Trade or Activity group row has no business carrying trade lanes — its lanes
+             would be one bar for itself. Absent (null) on every other row kind, which is what the
+             renderer branches on. */
+          _glsm: (_lsmIdx && _isLoc) ? _lsmAgg(buckets[g], _catField, _lsmIdx) : null });
         walk(buckets[g], di + 1, gcode, parentAnc.concat([gcode]));
       });
       // Lift the dissolved (no-value-at-this-level) activities to the parent — grouped by the next
@@ -21133,7 +21192,35 @@
   var ROW_ZOOM_MIN = 0.5, ROW_ZOOM_MAX = 1.4;
   var _rowZoom = 1; try { var _rz = parseFloat(localStorage.getItem('ps_rowzoom')); if (_rz && isFinite(_rz)) _rowZoom = Math.min(ROW_ZOOM_MAX, Math.max(ROW_ZOOM_MIN, _rz)); } catch (e) {}
   function _baseRowH() { return _density === 'compact' ? 27 : 34; }
-  function rowHFor(z) { return Math.max(16, Math.round(_baseRowH() * z)); }
+  /* ---- LSM (Linear Scheduling Method) row layout ----------------------------------------------
+     The P6 time-location layout from the owner's LSM deck (Engr. Arnie L. Sy, Feb 2015): one row
+     per LOCATION, time across, and ONE BAR PER TRADE on that row — P6's "Show bar when
+     collapsed" (step 11) plus its per-bar "bar row" offsets (step 15). The slope of the resulting
+     staircase IS the production rate, which is the reading a plain Gantt cannot give.
+     WHY A MODE OF THE GANTT AND NOT A NEW VIEW: the deck's whole argument is that this IS the
+     Gantt laid out differently, and the code agrees — rows come from displayList(), filters
+     from rowMatches(), bars from ganttRowHTML. A separate view would re-implement all three and
+     lose drag, links, the baseline and export with them.
+     ⚠️ The lane roster is the CURATED KEY TRADES set (catKeyList), which already exists
+     for exactly this reason and whose own comment already quotes the same slide: "choose only
+     those activities that are with great importance and impact". */
+  var LSM_LANE_H = 9, LSM_LANE_GAP = 2, LSM_PAD = 8;   /* must match .ps-lsmbar/.ps-lsmbl in CSS */
+  var LSM_LANE_MAX = 14;        /* lanes past this fold into ONE marked overflow lane */
+  var _lsmRows = false; try { _lsmRows = localStorage.getItem('ps_lsmrows') === '1'; } catch (e) {}
+  /* ⚠️ ITS OWN FLAG AND ITS OWN KEY, deliberately NOT `_stkTopFirst`. That one is the
+     Vertical Stacking's display order and its own checkbox promises "Display order of THIS view
+     only", so sharing it would make changing one screen silently reorder the other. */
+  var _lsmTopFirst = true; try { _lsmTopFirst = localStorage.getItem('ps_lsm_topfirst') !== '0'; } catch (e) {}
+  /* The LSM row must hold one lane per keyed trade, so its height is DERIVED from the lane count
+     rather than picked. ⚠️ It is a FLOOR UNDER THE ZOOM, not a replacement for it: row
+     zoom can still make the row taller, never shorter than the lanes need. ⚠️ And it
+     goes through rowHFor so `applyRowZoom` stays THE ONE PLACE row height is set — see its
+     note just below. */
+  function _lsmRowH() { return LSM_PAD + _lsmLaneCount() * (LSM_LANE_H + LSM_LANE_GAP); }
+  function rowHFor(z) {
+    var h = Math.max(16, Math.round(_baseRowH() * z));
+    return _lsmRows ? Math.max(h, _lsmRowH()) : h;
+  }
   /* ⚠️ THE ONE PLACE ROW HEIGHT IS SET, in both the CSS and the JS. `ROWH` and `--ps-rowh` must not
      be able to disagree: the grid rows are laid out by CSS and the Gantt bars by JS arithmetic, so a
      mismatch of even a pixel per row walks the bars off their rows further down a 16,000-row list. */
@@ -22363,6 +22450,146 @@
   // outline-and-nothing, indistinguishable from the hatched inert track behind it, and at fractional
   // device-pixel offsets it aliases to a half-tone. See the CSS on .ps-sum-more for what happens
   // when a branch has more activities than the strip has lanes.
+  /* Is the stretch between two runs a REAL break, or just the weekend?
+     ⚠️⚠️ A TRADE THAT WORKS FRIDAY AND RETURNS MONDAY HAS NOT LEFT THE FLOOR.
+     The first cut tested calendar days, so every weekend became a notch — and on a schedule
+     whose activities are weekly that is a notch in very nearly every bar, which would make the
+     one mark that is supposed to mean "this floor stood idle" mean nothing at all. A gap counts
+     only when it contains at least one WORKING day.
+     ⚠️ This is the deck's own point, not an embellishment: it lists "it is very difficult
+     to integrate a working calendar on the LSM schedules drawn on spreadsheet or CADD" as a
+     disadvantage of drawing these by hand.
+     ⚠️ Over 14 clear calendar days it is a break whatever the calendar says — no
+     working week has a fortnight of holiday in it. That short-circuit also BOUNDS the walk, so a
+     two-year gap cannot turn into a 700-iteration loop per bar.
+     ⚠️ Degrades to the calendar-day rule when PDCal is absent, which is how every other
+     optional dependency in this file behaves. */
+  function _lsmIdleGap(endMs, nextMs, cal) {
+    var d = new Date(endMs); d.setDate(d.getDate() + 1);
+    var stop = new Date(nextMs);
+    if (+d >= +stop) return false;                  /* contiguous, or overlapping */
+    if (dayDiff(d, stop) > 14) return true;
+    if (!(window.PDCal && cal)) return true;        /* no calendar: any clear day is a gap */
+    for (var g = 0; +d < +stop && g < 32; g++, d.setDate(d.getDate() + 1)) {
+      if (PDCal.isWorkDay(cal, d)) return true;
+    }
+    return false;
+  }
+  /* ---- One bar per keyed trade, for ONE location row ------------------------------------------
+     Built from the activities in that location's bucket, and built in buildNodes while the bucket
+     is IN HAND — the same reason the baseline span, the status counts and `_gpct` are rolled
+     up in that pass. ⚠️ A group node does not carry its members, so any later pass would
+     have to re-bucket every row in the project to answer the same question.
+     ⚠️⚠️ CONTIGUOUS RUNS, NOT ONE SPAN FROM MIN TO MAX. A trade can work a
+     floor, leave, and come back; a single span would claim continuous work on a floor that stood
+     idle for a month. The runs become ONE bar with a notch per gap — the way `.ps-bar-cut`
+     already draws a change-order interruption, which is the P6 suspended-activity convention and
+     says the pieces are one trade's work rather than two unrelated bars.
+     ⚠️ Milestones are NOT skipped. A "floor cleared" milestone is a real thing recorded
+     on that floor, and dropping it silently would lose data the planner entered; if it is not a
+     curated key trade it has no lane and falls out here anyway. */
+  function _lsmAgg(acts, field, lm) {
+    var by = {}, OVER = '\u0000over', i;
+    for (i = 0; i < acts.length; i++) {
+      var a = acts[i];
+      if (isWbs(a)) continue;
+      var v = catValOf(a, field); if (!v) continue;
+      var ln = lm.map[v]; if (!ln) continue;              /* not curated -> not on this chart */
+      var s = pd(dispStart(a)), f = pd(dispFin(a)); if (!s || !f) continue;
+      if (+f < +s) { var t = s; s = f; f = t; }           /* a reversed pair would give a negative width */
+      var folded = ln.lane < 0;
+      var key = folded ? OVER : v;
+      var b = by[key] || (by[key] = { value: folded ? null : v, lane: folded ? lm.overLane : ln.lane,
+        color: folded ? null : ln.color, tex: folded ? 0 : ln.tex, over: folded,
+        /* ⚠️ ONE CALENDAR PER BAR, taken from the first activity that lands in it.
+           `dsCalendarFor(null, a)` is reused rather than re-derived — its own comment
+           describes exactly the chain wanted here: "the activity's, else the project default, else
+           PDCal's". Two activities of one trade on one floor under different calendars is possible
+           and rare; the bar is one mark and has to pick one, and the first is the honest choice. */
+        cal: (typeof dsCalendarFor === 'function') ? dsCalendarFor(null, a) : null,
+        names: {}, iv: [], wd: 0, we: 0, n: 0, bs: null, bf: null });
+      if (folded) b.names[v] = true;
+      b.iv.push([+s, +f]); b.n++;
+      /* Duration-weighted, the SAME weights _gpct and _costMap use, so a lane and the row's own
+         roll-up can never report different percentages for the same work. */
+      var d = dayDiff(s, f) + 1; if (d > 0) { b.wd += d; b.we += d * (a.percent_complete || 0); }
+      var xs = pd(a.bl_start), xf = pd(a.bl_finish);
+      if (xs && (!b.bs || +xs < +b.bs)) b.bs = xs;
+      if (xf && (!b.bf || +xf > +b.bf)) b.bf = xf;
+    }
+    var out = [];
+    Object.keys(by).forEach(function (k) {
+      var b = by[k];
+      b.iv.sort(function (p, q) { return p[0] - q[0] || p[1] - q[1]; });
+      var runs = [b.iv[0].slice()];
+      for (var j = 1; j < b.iv.length; j++) {
+        var cur = runs[runs.length - 1], nx = b.iv[j];
+        /* A gap needs a real idle WORKING day between the two — see _lsmIdleGap. */
+        if (!_lsmIdleGap(cur[1], nx[0], b.cal)) { if (nx[1] > cur[1]) cur[1] = nx[1]; }
+        else runs.push(nx.slice());
+      }
+      b.runs = runs;
+      b.s = new Date(runs[0][0]);
+      b.f = new Date(runs[runs.length - 1][1]);
+      b.pct = b.wd > 0 ? Math.max(0, Math.min(100, Math.round(b.we / b.wd))) : 0;
+      b.overCount = b.over ? Object.keys(b.names).length : 0;
+      b.iv = null; b.names = null;
+      out.push(b);
+    });
+    out.sort(function (p, q) { return p.lane - q.lane; });
+    return out.length ? out : null;
+  }
+  /* The LSM row: one lane per keyed trade, each a bar from its first start to its last finish on
+     this location, notched where the trade left the floor and came back.
+     ⚠️ NO BRACKET AND NO COMPOSITION STRIP ON AN LSM ROW. The row IS the floor and the
+     lanes ARE the reading; a roll-up bracket drawn over them would be a second, coarser answer to
+     the same question in the same space. The branch's span and roll-up % are still in the grid's
+     own cells for that row, so nothing is lost. */
+  function _lsmBarsHTML(r, min, dayw, top) {
+    var agg = r._glsm; if (!agg || !agg.length) return '';
+    var pitch = LSM_LANE_H + LSM_LANE_GAP, y0 = top + Math.round(LSM_PAD / 2), out = '';
+    var showBl = !!_gset.baseline, loc = r._graw || r.activity_name || '';
+    for (var i = 0; i < agg.length; i++) {
+      var b = agg[i], ly = y0 + b.lane * pitch;
+      var x = Math.round(dayDiff(min, b.s) * dayw);
+      var w = Math.max(Math.round((dayDiff(b.s, b.f) + 1) * dayw), 2);
+      /* The idle gaps, in BAR-LOCAL pixels, following .ps-bar-cut's own rule: a notch that would
+         touch either edge is dropped rather than drawn, since it would read as a shortened bar
+         instead of an interruption. */
+      var cuts = '';
+      for (var j = 1; j < b.runs.length; j++) {
+        var ge = new Date(b.runs[j - 1][1]), gs2 = new Date(b.runs[j][0]);
+        var gx = Math.round((dayDiff(b.s, ge) + 1) * dayw);
+        var gw = Math.max(Math.round((dayDiff(ge, gs2) - 1) * dayw), 1);
+        if (gx <= 0 || gx + gw >= w) continue;
+        cuts += '<div class="ps-lsmbar-gap" style="left:' + gx + 'px;width:' + gw + 'px;"></div>';
+      }
+      var brk = (b.runs.length > 1) ? (' \u2014 ' + (b.runs.length - 1) + ' break' + (b.runs.length === 2 ? '' : 's') + ' on this floor') : '';
+      var span = Fmt.date(dstr(b.s)) + ' \u2192 ' + Fmt.date(dstr(b.f));
+      if (b.over) {
+        /* ⚠️ The marker carries the COUNT and the names in its title, because the lane
+           itself deliberately says nothing about which trades these are. */
+        out += '<div class="ps-lsmbar-more" title="' + esc('+' + b.overCount + ' more key trades on ' + loc +
+          ' \u2014 not shown individually (the row fits ' + LSM_LANE_MAX + ' lanes): ' + span + brk) +
+          '" style="left:' + x + 'px;width:' + w + 'px;top:' + ly + 'px;"></div>';
+        continue;
+      }
+      var tip = b.value + ' \u2014 ' + loc + ': ' + span + ', ' + b.pct + '%, ' +
+        b.n + ' activit' + (b.n === 1 ? 'y' : 'ies') + brk;
+      out += '<div class="ps-lsmbar" data-lsmcat="' + esc(b.value) + '" title="' + esc(tip) +
+        '" style="left:' + x + 'px;width:' + w + 'px;top:' + ly + 'px;' + catTint(b.color) + '">' +
+        ((b.pct > 0) ? '<i style="width:' + b.pct + '%;' + catStyle(b.color, b.tex) + '"></i>' : '') +
+        cuts + '</div>';
+      if (showBl && b.bs && b.bf) {
+        var bx = Math.round(dayDiff(min, b.bs) * dayw);
+        var bw = Math.max(Math.round((dayDiff(b.bs, b.bf) + 1) * dayw), 2);
+        out += '<div class="ps-lsmbl" title="' + esc(b.value + ' \u2014 baseline on ' + loc + ': ' +
+          Fmt.date(dstr(b.bs)) + ' \u2192 ' + Fmt.date(dstr(b.bf))) +
+          '" style="left:' + bx + 'px;width:' + bw + 'px;top:' + (ly + LSM_LANE_H - 2) + 'px;"></div>';
+      }
+    }
+    return out;
+  }
   var PS_LANE_MIN = 3;
   function _sumSegsHTML(r, min, dayw, barX, laneCap) {
     var cfg = catCfg();
@@ -22469,6 +22696,13 @@
     // category-driven is per-bar: a categorised bar carries its own colour + fill, so the red
     // %-treatment is skipped there — decided by `_ce`/`_segs` at the bar, not by a mode flag.
     if (isWbsNode(r)) {
+      /* ⚠️ THE LSM ROW SHORT-CIRCUITS, and it is gated on `_glsm` rather than on the
+         mode alone: only a LOCATION group row carries an aggregation, so every other row kind
+         (a WBS branch, a Trade group, the Execution Phase head) keeps its normal bracket + strip
+         + rail rendering even while the mode is on. That is what makes the mode safe to leave on.
+         ⚠️ `_sumSegsHTML` is NOT reached from here and is NOT modified: its
+         `r._dkind === 'group'` guard still returns '' for every group row exactly as before. */
+      if (_lsmRows && r._glsm) return out + _lsmBarsHTML(r, min, dayw, top);
       var sp = wbsSpan(r); if (!sp) return '';
       var x = dayDiff(min, sp.s) * dayw, w = (dayDiff(sp.s, sp.e) + 1) * dayw;
       var wcS = (r._dkind === 'group') ? null : effWbsColor(r);
@@ -42785,6 +43019,99 @@
     return list;
   }
   function catMapNow() { catList(); return (_catCache && _catCache.map) || {}; }
+  /* ---- The LSM lane roster ---------------------------------------------------------------------
+     The keyed categories, in catList's own first-start order, each with the lane it occupies on
+     EVERY location row.
+     ⚠️⚠️ THE LANE IS FIXED PER TRADE FOR THE WHOLE CHART, and that is the
+     entire point: it is what makes one trade read as a continuous diagonal down the floors. It is
+     NOT greedy interval packing — `_sumSegsHTML` rejected that deliberately ("two activities
+     that merely do not OVERLAP shared a lane ... a shared lane says 'these are the same track of
+     work' when nothing of the sort is meant"). That objection was about per-ACTIVITY lanes, and it
+     argues FOR fixed lanes here, where a lane genuinely IS one trade.
+     ⚠️ The lane index counts KEYED entries only — the same counter catList uses for
+     the palette — so lane N and colour N are the same entry, and the legend doubles as the
+     lane key.
+     ⚠️ Capped at LSM_LANE_MAX with the remainder folded into ONE marked overflow lane.
+     NEVER `lane % cap`, which silently overpaints: the defect _sumSegsHTML records having already
+     shipped once. */
+  function _lsmLanes() {
+    var list = catList(), lanes = [], over = [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].muted) continue;            /* not a curated key trade -> no lane */
+      if (lanes.length < LSM_LANE_MAX) lanes.push({ value: list[i].value, color: list[i].color, tex: list[i].tex, lane: lanes.length });
+      else over.push(list[i].value);
+    }
+    lanes.over = over;                        /* the folded trades, named in the marker's title */
+    return lanes;
+  }
+  /* The DRAWN lane count, overflow marker included, floored at 1 so a project with no categories
+     yet still yields a sane row height rather than 0. */
+  function _lsmLaneCount() { var L = _lsmLanes(); return Math.max(1, L.length + (L.over && L.over.length ? 1 : 0)); }
+  /* The value -> lane index, PLUS the folded trades at lane -1 so the overflow marker has real
+     spans to draw rather than being a label with nothing behind it. ⚠️ A category that is
+     absent from this map is one the planner did not curate (muted); a category at lane -1 IS
+     curated and merely did not fit. Those are different facts and the renderer treats them
+     differently — the first is simply not on this chart, the second is counted in the marker. */
+  /* ---- Turning the LSM layout on, and the three things it has to arrange ----------------------
+     A layout is not just a flag: the deck's chart needs the grouping to BE the location, the tree
+     COLLAPSED to one row per floor, and a curated set of trades to put in the lanes. Making the
+     planner do those three by hand and only then discover the mode is how a feature ends up
+     "built with no door" — which this module has shipped twice (fillDown's change-order
+     branch, and openLocAdopt).
+     ⚠️ IT IS REVERSIBLE AND IT SAYS WHAT IT CHANGED. The outgoing grouping is remembered
+     and restored on the way out, and `setGroupBys` already saves and restores each grouping's own
+     collapse tree, so nothing the planner arranged is destroyed by visiting this mode.
+     ⚠️ It does NOT invent a curated set on a project that has few enough categories to
+     key them all — only when there are genuinely more trades than lanes, which is the case
+     the deck is talking about. */
+  var _lsmPrevGroup = null;
+  function setLsmRows(on) {
+    _lsmRows = !!on;
+    try { localStorage.setItem('ps_lsmrows', _lsmRows ? '1' : '0'); } catch (e) {}
+    var said = [];
+    if (_lsmRows) {
+      /* The lanes ARE the colour key, so the key cannot be off in this mode. */
+      var cfg = catCfg();
+      if (!cfg.on) { cfg.on = true; saveCatCfg(cfg); said.push('turned the colour key on'); }
+      /* ⚠️ PROPOSE, never silently draw 438 lanes. On a real schedule "Activity name"
+         yields hundreds of categories (catKeySet's own comment measures 438 on 4,393 activities),
+         and a chart with 438 lanes is not a chart. The busiest are the proposal; "Key trades..."
+         is where the planner corrects it. */
+      var all = catList();
+      if (!catKeySet() && all.length > LSM_LANE_MAX) {
+        var top = all.slice().sort(function (a, b) { return (b.n || 0) - (a.n || 0); })
+          .slice(0, LSM_LANE_MAX).map(function (c) { return c.value; });
+        if (top.length) { saveCatKeys(top); said.push('keyed the ' + top.length + ' busiest as lanes'); }
+      }
+      var locDims = LOC_LEVELS.map(function (l) { return 'loc:' + l.id; });
+      if (!locDims.length) {
+        UI.toast('No location levels defined yet — define them in Schedule Setup › Floors & Zones, then the LSM rows have an axis.', 'warn');
+      } else {
+        if (JSON.stringify(groupBys) !== JSON.stringify(locDims)) {
+          _lsmPrevGroup = groupBys.slice();
+          setGroupBys(locDims);
+          said.push('grouped by location');
+        }
+        expandToLevel(locDims.length);
+        said.push('collapsed to one row per ' + (locLevelName(locDims[locDims.length - 1].slice(4)) || 'level'));
+      }
+    } else if (_lsmPrevGroup && _lsmPrevGroup.length) {
+      setGroupBys(_lsmPrevGroup);
+      said.push('put your grouping back');
+      _lsmPrevGroup = null;
+    }
+    /* ⚠️ applyRowZoom is THE ONE PLACE row height is set, in both the CSS and the JS —
+       so the lane budget reaches `--ps-rowh` through it rather than being written here. */
+    applyRowZoom(false);
+    renderActLegend(); renderGrid(); renderGantt();
+    if (said.length) UI.toast('LSM rows ' + (_lsmRows ? 'on' : 'off') + ' — ' + said.join(', ') + '.', 'success');
+  }
+  function _lsmLaneIndex() {
+    var L = _lsmLanes(), m = {}, i, ov = L.over || [];
+    for (i = 0; i < L.length; i++) m[L[i].value] = L[i];
+    for (i = 0; i < ov.length; i++) m[ov[i]] = { value: ov[i], lane: -1, color: null, tex: 0 };
+    return { map: m, overLane: L.length, hasOver: ov.length > 0, overNames: ov };
+  }
   // The categories currently ON SCREEN — i.e. the activities exposed by the WBS branches the planner
   // has actually opened, so the legend is a key to what is in front of them rather than a 400-entry
   // index of the whole project.
@@ -43111,9 +43438,9 @@
     var vw = document.getElementById('ps-view-schedule');
     if (vw) vw.classList.toggle('ps-lsm', !!cfg.on);
     // Scope the printed entries to what the opened WBS branches actually expose.
-    var _vis = cfg.on ? catVisibleValues() : null, _hidden = 0;
+    var _vis = cfg.on ? catVisibleValues() : null, _hidden = 0, _hiddenNames = null, _all = list;
     if (_vis) {
-      var _all = list;
+      _all = list;
       list = _all.filter(function (c) { return _vis[c.value]; });
       _hidden = _all.length - list.length;
       /* ⚠️⚠️⚠️ THERE IS NO FALLBACK HERE ANY MORE, AND THAT IS THE WHOLE FIX. Reported four times
@@ -43138,11 +43465,30 @@
       // else. The muted remainder is still drawn on the Gantt (in grey), it just isn't keyed —
       // which is the entire point of the LSM layout.
       if (catKeySet()) { list = list.filter(function (c) { return !c.muted; }); _hidden = 0; }
+      /* ⚠️⚠️ IN THE LSM LAYOUT THE LEGEND IS THE LANE KEY, so it keys the lane
+         roster and ignores what is expanded. Everything in this mode is collapsed by design —
+         that is the layout — so the "collapsed means collapsed, no leaf rows means no chips"
+         rule above would leave eight coloured lanes on screen with nothing to say which trade is
+         which, which is the one thing this chart cannot do without.
+         ⚠️ This does NOT re-arm the fallback the note above is about. That bug was a
+         fallback to EVERY category in the project whenever the strict set came back empty. This is
+         the explicit, capped lane roster — the same shape as the curated-set branch one line
+         up, which already bypasses `_vis` for the same reason. */
+      if (_lsmRows) {
+        var _lanes = _lsmLanes(), _lm = {};
+        _lanes.forEach(function (x) { _lm[x.value] = 1; });
+        list = _all.filter(function (c) { return _lm[c.value]; });
+        _hidden = (_lanes.over || []).length;
+        _hiddenNames = (_lanes.over || []).slice();
+      }
     }
     // The actual names behind the "N more" count — the owner asked to SEE which ones, not read a
     // number. Derived as the set difference so it can never disagree with `_hidden`.
-    var _hiddenNames = [];
-    if (_vis && _hidden > 0) {
+    /* ⚠️ NOT re-initialised to [] — the LSM branch above has already filled it
+       with the folded trades, and a bare `= []` here would silently throw that away. `var` hoists,
+       so the assignment above is legal; what it must not do is get clobbered. */
+    if (!_hiddenNames) _hiddenNames = [];
+    if (_vis && _hidden > 0 && !_lsmRows) {
       var _inList = {}; list.forEach(function (c) { _inList[c.value] = 1; });
       _hiddenNames = _all.filter(function (c) { return !_inList[c.value]; }).map(function (c) { return c.value; });
     }
@@ -43202,6 +43548,11 @@
         (cfg.on ? '<label title="Adds a hatch / dot / line texture on top of each colour, so neighbouring trades stay apart on a thin bar."><input type="checkbox" id="ps-alg-tex"' + (cfg.tex ? ' checked' : '') + '> Textures</label>' : '') +
         (cfg.on ? '<button class="pd-btn" id="ps-alg-keys" style="min-height:32px;font-size:12px;" title="Choose the handful of trades worth keying, LSM-style. Everything else still draws, in grey.">Key trades' + (catKeySet() ? ' (' + catKeyList().length + ')' : '…') + '</button>' : '') +
         (cfg.on ? '<button class="pd-btn" id="ps-alg-reset" style="min-height:32px;font-size:12px;">Reset colours</button>' : '') +
+        /* ⚠️ The LSM toggle lives HERE, beside "Key trades...", because that button is
+           already the lane roster editor — the two controls are one subject. A direct control
+           rather than another nested menu, which is the owner's stated preference. */
+        (cfg.on ? '<label title="The LSM (time-location) layout: one row per location, time across, and one bar per keyed trade on each row \u2014 the slope of the staircase is the production rate. Groups by location and collapses to one row per floor."><input type="checkbox" id="ps-alg-lsmrows"' + (_lsmRows ? ' checked' : '') + '> <strong>LSM rows</strong></label>' : '') +
+        (cfg.on && _lsmRows ? '<span class="ps-seg2" title="Which way the floors run. The deck reverses them (highest at the top) because a building reads roof-down; this affects the LSM layout only."><button type="button" id="ps-alg-lsmtop"' + (_lsmTopFirst ? ' class="on"' : '') + '>Roof first</button><button type="button" id="ps-alg-lsmbot"' + (!_lsmTopFirst ? ' class="on"' : '') + '>Ground first</button></span>' : '') +
         (_hlCat ? '<span class="ps-alg-hl">Highlighting: ' + esc(_hlCat) + '<button type="button" id="ps-alg-hlclear" title="Clear the highlight">✕</button></span>' : '') +
         // Tip line removed — it was a permanent paragraph of instructions competing with the legend
         // it sat next to. Both behaviours it described are already discoverable (a bar and a month
@@ -43225,6 +43576,17 @@
     if (fld) fld.onclick = function () { setLegendFold(!_legendFolded); };
     applyLegendFold();
     host.querySelector('#ps-alg-on').onchange = function () { var c = catCfg(); c.on = this.checked; saveCatCfg(c); renderActLegend(); renderGantt(); };
+    var _lsmChk = host.querySelector('#ps-alg-lsmrows');
+    if (_lsmChk) _lsmChk.onchange = function () { setLsmRows(this.checked); };
+    var _lsmTopB = host.querySelector('#ps-alg-lsmtop'), _lsmBotB = host.querySelector('#ps-alg-lsmbot');
+    function _setLsmTop(v) {
+      if (_lsmTopFirst === v) return;
+      _lsmTopFirst = v;
+      try { localStorage.setItem('ps_lsm_topfirst', v ? '1' : '0'); } catch (e) {}
+      renderActLegend(); renderGrid(); renderGantt();
+    }
+    if (_lsmTopB) _lsmTopB.onclick = function () { _setLsmTop(true); };
+    if (_lsmBotB) _lsmBotB.onclick = function () { _setLsmTop(false); };
     host.querySelector('#ps-alg-field').onchange = function () { var c = catCfg(); c.field = this.value; c.colors = {}; saveCatCfg(c); renderActLegend(); renderGantt(); };
     var tex = host.querySelector('#ps-alg-tex');
     if (tex) tex.onchange = function () { var c = catCfg(); c.tex = this.checked; saveCatCfg(c); renderActLegend(); renderGantt(); };
@@ -43959,7 +44321,7 @@
         LOC_LEVELS.map(function (l) { return '<option value="' + esc(l.id) + '"' + (l.id === _stkLevel ? ' selected' : '') + '>' + esc(l.name) + '</option>'; }).join('') +
       '</select></label>' + allTowersToggle + scopeSel +
       '<span>Cut-off: <strong>' + esc(Fmt.date(dstr(D))) + '</strong></span>' +
-      '<label title="Display order of THIS view only. The grid and Gantt always keep their own build order (bottom-up)."><input type="checkbox" id="ps-stk-top"' + (_stkTopFirst ? ' checked' : '') + '> Highest level at the top</label>' +
+      '<label title="Display order of THIS view only. The grid and Gantt keep their own build order (bottom-up) \u2014 except in the LSM rows layout, which has its own Roof-first / Ground-first switch in the Legend."><input type="checkbox" id="ps-stk-top"' + (_stkTopFirst ? ' checked' : '') + '> Highest level at the top</label>' +
       '<button class="pd-btn" id="ps-stk-tagphases" style="height:28px;font-size:12px;" title="Assign Testing/Commissioning, Punchlisting, Handover, Closeout & Defects activities a Level value so they persist across the app">Tag phases…</button>' +
       '<span style="margin-left:auto;">Actual dates where recorded, else planned.</span></div>';
     if (!LOC_LEVELS.length) {
