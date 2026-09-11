@@ -9795,8 +9795,13 @@
       // The swap the planners asked for: the ACTIVITY on top, its locations beneath it.
       // ⚠️ No trailing 'wbs' — the location levels already say where the work is, so the WBS path
       // underneath them was pure duplication in this view (owner's call after seeing it live).
-      { name: 'Activity › Location (LSM)', dims: ['act'].concat(locDims) },
-      { name: 'Discipline › Activity › Location', dims: ['work', 'act'].concat(locDims) }
+      /* ⚠️ SHORT NAMES, because the path is already on the row. Each preset renders its full
+         dimension list as a `.ps-gm-hint` underneath ("Activity › Tower › Level › Zone › Unit"),
+         so spelling the path out in the NAME too was the row saying the same thing twice — and it
+         made the menu read as four long sentences rather than four choices.
+         Owner, 2026-09-11, named these: *"WBS tree (default) · LSM · By Activity"*. */
+      { name: 'LSM', dims: ['act'].concat(locDims) },
+      { name: 'By Activity', dims: ['work', 'act'].concat(locDims) }
     ].filter(function (p) { return p.dims.length; });
     var h = '<div class="ps-gm-sec">Presets</div>';
     presets.forEach(function (p, i) {
