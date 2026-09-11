@@ -13,6 +13,66 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### Where the One Portwood clashes come from: the closed loop holds (2026-09-12) — fmlozano
+
+Owner: *"let's test end-to-end the clash detection as well. The schedule in One Portwood is
+developed from the Schedule Setup, let's see how the clashes originated so that we can test if
+there are errors in the sequence/process in schedule setup."* **No code changed** — this entry
+records the verification and its answer.
+
+### ⚠️⚠️ THE DETECTOR AND THE GENERATOR AIM AT THE SAME FLOOR
+`autoTrace` chooses the predecessor it links to with
+
+    si = pk[Math.min(ord + L - 1, pk.length - 1)]
+
+and the clash detector measures against
+
+    var tr = pk[Math.min(ordK + L - 1, pk.length - 1)];
+
+Both expressions are **lifted out of the shipped source and RUN** over every
+(floors-in-category 1—30 × lead 1—8 × ordinal) combination — **3,720 cases,
+0 differ**, including the ones that hit the clamp at the top of a category.
+
+Then the property that follows from it, demonstrated rather than argued: a schedule built to the
+generator's own links raises **zero** handoff findings across **918 storey-pairs** — and a single
+storey dragged three days earlier **is** caught, so it is not a test that cannot fail.
+
+### What that means for One Portwood
+**The Schedule Setup's sequencing process is not what produced those clashes.** A schedule the
+setup generates is handoff-clash-free by construction. So a handoff finding on OPW101 says the
+**dates have drifted from the declaration since the push** — hand edits, a re-schedule, or
+calendar moves — not that the setup answered wrongly.
+⚠️ The same-storey overlaps are a different matter: they rest on trade ORDER, not on the
+handoff, and `autoTrace` does not prevent two trades sharing a storey. Those are real reports.
+
+### The declared configuration, read off the live app
+| Leading trade | whole-trade | basement | podium | typical | roof |
+|---|---|---|---|---|---|
+| General Requirements | **start together** | — | — | start together | — |
+| Site Works | — | 1 | 1 | 1 | 1 |
+| Structural Works | — | 4 | 4 | 4 | 4 |
+| Architectural Works | — | 1 | 1 | 1 | 1 |
+| MEPF Works | nothing declared | | | | |
+
+### End to end on that configuration
+The whole cold-open path now runs in the suite against **One Portwood's real 18 floors, their real
+categories and this real handoff table**, through the shipped `.then(…)` wiring: the first read
+is empty (and asserted to be — that is what triggers the fetch), the second carries all **18**
+categories, the order is asserted **not** to have been taken, the handoff arrives, and the exact
+finding that was wrong on screen — *"F1 Site Works before General Requirements"* — is
+suppressed.
+
+### Verified
+**572 assertions against the working tree, 27 against the pinned base, 0 failing. 25 negative
+builds, all 25 bite.**
+⚠️ Deployment confirmed by fetching the live file: `zh`, `zi` and `zj` are all served.
+⚠️⚠️ **Third occurrence of "a negative build must report, not explode":** the negative that
+rewrites the detector's target line left the new comparison with nothing to run, and it **crashed**
+on `A[-1].f` instead of failing. Guarded.
+⚠️ **Still not re-measured signed in:** the Chrome bridge dropped after the `zh` row-height fix
+was verified live and did not come back, so the OPW101 numbers under `zj`'s per-category arithmetic
+are not yet read off the real project.
+
 ### A correction to zi: the warmed catalogue supplies the CATEGORY, not the ORDER (2026-09-12 zj) — fmlozano
 
 ⚠️⚠️ **A REGRESSION I ALMOST SHIPPED IN THE FIX ONE ENTRY ABOVE, caught by reading my own diff

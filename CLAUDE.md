@@ -98,6 +98,26 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-12 — Where the One Portwood clashes come from: the closed loop holds
+
+Owner asked to trace the clash origins and test the Schedule Setup's sequencing. **No code changed**;
+this records the verification. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+- ⚠️⚠️ **The clash detector and `autoTrace` aim at the same floor.** Both target expressions are
+  lifted from the shipped source and **run** over 3,720 (floors × lead × ordinal)
+  cases: **0 differ**. A schedule built to the generator's own links then raises **zero** handoff
+  findings over 918 storey-pairs, while one storey moved three days earlier **is** caught.
+- **So the Setup's sequencing did not produce those clashes.** A handoff finding on OPW101 means the
+  dates have drifted from the declaration since the push, not that the setup answered wrongly. The
+  same-storey overlaps are separate — they rest on trade order, which `autoTrace` does not police.
+- The full cold-open path now runs end-to-end against One Portwood's **real** 18 floors, categories
+  and handoff table, through the shipped `.then` wiring.
+
+**572 assertions on the working tree, 27 against the pinned base, 0 failing; 25 negative builds, all
+bite.** `zh`/`zi`/`zj` confirmed served live. ⚠️ **Not re-measured signed in** — the Chrome
+bridge dropped after the row-height fix was verified and did not return.
+
 ### 2026-09-12 (zj) — Correction to zi: the warmed catalogue supplies the category, not the order
 
 ⚠️⚠️ **A regression almost shipped inside the previous fix.** `zi` had `_lsmDecl` read the
