@@ -95,6 +95,60 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-11 (a4) — The "race" was not a race, the fix was in the wrong function, and Schedule Setup stops explaining itself
+
+Owner: *"Let's reproduce the race deliberately"*, then *"How is this UI good? There's too much words…"*
+
+**⚠️⚠️ IT REPRODUCED, AND IT IS NOT A RACE.** (a3) guessed that the orphan rename lost to
+`_wbsSyncMissing` running concurrently. Driving it deliberately on BAU101-TEST — summary row present,
+`wbs_node_id` NULL, renamed through the real input — it diverged **2 trials out of 2**,
+deterministically, with no heal in flight. I even armed an interceptor to force the interleave; it
+never fired, and the divergence happened anyway. That is what killed the hypothesis.
+
+**The fix was in the wrong function.** `_wbsCommitName`, which (a2) patched, is wired **only to the
+keyboard** — Enter, Tab, the arrow keys. Typing a name and clicking away fires `change`, which calls
+**`wbsRename` → `_wbsCommit`** — a different path entirely. `_wbsCommit` builds `sumByNode` from the
+**in-memory `rows`** and opens with `if (!_nid) continue`, so a summary row whose link is NULL is
+never renamed. So (a2) fixed the path planners use least and left the main one untouched.
+
+⚠️ Which also means **(a3)'s "verification" of that path was invalid**: I dispatched a `change`
+event at a handler that does not exist, watched `wbs_nodes` change, and read that as my code
+working. It was `wbsRename` all along. Three entries in a row reasoned about a function the gesture
+never calls — found only by driving the real UI and reading the network.
+
+`_wbsCommit` now indexes unlinked summary rows by their dotted code, adopts one when the link lookup
+misses, renames it, and **re-links it in the same write** — renaming an orphan and leaving it
+orphaned fixes this rename and loses the next. The row is claimed out of the map, so two nodes
+resolving to one code cannot both take it. Verified on the same fixture: **2/2 diverged before,
+2/2 in sync after, and the link repaired**. Test data restored; final sweep 94 nodes, 94 rows,
+0 unlinked, 0 mismatches.
+
+**Then the words.** The Structure step put **~350 words in six paragraphs** above the tree before the
+planner reached a control. It is now **37**. ⚠️ The worst paragraph explained five buttons that
+**already carry `title=` tooltips saying the same thing** — the screen was printing its own tooltips
+as body text. Deleted rather than shortened; the one fact they lacked (Sync no longer runs on load,
+and the date beside it is its freshness) moved onto the two Sync buttons. The "almost-empty tree is
+correct" line now appears **only when the tree really is almost empty**.
+
+`stepwords.py` ranks every step by the prose it emits, so the sweep picks the heaviest screen rather
+than the loudest — Structure *felt* worst and was, but that is not evidence. `stPhases` 158 → 34
+(the back-scheduling rule stays: the dates move on their own, and a planner not told that reads it
+as the screen ignoring them; "calendar days, not working days" became the Duration column's
+tooltip). `stTowerLinks` empty state 124 → 41. Wizard total **1,343 → 1,195 words**.
+
+⚠️ This reverses the line I took in (a)/(a2) — *"a tooltip explaining what a button does is the
+screen admitting the button is not named well enough"*. That holds for an unclear **label**; it does
+not hold for a second sentence of consequence behind a clear one, and the owner asked for the hover.
+
+**Still heavy, deliberately not cut yet.** `stImpCommit` 118, `stImpPhases` 101, `stImpLoc` 100,
+`stImpRels` 82 — all four belong to the **import** wizard, a rare and destructive-if-wrong moment
+where explanation earns its place. They want reading before cutting, not a word count applied
+blindly. `stCalendars` 99, `stStart` 98, `stActivities` 90 and `stLevels` 79 are ordinary steps and
+are the next real candidates.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+
 ### 2026-09-11 (a3) — The rename, driven end-to-end against the live database — and one claim from (a2) corrected
 
 Owner: *"Let's verify the rename end-to-end."* (a2) shipped the naming pass with the honest caveat
