@@ -174,8 +174,14 @@ window.CCPackages = (function () {
     var total = CONTRACTS.reduce(function (a, r) { var n = Number(r.amount); return a + (isFinite(n) ? n : 0); }, 0);
     var hasPkgs = PKG.length > 0;
 
-    var h = '<div class="pd-card cc-dtcard"><div class="cc-dthead">' +
-      '<h3>Contract records</h3>' +
+    /* ⚠ THE SAME INTRODUCTION THE BOQ GETS. Owner: *"The UI of Bill of Quantities title is okay.
+       Let's adopt the same way for the contract records."* Bill of quantities and Contract lots are
+       both announced by a `.cc-sechead` -- a small uppercase title with a rule running to the edge
+       -- while this one carried its title INSIDE the card, so the page's three sections were
+       introduced two different ways for no reason. The card's own `<h3>` goes with it: repeating
+       the words immediately below the heading is what made the old header feel crowded. */
+    var h = '<div class="cc-sechead"><h2>Contract records</h2><span class="cc-sechead-rule"></span></div>' +
+      '<div class="pd-card cc-dtcard"><div class="cc-dthead">' +
       '<span class="cc-dtcount">' + CONTRACTS.length + (CONTRACTS.length === 1 ? ' record' : ' records') +
         (total ? ' · ' + esc(moneyShort(total)) : '') + '</span>' +
       '<span class="cc-dtspacer"></span>' +
@@ -194,14 +200,15 @@ window.CCPackages = (function () {
          almost every project the right number of lots is zero, so this is an escape hatch rather
          than an invitation. Once a lot exists the full section appears below and carries its own
          `+ Lot`, and this one stops being the only route. */
-      /* WARNING QUIETER THAN A pd-btn, DELIBERATELY. Owner: *"+Lot button needs UI rework"*.
-         With the Contract lots section hidden on a project with no lots, this is the only
-         thing left in that header - and for almost every project the right number of lots is
-         ZERO. A primary-weight button there reads as a step to take. It is an escape hatch,
-         so it looks like one: a text-weight control that gains a border on hover. */
-      (canWrite && !PKG.length
-        ? '<button class="boq-ghostbtn" id="pk-addfirst" title="A contract lot is a division BELOW this project. If the division already has its own project code it is a separate project, not a lot.">+ Lot</button>'
-        : '') +
+      /* ⚠⚠ `+ Lot` IS GONE FROM HERE. Owner: *"also remove the +Lot. This will make it much
+         cleaner."* It was already the quietest control on the screen because for almost every
+         project the right number of lots is ZERO -- and a control that should almost never be used
+         does not earn a permanent place in the header of the section people read every day.
+         ⚠ THE ROUTE IS NOT LOST, which is what makes the removal safe: the contract wizard's
+         package step defines lots when the contract is first recorded, and EDITING the contract
+         record (the pencil on its row) offers the same None / Define / Link choice afterwards. The
+         `+ Lot` inside the Contract lots section also stays -- but that section only exists once a
+         lot does, so it is an action within its own subject rather than an invitation on this one. */
       '</div>';
 
     if (!CONTRACTS.length) {
@@ -396,8 +403,6 @@ window.CCPackages = (function () {
        editing are different acts here: creation is the one that needs the guard rails. */
     var a = h.querySelector('#pk-add');
     if (a) a.onclick = function () { if (onNew) onNew('Package'); else edit(null); };
-    var af = h.querySelector('#pk-addfirst');
-    if (af) af.onclick = function () { if (onNew) onNew('Package'); else edit(null); };
     var nc = h.querySelector('#pk-newcontract');
     if (nc) nc.onclick = function () { if (onNew) onNew('Contract'); else edit(null); };
     var p = h.querySelector('#pk-push'); if (p) p.onclick = share;

@@ -1,5 +1,421 @@
 # Module: contracts-claims
 
+## 2026-09-10 (z1) — BOQ→schedule matching gets four rungs, and the location key was wrong twice
+
+**Run `migrations/2026-09-10-boq-match-rung.sql`.** Owner: *"How should we match the BOQ to the
+schedule?"* Answered as: layered — class code narrows, location picks, WBS branch next, name
+similarity as a tiebreak — with **heading maps, leaf allocates**.
+
+### ⚠️⚠️ First: hand-off (b) was ALREADY BUILT, and the audit that said otherwise is stale
+`openSeedFromSchedule()` / `scheduleSeedPlan()` (`boq.js:2761`, reachable from **Add lines from the
+schedule…** on a draft) already reads the tagged programme, writes `boq_class_map`
+(`source='authored'`) and writes `boq_allocations` at `qty = 0`. The 2026-09-08 (a) §4 table lists
+*"detailed schedule → detailed BOQ: ❌ nothing"*; that has not been true since 2026-09-07h/2026-09-08.
+Nothing was built for it here. It needs exercising, not writing.
+
+### ⚠️⚠️ THE ONE RUNG WAS A MONEY DEFECT, NOT AN IMPRECISION
+`candidatesFor()` returned every activity carrying the line's code and stopped. A code is a **tag**
+— *Rebar Works* is one code on forty floor-level activities — so a 3rd-floor line was matched to all
+forty and `proposeSplit` smeared its quantity by duration pro-rata.
+
+That is not cosmetic. `boqDerive` (`project-schedule/index.html:38164`) splits a line's `amount`
+across **exactly** its allocations → `project_schedule.planned_cost` → `schedule_scurve_agg`'s
+`w_cost` → Cash Flow's cash-in. A line spread over forty floors puts ~95% of its cost on floors it
+never touches, and every screen downstream reports it as fact.
+
+### The shared normaliser, and the two defects measuring it found
+**New `assets/js/locmatch.js` (`window.PDLoc`).** There were **three** copies of the location
+normaliser — the schedule's `_locNormKeyCalc`, `affected.js`'s deliberate cross-asserted duplicate,
+and `boq.js`'s `locKey`. The third was the odd one out, and executing it against the schedule's
+found two real faults, both reproduced on HEAD in the suite:
+
+| | HEAD | now |
+|---|---|---|
+| a `"to Roof Deck"` leaf vs a `Roofdeck` activity | **missed** | matched |
+| a **13th-floor** leaf vs a `3rd Floor` activity | **matched** (wrongly) | refused |
+
+The second is the sharper one and it is arithmetic: `locKey` kept the spaces, so
+`"…at 13 floor".indexOf("3 floor")` is a hit. Measured on the fixture, HEAD hands a 13th-floor line
+**three** activities, two of them on the wrong floor.
+
+⚠️ **`PDLoc.contains` is therefore NOT a one-line `indexOf`.** `normKey` strips every separator
+(which is what fixes Roofdeck), so it rejects a hit with a **digit immediately outside a numeric
+edge** of the needle. That is the "8th and 18th get merged" trap `locKey`'s own comment warned
+about, arriving from the other direction.
+⚠️ `normKey` is byte-for-byte the schedule's. It is the merge key every stored
+`project_schedule.location` value already agrees on; changing it would silently regroup a real
+project's floors. New behaviour goes in a new function.
+⚠️ **`project-schedule`'s own copy is NOT rewritten here** — it is a 43k-line file under concurrent
+edit and that swap is its own commit. The suite asserts `PDLoc` agrees with it over a spelling
+corpus instead, the precedent `affected.js` already set for the same pair.
+
+### The rungs
+`scoreCandidates(r)` → `[{act, rung, score, why}]`. The code is a **gate**; the other three score.
+**Only the best rung is reported per activity, never a blend** — "matched on location" and "matched
+on a 0.55 word overlap" deserve different trust and one number hides which you have. `topRung`
+allocates over the **winning rung only**: if three activities matched on location and thirty-seven
+on the code alone, the answer is the three. A weaker rung is a *fallback*, never a supplement.
+
+⚠️⚠️ **A design flaw of mine, caught by the fixture and not by reading.** The name rung first scored
+against the class code's **chart description** as well as the line's own text. Inside a code-gated
+set that discriminates nothing — an activity carries a code *because* its name resembles that code's
+description, which is exactly what `matchAct` does for the tagger. Its only effect was to relabel a
+code match as a name match and switch the split from pro-rata to equal. Measured: a provisional-sum
+line naming nothing came back as 20 activities on rung `name`. The chart read is gone; only the
+line's own description is scored, because that is the signal that varies **within** a code.
+
+⚠️ A location or WBS match is a statement about **where**, so its split is **equal**. Duration-
+weighting it would give a slower floor more of a quantity the match never measured. Only the
+un-discriminated code rung falls back to pro-rata — which is what the old function did for every case.
+
+### Heading maps, leaf allocates
+`codeFor(r)` walks `parent_id` (bounded at 8, as `pathOf` already is) to the nearest mapped ancestor.
+⚠️ **The direct map always wins** — a leaf mapped by hand away from its heading has been deliberately
+corrected. ⚠️ **`mappable()` is deliberately NOT widened**: it gates the suggestion and accept-all
+paths and `addAuthoredLines`' invariant that a heading is a group, not a scope item. The allocator
+reaches an inherited code through `codeFor`, which is where that question belongs.
+
+⚠️ The Class Codes KPI counted a numerator including headings against a denominator excluding them,
+so a heading-mapped bill could read *"41 of 38 mappable lines"*. Split into **Mapped** (leaves) and
+**Headings mapped**, the second naming how many extra lines it covers.
+
+### Two bugs fixed on the way, both live
+- ⚠️⚠️ **`allocHTML`'s class-code cell was an unguarded `CMAP[r.id].class_code`.** Safe only while
+  the list above it filtered on that same direct map — the moment a heading-mapped leaf reached the
+  row it would have thrown on `undefined.class_code` and taken the whole worklist with it. My own
+  change to `mapped` is what would have delivered that row.
+- ⚠️⚠️ **The allocation dialog's qty field was `type="number"`.** `.value` returns `""` for `1,000`
+  / `₱1,200.50` / `1,397,462,269.86`, and the handler did `Number(inp.value) || 0` — so typing a
+  quantity with thousands separators wrote a **silent zero** into an allocation. This is the trap
+  `boq.js` documented and fixed for the Lines grid in August and never carried across. Now
+  `type="text" inputmode="decimal"` + `numOf`.
+
+### The migration
+`matched_by` + `match_score`, additive and idempotent. ⚠️ **`method` is untouched and its CHECK is
+not relaxed**: `method` is how the quantity was **split**, `matched_by` is how the activity was
+**found**. The code already strained against conflating them — `addAuthoredLines` writes
+`method:'manual'` with a comment saying neither other value describes what happened.
+⚠️ `upsertAllocs` is now the one writer and **drops the two keys and retries once** on a schema-cache
+error, then says so in the toast. Without that the matcher would fail every Apply on an un-migrated
+database. It does **not** swallow other errors — an RLS refusal must still surface.
+⚠️ NULL `matched_by` stays legal: every existing row has no recorded rung, and back-filling one would
+invent a provenance. "Unknown" and "manual" are different claims.
+
+### Verified
+**138 assertions across three suites, 0 failing**, every function sliced out of the shipped file and
+executed; **HEAD executed as the contrast** in all three, and it reproduces both location defects and
+the unallocatable-inherited-leaf case.
+- The money invariant is asserted on all five fixture lines: Σ derived cost = the line's amount.
+  Changing *which* activities a line matches must never change the total, only its distribution.
+- Rendered against the real stylesheets at **1440 and 918**, both themes: rung chip **6.76:1 light /
+  8.04:1 dark**, no page horizontal scroll, the table scrolling inside its own card at 918.
+- ⚠️ **Two of my own assertions were wrong before the code was**, both recorded in the suite: the
+  digit-boundary contrast pointed at the wrong leaf (the defect runs longer-leaf → shorter-value), and
+  the inherited-leaf contrast expected a 20-way smear when HEAD in fact produces *nothing at all*.
+  Asserting the failure I expected instead of the one that occurs would have reported a bug the code
+  does not have and missed the one it does.
+- `node --check` clean; 0 NUL bytes; all pure LF. ⚠️ The first NUL check used `grep -c $'\x00'`,
+  which degenerates to an empty pattern and reported every line as a hit — the same false positive
+  this repo already recorded for `$'\r'`. Re-counted bytes.
+- ⚠️ **NOT verified signed in.** No allocation has been written against a real project, the migration
+  has not been run, and `location_levels.match` has never been read from a live row.
+
+`boq.js` / `affected.js` / the new `locmatch.js` → `?v=20260910z1`; `MODULE_V` → `20260910z1`
+(re-derived from the remote's `y9` **after** rebasing onto its 7 commits, not guessed).
+
+### Not built here, and named rather than silently skipped
+- The allocation dialog's **`slice(0, 800)` raw `<select>`** for adding an activity by hand — a
+  truncated list on a 16k-activity schedule. `CCAffected` already has the ladder + WBS tree for it.
+- **Hand-off (c)**, seeding the schedule from a high-level BOQ. It belongs in the Schedule Builder
+  (the two modules are separate pages with no shared runtime; `ScheduleBuilder` is a closure local),
+  so it is the other module's commit.
+- The BOQ **export**'s Class Code column still shows the direct map only, so an inherited-code line
+  exports blank while the allocator treats it as coded. Changing what a workbook says is its own call.
+
+## 2026-09-09 (cq) — The Affected-work intro drops from four lines to one
+
+Owner: *"Let's reduce the text in the step intro."* The third time the wizard's prose has been
+called too long, so this cuts on a rule rather than by taste.
+
+**Two of the four sentences were teaching the control, and the control now teaches itself.**
+*"Tick a place to take all of it, or search to add individual activities"* described a screen that
+did not yet exist when it was written. It does now: the ladder carries a count on every rung, the
+tree carries carets and checkboxes, and the search box's own placeholder names every field it
+matches. A caption narrating a legible control is just more to read before you can use it.
+
+⚠️ **What survives is the one fact the screen cannot show: no date moves.** A planner who believes
+saving reschedules the programme will not touch this step at all, and nothing on the page can
+disprove that on its own — so it stays, as three words in bold rather than a clause about previewed
+steps and pending variations.
+
+⚠️ **The EOT half — "the granted days stay a single figure on the record" — went with the rest**,
+because this step has no days field to mislead anyone with. The reasoning is unchanged and still
+recorded where a developer looks: the ⚠️ block above the function, and at length in
+`migrations/2026-09-09-cc-affected-activities.sql`. Deleting on-screen prose is not deleting the
+decision behind it.
+
+| type | before | after |
+|---|---|---|
+| Change Order | 65 words | **23** |
+| EOT | 41 words | **14** |
+| Claim | 27 words | **11** |
+
+**Measured in the browser, in the real wizard shell** (not counted by eye): at 1440 all three render
+as **one line**; at 918 the Change Order hint takes two and the other two stay at one. It was four
+lines at both widths. No page horizontal scroll at either.
+
+- `wizard.js?v=20260909cq`; `MODULE_V` → `20260909cq`. No other file changed.
+- ⚠️ **Not verified signed in** — the wizard was driven against a stubbed data layer.
+
+## 2026-09-09 (cp) — The Affected-work picker: a ladder, a WBS tree, and a Gantt beside them
+
+Owner, on the step shipped that morning: *"UI is clashing let's fix … I want to have the level
+breakdown select to be like a ladder rather than selecting since it can span different towers and
+levels and zones … most of the activities have the same activity name even though they have
+different activity IDs its difficult for the planner to have memorized all of these activity IDs …
+I believe in a form of a WBS type would be appropriate. I want to be able to have a side-by-side
+preview as well when I select the affected activity how it would look like in the Gantt."*
+
+### ⚠️⚠️ The clash was mine, and so was the reason it measured clean
+Two wizard rules, and the second is the sibling of a trap documented directly above it:
+
+- **`module.css:520` — `.ccw-main select { width: 100% }` was unconditional.** The `input` half of
+  that same rule carefully excludes checkboxes and radios, with a long comment about the class-code
+  ladder it once destroyed. `select` got no such exclusion, so the picker's level dropdown took a
+  full row.
+- **`module.css:505` — `.ccw-main label { display: block }`** at specificity **0-1-1** beat
+  `.cca-lbl { display:inline-flex }` at **0-1-0**, so the label was never inline and landed on top
+  of the control beside it.
+
+⚠️ **My harness passed because it hand-copied the `.ccw` / `.ccw-main` shell instead of rendering the
+real one**, so neither wizard rule was ever in the cascade. That error class is what changed here:
+the harness now calls the **real `CCWizard.open()`** and clicks through to the step.
+
+⚠️ **The fix is not more specificity — it cannot be.** Three `:not()` arguments put that selector at
+**0-4-1**, above anything a class can reach without `!important`, and the previous fix *was* an
+`!important`, on one control, leaving the next to rediscover it. A control now opts out with
+**`.cca-ctl`**, the same shape the rule already uses for checkboxes and radios, and its own rules
+then apply normally. Verified both ways in the browser: a probe `<input>` with no `.cca-ctl` still
+stretches to the wizard's width, so ordinary form fields are untouched.
+
+### The ladder replaces one `<select>` per level
+Copied from `boq.js`'s class-code cascade, which solves the same problem: every rung is re-derived
+**top-down from the parent's already-resolved set**, so pane N+1 is definitionally a subset of pane N.
+
+- ⚠️⚠️ **THAT NARROWING IS WHAT MAKES A BARE VALUE KEY SAFE.** The location migration is explicit
+  that values are plain text and not a node tree — *"Zone 'Z1' under two different locations is the
+  same string"* — so a rung keyed on the value alone would merge Tower A's Z1 with Tower B's Z1 and
+  a change order would silently take both. It cannot happen while resolution stays strictly
+  top-down, and the suite asserts it: Tower 1 › Z1 holds 2 activities, Tower 2 › Z1 holds 1, and the
+  **contrast build** — reading the same level un-narrowed — merges them into one rung of 3.
+  ⚠️ Do not add a "show me every zone at once" mode without introducing a composite key.
+- ⚠️⚠️ **N rungs, not four.** `.boq-lad` can hardcode four columns because a class code is always
+  trade › division › group › item. Location levels are per project — SLN101 is Tower › Level ›
+  Orientation › Zone › Cluster. The count is a CSS custom property set from the data; measured, 2
+  and 3 rungs share the width, and **5 and 7 clamp at 150px and scroll** rather than becoming
+  unreadable slivers.
+- ⚠️ **A level with no values under the current path is SKIPPED, not shown as "Unassigned".**
+  Measured live: under Tower 2 › 5F the Zone rung disappears entirely.
+- ⚠️ **Re-ticking a partly-selected rung selects ALL of it**, because the handler reads the
+  checkbox's own new state rather than recomputing — the same bug class as `boq.js`'s leaf fix.
+  Measured: 13 → untick one → `12/13` and indeterminate → re-tick → 13.
+- `2ND FLOOR` and `2nd Floor` stay **one** rung with a `×2` badge. ⚠️ The label is the spelling used
+  **most often on this schedule**, not the prettiest: `spellRank` scores them identically because
+  `/^[A-Z]/` cannot tell ALL-CAPS from Title Case, so frequency decides. That is the schedule's own
+  rule copied verbatim, and it is now asserted so a future change to it has to be deliberate.
+
+### The activity tree replaces the flat list
+- ⚠️⚠️ **Ancestry comes from splitting the dotted `wbs` string, NEVER from `wbs_node_id`.**
+  `2026-09-01-wbs-link-rpc.sql` measured that column NULL on **4,393 of 4,393** and **16,393 of
+  16,393** activities after an import; the grid never noticed because `rebuild()` splits the code.
+- ⚠️⚠️ **`ensureActs` had to STOP discarding the `WBS Summary` rows.** They are the only code→name
+  map, so without them every branch renders nameless — which is the whole point of a tree. Same
+  single read; they are kept in a `nameByCode` map and stay **out** of the selectable set, because a
+  change order raised against a heading would double-count everything beneath it. The **contrast
+  build** discards them and every branch comes back unnamed.
+- ⚠️ **Two `wbs` conventions coexist in one table and both are normal.** An imported activity carries
+  its own leaf code one segment below its branch; a builder-pushed one carries the *branch's* code,
+  identical to its siblings. Keyed naively the first gives every row its own node and the second
+  collapses forty onto one. A code is a branch when a summary row names it **or** anything sits
+  below it, and a row filed on its own branch code is indented inside it — asserted both ways.
+- **The duplicate-name qualifier fires only on names that actually repeat**, preferring the deepest
+  location value — the owner's complaint, and `emitLeaf`'s own comment, verbatim. Measured on screen:
+  nine rows reading `Formworks · Z1` / `Formworks · Z2`, and a name appearing once is left alone.
+- ⚠️ **Selected-but-out-of-scope rows are always appended.** Move the ladder to another tower and the
+  13 already ticked are still listed, still counted, still correctable. A selection you cannot see is
+  a selection you cannot fix.
+
+### The Gantt preview
+Adapted from the schedule's `renderMobileGanttBody` — the only self-contained date-scaled bar
+renderer in the repo. ⚠️ Positioned divs, not SVG: this module draws no SVG at all today, and its
+`#6b7280` literal is replaced by a token so the strip is legible in both themes (verified — every
+colour resolves to `--pd-*` in dark mode).
+
+⚠️⚠️ **IT IS NOT A SECOND COPY OF `splitPlan`, AND THAT IS PINNED BY ASSERTION.** The commit that
+built the bulk insert refused to duplicate the insertion arithmetic — *"a second copy of the one
+calculation a CO claim turns on"* — and that still holds. A preview needs two facts: where the gap
+sits and where the bar now ends. So the suite **slices the real `splitPlan` out of
+`project-schedule/index.html`, executes it, and asserts `newEnd` and both gap edges match across 35
+span × duration combinations.** If the schedule's arithmetic ever changes, this fails and gets
+corrected — which a silent duplicate would not. The **contrast build** introduces a one-day error
+and the assertion catches it.
+
+⚠️ A 1-day activity is refused **with its reason on the row**, never drawn as a gapless bar implying
+the insertion worked — `splitPlan` refuses it too, and both are asserted.
+⚠️ The preview strip carries the **same qualifier the tree does**: a list of nine rows reading
+"Formworks" answers *"which ones did I pick?"* with *"some Formworks"*.
+
+### ⚠️ A real bug found by measuring, which reading the rule would never have caught
+The CO-duration box rendered **149px wide inside a header strip built for a 42px chip**. The
+declaration was right — `flex: 0 0 42px` — and it lost to a default it does not mention: a flex
+item's `min-width: auto` resolves to the automatic minimum size, and for a form control that is the
+browser's intrinsic ~20-character width. `min-width: 0` fixes it; measured 42px afterwards at both
+1440 and 918.
+
+### Verified
+- **41 assertions, 0 failures**, executing the shipped `ladderOf` / `valuesAt` / `treeOf` /
+  `visibleTree` / `stampSegs` / `previewOf` / `bestSpelling` sliced out of the file, plus the real
+  `splitPlan` sliced out of the schedule. **Three contrast builds, all three bite.**
+- **Driven in a real browser against the real `CCWizard.open()`** at 1440 and 918, both themes:
+  **zero overlapping elements in the control bar** (the reported defect, measured as pairwise
+  rect intersection, not eyeballed), no page horizontal scroll at either width, the ladder cascading
+  and skipping, the tree naming and qualifying, and the preview drawing 13 ghost rails and 13
+  notches at `+14d`.
+- Class audit: **emitted-but-undefined: none; defined-but-never-emitted: none.** `node --check`
+  clean; CSS braces **526/526**; 0 NUL bytes; no duplicate `cca-*` DOM id (the seven duplicates the
+  gate reports are pre-existing, in files this change does not touch, and are mutually-exclusive
+  render branches).
+- Harness deleted before commit, and `git status` confirmed clean of untracked files — this repo has
+  shipped a harness to production twice.
+- ⚠️ **NOT VERIFIED SIGNED IN.** Every measurement above is against fixture data through a stubbed
+  data layer. No real schedule has been read, and no link has been saved.
+- `affected.js` / `module.css` → `?v=20260909cp`; `MODULE_V` → `20260909cp`.
+
+## 2026-09-09 — Affected work: the wizard finally names which activities a CO / EOT touches
+
+**Run `migrations/2026-09-09-cc-affected-activities.sql`.** Owner: *"adding change orders and
+extension of time the planner should be able to easily select which activities are affected with the
+CO/EOT … in a bulk manner in case that the CO/EOT affects a lot … by selecting affected activities
+based on the location and optional to add other activities in the schedule as well."*
+
+### Where this started: the wizard had no schedule at all
+
+`finish()` wrote one `contracts_claims` row. **No step, no field and no payload key in `wizard.js`
+mentioned `project_schedule` or an activity id** — so from the register's side there was no way to
+say what a variation covered, and the only link that existed anywhere was
+`project_schedule.change_order_ref`, a free-text column the schedule reads and this module never
+wrote. This is greenfield, not a repair.
+
+### New file: `affected.js` (`window.CCAffected`)
+
+Its own file beside `boq.js` / `pmi.js` / `packages.js`, because there are **two** consumers — the
+wizard's new step and the record form — and a picker living inside one would have to be reached
+through it. Loaded **before** `wizard.js` and `module.js` in `index.html`; both read it as
+`window.CCAffected` and both optional-guard every call, so a browser holding a cached `index.html`
+from before the file existed degrades instead of throwing.
+
+**The picker** is two panes in the wizard's wide shell: the **places** at one location level, and the
+**activities** they hold. Ticking a place takes all of it; a typed query searches the **whole
+project** regardless of place, which is the owner's *"optional to add other activities in the
+schedule as well"*.
+
+- ⚠️⚠️ **VALUES ARE GROUPED BY NORMALISED KEY, and it is load-bearing rather than tidiness.** A real
+  schedule spells one floor several ways — Avesta carries `2ND FLOOR` and `2nd Floor`, Jab carries
+  `Roofdeck` and `Roof Deck`. Offering those as separate places means the planner ticks one, believes
+  they have taken the fifth floor, and **silently misses the activities spelled the other way** — on
+  a change order, that is scope left out of a claim. Measured in a browser: 7 raw spellings → **4
+  places**, the 2nd-floor family gathering all **18** of its activities behind a `×3` badge whose
+  tooltip names every variant.
+- ⚠️ `LOC_ORD` / `_normCalc` / `spellRank` are a **deliberate duplicate** of the schedule's
+  `locNormKey` / `locSpellRank` (no shared runtime across module boundaries — the same call already
+  made for the People Picker and the chart helpers). **They are asserted against each other** in the
+  suite over 14 spellings, because if they drift the wizard and the schedule would group the same
+  floor differently.
+- ⚠️⚠️ **NO GROUPING-VALUE VETO, and this is a deliberate departure from the schedule.** `_vsLevVal`
+  refuses a stored value when `locIsGroupingValue` calls the name a trade or a phase
+  ("Superstructure"), and it is right to — it is drawing a **building**, and a trade is not a storey.
+  A **selector** is the opposite case: these values are already stored on the activities, so ticking
+  one selects exactly what was filed under it. Applying the veto would **hide activities from a
+  change order because the stacking dislikes the name of the place they are in**.
+- ⚠️ **Three load states, never a truthy array.** `boq.js`'s `ensureCodes` read `if (CODES) return
+  CODES;` and `[]` is truthy, so one read before the migration cached the empty answer for the whole
+  session and told an owner who had already run it that the chart was empty. Every loader here
+  reports `pending` / `ok` / `error`, and only `ok` may claim there is genuinely nothing — so "this
+  project has no schedule", "it has no location breakdown" and "the read was refused" are three
+  different sentences. All three were rendered and checked.
+- ⚠️ **Its own activity loader rather than widening `boq.js`'s `ensureActs`.** It needs `wbs`, the
+  dates and `change_order_ref`, which that one does not select — and `boq.js` is being edited by a
+  concurrent session today. `PDb.selectAll`, never a bare `.select()`: PostgREST caps a read at 1000
+  rows and answers 200, so a 16k-activity schedule would have offered the first 1000 and a change
+  order would have been raised against a sixteenth of the programme.
+- **Saving is diff-based** — added and removed only, so re-saving the picker is not a
+  delete-and-reinsert and `created_at` on the untouched links survives. It is the only record of when
+  the scope was first identified. Chunked at 100: an `.in()` filter travels in the URL.
+
+### The wizard step
+
+`{ key: 'affected', label: 'Affected work', when: raisedAgainst() }`, between Dates and Review.
+
+- ⚠️ **Shown for Claim as well as CO and EOT.** Not scope creep: this wizard already treats Claim and
+  Change Order identically in every other step (same fields, same money columns, one shared branch in
+  `stepDetails`), and a claim's basis is activities exactly as a change order's scope is. Excluding it
+  would be the special case.
+- ⚠️ **No `hasSchedule()` gate, which departs from the plan for this work.** `when()` runs
+  synchronously on every paint, so it cannot await the schedule read; gating on a load that may not
+  have finished would make the step, the rail count and the Back/Next arithmetic appear and disappear
+  mid-flow. `open()` **prefetches** instead — three or four clicks' head start — and the step's own
+  picker names every empty case. A step that explains why it is empty beats a step that silently is
+  not there.
+- ⚠️ `st.affIds` is the state and `st.affPicker` only the live handle, which dies with the DOM on
+  every step change. The Trades step keeps only the handle, so walking Back off it and forward again
+  starts from nothing; this one re-mounts from `affIds`.
+- ⚠️ `WIDE_STEPS` replaces the literal `cur.key === 'codes'`, so a third wide step cannot disagree
+  with the toggle.
+
+### Ordering, and the one rule that follows from it
+
+⚠️⚠️ **The links are written AFTER the record, because they reference its id — which does not exist
+until the insert returns. That is forced, and it has a consequence: a failed link write must not fail
+the save, and must not roll the record back.** The record is what the planner came to create and it
+is already safely stored; the links are an optional annotation that can be re-picked in one click.
+Rolling a good record back to undo an annotation would be strictly worse. So it reports by name and
+leaves the record standing — **unlike `rollbackPackages`**, where the package is created FIRST and
+would otherwise be left orphaned.
+
+⚠️ **`res.row.id`, not `res.id`.** `persistRecord` returns `{ ok, row, dropped }`. The first cut of
+this read `res.id`, which is `undefined` — **every link write would have been skipped and the
+"returned no id" branch would have fired on every single save**. Caught by reading the function
+instead of assuming its shape, before it ran once.
+
+### The record form and the register list
+
+`openForm` gains an **Affected work** section, `data-not="Contract"` (a contract is not raised against
+activities, it defines them), with the per-type sentence carried by the same `data-only`/`data-not`
+spans the days hint already uses — an EOT's set is **evidence**, a change order's is **scope**. The
+register row shows an activity count, and ⚠️ **only when it is non-zero**: a "0 activities" chip on
+every row of a register whose migration has not been run reads as a defect, and the absence of a chip
+claims nothing. `affChip` reads the cache and **never fetches** — `render()` runs on every filter
+keystroke.
+
+### Verified
+
+54 assertions across the pass (see the root `CLAUDE.md`), of which this module owns the normalisation
+agreement (E1–E7) and the step arithmetic (F0–F8), both with contrast builds. Rendered at 1440px and
+918px; ⚠️ both recorded CSS traps measured rather than read — `.ccw-main input { width:100% }` leaves
+the 22 checkboxes at **13px**, and the two panes give activity names **314px** at 918px rather than
+the ~200px squeeze `.boq-wide` exists to fix. Interactions driven: ticking a place selects its 18
+activities, searching narrows the pane **without losing the selection**, clearing restores it.
+
+⚠️ **One clarity fix came from looking at the render, not the code:** the level control was labelled
+"Place" while its options are level *names* ("Tower", "Level") — a box reading "Level" under a label
+reading "Place". Now labelled "Level"; the pane heading carries the chosen level's own name.
+
+⚠️ **Not verified signed in, and the migration has not been run.** No link has been written or read
+against a real project, so `saveFor`'s diff, the RLS on the new table and the orphaned-link report
+are untested against PostgREST.
+
+`module.css` / `module.js` / `wizard.js` / the new `affected.js` `?v=20260909co`;
+`MODULE_V` → `20260909co`.
 ## Two columns that existed since August finally have an editor, and the second insert path is gone (2026-09-08b) — fmlozano
 
 Owner: *"Let's do the half-built and consistency gaps first."* Four items off this morning's audit.

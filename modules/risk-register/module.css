@@ -15,18 +15,16 @@
 .rr-title .rr-title-txt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .rr-title-ico { color:var(--pd-red); vertical-align:-3px; margin-right:4px; }
 .rr-projctx { display:flex; align-items:center; min-width:0; flex:0 1 auto; }
-.rr-project { max-width:230px; min-width:120px; height:34px; font-weight:600; font-size:13px; background:transparent; border-color:transparent; }
+.rr-project { max-width:230px; min-width:120px; height:34px; font-weight:700; font-size:var(--pd-fs-base); background:transparent; border-color:transparent; }
 .rr-project:hover, .rr-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
 .rr-tabs { display:inline-flex; border:1px solid var(--pd-line); border-radius:var(--pd-radius); overflow:hidden; flex:none; }
-.rr-tab { border:0; background:var(--pd-card); color:var(--pd-ink); padding:6px 14px; font-weight:600; font-size:13px; cursor:pointer; font-family:var(--pd-font); transition:background .12s; white-space:nowrap; }
+.rr-tab { border:0; background:var(--pd-card); color:var(--pd-ink); padding:6px 14px; font-weight:700; font-size:var(--pd-fs-base); cursor:pointer; font-family:var(--pd-font); transition:background .12s; white-space:nowrap; }
 .rr-tab + .rr-tab { border-left:1px solid var(--pd-line); }
 .rr-tab:hover:not(.active) { background:var(--pd-bg); }
 .rr-tab.active { background:var(--pd-red); color:#fff; }
 .rr-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; }
 .rr-topbar-tools .pd-btn { height:34px; display:inline-flex; align-items:center; justify-content:center; }
 .rr-topbar-tools .pd-btn.rr-tb-labeled { padding:0 12px; gap:6px; }
-.rr-topbar-tools .pd-btn.pd-btn-primary { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
-.rr-topbar-tools .pd-btn.pd-btn-primary:hover { filter:brightness(.94); }
 .rr-tb-sep { width:1px; align-self:stretch; margin:5px 3px; background:var(--pd-line); }
 @media (max-width:820px) { .rr-title-txt { display:none; } }
 
@@ -40,23 +38,26 @@
   background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:8px 12px;
 }
 .rr-filt-ico { color:var(--pd-muted); flex:none; }
-.rr-filters .pd-input, .rr-filters .pd-select { height:34px; font-size:13px; }
+.rr-filters .pd-input, .rr-filters .pd-select { height:34px; font-size:var(--pd-fs-base); }
 .rr-filters .rr-search { flex:1 1 220px; min-width:160px; }
 /* Shown by module.js only while a filter is actually set — a permanently
    visible Clear reads as "something is filtered" when nothing is. */
 .rr-clear { display:none; align-items:center; gap:5px; border:1px solid var(--pd-line); background:var(--pd-card);
-  color:var(--pd-muted); border-radius:var(--pd-radius); height:34px; padding:0 10px; font-size:12px;
-  font-weight:600; cursor:pointer; font-family:var(--pd-font); }
+  color:var(--pd-muted); border-radius:var(--pd-radius); height:34px; padding:0 10px; font-size:var(--pd-fs-sm);
+  font-weight:700; cursor:pointer; font-family:var(--pd-font); }
 .rr-clear.show { display:inline-flex; }
 .rr-clear:hover { color:var(--pd-ink); border-color:var(--pd-red-mid); }
 
-/* ---- RCM band toggles ---------------------------------------------------- */
-.rr-bands { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:16px; }
-.rr-bands-lab { color:var(--pd-muted); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; margin-right:2px; }
-.rr-band { border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-muted);
-  border-radius:999px; padding:4px 12px; font-size:12px; font-weight:600; cursor:pointer; font-family:var(--pd-font); }
-.rr-band:hover { border-color:var(--pd-red-mid); color:var(--pd-ink); }
-.rr-band.on { background:var(--pd-red-light); border-color:var(--pd-red-mid); color:var(--pd-red-dark); }
+/* ---- RCM band toggles ----------------------------------------------------
+   The bespoke `.rr-band` pills and the `.rr-bands` row that held them are GONE
+   (2026-09-08, owner: the bands "feel new and not consistent with the UI that
+   was already built with other pages/modules"). They are the shared
+   `.pd-seg.pd-seg-multi` segmented control now, declared once in
+   assets/css/dashboard.css and living in the module bar; `.rr-bands` survives
+   only as the id/hook, carrying no look of its own.
+   ⚠️ Nothing to re-add here. If a band toggle needs to look different, it needs
+   to look different in dashboard.css, for the dashboard's period switch and the
+   Stakeholder Register's own bands too — that is the point of promoting it. */
 
 /* ⚠️ Brand red is not a text colour on a dark surface, and this was measured on
    the deployed site rather than assumed: --pd-red-dark reads 2.92:1 as the band
@@ -65,25 +66,23 @@
    look is unchanged. #FF8A80 is the shade this app already settled on for red
    text on dark (issues-lessons, 2026-08-24): 7.5 on --pd-bg, 6.2 on a card. */
 html.pd-dark .rr-bands-row th.rr-bandhead { color:#FF8A80; }
-html.pd-dark .rr-band.on { color:#FF8A80; }
+/* (`.rr-band.on`'s own dark override moved to `.pd-seg-multi` in dashboard.css.) */
 
-/* KPIs */
-.rr-kpis { display:grid; grid-template-columns:repeat(6, 1fr); gap:12px; margin-bottom:18px; }
-.rr-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius);
-  box-shadow:var(--pd-shadow); padding:14px 16px; }
-.rr-kpi-val { font-size:24px; font-weight:800; line-height:1; }
-.rr-kpi-label { color:var(--pd-muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; margin-top:6px; }
-.rr-kpi-sub { color:var(--pd-muted); font-size:11px; margin-top:3px; }
-/* Only the NUMBER takes the semantic colour; the card keeps the normal surface
-   so the label stays readable in both themes. */
-.rr-kpi.rcm-p1 .rr-kpi-val, .rr-kpi.rcm-p2 .rr-kpi-val,
-.rr-kpi.rcm-res-high .rr-kpi-val { color:var(--rcm-t); }
+/* KPIs -- the SHARED `.pd-kpis` / `.pd-kpi` card (dashboard.css + UI.kpi in
+   ui.js). The whole `.rr-kpi*` set that stood here is gone: it drew the value at
+   24px ABOVE a 12px label, where the shared card (and the project dashboard, and
+   every other stat in the app) draws a 10px uppercase label above a 20px value
+   with the brand accent bar down the left edge. The rcm-* priority colouring is
+   NOT lost -- `.pd-kpi[class*="rcm-"]` in dashboard.css reads the same
+   --rcm-c/--rcm-t pair, and still tints only the accent and the value so the
+   label stays readable in both themes. Column count and breakpoints are the
+   shared strip's auto-fit, so the six cards reflow without a rule here. */
 
-.rr-help { color:var(--pd-muted); margin-top:0; font-size:13px; line-height:1.55; max-width:80ch; }
+.rr-help { color:var(--pd-muted); margin-top:0; font-size:var(--pd-fs-base); line-height:1.55; max-width:80ch; }
 
 /* ---- Register table ----------------------------------------------------- */
-.rr-table { font-size:13px; }
-.rr-table td .rr-sub { color:var(--pd-muted); font-size:12px; margin-top:2px;
+.rr-table { font-size:var(--pd-fs-base); }
+.rr-table td .rr-sub { color:var(--pd-muted); font-size:var(--pd-fs-sm); margin-top:2px;
   max-width:360px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .rr-table td.rr-c-title { min-width:230px; }
 /* ⚠️ min-width, not just max-width. Without a floor the auto table layout
@@ -98,12 +97,12 @@ html.pd-dark .rr-band.on { color:#FF8A80; }
 .rr-clamp { display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical;
   overflow:hidden; line-height:1.45; }
 .rr-table td.rr-num, .rr-table th.rr-num, .rr-num { text-align:right; white-space:nowrap; }
-.rr-cat { font-weight:600; }
+.rr-cat { font-weight:700; }
 
 /* The band header row above the column names, so the register reads like the sheet. */
 .rr-bands-row th.rr-bandhead {
   background:var(--pd-bg); color:var(--pd-red-dark); text-align:center;
-  font-size:10px; font-weight:800; letter-spacing:.06em; text-transform:uppercase;
+  font-size:var(--pd-fs-micro); font-weight:800; letter-spacing:.06em; text-transform:uppercase;
   padding:5px 8px; border-bottom:1px solid var(--pd-line);
   border-left:1px solid var(--pd-line);
 }
@@ -114,15 +113,15 @@ html.pd-dark .rr-band.on { color:#FF8A80; }
 .rr-grow:hover > td { background:var(--pd-red-light); }
 .rr-gcar { display:inline-block; width:14px; color:var(--pd-muted); transition:transform .12s; }
 .rr-gcar.col { transform:rotate(-90deg); }
-.rr-gno { display:inline-block; min-width:22px; text-align:center; font-weight:800; font-size:11px;
+.rr-gno { display:inline-block; min-width:22px; text-align:center; font-weight:800; font-size:var(--pd-fs-xs);
   /* ⚠️ ink-on-card INVERTED, not white-on-muted. --pd-muted is a dark grey in light mode
      but a LIGHT grey in dark mode, so white on it measured 2.00:1 live. This pairing
      flips with the theme by construction: 16.3 light / 12.2 dark. */
-  color:var(--pd-card); background:var(--pd-ink); border-radius:4px; padding:1px 4px; margin-right:8px; }
-.rr-gname { font-weight:800; letter-spacing:.02em; text-transform:uppercase; font-size:12px; }
-.rr-gcount { color:var(--pd-muted); font-size:12px; margin:0 10px; }
+  color:var(--pd-card); background:var(--pd-ink); border-radius:var(--pd-radius); padding:1px 4px; margin-right:8px; }
+.rr-gname { font-weight:800; letter-spacing:.02em; text-transform:uppercase; font-size:var(--pd-fs-sm); }
+.rr-gcount { color:var(--pd-muted); font-size:var(--pd-fs-sm); margin:0 10px; }
 .rr-grow .rcm-pill-o { margin-right:5px; }
-.rr-gobj { color:var(--pd-muted); font-size:12px; margin-top:3px; font-weight:400; text-transform:none;
+.rr-gobj { color:var(--pd-muted); font-size:var(--pd-fs-sm); margin-top:3px; font-weight:400; text-transform:none;
   max-width:110ch; line-height:1.45; }
 
 /* Status chips
@@ -132,7 +131,7 @@ html.pd-dark .rr-band.on { color:#FF8A80; }
    In Progress 3.46:1 and Closed 4.12:1. Ink on the card is 16.3 light / 12.2
    dark by construction, and the border keeps the status legible at a glance.
    Same fix and the same reason as the contracts-claims `claim` mark. */
-.rr-st { display:inline-block; padding:1px 8px; border-radius:999px; font-size:11px; font-weight:700; white-space:nowrap;
+.rr-st { display:inline-block; padding:1px 8px; border-radius:var(--pd-radius-pill); font-size:var(--pd-fs-xs); font-weight:700; white-space:nowrap;
   border:1px solid var(--pd-line); color:var(--pd-ink); }
 .rr-st-open { border-color:var(--pd-bad); background:color-mix(in srgb, var(--pd-bad) 12%, transparent); }
 .rr-st-inprogress { border-color:var(--pd-warn); background:color-mix(in srgb, var(--pd-warn) 12%, transparent); }
@@ -141,12 +140,13 @@ html.pd-dark .rr-band.on { color:#FF8A80; }
 /* ---- Heat map view ------------------------------------------------------ */
 .rr-heatwrap { overflow-x:auto; }          /* the grid scrolls in its card, never the page */
 .rr-refgrid { max-width:560px; overflow-x:auto; }
-.rr-resrow { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
-.rr-rescard { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius);
-  padding:14px 16px; box-shadow:var(--pd-shadow); border-top:3px solid var(--rcm-c, var(--pd-line)); }
-/* ⚠️ --rcm-t, not --rcm-c. This is the one place the fill token survived as a text
-   colour and it measured 2.80:1 in dark (24px/800 needs 3) on the residual band cards. */
-.rr-rescard .rr-kpi-val { color:var(--rcm-t, var(--pd-ink)); }
+/* Residual band row -- the same shared card, so the only rule left is the strip.
+   ⚠️ The old `.rr-rescard` marked its band with a 3px border-TOP while the shared
+   card marks every metric with a 4px accent on its LEFT edge; two accent edges on
+   one page is exactly the kind of near-miss this pass exists to remove. The band
+   colour now rides the shared accent (`.pd-kpi[class*="rcm-"]`), and the "not
+   re-assessed" card, which has no band, correctly falls back to brand red. */
+.rr-resrow { display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:12px; }
 
 /* ---- Risk Universe view ------------------------------------------------- */
 .rr-uni td:first-child { min-width:190px; }
@@ -154,7 +154,7 @@ html.pd-dark .rr-band.on { color:#FF8A80; }
 .rr-unizero td { color:var(--pd-muted); }
 
 /* ---- Add/Edit form furniture -------------------------------------------- */
-.rr-fsec { font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase;
+.rr-fsec { font-size:var(--pd-fs-xs); font-weight:800; letter-spacing:.06em; text-transform:uppercase;
   color:var(--pd-red-dark); margin:18px 0 8px; padding-bottom:5px; border-bottom:1px solid var(--pd-line); }
 /* ⚠️ The third brand-red-as-text surface, and it was missed when the band header and
    the lit band pill were fixed: 2.40:1 in dark (11px/800 --pd-red-dark on the modal).
@@ -162,7 +162,7 @@ html.pd-dark .rr-band.on { color:#FF8A80; }
    token in dashboard.css rather than a fourth copy of this override. */
 html.pd-dark .rr-fsec { color:#FF8A80; }
 .rr-fsec:first-of-type { margin-top:10px; }
-.rr-fsec-hint { color:var(--pd-muted); font-weight:600; letter-spacing:0; text-transform:none; margin-left:6px; }
+.rr-fsec-hint { color:var(--pd-muted); font-weight:700; letter-spacing:0; text-transform:none; margin-left:6px; }
 .rr-lbl-hint { color:var(--pd-muted); font-weight:400; }
 .rr-frow { display:flex; gap:10px; flex-wrap:wrap; }
 .rr-frow > .pd-field { min-width:140px; }
@@ -171,26 +171,23 @@ html.pd-dark .rr-fsec { color:#FF8A80; }
      against this app's 44px touch minimum. Kept as pills that share rows rather
      than hidden: a stacked card still honours the band toggles, and showing
      every band by default would make each card six screens long. */
-  .rr-band { min-height:44px; padding:4px 16px; }
-  .rr-bands { gap:8px; }
+  /* (`.pd-seg`'s own 44px phone rung is in dashboard.css.) */
   /* Same reason as the band pills: the suggestion chips are buttons the shared
      phone rules do not match, so they measured under the 44px touch minimum. */
   .rr-sug { min-height:44px; padding:6px 12px; }
 .rr-actinfo { background:var(--pd-bg); border:1px solid var(--pd-line); border-radius:var(--pd-radius);
-  padding:9px 11px; font-size:12px; color:var(--pd-ink); line-height:1.5; margin:0 0 10px; }
-.rr-actinfo-t { color:var(--pd-muted); font-size:10px; font-weight:800; letter-spacing:.05em;
+  padding:9px 11px; font-size:var(--pd-fs-sm); color:var(--pd-ink); line-height:1.5; margin:0 0 10px; }
+.rr-actinfo-t { color:var(--pd-muted); font-size:var(--pd-fs-micro); font-weight:800; letter-spacing:.05em;
   text-transform:uppercase; margin-top:6px; }
 .rr-actinfo-t:first-child { margin-top:0; }
 .rr-suggest { display:flex; flex-wrap:wrap; gap:5px; margin-top:6px; }
-.rr-sug-lab { color:var(--pd-muted); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; align-self:center; }
+.rr-sug-lab { color:var(--pd-muted); font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase; letter-spacing:.04em; align-self:center; }
 .rr-sug { border:1px dashed var(--pd-line); background:transparent; color:var(--pd-muted);
-  border-radius:4px; padding:3px 7px; font-size:11px; cursor:pointer; font-family:var(--pd-font);
+  border-radius:var(--pd-radius); padding:3px 7px; font-size:var(--pd-fs-xs); cursor:pointer; font-family:var(--pd-font);
   max-width:100%; text-align:left; }
 .rr-sug:hover { border-style:solid; border-color:var(--pd-red-mid); color:var(--pd-ink); background:var(--pd-red-light); }
 
-@media (max-width:1400px) { .rr-kpis { grid-template-columns:repeat(3,1fr); } }
-@media (max-width:900px)  { .rr-resrow { grid-template-columns:repeat(2,1fr); } }
-@media (max-width:700px)  { .rr-kpis { grid-template-columns:repeat(2,1fr); } }
+/* (`.pd-kpis` and `.rr-resrow` are both auto-fit now -- no breakpoints needed.) */
 
 /* ---- Mobile & tablet ----------------------------------------------------
    Shared chrome comes from dashboard.css. The register is read-mostly (all
@@ -215,14 +212,14 @@ html.pd-dark .rr-fsec { color:#FF8A80; }
     background: var(--pd-card); border: 1px solid var(--pd-line);
     border-radius: var(--pd-radius); box-shadow: var(--pd-shadow); }
   .rr-table tr:hover td { background: none; }
-  .rr-table td { display: block; border: 0; padding: 3px 0; white-space: normal; font-size: 13px; max-width:none; }
-  .rr-table td[data-l]::before { content: attr(data-l) ": "; color: var(--pd-muted); font-weight: 600; font-size: 12px; }
+  .rr-table td { display: block; border: 0; padding: 3px 0; white-space: normal; font-size: var(--pd-fs-base); max-width:none; }
+  .rr-table td[data-l]::before { content: attr(data-l) ": "; color: var(--pd-muted); font-weight: 700; font-size: var(--pd-fs-sm); }
   .rr-table td .rr-sub { white-space: normal; max-width:none; }
   /* A stacked card has the room the table row did not — show the whole control. */
   .rr-clamp { -webkit-line-clamp:none; display:block; }
   /* Risk event is the card headline; code is a small index above it. */
-  .rr-table td.rr-c-title { font-size: 14px; padding-bottom: 6px; }
-  .rr-table td.rr-c-code { font-size: 11px; color: var(--pd-muted); }
+  .rr-table td.rr-c-title { font-size: var(--pd-fs-md); padding-bottom: 6px; }
+  .rr-table td.rr-c-code { font-size: var(--pd-fs-xs); color: var(--pd-muted); }
   .rr-table td.rr-rowacts { display: flex; gap: 8px; margin-top: 8px; white-space: normal !important; }
   /* Sized to content, not stretched to fill the row. Still >=44px tall via the
      shared .pd-btn phone rule. */

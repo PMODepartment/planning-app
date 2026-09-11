@@ -95,6 +95,5335 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-11 (z4) — The LSM data-date line: a grip you can drag, a state per storey, and a line that stops eating clicks
+
+Owner: *"build the data-date line next"*. Slice 4 of 5. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md). Module-only, no
+migration. The deck's headline read — a vertical line at a date with every floor's state beside
+it.
+
+- ⚠️⚠️ **Most of it existed, and one thing I "found" was not a bug.** I flagged the line drawing at
+  `today()` instead of the pinned `dataDate` — wrong: `today()` **is** the effective data date
+  (`return dataDate || wallToday()`). Recorded because the fix would have broken the one thing that
+  was already right.
+- ⚠️⚠️ **The line WAS eating clicks, though, and nobody had noticed.** It carried no
+  `pointer-events` and sits at z-index 6 over bars at 3, so it was already swallowing clicks on every
+  bar it crosses — two pixels, at one date, down the whole chart. It is `pointer-events:none`
+  now, and **measured after: a click at its own x over a crossing bar lands on the BAR.**
+- ⚠️⚠️ **The grip is a tab at the top, not the line.** Making the full-height line draggable would
+  have re-created that problem on purpose, and at month zoom a 2-day bar is ~8px wide — a short
+  activity under the data date would have become ungrabbable. ⚠️ The honest cost: the tab scrolls
+  with the chart; the Schedule dialog is still the way to set the date from anywhere.
+- ⚠️⚠️ **One data date.** The drag calls the same `setDataDate` the dialog does, then
+  `computeCPM()` → `renderAll()`, following the spotlight's precedent. Two as-of dates would
+  leave the Rate strip, the S-curve and EVM each reading a different "now". Nothing is written to the
+  database, so it is reversible — and it **names the old value** in the toast.
+- ⚠️⚠️ **The storey state comes from `_stkState`, the "Planned status as of" panel's own function**,
+  so the two screens cannot disagree. A lane bar's s/f ARE the bucket's min-start and max-finish, and
+  **that equivalence is proven over 160 date/shape combinations**, not assumed. The label reads
+  *"Plastering · through MEPF 1st Fix"* — ⚠️ the frontier being the furthest DONE trade in
+  sequence order, not a count, which would be wrong the moment a late trade finishes early.
+
+**295 assertions against the working tree, 11 against the pinned base, 0 failing.**
+⚠️⚠️ **And the gesture was actually DRIVEN — the first in this feature that has been.** Real
+mouse events on the shipped handler: the grip moves 858 → 1078px, which at 11px/day is 20 days,
+and the date goes 2026-03-20 → 2026-04-09 — exactly 20; the label tracks mid-drag;
+`computeCPM` and `renderAll` fire once each; the transient label and both `dragging` classes are
+cleaned up. Rendered at 1440×900: grip 11×14px `ew-resize`, line 2px inert, 6 status chips on
+`--pd-warn-bg`, no horizontal scroll.
+⚠️ **Not verified signed in.**
+
+`MODULE_V` → `20260911z4`, sort-checked against every token a browser might hold.
+
+### 2026-09-11 (z3) — LSM clash detection: two trades on one storey, against an order somebody stated
+
+Owner: *"build the clash detection next"*. Slice 3 of 5. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md). Module-only, no
+migration. The deck's first named advantage of LSM: *"Overlapping activities (clashes) can be
+detected easily"*.
+
+- ⚠️⚠️ **The project already declares the order, so it is reused.** `cmpWorkName` sorts by
+  `WORK_ORDER` — the owner-specified construction sequence — and already handles both
+  spellings a trade reaches the grid under (the canonical "Structural Works" and the Schedule Setup's
+  short "Structural"). ⚠️⚠️ On any other colour field the order is **INFERRED**, and it is labelled
+  inferred on the strip and in every tooltip: *"Tiles before Plastering"* is only a finding if
+  somebody said Plastering comes first.
+- ⚠️⚠️ **A shared finish day is a HANDOFF, not a clash.** `dispFin` is inclusive, so a successor
+  starting the day its predecessor finishes overlaps by one — ordinary FS practice. Without that
+  threshold every clean handoff in the programme would be reported.
+- ⚠️ **Different storeys are not a clash, and nor are two towers** — trades overlapping in time
+  on different floors is exactly how a takt programme runs. Both asserted; they are the false
+  positives that would discredit the feature on sight.
+- ⚠️⚠️ **Reported, never blocked or hidden.** Nothing is filtered or moved: the strip names the pair,
+  the storey and the working days; both bars carry a hatched mark over the overlapping stretch (both,
+  because marking one side reads as "this trade is wrong"). ⚠️ The chip **navigates** rather than
+  filtering — a filter would need a two-pass build, since the clash set is derived from
+  `buildNodes`' own output.
+- ⚠️ **One axis cache for every LSM reader**, lifted out of the rate into `_lsmAxOf`: one walk of
+  the span per frame, one boundary convention. Asserted at exactly three `makeAxis(` call sites.
+- ⚠️⚠️ **A fourth declared-but-unwired field:** `cfg.tradeLeads` ("floors of the leading trade done
+  before the following one starts") occurs twice — `blank()` and `normalize()` — and is read
+  nowhere. After `openLocAdopt`, `fillDown`'s change-order branch and `cfg.floorLag`. Wire it and
+  clashes could be measured against the declared handoff, not just trade order.
+
+**252 assertions against the working tree, 11 against the pinned base, 0 failing.** Executed rather
+than described: `_lsmSeq` handed its trades in the wrong order returns `WORK_ORDER`; a 5-working-day
+overlap counts 5; a same-day handoff, a clean gap, two storeys and two towers all count 0.
+Rendered at 1440×900 with both stylesheets inlined: 4 clashes → **8 marks**, 6 bars flagged,
+each mark inside its bar and ringed `rgb(196, 33, 39)` = `--pd-bad`.
+⚠️⚠️ A harness ordering bug worth keeping: the first render produced **0 marks** because it drew bars
+before `DL` was set, and `_lsmClash` reads `DL`. The real module is safe — `doRender` assigns DL
+before `renderWindow` — but the harness had to imitate that order rather than assume it.
+⚠️ The chip's click is wired and asserted structurally but **has not been clicked**; **not verified
+signed in**.
+
+`MODULE_V` → `20260911z3`, sort-checked against every token a browser might hold.
+
+### 2026-09-11 (z2) — The LSM production rate, and four things it should not have re-invented
+
+Owner: *"build the slope readout next"* — then four cross-check instructions while it was being
+built, every one of which found something. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md). Module-only, no
+migration. Slice 2 of 5.
+
+The deck's own argument for LSM over a Gantt: the **slope of the line is the rate of production**,
+quoted as "2 floors per month" and "12 working day cycle per floor". Neither is typed anywhere; both
+are now read off the staircase.
+
+- ⚠️⚠️ **Four duplications avoided because the owner asked.** `makeAxis` already precomputes a
+  working-day axis ("working days strictly BEFORE offset o") with `ALLAX` as its calendar-day
+  counterpart; `PDCal.workingDaysInRange` already counts working days; and
+  `ScheduleBuilder.locCatalogue()` already holds **the floor order the planner declared in Schedule
+  Setup**. All three are reused instead of rewritten. ⚠️ `makeAxis` **directly, never `axisFor`** —
+  that one caches for the CPM and wipes its cache when the base differs, so the rate strip would have
+  thrown away the CPM's axes on every repaint.
+- ⚠️⚠️ **And one duplication already shipped in slice 1, now corrected:** `_lsmAgg` resolved a bar's
+  calendar with `dsCalendarFor` (the duration-scenario screen's resolver) instead of `cpmCalOf` (the
+  scheduling one).
+- ⚠️⚠️ **The fit's y is the storey's POSITION, not its rank — caught by rendering it.**
+  `levelRank` is an ordering key: the roof answers **900**. Fitting on raw values put a Roof Deck 900
+  storeys above the top floor, and **every trade read "irregular" at r² 0.43**. On a real
+  high-rise the strip would have been useless. Reverting that one line reproduces 0.432396 exactly.
+- ⚠️⚠️ **There is no declared cycle to compare against, and that was checked.** The setup asks takt
+  questions but a per-floor cycle is stored nowhere — it emerges from durations plus those
+  settings when `generate()` runs. ⚠️ `cfg.floorLag` looks like the missing field and occurs
+  **twice** in the file, in `blank()` and `normalize()`, **read nowhere** — the third
+  declared-but-unwired field in this module. So the measured figure is the only honest one.
+- ⚠️ **Two fits, not one converted:** 12 calendar days between storeys reads **8.6 working days per
+  floor** *and* **2.5 floors per calendar month**. Dividing one by 30.44 would assume a seven-day
+  week. Under r² 0.7 the chip shows the **word** "irregular" and no figure — a greyed-out
+  number still gets read as a number.
+- ⚠️ **Nothing ends in a dead end**, made permanent: **50 structural assertions** check every new
+  function has a caller, every constant is read, all three controls are emitted *and* wired, and the
+  six existing helpers are genuinely reused.
+
+**199 assertions against the working tree, 11 against the pinned base, 0 failing**; rendered at
+1440×900 with both stylesheets inlined — 8 chips, 0 irregular, swatch computing
+`rgb(47, 111, 191)`. ⚠️⚠️ Three more harness defects recorded, including a probe that **again** could
+not link a branch it never ran — `_lsmDecl`'s `try/catch` degraded silently to the heuristic
+basis and hid the cause.
+⚠️ **Not verified signed in.**
+
+`MODULE_V` → `20260911z2`, sort-checked against every token a browser might hold.
+
+### 2026-09-11 (z1) — The LSM Gantt: one row per floor, one bar per trade
+
+Owner, with a training deck (*Linear Scheduling Method for High-Rise Building Construction*, Engr.
+Arnie L. Sy, Feb 2015): *"Read the PDF and how we can properly implement the Gantt view of the LSM
+in the schedule module."* Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md). Module-only; no
+migration. **Slice 1 of 5** — the layout; slope, clash detection, the data-date line and the
+flowline chart are named there and deliberately not built yet.
+
+The deck's P6 method: WBS level 1 = **location**, **collapse** to one row per floor, **one bar
+format per trade** with *"Show bar when collapsed"*, **bar rows** adjusted so overlaps stay visible,
+floors **reversed** so the roof is on top. The slope of the staircase **is** the production rate.
+
+- ⚠️⚠️ **The enabler was already in the file and is NOT touched.** `_sumSegsHTML` already lane-packs
+  N bars into one row — P6's "bar rows" exactly — but it bails on group rows and uses one
+  lane per ACTIVITY. Loosening its guard would have changed every grouped row in the app; a new
+  `_lsmBarsHTML` short-circuits ahead of it instead, gated on the row's own aggregation so every
+  other row kind renders unchanged while the mode is on.
+- ⚠️⚠️ **A weekend is not a break — found by testing, not by reading.** The first cut notched
+  every Friday→Monday, which on a weekly schedule is a notch in nearly every bar and empties the
+  one mark that means "this floor stood idle". A gap now needs a **working** day, through
+  `PDCal.isWorkDay` and the activity's own calendar. The deck names this exactly: *"it is very
+  difficult to integrate a working calendar on the LSM schedules drawn on spreadsheet or CADD."*
+- ⚠️⚠️ **Reversing the floors contradicted a documented decision**, so it is scoped: its own flag,
+  LSM mode only, plain Gantt byte-for-byte unchanged — and the Vertical Stacking checkbox that
+  promised *"the grid and Gantt always keep their own build order"* is corrected, because left alone
+  it becomes a false statement on screen. ⚠️ And it is **not** a plain `.reverse()`: that drags
+  non-storeys ("Ground Reservoir") to the top of the building, which `stkDisplayOrder` already
+  learned the hard way; its rule is reused.
+- ⚠️ **The curated key-trade set already existed for this**, quoting the same slide — so the
+  lane roster IS that set, not a second mechanism. The mode **proposes** one rather than drawing 438
+  lanes, and says so.
+- ⚠️ **The legend becomes the lane key** in this mode. It normally keys only the leaf rows on
+  screen ("collapsed means collapsed"), and everything here is collapsed by design. This does not
+  re-arm the old whole-project fallback: it is the explicit, capped roster.
+- ⚠️ **And it has a door.** `setLsmRows` sets the location grouping, collapses via the existing
+  `expandToLevel`, proposes the trades, and reports what it changed — reversibly. A mode whose
+  three prerequisites are left to the planner to discover is the "built with no door" defect this
+  module has shipped twice.
+
+**81 assertions against the working tree, 11 against the pinned base**, all executing functions
+sliced out of the shipped file **by name**; the contrast has none of the new code and its
+`rowHFor(1)` is the plain 34. Rendered at 1440×900 with both stylesheets **inlined**: 48 bars,
+8 per row, 6 rows, 11px lane pitch, 1 notch, 0 horizontal scroll, and a bar background computing
+`rgba(47, 111, 191, 0.2)` — a colour, not a width. Structural's staircase measures
+370/298/227/155/84/13px down the floors.
+⚠️⚠️ **Two harness bugs that read exactly like module bugs**, both recorded in the module log: a
+slicer that did not understand regex literals (`levelRank` holds one containing both quote
+characters) and so returned 217,897 characters; and a link pass that could not link a branch its
+probe never ran.
+⚠️ **Not verified signed in** — no real project's locations, trades or calendar have been
+through this.
+
+`MODULE_V` → `20260911z1`. ⚠️⚠️ **Not the next letter:** the remote had `20260911e3` while this
+tree held `20260911sc6`, and `e3` sorts **before** `sc6`, so a browser holding `sc6` would never
+fetch it. `z1` is past both, verified by sorting all three rather than assumed.
+⚠️ Integrated by **re-applying the content-anchored patch scripts onto the fast-forwarded base**
+rather than merging a 46k-line file — byte-identical result, every anchor matched exactly once.
+The other session's five commits did not touch this module.
+
+### 2026-09-11 (c1) — Minutes get a Card/Table switch and a non-editable number; mobile tables stop turning into tiles
+
+Owner's four items, two per module. Detail in
+[`modules/minutes-of-meeting/CLAUDE.md`](modules/minutes-of-meeting/CLAUDE.md) and
+[`modules/issues-lessons/CLAUDE.md`](modules/issues-lessons/CLAUDE.md).
+
+**Minutes of Meeting.** A **Card | Table** switcher beside the "Minutes" heading in a meeting's
+detail view — Card stays the full editor (the standing "THIS IS A CARD LIST, NOT A TABLE" warning
+is about there being only one editable layout, not about a second, narrower read view), Table is a
+new plain-text scan table that scrolls horizontally rather than reflowing, with a click on a row
+jumping back to Card focused on that minute. ⚠️ Hidden while presenting — the slide deck steps
+through `.il-mi-card` elements directly, so Table is forced off during Present regardless of the
+stored preference. The Details/Schedule/Venue/Attendees section headings in the Detail view now
+get the same dashed divider the Add-meeting modal already had (that modal's own comment claimed
+the Detail view already matched it; it did not — the rule was scoped to the modal alone). The
+minute **No.** field is no longer a typed input: it always shows the number derived from the
+minute's position (the same fallback every other reader of this number already uses), and the only
+way to change it now is reordering.
+
+**Issues & Concerns / Lessons Learned.** The mobile (`≤700px`) rule that turned each table row into
+a stacked card is removed. Both tables already sit inside a scrolling wrapper and already share the
+`.pd-table` class, whose own phone rule (in the shared stylesheet) makes a table scroll
+horizontally at the same breakpoint — the module-local override was actively fighting that shared
+behaviour, per its own comment explaining why it had to outrank it. Removing it restores the shared
+scroll-instead-of-reflow behaviour with no markup changes.
+
+⚠️ Not verified signed in for either module — no live login is possible in this environment.
+
+`MODULE_V` unchanged in both — neither module's `index.html` structure changed, only their
+module-local `module.css`/`module.js?v=` tokens moved.
+
+### 2026-09-11 (sc2) — Every other grid checked for the same mismatch: one dead-code candidate, nothing live
+
+Owner: *"Let's check the other grid views for the same mismatch."*
+
+**The question had to be sharpened first.** The schedule grid's fault was not "the counts differ" — it
+was that the header and the body are built by **two different functions**, from a column set
+(`LOC_LEVELS` / `CODE_TYPES` / `UDF_DEFS`) that arrives asynchronously, so the two calls could see
+different snapshots. A grid whose header and rows are emitted inside **one** function from **one**
+local snapshot cannot drift however late the data lands; the worst it can do is render early and look
+empty. So the sweep asks that of every table in the app, then measures what it can reach.
+
+**Static, whole repo — 155 `<thead>`s.** `headbody.py` finds the smallest function containing each
+`<thead>` and asks whether that same function emits the `<td>` beneath it. **150 do** — structurally
+immune, across all 16 modules. **Five do not**, and all five were opened:
+
+- **`detRelsEdit` ×2** (schedule details → Relationships) — fixed 5- and 4-column tables, bodies from
+  `relRowHtmlEdit` / `relRowHtml`. Static columns cannot drift; measured live at **5×1 and 4×1**.
+- **`tbl(head, body)`** (Diagnose report) — a generic helper, so the pairing lives at each call site.
+  All four checked: heads of **6 / 5 / 5 / 4** against bodies of **6 / 5 / 5 / 4** `<td>`; two of them
+  measured live at **6×6** and **5×5**.
+- **`portMonthHead`** (Manpower Loading) — a header *helper*; both callers pass the **same local
+  `months`** array that every body row maps. One snapshot, one function.
+- **`renderRegister`** (Drawing Register) — the only true split, and it is **dead code in this repo**:
+  `config.js` has the module `enabled: false`, `retiredTo: 'the Engineering App'`. Its live home is
+  another app; `modules/drawing-register/` here is a leftover.
+
+**Live — 18 grids on 8 pages, 0 mismatches.** Schedule grid **39×21** (still aligned after the sc6
+fix and a full tour of the module), progress table 7×26, stacking overview 10×4 and 10×5, Cost
+Loading steps 1-4 (5×25, 5×25, 2×25 + **8×125**, 4×25), details tabs (8×1, 5×1, 5×1 + 4×1, 4×1, 9×1),
+Activity Codes 3×25, UDFs 4×5, Diagnose 6×6 and 5×5, Manpower matrix **47×5**, Cash Flow matrix
+**58×13**, Equipment matrix 39×6, BOQ items **13×139**, Resource master 10×20, Portfolio 8×27.
+
+**⚠️⚠️ THE PROBE WAS WRONG FIRST, AND IT ACCUSED MANPOWER LOADING.** It reported the matrix's
+**Actual** row as one cell short of a 47-column header — the exact shape of the bug being hunted.
+It is correct code: `bandRows()` emits the department label **once** with `rowspan="live.length"`, so
+the rows beneath it carry one `<td>` fewer because that column is already occupied from above. The
+probe counted cells per row and never modelled **rowspan**. It now lays the table out the way a
+browser does — an occupancy grid with carry-downs — and a row is short only when a **column** ends up
+with nothing in it. Same lesson as `cellcount.py`: a checker that cannot be right about correct code
+cannot be trusted about wrong code. (The error is one-directional — ignoring rowspan makes rows look
+*shorter*, so it over-reports and never hides a real mismatch. Every clean result taken before the fix
+still stands.)
+
+**What this pass did NOT reach, stated rather than counted as a pass:** the import wizard's Excel
+preview grid (needs a file walked through it), the Snapshots / Change-history / Risk dialogs (they sat
+on *"Loading…"* — the tab was backgrounded and its timers are throttled), the stacking overview's
+`showPath` branch (needs a band with no value on its level), and most Manpower / Positions / Roster
+views, which rendered no table at all for the loaded project.
+
+No code changed: nothing live is broken.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+
+### 2026-09-11 (sc) — Columns not aligned: two different bugs wearing the same face
+
+Owner: *"Bug inside the grid columns do not refer correctly to its content. Columns are not aligned."*
+
+Every cell in this grid is positioned by a CSS `order` rule keyed on `nth-child`, so the body's cell
+**sequence** is the only thing tying a value to its heading. Two unrelated faults were both breaking
+that sequence, and they look identical on screen.
+
+**Half one — a summary row a cell short.** Live DOM on OPW101: header **39** cells, body **38**,
+diverging at index 26. The task chain emits `corefCellHtml`; the summary chain
+(`sumConScopeHtml → sumPkgHtml → sumCcodeHtml`) simply stopped at the class code, so every column
+after it shifted left by one and *"Structural Works"* — a trade roll-up — printed beneath **CHANGE
+ORDER REF**. It now emits the blank change-order lane, the same device `sumConScopeHtml` already
+uses for the constraint lanes, and whose own comment states the invariant this broke: *"keeps the
+cell count identical, which the nth-child column machinery needs"*. `cellcount.py` guards it by
+walking both chains. ⚠️ Counted per **return path**, not per function body — the first version summed
+branches that can never both run and reported `c-scope c-scope` for correct code, and a checker that
+cannot be right about correct code cannot be trusted about wrong code.
+
+**Half two — a header that discovered columns without the body.** Re-measuring after that fix
+confirmed it (`c-coref` at index 26 in both) and exposed a bigger, separate gap underneath: header
+**39** cells against **29** in every body row — **eleven** `c-x` extra columns to the body's one. The
+header carried TOWER / LEVEL / ZONE; the body had been serialised before `location_levels` came back
+and still carried only Trade. `extraColDefs()` reads `LOC_LEVELS` / `CODE_TYPES` / `UDF_DEFS`, all of
+which arrive asynchronously, and `renderHeader()` is called **alone** from four places that have just
+discovered columns — `refreshLocLevels()` and the three import/push paths all run
+`populateGroupSelect(); seedExtraHidden(); renderHeader();` and stop. `syncGridColumns()` only closes
+this along the `renderGrid()` path, so none of the four went through it. The body now keeps **its
+own** signature, written in `renderWindow()` at the line past which the rows below are definitely
+rebuilt, and `renderHeader()` reconciles against it.
+
+**⚠️⚠️ The first version of that repair could never run, and the tab I was measuring in is why.** It
+queued `renderGrid()` on a timeout. `renderGrid()` is `scheduleRender()`, which is
+`requestAnimationFrame`-debounced behind `if (_rafP) return` — **and a rAF never fires in a hidden
+tab**. Driving the deployed build in a backgrounded Chrome tab, the grid stayed at 39/29 through
+`renderGrid()`, `renderAll()` **and a full reload**, while a direct `renderWindow(true)` rebuilt it to
+39 on the spot; the tab reported `visibilityState: "hidden"` and a rAF callback that never ran. So
+`_rafP` latches true on the first swallowed request and every render after it returns immediately —
+which also means part of what I had been measuring as "the body is stale" was the tab's own doing.
+The repair is now a **direct, synchronous `renderWindow(true)`**, which is the right call on the
+merits anyway: a column-set change does not change the display **list**, only the cells in it.
+⚠️ And `_hdrRepair` is lowered for the one `renderHeader()` that `doRender()` makes, because
+`doRender()` renders the window itself on the next line — measured: **exactly one** body rebuild on
+each path, not two.
+
+Driven end-to-end on the deployed build against OPW101, and the defect reproduced deliberately
+rather than waited for: emptying `LOC_LEVELS` and re-serialising takes the body to **35** against a
+39-cell header; `renderHeader()` **alone** — the entire call `refreshLocLevels()` makes — brings it
+back to **39**, with **0 of 22 rows** disagreeing. A natural load now arrives at 39/39.
+
+`MODULE_V` → `20260911sc6`.
+
+
+### The manual sheet's preview curve gets its own compact size (2026-09-11) — ethanrobles10
+
+Owner: *"can you make the curve smaller for the manual POC entry. And make it aesthetically
+pleasing."*
+
+The preview above the S-curve's manual sheet was the full Curve-tab chart verbatim — a 340-unit plot,
+five gridlines, a two-row legend and two long paragraphs, about 580px of furniture on top of the
+36-column spreadsheet the planner is trying to type into. It is now **352px, 40% less**.
+
+- ⚠️⚠️ **Smaller is a different chart, not a scaled-down one.** Capping the height and letting the
+  viewBox shrink takes the type down with it — at the height this needed, 11px axis labels land near
+  7px. So a `compact` flag re-proportions the drawing (plot box 340 → **196**, five gridlines → three,
+  tighter pads, thinner strokes) and the fonts keep real sizes in CSS.
+- ⚠️ **A flag on the shared renderer, never a second renderer** — the preview and the Curve tab draw
+  the same project, and two chart builders is how they start disagreeing about it. Every `-sm` rule is
+  scoped to its own class so the full-size chart is untouched, which was measured rather than assumed.
+- ⚠️ The manual-curve honesty note got **shorter, not weaker**: 317 chars → 69, still making all three
+  claims (it is a manual curve, what the trades are weighted by, what has been entered) plus the
+  unsaved count. The Curve tab keeps the full paragraph, where the sheet is a tab away.
+- A caption row says the curve **redraws as you type** — a fact only a code comment stated, and a
+  planner who does not know it has no reason to look up at the chart.
+
+⚠️ **Not verified against real data** — the anon key has no grants. Measured in a gitignored harness
+loading the module's own stylesheet and its shipped renderer over a synthetic 30-month programme.
+
+`MODULE_V` → `20260911sc1`. Detail: [`modules/s-curve/CLAUDE.md`](modules/s-curve/CLAUDE.md).
+
+### 2026-09-11 (b2) — All five fixes driven end-to-end on OPW101, and the toolbar measured rather than guessed
+
+Owner: *"Let's verify these fixes end-to-end"*, then *"The toolbar needs proper rework it spills over."*
+
+**Every fix exercised through the real UI on the real project. Nothing was written.**
+
+| # | Verified |
+|---|---|
+| **3** scroll | Tree scrolled to **2000px**, then a tick **and** a branch toggle — held at **2000** both times. Before, each repaint reset it to 0. |
+| **3** "+N" | Search "Rebar" → 77 leaves, each offering **"+76"**. Clicking **+75** on *Rebar · B3* took the selection **1 → 77**, footer *"Use 77 activities"*, scroll held. The eighteen-floor expand-and-tick job, in one click. |
+| **4** orchestrator | Pass 2 now reads *"**5 name(s)** need a person to say which line they are"* with a **Match names…** button, where it said *"nothing to do"*. |
+| **4** safety | The screen opens **0 of 5 answered**, button *"Nothing chosen"* — **nothing pre-picked**, exactly as a re-code must be. Each row names the code it carries today (*"now 3050"*), on its own line. |
+| **2** dialog | No ACTIVITY/QTY header over zero rows; **one** amber box where there were two. |
+| **5** wrap | First paragraph now lands on **one line** instead of orphaning *"attached to one."* |
+
+Zero console errors and zero unhandled rejections across the whole walk.
+
+**⚠️ THE TOOLBAR, MEASURED.** At a 1168px row the seventeen children sum to **2244px**. Two causes,
+both found only by measuring:
+
+1. **The grouping button was the only control whose label grows with the data** — `"WBS"` is 90px,
+   `"Trade › Activity › Tower › Level › Zone › Unit"` is **308px**, the widest of seventeen by more
+   than 3×. That is why the toolbar was not merely two rows but an **unstable** two rows: change the
+   grouping and the colour and `?` buttons jump between them. Capped at 190px and ellipsised, the
+   full path moved to the button's own `title` — capping without that would have hidden which
+   grouping is live, trading one defect for a worse one.
+2. **The search box had no ceiling.** `flex:1 1 100px` grows into whatever space is going; measured
+   at **1127px** once wrapped — a search field spanning the window. Capped at 340px.
+
+⚠️ **Neither makes it one row at 1168px, and that is not claimed.** Measured: even a **95px** cap on
+the grouping label still wraps, while the same toolbar fits **one row at 1400px and above** — the
+threshold sits between. What the caps fix is the **reflow** and the stretched input; one row at
+narrow widths needs an overflow menu, which is a separate and bigger call.
+
+⚠️ Also measured and worth recording: on OPW101 the *Match names* candidates are drawn from the
+codes on the **revision in view**, so the General Requirements BOQ offers *"01751 Rebar Testing"*
+for an activity called *Rebar* — correct for that bill, and not the Structural code the planner
+wants. Picking the Structural Works BOQ first is what makes that screen useful.
+
+`?v=` → `20260911b2`, `MODULE_V` → `20260911d5`.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+
+### 2026-09-11 (b1) — Five reports from testing BOQ linking, and an Actions menu taller than the window
+
+Owner, testing the BOQ→schedule linking on OPW101, listed five. All five answered, plus the Actions
+menu reported separately.
+
+**⚠️⚠️ #3 THE SCROLL RESET WAS A BUG, NOT FRICTION.** *"Each time I open a WBS it brings me back to
+the top and I would have to scroll down multiple times."* `paint()` writes `host.innerHTML`
+wholesale, which destroys `.cca-treebody` and builds a new one — and a new element's `scrollTop` is
+**0**. Every expand, every collapse, every tick threw the planner back to the top of a 2,561-row
+tree. There was no scroll handling in `affected.js` at all: grep for `scrollTop`, zero hits. On a
+job that is *"open eighteen floors and tick one row in each"*, that reset **is** the cost of the
+task. Captured before the write, restored synchronously after (a `requestAnimationFrame` would show
+the top for one frame and read as a flicker), keyed by CLASS because the ladder is rebuilt with a
+different number of rungs depending on where the cursor sits.
+
+**#3, second half — "Rebar across every floor" without expanding each one.** Search + *Select all N*
+already does exactly that, but it only appears once you have typed, and somebody expanding branches
+is not in the search box. Each leaf row now carries **"+N"** — the rest of its namesakes across the
+whole project, the same set the search would find, reached from where they already are.
+
+**⚠️⚠️ #4 THE ORCHESTRATOR WAS A DEAD END, AND THE REASON IS SPECIFIC.** *"What is its function when
+all 3 steps are skipped?"* OPW101 reports **2,561 of 2,561 activities coded** — just not with codes
+this bill uses — and `nameGroups()` opened with `if (a.class_code) return;`, untagged only. I wrote
+that guard to stop forty activities being retagged behind the planner's back. It blocked precisely
+the project that needed the screen: two vocabularies, and reconciling them is the whole job. An
+activity now qualifies when it carries **no code** or **a code this bill does not use**. A retag is
+**never pre-picked** however confident the name (moving a code moves money), it **names the code it
+currently carries**, and an activity already carrying one of *this* bill's codes is still left
+alone. That is also most of **#1**: with pass 2 able to act, pass 3 can propose every line at once
+instead of 21 trips through the Link dialog.
+
+**#2 the Link dialog** lost two pieces of furniture: an ACTIVITY / QTY header over **zero rows**,
+sitting directly on top of the button whose job is to create the first one; and the second of two
+stacked amber boxes, which reported *"0 activities"* as news underneath *"no activity carries this
+code, and none is named like this line"*.
+
+**#5 the wrap.** The `70ch` measure was not the problem — the **sentences** were. At that width the
+first one broke after "never" and left *"attached to one."* alone on a line, which reads as broken
+wrapping rather than as a long sentence. Shortened until each lands whole.
+
+**THE ACTIONS MENU: 19 flat items, taller than the window.** ⚠️ The overflow is a bug this file had
+already diagnosed: `.ps-menu` sets `overflow:hidden` with **no max-height**, and the comment two
+lines below reads *"Tall popup menus must scroll rather than clip"* — applied to two other menus and
+never to `.ps-menu` itself. Now bounded. ⚠️ And `78vh` was **still wrong**: measured on the deployed
+build, the menu opens **166px** down the page, so a cap expressed as a fraction of the viewport
+overhung by 7px. A cap has to budget for where the menu starts. `max(220px, calc(100vh - 230px))`
+measures **bottom 657 against a 721 viewport**.
+
+The map, and two of the moves are backed by more than taste:
+- **Removed as literal duplicates** — `Baselines…` and `What-if scenarios…` call `openBaselines()` /
+  `openScenarios()`, the *identical* functions `Open ▾ → Manage…` already calls, verified by reading
+  both handlers. `Open ▾` carries no width media-query, so nothing became less reachable.
+- **Moved to `Analyze ▾`** — `Schedule risk (Monte Carlo)…` and `Threshold monitoring…`: both answer
+  *"what does this schedule tell me"*, which is that menu's job, and it already uses headings.
+- **⚠️ NOT removed, though it looked like a third duplicate** — `Keyboard shortcuts…`. The toolbar's
+  `?` is `display:none` below 1400px and **this file's own comment says so**: it is the permanent
+  home, not a copy. The check the owner asked for (*"make sure that it makes sense"*) is the only
+  reason that survived.
+- **Grouped** under PROGRESS · BULK EDIT · PROJECT DATA · DISPLAY · HELP · (danger).
+
+⚠️ The two removed buttons' handlers went **in the same change**: `getElementById(…).onclick` on a
+missing node throws *"Cannot set properties of null"* and kills every line of wiring **below** it —
+the z6 outage in a different costume. `idcheck.py` now proves the whole file: **136 unguarded
+lookups, 0 missing**, and the live build confirms nine controls wired *after* the removal point are
+still wired.
+
+Verified: **15 new assertions** on the retag path (never pre-picked, already-correct activity
+excluded, `planTags` untouched) plus **230 unchanged — 245 total**. Integrated over a concurrent
+Progress Photos push; the only overlap was the `MODULE_V` line, resolved to a token newer than
+**both** so neither change ships behind a cached grid. `?v=` → `20260911b`,
+`MODULE_V` → `20260911d3`.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+
+### 2026-09-11 (a7) — The import wizard walked end to end, the sidebar given somewhere to stick, and a sentence that was four columns
+
+Owner: *"Let's verify the import steps too"*, then *"The side bar is clipping when the schedule setup
+page is scrolled down"* and *"UI for the pop in working calendar needs improvement"*.
+
+**The import wizard, driven with a real file, and nothing written.** A workbook was built in the page
+with the app's own SheetJS — three branches, four activities, three FS links, WBS depth carried as
+outline levels — wrapped as a `File` and handed to the module's **own** file input, so the genuine
+parser ran. All four edited steps render correctly on **DEMO01**, the sandbox:
+- **2 · Activities & phases** — *"From verify-import-test.xlsx — 4 activities under 3 WBS branches"*,
+  and the rewritten line, *"Construction must sit under Execution Phase — the next step reads
+  locations out of it."*
+- **3 · Location breakdown** — the shortened lede, the **"Tower Handover"** example intact, and the
+  *"no levels yet"* note firing from the state that makes it true.
+- **5 · The file's logic** — *"The file carries 3 relationships. 3 will be imported (3 × FS)."*
+- **6 · What is about to be written** — *"pressing **Import** is the first and only thing that changes
+  the schedule"* verbatim, the gated red no-location warning, and `Import 4 activities`.
+
+⚠️ **The Import button was never pressed**, and that is not caution, it is the design: the sentence
+(a6) preserved is exactly what makes walking the wizard safe. Confirmed afterwards — DEMO01 holds
+**8 rows, 8 nodes, 0 activities**, unchanged.
+
+**⚠️ And walking it found a defect I had introduced in (a6).** Step 5 read *". drag one bar onto
+another"* — a sentence starting mid-word. The clause I cut ended in a **colon**, so the text after it
+was correctly lowercase; removing the clause left the lowercase behind. Invisible in the source,
+invisible to `node --check`, visible the moment a real file went through.
+
+**⚠️⚠️ THE SIDEBAR HAD NOWHERE TO STICK.** `position:sticky` was already correct on `.pd-sidebar`;
+what was missing was **travel**. A sticky box cannot move outside its containing block, and this
+module pins `.pd-content { height:100vh }` so the Gantt can be a full-height flex layout scrolling
+its own panes. Schedule Setup is not that — it is a long document that scrolls the **page** — so its
+1,134px of content overflowed every ancestor while all of them stayed 721px. Measured at
+`scrollY 400`: the sidebar sat at **`top:-400, bottom:321`**, scrolled clean away with the page
+showing through beneath it. The `100vh` is **not** removed, because the Schedule grid depends on it;
+it is scoped off a `.ps-longdoc` class `switchTab` sets for the two views that scroll the page.
+After: **`top:0` at every scroll position**, covering the viewport. Regression checked on the
+Schedule view — `contentH` still `721px`, page does not scroll, grid still scrolls internally
+(348 visible of 7,106).
+
+**A sentence rendered as four columns.** `.calwiz-check` is `display:flex; gap:8px`, and the label's
+children were **five** flex items — the box, the bare text *"Also take the"*, `<b>special
+non-working days</b>`, the bare text *"off"*, and the `<i>` note. Each is its own column and wraps on
+its own, which is why the dialog showed *"Also take the / special non-working days / off"*. Wrapped
+in one `<span>`: measured **2 flex items**, the text 616px wide, one line. ⚠️ Third time this family
+has appeared — the sidebar brand's gap, the "Use 0 activit ies" button, now this. **Never split a
+sentence across elements inside a flex row.**
+
+`MODULE_V` → `20260911a7`. Nothing was written to any project in this entry.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+
+### 2026-09-11 (a6) — The import wizard: read first, and the reading changed the answer
+
+Owner: *"Let's do the import wizard too."*
+
+(a5) deferred these four steps — 401 words by the old count, the heaviest left — on the grounds that
+an import is rare and **destructive if it goes wrong**, so they wanted reading rather than a word
+count. Reading them: **most of it stays.** The count was pointing at the right screens for the wrong
+reason; what is heavy about them is mostly what makes them safe.
+
+**Kept, deliberately — every one is a consequence, not an explanation.** Verified present on the
+deployed file after the change:
+- *"pressing **Import** is the first and only thing that changes the schedule"* — the single most
+  important sentence in the wizard;
+- *"**Replace** then clears only that package, leaving the others alone"*;
+- *"**Replace** on this path clears the **whole project**, not one package"*;
+- the red *no location mapping* warning, already gated on the state that makes it true;
+- every live count — file name, activities, branches, relationships by type, pending edits;
+- the *"a **Tower** rule that also swept up 'Tower Handover'"* example, which is the actual failure
+  mode that step exists to catch.
+
+**Cut — architecture asides that change nothing the planner does.** A parenthetical joke about the
+project root; how a nested branch inherits its parent's phase (discovered by using the control — the
+**consequence**, that construction must sit under Execution or the next step finds no locations,
+stays in one line); what the location breakdown is used for elsewhere in the module; and an
+orientation comparing this step to the build path's Zone/Trade sequence steps, which a planner
+importing a file has not used.
+
+**⚠️⚠️ NO WORD COUNT IS QUOTED FOR THIS CHANGE, AND THE REASON IS A DEFECT IN MY OWN TOOL.**
+`stepwords.py` strips JS concatenation with a regex over the paragraph, which makes it sensitive to
+the **shape** of that concatenation rather than its content: replacing `' + _stepNo(x) + '` with
+`'. '` pushed `stImpRels`' reported count **UP by 27** while the text on screen went **down**. A
+rewrite counting only string literals under-captured instead, and also reported increases where
+there were none. A measure that moves when you refactor an expression is not measuring the prose,
+and it nearly had me "fix" a cut that had already worked. Both are recorded as unreliable across a
+refactor. The build-path figures in (a4)/(a5) stand, because those cuts deleted whole paragraphs
+rather than reshaping expressions — but the lesson is that the number was never the evidence; the
+reading was.
+
+⚠️ One of my own verification checks was also a false positive: it reported the cut joke still
+present, because the phrase survives at line 12539 as a **code comment**. The check was matching the
+source rather than the UI.
+
+**Not browser-verified, and cannot cheaply be.** Reaching these four steps needs a real file walked
+through a real import, which would write to a project. What IS verified on the deployed build: every
+kept sentence and every cut is confirmed by string check against the live file, and the **shared**
+build path — which runs the same `stStructure` renderer — loads with 8 rail steps, the pending strip
+populated, the panel rendered, and **no console errors or unhandled rejections**.
+`MODULE_V` → `20260911a6`.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+
+### 2026-09-11 (a5) — Schedule Setup: twelve steps become eight, "not pushed yet" becomes a number, and text has to earn its place
+
+Owner: *"Let's do all three."*
+
+**The rail: 12 → 8.** Tower links, Zone sequence, Trade sequence, Scope per zone and Stacking all
+answer one question — **how does the building repeat** — and four of the five are inert on a project
+with one tower and no zones. They were five rail entries of nothing, and the rail's **length** is
+what makes this wizard look big before a word of it is read. They are now tabs inside one
+**Repetition** step.
+
+⚠️ Tabs, not a merge: each keeps its own renderer, heading and empty state, untouched. The only
+thing that changed is where the planner clicks. `_stepNo` **aliases** the five titles onto the
+containing step, because 27 places in this file say *"set in step 7 · Zone sequence"* and `_stepNo`
+answers `''` for a title it cannot find — a blank there reads as a broken reference, where a number
+reads as a renamed step. Verified in the browser: all five tabs render, each headed **"6 · «its own
+title»"**, and a cross-reference elsewhere resolves to **6** with **zero** blank references.
+
+**Pending is a number now.** Half the remaining prose existed to say that what you are looking at is
+not in the schedule until you push. The setup bar carries it on every step instead —
+**"66 activities ready to push · 132 in the schedule now"**, measured live on BAU101-TEST. It reuses
+the `generate('int')` call the 5PMLC view already made every render, so it costs nothing new. The
+paragraph that said it on one step is gone; what is kept is the one case a count cannot explain — a
+tree whose rows all read **0** because nothing has ever been pushed, which without a word reads as a
+fault.
+
+**Text gates on state.** Most of what was left already did: `stStart` swaps its lede on whether the
+project has activities, `stActivities` shows its unrecognised-code warning only when there are any.
+Four printed regardless, and each went to the mechanism this file already has:
+a justification for the step's **position** in the rail (the rail shows the position — cut); a
+reassurance that all three paths end alike (nothing acts on it — cut); the accepted **trade codes**
+(into this step's existing *How to use this step* collapsible); and a click-by-click instruction
+(into `_sbldHow`, built for exactly that).
+
+⚠️ I first wrote that the trade codes moved onto the **Trade column header**. They did not — that
+grid builds its headers from a column spec and there was no cheap place to hang a `title`. The
+comment is corrected in the file rather than left describing something that is not there.
+
+Measured before and after with `stepwords.py`, which ranks every `st*` renderer by the prose it
+emits so the sweep picks the heaviest screen rather than the loudest: **1,343 → 1,079 words**, and
+with (a4)'s cuts the wizard is down from **~1,690**. Driven in a signed-in browser on the deployed
+build: 8 rail entries, five working tabs, the strip populated, **no console errors and no unhandled
+rejections**. `MODULE_V` → `20260911a5`.
+
+**Next, if it is wanted.** The four heaviest remaining are all the **import** wizard —
+`stImpCommit` 118, `stImpPhases` 101, `stImpLoc` 100, `stImpRels` 82 — a rare and
+destructive-if-wrong moment where explanation earns its place. They want reading, not a word count.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+
+### 2026-09-11 (a4) — The "race" was not a race, the fix was in the wrong function, and Schedule Setup stops explaining itself
+
+Owner: *"Let's reproduce the race deliberately"*, then *"How is this UI good? There's too much words…"*
+
+**⚠️⚠️ IT REPRODUCED, AND IT IS NOT A RACE.** (a3) guessed that the orphan rename lost to
+`_wbsSyncMissing` running concurrently. Driving it deliberately on BAU101-TEST — summary row present,
+`wbs_node_id` NULL, renamed through the real input — it diverged **2 trials out of 2**,
+deterministically, with no heal in flight. I even armed an interceptor to force the interleave; it
+never fired, and the divergence happened anyway. That is what killed the hypothesis.
+
+**The fix was in the wrong function.** `_wbsCommitName`, which (a2) patched, is wired **only to the
+keyboard** — Enter, Tab, the arrow keys. Typing a name and clicking away fires `change`, which calls
+**`wbsRename` → `_wbsCommit`** — a different path entirely. `_wbsCommit` builds `sumByNode` from the
+**in-memory `rows`** and opens with `if (!_nid) continue`, so a summary row whose link is NULL is
+never renamed. So (a2) fixed the path planners use least and left the main one untouched.
+
+⚠️ Which also means **(a3)'s "verification" of that path was invalid**: I dispatched a `change`
+event at a handler that does not exist, watched `wbs_nodes` change, and read that as my code
+working. It was `wbsRename` all along. Three entries in a row reasoned about a function the gesture
+never calls — found only by driving the real UI and reading the network.
+
+`_wbsCommit` now indexes unlinked summary rows by their dotted code, adopts one when the link lookup
+misses, renames it, and **re-links it in the same write** — renaming an orphan and leaving it
+orphaned fixes this rename and loses the next. The row is claimed out of the map, so two nodes
+resolving to one code cannot both take it. Verified on the same fixture: **2/2 diverged before,
+2/2 in sync after, and the link repaired**. Test data restored; final sweep 94 nodes, 94 rows,
+0 unlinked, 0 mismatches.
+
+**Then the words.** The Structure step put **~350 words in six paragraphs** above the tree before the
+planner reached a control. It is now **37**. ⚠️ The worst paragraph explained five buttons that
+**already carry `title=` tooltips saying the same thing** — the screen was printing its own tooltips
+as body text. Deleted rather than shortened; the one fact they lacked (Sync no longer runs on load,
+and the date beside it is its freshness) moved onto the two Sync buttons. The "almost-empty tree is
+correct" line now appears **only when the tree really is almost empty**.
+
+`stepwords.py` ranks every step by the prose it emits, so the sweep picks the heaviest screen rather
+than the loudest — Structure *felt* worst and was, but that is not evidence. `stPhases` 158 → 34
+(the back-scheduling rule stays: the dates move on their own, and a planner not told that reads it
+as the screen ignoring them; "calendar days, not working days" became the Duration column's
+tooltip). `stTowerLinks` empty state 124 → 41. Wizard total **1,343 → 1,195 words**.
+
+⚠️ This reverses the line I took in (a)/(a2) — *"a tooltip explaining what a button does is the
+screen admitting the button is not named well enough"*. That holds for an unclear **label**; it does
+not hold for a second sentence of consequence behind a clear one, and the owner asked for the hover.
+
+**Still heavy, deliberately not cut yet.** `stImpCommit` 118, `stImpPhases` 101, `stImpLoc` 100,
+`stImpRels` 82 — all four belong to the **import** wizard, a rare and destructive-if-wrong moment
+where explanation earns its place. They want reading before cutting, not a word count applied
+blindly. `stCalendars` 99, `stStart` 98, `stActivities` 90 and `stLevels` 79 are ordinary steps and
+are the next real candidates.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+
+### 2026-09-11 (a3) — The rename, driven end-to-end against the live database — and one claim from (a2) corrected
+
+Owner: *"Let's verify the rename end-to-end."* (a2) shipped the naming pass with the honest caveat
+that it was **not** browser-verified. It is now, signed in, against **BAU101-TEST** — a test copy,
+chosen so no live project was touched. Every value was restored and the project was swept clean
+afterwards: **94 nodes, 94 summary rows, 0 unlinked, 0 name mismatches, 0 duplicates.**
+
+**⚠️ FIRST, A CORRECTION TO (a2).** That entry said *"the name cell is `ps-editable` on every row
+with no `isWbs` guard, so renaming a branch in the grid is not merely possible, it is the obvious
+gesture."* That is true of `rowHtml`, and it is **wrong about what the planner sees**: in the
+WBS-grouped view the branch rows are rendered as **group headers** — no `data-rowid`, no
+`data-field`, not editable. Measured in the live DOM. The reachable path is the **detail form**
+(`#ps-f-name`), which does edit a `WBS Summary` row's name and does route through `persist()`. So
+the write-back is real and reachable, but the route I described was not the route.
+
+**What the three paths actually did, driven through the real UI.**
+
+| path | before | after |
+|---|---|---|
+| detail form → `wbs_nodes` | only the projection changed | **both** changed |
+| WBS Manager → projection, linked | in-memory only | PATCH observed, **both** in sync |
+| WBS Manager → projection, orphaned link | silently nothing | fallback PATCH, **both** in sync |
+
+The orphan case is the one (a2) was written for, and it was reproduced properly: the summary row's
+`wbs_node_id` was nulled to recreate the post-import state this file documents, then the branch was
+renamed through the Manager's own input and handler.
+
+**⚠️⚠️ AND THE FIRST ORPHAN ATTEMPT FAILED, WHICH IS THE FINDING.** Source renamed, projection did
+not. Chasing it through the network layer: the two requests I assumed were mine were in fact
+`_wbsSyncMissing`'s own `GET`s — their filter sets match it exactly — and **my updates issued no
+request at all** on that pass. On a clean retry both PATCHes appear and both copies converge. So the
+fallback is not broken; it **raced the heal pass**, which was mid-flight re-linking rows at that
+moment and had already changed the `is('wbs_node_id', null)` set out from under the query. Narrow —
+it needs a rename in the same seconds as a heal — but real, and recorded rather than smoothed over.
+
+⚠️ I nearly mis-diagnosed this twice: first concluding `.select()` on an update was being turned
+into a `GET` (it is not — the same chain PATCHes correctly from a console client), then that the
+handler had thrown (it had not — no error, and the PATCH appears on a clean run). Reading the
+network instead of the code is what settled it, and both wrong hypotheses came from trusting a
+single observation of a racy path.
+
+**Not changed here.** No fix for the race is shipped. The right shape is probably to re-read once
+when the fallback finds nothing, but that is a guess about a window I have observed exactly once,
+and writing a retry loop against a heal pass on the strength of one sighting is how the "missing WBS
+rows" incident this file already records began. It wants its own reproduction first.
+
+Verified live: the deployed page is `MODULE_V 20260911a2` and carries the new code; the test drove
+the real detail form, the real WBS Manager input and their real handlers, not a stub.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+
+### 2026-09-11 (a2) — The naming pass: one branch name, not two copies that drift apart
+
+Owner: *"Check the naming of these from the schedule setup and the WBS so everything is
+consistent"*, then *"Let's do the naming pass as well"*.
+
+**First, what is NOT wrong, established by reading rather than assumed.** The picker's rung names
+(Tower / Level / Zone / Unit) come from the project's own `location_levels` — the same table Schedule
+Setup writes — so those are consistent by construction. And every consumer of a WBS branch name
+reads the *same* source: the schedule's own `_phaseCodeNameMap`, boq.js's `WBSNAME` and
+affected.js's `NAME_BY_CODE` all build from `activity_type = 'WBS Summary'` rows. There is **one
+vocabulary**, not three. Two of the three things I had listed as unreconciled were not.
+
+**What is wrong is that the vocabulary has two copies, and they drift — both ways.** This file
+already says it out loud: `WBS_NODES` is commented *"authoring source of truth; projected to
+WBS-Summary rows"*. Every reader takes the **projection**. Nothing kept the projection equal to the
+source.
+
+**⚠️⚠️ Renaming a branch in the grid changed only the mirror.** The name cell is `ps-editable` on
+every row with **no `isWbs` guard**, so renaming a branch in the schedule is not merely possible, it
+is the obvious gesture — and it wrote `project_schedule.activity_name` while `wbs_nodes.name` kept
+the old text. `_wbsSyncMissing` re-seeds summary rows from the nodes, so the planner's rename was
+one heal away from **silently reverting**, and until then the WBS Manager and the schedule
+disagreed. This file already states the principle for the Drawing Register mirror — *"Letting it be
+edited here would show a number the next sync silently overwrites — worse than not offering the edit
+at all"* — and a branch name is the same shape. It is written **back** rather than forbidden,
+because the grid is where planners work; sending them to another screen to rename the thing they are
+looking at is the friction, not the fix. Through `PDSync` when present, so a rename made offline is
+not the half of the pair that goes missing.
+
+**⚠️⚠️ Renaming in the WBS Manager reached the projection only by luck.** The old line found the
+summary row in the **in-memory `rows`** array and only if it carried `wbs_node_id` — and this file
+documents at length that an import leaves that link **NULL** when `wbs_link_codes` times out
+(measured at 8,173ms against an ~8s `statement_timeout`), the rows all still present, simply
+unlinked. So on exactly the big projects where a rename matters most it silently did not propagate:
+`wbs_nodes` said the new name and every reader went on saying the old one. It is now a **server-side
+update** keyed on the link, with a fallback that adopts the orphan row **at this node's code** —
+which is not a second notion of identity, it is the rule `_wbsSyncMissing` already uses, read the
+other way round. `is('wbs_node_id', null)` on that fallback is not optional: without it the update
+would rename whatever row sits at that code, including one belonging to a different, correctly
+linked node. The memoised phase-name map is invalidated, or it would outlive the name.
+
+**⚠️ And a failing test found two more, which I had not looked at.** My assertion "the in-memory
+write is gone" failed because that `rows.find` line appears **three** times — once in the rename and
+twice in the **delete** paths, which carry the same bug in a worse form: a deleted branch left an
+**orphaned summary row** that goes on showing its name in the schedule, the BOQ and the picker
+forever. Both now delete the projection on the server. ⚠️ Keyed on the **link only** — the rename
+can fall back to the dotted code because renaming the wrong row is recoverable and deleting one is
+not, so an unlinked row is left to the dedupe pass rather than guessed at.
+
+Verified: **38 new assertions, 0 failing**, plus 34 + 36 + 24 + 29 + 26 + 43 — **230 total**. Pinned
+to **d992e59**. ⚠️ `node --check` parses a file whose script is dead — the failure that killed the
+whole BOQ module on (z6) — so every identifier the new code names is checked for a declaration in
+the **same** script block (all four touched sites are inside the one 4427–45659 block, confirmed by
+brace-counting rather than by eye). `_wbsNodeIdForRow` is not merely inspected: its **real source
+text** is lifted from the file and executed against a node fixture — linked row resolves by link, an
+unlinked row resolves by code (the post-import state), a row with neither resolves to nothing, a
+task is never a branch, `null` survives, and the memo re-derives when the tree changes.
+
+⚠️ **One defect of my own, caught before it shipped**: the write-back originally sat *above*
+`_myWrites[id]`, so an `await` ran before the Realtime echo guard was armed — leaving a window in
+which the echo of this very write arrives unsuppressed and is handled as somebody else's edit. Moved
+below it.
+
+**Not browser-verified.** These are database write paths; exercising them needs a signed-in session
+against a real project, and nothing here has been driven through one. The pure resolution logic is
+executed and the call shapes are asserted, but the round-trip is not. `?v=` → `MODULE_V 20260911a2`,
+because a module **page** changed.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+
+### 2026-09-11 (a) — Match names to the bill: the tagger's question asked the other way round, and three entry points become one
+
+Owner: *"Let's do 1 and 2"* — the specificity screen, and centralising the duplicate buttons.
+
+**1 · The screen.** `planTags` asks, for each **class code**, which activities resemble it. On
+OPW101 that answers *"no name resembles it"* twenty-one times out of twenty-one, and the
+measurement says why in one clause: `matchAct`'s second rung is
+`l3.indexOf(an) >= 0 && an.length > 6`, the schedule calls the work **"Rebar"**, and "Rebar" is five
+characters. `openNameMatch` asks the other question — for each distinct **activity name**, which of
+this bill's codes could it be? There are far fewer names than activities, so **one answer tags 72
+rows**, and the count sits in the row so the planner can see the leverage before spending the click.
+
+⚠️⚠️ **The relaxed rule builds a shortlist for a human and writes nothing**, and that is the whole
+reason it may sit below `TAG_FLOOR`. It is also the answer to my own objection from yesterday
+against simply lowering the guard: "Rebar" is a legitimate candidate for **Rebar Works**, **Rebar
+Consumables** *and* **Rebar Coupler**. The ambiguity is real and lives in the data — the schedule is
+less specific than the bill. Auto-picking one would be "confidently allocated the same 72 activities
+to three different lines", which is worse than finding nothing. So all three are shown and the
+planner says which; a name with exactly **one** confident candidate is pre-answered, a name with two
+is never pre-answered. The partial rule is whole-word (`tokensOf`), so "bar" does not drag in
+"Rebar Works" — and because `tokensOf` drops words of three characters or fewer, an activity called
+"PC" tokenises to nothing, where `[].every()` is **true** and would have made it a candidate for
+every code on the bill. That empty check is load-bearing and is asserted.
+
+The plan goes to `applyTagPlan` — the **same writer** the tagger already uses. A second write path
+for tags would be the drift this module has paid for twice.
+
+**2 · One entry point.** *"Is this the same with the other button selections just in compiled
+format? If yes let's just centralize everything."* It is: `Propose splits for all unallocated…` ran
+`planAllocs` and `Tag schedule activities…` ran `planTags` — literally passes 3 and 2 of **Code, tag
+and allocate**, except the dialog *chains* them so its counts account for what the earlier passes
+would do and the standalone buttons' did not. Two controls doing a worse version of one control is
+how a planner learns to trust neither. Both are gone; the toolbar carries one button.
+
+⚠️ **`bulkPropose` is deleted, not left unreferenced** — 55 lines, no caller once its button went. A
+dead entry point is the next person's second way of doing this. ⚠️ But its `allocBlockReason`
+paragraph was **not** a duplicate and it was that function's only caller, so the measured reason
+("none of its 2,561 activities carries a class code yet") **moved into the orchestrator** rather
+than going with it. Deleting the function blind would have deleted the explanation from the product,
+which is the opposite of the point. Pass 2's note stops saying "nothing to do" — a lie on this
+project — and offers the screen that unblocks it.
+
+⚠️ A **third** entry point turned up only because a test failed: `#boq-c-tag` on the Class Codes
+tab. It stays — that tab is where tagging belongs, so it is contextual access rather than a
+duplicate pass — but its `title=` went. A tooltip explaining what a button does is the screen
+admitting the button is not named well enough, and it is invisible on a phone. That is the standing
+instruction: *"without having to use many tooltips and lengthy texts expecting the planner to read
+them properly."*
+
+Verified: **43 new assertions, 0 failing**, plus 34 + 36 + 24 + 29 + 26 — **192 total**. Pinned to
+**d1397fd**. The fixture uses the owner's **real** names ("Rebar" on the schedule, "Rebar Works" on
+the bill); yesterday's named them alike and so agreed with the code for the wrong reason.
+⚠️ Four of my assertions were wrong and the corrections are the point: I asserted "the tagger
+matched nothing at all" and it matches **72**, because *Formworks* is spelled the same on both sides
+and always worked — the failure is not global, it is exactly the names where the schedule is
+**shorter** than the bill, and asserting the total hid the very distinction this screen exists for.
+
+Rendered against the real stylesheets at 344px with the phone block live, both themes: chips and the
+primary meet `--pd-tap` at **44px**, every text pair clears AA, and the only sub-4.5 readings are
+white on `--pd-red` at 4.12 — the app's standing `.pd-btn-primary` treatment, not new here. ⚠️ The
+harness first reported the page scrolling sideways; it was the harness, which had put the modal in a
+padded body instead of `.pd-modal-overlay`'s fixed box. Corrected, nothing overflows. 44 JS files +
+32 inline blocks parse; 595/595 braces; 0 NUL bytes. `?v=` → `20260911a`.
+
+**Still open.** The name pass makes the 21 lines answerable in about ten clicks instead of an
+afternoon, but it does not make them automatic, and nothing should: only a person can say whether
+"Rebar" is the works, the consumables or the coupler. WBS branch names, BOQ sheet names and the
+chart's item names still come from three unreconciled sources.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+
+### Consolidated drew a box on a project whose every floor was traced (2026-09-11) — ethanrobles10
+
+Owner: *"how come when pressing the consolidated and combining 2 trades that have the same floor
+plan per floor but just different zones, the overall shape just resorts to a default rectangle. pls
+fix that."*
+
+Two faults, and both are the plan pipeline reading "this card spans trades" as **no plan** rather
+than as **all of them**.
+
+- ⚠️⚠️ The plan map wrote a bare floor key only when every trade pointed at the **same plate id** —
+  and it never can: each trade keeps its own floors tree, so two trades that traced the identical
+  outline still point at two different plates. Consolidated, which can only read that key, was told
+  there was no plan and fell back to the wrap grid. It now takes the **largest** traced footprint —
+  not a union, which needs polygon booleans this app does not carry and would stack coplanar caps
+  inside one extrusion.
+- ⚠️⚠️ And a Consolidated row is split by **trade**, so the cell matched no zone and the whole-floor
+  fallback (keyed on `n === 1`) never fired. A trade IS the whole floor, so it now takes the floor's
+  outline — and the trades are **banded in height**, because a traced outline is positioned by its
+  own coordinates and two trades handed the same one would extrude two solids in the same place.
+- Untraced cards, per-trade cards and every 2D card are unchanged: the band maths is the identity at
+  `bandN = 1`. The footer now says when a footprint came from several trades' plans.
+- ⚠️ Regression fixed from `zd`: the new timeline legend sat on top of the 3D viewpoint bar (visible
+  in the owner's screenshot, covering the Display control). Its offset is measured from the
+  viewport's position inside the stage instead of being a constant.
+
+⚠️ **Not verified against real data** — the anon key has no grants. The plate-selection rule, the
+band geometry and the legend placement were measured against the shipped code in gitignored
+harnesses; that the owner's two zoning trees resolve to the plates expected has not been seen. Read
+the footer line under the model on Consolidated first.
+
+`MODULE_V` → `20260911a1`. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+### The vertical stacking's full-screen window plays itself, and says which week it is showing (2026-09-10) — ethanrobles10
+
+Owner: *"For the vertical stacking full screen, allow a play button to see the progress over time,
+and allow users to set the playback speed (daily, weekly, monthly, quarterly etc.). But can you also
+include a legend of the number of timeline on the upper right (example: week 1, week 2, week 3
+etc...)"*
+
+Project Schedule → **Vertical Stacking → expand a tower** (the window with the Full screen button).
+Its scrubber already walked the programme; you had to walk it by hand, a month at a time, and
+nothing said how far into the job the picture was.
+
+- **Play / pause**, plus a **Daily / Weekly / Monthly / Quarterly / Yearly** speed. The speed *is*
+  the step, so it also re-labels the two step arrows — one dial, not a playback speed and an arrow
+  size that could disagree. Play from Live starts at the beginning; the finish is a stop, not a
+  loop; and touching the handle, the arrows, Live or a legend row stops the run.
+- A **timeline legend** in the stage's top-right: five period rows, the current one lit with its
+  date range, `Week 91 of 105` beneath, each row clickable to jump there. ⚠️ Every number counts
+  from **this building's own start** — "Week 1" is the week this tower starts, not ISO week 1.
+- ⚠️ Playback deliberately bypasses the drag scheduler, which *drops* coalesced frames: a film that
+  dropped frames would skip the periods it was asked to show. Each frame repaints, measures itself,
+  then schedules the next.
+
+⚠️ **Not verified against real data** — the anon key has no grants. The period arithmetic, the
+control wiring and the paint pacing were measured in a gitignored harness running the shipped code
+slices; how a 2,500-activity tower feels under a daily run has not been seen.
+
+`MODULE_V` → `20260910zd`. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+### The manual sheet becomes a trades × months matrix, with the curve live above it (2026-09-10) — ethanrobles10
+
+Owner: *"i was thinking, what if it were the other way around. meaning the months are plotted as
+columns and the trades are plotted as rows. And then while inputting, there would still be an
+scurve displayed above the table."*
+
+⚠️⚠️ **This reverses the shape I argued for hours earlier, and the argument was incomplete rather
+than wrong.** I refused a trades × months matrix because eight trades over three years is 288 cells
+and, at three kinds per cell, **864**. That arithmetic holds; what I missed is that **the third
+dimension does not have to be in the grid** — Planned / Actual / Forecast is a **mode** now, so the
+sheet is 8 × 36 for one kind at a time. That is the shape of the spreadsheet a planner is copying
+from, and it does something the per-trade sheet could not do at all: comparing two trades in the
+same month was two screens there and is a glance here.
+
+⚠️ **The column footer is the project's WEIGHTED figure, not the sum of the column** — adding six
+trades' percentages gives a number over 100 that means nothing, since each is a share of a different
+scope. Weighted, it is exactly the height of that month's bar on the chart above, so the footer is a
+cross-check between the sheet and the curve. ⚠️ The matrix is always **monthly** whatever the Period
+control says: the stored grain is a month, and typing a quarter would mean inventing its split.
+
+**The curve above the sheet is live, and that required one change.** `computeManual` read the saved
+rows, so a chart above the sheet would have sat still while the planner typed and jumped on Save;
+`manEffective()` now lays the unsaved edits over the saved ones and *every* reader goes through it,
+so the chart, the row totals and the footer all describe the sheet as it is on screen. It is the
+**same `renderChart`** the Curve tab uses, pointed at a second host, with its note carrying
+*"Includes N unsaved edits"* — a chart drawn from numbers the database does not hold must say so.
+⚠️⚠️ And a cell edit deliberately does **not** re-render the sheet: rebuilding the table drops the
+focus out of the cell being typed in. Measured — after an edit the table node is unchanged and
+`document.activeElement` is still the cell.
+
+⚠️⚠️ **A defect this found in what shipped this morning: the Curve tab drew NO chart in Manual
+mode.** `renderChart`'s manual branch set the basis note and then **`return`ed before any drawing**,
+so selecting Manual left the sentence explaining the curve above an empty plot. Nothing errored and
+the note made it look as though something had happened — which is why a browser check missed it:
+that check only ever ran the automatic mode. Confirmed present in `HEAD` before touching it.
+
+**`PDGrid` (`assets/js/xlgrid.js`) is adopted rather than re-implemented** — the cells carry its
+`data-i` / `data-f` contract, which buys Tab/Enter/arrows, Ctrl+D fill-down, Ctrl+Z and **a paste
+straight out of Excel** (measured: a four-cell TSV paste filled four months). ⚠️ Loaded at the
+version the other page already uses, not a second one. ⚠️⚠️ Wiring that paste exposed the
+`type="number"` trap **for the third time in this repo**: a number input reads back `""` for `12,5`,
+so the value vanished with no error. Fixed as the BOQ grid and the nine Contracts & Claims money
+fields were — `type="text"` + `inputmode="decimal"` — and a comma is now **refused rather than
+stripped**, because stripping turns the European `12,5` into 125, a guess about locale that produces
+a plausible wrong number. Two refusals, two messages: unreadable and out-of-range are different
+mistakes.
+
+**85 assertions across three suites, 0 failing** (14 new; the earlier 37 and 34 re-run), and driven
+in a real browser in light and dark: 5 trades × 24 months, typing moved the row total 0 → 25%, the
+weighted footer 22.7 → 29.5% and the curve's first point with it; the frozen corner holds after a
+600px scroll; an over-100 row total is flagged. ⚠️ Not verified signed in, and
+`migrations/2026-09-10-scurve-manual-poc.sql` still has to be run.
+
+`MODULE_V` → `20260910zc`. Detail: [`modules/s-curve/CLAUDE.md`](modules/s-curve/CLAUDE.md).
+
+### The manual-POC migration could not run: `projects.id` is text, not uuid (2026-09-10) — ethanrobles10
+
+Owner, running `migrations/2026-09-10-scurve-manual-poc.sql`: **`ERROR: 42804 … Key columns
+"project_id" and "id" are of incompatible types: uuid and text.`**
+
+⚠️⚠️ **`projects.id` is `text`** — it is the project CODE (`AVR101`, `OPW101`), not a surrogate
+uuid (`supabase-schema.sql:33`), and **26 tables in this schema already declare `project_id text
+references projects(id)`**. I wrote the type I expected instead of the one the schema has.
+⚠️ The module’s own JS was already right — `pid` is that text code — so nothing in the module
+changed, which is also why no check I ran could have caught it: every one was against the shipped
+JS, and the SQL is only exercised by being run. ⚠️ Nothing was created by the failed run (the FK is
+inline, so the statement fails atomically), so the corrected file is safe to run as-is.
+
+⚠️⚠️ **And the GRANTS were missing — the same omission this log records for the stakeholder-directory
+migration on 2026-09-09.** A policy is not a grant: RLS filters rows for a role that already holds
+the table privilege, so every query would have failed with *“permission denied for table
+scurve_manual”* — which reads like an RLS problem and is not one. **That was the next error the
+owner would have hit after fixing the type.** Also added: a guard that `raise exception`s when an
+existing table has the wrong column type, because **`if not exists` is a silent no-op there** and
+would have left the module broken with nothing to explain it.
+
+Verified structurally (parens 24/24, `$` paired, 2 tables / 2 grants / 2 policies, **0**
+occurrences of `project_id uuid`, 0 NUL bytes); the VERIFY block now checks all three project-id
+columns read `text` in one query. ⚠️ **Not run against a database from here** — no SQL runner and no
+grants, so the owner’s next run is the real test. ⚠️ **No `MODULE_V` bump**: only a `.sql` file and
+the changelogs changed, and no module page is cache-busted by a migration.
+Detail: [`modules/s-curve/CLAUDE.md`](modules/s-curve/CLAUDE.md).
+
+### The S-curve gets a Manual data tab, a monthly/quarterly/yearly lens, and a chart you can interrogate (2026-09-10) — ethanrobles10
+
+Owner: *"add a tab wherein users are able to put the data manually. And also for the landing page of
+the s-curve, allow users the option to view monthly, quarterly, yearly etc. and when hovering over
+data, pls show the contents like POC, amount. And then when clicked, what are the details in terms
+of gen req, site works, structural works, etc."*
+
+**The manual sheet becomes a screen.** It shipped this morning as a card stacked under the chart and
+gated on the chart's own mode — so it was a scroll away from the control that opened it, and
+entering next quarter's forecast meant first switching what the chart was claiming. It is a `Curve`
+| `Manual data` tab now, through **`UI.tabsToDropdown`, the app's own convention** (fourteen other
+modules use it, and `pd-tabsrc` puts it under the shared pre-JS boot-flash rule) rather than a
+fifteenth navigation idiom. ⚠️ The tab and the mode stay **independent** — the tab is where you are,
+the mode is where the curve's numbers come from — so the sheet states the combination out loud:
+*"The Curve tab is drawing from the schedule, not from this sheet"*, with a button that switches it.
+
+**Monthly / quarterly / yearly is a LENS, not a third engine run.** ⚠️⚠️ Cumulative takes the *last*
+month of a bucket, periodic *sums* them — getting those the same way round is the whole correctness
+of it, since Jan+Feb+Mar added up is roughly triple where the curve has actually reached and sails
+past 100%. ⚠️ The bucket holding the data date reads its actual at `ti` (the engine anchors that one
+month and zeroes the rest, so the bucket's last month would report **0% for the quarter we are
+standing in**); a bucket entirely in the future carries `null`, not 0; a November start gives an
+honest two-month Q4. ⚠️⚠️ The x-axis **stays in month space** at every granularity, which is what let
+the SPI forecast S-curve — plotted from dates — go untouched. The data table reads the same lens,
+never its own bucketing.
+
+**Hover gives POC and amount.** ⚠️⚠️ On the duration basis there is no peso figure in the result at
+all, and 40% of the duration is not 40% of the money — so a **companion cost series** is computed
+alongside, aligned **by month key, never by index**: the two results can have different lengths
+(the forecast finish is SPI-derived per basis), so reading it positionally would put March's money
+under June's progress and look entirely plausible. Absent rather than faked when nothing is
+cost-loaded.
+
+**Click gives the trade breakdown.** Each trade is its own curve — splitting the project's figure by
+weight would report every trade at the same percentage. ⚠️⚠️ Two columns that are routinely confused,
+and the header says so: **Own %** is how far along that trade is, **Points of project** is what it
+contributes. General Requirements at 100% of itself on a job where it is 6% of the scope contributes
+6 points, not 100. The points column sums to the project's own figure, and measured in a browser it
+does: 20.0 against planned 20%, 10.8 against actual 10.8%.
+
+⚠️⚠️ **A real defect caught by looking at the render rather than by testing:** the amount column
+first reported `projectAmount × durationShare`, and Structural Works came out at **₱585.3K where its
+own cost curve says ₱1.9M** — a 3× error, with the column total still reconciling, so nothing on
+screen would have given it away. Each trade now gets its own cost-basis series.
+
+**Verified by execution** (37 assertions, 0 failing; the previous pass's 34 still pass) and **driven
+in a real browser** in light and dark on a five-trade cost-loaded fixture — 27 bands / 9 / 3 across
+the three granularities with the bar widths, axis titles and table columns following, and the chart
+checked *against* the readout: the data-date quarter draws no actual bar and the readout omits that
+row, so what is drawn and what is said agree. ⚠️ Not verified signed in; the manual tables still
+need `migrations/2026-09-10-scurve-manual-poc.sql`.
+
+`MODULE_V` → `20260910zb`. Detail: [`modules/s-curve/CLAUDE.md`](modules/s-curve/CLAUDE.md).
+
+
+### 2026-09-10 (za3) — A class code the schedule has never heard of stops being a dead end — and the measurement that says it will not rescue OPW101
+
+Owner: *"Let's make sure that the linking is easy as well. Put yourselves in the shoes of the
+planner and think of how much time and effort would it take."*
+
+**The dead end.** `candidatesFor` gates every proposal on the line's class code. On OPW101 the
+Structural lines carry `03051`, nothing on the schedule carries `03051`, so the candidate set came
+back **empty** — and an empty set is not a weak answer, it is *no* answer: the four rungs never ran.
+All 21 lines read "not scheduled", and the only advice the screen could give was "tag the activities
+first", which is 2,561 activities of manual work standing between the planner and any proposal at
+all. Now, when the gate is set but matches nothing, the line falls back to **its own name across the
+whole schedule**. Measured on an 18-floor fixture: **0 links before, 144 after, in 5ms**.
+
+The bar is `TAG_FLOOR` — the **same 0.8** at which the tagger already pre-ticks — not a new
+threshold, and not the 0.35 floor this file warns "would return hundreds". A preliminary keeps
+returning nothing: no activity is named "Rental of Flat Bed Truck", so the derived
+preliminary/mismatch distinction is untouched and **no fabricated link can reach `planned_cost`**.
+⚠️ The code rung is never bumped on this path — those activities do not carry the line's code, and
+writing "carries 03051" into `boq_allocations.matched_by` would be a false entry in an audit trail.
+The dialog says which it is, because a proposal built from a name is a weaker claim than one built
+from a code.
+
+**⚠️⚠️ AND IT WILL NOT FIX THE OWNER'S 21 LINES, which measurement showed and the fixture had
+hidden.** My suite used activities named "Rebar Works". The live schedule names them **"Rebar"**.
+Probed against the shipped `matchAct`:
+
+| activity | BOQ line | score |
+|---|---|---|
+| `Rebar` | Rebar Works | **no match** |
+| `Rebar Works` | Rebar Works | 0.95 |
+| `Formwork` | Formworks | 0.85 |
+| `Concrete` | Ready Mix Concrete | 0.85 |
+
+`Rebar` fails on one clause: rung 2 is `l3.indexOf(an) >= 0 && an.length > 6`, and "Rebar" is five
+characters. That single guard is why the tagger reports *"no name resembles it"* for all 21 codes,
+and why this fallback stays silent on the same data. The fixture agreed with the code because I
+built it from the BOQ's vocabulary rather than the schedule's — a test passing for the wrong reason,
+which is the trap this file already records three times.
+
+**Relaxing the guard is NOT the fix, and that is a finding rather than a deferral.** `Rebar` scores
+0.85 against *Rebar Works*, *Rebar Consumables* **and** *Rebar Coupler* — three different BOQ lines,
+one activity name. The ambiguity is real and lives in the data: the schedule is less specific than
+the bill. No threshold resolves it; only a human, or a more specific activity name, can. Lowering
+`an.length` would convert "found nothing" into "confidently allocated the same 72 activities to
+three different lines", which is worse.
+
+**Also ruled out, on this repo's own evidence.** The activities are badged `HAS 3050` while the
+lines carry `03051`, which looks like a leading-zero mismatch worth normalising. It is not:
+`2026-08-21-class-codes.sql` states that **de-zeroing collides genuinely different items** —
+`015051` (Earthmoving) with `15051` (Railings), `017151` with `17151` — and that the padded code is
+the key. So no code normalisation was written.
+
+Verified: **26 new assertions, 0 failing**, plus 34 + 36 + 24 + 29 — **149 total**. Pinned to
+**3897c0f**. ⚠️ Three of my own expectations were wrong before the code was, all corrected in place
+rather than deleted: I expected the plan count to be unchanged (it legitimately improves 1 → 2), I
+expected the winning rung to change (it does not — inside a gated set `name` at 0.60 already beat
+`code` at 0.10), and I expected `why` to read "carries 03051" (`why` carries the *winning* rung's
+reason only; the code rung is a floor, not a label). Two assertions in the match-all suite also
+encoded "un-chained C is 0"; it is 1 now, deliberately, and the contrast the test exists for is
+still there at 1 against 3. `?v=` → `20260910za3`.
+
+**Open, and now the critical path.** `matchAct`'s specificity gap is the real blocker for OPW101,
+and the answer is a screen that says *"'Rebar' matches three lines — which is it?"* rather than a
+threshold. The orchestrator is also the same three passes the individual buttons run, so the buttons
+and the dialog want centralising; and WBS branch names, BOQ sheet names and the chart's own item
+names come from three sources that nobody has reconciled. All three are next.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+
+### 2026-09-10 (za2) — The picker was hiding activities two more ways, and both were opening filters nobody chose
+
+Five things reported off the live OPW101 screen in one sitting: *"Let's fix the .cca-row tap
+targets"*, *"This should be fixed as well"*, *"Pop-up for the UI needs fix as well and simplicity"*,
+*"Structural works isn't viewing properly"*, *"Why can't I see rebar works now?"*
+
+**⚠️⚠️ The ladder opened on a filter the planner never set.** `ladderOf` defaulted every rung to
+its own first value, and the rungs cascade — so the picker opened on Tower 1 → 5TH Floor → Z1 → U1,
+which on this project is **18 of 2,561 activities**. Structural Works was absent from the tree
+entirely, because Structural is planned per zone and carries no Unit at all, so every one of its
+activities was filtered out by a rung that had positioned itself. Measured on an 18-floor fixture:
+before, **0 of 216** Structural activities and **0 of 72** Rebar Works survived the opening cursor;
+after, all of them do. The default is now **All**, the rung below appears once a value is picked,
+and the ladder is a drill-down instead of a guess. Nothing is selected either way — the ladder
+positions the view, it never ticks a box. My own note in this file argued the opposite ("a ladder
+opening on everything is a filter nobody chose"); it had it backwards, and the live screen is what
+showed it: an opening *narrowing* is the filter nobody chose, and it reads as missing data.
+
+**⚠️⚠️ The row cap deleted structure, not rows.** `slice(0, ROW_CAP)` was applied to the ACTIVITY
+LIST before `treeOf` ran, and a branch only exists if some activity in the list puts it there. So
+past activity 400 the floors did not exist in the tree at all — not scrolled off, absent — and no
+amount of expanding could reach them. That is the whole of *"Why can't I see rebar works now?"*,
+with the header reading `400+`. Measured: the top floor's Rebar Works rows were **not in the tree**
+before, and are now. The cap moved to the **painted rows**, after the open/closed filter; branches
+start closed, so the opening paint is **3 rows** — the three top-level WBS branches — against a
+cap of 400. Fully expanded the same fixture is 705 rows, so the cap does still bite, and now says
+so: **305 more rows not shown**. And the notice says what it
+is holding back — a cap whose entire signal is a `+` is one a planner cannot act on, and it was read
+as "there is no Rebar Works".
+
+**The tap target was 13px, not the 30px I reported yesterday.** Re-measured with the markup
+`affected.js` actually emits: every checkbox is **13×13** against a 44px `--pd-tap`, and
+`.cca-row[data-act]` carried **no handler at all** — so the row's 30px bought nothing, and the one
+row type a planner clicks hundreds of times was the smallest target in the dialog. The leaf rows now
+answer a row click, as the ladder and branch rows always have. The box follows the class-code tree
+next door (15px + brand accent) rather than inventing a second convention, and on a phone the row
+meets `--pd-tap` with the bodies grown to match, so the same four and seven rows stay on screen
+instead of the list becoming a keyhole.
+
+**"Add lines from the schedule" was a five-column table in a 520px modal.** The Description column
+came out about 90px and "not in the class-code chart — it will be filed under Others" wrapped to one
+word per line in red, which reads as an error rather than the note it is. `.boq-widish` already
+existed in this module for screens needing more than 520px; this dialog simply never opted in. The
+three narrow columns are now pinned so the sentence gets the remainder.
+
+**"Link to activities" said the same thing twice.** A paragraph explaining that a line with no
+quantity still keeps its link sat above a `.boq-recon` line saying exactly that, with the count
+filled in. The paragraph is deleted, not moved — the foot keeps it because it is the one that can
+state **how many**. The two scope descriptions lost a clause each. The `Choose activities…` button
+and its hint were an inline-flex button followed by a bare inline span, so the hint sat on the
+button's baseline rather than its centre with only a collapsed text space between them; that row is
+a flex row now.
+
+Verified: **29 new assertions, 0 failing**, plus 33 + 36 + 24 unchanged. The new suite is pinned to
+**17c3e8c** and asserts the BEFORE state as well as the after — that Structural really was absent,
+that Rebar really was unreachable, that whole floors really were missing from the tree — so it fails
+on the old file rather than passing on both. It loads the **real** `locmatch.js` rather than stubbing
+`bestSpelling`, which would have made the suite test my stub's ordering instead of the app's. 44 JS
+files + 32 inline blocks parse; 571/571 braces; 0 NUL bytes. `?v=` → `20260910za2` on `boq.js`,
+`affected.js` and `module.css`.
+
+**Not fixed, and it is the big one.** `candidatesFor` gates every proposal on the line's class code:
+no activity carries `03051`, so the candidate set is empty, the four rungs never run, and all 21
+Structural lines read "not scheduled" — while the schedule holds 72 activities literally named
+"Rebar Works". The app's current answer is "tag the activities first", which is the manual work the
+owner is asking about. A name-rung fallback for the gated-but-empty case is the next change.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+
+### 2026-09-10 (za1) — "Use 0 activit ies": a word split across two flex items, and a consistency review in which my own checker was wrong twice
+
+Owner: *"I just noticed the Use x activit ies button has a UI error"*, then *"Let's follow the app
+UI consistency review for this code change"*.
+
+**The defect.** `.pd-btn` is `display:inline-flex; gap:6px`. A gap falls between **every** flex
+item, and a bare text node inside a flex container becomes an *anonymous* flex item — it is not
+exempt. The label was built as `Use <span id="sp-pn">0</span> activit<span id="sp-pys">ies</span>`,
+which is four items, so the button rendered `Use 0 activit ies` — the gap landed **inside the
+word**. Fixed by making the label a single text node (`useBtn.textContent = 'Use ' + n +
+' activit' + (n===1?'y':'ies')`), which also deletes the two id lookups the counter used.
+
+⚠️ **This repo had already recorded this exact trap**, on the sidebar brand: a bare text node
+between two images took a gap on *both* sides and measured 18px where the rule said 9px. Same
+mechanism, same stylesheet, and I walked into it anyway. The rule worth keeping: never split a word
+across elements inside a flex row — build the string and set `textContent`.
+
+`flexword.py` now sweeps for it (an opening tag glued to the end of a word inside a known
+flex-with-gap class). Across all 44 JS files and every HTML file: **one** real instance, the one
+above. The only other hit — `Months<span` in project-schedule — is a false positive of the sweep's
+400-char window, and is reported as one rather than "fixed".
+
+**The consistency review.** Of the 20 CSS rules this change added: **0** off-scale font sizes, **0**
+off-scale weights, **0** off-scale radii, **0** non-token shadows. Three colour literals, all
+judged and kept: `.boq-ma-n { color:#fff }` on `--pd-red` (the app's standing treatment — `.cc-tab.active`,
+`.pd-btn-primary`, `.sbld-step.on .sbld-step-n` and 8 more do the same), and two neutral
+`rgba(128,128,128,a)` separators, which composite identically on either theme and match the
+surrounding `.cca-*` rules.
+
+**Both themes, rendered against the real stylesheets, at 344px with the ≤700px block active.**
+Every surface this change introduced clears AA: the step text 16.30/12.22, the mini text 7.07/7.02,
+the scope option 14.25/13.45, the new ladder rows 7.07/7.02, the hint line 7.07/7.02. Within each
+row that actually exists, buttons match exactly — picker toolbar 36h/36h, modal footer 44h/44h,
+and the footer's primary button meets `--pd-tap` (44px) on the nose.
+
+⚠️ **The checker was wrong twice, and both would have caused a "fix" that made things worse.**
+(1) `bgOf` returned the first non-transparent `backgroundColor` and `lum()` then dropped the alpha
+channel, so ink on the selected row's `rgba(238,49,36,.14)` tint was measured against **fully
+saturated red** and reported 3.96 light / 3.59 dark. Composited properly it is **13.30 / 10.96** —
+the failure was the harness's, not the CSS's, and the row is pre-existing anyway.
+(2) The harness stood `Select all 9` (`.pd-btn-sm`) beside `Use 9 activities` (`.pd-btn`) in a row
+that **does not exist in the app** — the owner saw the page and said *"Buttons are not the sized the
+same"*, and he was right about the render and right that it was worth asking. They are 36h and 44h.
+But `#cca-selall`'s real neighbours are `.cca-count` and `#cca-clear`, both `.pd-btn-sm`, and the
+footer's real neighbour is `Back`, also `.pd-btn`. The harness now draws both real groupings, and a
+size is judged against the row it truly sits in.
+
+**Reported, not fixed — each is app-wide and pre-dates this change:**
+- White on `--pd-red` is **4.12:1**, under AA's 4.5 for small text. It is identical for
+  `.pd-btn-primary` everywhere, 11 `.*-tab.active` rules, and `.sbld-step-n` — so `.boq-ma-n`
+  matches the app exactly. Darkening it for this one badge would make the badge inconsistent
+  without making the app accessible; it is a brand decision (`--pd-red-dark` measures better) and
+  needs its own sweep.
+- `.cca-row` is **30px** tall on a phone against a 44px `--pd-tap`. Measured against a plain
+  pre-existing row: also 30px. Every row in every picker shares it; raising only the two rows this
+  change added would make them inconsistent with their 18 siblings, and raising all of them cuts how
+  many fit on screen. Its own change.
+
+Verified: 33 + 36 + 24 = **93 assertions, 0 failing**; `window.BOQ` assigns with 20 exported keys
+and 48 `_internals`, none undefined (the check that would have caught the z6 outage); 44 JS files +
+31 inline blocks parse; 0 brace mismatches; 0 NUL bytes. The match-all suite is pinned to
+**8be5101**, the parent of the lift commit, not to HEAD — comparing HEAD with itself is the trap
+this file already records. `?v=` → `20260910za1` on `boq.js` only, the one asset that changed.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+
+### A progress-photos viewer on the dashboard, and the S-curve gets periodic bars, a trade filter and a manual mode (2026-09-10) — ethanrobles10
+
+Owner: *"can you input a progress photos viewer for the dashboard and make it visually pleasing."*
+Then, for the S-Curve: *"currently there is cumulative. I want you to add a periodic bar chart, and
+then a mode at the top to filter the trades being displayed. And then later on a filter for General
+Requirements vs Measured Works."* Then: *"provide 2 options … Manual intervention or automatic
+detecting … For the planned, this should be defined in the planning phase … and will be locked as
+the project is actualized. For the actuals, allow users for manual intervention. For the forecast,
+allow users to input POCs manually for the following months per trade."*
+
+**The dashboard's photo panel was a contact sheet, not a viewer.** Six 112×74 thumbnails in a grid,
+nothing clickable — at that size a site photo is a smudge, so you could see *that* photos existed
+and not what was in one, and the only way to look at the work was to leave the dashboard. It is now
+a 16:9 hero with its caption over the image, a rail of the rest, and a full lightbox (prev/next,
+←/→, Esc, and the index you navigated to becomes the panel's hero on close). ⚠️ The image is
+`contain`, never `cover`: a progress photo cropped to fill a frame is a photo with the thing being
+reported cut out of it. ⚠️ **A real defect was caught by measuring, not looking**: `phPaint()` ran
+before the rail existed, so the current thumbnail was never marked until the planner clicked
+something — the index of the lit tile came back as −1 on a freshly rendered panel, which looks
+exactly like a panel whose first photo simply is not current. The `recent` window went 6 → 12 so
+there is something to browse.
+
+**The S-curve gained periodic bars, a trade filter, and a manual mode.** The bars are *derived* —
+period *n* = cumulative *n* − cumulative *n−1* — so they always add back up to the line, on their
+own right-hand axis because a monthly increment on a 3-year programme is a few percent of the total
+and plotting it on the 0–100% axis leaves unreadable stubs. ⚠️⚠️ **Looking at the chart caught a
+wrong claim**: the data-date month's actual bar reached 97% of the axis on a project that had done
+35%, because the engine deliberately *anchors* that point to the true recorded total while earlier
+months are *modelled* — so the step absorbs the whole model-vs-reality discrepancy, which is right
+for the cumulative line and is not one month's production. It is no longer drawn as one, and the
+note says why.
+
+The trade filter uses `work_type`, which is **the shell's own convention** (the dashboard's
+programme panel already groups this table that way) rather than a second rule; Project Schedule's
+WBS-walking fallback is deliberately *not* copied, and the cost is stated on screen instead of
+hidden. ⚠️ Untraded activities pass neither General Requirements nor Measured Works — unknown is not
+measured — and the count is stated so the split can be reconciled. ⚠️ The RPC monthly aggregate is
+refused whenever a filter is on: it carries no trade, so it would draw the whole project under a
+one-trade heading.
+
+**Manual mode** is the planner's own monthly POC per trade, in a new table (`scurve_manual`,
+`scurve_manual_meta` — `migrations/2026-09-10-scurve-manual-poc.sql`, additive and idempotent).
+⚠️⚠️ **A trade is weighted by its share of the schedule, never an equal share** — a 2%-of-the-job
+trade must not move the project as much as a 40% one, and the wrong version looks entirely
+plausible. Planned is read-only once locked *or* once the schedule carries recorded progress
+(*"locked as the project is actualized"*); actual is editable to the data date; forecast only after
+it; every refusal is explained where it is refused. The two sources are never merged and the mode
+travels into the card heading, because a manual curve read as a schedule-derived one is a claim
+nobody made.
+
+**Verified by execution** (34 assertions, 0 failing) and **in a real browser** against the app's own
+CSS in light and dark — the shipped renderers on a six-trade fixture produced a sheet with 24
+editable and 48 read-only cells, exactly what the editability rule predicts. ⚠️ **Not verified
+against the database**: the anon key has no grants, so no row was written and the 42P01 fallback is
+code, not observed. Until the migration is run, Manual mode says so and names the file; Automatic
+is untouched.
+
+`config.js` → `?v=20260910za` on **28 pages** (the photo window lives in it, and a cached copy would
+keep asking for 6); `MODULE_V` → `20260910za`. ⚠️ Re-derived from the remote TWICE — it took `z9` for
+the BOQ pass while this was in flight, and `za` sorts after it (`z10` would sort before). The fourth
+collision this log has recorded today.
+Detail: [`modules/s-curve/CLAUDE.md`](modules/s-curve/CLAUDE.md).
+
+
+### 2026-09-10 (z9) — B: a line can be allocated to the PROJECT; and the picker was hiding activities, could not span floors, and made "Rebar everywhere" a manual deselect
+
+**Run `migrations/2026-09-10-boq-project-scope.sql`.** Owner: *"Let's do B as well"*, then three
+reports off the live picker — *"Structural works doesn't appear on some floors"*, *"Is there a way to
+select all floors but select specific activities only from the selection"*, and *"Right now I have to
+expand all WBS and manually deselect activities… its very tedious work."* All four fixed.
+
+#### ⚠️⚠️ B · A PRELIMINARY HAD NOWHERE TO BE RECORDED, SO IT CONTRIBUTED ₱0
+`boq_allocations.activity_id` was `not null`, so the only way to record Mobilization or a site office
+was to attach it to an activity it does not belong to. Planners left them unallocated instead — and
+`boqDerive` drops a line with no allocations outright (`if (!list.length) return;`). **Measured on the
+fixture: today the preliminary contributes nothing and the basis is ₱3,000; with B it is ₱3,600.**
+
+`scope in ('activity','project')`, `activity_id` nullable, and three guards:
+- a CHECK making the two shapes exclusive, so a NULL can never read as "not filled in yet";
+- ⚠️ a **partial unique index** — the existing unique is `(boq_item_id, activity_id)` and Postgres
+  treats NULLs as **distinct**, so without it "the project as a whole" could be recorded twice and
+  counted twice;
+- ⚠️⚠️ a **trigger** against mixing activity and project rows on one line. A CHECK sees one row; the
+  rule is about the set. Mixing would put the same money in the per-activity map *and* the
+  project-wide spread, and the contract total would silently exceed itself.
+
+⚠️ **`'wbs'` is deliberately NOT in the CHECK** — nothing in the UI can produce one, and this module's
+own history records the trap of adding a pointer before the screen that sets it.
+
+**The spread is pro-rata by duration**, which is what "time-related preliminary" means, and it is the
+only way the money can reach the curve at all: `schedule_scurve_agg` reads
+`coalesce(planned_cost, bl_cost, 0)` over **leaf activities**, and Cost Loading's Apply writes that
+column per activity. There is nowhere else for a project-wide cost to live.
+⚠️ **A synthetic "project-wide" cost line over all activities was the obvious design and it is wrong:
+Apply writes `planned_cost = amount`, an OVERWRITE per activity, not a sum** — it would have wiped
+every direct cost. Established by reading the write, before building on the assumption.
+⚠️ The total is **reported separately as well as spread**, because once inside the per-activity map it
+is invisible — a planner reading "Rebar Works · from the BOQ ₱X" cannot tell how much of X is the site
+office. Cost Loading now names it.
+⚠️ A project-scoped row **refuses rather than degrades** when the migration is absent: without `scope`
+it is indistinguishable from an activity allocation, and `activity_id` is still NOT NULL there.
+
+#### ⚠️⚠️ THE PICKER WAS HIDING ACTIVITIES, AND THE COUNTS SAID SO
+*"Structural works doesn't appear on some floors."* `valuesAt` did `if (!v) return;` — an activity with
+**no value at a level was dropped from every bucket**, and `ladderOf` then narrows with
+`cand = chosen.acts`, so it vanished from every rung below and from the tree. Structural work on the
+7th floor carries a Zone and **no Unit**, so all 24 activities disappeared the moment the Unit rung
+auto-positioned on U1. The screenshot showed it if you added up: the floor held **240** and its zone
+values summed to **236**. There is now a **`— no <level> recorded —`** bucket, last, labelled from the
+level so it reads as a fact about the data rather than a place called "none".
+
+#### All floors at once, and "Rebar everywhere" in one click
+- **`All <level>s`** on every rung. ⚠️⚠️ **The rungs below an All are not rendered**, and that is the
+  point rather than a limitation: `valuesAt`'s own note forbids a "every zone at once" mode without a
+  composite key, and it is right — with Level on All, the 5th floor's Z1 and the 7th floor's Z1 are
+  the same string and two different places. Resolution stays strictly top-down; the screen says why.
+  ⚠️ The default is still the first value: a ladder opening on "everything" is a filter nobody chose,
+  the mirror of the bug above.
+- **`Select all N`** beside the search. A search already spans the whole project
+  (`scope = hits || lad.cand`), so *"Rebar"* lists every Rebar activity on every floor — what was
+  missing was a way to take them. It states the **count** (the tree is capped, so "all" alone could
+  select more than is on screen), **toggles**, and is **additive** across searches.
+  ⚠️ Ticking `All` includes the no-value bucket — those activities *are* part of "all of them", and
+  excluding them would rebuild the hole the bucket was added to close.
+
+#### ⚠️⚠️ TWO BUGS OF MY OWN, BOTH FOUND ONLY BY RENDERING
+1. **A raw NUL byte shipped into `affected.js`.** I wrote the sentinel as a control character instead
+   of the escape — the identical mistake this repo records for `exactKey` — and `grep` answered
+   *"Binary file matches"*. Caught within a minute, but `verify.py` would have caught it at commit and
+   I had not run it since the edit.
+2. **⚠️⚠️ AND THE SENTINEL COULD NOT WORK ANYWAY: an HTML parser substitutes U+FFFD for U+0000**, so
+   `data-v` read back `"�all"`, never matched, and the ladder fell through to the first value —
+   **both new gestures rendered perfectly and did nothing when clicked.** Structural assertions would
+   have passed. `normKey` ends `.replace(/[^a-z0-9]+/g,'')`, so every real key is `[a-z0-9]` only and
+   `'*all*'` / `'*none*'` cannot collide while surviving an attribute.
+
+#### Verified — 24 + 36 + 33 assertions, 0 failing, plus the picker driven in a browser
+- **The money:** basis 3,000 → 3,600; spread **1200/2400** on durations 10:20 (**not** equal — a
+  same-length fixture could not tell those apart); the zero-duration milestone takes none; the
+  **money invariant** holds (basis == priced lines exactly, heading and exclusion never counted); a
+  row with **no** `scope` reads as an activity allocation, so every pre-migration row is unchanged;
+  no leaf with a duration → counted, spread nowhere, never divided by zero.
+- **Driven, not asserted:** the floor-level activity is **invisible by default and reachable** through
+  the new bucket; `All levels` collapses the rungs to `[Tower, Level]` and the tree holds **21**;
+  search *"Rebar"* → **Select all 9** → 1 → **10 selected** in one click; it toggles back; and adding
+  *"Concrete"* accumulates to **16**.
+- 44 JS files + 30 inline blocks parse; 563/563 braces; **0 NUL bytes across 299 text files**;
+  migration parens 12/12, `$$` paired.
+- `boq.js` / `affected.js` / `module.css` → `?v=20260910z9`; `MODULE_V` → `20260910z9`.
+
+⚠️ **Three of my own assertions were wrong before the code was**, each left in the suite: a 400-char
+regex window failed on a correct handler because the explaining comment is longer than that; `.cca-rung`
+was never a class; and a structural search matched the comment quoting the code it had removed.
+
+⚠️ **NOT verified signed in, and the migration has not been run.** Until it does, the scope control
+saves nothing and says so. The spread has never run against a real 2,561-activity schedule, and **the
+first project-scoped line is the test** — the figure to watch is Cost Loading's new "of that is
+project-wide" line against the BOQ's own General Requirements total.
+⚠️ **A front-loaded preliminary is still not expressible.** Mobilization is spent in month one, but a
+project-scoped line inherits each activity's own dates, so it spreads across the whole programme.
+Recorded rather than guessed at.
+
+
+### 2026-09-10 (z8) — The activity picker could not reach 69% of the schedule, and "0 activities" was answering three different questions
+
+Owner, on OPW101 with the allocation dialog open: *"Right now the linking is still not easy."* Then,
+on the bar: *"There are two buttons for match to schedule."* Then, on the disclosure: *"is lengthy and
+wrap texts incorrectly."* Three reports, all correct, all fixed here.
+
+#### ⚠️⚠️ A · THE PICKER WAS A RAW `<select>` OF `ACTS.slice(0, 800)`
+On a project with **2,561 activities that is 1,761 — 69% — simply not in the list**, unreachable by
+any amount of scrolling. No search, no grouping, no predictable order, and `onchange` added **one**
+activity per interaction. Linking a line to a floor's worth of work meant forty passes through a list
+that could not see two thirds of the project. The (z1) entry had named this exact gap and left it.
+
+It is replaced by **`CCAffected`'s ladder + WBS tree + search** — the *same* picker the change-order
+wizard uses, with its change-order half suppressed by a new `opts.preview:false`.
+⚠️ **Suppressed, not rebuilt.** A second picker for the BOQ is the drift this module has already paid
+for twice (two create dialogs, two import doors); `impactOf`/`ganttHTML` simply never run, and
+`if (du)` already guarded the CO-duration wiring, so nothing could crash.
+⚠️ The selection **starts from the parts already on the line**, so opening it to add one activity
+cannot silently drop the nine already there.
+⚠️ It **takes over the dialog body** rather than opening a modal on top of one — the trap this file
+records — and widens to `boq-wide` while picking, because a ladder plus a tree inside `.pd-modal`'s
+520px is the ~200px squeeze that class was added to fix.
+⚠️ The footer's own handlers are **re-bound** on return: replacing `innerHTML` killed them, and
+Cancel/Apply would have looked right and done nothing.
+
+#### ⚠️⚠️ C · "0 ACTIVITIES" WAS THREE DIFFERENT FACTS WEARING ONE NUMBER
+The screenshot was fully coded on both sides — **122 of 122 lines mapped, 2,561 of 2,561 activities
+coded** — and every row still read `0`. That is not 122 failures. Mobilization, Demobilization,
+Rental of Skidloader, Barracks, Site Office are **time-related preliminaries**, and a structural
+programme has no activity called "Rental of Flat Bed Truck".
+
+⚠️ **The distinction is DERIVED, never taken from the trade's name.** A hard-coded "General
+Requirement" list would be a guess about Finance's chart and would rot the first time it was revised.
+`tradeActivityCounts()` instead measures, off the chart: does **any** activity carry a code in this
+line's trade? The column now says which of four situations a line is in:
+
+| | shown |
+|---|---|
+| allocated | the count, as before |
+| candidates exist | **`n` ready** |
+| no activity carries the code, **and the whole trade is absent** | **not scheduled** — normal for preliminaries |
+| no activity carries the code, but the trade IS on the programme | `0`, with *"14 of 320 activities are in Structural Works"* |
+
+⚠️ The memo is cleared in `refreshActs()` and `reset()`. Without the first, a stale count would report
+a trade as absent from a schedule **the planner had just tagged** — telling them their own work had no
+effect.
+
+#### The two buttons, and the caption that was also WRONG
+- **`Match to the schedule…` → `Code, tag and allocate…`.** (z7) shipped it a tab-width away from the
+  sub-tab **Match to schedule**. One is a place, one is an action over the whole bill, and two
+  controls reading the same is how a planner learns to distrust both. The dialog heading follows the
+  button, not the tab.
+- **"How matching works" was stale, not merely long.** It described **three** rungs — *"location match
+  first, then pro-rata by duration, then by hand"* — which is the behaviour **before** (z1)'s ladder.
+  There are four, and pro-rata is now the **last**, not the second. A caption naming the wrong order
+  teaches the planner to distrust the Method column, which reports the real one.
+  ⚠️ And the wrap defect was a **unit** error: `max-width: 900px` does not track the font size, so at
+  this scale a line ran ~115 characters, about double a comfortable measure. `70ch` does track it.
+  ⚠️ The old last sentence — *"there is deliberately no quantity column on the activity"* — is a schema
+  decision a planner never acts on; it lives in the migration and in `docs/`, not on screen.
+
+  | rendered, against the real stylesheets | before | after |
+  |---|---|---|
+  | paragraphs | 1 | 3 |
+  | characters | 344 | **262** |
+  | measure | 898px | **472px** |
+  | characters per line | ~115 | ~51 / 61 / 39 |
+
+#### Verified — 36 assertions, 0 failing, plus two renders
+- **The picker was MOUNTED, not just asserted**: the real `CCAffected` against stubbed loaders and the
+  **real `PDLoc`**, in a browser. Ladder **2 rungs** (Tower, Level) carrying real values with
+  indeterminate states, tree rows named, search present, `initial:['A1']` honoured and reported as
+  *"1 selected"* — and **0 preview columns, 0 CO-duration boxes**, `.cca-lower` computing to a
+  **single 840px column** with the tree taking 839 of it.
+- The **merge rule** is executed: adding a third activity **keeps the typed 60/40**, new parts split
+  only the remainder, de-selecting drops that part, a qty-less line links at 0, and an over-allocated
+  line never yields a negative.
+- The **four link states** are executed against a fixture shaped like OPW101 — the preliminary reports
+  `notInSchedule`, the Structural line with no activity on its code reports `0` **with its trade's
+  count**, and an allocated line reports `linked` whatever the trade says.
+- 44 JS files + 30 inline blocks parse; 552/552 braces; 0 NUL bytes.
+- `boq.js` / `affected.js` / `module.css` → `?v=20260910z8`; `MODULE_V` → `20260910z8`.
+
+⚠️ **Three of my own checks were wrong before the code was**, each left in the suite: a structural
+search found `slice(0, 800)` **in the comment explaining its removal** (the checker measuring the
+changelog, not the code — comments are stripped now); `[^}]*` could not cross the `{}` literals inside
+`reset()`'s own body and reported a call that is plainly there as missing; and `.cca-rung` was never a
+class, so the ladder read as absent when it had rendered two rungs.
+
+⚠️ **NOT verified signed in.** The picker is mounted against a fixture, not a real schedule, so the
+one thing still unproven is `CCAffected`'s own read against a 2,561-activity project — which is
+exactly where the old 800-cap hurt. **That is the first thing to try:** open a line, press *Choose
+activities…*, and check the tree holds more than 800.
+
+⚠️ **B is still not built** — a line still cannot be allocated to the project rather than an activity,
+so those 122 preliminaries contribute **₱0** to the cost-loaded S-curve (`boqDerive` returns early on
+a line with no allocations). The screen now says *why* they are unmatched; it does not yet let them
+carry cost. That needs a migration and the owner's call on whether preliminaries belong in the curve.
+
+
+### 2026-09-10 (z7) — Batching the BOQ onto the schedule: one action for three passes, and the dead end that made the third look broken
+
+Owner: *"How would the planner easily batch the BOQ to the activities in the schedule?"* then *"Let's do
+both."* ⚠️ **No matching logic is added here.** Every engine already existed; what did not exist was a way
+to run them in the order they depend on, and a way to find out why the last one found nothing.
+
+#### ⚠️⚠️ THE THIRD PASS WAS A DEAD END, AND THE SCREEN COULD NOT SAY WHY
+`candidatesFor()` returns nothing unless the **activity** already carries the line's class code. So on a
+schedule nobody has tagged, *every* line reports "cannot", and the modal said only:
+
+> *N cannot — no activity on this project carries their class code.*
+
+True, and useless: the fix is one button on the **previous tab**, and nothing on screen pointed at it.
+`allocBlockReason()` now measures which of three situations it is and says the right one:
+
+| measured | what the planner is told |
+|---|---|
+| **0 of N activities tagged** | it is a missing **prerequisite** — with a **Tag schedule activities…** button right there |
+| no activities at all | there is nothing to allocate to |
+| some tagged, not these | the general case, **with the count** (`14 of 320 tagged`) so "tag more" is actionable |
+
+⚠️ The button **closes this modal before opening the tag dialog** — that one is a modal too, and stacking
+it leaves the planner clicking a pane they cannot reach. Same rule the wizard's own hand-off follows.
+
+#### The three passes as one action: **Match to the schedule…**
+In the BOQ bar, not on a tab, because it spans three of them — two passes live on Class Codes and one on
+Match to schedule, so a control that runs all three belongs to none of them. Writers only, and only once a
+revision exists.
+
+    A · code the BOQ lines        (from the suggestion library, above a confidence floor)
+    B · tag the schedule activities  (≥80% name confidence, never moving an already-coded activity)
+    C · allocate the quantities      (on the strongest rung that finds anything)
+
+#### ⚠️⚠️ THE PREVIEW IS EXACT, NOT AN ESTIMATE — and that is the whole engineering problem
+B's plan depends on what A would write, and C's on what B would write. A preview computed against
+*today's* state would be **wrong about two of the three passes** — and would report **0** for pass C on
+exactly the project this feature exists for. So `matchAllDryRun()` overlays the passes in memory, runs the
+real planners, and restores in a `finally`. Nothing is written.
+
+It is only possible because the three planners are **synchronous and pure over module state** — so nothing
+can interleave between the overlay and the restore. ⚠️ The overlays **copy** (`CMAP` gets a fresh object,
+each tagged activity a fresh row): mutating the real `ACTS` would leave the module holding codes that are
+not in the database if anything threw.
+
+⚠️ **The RUN re-plans from real state between passes rather than replaying the simulation.** A pass can
+write fewer rows than it asked for — RLS refuses activities the planner did not import, and PostgREST
+answers a filtered UPDATE with 200 and zero rows — so pass C is built from what pass B *achieved*.
+Replaying the plan would allocate against tags that do not exist. Each pass reports what it actually did,
+and a shortfall is named (`38 activity tag(s) of 41 asked`).
+
+#### ⚠️ The engines are LIFTED, not copied
+`planCodeMap` / `planTags` / `planAllocs` and `applyCodeMap` / `applyTagPlan` / `applyAllocPlans` are now
+module-scope, and the three dialogs call them. A second copy would let the orchestrator's preview and a
+dialog's own preview disagree about the same project — which is the failure this module has already paid
+for twice (two create dialogs, two import doors).
+
+#### Verified — **33 assertions, 0 failing**, executing the shipped file
+The load-bearing one is not "the dry run returns numbers", it is:
+
+> **dry-run pass C === the pass C you get after ACTUALLY applying A and B.**
+
+Asserted on `ok`, `none`, the rung breakdown and the part count. Also:
+- ⚠️ **The dry run restores state** — A, B and C all re-plan identically afterwards, and no activity object
+  was mutated.
+- ⚠️ **CONTRAST that bites:** un-chained, pass C plans **0** on this fixture while the chained preview
+  plans **3**. If that ever stops differing, the dry run has stopped simulating.
+- ⚠️ **The refactor is proved a MOVE:** HEAD is loaded in its own sandbox and its own inline expressions
+  are evaluated against the same fixture using HEAD's own helpers — same lines, same codes, same
+  confidences, same considered set. Two implementations compared, not one with itself.
+- ⚠️ The fixture exercises **both rungs**: a line naming a place resolves on **location** and takes only
+  the 3rd-floor activity, not both activities sharing its code — the money property the z1 entry records.
+- The blocked-reason measurement across all three cases.
+- 44 JS files + 30 inline blocks parse; 549/549 braces; 0 NUL bytes; all six new `boq-ma*` / `boq-blocked`
+  classes resolve (`boq-clm` is undefined at HEAD too — pre-existing, already recorded).
+
+⚠️ **Three of my own assertions were wrong before the code was**, each recorded in the suite: I expected
+every split on the **location** rung when my fixture's descriptions named no place (the name rung is
+correct there); I expected one activity per line when two activities legitimately shared a name; and I
+compared what pass C *splits* against what HEAD *considers*, which differ when nothing is tagged. Asserting
+the behaviour I assumed rather than the behaviour that occurs would have reported three bugs that do not
+exist.
+
+`boq.js` / `module.css` → `?v=20260910z7`; `MODULE_V` → `20260910z7`.
+⚠️ **NOT verified signed in.** No pass has been run against a real project, so the three writes, the RLS
+shortfall path and the between-pass re-plan are proved by execution against module state, never against
+PostgREST. The first real run is the test — and the honest thing to watch is whether pass B's reported
+count matches what it asked for.
+
+
+### 2026-09-10 (z6) — ⚠️⚠️ HOTFIX: Contracts & Claims' entire BOQ has been dead in production since (z1). One deleted function, one line that still named it.
+
+Owner, with a screenshot of the wizard's Trades step empty and a red toast: *"BOQ errors. Let's fix."*
+Both symptoms, one cause, and it was live.
+
+#### The bug
+```
+ReferenceError: locKey is not defined
+  at boq.js?v=20260910z4:5270
+```
+`boq.js` is `window.BOQ = (function () { … })()`. Line 5270 sits in the `_internals` export — an
+**object literal evaluated when the IIFE returns** — and still read `locKey: locKey`. (z1) deleted
+that private function, replacing it with the shared `PDLoc`, and left the export naming it. So the
+IIFE threw on the way out, **`window.BOQ` was never assigned**, and every feature that reads it went
+down together:
+
+| symptom in the screenshot | the line that produces it |
+|---|---|
+| red toast *"BOQ did not load."* | `createBoqDraft`: `if (!window.BOQ \|\| !BOQ.createDraft) throw` |
+| **Trades step empty** | `addBoqTrades`: `if (window.BOQ && BOQ.addTrades)` — silently no-ops |
+| the step could not tell which path it was on | `boqDraft()` returns null, so `boqPath()` cannot resolve |
+
+⚠️ **Fixed by REMOVING the export, not by re-pointing it at `PDLoc.normKey`** — that is a different
+function (it strips every separator, which is the whole reason the private one was retired for
+missing *"Roof Deck"* vs *"Roofdeck"*), so keeping the old spelling would hand the next reader the
+retired semantics under the retired name. Nothing in the repo reads `_internals.locKey`; checked.
+⚠️ `affected.js` kept **thin delegates** through exactly this refactor, and its own (z1) entry says
+why — *"keeping the local names so the `_internals` export its suite reads is untouched."* This file
+deleted outright and missed the export. Same refactor, two files, one of them checked.
+
+#### ⚠️⚠️ WHY THREE PASSES SHIPPED ON TOP OF A DEAD MODULE WITHOUT NOTICING
+(z1), (z3) and (z4) all touched this file and all reported themselves verified. Every one of them
+verified by **slicing a function out of the file and executing it** — which loads the slice, never
+the module. And `node --check` **parses**; it cannot see a ReferenceError. This repo has recorded
+that exact sentence twice before (the schedule's *"below is not defined"*, and stakeholder-map's
+`canWrite`), and this is the third time it has cost a live module.
+
+So the missing check is now written and run: **it EXECUTES each shipped browser script against a
+minimal window stub and asserts the file's global actually gets assigned.**
+- ⚠️ It does not stop at the first throw. It also reports **undefined-valued keys** in the public
+  export and in `_internals`, which is what proves no *second* stale name is hiding behind the first.
+  For boq.js: **20 exported keys, 39 `_internals` keys, 0 undefined.**
+- ⚠️ One of my own stubs produced a false failure worth recording: `externals` is `Object.assign`'d
+  over the window **last**, so listing `PDSync: {}` there silently overwrote the working stub above
+  it and theme.js reported `sync.pendingCount is not a function` as if it were an app defect. A thin
+  stub that shadows a good one is how a harness invents its own failures.
+
+#### Verified
+- **The bug reproduced twice before being touched** — in the browser off the deployed page, and
+  outside it, both naming line 5270. Fixed, both clean.
+- **38 shipped browser scripts executed: 0 throw at load.** (Three `test*.js` are Node files using
+  `require` and are correctly excluded; `auth.js` and `theme.js` needed real stubs for
+  `supabase.createClient` and `PDSync.pendingCount` and are clean with them.) **The defect is
+  isolated to this one line** — that is measured across the app, not assumed.
+- 44 JS files + 30 inline blocks parse, 0 failures; 0 brace mismatches; 0 NUL bytes.
+- `boq.js` → `?v=20260910z6`, `MODULE_V` → `20260910z6`. ⚠️ `z6`, not `z5`: `z5` is dashboard.css's
+  current token from the pass before this one.
+- ⚠️ **Not verified signed in.** The load-time failure is fixed and proved by execution; whether the
+  Trades ladder then *populates* depends on the class-code read behind it, which needs a real session.
+  That is the thing to check first: open the wizard and confirm the trades list has rows.
+
+
+### 2026-09-10 (z5) — Project Schedule's phone bar painted itself over the activity list, because chrome is allowed to be crushed
+
+Owner, with a screenshot: *"UI is bugged for Project Schedule phone view."* The toolbar, the data-date
+badge, the project title and the avatar were all drawn **on top of** the activity cards. Not a
+z-index problem and not a wrapping problem — a flex-shrink one.
+
+#### ⚠️⚠️ THE MODULE BAR WAS BEING SQUASHED BELOW ITS OWN CONTENT
+Measured on the live signed-in page at 375px, before anything was changed:
+
+| | |
+|---|---|
+| `.pd-modulebar` used height | **52px** — exactly its `min-height` |
+| its `scrollHeight` | **244px** |
+| its children's bottom edge | **y = 302** — the box ended at y = 110 |
+| overflowing itself by | **192px** |
+
+The bar wraps to five rows at 375px (title switch · freshness pill + data-date badge · tools · view
+switcher) and reported a *used* height of one row.
+
+⚠️ **The cause is not the wrapping and not the `min-height`.** Project Schedule sets
+`.pd-content { height: 100vh; display: flex; flex-direction: column }` to dock its details panel into
+the viewport — a deliberate desktop design, with its own comment. That makes the topbar and the module
+bar **flex items of a height-constrained column**, and a flex item defaults to **`flex-shrink: 1`**. So
+once the column's children exceed 100vh the browser shrinks them, `min-height` stops it at 52px, and
+`overflow: visible` paints the other four rows downward over whatever follows. Exactly the screenshot.
+
+**Fix: `flex-shrink: 0` on `.pd-topbar` and `.pd-modulebar`.** Chrome holds its own height and the
+CONTENT area gives way instead — which is what the docking layout wanted all along.
+
+#### The blast radius, measured rather than reasoned
+Three modules turn `.pd-content` into a column flex container — project-schedule (`height:100vh`),
+drawing-register (`body.dr-fit`) and material-submittal (`body.ms-fit`). Only the first has a **hard
+height**, which is why only it shows the bug today; the other two are one `height` away from it.
+⚠️ For **the other 13 modules `flex-shrink` is inert**, because `.pd-content` is not a flex container
+there at all — and that is proven, not assumed (table below).
+
+#### Verified — with the BEFORE pinned to a SHA, not to `HEAD`
+⚠️ `git show HEAD:` silently becomes self-comparison the moment the fix is committed, so the contrast
+is built from **`601ac2a`** explicitly.
+
+| viewport | case | `flex-shrink` | bar box | bar content | children painting over content |
+|---|---|---|---|---|---|
+| 375 | **BEFORE**, project-schedule | 1 | **52** | 210 | **5** |
+| 375 | **AFTER**, project-schedule | 0 | **221** | 220 | **0** |
+| 375 | BEFORE / AFTER, no module css | 1 / 0 | 176 / **176** | 175 / 175 | 0 / 0 |
+| 1400 | BEFORE, project-schedule | 1 | 52 | 51 | 0 |
+| 1400 | **AFTER**, project-schedule | 0 | **55** | 54 | 0 |
+| 1400 | BEFORE / AFTER, no module css | 1 / 0 | 55 / **55** | 54 / 54 | 0 / 0 |
+
+- The five elements the harness names as painting over the content are the five in the owner's
+  screenshot: the title switch, the data-date badge, the tools cluster, the view switcher and the
+  freshness pill.
+- **The other 13 modules are byte-identical** at both widths — the regression case that mattered.
+- ⚠️ **Desktop project-schedule moves 52 → 55px, and that is a FIX, not a regression.** 55 is what
+  every non-docking module already measures; the 52 was the same shrink happening quietly, with a
+  wrapping flex container compressing its single line by 3px. The docking module now agrees with the
+  rest of the app.
+- ⚠️ **My first harness reproduced NOTHING** — it put a stub in `.pd-main`, so the column's children fit
+  100vh, the flex algorithm had no reason to shrink anything, and BEFORE looked healthy. The crush
+  needs a `.pd-main` that cannot give way, which is what the live page has (`clientHeight` 812 against
+  `scrollHeight` 15042). It is now tested with `.pd-main` both shrinkable and not; **both crush.**
+- 44 JS files + 30 inline blocks parse, 0 failures; dashboard.css 531/531 braces; 0 NUL bytes across
+  31 files.
+- `?v=` → `20260910z5` on dashboard.css (30 pages — `person.html` is new since `x1`).
+  ⚠️ `z5`, re-derived from the remote **after** integrating: a concurrent session took `z1`–`z4` while
+  this was in progress, and `x2` would have sorted *before* what a browser already holds.
+- ⚠️ **Not verified on the live page**, and the reason is worth recording: the browser session signed
+  out mid-investigation, and signing back in is not something I do. The measurements above are against
+  the real shipped stylesheets in a real browser; the confirming look at the deployed page is not done.
+
+
+### 2026-09-10 (z4) — The class-code library stops being de-zeroed, and a group code stops reading as an error
+
+**Run `migrations/2026-09-10-class-code-group-names.sql`.** Owner: *"let's fix the CLASS_CODE_DB
+de-zeroing next"* — the item (z3) named as reported-but-not-fixed. Detail, and the two harness
+mistakes worth keeping:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+- **43 codes padded.** `CLASS_CODE_DB` is Finance's Level-2 group chart, and all 197 entries now
+  match a real `code_l2`. Applied by a script that edits only the first field of a line inside the
+  literal and refuses any code that does not then resolve; **0 duplicates before or after**, line
+  count unchanged, no name or trade altered.
+- ⚠️⚠️ **Padding alone would have bought nothing, and that was the real defect.** `class_codes` is
+  keyed on the ITEM code, so the resolver could never resolve a group however it was spelled —
+  **197 of 197 library codes read as unrecognised**, which is every activity the Schedule Builder
+  has ever pushed. An activity is coarser than a bill line by nature: a group ("Chilled Water AC
+  Works") is the size of something you schedule, an item ("Chilled Water Condenser Riser (B.I
+  Pipes)") the size of something you bill. `ccLevelOf` now answers **item | group | neither**,
+  resolving the group side from `code_l2` / `desc_l2` — columns already on every loaded row, so no
+  second fetch and no second source to keep in step.
+- ⚠️ **The item index always wins.** Four of the 205 groups also exist as an L3 code, where the
+  group's general item carries the group's own number; those read as the item, which is the more
+  specific true answer.
+- ⚠️ **A group code is toned, not coloured like an error** — the red is reserved for a code that
+  resolves at neither level. Measured on the row it sits on: item **16.30 / 12.22**, group
+  **7.07 / 7.02** light / dark, all three states distinguishable in both themes.
+- **The BOQ allocator meets it halfway.** A line carries an item code and a builder-made activity a
+  group code, so exact equality matched nothing between them and the allocator proposed nothing at
+  all on such a schedule. It now falls back to the group — ⚠️ but **exact wins as a set**: the
+  coarser candidates are never offered alongside an exact one, or a whole-group activity would
+  dilute a split that had a precise answer. ⚠️ The group comes from the chart's `code_l2`, never
+  from truncating the code, which would be de-zeroing in another costume.
+- **The migration corrects two chart errors** the audit found: `25200` is labelled *Chilled Water AC
+  Works* but holds only Fresh Air Duct items, `25550` is labelled *Stair Pressurization* but holds
+  Kitchen Exhaust items — each the name of the group above it. ⚠️ Written **by `code_l2`, never by
+  `code`**: `desc_l2` is denormalised across every item of the group, so a single-row update would
+  leave the group answering two different names. ⚠️ 11 trade disagreements are **left alone** —
+  choosing between the chart's *Others* and the library's *Site Works* is Finance's call.
+
+**42 new assertions (240 across five suites), 0 failing**, with the pre-change revision executed as
+the contrast — it leaves 43 codes unresolved, flags a group code as unknown, and returns **0
+candidates** for a group-coded schedule.
+⚠️ **Not verified signed in** — no activity has been pushed with a group code and read back, and the
+migration has not been run.
+⚠️ **Measured and deliberately not fixed:** `.ps-cctag.unknown` computes **3.40:1 on dark**, under
+AA — it uses the brand surface red where `--pd-bad-text` exists. But `color:var(--pd-red)` appears
+**120 times in project-schedule alone**, so fixing one is worse than fixing none. Its own sweep.
+
+`MODULE_V` → `20260910z4`; contracts-claims `boq.js` with it.
+
+### 2026-09-10 (z3) — The Schedule Builder seeds its activities from the project's own BOQ
+
+Owner: *"let's do the schedule builder seeding from the high-level BOQ."* The last of the three
+hand-offs, and the one that had nothing. Detail, the two pre-existing defects it exposed and the
+layout defect measurement caught:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md). What reaches beyond the
+module:
+
+- **`+ From BOQ`** in the Activities step's holding pane loads only the class codes this project's
+  **current** BOQ revisions carry, reading `boq_revisions` + `boq_class_map` + `boq_items` under the
+  caller's own RLS and writing nothing. It fills the same list `+ Library` does, so ticking and `←`
+  are the accept step already there — ⚠️ deliberately not a second propose→preview→apply modal, since
+  the holding list is the preview and ticking is the acceptance.
+- ⚠️ The mapping is the **exact inverse of Contracts & Claims' `addAuthoredLines`** — `desc_l3` →
+  activity name, `desc_l2` → the Construction Library grouping, Finance trade → builder group. The
+  two directions have to agree on the string or a round trip renames everything.
+- ⚠️⚠️ **`parseTrade` recognised three of Finance's seven trade values — 458 of 702 chart codes would
+  have landed in Others.** `'Structural Works'`, `'Architectural Works'`, `'MEPF Works'` and
+  `'Allied Services Works'` all returned null. It also meant this module could not read back the
+  `work_type` labels it writes itself, so pasting a Trade column out of the schedule into this grid
+  silently cleared four of eight trades. Both fixed by naming the vocabularies.
+- ⚠️⚠️ **And the `+ Library` list cannot produce a valid class code at all.** `CLASS_CODE_DB` is
+  Finance's **Level-2 group** chart with the leading zeros stripped — 197 entries, 43 of which match
+  an L2 group only after zero-padding, and **zero** of which are valid Level-3 codes. The push writes
+  `class_code = a.code`, so every library-seeded activity carries a code that resolves to nothing and
+  the BOQ allocator can never gate on it. **Not fixed here** (padding makes them correct L2 codes and
+  still not L3 — a different, larger decision); **reported on screen** instead, beside the button
+  whose codes do resolve.
+- **That is the payoff and it closes this morning's loop:** a BOQ-seeded activity arrives already
+  carrying a resolvable Finance L3 code, so the four-rung matcher shipped in Contracts & Claims at
+  `z1` matches it with no manual tagging step at all.
+
+⚠️ **A correction to the 2026-09-08 (a) §4 audit table**, which lists *"detailed schedule → detailed
+BOQ: ❌ nothing"*. That has not been true since 2026-09-07h. With this commit **all three of the
+owner's hand-offs exist**; the middle one (tagging) has since August.
+
+**56 assertions, 0 failing**, sliced out of the shipped file with the pre-change revision executed as
+the contrast. ⚠️ A real layout defect caught by measuring: a second button in the `nowrap` header
+shredded both labels (header 36 → 59px at the pane's 320px default, 81px with the label on **three**
+lines at its 180px minimum). Fixed with nowrap + a wrapping header + a shorter label; the resting
+state is back to one row at 36px, no overflow at any width, both themes.
+⚠️ **Not verified signed in** — the loader's three reads have never run against a real BOQ.
+
+`MODULE_V` → `20260910z3`, re-derived from the remote's `z2` **after** rebasing onto it — that commit
+touched the same 44k-line file and the two sets of edits auto-merged, checked afterwards by asserting
+both sides are present.
+
+### The camera survives the scrubber, both compare panes turn together, and the per-zone question is answered (2026-09-10) — ethanrobles10
+
+Owner: *"return the progress per zone, aligned with the schedule … whenever the progress bar is
+moved, please retain the view being displayed … in planned vs actual, whenever there are view
+changes on the right, please also change the left (planned) pane."*
+
+⚠️⚠️ **Per-zone progress had been asked about three times and closed twice with an answer that
+cannot be followed.** Measured on the shipped code: where a zone IS recorded, Detail 2 draws one
+block per zone and each fills on its own schedule (Zone A 100% while Zone B is still 0% at the
+same as-of date). Where **no** zone is recorded, `_vsRowCells` folds every activity into one `'—'`
+bucket — the Detail 1 drawing, reporting the floor's number, under a Detail 2 label, with nothing
+saying why. So "switch Detail to 2" changed nothing and the planner watched the whole floor move
+as one. Nothing was wrong with the progress; **the zone column was empty and the view hid it.**
+Detail levels nothing is filed under are now disabled and carry the reason, naming the level
+(*Zone*, not "locations"); `_vsDetailNow()` clamps to the depth the data supports; a banner states
+the gap; and the footer stops recommending a switch that would draw the identical building.
+
+**The camera was thrown away on every frame of a scrub** — `renderVStack()` rebuilds each scene
+and `_vs3Build` ends with `setView('iso')`. There is a camera memory per card now, harvested
+before the dispose and replayed after the build, and `view()` was not enough on its own: it names
+the last viewpoint *button*, so a hand-dragged angle came back as the nearest preset (the focus
+window had the same half-fix). `cam()`/`setCam()` carry the orbit and the zoom — the zoom as a
+**ratio** of each model's own default radius. The horizontal scroll is kept too.
+
+**Planned vs Actual is one camera.** The viewpoint bar was per pane, deliberately; the owner
+overruled it and is right, because 2D compare already drives both panes on hover, pan and zoom.
+One bar above both panes, and every orbit or click on either model drives the other. ⚠️ The
+`silent` flag on `setCam` is the re-entrancy guard — without it the first drag ping-pongs between
+the panes forever.
+
+**Verified by execution** (17 assertions, 0 failing) and, for the pane linking, in a real browser
+against the shipped wiring: clicking the shared bar tells both scenes; orbiting the right pane
+moves the left to the same azimuth with no echo back. ⚠️ Not verified signed in (no grants on the
+anon key) — no WebGL scene was built against this project's data.
+
+`MODULE_V` → `20260910z2` (⚠️ re-derived from the remote after a concurrent session took `z1`
+mid-work — the exact collision this log records). Detail: [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+### 2026-09-10 (z1) — Matching the BOQ to the schedule: four rungs instead of one, and a location key that was wrong twice
+
+**Run `migrations/2026-09-10-boq-match-rung.sql`.** Owner: *"How should we match the BOQ to the
+schedule?"* Full detail, every ⚠️ decision and the two of my own assertions that were wrong before
+the code was: [`modules/contracts-claims/CLAUDE.md`](modules/contracts-claims/CLAUDE.md). What
+reaches beyond the module:
+
+- ⚠️⚠️ **New `assets/js/locmatch.js` (`PDLoc`) — there were THREE copies of the location normaliser
+  and one of them was wrong.** The schedule's `_locNormKeyCalc`, `affected.js`'s deliberate
+  cross-asserted duplicate, and `boq.js`'s own `locKey`. Executing the third against the first found
+  two real defects: it **missed** `"Roof Deck"` vs `"Roofdeck"` (a real pair on the Jab schedule),
+  and it **matched a 13th-floor leaf to `"3rd Floor"`** — it kept the spaces, so
+  `"…at 13 floor".indexOf("3 floor")` is a hit. Measured on the fixture, HEAD hands a 13th-floor
+  line **three** activities, two of them on the wrong floor. Both reproduced on HEAD in the suite.
+- ⚠️⚠️ **That was a MONEY defect, which is why it is worth a shared file.** `boqDerive`
+  (`project-schedule/index.html:38164`) splits a BOQ line's `amount` across exactly its allocations
+  → `project_schedule.planned_cost` → `schedule_scurve_agg`'s `w_cost` → Cash Flow's cash-in. The
+  old allocator offered ONE rung — every activity carrying the line's class code, a **tag** carried
+  by forty floor-level activities — so a 3rd-floor line was smeared over forty floors by duration
+  pro-rata and every screen downstream reported it as fact.
+- ⚠️ **`PDLoc.contains` is not a one-line `indexOf`**, and that is the whole reason it is a function.
+  `normKey` strips every separator (which is what fixes Roofdeck), so a plain containment test
+  re-creates the digit-boundary bug in the other direction. It rejects a hit with a digit
+  immediately outside a numeric edge of the needle — the "8th and 18th get merged" trap `locKey`'s
+  own comment warned about.
+- ⚠️ **`project-schedule`'s copy is deliberately NOT rewritten here.** It is a 43k-line file under
+  concurrent edit and swapping the function that decides every location grouping in the Vertical
+  Stacking is its own commit with its own verification. The suite asserts `PDLoc` agrees with it
+  over a spelling corpus instead — the precedent `affected.js` already set for the same pair.
+  ⚠️ So `locmatch.js` is loaded by **one** page today, not two. It is a shared asset by intent, not
+  yet by use, and the schedule's adoption is the follow-up.
+- **`affected.js`'s duplicate is retired** to thin delegates, keeping the local names so the
+  `_internals` export its suite reads is untouched and the diff stays checkable.
+
+Also fixed, both live and both found by measuring rather than reading: the allocation dialog's qty
+field was **`type="number"`**, so `1,000` read back as `""` and wrote a silent **zero** into an
+allocation (the trap fixed for the Lines grid in August and never carried across); and
+`allocHTML`'s class-code cell was an unguarded `CMAP[r.id].class_code` that would have thrown on the
+first heading-mapped row.
+
+⚠️ **A correction to the 2026-09-08 (a) §4 audit table:** it lists *"detailed schedule → detailed
+BOQ: ❌ nothing"*. That has not been true since 2026-09-07h — `openSeedFromSchedule()` /
+`scheduleSeedPlan()` reads the tagged programme and writes the lines **born matched**. Nothing was
+built for it here; it needs exercising, not writing.
+
+**138 assertions across three suites, 0 failing**, every function sliced out of the shipped file and
+**HEAD executed as the contrast** in all three. Rendered against the real stylesheets at 1440 and
+918 in both themes: rung chip **6.76:1 light / 8.04:1 dark**, no page horizontal scroll.
+⚠️ **Not verified signed in** — no allocation written against a real project and the migration has
+not been run.
+
+`boq.js` / `affected.js` / new `locmatch.js` → `?v=20260910z1`; `MODULE_V` → `20260910z1`.
+⚠️ `z1`, not `y10` — `y10` sorts *before* `y9`. Re-derived from the remote **after** rebasing onto
+its 7 commits, which is the rule this log has now arrived at five times.
+
+### The stacking bar loses a row, and the Fit button it lost was already dead (2026-09-10) — ethanrobles10
+
+Owner: *"cleanup the UI just below the header. i think it is too much. you can remove the Fit
+button."*
+
+⚠️⚠️ **The Fit button had been doing nothing for two weeks.** It toggled a flag whose only effects
+were an `is-fit` class on the stage and a `--ps-vs-fith` property on the grid — measured by a
+careful two-pass routine — and **neither was read by any CSS rule in the file**. Its own tooltip
+still advertised the magnifier, deleted 2026-09-02, which is the clue nothing had exercised it
+since. Removing it changes no pixel of the drawing: what fits the stack is `--ps-vs-paneh`, which
+is live and untouched. The flag, both passes, the class and the `ps_vsfit` key all went with it;
+the focus window's own Fit, which is wired to a real transform, stays.
+
+**The legend was a paragraph parked in a row of buttons** — `flex:1 1 100%`, so it claimed a whole
+row and wrapped inside it. Nothing deleted, demoted: the glance-level part stays visible (and the
+DONE colours stay *in* their colours), the two long explanations move into its `title`. Visible
+legend text **176 → 66 characters** in Actual, **360 → 87** in Planned vs Actual.
+
+Measured in a browser against the app's real CSS, from the shipped builder sliced and executed:
+at an 1798px pane the bar goes **65px → 58px** in Actual and **3 rows / 110px → 2 rows / 58px** in
+Planned vs Actual; at 1200px, **4 rows / 97px → 3 rows / 71px**. Dividers 6 → 5. ⚠️ Not verified
+signed in (no grants on the anon key) — the claims are about the bar's markup and layout.
+
+`MODULE_V` → `20260910y9`. Detail: [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+### ⚠️⚠️ The floor was drawn at a quarter of its size at Detail 1: the wrap grid was sizing the plan (2026-09-10) — jasantos2
+
+Owner: *"the size of the floor is decreased when proceed with level 1 - detail. Like i said,
+allow users to define in the floor plan the size of the floor."*
+
+Measured before it was touched, by executing the shipped builder both ways on one traced plate:
+**Detail 2 gave a 2 × 2 plate, Detail 1 gave 1 × 1 — the same plan at 25% of its area.** The
+plate's size in world units was `cols × rows` of the **wrap grid**, the layout meant for cells
+that have no plan, and that grid comes from the cell COUNT: four zones make 2×2, one cell makes
+1×1. The traced plan had nothing to do with that number and was scaled by it anyway — the same
+class of mistake as the two before it, a value describing the GUESS applied to the STATEMENT. A
+traced card's plate is a constant now; an untraced one keeps the wrap sizing, which is what the
+footer has always said it is.
+
+And the **sheet was fixed at 1000 × 620 with no way to change it** — every plan, portrait or
+landscape, traced on the same landscape rectangle, which *is* the floor's proportions as far as
+the 3D is concerned. There is a **Sheet** control now (Wide 3:2 · Square · Tall 2:3 · Fit to the
+image), attaching an image adopts its shape while nothing is drawn, ⚠️ changing it **rescales what
+is already drawn** (points are stored in plan units, so raising the height without touching them
+would bunch every zone against the top), and the sheet's ratio crosses the module boundary so the
+3D plate is as deep as the drawing says.
+
+**240 assertions across fourteen suites, 0 failing** — the size bug is asserted against the
+revision before the fix, executed on the same input.
+
+### The 3D card's controls collapse to one Display button, and the fill level gets a line (2026-09-10) — jasantos2
+
+Owner: *"can you simplify the UI, i think too much buttons and information, propose a simplified
+UI yet still pleasing to the eye. In addition, how come the progress per zone is removed? pls
+bring that back."*
+
+⚠️⚠️ **Twenty-one controls in one flat row, and the one used every few seconds was last.** The six
+**viewpoints** stay out in the open (Iso lit, because that is where every scene starts) and
+everything set once and then left alone — plan wrap, front edge, colour meaning, floor markers,
+Sync — is behind one **Display** button that carries a count of how many are off their default,
+so nothing hidden is a surprise. It is a `<details>`, not a hand-built popover: no outside-click
+handler to leak, keyboard-reachable for free, and its open state survives the repaint every
+control inside it triggers. The **footer** was six sentences under every card at once; it is one
+line now — what a block is, whether the layout is real or guessed, and the schematic warning in
+short form — with the standing explanation behind *What am I looking at?*. In the floor-plan
+window, the two facts stated once per floor (which way it faces, and the floor's own shape) share
+one row instead of two.
+
+⚠️⚠️ **Per-zone progress: the maths never changed, the reading did.** Every zone has always filled
+on its own percentage — but a horizontal split across a zone's *width* is tens of pixels, while
+the vertical one inside a storey's *height* is about two on a twenty-storey tower, so per-zone
+progress stopped being legible, which for the person looking at it is the same as gone. There is
+now **a hairline at the fill level** — carved out of the done slice, never laid over it, so the
+z-fighting fix still holds — in a light tint of the trade's own hue, measured at 65.0 / 40.3 ΔE
+against remaining / done in the light theme and 53.4 / 28.3 in dark.
+
+**230 assertions across thirteen suites, 0 failing.** ⚠️ The bar was also *looked at*: rendered in
+a browser from the shipped `_vs3Bar` / `_vs3Foot` output against the app's real `dashboard.css`,
+in both themes, through a throwaway gitignored harness.
+
+### At Detail 1 the floor plan disappeared; the floor's shape is now its own control (2026-09-10) — jasantos2
+
+Owner: *"how come when clicking level 1 detail, the floor plan size disappears? … can you add an
+option of defining the shapes of the zones AND for the floors, so that way we can distinguish the
+difference between them"* — and *"how come the progress per zone was removed?"*
+
+⚠️⚠️ Detail 1 draws a storey as ONE cell with an empty label, so no zone can match it, and the
+only thing that answered for a whole floor was an explicitly drawn outline — a control that had
+shipped as a swatch at the end of the **zone** palette, where it reads as another zone. A planner
+who traced four zones and no outline got a guessed box the moment they switched to Detail 1. **A
+floor with zones and no outline now takes its shape from those zones**; an explicit outline still
+wins, because a podium slab bigger than the zones on it can only be stated by drawing it.
+
+The two shapes are now two controls: the outline is out of the zone palette and has its own
+**Floor shape** row, which states which of three cases the floor is in (drawn as *n* areas, taken
+from the *n* zone areas traced, or nothing traced yet) and carries the same double duty the zone
+palette has — with an area selected it makes that area the outline, otherwise it loads the brush.
+
+⚠️ On the progress: per-zone was not lost — the suite now pins it (Detail 2, a two-zone storey at
+25% and 75%, builds two blocks filled to 0.138 and 0.413 of the storey height, each from its own
+traced outline; Detail 1 is one block at the floor's own progress). What was missing is that the
+card never SAID which grain it was drawing, and the footer now names it.
+
+**219 assertions across thirteen suites, 0 failing** — the Detail-1 loss is asserted against a
+control: the same plate through the previous revision returns no shape at all.
+
+### ⚠️⚠️ Every trade was drawn with the first trade's floor plan (2026-09-10) — jasantos2
+
+Owner: *"the defined section for structural is coinciding the defined floor plan and zoning
+shapes with other trades … I have defined a new floor plan for architectural and yet this is
+being shown."*
+
+Zoning is **per trade** — a plate is pointed at a floor id, so Architectural's *Level 3* and
+Structural's *Level 3* are two different floors that share a name. The map that crosses the
+module boundary was keyed by that **name alone**, with `if (!out[k])`, so the project got one
+plan per floor name from whichever trade came first in `cfg.zoning`'s key order and **every card
+drew it**. Re-drawing the Architectural plan could not change what the Architectural card showed:
+it was never being asked for.
+
+The map is keyed **`trade|floor`** now, with the trade's aliases emitted at the source (the
+canonical work label, the short label, the key) rather than guessed at the far end. ⚠️ The bare
+floor key survives **only when every trade that named that floor points at the same plate** — it
+is what a per-tower or consolidated card reads, and when the trades disagree it emits nothing so
+that card falls back to the wrap instead of borrowing someone else's building. The card's trade
+is derived in `_vsTowerModel` (a card whose activities are all one trade IS that trade), and the
+footer now separates **"not traced"** from **"traced, but under another trade"** — a distinction
+that could not even be expressed before.
+
+**203 assertions across twelve suites, 0 failing.** ⚠️⚠️ HEAD is executed as the control: on the
+same two-trade setup it hands both cards the same outline — the bug, reproduced — and this file
+hands each card its own.
+
+
+### 2026-09-10 (y5) — The edit form takes the read view's shape, and one Save becomes two scoped ones
+
+Owner, four things at once: *"I don't think this pop up window is necessary anymore. We can have a
+save globally or save project only to scope the edit. Under this view, it is not apparent that the
+fields aren't editable. Check when I am editing the person it saves when I edit anything from the edit
+page. Is it possible if the edit just follows the format of the view so the user doesn't see a new
+arrangement of the fields."*
+
+#### ⚠️⚠️ ONE PRIMITIVE MADE THE FORM MATCH THE VIEW
+`.sm-frow` is the form's **only** layout element — 18 of them — and it was `display:flex`, packing
+two or three controls per row while the read view stacks one per row with the label above. Stacking it
+gives the whole form the read view's rhythm. **Measured: `fieldsPerRowMax` is 1**, and `.sm-frow`
+computes `block`. Asked which way to reconcile it with the register's own form, the owner chose to
+**restyle that form** rather than build a second one — so there is still one form and both callers get
+the new arrangement. ⚠️ The accepted cost is a longer scroll in **+ Add**: 39 controls in one column.
+
+#### Two scoped saves, and why "project only" cannot mean what it sounds like
+*Save this project* / *Save for all projects* replace the single Save, and **"Edit person…" is gone** —
+its fields were these fields.
+
+⚠️⚠️ **The two scopes differ in WHICH TABLE is written, never in which project an identity belongs
+to.** `overlayPeople()` copies every directory field over the row on load, so a name saved "to this
+project only" would be **overwritten on the next read** — it would look saved and silently revert.
+So: *this project* writes the assessment; *all projects* also writes the person.
+
+**Measured both:** *all projects* produces **2 updates** (the directory identity and the project row);
+*this project* produces **1**, and a name typed into the identity box **does not reach the directory** —
+the mirror carries the *person's* name, not the typed one. That is the existing `shared ? person.name
+: inputs` guard, and it is what stops a project save re-asserting a stale snapshot over somebody
+else's directory edit.
+
+⚠️ The identity write uses `.select('id')` **and a length check** — PostgREST answers an RLS-filtered
+UPDATE with 200 and zero rows — and is **guarded on `window.PDStakeholders`**, matching how
+`confirmPerson` already treats that helper as an optional script rather than assuming it loaded.
+
+#### Autosave is off on the person page only
+⚠️ It fires a debounced click of the real Save ~1.2s after any keystroke. With two scopes it would
+have to **choose one on the planner's behalf**, and the one it would choose writes a different table
+from the one they may have meant. **Measured: `autosaveWired` is false on the page.** The modal keeps
+it — there is one scope there.
+
+#### A locked field stops looking like an empty box
+⚠️ It keeps its input (the value stays selectable and the layout does not shift) and becomes
+unmistakably inert: no fill, **no border**, and a `🔒 PORTFOLIO` mark on the label. **Measured for a
+viewer: 3 of 3 identity fields disabled, the badge present, and the input's border computes
+`rgba(0,0,0,0)`.** ⚠️ Keyed on `.pd-field:has(input:disabled)` in CSS rather than a class threaded
+through the markup — that would have meant a blanket replace across a 2,400-line file, putting a
+variable into functions that never declare it, **which is exactly the ReferenceError shipped in (y4)
+an hour earlier.** The same mistake, refused the second time.
+
+`MODULE_V` → `20260910y5`; stakeholder-map `module.js`/`module.css` → `?v=20260910y5` on **both**
+referencing pages.
+⚠️ **Not verified signed in.**
+⚠️ **NOT DONE, and asked for in the same message:** splitting *Name of stakeholder* into first and
+last name. It needs its own migration, and a backfill rule that is genuinely ambiguous on Filipino
+names — `Marco Dela Cruz` and `Maria Santos Cruz` do not split on the last space. It is the next piece.
+
+### 2026-09-10 (y4) — ⚠️⚠️ HOTFIX: the register came up empty. I called a function that did not exist.
+
+Owner, with a screenshot of a populated KPI strip over an empty page: *"A regression. The stakeholder
+isn't shown in the page."* Correct, and it was live.
+
+#### The bug
+(y2)'s selection markup calls `canWrite()` in two places — the row's checkbox cell and the header's
+select-all. **`canWrite` was never defined in that module.** It gates writes nowhere else; it relies
+on RLS. So `renderTable()` threw a `ReferenceError` on every paint, and because `render()` runs
+`renderKpis()` → `renderTable()` → `renderCards()` in that order, **the throw took the cards with
+it**: the KPI strip painted, and everything below it did not. Exactly the screenshot.
+
+#### ⚠️⚠️ Why the verification missed it, which is the part worth keeping
+`node --check` cannot see a `ReferenceError` — it is a runtime fact, and this log already records that
+lesson under *"below is not defined"*. Both harnesses were blind to it for **different** reasons:
+
+- the **view harness stubbed `renderTable` out** — it was testing `switchView`, so it replaced the
+  very function that throws;
+- the **mount harness runs on `person.html`**, where (y2) deliberately guards `render()` off with
+  `if (!document.getElementById('sm-table')) return;` — so the whole render path was skipped.
+
+Two green harnesses, one broken function, and neither could have failed. **A new harness now carries
+the register's real markup and runs `init()` end to end**, so `renderKpis` → `renderTable` →
+`renderCards` all execute against the shipped module with only its externals stubbed.
+
+⚠️⚠️ **And the contrast build BITES, which is what makes the green run mean anything.** The identical
+harness pointed at `git show HEAD:` — the broken bytes — reports **4 KPIs, 0 cards, 0 table rows, 0
+groups**: the owner's screenshot reproduced. Against the fix: **4 KPIs, 2 cards, 2 rows, 2 groups, 0
+page errors.**
+
+#### Also verified, now that the path actually runs
+Select one → the bar reads *1 selected · Clear · Delete 1*; select-all ticks **2 of 2**; the bulk
+delete issues **ONE statement carrying both ids** and toasts *"Deleted 2."*; a stubbed RLS shortfall
+(2 asked, 1 removed) toasts **"Deleted 1 of 2 — the rest were refused"** rather than a false success;
+and a **viewer** gets 0 checkboxes and no select-all while the cards still render.
+
+#### ⚠️ Two version mistakes in the same round, both caught before pushing
+- The (y2) bump rewrote `module.js` / `module.css` in **five unrelated modules** — every module has a
+  file of that basename, the false-sharing trap this log already records for the `?v=` audit. Reverted.
+- Then the (y3) attempt bumped `stakeholder-map/module.js` on **its own page only** and left
+  `person.html` — which now loads that same module — on the previous token, producing a genuine
+  **version split** the asset audit caught. Both pages are bumped together now.
+- ⚠️ `MODULE_V` is **y4**: the concurrent session took `y3` while this was in progress. Re-derived
+  from the remote **after** integrating, which is the rule this log arrived at the last four times.
+
+`MODULE_V` → `20260910y4`; stakeholder-map `module.js` → `?v=20260910y4` on **both** referencing pages.
+⚠️ **Not verified signed in** — the render path is executed against a stub, not a live project.
+### Progress fills upward, the striped shading was z-fighting, every floor is named, the front is an object (2026-09-10) — jasantos2
+
+Owner: *"hopefully there is a label for all floors … make it that the progress for the 3D version
+is from bottom to top … the shades are like unstable or not uniform … remove the front faces etc.
+I just want you to add a feature wherein users are just able to place an object and then you
+would be able to identify which is the front face of the project."*
+
+⚠️⚠️ **The "unstable shades" were Z-FIGHTING, and the vertical fill is the same fix.** The done
+stretch was a second, narrower block sitting **inside** the dim one, lifted by a thousandth of a
+unit to win the depth test — four of its six faces coplanar with the block around it. At this
+camera's range the depth buffer cannot separate two surfaces that close, so which one is in front
+is decided per pixel and changes as the model turns: that is the mottled, striped shading in the
+owner's screenshot. A zone is now **two disjoint slices stacked in height** — done from the floor
+of the storey up to its percentage, remaining above it. Nothing overlaps, no nudge is needed, and
+the progress reads bottom to top. `_vsClipX`, which cut a traced outline at the progress fraction,
+is deleted; the compare mark, a vertical blade at a fraction of the zone's *width*, became a
+horizontal band at the baseline's *height*.
+
+**A label for every floor**: the first cut dropped all but ~14 at build time, so a floor could not
+be named however far you zoomed. Every storey has one now, and the only thinning is per frame —
+⚠️ at a 17px threshold taken from the label's own height in the CSS, not guessed.
+
+**The front is an object you place.** The four N/E/S/W buttons are gone from the floor-plan
+window; the planner drops a marker on the frontage and the nearest edge of the sheet is the front,
+derived and drawn back on the drawing. ⚠️ Stored and compared in fractions of the sheet, so
+replacing the plan image cannot move it to another edge; ⚠️ setups that named their front on the
+old screen are still read, the marker wins when there is one, and **Remove clears both** — "removed
+but still facing east" is the one state the pair must never produce.
+
+**181 assertions across ten suites, 0 failing** — the z-fighting fix is asserted on the geometry
+the builder actually produces: two boxes, touching but not overlapping, same footprint, neither
+nudged.
+
+
+### 2026-09-10 (y2) — The register's form is folded onto the person page, and the row loses Edit and Delete
+
+Owner: *"Fold the register form onto the person page… I also need an edit button from this page as
+well. Remove the edit stakeholder from the register page. All edits should only be available at the
+person page. Delete button shouldn't be here as well but we should consider bulk delete."*
+
+#### ⚠️⚠️ THE FORM IS NOT EXTRACTED AND NOT COPIED — the modal became one of two hosts
+`openForm` is **619 lines** carrying the photo well, six RCM bands, every derived preview and the
+autosave wiring, and it reads ~38 things from the module around it. Lifting it into a shared file
+would be a large rewrite of the most complex form in the app, verified against nothing; copying it
+would leave two editors to keep in step — the failure this log keeps recording. But `openForm` uses
+its modal handle **only as `{ el, close }`**: every field lookup goes through `m.el.querySelector`,
+and `Autosave` takes `{ root, modal }`. So an element on another page satisfies the same contract.
+`inlineHost()` is nine lines, the 619 are untouched, and the person page renders the **identical**
+form. **Measured: mounting it opens 0 modals and 0 overlays**, and produces 39 inputs across all 8
+bands with the identity fields disabled 3 of 3.
+
+- ⚠️ `mountForm` deliberately does **not** call `init()` — that wires the register's toolbar, filters,
+  collaboration presence and project picker, none of which exist on `person.html`. It sets the two
+  pieces of state the form reads and loads the rows.
+- ⚠️ `render()` gained a guard on `#sm-table`: `load()` ends in `render()`, which would reach
+  `$('sm-clear').classList` and throw on a page with no toolbar. Guarded on the register markup
+  itself rather than on a flag, because that markup **is** what render() needs.
+- ⚠️ The host is told **before** the form closes — the page repaints from the saved row, and closing
+  first would empty the element it is about to render into. **Measured: 1 UPDATE of 46 fields,
+  `onSaved` fired, and Cancel empties the host and fires `onClose`.**
+
+#### Editing leaves the register entirely
+Row **Edit** and **Delete** are gone, and so is the card's Edit. ⚠️ `wireRowActions` is **deleted
+rather than left dead** — a wiring function that matches nothing reads as a feature that exists, and
+the next `data-edit` anyone adds would silently re-open a second editor. ⚠️ `+ Add stakeholder` still
+uses the modal: adding is not editing, and the picker flow around it is the register's own.
+
+#### Bulk delete, and where it goes
+In the table's **own `.pd-dt-head` strip**, beside the row count. That component's note already says
+a table's actions belong there rather than floating above the page, and a destructive action needs to
+sit next to the number it will destroy.
+
+- ⚠️ **Selection is table-only.** A card is a person; picking thirty of them by clicking cards is not
+  a bulk gesture. The layout toggle is one click away.
+- ⚠️ **"Select all" means the rows currently SHOWN**, never the whole register — anything else arms a
+  delete over work the planner is not looking at. The selection is also **pruned on every render** and
+  **not persisted**: one restored from localStorage a day later would arm a delete over invisible rows.
+- ⚠️ **One statement, not N.** `.in('id', ids)` is a single round trip and a single RLS decision, and
+  it **counts what came back** — PostgREST returns the rows it actually removed, so a shortfall is
+  reported rather than rounded up to "Deleted 12". Deleting in a loop leaves a half-finished job on
+  the first refusal with no way to say which half.
+- ⚠️ The checkbox reuses the **same trailing cell** the two buttons had, so the band header's colspan
+  arithmetic is untouched — a leading column would have shifted every band by one.
+
+#### ⚠️ A pre-existing defect the fold exposed
+The form printed **"1 · Identity & photo" twice**, with the scope banner sandwiched between the two.
+**2 occurrences in HEAD before this change** — not introduced here, but found by rendering the form on
+the page where it is now the first thing read. Removed; the band list measures 8, was 9.
+
+#### The person page
+An **Edit** button at project scope (writers only, and only when the person is actually on that
+project), and ⚠️ `editing` and `projEditing` are separate flags because they edit different tables and
+are gated differently. While the form is open the read view is **not drawn** — two copies of every
+value on one page, one of them stale the moment you type, with the taller of the two on top.
+
+⚠️⚠️ **The wide gutter with the sidebar collapsed was `.pp-wrap` being capped AND left-aligned.**
+Collapsing the rail 240 → 64px handed all 176px of recovered width to one empty gutter on the right.
+**Measured before: left 24 / right 172 at a collapsed rail, and 24 / 496 at 1700px. After: 28/28 and
+190/190.** Centred, and the cap raised 1180 → 1320 since centring alone would have left two 88px
+gutters.
+
+`person.js`/`person.css` and stakeholder-map `module.js`/`module.css` → `?v=20260910y2`;
+`MODULE_V` → `20260910y2` (re-derived from the remote after integrating, not guessed).
+⚠️ **Not verified signed in** — the form is mounted and saved against a stub, never a real row.
+
+### 2026-09-10 (y1) — A stakeholder has a page: one profile, two scopes, and identity locked to the portfolio
+
+**New `person.html`, `assets/js/person.js`, `assets/css/person.css`.** Owner, items 3 and 4 of six:
+*"When clicking on the stakeholder from the Portfolio View it just opens a pop-up for assigning a
+project. I need to have the page where I will see the personal page of that stakeholder with details
+and with user permissions I can edit that stakeholder"*, and on the project register *"instead let's
+make use of the personal page as well. Information presented will be project-level only and view-only
+for those items that are only should be editable in the portfolio level."*
+
+Modelled on the separate Megawide Stakeholders app the owner pointed at — breadcrumb, a header card
+carrying the face and one primary action, then **Personal details** beside an ownership panel, every
+field label-above-value with an em dash where there is nothing.
+
+- ⚠️⚠️ **ONE PAGE, TWO SCOPES, AND THE SCOPE IS IN THE URL** —
+  `person.html#person=<id>` is the portfolio profile, `…&project=<PID>` is that project's view of the
+  same person. A profile view built inside each module would exist twice and drift, which is the
+  failure this log records for the S-curve maths and again for the identity matcher. One renderer;
+  the scope decides only which blocks appear and which are editable.
+- ⚠️⚠️ **WHAT IS EDITABLE WHERE IS A DATA FACT, NOT A UI PREFERENCE.** `stakeholders` is who a person
+  *is*; `stakeholder_map` is one project's assessment of them. So identity is editable at portfolio
+  scope only, and a project page renders those 13 fields **locked with a `PORTFOLIO` badge**. That is
+  the owner's "view-only" ask, and it is also what stops two projects disagreeing about a name.
+- ⚠️ **The save uses `.select('id')` and a LENGTH CHECK.** PostgREST answers an RLS-filtered UPDATE
+  with **200 and zero rows** — the silent success recorded here since `boq_tag_activities`. **Measured:
+  a refused save leaves the name unchanged on screen and warns, rather than reporting "Saved".**
+- ⚠️ It writes through `PDStakeholders.writeTolerant`, so on a database without
+  `2026-09-10-stakeholder-profile-fields.sql` the refused column is dropped and the rest still saves —
+  **measured: two attempts, and the toast names what it gave up.**
+- ⚠️ **A click now navigates; `openPersonPanel` is kept, not deleted.** Assigning to projects and
+  merging duplicates act on the directory *around* a person rather than on the person, so they stay a
+  dialog — reached from a new `⋯` button on the card and from the Health view's duplicate list.
+- ⚠️ A register row with **no `stakeholder_id`** (written before the directory existed) has no profile
+  to open, so it falls back to the register's own form rather than navigating to a dead page.
+
+⚠️⚠️ **A defect the harness found and reading would not have:** `editing` is module state and the
+project chips navigate to another scope of the *same* page, replacing no document — so leaving a
+profile mid-edit opened the **next** person already in edit mode, over a form built from the previous
+person's values. Reset on every load.
+
+**Verified** by executing the shipped `person.js` against a stub that behaves like RLS: portfolio
+scope renders 13 fields with **0 locked** and an *Edit profile* action for a planner and **none for a
+viewer**; project scope renders **17 fields with 13 locked**, the Ownership panel and **6 OPS bands**,
+and **0 inputs**; the editor gives 12 inputs and a 12-key patch; the refusal and the un-migrated
+degrade both behave as above; two columns at 741/390px, the status dot resolving to `--pd-ok`, and no
+horizontal page scroll.
+
+⚠️ **Project-level fields are READ-ONLY on this page.** The register's own 31-column form already owns
+writing them, with its derivations and autosave, and a second editor is a second set of rules to keep
+in step — so the project page's primary action is *Open register*. Folding that form onto the page is
+the remaining half of item 4 and is deliberately not in this commit.
+
+New assets at `?v=20260910y1`; stakeholder-map `module.js`/`module.css` → `?v=20260910y1`;
+`MODULE_V` → `20260910y1`. 30 pages, 50 assets, one version each.
+⚠️ **Not verified signed in** — no real profile has been read or written.
+### A floor with no zones can be shaped, the progress tones are measured, and the storeys are named (2026-09-10) — jasantos2
+
+Owner: *"for floors without levels, there should also be an option for users to edit the shape of
+that floor … look at the colors of the progress of the levels / zones, pls improve it … add like a
+demarcation or floors that show which floor is this."*
+
+⚠️⚠️ **A floor with no zones could not be given a shape at all.** The **Plan** button was only
+emitted when the Activity level was Zone or Unit, and inside the window the Add/Trace row needed a
+zone code to draw as — so on a floor-level project the shape of a storey was the one thing a
+planner could not state, and the 3D drew a box. Both gates are gone: a reserved code (`*floor*`,
+shown as "Whole floor") makes the outline an ordinary shape that every existing gesture already
+handles, and the 3D extrudes it — ⚠️ only where the storey is a single cell, or a four-zone floor
+would become four identical slabs in one place.
+
+**The band with no floor** (activities carrying no level) can be given a plan too, ticked in the
+window's *Also use this plan elsewhere…*, and it crosses the boundary under a ⚠️ **protocol key**
+rather than under the words printed on the row, which are free to be reworded.
+
+⚠️⚠️ **The progress colours were failing on the dark theme, and the light theme is why nobody saw
+it.** Remaining was `colour × 0.42`, one walk toward black whatever the model stood on: measured
+against the dark card, **9.5 ΔE** from the background — the same rule measures 69.6 on light. The
+two tones are now **placed** on lightness rungs per theme, hue and saturation untouched: remaining
+against its background goes 9.5 → **23.2** on dark, trade separation in the remaining tone 37.2 →
+47.5 light / 60.1 dark, and done-vs-remaining — the progress read itself — is held at 26–28.5. ⚠️
+The lights were also **clipping the model white** (top faces at 1.143 of full); 0.58 + 0.48 puts
+them at 0.949 with a *larger* directional share.
+
+**Floor markers**: a slab under every storey and an HTML label naming it, thinned to ~14 on a
+forty-storey tower (top and bottom always kept, overlaps dropped), the grade line named, and a
+`Floors · Labelled | Plain` toggle. **140 assertions across eight suites, 0 failing** — the colour
+table above is the output of executing the old rule and the new one on the same palette, not a
+description of them.
+### 2026-09-10 (x2) — Frozen columns had eaten the phone table, and a sticky rail taller than the window cannot be scrolled to its end
+
+Two owner reports in one pass: *"the table in the phone view can't be read properly due to the frozen
+columns. Let's check for other modules as well"* and *"see side panel its short in the schedule setup
+page. Let's do global check for this if there are cases that this is happening on other modules."*
+Both asked for the same thing — the global check — and in both cases **the app already contained the
+correct answer in other modules**; the fix is adoption, not invention.
+
+#### ⚠️⚠️ THE FROZEN COLUMNS WERE CONSUMING THE DATA THEY EXIST TO LABEL
+Measured on the live signed-in page at 375px, wrapper 353px:
+
+| table | frozen | readable window | data columns visible |
+|---|---|---|---|
+| `.mp-mx` (Manpower) | 190 + 96 = **286px** | **67px** (19%) | **1 of 47** |
+| `.mp-gt` (Manpower totals) | 210 + 150 = **360px** | **negative** | the data starts past the right edge |
+| `.eq-mx` (Equipment) | 150 + 84 = **234px** | 119px | ~2 of 47 |
+
+A frozen column exists so the label stays beside the data. At these widths it was replacing it.
+
+⚠️ **Three modules had already solved this and these never adopted it** — material-submittal
+(`.ms-fz2 { position: static }` + fz1 190→132), cash-flow (`.lbl` 200→118), portfolio-overview
+(`.po-eq-c1` 236→150). All three do the same thing: **keep ONE frozen column, narrowed, and let the
+second scroll away with the body.** Applied here with material-submittal's 132px reused rather than a
+fourth number invented. Result at 375px: **frozen 286→132, readable window 89→243px** (harness), and
+`.eq-mx` **234→132 / 141→243**.
+
+Four more tables freeze `:first-child` with **no declared width**, so the frozen zone is as wide as its
+longest label — the same failure, data-dependent instead of hard-coded: `.sc-table`, `.pr-ttable`,
+`.pr-ed`, `.rl-matrix`. Capped at the same 132px with an ellipsis.
+⚠️ **Those four are NOT measured live** — each sits behind a view I could not reach signed in. They are
+the pattern applied, and a cap can only narrow, so it cannot make the current state worse. The
+Manpower and Equipment numbers above *are* measured. `.rl-table`, the one actually on screen in
+Resource Loading, measured **0 frozen columns** and correctly just scrolls — left alone.
+
+#### ⚠️⚠️ A TALL STICKY COLUMN IS UNREACHABLE AT ITS BOTTOM
+`position: sticky` does **not** scroll its own content. Once the element is taller than the window the
+browser simply lets the page scroll past it, so the last items are only reachable if the *sibling*
+column happens to be long enough to scroll that far. Schedule Setup's rail is 12 steps ≈ **578px**; on
+a laptop window with browser chrome (~480px of viewport) steps 11–12 sit **98px below the window with
+no way to reach them**. That is the "short side panel".
+
+The fix is the **pair**, never `max-height` alone: `max-height: calc(100vh - 24px)` (derived from the
+rail's own `top:12px`, not a magic number) **+ `overflow-y: auto`**, plus `overscroll-behavior: contain`
+so reaching the rail's end does not start scrolling the page behind it.
+
+#### The global check, and what it excluded
+16 rules use `position: sticky` with a `top` offset. ⚠️ **11 of them are one-row BARS** — sticky table
+headers, `.pd-topbar`, `.cca-gr-head`, `.pp-grid-head`, `.ps-net-head`, `.sbld-libL1` and the like —
+which are one row tall and *cannot* have this bug; sweeping them in would have been 11 pointless edits.
+**2 were already capped**, and they are the pattern: `.pd-sidebar` is `sticky; top:0; height:100vh;
+overflow-y:auto`, `.po-dir-bands` uses max-height. ⚠️ My first classifier reported `.pd-sidebar` as a
+defect because it only looked for `max-height` — `height:100vh` caps just as well. **The 3 genuine gaps
+were all in project-schedule**: `.sbld-railcol`, `.sbld-rail` (Cost Loading's rail is not wrapped in a
+railcol) and `.sbld-tower` (a tower card's zone list grows with the project).
+
+#### Verified
+- ⚠️ **The contrast case is built from `git show HEAD:`**, so the BEFORE genuinely fails: at a 480px
+  window the old rail is 578px, `fitsWindow:false`, no scrollbar, **last step unreachable**. After:
+  `max-height:456px`, `overflow-y:auto`, `clientHeight 456 ≤ 480`, `scrollHeight 578` → its own
+  scrollbar, **last step reachable**.
+- ⚠️ **My first rail test used a 600px window, where the 578px rail FITS — so BEFORE and AFTER both
+  passed and it proved nothing.** Re-run at 480px, which is what the owner's screenshot shows.
+- Frozen columns at 375px, both from the real module stylesheets: `.mp-mx` 286→132px frozen,
+  `.eq-mx` 234→132px, each leaving 243px readable.
+- 42 JS files + 29 inline blocks parse, 0 failures; 0 brace mismatches; 0 NUL bytes across 9 files.
+- `MODULE_V` → `20260910x2` (six module pages changed; dashboard.css did not, so it stays at `x1`).
+- ⚠️ **Not yet re-verified on the live site** — pushed and awaiting deploy at the time of writing.
+
+
+### 2026-09-10 (x1) — Checking (w9) on the live signed-in page found three more targets and one dead line I had written
+
+⚠️ (w9) was measured in an offline harness that rendered **only the topbar**. Opening the deployed
+site signed in, at 375px, immediately produced things that harness could not see — plus a correction
+to a claim I made in (w9)'s own changelog. Recorded because the lesson is the harness's blind spot,
+not the pixels.
+
+#### ⚠️⚠️ A CLAIM IN (w9) WAS WRONG: `min-*` DOES BEAT A FIXED `height`
+(w9) added `.pd-filttoggle, .il-topfilttoggle, .pp-topfilttoggle { height: auto; width: auto; }` with
+a comment asserting *"a `min-*` cannot beat a fixed `height`"*. **That is false.** `min-height` and
+`min-width` always clamp the used size above `height`/`width` (CSS 2.1 §10.7). Measured on the live
+page: forcing `height:34px !important; width:34px !important` back onto a real `.pd-filttoggle` at
+375px still laid out **44×44**; stripping the `min-*` pair instead laid out **34×34**. The release was
+also **unreachable** regardless — the base `.pd-filttoggle` rule sits *below* the phone media block in
+the file, so at equal specificity it wins on source order. Line deleted, comment replaced with the
+measurement. The (w9) fix itself was never in doubt; the `min-*` pair was doing all of the work.
+
+#### Three real targets the topbar-only harness could not reach
+| | was | now | why it was missed |
+|---|---|---|---|
+| `.pd-nav-sibling` | 40px | 44 | in the sidebar **drawer** — harness had no sidebar |
+| `.pd-avatar` | 40px | 44 | phone block already grew it 36→40 and stopped 4px short |
+| checkbox / radio `<label>` | **19px** | 44 | in module CONTENT, which needs data to render |
+
+`.pd-sidebar nav a` already had `min-height: var(--pd-tap)` in the phone block; `.pd-nav-sibling` is
+the same kind of row (the sibling-app links in `.pd-nav-foot`) and was never added to it — **the exact
+omission pattern (w9) fixed for `.pd-filttoggle`**, one rule further up the same file.
+
+#### ⚠️⚠️ THE CHECKBOX LABELS NEEDED A `display`, NOT JUST A `min-height`
+A checkbox is ~13×13 and `font-size` cannot size it, so the **`<label>` is the tap target** — and those
+measured **19px** tall, under this file's own 44px bar and under WCAG 2.5.8's 24px. `:has()` is what
+makes them targetable at all (there is no parent selector otherwise) — verified supported before use.
+⚠️ **`min-height` alone did nothing**: it does not apply to a non-replaced **inline** box, and a
+`<label>` is inline by default. Measured: `min-height` computed as 44px while the label still laid out
+at **17px**. Adding `display: inline-flex; align-items: center` made it 44. `inline-flex`, not `flex`,
+so a row of labels still flows inline instead of each claiming its own line — and a label with **no**
+checkbox inside is not matched and stays inline at 19px, checked as a control case rather than assumed.
+
+#### Also confirmed on the live page, not just asserted
+- **`.mp-mxwrap` is `overflow-x: auto`, 353px wide over a 2446px table, and scrolls.** The matrix
+  columns *do* extend past the viewport — inside their own scroll container, which is why the page
+  itself does not move. This is independent confirmation that (w9)'s "90 unwrapped tables" was noise.
+- **The `NotFoundError` from `theme.js?v=…w4` in the console was a stale buffered entry** from the
+  tab's previous page load, not a live failure: the page fetched `theme.js?v=20260910w7` and
+  `.pd-theme-toggle` is present in the DOM. Checked `performance.getEntriesByType('resource')` rather
+  than trusting the console line.
+
+#### Verified
+- **12 cases × 2 widths against the edited stylesheet. At 375px, 11 of 12 at ≥44px**; the 12th is the
+  control (a plain `<label>` with no input, correctly left inline at 19px).
+- **At 1200px every case is byte-identical to before**: filttoggle 34×34, avatar 36, nav-sibling 38,
+  sidebar nav a 37, labels 19, bare input 22 @13.33px, `.pd-input` 32 @12.5px.
+- Live signed-in home at 375px: **0 sideways scroll, 0 elements past the viewport, 0 small taps**, and
+  the home search — a bare `<input>`, the exact case (w9) fixed — computes **16px / 44px**.
+- 42 JS files + 29 inline blocks parse, 0 failures; 530/530 braces; 0 NUL bytes across 30 files.
+- `?v=` → `20260910x1` on dashboard.css only (theme.js stays at `w7`, modules-grid.js at `w9` — neither
+  changed). ⚠️ `x1`, not `w10`: `w10` sorts *before* `w9`.
+- ⚠️ **Still not verified on a real device.** Real iOS Safari's zoom is the behaviour being designed
+  around and an emulated viewport cannot exercise it.
+
+
+### 2026-09-10 (w9) — Phone sweep: every form in the app zoomed iOS, and the filter funnel was the smallest target on screen
+
+Owner: *"Let's now do a complete sweep for phone view UI."* ⚠️ The useful finding is not that the app
+lacks a phone story — it has a good one (`body{overflow-x:clip}`, `.pd-tablewrap`, `--pd-tap:44px`, an
+iOS zoom guard). It is **where that story was not being followed**, and two of my three suspicions
+turned out to be my own noise.
+
+#### ⚠️⚠️ THE REAL ONE: 10 OF 12 INPUT CONTEXTS ZOOMED THE PAGE ON iOS
+iOS Safari zooms the whole page whenever a **focused** input computes under 16px. Measured at 390px
+against the real shared + module stylesheets:
+
+| construction | font-size | height |
+|---|---|---|
+| shared `.pd-input` / `.pd-select` | **16px** | 44 — the guard working |
+| bare `<input>` (no `type`) | **13.33px** | 22 |
+| `cc-form` · `boq-filters` · `eq-controls` | **13px** | 31–35 |
+| `ccw-pkgs` · `cf-tr-row` · `eq-mx` | **12.5px** | 22–32 |
+| `dr-subrow` | **12px** | 24 |
+
+**Two independent causes, both proven, not guessed:**
+1. ⚠️⚠️ **`input[type="text"]` CANNOT MATCH `<input>`.** A defaulted type is not a *present attribute*,
+   so the guard's type list never applied to the **39 bare inputs** this app ships. The only form that
+   cannot be outrun by new markup is to select `input` and exclude the few types that must *not* be
+   16px (checkbox / radio / range / color / hidden).
+2. ⚠️⚠️ **module.css LOADS AFTER dashboard.css**, so at equal specificity the module wins — and those
+   module rules are not inside a phone media query at all, so they applied at phone width too.
+   `.cc-form input` (0,1,1) beat `input[type="text"]` (0,1,1) on source order alone.
+
+Hence **`!important`**, which this file otherwise avoids. iOS's zoom is a *platform behaviour*, not a
+style preference — under 16px it zooms, and there is no value a module could legitimately prefer
+instead. This is the one place a module does not get a vote. The same fields also measured **22–35px
+tall**, so they now take the 44px minimum this block already enforces on `.pd-btn` — via `min-height`,
+never `height`, so a textarea can still grow.
+
+#### The filter funnel was the smallest control on a phone
+`.pd-filttoggle` is a fixed **34×34** with no phone override — and the ≤700px block *already has* a
+list of icon buttons that get 44px (`.pd-vt, .pd-icon-btn, .pd-theme-toggle, .pd-sidebar-toggle`). It
+was simply never added to it. It is one of the most-tapped controls on a phone, in **six** modules
+counting the two local copies (`.il-topfilttoggle`, `.pp-topfilttoggle`), which are named in the same
+rule rather than left to drift.
+⚠️ A `min-height` cannot beat a fixed `height`, so the 34px `height`/`width` are released to `auto`
+first — otherwise the addition would have *looked* right and changed nothing.
+
+Three module-local one-offs went with it, each an established shared decision a module's own copy
+never inherited: `.sc-seg button` (32px, where dashboard.css already gives `.pd-seg > button` 44px),
+and project-schedule's `.ps-title-btn` (28px) and `.ps-datadate-badge` (34px). ⚠️ Both of those are
+real `<button>`s — the title is the **view switcher**, the badge **opens the Schedule dialog** —
+checked in the markup rather than assumed from their names. Each fix went into that module's own
+existing `@media (max-width: 700px)` block, not into the shared file.
+
+#### ⚠️ Two suspicions that were MY noise, recorded so they are not re-raised
+- **"90 tables with no scroll wrapper."** False. My detector looked back 240 characters for a wrapper
+  keyword. The app does handle wide tables consistently, just through **several** mechanisms:
+  `.mp-mxwrap` / `.eq-mxwrap` / `.cc-tablecard` / `.mw-tablewrap` — and `.rcm-tbl` is
+  `display:block; overflow-x:auto`, i.e. **the table is its own scroll container**. Checked one by one.
+- **`.cc-tablecard { overflow: visible }`** looked like an override that would make a wide table
+  unreachable under `overflow-x: clip`. It is inside **`@media print`**. Correct as written.
+
+#### Verified
+- **14 modules at 390px, running the real `initModuleTopbar` + `tabsToDropdown`: 0 page-level sideways
+  scroll, 0 elements past the viewport, 0 controls under 44px.** Before: 8 modules had small targets.
+- **12 input contexts at 390px: 0 zooming, 0 under 44px** — from 10 and 10.
+- ⚠️⚠️ **Desktop proved untouched, not assumed from the media query** — `!important` earns that check.
+  At 1200px every measurement is byte-identical to before: `.pd-filttoggle` **34×34**, inputs
+  12 / 12.5 / 13 / 13.33px at h=22–35, `.pd-seg` button 32px.
+- **42 JS files + 29 inline blocks parse (`node --check`), 0 failures**; dashboard.css 530/530 braces,
+  0 NUL bytes across all 31 changed files.
+- `?v=` → `20260910w9` on dashboard.css (29 pages) + modules-grid.js, `MODULE_V` fallback bumped.
+- ⚠️ **Not verified signed in, and not verified on a real device.** This is the *shell* — topbar,
+  modulebar, form controls — measured in an emulated 390px viewport. A module's own CONTENT area needs
+  data to render and is not covered; nor is real iOS Safari, whose zoom behaviour is the thing being
+  designed around.
+
+
+
+### 2026-09-10 (w8) — Two follow-ups to (w6): a doubled module icon, and a tab called "Loading"
+
+Both reported by the owner off the live site, and both are (w6)'s doing.
+
+#### ⚠️⚠️ THE DOUBLED ICON — I PASSED `opts.icon` TO MODULES THAT STILL SHOW THEIR `<h1>`
+`UI.tabsToDropdown(sel, {icon})` inserts a module icon beside the trigger. That is correct **only
+when the module's own `<h1>` is hidden**, and the split is documented in the 2026-09-04 entry:
+
+- **`<h1>` hidden outright** → pass `opts.icon`: `issues-lessons` (its `module.js:884` sets
+  `.il-title` to `display:none`), `progress-photos` (no standalone `<h1>` at all). **2 modules.**
+- **`<h1>` stays in the bar** → pass **nothing**; its own icon rides beside the trigger.
+  `risk-register`, `stakeholder-map`, `contracts-claims`, `minutes-of-meeting`. **4 modules.**
+
+(w6) added the three new callers to the *first* group by passing an icon — but all three keep their
+`<h1>`, so the bar drew the module mark **twice**. `opts.icon` removed from all three; they now match
+the four-module pattern they belong to.
+
+**Measured, with the real `initModuleTopbar` + `tabsToDropdown` + `Icons.hydrate` run per module:
+every module renders exactly ONE module icon.** ⚠️ `issues-lessons` reports 2 in the harness because
+`module.js` — which is what hides its `<h1>` — is not loaded there; verified against the shipped source
+rather than waved away.
+
+#### "Loading" reads as a spinner
+Owner: *"the name 'Loading' should be renamed properly since it makes it seem that is loading."* The
+first tab of Manpower and Equipment was literally `Loading`, and once (w6) collapsed the strip into a
+dropdown the bar read **"⬛ Loading ▾"** — which looks exactly like a page that has not finished.
+Renamed to **Overview**: it is the module's landing view, the sibling tabs are nouns (Positions, Org
+Chart, Roster), and the module title already carries the word *Loading*.
+
+⚠️⚠️ **`data-view="loading"` IS UNCHANGED — only the label moved.** That value is what the URL hash
+carries (`#mp_view={"v":"loading"}`) and what `module.js` queries by
+(`.mp-tab[data-view="loading"]`), so renaming it would break every link anyone has saved and the
+module's own tab-activation. The visible word changed; the identifier did not.
+
+#### Verified
+- **9 modules, exactly 1 module icon each** (issues-lessons confirmed from source, see above).
+- `data-view="loading"` still present in both modules; only the button text differs.
+- **42 JS files + 30 inline blocks across 29 pages parse, 0 failures**; braces balanced, 0 NUL bytes.
+- `MODULE_V` → `20260910w8`.
+- ⚠️ **Three defects in my own harness on the way to this number**, all of which reported success or
+  nonsense before being fixed — worth recording because each is a different shape:
+  1. `eval`-ing `tabsToDropdown` across from the host lost its closure (`ReferenceError: esc is not
+     defined`), which produced an **empty result array — and `[].every()` is `true`**. An audit that
+     measures nothing reports a pass. Now ui.js is loaded *inside* the frame.
+  2. Counting every `svg` in the bar swept up Export/refresh/filter and reported 4–10 icons.
+  3. Counting `h1 [data-ico]` **and** `h1 svg` counted one icon twice — `Icons.hydrate()` puts the
+     svg *inside* the placeholder.
+- ⚠️ **Not verified signed in.**
+
+
+### 2026-09-10 (w7) — The theme toggle has been missing on every logged-in module page
+
+Found while verifying (w6) on the live site: the console carried
+`NotFoundError: Failed to execute 'insertBefore' on 'Node'` at `theme.js`, on **every** module —
+including ones that commit never touched.
+
+#### ⚠️⚠️ IT IS A DESCENDANT vs DIRECT-CHILD MISMATCH, AND IT ONLY BITES WHEN LOGGED IN
+```js
+var ub = topbar.querySelector('#user-bar');      // DESCENDANT search - finds it however deep
+if (ub) topbar.insertBefore(btn, ub);            // demands a DIRECT CHILD - throws otherwise
+```
+`UI.initModuleTopbar()` moves `#user-bar` down into `.pd-tb-main`. Whether it has done so before
+`theme.js`'s `inject()` runs decides whether this line throws:
+
+- **Logged out** — `AppAuth.requireLogin` redirects, `initModuleTopbar()` never runs, `#user-bar`
+  is still a direct child, no throw. **This is every test I have run all session.**
+- **Logged in with a cached session** — `requireLogin`'s callback resolves in a **microtask**, and
+  microtasks flush *before* the `DOMContentLoaded` **task** that runs `inject()`. So the bar is
+  already restructured, the insert throws, and **the throw kills the rest of `inject()` — the page
+  ends up with no theme toggle at all.**
+
+⚠️ That matches the owner's screenshots exactly: no sun/moon button beside the avatar, on both.
+It is also why my own harnesses never saw it — they render the shell without a session.
+
+#### It is NOT from this session's work
+The offending line is **byte-identical** in the pre-(w4) `theme.js` (`git show aa3d19a~1`) — checked,
+because `theme.js` is a file I edited today and the error surfaced right after that deploy, which
+makes "I broke it" the obvious and wrong conclusion. What changed is that the `?v=` bump finally
+delivered a *fresh* `theme.js` to a browser that had been serving the August bytes since August;
+the bug was always in them.
+
+**Fix:** insert relative to the node itself — `ub.parentNode.insertBefore(btn, ub)` — which is
+correct whether `#user-bar` sits directly in `.pd-topbar` or inside `.pd-tb-main`, and puts the
+toggle beside it either way.
+
+#### Verified by a contrast build
+The crash needs the logged-in ORDER, so the harness forces it: build the topbar, run the real
+`UI.initModuleTopbar()`, *then* try both insertion strategies.
+
+| | old code | fix |
+|---|---|---|
+| `#user-bar` still a direct child? | **false** | — |
+| threw | **NotFoundError** | `null` |
+| toggle in the DOM | **false** | **true** |
+| placed next to `#user-bar` | — | **true** |
+
+- `theme.js` → `?v=20260910w7` across all pages that load it; one version, 0 splits.
+- **42 JS files + 30 inline blocks parse, 0 failures.**
+- ⚠️ **Still not verified signed in** — the ordering is forced in a harness rather than observed on
+  a real login. The owner's next module open is the real confirmation, and the tell is simply
+  whether the sun/moon button is there.
+
+
+### 2026-09-10 (w6) — Manpower's top bar was on two rows, the footer is renamed, and the rail's collapse stops snapping
+
+Three owner items, one of them a real clipping bug the owner caught in a screenshot.
+
+#### ⚠️⚠️ THE CLIPPING: SEVEN LABELLED TABS IN A `nowrap` BAR — EXACTLY WHAT THE CSS COMMENT PREDICTED
+`.pd-modulebar` is `flex-wrap: nowrap` above 701px, and its own comment says why that is safe:
+
+> *"This is only safe now that the tab strip is a single compact dropdown trigger rather than a row of
+> N labelled buttons — before that, nowrap on a 4-tab module would have overflowed at laptop widths."*
+
+**Three modules never made that move.** manpower-loading carries **seven** labelled tabs — 632px of
+them — so its tools cluster was squeezed until it wrapped, taking the bar to two rows and pushing
+"Portfolio" under the `+ Add manpower` button. Measured across every module at five widths, sidebar
+open and collapsed:
+
+| | @1600 | @1440 | @1366 | @1280 | @1152 |
+|---|---|---|---|---|---|
+| **manpower-loading** (7 tabs) | 55px | **75px** | **75px** · cut 48 | **75px** · cut 105 | **75px** · cut 183 |
+| equipment-loading (4 tabs) | 55 | 55 | 55 | 55 | 55 |
+| productivity-rates (3 tabs) | 56 | 56 | 56 | 56 | 56 |
+| the other 11 (dropdown) | 52–55 everywhere | | | | |
+
+⚠️ **The owner asked me to check Equipment Loading too, "since these two share the same UI" — and it
+shares the construction but not the symptom.** Its 4 tabs are 353px and fit at every width tested,
+down to a 912px content area. It is not broken today; it is one tab away from it. Same for
+productivity-rates. All three are converted, so the answer is "fixed, and the other two were latent".
+
+**All three now use `UI.tabsToDropdown()`**, matching the eleven modules that already did — 14 of 14.
+The wiring is copied verbatim from risk-register **including its reasoning**: a *third*
+`DOMContentLoaded` listener, because theme.js's topbar injection must run before
+`initModuleTopbar()` restructures the bar, and registering last is what guarantees both have already
+run. Calling `initModuleTopbar()` early was tried and reverted there.
+⚠️ Their strips also gain `pd-tabsrc`, so the (w4) boot-flash rule covers them.
+
+**Measured after: every module, every width, `barH` is 52 or 55 — one row — and zero squeezed
+children.** manpower goes 75 → 55 at all five widths.
+
+#### The sidebar footer
+`Megawide Construction Corporation / EPC · PMO` → `Megawide Construction Corporation / PMO Department`,
+across all **21** pages that carry it. ⚠️ The `<br>` is kept: the owner's text used a `·` as the
+separator, and on a 240px rail the line break is what that separator has to be.
+
+#### The collapse stops snapping
+The rail animated `width`/`flex-basis`/`padding` over .2s — but **everything inside it vanished on
+frame 1**, which is what read as a snap followed by a drift:
+- `font-size: 0` on the nav rows was not in any transition list, so the labels disappeared instantly.
+  `font-size` is now animated, so the text shrinks *with* the rail.
+- `display: none` **cannot be transitioned at all**. The footer and the section labels now fold to
+  `height: 0` instead, which reaches the identical end state animatedly.
+- One easing curve for the shell (`--pd-ease`), `.22s`, replacing `ease` — which starts too fast and
+  lands too softly for a 176px slide.
+- ⚠️ `prefers-reduced-motion` turns the whole thing off, the rule the rest of this file already follows.
+
+⚠️⚠️ **Swapping `display:none` for `height:0` is the kind of change that looks equivalent and is not
+— an element folded to zero height still participates in layout.** So the end states were measured in
+both states with transitions disabled (reading geometry mid-transition returns the START value, a trap
+on file here twice): rail **240 / 64**, brand block **58 / 58** (the documented value, unchanged),
+footer **61 / 0**, opacity **1 / 0**.
+⚠️ And the first measurement caught a real slip: the folded footer came out **h = 1**, not 0, because
+I had made its top border *transparent* rather than removing it — a transparent 1px border still
+measures 1px. Fixed to `border-top-width: 0` and re-measured.
+
+#### Verified
+- **14 modules × 5 widths after the change: 0 multi-row bars, 0 squeezed children.**
+- Sidebar end states measured in both states, transitions disabled — all match the documented values.
+- **42 JS files + 30 inline blocks across 29 pages parse, 0 failures**; braces 523/523, 0 NUL bytes.
+- ⚠️ A false positive in my own detector, worth recording: the first pass reported "wrapped" for
+  **every** module, because it compared child `top` values — and a `|` separator with
+  `align-self: stretch`, or an icon beside text, differ in `top` without anything having wrapped.
+  Re-done against centre-Y with a 12px threshold, which left exactly one real offender.
+- ⚠️ **Not verified signed in.** The tab dropdown is exercised through the real `UI.tabsToDropdown`
+  against the real markup, but no module has been navigated with it on a live login.
+
+
+### 2026-09-10 (w5) — A boot skeleton for the topbar's two JS-filled slots
+
+Follow-on to (w4), which killed the tab-strip flash but explicitly did **not** fix the second half: the
+topbar's *contents* still arrive after the auth round-trip. This is that half.
+
+#### What was still popping in
+- **`#user-bar`** is written by `UI.renderUserBar()` only after `AppAuth.requireLogin()` resolves —
+  **two network round-trips**. ⚠️ While empty it is `width: 0`, so the avatar did not merely arrive
+  late, **it shifted the whole topbar** when it landed.
+- **The project `<select>`** already carries `min-width: 120px`, so its box was reserved — what it
+  lacked was any sign it was still loading, so it read as an empty control rather than a pending one.
+
+#### ⚠️⚠️ The skeleton keys off `:empty`, and that is the whole design
+```css
+html.pd-js #user-bar:empty { … shimmer … }
+```
+A slot is a skeleton **exactly while it has no children**, and the moment JS writes into it the
+selector stops matching and the skeleton is gone. **No class to add, no class to remove, nothing to
+coordinate, and nothing left behind if a render path changes later.** The alternative — an
+`.is-loading` class someone has to remember to clear — is how a skeleton ends up stuck on screen
+forever, and this app already has one bug of exactly that family on file (`ensureCodes` caching an
+empty array because `[]` is truthy).
+
+- ⚠️ Gated on **`html.pd-js`**, the marker (w4) that `theme.js` sets before first paint. Without JS the
+  real, empty controls render — a shimmer that can never resolve would be worse than a blank box.
+- ⚠️ `--pd-skel-base` / `--pd-skel-hi` are a **neutral wash, not brand red**: a shimmer means "not
+  loaded yet", and tinting it with the brand would read as a *state*. Paired per theme like every
+  other surface token.
+- ⚠️ `prefers-reduced-motion` turns the sweep off and keeps the block, following the same rule
+  `.pd-spin` already sets in this file.
+
+#### Verified — rendered in both themes, empty and filled
+| | empty | after JS fills it | |
+|---|---|---|---|
+| `#user-bar` (light + dark) | **36×36**, `pd-skel-sweep`, gradient present | **36×36**, animation `none`, gradient gone | **shift = 0px** |
+| project `<select>` (light + dark) | gradient + sweep | gradient gone, animation `none` | |
+| **no-JS control** (no `pd-js`) | **no gradient, no animation** | — | degradation correct |
+
+**The 0px is the point**: the avatar's footprint is now reserved, so the topbar no longer jumps when
+auth resolves. And the `:empty` self-clearing is measured rather than assumed — the same element is
+read before and after `innerHTML` is written.
+
+#### ⚠️ A flaw in my own version-bump script, caught here
+The bump helper derives its asset list from `git diff --name-only` **and then edits
+`assets/js/modules-grid.js`** (the `MODULE_V` fallback literal). On a round where that file was not
+otherwise touched, it therefore changed the file's CONTENT while leaving its own `?v=` on the previous
+token — **the exact stale-bytes trap that (w4) was written up for, reproduced by the tool meant to
+prevent it.** Caught by reading the bump output (`modules-grid.js` absent from the asset list while
+`MODULE_V fallback 1` was reported) and fixed by re-running once the file was dirty.
+⚠️ The durable fix is to compute the list *after* every edit, or to always include `modules-grid.js`;
+noted here because the next person will hit it the same way.
+
+- `dashboard.css` + `modules-grid.js` → `?v=20260910w5` (29 / 2 pages), `MODULE_V` with them.
+  `theme.js` correctly stays on `w4` — it did not change this round.
+- **42 JS files + 30 inline blocks across 29 pages parse, 0 failures**; braces balanced 519/519,
+  0 NUL bytes.
+- ⚠️ **Not verified signed in** — the skeleton is proved by driving the same DOM the app produces
+  (empty slot → `innerHTML` → re-measure), not by watching a real login resolve.
+
+⚠️ **Deliberately not skeletoned:** the module `<h1>` and its icon are static markup and paint
+immediately, and the module's own content area is the module's business — a shell skeleton that
+guessed at a module's layout would be wrong on most of them.
+
+
+### 2026-09-10 (w4) — The flash when you open a module: the raw tab strip painting before JS collapses it
+
+Owner: *"When I open a module, for a split second it shows the previous UI."* Real, reproducible, and
+**made far more visible by my own work today.**
+
+#### What is actually on screen during that split second
+Six modules ship a flat `<div class="x-tabs">` — a full-width row of tab buttons — that
+`UI.tabsToDropdown()` collapses into the compact dropdown. It does that by adding
+`.pd-tabsdrop-src`, which is `display:none !important`.
+
+⚠️ **That class only lands at DOMContentLoaded.** Every module's scripts sit at the **end of
+`<body>`**, so the body paints the raw tab row first and the conversion removes it afterwards.
+Reproduced by rendering the module's own markup and stylesheets with the body scripts stripped: a
+full-width `Register | Heat Map | Risk Universe | …` strip and an unassembled topbar — which is
+exactly the frame being described.
+
+**Measured on the live Risk Register:**
+
+| | stylesheets ready | conversion runs (DCL) | raw row on screen for |
+|---|---|---|---|
+| warm cache | 66ms | 135ms | ~70ms |
+| **cold cache** | — | **1601ms** | **~1.5s** |
+
+⚠️⚠️ **And that is why it started being noticeable now.** Every `?v=` bump today invalidated every
+asset, so each module open has been a **cold** load — moving this from an imperceptible 70ms to over a
+second. The defect was always there; the cache-busting made it visible. Worth recording, because the
+obvious reading — "the last CSS change broke something" — is wrong.
+
+#### The fix
+`theme.js` already runs in `<head>` **before first paint** (it is what applies `pd-dark` without a
+flash), so it is the only place that can mark the document early enough. It now adds **`html.pd-js`**,
+and `dashboard.css` carries `html.pd-js .pd-tabsrc { display: none }`. The six strips gain a shared
+`pd-tabsrc` class. The row is therefore hidden on the **very first frame** and the dropdown simply
+appears in its place.
+
+⚠️⚠️ **The failsafe deliberately does NOT live in `ui.js`.** All six modules call the converter behind
+`if (window.UI && UI.tabsToDropdown)` — they degrade to the raw tabs **on purpose** when `ui.js` is
+missing. Hiding the strip from CSS would turn that graceful degradation into a module with no
+navigation at all. So `theme.js` — which does not depend on `ui.js` — reveals anything still
+unconverted on `window.load` and again on a 4s timer. **Verified by running the reproduction with the
+module scripts stripped: the strip comes back**, which is the degradation path working.
+⚠️ All six strips carry ≥2 buttons (4/3/2/3/3/3), and `tabsToDropdown` only bails below 2 — so none can
+sit hidden waiting for the failsafe in normal use.
+
+#### ⚠️⚠️ I nearly shipped a fix that could not work
+The first test showed `pd-dark` applied but **`pd-js` absent**: theme.js had run, from a **cached
+copy**. I had changed its contents without bumping `theme.js?v=`, which had sat on `20260812b` since
+August. The browser keyed the old bytes to the same URL and served them. **This repo's single
+most-recorded deploy failure, and I walked into it while fixing a caching-adjacent bug.**
+`theme.js` → `?v=20260910w4` across all **30** pages.
+
+#### Verified
+- `html.pd-js .pd-tabsrc` measured directly: with the class the strip computes **`display: none`**,
+  without it **`flex`** — the rule genuinely does the hiding.
+- `pd-js` confirmed on `<html>` at parse time (the marker is set by the head script).
+- The failsafe path exercised and confirmed to restore the strip.
+- **42 JS files + 30 inline blocks across 29 pages parse, 0 failures** (bar the documented
+  progress-photos false positive). Braces balanced, 0 NUL bytes.
+- ⚠️ **Not verified signed in** — `requireLogin` redirects, so the settled dropdown was not observed
+  on a live module; the mechanism is proved, the finished screen is not.
+
+#### ⚠️ What this does NOT fix, honestly
+The topbar's **contents** still populate after auth resolves — the project name and the user avatar are
+a Supabase round-trip, not a CSS problem, and they will still fill in a moment after the page appears.
+What is gone is the **layout jump**: a full-width row of buttons appearing and then vanishing. If the
+remaining fill-in is still distracting, the fix is a skeleton placeholder in that bar, which is its own
+piece of work.
+
+
+### 2026-09-10 (w3) — A button and the input beside it had different corners, and "fully rounded" had three spellings
+
+Last item of the second-pass audit, done under the rule the spacing pass arrived at: **fix components,
+not pixels.** 460 off-scale `border-radius` declarations in 24 values sounds like a sweep; almost none
+of it was worth sweeping, and the part that mattered was not in that number at all.
+
+#### ⚠️⚠️ THE FINDING IS IN THE SHARED FILE, AND THE APP HAD ALREADY HALF-NOTICED IT
+`.pd-btn` is **8px**. `.pd-input` / `.pd-select` / `.pd-textarea` are **7px**. So a Filter button and
+the search box beside it — in every toolbar in this app — had different corners.
+
+⚠️ And the phone block carried `.pd-btn { border-radius: 7px }`, pulling the **button down to match the
+input** at ≤700px. Someone had already reached the same conclusion from the other end and fixed it in
+one breakpoint only. Both are `--pd-radius-md` now, and that override is deleted rather than restated.
+
+**Measured after, at 1440 and at 700:** button, input, select and `.pd-btn-sm` all report **8px at both
+widths**. Before: 8 vs 7 on desktop, and 7 vs 7 on the phone — inconsistent in two different directions.
+
+#### "Fully rounded" had three spellings
+`999px` ×88, `99px` ×5, `20px` ×6 — plus `50%`. New `--pd-radius-pill`, **97 declarations converged**.
+⚠️ `20px` is included because it is not really a different value here: all six uses are chips **18–22px
+tall**, where the browser caps the radius at half the shorter side, so `20px` and `999px` render the
+*same corner*. Measured on the two shipped chips: heights **20px and 23px**, both fully round before and
+after.
+⚠️ `50%` is deliberately NOT folded in — **67 declarations kept**. A percentage radius is an ellipse of
+the box, which is what the avatar wants; on a non-square element it is genuinely different from a large
+px radius, and collapsing the two would be wrong the first time someone uses it on a rectangle.
+
+#### 157 rung values written as literals
+`8px` ×92 → `--pd-radius-md`, `4px` ×53 → `--pd-radius`, `12px` ×13 → `--pd-radius-lg`. **Zero visual
+change** — the values are identical, they just stop being literals, which is what makes the scale
+enforceable rather than aspirational. Single-value declarations only: a compound `14px 14px 0 0` is a
+shape, not a rung, and is left alone.
+
+#### ⚠️⚠️ 278 off-scale declarations DELIBERATELY LEFT, and this is the third time that call has been made
+`3px` ×84, `6px` ×68, `5px` ×33, `2px` ×32, `10px` ×26, `9px` ×18, `7px` ×11. The **2026-09-03 (r)**
+entry decided this explicitly — *"pure diff noise with no visual effect, and PRC itself uses 8/10/20px
+for the equivalent chrome"* — and that judgement still holds for a 3px chip corner. The one place it was
+revisited (dropdown menus, earlier today) was because their spread had grown to **4→12px**, which is
+visible; **a single pixel of corner is not.** Same reasoning as the spacing pass: the cost of the sweep
+is real and the benefit is not.
+
+#### Verified
+- Rendered at **1440 and 700**: button / input / select / btn-sm all **8px, matching at both**.
+- Pills measured fully round at their real heights (20px, 23px), unchanged by the token.
+- **67 `50%` circle declarations survive** — checked explicitly, since the migration regex was
+  px-only and folding them in would have been the easy mistake.
+- Every `var(--pd-radius*)` used resolves to a token that exists.
+- **42 JS files + 30 inline blocks across 29 pages parse, 0 failures** (bar the documented
+  progress-photos false positive). Braces balanced, 0 NUL bytes.
+- `?v=` → `20260910w3`.
+- ⚠️ **Not verified signed in.**
+
+#### The second-pass audit is closed
+Everything found by looking rather than by being pointed at is now either fixed or recorded with a
+reason: the **loading-veil z-index** (a toast painted behind the veil in three modules), the **focus
+rings** (none on any button; three that existed and measured 1.10–1.90:1), the **box-shadow** scale, the
+**spacing** decision, and this. What is knowingly left:
+- `--boq-*` in contracts-claims — a fourth palette, private but **correct** (paired per theme and
+  measured). Aliasing it to the shared tokens is a real cleanup and its own commit.
+- `.pp-lightbox` shares `z-index: 900` with `.pd-modal-overlay`, so ties resolve by DOM order.
+- The shared `.pd-kpi` is 4px taller than the module copies, from an inner `gap: 4px` they lack.
+- `padding`'s 257 distinct values — per-component variation, and the same "fix components" rule applies.
+
+
+### 2026-09-10 (w2) — A spacing scale, and the measurement that says NOT to sweep with it
+
+Fourth item of the second-pass audit, and the one where the audit changed the plan. **924 `gap`
+declarations in 42 distinct values**, plus 1,163 `padding` and 291 `margin`. The 42 looks like the type
+scale's 29. **It is not the same problem**, and acting as if it were would have been the expensive
+mistake here.
+
+#### ⚠️⚠️ WHY THERE IS A SCALE BUT NO MIGRATION
+- The app **already sits on a coherent 2px grid**: 8px ×207, 6px ×157, 10px ×137, 12px ×63, 5px ×71,
+  4px ×56. **665 of 881 single-value gaps are already on a sensible rung.**
+- Imposing a real 4-based scale would displace **535 declarations**, and **6px ×157 plus 10px ×137 are
+  294 of them on their own**.
+- And the payoff is not there. Half a pixel of type aggregates into a visible "built by different
+  people" feel — that is why the type sweep was worth it. **Two pixels of gap between two buttons is
+  imperceptible**, and every move risks re-wrapping a toolbar that only just fits.
+
+So `--pd-space-2xs/xs/sm/md/lg/xl` (2/4/8/12/16/24) lands as a **target for new code and for components
+being converged**, and the existing 6/10/14/18px values are left exactly where they are. ⚠️ 18px gets no
+rung on purpose: it is `.pd-card`'s padding and `.pd-kpi`'s inline padding, both inherited from the PRC
+reference app, and re-basing those is its own decision.
+
+#### The thing that WAS actually costing consistency: the KPI card is six components
+Same strip, one per module, measured:
+
+| | grid floor | gap | padding | radius |
+|---|---|---|---|---|
+| shared `.pd-kpi` | 170px | 12px | **16px 18px** | **12px** |
+| equipment · manpower · resource-loading | 160/150px | 12px | 13px 16px | 8px |
+| productivity · s-curve | 160/150px | 12px | 14px 16px | 8px |
+| cash-flow | flex | **14px** | 16px 18px | — |
+
+Its **font-size (20px) and weight (800) were only normalised two commits ago**; padding and radius were
+the remaining axis. All five grid modules now carry the shared `16px 18px` and `--pd-radius-lg`, and
+cash-flow's odd 14px gap joins the other five on 12px.
+
+⚠️⚠️ **`minmax` is deliberately NOT converged, and measuring is the only reason I know that.** Raising
+the floor 150/160 → 170px looked like part of the same convergence. Measured at 8 cards / 1440px: the
+shared 170px floor lays out **2 rows** where the modules' 150–160px floor gives **1**. `auto-fit` drops
+a column when the floor rises, so that change **re-wraps the strip** — it is a per-module decision about
+how many KPIs fit on a row, in the same category as the `repeat(2,1fr)` phone overrides, which are also
+left alone. Only the visual properties were converged.
+
+#### Verified
+- **Rendered at 1440 / 1200 / 980 / 820px, before and after.**
+  - **4 cards (the real case — these modules render 1–4):** all six strips now report **identical**
+    `padding 16px 18px`, `border-radius 12px`, `gap 12px`, card width 346px, 1 row. Before, padding and
+    radius differed in five of six.
+  - **8 cards:** row counts **byte-identical to before** at every width (1r/2r/2r/2r for the modules,
+    2r throughout for shared) — proof the wrapping behaviour was not touched.
+- ⚠️ **One residual difference, measured and left:** the shared `.pd-kpi` is **79px** tall against the
+  modules' **75px**, because it carries an inner `gap: 4px` between label and value that the module
+  cards do not. Adding it would make them identical, but a module card with three children would gain
+  more than 4px, so it is named rather than changed.
+- **42 JS files + 30 inline blocks across 29 pages parse, 0 failures** (bar the documented
+  progress-photos false positive). Braces balanced, 0 NUL bytes.
+- `?v=` → `20260910w2`.
+
+#### The second-pass audit is now closed. What remains, and why it is being left
+- **`border-radius`: 460 off-scale declarations in 24 values** — but ~165 are rung values merely written
+  as literals (a zero-visual-change cleanup), and the **2026-09-03 (r) decision to leave the small-chrome
+  radii alone still stands** for the rest. Only the dropdown menus were revisited, and that was because
+  their spread had grown to 4→12px, which is visible.
+- **`padding`: 257 distinct values.** Inflated by being a compound property, and — like `gap` — the
+  variation is per-component rather than systemic. The lesson from this entry applies: **fix components,
+  not pixels.**
+- `.pp-lightbox` shares `z-index: 900` with `.pd-modal-overlay`, so ties resolve by DOM order.
+- `--boq-*` in contracts-claims is still a private, correctly-themed parallel palette.
+
+
+### 2026-09-10 (w1) — 42 elevation recipes become 4 rungs, and the shadow scale grows the one it was missing
+
+Third item of the second-pass audit. **174 box-shadow declarations, 97 distinct values** — but the
+headline number is misleading, and that is the whole point of this entry.
+
+#### ⚠️⚠️ A BOX-SHADOW IN THIS APP IS DOING FIVE DIFFERENT JOBS, AND ONLY ONE OF THEM IS ELEVATION
+A blanket sweep onto `--pd-shadow*` would have deleted **every accent rail in the app**. Classified by
+what the shadow actually does rather than by how it reads:
+
+| job | shape | count | verdict |
+|---|---|---|---|
+| **elevation** | offset + blur, not inset | **50 decls / 42 values** | the only bucket the tokens are for |
+| rail (accent bar) | `inset 3px 0 0 …` | 52 / 32 | a left rail, not a shadow — untouched |
+| ring (outline substitute) | `0 0 0 Npx` | 14 / 10 | handled in the focus pass (v9) |
+| hairline (border as shadow) | `inset 0 0 0 1px` | 13 / 10 | a border — untouched |
+| already a token | | 45 | |
+
+**After: elevation is 29 declarations / 26 values, and token use goes 45 → 65.**
+
+#### The new rung is not invented
+`--pd-shadow-xl: 0 20px 60px` — **`.pd-modal` already carried exactly those values**, at `.30` light and
+`.60` dark, as a hand-maintained pair with its own `html.pd-dark` override. The scale stopped at `-lg`,
+so the top surface in the app had nowhere to point. Promoting it is **zero visual change** and deletes
+the override, because the token remaps for dark like every other one.
+⚠️ **Verified rather than assumed** — that deletion is the one edit here that could fail silently, so
+the modal was rendered in both themes: **`rgba(0,0,0,0.3) 0 20px 60px` light / `rgba(0,0,0,0.6)` dark**,
+byte-for-byte what the deleted rule used to provide. The radius scale already ran to `-xl`; the shadow
+scale now matches it.
+
+#### 21 elevation shadows deliberately NOT migrated, each for a reason
+Scoping this was most of the work. The excluded ones are not laziness — the token would be *wrong*:
+- ⚠️ **Shadows drawn on PHOTOGRAPHS or a dark lightbox** (`.bim-pin`, `.pp-plancluster`, `.bim-regpt`,
+  `.pp-lb-*`, `.ppr-kpoverlay`, `.ppr-keyplan`, `.ppr-stack*`, `.bim-*handle-el`). Their `.35–.50` alpha
+  is deliberate: `--pd-shadow`'s `.07` is **invisible over an image**. Same reasoning that kept the
+  white pin rings in the colour pass.
+- ⚠️⚠️ **DIRECTIONAL shadows on slide-in panels** — `.mw-drawer` `-12px 0 34px`, `.ps-health-panel`
+  `-8px 0 28px`, `.pd-sidebar` `0 0 40px`. Every token is vertical (`0 8px 24px`), so swapping them
+  **moves the light source** and throws the shadow to the wrong side of a panel that slides in from the
+  right. This is the one that would have looked like a rendering fault.
+- ⚠️ **Chart furniture doing legibility work, not elevation** (`.ps-bar`, `.ps-mile-bl`,
+  `.ps-vs-tlhandle`, `.ps-vs-fz-track .hd`) — separation against a busy gantt, where the token's alpha
+  is roughly half what the job needs.
+- Two-layer composites tuned to a specific look (`.ps-vs-tower`, `.sbld-stacktower`) and the
+  `dev-mobile` device mockup (`.dv-shell`).
+
+#### Verified
+- **Rendered in both themes**: all 8 sampled migrated surfaces resolve to a real shadow and **all 8
+  differ between light and dark**, so every one is going through the token rather than a stuck literal.
+- Each edit is located **by selector** and replaces only that rule's `box-shadow` value, so a moved
+  rule fails loudly instead of patching the wrong thing — **19 of 19 matched**.
+- **42 JS files + 30 inline blocks across 29 pages parse, 0 failures** (bar the documented
+  progress-photos false positive). Braces balanced, 0 NUL bytes.
+- ⚠️ **A bug in my own classifier, caught because the answer was implausible.** The first run reported
+  **zero** elevation shadows and 64 "other". Cause: in `0 8px 24px` the **first length is unitless**, so
+  a `/(-?[\d.]+)px/` findall returned only two numbers and every elevation shadow fell through the
+  `len(nums) >= 3` test. An audit that reports nothing in its main category is reporting on itself.
+- `?v=` → `20260910w1`. ⚠️ **Not `v10`** — `v10` sorts *before* `v9` lexically, which is the sorting
+  trap this log recorded two entries ago in its own right.
+- ⚠️ **Not verified signed in.** Shadows are measured against the shipped stylesheets in a harness; no
+  real card, menu or modal has been seen on a live page.
+
+#### Still open from the second-pass audit
+- **No spacing scale exists at all** — 924 `gap` declarations in **42 distinct values**, plus padding
+  and margin untouched. The system has type, colour, radius, shadow and z-index tokens and **nothing
+  for rhythm**, which is the largest remaining gap.
+- **460 off-scale `border-radius` declarations in 24 values** — though ~165 are rung values merely
+  written as literals, i.e. a no-visual-change cleanup, and the 2026-09-03 (r) decision to leave
+  small-chrome radii alone still stands for the rest.
+- `.pp-lightbox` shares `z-index: 900` with `.pd-modal-overlay`, so ties resolve by DOM order.
+
+### Trace over another floor, front/rear on the drawing, zone colours, a 3D hover trace (2026-09-10) — jasantos2
+
+Owner: *"For uniformity of the sizes of the floor plans … show the overview of the other floor
+plans and trace it from there? but the overview from other floors should not be editable. Also …
+defining from the floor plan which is the front, which is the rear. Also can you add option for
+colors. As well as when hovering over the zones in the vertical stacking 3D, can you show like a
+trace of the zone to distinguish it."*
+
+**Trace over** in the floor-plan window shows another floor's outlines as a ghost — no ids, no
+handles, `pointer-events:none` on the group *and* the polygons, so a click passes **through** it to
+the real shape; ⚠️ deduped by plate, and it now offers **every plate in the project**, labelled by
+trade, not only the floors of the trade being edited. **Copy these here** makes them ordinary
+shapes.
+
+**Front faces**, on the drawing itself: one field (the rear is derived — two would allow a building
+whose front and rear are the same side), the edge drawn on the sheet, and ⚠️ the 3D card's own
+buttons go **inert** with a note saying where the answer lives, rather than staying live and
+ignored. It turns the camera, not just the labels.
+
+**Zone colours**: a swatch beside the zone palette, ⚠️ keyed by zone **code project-wide** (`Zone 1`
+is one zone, on every storey), with the automatic hue now a **hash of the code** instead of its
+index in one floor's list — the index made the same zone two colours one storey apart. In the 3D
+bar, **Colour · Trade | Zone**, ⚠️ opt-in and off by default: fill = trade is this card's primary
+channel, and it falls back per cell so an untraced zone keeps its trade colour.
+
+**Hovering a zone in 3D traces its outline** — ⚠️ with `depthTest` off, so the trace reads *through*
+the building instead of being hidden by the storeys in front of the zone it is meant to pick out —
+plus a readout of storey, zone, percent and finish. One raycaster serves hover and click.
+
+⚠️⚠️ And a bug in this batch's own first half: `zonePlanFetch` now returns `{ byLabel, front }`, and
+**Sync floor plans was still reading that envelope as the map** — so it reported "read the floor
+plans for 2 floors" on every project and every lookup missed. **86 assertions across five suites,
+0 failing**, executing sliced shipped code, with the pre-fix text run as the control.
+
+### 2026-09-10 (v9) — The app had no keyboard focus ring, and three of the ones it did have were invisible
+
+Second item of the second-pass audit. Focus visibility is the one UI inconsistency with a hard,
+measurable floor — **WCAG 2.2 SC 1.4.11 asks for 3:1** on a focus indicator — so this is checkable
+rather than arguable.
+
+#### ⚠️⚠️ NO BUTTON, LINK, TAB, AVATAR OR ICON BUTTON IN THIS APP HAD A `:focus` RULE
+Three classes carried one — `.pd-input` / `.pd-select` / `.pd-textarea`. **Everything else had
+nothing**, so what a keyboard user saw was whatever their browser happened to draw: Chrome's
+black-and-white double ring, Firefox's blue one, something else on Safari. Not invisible, but the app
+had no focus identity of its own and no control over it.
+
+New shared rule, and every part of it is load-bearing:
+
+```css
+:where(a[href], button, input, select, textarea, summary,
+       [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid var(--pd-focus); outline-offset: 2px;
+}
+```
+
+- ⚠️ **`:focus-visible`, never `:focus`.** A ring that also fires on mouse clicks is *why* people
+  delete focus rings, and deleting them is how a control ends up with no indicator at all — which is
+  precisely what had happened to three controls below.
+- ⚠️⚠️ **`:where()` is what makes this safe.** It contributes **zero** specificity, so the rule sits at
+  (0,1,0) and **every existing component rule still wins untouched**. Verified by resolving the real
+  cascade: `.pd-input` reports *two* rules applying and `.pd-input:focus` (0,2,0) winning, so form
+  fields keep their inset −1px ring; `.ps-wbs-row:focus { outline:none }` also still wins, so its
+  documented suppression survives. A blanket ring at ordinary specificity would have silently
+  overridden both.
+- ⚠️⚠️ **`outline-offset: 2px` is the reason it works on the red `+ Add` button.** A red ring drawn
+  *on* `--pd-red` is **1.00:1 — literally invisible**. Two pixels out it lands on the surface behind.
+  Measured on every ground the app paints: white card **4.12**, app bg **3.74**, dark ground **4.14**,
+  dark card **3.40**, sidebar **3.96**. The dark card is the tightest and still clears 3:1.
+- ⚠️ `[tabindex="-1"]` is excluded: those are script-focusable only and never reached by Tab.
+
+#### Three indicators that were there and could not be seen
+| control | was | measured | now |
+|---|---|---|---|
+| `.sbld-xlwrap` (the spreadsheet, `tabindex="0"`) | `inset 0 0 0 2px var(--pd-red-light)` — its **only** indicator | **1.14** light / **1.10** dark | `--pd-focus` inset, 4.12 / 3.40 |
+| `select.ps-status-pill` (schedule grid) | `outline:none` + `--pd-red-mid` inset | **1.90** | `--pd-focus` inset |
+| `.pd-home-search input` | `outline:none` + a `--pd-red-light` halo | **1.14** | halo kept as decoration, the ring restored |
+| `.pscl-in` | `outline:none`, nothing else — a transparent borderless input | **no indicator at all** | `--pd-focus`, inset |
+
+⚠️ The three pale-tint rings that **remain** were checked and left: each pairs its halo with a
+`border-color: var(--pd-red)` change, which is a visible 4.12:1 indicator in its own right. The tint is
+decoration there, not the indicator.
+
+⚠️ **`.ps-wbs-row:focus { outline:none }` is deliberately untouched, and checking it is the point.**
+Its comment claims focus always coincides with `.selected`, whose tint and red rail are the indicator.
+That claim is **true**: the rows are `tabindex="-1"` (never reached by Tab) and the only `.focus()` call
+sits immediately after the selection is set. A suppression with a reason that holds is not a defect.
+`.dr-grid:focus` likewise — drawing-register is `enabled:false` and its stub page does not even load
+its stylesheet.
+
+- **`--pd-focus` gets its own token** rather than reusing `--pd-red`: a focus indicator is an
+  accessibility contract with a measured floor, while the brand accent is free to be re-tuned for
+  looks. Tying them means a brand tweak could silently drop the ring under 3:1. Eleven rules now share
+  it; it was **six different treatments** before.
+- ⚠️ A ring at `outline-offset: 2px` **overlaps the neighbouring cell** in a table as dense as the
+  BOQ/step-4 grid, so grid inputs pull it inside (`-2px`). Same ring, same colour, drawn within its own
+  cell.
+
+#### Verified
+- **Cascade resolution against the shipped stylesheet**, control by control: **0 of 15 controls now
+  have no focus rule**, down from 10 of 15.
+- ⚠️⚠️ **The obvious harness DOES NOT WORK, and it lied confidently before I caught it.** `el.focus()`
+  sets `document.activeElement`, but an automated browser pane never gives the document real focus
+  (`document.hasFocus() === false`), so `:focus` never matches for style computation — **every control
+  reported `outline: NONE`, including `.pd-input`, which provably has one.** Fronting the tab and
+  calling `window.focus()` did not fix it. Hence resolving the cascade instead of trying to fake focus.
+- ⚠️ **And the first cascade harness was wrong too**: it split `selectorText` on every comma, which
+  shreds `:where(a, button, input)` into fragments and then reports that the new rule matches nothing —
+  a bug in the checker that reads exactly like a bug in the CSS. Fixed to split on top-level commas
+  only, and the specificity function fixed to treat `:where()` as zero.
+- ⚠️ **The contrast numbers in the first draft of the CSS comment were WRONG** — asserted from memory
+  (3.96 / 4.14 / 3.62) rather than computed. Re-measured and corrected in the file to 4.12 / 3.74 /
+  4.14 / 3.40 / 3.96. Stating a number is a claim; this repo's standard is to measure it.
+- **42 JS files + 30 inline blocks across 29 pages parse, 0 failures** (bar the documented
+  progress-photos false positive). Braces balanced, 0 NUL bytes.
+- `?v=` → `20260910v9`. ⚠️ **Not v8: the concurrent session had already taken it**, found by reading
+  the remote's `MODULE_V` before pushing rather than after — the collision this log has now recorded
+  five times.
+- ⚠️ **Not verified signed in, and not verified by actually tabbing a live page** — the pane cannot
+  give a document focus, which is the whole reason for the cascade approach. The rings are proved to
+  apply and to clear 3:1; they have not been *seen*.
+
+
+### 2026-09-10 (v7) — A toast was painted behind the loading veil in three modules, and z-index gets a scale
+
+First item of the second-pass UI audit — the one the owner asked for *"since much of the UI fixes are
+from my hints"*, i.e. found by looking rather than by being pointed at.
+
+#### ⚠️⚠️ THE BUG: THE SAME COMPONENT SAT AT TWO DIFFERENT LAYERS, AND IT HID ERROR MESSAGES
+Measured across the app: **26 distinct z-index values, 0 to 9999**, including four escape-hatch numbers
+(999, 1000, 9000, 9999) — the signature of layering settled by escalation rather than by design. The
+consequence was not cosmetic:
+
+| | z-index | toast behaviour |
+|---|---|---|
+| `.ps-loading` · `.mp-loading` · `.eq-loading` | **9999** | toast painted **BEHIND** the veil |
+| `.pr-loading` · `.sc-loading` | **999** | toast on top, correctly |
+
+All five are the **same component** — the full-page busy veil — and ⚠️ **all five are direct `body`
+children with `position: fixed`**, established with an ancestor-chain parse rather than by reading the
+numbers, because a z-index only competes inside its own stacking context. So those values go head to
+head with `.pd-toast` (1000) and `.pd-modal-overlay` (900).
+
+⚠️ **A toast is how this app reports that a load FAILED.** So in three of five modules the message the
+planner most needed was the one covered up, and which modules those were came down to nothing but which
+number a developer happened to type.
+
+#### The scale, and why the order is a behaviour rather than a preference
+`--pd-z-modal: 900` · `--pd-z-escape: 920` · `--pd-z-loading: 950` · `--pd-z-toast: 1000`
+
+- **loading is above modal** — a page-wide veil is meant to cover a dialog.
+- **escape** is for a body-level menu that must clear the modal it was opened from
+  (`.sbld-libmenu`, which `document.body.appendChild`s itself and carried **9000**, above the toast).
+- **toast is always top.** Nothing may ever cover it.
+
+⚠️ **Only the BODY-LEVEL layers are tokenised, deliberately.** The in-page ones (topbar 20, dropdowns
+30/40, sidebar 50/70, scrim 60) live inside stacking contexts where their numbers are local and largely
+inert — **`.pd-usermenu` carried `z-index: 9999` while sitting inside a `position:sticky; z-index:20`
+topbar, so it could never rise above 20 no matter what it asked for.** It is left exactly as it is:
+the number is misleading but harmless, and changing the one control that appears on all 29 pages
+without a reason is how the *next* regression happens. Named here instead.
+
+#### Verified by HIT-TESTING, not by reading z-index
+The real question is not what the CSS says, it is which element owns the pixel. So the harness renders
+the modal overlay, that module's own veil and a toast as **body children** (where all three genuinely
+live) against `dashboard.css` + the module's real CSS, then asks `document.elementFromPoint` what is on
+top at the toast's own centre.
+
+**After: all five modules report `top-at-toast = toast`.** modal 900 < veil 950 < toast 1000.
+
+⚠️⚠️ **And the contrast build BITES** — the identical harness built from `git show HEAD:` (the pre-fix
+bytes) reports **`top-at-toast = LOADING VEIL` for project-schedule, manpower-loading and
+equipment-loading**, and `toast` for the other two. That is the reported bug reproduced exactly, which
+is what makes the green run afterwards mean something. A test that cannot fail is not evidence.
+
+- ⚠️ **`node --check` over every inline `<script>` and every `.js` file was run this time** — 42 JS
+  files + 30 inline blocks across 29 pages, **0 failures** (bar the documented progress-photos false
+  positive, a `<script>` inside an HTML comment). That is the check whose absence let the (v6) outage
+  ship, and it is now part of the routine rather than something remembered.
+- Brace balance holds; 0 NUL bytes. `dashboard.css` → `?v=20260910v7` across all 29 pages, `MODULE_V`
+  with it. One version each, 0 splits.
+- ⚠️ **Not verified signed in** — the layering is proved by hit-test against the shipped stylesheets;
+  no real load was made to fail in order to watch a real toast appear over a real veil.
+
+#### Named, not fixed — the rest of the second-pass audit
+- **`.pp-lightbox` is `z-index: 900`, the same layer as `.pd-modal-overlay`.** Ties resolve by DOM
+  order, so this is decided by accident. Not a proven bug, so not touched blind.
+- **57 distinct `box-shadow` recipes** across 69 non-token declarations, including inconsistent focus
+  rings — an accessibility question as much as a visual one.
+- **No spacing scale exists at all:** 924 `gap` declarations in **42 distinct values**. The system has
+  type, colour, radius and shadow tokens and nothing for rhythm.
+- **460 off-scale `border-radius` declarations in 24 values** — though ~165 of those are rung values
+  merely written as literals, which is a no-visual-change cleanup.
+
+
+### 2026-09-10 (v6) — ⚠️⚠️ HOTFIX: I broke Project Schedule and Cash Flow in production. A quote did it.
+
+Owner, with a screenshot of a dead Schedule: *"Your fix has bugged the schedule module."* Correct, and
+it was live. **Both modules were completely non-functional** — empty grid, *Total: 0 activities*, no
+project context, nothing on the page working.
+
+#### The bug
+Yesterday's (uic) pass put the brandbook's document font into the two print/export stylesheets. Those
+stylesheets are **JS string literals**, single-quoted:
+
+```js
+'<style>body{font-family:Arial,Helvetica,sans-serif;color:#231F20;margin:28px;}' +   // before
+'<style>body{font-family:Calibri,'Segoe UI',Arial,Helvetica,sans-serif;...}' +       // after — BROKEN
+```
+
+⚠️⚠️ **`'Segoe UI'` TERMINATED THE SURROUNDING JS STRING.** CSS is happy with single quotes; JavaScript
+is not, when the string is already single-quoted. The result is not a broken font — it is a
+`SyntaxError`, and a syntax error anywhere in an inline `<script>` **kills the entire block**. In
+`project-schedule/index.html` that block is **~35,000 lines**, i.e. the whole module. Cash Flow, same
+edit, same outcome.
+
+**Fixed** by using double quotes for the font name inside the single-quoted JS string —
+`font-family:Calibri,"Segoe UI",Arial,Helvetica,sans-serif`. CSS accepts either; JS only accepts the
+one that is not already doing a job.
+
+#### ⚠️⚠️ Why my verification did not catch it, which is the part worth keeping
+The (uic) commit ran, and *passed*: CSS brace balance, `<style>`/`<script>` tag balance, NUL-byte scan,
+30 rendered contrast measurements, 10 rendered button measurements. **Every one of those was green on a
+file whose entire script failed to parse.** Brace-and-tag balance is a check on the *shape* of the
+document; it says nothing about whether the code inside it runs. And every browser measurement I took
+was against a **harness** that inlines the stylesheets — no harness ever loads the module's own script,
+so none of them could see it.
+
+⚠️ **This repo already knew.** Its own changelog lists *"inline `<script>` parses"* as a standard check
+in entry after entry. I did not run it. A `node --check` over every inline block takes seconds and is
+the single check that would have caught this.
+
+**Now enforced properly:** every inline `<script>` on all 29 pages plus all 42 `.js` files are parsed —
+**42 JS files + 30 inline blocks across 29 pages, 0 failures.**
+⚠️ One reported failure is the **documented pre-existing false positive** in
+`progress-photos/index.html` (a `<script>` written inside an HTML *comment*, which a regex extractor
+splits wrongly). Verified by running the same check against `b5d9aa5~1` — the commit *before* any of
+this work — where it fails identically. Named rather than silently filtered.
+
+#### The general trap, recorded
+**Editing CSS that lives inside a JS string is not editing CSS.** The print/export stylesheets in
+`cash-flow` and `project-schedule` are exactly this, and the type-scale pass (v5) already treats them
+as a no-go zone for a *different* reason (they resolve no `--pd-*` variable, having no `:root`). That
+same "js-built block" detector — a `<style>` block containing `' +` — should gate **every** edit to
+them, not just token substitution. The v5 script had it; the uic Calibri edit was a hand-written
+`.replace()` that bypassed it entirely.
+
+`MODULE_V` → `20260910v6`. ⚠️ **Not verified signed in** — the fix is proved by parsing the shipped
+bytes, which is precisely the check that was missing; the owner's own reload is the real confirmation.
+
+
+### 2026-09-10 (v5) — The type scale stops being a suggestion: 892 font-sizes onto the eight rungs
+
+The third and last of the owner's UI-consistency items, taken as its own commit so it can be reverted
+on its own. The `--pd-fs-*` scale has existed since 2026-09-08 with the instruction *"Reach for a rung.
+Never write a fresh literal"* — and **892 declarations across 14 files still carried a literal**, in
+**25 distinct values**. Half a pixel is invisible alone and unmistakable in aggregate; it is most of
+what reads as "each module was built by a different person".
+
+**Measured after: 25 distinct values → 14, and 892 literal declarations → 43 — every one of the 43 an
+exemption, 0 real leftovers.**
+
+#### The mapping is explicit, and the three real ties are decided here rather than by a float compare
+
+| from | to | | from | to |
+|---|---|---|---|---|
+| 8, 8.5, 9, 9.5 | `--pd-fs-micro` 10px | | 13.5 | `--pd-fs-base` 13px |
+| 10.5, 11.5 | `--pd-fs-xs` 11px | | 15.5 | `--pd-fs-md` 15px |
+| 12 | `--pd-fs-sm` 12.5px | | 17, 18 | `--pd-fs-lg` 16px |
+| 14 | `--pd-fs-body` | | 19, 21, 22 | `--pd-fs-stat` 20px |
+| | | | 23, 26 | `--pd-fs-hero` 24px |
+
+⚠️ **10.5 goes UP to 11** — the more-used rung, and rounding small text down costs legibility.
+⚠️ **18 goes DOWN to 16**, which the token's own comment calls *"the largest heading in the app"*.
+⚠️ **22 goes DOWN to 20**, not up: `--pd-fs-hero` is reserved for *"the ONE biggest number on a screen"*.
+
+#### ⚠️⚠️ The 22px cluster is the whole argument for a scale, in one finding
+All **nine** `22px` declarations turned out to be `.eq-kpi-v`, `.mp-kpi-v`, `.pr-kpi-v`, `.rl-kpi-v`,
+`.sc-kpi-v`, `.boq-poc-v`, `.ps-ck-kpi .v` … — **nine modules independently inventing 22px for a KPI
+value**, while the shared `--pd-fs-stat` is 20px and its comment literally reads *"KPI / metric value"*.
+Nobody was being careless; there was simply nothing stopping them. **Measured in a browser afterwards:
+all eight KPI components render at 20px, one weight, zero overflow.**
+⚠️ Two of them (`productivity-rates`, `s-curve`) were also **weight 700 where the shared component and
+the other six are 800** — brought onto 800 in the same pass, since a KPI row that agrees on size and
+disagrees on weight has not actually converged.
+
+#### The two exemptions, detected rather than listed
+The token block already names them, and both are **different MEDIA, not different opinions**:
+- ⚠️ **A rule containing `fill:` is SVG**, where `font-size` is in **user units, not pixels**. That one
+  test generalises what the comment names case-by-case (progress-photos' 3.2px plan label,
+  project-schedule's 8px dependency tags) — **22 declarations left alone**, and it correctly caught
+  ones nobody had listed, e.g. cash-flow's `.cf-donut-c2`.
+- ⚠️ **A `<style>` block built by JS string concatenation is a print/export stylesheet**, laid out for
+  paper. Detected by `' +` inside the block — **21 declarations left alone**. These could not have been
+  converted even in principle: they are written into a fresh `document.write` window that has no
+  `:root`, so every `var(--pd-fs-*)` would have resolved to nothing and the sheet would have printed at
+  the browser default.
+
+#### Verified
+- **892 declarations converted; residual literals classified: 22 SVG, 21 print, `REAL LEFTOVER: 0`.**
+- **Every `var(--pd-fs-*)` used in the app resolves** — the 10 token names used are exactly the 10
+  defined in `dashboard.css`. A misspelt token drops the declaration silently at computed-value time,
+  which is the failure this check exists for.
+- **Rendered in a browser** against each module's real stylesheets: 8 KPI components, **one size
+  (20px), one weight (800), 0 overflowing**.
+- Brace balance holds; **0 NUL bytes**. ⚠️ project-schedule's `<script>` 16/14 is the documented
+  false positive, byte-identical to HEAD.
+- `?v=` → `20260910v5`, one version each, 0 splits. ⚠️ Four modules' `module.css` are bumped without
+  having changed — the bump list is derived by basename from `git diff`, and **over-bumping is the safe
+  direction** (one extra fetch) where under-bumping ships changed bytes under a cached version.
+- ⚠️ **Not verified signed in.** The KPI row is measured; the ±0.5px shifts across the other ~880
+  declarations are not individually rendered, and the screens most worth a glance are the dense ones —
+  the **Schedule grid** and the **BOQ table**, where a 12 → 12.5px row could change wrapping.
+
+
+### 2026-09-10 (v4) — `font-weight: 600` folds into Bold, and the ten hierarchies it would have flattened
+
+Owner's decision, off the Brandbook question raised in the (uic) entry below: **map 600 → 700 (Bold)**.
+Brandbook 2026 p.29 names five Gotham cuts — **Thin / Regular / Italic / Medium / Bold / Black** — and
+there is **no Gotham Semibold**, so every `font-weight: 600` in this app addressed a cut of the primary
+face that does not exist. **262 declarations across 22 files.**
+
+⚠️ It was not visibly broken and that is worth stating plainly: Gotham is unlicensed here, so
+essentially every user renders **Montserrat**, which *does* ship a 600. This was a latent divergence
+that would have bitten the day a Gotham webfont licence landed — not a bug anyone could see.
+
+#### ⚠️⚠️ TEN OF THE 262 WOULD HAVE BEEN DESTROYED BY THE OBVIOUS SED, INCLUDING ONE THIS LOG BUILT ON PURPOSE
+A blanket `600 → 700` is a one-line change and it is **wrong**, because ten places use 600 and 700 as a
+deliberate **two-level hierarchy** — the light half and the heavy half of the same component. Folding
+both ends into 700 makes the two states **identical**:
+
+| the pair | what the distinction means |
+|---|---|
+| `.pd-nt-portfolio` / `.pd-nt-portfolio.sel` | **selected vs unselected** in the project dropdown |
+| `.ps-pkgtag.inherited` / `.ps-pkgtag.mixed` vs `.ps-pkgtag` | an inherited/mixed package tag vs an explicit one |
+| `.boq-alloc.none` vs `.boq-alloc` | nothing allocated vs a real allocation |
+| `.po-dir-band.is-empty` vs `.po-dir-band` | an empty A–Z band vs a populated one |
+| `.pd-pv-n small`, `.pd-sc-tbl th small`, `.po-dir-sechead span`, `.po-dir-listband td span` | a sub-label inside its own heading |
+| `.dr-stsel option` vs `.dr-stsel` | an option vs the closed select |
+
+⚠️⚠️ **`.pd-nt-portfolio.sel` is a feature this changelog added deliberately** — 2026-09-03 (i), *"Portfolio
+now renders bold when it's the selected row"*, bumped to 700 specifically so the selection was visible.
+The obvious fold would have silently reverted it, and the diff would have looked like tidy-up.
+
+**Those ten go to 500 (Medium), not 700.** The hierarchy survives, and it is now expressed as **500 vs
+700 — two real Gotham cuts** — where it used to be 600 vs 700, one real and one synthesised. The
+contrast is *wider* than before, not narrower.
+
+⚠️ **Found by asking which selectors EXTEND which**, not by a shared class prefix: `.pd-tab` and
+`.pd-avatar` share `pd-` and are unrelated, which is why a prefix-grouping first pass reported **56**
+false candidates. The test that matters is whether one selector is the other plus a compound or
+descendant part.
+
+#### The webfont stops requesting a weight nothing uses
+`@import` went `400;500;600;700;800` → **`400;500;700;800`**. One fewer face downloaded on every cold
+load, and the list now mirrors the brandbook's cuts exactly, so the next `600` has nowhere to render
+from. The app's weights are now **400 Regular · 500 Medium · 700 Bold · 800 Black** — measured: **813
+declarations, 4 distinct values**, down from 5.
+
+#### Verified
+- **0 occurrences of `font-weight: 600`** remain in any `.css`, `.html` or `.js`.
+- **All ten hierarchies asserted still two-level** — each reads `light=500 heavy=700`, **0 flattened**.
+- Brace balance holds on every changed stylesheet and inline `<style>`; **0 NUL bytes**.
+  ⚠️ Two `<script>` tag-count mismatches are reported and **both are byte-identical to HEAD** — the
+  documented false positives (progress-photos' CDN `build/three.min.js` src, project-schedule's
+  `<script` inside a JS string). Checked against HEAD rather than assumed.
+- `dashboard.css`, `my-work.css`, `ppr.js`, `modules-grid.js` + `MODULE_V`, and six modules'
+  `module.css` → `?v=20260910v4`. **One version each, 0 splits.** ⚠️ The bump list is derived from
+  `git diff --name-only`, not hand-kept — a hand-kept list is how an asset ships changed under a
+  version a browser already holds.
+- ⚠️ **Not verified signed in**, and ⚠️ **not re-rendered**: this is one property, statically proven,
+  and the only real risk (a flattened hierarchy) is asserted above rather than eyeballed. The screens
+  worth a glance on the next real login are the **project dropdown** (selected row) and the
+  **Schedule's package tags**.
+
+### ⚠️⚠️ The floor plan never reached the Vertical Stacking at all, and a Sync button (2026-09-10) — jasantos2
+
+Owner: *"can't there be a button that allows syncing the floor plans to the 3D? and nothing is still
+being shown in the vertical stacking 3D."*
+
+⚠️⚠️⚠️ **The guard could never pass.** The Project Schedule module is one IIFE, so
+`var ScheduleBuilder` is a **closure local** and `window.ScheduleBuilder` is never assigned — and
+`_vsZpAll` tested `window.ScheduleBuilder`. It returned `{}` unconditionally, so the traced floor
+plan **never reached the Vertical Stacking**, in 2D or 3D, from the day the feature shipped. The
+last two turns of work on this — the label join, the 2D layout, the cold-open fetch, the three-way
+footer — were all correct and all sat behind a condition that is false by construction. ⚠️ Every
+other consumer in that file already used `typeof ScheduleBuilder !== 'undefined'`.
+
+⚠️ **Why the suites missed it:** they run `_vsZpAll` in a context where the bridge is *provided*,
+which tests whether the map gets built, not whether the bridge is reachable. The new suite executes
+it in a context shaped like the real one — a `window` that exists and has no `ScheduleBuilder` — and
+**HEAD returns `{}` on the identical input**.
+
+**Sync floor plans**, in the 3D bar: it clears the memo *and* the asked-flag (or it would respect
+the cache it is meant to bypass), and it always reports what happened — synced, *n* of *m*, a plan
+that matches no storey, or nothing found, with the empty case naming where to draw one and to save.
+⚠️ The verdict is read from the **same fit function the footer prints**, so the two cannot
+contradict each other, and ⚠️ a card with no storeys is not accused of a name mismatch.
+
+**767 assertions across fourteen suites plus the runtime and extrusion checks, 0 failing**; 29 new.
+⚠️ A structural assertion now forbids any **code** reader going through `window.`, while still
+allowing the comment that explains the bug to quote it. ⚠️ **Not verified signed-in** — the database
+round trip still has not run.
+
+`MODULE_V` → `20260910v2`. Detail: [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+### The 3D card could not see the floor plan unless the Setup tab had been opened (2026-09-10) — jasantos2
+
+Owner: *"i want to use that defined floor plan and apply it to the vertical stacking 3D? it is not
+reflecting? how do you make it reflect."*
+
+⚠️⚠️ **The plan lives in the Schedule Setup config, and `ScheduleBuilder` only holds a config once
+that tab has loaded one** — a caveat already written down for the schedule grid's default grouping
+and never carried across to the stacking. Trace the zones, save, reload, open Vertical Stacking:
+`cfg` is `null`, the bridge returns `{}`, and the card falls back to the guessed layout without
+erroring or saying why.
+
+- **The stacking now loads the saved setup itself** (`zonePlanFetch`), reading the setup row
+  directly. ⚠️ It never assigns the builder's live `cfg` — that would hand it a setup nobody opened,
+  which `isDirty()` and `save()` would then reason about. ⚠️ Most recently updated wins, matching the
+  setup tab, or the two would draw different buildings. ⚠️ One implementation of the label map
+  serves both paths, so they cannot index the plan two different ways.
+- ⚠️⚠️ **A project with no plan is marked as asked**, or it would fetch, repaint, find nothing and
+  fetch again on every repaint forever.
+- ⚠️⚠️ **The footer now says which of three things is wrong.** It printed *"attach a floor plan"* for
+  all of them — including when the plan exists and **no storey matches it**, which is almost always
+  the floor's Code/Name not being what the activities carry as their level. That case now says the
+  plan **is** traced, prints **both sides** of the join, and names the field to fix.
+
+**738 assertions across thirteen suites plus the runtime and extrusion checks, 0 failing**; 45 new,
+executed against a deliberately empty live config — the cold open itself. ⚠️ Controls run on HEAD:
+no fallback at all, and one footer line for every case. ⚠️ Three suites needed their **slice lists**
+extended rather than their expectations changed, and two **stubs were replaced with the real
+functions** while I was in there. ⚠️ **Not verified signed-in, and this change most needs it** — the
+fetch is a real query and the anon key has no grants, so the round trip has never run.
+
+`MODULE_V` → `20260910v1`. Detail: [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+### 2026-09-10 (uic) — A global UI consistency pass: status surfaces, the `+ Add` button, and one monospace family
+
+Owner: *"Let's globally check the UI of all app and perform consistency fix"*, then *"Check also font
+styles not just font sizes"*, *"I am pretty sure the +Add across all modules have different font styles
+let's check globally"*, and *"Let's follow the brandbook."* Audited by measurement across all 27
+stylesheet sources (12 `.css` files + the inline `<style>` of every page), never by eye.
+
+#### ⚠️⚠️ THE SHARED STATUS PILL WAS ITSELF BELOW AA, WHICH IS WHY NINE MODULES REFUSED TO USE IT
+Measured against the card surfaces before changing anything: **`--pd-ok` (#1f8f4e) is 4.12:1 on white
+and `--pd-warn` (#C77700) is 3.46:1** — and `.pd-pill-ok` / `.pd-pill-warn` painted their label in
+exactly those two. So the component every module was told to reuse failed the bar, and nine of them
+hand-rolled a green/amber/red instead. **A reuse problem with a contrast cause.**
+
+- **New status-surface tokens — a tint / border / text TRIPLE per status**, `--pd-{ok,warn,bad}-*`,
+  remapped under `html.pd-dark`. ⚠️ The `-text` values are **not invented**: they are the ones the
+  modules had already converged on by hand (`#12693a` in three modules, `#8A5300` in project-schedule),
+  so migrating moves a module *toward* the rest of the app — the same rule the type scale follows.
+- ⚠️ **The tints are `rgba`, not opaque hex, on purpose.** An rgba tint composites over whatever card it
+  lands on, so one value is correct in both themes and a module cannot get a white pill on a dark card
+  by forgetting an override. That forgotten override was the actual defect in six modules.
+- ⚠️ **`--pd-info` is a FOURTH status and it is here because the app already had it** — measured **24
+  blue declarations across five files in four spellings** (`#2F6FBF`×11, `#2f6fed`×5, `#2563EB`×6,
+  `#1d4ed8`×1). `#2f6fed` measured **3.84:1** on its own tint, which is the argument for one token over
+  four.
+- **74 declarations swapped** from `--pd-{ok,warn,bad}` to their `-text` pair, across 15 files —
+  `color:` only. `border-color`, `background` and every `color-mix()` surface keep the base token,
+  because those are surfaces and the base value is right for them.
+- **Nine modules' hand-rolled pills migrated.** ⚠️ Contracts & Claims and Manpower were **not broken** —
+  both paired every literal with its own `html.pd-dark` override and both had done the measurement.
+  What they had was a *private parallel palette*; the override pairs are deleted, not the reasoning.
+
+#### The `+ Add` button, which the owner was right about
+Measured, per module, with each module's real stylesheets inlined: the primary Add label computed
+**12.5px in seven modules and 13px in four**, and the button hovered **two different ways**.
+⚠️ **The sharpest case: issues-lessons and minutes-of-meeting use the SAME class names** and still
+disagreed, because minutes-of-meeting excludes the labelled button from its 34×34 icon rule with
+`:not(.il-tb-labeled)` and issues-lessons does not. **The fix already existed in this repo and had
+never been applied to its own sibling.**
+
+- ⚠️⚠️ **The hover is settled by the brandbook, not by taste.** Ten modules overrode the shared
+  `.pd-btn-primary:hover` with `filter: brightness(.94)` at (0,4,0) against the shared rule's (0,2,0).
+  That filter computes **#DF2E22 on #EE3124 — a colour that appears nowhere in Brandbook 2026.**
+  `--pd-red-dark` (#C42127) is named there outright as a **Secondary** brand colour (p.14): a secondary
+  brand colour for a secondary state. All ten overrides deleted, plus the ten
+  `background/border/color` re-declarations beside them that only existed to raise specificity.
+- ⚠️⚠️ **A REGRESSION I INTRODUCED, CAUGHT BY MEASURING AND NOT BY READING.** Adding `:not()` to the icon
+  rule also removed the only source of `height:34px` for those buttons: three of them collapsed to
+  **16px**. The font-size was right and the button was ruined. The labelled button now carries its own
+  height — again copying minutes-of-meeting, which had it correct all along.
+- **Measured after: all ten identical** — 12.5px / weight 500 / 8px radius / `0 12px` padding / 34px,
+  with **10/10 painted `rgb(238,49,36)`** so the stylesheets are provably in the cascade.
+
+#### ⚠️⚠️ A monospace bug that only shows up on Windows — which is what this app is used on
+**12 hand-written monospace stacks across 7 files, in five spellings.** Five of them are
+`ui-monospace, SFMono-Regular, Menlo, monospace` — an Apple system font, an Apple font and a generic,
+with **no Windows font in the list at all**, so on Windows they fall through to the browser default
+while the stacks naming Consolas get Consolas. Two faces, same screen.
+⚠️ `--pd-mono` was **already defined and already correct** — inside `contracts-claims/module.css`, under
+a comment warning that "a second definition is exactly how the two drift apart again". That warning was
+right and was unenforceable from there: module.css loads only on its own page, so any other module
+writing `var(--pd-mono)` got **nothing**. Promoted to `dashboard.css` unchanged; all 12 converged.
+- **Brandbook p.29 names Calibri the *document* font.** Both print/export stylesheets were on Arial;
+  they now lead with Calibri and keep Arial as the fallback. ⚠️ They take the literal stack, not
+  `var(--pd-font-doc)` — a string written into a fresh `document.write` window cannot see this app's
+  `:root`.
+
+#### Dropdowns
+Measured across every popover: **radius 4→12px in seven values, five literal shadows**, and
+⚠️ **`var(--pd-shadow)` — the flat `0 1px 3px` CARD shadow — on four floating menus**, which reads as
+glued to the page rather than above it. All converged to `--pd-radius-md` + `--pd-shadow-lg` (themed;
+every literal was light-mode-only).
+⚠️⚠️ **This deliberately revisits the 2026-09-03 (r) decision** to leave small-chrome radii alone as
+"pure diff noise with no visual effect". That was correct for the 9-vs-10px it was judging; it is not
+correct now, because `--pd-radius` (4px, the *smallest* rung) has since been applied to three menus and
+4px against 12px on the same kind of surface is visible.
+- **Three `<select>`s and three `<input>`s carried no class at all** — the bulk-update modal's whole row
+  was raw browser chrome. ⚠️ Classing only the select would have made it disagree with its own
+  siblings, so all four in that row were classed together.
+- ⚠️ **A correction to my own first count:** I reported "32 unclassed selects". The real number is
+  **three** — 29 of those were the literal text `<select>` inside code comments, which the grep counted.
+
+#### One duplicated block, removed
+`modules/project-schedule/index.html` carried **23 byte-identical lines twice** (`.ps-vs-warn`,
+`.ps-vs-warnx`, `.ps-vs-seg`, `.ps-vs-badge-warn`). Safe to drop the later copy: the only rules between
+the two set `transition`, which the block never declares. ⚠️ Located by **content, not line number** —
+earlier edits in the same script collapse four lines into two, so any hardcoded index was already stale.
+File 43,038 → 43,020 lines: −23 dedupe, +7 comment, −2 collapsed overrides, which is exactly −18.
+
+#### Verified
+- **30 contrast measurements, 15 pills × both themes, rendered against the real stylesheets: 0 below
+  AA, minimum 4.57:1.** Every value matches the token arithmetic (ok 5.85/5.16, warn 5.55/4.57,
+  bad 4.79/5.13, info 5.66/5.48).
+- **10 `+ Add` buttons measured identical**, from each module's own shipped markup and CSS.
+- `.ps-scopetag.co-strong` was `#fff` on `#E08A3C` = **2.56:1**, wrong in both themes because the fill is
+  a fixed literal. Now `#231F20`, **measured 6.11:1**. ⚠️ The ink is a literal on purpose and must not
+  become `var(--pd-ink)`, which remaps to `#F0EFEF` on dark and would reinstate the 2.56.
+- Brace balance holds on all 9 changed stylesheets and every inline `<style>`; **0 NUL bytes**.
+  ⚠️ project-schedule's `<script>` count is 16/14 — **identical to HEAD**, the documented
+  `<script` -in-a-JS-string false positive, not something this change caused.
+- font-family went **9 distinct values → 4**, all four legitimate.
+- `dashboard.css` → `?v=20260910v3` across **all 29 pages**, `modules-grid.js` across 2 + its fallback
+  literal, and the six edited modules' `module.css`. **One version each, 0 splits.**
+- ⚠⚠ **THE VERSION IS `v3`, NOT THE `uic` THIS ENTRY WAS FIRST WRITTEN WITH, AND THAT IS THE COLLISION
+  THIS LOG KEEPS RECORDING — the fourth time.** I picked a deliberately non-sequential token (`uic`) to
+  avoid exactly this, and it did not help: the concurrent session pushed `20260910v2` while this work was
+  in progress, and `uic` sorts BEFORE `v2`. A version that sorts *earlier* than one already served is worse
+  than a collision — a browser holding `v2` would never fetch `uic`. Rebased and bumped past **both** sides
+  to `v3`. ⚠️ The rule that actually works is not "pick an unusual letter", it is **re-derive the version
+  AFTER integrating, from what the remote already has**.
+- ⚠️ **20 of the 40 changed files are version-only, checked individually**, so no concurrent session's
+  work is swept in.
+- ⚠️ **Not verified signed in.** Everything above is a real browser measurement against the shipped
+  stylesheets with auth/DB absent; no live project was loaded.
+
+⚠️ **Rebased onto three commits from the concurrent project-schedule session** (floor-plan sync).
+`CLAUDE.md` and `modules/project-schedule/index.html` **auto-merged**; the only conflicts were the three
+version strings above. Checked after resolving: changelog **3,226 + 130 = 3,356 lines, 91 headings, 91
+unique — no doubling**; my dedupe still holds (one `.ps-vs-warn` rule) and their Sync work is present.
+
+#### Deliberately NOT done, each with a reason
+- ⚠️ **`--boq-*` (Contracts & Claims) is left alone.** It is a *fourth* parallel palette and it is
+  **correct** — paired per theme and measured, with its own note saying so. Aliasing it to the shared
+  tokens is a real cleanup but it is a change to a working, documented system and belongs in its own
+  commit with its own verification.
+- ⚠️ **The type scale is NOT normalised here.** 485 declarations still sit off the eight rungs
+  (12px×202, 11.5×86, 10.5×74, 9.5×23 …). That is the single largest remaining inconsistency and it
+  changes rendering on every screen, so it needs its own measured pass — not the tail of this one.
+- ⚠️⚠️ **`font-weight: 600` is flagged, not changed — and it needs an owner decision.** Brandbook p.29
+  names five Gotham cuts: **Thin / Regular / Medium / Bold / Black**. There is **no Gotham Semibold**,
+  and the app carries **233 declarations at 600**. It is not currently broken — the web fallback is
+  Montserrat, which *does* have a 600, and essentially every user sees Montserrat because Gotham is
+  unlicensed here — so this is a latent divergence that bites only if Gotham is ever installed.
+  Resolving it means moving 233 declarations to **500 (Medium)** or **700 (Bold)**, which visibly
+  changes the weight of the whole app in one direction or the other. That is the owner's call.
+- ⚠️ `modules/material-submittal` and `modules/drawing-register` keep 36 of the 70 remaining colour
+  literals: both are `enabled:false`, retired to the Engineering App, and their `index.html` stubs do
+  not even load their `module.css`. The remaining 34 are the print stylesheets (paper is not themed),
+  progress-photos' white pin rings on photographs (correct in both themes), and the one deliberate
+  literal above.
+
+
+### 2026-09-10 (u7) — A shared data-table layer, and the Stakeholder Map opens on cards
+
+Item 6 of six owner items on the stakeholder screens. Detail in
+[`modules/stakeholder-map/CLAUDE.md`](modules/stakeholder-map/CLAUDE.md). What reaches beyond the
+module:
+
+- ⚠️⚠️ **`dashboard.css` gains `.pd-dt`, and it is a PROMOTION rather than a new component.** The
+  idiom is the Procurement app's `.data-table`, ported into Contracts & Claims on 2026-09-07 as
+  `.cc-dt*` under its own note — *"divergent table styles is exactly what the UI-uniformity pass keeps
+  having to rework"*. Stakeholder Map needed the same header strip, sortable headers, group rows and
+  footer, and a **third hand-copy is how three tables end up disagreeing**. It layers over the shared
+  `.pd-table`, and every value is a `--pd-*` token: the Procurement original hard-codes its colours and
+  re-states them under `body.dark-mode`, so carrying the literals across gives a table that is right
+  in light mode and unreadable in dark.
+- ⚠️ **`.cc-dt*` is deliberately UNCHANGED.** Migrating Contracts & Claims onto the shared rules is its
+  own change with its own verification; doing it here would put a module I was not asked to touch into
+  this commit. Until then the two coexist, and the shared one is the successor.
+- ⚠️ **Screen and layout stop being the same list.** The module's dropdown offered *Register* and
+  *Cards* as two screens, so the card view and the table view of the same register were siblings and
+  neither was "the register". Now one Register screen with a card/table switcher, cards by default —
+  and **every hash ever issued still resolves**, because the old `list`/`cards` values normalise to the
+  Register screen *and set the layout*.
+
+**Verified** by slicing the shipped view logic out of `module.js` and driving it against the real
+markup lifted byte-for-byte from `index.html`: exactly one pane visible in every state including an
+unrecognised view, both legacy hashes landing on the right layout, and the band toggles rendering
+inside the table card rather than the topbar. ⚠️⚠️ The first measurement of the new header strip
+reported it transparent and border-less **while the CSS was correct** — the harness linked
+`dashboard.css` with no `?v=` and got the browser's stale copy. That is the **second** harness this
+session to report correct rules as missing; harness stylesheets are now cache-busted.
+
+`dashboard.css` → `?v=20260910u7` (29 pages); stakeholder-map `module.js`/`module.css` and
+`stakeholders.js` → `?v=20260910u7`; `MODULE_V` → `20260910u7`. ⚠️ Every one of the other 28 pages was
+checked to carry **version-only** changes, so no concurrent session's work is swept in.
+⚠️ **Not verified signed in.**
+
+### 2026-09-10 (u6) — Gift Tier is removed from the app, and a migration drops the columns
+
+Owner, on the project-level Stakeholder Map: *"Let's drop the Gift Tier as well."* Asked whether to
+remove it from the UI only or to drop the columns outright, the owner chose to drop them.
+
+**Run `migrations/2026-09-10-drop-gift-tier.sql`.**
+
+- ⚠️⚠️ **IT DESTROYS DATA AND CANNOT BE UNDONE.** Every gift tier recorded on any stakeholder, on any
+  project, is gone the moment it runs; re-adding the column afterwards gives you an empty one. The
+  migration **counts the values it is about to destroy and `raise notice`s the number before the
+  drop takes effect**, inside the transaction, so there is a moment to `rollback` — and its header
+  carries a ready-made archive query for anyone who wants the values kept. This environment's key has
+  no grants, so I could not read that count for the owner in advance.
+- ⚠️ **Both tables are dropped in ONE transaction.** `gift_tier` was one of the 13 `PERSON_FIELDS`
+  mirrored between `stakeholders` (the directory) and `stakeholder_map` (the per-project register);
+  dropping one side alone leaves the mirror asymmetric and every insert naming the column fails
+  against whichever table lost it.
+- ⚠️ **The schema files are updated too** (`supabase-schema.sql`, `supabase-build.sql`,
+  `supabase-setup.sql`, `migrations/VERIFY-schema.sql`). Dropping a column in a migration while the
+  canonical schema still declares it means the next fresh deployment resurrects it — and the two then
+  disagree silently. ⚠️ `migrations/2026-07-20-stakeholder-map-full.sql` is **history and is left
+  alone**: it records what that migration did, and the drop is its own migration.
+- The field is gone from both forms that carried it (the directory identity form and the register's
+  own add/edit), from both copies of `PERSON_FIELDS`, and from the directory test's expectations.
+
+**Verified by execution:** `PERSON_FIELDS` is 12, the two copies are **identical** (they are compared
+element-wise, because a mirror that disagrees is the failure this contract exists to prevent), no
+live file outside the migration history names the column, and the shared suites still pass — **41
+matcher + 66 operations, 0 failing.** `stakeholders.js` → `?v=20260910u6`; stakeholder-map
+`module.js`/`module.css` → `?v=20260910u6`; `MODULE_V` → `20260910u6`.
+⚠️ **Not verified signed in, and the migration has not been run from here.**
+
+### Snap to grid, and the traced layout finally reaches the Vertical Stacking (2026-09-10) — jasantos2
+
+Owner: *"can you add snapping to grid. also how come the zones defined are not shown in the vertical
+stacking? meaning the layout?"*
+
+**Snap to grid** in the floor-plan window — Off / 10 / 20 / 25 / 50 / 100, remembered, drawn under
+the shapes. ⚠️ The grid is in **plan units**, not pixels, so it survives a zoom and a re-upload.
+⚠️ **Off is a real setting**: an as-built trace needs the corner where the drawing puts it.
+⚠️⚠️ **A move snaps the box origin, not each corner** — snapping every point would *deform* the
+outline as it travelled. ⚠️ A defect found by driving it: a new preset was grid-**placed** but not
+grid-**sized**, so two zones added side by side did not meet; every corner of a new shape now snaps,
+falling back to the rigid shape when a coarse grid would collapse it.
+
+⚠️⚠️ **The zones were not showing for two reasons, both proved by execution — neither a rendering
+problem.** The **2D card never read the floor plan at all**, and 2D is the default view. And even in
+3D the join only held at **Detail 2**: deeper, the cell label becomes a location path (`Z1 · Unit A`)
+while the plan stores bare zone codes, so every outline silently vanished. The matcher now tries the
+whole label then each segment, left to right — the axis order, so a unit cannot outrank a zone.
+
+**What an elevation can honestly say about a plan:** a section cannot draw a floor plan, so the 2D
+card takes the two facts that *are* real — zones **ordered** left to right as drawn (⚠️ which is why
+`Z10` used to sit between `Z1` and `Z2`) and **sized** by their share of traced floor **area**
+(⚠️ shoelace, not bounding box). ⚠️ It degrades: no plan means the old equal shares, byte for byte,
+and an untraced zone keeps its cell. ⚠️ A second defect found by testing — the minimum cell width
+did not actually hold, because clamping then renormalising pushes a thin cell back under; replaced
+with water-filling.
+
+**693 assertions across twelve suites plus the runtime and extrusion checks, 0 failing**; 67 new, and
+the controls run on HEAD and reproduce the reported bug. ⚠️ The window was **driven in a browser** —
+all nine presets on grid, a move that snapped *and* left the shape undeformed, Off landing a corner
+exactly. ⚠️ `vscheck` was taught to link module-level `var`s (the module's own declaration, never a
+stub) and re-proved against the outage control: broken 0/10, fixed 10/10. ⚠️ harness12's reversal
+proof is **retired on purpose** — it asserted this function never changes. ⚠️ **Not verified
+signed-in** — the image upload still has never run against the real bucket.
+
+`MODULE_V` → `20260910u3`. Detail: [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+### 2026-09-10 (u3) — Portfolio toolbar: the project filter stops clipping, and A–Z becomes a sticky rail
+
+Items 1 and 2 of six owner items on the stakeholder screens. Detail in
+[`modules/portfolio-overview/CLAUDE.md`](modules/portfolio-overview/CLAUDE.md).
+
+- ⚠️⚠️ **The clipping was the POSITIONING, not the width.** `.po-projfilter-menu` was
+  `position:absolute; left:0; width:260px` hanging off a **right-aligned** button, so it opened
+  rightwards from the right edge of the page and ran off it. It now expands **inline**, the idiom
+  every other filter in this app already uses (`.pd-filtergroup`, `.po-toolbar-fields`), which cannot
+  clip by construction — rather than being nudged to `right:0`, which fixes this one case and leaves
+  the next to be found.
+- ⚠️ **One filter button, one NODE.** Four of the thirteen views have a filter panel; `placeScope`
+  *moves* the scope control into it so those views have a single control, and falls back to its own
+  bar in the nine that do not. Moving the element carries its wiring, state and selection with it — a
+  copy per view is what would need keeping in step.
+- ⚠️ The **A–Z index is now a sticky vertical rail** beside the cards. `align-self:flex-start` is
+  required or a stretched flex item gives `position:sticky` nothing to travel within — correct in the
+  cascade and does not stick. On a phone it reverts to a horizontal strip: a 22px column of 27
+  letters is far under the 44px touch target.
+
+Measured in a browser with the toolbar markup lifted byte-for-byte from the shipped page and
+`placeScope` sliced out of it: the panel spans 60→771 in a 1265px viewport with **no overflow and no
+horizontal page scroll**, and the rail is **pinned at `top: 8px` after scrolling 1,200px**. The
+funnel's `has-active` state was measured off and on, so a narrowed scope is still visible at a glance
+with the panel shut. `MODULE_V` → `20260910u4`.
+⚠️⚠️ **`MODULE_V` is `u4`, not `u3`: the concurrent session in this tree independently
+picked `20260910u3` and pushed it first — the SAME two-sessions-same-letter collision this
+log has already recorded twice.** ⚠️ It rebased **cleanly**, because both sides set the
+identical string and git had nothing to conflict on, and that is the dangerous shape: my changes
+would otherwise have shipped under a version a browser had already cached WITHOUT them. The
+other session’s own entry above still reads `u3`, which is what it shipped.
+⚠️ **Not verified signed in.**
+
+### 2026-09-10 (u2) — Directory Health, and a duplicate scan that stops being quadratic
+
+The dashboard half of the stakeholder-app adoption. Owner: *"And a dashboard page that can also be
+adopted"*, scoped to **directory health from our own data** — so the same idea pointed at the register
+we hold, not a copy of the other app's screen. Detail in
+[`modules/portfolio-overview/CLAUDE.md`](modules/portfolio-overview/CLAUDE.md). What reaches beyond
+the page:
+
+- ⚠️⚠️ **`assets/js/stakeholders.js` gains `duplicatePairs`, and it is BLOCKED because scoring every
+  pair was measurably too slow to ship: 900 people is 404,550 pairs and 2.3 SECONDS of blocked main
+  thread.** The blocking key is derived **from the matcher's own surname gate**, never invented beside
+  it — equality and the one-edit case both fall out of the deletion neighbourhood, and the
+  initial-of-a-surname case needs a one-character token, so those few people are compared against
+  everyone. It lives in the shared file rather than in the page because a whole-directory duplicate
+  scan is exactly the thing that gets hand-copied next.
+- ⚠️⚠️ **A wrong blocking key is INVISIBLE** — it drops duplicates and the screen reports *"none
+  found"*. So the suite does not test the blocking, it asserts the blocked scan returns the **exact
+  pair set an exhaustive scan returns**, over a directory built full of the near-misses blocking is
+  most likely to lose. **Three new contrast builds, all biting.**
+- ⚠️ **Two cuts of the cap were both wrong and measurement caught both.** The first enumerated every
+  pair and checked the cap afterwards — 11 seconds to answer *"not scanned"*; a cap that only reports
+  after paying the cost is not a cap. The second estimated cost from bucket sizes, which over-counts
+  about sevenfold, and refused a 300-person directory that was 267ms of honest work. Shipped: the
+  decision is exact and the enumeration aborts at the cap. **2,000 people now scan in 446ms.**
+- ⚠️ The Directory's map read **stopped filtering out unlinked rows** — one read now answers both
+  *"who is on which project"* and *"how many register rows predate the directory"*.
+
+**143 assertions** across three suites (41 matcher + 66 operations + 36 health, the last two sliced
+out of the shipped files), **11 of 11 contrast builds biting**. Rendered in a browser in both themes.
+⚠️⚠️ **My harness reported a clean render of INVISIBLE bars** — it never loaded `dashboard.css`, so
+every `--pd-*` token resolved to nothing and each fill computed transparent **with perfect widths**;
+the width checks passed and said nothing about whether anything was painted. Fixed, and the harness
+now asserts the fills are not transparent. ⚠️ The narrow-viewport check **did not run** (the pane
+refused 420px and reported 980), so the phone case rests on the `auto-fit` rule, not on a render.
+
+`stakeholders.js` → `?v=20260910u2`; `MODULE_V` → `20260910u2` (fallback literal included). 48 assets
+on one version each, 0 splits, 0 missing; 0 NUL bytes.
+⚠️ **Not verified signed in** — no health figure has been computed from the live directory, and
+`migrations/2026-09-10-stakeholder-profile-fields.sql` still needs running.
+
+### 2026-09-10 (u1) — The stakeholder directory becomes a card Universe with clickable A–Z bands
+
+**Run `migrations/2026-09-10-stakeholder-profile-fields.sql`.** Owner, with screenshots of a separate
+stakeholder app by another developer: *"I want to adopt the feature seeing the whole stakeholders
+rather than a table and seeing the clickable bands. And a dashboard page that can also be adopted."*
+Asked which to build first, the owner chose the **Universe view**; the dashboard follows. Detail in
+[`modules/portfolio-overview/CLAUDE.md`](modules/portfolio-overview/CLAUDE.md). What reaches beyond
+the page:
+
+- ⚠️⚠️ **A CORRECTION TO YESTERDAY'S (s4) AND (s5) ENTRIES, BOTH MINE: `assets/js/stakeholders.js`
+  SHIPPED WITH A NUL BYTE, AND BOTH ENTRIES CLAIMED "0 NUL bytes".** `exactKey` joins name and
+  organisation with a separator that cannot occur in either — correct in intent, and written into the
+  source as a **raw byte** rather than the escape `'\u0000'`. So the repo's own "0 NUL bytes" check was
+  reported green against a file that failed it, twice. The byte is now the two-character escape;
+  ⚠️ the runtime string is **unchanged, proved by executing both copies** — HEAD's `exactKey` and the
+  fixed one agree on 7/7 inputs, the separator is still U+0000, and the collision a printable
+  separator would create (`"A B" + ""` vs `"A" + " B"`) stays impossible.
+- ⚠️ **The new profile columns are DELIBERATELY OUT of the `stakeholder_map` mirror.** Verified
+  against the live database that `middle_initial`, `sub_sector`, `secondary_position`, `status` and
+  `is_favorite` exist on **neither** table, so mirroring them would break every `stakeholder_map`
+  insert. `PROFILE_ONLY` / `PROFILE_FIELDS` keep them on the directory alone, and `writeTolerant`
+  **drops a refused column and retries**, reporting what it gave up — so a deployment that has not
+  run the migration still creates people, minus the new fields, instead of failing.
+
+**84 assertions** (41 matcher + 43 operations) executing the shipped file, **8 of 8 contrast builds
+biting**. The Universe itself was **driven in a browser** against the real stylesheet — 27 bands, the
+empty ones disabled rather than hidden, band-click filtering, all four groupings, both layouts, and
+uniform card heights. `stakeholders.js` → `?v=20260910u1`; `MODULE_V` → `20260910u1` (fallback
+literal included). 48 assets on one version each, 0 splits, 0 missing; 0 NUL bytes across every
+tracked text file, this time actually measured - including the prose, because the same byte reappeared in
+the DRAFT OF THIS ENTRY and turned the changelog into a file grep calls binary.
+⚠️ **Not verified signed in** — no card drawn from the live directory, no favourite written, and the
+migration has not been run.
+
+### The floor plan window gets tools: shapes, undo, clipboard, and naming the zone (2026-09-10) — jasantos2
+
+Owner: *"if there is no floor plan, how do i add shapes or create shapes? and how come this is the
+only interactable things to do in the window."*
+
+⚠️ **The question is the defect.** Yesterday's window could do one thing — trace a polygon corner by
+corner over an attached image — so with no image there was nothing to click at all.
+
+- **Nine shape presets** (rectangle, square, L, T, U, triangle, trapezoid, hexagon, circle), so a
+  rectangular plate takes one click instead of four corners, and a floor with **no drawing yet** can
+  still be laid out. ⚠️ The menu icon is drawn by the **same function that builds the shape**, so it
+  cannot advertise an outline the button does not produce.
+- ⚠️ **Undo (Ctrl+Z, 50 deep) is a snapshot, not an operation log** — one thing to get right instead
+  of a correct inverse for each of seven gestures. ⚠️ The test is **derived from the window's own
+  assignments**, so a new mutable field left out of the snapshot fails a test rather than quietly
+  losing a planner's work.
+- **Copy / paste / duplicate / delete**, with a deep-copied clipboard and an offset paste, and the
+  zone palette doing **double duty**: it names the *next* shape, or **re-names the selected one** —
+  the owner's *"defining which is zone 1 2 etc."*, which previously meant delete and re-draw.
+- ⚠️ **Undoing back to nothing now drops the plate**, or an undone first shape would leave the floor
+  still reading *"has a plan"*.
+
+**104 assertions in the plan suite, 27 new, all passing**, plus the runtime and extrusion checks. The
+presets are executed, not read. ⚠️⚠️ **The gestures were driven in a browser** — a preset added with
+no plan image, a move by exactly the drag delta, a reshape touching one corner, the midpoint dot
+adding a corner and Alt-click removing it, and four undos stepping back to an empty plate. ⚠️ Five
+assertions were **retargeted** where this change rewrote the lines they described, each named and
+each property unchanged or stricter. Whole set: **627 assertions, 0 failing**; ⚠️ three suites did
+not run — one broken by the change-order refactor, one needing a BOQ file absent from this repo, and
+one **obsolete** (it tests the zone grid replaced yesterday). ⚠️ **Not verified signed-in** — the
+image upload still has never run against the real bucket.
+
+`MODULE_V` → `20260910s5`. Detail: [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+### 2026-09-10 (s5) — The Portfolio Stakeholders tab stops being read-only
+
+Second half of Stage 4. The tab had a search box and a read-only table over the `stakeholder_map`
+mirror; it now carries a **Directory** view over `stakeholders` itself with **+ Add person**,
+**Assign to projects** and **Merge**. Detail in
+[`modules/portfolio-overview/CLAUDE.md`](modules/portfolio-overview/CLAUDE.md). What reaches beyond
+the page:
+
+- ⚠️⚠️ **`assets/js/stakeholders.js` gains the data operations, and merge REFUSES rather than
+  guessing.** `stakeholder_map_upd` is `(created_by = auth.uid() or is_admin())`, and PostgREST
+  answers an RLS-filtered UPDATE with **200 and zero rows** — the silent-success trap recorded here
+  since `boq_tag_activities`. Re-pointing rows another planner created would report success and
+  change nothing. Every write is counted; a shortfall stops the merge and **deletes nothing**,
+  because deleting the loser then would orphan the rows that did not move.
+- ⚠️ It also refuses when both people are on the **same project** — resolving that means destroying
+  one project's own assessment of them, which is not a merge dialog's decision.
+- ⚠️ The duplicate warning in **+ Add person** fires *while typing*, not after saving, through the
+  same shared matcher the module's save path uses — so the two screens cannot disagree.
+
+**26 new assertions** on the shipped operations against a stub that behaves like RLS, plus the 41
+matcher assertions and **8 contrast builds, all biting**. ⚠️ One contrast did not bite until the
+fixture was fixed (the loser's field was null, so an overwrite build had nothing to overwrite), and
+my first Supabase stub made `.select()` terminal, which threw out of shipped code that was fine.
+Driven in a browser: assign, clean merge, and **both** refusal paths, with the same-project refusal
+writing nothing at all. `stakeholders.js` → `?v=20260910s5`; `MODULE_V` → `20260910s5`.
+⚠️ **Not verified signed in** — the RLS refusal paths are reasoned from the policy text and a stub,
+never observed; the first real merge is the thing most worth watching.
+
+### 2026-09-10 (s4) — A stakeholder typed twice under two spellings now gets caught, and asks before it links
+
+**New `assets/js/stakeholders.js`.** Owner: *"there will be cases that at one point a stakeholder isn't
+in the general database and two different planners of their respective projects will add the same
+stakeholder and would have duplicate stakeholder register of the same person"* — and, when asked how
+strict to be: *"let's also make sure that the warning can identify similarity in names. e.g. Fernando
+Miguel Lozano vs Fernando Lozano etc."* Stage 4 of a five-stage pass.
+
+#### ⚠️ Most of the directory already existed. What was missing was the matching.
+`stakeholders`, `stakeholder_map.stakeholder_id`, the 13-field mirror, `findOrCreatePerson`, the
+picker and "Save for all projects" all shipped on 2026-09-08 — and **the migration HAS been run**,
+which this log said it had not. Established by probing the live database: PostgREST resolves column
+names *before* the permission check, so every column of `stakeholders` and `stakeholder_map
+.stakeholder_id` answers `42501` (exists, blocked by grants) against controls returning `PGRST205`
+for a missing table and `42703` for a missing column. The gap was that matching was **exact**:
+`lower(btrim(name))` + `lower(coalesce(btrim(organization),''))`, which cannot see the owner's case.
+
+#### ⚠️⚠️ The matcher RANKS. It never links on its own.
+An **exact** name+organisation hit still resolves silently, because the unique index makes it the only
+possible outcome. A **fuzzy** hit is different in kind — "Fernando Miguel Lozano" and "Fernando
+Lozano" are probably one person and might be two, and only the planner knows. Linking silently would
+merge two real people into one record with no undo in the UI, which is strictly worse than the
+duplicate it was preventing. So the save pauses and asks, once, with the reason on screen.
+
+- ⚠️⚠️ **THE SURNAME GATE is what keeps it honest.** Every name rule requires the LAST token to agree
+  (or be an initial of the other). Without it, "Juan Santos" and "Maria Santos" read as a near-miss on
+  a shared surname, and a directory of Filipino names would surface false matches constantly.
+- Rules: token-subset with a shared surname (the owner's case, 0.92), initial expansion, a
+  single-token typo at edit distance ≤2 on tokens of ≥4 characters, and nickname **substituted for the
+  given name** — the directory holds `Ana Reyes` nicknamed `Anne`, and the person gets typed as `Anne
+  Reyes`. ⚠️ My first nickname rule only fired when the nickname equalled the *whole* other name, so
+  that case scored zero. The suite caught it, not a reading.
+- ⚠️ Organisation **adjusts, never decides**: agreement boosts, disagreement demotes but still
+  surfaces — people change employer, and that is exactly the duplicate worth catching.
+- ⚠️ `exactKey` deliberately does **not** normalise. It must agree with the DATABASE's index, not with
+  the matcher, or a "find" that misses inserts a row the index then refuses and the save fails with a
+  constraint error the planner cannot act on.
+- ⚠️⚠️ **The prompt is gated on `isNew`, and that gate is load-bearing:** `Autosave.wire` clicks the
+  same Save button on a debounce for existing rows, so prompting on edit would throw a modal up
+  mid-keystroke.
+
+#### ⚠️ A shared file, because this page has already made the other mistake
+`portfolio-overview` carried a hand-copied duplicate of the S-curve maths until yesterday. Both it and
+the Stakeholder Map need identity matching, so the logic lives in one file both load.
+
+#### Verified
+**41 assertions** executing the shipped file, including the owner's own case both directions, and a
+**negative set** that must NOT match (two unrelated Santoses, `Jose Cruz` vs `Jose Cruzado`,
+`Michael`/`Michelle Tan`, `Peter`/`Paul Lim`). **4 contrast builds, all biting.**
+⚠️⚠️ **Two of them did NOT bite at first, and that was a real gap in the suite rather than proof the
+code was fine.** Removing the surname gate entirely, and widening typo tolerance to two-letter tokens,
+both left every assertion green — the negatives were passing for *other* reasons, so those two guards
+were untested and I would have claimed them verified. Three cases were added that fail the moment
+either guard is removed (`Maria Santos` vs `Maria Santos Cruz`; `Jo`/`Bo Cruz`; `Al`/`Ed Reyes`).
+
+The dialog was **driven in a browser** against the shipped stylesheet with `confirmPerson` sliced out
+of the module: Link returns the existing person, "someone else" creates, Cancel aborts the save, an
+**exact** match and an **unrelated** name both raise no prompt at all, and — the safety property —
+clicking Link with nothing selected **keeps the dialog open and warns** instead of silently creating.
+
+- New `assets/js/stakeholders.js?v=20260910s4`, loaded by the two pages that need it; stakeholder-map
+  `module.js`/`module.css` → `?v=20260910s4`; `MODULE_V` → `20260910s4`. 48 assets on one version
+  each, 0 splits, 0 missing.
+- ⚠️ **Not verified signed in** — no person has been linked or created against the live directory.
+- ⚠️ **Deliberately NOT in this commit:** the portfolio-level Directory view (create a person and
+  assign them to projects from the Portfolio Dashboard) and the merge tool for duplicates that already
+  exist. The Stakeholders tab there is still read-only. Stopping the NEW duplicates is the half that
+  prevents the problem getting worse; cleaning up existing ones is its own piece of work.
+
+⚠️ **A correction to yesterday's (p3) entry, which was mine:** the row-level `.pd-perf-basis` line I
+added to the dashboard KPI row carried `grid-column: 1/-1`, which **occupies every track** of a
+`repeat(auto-fit, minmax(196px,1fr))` grid and so prevented auto-fit from collapsing the empty ones —
+squeezing the four cards from 454px to 221px. Found and removed by another session three hours later
+(`82e03f1`). I verified the card text and the projects table's cell arithmetic and never re-measured
+the KPI grid itself, which is the one thing that change could break.
+
+### Floor plans you can trace: attach the drawing, outline the zones on it (2026-09-10) — jasantos2
+
+Owner: *"instead of doing this method for defining the zones / areas, i want a pop up window or space
+dedicated for attaching images (like the floor plan) and tracing the zones or areas, similar to the
+one in the equipment loading… that floor plan will be identified for a specific floor. Now there will
+be options if that floor plan can also be applied to other floors."*
+
+Yesterday's cell grid is replaced. A grid could say *"Zone 1 is the left third"*; a traced plan says
+where Zone 1 **is**. Each floor row in **Floors & Zones** now has a **Plan** button — showing at a
+glance how much of that floor is traced — which opens a window holding the drawing.
+
+- **Modelled on the equipment site plan, deliberately**: polygons in virtual plan units (never
+  pixels, so a trace survives a re-upload at another resolution), the image as a path in the
+  **existing `site-plans` bucket** — so ⚠️ **no new migration** — and a fade slider for tracing over
+  a busy drawing.
+- ⚠️ **One plate, many floors, by reference.** "Also use this plan on other floors" is a pointer, so
+  re-tracing once updates every floor sharing it. Copying would leave a forty-storey tower with
+  thirty-nine stale copies after the first re-trace.
+- ⚠️ **Nothing from yesterday is lost**: a grid plate is migrated to polygons on read, one rectangle
+  per painted cell, and the per-type bag is carried across too.
+- **The 3D card extrudes the real outline** — and ⚠️ the progress split stays *hard-edged* on a traced
+  shape, because the polygon is genuinely **cut** at the done fraction rather than tinted. A zone
+  traced in two pieces is drawn as two pieces.
+
+⚠️⚠️ **Three defects came out of driving the window rather than reading it**: deleting the last area
+left an empty plate in the setup (the exact rule the grid version had and this one lost); the "No plan
+attached" prompt showed *through* the traced shapes; and a zero-area clip reached the geometry
+builder, now guarded by a shoelace-area test rather than a point count. A fourth was caught by
+inspection — the old per-storey plate comparison would have **thrown** on the new shape, so it is
+deleted rather than left dead.
+
+**779 assertions across thirteen suites plus the runtime check, all passing** (89 new, including a
+suite that executes the extrusion against a recording stand-in for three.js). ⚠️ Five assertions
+needed *retargeting* where this change rewrote the lines they described. ⚠️ Two suites remain broken
+by the concurrent change-order refactor. ⚠️ **Not verified signed-in** — storage is stubbed in the
+harness, so **the upload has never run against the real bucket**; that is the first thing to try.
+
+`MODULE_V` → `20260910a`. Detail: [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+### 2026-09-09 (y) — The brand mark grows 29%, the caption goes white, and the block does not get taller
+
+Owner: *"Make the logo bigger and the Planning Suite color white. Optimize the space as well and make
+sure everything looks professional looking."* Four asks, and the third is the one that constrains the
+other three — a bigger mark that simply pushes the nav back down is not an optimisation.
+
+#### ⚠️ The mark was smaller than its box, which is why 28px read small
+`favicon-icon.png` is the M padded into a 256x256 canvas. **Measured off the file rather than eyeballed:
+the opaque bounding box is 224x187, i.e. 87.5% x 73.0% fill.** So the 28px box was drawing a
+**24.5 x 20.5** glyph — the mark was already losing ~4px to transparent padding before it sat down
+next to the words. At **36px** the drawn glyph is **31.5 x 26.3**. That is the "bigger" that was asked
+for, and it is bigger by more than the box numbers suggest.
+
+#### ⚠️⚠️ It got bigger and the rail got SHORTER, which is the whole of "optimize the space"
+Padding went 14/12 → **11/10**, so with a mark 8px taller the brand block measures **58px** against the
+56px it measured before this round (and the **95px** it was two rounds ago). The nav starts at 58px.
+
+⚠️ **The collapsed rail was re-padded to the same 11/10, and that fixed a jump nobody had reported.**
+It carried `16px 8px`, so its brand block was 60px against the expanded rail's 56 — toggling the rail
+nudged all 13 nav rows by 4px. Both states now measure **58px** and the rows hold still.
+
+⚠️ **The mobile drawer went 28/22 → 22/18** for the same reason in reverse: left alone, the taller mark
+would have added 8px to a drawer header that did not need it. It now measures **77px**, 2px *less* than
+before, and `max()` still hands a notched phone its safe-area inset.
+
+#### ⚠️ White is not only what was asked for — the red caption was failing contrast
+`--pd-red` (#EE3124) on the rail (#231F20 light / #161717 dark) computes to **3.96:1 and 4.36:1**. At
+10px that is small text, so the bar is **4.5:1**, and it was under it in both themes. `#fff` computes to
+**16.30:1 and 17.96:1**. It also resolves a hierarchy problem: the mark and the words were both red, so
+two things competed to be the brand; with the mark keeping the colour, the words become the brightest
+*text* in the rail, above the nav rows' `rgba(255,255,255,.65)`.
+- Caption sized 10 → **11px** (`--pd-fs-xs`) to hold its own beside a bigger mark, and tracking eased
+  **.18 → .15em**, because the same tracking at a larger size ran the lockup wide.
+
+#### Verified
+Measured in a harness whose brand markup is lifted **byte-for-byte out of `dashboard.html`** (only the
+`src` swapped for the real PNG's bytes as a data URI) with `dashboard.css` inlined, at 1440x820:
+- **Expanded rail (240px):** block **58px**, mark **36x36**, lockup centred to **0.05px** (34.8 vs 34.75
+  ideal), caption `rgb(255,255,255)` / 11px / 1.65px tracking, **18.7px** of slack before the inner edge.
+- **Collapsed rail (64px):** block **58px** — identical to expanded — mark centred **32.0 vs 32.0**,
+  **6px** clearance each side of the 48px inner width, caption and section labels `display:none`.
+- **Mobile drawer (290px @ 718px):** block **77px**, mark 36px, caption shown.
+
+⚠️ **The first attempt measured nothing.** The pane renders a file outside the project as a `data:`
+snapshot, so the relative `<link>` to `dashboard.css` resolved to nothing and it reported black text and
+a 702px sidebar — the *third* time this session a harness has reported an unstyled page as a finding.
+Inlining the stylesheet is what made the numbers real. ⚠️ A `getBoundingClientRect` read issued in the
+**same batch** as `resize_window` also returned 240px for a 64px rail. **Not pre-reflow geometry — it is
+the first frame of a transition.** `.pd-sidebar` carries `transition: width .2s ease, flex-basis .2s
+ease, padding .2s ease` (dashboard.css:135), so an immediate read returns the START value and looks
+settled. The computed-style read said 64px while the rect said 240, which is the tell. The fix is not
+to wait: inject `*{transition:none!important;animation:none!important}` and force a reflow before
+measuring anything that animates — the trap is already on file from 2026-09-01 and 2026-09-09.
+
+⚠️ Screenshots could not confirm the visual — the static snapshot does not re-render after DOM
+mutation — so this rests on geometry and computed styles, not on a picture.
+
+CSS-only across all 29 pages; no markup changed. `dashboard.css` → `?v=20260909y`. `MODULE_V` untouched,
+because no module asset moved.
+
+### 2026-09-09 (x) — The sidebar brand becomes the red M with PLANNING SUITE beside it
+
+Owner: *"Instead of the Megawide Construction logo lets make it the red megawide m logo and beside
+it is the Planning Suite."* **CSS only** — both `<img>`s were already in all 29 pages' markup (the
+wordmark for the expanded rail, the mark for the collapsed one), so no HTML changed.
+
+⚠ **The wordmark named the company; the mark can do that in 28px.** `MEGAWIDE CONSTRUCTION` is a
+5.81:1 lockup, so it had to span most of a 240px rail to stay legible — spending the widest element
+in the sidebar on something every page of this app already belongs to, while the thing it actually
+identifies, the Planning Suite, was the small red line underneath. Now the mark carries the company
+and the product name gets the row beside it.
+
+| | before today | after (w) | **after (x)** |
+|---|---|---|---|
+| brand block | 95px | 79px | **56px** |
+| first nav row | 131px | 109px | **87px** |
+
+**44px reclaimed across the two changes**, a third of the original block, with the nav starting
+where the logo used to end.
+
+⚠⚠ **`gap` WAS THE WRONG TOOL AND MEASURING IS THE ONLY REASON I KNOW IT.** The markup carries a
+bare `Planners Dashboard` text node between the two images — the thing `font-size: 0` exists to
+hide. In a flex container that text node becomes an **anonymous flex item**: zero-width, but still
+an item, so `gap: 9px` was applied on **both** sides of it and the measured space came out **18px**.
+The spacing is a `margin-left` on the caption instead, which is exactly one gap however many empty
+text nodes the markup carries. Re-measured: **10px**, lockup centred to within 0px.
+
+⚠ **All three brand states move together, and two of them invert.** The mark was `display:none` by
+default and shown only under `.pd-collapsed`; that default is now `block`, so the collapsed rail
+drops only the *words* (verified: rail 64px, mark `block` and centred, words and wordmark `none`),
+and the phone drawer — which re-expands `.pd-collapsed` — stops restoring the wordmark and stops
+suppressing the mark. With one mark instead of two there is nothing left to stack.
+
+⚠ **The phone drawer is verified by SOURCE, not by measurement, and that distinction is the point.**
+The pane refused to emulate a narrow viewport for the second time today, reporting `clientWidth 980`
+against a 375px request — so what that check measured was the *collapsed desktop rail*, not the
+drawer. Verified instead against the shipped bytes: all three rules present verbatim, brace-matched
+as **contained** in the `@media (max-width: 820px)` block at lines 1067–1118, and both base
+declarations (176, 193) earlier in source order. That is a proof about the cascade; it is not a
+rendered drawer, and it is worth checking on a real phone.
+
+⚠ `logo-white.png` is **retired from the sidebar, not deleted** — it is still the login and home
+mark (`.pd-auth-mark`), and its `<img>` stays in the markup, which is what kept this to one file.
+⚠ `dashboard.css` is SHARED — `?v=` bumped across **all 29 pages**. `MODULE_V` → `20260909x`.
+⚠ **Not verified signed in.**
+### Zone layout in Floors & Zones — the prerequisite the 3D stacking reads (2026-09-09) — jasantos2
+
+Owner: *"the pre-requisites for the 3D to be established is to define the location of the zones and
+areas. in the schedule setup, in the step of defining the floors… per floor or type (type is the
+basement, podium / commercial, typical, roof deck)."*
+
+A floor's zones were an **ordered list and nothing more**, which is exactly why both stacking cards
+drew them as equal slices. Floors & Zones now has a **Zone layout** editor: a coarse plan grid held
+per floor **type**, with a per-floor override, saying which part of the plate each zone occupies.
+
+- ⚠️⚠️ **A grid, not a polygon** — deliberately. It gives each zone its **position** and **relative
+  size**, which is what the stacking views ask for. It is **not** a survey: no dimensions, and the
+  editor and the 3D footer both say so.
+- ⚠️ **Per type first**, because a forty-storey tower has four or five distinct plates, not forty.
+  One floor that genuinely differs gets its own; "Use the type's plate" gives it back.
+- ⚠️ **Keyed by zone code**, so one plate serves every trade that names its zones the same way — a
+  floor has one physical shape, and a plan per trade would let two trades disagree about one slab.
+- ⚠️ **The plate is created only when a cell is painted.** Arriving, switching type or nudging the
+  grid write nothing, so "no plate yet" stays true.
+- **The 3D card reads it**: zones sit where you put them, a zone spanning cells is drawn across them,
+  and the footer says whether the positions are yours or a guess. ⚠️ One plate is drawn per tower, so
+  storeys whose plates disagree fall back to the old wrap rather than squashing one onto the other.
+
+⚠️⚠️ **Two defects came out of driving the editor in a browser**, not from reading it — both made a
+planner's own layout look lost: picking a floor with no override drew an empty grid instead of the
+plate that floor actually uses, and "Use the type's plate" then reported "no plate yet" over an empty
+grid while the type's plate sat there intact.
+
+**770 assertions across twelve suites plus the runtime check, all passing** (79 new). ⚠️ Three suites
+needed *retargeting* where this change edited the lines they described — named, not quietly adjusted.
+⚠️ Two suites remain broken by the concurrent change-order refactor. ⚠️ **Not verified signed-in**:
+nothing was saved to a setup, so the 3D card has not been seen reading a real layout.
+
+`MODULE_V` → `20260909x`. Detail: [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+### 2026-09-09 (w) — The sidebar brand block gives 22px back to the nav
+
+Owner: *"Reclaim the height so the nav starts higher, smoothen the placement of the Planning
+Suite."* **Measured at 1440×820 before touching anything**: the brand block was **95px** and the
+first nav row began at **131px** — 22 top padding + 30 logo + 9 + 15 wordmark + 18 bottom + 1 rule,
+and then nav's own 16 before the PROJECT label. Nearly a fifth of a 13-item rail spent before the
+first item.
+
+| | before | after |
+|---|---|---|
+| brand block | 95px | **79px** |
+| first nav row | 131px | **109px** |
+| PROJECT label | 111px | **89px** |
+
+⚠ **The wordmark is smoothed, not just squeezed.** The old rhythm ran **22 / 9 / 18** — the
+wordmark sat nearer the logo than the rule beneath it while the outer margins disagreed by 4px, so
+the lockup read as drifting rather than centred. It is now **14 / 7 / 13**: the pair stays tight
+(the wordmark belongs to the mark) with outer margins that read as even. Measured, not eyeballed.
+⚠ The `.18em` letter-spacing and the matching `padding-left` optical re-centre are untouched — that
+hack is correct and its comment explains why.
+
+⚠ **Both other brand states verified unchanged.** The collapsed icon rail keeps its own
+`16px 8px` and still swaps the wordmark for the mark (measured: 63px, logo `display:none`, mark
+`block`). The phone drawer keeps its safe-area padding because the `@media (max-width:820px)`
+block restates `.pd-brand` at **line 1084**, after the rule edited at **line 154** and at equal
+specificity — ⚠ confirmed by SOURCE ORDER rather than by measurement, because the pane refused to
+emulate 420px and reported 980 instead. Saying which of the two it was matters: one is proof, the
+other is a check that did not run.
+
+⚠ `dashboard.css` is SHARED — `?v=` bumped across **all 29 pages** in one pass; a partial bump
+leaves pages disagreeing about which copy they hold. `MODULE_V` → `20260909w`.
+⚠ **Not verified signed in** — measured in a harness carrying the brand markup byte-for-byte from
+`dashboard.html` and the real stylesheet.
+### 2026-09-09 (v) — Progress Photos at 150+: the gallery was missing the collapse the LIST view already had
+
+Owner: *"The progress photos UI need to be updated ... This needs to be properly compiled when
+anticipating the photos database could reach up to 150+ photos."* Measured before changing anything,
+by slicing the **shipped** `galleryHTML` / `groupRows` / `cardHTML` / `thumb` out of `module.js` and
+running them over fixtures — so the markup under measurement is the real renderer's, not a copy.
+
+| photos | DOM nodes | page height | **screens of scrolling** |
+|---|---|---|---|
+| 150 | 1,549 | 9,747px | **10.8** |
+| 400 | 4,049 | 22,880px | **25.4** |
+
+⚠⚠ **THE THROUGHPUT WAS NEVER THE PROBLEM, and it is worth saying because that is where a scale
+complaint usually leads.** All 150 images already carry `loading="lazy"`; signing is already batched
+through `createSignedUrls` with a transform-thumbnail path and an on-demand full-res fallback; the
+DOM is small. Nothing here needed virtualising, paginating or caching.
+
+⚠⚠ **What it lacked was a way to put a month away once you had looked at it — and the LIST view has
+had exactly that all along.** `listHTML` emits `.pp-group` with `data-group`, reads `collapsed[g.key]`
+and `saveUI()`s it; `galleryHTML` emitted a plain heading with none of it. So the view the owner was
+complaining about was the one *without* the feature its sibling already shipped. That is an
+asymmetry to close, not a feature to invent.
+
+- **Gallery groups collapse**, reusing `collapsed{}` and the **same keys** the list writes — so a
+  month closed in one view is closed in the other, and one wiring serves both
+  (`.pp-group,.pp-gallerygrouphead[data-group]`) so they cannot drift apart.
+  **Measured: collapsing 7 of 8 month groups takes 150 photos from 10.8 screens to 1.6 — −85%.**
+- **The heading is sticky**, `top:0; z-index:2`, matching `.pp-grid-head` (the list view's own sticky
+  header) rather than inventing a second convention. Measured mid-scroll at 4,200px: exactly **one**
+  heading pinned, reading *June 2026 · 21*. Before, headings scrolled away and a tile wall said
+  nothing about where you were.
+- ⚠ The class stays `.pp-gallerygrouphead` rather than becoming `.pp-group`: the list's rule carries
+  `min-width:980px` for its horizontally-scrolling grid, which would have forced a phantom scrollbar
+  across the tile wall. Same behaviour, its own chrome.
+
+⚠ **A cached stylesheet nearly produced a false negative.** The first measurement reported the head
+as `position:static` with a transparent background — the harness linked `module.css` with no `?v=`
+and the browser served the old copy. The rule was correct on disk the whole time. Cache-busted and
+re-measured; this is the same class of thing this repo's own `?v=` discipline exists for.
+
+`module.js` / `module.css` → `?v=20260909v`; `MODULE_V` → `20260909v`.
+⚠ **Not verified signed in** — fixtures through sliced renderers, no real photo row rendered.
+### Vertical Stacking restored after I broke it, plus 3D in full screen and under Planned vs Actual (2026-09-09) — jasantos2
+
+Owner, with a screenshot: *"where is the 3D? and how come there is an error, no vertical stacking
+now."* The live view read **"below is not defined"**.
+
+- ⚠️⚠️ **I broke it.** Yesterday's refactor lifted the level ordering into `_vsTowerModel`; that
+  region declares `above` and `below`, the drawing code still reads both, and the model did not hand
+  them back — so the card threw on every project. Fixed by returning them.
+- ⚠️⚠️ **And the proof I trusted could not see it.** I had verified that refactor by *reversing* it
+  and diffing against HEAD statement for statement. That passed, and was worthless here by
+  construction: reversing the extraction reassembles the whole function, so every variable resolves
+  inside it regardless of the shipped scope. **A textual-equivalence proof cannot see a
+  ReferenceError.** I checked the code was the same and never checked it still ran.
+- **Two checks now exist.** A runtime check that *executes* the shipped renderer on all three bases
+  and the trade-split path; ⚠️ its resolver links the **real** functions on demand and **refuses to
+  stub** any name the module does not define as a function — otherwise it would have gone green on
+  the broken file. Proved both ways: 10/10 fail naming `below` on the broken file, 10/10 pass on the
+  fixed one. Plus a static check that no variable left in the model is still read by the renderer.
+- **Where the 3D was:** already in the Vertical Stacking toolbar, `2D | 3D`, 2D default. It was
+  invisible only because the view threw before the toolbar drew.
+- **Planned vs Actual in 3D:** the 2D cell's three channels, unchanged — fill = the trade (⚠️ kept,
+  because replacing it once made every trade unidentifiable), brightness = done, and the **slip on
+  the block's edges**, plus a **baseline mark** at the planned fraction (absent when there is no
+  baseline; a mark at 0 would claim something different).
+- **Full screen in 3D:** the focus window builds the model, two side-by-side under compare, each
+  with its own viewpoint bar. ⚠️ The SVG-only zoom/fit controls are **not emitted** rather than left
+  dead — which created a null-dereference crash that the suite caught. Full screen **resizes** the
+  canvas, and the scrubber rebuilds the scenes while keeping the chosen viewpoint and disposing the
+  old GPU contexts.
+
+**479 assertions across eleven suites plus the runtime check, all passing.** ⚠️ Two suites remain
+broken by the concurrent change-order refactor (named again, not dropped). ⚠️ A `sed` prefix match
+nearly shipped collateral damage to two unrelated version strings — caught by reading the diff.
+⚠️ **Not verified signed-in**: the fix is proved by executing the shipped renderer, not by loading
+the live page.
+
+`MODULE_V` → `20260909v`. Detail: [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+### 2026-09-09 (u) — The dashboard KPI cards were squeezed BY the line the owner asked to remove
+
+Owner, two asks in one message: *"The 4 KPI cards should fit properly right now everything looks
+squeezed"* and *"remove the ... tooltip since this is understood common sense."* **They were the
+same bug**, which is not what either of us expected.
+
+⚠⚠ **`grid-column:1/-1` OCCUPIES EVERY TRACK, SO `auto-fit` CAN NEVER COLLAPSE ONE.** The grid is
+`repeat(auto-fit, minmax(196px, 1fr))`, which at 1900px lays down **eight** tracks and is supposed
+to collapse the four with nothing in them. The basis paragraph spanned `1/-1`, so all eight counted
+as occupied and the four cards were handed a quarter of the row each.
+
+**Measured at 1900px, before and after, in a harness carrying the shipped rules:**
+
+| | tracks | card width | caption lines |
+|---|---|---|---|
+| with the basis line | `221px × 8` | **221px** | 2–3 |
+| without it | `454px × 4` + 4 collapsed | **454px** | 1–2 |
+
+**+233px per card**, from deleting a sentence. No grid rule was touched — the auto-fit was correct
+all along and was simply being prevented from doing its job.
+
+⚠ **The prose was defensible when it was written** (a number with no stated basis gets trusted
+further than it deserves) and the owner is right that EV ÷ PV and duration-weighting are common
+ground for a planner. ⚠ The **empty** cards keep their own text: that is not an explanation of a
+concept, it names a missing input and where to capture it, which is actionable — and it is the half
+the earlier entry's reasoning actually protects.
+
+The now-dead `.pd-perf-basis` rules went with it. `MODULE_V` → `20260909u`.
+⚠ **Not verified signed in** — measured against the shipped rules in a harness, not on live data.
+### Vertical Stacking gains a 3D view, with the plan layout and the four elevations as its prerequisites (2026-09-09) — jasantos2
+
+Owner: *"establishing a 3D view of the 2D vertical stacking that is already established… the
+pre-requisites is defining the section plan and how the layout of the zones and areas are. As well
+as defining from the top view, which is the front, right side, left side and rear elevations."*
+
+- **A `2D | 3D` switch on the Vertical Stacking toolbar.** The 3D card is the *same* storeys, the
+  same grade line and the same cells as the 2D card — ⚠️ literally: the level ordering was lifted
+  into one `_vsTowerModel` that both renderers read, because two renderers deriving their own order
+  is how a 3D view ends up disagreeing with the 2D view of the same data.
+- ⚠️⚠️ **The 2D card is proved untouched, not spot-checked.** It is the view read daily and this
+  moved 28 lines out of the middle of its renderer, so the suite **reverses the refactor** and
+  asserts the result equals HEAD's renderer statement for statement — a proof over every input.
+- **The prerequisites**: *Plan columns* (how the zones wrap in plan) and *Front faces N/E/S/W*
+  (which edge is the front). Right, rear and left are **derived** by rotation, never stored — a
+  building cannot have two fronts. Six viewpoints follow: Front / Right / Rear / Left / Top / Iso,
+  plus drag to orbit and click a block for its dates (the *same* panel the 2D cell opens).
+- ⚠️⚠️ **Two geometry flaws that only measurement found**, both plausible on screen: per-storey grids
+  drew a 2-zone floor at half the width of a 4-zone floor (a floor with two zones has the *same*
+  plate, cut differently), and a storey whose cells did not fill its grid left a hole — three cells
+  covering 4.5 of a 6-unit plate. Every storey now tiles the same plate exactly, asserted for every
+  cell count on every plate up to twelve zones.
+- ⚠️ **What it is not**: a survey. The schedule holds zones as an ordered list with no outlines,
+  coordinates or areas, so the footprint is schematic and the card **says so on screen** — no length
+  or area is implied. Cross-sections drawn off real plans remain a separate piece of work with a
+  storage decision in it.
+- three.js is the **same pinned r128 Progress Photos already ships**, loaded **lazily** so the grid
+  does not pay 600KB for a card most sessions never open, and every repaint frees its WebGL contexts
+  (a browser caps them, then silently kills the oldest).
+
+**732 assertions across eleven suites, all passing** (73 new), and the card was **drawn, orbited and
+picked in a real browser** with the real library. ⚠️ **Not verified signed-in** — it ran against a
+fixture model, never inside the module with a live project's activities.
+
+`MODULE_V` → `20260909a`. Detail: [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+### 2026-09-09 (t) — Minutes of Meeting: the empty card above the table was one we emptied ourselves
+
+Owner: *"There is a big empty space above the table let's fix the UI."* Self-inflicted, and the
+history is in this log: on **2026-09-03** Filter, Export and **+ Add meeting** all moved OUT of that
+in-page row into the secondary top bar, and the leading “3 meetings” count moved BELOW the table as
+a footnote. Each move was right on its own. What none of them noticed is what was left: a bordered,
+padded, full-width **card whose entire content was a 34px two-button toggle**.
+
+⚠ **A card is a container for content.** With nothing left to contain it stops reading as a
+container and starts reading as a rendering fault — which is exactly how it was reported. The chrome
+is removed (no background, no border, no padding) and the row simply right-aligns its toggle above
+the table. **Measured against the real stylesheet: 54px → 36px**, plus the bottom margin 14 → 10.
+
+⚠ **The toggle STAYS in the content rather than following the other three into the topbar.** Item 6
+of that same 2026-09-03 round moved view toggles deliberately *out* of the chrome and into the
+content, “on top of the view they switch”. So the chrome goes and the control stays — removing the
+card is not an invitation to undo that.
+
+⚠ The `flex:1` spacer div went with it: the row right-aligns itself now, and a spacer whose only
+job is to push one control across is a div somebody has to reason about the next time a second
+control appears. ⚠ The **filters panel** below is untouched and keeps its own card — verified, since
+stripping the wrong one would have left the open filters floating on the page background.
+
+`module.js` / `module.css` → `?v=20260909t`; `MODULE_V` → `20260909t`.
+⚠ **Not verified signed in** — measured in a harness carrying the real stylesheets, not on the live
+module.
+### 2026-09-09 (s) — Contracts & Claims: two duplicate buttons removed, and the export finally asks
+
+Six owner items on the Contract tab, all of them about the same thing — controls sitting where they
+do not belong.
+
+- ⚠⚠ **"Add BOQ…" is gone from the BOQ toolbar.** *"There is an +Add button in the title bar and
+  another Add BOQ at the bottom."* The topbar **+ Add** opens the same wizard, and that wizard's BOQ
+  step creates a **new BOQ document** (`boqPath() === 'add'`), not only a revision on an existing
+  one — checked before removing it, because deleting the only route to a second trade BOQ would
+  have undone a feature asked for two days ago. The **empty-state** button stays: with no BOQ at all
+  the section is otherwise a dead end, and a call to action is not a duplicate of a visible control.
+- ⚠⚠ **`+ Lot` is gone from the Contract records head.** Also verified first: lots are created by
+  the contract wizard's package step, and by **editing** the contract record afterwards (the pencil
+  offers the same None / Define / Link choice). The `+ Lot` **inside** the Contract lots section
+  stays — but that section only exists once a lot does, so it is an action within its own subject
+  rather than an invitation on a screen where the right answer is almost always zero lots.
+- **The keyboard hint moved to the FOOT of the grid.** In the filter bar it put a line of keyboard
+  syntax between the planner and the first row on every open — read once, then in the way forever.
+  ⚠ The `isDraft() && canWrite` comment travelled with it, because the `var`-hoisting trap it warns
+  about travels with the line.
+- ⚠⚠ **The topbar export now asks what to export.** *"There is an export button at the title bar we
+  can have option to export to excel for which items contracts/boq/ or all."* It used to emit
+  whichever register tab you were on, silently, so the BOQ needed a second Export button further
+  down the page. That button is deleted and the topbar opens a chooser: **records / BOQ / both**,
+  both sheets in one workbook.
+  ⚠ **Each sheet is built by its own module** — `BOQ.sheet()` and `recordsSheet()`, both refactored
+  to return rows and write nothing. A chooser that rebuilt either column set would be a second
+  definition of what an export contains, and the two would drift the first time a column moved.
+  ⚠ An option with nothing behind it is **disabled with its reason on screen**, not hidden — hiding
+  it would leave the planner wondering whether the app can export a BOQ at all.
+- **Contract records gets the section head the BOQ has.** *"The UI of Bill of Quantities title is
+  okay. Let's adopt the same way for the contract records."* Bill of quantities and Contract lots
+  are both announced by a `.cc-sechead`; this one carried its title inside the card, so three
+  sections on one page were introduced two different ways. The card's own `<h3>` went with it —
+  repeating the words directly under the heading is what made that header feel crowded.
+- **The project selector drops "Group Head: ".** *"just leave who the group head is"*. In a
+  two-line row the subtitle has room for the location and a name; the label spent a third of it
+  restating a column heading the reader already understands. Three sites in the shared `ui.js`.
+
+**Verified:** all six confirmed by static assertion (button ids gone, section head present, hint
+under the grid, dead `pk-addfirst` wiring removed with its button); the new chooser **rendered
+against the real stylesheets** in both themes — disabled option dimmed at 0.55 with `not-allowed`,
+first enabled option pre-selected, every colour resolving through `--pd-*` in dark. Class audit
+clean apart from the two pre-existing strays this log already records (`boq-clm`, `cc-listbar`).
+41 JS files parse; CSS braces 555/555; every asset on one version.
+⚠ `ui.js` is SHARED — `?v=` bumped across all 21 referencing pages in one pass.
+contracts `boq.js` / `module.js` / `packages.js` / `module.css` / `ui.js` → `?v=20260909s`;
+`MODULE_V` → `20260909s`. ⚠ **Not verified signed in** — no workbook has actually been written.
+### 2026-09-09 (r) — The change-order engine becomes shared, and the wizard previews what it will create
+
+**New `assets/js/co-insert.js`.** Owner: *"The per activity view doesn't bring much value ... I was
+thinking that it would show the whole Gantt view of the schedule and it would see the relationships
+per level/activity/wbs ... We should also consider when a change order not only affects existing
+activities but will also add them. I believe there is a function already that is available in the
+schedule module. Let's implement holistically."* All three are right, and the third is the one that
+decided the shape of this.
+
+#### ⚠️⚠️ The arithmetic moved out of project-schedule, and the reason its own comment gave for keeping it was half right
+`splitPlan` / `splitBuild` / `bulkSplitPlan` lived inside `modules/project-schedule/index.html`, under
+a comment stating: *"AND IT LIVES HERE, NOT IN CONTRACTS & CLAIMS ... inserting the work is this
+module's job."* **True of the WRITES, which still happen only there. False of the READS.** Contracts
+& Claims has to preview the same result — a planner raising a variation needs to see the activities
+it will create before agreeing to it — and the only two ways to do that were to copy the arithmetic
+or share it. `affected.js` already carried a comment refusing the copy: *"a second copy of the one
+calculation a CO claim turns on."* So it is shared: **one implementation, two callers.**
+
+⚠️⚠️ **THE DATE HELPERS ARE INJECTED, AND THAT IS WHAT MADE THE MOVE SAFE.** project-schedule's
+`pd`/`dstr`/`addDays` are **local-time**; contracts-claims' are **UTC**, deliberately (in UTC+8 a
+plain `YYYY-MM-DD` parsed locally lands on the previous day at 16:00 and every bar starts a day
+early). Standardising the shared file on either would have silently moved the other module's dates.
+The *arithmetic* is what must not be duplicated; the date representation is each module's own.
+
+⚠️ **One deliberate behaviour change, recorded rather than left to be discovered:** the single-insert
+id allocator now scans to 9999 rather than 999, because the bulk allocator (which threads a `taken`
+map, without which 23 hosts under `CO-014` would every one be handed the id `CO-014`) is the survivor
+of the two. It can only ever find *more* free ids.
+
+**Proved identical, not asserted:** a suite slices the OLD `splitPlan`/`splitFreeId`/`splitBuild`/
+`_bulkFreeId`/`bulkSplitPlan` out of **git HEAD** and executes them beside the shipped shared file
+over the same inputs — 3 starts × 6 spans × 4 durations × 5 cut positions, plus id collisions,
+1/5/23-host runs, a fixed cut date producing mixed refusals, and the undated / already-cites
+branches. **370 results compared, 370 identical, 0 differing.** A refactor that cannot show this is a
+rewrite with extra steps.
+
+#### The preview is a Gantt, and it draws the work being ADDED
+The per-activity strip is gone. In its place, grouped under their **WBS branches** (collapsible,
+open by default): each host bar drawn to its **new** finish with the notch where work stops, and —
+the half the old preview could not show at all — **the change-order activity that will be created**,
+as its own red row beneath its host.
+
+- ⚠️ Those rows come from `bulkSplitPlan`, **the same function the schedule runs when it performs the
+  insert**. The ids are real (`CO-014`, `CO-014-2`, `CO-014-3` — the bulk allocator working), the
+  dates are real, and the tooltip carries the actual predecessor string (`ST-5-1 SS+12`). The preview
+  cannot drift from the insert, because there is nothing to drift from.
+- ⚠️ **A refused host says so on its own row** — *"A 1-day activity cannot be split…"*, the engine's
+  own message — rather than being quietly absent from a list the planner believes is complete.
+- ⚠️ **An EOT plans nothing.** Its activities are the delay *basis*; the granted days move the
+  contract completion date and are not added to the work. The schedule's bulk screen refuses one for
+  the same reason, and proposing rows here would invite a planner to expect activities that will
+  never exist.
+- ⚠️ The Gantt is **not behind a `<details>` any more**. It was, while it was a strip of 240
+  one-pixel bars — correct then, wrong now: it *is* the preview, and the impact headline above it is
+  the summary of what it shows. The preview pane grew 300 → 360px to match, and the tree beside it
+  with it.
+- ⚠️ Preview branches keep their **own** open/closed map. Sharing one with the picker tree made
+  collapsing in one pane silently reorganise the other; and a collapse stores `0` rather than
+  deleting the key, or it would be indistinguishable from never-seen and spring open on the next
+  repaint — which is every keystroke.
+
+#### Verified
+370 equivalence assertions (above) + the 18 on `impactOf`, all sliced from shipped files. Driven
+through the real `CCWizard.open()` at 1440px in both themes: **21 activities created, 1 refused**,
+ids allocated from the reference, WBS grouping correct, no page horizontal scroll, and every colour
+resolving through `--pd-*` in dark (`.cca-gr-bar` → `#6f767d`, no hardcoded light grey). Class audit
+clean **both** ways after deleting the now-dead `.cca-mg-*` strip rules and the `<details>` rules.
+⚠️ Also brought the `MODULE_V` **fallback** literal current — it had drifted 4 versions behind. It is
+only used by a page that omits the `?v=`, which is why the drift was invisible.
+`co-insert.js` (new) / `affected.js` / `wizard.js` / contracts `module.css` → `?v=20260909r`;
+`MODULE_V` → `20260909r`.
+⚠️ **Not verified signed in** — fixture data through a stubbed layer. No activity has been inserted.
+
+### 2026-09-09 (p3) — Portfolio's 13 in-page tabs go, the S-curve becomes per-project, and the KPI cards stop explaining themselves
+
+Owner's three Portfolio Dashboard items and two Project Dashboard items. Stage 3 of a five-stage pass.
+Detail in [`modules/portfolio-overview/CLAUDE.md`](modules/portfolio-overview/CLAUDE.md) and
+[`modules/progress-photos/CLAUDE.md`](modules/progress-photos/CLAUDE.md). What reaches beyond a module:
+
+- ⚠️⚠️ **`ui.js` gains a MILESTONES row, and without it the tab removal would have orphaned a whole
+  view.** Milestones has no module, so `PORTFOLIO_TAB` — which maps module keys to portfolio views —
+  cannot produce it, and the in-page strip was its only entry point. Found by enumerating what the
+  sidebar can reach *before* deleting the thing being replaced, not after.
+- ⚠️⚠️ **THE PORTFOLIO ROLE GATE MOVED FROM THE TAB BUTTONS INTO `switchView`, AND IS STRICTLY
+  STRONGER.** It used to set `hidden` on five `.po-tab` buttons — which never stopped anyone typing the
+  `#po_view=` hash, because the hash routes straight to `switchView`. Gating the view closes the entry
+  point the tabs never covered. Same five modules, still matching `superAdminOnly` in `config.js`;
+  UI visibility only, no RLS change.
+- ⚠️⚠️ **`portfolio-overview` STOPS CARRYING ITS OWN COPY OF THE S-CURVE MATHS.** `scCompute` was a
+  hand-copied duplicate of `assets/js/scurve.js` — the exact drift the 2026-09-01 extraction into
+  `PDScurve` existed to prevent — and it is now a wrapper over the shared engine. This is a
+  prerequisite, not tidying: the *"Overall Progress" ≡ "Actual to date"* identity bug exists in three
+  places, and Stage 5 can only fix it once if this page reads the shared engine.
+- **The portfolio S-curve draws one line per project**: colour = project, Baseline dashed, Actual
+  solid, Forecast dotted. ⚠️ The y-axis is **per-project percent**, never a shared absolute total — a
+  40,000-day programme would otherwise flatten a 2,000-day one into the axis. ⚠️ `project_id` had to be
+  added to the lean select; its absence is precisely why this was impossible before. ⚠️ Above five
+  projects it defaults to Actual-only **and says so on screen**; no project is ever silently dropped.
+- **Project Dashboard: four KPI paragraphs become four short notes plus one row-level sentence.**
+  Owner: *"There are too many text tooltips for each KPI card."* ⚠️ The load-bearing comment above
+  `perfCard` still holds — POC is duration-weighted while SPI/CPI are cost ratios, and a row of bare
+  numbers invites combining them — so the basis is still stated, **once, contrasting both bases in one
+  sentence** instead of four cards each explaining themselves. ⚠️ Empty cards keep their own text:
+  that one names a missing input and where to capture it, which is actionable rather than explanatory.
+  The S-curve hint drops from three sentences to one, keeping only what the chart cannot show itself.
+- **Progress Photos: the Explorer resemblance was the tile size, measured.** The default scale of 1/3
+  resolved to a **125px card holding a 70px image**; it is now **263px / 158px**, and each tile carries
+  a two-line caption where it previously carried no text at all.
+
+**Verified** by slicing the shipped overlay and the shipped `galleryHTML` out of their files and
+executing them against fixtures in a real browser, then measuring: 2/3/7-project overlays produce
+6/9/7 polylines in 2/3/7 colours with no point outside the plot box; every photo caption line is
+unclipped and unwrapped at the shipped scale. Portfolio table cell arithmetic **asserted** at 8 across
+header, body, group subtotal, TOTAL and empty state. `node --check` clean; inline `<script>` parses
+(⚠️ progress-photos' own extraction reports the documented pre-existing false positive — a CDN `src`
+containing `build/three.min.js` — **confirmed identical on HEAD** rather than assumed); CSS braces
+593/593; 47 assets on one version each, 0 splits, 0 missing.
+
+- `ui.js` → `?v=20260909p3` (21 pages); progress-photos `module.js`/`module.css` → `?v=20260909p3`;
+  `MODULE_V` → `20260909p3`. `scurve.js` is unchanged and keeps `20260901a` — it simply gains a third
+  referencing page.
+- ⚠️ `modules/project-schedule/index.html` and `modules/contracts-claims/index.html` are again staged
+  as **HEAD + this change only**; the concurrent session's extraction of `splitPlan` into the untracked
+  `assets/js/co-insert.js` is still in the working tree and is not mine to commit.
+- ⚠️ **Not verified signed in.**
+
+### 2026-09-09 (u2) — Minutes of Meeting: the PDF stops being a screenshot, and `hidden` starts working app-wide
+
+Owner's six Minutes-of-Meeting items. Stage 2 of a five-stage pass. Full detail:
+[`modules/minutes-of-meeting/CLAUDE.md`](modules/minutes-of-meeting/CLAUDE.md). The parts that reach
+beyond the module:
+
+- ⚠️⚠️ **`hidden` DID NOT WORK ON ANY `.pd-btn` IN THIS APP, ANYWHERE.**
+  `.pd-btn { display: inline-flex }` is specificity **(0,1,0)** — exactly equal to the user agent's own
+  `[hidden] { display: none }` — and an author rule beats the UA default at equal specificity. So every
+  `btn.hidden = true` in every module set an attribute that changed nothing. **MEASURED before the fix:
+  four `.pd-btn`s carrying the attribute all computed `display:flex`.** In Minutes of Meeting that put
+  the filter funnel on screens that draw no filter panel, so clicking it silently toggled state you only
+  saw later — which is how it was reported ("the search and filter view doesn't work when clicked").
+  ⚠️ This is the **same defect** `minutes-of-meeting/module.css` has documented at length since August
+  for `.il-icondd-menu`, fixed there with `:not([hidden])` and never generalised. Now one line in
+  `dashboard.css`, fixing the class app-wide.
+  ⚠️ **The shared fix alone was not sufficient, and only measuring showed it:** a module rule at
+  (0,3,0) outranked it, so `+ Add meeting` hid correctly while the funnel and refresh did not.
+- ⚠️ **A shared `.pd-spin`.** There was **no spinner in `assets/` at all** — zero keyframes — and three
+  modules (`.cc-spin`, `.dr-spin`, `.ms-spin`) had each rolled a byte-identical private copy. Promoted
+  rather than letting a fourth be added. Carries a `prefers-reduced-motion` slow-down.
+- ⚠️⚠️ **`.pd-input` and `.pd-select` now pin `min-height: 32px`, and my hypothesis about why was
+  wrong.** I expected native `<select>` chrome to be the "different UI" the owner reported. Measured:
+  background, border, radius and colour all **match**. What differs is the box — text input **29px**,
+  `<select>` **31px**, date input **31px**, three heights in one form row, because neither class pins a
+  height and each control type adds its own intrinsic box.
+  ⚠️ **`min-height`, deliberately NOT `height`** — this app has many `<textarea class="pd-input">`,
+  which a fixed height would have collapsed to one line, and project-schedule has
+  `<select multiple size="4">`. Both re-measured after the change: textarea **59px**, multiple-select
+  **78px**, `.pd-input-sm` still **34px**, and the three form controls now agree at **32px**.
+- **The module drops `html2pdf` for native jsPDF + autoTable.** The owner's own exported file proved the
+  export was a **photograph**: `Producer (jsPDF 2.3.1)`, two `/DCTDecode` images at 1438×2096, **0 text
+  operators**, 341.5 KB — so the reported text overflow was baked into a bitmap where no stylesheet
+  could reach it. Now **21.1 KB with 103 selectable text operators and 0 JPEGs**, wrapping guaranteed by
+  `splitTextToSize`. ⚠️ `jsPDF` is **not** obtainable from the html2pdf bundle (measured:
+  `window.jspdf` undefined, `html2pdf.jsPDF` absent), which is why two new tags rather than reuse.
+  ⚠️ `issues-lessons` and `progress-photos` still load html2pdf and are untouched.
+
+**Verified** on real produced PDF files — the shipped drawing code sliced out of `module.js` and
+executed against fixtures, the bytes captured and the PDF structure parsed — not by reading the code
+that emits it. CSS measured before and after in a browser. `node --check` clean; inline `<script>`
+parses; braces 492/492 and 355/355; 0 NUL bytes; **47 assets on one version each, 0 version splits,
+0 referenced-but-missing**. ⚠️ **Not verified signed in.**
+
+- Shared `dashboard.css` → `?v=20260909u2` (29 pages); module `module.css` / `module.js` →
+  `?v=20260909u2`; `MODULE_V` → `20260909u2` (the module's `index.html` swapped its PDF libraries).
+- ⚠️ `modules/project-schedule/index.html` and `modules/contracts-claims/index.html` are again staged as
+  **HEAD + this change only** — they still carry the concurrent session's in-progress extraction of
+  `splitPlan` into the untracked `assets/js/co-insert.js`, and committing the working-tree copies would
+  ship a `<script src>` pointing at a file that is not in the repo.
+
+### 2026-09-09 (ui) — The sidebar brand, a collapsed rail that shows the mark, and two sibling links you can tell apart
+
+Owner's three Global items: *"The logo and the 'Planning Suite' title in the side panel looks off. Let's
+optimize the UI to make it more professional looking."* / *"when the side panel is collapsed, I want to
+see the red megawide logo 'M' at the very top of the side panel."* / *"when collapsed the redirect link
+is unidentifiable. Let's plan how to show the procurement and engineering apps logo."*
+Stage 1 of a five-stage pass; the other four areas follow as their own commits.
+
+- **The brand block.** Wordmark `max-width` 150 → **176px** (it is a 5.81:1 lockup, so width is the only
+  lever on its presence, and 150px in a 240px rail read as an afterthought floating in 28/24px of
+  padding); padding `28px 20px 24px` → `22px 18px 18px`; caption tracking `.14em` → `.18em` with a
+  matching `padding-left: .18em` — letter-spacing appends a gap AFTER the last letter, which drags
+  centred text visually left, so the pad puts it back on the optical centre.
+- ⚠️ **"Planning Suite" was on screen TWICE** — the brand `<small>` and the footer's *"EPC · PMO ·
+  Planning Suite"*, in all 21 sidebar pages. The **footer** drops it: the product name belongs at the
+  top where it identifies the app, and the footer is left naming the org unit that owns it.
+- ⚠️⚠️ **NO NEW ASSET WAS CUT FOR THE COLLAPSED MARK.** `assets/img/favicon.png` **is** the red Megawide
+  "M" (established by rendering it, not by its name), and `favicon-icon.png` is that same mark already
+  padded to 256×256 and already cache-busted. The collapsed block previously hid the logo **and** the
+  caption and put nothing back, so the 64px rail opened with an empty padded box above bare icons.
+- ⚠️⚠️ **A PER-APP LOGO WAS NOT AN OPTION, AND ESTABLISHING THAT CHANGED THE ANSWER.** The owner asked
+  for "the procurement and engineering apps logo". `engineering-app`, `wpm` (Procurement) and this app
+  all ship the **same** 1020×850 Megawide mark — so a logo would have been three identical marks, no
+  more distinguishable than the two identical `externalLink` glyphs it was meant to replace. They get
+  purpose-drawn glyphs instead: a **purchase cart** and a **drafting compass**. ⚠️ Namespaced `app*`
+  deliberately — `compass` (Stakeholder Map) and `ruler` are already taken, and a sibling link sitting a
+  few rows under the Stakeholder Map row must not wear a near-copy of its icon. `externalLink` is
+  **not orphaned** (`modules-grid.js:58` still draws it on retired-module cards).
+
+⚠️⚠️ **BOTH "FAILURES" DURING VERIFICATION WERE THE HIDDEN-TAB ARTEFACT, NOT THE CODE — and neither
+would have been visible by reading.** (1) The first pass measured **every width as 0** and reported
+`brandPad` as the **mobile** value; `visibilityState` was `hidden` and `innerWidth` was **0**, which
+matches `max-width: 820px`, so the phone rules were legitimately winning against a zero-width viewport.
+(2) After a screenshot forced a paint, the collapsed rail still measured **240px** where the rule says
+64 — and it stayed 240 after a 450ms wait. That is not the rule losing: **a hidden tab never advances a
+CSS transition**, so `width` sits at its start value indefinitely. A cascade probe confirmed
+`.pd-app.pd-collapsed .pd-sidebar` **matches** with no later rule overriding it; re-measuring with
+transitions disabled gives **64px**. Measuring during a transition measures the animation, not the rule.
+
+**Measured, transitions disabled, at 1440px and 400px in both themes:** expanded rail **240** / logo
+**176 × 30.3** / mark `display:none` / padding `22px 18px 18px`; collapsed rail **64** / mark **30 × 30
+and centred** (|cx − railW/2| < 1.5px) / logo, caption, footer and both sibling labels all hidden / both
+sibling icons 16px with **genuinely different shapes** (`circle,path,path,path,path` vs
+`circle,circle,path`); the 400px drawer re-expands `.pd-collapsed` to 290px and **suppresses the mark**,
+so the wordmark and the mark can never stack; **no horizontal page scroll at either width**. Zero pages
+are left with two identical sibling icons. `dashboard.css` braces **483/483**, both changed JS files
+parse, `Icons.names` **79 → 81**, 0 NUL bytes.
+
+- Assets `dashboard.css` / `icons.js` / `modules-grid.js` → `?v=20260909ui` across **29 / 21 / 2**
+  references; audited to **0 version splits over 47 distinct assets** and **0 referenced-but-missing
+  files**. `MODULE_V` → `20260909ui`, fallback literal included — every module `index.html` changed, and
+  a module page is cached under `index.html?v=MODULE_V`, so without it a returning browser keeps serving
+  a page that still requests the old stylesheet. ⚠️ **Deliberately not the next letter in the daily
+  sequence**: the concurrent session in this tree is already on `20260909r`.
+- ⚠️⚠️ **TWO PAGES WERE STAGED AS "HEAD + MY EDITS", NOT FROM THE WORKING TREE.**
+  `modules/project-schedule/index.html` and `modules/contracts-claims/index.html` carry a concurrent
+  session's in-progress extraction of `splitPlan` into the **still-untracked** `assets/js/co-insert.js`.
+  Committing the working-tree copies would have shipped a `<script src>` pointing at a file that is not
+  in the repo, and deleted `splitPlan` with it. Verified after staging: those two blobs contain **0**
+  `co-insert` references, project-schedule's staged copy still contains `splitPlan`, and the staged diff
+  for both is exactly the six lines of this change. Their working trees are untouched, as is
+  `contracts-claims/wizard.js`.
+- ⚠️ **A false positive worth recording rather than reporting as a finding:** the first `?v=` audit
+  claimed 19 "unversioned references", every one of which was the asset NAME occurring in prose inside a
+  comment (*"comes from dashboard.css"*). The checker now resolves only `src=`/`href=` attribute values.
+  An earlier line-ending check was wrong the same way — `grep -c $'\r'` degenerated to an empty pattern
+  and reported every one of the 21 files as CRLF; they are all **pure LF**, re-derived by counting bytes.
+- ⚠️ **Not verified signed in.** `requireLogin` redirects without a session, so this was measured against
+  a harness **generated from the shipped `dashboard.html`** with the Supabase-dependent scripts stripped —
+  never hand-copied, because a hand-copied shell puts different rules in the cascade than the ones that
+  actually ship (the trap recorded on 2026-09-09 cp). The harness was deleted before committing.
+
+### 2026-09-09 (q) — The Affected-work preview answers the question a change order actually raises
+
+Owner: *"I want the preview to show the overall change in the Gantt not just the bar graph how much
+it lengthens in the Gantt. The current preview doesn't provide any useful information."* Right, and
+the screenshot shows exactly why: **240 selected activities drew 240 bars 1-3px wide** across a
+project-wide window. It answered *"which bars did I tick"* — which the tree beside it already
+answers — and never answered the only question a variation raises: **what does this do to the
+programme?**
+
+#### ⚠⚠ N days on 240 activities is not 240 × N, and usually not even N
+The activities run in **parallel**. What moves is the LATEST finish among them, and that only moves
+the programme if it was already the programme's own finish. New pure `impactOf(sel, all, dur)`
+computes precisely that — and it can, because `ACTS` already holds **every** activity on the
+project, not just the selection, so the programme window is knowable without another read.
+
+The panel now leads with the finding:
+- **Programme finish moves N days later**, with the before → after dates — or **unchanged**, when the
+  added time ends inside the current programme.
+- **One bar for the whole programme**: what exists now, where the selection sits inside it, and the
+  extension past the current finish. That is the "overall change in the Gantt".
+- The sentence that makes it worth having: *"their work spans 1 Mar 2026 → 30 Jun 2027, growing
+  **45 days** to 14 Aug 2027 — not 110 × 45, because they run in parallel."*
+
+⚠⚠ **`slip` IS A LOWER BOUND, NOT A FORECAST, and the panel says so on screen.** This is date
+arithmetic over the selected activities. It does **not** run CPM, does not move successors, and
+cannot know whether a non-critical activity has float to absorb the insertion — so a slip of 0 means
+*"the added time ends inside the current programme window"*, **never** *"the project is
+unaffected"*. That distinction is the whole reason this file still refuses to copy `splitPlan`.
+
+⚠ **The per-activity strip is kept, demoted to evidence** — a `<details>` that opens itself at ≤12
+rows and stays shut above that. It was never wrong, only mis-ranked: at 240 rows it is noise, at 6 it
+is exactly what you want. Deleting it would have thrown away a real view to fix a layout decision.
+
+**18 assertions** on `impactOf`, sliced out of the shipped file: 240 parallel activities × 10 days
+grows the span by **10, not 2,400**; the programme finish does **not** move when the selection is not
+the last-finishing work; it moves by **10** when it is; a selection ending 4 days short of the
+programme with a 10-day order yields **6** days of slip (partial float absorbed); undated and 1-day
+activities are counted rather than silently dropped; an empty selection does not throw.
+**Driven in a real browser** through the actual `CCWizard.open()` at 1440px, both themes: the slip
+and unchanged branches both render correctly, `--pd-danger-text` resolves to `#FF8A80` in dark with
+`color-mix` computed and **no hardcoded literal**.
+`affected.js` / `module.css` → `?v=20260909q`; `MODULE_V` → `20260909q`.
+⚠ **Not verified signed in** — fixture data through a stubbed data layer; no real programme read.
+### 2026-09-09 (p) — Cash Flow's number inputs swept, and a regression in yesterday's fix caught
+
+Owner: *"let's sweep the cash flow number inputs"* — the follow-up the audit named. **Not swept
+blind:** the audit's own rule is that the READER has to be checked first, and checking it here found
+both a worse variant of the bug and a defect I had introduced hours earlier.
+
+#### It was worse here than in Contracts & Claims
+Cash Flow's reader was `function num(v) { return Number(v) || 0; }`. So a comma-typed amount did not
+become null — it became **`0`**. ⚠⚠ A null is at least visibly absent on the next load; a **0 is a
+real number that flows into the arithmetic unnoticed**, and `s-ibb` (Contract Amount IBB) feeds
+`var base = numInput('s-ibb') || 0` in **six** places, so the entire projection would have been drawn
+off a zero contract with nothing on screen looking wrong.
+
+#### ⚠⚠ A REGRESSION IN THE (n) FIX, FOUND BY EXECUTING IT
+The tolerant reader I shipped yesterday stripped commas after checking only for *a comma following a
+dot*. That caught `1.000,50` but **not `12,5`, which it turned into `125`** — where the original
+`Number("12,5")` gave NaN → null. I replaced a silent blank with a **silent wrong number**, which is
+the worse of the two. Both readers now **validate the comma shape instead of stripping it**: an
+English thousands separator is always followed by exactly three digits, so the whole string is
+matched against `^-?\d{1,3}(,\d{3})+(\.\d+)?$` and anything else is refused.
+
+#### And an ordering bug the suite caught before it shipped
+The first cut validated commas **before** stripping the currency symbol, so `₱1,200.50` failed the
+pattern and returned 0 — the exact bug being fixed, reintroduced one step earlier in the same
+function. Reordered. ⚠ It was a *test* that found this, not a reading: the code looked right.
+
+#### What was flipped, and what deliberately was NOT
+**8 of 27** inputs are money-capable and are now `type="text"` + `inputmode="decimal"`: `s-ibb`,
+`s-bcb`, `s-limit`, the actuals `₱ amount`, and the four **basis-dependent** tranche inputs that hold
+either a peso figure or a percent depending on `t.basis` — those cannot stay numeric, since half
+their uses are money.
+⚠ **The other 19 stay `type="number"` on purpose.** They are percentages and month counts: a
+thousands separator is not expressible in them, and the spinner plus the mobile numeric keypad are
+worth keeping where they are safe. Sweeping them too would have been change without benefit.
+⚠ **No change handler needed touching** — every one already reads `v === '' ? null : num(v)`, so
+making `num()` parse was enough, and empty stays distinguishable from zero.
+
+**35 assertions, 0 failures**, executed against both readers sliced out of the shipped files:
+`₱1,200.50`, `(1,500.25)`, `1,397,462,269.86`, `12.5%`, `$1,000` all parse; `12,5`, `1.000,50`,
+`1,00` and `1,0000` are all **refused** rather than guessed; numbers pass through untouched and junk
+still yields `0`, so every `num(x) || 0` caller keeps its exact previous contract.
+contracts `module.js` → `?v=20260909p`; `MODULE_V` → `20260909p`. ⚠ **Not verified signed in.**
+### 2026-09-09 (n) — Whole-app audit: a money field that blanked itself, four caches that cached failure
+
+Owner: *"Debug the planning app whole and check for improvements."* Audited against **this repo's own
+recorded failure modes** rather than a generic checklist, because those are the bugs it actually
+ships. Two mechanical passes over 113k lines, then every candidate read by hand.
+
+⚠️⚠️ **MOST OF WHAT THE SCAN FLAGGED WAS THE SCAN'S OWN FAULT, AND SAYING SO IS THE POINT.** The two
+loudest findings — *"35 tables never granted"* and *"4 tables with RLS and no policy"* — were both
+artifacts of my regexes. The policies exist, created dynamically via
+`execute format('create policy %I on %I', ...)`, which a literal pattern cannot see; the grants are a
+multi-table statement plus a blanket `grant ... on all tables in schema public` at
+`supabase-schema.sql:721`. **209 raw findings reduced to 6 real ones.** An audit that reports its
+false positives as findings is worse than no audit.
+
+#### ⚠️⚠️ The one that loses data: nine `type="number"` fields in Contracts & Claims
+**MEASURED in a real browser, not asserted** — `input[type=number].value` returns `""` for anything
+the spec cannot parse, which is every way a planner writes money:
+
+| typed | `type="number"` | `type="text"` |
+|---|---|---|
+| `1,000` | **`""`** | `1,000` |
+| `1,397,462,269.86` | **`""`** | preserved |
+| `₱1,200.50` | **`""`** | preserved |
+| `(500)` | **`""`** | preserved |
+
+`n()` turned that `""` into **`null`**, so typing the contract amount with thousands separators
+**silently blanked it** — no error, and nothing afterwards to say a figure had ever been entered.
+⚠️ `1,397,462,269.86` is not a hypothetical: it is a contract amount from this register's own
+history. The four EOT day fields carry it too — this project's day counts are four digits
+(1,048 / 1,095), so `1,048` blanked just as readily.
+
+⚠️ **The BOQ found this trap in August and fixed it for its grid cells only** (`boq.js:1629`, *"NUMERIC
+CELLS ARE type=text ... AND THIS IS THE OPPOSITE OF THE OBVIOUS CHOICE"*). The record form beside it
+never got the fix, and no other module knows the trap exists. All nine fields are now
+`type="text"` + `inputmode`, and `n()` parses the way `numOf` does.
+⚠️ **It goes one step FURTHER than `numOf`, deliberately:** stripping commas blindly turns the
+European `1.000,50` into `1.0005` — not a rejection, a **wrong number that looks real**. A comma after
+a dot is never English formatting, so it is refused rather than guessed. **12 assertions, executed
+against the function sliced out of the shipped file**; the ambiguous case is one of them, and it
+failed until the guard was added.
+
+#### ⚠️ Four caches that cache failure, all the same shape
+`[]` is truthy, so `if (X) return X;` caches an empty answer **and an error** for the whole session:
+
+| where | consequence |
+|---|---|
+| `boq.js ensureActs` | any RLS refusal or 8s timeout → the allocator reports "no activities" forever |
+| `boq.js ensureSugg` | starts legitimately empty on a fresh deployment → never queries twice |
+| **`assets/js/db.js getPeople`** | **shared** — one transient RPC failure at load and *every* assignment picker in *every* module silently offers free text for the session |
+| `equipment-loading loadTowerVals` | caches `[]` when no level is chosen → picking one afterwards does nothing |
+
+⚠️ This is the **exact** defect `ensureCodes` documents at `boq.js:703` — fixed there in
+September, left standing in its sibling sixty lines below, and in three other files. All four now
+guard on `.length`.
+
+#### A block written twice
+`boq.js`'s heading child-count loop appeared **twice, back to back**, with only blank lines between —
+same `var kids`, same nested loop over the full line list, the second overwriting the first with
+identical values. A merge artifact. Removed; up to ~900 rows are no longer walked twice for nothing.
+⚠️ Found by the hoisting scanner, **for the wrong reason** — it saw the first copy's variables used
+"before" the second copy's `var`. Right answer, wrong mechanism, and worth recording as such.
+
+#### Reported, deliberately NOT changed
+- **Duplicate DOM ids — re-checked properly, and the class is CLEAN.** The first pass used the
+  unreliable checker described below, so the finding was re-derived with a character scanner that
+  blanks comments only and respects string literals, splitting **static markup** from **JS-emitted**
+  ids. Result: **zero duplicates in static markup on all 29 pages**, and **zero ids that appear both
+  statically and in JS output** — those are the two shapes that would put two same-id elements in
+  the document at once. Every remaining duplicate is JS-emitted and mutually exclusive **by
+  construction**, in one of three shapes, each verified by reading the code:
+    - a **ternary**, so exactly one branch can render — productivity-rates `f-wp`
+      (`WPS.length ? <select> : <input>`), project-schedule `b-aconfirm`;
+    - **branch-replaced `innerHTML`** — resource-loading's `openForm` writes `f-name` / `f-rate` /
+      `f-uom` / `f-rem` in three `if/else if/else` arms that each REPLACE the form body;
+    - **two separate modals** that never open together — equipment-loading `eq-x`
+      (`openForm` vs `openMonths`), project-schedule's `lw-*` (the LBS matcher vs the trade matcher).
+  ⚠ My earlier one-line claim that *"every pair sits in a mutually exclusive modal"* was right in
+  conclusion and wrong in detail — only the third shape is a modal. Sharing ids across two modals is
+  still the fragile one: nothing but convention stops both being open at once.
+- **140 other `type="number"` inputs**, mostly Cash Flow money fields carrying the same latent risk.
+  Not swept blind: each module needs its own reader checked first, which is a pass per module.
+- `assets/js/mcc-rcm.js` has **606 CRLF among 617 LF** — anchors there must be byte-exact.
+
+⚠️ **The audit's own duplicate-id check is unreliable** and was caught being so: adding a comment to
+one file made a real duplicate *disappear* from the report, because regex comment-stripping mis-pairs
+against `/*` and `*/` inside string literals. Raw `grep` is authoritative; the checker is a shortlist.
+
+`db.js` / `boq.js` / contracts `module.js` → `?v=20260909n` (db.js is shared — 23 pages);
+`MODULE_V` → `20260909n`. 40 JS files parse, CSS braces balanced, 0 NUL bytes, every asset on one
+version, nothing referenced-but-missing. ⚠️ **Not verified signed in** — no form was submitted.
+
+### 2026-09-09 (m2) — The stakeholder-directory migration could not run, twice over
+
+Owner ran `migrations/2026-09-08-stakeholder-directory.sql` and got
+**`ERROR 42883: function max(uuid) does not exist`**. Two blocking defects, both in the file this
+session inherited unreviewed from the other clone — which is why it was flagged as the one piece
+neither of us had read.
+
+- ⚠⚠ **`max(sm.created_by)` on a uuid.** Postgres has no `max(uuid)`, so the backfill aborted
+  and the SQL editor's single transaction took the whole file with it. **The aggregate was wrong
+  in principle too**: uuids have no meaningful order, so "the greatest creator" states nothing.
+  Replaced with the creator of the EARLIEST row, non-null preferred — the same
+  `(array_agg(... order by ...))[1]` idiom the file already uses for `photo_path` /
+  `photo_thumb_path`, and for the reason its own comment gives there: the value must come from a
+  specific row, not from an independent aggregate that can pair fields across different rows.
+- ⚠⚠ **The file contained NO `grant` at all**, which the first error was hiding. RLS policies
+  FILTER rows for a role that already holds the table privilege; they never grant it. Every app
+  query would have failed with *"permission denied for table stakeholders"* — which reads like an
+  RLS problem and is not one. Every sibling migration in the folder carries the line.
+
+**Verified statically** (the migration has not been re-run here): code-only parens 110/110, `$$`
+paired, and the INSERT's **14 columns against 14 SELECT expressions** — a count that read 20 until
+the checker was corrected to strip comments, since the new comment prose contains commas.
+⚠❌ **Not run against the database.** The owner re-runs it; the file is idempotent
+(`if not exists` throughout, `on conflict do nothing`), so a partial first attempt is safe.
+
+### 2026-09-09 (m) — The other session's 33-commit-old working tree, merged rather than discarded
+
+The clone had `.git/rebase-merge/` present but **completely empty** — no `head-name`, `onto`,
+`orig-head`, todo or done — so `git status` claimed *"you are currently rebasing … all conflicts
+fixed"* with no rebase to continue. ⚠️ I had earlier reported this as a paused rebase belonging to a
+concurrent session; that was wrong and is corrected here. The directory was stale state from Sep 7,
+and `git rebase --quit` could not remove it (a lock, most likely OneDrive syncing `.git`), so the
+empty directory was removed directly.
+
+Underneath it sat 48 modified files and 2 genuinely new ones on a HEAD **33 commits behind**. Two
+independent checks agreed the work was real and unpushed: `stakeholder-map/module.js` carried
+**41 mentions of "directory" against 0 upstream** (2,176 lines vs 1,420), plus
+`migrations/2026-09-08-stakeholder-directory.sql` and `test-directory.js`, neither on `origin/main`.
+
+⚠️⚠️ **A PULL WOULD HAVE COST THAT, AND GITHUB DESKTOP WAS OFFERING TO DO IT.** The tree diverged in
+BOTH directions — ahead on stakeholder-map, and 2,044 lines behind on `project-schedule/index.html`
+— so `pull` refuses and the tool's remedy is stash-or-discard. Captured first as
+`refs/backup/worktree-20260909` and the branch `wip/other-session-20260909`, both built through a
+throwaway index so **HEAD, the index and every file on disk were untouched**.
+
+**43 conflict hunks across 27 files. Resolved by rule, not by picking a side:**
+
+- ⚠️ **`modules/project-schedule/*` → OURS, and this is the one that mattered.** The wip side's diff
+  there is a **reversion**: it deletes the *"Cost Loading step 2 reads the BOQ"* 2026-09-08 entry,
+  which exists in both the merge base and `origin/main`. Measured — base 39,319 lines,
+  `origin/main` 41,241, wip 39,197. wip never had the Structure step; the "theirs 0" hunks were its
+  own local deletions overlapping upstream's additions, not a considered removal.
+- ⚠️ **`issues-lessons/module.css` → THEIRS on the `.il-report` rules, and it is verified, not
+  preferred.** OURS targets `.il-iss-actions` and `.il-mi-card`, which `module.js` emits **zero**
+  times — silent no-ops. THEIRS targets `.il-mom-actions` / `.il-iss-card` / `.il-workflow-*`, which
+  it emits 3 / 2 / 3 / 1 times.
+- ⚠️⚠️ **`stakeholder-map` CSS *and* JS → THEIRS together, as a consistency requirement.** wip drops
+  the module-local `.sm-kpi*` set for the shared `.pd-kpis` / `UI.kpi` component. `risk-register`'s
+  `module.js` had **already auto-merged onto `UI.kpi`**, so keeping OURS for stakeholder-map's CSS
+  while its JS emits `UI.kpi` would have rendered the KPI strip unstyled. Confirmed after resolving:
+  the container is `<div class="pd-kpis" id="sm-kpis">` and `dashboard.css` defines it.
+- **The comment-only hunks → OURS.** `--pd-fs-base` **is** `13px`, so HEAD's literal and wip's token
+  are the same value; the rest differed only in `⚠` vs `⚠️` and `--` vs an em dash.
+- ⚠️ **21 files were pure cache-bust collisions** and were resolved mechanically by a test that
+  normalises the version string and compares the two sides — never `--ours` / `--theirs`, which take
+  a whole file and drop your own non-conflicting edits in it.
+
+⚠️ **Every asset whose CONTENT the merge changed got a version newer than BOTH sides** (`20260909m`,
+18 assets, 29 pages) — the merged bytes existed on neither side, so neither side's string is honest.
+Audited by resolving each reference to its real path (a basename grouping reports a false split,
+since every module has its own `module.css`): **40 distinct assets, one version each, none missing.**
+
+**Verified:** 40 JS files parse, 0 failures; CSS braces balanced on all 8 changed stylesheets; 0 NUL
+bytes; both sides' work present — Structure step, the 2026-09-08 changelog entry, the delete-BOQ
+handler, `TRADEMAP`, `affected.js`'s ladder/tree/preview, and the stakeholder directory with its
+migration and test. Root `CLAUDE.md` is byte-identical to `origin/main` — no doubled changelog. ⚠️ The
+two duplicate `2026-09-03 (b)/(c)` headings it reports are **pre-existing upstream**, and the (b) pair
+is the documented legitimate one.
+
+⚠️ **Not verified signed in, and not rendered.** This is a textual integration: nothing was clicked
+through, and the stakeholder directory has never been exercised against a live project.
+
+### 2026-09-09 (cq) — The Affected-work intro drops from four lines to one
+
+Owner: *"Let's reduce the text in the step intro."* The third time the wizard's prose has been
+called too long, so this cuts on a rule rather than by taste.
+
+**Two of the four sentences were teaching the control, and the control now teaches itself.**
+*"Tick a place to take all of it, or search to add individual activities"* described a screen that
+did not yet exist when it was written. It does now: the ladder carries a count on every rung, the
+tree carries carets and checkboxes, and the search box's own placeholder names every field it
+matches. A caption narrating a legible control is just more to read before you can use it.
+
+⚠️ **What survives is the one fact the screen cannot show: no date moves.** A planner who believes
+saving reschedules the programme will not touch this step at all, and nothing on the page can
+disprove that on its own — so it stays, as three words in bold rather than a clause about previewed
+steps and pending variations.
+
+⚠️ **The EOT half — "the granted days stay a single figure on the record" — went with the rest**,
+because this step has no days field to mislead anyone with. The reasoning is unchanged and still
+recorded where a developer looks: the ⚠️ block above the function, and at length in
+`migrations/2026-09-09-cc-affected-activities.sql`. Deleting on-screen prose is not deleting the
+decision behind it.
+
+| type | before | after |
+|---|---|---|
+| Change Order | 65 words | **23** |
+| EOT | 41 words | **14** |
+| Claim | 27 words | **11** |
+
+**Measured in the browser, in the real wizard shell** (not counted by eye): at 1440 all three render
+as **one line**; at 918 the Change Order hint takes two and the other two stay at one. It was four
+lines at both widths. No page horizontal scroll at either.
+
+- `wizard.js?v=20260909cq`; `MODULE_V` → `20260909cq`. No other file changed.
+- ⚠️ **Not verified signed in** — the wizard was driven against a stubbed data layer.
+
+### 2026-09-09 (cp) — The Affected-work picker: a ladder, a WBS tree, and a Gantt beside them
+
+Owner, on the step shipped that morning: *"UI is clashing let's fix … I want to have the level
+breakdown select to be like a ladder rather than selecting since it can span different towers and
+levels and zones … most of the activities have the same activity name even though they have
+different activity IDs … I believe in a form of a WBS type would be appropriate. I want to be able
+to have a side-by-side preview as well … how it would look like in the Gantt."* Detail in
+[`modules/contracts-claims/CLAUDE.md`](modules/contracts-claims/CLAUDE.md).
+
+- ⚠️⚠️ **The clash was two wizard rules, and my harness is why it measured clean.**
+  `.ccw-main select { width:100% }` was unconditional — the `input` half of that same rule excludes
+  checkboxes and radios, with a long comment about the ladder it once destroyed, and `select` got no
+  such exclusion — while `.ccw-main label { display:block }` (0-1-1) beat the picker's own
+  `.cca-lbl` (0-1-0). **My harness hand-copied the `.ccw-main` shell, so neither rule was ever in the
+  cascade.** It now drives the **real `CCWizard.open()`** and asserts computed styles.
+- ⚠️ **More specificity cannot win that fight and the fix does not try.** Three `:not()` arguments
+  put the rule at **0-4-1**; the previous fix was an `!important` on one control. A sub-component's
+  controls now opt out with `.cca-ctl` — the same shape the rule already uses for checkboxes — and
+  a probe input without it still stretches, so ordinary wizard fields are untouched.
+- ⚠️⚠️ **The ladder's rungs are re-derived strictly top-down, and that is what makes a bare value key
+  safe.** Location values are plain text, not a node tree — *"Zone 'Z1' under two different locations
+  is the same string"* — so a value-keyed rung would merge two towers' Z1 and a change order would
+  silently take both. Asserted, with a contrast build that reads the level un-narrowed and does
+  merge them. **N rungs, not four**, because levels are per project; 5 clamp and scroll.
+- ⚠️⚠️ **Ancestry comes from the dotted `wbs` string, never `wbs_node_id`** — measured NULL on
+  16,393 of 16,393 activities after an import — and **`ensureActs` had to stop discarding the
+  `WBS Summary` rows**, which are the only code→name map. They stay out of the selectable set.
+- ⚠️⚠️ **The preview is NOT a second copy of `splitPlan`, and it is pinned by assertion rather than
+  by good intentions:** the suite slices the real `splitPlan` out of `project-schedule/index.html`,
+  executes it, and asserts the preview's new finish and both gap edges match across 35 span ×
+  duration combinations. If that arithmetic ever changes, this fails.
+- ⚠️ **A real bug found only by measuring:** the CO-duration box rendered **149px** where
+  `flex:0 0 42px` says 42 — a flex item's `min-width:auto` resolves to a form control's intrinsic
+  width and silently outranks the flex basis. Reading the rule would never have shown it.
+- **41 assertions, 0 failures, 3 contrast builds all biting**; driven in a real browser at 1440 and
+  918 in both themes with **zero overlapping elements in the control bar**, measured as pairwise
+  rect intersection. ⚠️ **Not verified signed in** — fixture data through a stubbed data layer.
+- `affected.js` / contracts `module.css` → `?v=20260909cp`; `MODULE_V` → `20260909cp`.
+
+### 2026-09-09 (co) — A change order says which activities it touches, and inserts into all of them at once
+
+**Run `migrations/2026-09-09-cc-affected-activities.sql`.** Owner: *"adding change orders and
+extension of time the planner should be able to easily select which activities are affected with the
+CO/EOT … in a bulk manner in case that the CO/EOT affects a lot … by selecting affected activities
+based on the location and optional to add other activities in the schedule as well."* Detail in
+[`modules/contracts-claims/CLAUDE.md`](modules/contracts-claims/CLAUDE.md) and
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+- ⚠️⚠️ **THE WIZARD WROTE ONE ROW AND NOTHING ELSE.** No step, field or payload key in `wizard.js`
+  mentioned `project_schedule` or an activity id, so the commercial record and the programme it
+  argues about could not see each other from the register's side at all. There is now an **Affected
+  work** step for Change Order / Claim / EOT: pick a **place** (tower, level, zone) to take all of
+  it, or search to add individual activities.
+- ⚠️⚠️ **AN EOT'S ACTIVITY SET CARRIES NO DAYS, and this is the decision the whole shape turns on.**
+  The owner asked directly whether EOT should get a per-activity model. It should not:
+  `approved_days` stays the single contract-level figure the schedule already sums (*"Contract finish
+  + granted days = Revised finish"*), and the activities are the delay **basis** — a set, not
+  numbers. Delay on parallel paths is **concurrent**: two activities each slipping 10 days on two
+  parallel paths is **10** days of project delay, not 20, because only the critical path carries. A
+  per-activity day column would invite the obvious roll-up and produce a figure nobody could defend
+  in a claim. Same trap the BOQ allocations recorded from the other side — *"the sum belongs on the
+  allocation, not on the tag."*
+- ⚠️ **Saving a change order reschedules NOTHING.** A Pending variation must not move forty finish
+  dates as a side effect of being recorded. Inserting the work is a separate, previewed action.
+- ⚠️⚠️ **A NEW TABLE RATHER THAN `change_order_ref`, for three reasons that are each fatal on their
+  own.** That column exists and already joins to `contracts_claims.reference_no` — but it is ONE
+  text column, so a second variation overwrites the first (real projects re-touch the same activity:
+  CO-014 in March, EOT-003 citing it in June); paired with `scope_type` it already means *"this row
+  IS change-order work"*, which is a different fact from *"this row is AFFECTED BY it"*; and EOT has
+  nowhere to go at all. `cc_affected_activities` is keyed on **`activity_id`, never the row uuid** —
+  an import deletes and reinserts every row, so a uuid link is destroyed by the next import while
+  the planner's Activity ID survives.
+- ⚠️⚠️ **NO SECURITY-DEFINER RPC WAS NEEDED, and establishing that is worth as much as the feature.**
+  `boq_tag_activities` had to be one because it UPDATEs `project_schedule`, which is gated on
+  `created_by = auth.uid() or is_admin()` — and PostgREST answers an RLS-filtered UPDATE with 200 and
+  zero rows. Verified from the policy source: `project_schedule` **INSERT** carries no ownership
+  clause (`is_writer() and created_by = auth.uid() and can_access_project(...)`). Because the links
+  live in their own table, nothing here updates an activity anybody else imported, so that
+  silent-success trap cannot arise.
+- ⚠️⚠️ **`fillDown('change_order_ref', …)` HAS EXISTED SINCE IT WAS WRITTEN AND HAD NEVER RUN.** It
+  filters the selection to `isExecPhase`, reports the skipped count and explains the refusal; its own
+  neighbouring comment says *"marking a run of activities as one change order is exactly the bulk
+  edit these columns exist for"*. But `fillDown` is reachable only from a grid cell's `data-field`,
+  the Scope cell emits `data-field="scope_type"` and renders the ref as a read-only span, and a
+  repo-wide search for `data-field="change_order_ref"` returned **nothing**. The feature was built
+  and had no door. A **Change Order Ref column** is the door — right-click → *Fill Change Order Ref
+  down (N)* and Ctrl+D now work on a multi-row selection. Smallest change in the whole pass, largest
+  payoff.
+- **Select activities by location** (Actions menu) resolves a place to activities and loads them into
+  the grid's existing `_selSet`, so every bulk action applies with **no new apply path**. Global
+  Change could not have done it: `GC_FIELDS` addresses plain row fields and `location` is a jsonb map.
+- **The bulk insert reuses `splitPlan` / `splitBuild` unmodified** — proven by the diff, which
+  contains six `+` mentions of them and **zero** deletions. They are pure functions returning data,
+  which is what makes a whole-run preview possible; and it lives in the schedule because that is
+  where the arithmetic is and which app owns schedule writes. One preview table replaces
+  `applySplit`'s per-host `confirm()` — twenty-three confirmations is not an interface — and all
+  three refusal classes are **listed with their reason**, never silently skipped.
+- ⚠️⚠️ **THE ONE DEFECT THAT WOULD HAVE CORRUPTED DATA: twenty-three activities sharing an Activity
+  ID.** `splitBuild` uses `co.ref` as the new row's id, and `splitFreeId` checks only against `rows`
+  — which never grows during a run, because nothing is written until the end. So every host under
+  CO-014 would have been handed the id `CO-014`. Activity IDs are what predecessor strings, the
+  schedule↔document links and these new links all reference, so it would have broken three things
+  silently. `_bulkFreeId` threads a `taken` map and checks both. **The contrast build proves it**:
+  reverting that one condition fails exactly the three id-uniqueness assertions.
+- **Verified: 54 assertions** executing `splitPlan` / `splitBuild` / `_bulkFreeId` / `bulkSplitPlan`
+  / `locSelValues` and the wizard's own `STEPS` **sliced out of the shipped files** — plus **three
+  contrast builds**, each reverting one thing and each failing only where it should (3, 5 and 6
+  assertions). `splitPlan`/`splitBuild` run as a **control**. **Rendered in a browser** at 1440px and
+  at **918px** (the owner's own screenshot width): 7 raw floor spellings collapse to **4 places**,
+  "2nd Floor" gathering all **18** of its activities under a ×3 badge naming every variant; both
+  recorded CSS traps measured absent (22 checkboxes at **13px**, activity names at **314px** not the
+  ~200px squeeze); no page or pane overflow; and both degrade paths — no location levels, and the
+  un-run migration — name what to do and leave the picker usable.
+- ⚠️ **Three of my own mistakes, caught and recorded rather than shipped:** `res.id` where
+  `persistRecord` returns `{ok, row, dropped}` (every link write would have been skipped silently);
+  a `p._open` flag read off freshly-derived objects (expanding a place would have shown nothing); and
+  two unsound test metrics — a `wrapped` check comparing height against a *set* height, and a
+  line-count from `top` offsets that `align-items:center` makes meaningless.
+- Assets contracts `module.css` / `module.js` / `wizard.js` + the new `affected.js` `?v=20260909co`;
+  **`MODULE_V` → `20260909co`** — ⚠️ deliberately not a letter in the daily sequence, since two
+  collisions this month came from two sessions picking the same next letter.
+- ⚠️ **Not verified signed in, and the migration has not been run.** No link has been written, no
+  bulk insert applied and no CO Ref filled down against a real project. Until the migration runs the
+  register saves normally and reports the unsaved links by name.
+- ⚠️ **Deliberately not built:** a deep link from the record into the schedule (the schedule reads
+  **no** URL parameters at all today — 0 occurrences of `URLSearchParams` — so it discovers the links
+  from the table itself), per-activity EOT days, and retro-linking existing `change_order_ref` values.
+### 2026-09-08 (pv) — Three registers: a KPI strip that fits, four invisible buttons, and a present view put back
+
+No migration. Owner's items 1–3 of four; **item 4 (Progress Photos) was explicitly paused by the owner
+and is not in this commit.** Detail in each module's own `CLAUDE.md`.
+
+- ⚠️⚠️ **Stakeholder Map's KPI strip needed a CSS change that the first cut of this work did not
+  contain, and only rebasing onto main exposed that.** The owner asked to drop three cards and *"fit
+  the other 4 kpi cards in a single level row."* Dropping the cards is four lines; the row is
+  `.sm-kpis`, which was `repeat(7, 1fr)` with breakpoints at 1600/1000/700 — sized for the seven cards
+  that used to be there. **Four cards in that grid is worse than seven, not better:** seven tracks at
+  desktop width leaves three empty cells, and at 918px — the width the owner's own screenshot was taken
+  at — the 1000px breakpoint drops it to three tracks, so four cards would still have wrapped to two
+  rows and the complaint would have survived the change meant to fix it. `.sm-kpis` now carries the
+  shared `.pd-kpis` rule verbatim (`repeat(auto-fit, minmax(170px, 1fr))`) and the three breakpoints
+  are gone. ⚠️ **MEASURED, 8 widths from 700–1900px:** four cards are **one row at 760px and every
+  width above it**, with no upper bound (auto-fit stops adding tracks once the four are placed and
+  `1fr` stretches them — 466px each at 1900px, so no ragged empty cell); at 918px it is one row where
+  the old seven cards are **two**, which is the reported bug reproduced. Below 760px it goes to two
+  rows, correct on a phone. ⚠️ Neither removed signal is lost: *no photo* is still a filter
+  (`filters.flag === 'nophoto'`) and a missing plan still prints on the stakeholder's own card.
+- ⚠️⚠️ **Meetings' four detail-toolbar buttons were not broken, they were INVISIBLE.**
+  *"I am not sure if one of the buttons are present view. or any of the functions of the other buttons
+  as well."* Every control in that toolbar is a `data-ico` placeholder that `Icons.hydrate()` fills in;
+  `render()` hydrates `#il-mom-view` after calling `renderDetail()`, so a **first landing looked
+  correct** — but **28 other call sites invoke `renderDetail()` directly** (toggling reporting view,
+  every workflow step, every filter change, every save), and each rebuilt the toolbar with nothing to
+  fill the icons in. Fixed at `renderDetail()` rather than at the 28 callers, for the same reason
+  `psSetupChanged()` exists in project-schedule. The favourite star survived only because it is a
+  literal ★/☆, not an icon. **Measured both ways in a browser:** unhydrated, all four report
+  `svg:false` with empty labels — the screenshot's blank buttons; hydrated, all four render.
+- ⚠️ **`+ Add meeting` wrapped because a 34px square rule had no `:not()`.**
+  `.il-topbar-tools .pd-btn` forced `width:34px` onto **every** button in the cluster, so two words
+  wrapped inside a 34px box. **Measured:** with `.il-tb-labeled` it is 106px and **one line box**
+  (`scrollWidth/clientWidth 104/104`); with the class removed, 34px and **two line boxes**,
+  `39/32` — overflowing. ⚠️ The first version of this assertion was **unsound** (it compared height
+  against `fontSize × 1.6`, but 34px is the button's *set* height, so it reported a wrap either way);
+  redone by counting line boxes with `Range.getClientRects()`. ⚠️ `.pd-btn` in the **shared**
+  `dashboard.css` carries no `white-space`, so this is a shared gap fixed module-locally — that file is
+  being edited by another session today.
+- **The mode toggle gets a word, in both registers.** Export / email / distribute are *actions* and read
+  fine as icons with titles; a reporting view is a **mode** — it changes what the whole screen is — and
+  the owner could not identify it even in principle. Both now read **Present** / **Exit**, same word and
+  same treatment in Meetings and in Issues & Concerns. The Meetings state chip also stops being a
+  paragraph: it carried the whole sentence *"Draft — editable by you, a planner, or this meeting's
+  attendees"*, which made a 60-character essay out of a status pill; the sentence moved to its own note
+  line beside the locked note, so it is still on screen and still readable on a phone (a `title` would
+  have hidden it from touch entirely).
+- ⚠️⚠️ **Issues & Concerns' present view is RESTORED, and this is a deliberate reversal of a decision
+  whose note is still in that module's `module.css`.** *"what happened to the present view?"* — it was
+  removed on purpose in `256deb7`, recorded there as *"No need for reporting view" — confirmed
+  unreachable, not just unused*. That reasoning was right about the **Dashboard** (a portfolio read) and
+  wrong about the **single record**: presenting one issue in a meeting is not the same act as reading the
+  register, and both Minutes of Meeting and Project Schedule kept a present mode for exactly that. The
+  note is left in place and answered rather than deleted.
+- ⚠️⚠️ **`present` is its own flag and must NOT be folded into `opts.readOnly`, even though both end at
+  `ro=true`.** `readOnly` additionally sets `bg`, which means *"this is the Background embed on a
+  lesson's page"* and keeps the narrative fields in **boxed, disabled textarea chrome** — the exact
+  opposite of what a present view wants, because an `<input>` clips its own value (measured in Meetings
+  at 659px of text in a 416px box). Reusing `readOnly` would have silently turned the present view into
+  a Background embed. ⚠️ **7 assertions executing the flag computation sliced verbatim out of the
+  shipped `issDetailHTML`**, with a **contrast build** on the pre-fix line: it fails exactly the
+  `present` case (`ro:false` where `ro:true` is required), so the suite bites. ⚠️ The mode is
+  **session-only and reset on leaving the record** — a screen that comes back read-only tomorrow reads
+  as *"I have lost permission"*.
+- ⚠️ **Two defects caught in this commit that the first cut would have shipped**, both from rebasing onto
+  main rather than committing out of a shared working tree: my present-view CSS first targeted
+  `.il-iss-actions` and `.il-mi-card`, **neither of which issues-lessons emits** (the real names are
+  `.il-mom-actions` and `.il-iss-card`) — a silent no-op; and `font-size: var(--pd-fs-sm)` referenced a
+  token that **does not exist on main** (the `--pd-fs-*` scale is another session's unlanded work), so
+  the declaration would have been dropped at computed-value time. Every selector is now verified against
+  the markup the module actually emits, and the token carries a `12px` fallback so it is correct now and
+  adopts the scale when it lands.
+- ⚠️⚠️ **Built in a temp worktree off `origin/main`, NOT staged out of the shared clone, and that was
+  the whole difficulty of this commit.** The clone has **55 modified files** belonging to a concurrent
+  session — an app-wide typography-token and shared-component refactor that had already migrated
+  `#sm-kpis`/`#il-kpis` onto `.pd-kpis`, rewritten `stakeholder-map/module.js` by 840 lines, and burned
+  `?v=20260908d` on `dashboard.css` and `ui.js`. **Item 1's verified behaviour depended on that
+  unlanded migration** (which is how the missing CSS was found), and committing their `?v=` bumps
+  without their file contents would have cache-poisoned their real deploy. Only module-local `?v=`
+  tokens are bumped here; every shared asset token is left exactly as main has it.
+- Assets `module.css` / `module.js` `?v=20260908pv` in all three modules; **`MODULE_V` → `20260908pv`**.
+  ⚠️ **Deliberately not a letter in the daily sequence** — main is already at `20260908h`, and the two
+  collisions this month were both two sessions independently picking the same next letter.
+- ⚠️ **Not verified signed in.** No live login is possible here. The KPI row, the toolbar geometry and
+  the icon hydration are real browser measurements against the shipped stylesheets with the module's own
+  markup; the present view's flags are asserted against code sliced out of the shipped file. Nothing has
+  been driven against a real project.
+### Construction Library: Excel-style Ctrl-click selection, and a drag grip replacing the Move buttons (2026-09-08) — jasantos2
+
+Owner: *"for the multiple selection, can you adapt similar to excel wherein if multiple selection,
+you must hold ctrl and then click to select another row. And also instead of having buttons to move
+up and move down, there should be a menu icon on the left, to allow smooth rearrangement."*
+
+- **Excel's rules, exactly.** A plain click **replaces** the selection (it used to toggle, which let
+  a selection accumulate quietly and then *Group* act on all of it); **Ctrl** — or **Cmd** — toggles
+  one row and keeps the rest; **Shift** takes the range from the anchor and replaces, **Ctrl+Shift**
+  adds. ⚠️ The anchor does not move on a shift-click, so shift-clicking again re-picks the range from
+  the same start instead of ratcheting outward.
+- **A ≡ grip, first in every re-arrangeable row.** Drag to re-arrange. ⚠️ Only the grip is
+  draggable, never the row — a draggable ancestor kills text selection in the grouping-path field.
+- ⚠️ **One drop does both halves of what a drag means:** the order *and* the grouping. Dropping a row
+  inside another grouping re-homes it as well as placing it; a drag that reordered but left the path
+  alone would park a row visually inside a grouping it is not in. Cross-trade drops are refused with
+  the reason, because a trade is set by a discipline matcher elsewhere and re-trading a row by
+  dragging it past a heading would undo that.
+- A grouping's grip moves the **whole grouping** among its own siblings; a drag started on a selected
+  row carries the **whole selection**.
+- ⚠️ **Move up / Move down are gone from the bar, as asked** — kept in the right-click menu, and the
+  grip takes **↑ / ↓**, so re-arranging never needs a mouse.
+
+**599 assertions across ten suites, all passing** (54 new). ⚠️⚠️ **This time the drag was fired in a
+browser**: a git-ignored page renders the shipped pane and wires the shipped handlers, so real
+`DragEvent`s were dispatched at it — the reorder, the re-home, the refused cross-trade drop (with no
+dirty flag), a whole grouping moved, and both keyboard routes all confirmed on the live DOM. It also
+caught a defect the tests could not: the drop edge and the selection edge are both two-class rules,
+so the one declared later wins, and the marker was vanishing on exactly the rows being dragged.
+⚠️ **Not verified signed-in** — nothing was pushed, and the drag has not run inside the module with
+a real project loaded.
+
+`MODULE_V` → `20260908h`. Detail: [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+### Schedule Setup: the WBS step and the Library become one Structure step with two views (2026-09-08) — jasantos2
+
+Owner: *"merge the WBS in step 2 into step 6… Call the view for the step 2 as 5PMLC, and step 6 as
+Construction Library… edits made should be updated live"*, then *"delete some groupings… multiple
+selection of rows in the right pane, and then right click, group them together with a defined group
+name. As well as re-arranging the items."*
+
+- **One step, two views.** *Structure* replaces both steps: **5PMLC** is the project's whole live WBS
+  (Milestones → Close-out), **Construction Library** is the places and groupings inside Execution.
+  5PMLC is the default, which keeps the orientation the old step 2 existed to give. The **import path
+  gains the 5PMLC view**, which it never had. Old deep links (`gotoStep('WBS')`, `'Library'`) still
+  resolve and select the matching view.
+- ⚠️ **On "updated live", honestly:** the views edit different stores — 5PMLC edits the **live** WBS
+  tree, the Construction Library edits **this setup's draft**, which becomes branches at
+  *Generate ▸ Push*. So a Library edit cannot make a branch appear in the tree; the branch does not
+  exist yet, and writing branches per keystroke would litter a project's live WBS with structure
+  nobody pushed. What *is* live is the bridge line between the two views, recomputed on every render
+  from both sources, and it names the push in as many words.
+- **Delete a grouping.** ⚠️ It deletes the **rung**, not the work: everything under it moves up into
+  the parent, and the confirm says so. Nothing on this screen can delete an activity.
+- **Multi-select and group.** Click a name, shift-click for a range, right-click to act. ⚠️ Grouping
+  **inserts** a shared rung above the selection rather than overwriting their paths, so nothing they
+  already had is discarded; a selection spanning trades makes one grouping of that name inside each
+  trade, and the toast says when that happened.
+- **Re-arranging** items and whole groupings, within siblings. ⚠️ Not cosmetic — this order is the
+  order the push builds the branches in.
+
+**544 assertions across nine suites, all passing** (96 new). A browser render caught two defects
+this time, including a selected row that showed its tint but not its edge because a single-class rule
+lost to the equally-specific depth rules below it. ⚠️ **Not verified signed-in** — nothing was pushed
+and no live WBS tree was loaded, so the two views have never been switched between against a real
+project.
+
+`MODULE_V` → `20260908g`. Detail: [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+### Schedule Setup Library: the grouping becomes a path, and the places gain their unit rung (2026-09-08) — jasantos2
+
+Owner: *"for the library, allow users to add more levels and as well as in the right pane for the
+groupings and items."*
+
+The Library's two panes were three rungs deep each, by construction. Both now go four.
+
+- **Right pane — the grouping is a PATH.** A trade holds a *tree* of groupings, and an item sits on
+  whichever rung its own path ends on (`Structural › Substructure › Concrete Works › Rebar › Rebar`).
+  Stored as `grp` + `grps` and read only through `absPathOf`; ⚠️ `grp` always holds rung 1, so every
+  reader written before nesting existed gets exactly the value it used to get.
+- **Editing it: ‹ out / › in.** ⚠️ One button per rung does not survive more rungs — a rendered pane
+  showed **L2 L3 L4 L5 L6 on every item row**, squeezing the activity name. Promote/demote is two
+  controls at any depth, and the chip at the head of the row already names the rung. Deepening
+  borrows a **sibling's** name, in the spelling the pane draws; cancelling writes nothing.
+- **Restructuring: Rename and + level.** Rename retitles a rung for every item under *that* node
+  (two same-named groupings under different parents stay two). ⚠️ **+ level INSERTS** a rung and
+  moves everything beneath one step deeper — the first version moved direct items only, and the
+  rendered check found the button dead on the one grouping most worth inserting a phase under.
+  A sub-tree already at the cap refuses rather than being truncated, which would be silent loss.
+- **Left pane — the unit.** ⚠️ It has existed in `cfg.zoning`, in the push and behind Floors &
+  Zones' own buttons since before this pane did; the pane just stopped at the zone, so a project
+  with units read as if it had none. Four is the honest number: those are the rungs the setup
+  stores and the stacking bands by. A fifth is a schema change and its own prompt.
+- **The rung names come from the project.** The left pane reads its own location levels, so a
+  breakdown named *Tower › Level › Zone › Cluster* says so here as it does in the push dialog.
+- **One WBS dim per rung** — `agroup`…`agroup4`, keyed on the whole prefix so two parents' `Rebar`
+  stay two branches. ⚠️ Every rung **self-skips**: a project that groups nothing pushes a tree
+  identical to before this existed, and a saved setup gains nothing until it is ticked in
+  *Generate → WBS structure*. The dialog now says *why* each skipped dim is skipped, per dim.
+
+⚠️ It does **not** change the Vertical Stacking axis: that axis is the location breakdown, and the
+grouping is activity structure.
+
+**447 assertions across eight suites, all passing** (123 new, executing the shipped path model, the
+Library's tree builder and the push's own `dimKey`), plus a browser render that is where four of the
+defects above were found. ⚠️ **Not verified signed-in** — the anon key has no grants, so the four
+grouping rungs have never been built against a real project's WBS.
+
+`MODULE_V` → `20260908f`. Detail: [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
 ### 2026-09-08 (e) — The right pane's skipped L2 was a bug of mine; the grouping becomes a WBS rung
 
 Owner: *"how come on the right pane, the trades are L1 and then L3 is followed?"* Because

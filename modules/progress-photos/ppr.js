@@ -1254,9 +1254,13 @@ window.PPR = (function () {
 
   // Item 8 (2026-09-02): resolve the REAL bim.js pin (position + camera
   // direction cone) for a photo, if one was placed on the Floor Plans screen.
-  // Reuses BIM.pinInfoFor/keyPlanMarkerHTML verbatim (bim.js's own exports,
-  // added specifically for this) rather than re-deriving pin/cone geometry a
-  // second time in this file.
+  // Reuses BIM.pinInfoFor/keyPlanMiniMarkerHTML verbatim (bim.js's own
+  // exports, added specifically for this) rather than re-deriving pin/cone
+  // geometry a second time in this file. ⚠️ 2026-09-11: the MARKER half of
+  // that reuse was wrong for over a week — it called the full-size
+  // keyPlanMarkerHTML (sized for bim.js's own large Plans-tab stage), which
+  // rendered a wildly oversized pin in this small corner overlay. See the
+  // fix's own comment where kpOverlay is built, below.
   // ⚠️ `aspect` is the PLAN's own true width/height ratio (when known) so the
   // overlay's box can be given that exact aspect-ratio via CSS — the pin's
   // x_norm/y_norm are percentages of the plan image's FULL box, and only an
@@ -1313,7 +1317,16 @@ window.PPR = (function () {
         'style="width:' + kpwPct + '%;aspect-ratio:' + kpInfo.aspect + ';">' +
         '<div class="ppr-kpoverlay-inner">' +
           '<img class="ppr-kpoverlay-img" src="' + esc(kpInfo.planUrl) + '" alt="Key plan" />' +
-          BIM.keyPlanMarkerHTML(kpInfo.pin) +
+          // ⚠️ 2026-09-11 fix: this used to call BIM.keyPlanMarkerHTML(),
+          // which draws the pin at .bim-pin's FULL 26px size — sized for
+          // the large Plans-tab stage, not this ~60-90px corner box. That
+          // rendered the pin (and, obscured behind its bulk, the camera
+          // cone) wildly out of proportion — "does not display properly".
+          // keyPlanMiniMarkerHTML is the scaled-down sibling module.js's
+          // own lightbox overlay already used for exactly this reason;
+          // both small overlays now share the one function rather than
+          // drawing two different-sized pins for the same pin row.
+          (BIM.keyPlanMiniMarkerHTML ? BIM.keyPlanMiniMarkerHTML(kpInfo.pin) : '') +
         '</div>' +
         '<div class="ppr-kpoverlay-resize" data-resize="' + which + '" title="Drag to resize"></div>' +
       '</div>';
@@ -1656,8 +1669,21 @@ window.PPR = (function () {
     $('ppr-d-yes').onclick = async function () {
       this.disabled = true;
       // ppr_slides.ppr_id is ON DELETE CASCADE, so the slides go with it.
-      var res = await sb().from(T_PPR).delete().eq('id', p.id);
+      // ⚠️ `.select('id')` and a ROW-COUNT check. These tables carry an
+      // owner-or-admin DELETE policy, so a refusal matches ZERO rows and
+      // PostgREST reports it as a clean success with NO error -- the module then
+      // toasts success over a row that never left. Same defect, same fix, as the
+      // photo/pano/recon deletes audited in module.js on 2026-09-04; these are
+      // their siblings in this file, missed by that pass.
+      // ⚠⚠ The confirm above promises the slides go too (ppr_slides.ppr_id is
+      //     ON DELETE CASCADE). A refusal cascades nothing -- so reporting success
+      //     here claimed a whole presentation had been removed when none of it had.
+      var res = await sb().from(T_PPR).delete().eq('id', p.id).select('id');
       if (res.error) { UI.toast(res.error.message, 'error'); this.disabled = false; return; }
+      if (!res.data || !res.data.length) {
+        UI.toast('Not deleted — the database refused it. A presentation can only be removed by whoever created it, or by an admin.', 'error');
+        this.disabled = false; return;
+      }
       m.close(); UI.toast('Presentation deleted', 'ok');
       if (selId === p.id) selId = null;
       await load();
@@ -2101,8 +2127,20 @@ window.PPR = (function () {
     var m = openModal(html, 460);
     $('ppr-sd-yes').onclick = async function () {
       this.disabled = true;
-      var res = await sb().from(T_SLIDE).delete().eq('id', sl.id);
+      // ⚠️ `.select('id')` and a ROW-COUNT check. These tables carry an
+      // owner-or-admin DELETE policy, so a refusal matches ZERO rows and
+      // PostgREST reports it as a clean success with NO error -- the module then
+      // toasts success over a row that never left. Same defect, same fix, as the
+      // photo/pano/recon deletes audited in module.js on 2026-09-04; these are
+      // their siblings in this file, missed by that pass.
+      // ⚠⚠ The key-plan file removal below must not run on a refusal, or a
+      //     surviving slide loses its key plan permanently.
+      var res = await sb().from(T_SLIDE).delete().eq('id', sl.id).select('id');
       if (res.error) { UI.toast(res.error.message, 'error'); this.disabled = false; return; }
+      if (!res.data || !res.data.length) {
+        UI.toast('Not deleted — the database refused it. A slide can only be removed by whoever added it, or by an admin.', 'error');
+        this.disabled = false; return;
+      }
       if (sl.key_plan_url) { try { await sb().storage.from(BUCKET).remove([sl.key_plan_url]); } catch (e) {} }
       m.close(); UI.toast('Slide deleted', 'ok');
       await load();
@@ -2452,11 +2490,15 @@ window.PPR = (function () {
     '.pagegroup:not(:last-of-type){break-after:page;page-break-after:always}' +
     '.meta{display:flex;flex-wrap:wrap;gap:18px;font-size:13px;margin-bottom:8px;align-items:baseline}' +
     '.meta .no{font-weight:700;color:#EE3124}' +
-    '.meta b{color:#6b6b6b;font-weight:600;margin-right:4px}' +
+    '.meta b{color:#6b6b6b;font-weight:700;margin-right:4px}' +
     // Shared-location tile (follow-up feedback item 3/4): one line above the
     // pair when both photos are at the same place, instead of repeating it in
     // each figcaption below.
-    '.meta .sharedloc{font-weight:600;color:#4a4a4a}' +
+    // ⚠️ font-weight:700 (was 600) — folded in from main's app-wide
+    // "font-weight 600 -> 700" consistency sweep during the 2026-09-12
+    // merge; this line's own weight wasn't part of that sweep's stated
+    // exceptions, so it's honored here rather than silently dropped.
+    '.meta .sharedloc{font-weight:700;color:#4a4a4a}' +
     // A fixed-ratio frame (the classic padding-top trick, not the CSS
     // `aspect-ratio` property — html2pdf's html2canvas capture has spotty
     // support for that newer property, and the padding-top box is exactly as
@@ -2488,8 +2530,10 @@ window.PPR = (function () {
     // touch more line-height so the three caption lines don't read as one
     // dense block; `.d`/`.c` sizes unchanged — the hierarchy is location >
     // date = description, matching how the live editor's own pane already
-    // reads.
-    'figcaption .loc{font-size:13px;font-weight:600;color:#231F20;line-height:1.3}' +
+    // reads. ⚠️ font-weight:700 (was 600) folded in from main's app-wide
+    // "font-weight 600 -> 700" sweep during the 2026-09-12 merge — the size/
+    // line-height bump above is this branch's own, unrelated change.
+    'figcaption .loc{font-size:13px;font-weight:700;color:#231F20;line-height:1.3}' +
     'figcaption .d{font-size:13px;line-height:1.3}' +
     'figcaption .c{font-style:italic;font-size:12.5px;color:#4a4a4a;margin-top:2px;line-height:1.3}' +
     // Closing "Thank You" page — the same bookend language as the header
@@ -3275,8 +3319,18 @@ window.PPR = (function () {
     var m = openModal(html, 420);
     $('tmpl-d-yes').onclick = async function () {
       this.disabled = true;
-      var res = await sb().from(T_TMPL).delete().eq('id', t.id);
+      // ⚠️ `.select('id')` and a ROW-COUNT check. These tables carry an
+      // owner-or-admin DELETE policy, so a refusal matches ZERO rows and
+      // PostgREST reports it as a clean success with NO error -- the module then
+      // toasts success over a row that never left. Same defect, same fix, as the
+      // photo/pano/recon deletes audited in module.js on 2026-09-04; these are
+      // their siblings in this file, missed by that pass.
+      var res = await sb().from(T_TMPL).delete().eq('id', t.id).select('id');
       if (res.error) { UI.toast(res.error.message, 'error'); this.disabled = false; return; }
+      if (!res.data || !res.data.length) {
+        UI.toast('Not deleted — the database refused it. A template can only be removed by whoever created it, or by an admin.', 'error');
+        this.disabled = false; return;
+      }
       m.close(); UI.toast('Template deleted', 'ok');
       await loadTemplates(); renderTemplates();
     };

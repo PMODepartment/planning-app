@@ -200,7 +200,7 @@ window.APP_CONFIG = {
     { key: 'progress-photos',   name: 'Progress Photos',                       path: 'modules/progress-photos/index.html',   icon: 'camera',     enabled: true, dash: { table: 'progress_photos', unit: 'photos',
       // ⚠️ The bucket is named HERE, by the module that owns it. The shell signs whatever bucket it
       // is told about and knows nothing about where progress photos live.
-      recent: { orderBy: 'taken_at', limit: 6, columns: ['title', 'works', 'taken_at', 'location'],
+      recent: { orderBy: 'taken_at', limit: 12, columns: ['title', 'works', 'taken_at', 'location'],
                 bucket: 'progress-photos', pathCol: 'photo_url', ttl: 3600 } } },
     { key: 'contracts-claims',  name: 'Contracts & Claims',                    path: 'modules/contracts-claims/index.html',  icon: 'contract',   enabled: true, dash: { table: 'contracts_claims', unit: 'records',
       metrics: [

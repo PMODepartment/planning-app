@@ -532,7 +532,12 @@
     // approved in Admin, which is not something a picker needs to see mid-session,
     // and every module that offers an assignment field would otherwise re-fetch it.
     async getPeople() {
-      if (_people) return _people;
+      /* ⚠⚠ `_people.length`, NOT `_people`. An empty array is truthy, and the error branch
+         below deliberately sets `[]` -- so ONE transient RPC failure at page load poisoned the
+         roster for the whole session, and every assignment picker in every module silently
+         offered free text instead of people until a reload. Caching a SUCCESSFUL empty answer is
+         fine; caching a FAILED one is not, and the plain guard could not tell them apart. */
+      if (_people && _people.length) return _people;
       var res = await sb().rpc('app_people');
       // ⚠️ Tolerant of the un-run migration: no function means no roster, and the
       // caller falls back to free text rather than losing the whole form.

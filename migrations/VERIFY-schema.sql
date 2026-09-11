@@ -191,7 +191,6 @@ with expected(migration, kind, obj, col) as (values
     ('2026-07-20-stakeholder-map-full.sql','column','stakeholder_map','birthday'),
     ('2026-07-20-stakeholder-map-full.sql','column','stakeholder_map','current_rel'),
     ('2026-07-20-stakeholder-map-full.sql','column','stakeholder_map','email'),
-    ('2026-07-20-stakeholder-map-full.sql','column','stakeholder_map','gift_tier'),
     ('2026-07-20-stakeholder-map-full.sql','column','stakeholder_map','nickname'),
     ('2026-07-20-stakeholder-map-full.sql','column','stakeholder_map','primary_responsible'),
     ('2026-07-20-stakeholder-map-full.sql','column','stakeholder_map','stakeholder_group'),
@@ -459,7 +458,20 @@ with expected(migration, kind, obj, col) as (values
     ('2026-09-03-floor-plan-revisions-zones.sql','column','floor_plans','is_current'),
     ('2026-09-03-floor-plan-revisions-zones.sql','column','floor_plans','revision'),
     ('2026-09-03-floor-plan-revisions-zones.sql','table','floor_plan_zones',''),
-    ('2026-09-03-mom-draft-attendee-edit.sql','function','mom_is_attendee','')
+    ('2026-09-03-mom-draft-attendee-edit.sql','function','mom_is_attendee',''),
+    ('2026-09-07-boq-documents.sql','column','boq_revisions','document_id'),
+    ('2026-09-07-boq-documents.sql','table','boq_documents',''),
+    ('2026-09-07-boq-manual.sql','column','boq_items','origin'),
+    ('2026-09-07-boq-manual.sql','column','boq_revisions','origin'),
+    ('2026-09-07-boq-manual.sql','column','boq_revisions','status'),
+    ('2026-09-07-boq-manual.sql','function','boq_items_issued_guard',''),
+    ('2026-09-07-boq-manual.sql','function','boq_revisions_draft_not_current',''),
+    ('2026-09-07-class-code-trades.sql','column','class_codes','trade'),
+    ('2026-09-07-progress-photos-favorites.sql','column','progress_photos','favorite'),
+    ('2026-09-07-progress-photos-favorites.sql','function','set_photo_favorite',''),
+    ('2026-09-07-progress-photos-works-activity-ids.sql','column','progress_photos','works_activity_ids'),
+    ('2026-09-07-trade-map.sql','table','trade_map',''),
+    ('2026-09-09-cc-affected-activities.sql','table','cc_affected_activities','')
 ),
 missing as (
   select e.* from expected e

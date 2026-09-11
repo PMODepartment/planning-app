@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="../../assets/img/favicon-icon.png?v=20260903a" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
-  <script src="../../assets/js/theme.js?v=20260812b"></script>
+  <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Risk Register · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260904a" />
-  <link rel="stylesheet" href="../../assets/css/mcc-rcm.css?v=20260902a" />
-  <link rel="stylesheet" href="module.css?v=20260902b" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910z5" />
+  <link rel="stylesheet" href="../../assets/css/mcc-rcm.css?v=20260910w3" />
+  <link rel="stylesheet" href="module.css?v=20260910w3" />
 </head>
 <body>
   <div class="pd-app">
@@ -18,17 +18,17 @@
          requireLogin callback below; this static markup mirrors dashboard.html's shell
          exactly so the two never drift. -->
     <aside class="pd-sidebar">
-      <div class="pd-brand"><img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>Planning Suite</small></div>
+      <div class="pd-brand"><img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction"><img class="pd-brand-mark" src="../../assets/img/favicon-icon.png?v=20260903a" alt="" aria-hidden="true">Planners Dashboard<small>Planning Suite</small></div>
       <nav id="side-nav"></nav>
       <div class="pd-nav-foot">
         <a class="pd-nav-sibling" href="https://pmodepartment.github.io/engineering-app/" target="_blank" rel="noopener" title="Opens Engineering App in a new tab">
-          <span class="pd-navico" data-ico="externalLink"></span><span class="pd-navtxt">Engineering App</span>
+          <span class="pd-navico" data-ico="appEngineering"></span><span class="pd-navtxt">Engineering App</span>
         </a>
         <a class="pd-nav-sibling" href="https://pmodepartment.github.io/prc-app/" target="_blank" rel="noopener" title="Opens Procurement App in a new tab">
-          <span class="pd-navico" data-ico="externalLink"></span><span class="pd-navtxt">Procurement App</span>
+          <span class="pd-navico" data-ico="appProcurement"></span><span class="pd-navtxt">Procurement App</span>
         </a>
       </div>
-      <div class="pd-sidebar-foot">Megawide Construction Corporation<br>EPC &middot; PMO &middot; Planning Suite</div>
+      <div class="pd-sidebar-foot">Megawide Construction Corporation<br>PMO Department</div>
     </aside>
     <div class="pd-content">
       <div class="pd-topbar">
@@ -39,7 +39,7 @@
         <div class="rr-projctx">
           <select class="pd-select rr-project" id="rr-project" title="Project"></select>
         </div>
-        <div class="rr-tabs" role="tablist">
+        <div class="rr-tabs pd-tabsrc" role="tablist">
           <button class="rr-tab active" data-view="list">Register</button>
           <button class="rr-tab" data-view="heat">Heat Map</button>
           <button class="rr-tab" data-view="universe">Risk Universe</button>
@@ -51,6 +51,21 @@
                dot lights whenever a filter narrower than "everything" is applied,
                even while the panel is collapsed. Hidden outside the Register view
                (switchView) since none of the other three views read `filters`. -->
+          <!-- RCM band (column-group) toggles. 2026-09-08 (owner: the bands "feel new
+               and not consistent with the UI that was already built"): they were a row of
+               bespoke pills on their own line between the filters and the KPIs — a
+               component that existed nowhere else in the app, in a slot nothing else in
+               the app uses. Now the SHARED `.pd-seg` segmented control (dashboard.css),
+               multi-select variant, sitting in the module bar with every other control.
+               ⚠️ NO leading label chip on purpose: the register's own band header row
+               repeats these exact words directly above the columns they show, so a
+               "BANDS" caption here is a third copy of the same word AND ~75px this row
+               does not have. The control is labelled for screen readers instead.
+               ⚠️ Labels are the SHORT verb forms; the full band name is each button's
+               title. "Identify / Assess / Respond / Residual / Audit" also happens to
+               read as the RCM's own left-to-right order, which the nouns did not. -->
+          <span class="pd-seg pd-seg-multi rr-bands" id="rr-bands" role="group" aria-label="Column bands shown in the register"></span>
+          <span class="rr-tb-sep"></span>
           <button class="pd-filttoggle" id="rr-filttoggle" title="Filters"><span data-ico="filter" data-ico-size="16"></span></button>
           <span class="rr-tb-sep"></span>
           <button class="pd-btn" id="rr-export" title="Export the register to CSV (opens in Excel)">Export</button>
@@ -79,12 +94,8 @@
           <button class="rr-clear" id="rr-clear"><span data-ico="x" data-ico-size="14"></span>Clear</button>
         </div>
 
-        <!-- RCM band (column-group) toggles — the honest equivalent of scrolling
-             the sheet sideways. Rendered by module.js; state persists per browser. -->
-        <div class="rr-bands" id="rr-bands"></div>
-
         <!-- KPIs -->
-        <div class="rr-kpis" id="rr-kpis"></div>
+        <div class="pd-kpis" id="rr-kpis"></div>
 
         <!-- Register view -->
         <div id="rr-view-list">
@@ -96,13 +107,13 @@
         <!-- Heat Map view -->
         <div id="rr-view-heat" style="display:none;">
           <div class="pd-card">
-            <h2 style="margin-top:0;">Risk assessment heat map</h2>
+            <h2 class="pd-panel-t">Risk assessment heat map</h2>
             <p class="rr-help">Open risk events placed by Impact × Probability. The colour is the workbook's own Priority / Level — a <strong>lookup</strong> into this grid, not a band on the product. Click a cell to filter the register to it.</p>
             <div class="rr-heatwrap"><div id="rr-heat"></div></div>
             <div id="rr-heat-legend"></div>
           </div>
           <div class="pd-card">
-            <h2 style="margin-top:0;">Residual risk — after controls</h2>
+            <h2 class="pd-panel-t">Residual risk — after controls</h2>
             <p class="rr-help">Severity × occurrence × degree of control (1–125). A risk with no residual score has never been re-assessed, so the register can only show its inherent rating.</p>
             <div id="rr-res-summary"></div>
           </div>
@@ -111,7 +122,7 @@
         <!-- Risk Universe view -->
         <div id="rr-view-universe" style="display:none;">
           <div class="pd-card">
-            <h2 style="margin-top:0;">MCC Risk Universe</h2>
+            <h2 class="pd-panel-t">MCC Risk Universe</h2>
             <p class="rr-help">The controlled taxonomy, with this project's risk count against each branch. The <em>empty</em> rows are the point: a category with no risks is either genuinely not a risk on this job, or a blind spot.</p>
             <div id="rr-universe"></div>
           </div>
@@ -126,17 +137,17 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/config.js?v=20260902a"></script>
+<script src="../../assets/js/config.js?v=20260910za"></script>
   <script src="../../assets/js/auth.js?v=20260901b"></script>
-  <script src="../../assets/js/db.js?v=20260907a"></script>
+  <script src="../../assets/js/db.js?v=20260909n"></script>
   <script src="../../assets/js/program.js?v=20260827a"></script>
-  <script src="../../assets/js/ui.js?v=20260904a"></script>
-  <script src="../../assets/js/icons.js?v=20260907a"></script>
+  <script src="../../assets/js/ui.js?v=20260909s"></script>
+  <script src="../../assets/js/icons.js?v=20260909ui"></script>
   <script src="../../assets/js/offline.js?v=20260812b"></script>
   <script src="../../assets/js/collab.js?v=20260812b"></script>
   <script src="../../assets/js/autosave.js?v=20260812b"></script>
   <script src="../../assets/js/mcc-rcm.js?v=20260902a"></script>
-  <script src="module.js?v=20260902b"></script>
+  <script src="module.js?v=20260909m"></script>
   <script>
     // Item 1 (2026-09-02) — see the note in minutes-of-meeting/index.html:
     // the topbar tabs become one dropdown and the static module label beside

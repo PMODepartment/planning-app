@@ -54,13 +54,13 @@ html.pd-dark .rcm-p3, html.pd-dark .rcm-res-mod { --rcm-t: #fbbf24; }
 html.pd-dark .rcm-p4, html.pd-dark .rcm-res-low { --rcm-t: #4ade80; }
 
 .rcm-pill {
-  display: inline-block; padding: 2px 8px; border-radius: 999px;
-  font-size: 11px; font-weight: 700; line-height: 1.6; white-space: nowrap;
+  display: inline-block; padding: 2px 8px; border-radius: var(--pd-radius-pill);
+  font-size: var(--pd-fs-xs); font-weight: 700; line-height: 1.6; white-space: nowrap;
   color: #fff; background: var(--rcm-c, var(--pd-muted));
 }
 .rcm-pill-o {                     /* outline variant, for dense table cells */
-  display: inline-block; padding: 1px 7px; border-radius: 999px;
-  font-size: 11px; font-weight: 700; line-height: 1.6; white-space: nowrap;
+  display: inline-block; padding: 1px 7px; border-radius: var(--pd-radius-pill);
+  font-size: var(--pd-fs-xs); font-weight: 700; line-height: 1.6; white-space: nowrap;
   color: var(--rcm-t, var(--pd-muted));
   border: 1px solid var(--rcm-t, var(--pd-line));
   background: color-mix(in srgb, var(--rcm-c, transparent) 14%, transparent);
@@ -70,7 +70,7 @@ html.pd-dark .rcm-p4, html.pd-dark .rcm-res-low { --rcm-t: #4ade80; }
 /* ---- Reference tables (Criteria / Universe / Control Masterlist) --------- */
 .rcm-tblwrap { margin: 0 0 22px; }
 .rcm-tbl-cap {
-  font-size: 13px; font-weight: 800; letter-spacing: .02em;
+  font-size: var(--pd-fs-base); font-weight: 800; letter-spacing: .02em;
   text-transform: uppercase; color: var(--pd-ink); margin: 0 0 8px;
 }
 /* ⚠️ The wide reference tables scroll INSIDE this block, never the page — the
@@ -78,69 +78,69 @@ html.pd-dark .rcm-p4, html.pd-dark .rcm-res-low { --rcm-t: #4ade80; }
    top bar slide away with the content. */
 .rcm-tbl {
   display: block; overflow-x: auto; max-width: 100%;
-  border-collapse: collapse; width: 100%; font-size: 13px;
+  border-collapse: collapse; width: 100%; font-size: var(--pd-fs-base);
 }
 .rcm-tbl thead th {
   text-align: left; padding: 8px 10px; white-space: nowrap;
   background: var(--pd-bg); color: var(--pd-muted);
-  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  font-size: var(--pd-fs-xs); font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
   border-bottom: 1px solid var(--pd-line);
 }
 .rcm-tbl td { padding: 8px 10px; vertical-align: top; border-bottom: 1px solid var(--pd-line); color: var(--pd-ink); }
 .rcm-tbl tbody tr:last-child td { border-bottom: 0; }
 .rcm-tbl-k { white-space: nowrap; }
-.rcm-tbl-note { font-size: 12px; color: var(--pd-muted); margin-top: 8px; line-height: 1.5; }
+.rcm-tbl-note { font-size: var(--pd-fs-sm); color: var(--pd-muted); margin-top: 8px; line-height: 1.5; }
 .rcm-bul { margin: 4px 0 0; padding-left: 18px; }
 .rcm-bul li { margin: 2px 0; color: var(--pd-muted); }
 
 /* ---- Heat-map grid ------------------------------------------------------- */
 .rcm-grid { border-collapse: separate; border-spacing: 4px; width: 100%; }
 .rcm-ax {
-  color: var(--pd-muted); font-size: 11px; font-weight: 700;
+  color: var(--pd-muted); font-size: var(--pd-fs-xs); font-weight: 700;
   text-transform: uppercase; letter-spacing: .04em; text-align: center; padding: 4px;
 }
 .rcm-ax-y { width: 22px; }
 /* Rotate the y-axis caption so a 5-row grid doesn't need a wide gutter. */
 .rcm-ax-y span { display: inline-block; writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; }
 .rcm-gcell {
-  border-radius: 8px; padding: 8px; min-width: 74px; height: 78px;
+  border-radius: var(--pd-radius-md); padding: 8px; min-width: 74px; height: 78px;
   vertical-align: top; cursor: pointer; position: relative;
   border: 1px solid color-mix(in srgb, var(--rcm-c, var(--pd-line)) 55%, transparent);
   background: color-mix(in srgb, var(--rcm-c, transparent) 14%, var(--pd-card));
   transition: box-shadow .12s, transform .12s;
 }
-.rcm-gcell:hover { box-shadow: 0 2px 10px rgba(0,0,0,.14); transform: translateY(-1px); }
+.rcm-gcell:hover { box-shadow: var(--pd-shadow-md); transform: translateY(-1px); }
 .rcm-gcell.rcm-cell-active { outline: 2px solid var(--pd-red); outline-offset: 1px; }
 .rcm-gcell-lab {
-  display: block; font-size: 10px; font-weight: 800; letter-spacing: .02em;
+  display: block; font-size: var(--pd-fs-micro); font-weight: 800; letter-spacing: .02em;
   text-transform: uppercase; color: var(--rcm-t, var(--pd-muted));
 }
-.rcm-gcell-count { display: block; font-size: 22px; font-weight: 800; color: var(--pd-ink); line-height: 1.2; }
-.rcm-gcell-empty { color: var(--pd-muted); font-size: 18px; }
+.rcm-gcell-count { display: block; font-size: var(--pd-fs-stat); font-weight: 800; color: var(--pd-ink); line-height: 1.2; }
+.rcm-gcell-empty { color: var(--pd-muted); font-size: var(--pd-fs-lg); }
 .rcm-gchips { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
 .rcm-gchip {
-  font-size: 10px; padding: 1px 5px; border-radius: 4px; max-width: 100%;
+  font-size: var(--pd-fs-micro); padding: 1px 5px; border-radius: var(--pd-radius); max-width: 100%;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   background: var(--pd-bg); color: var(--pd-ink); border: 1px solid var(--pd-line);
 }
 
 /* ---- Legend -------------------------------------------------------------- */
 .rcm-legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 14px; }
-.rcm-leg { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--pd-muted); }
+.rcm-leg { display: inline-flex; align-items: center; gap: 6px; font-size: var(--pd-fs-sm); color: var(--pd-muted); }
 .rcm-leg b { color: var(--pd-ink); }
 .rcm-leg-sw { width: 12px; height: 12px; border-radius: 3px; background: var(--rcm-c, var(--pd-line)); display: inline-block; }
 
 /* ---- Derived-value readout used inside the Add/Edit forms ---------------- */
 .rcm-derived {
   display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center;
-  padding: 8px 10px; border-radius: 8px; margin: 2px 0 10px;
-  background: var(--pd-bg); border: 1px solid var(--pd-line); font-size: 12px;
+  padding: 8px 10px; border-radius: var(--pd-radius-md); margin: 2px 0 10px;
+  background: var(--pd-bg); border: 1px solid var(--pd-line); font-size: var(--pd-fs-sm);
 }
-.rcm-derived .rcm-d-k { color: var(--pd-muted); text-transform: uppercase; font-size: 10px; letter-spacing: .04em; font-weight: 700; }
+.rcm-derived .rcm-d-k { color: var(--pd-muted); text-transform: uppercase; font-size: var(--pd-fs-micro); letter-spacing: .04em; font-weight: 700; }
 .rcm-derived .rcm-d-v { color: var(--pd-ink); font-weight: 700; }
 
 @media (max-width: 700px) {
   .rcm-gcell { min-width: 58px; height: 64px; padding: 5px; }
-  .rcm-gcell-count { font-size: 17px; }
+  .rcm-gcell-count { font-size: var(--pd-fs-lg); }
   .rcm-gchips { display: none; }   /* chips are unreadable at this size */
 }

@@ -13,8 +13,9 @@
    never falls through to the generic default.
    WARNING The sans family is NOT redefined here - it comes from the shell's --pd-font,
    and a second definition is exactly how the two drift apart again. */
-:root { --pd-mono: ui-monospace, SFMono-Regular, "SF Mono", Consolas,
-  "Liberation Mono", Menlo, monospace; }
+/* ⚠️ --pd-mono MOVED to dashboard.css (2026-09-10), unchanged. The warning above was
+   right and could never be enforced from here: module.css loads only on this page, so
+   every other module that wrote var(--pd-mono) resolved it to nothing. */
 
 /* Contracts & Claims Register — module styles (all classes prefixed .cc-)
    Chrome (topbar / tabs / tools / filter bar) is copied from drawing-register /
@@ -41,26 +42,24 @@
 .cc-title-ico { color:var(--pd-red); vertical-align:-3px; }
 
 .cc-projctx { display:flex; align-items:center; min-width:0; flex:0 1 auto; }
-.cc-project { max-width:230px; min-width:120px; height:34px; font-weight:600; font-size:13px;
+.cc-project { max-width:230px; min-width:120px; height:34px; font-weight:700; font-size:var(--pd-fs-base);
   background:transparent; border-color:transparent; }
 .cc-project:hover, .cc-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
 
 .cc-tabs { display:inline-flex; border:1px solid var(--pd-line); border-radius:var(--pd-radius); overflow:hidden; flex:none; }
-.cc-tab { border:0; background:var(--pd-card); color:var(--pd-ink); padding:6px 14px; font-weight:600;
-  cursor:pointer; font-size:13px; transition:background .12s; white-space:nowrap; }
+.cc-tab { border:0; background:var(--pd-card); color:var(--pd-ink); padding:6px 14px; font-weight:700;
+  cursor:pointer; font-size:var(--pd-fs-base); transition:background .12s; white-space:nowrap; }
 .cc-tab + .cc-tab { border-left:1px solid var(--pd-line); }
 .cc-tab:hover:not(.active) { background:var(--pd-bg); }
 .cc-tab.active { background:var(--pd-red); color:#fff; }
 
 .cc-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; }
-.cc-topbar-tools .pd-btn { height:34px; width:34px; padding:0; display:inline-flex; align-items:center; justify-content:center;
-  background:transparent; border-color:transparent; font-size:13px; }
+.cc-topbar-tools .pd-btn:not(.cc-tb-labeled) { height:34px; width:34px; padding:0; display:inline-flex; align-items:center; justify-content:center;
+  background:transparent; border-color:transparent; font-size:var(--pd-fs-base); }
 .cc-topbar-tools .pd-btn:hover { background:var(--pd-bg); border-color:var(--pd-line); }
-.cc-topbar-tools .pd-btn.cc-tb-labeled { width:auto; padding:0 12px; gap:6px; }
-.cc-topbar-tools .pd-btn.pd-btn-primary { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
-.cc-topbar-tools .pd-btn.pd-btn-primary:hover { filter:brightness(.94); }
+.cc-topbar-tools .pd-btn.cc-tb-labeled { height:34px; width:auto; padding:0 12px; gap:6px; white-space:nowrap; }
 .cc-tb-sep { width:1px; align-self:stretch; margin:5px 3px; background:var(--pd-line); }
-.cc-clearbtn { color:var(--pd-bad,#dc2626); }
+.cc-clearbtn { color:var(--pd-bad-text); }
 .cc-clearbtn:hover { background:var(--pd-bad,#dc2626) !important; border-color:var(--pd-bad,#dc2626) !important; color:#fff; }
 
 /* ---- Filter bar — collapsed by default, revealed via the topbar funnel
@@ -75,18 +74,18 @@
 .cc-filters .pd-select { flex:0 0 auto; max-width:190px; }
 .cc-filters .cc-date { flex:0 0 auto; width:150px; }
 .cc-clearfilt { display:inline-flex; align-items:center; gap:5px; border:0; background:none; cursor:pointer;
-  color:var(--pd-muted); font-size:12px; font-weight:600; padding:4px 6px; border-radius:var(--pd-radius); }
+  color:var(--pd-muted); font-size:var(--pd-fs-sm); font-weight:700; padding:4px 6px; border-radius:var(--pd-radius); }
 .cc-clearfilt:hover { background:var(--pd-bg); color:var(--pd-red); }
 .cc-clearfilt[hidden] { display:none; }
-.cc-count { color:var(--pd-muted); font-size:13px; margin-left:auto; white-space:nowrap; }
+.cc-count { color:var(--pd-muted); font-size:var(--pd-fs-base); margin-left:auto; white-space:nowrap; }
 
 /* ---- Table -------------------------------------------------------------- */
 .cc-tablecard { padding:0; overflow:auto; max-height:calc(100vh - 250px); }
 .cc-table { border-collapse:separate; border-spacing:0; width:100%; min-width:1020px; }
 .cc-table thead th { position:sticky; top:0; z-index:2; background:var(--pd-card);
-  border-bottom:2px solid var(--pd-line); font-size:11px; letter-spacing:.03em; text-transform:uppercase;
+  border-bottom:2px solid var(--pd-line); font-size:var(--pd-fs-xs); letter-spacing:.03em; text-transform:uppercase;
   color:var(--pd-muted); padding:10px 12px; white-space:nowrap; text-align:left; }
-.cc-table td { padding:9px 12px; vertical-align:middle; border-bottom:1px solid var(--pd-line); font-size:13px; }
+.cc-table td { padding:9px 12px; vertical-align:middle; border-bottom:1px solid var(--pd-line); font-size:var(--pd-fs-base); }
 .cc-table tbody tr:not(.cc-total):hover td { background:var(--pd-bg); }
 .cc-r { text-align:right; white-space:nowrap; }
 .cc-table th.cc-r { text-align:right; }
@@ -95,8 +94,8 @@
    from one another then edited apart, and a silent disagreement only surfaces in a
    billing dispute. Defined here rather than emitted undefined, which is the bug this
    file's pill audit had just fixed. */
-.cc-warn { color:var(--boq-warn); font-weight:600; }
-.cc-mini { color:var(--pd-muted); font-size:11px; }
+.cc-warn { color:var(--boq-warn); font-weight:700; }
+.cc-mini { color:var(--pd-muted); font-size:var(--pd-fs-xs); }
 .cc-nowrap { white-space:nowrap; }
 .cc-actcol { width:76px; }
 .cc-cb { width:34px; text-align:center; }
@@ -104,58 +103,55 @@
 .cc-selrow td { background:rgba(238,49,36,.06) !important; }
 /* Description wraps to two lines like the Power Apps grid, rather than truncating */
 .cc-desc { min-width:300px; max-width:520px; }
-.cc-desc-txt { font-weight:600; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
-.cc-ref { font-family:var(--pd-mono); font-weight:700; font-size:12px; }
+.cc-desc-txt { font-weight:700; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.cc-ref { font-family:var(--pd-mono); font-weight:700; font-size:var(--pd-fs-sm); }
 
 /* Project total row — the app's gray banner carrying the column roll-ups */
-tr.cc-total td { background:var(--pd-bg); font-weight:800; font-size:13px;
+tr.cc-total td { background:var(--pd-bg); font-weight:800; font-size:var(--pd-fs-base);
   border-top:2px solid var(--pd-line); border-bottom:2px solid var(--pd-line); }
 html.pd-dark tr.cc-total td { background:rgba(255,255,255,.06); }
 .cc-total-name { display:flex; align-items:center; gap:8px; }
 
 /* ---- Status ------------------------------------------------------------- */
 /* The app shows Pending in RED (it's the actionable state) and the rest plain. */
-.cc-st { font-weight:600; white-space:nowrap; }
-.cc-st.st-pending     { color:var(--pd-bad,#dc2626); }
-.cc-st.st-approved    { color:#12693a; }
-.cc-st.st-disapproved { color:#9b1c1c; }
+.cc-st { font-weight:700; white-space:nowrap; }
+.cc-st.st-pending     { color:var(--pd-bad-text); }
+.cc-st.st-approved    { color:var(--pd-ok-text); }
+.cc-st.st-disapproved { color:var(--pd-bad-text); }
 .cc-st.st-cancelled   { color:var(--pd-muted); font-weight:500; }
-html.pd-dark .cc-st.st-approved    { color:#7fd6a2; }
-html.pd-dark .cc-st.st-disapproved { color:#f19a9a; }
-.cc-st-date { display:block; color:var(--pd-muted); font-weight:400; font-size:11px; margin-top:1px; }
+.cc-st-date { display:block; color:var(--pd-muted); font-weight:400; font-size:var(--pd-fs-xs); margin-top:1px; }
 /* Aging is only meaningful while Pending; long waits escalate. */
 .cc-age { font-weight:700; }
-.cc-age.warn { color:#b45309; }
-.cc-age.bad  { color:var(--pd-bad,#dc2626); }
-html.pd-dark .cc-age.warn { color:#f0c469; }
+.cc-age.warn { color:var(--pd-warn-text); }
+.cc-age.bad  { color:var(--pd-bad-text); }
 
 /* ---- KPI strip ---------------------------------------------------------- */
 .cc-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:14px; }
 .cc-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius);
   padding:12px 14px; position:relative; overflow:hidden; }
 .cc-kpi::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--pd-red); }
-.cc-kpi-l { color:var(--pd-muted); font-size:11px; text-transform:uppercase; letter-spacing:.04em; font-weight:700; }
-.cc-kpi-v { font-size:21px; font-weight:800; margin-top:4px; line-height:1.15; word-break:break-word; }
-.cc-kpi-s { color:var(--pd-muted); font-size:11px; margin-top:3px; }
-.cc-kpi.good .cc-kpi-v { color:#12693a; } html.pd-dark .cc-kpi.good .cc-kpi-v { color:#7fd6a2; }
-.cc-kpi.bad  .cc-kpi-v { color:var(--pd-bad,#dc2626); }
-.cc-kpi.warn .cc-kpi-v { color:#b45309; } html.pd-dark .cc-kpi.warn .cc-kpi-v { color:#f0c469; }
+.cc-kpi-l { color:var(--pd-muted); font-size:var(--pd-fs-xs); text-transform:uppercase; letter-spacing:.04em; font-weight:700; }
+.cc-kpi-v { font-size:var(--pd-fs-stat); font-weight:800; margin-top:4px; line-height:1.15; word-break:break-word; }
+.cc-kpi-s { color:var(--pd-muted); font-size:var(--pd-fs-xs); margin-top:3px; }
+.cc-kpi.good .cc-kpi-v { color:var(--pd-ok-text); }
+.cc-kpi.bad  .cc-kpi-v { color:var(--pd-bad-text); }
+.cc-kpi.warn .cc-kpi-v { color:var(--pd-warn-text); }
 
 /* ---- Modal / form ------------------------------------------------------- */
 .cc-form { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; }
-.cc-form label { display:flex; flex-direction:column; gap:4px; font-size:12px; font-weight:600; color:var(--pd-muted); }
+.cc-form label { display:flex; flex-direction:column; gap:4px; font-size:var(--pd-fs-sm); font-weight:700; color:var(--pd-muted); }
 .cc-form label.cc-wide { grid-column:1/-1; }
-.cc-form input, .cc-form select, .cc-form textarea { font:inherit; font-size:13px; font-weight:400; color:var(--pd-ink);
+.cc-form input, .cc-form select, .cc-form textarea { font:inherit; font-size:var(--pd-fs-base); font-weight:400; color:var(--pd-ink);
   background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:7px 9px; }
 .cc-form textarea { resize:vertical; min-height:58px; }
-.cc-sec { grid-column:1/-1; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.05em;
+.cc-sec { grid-column:1/-1; font-size:var(--pd-fs-xs); font-weight:800; text-transform:uppercase; letter-spacing:.05em;
   color:var(--pd-red); border-bottom:1px solid var(--pd-line); padding-bottom:5px; margin-top:4px; }
 .cc-sec:first-child { margin-top:0; }
-.cc-hint { grid-column:1/-1; color:var(--pd-muted); font-size:12px; margin:-4px 0 0; }
+.cc-hint { grid-column:1/-1; color:var(--pd-muted); font-size:var(--pd-fs-sm); margin:-4px 0 0; }
 
 /* ---- Empty / loading ---------------------------------------------------- */
 .cc-empty { text-align:center; padding:48px 20px; color:var(--pd-muted); }
-.cc-empty h3 { margin:0 0 6px; color:var(--pd-ink); font-size:15px; }
+.cc-empty h3 { margin:0 0 6px; color:var(--pd-ink); font-size:var(--pd-fs-md); }
 .cc-spin { display:inline-block; width:13px; height:13px; vertical-align:-2px; margin-right:6px;
   border:2px solid var(--pd-line); border-top-color:var(--pd-red); border-radius:50%; animation:cc-spin .7s linear infinite; }
 @keyframes cc-spin { to { transform:rotate(360deg); } }
@@ -164,7 +160,7 @@ html.pd-dark .cc-age.warn { color:#f0c469; }
 @media print {
   .pd-topbar, .cc-filters, .cc-actcol, .cc-cb { display:none !important; }
   .cc-tablecard { max-height:none; overflow:visible; }
-  .cc-table { min-width:0; font-size:10px; }
+  .cc-table { min-width:0; font-size:var(--pd-fs-micro); }
   .cc-kpi { break-inside:avoid; }
 }
 
@@ -180,7 +176,7 @@ html.pd-dark .cc-age.warn { color:#f0c469; }
    -------------------------------------------------------------------------- */
 @media (max-width: 700px) {
   .cc-tablecard { overflow-x: auto; }
-  .cc-table { min-width: 860px; font-size: 12px; }
+  .cc-table { min-width: 860px; font-size: var(--pd-fs-sm); }
   .cc-desc { min-width: 190px; max-width: 240px; }
   .cc-filters { flex-wrap: wrap; gap: 8px; }
   .cc-filters > * { flex: 1 1 100%; min-width: 0; }
@@ -228,12 +224,12 @@ html.pd-dark {
 }
 .boq-bar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px; }
 .boq-spacer { flex:1 1 auto; }
-.boq-inline { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--pd-muted); }
-.boq-inline .pd-select { height:32px; font-size:12px; max-width:280px; width:auto; }
+.boq-inline { display:inline-flex; align-items:center; gap:6px; font-size:var(--pd-fs-sm); color:var(--pd-muted); }
+.boq-inline .pd-select { height:32px; font-size:var(--pd-fs-sm); max-width:280px; width:auto; }
 
 .boq-subtabs { display:inline-flex; border:1px solid var(--pd-line); border-radius:var(--pd-radius); overflow:hidden; }
-.boq-subtab { border:0; background:var(--pd-card); color:var(--pd-ink); padding:6px 13px; font-weight:600;
-  cursor:pointer; font-size:12px; white-space:nowrap; }
+.boq-subtab { border:0; background:var(--pd-card); color:var(--pd-ink); padding:6px 13px; font-weight:700;
+  cursor:pointer; font-size:var(--pd-fs-sm); white-space:nowrap; }
 .boq-subtab + .boq-subtab { border-left:1px solid var(--pd-line); }
 .boq-subtab:hover:not(.active) { background:var(--pd-bg); }
 .boq-subtab.active { background:var(--pd-red); color:#fff; }
@@ -245,11 +241,11 @@ html.pd-dark {
    has to override that; it is not decoration. */
 .boq-filters { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px;
   background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:8px 12px; }
-.boq-filters .pd-select { width:auto; min-width:150px; max-width:220px; height:34px; font-size:13px; }
-.boq-filters .pd-input { width:auto; flex:1 1 240px; min-width:170px; height:34px; font-size:13px; }
+.boq-filters .pd-select { width:auto; min-width:150px; max-width:220px; height:34px; font-size:var(--pd-fs-base); }
+.boq-filters .pd-input { width:auto; flex:1 1 240px; min-width:170px; height:34px; font-size:var(--pd-fs-base); }
 
 /* ---- Alerts (the reconciliation gate speaks here) ---------------------- */
-.boq-alert { border-radius:var(--pd-radius); padding:10px 13px; font-size:12px; margin-bottom:12px;
+.boq-alert { border-radius:var(--pd-radius); padding:10px 13px; font-size:var(--pd-fs-sm); margin-bottom:12px;
   border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-ink); line-height:1.5; }
 .boq-alert.bad  { border-color:var(--boq-bad);  background:var(--boq-bad-bg); }
 .boq-alert.warn { border-color:var(--boq-warn); background:var(--boq-warn-bg); }
@@ -258,20 +254,20 @@ html.pd-dark {
 
 /* ---- Item table -------------------------------------------------------- */
 .boq-table { min-width:1080px; }
-.boq-table .boq-no { font-family:var(--pd-mono); font-size:11px;
+.boq-table .boq-no { font-family:var(--pd-mono); font-size:var(--pd-fs-xs);
   white-space:nowrap; color:var(--pd-muted); }
 /* A heading carries the SPEC on the fit-out sheets and is where the class code
    belongs, so it is visually the anchor row, not a de-emphasised one. */
 .boq-table tr.boq-head > td { background:var(--pd-bg); font-weight:700; }
-.boq-excl { font-size:11px; color:var(--boq-warn); font-style:italic; margin-top:2px; }
-.boq-h3 { margin:14px 12px 8px; font-size:13px; }
+.boq-excl { font-size:var(--pd-fs-xs); color:var(--boq-warn); font-style:italic; margin-top:2px; }
+.boq-h3 { margin:14px 12px 8px; font-size:var(--pd-fs-base); }
 /* ⚠️ The import/preview modal body, used 8 times in boq.js and never styled — so a
    1,200-line preview had no scroll of its own and pushed the modal's footer (with
    Accept and Cancel) off the screen. Found by auditing every class the module emits
    against every one this file defines. */
 .boq-imp { padding:14px 16px; max-height:70vh; overflow:auto; }
 
-.boq-kind { display:inline-block; font-size:10px; font-weight:700; text-transform:uppercase;
+.boq-kind { display:inline-block; font-size:var(--pd-fs-micro); font-weight:700; text-transform:uppercase;
   letter-spacing:.03em; padding:2px 6px; border-radius:3px; white-space:nowrap;
   background:var(--pd-bg); color:var(--pd-muted); border:1px solid var(--pd-line); }
 .boq-kind.k-measured    { color:var(--boq-good); border-color:var(--boq-good); }
@@ -301,46 +297,68 @@ html.pd-dark {
 .boq-kind.k-active      { color:var(--boq-good); border-color:var(--boq-good); }
 .boq-kind.k-archived    { color:var(--pd-muted); border-style:dashed; }
 
-.boq-code, .boq-sugg { font-family:var(--pd-mono); font-size:11px;
+.boq-code, .boq-sugg { font-family:var(--pd-mono); font-size:var(--pd-fs-xs);
   font-weight:700; padding:2px 6px; border-radius:3px; white-space:nowrap; }
 .boq-code { background:var(--pd-red-light); color:var(--pd-red); }
 .boq-sugg { background:var(--pd-bg); color:var(--pd-ink); border:1px dashed var(--pd-line); }
 
 /* Allocation reconciliation, always visible both ways: a silent shortfall is
    work nobody has planned and a silent excess is a wrong S-curve. */
-.boq-alloc { display:inline-block; font-size:11px; font-weight:700; padding:2px 6px; border-radius:3px; }
-.boq-alloc.none { background:var(--pd-bg); color:var(--pd-muted); font-weight:600; }
+.boq-alloc { display:inline-block; font-size:var(--pd-fs-xs); font-weight:700; padding:2px 6px; border-radius:3px; }
+.boq-alloc.none { background:var(--pd-bg); color:var(--pd-muted); font-weight:500; }
 .boq-alloc.part { background:var(--boq-warn-bg); color:var(--boq-warn); }
 .boq-alloc.full { background:var(--boq-good-bg); color:var(--boq-good); }
 .boq-alloc.over { background:var(--boq-bad-bg);  color:var(--boq-bad); }
 
 /* ---- Import preview ---------------------------------------------------- */
 .boq-imp-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin:10px 0; }
-.boq-imp-grid label { display:flex; flex-direction:column; gap:4px; font-size:12px; font-weight:600; color:var(--pd-muted); }
+.boq-imp-grid label { display:flex; flex-direction:column; gap:4px; font-size:var(--pd-fs-sm); font-weight:700; color:var(--pd-muted); }
 .boq-imp-grid .pd-input { width:100%; height:34px; }
-.boq-prevtab, .boq-splittab, .boq-progtab { width:100%; border-collapse:collapse; font-size:12px; margin:8px 0; }
-.boq-prevtab th, .boq-splittab th, .boq-progtab th { text-align:left; font-size:10px; text-transform:uppercase;
+.boq-prevtab, .boq-splittab, .boq-progtab { width:100%; border-collapse:collapse; font-size:var(--pd-fs-sm); margin:8px 0; }
+.boq-prevtab th, .boq-splittab th, .boq-progtab th { text-align:left; font-size:var(--pd-fs-micro); text-transform:uppercase;
   letter-spacing:.04em; color:var(--pd-muted); border-bottom:1px solid var(--pd-line); padding:5px 6px; }
 .boq-prevtab td, .boq-splittab td, .boq-progtab td { padding:5px 6px; border-bottom:1px solid var(--pd-line); vertical-align:top; }
-.boq-prevtab .boq-prevnote td { font-size:11px; color:var(--pd-muted); background:var(--pd-bg); }
-.boq-sm { height:28px; font-size:12px; width:auto; min-width:92px; }
+/* ⚠️ The narrow columns are pinned so the DESCRIPTION gets every pixel left over. Without this
+   the browser shares width by content, and a five-column table inside `.pd-modal` gave the one
+   column carrying a sentence about 90px - eleven lines, one word per line, in red. */
+.boq-sscol-code { width:88px; } .boq-sscol-n { width:66px; } .boq-sscol-trade { width:118px; }
+.boq-splittab td code { white-space:nowrap; }
+.boq-prevtab .boq-prevnote td { font-size:var(--pd-fs-xs); color:var(--pd-muted); background:var(--pd-bg); }
+.boq-sm { height:28px; font-size:var(--pd-fs-sm); width:auto; min-width:92px; }
 
 /* ---- Class-code picker ------------------------------------------------- */
 .boq-pick .pd-input { width:100%; }
 .boq-picklist { max-height:340px; overflow-y:auto; border:1px solid var(--pd-line);
   border-radius:var(--pd-radius); margin:10px 0; }
 .boq-pickrow { display:flex; gap:10px; align-items:baseline; width:100%; text-align:left; border:0;
-  background:transparent; cursor:pointer; padding:7px 10px; font-size:12px; color:var(--pd-ink); }
+  background:transparent; cursor:pointer; padding:7px 10px; font-size:var(--pd-fs-sm); color:var(--pd-ink); }
 .boq-pickrow + .boq-pickrow { border-top:1px solid var(--pd-line); }
 .boq-pickrow:hover { background:var(--pd-bg); }
 .boq-pickrow code { font-weight:700; color:var(--pd-red); flex:none; }
 
 /* ---- Allocation split + progress editors ------------------------------ */
 .boq-split, .boq-prog { max-height:62vh; overflow-y:auto; }
-.boq-qin, .boq-rel { width:110px; height:30px; font-size:12px; text-align:right; }
-.boq-splitadd { margin:8px 0; }
+.boq-qin, .boq-rel { width:110px; height:30px; font-size:var(--pd-fs-sm); text-align:right; }
+/* ---- The allocation SCOPE (2026-09-10-boq-project-scope.sql) --------------------------------
+   ⚠️ Two full-width options rather than a `<select>`: each carries a sentence explaining what the
+   choice MEANS for the money, and this is the one decision in the dialog that changes which table
+   column the row lands in. A dropdown would hide both readings behind one closed line. */
+.boq-scope { display:flex; flex-direction:column; gap:6px; margin:10px 0 4px; }
+.boq-scopeopt { display:flex; align-items:flex-start; gap:9px; padding:9px 11px; cursor:pointer;
+  border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); background:var(--pd-card); }
+.boq-scopeopt.on { border-color:var(--pd-red); background:var(--pd-red-light); }
+/* ⚠️ The radio must NOT be stretched by `.ccw-main input { width:100% }` — the same rule that made
+   the class-code ladder unusable in the wizard. Scoped here so it holds wherever the dialog opens. */
+.boq-scopeopt input[type="radio"] { width:auto; flex:none; margin-top:2px; }
+.boq-scopeopt .cc-mini { display:block; margin-top:2px; }
+/* The project-scope explanation replaces the whole activity half, so it is given room to read. */
+.boq-projnote { border-left:3px solid var(--pd-red); padding-left:10px; max-width:70ch; }
+/* ⚠️ A button and its hint, laid out. They were an inline-flex button followed by a bare inline
+   span, so the hint sat on the button's BASELINE rather than its centre and the only gap between
+   them was a collapsed text space. */
+.boq-splitadd { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:8px 0; }
 .boq-splitadd .pd-select { width:100%; max-width:none; }
-.boq-recon { font-size:12px; padding:8px 11px; border-radius:var(--pd-radius); border:1px solid var(--pd-line); }
+.boq-recon { font-size:var(--pd-fs-sm); padding:8px 11px; border-radius:var(--pd-radius); border:1px solid var(--pd-line); }
 .boq-recon.ok   { border-color:var(--boq-good); background:var(--boq-good-bg); }
 .boq-recon.warn { border-color:var(--boq-warn); background:var(--boq-warn-bg); }
 .boq-recon.bad  { border-color:var(--boq-bad);  background:var(--boq-bad-bg); }
@@ -392,11 +410,11 @@ html.pd-dark {
 /* A superseded revision is history, not noise: dimmed but never hidden, because
    it is the evidence for what changed. */
 .pmi-superseded > td { opacity:.62; }
-.pmi-refs { font-family:var(--pd-mono); font-size:11px; }
+.pmi-refs { font-family:var(--pd-mono); font-size:var(--pd-fs-xs); }
 
 /* The three relations are three DIFFERENT marks. Collapsing them into one
    "related" badge is what makes the 29 -> 29.2 -> rev1 chain unreadable. */
-.pmi-link { display:inline-block; font-size:10px; font-weight:800; text-transform:uppercase;
+.pmi-link { display:inline-block; font-size:var(--pd-fs-micro); font-weight:800; text-transform:uppercase;
   letter-spacing:.04em; padding:2px 5px; border-radius:3px; white-space:nowrap;
   border:1px solid var(--pd-line); background:var(--pd-bg); color:var(--pd-muted); }
 .pmi-link.parent { color:var(--boq-info); border-color:var(--boq-info); }
@@ -421,17 +439,17 @@ html.pd-dark {
 .pmi-hdr { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px;
   background:var(--pd-bg); border:1px solid var(--pd-line); border-radius:var(--pd-radius);
   padding:11px 13px; margin-bottom:10px; }
-.pmi-ref { font-family:var(--pd-mono); font-size:12px; font-weight:700; }
-.pmi-scope { font-size:13px; line-height:1.55; margin:0 0 10px; }
+.pmi-ref { font-family:var(--pd-mono); font-size:var(--pd-fs-sm); font-weight:700; }
+.pmi-scope { font-size:var(--pd-fs-base); line-height:1.55; margin:0 0 10px; }
 
 .pmi-chain-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:5px 0;
   border-bottom:1px solid var(--pd-line); }
 .pmi-chain-row:last-child { border-bottom:0; }
-.pmi-jump { height:28px; padding:0 9px; font-size:12px; font-family:var(--pd-mono); }
+.pmi-jump { height:28px; padding:0 9px; font-size:var(--pd-fs-sm); font-family:var(--pd-mono); }
 
 .pmi-up { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:8px 0; }
-.pmi-up .pd-select { width:auto; min-width:170px; height:32px; font-size:12px; }
-.pmi-view { height:26px; padding:0 8px; font-size:12px; max-width:320px; overflow:hidden;
+.pmi-up .pd-select { width:auto; min-width:170px; height:32px; font-size:var(--pd-fs-sm); }
+.pmi-view { height:26px; padding:0 8px; font-size:var(--pd-fs-sm); max-width:320px; overflow:hidden;
   text-overflow:ellipsis; white-space:nowrap; }
 
 /* ---- The cost card ----------------------------------------------------- */
@@ -439,7 +457,7 @@ html.pd-dark {
   color:var(--pd-red); width:26px; }
 .pmi-card tr.pmi-total > td { font-weight:800; border-top:2px solid var(--pd-line);
   background:var(--pd-bg); }
-.pmi-card .pd-input, .pmi-card .pd-select { height:30px; font-size:12px; width:100%; }
+.pmi-card .pd-input, .pmi-card .pd-select { height:30px; font-size:var(--pd-fs-sm); width:100%; }
 
 .pmi-prof { padding:14px 16px; margin-bottom:12px; }
 .pmi-prof-h { display:flex; align-items:flex-start; justify-content:space-between; gap:12px;
@@ -450,9 +468,9 @@ html.pd-dark {
    .cc-form is a grid of stacked .pd-field labels and would put each box on its
    own line. */
 .pmi-chk { display:flex !important; flex-direction:row !important; align-items:center; gap:7px;
-  font-size:12px; font-weight:500; }
+  font-size:var(--pd-fs-sm); font-weight:500; }
 .pmi-chk input { width:15px; height:15px; accent-color:var(--pd-red); flex:none; }
-.pmi-chk-sm { display:inline-flex; align-items:center; gap:3px; font-size:11px; margin-right:6px;
+.pmi-chk-sm { display:inline-flex; align-items:center; gap:3px; font-size:var(--pd-fs-xs); margin-right:6px;
   font-family:var(--pd-mono); }
 .pmi-chk-sm input { width:13px; height:13px; accent-color:var(--pd-red); }
 
@@ -472,7 +490,7 @@ html.pd-dark {
 .boq-poc { padding:0 0 6px; margin-bottom:14px; }
 .boq-poc-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px; padding:0 14px 4px; }
 .boq-poc-cell { background:var(--pd-bg); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:10px 13px; }
-.boq-poc-v { font-size:22px; font-weight:800; margin:3px 0 2px; line-height:1.15; }
+.boq-poc-v { font-size:var(--pd-fs-stat); font-weight:800; margin:3px 0 2px; line-height:1.15; }
 /* Semantic, and on the SAME measured pairs as the rest of this module — a small
    gap is expected, a large one is worth a conversation. Neither is an error. */
 .boq-poc-cell.ok   { border-color:var(--boq-good); }
@@ -490,19 +508,19 @@ html.pd-dark {
 .ccw { max-width: 880px; width: 96vw; }
 .ccw-wrap { display: flex; gap: 0; align-items: stretch; }
 .ccw-rail { flex: 0 0 190px; border-right: 1px solid var(--pd-line); padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; }
-.ccw-rail-i { display: flex; align-items: center; gap: 9px; width: 100%; padding: 8px 9px; border: 0; border-radius: 8px;
-  background: transparent; color: var(--pd-muted); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.ccw-rail-i { display: flex; align-items: center; gap: 9px; width: 100%; padding: 8px 9px; border: 0; border-radius: var(--pd-radius-md);
+  background: transparent; color: var(--pd-muted); font: inherit; font-size: var(--pd-fs-sm); text-align: left; cursor: pointer; }
 .ccw-rail-i:hover:not(:disabled) { background: var(--pd-bg); }
 .ccw-rail-i:disabled { cursor: default; opacity: .5; }
 .ccw-rail-i.on { background: var(--pd-bg); color: var(--pd-ink); font-weight: 700; }
 .ccw-rail-n { flex: 0 0 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
-  background: var(--pd-line); color: var(--pd-ink); font-size: 11px; font-weight: 700; }
+  background: var(--pd-line); color: var(--pd-ink); font-size: var(--pd-fs-xs); font-weight: 700; }
 .ccw-rail-i.on .ccw-rail-n { background: var(--pd-red); color: #fff; }
 .ccw-rail-i.done .ccw-rail-n { background: #12693a; color: #fff; }
 .ccw-main { flex: 1 1 auto; padding: 14px 16px; min-width: 0; max-height: 66vh; overflow: auto; }
-.ccw-main h3 { margin: 0; font-size: 15px; }
-.ccw-sub { margin: 2px 0 12px; color: var(--pd-muted); font-size: 12px; }
-.ccw-main label { display: block; font-size: 12px; font-weight: 600; color: var(--pd-muted); margin: 10px 0 0; }
+.ccw-main h3 { margin: 0; font-size: var(--pd-fs-md); }
+.ccw-sub { margin: 2px 0 12px; color: var(--pd-muted); font-size: var(--pd-fs-sm); }
+.ccw-main label { display: block; font-size: var(--pd-fs-sm); font-weight: 700; color: var(--pd-muted); margin: 10px 0 0; }
 /* ⚠⚠ CHECKBOXES AND RADIOS ARE EXCLUDED, and the omission cost the Trades step its labels.
    This rule said `.ccw-main input`, so EVERY input inside the wizard's main pane was given
    `width:100%` and 9px/11px of padding — including the four-pane class-code ladder that the
@@ -515,44 +533,52 @@ html.pd-dark {
    ⚠ It also stretched the three RADIOS the wizard renders (the BOQ build/import pair and the
    primary-package column), so a text-field rule was quietly deforming every toggle control in
    the wizard. Scoped by TYPE rather than patched per-widget: a control added inside .ccw-main
-   later inherits the correct behaviour instead of inheriting the next version of this bug. */
-.ccw-main input:not([type="checkbox"]):not([type="radio"]),
-.ccw-main select, .ccw-main textarea { width: 100%; margin-top: 4px; padding: 9px 11px;
-  border: 1px solid var(--pd-line); border-radius: 8px; font: inherit; font-size: 14px;
+   later inherits the correct behaviour instead of inheriting the next version of this bug.
+   ⚠⚠ AND A MOUNTED SUB-COMPONENT OPTS OUT WITH `.cca-ctl`. The same rule also
+   deformed the Affected-work picker's control bar -- `width:100%` turned its search box and
+   its level select into two full-width rows that overlapped, which is the clash the owner
+   reported. Raising the picker's own specificity cannot win here: three `:not()` arguments
+   put this selector at 0-4-1, above anything a class can reach without `!important` -- and
+   the previous fix WAS an `!important`, on one control, leaving the next to rediscover it.
+   Excluding a marker class instead lets a sub-component say "these are my controls, not your
+   form fields" once, and its own rules then apply normally. */
+.ccw-main input:not([type="checkbox"]):not([type="radio"]):not(.cca-ctl),
+.ccw-main select:not(.cca-ctl), .ccw-main textarea:not(.cca-ctl) { width: 100%; margin-top: 4px; padding: 9px 11px;
+  border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md); font: inherit; font-size: var(--pd-fs-body);
   background: var(--pd-card); color: var(--pd-ink); }
 .ccw-main textarea { min-height: 68px; resize: vertical; }
 .ccw-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
-.ccw-hint { color: var(--pd-muted); font-size: 12px; margin: 8px 0 0; line-height: 1.45; }
+.ccw-hint { color: var(--pd-muted); font-size: var(--pd-fs-sm); margin: 8px 0 0; line-height: 1.45; }
 /* A refusal, not a hint. It shares .ccw-hint's typography so it reads as part of the
    step, but it must not be scanned past like the muted advice around it — the whole
    point is that Save will not proceed while it is showing. */
 .ccw-stop { color: var(--pd-ink); background: var(--pd-red-light, #fdf1f1); border: 1px solid #C42127;
   border-left-width: 3px; border-radius: 6px; padding: 9px 11px; margin-top: 10px; }
 .ccw-mut { color: var(--pd-muted); }
-.ccw-new { color: var(--pd-red); font-size: 11px; font-weight: 700; }
+.ccw-new { color: var(--pd-red); font-size: var(--pd-fs-xs); font-weight: 700; }
 .ccw-cards { display: grid; gap: 8px; }
 .ccw-card { display: block; width: 100%; text-align: left; padding: 11px 13px; border: 1px solid var(--pd-line);
   border-radius: 10px; background: var(--pd-card); color: var(--pd-ink); font: inherit; cursor: pointer; }
 .ccw-card:hover { border-color: var(--pd-muted); }
 .ccw-card.on { border-color: var(--pd-red); box-shadow: inset 0 0 0 1px var(--pd-red); }
-.ccw-card-t { display: block; font-weight: 700; font-size: 13px; }
-.ccw-card-d { display: block; color: var(--pd-muted); font-size: 12px; margin-top: 2px; }
+.ccw-card-t { display: block; font-weight: 700; font-size: var(--pd-fs-base); }
+.ccw-card-d { display: block; color: var(--pd-muted); font-size: var(--pd-fs-sm); margin-top: 2px; }
 /* The repeatable package list: one contract commonly buys several lots, so this is a
    table of rows rather than a form. Inputs are compact because five rows must fit
    without the step becoming a scroll of its own. */
-.ccw-pkgs { width:100%; border-collapse:collapse; font-size:12px; margin-top:8px; }
-.ccw-pkgs th { text-align:left; font-size:10px; text-transform:uppercase; letter-spacing:.03em;
+.ccw-pkgs { width:100%; border-collapse:collapse; font-size:var(--pd-fs-sm); margin-top:8px; }
+.ccw-pkgs th { text-align:left; font-size:var(--pd-fs-micro); text-transform:uppercase; letter-spacing:.03em;
   color:var(--pd-muted); font-weight:700; padding:0 4px 4px; }
 .ccw-pkgs td { padding:2px 3px; }
 .ccw-pkgs input[type="text"], .ccw-pkgs input:not([type]), .ccw-pkgs input[type="date"], .ccw-pkgs input[type="number"] {
-  width:100%; margin:0; padding:6px 8px; font-size:12px; }
+  width:100%; margin:0; padding:6px 8px; font-size:var(--pd-fs-sm); }
 .ccw-x { padding:2px 8px; line-height:1.2; color:var(--pd-muted); }
 .ccw-x:hover { color:var(--boq-bad,#b3241a); }
 #ccw-addpkg { margin-top:8px; }
 @media (max-width:700px) { .ccw-pkgs, .ccw-pkgs tbody, .ccw-pkgs tr, .ccw-pkgs td { display:block; width:100%; }
   .ccw-pkgs thead { display:none; }
   .ccw-pkgs tr { border-bottom:1px solid var(--pd-line); padding-bottom:6px; margin-bottom:6px; } }
-.ccw-review { width: 100%; border-collapse: collapse; font-size: 13px; }
+.ccw-review { width: 100%; border-collapse: collapse; font-size: var(--pd-fs-base); }
 .ccw-review td { padding: 6px 4px; border-bottom: 1px solid var(--pd-line); vertical-align: top; }
 .ccw-review td:first-child { color: var(--pd-muted); width: 40%; }
 @media (max-width: 700px) {
@@ -588,59 +614,56 @@ html.pd-dark {
       competing screens, neither of them titled. */
 .cc-dthead { display:flex; align-items:center; gap:10px; flex-wrap:wrap;
   padding:11px 14px; border-bottom:1px solid var(--pd-line); background:var(--pd-card); }
-.cc-dthead h3 { margin:0; font-size:13px; font-weight:800; letter-spacing:.02em; color:var(--pd-ink); }
-.cc-dtcount { font-size:11px; font-weight:600; color:var(--pd-muted); white-space:nowrap; }
+.cc-dthead h3 { margin:0; font-size:var(--pd-fs-base); font-weight:800; letter-spacing:.02em; color:var(--pd-ink); }
+.cc-dtcount { font-size:var(--pd-fs-xs); font-weight:700; color:var(--pd-muted); white-space:nowrap; }
 .cc-dtspacer { flex:1 1 auto; }
-.cc-dthead .pd-btn { height:30px; padding:0 11px; font-size:12px; }
+.cc-dthead .pd-btn { height:30px; padding:0 11px; font-size:var(--pd-fs-sm); }
 
 /* Sortable headers. WPM signals these with `th[onclick]{cursor:pointer}` and a red
    hover; same affordance, minus the inline handler. */
 .cc-table th.cc-sort { cursor:pointer; user-select:none; }
 .cc-table th.cc-sort:hover { color:var(--pd-red); }
-.cc-table th.cc-sort::after { content:"\2195"; opacity:.28; margin-left:5px; font-size:10px; }
+.cc-table th.cc-sort::after { content:"\2195"; opacity:.28; margin-left:5px; font-size:var(--pd-fs-micro); }
 .cc-table th.cc-sort.asc::after  { content:"\2191"; opacity:1; color:var(--pd-red); }
 .cc-table th.cc-sort.desc::after { content:"\2193"; opacity:1; color:var(--pd-red); }
 
 /* Group / section rows — WPM's `.zone-row`, used here for a trade division inside a
    BOQ and for a package heading inside a contract list. */
-.cc-table tr.cc-grp > td { background:var(--pd-bg); font-weight:800; font-size:11px;
+.cc-table tr.cc-grp > td { background:var(--pd-bg); font-weight:800; font-size:var(--pd-fs-xs);
   text-transform:uppercase; letter-spacing:.05em; color:var(--pd-ink);
   border-bottom:1px solid var(--pd-line); }
 html.pd-dark .cc-table tr.cc-grp > td { background:rgba(255,255,255,.05); }
 .cc-grptog { border:0; background:none; cursor:pointer; color:var(--pd-muted); font:inherit;
-  font-size:11px; padding:0 6px 0 0; }
+  font-size:var(--pd-fs-xs); padding:0 6px 0 0; }
 .cc-grptog:hover { color:var(--pd-red); }
 tr.cc-collapsed { display:none; }
 
 /* Table footer — a note or a pager under the rows, inside the same card. */
 .cc-dtfoot { padding:9px 14px; border-top:1px solid var(--pd-line); background:var(--pd-card);
-  color:var(--pd-muted); font-size:11px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-.cc-dtfoot .pd-btn { height:28px; padding:0 10px; font-size:12px; }
+  color:var(--pd-muted); font-size:var(--pd-fs-xs); display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.cc-dtfoot .pd-btn { height:28px; padding:0 10px; font-size:var(--pd-fs-sm); }
 .cc-dtfoot p { margin:0; }
 
 /* An empty table states it in one line INSIDE the card, at the height of a row.
    ⚠️ This replaces the page-filling .cc-empty card the Contract tab used to lead with:
       "no packages" is the normal shape of a single-lot job, and a 48px-padded card
       headlining it made the ordinary case look like a defect. */
-.cc-dtnone { padding:22px 14px; text-align:center; color:var(--pd-muted); font-size:12px; }
+.cc-dtnone { padding:22px 14px; text-align:center; color:var(--pd-muted); font-size:var(--pd-fs-sm); }
 .cc-dtnone b { color:var(--pd-ink); }
 
 /* Badges — WPM's `.badge` pill set. `.boq-kind` already covers the outlined vocabulary,
    so these are the FILLED states a status column wants. */
-.cc-badge { display:inline-block; font-size:10px; font-weight:800; letter-spacing:.03em;
-  padding:2px 8px; border-radius:20px; white-space:nowrap; }
-.cc-badge.b-ok   { background:rgba(18,105,58,.12);  color:#12693a; }
-.cc-badge.b-warn { background:rgba(180,83,9,.14);   color:#b45309; }
-.cc-badge.b-bad  { background:rgba(220,38,38,.12);  color:#b3241a; }
+.cc-badge { display:inline-block; font-size:var(--pd-fs-micro); font-weight:800; letter-spacing:.03em;
+  padding:2px 8px; border-radius:var(--pd-radius-pill); white-space:nowrap; }
+.cc-badge.b-ok   { background:var(--pd-ok-bg);   color:var(--pd-ok-text); }
+.cc-badge.b-warn { background:var(--pd-warn-bg); color:var(--pd-warn-text); }
+.cc-badge.b-bad  { background:var(--pd-bad-bg);  color:var(--pd-bad-text); }
 .cc-badge.b-mut  { background:var(--pd-bg);         color:var(--pd-muted); }
-html.pd-dark .cc-badge.b-ok   { background:rgba(127,214,162,.16); color:#7fd6a2; }
-html.pd-dark .cc-badge.b-warn { background:rgba(240,196,105,.16); color:#f0c469; }
-html.pd-dark .cc-badge.b-bad  { background:rgba(241,154,154,.16); color:#f19a9a; }
 
 /* A section rule between the two stacked tables on the Contract tab, so "records" and
    "lots" read as two things rather than one long scroll. */
 .cc-sechead { display:flex; align-items:baseline; gap:10px; margin:18px 0 8px; }
-.cc-sechead h2 { margin:0; font-size:12px; font-weight:800; text-transform:uppercase;
+.cc-sechead h2 { margin:0; font-size:var(--pd-fs-sm); font-weight:800; text-transform:uppercase;
   letter-spacing:.06em; color:var(--pd-muted); white-space:nowrap; }
 .cc-sechead-rule { flex:1 1 auto; height:1px; background:var(--pd-line); }
 .cc-sechead:first-child { margin-top:2px; }
@@ -665,7 +688,7 @@ html.pd-dark .cc-badge.b-bad  { background:rgba(241,154,154,.16); color:#f19a9a;
   background:rgba(180,83,9,.07); border-radius:var(--pd-radius); padding:11px 14px; margin-bottom:12px; }
 html.pd-dark .boq-draft { background:rgba(240,196,105,.09); }
 .boq-draft strong { color:var(--pd-ink); }
-.boq-draft-txt { flex:1 1 320px; font-size:12px; color:var(--pd-muted); }
+.boq-draft-txt { flex:1 1 320px; font-size:var(--pd-fs-sm); color:var(--pd-muted); }
 
 /* The class-code tree: division › group › item, with a checkbox on every level. */
 .boq-tree { border:1px solid var(--pd-line); border-radius:var(--pd-radius);
@@ -675,35 +698,35 @@ html.pd-dark .boq-draft { background:rgba(240,196,105,.09); }
 .boq-trow { display:flex; align-items:center; gap:8px; padding:7px 10px; cursor:pointer; }
 .boq-trow:hover { background:var(--pd-bg); }
 .boq-trow input[type="checkbox"] { width:15px; height:15px; accent-color:var(--pd-red); flex:none; cursor:pointer; }
-.boq-tcode { font-family:var(--pd-mono); font-size:11px; font-weight:700;
+.boq-tcode { font-family:var(--pd-mono); font-size:var(--pd-fs-xs); font-weight:700;
   color:var(--pd-muted); flex:none; min-width:58px; }
-.boq-tname { flex:1 1 auto; font-size:12px; min-width:0; }
-.boq-tn { color:var(--pd-muted); font-size:11px; white-space:nowrap; }
-.boq-tcaret { width:14px; text-align:center; color:var(--pd-muted); font-size:10px; flex:none; }
+.boq-tname { flex:1 1 auto; font-size:var(--pd-fs-sm); min-width:0; }
+.boq-tn { color:var(--pd-muted); font-size:var(--pd-fs-xs); white-space:nowrap; }
+.boq-tcaret { width:14px; text-align:center; color:var(--pd-muted); font-size:var(--pd-fs-micro); flex:none; }
 .boq-tl1 > .boq-trow { font-weight:700; background:var(--pd-bg); }
 html.pd-dark .boq-tl1 > .boq-trow { background:rgba(255,255,255,.04); }
-.boq-tl2 > .boq-trow { padding-left:26px; font-weight:600; }
+.boq-tl2 > .boq-trow { padding-left:26px; font-weight:700; }
 .boq-tl3 .boq-trow { padding-left:46px; }
 .boq-tkids[hidden] { display:none; }
-.boq-tpicked { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:10px; font-size:12px; }
+.boq-tpicked { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:10px; font-size:var(--pd-fs-sm); }
 .boq-tpicked b { color:var(--pd-red); }
 
 /* Inline editable cells, draft rows only. ⚠️ Direct inputs in the grid rather than a
    per-row modal: building a 60-line BOQ through 60 modals is the workflow nobody
    finishes, which is most of why the importer exists at all. */
-.boq-cell { width:100%; min-width:64px; font:inherit; font-size:12px; text-align:right;
+.boq-cell { width:100%; min-width:64px; font:inherit; font-size:var(--pd-fs-sm); text-align:right;
   color:var(--pd-ink); background:transparent; border:1px solid transparent;
-  border-radius:4px; padding:3px 5px; }
+  border-radius:var(--pd-radius); padding:3px 5px; }
 .boq-cell:hover { border-color:var(--pd-line); }
 .boq-cell:focus { border-color:var(--pd-red); background:var(--pd-card); outline:none; }
 .boq-cell.boq-cell-t { text-align:left; min-width:120px; }
-.boq-cellsel { font:inherit; font-size:11px; color:var(--pd-ink); background:transparent;
-  border:1px solid transparent; border-radius:4px; padding:2px 4px; }
+.boq-cellsel { font:inherit; font-size:var(--pd-fs-xs); color:var(--pd-ink); background:transparent;
+  border:1px solid transparent; border-radius:var(--pd-radius); padding:2px 4px; }
 .boq-cellsel:hover, .boq-cellsel:focus { border-color:var(--pd-line); background:var(--pd-card); }
-.boq-rowdel { border:0; background:none; color:var(--pd-muted); cursor:pointer; font-size:14px; padding:0 5px; }
+.boq-rowdel { border:0; background:none; color:var(--pd-muted); cursor:pointer; font-size:var(--pd-fs-body); padding:0 5px; }
 .boq-rowdel:hover { color:var(--boq-bad,#b3241a); }
-.boq-derived { color:var(--pd-muted); font-size:10px; }
-.boq-saving { color:var(--pd-muted); font-size:10px; }
+.boq-derived { color:var(--pd-muted); font-size:var(--pd-fs-micro); }
+.boq-saving { color:var(--pd-muted); font-size:var(--pd-fs-micro); }
 
 /* ==========================================================================
    BULK CONNECT — class code to schedule activities (boq.js openTagActivities)
@@ -713,6 +736,56 @@ html.pd-dark .boq-tl1 > .boq-trow { background:rgba(255,255,255,.04); }
    row wrapping onto three lines) and the code tree carries three indent levels plus a count
    column. Same widening the wizard gives itself with .ccw. */
 .pd-modal.boq-wide   { max-width:1040px; width:96vw; }
+
+/* ==========================================================================
+   MATCH NAMES TO THE BILL (boq.js openNameMatch)
+   ==========================================================================
+   One row per distinct activity name: what it is called, how many carry it, and the codes it
+   could be. No tooltips — a control that needs one is a control that is not named well enough. */
+.boq-nm-body { max-height:62vh; overflow-y:auto; padding:2px 16px 6px; }
+.boq-nmtab { width:100%; border-collapse:collapse; font-size:var(--pd-fs-sm); }
+.boq-nmtab th { position:sticky; top:0; z-index:1; text-align:left; background:var(--pd-card);
+  padding:6px; border-bottom:1px solid var(--pd-line); font-size:var(--pd-fs-micro);
+  text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
+.boq-nmtab td { padding:7px 6px; border-bottom:1px solid var(--pd-line); vertical-align:top; }
+/* ⚠️ The ANSWERED row is tinted rather than ticked. The planner is scanning for what is still
+   blank, and a row that has been dealt with should stop asking for attention. */
+.boq-nmtab tr.on td { background:var(--pd-red-light); }
+.boq-nm-name { font-weight:700; color:var(--pd-ink); }
+/* The code an activity carries TODAY, on a row that would replace it. */
+.boq-nm-had { display:block; font-weight:400; font-size:var(--pd-fs-micro); color:var(--pd-muted);
+  font-family:var(--pd-mono); }
+/* The count is the argument for spending the click, so it is the one figure set to read at a
+   glance — tabular so the column scans as a column. */
+.boq-nm-n { font-variant-numeric:tabular-nums; font-weight:700; color:var(--pd-muted);
+  white-space:nowrap; }
+.boq-nm-opts { display:flex; flex-wrap:wrap; gap:6px; }
+.boq-nm-opt { display:inline-flex; align-items:center; gap:6px; cursor:pointer;
+  border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-ink);
+  border-radius:var(--pd-radius-pill); padding:4px 11px; font:inherit;
+  font-size:var(--pd-fs-xs); line-height:1.3; }
+.boq-nm-opt:hover { border-color:var(--pd-red); }
+.boq-nm-opt code { font-family:var(--pd-mono); font-size:var(--pd-fs-micro); color:var(--pd-muted); }
+/* A CONFIDENT candidate is marked before it is chosen — the difference between "the matcher would
+   have taken this" and "this is merely possible" is the planner's whole decision. */
+.boq-nm-opt.sure { border-color:var(--pd-red); }
+.boq-nm-opt.on { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
+.boq-nm-opt.on code { color:#fff; }
+.boq-nm-skip { color:var(--pd-muted); }
+.boq-nm-skip.on { background:var(--pd-line); border-color:var(--pd-line); color:var(--pd-ink); }
+/* The step whose count is a BUTTON rather than a number — pass 2 when only a person can answer it. */
+.boq-ma-step.todo { border-color:var(--pd-red); }
+
+@media (max-width:700px) {
+  /* The three columns become a stack: a name, its count, then the choices full width. A table
+     this wide on a phone is the frozen-column squeeze the loading modules already fixed. */
+  .boq-nmtab, .boq-nmtab tbody, .boq-nmtab tr, .boq-nmtab td { display:block; width:100%; }
+  .boq-nmtab thead { display:none; }
+  .boq-nmtab tr { border-bottom:1px solid var(--pd-line); padding:8px 0; }
+  .boq-nmtab td { border-bottom:0; padding:2px 4px; }
+  .boq-nm-n::after { content:' activities'; font-weight:400; }
+  .boq-nm-opt { min-height:var(--pd-tap); }
+}
 .pd-modal.boq-widish { max-width:760px;  width:94vw; }
 
 .boq-tag { display:grid; grid-template-columns:minmax(240px,300px) 1fr; gap:14px; align-items:start; }
@@ -723,8 +796,8 @@ html.pd-dark .boq-tl1 > .boq-trow { background:rgba(255,255,255,.04); }
 .boq-tagcode:last-child { border-bottom:0; }
 .boq-tagcode:hover { background:var(--pd-bg); }
 .boq-tagcode.on { background:rgba(238,49,36,.08); box-shadow:inset 3px 0 0 var(--pd-red); }
-.boq-tagcode-c { font-family:var(--pd-mono); font-size:11px; font-weight:700; flex:none; }
-.boq-tagcode-d { flex:1 1 auto; font-size:12px; color:var(--pd-muted); min-width:0;
+.boq-tagcode-c { font-family:var(--pd-mono); font-size:var(--pd-fs-xs); font-weight:700; flex:none; }
+.boq-tagcode-d { flex:1 1 auto; font-size:var(--pd-fs-sm); color:var(--pd-muted); min-width:0;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .boq-tagpane { min-width:0; }
 .boq-tagacts { border:1px solid var(--pd-line); border-radius:var(--pd-radius); overflow:auto;
@@ -733,16 +806,36 @@ html.pd-dark .boq-tl1 > .boq-trow { background:rgba(255,255,255,.04); }
 .boq-tagact:last-child { border-bottom:0; }
 .boq-tagact:hover { background:var(--pd-bg); }
 .boq-tagact input[type="checkbox"] { width:15px; height:15px; accent-color:var(--pd-red); flex:none; }
-.boq-tagact-id { font-family:var(--pd-mono); font-size:11px;
+.boq-tagact-id { font-family:var(--pd-mono); font-size:var(--pd-fs-xs);
   color:var(--pd-muted); flex:none; min-width:78px; }
-.boq-tagact-n { flex:1 1 auto; font-size:12px; min-width:0; }
+.boq-tagact-n { flex:1 1 auto; font-size:var(--pd-fs-sm); min-width:0; }
 .boq-tagact-w { flex:none; }
 /* A match the proposer found, and WHY — never a bare highlight. */
-.boq-why { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.03em;
-  color:var(--boq-good,#12693a); border:1px solid currentColor; border-radius:20px; padding:1px 6px; white-space:nowrap; }
-html.pd-dark .boq-why { color:#7fd6a2; }
-.boq-taken { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.03em;
+.boq-why { font-size:var(--pd-fs-micro); font-weight:700; text-transform:uppercase; letter-spacing:.03em;
+  color:var(--boq-good,#12693a); border:1px solid currentColor; border-radius:var(--pd-radius-pill); padding:1px 6px; white-space:nowrap; }
+
+.boq-taken { font-size:var(--pd-fs-micro); font-weight:700; text-transform:uppercase; letter-spacing:.03em;
   color:var(--boq-warn,#b45309); white-space:nowrap; }
+
+/* ---- The whole-BOQ run's three-step preview ------------------------------------------------
+   ⚠️ A step that WOULD DO NOTHING is dimmed and reads "skipped" rather than being hidden. The
+   planner is being asked to trust a run that writes to three tables; seeing that pass 1 has
+   nothing to do is part of understanding what pass 3's number rests on. Hiding it would make the
+   preview shorter and the decision harder. */
+.boq-ma { display:flex; flex-direction:column; gap:6px; margin:10px 0 4px; }
+.boq-ma-step { display:flex; align-items:flex-start; gap:10px; padding:9px 11px;
+  border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); background:var(--pd-card); }
+.boq-ma-step.off { opacity:.6; }
+.boq-ma-n { flex:none; width:20px; height:20px; border-radius:50%; background:var(--pd-red); color:#fff;
+  font-size:var(--pd-fs-micro); font-weight:800; display:inline-flex; align-items:center;
+  justify-content:center; margin-top:1px; }
+.boq-ma-step.off .boq-ma-n { background:var(--pd-line); color:var(--pd-muted); }
+.boq-ma-t { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:2px; }
+/* ⚠️ min-width:0 above and text-align:right here — the count column must not be pushed off by a
+   long note, and a flex item's automatic minimum size would otherwise refuse to let the text wrap. */
+.boq-ma-c { flex:0 0 auto; text-align:right; font-size:var(--pd-fs-sm); }
+/* The blocked-pass note in the allocation preview — a stated prerequisite, not an error. */
+.boq-blocked { border-left:3px solid var(--boq-warn,#b45309); padding-left:9px; }
 @media (max-width:820px) { .boq-tag { grid-template-columns:1fr; }
   .boq-taglist { max-height:200px; } }
 
@@ -768,9 +861,9 @@ html.pd-dark .boq-why { color:#7fd6a2; }
 /* Collapsible headings (boq.js). The caret is part of the item cell, so it must not push the
    number out of alignment - fixed width, no bounce between the two glyphs. */
 .boq-caret { display:inline-block; width:16px; margin-right:2px; padding:0; border:0;
-  background:none; color:var(--pd-muted); cursor:pointer; font-size:11px; line-height:1; }
+  background:none; color:var(--pd-muted); cursor:pointer; font-size:var(--pd-fs-xs); line-height:1; }
 .boq-caret:hover { color:var(--pd-red); }
-.boq-hidden-n { color:var(--pd-muted); font-size:10px; font-weight:600; }
+.boq-hidden-n { color:var(--pd-muted); font-size:var(--pd-fs-micro); font-weight:700; }
 
 /* Row selection for bulk delete. The checkbox shares the actions column with the delete X, so
    the column count (and every colspan derived from it) is unchanged. */
@@ -782,19 +875,19 @@ html.pd-dark .boq-why { color:#7fd6a2; }
    off the screen on a wide bill. */
 .boq-trades{display:flex;align-items:center;gap:6px;margin:10px 0 4px;padding-bottom:6px;
   overflow-x:auto;white-space:nowrap}
-.boq-trades-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;
+.boq-trades-lbl{font-size:var(--pd-fs-micro);font-weight:700;text-transform:uppercase;letter-spacing:.04em;
   color:var(--pd-muted);margin-right:2px;flex:0 0 auto}
 .boq-trade{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;padding:4px 9px;
-  border:1px solid var(--pd-line);border-radius:999px;background:transparent;color:var(--pd-ink);
-  font:inherit;font-size:12px;cursor:pointer}
+  border:1px solid var(--pd-line);border-radius:var(--pd-radius-pill);background:transparent;color:var(--pd-ink);
+  font:inherit;font-size:var(--pd-fs-sm);cursor:pointer}
 .boq-trade:hover{border-color:var(--pd-muted);background:rgba(128,128,128,.10)}
 .boq-trade.on{border-color:var(--pd-red);background:rgba(238,49,36,.14);font-weight:700}
-.boq-trade-n{font-size:10px;font-weight:700;color:var(--pd-muted);font-variant-numeric:tabular-nums}
+.boq-trade-n{font-size:var(--pd-fs-micro);font-weight:700;color:var(--pd-muted);font-variant-numeric:tabular-nums}
 .boq-trade.on .boq-trade-n{color:var(--pd-red)}
 
 /* The empty-draft guide. Blocks, left-aligned inside a centred cell via an inline-block
    wrapper on the LIST ONLY - the heading and footer stay centred blocks of their own. */
-.boq-empty-h{font-weight:700;font-size:13px;color:var(--pd-ink);margin-bottom:12px}
+.boq-empty-h{font-weight:700;font-size:var(--pd-fs-base);color:var(--pd-ink);margin-bottom:12px}
 .boq-empty-steps{display:inline-block;text-align:left;margin:0;padding:0 0 0 22px;
   line-height:2;max-width:640px}
 .boq-empty-steps li{margin:0}
@@ -802,10 +895,10 @@ html.pd-dark .boq-why { color:#7fd6a2; }
 
 /* Wizard: a two-option choice (build by hand vs import) and the field grid under it. */
 .ccw-choice{display:grid;gap:8px;margin:12px 0}
-.ccw-opt{display:block;padding:10px 12px;border:1px solid var(--pd-line);border-radius:8px;cursor:pointer}
+.ccw-opt{display:block;padding:10px 12px;border:1px solid var(--pd-line);border-radius:var(--pd-radius-md);cursor:pointer}
 .ccw-opt:hover{border-color:var(--pd-muted)}
 .ccw-opt.on{border-color:var(--pd-red);background:rgba(238,49,36,.08)}
-.ccw-optsub{display:block;margin-top:4px;font-size:12px;color:var(--pd-muted);line-height:1.5}
+.ccw-optsub{display:block;margin-top:4px;font-size:var(--pd-fs-sm);color:var(--pd-muted);line-height:1.5}
 .ccw-grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
 @media (max-width:560px){.ccw-grid2{grid-template-columns:1fr}}
 
@@ -813,10 +906,16 @@ html.pd-dark .boq-why { color:#7fd6a2; }
 .boq-stage h3{margin:0 0 8px}
 .boq-stage p{max-width:620px;margin:0 auto;line-height:1.6;color:var(--pd-muted)}
 .boq-stage p b{color:var(--pd-ink)}
-.boq-how{margin:10px 0 4px;font-size:12px}
-.boq-how summary{cursor:pointer;color:var(--pd-muted);font-weight:600;list-style:revert}
+.boq-how{margin:10px 0 4px;font-size:var(--pd-fs-sm)}
+.boq-how summary{cursor:pointer;color:var(--pd-muted);font-weight:700;list-style:revert}
 .boq-how summary:hover{color:var(--pd-ink)}
-.boq-how p{margin:8px 0 0;color:var(--pd-muted);line-height:1.6;max-width:900px}
+/* ⚠️ `ch`, NOT `px` — 900px was the wrap defect the owner reported. A pixel cap is a measure in
+   the wrong unit: it does not track the font size, and at this size 900px runs to ~120 characters
+   a line, roughly double a comfortable one, so the eye loses the line it is returning to. `ch` is
+   the width of a "0" in the current face, so 70ch stays ~70 characters at any type scale. */
+.boq-how p{margin:8px 0 0;color:var(--pd-muted);line-height:1.6;max-width:70ch}
+/* Each paragraph is now one idea, so they need to read as separate ones. */
+.boq-how p + p{margin-top:7px}
 
 /* ==========================================================================
    THE CLASS-CODE LADDER (boq.js openCodeBuilder)
@@ -830,10 +929,10 @@ html.pd-dark .boq-why { color:#7fd6a2; }
 .boq-ladwrap { padding:0 16px 4px; }
 .boq-ladwrap .pd-input { margin-bottom:10px; }
 .boq-lad { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:8px; }
-.boq-lad-col { border:1px solid var(--pd-line); border-radius:8px; overflow:hidden;
+.boq-lad-col { border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); overflow:hidden;
   display:flex; flex-direction:column; min-width:0; }
 .boq-lad-h { display:flex; justify-content:space-between; align-items:center;
-  padding:6px 10px; font-size:10px; font-weight:700; text-transform:uppercase;
+  padding:6px 10px; font-size:var(--pd-fs-micro); font-weight:700; text-transform:uppercase;
   letter-spacing:.04em; color:var(--pd-muted); background:rgba(128,128,128,.10);
   border-bottom:1px solid var(--pd-line); }
 .boq-lad-h span { font-variant-numeric:tabular-nums; }
@@ -846,18 +945,275 @@ html.pd-dark .boq-why { color:#7fd6a2; }
 /* A partly-picked parent must not read as unpicked - same signal the tree used. */
 .boq-lad-row input[data-part] { outline:2px solid var(--pd-red); outline-offset:1px; }
 .boq-lad-code { flex:0 0 auto; font-family:var(--pd-mono);
-  font-size:11px; color:var(--pd-muted); }
-.boq-lad-name { flex:1 1 auto; font-size:12px; overflow:hidden; text-overflow:ellipsis;
+  font-size:var(--pd-fs-xs); color:var(--pd-muted); }
+.boq-lad-name { flex:1 1 auto; font-size:var(--pd-fs-sm); overflow:hidden; text-overflow:ellipsis;
   white-space:nowrap; }
-.boq-lad-n { flex:0 0 auto; font-size:10px; font-weight:700; color:var(--pd-muted);
+.boq-lad-n { flex:0 0 auto; font-size:var(--pd-fs-micro); font-weight:700; color:var(--pd-muted);
   font-variant-numeric:tabular-nums; }
 .boq-lad-row.on .boq-lad-n { color:var(--pd-red); }
 @media (max-width:820px) { .boq-lad { grid-template-columns:1fr; }
   .boq-lad-body { height:180px; } }
 
+/* ---- Affected activities (CO / EOT) -- see affected.js ---------------------
+   A LADDER across the top (which place), then the activity TREE and the Gantt PREVIEW below it.
+   ⚠️ Same visual language as `.boq-lad` above (bordered column, uppercase head carrying a count, a
+   fixed-height scrolling body) because it is the same act -- picking a lot of things out of a long
+   list -- and a second look for it would just be a second thing to maintain.
+   ⚠️⚠️ THIS PICKER RENDERS IN TWO HOSTS: inside `.ccw-main` (the wizard's Affected work step) and
+   inside `.pd-modal` (module.js's openForm). Every rule here must hold in both, which is why the
+   control sizing below uses FLEX BASIS rather than `width` -- see the `.cca-ctl` note at :519. */
+/* The affected-activity count under a register row's description. Rendered only when it is
+   non-zero -- see affChip() in module.js. */
+.cc-affn { color:var(--pd-red); font-weight:700; }
+
+.cca { padding:0 16px 4px; }
+.cca-loading { padding:18px 2px; font-size:var(--pd-fs-sm); color:var(--pd-muted); }
+
+/* ⚠️⚠️ THE OWNER'S REPORTED CLASH, AND ITS SECOND HALF. `.ccw-main label` (:505) sets
+   `display:block` at specificity 0-1-1 and beat the bare `.cca-lbl { display:inline-flex }` this
+   picker used to carry, so the control bar's label took a full row of its own and overlapped the
+   select beside it. The select half is fixed at :519 with `.cca-ctl`; this is the label half.
+   ⚠️ Scoped on `.cca` rather than on one class, so a label added to this picker later inherits the
+   correct behaviour instead of inheriting the next version of this bug. */
+.ccw-main .cca label { display:inline-flex; align-items:center; gap:6px; margin:0; }
+
+/* A state the planner has to act on: a missing migration, an unreadable schedule, or links whose
+   activities have since been renumbered by a re-import. */
+.cca-warn { margin:0 0 10px; padding:8px 11px; font-size:var(--pd-fs-xs); line-height:1.5;
+  border:1px solid var(--pd-line); border-left:3px solid var(--pd-warn, #b7791f);
+  border-radius:6px; background:rgba(128,128,128,.06); color:var(--pd-ink); }
+.cca-warn code { font-family:var(--pd-mono); font-size:var(--pd-fs-xs); }
+.cca-noladder { margin-bottom:8px; }
+
+.cca-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+/* ⚠️ FLEX BASIS, NOT `width`. The wizard's own input rule sits at specificity 0-4-1 (three
+   `:not()` arguments), which no reasonable class selector here can outrank -- so the fight is not
+   won on width at all: `.cca-ctl` opts the control out of that rule entirely (:519), and the flex
+   base size does the layout. The previous fix was `width:auto !important`, which papered over the
+   symptom on one control and left the next one to rediscover it. */
+.cca-q { flex:1 1 240px; min-width:170px; }
+.cca-count { font-size:var(--pd-fs-xs); font-weight:700; color:var(--pd-red);
+  font-variant-numeric:tabular-nums; }
+
+/* ---- the ladder ---------------------------------------------------------
+   ⚠️⚠️ N RUNGS, NOT FOUR. `.boq-lad` can hardcode `1fr 1fr 1fr 1fr` because a class code is always
+   trade > division > group > item. Location levels are per PROJECT -- SLN101 is Tower > Level >
+   Orientation > Zone > Cluster, five of them -- so the count comes from the data. `--cca-rungs` is
+   set on the host by paint(); `minmax(150px, 1fr)` is what turns a five-level project into a
+   horizontal scroll instead of five unreadable 90px columns. */
+.cca-lad { display:grid; grid-template-columns:repeat(var(--cca-rungs,3), minmax(150px,1fr));
+  gap:8px; margin-bottom:8px; overflow-x:auto; padding-bottom:2px; }
+
+/* ⚠️ Tree LEFT, preview RIGHT, and the preview is given the wider track: a bar chart is unreadable
+   below a few hundred pixels, while a tree row degrades gracefully by ellipsis. */
+.cca-lower { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.15fr); gap:8px; }
+/* ⚠️ `opts.preview:false` (the BOQ allocator) emits no second column, so the 1.15fr track would
+   otherwise sit empty and squeeze the tree into half the dialog. One column, full width. */
+.cca-nopreview .cca-lower { grid-template-columns:minmax(0,1fr); }
+/* The tree is the whole screen here rather than one of two panes, so it earns more height. */
+.cca-nopreview .cca-treebody { max-height:46vh; }
+
+.cca-col { border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); overflow:hidden;
+  background:var(--pd-card); min-width:0; }
+.cca-h { display:flex; justify-content:space-between; align-items:center;
+  gap:8px; padding:5px 10px; border-bottom:1px solid var(--pd-line);
+  font-size:var(--pd-fs-micro); font-weight:700; text-transform:uppercase; letter-spacing:.04em;
+  color:var(--pd-muted); background:rgba(128,128,128,.06); }
+.cca-h span { font-variant-numeric:tabular-nums; }
+.cca-body { overflow-y:auto; }
+.cca-ladbody { height:150px; }
+.cca-treebody { height:360px; }
+/* ⚠ Taller than the tree pane’s sibling default was, because the preview now carries a
+   headline AND a Gantt: at 300px the Gantt got about six rows, which is a keyhole onto the
+   thing the panel exists to show. */
+.cca-mgbody { height:360px; overflow:auto; }
+.cca-empty { padding:14px 12px; font-size:var(--pd-fs-xs); line-height:1.5; color:var(--pd-muted); }
+.cca-empty code { font-family:var(--pd-mono); font-size:var(--pd-fs-xs); }
+
+.cca-row { display:flex; align-items:center; gap:8px; padding:5px 10px; cursor:pointer;
+  border-bottom:1px solid rgba(128,128,128,.10); }
+.cca-row:hover { background:rgba(128,128,128,.12); }
+.cca-row.on { background:rgba(238,49,36,.14); }
+/* ⚠️ "All <level>s" and the no-value bucket are NOT places, so they are set in italic and toned
+   down — a planner scanning a column of tower names must not read either as one more tower. Both
+   still take the `.on` highlight, because either can be the ladder's position. */
+.cca-rowall .cca-name, .cca-rownone .cca-name { color:var(--pd-muted); }
+.cca-rowall { border-bottom:1px solid rgba(128,128,128,.24); }
+/* The no-value bucket sits last and is a statement about the DATA, so it is separated from the
+   real values above it rather than blending into the list. */
+.cca-rownone { border-top:1px solid rgba(128,128,128,.18); }
+/* Why the rungs below an "All" are not on screen. A pane that silently disappears reads as a bug. */
+.cca-hintline { margin:6px 0 0; font-size:var(--pd-fs-xs); color:var(--pd-muted); max-width:70ch; }
+.cca-row input { flex:0 0 auto; cursor:pointer; }
+/* "+N" — the rest of this activity's namesakes, across the whole project. Quiet until hovered:
+   it sits on every leaf row, so at full strength it would out-shout the names themselves. */
+.cca-takeall { flex:0 0 auto; cursor:pointer; font:inherit; font-size:var(--pd-fs-micro);
+  font-weight:700; line-height:1; padding:2px 6px; border-radius:var(--pd-radius-pill);
+  border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-muted); }
+.cca-takeall:hover { border-color:var(--pd-red); color:var(--pd-red); }
+@media (max-width:700px) { .cca-takeall { min-height:var(--pd-tap); padding:2px 10px; } }
+/* ⚠️ 13x13 was the real tap target on every row in this picker - measured, not assumed - while
+   the class-code tree in the same module already sizes its box to 15px and gives it the brand
+   accent. Same control, same module, so the same treatment rather than a second convention. */
+.cca-row input[type="checkbox"] { width:15px; height:15px; accent-color:var(--pd-red); }
+/* A partial tick is set as a DOM property (`indeterminate`), which has no CSS selector of its own;
+   the paint writes `data-part` beside it purely so the state can be seen at a glance. */
+.cca-row input[data-part] { outline:2px solid var(--pd-red); outline-offset:1px; }
+.cca-code { flex:0 0 auto; font-family:var(--pd-mono); font-size:var(--pd-fs-xs); color:var(--pd-muted); }
+.cca-name { flex:1 1 auto; font-size:var(--pd-fs-sm); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cca-n { flex:0 0 auto; font-size:var(--pd-fs-micro); font-weight:700; color:var(--pd-muted);
+  font-variant-numeric:tabular-nums; }
+.cca-row.on .cca-n { color:var(--pd-red); }
+/* `xN` -- this rung is spelled more than one way on the schedule and is treated as one place. */
+.cca-alt { flex:0 0 auto; font-size:var(--pd-fs-micro); font-weight:700; padding:1px 5px; border-radius:var(--pd-radius-pill);
+  background:rgba(128,128,128,.18); color:var(--pd-muted); }
+.cca-co { flex:0 0 auto; font-family:var(--pd-mono); font-size:var(--pd-fs-micro); padding:1px 5px;
+  border-radius:3px; border:1px solid var(--pd-line); color:var(--pd-muted); }
+
+/* ---- the activity tree --------------------------------------------------- */
+.cca-caret { flex:0 0 9px; font-size:var(--pd-fs-micro); line-height:1; color:var(--pd-muted); }
+.cca-tbranch { font-weight:700; background:rgba(128,128,128,.04); }
+/* ⚠️ The duplicate-name qualifier. It is deliberately MUTED and appended, never merged into the
+   name: the activity is still called "Formworks", and the suffix is only there because four rows
+   read "Formworks" and nothing else on screen tells them apart. */
+.cca-qual { color:var(--pd-muted); font-weight:400; }
+
+/* ---- the preview's CO-duration chip -------------------------------------- */
+.cca-durwrap { display:inline-flex; align-items:center; gap:5px; font-size:var(--pd-fs-micro); }
+/* ⚠️⚠️ `min-width:0` IS LOAD-BEARING, and measuring is the only way this shows up. A flex
+   item's default `min-width:auto` resolves to its automatic minimum size, and for a form control
+   that is the browser's intrinsic ~20-character width -- so `flex:0 0 42px` was overridden and the
+   box rendered **149px** inside a header strip built for a chip. Reading the rule would never have
+   caught it: the declaration is right, and it loses to a default it does not mention. */
+.cca-dur { flex:0 0 42px; min-width:0; padding:1px 4px; border:1px solid var(--pd-line);
+  border-radius:var(--pd-radius); background:var(--pd-bg); color:var(--pd-ink); font:inherit; font-size:var(--pd-fs-xs);
+  text-align:center; font-variant-numeric:tabular-nums; }
+
+/* ---- the PROGRAMME IMPACT panel -------------------------------------------
+   The answer to "what does this change order do?", above the per-bar detail. The strip below it
+   is the evidence; this is the finding. */
+.cca-imp { padding:8px 12px 10px; }
+.cca-imp-h { display:flex; flex-direction:column; gap:1px; margin-bottom:7px; }
+.cca-imp-h b { font-size:var(--pd-fs-base); font-weight:700; color:var(--pd-ink); }
+.cca-imp-h span { font-size:var(--pd-fs-xs); color:var(--pd-muted); }
+/* Only a REAL slip takes the danger colour. "Unchanged" must not read as an alarm, and an
+   un-entered duration must not read as a result. */
+.cca-imp-slip b { color:var(--pd-danger-text); }
+
+/* One bar for the whole programme: what is there now, what the selection occupies inside it, and
+   what the change order adds past the end. Percentage widths, so it needs no measurement pass. */
+.cca-imp-bar { position:relative; height:16px; border-radius:3px;
+  background:rgba(128,128,128,.10); overflow:hidden; }
+.cca-imp-prog { position:absolute; top:0; height:16px; background:rgba(128,128,128,.22); }
+/* The extension past today's finish -- dashed, because it is arithmetic, not a rescheduled date. */
+.cca-imp-ext { position:absolute; top:0; height:16px;
+  background:color-mix(in srgb, var(--pd-danger-text) 16%, transparent);
+  border-left:1px dashed var(--pd-danger-text); }
+/* The selection AFTER the insertion sits under the solid bar, so the growth reads as a tail. */
+.cca-imp-selafter { position:absolute; top:3px; height:10px; border-radius:2px;
+  border:1px dashed var(--pd-red); opacity:.75; }
+.cca-imp-sel { position:absolute; top:3px; height:10px; border-radius:2px; background:var(--pd-red); }
+.cca-imp-ax { display:flex; justify-content:space-between; margin-top:3px;
+  font-size:var(--pd-fs-micro); color:var(--pd-muted); font-variant-numeric:tabular-nums; }
+
+.cca-imp-note { margin-top:7px; font-size:var(--pd-fs-xs); line-height:1.5; color:var(--pd-muted); }
+.cca-imp-note b { color:var(--pd-ink); font-weight:700; }
+/* ⚠ The honesty line. Muted but always present -- `slip` is a lower bound, not a forecast. */
+.cca-imp-warn { margin-top:6px; padding-top:6px; border-top:1px solid var(--pd-line);
+  font-size:var(--pd-fs-micro); line-height:1.45; color:var(--pd-muted); }
+
+/* The grid's shortcut hint, at the FOOT of the grid it describes rather than in the filter bar
+   above it. A line of keyboard syntax between the planner and the first row is read once and then
+   in the way forever; below the last row it is where you look when you want it. */
+.boq-gridfoot { padding:7px 2px 2px; border-top:1px solid var(--pd-line); margin-top:2px; }
+
+/* The topbar export chooser: what goes in the workbook. */
+.ccx-body { display:flex; flex-direction:column; gap:8px; }
+.ccx-opt { display:flex; align-items:flex-start; gap:9px; padding:9px 11px; cursor:pointer;
+  border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); background:var(--pd-card); }
+.ccx-opt:hover { border-color:var(--pd-red); }
+.ccx-opt input { margin-top:2px; flex:0 0 auto; }
+.ccx-opt span { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.ccx-opt b { font-size:var(--pd-fs-base); font-weight:700; color:var(--pd-ink); }
+.ccx-opt small { font-size:var(--pd-fs-xs); color:var(--pd-muted); line-height:1.45; }
+/* ⚠ An option with nothing behind it is shown DISABLED with the reason, not hidden. Hiding it
+   would leave the planner wondering whether the app can export a BOQ at all; this says it can, and
+   that this project has none yet. */
+.ccx-opt.off { opacity:.55; cursor:not-allowed; }
+.ccx-opt.off:hover { border-color:var(--pd-line); }
+/* ---- the preview GANTT ----------------------------------------------------
+   Replaces the old per-activity strip. Owner: *"The per activity view doesn't bring much value ...
+   I was thinking that it would show the whole Gantt view of the schedule and it would see the
+   relationships per level/activity/wbs."* So rows are grouped under their WBS branches, host bars
+   carry the gap the variation opens, and the activities the change order CREATES are drawn as
+   their own rows beneath their host.
+   ⚠ Percentage geometry throughout, so the pane needs no measurement pass and reflows with the
+   modal instead of being laid out in pixels against a width it has to guess. */
+.cca-gr-head { display:flex; justify-content:space-between; gap:8px; padding:6px 10px;
+  border-bottom:1px solid var(--pd-line); font-size:var(--pd-fs-micro); color:var(--pd-muted);
+  background:rgba(128,128,128,.06); position:sticky; top:0; z-index:2; }
+.cca-gr-head b { color:var(--pd-ink); }
+.cca-gr { padding:2px 0 6px; }
+.cca-gr-row { display:flex; align-items:center; gap:8px; padding:1px 10px 1px 0; height:18px; }
+.cca-gr-lbl { flex:0 0 150px; min-width:0; font-size:var(--pd-fs-xs); overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap; }
+.cca-gr-track { position:relative; flex:1 1 auto; height:12px; border-radius:2px;
+  background:rgba(128,128,128,.08); }
+
+/* An existing activity. Where a variation lands it is drawn to its NEW finish, with the gap and
+   the added tail marked inside it -- one bar, matching how the schedule itself draws a split. */
+.cca-gr-bar { position:absolute; top:1px; height:10px; border-radius:2px; background:var(--ps-cc-bar,#8a8f94); }
+html.pd-dark .cca-gr-bar { background:#6f767d; }
+/* The notch: where work stops. Bar-local, taken from the PLAN's own co window. */
+.cca-gr-cut { position:absolute; top:1px; height:10px; background:var(--pd-card);
+  border-left:1px dashed var(--pd-muted); border-right:1px dashed var(--pd-muted); }
+/* The days the variation adds past the original finish. */
+.cca-gr-ext { position:absolute; top:1px; height:10px; border-radius:0 2px 2px 0;
+  background:color-mix(in srgb, var(--pd-danger-text) 30%, transparent); }
+/* A collapsed branch still says WHEN its work happens rather than going blank. */
+.cca-gr-sum { position:absolute; top:4px; height:4px; border-radius:2px; background:rgba(128,128,128,.45); }
+
+.cca-gr-branch { cursor:pointer; }
+.cca-gr-branch:hover { background:rgba(128,128,128,.10); }
+.cca-gr-branch .cca-gr-lbl { font-weight:700; font-size:var(--pd-fs-xs); }
+.cca-gr-branch .cca-gr-lbl i { font-style:normal; color:var(--pd-muted); font-weight:400; }
+
+/* ⚠⚠ THE ROW THAT DID NOT EXIST BEFORE: an activity the change order CREATES. It is red and
+   marked with a +, because it is the half of a variation the old preview could not show at all -- a
+   planner has to be able to see the work being ADDED, not only the bars being stretched. */
+.cca-gr-new .cca-gr-lbl { color:var(--pd-red); font-family:var(--pd-mono); font-size:var(--pd-fs-micro); }
+.cca-gr-plus { display:inline-block; width:11px; font-weight:800; color:var(--pd-red); }
+.cca-gr-cobar { position:absolute; top:2px; height:8px; border-radius:2px; background:var(--pd-red); }
+/* A host the engine refused (1-day, undated, already cites this reference) says so on its own row
+   rather than being silently absent from a list the planner thought was complete. */
+.cca-gr-err .cca-gr-lbl { color:var(--pd-muted); font-style:italic; font-size:var(--pd-fs-micro); }
+.cca-mg-more { padding:6px 10px; font-size:var(--pd-fs-xs); color:var(--pd-muted); }
+/* The row cap, in words. Sticky so it stays visible while the planner scrolls the branch they
+   opened - a notice that scrolls away answers the question only if you happen to be at the bottom. */
+.cca-cut { position:sticky; bottom:0; padding:6px 10px; font-size:var(--pd-fs-xs);
+  color:var(--pd-muted); background:var(--pd-card); border-top:1px solid var(--pd-line); }
+
+@media (max-width:820px) {
+  /* ⚠️ The ladder keeps its rung count and scrolls; collapsing it to one column would hide the
+     cascade, which is the one thing the control is for. The LOWER pair stacks instead. */
+  .cca-lad { grid-template-columns:repeat(var(--cca-rungs,3), minmax(140px,1fr)); }
+  .cca-lower { grid-template-columns:1fr; }
+  /* ⚠️ The ROW is the tap target on the leaf rows now (affected.js wires a row-level click), so
+     the row is what has to reach `--pd-tap` - measured at 30px against 44px. The bodies grow with
+     it so the same FOUR and SEVEN rows stay on screen; leaving them fixed would have paid for the
+     bigger target by turning the list into a keyhole, which is the trade this file already refused
+     once for `.cca-mgbody`. */
+  .cca-row { min-height:var(--pd-tap); }
+  .cca-row input[type="checkbox"] { width:18px; height:18px; }
+  .cca-ladbody { height:176px; }
+  .cca-treebody { height:308px; }
+  .cca-mgbody { height:200px; }
+}
+
+
 /* One modal header shape everywhere: a title, and one line saying what the screen is for.
    Replaces per-modal paragraphs of theory sitting above the controls. */
-.pd-modal-sub { margin-top:3px; font-size:12px; color:var(--pd-muted); line-height:1.4; }
+.pd-modal-sub { margin-top:3px; font-size:var(--pd-fs-sm); color:var(--pd-muted); line-height:1.4; }
 
 /* A computed cell. Muted and italic-free: it must read as a FIGURE, not as disabled chrome,
    because it is the number the planner actually checks. The cursor says it is not typed into. */
@@ -867,7 +1223,7 @@ html.pd-dark .boq-why { color:#7fd6a2; }
 /* A bare icon control - used for the BOQ rename pencil. Sized to sit on the same baseline as
    the .pd-select beside it rather than stretching the row. */
 .boq-iconbtn { height:30px; width:30px; padding:0; border:1px solid transparent; border-radius:6px;
-  background:transparent; color:var(--pd-muted); cursor:pointer; font-size:13px; line-height:1;
+  background:transparent; color:var(--pd-muted); cursor:pointer; font-size:var(--pd-fs-base); line-height:1;
   vertical-align:middle; }
 .boq-iconbtn:hover { border-color:var(--pd-line); color:var(--pd-ink); background:rgba(128,128,128,.12); }
 
@@ -885,12 +1241,12 @@ html.pd-dark .boq-why { color:#7fd6a2; }
 /* A GHOST control: an escape hatch, not an invitation. Reads as text until you approach it.
    Used where the correct answer for most projects is "do nothing" - see + Lot. */
 .boq-ghostbtn { height:30px; padding:0 10px; border:1px solid transparent; border-radius:6px;
-  background:transparent; color:var(--pd-muted); font:inherit; font-size:12px; font-weight:600;
+  background:transparent; color:var(--pd-muted); font:inherit; font-size:var(--pd-fs-sm); font-weight:700;
   cursor:pointer; }
 .boq-ghostbtn:hover { border-color:var(--pd-line); color:var(--pd-ink); background:rgba(128,128,128,.10); }
 
 /* The row-number gutter. Muted and tabular so it reads as an index, never as data. */
-.pdg-rownum { color:var(--pd-muted); font-variant-numeric:tabular-nums; font-size:11px;
+.pdg-rownum { color:var(--pd-muted); font-variant-numeric:tabular-nums; font-size:var(--pd-fs-xs);
   user-select:none; cursor:default; }
 
 /* The wizard widens only for the Trades step, which hosts the four-pane class-code ladder.
@@ -906,21 +1262,21 @@ html.pd-dark .boq-why { color:#7fd6a2; }
    ========================================================================== */
 .pmi-chwrap { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:8px; }
 @media (max-width:900px) { .pmi-chwrap { grid-template-columns:1fr; } }
-.pmi-chs { border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; min-width:0; }
+.pmi-chs { border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); overflow:hidden; min-width:0; }
 .pmi-chs-h { display:flex; align-items:center; justify-content:space-between; gap:8px;
-  padding:7px 11px; font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.04em;
+  padding:7px 11px; font-size:var(--pd-fs-xs); font-weight:800; text-transform:uppercase; letter-spacing:.04em;
   color:var(--pd-muted); background:rgba(128,128,128,.10); border-bottom:1px solid var(--pd-line); }
-.pmi-chs > p { padding:12px; margin:0; font-size:12px; line-height:1.5; }
-.pmi-chtab { font-size:12px; }
-.pmi-chtab th { font-size:10px; }
+.pmi-chs > p { padding:12px; margin:0; font-size:var(--pd-fs-sm); line-height:1.5; }
+.pmi-chtab { font-size:var(--pd-fs-sm); }
+.pmi-chtab th { font-size:var(--pd-fs-micro); }
 .pmi-chtab td { padding:5px 8px; vertical-align:middle; }
 /* ⚠️ The date inputs are the primary control here, so they get a real resting border and a
    compact height rather than inheriting the tall form field: five roles x two dates is ten
    controls in a modal that already carries three tables. */
-.pmi-chtab .pmi-chd, .pmi-chtab .pmi-chby { height:28px; padding:0 6px; font-size:12px;
+.pmi-chtab .pmi-chd, .pmi-chtab .pmi-chby { height:28px; padding:0 6px; font-size:var(--pd-fs-sm);
   border:1px solid var(--pd-line); border-radius:6px; background:var(--pd-card); color:var(--pd-ink);
   width:100%; box-sizing:border-box; min-width:0; }
-.pmi-chtab .pmi-chd:focus, .pmi-chtab .pmi-chby:focus { outline:2px solid var(--pd-red); outline-offset:-2px; }
+.pmi-chtab .pmi-chd:focus, .pmi-chtab .pmi-chby:focus { outline:2px solid var(--pd-focus); outline-offset:-2px; }
 /* THE THREE STATES, and they must be distinguishable at a glance rather than read.
    cleared = done and quiet · with = the one row that wants attention · pending = not yet its turn. */
 .pmi-chtab tr.pmi-ch-cleared td { background:rgba(18,105,58,.07); }
@@ -930,12 +1286,10 @@ html.pd-dark .pmi-chtab tr.pmi-ch-cleared td { background:rgba(78,209,139,.08); 
 .pmi-chtab tr.pmi-ch-pending td { color:var(--pd-muted); }
 /* An ORPHAN is data whose role no longer exists in the profile. Amber, not red: nothing is
    broken and nothing is lost — it needs re-keying, which is a chore, not an error. */
-.pmi-chtab tr.pmi-ch-orphan td { background:#FFF0D9; }
-html.pd-dark .pmi-chtab tr.pmi-ch-orphan td { background:#3A2E17; }
+.pmi-chtab tr.pmi-ch-orphan td { background:var(--pd-warn-bg); }
 .pmi-chtab tr.pmi-ch-orphan td:first-child { box-shadow:inset 3px 0 0 var(--pd-warn, #B8860B); }
 /* The register's holder line. Quiet — it sits under an aging figure that already carries the
    colour, and two loud things in one cell means neither is read. */
-.pmi-holder { color:var(--pd-muted); font-weight:600; }
+.pmi-holder { color:var(--pd-muted); font-weight:700; }
 /* "Cleared" as a positive statement. Same green the cost build-up uses for a closing figure. */
-.cc-ok { color:#0E7A4A; font-weight:700; }
-html.pd-dark .cc-ok { color:#4ED18B; }
+.cc-ok { color:var(--pd-ok-text); font-weight:700; }

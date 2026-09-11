@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="../../assets/img/favicon-icon.png?v=20260903a" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
-  <script src="../../assets/js/theme.js?v=20260812b"></script>
+  <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Portfolio Dashboard · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260904a" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910z5" />
   <style>
     .po-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:14px; }
     .po-toolbar .pd-select, .po-toolbar .pd-input, .po-toolbar .pd-btn { height:36px; }
@@ -23,46 +23,61 @@
     .po-search > [data-ico] { position:absolute; left:10px; color:var(--pd-muted); pointer-events:none; display:inline-flex; }
     .po-search .pd-input { padding-left:32px; width:220px; }
     .po-spacer { margin-left:auto; }
-    .po-chk { display:inline-flex; align-items:center; gap:6px; font-size:13px; cursor:pointer; color:var(--pd-ink); }
+    .po-chk { display:inline-flex; align-items:center; gap:6px; font-size:var(--pd-fs-base); cursor:pointer; color:var(--pd-ink); }
     /* multi-select project filter */
-    .po-projfilter { position:relative; }
-    .po-projfilter-menu { position:absolute; top:calc(100% + 6px); left:0; z-index:30; display:none;
-      background:var(--pd-card); border:1px solid var(--pd-line); border-radius:10px;
-      box-shadow:var(--pd-shadow); width:260px; overflow:hidden; }
-    .po-projfilter-menu.open { display:block; }
+    /* ⚠️⚠️ NOT A DROPDOWN ANY MORE. It was `position:absolute; left:0; width:260px`
+       hanging off a RIGHT-ALIGNED button, so a 260px menu opened rightwards from a
+       button already at the right edge and ran off the page — the clipping the owner
+       reported. Every other filter in this app expands INLINE and reflows the page
+       (`.pd-filtergroup`, `.po-toolbar-fields`), which cannot clip by construction,
+       so this adopts that idiom rather than being nudged to `right:0`.
+       ⚠️ It also drops the z-index and the shadow with the absolute positioning: an
+       inline panel is in flow and has nothing to lift above. */
+    .po-projfilter { min-width:0; }
+    .po-projfilter-menu { display:none; }
+    .po-projfilter-menu.open {
+      display:block; flex:1 1 100%; margin-top:8px; width:100%;
+      background:var(--pd-card); border:1px solid var(--pd-line);
+      border-radius:var(--pd-radius); overflow:hidden;
+    }
     .po-projfilter-search { padding:8px; border-bottom:1px solid var(--pd-line); }
     .po-projfilter-search input { width:100%; }
     .po-projfilter-actions { display:flex; gap:8px; padding:6px 10px; border-bottom:1px solid var(--pd-line); }
-    .po-projfilter-actions button { border:none; background:none; color:var(--pd-red); font-size:12px;
-      font-weight:600; cursor:pointer; padding:2px 0; }
-    .po-projfilter-list { max-height:260px; overflow-y:auto; padding:4px 0; }
+    .po-projfilter-actions button { border:none; background:none; color:var(--pd-red); font-size:var(--pd-fs-sm);
+      font-weight:700; cursor:pointer; padding:2px 0; }
+    /* Two columns once there is room — the list is the whole point of the panel and a
+       single 260px column of 40 projects was most of the reason it wanted to be a
+       floating menu. ⚠️ `overflow-y` only: a horizontal scroller here would clip nothing
+       now, but the column rule keeps long project names ellipsised instead. */
+    .po-projfilter-list { max-height:300px; overflow-y:auto; padding:4px 0;
+      display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); }
     .po-projfilter-list label { display:flex; align-items:center; gap:8px; padding:7px 12px;
-      font-size:13px; cursor:pointer; color:var(--pd-ink); }
+      font-size:var(--pd-fs-base); cursor:pointer; color:var(--pd-ink); }
     .po-projfilter-list label:hover { background:var(--pd-red-light); }
-    .po-projfilter-list .po-pf-empty { padding:12px; color:var(--pd-muted); font-size:13px; }
+    .po-projfilter-list .po-pf-empty { padding:12px; color:var(--pd-muted); font-size:var(--pd-fs-base); }
     /* Parent project (a development bought as several contract packages) and its packages.
        The indent is the only thing saying "these belong to that", so it has to survive the
        hover background — hence the padding shift rather than a margin. */
     .po-projfilter-list label.po-pf-prog { padding-top:9px; border-top:1px solid var(--pd-line,#eee); }
     .po-projfilter-list label.po-pf-prog:first-child { border-top:0; }
-    .po-projfilter-list .po-pf-count { margin-left:auto; font-size:11px; color:var(--pd-muted); white-space:nowrap; }
+    .po-projfilter-list .po-pf-count { margin-left:auto; font-size:var(--pd-fs-xs); color:var(--pd-muted); white-space:nowrap; }
     .po-projfilter-list label.po-pf-child { padding-left:30px; }
-    .po-projfilter-list label.po-pf-child code { margin-left:auto; font-size:11px; color:var(--pd-muted); }
+    .po-projfilter-list label.po-pf-child code { margin-left:auto; font-size:var(--pd-fs-xs); color:var(--pd-muted); }
     /* charts */
     .po-charts { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.6fr); gap:16px; margin:16px 0; }
     @media (max-width:920px){ .po-charts { grid-template-columns:1fr; } }
     .po-card { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:14px 16px; box-shadow:var(--pd-shadow); min-width:0; }
-    .po-card h3 { margin:0 0 10px; font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
+    .po-card h3 { margin:0 0 10px; font-size:var(--pd-fs-base); text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
     .po-donut-wrap { display:flex; align-items:center; gap:18px; }
-    .po-legend { display:flex; flex-direction:column; gap:7px; font-size:13px; }
+    .po-legend { display:flex; flex-direction:column; gap:7px; font-size:var(--pd-fs-base); }
     .po-legend .lg { display:flex; align-items:center; gap:8px; }
     .po-legend .sw { width:12px; height:12px; border-radius:3px; flex:none; }
     .po-legend .ct { margin-left:auto; font-weight:700; color:var(--pd-muted); padding-left:12px; }
     .po-bars svg { display:block; width:100%; }
-    .po-empty { color:var(--pd-muted); font-size:13px; padding:24px; text-align:center; }
+    .po-empty { color:var(--pd-muted); font-size:var(--pd-fs-base); padding:24px; text-align:center; }
     /* grouped portfolio table */
-    .po-table { width:100%; border-collapse:collapse; font-size:13px; }
-    .po-table th { position:sticky; top:0; background:var(--pd-bg); text-align:left; font-size:10.5px; text-transform:uppercase;
+    .po-table { width:100%; border-collapse:collapse; font-size:var(--pd-fs-base); }
+    .po-table th { position:sticky; top:0; background:var(--pd-bg); text-align:left; font-size:var(--pd-fs-xs); text-transform:uppercase;
       letter-spacing:.04em; color:var(--pd-muted); padding:9px 12px; border-bottom:2px solid var(--pd-line); white-space:nowrap; cursor:pointer; }
     .po-table th.num { text-align:right; }
     .po-table td { padding:8px 12px; border-bottom:1px solid var(--pd-line); }
@@ -75,27 +90,27 @@
     .po-row { cursor:pointer; }
     .po-row:hover td { background:var(--pd-red-light); }
     .po-sched { display:flex; align-items:center; gap:7px; }
-    .po-sched .bar { flex:0 0 54px; height:7px; background:var(--pd-line); border-radius:4px; overflow:hidden; }
+    .po-sched .bar { flex:0 0 54px; height:7px; background:var(--pd-line); border-radius:var(--pd-radius); overflow:hidden; }
     .po-sched .bar > div { height:100%; background:var(--pd-red); }
-    .po-var-up { color:var(--pd-bad); font-weight:600; } .po-var-dn { color:var(--pd-ok); font-weight:600; }
+    .po-var-up { color:var(--pd-bad-text); font-weight:700; } .po-var-dn { color:var(--pd-ok-text); font-weight:700; }
     .po-health { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px; vertical-align:middle; }
     .po-tot-row td { font-weight:800; border-top:2px solid var(--pd-ink); background:var(--pd-bg); }
-    .po-sort-ind { font-size:9px; color:var(--pd-red); margin-left:4px; }
+    .po-sort-ind { font-size:var(--pd-fs-micro); color:var(--pd-red); margin-left:4px; }
     /* ---- Equipment availability (portfolio) -----------------------------------------------
        A calendar strip per ASSET: one cell per month, coloured by the project that has it, and
        BLANK where the asset is free. Availability is the negative space, so the empty cell has to
        read as deliberate — hence the faint dotted ground rather than nothing at all. */
     .po-eq-bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:14px;
       background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:8px 12px; }
-    .po-eq-bar .pd-select, .po-eq-bar .pd-input { height:34px; font-size:13px; max-width:220px; }
-    .po-eq-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
+    .po-eq-bar .pd-select, .po-eq-bar .pd-input { height:34px; font-size:var(--pd-fs-base); max-width:220px; }
+    .po-eq-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); overflow:hidden; }
     .po-eq-seg button { border:0; background:var(--pd-card); color:var(--pd-ink); padding:7px 13px; font:inherit;
-      font-size:12.5px; font-weight:600; cursor:pointer; }
+      font-size:var(--pd-fs-sm); font-weight:700; cursor:pointer; }
     .po-eq-seg button + button { border-left:1px solid var(--pd-line); }
     .po-eq-seg button.active { background:var(--pd-red); color:#fff; }
 
     .po-eq-scroll { overflow:auto; max-height:66vh; }
-    .po-eq { border-collapse:separate; border-spacing:0; font-size:12px; table-layout:fixed;
+    .po-eq { border-collapse:separate; border-spacing:0; font-size:var(--pd-fs-sm); table-layout:fixed;
       width:100%; min-width:max-content; }
     .po-eq th, .po-eq td { padding:0; white-space:nowrap; }
     /* ⚠️ These three widths ARE the layout. The month cell is deliberately small enough that a
@@ -103,11 +118,11 @@
        a code plus a name. */
     .po-eq th.po-eq-c1, .po-eq td.po-eq-c1 { position:sticky; left:0; z-index:2; width:236px; min-width:236px;
       max-width:236px; background:var(--pd-card); text-align:left; padding:6px 12px; }
-    .po-eq thead th { position:sticky; top:0; z-index:3; background:var(--pd-bg); font-size:10px; font-weight:700;
+    .po-eq thead th { position:sticky; top:0; z-index:3; background:var(--pd-bg); font-size:var(--pd-fs-micro); font-weight:700;
       text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); padding:6px 0; text-align:center;
       border-bottom:2px solid var(--pd-line); }
     .po-eq thead th.po-eq-c1 { z-index:4; background:var(--pd-bg); }
-    .po-eq thead tr.po-eq-yr th { font-size:11px; color:var(--pd-ink); border-bottom:1px solid var(--pd-line);
+    .po-eq thead tr.po-eq-yr th { font-size:var(--pd-fs-xs); color:var(--pd-ink); border-bottom:1px solid var(--pd-line);
       text-align:left; padding-left:6px; }
     .po-eq td.po-eq-m, .po-eq th.po-eq-m { min-width:26px; }
     .po-eq td.po-eq-m { height:26px; }
@@ -123,45 +138,248 @@
       outline:2px solid var(--pd-bad); outline-offset:-2px; }
     .po-eq-now { box-shadow:inset 2px 0 0 var(--pd-red); }
     .po-eq-name { font-weight:700; overflow:hidden; text-overflow:ellipsis; }
-    .po-eq-code { display:inline-block; font-weight:800; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    .po-eq-code { display:inline-block; font-weight:800; font-family:var(--pd-mono);
       background:var(--pd-red-light); color:var(--pd-ink); border-radius:0 4px 4px 0; padding:0 6px;
       margin-right:7px; border-left:2px solid var(--pd-red); }
-    .po-eq-sub { font-size:10.5px; color:var(--pd-muted); overflow:hidden; text-overflow:ellipsis; }
-    .po-eq-legend { display:flex; flex-wrap:wrap; gap:12px; margin-top:10px; font-size:11.5px; color:var(--pd-muted); }
+    .po-eq-sub { font-size:var(--pd-fs-xs); color:var(--pd-muted); overflow:hidden; text-overflow:ellipsis; }
+    .po-eq-legend { display:flex; flex-wrap:wrap; gap:12px; margin-top:10px; font-size:var(--pd-fs-xs); color:var(--pd-muted); }
     .po-eq-lg { display:inline-flex; align-items:center; gap:6px; }
-    .po-eq-lg .sw { width:13px; height:13px; border-radius:4px; display:inline-block; border:1px solid rgba(0,0,0,.12); }
-    /* ⚠️ Measured, not chosen by eye: the light-mode green (#1F7A3D) reads 2.61:1 on the dark card
-       and --pd-bad 4.02:1 — both under AA for this weight. The dark overrides below are the same
-       semantics at 7.02 / 6.20. A single colour for both themes cannot satisfy either properly. */
-    .po-eq-free { color:#1F7A3D; font-weight:700; }
-    html.pd-dark .po-eq-free { color:#5FD08A; }
-    html.pd-dark .po-eq-flag { color:#FF8A7A; }
+    .po-eq-lg .sw { width:13px; height:13px; border-radius:var(--pd-radius); display:inline-block; border:1px solid rgba(0,0,0,.12); }
+    /* ⚠️ The measurement that used to live here (light #1F7A3D = 2.61:1 on the dark card,
+       --pd-bad = 4.02:1, both under AA) is exactly what --pd-ok-text / --pd-bad-text were
+       promoted for on 2026-09-10 — this page had solved it privately, for itself, with two
+       dark overrides. The tokens carry the same semantics at 6.76/7.11 and 5.84/6.14, so the
+       two overrides are DELETED rather than kept: a per-page pair is how the app ends up with
+       four greens again. */
+    .po-eq-free { color:var(--pd-ok-text); font-weight:700; }
     .po-eq-busy { color:var(--pd-muted); }
-    .po-eq-flag { color:var(--pd-bad); font-weight:700; }
+    .po-eq-flag { color:var(--pd-bad-text); font-weight:700; }
     @media (max-width: 700px) { .po-eq th.po-eq-c1, .po-eq td.po-eq-c1 { width:150px; min-width:150px; max-width:150px; } }
 
-    /* module tabs (Overview / S-Curve / Cash Flow / …) — wraps rather than scrolling, at every
-       width, now that there are 13 of them: #po-projfilter-wrap's dropdown is position:absolute,
-       so an overflow-x scroller here would clip it (the exact trap the module topbar hit). */
-    .po-tabs { display:flex; flex-wrap:wrap; row-gap:2px; border-bottom:2px solid var(--pd-line); margin-bottom:16px; }
-    .po-tab { padding:9px 18px; cursor:pointer; font-weight:600; font-size:13.5px; color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
-    .po-tab.active { color:var(--pd-red); border-bottom-color:var(--pd-red); }
+    /* module tabs (Overview / S-Curve / Cash Flow / …) — wraps rather than scrolling.
+       ⚠️ The original reason was that #po-projfilter-wrap's dropdown was position:absolute
+       and an overflow-x scroller would clip it. That dropdown is now an inline panel and
+       cannot be clipped, but wrapping is still right at 13 items and is left alone. */
+    /* The scope bar is what is left of `.po-tabs` once the 13 redundant tabs went: it
+       carries the project filter, which scopes every view. Right-aligned, no bottom rule
+       — there is no longer a tab row for a rule to underline. */
+    /* ⚠️ A COLUMN, so the inline panel can be full width under a right-aligned button.
+       As a row, the panel was constrained to the button's own width. */
+    .po-scopebar { display:flex; flex-direction:column; align-items:flex-end; margin-bottom:14px; }
+    .po-scopebar .po-projfilter { width:100%; display:flex; flex-direction:column; align-items:flex-end; }
+    /* Inside a view's own filter panel the scope is just another field in the row, and
+       its list breaks onto its own line. */
+    .po-toolbar-fields .po-projfilter { display:contents; }
     /* cross-project S-Curve / Cash Flow views */
     .po-kpis2 { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:16px; }
-    .po-kpi2 { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; padding:14px 16px; }
-    .po-kpi2-l { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); margin-bottom:5px; }
-    .po-kpi2-v { font-size:20px; font-weight:700; }
+    .po-kpi2 { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); padding:14px 16px; }
+    .po-kpi2-l { font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); margin-bottom:5px; }
+    .po-kpi2-v { font-size:var(--pd-fs-stat); font-weight:700; }
     .po-svg { width:100%; height:auto; display:block; }
     .po-grid2 { stroke:var(--pd-line); stroke-width:1; }
     .po-ylab2 { fill:var(--pd-muted); font-size:10.5px; text-anchor:end; }
     .po-xlab2 { fill:var(--pd-muted); font-size:10.5px; text-anchor:middle; }
-    .po-legend2 { display:flex; flex-wrap:wrap; gap:16px; margin-top:10px; font-size:12px; color:var(--pd-muted); }
+    .po-legend2 { display:flex; flex-wrap:wrap; gap:16px; margin-top:10px; font-size:var(--pd-fs-sm); color:var(--pd-muted); }
     .po-lg2 { display:inline-flex; align-items:center; }
     .sw2 { display:inline-block; width:14px; height:10px; margin-right:6px; border-radius:2px; }
     .sw2-line { width:18px; height:0; border-top:2px solid; margin-right:6px; }
-    .po-planned2 { fill:none; stroke:var(--pd-dark); stroke-width:2; }
-    html.pd-dark .po-planned2 { stroke:#c7ccd1; }
-    .po-actual2 { fill:none; stroke:var(--pd-red); stroke-width:2.5; }
+    /* Per-project overlay: which series are drawn, and why some are off by default. */
+    .po-sc-series { display:flex; flex-wrap:wrap; gap:14px; margin-top:10px; font-size:var(--pd-fs-sm); color:var(--pd-muted); }
+    .po-sc-series label { display:inline-flex; align-items:center; gap:5px; cursor:pointer; }
+    .po-sc-series input { width:auto; min-height:0; }
+    .po-sc-note { margin-top:8px; font-size:var(--pd-fs-sm); color:var(--pd-muted); line-height:1.5; }
+    /* The project legend can be long, so it wraps and sits under the style legend. */
+    .po-legend-proj { margin-top:6px; }
+    /* ---- Stakeholder directory (portfolio-level authoring) ---- */
+    .po-dir-nick { color:var(--pd-muted); font-weight:400; }
+    .po-dir-act { text-align:right; white-space:nowrap; }
+    .po-dir-lead { margin:0 0 14px; font-size:var(--pd-fs-base); line-height:1.5; color:var(--pd-muted); }
+    .po-dir-h { margin:16px 0 8px; font-size:var(--pd-fs-xs); font-weight:700; letter-spacing:.06em;
+      text-transform:uppercase; color:var(--pd-muted); }
+    .po-dir-form { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:10px; }
+    .po-dir-projs { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:4px;
+      max-height:230px; overflow-y:auto; padding:2px; }
+    .po-dir-proj { display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:var(--pd-radius);
+      border:1px solid transparent; font-size:var(--pd-fs-base); cursor:pointer; }
+    .po-dir-proj:hover { background:var(--pd-bg); }
+    .po-dir-proj input { width:auto; min-height:0; flex:none; }
+    .po-dir-proj.is-on { color:var(--pd-muted); cursor:default; }
+    .po-dir-proj em { margin-left:auto; font-style:normal; font-size:var(--pd-fs-xs); color:var(--pd-muted); }
+    .po-dir-merge { display:flex; flex-direction:column; gap:5px; }
+    .po-dir-mrow { display:flex; align-items:center; gap:9px; padding:7px 9px; font-size:var(--pd-fs-base);
+      border:1px solid var(--pd-line); border-radius:var(--pd-radius); cursor:pointer; }
+    .po-dir-mrow:hover { background:var(--pd-bg); }
+    .po-dir-mrow input { width:auto; min-height:0; flex:none; }
+    .po-dir-mrow small { color:var(--pd-muted); }
+    .po-dir-mrow em { margin-left:auto; font-style:normal; font-size:var(--pd-fs-xs); color:var(--pd-muted);
+      text-align:right; max-width:180px; }
+    .po-dir-note { display:block; margin-top:8px; font-size:var(--pd-fs-xs); color:var(--pd-muted); line-height:1.5; }
+    /* ---- The Universe: banded card grid (adopted 2026-09-10) ---- */
+    /* A-Z jump strip. Every letter is rendered, present or not: a strip that only
+       shows letters in use jumps around as you type, and a dimmed letter is the
+       useful answer to "is there anyone under Q?". */
+    /* ---- Directory Health ------------------------------------------------
+       Bars rather than a chart library: this file draws its S-curve with hand-rolled
+       inline SVG and pulls in no chart library anywhere, and a proportion bar is the
+       one shape that needs no axis to be read. */
+    .po-hl-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(330px,1fr)); gap:12px; }
+    .po-hl-panel { background:var(--pd-card); border:1px solid var(--pd-line);
+      border-radius:var(--pd-radius-md); padding:14px 15px; }
+    .po-hl-panel h3 { margin:0 0 11px; font-size:var(--pd-fs-xs); font-weight:700; letter-spacing:.06em;
+      text-transform:uppercase; color:var(--pd-muted); display:flex; align-items:baseline; gap:8px; }
+    .po-hl-panel h3 em { font-style:normal; letter-spacing:0; text-transform:none;
+      font-weight:400; font-size:var(--pd-fs-xs); margin-left:auto; }
+    .po-hl-bars { display:flex; flex-direction:column; gap:6px; }
+    .po-hl-bar { display:grid; grid-template-columns:minmax(0,1fr) 92px auto; align-items:center;
+      gap:9px; font-size:var(--pd-fs-sm); }
+    .po-hl-k { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .po-hl-t { height:7px; border-radius:var(--pd-radius); background:var(--pd-line); overflow:hidden; }
+    .po-hl-t i { display:block; height:100%; background:var(--pd-red); border-radius:var(--pd-radius); }
+    .po-hl-n { font-variant-numeric:tabular-nums; font-weight:700; font-size:var(--pd-fs-xs);
+      color:var(--pd-muted); white-space:nowrap; }
+    /* ⚠ A warned row is tinted, never recoloured to a literal — the 2026-09-03 (u)
+       entry records a fill painted literally on both themes. */
+    .po-hl-bar.is-warn .po-hl-t i { background:var(--pd-muted); }
+    .po-hl-bar.is-warn .po-hl-k { color:var(--pd-muted); }
+    .po-hl-none, .po-hl-note { margin:0; font-size:var(--pd-fs-xs); color:var(--pd-muted); line-height:1.5; }
+    .po-hl-note { margin-top:9px; }
+    .po-hl-dups { display:flex; flex-direction:column; gap:5px; }
+    .po-hl-dup { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) auto;
+      align-items:center; gap:7px; width:100%; text-align:left; font:inherit; font-size:var(--pd-fs-sm);
+      padding:7px 9px; border:1px solid var(--pd-line); border-radius:var(--pd-radius);
+      background:var(--pd-card); color:var(--pd-ink); cursor:pointer; }
+    .po-hl-dup:hover { border-color:var(--pd-red); }
+    .po-hl-dn { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:700; }
+    .po-hl-dv { font-size:var(--pd-fs-xs); color:var(--pd-muted); }
+    .po-hl-dup em { grid-column:1/-1; font-style:normal; font-size:var(--pd-fs-xs); color:var(--pd-muted); }
+    .po-hl-ds { font-variant-numeric:tabular-nums; font-size:var(--pd-fs-xs); font-weight:700; color:var(--pd-red); }
+    /* ⚠️⚠️ A STICKY VERTICAL RAIL ON THE RIGHT, not a horizontal strip above the cards.
+       The owner's point is the one that matters at scale: with 1,000 stakeholders a strip
+       that scrolls away with the page is useless exactly when you need it, because you are
+       a long way down the list. Sticky and beside the content, it is reachable from any
+       scroll position — the iOS-contacts idiom, and the same reason `.pd-table thead` in
+       this app is sticky.
+       ⚠️ `align-self:flex-start` is required: a flex item stretches to the row height by
+       default, and `position:sticky` on a full-height item has nothing to travel within. */
+    /* ⚠️⚠️ A STICKY VERTICAL INDEX RAIL ON THE RIGHT, not a horizontal strip above the
+       cards. The owner's point is the one that matters at scale: with 1,000 stakeholders a
+       strip that scrolls away with the page is useless exactly when you need it, because you
+       are a long way down the list. Sticky and beside the content it is reachable from any
+       scroll position — the iOS-contacts idiom, and the same reason `.pd-table thead` in this
+       app is sticky.
+       ⚠️ `align-self:flex-start` is REQUIRED: a flex item stretches to the row height by
+       default, and `position:sticky` on a full-height item has nothing to travel within. */
+    .po-dir-uniwrap { display:flex; align-items:flex-start; gap:18px; }
+    .po-dir-unimain { flex:1 1 auto; min-width:0; }
+    .po-dir-bands {
+      position:sticky; top:8px; align-self:flex-start; flex:none;
+      display:flex; flex-direction:column; gap:1px; padding:7px 6px;
+      max-height:calc(100vh - 96px); overflow-y:auto;
+      background:var(--pd-card); border:1px solid var(--pd-line);
+      border-radius:13px; box-shadow:var(--pd-shadow);
+      /* ⚠️ The rail is 32px wide; a scrollbar inside it would take a third of that and the
+         letters would reflow. It scrolls with the wheel, and the max-height only bites on a
+         short window. */
+      scrollbar-width:none;
+    }
+    .po-dir-bands::-webkit-scrollbar { width:0; height:0; }
+    /* ⚠️⚠️ NO PER-LETTER BORDER OR FILL. These rules replace the old horizontal-strip
+       button styling rather than overriding it: an index is a column of LETTERS, and 27
+       stacked bordered boxes is what made the first cut of this rail read as unfinished.
+       Weight and colour carry the state instead of chrome. */
+    .po-dir-band, .po-dir-bandall {
+      display:flex; align-items:center; justify-content:center;
+      width:20px; height:16px; padding:0; border:0; background:none;
+      border-radius:5px; font:inherit; font-size:var(--pd-fs-xs); font-weight:700; line-height:1;
+      color:var(--pd-ink); cursor:pointer;
+    }
+    /* "All" heads the rail and is separated by a rule, so the letters read as one run. */
+    .po-dir-bandall {
+      height:auto; padding:0 0 5px; margin-bottom:4px; font-size:var(--pd-fs-micro); letter-spacing:.06em;
+      color:var(--pd-muted); border-bottom:1px solid var(--pd-line); border-radius:0;
+    }
+    .po-dir-band i { display:none; }   /* the count rides in the title — see below */
+    .po-dir-band:hover:not(:disabled), .po-dir-bandall:hover {
+      background:var(--pd-red-light); color:var(--pd-red);
+    }
+    .po-dir-band.on, .po-dir-bandall.on { background:var(--pd-red); color:#fff; }
+    .po-dir-bandall.on { border-bottom-color:var(--pd-red); }
+    /* ⚠️ Faint and un-clickable, NOT hidden. A strip that shows only the letters in use
+       jumps around as you search, and a dimmed letter is the useful answer to "is there
+       anyone under Q?". The opacity IS the "has anybody" signal — the earlier 3px dot was
+       one more mark to read in a 20px column, and the letter already says it. */
+    .po-dir-band.is-empty { opacity:.26; cursor:default; font-weight:500; }
+
+    .po-dir-sec { margin-bottom:18px; }
+    .po-dir-sechead {
+      display:flex; align-items:center; gap:8px; margin:0 0 8px; font-size:var(--pd-fs-base); font-weight:700;
+      color:var(--pd-ink); border-bottom:1px solid var(--pd-line); padding-bottom:5px;
+    }
+    .po-dir-sechead span { font-size:var(--pd-fs-xs); font-weight:500; color:var(--pd-muted); }
+    .po-dir-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:10px; }
+    .po-dir-card {
+      position:relative; display:flex; gap:11px; align-items:flex-start; padding:12px 13px;
+      border:1px solid var(--pd-line); border-radius:var(--pd-radius-md, 8px);
+      background:var(--pd-card); cursor:pointer; min-width:0;
+    }
+    .po-dir-card:hover { border-color:var(--pd-red); }
+    /* ⚠️ Under the star, not beside it: the star is the frequent action and must keep
+       the corner it has always had. */
+    .po-dir-manage { position:absolute; top:26px; right:6px; width:20px; height:18px;
+      display:flex; align-items:center; justify-content:center; border:0; background:none;
+      color:var(--pd-muted); font-size:14px; line-height:1; cursor:pointer; border-radius:4px; }
+    .po-dir-manage:hover { color:var(--pd-red); background:var(--pd-red-light); }
+    .po-dir-card.is-inactive { opacity:.62; }
+    .po-dir-ava {
+      position:relative; flex:none; width:42px; height:42px; border-radius:50%;
+      background:var(--pd-bg); color:var(--pd-muted); display:flex; align-items:center;
+      justify-content:center; font-size:var(--pd-fs-base); font-weight:700;
+    }
+    .po-dir-dot {
+      position:absolute; right:-1px; bottom:-1px; width:10px; height:10px; border-radius:50%;
+      background:#2FA36B; border:2px solid var(--pd-card);
+    }
+    .po-dir-dot.off { background:var(--pd-muted); }
+    .po-dir-body { min-width:0; flex:1 1 auto; padding-right:18px; }
+    /* ⚠ Every line clips rather than wraps: a card that grows to fit a long agency
+       name breaks the grid rhythm, which is the whole reason this reads as a wall
+       of people instead of a table. */
+    .po-dir-name, .po-dir-org, .po-dir-role, .po-dir-meta {
+      overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    }
+    .po-dir-name { font-size:var(--pd-fs-base); font-weight:700; }
+    .po-dir-org  { font-size:var(--pd-fs-sm); color:var(--pd-ink); margin-top:2px; }
+    .po-dir-role { font-size:var(--pd-fs-xs); color:var(--pd-muted); }
+    /* ⚠ An EMPTY role line still reserves its row. Measured: without this a card
+       whose person has no position came out 85px against 102px for one who does, so a
+       section mixing the two rendered ragged. The wall only reads as a wall if every
+       card is the same height. Done with min-height, not a ::after escape:
+       the escape rendered as a literal mojibake glyph on the card. */
+    .po-dir-role:empty { min-height:1.35em; }
+    .po-dir-meta { font-size:var(--pd-fs-xs); color:var(--pd-muted); margin-top:4px; }
+    .po-dir-star {
+      position:absolute; top:9px; right:9px; border:0; background:none; cursor:pointer;
+      font-size:var(--pd-fs-md); line-height:1; color:var(--pd-line); padding:2px;
+    }
+    .po-dir-star:hover { color:var(--pd-red); }
+    .po-dir-star.on { color:#C9A227; }
+    /* Band header inside the LIST layout, so both layouts group identically. */
+    .po-dir-listband td {
+      background:var(--pd-bg); font-weight:700; font-size:var(--pd-fs-sm); padding:6px 12px !important;
+    }
+    .po-dir-listband td span { margin-left:8px; font-weight:500; color:var(--pd-muted); }
+    @media (max-width: 560px) { .po-dir-grid { grid-template-columns:1fr; } }
+
+    /* The live duplicate warning while typing a new person. */
+    .po-dir-dup { margin-top:12px; padding:10px 12px; border-radius:var(--pd-radius);
+      border:1px solid var(--pd-line); background:var(--pd-bg); font-size:var(--pd-fs-sm); }
+    .po-dir-dup b { display:block; margin-bottom:6px; }
+    .po-dir-dup-row { display:flex; gap:10px; align-items:baseline; padding:2px 0; }
+    .po-dir-dup-row em { margin-left:auto; font-style:normal; font-size:var(--pd-fs-xs); color:var(--pd-muted); }
+    .po-dir-dup small { display:block; margin-top:7px; color:var(--pd-muted); line-height:1.5; }
+    /* ⚠ `.po-planned2` / `.po-actual2` are DELETED, not left dead: they styled the two
+       polylines of the old single combined curve, and the per-project overlay strokes each
+       line inline (colour is per PROJECT now, so it cannot come from a static class). */
   
       /* ---- Mobile & tablet (2026-07-23) --------------------------------
          Shared chrome (topbar wrap, sheet modals, 16px inputs, 44px targets)
@@ -192,11 +410,25 @@
          scroller here would establish a clipping context and cut the project
          filter's own menu off. Same trap the module topbar hit. The filter
          takes its own full-width row so the tabs keep theirs. */
+      /* ⚠️ The rail reverts to a horizontal strip on a phone. A 22px-wide column of 27
+         letters is far under the 44px touch target, and with one card per row there is no
+         side channel to put it in. Sticky to the TOP there instead. */
+      @media (max-width: 760px) {
+        .po-dir-uniwrap { display:block; }
+        .po-dir-bands { position:sticky; top:0; z-index:5; flex-direction:row; flex-wrap:wrap;
+          gap:2px; max-height:none; overflow:visible; border-radius:var(--pd-radius);
+          margin-bottom:12px; box-shadow:none; }
+        /* 30px square: the rail's 20x16 is a pointer target, not a finger one. */
+        .po-dir-band, .po-dir-bandall { width:auto; min-width:30px; height:30px; padding:0 6px;
+          font-size:var(--pd-fs-sm); border-radius:var(--pd-radius); }
+        .po-dir-bandall { margin:0 4px 0 0; padding:0 8px; border-bottom:0;
+          border-right:1px solid var(--pd-line); border-radius:var(--pd-radius) 0 0 var(--pd-radius); }
+      }
       @media (max-width: 900px) {
-        .po-tabs { flex-wrap: wrap; row-gap: 2px; }
-        .po-tab { flex: 1 1 auto; justify-content: center; min-height: 44px; }
-        #po-projfilter-wrap { margin-left: 0 !important; flex: 1 1 100%; order: -1; margin-bottom: 8px; }
+        .po-scopebar { align-items: stretch; }
+        #po-projfilter-wrap { flex: 1 1 100%; }
         #po-projfilter-wrap > button { width: 100%; min-height: 44px; }
+        .po-scopebar .po-projfilter { align-items: stretch; }
       }
     
     /* ---- Portfolio milestone calendar ---------------------------------------
@@ -214,7 +446,7 @@
       --po-ms-good-bg: rgba(127,214,162,.15); --po-ms-warn-bg: rgba(240,196,105,.16);
       --po-ms-bad-bg: rgba(241,154,154,.16);  --po-ms-info-bg: rgba(142,194,240,.15);
     }
-    .po-kpi2-s { font-size:11.5px; color:var(--pd-muted); margin-top:3px; }
+    .po-kpi2-s { font-size:var(--pd-fs-xs); color:var(--pd-muted); margin-top:3px; }
     .po-kpi2.good .po-kpi2-v { color:var(--po-ms-good); }
     .po-kpi2.warn .po-kpi2-v { color:var(--po-ms-warn); }
     .po-kpi2.bad  .po-kpi2-v { color:var(--po-ms-bad); }
@@ -222,7 +454,7 @@
     .po-cal { padding:0; overflow:hidden; }
     .po-cal-head, .po-cal-grid { display:grid; grid-template-columns:repeat(7,1fr); }
     .po-cal-head { border-bottom:1px solid var(--pd-line); }
-    .po-cal-dow { padding:8px 10px; font-size:10.5px; font-weight:700; text-transform:uppercase;
+    .po-cal-dow { padding:8px 10px; font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase;
       letter-spacing:.05em; color:var(--pd-muted); }
     /* Sunday is the rest day on this suite's working week (Mon-Sat), which is why
        it sits at the END of the row rather than opening it. */
@@ -233,13 +465,13 @@
     .po-cal-cell.out { background:var(--pd-bg); }
     .po-cal-cell.rest { background:var(--pd-bg); }
     .po-cal-cell.today { box-shadow:inset 0 0 0 2px var(--pd-red); }
-    .po-cal-daynum { font-size:11.5px; font-weight:700; color:var(--pd-muted); display:flex;
+    .po-cal-daynum { font-size:var(--pd-fs-xs); font-weight:700; color:var(--pd-muted); display:flex;
       align-items:center; justify-content:space-between; }
-    .po-cal-todaytag { font-size:9.5px; font-weight:800; text-transform:uppercase; letter-spacing:.04em;
+    .po-cal-todaytag { font-size:var(--pd-fs-micro); font-weight:800; text-transform:uppercase; letter-spacing:.04em;
       color:#fff; background:var(--pd-red); border-radius:3px; padding:1px 5px; }
 
     .po-cal-chip { display:block; width:100%; text-align:left; border:1px solid transparent;
-      border-radius:4px; padding:2px 5px; font:inherit; font-size:10.5px; line-height:1.3;
+      border-radius:var(--pd-radius); padding:2px 5px; font:inherit; font-size:var(--pd-fs-xs); line-height:1.3;
       cursor:pointer; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .po-cal-chip-p { font-weight:800; opacity:.8; margin-right:4px; }
     .po-cal-chip.achieved { background:var(--po-ms-good-bg); color:var(--po-ms-good); border-color:var(--po-ms-good); }
@@ -254,22 +486,22 @@
        10.5px bold, while every chip and state badge passed at 4.8+. It uses the
        body ink with a PERMANENT underline instead — the classic link affordance,
        so it still reads as clickable without relying on colour. */
-    .po-cal-more { border:0; background:none; font:inherit; font-size:10.5px; font-weight:700;
+    .po-cal-more { border:0; background:none; font:inherit; font-size:var(--pd-fs-xs); font-weight:700;
       color:var(--pd-ink); text-decoration:underline; cursor:pointer; text-align:left; padding:1px 5px; }
     .po-cal-more:hover { color:var(--pd-red); }
-    .po-cal-none { padding:16px; text-align:center; color:var(--pd-muted); font-size:13px; }
+    .po-cal-none { padding:16px; text-align:center; color:var(--pd-muted); font-size:var(--pd-fs-base); }
 
-    .po-ms-state { font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.03em;
+    .po-ms-state { font-size:var(--pd-fs-xs); font-weight:800; text-transform:uppercase; letter-spacing:.03em;
       padding:2px 6px; border-radius:3px; white-space:nowrap; }
     .po-ms-state.achieved { color:var(--po-ms-good); background:var(--po-ms-good-bg); }
     .po-ms-state.overdue  { color:var(--po-ms-bad);  background:var(--po-ms-bad-bg); }
     .po-ms-state.due      { color:var(--po-ms-info); background:var(--po-ms-info-bg); }
     .po-ms-state.undated  { color:var(--pd-muted);   background:var(--pd-bg); }
-    .po-ms-slip { font-weight:700; font-size:12px; }
+    .po-ms-slip { font-weight:700; font-size:var(--pd-fs-sm); }
     .po-ms-slip.late  { color:var(--po-ms-bad); }
     .po-ms-slip.early { color:var(--po-ms-good); }
-    .po-ms-sub { color:var(--pd-muted); font-size:11.5px; }
-    .po-ms-prog, .po-ms-co { font-size:9.5px; font-weight:800; text-transform:uppercase;
+    .po-ms-sub { color:var(--pd-muted); font-size:var(--pd-fs-xs); }
+    .po-ms-prog, .po-ms-co { font-size:var(--pd-fs-micro); font-weight:800; text-transform:uppercase;
       letter-spacing:.04em; padding:1px 5px; border-radius:3px; border:1px solid currentColor; }
     /* Same reason, and worse at 9.5px: the badge keeps its RED BORDER — the only
        mark here that has one, so it stays distinguishable — while its text uses
@@ -294,28 +526,28 @@
     /* ---- Recent-photos strip (Photos tab) — a plain wrapping thumbnail grid ---- */
     .po-photo-grid { display:flex; flex-wrap:wrap; gap:10px; }
     .po-photo-item { width:150px; }
-    .po-photo-item img { width:150px; height:104px; object-fit:cover; border-radius:8px; border:1px solid var(--pd-line); background:var(--pd-bg); display:block; }
-    .po-photo-cap { font-size:11px; color:var(--pd-muted); margin-top:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .po-photo-item img { width:150px; height:104px; object-fit:cover; border-radius:var(--pd-radius-md); border:1px solid var(--pd-line); background:var(--pd-bg); display:block; }
+    .po-photo-cap { font-size:var(--pd-fs-xs); color:var(--pd-muted); margin-top:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   </style>
 </head>
 <body>
 <div class="pd-app">
   <aside class="pd-sidebar">
-    <div class="pd-brand"><img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>Planning Suite</small></div>
+    <div class="pd-brand"><img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction"><img class="pd-brand-mark" src="../../assets/img/favicon-icon.png?v=20260903a" alt="" aria-hidden="true">Planners Dashboard<small>Planning Suite</small></div>
     <!-- Contents depend on the current mode (Portfolio here) — rendered by UI.renderNav. -->
     <nav id="side-nav"></nav>
     <!-- Cross-app links to sibling apps. Separate Supabase projects /
          separate logins — open in a new tab rather than navigating away. -->
     <div class="pd-nav-foot">
       <a class="pd-nav-sibling" href="https://pmodepartment.github.io/engineering-app/" target="_blank" rel="noopener" title="Opens Engineering App in a new tab">
-        <span class="pd-navico" data-ico="externalLink"></span><span class="pd-navtxt">Engineering App</span>
+        <span class="pd-navico" data-ico="appEngineering"></span><span class="pd-navtxt">Engineering App</span>
       </a>
       <a class="pd-nav-sibling" href="https://pmodepartment.github.io/prc-app/" target="_blank" rel="noopener" title="Opens Procurement App in a new tab">
-        <span class="pd-navico" data-ico="externalLink"></span><span class="pd-navtxt">Procurement App</span>
+        <span class="pd-navico" data-ico="appProcurement"></span><span class="pd-navtxt">Procurement App</span>
       </a>
     </div>
     <!-- PRC's .sidebar-footer, pinned to the bottom of the panel. -->
-    <div class="pd-sidebar-foot">Megawide Construction Corporation<br>EPC &middot; PMO &middot; Planning Suite</div>
+    <div class="pd-sidebar-foot">Megawide Construction Corporation<br>PMO Department</div>
   </aside>
 
   <div class="pd-content">
@@ -327,24 +559,21 @@
     </div>
 
     <div class="pd-main">
-      <div class="po-tabs">
-        <button class="po-tab active" data-view="overview"><span data-ico="barChart" data-ico-size="15"></span> Overview</button>
-        <button class="po-tab" data-view="scurve"><span data-ico="trendingUp" data-ico-size="15"></span> S-Curve</button>
-        <button class="po-tab" data-view="cashflow"><span data-ico="cash" data-ico-size="15"></span> Cash Flow</button>
-        <button class="po-tab" data-view="resources"><span data-ico="users" data-ico-size="15"></span> Resources</button>
-        <button class="po-tab" data-view="equipment"><span data-ico="box" data-ico-size="15"></span> Equipment</button>
-        <button class="po-tab" data-view="milestones"><span data-ico="calendar" data-ico-size="15"></span> Milestones</button>
-        <button class="po-tab" data-view="risk"><span data-ico="risk" data-ico-size="15"></span> Risk Register</button>
-        <button class="po-tab" data-view="stakeholders"><span data-ico="compass" data-ico-size="15"></span> Stakeholders</button>
-        <button class="po-tab" data-view="issues"><span data-ico="clipboard" data-ico-size="15"></span> Issues</button>
-        <button class="po-tab" data-view="meetings"><span data-ico="calendar" data-ico-size="15"></span> Meetings</button>
-        <button class="po-tab" data-view="contracts"><span data-ico="contract" data-ico-size="15"></span> Contracts</button>
-        <button class="po-tab" data-view="photos"><span data-ico="camera" data-ico-size="15"></span> Favorite Photos</button>
-        <button class="po-tab" data-view="productivity"><span data-ico="barChart" data-ico-size="15"></span> Productivity</button>
-        <!-- Project filter lives here (not in the Overview toolbar) so it's reachable from every tab
-             — it scopes the Overview table AND the S-Curve / Cash Flow views. -->
-        <div class="po-projfilter" id="po-projfilter-wrap" style="margin-left:auto;align-self:center;">
-          <button class="pd-btn" id="po-projfilter-btn" type="button" title="Filter which projects appear in every tab">
+      <!-- ⚠⚠ THE 13-BUTTON `.po-tabs` STRIP WAS REMOVED (owner, 2026-09-09):
+             "The tabs in the page itself is redundant with the buttons of the side panel."
+             It was, exactly — UI.renderNav's portfolio section already deep-links into every
+             one of these views via `#po_view=`, so the strip was a second copy of the sidebar
+             sitting inside the page.
+           ⚠ Routing did NOT live in the strip and is untouched: `switchView` is driven by
+             UI.bindHistoryState off the URL hash, so every existing deep link still works.
+           ⚠⚠ THE PROJECT FILTER WAS A CHILD OF THAT STRIP and had to survive it — it scopes
+             EVERY view, not just Overview. It keeps its own bar rather than moving into the
+             Overview toolbar (where the other twelve views could not reach it), and that bar
+             must never become an overflow-x container: the menu is position:absolute and
+             would be clipped. -->
+      <div class="po-scopebar">
+        <div class="po-projfilter" id="po-projfilter-wrap">
+          <button class="pd-btn" id="po-projfilter-btn" type="button" title="Filter which projects appear in every view">
             <span data-ico="filter" data-ico-size="14"></span> <span id="po-projfilter-label">All projects</span> <span data-ico="chevronDown" data-ico-size="13"></span>
           </button>
           <div class="po-projfilter-menu" id="po-projfilter-menu">
@@ -508,10 +737,35 @@
             <span class="po-spacer"></span>
             <div class="po-search"><span data-ico="search" data-ico-size="15"></span><input class="pd-input" id="po-sh-q" placeholder="Search name, organization…" /></div>
           </div>
+          <div class="pd-seg" id="po-sh-view" role="tablist">
+            <button type="button" class="on" data-shv="directory">Directory</button>
+            <button type="button" data-shv="byproject">By project</button>
+            <button type="button" data-shv="health">Health</button>
+          </div>
+          <select class="pd-select pd-input-sm" id="po-sh-group" style="width:auto;" title="How the directory is grouped">
+            <option value="letter">Group A–Z</option>
+            <option value="org">Group by organisation</option>
+            <option value="sector">Group by sector</option>
+            <option value="none">No grouping</option>
+          </select>
+          <div class="pd-seg" id="po-sh-layout" role="group" aria-label="Directory layout">
+            <button type="button" class="pd-seg-ico on" data-lay="grid" title="Cards"><span data-ico="gridView" data-ico-size="15"></span></button>
+            <button type="button" class="pd-seg-ico" data-lay="list" title="List"><span data-ico="listView" data-ico-size="15"></span></button>
+          </div>
+          <button class="pd-btn pd-btn-primary" id="po-sh-add" style="height:36px;">+ Add person</button>
           <button class="pd-btn" id="po-sh-refresh" style="height:36px;"><span data-ico="refresh" data-ico-size="14"></span></button>
         </div>
-        <p style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Scoped to the <strong>project filter</strong> above (<span id="po-sh-scope">all projects</span>).</p>
+        <!-- ⚠ The scope note belongs to the BY-PROJECT view only. The Directory is the
+             portfolio-level master list: "on N projects" is a fact about the person, not
+             about the current filter, so narrowing it would make one person read 3 here
+             and 1 there. Hidden while the Directory is showing. -->
+        <p id="po-sh-scopenote" style="font-size:12px;color:var(--pd-muted);margin:0 0 12px;">Scoped to the <strong>project filter</strong> above (<span id="po-sh-scope">all projects</span>).</p>
         <div class="po-kpis2" id="po-sh-kpis"></div>
+        <!-- The card "Universe". Its own container rather than the table's, because the
+             two layouts have nothing in common structurally and swapping innerHTML on one
+             node would make each render pay for the other's markup. -->
+        <div id="po-dir-universe"></div>
+        <div id="po-dir-health" style="display:none;"></div>
         <div class="po-card" style="padding:0;overflow:hidden;">
           <div style="overflow-x:auto;"><table class="po-table" id="po-sh-table"></table></div>
         </div>
@@ -576,13 +830,19 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../../assets/js/config.js?v=20260902a"></script>
+<script src="../../assets/js/config.js?v=20260910za"></script>
 <script src="../../assets/js/auth.js?v=20260901b"></script>
-<script src="../../assets/js/db.js?v=20260907a"></script>
+<script src="../../assets/js/db.js?v=20260909n"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
 <script src="../../assets/js/mcc-rcm.js?v=20260902a"></script>
-<script src="../../assets/js/ui.js?v=20260904a"></script>
-<script src="../../assets/js/icons.js?v=20260907a"></script>
+  <!-- ⚠ The shared S-curve engine. This page used to carry a hand-copied duplicate of
+       its maths (scCompute), the exact drift the 2026-09-01 extraction existed to stop. -->
+  <script src="../../assets/js/scurve.js?v=20260901a"></script>
+<script src="../../assets/js/ui.js?v=20260909s"></script>
+<!-- Shared stakeholder directory: identity matching + find-or-create, used by
+     BOTH this page and the Stakeholder Map module. Not hand-copied into each. -->
+<script src="../../assets/js/stakeholders.js?v=20260910u7"></script>
+<script src="../../assets/js/icons.js?v=20260909ui"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -766,7 +1026,6 @@
     { k: 'id', label: 'ID', num: false },
     { k: 'status', label: 'Status', num: false },
     { k: 'progress', label: 'Schedule', num: false },
-    { k: 'grouphead', label: 'Group Head', num: false },
     { k: 'ffin', label: 'Forecast Finish', num: false },
     { k: 'orig', label: 'Original', num: true },
     { k: 'est', label: 'Estimated', num: true },
@@ -778,7 +1037,6 @@
       case 'id': return (p.id || '').toLowerCase();
       case 'status': return (p.status || 'active');
       case 'progress': return progressOf(p) == null ? -1 : progressOf(p);
-      case 'grouphead': return (groupHead(p) || '').toLowerCase();
       case 'ffin': return +(pd(p.forecast_finish || p.end_date) || 0);
       case 'orig': return num(p.original_budget);
       case 'est': return num(p.estimated_cost);
@@ -795,7 +1053,6 @@
       '<td><code>' + esc(p.id) + '</code></td>' +
       '<td>' + statusPill(p.status) + '</td>' +
       '<td>' + schedCell(p) + '</td>' +
-      '<td>' + esc(groupHead(p) || '—') + '</td>' +
       '<td>' + Fmt.date(p.forecast_finish || p.end_date) + '</td>' +
       '<td class="num">' + (p.original_budget != null ? Fmt.moneyShort(p.original_budget) : '—') + '</td>' +
       '<td class="num">' + (p.estimated_cost != null ? Fmt.moneyShort(p.estimated_cost) : '—') + '</td>' +
@@ -831,7 +1088,9 @@
       ? plist.length + ' package' + (plist.length === 1 ? '' : 's')
       : String(plist.length);
     return '<tr class="po-grp" data-grp="' + esc(name) + '"><td colspan="3"><span class="po-grp-name"><span class="po-caret">' + (open ? '▾' : '▸') + '</span>' + esc(groupDisplayOf(name, plist)) + ' <span style="color:var(--pd-muted);font-weight:400;">(' + esc(unit) + ')</span></span></td>' +
-      '<td' + (pr ? ' title="' + esc(pr.how) + '"' : '') + '>' + (pr ? pr.pct + '%' : '—') + '</td><td></td><td></td>' +
+      // ⚠ CELL COUNT: colspan 3 (Project/ID/Status) + Schedule + 1 filler (Forecast
+      //   Finish) + 3 money = 8, matching COLS now that Group Head is gone.
+      '<td' + (pr ? ' title="' + esc(pr.how) + '"' : '') + '>' + (pr ? pr.pct + '%' : '—') + '</td><td></td>' +
       '<td class="num">' + (orig ? Fmt.moneyShort(orig) : '—') + '</td><td class="num">' + (est ? Fmt.moneyShort(est) : '—') + '</td>' +
       '<td class="num">' + ((orig || est) ? Fmt.moneyShort(est - orig) : '—') + '</td></tr>';
   }
@@ -841,7 +1100,7 @@
     }).join('') + '</tr></thead>';
     var sorted = list.slice().sort(function (a, b) { var x = sortVal(a, sortCol), y = sortVal(b, sortCol); return x < y ? -sortDir : x > y ? sortDir : 0; });
     var body = '';
-    if (!sorted.length) { body = '<tr><td colspan="9" class="po-empty">No projects match the current filters.</td></tr>'; }
+    if (!sorted.length) { body = '<tr><td colspan="8" class="po-empty">No projects match the current filters.</td></tr>'; }
     else if (groupMode === 'none') { body = sorted.map(projRow).join(''); }
     else {
       var groups = {}, order = [];
@@ -851,7 +1110,7 @@
     }
     // grand total
     var gOrig = list.reduce(function (a, p) { return a + num(p.original_budget); }, 0), gEst = list.reduce(function (a, p) { return a + num(p.estimated_cost); }, 0);
-    if (sorted.length) body += '<tr class="po-tot-row"><td colspan="3">TOTAL (' + sorted.length + ')</td><td></td><td></td><td></td>' +
+    if (sorted.length) body += '<tr class="po-tot-row"><td colspan="3">TOTAL (' + sorted.length + ')</td><td></td><td></td>' +
       '<td class="num">' + (gOrig ? Fmt.moneyShort(gOrig) : '—') + '</td><td class="num">' + (gEst ? Fmt.moneyShort(gEst) : '—') + '</td><td class="num">' + ((gOrig || gEst) ? Fmt.moneyShort(gEst - gOrig) : '—') + '</td></tr>';
     var t = document.getElementById('po-table');
     t.innerHTML = head + '<tbody>' + body + '</tbody>';
@@ -985,7 +1244,12 @@
     // OFFSET .range(): OFFSET re-scans every preceding row (deep pages timed out on 42k-row
     // projects) and, with NO .order(), OFFSET pages can duplicate/skip rows → wrong totals.
     // Lean columns only (the fields scCompute reads) — not select('*') across tens of thousands.
-    var LEAN = 'id,activity_type,start_date,end_date,duration_days,percent_complete,actual_start,actual_finish';
+    // ⚠⚠ `project_id` IS LOAD-BEARING and was deliberately absent before: every row
+    //    arrived anonymous, which is exactly why a per-project overlay could not be drawn.
+    // ⚠ The rest of the list mirrors PDScurve.COLS so the fetch and the engine cannot
+    //    drift about which columns the maths needs.
+    var LEAN = 'project_id,' + (window.PDScurve ? PDScurve.COLS.join(',')
+      : 'id,activity_type,start_date,end_date,duration_days,percent_complete,actual_start,actual_finish');
     var last = null;
     while (true) {
       var q = sb().from('project_schedule').select(LEAN).in('project_id', ids).order('id', { ascending: true }).limit(1000);
@@ -996,47 +1260,165 @@
     }
     return all;
   }
+  // ⚠️⚠️ scCompute() USED TO BE A HAND-COPIED DUPLICATE of assets/js/scurve.js's maths and
+  //    is now a thin wrapper over the shared engine. The duplicate is exactly the drift the
+  //    2026-09-01 extraction into PDScurve existed to prevent, and it had already cost
+  //    something real: the "Overall Progress" / "Actual to date" identity bug had to be
+  //    reasoned about in THREE places instead of one. Fixing the engine now fixes this page.
+  // ⚠️ PDScurve.compute() filters its own leaves (WBS Summary rows excluded), so nothing
+  //    here pre-filters — a second leaf rule is a second thing to get wrong.
   function scCompute(list) {
-    var leaves = list.filter(function (r) { return !isWbsRow(r); });
-    if (!leaves.length) return { empty: true };
-    function val(a) { if (a.duration_days) return a.duration_days; var s = pd(a.start_date), e = pd(a.end_date); if (s && e) return (e - s) / 86400000 + 1; return 1; }
-    function done(a) { return val(a) * (Math.max(0, Math.min(100, a.percent_complete || 0)) / 100); }
-    var TOT = leaves.reduce(function (s, a) { return s + val(a); }, 0);
-    var ds = [], de = [];
-    leaves.forEach(function (a) { var s = pd(a.start_date), e = pd(a.end_date); if (s) ds.push(+s); if (e) de.push(+e); });
-    if (!ds.length) return { empty: true };
-    var min = new Date(Math.min.apply(null, ds));
-    var tnow = today();
-    var overallDone = leaves.reduce(function (s, a) { return s + done(a); }, 0);
-    var maxEnd = new Date(Math.max.apply(null, de.length ? de : ds));
-    var domainMax = new Date(Math.max(+maxEnd, +tnow));
-    var months = [], c = new Date(min.getFullYear(), min.getMonth(), 1);
-    while (c <= domainMax) { months.push(new Date(c)); c = new Date(c.getFullYear(), c.getMonth() + 1, 1); }
-    var plannedC = [], actualC = [];
-    months.forEach(function (m) {
-      var mEnd = new Date(m.getFullYear(), m.getMonth() + 1, 0);
-      var pv = 0, av = 0;
-      leaves.forEach(function (a) {
-        var s = pd(a.start_date), e = pd(a.end_date) || s; if (!s) return;
-        var pf = mEnd >= e ? 1 : (mEnd < s ? 0 : (e > s ? (mEnd - s) / (e - s) : 1));
-        pv += val(a) * pf;
-        if (mEnd < tnow) {
-          var aS = pd(a.actual_start || a.start_date);
-          var aE = pd(a.actual_finish) || pd(a.end_date) || aS;
-          if (aS) { var af = mEnd >= aE ? 1 : (mEnd < aS ? 0 : (aE > aS ? (mEnd - aS) / (aE - aS) : 1)); av += done(a) * af; }
-        }
-      });
-      plannedC.push(pv); actualC.push(av);
-    });
-    var ti = -1;
-    for (var i = 0; i < months.length; i++) { var me = new Date(months[i].getFullYear(), months[i].getMonth() + 1, 0); if (me >= tnow) { ti = i; break; } }
-    if (ti < 0) ti = months.length - 1;
-    actualC[ti] = overallDone;
-    for (var k = ti + 1; k < actualC.length; k++) actualC[k] = 0;
-    var plannedPct = TOT ? plannedC[ti] / TOT * 100 : 0, actualPct = TOT ? actualC[ti] / TOT * 100 : 0;
-    var overallPct = TOT ? overallDone / TOT * 100 : 0;
-    return { empty: false, months: months, plannedC: plannedC, actualC: actualC, TOT: TOT, plannedPct: plannedPct, actualPct: actualPct, overallPct: overallPct, variance: actualPct - plannedPct, ti: ti, activities: leaves.length };
+    if (!window.PDScurve) return { empty: true };
+    return PDScurve.compute(list || []);
   }
+
+  // ---- per-project overlay --------------------------------------------------
+  // Owner: "a chart s-curve showing the different s-curves of different projects …
+  // however, I am thinking how this would look if there are even 2 projects with
+  // different s-curves (BL, Actual, Forecast) for each project."
+  // The answer the chart implements: COLOUR = project, LINE STYLE = series.
+  // ⚠️⚠️ THE Y AXIS IS PER-PROJECT PERCENT, NOT A SHARED ABSOLUTE TOTAL. Duration units
+  //    are not comparable across projects — a 40,000-day programme would flatten a
+  //    2,000-day one into the axis and the comparison would say nothing. Every curve runs
+  //    0→100% of ITS OWN total, which is what "compare the S-curves" means.
+  var SC_PALETTE = ['#E5534B', '#2F86D8', '#2FA36B', '#C9A227', '#9B59B6', '#E08A3C', '#17A2A2', '#D45D8C'];
+  // ⚠️ Above this many projects the chart defaults to Actual-only. N projects × 3 series is
+  //    3N lines; past ~5 the overlay stops being readable. It is a DEFAULT, not a limit —
+  //    the toggles below re-enable the other series, and no project is ever silently dropped.
+  var SC_FULL_MAX = 5;
+  var scSeriesSel = null;          // null = the user has not chosen; auto-pick by count
+  var scData = null;
+
+  function scMonthKey(m) { return m.getFullYear() * 12 + m.getMonth(); }
+
+  // Re-index one project's cumulative series onto the shared month axis.
+  // ⚠️ Before the project starts the value is 0 and after it ends it holds its last value —
+  //    these are CUMULATIVE curves, so carrying forward is the truthful continuation. A gap
+  //    would read as "progress went away".
+  function scOnAxis(d, arr, axis, fromIdx, toIdx) {
+    var by = {};
+    d.months.forEach(function (m, i) { by[scMonthKey(m)] = arr[i]; });
+    var out = [], carry = null;
+    axis.forEach(function (k, i) {
+      var inRange = (fromIdx == null || i >= fromIdx) && (toIdx == null || i <= toIdx);
+      var v = by[k];
+      if (v == null) v = carry;
+      else carry = v;
+      out.push(inRange ? v : null);
+    });
+    return out;
+  }
+
+  function scRenderChart() {
+    var host = document.getElementById('po-sc-chart');
+    if (!scData || !scData.per.length) {
+      host.innerHTML = '<div class="po-empty">No dated activities found for the selected projects.</div>';
+      return;
+    }
+    var per = scData.per;
+    var sel = scSeriesSel || { bl: per.length <= SC_FULL_MAX, ac: true, fc: per.length <= SC_FULL_MAX };
+
+    // shared month axis: the union across every drawn project
+    var lo = Infinity, hi = -Infinity;
+    per.forEach(function (p) {
+      p.d.months.forEach(function (m) { var k = scMonthKey(m); if (k < lo) lo = k; if (k > hi) hi = k; });
+    });
+    var axis = [], labels = [];
+    for (var k = lo; k <= hi; k++) { axis.push(k); labels.push(new Date(Math.floor(k / 12), k % 12, 1)); }
+
+    var W = 1000, H = 340, padL = 40, padR = 14, padT = 14, padB = 30, n = axis.length;
+    function x(i) { return padL + (n <= 1 ? 0 : (i / (n - 1)) * (W - padL - padR)); }
+    function y(pct) { return padT + (1 - pct / 100) * (H - padT - padB); }
+
+    var grid = '';
+    [0, 25, 50, 75, 100].forEach(function (p) {
+      var yy = y(p);
+      grid += '<line x1="' + padL + '" y1="' + yy + '" x2="' + (W - padR) + '" y2="' + yy + '" class="po-grid2"/>' +
+              '<text x="' + (padL - 6) + '" y="' + (yy + 3) + '" class="po-ylab2">' + p + '%</text>';
+    });
+    var xlab = '', step = Math.max(1, Math.ceil(n / 12));
+    labels.forEach(function (mo, i) {
+      if (i % step === 0) xlab += '<text x="' + x(i) + '" y="' + (H - padB + 15) + '" class="po-xlab2">' +
+        mo.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }) + '</text>';
+    });
+
+    // today line — same month index on the shared axis for every project
+    var tnow = today();
+    var tKey = tnow.getFullYear() * 12 + tnow.getMonth();
+    var tIdx = axis.indexOf(tKey);
+    var todayL = tIdx < 0 ? '' : '<line x1="' + x(tIdx) + '" y1="' + padT + '" x2="' + x(tIdx) + '" y2="' + (H - padB) +
+      '" stroke="var(--pd-red)" stroke-width="1.2" stroke-dasharray="4 3" opacity=".7"/>';
+
+    function poly(vals, colour, dash, width) {
+      // ⚠️ Split on nulls rather than joining across them — one polyline through a gap
+      //    draws a straight line over months the series does not cover.
+      var runs = [], cur = [];
+      vals.forEach(function (v, i) {
+        if (v == null) { if (cur.length) { runs.push(cur); cur = []; } return; }
+        cur.push(x(i) + ',' + y(v));
+      });
+      if (cur.length) runs.push(cur);
+      return runs.filter(function (r) { return r.length > 1; }).map(function (r) {
+        return '<polyline points="' + r.join(' ') + '" fill="none" stroke="' + colour +
+          '" stroke-width="' + width + '"' + (dash ? ' stroke-dasharray="' + dash + '"' : '') +
+          ' stroke-linejoin="round" stroke-linecap="round"/>';
+      }).join('');
+    }
+
+    var lines = '';
+    per.forEach(function (p, pi) {
+      var d = p.d, c = scColor(pi), T = d.TOT || 1;
+      var pctOf = function (v) { return v == null ? null : v / T * 100; };
+      if (sel.bl) lines += poly(scOnAxis(d, d.plannedC.map(pctOf), axis, null, null), c, '5 3', 1.4);
+      if (sel.ac) {
+        var acIdxHi = axis.indexOf(scMonthKey(d.months[d.ti]));
+        lines += poly(scOnAxis(d, d.actualC.map(pctOf), axis, null, acIdxHi < 0 ? null : acIdxHi), c, '', 2.2);
+      }
+      if (sel.fc && d.forecastC) {
+        var fcIdxLo = axis.indexOf(scMonthKey(d.months[d.ti]));
+        lines += poly(scOnAxis(d, d.forecastC.map(pctOf), axis, fcIdxLo < 0 ? null : fcIdxLo, null), c, '1.5 2.5', 1.6);
+      }
+    });
+
+    var projLegend = per.map(function (p, pi) {
+      return '<span class="po-lg2"><span class="sw2-line" style="border-color:' + scColor(pi) +
+        ';border-width:2px;"></span>' + esc(p.name) + '</span>';
+    }).join('');
+    var styleLegend =
+      '<span class="po-lg2"><span class="sw2-line" style="border-color:currentColor;border-style:dashed;"></span>Baseline</span>' +
+      '<span class="po-lg2"><span class="sw2-line" style="border-color:currentColor;"></span>Actual</span>' +
+      '<span class="po-lg2"><span class="sw2-line" style="border-color:currentColor;border-style:dotted;"></span>Forecast</span>';
+    var toggles =
+      '<div class="po-sc-series">' +
+        ['bl', 'ac', 'fc'].map(function (kk, i) {
+          var lbl = ['Baseline', 'Actual', 'Forecast'][i];
+          return '<label><input type="checkbox" data-sc="' + kk + '"' + (sel[kk] ? ' checked' : '') + '> ' + lbl + '</label>';
+        }).join('') +
+      '</div>';
+    // ⚠️ When the default has quietly dropped two series, SAY SO. A chart that silently
+    //    shows a third of what was asked for reads as missing data.
+    var note = (!scSeriesSel && per.length > SC_FULL_MAX)
+      ? '<div class="po-sc-note">Showing <b>Actual</b> only — ' + per.length +
+        ' projects × 3 series is too many lines to read. Tick Baseline or Forecast to add them back, ' +
+        'or narrow the project filter.</div>'
+      : '';
+
+    host.innerHTML =
+      '<svg viewBox="0 0 ' + W + ' ' + H + '" class="po-svg">' + grid + todayL + lines + xlab + '</svg>' +
+      toggles + note +
+      '<div class="po-legend2">' + styleLegend + '</div>' +
+      '<div class="po-legend2 po-legend-proj">' + projLegend + '</div>';
+
+    host.querySelectorAll('input[data-sc]').forEach(function (cb) {
+      cb.onchange = function () {
+        scSeriesSel = scSeriesSel || { bl: sel.bl, ac: sel.ac, fc: sel.fc };
+        scSeriesSel[cb.dataset.sc] = cb.checked;
+        scRenderChart();
+      };
+    });
+  }
+
+  function scColor(i) { return SC_PALETTE[i % SC_PALETTE.length]; }
   // Same shape as scCompute(), but from the server-side combined aggregate (one JSON of
   // ~monthly buckets) instead of every raw activity row across the scoped projects.
   function scComputeFromAgg(a) {
@@ -1072,46 +1454,728 @@
       kpi2('Planned to date', r1(d.plannedPct) + '%') + kpi2('Actual to date', r1(d.actualPct) + '%') +
       kpi2('Schedule Variance', (v > 0 ? '+' : '') + v + ' pp', v >= 0 ? '--pd-ok' : '--pd-bad');
   }
-  function scRenderChart(d) {
-    var host = document.getElementById('po-sc-chart');
-    if (d.empty) { host.innerHTML = '<div class="po-empty">No dated activities found for the selected projects.</div>'; return; }
-    var W = 1000, H = 320, padL = 46, padR = 16, padT = 16, padB = 32, n = d.months.length, maxV = (d.TOT || 1) * 1.02;
-    function x(i) { return padL + (n <= 1 ? 0 : (i / (n - 1)) * (W - padL - padR)); }
-    function y(v) { return padT + (1 - (v / maxV)) * (H - padT - padB); }
-    var grid = '';
-    [0, .25, .5, .75, 1].forEach(function (p) { var yy = y(maxV * p); grid += '<line x1="' + padL + '" y1="' + yy + '" x2="' + (W - padR) + '" y2="' + yy + '" class="po-grid2"/><text x="' + (padL - 6) + '" y="' + (yy + 3) + '" class="po-ylab2">' + Math.round(p * 100) + '%</text>'; });
-    var xlab = ''; var step = Math.max(1, Math.ceil(n / 10));
-    d.months.forEach(function (mo, i) { if (i % step === 0) xlab += '<text x="' + x(i) + '" y="' + (H - padB + 16) + '" class="po-xlab2">' + mo.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }) + '</text>'; });
-    var pl = d.plannedC.map(function (v, i) { return x(i) + ',' + y(v); }).join(' ');
-    var ac = []; d.actualC.forEach(function (v, i) { if (i <= d.ti) ac.push(x(i) + ',' + y(v)); });
-    var tx = x(d.ti);
-    var todayL = '<line x1="' + tx + '" y1="' + padT + '" x2="' + tx + '" y2="' + (H - padB) + '" stroke="var(--pd-red)" stroke-width="1.5" stroke-dasharray="4 3"/>';
-    host.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="po-svg">' + grid + todayL +
-      '<polyline class="po-planned2" points="' + pl + '"/>' + (ac.length ? '<polyline class="po-actual2" points="' + ac.join(' ') + '"/>' : '') + xlab + '</svg>' +
-      '<div class="po-legend2"><span class="po-lg2"><span class="sw2-line" style="border-color:var(--pd-dark);"></span>Planned progress</span>' +
-      '<span class="po-lg2"><span class="sw2-line" style="border-color:var(--pd-red);"></span>Actual progress</span></div>';
-  }
   var scLoadedIds = null;
   async function loadScurve(force) {
     var ids = scopedProjectIds();
     if (!force && scLoadedIds && scLoadedIds.join(',') === ids.join(',')) return;
     document.getElementById('po-sc-scope').textContent = scopeLabel(ids);
-    if (!ids.length) { document.getElementById('po-sc-kpis').innerHTML = ''; document.getElementById('po-sc-chart').innerHTML = '<div class="po-empty">No projects match the current filter.</div>'; return; }
-    document.getElementById('po-sc-chart').innerHTML = '<div class="po-empty">Loading schedules across ' + ids.length + ' project(s)…</div>';
-    document.getElementById('po-sc-kpis').innerHTML = '';
+    var kpiHost = document.getElementById('po-sc-kpis'), chartHost = document.getElementById('po-sc-chart');
+    if (!ids.length) {
+      kpiHost.innerHTML = '';
+      chartHost.innerHTML = '<div class="po-empty">No projects match the current filter.</div>';
+      scData = null; return;
+    }
+    chartHost.innerHTML = '<div class="po-empty">Loading schedules across ' + ids.length + ' project(s)…</div>';
+    kpiHost.innerHTML = '';
     try {
-      // FAST PATH: one combined server-side aggregate across the scoped projects (dozens of
-      // monthly buckets) instead of every raw activity row. Falls back to the row fetch when
-      // the RPC isn't deployed yet.
-      var d = null;
+      // ⚠️ THE FAST PATH IS KEPT, FOR THE KPI STRIP ONLY. `schedule_scurve_agg_multi`
+      //    returns ONE combined monthly aggregate for the whole selection — it cannot
+      //    produce per-project series, so the overlay has to come from rows. Rendering
+      //    the roll-up KPIs off the RPC first means the strip appears immediately instead
+      //    of waiting on a 40k-row fetch, which is what it always did.
+      var roll = null;
       try {
         var r = await sb().rpc('schedule_scurve_agg_multi', { p_ids: ids });
-        if (!r.error && r.data && r.data.months) d = scComputeFromAgg(r.data);
-      } catch (e) { d = null; }
-      if (!d) { var list = await fetchScheduleForIds(ids); d = scCompute(list); }
+        if (!r.error && r.data && r.data.months) { roll = scComputeFromAgg(r.data); scRenderKpis(roll); }
+      } catch (e) { roll = null; }
+
+      var rows = await fetchScheduleForIds(ids);
+      if (!roll || roll.empty) { roll = scCompute(rows); scRenderKpis(roll); }
+
+      // ⚠️ Grouped by `project_id`, which fetchScheduleForIds now selects. It was
+      //    deliberately absent from the LEAN column list before — which is precisely WHY
+      //    a per-project overlay was impossible: every row arrived anonymous and the
+      //    combined maths never needed to know which project it came from.
+      var byP = {};
+      rows.forEach(function (x) { (byP[x.project_id] = byP[x.project_id] || []).push(x); });
+      var nameOf = {};
+      PROJ.forEach(function (p) { nameOf[p.id] = p.name || p.id; });
+      var per = ids.map(function (id) { return { id: id, name: nameOf[id] || id, d: scCompute(byP[id] || []) }; })
+                   .filter(function (p) { return p.d && !p.d.empty; });
+
+      scData = { rollup: roll, per: per };
       scLoadedIds = ids;
-      scRenderKpis(d); scRenderChart(d);
-    } catch (e) { UI.toast('Could not load schedules: ' + (e.message || e), 'error'); document.getElementById('po-sc-chart').innerHTML = '<div class="po-empty">Load failed.</div>'; }
+      scRenderChart();
+    } catch (e) {
+      UI.toast('Could not load schedules: ' + (e.message || e), 'error');
+      chartHost.innerHTML = '<div class="po-empty">Load failed.</div>';
+    }
+  }
+
+  // ================= Stakeholder DIRECTORY (portfolio-level authoring) ========
+  // Owner: "By Portfolio Overview and accessing the stakeholder map, planners can
+  // create stakeholders from this and assign it to different projects."
+  // ⚠️ This tab used to be READ-ONLY — a search box and a table over the
+  //    stakeholder_map MIRROR, with no way to create or assign anything. The mirror
+  //    view is kept (it answers "who is on which project"); the Directory view is
+  //    the portfolio-level master list the owner asked for.
+  // ⚠️ Every identity decision goes through the SHARED PDStakeholders, never a copy.
+  var shView = 'directory';          // 'directory' | 'byproject' | 'health'
+  var dirRows = null, dirUse = {}, dirErr = '', dirSel = null, dirUnlinked = 0;
+
+  function dirOn() { return !!window.PDStakeholders; }
+
+  async function loadDirectory(force) {
+    if (dirRows && !force) return dirRows;
+    dirErr = '';
+    try {
+      dirRows = await PDb.selectAll('stakeholders', function (q) { return q.order('name'); });
+    } catch (e) {
+      // ⚠️ A missing table is not an error to shout about — it means the migration
+      //    has not been run on this deployment, and the mirror view still works.
+      dirRows = [];
+      dirErr = PDStakeholders.missingTable(e)
+        ? 'The shared directory table is not present on this database yet.'
+        : ((e && e.message) || String(e));
+    }
+    // usage: which projects each person is on. ⚠️ Read from the FULL map, not the
+    // project-filtered one — "on N projects" is a fact about the person, and
+    // narrowing it to the current filter would make the same person read 3 on one
+    // screen and 1 on another.
+    dirUse = {};
+    try {
+      // ⚠ Read the WHOLE map, not only the linked rows: the rows with a NULL
+      //   stakeholder_id are register entries made before the directory existed, and
+      //   counting them is the Health view's "loose ends". One read answers both.
+      var all = await PDb.selectAll('stakeholder_map');
+      dirUnlinked = (all || []).filter(function (r) { return !r.stakeholder_id; }).length;
+      (all || []).forEach(function (r) {
+        if (!r.stakeholder_id) return;
+        (dirUse[r.stakeholder_id] = dirUse[r.stakeholder_id] || []).push(r.project_id);
+      });
+      Object.keys(dirUse).forEach(function (k) {
+        dirUse[k] = dirUse[k].filter(function (v, i, a) { return v && a.indexOf(v) === i; });
+      });
+    } catch (e) { /* usage is a nicety; the list is the point */ }
+    return dirRows;
+  }
+
+  function dirVisible() {
+    var q = shQuery.trim().toLowerCase();
+    return (dirRows || []).filter(function (p) {
+      if (!q) return true;
+      return ((p.name || '') + ' ' + (p.organization || '') + ' ' + (p.role_title || '') + ' ' +
+              (p.nickname || '') + ' ' + (p.email || '')).toLowerCase().indexOf(q) !== -1;
+    });
+  }
+
+  function dirRender() {
+    var host = document.getElementById('po-sh-table');
+    var list = dirVisible();
+    var multi = list.filter(function (p) { return (dirUse[p.id] || []).length > 1; }).length;
+    var unassigned = (dirRows || []).filter(function (p) { return !(dirUse[p.id] || []).length; }).length;
+    document.getElementById('po-sh-kpis').innerHTML =
+      kpi2('People', String((dirRows || []).length)) +
+      kpi2('On more than one project', String(multi)) +
+      // ⚠ A person on no project is the actionable state this screen exists to
+      //   surface — they were added and never assigned. Counted, not hidden.
+      kpi2('On no project', String(unassigned), unassigned ? '--pd-bad' : null) +
+      kpi2('Showing', String(list.length));
+
+    if (dirErr) {
+      document.getElementById('po-dir-universe').innerHTML =
+        '<div class="po-empty">' + esc(dirErr) + '</div>';
+      host.parentNode.style.display = 'none';
+      return;
+    }
+    dirRenderUniverse();
+  }
+
+  // The LIST layout: the same banded groups, drawn as table sections.
+  function dirRenderList(groups) {
+    var host = document.getElementById('po-sh-table');
+    var flat = groups.reduce(function (a, g) { return a.concat(g.items); }, []);
+    var head = '<thead><tr><th>Name</th><th>Organization</th><th>Role</th><th>Sector</th>' +
+               '<th class="num">Projects</th><th></th></tr></thead>';
+    var body = flat.length ? groups.map(function (g) {
+      // ⚠ One header row per band, with the SAME colspan as the table has columns (6).
+      return (g.key === '' ? '' :
+        '<tr class="po-dir-listband"><td colspan="6">' + esc(g.key) +
+        '<span>' + g.items.length + '</span></td></tr>') +
+      g.items.map(function (p) {
+      var n = (dirUse[p.id] || []).length;
+      return '<tr class="po-row" data-person="' + esc(p.id) + '">' +
+        '<td><b>' + esc(p.name || '(unnamed)') + '</b>' +
+          (p.nickname ? ' <span class="po-dir-nick">“' + esc(p.nickname) + '”</span>' : '') + '</td>' +
+        '<td>' + esc(p.organization || '—') + '</td>' +
+        '<td>' + esc(p.role_title || '—') + '</td>' +
+        '<td>' + esc(p.category || '—') + '</td>' +
+        // ⚠ 0 is a real, actionable state — a person in the directory on no project —
+        //   so it is shown as 0 rather than an em dash that reads as "unknown".
+        '<td class="num">' + n + '</td>' +
+        '<td class="po-dir-act"><button type="button" class="pd-btn pd-btn-sm" data-open="' + esc(p.id) + '">Open</button></td>' +
+      '</tr>';
+      }).join('');
+    }).join('') : '<tr><td colspan="6" class="po-empty">' +
+        (dirRows && dirRows.length ? 'No one matches that search.'
+          : 'The directory is empty. Add a person, or open a project’s Stakeholder Map — saving there adds them here.') +
+      '</td></tr>';
+    host.innerHTML = head + '<tbody>' + body + '</tbody>';
+    host.querySelectorAll('[data-open]').forEach(function (b) {
+      // ⚠️ This button is the MANAGE route (assign to projects, merge a duplicate).
+      //    It stays a dialog on purpose: both act on the directory around the person
+      //    rather than on the person, so leaving the list to do them is the wrong shape.
+      b.onclick = function (e) { e.stopPropagation(); openPersonPanel(b.dataset.open); };
+    });
+    host.querySelectorAll('.po-row[data-person]').forEach(function (r) {
+      r.onclick = function () { openPerson(r.dataset.person); };
+    });
+  }
+
+  // ---- Directory HEALTH -----------------------------------------------------
+  // The second half of the adoption: "a dashboard page that can also be adopted."
+  // ⚠️⚠️ IT IS BUILT FROM OUR OWN DATA AND ADDS NO QUERY. Every figure below is
+  //    derived from `dirRows` (the directory) and `dirUse` (the map) that the
+  //    Directory view has already loaded, so switching to this view costs nothing
+  //    and can never disagree with the list beside it.
+  // ⚠️ It reports; it does not clean. Nothing here writes — a duplicate is opened
+  //    through the SAME person panel that already owns merging, rather than this
+  //    view growing a second merge path that could drift from it.
+
+  function dirTop(list, keyOf, blank, limit) {
+    var by = {};
+    list.forEach(function (p) {
+      var k = (keyOf(p) || '').trim() || blank;
+      by[k] = (by[k] || 0) + 1;
+    });
+    var out = Object.keys(by).map(function (k) { return { key: k, n: by[k] }; });
+    // ⚠️ Ties break on the NAME, so two organisations with the same count do not
+    //    swap places between renders and read as data changing under the planner.
+    out.sort(function (a, b) { return b.n - a.n || a.key.localeCompare(b.key); });
+    return limit ? out.slice(0, limit) : out;
+  }
+
+  // Pure: rows in, figures out. No DOM, no globals, so it can be executed.
+  function dirHealth(rows, use, unlinked) {
+    rows = rows || [];
+    var S = window.PDStakeholders;
+    var total = rows.length;
+    var onNo = 0, onMulti = 0, haveTotal = 0, ofEach = 0;
+    var fieldHave = {};
+    (S ? S.COMPLETENESS_FIELDS : []).forEach(function (f) { fieldHave[f] = 0; });
+
+    rows.forEach(function (p) {
+      var n = ((use || {})[p.id] || []).length;
+      if (!n) onNo++; else if (n > 1) onMulti++;
+      if (S) {
+        var c = S.completeness(p);
+        haveTotal += c.have; ofEach = c.of;
+        S.COMPLETENESS_FIELDS.forEach(function (f) {
+          var v = p[f];
+          if (v != null && String(v).trim() !== '') fieldHave[f]++;
+        });
+      }
+    });
+
+    // per project, from the map we already hold
+    var perProj = {};
+    Object.keys(use || {}).forEach(function (sid) {
+      (use[sid] || []).forEach(function (pid) { perProj[pid] = (perProj[pid] || 0) + 1; });
+    });
+    var projects = Object.keys(perProj).map(function (id) {
+      return { key: projNameOf(id), id: id, n: perProj[id] };
+    }).sort(function (a, b) { return b.n - a.n || a.key.localeCompare(b.key); });
+
+    // ⚠️ The scan itself lives in the SHARED PDStakeholders, blocked so it does not
+    //    score every pair — my first cut here scored all of them and measured **2.3
+    //    seconds** of blocked main thread at 900 people. It refuses rather than
+    //    answering partially when even the blocked candidate set is too large.
+    var dup = S ? S.duplicatePairs(rows) : { pairs: [], scanned: false, considered: 0 };
+
+    return {
+      total: total,
+      onNo: onNo,
+      onMulti: onMulti,
+      pct: total && ofEach ? haveTotal / (total * ofEach) : 0,
+      fields: (S ? S.COMPLETENESS_FIELDS : []).map(function (f) {
+        return { key: f, n: fieldHave[f], pct: total ? fieldHave[f] / total : 0 };
+      }).sort(function (a, b) { return a.n - b.n || a.key.localeCompare(b.key); }),
+      sectors: dirTop(rows, function (p) { return p.category; }, 'No sector'),
+      orgs: dirTop(rows, function (p) { return p.organization; }, 'No organisation', 8),
+      // ⚠ the TRUE distinct count, so the panel can say "5 distinct" when it is
+      //   showing all five rather than claiming a "top 5" that truncates nothing.
+      orgTotal: dirTop(rows, function (p) { return p.organization; }, 'No organisation').length,
+      projects: projects,
+      dupes: dup.pairs,
+      dupScanned: dup.scanned,
+      dupConsidered: dup.considered,
+      unlinked: unlinked || 0
+    };
+  }
+
+  function dirBars(items, max, opts) {
+    opts = opts || {};
+    if (!items.length) return '<p class="po-hl-none">' + esc(opts.empty || 'Nothing to show.') + '</p>';
+    return '<div class="po-hl-bars">' + items.map(function (it) {
+      var w = max ? Math.max(2, Math.round((it.n / max) * 100)) : 0;
+      return '<div class="po-hl-bar' + (opts.warn && opts.warn(it) ? ' is-warn' : '') + '">' +
+        '<span class="po-hl-k" title="' + esc(it.key) + '">' + esc(it.key) + '</span>' +
+        '<span class="po-hl-t"><i style="width:' + w + '%"></i></span>' +
+        '<span class="po-hl-n">' + (opts.fmt ? opts.fmt(it) : it.n) + '</span>' +
+      '</div>';
+    }).join('') + '</div>';
+  }
+
+  function dirPanel(title, sub, body) {
+    return '<section class="po-hl-panel"><h3>' + esc(title) +
+      (sub ? '<em>' + esc(sub) + '</em>' : '') + '</h3>' + body + '</section>';
+  }
+
+  function dirRenderHealth() {
+    var wrap = document.getElementById('po-dir-health');
+    if (dirErr) { wrap.innerHTML = '<div class="po-empty">' + esc(dirErr) + '</div>'; return; }
+    var h = dirHealth(dirRows, dirUse, dirUnlinked);
+    if (!h.total) {
+      wrap.innerHTML = '<div class="po-empty">The directory is empty, so there is no health to report. ' +
+        'Add a person, or open a project’s Stakeholder Map — saving there adds them here.</div>';
+      return;
+    }
+    var pctTxt = Math.round(h.pct * 100) + '%';
+
+    document.getElementById('po-sh-kpis').innerHTML =
+      kpi2('People', String(h.total)) +
+      kpi2('Profile completeness', pctTxt, h.pct < 0.5 ? '--pd-bad' : null) +
+      kpi2('On no project', String(h.onNo), h.onNo ? '--pd-bad' : null) +
+      kpi2('Possible duplicates', h.dupScanned ? String(h.dupes.length) : '—',
+           h.dupScanned && h.dupes.length ? '--pd-bad' : null);
+
+    var maxField = h.total;
+    var maxSec = h.sectors.length ? h.sectors[0].n : 0;
+    var maxOrg = h.orgs.length ? h.orgs[0].n : 0;
+    var maxPrj = h.projects.length ? h.projects[0].n : 0;
+
+    var dupBody;
+    if (!h.dupScanned) {
+      dupBody = '<p class="po-hl-none">' + h.total + ' people leaves ' +
+        h.dupConsidered.toLocaleString() + ' pairs still worth comparing, which is more than this ' +
+        'scan will do in one go — so it has not been run, rather than freezing the tab or ' +
+        'answering over part of the directory. The duplicate warning still fires while you type ' +
+        'in <strong>+ Add person</strong>.</p>';
+    } else if (!h.dupes.length) {
+      dupBody = '<p class="po-hl-none">No two people in the directory score as the same person.</p>';
+    } else {
+      dupBody = '<div class="po-hl-dups">' + h.dupes.slice(0, 25).map(function (d) {
+        return '<button type="button" class="po-hl-dup" data-dup="' + esc(d.a.id) + '">' +
+          '<span class="po-hl-dn">' + esc(d.a.name || '(unnamed)') + '</span>' +
+          '<span class="po-hl-dv">vs</span>' +
+          '<span class="po-hl-dn">' + esc(d.b.name || '(unnamed)') + '</span>' +
+          '<em>' + esc(d.why || '') + '</em>' +
+          '<span class="po-hl-ds">' + d.score.toFixed(2) + '</span>' +
+        '</button>';
+      }).join('') +
+      (h.dupes.length > 25 ? '<p class="po-hl-none">' + (h.dupes.length - 25) +
+        ' more below these.</p>' : '') + '</div>' +
+      '<p class="po-hl-note">Opens the person, where <strong>Merge</strong> lives. ' +
+      'Nothing on this screen changes a record.</p>';
+    }
+
+    wrap.innerHTML =
+      '<p class="po-dir-lead">Everything here is read from the directory already on screen — ' +
+      'no extra query, and nothing on this view writes.</p>' +
+      '<div class="po-hl-grid">' +
+        dirPanel('Possible duplicates', h.dupScanned ? h.dupes.length + ' found' : 'not scanned', dupBody) +
+        dirPanel('Profile completeness', pctTxt + ' overall · least-filled first',
+          dirBars(h.fields, maxField, {
+            fmt: function (it) { return it.n + ' / ' + h.total; },
+            warn: function (it) { return it.pct < 0.34; }
+          })) +
+        dirPanel('By sector', h.sectors.length + ' distinct',
+          dirBars(h.sectors, maxSec, { warn: function (it) { return it.key === 'No sector'; } })) +
+        dirPanel('Organisations',
+          h.orgTotal > h.orgs.length ? 'top ' + h.orgs.length + ' of ' + h.orgTotal
+                                     : h.orgTotal + ' distinct',
+          dirBars(h.orgs, maxOrg, { warn: function (it) { return it.key === 'No organisation'; } })) +
+        dirPanel('People per project', h.projects.length + ' with anyone mapped',
+          dirBars(h.projects, maxPrj, { empty: 'Nobody is assigned to a project yet.' })) +
+        dirPanel('Loose ends', 'what to fix next',
+          '<div class="po-hl-bars">' +
+            '<div class="po-hl-bar' + (h.onNo ? ' is-warn' : '') + '">' +
+              '<span class="po-hl-k">On no project</span>' +
+              '<span class="po-hl-t"><i style="width:' + (h.total ? Math.round(h.onNo / h.total * 100) : 0) + '%"></i></span>' +
+              '<span class="po-hl-n">' + h.onNo + '</span></div>' +
+            '<div class="po-hl-bar">' +
+              '<span class="po-hl-k">On more than one</span>' +
+              '<span class="po-hl-t"><i style="width:' + (h.total ? Math.round(h.onMulti / h.total * 100) : 0) + '%"></i></span>' +
+              '<span class="po-hl-n">' + h.onMulti + '</span></div>' +
+            '<div class="po-hl-bar' + (h.unlinked ? ' is-warn' : '') + '">' +
+              '<span class="po-hl-k" title="stakeholder_map rows written before the directory existed">Map rows not linked to a person</span>' +
+              '<span class="po-hl-t"><i style="width:' + (h.unlinked ? 100 : 0) + '%"></i></span>' +
+              '<span class="po-hl-n">' + h.unlinked + '</span></div>' +
+          '</div>' +
+          // ⚠️ An unlinked row is NOT breakage — it is a register entry made before the
+          //    shared directory existed. Saying so stops it reading as data loss.
+          '<p class="po-hl-note">Unlinked rows are register entries made before the shared ' +
+          'directory existed. They still show under <strong>By project</strong>; re-saving one ' +
+          'in its project’s Stakeholder Map links it.</p>') +
+      '</div>';
+
+    wrap.querySelectorAll('[data-dup]').forEach(function (b) {
+      b.onclick = function () { openPersonPanel(b.dataset.dup); };
+    });
+  }
+
+  // ---- the Universe: banded grid / list -------------------------------------
+  // Adopted from the separate Megawide Stakeholders app at the owner's request:
+  // "seeing the whole stakeholders rather than a table and seeing the clickable
+  // bands." Two things came across — a CARD grid over the whole directory, and
+  // A-Z bands with counts that you can click to jump.
+  // ⚠️ `sm-bands` in the Stakeholder Map module is a DIFFERENT thing with a
+  //    confusingly similar name: RCM column-group toggles on the register table.
+  //    These are alphabet bands over people. Named `po-dir-band*` so nothing in
+  //    either file reads as the other.
+  var dirLayout = 'grid';          // 'grid' | 'list'
+  var dirGroup = 'letter';         // 'letter' | 'org' | 'sector' | 'none'
+  var dirBand = '';                // a clicked letter, or '' for all
+
+  function dirLetter(p) {
+    var n = (p && p.name || '').trim();
+    if (!n) return '#';
+    // ⚠️ Band on the same NORMALISED name the matcher uses, so "Engr. Ana Reyes"
+    //    lands under A with everyone else rather than under E on its honorific.
+    var norm = PDStakeholders ? PDStakeholders.normName(n) : n.toLowerCase();
+    var c = (norm || n).charAt(0).toUpperCase();
+    return /[A-Z]/.test(c) ? c : '#';
+  }
+  function dirGroupKey(p) {
+    if (dirGroup === 'org') return (p.organization || '').trim() || 'No organisation';
+    if (dirGroup === 'sector') return (p.category || '').trim() || 'No sector';
+    if (dirGroup === 'none') return '';
+    return dirLetter(p);
+  }
+
+  function dirGrouped(list) {
+    if (dirGroup === 'none') return [{ key: '', items: list }];
+    var by = {}, order = [];
+    list.forEach(function (p) {
+      var k = dirGroupKey(p);
+      if (!by[k]) { by[k] = []; order.push(k); }
+      by[k].push(p);
+    });
+    // ⚠️ '#' (names that do not start with a letter) sorts LAST, never first —
+    //    otherwise a handful of odd rows head a list of 240 people.
+    order.sort(function (a, b) {
+      if (a === '#') return 1; if (b === '#') return -1;
+      return a.localeCompare(b);
+    });
+    return order.map(function (k) { return { key: k, items: by[k] }; });
+  }
+
+  function dirStatusOf(p) {
+    // ⚠️ Absent column reads Active, matching the migration's own default, so a
+    //    deployment that has not run it shows every person as active rather than
+    //    as an unknown state.
+    return (p && p.status) || 'Active';
+  }
+
+  function dirCard(p) {
+    var n = (dirUse[p.id] || []).length;
+    var initials = (p.name || '?').split(/\s+/).filter(Boolean).slice(0, 2)
+      .map(function (w) { return w.charAt(0).toUpperCase(); }).join('') || '?';
+    var inactive = dirStatusOf(p) !== 'Active';
+    return '<div class="po-dir-card' + (inactive ? ' is-inactive' : '') + '" data-person="' + esc(p.id) + '">' +
+      '<div class="po-dir-ava">' + esc(initials) +
+        '<span class="po-dir-dot' + (inactive ? ' off' : '') + '" title="' + esc(dirStatusOf(p)) + '"></span></div>' +
+      '<div class="po-dir-body">' +
+        '<div class="po-dir-name">' + esc(p.name || '(unnamed)') + '</div>' +
+        '<div class="po-dir-org">' + esc(p.organization || '—') + '</div>' +
+        '<div class="po-dir-role">' + esc(p.role_title || '') + '</div>' +
+        '<div class="po-dir-meta">' + (n ? n + ' project' + (n === 1 ? '' : 's') : 'No project yet') + '</div>' +
+      '</div>' +
+      '<button type="button" class="po-dir-manage" data-open="' + esc(p.id) +
+        '" title="Assign to projects, or merge a duplicate">⋯</button>' +
+      '<button type="button" class="po-dir-star' + (p.is_favorite ? ' on' : '') +
+        '" data-fav="' + esc(p.id) + '" title="' + (p.is_favorite ? 'Remove from favourites' : 'Mark as favourite') +
+        '" aria-pressed="' + (p.is_favorite ? 'true' : 'false') + '">' + (p.is_favorite ? '★' : '☆') + '</button>' +
+    '</div>';
+  }
+
+  function dirBandStrip(groups, total) {
+    if (dirGroup !== 'letter') return '';
+    var have = {}; groups.forEach(function (g) { have[g.key] = g.items.length; });
+    var letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').concat(have['#'] ? ['#'] : []);
+    // ⚠️ Every letter is rendered, present or not — a strip that only shows the
+    //    letters in use jumps around as you search, and a disabled letter is the
+    //    useful answer to "is there anyone under Q?".
+    return '<div class="po-dir-bands" role="group" aria-label="Jump to a letter">' +
+      '<button type="button" class="po-dir-bandall' + (dirBand ? '' : ' on') +
+        '" data-band="" title="Show all ' + total + '">All</button>' +
+      letters.map(function (L) {
+        var c = have[L] || 0;
+        return '<button type="button" class="po-dir-band' + (c ? '' : ' is-empty') +
+          (dirBand === L ? ' on' : '') + '"' + (c ? '' : ' disabled') +
+          ' data-band="' + L + '" title="' + (c ? c + ' under ' + L : 'nobody under ' + L) + '">' + L +
+          (c ? '<i>' + c + '</i>' : '') + '</button>';
+      }).join('') + '</div>';
+  }
+
+  function dirRenderUniverse() {
+    var host = document.getElementById('po-sh-table');
+    var wrap = document.getElementById('po-dir-universe');
+    var all = dirVisible();
+    var groups = dirGrouped(all);
+    var shown = dirBand ? groups.filter(function (g) { return g.key === dirBand; }) : groups;
+    var count = shown.reduce(function (a, g) { return a + g.items.length; }, 0);
+
+    host.parentNode.style.display = dirLayout === 'list' ? '' : 'none';
+    wrap.style.display = dirLayout === 'list' ? 'none' : '';
+
+    if (dirLayout === 'list') { dirRenderList(shown); wrap.innerHTML = ''; return; }
+
+    // ⚠️ The rail is a SIBLING of the cards inside one flex row, and comes AFTER them in
+    //   source order so the tab sequence reaches the people before the index — the index
+    //   is navigation, not content.
+    wrap.innerHTML = '<div class="po-dir-uniwrap"><div class="po-dir-unimain">' +
+      (count ? shown.map(function (g) {
+        return '<section class="po-dir-sec">' +
+          (g.key === '' ? '' : '<h3 class="po-dir-sechead">' + esc(g.key) +
+            '<span>' + g.items.length + '</span></h3>') +
+          '<div class="po-dir-grid">' + g.items.map(dirCard).join('') + '</div></section>';
+      }).join('')
+      : '<div class="po-empty">' + (dirRows && dirRows.length
+          ? 'No one matches that search.'
+          : 'The directory is empty. Add a person, or open a project’s Stakeholder Map — saving there adds them here.') +
+        '</div>') +
+      '</div>' + dirBandStrip(groups, all.length) + '</div>';
+    dirWireCards(wrap);
+  }
+
+  function dirWireCards(root) {
+    root.querySelectorAll('[data-band]').forEach(function (b) {
+      b.onclick = function () { dirBand = b.dataset.band; dirRenderUniverse(); };
+    });
+    root.querySelectorAll('[data-open]').forEach(function (b) {
+      b.onclick = function (e) { e.stopPropagation(); openPersonPanel(b.dataset.open); };
+    });
+    root.querySelectorAll('[data-fav]').forEach(function (b) {
+      b.onclick = function (e) { e.stopPropagation(); dirToggleFav(b.dataset.fav); };
+    });
+    root.querySelectorAll('.po-dir-card[data-person]').forEach(function (c) {
+      c.onclick = function () { openPerson(c.dataset.person); };
+    });
+  }
+
+  // ⚠️⚠️ OPTIMISTIC, THEN REVERTED ON REFUSAL. A star that appears to stick and
+  //    silently did not is the worst of both — and `is_favorite` only exists once
+  //    2026-09-10-stakeholder-profile-fields.sql has been run, so on an
+  //    un-migrated database this WILL be refused. It says so, once, rather than
+  //    failing quietly on every click.
+  async function dirToggleFav(id) {
+    var p = (dirRows || []).filter(function (x) { return String(x.id) === String(id); })[0];
+    if (!p) return;
+    var was = !!p.is_favorite;
+    p.is_favorite = !was;
+    dirRenderUniverse();
+    try {
+      var res = await sb().from('stakeholders').update({ is_favorite: p.is_favorite })
+                          .eq('id', p.id).select('id');
+      if (res.error) throw res.error;
+      // ⚠ RLS answers a refused UPDATE with 200 and zero rows — the same silent
+      //   success the merge counts for. Zero rows means it did not happen.
+      if (!(res.data || []).length) throw new Error('The directory refused the change.');
+    } catch (e) {
+      p.is_favorite = was;
+      dirRenderUniverse();
+      var col = PDStakeholders.missingColumn(e);
+      UI.toast(col
+        ? 'Favourites need migrations/2026-09-10-stakeholder-profile-fields.sql to be run first.'
+        : 'Could not update: ' + ((e && e.message) || e), 'warn');
+    }
+  }
+
+  // ---- add a person ---------------------------------------------------------
+  function openDirAdd() {
+    var m = UI.modal(
+      '<div class="pd-modal-header"><h2>Add a person to the directory</h2></div>' +
+      '<div class="pd-modal-body">' +
+        '<p class="po-dir-lead">This creates a portfolio-level person. Assign them to projects next.</p>' +
+        '<div class="po-dir-form">' +
+          '<div class="pd-field"><label>Name *</label><input class="pd-input" id="po-dp-name"></div>' +
+          '<div class="pd-field"><label>Organization</label><input class="pd-input" id="po-dp-org"></div>' +
+          '<div class="pd-field"><label>Role / position</label><input class="pd-input" id="po-dp-role"></div>' +
+          '<div class="pd-field"><label>Sector</label><select class="pd-select" id="po-dp-cat">' +
+            '<option value="">—</option><option>Government</option><option>Private</option></select></div>' +
+          '<div class="pd-field"><label>Nickname</label><input class="pd-input" id="po-dp-nick"></div>' +
+          '<div class="pd-field"><label>Email</label><input class="pd-input" id="po-dp-email"></div>' +
+        '</div>' +
+        '<div id="po-dp-dup"></div>' +
+      '</div>' +
+      '<div class="pd-modal-foot">' +
+        '<button class="pd-btn" data-act="cancel">Cancel</button>' +
+        '<button class="pd-btn pd-btn-primary" data-act="save">Create person</button>' +
+      '</div>', { noBackdropClose: true });
+
+    function fields() {
+      return { name: (document.getElementById('po-dp-name').value || '').trim(),
+               organization: (document.getElementById('po-dp-org').value || '').trim(),
+               role_title: (document.getElementById('po-dp-role').value || '').trim(),
+               category: document.getElementById('po-dp-cat').value,
+               nickname: (document.getElementById('po-dp-nick').value || '').trim(),
+               email: (document.getElementById('po-dp-email').value || '').trim() };
+    }
+    // ⚠️ The duplicate warning appears WHILE TYPING, not after saving. Telling a
+    //    planner they have made a duplicate once it exists is worse than useless —
+    //    by then somebody has to merge it.
+    function checkDup() {
+      var box = document.getElementById('po-dp-dup');
+      var f = fields();
+      if (!f.name || !dirOn()) { box.innerHTML = ''; return; }
+      var hits = PDStakeholders.matchCandidates(f, dirRows || [], { limit: 3 });
+      if (!hits.length) { box.innerHTML = ''; return; }
+      box.innerHTML = '<div class="po-dir-dup"><b>Already in the directory?</b>' +
+        hits.map(function (h) {
+          return '<div class="po-dir-dup-row"><span>' + esc(h.person.name) +
+            (h.person.organization ? ' · ' + esc(h.person.organization) : '') + '</span>' +
+            '<em>' + esc(h.why) + '</em></div>';
+        }).join('') +
+        '<small>Creating this person anyway will leave two records for the same person. ' +
+        'Cancel and open the existing one instead if it is the same.</small></div>';
+    }
+    ['po-dp-name', 'po-dp-org'].forEach(function (id) {
+      document.getElementById(id).oninput = checkDup;
+    });
+
+    m.el.querySelector('[data-act="cancel"]').onclick = m.close;
+    m.el.querySelector('[data-act="save"]').onclick = async function (e) {
+      var btn = e.currentTarget, f = fields();
+      if (!f.name) { UI.toast('A name is required.', 'warn'); return; }
+      btn.disabled = true; btn.textContent = 'Creating…';
+      try {
+        var r = await PDStakeholders.createPerson(sb(), f, (profile && profile.id) || null);
+        UI.toast(r.existed ? 'That person was already in the directory — opening them.' : 'Person created', 'ok');
+        m.close();
+        await loadDirectory(true); dirRender();
+        if (r.person) openPersonPanel(r.person.id);
+      } catch (err) {
+        UI.toast('Could not create: ' + ((err && err.message) || err), 'error');
+        btn.disabled = false; btn.textContent = 'Create person';
+      }
+    };
+  }
+
+  // ---- one person: assign to projects, or merge ----------------------------
+  // ⚠️⚠️ CLICKING A PERSON OPENS THEIR PAGE, NOT A DIALOG. Owner: "when clicking on
+  //    the stakeholder from the Portfolio View it just opens a pop-up for assigning a
+  //    project. I need to have the page where I will see the personal page of that
+  //    stakeholder with details."
+  // ⚠️ `openPersonPanel` is KEPT and still reachable — it is where assigning to projects
+  //    and merging duplicates live, and the Health view's duplicate list opens it
+  //    directly. What changed is that it is no longer what a plain click does.
+  function personHref(id) {
+    return '../../person.html#person=' + encodeURIComponent(id);
+  }
+  function openPerson(id) { location.href = personHref(id); }
+
+  function openPersonPanel(id) {
+    var p = (dirRows || []).filter(function (x) { return String(x.id) === String(id); })[0];
+    if (!p) return;
+    var on = dirUse[p.id] || [];
+    var nameById = {}; PROJ.forEach(function (x) { nameById[x.id] = x.name || x.id; });
+
+    var projList = PROJ.map(function (x) {
+      var already = on.indexOf(x.id) !== -1;
+      return '<label class="po-dir-proj' + (already ? ' is-on' : '') + '">' +
+        '<input type="checkbox" value="' + esc(x.id) + '"' + (already ? ' checked disabled' : '') + '>' +
+        '<span>' + esc(nameById[x.id]) + '</span>' +
+        (already ? '<em>already on</em>' : '') + '</label>';
+    }).join('');
+
+    // ⚠ Merge candidates come from the same shared matcher, so the dialog cannot
+    //   propose a different set from the one the save path warns about.
+    var cands = dirOn() ? PDStakeholders.matchCandidates(p, dirRows || [], { limit: 5, excludeIds: [p.id], threshold: 0.6 }) : [];
+
+    var m = UI.modal(
+      '<div class="pd-modal-header"><h2>' + esc(p.name || '(unnamed)') + '</h2></div>' +
+      '<div class="pd-modal-body">' +
+        '<p class="po-dir-lead">' +
+          esc([p.role_title, p.organization].filter(Boolean).join(' · ') || 'No organisation recorded') +
+          ' — on <b>' + on.length + '</b> project' + (on.length === 1 ? '' : 's') + '.</p>' +
+        '<h4 class="po-dir-h">Assign to projects</h4>' +
+        '<div class="po-dir-projs">' + (projList || '<span class="po-empty">No projects available.</span>') + '</div>' +
+        (cands.length
+          ? '<h4 class="po-dir-h">Possible duplicates</h4>' +
+            '<div class="po-dir-merge">' +
+              cands.map(function (h) {
+                return '<label class="po-dir-mrow"><input type="radio" name="po-mrg" value="' + esc(h.person.id) + '">' +
+                  '<span>' + esc(h.person.name) + (h.person.organization ? ' · ' + esc(h.person.organization) : '') +
+                  ' <small>on ' + ((dirUse[h.person.id] || []).length) + ' project(s)</small></span>' +
+                  '<em>' + esc(h.why) + '</em></label>';
+              }).join('') +
+              // ⚠ Direction stated plainly. A merge is not symmetric and the dialog
+              //   must not leave which record survives to be inferred.
+              '<small class="po-dir-note">Merging keeps <b>' + esc(p.name) + '</b> and folds the selected ' +
+              'person into them: their projects move across, blank fields are filled in, and the duplicate ' +
+              'record is deleted. It is refused if both are on the same project — settle that one by hand first.</small>' +
+            '</div>'
+          : '') +
+      '</div>' +
+      '<div class="pd-modal-foot">' +
+        '<button class="pd-btn" data-act="close">Close</button>' +
+        (cands.length ? '<button class="pd-btn" data-act="merge">Merge selected into this person</button>' : '') +
+        '<button class="pd-btn pd-btn-primary" data-act="assign">Assign to ticked projects</button>' +
+      '</div>', { noBackdropClose: true });
+
+    m.el.querySelector('[data-act="close"]').onclick = m.close;
+
+    m.el.querySelector('[data-act="assign"]').onclick = async function (e) {
+      var btn = e.currentTarget;
+      var picked = [].filter.call(m.el.querySelectorAll('.po-dir-projs input:checked:not(:disabled)'),
+                                  function (i) { return true; }).map(function (i) { return i.value; });
+      if (!picked.length) { UI.toast('Tick at least one project.', 'warn'); return; }
+      btn.disabled = true; btn.textContent = 'Assigning…';
+      try {
+        var r = await PDStakeholders.assignToProjects(sb(), p, picked, (profile && profile.id) || null, on);
+        // ⚠ Report the real number. `stakeholder_map_ins` requires can_access_project,
+        //   so a project the planner cannot write to must not be counted as done.
+        if (r.short) UI.toast('Added to ' + r.inserted + ' project(s); ' + r.short + ' were refused — check your access.', 'warn');
+        else UI.toast('Added to ' + r.inserted + ' project(s).', 'ok');
+        m.close();
+        shLoadedIds = null;
+        await loadDirectory(true); dirRender();
+      } catch (err) {
+        UI.toast('Could not assign: ' + ((err && err.message) || err), 'error');
+        btn.disabled = false; btn.textContent = 'Assign to ticked projects';
+      }
+    };
+
+    var mb = m.el.querySelector('[data-act="merge"]');
+    if (mb) mb.onclick = async function (e) {
+      var sel = m.el.querySelector('input[name="po-mrg"]:checked');
+      if (!sel) { UI.toast('Pick the duplicate to fold in.', 'warn'); return; }
+      var loser = (dirRows || []).filter(function (x) { return String(x.id) === sel.value; })[0];
+      if (!loser) return;
+      if (!confirm('Fold "' + (loser.name || '') + '" into "' + (p.name || '') + '"?\n\n' +
+                   'Their projects move across and the duplicate record is deleted. This cannot be undone here.')) return;
+      var btn = e.currentTarget; btn.disabled = true; btn.textContent = 'Merging…';
+      try {
+        var r = await PDStakeholders.mergePeople(sb(), p, loser, dirUse);
+        if (r.ok) {
+          UI.toast('Merged. ' + r.repointed + ' project link(s) moved' +
+                   (r.filled.length ? ', ' + r.filled.length + ' field(s) filled in.' : '.'), 'ok');
+          m.close(); shLoadedIds = null;
+          await loadDirectory(true); dirRender();
+          return;
+        }
+        // ⚠ Every refusal names WHAT stopped it and what to do — none of them are
+        //   reported as a generic failure, and none is rounded up to success.
+        var msg = r.reason === 'both-on-project'
+            ? 'Both are on ' + r.projects.map(function (x) { return nameById[x] || x; }).join(', ') +
+              '. Remove one of them from that project first, then merge.'
+          : r.reason === 'partial-repoint'
+            ? 'Only ' + r.repointed + ' of ' + r.expected + ' project links could be moved — the rest belong to ' +
+              'other planners, and only their owner or an admin can move them. Nothing was deleted.'
+          : r.reason === 'delete-refused'
+            ? 'The records were merged, but deleting the duplicate needs a planner or admin role.'
+          : r.reason === 'winner-update-refused'
+            ? 'The directory refused the update — you may not have write access.'
+          : 'Merge did not complete.';
+        UI.toast(msg, 'warn');
+        btn.disabled = false; btn.textContent = 'Merge selected into this person';
+        shLoadedIds = null; await loadDirectory(true); dirRender();
+      } catch (err) {
+        UI.toast('Merge failed: ' + ((err && err.message) || err), 'error');
+        btn.disabled = false; btn.textContent = 'Merge selected into this person';
+      }
+    };
   }
 
   // ================= Portfolio Cash Flow (cross-project) =================
@@ -1256,7 +2320,7 @@
       return '<div style="display:flex;align-items:center;gap:10px;font-size:12.5px;">' +
         '<div style="width:170px;flex:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + esc(r.name) + '">' + esc(r.name) + '</div>' +
         '<div style="flex:1;background:var(--pd-line);border-radius:4px;height:16px;overflow:hidden;"><div style="width:' + pct + '%;height:100%;background:var(--pd-red);"></div></div>' +
-        '<div style="width:110px;flex:none;text-align:right;font-weight:600;">' + Fmt.moneyShort(r.bc) + '</div></div>';
+        '<div style="width:110px;flex:none;text-align:right;font-weight:700;">' + Fmt.moneyShort(r.bc) + '</div></div>';
     }).join('') + '</div>';
   }
   function rsRenderTable(list) {
@@ -1864,10 +2928,18 @@
     document.getElementById('po-ms-refresh').onclick = function () { loadMilestones(true); };
   }
 
+  // ⚠⚠ THE ROLE GATE MOVED IN HERE FROM THE TAB STRIP, AND IT IS STRICTLY STRONGER.
+  //    It used to be a loop that set `hidden` on five `.po-tab` buttons — which never
+  //    stopped anyone typing the `#po_view=` hash, because the hash goes straight to
+  //    switchView. Gating the view itself closes the entry point the tabs never covered.
+  //    ⚠ Same five as before, matching `superAdminOnly` in config.js, which is also what
+  //    gates the sidebar (ui.js `visible`). UI visibility only — no RLS change, as before.
+  var PO_SUPERADMIN_VIEWS = ['risk', 'stakeholders', 'equipment', 'cashflow', 'productivity'];
+
   function switchView(v) {
+    if (PO_SUPERADMIN_VIEWS.indexOf(v) !== -1 && window.__role !== 'super_admin') v = 'overview';
     view = v;
     wireMilestones();
-    document.querySelectorAll('.po-tab').forEach(function (b) { b.classList.toggle('active', b.dataset.view === v); });
     document.getElementById('po-view-overview').style.display = v === 'overview' ? '' : 'none';
     document.getElementById('po-view-scurve').style.display = v === 'scurve' ? '' : 'none';
     document.getElementById('po-view-cashflow').style.display = v === 'cashflow' ? '' : 'none';
@@ -1893,6 +2965,31 @@
     if (v === 'contracts') loadContracts(false);
     if (v === 'photos') loadPhotos(false);
     if (v === 'productivity') loadProductivity(false);
+    placeScope(v);
+  }
+
+  // ⚠️⚠️ ONE NODE, MOVED — never a second copy. The owner asked for the project filter
+  //    and the view's own funnel to be one control. Four of the thirteen views have an
+  //    expanding filter panel; in those the scope moves INTO it, so there is genuinely
+  //    one filter button. The other nine have no panel, and the scope still has to be
+  //    reachable from every view, so it falls back to its own bar.
+  // ⚠️ Moving the element keeps its wiring, its state and its selection: it is the same
+  //    DOM node, so nothing is re-bound and nothing can drift between views. Rendering a
+  //    copy per view is what would need the two kept in step.
+  var SCOPE_PANEL = { stakeholders: 'po-sh-fields', risk: 'po-rk-fields',
+                      issues: 'po-is-fields', equipment: 'po-eq-fields' };
+  function placeScope(v) {
+    var wrap = document.getElementById('po-projfilter-wrap');
+    if (!wrap) return;
+    var bar = document.querySelector('.po-scopebar');
+    var panel = SCOPE_PANEL[v] ? document.getElementById(SCOPE_PANEL[v]) : null;
+    var host = panel || bar;
+    if (host && wrap.parentNode !== host) {
+      // first in the panel: it scopes everything the other fields then filter within
+      if (panel) host.insertBefore(wrap, host.firstChild); else host.appendChild(wrap);
+    }
+    // ⚠️ The bar would otherwise keep its 14px bottom margin as an empty strip.
+    if (bar) bar.style.display = panel ? 'none' : '';
   }
 
   function exportExcel() {
@@ -1999,6 +3096,40 @@
     return (i && f && window.MCCRCM && MCCRCM.stkApproach) ? (MCCRCM.stkApproach(i, f) || '') : '';
   }
   async function loadStakeholders(force) {
+    // ⚠ The Directory does not depend on the project filter, so it is loaded and
+    //   rendered on its own path rather than being squeezed through the scoped one.
+    document.getElementById('po-sh-scopenote').style.display = shView === 'directory' ? 'none' : '';
+    document.getElementById('po-sh-add').hidden = shView !== 'directory';
+    document.getElementById('po-sh-group').hidden = shView !== 'directory';
+    document.getElementById('po-sh-layout').style.display = shView === 'directory' ? '' : 'none';
+    // ⚠ Health draws in its own container, so BOTH the universe and the table are put
+    //   away for it — otherwise whichever the Directory left showing stays on screen
+    //   under the dashboard.
+    var hl = document.getElementById('po-dir-health');
+    hl.style.display = shView === 'health' ? '' : 'none';
+    if (shView !== 'health') hl.innerHTML = '';
+    if (shView !== 'directory') {
+      var uni = document.getElementById('po-dir-universe');
+      if (uni) { uni.innerHTML = ''; uni.style.display = 'none'; }
+      document.getElementById('po-sh-table').parentNode.style.display =
+        shView === 'health' ? 'none' : '';
+    }
+    if (shView === 'health') {
+      // ⚠ Health is a read of the DIRECTORY, so it loads the same rows the Directory
+      //   loads — and reuses them when they are already in hand.
+      hl.innerHTML = '<div class="po-empty">Reading the directory\u2026</div>';
+      document.getElementById('po-sh-kpis').innerHTML = '';
+      await loadDirectory(force);
+      dirRenderHealth();
+      return;
+    }
+    if (shView === 'directory') {
+      var host = document.getElementById('po-sh-table');
+      if (!dirRows || force) host.innerHTML = '<tbody><tr><td class="po-empty">Loading the directory\u2026</td></tr></tbody>';
+      await loadDirectory(force);
+      dirRender();
+      return;
+    }
     var ids = scopedProjectIds();
     if (!force && shLoadedIds && shLoadedIds.join(',') === ids.join(',')) return;
     document.getElementById('po-sh-scope').textContent = scopeLabel(ids);
@@ -2352,12 +3483,6 @@
     // unhidden app-wide now, so its tab stays too. `resources`/`s-curve`/`milestones`/
     // `issues`/`meetings`/`photos`/`overview` stay — none of those seven modules are
     // superAdminOnly.
-    if (profile.role !== 'super_admin') {
-      ['risk', 'stakeholders', 'equipment', 'cashflow', 'productivity'].forEach(function (v) {
-        var b = document.querySelector('.po-tab[data-view="' + v + '"]');
-        if (b) b.hidden = true;
-      });
-    }
     document.getElementById('po-group').onchange = function (e) { groupMode = e.target.value; collapsed = {}; renderAll(); };
     wireProjFilter();
     document.getElementById('po-status').onchange = function (e) { statusFilter = e.target.value; renderAll(); };
@@ -2367,7 +3492,6 @@
     // Each tab's own filter row (incl. its search box) hides behind one
     // funnel toggle instead of sitting permanently open.
     UI.wireFilterToggle(document.getElementById('po-filttoggle'), document.getElementById('po-toolbar-fields'));
-    document.querySelectorAll('.po-tab').forEach(function (b) { b.onclick = function () { switchView(b.dataset.view); histView.push(); }; });
     // Browser-history integration — see UI.bindHistoryState in ui.js. Without this,
     // switching Overview/S-Curve/Cash Flow/Resources/Equipment/Milestones never
     // touches the URL, so the browser's native Back button jumps straight past
@@ -2397,7 +3521,40 @@
     document.getElementById('po-rk-q').oninput = function (e) { rkQuery = e.target.value; rkRender(); };
     UI.wireFilterToggle(document.getElementById('po-rk-filttoggle'), document.getElementById('po-rk-fields'));
     document.getElementById('po-sh-refresh').onclick = function () { loadStakeholders(true); };
-    document.getElementById('po-sh-q').oninput = function (e) { shQuery = e.target.value; shRender(); };
+    // ⚠ One search box drives both views, so it must dispatch on the current view
+    //   rather than always calling the mirror renderer.
+    document.getElementById('po-sh-q').oninput = function (e) {
+      shQuery = e.target.value;
+      if (shView === 'directory') dirRender();
+      // ⚠ Health is a portfolio-wide read of the whole directory, so the search box
+      //   does not narrow it — a completeness figure over the rows matching a search
+      //   is not the directory's completeness.
+      else if (shView !== 'health') shRender();
+    };
+    document.getElementById('po-sh-add').onclick = openDirAdd;
+    document.getElementById('po-sh-group').onchange = function (e) {
+      dirGroup = e.target.value;
+      dirBand = '';           // ⚠ a band from the old grouping means nothing in the new one
+      dirRenderUniverse();
+    };
+    document.querySelectorAll('#po-sh-layout [data-lay]').forEach(function (b) {
+      b.onclick = function () {
+        dirLayout = b.dataset.lay;
+        document.querySelectorAll('#po-sh-layout [data-lay]').forEach(function (x) {
+          x.classList.toggle('on', x === b);
+        });
+        dirRenderUniverse();
+      };
+    });
+    document.querySelectorAll('#po-sh-view [data-shv]').forEach(function (b) {
+      b.onclick = function () {
+        shView = b.dataset.shv;
+        document.querySelectorAll('#po-sh-view [data-shv]').forEach(function (x) {
+          x.classList.toggle('on', x === b);
+        });
+        loadStakeholders(false);
+      };
+    });
     UI.wireFilterToggle(document.getElementById('po-sh-filttoggle'), document.getElementById('po-sh-fields'));
     document.getElementById('po-is-refresh').onclick = function () { loadIssues(true); };
     document.getElementById('po-is-status').onchange = function (e) { isStatus = e.target.value; isRender(); };

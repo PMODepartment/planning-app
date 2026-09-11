@@ -31,6 +31,30 @@
   // FOUC-prevention: run immediately (this script is in <head>).
   apply(preferred());
 
+  // ⚠️⚠️ FLASH OF THE PRE-JS TAB STRIP, and this is the ONLY script that can prevent it.
+  // Six modules ship a flat <div class="x-tabs pd-tabsrc"> that UI.tabsToDropdown() collapses
+  // into a compact dropdown. Every module's scripts sit at the END of <body>, so the body paints
+  // with that full-width tab row and only then does the conversion run and remove it.
+  // MEASURED on the live Risk Register: stylesheets ready at 66ms, DOMContentLoaded at 135ms on a
+  // WARM cache -- but 1601ms on a COLD one, which is every load after a deploy bumps `?v=`. So the
+  // raw row sat on screen for over a second and then vanished, which is exactly the "it shows the
+  // previous UI for a split second" the owner reported.
+  // `pd-js` is set HERE because this file is the only one guaranteed to run before first paint;
+  // dashboard.css hides `.pd-tabsrc` while it is present.
+  document.documentElement.classList.add('pd-js');
+
+  // ⚠️ FAILSAFE, and it must NOT live in ui.js. The modules call tabsToDropdown behind
+  // `if (window.UI && UI.tabsToDropdown)`, i.e. they degrade to the raw tabs on purpose when ui.js
+  // is missing. Hiding the strip from CSS would turn that graceful degradation into a module with
+  // no navigation at all, so the reveal has to come from a file that does not depend on ui.js.
+  // Anything still unconverted once the page has settled gets shown.
+  function revealUnconverted() {
+    var left = document.querySelectorAll('.pd-tabsrc:not(.pd-tabsdrop-src)');
+    for (var i = 0; i < left.length; i++) left[i].classList.remove('pd-tabsrc');
+  }
+  window.addEventListener('load', function () { setTimeout(revealUnconverted, 0); });
+  setTimeout(revealUnconverted, 4000);
+
   function icon(mode) {
     var s = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
     if (mode === 'dark') {
@@ -59,7 +83,14 @@
     if (topbar) {
       btn.className = 'pd-theme-toggle';
       var ub = topbar.querySelector('#user-bar');
-      if (ub) topbar.insertBefore(btn, ub); else topbar.appendChild(btn);
+      // ⚠️⚠️ INSERT RELATIVE TO `ub`, NOT TO `topbar` — this threw and cost the theme toggle.
+      // `topbar.querySelector('#user-bar')` is a DESCENDANT search, but `insertBefore` demands a
+      // direct child, and UI.initModuleTopbar() moves #user-bar down into `.pd-tb-main`. With a
+      // CACHED SESSION AppAuth.requireLogin's callback resolves in a microtask — before the
+      // DOMContentLoaded task that runs this — so on a logged-in load initModuleTopbar had
+      // already moved it and this threw NotFoundError, killing the rest of inject() and leaving
+      // the page with NO theme toggle. Invisible when logged out, which is why it survived.
+      if (ub) ub.parentNode.insertBefore(btn, ub); else topbar.appendChild(btn);
     } else {
       btn.className = 'pd-theme-toggle pd-theme-toggle-float';
       document.body.appendChild(btn);

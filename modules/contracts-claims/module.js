@@ -260,6 +260,18 @@ window.ContractsClaims = (function () {
     _boqIO.observe(el);
   }
 
+  /* The affected-activity count for one record, as a chip under its description.
+     ⚠️ Reads the cache only and NEVER fetches: render() runs on every filter keystroke, and a
+     round trip per row per keystroke is the trap this module's `projects()` dep already records.
+     An unloaded or un-migrated cache simply yields no chip. */
+  function affChip(r) {
+    if (!window.CCAffected) return '';
+    var n = CCAffected.countFor(r.id);
+    if (!n) return '';
+    return '<div class="cc-mini cc-affn" title="' + n + ' schedule activit' + (n === 1 ? 'y is' : 'ies are') +
+      ' recorded as affected by this record">' + n + ' activit' + (n === 1 ? 'y' : 'ies') + '</div>';
+  }
+
   function render() {
     var host = document.getElementById('cc-view');
     /* The BOQ tab is a different KIND of screen — the client's contract document
@@ -332,7 +344,11 @@ window.ContractsClaims = (function () {
       h += '<tr' + (sel[r.id] ? ' class="cc-selrow"' : '') + ' data-id="' + esc(r.id) + '">' +
         '<td class="cc-cb"><input type="checkbox" data-cb="' + esc(r.id) + '"' + (sel[r.id] ? ' checked' : '') + ' /></td>' +
         '<td class="cc-desc"><div class="cc-desc-txt" title="' + esc(descOf(r)) + '">' + esc(descOf(r)) + '</div>' +
-          (r.counterparty ? '<div class="cc-mini">' + esc(clean(r.counterparty)) + '</div>' : '') + '</td>' +
+          (r.counterparty ? '<div class="cc-mini">' + esc(clean(r.counterparty)) + '</div>' : '') +
+          /* How many schedule activities this record touches. ⚠️ ONLY WHEN THERE ARE SOME --
+             a "0 activities" chip on every row of a register whose migration has not been run
+             would read as a defect, and the absence of a chip is not a claim about anything. */
+          affChip(r) + '</td>' +
         (view === 'claims' ? '<td class="cc-nowrap cc-mini">' + esc(r.record_type || '') + '</td>' : '') +
         c.cols.map(function (col) { return '<td class="cc-r">' + num(r[col.key]) + '</td>'; }).join('') +
         (view === 'contract' ? '' :
@@ -637,6 +653,30 @@ window.ContractsClaims = (function () {
         })();
       },
       persist: function (payload) { return persistRecord(payload, null); },
+      /* AFFECTED ACTIVITIES (2026-09-09). ⚠️ Every one of these is GUARDED on window.CCAffected
+         rather than assumed: affected.js is a new file, and a browser holding a cached
+         index.html from before it existed would otherwise throw on the wizard's new step -- the
+         exact "broken import that was an old parser still executing" failure MODULE_V exists to
+         prevent, arriving through the one door MODULE_V cannot close. The wizard already
+         optional-guards each of these on its side too; both halves are cheap. */
+      affectedPickerHTML: function () {
+        return window.CCAffected ? CCAffected.pickerHTML()
+          : '<p class="cc-hint">The activity picker is unavailable — reload the page.</p>';
+      },
+      mountAffectedPicker: function (root, opts) {
+        return window.CCAffected ? CCAffected.mount(root, opts) : Promise.resolve(null);
+      },
+      saveAffected: function (ccId, ids) {
+        return window.CCAffected ? CCAffected.saveFor(ccId, ids)
+          : Promise.resolve({ err: 'the activity picker is unavailable' });
+      },
+      /* Starts the schedule read the moment the wizard opens, so the step is ready by the time
+         the planner clicks through to it. Never awaited -- see the note in wizard.js open(). */
+      prefetchAffected: function () {
+        if (!window.CCAffected) return;
+        CCAffected.setProject(pid);
+        CCAffected.ensureActs(); CCAffected.ensureLevels(); CCAffected.ensureLinks();
+      },
       failMsg: recordFailMsg,
       warnDropped: warnDropped,
       done: gotoTypeTab
@@ -737,21 +777,21 @@ window.ContractsClaims = (function () {
 
       // Contract amount — only relevant to a Contract row.
       '<div class="cc-sec" data-only="Contract">Contract value</div>' +
-      '<label data-only="Contract">Contract amount<input id="cc-f-amount" type="number" step="0.01" value="' + esc(e.amount == null ? '' : e.amount) + '" /></label>' +
+      '<label data-only="Contract">Contract amount<input id="cc-f-amount" type="text" inputmode="decimal" value="' + esc(e.amount == null ? '' : e.amount) + '" /></label>' +
 
       // The four-stage pipeline, money or days depending on type.
       '<div class="cc-sec" data-not="Contract">Pipeline</div>' +
       '<p class="cc-hint" data-not="Contract">Estimated → Submitted → Evaluated → Client Approved. ' +
         '<span data-only="EOT">Extension of Time is measured in days.</span>' +
         '<span data-not="EOT">Claims and Change Orders are amounts.</span></p>' +
-      '<label data-money>Estimated amount<input id="cc-f-est-a" type="number" step="0.01" value="' + esc(e.est_amount == null ? '' : e.est_amount) + '" /></label>' +
-      '<label data-money>Submitted amount<input id="cc-f-sub-a" type="number" step="0.01" value="' + esc(e.sub_amount == null ? '' : e.sub_amount) + '" /></label>' +
-      '<label data-money>Evaluated amount<input id="cc-f-eval-a" type="number" step="0.01" value="' + esc(e.eval_amount == null ? '' : e.eval_amount) + '" /></label>' +
-      '<label data-money>Client approved amount<input id="cc-f-appr-a" type="number" step="0.01" value="' + esc(e.approved_amount == null ? '' : e.approved_amount) + '" /></label>' +
-      '<label data-days>Estimated days<input id="cc-f-est-d" type="number" step="1" value="' + esc(e.est_days == null ? '' : e.est_days) + '" /></label>' +
-      '<label data-days>Submitted days<input id="cc-f-sub-d" type="number" step="1" value="' + esc(e.sub_days == null ? '' : e.sub_days) + '" /></label>' +
-      '<label data-days>Evaluated days<input id="cc-f-eval-d" type="number" step="1" value="' + esc(e.eval_days == null ? '' : e.eval_days) + '" /></label>' +
-      '<label data-days>Client approved days<input id="cc-f-appr-d" type="number" step="1" value="' + esc(e.approved_days == null ? '' : e.approved_days) + '" /></label>' +
+      '<label data-money>Estimated amount<input id="cc-f-est-a" type="text" inputmode="decimal" value="' + esc(e.est_amount == null ? '' : e.est_amount) + '" /></label>' +
+      '<label data-money>Submitted amount<input id="cc-f-sub-a" type="text" inputmode="decimal" value="' + esc(e.sub_amount == null ? '' : e.sub_amount) + '" /></label>' +
+      '<label data-money>Evaluated amount<input id="cc-f-eval-a" type="text" inputmode="decimal" value="' + esc(e.eval_amount == null ? '' : e.eval_amount) + '" /></label>' +
+      '<label data-money>Client approved amount<input id="cc-f-appr-a" type="text" inputmode="decimal" value="' + esc(e.approved_amount == null ? '' : e.approved_amount) + '" /></label>' +
+      '<label data-days>Estimated days<input id="cc-f-est-d" type="text" inputmode="numeric" value="' + esc(e.est_days == null ? '' : e.est_days) + '" /></label>' +
+      '<label data-days>Submitted days<input id="cc-f-sub-d" type="text" inputmode="numeric" value="' + esc(e.sub_days == null ? '' : e.sub_days) + '" /></label>' +
+      '<label data-days>Evaluated days<input id="cc-f-eval-d" type="text" inputmode="numeric" value="' + esc(e.eval_days == null ? '' : e.eval_days) + '" /></label>' +
+      '<label data-days>Client approved days<input id="cc-f-appr-d" type="text" inputmode="numeric" value="' + esc(e.approved_days == null ? '' : e.approved_days) + '" /></label>' +
 
       '<div class="cc-sec" data-not="Contract">Status &amp; dates</div>' +
       '<label data-not="Contract">Status<select id="cc-f-stat"><option value="">—</option>' +
@@ -772,6 +812,24 @@ window.ContractsClaims = (function () {
       f('Date evaluated', 'cc-f-evald', e.date_evaluated, 'date', '', 'data-not="Contract"') +
       f('Date approved', 'cc-f-apprd', e.date_approved, 'date', '', 'data-not="Contract"') +
       '<p class="cc-hint" data-not="Contract">Aging is calculated from <b>Date submitted</b> while the record is Pending — it is never stored.</p>' +
+      /* AFFECTED WORK (2026-09-09). ⚠️ `data-not="Contract"` -- a contract is not raised against
+         activities, it defines them; only a Claim, Change Order or EOT is argued from a set of
+         work. applyType() toggles this the same way it toggles the money and days pipelines.
+         ⚠️ The per-type sentence uses the SAME data-only/data-not spans the days hint above
+            already uses, rather than a second mechanism: an EOT selection is EVIDENCE (the days
+            stay one contract-level figure) while a change order's is SCOPE, and reading one as
+            the other is how a claim goes wrong. */
+      (window.CCAffected
+        ? '<div class="cc-sec" data-not="Contract">Affected work</div>' +
+          '<div class="cc-wide" data-not="Contract">' +
+            '<p class="cc-hint">' +
+              '<span data-only="EOT">The activities this delay ran through — the <b>basis</b> of the claim. ' +
+                'Nothing here carries days; the granted days stay the single figure above.</span>' +
+              '<span data-not="EOT">The activities this record affects. Recording them moves no dates — ' +
+                'inserting change-order work into them is a separate, previewed step in the Project Schedule.</span>' +
+            '</p>' + CCAffected.pickerHTML() +
+          '</div>'
+        : '') +
       '<label class="cc-wide">Remarks<textarea id="cc-f-rem">' + esc(e.remarks || '') + '</textarea></label>';
 
     var m = UI.modal('<div class="pd-modal-header"><h2 style="margin:0;">' + (r ? 'Edit' : 'Add') + ' record</h2>' +
@@ -793,6 +851,20 @@ window.ContractsClaims = (function () {
     }
     el('cc-f-rtype').addEventListener('change', function () { applyType(); applyPkgMode(); });
     applyType();
+
+    /* ⚠️ MOUNTED AFTER THE MODAL EXISTS, not built into the body string: the picker reads the
+       schedule and needs its container in the document to wire its rows. Same reason the wizard
+       mounts it in wireStep() rather than in the step's own HTML.
+       ⚠️ `affPicker` stays null on a Contract or an older build, and the save path below checks
+          it -- so nothing here can make an ordinary record edit fail. */
+    var affPicker = null;
+    if (window.CCAffected) {
+      CCAffected.setProject(pid);
+      CCAffected.mount(m.el, {
+        initial: r ? CCAffected.listFor(r.id) : [],
+        ccId: r ? r.id : null
+      }).then(function (p) { affPicker = p; }).catch(function () { affPicker = null; });
+    }
 
     /* The "create a package from this contract" block only makes sense while
        "— Create from this contract —" is chosen; linking to an existing package must
@@ -843,7 +915,41 @@ window.ContractsClaims = (function () {
     el('cc-m-cancel').onclick = m.close;
     el('cc-m-save').onclick = async function () {
       var v = function (id) { var x = (el(id).value || '').trim(); return x === '' ? null : x; };
-      var n = function (id) { var x = v(id); if (x == null) return null; var y = Number(x); return isFinite(y) ? y : null; };
+      /* ⚠⚠ THE FIELDS ABOVE ARE type="text", NOT type="number", AND THIS READER IS WHY.
+         MEASURED in a real browser: for input[type=number] the DOM returns "" for ANY value the
+         spec cannot parse -- and that includes every way a planner actually writes money.
+             "1,000"             -> ""
+             "1,397,462,269.86"  -> ""      (a real contract amount from this register)
+             "₱1,200.50"          -> ""
+             "(500)"             -> ""
+         `Number("")` is 0, `v()` returns null, and the field saved as NULL. So typing the contract
+         amount with the thousands separators everyone uses silently BLANKED it, with no error and
+         no way to tell afterwards. The EOT day counts are four digits here too (1,048 / 1,095),
+         so they carry the same risk and were switched with them.
+         ⚠ The parser mirrors boq.js's `numOf`, which was written for exactly this after the
+         same trap was found in the BOQ grid -- see the note at boq.js:1629. Kept as a separate
+         copy rather than exported, because boq.js is loaded only on the Contract tab. */
+      var n = function (id) {
+        var x = v(id);
+        if (x == null) return null;
+        var t = String(x).trim();
+        if (!t) return null;
+        var neg = /^\(.*\)$/.test(t);
+        t = t.replace(/[()]/g, '').replace(/%$/, '').replace(/[₱$€£\s]/g, '');
+        /* ⚠⚠ COMMAS ARE VALIDATED, NOT STRIPPED. Blind stripping corrupts rather than
+           rejects: "1.000,50" becomes 1.0005 and "12,5" becomes 125 -- plausible wrong numbers,
+           which is worse than a refusal because nothing on screen looks off. A comma used as an
+           English thousands separator is ALWAYS followed by exactly three digits, so the whole
+           string is matched against that shape first and anything else is refused. */
+        if (t.indexOf(',') >= 0) {
+          if (!/^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(t)) return null;
+          t = t.replace(/,/g, '');
+        }
+        if (!/^-?\d*\.?\d+$/.test(t)) return null;
+        var y = Number(t);
+        if (!isFinite(y)) return null;
+        return neg ? -y : y;
+      };
       var t = el('cc-f-rtype').value;
       /* WHICH PACKAGE THIS RECORD POINTS AT, resolved per type.
          · Claim / CO / EOT → the package it is raised against (may be none).
@@ -923,7 +1029,28 @@ window.ContractsClaims = (function () {
       var btn = el('cc-m-save'); btn.disabled = true; btn.textContent = 'Saving…';
       var res = await persistRecord(payload, r);
       if (!res.ok) { btn.disabled = false; btn.textContent = 'Save'; UI.toast(recordFailMsg(res.error), 'error'); return; }
-      m.close(); UI.toast(r ? 'Record updated.' : 'Record added.', 'success');
+      /* ⚠️ AFTER the record, and NEVER allowed to fail it -- the same ordering and the same rule
+         as the wizard's finish(). On an edit the id already exists; on an insert it is the row
+         persistRecord just returned. A link write that fails is reported by name and the record
+         stands, because the record is what the planner came to save and the links can be
+         re-picked here in one click. */
+      var affMsg = '';
+      if (affPicker) {
+        var affId = (r && r.id) || (res.row && res.row.id);
+        if (affId) {
+          var ar = await CCAffected.saveFor(affId, affPicker.ids());
+          if (ar && ar.err) {
+            affMsg = String(ar.err).indexOf('no-migration:') === 0
+              ? ' ⚠️ Affected activities were NOT saved — run ' + String(ar.err).slice('no-migration:'.length) + '.'
+              : ' ⚠️ Affected activities were NOT saved: ' + ar.err;
+          } else if (ar && (ar.added || ar.removed)) {
+            affMsg = ' Affected work updated' +
+              (ar.added ? ', +' + ar.added : '') + (ar.removed ? ', −' + ar.removed : '') + '.';
+          }
+        }
+      }
+      m.close(); UI.toast((r ? 'Record updated.' : 'Record added.') + affMsg,
+        affMsg.indexOf('⚠️') >= 0 ? 'warn' : 'success');
       warnDropped(res.dropped);
       gotoTypeTab(t);
     };
@@ -1005,9 +1132,12 @@ window.ContractsClaims = (function () {
   // ==========================================================================
   // EXPORT
   // ==========================================================================
-  function exportExcel() {
+  /* ⚠ SPLIT so the chooser below can put this sheet in the SAME workbook as the BOQ. Returns
+     rows and writes nothing; null when there is nothing to export, so the chooser can say so
+     rather than emit an empty sheet. */
+  function recordsSheet() {
     var c = cfg(), list = visibleRows();
-    if (!list.length) { UI.toast('Nothing to export.', 'error'); return; }
+    if (!list.length) return null;
     var aoa = list.map(function (r) {
       var o = { 'Reference': r.reference_no || '', 'Description': clean(r.description) || clean(r.title) };
       if (view === 'claims') o['Type'] = r.record_type || '';
@@ -1028,12 +1158,71 @@ window.ContractsClaims = (function () {
     if (view === 'claims') tot['Type'] = '';
     c.cols.forEach(function (col) { tot[col.head] = t[col.key]; });
     aoa.push(tot);
+    return { name: c.label, rows: aoa };
+  }
 
-    var ws = XLSX.utils.json_to_sheet(aoa);
-    ws['!cols'] = Object.keys(aoa[0]).map(function (k) { return { wch: k === 'Description' ? 46 : Math.max(13, k.length + 2) }; });
+  /* ---- the topbar export ----------------------------------------------------
+     Owner: *"There is an export button at the title bar we can have option to export to excel for
+     which items contracts/boq/ or all"*. It used to export whatever register tab you were on and
+     nothing else, silently -- so a planner wanting the BOQ had to know to find a second Export
+     button further down the page. That button is gone; this asks.
+     ⚠ BOTH SHEETS COME FROM THEIR OWN MODULE, never re-derived here. `BOQ.sheet()` decides what a
+     BOQ export contains; `recordsSheet()` decides what a register export contains. A chooser that
+     rebuilt either column set would be a second definition of the same thing.
+     ⚠ An option with nothing behind it is DISABLED and says why, rather than being offered and
+     then producing an empty file. */
+  function exportSheets(which) {
+    var out = [];
+    if (which !== 'boq') { var r = recordsSheet(); if (r) out.push(r); }
+    if (which !== 'records' && window.BOQ && BOQ.sheet) { var b = BOQ.sheet(); if (b) out.push(b); }
+    if (!out.length) { UI.toast('Nothing to export.', 'error'); return; }
     var wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, c.label.slice(0, 28));
-    XLSX.writeFile(wb, c.label + ' - ' + (projName() || pid) + '.xlsx');
+    out.forEach(function (sh) {
+      var ws = XLSX.utils.json_to_sheet(sh.rows);
+      ws['!cols'] = Object.keys(sh.rows[0]).map(function (k) {
+        return { wch: k === 'Description' ? 46 : Math.max(13, k.length + 2) };
+      });
+      XLSX.utils.book_append_sheet(wb, ws, String(sh.name).slice(0, 28));
+    });
+    var label = out.length > 1 ? 'Contracts and BOQ' : out[0].name;
+    XLSX.writeFile(wb, label + ' - ' + (projName() || pid) + '.xlsx');
+  }
+
+  function exportExcel() {
+    var hasRec = !!recordsSheet();
+    var hasBoq = !!(window.BOQ && BOQ.sheet && BOQ.sheet());
+    if (!hasRec && !hasBoq) { UI.toast('Nothing to export.', 'error'); return; }
+    var c = cfg();
+    function opt(v, label, sub, on) {
+      return '<label class="ccx-opt' + (on ? '' : ' off') + '">' +
+        '<input type="radio" name="ccx" value="' + v + '"' + (on ? '' : ' disabled') + '>' +
+        '<span><b>' + esc(label) + '</b><small>' + esc(sub) + '</small></span></label>';
+    }
+    /* ⚠ The same header shape boq.js's `mHead` emits, written out rather than imported: `mHead`
+       is module-local to boq.js and exporting a formatting helper across files to save four lines
+       would couple the two for nothing. */
+    var m = UI.modal('<div class="pd-modal-header"><div><h2 style="margin:0;">Export to Excel</h2>' +
+      '<div class="pd-modal-sub">One workbook. Choose what goes in it.</div></div>' +
+      '<button class="pd-modal-close" id="ccx-x">&times;</button></div>' +
+      '<div class="pd-modal-body ccx-body">' +
+        opt('records', c.label, hasRec ? 'What this tab is showing, with its totals row.'
+                                       : 'Nothing on this tab to export.', hasRec) +
+        opt('boq', 'Bill of quantities', hasBoq ? 'The current revision, under the filters set on it.'
+                                                : 'No BOQ lines on this project yet.', hasBoq) +
+        opt('all', 'Both', (hasRec && hasBoq) ? 'Two sheets in one workbook.'
+                                              : 'Needs records and a BOQ.', hasRec && hasBoq) +
+      '</div>' +
+      '<div class="pd-modal-footer"><button class="pd-btn" id="ccx-c">Cancel</button>' +
+      '<button class="pd-btn pd-btn-primary" id="ccx-go">Export</button></div>');
+    var first = m.el.querySelector('input[name="ccx"]:not([disabled])');
+    if (first) first.checked = true;
+    m.el.querySelectorAll('#ccx-x,#ccx-c').forEach(function (b) { b.onclick = m.close; });
+    m.el.querySelector('#ccx-go').onclick = function () {
+      var sel = m.el.querySelector('input[name="ccx"]:checked');
+      if (!sel) return;
+      m.close();
+      exportSheets(sel.value);
+    };
   }
   function projName() {
     var s = document.getElementById('cc-project');
@@ -1079,6 +1268,16 @@ window.ContractsClaims = (function () {
     var res;
     try { res = { data: await PDb.selectAll(TABLE, function (q) { return q.eq('project_id', pid); }) }; }
     catch (err) { res = { error: err }; }
+    /* ⚠️ NOT AWAITED INTO THE CRITICAL PATH, and not allowed to fail this load. The register must
+       render whether or not 2026-09-09-cc-affected-activities.sql has been run; the counts are an
+       annotation on it. Fired here rather than lazily because render() may not fetch (see
+       affChip), so something has to fill the cache once. A repaint follows when it lands. */
+    if (window.CCAffected) {
+      CCAffected.setProject(pid);
+      CCAffected.ensureLinks().then(function () {
+        if (document.getElementById('cc-view')) render();
+      }).catch(function () {});
+    }
     if (res.error) {
       if (window.PDSync) { var c = await PDSync.cacheGet(PID_PFX + ':' + pid); if (c && c.rows) { rows = c.rows.slice(); fillFilters(); render(); return; } }
       var missing = /column|schema cache|PGRST204|does not exist/i.test(res.error.message || '');
@@ -1143,6 +1342,10 @@ window.ContractsClaims = (function () {
       // project's contract document.
       if (window.CCPackages) CCPackages.reset();
     if (window.BOQ) BOQ.reset();
+    /* ⚠️ A PROJECT SWITCH MUST DROP THE CACHED ACTIVITIES AND LINKS. Keeping them would offer
+       the previous project's activities under the new project's name -- and `setProject` is a
+       no-op when the id has not changed, so this is safe to call on every switch. */
+    if (window.CCAffected) CCAffected.setProject(pid);
       if (window.PMI) PMI.reset();
       if (view === 'boq' && window.BOQ) { BOQ.show(pid, projName()); joinCollab(); return; }
       if (view === 'pmi' && window.PMI) { PMI.show(pid, projName()); joinCollab(); return; }
@@ -1182,6 +1385,7 @@ window.ContractsClaims = (function () {
     /* The BOQ screen reaches the wizard through module.js rather than building its own
        dependency object - one wizard, one set of deps, no drift. */
     if (window.BOQ) BOQ.init(Object.assign({}, deps, { openWizard: openNew }));
+    if (window.CCAffected) CCAffected.init(deps);
     if (window.PMI) PMI.init(pmiDeps);
     document.querySelectorAll('.cc-tab').forEach(function (t) { t.onclick = function () { switchTab(t.dataset.view); if (histView) histView.push(); }; });
     // Browser-history integration (UI.bindHistoryState, ui.js) for the top-level

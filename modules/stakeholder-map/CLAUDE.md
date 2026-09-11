@@ -1,5 +1,228 @@
 # Module: stakeholder-map
 
+## 2026-09-10 (y5) — The form takes the read view's shape; one Save becomes two scoped ones
+
+- ⚠️⚠️ **`.sm-frow` was the whole layout.** 18 of them, `display:flex`, two or three controls per row.
+  Stacking it gives the form the person page's own rhythm — **measured `fieldsPerRowMax` = 1**. The
+  owner chose to restyle THIS form rather than build a second one on the page, so + Add gets it too.
+- **Two scoped saves** replace Save, and **Edit person… is deleted** — its fields were these fields.
+  ⚠️ The scopes differ in which TABLE is written: `overlayPeople()` copies the directory over the row
+  on load, so a name saved "project only" would silently revert on the next read. Measured: all
+  projects → 2 updates; this project → 1, and a typed name never reaches the directory.
+- ⚠️ **Autosave is off when the form is hosted** (`fopts.host`). It clicks the real Save on a debounce,
+  which with two scopes would pick a table for the planner. The modal keeps it — one scope there.
+- ⚠️ A locked field keeps its input but loses its fill and border and gains a `🔒 PORTFOLIO` label mark.
+  Keyed on `.pd-field:has(input:disabled)` — threading a class through the markup would have been a
+  blanket replace across the file, **the same ReferenceError shape as (y4)**.
+- ⚠️ The identity write is guarded on `window.PDStakeholders`, matching `confirmPerson`'s treatment of
+  that optional script.
+
+## 2026-09-10 (y4) — HOTFIX: `canWrite` was never defined, and the register rendered nothing
+
+(y2) called `canWrite()` from the selection markup. **This module has no such function** — it gates
+writes nowhere and relies on RLS. `renderTable()` threw a `ReferenceError` on every paint, and since
+`render()` runs renderKpis → renderTable → renderCards, the throw **took the cards with it**: KPI
+strip populated, page empty below.
+
+⚠️⚠️ **Neither harness could have caught it.** The view harness **stubbed `renderTable` out** (it was
+testing `switchView`), and the mount harness runs on `person.html`, where `render()` is deliberately
+guarded off. `node --check` cannot see a ReferenceError. A new harness carries the register's real
+markup and runs `init()` end to end.
+
+⚠️ **The contrast build bites:** the same harness against the broken bytes reports **4 KPIs, 0 cards,
+0 rows** — the reported bug reproduced — against **4 / 2 / 2** on the fix, with 0 page errors.
+
+`canWrite()` is now defined locally from `profile.role` (planner and above), matching the ladder
+`person.js` uses. It decides only whether the control is OFFERED; RLS still refuses the delete.
+
+## 2026-09-10 (y2) — The form moves to the person page; the row loses Edit and Delete, and gains bulk select
+
+⚠️⚠️ **`openForm` is UNCHANGED — the modal became one of two hosts.** It uses its handle only as
+`{ el, close }`, so `inlineHost()` (nine lines) lets `person.html` render the identical 619-line form
+inline. `mountForm` is the entry point and deliberately skips `init()`; `render()` is guarded on
+`#sm-table` because `load()` ends in it and would throw on a page with no toolbar.
+
+- Row **Edit**/**Delete** and the card's Edit are gone. ⚠️ `wireRowActions` is **deleted, not left
+  dead** — a wiring function matching nothing reads as a live feature.
+- ⚠️ **`+ Add stakeholder` still opens the modal.** Adding is not editing.
+- **Bulk delete** lives in the table's `.pd-dt-head` strip, beside the count. Selection is
+  **table-only**, "select all" means **the rows shown**, the set is pruned each render and never
+  persisted, and `delMany` deletes in **one statement** and **counts what came back** rather than
+  reporting a success it did not get.
+- ⚠️ A **pre-existing** duplicate "1 · Identity & photo" heading (2 in HEAD) is removed — found by
+  rendering the form where it is now read first.
+
+**Measured** with the real module loaded and only its externals stubbed: mounting opens **0 modals and
+0 overlays**, 39 inputs across 8 bands, identity disabled 3/3, autosave bound to the host; Save writes
+**one UPDATE of 46 fields** and calls back; Cancel empties the host and fires `onClose`.
+⚠️ **Not verified signed in.**
+
+## 2026-09-10 (y1) — A person opens their profile page, scoped to this project
+
+Owner, item 4: *"when clicking on a person in here would open a pop-up, instead let's make use of the
+personal page as well. Information presented will be project-level only and view-only for those items
+that are only should be editable in the portfolio level."*
+
+A card click now goes to the shared `person.html` with **this project in the URL**, so the page shows
+this project's ownership and its six OPS bands, with the 13 identity fields **locked and badged
+`PORTFOLIO`** — they belong to the shared directory, and editing them here would let two projects
+disagree about somebody's name.
+
+- ⚠️ It needs the **directory id**, not the register row id: `stakeholder_map.id` names one project's
+  row *about* a person, not the person.
+- ⚠️ A row with **no `stakeholder_id`** predates the directory and has no profile to open, so it falls
+  back to `openForm` rather than navigating to a dead page.
+- ⚠️ **Project fields are read-only there.** This module's own form owns writing those 31 columns,
+  with its derivations and its autosave; the profile page's action is *Open register*. Folding that
+  form onto the page is the remaining half of this item.
+
+Detail and the verification are in the root [`CLAUDE.md`](../../CLAUDE.md) entry for (y1).
+
+## 2026-09-10 (u7) — The module opens on cards, the screen is called Register, and the bands move into the table
+
+Owner, item 6 of six: *"first load of stakeholder map it should be the cards but we shall call it
+Register. There should only be a view changer button among the toolbars to change whether card view
+or register view. Let's also just follow the table features available in the Contracts & Claims
+Module… I believe the bands RCM column-group toggle will be removed/integrated in the table already."*
+
+### ⚠️⚠️ SCREEN and LAYOUT were the same list, which is why one register had two names
+`.sm-tabs` offered **Register / Cards / Impact / Criteria** — so the card view and the table view of
+the *same* register were two entries in the screen dropdown, and neither was "the register". They are
+now two different things: `curView` is the **screen** (Register / Impact / Criteria) and `smLayout` is
+how the Register **draws itself** (cards / table). One view changer, `#sm-layout`, in the toolbar.
+
+- **Cards is the default** and the layout is remembered in `localStorage`.
+- ⚠️ **Every bookmark ever issued still resolves.** The hash carried `{view:"list"}` or
+  `{view:"cards"}`; those normalise to the Register screen **and set the layout**, so an old link to
+  the table lands on the table rather than silently on the cards. **Measured both.**
+- ⚠️ The hash now carries the layout too, so Back steps through a layout change — the toggle rewrites
+  what is on screen just as much as the dropdown does.
+- ⚠️ The Impact/Influence grid's cell click jumps to the Register **screen** and no longer forces the
+  table. Which layout the planner left it in is their choice, and forcing it would undo that on every
+  cell click.
+
+### The bands are integrated, not removed
+⚠️ The owner expected the RCM column-group toggles to disappear into the table. They are **integrated**
+rather than deleted: they choose which of the register's columns are on screen, and the OPS register
+has **31 columns in 6 bands** — one horizontal scroller holding all of them is not a register anybody
+reads. They now live in the table's own `.pd-dt-head` strip, on the thing they act on.
+
+- ⚠️ `#sm-bands` is **static markup inside the strip**, not written by `renderTable()`. The strip
+  re-renders on every filter keystroke, and an element rebuilt under `renderBandToggles()` would lose
+  its handlers — only the count is re-written.
+- ⚠️ It keeps the same id and the same shared `.pd-seg.pd-seg-multi`, so `renderBandToggles()` is
+  untouched and the Risk Register's matching control still makes the choice the same way.
+- The per-view show/hide of the bands and their separator is **deleted rather than adjusted**: living
+  inside the table card, they are on screen exactly when the table is.
+
+### The table adopts the shared layer
+New `.pd-dt` in `dashboard.css` — header strip with the title and row count, sortable headers, group
+rows, footer. ⚠️ It is a **promotion, not a new component**: the idiom is the Procurement app's
+`.data-table`, ported into Contracts & Claims as `.cc-dt*` with the note *"divergent table styles is
+exactly what the UI-uniformity pass keeps having to rework"*. A third hand-copy is how three tables
+end up disagreeing. ⚠️ `.cc-dt*` is **unchanged** — migrating Contracts & Claims onto the shared rules
+is its own change with its own verification, and doing it here would put a module I was not asked to
+touch into this commit.
+
+### Verified
+The shipped `switchView` / `setLayout` / `VIEWS` / `LEGACY_VIEW` were **sliced out of `module.js`** and
+driven against the **real toolbar and pane markup lifted byte-for-byte** out of `index.html`:
+on load `register` + `cards` with the cards pane showing and the table hidden; the toggle flips both
+ways and the seg's `on` class follows; **exactly one pane** is visible in every state including an
+unrecognised view, which falls back to Register; Impact and Criteria hide the layout switcher and the
+filters; both legacy hashes resolve to the right layout; and the bands render **inside the table card
+and not in the topbar**, 6 buttons. The head strip measures 49px with a `--pd-card` background, a 1px
+bottom rule, the title *Register* and the bands right-aligned inside it.
+
+⚠️⚠️ **The first measurement of that strip reported it transparent with no border — and the CSS was
+correct the whole time.** The harness linked `dashboard.css` with no `?v=` and was served the
+browser's stale copy. This is the second harness in this session to report correct rules as missing,
+after one that never loaded the stylesheet at all. Harness stylesheets are now cache-busted.
+
+⚠️ **Not verified signed in** — no project's register has been loaded, so the table has not been drawn
+from real rows.
+
+## 2026-09-10 (u6) — Gift Tier removed
+
+Owner: *"Let's drop the Gift Tier as well."* Removed from the register's add/edit form and from the
+directory identity form, and dropped from `PERSON_FIELDS` — the 13-field mirror between
+`stakeholders` and `stakeholder_map` is now 12.
+
+⚠️ **`migrations/2026-09-10-drop-gift-tier.sql` drops the columns and DESTROYS the values.** The
+owner chose that over a UI-only removal after the data loss was stated. The migration reports the
+count it is about to destroy before the drop takes effect, so there is a moment to roll back.
+
+⚠️ Nothing displayed it — it was write-only, present in two forms and in the mirror list and rendered
+on no card, row or export. That is worth recording, because it is why removing it is this small.
+
+## 2026-09-08 — Four KPI cards, and the row rule that had to change with them
+
+Owner: *"The kpi warnings in the stakeholder map isn't necessary let's remove the total number of
+stakeholders, no photo, and no engagement plan. Let's fit the other 4 kpi cards in a single level row."*
+
+**Which three went, and why they answered nothing.** *Stakeholders* restated the register's own row
+count, which the table header already prints. *No photo* and *No engagement plan* are **data-entry
+chores, not stakeholder standing** — they read as warnings about the project when they are warnings
+about the form, and on a young register they are simply the row count a third and fourth time. What
+survives is the four that rank **attention**: who matters (`1st Priority`), how to handle them
+(`Manage Closely` / `Keep Satisfied`), and who is drifting (`Catch-up needed`).
+
+⚠️ **Neither removed signal is lost, which is what makes this a removal rather than a trade.**
+*no photo* is still a filter (`filters.flag === 'nophoto'`) and a missing plan still prints on the
+stakeholder's own card (`.sm-card-plan-none`). They stop competing for the eye at the top of the
+screen; they do not stop being visible.
+
+### ⚠️⚠️ The second half of the ask is CSS, and it is not optional
+
+`.sm-kpis` was `grid-template-columns: repeat(7, 1fr)` with breakpoints at 1600 → 4, 1000 → 3,
+700 → 2 — a column count sized for the seven cards that used to be emitted. **Four cards in that grid
+is worse than seven, not better:**
+
+- at desktop width, seven tracks holding four cards leaves **three empty cells**;
+- at **918px** — the width the owner's own screenshot was taken at — the 1000px breakpoint drops it to
+  **three tracks**, so four cards **still wrap to two rows**. The complaint would have survived the
+  change that was meant to fix it, which is exactly the failure mode a "just delete three cards" patch
+  invites.
+
+It now carries the shared `.pd-kpis` rule **verbatim** — `repeat(auto-fit, minmax(170px, 1fr))` — and
+the three breakpoints are deleted. ⚠️ Copied rather than re-tuned, and **no four-column rule is
+declared**: a hardcoded column count is precisely what the shared `.pd-kpis` comment records removing
+from five modules, because each copy's own breakpoints left a ragged empty cell at some window width.
+
+**MEASURED against the shipped stylesheets, 8 widths from 700–1900px, with the module's own `kpi()`
+markup copied verbatim out of `module.js`:**
+
+| width | 4 cards | 7 cards (before) | card width |
+|---|---|---|---|
+| 700 | 2 rows | 3 rows | 225px |
+| 760 | **1 row** | 2 rows | 181px |
+| 860 | **1 row** | 2 rows | 206px |
+| **918** | **1 row** | **2 rows** ← the screenshot | 221px |
+| 1100 | **1 row** | 2 rows | 266px |
+| 1440 | **1 row** | 1 row | 351px |
+| 1850 | **1 row** | 1 row | 454px |
+| 1900 | **1 row** | 1 row | 466px |
+
+⚠️ **There is no upper bound** — auto-fit stops adding tracks once the four are placed and `1fr`
+stretches them to fill, so the row cannot go ragged however wide the window gets. Two rows below 760px
+is correct on a phone. ⚠️ **This corrects a figure from an earlier draft of this work**, which claimed
+the one-row range was 860–1850px; that was measured against the shared `.pd-kpis` container in a
+different harness, not against this module's own rule, and the upper bound was an artefact of it.
+
+⚠️ **A concurrent session is separately migrating `#sm-kpis` onto the shared `.pd-kpis`** (deleting
+`.sm-kpis` outright and routing `kpi()` through `UI.kpi`). That work is not on main yet. When it lands
+it **supersedes this rule harmlessly** — same declaration, one fewer copy — and the four-card
+`renderKpis()` is correct in both worlds. The conflict, if there is one, resolves by taking their
+delete.
+
+### Verified
+`node --check` clean; `module.css` brace-balanced (179/179); **0 remaining references to `noPhoto` /
+`noPlan`** (the accumulators went with the cards). The geometry is a real browser measurement, not a
+reading of the CSS.
+
+⚠️ **Not verified signed in** — the strip has not been rendered against a real register.
+
+`module.css` / `module.js?v=20260908pv`; `MODULE_V` → `20260908pv`.
 ## EPC → MCC finished: the file, the global and the captions (2026-09-02f) — fmlozano
 
 Owner: *"Finish the EPC → MCC rename."* The 2026-09-01 pass renamed the two view **headings** and

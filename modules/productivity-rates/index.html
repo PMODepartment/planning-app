@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="../../assets/img/favicon-icon.png?v=20260903a" />
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
-  <script src="../../assets/js/theme.js?v=20260812b"></script>
+  <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Productivity Rates · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260904a" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260910z5" />
   <style>
     /* ---- Uniform module chrome (matches every other module). Keep the topbar
        rules in sync with those. 2026-08-30: modules gained a persistent
@@ -21,18 +21,18 @@
     .pr-title .pr-title-txt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .pr-title-ico { color:var(--pd-red); vertical-align:-3px; margin-right:4px; }
     .pr-projctx { display:flex; align-items:center; min-width:0; flex:0 1 auto; }
-    .pr-project { max-width:260px; min-width:120px; height:34px; font-weight:600; font-size:13px; background:transparent; border-color:transparent; }
+    .pr-project { max-width:260px; min-width:120px; height:34px; font-weight:700; font-size:var(--pd-fs-base); background:transparent; border-color:transparent; }
     .pr-project:hover, .pr-project:focus { background:var(--pd-card); border-color:var(--pd-line); }
     /* segmented view tabs */
-    .pr-tabs { display:inline-flex; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; flex:none; }
-    .pr-tab { border:0; background:transparent; padding:7px 14px; font:inherit; font-size:13px; font-weight:600; color:var(--pd-muted); cursor:pointer; }
+    .pr-tabs { display:inline-flex; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); overflow:hidden; flex:none; }
+    .pr-tab { border:0; background:transparent; padding:7px 14px; font:inherit; font-size:var(--pd-fs-base); font-weight:700; color:var(--pd-muted); cursor:pointer; }
     .pr-tab + .pr-tab { border-left:1px solid var(--pd-line); }
     .pr-tab.active { background:var(--pd-red); color:#fff; }
     /* tool cluster beside the profile */
     .pr-topbar-tools { display:flex; align-items:center; gap:4px; margin-left:auto; flex-wrap:wrap; }
-    .pr-topbar-tools .pd-btn { height:34px; width:34px; padding:0; font-size:13px; display:inline-flex; align-items:center; justify-content:center; background:transparent; border-color:transparent; }
+    .pr-topbar-tools .pd-btn:not(.pr-tb-labeled) { height:34px; width:34px; padding:0; font-size:var(--pd-fs-base); display:inline-flex; align-items:center; justify-content:center; background:transparent; border-color:transparent; }
     .pr-topbar-tools .pd-btn:hover { background:var(--pd-bg); border-color:var(--pd-line); }
-    .pr-topbar-tools .pd-btn.pr-tb-labeled { width:auto; padding:0 12px; gap:6px; }
+    .pr-topbar-tools .pd-btn.pr-tb-labeled { height:34px; width:auto; padding:0 12px; gap:6px; white-space:nowrap; }
     .pr-topbar-tools .pd-btn-primary { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
     .pr-topbar-tools .pd-btn.is-active { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
     .pr-tb-sep { width:1px; align-self:stretch; margin:5px 3px; background:var(--pd-line); }
@@ -41,20 +41,20 @@
        filter bars (risk-register / stakeholder-map). Left-aligned, no stray icon. */
     .pr-controls { display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:8px; background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:8px 12px; margin-bottom:16px; }
     .pr-filt-ico { color:var(--pd-muted); flex:none; }
-    .pr-controls label { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
-    .pr-controls .pd-select { height:34px; font-size:13px; }
-    .pr-ck { display:inline-flex; align-items:center; gap:6px; font-size:13px; color:var(--pd-ink); cursor:pointer; white-space:nowrap; }
+    .pr-controls label { font-size:var(--pd-fs-sm); font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
+    .pr-controls .pd-select { height:34px; font-size:var(--pd-fs-base); }
+    .pr-ck { display:inline-flex; align-items:center; gap:6px; font-size:var(--pd-fs-base); color:var(--pd-ink); cursor:pointer; white-space:nowrap; }
 
     /* KPIs */
-    .pr-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:18px; }
-    .pr-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:8px; padding:14px 16px; }
-    .pr-kpi-l { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); margin-bottom:5px; }
-    .pr-kpi-v { font-size:22px; font-weight:700; } .pr-kpi-s { font-size:12px; color:var(--pd-muted); margin-top:2px; }
-    .pr-ok { color:var(--pd-ok); } .pr-bad { color:var(--pd-bad); }
+    .pr-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:var(--pd-space-md); margin-bottom:18px; }
+    .pr-kpi { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius-lg); padding:var(--pd-space-lg) 18px; }
+    .pr-kpi-l { font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); margin-bottom:5px; }
+    .pr-kpi-v { font-size:var(--pd-fs-stat); font-weight:800; } .pr-kpi-s { font-size:var(--pd-fs-sm); color:var(--pd-muted); margin-top:2px; }
+    .pr-ok { color:var(--pd-ok-text); } .pr-bad { color:var(--pd-bad-text); }
 
     /* cards + chart */
     .pr-card { background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius); padding:16px; margin-bottom:18px; }
-    .pr-card h3 { margin:0 0 12px; font-size:15px; }
+    .pr-card h3 { margin:0 0 12px; font-size:var(--pd-fs-md); }
     .pr-svg { width:100%; height:auto; display:block; }
     .pr-grid { stroke:var(--pd-line); stroke-width:1; }
     .pr-ylab, .pr-xlab { fill:var(--pd-muted); font-size:11px; }
@@ -66,7 +66,7 @@
     .pr-dot-actual { fill:var(--pd-red); }
     .pr-today { stroke:var(--pd-red); stroke-width:1.4; stroke-dasharray:4 3; }
     .pr-today-lab { fill:var(--pd-red); font-size:10px; font-weight:700; }
-    .pr-legend { display:flex; flex-wrap:wrap; gap:18px; margin-top:12px; font-size:12px; color:var(--pd-muted); }
+    .pr-legend { display:flex; flex-wrap:wrap; gap:18px; margin-top:12px; font-size:var(--pd-fs-sm); color:var(--pd-muted); }
     .pr-lg { display:inline-flex; align-items:center; }
     .pr-sw { display:inline-block; width:18px; height:3px; margin-right:6px; }
     .pr-sw-planned { background:var(--pd-dark); } html.pd-dark .pr-sw-planned { background:#c7ccd1; }
@@ -75,18 +75,18 @@
     .pr-empty { text-align:center; padding:40px; color:var(--pd-muted); }
 
     /* tables */
-    .pr-table { width:100%; border-collapse:collapse; font-size:13px; }
-    .pr-table th { background:var(--pd-bg); padding:8px 12px; text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); border-bottom:2px solid var(--pd-line); white-space:nowrap; }
+    .pr-table { width:100%; border-collapse:collapse; font-size:var(--pd-fs-base); }
+    .pr-table th { background:var(--pd-bg); padding:8px 12px; text-align:left; font-size:var(--pd-fs-xs); text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); border-bottom:2px solid var(--pd-line); white-space:nowrap; }
     .pr-table td { padding:8px 12px; border-bottom:1px solid var(--pd-line); }
     .pr-table tbody tr:hover { background:var(--pd-bg); }
     .pr-num { text-align:right; font-variant-numeric:tabular-nums; }
     .pr-mono { font-variant-numeric:tabular-nums; }
-    .pr-sub { font-size:12px; color:var(--pd-muted); }
-    .pr-chip { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:700; background:var(--pd-bg); border:1px solid var(--pd-line); }
+    .pr-sub { font-size:var(--pd-fs-sm); color:var(--pd-muted); }
+    .pr-chip { display:inline-block; padding:2px 8px; border-radius:var(--pd-radius-pill); font-size:var(--pd-fs-xs); font-weight:700; background:var(--pd-bg); border:1px solid var(--pd-line); }
     /* transposed monitoring table (months across) */
-    .pr-ttable { width:100%; border-collapse:collapse; font-size:13px; }
+    .pr-ttable { width:100%; border-collapse:collapse; font-size:var(--pd-fs-base); }
     .pr-ttable th, .pr-ttable td { white-space:nowrap; padding:7px 12px; text-align:right; border-bottom:1px solid var(--pd-line); }
-    .pr-ttable th { background:var(--pd-bg); font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); border-bottom:2px solid var(--pd-line); }
+    .pr-ttable th { background:var(--pd-bg); font-size:var(--pd-fs-xs); text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); border-bottom:2px solid var(--pd-line); }
     .pr-ttable th:first-child, .pr-ttable td:first-child { text-align:left; position:sticky; left:0; font-weight:700; }
     .pr-ttable td:first-child { background:var(--pd-card); } .pr-ttable th:first-child { background:var(--pd-bg); }
     .pr-row-actual td { color:var(--pd-red); }
@@ -95,23 +95,23 @@
     /* monthly editor (wide modal) */
     .pd-modal:has(> .pr-editor) { max-width:min(1120px,96vw); width:1120px; }
     .pr-editor h2 { margin:0 0 4px; }
-    .pr-ed-scroll { overflow:auto; max-height:60vh; border:1px solid var(--pd-line); border-radius:8px; }
-    .pr-ed { width:100%; border-collapse:collapse; font-size:12.5px; }
-    .pr-ed th { position:sticky; top:0; z-index:2; background:var(--pd-bg); padding:6px 8px; text-align:center; font-size:10.5px; text-transform:uppercase; letter-spacing:.03em; color:var(--pd-muted); border-bottom:2px solid var(--pd-line); white-space:nowrap; }
+    .pr-ed-scroll { overflow:auto; max-height:60vh; border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); }
+    .pr-ed { width:100%; border-collapse:collapse; font-size:var(--pd-fs-sm); }
+    .pr-ed th { position:sticky; top:0; z-index:2; background:var(--pd-bg); padding:6px 8px; text-align:center; font-size:var(--pd-fs-xs); text-transform:uppercase; letter-spacing:.03em; color:var(--pd-muted); border-bottom:2px solid var(--pd-line); white-space:nowrap; }
     .pr-ed td { padding:3px 6px; border-bottom:1px solid var(--pd-line); text-align:center; }
     .pr-ed td:first-child, .pr-ed th:first-child { position:sticky; left:0; background:var(--pd-card); text-align:left; font-weight:700; white-space:nowrap; z-index:1; }
     .pr-ed th.pr-grp { border-left:1px solid var(--pd-line); }
     .pr-ed td.pr-grp { border-left:1px solid var(--pd-line); }
-    .pr-ed input { width:74px; height:28px; padding:2px 6px; text-align:right; border:1px solid var(--pd-line); border-radius:5px; background:var(--pd-card); color:var(--pd-ink); font:inherit; font-size:12px; font-variant-numeric:tabular-nums; }
+    .pr-ed input { width:74px; height:28px; padding:2px 6px; text-align:right; border:1px solid var(--pd-line); border-radius:5px; background:var(--pd-card); color:var(--pd-ink); font:inherit; font-size:var(--pd-fs-sm); font-variant-numeric:tabular-nums; }
     .pr-ed input:focus { outline:none; border-color:var(--pd-red); }
     .pr-ed .pr-derived { color:var(--pd-muted); font-variant-numeric:tabular-nums; }
     .pr-ed-del { cursor:pointer; color:var(--pd-muted); border:0; background:none; padding:2px 6px; }
-    .pr-ed-del:hover { color:var(--pd-bad); }
+    .pr-ed-del:hover { color:var(--pd-bad-text); }
     .pr-ed-foot { display:flex; align-items:center; gap:10px; margin-top:12px; flex-wrap:wrap; }
     .pr-ed-foot .pr-spacer { margin-left:auto; }
-    .pr-hint { font-size:12px; color:var(--pd-muted); }
+    .pr-hint { font-size:var(--pd-fs-sm); color:var(--pd-muted); }
 
-    .pr-loading { position:fixed; inset:0; background:rgba(20,20,20,.4); display:flex; align-items:center; justify-content:center; gap:12px; z-index:999; color:#fff; font-weight:600; }
+    .pr-loading { position:fixed; inset:0; background:rgba(20,20,20,.4); display:flex; align-items:center; justify-content:center; gap:12px; z-index:var(--pd-z-loading); color:#fff; font-weight:700; }
     .pr-spin { width:36px; height:36px; border:4px solid rgba(255,255,255,.3); border-top-color:#fff; border-radius:50%; animation:pr-spin .8s linear infinite; }
     @keyframes pr-spin { to { transform:rotate(360deg); } }
     @media (max-width:860px) { .pr-title-txt { display:none; } }
@@ -134,6 +134,14 @@
         .pr-kpis { grid-template-columns: repeat(2, 1fr); gap: 8px; }
         .pr-controls { flex-wrap: wrap; gap: 8px; }
         .pr-controls > * { flex: 1 1 100%; min-width: 0; }
+        /* ⚠️ Same content-sized frozen column as s-curve: `.pr-ttable`/`.pr-ed` freeze
+           `:first-child` with no width, and `.pr-ed`'s is `white-space:nowrap`, so a long trade
+           name pushes every data column past the right edge. Capped at the app's 132px with an
+           ellipsis. ⚠️ Not measured live (table behind a view I could not reach signed in) —
+           this is the established pattern applied, not an observed width. */
+        .pr-ttable th:first-child, .pr-ttable td:first-child,
+        .pr-ed th:first-child, .pr-ed td:first-child {
+          max-width: 132px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       }
     
     /* ---- F1/F2/F6 vendor layer -------------------------------------------
@@ -151,15 +159,15 @@
       --pr-warn-bg: rgba(240,196,105,.14); --pr-bad-bg: rgba(241,154,154,.14);
     }
     .pr-alert { border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-ink);
-      border-radius:8px; padding:10px 13px; font-size:12.5px; line-height:1.55; margin-bottom:12px; }
+      border-radius:var(--pd-radius-md); padding:10px 13px; font-size:var(--pd-fs-sm); line-height:1.55; margin-bottom:12px; }
     .pr-alert.warn { border-color:var(--pr-warn); background:var(--pr-warn-bg); }
-    .pr-secthead { padding:11px 14px; border-bottom:1px solid var(--pd-line); font-weight:700; font-size:13px;
+    .pr-secthead { padding:11px 14px; border-bottom:1px solid var(--pd-line); font-weight:700; font-size:var(--pd-fs-base);
       display:flex; align-items:baseline; gap:9px; }
-    .pr-note { margin:0; padding:10px 14px; font-size:12px; line-height:1.6; color:var(--pd-muted);
+    .pr-note { margin:0; padding:10px 14px; font-size:var(--pd-fs-sm); line-height:1.6; color:var(--pd-muted);
       border-bottom:1px solid var(--pd-line); background:var(--pd-bg); }
     /* UNLINKED is a state to act on, not decoration — it is why a vendor's
        months cannot enter a rate or an S-curve. */
-    .pr-unlinked { display:inline-block; font-size:10.5px; font-weight:700; text-transform:uppercase;
+    .pr-unlinked { display:inline-block; font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase;
       letter-spacing:.03em; padding:1px 5px; border-radius:3px;
       color:var(--pr-warn); border:1px solid var(--pr-warn); }
     .pr-thin { color:var(--pr-warn); }
@@ -172,17 +180,17 @@
   <!-- Persistent module sidebar (uniform across the suite — see MODULE_CONTRACT.md
        §"Sidebar"). Contents are mode='project', rendered by UI.renderNav below. -->
   <aside class="pd-sidebar">
-    <div class="pd-brand"><img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>Planning Suite</small></div>
+    <div class="pd-brand"><img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction"><img class="pd-brand-mark" src="../../assets/img/favicon-icon.png?v=20260903a" alt="" aria-hidden="true">Planners Dashboard<small>Planning Suite</small></div>
     <nav id="side-nav"></nav>
     <div class="pd-nav-foot">
       <a class="pd-nav-sibling" href="https://pmodepartment.github.io/engineering-app/" target="_blank" rel="noopener" title="Opens Engineering App in a new tab">
-        <span class="pd-navico" data-ico="externalLink"></span><span class="pd-navtxt">Engineering App</span>
+        <span class="pd-navico" data-ico="appEngineering"></span><span class="pd-navtxt">Engineering App</span>
       </a>
       <a class="pd-nav-sibling" href="https://pmodepartment.github.io/prc-app/" target="_blank" rel="noopener" title="Opens Procurement App in a new tab">
-        <span class="pd-navico" data-ico="externalLink"></span><span class="pd-navtxt">Procurement App</span>
+        <span class="pd-navico" data-ico="appProcurement"></span><span class="pd-navtxt">Procurement App</span>
       </a>
     </div>
-    <div class="pd-sidebar-foot">Megawide Construction Corporation<br>EPC &middot; PMO &middot; Planning Suite</div>
+    <div class="pd-sidebar-foot">Megawide Construction Corporation<br>PMO Department</div>
   </aside>
   <div class="pd-content">
     <div class="pd-topbar">
@@ -193,7 +201,7 @@
       <div class="pr-projctx">
         <select class="pd-select pr-project" id="pr-project" title="Project"></select>
       </div>
-      <div class="pr-tabs" role="tablist">
+      <div class="pr-tabs pd-tabsrc" role="tablist">
         <button class="pr-tab active" data-view="monitor">Monitoring</button>
         <button class="pr-tab" data-view="data">Data</button>
         <button class="pr-tab" data-view="rates">Rates</button>
@@ -248,12 +256,12 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="../../assets/js/config.js?v=20260902a"></script>
+<script src="../../assets/js/config.js?v=20260910za"></script>
 <script src="../../assets/js/auth.js?v=20260901b"></script>
-<script src="../../assets/js/db.js?v=20260907a"></script>
+<script src="../../assets/js/db.js?v=20260909n"></script>
 <script src="../../assets/js/program.js?v=20260827a"></script>
-<script src="../../assets/js/ui.js?v=20260904a"></script>
-<script src="../../assets/js/icons.js?v=20260907a"></script>
+<script src="../../assets/js/ui.js?v=20260909s"></script>
+<script src="../../assets/js/icons.js?v=20260909ui"></script>
 <script src="../../assets/js/calendar.js?v=20260903a"></script>
 <script src="../../assets/js/offline.js?v=20260812b"></script>
 <script src="../../assets/js/collab.js?v=20260812b"></script>
@@ -1221,6 +1229,22 @@
     } catch (e) { hideLoading(); UI.toast('Import failed: ' + (e.message || e), 'error'); load(); }
   }
 
+    // ⚠️ Converts this module's flat tab strip into the shared compact dropdown, which is what
+    // lets `.pd-modulebar` stay on ONE row (see its `flex-wrap:nowrap` comment in dashboard.css).
+    // ⚠️ NO `opts.icon`: this module's <h1> stays in the bar and keeps its own icon beside the
+    // trigger, so passing one draws it TWICE. Only issues-lessons and progress-photos pass an
+    // icon, and only because their <h1> is hidden outright — the same split the 2026-09-04
+    // entry describes. Four other modules call this with no options for exactly this reason.
+    // Registered as a THIRD DOMContentLoaded listener, deliberately: theme.js's topbar injection
+    // must run before UI.initModuleTopbar() restructures the bar, and both are DOMContentLoaded
+    // listeners fired in registration order. Registering last means both have already run — the
+    // same reasoning risk-register documents, where calling initModuleTopbar() early was tried
+    // and reverted.
+    (function () {
+      function go() { if (window.UI && UI.tabsToDropdown) UI.tabsToDropdown('.pr-tabs'); }
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go);
+      else go();
+    })();
   AppAuth.requireLogin(function (user, profile) {
     UI.renderUserBar(profile);
     UI.initShell();

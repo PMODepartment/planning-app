@@ -5,29 +5,29 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/png" href="assets/img/favicon-icon.png?v=20260903a" />
   <link rel="apple-touch-icon" href="assets/img/icon.png?v=20260830b" />
-  <script src="assets/js/theme.js?v=20260812b"></script>
+  <script src="assets/js/theme.js?v=20260910w7"></script>
   <title>Dashboard — Planners Dashboard</title>
-  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260904a" />
-  <link rel="stylesheet" href="assets/css/my-work.css?v=20260902a" />
+  <link rel="stylesheet" href="assets/css/dashboard.css?v=20260910z5" />
+  <link rel="stylesheet" href="assets/css/my-work.css?v=20260910w3" />
 </head>
 <body>
   <div class="pd-app">
     <aside class="pd-sidebar">
-      <div class="pd-brand"><img class="pd-brand-logo" src="assets/img/logo-white.png" alt="Megawide Construction">Planners Dashboard<small>Planning Suite</small></div>
+      <div class="pd-brand"><img class="pd-brand-logo" src="assets/img/logo-white.png" alt="Megawide Construction"><img class="pd-brand-mark" src="assets/img/favicon-icon.png?v=20260903a" alt="" aria-hidden="true">Planners Dashboard<small>Planning Suite</small></div>
       <!-- Contents depend on the current mode (Project here) — rendered by UI.renderNav. -->
       <nav id="side-nav"></nav>
       <!-- Cross-app links to sibling apps. Separate Supabase projects /
            separate logins — open in a new tab rather than navigating away. -->
       <div class="pd-nav-foot">
         <a class="pd-nav-sibling" href="https://pmodepartment.github.io/engineering-app/" target="_blank" rel="noopener" title="Opens Engineering App in a new tab">
-          <span class="pd-navico" data-ico="externalLink"></span><span class="pd-navtxt">Engineering App</span>
+          <span class="pd-navico" data-ico="appEngineering"></span><span class="pd-navtxt">Engineering App</span>
         </a>
         <a class="pd-nav-sibling" href="https://pmodepartment.github.io/prc-app/" target="_blank" rel="noopener" title="Opens Procurement App in a new tab">
-          <span class="pd-navico" data-ico="externalLink"></span><span class="pd-navtxt">Procurement App</span>
+          <span class="pd-navico" data-ico="appProcurement"></span><span class="pd-navtxt">Procurement App</span>
         </a>
       </div>
       <!-- PRC's .sidebar-footer, pinned to the bottom of the panel. -->
-      <div class="pd-sidebar-foot">Megawide Construction Corporation<br>EPC &middot; PMO &middot; Planning Suite</div>
+      <div class="pd-sidebar-foot">Megawide Construction Corporation<br>PMO Department</div>
     </aside>
 
     <div class="pd-content">
@@ -115,43 +115,45 @@
        The decisions chips that sat below them went on 2026-09-01 at the owner's request. */
     .pd-perf-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(196px, 1fr)); gap:12px; }
     .pd-perf {
-      position:relative; overflow:hidden; padding:13px 15px 12px; border-radius:12px;
+      position:relative; overflow:hidden; padding:13px 15px 12px; border-radius:var(--pd-radius-lg);
       background:var(--pd-card, var(--pd-bg)); border:1px solid var(--pd-line);
     }
     .pd-perf::before { content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--pc, var(--pd-muted)); }
-    .pd-perf-l { font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--pd-muted); font-weight:700; }
-    .pd-perf-v { display:block; font-size:25px; font-weight:800; line-height:1.15; margin-top:5px; letter-spacing:-.02em; }
+    .pd-perf-l { font-size:var(--pd-fs-micro); letter-spacing:.07em; text-transform:uppercase; color:var(--pd-muted); font-weight:700; }
+    .pd-perf-v { display:block; font-size:var(--pd-fs-hero); font-weight:800; line-height:1.15; margin-top:5px; letter-spacing:-.02em; }
     /* An empty card must not look like a measured one: smaller, muted, and it states the gap. */
-    .pd-perf-em { font-size:15px; font-weight:700; color:var(--pd-muted); }
+    .pd-perf-em { font-size:var(--pd-fs-md); font-weight:700; color:var(--pd-muted); }
     .pd-perf-bar { position:relative; height:5px; border-radius:3px; background:var(--pd-line); margin-top:9px; overflow:hidden; }
     .pd-perf-bar > i { display:block; height:100%; border-radius:3px; background:var(--pc, var(--pd-muted)); }
     /* ⚠️ The basis line is not decoration: a number with no stated basis gets trusted further than
        it deserves. Every card carries one, including the empty ones. */
-    .pd-perf-b { display:block; font-size:11.5px; color:var(--pd-muted); margin-top:6px; line-height:1.45; }
+    .pd-perf-b { display:block; font-size:var(--pd-fs-xs); color:var(--pd-muted); margin-top:6px; line-height:1.45; }
+    /* One short line, not a paragraph: a verdict or a comparison, never an explanation. */
+    .pd-perf-note { display:block; font-size:var(--pd-fs-xs); color:var(--pd-muted); margin-top:5px; line-height:1.4; }
     .pd-perf-good { color:#2FA36B; }
     .pd-perf-none .pd-perf-b { opacity:.9; }
-    @media (max-width:640px) { .pd-perf-v { font-size:21px; } }
+    @media (max-width:640px) { .pd-perf-v { font-size:var(--pd-fs-stat); } }
     /* Kept from the retired chips block: the perf cards and both list panels still use it. */
-    .pd-stat-warn { font-size:11.5px; color:var(--pd-muted); }
+    .pd-stat-warn { font-size:var(--pd-fs-xs); color:var(--pd-muted); }
 
     /* ---- Mini stat band, shared by the Minutes of Meeting and Issues panels ------------------- */
     .pd-mini-band { display:grid; grid-template-columns:repeat(auto-fit, minmax(96px, 1fr)); gap:8px; }
     .pd-mini-c { border:1px solid var(--pd-line); border-radius:9px; padding:9px 11px; background:var(--pd-card); border-left-width:3px; }
     .pd-mini-c.ok { border-left-color:var(--pd-ok, #2FA36B); }
     .pd-mini-c.bad { border-left-color:#E5534B; }
-    .pd-mini-l { display:block; font-size:9.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--pd-muted); font-weight:700; }
-    .pd-mini-v { display:block; font-size:19px; font-weight:800; line-height:1.2; margin-top:3px; letter-spacing:-.02em; }
-    .pd-mini-s { display:block; font-size:10.5px; color:var(--pd-muted); margin-top:3px; line-height:1.4; }
+    .pd-mini-l { display:block; font-size:var(--pd-fs-micro); text-transform:uppercase; letter-spacing:.06em; color:var(--pd-muted); font-weight:700; }
+    .pd-mini-v { display:block; font-size:var(--pd-fs-stat); font-weight:800; line-height:1.2; margin-top:3px; letter-spacing:-.02em; }
+    .pd-mini-s { display:block; font-size:var(--pd-fs-micro); color:var(--pd-muted); margin-top:3px; line-height:1.4; }
     .pd-mini-bar { height:5px; border-radius:3px; background:var(--pd-line); margin-top:11px; overflow:hidden; }
     .pd-mini-bar > i { display:block; height:100%; border-radius:3px; background:#2FA36B; }
     .pd-mini-note { margin-top:10px; }
     /* A capped list -- four rows at most, set in config.js. A panel that grew with the register
        would push everything below it off the page on a busy project. */
     .pd-list { list-style:none; margin:12px 0 0; padding:10px 0 0; border-top:1px solid var(--pd-line); display:grid; gap:7px; }
-    .pd-list-r { display:flex; align-items:center; gap:8px; font-size:11.5px; min-width:0; }
+    .pd-list-r { display:flex; align-items:center; gap:8px; font-size:var(--pd-fs-xs); min-width:0; }
     .pd-list-d { color:var(--pd-muted); flex:none; font-variant-numeric:tabular-nums; width:86px; }
     .pd-list-t { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .pd-tag { flex:none; font-size:9.5px; font-weight:700; padding:2px 7px; border-radius:999px;
+    .pd-tag { flex:none; font-size:var(--pd-fs-micro); font-weight:700; padding:2px 7px; border-radius:var(--pd-radius-pill);
       border:1px solid var(--pd-line); color:var(--pd-muted); background:var(--pd-bg); }
     .pd-tag-ok { color:#2FA36B; border-color:#2FA36B55; }
     .pd-tag-warn { color:#E08A3C; border-color:#E08A3C55; }
@@ -159,9 +161,9 @@
     @media (max-width:520px) { .pd-list-d { display:none; } }
 
     /* ---- S-Curve panel ------------------------------------------------------------------------ */
-    .pd-sc-kpi { display:flex; flex-wrap:wrap; gap:16px; font-size:11.5px; color:var(--pd-muted); margin-bottom:8px; }
-    .pd-sc-kpi b { font-size:15px; color:var(--pd-ink); font-weight:800; letter-spacing:-.02em; }
-    .pd-sc-legend { display:flex; flex-wrap:wrap; gap:14px; font-size:10.5px; color:var(--pd-muted); margin-bottom:6px; }
+    .pd-sc-kpi { display:flex; flex-wrap:wrap; gap:16px; font-size:var(--pd-fs-xs); color:var(--pd-muted); margin-bottom:8px; }
+    .pd-sc-kpi b { font-size:var(--pd-fs-md); color:var(--pd-ink); font-weight:800; letter-spacing:-.02em; }
+    .pd-sc-legend { display:flex; flex-wrap:wrap; gap:14px; font-size:var(--pd-fs-micro); color:var(--pd-muted); margin-bottom:6px; }
     .pd-sc-legend i, .pd-sc-tip i { display:inline-block; width:14px; height:0; border-top-width:2px; border-top-style:solid; margin-right:6px; vertical-align:middle; }
     .pd-sc-legend i.pl, .pd-sc-tip i.pl { border-top-color:#8A93A6; }
     .pd-sc-legend i.ac, .pd-sc-tip i.ac { border-top-color:#2FA36B; }
@@ -179,7 +181,7 @@
     .pd-sc-pl { fill:none; stroke:#8A93A6; stroke-width:2; stroke-linejoin:round; stroke-linecap:round; }
     .pd-sc-ac { fill:none; stroke:#2FA36B; stroke-width:2.5; stroke-linejoin:round; stroke-linecap:round; }
     .pd-sc-fc { fill:none; stroke:#C9A227; stroke-width:2; stroke-dasharray:5 4; stroke-linejoin:round; stroke-linecap:round; }
-    .pd-sc-tbl { border-collapse:collapse; font-size:10px; table-layout:fixed; margin-top:6px; }
+    .pd-sc-tbl { border-collapse:collapse; font-size:var(--pd-fs-micro); table-layout:fixed; margin-top:6px; }
     /* ⚠️ The 46px here is only a FALLBACK. The real widths come from the <colgroup> the panel
        emits, because the column width is computed per render (see scColFor) and the chart and the
        table must be laid out from one number. Under `table-layout:fixed` a col's width beats a
@@ -187,7 +189,7 @@
     .pd-sc-tbl th, .pd-sc-tbl td { width:46px; text-align:center; padding:3px 0; color:var(--pd-muted);
       white-space:nowrap; font-variant-numeric:tabular-nums; }
     .pd-sc-tbl th { font-weight:700; border-bottom:1px solid var(--pd-line); }
-    .pd-sc-tbl th small { display:block; font-size:8.5px; opacity:.75; font-weight:600; }
+    .pd-sc-tbl th small { display:block; font-size:var(--pd-fs-micro); opacity:.75; font-weight:500; }
     /* ⚠️ th.k AND td.k, both. Under `table-layout:fixed` the FIRST row sets every column width,
        and that row is the header — so styling only `td.k` left the header's corner cell at the
        month width, the whole table 46px narrower than it declared, and every month column sitting
@@ -213,57 +215,45 @@
     .pd-sc-tbl tr.fc td.k::before { border-top-color:#C9A227; border-top-style:dashed; }
     .pd-sc-tbl .now { color:var(--pd-ink); font-weight:800; }
     .pd-sc-tip { position:absolute; top:6px; z-index:3; pointer-events:none; min-width:150px;
-      background:var(--pd-card, var(--pd-bg)); border:1px solid var(--pd-line); border-radius:8px;
-      padding:7px 9px; font-size:10.5px; color:var(--pd-muted); display:grid; gap:2px;
+      background:var(--pd-card, var(--pd-bg)); border:1px solid var(--pd-line); border-radius:var(--pd-radius-md);
+      padding:7px 9px; font-size:var(--pd-fs-micro); color:var(--pd-muted); display:grid; gap:2px;
       box-shadow:0 6px 18px rgba(0,0,0,.28); }
-    .pd-sc-tip b { color:var(--pd-ink); font-size:11px; margin-bottom:2px; }
-    .pd-sc-tip-s { font-size:9.5px; opacity:.85; margin-bottom:2px; }
+    .pd-sc-tip b { color:var(--pd-ink); font-size:var(--pd-fs-xs); margin-bottom:2px; }
+    .pd-sc-tip-s { font-size:var(--pd-fs-micro); opacity:.85; margin-bottom:2px; }
 
-    /* Period switch. ⚠️ Deliberately the SAME segmented control the S-Curve module uses for its
-       Duration/Cost switch (`.sc-seg` there) — a planner moving between the panel and the module
-       should not have to learn a second control for the same kind of choice. */
-    .pd-seg { display:inline-flex; border:1px solid var(--pd-line); border-radius:8px; overflow:hidden; }
-    .pd-seg button { border:0; background:var(--pd-card); color:var(--pd-ink); font:inherit; font-size:11px;
-      font-weight:700; padding:5px 11px; cursor:pointer; line-height:1.3; }
-    .pd-seg button + button { border-left:1px solid var(--pd-line); }
-    .pd-seg button:hover { background:var(--pd-bg); }
-    /* ⚠️ Brand red with white text is the app's established ACTIVE state — the sidebar's current
-       nav item, .pd-btn-primary, the node tree's selection and the view tabs all use exactly this
-       pair. It measures 4.12:1, under AA for 11px text, and that is a property of the brand red
-       rather than of this control: forking it here would make one panel's toggle the only active
-       state in the app that looks different. Raised deliberately rather than silently diverged. */
-    .pd-seg button.on { background:var(--pd-red); color:#fff; }
-    /* ⚠️ 44px on a phone, per the rule assets/css/dashboard.css states for exactly this shape:
-       segmented buttons sized to their text were "among the hardest things on the page to hit
-       accurately". The desktop size is unchanged — this is the tap area, not visual bulk. */
-    @media (max-width:700px) { .pd-seg button { min-height:var(--pd-tap); padding:8px 13px; } }
+    /* Period switch. .pd-seg now lives in assets/css/dashboard.css (promoted
+       2026-09-08). The copy that stood here was identical in effect and, loading
+       after that file, was the one actually on screen -- so leaving both would have
+       meant the shared block was never the thing rendered. Same control, one
+       definition, now shared with the two registers' band toggles.
+       The dashboard is the SINGLE-CHOICE mode; .pd-seg-multi is the registers'. */
     /* The head puts the legend slot on the right; the switch shares it with the module link. */
     .pd-viz-h .pd-viz-legend { align-items:center; gap:12px; }
 
     /* ---- list extras shared by the deadline / MoM / Issues panels ---------------------------- */
     .pd-list-top { margin-top:0; padding-top:0; border-top:0; }
-    .pd-list-h { font-size:10.5px; color:var(--pd-muted); margin-top:12px; padding-top:10px;
-      border-top:1px solid var(--pd-line); font-weight:600; }
+    .pd-list-h { font-size:var(--pd-fs-micro); color:var(--pd-muted); margin-top:12px; padding-top:10px;
+      border-top:1px solid var(--pd-line); font-weight:700; }
     .pd-list-h + .pd-list { margin-top:7px; padding-top:0; border-top:0; }
-    .pd-list-t small { display:block; font-size:9.5px; color:var(--pd-muted); font-weight:500;
+    .pd-list-t small { display:block; font-size:var(--pd-fs-micro); color:var(--pd-muted); font-weight:500;
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .pd-list-r.done .pd-list-t { opacity:.6; }
-    .pd-list-r .pd-no { color:var(--pd-muted); font-weight:700; font-size:10px; }
+    .pd-list-r .pd-no { color:var(--pd-muted); font-weight:700; font-size:var(--pd-fs-micro); }
     .pd-ms { color:#C9A227; }
     .pd-due-r.late .pd-list-t { color:var(--pd-ink); }
-    .pd-due-p { flex:none; width:34px; text-align:right; font-size:10.5px; font-weight:700;
+    .pd-due-p { flex:none; width:34px; text-align:right; font-size:var(--pd-fs-micro); font-weight:700;
       color:var(--pd-muted); font-variant-numeric:tabular-nums; }
 
     /* ---- "My items" drawer -------------------------------------------------------------------- */
     .mw-fab { position:fixed; right:18px; bottom:18px; z-index:60; display:inline-flex; align-items:center;
-      gap:8px; padding:11px 15px; border-radius:999px; border:1px solid var(--pd-line);
-      background:var(--pd-card, var(--pd-bg)); color:var(--pd-ink); font-size:12.5px; font-weight:700;
+      gap:8px; padding:11px 15px; border-radius:var(--pd-radius-pill); border:1px solid var(--pd-line);
+      background:var(--pd-card, var(--pd-bg)); color:var(--pd-ink); font-size:var(--pd-fs-sm); font-weight:700;
       cursor:pointer; box-shadow:0 8px 24px rgba(0,0,0,.32); }
     .mw-fab:hover { border-color:var(--pd-muted); }
     .mw-fab.has { border-color:var(--pd-red); }
-    .mw-fab-ico { font-size:14px; line-height:1; }
-    .mw-fab-n { min-width:19px; height:19px; padding:0 5px; border-radius:999px; background:var(--pd-red);
-      color:#fff; font-size:10.5px; line-height:19px; text-align:center; font-weight:800; }
+    .mw-fab-ico { font-size:var(--pd-fs-md); line-height:1; }
+    .mw-fab-n { min-width:19px; height:19px; padding:0 5px; border-radius:var(--pd-radius-pill); background:var(--pd-red);
+      color:#fff; font-size:var(--pd-fs-micro); line-height:19px; text-align:center; font-weight:800; }
     .mw-scrim { position:fixed; inset:0; z-index:70; background:rgba(0,0,0,.42);
       opacity:0; transition:opacity .18s ease; }
     .mw-scrim.open { opacity:1; }
@@ -273,8 +263,8 @@
       transform:translateX(100%); transition:transform .2s ease; }
     .mw-drawer.open { transform:translateX(0); }
     .mw-drawer-head { display:flex; align-items:center; justify-content:space-between; gap:12px;
-      padding:14px 18px; border-bottom:1px solid var(--pd-line); font-size:14px; flex:none; }
-    .mw-drawer-x { background:none; border:0; color:var(--pd-muted); font-size:24px; line-height:1;
+      padding:14px 18px; border-bottom:1px solid var(--pd-line); font-size:var(--pd-fs-md); flex:none; }
+    .mw-drawer-x { background:none; border:0; color:var(--pd-muted); font-size:var(--pd-fs-hero); line-height:1;
       cursor:pointer; padding:0 4px; }
     .mw-drawer-x:hover { color:var(--pd-ink); }
     .mw-drawer-body { overflow-y:auto; padding:14px 18px 22px; flex:1 1 auto; }
@@ -289,15 +279,15 @@
     @media (max-width:640px) { .mw-fab-txt { display:none; } .mw-fab { padding:12px; } }
 
     /* ---- Visual panels ---------------------------------------------------------------------- */
-    .pd-viz { margin-top:12px; padding:15px 17px 16px; border-radius:12px;
+    .pd-viz { margin-top:12px; padding:15px 17px 16px; border-radius:var(--pd-radius-lg);
       background:var(--pd-card, var(--pd-bg)); border:1px solid var(--pd-line); }
     .pd-viz-2col { display:grid; grid-template-columns:repeat(auto-fit, minmax(360px, 1fr)); gap:12px; }
     .pd-viz-2col > .pd-viz { margin-top:12px; }
     .pd-viz-h { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:13px; }
-    .pd-viz-t { font-size:13.5px; font-weight:800; letter-spacing:-.01em; }
-    .pd-viz-s { font-size:11px; color:var(--pd-muted); }
-    .pd-viz-empty { font-size:12px; color:var(--pd-muted); padding:14px 2px; line-height:1.55; }
-    .pd-viz-legend { display:flex; gap:13px; flex-wrap:wrap; font-size:10.5px; color:var(--pd-muted); }
+    .pd-viz-t { font-size:var(--pd-fs-base); font-weight:800; letter-spacing:-.01em; }
+    .pd-viz-s { font-size:var(--pd-fs-xs); color:var(--pd-muted); }
+    .pd-viz-empty { font-size:var(--pd-fs-sm); color:var(--pd-muted); padding:14px 2px; line-height:1.55; }
+    .pd-viz-legend { display:flex; gap:13px; flex-wrap:wrap; font-size:var(--pd-fs-micro); color:var(--pd-muted); }
     .pd-viz-legend i { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px; }
 
     /* Programme view — one row per trade.
@@ -306,9 +296,9 @@
        read as three-quarters finished. Only the fill and the shortfall band carry colour now. */
     .pd-pv { display:grid; grid-template-columns:196px 1fr 62px; gap:9px 12px; align-items:center; }
     .pd-pv-l { min-width:0; line-height:1.3; }
-    .pd-pv-l b { display:block; font-size:11.5px; font-weight:700; color:var(--pd-ink);
+    .pd-pv-l b { display:block; font-size:var(--pd-fs-xs); font-weight:700; color:var(--pd-ink);
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .pd-pv-l small { display:block; font-size:10px; color:var(--pd-muted); white-space:nowrap;
+    .pd-pv-l small { display:block; font-size:var(--pd-fs-micro); color:var(--pd-muted); white-space:nowrap;
       overflow:hidden; text-overflow:ellipsis; }
     .pd-pv-l small.dim { opacity:.75; }
     .pd-pv-t { position:relative; height:18px; border-radius:9px; background:var(--pd-line); overflow:hidden; }
@@ -332,8 +322,8 @@
       opacity:.55; border-radius:1px; }
     /* Its own grid cell, never inside the clipped track — a % that can be sliced mid-digit into a
        different number is worse than no %. */
-    .pd-pv-n { font-size:11px; font-weight:700; text-align:right; line-height:1.25; }
-    .pd-pv-n small { display:block; font-size:9px; font-weight:600; color:var(--pd-muted); }
+    .pd-pv-n { font-size:var(--pd-fs-xs); font-weight:700; text-align:right; line-height:1.25; }
+    .pd-pv-n small { display:block; font-size:var(--pd-fs-micro); font-weight:500; color:var(--pd-muted); }
     .pd-viz-legend i.pd-lg-span { background:var(--pd-card); border:1px solid var(--pd-line); }
     .pd-viz-legend i.pd-lg-gap { background:repeating-linear-gradient(135deg, #E5534B 0 3px, transparent 3px 6px); }
     .pd-viz-legend i.pd-lg-now { background:var(--pd-ink); opacity:.55; width:3px; border-radius:1px; }
@@ -342,24 +332,102 @@
       .pd-pv-l small.dim { display:none; }
     }
 
-    /* Photo strip */
-    .pd-ph { display:grid; grid-template-columns:repeat(auto-fill, minmax(112px, 1fr)); gap:8px; }
-    .pd-ph-i { border-radius:9px; overflow:hidden; border:1px solid var(--pd-line); background:var(--pd-bg); }
-    .pd-ph-i img { display:block; width:100%; height:74px; object-fit:cover; }
-    .pd-ph-x { height:74px; display:flex; align-items:center; justify-content:center; color:var(--pd-muted); font-size:10px; }
-    .pd-ph-c { padding:5px 7px 6px; font-size:9.5px; color:var(--pd-muted); line-height:1.35; }
-    .pd-ph-c b { display:block; color:var(--pd-ink); font-size:10px; font-weight:700;
-      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    /* ==========================================================================================
+       PROGRESS PHOTOS — a viewer, not a contact sheet.
+       Owner 2026-09-10: *"can you input a progress photos viewer for the dashboard and make it
+       visually pleasing."*
+
+       ⚠️ WHAT WAS THERE: six 112×74 thumbnails in a grid, each with a caption under it. At that
+       size a site photo is a smudge — you could see THAT photos existed, not what was in one —
+       and nothing was clickable, so the only way to look at the work was to leave the dashboard
+       for the module.
+       ⚠️ WHAT IT IS NOW: one frame big enough to read, a rail of the rest under it, and a full
+       lightbox on click. The hero carries its caption OVER the image rather than under it, so the
+       picture gets the whole panel width instead of sharing it with a text column.
+       ⚠️ 16:9, fixed by aspect-ratio: site photos arrive portrait and landscape from a dozen
+       phones, and a frame that resized per photo would make the panel jump on every rail click —
+       this panel sits above the module grid, so its height moving is felt down the whole page.
+       ⚠️⚠️ The image is `contain`, NOT `cover`. A progress photo cropped to fill a frame is a photo
+       with the thing being reported cut out of it. The letterbox is the panel's own ground, so it
+       reads as a frame rather than as a gap.
+       ========================================================================================== */
+    .pd-ph-v { display:grid; gap:9px; }
+    .pd-ph-hero { position:relative; aspect-ratio:16/9; border-radius:var(--pd-radius-lg); overflow:hidden;
+      background:var(--pd-bg); border:1px solid var(--pd-line); cursor:zoom-in; padding:0; width:100%;
+      display:block; text-align:left; }
+    .pd-ph-hero img { display:block; width:100%; height:100%; object-fit:contain; }
+    /* ⚠️ Only the caption BAND is tinted, never the picture: a scrim over the whole frame dims the
+       one thing the panel exists to show. The gradient is what keeps white text legible over a
+       photo whose bottom edge might be pale concrete or dark shadow — both are common here. */
+    .pd-ph-cap { position:absolute; left:0; right:0; bottom:0; padding:26px 14px 11px; color:#fff;
+      background:linear-gradient(to top, rgba(0,0,0,.80) 0%, rgba(0,0,0,.55) 45%, rgba(0,0,0,0) 100%);
+      pointer-events:none; }
+    .pd-ph-cap b { display:block; font-size:var(--pd-fs-sm); font-weight:700; line-height:1.3;
+      overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-shadow:0 1px 3px rgba(0,0,0,.55); }
+    .pd-ph-cap small { display:block; margin-top:2px; font-size:var(--pd-fs-micro); opacity:.9;
+      text-shadow:0 1px 3px rgba(0,0,0,.55); }
+    /* The frame says it opens, without a button sitting on top of the photograph. */
+    .pd-ph-hint { position:absolute; top:9px; right:9px; padding:3px 8px; border-radius:var(--pd-radius-pill);
+      background:rgba(0,0,0,.55); color:#fff; font-size:var(--pd-fs-micro); font-weight:700;
+      opacity:0; transition:opacity .16s ease; pointer-events:none; }
+    .pd-ph-hero:hover .pd-ph-hint, .pd-ph-hero:focus-visible .pd-ph-hint { opacity:1; }
+    .pd-ph-hero:focus-visible { outline:2px solid var(--pd-red); outline-offset:2px; }
+    /* The rail. ⚠️ Scrolls rather than wrapping, for the same height reason as the hero. */
+    .pd-ph-rail { display:flex; gap:7px; overflow-x:auto; padding-bottom:3px; scrollbar-width:thin; }
+    .pd-ph-t { flex:0 0 auto; width:84px; height:56px; border-radius:7px; overflow:hidden; padding:0;
+      border:1px solid var(--pd-line); background:var(--pd-bg); cursor:pointer; position:relative;
+      transition:border-color .14s ease, opacity .14s ease; opacity:.62; }
+    .pd-ph-t img { display:block; width:100%; height:100%; object-fit:cover; }
+    .pd-ph-t:hover { opacity:1; }
+    /* ⚠️ A BORDER as well as full opacity marks the current tile. Opacity alone is a difference
+       you have to compare to notice; a red edge is one you see. */
+    .pd-ph-t.on { opacity:1; border-color:var(--pd-red); box-shadow:0 0 0 1px var(--pd-red); }
+    .pd-ph-t:focus-visible { outline:2px solid var(--pd-red); outline-offset:1px; }
+    /* Kept from the strip this replaced: a signed URL can fail or expire, and the caption still
+       carries the information, so a tile degrades to words rather than to a broken-image icon. */
+    .pd-ph-x { display:flex; align-items:center; justify-content:center; width:100%; height:100%;
+      color:var(--pd-muted); font-size:var(--pd-fs-micro); text-align:center; padding:4px; }
+    /* ---- The lightbox ------------------------------------------------------------------------
+       ⚠️ position:fixed on the PAGE, not inside the panel: a viewer clipped by its own card's
+       overflow is a viewer the size of the card. z-index clears the My-items drawer (71). */
+    .pd-lb { position:fixed; inset:0; z-index:90; display:flex; flex-direction:column;
+      background:rgba(8,9,11,.94); opacity:0; transition:opacity .16s ease; }
+    .pd-lb.open { opacity:1; }
+    .pd-lb-top { flex:none; display:flex; align-items:center; justify-content:space-between; gap:12px;
+      padding:12px 16px; color:#fff; }
+    .pd-lb-n { font-size:var(--pd-fs-xs); opacity:.75; font-variant-numeric:tabular-nums; }
+    .pd-lb-x { background:none; border:0; color:#fff; font-size:26px; line-height:1; cursor:pointer;
+      padding:0 6px; opacity:.75; }
+    .pd-lb-x:hover { opacity:1; }
+    .pd-lb-stage { flex:1 1 auto; min-height:0; position:relative; display:flex; align-items:center;
+      justify-content:center; padding:0 8px; }
+    .pd-lb-stage img { max-width:100%; max-height:100%; object-fit:contain; border-radius:6px; }
+    .pd-lb-nav { position:absolute; top:50%; transform:translateY(-50%); width:44px; height:44px;
+      border-radius:50%; border:1px solid rgba(255,255,255,.28); background:rgba(0,0,0,.45);
+      color:#fff; font-size:20px; line-height:1; cursor:pointer; display:flex; align-items:center;
+      justify-content:center; }
+    .pd-lb-nav:hover { background:rgba(0,0,0,.7); }
+    .pd-lb-nav.prev { left:12px; } .pd-lb-nav.next { right:12px; }
+    .pd-lb-nav:disabled { opacity:.25; cursor:default; }
+    .pd-lb-foot { flex:none; padding:12px 18px 20px; color:#fff; text-align:center; }
+    .pd-lb-foot b { display:block; font-size:var(--pd-fs-md); font-weight:700; }
+    .pd-lb-foot small { display:block; margin-top:3px; font-size:var(--pd-fs-xs); opacity:.72; }
+    @media (prefers-reduced-motion:reduce) { .pd-lb, .pd-ph-t, .pd-ph-hint { transition:none; } }
+    @media (max-width:640px) {
+      .pd-ph-t { width:66px; height:44px; }
+      .pd-lb-nav { width:38px; height:38px; }
+      .pd-lb-foot { padding:10px 14px 16px; }
+    }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="assets/js/config.js?v=20260902a"></script>
+  <script src="assets/js/config.js?v=20260910za"></script>
   <script src="assets/js/auth.js?v=20260901b"></script>
-  <script src="assets/js/db.js?v=20260907a"></script>
+  <script src="assets/js/db.js?v=20260909n"></script>
   <script src="assets/js/program.js?v=20260827a"></script>
   <script src="assets/js/scurve.js?v=20260901a"></script>
-  <script src="assets/js/ui.js?v=20260904a"></script>
-  <script src="assets/js/icons.js?v=20260907a"></script>
-  <script src="assets/js/modules-grid.js?v=20260908e"></script>
+  <script src="assets/js/ui.js?v=20260909s"></script>
+  <script src="assets/js/icons.js?v=20260909ui"></script>
+  <script src="assets/js/modules-grid.js?v=20260911z4"></script>
   <script src="assets/js/my-work.js?v=20260902a"></script>
   <script>
   (function () {
@@ -494,6 +562,7 @@
           ? '<strong class="pd-perf-v">' + o.value + '</strong>'
           : '<strong class="pd-perf-v pd-perf-em">' + Fmt.esc(o.empty || 'No data') + '</strong>') +
         (o.bar != null ? '<div class="pd-perf-bar"><i style="width:' + Math.max(0, Math.min(100, o.bar)) + '%"></i></div>' : '') +
+        (o.note ? '<small class="pd-perf-note">' + o.note + '</small>' : '') +
         (o.basis ? '<small class="pd-perf-b">' + o.basis + '</small>' : '') + '</div>';
     }
 
@@ -514,8 +583,7 @@
         ? perfCard({ label: 'Planned POC', empty: blN ? 'No baseline dates' : 'Not baselined',
             basis: 'Needs <b>bl_start</b> and <b>bl_finish</b> on the activities. Capture a baseline in <b>Project Schedule</b>.' })
         : perfCard({ label: 'Planned POC', value: Math.round(planned) + '%', color: '#8A93A6', bar: planned,
-            basis: 'Where the baseline says this project should be today.<br>Duration-weighted across ' +
-              blN + ' baselined activit' + (blN === 1 ? 'y' : 'ies') + '.' });
+            note: 'Baseline, ' + blN + ' activit' + (blN === 1 ? 'y' : 'ies') });
 
       var c2;
       if (poc == null) {
@@ -523,28 +591,49 @@
           basis: acts ? 'No progress recorded against any activity yet.' : 'Nothing to report on.' });
       } else {
         var gap = planned == null ? null : (poc - planned);
+        // ⚠ The comparison IS the useful half and stays; the sentence explaining the
+        //   weighting moved to the row-level basis line below, where it is said once.
         c2 = perfCard({ label: 'Actual POC', value: Math.round(poc) + '%', color: '#2FA36B', bar: poc,
-          basis: 'Duration-weighted across ' + acts + ' activities.<br>' +
-            (gap == null
-              ? '<span class="pd-stat-warn">No baseline, so there is no planned % to compare this against.</span>'
-              : '<span class="' + tone(gap >= 0) + '">' + (gap >= 0 ? '+' : '') + Math.round(gap) +
-                ' pts vs planned</span> &mdash; same duration weighting.') });
+          note: (gap == null
+            ? '<span class="pd-stat-warn">No baseline to compare</span>'
+            : '<span class="' + tone(gap >= 0) + '">' + (gap >= 0 ? '+' : '') + Math.round(gap) +
+              ' pts vs planned</span>') });
       }
 
       var c3 = spi == null
         ? perfCard({ label: 'SPI', empty: 'No planned value',
             basis: 'SPI is EV &divide; PV. Needs a <b>baseline</b> and <b>planned cost</b> to measure against.' })
         : perfCard({ label: 'SPI', value: r2(spi), color: spi >= 1 ? '#2FA36B' : '#E5534B',
-            basis: '<span class="' + tone(spi >= 1) + '">' + (spi >= 1 ? 'On or ahead of plan' : 'Behind schedule') +
-              '</span><br>Earned &divide; planned value, by cost.' });
+            note: '<span class="' + tone(spi >= 1) + '">' + (spi >= 1 ? 'On or ahead of plan' : 'Behind schedule') + '</span>' });
 
       var c4 = cpi == null
         ? perfCard({ label: 'CPI', empty: 'No actual cost',
             basis: 'CPI is EV &divide; AC. Needs recorded <b>actual cost</b> on the schedule.' })
         : perfCard({ label: 'CPI', value: r2(cpi), color: cpi >= 1 ? '#2FA36B' : '#E5534B',
-            basis: '<span class="' + tone(cpi >= 1) + '">' + (cpi >= 1 ? 'Under budget' : 'Over budget') +
-              '</span><br>Earned &divide; actual cost.' });
+            note: '<span class="' + tone(cpi >= 1) + '">' + (cpi >= 1 ? 'Under budget' : 'Over budget') + '</span>' });
 
+      // ⚠⚠ THE BASIS IS STILL STATED — ONCE, FOR THE ROW, instead of four times in four
+      //    paragraphs. The owner's complaint was the volume of explanatory text ("every KPI
+      //    card should be very intuitive"), NOT the honesty: the comment above this function
+      //    is load-bearing and still holds, because POC and SPI/CPI are genuinely not
+      //    measured the same way and a row of bare numbers invites combining them. Saying it
+      //    once, contrasting the two bases in a single sentence, is clearer than four cards
+      //    each explaining themselves in isolation — and it is four lines of prose, not
+      //    sixteen. ⚠ EMPTY cards keep their own text: that one is not an explanation, it
+      //    names the missing input and where to capture it, which is actionable.
+      /* ⚠⚠ THE BASIS PARAGRAPH IS GONE, AND REMOVING IT WIDENED THE CARDS BY 233px EACH.
+         Owner asked for two things -- *"The 4 KPI cards should fit properly right now everything
+         looks squeezed"* and *"remove the ... tooltip since this is understood common sense"* --
+         and they were THE SAME BUG. The paragraph carried `grid-column:1/-1`, which OCCUPIES every
+         track of `repeat(auto-fit, minmax(196px,1fr))`, so `auto-fit` could never collapse the
+         empty ones. MEASURED at 1900px: WITH the line, 8 live tracks and cards at 221px with
+         captions wrapping to 3 lines; WITHOUT it, 4 tracks at 454px and 4 collapsed to 0, captions
+         down to 1-2. A full-width child in an auto-fit grid silently defeats the auto-fit.
+         ⚠ The prose was defensible when written -- a number with no stated basis gets trusted
+         further than it deserves -- but the owner is right that EV/PV and duration-weighting are
+         common ground for a planner. The EMPTY cards keep their own text, which names a missing
+         input and where to capture it rather than explaining a concept; that is the half worth
+         keeping. */
       host.innerHTML = c1 + c2 + c3 + c4;
     }
 
@@ -871,13 +960,16 @@
         // ⚠️ The scroll hint is CONDITIONAL. On a quarterly axis the columns share the panel out and
         //    there is usually nothing to scroll, and an instruction to do something the page will not
         //    do reads as a broken control rather than as a leftover sentence.
+        // ⚠ Three sentences down to one. What went is the half that described what
+        //   HOVERING does — hovering demonstrates itself — and the note that percentages
+        //   are comparable, which the shared axis already shows. What stays is the two
+        //   things the chart cannot say for itself: that the current period is read at
+        //   TODAY rather than at its end, and (quarterly only) that a cumulative curve
+        //   must not be added up. The scroll half stays CONDITIONAL for the reason above.
         '<div class="pd-viz-s pd-mini-note">' +
-          (W + SC_KEY > (host.clientWidth || 0) - 34 ? 'Scroll sideways for the whole programme; hover' : 'Hover') +
-          ' a ' + unit + ' for its figures. Percentages are of the project total, so they are ' +
-          'comparable across ' + unit + 's. ' + (mode === 'q'
-            ? 'A quarter reads at its <b>end</b> — these are cumulative curves, so quarters are never added up. '
-            : '') +
-          'The <b>' + unit + ' in progress</b> is read at today, not at its end.</div>';
+          (W + SC_KEY > (host.clientWidth || 0) - 34 ? 'Scroll sideways for the whole programme. ' : '') +
+          'The <b>' + unit + ' in progress</b> is read at today, not at its end.' +
+          (mode === 'q' ? ' Quarters read at their <b>end</b> and are never added up.' : '') + '</div>';
 
       // ---- the period toggle ----
       // A repaint, never a re-fetch: the curve is already computed and held in MET.
@@ -1159,23 +1251,148 @@
         (sub ? '<small class="pd-mini-s">' + Fmt.esc(sub) + '</small>' : '') + '</div>';
     }
 
+    /* ==========================================================================================
+       THE PROGRESS PHOTOS VIEWER.
+       Owner 2026-09-10: *"can you input a progress photos viewer for the dashboard and make it
+       visually pleasing."*
+
+       A hero frame, a rail of the rest, and a lightbox. ⚠️ ONE list drives all three (`PH`), so
+       the rail, the hero and the lightbox can never be showing different photos — the index is the
+       only state, and every control moves that index.
+       ⚠️ NOTHING IS FETCHED HERE. The photos are the `recent` block the shell already loads for
+       every module that declares one (see APP_CONFIG's progress-photos `dash.recent`), signed
+       once by PDb. A viewer that re-queried would be a second source for the same six rows.
+       ========================================================================================== */
+    var PH = [], PHi = 0;
+    // What a photo is called, and what is known about when and where. Used by the hero, the rail's
+    // tooltips and the lightbox, so the three cannot describe the same photo differently.
+    function phTitle(r) { return r.title || r.works || 'Untitled'; }
+    function phSub(r) {
+      return [r.taken_at ? Fmt.date(r.taken_at) : '', r.location || '', r.works && r.title ? r.works : '']
+        .filter(Boolean).join(' · ');
+    }
     function renderPhotos() {
       var ph = MET['progress-photos'] || {}, rec = ph.recent || [];
       var mod = (APP_CONFIG.MODULES || []).find(function (m) { return m.key === 'progress-photos'; });
-      if (!rec.length) return vizEmpty('viz-photos', 'Latest Progress Photos',
-        'No photos uploaded for this project yet.');
+      var link = mod ? '<a class="pd-viz-s" href="' + ModulesGrid.href(mod) + '">Open the module</a>' : '';
+      if (!rec.length) return vizEmpty('viz-photos', 'Progress Photos',
+        'No photos uploaded for this project yet.' + (mod ? ' ' + link : ''));
+      PH = rec; PHi = 0;
       document.getElementById('viz-photos').innerHTML =
-        vizHead('Latest Progress Photos', rec.length + ' most recent of ' + ph.__rows,
-          mod ? '<a class="pd-viz-s" href="' + ModulesGrid.href(mod) + '">View all</a>' : '') +
-        '<div class="pd-ph">' + rec.map(function (r) {
-          // ⚠️ A signed URL can fail or expire; the caption still carries the information, so the
-          // tile degrades to text rather than a broken image icon.
-          return '<div class="pd-ph-i">' +
-            (r.__url ? '<img src="' + Fmt.esc(r.__url) + '" alt="" loading="lazy">' : '<div class="pd-ph-x">No preview</div>') +
-            '<div class="pd-ph-c"><b>' + Fmt.esc(r.title || r.works || 'Untitled') + '</b>' +
-            Fmt.esc([r.taken_at ? Fmt.date(r.taken_at) : '', r.location || ''].filter(Boolean).join(' · ')) +
-            '</div></div>';
-        }).join('') + '</div>';
+        vizHead('Progress Photos',
+          // ⚠️ States the window, not just the count: "6 most recent of 340" made a planner ask
+          // which 6, and the answer — the newest by date taken — is the thing worth saying.
+          rec.length + ' newest of ' + (ph.__rows == null ? rec.length : ph.__rows) +
+            ' &middot; click to enlarge', link) +
+        '<div class="pd-ph-v">' +
+          '<div id="ph-hero"></div>' +
+          (rec.length > 1 ? '<div class="pd-ph-rail" id="ph-rail"></div>' : '') +
+        '</div>';
+      /* ⚠️⚠️ THE RAIL IS BUILT BEFORE THE FIRST phPaint, and that order is the fix for a real
+         defect: phPaint marks the current thumbnail by querying [data-phi], so called first it
+         found an empty rail and NOTHING was ever marked until the planner clicked something.
+         Caught by measuring, not by looking: the index of the tile carrying the .on class came
+         back as -1 on a freshly rendered panel, which looks exactly like a panel whose first photo
+         simply is not the current one. */
+      var rail = document.getElementById('ph-rail');
+      if (rail) {
+        rail.innerHTML = rec.map(function (r, i) {
+          return '<button type="button" class="pd-ph-t" data-phi="' + i + '"' +
+            ' title="' + Fmt.esc(phTitle(r) + (phSub(r) ? ' — ' + phSub(r) : '')) + '"' +
+            ' aria-label="' + Fmt.esc('Show photo ' + (i + 1) + ' of ' + rec.length + ': ' + phTitle(r)) + '">' +
+            (r.__url ? '<img src="' + Fmt.esc(r.__url) + '" alt="" loading="lazy">' : '<span class="pd-ph-x">No preview</span>') +
+            '</button>';
+        }).join('');
+        rail.querySelectorAll('[data-phi]').forEach(function (b) {
+          b.onclick = function () { PHi = +b.dataset.phi; phPaint(); };
+        });
+      }
+      phPaint();
+    }
+    // Repaints the hero and re-marks the rail. ⚠️ Style and text only on the rail — the tiles are
+    // never rebuilt, so clicking one does not restart six image loads.
+    function phPaint() {
+      var host = document.getElementById('ph-hero'); if (!host || !PH.length) return;
+      var r = PH[PHi] || PH[0], sub = phSub(r);
+      host.innerHTML =
+        '<button type="button" class="pd-ph-hero" id="ph-open" aria-label="' +
+          Fmt.esc('Enlarge: ' + phTitle(r)) + '">' +
+          (r.__url ? '<img src="' + Fmt.esc(r.__url) + '" alt="' + Fmt.esc(phTitle(r)) + '">'
+                   : '<span class="pd-ph-x">No preview available for this photo</span>') +
+          '<span class="pd-ph-hint">' + (PHi + 1) + ' / ' + PH.length + ' &middot; click to enlarge</span>' +
+          '<span class="pd-ph-cap"><b>' + Fmt.esc(phTitle(r)) + '</b>' +
+            (sub ? '<small>' + Fmt.esc(sub) + '</small>' : '') + '</span>' +
+        '</button>';
+      var op = document.getElementById('ph-open');
+      if (op) op.onclick = function () { phLightbox(PHi); };
+      var rail = document.getElementById('ph-rail');
+      if (rail) rail.querySelectorAll('[data-phi]').forEach(function (b) {
+        var on = +b.dataset.phi === PHi;
+        b.classList.toggle('on', on);
+        b.setAttribute('aria-current', on ? 'true' : 'false');
+      });
+    }
+    /* The lightbox. ⚠️ Built and destroyed per opening rather than parked in the page: it holds a
+       full-size image, and leaving one in the DOM behind an `opacity:0` keeps that decode alive on
+       a dashboard nobody has asked to look at photos on.
+       ⚠️ The keydown listener is removed by close(), and close() is the ONLY way out — every exit
+       (Esc, the ×, the backdrop) goes through it, so the listener cannot outlive the overlay. */
+    function phLightbox(start) {
+      if (!PH.length) return;
+      var i = Math.max(0, Math.min(PH.length - 1, start || 0));
+      var box = document.createElement('div');
+      box.className = 'pd-lb';
+      box.setAttribute('role', 'dialog');
+      box.setAttribute('aria-modal', 'true');
+      box.setAttribute('aria-label', 'Progress photo viewer');
+      box.innerHTML =
+        '<div class="pd-lb-top"><span class="pd-lb-n" id="lb-n"></span>' +
+          '<button type="button" class="pd-lb-x" id="lb-x" aria-label="Close">&times;</button></div>' +
+        '<div class="pd-lb-stage" id="lb-stage">' +
+          '<button type="button" class="pd-lb-nav prev" id="lb-prev" aria-label="Previous photo">&#10094;</button>' +
+          '<img id="lb-img" alt="">' +
+          '<button type="button" class="pd-lb-nav next" id="lb-next" aria-label="Next photo">&#10095;</button>' +
+        '</div>' +
+        '<div class="pd-lb-foot"><b id="lb-t"></b><small id="lb-s"></small></div>';
+      document.body.appendChild(box);
+      // One frame later, so the opacity transition has a start state to move from.
+      requestAnimationFrame(function () { box.classList.add('open'); });
+      var img = box.querySelector('#lb-img');
+      function paint() {
+        var r = PH[i], sub = phSub(r);
+        // ⚠️ A photo with no signed URL is skipped rather than shown as a broken frame — but only
+        // in the lightbox, where there is nothing else on screen to explain the blank.
+        img.style.display = r.__url ? '' : 'none';
+        if (r.__url) { img.src = r.__url; img.alt = phTitle(r); }
+        box.querySelector('#lb-n').textContent = (i + 1) + ' of ' + PH.length;
+        box.querySelector('#lb-t').textContent = phTitle(r);
+        box.querySelector('#lb-s').textContent = sub || (r.__url ? '' : 'No preview available');
+        box.querySelector('#lb-prev').disabled = (i <= 0);
+        box.querySelector('#lb-next').disabled = (i >= PH.length - 1);
+      }
+      function go(d) { var n = i + d; if (n < 0 || n >= PH.length) return; i = n; paint(); }
+      function close() {
+        document.removeEventListener('keydown', onKey);
+        box.classList.remove('open');
+        // ⚠️ The index the planner navigated to becomes the panel's hero, so closing the viewer
+        // does not throw away where they got to.
+        PHi = i; phPaint();
+        setTimeout(function () { if (box.parentNode) box.parentNode.removeChild(box); }, 180);
+      }
+      function onKey(e) {
+        if (e.key === 'Escape') { e.preventDefault(); close(); }
+        else if (e.key === 'ArrowRight') { e.preventDefault(); go(1); }
+        else if (e.key === 'ArrowLeft') { e.preventDefault(); go(-1); }
+      }
+      box.querySelector('#lb-x').onclick = close;
+      box.querySelector('#lb-prev').onclick = function () { go(-1); };
+      box.querySelector('#lb-next').onclick = function () { go(1); };
+      // ⚠️ The BACKDROP closes, the stage does not: a click meant for the next arrow that lands a
+      // few pixels off should not dismiss the photo being read.
+      box.onclick = function (e) { if (e.target === box || e.target.id === 'lb-stage') close(); };
+      document.addEventListener('keydown', onKey);
+      paint();
+      box.querySelector('#lb-next').focus();
     }
 
     function renderViz() {
@@ -1187,7 +1404,7 @@
       try { renderProgram(); } catch (e) { vizEmpty('viz-program', 'Project Schedule & Milestones', 'Could not draw this panel.'); }
       try { renderMom(); } catch (e) { vizEmpty('viz-mom', 'Minutes of Meeting', 'Could not draw this panel.'); }
       try { renderIssues(); } catch (e) { vizEmpty('viz-issues', 'Issues &amp; Concerns', 'Could not draw this panel.'); }
-      try { renderPhotos(); } catch (e) { vizEmpty('viz-photos', 'Latest Progress Photos', 'Could not draw this panel.'); }
+      try { renderPhotos(); } catch (e) { vizEmpty('viz-photos', 'Progress Photos', 'Could not draw this panel.'); }
     }
 
     // Load every module's declared metrics in parallel, then draw once. A module that fails or

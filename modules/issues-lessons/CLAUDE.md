@@ -1,5 +1,139 @@
 # Module: issues-lessons
 
+## 2026-09-11 — Mobile no longer turns the Issues/Lessons tables into tiles
+
+Owner: "for issues and concerns and lessons learned list, in mobile view, the table turns into
+tiles. maintain table view even in mobile view and just allow scroll."
+
+⚠️⚠️ **That reflow was a deliberate, named piece of CSS, not a fallback nobody noticed** —
+`module.css`'s own 2026-07-23 comment explained it: below 700px the table hid `thead`, stacked
+each `<td>` as a labelled block and relabelled every cell from its `data-l` attribute, "since the
+issues register is an 11-column table with `min-width:980px` — side-scrolling a table that wide
+on a phone is unusable." That reasoning has since been overtaken by the app's own shared
+convention: `.pd-table`'s phone rule (`assets/css/dashboard.css`) already gives every table in
+this app a horizontal scroller at the identical 700px breakpoint, and both this module's tables
+(`#il-table` for Issues & Concerns, `#il-lessons-table` for Lessons Learned — both share the one
+`il-table` class) already sit inside a `<div class="pd-card" style="padding:0;overflow:auto;">`
+wrapper, so the scroll container was already there.
+
+The module-local override — `.pd-table.il-table` forced to `display:block` with `thead` hidden
+and every `<td>` stacked — is removed. The comment's own note explains why the selector was
+written `.pd-table.il-table` rather than plain `.il-table`: *"the table also carries the shared
+`.pd-table` class, whose phone rule makes it a nowrap horizontal scroller… dropping the `.pd-table`
+qualifier here silently restores side-scrolling."* That is now exactly the wanted behaviour, so the
+override is deleted rather than neutralised in place — leaving a dead, never-matching selector
+around is how the next person "helpfully" restores it.
+
+⚠️ `data-l` attributes are left in the markup untouched (`module.js` still emits them on every
+`<td>`) — harmless once nothing reads them, and removing them would be a second, unrelated change
+for no benefit. `.il-iconbtn`'s 42px phone touch-target rule is kept: the row action buttons
+(edit/delete) are still real controls on a horizontally-scrolled table and still need a bigger
+tap target than desktop.
+
+Since both the Issues and Lessons tables share the `il-table` class and the same 700px breakpoint,
+one fix covers both lists — confirmed by reading `renderLessonsLogView`'s own table markup, which
+reuses `class="pd-table il-table" id="il-lessons-table"` verbatim.
+
+### Verified
+
+CSS brace balance holds (270/270, unchanged proportionally after the removal); 0 NUL bytes.
+Re-read the surrounding mobile block (filter-panel wrap, Kanban column width, the `.pd-kpis`
+reflow note) to confirm none of those rules depended on anything inside the removed block — they
+did not, and are untouched.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment, the standing
+constraint for every UI pass in this repo. No live phone-width render of either table scrolling
+horizontally against real rows.
+
+`module.css?v=` → `20260911c`. No `MODULE_V` bump — `index.html`'s structure is unchanged, only
+the module-local stylesheet version moved.
+
+## 2026-09-08 — The present view is back, and this reverses a decision whose note is still in this module's CSS
+
+Owner: *"Issues & Concerns: what happened to the present view?"*
+
+**It was removed on purpose, and the note explaining why is still in `module.css`.** Entries (f)/(g)
+dropped the old toggle on the reasoning that *"Detail itself is the single-record read/edit view now,
+and the top-level Dashboard covers what reporting meant"* — recorded there as *"No need for reporting
+view" — confirmed unreachable, not just unused*. So this is **a deliberate reversal, not a bug fix**,
+and the note is answered rather than deleted.
+
+⚠️ **That reasoning was right about the DASHBOARD and wrong about the SINGLE RECORD.** The Dashboard is
+a portfolio read — it does cover what a *register-level* reporting view meant. But **presenting one
+issue in a meeting is not the same act as reading the register**, and both Minutes of Meeting and
+Project Schedule kept a present mode for exactly that. Restored for the **single record only**; nothing
+brings back a register-wide reporting screen.
+
+### ⚠️⚠️ `present` is its own flag and must NOT be folded into `opts.readOnly`
+
+Both end at `ro = true`, so reusing `readOnly` looks like the obvious one-word change. It is the one
+thing that would have broken this quietly.
+
+`readOnly` **additionally sets `bg`**, which means *"this is the Background embed on a lesson's page"*
+and deliberately keeps the narrative fields in **boxed, disabled `<textarea>` chrome**. A present view
+wants the exact opposite — `ilField`'s report mode, bare text — because an `<input>` **clips its own
+value**, which is precisely what made the Minutes' long Issue/Agenda unreadable in the one mode that
+exists for reading it (measured there at **659px of text in a 416px box**). Reusing `readOnly` would
+have silently turned the present view into a Background embed: read-only, yes, and unreadable.
+
+So: `mayEdit = (opts && (opts.readOnly || opts.present)) ? false : …`, with `bg` still keyed on
+`readOnly` alone.
+
+⚠️ **Offered only for a SAVED record** (`canPresent = !!(cur && !_issNew)`). A not-yet-saved draft has
+nothing to present, and forcing it read-only would strand whatever was typed.
+
+⚠️ **Session-only, never persisted, and reset with the rest of the per-record state.** Carrying a
+present mode onto the next issue you open shows it read-only for no reason the screen explains — a
+screen that comes back read-only tomorrow reads as *"I have lost permission"*, which is the failure
+mode the Project Schedule's own reporting view documents.
+
+⚠️ **The Exit button lives in `.il-detail-nav`**, which the mode leaves visible — it is the only way
+back out. Same rule the Project Schedule's reporting view follows for its Layout menu.
+
+### CSS: presentation only
+
+⚠️ **Every read-only behaviour comes from `opts.present` forcing `ro=true` in `issDetailHTML`, never
+from CSS.** A mode that only hid controls in CSS would leave them reachable by keyboard and the
+database would then refuse the write with an error the planner could not explain. The `.il-report`
+block just makes the record read like a sheet: the action rows, the workflow buttons and the required-
+field asterisks are hidden, the card gets a little more air, labels go muted, and controls lose pointer
+events. `@media print` drops the nav, since presenting often ends in a printout.
+
+⚠️⚠️ **The first cut of this CSS targeted `.il-iss-actions` and `.il-mi-card` — classes this module
+never emits.** A silent no-op: valid CSS, matching nothing, no error anywhere. The real names are
+`.il-mom-actions` and `.il-iss-card`. Every selector in the block is now verified against the markup
+`module.js` actually produces — `il-mom-actions`, `il-mom-addrow`, `il-workflow-acts`,
+`il-workflow-btns`, `il-req`, `il-iss-card`, `il-mi-f`, `il-detail-nav`, all present.
+
+⚠️ **`font-size: var(--pd-fs-sm)` was also wrong** — that token is part of another session's unlanded
+typography refactor and **does not exist on main**, so the declaration would have been dropped at
+computed-value time and the label silently inherited its size. Now `var(--pd-fs-sm, 12px)`, which
+matches `.pd-btn-sm` today and adopts the scale when it lands.
+
+**The control is labelled** — **Present** / **Exit** beside the eye (`.il-modebtn` / `.il-modetxt`),
+unlike the step arrows next to it, because it is a **mode**. Same word and same treatment as Minutes of
+Meeting, which got the same labelling in this commit; the owner could not identify the equivalent
+icon-only control there (*"I am not sure if one of the buttons are present view"*), and the two
+registers must not name this differently.
+
+### Verified
+**7 assertions executing the flag computation sliced VERBATIM out of the shipped `issDetailHTML`** —
+never reimplemented: `editable` → `{ro:false, bg:false}`; `present` → `{ro:true, **bg:false**}`;
+`readOnly` (the Background embed) → `{ro:true, bg:true}`; both → `{ro:true, bg:true}`; `present` for
+someone with **no** edit permission → still `{ro:true, bg:false}` (the mode grants nothing);
+`viewer` → `{ro:true, bg:false}`; `present:false` inert.
+
+⚠️ **A contrast build on the pre-fix line proves the suite bites:** with `(opts && opts.readOnly)` in
+place it fails exactly one assertion — `present` returns `{ro:false}` where `{ro:true}` is required —
+and exits non-zero. A suite that passes against both versions tests nothing.
+
+`node --check` clean; `module.css` brace-balanced (296/296).
+
+⚠️ **Not verified signed in** — the mode has not been entered against a real issue, so the rendered
+result of `ro=true` without `bg` (bare report text rather than boxed textareas) is asserted at the flag
+level, not seen.
+
+`module.css` / `module.js?v=20260908pv`; `MODULE_V` → `20260908pv`.
 ## 2026-09-03 (c) — Issues Dashboard chart consistency (shared with the Minutes of Meeting dashboard), and Champion's free-text input is retired in favour of the dropdown alone
 
 Owner's list included two items naming **both** dashboards (this module's Issues Dashboard and

@@ -2,6 +2,13 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+> ⚠️ **Merge note (2026-09-12):** two independent sessions had each prepended their own new
+> entries above the same shared history at once — this branch's HTML/PDF/PPTX export overhaul
+> (below) and a concurrent session's capture-flow work already landed on `main` (Add Media,
+> mic toggle, 360° stitching, gallery tile sizing — the block starting at "Second capture-flow
+> round"). Resolved as the union, per this file's own established convention for this exact
+> collision shape: **both sides' entries kept whole**, none dropped, none duplicated.
+
 ## Final HTML/PDF QA pass — the upper-left red square removed, the colored photo
 ## markers confirmed as QA-fixture-only, and a real 1px page-bleed sliver found
 ## and fixed (2026-09-11, later still)
@@ -1000,6 +1007,735 @@ deleted after this check — nothing from this pass is committed.
 `module.js`/`ppr.js` → `?v=20260909a`. New asset: `assets/branding/megawide-logo.png` (module
 contract §4 — module-local, no shared-file edit). `module.css` unchanged. No `MODULE_V` bump —
 `index.html`'s structure/DOM is unchanged, only its two `<script>` version query strings moved.
+
+## Second capture-flow round: single-item Add Media, a mic toggle that
+## finally works at any point in a recording, a real 360° stitching bug
+## found and fixed, a navigable panorama preview, and one honest platform
+## limitation (2026-09-11)
+
+Owner, off the just-shipped capture-flow round and a screenshot of the Add
+Media modal:
+```
+1. only 1 photo or video is allowed when adding media. do not allow multiple uploads per add media
+2. when taking video, the mute button and close button is not working
+3. when clicking upload photo or upload video, it still gives me three choices as shown in
+   attached. i want to go direct to choose from gallery
+4. when photo is opened and the key plan is shown, use the same pin as when adding. the red
+   circle with corresponding icon. don't use the green pin.
+5. when clicking add media > 360, show already all the input fields as with adding photos or
+   videos. improve 360 taking guide by moderating speed. once the video for 360 is processed,
+   preview should be navigable or operable as 360, dont just show a panoramic still photo. the
+   360 preview should also be the basis of the thumbnail where in last frame will be used as
+   thumbnail. improve also the processing of video to 360. processing has been failing.
+6. again, if location and works are not set-up in schedule, make the two fields optional
+```
+
+### Item 6 was already done — re-checked, not re-built
+
+`requiredFieldsMissing()` already reads `scheduleHasActivities()` (Works) and
+`LOC_LEVELS.length` (Location) before demanding either field, both already
+guard against a schedule with nothing to offer, and both were shipped and
+verified in the 2026-08-30 round. Re-read line by line against the shipped
+file before touching anything else in this round — still correct, nothing
+regressed it. No change.
+
+### ⚠️⚠️ Item 1 REVERSES the multi-upload allowance the previous round shipped
+
+That round removed `capture="environment"` specifically because it silently
+capped the picker to one file — fixing it made a batch of several photos
+possible again. This round's ask is the opposite: **at most one photo or
+video per "Add media"**. `#pp-files` drops `multiple` outright (a picker that
+can't even offer more than one is safer than one that can and gets trimmed
+after the fact), and `addStagedFiles(list)` — the one function both Take and
+Upload funnel through — no longer **appends** to a growing `stagedFiles`
+array; it **replaces** it: revokes any already-staged object URL, clears
+`pendingMarkup`/`pendingAdjust`, and stages only the latest pick, with a toast
+naming what happened when there was already something staged. Reusing this
+one function is what makes the cap catch Take, Upload *and* a picker that
+somehow still hands back more than one file in a single call, without three
+separate checks.
+
+### Item 3 — the native three-way chooser is a platform limit, and it turns out to cover BOTH kinds
+
+The prior round's fix removed `capture=` from photo specifically because
+that attribute forces the camera and, as a side effect, caps the picker to
+one file. What it left unaddressed — flagged at the time as an "honest
+platform limit" for **video** only — turns out to also describe **photo** on
+a real device: with no `capture` attribute at all, both iOS Safari and
+Android Chrome still present their own native chooser (Camera / Photo
+Library / Files, or the platform's equivalent three-way sheet) for a bare
+`<input type="file" accept="image/*">`. ⚠️ **There is no cross-browser HTML/
+JS mechanism that skips straight to the gallery tab of that sheet** — this
+was checked again this round, not assumed from the earlier entry, and the
+conclusion is the same: nothing here can be fixed by this app's own code.
+Recorded plainly rather than left as a silently-reopened bug report.
+
+### ⚠️⚠️ Item 2 — the mic toggle now works at ANY point, because it stopped tearing the stream down to do its job
+
+The previous round's mic button reopened the **whole camera+mic stream**
+every time it was toggled, and refused outright — a toast, nothing else —
+while a recording was in progress (the same restriction flip-camera already
+has, and for the same underlying reason: a live `MediaRecorder` is bound to
+whatever tracks its stream had at record-start). That refusal is almost
+certainly what read as "not working": tapping mute mid-recording visibly did
+nothing.
+
+Audio is now requested **up front** for every non-photo capture
+(`openStreamWithAudioFallback`, retrying video-only if the combined request
+fails — a device with no microphone must not lose camera access outright
+over an unrelated missing mic), and the toggle no longer reopens anything at
+all: it flips the live stream's own audio **track's `.enabled` flag**. A
+disabled track still exists and still feeds a live `MediaRecorder` — it just
+contributes silence for that stretch — so muting/unmuting now works
+identically before, during and after a recording, with nothing to race and
+nothing to refuse. `syncAudioBtn()` disables the button and shows it muted
+only when the stream genuinely has no audio track at all (the fallback
+path), so a button that looks live never silently does nothing.
+
+⚠️⚠️ **A second, real bug found while working on the same code, fixed
+alongside it:** `startRecording`'s `recorder.onstop` handler closed over the
+**module-level** `recorder` variable — and `close()` sets that variable to
+`null` **synchronously**, the instant `recorder.stop()` is called, well
+before the async `'stop'` event this handler answers actually fires. Reading
+`recorder.mimeType` at that point threw `Cannot read properties of null`
+**inside the browser's own event dispatch**, on every close (or shutter-stop)
+that happened while recording — exactly the kind of failure that can read as
+"the close button doesn't work" even though the overlay itself (torn down
+synchronously in `close()`, well before this ever fires) was already gone.
+Fixed by capturing the recorder instance in a **local** (`rec`) the closure
+reads instead of the module-level var.
+
+### ⚠️⚠️ Item 4 — the key-plan pin was green in TWO places, not the one place fixed last time
+
+The previous round's fix (2026-09-11, first round of this same day) unified
+the Gallery lightbox's corner overlay and the Presentation pane's overlay
+onto one `BIM.keyPlanMiniMarkerHTML`, replacing a cruder duplicate — but it
+never touched the actual **colour**, and it turns out "when photo is opened"
+is answered by a THIRD code path this file hadn't looked at: module.js's
+`paintKeyPlanOverlay()` manages the lightbox's own static
+`#pp-lb-keyplan-overlay-pin` span **directly** (className + position), never
+by regenerating HTML from `keyPlanMiniMarkerHTML` — so fixing that function
+alone would have left the actual reported screen unchanged.
+
+- **`.pp-kpmini-pin.pp-kpmini-pin-photo`** goes from `var(--pd-ok)` (green)
+  to `var(--pd-red)` — matching `.bim-pinstage-dot`, the capture-time
+  widget's own red circle, which is literally what "the same pin as when
+  adding" means. The shape changed too: a 12px teardrop anchored at its
+  base (`translate(-50%,-100%)`, `border-radius:50% 50% 50% 0`) becomes a
+  16px **circle** centred on the point (`translate(-50%,-50%)`,
+  `border-radius:50%`) — the teardrop was never what the capture widget
+  drew, so matching it meant matching the shape too, not just the colour.
+- **Both drawing paths now carry a real icon** — `Icons.svg(pin.direction_na
+  ? 'drone' : 'person', 9)` — the identical rule `pinFieldHTML`'s own
+  capture-time widget already uses. `keyPlanMiniMarkerHTML` (bim.js, used by
+  `ppr.js`'s presentation pane) gained it in its returned HTML string;
+  `paintKeyPlanOverlay` (module.js, the lightbox's own direct-DOM path)
+  gained the identical `pinEl.innerHTML = ...` assignment, wired in
+  separately since it never calls the shared function at all.
+- ⚠️ The full-size Plans-tab marker (`.bim-pin`/`pinMarkerHTML`, a different
+  screen entirely) is untouched — it still colours a photo pin green with a
+  plain camera icon, which is that screen's own established convention and
+  was not what this report was about.
+
+### ⚠️⚠️ Item 5 — five separate pieces, one of them a real, previously-shipped stitching bug
+
+**Fields shown up front.** `open360Upload`'s Description/Capture date/Works/
+Location/Pin block used to live inside `#pp360-result`, hidden until the
+stitch finished — the exact opposite of the ordinary photo/video Add Media
+form, which shows all its fields immediately. That block now sits outside
+`#pp360-result`, rendered the moment the modal opens; only the stitched
+**preview** itself (which obviously cannot exist before processing) still
+waits. The footer (Cancel/Save) is likewise no longer hidden behind
+processing — Save already checked `if (!stitchResult || !repBlob)` and
+toasts "still processing" rather than erroring, so showing it early costs
+nothing.
+
+**Pace moderation.** Two changes: the elapsed-time fallback's assumed "one
+slow full turn" duration goes from 18s to 24s (used only when there's no
+real compass to measure the actual turn against — a faster assumed pace had
+the ring finish before a genuinely careful walk-around would); and, when a
+real compass **is** reporting, actual angular speed is now measured between
+consecutive readings and a "Slow down — turning too fast blurs the frames"
+hint appears above `PACE_TOO_FAST_DEG_PER_SEC` (90°/s, roughly a full turn
+in under 4 seconds) with a short hold time so it doesn't flicker on noisy
+sensor data. Both target the same real problem: panning too fast starves
+consecutive frames of the overlap `pano360.js`'s feature matcher needs.
+
+**A navigable preview, not a static image.** The processed panorama used to
+render as a plain `<img>`. It now reuses the **exact same** drag-to-pan strip
+(`.pp-lb-panowrap`/`.pp-lb-pano`) the saved-360°-photo lightbox viewer
+already has — `wireDragPan`, pulled out of `wirePanoDrag()` as a small
+generic helper so both callers share one drag gesture instead of two
+independently-behaved ones. `#pp360-panowrap`/`#pp360-pano` override the
+lightbox's own 78vh sizing (correct for a full-viewport lightbox, far too
+tall for a ~600px-wide modal) with a fixed 240px box via id-specific rules.
+
+**Thumbnail defaults to the last frame.** The representative-frame scrubber
+used to default to the walk-around's midpoint; it now defaults to the END
+("the last frame will be used as thumbnail"), while staying adjustable in
+case the very last instant is blurry (the camera still moving as recording
+stopped).
+
+**⚠️⚠️ THE REAL FIND: the stitching pipeline never accumulated its
+homographies, and that is why processing was failing.** Reading
+`pano360.js`'s `stitchFrames`/`warpOnto` before touching anything: every
+frame past the first was warped using only its own **pairwise** homography
+against the raw, un-warped previous frame — correct for frame 1, silently
+wrong for every frame after it. Frame i−1's local pixel grid only coincides
+with the growing mosaic's coordinate system for i=1; from i=2 on, frame i−1
+had already been shifted within the mosaic by every homography applied
+before it, and nothing accounted for that. The practical effect is not a
+thrown error — a real image comes back — it is a mosaic that looks stitched
+and is actually broken: frames past the first pair landing back near the
+mosaic's own left edge instead of progressively further along it, with most
+of the canvas past roughly one frame's width staying blank. That is exactly
+"processing has been failing" with nothing on screen to explain why.
+
+Fixed by **composing** pairwise homographies into one cumulative transform
+per frame (`placements[i] = mat3Mul(placements[i-1], step)` — frame i's own
+local coordinates mapped all the way into the mosaic's coordinate system,
+anchored on frame 0's identity), then warping every frame with its own
+cumulative transform into a canvas sized from the **real bounding box** of
+every frame's warped corners (never a fixed-width guess, and clamped to
+8000px so a runaway/garbage homography can't try to allocate an unbounded
+canvas). A frame pair with no usable homography still gets a step (a pure
+horizontal shift of the previous frame's own width) so it composes into the
+same pipeline rather than needing a separately-shaped side-by-side fallback.
+`warpOnto` (the old, buggy, non-accumulating function) is deleted, not left
+dormant — nothing else in the app called it.
+
+### Verified
+
+**875 passed, 0 failed** (up from 854) — `pano360.js` is now loaded into the
+test harness for the first time (it previously had no coverage at all
+despite existing since the prior round); `mat3Mul`/`applyH3` are genuinely
+executed against real inputs, including the exact shape of bug this fix
+corrects (three composed 100px shifts must place the fourth frame at x=300,
+not back near x=0 — the previous stitcher's actual failure mode). `capture.js`'s
+new mic/audio-track logic, `recorder.onstop`'s local-var fix, `addStagedFiles`'s
+single-item cap, `keyPlanMiniMarkerHTML`'s icon+colour, and the `wireDragPan`
+refactor (re-confirmed to still coalesce a burst of scroll events into
+exactly one queued rAF callback after being pulled out of `wirePanoDrag`)
+are all covered by genuine execution or precise structural assertions, not
+loosened regexes. `node --check` clean on all five touched JS files; CSS
+braces balanced (539/539); 0 NUL bytes.
+
+⚠️⚠️ **A real, pre-existing bug in the test harness itself was found and
+fixed in the course of this**: an earlier test (the close-button/
+`getUserMedia`-race check) monkey-patches `ctx.document.getElementById`/
+`createElement`/`head`/`body` for its own controllable capture.js fixture
+and never restored them — so every test that ran later in the same file
+was silently reading through that patched stub instead of the shared
+`byId`-backed one, auto-vivifying a bare fake element (no `addEventListener`
+at all) for any id it hadn't seen. This went unnoticed until a new test
+needed a real `addEventListener` and got a `TypeError` instead. Fixed by
+capturing the four original values and restoring them in a `finally` —
+worth recording because it means every test that happened to run after that
+one in previous rounds was less trustworthy than its "PASS" suggested,
+though none of the assertions in this codebase actually depended on real
+DOM lookups after that point.
+
+⚠️ **Not verified signed in or on a real device** — same standing caveat as
+every entry in this file. In particular: the mic-mute fix's actual effect on
+a recorded file's audio track, the pace-warning hint against a real
+hand-held walk-around, the corrected stitching pipeline against a real
+recorded video (the math is proven; a real photo has not been produced by
+it), and the navigable preview's drag gesture in a real browser are all
+unverified beyond genuine execution of the underlying pure logic.
+
+`module.js`/`capture.js`/`pano360.js`/`bim.js`/`module.css` →
+`?v=20260911z2`; the shared `MODULE_V` fallback (`assets/js/modules-grid.js`,
+`dashboard.html`, `modules.html`) → `20260911z2` to match, since this
+module's `index.html` itself changed. `ppr.js` is untouched and stays at its
+existing `?v=`.
+
+## Six-item capture-flow round: one input attribute was two bugs, a real
+## close-button race, an audio toggle, and a 360° guide that actually tracks
+## coverage instead of double-counting a pan (2026-09-11)
+
+Owner, off the in-app camera work shipped the same day:
+```
+1. when uploading photos or videos, only 1 photo or video is allowed per instance
+2. there are still some bugs in the take photo/video a the close button does not close
+3. when clicking upload photo, it goes to camera. this should go to gallery
+4. when clicking upload video, it still gives me three choices, take video/photo library/
+   choose files. bring me to gallery directly
+5. for video, provide option to include or exclude audio
+6. for 360 photo, when taking video, improve 360 guide. show preview of 360 while video.
+   see attached photo for concept of 360 guide
+```
+
+### ⚠️⚠️ Items 1 and 3 were ONE bug: `capture="environment"` on the Upload-photo input
+
+`#pp-files`'s photo variant carried `accept="image/*" capture="environment"`. `capture` is a
+request to open the device's live camera directly, and on real mobile browsers it does two
+things at once, neither of them documented as obviously connected: it sends "Upload Photo"
+straight to the camera instead of the photo library (item 3), **and** it silently caps the
+picker to exactly one shot — a live camera capture has nothing to be plural about, so
+`multiple` is ignored the moment `capture` is present (item 1). Removed entirely; "Upload"
+now opens the ordinary file/photo-library picker for both photo and video (video never
+carried the attribute, which is why only photo showed the symptom), where `multiple`
+genuinely works. "Take Photo/Video" (`capture.js`, shipped the same day) is the one
+deliberately single-shot path, and it stays that way on purpose — a live in-app capture
+producing "several photos" at once wouldn't mean anything.
+
+### Item 4 — the native three-way chooser on video upload is a platform limit, not a bug
+
+⚠️ **Not fixed, because it can't be from here.** Once `capture="environment"` is gone, what a
+mobile browser does with a bare `<input type="file" accept="video/*">` is entirely up to the
+OS/browser — Android and iOS both offer their own multi-way sheet (record video / photo
+library / files) for video specifically, and there is no HTML attribute that forces straight
+to the gallery tab of that sheet the way there is for a hard camera-only request. Checked
+directly rather than assumed: the one attribute that *could* narrow it (`capture`) is exactly
+the one just removed for causing items 1 and 3, and re-adding it for video would reproduce
+this round's own bug in the other direction. Recorded here as an honest platform limit rather
+than silently left unaddressed.
+
+### ⚠️⚠️ Item 2 — the real bug: an async race between `getUserMedia` and the close button
+
+Reported again after the overnight round's own in-app camera shipped. `getUserMedia`'s
+permission prompt is asynchronous — a fast tap on × while it's still pending used to race the
+overlay's own teardown: `close()` ran first (removing the DOM, nulling `overlay`), and the
+still-pending stream promise resolved *afterwards* and tried to attach a live camera stream to
+a `<video>` element that no longer existed, and wire a flip-camera click handler onto a `null`
+lookup — throwing inside an unawaited async continuation (a silent unhandled rejection, no
+toast, nothing in the visible UI), **leaking the just-opened `MediaStream`** (nothing had ever
+stopped its tracks), and leaving the device's camera indicator lit with no overlay left to
+close it from. That is the "close doesn't close" report: the button visibly did nothing
+because the code trying to notice it had already thrown.
+
+Fixed with a session token (`capture.js:50`): `sessionToken` increments on every `close()`;
+every continuation after an `await` (four separate `.then()` sites — the stream opening,
+each of the three re-opens the flip-camera and new mic-toggle buttons trigger) captures its
+own token at the start and checks `stale()` before touching the DOM or attaching anything.
+A stream that resolves after the overlay already closed is stopped immediately
+(`getTracks().forEach(t => t.stop())`) rather than attached to a removed element.
+
+⚠️ **Contrast-checked, not just read**: temporarily disabled the `sessionToken++` in `close()`
+and reran the suite — the new race test (`a stream that resolves AFTER close() is stopped
+immediately, never attached to the (removed) video element`) genuinely fails against the
+pre-fix shape (`got 0 want 1`), confirming the test isn't vacuous. Restored and reconfirmed
+green.
+
+### Item 5 — a mic on/off toggle, held across opens
+
+A new `#pp-cap-audio` button (mic icon, red-tinted when muted) sits in the capture overlay's
+topbar for video and 360° modes only — never for photo, which has no audio track to toggle in
+the first place. `wantAudio` (default on) persists across opens the same way `curFacing`
+already does, so turning the mic off once keeps it off next time. `audioNow()` = `mode !==
+'photo' && wantAudio`, read by every `openStream()` call so the toggle actually changes what
+`getUserMedia` requests. ⚠️ **Refused mid-recording**, the same rule flip-camera already
+enforces and for the identical reason: a live `MediaRecorder` has already fixed the track it's
+recording from, so flipping the mic under it would silently do nothing to the file being
+produced — toggling it re-opens the stream via stop-then-reopen, which is exactly what a live
+recording can't tolerate.
+
+### Item 6 — the 360° guide now tracks *coverage of the ring*, not accumulated rotation
+
+⚠️⚠️ **A real bug in the OLD guide, found while building the replacement**: the previous
+`accumTurned` approach summed the absolute value of every heading delta without cancelling
+direction, so panning back and forth (as any real hand-held walk-around does) inflated the
+reported percentage past 100% without ever completing an actual turn — the "progress" bar was
+lying upward, not just imprecise.
+
+New model: the ring is divided into 24 fixed 15° buckets (`ringGuideHTML()`, modelled on the
+attached Facebook-style 360° reference — a static ring of tick segments, a rotating
+"facing" marker, and a live percentage label at the centre), and each new heading reading
+marks every bucket **crossed since the last reading** as covered — `coverageSteps(lastBucket,
+idx, total)`, a small pure function that walks the *shorter* direction around the ring between
+the two bucket indices. ⚠️ **My first draft of this always walked forward**, which for a
+backward pan (e.g. lastBucket 2 → idx 1) would have swept almost the entire ring the wrong way
+(2→3→…→23→0→1) instead of the correct one-step move backward — caught in my own review before
+it ever ran against a test, and covered explicitly now (`coverageSteps: moving BACKWARD by one
+bucket walks the SHORT way`, plus the two wrap-boundary cases at 23→0 and 0→23 in both
+directions, and the exact-half-ring tie). Percentage is `covered-bucket-count / 24`, so it can
+never exceed 100% regardless of how much the camera pans back and forth.
+
+⚠️ **Scope, stated rather than silently reduced**: this is direction-*coverage* tracking, not a
+live-stitched panorama preview. A true "show the 360 forming as you record" preview would need
+to warp and composite each new frame into the mosaic in real time during capture — a
+materially larger piece of work than a coverage ring, and not attempted here. What's built
+answers "have I turned enough, and which direction is still missing" — the concept in the
+reference photo — without claiming to show the panorama itself mid-recording.
+
+### Verified
+
+**854 passed, 0 failed** (up from 839) — `capture.js` gained test coverage for the first time
+in this pass (it previously had none at all): the removed `capture=` attribute (structural, on
+both photo and video); the close-button race, via a hand-built fake DOM (tracked `onclick`
+slots per element id) and a controllable `getUserMedia` Promise — tap × while the permission
+prompt is still pending, confirm the cancel callback fires immediately with `null`, then
+resolve the delayed stream and confirm its track was stopped (`stopped === 1`) rather than
+attached; the mic toggle's conditional rendering (video/360 get the button, photo gets a plain
+spacer, never both), `audioNow()`'s exact gating, and the mid-recording refusal; and six
+genuine-execution cases for `coverageSteps` (forward one, backward one, no movement, both wrap
+directions, the exact-half-ring tie) via a new `Capture._coverageSteps` test hook. `node
+--check` clean on `capture.js`/`module.js`/`test.js`; 0 NUL bytes.
+
+⚠️ **Not verified signed in or on a real device** — same standing caveat as every camera/
+recording entry in this file. In particular: item 4's platform-limit claim (that no HTML
+attribute can force video-upload straight to the gallery tab) is stated from documented
+browser/OS behaviour, not observed on a real phone; the mic toggle's actual effect on a
+recorded file's audio track, and the 360° guide's ring/percentage readout against a real
+hand-held walk-around, have not been seen on a real device either.
+
+`module.js`/`capture.js` → `?v=20260911d4`; `MODULE_V` → `20260911d4` (bumped because
+`index.html`'s own asset `?v=` references changed).
+
+## Fixed: the key-plan pin/camera-angle overlay drew the wrong-sized pin in the
+## presentation pane — a real display bug, not a re-description (2026-09-11)
+
+Owner: *"when photo is opened or in presentation, when key plan is shown, the pin and the
+camera angle and direction does not display properly. display the pin and camera angle in
+the same way they were defined to the photo. can you review again if these have been
+applied, optimize code and performance, and clean-up code."*
+
+**Investigated both surfaces named** — the Gallery lightbox's key-plan corner overlay
+(module.js) and the Presentation pane's key-plan overlay (ppr.js). Both draw a floor plan
+image plus the pin + camera-facing cone recorded when the photo was captured
+(`floor_plan_pins`, via `BIM.pinInfoFor`), but they were built by two different code paths
+that had quietly diverged:
+
+- **module.js's lightbox overlay** builds its own small (12px) pin span
+  (`.pp-lb-kpoverlay-pin`, now renamed — see below) and reuses only
+  `BIM.coneWedgeSVGAt(pin, headingOffset)` for the cone. This was already correctly scaled
+  for its ~1/8-photo-width corner box.
+- ⚠️⚠️ **ppr.js's presentation-pane overlay called `BIM.keyPlanMarkerHTML(pin)`
+  directly** — the SAME function bim.js's own full-window Plans-tab stage uses, which
+  draws a **26px** `.bim-pin` teardrop marker. Correctly proportioned against a
+  `min(70vh,640px)` stage; wildly, visibly oversized inside the presentation pane's
+  60-90px corner box — exactly *"the pin ... does not display properly"*. The oversized
+  pin also visually swamped the cone drawn underneath/around it, which is why the camera
+  angle read as broken too even though its own geometry (`coneWedgeSVG`) was never wrong.
+
+**Fix: one shared "mini" marker function, used by BOTH corner overlays, instead of the
+lightbox hand-rolling its own small pin while the presentation pane reused the full-size
+one.** New `BIM.keyPlanMiniMarkerHTML(pin)` (bim.js) = `coneWedgeSVG(pin)` (the same
+accurate pie-slice geometry, unchanged) + a small `<span class="pp-kpmini-pin
+pp-kpmini-pin-TYPE">` positioned at the pin's own `x_norm`/`y_norm` — no icon glyph, no
+button chrome, sized to match what the lightbox already drew correctly. ppr.js's
+`kpOverlay` now calls this instead of `BIM.keyPlanMarkerHTML`; module.js's lightbox path
+was updated to build the SAME shared class name (`pp-lb-kpoverlay-pin`/`pp-lb-kppin-photo`
+renamed to `pp-kpmini-pin`/`pp-kpmini-pin-photo`, in the CSS, the static `index.html`
+skeleton, and `paintKeyPlanOverlay`'s className assignment) rather than keeping two classes
+for one shape. `BIM.keyPlanMarkerHTML` (the full-size marker) is untouched and still used
+by bim.js's own Plans-tab stage — nothing about the large view changed.
+
+⚠️ **This directly answers "display the pin and camera angle in the same way they were
+defined to the photo"**: both small-overlay contexts now draw the pin through the identical
+function, at the identical relative scale, from the identical `x_norm`/`y_norm`/edge data —
+they can no longer visually disagree with each other or with how the capture widget itself
+rendered the pin+cone while it was being placed.
+
+**Verified — genuine execution, not just a source read.** `BIM.keyPlanMiniMarkerHTML(pin)`
+was called directly with a real pin (including a real recorded cone) and confirmed to
+render the small `pp-kpmini-pin` span at the pin's exact `x_norm`/`y_norm`, the same
+`coneWedgeSVG` output as before, and — the actual regression check — **no `.bim-pin`
+anywhere in its output**, contrasted against `BIM.keyPlanMarkerHTML(pin)` on the identical
+pin, which still draws `.bim-pin` and never the mini class. A `direction_na` pin (no
+camera-facing recorded) draws the small dot with no cone in the mini marker too, matching
+the full-size marker's own no-fabricated-cone rule. Reverted the ppr.js call back to
+`BIM.keyPlanMarkerHTML` and re-ran the suite to confirm the new assertions genuinely fail
+against the pre-fix shape (they do), then restored the fix.
+
+**Clean-up done alongside:** removed the stray "lightbox"-scoped class name
+(`pp-lb-kpoverlay-pin`) that ppr.js would otherwise have had to reuse under a
+lightbox-specific name, and consolidated the CSS comment documenting why this shape is
+scaled down to name both callers, not just one.
+
+**Full suite: 839 passed, 0 failed** (up from 830 — 5 new genuine-execution checks for the
+mini marker, plus source-level regression guards confirming ppr.js calls the mini marker
+and never the full-size one, the CSS rename landed everywhere, and the `#fff` context
+allow-lists were updated for the renamed class rather than silently widened).
+`module.js`/`module.css`/`bim.js`/`ppr.js` → `?v=20260911c1`; `MODULE_V` → `20260911c1`
+(bumped because `index.html`'s own asset `?v=` references changed again).
+
+⚠️ **Not verified signed in or against a real device** — same standing caveat as every
+entry in this file. The fix is proven by genuine execution of the real, shipped marker
+functions against a real pin fixture; how the presentation pane's overlay actually looks
+next to a real floor plan image has not been observed.
+
+## Re-review of the overnight 10-item round: all 9 confirmed still correct, two
+## real mobile-performance fixes (rAF-coalesced repaints), a dead-CSS sweep (2026-09-11)
+
+Owner re-posted the original 9-item overnight list verbatim and asked: *"can you review again if
+these have been applied, optimize code and performance, and clean-up code."* Three parts, taken in
+order.
+
+**Review.** Re-checked all 9 items against the shipped `module.js`/`bim.js`/`capture.js`/
+`pano360.js` — every one is present and unchanged since the previous entry (Take/Upload split with
+in-app capture; the staged-video-preview and Edit-video-preview fixes; `open360Upload()`'s capture
+flow; the 360° pan viewer with the pin-cone rotating to follow it; Adjust extended to video/360 with
+Markup and Key Plan gated correctly per kind; the in-form media-type toggle removed in favour of the
+dropdown; Works/Location made optional when the schedule has nothing to offer; the Plan view's
+First/Last steppers). No regression found; nothing needed re-doing.
+
+**Performance — two real, previously-uncoalesced repaint paths, both on the mobile-heaviest gestures
+in this module.**
+
+- ⚠️⚠️ **`wirePanoDrag()`'s scroll handler repainted the key-plan cone on every `scroll` event,
+  uncoalesced** — a pan drag across the 360° strip fires many `scroll` events per frame on a real
+  device, and each one called `paintKeyPlanOverlay()` (a real DOM rebuild of the pin/cone SVG)
+  synchronously, with no relation to the screen's own refresh rate. This is the exact
+  drag-repaints-too-often shape this module's own history already fixed once, for the now-deleted
+  cylindrical 360° viewer (2026-09-01), and the fix is the same established pattern: a dirty flag
+  plus one `requestAnimationFrame`-queued repaint. `onScrollChange()` now only updates
+  `lightboxPanoHeadingDeg` and schedules `repaintCone()` if nothing is already queued; the direct
+  `onScrollChange()` call inside `pointermove` was also removed as redundant — the `scrollLeft`
+  write it drives already triggers the native `scroll` event, which is enough.
+- **`openMarkupEditor`'s canvas redraw was called synchronously from every `pointermove`** during a
+  polygon-preview drag, a rotate, a resize, and the general select/stroke/shape-drag path — four
+  call sites, each invoking the full `drawMarkupObjects()` repaint on every raw pointer event. Added
+  `scheduleRedraw()` (a `mkRedrawRaf` dirty flag, same shape as the pano fix) and replaced those four
+  call sites; the ~26 other `redraw()` calls elsewhere in the editor are discrete click actions and
+  were deliberately left synchronous. The modal's `onClose` now also cancels any pending
+  `mkRedrawRaf`, so closing mid-drag can't leave a stale `requestAnimationFrame` callback pointing at
+  a canvas that's about to be removed.
+
+⚠️ **Both fixes are proven to coalesce, not just described as coalescing.** The test harness's
+`requestAnimationFrame`/`cancelAnimationFrame` stub is queue-based (`ctx.__rafQueue` +
+`flushRaf()`/`rafPending()`), not an immediate-call stub — the "a test that cannot fail is not
+evidence" trap this repo's own history repeatedly warns about. A new genuine-execution test drives
+the real, shipped `wirePanoDrag()` (via a new `PP._wirePanoDrag()` test hook) against a fake
+`#pp-lb-panowrap` element with a capturing `addEventListener`, fires three rapid `scroll` events, and
+asserts exactly **one** rAF callback is queued — not three. Reverting the coalescing guard (checked
+directly, then restored) makes that same assertion fail 3-vs-1, confirming it genuinely bites.
+Flushing the queue drains it to 0, and a further scroll afterward schedules a fresh callback — the
+guard resets per burst rather than latching permanently. `scheduleRedraw()`'s guard and its four
+call sites are covered by structural assertions (the same convention this file already accepts for
+pointer-gesture code the fake DOM's no-op `addEventListener` can't genuinely drive).
+
+**Clean-up.** Removed `.pp-mtypesel`/`.pp-mtype`/`.pp-mtype.active`/`.pp-mtype:disabled` from
+`module.css` — dead CSS left behind when `mediaTypeSelectorHTML`/`wireMediaTypeSelector` (the
+in-form Photo/Video toggle) were retired in the overnight round; confirmed orphaned by grepping both
+class names against every JS/HTML file in the module before deleting. A broader class-usage sweep
+across the rest of `module.css` turned up nothing else safely removable — the remaining
+"unreferenced" hits are either comments naming Drawing Register's own class names (a documented
+borrowed-convention note, not dead code here) or classes built by string concatenation
+(`'ppr-kp' + which`, `'bim-pin-' + type`), which a static grep can't resolve and which this file's
+own history already warns against blind-deleting.
+
+**Verified:** `node --check` clean on `module.js`/`test.js`/`modules-grid.js`; CSS braces balanced
+(536/536); 0 NUL bytes. **830 passed, 0 failed** (up from 822 — 8 new checks, all executing real
+shipped code or asserting the exact CSS/JS shape of the two fixes). `module.js`/`module.css` →
+`?v=20260911b1`; `MODULE_V` → `20260911b1` (bumped because `index.html`'s own asset `?v=` lines
+changed, which is itself a change to `index.html`'s bytes — the standing rule this repo's history
+records repeatedly).
+
+⚠️ **Not verified signed in or on a real device** — same standing caveat as every entry in this
+file. The coalescing itself is proven by genuine execution against a real, queue-based rAF stub; how
+the 360° pan and markup-editor drag actually *feel* on a real phone has not been observed.
+
+## The 15 pre-existing test failures, resolved: 12 stale assertions fixed
+## in place, 2 real gaps found in the harness itself, 0 app-code bugs (2026-09-11)
+
+Owner: "can you also resolve the 15 failed tests" — the ones the previous entry documented as
+pre-existing and out of scope. Investigated every one individually rather than patching regexes to
+make them pass; the honest split turned out to be:
+
+- **12 were stale exact-string/exact-count assertions** against source that had genuinely, correctly
+  moved on since the test was written — none of them a real defect. Root causes, each confirmed by
+  reading the actual current code before touching the test: `insertPresentation()`/`finish()` moved
+  their `.insert(...).select()` call into a shared helper (also carrying the Report Type
+  migration-tolerant retry) that a later refactor introduced; the Report Type `<option>` tags gained
+  a conditional `selected` attribute; `pane()` no longer reads Trade/Works at all — a **later, separate**
+  owner ask removed that whole caption line on purpose ("no need to include as caption all the
+  activities performed"); the PPTX shared-location text is now wrapped in `sanitizePptxText()` (the
+  2026-09-03 PowerPoint-corruption fix, applied to every PPTX string); `bim.js`'s `plans()`/
+  `pinFieldHTML()` read through `currentPlansList()`/`curPlans` (the floor-plan-revisions feature,
+  2026-09-03) instead of the raw `plans` array; ppr.js's Clear-filters reset gained `reportType: ''`;
+  the Works empty-state string was deleted outright when item 8 (this same week) made the whole field
+  omit itself rather than show an empty picker; and two legitimate `#fff`-on-`--pd-red` badges
+  (`.ppr-panelabel.is-current`, `.bim-revbadge`) had simply never been added to the allow-list regex.
+  Each fix is a comment explaining what changed and why the new pattern is correct, not just a
+  wider regex.
+- **2 were counting assertions that needed to grow from 2 to 3** — `works_activity_ids`/
+  `location`/`view_name` are now written by Add, Edit, **and** the new `open360Upload()` save path
+  (yesterday's own work), so the exact occurrence counts genuinely increased.
+- **1 was a real gap in the test harness, not the app** — the three `wireStageInteractions()`
+  window-listener assertions (`bim.js`) had gone permanently unreachable after the 2026-08-30
+  "Project Schedule is the only source of truth for Tower/Floor" business rule made `render()` stop
+  at `hasEstablishedLocations()` before ever reaching the stage HTML those listeners attach to. The
+  harness deliberately never calls `PP.init()`/`load()` (a documented, load-bearing choice elsewhere
+  in this file), so `window.ProgressPhotos.locLevels()`/`distinctLocValuesFor()` always read empty
+  here — no amount of seeding `store.location_levels`/`store.project_schedule` could have satisfied
+  it, since `bim.js` only ever asks the OTHER module's live object for that data. Fixed by stubbing
+  `PP.locLevels`/`PP.distinctLocValuesFor` directly for the duration of this one test block
+  (save/restore, the same convention this file already uses for `PP._setCanWrite`), and tagging the
+  section's own seeded floor plan with matching `location_values` so `currentPlanFor()` actually
+  resolves it — confirmed necessary by direct instrumentation (`bim-view`'s rendered HTML read "No
+  floor plan uploaded" until both were in place, `wireStageInteractions()` never having a stage to
+  wire against).
+
+⚠️ **The "bim.js's render() replays toolsVisible" assertion also needed re-scoping, not
+re-writing** — its `{0,60}`/`{0,400}`-style character budgets between two known-good literal strings
+were measured against the WRONG occurrence of a common early-return guard (`if (!host) return;`
+appears in more than one function in this file) or against a comment block wider than the budget
+allowed; re-anchored to `render()`'s own function body specifically, with the real measured gap.
+
+**Verified:** every fix confirmed by locating the exact current line in the shipped source first
+(never by widening a regex blind), then re-running the full suite. **822 passed, 0 failed** — up
+from 806/15 the previous entry left it at. `node --check` clean on `test.js`/`module.js`/`bim.js`;
+no application code changed in this pass — every fix above lives in `test.js` alone (or, for the
+harness gap, in the fixture the failing test itself builds).
+
+⚠️ **Not verified signed in** — same standing caveat as every other entry in this file; this was a
+test-suite correctness pass, not a live click-through.
+
+## In-app camera capture, real 360° stitching, a 360° pan viewer, and a
+## ten-item overnight round following the 360°/3D deletion (2026-09-10/11)
+
+Owner, immediately after the 360°/3D deletion (session below): a ten-item list to build a fresh
+360° feature and fix reported bugs, explicitly authorized to run unattended overnight
+("while I am asleep until 8am"). No live signed-in session or real camera/device was available in
+this environment for any of it — every claim below is source-level review, `node --check`, CSS
+brace-balance and manual re-reading of the edited regions, the same standing limitation this file
+has recorded for every camera/recording feature it has ever shipped.
+
+**New `capture.js`** — `window.Capture = { takePhoto, takeVideo, take360, close }`, a full-screen
+overlay styled after Photo Booth/iOS Camera (live stage, a circular shutter, a flip-camera button,
+a close ×). Each function hands back a Blob (or `null` on cancel) via callback; nothing here talks
+to Supabase — the module's own upload pipeline is still the one place a file, camera-captured or
+picked from disk, ever becomes a saved row. `take360` adds a compass-driven progress ring (iOS 13+
+`DeviceOrientationEvent.requestPermission()`, triggered on the first tap so it runs inside the
+required user gesture) with a time-based fallback everywhere orientation is unavailable.
+
+**New `pano360.js`** — `window.Pano360`, a from-scratch stitching pipeline (the earlier one was
+deleted at the owner's own request, "start fresh"). ⚠️ Same honest scope as before: standard
+OpenCV.js builds have no `cv.Stitcher`, so this composites ORB + BFMatcher(Hamming) + ratio test +
+`cv.findHomography`(RANSAC) + `cv.warpPerspective` frame-by-frame into a **cylindrical mosaic**, not
+a true equirectangular sphere — stated in the file's own header, not silently shipped as more than
+it is. Quality is flagged (`'poor'`) rather than hidden when a frame pair matches too few keypoints.
+`extractFrameAt`/`getDuration` back the representative-frame picker (item 3).
+
+**Items 1/2/5/6 — `openUpload` rebuilt.** The in-form Photo/Video type toggle
+(`mediaTypeSelectorHTML`/`wireMediaTypeSelector`) is gone — the "+ Add media" dropdown decides the
+kind before the modal opens, and the modal is built once for that fixed kind (item 6). Two buttons,
+**Take Photo/Video** and **Upload Photo/Video**, both feed the SAME staged-file array (`stagedFiles`)
+— a capture and a chosen file interleave freely, appended in whichever order the planner used them
+(item 1). ⚠️ **The staged-grid video-preview bug is fixed**: every staged file now gets a real
+object URL and a real `<video>` preview element — the old code only ever created an object URL for
+`/^image\//` files, so a staged video rendered as a bare filename placeholder with no preview at
+all (item 2). Adjust now offers itself for **every** staged file, photo or video; Markup stays
+photo-only (item 5) — matching the owner's explicit "no need for mark-up for video and 360".
+
+**Item 2 (second instance) — `openForm`'s Edit-photo preview.** The same class of bug: editing an
+existing **video** row previously rendered nothing (`thumbUrlOf()` resolves to `''` for a video,
+which has no thumbnail stand-in, so `previewSrc ? '<img>' : ''` silently omitted the whole preview).
+It now renders a real `<video>`, resolved via the same `ensureFullUrl()` the lightbox already uses.
+A 360 row's `thumb_url` **is** its representative frame, so the existing `<img>` path already works
+correctly for it — no special case needed.
+
+**Item 3 — a dedicated 360° upload flow, `open360Upload()`.** ⚠️ Deliberately **not** folded into
+`openUpload`'s batch pipeline — a 360° capture is one video in, one stitched-panorama row out, a
+different shape from N files → N rows. Take 360°/Upload 360° video → (if offline, stop here and
+offer a **Save video to gallery** download link rather than attempting to process-then-upload,
+since there is nowhere to queue a not-yet-stitched panorama offline) → `Pano360.stitchFromVideo`
+with a two-stage progress readout → a preview of the processed panorama, a low-confidence badge
+when `quality==='poor'` → a **representative-frame scrubber** (`Pano360.extractFrameAt`, debounced)
+whose frame becomes `thumb_url` and is also what the Key Plan pin/direction is captured against
+(reusing `BIM.pinFieldHTML`, unchanged) → the same Description/Capture date/Works/Location/View
+name fields every other capture uses. Saves as a `progress_photos` row with `media_type:'360'` —
+⚠️ **the single unified media table, never a second `panoramas` table** — this repo's own history
+already records having to undo exactly that split once; `floor_plan_pins.item_type` stays `'photo'`
+universally, so bim.js needed no schema change.
+
+**Item 4 — the 360° viewer.** A `.pp-lb-panowrap` strip (`overflow-x:auto`, native touch swipe for
+free, plus `wirePanoDrag()` for a mouse drag) replaces the ordinary `<img>`/`<video>` in the
+lightbox when `media_type==='360'`. No Markup (toggle and edit both hidden, same as video); Key
+Plan **stays available** (gated on `!isVideo`, which a 360 row already satisfies). ⚠️ **The camera
+direction actually follows the pan**, not just a static cone: `wirePanoDrag`'s scroll handler
+computes a heading fraction (`scrollLeft / maxScroll * 360`) into `lightboxPanoHeadingDeg`, and
+`paintKeyPlanOverlay` now calls a new `BIM.coneWedgeSVGAt(pin, headingOffset)` — the same accurate
+edge-based cone geometry as `coneWedgeSVG`, with the resolved direction rotated by that offset —
+instead of the fixed `coneWedgeSVG(pin)`. For an ordinary photo the offset is always 0, so this is
+byte-identical to before for everything that isn't a 360 photo.
+
+**Item 5 — Adjust/Markup/Key-Plan gating, consolidated.** Markup (toggle + edit) excluded for
+video AND 360; Adjust available for photo, video AND 360 (`openAdjustEditor` gained an `isVideo`
+flag that swaps its canvas+sharpen preview for a live `<video style="filter:...">` preview — CSS
+`filter` applies to a `<video>` exactly like an `<img>`; Sharpness, which has no CSS equivalent, is
+simply not offered on that path rather than silently doing nothing); Key Plan excluded for video
+only, available for photo and 360.
+
+**Item 7 (partial) — a real, confirmed waste removed from `signAll()`.** Its transform-fallback
+branch requested an image-transform signed URL for **every** thumb-less row's `photo_url`,
+including **video** rows — a video file run through an image transform, populating a `thumbCache`
+entry `thumb()`'s own video branch never reads (it resolves a video preview via `urlOf()`/the lazy
+intersection-observer path instead). Now excluded by `media_type !== 'video'`. ⚠️ **Broader mobile
+perf work (item 7's fuller ask) was not separately audited this round** — the 360 viewer's own
+plain-2D-pan choice (no WebGL/Three.js) already serves that goal directly, per pano360.js's header.
+
+**Items 8/9/10 — already landed in this same session before this entry was written** (Works/
+Location made optional when the schedule/Location Breakdown genuinely has nothing to offer; the
+Plan view's Live button replaced with First/Last steppers; the key-plan pin+cone now drawn via the
+same accurate edge-based geometry everywhere it renders, fixing a real bug where the Plans-tab
+marker and the lightbox overlay each drew a cruder approximation than the capture widget itself).
+
+**Verified**: `node --check` clean on `module.js`/`bim.js`/`capture.js`/`pano360.js`/`ppr.js`; 0 NUL
+bytes across every touched file; `module.css` braces balanced (540/540); 0 duplicate DOM `id=`
+attributes in `index.html`. `module.css`/`module.js`/`bim.js`/`capture.js`/`pano360.js` →
+`?v=20260910zd`.
+
+**`test.js` updated, not left stale.** Every assertion this round's own changes made incorrect was
+rewritten to match the current behaviour, not silently deleted — the retired
+`mediaTypeSelectorHTML`/`wireMediaTypeSelector`, the Plan view's Live-button removal (item 9, done
+earlier in this same session but never reflected in the suite until now), the pin-cone rewrite
+(item 10) that replaced a fixed-angle rotated wedge with the shared `coneWedgeSVGAt`, the Adjust/
+Markup/Key-Plan gating changes (item 5), and the three save-payload literals that legitimately grew
+a third occurrence (Add/Edit/360). **806 passed, 15 failed** (was 790/35 before this pass's own
+fixes) — every one of the 15 remaining failures was confirmed, by direct inspection, to predate this
+round: each references code this session never touched (`bim.js`'s `plans()`/`pinFieldHTML`/
+`wireStageInteractions`, `ppr.js`'s Report Type select and `finish()` ordering, the `.select()`-on-
+insert claim, the `#pp-lb-cap` trade/works/location assertion, the Clear-filters/archived-toggle
+assertion, the PPTX shared-location-tile assertion, and the Works empty-state string that a prior
+turn's item 8 fix already superseded) — none is new, and none is claimed fixed here.
+
+⚠️ **Not verified signed in, and this round most needs it.** No live click-through exists for: the
+in-app camera overlay against a real device camera; a real recorded 360° walk-around through the
+actual stitching pipeline; the representative-frame scrubber and Key Plan capture against a real
+video; the pan-viewer's drag gesture and the cone-follows-pan behaviour in a real browser; or the
+Adjust editor's live `<video>` CSS-filter preview. `test.js` has not been updated for any of this
+round's changes and needs a pass before this is considered fully verified per this module's own
+convention.
+
+## 2026-09-09 (p3) — The gallery stops looking like a folder of files
+
+Owner: *"Project Photos, I want this not to look like a windows explorer folder view looking like a
+bunch of photos database. Let's compile properly."*
+
+⚠️⚠️ **The resemblance was not a metaphor — it was the tile size, and it is MEASURED.**
+`gallerySizeScale` defaulted to **1/3** against `TILE_BASE_MIN = 290` / `TILE_BASE_H = 210`, which
+resolves to a **125px card holding a 70px-tall image**. That is Explorer's small-icon density almost
+exactly. The default is now **0.75** → a **263px card with a 158px image**: a grid you read rather
+than an icon wall you scan. Both figures are real browser measurements of the shipped `galleryHTML`.
+
+⚠️ **The other half was that the tile carried NO TEXT AT ALL.** `cardHTML` emitted an image and a
+checkbox and nothing else, so a wall of them cannot read as anything but a file listing. Each tile now
+carries a two-line caption — description, then date · location. ⚠️ Deliberately **not** the full
+metadata: the lightbox owns that (a 2026-08-28 decision this does not reverse). Both lines are
+`white-space: nowrap` + `text-overflow: ellipsis`, because a tile that grows to fit its text destroys
+the grid rhythm.
+
+⚠️⚠️ **A STORED SCALE IS NOW ONLY HONOURED ONCE THE SLIDER HAS ACTUALLY BEEN MOVED**, and without this
+the fix would have reached nobody who reported it. Every existing user has a stored `1/3` written by
+the *old default*, which is indistinguishable from a deliberate choice — so inferring intent from the
+value would either strand them all on the tiny tiles, or silently overrule someone who genuinely wanted
+them. A new `tilescaleset` flag records the choice at the moment it is made.
+
+⚠️ **The phone grid is untouched and gets no captions.** Below 768px it is a deliberate 3-column,
+2px-gap, `aspect-ratio:1` iOS-Photos wall; a caption strip under a ~120px tile is unreadable.
+
+**Verified** by slicing the shipped `galleryHTML` out of `module.js` and executing it against fixtures
+in a browser with the real stylesheet: at the shipped default **0 caption lines clipped and 0 wrapped**
+across 14 lines, `white-space: nowrap` and `text-overflow: ellipsis` both confirmed applied; dragged to
+1.5 also clean; dragged to 1/3 the captions clip with an ellipsis, which is that rule working rather
+than a defect. ⚠️ My first overflow probe was written `? false : false` — an assertion that could never
+fail — alongside a "wrapped" counter that was really re-detecting overflow (it returned the same 10 as
+the clip counter). Both were redone before any of the above was believed.
+
+`module.js` / `module.css` → `?v=20260909p3`; `MODULE_V` → `20260909p3`.
+⚠️ **Not verified signed in** — no real photo row has been rendered.
 
 ## PR review found two gaps in the fix below — fixed before merging (2026-09-08)
 
