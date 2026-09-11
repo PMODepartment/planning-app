@@ -76,6 +76,13 @@
        silently defeat the wrapper's own flex-shrink, overflowing the toolbar row. */
     .ps-tb-row .ps-search input { min-width:0; }
     .ps-tb-spacer { margin-left:auto; }
+    /* The overflow row. In NORMAL FLOW, not a popup — see the note on _tbFit: these controls carry
+       their own absolutely-positioned menus and nesting those inside a dropdown paints them over
+       whatever is around them. */
+    .ps-tb-overflow { display:flex; flex-wrap:wrap; align-items:center; gap:5px; row-gap:6px;
+      padding:6px 0 2px; margin-top:4px; border-top:1px solid var(--pd-line); }
+    .ps-tb-overflow[hidden] { display:none; }
+    #ps-tb-more.on { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
     .ps-tb-div { width:1px; align-self:stretch; min-height:26px; background:var(--pd-line); margin:0 2px; }
     /* one consistent control height across selects, inputs, buttons & segments */
     .ps-toolbar .pd-select, .ps-toolbar .pd-input, .ps-toolbar .pd-btn { height:36px; }
@@ -3885,6 +3892,9 @@
               </div>
             </div>
           </div>
+          <!-- ⚠️ The overflow toggle. Hidden until something has actually been shed, so on a wide
+               window the toolbar looks exactly as it always did. -->
+          <button class="pd-btn ps-icobtn" id="ps-tb-more" title="More toolbar controls" aria-expanded="false" hidden>⋯</button>
           <span class="ps-tb-spacer"></span>
           <!-- ⚠️ ICON-ONLY, for the same measured reason as Progress / Stacking / Outline above.
                Owner 2026-09-03: *"In my screen resolution of a laptop, the toolbar spills over into
@@ -9634,6 +9644,9 @@
        whole thing goes on the title, or capping it would have hidden which grouping is live —
        trading one defect for a worse one. */
     if (_gb) _gb.title = 'Grouping: ' + _full + ' — pick the levels and their order.';
+    /* The face is the widest control and it changes width with the grouping, so the fit has to be
+       re-taken whenever it does. */
+    if (typeof _tbFitSoon === 'function') _tbFitSoon();
     var m = document.getElementById('ps-group-menu');
     if (m && m.classList.contains('open')) renderGroupMenu();
   }
@@ -40916,6 +40929,79 @@
         setScope: function (s2) { clScope = s2; } } };
   })();
 
+  /* ==========================================================================================
+     TOOLBAR OVERFLOW — what does not fit moves to a row you can reveal.
+     ⚠️ Nodes are MOVED between the two containers, never rebuilt: every handler in this file is
+     attached once at init by id, so re-creating a control would silently unwire it — the same
+     class of failure as removing a button while its `getElementById(...).onclick` stays.
+     ⚠️ Shed order is LOWEST PRIORITY FIRST and explicit. Shedding from the end of the DOM would
+     drop the SEARCH box first, which is the one control a planner uses on every visit. */
+  var _TB_KEEP = { 'ps-actionsbtn': 1, 'ps-add': 1, 'ps-schedbtn': 1, 'ps-groupbtn': 1 };
+  var _TB_SHED = ['ps-help-btn', 'ps-fmtbtn-top', 'ps-outlinebtn', 'ps-vstackbtn', 'ps-progressbtn',
+                  'ps-zoombtn', 'ps-layoutbtn', 'ps-scopebtn', 'ps-openbtn', 'ps-analyzebtn'];
+  var _TB_ORDER = null, _tbRaf = 0;
+
+  function _tbUnit(btnId) {
+    var b = document.getElementById(btnId);
+    if (!b) return null;
+    return b.closest('.ps-menu-wrap') || b;
+  }
+
+  function _tbFit() {
+    var row = document.querySelector('.ps-tb-row');
+    var more = document.getElementById('ps-tb-overflow');
+    var moreBtn = document.getElementById('ps-tb-more');
+    if (!row || !more || !moreBtn) return;
+    /* Captured ONCE, and it is what restores the original order: re-inserting every remembered
+       child in sequence puts them back wherever they had been moved to. */
+    if (!_TB_ORDER) _TB_ORDER = [].slice.call(row.children);
+    _TB_ORDER.forEach(function (el) { row.insertBefore(el, moreBtn); });
+
+    // one row's height = the tallest control; anything more means it has wrapped
+    var unit = 0;
+    _TB_ORDER.forEach(function (el) { unit = Math.max(unit, el.offsetHeight || 0); });
+    if (!unit) return;
+
+    for (var i = 0; i < _TB_SHED.length && row.offsetHeight > unit + 8; i++) {
+      var el = _tbUnit(_TB_SHED[i]);
+      if (!el || _TB_KEEP[_TB_SHED[i]]) continue;
+      more.appendChild(el);
+    }
+    var any = more.children.length > 0;
+    moreBtn.hidden = !any;
+    if (!any) { more.hidden = true; moreBtn.classList.remove('on'); moreBtn.setAttribute('aria-expanded', 'false'); }
+  }
+
+  function _tbFitSoon() {
+    if (_tbRaf) return;
+    _tbRaf = (window.requestAnimationFrame || function (f) { return setTimeout(f, 16); })(function () {
+      _tbRaf = 0; _tbFit();
+    });
+  }
+
+  function _tbWire() {
+    var row = document.querySelector('.ps-tb-row');
+    var moreBtn = document.getElementById('ps-tb-more');
+    if (!row || !moreBtn || row.parentNode.querySelector('#ps-tb-overflow')) return;
+    var more = document.createElement('div');
+    more.className = 'ps-tb-overflow'; more.id = 'ps-tb-overflow'; more.hidden = true;
+    row.parentNode.insertBefore(more, row.nextSibling);
+    moreBtn.onclick = function () {
+      more.hidden = !more.hidden;
+      moreBtn.classList.toggle('on', !more.hidden);
+      moreBtn.setAttribute('aria-expanded', String(!more.hidden));
+    };
+    window.addEventListener('resize', _tbFitSoon);
+    /* ⚠️ The sidebar is the reason this exists: expanding it takes ~270px off the content and is
+       exactly the band where the toolbar stops fitting. It is a class flip on `.pd-app`, not a
+       resize, so a resize listener alone would never see it. */
+    var app = document.querySelector('.pd-app');
+    if (app && window.MutationObserver) {
+      new MutationObserver(_tbFitSoon).observe(app, { attributes: true, attributeFilter: ['class'] });
+    }
+    _tbFit();
+  }
+
   function switchTab(tab) {
     activeTab = tab;
     document.querySelectorAll('.ps-tab').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === tab); });
@@ -45561,6 +45647,11 @@
 
     (function () {
       var hb = document.getElementById('ps-help-btn'); if (hb) hb.onclick = function (e) { e.stopPropagation(); openShortcuts(); };
+      /* ⚠️ LAST, and deliberately after every other toolbar handler is attached. `_tbWire` takes the
+         first measurement and may immediately MOVE controls into the overflow row — moving a node
+         does not disturb its listeners, but wiring one that has already been moved would have to
+         find it in a different parent, so the order is: wire everything, then fit. */
+      _tbWire();
       // The permanent home for the sheet. The toolbar's `?` is hidden below 1400px (see its
       // comment) and the `?` KEY does not exist on every layout, so this must always be reachable.
       var hi = document.getElementById('ps-help-item');
