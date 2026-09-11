@@ -307,14 +307,47 @@
     /* The kind selector carries a count of what is entered under it. */
     .sc-seg button i { font-style:normal; font-size:var(--pd-fs-micro); font-weight:800;
       opacity:.7; margin-left:3px; }
-
     /* ---- The live preview above the sheet ------------------------------------------------------
        ⚠️ Given its own bordered block rather than dropped straight into the card: it is the same
        chart the Curve tab shows, and without a frame around it the sheet below reads as part of
-       the chart's own furniture. */
+       the chart's own furniture.
+
+       Owner 2026-09-11: *"can you make the curve smaller for the manual POC entry. And make it
+       aesthetically pleasing."*
+       ⚠️⚠️ SMALLER IS A DIFFERENT CHART, NOT A SCALED-DOWN ONE. The obvious move — cap the height
+       and let the viewBox shrink — takes the type down with it: at the height this needed, the
+       11px axis labels land at about 7px and the legend swatches become dashes. So the compact
+       pass changes the DRAWING (a shorter plot box, three gridlines instead of five, tighter
+       padding) and leaves every font at a real size. The furniture below shrinks on its own terms.
+       ⚠️ It is a flag on the shared renderer, not a second renderer: two chart builders is how the
+       preview and the Curve tab start disagreeing about the same numbers. */
     .sc-manchartwrap { border:1px solid var(--pd-line); border-radius:var(--pd-radius-md);
-      padding:12px 14px 10px; margin-bottom:12px; background:var(--pd-card); }
-    .sc-manchartwrap .sc-note { margin-top:6px; }
+      padding:9px 12px 10px; margin-bottom:14px; background:var(--pd-card); }
+    .sc-manchartwrap .sc-note { margin-top:6px; font-size:var(--pd-fs-xs); }
+    /* The caption. ⚠️ It says the chart is LIVE, which until now only a code comment did — a
+       planner who does not know the curve follows their typing has no reason to look up at it. */
+    .sc-mancap { display:flex; align-items:baseline; gap:9px; flex-wrap:wrap; margin-bottom:7px;
+      padding-bottom:7px; border-bottom:1px solid var(--pd-line); }
+    .sc-mancap .t { font-size:var(--pd-fs-micro); font-weight:800; letter-spacing:.06em;
+      text-transform:uppercase; color:var(--pd-muted); }
+    .sc-mancap .s { font-size:var(--pd-fs-micro); color:var(--pd-muted); }
+    /* ---- The compact chart's own furniture ---------------------------------------------------
+       ⚠️ Scoped to `.sc-svg-sm` / the `-sm` classes, never applied to `.sc-svg` itself: the Curve
+       tab is the same markup from the same function, and a rule written on the bare class would
+       quietly restyle the full-size chart as well. */
+    .sc-svg-sm .sc-ylab, .sc-svg-sm .sc-xlab { font-size:10px; }
+    .sc-svg-sm .sc-ylab2 { font-size:9px; }
+    .sc-svg-sm .sc-ylab2-t { font-size:8px; }
+    .sc-svg-sm .sc-today-lab { font-size:9px; }
+    /* ⚠️ Thinner strokes, because a 2.5px line on a plot two-fifths shorter reads as a ribbon and
+       the two curves start touching where they run close together. */
+    .sc-svg-sm .sc-planned, .sc-svg-sm .sc-forecast { stroke-width:1.6; }
+    .sc-svg-sm .sc-earned { stroke-width:2; }
+    .sc-svg-sm .sc-today { stroke-width:1.2; }
+    .sc-legend-sm { gap:8px 14px; margin-top:8px; font-size:var(--pd-fs-xs); }
+    .sc-legend-sm .sw { width:14px; margin-right:5px; }
+    .sc-legend-sm .sw-today { width:3px; height:10px; }
+    .sc-axisnote-sm { font-size:var(--pd-fs-micro); margin-top:5px; line-height:1.5; }
     /* ⚠️ Unsaved edits are marked in the BAD colour, not a neutral one: the curve above is drawn
        from them, so the state is "this chart is not what the database holds" — which is a warning,
        not a status. */
@@ -1512,7 +1545,9 @@
   function manChart() {
     if (!document.getElementById('sc-manchart')) return;
     var dm = computeManual();
-    renderChart(dm, { host: 'sc-manchart', note: 'sc-mannote', interactive: false });
+    // ⚠️ compact: the preview sits on top of a 36-column sheet, and the chart's job here is to
+    // show the SHAPE moving as you type — not to be read off. The Curve tab is where it is read.
+    renderChart(dm, { host: 'sc-manchart', note: 'sc-mannote', interactive: false, compact: true });
     var note = document.getElementById('sc-mannote');
     var nd = manDirtyCount();
     /* ⚠️ A chart drawn from numbers that are not in the database yet MUST say so — a screenshot of
@@ -1776,7 +1811,10 @@
          in the database yet must say so — a screenshot of it would otherwise assert data nobody
          has kept.
          ========================================================================================== */
-      '<div class="sc-manchartwrap"><div id="sc-manchart"></div><p class="sc-note" id="sc-mannote"></p></div>' +
+      '<div class="sc-manchartwrap">' +
+        '<div class="sc-mancap"><span class="t">Live preview</span>' +
+        '<span class="s">redraws as you type, unsaved edits included</span></div>' +
+        '<div id="sc-manchart"></div><p class="sc-note" id="sc-mannote"></p></div>' +
       '<div class="sc-srcbar">' + srcLine + '</div>' +
       lockBar +
       '<div class="sc-filterbar sc-kindbar">' + kindSeg +
@@ -1933,6 +1971,11 @@
     var host = document.getElementById(opts.host || 'sc-chart');
     if (!host) return;
     var interactive = (opts.interactive !== false);
+    /* ⚠️ DECLARED HERE, NOT BESIDE THE GEOMETRY IT MOSTLY DRIVES. The manual-curve note above the
+       plot reads it too, and `var` hoisting would have handed that branch an `undefined` — so the
+       compact note would have silently never fired while every geometry change worked.
+       See the block comment on the compact variant, down where H and the pads are set. */
+    var compact = !!opts.compact;
     // ⚠️ NOT named `basis` — that is now the module-level weighting flag, and shadowing it here
     // would make the note element win inside this function.
     var basisNote = document.getElementById(opts.note || 'sc-basis') || { textContent: '', innerHTML: '' };
@@ -1966,13 +2009,25 @@
       if (d.manSeen && d.manSeen.planned) seenTxt.push('planned');
       if (d.manSeen && d.manSeen.actual) seenTxt.push('actual');
       if (d.manSeen && d.manSeen.forecast) seenTxt.push('forecast');
-      basisNote.innerHTML = '<b>Manual curve</b> — entered by hand, per trade, per month, in the sheet ' +
-        'below. Each trade is weighted by its share of the schedule (' +
-        (basis === 'cost' ? 'loaded cost' : 'duration') + '), so the trades roll up to the project in ' +
-        'proportion to what they are worth. ' +
-        (seenTxt.length ? 'Entered so far: <b>' + seenTxt.join(', ') + '</b>. '
-                        : '<b>Nothing entered yet</b> — the curve is flat until the sheet below is filled in. ') +
-        'Switch to <b>Automatic</b> to read the same project from the schedule instead.';
+      var wWord = (basis === 'cost' ? 'loaded cost' : 'duration');
+      /* ⚠️⚠️ THE COMPACT FORM STILL MAKES ALL THREE CLAIMS. This paragraph is the longest piece of
+         furniture on the preview and shortening it was half the owner's ask — but it is also the
+         honesty note, so what it may lose is WORDS, never facts. It still says (1) this is a manual
+         curve, (2) what the trades are weighted by, (3) what has actually been entered; manChart
+         appends the unsaved count to it. What the compact form drops is the sentence telling the
+         planner where the sheet is and how to switch back to Automatic — both of which are on
+         screen, a few pixels below, on the very tab this preview lives in. The Curve tab keeps the
+         full paragraph, because there the sheet is a tab away and neither is in view. */
+      basisNote.innerHTML = compact
+        ? '<b>Manual curve</b> · trades weighted by ' + wWord + ' · ' +
+          (seenTxt.length ? 'entered: <b>' + seenTxt.join(', ') + '</b>'
+                          : '<b>nothing entered yet</b> — flat until the sheet below is filled in')
+        : '<b>Manual curve</b> — entered by hand, per trade, per month, in the sheet ' +
+          'below. Each trade is weighted by its share of the schedule (' + wWord + '), so the trades ' +
+          'roll up to the project in proportion to what they are worth. ' +
+          (seenTxt.length ? 'Entered so far: <b>' + seenTxt.join(', ') + '</b>. '
+                          : '<b>Nothing entered yet</b> — the curve is flat until the sheet below is filled in. ') +
+          'Switch to <b>Automatic</b> to read the same project from the schedule instead.';
     } else {
     /* ⚠️⚠️ THIS WAS AN EARLY `return`, AND IT MEANT THE CHART WAS NEVER DRAWN IN MANUAL MODE.
        Shipped that way this morning: the branch sets the manual basis note and then returned from
@@ -1992,14 +2047,26 @@
       (d.manual ? 'pinned to ' + iso(d.fcFinish) : 'performance-based (SPI ' + (Math.round(d.spi * 100) / 100) + ', auto finish ' + iso(d.autoFc) + ')') +
       '; it follows the plan’s shape from the actual point up to 100%. Set a date to override, clear it to auto-forecast.';
     }
-    var W = 1000, H = 340, padL = 40, padR = 16, padT = 16, padB = 40, n = d.months.length, maxV = d.TOT || 1;
+    /* ==========================================================================================
+       THE COMPACT VARIANT.
+       Owner 2026-09-11: *"can you make the curve smaller for the manual POC entry."*
+       ⚠️⚠️ A SHORTER PLOT BOX, NOT A SCALED-DOWN CHART. Capping the rendered height and letting the
+       viewBox shrink takes the TYPE down with it — at the height the preview needed, the 11px axis
+       labels land near 7px. So the drawing itself is re-proportioned here (H, and tighter pads) and
+       the fonts keep real sizes in CSS. The x-axis mapping, the bars, the forecast and the hit
+       bands are all expressed in terms of these five numbers already, so nothing below this line
+       needed a second code path.
+       ⚠️ A FLAG ON THE SHARED RENDERER, never a second renderer: the preview and the Curve tab draw
+       the same project, and two builders is how they start disagreeing about it. */
+    var W = 1000, H = compact ? 196 : 340, padL = compact ? 34 : 40, padR = 16,
+        padT = compact ? 12 : 16, padB = compact ? 26 : 40, n = d.months.length, maxV = d.TOT || 1;
     /* ⚠️ A RIGHT-HAND PAD when the bars are drawn, because they get their own axis. Without it the
        periodic scale's labels sit outside the viewBox and are simply not there.
        ⚠️ 56, not 44: measured in a browser, "per month" at 9px starts at x=962 and runs ~44px, so
        at padR=44 the axis title rendered as "per mor" — clipped by the viewBox edge, which does not
        scroll and gives no hint that anything is missing. */
     var showBars = (chartMode !== 'cum'), showLines = (chartMode !== 'per');
-    if (showBars) padR = 56;
+    if (showBars) padR = compact ? 48 : 56;
     /* ==========================================================================================
        ⚠️⚠️ THE X-AXIS STAYS IN MONTH SPACE WHATEVER THE GRANULARITY, and that is the decision that
        kept this change small and the forecast correct. A quarterly view draws FEWER POINTS on the
@@ -2088,7 +2155,9 @@
         (L.per === 'year' ? 'year' : L.per === 'quarter' ? 'quarter' : 'month') + '</text>';
     }
     var grid = '';
-    [0, .25, .5, .75, 1].forEach(function (p) { var yy = y(maxV * p); grid += '<line x1="' + padL + '" y1="' + yy + '" x2="' + (W - padR) + '" y2="' + yy + '" class="sc-grid"/><text x="' + (padL - 6) + '" y="' + (yy + 3) + '" class="sc-ylab">' + Math.round(p * 100) + '%</text>'; });
+    // ⚠️ Three gridlines in compact, not five: at 196 units tall they would sit ~18px apart on
+    // screen and read as hatching rather than as a scale.
+    (compact ? [0, .5, 1] : [0, .25, .5, .75, 1]).forEach(function (p) { var yy = y(maxV * p); grid += '<line x1="' + padL + '" y1="' + yy + '" x2="' + (W - padR) + '" y2="' + yy + '" class="sc-grid"/><text x="' + (padL - 6) + '" y="' + (yy + 3) + '" class="sc-ylab">' + Math.round(p * 100) + '%</text>'; });
     /* The x-axis labels the BUCKETS, thinned to what fits. ⚠️ Thinned by measured width, not by a
        fixed "every nth": a 3-year monthly chart needs every 4th and a 3-year quarterly chart needs
        every one, and a hard stride would either crowd one or gut the other. At month granularity
@@ -2103,7 +2172,7 @@
         var show = L.per === 'month' ? (isYearStart || i === 0) : (i % stride === 0 || i === nb - 1);
         if (!show) return;
         var txt = L.per === 'month' ? String(d.months[b.from].getFullYear()) : b.label;
-        xlab += '<text x="' + bcx(b) + '" y="' + (H - padB + 16) + '" class="sc-xlab">' + esc(txt) + '</text>';
+        xlab += '<text x="' + bcx(b) + '" y="' + (H - padB + (compact ? 13 : 16)) + '" class="sc-xlab">' + esc(txt) + '</text>';
       });
     })();
     // The cumulative curves, one point per bucket, at the bucket's own end.
@@ -2170,14 +2239,14 @@
     // ⚠️ ORDER IS THE READING ORDER: bars, then the grid and the data-date rule, then the curves
     // on top. A line hidden behind a bar is a line the planner cannot follow.
     host.innerHTML = '<div class="sc-plot">' +
-      '<svg viewBox="0 0 ' + W + ' ' + H + '" class="sc-svg">' + bars + grid + todayL +
+      '<svg viewBox="0 0 ' + W + ' ' + H + '" class="sc-svg' + (compact ? ' sc-svg-sm' : '') + '">' + bars + grid + todayL +
       (showLines
         ? '<polyline class="sc-planned" points="' + pl + '"/>' + fc +
           (ac.length ? '<polyline class="sc-earned" points="' + ac.join(' ') + '"/>' : '')
         : '') + xlab + (interactive || opts.hover !== false ? hit : '') + '</svg>' +
       // The readout, positioned against the plot box on hover. Empty until then.
       '<div class="sc-tip" hidden></div></div>' +
-      '<div class="sc-legend">' +
+      '<div class="sc-legend' + (compact ? ' sc-legend-sm' : '') + '">' +
       (showLines
         ? '<span class="sc-lg"><span class="sw sw-planned"></span> Planned (cumulative)</span>' +
           '<span class="sc-lg"><span class="sw sw-earned"></span> Actual (cumulative)</span>' +
@@ -2196,7 +2265,7 @@
       // ⚠️ Says what the bars' own axis is, because two y-axes on one chart is a thing a reader
       // has to be TOLD about — a bar read against the left-hand axis is out by an order of
       // magnitude, and nothing about the picture reveals that.
-      (showBars ? '<p class="sc-note sc-axisnote">The bars are read against the <b>right-hand</b> axis — ' +
+      (showBars ? '<p class="sc-note sc-axisnote' + (compact ? ' sc-axisnote-sm' : '') + '">The bars are read against the <b>right-hand</b> axis — ' +
         'each is that ' + (L.per === 'year' ? 'year' : L.per === 'quarter' ? 'quarter' : 'month') +
         '\'s own share of the total, peaking at ' +
         (maxV ? (Math.round(perMax / maxV * 1000) / 10) : 0) + '% in one ' +

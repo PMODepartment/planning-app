@@ -95,6 +95,33 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### The manual sheet's preview curve gets its own compact size (2026-09-11) — ethanrobles10
+
+Owner: *"can you make the curve smaller for the manual POC entry. And make it aesthetically
+pleasing."*
+
+The preview above the S-curve's manual sheet was the full Curve-tab chart verbatim — a 340-unit plot,
+five gridlines, a two-row legend and two long paragraphs, about 580px of furniture on top of the
+36-column spreadsheet the planner is trying to type into. It is now **352px, 40% less**.
+
+- ⚠️⚠️ **Smaller is a different chart, not a scaled-down one.** Capping the height and letting the
+  viewBox shrink takes the type down with it — at the height this needed, 11px axis labels land near
+  7px. So a `compact` flag re-proportions the drawing (plot box 340 → **196**, five gridlines → three,
+  tighter pads, thinner strokes) and the fonts keep real sizes in CSS.
+- ⚠️ **A flag on the shared renderer, never a second renderer** — the preview and the Curve tab draw
+  the same project, and two chart builders is how they start disagreeing about it. Every `-sm` rule is
+  scoped to its own class so the full-size chart is untouched, which was measured rather than assumed.
+- ⚠️ The manual-curve honesty note got **shorter, not weaker**: 317 chars → 69, still making all three
+  claims (it is a manual curve, what the trades are weighted by, what has been entered) plus the
+  unsaved count. The Curve tab keeps the full paragraph, where the sheet is a tab away.
+- A caption row says the curve **redraws as you type** — a fact only a code comment stated, and a
+  planner who does not know it has no reason to look up at the chart.
+
+⚠️ **Not verified against real data** — the anon key has no grants. Measured in a gitignored harness
+loading the module's own stylesheet and its shipped renderer over a synthetic 30-month programme.
+
+`MODULE_V` → `20260911sc1`. Detail: [`modules/s-curve/CLAUDE.md`](modules/s-curve/CLAUDE.md).
+
 ### 2026-09-11 (b2) — All five fixes driven end-to-end on OPW101, and the toolbar measured rather than guessed
 
 Owner: *"Let's verify these fixes end-to-end"*, then *"The toolbar needs proper rework it spills over."*
