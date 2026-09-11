@@ -3603,6 +3603,95 @@ window.BOQ = (function () {
   }
 
   /* ==========================================================================
+     MATCH BY NAME — the tagger's question, asked the other way round
+     ==========================================================================
+     ⚠️⚠️ `planTags` asks, FOR EACH CLASS CODE, which activities resemble it. On OPW101 that
+     answers "no name resembles it" twenty-one times out of twenty-one, and the measurement says
+     why: `matchAct`'s second rung is `l3.indexOf(an) >= 0 && an.length > 6`, the schedule calls the
+     work **"Rebar"**, and "Rebar" is five characters. One clause, and the whole automatic path is
+     mute — leaving the planner to hand-pick 21 codes against 2,561 activities.
+
+     This asks the OTHER question: for each distinct ACTIVITY NAME, which of this bill's codes could
+     it be? There are far fewer distinct names than activities — one decision tags dozens of rows —
+     and the count is on screen so the planner can see the leverage before spending the click.
+
+     ⚠️⚠️ THE RELAXED RULE BUILDS A SHORTLIST FOR A HUMAN AND WRITES NOTHING. That is the entire
+     reason it may sit below `TAG_FLOOR`, and it is the answer to my own objection against simply
+     lowering the guard: "Rebar" is a legitimate candidate for **Rebar Works**, **Rebar
+     Consumables** AND **Rebar Coupler**. The ambiguity is real and lives in the data — the schedule
+     is less specific than the bill. Auto-picking one would be "confidently allocated the same 72
+     activities to three different lines", which is worse than finding nothing. So all three are
+     SHOWN and the planner says which. */
+  function nameCandidates(name, c) {
+    var m = matchAct({ activity_name: name }, c);
+    if (m && m.score >= TAG_FLOOR) return { score: m.score, why: m.why, sure: true };
+    /* The partial rule: every WORD of the activity name appears in the item's words. It is a
+       whole-word test, not a substring one — "Rebar" is part of "Rebar Works", but "bar" is not a
+       word of it and must not drag the row in.
+       ⚠️ `tokensOf` drops words of three characters or fewer, so an activity called "PC" tokenises
+       to NOTHING — and `[].every()` is true, which would make it a candidate for every code on the
+       bill. The empty check is load-bearing. */
+    var at = tokensOf(name), it = tokensOf(c.desc_l3 || '');
+    if (!at.length || !it.length) return null;
+    var all = at.every(function (w) { return it.indexOf(w) >= 0; });
+    if (!all) return null;
+    return { score: 0.5, sure: false,
+             why: at.length === 1 ? 'the item begins with it' : 'every word is in the item' };
+  }
+
+  function nameGroups() {
+    var codes = codesInBoq().map(function (e) { return { e: e, c: codeRow(e.code) }; })
+      .filter(function (x) { return x.c; });
+    if (!codes.length) return [];
+    var by = {};
+    (ACTS || []).forEach(function (a) {
+      /* ⚠️ UNTAGGED ONLY — the same rule `planTags` follows, and for the same reason: a class code
+         drives the cost roll-up, so moving forty already-tagged activities in bulk is a
+         reconciliation nobody would know to go looking for. */
+      if (a.class_code) return;
+      var nm = String(a.activity_name || '').trim();
+      var k = nm ? normKey(nm) : '';
+      if (!k) return;
+      if (!by[k]) by[k] = { key: k, name: nm, acts: [] };
+      by[k].acts.push(a);
+    });
+    var out = Object.keys(by).map(function (k) {
+      var g = by[k];
+      g.cands = codes.map(function (x) {
+        var m = nameCandidates(g.name, x.c);
+        return m ? { code: x.e.code, desc: x.c.desc_l3 || '', lines: x.e.lines,
+                     score: m.score, why: m.why, sure: m.sure } : null;
+      }).filter(Boolean).sort(function (p, q) {
+        return q.score - p.score || String(p.code).localeCompare(String(q.code));
+      });
+      /* ⚠️ PRE-SELECTED ONLY WHEN EXACTLY ONE CANDIDATE IS CONFIDENT. Two confident candidates is
+         precisely the ambiguity this screen exists to surface; choosing for the planner there would
+         reintroduce the failure the whole design avoids. */
+      var sure = g.cands.filter(function (c2) { return c2.sure; });
+      g.pick = sure.length === 1 ? sure[0].code : null;
+      return g;
+    }).filter(function (g) { return g.cands.length; });
+    /* Biggest first: the decision that tags the most rows is the one worth making first. */
+    out.sort(function (p, q) {
+      return q.acts.length - p.acts.length || String(p.name).localeCompare(String(q.name));
+    });
+    return out;
+  }
+
+  /* The plan `applyTagPlan` already knows how to write — built from the planner's picks rather
+     than from a score. ⚠️ Deliberately the SAME shape and the SAME writer: a second write path for
+     tags would be the drift this module has already paid for twice. */
+  function nameTagPlan(groups) {
+    var byCode = {};
+    (groups || []).forEach(function (g) {
+      if (!g.pick) return;
+      var hits = byCode[g.pick] || (byCode[g.pick] = []);
+      g.acts.forEach(function (a) { hits.push({ a: a }); });
+    });
+    return Object.keys(byCode).map(function (code) { return { code: code, hits: byCode[code] }; });
+  }
+
+  /* ==========================================================================
      PASS B's PLAN, at module scope — every code on this revision, matched at once.
      ==========================================================================
      ⚠️ Lifted out of the tag dialog so the whole-BOQ run can PROPOSE the same tags without
@@ -3639,6 +3728,92 @@ window.BOQ = (function () {
       catch (e) { failed.push(p.code + ': ' + (e.message || e)); }
     }
     return { wrote: wrote, wanted: wanted, failed: failed };
+  }
+
+  /* ⚠️ The screen is a TABLE OF DECISIONS, not an explanation. Owner: *"make it intuitive and easy
+     to understand without having to use many tooltips and lengthy texts expecting the planner to
+     read them properly."* So each row is: the name, how many activities carry it, and the codes it
+     could be — as buttons. The count is the argument for spending the click; nothing else is said. */
+  async function openNameMatch() {
+    await ensureCodes();
+    await ensureActs();
+    var groups = nameGroups();
+    if (!groups.length) {
+      UI.toast('No untagged activity name resembles a code on this bill.', 'warn');
+      return;
+    }
+    var m = UI.modal('<div class="pd-modal-header"><div><h2 style="margin:0;">Match names to the bill</h2>' +
+      '<div class="pd-modal-sub">One answer tags every activity sharing that name</div></div>' +
+      '<button class="pd-modal-close" id="nm-x">&times;</button></div>' +
+      '<div class="boq-nm-body" id="nm-body"></div>' +
+      '<div class="pd-modal-footer" id="nm-foot"></div>');
+    m.el.querySelector('.pd-modal').classList.add('boq-wide');
+    var body = m.el.querySelector('#nm-body'), foot = m.el.querySelector('#nm-foot');
+    m.el.querySelector('#nm-x').onclick = m.close;
+
+    function counts() {
+      var n = 0, d = 0;
+      groups.forEach(function (g) { if (g.pick) { d++; n += g.acts.length; } });
+      return { decided: d, acts: n };
+    }
+
+    function paint() {
+      body.innerHTML = '<table class="boq-nmtab"><thead><tr>' +
+        '<th>Activity name</th><th class="cc-r">On</th><th>Which line is it?</th>' +
+        '</tr></thead><tbody>' +
+        groups.map(function (g, i) {
+          return '<tr' + (g.pick ? ' class="on"' : '') + '>' +
+            '<td class="boq-nm-name">' + esc(g.name) + '</td>' +
+            '<td class="cc-r boq-nm-n">' + g.acts.length + '</td>' +
+            '<td class="boq-nm-opts">' +
+              g.cands.slice(0, 6).map(function (c) {
+                return '<button type="button" class="boq-nm-opt' + (g.pick === c.code ? ' on' : '') +
+                  (c.sure ? ' sure' : '') + '" data-g="' + i + '" data-code="' + esc(c.code) + '">' +
+                  '<code>' + esc(c.code) + '</code> ' + esc(c.desc) + '</button>';
+              }).join('') +
+              (g.cands.length > 6 ? '<span class="cc-mini">+' + (g.cands.length - 6) + ' more</span>' : '') +
+              '<button type="button" class="boq-nm-opt boq-nm-skip' + (g.pick ? '' : ' on') +
+                '" data-g="' + i + '" data-code="">Skip</button>' +
+            '</td></tr>';
+        }).join('') + '</tbody></table>';
+
+      body.querySelectorAll('.boq-nm-opt').forEach(function (b) {
+        b.onclick = function () {
+          var g = groups[+b.dataset.g];
+          g.pick = b.dataset.code || null;
+          paint();
+        };
+      });
+
+      var c = counts();
+      foot.innerHTML = '<span class="cc-mini">' + c.decided + ' of ' + groups.length + ' answered</span>' +
+        '<span style="flex:1;"></span>' +
+        '<button class="pd-btn" id="nm-c">Cancel</button>' +
+        '<button class="pd-btn pd-btn-primary" id="nm-go"' + (c.acts ? '' : ' disabled') + '></button>';
+      var go = foot.querySelector('#nm-go');
+      /* One text node — `.pd-btn` is a flex row with a gap, so a word split across elements
+         renders with the gap inside it. */
+      go.textContent = c.acts ? 'Tag ' + c.acts + ' activit' + (c.acts === 1 ? 'y' : 'ies') : 'Nothing chosen';
+      foot.querySelector('#nm-c').onclick = m.close;
+      if (c.acts) go.onclick = function () { run(go); };
+    }
+
+    async function run(btn) {
+      btn.disabled = true;
+      var plan = nameTagPlan(groups);
+      try {
+        var r = await applyTagPlan(plan, function (i, n) { btn.textContent = 'Tagging ' + i + ' of ' + n + '…'; });
+        await refreshActs();
+        m.close();
+        reportTagged(r.wrote, r.wanted, r.failed);
+        render();
+      } catch (e) {
+        btn.disabled = false;
+        UI.toast('Tagging failed — ' + (e && e.message ? e.message : e), 'error');
+      }
+    }
+
+    paint();
   }
 
   async function openTagActivities() {
@@ -3960,7 +4135,11 @@ window.BOQ = (function () {
          is this line?"; tagging answers "which activities carry that code?" — and without the
          second the allocator has no candidates and proposes nothing, which on a freshly
          authored BOQ is every line. */
-      (canWrite ? '<button class="pd-btn" id="boq-c-tag" title="Give schedule activities these class codes">Tag schedule activities…</button>' : '') +
+      /* ⚠️ THE THIRD ENTRY POINT, and it stays — this is the Class Codes tab, which is where
+         tagging belongs, so it is contextual access rather than a duplicate pass. What went is the
+         `title=`: a tooltip explaining what a button does is the screen admitting the button is not
+         named well enough, and it is invisible on a phone. */
+      (canWrite ? '<button class="pd-btn" id="boq-c-tag">Tag schedule activities…</button>' : '') +
       '</div>';
 
     // Worst-confidence-first: the lines needing a human are at the top.
@@ -4577,8 +4756,8 @@ window.BOQ = (function () {
                      'Setup</b>, then come back — the BOQ waits, and nothing here is lost.', '', ''],
         notagged:   ['No schedule activity carries a class code',
                      'The activities exist but none is tagged, so there is nothing for a line to match against. ' +
-                     '<b>Tag schedule activities</b> writes the codes onto them in bulk — one code, many activities.',
-                     'Tag schedule activities…', 'tag']
+                     'Answer one question per activity name and every activity sharing it is tagged at once.',
+                     'Match names to the bill…', 'names']
       }[stage];
       h += '<div class="pd-card cc-empty boq-stage">' +
         (stage === 'loading' ? '<h3><span class="cc-spin"></span>' : '<h3>') + esc(S[0]) + '</h3>' +
@@ -4589,10 +4768,20 @@ window.BOQ = (function () {
       return h;
     }
 
+    /* ⚠️⚠️ TWO BUTTONS REMOVED, NOT RENAMED. Owner, 2026-09-10, looking at the orchestrator:
+       *"Is this the same with the other button selections just in compiled format? If yes let's
+       just centralize everything so that its easy to access."* It is: `Propose splits for all
+       unallocated…` ran `planAllocs` and `Tag schedule activities…` ran `planTags`, which are
+       literally passes 3 and 2 of `Code, tag and allocate` — except the dialog CHAINS them, so its
+       counts account for what the earlier passes would do and the standalone buttons' did not.
+       Two controls doing a worse version of one control is how a planner learns not to trust
+       either. One entry point now; the tagger survives inside it, because it is the only one of
+       the three that is not a duplicate.
+       ⚠️ The `title=` attribute went with it. A tooltip explaining what a button does is the
+       screen admitting the button is not named well enough — and it is invisible on a phone. */
     h += '<div class="boq-filters">' +
       '<input class="pd-input" id="boq-a-q" placeholder="Search lines…" value="' + esc(filt.q) + '" />' +
-      (canWrite ? '<button class="pd-btn" id="boq-a-auto">Propose splits for all unallocated…</button>' : '') +
-      (canWrite ? '<button class="pd-btn" id="boq-a-tag" title="Give schedule activities these class codes">Tag schedule activities…</button>' : '') +
+      (canWrite ? '<button class="pd-btn pd-btn-primary" id="boq-a-all">Code, tag and allocate…</button>' : '') +
       '</div>';
 
     h += '<div class="pd-card cc-tablecard"><table class="cc-table boq-table"><thead><tr>' +
@@ -4685,6 +4874,7 @@ window.BOQ = (function () {
     host.querySelectorAll('[data-stage-go]').forEach(function (b) {
       b.onclick = function () {
         var to = b.dataset.stageGo;
+        if (to === 'names') { openNameMatch(); return; }
         if (to === 'tag') { openTagActivities(); return; }
         sub = to; render();
       };
@@ -4692,8 +4882,7 @@ window.BOQ = (function () {
     var q = host.querySelector('#boq-a-q'), t = null;
     if (q) q.addEventListener('input', function () { clearTimeout(t); t = setTimeout(function () { filt.q = q.value; render(); }, 200); });
     host.querySelectorAll('[data-split]').forEach(function (b) { b.onclick = function () { openSplit(b.dataset.split); }; });
-    var au = host.querySelector('#boq-a-auto'); if (au) au.onclick = bulkPropose;
-    var tg2 = host.querySelector('#boq-a-tag'); if (tg2) tg2.onclick = openTagActivities;
+    var al = host.querySelector('#boq-a-all'); if (al) al.onclick = openMatchAll;
   }
 
   function openSplit(itemId) {
@@ -5112,61 +5301,13 @@ window.BOQ = (function () {
     return { kind: 'nocand', trade: trade, inTrade: inTrade, notInSchedule: !!trade && inTrade === 0 };
   }
 
-  async function bulkPropose() {
-    await ensureActs();
-    await ensureLocMatch();
-    var pl = planAllocs();
-    var ok = pl.ok, none = pl.none, byRung = pl.byRung;
-    var m = UI.modal('<h2 style="margin-top:0;">Propose allocations</h2>' +
-      '<p class="cc-hint">' + pl.todo + ' unallocated mapped line(s). <strong>' + ok.length + '</strong> can be split, ' +
-      'each on the strongest rung that found it:</p>' +
-      '<ul class="cc-hint" style="margin-top:0;">' +
-      RUNG_ORDER.map(function (k) {
-        return byRung[k] ? '<li><strong>' + byRung[k] + '</strong> by ' + RUNG_LABEL[k] + '</li>' : '';
-      }).join('') + '</ul>' +
-      /* ⚠️ The reason is MEASURED, not a fixed sentence. "No activity carries their class code" is
-         true either way, but on an untagged schedule it is a missing prerequisite with a button
-         attached, and saying only the general form is what made this a dead end. */
-      (function () {
-        if (!none) return '';
-        var why = allocBlockReason();
-        if (why.kind === 'untagged') {
-          return '<p class="cc-hint boq-blocked"><strong>' + none + '</strong> cannot — and the reason is the ' +
-            'same for all of them: <strong>not one of this project\'s ' + why.total + ' activities carries a class ' +
-            'code yet</strong>, so there is nothing for a line to attach to. Tag the schedule first — it is one ' +
-            'bulk run on the Class Codes tab.</p>' +
-            '<p style="margin:6px 0 0;"><button class="pd-btn" id="bp-tag">Tag schedule activities…</button></p>';
-        }
-        if (why.kind === 'noacts') {
-          return '<p class="cc-hint boq-blocked"><strong>' + none + '</strong> cannot — this project has no ' +
-            'schedule activities loaded, so there is nothing to allocate to.</p>';
-        }
-        return '<p class="cc-hint"><strong>' + none + '</strong> cannot — no activity carries their class code ' +
-          '(' + why.tagged + ' of ' + why.total + ' activities are tagged), so they stay unallocated rather than ' +
-          'being spread over something arbitrary. Tagging more of the schedule is what brings them in.</p>';
-      })() +
-      /* ⚠️ Says the quiet part out loud, because it is the change that moves money: a line
-         matched on location takes ONLY the activities at that location, where it used to take
-         every activity sharing the code and smear the quantity across them by duration. */
-      '<p class="cc-hint">A line matched on a place takes <strong>only the activities in that place</strong>, split ' +
-      'equally — never every activity sharing the code. Applying records the rung and the split method, so a later ' +
-      'audit can tell a proposal from a hand-made decision.</p>' +
-      '<div style="text-align:right;margin-top:12px;"><button class="pd-btn" id="bp-x">Cancel</button> ' +
-      '<button class="pd-btn pd-btn-primary" id="bp-go"' + (ok.length ? '' : ' disabled') + '>Apply ' + ok.length + ' split(s)</button></div>');
-    m.el.querySelector('#bp-x').onclick = m.close;
-    /* ⚠️ Closes this modal BEFORE opening the tag dialog — that one is a modal too, and stacking
-       it under this overlay leaves the planner clicking a pane they cannot reach. Same rule the
-       wizard's own hand-off follows. */
-    var bt = m.el.querySelector('#bp-tag');
-    if (bt) bt.onclick = function () { m.close(); openTagActivities(); };
-    m.el.querySelector('#bp-go').onclick = async function () {
-      m.close();
-      var wrote = await applyAllocPlans(ok);
-      if (!wrote.ok) { UI.toast(wrote.msg, 'error'); return; }
-      UI.toast('Applied ' + ok.length + ' allocation(s).' + (wrote.dropped ? ' ' + wrote.dropped : ''), 'success');
-      await load();
-    };
-  }
+  /* ⚠️ `bulkPropose` LIVED HERE AND IS GONE (2026-09-10). It rendered its own dialog for
+     `planAllocs` — which is pass 3 of `Code, tag and allocate`, run without the chaining
+     that makes the orchestrator's counts honest. Once the toolbar button was removed it had
+     no caller at all. ⚠️ Its `allocBlockReason` paragraph was NOT a duplicate and moved into
+     the orchestrator rather than going with it; `applyAllocPlans` keeps its other caller
+     there too. Deleted outright rather than left unreferenced: a dead entry point is the
+     next person's second way of doing this, and this module has paid for that twice. */
 
 
   // ==========================================================================
@@ -5247,6 +5388,7 @@ window.BOQ = (function () {
 
     function paint() {
       var d = matchAllDryRun(minConf);
+      var nmN = nameGroups().length;
       var total = d.a.length + d.bTags + d.c.ok.length;
       var rungs = RUNG_ORDER.filter(function (k) { return d.c.byRung[k]; })
         .map(function (k) { return '<span class="boq-why">' + d.c.byRung[k] + ' by ' + esc(RUNG_LABEL[k]) + '</span>'; })
@@ -5259,17 +5401,34 @@ window.BOQ = (function () {
           step(1, 'Code the BOQ lines', d.a.length, 'line(s) will be mapped',
                d.a.length ? 'From the suggestion library, at or above the confidence floor below.'
                           : 'Every mappable line already carries a code — nothing to do.') +
+          /* ⚠️ "Nothing to do" WAS A LIE ON THIS PROJECT, and it is the lie that cost the time.
+             Pass 2 finds nothing whenever the schedule's names are shorter than the bill's, and the
+             screen used to close the subject there. It now says how many names COULD be answered
+             by hand and offers the one screen that does it. */
           step(2, 'Tag the schedule activities', d.bTags, 'activity tag(s) will be written',
                d.bTags ? 'Across ' + d.b.filter(function (p) { return p.hits.length; }).length +
                          ' code(s), at ≥' + (TAG_FLOOR * 100).toFixed(0) + '% name confidence. ' +
                          'Activities already carrying a code are never moved in bulk.'
-                       : 'No untagged activity resembles any code on this BOQ — nothing to do.') +
+                       : (nmN
+                          ? nmN + ' name(s) need a person to say which line they are.'
+                          : 'No untagged activity resembles any code on this BOQ — nothing to do.'),
+               nmN && !d.bTags ? ['Match names…', 'names'] : null) +
           step(3, 'Allocate the quantities', d.c.ok.length, 'line(s) will be split into ' + d.parts + ' allocation(s)',
                d.c.ok.length ? rungs : 'Nothing can be split, even after the passes above.') +
         '</div>' +
-        (d.c.none ? '<p class="cc-hint"><strong>' + d.c.none + '</strong> line(s) still could not be allocated ' +
-          'afterwards — they stay unallocated rather than being spread over something arbitrary, and the ' +
-          'Match to schedule tab lists them.</p>' : '') +
+        /* ⚠️ THE REASON IS MEASURED, not a fixed sentence — and it is here because retiring
+           `bulkPropose` retired its only other caller. "No activity carries their class code" is
+           true either way, but on an untagged schedule it is a missing prerequisite the step above
+           can now fix, and saying only the general form is what made this a dead end in the first
+           place. One sentence: the planner is reading a dialog, not a manual. */
+        (d.c.none ? (function () {
+          var why = allocBlockReason();
+          return '<p class="cc-hint boq-blocked"><strong>' + d.c.none + '</strong> line(s) still cannot — ' +
+            (why.kind === 'noacts' ? 'this project has no schedule activities loaded'
+             : why.kind === 'untagged' ? 'none of its ' + why.total + ' activities carries a class code yet'
+             : 'no activity carries their code (' + why.tagged + ' of ' + why.total + ' tagged)') +
+            '. They stay unallocated rather than spread over something arbitrary.</p>';
+        })() : '') +
         '<label class="cc-hint" style="display:block;margin-top:10px;">Minimum confidence for pass 1 ' +
           '<select class="pd-select" id="ma-c" style="width:auto;">' +
           [90, 80, 60, 50].map(function (v) {
@@ -5277,23 +5436,40 @@ window.BOQ = (function () {
               '>' + v + '%</option>';
           }).join('') + '</select></label>';
 
-      foot.innerHTML = '<button class="pd-btn" id="ma-c2">Cancel</button><span style="flex:1;"></span>' +
+      /* ⚠️ THE PER-CODE TAGGER MOVED IN HERE RATHER THAN BEING DELETED. It is the manual route for
+         everything automation cannot decide, and it used to be a button in the Match-to-schedule
+         toolbar — one of the two that merely ran a pass this dialog already runs. Centralising the
+         duplicates must not quietly remove the one control that is NOT a duplicate. */
+      foot.innerHTML = '<button class="pd-btn" id="ma-c2">Cancel</button>' +
+        '<button class="pd-btn" data-ma-go="tag">Tag one code at a time…</button>' +
+        '<span style="flex:1;"></span>' +
         '<button class="pd-btn pd-btn-primary" id="ma-go"' + (total ? '' : ' disabled') + '>' +
         (total ? 'Run all three passes' : 'Nothing to do') + '</button>';
       foot.querySelector('#ma-c2').onclick = m.close;
+      m.el.querySelectorAll('[data-ma-go]').forEach(function (b) {
+        b.onclick = function () {
+          var to = b.dataset.maGo;
+          m.close();
+          if (to === 'names') openNameMatch(); else openTagActivities();
+        };
+      });
       body.querySelector('#ma-c').onchange = function () { minConf = Number(this.value); paint(); };
       var go = foot.querySelector('#ma-go');
       if (go) go.onclick = function () { run(go); };
     }
 
-    function step(n, title, count, unit, note) {
+    function step(n, title, count, unit, note, act) {
       var on = count > 0;
-      return '<div class="boq-ma-step' + (on ? '' : ' off') + '">' +
+      return '<div class="boq-ma-step' + (on ? '' : ' off') + (act ? ' todo' : '') + '">' +
         '<span class="boq-ma-n">' + n + '</span>' +
         '<span class="boq-ma-t"><strong>' + esc(title) + '</strong>' +
           '<span class="cc-mini">' + note + '</span></span>' +
-        '<span class="boq-ma-c">' + (on ? '<strong>' + count + '</strong> ' + esc(unit)
-                                        : '<span class="cc-mut">skipped</span>') + '</span></div>';
+        '<span class="boq-ma-c">' +
+          (act ? '<button class="pd-btn pd-btn-sm pd-btn-primary" data-ma-go="' + act[1] + '">' +
+                 esc(act[0]) + '</button>'
+               : on ? '<strong>' + count + '</strong> ' + esc(unit)
+                    : '<span class="cc-mut">skipped</span>') +
+        '</span></div>';
     }
 
     /* ⚠️⚠️ THE RUN RE-PLANS FROM REAL STATE BETWEEN PASSES rather than replaying the simulation.
@@ -5907,6 +6083,10 @@ window.BOQ = (function () {
          is that function's score, not a second opinion about names. */
       scoreCandidates: scoreCandidates, candidatesFor: candidatesFor, matchAct: matchAct,
       TAG_FLOOR: TAG_FLOOR,
+      /* The name pass, pure and therefore testable without a browser: the shortlist rule, the
+         grouping, and the plan handed to the SAME writer the tagger uses. */
+      nameCandidates: nameCandidates, nameGroups: nameGroups, nameTagPlan: nameTagPlan,
+      openNameMatch: openNameMatch,
       /* The three planners and the dry run that chains them — exported so a suite can assert the
          whole-BOQ preview equals what the three buttons would do, without a database. */
       planCodeMap: planCodeMap, planTags: planTags, planAllocs: planAllocs,

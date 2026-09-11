@@ -736,6 +736,53 @@ html.pd-dark .boq-tl1 > .boq-trow { background:rgba(255,255,255,.04); }
    row wrapping onto three lines) and the code tree carries three indent levels plus a count
    column. Same widening the wizard gives itself with .ccw. */
 .pd-modal.boq-wide   { max-width:1040px; width:96vw; }
+
+/* ==========================================================================
+   MATCH NAMES TO THE BILL (boq.js openNameMatch)
+   ==========================================================================
+   One row per distinct activity name: what it is called, how many carry it, and the codes it
+   could be. No tooltips — a control that needs one is a control that is not named well enough. */
+.boq-nm-body { max-height:62vh; overflow-y:auto; padding:2px 16px 6px; }
+.boq-nmtab { width:100%; border-collapse:collapse; font-size:var(--pd-fs-sm); }
+.boq-nmtab th { position:sticky; top:0; z-index:1; text-align:left; background:var(--pd-card);
+  padding:6px; border-bottom:1px solid var(--pd-line); font-size:var(--pd-fs-micro);
+  text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); }
+.boq-nmtab td { padding:7px 6px; border-bottom:1px solid var(--pd-line); vertical-align:top; }
+/* ⚠️ The ANSWERED row is tinted rather than ticked. The planner is scanning for what is still
+   blank, and a row that has been dealt with should stop asking for attention. */
+.boq-nmtab tr.on td { background:var(--pd-red-light); }
+.boq-nm-name { font-weight:700; color:var(--pd-ink); }
+/* The count is the argument for spending the click, so it is the one figure set to read at a
+   glance — tabular so the column scans as a column. */
+.boq-nm-n { font-variant-numeric:tabular-nums; font-weight:700; color:var(--pd-muted);
+  white-space:nowrap; }
+.boq-nm-opts { display:flex; flex-wrap:wrap; gap:6px; }
+.boq-nm-opt { display:inline-flex; align-items:center; gap:6px; cursor:pointer;
+  border:1px solid var(--pd-line); background:var(--pd-card); color:var(--pd-ink);
+  border-radius:var(--pd-radius-pill); padding:4px 11px; font:inherit;
+  font-size:var(--pd-fs-xs); line-height:1.3; }
+.boq-nm-opt:hover { border-color:var(--pd-red); }
+.boq-nm-opt code { font-family:var(--pd-mono); font-size:var(--pd-fs-micro); color:var(--pd-muted); }
+/* A CONFIDENT candidate is marked before it is chosen — the difference between "the matcher would
+   have taken this" and "this is merely possible" is the planner's whole decision. */
+.boq-nm-opt.sure { border-color:var(--pd-red); }
+.boq-nm-opt.on { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
+.boq-nm-opt.on code { color:#fff; }
+.boq-nm-skip { color:var(--pd-muted); }
+.boq-nm-skip.on { background:var(--pd-line); border-color:var(--pd-line); color:var(--pd-ink); }
+/* The step whose count is a BUTTON rather than a number — pass 2 when only a person can answer it. */
+.boq-ma-step.todo { border-color:var(--pd-red); }
+
+@media (max-width:700px) {
+  /* The three columns become a stack: a name, its count, then the choices full width. A table
+     this wide on a phone is the frozen-column squeeze the loading modules already fixed. */
+  .boq-nmtab, .boq-nmtab tbody, .boq-nmtab tr, .boq-nmtab td { display:block; width:100%; }
+  .boq-nmtab thead { display:none; }
+  .boq-nmtab tr { border-bottom:1px solid var(--pd-line); padding:8px 0; }
+  .boq-nmtab td { border-bottom:0; padding:2px 4px; }
+  .boq-nm-n::after { content:' activities'; font-weight:400; }
+  .boq-nm-opt { min-height:var(--pd-tap); }
+}
 .pd-modal.boq-widish { max-width:760px;  width:94vw; }
 
 .boq-tag { display:grid; grid-template-columns:minmax(240px,300px) 1fr; gap:14px; align-items:start; }

@@ -95,6 +95,78 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-11 (a) — Match names to the bill: the tagger's question asked the other way round, and three entry points become one
+
+Owner: *"Let's do 1 and 2"* — the specificity screen, and centralising the duplicate buttons.
+
+**1 · The screen.** `planTags` asks, for each **class code**, which activities resemble it. On
+OPW101 that answers *"no name resembles it"* twenty-one times out of twenty-one, and the
+measurement says why in one clause: `matchAct`'s second rung is
+`l3.indexOf(an) >= 0 && an.length > 6`, the schedule calls the work **"Rebar"**, and "Rebar" is five
+characters. `openNameMatch` asks the other question — for each distinct **activity name**, which of
+this bill's codes could it be? There are far fewer names than activities, so **one answer tags 72
+rows**, and the count sits in the row so the planner can see the leverage before spending the click.
+
+⚠️⚠️ **The relaxed rule builds a shortlist for a human and writes nothing**, and that is the whole
+reason it may sit below `TAG_FLOOR`. It is also the answer to my own objection from yesterday
+against simply lowering the guard: "Rebar" is a legitimate candidate for **Rebar Works**, **Rebar
+Consumables** *and* **Rebar Coupler**. The ambiguity is real and lives in the data — the schedule is
+less specific than the bill. Auto-picking one would be "confidently allocated the same 72 activities
+to three different lines", which is worse than finding nothing. So all three are shown and the
+planner says which; a name with exactly **one** confident candidate is pre-answered, a name with two
+is never pre-answered. The partial rule is whole-word (`tokensOf`), so "bar" does not drag in
+"Rebar Works" — and because `tokensOf` drops words of three characters or fewer, an activity called
+"PC" tokenises to nothing, where `[].every()` is **true** and would have made it a candidate for
+every code on the bill. That empty check is load-bearing and is asserted.
+
+The plan goes to `applyTagPlan` — the **same writer** the tagger already uses. A second write path
+for tags would be the drift this module has paid for twice.
+
+**2 · One entry point.** *"Is this the same with the other button selections just in compiled
+format? If yes let's just centralize everything."* It is: `Propose splits for all unallocated…` ran
+`planAllocs` and `Tag schedule activities…` ran `planTags` — literally passes 3 and 2 of **Code, tag
+and allocate**, except the dialog *chains* them so its counts account for what the earlier passes
+would do and the standalone buttons' did not. Two controls doing a worse version of one control is
+how a planner learns to trust neither. Both are gone; the toolbar carries one button.
+
+⚠️ **`bulkPropose` is deleted, not left unreferenced** — 55 lines, no caller once its button went. A
+dead entry point is the next person's second way of doing this. ⚠️ But its `allocBlockReason`
+paragraph was **not** a duplicate and it was that function's only caller, so the measured reason
+("none of its 2,561 activities carries a class code yet") **moved into the orchestrator** rather
+than going with it. Deleting the function blind would have deleted the explanation from the product,
+which is the opposite of the point. Pass 2's note stops saying "nothing to do" — a lie on this
+project — and offers the screen that unblocks it.
+
+⚠️ A **third** entry point turned up only because a test failed: `#boq-c-tag` on the Class Codes
+tab. It stays — that tab is where tagging belongs, so it is contextual access rather than a
+duplicate pass — but its `title=` went. A tooltip explaining what a button does is the screen
+admitting the button is not named well enough, and it is invisible on a phone. That is the standing
+instruction: *"without having to use many tooltips and lengthy texts expecting the planner to read
+them properly."*
+
+Verified: **43 new assertions, 0 failing**, plus 34 + 36 + 24 + 29 + 26 — **192 total**. Pinned to
+**d1397fd**. The fixture uses the owner's **real** names ("Rebar" on the schedule, "Rebar Works" on
+the bill); yesterday's named them alike and so agreed with the code for the wrong reason.
+⚠️ Four of my assertions were wrong and the corrections are the point: I asserted "the tagger
+matched nothing at all" and it matches **72**, because *Formworks* is spelled the same on both sides
+and always worked — the failure is not global, it is exactly the names where the schedule is
+**shorter** than the bill, and asserting the total hid the very distinction this screen exists for.
+
+Rendered against the real stylesheets at 344px with the phone block live, both themes: chips and the
+primary meet `--pd-tap` at **44px**, every text pair clears AA, and the only sub-4.5 readings are
+white on `--pd-red` at 4.12 — the app's standing `.pd-btn-primary` treatment, not new here. ⚠️ The
+harness first reported the page scrolling sideways; it was the harness, which had put the modal in a
+padded body instead of `.pd-modal-overlay`'s fixed box. Corrected, nothing overflows. 44 JS files +
+32 inline blocks parse; 595/595 braces; 0 NUL bytes. `?v=` → `20260911a`.
+
+**Still open.** The name pass makes the 21 lines answerable in about ten clicks instead of an
+afternoon, but it does not make them automatic, and nothing should: only a person can say whether
+"Rebar" is the works, the consumables or the coupler. WBS branch names, BOQ sheet names and the
+chart's item names still come from three unreconciled sources.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+
 ### Consolidated drew a box on a project whose every floor was traced (2026-09-11) — ethanrobles10
 
 Owner: *"how come when pressing the consolidated and combining 2 trades that have the same floor
@@ -293,6 +365,7 @@ row, so what is drawn and what is said agree. ⚠️ Not verified signed in; the
 need `migrations/2026-09-10-scurve-manual-poc.sql`.
 
 `MODULE_V` → `20260910zb`. Detail: [`modules/s-curve/CLAUDE.md`](modules/s-curve/CLAUDE.md).
+
 
 ### 2026-09-10 (za3) — A class code the schedule has never heard of stops being a dead end — and the measurement that says it will not rescue OPW101
 
