@@ -4745,11 +4745,13 @@ window.BOQ = (function () {
        ⚠️ One idea per line, so it wraps at the line breaks the author chose instead of wherever a
        900px measure happens to land. `.boq-how p` is capped at 70ch for the same reason. */
     h += '<details class="boq-how"><summary>How matching works</summary>' +
-      '<p>One class code is carried by <strong>many</strong> activities, so a line is spread ' +
-      '<em>across</em> them — never attached to one.</p>' +
-      '<p>The strongest rung that finds anything wins:<br>' +
-      '<strong>location</strong> → <strong>WBS branch</strong> → <strong>name</strong> → ' +
-      '<strong>class code alone</strong> (split pro-rata by duration).</p>' +
+      /* ⚠️ The 70ch measure was not the problem — the SENTENCES were. At that width the first one
+         broke after "never" and left "attached to one." alone on a line, which reads as broken
+         wrapping rather than as a long sentence. Shortened until each lands whole. */
+      '<p>A class code is carried by <strong>many</strong> activities. A line spreads ' +
+      '<em>across</em> them, never onto one.</p>' +
+      '<p>Strongest rung wins: <strong>location → WBS branch → name → class code</strong>, ' +
+      'then pro-rata by duration.</p>' +
       '<p><strong>Nothing is saved until you press Apply.</strong></p></details>';
 
     if (stage !== 'ready') {
@@ -4995,7 +4997,12 @@ window.BOQ = (function () {
           : '<div class="boq-alert warn">No activity on this project carries class code <code>' +
           esc(cfc) + '</code>, and none is named like this line. Allocate by hand, or tag the ' +
           'activities first.</div>') +
-        '<table class="boq-splittab"><thead><tr><th>Activity</th><th class="cc-r">Qty</th><th></th></tr></thead><tbody>' +
+        /* ⚠️ NO HEADER OVER AN EMPTY TABLE. With nothing allocated this drew ACTIVITY / QTY column
+           headings above zero rows, directly on top of the button whose job is to create the first
+           one — furniture for a table that does not exist. */
+        (prop.parts.length
+          ? '<table class="boq-splittab"><thead><tr><th>Activity</th><th class="cc-r">Qty</th><th></th></tr></thead><tbody>'
+          : '') +
         prop.parts.map(function (p, i) {
           return '<tr><td><code>' + esc(p.activity_id) + '</code> <span class="cc-mini">' + esc(p.name || '') + '</span>' +
             // ⚠️ Every proposed row says which rung found it. A bare list of activities is
@@ -5010,7 +5017,7 @@ window.BOQ = (function () {
             '<td class="cc-r"><input class="pd-input boq-qin" type="text" inputmode="decimal" data-i="' + i + '" value="' + esc(p.qty) + '" /></td>' +
             '<td><button class="pd-btn" data-rm="' + i + '" title="Remove">&times;</button></td></tr>';
         }).join('') +
-        '</tbody></table>' +
+        (prop.parts.length ? '</tbody></table>' : '') +
         /* ⚠️⚠️ THIS WAS A RAW `<select>` OF `ACTS.slice(0, 800)`, AND ON A REAL PROJECT IT COULD NOT
            REACH MOST OF THE SCHEDULE. Owner, 2026-09-10, on OPW101 (2,561 activities): *"Right now
            the linking is still not easy."* Measured: **1,761 activities — 69% — were not in the list
@@ -5050,10 +5057,15 @@ window.BOQ = (function () {
             (Math.abs(rem) < 1e-6 ? 'reconciles exactly.' : rem > 0 ? qtyStr(rem) + ' ' + esc(r.unit || '') + ' still unallocated.' :
               '<strong>over-allocated by ' + qtyStr(-rem) + '</strong>.') + '</p>'
           /* Still says the two things that matter - nothing is measured yet, and the link is kept
-             regardless - but in one line instead of three. */
-          : '<p class="boq-recon warn"><strong>No quantity</strong> yet, so this stores the ' +
-            '<strong>link only</strong> — ' + prop.parts.length + ' activit' + (prop.parts.length === 1 ? 'y' : 'ies') +
-            '. Enter <b>Qty</b> on the Lines tab to spread it across them.</p>');
+             regardless - but in one line instead of three.
+             ⚠️ AND ONLY ONCE THERE IS SOMETHING TO COUNT. With zero parts this sat directly under
+             "No activity carries class code X, and none is named like this line" and added nothing
+             to it — two amber boxes stacked, the second reporting "0 activities" as news. */
+          : (prop.parts.length
+            ? '<p class="boq-recon warn"><strong>No quantity</strong> yet, so this stores the ' +
+              '<strong>link only</strong> — ' + prop.parts.length + ' activit' + (prop.parts.length === 1 ? 'y' : 'ies') +
+              '. Enter <b>Qty</b> on the Lines tab to spread it across them.</p>'
+            : ''));
 
       body.querySelectorAll('.boq-qin').forEach(function (inp) {
         /* ⚠️ `numOf`, not `Number()` — the field is now text, so it can carry "1,000" and this is

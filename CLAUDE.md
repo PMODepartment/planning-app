@@ -95,6 +95,81 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-11 (b1) — Five reports from testing BOQ linking, and an Actions menu taller than the window
+
+Owner, testing the BOQ→schedule linking on OPW101, listed five. All five answered, plus the Actions
+menu reported separately.
+
+**⚠️⚠️ #3 THE SCROLL RESET WAS A BUG, NOT FRICTION.** *"Each time I open a WBS it brings me back to
+the top and I would have to scroll down multiple times."* `paint()` writes `host.innerHTML`
+wholesale, which destroys `.cca-treebody` and builds a new one — and a new element's `scrollTop` is
+**0**. Every expand, every collapse, every tick threw the planner back to the top of a 2,561-row
+tree. There was no scroll handling in `affected.js` at all: grep for `scrollTop`, zero hits. On a
+job that is *"open eighteen floors and tick one row in each"*, that reset **is** the cost of the
+task. Captured before the write, restored synchronously after (a `requestAnimationFrame` would show
+the top for one frame and read as a flicker), keyed by CLASS because the ladder is rebuilt with a
+different number of rungs depending on where the cursor sits.
+
+**#3, second half — "Rebar across every floor" without expanding each one.** Search + *Select all N*
+already does exactly that, but it only appears once you have typed, and somebody expanding branches
+is not in the search box. Each leaf row now carries **"+N"** — the rest of its namesakes across the
+whole project, the same set the search would find, reached from where they already are.
+
+**⚠️⚠️ #4 THE ORCHESTRATOR WAS A DEAD END, AND THE REASON IS SPECIFIC.** *"What is its function when
+all 3 steps are skipped?"* OPW101 reports **2,561 of 2,561 activities coded** — just not with codes
+this bill uses — and `nameGroups()` opened with `if (a.class_code) return;`, untagged only. I wrote
+that guard to stop forty activities being retagged behind the planner's back. It blocked precisely
+the project that needed the screen: two vocabularies, and reconciling them is the whole job. An
+activity now qualifies when it carries **no code** or **a code this bill does not use**. A retag is
+**never pre-picked** however confident the name (moving a code moves money), it **names the code it
+currently carries**, and an activity already carrying one of *this* bill's codes is still left
+alone. That is also most of **#1**: with pass 2 able to act, pass 3 can propose every line at once
+instead of 21 trips through the Link dialog.
+
+**#2 the Link dialog** lost two pieces of furniture: an ACTIVITY / QTY header over **zero rows**,
+sitting directly on top of the button whose job is to create the first one; and the second of two
+stacked amber boxes, which reported *"0 activities"* as news underneath *"no activity carries this
+code, and none is named like this line"*.
+
+**#5 the wrap.** The `70ch` measure was not the problem — the **sentences** were. At that width the
+first one broke after "never" and left *"attached to one."* alone on a line, which reads as broken
+wrapping rather than as a long sentence. Shortened until each lands whole.
+
+**THE ACTIONS MENU: 19 flat items, taller than the window.** ⚠️ The overflow is a bug this file had
+already diagnosed: `.ps-menu` sets `overflow:hidden` with **no max-height**, and the comment two
+lines below reads *"Tall popup menus must scroll rather than clip"* — applied to two other menus and
+never to `.ps-menu` itself. Now bounded. ⚠️ And `78vh` was **still wrong**: measured on the deployed
+build, the menu opens **166px** down the page, so a cap expressed as a fraction of the viewport
+overhung by 7px. A cap has to budget for where the menu starts. `max(220px, calc(100vh - 230px))`
+measures **bottom 657 against a 721 viewport**.
+
+The map, and two of the moves are backed by more than taste:
+- **Removed as literal duplicates** — `Baselines…` and `What-if scenarios…` call `openBaselines()` /
+  `openScenarios()`, the *identical* functions `Open ▾ → Manage…` already calls, verified by reading
+  both handlers. `Open ▾` carries no width media-query, so nothing became less reachable.
+- **Moved to `Analyze ▾`** — `Schedule risk (Monte Carlo)…` and `Threshold monitoring…`: both answer
+  *"what does this schedule tell me"*, which is that menu's job, and it already uses headings.
+- **⚠️ NOT removed, though it looked like a third duplicate** — `Keyboard shortcuts…`. The toolbar's
+  `?` is `display:none` below 1400px and **this file's own comment says so**: it is the permanent
+  home, not a copy. The check the owner asked for (*"make sure that it makes sense"*) is the only
+  reason that survived.
+- **Grouped** under PROGRESS · BULK EDIT · PROJECT DATA · DISPLAY · HELP · (danger).
+
+⚠️ The two removed buttons' handlers went **in the same change**: `getElementById(…).onclick` on a
+missing node throws *"Cannot set properties of null"* and kills every line of wiring **below** it —
+the z6 outage in a different costume. `idcheck.py` now proves the whole file: **136 unguarded
+lookups, 0 missing**, and the live build confirms nine controls wired *after* the removal point are
+still wired.
+
+Verified: **15 new assertions** on the retag path (never pre-picked, already-correct activity
+excluded, `planTags` untouched) plus **230 unchanged — 245 total**. Integrated over a concurrent
+Progress Photos push; the only overlap was the `MODULE_V` line, resolved to a token newer than
+**both** so neither change ships behind a cached grid. `?v=` → `20260911b`,
+`MODULE_V` → `20260911d3`.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+
 ### 2026-09-11 (a7) — The import wizard walked end to end, the sidebar given somewhere to stick, and a sentence that was four columns
 
 Owner: *"Let's verify the import steps too"*, then *"The side bar is clipping when the schedule setup
