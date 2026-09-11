@@ -3964,12 +3964,12 @@
         <!-- Design Development is MIRRORED from the Engineering App (drawing register +
              material submittal log). This pulls a fresh roll-up through the sync-eng
              Edge Function; the branch itself stays read-only. -->
-        <button class="pd-btn" id="ps-sync-eng" title="Refresh Design Development from the Engineering App's drawing register and material submittal log"><span data-ico="refresh" data-ico-size="15"></span> Sync Engineering</button>
+        <button class="pd-btn" id="ps-sync-eng" title="Refresh Design Development from the Engineering App's drawing register and material submittal log. Only this button refreshes it — it no longer runs when the schedule loads, because diffing a whole branch took minutes on a large tree. The date beside it is how fresh it is."><span data-ico="refresh" data-ico-size="15"></span> Sync Engineering</button>
         <span id="ps-sync-eng-at" style="font-size:11.5px;color:var(--pd-muted);"></span>
         <span class="ps-tb-div"></span>
         <!-- Procurement is MIRRORED from the Procurement (WPM) app: one branch per
              trade, one activity per work package. Read-only here. -->
-        <button class="pd-btn" id="ps-sync-prc" title="Refresh Procurement from the Procurement (WPM) app's work packages"><span data-ico="refresh" data-ico-size="15"></span> Sync Procurement</button>
+        <button class="pd-btn" id="ps-sync-prc" title="Refresh Procurement from the Procurement (WPM) app's work packages. Only this button refreshes it — it no longer runs when the schedule loads. The date beside it is how fresh it is."><span data-ico="refresh" data-ico-size="15"></span> Sync Procurement</button>
         <span id="ps-sync-prc-at" style="font-size:11.5px;color:var(--pd-muted);"></span>
         <button class="pd-btn" id="ps-push-needby" title="Send each work package's need-by date (earliest linked activity start) to the Procurement app"><span data-ico="upload" data-ico-size="15"></span> Push need-by → Procurement</button>
         </span>
@@ -31264,14 +31264,18 @@
         'What you edit on this view is <b>this setup</b>; the push is what turns it into branches there. ' +
         '<button class="pd-btn sbld-strjump" data-strview="pmlc">See the whole tree in 5PMLC →</button></p>';
     }
+    /* How many branches the live tree actually has — so the "near-empty" note can be shown only
+       when it is true. Counts WBS_NODES rather than DOM rows: the tree is virtualised, so the rows
+       on screen are a window, not the total. */
+    function _sbldWbsCount() { return (WBS_NODES || []).filter(Boolean).length; }
     function stStructure(host) {
       var v = strView();
       host.innerHTML = '<h2>' + _stepNo('Structure') + ' · Structure — ' +
         (v === 'lib' ? 'Construction Library' : '5PMLC') + '</h2>' +
-        '<p class="sbld-lede">One breakdown, two zoom levels. <b>5PMLC</b> is the project’s whole live tree — ' +
-        'Milestones, Initiation, Planning, Execution, Close-out. <b>Construction Library</b> is the places and the ' +
-        'work that end up inside <b>Execution</b>. Both are editable; they edit different things, and the line under ' +
-        'the tabs says which.</p>' +
+        /* ⚠️ 46 words became 17. The tabs are labelled and the line under them already says which
+           view is which — spelling out the five phase names here repeated what the tree shows. */
+        '<p class="sbld-lede">Two views of one breakdown. <b>5PMLC</b> is the whole tree; ' +
+        '<b>Construction Library</b> is the work that lands inside <b>Execution</b>.</p>' +
         strTabs(v) + strBridge(v) +
         '<div id="sbld-strbody"></div>';
       // Both the tabs and the bridge's jump button carry data-strview, so one wiring serves both.
@@ -33454,8 +33458,9 @@
       var head = '<h2>' + _stepNo('Tower links') + ' · How the towers interface</h2>';
       if (list.length < 2) {
         host.innerHTML = head +
-          '<p class="sbld-lede">With one tower there is nothing to interface. Add a second tower in step ' + _stepNo('Floors & Zones') +
-          ' and this step lets you say how they relate in time — for example <b>Tower B starts after Tower A · Podium L4</b>.</p>' +
+          /* The empty state already says which tower exists and that towers run in parallel; this
+             line only has to say what would make the step do something. */
+          '<p class="sbld-lede">Nothing to link with one tower. Add a second in step ' + _stepNo('Floors & Zones') + '.</p>' +
           '<div class="sbld-empty">Only <b>' + e2(towerLabel(list[0].id)) + '</b> is defined. Towers run in parallel until a relationship is stated here.</div>';
         return;
       }
@@ -35790,15 +35795,19 @@
           (Math.round((+b - +a) / 86400000) + 1) + ' calendar days</p>';
       })();
       host.innerHTML = '<h2>' + _stepNo('Project phases') + ' · The phases either side of construction</h2>' +
-        '<p class="sbld-lede">Everything the other steps build <b>is</b> the Execution Phase — trades, floors, zones and links only describe construction. Add the rest of the project lifecycle here as a plain list of activities with durations: they carry no location, and nothing repeats per zone. ' +
-        'The <b>before</b> phases are back-scheduled so they finish the day the Execution Phase starts, and <b>Close-out</b> picks up the day after it finishes, so the programme reads continuously.</p>' +
-        '<p class="sbld-hint"><b>Each row is one activity:</b> a <b>name</b>, a duration in <b>calendar days</b> ' +
-          '(these are not scheduled against a working calendar — they carry no location and no trade), and the ' +
-          '<b>dates</b> that follow from it. The dates are <em>computed, not typed</em>: the order of the rows is ' +
-          'the sequence, so each row starts when the row above it finishes, and <b>dragging a row changes the dates ' +
-          'of everything below it</b>. Tick <b>‖</b> to run a row <em>alongside</em> the one above instead of after ' +
-          'it — a block of concurrent rows takes as long as its longest member.</p>' +
-        '<p class="sbld-hint">Only these phases exist: the schedule’s <code>phase</code> column is fixed to Initiation, Planning, Execution and Close-out in the database, so no other lifecycle name can be stored on an activity.</p>' +
+        /* ⚠️ 158 WORDS BECAME 34. What went, and where it went instead:
+             • "the other steps build the Execution Phase" — the step list says so, in order;
+             • the back-scheduling rule — kept, because the dates move on their own and a planner
+               who is not told that reads it as the screen ignoring them;
+             • the whole "each row is one activity" paragraph — it described the columns the planner
+               is looking at. The one non-obvious bit (calendar days, not working days) is now the
+               duration column's own tooltip, read at the moment it is typed into;
+             • "only these phases exist" — a database constraint, not a lifecycle fact. It belongs
+               to the moment someone tries to add a fifth, not to every visit. */
+        '<p class="sbld-lede">The lifecycle around <b>Execution</b>. No locations here, and nothing ' +
+        'repeats per zone.</p>' +
+        '<p class="sbld-hint">Dates are <em>computed</em>: each row follows the one above, so ' +
+        'dragging a row moves everything below it. Tick <b>‖</b> to run alongside instead.</p>' +
         '<div class="sbld-phgrid">' + cards + '</div>' + span;
 
       host.querySelectorAll('[data-phon]').forEach(function (c) {
@@ -37999,26 +38008,35 @@
         (_gen ? ' The <b>' + _gen + '</b> activities this setup generates are not there until you ' +
           '<b>' + _stepNo('Generate') + ' · Push to Project Schedule</b>.' : '') +
         '</p>' +
-        '<p class="sbld-lede">This is the project’s <b>live</b> WBS — the same branches the schedule files its activities under, saved as you type. A <b>' + _stepNo('Generate') + ' · Push</b> creates the branches this setup needs (trade › grouping › tower › floor › zone) and reuses any that already exist; what you type here is what it reuses.</p>' +
+        /* ⚠️ FOUR PARAGRAPHS BECAME ONE LINE. What went and why:
+             • the push’s branch order (trade › grouping › tower › floor › zone) and which location
+               levels it uses — both belong to the push DIALOG, which is where the planner sets them;
+             • "the five top-level branches are held in a fixed order" — the tree shows that order;
+             • the long "almost-empty tree" paragraph — the one sentence a planner needs is kept and
+               is shown ONLY when the tree really is almost empty, instead of on every visit. */
+        '<p class="sbld-lede">The project' + '’s <b>live</b> WBS. Saved as you type.</p>' +
         /* ⚠️ REWRITTEN WHEN THE STEP MERGED. This used to read "this step is early on purpose",
            which was true while the tree was step 2 and is now simply FALSE on screen — the kind of
            stale sentence that teaches a planner to stop trusting the page. What survives is the part
            that is still true and still needed: an almost-empty tree here is CORRECT on a new project,
            and a planner who is not told that reads it as a fault. */
-        '<p class="sbld-hint"><b>An almost-empty tree here is correct on a new project.</b> Apart from the ' +
-        'five lifecycle phases there is nothing to show until something is pushed: <b>' + _stepNo('Generate') +
-        ' · Push</b> adds the trade, grouping, tower, floor and zone branches that the ' +
-        '<b>Construction Library</b> view and the steps around it describe. Nothing here has to be ' +
-        'filled in first.</p>' +
-        '<p class="sbld-hint">Which location levels the push turns into WBS levels, and in what order, is set in the push dialog itself (<b>WBS structure</b>) \u2014 it belongs to the push, not to the tree. Re-arranging <b>activities</b> day to day is done in the <b>Project Schedule</b> grid.</p>' +
-        '<p class="sbld-hint">The five top-level branches are held in a fixed order \u2014 <b>Milestones \u2192 Initiation \u2192 Planning \u2192 Execution \u2192 Close-out</b> \u2014 and restored on load if anything moves them. Everything you add sits inside them, where you can order it freely.</p>' +
+        /* ⚠️ Shown only when it is TRUE. A planner looking at a full tree does not need to be told
+           an empty one would be fine, and printing it every visit is how a page teaches people to
+           skip its text. `nWbs` counts the branches the tree actually has. */
+        ((_sbldWbsCount() <= 5)
+          ? '<p class="sbld-hint">A near-empty tree is normal — <b>' + _stepNo('Generate') +
+            ' · Push</b> creates the branches.</p>'
+          : '') +
         '<div class="sbld-wbsmount-tools" id="sbld-wbs-tools"></div>' +
         // ⚠️ The repair + mirror row. It is on its OWN line under the edit tools, not merged into
         // them: Adopt/Reset are recovery over a whole imported project and the two Sync buttons are
         // other teams' data, so mixing them into "Add WBS / Paste outline" would read as five more
         // ways to author a branch. With the WBS Manager screen gone this is their only home.
         '<div class="sbld-wbsmount-tools" id="sbld-wbs-integ" style="margin-top:2px;"></div>' +
-        '<p class="sbld-hint" style="margin:2px 0 10px;"><b>Adopt existing WBS</b> builds the tree from an import’s own WBS-Summary rows; <b>Reset WBS</b> rebuilds it from the schedule’s codes. The <b>Engineering</b> and <b>Procurement</b> branches are mirrors of those apps and stay read-only here — <b>Push need-by</b> is the one control that writes back out. <b>The two Sync buttons are the only thing that refreshes those branches:</b> they no longer run when the schedule loads, because diffing a whole branch against another app’s database took minutes on a large tree. The date beside each button is how fresh it is.</p>' +
+        /* ⚠️ AN 80-WORD PARAGRAPH DELETED, NOT SHORTENED. Every claim in it was already the
+           `title=` of the button it described — the screen was printing its own tooltips as body
+           text. The only fact the tooltips did not carry (Sync no longer runs on load; the date is
+           the freshness) now sits on the two Sync buttons themselves. */
         '<div id="sbld-wbs-host"></div>';
       var ok = sbWbsMount(host.querySelector('#sbld-wbs-tools'), host.querySelector('#sbld-wbs-host'), host.querySelector('#sbld-wbs-integ'));
       if (!ok) {
