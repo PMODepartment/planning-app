@@ -98,6 +98,25 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-12 — A demo project, end to end through the whole LSM chain
+
+Owner: *"Let's test it on a demo project"*. Built offline in the shape the Schedule Setup pushes one
+and dated the way `autoTrace` links one — 19 storeys, 5 trades, nothing written to a real
+project. Detail: [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+- All **19** storeys matched the Setup floor list and carried their category; the trade sequence
+  read as **declared**; **zero** handoff findings, which is the correct answer for a schedule dated
+  to the generator's own links; and dragging one storey three weeks early **is** caught, naming the
+  trade and the category.
+- ⚠️⚠️ **A real cost of `zj`, now measured:** because the floor ORDER is deliberately not taken
+  from the cold-open catalogue, the axis is still the `levelRank` heuristic — which drops
+  **"Podium 2"**. The declared order would have placed it, so making that order trustworthy is
+  worth doing and now has evidence behind it. Recorded, not taken: it changes the axis on every
+  project.
+
+**594 assertions on the working tree, 27 against the pinned base, 0 failing.** No shipped file
+changed.
+
 ### 2026-09-12 — Where the One Portwood clashes come from: the closed loop holds
 
 Owner asked to trace the clash origins and test the Schedule Setup's sequencing. **No code changed**;

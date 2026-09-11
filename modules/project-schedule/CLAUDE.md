@@ -13,6 +13,44 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### A demo project, end to end through the whole LSM chain (2026-09-12) — fmlozano
+
+Owner: *"Let's test it on a demo project"*. The Chrome bridge was still down, so the demo is built
+**offline in the shape the Schedule Setup pushes one** and dated **the way `autoTrace` links one**
+— each following trade trailing the leading one by that category's declared levels, counted
+within the category and clamped to its top. Nothing was written to any real project.
+
+**19 storeys** (4 basements, 2 podium, 12 typical, 1 roof), **5 trades**, the same declared handoff
+shape One Portwood uses.
+
+### What the chain did
+- **Floors matched:** all **19** storeys resolved to the Setup's floor list and carried their
+  category (`B4` basement, `Podium 2` podium, `Roof Deck` roof).
+- **Trades matched:** `seq.basis` **declared**, five lanes, General Requirements first, MEPF last.
+- ⚠️⚠️ **ZERO handoff findings**, which is the correct answer for a schedule dated to the
+  generator's own links — and `nUnkinded` **0**, so nothing went unchecked.
+- ⚠️⚠️ **The converse holds:** dragging ONE storey three weeks early is caught, and the finding
+  names the trade that moved (`MEPF Works`) and the category whose rule it broke (`typical`).
+- The strip stops saying either of the two sentences that were false on OPW101.
+
+### ⚠️⚠️ A REAL COST OF THE zj DECISION, NOW MEASURED
+Because `zj` deliberately does **not** take the floor ORDER from the cold-open catalogue, the axis
+is still `levelRank`'s heuristic — and the heuristic cannot rank every name a planner uses. On
+this demo it drops exactly one storey: **"Podium 2"**. The declared order *would* have placed it.
+
+So the deferred work now has evidence behind it: **making the declared order trustworthy is worth
+doing**, and the way to do it is to take the spine from the trade whose floor list actually covers
+the building rather than from whichever trade is first in `GROUPS`. Recorded, not taken, because it
+changes the axis on every project and deserves its own verification.
+
+### ⚠️ And another branch the link pass could not see
+`_lsmKindWord` / `LSM_KIND_LABEL` are reached **only when a lead finding actually RENDERS**, which
+the probe never does. The demo scenario is what surfaced them. Same family as the three "reaching a
+branch is not reaching every line in it" notes above.
+
+**594 assertions against the working tree, 27 against the pinned base, 0 failing.** No shipped file
+changed in this round.
+
 ### Where the One Portwood clashes come from: the closed loop holds (2026-09-12) — fmlozano
 
 Owner: *"let's test end-to-end the clash detection as well. The schedule in One Portwood is
