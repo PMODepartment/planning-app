@@ -95,6 +95,37 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-11 (c1) — Minutes get a Card/Table switch and a non-editable number; mobile tables stop turning into tiles
+
+Owner's four items, two per module. Detail in
+[`modules/minutes-of-meeting/CLAUDE.md`](modules/minutes-of-meeting/CLAUDE.md) and
+[`modules/issues-lessons/CLAUDE.md`](modules/issues-lessons/CLAUDE.md).
+
+**Minutes of Meeting.** A **Card | Table** switcher beside the "Minutes" heading in a meeting's
+detail view — Card stays the full editor (the standing "THIS IS A CARD LIST, NOT A TABLE" warning
+is about there being only one editable layout, not about a second, narrower read view), Table is a
+new plain-text scan table that scrolls horizontally rather than reflowing, with a click on a row
+jumping back to Card focused on that minute. ⚠️ Hidden while presenting — the slide deck steps
+through `.il-mi-card` elements directly, so Table is forced off during Present regardless of the
+stored preference. The Details/Schedule/Venue/Attendees section headings in the Detail view now
+get the same dashed divider the Add-meeting modal already had (that modal's own comment claimed
+the Detail view already matched it; it did not — the rule was scoped to the modal alone). The
+minute **No.** field is no longer a typed input: it always shows the number derived from the
+minute's position (the same fallback every other reader of this number already uses), and the only
+way to change it now is reordering.
+
+**Issues & Concerns / Lessons Learned.** The mobile (`≤700px`) rule that turned each table row into
+a stacked card is removed. Both tables already sit inside a scrolling wrapper and already share the
+`.pd-table` class, whose own phone rule (in the shared stylesheet) makes a table scroll
+horizontally at the same breakpoint — the module-local override was actively fighting that shared
+behaviour, per its own comment explaining why it had to outrank it. Removing it restores the shared
+scroll-instead-of-reflow behaviour with no markup changes.
+
+⚠️ Not verified signed in for either module — no live login is possible in this environment.
+
+`MODULE_V` unchanged in both — neither module's `index.html` structure changed, only their
+module-local `module.css`/`module.js?v=` tokens moved.
+
 ### 2026-09-11 (b1) — Five reports from testing BOQ linking, and an Actions menu taller than the window
 
 Owner, testing the BOQ→schedule linking on OPW101, listed five. All five answered, plus the Actions

@@ -317,50 +317,23 @@
 
 /* ---- Mobile & tablet (2026-07-23) ----------------------------------------
    Shared chrome (topbar wrap, sheet modals, 16px inputs, 44px targets) comes
-   from dashboard.css. The issues register is an 11-column table with
-   min-width:980px — side-scrolling a table that wide on a phone is unusable,
-   so below 700px each ROW BECOMES A CARD: thead hidden, cells stacked and
-   labelled from data-l (set in module.js).
+   from dashboard.css.
 
-   NOTE: the table also carries the shared `.pd-table` class, whose phone rule
-   makes it a nowrap horizontal scroller. These selectors are deliberately
-   written as `.pd-table.il-table` / `.il-table td` so they outrank it —
-   dropping the `.pd-table` qualifier here silently restores side-scrolling.
-   -------------------------------------------------------------------------- */
+   ⚠️⚠️ 2026-09-11: below 700px this table USED TO turn each row into a
+   stacked card (thead hidden, cells relabelled from data-l). Owner: "in
+   mobile view, the table turns into tiles. maintain table view even in
+   mobile view and just allow scroll." That card-conversion block is REMOVED
+   — the table now falls through to the shared `.pd-table` phone rule
+   (dashboard.css: `display:block; overflow-x:auto; white-space:nowrap`),
+   which scrolls the whole table horizontally inside its own card instead of
+   reflowing it. `data-l` attributes are still emitted by module.js (harmless
+   now — nothing reads them here) and `.il-iconbtn`'s 42px touch-target size
+   is kept, since row action buttons are still real controls on a scrolled
+   table. Do not re-add a `.pd-table.il-table` block that hides `thead` or
+   sets `display:block` on `tr`/`td` — that is exactly the tile conversion
+   this fix removes. */
 @media (max-width: 700px) {
-  .pd-table.il-table { display: block; min-width: 0; overflow-x: visible; white-space: normal; background: none; }
-  .il-table thead { display: none; }
-  .il-table tbody { display: block; }
-  .il-table tr {
-    display: block; margin-bottom: 10px; padding: 12px;
-    background: var(--pd-card); border: 1px solid var(--pd-line);
-    border-radius: var(--pd-radius); box-shadow: var(--pd-shadow);
-  }
-  .il-table tr:hover td { background: none; }
-  .il-table td {
-    display: block; border: 0; padding: 3px 0;
-    white-space: normal; max-width: none; font-size: var(--pd-fs-base);
-  }
-  .il-table td[data-l]::before {
-    content: attr(data-l) ": "; color: var(--pd-muted); font-weight: 700; font-size: var(--pd-fs-sm);
-  }
-  /* The issue text is the headline of the card, not a labelled field. */
-  .il-table td.il-cell-issue { font-size: var(--pd-fs-md); font-weight: 700; padding-bottom: 6px; }
-  .il-table td.il-cell-issue::before { content: none; }
-  /* ⚠️ The desktop `.il-clip` rule (above) dropped its clamp this round (item 6) —
-     this mobile-card clamp now carries its OWN full definition rather than
-     depending on the base rule for `display`/`-webkit-box-orient`/`overflow`, or
-     `-webkit-line-clamp` alone here would do nothing. */
-  .il-table td.il-cell-issue .il-clip {
-    display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
-  }
-  /* Row number reads as a card index, kept small and unlabelled. */
-  .il-table td.il-cell-num { font-size: var(--pd-fs-xs); color: var(--pd-muted); }
-  .il-table td.il-cell-num::before { content: "#"; }
-  .il-table td.il-rowacts { display: flex; gap: 8px; margin-top: 8px; }
   .il-iconbtn { width: 42px; height: 42px; font-size: var(--pd-fs-lg); }
-  /* An empty-state row spans the card, not a phantom column. */
-  .il-table td[colspan] { text-align: center; }
 
   .il-filters.open { flex-wrap: wrap; gap: 8px; }
   .il-filters.open > * { flex: 1 1 100%; min-width: 0; }

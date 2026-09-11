@@ -104,8 +104,22 @@
 /* ---- Add Meeting form (round 2): named sections + guaranteed row
    alignment ------------------------------------------------------------- */
 /* Item 6: Details / Schedule / Venue / Attendees / Agenda, the same weight
-   as the Detail view's own section headings (item 2 there). */
-.il-am-form .il-mom-sechead:not(:first-child) { margin-top: 18px; padding-top: 14px; border-top: 1px dashed var(--pd-line); }
+   as the Detail view's own section headings (item 2 there).
+   ⚠️⚠️ 2026-09-11: this comment claimed the Detail view already carried the
+   same divider — it did not. This selector was scoped to `.il-am-form` (the
+   "+ Add meeting" modal) alone, so the Detail view's own Details/Schedule/
+   Venue/Attendees headings (`.il-mom-detail-card`) got the base
+   `.il-mom-sechead` rule's plain 8px bottom margin and nothing else — no
+   visible break between one section's fields and the next. Owner: "provide
+   cleaner breaker between input groups of details, schedule, venue,
+   attendees, agenda, and minutes." `.il-mom-detail-card` is now covered by
+   the same selector, so both forms get the identical dashed break. Agenda
+   and Minutes already draw their own divider/box (`.il-mom-agenda`,
+   `.il-mom-actions`) and are unaffected either way. */
+.il-am-form .il-mom-sechead:not(:first-child),
+.il-mom-detail-card .il-mom-sechead:not(:first-child) {
+  margin-top: 18px; padding-top: 14px; border-top: 1px dashed var(--pd-line);
+}
 /* Items 2+3: every label in this form reserves the SAME vertical space —
    two lines' worth at this font-size — whether its own text needs one line
    or wraps to two, and whether a field has real label text at all (the
@@ -429,14 +443,45 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
 }
 .il-mom-actions h4 { margin: 0 0 4px; font-size: var(--pd-fs-xs); text-transform: uppercase; letter-spacing: .06em; color: var(--pd-muted); }
 .il-mom-actions p { margin: 0 0 8px; font-size: var(--pd-fs-sm); color: var(--pd-muted); }
+/* 2026-09-11 — the "Minutes" heading gains a Card/Table switch beside it.
+   `.il-mom-actions h4` above still applies (this is a descendant selector,
+   not `>`), so the heading's own size/case/colour are unchanged; this row
+   just puts the toggle on the same line rather than below it. */
+.il-mom-minhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.il-mom-minhead h4 { margin: 0; }
+#il-mom-minview { flex: none; }
 
-/* ⚠️⚠️ AN ACTION ITEM IS A CARD, NOT A TABLE ROW — do not put the columns
-   back. See the combined module's history for why (an 11-column table needing
-   1400px+ hid Owner/Due/Status/File/register-link behind a scrollbar). The card
-   mirrors mom-app's own layout — the same structure momDownloadPDF() renders —
-   so the screen and the export stay one document. */
+/* ⚠️⚠️ AN ACTION ITEM IS A CARD, NOT A TABLE ROW BY DEFAULT — do not put the
+   full column set back here. See the combined module's history for why (an
+   11-column EDITABLE table needing 1400px+ hid Owner/Due/Status/File/
+   register-link behind a scrollbar). The card mirrors mom-app's own layout —
+   the same structure momDownloadPDF() renders — so the screen and the export
+   stay one document.
+   2026-09-11 — momItemsTableHTML() below is a deliberate, narrower EXCEPTION:
+   a read-only scan table (six plain-text columns, no workflow/attachment/
+   history controls) offered as an alternate VIEW via the Card/Table toggle,
+   never the only layout. It scrolls horizontally in `.pd-tablewrap` rather
+   than reflowing, so it cannot reintroduce the clipped-columns problem above. */
 .il-mi-cards { display: flex; flex-direction: column; gap: 10px; }
 .il-mi-card { position: relative; border: 1px solid var(--pd-line); border-radius: 10px; padding: 12px; background: var(--pd-card); }
+.il-mi-card.il-mi-flash { animation: il-mi-flash-kf 1.4s ease-out; }
+@keyframes il-mi-flash-kf {
+  0% { box-shadow: 0 0 0 3px var(--pd-red); }
+  100% { box-shadow: 0 0 0 3px transparent; }
+}
+@media (prefers-reduced-motion: reduce) { .il-mi-card.il-mi-flash { animation: none; } }
+
+/* The Table alternate (momItemsTableHTML) — plain text, click a row to jump
+   back to Card view focused on that minute. */
+.il-mom-mtable th, .il-mom-mtable td { padding: 8px 10px; font-size: var(--pd-fs-sm); vertical-align: top; }
+.il-mom-mtable tbody tr { cursor: pointer; }
+.il-mom-mtable tbody tr:hover td { background: var(--pd-bg); }
+.il-mom-mtable td.il-mt-wrap { min-width: 220px; white-space: normal; overflow-wrap: anywhere; }
+.il-mom-mtable td.il-mt-no { white-space: nowrap; }
+.il-mt-blank { color: var(--pd-muted); }
+.il-mt-linked {
+  display: inline-block; margin-left: 4px; font-size: var(--pd-fs-xs); color: var(--pd-muted);
+}
 /* Individual View item 3 (round 2) — manual drag-to-reorder, replacing the
    removed "sort by" control. A card wireMinuteDrag() can actually pick up
    makes room for a small grip glyph at its top-left; the drag itself is
@@ -595,8 +640,14 @@ div.il-mom-acrow { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--p
 .il-mom-report .il-mom-stickyhead { margin: -18px -20px 12px; padding: 10px 20px; }
 .il-mom-report .il-mi-foot { border-top-style: solid; }
 /* One slide fills the card, so the list chrome around the minutes would repeat
-   above every single one of them. */
-.il-mom-slides .il-mom-actions > h4,
+   above every single one of them.
+   ⚠️ 2026-09-11 — `> h4` became `> .il-mom-minhead`: the "Minutes" heading is
+   now wrapped with the Card/Table toggle (see momItemRowHTML's own header
+   markup) so the two sit on one row, and the wrapper — not the bare `<h4>` —
+   is the actual direct child of `.il-mom-actions` now. The toggle itself is
+   never emitted while `_momReport` is true, so hiding the whole wrapper here
+   is equivalent to the old rule, not a widening of it. */
+.il-mom-slides .il-mom-actions > .il-mom-minhead,
 .il-mom-slides .il-mom-actions > p,
 .il-mom-slides .il-mom-filters,
 .il-mom-slides .il-mom-addrow { display: none !important; }

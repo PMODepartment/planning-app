@@ -113,6 +113,16 @@ window.MinutesOfMeeting = (function () {
   // series, so it can't collapse to either of those itself.
   var _momView = 'list', _momBrowsePrev = 'list';
   var _momSel = null;
+  // ⚠️ 2026-09-11 — 'card' | 'table'. A per-session display preference for the
+  // Minutes list inside a single meeting's detail view (see momItemRowHTML's own
+  // "THIS IS A CARD LIST, NOT A TABLE" warning: an action item has more fields
+  // than any screen has columns, so the card stays the primary, fully-editable
+  // layout). This is an ALTERNATE, scan-friendly table over the same minutes —
+  // it does not replace the card and does not itself edit anything; clicking a
+  // row switches back to Card and scrolls to that minute. Not reset per meeting
+  // or per project switch, same as `_momView` above — it is how the planner
+  // prefers to look at minutes, not a property of any one meeting.
+  var _minutesView = 'card';
   // Which series a currently-open MEETING was reached from, if any — set only
   // when a meeting is opened by clicking a row inside that series' own page
   // (momOpenSeries → the "Previously held" list), so "← Back" from the meeting
@@ -3099,7 +3109,20 @@ window.MinutesOfMeeting = (function () {
       // minutes". Same rows, same `mom_items` table: what changed is the name,
       // because these ARE the minutes of the meeting, not a to-do list beside
       // them. Every user-facing "action item" string in this module follows.
-      '<div class="il-mom-actions"><h4>Minutes</h4>' +
+      '<div class="il-mom-actions"><div class="il-mom-minhead"><h4>Minutes</h4>' +
+        // ⚠️ Hidden while presenting (_momReport) — the slide deck already steps
+        // through the cards one at a time (momApplySlides reads .il-mi-card
+        // directly), so a table view has nothing to switch INTO there. Hidden
+        // when there is nothing to switch between, too.
+        (items.length && !_momReport
+          ? '<div class="il-viewtoggle" id="il-mom-minview">' +
+              '<button type="button" class="il-vt-btn' + (_minutesView === 'card' ? ' on' : '') + '" data-minv="card" title="Card view">' +
+                '<span data-ico="gridView" data-ico-size="16"></span></button>' +
+              '<button type="button" class="il-vt-btn' + (_minutesView === 'table' ? ' on' : '') + '" data-minv="table" title="Table view">' +
+                '<span data-ico="listView" data-ico-size="16"></span></button>' +
+            '</div>'
+          : '') +
+      '</div>' +
         '<p>Each minute recorded at this meeting lives here. Use <b>Get from issue</b> to bring in ' +
         'something already logged in Issues &amp; Concerns — during a PPR, or any time — so it is ' +
         'tracked here without retyping it. New issues are raised directly in that register now, not ' +
@@ -3125,9 +3148,12 @@ window.MinutesOfMeeting = (function () {
         // Type / Status / Responsible / Target date) above full-width text blocks.
         // Keeping the two identical means what you read on screen IS what the export
         // prints; a third bespoke layout would let the screen and the PDF drift.
-        (vis.length ? '<div class="il-mi-cards">' +
-          vis.map(function (it, i) { return momItemRowHTML(it, ro, d, mayEdit, locked, i); }).join('') +
-          '</div>'
+        (vis.length
+          ? (!_momReport && _minutesView === 'table'
+              ? momItemsTableHTML(vis)
+              : '<div class="il-mi-cards">' +
+                vis.map(function (it, i) { return momItemRowHTML(it, ro, d, mayEdit, locked, i); }).join('') +
+                '</div>')
           : (items.length ? '' : '<div class="il-empty" style="padding:14px;">No minutes recorded on this meeting yet.</div>')) +
         (ro ? '' :
           '<div class="il-mom-addrow">' +
@@ -3599,6 +3625,47 @@ window.MinutesOfMeeting = (function () {
       '</div></div>';
   }
 
+  // ⚠️⚠️ 2026-09-11 — a TABLE view of the SAME minutes, not a second data model
+  // and not a replacement for the card list below. Owner: "when opening a
+  // meeting, the minutes are usually in tiles, provide also switcher to
+  // convert to table." The card stays the primary, fully-editable layout —
+  // see the "THIS IS A CARD LIST, NOT A TABLE, AND IT MUST STAY ONE" warning
+  // a few lines down: an action item carries more fields (workflow panel,
+  // attachments, lessons, history) than any table row can hold without
+  // reintroducing the exact horizontal-scroll problem that warning documents.
+  // This is instead a compact, SCAN view — one row per minute, the fields a
+  // reporter reads (No. / Status / Responsible / Target date / Issue / Agenda
+  // / Action item) as plain text — through the shared `.pd-tablewrap`/
+  // `.pd-table` convention every other register in this app already uses for
+  // a wide table, so it scrolls horizontally rather than reflowing into cards
+  // of its own. Clicking a row switches back to Card view and scrolls to that
+  // minute; this table never edits a field itself.
+  function momItemsTableHTML(vis) {
+    var body = vis.map(function (it, i) {
+      var iss = momIssueOf(it);
+      var st = iss ? (iss.status || 'Open') : (it.status || 'Open');
+      var no = it.item_no || String((it.seq == null ? (i || 0) : it.seq) + 1);
+      var actText = it.action_item || it.description || '';
+      var who = championText(it.owner_ids, it.owner);
+      return '<tr data-item="' + Fmt.esc(it.id) + '" title="Click to edit in Card view">' +
+        '<td class="il-mt-no">' + Fmt.esc(no) +
+          (it.carried_from_item_id ? ' <span class="il-mom-carried" title="Carried over from an earlier meeting">carried</span>' : '') +
+        '</td>' +
+        '<td><span class="il-pill ' + statusClass(st) + '">' + Fmt.esc(st) + '</span>' +
+          (it.issue_id ? ' <span class="il-mt-linked" title="Linked to an issue in Issues &amp; Concerns">Linked</span>' : '') +
+        '</td>' +
+        '<td>' + (who ? Fmt.esc(who) : '<span class="il-mt-blank">—</span>') + '</td>' +
+        '<td>' + (it.due_date ? Fmt.esc(Fmt.date(it.due_date)) : '<span class="il-mt-blank">—</span>') + '</td>' +
+        '<td class="il-mt-wrap">' + (it.issue ? Fmt.esc(it.issue) : '<span class="il-mt-blank">—</span>') + '</td>' +
+        '<td class="il-mt-wrap">' + (actText ? Fmt.esc(actText) : '<span class="il-mt-blank">—</span>') + '</td>' +
+      '</tr>';
+    }).join('');
+    return '<div class="pd-tablewrap"><table class="pd-table il-mom-mtable">' +
+      '<thead><tr><th>No.</th><th>Status</th><th>Responsible</th><th>Target date</th><th>Issue / Agenda</th><th>Action item</th></tr></thead>' +
+      '<tbody>' + body + '</tbody>' +
+    '</table></div>';
+  }
+
   function momItemRowHTML(it, ro, d, mayEdit, locked, i) {
     var iss = momIssueOf(it);
     // ⚠️ Rows written before the 2026-08-21 migration hold their action text in
@@ -3616,9 +3683,16 @@ window.MinutesOfMeeting = (function () {
       (canDrag ? '<span class="il-mi-draghandle" title="Drag to reorder" aria-hidden="true">⠿</span>' : '') +
       // ---- the six-cell meta grid, in mom-app's own order --------------------
       '<div class="il-mi-meta">' +
+      // ⚠️ 2026-09-11: No. is NOT an editable field any more — it is the minute's
+      // position in the list, derived from `seq` (the same fallback expression every
+      // other reader of this number already uses: the list view, the PDF/export
+      // builders and the slide label — see those for the identical
+      // `it.seq == null ? i : it.seq` expression). Reordering a minute (drag-to-
+      // reorder, `persistMinuteOrder`) is now the ONLY way its number changes; a
+      // hand-typed `item_no` from before this change still reads back (legacy data
+      // is never silently discarded) but nothing can type a new one.
       momFieldHTML('No.', 'il-c-no',
-        '<input class="pd-input pd-input-sm il-mi" data-f="item_no" value="' + Fmt.esc(it.item_no || '') +
-        '" placeholder="' + ((it.seq == null ? (i || 0) : it.seq) + 1) + '"' + d + '>',
+        '<div class="il-mi-val">' + Fmt.esc(it.item_no || String((it.seq == null ? (i || 0) : it.seq) + 1)) + '</div>',
         it.item_no || String((it.seq == null ? (i || 0) : it.seq) + 1),
         // Says the action came in from an earlier meeting. ⚠️ Not a status: a carried
         // action is the SAME action, and its register link came with it — without the
@@ -5466,6 +5540,22 @@ window.MinutesOfMeeting = (function () {
 
     var rep = host.querySelector('#il-mom-report');
     if (rep) rep.onclick = function () { _momReport = !_momReport; renderDetail(); };
+
+    // ⚠️ 2026-09-11 — Card/Table switch for the Minutes list (momItemsTableHTML).
+    host.querySelectorAll('#il-mom-minview [data-minv]').forEach(function (b) {
+      b.onclick = function () { _minutesView = b.dataset.minv; renderDetail(); };
+    });
+    // A table row is a shortcut into Card view, focused on that minute — the
+    // table itself never edits a field (see momItemsTableHTML's own comment).
+    host.querySelectorAll('.il-mom-mtable tbody tr[data-item]').forEach(function (tr) {
+      tr.onclick = function () {
+        var id = tr.dataset.item;
+        _minutesView = 'card';
+        renderDetail();
+        var card = host.querySelector('.il-mi-card[data-item="' + CSS.escape(id) + '"]');
+        if (card) { card.scrollIntoView({ block: 'center' }); card.classList.add('il-mi-flash'); setTimeout(function () { card.classList.remove('il-mi-flash'); }, 1400); }
+      };
+    });
 
     var favt = host.querySelector('#il-mom-favtoggle');
     if (favt) favt.onclick = function () { momToggleFavorite('meeting', _momSel); };
