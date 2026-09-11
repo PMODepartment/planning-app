@@ -1246,9 +1246,13 @@ window.PPR = (function () {
 
   // Item 8 (2026-09-02): resolve the REAL bim.js pin (position + camera
   // direction cone) for a photo, if one was placed on the Floor Plans screen.
-  // Reuses BIM.pinInfoFor/keyPlanMarkerHTML verbatim (bim.js's own exports,
-  // added specifically for this) rather than re-deriving pin/cone geometry a
-  // second time in this file.
+  // Reuses BIM.pinInfoFor/keyPlanMiniMarkerHTML verbatim (bim.js's own
+  // exports, added specifically for this) rather than re-deriving pin/cone
+  // geometry a second time in this file. ⚠️ 2026-09-11: the MARKER half of
+  // that reuse was wrong for over a week — it called the full-size
+  // keyPlanMarkerHTML (sized for bim.js's own large Plans-tab stage), which
+  // rendered a wildly oversized pin in this small corner overlay. See the
+  // fix's own comment where kpOverlay is built, below.
   // ⚠️ `aspect` is the PLAN's own true width/height ratio (when known) so the
   // overlay's box can be given that exact aspect-ratio via CSS — the pin's
   // x_norm/y_norm are percentages of the plan image's FULL box, and only an
@@ -1305,7 +1309,16 @@ window.PPR = (function () {
         'style="width:' + kpwPct + '%;aspect-ratio:' + kpInfo.aspect + ';">' +
         '<div class="ppr-kpoverlay-inner">' +
           '<img class="ppr-kpoverlay-img" src="' + esc(kpInfo.planUrl) + '" alt="Key plan" />' +
-          BIM.keyPlanMarkerHTML(kpInfo.pin) +
+          // ⚠️ 2026-09-11 fix: this used to call BIM.keyPlanMarkerHTML(),
+          // which draws the pin at .bim-pin's FULL 26px size — sized for
+          // the large Plans-tab stage, not this ~60-90px corner box. That
+          // rendered the pin (and, obscured behind its bulk, the camera
+          // cone) wildly out of proportion — "does not display properly".
+          // keyPlanMiniMarkerHTML is the scaled-down sibling module.js's
+          // own lightbox overlay already used for exactly this reason;
+          // both small overlays now share the one function rather than
+          // drawing two different-sized pins for the same pin row.
+          (BIM.keyPlanMiniMarkerHTML ? BIM.keyPlanMiniMarkerHTML(kpInfo.pin) : '') +
         '</div>' +
         '<div class="ppr-kpoverlay-resize" data-resize="' + which + '" title="Drag to resize"></div>' +
       '</div>';

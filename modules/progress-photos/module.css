@@ -340,19 +340,18 @@
   border-color: transparent transparent transparent rgba(255, 255, 255, .92);
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, .6));
 }
-/* Add-media type selector (Photo / Video / 360°-3D-on-hold) */
-.pp-mtypesel { display: flex; gap: 6px; }
-.pp-mtype {
-  flex: 1 1 0; padding: 8px 10px; text-align: center; cursor: pointer;
-  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
-  color: var(--pd-ink); font-size: var(--pd-fs-base); font-weight: 700;
+/* Item 3: a 360° tile is a plain photo tile (its representative frame) plus
+   a small corner badge -- distinguishes it from an ordinary photo without
+   needing a whole second tile layout. */
+.pp-panothumbwrap { position: relative; display: block; }
+.pp-360badge {
+  position: absolute; bottom: 6px; left: 6px; background: rgba(0, 0, 0, .55); color: #fff;
+  font-size: 10px; font-weight: 700; letter-spacing: .02em; padding: 2px 6px;
+  border-radius: 999px; pointer-events: none;
 }
-.pp-mtype.active { border-color: var(--pd-red); color: var(--pd-red); background: color-mix(in srgb, var(--pd-red) 8%, var(--pd-card)); }
-.pp-mtype:disabled { cursor: not-allowed; color: var(--pd-muted); opacity: .6; }
-
 /* Fifth round item 1: "+ Add media" as a dropdown choosing the media type up
-   front (Photo/Video/360°/3D), instead of deciding it inside the modal after
-   files may already be staged. */
+   front (Photo/Video), instead of deciding it inside the modal after files
+   may already be staged. */
 .pp-addmenu-wrap { position: relative; }
 .pp-addmenu {
   position: absolute; top: calc(100% + 4px); left: 0; z-index: 40; min-width: 150px;
@@ -414,36 +413,8 @@
 .pp-gallerygrouphead:hover { background: color-mix(in srgb, var(--pd-red) 8%, var(--pd-bg)); }
 .pp-gallerygrouphead .pp-caret { flex: none; color: var(--pd-muted); display: inline-flex; }
 
-/* ---- Panorama/reconstruction tiles, INLINE in the merged grid (items 6+8, current round) --- */
-/* Supersedes the old "Batch C, 2026-08-29" .pp-mediastrip/.pp-mediatile*
-   rules (deleted — nothing in module.js emits that markup any more; see
-   mediaKindThumbHTML()). Panoramas/3D scans now render as ordinary tiles
-   inside the SAME List/Gallery grid a real photo does — mediaKindThumbHTML()
-   wraps the per-context image class (.pp-thumb in List, .pp-cardphoto in
-   Gallery) exactly the way .pp-mkwrap already does for markup overlays, so
-   each tile inherits that context's existing size/crop rules for free
-   instead of needing its own. */
-.pp-mkthumb { position: relative; display: block; width: 100%; }
-/* Bottom-left/-right so this never collides with .pp-cardsel (top-left,
-   the select checkbox) on a Gallery card carrying both overlays. */
-.pp-mkbadge {
-  position: absolute; bottom: 4px; left: 4px; font-size: var(--pd-fs-micro); font-weight: 700;
-  color: #fff; background: color-mix(in srgb, var(--pd-red) 85%, black);
-  border-radius: var(--pd-radius-pill); padding: 1px 6px; pointer-events: none;
-}
-.pp-mkeditbtn {
-  position: absolute; bottom: 4px; right: 4px; z-index: 1; padding: 3px;
-  background: rgba(0, 0, 0, .55); border: 0; border-radius: 3px; color: #fff; cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-}
-.pp-mkeditbtn:hover { background: var(--pd-red); }
-
 /* Gallery favorite star (2026-09-07) — bottom-right of the card image, the
-   same fixed dark-scrim corner-overlay language as .pp-cardsel (top-left)
-   and .pp-mkeditbtn (a pseudo-row's own bottom-right button, on a mutually
-   exclusive tile kind so the two never collide). Real photo/video rows only
-   — cardHTML() omits this for a panorama/reconstruction pseudo-row, which
-   has no `favorite` column to toggle. */
+   same fixed dark-scrim corner-overlay language as .pp-cardsel (top-left). */
 .pp-cardfav {
   position: absolute; bottom: 4px; right: 4px; z-index: 1; padding: 3px;
   background: rgba(0, 0, 0, .55); border: 0; border-radius: 3px; color: #fff; cursor: pointer;
@@ -493,6 +464,15 @@
    element's exact rendered box in pixels — the CSS only needs to keep it
    pinned to the wrapper's top-left and out of the way of clicks/drag. */
 .pp-lb-markup { position: absolute; top: 0; left: 0; pointer-events: none; display: none; }
+/* Item 4: the 360° pan strip — a fixed-height window with the wide stitched
+   panorama scrolling horizontally inside it. `overflow-x:auto` gives touch
+   swipe-to-pan for free; wirePanoDrag() adds click-and-drag for a mouse. */
+.pp-lb-panowrap {
+  max-width: 88vw; max-height: 78vh; overflow-x: auto; overflow-y: hidden;
+  border: 3px solid #fff; background: #000; cursor: grab; touch-action: pan-x;
+}
+.pp-lb-panowrap:active { cursor: grabbing; }
+.pp-lb-pano { display: block; height: 78vh; max-height: 78vh; width: auto; max-width: none; user-select: none; }
 /* Round-2 item 3 (2026-09-02): REPLACES the old zoom in/out buttons — "have a
    magnifier instead". A circular lens that follows the cursor while it's over
    the photo, showing a magnified crop of the SAME <img> via a background-
@@ -538,22 +518,28 @@
   background: linear-gradient(135deg, transparent 50%, rgba(255, 255, 255, .8) 50%);
 }
 .pp-lb-kpoverlay-resize:hover { background: linear-gradient(135deg, transparent 50%, var(--pd-red) 50%); }
-/* Scaled-down copies of bim.js's own .bim-pin/.bim-pincone — that stage is
-   sized for a much larger, full-window plan view; a 1/8-photo-width corner
-   overlay needs a proportionally smaller marker. Positioned in JS
-   (paintKeyPlanOverlay) from the pin's own x_norm/y_norm, same convention. */
-.pp-lb-kpoverlay-pin {
+/* A scaled-down copy of bim.js's own .bim-pin — that stage is sized for a
+   much larger, full-window plan view (min(70vh,640px)); a corner overlay a
+   fraction of a photo's width needs a proportionally smaller dot. SHARED by
+   every small key-plan overlay in this module (the lightbox's own corner
+   box below, AND ppr.js's presentation-pane overlay) — reusing BIM's
+   full-size .bim-pin verbatim in either of those small boxes was the exact
+   bug reported 2026-09-11 ("the pin ... does not display properly"): a
+   26px map-pin teardrop is a small detail on a 640px stage and a
+   comically oversized blob in a 60-90px corner box. Positioned in JS from
+   the pin's own x_norm/y_norm, same convention as .bim-pin. The cone
+   itself needs no scaled-down copy — both callers inject the real
+   BIM.coneWedgeSVG(pin)/coneWedgeSVGAt(pin, offset) markup here, the same
+   accurate pie-slice geometry the Plans-tab marker and the capture widget
+   itself draw, full-bleed via the shared .bim-conewedge-svg rule
+   (module.css, bim.js's own section) regardless of the box's own size. */
+.pp-kpmini-pin {
   position: absolute; transform: translate(-50%, -100%);
   width: 12px; height: 12px; border-radius: 50% 50% 50% 0; transform-origin: center;
   border: 1.5px solid #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .45); pointer-events: none;
 }
-.pp-lb-kpoverlay-pin.pp-lb-kppin-photo { background: var(--pd-ok); }
-.pp-lb-kpoverlay-pin.pp-lb-kppin-panorama { background: var(--pd-red); }
-.pp-lb-kpoverlay-pin.pp-lb-kppin-reconstruction { background: var(--pd-dark); }
-.pp-lb-kpoverlay-cone {
-  position: absolute; width: 32px; height: 32px; pointer-events: none;
-  background: conic-gradient(from 0deg at 50% 100%, transparent 335deg, color-mix(in srgb, var(--pd-red) 40%, transparent) 335deg 360deg, color-mix(in srgb, var(--pd-red) 40%, transparent) 0deg 25deg, transparent 25deg);
-}
+.pp-kpmini-pin.pp-kpmini-pin-photo { background: var(--pd-ok); }
+.pp-lb-kpoverlay-cone { position: absolute; inset: 0; pointer-events: none; }
 .pp-lb-cap {
   margin-top: 12px; color: #fff; text-align: center;
   display: flex; flex-direction: column; gap: 3px; font-size: var(--pd-fs-base);
@@ -628,10 +614,10 @@
   margin-top: 10px; font-size: var(--pd-fs-base); color: var(--pd-muted);
 }
 /* Item 1 — the delete-confirm modal's warning when a photo being deleted is
-   used in one or more presentation slides. Same paired-token shape as the
-   equipment/recon "pending" badges (color-mix(--pd-warn) background, plain
-   --pd-warn text) — a solid --pd-warn fill would need a white-on-warn pair
-   this app doesn't otherwise carry, and warn-on-card already reads clearly. */
+   used in one or more presentation slides. A paired-token shape
+   (color-mix(--pd-warn) background, plain --pd-warn text) — a solid
+   --pd-warn fill would need a white-on-warn pair this app doesn't otherwise
+   carry, and warn-on-card already reads clearly. */
 .pp-delwarn {
   margin-top: 10px; padding: 8px 10px; border-radius: var(--pd-radius);
   background: color-mix(in srgb, var(--pd-warn) 16%, var(--pd-card));
@@ -1024,85 +1010,6 @@
 .ppr-wizpane { display: flex; flex-direction: column; gap: 6px; }
 .ppr-wizpane .ppr-img { max-height: 220px; object-fit: contain; }
 
-/* ---- Panoramic Capture (brief Section 6 / Phase 3) ----------------------- */
-.pano-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
-.pano-card {
-  margin: 0; background: var(--pd-card); border: 1px solid var(--pd-line);
-  border-radius: var(--pd-radius); overflow: hidden; display: flex; flex-direction: column;
-}
-.pano-thumb { position: relative; background: var(--pd-bg); height: 160px; }
-.pano-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.pano-thumb .pp-noimg { height: 160px; }
-.pano-badge {
-  position: absolute; top: 8px; left: 8px; padding: 3px 8px; border-radius: 3px;
-  font-size: var(--pd-fs-micro); font-weight: 700; letter-spacing: .02em;
-}
-.pano-badge-warn { background: var(--pd-warn); color: #fff; }
-.pano-meta { padding: 10px 12px 4px; }
-.pano-loc { font-size: var(--pd-fs-base); font-weight: 700; color: var(--pd-ink); }
-.pano-date { font-size: var(--pd-fs-sm); color: var(--pd-muted); margin-top: 2px; }
-.pano-acts { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 10px 12px 12px; }
-
-.pano-viewerwrap { position: relative; text-align: center; }
-.pano-viewerwrap canvas { width: 100%; max-width: 100%; height: auto; border-radius: var(--pd-radius); cursor: grab; background: #000; }
-.pano-viewerwrap canvas:active { cursor: grabbing; }
-.pano-viewerhint { font-size: var(--pd-fs-xs); color: var(--pd-muted); margin-top: 6px; }
-
-.pano-capturearea { margin-top: 12px; }
-.pano-camwrap { margin: 10px 0; position: relative; max-width: 420px; }
-.pano-camwrap video { width: 100%; max-width: 420px; border-radius: var(--pd-radius); background: #000; display: block; }
-.pano-capturebtns { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-/* Recording indicator (item 18) — a fixed dark/red overlay on the camera
-   preview, deliberately theme-independent: it sits on top of live camera
-   video, not an app surface, and a "you are recording" cue must read the
-   same regardless of light/dark mode. */
-.pano-recind {
-  position: absolute; top: 10px; left: 10px; display: flex; align-items: center; gap: 7px;
-  padding: 4px 10px 4px 8px; border-radius: var(--pd-radius-pill); background: rgba(0,0,0,.6); color: #fff;
-  font-size: var(--pd-fs-sm); font-weight: 700; font-variant-numeric: tabular-nums;
-}
-/* ⚠️ Same bug class as .pp-addmenu above: `display: flex` unconditionally
-   beats the UA's `[hidden] { display: none }`, so stopRecTimer()'s
-   `ind.hidden = true` was never actually removing the pulsing "recording"
-   indicator from the camera preview once it had shown once — found in the
-   same audit pass as the Add-media dropdown fix, not separately reported,
-   but the same silent failure mode and worth closing now it's been found. */
-.pano-recind[hidden] { display: none; }
-.pano-recdot {
-  width: 10px; height: 10px; border-radius: 50%; background: var(--pd-red);
-  animation: pano-recpulse 1s ease-in-out infinite;
-}
-@keyframes pano-recpulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
-#pano-c-record.is-active { background: var(--pd-red); border-color: var(--pd-red); color: #fff; }
-.pano-cmp-controls { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-bottom: 10px; font-size: var(--pd-fs-sm); color: var(--pd-muted); }
-.pano-cmp-controls label { display: flex; align-items: center; gap: 6px; }
-.pano-cmp-controls select { min-width: 160px; }
-.pano-src { font-size: var(--pd-fs-xs); padding: 2px 7px; border-radius: 3px; background: var(--pd-bg); color: var(--pd-muted); border: 1px solid var(--pd-line); margin-left: 6px; vertical-align: middle; }
-
-/* ---- 3D Reconstruction Requests (brief 6A / Phase 4) --------------------- */
-.recon-section { margin-bottom: 20px; }
-.recon-sectitle { font-size: var(--pd-fs-base); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); margin: 0 0 8px; }
-.recon-row {
-  background: var(--pd-card); border: 1px solid var(--pd-line); border-radius: var(--pd-radius);
-  padding: 10px 12px; margin-bottom: 8px;
-}
-.recon-rowmain { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-.recon-loc { font-size: var(--pd-fs-base); font-weight: 700; color: var(--pd-ink); }
-.recon-date { font-size: var(--pd-fs-sm); color: var(--pd-muted); margin-left: auto; }
-.recon-src { font-size: var(--pd-fs-xs); padding: 2px 7px; border-radius: 3px; background: var(--pd-bg); color: var(--pd-muted); border: 1px solid var(--pd-line); }
-.recon-note { font-size: var(--pd-fs-sm); color: var(--pd-muted); margin-top: 6px; }
-.recon-note-bad { color: var(--pd-bad-text); }
-.recon-acts { display: flex; gap: 8px; margin-top: 10px; }
-.recon-badge { font-size: var(--pd-fs-xs); font-weight: 700; padding: 3px 9px; border-radius: 3px; letter-spacing: .02em; }
-/* Each pairs the token's own OWN colour as text with a tint of that SAME
-   token as background (the proven .pd-pill-ok pattern from dashboard.css) —
-   every one of --pd-warn/--pd-red/--pd-ok/--pd-bad already carries a paired
-   dark-mode remap, so this re-themes correctly with no extra work here. */
-.recon-badge-pending { background: color-mix(in srgb, var(--pd-warn) 18%, var(--pd-card)); color: var(--pd-warn-text); }
-.recon-badge-mid { background: color-mix(in srgb, var(--pd-red) 12%, var(--pd-card)); color: var(--pd-red); }
-.recon-badge-ok { background: color-mix(in srgb, var(--pd-ok) 16%, var(--pd-card)); color: var(--pd-ok-text); }
-.recon-badge-bad { background: color-mix(in srgb, var(--pd-bad) 14%, var(--pd-card)); color: var(--pd-bad-text); }
-
 /* ---- Floor Plan overlay (brief 6B / Phase 5) ------------------------------
    Pin-navigator over a 2D image, not a true BIM/IFC viewer — see bim.js's own
    header comment for the scope note. Plain CSS transform pan/zoom (translate
@@ -1131,14 +1038,12 @@
   display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0;
 }
 .bim-pin span { transform: rotate(45deg); } /* undo the teardrop rotation for the icon glyph itself */
-.bim-pin-panorama { background: var(--pd-red); }
-.bim-pin-reconstruction { background: var(--pd-dark); }
 .bim-pin-photo { background: var(--pd-ok); }
-/* Item 3: a drone-sourced pin gets its own colour (distinct from either
-   panorama-red or reconstruction-dark, so "this one was flown" reads at a
-   glance) and a soft radial halo sized 3x the icon (set inline from JS,
-   since the icon size itself is dynamic), centred on the pin exactly like
-   .bim-pincone above already anchors to the same left/top point. */
+/* Item 3: a drone-sourced pin gets its own colour (distinct from the ordinary
+   photo pin, so "this one was flown" reads at a glance) and a soft radial
+   halo sized 3x the icon (set inline from JS, since the icon size itself is
+   dynamic), centred on the pin exactly like .bim-pincone above already
+   anchors to the same left/top point. */
 .bim-pin-drone { background: var(--pd-warn); }
 .bim-pin-dronehalo {
   position: absolute; transform: translate(-50%, -100%); pointer-events: none; z-index: 0;
@@ -1147,14 +1052,16 @@
 }
 #bim-place.is-active { background: var(--pd-red); color: #fff; border-color: var(--pd-red); }
 
-/* Direction cone (Batch E) — a CSS conic-gradient wedge, rotated per pin via
-   an inline transform (see pinConeHTML). Positioned/anchored identically to
-   .bim-pin (left/top % + translate(-50%,-100%)) so the cone's tip always
-   sits exactly at the pin's own point. */
-.bim-pincone {
-  position: absolute; width: 70px; height: 70px; pointer-events: none;
-  background: conic-gradient(from 0deg at 50% 100%, transparent 335deg, color-mix(in srgb, var(--pd-red) 35%, transparent) 335deg 360deg, color-mix(in srgb, var(--pd-red) 35%, transparent) 0deg 25deg, transparent 25deg);
-}
+/* Direction cone — the ONE shared renderer (bim.js coneWedgeSVG/
+   coneWedgeSVGFromParams): a true pie slice built from the pin's own
+   edge1/edge2 (or a default cone for a legacy direction_deg-only pin), full-
+   bleed over whatever box it's placed in (the Plans-tab stage, the
+   lightbox's key-plan corner, a presentation pane's popup) — the
+   coordinates are already normalized 0..1 (×100 in the SVG viewBox), so this
+   never needs its own pixel-size tuning per context. */
+.bim-conewedge-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.bim-conewedge { cursor: grab; }
+.bim-conewedge:active { cursor: grabbing; }
 
 /* Direction-drag widget (pin picker + Gallery pin flow) */
 .bim-dirwidget { display: flex; align-items: center; gap: 14px; }
@@ -1197,14 +1104,6 @@
 .pp-planfloorlabel { font-size: var(--pd-fs-sm); font-weight: 700; color: var(--pd-muted); }
 .pp-planfloorbar .pd-select { width: auto; min-width: 140px; }
 .pp-planmonthbar strong { min-width: 64px; text-align: center; font-variant-numeric: tabular-nums; }
-/* "Live" jump-back button (Plan view's month stepper — Stack view's own
-   copy of this control was removed with Stack view, Round-2 item 7) — same
-   on/off shape as .pp-tab.active / .pd-btn-primary: a solid brand-red fill
-   with white text is always legible regardless of theme, so it's exempt
-   from the dark-mode #fff audit like those two. */
-.pp-livebtn { padding: 4px 12px; font-size: var(--pd-fs-sm); }
-.pp-livebtn.is-live { background: var(--pd-red); border-color: var(--pd-red); color: #fff; cursor: default; }
-.pp-livebtn.is-live:hover { background: var(--pd-red); border-color: var(--pd-red); }
 .pp-planstage { position: relative; }
 .pp-planimgwrap { position: relative; width: 100%; height: 0; }
 .pp-planimgwrap img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; user-select: none; -webkit-user-drag: none; }
@@ -1291,9 +1190,7 @@
    to match. */
 .bim-conestage { position: relative; max-width: 100%; touch-action: none; }
 .bim-conestage img { width: 100%; display: block; cursor: crosshair; border-radius: var(--pd-radius); user-select: none; -webkit-user-drag: none; }
-.bim-conestage svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-.bim-conewedge { cursor: grab; }
-.bim-conewedge:active { cursor: grabbing; }
+/* .bim-conewedge-svg (shared, above) already positions the svg full-bleed. */
 /* Fifth round item 8: "only 1/4 the size of the pin" — the pin dot
    (.bim-pinstage-dot below) is 22px as of item 3 (was 14px, before it needed
    to hold a person/drone icon), so this stays proportioned at 6px. A round

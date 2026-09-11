@@ -4,14 +4,9 @@
 // ⚠️ SCOPE NOTE, stated up front because "BIM Model Overlay" invites a much
 // bigger reading than what's built here. This is a 2D FLOOR-PLAN PIN
 // NAVIGATOR — upload a floor plan image, place pins on it that each point at
-// a panorama / 3D reconstruction / progress photo, click a pin to open that
-// capture. It does NOT import, register against, or overlay a real BIM/IFC
-// model, and it does NOT attempt true 3D-to-2D registration of a
-// reconstruction's point cloud onto the floor plan (that would need known
-// camera poses relative to the floor plan's own coordinate frame — a real,
-// separate computer-vision problem). This is the same kind of honest scope
-// reduction as Phase 3's cylinder-instead-of-true-equirectangular panorama —
-// stated here rather than silently shipped under the bigger name.
+// a progress photo, click a pin to open that photo. It does NOT import,
+// register against, or overlay a real BIM/IFC model — stated here rather
+// than silently shipped under the bigger name.
 // ============================================================================
 
 window.BIM = (function () {
@@ -587,25 +582,41 @@ window.BIM = (function () {
   }
 
   function pinIcon(type) {
-    return type === 'panorama' ? 'compass' : (type === 'reconstruction' ? 'box' : 'camera');
+    return 'camera';
   }
-  // A cone showing field-of-view, drawn ONLY when direction_deg is set (Batch
-  // E) — a pin with no recorded direction is a plain dot, never a fabricated
-  // cone. Rendered as a CSS conic-gradient wedge, rotated by direction_deg;
-  // conic-gradient's own 0deg is "up", matching this column's own convention
-  // (0 = up on the plan image, clockwise) — so the rotation IS the angle,
-  // no offset needed.
-  function pinConeHTML(pin) {
-    if (pin.direction_deg === null || pin.direction_deg === undefined) return '';
-    return '<span class="bim-pincone" style="left:' + (pin.x_norm * 100) + '%;top:' + (pin.y_norm * 100) +
-      '%;transform:translate(-50%,-100%) rotate(' + pin.direction_deg + 'deg);"></span>';
-  }
+  // A cone showing field-of-view, drawn ONLY when a direction was actually
+  // recorded — a pin with no recorded direction is a plain dot, never a
+  // fabricated cone. `coneWedgeSVG` is the ONE shared renderer (below) — the
+  // true pie slice the capture widget itself drags, not a generic rotated
+  // wedge, so the Plans-tab marker shows the angle/reach exactly as it was
+  // drawn.
+  function pinConeHTML(pin) { return coneWedgeSVG(pin); }
   function pinMarkerHTML(pin) {
     return pinConeHTML(pin) +
       '<button class="bim-pin bim-pin-' + esc(pin.item_type) + '" data-pin="' + esc(pin.id) + '" ' +
       'style="left:' + (pin.x_norm * 100) + '%;top:' + (pin.y_norm * 100) + '%;" ' +
       'title="' + esc(pin.label || pin.item_type) + '">' +
       '<span data-ico="' + pinIcon(pin.item_type) + '" data-ico-size="13"></span></button>';
+  }
+  // The scaled-down sibling of pinMarkerHTML/keyPlanMarkerHTML above, for
+  // every SMALL key-plan overlay in this app (a lightbox corner box, a
+  // presentation pane's popup) rather than the full-window Plans-tab stage
+  // pinMarkerHTML is sized for (.bim-pin is 26px, appropriate against a
+  // min(70vh,640px) stage). Fixes a real display bug reported 2026-09-11:
+  // the presentation pane was reusing keyPlanMarkerHTML/pinMarkerHTML
+  // verbatim, so its 26px map-pin teardrop rendered wildly oversized
+  // inside a 60-90px corner box — "the pin ... does not display properly".
+  // ⚠️ Shared in ONE place, not copy-pasted per caller — module.js's
+  // lightbox overlay and ppr.js's presentation-pane overlay both call this
+  // now, so the two can never again draw two differently-scaled pins for
+  // the same underlying pin row. The cone is still the exact same accurate
+  // pie-slice geometry (coneWedgeSVG) pinMarkerHTML draws — nothing about
+  // the cone's shape/angle/reach changes at this smaller scale, only the
+  // dot's own CSS size (.pp-kpmini-pin, module.css) is different.
+  function keyPlanMiniMarkerHTML(pin) {
+    return coneWedgeSVG(pin) +
+      '<span class="pp-kpmini-pin pp-kpmini-pin-' + esc(pin.item_type || 'photo') + '" ' +
+      'style="left:' + (pin.x_norm * 100) + '%;top:' + (pin.y_norm * 100) + '%;"></span>';
   }
 
   function wirePlan() {
@@ -626,9 +637,7 @@ window.BIM = (function () {
   function openPin(pinId) {
     var pin = pins.filter(function (p) { return p.id === pinId; })[0];
     if (!pin) return;
-    if (pin.item_type === 'panorama') { if (window.PANO && PANO.open) PANO.open(pin.item_id); }
-    else if (pin.item_type === 'reconstruction') { if (window.RECON && RECON.openById) RECON.openById(pin.item_id); }
-    else if (pin.item_type === 'photo') { if (window.ProgressPhotos && ProgressPhotos.openPhotoById) ProgressPhotos.openPhotoById(pin.item_id); }
+    if (pin.item_type === 'photo') { if (window.ProgressPhotos && ProgressPhotos.openPhotoById) ProgressPhotos.openPhotoById(pin.item_id); }
   }
 
   // ⚠️ RETIRED IN PLACE (2026-08-30 feedback item 27): "Place pin should not
@@ -637,10 +646,10 @@ window.BIM = (function () {
   // removed from index.html, so `placeMode` can now never become true and
   // every branch below that checks it is dead code — left defined (not
   // deleted) per this module's own established convention for superseded
-  // code, since openPinPicker's "point a pin at an EXISTING panorama/3D scan"
-  // capability may still be worth a future button elsewhere. The real,
-  // per-photo pin+cone workflow now lives entirely in pinFieldHTML/
-  // wirePinField/readPinField below, driven from module.js's Add/Edit form.
+  // code, since openPinPicker's "point a pin at an existing photo" capability
+  // may still be worth a future button elsewhere. The real, per-photo
+  // pin+cone workflow now lives entirely in pinFieldHTML/wirePinField/
+  // readPinField below, driven from module.js's Add/Edit form.
   function togglePlaceMode() {
     placeMode = !placeMode;
     if ($('bim-place')) $('bim-place').classList.toggle('is-active', placeMode);
@@ -1483,14 +1492,11 @@ window.BIM = (function () {
   function isPdfPlan(plan) { return !!(plan && plan.image_url && /\.pdf(\?|$)/i.test(plan.image_url)); }
 
   function openPinPicker(xNorm, yNorm) {
-    var panos = (window.PANO && PANO.list) ? PANO.list() : [];
-    var recons = (window.RECON && RECON.doneList) ? RECON.doneList() : [];
     var photos = (window.ProgressPhotos && ProgressPhotos.allPhotos) ? ProgressPhotos.allPhotos() : [];
 
-    function itemOptionsHTML(type) {
-      var list = type === 'panorama' ? panos : (type === 'reconstruction' ? recons : photos);
-      if (!list.length) return '<option value="">— none available —</option>';
-      return list.map(function (r) {
+    function itemOptionsHTML() {
+      if (!photos.length) return '<option value="">— none available —</option>';
+      return photos.map(function (r) {
         var label = r.location || r.description || (r.id ? r.id.slice(0, 8) : 'Untitled');
         return '<option value="' + esc(r.id) + '">' + esc(label) + '</option>';
       }).join('');
@@ -1499,13 +1505,7 @@ window.BIM = (function () {
     var html =
       '<div class="pd-modal-header"><h3>Place a pin</h3><button class="pd-modal-close" data-close>×</button></div>' +
       '<div class="pp-form">' +
-        '<div class="pd-field"><label>What does this pin point to?</label>' +
-          '<select class="pd-select" id="bim-pin-type">' +
-            '<option value="panorama">360° panorama</option>' +
-            '<option value="reconstruction">3D reconstruction</option>' +
-            '<option value="photo">Progress photo</option>' +
-          '</select></div>' +
-        '<div class="pd-field"><label>Which one</label><select class="pd-select" id="bim-pin-item"></select></div>' +
+        '<div class="pd-field"><label>Which photo</label><select class="pd-select" id="bim-pin-item">' + itemOptionsHTML() + '</select></div>' +
         '<div class="pd-field"><label>Label <span class="pp-optnote">(optional)</span></label>' +
           '<input class="pd-input" id="bim-pin-label" /></div>' +
         directionWidgetHTML('bim-pin-dir', null) +
@@ -1513,9 +1513,6 @@ window.BIM = (function () {
       '<div class="pd-modal-footer"><button class="pd-btn" data-close>Cancel</button>' +
         '<button class="pd-btn pd-btn-primary" id="bim-pin-save">Place pin</button></div>';
     var m = openModal(html, 460);
-    function refreshItems() { $('bim-pin-item').innerHTML = itemOptionsHTML($('bim-pin-type').value); }
-    $('bim-pin-type').onchange = refreshItems;
-    refreshItems();
     wireDirectionWidget('bim-pin-dir');
 
     $('bim-pin-save').onclick = async function () {
@@ -1525,7 +1522,7 @@ window.BIM = (function () {
       var dirVal = $('bim-pin-dir-val').value;
       var row = {
         floor_plan_id: activePlanId, project_id: pid,
-        item_type: $('bim-pin-type').value, item_id: itemId,
+        item_type: 'photo', item_id: itemId,
         x_norm: xNorm, y_norm: yNorm,
         direction_deg: dirVal === '' ? null : +dirVal,
         label: $('bim-pin-label').value.trim() || null, created_by: uid
@@ -1785,6 +1782,80 @@ window.BIM = (function () {
     return { e1x: e1.x, e1y: e1.y, e2x: e2.x, e2y: e2.y };
   }
 
+  // ⚠️⚠️ THE ONE, SHARED cone renderer — a true pie slice (M pin, L edge1,
+  // ARC to edge2, Z) built from the SAME dir/halfWidth/reach the capture
+  // widget itself drags. Before this, the capture widget's own `coneSvg`
+  // (below, inside pinFieldHTML) was the ONLY place that drew the real
+  // shape — the Plans-tab marker (pinConeHTML), the lightbox's key-plan
+  // overlay (module.js paintKeyPlanOverlay) and the presentation pane
+  // (ppr.js, via keyPlanMarkerHTML) each drew their OWN much cruder cone —
+  // a plain CSS conic-gradient wedge of a FIXED angle/reach, rotated only by
+  // the bisector `direction_deg` — so a pin captured with a narrow, close-in
+  // cone or a wide, far-reaching one displayed as the same generic wedge
+  // everywhere except the one screen it was drawn on. "display the pin and
+  // camera angle in the same way they were defined" is exactly this: one
+  // geometry, one renderer, used by every screen that shows a pin.
+  // `viewBox="0 0 100 100"` + `preserveAspectRatio="none"` means this SVG
+  // scales to fill WHATEVER box it's placed in (the full Plans-tab stage,
+  // an 1/8-photo-width lightbox corner, a presentation pane's small popup)
+  // with no separate pixel-size tuning per context — the coordinates are
+  // already normalized 0..1 (×100), so a full-bleed sibling of the plan
+  // <img> lines up with it exactly regardless of that box's real size.
+  function coneWedgeSVGFromParams(px, py, dir, halfW, reach, ids) {
+    ids = ids || {};
+    var e = edgesFromCone(px, py, dir, halfW, reach);
+    var P = [px * 100, py * 100], E1 = [e.e1x * 100, e.e1y * 100], E2 = [e.e2x * 100, e.e2y * 100];
+    var R = reach * 100;
+    var largeArc = halfW * 2 > 180 ? 1 : 0;
+    var gradId = ids.gradId || ('conegrad-' + Math.random().toString(36).slice(2));
+    var wedgeIdAttr = ids.wedgeId ? ' id="' + ids.wedgeId + '"' : '';
+    return '<svg class="bim-conewedge-svg" viewBox="0 0 100 100" preserveAspectRatio="none">' +
+      '<defs><radialGradient id="' + gradId + '" gradientUnits="userSpaceOnUse" cx="' + P[0] + '" cy="' + P[1] + '" r="' + (R || 1) + '">' +
+        '<stop offset="0%" style="stop-color:var(--pd-red);stop-opacity:.85" />' +
+        '<stop offset="100%" style="stop-color:var(--pd-red);stop-opacity:0" />' +
+      '</radialGradient></defs>' +
+      '<path' + wedgeIdAttr + ' class="bim-conewedge" fill="url(#' + gradId + ')" stroke="none" ' +
+        'd="M ' + P[0] + ',' + P[1] + ' L ' + E1[0] + ',' + E1[1] + ' A ' + R + ',' + R + ' 0 ' + largeArc + ',1 ' + E2[0] + ',' + E2[1] + ' Z" />' +
+    '</svg>';
+  }
+  // Resolves a PIN ROW (x_norm/y_norm + either edge1_x/y/edge2_x/y — the
+  // real captured shape — or, for a pin saved before that shape existed, a
+  // bare `direction_deg`) into the same accurate wedge. `direction_na` or no
+  // direction data at all draws nothing, same as the capture widget itself.
+  // Shared by coneWedgeSVG and coneWedgeSVGAt (progress-photos item 4: the
+  // 360° viewer rotates this same cone to follow the pan position) — pulled
+  // out once so both callers resolve a pin's shape identically.
+  function resolveConeParams(pin) {
+    if (!pin || pin.direction_na) return null;
+    var hasEdges = pin.edge1_x != null && pin.edge1_y != null && pin.edge2_x != null && pin.edge2_y != null;
+    if (hasEdges) return coneParamsFromEdges(pin.x_norm, pin.y_norm, pin.edge1_x, pin.edge1_y, pin.edge2_x, pin.edge2_y);
+    if (pin.direction_deg !== null && pin.direction_deg !== undefined) {
+      // ⚠️ A LEGACY pin, saved before the pie-cone widget existed — it only
+      // ever recorded a single facing angle, never a real width/reach, so
+      // there is no true shape to reproduce. The capture widget's own
+      // default cone (CONE_DEFAULT_FOV/CONE_DEFAULT_REACH) is the closest
+      // honest stand-in: at least it points the right way.
+      return { dir: pin.direction_deg, halfW: CONE_DEFAULT_FOV / 2, reach: CONE_DEFAULT_REACH };
+    }
+    return null;
+  }
+  function coneWedgeSVG(pin, ids) {
+    var cone = resolveConeParams(pin);
+    if (!cone) return '';
+    return coneWedgeSVGFromParams(pin.x_norm, pin.y_norm, cone.dir, cone.halfW, cone.reach, ids);
+  }
+  // progress-photos item 4: "when navigating through the 360 photo, the
+  // key plan ... camera direction rotate to follow" -- the SAME cone,
+  // rotated by however far the 360 viewer has been panned since the photo
+  // was captured, so the plan's cone always points where the viewer is
+  // currently looking, not just where the capture started facing.
+  function coneWedgeSVGAt(pin, rotationOffsetDeg, ids) {
+    var cone = resolveConeParams(pin);
+    if (!cone) return '';
+    var dir = (cone.dir + (rotationOffsetDeg || 0) + 360 * 10) % 360; // %360 alone can return negative for a negative offset
+    return coneWedgeSVGFromParams(pin.x_norm, pin.y_norm, dir, cone.halfW, cone.reach, ids);
+  }
+
   function pinFieldHTML(idPrefix, existing) {
     var curPlans = currentPlansList();
     if (!curPlans.length) {
@@ -1891,20 +1962,16 @@ window.BIM = (function () {
     // ENTIRELY (not a grey placeholder) when `s.na` — "does not apply" now
     // means genuinely invisible, matching the ask that double-clicking to
     // mark a top-view photo makes the camera angle disappear.
+    // ⚠️ Delegates to the SHARED coneWedgeSVGFromParams (module scope) —
+    // every other renderer of this pin (the Plans-tab marker, the lightbox
+    // key-plan overlay, the presentation pane) draws through the same
+    // geometry now, so a pin can never look different here, while being
+    // dragged, than it does anywhere it's later displayed. Stable
+    // `-pin-wedge`/`-conegrad` ids are passed through so paintConeLive below
+    // can keep mutating them in place during a drag.
     function coneSvg(px, py, dir, halfW, reach) {
-      var e = edgesFromCone(px, py, dir, halfW, reach);
-      var P = [px * 100, py * 100], E1 = [e.e1x * 100, e.e1y * 100], E2 = [e.e2x * 100, e.e2y * 100];
-      var R = reach * 100;
-      var largeArc = halfW * 2 > 180 ? 1 : 0;
-      var gradId = idPrefix + '-conegrad';
-      return '<svg viewBox="0 0 100 100" preserveAspectRatio="none">' +
-        '<defs><radialGradient id="' + gradId + '" gradientUnits="userSpaceOnUse" cx="' + P[0] + '" cy="' + P[1] + '" r="' + R + '">' +
-          '<stop offset="0%" style="stop-color:var(--pd-red);stop-opacity:.85" />' +
-          '<stop offset="100%" style="stop-color:var(--pd-red);stop-opacity:0" />' +
-        '</radialGradient></defs>' +
-        '<path class="bim-conewedge" id="' + idPrefix + '-pin-wedge" fill="url(#' + gradId + ')" stroke="none" ' +
-          'd="M ' + P[0] + ',' + P[1] + ' L ' + E1[0] + ',' + E1[1] + ' A ' + R + ',' + R + ' 0 ' + largeArc + ',1 ' + E2[0] + ',' + E2[1] + ' Z" />' +
-      '</svg>';
+      return coneWedgeSVGFromParams(px, py, dir, halfW, reach,
+        { wedgeId: idPrefix + '-pin-wedge', gradId: idPrefix + '-conegrad' });
     }
     function stageHTML(planId, s) {
       var plan = planById(planId), url = planUrl(plan);
@@ -2227,6 +2294,18 @@ window.BIM = (function () {
     // never has to duplicate the pin/cone drawing rules (position, cone
     // gradient, NA-hiding) a second time.
     keyPlanMarkerHTML: function (pin) { return pinMarkerHTML(pin); },
+    // The scaled-down "mini" marker (see keyPlanMiniMarkerHTML's own
+    // comment) — every small corner overlay should call THIS, never
+    // keyPlanMarkerHTML above, which is sized for the full Plans-tab stage.
+    keyPlanMiniMarkerHTML: function (pin) { return keyPlanMiniMarkerHTML(pin); },
+    // The cone alone (no pin dot) — module.js's lightbox key-plan overlay
+    // draws its own differently-styled/coloured pin dot per item kind, but
+    // must not draw its own cone shape a second time; this is the same
+    // accurate geometry pinConeHTML uses internally.
+    coneWedgeSVG: function (pin, ids) { return coneWedgeSVG(pin, ids); },
+    // Item 4 (360° viewer): the same cone, rotated by however far the
+    // viewer has been panned since the photo was captured.
+    coneWedgeSVGAt: function (pin, rotationOffsetDeg, ids) { return coneWedgeSVGAt(pin, rotationOffsetDeg, ids); },
     // Item-8 lookup: does this photo have a pin, and if so where/on what plan
     // — used to render the Gallery tile's expandable key-plan-style icon.
     pinInfoFor: function (itemType, itemId) {

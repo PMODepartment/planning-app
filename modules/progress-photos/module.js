@@ -200,9 +200,9 @@ window.ProgressPhotos = (function () {
   // recursed until the stack overflowed, and threw a silent RangeError
   // inside the click handler (browsers log this to the console; nothing
   // reaches the screen). The overlay was never removed, and — critically —
-  // any code AFTER the `m.close()` call in a handler (e.g. the 360° button's
-  // `if (window.PANO...) PANO.openCapture();`, or the markup editor's Save
-  // button calling `onSave(objs)` right after `m.close()`) never ran either,
+  // any code AFTER the `m.close()` call in a handler (e.g. the markup
+  // editor's Save button calling `onSave(objs)` right after `m.close()`)
+  // never ran either,
   // because the throw happened first. The original close function is now
   // captured in `rawClose` BEFORE `m.close` is ever reassigned, and the
   // wrapper calls THAT — never `m.close()` — so it can never call itself.
@@ -643,7 +643,7 @@ window.ProgressPhotos = (function () {
   // 2. A plain "notify going forward" listener can still register a beat too
   //    late relative to WHEN loadSchedule() first resolves — on this app's
   //    deeply-async `safeInit(...)` sequence (index.html calls
-  //    ProgressPhotos.init/PPR.init/PANO.init/RECON.init/BIM.init back to
+  //    ProgressPhotos.init/PPR.init/BIM.init back to
   //    back with none of them awaited), exactly when each module's own
   //    async init() reaches its own registration relative to another
   //    module's await chain is not something to reason out and trust. Fixed
@@ -755,11 +755,10 @@ window.ProgressPhotos = (function () {
       $('pp-mkvistoggle').onclick = function () { setMarkupGlobalVisible(!markupGlobalVisible()); syncMkVisBtn(); render(); };
     }
     // Fifth round item 1: "+ Add media" is now a dropdown deciding the media
-    // type UP FRONT — Photo/Video open the same modal pre-set to that type
-    // (mediaTypeSelectorHTML/wireMediaTypeSelector both take the preset now).
-    // ⚠️ 2026-09-02: 360° is `disabled` in the menu markup now (discontinued
-    // — see index.html), so it carries no `data-addtype` any more and this
-    // loop only ever wires Photo/Video; 3D stays disabled as before.
+    // type UP FRONT — Photo/Video/360° open the modal pre-set to that type
+    // (openUpload({mtype}) reads it once and never offers an in-form switch;
+    // 360° routes to its own dedicated flow instead — see the dispatcher
+    // below).
     if ($('pp-add')) $('pp-add').onclick = function (e) {
       e.stopPropagation();
       var menu = $('pp-addmenu');
@@ -770,6 +769,10 @@ window.ProgressPhotos = (function () {
       Array.prototype.forEach.call($('pp-addmenu').querySelectorAll('[data-addtype]'), function (b) {
         b.onclick = function () {
           $('pp-addmenu').hidden = true;
+          // Item 3: 360° is a single-video-in/single-panorama-out flow, not
+          // a batch of N files -> N rows -- it gets its own dedicated modal
+          // rather than being shoehorned into openUpload's staging pipeline.
+          if (this.dataset.addtype === '360') { open360Upload(); return; }
           openUpload({ mtype: this.dataset.addtype });
         };
       });
@@ -784,6 +787,7 @@ window.ProgressPhotos = (function () {
     wireSelBar();
     wireLightboxMagnifier();
     wireLightboxKpResizeDrag();
+    wirePanoDrag();
 
     document.addEventListener('keydown', function (e) {
       if (!$('pp-lightbox') || $('pp-lightbox').hidden) return;
@@ -865,28 +869,16 @@ window.ProgressPhotos = (function () {
 
     // ⚠️ Real perf fix, the other half of signAll()'s own comment: this used
     // to AWAIT signAll() (a Storage round-trip signing every path in the
-    // project) — plus PANO/RECON's own loads — before render() ever ran
-    // once, so the grid sat on "Loading photos…" for the WHOLE signing
-    // round-trip even though rows (small JSON, already in hand) is all a
-    // first paint actually needs. render() now runs the moment rows are
-    // fetched+sorted — the grid paints with its existing placeholder
-    // (.pp-noimg) for anything not yet signed — and signing/PANO/RECON load
-    // happen in the background, triggering ONE follow-up render() once they
-    // resolve to fill in real thumbnails. fillFilterOptions() also needs
-    // PANO/RECON's data (item 6 unifies them into one grouped grid), so it
-    // moves to the background pass too.
+    // project) before render() ever ran once, so the grid sat on "Loading
+    // photos…" for the WHOLE signing round-trip even though rows (small
+    // JSON, already in hand) is all a first paint actually needs. render()
+    // now runs the moment rows are fetched+sorted — the grid paints with its
+    // existing placeholder (.pp-noimg) for anything not yet signed — and
+    // signing happens in the background, triggering ONE follow-up render()
+    // once it resolves to fill in real thumbnails.
     fillFilterOptions();
     render();
-    await Promise.all([
-      signAll(),
-      // Batch C (2026-08-29): the Gallery feed is UNIFIED (photos/videos +
-      // panoramas + done 3D reconstructions, one grid) — load the other two
-      // modules' data alongside this module's own so the merge has
-      // something to merge. Each call is a no-op once already loaded, so
-      // switching between screens and back doesn't re-fetch every time.
-      (window.PANO && PANO.ensureLoaded) ? PANO.ensureLoaded() : Promise.resolve(),
-      (window.RECON && RECON.ensureLoaded) ? RECON.ensureLoaded() : Promise.resolve()
-    ]);
+    await signAll();
     fillFilterOptions();
     render();
   }
@@ -950,7 +942,13 @@ window.ProgressPhotos = (function () {
       // Only the transform-fallback rows need their photo_url signed at
       // all for the GRID — a row with a real thumb_url never needs its
       // full photo re-derived into a second, redundant small copy.
-      if (!r.thumb_url && r.photo_url && !thumbCache[r.photo_url] && transformPaths.indexOf(r.photo_url) < 0) {
+      // Item 7 (performance): a VIDEO row's photo_url is a video file, not
+      // an image — an image-transform request against it can only fail or
+      // waste a round trip, and thumb()'s own video branch never reads
+      // thumbCache at all (it resolves a video preview via urlOf()/the lazy
+      // intersection-observer path instead). Excluded here rather than left
+      // to silently populate a cache nothing looks at.
+      if (r.media_type !== 'video' && !r.thumb_url && r.photo_url && !thumbCache[r.photo_url] && transformPaths.indexOf(r.photo_url) < 0) {
         transformPaths.push(r.photo_url);
       }
     });
@@ -1297,12 +1295,11 @@ window.ProgressPhotos = (function () {
   // repeating the surrounding <div class="pd-field">/<label> markup.
   function worksMultiFieldHTML(idPrefix, existingWorks) {
     _worksSel[idPrefix] = (existingWorks || []).slice();
-    if (!scheduleHasActivities()) {
-      return '<div class="pd-field pp-span2"><label>Works</label>' +
-        '<p class="pp-hint">No works available for this project.</p>' +
-        '<p class="pp-hint">Works must be established in the Project Schedule under the ' +
-        'Execution Phase before they can be selected here.</p></div>';
-    }
+    // Item 8: a project with no schedule activities to offer has nothing
+    // for this field to do — no picker to open, nothing to require. The
+    // field is omitted outright rather than shown with an explanatory empty
+    // state; requiredFieldsMissing() already never asks for it in this case.
+    if (!scheduleHasActivities()) return '';
     return '<div class="pd-field pp-span2"><label>Works' + reqMark() + '</label>' +
       '<div id="' + idPrefix + '-worksfield">' + worksChipsHTML(idPrefix) +
       '<button type="button" class="pd-btn" id="' + idPrefix + '-worksadd">+ Add works</button></div></div>';
@@ -1504,33 +1501,15 @@ window.ProgressPhotos = (function () {
   // --------------------------------------------------------------- filter ---
   // Items 6+8 (current round): "in gallery tile view, 360, 3D and video
   // should not be grouped separately. it should be included with the normal
-  // grouping whether by date or what" + "add select options for the 360 or
-  // video... provide option to edit all details." Panoramas/reconstructions
-  // used to render in a separate `#pp-media-strip` below the grid
-  // (mediaStripMatches/mediaStripItems, both retired below); they now flow
-  // through the SAME filter/group/select/thumb pipeline as ordinary photos,
-  // as normalized "pseudo-rows" (`_kind`/`_src`, real underlying row on
-  // `_src`) — one filter predicate serves both real rows and pseudo-rows so
-  // the two families can never silently disagree about what's "visible".
-  //
-  // A pseudo-row's `id` is PREFIXED ("pano:<uuid>"/"recon:<uuid>") so it can
-  // share the same `selected{}`/checkbox/lightbox machinery as a real photo
-  // id without ever colliding with one — every place that WRITES against an
-  // id (archive/delete/the progress_photos table) has to branch on `_kind`
-  // first; see byMergedId()/openMediaKindEditor()/the batch-action handlers.
+  // grouping whether by date or what". Photos and videos flow through one
+  // filter/group/select/thumb pipeline.
   function matchesFilters(r) {
     // "Show archived" is additive, not an either/or toggle: unchecked hides
     // archived items (the normal, tidy view); checked shows BOTH archived
     // and unarchived together, so a planner can see everything at once
     // instead of the view flipping to archived-only.
     if (!filters.archived && r.archived) return false;
-    // Panoramas/reconstructions carry no trade/works at all -- a trade or
-    // works filter being SET therefore excludes them rather than silently
-    // matching everything, so "Structural Works only" genuinely narrows to
-    // structural photos and doesn't leave an unrelated 360° tile sitting in
-    // the middle of the filtered grid.
     if (filters.trade) {
-      if (r._kind) return false;
       // A photo now carries MULTIPLE trades/works (2026-08-29 feedback item
       // 2) -- the filter matches if the picked value is ANY of the row's
       // values, checking both the new array column and the legacy singular
@@ -1538,7 +1517,6 @@ window.ProgressPhotos = (function () {
       if (tradesOf(r).indexOf(filters.trade) < 0) return false;
     }
     if (filters.works) {
-      if (r._kind) return false;
       if (worksOf(r).indexOf(filters.works) < 0) return false;
     }
     // A location filter is satisfied when every ACTIVE level filter matches
@@ -1553,228 +1531,22 @@ window.ProgressPhotos = (function () {
     if (filters.to && (!r.taken_at || r.taken_at > filters.to)) return false;
     var q = filters.search.trim().toLowerCase();
     if (q) {
-      // A pseudo-row's own kind label ("360° panorama"/"3D scan") is in the
-      // haystack too, so typing "360" or "3d" into the search box finds
-      // every capture of that kind even when its description is blank.
-      var hay = (r._kind
-        ? [r.location, r.description, r._kind === 'panorama' ? '360 panorama' : '3d scan']
-        : [r.description, r.title, r.view_name].concat(tradesOf(r), worksOf(r), [r.location])
-      ).join(' ').toLowerCase();
+      var hay = [r.description, r.title, r.view_name].concat(tradesOf(r), worksOf(r), [r.location])
+        .join(' ').toLowerCase();
       if (hay.indexOf(q) < 0) return false;
     }
     return true;
   }
-  function visible() { return rows.filter(matchesFilters); }
-
-  // Normalizes a panorama row into the same shape the photo pipeline reads
-  // (taken_at / location / location_values / archived / trades / works_multi
-  // / description), prefixing its id so it can share `selected{}` with real
-  // photos without colliding. `_src` keeps the real underlying row for
-  // anything that needs it (PANO.open, the edit-details modal). `description`
-  // carries a readable label for the List/Gallery grid's own Description
-  // column, since neither table has a photo-shaped caption field.
-  function panoPseudoRow(p) {
-    return {
-      id: 'pano:' + p.id, _kind: 'panorama', _src: p,
-      taken_at: p.taken_at || (p.created_at || '').slice(0, 10),
-      location: p.location || '', location_values: p.location_values || {},
-      archived: !!p.archived, description: '360° panorama', title: '', view_name: '',
-      trades: [], works_multi: [],
-    };
-  }
-  function reconPseudoRow(r) {
-    return {
-      id: 'recon:' + r.id, _kind: 'reconstruction', _src: r,
-      taken_at: (r.created_at || '').slice(0, 10),
-      location: r.location || '', location_values: r.location_values || {},
-      archived: !!r.archived, description: r.requested_note ? '3D scan — ' + r.requested_note : '3D scan',
-      title: '', view_name: '', trades: [], works_multi: [],
-    };
-  }
-  function panoPseudoRows() {
-    return (window.PANO && PANO.list ? PANO.list() : []).map(panoPseudoRow);
-  }
-  function reconPseudoRows() {
-    // Only DONE reconstructions have anything to show/open — a pending or
-    // in-progress request has no viewable result yet, matching the old
-    // media-strip's own `RECON.doneList()` scope.
-    return (window.RECON && RECON.doneList ? RECON.doneList() : []).map(reconPseudoRow);
-  }
-  // The merged, filtered set the Gallery grid actually renders — real photos
-  // plus panorama/reconstruction pseudo-rows, one filter predicate over all
-  // of them (see matchesFilters' comment above for why trade/works exclude
-  // pseudo-rows rather than matching them unconditionally).
+  // The filtered set the Gallery grid actually renders.
   function mergedRows() {
-    return rows.concat(panoPseudoRows(), reconPseudoRows()).filter(matchesFilters);
-  }
-  // Resolves a merged-grid id (real OR prefixed) back to its row — used by
-  // anything that needs to act on a clicked/selected tile regardless of kind.
-  function byMergedId(id) {
-    if (typeof id === 'string' && id.indexOf('pano:') === 0) {
-      var p = (window.PANO && PANO.list ? PANO.list() : []).filter(function (x) { return x.id === id.slice(5); })[0];
-      return p ? panoPseudoRow(p) : null;
-    }
-    if (typeof id === 'string' && id.indexOf('recon:') === 0) {
-      var rc = (window.RECON && RECON.doneList ? RECON.doneList() : []).filter(function (x) { return x.id === id.slice(6); })[0];
-      return rc ? reconPseudoRow(rc) : null;
-    }
-    return byId(id);
-  }
-
-  // Item 8: "add select options for the 360 or video. only when clicked
-  // like the photos, provide option to edit all details." A panorama/
-  // reconstruction has far fewer editable fields than a photo — no trade,
-  // works, or free-text description; `panoramas` stores
-  // location_values/taken_at/source, `reconstruction_requests` stores
-  // location_values/requested_note/video_source (see each file's own insert
-  // payload) — so this edits exactly those, never invents new columns.
-  // Reached from the small pencil icon on a merged-grid tile
-  // (mediaKindThumbHTML's [data-mkedit]); clicking the TILE itself still
-  // opens the real viewer (PANO.open/RECON.openById) — this is the separate,
-  // dedicated "edit all details" path the tile's own viewer has no UI for.
-  function openMediaKindEditor(row) {
-    var isPano = row._kind === 'panorama';
-    var src = row._src;
-    var locVals = Object.assign({}, src.location_values || {});
-    function locLine() {
-      return Object.keys(locVals).length
-        ? '<div class="pp-locchosen"><span data-ico="mapPin" data-ico-size="15"></span><strong>' +
-            Fmt.esc(locBreadcrumb(locVals)) + '</strong></div>'
-        : '<p class="pp-hint">No location selected yet.</p>';
-    }
-    var html =
-      '<div class="pd-modal-header"><h3>Edit ' + (isPano ? '360° panorama' : '3D scan') + '</h3>' +
-        '<button class="pd-modal-close" data-close>×</button></div>' +
-      '<div class="pp-form">' +
-        '<div class="pp-span2 pp-wbssection"><label>Location</label>' +
-          '<div id="pp-mked-locfield">' + locLine() + '</div></div>' +
-        '<div class="pd-field pp-span2"><button type="button" class="pd-btn" id="pp-mked-locbtn">Change location…</button></div>' +
-        (isPano
-          ? '<div class="pd-field"><label>Capture date</label>' +
-              '<input class="pd-input" type="date" id="pp-mked-date" value="' + Fmt.esc(src.taken_at || '') + '" /></div>' +
-            '<div class="pd-field"><label>Source</label><select class="pd-select" id="pp-mked-source">' +
-              '<option value="ground"' + (src.source !== 'drone' ? ' selected' : '') + '>Ground (staff phone)</option>' +
-              '<option value="drone"' + (src.source === 'drone' ? ' selected' : '') + '>Drone (aerial)</option>' +
-            '</select></div>'
-          : '<div class="pd-field pp-span2"><label>Note</label>' +
-              '<textarea class="pd-input" id="pp-mked-note" rows="3">' + Fmt.esc(src.requested_note || '') + '</textarea></div>' +
-            '<div class="pd-field"><label>Source</label><select class="pd-select" id="pp-mked-source">' +
-              '<option value="ground"' + (src.video_source !== 'drone' ? ' selected' : '') + '>Ground (staff phone)</option>' +
-              '<option value="drone"' + (src.video_source === 'drone' ? ' selected' : '') + '>Drone (aerial)</option>' +
-            '</select></div>') +
-      '</div>' +
-      '<div class="pd-modal-footer"><button class="pd-btn" data-close>Cancel</button>' +
-        (canWrite ? '<button type="button" class="pd-btn pd-btn-danger" id="pp-mked-del">Delete</button>' : '') +
-        (canWrite ? '<button type="button" class="pd-btn pd-btn-primary" id="pp-mked-save">Save</button>' : '') +
-      '</div>';
-    var m = openModal(html, 480);
-    hydrate(m.el);
-    // Bug fix (2026-09-04): this modal (opened via the pencil icon on a
-    // panorama/reconstruction tile) previously had no Delete action at
-    // all — neither did the tile itself — so there was NO way anywhere in
-    // the Gallery to delete a 360°/3D capture. Delegates to whichever
-    // sub-module actually owns the row (never a second copy of the storage-
-    // cleanup-then-row-delete logic those modules already have).
-    if ($('pp-mked-del')) $('pp-mked-del').onclick = function () {
-      m.close();
-      openMediaKindDeleteConfirm(row);
-    };
-    if ($('pp-mked-locbtn')) $('pp-mked-locbtn').onclick = function () {
-      openGenericLocationPicker(function (values) {
-        locVals = values;
-        var f = $('pp-mked-locfield');
-        if (f) { f.innerHTML = locLine(); hydrate(f); }
-      });
-    };
-    if ($('pp-mked-save')) $('pp-mked-save').onclick = async function () {
-      var patch = { location_values: locVals, location: Object.keys(locVals).length ? locBreadcrumb(locVals) : null };
-      if (isPano) {
-        if ($('pp-mked-date')) patch.taken_at = $('pp-mked-date').value || null;
-        if ($('pp-mked-source')) patch.source = $('pp-mked-source').value;
-      } else {
-        if ($('pp-mked-note')) patch.requested_note = $('pp-mked-note').value.trim() || null;
-        if ($('pp-mked-source')) patch.video_source = $('pp-mked-source').value;
-      }
-      var table = isPano ? 'panoramas' : 'reconstruction_requests';
-      var w = await tolerantWrite({ table: table, op: 'update', id: src.id, patch: patch });
-      if (!w.ok) { UI.toast((w.error && w.error.message) || 'Could not save', 'error'); return; }
-      // The underlying array PANO.list()/RECON.doneList() return is a
-      // .slice() of the module's own live objects — `src` IS that same
-      // object reference, so mutating it here updates every future
-      // panoPseudoRow()/reconPseudoRow() read of it too, with no separate
-      // reload/refresh call needed on pano.js/recon.js.
-      Object.keys(patch).forEach(function (k) { src[k] = patch[k]; });
-      m.close();
-      UI.toast('Saved', 'ok');
-      render();
-    };
-  }
-
-  // Bug fix (2026-09-04): panoramas/reconstructions had NO delete path
-  // anywhere in the merged Gallery grid — mediaKindThumbHTML() rendered only
-  // "open" + "edit" (pencil), openMediaKindEditor()'s footer had only
-  // Cancel/Save, and the real-photo delete flow (openDeleteConfirm/remove())
-  // is deliberately scoped to ids with a `progress_photos` row (a pseudo-row
-  // has none there to delete). Owner report: "i cant delete 360/3D media
-  // from the photos gallery." A small, separate confirm modal mirroring
-  // openDeleteConfirm's own shape — never a second copy of pano.js/recon.js's
-  // storage-cleanup-then-row-delete logic, matching this file's "one 360°
-  // viewer, one 3D viewer" rule for everything else pano/recon-shaped.
-  function openMediaKindDeleteConfirm(row) {
-    var isPano = row._kind === 'panorama';
-    var label = isPano ? '360° panorama' : '3D scan';
-    var html =
-      '<div class="pd-modal-header"><h3>Delete ' + Fmt.esc(label) + '</h3>' +
-        '<button class="pd-modal-close" data-close>×</button></div>' +
-      '<div class="pp-form"><p>Delete this ' + Fmt.esc(label) + '? ' +
-        (isPano
-          ? 'The stitched image is removed from storage too.'
-          : 'Its recorded video and any processed result files are removed from storage too.') +
-        ' This cannot be undone.</p></div>' +
-      '<div class="pd-modal-footer"><button class="pd-btn" data-close>Cancel</button>' +
-        '<button class="pd-btn pd-btn-danger" id="pp-mk-d-yes">Delete</button></div>';
-    var m = openModal(html, 440);
-    $('pp-mk-d-yes').onclick = async function () {
-      var btn = this;
-      btn.disabled = true;
-      var mod = isPano ? window.PANO : window.RECON;
-      if (!mod || !mod.deleteById) { UI.toast('Delete is not available right now', 'error'); btn.disabled = false; return; }
-      // ⚠️ Wrapped in try/catch (2026-09-04, exhausting the "still can't
-      // delete" report): an unexpected throw (a network drop mid-request,
-      // e.g.) previously left this async handler's promise rejecting with
-      // nothing catching it — the button stayed disabled forever with no
-      // toast at all, which reads exactly like "clicking Delete does
-      // nothing". Any failure now always re-enables the button and says so.
-      try {
-        var res = await mod.deleteById(row._src);
-        if (!res || !res.ok) {
-          UI.toast((res && res.error) || 'Could not delete', 'error');
-          btn.disabled = false;
-          return;
-        }
-        m.close();
-        UI.toast((isPano ? 'Panorama' : '3D scan') + ' deleted', 'ok');
-        render();
-      } catch (e) {
-        UI.toast((e && e.message) || 'Could not delete — check your connection and try again', 'error');
-        btn.disabled = false;
-      }
-    };
+    return rows.filter(matchesFilters);
   }
 
   // --------------------------------------------------------------- render ---
   function render() {
     var host = $('pp-view');
-    // Items 6+8: List/Gallery now render the MERGED set (real photos + the
-    // panorama/reconstruction pseudo-rows from mergedRows()) — there's no
-    // longer a separate strip below the grid for those two kinds.
     var list = mergedRows();
-    // The lightbox is a photo/video-only viewer (markup, adjustments, the
-    // edit/download cluster) — it never opens a panorama/reconstruction, so
-    // its own prev/next chain stays scoped to real rows only. A pseudo-row
-    // tile dispatches straight to PANO.open/RECON.openById instead (see
-    // wireRows' [data-act]/[data-rowopen] handlers), never into the lightbox.
-    lightboxIds = list.filter(function (r) { return !r._kind; }).map(function (r) { return r.id; });
+    lightboxIds = list.map(function (r) { return r.id; });
     syncGenThumbsBtn();
 
     // The count + view toggle live in the static list bar (Drawing Register's
@@ -1790,13 +1562,7 @@ window.ProgressPhotos = (function () {
     // bar is blank in Plan view — it already states its own count in its
     // own toolbar ("N pinned items") — and only ever describes the Gallery
     // grid it's the header of.
-    // Total now spans every merged kind (real photos + panoramas + 3D scans),
-    // matching what `list`/mergedRows() actually draws from — "N of M" must
-    // describe the SAME grid it sits above, or a project with mostly
-    // panoramas/scans would read as if most of its media didn't exist.
-    var total = rows.length +
-      (window.PANO && PANO.list ? PANO.list().length : 0) +
-      (window.RECON && RECON.doneList ? RECON.doneList().length : 0);
+    var total = rows.length;
     var count = $('pp-count');
     if (count) {
       count.textContent = (total && view !== 'plan')
@@ -1963,28 +1729,15 @@ window.ProgressPhotos = (function () {
   }
 
   // ---------------------------------------------------------- Plan view ----
-  // A pin carries no date of its own — it points AT a photo/panorama/3D-scan,
-  // and it's THAT item's own capture date that "as of month T" filters on.
-  // Ported from bim.js's old itemDateFor (Batch G); photos resolve directly
-  // against this file's own `rows`/`byId` rather than through
-  // ProgressPhotos.allPhotos(), since this now IS that file.
+  // A pin carries no date of its own — it points AT a photo, and it's THAT
+  // photo's own capture date that "as of month T" filters on. Ported from
+  // bim.js's old itemDateFor (Batch G); resolves directly against this
+  // file's own `rows`/`byId` rather than through ProgressPhotos.allPhotos(),
+  // since this now IS that file.
   function itemDateForPin(pin) {
-    var r;
-    if (pin.item_type === 'photo') {
-      r = byId(pin.item_id);
-      return r ? (r.taken_at || (r.created_at || '').slice(0, 10)) : '';
-    }
-    if (pin.item_type === 'panorama') {
-      var pl = (window.PANO && PANO.list) ? PANO.list() : [];
-      r = pl.filter(function (x) { return x.id === pin.item_id; })[0];
-      return r ? (r.taken_at || (r.created_at || '').slice(0, 10)) : '';
-    }
-    if (pin.item_type === 'reconstruction') {
-      var rl = (window.RECON && RECON.doneList) ? RECON.doneList() : [];
-      r = rl.filter(function (x) { return x.id === pin.item_id; })[0];
-      return r ? (r.approved_at || r.created_at || '').slice(0, 10) : '';
-    }
-    return '';
+    if (pin.item_type !== 'photo') return '';
+    var r = byId(pin.item_id);
+    return r ? (r.taken_at || (r.created_at || '').slice(0, 10)) : '';
   }
   // Grid-snap clustering, ported verbatim from bim.js's mapClusters — pins
   // within the same ~5% cell of the plan cluster together, deliberately NOT
@@ -2038,10 +1791,7 @@ window.ProgressPhotos = (function () {
   }
   // Sixth round item 2: "pins show number of photos. preview of the latest
   // photo should also be shown" (iOS Photos map style — the pin itself IS a
-  // photo thumbnail, with a count badge). Only photos have a natural
-  // thumbnail source here (thumbUrlOf); a cluster whose latest item is a
-  // panorama/reconstruction falls back to the plain number badge, since
-  // neither has an equivalent still-image preview wired up yet.
+  // photo thumbnail, with a count badge).
   function planClusterLatestThumb(cluster) {
     var latest = null, latestDate = '';
     cluster.pins.forEach(function (p) {
@@ -2072,9 +1822,7 @@ window.ProgressPhotos = (function () {
   }
   function openPlanPin(pin) {
     if (!pin) return;
-    if (pin.item_type === 'panorama') { if (window.PANO && PANO.open) PANO.open(pin.item_id); }
-    else if (pin.item_type === 'reconstruction') { if (window.RECON && RECON.openById) RECON.openById(pin.item_id); }
-    else if (pin.item_type === 'photo') { openPhotoById(pin.item_id); }
+    if (pin.item_type === 'photo') openPhotoById(pin.item_id);
   }
   function openPlanClusterList(cluster) {
     if (!cluster) return;
@@ -2084,7 +1832,7 @@ window.ProgressPhotos = (function () {
       '<div class="pp-form"><div class="ppr-tmpl-picklist">' +
         cluster.pins.map(function (p) {
           return '<button type="button" class="ppr-tmpl-pickrow" data-open="' + p.id + '">' +
-            Fmt.esc(p.label || (p.item_type === 'panorama' ? '360° panorama' : p.item_type === 'reconstruction' ? '3D reconstruction' : 'Photo')) +
+            Fmt.esc(p.label || 'Photo') +
             (itemDateForPin(p) ? ' — ' + Fmt.esc(itemDateForPin(p)) : '') + '</button>';
         }).join('') +
       '</div></div>';
@@ -2106,7 +1854,7 @@ window.ProgressPhotos = (function () {
       return '<div class="pp-empty"><span data-ico="compass" data-ico-size="34"></span>' +
         '<p>No floor plans uploaded yet.</p>' +
         (canWrite ? '<p class="pp-hint">Upload one on the <strong>Plans</strong> tab, then place pins linking it ' +
-          'to your photos, 360° captures and 3D scans — they\'ll show up here.</p>' : '') + '</div>';
+          'to your photos — they\'ll show up here.</p>' : '') + '</div>';
     }
     if (!planFloorId || !floors.some(function (p) { return p.id === planFloorId; })) planFloorId = floors[0].id;
     var floor = floors.filter(function (p) { return p.id === planFloorId; })[0];
@@ -2137,11 +1885,12 @@ window.ProgressPhotos = (function () {
       (months.length
         ? '<div class="pp-planmonthbar">' +
             '<span class="pp-planfloorlabel">Month</span>' +
+            '<button class="pp-iconbtn" id="pp-plan-mfirst" title="First month">«</button>' +
             '<button class="pp-iconbtn" id="pp-plan-mprev" title="Earlier month">‹</button>' +
             '<strong>' + (cutoff ? Fmt.esc(cutoff) : 'All') + '</strong>' +
             '<button class="pp-iconbtn" id="pp-plan-mnext" title="Later month">›</button>' +
+            '<button class="pp-iconbtn" id="pp-plan-mlast" title="Last month">»</button>' +
             '<button class="pd-btn" id="pp-plan-mplay">' + (planPlaying ? 'Stop' : '▶ Play') + '</button>' +
-            '<button class="pd-btn pp-livebtn' + (planMonth == null ? ' is-live' : '') + '" id="pp-plan-mlive" title="Back to the latest month">Live</button>' +
             '<span class="pp-hint">as of the end of this month</span>' +
           '</div>'
         : '<p class="pp-hint">No dated captures pinned on this floor yet.</p>') +
@@ -2157,7 +1906,7 @@ window.ProgressPhotos = (function () {
           // the cluster (iOS Photos' own map style), with the count as a
           // small badge rather than being the whole button's content —
           // falls back to the old plain-number style when the cluster's
-          // latest item has no photo thumbnail (a panorama/reconstruction).
+          // latest item has no photo thumbnail.
           var thumb = planClusterLatestThumb(c);
           return '<button class="pp-plancluster' + (thumb ? ' pp-plancluster-photo' : '') + '" data-cluster="' + i + '" style="left:' + (c.x * 100) + '%;top:' + (c.y * 100) + '%;' +
             (thumb ? 'background-image:url(\'' + Fmt.esc(thumb) + '\');' : '') + '" ' +
@@ -2194,6 +1943,18 @@ window.ProgressPhotos = (function () {
     var months = planMonthsAvailable(pins);
     var cutoff = planMonth || (months.length ? months[months.length - 1] : null);
     var clusters = planClusters(pins, cutoff);
+    // Item 9: First/Last jump straight to the earliest/latest available
+    // month, instead of stepping through every intervening one — the "Live"
+    // button this replaces only ever jumped to the LATEST month; First adds
+    // the missing other end, and Last covers what Live used to do (the
+    // default `cutoff` already resolves to the latest month when
+    // `planMonth` is null, so setting it explicitly here is equivalent).
+    if ($('pp-plan-mfirst')) $('pp-plan-mfirst').onclick = function () {
+      stopPlanMonthPlay(); planMonth = months[0]; render();
+    };
+    if ($('pp-plan-mlast')) $('pp-plan-mlast').onclick = function () {
+      stopPlanMonthPlay(); planMonth = months[months.length - 1]; render();
+    };
     if ($('pp-plan-mprev')) $('pp-plan-mprev').onclick = function () {
       var i = months.indexOf(cutoff); planMonth = months[Math.max(0, i - 1)]; render();
     };
@@ -2211,14 +1972,6 @@ window.ProgressPhotos = (function () {
         planMonth = ms[i + 1]; render();
       }, 900);
       render();
-    };
-    // Same "null = recorded/latest, a value = scrubbed" convention Project
-    // Schedule's Vertical Stacking timeline established — Live jumps back to
-    // it in one click instead of stepping through every intervening month.
-    if ($('pp-plan-mlive')) $('pp-plan-mlive').onclick = function () {
-      if (planMonth == null) return;   // already live — nothing to do
-      stopPlanMonthPlay();
-      planMonth = null; render();
     };
     Array.prototype.forEach.call(document.querySelectorAll('#pp-view [data-cluster]'), function (btn) {
       btn.onclick = function () { openPlanClusterList(clusters[+this.dataset.cluster]); };
@@ -2242,10 +1995,6 @@ window.ProgressPhotos = (function () {
   // Video previews are unaffected (there is no server-side transcode here;
   // `preload="metadata"` already keeps their bandwidth cost negligible).
   function thumb(r, cls) {
-    // Items 6+8: a panorama/reconstruction pseudo-row draws its own tile —
-    // it has no `photo_url`/`thumb_url` at all, so it must never reach the
-    // photo/video branches below.
-    if (r._kind) return mediaKindThumbHTML(r, cls);
     var u = thumbUrlOf(r);
     var isVideo = r.media_type === 'video';
     // ⚠️ A video tile has no equivalent of a photo's thumb_url/transform
@@ -2263,6 +2012,20 @@ window.ProgressPhotos = (function () {
         'data-lazyvideo="' + r.id + '" data-cls="' + cls + '">' +
         '<span class="' + cls + ' pp-noimg" title="Video"><span data-ico="video" data-ico-size="18"></span></span>' +
         '<span class="pp-vidplay"></span></span>';
+    }
+    // Item 3: "the representative frame will also be the thumbnail in
+    // previews" -- a 360 row's thumb_url IS that frame, so it renders as a
+    // plain photo tile with a small "360°" badge to distinguish it at a
+    // glance; a missing frame degrades to the same placeholder a photo
+    // with no preview gets.
+    if (r.media_type === '360') {
+      if (!u) return '<div class="' + cls + ' pp-noimg" title="Preview unavailable">' +
+                     '<span data-ico="compass" data-ico-size="18"></span></div>';
+      var filt360 = adjustmentsAreDefault(r.adjustments) ? '' : ' style="filter:' + Fmt.esc(cssFilterFor(adjustmentsOf(r))) + '"';
+      return '<span class="pp-panothumbwrap ' + cls + '-wrap" data-act="open" data-id="' + r.id + '">' +
+        '<img class="' + cls + '" src="' + Fmt.esc(u) + '" loading="lazy"' + filt360 + ' ' +
+          'alt="' + Fmt.esc(r.description || '360° photo') + '" />' +
+        '<span class="pp-360badge">360°</span></span>';
     }
     if (!u && !isVideo) return '<div class="' + cls + ' pp-noimg" title="Preview unavailable">' +
                    '<span data-ico="camera" data-ico-size="18"></span></div>';
@@ -2530,30 +2293,16 @@ window.ProgressPhotos = (function () {
   // unchanged into that overlay, since percentage transforms are always
   // relative to the transformed element itself regardless of zoom.
 
-  // ⚠️ RETIRED (items 6+8, current round): panoramas/reconstructions used to
-  // render in a separate `#pp-media-strip` below the grid via
-  // mediaStripMatches/mediaStripItems/mediaStripHTML/wireMediaStrip/
-  // renderMediaStrip — "360, 3D and video should not be grouped separately...
-  // it should be included with the normal grouping". That whole block is
-  // gone; the equivalent logic now lives in matchesFilters()/mergedRows()/
-  // panoPseudoRow()/reconPseudoRow() above, and mediaKindThumbHTML() (below,
-  // called from thumb()) draws the tile inline in List/Gallery.
-
-  // Gallery favorite star (2026-09-07): bottom-right of the card image,
-  // real photo/video rows only -- a panorama/reconstruction pseudo-row
-  // (`r._kind`) has no `favorite` column on it to toggle, so it renders
-  // nothing rather than a button that would silently do nothing on click.
+  // Gallery favorite star (2026-09-07): bottom-right of the card image.
   // ⚠️ Read-only (non-`canWrite`) users get a plain static mark when a photo
   // IS favorited, never an interactive-looking <button> — same rule this
-  // file already applies to every other writer-gated affordance (compare
-  // mediaKindThumbHTML's `canWrite ? '<button …pp-mkeditbtn…' : ''` two
-  // functions above): a control that looks clickable but silently does
-  // nothing on click (toggleFavorite's own `if (!canWrite) return;`) is
-  // worse than no control. Everyone still SEES which photos are favorited —
-  // favoriting is shared team curation, and that's the whole point of the
-  // Portfolio-level favorites-only view this feature also feeds.
+  // file already applies to every other writer-gated affordance: a control
+  // that looks clickable but silently does nothing on click (toggleFavorite's
+  // own `if (!canWrite) return;`) is worse than no control. Everyone still
+  // SEES which photos are favorited — favoriting is shared team curation, and
+  // that's the whole point of the Portfolio-level favorites-only view this
+  // feature also feeds.
   function favBtnHTML(r) {
-    if (r._kind) return '';
     var on = !!r.favorite;
     if (!canWrite) {
       return on ? '<span class="pp-cardfav is-fav is-readonly" title="Favorited" aria-hidden="true">' +
@@ -2588,26 +2337,6 @@ window.ProgressPhotos = (function () {
     }
   }
 
-  // Kind-aware tile for a panorama/reconstruction pseudo-row (thumb()'s
-  // `r._kind` branch). Clicking the tile opens the real viewer
-  // (PANO.open/RECON.openById — wired in wireRows' [data-act]/[data-rowopen]
-  // handlers below, which special-case a prefixed id before falling back to
-  // byId()); the small pencil button opens openMediaKindEditor() — item 8's
-  // separate "edit all details" affordance, since the viewer itself has no
-  // edit UI of its own.
-  function mediaKindThumbHTML(r, cls) {
-    var isPano = r._kind === 'panorama';
-    var u = isPano && window.PANO && PANO.urlOf ? PANO.urlOf(r._src) : '';
-    var label = isPano ? '360° panorama' : '3D scan';
-    return '<span class="' + cls + '-wrap pp-mkthumb" data-act="open" data-id="' + Fmt.esc(r.id) + '" title="' + Fmt.esc(label) + '">' +
-      (u ? '<img class="' + cls + '" src="' + Fmt.esc(u) + '" alt="" />' :
-           '<span class="' + cls + ' pp-noimg"><span data-ico="' + (isPano ? 'compass' : 'box') + '" data-ico-size="18"></span></span>') +
-      '<span class="pp-mkbadge">' + Fmt.esc(isPano ? '360°' : '3D') + '</span>' +
-      (canWrite ? '<button type="button" class="pp-mkeditbtn" data-mkedit="' + Fmt.esc(r.id) + '" title="Edit details">' +
-        '<span data-ico="pencil" data-ico-size="12"></span></button>' : '') +
-      '</span>';
-  }
-
   function wireRows(host) {
     /* ⚠ BOTH views' group heads. The gallery's carries the same `data-group` and toggles the
        same `collapsed{}` entry, so one wiring serves both and they cannot drift apart. */
@@ -2622,18 +2351,6 @@ window.ProgressPhotos = (function () {
       el.onclick = function (e) {
         e.stopPropagation();
         var id = el.dataset.id, a = el.dataset.act;
-        // A panorama/reconstruction tile's own [data-act="open"] dispatches
-        // to the real viewer (PANO.open/RECON.openById), never the photo
-        // lightbox — byId() below only ever knows real photo rows, so a
-        // prefixed pseudo-row id is resolved here first.
-        if (a === 'open' && typeof id === 'string' && id.indexOf('pano:') === 0) {
-          if (window.PANO && PANO.open) PANO.open(id.slice(5));
-          return;
-        }
-        if (a === 'open' && typeof id === 'string' && id.indexOf('recon:') === 0) {
-          if (window.RECON && RECON.openById) RECON.openById(id.slice(6));
-          return;
-        }
         var r = byId(id); if (!r) return;
         if (a === 'open') openLightbox(r.id);
         else if (a === 'download') download(r);
@@ -2646,36 +2363,19 @@ window.ProgressPhotos = (function () {
     // are gone: "upon opening the photo, the photos should be fine" — the
     // lightbox's own download/edit/delete cluster covers what those icons
     // used to). Clicks starting on the select checkbox are excluded so
-    // ticking a box never also opens the photo. Same pseudo-row dispatch as
-    // [data-act="open"] above — a merged List row for a panorama/scan opens
-    // its own real viewer, not the photo lightbox.
+    // ticking a box never also opens the photo.
     Array.prototype.forEach.call(host.querySelectorAll('[data-rowopen]'), function (row) {
       row.onclick = function (e) {
-        if (e.target.closest('.pp-selcell, .pp-mkeditbtn')) return;
-        var id = this.dataset.rowopen;
-        if (typeof id === 'string' && id.indexOf('pano:') === 0) { if (window.PANO && PANO.open) PANO.open(id.slice(5)); return; }
-        if (typeof id === 'string' && id.indexOf('recon:') === 0) { if (window.RECON && RECON.openById) RECON.openById(id.slice(6)); return; }
-        openLightbox(id);
+        if (e.target.closest('.pp-selcell')) return;
+        openLightbox(this.dataset.rowopen);
       };
     });
     // ⚠️ RETIRED (item 4): the [data-pinpreview] tile icon + its wiring are
     // gone -- the key-plan button now lives in the lightbox toolbar only
     // (#pp-lb-keyplan, wired in paintLightbox()).
-    // Items 6+8 — the pencil icon on a panorama/reconstruction tile opens the
-    // "edit all details" dialog, separate from clicking the tile itself
-    // (which opens the real viewer, matching "clicked like the photos").
-    Array.prototype.forEach.call(host.querySelectorAll('[data-mkedit]'), function (btn) {
-      btn.onclick = function (e) {
-        e.stopPropagation();
-        var row = byMergedId(this.dataset.mkedit);
-        if (row) openMediaKindEditor(row);
-      };
-    });
     // Batch select (follow-up feedback item 5) — one checkbox per row/tile,
     // in both List and Gallery views (they're two displays of the same
     // Gallery screen, so a selection made in one shouldn't be view-specific).
-    // Works unchanged for a pseudo-row's prefixed id — `selected{}` is just a
-    // plain id->true map, indifferent to what kind of id it holds.
     Array.prototype.forEach.call(host.querySelectorAll('[data-sel]'), function (cb) {
       cb.onchange = function () {
         if (this.checked) selected[this.dataset.sel] = true; else delete selected[this.dataset.sel];
@@ -2702,8 +2402,7 @@ window.ProgressPhotos = (function () {
   // map — a selection made under one filter must not silently act on rows a
   // since-changed filter no longer shows (Drawing Register's own bulk-select
   // bar was bitten by exactly this and documents the fix; the same rule
-  // applies here). mergedRows(), not visible(), so a selected panorama/scan
-  // tile stays counted while its own filter state still shows it.
+  // applies here).
   function visibleSelectedIds() {
     var vis = {}; mergedRows().forEach(function (r) { vis[r.id] = true; });
     return Object.keys(selected).filter(function (id) { return vis[id]; });
@@ -2717,54 +2416,23 @@ window.ProgressPhotos = (function () {
   // into the topbar tools row, toggled via syncChrome()'s explicit
   // `style.display`, never the `hidden` attribute), which sidesteps that bug
   // class entirely rather than just patching this one instance of it.
-  // Items 6+8: splits a mixed batch-selection (real photo ids + prefixed
-  // panorama/reconstruction pseudo-ids) into their three real target tables
-  // — every bulk action below needs to know which table each selected id
-  // actually belongs to, since progress_photos/panoramas/reconstruction_
-  // requests are three separate tables with no shared id space.
-  function splitSelectedIds(ids) {
-    var out = { photo: [], pano: [], recon: [] };
-    ids.forEach(function (id) {
-      if (typeof id === 'string' && id.indexOf('pano:') === 0) out.pano.push(id.slice(5));
-      else if (typeof id === 'string' && id.indexOf('recon:') === 0) out.recon.push(id.slice(6));
-      else out.photo.push(id);
-    });
-    return out;
-  }
   function wireSelBar() {
     // Item 5: choose a format instead of downloading each raw file — mirrors
     // ppr.js's own openDownloadChoice for presentations, so "Download" means
     // the same thing (pick HTML/PDF/PPTX) everywhere in this module.
-    // ⚠️ Scoped to real photos only — a panorama has no flat image suited to
-    // the HTML/PDF/PPTX embedding pipeline (collectPhotoImages expects a
-    // photo_url), and a 3D scan's "download" is really its own point-cloud
-    // viewer, not a slide. Selecting a mix downloads just the photos and
-    // says so, rather than silently dropping the rest with no explanation.
     if ($('pp-sel-download')) $('pp-sel-download').onclick = function () {
-      var split = splitSelectedIds(visibleSelectedIds());
-      if (!split.photo.length) {
-        UI.toast('Select at least one photo to download — 360°/3D captures open their own viewer instead', 'warn');
-        return;
-      }
-      if (split.pano.length || split.recon.length) {
-        UI.toast((split.pano.length + split.recon.length) + ' 360°/3D item(s) skipped — download covers photos only', 'warn');
-      }
-      openBatchDownloadChoice(split.photo);
+      var ids = visibleSelectedIds();
+      if (!ids.length) return;
+      openBatchDownloadChoice(ids);
     };
     if ($('pp-sel-archive')) $('pp-sel-archive').onclick = async function () {
       var ids = visibleSelectedIds();
       if (!ids.length) return;
-      var split = splitSelectedIds(ids);
-      var jobs = [];
-      if (split.photo.length) jobs.push(sb().from(TABLE).update({ archived: true }).in('id', split.photo));
-      if (split.pano.length) jobs.push(sb().from('panoramas').update({ archived: true }).in('id', split.pano));
-      if (split.recon.length) jobs.push(sb().from('reconstruction_requests').update({ archived: true }).in('id', split.recon));
-      var results = await Promise.all(jobs);
-      var err = results.filter(function (r) { return r.error; })[0];
-      if (err) {
-        if (/column .* does not exist|schema cache/i.test(err.error.message || '')) {
+      var res = await sb().from(TABLE).update({ archived: true }).in('id', ids);
+      if (res.error) {
+        if (/column .* does not exist|schema cache/i.test(res.error.message || '')) {
           UI.toast('Archiving needs a pending migration — run migrations/2026-08-29-archive-flag.sql', 'warn');
-        } else UI.toast(err.error.message, 'error');
+        } else UI.toast(res.error.message, 'error');
         return;
       }
       UI.toast(ids.length + ' item' + (ids.length === 1 ? '' : 's') + ' archived', 'ok');
@@ -2772,27 +2440,10 @@ window.ProgressPhotos = (function () {
       await load();
     };
     if ($('pp-sel-addppr')) $('pp-sel-addppr').onclick = function () {
-      var split = splitSelectedIds(visibleSelectedIds());
-      // ⚠️ A presentation slide is a before/after PHOTO pane by construction
-      // (before_photo_id/after_photo_id FK progress_photos) — a panorama or
-      // 3D scan can't fill that slot, so this stays photo-only, same
-      // reasoning as the download split above.
-      if (!split.photo.length) {
-        UI.toast('Select at least one photo — 360°/3D captures can\'t be added to a presentation slide', 'warn');
-        return;
-      }
-      if (split.pano.length || split.recon.length) {
-        UI.toast((split.pano.length + split.recon.length) + ' 360°/3D item(s) skipped', 'warn');
-      }
-      openAddToPresentation(split.photo);
+      var ids = visibleSelectedIds();
+      if (!ids.length) return;
+      openAddToPresentation(ids);
     };
-    // Item 1 (owner feedback), widened: batch delete now covers a MIXED
-    // selection — real photos AND 360°/3D pseudo-rows — through the SAME
-    // toolbar trash icon, not just photos. It used to refuse the whole
-    // action the instant a 360°/3D tile was checked, toasting a warning that
-    // pointed elsewhere instead — exactly the path a planner naturally
-    // reaches for (check a tile, click the toolbar trash icon). See
-    // openBatchDeleteConfirm below for the fix.
     if ($('pp-sel-delete')) $('pp-sel-delete').onclick = function () {
       openBatchDeleteConfirm(visibleSelectedIds());
     };
@@ -2870,10 +2521,9 @@ window.ProgressPhotos = (function () {
       // for a moment, but not a permanent phantom deletion. `.select('id')`
       // reports exactly which ids were ACTUALLY removed, so a refusal reads
       // as a real, honest message instead of a false success.
-      // ⚠️ Also wrapped in try/catch (2026-09-04, same pass as
-      // openMediaKindDeleteConfirm/openBatchDeleteConfirm above): an
-      // unexpected throw previously left this button stuck disabled forever
-      // with no toast — indistinguishable from "clicking Delete does nothing".
+      // ⚠️ Also wrapped in try/catch (2026-09-04): an unexpected throw
+      // previously left this button stuck disabled forever with no toast —
+      // indistinguishable from "clicking Delete does nothing".
       try {
         var res = await sb().from(TABLE).delete().in('id', ids).select('id');
         if (res.error) { UI.toast(res.error.message, 'error'); btn.disabled = false; return; }
@@ -2908,29 +2558,15 @@ window.ProgressPhotos = (function () {
     };
   }
 
-  // The batch-selection Delete button's real entry point — takes the RAW,
-  // possibly-mixed selection (real photo ids alongside pano:<uuid>/
-  // recon:<uuid> pseudo-ids) and deletes every kind through whichever module
-  // actually owns it. Real photos go through the same in-line delete
-  // openDeleteConfirm(ids) already uses (presentation-usage warning +
-  // TABLE delete + storage cleanup, kept here rather than re-calling that
-  // function so the whole mixed batch is confirmed and executed as ONE
-  // action); a panorama/reconstruction is deleted via PANO.deleteById/
-  // RECON.deleteById — the exact functions openMediaKindDeleteConfirm
-  // already uses for a single item's own edit-modal delete — never a second,
-  // in-file copy of that storage-cleanup-then-row-delete logic.
+  // The batch-selection Delete button's real entry point — same in-line
+  // delete shape as openDeleteConfirm(ids) (presentation-usage warning +
+  // TABLE delete + storage cleanup), kept as its own function so the batch
+  // toolbar and the single-photo lightbox delete stay independent callers.
   async function openBatchDeleteConfirm(ids) {
-    var split = splitSelectedIds(ids);
-    var total = split.photo.length + split.pano.length + split.recon.length;
+    var total = ids.length;
     if (!total) return;
     var usage = { photoIds: [], pprIds: [] };
-    if (split.photo.length) {
-      try { usage = await findPresentationUsage(split.photo); } catch (e) { /* best-effort — a failed check must not block deleting */ }
-    }
-    var parts = [];
-    if (split.photo.length) parts.push(split.photo.length + ' photo' + (split.photo.length === 1 ? '' : 's'));
-    if (split.pano.length) parts.push(split.pano.length + ' 360° panorama' + (split.pano.length === 1 ? '' : 's'));
-    if (split.recon.length) parts.push(split.recon.length + ' 3D scan' + (split.recon.length === 1 ? '' : 's'));
+    try { usage = await findPresentationUsage(ids); } catch (e) { /* best-effort — a failed check must not block deleting */ }
     var warnHtml = '';
     if (usage.photoIds.length) {
       var pluralPhoto = usage.photoIds.length === 1;
@@ -2944,7 +2580,7 @@ window.ProgressPhotos = (function () {
     var html =
       '<div class="pd-modal-header"><h3>Delete ' + total + ' item' + (total === 1 ? '' : 's') + '</h3>' +
         '<button class="pd-modal-close" data-close>×</button></div>' +
-      '<div class="pp-form"><p>Delete ' + Fmt.esc(parts.join(', ')) +
+      '<div class="pp-form"><p>Delete ' + total + ' photo' + (total === 1 ? '' : 's') +
         '? Every file is removed from storage too. This cannot be undone.</p>' + warnHtml + '</div>' +
       '<div class="pd-modal-footer">' +
         '<button class="pd-btn" data-close>Cancel</button>' +
@@ -2954,44 +2590,24 @@ window.ProgressPhotos = (function () {
       var btn = this;
       btn.disabled = true;
       try {
-        var failed = 0;
-        var succeededIds = [];
-        if (split.photo.length) {
-          // ⚠️ Same `.select()` guard as openDeleteConfirm's own fix above and
-          // for the identical reason — TABLE's DELETE RLS is owner-or-admin,
-          // not any writer, so a plain `.delete().in('id', …)` can't tell a
-          // real delete from RLS silently matching 0 rows. Reported here as
-          // per-item failures joining the pano/recon counter below, rather
-          // than aborting the whole mixed batch over the photos a planner
-          // simply isn't allowed to remove.
-          var res = await sb().from(TABLE).delete().in('id', split.photo).select('id');
-          if (res.error) { UI.toast(res.error.message, 'error'); btn.disabled = false; return; }
-          var deletedPhotoIds = (res.data || []).map(function (r) { return r.id; });
-          failed += split.photo.length - deletedPhotoIds.length;
-          succeededIds = succeededIds.concat(deletedPhotoIds);
-          var targetRows = rows.filter(function (r) { return deletedPhotoIds.indexOf(r.id) >= 0; });
-          var toRemove = [];
-          targetRows.forEach(function (r) { if (r.photo_url) toRemove.push(r.photo_url); if (r.thumb_url) toRemove.push(r.thumb_url); });
-          if (toRemove.length) { try { await sb().storage.from(BUCKET).remove(toRemove); } catch (e) {} }
-        }
-        for (var i = 0; i < split.pano.length; i++) {
-          var p = (window.PANO && PANO.list ? PANO.list() : []).filter(function (x) { return x.id === split.pano[i]; })[0];
-          if (!p || !window.PANO || !PANO.deleteById) { failed++; continue; }
-          var pr = await PANO.deleteById(p);
-          if (!pr || !pr.ok) failed++; else succeededIds.push('pano:' + split.pano[i]);
-        }
-        for (var j = 0; j < split.recon.length; j++) {
-          var rc = (window.RECON && RECON.doneList ? RECON.doneList() : []).filter(function (x) { return x.id === split.recon[j]; })[0];
-          if (!rc || !window.RECON || !RECON.deleteById) { failed++; continue; }
-          var rr = await RECON.deleteById(rc);
-          if (!rr || !rr.ok) failed++; else succeededIds.push('recon:' + split.recon[j]);
-        }
+        // ⚠️ Same `.select()` guard as openDeleteConfirm's own fix above and
+        // for the identical reason — TABLE's DELETE RLS is owner-or-admin,
+        // not any writer, so a plain `.delete().in('id', …)` can't tell a
+        // real delete from RLS silently matching 0 rows.
+        var res = await sb().from(TABLE).delete().in('id', ids).select('id');
+        if (res.error) { UI.toast(res.error.message, 'error'); btn.disabled = false; return; }
+        var deletedIds = (res.data || []).map(function (r) { return r.id; });
+        var failed = total - deletedIds.length;
+        var targetRows = rows.filter(function (r) { return deletedIds.indexOf(r.id) >= 0; });
+        var toRemove = [];
+        targetRows.forEach(function (r) { if (r.photo_url) toRemove.push(r.photo_url); if (r.thumb_url) toRemove.push(r.thumb_url); });
+        if (toRemove.length) { try { await sb().storage.from(BUCKET).remove(toRemove); } catch (e) {} }
         m.close();
         // Only ids that ACTUALLY got deleted leave `selected` — an item that
         // failed (e.g. RLS refused it) stays checked, since it's still there
         // and the planner may want to see it's the one that didn't go through.
-        succeededIds.forEach(function (id) { delete selected[id]; });
-        if (failed) UI.toast((total - failed) + ' of ' + total + ' item(s) deleted — ' + failed + ' could not be removed (only the uploader or an admin can)', 'warn');
+        deletedIds.forEach(function (id) { delete selected[id]; });
+        if (failed) UI.toast(deletedIds.length + ' of ' + total + ' item(s) deleted — ' + failed + ' could not be removed (only the uploader or an admin can)', 'warn');
         else UI.toast(total + ' item' + (total === 1 ? '' : 's') + ' deleted', 'ok');
         await load();
       } catch (e) {
@@ -3076,12 +2692,25 @@ window.ProgressPhotos = (function () {
     // completes in the background.
     var u = thumbUrlOf(r);
     var isVideo = r.media_type === 'video';
-    var imgEl = $('pp-lb-img'), vidEl = $('pp-lb-video');
+    // Item 4: "viewing 360 photos should be similar to viewing photos
+    // except without option for mark-up but key plan option should be
+    // available" -- media_type stays '360' for both, distinguishing it
+    // from an ordinary photo only in which element shows it.
+    var isPano = r.media_type === '360';
+    var imgEl = $('pp-lb-img'), vidEl = $('pp-lb-video'), panoWrap = $('pp-lb-panowrap'), panoImg = $('pp-lb-pano');
+    lightboxPanoHeadingDeg = 0;   // a fresh photo/step always resets the followed heading
     if (isVideo) {
       if (imgEl) { imgEl.hidden = true; imgEl.src = ''; }
+      if (panoWrap) panoWrap.hidden = true;
       if (vidEl) { vidEl.hidden = false; vidEl.src = ''; }   // resolved below — a video has no separate thumbnail to stand in with
+    } else if (isPano) {
+      if (imgEl) { imgEl.hidden = true; imgEl.src = ''; }
+      if (vidEl) { vidEl.hidden = true; vidEl.pause(); vidEl.src = ''; }
+      if (panoWrap) { panoWrap.hidden = false; panoWrap.scrollLeft = 0; }
+      if (panoImg) panoImg.src = u || '';   // the representative frame stands in until the wide panorama is signed
     } else {
       if (vidEl) { vidEl.hidden = true; vidEl.pause(); vidEl.src = ''; }
+      if (panoWrap) panoWrap.hidden = true;
       if (imgEl) { imgEl.hidden = false; imgEl.src = u || ''; }
     }
     // Swap in the real full-res image/video once signed. Guarded against
@@ -3108,11 +2737,14 @@ window.ProgressPhotos = (function () {
       if (!$('pp-lightbox') || $('pp-lightbox').hidden) return;
       u = full;
       if (isVideo) { if (vidEl) vidEl.src = full; }
+      else if (isPano) { if (panoImg) panoImg.src = full; }
       else { if (imgEl) imgEl.src = full; }
     });
-    // Item 5: exposure/brightness/contrast render live via CSS filter —
-    // photos only (adjustments has no meaning for a video clip here).
-    if (imgEl) imgEl.style.filter = isVideo ? '' : cssFilterFor(adjustmentsOf(r));
+    // Item 5 (overnight batch): exposure/brightness/contrast now render
+    // live via CSS filter on video too, not just photos -- CSS `filter`
+    // applies to a <video> element exactly the same way it does an <img>.
+    var adjFilterEl = isVideo ? vidEl : (isPano ? panoImg : imgEl);
+    if (adjFilterEl) adjFilterEl.style.filter = cssFilterFor(adjustmentsOf(r));
     $('pp-lb-cap').innerHTML =
       '<strong>' + Fmt.esc(r.view_name || r.description || 'Progress photo') + '</strong>' +
       '<span>' + Fmt.esc(tradesOf(r).concat(worksOf(r), [r.location]).filter(Boolean).join(' · ')) +
@@ -3131,8 +2763,12 @@ window.ProgressPhotos = (function () {
     // List/Gallery tile, and vice versa. The lightbox still keeps its own
     // `lightboxMarkupVisible` var (paintMarkupOverlay reads it), it's just
     // seeded FROM and written BACK to the shared preference below.
+    // Item 5: "no need for mark-up for video and 360" -- markup stays
+    // photo-only, both the toggle and the edit button.
+    var markupExcluded = isVideo || isPano;
     var mkBtn = $('pp-lb-markuptoggle'), mkEditBtn = $('pp-lb-markupedit');
-    if (mkEditBtn) mkEditBtn.style.display = canWrite ? '' : 'none';
+    if (mkBtn) mkBtn.style.display = markupExcluded ? 'none' : '';
+    if (mkEditBtn) mkEditBtn.style.display = (canWrite && !markupExcluded) ? '' : 'none';
     if (mkBtn) mkBtn.onclick = function () {
       lightboxMarkupVisible = !lightboxMarkupVisible;
       setMarkupGlobalVisible(lightboxMarkupVisible);
@@ -3148,30 +2784,32 @@ window.ProgressPhotos = (function () {
         paintMarkupOverlay(r);
       });
     };
-    // Item 5 — same shape as the markup edit button above: hidden for a
-    // video (adjustments are photo-only) and for a read-only viewer.
+    // Item 5 (overnight batch): Adjust now extends to video (and 360) --
+    // only Markup stays photo-only, per the owner's explicit instruction.
+    // The filter is applied to whichever media element is actually on
+    // screen (the <video> for a video row, the <img> otherwise).
     var adjBtn = $('pp-lb-adjustedit');
     if (adjBtn) {
-      adjBtn.style.display = (canWrite && !isVideo) ? '' : 'none';
+      adjBtn.style.display = canWrite ? '' : 'none';
       adjBtn.onclick = function () {
         openAdjustEditor(u, r.adjustments || {}, async function (newAdj) {
           r.adjustments = newAdj;
-          if (imgEl) imgEl.style.filter = cssFilterFor(newAdj);
+          var filterEl = isVideo ? vidEl : (isPano ? panoImg : imgEl);
+          if (filterEl) filterEl.style.filter = cssFilterFor(newAdj);
           var w = await tolerantWrite({ table: TABLE, op: 'update', id: r.id, patch: { adjustments: newAdj, updated_at: new Date().toISOString() } });
           if (!w.ok) UI.toast(w.error && w.error.message || 'Could not save adjustments', 'error');
-        });
+        }, isVideo);
       };
     }
-    // Item 4: the key-plan toggle -- shown only when this photo/item actually
-    // has a floor-plan pin (BIM.pinInfoFor, polymorphic across photo/pano/
-    // reconstruction the same way cardHTML used to compute it). Resets to
-    // hidden on every photo change (lightboxKeyPlanVisible), matching the
-    // per-photo scope the button itself now has -- stepping ←/→ to a
-    // different item must not carry the overlay over onto it.
+    // Item 4: the key-plan toggle -- shown only when this photo actually has
+    // a floor-plan pin (BIM.pinInfoFor). Resets to hidden on every photo
+    // change (lightboxKeyPlanVisible), matching the per-photo scope the
+    // button itself now has -- stepping ←/→ to a different item must not
+    // carry the overlay over onto it.
+    // Item 5: "no need also key plan for video, leave this only for photo
+    // and 360" -- gated on media type in addition to whether a pin exists.
     var kpBtn = $('pp-lb-keyplan');
-    var kpPinType = r._kind || 'photo';
-    var kpPinId = r._src ? r._src.id : r.id;
-    var kpHasPin = window.BIM && BIM.pinInfoFor && !!BIM.pinInfoFor(kpPinType, kpPinId);
+    var kpHasPin = !isVideo && window.BIM && BIM.pinInfoFor && !!BIM.pinInfoFor('photo', r.id);
     if (kpBtn) {
       kpBtn.style.display = kpHasPin ? '' : 'none';
       kpBtn.onclick = function () {
@@ -3196,6 +2834,11 @@ window.ProgressPhotos = (function () {
   }
   var lightboxMarkupVisible = true;
   var lightboxKeyPlanVisible = false;
+  // Item 4: how far (in degrees) the 360° viewer has been panned away from
+  // its opening position — reset to 0 whenever a photo opens/steps, updated
+  // live by wirePanoDrag() below, and read by paintKeyPlanOverlay() so the
+  // key-plan cone rotates to keep following the direction actually on screen.
+  var lightboxPanoHeadingDeg = 0;
   // Round-2 item 3 (2026-09-02): the lightbox's magnifier — replaces the
   // zoom in/out buttons item 10 added ("zoom is only for... the image pop-up
   // view" now means a magnifier, not a scale control). A circular lens
@@ -3280,9 +2923,7 @@ window.ProgressPhotos = (function () {
       if (!shown) { if (img) img.removeAttribute('src'); if (pinEl) pinEl.hidden = true; if (coneEl) coneEl.hidden = true; }
     }
     if (!lightboxKeyPlanVisible) { setShown(false); return; }
-    var pinType = r._kind || 'photo';
-    var pinId = r._src ? r._src.id : r.id;
-    var info = window.BIM && BIM.pinInfoFor && BIM.pinInfoFor(pinType, pinId);
+    var info = window.BIM && BIM.pinInfoFor && BIM.pinInfoFor('photo', r.id);
     if (!info || !info.planUrl) {
       UI.toast('That floor plan image is not available', 'warn');
       setShown(false);
@@ -3294,7 +2935,7 @@ window.ProgressPhotos = (function () {
     if (pinEl) {
       if (pin) {
         pinEl.hidden = false;
-        pinEl.className = 'pp-lb-kpoverlay-pin pp-lb-kppin-' + (pin.item_type || 'photo');
+        pinEl.className = 'pp-kpmini-pin pp-kpmini-pin-' + (pin.item_type || 'photo');
         pinEl.style.left = (pin.x_norm * 100) + '%';
         pinEl.style.top = (pin.y_norm * 100) + '%';
       } else {
@@ -3302,20 +2943,67 @@ window.ProgressPhotos = (function () {
       }
     }
     if (coneEl) {
-      // A cone is drawn only when a facing direction was actually recorded
-      // and the item isn't marked drone/top-view (direction_na) — a
-      // fabricated cone would claim a facing direction nobody captured.
-      var hasDir = pin && !pin.direction_na && pin.direction_deg !== null && pin.direction_deg !== undefined;
-      if (hasDir) {
-        coneEl.hidden = false;
-        coneEl.style.left = (pin.x_norm * 100) + '%';
-        coneEl.style.top = (pin.y_norm * 100) + '%';
-        coneEl.style.transform = 'translate(-50%,-100%) rotate(' + pin.direction_deg + 'deg)';
-      } else {
-        coneEl.hidden = true;
-      }
+      // ⚠️ The cone is drawn by BIM.coneWedgeSVG(pin) — the SAME accurate
+      // pie-slice geometry (built from the pin's own edge1/edge2) the
+      // Plans-tab marker and the capture widget itself use, not a generic
+      // fixed-angle wedge merely rotated by the bisector direction_deg.
+      // "display the pin and camera angle in the same way they were
+      // defined" — a bug fix, not just a redraw: the old rotated-wedge
+      // approach here could not represent a cone's real width or reach at
+      // all, only its facing direction. Returns '' (drawn as hidden) for a
+      // drone/top-view mark or a pin with no direction recorded at all.
+      // Item 4: "when navigating through the 360 photo, the key plan if
+      // shown should also have the camera direction rotate to follow" --
+      // for a 360 row the cone is additionally rotated by however far the
+      // pan viewer has moved (lightboxPanoHeadingDeg); for an ordinary
+      // photo that offset is always 0, so this is the same drawing as
+      // before for everything that isn't a 360 photo.
+      var headingOffset = (r.media_type === '360') ? lightboxPanoHeadingDeg : 0;
+      var svg = (pin && window.BIM && BIM.coneWedgeSVGAt) ? BIM.coneWedgeSVGAt(pin, headingOffset) : '';
+      if (svg) { coneEl.hidden = false; coneEl.innerHTML = svg; }
+      else { coneEl.hidden = true; coneEl.innerHTML = ''; }
     }
     setShown(true);
+  }
+  // Item 4: drag-to-pan for the 360° viewer -- .pp-lb-panowrap is a plain
+  // overflow-x:auto strip (native touch swipe for free); this adds
+  // click-and-drag for a mouse and, on every scroll however it happened,
+  // updates lightboxPanoHeadingDeg and re-paints the key-plan cone so it
+  // keeps following the direction actually on screen.
+  // Item 7 (performance): the cone repaint is coalesced to at most once per
+  // animation frame, the same "raw high-frequency input event -> a dirty
+  // flag + a single rAF-driven repaint" discipline this app's own 360°
+  // cylindrical-viewer history already established -- a touch-scrolled
+  // strip firing its native 'scroll' event doesn't need a full
+  // BIM.coneWedgeSVGAt()+innerHTML rebuild for every one of them. The
+  // pointermove handler only WRITES scrollLeft; it never calls the repaint
+  // itself, since that write already fires the 'scroll' listener below.
+  function wirePanoDrag() {
+    var wrap = $('pp-lb-panowrap');
+    if (!wrap) return;
+    var dragging = false, startX = 0, startScroll = 0, repaintRaf = null;
+    function repaintCone() {
+      repaintRaf = null;
+      var r = byId(lightboxIds[lightboxAt]);
+      if (r && r.media_type === '360' && lightboxKeyPlanVisible) paintKeyPlanOverlay(r);
+    }
+    function onScrollChange() {
+      var maxScroll = Math.max(1, wrap.scrollWidth - wrap.clientWidth);
+      lightboxPanoHeadingDeg = (wrap.scrollLeft / maxScroll) * 360;
+      if (repaintRaf) return;
+      repaintRaf = requestAnimationFrame(repaintCone);
+    }
+    wrap.addEventListener('pointerdown', function (e) {
+      dragging = true; startX = e.clientX; startScroll = wrap.scrollLeft;
+      try { wrap.setPointerCapture(e.pointerId); } catch (err) {}
+    });
+    wrap.addEventListener('pointermove', function (e) {
+      if (!dragging) return;
+      wrap.scrollLeft = startScroll - (e.clientX - startX);
+    });
+    wrap.addEventListener('pointerup', function () { dragging = false; });
+    wrap.addEventListener('pointercancel', function () { dragging = false; });
+    wrap.addEventListener('scroll', onScrollChange);
   }
   // Round-2 item 4: drag the overlay's bottom-left corner to resize it —
   // pinned top/right, so only the WIDTH needs to change; the <img>'s own
@@ -4389,8 +4077,13 @@ window.ProgressPhotos = (function () {
     // ⚠️ Audit fix: onClose now covers × / Cancel AND a backdrop click alike
     // (previously only the [data-close] re-wiring further down did, so
     // dismissing via backdrop click left this listener on `window` forever
-    // — see openModal's own comment for the mechanism).
-    var m = openModal(html, 900, function () { window.removeEventListener('resize', sizeCanvas); });
+    // — see openModal's own comment for the mechanism). Also cancels any
+    // still-pending coalesced redraw (item 7) rather than letting one last
+    // rAF callback fire against a canvas that's about to be detached.
+    var m = openModal(html, 900, function () {
+      window.removeEventListener('resize', sizeCanvas);
+      if (mkRedrawRaf) { cancelAnimationFrame(mkRedrawRaf); mkRedrawRaf = null; }
+    });
 
     var canvas = $('pp-mk-canvas'), ctx = canvas.getContext('2d'), img = $('pp-mk-img'), textEl = $('pp-mk-textedit');
     function sizeCanvas() {
@@ -4400,6 +4093,24 @@ window.ProgressPhotos = (function () {
       redraw();
     }
     function redraw() { drawMarkupObjects(ctx, objs, canvas.width, canvas.height, selectedIdx); }
+    // Item 7 (performance, mobile): a continuous drag/resize/rotate/free-draw
+    // gesture used to call the synchronous redraw() above directly off EVERY
+    // raw pointermove event — a full canvas clear + redraw of every object on
+    // each one, with no coalescing, the exact "renderer.render() on every raw
+    // input event" pattern this app's own 360° cylindrical-viewer history
+    // already diagnosed and fixed once ("a textbook cause of perceived
+    // stutter... independent of any listener leak"). A touchscreen can
+    // dispatch several pointermove events between two real screen refreshes,
+    // so this collapses any number landing within one animation frame into a
+    // single repaint. Only the CONTINUOUS pointermove path uses this — every
+    // discrete, click-driven redraw() elsewhere in this editor (creating a
+    // shape, picking a colour, toggling fill…) stays synchronous/instant,
+    // unchanged.
+    var mkRedrawRaf = null;
+    function scheduleRedraw() {
+      if (mkRedrawRaf) return;
+      mkRedrawRaf = requestAnimationFrame(function () { mkRedrawRaf = null; redraw(); });
+    }
     function pushHistory() { history.push(objs.map(function (o) { return Object.assign({}, o); })); undone = []; }
     if (img.complete) sizeCanvas(); else img.onload = sizeCanvas;
     window.addEventListener('resize', sizeCanvas);
@@ -4774,7 +4485,7 @@ window.ProgressPhotos = (function () {
       if (tool === 'polygon' && polyPoints !== null) {
         // Live preview of the NEXT edge, before it's clicked into place.
         objs[polyObjIdx].points = polyPoints.concat([toNorm(e)]);
-        redraw();
+        scheduleRedraw();
         return;
       }
       if (!drawing) return;
@@ -4782,7 +4493,7 @@ window.ProgressPhotos = (function () {
       var px = p[0] * canvas.width, py = p[1] * canvas.height;
       if (rotating) {
         objs[selectedIdx] = Object.assign({}, rotateOrig, { rotation: rotationFromPointer(px - rotateCenter.cx, py - rotateCenter.cy) });
-        redraw(); return;
+        scheduleRedraw(); return;
       }
       if (resizing) {
         if (resizeOrig.type === 'text' || resizeOrig.type === 'icon') {
@@ -4792,7 +4503,7 @@ window.ProgressPhotos = (function () {
           var local = markupToLocal(px, py, resizeOrig, canvas.width, canvas.height, ctx);
           objs[selectedIdx] = resizeBoxObj(resizeOrig, resizeCorner, local[0], local[1], canvas.width, canvas.height);
         }
-        redraw(); return;
+        scheduleRedraw(); return;
       }
       if (tool === 'select') {
         if (selectedIdx < 0 || !dragOrig) return;
@@ -4802,7 +4513,7 @@ window.ProgressPhotos = (function () {
       } else {
         var last = objs[objs.length - 1]; last.x1 = p[0]; last.y1 = p[1];
       }
-      redraw();
+      scheduleRedraw();
     });
     ['pointerup', 'pointercancel'].forEach(function (ev) {
       canvas.addEventListener(ev, function () {
@@ -4850,26 +4561,38 @@ window.ProgressPhotos = (function () {
   // openMarkupEditor's own contract exactly (never called on Cancel) so both
   // editors' callers (Add Media's staged-file grid, the lightbox) look the
   // same either way.
-  function openAdjustEditor(imageUrl, initialAdjustments, onSave) {
+  // Item 5 (overnight batch): "extend feature of adjusting photo to videos
+  // and 360. but no need for mark-up for video and 360." -- a new, optional
+  // `isVideo` flag switches the live preview from the canvas+sharpen
+  // pipeline (which needs a decoded <img> to draw from) to a plain <video>
+  // with the SAME cssFilterFor() applied directly as a CSS filter -- a
+  // browser applies `filter` to a <video> exactly like an <img>, so
+  // exposure/brightness/contrast still preview live with no per-frame
+  // canvas work. ⚠️ Sharpness is dropped for video, not silently ignored --
+  // it needs pixel convolution (getImageData/putImageData), which has no
+  // sane per-frame-of-a-playing-video cost, and CSS has no sharpen filter
+  // to fall back to either; the slider simply isn't offered, matching the
+  // existing rule that Sharpness never applies where CSS can't express it.
+  function openAdjustEditor(imageUrl, initialAdjustments, onSave, isVideo) {
     var adj = adjustmentsOf({ adjustments: initialAdjustments });
     var FIELDS = [
       { key: 'exposure', label: 'Exposure' },
       { key: 'brightness', label: 'Brightness' },
-      { key: 'contrast', label: 'Contrast' },
-      { key: 'sharpness', label: 'Sharpness' }
+      { key: 'contrast', label: 'Contrast' }
     ];
+    if (!isVideo) FIELDS.push({ key: 'sharpness', label: 'Sharpness' });
+    var mediaHTML = isVideo
+      ? '<video id="pp-adj-vid" src="' + Fmt.esc(imageUrl) + '" muted playsinline loop autoplay controls style="max-width:100%;display:block;"></video>'
+      // The <img> stays visible and laid out (needed so getBoundingClientRect
+      // reports a real size to draw the canvas at) — the canvas sits
+      // absolutely on top of it and, since drawImage repaints the whole
+      // rect opaquely, fully covers it the instant the first redraw runs.
+      // Same overlay pairing openMarkupEditor's own canvas uses.
+      : '<img id="pp-adj-img" src="' + Fmt.esc(imageUrl) + '" alt="" /><canvas id="pp-adj-canvas"></canvas>';
     var html =
       '<div class="pd-modal-header"><h3>Adjust</h3><button class="pd-modal-close" data-close>×</button></div>' +
       '<div class="pp-form">' +
-        // The <img> stays visible and laid out (needed so getBoundingClientRect
-        // reports a real size to draw the canvas at) — the canvas sits
-        // absolutely on top of it and, since drawImage repaints the whole
-        // rect opaquely, fully covers it the instant the first redraw runs.
-        // Same overlay pairing openMarkupEditor's own canvas uses.
-        '<div class="pp-adj-canvaswrap pp-mk-canvaswrap" id="pp-adj-canvaswrap">' +
-          '<img id="pp-adj-img" src="' + Fmt.esc(imageUrl) + '" alt="" />' +
-          '<canvas id="pp-adj-canvas"></canvas>' +
-        '</div>' +
+        '<div class="pp-adj-canvaswrap pp-mk-canvaswrap" id="pp-adj-canvaswrap">' + mediaHTML + '</div>' +
         '<div class="pp-adj-sliders">' + FIELDS.map(function (f) {
           return '<label class="pp-adj-row">' + f.label +
             ' <span class="pp-adj-val" id="pp-adj-val-' + f.key + '">' + adj[f.key] + '</span>' +
@@ -4884,21 +4607,28 @@ window.ProgressPhotos = (function () {
     // never a separate [data-close] re-wire, which would miss the backdrop
     // path and leak this resize listener exactly like the audited bug did.
     var m = openModal(html, 700, function () { window.removeEventListener('resize', redraw); });
-    var canvas = $('pp-adj-canvas'), ctx = canvas.getContext('2d'), img = $('pp-adj-img');
-    function redraw() {
-      var r = img.getBoundingClientRect();
-      // A 0-sized box (image not yet loaded/laid out — including the whole
-      // fake-DOM test harness, which never lays anything out) draws nothing
-      // rather than a canvas full of NaN geometry.
-      if (!r.width || !r.height) return;
-      canvas.width = r.width; canvas.height = r.height;
-      canvas.style.width = r.width + 'px'; canvas.style.height = r.height + 'px';
-      ctx.filter = cssFilterFor(adj);
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      ctx.filter = 'none'; // sharpen's own convolution must not be filtered AGAIN on top
-      applySharpen(ctx, canvas.width, canvas.height, adj.sharpness);
+    var redraw;
+    if (isVideo) {
+      var vid = $('pp-adj-vid');
+      redraw = function () { if (vid) vid.style.filter = cssFilterFor(adj); };
+      redraw();
+    } else {
+      var canvas = $('pp-adj-canvas'), ctx = canvas.getContext('2d'), img = $('pp-adj-img');
+      redraw = function () {
+        var r = img.getBoundingClientRect();
+        // A 0-sized box (image not yet loaded/laid out — including the whole
+        // fake-DOM test harness, which never lays anything out) draws nothing
+        // rather than a canvas full of NaN geometry.
+        if (!r.width || !r.height) return;
+        canvas.width = r.width; canvas.height = r.height;
+        canvas.style.width = r.width + 'px'; canvas.style.height = r.height + 'px';
+        ctx.filter = cssFilterFor(adj);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        ctx.filter = 'none'; // sharpen's own convolution must not be filtered AGAIN on top
+        applySharpen(ctx, canvas.width, canvas.height, adj.sharpness);
+      };
+      if (img.complete) redraw(); else img.onload = redraw;
     }
-    if (img.complete) redraw(); else img.onload = redraw;
     window.addEventListener('resize', redraw);
 
     FIELDS.forEach(function (f) {
@@ -4984,13 +4714,22 @@ window.ProgressPhotos = (function () {
       : '<p class="pp-hint">No location selected yet.</p>') +
       '<button type="button" class="pd-btn" id="' + idPrefix + '-locadd">' + (hasAny ? 'Change location…' : '+ Add field') + '</button>';
   }
+  // Item 8: a project with no Location Breakdown configured in the schedule
+  // has nothing for this field to offer — no tree to pick from, no activity
+  // to resolve against. Rather than showing a picker button that only ever
+  // opens to "No Location Breakdown set up for this project yet.", the whole
+  // block (label, picker, resolved-activity context) is omitted entirely and
+  // the field is optional by construction (requiredFieldsMissing below never
+  // asks for it). View name is unrelated to the schedule and always shown.
   function locationFieldHTML(idPrefix, existingValues, existingViewName) {
     _locSel[idPrefix] = Object.assign({}, existingValues || {});
-    return '<div class="pp-span2 pp-wbssection"><label>Location' + (LOC_LEVELS.length ? reqMark() : '') + '</label>' +
-        '<div id="' + idPrefix + '-locfield">' + locChosenHTML(idPrefix) + '</div>' +
-      '</div>' +
-      '<div class="pp-actctx pp-span2" id="' + idPrefix + '-actctx"></div>' +
-      codeOverlayHTML(idPrefix, []) +
+    var locBlock = LOC_LEVELS.length
+      ? '<div class="pp-span2 pp-wbssection"><label>Location' + reqMark() + '</label>' +
+          '<div id="' + idPrefix + '-locfield">' + locChosenHTML(idPrefix) + '</div>' +
+        '</div>' +
+        '<div class="pp-actctx pp-span2" id="' + idPrefix + '-actctx"></div>'
+      : '';
+    return locBlock + codeOverlayHTML(idPrefix, []) +
       '<div class="pd-field pp-span2"><label>View name' + reqMark() +
         ' <span class="pp-optnote">(what this specific photo/view shows)</span></label>' +
         '<input class="pd-input" id="' + idPrefix + '-viewname" value="' + Fmt.esc(existingViewName || '') + '" required /></div>';
@@ -5113,64 +4852,24 @@ window.ProgressPhotos = (function () {
     hydrate(ctx);
   }
 
-  // Add-media type selector (18-item list item 4). Photo is the default and
-  // the only kind this form has ever produced; Video is a plain,
-  // unprocessed upload sharing every other field (trade/works/location/key
-  // plan all apply the same way to a clip). 360°/3D are shown, not hidden —
-  // so a planner can SEE the capability exists — but disabled with a
-  // tooltip, since Gaussian Splatting/RunPod (3D) and 360° capture (buggy,
-  // discontinued 2026-09-02 per owner feedback item 1) are both on hold;
-  // their capture code in pano.js/recon.js is untouched and unreachable from
-  // here, never re-implemented in this form.
-  // 2026-08-29 feedback item 17: four options -- Photo / Video / 360° / 3D.
-  // Picking Photo/Video stays in THIS form (they share every other field).
-  // ⚠️ 2026-09-02: 360° is now ALSO disabled, same shape as 3D — reverses
-  // this comment's earlier "360° capture is being fixed... comes back as a
-  // real choice" note. Re-enabling it is: drop `disabled` on the button
-  // below, restore its click handler (still present, just unreachable while
-  // disabled), which hands off to pano.js's own real capture flow -- a 360°
-  // capture is a fundamentally different pipeline (record/stitch into a
-  // `panoramas` row, not a plain file into `progress_photos`), so it was
-  // always delegated to, never reimplemented here.
-  function mediaTypeSelectorHTML(idPrefix, cur) {
-    cur = cur || 'photo';
-    return '<div class="pd-field pp-span2"><label>Type</label>' +
-      '<div class="pp-mtypesel" role="tablist">' +
-        '<button type="button" class="pp-mtype' + (cur === 'photo' ? ' active' : '') +
-          '" data-mtype="photo" id="' + idPrefix + '-mtype-photo">Photo</button>' +
-        '<button type="button" class="pp-mtype' + (cur === 'video' ? ' active' : '') +
-          '" data-mtype="video" id="' + idPrefix + '-mtype-video">Video</button>' +
-        '<button type="button" class="pp-mtype" id="' + idPrefix + '-mtype-360" disabled title="360° capture is on hold">360°</button>' +
-        '<button type="button" class="pp-mtype" disabled title="3D reconstruction is on hold">3D</button>' +
-      '</div></div>';
-  }
-  function wireMediaTypeSelector(idPrefix, initial, onChange) {
-    var cur = initial || 'photo';
-    var fileInput = $(idPrefix + '-files');
-    function apply() {
-      if (fileInput) fileInput.accept = cur === 'video' ? 'video/*' : 'image/*';
-      // ⚠️ Audit fix: this used to run unconditionally on every call
-      // (including the very FIRST, before the user touches anything), so
-      // the markup's own `capture="environment"` — meant to hint mobile
-      // browsers to open the rear camera directly for a photo — was
-      // stripped on arrival and never actually took effect in Photo mode
-      // either. It's removed only in Video mode now, and restored when
-      // switching back to Photo, so toggling between the two is reversible.
-      if (fileInput) {
-        if (cur === 'video') fileInput.removeAttribute('capture');
-        else fileInput.setAttribute('capture', 'environment');
-      }
-      var pBtn = $(idPrefix + '-mtype-photo'), vBtn = $(idPrefix + '-mtype-video');
-      if (pBtn) pBtn.classList.toggle('active', cur === 'photo');
-      if (vBtn) vBtn.classList.toggle('active', cur === 'video');
-      if (onChange) onChange(cur);
-    }
-    ['photo', 'video'].forEach(function (t) {
-      var btn = $(idPrefix + '-mtype-' + t);
-      if (btn) btn.onclick = function () { cur = t; apply(); };
-    });
-    apply();
-    return { get: function () { return cur; } };
+  // Overnight batch item 6: "since there is already a drop down to choose
+  // photo, video, or 360 when clicking add media, no need for the type
+  // choices inside add media form." mediaTypeSelectorHTML/
+  // wireMediaTypeSelector (the in-form Photo/Video toggle) are RETIRED —
+  // the dropdown in the topbar decides the kind before this modal ever
+  // opens (preset.mtype), so the modal is now built once, for one fixed
+  // kind, with no in-form way to switch it.
+
+  // Turns a captured Blob (no filename of its own) into something the rest
+  // of this file already knows how to handle uniformly with a chosen File —
+  // both `stagedFiles` and `saveCapture`/`uploadFile` read `.name`/`.type`.
+  function blobToFile(blob, kind) {
+    var ext = kind === 'video'
+      ? (/mp4/.test(blob.type || '') ? '.mp4' : '.webm')
+      : '.jpg';
+    var name = (kind === 'video' ? 'capture_video_' : 'capture_photo_') + Date.now() + ext;
+    try { return new File([blob], name, { type: blob.type }); }
+    catch (e) { blob.name = name; return blob; } // ancient browsers lacking a spec File ctor — degrade to a name-tagged Blob
   }
 
   var _uploadModalOpen = false; // guards against stacking a 2nd "+ Add media" overlay on a fast
@@ -5181,34 +4880,54 @@ window.ProgressPhotos = (function () {
     if (_uploadModalOpen) return;   // already open — don't stack a second copy on top of it
     _uploadModalOpen = true;
     preset = preset || {};
+    // ⚠️ Fixed for the life of this modal — the dropdown that opened it
+    // (or a preset caller) already decided Photo vs Video; see item 6 above.
+    var mtype = preset.mtype === 'video' ? 'video' : 'photo';
+    var isVideoKind = mtype === 'video';
+    var nounSingular = isVideoKind ? 'video' : 'photo';
+    var nounPlural = isVideoKind ? 'Videos' : 'Photos';
     var today = new Date().toISOString().slice(0, 10);
     // Item 5: markup is now available AT UPLOAD TIME, before the file is even
     // saved — one local, in-memory annotation per staged file, keyed by
     // index, applied to a throwaway object URL (never uploaded anywhere) and
-    // merged into that file's own `markup` column on save. Rebuilt every
-    // time the file input changes (a fresh batch starts with no markup).
-    var pendingMarkup = {};   // file-array index -> markup objects[]
+    // merged into that file's own `markup` column on save.
+    var pendingMarkup = {};   // staged-file index -> markup objects[]
     // Item 5 (fourth round, 2026-08-30): exposure/brightness/contrast/
     // sharpness, available at upload time for the same reason markup is —
     // one in-memory {exposure,brightness,contrast,sharpness} per staged file.
-    var pendingAdjust = {};   // file-array index -> adjustments object
-    var stagedUrls = [];      // parallel array of object URLs, revoked on close/replace
-    function revokeStaged() {
-      stagedUrls.forEach(function (u) { try { URL.revokeObjectURL(u); } catch (e) {} }); stagedUrls = [];
+    var pendingAdjust = {};   // staged-file index -> adjustments object
+    // Item 1: a capture (Take Photo/Take Video) and a chosen file (Upload
+    // Photo/Upload Video) both land in the SAME array — one staged batch,
+    // built up additively by either route, in whichever order the planner
+    // used them.
+    var stagedFiles = [];     // File | Blob-with-.name, in staging order
+    var stagedUrls = [];      // parallel object URLs, created lazily, revoked on close
+    function cleanupStaged() {
+      stagedUrls.forEach(function (u) { try { URL.revokeObjectURL(u); } catch (e) {} });
       // openModal() calls this onClose on EVERY close path (×, Cancel, backdrop
       // click, and a programmatic m.close() after a successful upload), so this
       // is the one place that reliably clears the guard whichever way it closed.
+      if (window.Capture && Capture.close) Capture.close();
       _uploadModalOpen = false;
     }
     var html =
-      '<div class="pd-modal-header"><h3>Add media</h3>' +
+      '<div class="pd-modal-header"><h3>Add ' + nounPlural.toLowerCase() + '</h3>' +
         '<button class="pd-modal-close" data-close>×</button></div>' +
       '<div class="pp-form">' +
         '<p class="pp-hint">Fields below apply to every file in this batch — edit any ' +
           'individual item afterwards.</p>' +
-        mediaTypeSelectorHTML('pp', preset.mtype) +
-        '<div class="pd-field" id="pp-filesfield"><label>Photos</label>' +
-          '<input class="pd-input" type="file" id="pp-files" accept="image/*" capture="environment" multiple /></div>' +
+        '<div class="pd-field" id="pp-filesfield"><label>' + nounPlural + '</label>' +
+          // Item 1: "provide separate buttons for take photo/video and
+          // upload photo/video" -- Take opens the in-app camera overlay
+          // (capture.js), Upload triggers the same hidden file input this
+          // form has always used, unchanged in every other respect.
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 8px;">' +
+            '<button type="button" class="pd-btn" id="pp-take">Take ' + (isVideoKind ? 'Video' : 'Photo') + '</button>' +
+            '<button type="button" class="pd-btn" id="pp-choosefiles">Upload ' + (isVideoKind ? 'Video' : 'Photo') + '</button>' +
+          '</div>' +
+          '<input class="pd-input" type="file" id="pp-files" hidden accept="' + (isVideoKind ? 'video/*' : 'image/*') + '"' +
+            (isVideoKind ? '' : ' capture="environment"') + ' multiple />' +
+        '</div>' +
         '<div class="pp-gallery" id="pp-stagedgrid" style="margin:8px 0;"></div>' +
         '<div class="pp-form2">' +
           '<div class="pd-field"><label>Description</label>' +
@@ -5225,66 +4944,34 @@ window.ProgressPhotos = (function () {
         '<button class="pd-btn" data-close>Cancel</button>' +
         '<button class="pd-btn pd-btn-primary" id="pp-save">Upload</button></div>';
 
-    var m = openModal(html, 640, revokeStaged);
+    var m = openModal(html, 640, cleanupStaged);
     wireLocationField('pp');
     wireWorksMultiField('pp');
     if (window.BIM) BIM.wirePinField('pp');
-    // ⚠️ ROOT-CAUSE FIX (fifth round item 1): switching Photo<->Video after a
-    // file was already staged left the WRONG kind of file sitting there — a
-    // file input's own FileList can't be reassigned by script, so changing
-    // `accept`/`capture` did nothing to whatever was already chosen; only
-    // re-picking files through the input ever rebuilt the staged grid. Every
-    // type change now clears the whole staged batch (revoking object URLs,
-    // dropping pending markup/adjustments, resetting the input itself), so a
-    // photo staged for "Photo" can never survive into a "Video" upload.
-    var mtype = wireMediaTypeSelector('pp', preset.mtype, function (t) {
-      var fld = $('pp-filesfield'); if (fld) fld.querySelector('label').textContent = t === 'video' ? 'Videos' : 'Photos';
-      var filesInput = $('pp-files');
-      if (filesInput && filesInput.value) filesInput.value = '';
-      revokeStaged();
-      pendingMarkup = {}; pendingAdjust = {};
-      var grid = $('pp-stagedgrid'); if (grid) grid.innerHTML = '';
-    });
-    // 360° hands off to pano.js's own real capture flow (item 17) — this
-    // modal closes rather than trying to represent a recording/stitching
-    // pipeline inside the same form as a plain file upload.
-    // ⚠️ Item 9 fix: wrapped in try/catch and reports the error visibly. The
-    // REAL cause of "clicking 360 does nothing" was a bug in openModal()
-    // itself (fixed above, 2026-08-30) — m.close() used to throw, so
-    // execution never reached PANO.openCapture() at all. This try/catch is
-    // belt-and-braces so a FUTURE failure here (e.g. pano.js not yet loaded)
-    // is visible instead of silent, not a fix for the same bug twice.
-    // ⚠️ 2026-09-02: the button is `disabled` now (360° discontinued, item 1
-    // of this round), so this handler is currently unreachable — left wired
-    // rather than removed, so re-enabling the button alone restores it.
-    if ($('pp-mtype-360')) $('pp-mtype-360').onclick = function () {
-      try {
-        m.close();
-        if (window.PANO && PANO.openCapture) PANO.openCapture();
-        else UI.toast('360° capture is not available', 'error');
-      } catch (e) {
-        UI.toast('Could not open 360° capture: ' + ((e && e.message) || e), 'error');
-      }
-    };
-    // Item 5 — a thumbnail + "Markup" button per staged file, appearing the
-    // moment files are chosen (before Upload is ever pressed).
-    if ($('pp-files')) $('pp-files').onchange = function () {
-      revokeStaged();
-      pendingMarkup = {}; pendingAdjust = {};
-      var files = this.files || [];
-      var grid = $('pp-stagedgrid');
-      if (!grid) return;
-      grid.innerHTML = Array.prototype.map.call(files, function (f, i) {
-        var isImg = /^image\//.test(f.type);
-        var url = isImg ? URL.createObjectURL(f) : '';
-        if (url) stagedUrls[i] = url;
+
+    // Item 2: the staged-file grid's video preview -- a video file used to
+    // render as a bare filename placeholder (`isImg` gated the object URL
+    // entirely), which is the reported "the preview for the video ... is
+    // not working". Every staged file now gets a real object URL and a
+    // real preview element, image or video.
+    function renderStagedGrid() {
+      var grid = $('pp-stagedgrid'); if (!grid) return;
+      grid.innerHTML = stagedFiles.map(function (f, i) {
+        if (stagedUrls[i] === undefined) stagedUrls[i] = URL.createObjectURL(f);
+        var url = stagedUrls[i];
+        var fIsVideo = isVideoKind || /^video\//.test(f.type || '');
+        var media = fIsVideo
+          ? '<video class="pp-cardphoto" src="' + Fmt.esc(url) + '" muted playsinline preload="metadata" controls></video>'
+          : '<img class="pp-cardphoto" src="' + Fmt.esc(url) + '" alt="" />';
+        // Item 5: "extend feature of adjusting photo to videos and 360 ...
+        // no need for mark-up for video" -- Adjust is offered for every
+        // staged file; Markup only for a real image.
         return '<figure class="pp-card" data-staged="' + i + '">' +
-          (url ? '<div class="pp-cardimg"><img class="pp-cardphoto" src="' + Fmt.esc(url) + '" alt="" /></div>'
-               : '<div class="pp-cardimg pp-noimg" style="height:210px;">' + Fmt.esc(f.name) + '</div>') +
-          (isImg ? '<div class="pp-cardactions">' +
-              '<button type="button" class="pd-btn" style="margin:6px;" data-markupstage="' + i + '">Markup</button>' +
-              '<button type="button" class="pd-btn" style="margin:6px;" data-adjuststage="' + i + '">Adjust</button>' +
-            '</div>' : '') +
+          '<div class="pp-cardimg">' + media + '</div>' +
+          '<div class="pp-cardactions">' +
+            (fIsVideo ? '' : '<button type="button" class="pd-btn" style="margin:6px;" data-markupstage="' + i + '">Markup</button>') +
+            '<button type="button" class="pd-btn" style="margin:6px;" data-adjuststage="' + i + '">Adjust</button>' +
+          '</div>' +
         '</figure>';
       }).join('');
       Array.prototype.forEach.call(grid.querySelectorAll('[data-markupstage]'), function (b) {
@@ -5296,16 +4983,39 @@ window.ProgressPhotos = (function () {
       Array.prototype.forEach.call(grid.querySelectorAll('[data-adjuststage]'), function (b) {
         b.onclick = function () {
           var i = +this.dataset.adjuststage;
-          openAdjustEditor(stagedUrls[i], pendingAdjust[i] || {}, function (adj) { pendingAdjust[i] = adj; });
+          var fIsVideo = isVideoKind || /^video\//.test((stagedFiles[i] && stagedFiles[i].type) || '');
+          openAdjustEditor(stagedUrls[i], pendingAdjust[i] || {}, function (adj) { pendingAdjust[i] = adj; }, fIsVideo);
         };
+      });
+    }
+    function addStagedFiles(list) {
+      Array.prototype.forEach.call(list || [], function (f) { stagedFiles.push(f); });
+      renderStagedGrid();
+    }
+
+    if ($('pp-choosefiles')) $('pp-choosefiles').onclick = function () { var el = $('pp-files'); if (el) el.click(); };
+    if ($('pp-files')) $('pp-files').onchange = function () {
+      addStagedFiles(this.files);
+      this.value = ''; // lets picking the exact same file again still fire a change
+    };
+    // Item 1: "bring user to a separate page or pop-up window inside the
+    // app to take photos/videos directly inside app" -- hands off to
+    // capture.js, which owns the whole camera overlay; this modal only
+    // ever receives a finished Blob (or null on cancel) back.
+    if ($('pp-take')) $('pp-take').onclick = function () {
+      if (!window.Capture) { UI.toast('In-app camera capture is not available on this device — choose a file instead', 'warn'); return; }
+      var fn = isVideoKind ? Capture.takeVideo : Capture.takePhoto;
+      fn(function (blob) {
+        if (!blob) return; // the camera overlay was cancelled
+        addStagedFiles([blobToFile(blob, mtype)]);
       });
     };
     hydrate(m.el);
 
     $('pp-save').onclick = async function () {
-      var files = $('pp-files').files;
-      var kind = mtype.get();
-      if (!files || !files.length) { UI.toast('Choose at least one ' + (kind === 'video' ? 'video' : 'photo'), 'warn'); return; }
+      var files = stagedFiles;
+      var kind = mtype;
+      if (!files.length) { UI.toast('Choose or take at least one ' + nounSingular, 'warn'); return; }
       var reqErr = requiredFieldsMissing('pp');
       if (reqErr) { UI.toast(reqErr, 'warn'); return; }
       var locVals = currentLocValues('pp');
@@ -5393,6 +5103,218 @@ window.ProgressPhotos = (function () {
         await Promise.all(newIds.map(function (id) { return BIM.savePinForItem('photo', id, pinData); }));
       }
       if (typeof preset.onDone === 'function') preset.onDone(newIds);
+    };
+  }
+
+  // ============================================================================
+  // Item 3: "add option to add 360 ... use the same form as when adding
+  // photo video. except when take video is clicked, provide guides on
+  // camera to take the video for processing to 360. provide preview of
+  // processed 360 photo. in case app is offline, prompt user to save video
+  // to gallery for upload later on. when adding the key plan, ask user for
+  // representative photo frame and ask for the location, angle, direction
+  // of that specific frame to match. the representative frame will also be
+  // the thumbnail in previews."
+  //
+  // ⚠️ Deliberately its own flow, not a third mtype inside openUpload's
+  // batch pipeline: a 360° capture is ONE video in, ONE stitched-panorama
+  // row out -- fundamentally a different shape from N files -> N rows.
+  // The row still lands in `progress_photos` (media_type:'360'), never a
+  // second panorama table -- see pano360.js's own header comment for why.
+  // ============================================================================
+  function open360Upload() {
+    if (!pid) { UI.toast('Select a project first', 'warn'); return; }
+    if (_uploadModalOpen) return;
+    _uploadModalOpen = true;
+    var today = new Date().toISOString().slice(0, 10);
+    var videoBlob = null, videoUrl = null;
+    var stitchResult = null, stitchUrl = null;   // { blob, quality, width, height }
+    var repBlob = null, repUrl = null;           // representative frame -- becomes thumb_url
+    var pendingAdjust = {};                       // item 5: Adjust applies to 360 too, keyed 0 (a single item)
+    var repTimer = null;
+
+    function revokeAll() {
+      [videoUrl, stitchUrl, repUrl].forEach(function (u) { if (u) { try { URL.revokeObjectURL(u); } catch (e) {} } });
+      if (window.Capture && Capture.close) Capture.close();
+      _uploadModalOpen = false;
+    }
+
+    var html =
+      '<div class="pd-modal-header"><h3>Add 360° photo</h3>' +
+        '<button class="pd-modal-close" data-close>×</button></div>' +
+      '<div class="pp-form" id="pp360-body">' +
+        '<p class="pp-hint">Record a slow walk-around, or upload a video already recorded, and it will be ' +
+          'processed into a single 360° panorama.</p>' +
+        '<div id="pp360-step-source" style="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 8px;">' +
+          '<button type="button" class="pd-btn" id="pp360-take">Take 360°</button>' +
+          '<button type="button" class="pd-btn" id="pp360-choose">Upload 360° video</button>' +
+          '<input class="pd-input" type="file" id="pp360-file" hidden accept="video/*" />' +
+        '</div>' +
+        '<div id="pp360-offline" hidden>' +
+          '<p class="pp-hint">You are offline right now, so this video cannot be processed and uploaded from here. ' +
+            'Save it to your device\'s gallery and add it as a 360° photo once you are back online.</p>' +
+          '<a id="pp360-savelocal" class="pd-btn pd-btn-primary" download="360-capture.webm">Save video to gallery</a> ' +
+          '<button type="button" class="pd-btn" id="pp360-offlineclose">Close</button>' +
+        '</div>' +
+        '<div id="pp360-progress" hidden><div class="pp-progress" id="pp360-prog"></div></div>' +
+        '<div id="pp360-result" hidden>' +
+          '<div id="pp360-qualitywarn" class="pp-hint" hidden style="color:var(--pd-warn,#a66);">' +
+            'Low confidence stitch -- the video may not have had enough overlap between frames. Review before presenting.</div>' +
+          '<div class="pp-adj-canvaswrap pp-mk-canvaswrap" id="pp360-previewwrap">' +
+            '<img id="pp360-preview" alt="Processed 360° preview" style="max-width:100%;display:block;" />' +
+          '</div>' +
+          '<div style="margin:6px 0;"><button type="button" class="pd-btn" id="pp360-adjust">Adjust</button></div>' +
+          '<div class="pd-field"><label>Representative frame ' +
+            '<span class="pd-muted" style="font-weight:400;">(also used as the thumbnail)</span></label>' +
+            '<input type="range" id="pp360-repslider" min="0" max="1" step="0.01" value="0.5" style="width:100%;" />' +
+            '<img id="pp360-repframe" alt="Representative frame" style="max-width:220px;display:block;margin-top:6px;" />' +
+          '</div>' +
+          '<div class="pp-form2">' +
+            '<div class="pd-field"><label>Description</label>' +
+              '<input class="pd-input" id="pp360-desc" placeholder="e.g. Model Unit" /></div>' +
+            '<div class="pd-field"><label>Capture date' + reqMark() + '</label>' +
+              '<input class="pd-input" type="date" id="pp360-date" value="' + today + '" required /></div>' +
+            worksMultiFieldHTML('pp360', []) +
+            locationFieldHTML('pp360', {}) +
+            (window.BIM ? BIM.pinFieldHTML('pp360', null) : '') +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="pd-modal-footer" id="pp360-footer" hidden>' +
+        '<button class="pd-btn" data-close>Cancel</button>' +
+        '<button class="pd-btn pd-btn-primary" id="pp360-save">Save 360° photo</button></div>';
+
+    var m = openModal(html, 640, revokeAll);
+    wireLocationField('pp360');
+    wireWorksMultiField('pp360');
+    if (window.BIM) BIM.wirePinField('pp360');
+    hydrate(m.el);
+
+    function show(id, on) { var el = $(id); if (el) el.hidden = !on; }
+
+    // "in case app is offline, prompt user to save video to gallery for
+    // upload later on" -- checked the moment a video is actually acquired
+    // (recording or picking a file both work fine offline; it is the
+    // upload/processing-then-upload round trip that cannot).
+    function haveVideo(blob) {
+      videoBlob = blob;
+      videoUrl = URL.createObjectURL(blob);
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        show('pp360-step-source', false);
+        var a = $('pp360-savelocal');
+        if (a) { a.href = videoUrl; a.download = '360-capture' + (/mp4/.test(blob.type || '') ? '.mp4' : '.webm'); }
+        show('pp360-offline', true);
+        return;
+      }
+      runStitch();
+    }
+
+    async function runStitch() {
+      show('pp360-step-source', false);
+      show('pp360-progress', true);
+      var prog = $('pp360-prog'); if (prog) prog.textContent = 'Reading video…';
+      try {
+        var res = await Pano360.stitchFromVideo(videoBlob, function (stage, frac) {
+          if (!prog) return;
+          prog.textContent = (stage === 'frames' ? 'Reading frames…' : 'Stitching panorama…') + ' ' + Math.round(frac * 100) + '%';
+        });
+        stitchResult = res;
+        stitchUrl = URL.createObjectURL(res.blob);
+        show('pp360-progress', false);
+        show('pp360-result', true);
+        show('pp360-footer', true);
+        var img = $('pp360-preview'); if (img) img.src = stitchUrl;
+        var warn = $('pp360-qualitywarn'); if (warn) warn.hidden = res.quality !== 'poor';
+        // The representative-frame scrubber's default is the midpoint of
+        // the walk-around, before the planner ever touches the slider.
+        var dur = await Pano360.getDuration(videoBlob);
+        var slider = $('pp360-repslider');
+        if (slider) { slider.max = String(Math.max(0.01, dur)); slider.value = String(dur / 2); }
+        updateRepFrame(dur / 2);
+      } catch (err) {
+        show('pp360-progress', false);
+        UI.toast('Could not build the panorama' + (err && err.message ? ' (' + err.message + ')' : ''), 'error');
+        show('pp360-step-source', true);
+      }
+    }
+
+    async function updateRepFrame(atSeconds) {
+      try {
+        var blob = await Pano360.extractFrameAt(videoBlob, atSeconds, 640);
+        if (repUrl) { try { URL.revokeObjectURL(repUrl); } catch (e) {} }
+        repBlob = blob;
+        repUrl = URL.createObjectURL(blob);
+        var img = $('pp360-repframe'); if (img) img.src = repUrl;
+      } catch (e) { /* the video is still fine — the scrubber just has nothing new to show this tick */ }
+    }
+
+    if ($('pp360-choose')) $('pp360-choose').onclick = function () { var el = $('pp360-file'); if (el) el.click(); };
+    if ($('pp360-file')) $('pp360-file').onchange = function () {
+      var f = this.files && this.files[0];
+      this.value = '';
+      if (f) haveVideo(f);
+    };
+    if ($('pp360-take')) $('pp360-take').onclick = function () {
+      if (!window.Capture) { UI.toast('In-app camera capture is not available on this device — upload a video instead', 'warn'); return; }
+      Capture.take360(function (blob) { if (blob) haveVideo(blob); });
+    };
+    if ($('pp360-offlineclose')) $('pp360-offlineclose').onclick = function () { m.close(); };
+    if ($('pp360-repslider')) {
+      $('pp360-repslider').oninput = function () {
+        var t = +this.value;
+        clearTimeout(repTimer);
+        repTimer = setTimeout(function () { updateRepFrame(t); }, 150);
+      };
+    }
+    // Item 5: Adjust extends to 360 -- previewed against the stitched
+    // panorama image, saved onto the row exactly like a photo's adjustments.
+    if ($('pp360-adjust')) $('pp360-adjust').onclick = function () {
+      if (!stitchUrl) return;
+      openAdjustEditor(stitchUrl, pendingAdjust[0] || {}, function (adj) { pendingAdjust[0] = adj; });
+    };
+
+    $('pp360-save').onclick = async function () {
+      if (!stitchResult || !repBlob) { UI.toast('Still processing the panorama — please wait', 'warn'); return; }
+      var reqErr = requiredFieldsMissing('pp360');
+      if (reqErr) { UI.toast(reqErr, 'warn'); return; }
+      this.disabled = true;
+      var locVals = currentLocValues('pp360');
+      var act = resolveActivity(locVals);
+      var worksList = readWorksMulti('pp360');
+      var tradeList = deriveTradesForWorksList(worksList);
+      var pinData = window.BIM ? BIM.readPinField('pp360') : null;
+      var viewNameEl = $('pp360-viewname');
+      try {
+        var stitchFile = blobToFile(stitchResult.blob, 'photo');
+        var mainPath = await uploadFile(stitchFile);
+        var repFile = blobToFile(repBlob, 'photo');
+        var thumbPath = await uploadFile(repFile);
+        var row = {
+          project_id: pid, created_by: uid, title: stitchFile.name,
+          photo_url: mainPath, thumb_url: thumbPath, media_type: '360',
+          description: $('pp360-desc').value.trim(),
+          taken_at: $('pp360-date').value || null,
+          trades: tradeList, works_multi: worksList,
+          works_activity_ids: worksActivityIdsFor(worksList),
+          trade: tradeList[0] || null, works: worksList[0] || null,
+          location: locBreadcrumb(locVals) || null, location_values: locVals,
+          view_name: viewNameEl ? viewNameEl.value.trim() : null,
+          activity_id: act ? act.id : null, activity_name: act ? act.name : null,
+          tags: readCodeTags('pp360')
+        };
+        if (pendingAdjust[0] && !adjustmentsAreDefault(pendingAdjust[0])) row.adjustments = pendingAdjust[0];
+        var w = await tolerantWrite({ table: TABLE, op: 'insert', patch: row });
+        if (!w.ok) { UI.toast(w.error && w.error.message || 'Could not save the 360° photo', 'error'); this.disabled = false; return; }
+        m.close();
+        UI.toast('360° photo saved' + (stitchResult.quality === 'poor' ? ' (low confidence stitch)' : ''), 'ok');
+        await load();
+        if (pinData && window.BIM && BIM.savePinForItem && w.id) {
+          await BIM.savePinForItem('photo', w.id, pinData);
+        }
+      } catch (err) {
+        UI.toast('Could not save the 360° photo (' + (err && err.message || err) + ')', 'error');
+        this.disabled = false;
+      }
     };
   }
 
@@ -5845,12 +5767,21 @@ window.ProgressPhotos = (function () {
     // immediately, and ensureFullUrl() below swaps in the real full-
     // resolution preview once it's signed, rather than the form needing to
     // await a network round-trip before it can even open.
-    var previewSrc = thumbUrlOf(r);
+    // Item 2: a VIDEO row has no thumb_url/transform stand-in to show —
+    // thumbUrlOf() would resolve to '' for one until its full-res is
+    // signed, so the old `previewSrc ? '<img ...>' : ''` simply rendered no
+    // preview at all when editing an existing video. It now renders a real
+    // <video>, resolved via the same ensureFullUrl() the lightbox uses. A
+    // 360 row's thumb_url IS its representative frame, so the plain <img>
+    // path already works correctly for it — no special-case needed there.
+    var editIsVideo = r.media_type === 'video';
+    var previewSrc = editIsVideo ? '' : thumbUrlOf(r);
     var html =
       '<div class="pd-modal-header"><h3>Edit photo</h3>' +
         '<button class="pd-modal-close" data-close>×</button></div>' +
       '<div class="pp-form">' +
-        (previewSrc ? '<img class="pp-formpreview" id="pp-e-preview" src="' + Fmt.esc(previewSrc) + '" alt="" />' : '') +
+        (editIsVideo ? '<video class="pp-formpreview" id="pp-e-preview" controls muted playsinline></video>'
+          : (previewSrc ? '<img class="pp-formpreview" id="pp-e-preview" src="' + Fmt.esc(previewSrc) + '" alt="" />' : '')) +
         '<div class="pp-form2">' +
           '<div class="pd-field"><label>Description</label>' +
             '<input class="pd-input" id="pp-e-desc" value="' + Fmt.esc(r.description || '') + '" /></div>' +
@@ -5872,9 +5803,9 @@ window.ProgressPhotos = (function () {
     // the m.close reassignment those relied on and left the cursor
     // broadcasting "still editing" to every other viewer indefinitely.
     var m = openModal(html, 560, function () { broadcastCollabSel(null); });
-    if (previewSrc) ensureFullUrl(r).then(function (full) {
-      var img = $('pp-e-preview');   // gone once the modal has closed — the query itself is the "still open" check
-      if (full && img) img.src = full;
+    if (editIsVideo || previewSrc) ensureFullUrl(r).then(function (full) {
+      var el = $('pp-e-preview');   // gone once the modal has closed — the query itself is the "still open" check
+      if (full && el) el.src = full;
     });
     var codeWrap = $('pp-e-codes');
     if (codeWrap) Array.prototype.forEach.call(codeWrap.querySelectorAll('input[type=checkbox]'), function (c) {
@@ -6169,15 +6100,6 @@ window.ProgressPhotos = (function () {
       finally { filters = saved; }
     },
     _mergedRows: function () { return mergedRows(); },
-    _panoPseudoRow: function (p) { return panoPseudoRow(p); },
-    _reconPseudoRow: function (r) { return reconPseudoRow(r); },
-    // Test-only hooks (2026-09-04 fix — the batch trash icon refused a mixed
-    // selection outright; see openBatchDeleteConfirm's own comment). Splitting
-    // is pure and worth executing directly; the confirm/delete flow itself is
-    // exposed so a test can drive the real modal + real PANO/RECON.deleteById
-    // dispatch against an injected store, the same way _openModal already
-    // lets a test drive the recursion-fix modal for real.
-    _splitSelectedIds: function (ids) { return splitSelectedIds(ids); },
     _openBatchDeleteConfirm: function (ids) { return openBatchDeleteConfirm(ids); },
     // Test-only hooks for the markup engine (Batch F, 2026-08-29) — the same
     // convention as every hook above: genuinely EXECUTE the per-shape canvas
@@ -6230,7 +6152,7 @@ window.ProgressPhotos = (function () {
     _adjustmentsAreDefault: function (adj) { return adjustmentsAreDefault(adj); },
     _adjustmentsOf: function (r) { return adjustmentsOf(r); },
     _applySharpen: function (ctx, w, h, amount) { applySharpen(ctx, w, h, amount); },
-    openAdjustEditor: function (imageUrl, initialAdjustments, onSave) { openAdjustEditor(imageUrl, initialAdjustments, onSave); },
+    openAdjustEditor: function (imageUrl, initialAdjustments, onSave, isVideo) { openAdjustEditor(imageUrl, initialAdjustments, onSave, isVideo); },
     // Item 16 (2026-08-29, second round) — Plan view relocated here from
     // bim.js. Genuinely EXECUTE the cluster grouping bim.js's own tests
     // already proved out, now against THIS file's version.
@@ -6352,6 +6274,13 @@ window.ProgressPhotos = (function () {
     // matching ppr.js's/bim.js's own established `_setCanWrite` hook.
     _setCanWrite: function (v) { canWrite = v; },
     _favBtnHTML: function (r) { return favBtnHTML(r); },
-    _toggleFavorite: function (r) { return toggleFavorite(r); }
+    _toggleFavorite: function (r) { return toggleFavorite(r); },
+    // Test-only hook for the 360 pano-drag rAF coalescing fix (2026-09-11
+    // performance pass) — genuinely EXECUTES wirePanoDrag() so a test can
+    // prove the scroll-driven cone repaint really coalesces into at most
+    // one requestAnimationFrame callback per burst, rather than only
+    // reading the source. Reads `$('pp-lb-panowrap')` exactly as the real
+    // call site does; a test wires a fake element into that id first.
+    _wirePanoDrag: function () { return wirePanoDrag(); }
   };
 })();
