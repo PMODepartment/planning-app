@@ -83,6 +83,11 @@
       padding:6px 0 2px; margin-top:4px; border-top:1px solid var(--pd-line); }
     .ps-tb-overflow[hidden] { display:none; }
     #ps-tb-more.on { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
+    /* Compact: the scale and view buttons keep their icon and their caret, lose their word. Their
+       `title` already names the current value, so nothing becomes unknowable — only unlabelled, and
+       only while the row is too narrow to afford the word. */
+    .ps-tb-row.ps-tb-compact #ps-zoombtn-txt,
+    .ps-tb-row.ps-tb-compact #ps-viewbtn-txt { display:none; }
     .ps-tb-div { width:1px; align-self:stretch; min-height:26px; background:var(--pd-line); margin:0 2px; }
     /* one consistent control height across selects, inputs, buttons & segments */
     .ps-toolbar .pd-select, .ps-toolbar .pd-input, .ps-toolbar .pd-btn { height:36px; }
@@ -9638,8 +9643,14 @@
        the planner can still read it — the button's own tooltip. */
     var _gb = document.getElementById('ps-groupbtn');
     var t = document.getElementById('ps-groupbtn-txt');
-    var _full = groupBys.map(dimLabel).join(' › ');
-    if (t) t.textContent = _full;   // value only — see _paintViewBtn
+    var _labels = groupBys.map(dimLabel);
+    var _full = _labels.join(' › ');
+    /* ⚠️ A CSS ellipsis on a path truncates mid-journey — "Trade › Activity › Tower › Level…" says
+       where the grouping starts and nothing about where it ends, which is the half that tells you
+       how fine it is. Four or more levels show BOTH ENDS and the depth instead. */
+    var _face = _labels.length <= 3 ? _full
+      : (_labels[0] + ' › … › ' + _labels[_labels.length - 1] + ' (' + _labels.length + ')');
+    if (t) t.textContent = _face;   // value only — see _paintViewBtn
     /* ⚠️ The face is capped at 190px and ellipsised, so a long path is TRUNCATED ON SCREEN. The
        whole thing goes on the title, or capping it would have hidden which grouping is live —
        trading one defect for a worse one. */
@@ -40957,10 +40968,18 @@
     if (!_TB_ORDER) _TB_ORDER = [].slice.call(row.children);
     _TB_ORDER.forEach(function (el) { row.insertBefore(el, moreBtn); });
 
+    row.classList.remove('ps-tb-compact');
+
     // one row's height = the tallest control; anything more means it has wrapped
     var unit = 0;
     _TB_ORDER.forEach(function (el) { unit = Math.max(unit, el.offsetHeight || 0); });
     if (!unit) return;
+
+    /* ⚠️ SQUEEZE BEFORE HIDING. Dropping the scale and view buttons to their icons buys ~105px, and
+       a control that is narrower is still a control the planner can see — one moved into the
+       overflow row is one they have to go looking for. So compact first, shed only if that is not
+       enough, and on a wide window neither happens and the names stay. */
+    if (row.offsetHeight > unit + 8) row.classList.add('ps-tb-compact');
 
     for (var i = 0; i < _TB_SHED.length && row.offsetHeight > unit + 8; i++) {
       var el = _tbUnit(_TB_SHED[i]);
