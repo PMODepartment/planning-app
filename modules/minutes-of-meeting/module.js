@@ -1592,6 +1592,8 @@ window.MinutesOfMeeting = (function () {
       var c = itemOpenCount([m.id]);
       out.push({
         kind: 'meeting', id: m.id, favorite: !!m.is_favorite,
+        // Item 1 (2026-09-11 round): the List view's manual drag order.
+        sortOrder: m.sort_order == null ? null : m.sort_order,
         title: m.title || '(untitled)',
         dateSort: m.meeting_date || '',
         dateLabel: m.meeting_date
@@ -1609,6 +1611,7 @@ window.MinutesOfMeeting = (function () {
       var cs = itemOpenCount(schedMeetingsOf(s.id).map(function (m) { return m.id; }));
       out.push({
         kind: 'series', id: s.id, favorite: !!s.is_favorite,
+        sortOrder: s.sort_order == null ? null : s.sort_order,
         title: s.title || '(untitled)',
         // ⚠️ dateSort is a real ISO date (next occurrence, else its own start)
         // even though the DISPLAYED label is the frequency, so date-sorting a
@@ -1650,11 +1653,33 @@ window.MinutesOfMeeting = (function () {
       return true;
     });
   }
-  // ⚠️ Favorites pinned to the top is layered OVER whatever column sort is
+  // Item 1 (2026-09-11 round): "manual order" — a `sort_order` a planner sets
+  // by dragging a row (migrations/2026-09-11-mom-list-reorder.sql), falling
+  // back to the same date-based order the List view already defaults to for
+  // any row nobody has dragged yet.
+  function momOrderCmp(a, b) {
+    if (a.sortOrder != null || b.sortOrder != null) {
+      if (a.sortOrder == null) return 1;
+      if (b.sortOrder == null) return -1;
+      if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+    }
+    if (a.dateSort !== b.dateSort) return a.dateSort < b.dateSort ? 1 : -1;
+    return 0;
+  }
+  // ⚠️ Favorites pinned to the top is layered OVER whatever COLUMN sort is
   // active, not an alternative to it — partition into favorite/non-favorite,
   // sort each half with the same comparator, concatenate. A column click still
   // reorders within each half rather than fighting the favorite pin.
+  // ⚠️⚠️ Manual order (`col === 'manual'`) is the ONE exception, deliberately:
+  // it sorts the WHOLE list as one flat sequence with no pin at all. Pinning
+  // it too would mean a row dropped just above a favorite silently landed
+  // somewhere else instead — the drop position lying about the result is a
+  // worse surprise than a starred row simply not floating to the top while
+  // its order is being set by hand. The star still filters and still
+  // displays; it stops being an ordering rule for as long as manual order is
+  // the active List sort.
   function momSortedRows(rows) {
+    if (_momSort.col === 'manual') return rows.slice().sort(momOrderCmp);
     var col = _momSort.col, dir = _momSort.dir === 'asc' ? 1 : -1;
     function cmp(a, b) {
       var av, bv;
@@ -1868,22 +1893,138 @@ window.MinutesOfMeeting = (function () {
     return '<th class="il-mom-th' + (on ? ' on' : '') + '" data-sort="' + col + '">' + Fmt.esc(label) +
       (on ? (_momSort.dir === 'asc' ? ' ▲' : ' ▼') : '') + '</th>';
   }
+  // Item 1 (2026-09-11 round): the drag column doubles as its own toggle — see
+  // the `col === 'manual'` branch in wireBrowse's `[data-sort]` handler below.
+  function momListDragTh(manual) {
+    return '<th class="il-mom-th il-mom-dragth' + (manual ? ' on' : '') +
+      '" data-sort="manual" title="Drag rows to set a custom order">⋮⋮</th>';
+  }
+  // Same visual grip as the Issues & Concerns / Lessons Learned register
+  // (issues-lessons/module.js dragGripHTML) — each module keeps its own copy
+  // per MODULE_CONTRACT.md (no cross-module shared file for this), but the
+  // gesture is the same: Pointer Events, one handler for mouse, touch and pen,
+  // no HTML5 `draggable` (which never fires on a touch device at all).
+  function momDragGripHTML(id) {
+    return '<span class="il-draghandle il-reorderable" data-reorder="' + Fmt.esc(id) +
+      '" title="Drag to reorder"><svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor">' +
+      '<circle cx="3" cy="3" r="1.3"/><circle cx="9" cy="3" r="1.3"/><circle cx="3" cy="8" r="1.3"/>' +
+      '<circle cx="9" cy="8" r="1.3"/><circle cx="3" cy="13" r="1.3"/><circle cx="9" cy="13" r="1.3"/></svg></span>';
+  }
+  // `sorted` is the exact array `renderMomListHTML` drew the rows from
+  // (recomputed identically in wireBrowse — a cheap in-memory re-sort of
+  // already-loaded MOMS/SCHEDULES, not a re-fetch). Ids are the composite
+  // "kind:id" string dragGripHTML/data-reorder-row carry, since a meeting and
+  // a series can share the numbering space but never the identity.
+  function momWireReorder(container, sorted) {
+    if (!container) return;
+    var grips = container.querySelectorAll('[data-reorder]');
+    var rows = container.querySelectorAll('[data-reorder-row]');
+    function clearMarks() {
+      Array.prototype.forEach.call(rows, function (x) { x.classList.remove('il-drop-before', 'il-drop-after'); });
+    }
+    async function applyMomReorder(dragKey, targetKey, before) {
+      var arr = sorted.slice();
+      var fromIdx = -1, targetIdx = -1;
+      for (var i = 0; i < arr.length; i++) { if (arr[i].kind + ':' + arr[i].id === dragKey) { fromIdx = i; break; } }
+      if (fromIdx < 0) return;
+      var moved = arr.splice(fromIdx, 1)[0];
+      for (var j = 0; j < arr.length; j++) { if (arr[j].kind + ':' + arr[j].id === targetKey) { targetIdx = j; break; } }
+      if (targetIdx < 0) targetIdx = arr.length;
+      arr.splice(before ? targetIdx : targetIdx + 1, 0, moved);
+      var writes = [];
+      arr.forEach(function (r, i) {
+        var next = (i + 1) * 10;
+        if (r.sortOrder === next) return;
+        r.sortOrder = next;
+        // Keep MOMS/SCHEDULES (what momUnifiedRows() reads next render) in
+        // step, or the drop would look right for one frame and then snap back
+        // to the pre-drag order as soon as anything else triggers a repaint.
+        var src = r.kind === 'series'
+          ? SCHEDULES.find(function (s) { return String(s.id) === String(r.id); })
+          : MOMS.find(function (m) { return String(m.id) === String(r.id); });
+        if (src) src.sort_order = next;
+        var table = r.kind === 'series' ? 'mom_schedules' : 'meeting_minutes';
+        writes.push(sb().from(table).update({ sort_order: next }).eq('id', r.id));
+      });
+      try { await Promise.all(writes); } catch (e) { /* best-effort — a failed write just leaves that one row's order stale until the next reload */ }
+      renderBrowse();
+    }
+    Array.prototype.forEach.call(grips, function (el) {
+      el.onclick = function (e) { e.stopPropagation(); };
+      var dragId = null, pointerId = null;
+      el.onpointerdown = function (e) {
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
+        dragId = el.dataset.reorder;
+        pointerId = e.pointerId;
+        try { el.setPointerCapture(pointerId); } catch (e2) { /* capture can be refused on some browsers; the drag still tracks via the move handler below */ }
+        el.classList.add('il-dragging');
+        e.preventDefault();
+      };
+      el.onpointermove = function (e) {
+        if (pointerId == null || e.pointerId !== pointerId) return;
+        var hit = document.elementFromPoint(e.clientX, e.clientY);
+        var row = hit && hit.closest ? hit.closest('[data-reorder-row]') : null;
+        clearMarks();
+        if (!row || row.dataset.reorderRow === dragId) return;
+        var rect = row.getBoundingClientRect();
+        var before = (e.clientY - rect.top) < rect.height / 2;
+        row.classList.toggle('il-drop-before', before);
+        row.classList.toggle('il-drop-after', !before);
+      };
+      function reset() {
+        try { el.releasePointerCapture(pointerId); } catch (e2) { /* already released, or never captured */ }
+        el.classList.remove('il-dragging');
+        clearMarks();
+        pointerId = null;
+        dragId = null;
+      }
+      el.onpointerup = function (e) {
+        if (pointerId == null || e.pointerId !== pointerId) return;
+        var marked = container.querySelector('.il-drop-before, .il-drop-after');
+        var before = marked ? marked.classList.contains('il-drop-before') : false;
+        var targetId = marked ? marked.dataset.reorderRow : null;
+        var from = dragId;
+        reset();
+        if (targetId && from && targetId !== from) applyMomReorder(from, targetId, before);
+      };
+      // ⚠️ pointercancel resets WITHOUT committing — see the identical note in
+      // issues-lessons/module.js's wireReorder; an interrupted gesture must
+      // never silently apply whatever was last hovered.
+      el.onpointercancel = function (e) {
+        if (pointerId == null || e.pointerId !== pointerId) return;
+        reset();
+      };
+    });
+  }
   function renderMomListHTML(rows) {
     if (!rows.length) {
       return '<div class="il-empty" style="padding:28px;">' +
         ((MOMS.length || SCHEDULES.length) ? 'No meeting matches “' + Fmt.esc(_momQ) + '”.' : 'No minutes recorded on this project yet.') +
       '</div>';
     }
+    var manual = _momSort.col === 'manual';
     var sorted = momSortedRows(rows);
-    return '<div class="pd-card" style="padding:0;overflow:auto;">' +
+    // Manual order note mirrors the Issues & Concerns register's own "Sorted
+    // by X — drag-to-reorder is off..." convention the other way round: THIS
+    // list defaults to a column sort, so the note here explains how to get
+    // OUT of manual order once it's on (getting in is the ⋮⋮ header itself).
+    var note = manual
+      ? '<div class="il-mom-sortnote">Manual order — drag rows to rearrange. ' +
+        '<button type="button" id="il-mom-sortclear">Sort by date instead</button></div>'
+      : '';
+    return note + '<div class="pd-card" style="padding:0;overflow:auto;">' +
       '<table class="pd-table il-mom-listtable"><thead><tr>' +
+        momListDragTh(manual) +
         '<th class="il-mom-favtd"></th>' +
         momListSortTh('Title', 'title') + momListSortTh('Date', 'date') +
         momListSortTh('Attendees', 'attendees') + momListSortTh('Location', 'location') +
         momListSortTh('Minutes', 'open') +
       '</tr></thead><tbody>' +
       sorted.map(function (r) {
-        return '<tr class="il-mom-lrow" data-kind="' + r.kind + '" data-id="' + Fmt.esc(r.id) + '">' +
+        var rk = r.kind + ':' + r.id;
+        return '<tr class="il-mom-lrow" data-kind="' + r.kind + '" data-id="' + Fmt.esc(r.id) + '"' +
+          (manual ? ' data-reorder-row="' + Fmt.esc(rk) + '"' : '') + '>' +
+          '<td class="il-mom-dragcell">' + (manual ? momDragGripHTML(rk) : '') + '</td>' +
           '<td class="il-mom-favtd"><button type="button" class="il-mom-favbtn' + (r.favorite ? ' on' : '') +
             '" data-fav="' + r.kind + ':' + Fmt.esc(r.id) + '" title="' +
             (r.favorite ? 'Remove from favorites' : 'Add to favorites') + '">' + (r.favorite ? '★' : '☆') + '</button></td>' +
@@ -2170,11 +2311,21 @@ window.MinutesOfMeeting = (function () {
     host.querySelectorAll('.il-mom-th[data-sort]').forEach(function (th) {
       th.onclick = function () {
         var col = th.dataset.sort;
+        // Item 1 (2026-09-11 round): the ⋮⋮ column is a toggle INTO manual
+        // order, not a column with an asc/desc direction of its own.
+        if (col === 'manual') { _momSort = { col: 'manual', dir: '' }; renderBrowse(); return; }
         if (_momSort.col === col) _momSort.dir = _momSort.dir === 'asc' ? 'desc' : 'asc';
         else { _momSort.col = col; _momSort.dir = (col === 'title' || col === 'type') ? 'asc' : 'desc'; }
         renderBrowse();
       };
     });
+    var momSortClear = host.querySelector('#il-mom-sortclear');
+    if (momSortClear) momSortClear.onclick = function () { _momSort = { col: 'date', dir: 'desc' }; renderBrowse(); };
+    if (_momView === 'list' && _momSort.col === 'manual') {
+      // Item 1: drag-to-reorder — scoped to the List view's own table, sorted
+      // identically to what renderMomListHTML just drew (see momWireReorder).
+      momWireReorder(host.querySelector('.il-mom-listtable'), momSortedRows(momUnifiedFilter(momUnifiedRows())));
+    }
     // ⚠️ Dispatches by KIND — a series row (`kind === 'series'`) opens the
     // series page (item 6), a plain meeting opens Detail (item 5). A favorite
     // click inside the row stops propagation below, so it never also opens
@@ -2573,7 +2724,10 @@ window.MinutesOfMeeting = (function () {
       '<div class="pd-modal-header"><h3 style="margin:0;">+ Add meeting</h3>' +
         '<button class="pd-modal-close" id="il-am-x">&times;</button></div>' +
       '<div class="pd-modal-body il-am-form">' +
-        '<h4 class="il-mom-sechead">Details</h4>' +
+        // 2026-09-11 round 2: each section below is its own `.il-mom-sectile`
+        // tile, mirroring the Detail view (momDetailHTML) — see the note on
+        // that class in module.css.
+        '<div class="il-mom-sectile"><h4 class="il-mom-sechead">Details</h4>' +
         '<div class="il-form-row il-am-titlerow">' +
           '<div class="pd-field" style="flex:2 1 220px;"><label>Meeting title *</label>' +
             '<input class="pd-input" id="il-am-title" placeholder="e.g. Weekly PSC Meeting"></div>' +
@@ -2592,9 +2746,9 @@ window.MinutesOfMeeting = (function () {
           '<div class="pd-field" style="flex:2 1 220px;"><label>Meeting description</label>' +
             '<input class="pd-input" id="il-am-desc" list="il-am-desclist" placeholder="e.g. PPR Meeting, PSC Meeting">' +
             '<datalist id="il-am-desclist">' + momTypeDatalistOptions() + '</datalist></div>' +
-        '</div>' +
+        '</div></div>' +   /* end Details tile */
 
-        '<h4 class="il-mom-sechead">Schedule</h4>' +
+        '<div class="il-mom-sectile"><h4 class="il-mom-sechead">Schedule</h4>' +
         // ITEM 6: the plain Date field and the recurring series' Start/End dates
         // occupy the SAME row and are mutually exclusive — recur.onchange below
         // toggles which pair is hidden, so a recurring meeting's date field is
@@ -2623,20 +2777,23 @@ window.MinutesOfMeeting = (function () {
           '</div>' +
           '<div class="il-form-row" id="il-sf-rulewrap">' + scheduleRuleFieldsHTML({ frequency: FREQUENCIES[0].key }) + '</div>' +
         '</div>' +
+        '</div>' +   /* end Schedule tile */
 
-        '<h4 class="il-mom-sechead">Venue</h4>' +
+        '<div class="il-mom-sectile"><h4 class="il-mom-sechead">Venue</h4>' +
         '<div class="il-form-row">' +
           '<div class="pd-field" style="flex:1 1 200px;"><label>Venue *</label><input class="pd-input" id="il-am-venue"></div>' +
           '<div class="pd-field" style="flex:1 1 200px;"><label>Meeting link</label><input class="pd-input" id="il-am-link" placeholder="https://…"></div>' +
-        '</div>' +
+        '</div></div>' +   /* end Venue tile */
 
-        '<h4 class="il-mom-sechead">Attendees</h4>' +
+        '<div class="il-mom-sectile"><h4 class="il-mom-sechead">Attendees</h4>' +
         '<div class="pd-field"><label>Required attendees *</label>' + peoplePickerHTML('am-req', [], '', false) + '</div>' +
         '<div class="pd-field"><label>Optional attendees</label>' + peoplePickerHTML('am-opt', [], '', false) + '</div>' +
+        '</div>' +   /* end Attendees tile */
 
-        '<h4 class="il-mom-sechead">Agenda</h4>' +
+        '<div class="il-mom-sectile"><h4 class="il-mom-sechead">Agenda</h4>' +
         '<div class="pd-field"><div id="il-am-agenda">' + agendaRowsHTML([]) + '</div>' +
           '<button type="button" class="pd-btn pd-btn-sm" id="il-am-agenda-add" style="margin-top:6px;">+ Add agenda item</button></div>' +
+        '</div>' +   /* end Agenda tile */
       '</div>' +
       '<div class="pd-modal-footer">' +
         '<button class="pd-btn" id="il-am-cancel">Cancel</button>' +
@@ -3003,7 +3160,10 @@ window.MinutesOfMeeting = (function () {
       // Details / Schedule / Venue / Attendees / Agenda / Minutes. The single
       // "Meeting details" block this replaced held all of Title through
       // Recording under one heading; it is now four.
-      '<h4 class="il-mom-sechead">Details</h4>' +
+      // 2026-09-11 round 2: each of the four below is its own `.il-mom-sectile`
+      // tile rather than a heading followed by a dashed line — see the note on
+      // that class in module.css for why.
+      '<div class="il-mom-sectile"><h4 class="il-mom-sechead">Details</h4>' +
       '<div class="il-form-row">' +
         '<div class="pd-field" style="flex:2 1 260px;"><label>Title</label><input class="pd-input" id="il-mom-title" value="' + Fmt.esc(mom.title || '') + '"' + d + '></div>' +
         // ⚠️ ITEM #21 — the "Meeting type" DROPDOWN is grouped Internal /
@@ -3020,9 +3180,9 @@ window.MinutesOfMeeting = (function () {
           '<input class="pd-input" id="il-mom-type" list="il-mom-typelist" value="' + Fmt.esc(mom.meeting_type || '') +
           '" placeholder="e.g. PPR Meeting, PSC Meeting"' + d + '>' +
           '<datalist id="il-mom-typelist">' + momTypeDatalistOptions() + '</datalist></div>' +
-      '</div>' +
+      '</div></div>' +   /* end Details tile */
 
-      '<h4 class="il-mom-sechead">Schedule</h4>' +
+      '<div class="il-mom-sectile"><h4 class="il-mom-sechead">Schedule</h4>' +
       '<div class="il-form-row">' +
         '<div class="pd-field" style="flex:1 1 140px;"><label>Date</label><input class="pd-input" type="date" id="il-mom-date" value="' + (dateVal(mom.meeting_date)) + '"' + d + '></div>' +
         '<div class="pd-field" style="flex:1 1 110px;"><label>Start time</label>' +
@@ -3041,9 +3201,9 @@ window.MinutesOfMeeting = (function () {
           '<input class="pd-input" type="time" id="il-mom-astime" value="' + Fmt.esc(mom.actual_start_time || '') + '"' + d + '></div>' +
         '<div class="pd-field" style="flex:1 1 110px;"><label>Actual finish</label>' +
           '<input class="pd-input" type="time" id="il-mom-aetime" value="' + Fmt.esc(mom.actual_end_time || '') + '"' + d + '></div>' +
-      '</div>' +
+      '</div></div>' +   /* end Schedule tile */
 
-      '<h4 class="il-mom-sechead">Venue</h4>' +
+      '<div class="il-mom-sectile"><h4 class="il-mom-sechead">Venue</h4>' +
       '<div class="il-form-row">' +
         '<div class="pd-field" style="flex:1 1 160px;"><label>Venue</label>' +
           '<input class="pd-input" id="il-mom-venue" value="' + Fmt.esc(mom.venue || '') + '"' + d + '></div>' +
@@ -3052,9 +3212,9 @@ window.MinutesOfMeeting = (function () {
           '<input class="pd-input" id="il-mom-link" value="' + Fmt.esc(mom.meeting_link || '') + '" placeholder="https://…"' + d + '></div>' +
         '<div class="pd-field" style="flex:1 1 200px;"><label>Recording</label>' +
           '<input class="pd-input" id="il-mom-rec" value="' + Fmt.esc(mom.recording_url || '') + '" placeholder="https://… (optional)"' + d + '></div>' +
-      '</div>' +
+      '</div></div>' +   /* end Venue tile */
 
-      '<h4 class="il-mom-sechead">Attendees</h4>' +
+      '<div class="il-mom-sectile"><h4 class="il-mom-sechead">Attendees</h4>' +
       // ⚠️ ITEM #20 — three attendee tiers, each the same hybrid ids+text
       // People Picker used for Champion/Responsible elsewhere in this app.
       // The legacy free-text `attendees` column is read verbatim below when
@@ -3102,6 +3262,7 @@ window.MinutesOfMeeting = (function () {
             'carried its own record; read-only</small></label>' +
             '<div class="il-mi-val">' + Fmt.esc(mom.notes).replace(/\n/g, '<br>') + '</div></div>'
         : '') +
+      '</div>' +   /* end Attendees tile */
       '</div>' +   /* end #il-mom-slide-details */
       momAgendaSectionHTML(mom, ro) +
 

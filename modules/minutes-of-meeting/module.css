@@ -103,23 +103,33 @@
 
 /* ---- Add Meeting form (round 2): named sections + guaranteed row
    alignment ------------------------------------------------------------- */
-/* Item 6: Details / Schedule / Venue / Attendees / Agenda, the same weight
-   as the Detail view's own section headings (item 2 there).
-   ⚠️⚠️ 2026-09-11: this comment claimed the Detail view already carried the
-   same divider — it did not. This selector was scoped to `.il-am-form` (the
-   "+ Add meeting" modal) alone, so the Detail view's own Details/Schedule/
-   Venue/Attendees headings (`.il-mom-detail-card`) got the base
-   `.il-mom-sechead` rule's plain 8px bottom margin and nothing else — no
-   visible break between one section's fields and the next. Owner: "provide
-   cleaner breaker between input groups of details, schedule, venue,
-   attendees, agenda, and minutes." `.il-mom-detail-card` is now covered by
-   the same selector, so both forms get the identical dashed break. Agenda
-   and Minutes already draw their own divider/box (`.il-mom-agenda`,
-   `.il-mom-actions`) and are unaffected either way. */
-.il-am-form .il-mom-sechead:not(:first-child),
-.il-mom-detail-card .il-mom-sechead:not(:first-child) {
-  margin-top: 18px; padding-top: 14px; border-top: 1px dashed var(--pd-line);
+/* Item 6 / 2026-09-11 round 2: Details / Schedule / Venue / Attendees /
+   Agenda / Minutes, each its own TILE — not a dashed line between them.
+   ⚠️⚠️ The dashed line this replaced (shipped hours earlier the same day) was
+   itself a correction of an even older bug — a divider that had only ever
+   applied to `.il-am-form` (the "+ Add meeting" modal), never to the Detail
+   view. Owner, on the dashed line itself: "the breaker as a dashed horizontal
+   line is not enough. place each input group in separate tiles instead." A
+   dashed rule is still just a line running between two areas that otherwise
+   look identical to the page around them; a tile — its own border, its own
+   background, its own margin — reads as a distinct block on first glance,
+   which a divider only does on close inspection.
+   `.il-mom-sectile` is the wrapping box a section's `<h4 class="il-mom-sechead">`
+   plus its `.il-form-row`(s) now sit inside (momDetailHTML, openAddMeetingModal).
+   Its border/radius/background/padding are lifted verbatim from `.il-mom-actions`
+   below (the Minutes section, already boxed this way since before this pass) —
+   one look for all six groups, not five sections matching each other and a
+   sixth that already happened to match by coincidence. */
+.il-mom-sectile {
+  border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md);
+  padding: 10px 12px 12px; background: var(--pd-bg); margin-top: 12px;
 }
+.il-mom-sectile:first-child { margin-top: 0; }
+.il-mom-sectile .il-mom-sechead { margin: 0 0 8px; }
+/* ⚠️ `.il-am-form` had `.pd-modal-body`'s own padding to sit inside, which is
+   different chrome from `.il-mom-detail-card`'s — carried over unchanged, the
+   tile's OWN border/background is what now separates one group from the next
+   in the modal, exactly as it does in the Detail view. */
 /* Items 2+3: every label in this form reserves the SAME vertical space —
    two lines' worth at this font-size — whether its own text needs one line
    or wraps to two, and whether a field has real label text at all (the
@@ -171,6 +181,32 @@
 .il-mom-th.on { color: var(--pd-red); }
 .il-mom-lrow { cursor: pointer; }
 .il-mom-lrow:hover td { background: var(--pd-bg); }
+
+/* ---- Item 1 (2026-09-11 round): Meetings List drag-to-reorder ------------
+   Pointer Events (module.js momWireReorder), one gesture for mouse, touch and
+   pen — the identical mechanism and class names issues-lessons/module.css
+   uses, kept as its own copy here per MODULE_CONTRACT.md (no shared-file
+   drag component exists, and each module owns its own CSS). */
+.il-mom-dragth { width: 22px; text-align: center; }
+.il-mom-dragcell { width: 22px; text-align: center; }
+.il-reorderable { cursor: grab; }
+.il-dragging { opacity: .45; }
+.il-drop-before { box-shadow: inset 0 2px 0 0 var(--pd-red); }
+.il-drop-after { box-shadow: inset 0 -2px 0 0 var(--pd-red); }
+.il-draghandle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; min-height: 24px; color: var(--pd-line); cursor: grab; flex: none;
+  touch-action: none;   /* ⚠️ load-bearing on touch — see the note in module.js */
+}
+.il-draghandle:hover { color: var(--pd-muted); }
+.il-mom-sortnote {
+  display: flex; align-items: center; gap: 8px; padding: 8px 2px;
+  font-size: var(--pd-fs-sm); color: var(--pd-muted);
+}
+.il-mom-sortnote button {
+  border: 0; background: none; padding: 0; color: var(--pd-red);
+  font-size: inherit; font-weight: 700; cursor: pointer; text-decoration: underline;
+}
 .il-mom-draft {
   display: inline-block; font-size: var(--pd-fs-micro); font-weight: 700; letter-spacing: .06em;
   padding: 2px 7px; border-radius: 3px;
@@ -700,11 +736,21 @@ div.il-mom-acrow { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--p
    the two that follow it. */
 .il-mom-sechead { margin: 0 0 8px; font-size: var(--pd-fs-base); }
 
-.il-mom-agenda { margin: 14px 0; padding-top: 12px; border-top: 1px dashed var(--pd-line); }
+/* 2026-09-11 round 2: the same `.il-mom-sectile` tile as Details/Schedule/
+   Venue/Attendees/Minutes — was its own bespoke dashed-top-border box, now
+   one look for all six groups. `.il-mom-agenda` still exists as its own class
+   because momApplySlides() finds it BY ID (#il-mom-slide-agenda) to treat it
+   as one whole reporting-view slide — only its box styling moved onto the
+   shared tile. ⚠️ No slide-mode override needed here any more: `.il-mom-actions`
+   (Minutes) has never zeroed its own tile box while presenting, and this
+   agenda tile now follows the same, already-established precedent. */
+.il-mom-agenda {
+  border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md);
+  padding: 10px 12px 12px; background: var(--pd-bg); margin: 12px 0 0;
+}
 .il-mom-agenda h4 { margin: 0 0 4px; font-size: var(--pd-fs-base); }
 .il-mom-agview { margin: 6px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 3px; }
 .il-mom-agview li { font-size: var(--pd-fs-base); }
-.il-mom-slides .il-mom-agenda { border-top: 0; padding-top: 0; margin-top: 0; }
 
 /* ---- People picker (Responsible) ------------------------------------------
    Chips for accounts, built from the dropdown alone (2026-09-03, owner: "the

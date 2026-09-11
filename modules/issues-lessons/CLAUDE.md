@@ -1,5 +1,52 @@
 # Module: issues-lessons
 
+## 2026-09-11 (round 2) — Drag-to-reorder replaces the move-up/move-down buttons, using Pointer Events instead of HTML5 drag
+
+Owner: "use drag to re-order for issues and lessons list instead of up and down buttons."
+
+⚠️⚠️ **The move-up/move-down button pair existed for a real, documented reason: HTML5
+`draggable`/`ondragstart` never fires on a touch device at all**, so the grip alone did nothing on
+a phone and the two step buttons stood in for it there (2026-09-01, "mobile round"). Removing them
+outright without addressing that would have removed reordering from mobile entirely — not what was
+asked. The fix is **Pointer Events** (`pointerdown`/`pointermove`/`pointerup`/`pointercancel`), which
+DO fire for touch (and pen) as well as mouse from the same handler, so one gesture now covers every
+input method and the button pair's whole reason to exist is gone with it.
+
+- `dragGripHTML` drops `draggable="true"` entirely; `wireReorder` is rewritten around
+  `setPointerCapture`/`releasePointerCapture` and `document.elementFromPoint` (which still hit-tests
+  correctly at the pointer's real screen position even while capture routes the event itself to the
+  grip) instead of `ondragstart`/`ondragover`/`ondrop`.
+- ⚠️ **The drop target widened from the tiny grip icon to the WHOLE row.** The old `ondragover`
+  handler was bound only to the grip elements themselves, so hovering anywhere else in a row (which
+  is most of a row, and the part a fingertip is most likely to land on) registered nothing. Rows now
+  additionally carry `data-reorder-row` (in `<tr>`, alongside the existing `data-open`/
+  `data-open-lesson`), and `wireReorder` resolves the hovered drop target via
+  `hit.closest('[data-reorder-row]')` rather than requiring the pointer to be exactly over another
+  row's grip.
+- ⚠️ `touch-action: none` on `.il-draghandle` is load-bearing, not decoration — without it, a
+  touchstart on the grip is read as the start of a page scroll before the pointer handlers get a
+  look-in, and the drag never starts. Everywhere else in the row, ordinary touch-action stays `auto`,
+  so scrolling the page is untouched.
+- ⚠️⚠️ **`pointerup` and `pointercancel` must NOT share one handler that always commits.** The first
+  draft did exactly that, and a harness run caught it: cancelling a drag while a row happened to be
+  marked from the last `pointermove` silently applied that reorder anyway, because "was something
+  marked" was the only condition checked. `pointercancel` now resets state and clears marks with **no
+  write**; only `pointerup` reads the marked row and calls `applyReorder`.
+- Verified by slicing `wireReorder`/`applyReorder` out of the shipped file and executing them against
+  a hand-built DOM stand-in (classList/dataset/getBoundingClientRect mocks, `document.elementFromPoint`
+  and `applyReorder` itself injected via a `Function`-constructor closure) — drop-onto-bottom-half,
+  drop-onto-top-half, self-hover (no-op), a non-primary mouse button (ignored), a touch pointerdown
+  (starts the drag identically to mouse), and the pointercancel-after-hover case above, which failed
+  before the up/cancel split and passes after it.
+- `moveButtonsHTML` and its CSS (`.il-movebtns`/`.il-movebtn`, including the now-stale
+  ≤700px override that assumed the mobile card-reflow this same day's earlier round already removed)
+  are deleted outright rather than left unreferenced.
+- ⚠️ **Not verified signed in** — the gesture is proved against a DOM mock; the first real touch drag
+  on a phone is the thing most worth trying next.
+
+`module.css`/`module.js` → `?v=20260911d`; `MODULE_V` (via `modules-grid.js?v=` on
+`dashboard.html`/`modules.html`) → `20260911d`.
+
 ## 2026-09-11 — Mobile no longer turns the Issues/Lessons tables into tiles
 
 Owner: "for issues and concerns and lessons learned list, in mobile view, the table turns into

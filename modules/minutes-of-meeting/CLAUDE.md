@@ -1,5 +1,95 @@
 # Module: minutes-of-meeting
 
+## 2026-09-11 (round 2) — The Meetings List gets manual drag-to-reorder, and the dashed divider becomes real tiles
+
+**Run `migrations/2026-09-11-mom-list-reorder.sql`.** Owner's two follow-ups on the same day's
+earlier round: (1) "in list mode, allow also drag to reorder"; (2) "the breaker as a dashed
+horizontal line is not enough. place each input group in separate tiles instead."
+
+### 1 — Manual order for the Meetings List, alongside its existing column sorts
+
+The List view already sorted by Title/Date/Attendees/Location/Minutes, defaulting to Date
+descending, with favorites always pinned to the top of whichever sort was active. There was
+nowhere for a planner's own, hand-picked order to live — dragging a row did nothing, because
+nothing recorded what "dragged" would even mean here.
+
+- A new **⋮⋮** column, leftmost, doubles as its own toggle: clicking its header switches the List
+  sort to `'manual'`. In that mode every row grows the same drag grip
+  (`momDragGripHTML`/`momWireReorder`) the Issues & Concerns / Lessons Learned register already
+  uses — Pointer Events, not HTML5 `draggable` (which never fires on a touch device at all), so one
+  gesture works for mouse, touch and pen. A note above the table ("Manual order — drag rows to
+  rearrange.") carries a **Sort by date instead** link back out.
+- ⚠️⚠️ **The List mixes TWO tables in one sequence** (`meeting_minutes` for standalone/recorded
+  meetings, `mom_schedules` for recurring series — `momUnifiedRows()`), so the new `sort_order`
+  column exists on **both** (`migrations/2026-09-11-mom-list-reorder.sql`, additive, idempotent) and
+  shares one numbering space by convention: dragging a meeting row past a series row renumbers both
+  tables together, spaced by 10 (the same idiom as `mom_items.seq` and
+  `2026-09-01-issues-lessons-reorder.sql`). A drag's write is per-row, addressed to whichever table
+  that row's `kind` says it belongs to.
+- ⚠️⚠️ **Manual order deliberately does NOT keep favorites pinned to the top**, the one place it
+  differs from every other List sort. Every other sort partitions into favorite/non-favorite halves
+  and sorts each with the same comparator (`momSortedRows`) — layering the pin OVER the sort. Doing
+  that here would mean a row dropped just above a favorite silently lands somewhere else instead;
+  the drop position lying about the result is a worse surprise than a starred row simply not
+  floating to the top while its order is being set by hand. The star still filters
+  (`_momBrowseF.fav`) and still renders; it just stops being an ordering rule for as long as manual
+  order is the active sort. Documented at length above `momSortedRows` in module.js, and in the
+  migration's own header comment.
+- ⚠️ Rows with no `sort_order` yet fall back to the List's own existing date-based order (newest
+  first) — `momOrderCmp` mirrors `issueOrderCmp`/`lessonOrderCmp`'s null-handling exactly, nulls
+  sorting after any explicitly ordered row.
+- ⚠️ A completed drag mutates the underlying `MOMS`/`SCHEDULES` array objects directly (not just the
+  transient sorted-row copy), or the very next repaint — anything that calls `renderBrowse()` again
+  before a reload — would silently snap the row back to its pre-drag position.
+- Verified by slicing `momOrderCmp`/`momSortedRows`/`momWireReorder` out of the shipped file and
+  executing them against DOM/table mocks (a `Function`-constructor closure standing in for
+  `document`/`SCHEDULES`/`MOMS`/`sb`/`renderBrowse`, the same technique used to verify
+  issues-lessons' equivalent below): a meeting dragged onto a series row writes **both** tables in
+  one pass, in the correct order, updates the in-memory rows, and calls `renderBrowse()` exactly
+  once; hovering the row being dragged marks nothing; a `pointercancel` clears every mark and commits
+  no write, even when a drop target was already highlighted at the moment of cancellation (a case
+  that failed on the first draft of this code — see the matching note in issues-lessons/CLAUDE.md,
+  the identical mistake made in both modules' drag code the same day and fixed the same way in both).
+- ⚠️ **Not verified signed in** — no drag has been run against a real project, and the migration has
+  not been run from here.
+
+### 2 — Six named sections, six tiles
+
+⚠️⚠️ **The dashed divider this replaces shipped the SAME DAY, hours earlier**, as the fix for a
+comment that had wrongly claimed the Detail view already carried it (see entry below). The owner,
+looking at that fix: "the breaker as a dashed horizontal line is not enough. place each input group
+in separate tiles instead." A dashed rule is still just a line running between two areas that
+otherwise look identical to the page around them; a box — its own border, its own background, its
+own margin — reads as a distinct block at a glance, which a line only does on close inspection.
+
+- New `.il-mom-sectile` (module.css): border + `--pd-radius-md` + `var(--pd-bg)` background + its
+  own top margin — lifted **verbatim** from `.il-mom-actions` (the Minutes section), which has been
+  boxed exactly this way since before this pass. One look for all six groups, not five sections
+  matching each other and a sixth (Minutes) that already happened to match by coincidence.
+- Details / Schedule / Venue / Attendees in `momDetailHTML`, and Details / Schedule / Venue /
+  Attendees / Agenda in `openAddMeetingModal` (the "+ Add meeting" modal — the two forms are meant
+  to "read as one system," per the modal's own long-standing comment, so both got the tile treatment
+  together rather than leaving one on the old dashed rule), are each now wrapped in their own
+  `<div class="il-mom-sectile">`. `.il-mom-agenda` (the Detail view's Agenda section, found by its
+  own id since `momApplySlides()` looks it up as `#il-mom-slide-agenda` to treat it as one whole
+  reporting-view slide) picked up the identical box styling in its own rule rather than being
+  wrapped a second time.
+- ⚠️ The old `.il-mom-slides .il-mom-agenda { border-top:0; ... }` override — needed only because a
+  dashed top border reads as "there is content above me," which is false once Agenda is its own
+  full-screen slide — is removed rather than adapted. `.il-mom-actions` has never zeroed its own box
+  while presenting, and the agenda tile now follows that same, already-established precedent: a
+  boxed section is just a boxed section, slide or not.
+- Verified by manual div-by-div balance inspection of every edited boundary (a `<div class="pd-field">
+  ...<div class="il-mi-val">...</div></div>` construct inside the conditional Notes block makes a
+  naive automated string-literal-extraction check unreliable on `momDetailHTML` specifically — it
+  reported a false imbalance that line-by-line reading disproved; `openAddMeetingModal`, simpler and
+  with no such nested conditional, cross-checked clean via the same automated method: 32 open / 32
+  close `<div>`, 5 open / 5 close `<h4>`, 5 `.il-mom-sectile` occurrences) and `node --check`.
+- ⚠️ **Not verified signed in.**
+
+`module.css`/`module.js` → `?v=20260911d`; `MODULE_V` (via `modules-grid.js?v=` on
+`dashboard.html`/`modules.html`) → `20260911d`.
+
 ## 2026-09-11 — A Card/Table switcher for the Minutes list, real section dividers, and the minute number stops being typed
 
 Owner's three items: (1) "when opening a meeting, the minutes are usually in tiles, provide also

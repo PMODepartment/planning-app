@@ -551,6 +551,46 @@ Integrated over two concurrent sessions; `MODULE_V` resolved to a token newer th
 `module.css` + `boq.js` → `?v=20260911c`.
 
 
+### 2026-09-11 (c2) — Drag-to-reorder gets a real gesture on Issues/Lessons and reaches the Meetings List; six input groups become six tiles
+
+**Run `migrations/2026-09-11-mom-list-reorder.sql`.** Follow-ups on the same day's (c1) pass, owner:
+*"in list mode, allow also drag to reorder"* and *"the breaker as a dashed horizontal line is not
+enough. place each input group in separate tiles instead"* (Minutes of Meeting); *"use drag to
+re-order for issues and lessons list instead of up and down buttons"* (Issues & Concerns / Lessons
+Learned). Detail in [`modules/minutes-of-meeting/CLAUDE.md`](modules/minutes-of-meeting/CLAUDE.md)
+and [`modules/issues-lessons/CLAUDE.md`](modules/issues-lessons/CLAUDE.md).
+
+**Issues & Concerns / Lessons Learned.** The move-up/move-down buttons existed because native HTML5
+drag-and-drop never fires on a touch device — removing them outright would have removed reordering
+from mobile, not just from the button. Replaced instead with **Pointer Events**
+(`pointerdown`/`pointermove`/`pointerup`/`pointercancel`), one gesture for mouse, touch and pen, plus
+widening the drop target from the tiny grip icon to the whole row. ⚠️⚠️ A harness run caught a real
+defect before it shipped: `pointerup` and `pointercancel` sharing one handler meant an interrupted
+drag could silently commit whatever was last hovered — split into a commit path and a no-write abort
+path.
+
+**Minutes of Meeting.** The Meetings List gains a **⋮⋮** manual-order column (its own header doubles
+as the toggle into it), with a new `sort_order` on both `meeting_minutes` and `mom_schedules` — the
+List mixes rows from both in one sequence, so a drag spanning a meeting and a series row renumbers
+both tables together. ⚠️⚠️ Manual order deliberately does **not** keep favorites pinned to the top
+the way every other List sort does — pinning would mean a row dropped just above a favorite silently
+lands somewhere else, which is a worse surprise than the star simply not being an ordering rule while
+an order is being set by hand. The six named sections of the Detail view and the "+ Add meeting"
+modal (Details/Schedule/Venue/Attendees/Agenda/Minutes) move from a dashed divider — shipped hours
+earlier the same day — to a real `.il-mom-sectile` box each, lifted from the Minutes section's own
+box styling so all six finally share one look rather than five imitating a divider and a sixth that
+already happened to be boxed.
+
+⚠️ Not verified signed in for either module — no live login is possible in this environment. The
+drag gestures are proved against DOM mocks/harnesses, not a real touchscreen or a real drop.
+
+`MODULE_V` → `20260911zb` in both modules (their `module.css`/`module.js` tokens moved to `d`;
+neither module's `index.html` structure changed beyond its own `?v=` lines). ⚠️⚠️ **Not the next
+letter, and not `z6` either** — `z6` was this entry's original pick, made to sort past the concurrent
+`z5` LSM hotfix below; it collided with **(sc3)**, above, which independently picked the identical
+`20260911z6` off the same `z5` base, and that chain then continued through `uc`/`ud`/`ue`/`ug` up to
+`za`. Re-derived after integrating both sides rather than reused: `zb`, past `za`.
+
 ### 2026-09-11 (z5) — ⚠️⚠️ HOTFIX: ticking LSM stretched 2,561 rows, and the layout had almost no door
 
 Owner, from the live site: *"Ticking LSM widens the with of the rows why is that"*, and *"How does
