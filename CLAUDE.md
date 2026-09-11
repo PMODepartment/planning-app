@@ -95,6 +95,58 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-11 (a7) — The import wizard walked end to end, the sidebar given somewhere to stick, and a sentence that was four columns
+
+Owner: *"Let's verify the import steps too"*, then *"The side bar is clipping when the schedule setup
+page is scrolled down"* and *"UI for the pop in working calendar needs improvement"*.
+
+**The import wizard, driven with a real file, and nothing written.** A workbook was built in the page
+with the app's own SheetJS — three branches, four activities, three FS links, WBS depth carried as
+outline levels — wrapped as a `File` and handed to the module's **own** file input, so the genuine
+parser ran. All four edited steps render correctly on **DEMO01**, the sandbox:
+- **2 · Activities & phases** — *"From verify-import-test.xlsx — 4 activities under 3 WBS branches"*,
+  and the rewritten line, *"Construction must sit under Execution Phase — the next step reads
+  locations out of it."*
+- **3 · Location breakdown** — the shortened lede, the **"Tower Handover"** example intact, and the
+  *"no levels yet"* note firing from the state that makes it true.
+- **5 · The file's logic** — *"The file carries 3 relationships. 3 will be imported (3 × FS)."*
+- **6 · What is about to be written** — *"pressing **Import** is the first and only thing that changes
+  the schedule"* verbatim, the gated red no-location warning, and `Import 4 activities`.
+
+⚠️ **The Import button was never pressed**, and that is not caution, it is the design: the sentence
+(a6) preserved is exactly what makes walking the wizard safe. Confirmed afterwards — DEMO01 holds
+**8 rows, 8 nodes, 0 activities**, unchanged.
+
+**⚠️ And walking it found a defect I had introduced in (a6).** Step 5 read *". drag one bar onto
+another"* — a sentence starting mid-word. The clause I cut ended in a **colon**, so the text after it
+was correctly lowercase; removing the clause left the lowercase behind. Invisible in the source,
+invisible to `node --check`, visible the moment a real file went through.
+
+**⚠️⚠️ THE SIDEBAR HAD NOWHERE TO STICK.** `position:sticky` was already correct on `.pd-sidebar`;
+what was missing was **travel**. A sticky box cannot move outside its containing block, and this
+module pins `.pd-content { height:100vh }` so the Gantt can be a full-height flex layout scrolling
+its own panes. Schedule Setup is not that — it is a long document that scrolls the **page** — so its
+1,134px of content overflowed every ancestor while all of them stayed 721px. Measured at
+`scrollY 400`: the sidebar sat at **`top:-400, bottom:321`**, scrolled clean away with the page
+showing through beneath it. The `100vh` is **not** removed, because the Schedule grid depends on it;
+it is scoped off a `.ps-longdoc` class `switchTab` sets for the two views that scroll the page.
+After: **`top:0` at every scroll position**, covering the viewport. Regression checked on the
+Schedule view — `contentH` still `721px`, page does not scroll, grid still scrolls internally
+(348 visible of 7,106).
+
+**A sentence rendered as four columns.** `.calwiz-check` is `display:flex; gap:8px`, and the label's
+children were **five** flex items — the box, the bare text *"Also take the"*, `<b>special
+non-working days</b>`, the bare text *"off"*, and the `<i>` note. Each is its own column and wraps on
+its own, which is why the dialog showed *"Also take the / special non-working days / off"*. Wrapped
+in one `<span>`: measured **2 flex items**, the text 616px wide, one line. ⚠️ Third time this family
+has appeared — the sidebar brand's gap, the "Use 0 activit ies" button, now this. **Never split a
+sentence across elements inside a flex row.**
+
+`MODULE_V` → `20260911a7`. Nothing was written to any project in this entry.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+
 ### 2026-09-11 (a6) — The import wizard: read first, and the reading changed the answer
 
 Owner: *"Let's do the import wizard too."*
