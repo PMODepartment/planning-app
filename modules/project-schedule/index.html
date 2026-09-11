@@ -52,6 +52,16 @@
        With a `110px` basis and grow, it takes whatever the row has left, at any width, and the row
        can no longer break. It is still 160px+ on any normal window because it grows into the space
        the `.ps-tb-spacer` would otherwise absorb. */
+    /* ⚠️⚠️ THE ONE CONTROL WITH AN UNBOUNDED LABEL. The grouping button's face shows the whole
+       path, so "Trade > Activity > Tower > Level > Zone > Unit" measured 308px — a quarter of the
+       row — while "WBS" measures 90. Nothing else here grows with the data, so this is what made
+       the toolbar reflow: change the grouping and the colour and ? buttons jump to the second row
+       and back. Measured on the deployed build at 1168px: children summed 2244px, and this was the
+       widest of seventeen by more than 3x.
+       Capped and ellipsised. The full path is still on the button's `title`, and the grouping menu
+       itself shows it in full — the face only has to say which grouping is live, not recite it. */
+    #ps-groupbtn-txt { display:inline-block; max-width:190px; overflow:hidden;
+      text-overflow:ellipsis; white-space:nowrap; vertical-align:bottom; }
     .ps-tb-row .ps-search { flex:1 1 100px; min-width:100px; }
     .ps-tb-row .ps-search .pd-input { width:100%; }
     /* The <input> inside .ps-search has no CSS width, so its default min-width:auto resolves to
@@ -9607,8 +9617,16 @@
   // currently selected group-by no longer exists.
   function populateGroupSelect() {
     normalizeGroupBys();
+    /* ⚠️ The face is ellipsised now (see #ps-groupbtn-txt), so the full path has to live somewhere
+       the planner can still read it — the button's own tooltip. */
+    var _gb = document.getElementById('ps-groupbtn');
     var t = document.getElementById('ps-groupbtn-txt');
-    if (t) t.textContent = groupBys.map(dimLabel).join(' › ');   // value only — see _paintViewBtn
+    var _full = groupBys.map(dimLabel).join(' › ');
+    if (t) t.textContent = _full;   // value only — see _paintViewBtn
+    /* ⚠️ The face is capped at 190px and ellipsised, so a long path is TRUNCATED ON SCREEN. The
+       whole thing goes on the title, or capping it would have hidden which grouping is live —
+       trading one defect for a worse one. */
+    if (_gb) _gb.title = 'Grouping: ' + _full + ' — pick the levels and their order.';
     var m = document.getElementById('ps-group-menu');
     if (m && m.classList.contains('open')) renderGroupMenu();
   }
