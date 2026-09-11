@@ -13,6 +13,66 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### The declaration was never READ on a cold open (2026-09-11 zi) — fmlozano
+
+Owner: *"let's test the LSM end-to-end... let's see how the clashes originated"*. Driving the
+**live, signed-in** app on **OPW101 — One Portwood Residences** (2,561 activities) found two
+defects, and the first one disabled most of the last three days' work.
+
+### 1. ⚠️⚠️ TWO SENTENCES ON SCREEN WERE BOTH FALSE
+The clash strip said *"17 storeys are not in your Schedule Setup's floor list"* and *"No
+cross-trade handoff is declared in this project's Schedule Setup"*. Measured:
+
+| | |
+|---|---|
+| `ScheduleBuilder.locCatalogue()` (what `_lsmDecl` reads) | **0 floors** |
+| `locCatalogueFor(pid)` (the cold-open reader) | **18 floors, each with its category** |
+| Level values on the activities matching the setup's floor list | **18 of 18, exactly** |
+| trades carrying a declared handoff | **4** |
+
+**The naming was never the problem; the read was.** `cfg` is only populated once the Schedule Setup
+TAB has been opened, and nobody opens it on the way to a chart — so on every cold open the
+declared floor ORDER fell back to the `levelRank` heuristic AND every storey came back with no
+category, which means the per-category handoff **could never fire**. I wired `tradeHandoffFor`'s
+cold open and left its prerequisite without one.
+
+Fixed with the same pattern: `_lsmDeclWarm()`, once per project, not awaited, invalidating **both**
+the rate (the axis moves) and the clashes. ⚠️ The warmed catalogue lives in `_lsmDeclCat`, **not**
+in `_lsmDeclMemo`, which `_clearLsmRateMemo` wipes every frame — the `_lsmLeadMemo` lesson.
+
+⚠️⚠️ **The suite caught this as a REGRESSION IN MY OWN FIX, and how it did is the point.**
+`_lsmDecl` wraps its whole body in `try/catch`, so the unlinked `_lsmDeclCat` did not fail the link
+pass — it degraded **silently** to the heuristic basis, and four assertions failed with
+`"heuristic"` and no other clue. **Third appearance of that trap.**
+
+### 2. ⚠️⚠️ "START TOGETHER" WAS BEING CONTRADICTED ON SCREEN
+One Portwood's declared sequence, read off the live setup:
+
+| Leading trade | whole-trade | basement | podium | typical | roof |
+|---|---|---|---|---|---|
+| General Requirements | **start together** | — | — | start together | — |
+| Site Works | — | 1 | 1 | 1 | 1 |
+| Structural Works | — | 4 | 4 | 4 | 4 |
+| Architectural Works | — | 1 | 1 | 1 | 1 |
+| MEPF Works | nothing declared | | | | |
+
+The planner marked **General Requirements parallel**, and the strip still reported
+*"F1 — Site Works before General Requirements, 25 wd"*. The same-storey overlap class knew
+nothing about `tradeParallel`. **A chart contradicting an answer given two screens away is worse
+than not checking at all.**
+⚠️ Suppressed now — but **only for the trade that actually follows**, exactly as the handoff
+does, so a parallel answer cannot excuse an overlap between trades three apart; and per category,
+so "start together on the basements" does not excuse a typical floor.
+
+### Verified
+**539 assertions against the working tree, 27 against the pinned base, 0 failing.**
+⚠️⚠️ **23 negative builds, each reverting one decision, all 23 bite.**
+⚠️ One of them **passed at first**: the assertion matched `_declaredParallel(...)` anywhere on
+the line, so `if (false && _declaredParallel(...))` satisfied it. **Third time a substring assertion
+has been satisfied by dead code here** — it now requires the call to BE the condition.
+`node --check` PARSE OK, 0 functions lost, 61 insertions / 3 deletions.
+`MODULE_V` → `20260911zi`.
+
 ### A restored LSM mode came back at the PLAIN row height (2026-09-11 zh) — fmlozano
 
 Owner, with a screenshot: *"the width of the rows is too big that the gantt bars in the WBS do not

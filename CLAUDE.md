@@ -98,6 +98,28 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-11 (zi) — The LSM declaration was never read on a cold open
+
+End-to-end test of the LSM on the **live, signed-in** app (OPW101, 2,561 activities) found two
+defects. Detail: [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+- ⚠️⚠️ **Two sentences on screen were both false.** The strip said *"17 storeys are not in your
+  Schedule Setup's floor list"* and *"No cross-trade handoff is declared"* on a project where
+  **18 of 18** Level values match the floor list exactly and four trades carry a handoff.
+  `locCatalogue()` answered **0 floors** where `locCatalogueFor(pid)` answered **18 with
+  categories**: `_lsmDecl` had no cold-open path, so the declared floor order fell back to the
+  heuristic and the per-category handoff **could never fire**. The prerequisite of the feature
+  wired yesterday had no cold open of its own.
+- ⚠️⚠️ **"Start together" was being contradicted on screen.** The planner marked General
+  Requirements parallel and the strip still reported *"Site Works before General Requirements"*.
+  The overlap class now honours it — only for the trade that actually follows, and per category.
+
+**539 assertions on the working tree, 27 against the pinned base, 0 failing; 23 negative builds, all
+bite.** ⚠️ The suite caught the first fix regressing itself: `_lsmDecl`'s try/catch swallowed an
+unlinked name into a silent "heuristic", the **third** appearance of that trap. And one negative
+**passed** until the assertion was tightened — `if (false && call(...))` satisfied a substring
+match, also the third. `MODULE_V` → `20260911zi`.
+
 ### 2026-09-11 (zh) — A restored LSM mode came back at the plain row height
 
 Owner, with a screenshot: *"the rows are too big ... the gantt bars do not align with the WBS row"*.

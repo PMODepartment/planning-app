@@ -15039,7 +15039,7 @@
     try { _tradeMemo = {}; } catch (e) {}
     /* ⚠️ The declared handoff is read from the setup, so an edit to the setup makes it stale —
        and it is deliberately NOT on `_clearLsmRateMemo`'s per-frame list (see `_lsmLead`). */
-    try { _clearLsmLeadMemo(); _lsmClashMemo = null; } catch (e) {}
+    try { _clearLsmLeadMemo(); _clearLsmDeclCat(); _lsmClashMemo = null; } catch (e) {}
     // The levels are columns and group-by dimensions as well as stacking bands.
     try { populateGroupSelect(); } catch (e) {}
     try { seedExtraHidden(); } catch (e) {}
@@ -22732,6 +22732,38 @@
      the floor plans for the whole life of that feature. Same reader shape as the WBS matcher's. */
   var _lsmDeclMemo = null;
   function _clearLsmDeclMemo() { _lsmDeclMemo = null; }
+  /* ⚠️⚠️ THE COLD OPEN, WITHOUT WHICH NONE OF THIS FIRES. Measured on OPW101, signed in:
+     `ScheduleBuilder.locCatalogue()` answered **0 floors** while `locCatalogueFor(pid)` answered
+     **18, every one carrying its category** - because `cfg` is only populated once the Schedule
+     Setup TAB has been opened, and nobody opens it on the way to a chart. Two things were being
+     silently disabled by that:
+       - the DECLARED FLOOR ORDER fell back to the `levelRank` heuristic on every cold open, and
+       - every storey came back with no category, so the per-category handoff could never fire.
+     The strip said so out loud - *"17 storeys are not in your Schedule Setup's floor list"* and
+     *"No cross-trade handoff is declared"* - and **both sentences were false**: 18 of 18 Level
+     values match the setup's floor list exactly. The naming was never the problem; the read was.
+     ⚠️ Its own variable, NOT the memo: `_lsmDeclMemo` is cleared every frame by
+     `_clearLsmRateMemo`, so a warmed catalogue parked there would be thrown away on the next
+     repaint. Same lesson as `_lsmLeadMemo`. */
+  var _lsmDeclCat = null;
+  var _lsmDeclAsked = null;
+  function _clearLsmDeclCat() { _lsmDeclCat = null; _lsmDeclAsked = null; }
+  function _lsmDeclWarm() {
+    if (!_lsmAggOn() || !pid || _lsmDeclAsked === pid) return;
+    _lsmDeclAsked = pid;
+    try {
+      if (typeof ScheduleBuilder === 'undefined' || !ScheduleBuilder.locCatalogueFor) return;
+      ScheduleBuilder.locCatalogueFor(pid).then(function (cat) {
+        if (!cat || !Object.keys(cat).length) return;
+        _lsmDeclCat = cat;
+        /* Everything downstream of the declaration is now stale: the floor ORDER (so the rate's
+           ordinals), and the categories the handoff is measured in. */
+        _clearLsmDeclMemo(); _lsmRateMemo = null; _lsmClashMemo = null;
+        if (_lsmAggOn()) { try { renderGrid(); renderGantt(); renderActLegend(); } catch (e) {} }
+        if (flowlineMode) { try { renderFlowline(); } catch (e) {} }
+      }, function () {});
+    } catch (e) {}
+  }
   /* ⚠️⚠️ THE DECLARED CROSS-TRADE HANDOFF — "how many floors of the leading trade are done
      before the following one starts". Owner: *"Wire cfg.tradeLeads into the clash detection"*.
      ⚠️⚠️ `cfg.tradeLeads` ALONE WOULD HAVE BEEN A DEAD END. It is the LEGACY per-pair field:
@@ -22786,8 +22818,10 @@
     if (_lsmDeclMemo) return _lsmDeclMemo;
     var m = {}, n = 0, kind = {};
     try {
-      var cat = (typeof ScheduleBuilder !== 'undefined' && ScheduleBuilder.locCatalogue)
-        ? (ScheduleBuilder.locCatalogue() || {}) : {};
+      /* ⚠️ The warmed catalogue wins: on a cold open the synchronous one is empty, and on a
+         session where the setup tab IS open the two are the same read. */
+      var cat = _lsmDeclCat || ((typeof ScheduleBuilder !== 'undefined' && ScheduleBuilder.locCatalogue)
+        ? (ScheduleBuilder.locCatalogue() || {}) : {});
       Object.keys(cat).forEach(function (lid) {
         (cat[lid] || []).forEach(function (e) {
           if (!e || e.dim !== 'floor' || !e.value) return;
@@ -22803,6 +22837,7 @@
         });
       });
     } catch (e) { m = {}; n = 0; kind = {}; }
+    if (!n) _lsmDeclWarm();          /* empty means "not read yet" far more often than "none" */
     return (_lsmDeclMemo = { map: m, n: n, kind: kind });
   }
   /* The rank used by BOTH the row order and the rate fit, so the slope always describes the chart
@@ -23137,6 +23172,25 @@
     if (!_lsmAggOn() || !DL || !DL.length) return (_lsmClashMemo = out);
     var seq = _lsmSeq();
     out.basis = seq.basis;
+    /* ⚠️⚠️ "START TOGETHER" SUPPRESSES THE SAME-STOREY OVERLAP TOO, not just the handoff.
+       Found on OPW101: the planner marked **General Requirements** as running in parallel, and the
+       strip still reported *"F1 - Site Works before General Requirements, 25 wd"*. That is the
+       chart contradicting an answer the planner gave in the Schedule Setup two screens away, which
+       is worse than not checking at all.
+       ⚠️ ONLY FOR THE TRADE THAT ACTUALLY FOLLOWS, exactly as the handoff does: the setup's
+       parallel answer is about a trade and its immediate successor, so it cannot excuse an overlap
+       between trades three apart that nobody said anything about. */
+    var _par = _lsmLead(), _parNext = {};
+    for (k = 0; k < seq.order.length - 1; k++) _parNext[seq.order[k]] = seq.order[k + 1];
+    var _parNorm = function (v) { return String(v == null ? '' : v).trim().toLowerCase(); };
+    function _declaredParallel(a, b, fk) {
+      if (_parNext[a] !== b) return false;                 /* not the pair the answer is about */
+      var rec = _par.lead[_parNorm(a)];
+      if (!rec) return false;
+      if (rec.par) return true;                            /* the whole trade starts together */
+      var kr = fk && rec.kind ? rec.kind[fk] : null;
+      return !!(kr && kr.p);                               /* this category starts together */
+    }
     var min = null, max = null, rowsOf = [], rowAt = {}, i, j, k;
     for (i = 0; i < DL.length; i++) {
       var r = DL[i]; if (!r || !r._glsm) continue;
@@ -23157,6 +23211,10 @@
         for (var c = 0; c < bars.length; c++) {
           var A = bars[a], B = bars[c];
           if (seq.idx[A.value] >= seq.idx[B.value]) continue;   /* A must PRECEDE B in the sequence */
+          /* ⚠️ The planner already said these two run together - see _declaredParallel. The
+             storey's own category is used where it is known, so "start together on the basements"
+             does not excuse an overlap on a typical floor. */
+          if (_declaredParallel(A.value, B.value, _lsmDecl().kind[locNormKey(row.r._graw || row.r.activity_name || '')] || '')) continue;
           /* B is supposed to follow A on this storey. It clashes if it starts before A finishes. */
           if (+B.s > +A.f) continue;
           var s = B.s, f = (+A.f < +B.f) ? A.f : B.f;
