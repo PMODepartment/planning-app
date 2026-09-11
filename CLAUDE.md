@@ -78,6 +78,7 @@ developer, plug into one shared shell.
 | `dashboard.html` | **Project Home** for the selected project (Project/Program/Workspace tabs + module grid) |
 | `admin.html` | User approval/roles/project-assignment + project & workspace management |
 | `supabase-schema.sql` / `supabase-setup.sql` | All shared + module tables, RLS, grants, helpers, bootstrap |
+| `tools/wiring-check.js` | **Run `node tools/wiring-check.js` before any commit that touches a shared asset or a cross-module call.** Loads every shipped browser script against a window stub and proves: each assigns its global, no export (incl. `_internals`) is undefined, every cross-module reference names a key its provider really exports, every referenced asset exists and is on ONE version, and every enabled module's page is real. ⚠️ It **self-tests first** by reproducing the 2026-09-10 (z6) outage in memory — a checker that has never failed proves nothing. |
 | `MODULE_CONTRACT.md` | Rules every module developer must follow |
 
 ## Roles
@@ -94,6 +95,65 @@ developer, plug into one shared shell.
 ---
 
 ## Changelog
+
+### 2026-09-11 (uf) — "Are the modules connected?" becomes a thing the repo can prove
+
+Owner: *"Make sure every module connected with each other properly … perform a debugging process …
+improvement in the infrastructure."* So this is not an assertion that they are connected; it is a
+**committed checker** that answers the question on every future change — `tools/wiring-check.js`,
+run with `node tools/wiring-check.js`.
+
+**⚠️⚠️ THE FAILURE IT EXISTS FOR IS ON FILE AND IT KILLED A LIVE MODULE.** On 2026-09-10 (z6) the
+entire Contracts & Claims BOQ was dead in production because `boq.js`'s `_internals` export named
+`locKey`, a function deleted in the same refactor. That object literal is evaluated when the IIFE
+returns, so it threw there, **`window.BOQ` was never assigned**, and every BOQ feature went down
+together — while `node --check` parsed the file happily, because a ReferenceError is a runtime fact.
+Three passes shipped on top of that dead module without noticing.
+
+So the checker **executes** rather than reads, and proves five things:
+
+1. every shipped browser script **loads** and assigns its global — the z6 failure;
+2. no exported key is `undefined`, **including one level into `_internals`**, where z6 hid;
+3. **every cross-module reference names a key its provider really exports** — this is the half that
+   answers the owner's question: (1) and (2) prove a module *loads*, (3) proves module A can
+   actually reach the function it calls in module B. **3,457 references checked**;
+4. every referenced asset exists on disk, and each is on **one** version;
+5. every `enabled: true` module in `config.js` has a page that exists.
+
+**⚠️ IT SELF-TESTS BEFORE IT REPORTS ANYTHING.** A checker that has never failed proves nothing, so
+it re-injects the z6 shape into the real `boq.js` in memory and aborts unless it catches it —
+`locKey is not defined`, `window.BOQ === undefined`. Green means something only because that bites.
+
+**And the first full run found a real defect, which was mine.** `modules/stakeholder-map/module.js`
+was referenced at **two versions**: `20260911ud` from the module's own page and **`20260910y5`** from
+`person.html`, which loads the same file. I introduced the split in (uc) and widened it in (ud) by
+bumping only the module's own page. ⚠️ **The 2026-09-10 (y4) entry warns about this exact trap for
+this exact file** — *"the (y3) attempt bumped stakeholder-map/module.js on its own page only and left
+person.html … producing a genuine version split the asset audit caught"* — and I walked into it
+anyway. Effect: a planner landing on the person page was served the **old** module. Fixed.
+
+**⚠️ Three of the checker's own first-run findings were the checker's fault, and each is recorded in
+it rather than quietly patched:**
+- **`theme.js` reported as failing to load** — it calls `matchMedia()` unqualified, and
+  `new Function` resolves a bare name against the *real* global scope, not the `window` object
+  passed in. Every bare global a shipped script legitimately uses is now passed by name, through one
+  runner shared by the self-test and the sweep so they cannot diverge.
+- **`PPR._syncSelChrome` reported as an unresolved cross-module call** — it occurs exactly once in
+  the repo, inside an `<!-- … -->` block explaining the selection chrome. Stripping only JS comments
+  turns documentation into a finding, which is how a checker trains people to ignore it.
+- **Version splits are tracked per resolved PATH, never per basename** — every module has its own
+  `module.css`, and grouping by basename reports a split that does not exist. That false positive is
+  already on file from the 2026-09-09 (m) asset audit.
+
+Result on the tree as it stands: **123 passed, 0 failed** — 38 providers load and assign, no
+undefined exports, 3,457 cross-module references resolve, every asset exists on one version, and all
+enabled modules have real pages.
+
+⚠️ **What it does NOT check, stated rather than implied:** it proves a module can *reach* an export,
+not that the call is *correct* — arity, argument shapes and return contracts are out of scope. And
+the stub is deliberately thin: a stub that answered everything would let a module calling a function
+nobody provides look healthy, which is the opposite of the point.
+
 
 ### 2026-09-11 (ue) — #2 was already fixed; what was broken was the route to it
 
