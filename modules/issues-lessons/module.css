@@ -820,43 +820,26 @@ html.pd-dark { --il-panel-accent: #FF8A80; }
 .il-dash-fulllist-card .pd-tablewrap,
 .il-dash-lessons-card .pd-tablewrap { max-height: 400px; overflow-y: auto; }
 
-/* ---- Drag-to-reorder (item 2) ----------------------------------------- */
-[draggable="true"].il-reorderable { cursor: grab; }
+/* ---- Drag-to-reorder (item 2; 2026-09-11: Pointer Events, one gesture for
+   mouse, touch and pen — see wireReorder in module.js. The move-up/move-down
+   button pair that used to stand in for the grip below 700px, because native
+   HTML5 drag-and-drop never fires on a touch device, is gone: Pointer Events
+   do fire on touch, so the one grip now works at every width. Do not bring
+   `[draggable="true"]`/`ondragstart` back for this — it is exactly what
+   didn't work on a phone.) ------------------------------------------------ */
+.il-reorderable { cursor: grab; }
 .il-dragging { opacity: .45; }
 .il-drop-before { box-shadow: inset 0 2px 0 0 var(--pd-red); }
 .il-drop-after { box-shadow: inset 0 -2px 0 0 var(--pd-red); }
 .il-draghandle {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 18px; color: var(--pd-line); cursor: grab; flex: none;
+  width: 18px; min-height: 24px; color: var(--pd-line); cursor: grab; flex: none;
+  /* ⚠️⚠️ Load-bearing on touch: without this, a finger pressing the grip is
+     read as the start of a page scroll before our own pointermove handler
+     ever gets a look-in, and the drag simply never starts. */
+  touch-action: none;
 }
 .il-draghandle:hover { color: var(--pd-muted); }
-/* ITEM 3 (2026-09-01, mobile round): move-up/move-down step buttons stand in
-   for the drag grip below 700px, where HTML5 drag-and-drop never fires at
-   all on a touch device (see the note on dragGripHTML/moveButtonsHTML in
-   module.js) — only one of the two controls is ever shown at a given width.
-   ⚠️ Sized smaller than this app's usual 44px touch minimum on purpose: a
-   full-size control here would make every row noticeably taller across the
-   whole register just for this one cell, and a step button's target (move
-   one place) tolerates an imprecise tap far better than a primary action
-   does — a miss just needs a second tap, not a wrong record touched. */
-.il-movebtns { display: none; flex-direction: column; gap: 1px; }
-.il-movebtn {
-  display: flex; align-items: center; justify-content: center;
-  width: 22px; height: 16px; padding: 0; border: 1px solid var(--pd-line);
-  border-radius: 3px; background: var(--pd-card); color: var(--pd-muted);
-  font-size: var(--pd-fs-micro); line-height: 1; cursor: pointer;
-}
-.il-movebtn:hover:not(:disabled) { background: var(--pd-bg); color: var(--pd-ink); }
-.il-movebtn:disabled { opacity: .3; cursor: default; }
-@media (max-width: 700px) {
-  .il-draghandle { display: none; }
-  /* Row (not column) here — the dragcell becomes a stacked card's own
-     top block at this width (see "Mobile & tablet" below), so a horizontal
-     pair reads as a compact toolbar line rather than an unexplained vertical
-     stack taking its own height before the card's real content starts. */
-  .il-movebtns { display: flex; flex-direction: row; gap: 6px; margin-bottom: 4px; }
-  .il-movebtn { width: 36px; height: 28px; font-size: var(--pd-fs-sm); }
-}
 
 /* ---- People picker (Champion / Responsible) ------------------------------
    Chips for accounts, built from the dropdown alone (2026-09-03, owner: "the

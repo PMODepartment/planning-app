@@ -217,8 +217,9 @@ window.IssuesLessons = (function () {
     return !!(r && r.lesson_learned && r.lesson_learned.trim());
   }
 
-  // ---- ITEM 2: drag-to-reorder — the display order the Issues list and the
-  // Lessons list draw from. `sort_order` is a plain nullable integer (migration
+  // ---- ITEM 2: drag-to-reorder (2026-09-11 round: Pointer Events, not HTML5
+  // drag-and-drop) — the display order the Issues list and the Lessons list
+  // draw from. `sort_order` is a plain nullable integer (migration
   // 2026-09-01-issues-lessons-reorder.sql); a row nobody has dragged has none,
   // so it falls back to the existing date-based order it always had. Once a
   // list is reordered, every row in the reordered view carries an explicit
@@ -249,80 +250,86 @@ window.IssuesLessons = (function () {
   // renumbers what is actually on screen, and its members are the SAME objects that live
   // in `baseArr` (a `.filter()` result, never a copy), so mutating `r.sort_order` here
   // already updates the real row; `baseArr.sort(cmp)` after just re-settles its order.
-  var _dragReorderId = null;
   function dragGripHTML(id) {
-    return '<span class="il-draghandle il-reorderable" draggable="true" data-reorder="' + Fmt.esc(id) +
+    // ⚠️⚠️ NO `draggable="true"` — see wireReorder below. HTML5 drag-and-drop
+    // never fires on a touch device at all, which used to mean the grip did
+    // nothing on a phone and a move-up/move-down button pair stood in for it
+    // there (removed 2026-09-11: "use drag to re-order... instead of up and
+    // down buttons"). Pointer Events fire for mouse, touch AND pen from the
+    // same handler, so one gesture now works everywhere.
+    return '<span class="il-draghandle il-reorderable" data-reorder="' + Fmt.esc(id) +
       '" title="Drag to reorder"><svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor">' +
       '<circle cx="3" cy="3" r="1.3"/><circle cx="9" cy="3" r="1.3"/><circle cx="3" cy="8" r="1.3"/>' +
       '<circle cx="9" cy="8" r="1.3"/><circle cx="3" cy="13" r="1.3"/><circle cx="9" cy="13" r="1.3"/></svg></span>';
   }
-  // ITEM 3 (2026-09-01, mobile round): touch devices never fire HTML5 drag
-  // events at all — `dragGripHTML`'s native `draggable`/`ondragstart` is a
-  // desktop-mouse-only mechanism, which is exactly why reordering "does
-  // nothing" on a phone: not a bug in the drag code, a whole input model
-  // that doesn't exist on touch. Rather than reimplement drag-and-drop on top
-  // of touch/pointer events (real gesture-conflict risk with page scroll, and
-  // nothing here can be verified against a real touchscreen), a step button
-  // pair does the same job with no gesture at all — CSS shows these ONLY
-  // ≤700px and hides the drag grip there instead (module.css), since dragging
-  // genuinely doesn't work in that state and a control that does nothing is
-  // worse than no control.
-  function moveButtonsHTML(id, isFirst, isLast) {
-    return '<span class="il-movebtns">' +
-      '<button type="button" class="il-movebtn" data-moveup="' + Fmt.esc(id) + '"' +
-        (isFirst ? ' disabled' : '') + ' title="Move up" aria-label="Move up">▲</button>' +
-      '<button type="button" class="il-movebtn" data-movedown="' + Fmt.esc(id) + '"' +
-        (isLast ? ' disabled' : '') + ' title="Move down" aria-label="Move down">▼</button>' +
-    '</span>';
-  }
+  // `container` must render each reorderable ROW with a `data-reorder-row`
+  // attribute equal to its grip's `data-reorder` id (see the Issues/Lessons
+  // row templates) — that is the DROP target, deliberately the whole row and
+  // not just the small grip icon, since a fingertip is far less precise than
+  // a mouse cursor. The grip itself is only ever the DRAG START handle.
   function wireReorder(container, list, baseArr, cmp, table) {
     if (!container) return;
-    var els = container.querySelectorAll('[data-reorder]');
-    Array.prototype.forEach.call(els, function (el) {
+    var grips = container.querySelectorAll('[data-reorder]');
+    var rows = container.querySelectorAll('[data-reorder-row]');
+    function clearMarks() {
+      Array.prototype.forEach.call(rows, function (x) { x.classList.remove('il-drop-before', 'il-drop-after'); });
+    }
+    Array.prototype.forEach.call(grips, function (el) {
       // The handle itself must never also trigger a row/card's own "open" click.
       el.onclick = function (e) { e.stopPropagation(); };
-      el.ondragstart = function (e) {
-        _dragReorderId = el.dataset.reorder;
-        try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', _dragReorderId); } catch (e2) { /* some browsers refuse setData on certain drag sources — the id is already cached above */ }
+      var dragId = null, pointerId = null;
+      el.onpointerdown = function (e) {
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
+        dragId = el.dataset.reorder;
+        pointerId = e.pointerId;
+        // Pointer capture keeps every subsequent move/up event routed to THIS
+        // element even once the finger/cursor has moved elsewhere — without
+        // it, a finger sliding off the tiny grip would silently end the drag.
+        try { el.setPointerCapture(pointerId); } catch (e2) { /* capture can be refused on some browsers; the drag still tracks via the move handler below */ }
         el.classList.add('il-dragging');
-      };
-      el.ondragend = function () {
-        el.classList.remove('il-dragging');
-        Array.prototype.forEach.call(els, function (x) { x.classList.remove('il-drop-before', 'il-drop-after'); });
-        _dragReorderId = null;
-      };
-      el.ondragover = function (e) {
-        if (!_dragReorderId || _dragReorderId === el.dataset.reorder) return;
+        // Stops a touch drag also panning the page underneath the finger, and
+        // stops the tap that started it from later firing as a click-to-open.
         e.preventDefault();
-        var rect = el.getBoundingClientRect();
+      };
+      el.onpointermove = function (e) {
+        if (pointerId == null || e.pointerId !== pointerId) return;
+        // Pointer capture routes the EVENT to `el`, but hit-testing at the
+        // pointer's actual screen position still works normally — this is
+        // what finds which row is currently under the finger/cursor.
+        var hit = document.elementFromPoint(e.clientX, e.clientY);
+        var row = hit && hit.closest ? hit.closest('[data-reorder-row]') : null;
+        clearMarks();
+        if (!row || row.dataset.reorderRow === dragId) return;
+        var rect = row.getBoundingClientRect();
         var before = (e.clientY - rect.top) < rect.height / 2;
-        Array.prototype.forEach.call(els, function (x) { if (x !== el) x.classList.remove('il-drop-before', 'il-drop-after'); });
-        el.classList.toggle('il-drop-before', before);
-        el.classList.toggle('il-drop-after', !before);
+        row.classList.toggle('il-drop-before', before);
+        row.classList.toggle('il-drop-after', !before);
       };
-      el.ondrop = function (e) {
-        e.preventDefault();
-        var targetId = el.dataset.reorder, dragId = _dragReorderId, before = el.classList.contains('il-drop-before');
-        el.classList.remove('il-drop-before', 'il-drop-after');
-        if (!dragId || dragId === targetId) return;
-        applyReorder(list, baseArr, cmp, table, dragId, targetId, before);
+      // ⚠️ pointerup and pointercancel are NOT the same event and must not
+      // share one handler that always commits: a cancel (the OS taking the
+      // gesture for something else — a back-swipe, a browser-chrome pull —
+      // is exactly when a row is likely still marked from the last move) has
+      // to abort with no write, or an interrupted drag would silently commit
+      // whatever it last hovered over.
+      function reset() {
+        try { el.releasePointerCapture(pointerId); } catch (e2) { /* already released, or never captured */ }
+        el.classList.remove('il-dragging');
+        clearMarks();
+        pointerId = null;
+        dragId = null;
+      }
+      el.onpointerup = function (e) {
+        if (pointerId == null || e.pointerId !== pointerId) return;
+        var marked = container.querySelector('.il-drop-before, .il-drop-after');
+        var before = marked ? marked.classList.contains('il-drop-before') : false;
+        var targetId = marked ? marked.dataset.reorderRow : null;
+        var from = dragId;
+        reset();
+        if (targetId && from && targetId !== from) applyReorder(list, baseArr, cmp, table, from, targetId, before);
       };
-    });
-    // ITEM 3: move-up/move-down — same underlying `applyReorder` the drag
-    // handle uses, just fed a computed neighbour id instead of a drop target,
-    // so both input methods can never disagree about what "move" means.
-    Array.prototype.forEach.call(container.querySelectorAll('[data-moveup],[data-movedown]'), function (btn) {
-      btn.onclick = function (e) {
-        e.stopPropagation();
-        if (btn.disabled) return;
-        var up = btn.hasAttribute('data-moveup');
-        var id = up ? btn.dataset.moveup : btn.dataset.movedown;
-        var idx = -1;
-        for (var i = 0; i < list.length; i++) { if (String(list[i].id) === String(id)) { idx = i; break; } }
-        if (idx < 0) return;
-        var neighborIdx = up ? idx - 1 : idx + 1;
-        if (neighborIdx < 0 || neighborIdx >= list.length) return;
-        applyReorder(list, baseArr, cmp, table, id, list[neighborIdx].id, up);
+      el.onpointercancel = function (e) {
+        if (pointerId == null || e.pointerId !== pointerId) return;
+        reset();
       };
     });
   }
@@ -1750,18 +1757,17 @@ window.IssuesLessons = (function () {
       var a = agingDays(r);
       var agingTxt = a == null ? '—' : (a + ' day' + (a === 1 ? '' : 's'));
       var hot = a != null && a > 90 && (r.status || 'Open') !== 'Closed';
-      // data-l = the column heading. Unused on desktop (the <thead> supplies it);
-      // at phone width module.css hides the head and stacks each row into a card,
-      // where every value needs its own inline label (.il-table td::before).
-      return '<tr class="il-clickrow" data-open="' + Fmt.esc(r.id) + '">' +
+      // data-l = the column heading — unused on desktop (the <thead> supplies
+      // it), read by the phone-width layout (2026-09-11: scroll, not cards —
+      // see the note on .pd-table.il-table in module.css).
+      var issCanDrag = !_issSort.key;
+      return '<tr class="il-clickrow" data-open="' + Fmt.esc(r.id) + '"' +
+        (issCanDrag ? ' data-reorder-row="' + Fmt.esc(r.id) + '"' : '') + '>' +
         // Item 2: drag handle — a separate element so the row's own click-to-open
         // handler is never fought by the drag gesture. ITEM 9: blank while a
         // column sort is active (see the note above the table) — a handle that
-        // would just be discarded by the next sorted render. ITEM 3 (this
-        // round): the move buttons sit alongside it — CSS shows only one of
-        // the two depending on width (module.css), so this cell never shows
-        // both a grip and buttons at once.
-        '<td class="il-dragcell">' + (_issSort.key ? '' : dragGripHTML(r.id) + moveButtonsHTML(r.id, i === 0, i === data.length - 1)) + '</td>' +
+        // would just be discarded by the next sorted render.
+        '<td class="il-dragcell">' + (issCanDrag ? dragGripHTML(r.id) : '') + '</td>' +
         '<td class="il-cell-num">' + (i + 1) + '</td>' +
         '<td data-l="Department">' + Fmt.esc(r.department) + '</td>' +
         // ITEM 1 (2026-09-02): no "Lesson captured" tag here any more — a lesson
@@ -3214,10 +3220,9 @@ window.IssuesLessons = (function () {
     var body = list.map(function (l, i) {
       var resolved = lessonResolvedDate(l);
       var canDrag = !isLegacyLesson(l) && !_lessSort.key;
-      // ITEM 3 (2026-09-01, mobile round): the move buttons alongside the
-      // drag grip — see the note on dragGripHTML/moveButtonsHTML above.
-      return '<tr class="il-clickrow" data-open-lesson="' + Fmt.esc(l.id) + '">' +
-        '<td class="il-dragcell">' + (canDrag ? dragGripHTML(l.id) + moveButtonsHTML(l.id, i === 0, i === list.length - 1) : '') + '</td>' +
+      return '<tr class="il-clickrow" data-open-lesson="' + Fmt.esc(l.id) + '"' +
+        (canDrag ? ' data-reorder-row="' + Fmt.esc(l.id) + '"' : '') + '>' +
+        '<td class="il-dragcell">' + (canDrag ? dragGripHTML(l.id) : '') + '</td>' +
         '<td class="il-ls-dept" data-l="Department">' + Fmt.esc(l.department || '—') + '</td>' +
         '<td class="il-cell-wrap" data-l="Lesson Learned"><div class="il-clip">' + Fmt.esc(l.lesson) + '</div></td>' +
         '<td class="il-cell-wrap" data-l="Issue"><div class="il-clip">' + Fmt.esc(lessonIssueCellText(l)) + '</div></td>' +
