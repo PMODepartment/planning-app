@@ -2327,7 +2327,11 @@
        extends the page."* `overflow-x:hidden` keeps the corner radius clipping the rows. */
     .ps-menu { position:absolute; top:calc(100% + 4px); left:0; z-index:50; display:none; min-width:180px;
       background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); box-shadow:var(--pd-shadow);
-      max-height:78vh; overflow-y:auto; overflow-x:hidden; }
+      /* ⚠️ NOT `78vh`. Measured on the deployed build: the menu opens 166px down the page (topbar
+         + module bar + toolbar), so a cap expressed as a fraction of the VIEWPORT still overhung
+         the bottom by 7px — a cap has to budget for where the menu starts, not just how tall the
+         window is. `max()` keeps it usable if the chrome ever grows past the viewport. */
+      max-height:max(220px, calc(100vh - 230px)); overflow-y:auto; overflow-x:hidden; }
     /* The section labels these menus group by. Sticky, so the heading of the group you are reading
        stays visible once the list scrolls. */
     .ps-menu-h { position:sticky; top:0; z-index:1; background:var(--pd-card);
