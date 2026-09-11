@@ -20887,6 +20887,12 @@
   // shifts as you scroll because the frozen columns interact with the same `order` values.
   // Guarding on a SIGNATURE (not a count) also catches a reorder or a rename that keeps the count.
   var _colSig = null;
+  /* ⚠️ THE BODY KEEPS ITS OWN, because the header does not always bring it along. renderHeader() is
+     called ALONE from four places that have just discovered columns — refreshLocLevels() and the
+     three import/push paths all run `populateGroupSelect(); seedExtraHidden(); renderHeader();` and
+     stop — so syncGridColumns(), which only runs inside renderGrid(), never sees those. Measured
+     live on OPW101: head 39 cells (11 extra columns), every body row 29 (1). */
+  var _bodySig = null, _bodyRepaintQ = 0;
   function gridColSig() { return gridCols().map(colKey).join('|'); }
   // Re-assert the header + the order/hide CSS when the column set has moved under the body.
   function syncGridColumns() {
@@ -20939,6 +20945,16 @@
     applyColHidden();
     applyColOrder();
     syncHeadHeights();
+    /* ⚠️ AND THE BODY, IF THE HEADER JUST MOVED WITHOUT IT — see the note on _bodySig. Deferred by a
+       tick, and the flag is cleared AFTER the repaint, so the renderHeader() that renderGrid() runs
+       through syncGridColumns() cannot queue a second pass: at most one repaint per header change. */
+    _colSig = gridColSig();
+    if (_bodySig !== null && _bodySig !== _colSig && !_bodyRepaintQ) {
+      _bodyRepaintQ = 1;
+      setTimeout(function () {
+        try { renderGrid(); } finally { _bodyRepaintQ = 0; }
+      }, 0);
+    }
   }
   // OPC-style column header menu (Sort / Adjust to fit / Rename / Hide).
   function openColMenu(idx, anchor) {
@@ -21976,6 +21992,9 @@
     var winKey = first + ':' + last + ':' + DL.length;
     if (!force && winKey === _gridWinKey) return;
     _gridWinKey = winKey;
+    // Recorded HERE, not in renderGrid(), because this is the line past which the rows below are
+    // definitely rebuilt — the two early returns above leave the previous body on screen.
+    _bodySig = gridColSig();
     // grid: render only the window, offset with translateY
     var gh = '';
     for (var i = first; i < last; i++) gh += gridRowHTML(DL[i], i);
