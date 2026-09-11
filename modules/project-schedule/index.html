@@ -1046,6 +1046,10 @@
     .ps-lsmclash-chip { display:inline-flex; align-items:center; gap:5px; font:inherit;
       font-size:var(--pd-fs-xs); background:var(--pd-bad-bg); border:1px solid var(--pd-bad-line);
       border-radius:var(--pd-radius); padding:1px 6px; cursor:pointer; color:var(--pd-ink); }
+    /* ⚠️ Same treatment as the flowline's: a dashed left rail marks the handoff class without
+       claiming it is worse than a same-storey overlap. Both are "possible pitfalls" and the deck
+       ranks neither above the other, so a second colour would claim an order it does not make. */
+    .ps-lsmclash-chip.ps-lsmclash-lead { border-left:3px dashed var(--pd-bad); }
     .ps-lsmclash-chip:hover { background:var(--pd-card); }
     .ps-lsmclash-chip > b { font-weight:700; }
     .ps-lsmclash-chip > u { text-decoration:none; color:var(--pd-muted); }
@@ -1102,6 +1106,11 @@
     .ps-fl-block { opacity:.55; }
     .ps-fl-slope { font-size:9px; font-weight:700; }
     .ps-fl-clash { fill:none; stroke:var(--pd-bad); stroke-width:2.5; opacity:.9; }
+    /* ⚠️ The handoff finding is DASHED, so the two classes are distinguishable without a second
+       colour: both are "possible pitfalls" and neither is more severe than the other, so a second
+       hue would claim a ranking the deck explicitly does not make. No literal — dark mode is a
+       pure token remap. */
+    .ps-fl-clash-lead { stroke-dasharray:5px 3px; }
     .ps-fl-dd { stroke:var(--ps-dd,var(--pd-red)); stroke-width:2; }
     .ps-fl-note { margin-top:8px; font-size:var(--pd-fs-xs); color:var(--pd-muted); line-height:1.5; }
     /* The data-date grip: a small tab at the top of the line, and the ONLY draggable part of it.
@@ -15028,6 +15037,9 @@
     try { _clearPhaseMemo(); } catch (e) {}
     try { _clearScopeMemo(); } catch (e) {}
     try { _tradeMemo = {}; } catch (e) {}
+    /* ⚠️ The declared handoff is read from the setup, so an edit to the setup makes it stale —
+       and it is deliberately NOT on `_clearLsmRateMemo`'s per-frame list (see `_lsmLead`). */
+    try { _clearLsmLeadMemo(); _lsmClashMemo = null; } catch (e) {}
     // The levels are columns and group-by dimensions as well as stacking bands.
     try { populateGroupSelect(); } catch (e) {}
     try { seedExtraHidden(); } catch (e) {}
@@ -22703,6 +22715,56 @@
      the floor plans for the whole life of that feature. Same reader shape as the WBS matcher's. */
   var _lsmDeclMemo = null;
   function _clearLsmDeclMemo() { _lsmDeclMemo = null; }
+  /* ⚠️⚠️ THE DECLARED CROSS-TRADE HANDOFF — "how many floors of the leading trade are done
+     before the following one starts". Owner: *"Wire cfg.tradeLeads into the clash detection"*.
+     ⚠️⚠️ `cfg.tradeLeads` ALONE WOULD HAVE BEEN A DEAD END. It is the LEGACY per-pair field:
+     `autoTrace` stopped reading it on 2026-08-13 when the question became per-leading-trade, and
+     nothing has written it since, so on every project set up after that date it is `{}`. Wiring
+     only that would have shipped a check that can never fire on a current project. So the builder
+     resolves the whole chain it already owns — per-pair `tradeLeads` first (most specific, and
+     still present on older setups), then the per-leading-trade `tradeBatchKind`/`tradeBatch` —
+     and this side reads the answer. See `ScheduleBuilder.tradeHandoff`.
+     ⚠️ `cfg.floorLead` is NOT in it: it is a default `blank()` writes to every setup, so it is
+     not evidence that anybody declared anything. No declaration, no lead clash for that pair.
+     ⚠️ NOT CLEARED BY `_clearLsmRateMemo`. The warm below fills this asynchronously, and a
+     per-frame clear would overwrite the fetched answer with the empty synchronous one on the very
+     next repaint — the memo lives until the setup actually changes (`psSetupChanged`). */
+  var _lsmLeadMemo = null;
+  var _lsmLeadAsked = null;
+  function _clearLsmLeadMemo() { _lsmLeadMemo = null; _lsmLeadAsked = null; }
+  function _lsmLead() {
+    if (_lsmLeadMemo) return _lsmLeadMemo;
+    var out = { pair: {}, lead: {}, any: false };
+    try {
+      var h = (typeof ScheduleBuilder !== 'undefined' && ScheduleBuilder.tradeHandoff)
+        ? ScheduleBuilder.tradeHandoff() : null;
+      if (h && h.pair && h.lead) out = h;
+    } catch (e) {}
+    _lsmLeadMemo = out;
+    if (!out.any) _lsmLeadWarm();
+    return out;
+  }
+  /* ⚠️⚠️ THE COLD OPEN, the WBS matcher's own pattern. `ScheduleBuilder` holds a cfg only once
+     the Schedule Setup TAB has been opened this session, and nobody opens it on the way to a chart
+     — so the synchronous read above is empty in precisely the case this check exists for.
+     ⚠️ Deliberately NOT awaited: the chart draws immediately with the same-storey clashes it
+     can already see, and the declared-handoff ones appear a moment later.
+     ⚠️ ONCE PER PROJECT (`_lsmLeadAsked`), or a repaint-per-answer would queue a fetch per
+     frame — the failure the stacking view's `_vsZpAsked` guard exists for. */
+  function _lsmLeadWarm() {
+    if (!_lsmAggOn() || !pid || _lsmLeadAsked === pid) return;
+    _lsmLeadAsked = pid;
+    try {
+      if (typeof ScheduleBuilder === 'undefined' || !ScheduleBuilder.tradeHandoffFor) return;
+      ScheduleBuilder.tradeHandoffFor(pid).then(function (h) {
+        if (!h || !h.any) return;
+        _lsmLeadMemo = h;
+        _lsmClashMemo = null;               /* the only thing that reads it */
+        if (_lsmAggOn()) { try { renderGantt(); renderActLegend(); } catch (e) {} }
+        if (flowlineMode) { try { renderFlowline(); } catch (e) {} }
+      }, function () {});
+    } catch (e) {}
+  }
   function _lsmDecl() {
     if (_lsmDeclMemo) return _lsmDeclMemo;
     var m = {}, n = 0;
@@ -23046,16 +23108,18 @@
      to the planner. Nothing is hidden, moved or refused. */
   function _lsmClash() {
     if (_lsmClashMemo) return _lsmClashMemo;
-    var out = { list: [], marks: {}, n: 0, basis: 'inferred', wd: false };
+    var out = { list: [], marks: {}, n: 0, nOverlap: 0, nLead: 0, basis: 'inferred', wd: false,
+                leadBasis: false };
     if (!_lsmAggOn() || !DL || !DL.length) return (_lsmClashMemo = out);
     var seq = _lsmSeq();
     out.basis = seq.basis;
-    var min = null, max = null, rowsOf = [], i, j, k;
+    var min = null, max = null, rowsOf = [], rowAt = {}, i, j, k;
     for (i = 0; i < DL.length; i++) {
       var r = DL[i]; if (!r || !r._glsm) continue;
       var rank = _lsmRankOf(r._graw || r.activity_name || '');
       if (rank == null) continue;              /* the same rank filter the rate uses */
       rowsOf.push({ r: r, i: i, rank: rank, ser: (r._danc || []).join('\u0001') });
+      rowAt[(r._danc || []).join('\u0001') + '\u0002' + rank] = rowsOf[rowsOf.length - 1];
       for (j = 0; j < r._glsm.length; j++) {
         var b = r._glsm[j];
         if (!min || +b.s < +min) min = b.s;
@@ -23078,8 +23142,8 @@
              start/end pair into a duration. */
           var days = ax.span(dayDiff(min, s), dayDiff(min, f));
           if (days <= LSM_CLASH_MIN) continue;
-          out.n++;
-          out.list.push({ ser: row.ser, rank: row.rank, i: row.i,
+          out.n++; out.nOverlap++;
+          out.list.push({ kind: 'overlap', ser: row.ser, rank: row.rank, i: row.i,
             loc: row.r._graw || row.r.activity_name || '', rowId: row.r.id,
             a: A.value, b: B.value, days: days, s: s, f: f });
           /* BOTH bars carry the mark: a clash is a property of the pair, and marking only the
@@ -23091,6 +23155,78 @@
         }
       }
     });
+    /* ⚠️⚠️ THE SECOND CLASS: THE DECLARED HANDOFF, VIOLATED. The pass above asks "are two
+       trades on one storey at once"; this one asks the question the planner actually answered in
+       the Schedule Setup — *"how many floors does <A> do before <B> follows?"* — and reports where
+       B climbed closer than that. It is the deck's own concern ("the effect of constraints in both
+       time AND location") measured against a stated number rather than an inferred order.
+       ⚠️⚠️ ONLY ON THE DECLARED BASIS. The handoff is declared per TRADE, so it can only be
+       applied when the lanes ARE trades — `catCfg().field === 'work'`, which is exactly what
+       `seq.basis === 'declared'` means here. Colour the chart by an Activity Code and this pass
+       does not run, rather than matching trade names against code values and finding nothing. */
+    var LD = _lsmLead();
+    if (LD.any && seq.basis === 'declared') {
+      var R2 = _lsmRate(), ordAll = R2.ord || {}, byKey = R2.byKey || {};
+      var nextOf = {};
+      for (k = 0; k < seq.order.length - 1; k++) nextOf[seq.order[k]] = seq.order[k + 1];
+      var lnorm = function (v) { return String(v == null ? '' : v).trim().toLowerCase(); };
+      var kk = Object.keys(byKey);
+      kk.forEach(function (ka) {
+        var A = byKey[ka], ordM = ordAll[A.ser];
+        if (!ordM || seq.idx[A.value] == null) return;
+        /* A's storeys BY ORDINAL, so "L floors up" is a lookup and not a search. */
+        var aBy = {};
+        Object.keys(A.byRank).forEach(function (rk) {
+          var o = ordM[rk];
+          if (o != null) aBy[o] = { rank: +rk, v: A.byRank[rk] };
+        });
+        kk.forEach(function (kb) {
+          var B = byKey[kb];
+          if (B.ser !== A.ser || B.value === A.value) return;
+          if (seq.idx[B.value] == null || seq.idx[A.value] >= seq.idx[B.value]) return;
+          /* ⚠️⚠️ A PER-TRADE LEAD APPLIES ONLY TO THE TRADE THAT ACTUALLY FOLLOWS. The setup
+             asks *"how many floors at a time does <A> do before <B> FOLLOWS"*, so `lead[A]` is a
+             statement about A and its immediate successor, not about every trade after it.
+             Applying it to Structural→Tiles would invent a constraint nobody stated. The per-PAIR
+             `tradeLeads` answer names both trades, so it applies to that pair whatever the gap. */
+          var L = LD.pair[lnorm(A.value) + '>' + lnorm(B.value)], how = 'pair';
+          if (L == null && nextOf[A.value] === B.value) { L = LD.lead[lnorm(A.value)]; how = 'trade'; }
+          if (!(L >= 1)) return;
+          out.leadBasis = true;
+          Object.keys(B.byRank).forEach(function (rk) {
+            var oB = ordM[rk];
+            if (oB == null) return;
+            var hit = aBy[oB + L - 1];
+            /* ⚠️⚠️ A STOREY THAT IS NOT IN THE PLAN IS NOT A VIOLATION. Near the top of the
+               building the leading trade simply runs out of floors to be ahead on — B on the roof
+               cannot wait for A to finish four floors above it. Reporting those would put a clash
+               on the last L-1 storeys of every pair on every project, which is noise that would
+               teach the planner to ignore the strip. */
+            if (!hit) return;
+            var bs = B.byRank[rk].s, af = hit.v.f;
+            if (+bs > +af) return;                   /* B waited: the declaration is satisfied */
+            var ax2 = _lsmAxOf(A.cal || B.cal, min, max);
+            if (ax2 && ax2.wd) out.wd = true;
+            var early = ax2.span(dayDiff(min, bs), dayDiff(min, af));
+            if (early <= LSM_CLASH_MIN) return;
+            var row2 = rowAt[A.ser + '\u0002' + rk] || null;
+            out.n++; out.nLead++;
+            out.list.push({ kind: 'lead', ser: A.ser, rank: +rk, i: row2 ? row2.i : 0,
+              loc: R2.label[A.ser + '\u0002' + rk] || '',
+              rowId: row2 ? row2.r.id : '',
+              aloc: R2.label[A.ser + '\u0002' + hit.rank] || '',
+              a: A.value, b: B.value, days: early, s: bs, f: af, need: L, how: how });
+            /* ⚠️ ONLY THE FOLLOWING TRADE IS MARKED, an explicit departure from the same-storey
+               rule above (which marks both because either could be the one out of place). Here the
+               pair is on DIFFERENT storeys and the finding is specifically "B started before the
+               declared handoff" — putting a red stretch on A's bar would mark a trade that is
+               exactly where the planner said it would be. */
+            var key2 = A.ser + '\u0002' + B.value + '\u0002' + rk;
+            (out.marks[key2] = out.marks[key2] || []).push({ s: bs, f: af });
+          });
+        });
+      });
+    }
     /* Worst first: the strip shows a handful and the count carries the rest. */
     out.list.sort(function (p, q) { return q.days - p.days || p.rank - q.rank; });
     return (_lsmClashMemo = out);
@@ -23104,24 +23240,53 @@
     var unit = C.wd ? 'wd' : 'cd', CAP = 8, h = '';
     for (var i = 0; i < C.list.length && i < CAP; i++) {
       var x = C.list[i];
-      var tip = x.b + ' starts on ' + x.loc + ' before ' + x.a + ' finishes there \u2014 ' +
-        x.days + ' ' + (C.wd ? 'working' : 'calendar') + ' days of overlap (' +
-        Fmt.date(dstr(x.s)) + ' \u2192 ' + Fmt.date(dstr(x.f)) + '). ' +
-        (C.basis === 'declared'
-          ? 'The order is your declared construction sequence, so this is out of sequence.'
-          : 'The order is INFERRED from when each trade first starts \u2014 nobody declared it, so treat this as a question rather than a fault.') +
-        ' Click to go to that storey.';
-      h += '<button type="button" class="ps-lsmclash-chip" data-lsmclash="' + esc(x.rowId || '') +
-        '" title="' + esc(tip) + '"><b>' + esc(x.loc) + '</b><u>' + esc(x.b) + ' before ' + esc(x.a) +
+      var tip, lbl;
+      if (x.kind === 'lead') {
+        /* ⚠️⚠️ A DIFFERENT FINDING, IN DIFFERENT WORDS. This one is not "two trades on one
+           storey" — it is "the following trade climbed closer than the handoff you declared", and
+           the tooltip has to name the declared number, where it came from and which storey the
+           leading trade had reached, or it reads as an unexplained accusation. */
+        tip = x.b + ' starts on ' + x.loc + ' while ' + x.a + ' has still not finished ' +
+          (x.aloc || (x.need + ' floors up')) + ' \u2014 ' + x.days + ' ' +
+          (C.wd ? 'working' : 'calendar') + ' days early (' +
+          Fmt.date(dstr(x.s)) + ' \u2192 ' + Fmt.date(dstr(x.f)) + '). ' +
+          'Your Schedule Setup declares ' + x.need + ' floor' + (x.need === 1 ? '' : 's') +
+          ' of ' + x.a + ' done before ' + x.b + ' follows' +
+          (x.how === 'pair' ? ' (a per-pair handoff)' : ' (declared for ' + x.a + ')') + '. ' +
+          'Click to go to that storey.';
+        lbl = esc(x.b) + ' ' + x.need + ' floors behind ' + esc(x.a);
+      } else {
+        tip = x.b + ' starts on ' + x.loc + ' before ' + x.a + ' finishes there \u2014 ' +
+          x.days + ' ' + (C.wd ? 'working' : 'calendar') + ' days of overlap (' +
+          Fmt.date(dstr(x.s)) + ' \u2192 ' + Fmt.date(dstr(x.f)) + '). ' +
+          (C.basis === 'declared'
+            ? 'The order is your declared construction sequence, so this is out of sequence.'
+            : 'The order is INFERRED from when each trade first starts \u2014 nobody declared it, so treat this as a question rather than a fault.') +
+          ' Click to go to that storey.';
+        lbl = esc(x.b) + ' before ' + esc(x.a);
+      }
+      h += '<button type="button" class="ps-lsmclash-chip' + (x.kind === 'lead' ? ' ps-lsmclash-lead' : '') +
+        '" data-lsmclash="' + esc(x.rowId || '') +
+        '" title="' + esc(tip) + '"><b>' + esc(x.loc) + '</b><u>' + lbl +
         '</u><s>' + x.days + ' ' + unit + '</s></button>';
     }
     var more = C.n - Math.min(C.n, CAP);
+    /* ⚠️ THE LABEL SAYS WHICH EVIDENCE IS BEHIND THE COUNT. Same-storey overlaps rest on a
+       trade ORDER (declared or inferred); handoff findings rest on a NUMBER the planner typed.
+       One count covering both without saying so would let the weaker evidence borrow the
+       stronger's authority. */
+    var lead = C.nLead || 0, over = C.nOverlap || 0;
     return '<div class="ps-lsmclash-strip"><span class="ps-lsmclash-lbl" title="' +
       esc('Where two trades are on the same storey at the same time, against ' +
         (C.basis === 'declared' ? 'your declared construction sequence' : 'an order INFERRED from when each trade first starts') +
-        '. The deck calls these "possible pitfalls" - some overlap is deliberate, so these are reported and never blocked or hidden.') +
+        '. The deck calls these "possible pitfalls" - some overlap is deliberate, so these are reported and never blocked or hidden.' +
+        (lead ? ' ' + over + ' of them ' + (over === 1 ? 'is that' : 'are that') + '; the other ' +
+                (lead === 1 ? 'one is' : lead + ' are') + ' a different finding — the following trade climbed closer than the floors-behind handoff declared in your Schedule Setup.'
+              : (C.leadBasis ? ' Your Schedule Setup\u2019s floors-behind handoff was checked too, and nothing violates it.'
+                             : ' No cross-trade handoff is declared in this project\u2019s Schedule Setup, so only same-storey overlaps are checked.'))) +
       '">' + C.n + ' clash' + (C.n === 1 ? '' : 'es') +
-      (C.basis === 'inferred' ? ' <em>(inferred order)</em>' : '') + '</span>' + h +
+      (lead ? ' <em>(' + lead + ' vs declared handoff)</em>'
+            : (C.basis === 'inferred' ? ' <em>(inferred order)</em>' : '')) + '</span>' + h +
       (more > 0 ? '<span class="ps-lsmclash-more" title="' + esc('The strip shows the ' + CAP + ' longest overlaps.') + '">+' + more + ' more</span>' : '') +
       '</div>';
   }
@@ -31866,7 +32031,74 @@
     function floorKind(f) { return (f && f.kind && KIND_LABEL[f.kind]) ? f.kind : (f && f.sub ? 'basement' : 'typical'); }
     // Per-leading-trade, per-kind handoff. Typical falls back to the legacy global tradeBatch/tradeParallel
     // so existing configs keep working; other kinds default to 1 level behind (the old basement 1:1 rule).
-    function batchKind(prev, k) { var m = cfg.tradeBatchKind && cfg.tradeBatchKind[prev]; var v = m ? m[k] : null; if (v == null && k === 'typical') v = cfg.tradeBatch[prev]; if (v == null) v = (k === 'typical' ? (cfg.floorLead || 4) : 1); return Math.max(1, +v || 1); }
+    /* ⚠️⚠️ WHAT THE PLANNER ACTUALLY DECLARED, OR NULL — SPLIT OUT OF `batchKind` so it can be
+       asked WITHOUT the default tail. `batchKind` must always answer a number (the generator has to
+       link something), but the LSM clash detector must be able to tell a DECLARATION from a
+       fallback: flagging a trade for violating a handoff nobody stated is exactly the trust failure
+       this module keeps recording. Behaviour-identical for `batchKind` — it only reaches this call
+       when `m['typical']` was already null, so the first test inside is a no-op there, and the
+       suite executes both to prove it rather than taking this sentence's word for it.
+       ⚠️ The auto-trace dialog writes `cfg.tradeBatch[t]` alongside
+       `cfg.tradeBatchKind[t].typical`, so these normally agree; the per-kind value wins if they
+       ever drift, which is the order `batchKind` itself reads them in. */
+    function declaredBatchOf(c, prev) {
+      var m = c && c.tradeBatchKind && c.tradeBatchKind[prev];
+      var v = (m && m.typical != null) ? m.typical : null;
+      if (v == null && c && c.tradeBatch) v = c.tradeBatch[prev];
+      return v == null ? null : Math.max(1, +v || 1);
+    }
+    function declaredBatch(prev) { return declaredBatchOf(cfg, prev); }
+    function batchKind(prev, k) { var m = cfg.tradeBatchKind && cfg.tradeBatchKind[prev]; var v = m ? m[k] : null; if (v == null && k === 'typical') v = declaredBatch(prev); if (v == null) v = (k === 'typical' ? (cfg.floorLead || 4) : 1); return Math.max(1, +v || 1); }
+    /* ⚠️⚠️ THE DECLARED CROSS-TRADE HANDOFF, KEYED BY TRADE LABEL — for the LSM clash detector.
+       ⚠️ THE MATCHING LIVES ON THIS SIDE, WHERE `cfg` IS OWNED, exactly as `zonePlanByLabel`
+       does: `cfg` keys everything by GROUP CODE ('ST', 'AR'), and the Gantt knows a trade only as
+       the label on an activity's `work` field. Making the other side guess that mapping is how two
+       screens end up disagreeing about one trade.
+       ⚠️ EVERY SPELLING A TRADE CAN REACH THE GRID BY gets a key — the canonical GWORK label
+       ("Structural Works"), the setup's short GLABEL ("Structural") and the raw code. That is the
+       same two-spellings problem `WORK_ORDER` documents: a project pushed before the GWORK fix
+       still carries the short label, and a silent miss here would read as "no handoff declared",
+       which is indistinguishable from "the planner declared nothing" and is a worse answer.
+       ⚠️⚠️ `cfg.floorLead` IS DELIBERATELY NOT EXPORTED. It is a project DEFAULT that `blank()`
+       sets to 4 on every setup whether or not a planner ever touched it, so treating it as a
+       declaration would measure most projects against a number nobody chose. Only `tradeLeads` (the
+       legacy per-PAIR answer) and `tradeBatchKind`/`tradeBatch` (the current per-LEADING-TRADE
+       answer) are evidence that somebody said something. */
+    function handoffFrom(c) {
+      var out = { pair: {}, lead: {}, any: false };
+      if (!c) return out;
+      function keysFor(g) {
+        var ks = [], seen = {};
+        [GWORK[g], GLABEL[g], g].forEach(function (s) {
+          var k = String(s == null ? '' : s).trim().toLowerCase();
+          if (k && !seen[k]) { seen[k] = 1; ks.push(k); }
+        });
+        return ks;
+      }
+      GROUPS.forEach(function (g) {
+        var v = declaredBatchOf(c, g);
+        if (v == null) return;
+        keysFor(g).forEach(function (k) { out.lead[k] = v; });
+        out.any = true;
+      });
+      /* ⚠️ THE LEGACY PER-PAIR FIELD, KEY SHAPE `prev + '>' + next` — read off the last version
+         that consumed it (a404f83), not guessed. `autoTrace` stopped reading it when the question
+         became per-leading-trade and it has been normalized-but-unread since; a project set up
+         before 2026-08-13 still carries the planner's per-pair answers, and they are the MOST
+         specific thing anybody said about these two trades, so they win over the per-trade value. */
+      var tl = (c.tradeLeads && typeof c.tradeLeads === 'object') ? c.tradeLeads : {};
+      Object.keys(tl).forEach(function (key) {
+        var p = String(key).split('>');
+        if (p.length !== 2) return;
+        var v = Math.round(+tl[key]);
+        if (!(v >= 1)) return;
+        keysFor(p[0].trim()).forEach(function (ka) {
+          keysFor(p[1].trim()).forEach(function (kb) { out.pair[ka + '>' + kb] = v; });
+        });
+        out.any = true;
+      });
+      return out;
+    }
     function parallelKind(prev, k) { var m = cfg.tradeParallelKind && cfg.tradeParallelKind[prev]; if (m && (k in m)) return !!m[k]; if (k === 'typical') return !!cfg.tradeParallel[prev]; return false; }
     // Takt / location-based logic: each trade climbs its own floors cell-by-cell (matched by zone+unit
     // code), and a following trade stays a configurable number of floors BEHIND the one before it.
@@ -40737,6 +40969,43 @@
         } catch (e) { try { return catalogueFrom(cfg); } catch (e2) { return {}; } }
       },
       tradeLabels: function () { return GROUPS.map(function (g) { return GWORK[g] || GLABEL[g] || g; }); },
+      /* The declared cross-trade handoff — see handoffFrom. Returns { pair, lead, any } keyed by
+         lowercased trade label. ⚠️ `any === false` means NOBODY HAS DECLARED ONE (or no setup is
+         loaded), which the caller must treat as "no claim", never as "zero floors behind". */
+      tradeHandoff: function () { try { return handoffFrom(cfg); } catch (e) { return { pair: {}, lead: {}, any: false }; } },
+      /* ⚠️⚠️ THE COLD-OPEN PATH, the same rule as `locCatalogueFor`: `cfg` is only populated once
+         the Schedule Setup TAB has been opened this session, and the LSM chart is normally reached
+         without ever going there — so the synchronous read above comes up empty in exactly the case
+         this check exists for. This reads the project's saved setup directly.
+         ⚠️ IT DOES NOT LOAD THE SETUP INTO THE BUILDER. Nothing is assigned to `cfg`,
+         `curSetupId`, `curPid` or `mode`: adopting a setup as a side effect of drawing a chart
+         would silently pick one of several packages' setups and could discard a staged import.
+         ⚠️ THE SETUP THAT IS OPEN WINS, and when one is open no other is consulted — a planner
+         half-way through Package B's setup must not be measured against Package A's handoff. Only
+         when nothing is open does `pickDefaultSetup`'s "most recently edited" rule choose the row. */
+      tradeHandoffFor: async function (projectId) {
+        var EMPTY = { pair: {}, lead: {}, any: false };
+        try {
+          var live = handoffFrom(cfg);
+          if (live.any && (!projectId || projectId === curPid)) return live;
+          if (!projectId) return live;
+          var r = await sbc().from('schedule_builder').select('id,config,updated_at').eq('project_id', projectId);
+          if (r.error || !r.data || !r.data.length) return live;
+          var row = null;
+          if (curSetupId) {
+            row = r.data.filter(function (x) { return x.id === curSetupId; })[0] || null;
+            if (!row) return live;
+          } else {
+            row = r.data.slice().sort(function (a, b) {
+              return String(b.updated_at || '').localeCompare(String(a.updated_at || ''));
+            })[0];
+          }
+          var c = (row && row.config) ? normalize(row.config) : null;
+          if (!c) return live;
+          var derived = handoffFrom(c);
+          return derived.any ? derived : live;
+        } catch (e) { try { return handoffFrom(cfg); } catch (e2) { return EMPTY; } }
+      },
       /* THE STRUCTURE THIS SETUP DEFINES, AS THE GRID GROUP-BY DIMS.
          Owner 2026-09-03: *"i think the WBS tree default should be matched with what was defined in
          the schedule setup."* Right — the setup is where the planner says how this project is
@@ -40789,6 +41058,9 @@
         getKind: function () { return uiSeqKind; },
         t4Set: t4Set, t4Get: t4Get, generate: generate,
         autoTrace: autoTrace, towerLinkEdges: towerLinkEdges, locList: locList,
+        /* ⚠️ `batchKind` is exposed BESIDE `declaredBatchOf` so the suite can prove the split
+           left it behaviour-identical, rather than trusting the comment beside it. */
+        batchKind: batchKind, declaredBatchOf: declaredBatchOf, handoffFrom: handoffFrom,
         setStep: function (n) { step = n; }, render: function () { render(); },
         setPid: function (id) { curPid = id; curUid = 'u1'; },
         setTrade: function (t) { uiTrade = t; }
@@ -44064,8 +44336,15 @@
       (C.list || []).forEach(function (x) {
         if (x.ser !== ser || ordMap[x.rank] == null) return;
         var y = Y(ordMap[x.rank]);
-        cm += '<line class="ps-fl-clash" x1="' + X(x.s) + '" y1="' + y + '" x2="' + (X(x.f) + Math.round(dayw)) + '" y2="' + y + '"><title>' +
-          esc(x.b + ' before ' + x.a + ' on ' + x.loc + ' — ' + x.days + ' ' + (C.wd ? 'working' : 'calendar') + ' days') +
+        /* ⚠️ Both classes land on the storey they are ABOUT — which for a handoff finding is
+           the FOLLOWING trade's storey, not the leading trade's. The line is the stretch by which
+           it is early, so it reads on the chart as "this diagonal got ahead of itself". */
+        cm += '<line class="ps-fl-clash' + (x.kind === 'lead' ? ' ps-fl-clash-lead' : '') +
+          '" x1="' + X(x.s) + '" y1="' + y + '" x2="' + (X(x.f) + Math.round(dayw)) + '" y2="' + y + '"><title>' +
+          esc(x.kind === 'lead'
+            ? x.b + ' on ' + x.loc + ' is ' + x.days + ' ' + (C.wd ? 'working' : 'calendar') +
+              ' days ahead of the declared ' + x.need + '-floor handoff behind ' + x.a
+            : x.b + ' before ' + x.a + ' on ' + x.loc + ' — ' + x.days + ' ' + (C.wd ? 'working' : 'calendar') + ' days') +
           '</title></line>';
       });
 

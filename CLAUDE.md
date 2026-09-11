@@ -98,6 +98,40 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-11 (zf) — The declared cross-trade handoff, wired into the LSM clash detection
+
+Owner: *"Wire cfg.tradeLeads into the clash detection"*. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md). Module-only, no
+migration, no new store.
+
+- ⚠️⚠️ **`cfg.tradeLeads` alone would have been a dead end, and that is the finding.** It is the
+  **legacy per-pair** field; `autoTrace` stopped reading it on 2026-08-13 (`a404f83`) and nothing has
+  written it since, so on every project set up after that date it is `{}`. The whole declared chain
+  is read instead — per-pair `tradeLeads` first (still present on older setups), then the current
+  per-leading-trade `tradeBatchKind`/`tradeBatch`. Key shape read off that commit, not guessed.
+- ⚠️⚠️ **`cfg.floorLead` is deliberately not evidence.** `blank()` writes `4` to every setup whether
+  or not anybody chose it, so using it would measure most projects against a number nobody stated.
+  No declaration, no finding.
+- ⚠️ **One reader:** `declaredBatchOf` was split out of `batchKind` (which must always answer a
+  number) so the detector can tell a declaration from a fallback. The suite executes **both** over
+  all 80 (cfg, trade, floor-kind) combinations: **0 differ**.
+- The new finding is *"the following trade climbed closer than you declared"*, with three rules that
+  keep it honest: a per-trade lead applies **only to the trade that actually follows**; a storey the
+  leading trade never reaches is **not** a violation; and only the **following** trade is marked.
+- ⚠️⚠️ **The link pass caught the new dependency twice** — `_lsmLead is not defined`, then
+  `pid is not defined`, because the probe reached the warm path with the mode off and it tests
+  `_lsmAggOn()` first. Reaching a branch is not reaching every line in it.
+
+**475 assertions on the working tree, 23 against the pinned base, 0 failing.** ⚠️⚠️ **Eight
+negative builds, each reverting one decision, all bite** (9/5/2/1/1/1/3/3 failures). Rendered and
+**measured**: the handoff chip computes `dashed 3px`, the plain chip `solid 1px`; the flowline's
+handoff mark `stroke-dasharray 5px, 3px` against `none` — same colour, because the deck ranks
+neither class above the other.
+⚠️ **Not verified signed in**, and **not applied per floor kind** (only `tradeBatchKind`'s
+*typical* value; the LSM's storeys come from the location breakdown, not the setup's floor list).
+
+`MODULE_V` → `20260911zf`.
+
 ### 2026-09-11 (ze) — Keep the Activity › Location preset, and fix the comment that had become false
 
 Owner: **"Keep the Activity › Location preset"**. It stays. Detail:

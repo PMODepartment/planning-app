@@ -13,6 +13,121 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### The declared cross-trade handoff, wired into the clash detection (2026-09-11 zf) — fmlozano
+
+Owner: *"Wire cfg.tradeLeads into the clash detection"* — taking up the standing invitation left at
+the end of slice 3, where `cfg.tradeLeads` was named as declared-but-unread.
+
+### 1. ⚠️⚠️ `cfg.tradeLeads` ALONE WOULD HAVE BEEN A DEAD END, AND THAT IS THE FINDING
+It is the **legacy** per-pair field. `autoTrace` stopped reading it on **2026-08-13** (commit
+`a404f83`) when the auto-trace question changed from *"how many floors between <A> and <B>"* to
+*"how many floors at a time does <A> do before the next trade follows"*, and **nothing has written
+it since**. On every project set up after that date it is `{}`. Wiring only that field would have
+shipped a check that can never fire on a current project — a dead end of a subtler kind than the
+three this module's audit already records.
+
+So the **whole declared chain** is read, most specific first:
+
+| Source | What it is | Still authored? |
+|---|---|---|
+| `cfg.tradeLeads['ST>AR']` | the legacy **per-pair** answer | no — but present on pre-Aug-13 setups |
+| `cfg.tradeBatchKind[t].typical` / `cfg.tradeBatch[t]` | the current **per-leading-trade** answer | yes, in the auto-trace dialog |
+
+⚠️ The key shape `prev + '>' + next` was **read off `a404f83`**, the last commit that consumed
+it — not guessed from the field name.
+
+### 2. ⚠️⚠️ `cfg.floorLead` IS DELIBERATELY NOT EVIDENCE
+`blank()` writes `floorLead: 4` to **every** setup whether or not a planner ever touched it. Treating
+it as a declaration would measure most projects in the database against a number nobody chose, and
+put a red chip on trades for violating it. **No declaration, no handoff finding for that pair.**
+Same rule as slice 3's *"an inferred order is labelled inferred"*, one step further: an invented
+number is not labelled, it is **not used**.
+
+### 3. One reader, not two
+`batchKind` had the chain inline and must always answer a number (the generator has to link
+something). The clash detector needs the opposite — to know when **nothing** was declared. So
+`declaredBatchOf(cfg, trade)` was **split out of** `batchKind`, which now calls it.
+⚠️ Behaviour-identical, and the suite **executes both** over all 80 (cfg, trade, floor-kind)
+combinations rather than trusting the comment: **0 differ**.
+
+⚠️ THE MATCHING LIVES ON THE BUILDER'S SIDE, where `cfg` is owned — the `zonePlanByLabel` rule.
+`cfg` keys trades by GROUP CODE (`ST`), the Gantt knows them as the label on `work`. The new
+`ScheduleBuilder.tradeHandoff()` emits **every spelling a trade can reach the grid by** (canonical
+`GWORK`, the setup's short `GLABEL`, the raw code) — the two-spellings problem `WORK_ORDER`
+documents, where a silent miss reads as *"nothing declared"*, which is a worse answer than an error.
+
+### 4. What it reports
+A **second class of finding**, beside the same-storey overlap: *the following trade climbed closer
+than the handoff you declared*. B on storey `k` is compared against A's finish on storey
+`k + L - 1`.
+
+- ⚠️⚠️ **A per-TRADE lead applies only to the trade that actually FOLLOWS.** The setup asks about
+  A and its immediate successor, so applying `lead[A]` to Structural→Tiles would invent a
+  constraint nobody stated. A per-PAIR `tradeLeads` answer names both trades, so it applies to that
+  pair whatever the gap.
+- ⚠️⚠️ **A storey the leading trade never reaches is not a violation.** Near the top, A simply runs
+  out of floors to be ahead on. Without this the check would put a chip on the last L-1 storeys of
+  every pair on every project — noise that teaches a planner to ignore the strip.
+- ⚠️ **Only the following trade is marked**, an explicit departure from the same-storey rule
+  (which marks both because either could be out of place). Here the pair is on *different* storeys
+  and the finding is specifically *"B started early"*; marking A would redden a trade that is exactly
+  where the planner said it would be.
+- ⚠️ **Only on the declared basis.** The handoff is declared per trade, so it applies only when
+  the lanes ARE trades (`catCfg().field === 'work'`). Colour by an Activity Code and the pass does
+  not run, rather than matching trade names against code values and finding nothing.
+- ⚠️ It derives **nothing of its own**: storey ordinals and per-storey spans come from
+  `_lsmRate`, the sequence from `_lsmSeq` — the `_vsTowerModel` rule again.
+
+### 5. The cold open, and the memo that must NOT be cleared per frame
+`ScheduleBuilder` holds a cfg only once the Schedule Setup **tab** has been opened this session, and
+nobody opens it on the way to a chart. So `tradeHandoffFor(pid)` reads the saved setup directly —
+the WBS matcher's own pattern, once per project, not awaited, the open setup winning over the most
+recently edited one.
+⚠️⚠️ **`_lsmLeadMemo` is deliberately absent from `_clearLsmRateMemo`'s per-frame list.** A
+per-frame clear would overwrite the fetched answer with the empty synchronous one on the very next
+repaint. It is invalidated by `psSetupChanged` — when the setup actually changes — and nowhere else.
+
+### 6. ⚠️⚠️ THE LINK PASS CAUGHT THE NEW DEPENDENCY, TWICE
+`_lsmClash` gained a call to `_lsmLead`, and the suite died with `_lsmLead is not defined` rather
+than passing quietly — which is the entire reason it refuses to stub. Then it died again on
+`pid is not defined`, because the probe reached `_lsmLeadWarm` with the LSM mode **off**, and the
+function tests `_lsmAggOn()` before it ever mentions `pid`. **Reaching a branch is not the same as
+reaching every line in it** — the third appearance of that trap in this feature.
+
+### Verified
+**475 assertions against the working tree, 23 against the pinned base `4d82fd4`, 0 failing.**
+
+⚠️⚠️ **Eight negative builds, each reverting ONE decision, and every one bites:** the pass made
+unreachable (**9** fail), `floorLead` treated as evidence (**5**), `batchKind` drifted by one
+(**2**), the top-of-building guard removed (**1**), a per-trade lead applied to any pair (**1**),
+the leading trade marked too (**1**), only the canonical spelling keyed (**3**), the legacy per-pair
+field ignored (**3**).
+
+The base contrast proves the dead end it closes: `tradeLeads` appears on **exactly two lines** there
+— `blank()` and `normalize()` — and **nothing ever indexes into it**.
+
+**Rendered** at the shipped CSS, gated on `visibilityState` + `clientWidth`, both classes measured:
+the handoff chip computes `dashed 3px rgb(196, 33, 39)` against the overlap chip's
+`solid 1px rgba(196, 33, 39, .28)`; the flowline's handoff mark computes
+`stroke-dasharray 5px, 3px` against the plain mark's `none`, same colour and width. Label reads
+*"2 clashes (1 vs declared handoff)"*, chip reads *"3rd Floor · Architectural Works 3 floors behind
+Structural Works · 12 wd"*, no horizontal page scroll.
+⚠️ **A second colour was deliberately not used.** The deck calls both *"possible pitfalls"* and
+ranks neither above the other; a second hue would claim a severity order it does not make.
+⚠️ The strip and flowline were rendered from the shipped renderers over a **fabricated** clash
+model (`setClash`) — the detector's arithmetic is proved by the suite, the browser proves the two
+classes are distinguishable.
+
+⚠️ **Not verified signed in.** No real project has been measured against its own Schedule Setup.
+
+⚠️ **Not applied per floor kind.** `cfg.tradeBatchKind` can say *basement 1, typical 6, roof 2*,
+and only the **typical** value is used, because the LSM's storeys come from the location breakdown
+and not from the setup's floor list — there is no matching between the two yet. Wiring that is the
+next standing invitation.
+
+`node --check` PARSE OK; 0 functions lost; NUL 0, CR 0, braces and comment markers balanced.
+`MODULE_V` → `20260911zf`, sort-checked against `ze`.
+
 ### "Keep the Activity › Location preset" — and the comment that had become false (2026-09-11 ze) — fmlozano
 
 Owner, on the preset I offered to drop: **"Keep the Activity › Location preset"**. It stays, and
