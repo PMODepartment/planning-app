@@ -95,6 +95,50 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-11 (b2) — All five fixes driven end-to-end on OPW101, and the toolbar measured rather than guessed
+
+Owner: *"Let's verify these fixes end-to-end"*, then *"The toolbar needs proper rework it spills over."*
+
+**Every fix exercised through the real UI on the real project. Nothing was written.**
+
+| # | Verified |
+|---|---|
+| **3** scroll | Tree scrolled to **2000px**, then a tick **and** a branch toggle — held at **2000** both times. Before, each repaint reset it to 0. |
+| **3** "+N" | Search "Rebar" → 77 leaves, each offering **"+76"**. Clicking **+75** on *Rebar · B3* took the selection **1 → 77**, footer *"Use 77 activities"*, scroll held. The eighteen-floor expand-and-tick job, in one click. |
+| **4** orchestrator | Pass 2 now reads *"**5 name(s)** need a person to say which line they are"* with a **Match names…** button, where it said *"nothing to do"*. |
+| **4** safety | The screen opens **0 of 5 answered**, button *"Nothing chosen"* — **nothing pre-picked**, exactly as a re-code must be. Each row names the code it carries today (*"now 3050"*), on its own line. |
+| **2** dialog | No ACTIVITY/QTY header over zero rows; **one** amber box where there were two. |
+| **5** wrap | First paragraph now lands on **one line** instead of orphaning *"attached to one."* |
+
+Zero console errors and zero unhandled rejections across the whole walk.
+
+**⚠️ THE TOOLBAR, MEASURED.** At a 1168px row the seventeen children sum to **2244px**. Two causes,
+both found only by measuring:
+
+1. **The grouping button was the only control whose label grows with the data** — `"WBS"` is 90px,
+   `"Trade › Activity › Tower › Level › Zone › Unit"` is **308px**, the widest of seventeen by more
+   than 3×. That is why the toolbar was not merely two rows but an **unstable** two rows: change the
+   grouping and the colour and `?` buttons jump between them. Capped at 190px and ellipsised, the
+   full path moved to the button's own `title` — capping without that would have hidden which
+   grouping is live, trading one defect for a worse one.
+2. **The search box had no ceiling.** `flex:1 1 100px` grows into whatever space is going; measured
+   at **1127px** once wrapped — a search field spanning the window. Capped at 340px.
+
+⚠️ **Neither makes it one row at 1168px, and that is not claimed.** Measured: even a **95px** cap on
+the grouping label still wraps, while the same toolbar fits **one row at 1400px and above** — the
+threshold sits between. What the caps fix is the **reflow** and the stretched input; one row at
+narrow widths needs an overflow menu, which is a separate and bigger call.
+
+⚠️ Also measured and worth recording: on OPW101 the *Match names* candidates are drawn from the
+codes on the **revision in view**, so the General Requirements BOQ offers *"01751 Rebar Testing"*
+for an activity called *Rebar* — correct for that bill, and not the Structural code the planner
+wants. Picking the Structural Works BOQ first is what makes that screen useful.
+
+`?v=` → `20260911b2`, `MODULE_V` → `20260911d5`.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+
 ### 2026-09-11 (b1) — Five reports from testing BOQ linking, and an Actions menu taller than the window
 
 Owner, testing the BOQ→schedule linking on OPW101, listed five. All five answered, plus the Actions
