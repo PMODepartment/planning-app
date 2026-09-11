@@ -95,6 +95,70 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-11 (ue) — #2 was already fixed; what was broken was the route to it
+
+Owner: *"Let's perform 2 and 3 before acting on 1."* #2 was the `matchAct` specificity gap, carried
+as open since 2026-09-10 (za3), which called it *"the real blocker for OPW101"*.
+
+**⚠️⚠️ MEASURING IT CHANGED WHAT THE FIX IS.** za3 said the answer is *"a screen that says 'Rebar
+matches three lines — which is it?' rather than a threshold"*. That screen (`openNameMatch` /
+`nameCandidates`) was built the **next day**, in (a). Running the **shipped** functions against the
+real OPW101 shape:
+
+| | result |
+|---|---|
+| `matchAct('Rebar', 'Rebar Works')` | **null** — the `an.length > 6` guard, 'rebar' is 5 |
+| `matchAct('Concrete', 'Ready Mix Concrete')` | 0.85 — 8 characters clears the same guard |
+| `nameCandidates('Rebar', …)` over the bill | **exactly 3**: Rebar Works / Consumables / Coupler |
+| …each one | `sure: false` — never auto-picked |
+| `nameCandidates('PC', …)` | null — the empty-token guard working |
+
+So the matching is **right** and nothing needed relaxing. What is wrong is **routing**: the Link
+dialog gates on `matchAct`, finds nothing, and says *"none is named like this line. Allocate by
+hand, or tag the activities first"* — naming no screen — while the Match-names screen next door
+would offer three. A dead end standing in front of the answer.
+
+- **The dead end now counts and routes.** It reports how many activity names could be this line and
+  offers **Match names…**. ⚠️ The count comes from `nameGroups()`, that screen's **own** function,
+  so the number here and the rows there cannot disagree. ⚠️ It **closes this dialog before opening
+  that one** — `openNameMatch` is a modal too, and this module has already paid for stacking one on
+  another. ⚠️ Computed **once per dialog**, never in `paint()`: `nameGroups()` walks every activity
+  against every code on the bill, and `paint()` re-runs on every keystroke in a Qty box.
+
+**#3 — the Method column stops being blank.** Owner: *"the table tags a manual method but how does
+one tag it automatically, is there a button that I am not sure it works?"* The automatic path **is**
+the Link/Allocate dialog, which proposes before you touch it; `manual` appears only for a link
+picked by hand. The blank cell is what made that look absent. It now reads **`auto`** — ⚠️ only
+where candidates actually exist (`kind === 'ready'`), so it never promises a proposal the dialog
+cannot make.
+
+**⚠️ And one found in passing: `lineLinkState` scanned every activity TWICE.** It called
+`candidatesFor(r)` once to test and again to count — each call filters all **2,561** activities, so
+a 122-line bill scanned them **244 times** to draw one table. Called once; and the row builder now
+computes one state read by **both** the Activities and Method columns, which also stops the two
+columns being able to disagree about the same line.
+
+Verified: **22 new assertions** — the matching half **executed** against the shipped functions, the
+wiring half structural and **every structural check paired against HEAD**, so the suite fails on the
+old file. Plus **221 unchanged: 243 total, 0 failures.**
+
+⚠️ **Two of my own harness errors on the way, both of which reported the opposite of the truth.**
+First, lifting each function with its own `new Function` — whose body runs in **global** scope — left
+`matchAct` unresolved inside `nameCandidates`; it threw, my `try/catch` stored the error string, and
+a non-null error is truthy, so the probe reported *"Formworks matches Rebar Coupler"* and five
+candidates for everything. Then, having fixed that, I injected **`PDLoc.normKey`** — which **strips
+every separator**, so *"Rebar Works"* tokenises to the single word `rebarworks` and the whole-word
+rule matches nothing: the probe reported that the screen built for this case **finds nothing**. The
+module has its **own** `normKey` (`boq.js:151`) that keeps spaces; `PDLoc`'s is the location merge
+key. Two functions, two jobs, and an approximation of either tests the stub rather than the app. The
+suite now asserts `normKey('Rebar Works') === 'rebar works'` before it asserts anything else.
+⚠️ A third, in the suite itself: the "called once" check read **2**, because the comment explaining
+the fix *names* `candidatesFor()`. It was measuring its own explanation. Comments stripped first —
+the same correction `cellcount.py` needed.
+
+`boq.js` → `?v=20260911ue`; `MODULE_V` → `20260911z9`.
+
+
 ### 2026-09-11 (ud) — The shorten half, and the 99 that were really 13
 
 Second half of the owner's *"restyle and shorten"*. The restyle shipped in (uc); this is the prose.

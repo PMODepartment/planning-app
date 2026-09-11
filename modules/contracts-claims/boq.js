@@ -4869,6 +4869,9 @@ window.BOQ = (function () {
       'No line matches “' + esc(filt.q) + '”. Clear the search to see the worklist.</td></tr>';
     list.slice(0, 300).forEach(function (r) {
       var al = allocOf(r.id), s = allocSum(al), qOn = hasQty(r), q = Number(r.qty) || 0, rem = q - s;
+      // One state per row, read by BOTH the Activities cell and the Method cell - two calls would
+      // let the two columns disagree about the same line.
+      var _st = lineLinkState(r);
       h += '<tr data-id="' + esc(r.id) + '">' +
         '<td class="cc-desc"><div class="cc-desc-txt">' + esc(r.description || '') + '</div>' +
           '<div class="cc-mini">' + esc(r.sheet) + ' · row ' + r.source_row + ' · ' + esc(r.unit || '') +
@@ -4896,7 +4899,7 @@ window.BOQ = (function () {
            item, and it was the majority of the owner's 122. The count is kept for the linked rows;
            the rest say which case they are in. */
         '<td class="cc-r">' + (function () {
-          var st = lineLinkState(r);
+          var st = _st;
           /* ⚠️ Checked BEFORE the count, because a project-scoped line HAS an allocation and would
              otherwise read "1" — a number that means "one activity", which is the one thing it is
              not. */
@@ -4919,9 +4922,19 @@ window.BOQ = (function () {
         /* ⚠️ The RUNG is what a planner needs here — "location" answers "can I trust this?" in a
            way "prorata" does not. Falls back to the split method on rows written before
            2026-09-10-boq-match-rung.sql, where `matched_by` is legitimately null. */
+        /* ⚠️ AND IT IS NOT BLANK WHEN THERE IS NOTHING LINKED YET. Owner, 2026-09-11: *"the table
+           tags a manual method but how does one tag it automatically, is there a button that I am
+           not sure it works?"* — the automatic path is the Link/Allocate dialog, which proposes a
+           match before you touch it, and `manual` appears only for a link picked by hand. A blank
+           cell is what made that look absent. It says `auto` ONLY where candidates actually exist,
+           so it never promises a proposal the dialog cannot make. */
         '<td>' + (al.length
           ? '<span class="boq-why">' + esc(al[0].matched_by || al[0].method || '') + '</span>'
-          : '') + '</td>' +
+          : (_st.kind === 'ready'
+            ? '<span class="cc-mut" title="Press ' + (qOn ? 'Allocate' : 'Link') + ' — the dialog ' +
+              'proposes a match before you touch it, and records the rung that found it. ' +
+              '“manual” appears only for a link you pick by hand.">auto</span>'
+            : '')) + '</td>' +
         (canWrite ? '<td class="cc-actcol"><button class="pd-btn" data-split="' + esc(r.id) + '">' + (qOn ? 'Allocate…' : 'Link…') + '</button></td>' : '') +
         '</tr>';
     });
@@ -4990,6 +5003,19 @@ window.BOQ = (function () {
       '<button class="pd-btn pd-btn-primary" id="sp-go">Apply</button></div>');
     var body = m.el.querySelector('#sp-body');
 
+    /* How many distinct ACTIVITY NAMES could be this line, according to the Match-names screen?
+       ⚠️ Read from nameGroups(), the screen's own function, so the count in this dialog and the
+       rows on that screen cannot disagree. Once per dialog - see the note above openSplit. */
+    var _nameAlt = 0;
+    try {
+      var _cfOpen = codeFor(r);
+      if (_cfOpen) {
+        _nameAlt = nameGroups().filter(function (g) {
+          return g.cands.some(function (c2) { return String(c2.code) === String(_cfOpen.class_code); });
+        }).length;
+      }
+    } catch (e) { _nameAlt = 0; }
+
     function paint() {
       var q = Number(r.qty) || 0, s = prop.parts.reduce(function (a, p) { return a + (Number(p.qty) || 0); }, 0);
       var rem = q - s;
@@ -5037,8 +5063,19 @@ window.BOQ = (function () {
               'matched on <strong>name</strong> instead. Worth a look before you apply.</div>'
             : '')
           : '<div class="boq-alert warn">No activity on this project carries class code <code>' +
-          esc(cfc) + '</code>, and none is named like this line. Allocate by hand, or tag the ' +
-          'activities first.</div>') +
+          esc(cfc) + '</code>, and none is named like this line.' +
+          /* ⚠️ NOT A DEAD END WHEN ANOTHER SCREEN CAN ANSWER IT. This dialog gates on matchAct,
+             whose second rung needs an activity name longer than six characters - so a schedule
+             saying "Rebar" against a bill saying "Rebar Works" scores nothing here while the
+             Match-names screen offers all three Rebar lines. Measured on OPW101. */
+          (_nameAlt
+            ? ' <strong>' + _nameAlt + '</strong> activity name' + (_nameAlt === 1 ? '' : 's') +
+              ' on this schedule could be this line &mdash; they are shorter than the bill&rsquo;s ' +
+              'wording, so only a person can say which.' +
+              '<div style="margin-top:8px;"><button class="pd-btn pd-btn-primary" id="sp-names">' +
+              'Match names&hellip;</button></div>'
+            : ' Allocate by hand, or tag the activities first.') +
+          '</div>') +
         /* ⚠️ NO HEADER OVER AN EMPTY TABLE. With nothing allocated this drew ACTIVITY / QTY column
            headings above zero rows, directly on top of the button whose job is to create the first
            one — furniture for a table that does not exist. */
@@ -5127,6 +5164,10 @@ window.BOQ = (function () {
       });
       var pk = body.querySelector('#sp-pick');
       if (pk) pk.onclick = openPicker;
+      /* ⚠️ CLOSE, THEN OPEN. openNameMatch is a modal too, and this module has already paid for
+         stacking one on another - the planner ends up clicking a pane behind the top one. */
+      var nmb = body.querySelector('#sp-names');
+      if (nmb) nmb.onclick = function () { m.close(); openNameMatch(); };
       body.querySelectorAll('input[name="sp-scope"]').forEach(function (rd) {
         rd.onchange = function () {
           projScope = rd.value === 'project';
@@ -5373,7 +5414,10 @@ window.BOQ = (function () {
     }
     var cf = codeFor(r);
     if (!cf) return { kind: 'nocode' };
-    if (candidatesFor(r).length) return { kind: 'ready', n: candidatesFor(r).length };
+    /* ⚠️ ONCE. candidatesFor() filters every activity on the project, and calling it twice made a
+       122-line bill scan 2,561 activities 244 times to draw one table. */
+    var cand = candidatesFor(r);
+    if (cand.length) return { kind: 'ready', n: cand.length };
     var row = codeRow(cf.class_code);
     var trade = row && row.desc_l1 ? String(row.desc_l1).trim() : '';
     var counts = tradeActivityCounts();
