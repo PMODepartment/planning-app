@@ -95,6 +95,56 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-11 (a5) — Schedule Setup: twelve steps become eight, "not pushed yet" becomes a number, and text has to earn its place
+
+Owner: *"Let's do all three."*
+
+**The rail: 12 → 8.** Tower links, Zone sequence, Trade sequence, Scope per zone and Stacking all
+answer one question — **how does the building repeat** — and four of the five are inert on a project
+with one tower and no zones. They were five rail entries of nothing, and the rail's **length** is
+what makes this wizard look big before a word of it is read. They are now tabs inside one
+**Repetition** step.
+
+⚠️ Tabs, not a merge: each keeps its own renderer, heading and empty state, untouched. The only
+thing that changed is where the planner clicks. `_stepNo` **aliases** the five titles onto the
+containing step, because 27 places in this file say *"set in step 7 · Zone sequence"* and `_stepNo`
+answers `''` for a title it cannot find — a blank there reads as a broken reference, where a number
+reads as a renamed step. Verified in the browser: all five tabs render, each headed **"6 · «its own
+title»"**, and a cross-reference elsewhere resolves to **6** with **zero** blank references.
+
+**Pending is a number now.** Half the remaining prose existed to say that what you are looking at is
+not in the schedule until you push. The setup bar carries it on every step instead —
+**"66 activities ready to push · 132 in the schedule now"**, measured live on BAU101-TEST. It reuses
+the `generate('int')` call the 5PMLC view already made every render, so it costs nothing new. The
+paragraph that said it on one step is gone; what is kept is the one case a count cannot explain — a
+tree whose rows all read **0** because nothing has ever been pushed, which without a word reads as a
+fault.
+
+**Text gates on state.** Most of what was left already did: `stStart` swaps its lede on whether the
+project has activities, `stActivities` shows its unrecognised-code warning only when there are any.
+Four printed regardless, and each went to the mechanism this file already has:
+a justification for the step's **position** in the rail (the rail shows the position — cut); a
+reassurance that all three paths end alike (nothing acts on it — cut); the accepted **trade codes**
+(into this step's existing *How to use this step* collapsible); and a click-by-click instruction
+(into `_sbldHow`, built for exactly that).
+
+⚠️ I first wrote that the trade codes moved onto the **Trade column header**. They did not — that
+grid builds its headers from a column spec and there was no cheap place to hang a `title`. The
+comment is corrected in the file rather than left describing something that is not there.
+
+Measured before and after with `stepwords.py`, which ranks every `st*` renderer by the prose it
+emits so the sweep picks the heaviest screen rather than the loudest: **1,343 → 1,079 words**, and
+with (a4)'s cuts the wizard is down from **~1,690**. Driven in a signed-in browser on the deployed
+build: 8 rail entries, five working tabs, the strip populated, **no console errors and no unhandled
+rejections**. `MODULE_V` → `20260911a5`.
+
+**Next, if it is wanted.** The four heaviest remaining are all the **import** wizard —
+`stImpCommit` 118, `stImpPhases` 101, `stImpLoc` 100, `stImpRels` 82 — a rare and
+destructive-if-wrong moment where explanation earns its place. They want reading, not a word count.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+
 ### 2026-09-11 (a4) — The "race" was not a race, the fix was in the wrong function, and Schedule Setup stops explaining itself
 
 Owner: *"Let's reproduce the race deliberately"*, then *"How is this UI good? There's too much words…"*
