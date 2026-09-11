@@ -95,6 +95,62 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-11 (sc3) — 77 rows that all said "Formworks", and two buttons with one name
+
+Owner, testing the BOQ link on OPW101: *"The planner would have no idea if the similar activities
+named which locations are they."* — and, separately, *"There are two buttons of code, tag, allocate
+let's consolidate."*
+
+**Every proposed activity now says WHERE it is.** The Link dialog listed 77 rows reading
+`SB300004 Formworks`, `SB300008 Formworks`, `SB300012 Formworks` — an activity id, a name shared by
+all 77, and a match badge. Nothing on the row answered the only question the planner actually has.
+
+**⚠️⚠️ THE NEAREST BRANCH IS NOT THE ANSWER, AND MEASURING IS THE ONLY REASON I KNOW THAT.** The
+obvious fix is to print the activity's own WBS branch. Measured on those exact 77, the last segment
+is `B3`, `Z1`, `Z2`, `Z3`… — **a bare zone number is precisely as uninformative as the name it was
+meant to disambiguate**, and I would have shipped it believing it worked. What separates those rows
+is the chain **minus the part they all share**: every one of the 77 begins
+`Execution Phase › Structural Works`. Drop the common prefix, draw the differing tail:
+`B3` · `Ground Floor › Z1` · `2ND Floor › Z1`. Measured on the same 77: **77 of 77 labels unique,
+longest 17 characters, none without a chain.**
+
+The label is capped at two segments — an address, not a path — and a branch the summary rows do not
+name yields nothing rather than a bare dotted code, which would look like an address without being
+one. ⚠️ Computed **once per paint**: `ACTS.find` over 2,561 activities inside a 77-row map is ~15M
+comparisons, and this dialog repaints on every keystroke in a Qty box. ⚠️ And it is resolved at
+RENDER time from `activity_id`, not stored on the part — a part is built in **three** places
+(`proposeSplit`, the existing-allocation path, `mergePickedParts`) and a fourth field is a fourth
+chance for one path to disagree, which is the bug family this session has spent all day on.
+
+**One orchestrator button, not two.** `boq-matchall` (the bar) and `boq-a-all` (the Match tab) called
+the **same function** under the **same label**, two inches apart. ⚠️ The second was one I added on
+2026-09-10 *while fixing this exact complaint* — that consolidation folded two genuinely different
+buttons into one and put it next to a control that already existed. The bar keeps it, on that
+button's own documented reasoning: the run spans three tabs, so it belongs to none of them. The
+handler went in the same edit rather than being left dangling.
+
+`suite-namematch`'s assertion was **re-pointed, not deleted** — it pinned `boq-a-all` as "the one
+button that remains", which is now the wrong one. It guards the invariant that actually matters:
+exactly one entry point, and no wiring left pointing at the removed id.
+
+**On "how does one tag automatically?"** — nothing to build: the automatic tagger is pass 2 of
+**Code, tag and allocate…**, and per line the Link…/Allocate… dialog already proposes a match before
+you touch it (which is the pre-selection the owner noticed and liked). `manual` appears in the
+**Method** column only for links picked by hand; an accepted proposal records the rung that found it
+— `location`, `wbs`, `name` or `code`. The column is blank on unlinked lines, which is what made the
+automatic path look absent. Left alone pending the owner's call rather than redesigned unasked.
+
+Verified: **13 new assertions** on `whereLabels` — pulled out of the shipped file and executed, not
+re-typed — plus **208 unchanged: 221 total, 0 failures**. ⚠️ One of the 13 failed first and was
+**my expectation, not the code**: I asserted a lone real chain beside an unknown activity should
+elide to `B3`, which contradicts the case two lines above it specifying that a single part keeps its
+context. Corrected in place with the reason recorded.
+
+Integrated over two concurrent sessions; `MODULE_V` resolved to a token newer than **both** sides
+(`20260911z6`), and another session's in-progress flowline work was left unstaged.
+`module.css` + `boq.js` → `?v=20260911c`.
+
+
 ### 2026-09-11 (z5) — ⚠️⚠️ HOTFIX: ticking LSM stretched 2,561 rows, and the layout had almost no door
 
 Owner, from the live site: *"Ticking LSM widens the with of the rows why is that"*, and *"How does

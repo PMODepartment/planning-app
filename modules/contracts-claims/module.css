@@ -817,6 +817,14 @@ html.pd-dark .boq-tl1 > .boq-trow { background:rgba(255,255,255,.04); }
 .boq-taken { font-size:var(--pd-fs-micro); font-weight:700; text-transform:uppercase; letter-spacing:.03em;
   color:var(--boq-warn,#b45309); white-space:nowrap; }
 
+/* WHERE the activity is. Deliberately QUIETER than .boq-why: that badge is a claim about the match
+   and wants to be read; this is an address and wants to be scanned down a column of 77 rows. Not
+   uppercased for the same reason - `Ground Floor › Z1` is a place name, and shouting it costs the
+   reading speed the column exists for. */
+.boq-where { font-size:var(--pd-fs-xs); color:var(--pd-ink); background:var(--pd-bg);
+  border:1px solid var(--pd-line); border-radius:var(--pd-radius-pill);
+  padding:0 6px; white-space:nowrap; }
+
 /* ---- The whole-BOQ run's three-step preview ------------------------------------------------
    ⚠️ A step that WOULD DO NOTHING is dimmed and reads "skipped" rather than being hidden. The
    planner is being asked to trust a run that writes to three tables; seeing that pass 1 has

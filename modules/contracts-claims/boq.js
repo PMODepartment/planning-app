@@ -814,6 +814,43 @@ window.BOQ = (function () {
     return out;
   }
 
+  /* WHICH of these is this one? Owner, testing OPW101: *"The planner would have no idea if the
+     similar activities named which locations are they."* - 77 rows in the link dialog all reading
+     `Formworks`, with nothing to tell them apart.
+
+     ⚠️ THE NEAREST BRANCH IS NOT THE ANSWER. Measured on those exact 77, the last segment is `B3`,
+     `Z1`, `Z2`, `Z3`... - a bare zone number is as uninformative as the name it was meant to
+     disambiguate. What separates them is the chain MINUS the part they all share: every one begins
+     `Execution Phase › Structural Works`, so the common prefix is dropped and only the differing
+     tail is drawn - `B3`, `Ground Floor › Z1`, `2ND Floor › Z1`. Measured: 77 of 77 unique,
+     longest 17 characters.
+
+     ⚠️ Returned as a LIST parallel to `parts`, so the caller computes it ONCE. `ACTS.find` over
+     2,561 activities inside a 77-row map is ~15M comparisons per repaint, and this dialog repaints
+     on every keystroke in a Qty box.
+
+     A chain the summary rows do not name yields '' rather than a bare dotted code - a number that
+     looks like an address but is not one is worse than saying nothing. */
+  function whereLabels(parts) {
+    var acts = ACTS || [], byId = {};
+    acts.forEach(function (a) { byId[String(a.activity_id)] = a; });
+    var chains = (parts || []).map(function (p) {
+      var a = (p && p.activity_id != null) ? byId[String(p.activity_id)] : null;
+      return a ? wbsNamesOf(a) : [];
+    });
+    var real = chains.filter(function (c) { return c.length; });
+    var cut = 0;
+    if (real.length > 1) {
+      var min = Math.min.apply(null, real.map(function (c) { return c.length; }));
+      // never consume the LAST segment: two identical chains must still say where they are
+      while (cut < min - 1 && real.every(function (c) { return c[cut] === real[0][cut]; })) cut++;
+    }
+    return chains.map(function (c) {
+      // the last two are enough to place it; more is a path, not an address
+      return c.length ? c.slice(cut).slice(-2).join(' › ') : '';
+    });
+  }
+
   /* The saved WBS-branch → place table the schedule's Match-WBS-to-locations wizard writes
      (`location_levels.match`, keyed by branch NAME). Read-only here, and the single most useful
      thing this module can borrow: it is a planner's own confirmed statement that a branch IS a
@@ -4810,7 +4847,12 @@ window.BOQ = (function () {
        screen admitting the button is not named well enough — and it is invisible on a phone. */
     h += '<div class="boq-filters">' +
       '<input class="pd-input" id="boq-a-q" placeholder="Search lines…" value="' + esc(filt.q) + '" />' +
-      (canWrite ? '<button class="pd-btn pd-btn-primary" id="boq-a-all">Code, tag and allocate…</button>' : '') +
+      /* ⚠️ THE SECOND `Code, tag and allocate…` IS GONE. Owner, 2026-09-11: *"There are two
+         buttons of code, tag, allocate let's consolidate."* This one and `boq-matchall` in the bar
+         called the SAME function under the SAME label, two inches apart - the identical complaint
+         the bar button's own note records from 2026-09-10 about `Match to schedule`, re-made by a
+         control I added while fixing it. The BAR keeps it: the run spans three tabs, so it belongs
+         to none of them, which is exactly why it lives up there. */
       '</div>';
 
     h += '<div class="pd-card cc-tablecard"><table class="cc-table boq-table"><thead><tr>' +
@@ -4911,7 +4953,6 @@ window.BOQ = (function () {
     var q = host.querySelector('#boq-a-q'), t = null;
     if (q) q.addEventListener('input', function () { clearTimeout(t); t = setTimeout(function () { filt.q = q.value; render(); }, 200); });
     host.querySelectorAll('[data-split]').forEach(function (b) { b.onclick = function () { openSplit(b.dataset.split); }; });
-    var al = host.querySelector('#boq-a-all'); if (al) al.onclick = openMatchAll;
   }
 
   function openSplit(itemId) {
@@ -4953,6 +4994,7 @@ window.BOQ = (function () {
       var q = Number(r.qty) || 0, s = prop.parts.reduce(function (a, p) { return a + (Number(p.qty) || 0); }, 0);
       var rem = q - s;
       var cf = codeFor(r), cfc = cf ? cf.class_code : '';
+      var _where = whereLabels(prop.parts);   // once per paint - see whereLabels()
       body.innerHTML =
         '<p class="cc-hint"><strong>' + esc(r.description || '') + '</strong><br>' +
         esc(r.sheet) + ' row ' + r.source_row + ' · ' + qtyStr(q) + ' ' + esc(r.unit || '') +
@@ -5005,6 +5047,8 @@ window.BOQ = (function () {
           : '') +
         prop.parts.map(function (p, i) {
           return '<tr><td><code>' + esc(p.activity_id) + '</code> <span class="cc-mini">' + esc(p.name || '') + '</span>' +
+            // WHERE it is - the whole point of the row when 77 of them share one name.
+            (_where[i] ? ' <span class="boq-where">' + esc(_where[i]) + '</span>' : '') +
             // ⚠️ Every proposed row says which rung found it. A bare list of activities is
             //    unauditable: "at 3rd Floor" and "2 of 3 item words" deserve different trust.
             (p.why ? ' <span class="boq-why">' + esc(p.why) + '</span>' : '') + '</td>' +
