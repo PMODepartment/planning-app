@@ -37208,9 +37208,14 @@
 
       host.innerHTML = '<h2>' + _stepNo('Activities & phases') + ' · What came in, and which phase it belongs to</h2>' +
         '<p class="sbld-lede">From <b>' + e2(imp.fname) + '</b> — <b>' + leaves.toLocaleString() + '</b> activities under <b>' +
-          impBranches().length.toLocaleString() + '</b> WBS branches' + (dropped.length ? ', with the file’s own project-root wrapper dropped (the project is already the project)' : '') + '. ' +
+          impBranches().length.toLocaleString() + '</b> WBS branches' + (dropped.length ? ', with the file’s own project-root wrapper dropped' : '') + '. ' +
           'File each branch under one of this project’s standard phases — that <b>is</b> the phase, because an imported activity takes its phase from the branch it sits under. Anything you do not want in the schedule at all, tick <b>exclude</b>.</p>' +
-        '<p class="sbld-hint">A nested branch follows its parent unless you give it a phase of its own — so a sub-branch that is really Close-out can be lifted out without unpicking the branch above it. <b>Filing the construction work under Execution Phase is what lets the next step read locations out of it</b>, and what makes location grouping work afterwards.</p>' +
+        /* ⚠️ The first half described behaviour the planner discovers by using the control (a
+           nested branch inherits until you override it). The second half is a CONSEQUENCE they
+           cannot discover — getting it wrong makes the next step find no locations — so it stays,
+           in one line. */
+        '<p class="sbld-hint">Construction must sit under <b>Execution Phase</b> — the next step ' +
+        'reads locations out of it.</p>' +
         '<div class="sbld-phgrid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:12px;">' + tally + '</div>' +
         flatPick +
         '<div class="pd-card ps-ck-card" style="margin-bottom:12px;"><div class="ps-ck-h"><span data-ico="layers" data-ico-size="15"></span> The file’s WBS</div>' +
@@ -37279,7 +37284,10 @@
       sources.forEach(function (s2) { s2._sample = locSrcSample(leafRecs, s2); });
 
       host.innerHTML = '<h2>' + _stepNo('Floors & Zones') + ' · Location breakdown</h2>' +
-        '<p class="sbld-lede">The project’s location levels, and where each one is read from in this file. This is the same breakdown the generation path defines — there is one per project, and everything that groups, stacks or reports by location uses it.</p>' +
+        /* ⚠️ The second sentence explained that this is the same breakdown the build path defines
+           and that other features read it. True, and it changes nothing the planner does here. */
+        '<p class="sbld-lede">The project’s location levels, and where each one is read from in ' +
+        'this file.</p>' +
         _locBreakdownBar() +
         (sources.length
           ? '<p class="sbld-hint">Map each level onto a source from the file. Leave a level on <b>— skip —</b> to import without it; the preview underneath lists the actual values each mapping would produce, which is how you catch a <b>Tower</b> rule that also swept up “Tower Handover”.</p>' +
@@ -37683,7 +37691,10 @@
           '. <b>' + all.length.toLocaleString() + '</b> will be imported' +
           (Object.keys(byType).length ? ' (' + Object.keys(byType).sort().map(function (t) { return byType[t] + ' × ' + t; }).join(', ') + ')' : '') +
           (impRelDirty() ? ', with <b>' + impRelDirty() + '</b> of your own change' + (impRelDirty() === 1 ? '' : 's') : '') +
-          '. This works the way <b>' + _stepNo('Zone sequence') + ' · Zone sequence</b> and <b>' + _stepNo('Trade sequence') + ' · Trade sequence</b> work on the build path: ' +
+          /* ⚠️ "This works the way the build path's Zone/Trade sequence steps work" is an
+             orientation for somebody who has used the OTHER path. A planner importing a file has
+             not, and the gestures are spelled out immediately after it anyway. */
+          '. ' +
           '<b>drag one bar onto another to connect them</b>, click a line to change its type or lag, and switch to <b>View</b> to see what drives what.</p>' +
         '<div class="sbld-relmodes">' + modes + '</div>' +
         '<div class="sbld-sec-actions">' +
@@ -37963,7 +37974,7 @@
             (discN ? Math.round(discN / (probe.length || 1) * 100) + '% of activities (' + discN.toLocaleString() + ' of ' + probe.length.toLocaleString() + ') carry a recognisable trade heading.'
                    : 'No recognised trade headings in this file’s WBS — nothing to set.') + '</span></span></label>' +
           pkgHtml +
-          (imp.kind === 'xer' ? '<p class="sbld-hint" style="margin:10px 0 0;">A P6 file also brings its <b>calendars</b>, <b>activity codes</b>, <b>user-defined fields</b> and <b>resource master</b> into this project, added alongside anything already here. A calendar that already exists with the same name, week and hours is reused rather than copied. <b>Replace</b> on this path clears the whole project, not one package.</p>' : '') +
+          (imp.kind === 'xer' ? '<p class="sbld-hint" style="margin:10px 0 0;">A P6 file also brings its <b>calendars</b>, <b>activity codes</b>, <b>user-defined fields</b> and <b>resource master</b>, added alongside anything already here. <b>Replace</b> on this path clears the <b>whole project</b>, not one package.</p>' : '') +
         '</div>' +
         '<div class="sbld-sec-actions">' +
           '<button class="pd-btn pd-btn-primary" id="b-impcommit"' + (kept.length ? '' : ' disabled') + '><span data-ico="download" data-ico-size="14"></span> Import ' + kept.length.toLocaleString() + ' activities into the schedule</button>' +
