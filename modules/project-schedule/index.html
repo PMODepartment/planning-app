@@ -62,13 +62,32 @@
        itself shows it in full — the face only has to say which grouping is live, not recite it. */
     #ps-groupbtn-txt { display:inline-block; max-width:190px; overflow:hidden;
       text-overflow:ellipsis; white-space:nowrap; vertical-align:bottom; }
-    .ps-tb-row .ps-search { flex:1 1 100px; min-width:100px; }
+    /* ⚠️ THE SEARCH IS GREEDY AND THAT IS WHY THE SECOND ROW LOOKED BROKEN. `flex:1 1 100px` has
+       no ceiling, so it GROWS into whatever space is going — measured at **1127px** once it wrapped,
+       a search box spanning the entire window. Capped: it now ends where a search box should end,
+       and a wrapped row reads as a deliberate second row rather than a stretched input.
+       ⚠️ This does NOT stop the wrap — at 1168px the buttons alone nearly fill the row, and no
+       label trimming changes that (measured: even a 95px grouping cap still wraps). One row at
+       narrow widths needs an overflow menu, which is a separate and bigger call. */
+    .ps-tb-row .ps-search { flex:1 1 100px; min-width:100px; max-width:340px; }
     .ps-tb-row .ps-search .pd-input { width:100%; }
     /* The <input> inside .ps-search has no CSS width, so its default min-width:auto resolves to
        its min-content (intrinsic) size — which can exceed the wrapper's declared min-width and
        silently defeat the wrapper's own flex-shrink, overflowing the toolbar row. */
     .ps-tb-row .ps-search input { min-width:0; }
     .ps-tb-spacer { margin-left:auto; }
+    /* The overflow row. In NORMAL FLOW, not a popup — see the note on _tbFit: these controls carry
+       their own absolutely-positioned menus and nesting those inside a dropdown paints them over
+       whatever is around them. */
+    .ps-tb-overflow { display:flex; flex-wrap:wrap; align-items:center; gap:5px; row-gap:6px;
+      padding:6px 0 2px; margin-top:4px; border-top:1px solid var(--pd-line); }
+    .ps-tb-overflow[hidden] { display:none; }
+    #ps-tb-more.on { background:var(--pd-red); border-color:var(--pd-red); color:#fff; }
+    /* Compact: the scale and view buttons keep their icon and their caret, lose their word. Their
+       `title` already names the current value, so nothing becomes unknowable — only unlabelled, and
+       only while the row is too narrow to afford the word. */
+    .ps-tb-row.ps-tb-compact #ps-zoombtn-txt,
+    .ps-tb-row.ps-tb-compact #ps-viewbtn-txt { display:none; }
     .ps-tb-div { width:1px; align-self:stretch; min-height:26px; background:var(--pd-line); margin:0 2px; }
     /* one consistent control height across selects, inputs, buttons & segments */
     .ps-toolbar .pd-select, .ps-toolbar .pd-input, .ps-toolbar .pd-btn { height:36px; }
@@ -3878,6 +3897,9 @@
               </div>
             </div>
           </div>
+          <!-- ⚠️ The overflow toggle. Hidden until something has actually been shed, so on a wide
+               window the toolbar looks exactly as it always did. -->
+          <button class="pd-btn ps-icobtn" id="ps-tb-more" title="More toolbar controls" aria-expanded="false" hidden>⋯</button>
           <span class="ps-tb-spacer"></span>
           <!-- ⚠️ ICON-ONLY, for the same measured reason as Progress / Stacking / Outline above.
                Owner 2026-09-03: *"In my screen resolution of a laptop, the toolbar spills over into
@@ -4653,6 +4675,13 @@
   function _paintViewBtn() {
     var t = document.getElementById('ps-viewbtn-txt');
     if (t) t.textContent = _viewName();
+    /* ⚠️ THE TOOLTIP NAMES THE VALUE, because the FACE no longer always does. Compact mode hides
+       this label to buy room, and the title still read "the face shows the current one" — which
+       became false the moment the face was hidden. A tooltip that describes a state the screen is
+       not in is worse than no tooltip: it is the control lying about itself. */
+    var b = document.getElementById('ps-layoutbtn');
+    if (b) b.title = 'View: ' + _viewName() + ' — Gantt, Grid, Split, Activity Network. ' +
+      'Progress and Stacking have their own buttons.';
   }
   var RESRC = [], ASSIGN = [], CALS = [];   // resource master + assignments + calendars for this project
   var CODE_TYPES = [], CODE_VALUES = [], STEPS = [], UDF_DEFS = [];   // activity codes + weighted steps + UDF defs for this project
@@ -9341,6 +9370,10 @@
   function _paintZoomBtn() {
     var t = document.getElementById('ps-zoombtn-txt');
     if (t) t.textContent = _zoomLabel(zoom);   // value only — see _paintViewBtn
+    // ⚠️ Same reason as _paintViewBtn: compact mode can hide the face, so the title carries the value.
+    var b = document.getElementById('ps-zoombtn');
+    if (b) b.title = 'Timeline scale: ' + _zoomLabel(zoom) + ' — or drag a column edge in the date ' +
+      'header / Ctrl + scroll over the chart to fine-tune column width.';
   }
   function renderZoomMenu() {
     var menu = document.getElementById('ps-zoom-menu'); if (!menu) return;
@@ -9621,12 +9654,21 @@
        the planner can still read it — the button's own tooltip. */
     var _gb = document.getElementById('ps-groupbtn');
     var t = document.getElementById('ps-groupbtn-txt');
-    var _full = groupBys.map(dimLabel).join(' › ');
-    if (t) t.textContent = _full;   // value only — see _paintViewBtn
+    var _labels = groupBys.map(dimLabel);
+    var _full = _labels.join(' › ');
+    /* ⚠️ A CSS ellipsis on a path truncates mid-journey — "Trade › Activity › Tower › Level…" says
+       where the grouping starts and nothing about where it ends, which is the half that tells you
+       how fine it is. Four or more levels show BOTH ENDS and the depth instead. */
+    var _face = _labels.length <= 3 ? _full
+      : (_labels[0] + ' › … › ' + _labels[_labels.length - 1] + ' (' + _labels.length + ')');
+    if (t) t.textContent = _face;   // value only — see _paintViewBtn
     /* ⚠️ The face is capped at 190px and ellipsised, so a long path is TRUNCATED ON SCREEN. The
        whole thing goes on the title, or capping it would have hidden which grouping is live —
        trading one defect for a worse one. */
     if (_gb) _gb.title = 'Grouping: ' + _full + ' — pick the levels and their order.';
+    /* The face is the widest control and it changes width with the grouping, so the fit has to be
+       re-taken whenever it does. */
+    if (typeof _tbFitSoon === 'function') _tbFitSoon();
     var m = document.getElementById('ps-group-menu');
     if (m && m.classList.contains('open')) renderGroupMenu();
   }
@@ -9753,8 +9795,13 @@
       // The swap the planners asked for: the ACTIVITY on top, its locations beneath it.
       // ⚠️ No trailing 'wbs' — the location levels already say where the work is, so the WBS path
       // underneath them was pure duplication in this view (owner's call after seeing it live).
-      { name: 'Activity › Location (LSM)', dims: ['act'].concat(locDims) },
-      { name: 'Discipline › Activity › Location', dims: ['work', 'act'].concat(locDims) }
+      /* ⚠️ SHORT NAMES, because the path is already on the row. Each preset renders its full
+         dimension list as a `.ps-gm-hint` underneath ("Activity › Tower › Level › Zone › Unit"),
+         so spelling the path out in the NAME too was the row saying the same thing twice — and it
+         made the menu read as four long sentences rather than four choices.
+         Owner, 2026-09-11, named these: *"WBS tree (default) · LSM · By Activity"*. */
+      { name: 'LSM', dims: ['act'].concat(locDims) },
+      { name: 'By Activity', dims: ['work', 'act'].concat(locDims) }
     ].filter(function (p) { return p.dims.length; });
     var h = '<div class="ps-gm-sec">Presets</div>';
     presets.forEach(function (p, i) {
@@ -20840,13 +20887,24 @@
   // shifts as you scroll because the frozen columns interact with the same `order` values.
   // Guarding on a SIGNATURE (not a count) also catches a reorder or a rename that keeps the count.
   var _colSig = null;
+  /* ⚠️ THE BODY KEEPS ITS OWN, because the header does not always bring it along. renderHeader() is
+     called ALONE from four places that have just discovered columns — refreshLocLevels() and the
+     three import/push paths all run `populateGroupSelect(); seedExtraHidden(); renderHeader();` and
+     stop — so syncGridColumns(), which only runs inside renderGrid(), never sees those. Measured
+     live on OPW101: head 39 cells (11 extra columns), every body row 29 (1). */
+  var _bodySig = null;
+  /* Lowered for the one renderHeader() that doRender() makes through syncGridColumns(): that caller
+     renders the window itself on the next line, so repairing here would serialise every visible row
+     twice on every column change. */
+  var _hdrRepair = true;
   function gridColSig() { return gridCols().map(colKey).join('|'); }
   // Re-assert the header + the order/hide CSS when the column set has moved under the body.
   function syncGridColumns() {
     var sig = gridColSig();
     if (sig === _colSig) return false;
     _colSig = sig;
-    renderHeader();
+    _hdrRepair = false;
+    try { renderHeader(); } finally { _hdrRepair = true; }
     if (typeof applyColOrder === 'function') applyColOrder();
     if (typeof applyColHidden === 'function') applyColHidden();
     return true;
@@ -20892,6 +20950,15 @@
     applyColHidden();
     applyColOrder();
     syncHeadHeights();
+    /* ⚠️ AND THE BODY, IF THE HEADER JUST MOVED WITHOUT IT — see the note on _bodySig.
+       ⚠️ renderWindow(true), NOT renderGrid(). renderGrid() is scheduleRender(), which is
+       requestAnimationFrame-debounced, and a rAF NEVER FIRES IN A HIDDEN TAB: measured with the tab
+       backgrounded, `_rafP` latches true on the first swallowed request and every renderGrid() after
+       it returns immediately — the repair never ran. It is also the right call on the merits: a
+       column-set change does not change the display LIST, only the cells in it, so re-serialising
+       the window is the whole repair. Synchronous, so nothing can swallow it. */
+    _colSig = gridColSig();
+    if (_hdrRepair && _bodySig !== null && _bodySig !== _colSig) renderWindow(true);
   }
   // OPC-style column header menu (Sort / Adjust to fit / Rename / Hide).
   function openColMenu(idx, anchor) {
@@ -21593,7 +21660,17 @@
     if (!cc || !cc.n) cell = '<span style="color:var(--pd-muted);">—</span>';
     else if (cc.mixed) cell = '<span style="color:var(--pd-muted);" title="' + esc(cc.names.slice(0, 12).join(' · ')) + '">Mixed (' + cc.n + ')</span>';
     else cell = '<span class="ps-cctag" title="' + esc(ccLabel(cc.code)) + '">' + esc(cc.code) + '</span>';
-    return '<div class="ps-cell c-ccode">' + cell + '</div>';
+    /* ⚠️⚠️ AND THE CHANGE-ORDER-REF LANE, BLANK. A summary row cites no variation of its own, but
+       the task row emits `corefCellHtml` here and this chain used to stop at the class code — one
+       cell short. The column machinery positions every cell by `nth-child`, so a single missing
+       lane shifts EVERY column after it left by one, and the grid then prints values under the
+       wrong heading: measured on OPW101, the header read 39 cells and the body 38, diverging at
+       index 26, which is why "Structural Works" appeared beneath CHANGE ORDER REF.
+       ⚠️ This is the invariant `sumConScopeHtml` states four functions up — *"keeps the cell count
+       identical, which the nth-child column machinery needs"* — and this chain was the one place
+       that broke it. */
+    return '<div class="ps-cell c-ccode">' + cell + '</div>' +
+           '<div class="ps-cell c-coref"></div>';
   }
   // The trailing lane the column-chooser "+" lives in — see the .c-plus note in the CSS. Emitted on
   // EVERY row kind so the header and the body stay cell-for-cell identical.
@@ -21919,6 +21996,9 @@
     var winKey = first + ':' + last + ':' + DL.length;
     if (!force && winKey === _gridWinKey) return;
     _gridWinKey = winKey;
+    // Recorded HERE, not in renderGrid(), because this is the line past which the rows below are
+    // definitely rebuilt — the two early returns above leave the previous body on screen.
+    _bodySig = gridColSig();
     // grid: render only the window, offset with translateY
     var gh = '';
     for (var i = first; i < last; i++) gh += gridRowHTML(DL[i], i);
@@ -40909,6 +40989,115 @@
         setScope: function (s2) { clScope = s2; } } };
   })();
 
+  /* ==========================================================================================
+     TOOLBAR OVERFLOW — what does not fit moves to a row you can reveal.
+     ⚠️ Nodes are MOVED between the two containers, never rebuilt: every handler in this file is
+     attached once at init by id, so re-creating a control would silently unwire it — the same
+     class of failure as removing a button while its `getElementById(...).onclick` stays.
+     ⚠️ Shed order is LOWEST PRIORITY FIRST and explicit. Shedding from the end of the DOM would
+     drop the SEARCH box first, which is the one control a planner uses on every visit. */
+  var _TB_KEEP = { 'ps-actionsbtn': 1, 'ps-add': 1, 'ps-schedbtn': 1, 'ps-groupbtn': 1 };
+  var _TB_SHED = ['ps-help-btn', 'ps-fmtbtn-top', 'ps-outlinebtn', 'ps-vstackbtn', 'ps-progressbtn',
+                  'ps-zoombtn', 'ps-layoutbtn', 'ps-scopebtn', 'ps-openbtn', 'ps-analyzebtn'];
+  var _TB_ORDER = null, _tbRaf = 0;
+
+  function _tbUnit(btnId) {
+    var b = document.getElementById(btnId);
+    if (!b) return null;
+    return b.closest('.ps-menu-wrap') || b;
+  }
+
+  function _tbFit() {
+    var row = document.querySelector('.ps-tb-row');
+    var more = document.getElementById('ps-tb-overflow');
+    var moreBtn = document.getElementById('ps-tb-more');
+    if (!row || !more || !moreBtn) return;
+    /* Captured ONCE, and it is what restores the original order: re-inserting every remembered
+       child in sequence puts them back wherever they had been moved to. */
+    if (!_TB_ORDER) _TB_ORDER = [].slice.call(row.children);
+    _TB_ORDER.forEach(function (el) { row.insertBefore(el, moreBtn); });
+
+    row.classList.remove('ps-tb-compact');
+
+    // one row's height = the tallest control; anything more means it has wrapped
+    var unit = 0;
+    _TB_ORDER.forEach(function (el) { unit = Math.max(unit, el.offsetHeight || 0); });
+    if (!unit) return;
+
+    /* ⚠️ SQUEEZE BEFORE HIDING. Dropping the scale and view buttons to their icons buys ~105px, and
+       a control that is narrower is still a control the planner can see — one moved into the
+       overflow row is one they have to go looking for. So compact first, shed only if that is not
+       enough, and on a wide window neither happens and the names stay. */
+    if (row.offsetHeight > unit + 8) row.classList.add('ps-tb-compact');
+
+    for (var i = 0; i < _TB_SHED.length && row.offsetHeight > unit + 8; i++) {
+      var el = _tbUnit(_TB_SHED[i]);
+      if (!el || _TB_KEEP[_TB_SHED[i]]) continue;
+      more.appendChild(el);
+    }
+    var any = more.children.length > 0;
+    moreBtn.hidden = !any;
+    /* Nothing overflowed: there is no row to show and no toggle to offer. Otherwise the planner's
+       remembered choice decides, so a repaint never folds a row they had opened. */
+    _tbSetOpen(any && _tbWantOpen());
+  }
+
+  function _tbWantOpen() {
+    try { return localStorage.getItem('ps_tb_more_open') === '1'; } catch (e) { return false; }
+  }
+  function _tbSetOpen(open) {
+    var more = document.getElementById('ps-tb-overflow');
+    var moreBtn = document.getElementById('ps-tb-more');
+    if (!more || !moreBtn) return;
+    more.hidden = !open;
+    moreBtn.classList.toggle('on', !!open);
+    moreBtn.setAttribute('aria-expanded', String(!!open));
+  }
+
+  function _tbFitSoon() {
+    if (_tbRaf) return;
+    _tbRaf = (window.requestAnimationFrame || function (f) { return setTimeout(f, 16); })(function () {
+      _tbRaf = 0; _tbFit();
+    });
+  }
+
+  function _tbWire() {
+    var row = document.querySelector('.ps-tb-row');
+    var moreBtn = document.getElementById('ps-tb-more');
+    if (!row || !moreBtn || row.parentNode.querySelector('#ps-tb-overflow')) return;
+    var more = document.createElement('div');
+    more.className = 'ps-tb-overflow'; more.id = 'ps-tb-overflow'; more.hidden = true;
+    row.parentNode.insertBefore(more, row.nextSibling);
+    /* ⚠️ THE REVEAL IS REMEMBERED. Owner: *"is the ellipsis permanent? I want to be able to access
+       the buttons without the ellipsis."* A control you have to re-open on every repaint is one you
+       have to keep re-finding, so opening it once is a preference, not a gesture: it persists per
+       browser and is re-applied on every fit. The `⋯` is then only ever a way to fold the row away
+       again, never a gate you must pass each time. */
+    moreBtn.onclick = function () {
+      _tbSetOpen(more.hidden);
+      try { localStorage.setItem('ps_tb_more_open', more.hidden ? '0' : '1'); } catch (e) {}
+    };
+    window.addEventListener('resize', _tbFitSoon);
+    /* ⚠️ The sidebar is the reason this exists: expanding it takes ~270px off the content and is
+       exactly the band where the toolbar stops fitting. It is a class flip on `.pd-app`, not a
+       resize, so a resize listener alone would never see it. */
+    var app = document.querySelector('.pd-app');
+    if (app && window.MutationObserver) {
+      new MutationObserver(_tbFitSoon).observe(app, { attributes: true, attributeFilter: ['class'] });
+    }
+    /* ⚠️⚠️ AND AGAIN WHEN THE SIDEBAR HAS FINISHED MOVING. `.pd-sidebar` carries
+       `transition: width .22s`, so the class flip fires the observer while the rail is still
+       ANIMATING — the fit was being computed against the OLD width and came out exactly backwards:
+       measured on the deployed build, collapsing (which gives 176px BACK) shed five controls, and
+       expanding (which takes them away) shed none and wrapped. A rAF is not enough; the width is
+       not final until the transition ends. */
+    var sb = document.querySelector('.pd-sidebar');
+    if (sb) sb.addEventListener('transitionend', function (e) {
+      if (e.propertyName === 'width' || e.propertyName === 'flex-basis') _tbFitSoon();
+    });
+    _tbFit();
+  }
+
   function switchTab(tab) {
     activeTab = tab;
     document.querySelectorAll('.ps-tab').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === tab); });
@@ -45554,6 +45743,11 @@
 
     (function () {
       var hb = document.getElementById('ps-help-btn'); if (hb) hb.onclick = function (e) { e.stopPropagation(); openShortcuts(); };
+      /* ⚠️ LAST, and deliberately after every other toolbar handler is attached. `_tbWire` takes the
+         first measurement and may immediately MOVE controls into the overflow row — moving a node
+         does not disturb its listeners, but wiring one that has already been moved would have to
+         find it in a different parent, so the order is: wire everything, then fit. */
+      _tbWire();
       // The permanent home for the sheet. The toolbar's `?` is hidden below 1400px (see its
       // comment) and the `?` KEY does not exist on every layout, so this must always be reachable.
       var hi = document.getElementById('ps-help-item');
@@ -45905,6 +46099,10 @@
       load: load,
       rebuild: rebuild,
       renderAll: renderAll,
+      // Exposed for the header/body invariant: gridColSig() is what both are built from, and
+      // renderHeader() is the call the four column-discovering paths make on its own.
+      renderHeader: renderHeader,
+      gridColSig: gridColSig,
       scheduleRender: scheduleRender,
       doRender: doRender,
       renderWindow: renderWindow,

@@ -553,3 +553,82 @@ dark mode.
 ⚠️ **Not verified signed in**, and the migration still has to be run — `scurve_manual` /
 `scurve_manual_meta`, `migrations/2026-09-10-scurve-manual-poc.sql`. Nothing here has written a row;
 Save is exercised against a stub.
+
+## The manual sheet's preview curve gets its own compact size (2026-09-11 d8) — ethanrobles10
+
+Owner: *"can you make the curve smaller for the manual POC entry. And make it aesthetically
+pleasing."*
+
+The preview above the manual sheet was the **full Curve-tab chart**, verbatim: a 340-unit plot, five
+gridlines, a two-row legend and two long paragraphs — about 580px of furniture sitting on top of a
+36-column spreadsheet the planner is actually trying to type into.
+
+⚠️ `MODULE_V` → `20260911sc1`, **re-derived from the remote after rebasing**: this landed as `d7`, then `d8`, then `d9`,
+another session took all three while it was being written. A shared cache-bust that two
+commits both claim busts nothing for whichever deploy lands second, so this one steps OFF the shared `d<N>` run rather than racing it again — `sc1` cannot collide with a sequence nobody else is walking.
+
+### ⚠️⚠️ SMALLER IS A DIFFERENT CHART, NOT A SCALED-DOWN ONE
+The obvious move — cap the rendered height and let the viewBox shrink — takes the **type** down with
+it. At the height this needed, the 11px axis labels land near 7px and the legend swatches become
+dashes. So `renderChart` takes a `compact` flag that re-proportions the **drawing**, and the fonts
+keep real sizes in CSS:
+
+| | Curve tab | Manual preview |
+|---|---|---|
+| Plot box | 1000 × 340 | 1000 × **196** |
+| Gridlines | 0/25/50/75/100 | 0/**50**/100 |
+| Pads (L/T/B, R with bars) | 40 / 16 / 40 / 56 | 34 / 12 / 26 / 48 |
+| Axis label size | 11px | **10px** (not 6px) |
+| Source note | 317 chars | **69** |
+
+- ⚠️ **A flag on the shared renderer, never a second renderer.** The preview and the Curve tab draw
+  the same project; two chart builders is how they start disagreeing about it. Everything below the
+  five geometry numbers — the x mapping, the bars, the forecast S-curve, the hover bands — is already
+  expressed in terms of them, so no second code path was needed.
+- ⚠️ Three gridlines, not five: at 196 units tall, five sit ~18px apart on screen and read as
+  hatching rather than as a scale.
+- ⚠️ Thinner strokes in compact (2.5 → 2, 2 → 1.6). At two-fifths less height the full-weight lines
+  read as ribbons and the planned and actual curves touch where they run close together.
+- ⚠️ Every `-sm` rule is scoped to its own class, never written on the bare `.sc-svg` / `.sc-legend`.
+  The Curve tab is the same markup from the same function, so a rule on the bare class would quietly
+  restyle the full-size chart too. Verified: the full chart still reports `viewBox 0 0 1000 340`,
+  class `sc-svg`, 5 gridlines, 11px labels.
+
+### ⚠️ The honesty note got shorter, not weaker
+The manual-curve paragraph is the longest thing on the preview and shortening it was half the ask —
+but it is also the note that stops a screenshot asserting data nobody entered. The compact form still
+makes **all three claims**: this is a manual curve, what the trades are weighted by, and what has
+actually been entered (`Manual curve · trades weighted by duration · entered: planned, actual`), with
+`manChart` still appending the unsaved count. What it drops is the sentence telling the planner where
+the sheet is and how to switch back to Automatic — both on screen a few pixels below, on the very tab
+this preview lives in. **The Curve tab keeps the full paragraph**, where the sheet is a tab away and
+neither is in view.
+
+⚠️⚠️ `var compact` is declared at the TOP of `renderChart`, not beside the geometry it mostly drives.
+The note branch above the plot reads it too, and `var` hoisting would have handed that branch an
+`undefined` — the compact note would have silently never fired while every geometry change worked.
+
+### And the block itself
+A caption row (`Live preview · redraws as you type, unsaved edits included`) above a hairline rule,
+tighter padding, a one-line compact legend and micro-sized notes. ⚠️ The caption is not decoration:
+that the curve follows your typing was a fact only a code comment stated, and a planner who does not
+know it has no reason to look up at the chart at all.
+
+### Verified
+A gitignored harness (deleted) that loads the module's **own `<style>` block** by XHR and the
+**shipped** `renderChart` / `lens` / `periodBuckets` / `periodic` sliced verbatim, drawing the same
+synthetic 30-month programme twice — compact and full — side by side in one page.
+
+| Measured in the browser | Result |
+|---|---|
+| Compact plot | `viewBox 0 0 1000 196`, class `sc-svg sc-svg-sm`, rendered **220px** tall |
+| Full plot (unchanged) | `viewBox 0 0 1000 340`, class `sc-svg`, rendered 390px tall |
+| Whole preview block | **352px**, against 583px for the full-size card — **40% less vertical space** |
+| Gridlines | 3 compact / 5 full |
+| Axis label size | 10px compact / 11px full — still a real size |
+| Source note | 69 chars compact / 317 full, all three claims intact in both |
+
+⚠️ **Not verified against real data** — the anon key has no grants, so this was measured on a
+synthetic curve, not on a project's own manual sheet. What is proven is the geometry, the scoping of
+the `-sm` rules and that the full-size chart is untouched; what has not been seen is the preview
+redrawing as a planner types into the matrix.

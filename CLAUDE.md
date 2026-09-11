@@ -126,6 +126,184 @@ scroll-instead-of-reflow behaviour with no markup changes.
 `MODULE_V` unchanged in both — neither module's `index.html` structure changed, only their
 module-local `module.css`/`module.js?v=` tokens moved.
 
+### 2026-09-11 (sc2) — Every other grid checked for the same mismatch: one dead-code candidate, nothing live
+
+Owner: *"Let's check the other grid views for the same mismatch."*
+
+**The question had to be sharpened first.** The schedule grid's fault was not "the counts differ" — it
+was that the header and the body are built by **two different functions**, from a column set
+(`LOC_LEVELS` / `CODE_TYPES` / `UDF_DEFS`) that arrives asynchronously, so the two calls could see
+different snapshots. A grid whose header and rows are emitted inside **one** function from **one**
+local snapshot cannot drift however late the data lands; the worst it can do is render early and look
+empty. So the sweep asks that of every table in the app, then measures what it can reach.
+
+**Static, whole repo — 155 `<thead>`s.** `headbody.py` finds the smallest function containing each
+`<thead>` and asks whether that same function emits the `<td>` beneath it. **150 do** — structurally
+immune, across all 16 modules. **Five do not**, and all five were opened:
+
+- **`detRelsEdit` ×2** (schedule details → Relationships) — fixed 5- and 4-column tables, bodies from
+  `relRowHtmlEdit` / `relRowHtml`. Static columns cannot drift; measured live at **5×1 and 4×1**.
+- **`tbl(head, body)`** (Diagnose report) — a generic helper, so the pairing lives at each call site.
+  All four checked: heads of **6 / 5 / 5 / 4** against bodies of **6 / 5 / 5 / 4** `<td>`; two of them
+  measured live at **6×6** and **5×5**.
+- **`portMonthHead`** (Manpower Loading) — a header *helper*; both callers pass the **same local
+  `months`** array that every body row maps. One snapshot, one function.
+- **`renderRegister`** (Drawing Register) — the only true split, and it is **dead code in this repo**:
+  `config.js` has the module `enabled: false`, `retiredTo: 'the Engineering App'`. Its live home is
+  another app; `modules/drawing-register/` here is a leftover.
+
+**Live — 18 grids on 8 pages, 0 mismatches.** Schedule grid **39×21** (still aligned after the sc6
+fix and a full tour of the module), progress table 7×26, stacking overview 10×4 and 10×5, Cost
+Loading steps 1-4 (5×25, 5×25, 2×25 + **8×125**, 4×25), details tabs (8×1, 5×1, 5×1 + 4×1, 4×1, 9×1),
+Activity Codes 3×25, UDFs 4×5, Diagnose 6×6 and 5×5, Manpower matrix **47×5**, Cash Flow matrix
+**58×13**, Equipment matrix 39×6, BOQ items **13×139**, Resource master 10×20, Portfolio 8×27.
+
+**⚠️⚠️ THE PROBE WAS WRONG FIRST, AND IT ACCUSED MANPOWER LOADING.** It reported the matrix's
+**Actual** row as one cell short of a 47-column header — the exact shape of the bug being hunted.
+It is correct code: `bandRows()` emits the department label **once** with `rowspan="live.length"`, so
+the rows beneath it carry one `<td>` fewer because that column is already occupied from above. The
+probe counted cells per row and never modelled **rowspan**. It now lays the table out the way a
+browser does — an occupancy grid with carry-downs — and a row is short only when a **column** ends up
+with nothing in it. Same lesson as `cellcount.py`: a checker that cannot be right about correct code
+cannot be trusted about wrong code. (The error is one-directional — ignoring rowspan makes rows look
+*shorter*, so it over-reports and never hides a real mismatch. Every clean result taken before the fix
+still stands.)
+
+**What this pass did NOT reach, stated rather than counted as a pass:** the import wizard's Excel
+preview grid (needs a file walked through it), the Snapshots / Change-history / Risk dialogs (they sat
+on *"Loading…"* — the tab was backgrounded and its timers are throttled), the stacking overview's
+`showPath` branch (needs a band with no value on its level), and most Manpower / Positions / Roster
+views, which rendered no table at all for the loaded project.
+
+No code changed: nothing live is broken.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+
+### 2026-09-11 (sc) — Columns not aligned: two different bugs wearing the same face
+
+Owner: *"Bug inside the grid columns do not refer correctly to its content. Columns are not aligned."*
+
+Every cell in this grid is positioned by a CSS `order` rule keyed on `nth-child`, so the body's cell
+**sequence** is the only thing tying a value to its heading. Two unrelated faults were both breaking
+that sequence, and they look identical on screen.
+
+**Half one — a summary row a cell short.** Live DOM on OPW101: header **39** cells, body **38**,
+diverging at index 26. The task chain emits `corefCellHtml`; the summary chain
+(`sumConScopeHtml → sumPkgHtml → sumCcodeHtml`) simply stopped at the class code, so every column
+after it shifted left by one and *"Structural Works"* — a trade roll-up — printed beneath **CHANGE
+ORDER REF**. It now emits the blank change-order lane, the same device `sumConScopeHtml` already
+uses for the constraint lanes, and whose own comment states the invariant this broke: *"keeps the
+cell count identical, which the nth-child column machinery needs"*. `cellcount.py` guards it by
+walking both chains. ⚠️ Counted per **return path**, not per function body — the first version summed
+branches that can never both run and reported `c-scope c-scope` for correct code, and a checker that
+cannot be right about correct code cannot be trusted about wrong code.
+
+**Half two — a header that discovered columns without the body.** Re-measuring after that fix
+confirmed it (`c-coref` at index 26 in both) and exposed a bigger, separate gap underneath: header
+**39** cells against **29** in every body row — **eleven** `c-x` extra columns to the body's one. The
+header carried TOWER / LEVEL / ZONE; the body had been serialised before `location_levels` came back
+and still carried only Trade. `extraColDefs()` reads `LOC_LEVELS` / `CODE_TYPES` / `UDF_DEFS`, all of
+which arrive asynchronously, and `renderHeader()` is called **alone** from four places that have just
+discovered columns — `refreshLocLevels()` and the three import/push paths all run
+`populateGroupSelect(); seedExtraHidden(); renderHeader();` and stop. `syncGridColumns()` only closes
+this along the `renderGrid()` path, so none of the four went through it. The body now keeps **its
+own** signature, written in `renderWindow()` at the line past which the rows below are definitely
+rebuilt, and `renderHeader()` reconciles against it.
+
+**⚠️⚠️ The first version of that repair could never run, and the tab I was measuring in is why.** It
+queued `renderGrid()` on a timeout. `renderGrid()` is `scheduleRender()`, which is
+`requestAnimationFrame`-debounced behind `if (_rafP) return` — **and a rAF never fires in a hidden
+tab**. Driving the deployed build in a backgrounded Chrome tab, the grid stayed at 39/29 through
+`renderGrid()`, `renderAll()` **and a full reload**, while a direct `renderWindow(true)` rebuilt it to
+39 on the spot; the tab reported `visibilityState: "hidden"` and a rAF callback that never ran. So
+`_rafP` latches true on the first swallowed request and every render after it returns immediately —
+which also means part of what I had been measuring as "the body is stale" was the tab's own doing.
+The repair is now a **direct, synchronous `renderWindow(true)`**, which is the right call on the
+merits anyway: a column-set change does not change the display **list**, only the cells in it.
+⚠️ And `_hdrRepair` is lowered for the one `renderHeader()` that `doRender()` makes, because
+`doRender()` renders the window itself on the next line — measured: **exactly one** body rebuild on
+each path, not two.
+
+Driven end-to-end on the deployed build against OPW101, and the defect reproduced deliberately
+rather than waited for: emptying `LOC_LEVELS` and re-serialising takes the body to **35** against a
+39-cell header; `renderHeader()` **alone** — the entire call `refreshLocLevels()` makes — brings it
+back to **39**, with **0 of 22 rows** disagreeing. A natural load now arrives at 39/39.
+
+`MODULE_V` → `20260911sc6`.
+
+
+### The manual sheet's preview curve gets its own compact size (2026-09-11) — ethanrobles10
+
+Owner: *"can you make the curve smaller for the manual POC entry. And make it aesthetically
+pleasing."*
+
+The preview above the S-curve's manual sheet was the full Curve-tab chart verbatim — a 340-unit plot,
+five gridlines, a two-row legend and two long paragraphs, about 580px of furniture on top of the
+36-column spreadsheet the planner is trying to type into. It is now **352px, 40% less**.
+
+- ⚠️⚠️ **Smaller is a different chart, not a scaled-down one.** Capping the height and letting the
+  viewBox shrink takes the type down with it — at the height this needed, 11px axis labels land near
+  7px. So a `compact` flag re-proportions the drawing (plot box 340 → **196**, five gridlines → three,
+  tighter pads, thinner strokes) and the fonts keep real sizes in CSS.
+- ⚠️ **A flag on the shared renderer, never a second renderer** — the preview and the Curve tab draw
+  the same project, and two chart builders is how they start disagreeing about it. Every `-sm` rule is
+  scoped to its own class so the full-size chart is untouched, which was measured rather than assumed.
+- ⚠️ The manual-curve honesty note got **shorter, not weaker**: 317 chars → 69, still making all three
+  claims (it is a manual curve, what the trades are weighted by, what has been entered) plus the
+  unsaved count. The Curve tab keeps the full paragraph, where the sheet is a tab away.
+- A caption row says the curve **redraws as you type** — a fact only a code comment stated, and a
+  planner who does not know it has no reason to look up at the chart.
+
+⚠️ **Not verified against real data** — the anon key has no grants. Measured in a gitignored harness
+loading the module's own stylesheet and its shipped renderer over a synthetic 30-month programme.
+
+`MODULE_V` → `20260911sc1`. Detail: [`modules/s-curve/CLAUDE.md`](modules/s-curve/CLAUDE.md).
+
+### 2026-09-11 (b2) — All five fixes driven end-to-end on OPW101, and the toolbar measured rather than guessed
+
+Owner: *"Let's verify these fixes end-to-end"*, then *"The toolbar needs proper rework it spills over."*
+
+**Every fix exercised through the real UI on the real project. Nothing was written.**
+
+| # | Verified |
+|---|---|
+| **3** scroll | Tree scrolled to **2000px**, then a tick **and** a branch toggle — held at **2000** both times. Before, each repaint reset it to 0. |
+| **3** "+N" | Search "Rebar" → 77 leaves, each offering **"+76"**. Clicking **+75** on *Rebar · B3* took the selection **1 → 77**, footer *"Use 77 activities"*, scroll held. The eighteen-floor expand-and-tick job, in one click. |
+| **4** orchestrator | Pass 2 now reads *"**5 name(s)** need a person to say which line they are"* with a **Match names…** button, where it said *"nothing to do"*. |
+| **4** safety | The screen opens **0 of 5 answered**, button *"Nothing chosen"* — **nothing pre-picked**, exactly as a re-code must be. Each row names the code it carries today (*"now 3050"*), on its own line. |
+| **2** dialog | No ACTIVITY/QTY header over zero rows; **one** amber box where there were two. |
+| **5** wrap | First paragraph now lands on **one line** instead of orphaning *"attached to one."* |
+
+Zero console errors and zero unhandled rejections across the whole walk.
+
+**⚠️ THE TOOLBAR, MEASURED.** At a 1168px row the seventeen children sum to **2244px**. Two causes,
+both found only by measuring:
+
+1. **The grouping button was the only control whose label grows with the data** — `"WBS"` is 90px,
+   `"Trade › Activity › Tower › Level › Zone › Unit"` is **308px**, the widest of seventeen by more
+   than 3×. That is why the toolbar was not merely two rows but an **unstable** two rows: change the
+   grouping and the colour and `?` buttons jump between them. Capped at 190px and ellipsised, the
+   full path moved to the button's own `title` — capping without that would have hidden which
+   grouping is live, trading one defect for a worse one.
+2. **The search box had no ceiling.** `flex:1 1 100px` grows into whatever space is going; measured
+   at **1127px** once wrapped — a search field spanning the window. Capped at 340px.
+
+⚠️ **Neither makes it one row at 1168px, and that is not claimed.** Measured: even a **95px** cap on
+the grouping label still wraps, while the same toolbar fits **one row at 1400px and above** — the
+threshold sits between. What the caps fix is the **reflow** and the stretched input; one row at
+narrow widths needs an overflow menu, which is a separate and bigger call.
+
+⚠️ Also measured and worth recording: on OPW101 the *Match names* candidates are drawn from the
+codes on the **revision in view**, so the General Requirements BOQ offers *"01751 Rebar Testing"*
+for an activity called *Rebar* — correct for that bill, and not the Structural code the planner
+wants. Picking the Structural Works BOQ first is what makes that screen useful.
+
+`?v=` → `20260911b2`, `MODULE_V` → `20260911d5`.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+
 ### 2026-09-11 (b1) — Five reports from testing BOQ linking, and an Actions menu taller than the window
 
 Owner, testing the BOQ→schedule linking on OPW101, listed five. All five answered, plus the Actions
