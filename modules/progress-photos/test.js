@@ -728,13 +728,21 @@ console.log('\n[misc] insert().select() returns the new row id');
   // .pp-tab.active/.pd-btn-primary two entries up -- .ppr-panelabel.is-current
   // is the Current-slide pill in a presentation pane, .bim-revbadge is the
   // "current revision" pill in the floor-plan revision-history list.
-  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.bim-pin\b|\.bim-pinstage-dot\b|#bim-place\.is-active|\.pp-plancluster\b|\.ppr-mktool\b|\.ppr-sortno\b|\.pp-mk-tool\.active|\.bim-regpt\b|\.bim-conehandle-el\b|\.bim-dirhandle-el\b|\.pp-livebtn\.is-live\b|\.pp-iconbtn\.is-active\b|\.pp-cardfav\b|\.pp-360badge\b|\.ppr-panelabel\.is-current\b|\.bim-revbadge\b/;
+  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.pp-kpmini-pin\b|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.bim-pin\b|\.bim-pinstage-dot\b|#bim-place\.is-active|\.pp-plancluster\b|\.ppr-mktool\b|\.ppr-sortno\b|\.pp-mk-tool\.active|\.bim-regpt\b|\.bim-conehandle-el\b|\.bim-dirhandle-el\b|\.pp-livebtn\.is-live\b|\.pp-iconbtn\.is-active\b|\.pp-cardfav\b|\.pp-360badge\b|\.ppr-panelabel\.is-current\b|\.bim-revbadge\b/;
   const stray = fffRules.filter((sel) => !ALLOWED_FFF_CONTEXT.test(sel));
   ok('every #fff use sits under a documented fixed-colour selector', stray.length === 0 && fffRules.length > 0,
      JSON.stringify(stray));
   ok('the dark lightbox overlay still uses #fff for its tool icons', /\.pp-lb-tool \{[^}]*color: #fff/.test(css));
+  // ⚠️ 2026-09-11: .pp-kpmini-pin is deliberately excluded from this sweep —
+  // it's the shared small key-plan marker dot (module.css), a fixed
+  // colored disc that always needs a white BORDER to read against any plan
+  // image underneath it, same reviewed reasoning as .bim-pin/.bim-pinstage-
+  // dot in ALLOWED_FFF_CONTEXT above (both already carry the identical
+  // "#fff border on a solid-colour dot" shape). It happens to start with
+  // "pp-kp" like the retired flat key-plan surfaces this sweep was built to
+  // catch, so it's named out explicitly rather than silently matched.
   ok('no #fff on any new light surface (gallery/keyplan/pickers)',
-     !/\.pp-(kp|gallerygroup|gallerybar|groupby)[^{]*\{[^}]*#fff/.test(css) &&
+     !/\.pp-(?!kpmini-pin\b)(kp|gallerygroup|gallerybar|groupby)[^{]*\{[^}]*#fff/.test(css) &&
      !/\.ppr-pick[^{]*\{[^}]*#fff/.test(css));
 
   // ============================================================ Phase 2 ===
@@ -3011,7 +3019,7 @@ console.log('\n[misc] insert().select() returns the new row id');
   // WAY it faced, not just the bare plan image. Healthy churn from an
   // intentional change, not a regression.
   ok('index.html: #pp-lb-keyplan-overlay is a real <div> stage INSIDE .pp-lb-imgwrap (img + pin + cone), hidden by default',
-     /pp-lb-imgwrap[\s\S]*?<div class="pp-lb-kpoverlay" id="pp-lb-keyplan-overlay" hidden>[\s\S]*?<img id="pp-lb-keyplan-overlay-img" alt="Key plan" \/>[\s\S]*?<span class="pp-lb-kpoverlay-pin" id="pp-lb-keyplan-overlay-pin" hidden><\/span>[\s\S]*?<span class="pp-lb-kpoverlay-cone" id="pp-lb-keyplan-overlay-cone" hidden><\/span>[\s\S]*?<\/div>[\s\S]*?<\/div>/.test(html));
+     /pp-lb-imgwrap[\s\S]*?<div class="pp-lb-kpoverlay" id="pp-lb-keyplan-overlay" hidden>[\s\S]*?<img id="pp-lb-keyplan-overlay-img" alt="Key plan" \/>[\s\S]*?<span class="pp-kpmini-pin" id="pp-lb-keyplan-overlay-pin" hidden><\/span>[\s\S]*?<span class="pp-lb-kpoverlay-cone" id="pp-lb-keyplan-overlay-cone" hidden><\/span>[\s\S]*?<\/div>[\s\S]*?<\/div>/.test(html));
   // Item 5 (overnight batch): "no need also key plan for video, leave this
   // only for photo and 360" -- kpHasPin now also gates on media type, not
   // only on whether a pin exists.
@@ -3375,10 +3383,18 @@ console.log('\n[misc] insert().select() returns the new row id');
   // when the photo actually has a plan, and that toggling ONE pane's state
   // never affects the other.
   (function () {
-    const savedPinInfoFor = BIM.pinInfoFor, savedMarkerHTML = BIM.keyPlanMarkerHTML;
+    // ⚠️ 2026-09-11: stubs BIM.keyPlanMiniMarkerHTML, NOT keyPlanMarkerHTML
+    // — the presentation pane must call the scaled-down "mini" marker
+    // (module.js's own lightbox overlay already did), never the full-size
+    // one BIM.keyPlanMarkerHTML draws for the large Plans-tab stage. Using
+    // the wrong stub here would let this test keep passing against the
+    // regression the fix corrects (see the class-usage sweep below, which
+    // additionally proves keyPlanMarkerHTML is genuinely never called).
+    const savedPinInfoFor = BIM.pinInfoFor, savedMiniMarkerHTML = BIM.keyPlanMiniMarkerHTML;
+    let markerCalls = 0;
     try {
       BIM.pinInfoFor = function () { return { pin: { x_norm: 0.4, y_norm: 0.6 }, planUrl: 'plan.png', planWidth: 800, planHeight: 400 }; };
-      BIM.keyPlanMarkerHTML = function (pin) { return '<div class="fake-pin" data-x="' + pin.x_norm + '"></div>'; };
+      BIM.keyPlanMiniMarkerHTML = function (pin) { markerCalls++; return '<div class="fake-pin" data-x="' + pin.x_norm + '"></div>'; };
 
       const photos = [{ id: 'ph3', photo_url: 'path/c.jpg', markup: [], taken_at: '2026-01-03' }];
       const urlCache = { 'path/c.jpg': 'signed://c' };
@@ -3397,18 +3413,39 @@ console.log('\n[misc] insert().select() returns the new row id');
          /id="ppr-kpoverlay-after" style="width:10%;aspect-ratio:2;"/.test(h));
       ok('...defaults to the 10% overlay size (KP_OVERLAY_DEFAULT) until the user drags to resize',
          /style="width:10%;/.test(h));
-      ok('...draws the SAME pin+cone marker bim.js\'s own Plans-tab view uses (BIM.keyPlanMarkerHTML), never a re-derived one',
-         /<div class="fake-pin" data-x="0\.4"><\/div>/.test(h));
+      ok('...draws the SCALED-DOWN "mini" pin+cone marker (BIM.keyPlanMiniMarkerHTML) — the same one module.js\'s lightbox corner overlay uses — never a re-derived one, and never the full-size Plans-tab marker',
+         /<div class="fake-pin" data-x="0\.4"><\/div>/.test(h) && markerCalls === 1);
       ok('...and carries a drag-to-resize handle on its bottom-left corner',
          /class="ppr-kpoverlay-resize" data-resize="after" title="Drag to resize"/.test(h));
 
       ok('_getKeyPlanOpenPane(\'after\') reflects the value just set, and the OTHER pane (\'before\') is untouched by it',
          PPR._getKeyPlanOpenPane('after') === true && PPR._getKeyPlanOpenPane('before') === false);
     } finally {
-      BIM.pinInfoFor = savedPinInfoFor; BIM.keyPlanMarkerHTML = savedMarkerHTML;
+      BIM.pinInfoFor = savedPinInfoFor; BIM.keyPlanMiniMarkerHTML = savedMiniMarkerHTML;
       PPR._setKeyPlanOpenPane('after', false);
     }
   })();
+  // Real-defect regression guard (2026-09-11): a live sighting can only be
+  // trusted to stay fixed if the SOURCE itself is asserted, not just this
+  // one stubbed render — ppr.js's kpOverlay markup must call the mini
+  // marker, must never call the full-size one, and the shared CSS/JS class
+  // rename must have landed everywhere it's used (a stray old class name
+  // left in the static HTML skeleton would silently drop the base
+  // position/size rule the mini pin depends on).
+  ok('ppr.js: the presentation pane\'s key-plan overlay calls BIM.keyPlanMiniMarkerHTML(kpInfo.pin), never BIM.keyPlanMarkerHTML',
+     /BIM\.keyPlanMiniMarkerHTML \? BIM\.keyPlanMiniMarkerHTML\(kpInfo\.pin\) : ''/.test(pjs) &&
+     !/BIM\.keyPlanMarkerHTML\(kpInfo\.pin\)/.test(pjs));
+  ok('bim.js: keyPlanMiniMarkerHTML is exported and draws coneWedgeSVG(pin) + a .pp-kpmini-pin span (never .bim-pin, the full-size Plans-tab marker)',
+     /keyPlanMiniMarkerHTML: function \(pin\) \{ return keyPlanMiniMarkerHTML\(pin\); \}/.test(bmjs) &&
+     /function keyPlanMiniMarkerHTML\(pin\) \{\s*return coneWedgeSVG\(pin\) \+\s*'<span class="pp-kpmini-pin pp-kpmini-pin-' \+ esc\(pin\.item_type \|\| 'photo'\) \+ '" '/.test(bmjs));
+  ok('module.css: .pp-kpmini-pin (the shared scaled-down pin, ~12px) exists; the old lightbox-only-named .pp-lb-kpoverlay-pin/.pp-lb-kppin-photo classes are gone (renamed, not duplicated)',
+     /\.pp-kpmini-pin \{[^}]*width: 12px; height: 12px;/.test(css) &&
+     /\.pp-kpmini-pin\.pp-kpmini-pin-photo \{ background: var\(--pd-ok\); \}/.test(css) &&
+     !/\.pp-lb-kpoverlay-pin\s*\{/.test(css) && !/\.pp-lb-kppin-photo/.test(css));
+  ok('index.html/module.js: the lightbox\'s own corner-overlay pin span uses the shared .pp-kpmini-pin class in both its static markup and its live className assignment — no stray old class name left in either place',
+     /<span class="pp-kpmini-pin" id="pp-lb-keyplan-overlay-pin" hidden><\/span>/.test(html) &&
+     /pinEl\.className = 'pp-kpmini-pin pp-kpmini-pin-' \+ \(pin\.item_type \|\| 'photo'\);/.test(mjs) &&
+     !/pp-lb-kpoverlay-pin/.test(html) && !/pp-lb-kpoverlay-pin/.test(mjs));
 
   // --- pane(): a photo with NO plan at all renders no toggle button, and
   // no overlay, however this pane's own open state is set (never a
@@ -3746,6 +3783,35 @@ console.log('\n[misc] insert().select() returns the new row id');
     } finally {
       delete byId['pp-lb-panowrap'];
     }
+  })();
+
+  console.log('\n[53] Key-plan pin/camera-angle display fix (2026-09-11): shared "mini" marker, not the full-size Plans-tab one');
+  // Genuine execution of the real, shipped BIM.keyPlanMiniMarkerHTML (never
+  // a stub) against a real pin with a real recorded direction — proves the
+  // fix actually draws a differently-shaped, differently-classed pin from
+  // the full-size BIM.keyPlanMarkerHTML/pinMarkerHTML, not merely that the
+  // two function names differ.
+  (function () {
+    var pin = { id: 'pin1', item_type: 'photo', x_norm: 0.4, y_norm: 0.6, edge1_x: 0.3, edge1_y: 0.45, edge2_x: 0.5, edge2_y: 0.45 };
+    var mini = BIM.keyPlanMiniMarkerHTML(pin);
+    var full = BIM.keyPlanMarkerHTML(pin);
+
+    ok('BIM.keyPlanMiniMarkerHTML draws the small, correctly-positioned marker span (pp-kpmini-pin, matched to x_norm/y_norm) rather than the full-size .bim-pin button',
+       /<span class="pp-kpmini-pin pp-kpmini-pin-photo" style="left:40%;top:60%;"><\/span>/.test(mini));
+    ok('…and still draws the SAME accurate cone geometry (coneWedgeSVG) — only the pin dot\'s markup/size changed, never the camera-angle geometry itself',
+       /<svg class="bim-conewedge-svg"/.test(mini) && /class="bim-conewedge"/.test(mini));
+    ok('the mini marker NEVER contains the full-size .bim-pin button — the two are visually distinct markup, not the same button under two names',
+       !/class="bim-pin/.test(mini));
+    ok('…while the ordinary (full-size, Plans-tab) BIM.keyPlanMarkerHTML/pinMarkerHTML DOES still draw .bim-pin, unchanged by this fix — this proves the two functions genuinely differ, not just that one was renamed',
+       /class="bim-pin bim-pin-photo"/.test(full) && !/pp-kpmini-pin/.test(full));
+
+    // A pin with no recorded direction (or explicitly drone/top-view) draws
+    // no cone in EITHER marker — the mini marker must not fabricate a
+    // camera angle any more than the full-size one does.
+    var noDir = { id: 'pin2', item_type: 'photo', x_norm: 0.2, y_norm: 0.2, direction_na: true };
+    var miniNoDir = BIM.keyPlanMiniMarkerHTML(noDir);
+    ok('a pin with no recorded facing direction (direction_na) draws the pin dot with no cone at all, in the mini marker too',
+       /<span class="pp-kpmini-pin pp-kpmini-pin-photo" style="left:20%;top:20%;"><\/span>/.test(miniNoDir) && !/<svg/.test(miniNoDir));
   })();
 
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');

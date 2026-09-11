@@ -598,6 +598,26 @@ window.BIM = (function () {
       'title="' + esc(pin.label || pin.item_type) + '">' +
       '<span data-ico="' + pinIcon(pin.item_type) + '" data-ico-size="13"></span></button>';
   }
+  // The scaled-down sibling of pinMarkerHTML/keyPlanMarkerHTML above, for
+  // every SMALL key-plan overlay in this app (a lightbox corner box, a
+  // presentation pane's popup) rather than the full-window Plans-tab stage
+  // pinMarkerHTML is sized for (.bim-pin is 26px, appropriate against a
+  // min(70vh,640px) stage). Fixes a real display bug reported 2026-09-11:
+  // the presentation pane was reusing keyPlanMarkerHTML/pinMarkerHTML
+  // verbatim, so its 26px map-pin teardrop rendered wildly oversized
+  // inside a 60-90px corner box — "the pin ... does not display properly".
+  // ⚠️ Shared in ONE place, not copy-pasted per caller — module.js's
+  // lightbox overlay and ppr.js's presentation-pane overlay both call this
+  // now, so the two can never again draw two differently-scaled pins for
+  // the same underlying pin row. The cone is still the exact same accurate
+  // pie-slice geometry (coneWedgeSVG) pinMarkerHTML draws — nothing about
+  // the cone's shape/angle/reach changes at this smaller scale, only the
+  // dot's own CSS size (.pp-kpmini-pin, module.css) is different.
+  function keyPlanMiniMarkerHTML(pin) {
+    return coneWedgeSVG(pin) +
+      '<span class="pp-kpmini-pin pp-kpmini-pin-' + esc(pin.item_type || 'photo') + '" ' +
+      'style="left:' + (pin.x_norm * 100) + '%;top:' + (pin.y_norm * 100) + '%;"></span>';
+  }
 
   function wirePlan() {
     if ($('bim-plan-select')) $('bim-plan-select').onchange = function () {
@@ -2274,6 +2294,10 @@ window.BIM = (function () {
     // never has to duplicate the pin/cone drawing rules (position, cone
     // gradient, NA-hiding) a second time.
     keyPlanMarkerHTML: function (pin) { return pinMarkerHTML(pin); },
+    // The scaled-down "mini" marker (see keyPlanMiniMarkerHTML's own
+    // comment) — every small corner overlay should call THIS, never
+    // keyPlanMarkerHTML above, which is sized for the full Plans-tab stage.
+    keyPlanMiniMarkerHTML: function (pin) { return keyPlanMiniMarkerHTML(pin); },
     // The cone alone (no pin dot) — module.js's lightbox key-plan overlay
     // draws its own differently-styled/coloured pin dot per item kind, but
     // must not draw its own cone shape a second time; this is the same

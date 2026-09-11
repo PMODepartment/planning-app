@@ -2,6 +2,79 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Fixed: the key-plan pin/camera-angle overlay drew the wrong-sized pin in the
+## presentation pane — a real display bug, not a re-description (2026-09-11)
+
+Owner: *"when photo is opened or in presentation, when key plan is shown, the pin and the
+camera angle and direction does not display properly. display the pin and camera angle in
+the same way they were defined to the photo. can you review again if these have been
+applied, optimize code and performance, and clean-up code."*
+
+**Investigated both surfaces named** — the Gallery lightbox's key-plan corner overlay
+(module.js) and the Presentation pane's key-plan overlay (ppr.js). Both draw a floor plan
+image plus the pin + camera-facing cone recorded when the photo was captured
+(`floor_plan_pins`, via `BIM.pinInfoFor`), but they were built by two different code paths
+that had quietly diverged:
+
+- **module.js's lightbox overlay** builds its own small (12px) pin span
+  (`.pp-lb-kpoverlay-pin`, now renamed — see below) and reuses only
+  `BIM.coneWedgeSVGAt(pin, headingOffset)` for the cone. This was already correctly scaled
+  for its ~1/8-photo-width corner box.
+- ⚠️⚠️ **ppr.js's presentation-pane overlay called `BIM.keyPlanMarkerHTML(pin)`
+  directly** — the SAME function bim.js's own full-window Plans-tab stage uses, which
+  draws a **26px** `.bim-pin` teardrop marker. Correctly proportioned against a
+  `min(70vh,640px)` stage; wildly, visibly oversized inside the presentation pane's
+  60-90px corner box — exactly *"the pin ... does not display properly"*. The oversized
+  pin also visually swamped the cone drawn underneath/around it, which is why the camera
+  angle read as broken too even though its own geometry (`coneWedgeSVG`) was never wrong.
+
+**Fix: one shared "mini" marker function, used by BOTH corner overlays, instead of the
+lightbox hand-rolling its own small pin while the presentation pane reused the full-size
+one.** New `BIM.keyPlanMiniMarkerHTML(pin)` (bim.js) = `coneWedgeSVG(pin)` (the same
+accurate pie-slice geometry, unchanged) + a small `<span class="pp-kpmini-pin
+pp-kpmini-pin-TYPE">` positioned at the pin's own `x_norm`/`y_norm` — no icon glyph, no
+button chrome, sized to match what the lightbox already drew correctly. ppr.js's
+`kpOverlay` now calls this instead of `BIM.keyPlanMarkerHTML`; module.js's lightbox path
+was updated to build the SAME shared class name (`pp-lb-kpoverlay-pin`/`pp-lb-kppin-photo`
+renamed to `pp-kpmini-pin`/`pp-kpmini-pin-photo`, in the CSS, the static `index.html`
+skeleton, and `paintKeyPlanOverlay`'s className assignment) rather than keeping two classes
+for one shape. `BIM.keyPlanMarkerHTML` (the full-size marker) is untouched and still used
+by bim.js's own Plans-tab stage — nothing about the large view changed.
+
+⚠️ **This directly answers "display the pin and camera angle in the same way they were
+defined to the photo"**: both small-overlay contexts now draw the pin through the identical
+function, at the identical relative scale, from the identical `x_norm`/`y_norm`/edge data —
+they can no longer visually disagree with each other or with how the capture widget itself
+rendered the pin+cone while it was being placed.
+
+**Verified — genuine execution, not just a source read.** `BIM.keyPlanMiniMarkerHTML(pin)`
+was called directly with a real pin (including a real recorded cone) and confirmed to
+render the small `pp-kpmini-pin` span at the pin's exact `x_norm`/`y_norm`, the same
+`coneWedgeSVG` output as before, and — the actual regression check — **no `.bim-pin`
+anywhere in its output**, contrasted against `BIM.keyPlanMarkerHTML(pin)` on the identical
+pin, which still draws `.bim-pin` and never the mini class. A `direction_na` pin (no
+camera-facing recorded) draws the small dot with no cone in the mini marker too, matching
+the full-size marker's own no-fabricated-cone rule. Reverted the ppr.js call back to
+`BIM.keyPlanMarkerHTML` and re-ran the suite to confirm the new assertions genuinely fail
+against the pre-fix shape (they do), then restored the fix.
+
+**Clean-up done alongside:** removed the stray "lightbox"-scoped class name
+(`pp-lb-kpoverlay-pin`) that ppr.js would otherwise have had to reuse under a
+lightbox-specific name, and consolidated the CSS comment documenting why this shape is
+scaled down to name both callers, not just one.
+
+**Full suite: 839 passed, 0 failed** (up from 830 — 5 new genuine-execution checks for the
+mini marker, plus source-level regression guards confirming ppr.js calls the mini marker
+and never the full-size one, the CSS rename landed everywhere, and the `#fff` context
+allow-lists were updated for the renamed class rather than silently widened).
+`module.js`/`module.css`/`bim.js`/`ppr.js` → `?v=20260911c1`; `MODULE_V` → `20260911c1`
+(bumped because `index.html`'s own asset `?v=` references changed again).
+
+⚠️ **Not verified signed in or against a real device** — same standing caveat as every
+entry in this file. The fix is proven by genuine execution of the real, shipped marker
+functions against a real pin fixture; how the presentation pane's overlay actually looks
+next to a real floor plan image has not been observed.
+
 ## Re-review of the overnight 10-item round: all 9 confirmed still correct, two
 ## real mobile-performance fixes (rAF-coalesced repaints), a dead-CSS sweep (2026-09-11)
 

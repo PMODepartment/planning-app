@@ -519,19 +519,26 @@
 }
 .pp-lb-kpoverlay-resize:hover { background: linear-gradient(135deg, transparent 50%, var(--pd-red) 50%); }
 /* A scaled-down copy of bim.js's own .bim-pin — that stage is sized for a
-   much larger, full-window plan view; a 1/8-photo-width corner overlay needs
-   a proportionally smaller dot. Positioned in JS (paintKeyPlanOverlay) from
-   the pin's own x_norm/y_norm, same convention. The cone itself is NOT a
-   scaled-down copy of anything — paintKeyPlanOverlay injects the real
-   BIM.coneWedgeSVG(pin) markup here, the same accurate pie-slice geometry
-   the Plans-tab marker and the capture widget itself draw, full-bleed via
-   the shared .bim-conewedge-svg rule (module.css, bim.js's own section). */
-.pp-lb-kpoverlay-pin {
+   much larger, full-window plan view (min(70vh,640px)); a corner overlay a
+   fraction of a photo's width needs a proportionally smaller dot. SHARED by
+   every small key-plan overlay in this module (the lightbox's own corner
+   box below, AND ppr.js's presentation-pane overlay) — reusing BIM's
+   full-size .bim-pin verbatim in either of those small boxes was the exact
+   bug reported 2026-09-11 ("the pin ... does not display properly"): a
+   26px map-pin teardrop is a small detail on a 640px stage and a
+   comically oversized blob in a 60-90px corner box. Positioned in JS from
+   the pin's own x_norm/y_norm, same convention as .bim-pin. The cone
+   itself needs no scaled-down copy — both callers inject the real
+   BIM.coneWedgeSVG(pin)/coneWedgeSVGAt(pin, offset) markup here, the same
+   accurate pie-slice geometry the Plans-tab marker and the capture widget
+   itself draw, full-bleed via the shared .bim-conewedge-svg rule
+   (module.css, bim.js's own section) regardless of the box's own size. */
+.pp-kpmini-pin {
   position: absolute; transform: translate(-50%, -100%);
   width: 12px; height: 12px; border-radius: 50% 50% 50% 0; transform-origin: center;
   border: 1.5px solid #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .45); pointer-events: none;
 }
-.pp-lb-kpoverlay-pin.pp-lb-kppin-photo { background: var(--pd-ok); }
+.pp-kpmini-pin.pp-kpmini-pin-photo { background: var(--pd-ok); }
 .pp-lb-kpoverlay-cone { position: absolute; inset: 0; pointer-events: none; }
 .pp-lb-cap {
   margin-top: 12px; color: #fff; text-align: center;

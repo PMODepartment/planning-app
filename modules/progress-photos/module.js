@@ -2935,7 +2935,7 @@ window.ProgressPhotos = (function () {
     if (pinEl) {
       if (pin) {
         pinEl.hidden = false;
-        pinEl.className = 'pp-lb-kpoverlay-pin pp-lb-kppin-' + (pin.item_type || 'photo');
+        pinEl.className = 'pp-kpmini-pin pp-kpmini-pin-' + (pin.item_type || 'photo');
         pinEl.style.left = (pin.x_norm * 100) + '%';
         pinEl.style.top = (pin.y_norm * 100) + '%';
       } else {
