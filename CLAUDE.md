@@ -84,6 +84,7 @@ developer, plug into one shared shell.
 | `tools/dead-exports.js` | `node tools/dead-exports.js` — a key on a module's public object that NOTHING in the repo reads (the inverse of wiring-check). ⚠️⚠️ It VERIFIES each parse and prints an UNPARSED list for surfaces its tokenizer could not read — `ScheduleBuilder` is currently one of them, so a clean run does not cover it. |
 | `tools/dark-remap.js` | `node tools/dark-remap.js` — a COLOUR token whose only definition sits in a light-mode block, so it keeps its light value on a dark ground. ⚠️⚠️ It knows the two patterns that look identical to that bug and are not: a brand colour, and the FILL half of this repo's fill/text split (`--sm-c`/`--rcm-c` stay fixed, `--sm-t`/`--rcm-t` remap). Tokens only — a raw colour literal with no dark rule is out of scope. |
 | `tools/loc-key-agree.js` | `node tools/loc-key-agree.js` — the location merge key exists TWICE on purpose (`PDLoc.normKey` and the schedule's private `_locNormKeyCalc`); this proves they still agree, over the ordinal maps, the function bodies and 51 real spellings. ⚠️⚠️ It is a MONEY path — a key that drifts moves a BOQ line to the wrong floor, through `planned_cost` into the S-curve. A slice that cannot find either function ABORTS rather than passing. |
+| `tools/selectall-key.js` | `node tools/selectall-key.js` — a `PDb.selectAll` call on a relation with no `id`, which pages on `id` by default and so returns `400 / 42703` on EVERY read. ⚠️⚠️ This shape has shipped FOUR times (`class_codes`, `trade_map`, and two vendor views that had never loaded on any project). It resolves table constants, and a relation it cannot find in the repo SQL is reported as UNKNOWN rather than assumed safe. |
 | `MODULE_CONTRACT.md` | Rules every module developer must follow |
 
 ## Roles
@@ -100,6 +101,55 @@ developer, plug into one shared shell.
 ---
 
 ## Changelog
+
+### 2026-09-12 — `tools/selectall-key.js`: so the FIFTH one is found by a command
+
+The vendor-view bug above was found by opening a console on a signed-in page. That is not a
+strategy. This is the same defect turned into a check. **No shipped file changed.**
+
+`PDb.selectAll(table, apply, cols, key)` pages with `.order(key).gt(key, last)` and defaults that
+cursor to **`id`**. A keyset cursor must be a single unique, non-null column, so a relation without
+one cannot be paged at all — every read returns `400 / 42703`, and callers routinely swallow that
+as *"the migration has not run yet"*.
+
+⚠️⚠️ **It has shipped four times:** `class_codes` (2026-09-07 e, where the owner re-ran the
+migration again and again and it could never help), `trade_map` (2026-09-09 m2), and tonight's
+`vendor_qty_reconciliation` and `vendor_rate_library`.
+
+**The checker reads the repo's own SQL** — 106 relations across the schema files and 167
+migrations — works out which declare an `id`, and matches that against every `selectAll` call
+site. **84 sites: 83 resolved safe, 0 broken, 1 genuinely dynamic** (a function parameter in
+`my-work.js`, resolved by hand: all three tables it is called with declare `id`).
+
+### ⚠️⚠️ IT REPORTED A FALSE POSITIVE FIRST, AND THAT IS THE PART WORTH RECORDING
+The first run flagged **`wpm_vendors`** — while the live network log showed that exact request
+returning **200** and paging on `id=gt.<uuid>`. The table declares `id uuid primary key` two lines
+below a `--` comment, and the column test was anchored on *"start of line or after a comma"* with
+**no comment stripping**, so it missed the real column. Worse, the comment contains the words
+*"vendors.id"*, which could equally have produced a false positive elsewhere. A checker that cries
+wolf is the one thing this repo has said it may not do — *"one false finding teaches people to
+skip the report"* (2026-09-11 uh). Fixed by stripping SQL comments and splitting the body on
+**top-level** commas, so `numeric(12,2)` is one column rather than two.
+
+⚠️ **And the self-tests were re-typing the regex instead of calling the function** — the same
+"assert on a copy of the thing under test" trap the LSM suite has now been caught by four times, and
+that I was caught by earlier tonight. They call `declaresId` itself now, and three of the eight
+cases are the shapes that actually broke it.
+
+### ⚠️ Resolving the constants was most of the value
+**35 of 84 call sites pass a CONSTANT** (`T_REV`, `TABLE`, `DIR`), not a literal. Left unresolved
+they were a blind spot big enough to hide the next instance — and the first fix only got them to
+13, because these are multi-declarator statements (`var T_REV = '…', T_ITEM = '…', …`)
+where every name after the first follows a **comma**, not the `var` keyword. Unanchored, 83 of 84
+resolve.
+
+**Proved to bite on the real repo, not a fixture:** putting tonight's defective
+`selectAll('vendor_qty_reconciliation', …)` call back produces exactly **1 finding**, naming the
+file, the line, the relation and that it is a **view**; restoring the fix returns it to 0 and the
+file is byte-identical to HEAD.
+
+`wiring-check` 123/123, `dark-remap` 0, `loc-key-agree` clean, `dead-hooks` 9 known, `test-lsm`
+660/0. No shipped file changed, so no `MODULE_V` bump.
 
 ### 2026-09-12 — Two vendor views that have never loaded, found by driving the live app
 
