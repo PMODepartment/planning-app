@@ -4410,26 +4410,63 @@ console.log('\n[misc] insert().select() returns the new row id');
     eq('Pano360: three composed 100px shifts place the fourth frame at x=300, not back near x=0 (the exact class of bug "processing has been failing" traces to)',
        JSON.stringify(P360._applyH3(p3, 0, 0)), JSON.stringify([300, 0]));
   })();
-  ok('pano360.js: the old warpOnto (pairwise-only, no accumulation across frames) is GONE — stitchFrames now composes a cumulative placement per frame',
+  ok('pano360.js: the old warpOnto (pairwise-only, no accumulation across frames) is GONE — stitchFrames now composes a cumulative placement per PLACED frame (usedIdx), not per raw extracted frame',
      !/function warpOnto\(/.test(p3js) &&
      /var placements = \[\[1, 0, 0, 0, 1, 0, 0, 0, 1\]\];/.test(p3js) &&
-     /placements\.push\(mat3Mul\(placements\[i - 1\], step\)\);/.test(p3js));
-  ok('pano360.js: the mosaic canvas is sized from the REAL bounding box of every frame\'s warped corners, never a fixed-width guess',
+     /placements\.push\(mat3Mul\(placements\[placements\.length - 1\], step\)\);/.test(p3js));
+  ok('pano360.js: the mosaic canvas is sized from the REAL bounding box of every PLACED frame\'s warped corners (usedIdx), never a fixed-width guess and never a frame the lookahead search skipped over',
      /var minX = 0, maxX = 0, minY = 0, maxY = 0;/.test(p3js) &&
-     /var MAX_DIM = 8000;/.test(p3js));
+     /usedIdx\.forEach\(function \(frameIdx, pi\) \{/.test(p3js) &&
+     /var MAX_DIM = 6000;/.test(p3js));
 
   console.log('\n[55] Item 4 (2026-09-11, third round): Hugin is infeasible in-browser (documented, not integrated); seam feathering replaces the hard destination-over cut');
 
   ok('pano360.js states, plainly, why Hugin was investigated and is NOT integrated — a native desktop app with no WASM/JS bindings, not merely "not chosen"',
      /Hugin was investigated and is NOT integrated/.test(p3js) &&
      /no WebAssembly build and no JS/.test(p3js) && /bindings anywhere/.test(p3js));
-  ok('…and the compositing loop no longer draws raw frames with a hard destination-over cut — every frame is feathered first, then painted in order with plain source-over blending',
+  ok('…and the compositing loop no longer draws raw frames with a hard destination-over cut — every PLACED frame is feathered first, then painted in order with plain source-over blending',
      !/globalCompositeOperation = idx2 === 0 \? 'source-over' : 'destination-over';/.test(p3js) &&
-     /var feathered = featheredFrame\(frames\[idx2\], idx2 > 0, idx2 < frames\.length - 1, FEATHER_FRAC\);/.test(p3js) &&
+     /var feathered = featheredFrame\(cylFrames\[frameIdx\], pi > 0, pi < lastPi, FEATHER_FRAC\);/.test(p3js) &&
      /featherMat = cv\.imread\(feathered\);/.test(p3js));
   ok('…ORB feature matching still runs against the PRISTINE frames (rawMats), never the feathered copies — feathering only touches what gets drawn, not what gets matched',
-     /var rawMats = frames\.map\(function \(f\) \{ return cv\.imread\(f\); \}\);/.test(p3js) &&
-     /homographyBetween\(rawMats\[i - 1\], rawMats\[i\]\)/.test(p3js));
+     /var rawMats = cylFrames\.map\(function \(f\) \{ return cv\.imread\(f\); \}\);/.test(p3js) &&
+     /homographyBetween\(rawMats\[anchor\], rawMats\[c\]\)/.test(p3js));
+
+  console.log('\n[56] 2026-09-12 (later still): the stitcher now samples frame density from the video\'s own duration, and the chain SKIPS a frame with too little overlap rather than forcing a bad join');
+  console.log('[56b] 2026-09-12 (later still): sampling density raised to 30fps (frames = 30 * duration) so consecutive frames overlap enough to join across the WHOLE recording, not just a fraction of it');
+
+  ok('pano360.js no longer samples a FIXED frame count regardless of how long or short the clip is — frameCountFor scales with duration',
+     !/var FRAME_COUNT = 12;/.test(p3js) &&
+     /function frameCountFor\(durationSec\)/.test(p3js) &&
+     /var duration = await getDuration\(videoBlob\);/.test(p3js) &&
+     /var frameCount = frameCountFor\(duration\);/.test(p3js) &&
+     /extractFrames\(videoBlob, frameCount, WORK_MAXW\)/.test(p3js));
+  ok('…and the chain-building loop looks AHEAD up to JOIN_LOOKAHEAD frames from the last-placed anchor for the first confident join, rather than always forcing frame i against i-1',
+     /var JOIN_LOOKAHEAD = 5;/.test(p3js) &&
+     /var windowEnd = Math\.min\(lastIdx, i \+ JOIN_LOOKAHEAD - 1\);/.test(p3js) &&
+     /if \(confident\) break; \/\/ found a real join — stop searching further ahead/.test(p3js));
+  ok('…a candidate that produced a real homography is always preferred over one that did not, even when the raw match count says otherwise — a homography is what actually places a frame',
+     /var better = !best \? true : \(!!res\.H !== !!best\.H \? !!res\.H : res\.matches > best\.matches\);/.test(p3js));
+
+  // Genuine execution of frameCountFor() — the actual density fix for "even
+  // if video is taken a bit quickly, stitcher should still work": a quick
+  // recording must be sampled MORE densely in time, not the same fixed
+  // count as a slow one, or the angular gap between consecutive frames
+  // stays exactly as wide as it was before this fix.
+  (function () {
+    eq('frameCountFor: a very short clip is still floored at MIN_FRAMES, never sampled down to almost nothing',
+       P360._frameCountFor(0.3), 14);
+    eq('frameCountFor: a very long clip is capped at the MAX_FRAMES safety ceiling, never left to grow unbounded',
+       P360._frameCountFor(9999), 1200);
+    eq('frameCountFor: an ordinary mid-length clip is exactly 30 * duration (30fps) rather than a fixed 12 or the old 3fps rate',
+       P360._frameCountFor(6), 180);
+    eq('frameCountFor: a zero/invalid duration degrades to MIN_FRAMES rather than throwing or sampling zero frames',
+       P360._frameCountFor(0), 14);
+    ok('…and a SHORTER (faster) clip samples MORE densely per second of real time than a longer one covering the same rotation — the actual fix, not just a bigger fixed number',
+       P360._frameCountFor(4) / 4 >= P360._frameCountFor(20) / 20);
+    eq('frameCountFor: a typical ~24s walk-around (the capture guide\'s own assumed pace) is not capped by the new safety ceiling',
+       P360._frameCountFor(24), 720);
+  })();
 
   // Genuine execution of featherStops() — the one piece of the feathering
   // fix that is silently wrong in a specific, easy-to-miss way if the clamp

@@ -2,6 +2,251 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Sampling density raised to 30fps — the mosaic was covering only a fraction of the actual 360° recorded, not a cropping bug (2026-09-12, later still)
+
+Owner, continuing from PR #97: *"the 360 feature ... is working better, taking off from PR97. but we
+need to adjust the overlap length as only a fraction of the supposed 360 was captured. use also more
+frames, assuming 30fps, the number of frames should equal 30 times duration of video into seconds."*
+
+⚠️⚠️ **"Overlap length" and "more frames" are the same lever, not two separate fixes.** The prior
+same-day entry below (*"sample density scales with the video's own duration"*) had already moved
+`frameCountFor` off a fixed 12-frame count — but its own `FRAMES_PER_SEC = 3` was still, itself, the
+residual cause of this report. At 3 samples/sec, two consecutive extracted frames can still be several
+real degrees of rotation apart on anything but a very slow turn — and the amount of **shared image
+content ("overlap") between them** is exactly what ORB/BFMatcher needs to find a confident join at all
+(this file's own header, a few entries up, already documents this causal chain for the identical
+reason). Whenever a stretch of the recording didn't carry enough overlap to join confidently,
+`JOIN_LOOKAHEAD`'s own fallback either **skips ahead** (the frames in between are never placed at all)
+or falls back to an **approximate pure-shift** step — either way, the final mosaic ends up representing
+LESS of the camera's actual physical rotation than was really recorded. That is "only a fraction of the
+supposed 360 was captured": not the video being cropped, but the STITCH silently giving up on parts of
+it and never being asked to.
+
+### The fix
+
+- **`FRAMES_PER_SEC`: 3 → 30`** — matching a typical recording's own real frame rate, so extraction
+  effectively samples close to every recorded frame rather than one in ten. `frameCountFor(durationSec)`
+  is now, per the owner's own formula, exactly `30 * durationSec` (still floored at `MIN_FRAMES = 14`
+  for a near-zero-length clip). This maximizes the overlap between any two consecutive samples across
+  the WHOLE recording — not just the parts of it a planner happened to turn slowly through — giving the
+  join-recognition chain built in the entry below its best possible chance to join every pair
+  confidently, end to end.
+- **`MAX_FRAMES`: 40 → 1200`** — this had to move too, or it would silently defeat the density fix for
+  anything past ~1.3 seconds of video (40 ÷ 30fps), capping right back down to the same sparse density
+  this fix exists to remove. 1200 is 40 seconds at 30fps — comfortably past the capture guide's own
+  assumed ~24-second "one slow full turn" (`ROTATION_TARGET_MS` in `capture.js`), so an ordinary
+  walk-around is never capped at all. ⚠️ **It remains a hard safety ceiling, not a normal-case limit** —
+  a mistakenly very long recording still cannot ask the pairwise ORB/RANSAC join loop (already the
+  single most CPU-heavy part of this pipeline) to run against an unbounded number of frames and lock up
+  a mobile browser.
+- ⚠️ **Flagged plainly, not silently accepted:** a real walk-around at this density is genuinely
+  several hundred frames (a 20-second recording is 600), and the join loop is sequential, per-pair
+  OpenCV work — each of up to `JOIN_LOOKAHEAD` (5) candidates runs its own ORB detect + BFMatcher +
+  RANSAC. This is meaningfully slower on a real phone than the previous 14–40 frame range. That is the
+  direct, accepted cost of the requested density, not a regression to quietly walk back if a future
+  pass finds it slow — if it proves too slow in practice, the next lever is `JOIN_LOOKAHEAD` or a
+  coarser `WORK_MAXW`, not silently lowering `FRAMES_PER_SEC` back down.
+- The head/tail sampling trim in `extractFrames` (`0.03`…`0.97` of the duration, avoiding a hand/pocket
+  frame at the very start/end of a recording) is **untouched** — it discards a fixed 6% of the
+  timeline regardless of rotation and was not the mechanism behind this report; touching it would have
+  been a second, unrelated change riding along on this one.
+
+### Verified
+
+**903 checks green** (was 902 — 1 new, plus 3 existing `frameCountFor` assertions rewritten in place to
+the new numbers, "healthy churn from an intentional change" per this file's own convention, not silently
+deleted): `frameCountFor(6) === 180` (was 18), `frameCountFor(9999)` capped at the new **1200** ceiling
+(was 40), and a new check that `frameCountFor(24)` — the capture guide's own assumed full-turn duration
+— is **720**, comfortably under the new ceiling and not capped. The pre-existing "short clip floors at
+MIN_FRAMES" check was re-based on a shorter duration (`0.3s`, not `1s`) since `30 * 1 = 30` no longer
+floors at 14 the way `3 * 1 = 3` used to — the floor itself is unchanged, only the duration needed to
+exercise it moved. Confirmed against a clean `git stash` of this same branch: the exact same **3**
+pre-existing, unrelated failures (a PDF page-break assertion and two `capture.js` audio/flash assertions)
+appear before and after this change, byte-for-byte identical — zero regressions. `node --check` clean;
+0 NUL bytes; braces (105/105) and parens (479/479) balanced.
+
+⚠️ **Not verified signed in** — same standing caveat as every entry in this file; no real device
+recording has been run through the new 30fps density. See the sibling preview artifact sent alongside
+this change: a synthetic rotating-scene test (Chromium + the real, CDN-pinned OpenCV.js, not a
+reimplementation) comparing the OLD 3fps/40-frame-cap density against the NEW 30fps/1200-cap density on
+the identical source rotation, to demonstrate the actual mechanism (more overlap → more confident joins
+→ a wider, more complete mosaic) rather than only asserting the two numbers changed.
+
+`pano360.js`/`index.html?v=` → `20260912t`; `MODULE_V` (`assets/js/modules-grid.js?v=` in
+`dashboard.html`/`modules.html`) → `20260912t`.
+
+## The stitcher's real fix: sample density scales with the video's own duration,
+## and the chain SKIPS a frame with too little overlap instead of forcing a bad
+## join (2026-09-12, later still)
+
+Owner, off the live "11 of 11 frame-to-frame joins could not be matched confidently" report:
+*"why can't the stitcher match frame to frame joins. stitcher should breakdown video into
+smaller frames then run join recognition then switch. even if video is taken a bit quickly,
+stitcher should still work. please resolve at all cost."*
+
+### ⚠️⚠️ THE THRESHOLD WAS NEVER THE PROBLEM — SAMPLING WAS
+
+`extractFrames` pulled a FIXED `FRAME_COUNT = 12` frames spread evenly across the WHOLE clip,
+however long or short. A careful 20-second walk-around and a quick 4-second spin both got the
+identical 12 samples — so on the quick spin, each consecutive pair is many degrees of rotation
+apart, and past a certain angular gap there is genuinely too little shared image content left
+for ORB/BFMatcher to find enough confident correspondences. **Lowering `MIN_GOOD_MATCHES` would
+not have fixed this** — it would only have started accepting coincidental, wrong matches on
+pairs that truly don't overlap. "11 of 11 failed" is exactly what a fixed 12-frame sample looks
+like on a video panned faster than that spacing can keep up with.
+
+### The fix, in the owner's own words: smaller frames, then join recognition, then switch
+
+1. **`frameCountFor(durationSec)`** replaces the fixed count — sampling now targets roughly 3
+   frames per second of real time (`FRAMES_PER_SEC`), floored at `MIN_FRAMES = 14` so a very
+   short clip is still sampled meaningfully, capped at `MAX_FRAMES = 40` so a long recording
+   stays bounded. **A quick recording is now broken down into far more, closer-together frames**
+   — for a given total rotation, that directly shrinks the angular gap between consecutive
+   samples and gives the matcher real overlap to work with. `stitchFromVideo` reads the video's
+   duration once (`getDuration`, the same `fixInfiniteDuration`-tolerant path `extractFrames`
+   already uses internally) before deciding how many frames to pull.
+2. **The chain no longer forces every extracted frame into the mosaic in strict order.**
+   Building it now does literally what was asked — run join recognition, and when a candidate
+   doesn't join well, SWITCH to a later one instead of accepting a bad join. From the last
+   successfully-placed frame (the "anchor"), `JOIN_LOOKAHEAD` (5) lets the builder look ahead
+   that many frames for the first one whose match against the anchor clears
+   `MIN_GOOD_MATCHES`; every frame in between that didn't have enough overlap is skipped
+   entirely — never placed, never approximated — rather than forced in via a crude shift. Only
+   when nothing in that whole window clears the bar (a genuinely blank stretch, a lighting
+   change) does it fall back to the single best-scoring candidate it saw, exactly the old
+   code's safety net, so the chain can never simply stall.
+3. ⚠️ **A candidate that produced a real homography is always preferred over one that didn't**,
+   even when its raw ORB match count is lower — a usable homography is what actually places a
+   frame; a candidate with more matches but no homography (RANSAC or the plausibility gate
+   rejected it) isn't a "better" candidate, it's one that can't be placed at all.
+4. `pairsTotal`/`pairsFallback` (the numbers behind the on-screen "N of M frame-to-frame joins
+   could not be matched confidently" message) now count joins actually BUILT, never frames the
+   lookahead search skipped over — a skipped frame was never a join attempt in the first place,
+   so it must not inflate the denominator the planner reads that ratio against.
+
+⚠️ Nothing about the cylindrical-projection fix, the grayscale-conversion fix, the memory/area
+cap, or the mid-day plausibility gate changed — all four are correct and this is additive on
+top of them: it changes *which* frames get compared and *how many* exist to compare, not the
+underlying geometry.
+
+### Verified
+
+**All of pano360.js's own existing genuine-execution coverage still passes** (`mat3Mul`/
+`applyH3`'s cumulative-composition proof, `isPlausiblePanHomography`'s rejection cases,
+`featherStops`'s clamp) — none of that math changed. New genuine-execution coverage for
+`frameCountFor` (test-only hook `Pano360._frameCountFor`): a very short clip floors at
+`MIN_FRAMES`; a very long one caps at `MAX_FRAMES`; an ordinary clip scales at ~3/sec; a zero/
+invalid duration degrades to the floor rather than throwing; and — the actual property this fix
+turns on — **a shorter clip samples measurably MORE densely per second of real time than a
+longer one**, confirmed by direct computation, not just read from the constant. The candidate-
+preference rule (`better = !!res.H !== !!best.H ? !!res.H : res.matches > best.matches`) and the
+lookahead/skip structure are asserted against the shipped source. `node --check` clean;
+`tools/wiring-check.js` — **126 passed, 0 failed**; the module's full suite — **902 passed, 3
+failed**, and all 3 failures are pre-existing and unrelated (2 in `capture.js`'s mic-toggle
+tests, 1 in the PDF page-break CSS tests), confirmed unchanged by re-running the identical suite
+against the commit before this fix.
+
+⚠️ **What this cannot prove from here**: this sandbox has no camera and no network path to the
+real OpenCV.js CDN build (the standing caveat on every entry in this file), so the density curve
+and the lookahead search are proven correct by genuine execution of the pure logic, not against
+a real recorded video. What they directly target — a fixed, duration-independent 12-frame
+sample that starves a fast pan of overlap, and a chain that forced every extracted frame in
+regardless of whether it actually joined — is exactly the shape of "11 of 11 joins failed" the
+live report showed. **The first real recording through this exact code path, especially a
+deliberately fast one, is still the actual end-to-end test.**
+
+`pano360.js` → `?v=20260912s`; the shared `MODULE_V` fallback (`assets/js/modules-grid.js`,
+`dashboard.html`, `modules.html`) → `20260912s` to match, since this module's `index.html`
+itself changed (`pano360.js?v=` line). `module.js`/`module.css`/`capture.js` are unchanged this
+round and stay at their existing `?v=` tokens — the on-screen message text
+("N of M frame-to-frame joins could not be matched confidently…") already reads correctly
+against the new counts with no wording change needed.
+
+## Add 360°: same one-item-per-Add protocol as photo/video — an explicit × to cancel (2026-09-12, later)
+
+Owner: the 360° flow should follow the same "one upload per Add media instance" rule the ordinary
+photo/video form already enforces (`addStagedFiles`/`removeStaged`/`syncAddButtonsRow`) — once a
+360° is uploaded/processed, the Take/Upload buttons stay hidden until the planner clicks an × to
+cancel it.
+
+- ⚠️ **Half of this was already true.** `#pp360-step-source` (the Take video / Upload video /
+  Upload 360° photo row) already hides the instant a source is picked, and there was never an
+  array to over-fill — a video or photo goes straight into single-slot state
+  (`videoBlob`/`stitchResult`/`repBlob`), so "only one upload per Add media instance" already held
+  structurally. **What was missing was the way back**: once processing finished and the panorama
+  preview was showing, the only escape was Cancel — closing the *whole* modal — matching neither the
+  ordinary form's per-item × nor the owner's explicit ask.
+- **New `resetPano360()`** discards the current capture/upload — revokes every object URL
+  (`videoUrl`/`stitchUrl`/`repUrl`), tears down the live Pannellum viewer, clears
+  `stitchResult`/`repBlob`/`pendingAdjust`, hides the result/thumbnail/warning elements, and shows
+  `#pp360-step-source` again — the exact same effect `removeStaged()` has for an ordinary staged
+  photo/video, just applied to this flow's single-slot state instead of an array splice.
+- **A new `#pp360-remove` × button**, styled with the existing `.pp-stagermv` corner-overlay class
+  (the same dark-scrim circular × already used on a staged photo/video card), sits on the panorama
+  preview (`#pp360-panowrap`) — so it only appears once there's something to remove, i.e. exactly
+  "once a 360 is uploaded."
+- ⚠️ **Scoped to the result view on purpose.** The × lives inside `#pp360-result`, which stays
+  hidden during processing/offline, so there's nothing to click (and nothing to cancel a
+  still-running stitch with) until a result actually exists — matching the ordinary form, where the
+  remove × likewise only exists on an already-staged card.
+
+### Verified
+
+`node --check` clean on `module.js`; `tools/wiring-check.js` — **123 passed, 0 failed**, 3525
+cross-module references checked. `#pp360-remove` is declared once and wired once, no duplicate DOM
+ids introduced. ⚠️ **Not verified against a real device** — the reset path reuses the same object-
+URL-revoke / viewer-`.destroy()` calls the modal's own `revokeAll()` (close) already exercises, but
+the click-through of picking a source, letting it process, then clicking × and re-picking has not
+been driven in a real browser.
+
+No version bump beyond what the previous entry already carries — `module.js` stays `?v=20260912r`.
+
+## Add 360°: "Take video" / "Upload video" (renamed), plus a direct "Upload 360° photo" path (2026-09-12)
+
+Owner: rename the two capture-a-video options in the "Add 360°" flow to plain "Take video" /
+"Upload video", and add a third option — "Upload 360° photo" — for a pre-processed 360° photo
+(already equirectangular/cylindrical, viewable as 360° as-is) that needs no stitching at all.
+
+- **`open360Upload()`'s source-step buttons renamed**: `#pp360-take` "Take 360°" → "Take video",
+  `#pp360-choose` "Upload 360° video" → "Upload video". Neither's behaviour changed — both still
+  feed a video into `runStitch()`/`Pano360.stitchFromVideo`. The naming was the only thing that
+  claimed "360°" about acquiring the raw footage; the actual 360° result only exists once it's
+  stitched, which is what the new third button skips entirely.
+- **New `#pp360-choosephoto` "Upload 360° photo"** — a plain image file input
+  (`#pp360-photofile`, `accept="image/*"`). Picking a file goes straight to a new `havePhoto(file)`,
+  which reads the file's real pixel dimensions (`imageDims()`, a plain `<img>` decode) and hands it
+  to a new shared `showStitchResult({blob:file, width, height, quality:'ok'})` — no
+  `Pano360.stitchFromVideo` call, no frame extraction, no OpenCV.js.
+- ⚠️⚠️ **`showStitchResult()` is `runStitch()`'s own post-processing logic, pulled out so both
+  paths can never disagree about how a finished panorama is shown.** It's the exact same code that
+  used to run inline at the end of `runStitch()`'s `try` block (show the flat standin image first,
+  attempt to mount Pannellum, degrade to the standin + a named warning if the viewer can't mount,
+  capture a default thumbnail either way, and show/hide the frame-match quality warning). `runStitch()`
+  now just awaits the real stitch and calls `showStitchResult(res)`; `havePhoto()` calls the identical
+  function with a synthesized result carrying no `pairsFallback`/`pairsTotal` (a photo was never
+  stitched, so there's nothing to report a fallback join on) — the quality-warning branch is a no-op
+  for that shape by construction, not a special case bolted on.
+- ⚠️ The upload hint paragraph above the buttons now names the third path explicitly, so "no
+  processing needed" is stated rather than left for the button label alone to imply.
+- Save is otherwise unchanged for a photo-sourced result: `#pp360-save` still reads `stitchResult`/
+  `repBlob` and writes the same `progress_photos` row (`media_type:'360'`) regardless of which of
+  the three buttons produced them.
+
+### Verified
+
+`node --check` clean on `module.js`; `tools/wiring-check.js` — **123 passed, 0 failed**, 3525
+cross-module references checked, every asset on one version. 0 duplicate DOM ids (the two new
+button/input ids are unique). ⚠️ **Not verified against a real device or a real pre-processed 360°
+photo file** — the dimension-read path (`imageDims`) is the same plain `<img>` decode this file
+already uses elsewhere (`captureImageThumbnail`'s own standin-image path), and `showStitchResult`
+is the exact code that was already shipped and verified for the video path; what hasn't been
+exercised here is a real equirectangular photo actually mounting correctly in Pannellum end to end.
+
+`module.js` → `?v=20260912r`; the shared `MODULE_V` fallback (`assets/js/modules-grid.js`,
+`dashboard.html`, `modules.html`) → `20260912r` to match, since this module's `index.html` itself
+changed (its own `module.js?v=` line). `pano360.js`/`capture.js`/`module.css` are unchanged this
+round and stay at their existing `?v=` tokens.
+
 ## The "still returns black" bug survived the cylindrical-projection fix because
 ## it was never the stitch — it was the VIEWER silently failing to mount
 ## (2026-09-12, later still)
