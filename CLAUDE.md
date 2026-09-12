@@ -83,6 +83,7 @@ developer, plug into one shared shell.
 | `tools/dead-hooks.js` | `node tools/dead-hooks.js` — a class a module QUERIES that nothing ever EMITS (the `#pk-boq` shape: a handler bound to markup that does not exist). ⚠️ The inverse check, "a class with no CSS rule", is noise — query hooks have no style by design. |
 | `tools/dead-exports.js` | `node tools/dead-exports.js` — a key on a module's public object that NOTHING in the repo reads (the inverse of wiring-check). ⚠️⚠️ It VERIFIES each parse and prints an UNPARSED list for surfaces its tokenizer could not read — `ScheduleBuilder` is currently one of them, so a clean run does not cover it. |
 | `tools/dark-remap.js` | `node tools/dark-remap.js` — a COLOUR token whose only definition sits in a light-mode block, so it keeps its light value on a dark ground. ⚠️⚠️ It knows the two patterns that look identical to that bug and are not: a brand colour, and the FILL half of this repo's fill/text split (`--sm-c`/`--rcm-c` stay fixed, `--sm-t`/`--rcm-t` remap). Tokens only — a raw colour literal with no dark rule is out of scope. |
+| `tools/loc-key-agree.js` | `node tools/loc-key-agree.js` — the location merge key exists TWICE on purpose (`PDLoc.normKey` and the schedule's private `_locNormKeyCalc`); this proves they still agree, over the ordinal maps, the function bodies and 51 real spellings. ⚠️⚠️ It is a MONEY path — a key that drifts moves a BOQ line to the wrong floor, through `planned_cost` into the S-curve. A slice that cannot find either function ABORTS rather than passing. |
 | `MODULE_CONTRACT.md` | Rules every module developer must follow |
 
 ## Roles
@@ -99,6 +100,57 @@ developer, plug into one shared shell.
 ---
 
 ## Changelog
+
+### 2026-09-12 — `tools/loc-key-agree.js`: the safety net a deferral promised and never had
+
+Overnight audit, agenda item 7 — shared surfaces. **No shipped file changed.**
+
+The location merge key exists **twice on purpose**: `PDLoc.normKey` in `assets/js/locmatch.js`
+(shared, loaded by Contracts & Claims) and `_locNormKeyCalc` private to the schedule module. The
+2026-09-10 (z1) pass extracted `PDLoc` after finding **three** copies, one of which was wrong — it
+missed *"Roof Deck"* vs *"Roofdeck"* and matched a 13th-floor leaf to *"3rd Floor"*. It deliberately
+did **not** rewrite the schedule's copy, and the reason still holds: that file is ~46k lines under
+concurrent edit and the function decides every location grouping in the Vertical Stacking, so the
+swap is its own commit. What it promised instead was *"the suite asserts `PDLoc` agrees with it over
+a spelling corpus"*.
+
+### ⚠️⚠️ THAT SUITE WAS NEVER COMMITTED, SO THE NET DID NOT EXIST
+Checked rather than assumed: **no committed file names both `_locNormKeyCalc` and `PDLoc`.** The one
+hit inside `modules/project-schedule/test-lsm.js` is a **comment**, and `modules/contracts-claims/`
+ships **no test file at all** — so (z1)'s "138 assertions across three suites" are gone with the
+scratch directory they lived in. The guarantee holding a **money path** together was a sentence in a
+changelog. Second time tonight that verification turned out to be living somewhere temporary.
+
+### ⚠️ IT IS A MONEY PATH, WHICH IS WHY A COMMENT IS NOT ENOUGH
+`boqDerive` splits a BOQ line's amount across the activities a location match resolves →
+`project_schedule.planned_cost` → `schedule_scurve_agg`'s `w_cost` → Cash Flow's cash-in. A key
+that drifts on one spelling moves money to the wrong floor, and every screen downstream reports it
+as fact.
+
+### What the checker does
+Slices both copies **by name** (never by line number), executes them, and compares three things: the
+**ordinal-word maps** key by key, the function **bodies** once the `ORD`/`LOC_ORD` name is
+normalised, and **51 real spellings** run through both — every one a spelling this repo has met or
+a pair a recorded defect turned on. Then it checks the behaviour itself, because agreeing is not the
+same as being right and both could be wrong together: Roof Deck/Roofdeck merge, 3rd/Third merge,
+**13th and 3rd stay apart**, **8th and 18th stay apart**, and the *"Nineth"* typo folds onto 9th.
+
+- ⚠️ **A slice that returns null ABORTS.** If either function is renamed or moved, that is a
+  finding — not a run that quietly compares nothing and passes.
+- **Five self-tests run first**, each a way the copies could really drift (a missing ordinal word, a
+  word mapped to the wrong number, a dropped suffix strip, a dropped separator strip, plus the
+  identical-copies control).
+
+**Result: 22 ordinal words each, bodies identical, 51 spellings agree, all 5 behaviours hold.**
+⚠️⚠️ **And the green run is proved to mean something on the REAL files, not just a fixture:**
+changing the schedule's `nineth:9` to `nineth:99` makes it report the map difference **and** name the
+value that diverges — *"Nineth Floor" normalises differently: schedule="99floor" PDLoc="9floor"* —
+and exit 1. Restored, it returns to clean.
+
+**Every other checker re-run, none regressed:** `wiring-check` 123/123 (which also proves every asset
+resolves and is on ONE version), `dark-remap` 0 findings, `dead-hooks` 9 (the known triaged set),
+`dead-exports` unchanged, `test-lsm` 660/0. All three `MODULE_V` carriers read `20260912b` and the
+deployed site serves it.
 
 ### 2026-09-12 — The four frozen columns nobody could measure, measured
 
