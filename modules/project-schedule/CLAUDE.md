@@ -13,6 +13,86 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### The stacking comes back to the Project Schedule, and the towers become a checklist (2026-09-13 b) — ethanrobles10
+
+Owner: *"nevermind, put the vertical stacking in the project schedule tab. I just wanted you to have
+a simpler UI dedicated for the 3D vertical stacking. In addition, when selecting which towers'
+vertical stacking to be displayed, also have an option where only towers 1 and 2 are displayed etc by
+having like a checklist for each tower."*
+
+### ⚠️⚠️ THE TAB IS REVERTED — THE ASK WAS ABOUT THE BAR, NOT ABOUT A PLACE
+Yesterday's *"a separate tab entirely dedicated for 3D views, since this sub-module is getting
+heavy"* was read as a routing problem and answered with a destination. It was a **density** problem:
+the pane's own bar is the thing that is heavy. A tab is a place; the complaint was about what is in
+the place. `#ps-vstack` is back inside `#ps-view-schedule`, the menu entry and `#ps-view-3d` are
+gone, and the toolbar button toggles the view again exactly as it did.
+
+⚠️ Three things from that pass **survived on purpose**, because they answer the owner's other
+question and have nothing to do with where the pane lives:
+
+- **The first open lands in 3D**, and — ⚠️ **only if the planner has never chosen** — because
+  `_vs3D` is remembered in `localStorage` (`ps_vs3d`), and forcing it every session would quietly
+  undo a deliberate preference for the 2D section on every reload. A null key means nobody has
+  picked yet, which is the only case this may answer.
+- **The first open lands on the Site scope when a site plan has been traced**, which is the owner's
+  *"how can i see the 2 towers based on their arrangement?"* answered without them finding anything.
+- **The "Draw the site plan…" button** where the Site button cannot be offered.
+
+### ⚠️⚠️ THE TOWERS WERE A `<select>`, WHICH COULD NOT EXPRESS WHAT WAS ASKED FOR
+One tower or all of them — never two. The **trades**, three inches below, were already a row of
+tick-able chips: the same kind of question, answered two different ways, and the dropdown could not
+say "Tower 1 and Tower 2" at all. The towers are now a chip row of the same shape, and the bar is one
+control lighter, which is the other half of *"simpler UI"*.
+
+- ⚠️⚠️ **`_vsTower` IS DERIVED from the selection, never maintained beside it.** It is read in a
+  dozen places — card titles, the no-tower bucket, the focus window, the PDF caption — so a second
+  field answering "which tower" is exactly how a card ends up titled Tower 1 while drawing Tower 2.
+  One ticked reads as that tower's name (every existing label keeps working untouched); two or more
+  read as `'ALL'` with the subset doing the filtering.
+- ⚠️ **Empty means ALL, never "none".** "All towers" CLEARS the list rather than ticking every box,
+  so the cleared state and the all-ticked state cannot drift apart — and a filter that can be emptied
+  into showing nothing is one a planner can get stuck in.
+- ⚠️⚠️ **The chip list is built from `_twAll`, never from the filtered `towerNames`.** Building it
+  from the towers currently shown would delete the chips for the towers currently hidden, leaving a
+  planner who ticked two with no way back to the other six — the controls that could bring them back
+  having just been filtered off the screen. This is the trap in the whole feature.
+- ⚠️ **Both the activities and the tower list narrow**, or "Tower 1 and Tower 2" would still draw
+  eight cards, six of them empty.
+- ⚠️ Picking towers switches the scope to **Per tower** (side by side) — the rule the old "All
+  towers" option already carried, and the only scope that draws one model per tower — **except on
+  the Site**, where the whole point is one picture of where the towers stand, and forcing the scope
+  would throw a planner off the arrangement the moment they narrowed it to two.
+- ⚠️ **The PDF caption names the towers actually shown.** `_vsTower` reads `'ALL'` whenever the
+  selection is not exactly one, which is right for filtering and wrong for a caption: a PDF headed
+  "All towers" over a drawing of Tower 1 and Tower 2 misstates its own subject, and it is the copy
+  that leaves the building.
+- ⚠️ The row is emitted only when there is more than one thing to choose between, and a single-tower
+  project is still pinned to its one tower — through the SELECTION, since `_vsTower` is derived and
+  assigning it alone would be overwritten on the next render.
+
+### Verified
+- **33 assertions** driving the shipped filter block, cut verbatim out of `renderVStack` and run
+  against a fixture of 8 towers plus 3 untowered activities (harness gitignored, deleted): nothing
+  ticked is every tower; one ticked behaves exactly as the old single-select including the label;
+  **"only towers 1 and 2" gives 4 activities, 2 models and leaves the other six chips on screen**;
+  three out of order come back in project order; the no-tower bucket works alone and beside a tower;
+  a stale pick from another project is dropped and cannot filter the view to nothing; all eight
+  ticked is the same picture as none; and the helpers toggle back to ALL rather than to none.
+- **31 assertions** reading the shipped file: the tab is gone completely (no menu entry, no
+  container, no `_vs3TabEnter`, nothing in `switchTab`) while the pane's own 2D/3D toggle is
+  untouched; the pane is inside the schedule view again and starts hidden; the toolbar button and
+  `_setView` drive it as before; the three deliberate survivors are in place; and every piece of the
+  checklist is wired.
+- ⚠️ **Gated against the previous commit**, where the tab existed, the pane was not in the schedule
+  view, and the towers were a single-select with no `_vsTowerSel` at all.
+- **Layout measured in a browser** against the shipped stylesheets: the tower row sits above the
+  trade row above the bar, nine chips fit one line at 1200px, ticked and unticked chips differ in
+  background (not by colour alone — `aria-pressed` carries the state), and the count note reads
+  "2 of 8 towers shown side by side".
+- ⚠️ **Not verified signed in.** The anon key has no grants, so no real project has been filtered to
+  two towers in the app. First thing to check: tick Tower 1 and Tower 2 — two cards, side by side,
+  and the other six chips still there to tick back on.
+
 ### 3D Views is a destination of its own, and the site arrangement is what it opens on (2026-09-13 a) — ethanrobles10
 
 Owner: *"how can i see the 2 towers based on their arrangement? Meaning the site dev plan should also

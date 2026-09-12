@@ -102,6 +102,47 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### The stacking comes back to the Project Schedule, and the towers become a checklist (2026-09-13) — ethanrobles10
+
+Owner: *"nevermind, put the vertical stacking in the project schedule tab. I just wanted you to have
+a simpler UI dedicated for the 3D vertical stacking. In addition, when selecting which towers'
+vertical stacking to be displayed, also have an option where only towers 1 and 2 are displayed etc by
+having like a checklist for each tower."*
+
+⚠️⚠️ **The tab is reverted, and the reading that produced it was wrong.** Yesterday's *"a separate tab
+entirely dedicated for 3D views, since this sub-module is getting heavy"* was read as a routing
+problem and answered with a destination; it was a **density** problem — the pane's own bar is what is
+heavy. A tab is a place, and the complaint was about what is in the place.
+
+⚠️ Three things from that pass survive on purpose, because they answer the owner's *other* question
+and have nothing to do with where the pane lives: the first open lands **in 3D** (only where the
+planner has never chosen — `_vs3D` is remembered in localStorage, and overriding it every session
+would quietly undo a preference the app stores), the first open lands on the **Site scope** when a
+plan has been traced, and the **"Draw the site plan…"** button stays where the Site button cannot be
+offered.
+
+- ⚠️⚠️ **The towers were a `<select>` that could not express the request** — one tower or all of
+  them, never two — while the trades three inches below were already tick-able chips. Same kind of
+  question, two different answers. The towers are now a chip row of the same shape, and the bar is
+  one control lighter.
+- ⚠️⚠️ **`_vsTower` is DERIVED from the selection, never maintained beside it**: it is read in a
+  dozen places for labels and for the no-tower bucket, and two fields both answering "which tower"
+  is how a card ends up titled Tower 1 while drawing Tower 2.
+- ⚠️⚠️ **The chip list is built from the full tower set, never the filtered one.** Building it from
+  the towers currently shown would delete the chips for the towers currently hidden — leaving a
+  planner who ticked two with no way back to the other six.
+- ⚠️ Empty means ALL, never none; the activities *and* the model list narrow together; picking towers
+  switches to the side-by-side scope except on the Site; and the PDF caption names the towers
+  actually shown rather than "All towers".
+
+⚠️ 33 assertions drive the shipped filter block, cut verbatim out of `renderVStack`, over 8 towers
+and 3 untowered activities — including the owner's own case, "only towers 1 and 2". Plus 31 on the
+revert and the wiring, gated against the previous commit, and the two chip rows measured in a
+browser. **Not verified signed in** — no real project has been filtered to two towers in the app.
+
+`MODULE_V` → `20260913b`. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
 ### 3D Views is a destination of its own, and the site arrangement is what it opens on (2026-09-13) — ethanrobles10
 
 Owner: *"how can i see the 2 towers based on their arrangement? Meaning the site dev plan should also
