@@ -100,6 +100,72 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-12 — The four frozen columns nobody could measure, measured
+
+Overnight audit, agenda item 6 — the responsive half. **No file changed. That is the result, not
+a gap in it.**
+
+### ⚠️⚠️ THE 2026-09-10 (x2) PASS CAPPED FOUR TABLES AND SAID, FOUR TIMES, THAT IT COULD NOT CHECK THEM
+`.sc-table`, `.pr-ttable`, `.pr-ed` and `.rl-matrix` each freeze `:first-child` with **no declared
+width**, so the frozen zone is as wide as the longest label. (x2) applied the app's 132px cap and
+recorded the caveat honestly — *"NOT measured live: this table sits behind a view I could not reach
+signed in — this is the pattern applied, not a fix to an observed width."* Still true: the Chrome
+bridge is down. But the question is a **CSS layout** question, so it does not need a login, only the
+real stylesheets.
+
+⚠️⚠️ **And I expected the caps to be NO-OPS.** None of the three modules declares `table-layout`,
+so every one of these tables is **auto layout**, where `max-width` on a cell is routinely ignored by
+the table algorithm. Measured against the shipped stylesheets, that is **wrong**:
+
+| width | frozen column | `max-width` | ellipsis fires |
+|---|---|---|---|
+| 375px | **132px** on all four | `132px` | **yes** (`clipped: true`) |
+| 700px | **132px** on all four | `132px` | **yes** |
+| 701px | 354–461px | `none` | no |
+| 1440px | 410–500px | `none` | no |
+
+**All four caps work.** The (x2) caveat is discharged.
+
+### ⚠️ REPORTED, NOT SHIPPED: the cap stops at 700px and the problem does not
+Above the breakpoint the frozen column is uncapped and **data-dependent** again. With a 39-character
+label it takes, of the wrapper:
+
+| | 768px | 820px | 1024px | 1180px |
+|---|---|---|---|---|
+| `.sc-table` | 59% | 55% | 43% | 38% |
+| `.pr-ttable` | **65%** | 61% | 48% | 42% |
+| `.pr-ed` | 63% | 59% | 47% | 41% |
+| `.rl-matrix` | 50% | 47% | 37% | 33% |
+
+768px is iPad portrait — a real device — and at 65% the label is again closer to replacing the
+data than labelling it, which is (x2)'s own stated reason for capping.
+⚠️⚠️ **But the number is from MY fixture label, not from a planner's data**, so this proves the
+**mechanism** (uncapped and data-dependent above 700px), never a real-world severity. Raising a
+breakpoint changes what every tablet and split-screen user sees, on evidence I cannot complete
+without a login. **The owner's call, with the measurements above rather than an assertion.**
+
+### Checked and NOT a defect, so it is not re-raised later
+`.pd-btn-sm` measures **36px** on a phone against `--pd-tap: 44px`. That is **deliberate**:
+`dashboard.css:1441` sets it on the line directly after `.pd-btn`'s `min-height: var(--pd-tap)`,
+inside the same phone block — somebody set the big button to 44 and the small one to 36 on
+purpose. 152 uses app-wide, and 36px clears WCAG 2.5.8 AA (24px). Reporting it would have been
+crying wolf.
+
+### ⚠️ One real inconsistency, also reported rather than shipped
+`.ps-vs3-more > summary` — the *Display* control on the 3D stacking bar — measures **30px with
+`min-height: 0px`** at phone width. It is a bare `<summary>` carrying no `.pd-btn` class, so none of
+the shared phone rules reach it, and the module declares no override. That puts it under the app's
+own *smallest deliberate* control size (36px), not merely under 44. Pre-existing; it is the element
+whose `font-weight` this session changed, and the height was already 30px before that.
+
+### ⚠️⚠️ THE HARNESS ARTEFACT THAT WOULD HAVE MADE ALL OF THIS WRONG
+The first run reported `max-width: none` at every table and I nearly wrote up *"the caps are
+no-ops"*. The pane had **refused the 375px viewport and reported `innerWidth` 980**, so the phone
+media query legitimately did not apply — the same refusal recorded on 2026-09-09 (w). The width
+under test now comes from an **iframe**, whose own viewport a media query does evaluate. Every read
+is still gated on `visibilityState` + a non-zero `clientWidth`, with transitions killed first.
+All four harness files were **deleted**.
+
 ### 2026-09-12 — The geometry audit, and the LSM suite stops living in a temp folder
 
 Overnight audit, agenda item 5. **No shipped file changed.** Detail:
