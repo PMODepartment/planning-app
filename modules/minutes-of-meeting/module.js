@@ -4385,7 +4385,7 @@ window.MinutesOfMeeting = (function () {
     var take = momCarryable(src).filter(function (it) { return !already[it.id]; });
     if (!take.length) {
       UI.toast(momCarryable(src).length
-        ? 'Every still-open action from those minutes has already been carried over.'
+        ? 'Every still-open minute has already been carried over.'
         : 'Nothing is still open on those minutes.', 'info');
       return;
     }
@@ -4427,7 +4427,11 @@ window.MinutesOfMeeting = (function () {
         if (!u.error) target.carried_from_mom_id = src.id;
       }
       var linked = take.filter(function (it) { return it.issue_id; }).length;
-      UI.toast('Carried over ' + take.length + ' action' + (take.length === 1 ? '' : 's') +
+      // ⚠️ "open minute(s)", not "action(s)" — these rows are this module's
+      // own MINUTES (mom_items), and what's carried is specifically the
+      // still-OPEN ones (momCarryable's own filter above the toast that
+      // says nothing was left to carry).
+      UI.toast('Carried over ' + take.length + ' open minute' + (take.length === 1 ? '' : 's') +
         (linked ? ' — ' + linked + ' still linked to the register' : ''), 'ok');
       renderDetail();
     } catch (e) {

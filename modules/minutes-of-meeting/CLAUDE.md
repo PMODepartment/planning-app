@@ -1,5 +1,23 @@
 # Module: minutes-of-meeting
 
+## 2026-09-12 (e) — The carry-over toast says "open minutes", not "actions"
+
+Owner: *"when carrying over meeting, there is a notification saying carried over X actions.
+instead of 'actions', use 'open minutes'."* `momCarryOver`'s success toast —
+*"Carried over N action(s) — M still linked to the register"* — is now *"Carried over N open
+minute(s)…"*, matching the module's own terminology throughout (these rows are this module's
+MINUTES, `mom_items`, and what's carried is specifically the still-**open** ones). The sibling
+"nothing left to carry" toast in the same function ("Every still-open action from those minutes
+has already been carried over.") is corrected the same way for consistency.
+
+### Verified
+`node --check` clean. Grepped every remaining `action` occurrence near `momCarryOver` — the three
+left are code comments, not user-facing strings.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment.
+
+`module.js?v=` → `20260912k` (`module.css` unchanged). No `MODULE_V` bump.
+
 ## 2026-09-12 (d) — The recurring series gets its own editable Schedule group in the meeting view, and the carry-over modal splits into Schedule and Next Meeting
 
 Owner's three-item refinement of round (c). **No migration.**
