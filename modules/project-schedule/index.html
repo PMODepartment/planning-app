@@ -3378,6 +3378,17 @@
     .zpw-live { fill:rgba(238,49,36,.18); stroke:var(--pd-red); stroke-width:3; stroke-dasharray:9 6; }
     .zpw-lbl { font-size:var(--pd-fs-xs); color:var(--pd-muted); min-width:38px; }
     .zpw-shapes { display:inline-flex; gap:3px; flex-wrap:wrap; }
+    /* Orient + size, on the selected area. ⚠️ Its own group with a label: four turn buttons beside
+       two size buttons is unreadable as a bare run of six, and they are two different actions. */
+    .zpw-xform { display:inline-flex; align-items:center; gap:5px; }
+    .zpw-xform .ps-tb-lbl { font-size:var(--pd-fs-micro); font-weight:800; letter-spacing:.05em;
+      text-transform:uppercase; color:var(--pd-muted); }
+    .zpw-xform .ps-vs-seg > button { padding:5px 8px; font-size:var(--pd-fs-sm); min-width:30px; }
+    .zpw-xform .ps-vs-seg > button:disabled { opacity:.45; cursor:not-allowed; }
+    /* The site plan's scale note. ⚠️ It says the sizes are a DEFAULT, not a survey — see
+       zpSitePlaceFootprints. A planner reading relative sizes off this drawing would be reading
+       something nobody stated. */
+    .zpw-scalenote { font-size:var(--pd-fs-xs); color:var(--pd-muted); line-height:1.5; margin:6px 0 0; }
     .zpw-shbtn { display:inline-flex; align-items:center; justify-content:center; width:26px; height:24px;
       padding:0; border:1px solid var(--pd-line); border-radius:6px; background:var(--pd-card);
       color:var(--pd-ink); cursor:pointer; }
@@ -36246,6 +36257,51 @@
       return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
     }
     /* The preset library, verbatim from the equipment site plan so the two screens cannot drift. */
+    /* ==== ARRANGE AND ORIENT: rotate and resize a traced outline ==========================
+       Owner 2026-09-12: *"once the per tower floor plan has been established, in the site plan, the
+       resulting shapes from the per tower is migrated into the site plan. And therefore just
+       arrangement is just required and orientation."*
+
+       Moving a shape already existed (drag it). **Orienting one did not** — there was no way to turn
+       a footprint at all, so a tower that faces the road at an angle could only be re-traced corner
+       by corner at that angle, which is exactly the work importing the footprint is meant to remove.
+
+       ⚠️⚠️ ROTATION IS ABOUT THE SHAPE'S OWN CENTRE, never the sheet's. Turning about the sheet
+       would send a tower across the site as well as turning it, so "orient" and "arrange" would stop
+       being two independent actions and every rotation would need a compensating drag.
+       ⚠️ NOT SNAPPED TO THE GRID. The snap exists so adjacent zones MEET; a rotated corner lands
+       wherever the angle puts it, and snapping it would deform the outline a little more on every
+       click until a rectangle was no longer a rectangle. Rotation and scaling are exact.
+       ⚠️ A shape pushed off the sheet is TRANSLATED back, never squashed: clamping each point
+       independently is what turns a rotated rectangle into a trapezoid. If it cannot fit at all
+       (bigger than the sheet), the transform is refused rather than silently mangling the outline. */
+    function zpXformPts(pts, fn) { return pts.map(fn); }
+    function zpFitBack(pts, h) {
+      var b = zpBBoxOf(pts);
+      if (b.w > ZP_W || b.h > h) return null;      // cannot fit — refuse
+      var dx = 0, dy = 0;
+      if (b.x < 0) dx = -b.x; else if (b.x + b.w > ZP_W) dx = ZP_W - (b.x + b.w);
+      if (b.y < 0) dy = -b.y; else if (b.y + b.h > h) dy = h - (b.y + b.h);
+      return (dx || dy) ? pts.map(function (p) { return [p[0] + dx, p[1] + dy]; }) : pts;
+    }
+    function zpRotatePts(pts, deg, h) {
+      var b = zpBBoxOf(pts), cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+      var r = deg * Math.PI / 180, cs = Math.cos(r), sn = Math.sin(r);
+      return zpFitBack(zpXformPts(pts, function (p) {
+        var dx = p[0] - cx, dy = p[1] - cy;
+        return [cx + dx * cs - dy * sn, cy + dx * sn + dy * cs];
+      }), h);
+    }
+    /* ⚠️ UNIFORM, and it has to be. The app carries no dimensions, so a tower's outline is only its
+       PROPORTIONS — scaling x and y separately would throw away the one true thing about it. */
+    function zpScalePts(pts, k, h) {
+      var b = zpBBoxOf(pts), cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+      var out = zpXformPts(pts, function (p) {
+        return [cx + (p[0] - cx) * k, cy + (p[1] - cy) * k];
+      });
+      if (!zpRingOk(out)) return null;             // scaled to nothing
+      return zpFitBack(out, h);
+    }
     function zpPreset(kind, w, h) {
       w = w || 220; h = h || 160;
       var pts = [];
@@ -36387,6 +36443,101 @@
        ⚠️ No sharing panel and no trace-over: there is exactly ONE site plan in a project, so
        "also use this plan on…" has nothing to offer and "trace over another floor" would offer a
        floor plate at site scale. Both are absent rather than present-and-empty. */
+    /* ==== THE SITE PLAN IS BUILT FROM THE TOWERS' OWN FLOOR PLANS =========================
+       Owner 2026-09-12: *"the pre-requisites first is to establish the per tower floor plan. meaning
+       once the per tower floor plan has been established, in the site plan, the resulting shapes
+       from the per tower is migrated into the site plan. And therefore just arrangement is just
+       required and orientation. But obviously, the site plan should have a larger scale since you
+       are arranging the footprint / layout established on per tower."*
+
+       ⚠️⚠️ THIS REPLACES RE-TRACING, WHICH WAS THE SITE PLAN'S REAL COST. As shipped yesterday the
+       planner had already drawn every tower's floors and was then asked to draw each tower AGAIN,
+       freehand, at site scale — a second outline of the same building, by hand, which can only
+       disagree with the first. The footprint is derived from the floor plans instead, so the site
+       plan starts as the towers and the remaining work is the two things only a person knows: where
+       each one stands, and which way it faces.
+
+       ⚠️ THE LARGEST TRACED PLATE IS THE TOWER'S FOOTPRINT — the same rule `zpBareShape` uses for a
+       floor several trades traced, and for the same reason: the slab is at least as big as the
+       biggest thing anyone drew on it, and a trade that traced only a core is a subset of that
+       floor, not a rival claim about it. A podium is therefore the footprint of a tower that has
+       one, which is what a site plan wants.
+       ⚠️ Across EVERY trade, because zoning is per trade and the tower is one building. */
+    function zpTowerPlate(towerId) {
+      var best = null, bestA = -1;
+      GROUPS.forEach(function (tr) {
+        floorsOfTower(tr, towerId).forEach(function (f) {
+          var p = zpFor(f);
+          if (!p || !p.polys || !p.polys.length) return;
+          var polys = zpPlateOutline(p);
+          var a = 0;
+          polys.forEach(function (q) {
+            var s = 0, pts = q.pts || [];
+            for (var i = 0; i < pts.length; i++) {
+              var u = pts[i], w = pts[(i + 1) % pts.length];
+              s += u[0] * w[1] - w[0] * u[1];
+            }
+            a += Math.abs(s) / 2;
+          });
+          if (a > bestA) { bestA = a; best = { plate: p, polys: polys, area: a }; }
+        });
+      });
+      return (best && best.area > 0) ? best : null;
+    }
+    /* A plate's OUTLINE rather than its zones. ⚠️ Mirrors `_vsZpOutlineOf` deliberately — the
+       explicit whole-floor areas when any were drawn, otherwise the zones together, which ARE the
+       floor's footprint (nobody should have to draw the same shape twice). */
+    function zpPlateOutline(p) {
+      var out = (p.polys || []).filter(function (q) { return zpIsAll(q.code); });
+      return out.length ? out : (p.polys || []);
+    }
+    /* One tower's footprint, placed on the site sheet.
+       ⚠️⚠️ PLAN UNITS ARE SQUARE ON EVERY SHEET, which is what makes this a copy rather than a
+       projection: a sheet is ZP_W across by `h` down in the SAME unit, so a footprint's bbox is
+       genuinely its proportions and the points can be carried over under ONE uniform scale. Scaling
+       x and y separately to "fill the slot" would stretch a tower into a shape nobody drew.
+       ⚠️ THE SCALE IS A DEFAULT, NOT A MEASUREMENT, and the window says so. The app stores no
+       dimensions anywhere, so nothing here can know that Tower A is really wider than Tower B —
+       only that each is the shape it was traced as. Every tower is therefore brought in at the same
+       footprint WIDTH and the planner resizes from there; claiming a relative size would be
+       inventing a survey.
+       ⚠️ Laid out on a coarse grid with real gaps, so the towers arrive separated and draggable
+       rather than stacked on each other at the origin. */
+    function zpSitePlaceFootprints(towers, siteH) {
+      var found = [], missing = [];
+      towers.forEach(function (t) {
+        var fp = zpTowerPlate(t.id);
+        if (fp) found.push({ tower: t, fp: fp }); else missing.push(t.name || t.code || 'Tower');
+      });
+      if (!found.length) return { polys: [], placed: 0, missing: missing };
+      var n = found.length;
+      var cols = Math.max(1, Math.ceil(Math.sqrt(n)));
+      var rows = Math.max(1, Math.ceil(n / cols));
+      var cellW = ZP_W / cols, cellH = siteH / rows;
+      // ⚠️ 0.62 of the cell, so two towers side by side have a street between them rather than
+      // touching edges the planner has to pull apart before they can arrange anything.
+      var slotW = cellW * 0.62, slotH = cellH * 0.62;
+      var polys = [];
+      found.forEach(function (it, i) {
+        var col = i % cols, row = Math.floor(i / cols);
+        var cx = cellW * (col + 0.5), cy = cellH * (row + 0.5);
+        var all = [];
+        it.fp.polys.forEach(function (q) { (q.pts || []).forEach(function (p) { all.push(p); }); });
+        if (all.length < 3) return;
+        var b = zpBBoxOf(all);
+        if (!(b.w > 0) || !(b.h > 0)) return;
+        var k = Math.min(slotW / b.w, slotH / b.h);
+        var bx = b.x + b.w / 2, by = b.y + b.h / 2;
+        var code = it.tower.name || it.tower.code || 'Tower';
+        it.fp.polys.forEach(function (q) {
+          var pts = (q.pts || []).map(function (p) {
+            return [zpClamp(cx + (p[0] - bx) * k, 0, ZP_W), zpClamp(cy + (p[1] - by) * k, 0, siteH)];
+          });
+          if (zpRingOk(pts)) polys.push({ id: zpNewId(), code: code, pts: pts });
+        });
+      });
+      return { polys: polys, placed: found.length, missing: missing };
+    }
     function zpSubjSite() {
       /* ⚠️⚠️ THE PAINTABLE TOWERS ARE BOTH SOURCES, NOT JUST THE CHIPS. Owner 2026-09-12: *"the
          schedule setup should detect, if the project has multiple towers or not."* A planner
@@ -36771,7 +36922,7 @@
                 e2(zpLabelOf(c)) + '</button>';
             }).join('') : '') +
             '</span>' +
-            (codes.length ? '' : '<span class="sbld-hint" style="margin:0;">' + (SUBJ.site ? 'This project has no towers named yet — add them on the <b>Tower</b> bar behind this window, then trace one area per tower.' : 'This floor has no zones — draw its <b>outline</b> in the row below, or add zones in the step behind.') + '</span>') +
+            (codes.length ? '' : '<span class="sbld-hint" style="margin:0;">' + (SUBJ.site ? 'This project has no towers named yet — add them on the <b>Tower</b> bar behind this window. Trace each tower’s floor plan on its own floor rows, and its footprint can then be brought straight in here.' : 'This floor has no zones — draw its <b>outline</b> in the row below, or add zones in the step behind.') + '</span>') +
             /* ---- the zone's colour -----------------------------------------------------
                ⚠️ IT SITS IN THIS ROW, not a row of its own, because it is the same question
                the row already asks — which zone is this — answered on the other axis. The
@@ -36793,9 +36944,27 @@
             })() +
           '</div>' +
 
-
           // ---- row 3: making and editing areas -------------------------------------------
           (all.length ? '<div class="zpw-bar">' +
+            /* ==== THE SITE PLAN'S OWN FIRST ACTION ========================================
+               ⚠️⚠️ IT LEADS THE ROW, ahead of the shape presets, because on a site plan it is
+               almost always the right first move and the presets are the fallback. Drawing a tower
+               freehand at site scale is a SECOND outline of a building already traced, and two
+               outlines of one building can only disagree.
+               ⚠️ It says how many towers it can bring in BEFORE it is pressed, so a project whose
+               floor plans are half-traced is not discovered by pressing it and getting two of four. */
+            (SUBJ.site ? (function () {
+              var _fpn = 0;
+              towerList().forEach(function (t) { if (zpTowerPlate(t.id)) _fpn++; });
+              return '<button class="pd-btn' + (_fpn && !d.polys.length ? ' pd-btn-primary' : '') +
+                '" id="zpw-fromtowers"' + (_fpn ? '' : ' disabled') + ' title="' +
+                e2(_fpn ? ('Bring in the traced footprint of ' + _fpn + ' tower' + (_fpn === 1 ? '' : 's') +
+                          ' from its own floor plans, then arrange and turn them. Nothing is re-traced.')
+                        : 'No tower has a traced floor plan yet — draw one on a floor row behind this window first, and its footprint lands here.') + '">' +
+                '<span data-ico="layers" data-ico-size="14"></span> ' +
+                (_fpn ? 'Bring in ' + _fpn + ' tower footprint' + (_fpn === 1 ? '' : 's') : 'No tower plans yet') + '</button>' +
+                '<span class="ps-tb-div"></span>';
+            })() : '') +
             '<span class="zpw-lbl">Add</span>' +
             '<span class="zpw-shapes">' + ZP_SHAPES.map(function (s) {
               return '<button class="zpw-shbtn" data-zpadd="' + s.k + '" title="' + e2('Add a ' + s.label.toLowerCase()) + '">' +
@@ -36810,6 +36979,26 @@
             '<button class="pd-btn" id="zpw-dup"' + (sel ? '' : ' disabled') + ' title="Copy and paste in one go">Duplicate</button>' +
             '<button class="pd-btn" id="zpw-del"' + (sel ? '' : ' disabled') + '>Delete</button>' +
             '<span class="ps-tb-div"></span>' +
+            /* ==== ORIENT AND SIZE =========================================================
+               ⚠️ Not gated to the site plan. A zone traced at the wrong angle on a floor plan is
+               the same problem, and a control that exists on one subject and not the other is a
+               control the planner has to remember the rules for.
+               ⚠️ 90° and 15° both: a tower is usually square to the site OR set at an angle to a
+               road, and six clicks of 15° to reach a right angle is not a control. */
+            '<span class="zpw-xform" title="Turn and resize the selected area">' +
+              '<span class="ps-tb-lbl">Orient</span>' +
+              '<span class="ps-vs-seg">' +
+                '<button data-zprot="-90"' + (sel ? '' : ' disabled') + ' title="Turn a quarter turn anticlockwise">&#8630;90</button>' +
+                '<button data-zprot="-15"' + (sel ? '' : ' disabled') + ' title="Turn 15° anticlockwise">&#8630;</button>' +
+                '<button data-zprot="15"' + (sel ? '' : ' disabled') + ' title="Turn 15° clockwise">&#8631;</button>' +
+                '<button data-zprot="90"' + (sel ? '' : ' disabled') + ' title="Turn a quarter turn clockwise">&#8631;90</button>' +
+              '</span>' +
+              '<span class="ps-vs-seg">' +
+                '<button data-zpscale="0.9"' + (sel ? '' : ' disabled') + ' title="Make it smaller — the shape is kept, only the size changes">&#8722;</button>' +
+                '<button data-zpscale="1.1111111"' + (sel ? '' : ' disabled') + ' title="Make it bigger — the shape is kept, only the size changes">+</button>' +
+              '</span>' +
+            '</span>' +
+            '<span class="ps-tb-div"></span>' +
             '<label class="zpw-grid-ctl" title="Corners land on a grid of this many plan units (the sheet is ' + ZP_W + ' across)">Snap' +
               '<select class="pd-select" id="zpw-grid">' + ZP_GRIDS.map(function (g) {
                 return '<option value="' + g + '"' + (g === W.grid ? ' selected' : '') + '>' + (g ? g : 'Off') + '</option>';
@@ -36820,6 +37009,17 @@
           '</div>' : '') +
 
           (W.err ? '<p class="sbld-note sbld-note-warn">' + e2(W.err) + '</p>' : '') +
+          /* ==== WHAT THIS DRAWING DOES AND DOES NOT CLAIM ===============================
+             ⚠️⚠️ THE SITE IS A LARGER SCALE THAN THE FLOOR PLANS IT IS BUILT FROM, and nothing in
+             this app stores a dimension — so a footprint arrives at a DEFAULT size, not a measured
+             one, and two towers arriving the same width is not a statement that they are. Said here
+             rather than left to be inferred: a planner reading relative sizes off an arrangement
+             nobody measured would be reading something the app never claimed. Each tower keeps its
+             own PROPORTIONS exactly, which is the part that is true. */
+          (SUBJ.site ? '<p class="zpw-scalenote">Every footprint comes in at the same width, because ' +
+            'no dimension is stored anywhere in this app — each tower keeps its own <b>shape</b>, ' +
+            'not its size relative to the others. Use <b>Orient</b> to turn one and the − / + ' +
+            'buttons to size it against its neighbours. This is an arrangement, never a survey.</p>' : '') +
           // ⚠️ The stage's aspect is the SHEET's, or a re-shaped sheet would be squashed back
           // into the 1000 x 620 box the CSS used to hard-code and every corner would move.
           '<div class="zpw-stage' + (W.drawing ? ' drawing' : '') + '" id="zpw-stage" style="aspect-ratio:' + ZP_W + ' / ' + hh + ';">' +
@@ -36955,6 +37155,39 @@
         wrap.querySelectorAll('[data-zpadd]').forEach(function (b) {
           b.onclick = function () { addPreset(b.dataset.zpadd); };
         });
+        /* ⚠️⚠️ IT ADDS, IT NEVER REPLACES. A planner who has already arranged three towers and
+           traces the fourth's floor plan must be able to bring that one in without losing the
+           arrangement — so an area whose code is already on the site is left exactly where it is,
+           and the button reports what it skipped. Replacing would silently undo the arranging this
+           whole feature exists to make the only remaining work. */
+        var _ft = q('zpw-fromtowers');
+        if (_ft) _ft.onclick = function () {
+          var W2 = _zpWin, d2 = W2.draft;
+          var have = {};
+          (d2.polys || []).forEach(function (p) { have[zpNormCode(p.code)] = 1; });
+          var want = towerList().filter(function (t) {
+            return !have[zpNormCode(t.name || t.code || '')];
+          });
+          if (!want.length) {
+            UI.toast('Every tower is already on the site plan. Delete one to bring its footprint in again.', 'warn');
+            return;
+          }
+          var res = zpSitePlaceFootprints(want, H());
+          if (!res.polys.length) {
+            UI.toast('No footprint could be read — the towers left to place have no traced floor plan yet.', 'warn');
+            return;
+          }
+          snap();
+          d2.polys = (d2.polys || []).concat(res.polys);
+          W2.sel = res.polys[res.polys.length - 1].id;
+          commit(); render();
+          var msg = 'Brought in ' + res.placed + ' tower footprint' + (res.placed === 1 ? '' : 's') +
+            '. Drag to arrange, and use Orient to turn them.';
+          if (res.missing.length) msg += ' No floor plan yet for ' + res.missing.slice(0, 3).join(', ') +
+            (res.missing.length > 3 ? '…' : '') + '.';
+          if (want.length < towerList().length) msg += ' ' + (towerList().length - want.length) + ' already placed, left alone.';
+          UI.toast(msg);
+        };
         var dr = q('zpw-draw');
         if (dr) dr.onclick = function () {
           if (W.drawing) {
@@ -36975,6 +37208,24 @@
         };
         var ps = q('zpw-paste'); if (ps) ps.onclick = function () { pasteAt(W.clip); };
         var du = q('zpw-dup'); if (du) du.onclick = function () { var s = selShape(); if (s) pasteAt(s); };
+        /* ⚠️ One snapshot per click, before the change — the same contract every other gesture in
+           this window has, so Ctrl+Z steps back through a rotation the way it steps back a move. */
+        wrap.querySelectorAll('[data-zprot]').forEach(function (b) {
+          b.onclick = function () {
+            var s = selShape(); if (!s) return;
+            var np = zpRotatePts(s.pts, parseFloat(b.dataset.zprot) || 0, H());
+            if (!np) { UI.toast('That area is too big for the sheet to turn it — make it smaller first, or give the sheet a different shape.', 'warn'); return; }
+            snap(); s.pts = np; commit(); render();
+          };
+        });
+        wrap.querySelectorAll('[data-zpscale]').forEach(function (b) {
+          b.onclick = function () {
+            var s = selShape(); if (!s) return;
+            var np = zpScalePts(s.pts, parseFloat(b.dataset.zpscale) || 1, H());
+            if (!np) { UI.toast('That is as ' + (parseFloat(b.dataset.zpscale) > 1 ? 'big' : 'small') + ' as this area can go on this sheet.', 'warn'); return; }
+            snap(); s.pts = np; commit(); render();
+          };
+        });
         var del = q('zpw-del');
         if (del) del.onclick = function () {
           var i = W.draft.polys.map(function (p) { return p.id; }).indexOf(W.sel);

@@ -102,6 +102,44 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### The site plan is built from the towers' own floor plans — arrange and orient, never re-trace (2026-09-12) — ethanrobles10
+
+Owner: *"the pre-requisites first is to establish the per tower floor plan. meaning once the per tower
+floor plan has been established, in the site plan, the resulting shapes from the per tower is migrated
+into the site plan. And therefore just arrangement is just required and orientation. But obviously, the
+site plan should have a larger scale…"*
+
+⚠️⚠️ **This replaces re-tracing, which was the site plan's real cost.** As shipped yesterday it was a
+blank sheet with the tower names as brushes — so a planner who had already drawn every tower's floors
+was asked to draw each tower **again**, freehand, at site scale. A second outline of the same building
+can only disagree with the first. **`Bring in N tower footprints`** now derives each tower's footprint
+from its own floor plans and places them, leaving the two things only a person knows.
+
+- ⚠️ **The largest traced plate is the footprint** — the same rule the Consolidated fix uses, and for
+  the same reason: the slab is at least as big as the biggest thing anyone drew on it. So a **podium**
+  is the footprint of a tower that has one, which is what a site plan wants. Across every trade.
+- ⚠️⚠️ **It ADDS, never replaces.** Tracing a fourth tower's floors later must not undo the arrangement
+  of the first three, so an area already on the site is left exactly where it is and the toast says
+  what it skipped.
+- ⚠️⚠️ **Orienting did not exist at all** — half the ask. A new **Orient** group turns the selected
+  area (quarter turns and 15°) and resizes it uniformly. Rotation is about the **shape's own centre**,
+  never the sheet's, or every turn would need a compensating drag; it is **not grid-snapped**, or a
+  rectangle would deform a little more on every click; and a shape pushed off the sheet is
+  **translated back, never squashed** — one that cannot fit is refused with a reason.
+- ⚠️⚠️ **"A larger scale" is a DEFAULT, not a measurement, and the window says so.** Plan units are
+  square on every sheet, so the migration is a copy under **one uniform scale** and each tower keeps
+  its proportions exactly. But nothing in this app stores a dimension, so every tower arrives at the
+  same width and the note reads *"each tower keeps its own shape, not its size relative to the others…
+  This is an arrangement, never a survey."*
+
+⚠️ **Not verified signed in** — the anon key has no grants, so no real floor plan has been read and no
+footprint has landed on a real site sheet. The geometry was measured against the shipped code in a
+gitignored harness (38 assertions): proportions preserved for 2:1, 1:3 and square; rotation exact and
+area-preserving; every refusal path.
+
+`MODULE_V` → `20260912g`. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
 ### The setup detects its own towers, and the floor-plan apply list stops crossing buildings (2026-09-12) — ethanrobles10
 
 Owner: *"but the schedule setup should detect, if the project has multiple towers or not."* And:
