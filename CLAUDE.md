@@ -102,6 +102,41 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### The site plan expands to full screen, like every other card (2026-09-13) — ethanrobles10
+
+Owner: *"add a full screen also for the site"*
+
+The site development plan was the one card in the Vertical Stacking without the expand affordance,
+and it is the card that needs the room most — a whole site at card width is eight buildings in a
+strip a few hundred pixels wide. It now opens the same focus window every other card does: the same
+orbit, zoom, planned-vs-actual compare and playback scrubber.
+
+- ⚠️⚠️ **The site is a different MODEL, not a different camera on the same one**, which is why this
+  was not just a matter of emitting the button. The focus window built `_vsTowerModel` — one
+  building's storeys — where the site needs `_vsSiteModel`, every tower where the plan says it
+  stands. Handing the site card to the tower builder would have filled the window with one merged
+  building and **no sign that anything was wrong**.
+- ⚠️⚠️ **Both 3D build paths pass it.** The window builds its scenes on open AND again on every scrub
+  frame of the playback. Passing the site to the first and forgetting the second would have opened
+  correctly and collapsed into a single tower the moment the timeline was dragged — a divergence that
+  only appears after an interaction.
+- ⚠️ The tower names are carried on the CARD and **copied**, not read from `_vsScope` at open time:
+  the window outlives the render that opened it, so a filter changed behind the modal must not change
+  what it rebuilds. It registers with the FILTERED tower list, so the window shows exactly the towers
+  ticked in the checklist.
+- ⚠️ The expand button now stays on the right when a card head wraps at narrow widths — it was
+  landing at the left of the new line, reading as a stray control. Felt first on the site card, whose
+  subtitle is the longest in the view, but fixed on the shared rule.
+
+⚠️ 24 assertions drive the shipped `_vsFocusReg` and `_vs3FocusBuild`, sliced verbatim: which model
+each kind of card builds, that the towers are copied rather than referenced, and that compare builds
+at the pane's basis and puts the module's basis back. Gated against the previous commit, plus browser
+measurement of the button. **Not verified signed in** — the site has not been opened full screen on a
+real project.
+
+`MODULE_V` → `20260913c`. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
 ### The stacking comes back to the Project Schedule, and the towers become a checklist (2026-09-13) — ethanrobles10
 
 Owner: *"nevermind, put the vertical stacking in the project schedule tab. I just wanted you to have

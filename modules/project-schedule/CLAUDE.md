@@ -13,6 +13,69 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### The site plan expands to full screen, like every other card (2026-09-13 c) — ethanrobles10
+
+Owner: *"add a full screen also for the site"*
+
+The site development plan was the one card in the Vertical Stacking without the expand affordance —
+and it is the card that needs the room most: a whole site at card width is eight buildings in a strip
+a few hundred pixels wide. It now opens the same focus window every other card does, with the same
+orbit, the same zoom, the same planned-vs-actual compare and the same playback scrubber.
+
+### ⚠️⚠️ THE SITE IS A DIFFERENT MODEL, NOT A DIFFERENT CAMERA ON THE SAME ONE
+This is the whole of why it was not simply a matter of emitting the button. `_vs3FocusBuild` built
+its model with `_vsTowerModel(list, null)` — which stacks ONE building's storeys. The site is
+`_vsSiteModel(list, towers)`, which places every tower where the site plan says it stands, each as
+tall as its own storey count. Handing the site card to the tower builder would have filled the window
+with one merged building and **no sign that anything was wrong** — the window would have looked
+perfectly normal and described a project that does not exist.
+
+- `_vsFocusReg(name, color, list, prefix, site)` takes the tower names, and `_vs3FocusBuild(…, T,
+  siteTowers)` chooses the builder from them.
+- ⚠️⚠️ **BOTH 3D build paths pass it.** The window builds its scenes twice: once on open, and again
+  on every scrub frame of the playback (the camera is kept, the scenes are disposed and rebuilt). A
+  `card.site` passed to the first and forgotten in the second would have opened correctly and then
+  turned into a single tower the moment the planner dragged the timeline — the kind of divergence
+  that hides longest, because it only appears after an interaction.
+- ⚠️ **The towers are carried on the CARD, not read from `_vsScope` at open time**, and copied rather
+  than referenced: the focus window outlives the render that opened it, so a scope or a filter
+  changed behind the modal would otherwise make the next scrub frame rebuild a different drawing.
+- ⚠️ It registers with the **filtered** `towerNames`, so expanding the site shows exactly the towers
+  currently ticked in the checklist — the window and the card it came from agree.
+- ⚠️ **A 2D guard, for a state that cannot be reached today.** The site has no honest section — two
+  towers north and south of each other occupy the same place in an elevation — so the expand button
+  is only emitted on the 3D site card. The guard is kept because the only thing making that true is
+  one `if` in another function.
+
+### ⚠️ And the expand button stays on the right when the head wraps
+At narrow widths `.ps-vs-towerh` wraps, and the button was landing at the LEFT of the new line, where
+it reads as a stray control rather than as the card's own corner affordance. Felt first on the site
+card — whose subtitle, *"2 of 8 towers placed · N activities · N% complete"*, is the longest in the
+view — but it is every card's behaviour at that width, so the fix is on the shared rule.
+
+### Verified
+- **24 assertions** driving the shipped `_vsFocusReg` and `_vs3FocusBuild`, sliced verbatim (harness
+  gitignored, deleted): an ordinary card registers with `site: null` and builds a **tower** model;
+  the site card registers with its towers and builds a **site** model, handed the right names; the
+  towers are **copied**, not referenced (mutating the caller's array afterwards does not reach the
+  card); an empty tower list is treated as no site; and in compare mode the build happens at the
+  pane's basis with the module's basis put back afterwards.
+- ⚠️ A trap the harness itself hit first: the model stubs have to be defined **inside** the evaluated
+  body, or they close over the harness's own `_vsBasis` instead of the one the sliced builder swaps —
+  and the basis assertion then passes or fails on the harness rather than on the code.
+- Source checks in the same run: the site card registers with `towerNames`; **both** 3D build paths
+  pass `card.site` and none is left without it; the 2D guard is present; the card keeps its meter and
+  footer.
+- ⚠️ **Gated against the previous commit**, where the site card had no expand button, `_vsFocusReg`
+  took no site and `_vs3FocusBuild` knew only the tower model.
+- **Measured in a browser** against the shipped stylesheets: the button is 26 × 26, the same size as
+  a trade card's, sits inside the header, is right-aligned to the card edge, carries its glyph and
+  its `aria-label`, and is hidden until hover exactly as the others are.
+- ⚠️ **Not verified signed in.** The anon key has no grants, so the site has not actually been opened
+  full screen on a real project: what is proven is which model the window builds and with what, not a
+  WebGL site drawn at full width. First thing to check: expand the site card and scrub the timeline —
+  it must stay a site through every frame, not collapse into one tower.
+
 ### The stacking comes back to the Project Schedule, and the towers become a checklist (2026-09-13 b) — ethanrobles10
 
 Owner: *"nevermind, put the vertical stacking in the project schedule tab. I just wanted you to have

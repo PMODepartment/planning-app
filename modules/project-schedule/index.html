@@ -2227,6 +2227,12 @@
          every zone date unreadable, which is the whole content of the view. */
       .ps-vs-scroll { overflow-x:auto; }
       .ps-vs-towerh { flex-wrap:wrap; row-gap:2px; }
+      /* ⚠️ When the head WRAPS, the expand button must not land at the left of the new line — it
+         reads as a stray control rather than as the card's own corner affordance. `margin-left:auto`
+         keeps it on the right of whichever line it ends up on. Felt first on the site card, whose
+         subtitle ("2 of 8 towers placed · N activities · N% complete") is the longest in the view,
+         but it is every card's behaviour at this width. */
+      .ps-vs-towerh .ps-vs-expand { margin-left:auto; }
       /* Timeline: bigger grip, bigger buttons, and the head stacks so the date is never
          squeezed by the transport controls. */
       .ps-vs-tl { padding:10px 10px 12px; }
@@ -18021,9 +18027,15 @@
     return '<div class="ps-vs-meter" aria-hidden="true"><i style="width:' + ap + '%"></i>' +
       (pp == null ? '' : '<b style="left:' + Math.max(0, Math.min(100, pp)) + '%"></b>') + '</div>';
   }
-  function _vsFocusReg(name, color, list, prefix) {
+  /* ⚠️ `site` is the list of TOWER NAMES when the card being registered is the site development
+     plan, and null for every other card. Owner 2026-09-13: *"add a full screen also for the site"*.
+     It is carried on the card rather than read from `_vsScope` at open time because the focus
+     window outlives the render that opened it: a scope changed behind the modal would otherwise
+     make the window rebuild a different drawing on the next scrub frame. */
+  function _vsFocusReg(name, color, list, prefix, site) {
     var i = _vsFocusCards.length;
-    _vsFocusCards.push({ name: String(name), color: color, list: list, prefix: prefix });
+    _vsFocusCards.push({ name: String(name), color: color, list: list, prefix: prefix,
+                         site: (site && site.length) ? site.slice() : null });
     return '<button class="ps-vs-expand" data-vsx="' + i + '" aria-label="Expand ' + esc(String(name)) + '"' +
       ' title="Expand ' + esc(String(name)) + ' \u2014 a focus window you can scroll to zoom and drag to pan, with the option of planned and actual side by side">' +
       '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
@@ -18061,13 +18073,17 @@
      not leave the main view's cell map describing a basis the main view is not drawing.
      ⚠️ It returns the SCENE HANDLE, not markup: a WebGL canvas cannot be built inside a string,
      and it has to be disposed rather than garbage-collected (see _vs3Dispose). */
-  function _vs3FocusBuild(mount, list, color, prefix, basis, T) {
+  function _vs3FocusBuild(mount, list, color, prefix, basis, T, siteTowers) {
     var saveB = _vsBasis, saveC = _vsCells;
     _vsCells = {};
     var scene, cells;
     try {
       if (basis) _vsBasis = basis;
-      var model = _vsTowerModel(list, null);
+      /* ⚠️⚠️ THE SITE IS A DIFFERENT MODEL, not a different camera on the same one. `_vsTowerModel`
+         stacks one building's storeys; `_vsSiteModel` places every tower where the site plan says
+         it stands, each as tall as its own storey count. Handing the site card to the tower builder
+         would fill the window with one merged building and no sign that anything was wrong. */
+      var model = siteTowers ? _vsSiteModel(list, siteTowers) : _vsTowerModel(list, null);
       if (!model) { mount.innerHTML = '<div class="ps-vs-empty">Nothing to stack for this selection.</div>'; return null; }
       scene = _vs3Build(mount, model, color, prefix, T);
       cells = _vsCells;
@@ -18594,6 +18610,14 @@
   }
   function _vsOpenFocus(idx) {
     var card = _vsFocusCards[idx]; if (!card || !card.list.length) return;
+    /* ⚠️ The site has no 2D drawing, and it says so rather than opening a window with a section in
+       it: the 2D card is an ELEVATION, and two towers north and south of each other occupy the same
+       place in one. Unreachable today — the expand button is only emitted on the 3D site card — and
+       kept because the thing that makes it unreachable is one `if` in another function. */
+    if (card.site && !_vs3D) {
+      UI.toast('The site plan is a plan, not a section — switch this view to 3D and open it again.', 'warn');
+      return;
+    }
     // Compare is remembered for the session only — it is a way of LOOKING at a building, and a
     // remembered split view is how someone opens this next week and reports the tower duplicated.
     var cmp = !!(_vsFocus && _vsFocus.cmp);
@@ -18754,7 +18778,7 @@
           panes.forEach(function (p, i) {
             var mount = wrap.querySelector('[data-fz3d="' + i + '"]');
             if (!mount) return;
-            var b3 = _vs3FocusBuild(mount, card.list, card.color, card.prefix + '|FZ', p.basis, T);
+            var b3 = _vs3FocusBuild(mount, card.list, card.color, card.prefix + '|FZ', p.basis, T, card.site);
             if (!b3 || !b3.scene) return;
             _vs3FocusScenes.push(b3.scene);
             // The last pane's map wins, exactly as the SVG path does — see the note above.
@@ -18815,7 +18839,9 @@
           panes.forEach(function (p, i) {
             var mount = wrap.querySelector('[data-fz3d="' + i + '"]');
             if (!mount) return;
-            var b3 = _vs3FocusBuild(mount, card.list, card.color, card.prefix + '|FZ', p.basis, T);
+            // ⚠️ `card.site` here too, or every scrub frame would rebuild the site window as a
+            // single stacked tower — the playback is where a divergence like that hides longest.
+            var b3 = _vs3FocusBuild(mount, card.list, card.color, card.prefix + '|FZ', p.basis, T, card.site);
             if (!b3 || !b3.scene) return;
             if (keep[i] && b3.scene.setCam) b3.scene.setCam(keep[i], true);
             else if (keep[i] && b3.scene.setView) b3.scene.setView(keep[i]);
@@ -19722,6 +19748,12 @@
           '<span class="n"><span class="ps-vs-dot" style="background:var(--pd-red)"></span>Site development plan</span>' +
           '<span class="ct">' + _sfit.hit + ' of ' + _sfit.n + ' tower' + (_sfit.n === 1 ? '' : 's') +
           ' placed · ' + acts.length + ' activities · ' + _vsProgress(acts) + '% ' + _vsProgressWord() + '</span>' +
+          /* ⚠️⚠️ THE SITE EXPANDS LIKE EVERY OTHER CARD. Owner 2026-09-13: *"add a full screen also
+             for the site"* — it was the one card in this view without the affordance, and it is the
+             card that needs the room most: a whole site at card width is eight buildings in a strip
+             a few hundred pixels wide. The tower names go with it, because the site is built from a
+             DIFFERENT model (see _vs3FocusBuild) and the window has to know which one to build. */
+          _vsFocusReg('Site development plan', 'var(--pd-red)', acts, 'SITE', towerNames) +
           '</div>' + _vsCardMeter(acts) +
           _vs3Bar('SITE') + '<div class="ps-vs3-mount" data-vs3mount="SITE">' +
           '<div class="ps-vs3-load">Loading the site view…</div></div>' +
