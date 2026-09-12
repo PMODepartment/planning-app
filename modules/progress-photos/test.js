@@ -4433,6 +4433,7 @@ console.log('\n[misc] insert().select() returns the new row id');
      /homographyBetween\(rawMats\[anchor\], rawMats\[c\]\)/.test(p3js));
 
   console.log('\n[56] 2026-09-12 (later still): the stitcher now samples frame density from the video\'s own duration, and the chain SKIPS a frame with too little overlap rather than forcing a bad join');
+  console.log('[56b] 2026-09-12 (later still): sampling density raised to 30fps (frames = 30 * duration) so consecutive frames overlap enough to join across the WHOLE recording, not just a fraction of it');
 
   ok('pano360.js no longer samples a FIXED frame count regardless of how long or short the clip is — frameCountFor scales with duration',
      !/var FRAME_COUNT = 12;/.test(p3js) &&
@@ -4454,15 +4455,17 @@ console.log('\n[misc] insert().select() returns the new row id');
   // stays exactly as wide as it was before this fix.
   (function () {
     eq('frameCountFor: a very short clip is still floored at MIN_FRAMES, never sampled down to almost nothing',
-       P360._frameCountFor(1), 14);
-    eq('frameCountFor: a very long clip is capped at MAX_FRAMES, never left to grow unbounded',
-       P360._frameCountFor(60), 40);
-    eq('frameCountFor: an ordinary mid-length clip scales with duration (~3 frames/sec) rather than a fixed 12',
-       P360._frameCountFor(6), 18);
+       P360._frameCountFor(0.3), 14);
+    eq('frameCountFor: a very long clip is capped at the MAX_FRAMES safety ceiling, never left to grow unbounded',
+       P360._frameCountFor(9999), 1200);
+    eq('frameCountFor: an ordinary mid-length clip is exactly 30 * duration (30fps) rather than a fixed 12 or the old 3fps rate',
+       P360._frameCountFor(6), 180);
     eq('frameCountFor: a zero/invalid duration degrades to MIN_FRAMES rather than throwing or sampling zero frames',
        P360._frameCountFor(0), 14);
     ok('…and a SHORTER (faster) clip samples MORE densely per second of real time than a longer one covering the same rotation — the actual fix, not just a bigger fixed number',
        P360._frameCountFor(4) / 4 >= P360._frameCountFor(20) / 20);
+    eq('frameCountFor: a typical ~24s walk-around (the capture guide\'s own assumed pace) is not capped by the new safety ceiling',
+       P360._frameCountFor(24), 720);
   })();
 
   // Genuine execution of featherStops() — the one piece of the feathering

@@ -2,6 +2,79 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Sampling density raised to 30fps — the mosaic was covering only a fraction of the actual 360° recorded, not a cropping bug (2026-09-12, later still)
+
+Owner, continuing from PR #97: *"the 360 feature ... is working better, taking off from PR97. but we
+need to adjust the overlap length as only a fraction of the supposed 360 was captured. use also more
+frames, assuming 30fps, the number of frames should equal 30 times duration of video into seconds."*
+
+⚠️⚠️ **"Overlap length" and "more frames" are the same lever, not two separate fixes.** The prior
+same-day entry below (*"sample density scales with the video's own duration"*) had already moved
+`frameCountFor` off a fixed 12-frame count — but its own `FRAMES_PER_SEC = 3` was still, itself, the
+residual cause of this report. At 3 samples/sec, two consecutive extracted frames can still be several
+real degrees of rotation apart on anything but a very slow turn — and the amount of **shared image
+content ("overlap") between them** is exactly what ORB/BFMatcher needs to find a confident join at all
+(this file's own header, a few entries up, already documents this causal chain for the identical
+reason). Whenever a stretch of the recording didn't carry enough overlap to join confidently,
+`JOIN_LOOKAHEAD`'s own fallback either **skips ahead** (the frames in between are never placed at all)
+or falls back to an **approximate pure-shift** step — either way, the final mosaic ends up representing
+LESS of the camera's actual physical rotation than was really recorded. That is "only a fraction of the
+supposed 360 was captured": not the video being cropped, but the STITCH silently giving up on parts of
+it and never being asked to.
+
+### The fix
+
+- **`FRAMES_PER_SEC`: 3 → 30`** — matching a typical recording's own real frame rate, so extraction
+  effectively samples close to every recorded frame rather than one in ten. `frameCountFor(durationSec)`
+  is now, per the owner's own formula, exactly `30 * durationSec` (still floored at `MIN_FRAMES = 14`
+  for a near-zero-length clip). This maximizes the overlap between any two consecutive samples across
+  the WHOLE recording — not just the parts of it a planner happened to turn slowly through — giving the
+  join-recognition chain built in the entry below its best possible chance to join every pair
+  confidently, end to end.
+- **`MAX_FRAMES`: 40 → 1200`** — this had to move too, or it would silently defeat the density fix for
+  anything past ~1.3 seconds of video (40 ÷ 30fps), capping right back down to the same sparse density
+  this fix exists to remove. 1200 is 40 seconds at 30fps — comfortably past the capture guide's own
+  assumed ~24-second "one slow full turn" (`ROTATION_TARGET_MS` in `capture.js`), so an ordinary
+  walk-around is never capped at all. ⚠️ **It remains a hard safety ceiling, not a normal-case limit** —
+  a mistakenly very long recording still cannot ask the pairwise ORB/RANSAC join loop (already the
+  single most CPU-heavy part of this pipeline) to run against an unbounded number of frames and lock up
+  a mobile browser.
+- ⚠️ **Flagged plainly, not silently accepted:** a real walk-around at this density is genuinely
+  several hundred frames (a 20-second recording is 600), and the join loop is sequential, per-pair
+  OpenCV work — each of up to `JOIN_LOOKAHEAD` (5) candidates runs its own ORB detect + BFMatcher +
+  RANSAC. This is meaningfully slower on a real phone than the previous 14–40 frame range. That is the
+  direct, accepted cost of the requested density, not a regression to quietly walk back if a future
+  pass finds it slow — if it proves too slow in practice, the next lever is `JOIN_LOOKAHEAD` or a
+  coarser `WORK_MAXW`, not silently lowering `FRAMES_PER_SEC` back down.
+- The head/tail sampling trim in `extractFrames` (`0.03`…`0.97` of the duration, avoiding a hand/pocket
+  frame at the very start/end of a recording) is **untouched** — it discards a fixed 6% of the
+  timeline regardless of rotation and was not the mechanism behind this report; touching it would have
+  been a second, unrelated change riding along on this one.
+
+### Verified
+
+**903 checks green** (was 902 — 1 new, plus 3 existing `frameCountFor` assertions rewritten in place to
+the new numbers, "healthy churn from an intentional change" per this file's own convention, not silently
+deleted): `frameCountFor(6) === 180` (was 18), `frameCountFor(9999)` capped at the new **1200** ceiling
+(was 40), and a new check that `frameCountFor(24)` — the capture guide's own assumed full-turn duration
+— is **720**, comfortably under the new ceiling and not capped. The pre-existing "short clip floors at
+MIN_FRAMES" check was re-based on a shorter duration (`0.3s`, not `1s`) since `30 * 1 = 30` no longer
+floors at 14 the way `3 * 1 = 3` used to — the floor itself is unchanged, only the duration needed to
+exercise it moved. Confirmed against a clean `git stash` of this same branch: the exact same **3**
+pre-existing, unrelated failures (a PDF page-break assertion and two `capture.js` audio/flash assertions)
+appear before and after this change, byte-for-byte identical — zero regressions. `node --check` clean;
+0 NUL bytes; braces (105/105) and parens (479/479) balanced.
+
+⚠️ **Not verified signed in** — same standing caveat as every entry in this file; no real device
+recording has been run through the new 30fps density. See the sibling preview artifact sent alongside
+this change: a synthetic rotating-scene test (Chromium + the real, CDN-pinned OpenCV.js, not a
+reimplementation) comparing the OLD 3fps/40-frame-cap density against the NEW 30fps/1200-cap density on
+the identical source rotation, to demonstrate the actual mechanism (more overlap → more confident joins
+→ a wider, more complete mosaic) rather than only asserting the two numbers changed.
+
+`pano360.js`/`index.html?v=` → `20260912t`; `MODULE_V` (`assets/js/modules-grid.js?v=` in
+`dashboard.html`/`modules.html`) → `20260912t`.
+
 ## The stitcher's real fix: sample density scales with the video's own duration,
 ## and the chain SKIPS a frame with too little overlap instead of forcing a bad
 ## join (2026-09-12, later still)

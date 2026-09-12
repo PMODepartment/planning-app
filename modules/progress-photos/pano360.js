@@ -90,12 +90,51 @@
 // fix is what makes a real walk-around rotation project correctly at all;
 // this fix is about giving the matcher pairs that actually have something
 // in common to match, and a way to route around the ones that don't.
+//
+// ⚠️⚠️ 2026-09-12 (later still — "360 is working better, taking off from
+// PR97, but only a fraction of the supposed 360 was captured — adjust the
+// overlap length; use more frames, 30fps, frames = 30 * duration(sec)"):
+// FRAMES_PER_SEC = 3 (above) was itself still the residual cause. Sampling
+// only 3 times a second means each pair of consecutive frames can still be
+// several degrees of rotation apart on anything but a very slow turn — real
+// overlap (shared image content) between them is exactly what ORB/BFMatcher
+// needs to find a confident join at all (see the header above). Whenever a
+// stretch of the recording didn't have enough overlap to join confidently,
+// `JOIN_LOOKAHEAD`'s fallback either skips ahead (losing the frames in
+// between) or falls back to an approximate pure-shift step — either way the
+// FINAL mosaic ends up covering LESS of the camera's actual physical
+// rotation than was really recorded, which is exactly "only a fraction of
+// the supposed 360 was captured": not a cropping bug, a join-density bug.
+//
+// FRAMES_PER_SEC is now 30 — matching the video's own real frame rate (a
+// typical MediaRecorder capture), so extraction effectively samples every
+// recorded frame rather than one in ten, maximizing the overlap between any
+// two consecutive samples and giving the matcher the best possible chance
+// to join every pair confidently across the WHOLE recording, not just the
+// slow parts of it. `frameCountFor(durationSec)` is therefore, per this
+// request, exactly `30 * durationSec` for any ordinary-length recording.
+//
+// ⚠️ MAX_FRAMES had to move too, or it would silently defeat this for
+// anything past ~1.3s of video (40 frames / 30fps) — capping straight back
+// down to the same sparse density this fix exists to remove. Raised to 1200
+// (40s at 30fps — comfortably past the capture guide's own assumed ~24s
+// "one slow full turn", ROTATION_TARGET_MS in capture.js) so a normal 360°
+// walk-around is never capped at all; it remains a hard SAFETY ceiling, not
+// a normal-case limit, so a mistakenly very long recording still can't ask
+// the pairwise ORB/RANSAC join loop below (already the most CPU-heavy part
+// of this pipeline) to run for an unbounded number of frames and lock up a
+// mobile browser. ⚠️ Flagged plainly: 900+ frames is real, sequential
+// per-pair OpenCV work (each of up to JOIN_LOOKAHEAD candidates does its own
+// ORB detect + BFMatcher + RANSAC), and this is meaningfully slower on a
+// real phone than the previous 14-40 frame range — expected and accepted as
+// the direct cost of the requested density, not a regression to silently
+// walk back.
 window.Pano360 = (function () {
   var WORK_MAXW = 640;           // per-frame width used for feature matching/warping — kept small for mobile CPU cost
   var MIN_GOOD_MATCHES = 12;     // below this, a join is not "confident" — see the lookahead search below
   var MIN_FRAMES = 14;           // floor on how few frames a very short clip still gets sampled into
-  var MAX_FRAMES = 40;           // ceiling — keeps compute/memory bounded on a long recording
-  var FRAMES_PER_SEC = 3;        // target sampling density: roughly one frame every 1/3 second of real time
+  var MAX_FRAMES = 1200;         // safety ceiling only (40s @ 30fps) — not meant to bind on an ordinary recording
+  var FRAMES_PER_SEC = 30;       // target sampling density: one frame per recorded video frame, assuming 30fps
   var JOIN_LOOKAHEAD = 5;        // how many frames ahead of the last-placed one to search for a confident join
 
   // Pure, and exported (Pano360._frameCountFor) so the density curve itself
