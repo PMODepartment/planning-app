@@ -170,6 +170,37 @@
    in a row start on the same Y, rather than depending on no label ever
    wrapping at whatever width the modal happens to be. */
 .il-am-form .pd-field > label:not(.il-am-checklabel) { min-height: 26px; line-height: 13px; }
+/* ⚠️⚠️ Owner report (phone screenshot of this exact form): "space between
+   recurring and meeting title is very big" / "the vertical gap between label
+   and input box is still quite large… second photo [the Detail view] shows
+   better tighter spacing." The two-line reservation above exists so a field
+   with NO label text of its own — Favorite / Recurring / the Regular-vs-
+   Irregular select, each preceded by amGhostLabel(), a bare `<label
+   aria-hidden>` with no class, so it is caught by this very selector too —
+   still starts its control level with a REAL label beside it on the same
+   desktop row. Below 700px that's no longer reliably true: `.il-am-titlerow`
+   now carries four fields (title, favorite, recurring, and — once Recurring
+   is ticked — the regularity select), and a narrow phone can only fit the
+   title with one or two of the icon-sized ones before the rest wrap to their
+   own line. A wrapped field with nothing beside it to align with still pays
+   the full 26px reservation — a solid block of nothing above its own
+   checkbox/star/select — stacking with the row's ordinary `.pd-field`
+   bottom margin into the "very big" gap reported. The other half of the
+   report (label text itself sitting far above its input, even on a row that
+   never wraps) is the SAME rule: 26px is roughly double this label's actual
+   line height at the app's current --pd-fs-micro (10px) scale, on every
+   label in this form, real or ghost, everywhere.
+   Reset to a natural single-line label below 700px rather than
+   special-casing which rows still happen to pair up two-wide at a given
+   phone width — that also keeps the Favorite star's ghost label shrinking
+   in step with Meeting title's real label whenever the two DO still share a
+   line, so alignment where it still matters is unaffected. Scoped to THIS
+   form only (`.il-am-form`); the Detail/reporting view (momFieldHTML) never
+   had this reservation and was already tight — matching the owner's own
+   "second photo is better" comparison exactly. */
+@media (max-width: 700px) {
+  .il-am-form .pd-field > label:not(.il-am-checklabel) { min-height: 0; line-height: normal; }
+}
 .il-am-checklabel {
   display: flex; align-items: center; gap: 6px; font-weight: 400;
   height: 34px; font-size: var(--pd-fs-base); color: var(--pd-ink);
