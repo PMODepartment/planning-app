@@ -6,6 +6,65 @@ can't do that. One entry per prompt, newest first.
 
 ---
 
+## 2026-09-12 (c) — Pormac gets a face: a Megawide-branded avatar on every assistant bubble
+
+Owner supplied a cartoon construction-worker illustration (white Megawide hardhat, black
+polo, safety harness) and asked for it as the chatbot's profile photo, cropped to the upper
+body only.
+
+- **New `assets/img/pormac-avatar.png`** — a square bust crop (head, helmet, shoulders, top
+  of collar) taken from the supplied full-figure illustration; the waist-down and both hands
+  are deliberately cropped out, since a chat avatar is read at ~30px and a bust reads clearly
+  at that size where a full standing figure would not.
+- **Only `assistant` messages carry it.** `pushMessage()` in `module.js` now branches on
+  `role`: an assistant bubble is wrapped in an avatar + `.pmc-msgcol` row
+  (`.pmc-msg.assistant` becomes `flex-direction: row`), while `user` and `system` messages
+  keep the plain column layout they already had. ⚠️ Putting the avatar on every role would
+  have implied Pormac wrote the planner's own messages.
+- `updateMessage()` needed no change — it still writes into the same `.pmc-bubble` node
+  `pushMessage()` returns; the new wrapper markup sits around it, not inside it.
+- `.pmc-avatar` is `30×30`, circular, `object-fit: cover` (so the square source crop reads
+  round without a second, separately-cropped asset).
+
+⚠️ Not verified signed in — no live conversation has rendered the avatar against a real
+login; the layout is checked by reading the shipped CSS/markup, not by loading the page.
+
+---
+
+## 2026-09-12 (b) — Access control removed: Pormac is open to every approved user
+
+Owner: *"pormac should be available to everyone. no need for the settings to define
+accessibility of pormac."* Also: *"in the sidebar, put Pormac before dashboards as the very
+first module."*
+
+⚠️ **The "all vs selected users" toggle shipped in the first build (below) is gone, same
+day.** `pormac_settings` and `pormac_allowed_users` are dropped; `pormac_can_use()` is kept
+under its name (`supabase/functions/pormac-chat` already calls it) but its body is now just
+`is_approved()`. The admin ⚙ Settings button, the whole allow-list modal, and the
+"not turned on for you yet" blocked screen are deleted from the module — there was nothing
+left for that screen to gate.
+
+⚠️⚠️ **The client-side access check in `module.js` is removed outright, not merely
+simplified, and that is a real observation, not a shortcut.** `AppAuth.requireLogin` already
+redirects anyone whose `status !== 'approved'` to `pending.html` before `Pormac.init()` ever
+runs (`assets/js/auth.js`) — so by the time this code executes, `pormac_can_use()` (now
+`is_approved()`) is unconditionally true. Keeping the round-trip would have been a check that
+can never fail, guarding nothing.
+
+**Sidebar order**: Pormac now renders in `UI.renderNav` (`assets/js/ui.js`) as its own row,
+pulled out of the ordinary module list and placed **before** the Dashboard link — in both
+the project sidebar and the portfolio sidebar (the ask said "dashboards", plural, and both
+modes hardcode their own Dashboard link ahead of the module list the same way). Every other
+module still flows through `config.js`'s declared `MODULES` order unchanged; Pormac is the
+one deliberate exception.
+
+⚠️ **Not verified signed in.** `pormac_can_use()`'s new trivial body was read against the
+SQL, not exercised against a live session; the sidebar reordering was checked by tracing the
+render function's logic, not by loading a real page. The migration is safe to re-run even if
+the original version (with the settings tables) was already applied — it drops them first.
+
+---
+
 ## 2026-09-12 — First build
 
 Owner: *"add a new module open to all or selected users - an AI bot named Pormac... totally

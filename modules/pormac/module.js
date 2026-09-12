@@ -31,8 +31,6 @@
 window.Pormac = (function () {
   var pid = null;                 // selected project id (sessionStorage 'pd_project')
   var profile = null;
-  var canUse = false;
-  var isAdmin = false;
   var conversationId = null;      // pormac_conversations.id, once persisted
   var chatHistory = [];           // [{role:'user'|'assistant', content}] — sent to the model
   var tier = null;                // 'local-full' | 'local-lite' | 'remote'
@@ -49,8 +47,6 @@ window.Pormac = (function () {
   // ==========================================================================
   async function init(user, prof) {
     profile = prof;
-    isAdmin = prof.role === 'admin' || prof.role === 'super_admin';
-    if (isAdmin) $('pmc-settings').style.display = '';
 
     await loadProjects();
     $('pmc-project').onchange = function (e) {
@@ -60,7 +56,6 @@ window.Pormac = (function () {
       renderMessages();
     };
     $('pmc-new').onclick = function () { conversationId = null; chatHistory = []; renderMessages(); };
-    $('pmc-settings').onclick = openSettings;
     $('pmc-send').onclick = onSend;
     $('pmc-input').addEventListener('keydown', function (e) {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSend(); }
@@ -70,20 +65,14 @@ window.Pormac = (function () {
       this.style.height = Math.min(160, this.scrollHeight) + 'px';
     });
 
-    // ---- Access gate. Admins always pass (server-side, via pormac_can_use()),
-    // so they can open Settings even before anyone has been let in. ----------
-    var { data, error } = await sb().rpc('pormac_can_use');
-    if (error) {
-      // Most likely: migrations/2026-09-12-pormac.sql has not been run yet.
-      canUse = isAdmin; // let an admin in anyway so they can see the setup is missing
-      if (!canUse) return showBlocked('Pormac is still being set up for this workspace. Check back soon.');
-      UI.toast('Pormac: access check failed (' + error.message + ') — has the migration run?', 'warn');
-    } else {
-      canUse = !!data;
-    }
-    if (!canUse) return showBlocked();
-
-    $('pmc-blocked').style.display = 'none';
+    // ⚠️ No access gate here (2026-09-12, owner's call: "available to
+    // everyone, no need for settings to define accessibility"). Every user
+    // who reaches this page is already `status = 'approved'` —
+    // `AppAuth.requireLogin` redirects anyone else to pending.html before
+    // `init()` ever runs — so there is nothing left to check. `pormac_can_use()`
+    // still exists in the database purely for `supabase/functions/pormac-chat`
+    // (the hosted fallback) to lean on the same rule server-side; it is just
+    // `is_approved()` now, not a per-user allow-list.
     $('pmc-chrome').style.display = 'flex';
     renderTierBar();
     renderMessages();
@@ -97,13 +86,6 @@ window.Pormac = (function () {
       renderTierBar(cap.reason);
       return cap;
     });
-  }
-
-  function showBlocked(msg) {
-    $('pmc-blocked-msg').textContent = msg ||
-      "Ask an admin to turn it on for everyone, or add you to the allow-list (⚙ above, admins only).";
-    $('pmc-blocked').style.display = '';
-    $('pmc-chrome').style.display = 'none';
   }
 
   async function loadProjects() {
@@ -497,11 +479,18 @@ window.Pormac = (function () {
     var thread = $('pmc-thread');
     var wrap = document.createElement('div');
     wrap.className = 'pmc-msg ' + role;
-    wrap.innerHTML =
+    var col =
       (contextUsed && contextUsed.length ? '<div class="pmc-ctxchips">' + contextUsed.map(function (c) {
         return '<span class="pmc-ctxchip">' + Fmt.esc(c) + '</span>';
       }).join('') + '</div>' : '') +
       '<div class="pmc-bubble">' + (content ? Fmt.esc(content) : '<span class="pmc-cursor"></span>') + '</div>';
+    // ⚠️ Only assistant bubbles carry the Pormac avatar — a planner's own
+    // messages and the system placeholder ("pick a project…") aren't Pormac
+    // talking, so an avatar on those would misattribute the message.
+    wrap.innerHTML = role === 'assistant'
+      ? '<img class="pmc-avatar" src="../../assets/img/pormac-avatar.png?v=20260912a" alt="" aria-hidden="true">' +
+        '<div class="pmc-msgcol">' + col + '</div>'
+      : col;
     thread.appendChild(wrap);
     thread.scrollTop = thread.scrollHeight;
     return wrap.querySelector('.pmc-bubble');
@@ -523,71 +512,6 @@ window.Pormac = (function () {
       return;
     }
     chatHistory.forEach(function (m) { pushMessage(m.role, m.content); });
-  }
-
-  // ==========================================================================
-  // Admin settings — access mode + allow-list
-  // ==========================================================================
-  async function openSettings() {
-    var { data: settings } = await sb().from('pormac_settings').select('*').eq('id', 1).maybeSingle();
-    var mode = (settings && settings.access_mode) || 'selected';
-    var { data: allowed } = await sb().from('pormac_allowed_users').select('user_id');
-    var allowedIds = (allowed || []).map(function (r) { return r.user_id; });
-    var users = await PDb.getAllUsers();
-    var byId = {}; users.forEach(function (u) { byId[u.id] = u; });
-
-    var m = UI.modal(
-      '<h3 style="margin-top:0;">Who can use Pormac?</h3>' +
-      '<div class="pmc-set-mode">' +
-        '<label><input type="radio" name="pmc-mode" value="all"' + (mode === 'all' ? ' checked' : '') + '> Everyone (any approved user)</label>' +
-        '<label><input type="radio" name="pmc-mode" value="selected"' + (mode === 'selected' ? ' checked' : '') + '> Selected users only</label>' +
-      '</div>' +
-      '<div id="pmc-set-selected" style="display:' + (mode === 'selected' ? '' : 'none') + '">' +
-        '<div style="display:flex;gap:8px;margin-bottom:8px;">' +
-          '<select class="pd-select" id="pmc-set-pick" style="flex:1;">' +
-            '<option value="">Add a user…</option>' +
-            users.filter(function (u) { return allowedIds.indexOf(u.id) === -1; }).map(function (u) {
-              return '<option value="' + u.id + '">' + Fmt.esc(u.name || u.email) + '</option>';
-            }).join('') +
-          '</select>' +
-          '<button class="pd-btn" id="pmc-set-add">Add</button>' +
-        '</div>' +
-        '<div class="pmc-set-list" id="pmc-set-list">' +
-          (allowedIds.length ? allowedIds.map(function (uid) {
-            var u = byId[uid];
-            return '<div class="pmc-set-row" data-uid="' + uid + '"><span>' + Fmt.esc(u ? (u.name || u.email) : uid) + '</span>' +
-              '<button class="pd-btn pd-btn-sm" data-remove="' + uid + '">Remove</button></div>';
-          }).join('') : '<div class="pmc-set-row pmc-muted">Nobody added yet — admins can always use Pormac regardless.</div>') +
-        '</div>' +
-      '</div>' +
-      '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;">' +
-        '<button class="pd-btn" id="pmc-set-close">Close</button>' +
-      '</div>'
-    );
-
-    m.el.querySelectorAll('input[name="pmc-mode"]').forEach(function (r) {
-      r.onchange = async function () {
-        m.el.querySelector('#pmc-set-selected').style.display = r.value === 'selected' ? '' : 'none';
-        var { error } = await sb().from('pormac_settings')
-          .update({ access_mode: r.value, updated_by: profile.id, updated_at: new Date().toISOString() }).eq('id', 1);
-        if (error) UI.toast(error.message, 'error'); else UI.toast('Saved', 'ok');
-      };
-    });
-    m.el.querySelector('#pmc-set-add').onclick = async function () {
-      var sel = m.el.querySelector('#pmc-set-pick');
-      var uid = sel.value; if (!uid) return;
-      var { error } = await sb().from('pormac_allowed_users').insert({ user_id: uid, added_by: profile.id });
-      if (error) { UI.toast(error.message, 'error'); return; }
-      m.close(); openSettings();
-    };
-    m.el.querySelectorAll('[data-remove]').forEach(function (b) {
-      b.onclick = async function () {
-        var { error } = await sb().from('pormac_allowed_users').delete().eq('user_id', b.getAttribute('data-remove'));
-        if (error) { UI.toast(error.message, 'error'); return; }
-        m.close(); openSettings();
-      };
-    });
-    m.el.querySelector('#pmc-set-close').onclick = m.close;
   }
 
   return { init: init };

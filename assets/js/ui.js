@@ -393,9 +393,20 @@
       // module grid), but the five portfolio-mode pages never needed to before now. Default
       // to the shared registry rather than requiring five call sites to be updated.
       var pmods = (ctx.modules || (window.APP_CONFIG && APP_CONFIG.MODULES) || []).filter(function (m) { return m.enabled && visible(m); });
+      // ⚠️ Pormac renders before BOTH dashboard links, as the very first row —
+      // owner's call (2026-09-12), same reason as the project-mode branch below.
+      var pPormac = pmods.filter(function (m) { return m.key === 'pormac'; })[0];
+      pmods = pmods.filter(function (m) { return m.key !== 'pormac'; });
+      function pmodRow(m) {
+        var tab = PORTFOLIO_TAB[m.key];
+        var href = tab ? poHref(tab) : (window.ModulesGrid ? base + ModulesGrid.href(m) : base + m.path);
+        return '<a href="' + href + '" title="' + esc(m.name) + (tab ? ' — portfolio-wide' : '') + '">' +
+          '<span class="pd-navico" data-ico="' + esc(m.icon) + '"></span><span class="pd-navtxt">' + esc(m.name) + '</span></a>';
+      }
       html = '<div class="pd-navsec">Portfolio</div>' +
         '<a href="' + base + 'projects.html"' + cls('projects') + ' title="Projects">' +
           '<span class="pd-navico" data-ico="grid"></span><span class="pd-navtxt">Projects</span></a>' +
+        (pPormac ? pmodRow(pPormac) : '') +
         '<a href="' + poBase + '"' + cls('portfolio-dashboard') + ' title="Portfolio Dashboard">' +
           '<span class="pd-navico" data-ico="barChart"></span><span class="pd-navtxt">Dashboard</span></a>' +
         // ⚠️⚠️ MILESTONES HAS NO MODULE, so `pmods` below cannot produce it — it is a
@@ -406,12 +417,7 @@
         //    the plain `poBase` "Dashboard" link above already lands on it.
         '<a href="' + poHref('milestones') + '" title="Milestones — portfolio-wide">' +
           '<span class="pd-navico" data-ico="calendar"></span><span class="pd-navtxt">Milestones</span></a>' +
-        pmods.map(function (m) {
-          var tab = PORTFOLIO_TAB[m.key];
-          var href = tab ? poHref(tab) : (window.ModulesGrid ? base + ModulesGrid.href(m) : base + m.path);
-          return '<a href="' + href + '" title="' + esc(m.name) + (tab ? ' — portfolio-wide' : '') + '">' +
-            '<span class="pd-navico" data-ico="' + esc(m.icon) + '"></span><span class="pd-navtxt">' + esc(m.name) + '</span></a>';
-        }).join('') +
+        pmods.map(pmodRow).join('') +
         // ⚠️ Personal (My Work / Tasks) is super-admin-only "for now" too (2026-09-03,
         // same owner ask as the module hiding above) — gated the same way, off the global
         // role rather than a new ctx flag.
@@ -438,14 +444,23 @@
       // module (`minutes-of-meeting`), so it now flows through mods.map()
       // below like every other module; config.js's MODULES order is what
       // puts it first, right after Dashboard.
+      //
+      // ⚠️ Pormac is pulled out and rendered BEFORE the Dashboard link — the
+      // one exception to "config.js's order is the nav order" (owner's call,
+      // 2026-09-12): it is the very first row in the sidebar, above Dashboard,
+      // not merely first among modules.
+      function modRow(m) {
+        var href = window.ModulesGrid ? base + ModulesGrid.href(m) : base + m.path;
+        return '<a href="' + href + '"' + cls(m.key) + ' title="' + esc(m.name) + '">' +
+          '<span class="pd-navico" data-ico="' + esc(m.icon) + '"></span><span class="pd-navtxt">' + esc(m.name) + '</span></a>';
+      }
+      var pormacMod = mods.filter(function (m) { return m.key === 'pormac'; })[0];
+      mods = mods.filter(function (m) { return m.key !== 'pormac'; });
       html = '<div class="pd-navsec">Project</div>' +
+        (pormacMod ? modRow(pormacMod) : '') +
         '<a href="' + base + 'dashboard.html"' + cls('dashboard') + ' title="Dashboard">' +
           '<span class="pd-navico" data-ico="home"></span><span class="pd-navtxt">Dashboard</span></a>' +
-        mods.map(function (m) {
-          var href = window.ModulesGrid ? base + ModulesGrid.href(m) : base + m.path;
-          return '<a href="' + href + '"' + cls(m.key) + ' title="' + esc(m.name) + '">' +
-            '<span class="pd-navico" data-ico="' + esc(m.icon) + '"></span><span class="pd-navtxt">' + esc(m.name) + '</span></a>';
-        }).join('');
+        mods.map(modRow).join('');
     }
     navEl.innerHTML = html;
     if (window.Icons) Icons.hydrate(navEl);
