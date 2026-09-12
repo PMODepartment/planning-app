@@ -105,12 +105,11 @@ window.MinutesOfMeeting = (function () {
   // how a planner concludes their meetings have gone missing).
   var _momFiltOpen = false;
   var _momBrowseF = { kind: '', state: '', fav: false, group: '' };
-  // ⚠️ 'list' | 'calendar' | 'detail' | 'series'. Meetings are BROWSED (list or
-  // calendar); a single one is OPEN (detail); a recurring SERIES is open on its
-  // own page (series — its definition + the meetings actually held under it).
-  // "Back to meetings" returns to whichever browse mode was last active —
-  // `_momBrowsePrev` is only ever set from list/calendar, never from detail or
-  // series, so it can't collapse to either of those itself.
+  // ⚠️ 'list' | 'calendar' | 'detail'. Meetings are BROWSED (list or calendar);
+  // a single one — recurring or not — is OPEN (detail). "Back to meetings"
+  // returns to whichever browse mode was last active — `_momBrowsePrev` is
+  // only ever set from list/calendar, never from detail, so it can't collapse
+  // to that itself.
   var _momView = 'list', _momBrowsePrev = 'list';
   var _momSel = null;
   // ⚠️ 2026-09-11 — 'card' | 'table'. A per-session display preference for the
@@ -123,12 +122,6 @@ window.MinutesOfMeeting = (function () {
   // or per project switch, same as `_momView` above — it is how the planner
   // prefers to look at minutes, not a property of any one meeting.
   var _minutesView = 'card';
-  // Which series a currently-open MEETING was reached from, if any — set only
-  // when a meeting is opened by clicking a row inside that series' own page
-  // (momOpenSeries → the "Previously held" list), so "← Back" from the meeting
-  // returns to the series page rather than to the flat list/calendar it would
-  // otherwise fall back to.
-  var _momCameFromSeries = null;
   var _momCalMonth = null;      // 'YYYY-MM' — the month the calendar view shows
   // 'month' | 'week' — which grid the Calendar sub-view renders.
   var _momCalMode = 'month';
@@ -162,18 +155,16 @@ window.MinutesOfMeeting = (function () {
   // for the occurrence math (schedDatesInRange / schedNextOccurrence / …).
   // ==========================================================================
   var SCHEDULES = [];
-  // ⚠️ REHAUL (2026-09-02): a recurring series is no longer browsed from a
-  // side panel above the meetings list — it is a ROW in the unified Meetings
-  // list (see momUnifiedRows below), and clicking it opens a full SERIES PAGE
-  // (`_momView === 'series'`, `_seriesSel` = the schedule id): the series'
-  // own definition, above a list of every meeting actually held under it —
-  // clicking one of THOSE opens the normal single-meeting Detail view. A
-  // series is created from the Add Meeting modal's "Recurring" tag now, so
-  // `_schedFormOpen`/`_schedFormDraft` below serve EDITING an existing series
-  // from its own page only, never creation.
-  var _seriesSel = null;
-  var _schedFormOpen = false, _schedFormDraft = null;      // edit a SCHEDULE, from its page
-  var _schedOccOpen = false, _schedOccDraft = null;        // "+ Add a meeting" for it
+  // ⚠️ ROUND 3 — there is no separate "series page" any more. A recurring
+  // occurrence is a REAL row in the unified Meetings list, same as any other
+  // meeting (momUnifiedRows shows only the latest one per schedule); opening
+  // it is an ordinary momOpenMeeting → Detail, and every occurrence under the
+  // same schedule is reached from THAT meeting's own "Meeting history" table
+  // (momHistorySectionHTML), not a second screen. A schedule with no
+  // occurrence yet (freshly created from the Add Meeting modal's "Recurring"
+  // tag) has nothing to show in the list until its first meeting exists — the
+  // Calendar's own predicted/"planned" chips are how that first one gets
+  // created (openNextMeetingModal).
 
   // ⚠️ ITEM #23 — per-action-item hold/close, mirroring the Issues workflow
   // (2026-08-31). Keyed by item id, unlike Issues' single `_issHoldOpen` /
@@ -769,10 +760,8 @@ window.MinutesOfMeeting = (function () {
     _momSel = null; _momErr = ''; _momLoaded = false;
     _momQ = ''; _momF = { q: '', cat: '', type: '', status: '' };
     _momView = 'list'; _momBrowsePrev = 'list'; _momTab = 'meetings';
-    _momCameFromSeries = null; _momCalMode = 'month'; _momWeekStart = null;
+    _momCalMode = 'month'; _momWeekStart = null;
     _addOpen = false; _addDraft = null;
-    _seriesSel = null; _schedFormOpen = false; _schedFormDraft = null;
-    _schedOccOpen = false; _schedOccDraft = null;
     _momItemWF = {}; ITEM_HISTORY = {};
     // ⚠️ These were NOT reset, so switching project cleared the search box while
     //    keeping the filter values that hide rows — a filtered-looking list with an
@@ -1049,6 +1038,15 @@ window.MinutesOfMeeting = (function () {
       .slice().sort(function (a, b) { return (b.meeting_date || '').localeCompare(a.meeting_date || ''); });
   }
 
+  // Plain UTC day arithmetic on a 'YYYY-MM-DD' string — matching this file's
+  // own stated convention (schedDatesInRange etc.) rather than local time,
+  // which is what "carry over to next meeting" defaults its date field to.
+  function plusDaysISO(iso, n) {
+    var d = new Date((iso || momToday()) + 'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate() + n);
+    return d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate());
+  }
+
   // ============================================================================
   async function init(user, prof) {
     profile = prof;
@@ -1068,13 +1066,11 @@ window.MinutesOfMeeting = (function () {
     // jumping straight past every view to the module launcher.
     histView = UI.bindHistoryState({
       key: 'mom_view',
-      get: function () { return { t: _momTab, v: _momView, m: _momSel, s: _seriesSel, f: _momCameFromSeries }; },
+      get: function () { return { t: _momTab, v: _momView, m: _momSel }; },
       apply: function (state) {
         _momTab = state.t || 'meetings';
-        _momView = state.v || 'list'; _momSel = state.m || null; _seriesSel = state.s || null;
-        _momCameFromSeries = state.f || null;
+        _momView = state.v || 'list'; _momSel = state.m || null;
         if (_momView === 'detail' && !_momSel) _momView = _momBrowsePrev || 'list';
-        if (_momView === 'series' && !_seriesSel) _momView = _momBrowsePrev || 'list';
         render();
       }
     });
@@ -1209,8 +1205,8 @@ window.MinutesOfMeeting = (function () {
   // filter toggle only — nothing in that tab's own item list asked for a
   // download or an add-meeting button there, and offering either would act
   // on data the dashboard isn't even displaying rows of. A single meeting or
-  // series page shows none of the three; its own per-meeting toolbar
-  // (further down in Detail) is untouched by this.
+  // meeting shows none of the three; its own per-meeting toolbar (further
+  // down in Detail) is untouched by this.
   function syncTopbarTools() {
     var filtBtn = $('il-mom-tb-filter'), expWrap = $('il-mom-tb-export'), addBtn = $('il-mom-tb-add');
     if (!filtBtn) return;
@@ -1242,7 +1238,6 @@ window.MinutesOfMeeting = (function () {
     syncTopTabs();
     if (_momTab === 'dashboard') renderMomDashboard();
     else if (_momView === 'detail' && _momSel) renderDetail();
-    else if (_momView === 'series' && _seriesSel) renderSeriesPage();
     else renderBrowse();
     if (window.Icons && Icons.hydrate) Icons.hydrate($('il-mom-view'));
     paintRemote();
@@ -1556,15 +1551,16 @@ window.MinutesOfMeeting = (function () {
   }
 
   // ==========================================================================
-  // REHAUL (2026-09-02) — UNIFIED MEETINGS LIST
-  // ⚠️ Item 4's list is "meetings" — a planner does not care whether a row is
-  // a one-off or a recurring series until they click into it, so List/Calendar
-  // now browse ONE set of descriptors built from BOTH `MOMS` (standalone —
-  // `schedule_id` null) and `SCHEDULES` (active recurring series). An
-  // OCCURRENCE of a series (`schedule_id` set) is never a row here — it is
-  // reached only from that series' own page (momOpenSeries), which is what
-  // item 6 asks for: click the recurring "meeting" → its definition + the
-  // meetings actually held under it, THEN click one of those for its minutes.
+  // UNIFIED MEETINGS LIST
+  // ⚠️ ROUND 3 — "a recurring meeting should be treated the same way as a
+  // non-recurring one" (the owner's own words). Every row here is a REAL
+  // `meeting_minutes` row, standalone or an occurrence alike; there is no
+  // separate summary row for a schedule any more. An occurrence
+  // (`schedule_id` set) is grouped with its siblings and only the MOST
+  // RECENT one is listed — "details of the recurring meeting should just
+  // reflect the latest occurrence" — with every occurrence, this one
+  // included, reachable from that meeting's own Detail view via its
+  // "Meeting history" table (momHistorySectionHTML).
   // ==========================================================================
   function plannedAttendeeCount(row) {
     return (attendeeCount(row.attendees_required) || 0) + (attendeeCount(row.attendees_optional) || 0);
@@ -1586,14 +1582,21 @@ window.MinutesOfMeeting = (function () {
     return { open: open, total: total };
   }
   function momUnifiedRows() {
+    // Keyed by schedule_id → its most recently dated occurrence. A standalone
+    // meeting (no schedule_id) is never touched by this map.
+    var latestBySched = {};
+    MOMS.forEach(function (m) {
+      if (!m.schedule_id) return;
+      var cur = latestBySched[m.schedule_id];
+      if (!cur || (m.meeting_date || '') > (cur.meeting_date || '')) latestBySched[m.schedule_id] = m;
+    });
     var out = [];
     MOMS.forEach(function (m) {
-      if (m.schedule_id) return;   // an occurrence — browsed from its series page, not here
+      if (m.schedule_id && latestBySched[m.schedule_id] !== m) return;   // an earlier occurrence of the same series
       var c = itemOpenCount([m.id]);
       out.push({
         kind: 'meeting', id: m.id, favorite: !!m.is_favorite,
-        // Item 1 (2026-09-11 round): the List view's manual drag order.
-        sortOrder: m.sort_order == null ? null : m.sort_order,
+        recurring: !!m.schedule_id,
         title: m.title || '(untitled)',
         dateSort: m.meeting_date || '',
         dateLabel: m.meeting_date
@@ -1604,29 +1607,6 @@ window.MinutesOfMeeting = (function () {
         draft: !m.is_distributed,
         group: m.meeting_group || '',
         open: c.open, total: c.total,
-      });
-    });
-    schedActiveList().forEach(function (s) {
-      var next = schedNextOccurrence(s, momToday());
-      var cs = itemOpenCount(schedMeetingsOf(s.id).map(function (m) { return m.id; }));
-      out.push({
-        kind: 'series', id: s.id, favorite: !!s.is_favorite,
-        sortOrder: s.sort_order == null ? null : s.sort_order,
-        title: s.title || '(untitled)',
-        // ⚠️ dateSort is a real ISO date (next occurrence, else its own start)
-        // even though the DISPLAYED label is the frequency, so date-sorting a
-        // list mixing meetings and series still orders sensibly.
-        dateSort: next || s.start_date || '',
-        dateLabel: schedFrequencyLabel(s),
-        attendees: plannedAttendeeCount(s),
-        location: s.venue || '—',
-        // ⚠️ A SERIES HAS NO DRAFT STATE — a draft is a property of one
-        // recorded minute, and a series is the rule that produces them. It is
-        // `false` rather than null so the Draft pill simply never renders on a
-        // series row; the Status filter below documents what that means for it.
-        draft: false,
-        group: s.meeting_group || '',
-        open: cs.open, total: cs.total,
       });
     });
     return out;
@@ -1640,46 +1620,23 @@ window.MinutesOfMeeting = (function () {
     var q = _momQ.trim().toLowerCase();
     return rows.filter(function (r) {
       if (q && r.title.toLowerCase().indexOf(q) < 0 && r.location.toLowerCase().indexOf(q) < 0) return false;
-      if (_momBrowseF.kind && r.kind !== _momBrowseF.kind) return false;
+      // ⚠️ ROUND 3 — every row is `kind:'meeting'` now (see momUnifiedRows);
+      // the "One-time only"/"Recurring only" filter values are unchanged, but
+      // read off `r.recurring` instead of a row kind that no longer varies.
+      if (_momBrowseF.kind === 'meeting' && r.recurring) return false;
+      if (_momBrowseF.kind === 'series' && !r.recurring) return false;
       if (_momBrowseF.group && r.group !== _momBrowseF.group) return false;
-      // ⚠️ Filtering by Draft/Distributed excludes every SERIES row, because a
-      // series genuinely has neither state (see `draft` above). That is the
-      // honest outcome — the alternative, treating a series as "distributed",
-      // would assert something nobody recorded — and the filter's own option
-      // labels say "meetings only" so it is not a surprise.
-      if (_momBrowseF.state === 'draft' && !(r.kind === 'meeting' && r.draft)) return false;
-      if (_momBrowseF.state === 'distributed' && !(r.kind === 'meeting' && !r.draft)) return false;
+      if (_momBrowseF.state === 'draft' && !r.draft) return false;
+      if (_momBrowseF.state === 'distributed' && r.draft) return false;
       if (_momBrowseF.fav && !r.favorite) return false;
       return true;
     });
-  }
-  // Item 1 (2026-09-11 round): "manual order" — a `sort_order` a planner sets
-  // by dragging a row (migrations/2026-09-11-mom-list-reorder.sql), falling
-  // back to the same date-based order the List view already defaults to for
-  // any row nobody has dragged yet.
-  function momOrderCmp(a, b) {
-    if (a.sortOrder != null || b.sortOrder != null) {
-      if (a.sortOrder == null) return 1;
-      if (b.sortOrder == null) return -1;
-      if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
-    }
-    if (a.dateSort !== b.dateSort) return a.dateSort < b.dateSort ? 1 : -1;
-    return 0;
   }
   // ⚠️ Favorites pinned to the top is layered OVER whatever COLUMN sort is
   // active, not an alternative to it — partition into favorite/non-favorite,
   // sort each half with the same comparator, concatenate. A column click still
   // reorders within each half rather than fighting the favorite pin.
-  // ⚠️⚠️ Manual order (`col === 'manual'`) is the ONE exception, deliberately:
-  // it sorts the WHOLE list as one flat sequence with no pin at all. Pinning
-  // it too would mean a row dropped just above a favorite silently landed
-  // somewhere else instead — the drop position lying about the result is a
-  // worse surprise than a starred row simply not floating to the top while
-  // its order is being set by hand. The star still filters and still
-  // displays; it stops being an ordering rule for as long as manual order is
-  // the active List sort.
   function momSortedRows(rows) {
-    if (_momSort.col === 'manual') return rows.slice().sort(momOrderCmp);
     var col = _momSort.col, dir = _momSort.dir === 'asc' ? 1 : -1;
     function cmp(a, b) {
       var av, bv;
@@ -1731,8 +1688,8 @@ window.MinutesOfMeeting = (function () {
           '</select>' +
           '<select class="pd-select pd-input-sm" id="il-momb-state">' +
             '<option value="">Any status</option>' +
-            '<option value="draft"' + (_momBrowseF.state === 'draft' ? ' selected' : '') + '>Draft (meetings only)</option>' +
-            '<option value="distributed"' + (_momBrowseF.state === 'distributed' ? ' selected' : '') + '>Distributed (meetings only)</option>' +
+            '<option value="draft"' + (_momBrowseF.state === 'draft' ? ' selected' : '') + '>Draft</option>' +
+            '<option value="distributed"' + (_momBrowseF.state === 'distributed' ? ' selected' : '') + '>Distributed</option>' +
           '</select>' +
           '<select class="pd-select pd-input-sm" id="il-momb-group">' +
             '<option value="">Any group</option>' +
@@ -1810,228 +1767,66 @@ window.MinutesOfMeeting = (function () {
       '<input class="pd-input" type="number" min="1" max="31" id="il-sf-dom" value="' + (s.day_of_month || 1) + '"></div>';
   }
 
-  function scheduleFormHTML(draft) {
-    var s = draft || {};
-    var isNew = !s.id;
-    return '<div class="il-mom-schedform">' +
-      '<div class="il-form-row">' +
-        '<div class="pd-field" style="flex:2 1 200px;"><label>Title</label>' +
-          '<input class="pd-input" id="il-sf-title" value="' + Fmt.esc(s.title || '') +
-          '" placeholder="e.g. Monthly PSC Meeting"></div>' +
-        '<div class="pd-field" style="flex:1 1 130px;"><label>Group</label>' +
-          '<select class="pd-select" id="il-sf-group">' +
-            ['Internal', 'External'].map(function (g) {
-              return '<option' + ((s.meeting_group || 'Internal') === g ? ' selected' : '') + '>' + g + '</option>';
-            }).join('') +
-          '</select></div>' +
-      '</div>' +
-      '<div class="il-form-row">' +
-        '<div class="pd-field" style="flex:1 1 220px;"><label>Frequency</label>' +
-          '<select class="pd-select" id="il-sf-freq">' +
-            FREQUENCIES.map(function (f) {
-              return '<option value="' + f.key + '"' + ((s.frequency || 'monthly_date') === f.key ? ' selected' : '') +
-                '>' + f.label + '</option>';
-            }).join('') +
-          '</select></div>' +
-        '<div class="pd-field" style="flex:1 1 150px;"><label>Starts from</label>' +
-          '<input class="pd-input" type="date" id="il-sf-start" value="' + dateVal(s.start_date || momToday()) + '"></div>' +
-      '</div>' +
-      '<div class="il-form-row" id="il-sf-rulewrap">' + scheduleRuleFieldsHTML(s) + '</div>' +
-      '<div class="il-mom-schedform-acts">' +
-        '<button class="pd-btn pd-btn-primary pd-btn-sm" id="il-sf-save">' + (isNew ? 'Create schedule' : 'Save schedule') + '</button>' +
-        '<button class="pd-btn pd-btn-sm" id="il-sf-cancel">Cancel</button>' +
-      '</div>' +
-    '</div>';
-  }
-
-  // ⚠️ ITEM #22: "define date, optional and required attendees plus other
-  // details which are copied from the last meeting by default." Every field
-  // pre-fills from the schedule's most recent recorded occurrence (`last`)
-  // and falls back to the schedule's own next expected date when there is
-  // no prior occurrence to copy from — a brand-new schedule's first meeting.
-  function scheduleOccFormHTML(s) {
-    var last = schedMeetingsOf(s.id)[0];
-    var next = schedNextOccurrence(s, momToday());
-    // ⚠️ `_schedOccDraft.date` wins when set — the one path that sets it is a
-    // click on a specific PLANNED chip in the calendar, which names an exact
-    // day that may not be the schedule's bare "next" date if several of its
-    // occurrences are visible on screen at once.
-    var defDate = (_schedOccDraft && _schedOccDraft.date) || next || (last && last.meeting_date) || momToday();
-    var defVenue = (last && last.venue) || '';
-    var defLink = (last && last.meeting_link) || '';
-    var reqIds = (last && last.attendees_required && last.attendees_required.ids) || [];
-    var reqText = (last && last.attendees_required && last.attendees_required.text) || '';
-    var optIds = (last && last.attendees_optional && last.attendees_optional.ids) || [];
-    var optText = (last && last.attendees_optional && last.attendees_optional.text) || '';
-    return '<div class="il-mom-occform">' +
-      '<div class="il-form-row">' +
-        '<div class="pd-field" style="flex:1 1 140px;"><label>Date</label>' +
-          '<input class="pd-input" type="date" id="il-of-date" value="' + dateVal(defDate) + '"></div>' +
-        '<div class="pd-field" style="flex:1 1 160px;"><label>Venue</label>' +
-          '<input class="pd-input" id="il-of-venue" value="' + Fmt.esc(defVenue) + '"></div>' +
-        '<div class="pd-field" style="flex:1 1 160px;"><label>Meeting link</label>' +
-          '<input class="pd-input" id="il-of-link" value="' + Fmt.esc(defLink) + '"></div>' +
-      '</div>' +
-      '<div class="pd-field"><label>Required attendees</label>' + peoplePickerHTML('occ-req', reqIds, reqText, false) + '</div>' +
-      '<div class="pd-field"><label>Optional attendees</label>' + peoplePickerHTML('occ-opt', optIds, optText, false) + '</div>' +
-      '<div class="il-mom-schedform-acts">' +
-        '<button class="pd-btn pd-btn-primary pd-btn-sm" id="il-of-create">Create this meeting</button>' +
-        '<button class="pd-btn pd-btn-sm" id="il-of-cancel">Cancel</button>' +
-      '</div>' +
-    '</div>';
-  }
+  // ⚠️ ROUND 3 — scheduleFormHTML/scheduleOccFormHTML (the series page's own
+  // create/rename form and its "+ Add a meeting" occurrence form) are gone:
+  // there is no series page left to render them on. scheduleRuleFieldsHTML
+  // above survives — it is still used by the Add-meeting modal's own
+  // recurring-checkbox path and by openNextMeetingModal's promotion form.
 
   // ---- List view --------------------------------------------------------
-  // Item 4: Title / Date-or-frequency / # Attendees / Location, favorites
-  // pinned to the top (momSortedRows). A recurring "meeting" is tagged
-  // Recurring, a not-yet-distributed standalone one Draft — both plain text
-  // pills next to the title, the same visual language as the Detail view's
-  // own draft/distributed state, so the list previews what opening the row
+  // Item 4: Title / Date / Recurring / # Attendees / Location, favorites
+  // pinned to the top (momSortedRows). Round 3: "Recurring" is its own
+  // read-only tickbox column (r.recurring, from momUnifiedRows) rather than
+  // a text pill; a not-yet-distributed meeting still gets the Draft pill
+  // next to its title, the same visual language as the Detail view's own
+  // draft/distributed state, so the list previews what opening the row
   // will show.
   function momListSortTh(label, col) {
     var on = _momSort.col === col;
     return '<th class="il-mom-th' + (on ? ' on' : '') + '" data-sort="' + col + '">' + Fmt.esc(label) +
       (on ? (_momSort.dir === 'asc' ? ' ▲' : ' ▼') : '') + '</th>';
   }
-  // Item 1 (2026-09-11 round): the drag column doubles as its own toggle — see
-  // the `col === 'manual'` branch in wireBrowse's `[data-sort]` handler below.
-  function momListDragTh(manual) {
-    return '<th class="il-mom-th il-mom-dragth' + (manual ? ' on' : '') +
-      '" data-sort="manual" title="Drag rows to set a custom order">⋮⋮</th>';
-  }
-  // Same visual grip as the Issues & Concerns / Lessons Learned register
-  // (issues-lessons/module.js dragGripHTML) — each module keeps its own copy
-  // per MODULE_CONTRACT.md (no cross-module shared file for this), but the
-  // gesture is the same: Pointer Events, one handler for mouse, touch and pen,
-  // no HTML5 `draggable` (which never fires on a touch device at all).
+  // ⚠️ ROUND 3 — reused for the Minutes list's own drag-to-reorder
+  // (wireMinuteDrag, below) instead of the Meetings List, which no longer
+  // drags at all. Same visual grip as the Issues & Concerns / Lessons Learned
+  // register (issues-lessons/module.js dragGripHTML) — each module keeps its
+  // own copy per MODULE_CONTRACT.md (no cross-module shared file for this) —
+  // Pointer Events, one handler for mouse, touch and pen, no HTML5
+  // `draggable` (which never fires on a touch device at all).
   function momDragGripHTML(id) {
     return '<span class="il-draghandle il-reorderable" data-reorder="' + Fmt.esc(id) +
       '" title="Drag to reorder"><svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor">' +
       '<circle cx="3" cy="3" r="1.3"/><circle cx="9" cy="3" r="1.3"/><circle cx="3" cy="8" r="1.3"/>' +
       '<circle cx="9" cy="8" r="1.3"/><circle cx="3" cy="13" r="1.3"/><circle cx="9" cy="13" r="1.3"/></svg></span>';
   }
-  // `sorted` is the exact array `renderMomListHTML` drew the rows from
-  // (recomputed identically in wireBrowse — a cheap in-memory re-sort of
-  // already-loaded MOMS/SCHEDULES, not a re-fetch). Ids are the composite
-  // "kind:id" string dragGripHTML/data-reorder-row carry, since a meeting and
-  // a series can share the numbering space but never the identity.
-  function momWireReorder(container, sorted) {
-    if (!container) return;
-    var grips = container.querySelectorAll('[data-reorder]');
-    var rows = container.querySelectorAll('[data-reorder-row]');
-    function clearMarks() {
-      Array.prototype.forEach.call(rows, function (x) { x.classList.remove('il-drop-before', 'il-drop-after'); });
-    }
-    async function applyMomReorder(dragKey, targetKey, before) {
-      var arr = sorted.slice();
-      var fromIdx = -1, targetIdx = -1;
-      for (var i = 0; i < arr.length; i++) { if (arr[i].kind + ':' + arr[i].id === dragKey) { fromIdx = i; break; } }
-      if (fromIdx < 0) return;
-      var moved = arr.splice(fromIdx, 1)[0];
-      for (var j = 0; j < arr.length; j++) { if (arr[j].kind + ':' + arr[j].id === targetKey) { targetIdx = j; break; } }
-      if (targetIdx < 0) targetIdx = arr.length;
-      arr.splice(before ? targetIdx : targetIdx + 1, 0, moved);
-      var writes = [];
-      arr.forEach(function (r, i) {
-        var next = (i + 1) * 10;
-        if (r.sortOrder === next) return;
-        r.sortOrder = next;
-        // Keep MOMS/SCHEDULES (what momUnifiedRows() reads next render) in
-        // step, or the drop would look right for one frame and then snap back
-        // to the pre-drag order as soon as anything else triggers a repaint.
-        var src = r.kind === 'series'
-          ? SCHEDULES.find(function (s) { return String(s.id) === String(r.id); })
-          : MOMS.find(function (m) { return String(m.id) === String(r.id); });
-        if (src) src.sort_order = next;
-        var table = r.kind === 'series' ? 'mom_schedules' : 'meeting_minutes';
-        writes.push(sb().from(table).update({ sort_order: next }).eq('id', r.id));
-      });
-      try { await Promise.all(writes); } catch (e) { /* best-effort — a failed write just leaves that one row's order stale until the next reload */ }
-      renderBrowse();
-    }
-    Array.prototype.forEach.call(grips, function (el) {
-      el.onclick = function (e) { e.stopPropagation(); };
-      var dragId = null, pointerId = null;
-      el.onpointerdown = function (e) {
-        if (e.pointerType === 'mouse' && e.button !== 0) return;
-        dragId = el.dataset.reorder;
-        pointerId = e.pointerId;
-        try { el.setPointerCapture(pointerId); } catch (e2) { /* capture can be refused on some browsers; the drag still tracks via the move handler below */ }
-        el.classList.add('il-dragging');
-        e.preventDefault();
-      };
-      el.onpointermove = function (e) {
-        if (pointerId == null || e.pointerId !== pointerId) return;
-        var hit = document.elementFromPoint(e.clientX, e.clientY);
-        var row = hit && hit.closest ? hit.closest('[data-reorder-row]') : null;
-        clearMarks();
-        if (!row || row.dataset.reorderRow === dragId) return;
-        var rect = row.getBoundingClientRect();
-        var before = (e.clientY - rect.top) < rect.height / 2;
-        row.classList.toggle('il-drop-before', before);
-        row.classList.toggle('il-drop-after', !before);
-      };
-      function reset() {
-        try { el.releasePointerCapture(pointerId); } catch (e2) { /* already released, or never captured */ }
-        el.classList.remove('il-dragging');
-        clearMarks();
-        pointerId = null;
-        dragId = null;
-      }
-      el.onpointerup = function (e) {
-        if (pointerId == null || e.pointerId !== pointerId) return;
-        var marked = container.querySelector('.il-drop-before, .il-drop-after');
-        var before = marked ? marked.classList.contains('il-drop-before') : false;
-        var targetId = marked ? marked.dataset.reorderRow : null;
-        var from = dragId;
-        reset();
-        if (targetId && from && targetId !== from) applyMomReorder(from, targetId, before);
-      };
-      // ⚠️ pointercancel resets WITHOUT committing — see the identical note in
-      // issues-lessons/module.js's wireReorder; an interrupted gesture must
-      // never silently apply whatever was last hovered.
-      el.onpointercancel = function (e) {
-        if (pointerId == null || e.pointerId !== pointerId) return;
-        reset();
-      };
-    });
-  }
   function renderMomListHTML(rows) {
     if (!rows.length) {
       return '<div class="il-empty" style="padding:28px;">' +
-        ((MOMS.length || SCHEDULES.length) ? 'No meeting matches “' + Fmt.esc(_momQ) + '”.' : 'No minutes recorded on this project yet.') +
+        (MOMS.length ? 'No meeting matches “' + Fmt.esc(_momQ) + '”.' : 'No minutes recorded on this project yet.') +
       '</div>';
     }
-    var manual = _momSort.col === 'manual';
     var sorted = momSortedRows(rows);
-    // Manual order note mirrors the Issues & Concerns register's own "Sorted
-    // by X — drag-to-reorder is off..." convention the other way round: THIS
-    // list defaults to a column sort, so the note here explains how to get
-    // OUT of manual order once it's on (getting in is the ⋮⋮ header itself).
-    var note = manual
-      ? '<div class="il-mom-sortnote">Manual order — drag rows to rearrange. ' +
-        '<button type="button" id="il-mom-sortclear">Sort by date instead</button></div>'
-      : '';
-    return note + '<div class="pd-card" style="padding:0;overflow:auto;">' +
+    return '<div class="pd-card" style="padding:0;overflow:auto;">' +
       '<table class="pd-table il-mom-listtable"><thead><tr>' +
-        momListDragTh(manual) +
         '<th class="il-mom-favtd"></th>' +
         momListSortTh('Title', 'title') + momListSortTh('Date', 'date') +
+        // Round 3, item 1: a read-only fact about the row, not a control — no
+        // click handler, no sort, just a checkbox stating whether this
+        // meeting belongs to a recurring series.
+        '<th class="il-mom-rectd" title="Is this meeting part of a recurring series?">Recurring</th>' +
         momListSortTh('Attendees', 'attendees') + momListSortTh('Location', 'location') +
         momListSortTh('Minutes', 'open') +
       '</tr></thead><tbody>' +
       sorted.map(function (r) {
-        var rk = r.kind + ':' + r.id;
-        return '<tr class="il-mom-lrow" data-kind="' + r.kind + '" data-id="' + Fmt.esc(r.id) + '"' +
-          (manual ? ' data-reorder-row="' + Fmt.esc(rk) + '"' : '') + '>' +
-          '<td class="il-mom-dragcell">' + (manual ? momDragGripHTML(rk) : '') + '</td>' +
+        return '<tr class="il-mom-lrow" data-id="' + Fmt.esc(r.id) + '">' +
           '<td class="il-mom-favtd"><button type="button" class="il-mom-favbtn' + (r.favorite ? ' on' : '') +
-            '" data-fav="' + r.kind + ':' + Fmt.esc(r.id) + '" title="' +
+            '" data-fav="' + Fmt.esc(r.id) + '" title="' +
             (r.favorite ? 'Remove from favorites' : 'Add to favorites') + '">' + (r.favorite ? '★' : '☆') + '</button></td>' +
           '<td>' + Fmt.esc(r.title) +
-            (r.kind === 'series' ? ' <span class="il-mom-recur">Recurring</span>' : '') +
             (r.draft ? ' <span class="il-mom-draft">Draft</span>' : '') + '</td>' +
           '<td>' + Fmt.esc(r.dateLabel) + '</td>' +
+          '<td class="il-mom-rectd"><input type="checkbox" disabled' + (r.recurring ? ' checked' : '') +
+            ' aria-label="' + (r.recurring ? 'Recurring meeting' : 'One-time meeting') + '"></td>' +
           '<td>' + (r.attendees || '—') + '</td>' +
           '<td>' + Fmt.esc(r.location) + '</td>' +
           // Item 11 — "X of Y open", never a bare total. ⚠️ A meeting with no
@@ -2311,50 +2106,32 @@ window.MinutesOfMeeting = (function () {
     host.querySelectorAll('.il-mom-th[data-sort]').forEach(function (th) {
       th.onclick = function () {
         var col = th.dataset.sort;
-        // Item 1 (2026-09-11 round): the ⋮⋮ column is a toggle INTO manual
-        // order, not a column with an asc/desc direction of its own.
-        if (col === 'manual') { _momSort = { col: 'manual', dir: '' }; renderBrowse(); return; }
         if (_momSort.col === col) _momSort.dir = _momSort.dir === 'asc' ? 'desc' : 'asc';
         else { _momSort.col = col; _momSort.dir = (col === 'title' || col === 'type') ? 'asc' : 'desc'; }
         renderBrowse();
       };
     });
-    var momSortClear = host.querySelector('#il-mom-sortclear');
-    if (momSortClear) momSortClear.onclick = function () { _momSort = { col: 'date', dir: 'desc' }; renderBrowse(); };
-    if (_momView === 'list' && _momSort.col === 'manual') {
-      // Item 1: drag-to-reorder — scoped to the List view's own table, sorted
-      // identically to what renderMomListHTML just drew (see momWireReorder).
-      momWireReorder(host.querySelector('.il-mom-listtable'), momSortedRows(momUnifiedFilter(momUnifiedRows())));
-    }
-    // ⚠️ Dispatches by KIND — a series row (`kind === 'series'`) opens the
-    // series page (item 6), a plain meeting opens Detail (item 5). A favorite
-    // click inside the row stops propagation below, so it never also opens
-    // the row it sits in.
+    // ⚠️ ROUND 3 — every row is a real meeting now (momUnifiedRows), so this
+    // is always a plain momOpenMeeting; there is no separate series page to
+    // dispatch to any more. A favorite click inside the row stops
+    // propagation below, so it never also opens the row it sits in.
     host.querySelectorAll('.il-mom-lrow').forEach(function (tr) {
-      tr.onclick = function () {
-        if (tr.dataset.kind === 'series') momOpenSeries(tr.dataset.id);
-        else momOpenMeeting(tr.dataset.id);
-      };
+      tr.onclick = function () { momOpenMeeting(tr.dataset.id); };
     });
     host.querySelectorAll('[data-fav]').forEach(function (b) {
-      b.onclick = function (e) {
-        e.stopPropagation();
-        var i = b.dataset.fav.indexOf(':');
-        momToggleFavorite(b.dataset.fav.slice(0, i), b.dataset.fav.slice(i + 1));
-      };
+      b.onclick = function (e) { e.stopPropagation(); momToggleFavorite(b.dataset.fav); };
     });
     host.querySelectorAll('.il-mom-calchip[data-mom]').forEach(function (b) {
       b.onclick = function () { momOpenMeeting(b.dataset.mom); };
     });
-    // A PLANNED chip has no meeting to open yet — it opens the series page
-    // with the "+ Add a meeting" form already showing, pre-dated to the day
-    // that was clicked (overriding the form's own default of the schedule's
-    // NEXT expected date, which may not be this exact day if several
-    // occurrences are visible on one screen).
+    // ⚠️ ROUND 3 — a PLANNED chip has no meeting to open yet; it opens the
+    // "carry over to the next meeting" modal directly, pre-dated to the day
+    // that was clicked (overriding the modal's own +7-day-style guess, which
+    // may not be this exact day if several occurrences are visible on one
+    // screen). There is no series page for it to hand off to any more.
     host.querySelectorAll('.il-mom-calchip[data-plansched]').forEach(function (b) {
       b.onclick = function () {
-        _schedOccOpen = true; _schedOccDraft = { date: b.dataset.planiso };
-        momOpenSeries(b.dataset.plansched);
+        openNextMeetingModal({ schedId: b.dataset.plansched, presetDate: b.dataset.planiso });
       };
     });
     // ⚠️ ROUND 2 — ONE prev/next/today, shared by Month and Week (see
@@ -2385,27 +2162,23 @@ window.MinutesOfMeeting = (function () {
     });
   }
 
-  // ⚠️ Every schedule-CRUD/occurrence-creation control below (item #19/#22's
-  // "+ New schedule"/"+ Add a meeting"/rename/delete) now lives on the series
-  // page (renderSeriesPage/wireSeriesPage below), not in the browse view —
-  // a series is opened from the unified list like anything else (item 6),
-  // so it no longer needs its own always-visible panel in wireBrowse().
+  // ⚠️ ROUND 3 — no more series page to branch to: momUnifiedRows only ever
+  // emits meeting rows now, and every occurrence is a real Detail view.
   function reRenderMomHost() {
-    if (_momView === 'series') renderSeriesPage();
-    else if (_momView === 'detail') renderDetail();
+    if (_momView === 'detail') renderDetail();
     else renderBrowse();
   }
 
-  async function momToggleFavorite(kind, id) {
-    var table = kind === 'series' ? 'mom_schedules' : 'meeting_minutes';
-    var arr = kind === 'series' ? SCHEDULES : MOMS;
-    var row = arr.find(function (x) { return x.id === id; });
+  // ⚠️ ROUND 3 — meeting_minutes only. There is no second "kind" to branch
+  // on any more; every favoritable row is a real meeting.
+  async function momToggleFavorite(id) {
+    var row = MOMS.find(function (x) { return x.id === id; });
     if (!row) return;
     var next = !row.is_favorite;
     row.is_favorite = next;   // optimistic — the star flips before the round-trip lands
     reRenderMomHost();
     try {
-      var u = await sb().from(table).update({ is_favorite: next }).eq('id', id);
+      var u = await sb().from('meeting_minutes').update({ is_favorite: next }).eq('id', id);
       if (u.error) throw u.error;
     } catch (e) {
       row.is_favorite = !next;
@@ -2415,180 +2188,101 @@ window.MinutesOfMeeting = (function () {
     }
   }
 
-  function momOpenSeries(id) {
-    _momTab = 'meetings';
-    if (_momView !== 'series') _momBrowsePrev = _momView;
-    _seriesSel = id; _momView = 'series';
-    render();
-    if (histView) histView.push();
+  // ⚠️ ROUND 3 — "Meeting history" table on a recurring occurrence's own
+  // Detail view (momDetailHTML). This is now the ONLY way to reach an
+  // earlier occurrence of the same schedule — there is no separate series
+  // page any more, and the Meetings List shows only the latest one
+  // (momUnifiedRows). The current row is named and non-clickable; every
+  // other row opens like any other meeting.
+  function momHistorySectionHTML(mom) {
+    var all = schedMeetingsOf(mom.schedule_id);
+    return '<div class="il-mom-history"><h4>Meeting history</h4>' +
+      '<table class="pd-table"><thead><tr><th>Date</th><th>Venue</th><th>Attendees</th><th>Minutes</th></tr></thead><tbody>' +
+      all.map(function (m) {
+        var cur = m.id === mom.id;
+        return '<tr class="il-mom-histrow' + (cur ? ' is-current' : '') + '"' +
+            (cur ? '' : ' data-mom="' + Fmt.esc(m.id) + '"') + '>' +
+          '<td>' + Fmt.esc(m.meeting_date ? Fmt.date(m.meeting_date) : '—') +
+            (cur ? ' <span class="il-mom-histcur">(this meeting)</span>' : '') + '</td>' +
+          '<td>' + Fmt.esc(m.venue || '—') + '</td>' +
+          '<td>' + (plannedAttendeeCount(m) || '—') + '</td>' +
+          '<td>' + momItemsOf(m.id).length + '</td>' +
+        '</tr>';
+      }).join('') + '</tbody></table></div>';
   }
 
-  // ---- Series page (item 6): a recurring schedule's own details plus every
-  // meeting actually held under it. -------------------------------------
-  function renderSeriesPage() {
-    var host = $('il-mom-view'); if (!host) return;
-    var s = SCHEDULES.find(function (x) { return x.id === _seriesSel; });
-    if (!s) { _momView = _momBrowsePrev || 'list'; renderBrowse(); return; }
-    host.classList.remove('il-mom-report');
-    var past = schedMeetingsOf(s.id);
-    var next = schedNextOccurrence(s, momToday());
-    var mine = s.created_by === UID;
-    host.innerHTML =
-      '<button type="button" class="pd-btn pd-btn-sm il-mom-back" id="il-mom-back">← Back to meetings</button>' +
-      '<div class="pd-card il-mom-seriescard">' +
-        '<div class="il-mom-seriesheadrow">' +
-          '<div>' +
-            '<h2 class="il-mom-seriestitle">' + Fmt.esc(s.title || '(untitled)') +
-              ' <span class="il-mom-recur">Recurring</span></h2>' +
-            '<div class="il-mom-seriesmeta">' + Fmt.esc(schedFrequencyLabel(s)) +
-              ' · ' + Fmt.esc(s.meeting_group || 'Internal') +
-              (s.end_date ? ' · ends ' + Fmt.esc(Fmt.date(s.end_date)) : '') +
-              (next ? ' · next: ' + Fmt.esc(Fmt.date(next)) : ' · no further occurrences') +
-            '</div>' +
-          '</div>' +
-          '<div class="il-mom-seriesacts">' +
-            '<button type="button" class="pd-btn pd-btn-sm il-mom-favbtn' + (s.is_favorite ? ' on' : '') +
-              '" id="il-mom-favtoggle" data-fav="series:' + Fmt.esc(s.id) + '">' +
-              (s.is_favorite ? '★ Favorited' : '☆ Favorite') + '</button>' +
-            ((isSteward || mine) ? '<button type="button" class="pd-btn pd-btn-sm" id="il-sched-edit">Edit</button>' : '') +
-            ((isSteward || mine) ? '<button type="button" class="pd-btn pd-btn-sm pd-btn-danger" id="il-sched-del">Delete</button>' : '') +
-            (canAdd ? '<button type="button" class="pd-btn pd-btn-primary pd-btn-sm" id="il-sched-addocc">+ Add a meeting</button>' : '') +
-          '</div>' +
+  // ⚠️ ROUND 3 — "Carry over to next meeting", replacing the series page's
+  // "+ Add a meeting" as the only way to create the next occurrence.
+  // `opts.schedId` set = an existing recurring meeting's own button (or a
+  // Calendar planned-chip click, with `opts.presetDate` naming the exact day
+  // clicked); `opts.seedMom` set with no `schedId` = a PLAIN meeting's own
+  // button — creating the next meeting here PROMOTES it into a brand-new
+  // series, per the owner's own rule: "if current meeting is non-recurring,
+  // hitting the carry over button will make the meeting a recurring one."
+  function openNextMeetingModal(opts) {
+    opts = opts || {};
+    var sch = opts.schedId ? SCHEDULES.find(function (x) { return x.id === opts.schedId; }) : null;
+    var seed = sch ? schedMeetingsOf(sch.id)[0] : opts.seedMom;
+    var isRecur = !!sch;
+    var defTitle = (sch && sch.title) || (seed && seed.title) || '';
+    var next = sch ? schedNextOccurrence(sch, momToday()) : null;
+    var defDate = opts.presetDate || next || (seed ? plusDaysISO(seed.meeting_date, 7) : momToday());
+    var defVenue = (seed && seed.venue) || '';
+    var defLink = (seed && seed.meeting_link) || '';
+    var reqIds = (seed && seed.attendees_required && seed.attendees_required.ids) || [];
+    var reqText = (seed && seed.attendees_required && seed.attendees_required.text) || '';
+    var optIds = (seed && seed.attendees_optional && seed.attendees_optional.ids) || [];
+    var optText = (seed && seed.attendees_optional && seed.attendees_optional.text) || '';
+    // ⚠️ The frequency's default weekday comes from the SEED meeting's own
+    // date, not a bare Monday — a meeting that has always fallen on a
+    // Wednesday should not be promoted into a Monday series.
+    var seedWeekday = (seed && seed.meeting_date) ? utcDow(new Date(seed.meeting_date + 'T00:00:00Z')) : 0;
+
+    var m = UI.modal(
+      '<div class="pd-modal-header"><h3>Carry over to next meeting</h3>' +
+        '<button class="pd-modal-close" data-close>&times;</button></div>' +
+      '<div class="pd-modal-body">' +
+        (isRecur
+          ? '<p class="il-mom-note">Creates the next occurrence of <b>' + Fmt.esc(defTitle || '(untitled)') +
+            '</b>, and carries forward whatever is still open from the last one.</p>'
+          : '<p class="il-mom-note">Creates the next meeting and carries forward whatever is still open ' +
+            'from this one. <b>This also makes it a recurring meeting</b> — pick how often it repeats.</p>') +
+        '<div class="il-form-row">' +
+          '<div class="pd-field" style="flex:2 1 200px;"><label>Title</label>' +
+            '<input class="pd-input" id="il-nx-title" value="' + Fmt.esc(defTitle) + '"></div>' +
+          '<div class="pd-field" style="flex:1 1 150px;"><label>Date</label>' +
+            '<input class="pd-input" type="date" id="il-nx-date" value="' + dateVal(defDate) + '"></div>' +
         '</div>' +
-        (_schedFormOpen ? scheduleFormHTML(_schedFormDraft) : '') +
-        (_schedOccOpen ? scheduleOccFormHTML(s) : '') +
+        (isRecur ? '' :
+          '<div class="il-form-row">' +
+            '<div class="pd-field" style="flex:1 1 220px;"><label>Repeats</label>' +
+              '<select class="pd-select" id="il-nx-freq">' +
+                FREQUENCIES.map(function (f) { return '<option value="' + f.key + '">' + f.label + '</option>'; }).join('') +
+              '</select></div>' +
+          '</div>' +
+          '<div class="il-form-row" id="il-nx-rulewrap">' +
+            scheduleRuleFieldsHTML({ frequency: FREQUENCIES[0].key, weekday: seedWeekday }) +
+          '</div>') +
+        '<div class="il-form-row">' +
+          '<div class="pd-field" style="flex:1 1 200px;"><label>Venue</label><input class="pd-input" id="il-nx-venue" value="' + Fmt.esc(defVenue) + '"></div>' +
+          '<div class="pd-field" style="flex:1 1 200px;"><label>Meeting link</label><input class="pd-input" id="il-nx-link" value="' + Fmt.esc(defLink) + '" placeholder="https://…"></div>' +
+        '</div>' +
+        '<div class="pd-field"><label>Required attendees</label>' + peoplePickerHTML('nx-req', reqIds, reqText, false) + '</div>' +
+        '<div class="pd-field"><label>Optional attendees</label>' + peoplePickerHTML('nx-opt', optIds, optText, false) + '</div>' +
       '</div>' +
-      '<div class="pd-card il-mom-seriespast">' +
-        '<h3>Meetings held (' + past.length + ')</h3>' +
-        (past.length
-          ? '<table class="pd-table"><thead><tr><th>Date</th><th>Status</th><th>Attendees</th></tr></thead><tbody>' +
-            past.map(function (m) {
-              return '<tr class="il-mom-schedpasti" data-mom="' + Fmt.esc(m.id) + '">' +
-                '<td>' + Fmt.esc(m.meeting_date ? Fmt.date(m.meeting_date) : '—') + '</td>' +
-                '<td>' + (m.is_distributed ? 'Distributed' : '<span class="il-mom-draft">Draft</span>') + '</td>' +
-                '<td>' + (plannedAttendeeCount(m) || '—') + '</td>' +
-              '</tr>';
-            }).join('') + '</tbody></table>'
-          : '<div class="il-empty" style="padding:18px;">No meetings recorded on this schedule yet — ' +
-            '"+ Add a meeting" opens the first one, its details copied from nothing since none exist yet.</div>') +
-      '</div>';
-    wireSeriesPage();
-    if (window.Icons && Icons.hydrate) Icons.hydrate(host);
-  }
-
-  function wireSeriesPage() {
-    var host = $('il-mom-view'); if (!host) return;
-    var back = host.querySelector('#il-mom-back');
-    if (back) back.onclick = function () {
-      _momView = _momBrowsePrev || 'list'; _seriesSel = null;
-      _schedFormOpen = false; _schedFormDraft = null; _schedOccOpen = false; _schedOccDraft = null;
-      render();
-      if (histView) histView.push();
-    };
-    host.querySelectorAll('[data-fav]').forEach(function (b) {
-      b.onclick = function (e) {
-        e.stopPropagation();
-        var i = b.dataset.fav.indexOf(':');
-        momToggleFavorite(b.dataset.fav.slice(0, i), b.dataset.fav.slice(i + 1));
-      };
-    });
-    var sedit = host.querySelector('#il-sched-edit');
-    if (sedit) sedit.onclick = function () {
-      _schedFormDraft = SCHEDULES.find(function (x) { return x.id === _seriesSel; });
-      _schedFormOpen = true; renderSeriesPage();
-    };
-    var sdel = host.querySelector('#il-sched-del');
-    if (sdel) sdel.onclick = function () { scheduleDelete(_seriesSel); };
-    var sc = host.querySelector('#il-sf-cancel');
-    if (sc) sc.onclick = function () { _schedFormOpen = false; _schedFormDraft = null; renderSeriesPage(); };
-    var freqSel = host.querySelector('#il-sf-freq');
+      '<div class="pd-modal-footer">' +
+        '<button class="pd-btn" data-close>Cancel</button>' +
+        '<button class="pd-btn pd-btn-primary" id="il-nx-create">Create meeting</button>' +
+      '</div>');
+    wireModalChrome(m, 640);
+    wirePeople(m.el, null);
+    var freqSel = m.el.querySelector('#il-nx-freq');
     if (freqSel) freqSel.onchange = function () {
-      var wrap = host.querySelector('#il-sf-rulewrap');
-      if (wrap) wrap.innerHTML = scheduleRuleFieldsHTML({ frequency: freqSel.value });
+      var wrap = m.el.querySelector('#il-nx-rulewrap');
+      if (wrap) wrap.innerHTML = scheduleRuleFieldsHTML({ frequency: freqSel.value, weekday: seedWeekday });
     };
-    var sv = host.querySelector('#il-sf-save');
-    if (sv) sv.onclick = scheduleFormSave;
-    var saddocc = host.querySelector('#il-sched-addocc');
-    if (saddocc) saddocc.onclick = function () { _schedOccOpen = true; _schedOccDraft = null; renderSeriesPage(); };
-    var socancel = host.querySelector('#il-of-cancel');
-    if (socancel) socancel.onclick = function () { _schedOccOpen = false; _schedOccDraft = null; renderSeriesPage(); };
-    var socreate = host.querySelector('#il-of-create');
-    if (socreate) socreate.onclick = function () { scheduleCreateOccurrence(_seriesSel); };
-    wirePeople(host, null);   // the occurrence form's Required/Optional pickers
-    host.querySelectorAll('.il-mom-schedpasti').forEach(function (tr) {
-      tr.onclick = function () { momOpenMeeting(tr.dataset.mom); };
-    });
-  }
-
-  async function scheduleFormSave() {
-    var host = $('il-mom-view'); if (!host) return;
-    var g = function (id) { var e = host.querySelector('#' + id); return e ? e.value : ''; };
-    var payload = {
-      project_id: pid,
-      title: g('il-sf-title').trim() || '(untitled schedule)',
-      meeting_group: g('il-sf-group') || 'Internal',
-      frequency: g('il-sf-freq') || 'monthly_date',
-      start_date: g('il-sf-start') || momToday(),
-      weekday: null, week_ordinal: null, day_of_month: null, interval_n: 1,
-    };
-    if (payload.frequency === 'weekly') {
-      payload.weekday = +g('il-sf-weekday') || 0;
-      payload.interval_n = Math.max(1, +g('il-sf-interval') || 1);
-    } else if (payload.frequency === 'monthly_weekday') {
-      payload.weekday = +g('il-sf-weekday') || 0;
-      payload.week_ordinal = +g('il-sf-ordinal') || 1;
-    } else {
-      payload.day_of_month = Math.max(1, Math.min(31, +g('il-sf-dom') || 1));
-    }
-    var editing = _schedFormDraft && _schedFormDraft.id;
-    try {
-      if (editing) {
-        var u = await sb().from('mom_schedules').update(payload).eq('id', editing);
-        if (u.error) throw u.error;
-        var s = SCHEDULES.find(function (x) { return x.id === editing; });
-        if (s) Object.assign(s, payload);
-        UI.toast('Schedule saved', 'ok');
-      } else {
-        payload.created_by = UID;
-        var ins = await sb().from('mom_schedules').insert(payload).select().single();
-        if (ins.error) throw ins.error;
-        SCHEDULES.push(ins.data);
-        SCHEDULES.sort(function (a, b) { return (a.title || '').localeCompare(b.title || ''); });
-        _seriesSel = ins.data.id;
-        UI.toast('Schedule created', 'ok');
-      }
-      _schedFormOpen = false; _schedFormDraft = null;
-      reRenderMomHost();
-    } catch (e) {
-      UI.toast(/relation|does not exist|schema cache/i.test(e.message || '')
-        ? 'Run migrations/2026-09-01-mom-schedules-attendees-item-history.sql in Supabase first.' : e.message, 'error');
-    }
-  }
-
-  async function scheduleDelete(id) {
-    var s = SCHEDULES.find(function (x) { return x.id === id; });
-    if (!s) return;
-    var n = schedMeetingsOf(id).length;
-    if (!confirm('Delete the schedule "' + (s.title || '') + '"?' +
-      (n ? '\n\n' + n + ' recorded meeting(s) STAY — they simply stop pointing back at a recurring schedule.' : ''))) return;
-    try {
-      // ⚠️ `.select('id')` and a row-count check. These module tables carry an
-      // owner-or-admin DELETE policy (`is_writer() and (created_by = auth.uid()
-      // or is_admin())`), so a refusal matches ZERO rows and PostgREST reports a
-      // clean success with NO error -- the old code then filtered the schedule
-      // out of the local array and toasted "Schedule deleted" over a row that is
-      // still there and returns on the next load. Same defect, same fix, as the
-      // progress-photos deletes (2026-09-04).
-      var dl = await sb().from('mom_schedules').delete().eq('id', id).select('id');
-      if (dl.error) throw dl.error;
-      if (!dl.data || !dl.data.length) {
-        throw new Error('The database refused it. A schedule can only be deleted by whoever created it, or by an admin.');
-      }
-      SCHEDULES = SCHEDULES.filter(function (x) { return x.id !== id; });
-      if (_seriesSel === id) { _seriesSel = null; _momView = _momBrowsePrev || 'list'; }
-      UI.toast('Schedule deleted', 'ok');
-      reRenderMomHost();
-    } catch (e) { UI.toast(e.message, 'error'); }
+    var create = m.el.querySelector('#il-nx-create');
+    if (create) create.onclick = function () { createNextOccurrence(m, opts.schedId, seed, sch); };
   }
 
   // ⚠️ Creates the meeting FIRST, then opens it in Detail before touching the
@@ -2597,50 +2291,82 @@ window.MinutesOfMeeting = (function () {
   // does not exist until momOpenMeeting() has rendered it. Getting this order
   // backwards would resave the row with a blank "(untitled)" title (g() on a
   // missing element returns '', not the row's real value).
-  async function scheduleCreateOccurrence(schedId) {
-    var s = SCHEDULES.find(function (x) { return x.id === schedId; });
-    if (!s) return;
-    var host = $('il-mom-view');
-    var dateEl = host.querySelector('#il-of-date'), venueEl = host.querySelector('#il-of-venue'),
-        linkEl = host.querySelector('#il-of-link');
-    var dateV = dateEl ? dateEl.value : '';
-    if (!dateV) { UI.toast('Pick a date for this meeting.', 'warn'); return; }
-    var reqRoot = host.querySelector('[data-people="occ-req"]'), optRoot = host.querySelector('[data-people="occ-opt"]');
+  async function createNextOccurrence(m, schedId, seed, sch) {
+    var root = m.el;
+    var g = function (id) { var e = root.querySelector('#' + id); return e ? e.value : ''; };
+    var title = g('il-nx-title').trim() || '(untitled)';
+    var dateV = g('il-nx-date');
+    if (!dateV) { UI.toast('Pick a date for the next meeting.', 'warn'); return; }
+    var venue = g('il-nx-venue').trim(), link = g('il-nx-link').trim();
+    var reqRoot = root.querySelector('[data-people="nx-req"]'), optRoot = root.querySelector('[data-people="nx-opt"]');
     var reqIds = reqRoot ? idsOf(reqRoot) : [], reqText = reqRoot ? textOf(reqRoot) : '';
     var optIds = optRoot ? idsOf(optRoot) : [], optText = optRoot ? textOf(optRoot) : '';
-    var last = schedMeetingsOf(schedId)[0];
+    var btn = root.querySelector('#il-nx-create');
+    if (btn) btn.disabled = true;
     try {
+      var schedIdToUse = schedId;
+      if (!schedIdToUse) {
+        // Promote: a brand-new schedule, anchored on the SEED meeting's own
+        // date — so the series reads as starting from the meeting that was
+        // just carried forward, not from today.
+        var freq = g('il-nx-freq') || FREQUENCIES[0].key;
+        var payload = {
+          project_id: pid, title: title,
+          meeting_group: (seed && seed.meeting_group) || 'Internal',
+          frequency: freq, start_date: (seed && seed.meeting_date) || momToday(),
+          weekday: null, week_ordinal: null, day_of_month: null, interval_n: 1,
+          created_by: UID,
+        };
+        if (freq === 'weekly') {
+          payload.weekday = +g('il-sf-weekday') || 0;
+          payload.interval_n = Math.max(1, +g('il-sf-interval') || 1);
+        } else if (freq === 'monthly_weekday') {
+          payload.weekday = +g('il-sf-weekday') || 0;
+          payload.week_ordinal = +g('il-sf-ordinal') || 1;
+        } else {
+          payload.day_of_month = Math.max(1, Math.min(31, +g('il-sf-dom') || 1));
+        }
+        var schIns = await sb().from('mom_schedules').insert(payload).select().single();
+        if (schIns.error) throw schIns.error;
+        SCHEDULES.push(schIns.data);
+        SCHEDULES.sort(function (a, b) { return (a.title || '').localeCompare(b.title || ''); });
+        schedIdToUse = schIns.data.id;
+        // ⚠️ Retroactively links the ORIGINAL (seed) meeting into the new
+        // series — the "makes the meeting a recurring one" half of the rule.
+        // Never reached when `schedId` was already set (an existing series'
+        // own next-occurrence), which is why this whole branch is
+        // schedId-absent-only.
+        if (seed) {
+          var upd = await sb().from('meeting_minutes').update({ schedule_id: schedIdToUse }).eq('id', seed.id).select('id');
+          if (upd.error) throw upd.error;
+          if (upd.data && upd.data.length) seed.schedule_id = schedIdToUse;
+        }
+      }
       var ins = await sb().from('meeting_minutes').insert({
-        project_id: pid, schedule_id: schedId, title: s.title,
-        meeting_date: dateV, meeting_group: s.meeting_group || 'Internal',
-        venue: venueEl ? (venueEl.value.trim() || null) : null,
-        meeting_link: linkEl ? (linkEl.value.trim() || null) : null,
+        project_id: pid, schedule_id: schedIdToUse, title: title,
+        meeting_date: dateV, meeting_group: (sch && sch.meeting_group) || (seed && seed.meeting_group) || 'Internal',
+        venue: venue || null, meeting_link: link || null,
         attendees_required: { ids: reqIds, text: reqText },
         attendees_optional: { ids: optIds, text: optText },
         created_by: UID,
       }).select().single();
       if (ins.error) throw ins.error;
       MOMS.unshift(ins.data);
-      // ⚠️ `_seriesSel` stays SET (not nulled) — momOpenMeeting captures the
-      // current `_momView` ('series', since we're calling this from the
-      // series page) as `_momBrowsePrev`, so "← Back to meetings" from the
-      // occurrence just created returns to ITS series page, not wherever
-      // List/Calendar happened to be sitting before the series was opened.
-      _schedOccOpen = false; _schedOccDraft = null;
+      m.close();
       momOpenMeeting(ins.data.id);   // renders Detail NOW — see the note above
-      // ⚠️ ITEM #19 — "starts always from previous meeting minutes." Seeded
-      // quietly with the register's own still-open issues (the same rule
-      // "+ New minutes" already follows), THEN the immediately-preceding
-      // occurrence of this schedule carries forward whatever is still open
-      // on it — one deliberate reuse of the existing carry-over rules
-      // (idempotent, register-decides-openness) rather than a second,
-      // competing definition of "copy the previous minutes".
+      // ⚠️ Seeded quietly with the register's own still-open issues (the same
+      // rule "+ New minutes" already follows), THEN the seed meeting carries
+      // forward whatever is still open on it — one deliberate reuse of the
+      // existing carry-over rules (idempotent, register-decides-openness)
+      // rather than a second, competing definition of "copy the previous
+      // minutes".
       try { await momPullIssues(ins.data.id, { quiet: true }); } catch (e) {}
-      if (last) { try { await momCarryOver(last.id); } catch (e) {} }
+      if (seed) { try { await momCarryOver(seed.id); } catch (e) {} }
       renderDetail();
     } catch (e) {
+      if (btn) btn.disabled = false;
       UI.toast(/relation|does not exist|schema cache|column/i.test(e.message || '')
-        ? 'Run migrations/2026-09-01-mom-schedules-attendees-item-history.sql in Supabase first.' : e.message, 'error');
+        ? 'Run migrations/2026-09-01-mom-schedules-attendees-item-history.sql in Supabase first.' : (e.message || e), 'error');
     }
   }
 
@@ -3131,6 +2857,14 @@ window.MinutesOfMeeting = (function () {
         ]) +
         '<button class="pd-btn pd-btn-sm il-mom-iconbtn" id="il-mom-email" title="Email these minutes" ' +
           'aria-label="Email these minutes"><span data-ico="mail" data-ico-size="16"></span></button>' +
+        // ⚠️ ROUND 3 — one button for BOTH recurring and non-recurring
+        // meetings ("there should be separate button beside the distribute/
+        // email/etc buttons to carry over to next meeting"). Gated on
+        // `mayEdit`, same as every other write control on this card — reading
+        // a meeting is not the same act as scheduling its successor.
+        (mayEdit ? '<button class="pd-btn pd-btn-sm il-mom-iconbtn" id="il-mom-carrynext" ' +
+          'title="Carry over to next meeting" aria-label="Carry over to next meeting">' +
+          '<span data-ico="redo" data-ico-size="16"></span></button>' : '') +
         // ⚠️ Gated on canDistribute(), NOT the broadened `mayEdit` — an attendee can
         // edit everything else on a draft, but distributing (or reverting) it is a
         // deliberate workflow act that stays with whoever wrote it or a planner. The
@@ -3352,6 +3086,10 @@ window.MinutesOfMeeting = (function () {
               'minutes, so only a planner can delete them.</span>') +
           '<div style="flex:1;"></div>' +
           '<button class="pd-btn pd-btn-primary pd-btn-sm" id="il-mom-save">Save minutes</button></div>') +
+      // ⚠️ ROUND 3 — "after all the meeting details ie after minutes, display
+      // list meeting history table" — only for a recurring occurrence
+      // (isRecurOcc). A plain meeting has no series to list a history of.
+      (isRecurOcc ? momHistorySectionHTML(mom) : '') +
     '</div>';
   }
 
@@ -3839,9 +3577,10 @@ window.MinutesOfMeeting = (function () {
     // the seq math ambiguous for whatever is hidden), and never in the
     // reporting/slide view, which is for reading, not rearranging.
     var canDrag = !ro && !momFilterOn() && !_momReport;
-    return '<div class="il-mi-card"' + (canDrag ? ' draggable="true"' : '') +
+    return '<div class="il-mi-card' + (canDrag ? ' has-drag' : '') + '"' +
+      (canDrag ? ' data-reorder-row="' + Fmt.esc(it.id) + '"' : '') +
       ' data-item="' + Fmt.esc(it.id) + '">' +
-      (canDrag ? '<span class="il-mi-draghandle" title="Drag to reorder" aria-hidden="true">⠿</span>' : '') +
+      (canDrag ? momDragGripHTML(it.id) : '') +
       // ---- the six-cell meta grid, in mom-app's own order --------------------
       '<div class="il-mi-meta">' +
       // ⚠️ 2026-09-11: No. is NOT an editable field any more — it is the minute's
@@ -5036,7 +4775,7 @@ window.MinutesOfMeeting = (function () {
     var body = rows.length
       ? rows.map(function (r) {
           return '<tr><td>' + (r.favorite ? '★' : '') + '</td><td>' + Fmt.esc(r.title) +
-            (r.kind === 'series' ? ' (Recurring)' : '') + '</td><td>' + Fmt.esc(r.dateLabel) + '</td>' +
+            (r.recurring ? ' (Recurring)' : '') + '</td><td>' + Fmt.esc(r.dateLabel) + '</td>' +
             '<td>' + (r.attendees || '') + '</td><td>' + Fmt.esc(r.location) + '</td></tr>';
         }).join('')
       : '<tr><td colspan="5">No meetings recorded.</td></tr>';
@@ -5054,7 +4793,7 @@ window.MinutesOfMeeting = (function () {
     var rows = momExportListRows();
     var head = ['Favorite', 'Title', 'Date / Frequency', 'Attendees', 'Location'];
     var body = rows.map(function (r) {
-      return [r.favorite ? 'Yes' : '', r.title + (r.kind === 'series' ? ' (Recurring)' : ''), r.dateLabel, r.attendees || '', r.location];
+      return [r.favorite ? 'Yes' : '', r.title + (r.recurring ? ' (Recurring)' : ''), r.dateLabel, r.attendees || '', r.location];
     });
     var ws = XLSX.utils.aoa_to_sheet([head].concat(body));
     var wb = XLSX.utils.book_new();
@@ -5422,13 +5161,13 @@ window.MinutesOfMeeting = (function () {
         margin: { left: c.L, right: c.R, top: c.top },
         head: [['', 'Title', 'Date / Frequency', 'Attendees', 'Location', 'Minutes']],
         // ⚠️ Field names taken from momUnifiedRows()'s own row shape, not guessed:
-        //    kind / title / dateLabel / attendees / location / open / total / favorite.
+        //    recurring / title / dateLabel / attendees / location / open / total / favorite.
         //    `open`/`total` are counts, and a meeting with no minutes reads —, never
         //    "0 of 0 open", which is the rule the list view itself follows.
         body: rows.map(function (r) {
           return [
             r.favorite ? '*' : '',
-            (r.title || '—') + (r.kind === 'series' ? '  (Recurring)' : ''),
+            (r.title || '—') + (r.recurring ? '  (Recurring)' : ''),
             r.dateLabel || '—',
             String(r.attendees == null ? '—' : r.attendees),
             r.location || '—',
@@ -5578,67 +5317,108 @@ window.MinutesOfMeeting = (function () {
     document.addEventListener('keydown', _momSlideKeys);
   }
 
-  // ⚠️ ROUND 2, INDIVIDUAL VIEW ITEM 3 — manual drag-to-reorder over the
-  // minute cards, replacing the removed automatic "sort by" control.
-  // HTML5 drag events, no library — the same class of interaction the WBS
-  // Manager / Drawing Register already use elsewhere in this app.
-  var _momDragCard = null;
+  // ⚠️ ROUND 2, ITEM 3 / ROUND 3 (owner: "for minutes list, allow drag to
+  // reorder") — manual drag-to-reorder over the minute cards, converted from
+  // HTML5 native drag events (which never fire on a touch device at all) to
+  // Pointer Events. Same mechanism, same momDragGripHTML/`.il-draghandle
+  // .il-reorderable`/`data-reorder`/`data-reorder-row` convention as the
+  // Issues & Concerns / Lessons Learned register's own drag
+  // (issues-lessons/module.js wireReorder/applyReorder) — each module keeps
+  // its own copy per MODULE_CONTRACT.md (no cross-module shared file for
+  // this), and this one writes `mom_items.seq` rather than a `sort_order`
+  // column, since that is what this table already orders by.
   function wireMinuteDrag(host, momId) {
     var wrap = host.querySelector('.il-mi-cards');
     if (!wrap) return;
-    function clearDropMarks() {
-      wrap.querySelectorAll('.il-mi-card').forEach(function (c) { c.classList.remove('drop-before', 'drop-after'); });
+    var grips = wrap.querySelectorAll('[data-reorder]');
+    var rows = wrap.querySelectorAll('[data-reorder-row]');
+    function clearMarks() {
+      Array.prototype.forEach.call(rows, function (x) { x.classList.remove('il-drop-before', 'il-drop-after'); });
     }
-    wrap.querySelectorAll('.il-mi-card[draggable="true"]').forEach(function (card) {
-      card.ondragstart = function (e) {
-        _momDragCard = card;
-        card.classList.add('is-dragging');
-        if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', card.dataset.item); } catch (e2) {} }
-      };
-      card.ondragend = function () { card.classList.remove('is-dragging'); clearDropMarks(); _momDragCard = null; };
-      card.ondragover = function (e) {
-        if (!_momDragCard || _momDragCard === card) return;
+    Array.prototype.forEach.call(grips, function (el) {
+      // The handle itself must never also trigger a card's own click handling.
+      el.onclick = function (e) { e.stopPropagation(); };
+      var dragId = null, pointerId = null;
+      el.onpointerdown = function (e) {
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
+        dragId = el.dataset.reorder;
+        pointerId = e.pointerId;
+        // Pointer capture keeps every subsequent move/up event routed to THIS
+        // element even once the finger/cursor has moved elsewhere — without
+        // it, a finger sliding off the tiny grip would silently end the drag.
+        try { el.setPointerCapture(pointerId); } catch (e2) { /* capture can be refused on some browsers; the drag still tracks via the move handler below */ }
+        el.classList.add('il-dragging');
         e.preventDefault();
-        var r = card.getBoundingClientRect();
-        var before = (e.clientY - r.top) < r.height / 2;
-        clearDropMarks();
-        card.classList.add(before ? 'drop-before' : 'drop-after');
       };
-      card.ondrop = function (e) {
-        e.preventDefault();
-        if (!_momDragCard || _momDragCard === card) return;
-        var r = card.getBoundingClientRect();
-        var before = (e.clientY - r.top) < r.height / 2;
-        wrap.insertBefore(_momDragCard, before ? card : card.nextSibling);
-        clearDropMarks();
-        persistMinuteOrder(momId, wrap);
+      el.onpointermove = function (e) {
+        if (pointerId == null || e.pointerId !== pointerId) return;
+        var hit = document.elementFromPoint(e.clientX, e.clientY);
+        var row = hit && hit.closest ? hit.closest('[data-reorder-row]') : null;
+        clearMarks();
+        if (!row || row.dataset.reorderRow === dragId) return;
+        var rect = row.getBoundingClientRect();
+        var before = (e.clientY - rect.top) < rect.height / 2;
+        row.classList.toggle('il-drop-before', before);
+        row.classList.toggle('il-drop-after', !before);
+      };
+      // ⚠️ pointerup and pointercancel must not share one handler that always
+      // commits — a cancel (the OS taking the gesture for something else) is
+      // exactly when a row is likely still marked from the last move, and has
+      // to abort with no write.
+      function reset() {
+        try { el.releasePointerCapture(pointerId); } catch (e2) { /* already released, or never captured */ }
+        el.classList.remove('il-dragging');
+        clearMarks();
+        pointerId = null; dragId = null;
+      }
+      el.onpointerup = function (e) {
+        if (pointerId == null || e.pointerId !== pointerId) return;
+        var marked = wrap.querySelector('.il-drop-before, .il-drop-after');
+        var before = marked ? marked.classList.contains('il-drop-before') : false;
+        var targetId = marked ? marked.dataset.reorderRow : null;
+        var from = dragId;
+        reset();
+        if (targetId && from && targetId !== from) applyMinuteReorder(momId, from, targetId, before);
+      };
+      el.onpointercancel = function (e) {
+        if (pointerId == null || e.pointerId !== pointerId) return;
+        reset();
       };
     });
   }
   // ⚠️ Only the CARDS ACTUALLY ON SCREEN are renumbered — drag is offered
   // only while nothing is filtering the meeting's minutes (canDrag in
-  // momItemRowHTML), so this is always every minute the meeting has, never a
-  // filtered subset whose seq math would otherwise leave the hidden rows
-  // ambiguous. `MOM_ITEMS` is updated in place so the very next render (and
-  // anything else reading it — the dashboard, the PDF) agrees with the drop.
-  async function persistMinuteOrder(momId, wrap) {
-    var ids = Array.prototype.map.call(wrap.querySelectorAll('.il-mi-card'), function (c) { return c.dataset.item; });
+  // momItemRowHTML), so `momVisibleItems(momId)` here is always every minute
+  // the meeting has, never a filtered subset whose seq math would otherwise
+  // leave the hidden rows ambiguous. `MOM_ITEMS` is updated in place so the
+  // very next render (and anything else reading it — the dashboard, the PDF)
+  // agrees with the drop.
+  async function applyMinuteReorder(momId, dragId, targetId, before) {
+    var list = momVisibleItems(momId);
+    var from = -1;
+    for (var i = 0; i < list.length; i++) { if (String(list[i].id) === String(dragId)) { from = i; break; } }
+    if (from < 0) return;
+    var arr = list.slice();
+    var moved = arr.splice(from, 1)[0];
+    var targetIdx = -1;
+    for (var j = 0; j < arr.length; j++) { if (String(arr[j].id) === String(targetId)) { targetIdx = j; break; } }
+    if (targetIdx < 0) targetIdx = arr.length;
+    arr.splice(before ? targetIdx : targetIdx + 1, 0, moved);
     var changed = [];
-    ids.forEach(function (id, idx) {
-      var it = MOM_ITEMS.find(function (x) { return x.id === id && x.mom_id === momId; });
-      if (it && it.seq !== idx) { it.seq = idx; changed.push({ id: id, seq: idx }); }
-    });
-    if (!changed.length) return;
-    MOM_ITEMS.sort(function (a, b) {
-      return (a.seq || 0) - (b.seq || 0) || String(a.created_at || '').localeCompare(String(b.created_at || ''));
-    });
-    // ⚠️ Sequential, not Promise.all — same rule "Get from issue" already
-    // follows for numbering writes: overlapping requests racing onto the
-    // same sequence is worse than the small delay of writing in order.
-    for (var i = 0; i < changed.length; i++) {
-      try { await sb().from('mom_items').update({ seq: changed[i].seq }).eq('id', changed[i].id); }
-      catch (e) { /* best-effort — the on-screen order already reflects the drop */ }
+    arr.forEach(function (it, idx) { if (it.seq !== idx) { it.seq = idx; changed.push({ id: it.id, seq: idx }); } });
+    if (changed.length) {
+      MOM_ITEMS.sort(function (a, b) {
+        return (a.seq || 0) - (b.seq || 0) || String(a.created_at || '').localeCompare(String(b.created_at || ''));
+      });
+      // ⚠️ Sequential, not Promise.all — same rule "Get from issue" already
+      // follows for numbering writes: overlapping requests racing onto the
+      // same sequence is worse than the small delay of writing in order.
+      for (var k = 0; k < changed.length; k++) {
+        try { await sb().from('mom_items').update({ seq: changed[k].seq }).eq('id', changed[k].id); }
+        catch (e) { /* best-effort — the on-screen order already reflects the drop */ }
+      }
     }
+    renderDetail();
   }
 
   // ⚠️ DETAIL wiring only — the meeting picker and "+ New minutes" moved to the
@@ -5719,11 +5499,11 @@ window.MinutesOfMeeting = (function () {
     });
 
     var favt = host.querySelector('#il-mom-favtoggle');
-    if (favt) favt.onclick = function () { momToggleFavorite('meeting', _momSel); };
+    if (favt) favt.onclick = function () { momToggleFavorite(_momSel); };
     // ITEM 5 (round 2) — the sticky header's own copy of the same star, shown
     // only on a recurring occurrence (see isRecurOcc in momDetailHTML).
     var favtS = host.querySelector('#il-mom-favtoggle-sticky');
-    if (favtS) favtS.onclick = function () { momToggleFavorite('meeting', _momSel); };
+    if (favtS) favtS.onclick = function () { momToggleFavorite(_momSel); };
 
     var dist = host.querySelector('#il-mom-dist');
     if (dist) dist.onclick = function () {
@@ -5737,6 +5517,24 @@ window.MinutesOfMeeting = (function () {
     // ITEM 3 — one button, the source meetings live inside the modal.
     var cgo = host.querySelector('#il-mom-carrygo');
     if (cgo) cgo.onclick = function () { openCarryOverModal(_momSel); };
+
+    // ⚠️ ROUND 3 — "Carry over to next meeting." A recurring occurrence
+    // (schedule_id set) opens the modal against its OWN schedule; a plain
+    // meeting has no schedule yet, so it passes itself as the seed instead —
+    // openNextMeetingModal treats the absence of a schedId as "promote this
+    // meeting into a new series" (createNextOccurrence).
+    var carryNext = host.querySelector('#il-mom-carrynext');
+    if (carryNext) carryNext.onclick = function () {
+      var cur = MOMS.find(function (x) { return x.id === _momSel; });
+      if (!cur) return;
+      openNextMeetingModal(cur.schedule_id ? { schedId: cur.schedule_id } : { seedMom: cur });
+    };
+
+    // ⚠️ ROUND 3 — the "Meeting history" table's own rows (momHistorySectionHTML).
+    // The current meeting's row carries no `data-mom` and is not clickable.
+    host.querySelectorAll('.il-mom-histrow[data-mom]').forEach(function (tr) {
+      tr.onclick = function () { momOpenMeeting(tr.dataset.mom); };
+    });
 
     // ⚠ Saves the header first when the user may edit: every export reads
     // MOMS, not the live form, so a title typed and not saved would be
@@ -5920,8 +5718,8 @@ window.MinutesOfMeeting = (function () {
     });
 
     // ITEM 3 (round 2) — manual drag-to-reorder, replacing the removed
-    // "sort by" control. Only the cards momItemRowHTML actually marked
-    // draggable="true" (editable, unfiltered, not in reporting view) wire up.
+    // "sort by" control. Only the cards momItemRowHTML actually gave a grip
+    // (editable, unfiltered, not in reporting view — see `canDrag`) wire up.
     wireMinuteDrag(host, _momSel);
 
     var db = host.querySelector('#il-mom-del');

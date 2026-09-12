@@ -1,5 +1,139 @@
 # Module: minutes-of-meeting
 
+## 2026-09-12 — The Meetings List drops manual order, the Minutes list gets a real drag gesture, and recurring meetings stop having a second screen
+
+Owner's three items: (1) "for meeting list, no need to allow drag to reorder. by default, sort by
+date with favorite always at top"; (2) "for minutes list, allow drag to reorder"; (3) a full rewrite
+of the recurring-meeting workflow — a read-only Recurring tickbox on every Meetings List row, a
+meeting history table after the minutes, clicking a previous meeting opens it as an ordinary
+meeting, the Meetings List shows only the latest occurrence of a series, and a "carry over to next
+meeting" button that also promotes a non-recurring meeting into a recurring one.
+
+### 1 — Meetings List: back to column sort, favorites always on top
+
+The **⋮⋮** manual-order column shipped only hours earlier the same day (round 2, "in list mode,
+allow also drag to reorder") is gone: `momOrderCmp`/`momListDragTh`/`momWireReorder` are deleted,
+`momSortedRows` no longer has a `'manual'` branch, and the sort-header click handler no longer has
+a special case for it. The list is back to what it was before that round — click any column to sort
+it, favorites partitioned to the top of whichever sort is active — which is exactly what the owner
+asked for. ⚠️ `migrations/2026-09-11-mom-list-reorder.sql` (the `sort_order` columns on
+`meeting_minutes`/`mom_schedules`) is left in place as inert history rather than deleted or reverted
+— this repo does not rewrite a migration once it may have been run, and an unused nullable column
+costs nothing.
+
+### 2 — Minutes list: drag-to-reorder, converted to Pointer Events
+
+⚠️⚠️ **This ALREADY existed, and it already didn't work on touch.** `wireMinuteDrag`/
+`persistMinuteOrder` (2026-09-02) were pure HTML5 `draggable`/`ondragstart`/`ondragover`/`ondrop` —
+which never fires on a touch device at all, the same defect this app's history has now recorded and
+fixed twice this same day for Issues & Concerns / Lessons Learned. So "allow drag to reorder" reads
+as "make the drag that is already there actually work everywhere," not as a feature to build from
+nothing.
+
+Converted to Pointer Events (`pointerdown`/`pointermove`/`pointerup`/`pointercancel`), the identical
+mechanism and class names (`.il-draghandle`/`.il-reorderable`/`.il-dragging`/`.il-drop-before`/
+`.il-drop-after`, `data-reorder`/`data-reorder-row`) `issues-lessons/module.js`'s own
+`wireReorder`/`applyReorder` use — each module keeps its own copy per MODULE_CONTRACT.md, but the
+shapes now match exactly. `momDragGripHTML(id)` (already built earlier the same day for exactly this
+purpose) supplies the grip; `momItemRowHTML` puts `data-reorder-row` directly on the `.il-mi-card`
+itself rather than a separate grip-only target, so the whole card is the drop zone, not just the
+small glyph. The write is `applyMinuteReorder`, over `mom_items.seq` — `momVisibleItems(momId)` is
+the ordered set (drag is only offered while nothing filters the meeting's minutes, so this is always
+every minute, never a filtered subset whose seq math would leave hidden rows ambiguous), written
+sequentially rather than via `Promise.all` (the same rule "Get from issue" already follows for
+numbering writes — overlapping requests racing onto one sequence is worse than the small delay of
+writing in order).
+
+⚠️ `pointerup` and `pointercancel` are two separate handlers, not one that always commits — a cancel
+(the OS taking the gesture for something else) is exactly when a card is likely still marked from
+the last move, and has to abort with no write.
+
+### 3 — Recurring meetings: no more series page
+
+Owner: *"in meeting list, there is error in workflow regarding recurring and non-recurring
+meetings."* The error was architectural: a recurring schedule (`mom_schedules`) was its own kind of
+row in the unified Meetings List (`kind: 'series'`), opened onto its own screen
+(`momOpenSeries`/`renderSeriesPage`/`wireSeriesPage`) with its own CRUD
+(`scheduleFormSave`/`scheduleDelete`) and its own "+ Add a meeting" form
+(`scheduleCreateOccurrence`/`scheduleOccFormHTML`) — a second browsing surface next to the one that
+already existed for ordinary meetings, and every occurrence of a series lived only inside that
+second surface's own "Meetings held" table, never in the list itself.
+
+⚠️⚠️ **All four of those functions, and `scheduleFormHTML`/`scheduleOccFormHTML`, are deleted.**
+Every occurrence of a recurring schedule is a REAL `meeting_minutes` row now
+(`schedule_id` set), and it opens exactly like any other meeting — there is nothing left for a
+series page to do.
+
+- **A read-only Recurring tickbox column** in the Meetings List (`momUnifiedRows`'s `recurring`
+  field, `.il-mom-rectd`), a disabled checkbox — nothing on this screen can toggle it; the only way a
+  meeting becomes recurring is the promotion path below.
+- **`momUnifiedRows` shows only the LATEST occurrence per schedule** — a small map from
+  `schedule_id` to whichever of its meetings has the latest `meeting_date` — "from the meeting list,
+  details of the recurring meeting should just reflect the latest occurrence."
+- **`momHistorySectionHTML(mom)`** — a "Meeting history" table after the Minutes section, on a
+  recurring occurrence only (`isRecurOcc`). Every meeting under the same schedule
+  (`schedMeetingsOf`), current row named and non-clickable, every other row opening via
+  `momOpenMeeting` — "as a normal meeting," per the owner's own wording, since that is exactly what
+  `momOpenMeeting` already does for any row. "The history then shows all meetings linked including
+  the latest one" — the table lists every occurrence, current one included.
+- **"Carry over to next meeting"** — one icon button (`redo`) in the Detail toolbar, beside
+  Email/Distribute, gated on `mayEdit` like every other write control on the card.
+  `openNextMeetingModal(opts)` takes `{schedId}` (an existing series' own button, or a Calendar
+  planned-chip click, `presetDate` naming the exact day clicked) or `{seedMom}` (a plain meeting's
+  own button, no schedule yet). `createNextOccurrence` does the write:
+  - **`schedId` set** — inserts the next `meeting_minutes` row under that schedule, exactly as
+    `scheduleCreateOccurrence` used to.
+  - ⚠️⚠️ **`schedId` absent — "if current meeting is non-recurring, hitting the carry over button
+    will make the meeting a recurring one."** A brand-new `mom_schedules` row is inserted, anchored
+    on the SEED meeting's own date (`start_date: seed.meeting_date`, not today — so the series reads
+    as starting from the meeting that was just carried forward) and its default weekday derived from
+    that same date (`utcDow`), not a bare Monday. The seed meeting is then retroactively updated
+    (`schedule_id` set on it) — the promotion. Only then is the next occurrence inserted under the
+    new schedule.
+  - Both branches finish the same way `scheduleCreateOccurrence` did: `momOpenMeeting` (so
+    `momCarryOver` — which reads its fields off the Detail form's DOM — has a form to read),
+    `momPullIssues` quietly, then `momCarryOver(seed.id)` to bring forward whatever is still open.
+
+⚠️ `reRenderMomHost`/`momToggleFavorite` are simplified to `meeting_minutes` only — there is no
+second "kind" left to branch on, since `momUnifiedRows` only ever emits meeting rows now. The three
+list-export functions (`momExportListHTML`/`momExportListXLSX`/the PDF's `autoTable` body builder)
+that used to test `r.kind === 'series'` now test `r.recurring`, the field `momUnifiedRows` actually
+emits.
+
+### CSS
+
+`.il-mom-dragth`/`.il-mom-dragcell`/`.il-mom-sortnote`/`.il-mom-sortnote button` (the Meetings List's
+own manual-order chrome) are removed; the shared `.il-draghandle`/`.il-reorderable`/`.il-dragging`/
+`.il-drop-before`/`.il-drop-after` set survives unchanged, since the Minutes list's drag now uses it
+too. `.il-mi-card[draggable="true"]`/`.il-mi-draghandle` (HTML5-drag-specific) become
+`.il-mi-card.has-drag`/`.il-mi-card > .il-draghandle`; the card-specific `.is-dragging`/`.drop-before`/
+`.drop-after` rules are removed since `data-reorder-row` sits directly on the card and the shared
+2px drop-mark rules already cover it. New `.il-mom-rectd`/`.il-mom-opencell`,
+`.il-mom-history`/`.il-mom-histrow`/`.il-mom-histcur`/`.is-current`. ⚠️ The series page's own CSS
+(`.il-mom-seriescard`/`-seriesheadrow`/`-seriestitle`/`-seriesmeta`/`-seriesacts`/`-seriespast`,
+`.il-mom-recur`, `.il-mom-schedpasti`, `.il-mom-schedform`/`.il-mom-occform`/`-schedform-acts`) is
+removed with the functions that emitted it. ⚠️ Also removed: a whole block
+(`.il-mom-schedpanel`/`-schedhead`/`-schedbody`/`-schedlist`/`-schedright`/`-schedrow`/`-schedpast`/
+`-schedpasti`/`-schedform`/`-occform`/`-schedform-acts`) that was **already dead** before this
+change — an even earlier always-visible schedule panel superseded by the series page on 2026-09-02 —
+found and removed while touching this exact area, rather than left as rot.
+
+### Verified
+
+`node --check` clean on `module.js`; CSS brace balance holds (357/357) and every `/* … */` comment
+opened is closed (89/89); repo-wide grep for every deleted identifier
+(`momOpenSeries`/`renderSeriesPage`/`wireSeriesPage`/`scheduleFormSave`/`scheduleDelete`/
+`scheduleCreateOccurrence`/`scheduleFormHTML`/`scheduleOccFormHTML`/`momOrderCmp`/`momListDragTh`/
+`momWireReorder`/`_seriesSel`/`_schedFormOpen`/`_schedFormDraft`/`_schedOccOpen`/`_schedOccDraft`/
+`_momCameFromSeries`) — zero remaining references outside this changelog's own historical entries.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment. No live click-through
+of the promotion path (a plain meeting becoming a recurring series), the Meeting history table, or
+the Pointer-Events drag on the Minutes list against real data.
+
+`module.css`/`module.js?v=` → `20260912e`; `MODULE_V` (via `modules-grid.js?v=` on
+`dashboard.html`/`modules.html`) → `20260912e`.
+
 ## 2026-09-11 (round 2) — The Meetings List gets manual drag-to-reorder, and the dashed divider becomes real tiles
 
 **Run `migrations/2026-09-11-mom-list-reorder.sql`.** Owner's two follow-ups on the same day's
