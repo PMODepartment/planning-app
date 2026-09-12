@@ -5785,6 +5785,11 @@ window.ProgressPhotos = (function () {
           // stitch. The standin only ever gets hidden once a real viewer
           // has actually mounted (below).
           '<div class="pp-lb-panowrap" id="pp360-panowrap" style="border-radius:var(--pd-radius);">' +
+            // One 360° item per Add, same as photo/video: this × cancels
+            // the current capture/upload and brings the Take/Upload
+            // buttons back (resetPano360, above) -- the same corner-×
+            // language as .pp-stagermv on an ordinary staged photo card.
+            '<button type="button" class="pp-stagermv" id="pp360-remove" title="Remove this 360° photo" aria-label="Remove">×</button>' +
             '<img id="pp360-pano-standin" alt="Stitched panorama preview" hidden />' +
             '<div id="pp360-pano-viewer" class="pp-lb-panoviewer"></div>' +
           '</div>' +
@@ -5826,6 +5831,36 @@ window.ProgressPhotos = (function () {
     hydrate(m.el);
 
     function show(id, on) { var el = $(id); if (el) el.hidden = !on; }
+
+    // Same "one item per Add, an explicit remove before you can pick again"
+    // protocol the ordinary photo/video Add Media form enforces
+    // (removeStaged/syncAddButtonsRow, above) -- a 360° capture is already
+    // capped at one by construction (there's no staged-files array here,
+    // just single-slot state), and the Take/Upload buttons already hide the
+    // moment a source is picked. What was missing is a way BACK: once the
+    // panorama/photo is processed and previewed, the only escape was
+    // Cancel, closing the WHOLE modal. This discards just the current
+    // capture/upload (revoking its object URLs, tearing down the Pannellum
+    // viewer, clearing the thumbnail and any pending Adjust) and restores
+    // #pp360-step-source, mirroring removeStaged()'s effect exactly.
+    function resetPano360() {
+      [videoUrl, stitchUrl, repUrl].forEach(function (u) { if (u) { try { URL.revokeObjectURL(u); } catch (e) {} } });
+      if (pp360Viewer) { try { pp360Viewer.destroy(); } catch (e) {} pp360Viewer = null; }
+      videoBlob = null; videoUrl = null;
+      stitchResult = null; stitchUrl = null;
+      repBlob = null; repUrl = null;
+      pendingAdjust = {};
+      var qwarn = $('pp360-qualitywarn'); if (qwarn) qwarn.hidden = true;
+      var vwarn = $('pp360-viewerwarn'); if (vwarn) vwarn.hidden = true;
+      var standinEl = $('pp360-pano-standin'); if (standinEl) { standinEl.src = ''; standinEl.hidden = true; }
+      var viewerEl = $('pp360-pano-viewer'); if (viewerEl) viewerEl.innerHTML = '';
+      var thumbImg = $('pp360-thumbpreview'); if (thumbImg) thumbImg.src = '';
+      show('pp360-thumbfield', false);
+      show('pp360-progress', false);
+      show('pp360-result', false);
+      show('pp360-offline', false);
+      show('pp360-step-source', true);
+    }
 
     // "in case app is offline, prompt user to save video to gallery for
     // upload later on" -- checked the moment a video is actually acquired
@@ -6004,6 +6039,7 @@ window.ProgressPhotos = (function () {
       Capture.take360(function (blob) { if (blob) haveVideo(blob); });
     };
     if ($('pp360-offlineclose')) $('pp360-offlineclose').onclick = function () { m.close(); };
+    if ($('pp360-remove')) $('pp360-remove').onclick = function () { resetPano360(); };
     // Item 6: captures whatever the viewer is CURRENTLY showing, replacing
     // the old separate rep-frame scrubber.
     if ($('pp360-usethumb')) $('pp360-usethumb').onclick = function () {

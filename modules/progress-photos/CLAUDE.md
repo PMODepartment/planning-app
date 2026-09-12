@@ -2,6 +2,45 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Add 360°: same one-item-per-Add protocol as photo/video — an explicit × to cancel (2026-09-12, later)
+
+Owner: the 360° flow should follow the same "one upload per Add media instance" rule the ordinary
+photo/video form already enforces (`addStagedFiles`/`removeStaged`/`syncAddButtonsRow`) — once a
+360° is uploaded/processed, the Take/Upload buttons stay hidden until the planner clicks an × to
+cancel it.
+
+- ⚠️ **Half of this was already true.** `#pp360-step-source` (the Take video / Upload video /
+  Upload 360° photo row) already hides the instant a source is picked, and there was never an
+  array to over-fill — a video or photo goes straight into single-slot state
+  (`videoBlob`/`stitchResult`/`repBlob`), so "only one upload per Add media instance" already held
+  structurally. **What was missing was the way back**: once processing finished and the panorama
+  preview was showing, the only escape was Cancel — closing the *whole* modal — matching neither the
+  ordinary form's per-item × nor the owner's explicit ask.
+- **New `resetPano360()`** discards the current capture/upload — revokes every object URL
+  (`videoUrl`/`stitchUrl`/`repUrl`), tears down the live Pannellum viewer, clears
+  `stitchResult`/`repBlob`/`pendingAdjust`, hides the result/thumbnail/warning elements, and shows
+  `#pp360-step-source` again — the exact same effect `removeStaged()` has for an ordinary staged
+  photo/video, just applied to this flow's single-slot state instead of an array splice.
+- **A new `#pp360-remove` × button**, styled with the existing `.pp-stagermv` corner-overlay class
+  (the same dark-scrim circular × already used on a staged photo/video card), sits on the panorama
+  preview (`#pp360-panowrap`) — so it only appears once there's something to remove, i.e. exactly
+  "once a 360 is uploaded."
+- ⚠️ **Scoped to the result view on purpose.** The × lives inside `#pp360-result`, which stays
+  hidden during processing/offline, so there's nothing to click (and nothing to cancel a
+  still-running stitch with) until a result actually exists — matching the ordinary form, where the
+  remove × likewise only exists on an already-staged card.
+
+### Verified
+
+`node --check` clean on `module.js`; `tools/wiring-check.js` — **123 passed, 0 failed**, 3525
+cross-module references checked. `#pp360-remove` is declared once and wired once, no duplicate DOM
+ids introduced. ⚠️ **Not verified against a real device** — the reset path reuses the same object-
+URL-revoke / viewer-`.destroy()` calls the modal's own `revokeAll()` (close) already exercises, but
+the click-through of picking a source, letting it process, then clicking × and re-picking has not
+been driven in a real browser.
+
+No version bump beyond what the previous entry already carries — `module.js` stays `?v=20260912r`.
+
 ## Add 360°: "Take video" / "Upload video" (renamed), plus a direct "Upload 360° photo" path (2026-09-12)
 
 Owner: rename the two capture-a-video options in the "Add 360°" flow to plain "Take video" /
