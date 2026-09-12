@@ -13,6 +13,87 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### The site grid is the project's, not the press's; and the view steps back to 25% (2026-09-12 n) — ethanrobles10
+
+Owner: *"look at this, this does not enable users to fit more towers. enlargen the space, there
+should be like a maximum of 50 or 25% zoom out."*
+
+### ⚠️⚠️ THE GRID WAS SIZED BY THE PRESS, NOT BY THE PROJECT — AND THAT IS THE WHOLE COMPLAINT
+`zpSitePlaceFootprints` built its layout grid from `found.length`: how many footprints were being
+brought in **at that moment**. On the owner's eight-tower job only Tower 1 had a traced floor plan,
+so the button read *"Bring in 1 tower footprint"*, `n` was 1, and that one tower was handed a
+**one-cell grid — the whole sheet as its cell**. Measured against the previous code:
+
+| | previous | now |
+|---|---|---|
+| Tower 1 arriving alone on an 8-tower job | **353 × 236** on a 1000 × 620 sheet | **127 × 78** |
+| the same tower when all eight arrive at once | 118 wide | 118 wide |
+| ⚠️ so the same site plan carried the same tower at | **two different scales** (353 vs 118) | one |
+| bringing the eight in one at a time | **all eight in cell 4, 28 overlapping pairs** | eight cells, 0 overlaps |
+
+That last row is the one that mattered most and I had not predicted it: the cell index came from the
+footprint's position in **this press's** list, so every tower brought in on its own landed in the
+same cell, on top of the last. A planner adding each tower as they traced it would have stacked all
+eight on one spot.
+
+- ⚠️ The grid is now sized by **`opts.total`** — `SUBJ.codes.length`, the subject's own list of tower
+  names (the setup's chips plus whatever the schedule carries). The first tower to arrive already
+  sits in the space it will still be in when all eight are there.
+- ⚠️ **A new arrival takes a FREE cell.** What is already on the sheet is passed in as `opts.busy`; a
+  cell counts as taken if any existing area's centre falls in it. Bringing in the fourth tower after
+  arranging three must not drop it on one of them.
+- ⚠️ Past the last free cell it **wraps rather than refusing**: a sheet with every cell taken is still
+  better served by a footprint the planner can see and drag than by one that silently never arrived.
+- ⚠️ `total` is capped at 64, so a malformed tower list cannot ask for an 8000-cell grid.
+
+### ⚠️ THE VIEW STEPS BACK PAST THE SHEET NOW — 25% TO 1200%
+Zooming out past 100% used to be refused, on the grounds that the whole sheet already IS everything
+there is. True of the **drawing**, and beside the point for someone arranging eight towers who wants
+to see the sheet whole with room around it to judge the arrangement by. `ZP_ZMIN = 0.25`.
+
+- ⚠️⚠️ **The sheet is drawn as a PAGE from here on.** The moment the view is bigger than the sheet,
+  "where does the paper end" stops being obvious — the stage's own edge used to be the answer.
+  A `.zpw-sheet` rect marks the edge and a `.zpw-off` path dims everything outside it.
+- ⚠️⚠️ **`fill:none` on that rect, and that is not a detail**: the svg sits ABOVE the plan image, so a
+  filled rectangle the size of the sheet would hide the very drawing the planner attached to trace
+  over. The paper is marked by its edge and by the margin being dimmed, never by being painted.
+- ⚠️ **The margin is somewhere to look from, not somewhere to build.** Nothing can be drawn or
+  dragged off the sheet — every stored coordinate is in sheet units — so `ptOnSheet()` now guards the
+  tracing and marker clicks. `ptOf` clamps, which is right for a drag (a shape pushed at the edge
+  should stop there) and wrong for a click, where it would drop a corner on the nearest edge,
+  somewhere the planner did not click. Ignored silently: at 25% the margin is most of the window and
+  a warning per stray click would be a stream of them.
+- ⚠️ **Below 100% the sheet is CENTRED in the view**, not pinned to the corner the clamp would have
+  put it in — that is what makes zooming out read as stepping back from the paper rather than as the
+  drawing sliding away.
+- ⚠️ The backdrop image is transformed at **any** zoom that is not 1, not just above it: zoomed out,
+  `V.x` is negative and the image has to shrink and move right by exactly what the trace does, or the
+  plan would part company with the zones drawn on it. **Measured in a browser**: at 25% the image
+  lands on the sheet rect to within 1.5px on all four edges.
+- ⚠️ `Fit` is now a point in the MIDDLE of the range rather than one end of it, so it is live whenever
+  the view is not at 100%, in either direction.
+
+### Verified
+- **563 assertions** driving the shipped placement and rotation code, sliced verbatim (harness
+  gitignored, deleted), including the new grid: a lone arrival on an 8-tower job fits a 1-of-8 cell;
+  one-at-a-time and all-at-once give the **same size**; eight towers brought in one by one take eight
+  different cells with **zero overlapping pairs**, all on the sheet and all still turnable at all 25
+  angles.
+- ⚠️ **Gated against the previous commit**: the same suite fails **12** assertions there — the table
+  above is that gate's output, including the 28 overlapping pairs.
+- **68 assertions** on the view maths (`zView` / `zSet` / `zFit` / `ptOf`, sliced verbatim): at 0.75,
+  0.5 and 0.25 the view is bigger than the sheet, the sheet is centred to 1e-9 with equal margins on
+  both sides, the whole sheet is inside the view, the aspect is unchanged, the stage centre is still
+  the sheet centre, a click in the margin clamps onto the paper; Fit from 25% restores exactly; the
+  cursor anchor still holds when zooming back in from 25%; a tall sheet behaves the same.
+- **Measured in a browser** against the shipped stylesheets: at 25% the sheet is 0.2495 of the stage
+  width and 0.2493 of its height, centred, the image lands exactly on it, and the dim path covers the
+  stage with the sheet punched out; at 100% the sheet rect lands on the stage's own edges.
+- ⚠️ **Not verified signed in.** The anon key has no grants, so no real site plan has been zoomed out
+  or had a second tower imported into a free cell. First thing to check on a real project: trace one
+  tower of eight, bring it in, and it should arrive small and in the top-left cell — not filling the
+  middle of the sheet.
+
 ### Orient redraws the window it changed, and the sharing panel stops shutting on every tick (2026-09-12 m) — ethanrobles10
 
 Owner, with a screenshot: *"the re-orientation is not working. like it is not live, every time i

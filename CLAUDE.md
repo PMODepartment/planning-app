@@ -102,6 +102,37 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### The site grid is the project's, not the press's; and the view steps back to 25% (2026-09-12) — ethanrobles10
+
+Owner: *"look at this, this does not enable users to fit more towers. enlargen the space, there
+should be like a maximum of 50 or 25% zoom out."*
+
+⚠️⚠️ **The layout grid was sized by how many footprints were being brought in at that moment**, not by
+how many towers the project has. On an eight-tower job where only Tower 1 was traced, that one tower
+got a one-cell grid — **the whole sheet as its cell** — and arrived 353 × 236 on a 1000 × 620 sheet.
+Measured against the previous code, it is now 127 × 78, the same size it would be if all eight
+arrived together (it used to be 353 alone and 118 together: two scales on one drawing).
+
+- ⚠️⚠️ **And every tower brought in on its own landed in the same cell.** The cell index came from the
+  footprint's position in *this press's* list, so a planner importing each tower as they traced it
+  stacked all eight on one spot — 28 overlapping pairs in the gate. A new arrival now takes a **free**
+  cell, counted from what is already on the sheet.
+- ⚠️ **The view now goes down to 25%**, and the sheet is drawn as a page: a rect marks the paper's
+  edge and everything outside it is dimmed. `fill:none` on that rect, deliberately — the svg sits
+  above the plan image, and a filled rectangle would hide the drawing being traced over.
+- ⚠️ **The margin is somewhere to look from, not somewhere to build.** Nothing can live off the sheet
+  (every stored point is in sheet units), so clicks out there are ignored while tracing rather than
+  clamped onto the nearest edge, and below 100% the sheet is centred rather than pinned to a corner.
+
+⚠️ 563 assertions on the placement code and 68 on the view maths, both sliced verbatim from the
+shipped file, plus browser measurement of the 25% view (the sheet is 0.2495 of the stage, centred,
+with the image landing on it to within 1.5px). Gated against the previous commit, where the same
+suite fails 12. **Not verified signed in** — no real site plan has been zoomed out or had a second
+tower imported into a free cell.
+
+`MODULE_V` → `20260912n`. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
 ### Orient redraws the window it changed; the sharing panel stops shutting on every tick (2026-09-12) — ethanrobles10
 
 Owner, with a screenshot: *"the re-orientation is not working. like it is not live, every time i
