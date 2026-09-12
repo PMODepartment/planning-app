@@ -13,6 +13,102 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### The site plan is BUILT from the towers' own floor plans; all that is left is arranging and orienting (2026-09-12 g) — ethanrobles10
+
+Owner: *"the pre-requisites first is to establish the per tower floor plan. meaning once the per tower
+floor plan has been established, in the site plan, the resulting shapes from the per tower is migrated
+into the site plan. And therefore just arrangement is just required and orientation. But obviously,
+the site plan should have a larger scale since you are arranging the footprint / layout established on
+per tower."*
+
+### ⚠️⚠️ THIS REPLACES RE-TRACING, WHICH WAS THE SITE PLAN'S REAL COST
+As shipped yesterday the site plan was a blank sheet with the tower names as brushes. So a planner who
+had already drawn every tower's floors was asked to draw each tower **again**, freehand, at site scale
+— a second outline of the same building, by hand, which can only disagree with the first. The owner is
+describing the right dependency: the floor plans are the **prerequisite**, and the site plan is their
+**arrangement**.
+
+**`Bring in N tower footprints`** now leads the site window's tool row. It derives each tower's
+footprint from that tower's own floor plans, places them on the site sheet, and leaves the two things
+only a person knows: **where each one stands, and which way it faces**.
+
+- ⚠️ **The largest traced plate is the tower's footprint** — the same rule `zpBareShape` uses for a
+  floor several trades traced, and for the same reason: the slab is at least as big as the biggest
+  thing anyone drew on it, and a trade that traced only a core is a subset of that floor, not a rival
+  claim about it. A **podium** is therefore the footprint of a tower that has one, which is exactly
+  what a site plan wants.
+- ⚠️ Across **every** trade, because zoning is per trade and the tower is one building.
+- ⚠️ The plate's **outline**, not its zones — explicit `*floor*` areas when any were drawn, otherwise
+  the zones together, which ARE the floor's footprint. Mirrors `_vsZpOutlineOf` so the site view and
+  the stacking read one shape.
+- ⚠️⚠️ **It ADDS, it never replaces.** A planner who has arranged three towers and then traces the
+  fourth's floor plan must be able to bring that one in **without losing the arrangement** — so an area
+  whose code is already on the site is left exactly where it is, and the button reports what it
+  skipped. Replacing would silently undo the arranging this whole feature exists to make the only
+  remaining work.
+- ⚠️ A tower with no floor plan yet is **named in the toast**, never silently absent, and the button
+  says how many it can bring in **before** it is pressed — so a half-traced project is not discovered
+  by pressing it and getting two of four.
+
+### ⚠️⚠️ ORIENTING DID NOT EXIST AT ALL, WHICH IS HALF THE OWNER'S ASK
+Moving a shape already worked (drag it). There was **no way to turn one** — so a tower that faces the
+road at an angle could only be re-traced corner by corner at that angle, which is precisely the work
+importing the footprint is meant to remove. A new **Orient** group on the selection:
+
+- `↶90 ↶ ↷ ↷90` — quarter turns and 15°. Both, because a tower is usually square to the site **or**
+  set at an angle to a road, and six clicks of 15° to reach a right angle is not a control.
+- `− +` — uniform resize, ⚠️ **uniform because the app carries no dimensions**: a tower's outline is
+  only its PROPORTIONS, and scaling x and y separately would throw away the one true thing about it.
+- ⚠️ **Rotation is about the shape's own centre, never the sheet's.** Turning about the sheet would
+  send a tower across the site as well as turning it, so "orient" and "arrange" would stop being two
+  independent actions and every rotation would need a compensating drag.
+- ⚠️ **Not snapped to the grid.** The snap exists so adjacent zones MEET; a rotated corner lands
+  wherever the angle puts it, and snapping it would deform the outline a little more on every click
+  until a rectangle was no longer a rectangle.
+- ⚠️ **A shape pushed off the sheet is TRANSLATED back, never squashed** — clamping each point
+  independently is what turns a rotated rectangle into a trapezoid. One that cannot fit at all is
+  **refused with a reason** rather than silently mangled.
+- ⚠️ **Not gated to the site plan.** A zone traced at the wrong angle on a floor plan is the same
+  problem, and a control that exists on one subject and not the other is one more rule to remember.
+
+### ⚠️⚠️ "A LARGER SCALE" IS A DEFAULT, NOT A MEASUREMENT, AND THE WINDOW SAYS SO
+This is the part that could quietly become a lie. **Plan units are square on every sheet** — a sheet is
+`ZP_W` across by `h` down in the SAME unit — which is what makes the migration a *copy* rather than a
+projection: a footprint's bbox is genuinely its proportions, and the points carry over under **one
+uniform scale**. Scaling x and y to "fill the slot" would stretch a tower into a shape nobody drew.
+
+But nothing in this app stores a **dimension**, so nothing here can know that Tower A is really wider
+than Tower B — only that each is the shape it was traced as. Every tower therefore arrives at the same
+footprint **width**, and the window carries a note saying that in as many words: *"each tower keeps its
+own shape, not its size relative to the others… This is an arrangement, never a survey."* Claiming a
+relative size would be inventing a survey, and a planner reading sizes off this drawing would be
+reading something the app never stated.
+
+⚠️ They are laid out on a coarse grid at **0.62 of a cell**, so two towers side by side arrive with a
+street between them rather than touching edges the planner has to pull apart before they can arrange
+anything.
+
+### Verified
+A gitignored harness (deleted) driving the **shipped** `zpRotatePts` / `zpScalePts` / `zpFitBack` /
+`zpTowerPlate` / `zpPlateOutline` / `zpSitePlaceFootprints`, sliced verbatim — **38 assertions**.
+
+| Checked | Result |
+|---|---|
+| Rotation | a quarter turn swaps w/h, the **centre does not move**, area preserved exactly, four turns return the original, 15° preserves area (not snapped, not deformed) |
+| ⚠️ Off-sheet | translated back **and not deformed** (area unchanged, bbox still the rotated one); one that cannot fit is **refused**, not clamped |
+| Scaling | both sides halve, **aspect untouched**, area goes as k², centre holds; past the sheet and down to nothing are both refused |
+| Footprint | the **podium** wins over the typical floor, across **every** trade; an explicit outline wins over the zones; zones ARE the footprint when no outline was drawn; a tower with no plan reads null |
+| ⚠️ The migration | 2:1, 1:3 and square all arrive with their **own aspect intact**; every point on the sheet; separated, not stacked; each inside its slot |
+| Missing plans | named, not dropped; nothing invented |
+| A multi-piece footprint | both pieces arrive under **one** scale — same size as each other, and the **same distance apart in proportion** |
+
+⚠️ **Not verified signed in, and this is the caveat that matters most here.** The anon key has no
+grants, so no real floor plan has been read and no footprint has ever landed on a real site sheet. What
+is proven is the geometry — the derivation rule, the proportion preservation, the clamping and the
+refusals. What has not been seen is the button pressed on a project with real traced floors. Trace one
+tower's floor plan, open **Site plan…**, and the first thing to check is that the footprint that
+arrives is the shape you drew.
+
 ### The setup detects its own towers, and "apply this plan to other floors" stops crossing buildings (2026-09-12 e) — ethanrobles10
 
 Owner, on yesterday's site plan: *"but the schedule setup should detect, if the project has multiple
