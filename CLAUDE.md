@@ -102,6 +102,42 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-12 — Pormac gets a Megawide-branded avatar
+
+Owner supplied a cartoon construction-worker illustration and asked it be used as the
+chatbot's profile photo, "only the upper portion of the upper body." Detail:
+[`modules/pormac/CLAUDE.md`](modules/pormac/CLAUDE.md).
+
+New `assets/img/pormac-avatar.png` — a square bust crop (helmet, face, shoulders) of the
+supplied full-figure image. Shown only on assistant chat bubbles (`modules/pormac/module.js`
+`pushMessage()`), never on the planner's own messages. `modules/pormac/module.css` gains
+`.pmc-avatar` (30px, circular) and turns `.pmc-msg.assistant` into a row so the avatar sits
+beside the bubble rather than above it.
+
+⚠️ Not verified signed in — no live conversation has rendered it.
+
+### 2026-09-12 — Pormac opened to everyone; moved to the top of the sidebar
+
+Owner: *"pormac should be available to everyone. no need for the settings to define
+accessibility of pormac."* Also: *"in the sidebar, put Pormac before dashboards as the very
+first module."* Follow-up to the Pormac build below, same day. Detail:
+[`modules/pormac/CLAUDE.md`](modules/pormac/CLAUDE.md).
+
+- **The access-control layer is removed.** `pormac_settings` / `pormac_allowed_users` and the
+  admin Settings modal are gone; `pormac_can_use()` is now simply `is_approved()` — kept under
+  that name only because `supabase/functions/pormac-chat` already calls it. ⚠️ The client-side
+  gate in `module.js` is deleted outright, not simplified: `AppAuth.requireLogin` already
+  redirects anyone not `approved` before the module's own code runs, so the extra check could
+  never fail.
+- **Pormac renders before the Dashboard link**, in both the project and portfolio sidebars —
+  the one exception to "config.js's `MODULES` order is the nav order."
+
+`migrations/2026-09-12-pormac.sql` updated to drop the now-removed tables (safe to re-run
+whether or not the original version was already applied). `assets/js/ui.js` changed
+(`renderNav`) — shared file.
+
+⚠️ **Not verified signed in.**
+
 ### 2026-09-12 — New module: Pormac, an in-browser AI assistant (zero hosting cost)
 
 Owner: *"add a new module open to all or selected users - an AI bot named Pormac... totally

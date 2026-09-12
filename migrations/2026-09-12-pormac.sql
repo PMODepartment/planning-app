@@ -29,68 +29,22 @@
 -- Idempotent; safe to re-run.
 -- ============================================================================
 
--- ---- Access control: "open to all" vs "selected users" ---------------------
--- A single settings row (never more than one — enforced by the check on `id`)
--- an admin flips between the two modes. Default is 'selected' with an EMPTY
--- allow-list — i.e. admin/super_admin only — until an admin deliberately opens
--- it wider, the same safe-by-default posture new modules ship with
--- (`enabled:false` / `superAdminOnly:true`) rather than defaulting to "open".
-create table if not exists pormac_settings (
-  id            smallint primary key default 1,
-  access_mode   text not null default 'selected' check (access_mode in ('all', 'selected')),
-  updated_by    uuid references users(id),
-  updated_at    timestamptz default now(),
-  constraint pormac_settings_singleton check (id = 1)
-);
-insert into pormac_settings (id) values (1) on conflict (id) do nothing;
+-- ---- Access control: available to every approved user ----------------------
+-- ⚠️ 2026-09-12: originally shipped as a runtime "all vs selected users"
+-- toggle (a `pormac_settings` singleton + `pormac_allowed_users` allow-list).
+-- Owner's call, same day: no settings screen needed — Pormac is open to
+-- everyone. Both tables are dropped; `pormac_can_use()` is kept (rather than
+-- deleted outright) purely because `supabase/functions/pormac-chat` — the
+-- hosted fallback — already calls it by name, and keeping the name means that
+-- function needs no change. Its body is now simply `is_approved()`.
+drop table if exists pormac_allowed_users;
+drop table if exists pormac_settings;
 
-create table if not exists pormac_allowed_users (
-  user_id     uuid primary key references users(id) on delete cascade,
-  added_by    uuid references users(id),
-  added_at    timestamptz default now()
-);
-
--- Helper: may the current user talk to Pormac at all? Admin/super_admin always
--- can (so they can never lock themselves out while configuring it); everyone
--- else needs either access_mode='all' or a row in the allow-list. Mirrors the
--- shape of is_admin()/is_writer() elsewhere in this file.
 create or replace function pormac_can_use() returns boolean
   language sql stable security definer set search_path = public as $$
-  select exists (
-    select 1 from users u
-    where u.id = auth.uid() and u.status = 'approved'
-      and (
-        u.role in ('admin', 'super_admin')
-        or (select access_mode from pormac_settings where id = 1) = 'all'
-        or exists (select 1 from pormac_allowed_users a where a.user_id = auth.uid())
-      )
-  );
+  select is_approved();
 $$;
 grant execute on function pormac_can_use() to authenticated;
-
-grant select, insert, update on pormac_settings to authenticated;
-alter table pormac_settings enable row level security;
-drop policy if exists pormac_settings_read on pormac_settings;
-create policy pormac_settings_read on pormac_settings for select using (is_approved());
-drop policy if exists pormac_settings_write on pormac_settings;
-create policy pormac_settings_write on pormac_settings for update
-  using (is_admin()) with check (is_admin());
--- No insert policy beyond the seeded row above: the singleton is created once
--- by this migration, never by the app.
-
-grant select, insert, delete on pormac_allowed_users to authenticated;
-alter table pormac_allowed_users enable row level security;
-drop policy if exists pormac_allowed_users_read on pormac_allowed_users;
--- A non-admin may see their OWN row (so the settings screen can honestly say
--- "you personally have access") but never the whole list.
-create policy pormac_allowed_users_read on pormac_allowed_users for select
-  using (is_admin() or user_id = auth.uid());
-drop policy if exists pormac_allowed_users_write on pormac_allowed_users;
-create policy pormac_allowed_users_write on pormac_allowed_users for insert
-  with check (is_admin());
-drop policy if exists pormac_allowed_users_del on pormac_allowed_users;
-create policy pormac_allowed_users_del on pormac_allowed_users for delete
-  using (is_admin());
 
 -- ---- Chat history ------------------------------------------------------
 -- Deliberately NOT folded into the generic module-table RLS loop further up
@@ -180,6 +134,4 @@ create policy pormac_usage_read on pormac_usage for select
 -- drop table if exists pormac_usage;
 -- drop table if exists pormac_messages;
 -- drop table if exists pormac_conversations;
--- drop table if exists pormac_allowed_users;
--- drop table if exists pormac_settings;
 -- drop function if exists pormac_can_use();
