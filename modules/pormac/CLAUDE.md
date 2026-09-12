@@ -6,6 +6,69 @@ can't do that. One entry per prompt, newest first.
 
 ---
 
+## 2026-09-12 (e) — Chat history: a real second screen, and "New chat" made to work from it
+
+Owner: *"include already the char history in this build. fix also new chat so it should
+work."* The "not built in this pass" item from the first build — a screen to browse/delete
+past conversations — lands here; `pormac_conversations`/`pormac_messages` already existed for
+it (2026-09-12 first build), so no migration.
+
+- **`Chat` / `History` is now a real, working tab pair**, using the same `UI.tabsToDropdown()`
+  every other module's screen switcher already goes through — this is also why the lone
+  `Chat` tab did nothing before: that helper bails outright below two buttons
+  (`if (btns.length < 2) return;`), so it had never actually run.
+- **History is personal, not project-scoped** — `pormac_conversations`' own `select` RLS is
+  gated on `created_by = auth.uid() or is_admin()`, with no project clause, so the list spans
+  every project a planner has ever chatted about, each row naming which one (from the
+  `PROJECTS` array `loadProjects()` already caches, no second fetch). Clicking a row loads its
+  messages and **restores the project it was grounded in** — but only if that project is still
+  one the planner can see; one they've since lost access to falls back to General rather than
+  pointing a context provider at an id RLS would refuse anyway.
+- ⚠️⚠️ **`updated_at` was declared, indexed (`idx_pormac_conv_owner … updated_at desc`), and
+  never once written.** Nothing bumped it after the first message, so every conversation would
+  have sorted by its *creation* time forever — an ongoing chat sinking below a brand-new one
+  the moment the newer one was opened. `persistTurn()` now updates it on every turn after the
+  first (the insert already sets it via the column default).
+- **Delete is per-row**, `confirm()`-gated to match this app's existing convention (risk-register,
+  issues-lessons) rather than a bespoke dialog; `pormac_messages` cascades, so one delete is
+  enough. Deleting the conversation currently open in Chat drops it back to blank.
+- ⚠️⚠️ **"New chat" needed one more fix once History existed**: it reset `chatHistory` and
+  `conversationId` correctly already, but clicking it while ON the History tab reset the thread
+  invisibly behind the pane you were still looking at — indistinguishable from doing nothing.
+  It now also switches back to Chat, so the reset is always seen.
+
+⚠️ Not verified signed in — no live login is possible in this environment. The RLS scoping,
+the `updated_at` write and the fallback-to-General path are argued from the migration's own
+policy text and the shipped code, not observed against a real conversation.
+
+---
+
+## 2026-09-12 (d) — Chat/New chat "don't work": one was never wired, the other was a race
+
+Owner: *"chat and new chat buttons dont work. what are they supposed to do."*
+
+- **"Chat" is inert by design, not by bug.** It is the only tab in `.pmc-tabs` — a
+  conversation-history browser was explicitly deferred when this module was first built (see
+  the "not built in this pass" note below) — so it carries no click handler at all. Nothing
+  changed here; it is correctly a no-op today.
+- ⚠️⚠️ **"New chat" had a real bug: its handler was wired AFTER an `await`.** `#pmc-new` and
+  `#pmc-send` are static markup in the topbar/composer — they paint and look clickable the
+  instant the page loads, well before `init()` has run. Their `onclick` was previously set
+  only once `await loadProjects()` resolved, so any hiccup fetching `projects` (RLS, a network
+  blip, a slow connection) threw out of `init()` right there and **every handler below it —
+  New chat, Send, Enter-to-send — never got attached, silently.** The buttons looked exactly
+  as clickable as a moment before; nothing on screen said why they had stopped responding.
+  Fixed by wiring all four handlers **before** the first `await`, and wrapping
+  `loadProjects()` in its own try/catch with a toast on failure — a broken project fetch now
+  costs only the project picker (grounding falls back to `pid === null`), never the chat
+  itself.
+
+⚠️ Not verified signed in — no live login is possible in this environment; the fix is argued
+from the control flow (handlers now attach synchronously, before any `await`), not observed
+against a real failing fetch.
+
+---
+
 ## 2026-09-12 (c) — Pormac gets a face: a Megawide-branded avatar on every assistant bubble
 
 Owner supplied a cartoon construction-worker illustration (white Megawide hardhat, black
