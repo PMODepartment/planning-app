@@ -102,6 +102,67 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-12 — Pormac: one conversation per project, and the composer a slow fetch could hide
+
+Owner: *"no need for chat and history tab switcher. keep only 1 conversation per user per project.
+history should be scrollable as needed. no need also for new chat since everything is in one
+conversation"* and *"I cant type text to ask pormac. please fix"*. Detail:
+[`modules/pormac/CLAUDE.md`](modules/pormac/CLAUDE.md). Module-only, **no migration**.
+
+⚠️⚠️ **THE COMPOSER WAS `display:none` BEHIND AN `await`, AND THAT IS THE WHOLE OF "I CAN'T
+TYPE".** `#pmc-chrome` — the thread, the composer, everything you type into — shipped hidden and
+was revealed by `switchView('chat')`, which sat **below `await loadProjects()`**. A project fetch
+that was slow, refused or never resolved therefore left the planner with no input on the page at
+all and nothing saying why. Reproduced in a browser against the shipped bytes: with the fetch
+pending, `#pmc-input` renders **0×0** and a click on it times out. ⚠️ This is the same-day (d)
+bug one layer up — that pass moved the *handlers* above the first `await` for exactly this reason
+and left the *pane's visibility* below it. The pane is now visible in the markup itself.
+
+⚠️⚠️ **AND `modules/pormac/module.js` / `module.css` HAD NO `?v=` AT ALL** — so every same-day fix
+to this module since it launched changed those files under a URL a browser had already cached, and
+any of them may never have reached the owner's tab. Both now carry `?v=20260912r`.
+
+**The layout was never docked either.** `.pmc-main` asked for `height:100%` inside `.pd-content`,
+which the shared stylesheet declares as `flex:1; min-width:0` with **no height** — so it resolved
+to `auto`, the thread grew with the conversation and the **page** scrolled instead of the thread,
+drifting the composer below the fold with every reply. `.pd-content` now takes a viewport height
+and becomes the flex column (what project-schedule already does for its docked details panel), so
+the thread is the one thing that scrolls — which is also *"history should be scrollable as
+needed"* — with the composer pinned. ⚠️ `.pd-topbar` takes `flex:none` with it, or a
+height-constrained column crushes the bar below its own content and paints it over the chat (the
+2026-09-10 z5 defect, in this module's shape).
+
+**One conversation per planner per project.** The `Chat`/`History` tabs, `New chat` and the whole
+history pane are gone; opening the module or switching project resumes that project's single
+running thread. ⚠️⚠️ **"One" is enforced by what the client READS, not by a unique index, and that
+is a deliberate call** — rows already exist from every press of the old "New chat", so a
+constraint could not be added without first destroying or merging real conversations, and the
+**General (no project)** case cannot be covered by a plain unique index at all, since Postgres
+treats NULLs as distinct (the same trap `2026-09-10-boq-project-scope.sql` needed a *partial*
+index for). So there is no migration: the loader reads **every** conversation the planner has for
+this project and merges their messages into one chronological thread — making *"everything is in
+one conversation"* true on screen **including retroactively** — while new turns write to the most
+recently updated row, converging them without deleting anything.
+
+⚠️ The message read is **newest-first + limit, then reversed**: an ascending limit would have
+returned the OLDEST 200 and silently dropped everything recent. ⚠️ `.eq('created_by', …)` is not
+redundant with RLS — the policy is `created_by = auth.uid() OR is_admin()`, so without it an admin
+would load every planner's conversations into their own thread.
+
+**Verified** in a real browser (the shipped page, auth/DB stubbed, harness deleted) at 1440×900
+and 390×740, light and dark: the input is in the viewport, is the top element at its own centre
+and accepts typed text in all five scenarios **including with the project fetch left permanently
+pending** — the same probe against the pre-fix bytes reports 0×0 and a click timeout, so it bites.
+300 stored messages render as the cap note then `msg 101 … msg 300` chronologically, thread
+scrolling and pinned at the bottom; switching project reloads that project's own thread. ⚠️ The
+first cut of that probe stubbed the query builder without honouring `.order()`/`.limit()` and
+reported the thread reversed — a defect in the checker, not the code.
+`node --check` clean; `module.css` braces 30/30; 0 NUL bytes; `tools/wiring-check.js` **126/126,
+0 version splits**; `tools/dead-hooks.js` unchanged against its documented 9-finding baseline.
+⚠️ **Not verified signed in** — no real conversation has been loaded, merged or written.
+
+`MODULE_V` → `20260912r` (the module's `index.html` changed structurally).
+
 ### iPhone date/time inputs were rendering at native, uncontrolled height — the visible gap was the box, not the margin (2026-09-12) — gwsia
 
 Owner, with a screenshot of Minutes of Meeting's "+ Add meeting" form on an iPhone: *"in iphone,

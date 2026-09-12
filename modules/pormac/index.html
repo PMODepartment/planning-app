@@ -8,7 +8,7 @@
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Pormac · Planners Dashboard</title>
   <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260912q" />
-  <link rel="stylesheet" href="module.css" />
+  <link rel="stylesheet" href="module.css?v=20260912r" />
 </head>
 <body>
   <div class="pd-app">
@@ -36,17 +36,10 @@
         <div class="pmc-projctx">
           <select class="pd-select pmc-project" id="pmc-project" title="Project"></select>
         </div>
-        <div class="pmc-tabs" role="tablist">
-          <button class="pmc-tab active" data-view="chat">Chat</button>
-          <button class="pmc-tab" data-view="history">History</button>
-        </div>
-        <div class="pmc-topbar-tools">
-          <button class="pd-btn" id="pmc-new" title="Start a new conversation">New chat</button>
-        </div>
         <div id="user-bar"></div>
       </div>
       <div class="pd-main pmc-main">
-        <div class="pmc-chrome" id="pmc-chrome" style="display:none;">
+        <div class="pmc-chrome" id="pmc-chrome">
           <div class="pmc-tierbar" id="pmc-tierbar"></div>
           <div class="pmc-thread" id="pmc-thread"></div>
           <div class="pmc-composer">
@@ -59,7 +52,6 @@
             figures) to answer — it can still be wrong, and it always says which data it used.
           </div>
         </div>
-        <div class="pmc-history" id="pmc-history" style="display:none;"></div>
       </div>
     </div>
   </div>
@@ -70,7 +62,7 @@
   <script src="../../assets/js/db.js?v=20260909n"></script>
   <script src="../../assets/js/ui.js?v=20260912a"></script>
   <script src="../../assets/js/icons.js?v=20260912i"></script>
-  <script src="module.js"></script>
+  <script src="module.js?v=20260912r"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);

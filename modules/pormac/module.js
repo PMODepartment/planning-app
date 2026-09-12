@@ -38,8 +38,7 @@ window.Pormac = (function () {
   var engine = null;              // the WebLLM engine instance, once loaded
   var engineModelId = null;
   var sending = false;
-  var view = 'chat';              // 'chat' | 'history'
-  var PROJECTS = [];              // cached from loadProjects(), for labelling History rows
+  var convToken = 0;              // guards a slow conversation load landing after a project switch
 
   function sb() { return AppAuth.getSB(); }
   function $(id) { return document.getElementById(id); }
@@ -50,19 +49,17 @@ window.Pormac = (function () {
   async function init(user, prof) {
     profile = prof;
 
-    // ⚠️⚠️ WIRE THE BUTTONS BEFORE ANY `await`. `#pmc-new` / `#pmc-send` are
-    // static markup in the topbar and composer — they render and look
-    // clickable the instant the page paints, well before this function has
-    // run at all. They used to get their onclick only after `loadProjects()`
-    // resolved below, so a slow or failing project fetch (RLS hiccup, a
-    // network blip) left them sitting there inert with nothing on screen
-    // to say why — "the buttons don't work" with no visible cause. Wiring
-    // first means a project-list failure can only ever cost the project
-    // picker, never the chat controls.
-    // "New chat" has to work from EITHER tab — a planner reading History who
-    // hits it should land back in a blank Chat, not have the reset happen
-    // invisibly behind the pane they're still looking at.
-    $('pmc-new').onclick = function () { conversationId = null; chatHistory = []; switchView('chat'); renderMessages(); };
+    // ⚠️⚠️ WIRE THE COMPOSER BEFORE ANY `await`, AND NEVER GATE THE PANE ON ONE.
+    // `#pmc-send` and `#pmc-input` are static markup — they paint the instant
+    // the page loads, well before this function has run. The handlers used to
+    // be attached only after `loadProjects()` resolved, and worse, the whole
+    // `#pmc-chrome` pane (composer included) started `display:none` and was
+    // revealed by `switchView('chat')` BELOW that same await. So a slow or
+    // hanging project fetch left the planner with no box to type into at all
+    // and nothing on screen saying why — measured: with the fetch pending,
+    // `#pmc-input` renders 0x0 and a click on it never lands. The pane is now
+    // visible in the markup itself, and a project-list failure can only ever
+    // cost the project picker.
     $('pmc-send').onclick = onSend;
     $('pmc-input').addEventListener('keydown', function (e) {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSend(); }
@@ -72,23 +69,12 @@ window.Pormac = (function () {
       this.style.height = Math.min(160, this.scrollHeight) + 'px';
     });
 
-    // Chat / History screen switcher — same `UI.tabsToDropdown` convention
-    // every other module's tab strip already uses, so it collapses into the
-    // compact dropdown trigger rather than staying a row of buttons. Wiring
-    // the real buttons is this module's job; the dropdown just proxies clicks
-    // to them and mirrors whichever one carries `.active`.
-    Array.prototype.forEach.call(document.querySelectorAll('.pmc-tab'), function (btn) {
-      btn.onclick = function () { switchView(btn.dataset.view); };
-    });
-    if (window.UI && UI.tabsToDropdown) UI.tabsToDropdown('.pmc-tabs');
-
     try {
       await loadProjects();
       $('pmc-project').onchange = function (e) {
         pid = e.target.value || null;
         sessionStorage.setItem('pd_project', pid || '');
-        conversationId = null; chatHistory = [];
-        renderMessages();
+        loadConversation();
       };
     } catch (e) {
       // A planner can still chat without a project selected — this only
@@ -104,9 +90,8 @@ window.Pormac = (function () {
     // still exists in the database purely for `supabase/functions/pormac-chat`
     // (the hosted fallback) to lean on the same rule server-side; it is just
     // `is_approved()` now, not a per-user allow-list.
-    switchView('chat');
     renderTierBar();
-    renderMessages();
+    loadConversation();
 
     // Kick off capability detection in the background — the planner can start
     // typing immediately. onSend() awaits `capPromise` if it hasn't landed yet,
@@ -121,7 +106,6 @@ window.Pormac = (function () {
 
   async function loadProjects() {
     var projects = await PDb.getProjects();
-    PROJECTS = projects; // cached so History rows can label a conversation's project without a second fetch
     var sel = $('pmc-project');
     pid = sessionStorage.getItem('pd_project') || null;
     sel.innerHTML = '<option value="">General (no project selected)</option>' +
@@ -133,106 +117,80 @@ window.Pormac = (function () {
   }
 
   // ==========================================================================
-  // Chat / History screens
+  // The conversation — ONE per planner per project
   // ==========================================================================
-  function switchView(v) {
-    view = v;
-    Array.prototype.forEach.call(document.querySelectorAll('.pmc-tab'), function (b) {
-      b.classList.toggle('active', b.dataset.view === v);
-    });
-    $('pmc-chrome').style.display = v === 'chat' ? 'flex' : 'none';
-    $('pmc-history').style.display = v === 'history' ? 'flex' : 'none';
-    if (v === 'history') renderHistory();
-  }
+  // ⚠️ Declared ABOVE its readers: a `var` hoists its declaration but not its
+  // assignment, and this app has shipped two crashes from exactly that shape.
+  var MSG_CAP = 200;   // messages rendered into the thread; older turns stay in the database
 
-  // Personal, not project-shared — RLS already scopes `select` on
-  // pormac_conversations to `created_by = auth.uid() or is_admin()`, so this
-  // reads across every project the planner has ever chatted about, not just
-  // the one currently selected, with each row saying which project it was.
-  async function renderHistory() {
-    var host = $('pmc-history');
-    host.innerHTML = '<div class="pmc-muted" style="padding:16px;">Loading…</div>';
+  // Owner, 2026-09-12: "keep only 1 conversation per user per project... no need
+  // also for new chat since everything is in one conversation." So there is no
+  // Chat/History switcher and no reset button: opening the module (or switching
+  // project) resumes that project's single running thread, which the planner
+  // scrolls back through in place.
+  //
+  // ⚠️⚠️ "ONE" IS ENFORCED BY WHAT THIS READS, NOT BY A UNIQUE INDEX, AND THAT IS
+  // DELIBERATE. Rows already exist from before this change — every press of the
+  // old "New chat" made another — so a unique constraint could not be added
+  // without first destroying or merging real conversations. Worse, the General
+  // (no project) case cannot be covered by a plain unique index at all: Postgres
+  // treats NULLs as distinct, so `(created_by, project_id)` would happily admit
+  // a second NULL-project row. Instead this loads EVERY conversation the planner
+  // has for this project and merges their messages into one chronological
+  // thread, so "everything is in one conversation" is true on screen from the
+  // first load, including retroactively — while new turns are written to the
+  // most recently updated one, which converges the rows without deleting any.
+  //
+  // ⚠️ `.eq('created_by', ...)` is not redundant with RLS. The select policy is
+  // `created_by = auth.uid() OR is_admin()`, so without it an admin would load
+  // every planner's conversations into their own thread.
+  async function loadConversation() {
+    var token = ++convToken;   // a project switch mid-fetch must win over this load
+    conversationId = null;
+    chatHistory = [];
+    renderMessages('Loading this project’s conversation…');
     try {
-      var { data, error } = await sb().from('pormac_conversations')
-        .select('id,project_id,title,updated_at')
-        .order('updated_at', { ascending: false })
-        .limit(50);
+      var q = sb().from('pormac_conversations').select('id')
+        .eq('created_by', profile.id)
+        .order('updated_at', { ascending: false });
+      q = pid ? q.eq('project_id', pid) : q.is('project_id', null);
+      var { data: convs, error } = await q;
       if (error) throw error;
-      var rows = data || [];
-      if (!rows.length) {
-        host.innerHTML = '<div class="pmc-muted" style="padding:16px;">No past conversations yet — anything you send in Chat is saved here.</div>';
-        return;
-      }
-      host.innerHTML = rows.map(function (r) {
-        var proj = PROJECTS.filter(function (p) { return p.id === r.project_id; })[0];
-        return '<div class="pmc-hist-row" data-id="' + Fmt.esc(r.id) + '">' +
-          '<div class="pmc-hist-txt">' +
-            '<div class="pmc-hist-title">' + Fmt.esc(r.title || 'New conversation') + '</div>' +
-            '<div class="pmc-hist-meta">' + Fmt.esc(proj ? proj.name : 'General') + ' · ' + Fmt.esc(Fmt.date(r.updated_at)) + '</div>' +
-          '</div>' +
-          '<button type="button" class="pd-icon-btn pmc-hist-del" data-id="' + Fmt.esc(r.id) + '" ' +
-            'title="Delete this conversation" data-ico="trash" data-ico-size="14"></button>' +
-        '</div>';
-      }).join('');
-      if (window.Icons) Icons.hydrate(host);
-      Array.prototype.forEach.call(host.querySelectorAll('.pmc-hist-row'), function (row) {
-        row.onclick = function (e) {
-          if (e.target.closest('.pmc-hist-del')) return; // the delete button has its own handler below
-          openConversation(row.dataset.id);
-        };
-      });
-      Array.prototype.forEach.call(host.querySelectorAll('.pmc-hist-del'), function (btn) {
-        btn.onclick = function (e) { e.stopPropagation(); deleteConversation(btn.dataset.id); };
-      });
-    } catch (e) {
-      host.innerHTML = '<div class="pmc-muted" style="padding:16px;">Could not load past conversations (' +
-        Fmt.esc((e && e.message) || String(e)) + ').</div>';
-    }
-  }
+      if (token !== convToken) return;
 
-  async function openConversation(id) {
-    try {
-      var { data: conv, error: convErr } = await sb().from('pormac_conversations')
-        .select('id,project_id').eq('id', id).single();
-      if (convErr) throw convErr;
+      var ids = (convs || []).map(function (c) { return c.id; });
+      if (!ids.length) { renderMessages(); return; }   // nothing yet — persistTurn() creates it on the first reply
+      conversationId = ids[0];                          // canonical: the most recently updated
+
+      // Newest-first + limit, then reversed — an ascending limit would hand back
+      // the OLDEST N and silently drop everything recent, which is the half a
+      // planner is actually reading.
       var { data: msgs, error: msgErr } = await sb().from('pormac_messages')
-        .select('role,content').eq('conversation_id', id).order('created_at', { ascending: true });
+        .select('role,content')
+        .in('conversation_id', ids)
+        .order('created_at', { ascending: false })
+        .limit(MSG_CAP + 1);
       if (msgErr) throw msgErr;
+      if (token !== convToken) return;
 
-      conversationId = conv.id;
+      var rows = (msgs || []).slice().reverse();
       // A message row's own `role` check allows 'system' too, but nothing in
       // this module ever WRITES one — only the shape chatHistory/promptMessages
       // expects is kept.
-      chatHistory = (msgs || []).filter(function (m) { return m.role === 'user' || m.role === 'assistant'; })
-        .map(function (m) { return { role: m.role, content: m.content }; });
-
-      // Restore the project this conversation was grounded in — but only if
-      // it's still one the planner can see. A project they've since lost
-      // access to isn't in `#pmc-project`'s own option list, and forcing pid
-      // to it anyway would just have every context provider query a project
-      // RLS refuses; General is the honest fallback there, not a query.
-      var sel = $('pmc-project');
-      var hasOption = conv.project_id && Array.prototype.some.call(sel.options, function (o) { return o.value === conv.project_id; });
-      pid = hasOption ? conv.project_id : null;
-      sel.value = pid || '';
-      sessionStorage.setItem('pd_project', pid || '');
-
-      switchView('chat');
-      renderMessages();
+      rows = rows.filter(function (m) { return m.role === 'user' || m.role === 'assistant'; });
+      var truncated = rows.length > MSG_CAP;
+      chatHistory = truncated ? rows.slice(-MSG_CAP) : rows;
+      chatHistory = chatHistory.map(function (m) { return { role: m.role, content: m.content }; });
+      renderMessages(null, truncated);
     } catch (e) {
-      UI.toast('Pormac: could not open that conversation (' + ((e && e.message) || e) + ')', 'warn');
+      if (token !== convToken) return;
+      // The chat itself still works without its history — this only costs the
+      // earlier turns, so say so rather than leaving a blank thread that reads
+      // as "nothing was ever saved".
+      renderMessages('Could not load earlier messages (' + ((e && e.message) || e) + '). You can still ask a question.');
     }
   }
 
-  async function deleteConversation(id) {
-    if (!confirm('Delete this conversation? This cannot be undone.')) return;
-    var { error } = await sb().from('pormac_conversations').delete().eq('id', id);
-    if (error) { UI.toast('Pormac: could not delete that conversation (' + error.message + ')', 'warn'); return; }
-    // Deleting the one currently open in Chat drops it back to blank —
-    // its messages are gone (cascade delete), so there is nothing left to show.
-    if (id === conversationId) { conversationId = null; chatHistory = []; renderMessages(); }
-    renderHistory();
-  }
 
   // ==========================================================================
   // Capability detection + tiered model selection
@@ -599,9 +557,10 @@ window.Pormac = (function () {
         if (error) throw error;
         conversationId = data.id;
       } else {
-        // History sorts by `updated_at desc`, and nothing else in this table
-        // ever bumps it — without this an ongoing conversation would sink
-        // to the bottom of its own list the moment a newer one was created.
+        // `loadConversation()` picks this project's canonical conversation by
+        // `updated_at desc`, and nothing else in this table ever bumps it —
+        // without this, an ongoing thread would lose that role to any older
+        // row that happened to be touched more recently.
         await sb().from('pormac_conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId);
       }
       await sb().from('pormac_messages').insert([
@@ -641,15 +600,21 @@ window.Pormac = (function () {
     thread.scrollTop = thread.scrollHeight;
   }
 
-  function renderMessages() {
+  // `note` replaces the thread with a single system line (loading / a failed
+  // history read); `truncated` prefixes the thread with one, because a planner
+  // scrolling to the top of a capped thread would otherwise read it as the
+  // start of the conversation.
+  function renderMessages(note, truncated) {
     var thread = $('pmc-thread');
     thread.innerHTML = '';
+    if (note) { pushMessage('system', note); return; }
     if (!chatHistory.length) {
-      thread.innerHTML = '<div class="pmc-msg system"><div class="pmc-bubble">' +
-        (pid ? 'Ask me anything about this project.' : 'Pick a project above for grounded answers, or ask a general question.') +
-        '</div></div>';
+      pushMessage('system', pid
+        ? 'Ask me anything about this project. Everything you ask here stays in one running conversation — scroll back any time.'
+        : 'Pick a project above for grounded answers, or ask a general question.');
       return;
     }
+    if (truncated) pushMessage('system', 'Showing the most recent ' + MSG_CAP + ' messages of this conversation.');
     chatHistory.forEach(function (m) { pushMessage(m.role, m.content); });
   }
 
