@@ -102,6 +102,43 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### Minutes of Meeting: the Add-meeting form's own ghost-label reservation, not the shared label/input rules, was the "very big" mobile gap (2026-09-12)
+
+Owner, two phone screenshots of the same "+ Add meeting" form: *"space between recurring and
+meeting title is very big"* and *"the vertical gap between label and input box is still quite
+large as in first photo. second photo shows better tighter spacing between label and box."* The
+second photo is this module's own Detail (edit) view, offered as the tighter comparison.
+
+⚠️⚠️ **Not the same cause as the whole-app label/input pass or the `.il-timepair` overflow fix
+recorded just above** — both of those hold, untouched. This is a third, narrower thing:
+`.il-am-form .pd-field > label:not(.il-am-checklabel) { min-height: 26px; line-height: 13px; }`
+(module-local, "guaranteed row alignment" from an earlier round) reserves two lines' worth of
+height under every label in this ONE form, including the empty **ghost label**
+(`amGhostLabel()`) that sits above the Favorite star, the Recurring checkbox, and the
+Regular/Irregular select purely to keep each level with a real label on the same desktop row.
+Below 700px that row can hold four such fields at once, and a narrow phone wraps the rest onto
+their own line — where a field alone still pays the full 26px reservation with nothing left to
+align with, which is the "very big" gap between Recurring and the title above it. The same rule
+also leaves every label in the form, real or ghost, sitting well above its input even on a row
+that never wraps at all — the other half of the report.
+
+Fixed by resetting the reservation to a natural single-line label below 700px (rather than
+special-casing which rows still pair up two-wide at a given width) — because the ghost label is
+caught by the very same selector as the real ones, this keeps the Favorite star's ghost label
+shrinking in step with Meeting title's real label whenever the two DO still share a line, so
+alignment where it still matters is unaffected. Scoped to `.il-am-form` only; the Detail view
+never carried this reservation and was already tight, matching the owner's own comparison.
+Full detail: [`modules/minutes-of-meeting/CLAUDE.md`](modules/minutes-of-meeting/CLAUDE.md).
+
+**Verified:** brace balance holds (363/363); 0 NUL bytes; `node tools/wiring-check.js` 126/126,
+0 version splits; `node tools/dead-hooks.js` unchanged against its documented 9-finding baseline.
+⚠️ **Not verified signed in and no screenshot** — no live login or compositing/screenshot tool is
+available this session; reasoned from the CSS cascade and the current `main` markup, not observed
+rendered on a device.
+
+`modules/minutes-of-meeting/module.css` → `?v=20260912r`. No shared asset touched, no `MODULE_V`
+bump.
+
 ### 2026-09-12 — Pormac: one conversation per project, and the composer a slow fetch could hide
 
 Owner: *"no need for chat and history tab switcher. keep only 1 conversation per user per project.
