@@ -529,12 +529,31 @@
       } catch (e) { /* no settings row yet: the project id IS the default mapping */ }
       WPS = await PDb.selectAll('wpm_work_packages', function (q) { return q.eq('wpm_project_id', wpmId); });
     } catch (e) { if (!vendorErr) vendorErr = e; }
+    /* ⚠️⚠️ A PLAIN SELECT, NOT PDb.selectAll - the THIRD time this repo has had to say it.
+       selectAll pages with .order(key).gt(key, last) and needs a UNIQUE, NON-NULL cursor, and it
+       defaults that cursor to `id`. Both of these are aggregate VIEWS and neither has one:
+       vendor_qty_reconciliation groups by (project_id, work_package, unit) and
+       vendor_rate_library by (vendor_id, category, unit, resource_type).
+       ⚠️⚠️ MEASURED LIVE ON OPW101, 2026-09-12: every read returned 400
+       `42703 column vendor_qty_reconciliation.id does not exist`, and the catch below swallowed
+       it as "the migration has not run" - so RECON and RATELIB were ALWAYS EMPTY, on every
+       project, for everyone, since the day they were wired. The same shape as class_codes
+       (2026-09-07 e) and trade_map (2026-09-09 m2).
+       ⚠️ A composite key cannot be a keyset cursor, so there is nothing to pass as `key`:
+       one request each, ordered, with a ceiling well above what either view can produce. */
     try {
-      RECON = await PDb.selectAll('vendor_qty_reconciliation', function (q) { return q.eq('project_id', pid); });
-    } catch (e) { /* view arrives with the F2 migration */ }
+      var rc = await sb().from('vendor_qty_reconciliation').select('*')
+                         .eq('project_id', pid)
+                         .order('work_package').order('unit').limit(2000);
+      if (rc.error) throw rc.error;
+      RECON = rc.data || [];
+    } catch (e) { /* 42P01 until the F2 migration runs; anything else leaves it empty too */ }
     try {
-      RATELIB = await PDb.selectAll('vendor_rate_library', function (q) { return q; });
-    } catch (e) { /* view arrives with the F2 migration */ }
+      var rl = await sb().from('vendor_rate_library').select('*')
+                         .order('vendor_id').order('trade').order('unit').limit(5000);
+      if (rl.error) throw rl.error;
+      RATELIB = rl.data || [];
+    } catch (e) { /* 42P01 until the F2 migration runs; anything else leaves it empty too */ }
   }
   function vendorName(id) {
     if (!id) return null;

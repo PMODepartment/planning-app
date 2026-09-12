@@ -1,5 +1,54 @@
 # Module: productivity-rates — Productivity Monitoring
 
+## Two vendor views have never loaded, on any project (2026-09-12) — fmlozano
+
+Found by driving the **live, signed-in** app on OPW101 — the first signed-in session in days.
+The console carried two 400s. They are not new, and they are not this project's fault.
+
+```
+42703  column vendor_qty_reconciliation.id does not exist
+42703  column vendor_rate_library.id does not exist
+```
+
+### ⚠️⚠️ `RECON` AND `RATELIB` HAVE BEEN EMPTY SINCE THE DAY THEY WERE WIRED
+Both are read with `PDb.selectAll`, which pages with `.order(key).gt(key, last)` and defaults that
+cursor to **`id`**. Both are aggregate **VIEWS** and neither has one:
+`vendor_qty_reconciliation` groups by `(project_id, work_package, unit)` and `vendor_rate_library`
+by `(vendor_id, category, unit, resource_type)`. So every read 400s — and the `catch` swallowed it
+with the comment *"view arrives with the F2 migration"*.
+
+⚠️⚠️ **That comment is why nobody noticed.** The migration HAS run: the error is `42703`
+(*column* does not exist), not `42P01` (*relation* does not exist). The failure was permanently
+misread as "not migrated yet", so the screen showed nothing and blamed a migration that was
+already applied — **exactly** the shape of `class_codes` on 2026-09-07 (e), where the owner ran
+the migration repeatedly, correctly, and it could never help.
+
+### ⚠️ THE FIX IS A PLAIN SELECT, AND THERE IS NOTHING TO PASS AS `key`
+A keyset cursor must be a **single unique non-null column**. These views have composite keys, so
+`selectAll` cannot page them at all. One request each, ordered, with a ceiling far above what either
+view can produce — the same answer `trade_map` got on 2026-09-09 (m2), which is the **third**
+time this repo has landed on it. `selectAll`'s own doc comment warns about this trap by name and
+these two callers still walked into it.
+
+### Proved on the live database, side by side
+| query | result |
+|---|---|
+| `vendor_qty_reconciliation` **old** `.order('id')` | **ERROR 42703 column … does not exist** |
+| `vendor_qty_reconciliation` **new** `.order('work_package').order('unit')` | **0 rows, no error** |
+| `vendor_rate_library` **old** `.order('id')` | **ERROR 42703 column … does not exist** |
+| `vendor_rate_library` **new** `.order('vendor_id').order('trade').order('unit')` | **0 rows, no error** |
+
+⚠️ **0 rows is the honest answer for OPW101** — it records no vendor reconciliation — and it
+is a *result* now rather than a swallowed error. What changes is that a project which HAS the data
+will finally see it.
+
+⚠️ **Not changed: the catch still degrades quietly.** Turning a swallowed read into a visible
+error is a design decision about what a planner sees, and it belongs to the owner. The comment now
+says what a failure actually means instead of blaming the migration.
+
+`node --check` PARSE OK, 0 functions lost, 0 `selectAll` calls left on either view.
+`MODULE_V` → `20260912c`.
+
 ## F1/F2/F6 vendor attribution, reconciliation and the rate library (2026-08-25) — fmlozano
 **Run `../../migrations/2026-08-25-vendor-identity.sql` + `-vendor-performance.sql`.** New **Rates**
 tab; `vendor_id` + `work_package` on each activity, and a Vendor + Work package column in the Data

@@ -101,6 +101,40 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-12 — Two vendor views that have never loaded, found by driving the live app
+
+The first signed-in session in days, on OPW101. The console carried two 400s. Detail:
+[`modules/productivity-rates/CLAUDE.md`](modules/productivity-rates/CLAUDE.md).
+
+- ⚠️⚠️ **`vendor_qty_reconciliation` and `vendor_rate_library` have been empty since they were
+  wired, on every project, for everyone.** Both are read with `PDb.selectAll`, which pages on `id`;
+  both are aggregate **views** with composite keys and no `id` at all. Every read returned
+  `42703 column ….id does not exist`.
+- ⚠️⚠️ **The `catch` swallowed it as *"view arrives with the F2 migration"*, and that is why it
+  survived.** The migration HAS run — the error is `42703` (*column* missing), not `42P01`
+  (*relation* missing). A permanent failure read as "not migrated yet". The identical shape as
+  `class_codes` (2026-09-07 e), where the owner ran the migration again and again and it could
+  never help.
+- **Fixed with a plain select** — a keyset cursor must be a single unique column, so there is
+  nothing to pass as `key`. Third time this repo has arrived at that answer after `class_codes` and
+  `trade_map`, and `selectAll`'s own doc comment warns about it by name.
+- **Proved live, side by side:** the old `.order('id')` returns `ERROR 42703` on both views; the new
+  ordering returns **0 rows, no error**. 0 is honest for OPW101, and it is now a result rather than
+  a swallowed error.
+
+Also verified live and signed in, on the same pass: `ROWH` 34 = `--ps-rowh` 34px on a cold load;
+LSM on → **ROWH 162**, lane offsets **4, 15 … 147** (`4 + 11i`), **140 bars over 10 floor
+rows, 0 spills** (it was 20 of 58 outside their rows when `zh` was reported); floors ordered
+roof-first; the RATE strip reading 14 trades; the CLASH strip labelled **"(inferred order)"**,
+correctly, because the colour field is Activity name.
+⚠️ **And a correction to yesterday's frozen-column report:** measured with REAL labels,
+`.sc-table`'s frozen column is **156px = 23%** of its wrapper at desktop, not the 59% my fixture
+label predicted — the real longest label is *"Planned this month"*, not the 39-character string I
+tested with. The 132px cap is confirmed live at phone width. `.rl-table` measures 97px = 14%.
+`.rl-matrix`, `.pr-ttable` and `.pr-ed` have no rows on this project and remain unmeasured.
+
+`MODULE_V` → `20260912c`.
+
 ### 2026-09-12 — `tools/loc-key-agree.js`: the safety net a deferral promised and never had
 
 Overnight audit, agenda item 7 — shared surfaces. **No shipped file changed.**
