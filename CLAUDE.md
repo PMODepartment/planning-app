@@ -102,6 +102,39 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### The plan window zooms and pans like a CAD drawing; the setup step sheds three rows (2026-09-12) — ethanrobles10
+
+Owner: *"make the space allotted for the site plan bigger. meaning it should be similar to autocad,
+wheren you can zoom in zoom out. And also, simplify the UI pls, refer to the screenshot."*
+
+⚠️⚠️ **The stage was already huge — it just would not fit on the screen.** At `width:100%` it computed
+to about 1136 x 704, and `.pd-modal` is capped at `max-height:90vh`, so the drawing the window exists
+for was the part you had to scroll to. Its width is now capped by the height that actually fits, so
+the whole sheet is on screen at once and getting closer is the zoom's job.
+
+- ⚠️⚠️ **The zoom is a window on the sheet, in PLAN UNITS** — the svg's `viewBox` is the view, so
+  there is no second coordinate system to keep in step. `ptOf()` was the only function that had to
+  change, and every gesture (trace, drag, reshape, drop the marker) works zoomed without being
+  rewritten.
+- ⚠️ **Clamped to the sheet, unlike AutoCAD**: model space is infinite, a plate is not, and panning
+  past the edge could only lose the drawing off-screen. The wheel zooms on the cursor; a background
+  drag pans once zoomed in; middle-drag pans at any zoom. Handles, labels and line weights are sized
+  on SCREEN, so the drawing does not change as you look closer at it.
+- ⚠️ **Three rows folded.** The window's own setup rows (image, sheet shape, front) into one
+  `<details>` whose summary carries the state; in the setup step behind it, quick-generate and
+  copy-from-trade into one "Quick setup" panel that is open exactly when the trade is empty.
+- ⚠️⚠️ **`.sbld-mini` is `width:62px`** and had caught two more controls — the owner's screenshot shows
+  "Site plan 1/8" wrapped onto two lines inside a 30px button, and the Activity level select reading
+  "Aut". Fixed, and the three per-tower actions moved behind one ⋯ menu.
+
+⚠️ **Not verified signed in** — the anon key has no grants. The view arithmetic is proven by 39
+assertions against the shipped functions, and the layout by measuring the shipped stylesheets in a
+browser (the window fits 782px inside an 810px cap at 1440x900, aspect exact). What has not been seen
+is a corner dragged on a real traced plate at 6x.
+
+`MODULE_V` → `20260912j`. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
 ### The site plan is built from the towers' own floor plans — arrange and orient, never re-trace (2026-09-12) — ethanrobles10
 
 Owner: *"the pre-requisites first is to establish the per tower floor plan. meaning once the per tower

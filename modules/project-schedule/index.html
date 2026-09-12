@@ -3345,13 +3345,24 @@
        with an SVG in plan units stretched over it, so a trace is resolution-independent. */
     .sbld-zpbtn { font-size:var(--pd-fs-xs); padding:2px 9px; min-height:0; }
     .sbld-zpbtn.has { border-color:var(--pd-red); color:var(--pd-red); }
-    .zpw-modal { width:min(1180px, 96vw); max-width:96vw; }
+    /* ⚠️ Owner 2026-09-12: *"make the space allotted for the site plan bigger."* Nearly the whole
+       window, because the drawing IS the window — everything else in it is a control for the
+       drawing. */
+    .zpw-modal { width:min(1560px, 97vw); max-width:97vw; }
     .zpw { display:flex; flex-direction:column; gap:9px; }
     .zpw-head { display:flex; align-items:center; gap:10px; }
     .zpw-title { font-size:var(--pd-fs-md); font-weight:700; display:flex; flex-direction:column; gap:1px; }
     .zpw-sub { font-size:var(--pd-fs-xs); font-weight:400; color:var(--pd-muted); }
     .zpw-sp { flex:1 1 auto; }
     .zpw-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    /* The folded setup rows — see paint(). ⚠️ The summary carries the STATE as well as the name,
+       so shut is not the same as hidden. */
+    .zpw-more { border:1px solid var(--pd-line); border-radius:9px; background:var(--pd-bg); }
+    .zpw-more > summary { display:flex; align-items:center; gap:9px; flex-wrap:wrap; cursor:pointer;
+      padding:7px 11px; font-size:var(--pd-fs-sm); font-weight:700; }
+    .zpw-more[open] > summary { border-bottom:1px solid var(--pd-line); margin-bottom:9px; }
+    .zpw-more > .zpw-bar { padding:0 11px 9px; }
+    .zpw-moresum { font-weight:400; font-size:var(--pd-fs-xs); color:var(--pd-muted); }
     .zpw-pal { display:flex; align-items:center; gap:5px; flex-wrap:wrap; }
     .zpw-sw { min-width:42px; padding:3px 9px; border:1px solid var(--pd-line); border-radius:6px;
       font:inherit; font-size:var(--pd-fs-xs); font-weight:700; color:#fff; cursor:pointer; background:var(--zc, #888); }
@@ -3364,18 +3375,63 @@
     .zpw-op input { width:90px; }
     /* ⚠️ The stage keeps a fixed aspect so the plan units and the pixels stay proportional; the
        svg stretches to it with preserveAspectRatio="none", which is what makes ptOf() correct. */
-    .zpw-stage { position:relative; width:100%; aspect-ratio:1000 / 620; background:var(--pd-bg);
+    /* ⚠️⚠️ THE STAGE IS SIZED BY THE HEIGHT THE SCREEN CAN SHOW, not by the modal's width. At
+       `width:100%` a wide window made a stage ~700 units tall, the modal ran past its own 90vh,
+       and the drawing you opened the window to look at was the part you had to scroll to. The
+       width is capped by the height that actually fits, so the whole sheet is on screen at once —
+       and getting closer is the zoom control's job, not the scrollbar's.
+       ⚠️ THE BOX KEEPS THE SHEET'S ASPECT IN BOTH DIMENSIONS. The svg is stretched over it with
+       preserveAspectRatio="none", so a box of any other shape would silently distort every trace
+       and ptOf() would stop agreeing with what is drawn. `--zpar` is written by paint() from the
+       sheet's own height; the literal here is only a fallback. */
+    /* ⚠️ 90vh, not 100vh: `.pd-modal` is itself capped at 90vh and scrolls past it, so the sum that
+       has to fit is the modal's, not the screen's. The 360px is this window's own chrome measured
+       on the SITE plan — the row of controls, the fold, the tip, the chip list and the scale note —
+       because that is the taller of the two subjects, and a stage that fits the floor plan but not
+       the site plan would scroll on exactly the drawing this was asked for. */
+    .zpw-stage { --zpvh:max(300px, calc(90vh - 360px)); position:relative;
+      aspect-ratio:var(--zpar, 1000 / 620);
+      width:min(100%, calc(var(--zpvh) * var(--zpar, 1000 / 620)));
+      margin-inline:auto; background:var(--pd-bg);
       border:1px solid var(--pd-line); border-radius:10px; overflow:hidden; }
-    .zpw-stage.drawing { cursor:crosshair; }
-    .zpw-img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; pointer-events:none; }
+    .zpw-stage.zoomed { cursor:grab; }
+    .zpw-stage.drawing, .zpw-stage.drawing.zoomed { cursor:crosshair; }
+    .zpw-stage.panning, .zpw-stage.panning.drawing { cursor:grabbing; }
+    /* ⚠️ transform-origin at the top-left corner, because the zoom transform is written in the
+       same terms as the svg's viewBox — an origin in the middle would need the offset solved
+       twice, in two conventions, for one view. */
+    .zpw-img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain;
+      transform-origin:0 0; pointer-events:none; }
     .zpw-svg { position:absolute; inset:0; width:100%; height:100%; }
+    /* ==== THE ZOOM CONTROL ============================================================
+       ⚠️ ON the stage rather than in a toolbar row, for two reasons: it is a control for the
+       VIEW and not for the drawing, and the edit row it would otherwise sit in is not emitted at
+       all until the sheet has something to draw — so a planner zooming into a bare floor plan to
+       place their first corner would have had no control at all. */
+    .zpw-zoom { position:absolute; right:8px; bottom:8px; z-index:2; display:flex; align-items:center;
+      gap:2px; padding:3px; border:1px solid var(--pd-line); border-radius:9px;
+      background:var(--pd-card); box-shadow:0 2px 8px rgba(0,0,0,.22); }
+    .zpw-zoom button { min-width:27px; height:24px; padding:0 7px; border:none; border-radius:6px;
+      background:none; color:var(--pd-ink); font:inherit; font-size:var(--pd-fs-sm); font-weight:700;
+      line-height:1; cursor:pointer; }
+    .zpw-zoom button:hover:not(:disabled) { background:var(--pd-bg); color:var(--pd-red); }
+    .zpw-zoom button:disabled { opacity:.38; cursor:not-allowed; }
+    .zpw-zpct { min-width:44px; text-align:center; font-size:var(--pd-fs-xs); color:var(--pd-muted);
+      font-variant-numeric:tabular-nums; }
+    /* ⚠️ vector-effect, so a line is the same weight at every zoom. Without it a 3-unit stroke at
+       6× reads as a fat band and a small zone disappears under its own outline — the drawing
+       would change as you looked closer at it. */
     .zpw-shape polygon { fill:var(--zc, #888); fill-opacity:.34; stroke:var(--zc, #888); stroke-width:3;
-      cursor:grab; }
+      vector-effect:non-scaling-stroke; cursor:grab; }
     .zpw-shape:hover polygon { fill-opacity:.5; }
     .zpw-shape.sel polygon { fill-opacity:.58; stroke-width:6; }
-    .zpw-shape text { fill:#fff; font-size:26px; font-weight:800; text-anchor:middle; paint-order:stroke;
-      stroke:rgba(0,0,0,.45); stroke-width:5; pointer-events:none; }
-    .zpw-live { fill:rgba(238,49,36,.18); stroke:var(--pd-red); stroke-width:3; stroke-dasharray:9 6; }
+    /* ⚠️ `--zs` is 1/zoom, written on the svg by paint(). A label is a fixed size on SCREEN, like
+       every other annotation here — text that grew with the zoom would cover the very corner the
+       planner zoomed in to reach. */
+    .zpw-shape text { fill:#fff; font-size:calc(26px * var(--zs, 1)); font-weight:800; text-anchor:middle;
+      paint-order:stroke; stroke:rgba(0,0,0,.45); stroke-width:calc(5 * var(--zs, 1)); pointer-events:none; }
+    .zpw-live { fill:rgba(238,49,36,.18); stroke:var(--pd-red); stroke-width:3; stroke-dasharray:9 6;
+      vector-effect:non-scaling-stroke; }
     .zpw-lbl { font-size:var(--pd-fs-xs); color:var(--pd-muted); min-width:38px; }
     .zpw-shapes { display:inline-flex; gap:3px; flex-wrap:wrap; }
     /* Orient + size, on the selected area. ⚠️ Its own group with a label: four turn buttons beside
@@ -3396,10 +3452,14 @@
     /* ⚠️ The corner handles belong to the SELECTED shape only — see paint(). They are drawn
        larger than they look: a 9-unit radius on a 1000-unit plate is a comfortable target at any
        window size, and the visible dot is the stroke. */
-    .zpw-vx { fill:var(--pd-red); stroke:#fff; stroke-width:2; cursor:grab; }
-    .zpw-mid { fill:#fff; stroke:var(--pd-red); stroke-width:2; opacity:.55; cursor:copy; }
+    /* ⚠️ The RADIUS is divided by the zoom in paint(), the stroke is held by vector-effect: a
+       handle is a target for the cursor, and a target that grows with the zoom is the one thing
+       that must not happen when you zoom in to place it precisely. */
+    .zpw-vx { fill:var(--pd-red); stroke:#fff; stroke-width:2; vector-effect:non-scaling-stroke; cursor:grab; }
+    .zpw-mid { fill:#fff; stroke:var(--pd-red); stroke-width:2; vector-effect:non-scaling-stroke;
+      opacity:.55; cursor:copy; }
     .zpw-mid:hover { opacity:1; }
-    .zpw-lv { fill:var(--pd-red); stroke:#fff; stroke-width:2; }
+    .zpw-lv { fill:var(--pd-red); stroke:#fff; stroke-width:2; vector-effect:non-scaling-stroke; }
     .zpw-shape.drag polygon { fill-opacity:.6; cursor:grabbing; }
     /* ⚠️ vector-effect keeps the gridline ONE pixel wide however the stage is stretched. The svg
        is preserveAspectRatio="none", so a plain stroke-width would be scaled unevenly on the two
@@ -3424,9 +3484,9 @@
     .zpw-mark-h { fill:var(--pd-red); fill-opacity:.14; stroke:var(--pd-red); stroke-opacity:.35;
       stroke-width:2; vector-effect:non-scaling-stroke; }
     .zpw-mark-d { fill:var(--pd-red); stroke:#fff; stroke-width:3; vector-effect:non-scaling-stroke; }
-    .zpw-mark text { fill:var(--pd-red); font-size:22px; font-weight:800; text-anchor:middle;
-      letter-spacing:.06em; paint-order:stroke; stroke:var(--pd-card); stroke-width:5;
-      pointer-events:none; }
+    .zpw-mark text { fill:var(--pd-red); font-size:calc(22px * var(--zs, 1)); font-weight:800;
+      text-anchor:middle; letter-spacing:.06em; paint-order:stroke; stroke:var(--pd-card);
+      stroke-width:calc(5 * var(--zs, 1)); pointer-events:none; }
     .zpw-front, .zpw-rear { pointer-events:none; vector-effect:non-scaling-stroke; }
     .zpw-front { stroke:var(--pd-red, #EE3124); stroke-width:6; opacity:.85; }
     .zpw-rear { stroke:var(--pd-muted); stroke-width:4; stroke-dasharray:10 7; opacity:.6; }
@@ -3849,7 +3909,13 @@
     .sbld-tltxt { flex:1 1 auto; font-size:var(--pd-fs-base); }
     .sbld-tllag { font-size:var(--pd-fs-xs); font-weight:700; color:var(--pd-red); background:var(--pd-red-light); padding:1px 6px; border-radius:var(--pd-radius); }
     /* Step-2 tower strip. With one tower it is a single quiet chip; with more it is the selector. */
+    /* ⚠️⚠️ THE DECLARATIONS WERE SPLIT AROUND THE NOTE'S RULES: `.sbld-towerbar {` opened here,
+       three unrelated rules were written inside the open block, and its own padding/border closed
+       it ten lines later. It rendered only because CSS nesting is supported and the note really is
+       inside the bar — in a browser without nesting every `.sbld-towerbar-note` rule was dropped
+       and the drift warning lost its styling. Written out flat. */
     .sbld-towerbar { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin:2px 0 10px;
+      padding:8px 10px; border:1px solid var(--pd-line); border-radius:9px; background:var(--pd-bg); }
     /* What the step DETECTED about the towers. ⚠️ Its own row, wrapping under the chips: on a
        four-tower job the drift message is a sentence, and squeezed into the chip row it would push
        the controls onto a second line every time it appeared. */
@@ -3857,8 +3923,37 @@
       margin-top:2px; line-height:1.5; }
     .sbld-towerbar-note.warn { color:var(--pd-warn-text); background:var(--pd-warn-bg);
       border-radius:var(--pd-radius-md); padding:5px 9px; }
-      padding:8px 10px; border:1px solid var(--pd-line); border-radius:9px; background:var(--pd-bg); }
     .sbld-towerbar-l { font-size:var(--pd-fs-xs); text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); font-weight:700; margin-right:2px; }
+    /* ⚠️⚠️ NOT `.sbld-mini`, WHICH IS `width:62px` — sized for the two-character number inputs it
+       was written for. It is the third control in this step to be caught by that class: on
+       "Site plan 1/8" it wrapped the label onto two lines inside a 30px-tall button, so the one
+       number the button exists to report was cut in half (owner 2026-09-12, with a screenshot). */
+    .sbld-twbtn { height:30px; padding:2px 10px; font-size:var(--pd-fs-sm); font-weight:700;
+      white-space:nowrap; }
+    /* The active tower's own actions, behind one control. ⚠️ Owner 2026-09-12: *"simplify the UI"*.
+       Rename / Copy from… / Delete are all "…this tower", all occasional, and three of them in a
+       row read as three more primary actions beside the two that ARE primary — adding a tower, and
+       the site plan. ⚠️ A <details>, so the ids inside are in the DOM at all times and every
+       handler stays wired exactly as it was. */
+    .sbld-twmore { position:relative; flex:0 0 auto; }
+    .sbld-twmore > summary { list-style:none; cursor:pointer; display:inline-flex; align-items:center;
+      justify-content:center; width:30px; height:30px; border:1px solid var(--pd-line);
+      border-radius:var(--pd-radius); background:var(--pd-card); color:var(--pd-muted);
+      font-weight:800; line-height:1; }
+    .sbld-twmore > summary::-webkit-details-marker { display:none; }
+    .sbld-twmore[open] > summary, .sbld-twmore > summary:hover { border-color:var(--pd-red); color:var(--pd-red); }
+    .sbld-twmenu { position:absolute; z-index:40; top:calc(100% + 5px); left:0; display:flex;
+      flex-direction:column; gap:5px; min-width:178px; padding:7px; border:1px solid var(--pd-line);
+      border-radius:9px; background:var(--pd-card); box-shadow:0 6px 18px rgba(0,0,0,.22); }
+    .sbld-twmenu .pd-btn { width:100%; justify-content:flex-start; white-space:nowrap; }
+    /* ⚠️ Owner 2026-09-12: *"simplify the UI"*. Generating a building and copying another trade's
+       are both answers to "this trade has nothing in it" — controls used once and then never
+       again, sitting above the floors the planner has already typed. Folded, and open exactly when
+       the tower IS empty, which is the only moment they are the next thing to do. */
+    .sbld-fill { margin:0 0 12px; border:1px solid var(--pd-line); border-radius:9px; background:var(--pd-bg); }
+    .sbld-fill > summary { cursor:pointer; padding:7px 11px; font-size:var(--pd-fs-sm); font-weight:700; }
+    .sbld-fill[open] > summary { border-bottom:1px solid var(--pd-line); }
+    .sbld-fillbody { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:9px 11px; }
     /* relationship dialog */
     .sbld-linkdlg { position:fixed; z-index:600; background:var(--pd-card); border:1px solid var(--pd-line); border-radius:var(--pd-radius-md); box-shadow:var(--pd-shadow-lg); padding:10px; width:224px; }
     .sbld-ld-h { font-size:var(--pd-fs-xs); font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--pd-muted); margin-bottom:6px; }
@@ -35450,7 +35545,7 @@
           return '<button class="sbld-chip' + (t.id === act ? ' on' : '') + '" data-twsel="' + e2(t.id) + '" title="' +
             e2((t.code ? t.code + ' — ' : '') + (t.name || '')) + '">' + e2(t.name || t.code || 'Tower') + '</button>';
         }).join('') +
-        '<button class="pd-btn sbld-mini" id="b-twadd" title="Add another tower">+ Tower</button>' +
+        '<button class="pd-btn sbld-twbtn" id="b-twadd" title="Add another tower">+ Tower</button>' +
         /* ==== WHERE THE SITE PLAN IS DEFINED ==============================================
            ⚠️⚠️ ON THE TOWER BAR, and that is the answer to the owner's *"propose how and where
            you would define the plan"*. This bar is the only place in the app that enumerates the
@@ -35482,7 +35577,7 @@
             if (zpIsAll(c)) return false;
             return !!_seen[zpNormCode(c)];
           }).length : 0;
-          return '<button class="pd-btn sbld-mini sbld-sitebtn' + (_sp ? ' has' : '') + '" id="b-siteplan" title="' +
+          return '<button class="pd-btn sbld-twbtn sbld-sitebtn' + (_sp ? ' has' : '') + '" id="b-siteplan" title="' +
             e2(_sp ? ('Site development plan · ' + _hit + ' of ' + _tw + ' tower' + (_tw === 1 ? '' : 's') +
                       ' traced' + (_sp.img ? ' · drawing attached' : ' · no drawing attached') +
                       ' — the Vertical Stacking’s Site view is built from it')
@@ -35490,9 +35585,17 @@
             '<span data-ico="compass" data-ico-size="14"></span> ' +
             (_sp ? 'Site plan ' + _hit + '/' + _tw : 'Site plan…') + '</button>';
         })() : '') +
-        '<button class="pd-btn sbld-mini" id="b-twren" title="Rename the active tower">Rename</button>' +
-        (list.length > 1 ? '<button class="pd-btn sbld-mini" id="b-twcopy" title="Copy another tower\'s floors, zones, units and sequencing into this one">Copy from…</button>' : '') +
-        (list.length > 1 ? '<button class="pd-btn sbld-mini sbld-del" id="b-twdel" title="Delete the active tower and its floors">Delete</button>' : '') +
+        /* ⚠️ ONE control for the three things you can do TO the active tower — see .sbld-twmore.
+           The ids are unchanged, so every handler is wired exactly as it was.
+           ⚠️ Delete names the tower in the label, because it is the destructive one and a menu row
+           reading just "Delete" is a row that does not say what it will take with it. */
+        '<details class="sbld-twmore"><summary title="' + e2('More for ' + towerLabel(act)) + '">⋯</summary>' +
+          '<div class="sbld-twmenu">' +
+            '<button class="pd-btn" id="b-twren" title="Rename the active tower">Rename…</button>' +
+            (list.length > 1 ? '<button class="pd-btn" id="b-twcopy" title="Copy another tower\'s floors, zones, units and sequencing into this one">Copy floors from another tower…</button>' : '') +
+            (list.length > 1 ? '<button class="pd-btn sbld-del" id="b-twdel" title="Delete the active tower and its floors">' + e2('Delete ' + towerLabel(act)) + '</button>' : '') +
+          '</div>' +
+        '</details>' +
         /* ==== WHAT WAS DETECTED, SAID OUT LOUD ============================================
            ⚠️⚠️ THE DRIFT CASE IS THE ONE WORTH INTERRUPTING FOR. A schedule carrying towers this
            setup has never named is the exact state in which the site plan's name join fails — the
@@ -36598,7 +36701,18 @@
                  // window opens ready to draw rather than opening with nothing selectable.
                  brush: codes[0] || ZP_ALL, drawing: false, pts: [], sel: null, url: null,
                  busy: false, err: '', hist: [], clip: null, grid: zpGridLoad(), ref: '',
-                 placing: false };
+                 placing: false,
+                 /* ==== THE VIEW ==============================================================
+                    Owner 2026-09-12: *"it should be similar to autocad, wheren you can zoom in
+                    zoom out."* ⚠️ `zk` is the zoom and `zx`/`zy` are the top-left corner of what
+                    is visible, IN PLAN UNITS — the same units every traced point is stored in, so
+                    the view and the drawing are never two coordinate systems to keep in step.
+                    ⚠️ The view is a VIEW: nothing here is committed, undone or saved, and a plate
+                    opened again opens showing the whole sheet. */
+                 zk: 1, zx: 0, zy: 0,
+                 // ⚠️ The setup rows open on a BLANK sheet, where attaching the plan really is the
+                 // first move, and shut once anything is drawn — when the stage is what matters.
+                 more: !(plate && ((plate.polys && plate.polys.length) || plate.img)) };
 
       function H() { return zpH(_zpWin.draft); }
       /* ⚠️ READ STRAIGHT OFF THE BAG, never through zpIdFor: that resolves a floor, and a
@@ -36733,8 +36847,24 @@
         commit(); paint();
       }
 
+      /* What the folded setup rows are hiding, said in words. ⚠️ A fold that hides the STATE as
+         well as the controls is a fold a planner has to open to find out whether they need to
+         open it. */
+      function _moreSum() {
+        var d2 = _zpWin.draft, h2 = H();
+        var nm = (ZP_SHEETS.filter(function (s2) { return String(h2) === s2[0]; })[0] ||
+                  [0, (Math.round(ZP_W / h2 * 100) / 100) + ':1'])[1];
+        var bits = [nm, d2.img ? 'image attached' : 'no image',
+                    zpFront() ? ('front: ' + ZP_EDGE_SIDE[zpFront()]) : 'front not set'];
+        if (_zpWin.ref) bits.push('tracing over another floor');
+        return bits.join(' · ');
+      }
       function paint() {
         var W = _zpWin, d = W.draft, hh = H();
+        /* The window on the sheet, and the factor every fixed-size annotation divides by.
+           ⚠️ Handles, labels and line weights are sized on SCREEN, not in plan units: a corner
+           handle that grew with the zoom would cover the very corner you zoomed in to reach. */
+        var V = zView(), zs = 1 / V.k;
         var all = allCodes();
         var sel = selShape();
         var mine = SUBJ.users(W.plateId);
@@ -36748,10 +36878,11 @@
           // once turns a floor of six zones into a field of eighty dots.
           var handles = on ? q.pts.map(function (p, i) {
             var nx = q.pts[(i + 1) % q.pts.length];
-            return '<circle class="zpw-vx" data-vi="' + i + '" cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="9"></circle>' +
+            return '<circle class="zpw-vx" data-vi="' + i + '" cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) +
+              '" r="' + (9 * zs).toFixed(2) + '"></circle>' +
               // A faded midpoint handle ADDS a corner there — the equipment plan's gesture.
               '<circle class="zpw-mid" data-mid="' + i + '" cx="' + ((p[0] + nx[0]) / 2).toFixed(1) +
-                '" cy="' + ((p[1] + nx[1]) / 2).toFixed(1) + '" r="7"></circle>';
+                '" cy="' + ((p[1] + nx[1]) / 2).toFixed(1) + '" r="' + (7 * zs).toFixed(2) + '"></circle>';
           }).join('') : '';
           return '<g class="zpw-shape' + (on ? ' sel' : '') + '" data-zpoly="' + e2(q.id) + '" style="--zc:' + zpColor(q.code) + '">' +
             '<polygon points="' + zpPts(q.pts) + '"></polygon>' +
@@ -36806,13 +36937,13 @@
         if (_mk) {
           var _mx = _mk.x * ZP_W, _my = _mk.y * hh;
           markSvg = '<g class="zpw-mark" data-zpmark="1">' +
-            '<circle class="zpw-mark-h" cx="' + _mx.toFixed(1) + '" cy="' + _my.toFixed(1) + '" r="26"></circle>' +
-            '<circle class="zpw-mark-d" cx="' + _mx.toFixed(1) + '" cy="' + _my.toFixed(1) + '" r="11"></circle>' +
-            '<text x="' + _mx.toFixed(1) + '" y="' + (_my - 22).toFixed(1) + '">FRONT</text></g>';
+            '<circle class="zpw-mark-h" cx="' + _mx.toFixed(1) + '" cy="' + _my.toFixed(1) + '" r="' + (26 * zs).toFixed(2) + '"></circle>' +
+            '<circle class="zpw-mark-d" cx="' + _mx.toFixed(1) + '" cy="' + _my.toFixed(1) + '" r="' + (11 * zs).toFixed(2) + '"></circle>' +
+            '<text x="' + _mx.toFixed(1) + '" y="' + (_my - 22 * zs).toFixed(1) + '">FRONT</text></g>';
         }
         var live = W.drawing && W.pts.length
           ? '<polyline class="zpw-live" points="' + zpPts(W.pts) + '"></polyline>' +
-            W.pts.map(function (p) { return '<circle class="zpw-lv" cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="7"></circle>'; }).join('')
+            W.pts.map(function (p) { return '<circle class="zpw-lv" cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="' + (7 * zs).toFixed(2) + '"></circle>'; }).join('')
           : '';
 
         wrap.innerHTML =
@@ -36824,6 +36955,20 @@
             '<button class="pd-btn" id="zpw-x">Close</button>' +
           '</div>' +
 
+          /* ==== THE SHEET'S OWN SETTINGS, FOLDED ========================================
+             ⚠️⚠️ Owner 2026-09-12: *"simplify the UI"*, and it buys the stage its height back.
+             These two rows are SETUP — which image lies underneath, how the sheet is shaped,
+             which way the building faces. They are answered once and then carried for the life of
+             the drawing, while everything below them is used on every gesture; open, they cost
+             ~90px of a window whose whole point is the stage.
+             ⚠️ THE SUMMARY CARRIES THE STATE, so shutting them hides the controls and not the
+             facts — the sheet's shape, whether an image is attached and where the front is all
+             read without opening anything.
+             ⚠️ `<details>` keeps its contents in the DOM when shut, which is what lets every
+             control inside stay wired exactly as it was. */
+          '<details class="zpw-more" id="zpw-more"' + (W.more ? ' open' : '') + '>' +
+            '<summary>Sheet, image &amp; front' +
+              '<span class="zpw-moresum">' + e2(_moreSum()) + '</span></summary>' +
           // ---- row 1: the drawing underneath -------------------------------------------
           '<div class="zpw-bar">' +
             '<span class="zpw-lbl">Plan</span>' +
@@ -36874,37 +37019,8 @@
                 '<button class="pd-btn" id="zpw-mkx" title="Remove the marker and leave the front undefined">Remove</button>'
               : '<span class="sbld-hint" style="margin:0;">not set \u2014 the 3D view falls back to its own <b>Front faces</b> setting</span>') +
             (W.placing ? '<span class="sbld-hint" style="margin:0;">click anywhere on the drawing, nearest edge wins</span>' : '') +
-          /* ---- the FLOOR's own shape, which is not a zone -------------------------------
-             ⚠️⚠️ Owner 2026-09-10: *"how come when clicking level 1 detail, the floor plan size
-             disappears? To solve this … add an option of defining the shapes of the zones AND
-             for the floors, so that way we can distinguish the difference between them."*
-             Both halves are answered here: the outline has its own row rather than a swatch in
-             the zone palette, and when it is not drawn the floor's shape is taken from the zones
-             (see _vsZpOutlineOf) instead of falling back to a guessed box. */
-            '<span class="ps-tb-div"></span>' +
-            '<span class="zpw-lbl">Floor shape</span>' +
-            (function () {
-              var _out = outlinePolys(), _zon = zonePolys();
-              /* ⚠️ THE SAME DOUBLE DUTY THE ZONE PALETTE HAS, and the row above says which: with
-                 an area selected this MAKES that area the outline, otherwise it loads the brush.
-                 One rule for "what is this area", two places to say it, no third gesture. */
-              var _on = sel ? zpIsAll(sel.code) : zpIsAll(W.brush);
-              return '<button class="zpw-sw all' + (_on ? ' on' : '') + '" data-zpb="' + e2(ZP_ALL) + '"' +
-                  ' style="--zc:' + zpColor(ZP_ALL) + '" title="' + e2(sel
-                    ? ('Make this area the ' + SUBJ.outlineWord + ' rather than a ' + SUBJ.codeWord)
-                    : 'Draw the floor’s own outline — use it when the slab is bigger than the zones on it, or when the floor has no zones at all') +
-                  '">' + e2(ZP_ALL_LABEL) + '</button>' +
-                (_out.length
-                  ? '<button class="pd-btn" id="zpw-outx" title="Delete the outline. The floor’s shape goes back to being its zones.">Remove</button>' +
-                    '<span class="sbld-hint" style="margin:0;">drawn as <b>' + _out.length + ' area' + (_out.length === 1 ? '' : 's') +
-                      '</b> · this is what the 3D view extrudes when a storey is read as one block (Detail 1)</span>'
-                  : (_zon.length
-                      ? '<span class="sbld-hint" style="margin:0;">taken from the <b>' + _zon.length + ' zone area' + (_zon.length === 1 ? '' : 's') +
-                        '</b> you traced — draw one only if the floor plate is bigger than its zones</span>'
-                      : '<span class="sbld-hint" style="margin:0;">nothing traced yet — draw the outline, or trace the zones and the floor takes their shape</span>')) +
-              '';
-            })() +
           '</div>' +
+          '</details>' +
 
           // ---- row 2: which zone ---------------------------------------------------------
           /* ⚠️ THE PALETTE DOES DOUBLE DUTY, and the label says which: with a shape selected it
@@ -36941,6 +37057,41 @@
                 (zpColorIsSet(act)
                   ? '<button class="pd-btn" id="zpw-colx" title="Back to the automatic colour for this zone">Auto</button>'
                   : '<span class="sbld-hint" style="margin:0;">automatic</span>');
+            })() +
+          /* ---- the FLOOR's own shape, which is not a zone -------------------------------
+             ⚠️⚠️ Owner 2026-09-10: *"how come when clicking level 1 detail, the floor plan size
+             disappears? To solve this … add an option of defining the shapes of the zones AND
+             for the floors, so that way we can distinguish the difference between them."*
+             ⚠️ IT SITS AT THE END OF THE PALETTE ROW, after a divider and behind its own label —
+             owner 2026-09-12: *"simplify the UI"*. It is a BRUSH, and it was in a row of its own
+             next to controls for the front marker, which is not a brush at all. What the earlier
+             note was protecting is the distinction, not the row: a dashed swatch behind the words
+             "Floor shape" cannot be misread as a zone somebody forgot they named, and a planner
+             looking for "what do I draw next" now finds every answer on one line.
+             ⚠️ When it is not drawn the floor's shape is taken from the zones (see _vsZpOutlineOf)
+             instead of falling back to a guessed box. */
+            '<span class="ps-tb-div"></span>' +
+            '<span class="zpw-lbl">Floor shape</span>' +
+            (function () {
+              var _out = outlinePolys(), _zon = zonePolys();
+              /* ⚠️ THE SAME DOUBLE DUTY THE ZONE PALETTE HAS, and the row above says which: with
+                 an area selected this MAKES that area the outline, otherwise it loads the brush.
+                 One rule for "what is this area", two places to say it, no third gesture. */
+              var _on = sel ? zpIsAll(sel.code) : zpIsAll(W.brush);
+              return '<button class="zpw-sw all' + (_on ? ' on' : '') + '" data-zpb="' + e2(ZP_ALL) + '"' +
+                  ' style="--zc:' + zpColor(ZP_ALL) + '" title="' + e2(sel
+                    ? ('Make this area the ' + SUBJ.outlineWord + ' rather than a ' + SUBJ.codeWord)
+                    : 'Draw the floor’s own outline — use it when the slab is bigger than the zones on it, or when the floor has no zones at all') +
+                  '">' + e2(ZP_ALL_LABEL) + '</button>' +
+                (_out.length
+                  ? '<button class="pd-btn" id="zpw-outx" title="Delete the outline. The floor’s shape goes back to being its zones.">Remove</button>' +
+                    '<span class="sbld-hint" style="margin:0;">drawn as <b>' + _out.length + ' area' + (_out.length === 1 ? '' : 's') +
+                      '</b> · this is what the 3D view extrudes when a storey is read as one block (Detail 1)</span>'
+                  : (_zon.length
+                      ? '<span class="sbld-hint" style="margin:0;">taken from the <b>' + _zon.length + ' zone area' + (_zon.length === 1 ? '' : 's') +
+                        '</b> you traced — draw one only if the floor plate is bigger than its zones</span>'
+                      : '<span class="sbld-hint" style="margin:0;">nothing traced yet — draw the outline, or trace the zones and the floor takes their shape</span>')) +
+              '';
             })() +
           '</div>' +
 
@@ -37022,16 +37173,38 @@
             'buttons to size it against its neighbours. This is an arrangement, never a survey.</p>' : '') +
           // ⚠️ The stage's aspect is the SHEET's, or a re-shaped sheet would be squashed back
           // into the 1000 x 620 box the CSS used to hard-code and every corner would move.
-          '<div class="zpw-stage' + (W.drawing ? ' drawing' : '') + '" id="zpw-stage" style="aspect-ratio:' + ZP_W + ' / ' + hh + ';">' +
-            (W.url ? '<img class="zpw-img" src="' + e2(W.url) + '" alt="" style="opacity:' + (d.o == null ? 1 : d.o) + '">' : '') +
-            '<svg class="zpw-svg" id="zpw-svg" viewBox="0 0 ' + ZP_W + ' ' + hh + '" preserveAspectRatio="none">' + gridSvg + refSvg + frontSvg + shapes + live + markSvg + '</svg>' +
+          '<div class="zpw-stage' + (W.drawing ? ' drawing' : '') + (V.k > 1 ? ' zoomed' : '') +
+              '" id="zpw-stage" style="--zpar:' + ZP_W + ' / ' + hh + ';">' +
+            /* ⚠️ The backdrop is moved by the SAME numbers as the viewBox below it, written in the
+               transform's own terms: scale first, then shift by the view's top-left as a fraction
+               of the sheet. Anything else and the drawing would slide off its own plan. */
+            (W.url ? '<img class="zpw-img" src="' + e2(W.url) + '" alt="" style="opacity:' + (d.o == null ? 1 : d.o) +
+              (V.k > 1 ? ';transform:scale(' + V.k.toFixed(4) + ') translate(' +
+                (-V.x / ZP_W * 100).toFixed(4) + '%,' + (-V.y / hh * 100).toFixed(4) + '%)' : '') + '">' : '') +
+            '<svg class="zpw-svg" id="zpw-svg" style="--zs:' + zs.toFixed(4) + '" viewBox="' +
+              V.x.toFixed(2) + ' ' + V.y.toFixed(2) + ' ' + V.w.toFixed(2) + ' ' + V.h.toFixed(2) +
+              '" preserveAspectRatio="none">' + gridSvg + refSvg + frontSvg + shapes + live + markSvg + '</svg>' +
             (!d.img && !d.polys.length && !W.drawing ? '<div class="zpw-empty"><b>Nothing here yet.</b><br>' +
               'Pick a zone above, then <b>add a shape</b> — or <b>Trace…</b> it corner by corner.<br>' +
               'Attaching the floor plan is optional, but it gives you something to draw over.</div>' : '') +
+            /* ==== ZOOM ===================================================================
+               ⚠️ The percentage is a READOUT, not decoration: a planner who has zoomed into one
+               corner of a site plan needs to know that is what they are looking at before they
+               judge anything on it by eye. */
+            '<div class="zpw-zoom">' +
+              '<button id="zpw-zout"' + (V.k > 1 ? '' : ' disabled') + ' title="Zoom out">&#8722;</button>' +
+              '<span class="zpw-zpct" title="' + e2(V.k > 1
+                ? ('Showing about ' + Math.round(V.w) + ' × ' + Math.round(V.h) + ' of the ' +
+                   ZP_W + ' × ' + Math.round(hh) + ' sheet')
+                : 'The whole sheet') + '">' + Math.round(V.k * 100) + '%</span>' +
+              '<button id="zpw-zin"' + (V.k < ZP_ZMAX ? '' : ' disabled') + ' title="Zoom in">+</button>' +
+              '<button id="zpw-zfit"' + (V.k > 1 ? '' : ' disabled') + ' title="Back to the whole sheet">Fit</button>' +
+            '</div>' +
           '</div>' +
           '<p class="zpw-tip">Drag an area to move it · drag a corner to reshape · the faint dot between two corners adds one · ' +
             '<b>Alt</b>-click a corner removes it' +
-            (W.grid > 0 ? ' \u00b7 corners snap to a <b>' + W.grid + '</b>-unit grid' : '') + '</p>' +
+            (W.grid > 0 ? ' · corners snap to a <b>' + W.grid + '</b>-unit grid' : '') +
+            ' · <b>scroll</b> to zoom' + (V.k > 1 ? ' · <b>drag the background</b> to pan' : '') + '</p>' +
 
           '<div class="zpw-foot">' +
             '<div class="zpw-list">' + (d.polys.length
@@ -37080,13 +37253,52 @@
         wire();
       }
 
+      /* ==== ZOOM AND PAN ==================================================================
+         Owner 2026-09-12: *"it should be similar to autocad, wheren you can zoom in zoom out."*
+
+         ⚠️⚠️ THE VIEW IS A WINDOW ON THE SHEET, IN PLAN UNITS — never a transform layered over
+         the drawing. The svg's viewBox IS the view, so every point already stored, every shape
+         drawn and every new corner stay in ONE coordinate system at every zoom; there is no
+         second frame to keep in step and nothing to convert on the way out.
+         ⚠️⚠️ AND IT IS CLAMPED TO THE SHEET. AutoCAD's model space is infinite, so panning into
+         empty space there is harmless; a plate is ZP_W x h and nothing exists outside it, so
+         panning past the edge could only lose the drawing off-screen and leave a planner staring
+         at blank paper wondering what they broke. Zooming out past the whole sheet is refused for
+         the same reason — that view already IS everything there is. */
+      var ZP_ZMAX = 12;
+      function zView() {
+        var W = _zpWin, h = H();
+        var k = zpClamp(W.zk || 1, 1, ZP_ZMAX);
+        var vw = ZP_W / k, vh = h / k;
+        return { k: k, w: vw, h: vh,
+                 x: zpClamp(W.zx || 0, 0, Math.max(0, ZP_W - vw)),
+                 y: zpClamp(W.zy || 0, 0, Math.max(0, h - vh)) };
+      }
+      /* Zoom to `k`, keeping the plan point (ax, ay) where it already is on screen. ⚠️ THAT
+         ANCHOR IS WHAT MAKES A WHEEL ZOOM A MAGNIFIER rather than a slider: the thing under the
+         pointer is the thing that stays put, so zooming in on a corner arrives at that corner
+         instead of at the middle of the sheet. */
+      function zSet(k, ax, ay) {
+        var W = _zpWin, h = H(), v = zView();
+        var nk = zpClamp(k, 1, ZP_ZMAX);
+        var fx = v.w ? (ax - v.x) / v.w : 0.5, fy = v.h ? (ay - v.y) / v.h : 0.5;
+        var nw = ZP_W / nk, nh = h / nk;
+        W.zk = nk;
+        W.zx = zpClamp(ax - fx * nw, 0, Math.max(0, ZP_W - nw));
+        W.zy = zpClamp(ay - fy * nh, 0, Math.max(0, h - nh));
+      }
+      function zFit() { var W = _zpWin; W.zk = 1; W.zx = 0; W.zy = 0; }
       // ⚠️ Off the STAGE's own box: the svg is stretched to it (preserveAspectRatio="none"), so the
       // two agree, and the stage is what the pointer events are bound to.
+      // ⚠️⚠️ EVERY pointer position in this window comes through here, which is why zooming needed
+      // no other gesture rewritten: tracing, dragging a corner, moving a shape and dropping the
+      // front marker all ask this one function where the cursor is in plan units.
       function ptOf(ev, stage) {
         var r = stage.getBoundingClientRect();
         if (!r.width || !r.height) return null;
-        return [zpClamp((ev.clientX - r.left) / r.width * ZP_W, 0, ZP_W),
-                zpClamp((ev.clientY - r.top) / r.height * H(), 0, H())];
+        var v = zView();
+        return [zpClamp(v.x + (ev.clientX - r.left) / r.width * v.w, 0, ZP_W),
+                zpClamp(v.y + (ev.clientY - r.top) / r.height * v.h, 0, H())];
       }
       function finish() {
         var W = _zpWin;
@@ -37361,6 +37573,81 @@
 
         var stage = q('zpw-stage'), svg = q('zpw-svg');
         if (!stage || !svg) return;
+        /* ==== THE VIEW CONTROLS ===========================================================
+           ⚠️ stopPropagation on the buttons: they sit INSIDE the stage, and a click that reached
+           the stage while tracing would drop a corner behind the zoom control. */
+        var _zi = q('zpw-zin'), _zo = q('zpw-zout'), _zf = q('zpw-zfit');
+        function _zstep(mul) {
+          return function (ev) {
+            ev.stopPropagation();
+            var v = zView();
+            zSet(v.k * mul, v.x + v.w / 2, v.y + v.h / 2);   // a button zooms on the middle
+            paint();
+          };
+        }
+        if (_zi) _zi.onclick = _zstep(1.6);
+        if (_zo) _zo.onclick = _zstep(1 / 1.6);
+        if (_zf) _zf.onclick = function (ev) { ev.stopPropagation(); zFit(); paint(); };
+        // ⚠️ passive:false, or the browser keeps the scroll and preventDefault is ignored — the
+        // modal would scroll away under the cursor instead of the drawing zooming.
+        stage.addEventListener('wheel', function (ev) {
+          var p = ptOf(ev, stage); if (!p) return;
+          ev.preventDefault();
+          zSet(zView().k * (ev.deltaY < 0 ? 1.25 : 1 / 1.25), p[0], p[1]);
+          paint();
+        }, { passive: false });
+        /* ---- panning -------------------------------------------------------------------
+           ⚠️ Drag the BACKGROUND, and only once zoomed in: at 100% the whole sheet is already on
+           screen, so a drag that moved nothing would read as a broken gesture. The middle button
+           pans at any zoom, which is the habit AutoCAD leaves people with.
+           ⚠️ Shapes and the marker stopPropagation on their own pointerdown, so dragging one
+           still moves it — this only ever sees a press that landed on empty paper.
+           ⚠️ NOT while tracing or placing: those are pointer modes of their own, and a left drag
+           that panned mid-trace would swallow the click that was meant to be a corner. */
+        stage.addEventListener('pointerdown', function (ev) {
+          var midBtn = (ev.button === 1);
+          if (!midBtn) {
+            if (ev.button) return;
+            if (W.drawing || W.placing) return;
+            if (zView().k <= 1) return;
+            if (ev.target && ev.target.closest &&
+                ev.target.closest('[data-zpoly],[data-zpmark],.zpw-zoom')) return;
+          }
+          var r = stage.getBoundingClientRect(); if (!r.width || !r.height) return;
+          var v0 = zView(), sx = ev.clientX, sy = ev.clientY, hh4 = H(), moved = false;
+          ev.preventDefault();
+          stage.classList.add('panning');
+          try { stage.setPointerCapture(ev.pointerId); } catch (e) {}
+          var img = wrap.querySelector('.zpw-img');
+          function mv(e2) {
+            var nx = zpClamp(v0.x - (e2.clientX - sx) / r.width * v0.w, 0, Math.max(0, ZP_W - v0.w));
+            var ny = zpClamp(v0.y - (e2.clientY - sy) / r.height * v0.h, 0, Math.max(0, hh4 - v0.h));
+            if (Math.abs(nx - W.zx) + Math.abs(ny - W.zy) > 0.01) moved = true;
+            W.zx = nx; W.zy = ny;
+            /* ⚠️ The viewBox is rewritten LIVE and the window repainted once on release: a full
+               paint() per pointermove rebuilds every control in the window underneath the cursor,
+               and the pan judders. */
+            svg.setAttribute('viewBox', nx.toFixed(2) + ' ' + ny.toFixed(2) + ' ' +
+              v0.w.toFixed(2) + ' ' + v0.h.toFixed(2));
+            if (img) img.style.transform = 'scale(' + v0.k.toFixed(4) + ') translate(' +
+              (-nx / ZP_W * 100).toFixed(4) + '%,' + (-ny / hh4 * 100).toFixed(4) + '%)';
+          }
+          function up() {
+            stage.removeEventListener('pointermove', mv);
+            stage.removeEventListener('pointerup', up);
+            stage.removeEventListener('pointercancel', up);
+            stage.classList.remove('panning');
+            try { stage.releasePointerCapture(ev.pointerId); } catch (e) {}
+            if (moved) paint();
+          }
+          stage.addEventListener('pointermove', mv);
+          stage.addEventListener('pointerup', up);
+          stage.addEventListener('pointercancel', up);
+        });
+        /* ⚠️ The fold keeps its state on the window object, or every repaint — and this window
+           repaints on every gesture — would spring it open again under the planner's hands. */
+        var _mo = q('zpw-more');
+        if (_mo) _mo.ontoggle = function () { W.more = _mo.open; };
         /* Dragging the marker. ⚠️ NO snap() AND NO UNDO ENTRY: the marker is not part of the
            outline, and putting it in the drawing's history would make Ctrl+Z step through
            where somebody had dropped a pin instead of through the shapes they drew.
@@ -37601,17 +37888,18 @@
       // Most towers share the same floors/zones across trades — copy this trade's zoning to the others
       // (or pull another trade's zoning in) instead of re-entering the whole building per trade.
       var otherTr = used.filter(function (g) { return g !== tr; }), srcTr = otherTr.filter(function (g) { return cfg.zoning[g].floors.length; });
-      var copyCtrl = otherTr.length ? '<div class="sbld-sec-actions" style="margin:2px 0 12px;flex-wrap:wrap;">' +
-        '<span class="sbld-hint">Same building for several trades?</span>' +
-        (zn.floors.length ? '<button class="pd-btn" id="b-applyall">Copy ' + e2(GLABEL[tr]) + ' floors/zones → all trades</button>' : '') +
+      /* ⚠️ The PIECES, not a row: they are assembled into the folded "Quick setup" panel below,
+         beside the quick generator, because both of them answer the same question — this trade
+         has no floors yet, how do I fill it? */
+      var copyInner = otherTr.length ?
+        ((zn.floors.length ? '<button class="pd-btn" id="b-applyall">Copy ' + e2(GLABEL[tr]) + ' floors/zones → all trades</button>' : '') +
         // ⚠️ NOT `.sbld-mini`, which is `width:62px` — sized for the two-character number inputs
         // it was written for. On a <select> it clipped this control's own placeholder to "choc"
         // (owner 2026-09-03: *"There's also an error in the dropdown UI"*), and every option with it,
         // so the one thing the control had to say — which trade you are copying — was unreadable.
         // `width:auto` lets a <select> size to its longest option, which is what it is for.
         (srcTr.length ? '<label class="sbld-hint" style="display:inline-flex;align-items:center;gap:5px;">or copy from <select class="pd-select" id="b-copyfrom" style="height:30px;width:auto;max-width:230px;font-size:12px;"><option value="">choose trade…</option>' +
-          srcTr.map(function (g) { return '<option value="' + g + '">' + e2(GLABEL[g]) + ' (' + leafCount(g) + ')</option>'; }).join('') + '</select></label>' : '') +
-        '</div>' : '';
+          srcTr.map(function (g) { return '<option value="' + g + '">' + e2(GLABEL[g]) + ' (' + leafCount(g) + ')</option>'; }).join('') + '</select></label>' : '')) : '';
       var _twFloors = zn.floors.map(function (f, i) { return { f: f, i: i }; })
         .filter(function (o) { return towerIdOf(o.f) === _twAct; });
       var floorsHtml = _twFloors.length ? _twFloors.map(function (_o) {
@@ -37668,6 +37956,20 @@
       // Quick-generate inputs keep the counts the planner last generated with for THIS trade, so a
       // value they just typed (e.g. units) stays put instead of snapping back to 0 on re-render.
       var qd = quickN[tr] || { B: 0, F: 5, Z: 2, U: 0 };
+      /* ==== FILLING AN EMPTY TRADE, IN ONE FOLD ==========================================
+         ⚠️ Owner 2026-09-12: *"simplify the UI"*. Two full rows of controls — generate a building,
+         or copy another trade's — stood above the floors on every render of this step, and both of
+         them are used once per trade and then never again.
+         ⚠️ OPEN EXACTLY WHEN THIS TOWER AND TRADE ARE EMPTY, which is the only moment they are the
+         next thing to do; shut the instant there is a floor to look at instead.
+         ⚠️ `<details>` keeps its contents in the DOM when shut, so #q-base, #b-quick, #b-applyall
+         and #b-copyfrom stay wired below exactly as they were. */
+      var fillCtrl = '<details class="sbld-fill"' + (_twFloors.length ? '' : ' open') + '>' +
+        '<summary>Quick setup — generate floors' + (copyInner ? ', or take another trade’s' : '') + '…</summary>' +
+        '<div class="sbld-fillbody">' +
+          '<span class="sbld-quick">Quick: <input class="pd-input" id="q-base" type="number" min="0" max="20" value="' + qd.B + '" style="width:50px;height:30px;"> bsmt + <input class="pd-input" id="q-floors" type="number" min="1" max="80" value="' + qd.F + '" style="width:50px;height:30px;"> flr × <input class="pd-input" id="q-zones" type="number" min="0" max="20" value="' + qd.Z + '" style="width:50px;height:30px;"> zn × <input class="pd-input" id="q-units" type="number" min="0" max="20" value="' + qd.U + '" style="width:50px;height:30px;"> un <button class="pd-btn" id="b-quick">Generate</button></span>' +
+          copyInner +
+        '</div></details>';
       host.innerHTML = '<h2>' + _stepNo('Floors & Zones') + ' · Substructure &amp; Superstructure — per trade</h2>' +
         '<p class="sbld-lede">Pick a trade, add its <b>' + e2(dimLabelOf('floor').toLowerCase()) + 's</b> (superstructure) and any <b>basements</b> (substructure), then optionally split each into <b>' + e2(dimLabelOf('zone').toLowerCase()) + 's</b> and <b>' + e2(dimLabelOf('unit').toLowerCase()) + 's</b>. These are optional. The tower on the right shows superstructure above the grade line and basements below.</p>' +
         // ⚠️ THE LOCATION BREAKDOWN COMES FIRST. The builder's three location levels ARE the project's
@@ -37678,14 +37980,19 @@
         _locBreakdownBar() +
         _towerBar() +
         '<div class="sbld-sec-actions" style="margin-bottom:8px;"><label class="sbld-tag" style="padding:6px 10px;">Activity level (whole project)&nbsp; ' +
-        '<select class="pd-select sbld-mini" id="b-loclevel" title="Which location level activities are scheduled at across the whole project. Auto = deepest level you define per floor.">' +
+        /* ⚠️ NOT `.sbld-mini` — at `width:62px` this <select> showed "Aut" where it had to show
+           "Auto (deepest defined)" (owner 2026-09-12, with a screenshot). Third control in this
+           step caught by that class; `width:auto` lets a <select> size to its longest option.
+           ⚠️ The worked example moved into the title: it is a sentence about what the four options
+           mean, read once, and it sat on this row for the life of the project. */
+        '<select class="pd-select" id="b-loclevel" style="height:30px;width:auto;max-width:240px;font-size:12px;" title="Which location level activities are scheduled at across the whole project. Auto = the deepest level you define per floor. Floor level schedules one activity per floor and ignores zones and units; Zone level schedules per zone; Unit level per unit.">' +
         [['auto', 'Auto (deepest defined)'], ['floor', 'Floor level'], ['zone', 'Zone level'], ['unit', 'Unit level']].map(function (o) { return '<option value="' + o[0] + '"' + ((cfg.locLevel || 'auto') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
         '</select></label>' +
-        '<span class="sbld-hint">Remaps the whole builder — e.g. <b>Floor level</b> schedules activities per floor (zones/units ignored); <b>Zone level</b> per zone.</span></div>' +
-        chips + copyCtrl +
+        '<span class="sbld-hint">Remaps the whole builder.</span></div>' +
+        chips +
         '<div class="sbld-lvlgrid">' +
-        '<div><div class="sbld-sec-actions"><button class="pd-btn pd-btn-primary" id="b-addfloor">+ Add floor</button><button class="pd-btn" id="b-addbsmt">+ Basement</button>' +
-        '<span class="sbld-quick">Quick: <input class="pd-input" id="q-base" type="number" min="0" max="20" value="' + qd.B + '" style="width:50px;height:30px;"> bsmt + <input class="pd-input" id="q-floors" type="number" min="1" max="80" value="' + qd.F + '" style="width:50px;height:30px;"> flr × <input class="pd-input" id="q-zones" type="number" min="0" max="20" value="' + qd.Z + '" style="width:50px;height:30px;"> zn × <input class="pd-input" id="q-units" type="number" min="0" max="20" value="' + qd.U + '" style="width:50px;height:30px;"> un <button class="pd-btn" id="b-quick">Generate</button></span></div>' +
+        '<div><div class="sbld-sec-actions"><button class="pd-btn pd-btn-primary" id="b-addfloor">+ Add floor</button><button class="pd-btn" id="b-addbsmt">+ Basement</button></div>' +
+        fillCtrl +
         floorsHtml + '<p class="sbld-hint">Drag ⠇ to reorder. Floors auto-name F1, F2…; basements B1, B2… (B1 = topmost, deepest built first). Zones Z1…; units U1… (0 = none).</p></div>' +
         '<div class="sbld-tower" style="zoom:' + towerZoom + ';"><div class="sbld-towerh"><span class="sbld-dot" style="background:' + gc(tr) + '"></span>' + e2(GLABEL[tr]) +
           (multiTower() ? ' <span style="font-weight:700;color:var(--pd-muted);">· ' + e2(towerLabel(_twAct)) + '</span>' : '') + '</div>' + towerSVG(tr, _twAct) + '</div>' +
@@ -37720,6 +38027,20 @@
       // ⚠️ Counts and codes are per TOWER, so adding F1 to Tower B does not become F21 because Tower
       // A already has twenty floors.
       host.querySelectorAll('[data-twsel]').forEach(function (b) { b.onclick = function () { uiTower = b.dataset.twsel; render(); }; });
+      /* ⚠️ A <details> stays open until something shuts it. Every action inside this one re-renders
+         the step — except walking away from it, so a menu opened by mistake would hang over the
+         floor list for the rest of the session. The next press outside closes it.
+         ⚠️ The listener removes ITSELF once the step has re-rendered and its element is detached,
+         rather than being left to accumulate one dead handler per render. */
+      var _twMore = host.querySelector('.sbld-twmore');
+      if (_twMore) {
+        var _twOut = function (ev) {
+          if (!document.body.contains(_twMore)) { document.removeEventListener('pointerdown', _twOut); return; }
+          if (!_twMore.open || _twMore.contains(ev.target)) return;
+          _twMore.open = false;
+        };
+        document.addEventListener('pointerdown', _twOut);
+      }
       var _twAdd = host.querySelector('#b-twadd');
       if (_twAdd) _twAdd.onclick = function () {
         var n = towerList().length + 1;

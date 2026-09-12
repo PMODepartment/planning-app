@@ -13,6 +13,129 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+
+### The plan window zooms like a CAD drawing, and the step behind it sheds three rows (2026-09-12 j) — ethanrobles10
+
+Owner: *"make the space allotted for the site plan bigger. meaning it should be similar to autocad,
+wheren you can zoom in zoom out. And also, simplify the UI pls, refer to the screenshot."*
+
+### ⚠️⚠️ THE STAGE WAS ALREADY HUGE — IT JUST WOULD NOT FIT ON THE SCREEN
+`.zpw-stage` was `width:100%` with the sheet's aspect, so on a 1180px modal it computed to roughly
+1136 x 704. `.pd-modal` is capped at `max-height:90vh` and scrolls past it, so the drawing the window
+exists for was the part you had to scroll to — and widening the modal could not have helped: every
+extra pixel of width bought 0.62 more pixels of height the modal could not show.
+
+- ⚠️⚠️ **The width is now capped by the height that actually fits**:
+  `width:min(100%, calc(var(--zpvh) * var(--zpar)))` with `--zpvh: max(300px, calc(90vh - 360px))`.
+  The whole sheet is on screen at once, and getting closer is the zoom's job rather than the
+  scrollbar's.
+- ⚠️ **90vh, not 100vh** — the sum that has to fit is the MODAL's, and the modal is the thing capped
+  at 90vh. The 360px is this window's own chrome measured on the **site** plan, which is the taller
+  subject (it carries the scale note); a budget that fitted the floor plan and not the site plan
+  would scroll on exactly the drawing this was asked for.
+- ⚠️ **The box keeps the sheet's aspect in BOTH dimensions.** The svg is stretched over it with
+  `preserveAspectRatio="none"`, so a box of any other shape silently distorts every trace and
+  `ptOf()` stops agreeing with what is drawn. `--zpar` is written by paint() from the sheet's own
+  height; the literal in the CSS is only a fallback.
+- The modal itself went `min(1180px, 96vw)` to `min(1560px, 97vw)`, which is what lets a wide sheet
+  use the height once the height is the constraint.
+
+### ⚠️⚠️ THE ZOOM IS A WINDOW ON THE SHEET, IN PLAN UNITS — NOT A TRANSFORM OVER THE DRAWING
+`_zpWin.zk / zx / zy` is the zoom and the top-left corner of what is visible, **in the same units
+every traced point is already stored in**. The svg's `viewBox` IS that window, so there is no second
+coordinate system to keep in step and nothing to convert on the way out.
+
+- ⚠️⚠️ **`ptOf()` was the only thing that had to change.** Every pointer position in this window —
+  tracing a corner, dragging a shape, dragging a vertex, dropping the front marker — asks that one
+  function where the cursor is in plan units. Adding the view offset there made every gesture work
+  zoomed, with no gesture rewritten.
+- ⚠️⚠️ **Clamped to the sheet, unlike AutoCAD.** Model space is infinite, so panning into nothing is
+  harmless there; a plate is ZP_W x h and nothing exists outside it, so panning past the edge could
+  only lose the drawing off-screen and leave a planner staring at blank paper. Zooming out past the
+  whole sheet is refused for the same reason — that view already IS everything there is. Cap 12x.
+- ⚠️ **The wheel zooms on the CURSOR** (`zSet(k, ax, ay)` holds the anchor point still), which is what
+  makes it a magnifier rather than a slider: zooming in on a corner arrives at that corner, not at
+  the middle of the sheet. The plus/minus buttons anchor on the middle, because they have no cursor.
+- ⚠️ **Pan is a background drag, and only once zoomed in** — at 100% the whole sheet is already on
+  screen, so a drag that moved nothing would read as broken. Middle-button drag pans at any zoom,
+  which is the habit AutoCAD leaves people with. Shapes and the marker stopPropagation on their own
+  `pointerdown`, so dragging one still moves it; panning only ever sees a press on empty paper. Not
+  while tracing or placing — those are pointer modes of their own, and a left drag that panned
+  mid-trace would swallow the click meant to be a corner.
+- ⚠️ **Every annotation is sized on SCREEN, not in plan units.** Line weights hold through
+  `vector-effect:non-scaling-stroke`; handle radii are divided by the zoom in paint(); labels use
+  `--zs` (1/zoom) written on the svg. A 3-unit stroke at 6x is a fat band that swallows a small zone,
+  and a handle that grew with the zoom would cover the very corner you zoomed in to reach.
+- ⚠️ **The control sits ON the stage**, not in a toolbar row: it is a control for the VIEW, and the
+  edit row it would otherwise live in is not emitted at all until the sheet has a zone to draw — so a
+  planner zooming in to place their first corner would have had no control at all.
+- ⚠️ The pan rewrites the `viewBox` live and repaints once on release. A full `paint()` per
+  pointermove rebuilds every control in the window underneath the cursor, and the pan judders.
+
+### ⚠️ THE WINDOW'S OWN SETUP ROWS ARE FOLDED
+Which image is underneath, how the sheet is shaped and which way the building faces are answered once
+and then carried for the life of the drawing — and they cost ~90px of stage on every repaint. Folded
+into one `<details>`, **open on a blank sheet** (attaching the plan really is the first move there)
+and shut once anything is drawn.
+
+- ⚠️ **The summary carries the STATE**, not just a name: sheet shape, image attached or not, where the
+  front is. A fold that hides the facts as well as the controls is one you have to open to find out
+  whether you need to open it.
+- ⚠️ **The Floor-shape brush moved OUT of that fold** and onto the end of the palette row. It is a
+  brush, and it had been sitting in a row of controls for the front marker, which is not a brush at
+  all. The earlier note about keeping it out of the zone palette was protecting the DISTINCTION, not
+  the row — a dashed swatch behind the words "Floor shape", after a divider, cannot be misread as a
+  zone somebody forgot they named.
+- ⚠️ `<details>` keeps its contents in the DOM when shut, so every id inside stays wired exactly as it
+  was. The open/shut state lives on `_zpWin.more`, or every repaint — and this window repaints on
+  every gesture — would spring it open under the planner's hands.
+
+### ⚠️⚠️ `.sbld-mini` IS `width:62px`, AND IT HAD CAUGHT TWO MORE CONTROLS
+The owner's screenshot shows it: **"Site plan 1/8" wrapped onto two lines inside a 30px-tall button**,
+so the one number that button exists to report was cut in half, and the **Activity level** select read
+**"Aut"** where it had to read "Auto (deepest defined)". That class is sized for the two-character
+number inputs it was written for — the same trap already recorded in this file for the copy-from-trade
+select on 2026-09-03. Measured after the fix: the site-plan button is 111px wide with
+`scrollHeight === clientHeight`; the old one is 62px with `scrollHeight 36 > clientHeight 29`.
+
+- New `.sbld-twbtn` (auto width, `white-space:nowrap`) for the tower bar; `width:auto` on the select.
+- ⚠️ **Rename / Copy from… / Delete went behind one ⋯ menu.** They are all "…this tower", all
+  occasional, and three of them in a row read as three more primary actions beside the two that ARE
+  primary — adding a tower, and the site plan. Delete names the tower in its label, because it is the
+  destructive one and a menu row reading just "Delete" does not say what it takes with it.
+- ⚠️ The menu closes on the next press outside; the listener removes ITSELF once the step re-renders
+  and its element is detached, rather than leaving one dead handler behind per render.
+- ⚠️ **Quick-generate and copy-from-trade folded into one "Quick setup" panel**, open exactly when
+  this tower and trade have no floors — the only moment either is the next thing to do. Two rows of
+  controls that stood above the floors a planner had already typed, on every render, for the life of
+  the project.
+- ⚠️ The Activity level row's worked example moved into the select's `title`: a sentence about what
+  four options mean, read once, that sat on that row forever.
+
+### ⚠️ A CSS BLOCK THAT ONLY WORKED BY ACCIDENT
+`.sbld-towerbar {` opened its declaration block, three unrelated `.sbld-towerbar-note` rules were
+written INSIDE it, and its own `padding`/`border` closed the block ten lines later. It rendered only
+because CSS nesting happens to be supported and the note really is a descendant of the bar — in a
+browser without nesting every note rule was dropped and the drift warning lost its styling. Written
+out flat.
+
+### Verified
+- **39 assertions** against `zView` / `zSet` / `zFit` / `ptOf`, sliced verbatim out of the shipped
+  file and driven in node (harness gitignored, deleted): the wheel anchor holds the point under the
+  cursor **exactly** where the clamp does not bite, and stays on the sheet where it does; the view
+  never leaves the sheet at any zoom or anchor, including a tall sheet; the zoom clamps at 1 and 12;
+  the window is always the sheet over k with the **aspect unchanged**; `ptOf` never returns an
+  off-sheet point; 100px of screen is worth a quarter of the plan at 4x; Fit restores exactly.
+- **Layout measured in a browser** against the shipped stylesheets (`dashboard.css` and the module's
+  own `<style>`, both sliced verbatim into a gitignored harness, deleted): at 1440x900 the whole
+  window is **782px against an 810px cap — it fits**; the stage is 725.8 x 450, an aspect of 1.6129
+  against the sheet's 1.6129; the zoom control sits inside the stage; the ⋯ menu opens below the bar
+  and fully on screen; and the two button measurements above.
+- ⚠️⚠️ **Not verified signed in.** The anon key has no grants, so no real plate has been opened: what
+  is proven is the view arithmetic and the CSS layout, not a drag on a real traced zone at 6x. The
+  first thing to check on a real project is that dragging a corner while zoomed lands it under the
+  cursor.
+
 ### The site plan is BUILT from the towers' own floor plans; all that is left is arranging and orienting (2026-09-12 g) — ethanrobles10
 
 Owner: *"the pre-requisites first is to establish the per tower floor plan. meaning once the per tower
