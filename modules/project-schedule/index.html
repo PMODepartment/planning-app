@@ -3410,6 +3410,12 @@
     /* Everything that is not the sheet, dimmed — one path with the sheet punched out of it
        (fill-rule evenodd), drawn only when the view is actually wider than the paper. */
     .zpw-off { fill:rgba(0,0,0,.38); pointer-events:none; }
+    /* ⚠️ The margin SAYS what it is. Owner 2026-09-12: *"you just defeated the purpose of the zoom
+       out … there should be more space to add all towers."* A grey band around the paper reads as
+       room until you try to use it, and the honest answer is that there is no such room to give —
+       so the band names itself instead of pretending. */
+    .zpw-offlbl { fill:var(--pd-muted); font-size:calc(12px * var(--zs, 1)); font-weight:700;
+      letter-spacing:.02em; pointer-events:none; }
     .zpw-stage.drawing, .zpw-stage.drawing.zoomed { cursor:crosshair; }
     .zpw-stage.panning, .zpw-stage.panning.drawing { cursor:grabbing; }
     /* ⚠️ transform-origin at the top-left corner, because the zoom transform is written in the
@@ -36712,6 +36718,40 @@
        inventing a survey.
        ⚠️ Laid out on a coarse grid with real gaps, so the towers arrive separated and draggable
        rather than stacked on each other at the origin. */
+    /* How much of its own cell a footprint is allowed to fill.
+       ⚠️⚠️ IT RISES WITH THE TOWER COUNT, and that is the answer to *"what happens if there are 17
+       towers that we need to place."* With two towers the cells are enormous and a footprint
+       filling two thirds of one would be a floor plan, not a site plan — so it takes 38%, and the
+       rest is street. With seventeen the cells are small, and holding to 38% would put seventeen
+       specks on a sheet nobody could read — so it takes 62%, which is as much of a small cell as
+       can be given away and still leave a gap between neighbours.
+       ⚠️ The SHEET never changes. Nothing in this app has a dimension, so "more space" can only
+       ever mean "smaller footprints" — there is no other lever, and a bigger sheet with
+       proportionally bigger towers on it would be the same drawing at a different number. */
+    function zpSiteSlotFrac(n) { return zpClamp(0.34 + 0.02 * n, 0.34, 0.62); }
+    /* The grid the footprints are laid out on.
+       ⚠️⚠️ NOT `ceil(sqrt(n))`. A square grid on a 3:2 sheet leaves a third of the paper unused
+       and shrinks every tower to pay for it: seventeen towers came out as a 5 x 4 of 200 x 155
+       cells when a 6 x 3 of 167 x 207 fits the same seventeen with one cell to spare. Every
+       (cols, rows) that can hold `n` is tried and the one that brings the footprints in LARGEST
+       wins — scored on the SMALLEST of them, so the winner is the layout that treats the worst-off
+       tower best rather than the one that flatters the average.
+       ⚠️ `n` is capped at 64 and cols runs to n, so this is a few thousand divisions on a button
+       press, once. */
+    function zpSiteGrid(n, sheetW, sheetH, boxes) {
+      var frac = zpSiteSlotFrac(n), best = null;
+      for (var c = 1; c <= n; c++) {
+        var r = Math.ceil(n / c);
+        var sw = (sheetW / c) * frac, sh = (sheetH / r) * frac;
+        var worst = Infinity;
+        (boxes || []).forEach(function (b) {
+          if (b.w > 0 && b.h > 0) worst = Math.min(worst, Math.min(sw / b.w, sh / b.h));
+        });
+        if (!isFinite(worst)) worst = Math.min(sw, sh);   // nothing to measure: keep the cell square-ish
+        if (!best || worst > best.k) best = { cols: c, rows: r, k: worst, frac: frac };
+      }
+      return best || { cols: 1, rows: 1, k: 1, frac: frac };
+    }
     function zpSitePlaceFootprints(towers, siteH, opts) {
       opts = opts || {};
       var found = [], missing = [];
@@ -36720,61 +36760,58 @@
         if (fp) found.push({ tower: t, fp: fp }); else missing.push(t.name || t.code || 'Tower');
       });
       if (!found.length) return { polys: [], placed: 0, missing: missing };
+      // Each footprint's own bounding box, measured once — the grid is chosen against these.
+      found.forEach(function (it) {
+        var all = [];
+        it.fp.polys.forEach(function (q) { (q.pts || []).forEach(function (p) { all.push(p); }); });
+        it.box = (all.length >= 3) ? zpBBoxOf(all) : null;
+      });
       /* ==== THE GRID IS THE PROJECT'S, NOT THIS PRESS'S ==================================
-         ⚠️⚠️ Owner 2026-09-12: *"this does not enable users to fit more towers."* And it did not:
-         the grid was sized by how many footprints were being brought in AT THAT MOMENT. On an
-         eight-tower job where only Tower 1 had been traced, the button read "Bring in 1 tower
-         footprint", `n` was 1, and that one tower was handed a one-cell grid — the WHOLE sheet as
-         its cell. It arrived nearly 400 units wide, and there was visibly no room for the other
-         seven; worse, when they were traced later they would be laid out on a 3 x 3 grid at a
-         third of the size, so the same site plan would carry towers at two different scales for
-         no reason a planner could see.
-         ⚠️ Sized by how many towers the PROJECT has, so the first one to arrive already sits in
-         the space it will still be in when all eight are there. `total` is the subject's own list
-         of tower names (see zpSubjSite) — the setup's chips plus whatever the schedule carries. */
-      var n = Math.max(found.length, Math.min(64, +opts.total || 0));
-      var cols = Math.max(1, Math.ceil(Math.sqrt(n)));
-      var rows = Math.max(1, Math.ceil(n / cols));
+         ⚠️⚠️ Owner 2026-09-12: *"this does not enable users to fit more towers."* The grid used to
+         be sized by how many footprints were being brought in AT THAT MOMENT. On an eight-tower
+         job where only Tower 1 had been traced, the button read "Bring in 1 tower footprint", `n`
+         was 1, and that one tower was handed a one-cell grid — the WHOLE sheet as its cell.
+         ⚠️ Sized by how many towers the PROJECT has, so the first to arrive already sits in the
+         space it will still be in when all of them are there. `total` is the subject's own list of
+         tower names (see zpSubjSite): the setup's chips plus whatever the schedule carries.
+         ⚠️ And by what is ALREADY on the sheet, so a project that grows past its own tower list
+         still gets a cell per footprint rather than a second one on top of an arranged neighbour. */
+      var busy = (opts.busy || []).filter(function (q) { return (q.pts || []).length >= 3; });
+      var n = Math.min(96, Math.max(found.length,
+                                    +opts.total || 0,
+                                    busy.length + found.length));
+      var G = zpSiteGrid(n, ZP_W, siteH, found.map(function (it) { return it.box; }).filter(Boolean));
+      var cols = G.cols, rows = G.rows;
       var cellW = ZP_W / cols, cellH = siteH / rows;
-      /* ⚠️ AND A NEW ARRIVAL TAKES A FREE CELL. Bringing in the fourth tower after arranging three
-         must not drop it on top of one of them, so the cells that already hold something are
-         counted first and skipped. `busy` is whatever is on the sheet now; a cell is taken if any
-         existing area's centre falls in it. */
+      /* ⚠️ A NEW ARRIVAL TAKES A FREE CELL. Bringing in the fourth tower after arranging three must
+         not drop it on top of one of them, so the cells that already hold something are counted
+         first and skipped. A cell is taken if an existing area's centre falls in it. */
       var taken = {};
-      (opts.busy || []).forEach(function (q) {
-        var pts = q.pts || []; if (pts.length < 3) return;
-        var bb = zpBBoxOf(pts);
+      busy.forEach(function (q) {
+        var bb = zpBBoxOf(q.pts);
         var c = Math.floor((bb.x + bb.w / 2) / cellW), r2 = Math.floor((bb.y + bb.h / 2) / cellH);
         taken[Math.max(0, Math.min(rows - 1, r2)) * cols + Math.max(0, Math.min(cols - 1, c))] = 1;
       });
       var nextCell = 0;
       function freeCell() {
         while (nextCell < cols * rows && taken[nextCell]) nextCell++;
-        // ⚠️ Past the last free cell it wraps rather than refusing: a sheet with every cell taken
-        // is still better served by a footprint the planner can see and drag than by one that
-        // silently never arrived.
-        var at = (nextCell < cols * rows) ? nextCell : (found.length % (cols * rows));
+        /* ⚠️ The grid is sized so this cannot run out — `n` counts what is on the sheet as well as
+           what is arriving. If it ever does, the last cell is reused rather than the footprint
+           being dropped: a tower the planner can see and drag beats one that silently never came. */
+        var at = (nextCell < cols * rows) ? nextCell : (cols * rows - 1);
         taken[at] = 1; nextCell++;
         return at;
       }
-      /* ⚠️⚠️ 0.38 OF THE CELL, NOT 0.62. Owner 2026-09-12: *"the default scale of the site plan
-         should be way less."* A site plan is a LARGER scale than the floor plans it is built from —
-         a tower that filled its own sheet is a small object on a site — so arriving at two thirds
-         of a cell made the sheet look like a floor plan of four big rooms, and left the planner
-         shrinking every footprint before they could begin arranging. Coming in small is also the
-         cheaper mistake: pressing + a few times is one gesture, and dragging four overlapping
-         towers apart is not. */
-      var slotW = cellW * 0.38, slotH = cellH * 0.38;
+      var slotW = cellW * G.frac, slotH = cellH * G.frac;
       var polys = [];
       found.forEach(function (it) {
         var at = freeCell();
         var col = at % cols, row = Math.floor(at / cols);
         var cx = cellW * (col + 0.5), cy = cellH * (row + 0.5);
-        var all = [];
-        it.fp.polys.forEach(function (q) { (q.pts || []).forEach(function (p) { all.push(p); }); });
-        if (all.length < 3) return;
-        var b = zpBBoxOf(all);
-        if (!(b.w > 0) || !(b.h > 0)) return;
+        // ⚠️ The SAME box the grid was chosen against, not a second measurement of the same shape:
+        // two measurements are two chances to disagree about how big this tower is.
+        var b = it.box;
+        if (!b || !(b.w > 0) || !(b.h > 0)) return;
         var k = Math.min(slotW / b.w, slotH / b.h);
         /* ⚠️⚠️ ROTATABILITY IS A CONSTRAINT HERE, NOT A HOPE. Owner 2026-09-12: *"what if the
            footprint of tower 1 is so big it is unable to be rotated?"* — and it was a real state to
@@ -37360,7 +37397,14 @@
              rather than left to be inferred: a planner reading relative sizes off an arrangement
              nobody measured would be reading something the app never claimed. Each tower keeps its
              own PROPORTIONS exactly, which is the part that is true. */
-          (SUBJ.site ? '<p class="zpw-scalenote">Every footprint comes in at the same width, because ' +
+          /* ⚠️ It now says what sets the SIZE as well as what the size does not mean. Owner
+             2026-09-12: *"there should be more space to add all towers … what happens if there are
+             17 towers."* Nothing in this app has a dimension, so "more space" can only ever mean
+             "smaller footprints" — there is no other lever — and the size is therefore set by how
+             many towers the project has, so every one of them has a place before the first arrives. */
+          (SUBJ.site ? '<p class="zpw-scalenote">Footprints are sized so that <b>every tower in the ' +
+            'project has a place of its own</b> — the more towers, the smaller each one arrives. ' +
+            'Every one comes in at the same width, because ' +
             'no dimension is stored anywhere in this app — each tower keeps its own <b>shape</b>, ' +
             'not its size relative to the others. Use <b>Orient</b> to turn one and the − / + ' +
             'buttons to size it against its neighbours. This is an arrangement, never a survey.</p>' : '') +
@@ -37400,7 +37444,9 @@
                 ? '<path class="zpw-off" fill-rule="evenodd" d="' +
                     'M' + V.x.toFixed(2) + ' ' + V.y.toFixed(2) + 'h' + V.w.toFixed(2) +
                       'v' + V.h.toFixed(2) + 'h' + (-V.w).toFixed(2) + 'Z' +
-                    'M0 0h' + ZP_W + 'v' + hh + 'h' + (-ZP_W) + 'Z"></path>'
+                    'M0 0h' + ZP_W + 'v' + hh + 'h' + (-ZP_W) + 'Z"></path>' +
+                  '<text class="zpw-offlbl" x="' + (V.x + 14 * zs).toFixed(1) + '" y="' +
+                    (V.y + 26 * zs).toFixed(1) + '">off the site plan \u2014 every area lives on the sheet</text>'
                 : '') + '</svg>' +
             (!d.img && !d.polys.length && !W.drawing ? '<div class="zpw-empty"><b>Nothing here yet.</b><br>' +
               'Pick a zone above, then <b>add a shape</b> — or <b>Trace…</b> it corner by corner.<br>' +

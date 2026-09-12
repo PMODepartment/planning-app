@@ -13,6 +13,91 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### Seventeen towers fit, and they are legible: the layout grid is chosen, not assumed (2026-09-12 p) — ethanrobles10
+
+Owner: *"bruh you just defeated the purpose of the zoom out… my point is that there should be more
+space to add all towers!!! what happens if there are 17 towers that we need to place. …or propose
+something wherein in the default size of footprint per tower, make the space smaller so when it
+comes to the site plan, your current size now fits."*
+
+### ⚠️⚠️ THE ZOOM CANNOT MAKE SPACE, AND SHIPPING IT AS IF IT COULD WAS THE MISTAKE
+Nothing in this app carries a dimension. The sheet is `ZP_W` x `h` of nothing in particular, so a
+bigger sheet with proportionally bigger towers on it is **the same drawing at a different number** —
+there is no absolute size for "more room" to be measured against. **"More space" can only ever mean
+"smaller footprints relative to the sheet."** That is the only lever there is, and the owner named it
+themselves in the second half of the message.
+
+So the zoom-out stays — it was asked for, and stepping back from a sheet you are zoomed into is worth
+having — but the margin now **says what it is**: *"off the site plan — every area lives on the
+sheet."* A grey band around the paper reads as room until you try to use it.
+
+### ⚠️⚠️ THE GRID IS CHOSEN AGAINST THE ACTUAL FOOTPRINTS, NOT ASSUMED TO BE SQUARE
+`cols = ceil(sqrt(n))` is only right on a square sheet holding square buildings. On a 3:2 sheet it
+wastes a third of the paper and shrinks every tower to pay for it. `zpSiteGrid` now tries every
+`(cols, rows)` that can hold `n` and keeps the one that brings the footprints in **largest** —
+scored on the **smallest** of them, so the winner treats the worst-off tower best rather than
+flattering the average. `n` is capped at 96 and cols runs to n: a few thousand divisions, once, on a
+button press.
+
+What it picks, measured (17 towers, wide 3:2 sheet):
+
+| footprints | square rule | chosen |
+|---|---|---|
+| wide slabs 700 x 150 | 5 x 4 | **3 x 6** |
+| tall slabs 180 x 520 | 5 x 4 | **9 x 2** |
+| square-ish 250 x 250 | 5 x 4 | **6 x 3** (18 cells, 1 spare) |
+
+### ⚠️ AND THE SLOT FRACTION RISES WITH THE TOWER COUNT
+`zpSiteSlotFrac(n) = clamp(0.34 + 0.02n, 0.34, 0.62)`.
+
+With two towers the cells are enormous, and a footprint filling two thirds of one would be a floor
+plan rather than a site plan — so it takes **38%** and the rest is street. With seventeen the cells
+are small, and holding to 38% would put seventeen specks on a sheet nobody could read — so it takes
+**62%**, which is as much of a small cell as can be given away while still leaving a gap between
+neighbours.
+
+Measured against the previous commit, seventeen towers of 400 x 250:
+
+| | previous | now |
+|---|---|---|
+| each tower arrives | 76 x 48 | **124 x 78** |
+| they cover | 9.9% of the sheet | **26.4%** |
+| grid | 5 x 4 | 5 x 4 (this fixture; other shapes differ — see the table above) |
+| overlaps, brought in one at a time | 0 | 0 |
+
+⚠️ Note the direction: the towers got **bigger**, not smaller. "Fitting more towers" was never about
+shrinking them — it is about every tower having a place of its own, which the grid now guarantees
+before the first one arrives. Shrinking them further would only have made seventeen unreadable specks
+in the middle of an empty sheet.
+
+### ⚠️ Smaller things that came with it
+- The footprint's bounding box is measured **once**, by `zpSitePlaceFootprints`, and used both to
+  choose the grid and to place the shape. Two measurements of one building are two chances to
+  disagree about how big it is.
+- `n` counts **what is already on the sheet** as well as what is arriving, so a project that grows
+  past its own tower list still gets a cell per footprint. The wrap-onto-an-occupied-cell fallback is
+  gone; it cannot be reached, and if it ever were it reuses the last cell rather than dropping the
+  tower.
+- The site window's scale note now says what sets the size: *"Footprints are sized so that every
+  tower in the project has a place of its own — the more towers, the smaller each one arrives."*
+
+### Verified
+- **737 assertions** driving the shipped code, sliced verbatim (harness gitignored, deleted).
+  The new suite runs **2, 5, 9, 17, 25, 40 and 64 towers across three sheet shapes** (wide, square,
+  tall) with four different footprint aspects mixed together, and for each: every tower placed, **no
+  overlapping pairs**, all on the sheet, all still turnable at all 25 angles, a cell for each, the
+  smallest still legible against its own cell, the biggest still leaving a street, and every
+  proportion intact. Plus seventeen brought in **one at a time**, which is how a planner actually
+  traces them: seventeen places, no overlaps, all the same size, all locked.
+- ⚠️ **The grid is INFERRED from where the footprints landed** — distinct centre columns and rows —
+  not read back out of `zpSiteGrid`. Asking the chooser what it chose and then checking the
+  footprints against that would be the code marking its own homework.
+- ⚠️ **Gated against the previous commit**: the 17-tower comparison above is that gate's output.
+- 68 assertions on the view maths and 23 on the window's call sites still pass unchanged.
+- ⚠️ **Not verified signed in.** The anon key has no grants, so no seventeen-tower project has been
+  laid out in the app. First thing to check: on a project with many towers, they should arrive in a
+  grid that uses the sheet's shape — not a square block in the middle of it.
+
 ### The site grid is the project's, not the press's; and the view steps back to 25% (2026-09-12 n) — ethanrobles10
 
 Owner: *"look at this, this does not enable users to fit more towers. enlargen the space, there

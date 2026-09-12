@@ -102,6 +102,41 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### Seventeen towers fit, and they are legible: the site grid is chosen, not assumed (2026-09-12) — ethanrobles10
+
+Owner: *"bruh you just defeated the purpose of the zoom out… my point is that there should be more
+space to add all towers!!! what happens if there are 17 towers that we need to place."*
+
+⚠️⚠️ **The zoom cannot make space, and shipping it as if it could was the mistake.** Nothing in this
+app carries a dimension: the sheet is `ZP_W` x `h` of nothing in particular, so a bigger sheet with
+proportionally bigger towers on it is the same drawing at a different number. **"More space" can only
+mean "smaller footprints relative to the sheet"** — the owner named the real lever themselves. The
+zoom-out stays, but the margin now says what it is: *"off the site plan — every area lives on the
+sheet."*
+
+- ⚠️⚠️ **The layout grid is now chosen against the actual footprints.** `ceil(sqrt(n))` is only right
+  on a square sheet holding square buildings; on a 3:2 sheet it wastes a third of the paper and
+  shrinks every tower to pay for it. Every `(cols, rows)` that can hold `n` is tried and the one
+  bringing the footprints in largest wins, scored on the **smallest** of them. Seventeen towers:
+  wide slabs get a 3 x 6, tall slabs a 9 x 2, square-ish a 6 x 3 — where the square rule gave 5 x 4
+  for all three.
+- ⚠️ **The slot fraction rises with the tower count** (38% of a cell at two towers, 62% at
+  seventeen): big cells should not be filled, small ones must be. Measured against the previous
+  commit, seventeen towers arrive **124 x 78 instead of 76 x 48**, covering 26.4% of the sheet
+  instead of 9.9%.
+- ⚠️ Note the direction: the towers got **bigger**. "Fitting more towers" was never about shrinking
+  them — it is about every tower having a place of its own before the first one arrives, which the
+  grid now guarantees.
+
+⚠️ 737 assertions on the shipped code, including 2 / 5 / 9 / 17 / 25 / 40 / 64 towers across wide,
+square and tall sheets with mixed footprint shapes: every tower placed, zero overlapping pairs, all
+on the sheet, all turnable, proportions intact — and seventeen brought in one at a time, which is how
+a planner actually traces them. The grid is inferred from where they landed rather than read back out
+of the chooser. **Not verified signed in** — no seventeen-tower project has been laid out in the app.
+
+`MODULE_V` → `20260912p`. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
 ### Mobile form audit: Start/End pairs stop splitting apart, and labels catch up to their inputs (2026-09-12) — gwsia
 
 Owner, off a phone screenshot of Minutes of Meeting's "+ Add meeting" form: *"audit layout especially
