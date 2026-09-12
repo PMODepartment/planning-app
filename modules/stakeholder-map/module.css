@@ -477,8 +477,10 @@ html.pd-dark .sm-ap-row.is-here .sm-ap-tag { color: #FF8A80; }
 .pp-formhost .pd-field { padding: 9px 0; border-bottom: 1px solid var(--pd-line); }
 .pd-modal-body .sm-fsec + .sm-frow .pd-field:first-child,
 .pp-formhost .sm-fsec + .sm-frow .pd-field:first-child { padding-top: 0; }
+/* ⚠️ --pd-fs-sm, matching the input below it (and the app-wide `.pd-field label` rung) —
+   was --pd-fs-xs, a visibly smaller label than the value it labels. */
 .pd-modal-body .pd-field > label,
-.pp-formhost .pd-field > label { font-size: var(--pd-fs-xs); font-weight: 500;
+.pp-formhost .pd-field > label { font-size: var(--pd-fs-sm); font-weight: 500;
   color: var(--pd-muted); margin-bottom: 4px; display: block; }
 
 /* ⚠️⚠️ A LOCKED FIELD MUST NOT READ AS AN EMPTY BOX YOU COULD TYPE IN — that is

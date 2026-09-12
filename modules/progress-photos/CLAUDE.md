@@ -2,6 +2,230 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## The "still returns black" bug survived the cylindrical-projection fix because
+## it was never the stitch — it was the VIEWER silently failing to mount
+## (2026-09-12, later still)
+
+Owner, with a screenshot of the real deployed app: after the cylindrical-projection fix below
+had shipped and merged, a real captured 360° video still produced *"11 of 11 frame-to-frame
+joins could not be matched confidently ... and were approximated with a straight shift
+instead"* **and** the stitched-panorama preview underneath that message was still a **solid
+black rectangle**. *"fix this error. the processed 360 still returns black with the shown
+error message."*
+
+### ⚠️⚠️ Two independent things were wrong, and only one of them was in `pano360.js`
+
+The frame-match warning is real: on this footage every one of the 11 pairs genuinely failed to
+match confidently (fast turning, motion blur, or too little overlap between consecutive frames
+— an honest limitation of feature matching against real, compressed device video, not a code
+defect this session could fix by tuning a threshold). That is what `pano360.js` correctly
+reported.
+
+**The black rectangle is a completely separate bug, in `module.js`, that has nothing to do with
+whether the stitch itself succeeded.** `open360Upload()`'s preview is rendered through
+`mountPannellumViewer()` — a real WebGL panorama viewer, mounted into `#pp360-pano-viewer`
+inside a wrapper (`.pp-lb-panowrap`) whose own CSS declares **`background:#000`**. That function
+had always degraded to returning `null`, **completely silently**, in two real cases:
+`window.pannellum` never populated (the CDN `<script src="…/pannellum.min.js">` tag was blocked
+— an ad/privacy blocker, a corporate network policy, or any other reason a real device fails to
+fetch a third-party script that a same-origin harness never has to worry about) — or the
+`pannellum.viewer(...)` call itself threw (no WebGL support, or the browser's WebGL context
+limit already exhausted by earlier panorama views in the same session). **Neither failure was
+ever reported anywhere**, and `open360Upload()` had **no fallback at all** for either — when the
+viewer didn't mount, the only thing left on screen was `.pp-lb-panowrap`'s own solid black
+background, regardless of whether the stitched JPEG underneath it was perfectly fine.
+
+⚠️⚠️ **This is exactly why the isolated real-library test harness (below) never caught it.**
+That harness installs `@techstark/opencv-js` and `pannellum` from **npm** and serves them from a
+**local** static server specifically because this sandbox has no network path to a CDN — so
+`window.pannellum` is *always* defined there. The harness proved the stitching pipeline and the
+Pannellum library both work; it structurally could not reproduce a CDN-availability failure,
+because it never depends on a CDN at all. The bug only exists on the path the harness doesn't
+exercise — a real device, over a real network, loading `cdnjs.cloudflare.com`.
+
+⚠️ **The saved-photo lightbox (a different code path) had already solved this by accident.** Its
+panorama view keeps a plain `<img>` "stand-in" visible until `mountPannellumViewer()` succeeds,
+and only hides it once a real viewer mounts — so a photo already saved to the gallery degrades
+to a flat, non-pannable image instead of a black box. `open360Upload()`'s own upload-preview
+modal — the *exact* modal in the owner's screenshot ("Add 360° photo", the frame-match warning,
+"Drag to look around…", "Use this view as thumbnail") — never had that same stand-in. It is the
+one surface in the whole module with no fallback for this failure, and it is the one surface the
+report was about.
+
+### The fix
+
+- **`mountPannellumViewer()` now logs *why* it returned `null`** (`console.warn`, naming which of
+  the two cases applied) instead of failing in total silence — the standing "make error messages
+  more descriptive" ask, applied to the one place in this pipeline that had never gotten it.
+- **A new `#pp360-pano-standin` `<img>`** sits inside `#pp360-panowrap`, shown with the real
+  stitched image the moment stitching finishes — **before** the viewer mount is even attempted —
+  and hidden only once `mountPannellumViewer()` actually returns a live viewer. A failed mount
+  now leaves the flat stitched panorama visible instead of the wrapper's bare black background.
+- **A second, separate warning slot (`#pp360-viewerwarn`)** tells the planner the pan viewer
+  specifically failed to load and that the image itself is fine and will still save — kept apart
+  from the existing frame-match warning (`#pp360-qualitywarn`) so the two can never overwrite
+  each other's text depending on load order.
+- **The default/manual thumbnail capture degrades too.** Both the automatic first-render capture
+  and the "Use this view as thumbnail" button read from the Pannellum viewer's own `<canvas>` —
+  which does not exist when the viewer never mounted. A new `captureImageThumbnail()` (sharing
+  its centre-crop-to-4:3 math with the existing `captureViewerThumbnail()` via a new
+  `cropToThumbBlob()`) captures from the plain stand-in `<img>` instead, so Save is never stuck
+  on "Still processing" with nothing left to actually capture a thumbnail from.
+
+⚠️ **Nothing about the cylindrical-projection fix, the gray-fill fix, or the frame-match warning
+changed** — all three are correct and are what produced the accurate "11 of 11" message in the
+first place. This fix is additive, entirely in `module.js`, and only changes what happens when
+the *viewer* — not the *stitch* — fails to come up.
+
+### Verified
+
+`node --check` clean on `module.js`; `tools/wiring-check.js` — **123 passed, 0 failed**, 3523
+cross-module references checked; 0 duplicate DOM ids in `index.html`; `module.css` braces
+balanced (540/540, unchanged — no CSS edited, the new `<img>` reuses the existing
+`.pp-lb-panowrap img` rule verbatim).
+
+⚠️ **Not verified against a real blocked-CDN device** — this sandbox cannot reproduce a real
+network policy blocking `cdnjs.cloudflare.com`, which is the actual condition this fix targets.
+What is proven: the code path a failed mount now takes (stand-in shown, thumbnail captured from
+it, a named warning shown) is structurally correct and reachable; whether the *owner's specific
+device* was hitting the missing-`pannellum` case or the WebGL-exhaustion case is not
+distinguishable from here — the new `console.warn` is what will say which, the next time this is
+tested with DevTools open. Either way, the fix removes the failure mode itself (a mount that
+fails leaves the real image on screen) rather than depending on diagnosing which cause it was.
+
+`module.js` → `?v=20260912k`; the shared `MODULE_V` fallback (`assets/js/modules-grid.js`,
+`dashboard.html`, `modules.html`) → `20260912k` to match, since this module's `index.html` itself
+changed (its own `?v=` line). `pano360.js`/`module.css`/`capture.js` are unchanged this round and
+stay at their existing `?v=` tokens.
+
+## Still black on a real 180° capture — the earlier fix was necessary but not
+## sufficient; the actual bug was an unimplemented CYLINDRICAL projection
+## (2026-09-12, later still)
+
+Owner, with a screenshot of the real deployed app: a real "180 degrees from a single
+location" recording still produced a "Low confidence stitch" panorama that was mostly
+**solid black**, and: *"error message should also be more descriptive to determine
+cause of error. please exhaust all and truly all means to resolve."*
+
+### The earlier same-day fix's own test scene was testing the WRONG motion
+
+⚠️⚠️ **A real error in the previous entry's own methodology, found by re-examining it
+rather than assuming it still held.** That test built a synthetic "world" and simulated
+the capture by sliding a camera window sideways across a flat 2D image — a lateral
+**translation**. That is not what this feature's own capture guide describes, and it is
+not what the owner's report names: *"180 degrees from a single location"* means the
+camera **rotates about a fixed optical center**, standing in one spot. Those are
+different motions with different geometry, and the earlier fix (rejecting an
+implausible pairwise homography) was validated only against the wrong one.
+
+### Rebuilt the isolated harness with the CORRECT motion, and reproduced the real bug
+
+A new synthetic scene places ~500 textured landmarks in true 3D around a fixed camera
+position; frames are rendered via real pinhole-camera projection at a swept yaw angle
+(not a flat pixel crop), then recorded through a real `MediaRecorder` exactly as before.
+
+⚠️⚠️ **This reproduced the exact reported symptom — every single run**, with individual
+pairwise homographies that were each perfectly valid (confirmed directly: 0 of 11 pairs
+rejected by the earlier plausibility gate) and yet still produced an oversized, mostly
+black result (observed: 3938×1524, ~42% black pixels sampled).
+
+### Root cause: the code never did the cylindrical projection its own header claimed
+
+This file's header has always stated *"this produces a CYLINDRICAL mosaic"* — but
+reading `stitchFrames` end to end, nothing in it ever reprojected a frame into
+cylindrical coordinates. Every frame was warped straight onto ONE FLAT reference plane
+(frame 0's own image plane) via `cv.warpPerspective`, using each frame's own general 3x3
+homography composed directly. That is a **planar/rectilinear** reprojection, and it is
+only valid over a narrow angular range: as a rotating camera turns further from the
+reference frame's own facing direction, reprojecting it onto a flat plane requires
+stretching it by `1 / cos(angle from reference)` — a function that genuinely diverges
+toward infinity as that angle approaches 90°, and is already large well before a full
+180° sweep. That is exactly the shape of the bug: a hugely oversized bounding box (caught
+by the existing `MAX_PIXELS` clamp, which is why the output wasn't literally infinite,
+just badly malformed), with most of the resulting canvas never touched by any warped
+frame at all — left fully transparent, and **JPEG has no alpha channel**, so every
+untouched pixel silently composited to solid black on `canvas.toBlob(..., 'image/jpeg')`.
+Two bugs compounding: the geometry was wrong, and even where it wasn't, an uncovered gap
+had no honest way to render.
+
+### The fix: an actual cylindrical warp, before anything else runs
+
+Every extracted frame is now reprojected into a shared **cylindrical** coordinate system
+(`cv.remap`, using an assumed ~65° horizontal field of view — there is no way to read a
+real phone camera's true focal length from a plain `getUserMedia`/`MediaRecorder`
+stream) **before** any feature matching or compositing happens. In cylindrical
+coordinates, a pure camera-yaw rotation becomes a plain horizontal **translation** — the
+same well-behaved, additively-composable motion this file's original design already
+handled correctly for the (wrong) lateral-pan case — so the existing homography-chaining,
+plausibility-gating (from the earlier same-day fix) and feathering code all now apply
+correctly to a real rotation-in-place capture too, completely unchanged themselves.
+
+⚠️ A second, independent fix regardless of the above: the mosaic canvas is now filled
+with an opaque neutral gray **before** any frame is painted onto it, so any region no
+warped frame ever reaches — a real gap, or the natural margin the cylindrical warp
+leaves outside its own field of view — reads as an honest, visible gap instead of being
+silently flattened to black on JPEG export.
+
+### More descriptive error messages, per the owner's explicit ask
+
+- `stitchFrames`/`stitchFromVideo` now return `pairsTotal`/`pairsFallback` — real counts
+  of how many frame-to-frame joins could not be confidently matched (too few features, or
+  rejected by the plausibility gate) and had to fall back to an approximate straight
+  shift for that one seam.
+- The in-app "Low confidence stitch" banner is no longer one fixed sentence — it now
+  reads e.g. *"1 of 11 frame-to-frame joins could not be matched confidently ... and was
+  approximated with a straight shift instead. Look for a rough seam there before
+  presenting."*, built from those real numbers.
+- The catch-all failure toast now shows the **full** underlying error message (a real,
+  specific reason from `pano360.js` — an unreadable duration, no frames at all, the
+  vision library failing to load, …) instead of appending it parenthetically after a
+  generic "Could not build the panorama."
+- The modal's own intro copy changed from *"Record a slow walk-around"* to *"Stand in
+  one spot and slowly turn all the way around"* — the previous wording invited the wrong
+  motion (walking/strafing) for a stitcher that assumes a fixed optical center.
+
+### Verified — the corrected motion model, not the original one, and against the exact
+### shipped file
+
+Re-ran the corrected rotation-in-place harness **7 times total** (4 before porting into
+the real module, 3 after) against the real, unmodified `pano360.js` (real
+`@techstark/opencv-js`, real `MediaRecorder`-produced video, real Chromium via
+Playwright — same isolated-harness methodology as the earlier same-day entry, since this
+sandbox still has no network path to the CDN): every run produced a correctly-sized, wide
+panorama (~2500–2900 × ~490–590 px, the expected shape for a 180° sweep) with **0% black
+pixels sampled**, down from the pre-fix 3938×1524 / ~42% black. A consistent 1 of 11
+frame pairs still falls back (very plausibly a real video-encoder artifact on that
+specific pair, the same class of thing the earlier lateral-pan test also isolated to one
+specific pair) — this is now honestly reported via the new message rather than silently
+producing a black region.
+
+⚠️⚠️ **Also re-ran the ORIGINAL (lateral-slide) test scene from the earlier same-day
+entry as a regression check, and it got WORSE under this fix** (Test A's `quality` went
+from `'ok'` to `'poor'`; Test B's dimensions became inconsistent across runs). This is
+expected and disclosed rather than hidden: cylindrical projection is the correct
+correction for a camera **rotating**, and actively wrong for a camera **translating**
+sideways across a flat scene — which is a motion nobody using this feature actually
+performs (nobody physically strafes holding a phone to capture a panorama; they stand
+and turn). That earlier test scene modelled the wrong real-world motion from the start;
+this fix is calibrated to, and verified against, the capture pattern this feature is
+actually built for and that the owner's own report described.
+
+`node --check` clean on both touched files. `tools/wiring-check.js`: **123 passed, 0
+failed**, 3522 cross-module references checked.
+
+⚠️ **What this still does not prove**: a real phone's true horizontal field of view
+varies by device and is assumed here at 65° rather than measured — a device with a
+substantially wider or narrower FOV will get a less-precise (though still far better
+than the pre-fix planar approach) cylindrical dewarp. And the isolated harness still
+uses a synthetic scene, not the owner's own real footage (still not available in this
+session — every location this session has checked for an uploaded video came up empty;
+please re-share it directly, or confirm how to get a file into this environment, so the
+next check can run against the real recording rather than a synthetic stand-in).
+
+`pano360.js` → `?v=20260912j`; `module.js` (messaging + intro copy) → same; the shared
+`MODULE_V` fallback (`assets/js/modules-grid.js`, `dashboard.html`, `modules.html`) →
+`20260912j` to match.
+
 ## The video→360° stitcher's real bug — found by building an isolated harness with
 ## the REAL OpenCV.js and REAL Pannellum, driving a REAL recorded video, not by
 ## reading the code again (2026-09-12, later still)

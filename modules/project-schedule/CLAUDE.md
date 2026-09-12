@@ -13,6 +13,172 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### Seventeen towers fit, and they are legible: the layout grid is chosen, not assumed (2026-09-12 p) — ethanrobles10
+
+Owner: *"bruh you just defeated the purpose of the zoom out… my point is that there should be more
+space to add all towers!!! what happens if there are 17 towers that we need to place. …or propose
+something wherein in the default size of footprint per tower, make the space smaller so when it
+comes to the site plan, your current size now fits."*
+
+### ⚠️⚠️ THE ZOOM CANNOT MAKE SPACE, AND SHIPPING IT AS IF IT COULD WAS THE MISTAKE
+Nothing in this app carries a dimension. The sheet is `ZP_W` x `h` of nothing in particular, so a
+bigger sheet with proportionally bigger towers on it is **the same drawing at a different number** —
+there is no absolute size for "more room" to be measured against. **"More space" can only ever mean
+"smaller footprints relative to the sheet."** That is the only lever there is, and the owner named it
+themselves in the second half of the message.
+
+So the zoom-out stays — it was asked for, and stepping back from a sheet you are zoomed into is worth
+having — but the margin now **says what it is**: *"off the site plan — every area lives on the
+sheet."* A grey band around the paper reads as room until you try to use it.
+
+### ⚠️⚠️ THE GRID IS CHOSEN AGAINST THE ACTUAL FOOTPRINTS, NOT ASSUMED TO BE SQUARE
+`cols = ceil(sqrt(n))` is only right on a square sheet holding square buildings. On a 3:2 sheet it
+wastes a third of the paper and shrinks every tower to pay for it. `zpSiteGrid` now tries every
+`(cols, rows)` that can hold `n` and keeps the one that brings the footprints in **largest** —
+scored on the **smallest** of them, so the winner treats the worst-off tower best rather than
+flattering the average. `n` is capped at 96 and cols runs to n: a few thousand divisions, once, on a
+button press.
+
+What it picks, measured (17 towers, wide 3:2 sheet):
+
+| footprints | square rule | chosen |
+|---|---|---|
+| wide slabs 700 x 150 | 5 x 4 | **3 x 6** |
+| tall slabs 180 x 520 | 5 x 4 | **9 x 2** |
+| square-ish 250 x 250 | 5 x 4 | **6 x 3** (18 cells, 1 spare) |
+
+### ⚠️ AND THE SLOT FRACTION RISES WITH THE TOWER COUNT
+`zpSiteSlotFrac(n) = clamp(0.34 + 0.02n, 0.34, 0.62)`.
+
+With two towers the cells are enormous, and a footprint filling two thirds of one would be a floor
+plan rather than a site plan — so it takes **38%** and the rest is street. With seventeen the cells
+are small, and holding to 38% would put seventeen specks on a sheet nobody could read — so it takes
+**62%**, which is as much of a small cell as can be given away while still leaving a gap between
+neighbours.
+
+Measured against the previous commit, seventeen towers of 400 x 250:
+
+| | previous | now |
+|---|---|---|
+| each tower arrives | 76 x 48 | **124 x 78** |
+| they cover | 9.9% of the sheet | **26.4%** |
+| grid | 5 x 4 | 5 x 4 (this fixture; other shapes differ — see the table above) |
+| overlaps, brought in one at a time | 0 | 0 |
+
+⚠️ Note the direction: the towers got **bigger**, not smaller. "Fitting more towers" was never about
+shrinking them — it is about every tower having a place of its own, which the grid now guarantees
+before the first one arrives. Shrinking them further would only have made seventeen unreadable specks
+in the middle of an empty sheet.
+
+### ⚠️ Smaller things that came with it
+- The footprint's bounding box is measured **once**, by `zpSitePlaceFootprints`, and used both to
+  choose the grid and to place the shape. Two measurements of one building are two chances to
+  disagree about how big it is.
+- `n` counts **what is already on the sheet** as well as what is arriving, so a project that grows
+  past its own tower list still gets a cell per footprint. The wrap-onto-an-occupied-cell fallback is
+  gone; it cannot be reached, and if it ever were it reuses the last cell rather than dropping the
+  tower.
+- The site window's scale note now says what sets the size: *"Footprints are sized so that every
+  tower in the project has a place of its own — the more towers, the smaller each one arrives."*
+
+### Verified
+- **737 assertions** driving the shipped code, sliced verbatim (harness gitignored, deleted).
+  The new suite runs **2, 5, 9, 17, 25, 40 and 64 towers across three sheet shapes** (wide, square,
+  tall) with four different footprint aspects mixed together, and for each: every tower placed, **no
+  overlapping pairs**, all on the sheet, all still turnable at all 25 angles, a cell for each, the
+  smallest still legible against its own cell, the biggest still leaving a street, and every
+  proportion intact. Plus seventeen brought in **one at a time**, which is how a planner actually
+  traces them: seventeen places, no overlaps, all the same size, all locked.
+- ⚠️ **The grid is INFERRED from where the footprints landed** — distinct centre columns and rows —
+  not read back out of `zpSiteGrid`. Asking the chooser what it chose and then checking the
+  footprints against that would be the code marking its own homework.
+- ⚠️ **Gated against the previous commit**: the 17-tower comparison above is that gate's output.
+- 68 assertions on the view maths and 23 on the window's call sites still pass unchanged.
+- ⚠️ **Not verified signed in.** The anon key has no grants, so no seventeen-tower project has been
+  laid out in the app. First thing to check: on a project with many towers, they should arrive in a
+  grid that uses the sheet's shape — not a square block in the middle of it.
+
+### The site grid is the project's, not the press's; and the view steps back to 25% (2026-09-12 n) — ethanrobles10
+
+Owner: *"look at this, this does not enable users to fit more towers. enlargen the space, there
+should be like a maximum of 50 or 25% zoom out."*
+
+### ⚠️⚠️ THE GRID WAS SIZED BY THE PRESS, NOT BY THE PROJECT — AND THAT IS THE WHOLE COMPLAINT
+`zpSitePlaceFootprints` built its layout grid from `found.length`: how many footprints were being
+brought in **at that moment**. On the owner's eight-tower job only Tower 1 had a traced floor plan,
+so the button read *"Bring in 1 tower footprint"*, `n` was 1, and that one tower was handed a
+**one-cell grid — the whole sheet as its cell**. Measured against the previous code:
+
+| | previous | now |
+|---|---|---|
+| Tower 1 arriving alone on an 8-tower job | **353 × 236** on a 1000 × 620 sheet | **127 × 78** |
+| the same tower when all eight arrive at once | 118 wide | 118 wide |
+| ⚠️ so the same site plan carried the same tower at | **two different scales** (353 vs 118) | one |
+| bringing the eight in one at a time | **all eight in cell 4, 28 overlapping pairs** | eight cells, 0 overlaps |
+
+That last row is the one that mattered most and I had not predicted it: the cell index came from the
+footprint's position in **this press's** list, so every tower brought in on its own landed in the
+same cell, on top of the last. A planner adding each tower as they traced it would have stacked all
+eight on one spot.
+
+- ⚠️ The grid is now sized by **`opts.total`** — `SUBJ.codes.length`, the subject's own list of tower
+  names (the setup's chips plus whatever the schedule carries). The first tower to arrive already
+  sits in the space it will still be in when all eight are there.
+- ⚠️ **A new arrival takes a FREE cell.** What is already on the sheet is passed in as `opts.busy`; a
+  cell counts as taken if any existing area's centre falls in it. Bringing in the fourth tower after
+  arranging three must not drop it on one of them.
+- ⚠️ Past the last free cell it **wraps rather than refusing**: a sheet with every cell taken is still
+  better served by a footprint the planner can see and drag than by one that silently never arrived.
+- ⚠️ `total` is capped at 64, so a malformed tower list cannot ask for an 8000-cell grid.
+
+### ⚠️ THE VIEW STEPS BACK PAST THE SHEET NOW — 25% TO 1200%
+Zooming out past 100% used to be refused, on the grounds that the whole sheet already IS everything
+there is. True of the **drawing**, and beside the point for someone arranging eight towers who wants
+to see the sheet whole with room around it to judge the arrangement by. `ZP_ZMIN = 0.25`.
+
+- ⚠️⚠️ **The sheet is drawn as a PAGE from here on.** The moment the view is bigger than the sheet,
+  "where does the paper end" stops being obvious — the stage's own edge used to be the answer.
+  A `.zpw-sheet` rect marks the edge and a `.zpw-off` path dims everything outside it.
+- ⚠️⚠️ **`fill:none` on that rect, and that is not a detail**: the svg sits ABOVE the plan image, so a
+  filled rectangle the size of the sheet would hide the very drawing the planner attached to trace
+  over. The paper is marked by its edge and by the margin being dimmed, never by being painted.
+- ⚠️ **The margin is somewhere to look from, not somewhere to build.** Nothing can be drawn or
+  dragged off the sheet — every stored coordinate is in sheet units — so `ptOnSheet()` now guards the
+  tracing and marker clicks. `ptOf` clamps, which is right for a drag (a shape pushed at the edge
+  should stop there) and wrong for a click, where it would drop a corner on the nearest edge,
+  somewhere the planner did not click. Ignored silently: at 25% the margin is most of the window and
+  a warning per stray click would be a stream of them.
+- ⚠️ **Below 100% the sheet is CENTRED in the view**, not pinned to the corner the clamp would have
+  put it in — that is what makes zooming out read as stepping back from the paper rather than as the
+  drawing sliding away.
+- ⚠️ The backdrop image is transformed at **any** zoom that is not 1, not just above it: zoomed out,
+  `V.x` is negative and the image has to shrink and move right by exactly what the trace does, or the
+  plan would part company with the zones drawn on it. **Measured in a browser**: at 25% the image
+  lands on the sheet rect to within 1.5px on all four edges.
+- ⚠️ `Fit` is now a point in the MIDDLE of the range rather than one end of it, so it is live whenever
+  the view is not at 100%, in either direction.
+
+### Verified
+- **563 assertions** driving the shipped placement and rotation code, sliced verbatim (harness
+  gitignored, deleted), including the new grid: a lone arrival on an 8-tower job fits a 1-of-8 cell;
+  one-at-a-time and all-at-once give the **same size**; eight towers brought in one by one take eight
+  different cells with **zero overlapping pairs**, all on the sheet and all still turnable at all 25
+  angles.
+- ⚠️ **Gated against the previous commit**: the same suite fails **12** assertions there — the table
+  above is that gate's output, including the 28 overlapping pairs.
+- **68 assertions** on the view maths (`zView` / `zSet` / `zFit` / `ptOf`, sliced verbatim): at 0.75,
+  0.5 and 0.25 the view is bigger than the sheet, the sheet is centred to 1e-9 with equal margins on
+  both sides, the whole sheet is inside the view, the aspect is unchanged, the stage centre is still
+  the sheet centre, a click in the margin clamps onto the paper; Fit from 25% restores exactly; the
+  cursor anchor still holds when zooming back in from 25%; a tall sheet behaves the same.
+- **Measured in a browser** against the shipped stylesheets: at 25% the sheet is 0.2495 of the stage
+  width and 0.2493 of its height, centred, the image lands exactly on it, and the dim path covers the
+  stage with the sheet punched out; at 100% the sheet rect lands on the stage's own edges.
+- ⚠️ **Not verified signed in.** The anon key has no grants, so no real site plan has been zoomed out
+  or had a second tower imported into a free cell. First thing to check on a real project: trace one
+  tower of eight, bring it in, and it should arrive small and in the top-left cell — not filling the
+  middle of the sheet.
+
 ### Orient redraws the window it changed, and the sharing panel stops shutting on every tick (2026-09-12 m) — ethanrobles10
 
 Owner, with a screenshot: *"the re-orientation is not working. like it is not live, every time i

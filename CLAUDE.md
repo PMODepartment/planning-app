@@ -156,6 +156,130 @@ one message on both a capable laptop and an older phone.
 remote returns one JSON response), a screen to browse/delete past conversations, and pinning a
 tested WebLLM package version instead of always resolving `+esm` latest.
 
+### Seventeen towers fit, and they are legible: the site grid is chosen, not assumed (2026-09-12) — ethanrobles10
+
+Owner: *"bruh you just defeated the purpose of the zoom out… my point is that there should be more
+space to add all towers!!! what happens if there are 17 towers that we need to place."*
+
+⚠️⚠️ **The zoom cannot make space, and shipping it as if it could was the mistake.** Nothing in this
+app carries a dimension: the sheet is `ZP_W` x `h` of nothing in particular, so a bigger sheet with
+proportionally bigger towers on it is the same drawing at a different number. **"More space" can only
+mean "smaller footprints relative to the sheet"** — the owner named the real lever themselves. The
+zoom-out stays, but the margin now says what it is: *"off the site plan — every area lives on the
+sheet."*
+
+- ⚠️⚠️ **The layout grid is now chosen against the actual footprints.** `ceil(sqrt(n))` is only right
+  on a square sheet holding square buildings; on a 3:2 sheet it wastes a third of the paper and
+  shrinks every tower to pay for it. Every `(cols, rows)` that can hold `n` is tried and the one
+  bringing the footprints in largest wins, scored on the **smallest** of them. Seventeen towers:
+  wide slabs get a 3 x 6, tall slabs a 9 x 2, square-ish a 6 x 3 — where the square rule gave 5 x 4
+  for all three.
+- ⚠️ **The slot fraction rises with the tower count** (38% of a cell at two towers, 62% at
+  seventeen): big cells should not be filled, small ones must be. Measured against the previous
+  commit, seventeen towers arrive **124 x 78 instead of 76 x 48**, covering 26.4% of the sheet
+  instead of 9.9%.
+- ⚠️ Note the direction: the towers got **bigger**. "Fitting more towers" was never about shrinking
+  them — it is about every tower having a place of its own before the first one arrives, which the
+  grid now guarantees.
+
+⚠️ 737 assertions on the shipped code, including 2 / 5 / 9 / 17 / 25 / 40 / 64 towers across wide,
+square and tall sheets with mixed footprint shapes: every tower placed, zero overlapping pairs, all
+on the sheet, all turnable, proportions intact — and seventeen brought in one at a time, which is how
+a planner actually traces them. The grid is inferred from where they landed rather than read back out
+of the chooser. **Not verified signed in** — no seventeen-tower project has been laid out in the app.
+
+`MODULE_V` → `20260912p`. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+### Mobile form audit: Start/End pairs stop splitting apart, and labels catch up to their inputs (2026-09-12) — gwsia
+
+Owner, off a phone screenshot of Minutes of Meeting's "+ Add meeting" form: *"audit layout especially
+in mobile view... for inputs with dates or time, start and finish should always be in same line as
+much as possible"*, and *"the input texts are also noticeably larger than the label texts... make
+input text same size as label to make app more minimalist. apply to all."*
+
+**1 · Start/End pairs no longer split across a wrap.** `.il-form-row` (the shared row shape this
+module's forms use) is `flex-wrap: wrap`, which packs items one at a time — on a phone that reliably
+strands the LAST field of a `Date + Start time + End time` (or `Series start + Series end + Start +
+End`) row alone on its own line, exactly what the screenshot showed (`Date`+`Start time` on one line,
+`End time` orphaned below). New `.il-timepair` wraps a Start/End (or series-start/series-end) pair in
+its own `display:flex` box with no wrap of its own, so it counts as ONE item to the outer row: the
+pair can still be pushed onto its own line as a whole, but the two fields inside it can only ever
+shrink together, never split apart. Applied to all ten Start/End(-time-or-date) pairs in Minutes of
+Meeting — the only module in the app with `type="time"` inputs.
+
+**2 · Labels and inputs converge on one size, and the mobile floor is why they can't converge the
+other way.** `.pd-field label` (the bare label under the shared field wrapper) was `--pd-fs-xs`
+(11px) while `.pd-input`/`.pd-select`/`.pd-textarea` sit at `--pd-fs-sm` (12.5px) — a label visibly
+smaller than the value it labels, on every form in the app. Raised to `--pd-fs-sm`, matching
+`.pd-label` (which already used it) and the input beside it. Stakeholder Map's own
+`.pp-formhost`/`.pd-modal-body` label override (used by the person page and the register's modal)
+carried the same `xs` mismatch and is brought onto `sm` too.
+
+⚠️⚠️ **On a phone this can only be closed from the LABEL side, not the input side, and that is a
+platform constraint, not a preference.** `dashboard.css` already carries a heavily-verified
+`!important` rule forcing every input to `--pd-fs-tap` (16px) at ≤700px — iOS Safari zooms the whole
+page when a focused field computes under 16px, which is exactly the bug that rule was written to
+kill (2026-09-10). Shrinking mobile inputs to match an 11–12.5px label would reintroduce that zoom.
+So the mobile media query now also raises `.pd-field label, .pd-label` to `--pd-fs-tap` (16px) — the
+two converge upward, at the one size iOS will not zoom on, rather than downward. Desktop converges at
+the smaller `--pd-fs-sm` rung, where nothing forces a floor.
+
+⚠️ **Scope of this pass**: the shared `.pd-field`/`.pd-label`/`.il-form-row` classes cover the large
+majority of forms across the suite per `MODULE_CONTRACT.md`'s shared-API convention, so this reaches
+every module using them without a per-module edit. A handful of modules declare their own
+label/field classes outright (`contracts-claims` `.cc-form`/`.ccw-main`, `progress-photos`
+`.pp-wbssection`/`.pp-mk-group-fill`) and were checked — both already sit at `--pd-fs-sm`, so no
+change was needed there. `material-submittal`/`drawing-register` (`enabled:false`, retired) were left
+alone. The Start/End pairing fix is scoped to Minutes of Meeting because it is the only module with
+`type="time"` fields; other modules' Start/End **date** pairs are two-item rows already (checked via
+`.pd-field` flex-basis arithmetic) and were not reproducing the reported symptom.
+
+**Verified:** `node --check` on `modules/minutes-of-meeting/module.js` (all 10 new `.il-timepair`
+wrappers open/close balanced); CSS brace balance holds on `dashboard.css` (535/535),
+`minutes-of-meeting/module.css` (359/359) and `stakeholder-map/module.css` (221/221); 0 NUL bytes;
+`tools/wiring-check.js` 123/123, 3,522 cross-module references, 0 failed; `tools/dead-hooks.js`
+unchanged against its documented 9-finding baseline.
+⚠️ **Not verified signed in** — no live login is possible in this environment. The wrap behaviour is
+argued from the flex model (a `nowrap` box with `min-width:0` children cannot itself be split by an
+ancestor's wrap), not observed on a real 375px device.
+
+`dashboard.css` → `?v=20260912l` (30 pages); `minutes-of-meeting/module.css`/`module.js` →
+`?v=20260912l`; `stakeholder-map/module.css` → `?v=20260912l` (both `stakeholder-map/index.html` and
+`person.html`, its two referencing pages — `module.js` there is unchanged and stays `20260911ud`). No
+`MODULE_V` bump — no module's `index.html` changed structurally, only version query strings.
+
+### The site grid is the project's, not the press's; and the view steps back to 25% (2026-09-12) — ethanrobles10
+
+Owner: *"look at this, this does not enable users to fit more towers. enlargen the space, there
+should be like a maximum of 50 or 25% zoom out."*
+
+⚠️⚠️ **The layout grid was sized by how many footprints were being brought in at that moment**, not by
+how many towers the project has. On an eight-tower job where only Tower 1 was traced, that one tower
+got a one-cell grid — **the whole sheet as its cell** — and arrived 353 × 236 on a 1000 × 620 sheet.
+Measured against the previous code, it is now 127 × 78, the same size it would be if all eight
+arrived together (it used to be 353 alone and 118 together: two scales on one drawing).
+
+- ⚠️⚠️ **And every tower brought in on its own landed in the same cell.** The cell index came from the
+  footprint's position in *this press's* list, so a planner importing each tower as they traced it
+  stacked all eight on one spot — 28 overlapping pairs in the gate. A new arrival now takes a **free**
+  cell, counted from what is already on the sheet.
+- ⚠️ **The view now goes down to 25%**, and the sheet is drawn as a page: a rect marks the paper's
+  edge and everything outside it is dimmed. `fill:none` on that rect, deliberately — the svg sits
+  above the plan image, and a filled rectangle would hide the drawing being traced over.
+- ⚠️ **The margin is somewhere to look from, not somewhere to build.** Nothing can live off the sheet
+  (every stored point is in sheet units), so clicks out there are ignored while tracing rather than
+  clamped onto the nearest edge, and below 100% the sheet is centred rather than pinned to a corner.
+
+⚠️ 563 assertions on the placement code and 68 on the view maths, both sliced verbatim from the
+shipped file, plus browser measurement of the 25% view (the sheet is 0.2495 of the stage, centred,
+with the image landing on it to within 1.5px). Gated against the previous commit, where the same
+suite fails 12. **Not verified signed in** — no real site plan has been zoomed out or had a second
+tower imported into a free cell.
+
+`MODULE_V` → `20260912n`. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
 ### Orient redraws the window it changed; the sharing panel stops shutting on every tick (2026-09-12) — ethanrobles10
 
 Owner, with a screenshot: *"the re-orientation is not working. like it is not live, every time i

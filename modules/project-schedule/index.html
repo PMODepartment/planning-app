@@ -7,7 +7,7 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Project Schedule &amp; Cost Loading · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260911uc" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260912l" />
   <style>
     .ps-tabs { display:flex; border-bottom:2px solid var(--pd-line); margin-bottom:14px; }
     .ps-tab { padding:8px 20px; cursor:pointer; font-weight:700; font-size:var(--pd-fs-base); color:var(--pd-muted); border:none; border-bottom:2px solid transparent; margin-bottom:-2px; background:none; display:inline-flex; align-items:center; gap:6px; }
@@ -3395,6 +3395,27 @@
       margin-inline:auto; background:var(--pd-bg);
       border:1px solid var(--pd-line); border-radius:10px; overflow:hidden; }
     .zpw-stage.zoomed { cursor:grab; }
+    /* ==== THE SHEET AS A PAGE ==========================================================
+       ⚠️ Below 100% the view is larger than the sheet, so the stage is no longer the edge of the
+       paper. The rect IS the paper, and the stage around it is not: nothing can be drawn or
+       dragged out there, because every stored coordinate is in sheet units.
+       ⚠️ At 100% the rect lands exactly on the stage's own edges, so the ordinary view pays a
+       hairline border and nothing else. The stage takes the CARD colour when zoomed out so the
+       two read apart; at 100% it is never visible. */
+    /* ⚠️⚠️ fill:none, AND THAT IS NOT A DETAIL. The svg sits ABOVE the plan image, so a filled
+       rectangle the size of the sheet would hide the very drawing the planner attached to trace
+       over. The paper is marked by its EDGE, and by the area outside it being dimmed. */
+    .zpw-sheet { fill:none; stroke:var(--pd-muted); stroke-width:1.5;
+      vector-effect:non-scaling-stroke; pointer-events:none; }
+    /* Everything that is not the sheet, dimmed — one path with the sheet punched out of it
+       (fill-rule evenodd), drawn only when the view is actually wider than the paper. */
+    .zpw-off { fill:rgba(0,0,0,.38); pointer-events:none; }
+    /* ⚠️ The margin SAYS what it is. Owner 2026-09-12: *"you just defeated the purpose of the zoom
+       out … there should be more space to add all towers."* A grey band around the paper reads as
+       room until you try to use it, and the honest answer is that there is no such room to give —
+       so the band names itself instead of pretending. */
+    .zpw-offlbl { fill:var(--pd-muted); font-size:calc(12px * var(--zs, 1)); font-weight:700;
+      letter-spacing:.02em; pointer-events:none; }
     .zpw-stage.drawing, .zpw-stage.drawing.zoomed { cursor:crosshair; }
     .zpw-stage.panning, .zpw-stage.panning.drawing { cursor:grabbing; }
     /* ⚠️ transform-origin at the top-left corner, because the zoom transform is written in the
@@ -36697,34 +36718,100 @@
        inventing a survey.
        ⚠️ Laid out on a coarse grid with real gaps, so the towers arrive separated and draggable
        rather than stacked on each other at the origin. */
-    function zpSitePlaceFootprints(towers, siteH) {
+    /* How much of its own cell a footprint is allowed to fill.
+       ⚠️⚠️ IT RISES WITH THE TOWER COUNT, and that is the answer to *"what happens if there are 17
+       towers that we need to place."* With two towers the cells are enormous and a footprint
+       filling two thirds of one would be a floor plan, not a site plan — so it takes 38%, and the
+       rest is street. With seventeen the cells are small, and holding to 38% would put seventeen
+       specks on a sheet nobody could read — so it takes 62%, which is as much of a small cell as
+       can be given away and still leave a gap between neighbours.
+       ⚠️ The SHEET never changes. Nothing in this app has a dimension, so "more space" can only
+       ever mean "smaller footprints" — there is no other lever, and a bigger sheet with
+       proportionally bigger towers on it would be the same drawing at a different number. */
+    function zpSiteSlotFrac(n) { return zpClamp(0.34 + 0.02 * n, 0.34, 0.62); }
+    /* The grid the footprints are laid out on.
+       ⚠️⚠️ NOT `ceil(sqrt(n))`. A square grid on a 3:2 sheet leaves a third of the paper unused
+       and shrinks every tower to pay for it: seventeen towers came out as a 5 x 4 of 200 x 155
+       cells when a 6 x 3 of 167 x 207 fits the same seventeen with one cell to spare. Every
+       (cols, rows) that can hold `n` is tried and the one that brings the footprints in LARGEST
+       wins — scored on the SMALLEST of them, so the winner is the layout that treats the worst-off
+       tower best rather than the one that flatters the average.
+       ⚠️ `n` is capped at 64 and cols runs to n, so this is a few thousand divisions on a button
+       press, once. */
+    function zpSiteGrid(n, sheetW, sheetH, boxes) {
+      var frac = zpSiteSlotFrac(n), best = null;
+      for (var c = 1; c <= n; c++) {
+        var r = Math.ceil(n / c);
+        var sw = (sheetW / c) * frac, sh = (sheetH / r) * frac;
+        var worst = Infinity;
+        (boxes || []).forEach(function (b) {
+          if (b.w > 0 && b.h > 0) worst = Math.min(worst, Math.min(sw / b.w, sh / b.h));
+        });
+        if (!isFinite(worst)) worst = Math.min(sw, sh);   // nothing to measure: keep the cell square-ish
+        if (!best || worst > best.k) best = { cols: c, rows: r, k: worst, frac: frac };
+      }
+      return best || { cols: 1, rows: 1, k: 1, frac: frac };
+    }
+    function zpSitePlaceFootprints(towers, siteH, opts) {
+      opts = opts || {};
       var found = [], missing = [];
       towers.forEach(function (t) {
         var fp = zpTowerPlate(t.id);
         if (fp) found.push({ tower: t, fp: fp }); else missing.push(t.name || t.code || 'Tower');
       });
       if (!found.length) return { polys: [], placed: 0, missing: missing };
-      var n = found.length;
-      var cols = Math.max(1, Math.ceil(Math.sqrt(n)));
-      var rows = Math.max(1, Math.ceil(n / cols));
-      var cellW = ZP_W / cols, cellH = siteH / rows;
-      /* ⚠️⚠️ 0.38 OF THE CELL, NOT 0.62. Owner 2026-09-12: *"the default scale of the site plan
-         should be way less."* A site plan is a LARGER scale than the floor plans it is built from —
-         a tower that filled its own sheet is a small object on a site — so arriving at two thirds
-         of a cell made the sheet look like a floor plan of four big rooms, and left the planner
-         shrinking every footprint before they could begin arranging. Coming in small is also the
-         cheaper mistake: pressing + a few times is one gesture, and dragging four overlapping
-         towers apart is not. */
-      var slotW = cellW * 0.38, slotH = cellH * 0.38;
-      var polys = [];
-      found.forEach(function (it, i) {
-        var col = i % cols, row = Math.floor(i / cols);
-        var cx = cellW * (col + 0.5), cy = cellH * (row + 0.5);
+      // Each footprint's own bounding box, measured once — the grid is chosen against these.
+      found.forEach(function (it) {
         var all = [];
         it.fp.polys.forEach(function (q) { (q.pts || []).forEach(function (p) { all.push(p); }); });
-        if (all.length < 3) return;
-        var b = zpBBoxOf(all);
-        if (!(b.w > 0) || !(b.h > 0)) return;
+        it.box = (all.length >= 3) ? zpBBoxOf(all) : null;
+      });
+      /* ==== THE GRID IS THE PROJECT'S, NOT THIS PRESS'S ==================================
+         ⚠️⚠️ Owner 2026-09-12: *"this does not enable users to fit more towers."* The grid used to
+         be sized by how many footprints were being brought in AT THAT MOMENT. On an eight-tower
+         job where only Tower 1 had been traced, the button read "Bring in 1 tower footprint", `n`
+         was 1, and that one tower was handed a one-cell grid — the WHOLE sheet as its cell.
+         ⚠️ Sized by how many towers the PROJECT has, so the first to arrive already sits in the
+         space it will still be in when all of them are there. `total` is the subject's own list of
+         tower names (see zpSubjSite): the setup's chips plus whatever the schedule carries.
+         ⚠️ And by what is ALREADY on the sheet, so a project that grows past its own tower list
+         still gets a cell per footprint rather than a second one on top of an arranged neighbour. */
+      var busy = (opts.busy || []).filter(function (q) { return (q.pts || []).length >= 3; });
+      var n = Math.min(96, Math.max(found.length,
+                                    +opts.total || 0,
+                                    busy.length + found.length));
+      var G = zpSiteGrid(n, ZP_W, siteH, found.map(function (it) { return it.box; }).filter(Boolean));
+      var cols = G.cols, rows = G.rows;
+      var cellW = ZP_W / cols, cellH = siteH / rows;
+      /* ⚠️ A NEW ARRIVAL TAKES A FREE CELL. Bringing in the fourth tower after arranging three must
+         not drop it on top of one of them, so the cells that already hold something are counted
+         first and skipped. A cell is taken if an existing area's centre falls in it. */
+      var taken = {};
+      busy.forEach(function (q) {
+        var bb = zpBBoxOf(q.pts);
+        var c = Math.floor((bb.x + bb.w / 2) / cellW), r2 = Math.floor((bb.y + bb.h / 2) / cellH);
+        taken[Math.max(0, Math.min(rows - 1, r2)) * cols + Math.max(0, Math.min(cols - 1, c))] = 1;
+      });
+      var nextCell = 0;
+      function freeCell() {
+        while (nextCell < cols * rows && taken[nextCell]) nextCell++;
+        /* ⚠️ The grid is sized so this cannot run out — `n` counts what is on the sheet as well as
+           what is arriving. If it ever does, the last cell is reused rather than the footprint
+           being dropped: a tower the planner can see and drag beats one that silently never came. */
+        var at = (nextCell < cols * rows) ? nextCell : (cols * rows - 1);
+        taken[at] = 1; nextCell++;
+        return at;
+      }
+      var slotW = cellW * G.frac, slotH = cellH * G.frac;
+      var polys = [];
+      found.forEach(function (it) {
+        var at = freeCell();
+        var col = at % cols, row = Math.floor(at / cols);
+        var cx = cellW * (col + 0.5), cy = cellH * (row + 0.5);
+        // ⚠️ The SAME box the grid was chosen against, not a second measurement of the same shape:
+        // two measurements are two chances to disagree about how big this tower is.
+        var b = it.box;
+        if (!b || !(b.w > 0) || !(b.h > 0)) return;
         var k = Math.min(slotW / b.w, slotH / b.h);
         /* ⚠️⚠️ ROTATABILITY IS A CONSTRAINT HERE, NOT A HOPE. Owner 2026-09-12: *"what if the
            footprint of tower 1 is so big it is unable to be rotated?"* — and it was a real state to
@@ -37310,23 +37397,57 @@
              rather than left to be inferred: a planner reading relative sizes off an arrangement
              nobody measured would be reading something the app never claimed. Each tower keeps its
              own PROPORTIONS exactly, which is the part that is true. */
-          (SUBJ.site ? '<p class="zpw-scalenote">Every footprint comes in at the same width, because ' +
+          /* ⚠️ It now says what sets the SIZE as well as what the size does not mean. Owner
+             2026-09-12: *"there should be more space to add all towers … what happens if there are
+             17 towers."* Nothing in this app has a dimension, so "more space" can only ever mean
+             "smaller footprints" — there is no other lever — and the size is therefore set by how
+             many towers the project has, so every one of them has a place before the first arrives. */
+          (SUBJ.site ? '<p class="zpw-scalenote">Footprints are sized so that <b>every tower in the ' +
+            'project has a place of its own</b> — the more towers, the smaller each one arrives. ' +
+            'Every one comes in at the same width, because ' +
             'no dimension is stored anywhere in this app — each tower keeps its own <b>shape</b>, ' +
             'not its size relative to the others. Use <b>Orient</b> to turn one and the − / + ' +
             'buttons to size it against its neighbours. This is an arrangement, never a survey.</p>' : '') +
           // ⚠️ The stage's aspect is the SHEET's, or a re-shaped sheet would be squashed back
           // into the 1000 x 620 box the CSS used to hard-code and every corner would move.
+          // ⚠️ No class for "zoomed out": the margin is marked by the dim path inside the svg, and
+          // a second mechanism saying the same thing is one more thing to keep in step.
           '<div class="zpw-stage' + (W.drawing ? ' drawing' : '') + (V.k > 1 ? ' zoomed' : '') +
               '" id="zpw-stage" style="--zpar:' + ZP_W + ' / ' + hh + ';">' +
             /* ⚠️ The backdrop is moved by the SAME numbers as the viewBox below it, written in the
                transform's own terms: scale first, then shift by the view's top-left as a fraction
-               of the sheet. Anything else and the drawing would slide off its own plan. */
+               of the sheet. Anything else and the drawing would slide off its own plan.
+               ⚠️ At ANY zoom that is not 1, not just above it: zoomed out, V.x is negative and the
+               image has to shrink and move right by exactly as much as the trace does, or the plan
+               underneath would part company with the zones drawn on it. */
             (W.url ? '<img class="zpw-img" src="' + e2(W.url) + '" alt="" style="opacity:' + (d.o == null ? 1 : d.o) +
-              (V.k > 1 ? ';transform:scale(' + V.k.toFixed(4) + ') translate(' +
+              (Math.abs(V.k - 1) > 1e-9 ? ';transform:scale(' + V.k.toFixed(4) + ') translate(' +
                 (-V.x / ZP_W * 100).toFixed(4) + '%,' + (-V.y / hh * 100).toFixed(4) + '%)' : '') + '">' : '') +
             '<svg class="zpw-svg" id="zpw-svg" style="--zs:' + zs.toFixed(4) + '" viewBox="' +
               V.x.toFixed(2) + ' ' + V.y.toFixed(2) + ' ' + V.w.toFixed(2) + ' ' + V.h.toFixed(2) +
-              '" preserveAspectRatio="none">' + gridSvg + refSvg + frontSvg + shapes + live + markSvg + '</svg>' +
+              '" preserveAspectRatio="none">' +
+              /* ==== THE SHEET, DRAWN AS A PAGE =========================================
+                 ⚠️⚠️ It exists because the view can now step BACK past the sheet, and the moment it
+                 does, "where does the paper end" stops being obvious — the stage used to be the
+                 answer. Nothing can be drawn or dragged outside this rectangle (every stored point
+                 is in sheet units), so a margin that looked like more room would be the
+                 looks-live-does-nothing failure this module keeps recording. Drawn FIRST, under
+                 the grid and everything else.
+                 ⚠️ At 100% it lands exactly on the stage's edges, so it costs the normal view a
+                 hairline border and nothing else. */
+              '<rect class="zpw-sheet" x="0" y="0" width="' + ZP_W + '" height="' + hh + '"></rect>' +
+              gridSvg + refSvg + frontSvg + shapes + live + markSvg +
+              /* ⚠️ LAST, so it dims the margin over everything — and it is emitted only when the
+                 view is genuinely bigger than the sheet, so at 100% and closer there is no extra
+                 element at all. The sheet is punched out with fill-rule="evenodd". */
+              (V.k < 1
+                ? '<path class="zpw-off" fill-rule="evenodd" d="' +
+                    'M' + V.x.toFixed(2) + ' ' + V.y.toFixed(2) + 'h' + V.w.toFixed(2) +
+                      'v' + V.h.toFixed(2) + 'h' + (-V.w).toFixed(2) + 'Z' +
+                    'M0 0h' + ZP_W + 'v' + hh + 'h' + (-ZP_W) + 'Z"></path>' +
+                  '<text class="zpw-offlbl" x="' + (V.x + 14 * zs).toFixed(1) + '" y="' +
+                    (V.y + 26 * zs).toFixed(1) + '">off the site plan \u2014 every area lives on the sheet</text>'
+                : '') + '</svg>' +
             (!d.img && !d.polys.length && !W.drawing ? '<div class="zpw-empty"><b>Nothing here yet.</b><br>' +
               'Pick a zone above, then <b>add a shape</b> — or <b>Trace…</b> it corner by corner.<br>' +
               'Attaching the floor plan is optional, but it gives you something to draw over.</div>' : '') +
@@ -37335,13 +37456,18 @@
                corner of a site plan needs to know that is what they are looking at before they
                judge anything on it by eye. */
             '<div class="ps-zoomctl">' +
-              '<button id="zpw-zout"' + (V.k > 1 ? '' : ' disabled') + ' title="Zoom out">&#8722;</button>' +
+              '<button id="zpw-zout"' + (V.k > ZP_ZMIN * 1.001 ? '' : ' disabled') + ' title="Zoom out \u2014 below 100% the whole sheet is shown with room around it">&#8722;</button>' +
               '<span class="ps-zoomctl-pct" title="' + e2(V.k > 1
                 ? ('Showing about ' + Math.round(V.w) + ' × ' + Math.round(V.h) + ' of the ' +
                    ZP_W + ' × ' + Math.round(hh) + ' sheet')
-                : 'The whole sheet') + '">' + Math.round(V.k * 100) + '%</span>' +
+                : (V.k < 1
+                    ? ('The whole ' + ZP_W + ' × ' + Math.round(hh) + ' sheet with room around it — ' +
+                       'areas still live on the sheet, the margin is only somewhere to look from')
+                    : 'The whole sheet')) + '">' + Math.round(V.k * 100) + '%</span>' +
               '<button id="zpw-zin"' + (V.k < ZP_ZMAX ? '' : ' disabled') + ' title="Zoom in">+</button>' +
-              '<button id="zpw-zfit"' + (V.k > 1 ? '' : ' disabled') + ' title="Back to the whole sheet">Fit</button>' +
+              // ⚠️ Fit is "the sheet fills the stage", which is now a point in the MIDDLE of the
+              // range rather than one end of it — so it is live whenever the view is not there.
+              '<button id="zpw-zfit"' + (Math.abs(V.k - 1) > 0.005 ? '' : ' disabled') + ' title="Back to the whole sheet, filling the window">Fit</button>' +
             '</div>' +
           '</div>' +
           /* ⚠️ A migrated footprint gets its OWN line, above the general one, because the general
@@ -37426,14 +37552,27 @@
          panning past the edge could only lose the drawing off-screen and leave a planner staring
          at blank paper wondering what they broke. Zooming out past the whole sheet is refused for
          the same reason — that view already IS everything there is. */
-      var ZP_ZMAX = 12;
+      /* ⚠️⚠️ THE VIEW GOES BELOW 100% NOW. Owner 2026-09-12: *"there should be like a maximum of
+         50 or 25% zoom out."* Zooming out past the sheet used to be refused on the grounds that
+         the whole sheet already IS everything there is — true of the DRAWING, and beside the point
+         for the planner, who is arranging eight towers and wants to see the sheet whole with room
+         around it to judge the arrangement by. The sheet is drawn as a page from here down, so
+         what is paper and what is not stays obvious at every zoom.
+         ⚠️ The sheet is still the only place a point can live: nothing can be drawn or dragged off
+         it, because every stored coordinate is in sheet units. The margin is somewhere to look
+         from, not somewhere to build. */
+      var ZP_ZMAX = 12, ZP_ZMIN = 0.25;
       function zView() {
         var W = _zpWin, h = H();
-        var k = zpClamp(W.zk || 1, 1, ZP_ZMAX);
+        var k = zpClamp(W.zk || 1, ZP_ZMIN, ZP_ZMAX);
         var vw = ZP_W / k, vh = h / k;
+        /* ⚠️ Below 100% the view is BIGGER than the sheet, so there is no range left to pan and
+           the clamp would pin the sheet to the top-left corner. Centred instead, which is what
+           makes zooming out read as stepping back from the paper rather than as the drawing
+           sliding away into a corner. */
         return { k: k, w: vw, h: vh,
-                 x: zpClamp(W.zx || 0, 0, Math.max(0, ZP_W - vw)),
-                 y: zpClamp(W.zy || 0, 0, Math.max(0, h - vh)) };
+                 x: (vw >= ZP_W) ? (ZP_W - vw) / 2 : zpClamp(W.zx || 0, 0, ZP_W - vw),
+                 y: (vh >= h) ? (h - vh) / 2 : zpClamp(W.zy || 0, 0, h - vh) };
       }
       /* Zoom to `k`, keeping the plan point (ax, ay) where it already is on screen. ⚠️ THAT
          ANCHOR IS WHAT MAKES A WHEEL ZOOM A MAGNIFIER rather than a slider: the thing under the
@@ -37441,7 +37580,7 @@
          instead of at the middle of the sheet. */
       function zSet(k, ax, ay) {
         var W = _zpWin, h = H(), v = zView();
-        var nk = zpClamp(k, 1, ZP_ZMAX);
+        var nk = zpClamp(k, ZP_ZMIN, ZP_ZMAX);
         var fx = v.w ? (ax - v.x) / v.w : 0.5, fy = v.h ? (ay - v.y) / v.h : 0.5;
         var nw = ZP_W / nk, nh = h / nk;
         W.zk = nk;
@@ -37460,6 +37599,19 @@
         var v = zView();
         return [zpClamp(v.x + (ev.clientX - r.left) / r.width * v.w, 0, ZP_W),
                 zpClamp(v.y + (ev.clientY - r.top) / r.height * v.h, 0, H())];
+      }
+      /* Is the pointer on the PAPER, or out in the margin?
+         ⚠️ ptOf clamps to the sheet, which is right for a drag — a shape pushed at the edge should
+         stop there — and wrong for a click: zoomed out, clicking in the margin would drop a corner
+         on the nearest edge, somewhere the planner did not click. The tracing and marker gestures
+         ask this first and ignore anything off the paper. */
+      function ptOnSheet(ev, stage) {
+        var r = stage.getBoundingClientRect();
+        if (!r.width || !r.height) return false;
+        var v = zView();
+        var x = v.x + (ev.clientX - r.left) / r.width * v.w;
+        var y = v.y + (ev.clientY - r.top) / r.height * v.h;
+        return x >= 0 && x <= ZP_W && y >= 0 && y <= H();
       }
       function finish() {
         var W = _zpWin;
@@ -37545,7 +37697,11 @@
             UI.toast('Every tower is already on the site plan. Delete one to bring its footprint in again.', 'warn');
             return;
           }
-          var res = zpSitePlaceFootprints(want, H());
+          /* ⚠️ The grid is sized by EVERY tower the project has, not by the handful being placed
+             now — see zpSitePlaceFootprints. `SUBJ.codes` is that list: the setup's tower chips
+             plus whatever the schedule carries. And what is already on the sheet is passed in, so
+             a later arrival takes a free cell instead of landing on an arranged neighbour. */
+          var res = zpSitePlaceFootprints(want, H(), { total: codes.length, busy: d2.polys || [] });
           if (!res.polys.length) {
             UI.toast('No footprint could be read — the towers left to place have no traced floor plan yet.', 'warn');
             return;
@@ -37878,6 +38034,10 @@
         };
         // ---- tracing ---------------------------------------------------------------------
         stage.onclick = function (ev) {
+          // ⚠️ Nothing can be placed off the paper — see ptOnSheet. Silently ignored rather than
+          // toasted: at 25% the margin is most of the window, and a warning per stray click would
+          // be a stream of them.
+          if ((W.placing || W.drawing) && !ptOnSheet(ev, stage)) return;
           /* ⚠️ Placing wins over tracing, and turns itself off after one click: a mode that
              stays on until you find the button again is how a planner ends up moving the marker
              every time they mean to draw. */

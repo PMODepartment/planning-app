@@ -101,6 +101,18 @@
    in any header field blows the whole row out past the card. */
 .il-form-row > .pd-field { flex: 1 1 160px; min-width: 0; }
 
+/* ⚠️⚠️ `.il-timepair` — a Start/End (or Series start/end) pair that must never
+   split across a wrap. `.il-form-row` wraps ITEM BY ITEM, packing as many as
+   fit per line — on a phone that reliably strands the LAST field of a
+   Date+Start+End (or Series-start+Series-end+Start+End) row alone on its own
+   line, which is the opposite of "start and finish on the same line."
+   Wrapping the pair in its own `display:flex` box (no `flex-wrap`) makes it
+   ONE item to the outer `.il-form-row`: the row can still wrap the pair as a
+   whole onto its own line, but the two fields inside it can only ever shrink
+   together — they can never be split apart from each other. */
+.il-timepair { display: flex; gap: 10px; flex: 1 1 220px; min-width: 0; }
+.il-timepair > .pd-field { flex: 1 1 0; min-width: 0; }
+
 /* ---- Add Meeting form (round 2): named sections + guaranteed row
    alignment ------------------------------------------------------------- */
 /* Item 6 / 2026-09-11 round 2: Details / Schedule / Venue / Attendees /
