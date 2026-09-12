@@ -100,6 +100,28 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-12 — The geometry audit, and the LSM suite stops living in a temp folder
+
+Overnight audit, agenda item 5. **No shipped file changed.** Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+- **The `zh` class was hunted properly and it cannot recur in most of the module** — every
+  `index × height` site enumerated: the Gantt's 8 all read one `ROWH`; **Progress draws its bars
+  inside a `<td>`**, so a bar cannot leave its row; the 4 SVG chart renderers each feed label and bar
+  from one local `rowH`; `WBS_ROWH` matches its CSS; the 3D stacking's labels are projected per frame.
+- **The LSM lanes are the one composed case**, and the suite proved the parts but never the whole:
+  it checked a lane's internals and that lanes do not overlap, never **whether the last lane lands
+  inside the row** — which is the `zh` symptom exactly. **43 new assertions** close it.
+- ⚠️⚠️ **The first cut of them was worthless and a negative build is the only reason I know** — it
+  recomputed the budget from the constants instead of calling `_lsmRowH()`, so breaking `_lsmRowH`
+  left it green. Fourth instance of "assert on a copy of the thing under test" in this suite.
+  Rewritten to execute both sides, it now fails **14** on that build.
+- ⚠️⚠️ **660 assertions were living in a session TEMP directory.** Not gitignored — just never
+  committed. Now `modules/project-schedule/test-lsm.js`, matching the three module test suites this
+  repo already ships. Node-only, loaded by no page, so **no `MODULE_V` bump**.
+
+**660 on the working tree, 27 against the pinned base, 0 failing; 3 negative builds, all biting.**
+
 ### 2026-09-12 — `tools/dark-remap.js`: a colour that only exists in light mode
 
 Overnight audit, agenda item 4. The loop's own rule for the UI audit — *"a colour whose ONLY

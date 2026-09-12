@@ -13,6 +13,72 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### The geometry audit, and the suite stops living in a temp folder (2026-09-12) — fmlozano
+
+Overnight audit, agenda item 5 — the geometry half of the UI audit: hunting the `zh` defect class
+(a row height derived in one place while bars are positioned from another) in Progress, Vertical
+Stacking, Network and the rest. **No shipped file changed.**
+
+### ⚠️⚠️ THE CLASS CANNOT RECUR IN MOST OF THIS FILE, AND THE REASON IS STRUCTURAL
+Not *"I looked and it seemed fine"*. Every site that positions something at `index × height` was
+enumerated and classified:
+
+| where | why it is safe |
+|---|---|
+| the Gantt (8 sites) | all read the **one** `ROWH`; `zh` closed the derivation gap |
+| **Progress** | bars are `.ps-prog-track` inside a `<td>` — **in flow**, so a bar cannot leave its row |
+| 4 SVG chart renderers | one local `rowH` per function feeds **both** the label `<text>` and the bar |
+| WBS Manager | `WBS_ROWH = 34` vs `.ps-wbs-row { height:34px; box-sizing:border-box }`, no gap on the container |
+| `--c-plus` | the CSS reads `var(--c-plus)` itself, so it cannot drift from the value it mirrors |
+| Vertical Stacking 3D | labels are **projected from the scene per frame**, not a fixed-constant pair |
+
+The LSM lanes are the one genuinely composed case: the budget (`_lsmRowH`) and the placement
+(`_lsmBarsHTML`) are **two expressions over the same four constants**. Lane *i* lands at
+`top + 4 + 11i`, the bar is 6px and the rail ends 9px in, so the last element bottoms at
+`top + 11n + 2` against a row of `top + 11n + 8` — **6px of slack**.
+
+### The suite proved the parts and never the whole
+It already asserted a lane's internals (`bar 6 + 1 air + rail 2 == LSM_LANE_H`, read out of the
+**shipped CSS**) and that lane bands do not overlap each other. Neither asks the question the
+owner's screenshot asked: **does the last lane still land inside the row?** That is the `zh` symptom
+verbatim — *ROWH 31 where the lanes needed 74, 20 of 58 bars outside their own row*.
+**43 new assertions** answer it for every lane count `1..LSM_LANE_MAX`, and **both sides are
+executed**: the budget by calling `_lsmRowH()`, the placement by parsing `_lsmBarsHTML()`'s real
+output, the heights out of the real CSS.
+
+### ⚠️⚠️ THE FIRST CUT OF THOSE ASSERTIONS WAS WORTHLESS, FOR THE FOURTH TIME IN THIS SUITE
+It recomputed the budget **from the constants** instead of calling `_lsmRowH()` — so a negative
+build that broke `_lsmRowH` outright left it **green**. Asserting on a copy of the thing under test
+is the trap this file has now recorded four times (the `setGroupBys` guard, the `_declaredParallel`
+substring, the hand-written `tr` fixture, and this). Rewritten to execute, it **bites**:
+
+| negative build | result |
+|---|---|
+| `_lsmRowH` drops the lane GAP from its budget | **14 fail** — *"5 lane(s) lowest bottom 54px of the 53px granted"*, rising to 87 of 80 at 8 lanes |
+| the placement drifts 12px down | **14 fail**, at every lane count |
+| the CSS bar grows 6px → 14px | **1 fail**, caught by the existing composition assertion |
+| the placement drifts **4px** down | **passes, correctly** — see below |
+
+⚠️ **The sensitivity is stated rather than overclaimed:** the check catches a budget error and a
+placement drift **beyond the row's 6px slack**. A drift *within* the slack is a misalignment, not a
+spill, and this assertion is blind to it by design — that is the flowline's 2px-label shape, which
+has its own maxDrift-0 check.
+
+### ⚠️⚠️ AND THE SUITE ITSELF WAS THE LARGEST RISK IN THE ROOM
+**660 assertions covering the whole LSM feature existed only in a session TEMP directory.** Not
+gitignored — checked, there is no rule for it — just never committed, so every future session
+would rebuild it from nothing while the loop's own rules require proving each change with it.
+It is now **`modules/project-schedule/test-lsm.js`**, which is the convention this repo already
+follows for `progress-photos/test.js`, `risk-register/test-rcm.js` and
+`stakeholder-map/test-directory.js`: Node-only, `require('fs')` and nothing else, loaded by **no**
+page — so nothing a planner sees changes and no `MODULE_V` bump is owed.
+⚠️ Its header now carries the **pinned base SHA** and the exact two commands, because the pin has
+already been overwritten once mid-feature and three assertions quietly became self-comparison.
+
+**660 assertions on the working tree, 27 against the pinned base `4d82fd4`, 0 failing.** The base is
+missing **35 functions and 17 constants**, which the run prints — so a base that has stopped being
+a contrast says so out loud.
+
 ### The last four font-weight 600 in the app (2026-09-12) — fmlozano
 
 Overnight audit, agenda item 3 — the UI audit. Two values this repo has previously driven to
