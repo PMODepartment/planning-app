@@ -423,19 +423,110 @@ window.Pano360 = (function () {
   var MAX_PIXELS = 6000000;   // ~6 megapixels of OUTPUT — the actual memory-bounding cap
   var MAX_DIM = 6000;         // per-dimension backstop, independent of the area cap above
 
+  // ⚠️⚠️ 2026-09-12 (found via a REAL "180 degrees from one location" test —
+  // see the isolated harness described in the changelog): the plausibility
+  // gate above is necessary but NOT sufficient. It stops one bad pairwise
+  // homography from poisoning the chain; it does nothing about a chain of
+  // otherwise-CORRECT pairwise homographies still producing a mosaic that is
+  // hugely oversized and mostly blank once composed. Reproduced directly: 12
+  // frames of a real 180° in-place rotation, with EVERY pairwise homography
+  // individually valid and passing the plausibility gate, still produced a
+  // 3938x1524 output with ~42% of its pixels solid black.
+  //
+  // Root cause: this stitcher was composing every frame's homography onto
+  // ONE FLAT reference image plane (frame 0's own plane) — a planar
+  // reprojection. That is only valid over a narrow angular range: as a
+  // rotating camera turns further from the reference frame's facing
+  // direction, reprojecting it onto a flat plane has to stretch it by
+  // 1/cos(angle from the reference) — which genuinely diverges toward
+  // infinity as that angle nears 90°, and is already large well before a
+  // full 180° sweep. That is exactly what this file's own header comment
+  // ("this produces a CYLINDRICAL mosaic") was always SUPPOSED to prevent —
+  // but nothing in the code actually reprojected into cylindrical
+  // coordinates; every frame was warped in flat image space the whole time.
+  //
+  // Fixed by doing the cylindrical projection the header always claimed:
+  // every extracted frame is warped into a shared CYLINDRICAL coordinate
+  // system (via `cv.remap`, using an assumed horizontal field of view —
+  // there is no way to read a real phone camera's true focal length from a
+  // plain getUserMedia/MediaRecorder stream) BEFORE any feature matching or
+  // compositing happens. In cylindrical coordinates a pure camera-yaw
+  // rotation becomes a plain horizontal TRANSLATION — the same well-behaved,
+  // additively-composable motion this file's original "lateral pan" design
+  // already handled correctly — so the existing homography-chaining,
+  // plausibility-gating and feathering code below (all otherwise unchanged)
+  // now applies correctly to a real walk-around rotation too, not only to a
+  // lateral slide.
+  var CYL_FOV_DEG = 65;   // assumed horizontal field of view of the recording camera
+
+  function cylindricalFocalPx(width) {
+    return width / (2 * Math.tan(CYL_FOV_DEG * Math.PI / 360));
+  }
+
+  // Builds the INVERSE remap (destination cylindrical pixel -> source
+  // perspective pixel) once per frame size, reused for every frame — the
+  // standard closed-form cylindrical-projection mapping used by every
+  // from-scratch panorama stitcher (Szeliski, "Image Alignment and
+  // Stitching"). Built as plain JS typed arrays first, then handed to
+  // OpenCV.js in one bulk call — a per-pixel `cv.Mat` write would be far
+  // slower for no benefit over ~300K pixels.
+  function buildCylindricalMaps(w, h, f) {
+    var cx = w / 2, cy = h / 2;
+    var mapXData = new Float32Array(w * h);
+    var mapYData = new Float32Array(w * h);
+    for (var yc = 0; yc < h; yc++) {
+      for (var xc = 0; xc < w; xc++) {
+        var theta = (xc - cx) / f;
+        var hh = (yc - cy) / f;
+        var idx = yc * w + xc;
+        mapXData[idx] = f * Math.tan(theta) + cx;
+        mapYData[idx] = f * hh / Math.cos(theta) + cy;
+      }
+    }
+    return { mapX: cv.matFromArray(h, w, cv.CV_32FC1, mapXData), mapY: cv.matFromArray(h, w, cv.CV_32FC1, mapYData) };
+  }
+
+  // Warps ONE frame (a <canvas>) into cylindrical coordinates via the shared
+  // maps, returning a NEW <canvas> the same size — the source frame is
+  // never mutated, so a caller still holding the raw frame (e.g. for the
+  // representative-thumbnail picker) is unaffected.
+  function cylindricalWarpFrame(frameCanvas, maps) {
+    var src = cv.imread(frameCanvas), dst = new cv.Mat();
+    try {
+      cv.remap(src, dst, maps.mapX, maps.mapY, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar(0, 0, 0, 0));
+      var out = document.createElement('canvas');
+      out.width = frameCanvas.width; out.height = frameCanvas.height;
+      cv.imshow(out, dst);
+      return out;
+    } finally { src.delete(); dst.delete(); }
+  }
+
   async function stitchFrames(frames, onProgress) {
     await ensureOpenCV();
     if (frames.some(function (f) { return !f || !f.width || !f.height; })) {
       throw new Error('Could not read the recorded frames — the camera may not have captured any video.');
     }
     var poor = false;
-    var rawMats = frames.map(function (f) { return cv.imread(f); });
+    var fallbackCount = 0;
+    // Reproject every frame into cylindrical coordinates FIRST (see the note
+    // above) — everything from here on operates on the cylindrical frames,
+    // never the raw perspective ones.
+    var focalPx = cylindricalFocalPx(frames[0].width);
+    var cylMaps = buildCylindricalMaps(frames[0].width, frames[0].height, focalPx);
+    var cylFrames;
     try {
-      // placements[i] = the 3x3 row-major homography mapping frame i's OWN
-      // local pixel coordinates directly into the mosaic's coordinate
-      // system. placements[0] is the identity — frame 0 anchors the mosaic.
+      cylFrames = frames.map(function (f) { return cylindricalWarpFrame(f, cylMaps); });
+    } finally {
+      cylMaps.mapX.delete(); cylMaps.mapY.delete();
+    }
+    var rawMats = cylFrames.map(function (f) { return cv.imread(f); });
+    try {
+      // placements[i] = the 3x3 row-major homography mapping cylindrical
+      // frame i's OWN local pixel coordinates directly into the mosaic's
+      // coordinate system. placements[0] is the identity — frame 0 anchors
+      // the mosaic.
       var placements = [[1, 0, 0, 0, 1, 0, 0, 0, 1]];
-      for (var i = 1; i < frames.length; i++) {
+      for (var i = 1; i < cylFrames.length; i++) {
         var res = homographyBetween(rawMats[i - 1], rawMats[i]);
         if (res.matches < MIN_GOOD_MATCHES) poor = true;
         var step;
@@ -444,18 +535,19 @@ window.Pano360 = (function () {
           res.H.delete();
         } else {
           poor = true;
+          fallbackCount++;
           // No usable homography for this pair — approximate with a pure
           // horizontal shift of one frame-width, so the frame still lands
           // BESIDE what came before it instead of vanishing or landing on
           // top of it (the previous version's side-by-side-append fallback,
           // expressed as a transform so it composes the same way).
-          step = [1, 0, frames[i - 1].width, 0, 1, 0, 0, 0, 1];
+          step = [1, 0, cylFrames[i - 1].width, 0, 1, 0, 0, 0, 1];
         }
         // T_i = T_(i-1) * H_i — H_i maps frame i into frame i-1's own local
         // space; T_(i-1) then carries that into the mosaic's space, which is
         // exactly the composition this fix was missing.
         placements.push(mat3Mul(placements[i - 1], step));
-        if (onProgress) onProgress((i / (frames.length - 1)) * 0.5);
+        if (onProgress) onProgress((i / (cylFrames.length - 1)) * 0.5);
         // Break each pair's ORB/BFMatcher/RANSAC work into its own browser
         // task — a 12-frame stitch run as ONE synchronous block is exactly
         // the shape that reads as an unresponsive/crashed page on a slower
@@ -469,7 +561,7 @@ window.Pano360 = (function () {
       // needed to keep it entirely on-canvas (a pan can drift the mosaic's
       // own origin negative just as easily as it can grow it rightward).
       var minX = 0, maxX = 0, minY = 0, maxY = 0;
-      frames.forEach(function (f, idx) {
+      cylFrames.forEach(function (f, idx) {
         [[0, 0], [f.width, 0], [0, f.height], [f.width, f.height]].forEach(function (c) {
           var p = applyH3(placements[idx], c[0], c[1]);
           if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0];
@@ -495,7 +587,20 @@ window.Pano360 = (function () {
       var mosaic = document.createElement('canvas');
       mosaic.width = outW; mosaic.height = outH;
       var mctx = mosaic.getContext('2d');
-      for (var idx2 = 0; idx2 < frames.length; idx2++) {
+      // ⚠️⚠️ 2026-09-12: an opaque neutral fill BEFORE any frame is painted.
+      // A canvas starts fully transparent, and any area no warped frame ever
+      // touches — a real gap, or the margin the cylindrical warp itself
+      // leaves outside its valid field of view — stayed transparent all the
+      // way to `canvas.toBlob(..., 'image/jpeg')`. JPEG has no alpha
+      // channel, and a transparent pixel is composited onto BLACK by the
+      // browser before JPEG encoding — so any uncovered area silently became
+      // solid black in the saved photo, indistinguishable from "the stitch
+      // is broken" even when most of the frame was fine. A neutral mid-gray
+      // fill means an uncovered area reads as an honest gap, never as more
+      // (wrong) picture content and never as an unreadable black void.
+      mctx.fillStyle = '#808080';
+      mctx.fillRect(0, 0, outW, outH);
+      for (var idx2 = 0; idx2 < cylFrames.length; idx2++) {
         var placed = mat3Mul(shift, placements[idx2]);
         var dstMat = null, Hmat = null, featherMat = null;
         try {
@@ -504,7 +609,7 @@ window.Pano360 = (function () {
           // edges — see featheredFrame's own comment), not the raw pixels.
           // ORB feature matching above still runs against the pristine
           // `rawMats` — feathering only ever touches what gets DRAWN.
-          var feathered = featheredFrame(frames[idx2], idx2 > 0, idx2 < frames.length - 1, FEATHER_FRAC);
+          var feathered = featheredFrame(cylFrames[idx2], idx2 > 0, idx2 < cylFrames.length - 1, FEATHER_FRAC);
           featherMat = cv.imread(feathered);
           Hmat = cv.matFromArray(3, 3, cv.CV_64F, placed);
           dstMat = new cv.Mat();
@@ -521,13 +626,17 @@ window.Pano360 = (function () {
           if (dstMat) dstMat.delete();
           if (featherMat) featherMat.delete();
         }
-        if (onProgress) onProgress(0.5 + (idx2 / (frames.length - 1)) * 0.5);
+        if (onProgress) onProgress(0.5 + (idx2 / (cylFrames.length - 1)) * 0.5);
         // Same reasoning as the homography loop's own yield above — each
         // frame's warp allocates a full mosaic-sized Mat + canvas, and this
         // gives the browser a real chance to free the previous one first.
         await yieldToUI();
       }
-      return { canvas: mosaic, quality: poor ? 'poor' : 'ok' };
+      // pairsTotal/pairsFallback let the caller report something concrete
+      // ("N of M frame transitions could not be matched confidently")
+      // instead of a single opaque "low confidence" flag — the owner's own
+      // ask for a more descriptive error/quality message.
+      return { canvas: mosaic, quality: poor ? 'poor' : 'ok', pairsTotal: cylFrames.length - 1, pairsFallback: fallbackCount };
     } finally {
       rawMats.forEach(function (m) { try { m.delete(); } catch (e) {} });
     }
@@ -542,7 +651,10 @@ window.Pano360 = (function () {
     var result = await stitchFrames(frames, function (f) { if (onProgress) onProgress('stitch', f); });
     return new Promise(function (resolve) {
       result.canvas.toBlob(function (blob) {
-        resolve({ blob: blob, quality: result.quality, width: result.canvas.width, height: result.canvas.height });
+        resolve({
+          blob: blob, quality: result.quality, width: result.canvas.width, height: result.canvas.height,
+          pairsTotal: result.pairsTotal, pairsFallback: result.pairsFallback
+        });
       }, 'image/jpeg', 0.88);
     });
   }
@@ -560,6 +672,9 @@ window.Pano360 = (function () {
     _applyH3: applyH3,
     _featherStops: featherStops,
     _stitchFrames: stitchFrames,
-    _isPlausiblePanHomography: isPlausiblePanHomography
+    _isPlausiblePanHomography: isPlausiblePanHomography,
+    _cylindricalFocalPx: cylindricalFocalPx,
+    _buildCylindricalMaps: buildCylindricalMaps,
+    _cylindricalWarpFrame: cylindricalWarpFrame
   };
 })();
