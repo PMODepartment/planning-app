@@ -102,6 +102,64 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### Mobile form audit: Start/End pairs stop splitting apart, and labels catch up to their inputs (2026-09-12) — gwsia
+
+Owner, off a phone screenshot of Minutes of Meeting's "+ Add meeting" form: *"audit layout especially
+in mobile view... for inputs with dates or time, start and finish should always be in same line as
+much as possible"*, and *"the input texts are also noticeably larger than the label texts... make
+input text same size as label to make app more minimalist. apply to all."*
+
+**1 · Start/End pairs no longer split across a wrap.** `.il-form-row` (the shared row shape this
+module's forms use) is `flex-wrap: wrap`, which packs items one at a time — on a phone that reliably
+strands the LAST field of a `Date + Start time + End time` (or `Series start + Series end + Start +
+End`) row alone on its own line, exactly what the screenshot showed (`Date`+`Start time` on one line,
+`End time` orphaned below). New `.il-timepair` wraps a Start/End (or series-start/series-end) pair in
+its own `display:flex` box with no wrap of its own, so it counts as ONE item to the outer row: the
+pair can still be pushed onto its own line as a whole, but the two fields inside it can only ever
+shrink together, never split apart. Applied to all ten Start/End(-time-or-date) pairs in Minutes of
+Meeting — the only module in the app with `type="time"` inputs.
+
+**2 · Labels and inputs converge on one size, and the mobile floor is why they can't converge the
+other way.** `.pd-field label` (the bare label under the shared field wrapper) was `--pd-fs-xs`
+(11px) while `.pd-input`/`.pd-select`/`.pd-textarea` sit at `--pd-fs-sm` (12.5px) — a label visibly
+smaller than the value it labels, on every form in the app. Raised to `--pd-fs-sm`, matching
+`.pd-label` (which already used it) and the input beside it. Stakeholder Map's own
+`.pp-formhost`/`.pd-modal-body` label override (used by the person page and the register's modal)
+carried the same `xs` mismatch and is brought onto `sm` too.
+
+⚠️⚠️ **On a phone this can only be closed from the LABEL side, not the input side, and that is a
+platform constraint, not a preference.** `dashboard.css` already carries a heavily-verified
+`!important` rule forcing every input to `--pd-fs-tap` (16px) at ≤700px — iOS Safari zooms the whole
+page when a focused field computes under 16px, which is exactly the bug that rule was written to
+kill (2026-09-10). Shrinking mobile inputs to match an 11–12.5px label would reintroduce that zoom.
+So the mobile media query now also raises `.pd-field label, .pd-label` to `--pd-fs-tap` (16px) — the
+two converge upward, at the one size iOS will not zoom on, rather than downward. Desktop converges at
+the smaller `--pd-fs-sm` rung, where nothing forces a floor.
+
+⚠️ **Scope of this pass**: the shared `.pd-field`/`.pd-label`/`.il-form-row` classes cover the large
+majority of forms across the suite per `MODULE_CONTRACT.md`'s shared-API convention, so this reaches
+every module using them without a per-module edit. A handful of modules declare their own
+label/field classes outright (`contracts-claims` `.cc-form`/`.ccw-main`, `progress-photos`
+`.pp-wbssection`/`.pp-mk-group-fill`) and were checked — both already sit at `--pd-fs-sm`, so no
+change was needed there. `material-submittal`/`drawing-register` (`enabled:false`, retired) were left
+alone. The Start/End pairing fix is scoped to Minutes of Meeting because it is the only module with
+`type="time"` fields; other modules' Start/End **date** pairs are two-item rows already (checked via
+`.pd-field` flex-basis arithmetic) and were not reproducing the reported symptom.
+
+**Verified:** `node --check` on `modules/minutes-of-meeting/module.js` (all 10 new `.il-timepair`
+wrappers open/close balanced); CSS brace balance holds on `dashboard.css` (535/535),
+`minutes-of-meeting/module.css` (359/359) and `stakeholder-map/module.css` (221/221); 0 NUL bytes;
+`tools/wiring-check.js` 123/123, 3,522 cross-module references, 0 failed; `tools/dead-hooks.js`
+unchanged against its documented 9-finding baseline.
+⚠️ **Not verified signed in** — no live login is possible in this environment. The wrap behaviour is
+argued from the flex model (a `nowrap` box with `min-width:0` children cannot itself be split by an
+ancestor's wrap), not observed on a real 375px device.
+
+`dashboard.css` → `?v=20260912l` (30 pages); `minutes-of-meeting/module.css`/`module.js` →
+`?v=20260912l`; `stakeholder-map/module.css` → `?v=20260912l` (both `stakeholder-map/index.html` and
+`person.html`, its two referencing pages — `module.js` there is unchanged and stays `20260911ud`). No
+`MODULE_V` bump — no module's `index.html` changed structurally, only version query strings.
+
 ### The site grid is the project's, not the press's; and the view steps back to 25% (2026-09-12) — ethanrobles10
 
 Owner: *"look at this, this does not enable users to fit more towers. enlargen the space, there

@@ -1,5 +1,20 @@
 # Module: minutes-of-meeting
 
+## 2026-09-12 (f) — Every Start/End (and series-start/-end) pair gets `.il-timepair`
+
+Detail and verification in the root [`CLAUDE.md`](../../CLAUDE.md)'s matching entry — a shared-CSS
+change (`.pd-field label` sizing) plus this module's own markup. All ten places this module renders
+`type="time"` (or a series start/end date pair) alongside another field in one `.il-form-row` — the
+Add-meeting modal's two Schedule tiles, the one-time-meeting Date-and-Venue row, the Carry-over
+modal's both branches, and the Detail view's Schedule and Date-and-Venue tiles — now wrap the pair in
+`.il-timepair`, a `display:flex; flex-wrap:nowrap` box that counts as one item to the outer row. The
+row can still push the pair onto its own line on a narrow phone; the two fields inside it cannot be
+split from each other, which flex-wrap on the bare row was doing (Date+Start on one line, End
+orphaned on the next — the reported screenshot).
+
+⚠️ `module.js?v=20260912l`/`module.css?v=20260912l`.
+⚠️ **Not verified signed in** — argued from the flex model, not observed on a device.
+
 ## 2026-09-12 (e) — The carry-over toast says "open minutes", not "actions"
 
 Owner: *"when carrying over meeting, there is a notification saying carried over X actions.
