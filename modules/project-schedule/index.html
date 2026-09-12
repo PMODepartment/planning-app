@@ -1517,6 +1517,10 @@
        ever a silent toggle with no lit state — which is precisely why the toolbar could not say
        where you were. Now they are top-level again (owner 2026-09-02) the lit state is the whole
        point: it is what stops a standalone shortcut re-becoming a control you cannot read. */
+    /* The way to the site plan, offered where its absence is felt. ⚠️ Sized like the bar's own
+       controls, not like a call to action — it is one of several things a planner might do here,
+       not the thing they must do. */
+    .ps-vs-sitecta { height:26px; padding:2px 10px; font-size:var(--pd-fs-xs); font-weight:700; white-space:nowrap; }
     #ps-progressbtn.active, #ps-vstackbtn.active, #ps-lsmbtn.active, #ps-flowbtn.active { background:var(--pd-red); color:#fff; border-color:var(--pd-red); }
     #ps-progressbtn.active .pd-ico, #ps-vstackbtn.active .pd-ico, #ps-lsmbtn.active .pd-ico, #ps-flowbtn.active .pd-ico { color:#fff; }
     /* ---- Vertical Stacking view (toolbar) ------------------------------------------------
@@ -4035,7 +4039,17 @@
                    hidden park slot those borrowed nodes return to — see sbWbsPark. -->
           <button data-tab="builder"><span data-ico="layers" data-ico-size="14"></span> Schedule Setup</button>
           <button data-tab="schedule"><span data-ico="calendar" data-ico-size="14"></span> Project Schedule</button>
+          <!-- ⚠️⚠️ A DESTINATION OF ITS OWN. Owner 2026-09-13: *"there should be a separate tab
+               entirely dedicated for 3D views, since this sub-module is getting heavy."* The
+               Vertical Stacking was a TOOLBAR TOGGLE on the Project Schedule — a full-screen panel
+               that replaced the grid and the Gantt while still living inside the view that owns
+               them, reached by one unlabelled icon among fourteen. It is not a way of looking at
+               the schedule table; it is a different question about the same project (what does the
+               building look like, and where do the towers stand), and it now has the same standing
+               as the schedule and the cost. ⚠️ The old toolbar button still works — it comes here
+               now, so nobody loses the door they know. -->
           <button data-tab="costload"><span data-ico="cash" data-ico-size="14"></span> Cost Loading</button>
+          <button data-tab="vs3d"><span data-ico="box" data-ico-size="14"></span> 3D Views</button>
         </div>
       </div>
       <!-- Project context sits next to the title, left-aligned. Uses the app-wide shared
@@ -4290,8 +4304,8 @@
 
         <!-- Activity Progress View — per-activity Physical vs Planned progress (no dates) -->
         <div class="ps-progress" id="ps-progress" style="display:none;"></div>
-        <!-- Vertical Stacking (toolbar button). Separate from the #ps-stack-back pane. -->
-        <div class="ps-vstack" id="ps-vstack" style="display:none;"></div>
+        <!-- ⚠️ The Vertical Stacking's pane MOVED OUT of this view — it is the 3D Views tab now
+             (see #ps-view-3d). It sat here because it began as a toolbar toggle over the schedule. -->
         <div class="ps-flowline" id="ps-flowline" style="display:none;"></div>
 
         <!-- OPC-style grid footer: activity count + Download (mirrors OPC's strip under its grid) -->
@@ -4454,6 +4468,22 @@
           </div>
           <div class="sbld-panel" id="ps-cl-panel"></div>
         </div>
+      </div>
+
+      <!-- ==== 3D VIEWS ====================================================================
+           Owner 2026-09-13: *"how can i see the 2 towers based on their arrangement? Meaning the
+           site dev plan should also be seen in the vertical stacking. Better yet, there should be a
+           separate tab entirely dedicated for 3D views, since this sub-module is getting heavy."*
+
+           ⚠️⚠️ THE SITE VIEW ALREADY EXISTED AND NOBODY COULD FIND IT. It is a button called "Site"
+           inside a scope segment, inside the toolbar of a panel that was itself behind an unlabelled
+           icon in the schedule's toolbar — three levels deep, and only ever visible while the
+           stacking pane happened to be open. Giving the 3D views a destination of their own is what
+           makes the site arrangement reachable, so the two asks are one change.
+           ⚠️ The pane element keeps its id: every renderer, the focus window and the scene registry
+           all address `#ps-vstack`, and moving markup is safe in a way that renaming is not. -->
+      <div id="ps-view-3d" style="display:none;">
+        <div class="ps-vstack" id="ps-vstack"></div>
       </div>
 
       <!-- COST / EVM -->
@@ -19332,6 +19362,18 @@
         ? '<button data-vssc="site"' + (_vsScope === 'site' ? ' class="on"' : '') +
           ' title="The master site development plan — every tower where it actually stands, each as tall as its own storey count and shaded by its own progress. Drawn in Schedule Setup › Floors &amp; Zones › Site plan.">Site</button>'
         : '') + '</span>' +
+      /* ⚠️⚠️ AND WHEN THERE IS NO PLAN, A WAY TO GO AND DRAW ONE. Owner 2026-09-13: *"how can i see
+         the 2 towers based on their arrangement?"* — on a multi-tower project with nothing traced,
+         the Site button is absent (it would draw a false picture), and until now the screen said
+         nothing about why or what to do. This is not a disabled Site button wearing a different
+         face: it is a live control that goes to the step that owns the drawing, which is the only
+         honest thing to offer when the answer is "nobody has drawn it yet". */
+      ((towerNames.length > 1 && !_vsSitePlan())
+        ? '<span class="ps-tb-div"></span>' +
+          '<button class="pd-btn ps-vs-sitecta" id="ps-vs-sitecta" title="' +
+          esc('Arrange the ' + towerNames.length + ' towers on a site plan, and this view can show where each one stands. Opens Schedule Setup › Floors & Zones.') +
+          '"><span data-ico="compass" data-ico-size="14"></span> Draw the site plan…</button>'
+        : '') +
       '<span class="ps-tb-div"></span>' +
       '<span class="ps-vs-seg">' +
         '<button data-vs3d="0"' + (!_vs3D ? ' class="on"' : '') + ' title="The section: storeys as rows, zones across">2D</button>' +
@@ -19705,6 +19747,14 @@
     var _zps = host.querySelector('#ps-vs-zpsync');
     if (_zps) _zps.onclick = function () { _vsZpSync(); };
     host.querySelectorAll('[data-vssc]').forEach(function (b) { b.onclick = function () { _vsScope = b.dataset.vssc; _vsAnim = 'in'; renderVStack(); }; });
+    /* ⚠️ switchTab FIRST, then gotoStep — the same order as the 'gotoloc' deep link: switchTab is
+       what calls ScheduleBuilder.open(), and gotoStep re-renders the panel open() has just built.
+       The other way round paints the step and then has it replaced. */
+    var _sct = host.querySelector('#ps-vs-sitecta');
+    if (_sct) _sct.onclick = function () {
+      switchTab('builder');
+      try { ScheduleBuilder.gotoStep('Floors & Zones'); } catch (e) {}
+    };
     host.querySelectorAll('[data-vsdet]').forEach(function (b) { b.onclick = function () { _vsDetail = parseInt(b.dataset.vsdet, 10) || 1; _vsAnim = 'fade'; renderVStack(); }; });
     host.querySelectorAll('[data-vsdt]').forEach(function (b) { b.onclick = function () { _vsDateMode = b.dataset.vsdt; _vsAnim = 'fade'; renderVStack(); }; });
     host.querySelectorAll('[data-vsbasis]').forEach(function (b) { b.onclick = function () { _vsBasis = b.dataset.vsbasis; _vsAnim = 'fade'; renderVStack(); }; });
@@ -19808,6 +19858,28 @@
       var b = host.querySelector('#ps-vs-recheck');
       if (b) b.onclick = function () { b.disabled = true; b.textContent = 'Retrying…'; _vsAnim = 'fade'; _vsRenderSafe(hostEl); };
     }
+  }
+  /* Arriving on the 3D Views tab.
+     ⚠️⚠️ IT ARRIVES IN 3D. `_vs3D` defaults to the 2D card and is remembered across a session, so a
+     tab called "3D Views" would otherwise have opened on a SECTION drawing — a contradiction with
+     its own name. Set once, not on every entry: a planner who deliberately switches to 2D in here
+     has to be able to leave and come back to it.
+     ⚠️⚠️ AND ON THE SITE, WHEN THERE IS A PLAN. Owner 2026-09-13: *"how can i see the 2 towers based
+     on their arrangement?"* The Site scope already existed — as one button, in a segment, in the
+     toolbar of a pane that was itself behind an unlabelled icon. Where a site plan has been traced
+     it is the view this tab most obviously exists for, so the first visit lands there.
+     ⚠️ renderVStack re-checks the gate (`towerNames.length > 1 && _vsSitePlan()`) and falls back to
+     Per trade on its own, so this can never strand a planner on a scope with nothing in it. */
+  var _vs3TabSeen = false;
+  function _vs3TabEnter() {
+    if (!_vs3TabSeen) {
+      _vs3TabSeen = true;
+      _vs3D = true;
+      var _sp = null;
+      try { _sp = _vsSitePlan(); } catch (e) {}
+      if (_sp) _vsScope = 'site';
+    }
+    setVStackMode(true);
   }
   function setVStackMode(on) {
     vstackMode = on;
@@ -44146,20 +44218,34 @@
     // ⚠️ #ps-view-wbs is DELIBERATELY not switched: it is the hidden park slot for the WBS tree now,
     // not a view. Showing it would put a second copy of the tree's toolbar on screen.
     var vb = document.getElementById('ps-view-builder'); if (vb) vb.style.display = tab === 'builder' ? '' : 'none';
+    /* ==== THE 3D VIEWS TAB ==============================================================
+       ⚠️⚠️ The pane's own switch is still `setVStackMode`, and this calls it rather than reaching
+       into the pane: that function is what registers the scenes, kicks the location-levels refetch
+       and runs the entry animation. Two ways to turn one pane on is how a view ends up half
+       initialised. Leaving the tab turns it OFF, or the WebGL contexts stay live behind a hidden
+       view — a card that is not on screen still holds a canvas and a render loop. */
+    var v3d = document.getElementById('ps-view-3d'); if (v3d) v3d.style.display = tab === 'vs3d' ? '' : 'none';
+    if (tab === 'vs3d') _vs3TabEnter();
+    else if (typeof vstackMode !== 'undefined' && vstackMode) setVStackMode(false);
     // ⚠️ Leaving the setup returns the borrowed WBS tree to its park slot. Without this it would sit
     // inside a hidden view, and the next thing to repaint that panel would take it out of the document.
     if (tab !== 'builder') sbWbsPark();
     /* ⚠️ Setup and Cost Loading scroll the PAGE; the Schedule scrolls its own panes. The class says
        which, so the 100vh above can stay where it is needed and get out of the way where it is not. */
     var _app = document.querySelector('.pd-app');
-    if (_app) _app.classList.toggle('ps-longdoc', tab === 'builder' || tab === 'costload');
+    // ⚠️ The 3D tab scrolls the PAGE like the setup and the cost table: its cards are as tall as
+    // the buildings in them, and a pane that scrolled inside a 100vh box would put a second
+    // scrollbar beside the one the planner is already using.
+    if (_app) _app.classList.toggle('ps-longdoc', tab === 'builder' || tab === 'costload' || tab === 'vs3d');
     // (#ps-view-calendars is a hidden host now, not a view — Working Calendars is a Setup step.)
     // Add activity / Group / Zoom / Expand / Views / Layout / Columns / Colors / Critical path /
     // Link mode only apply to the Schedule grid+Gantt — not meaningful on the Setup or Cost table.
     var toolbar = document.querySelector('.ps-toolbar'); if (toolbar) toolbar.style.display = tab === 'schedule' ? '' : 'none';
     document.querySelectorAll('.pd-sidebar [data-view]').forEach(function (a) { a.classList.toggle('active', a.dataset.view === tab); });
     // Drive the clickable title (frees the tab-strip row for the panels)
-    var name = tab === 'costload' ? 'Cost Loading' : (tab === 'builder' ? 'Schedule Setup' : 'Project Schedule');
+    var name = tab === 'costload' ? 'Cost Loading'
+             : (tab === 'builder' ? 'Schedule Setup'
+             : (tab === 'vs3d' ? '3D Views' : 'Project Schedule'));
     var tt = document.getElementById('ps-title-txt'); if (tt) tt.textContent = name;
     document.title = name + ' · Planners Dashboard';
     applyColHidden();   // re-assert the Schedule grid's hidden-column CSS for this view
@@ -48499,7 +48585,10 @@
     function _setView(v) {
       var wantProg = v === 'progress', wantStack = v === 'stacking', wantFlow = v === 'flowline';
       if (typeof flowlineMode !== 'undefined' && flowlineMode !== wantFlow) setFlowlineMode(wantFlow);
-      if (typeof vstackMode !== 'undefined' && vstackMode !== wantStack) setVStackMode(wantStack);
+      // ⚠️ "Stacking" is no longer a layout of this view — it is the 3D Views tab. Anything still
+      // asking for it (a remembered view key, a deep link) is sent there rather than being told no.
+      if (wantStack) { switchTab('vs3d'); return; }
+      if (typeof vstackMode !== 'undefined' && vstackMode) setVStackMode(false);
       if (typeof progressMode !== 'undefined' && progressMode !== wantProg) setProgressMode(wantProg);
       if (!wantProg && !wantStack && !wantFlow) {
         layoutMode = v;
@@ -48660,8 +48749,12 @@
     (function () {
       var pb = document.getElementById('ps-progressbtn');
       if (pb) pb.onclick = function (e) { e.stopPropagation(); closeMenus(); _setView(_viewKey() === 'progress' ? layoutMode : 'progress'); };
+      /* ⚠️ The Vertical Stacking is a TAB now, not a panel over the schedule — so its old toolbar
+         button is a door to that tab rather than a toggle. Kept rather than removed: it is the way
+         every planner on this project already knows, and a shortcut that lands you where the thing
+         moved to is kinder than one that disappeared. */
       var vb = document.getElementById('ps-vstackbtn');
-      if (vb) vb.onclick = function (e) { e.stopPropagation(); closeMenus(); _setView(_viewKey() === 'stacking' ? layoutMode : 'stacking'); };
+      if (vb) vb.onclick = function (e) { e.stopPropagation(); closeMenus(); switchTab('vs3d'); };
       /* ⚠️ LSM is NOT one of the full-width panels: it is a ROW LAYOUT inside the split, so
          it toggles its own flag rather than going through `_setView`. `setLsmRows` repaints the
          View button, so the face still names it. */

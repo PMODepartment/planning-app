@@ -13,6 +13,88 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### 3D Views is a destination of its own, and the site arrangement is what it opens on (2026-09-13 a) — ethanrobles10
+
+Owner: *"how can i see the 2 towers based on their arrangement? Meaning the site dev plan should also
+be seen in the vertical stacking. Better yet, there should be a separate tab entirely dedicated for
+3D views, since this sub-module is getting heavy."*
+
+### ⚠️⚠️ THE SITE VIEW ALREADY EXISTED, THREE LEVELS DOWN, AND THAT IS WHY THE TWO ASKS ARE ONE CHANGE
+The answer to the first question was a button called **Site** — inside a scope segment, inside the
+toolbar of a pane, which was itself behind **one unlabelled icon** among fourteen in the Project
+Schedule's toolbar, and only ever visible while that pane happened to be open. It drew exactly what
+was asked for and nobody could find it. Giving the 3D views a destination is what makes the site
+arrangement reachable; building the tab without moving the site view into the light would have missed
+the point of the question.
+
+### THE TAB
+`data-tab="vs3d"` in the view menu, `#ps-view-3d` beside `#ps-view-builder` and `#ps-view-costload`,
+and `#ps-vstack` moved into it — **markup moved, id unchanged**, because every renderer, the focus
+window and the scene registry all address `#ps-vstack` and moving markup is safe in a way renaming is
+not.
+
+- ⚠️ **The Vertical Stacking was a TOGGLE OVER the schedule** — a full-width panel that replaced the
+  grid and the Gantt while still living inside `#ps-view-schedule`, with CSS hiding the panes around
+  it. It is not a way of looking at the schedule table; it is a different question about the same
+  project, and it now has the same standing as the schedule and the cost.
+- ⚠️⚠️ **Leaving the tab turns the pane OFF.** `switchTab` calls `setVStackMode(false)` on the way
+  out, or the WebGL contexts stay live behind a hidden view — a card that is not on screen still
+  holds a canvas and a render loop.
+- ⚠️ **Entering calls `setVStackMode(true)`, not the pane's internals.** That function registers the
+  scenes, kicks the location-levels refetch and runs the entry animation; two ways to turn one pane
+  on is how a view ends up half initialised.
+- ⚠️ **The old toolbar button still works — it comes here now.** It is the door every planner on this
+  project already knows, and a shortcut that lands you where the thing moved to is kinder than one
+  that vanished. Anything else still asking for the "stacking" view (a remembered view key, a deep
+  link) is routed the same way rather than being told no.
+- ⚠️ The tab scrolls the PAGE (`ps-longdoc`), like the setup and the cost table: its cards are as tall
+  as the buildings in them, and a pane scrolling inside a 100vh box would put a second scrollbar
+  beside the one the planner is already using.
+
+### ⚠️ WHAT THE TAB OPENS ON
+- **In 3D.** `_vs3D` defaults to the 2D card and is remembered across a session, so a tab called
+  "3D Views" would otherwise have opened on a SECTION drawing — a contradiction with its own name.
+  Set **once**, not on every entry: a planner who deliberately switches to 2D in here has to be able
+  to leave and come back to it.
+- **On the Site scope, when a plan has been traced.** That is the owner's first question answered
+  without them having to find anything. `renderVStack` re-checks the gate
+  (`towerNames.length > 1 && _vsSitePlan()`) and falls back to Per trade on its own, so this can
+  never strand a planner on a scope with nothing in it.
+
+### ⚠️⚠️ AND WHEN THERE IS NO PLAN, A WAY TO GO AND DRAW ONE
+On a multi-tower project with nothing traced, the Site button is **absent** — it would draw every
+tower at the same place on a guessed grid, which says something false about where the buildings
+stand — and until now the screen said nothing about why, or what to do instead. A **Draw the site
+plan…** button now sits in that gap.
+
+⚠️ It is not a disabled Site button wearing a different face: it is a live control that goes to the
+step that owns the drawing (`switchTab('builder')` then `gotoStep('Floors & Zones')` — that order,
+because switchTab is what calls `ScheduleBuilder.open()` and gotoStep re-renders the panel it has
+just built). When the answer is "nobody has drawn it yet", the only honest control is one that takes
+you to where it gets drawn.
+
+### Verified
+- **The shipped `switchTab` driven in a browser**, sliced verbatim and run against the real view
+  containers with the rest stubbed and recorded. Across `schedule → builder → vs3d → schedule → vs3d
+  → costload → vs3d`: exactly one view visible at every step; on **vs3d** the pane is shown, the
+  toolbar hidden, `ps-longdoc` set, the title reads **3D Views**, and the calls are
+  `_vs3TabEnter → setVStackMode:true`; on the way out to **either** other tab the calls begin
+  `setVStackMode:false` and the pane is hidden. The old tabs are unchanged — `renderGantt` on
+  schedule, `ScheduleBuilder.open` on builder, `CostLoading.open` on costload.
+- **26 assertions reading the shipped file** (harness gitignored, deleted): one `#ps-vstack` and it
+  is inside `#ps-view-3d` and no longer inside `#ps-view-schedule`; switchTab shows the view, enters
+  the pane, turns it off on leaving, names the tab and sets `ps-longdoc`; the toolbar button and the
+  "stacking" view key both route to the tab and nothing still toggles it as a layout; `_vs3TabEnter`
+  forces 3D, lands on the site under a plan and is a one-shot; the CTA is emitted only when there are
+  towers and no plan, and is wired to the setup step; the Site button is still gated on a real plan.
+- ⚠️ **Gated against the previous commit**: there was no `vs3d` tab, the pane lived inside
+  `#ps-view-schedule`, the toolbar button toggled a layout, and there was no route to a site plan
+  from the stacking at all.
+- ⚠️ **Not verified signed in.** The anon key has no grants, so the tab has not been opened on a real
+  project: what is proven is the switching, not a WebGL scene drawn inside the new container. First
+  thing to check: open **3D Views** on the eight-tower job — it should arrive on the site
+  arrangement, and the towers already traced should stand where you put them.
+
 ### Seventeen towers fit, and they are legible: the layout grid is chosen, not assumed (2026-09-12 p) — ethanrobles10
 
 Owner: *"bruh you just defeated the purpose of the zoom out… my point is that there should be more

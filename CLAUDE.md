@@ -102,6 +102,42 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 3D Views is a destination of its own, and the site arrangement is what it opens on (2026-09-13) — ethanrobles10
+
+Owner: *"how can i see the 2 towers based on their arrangement? Meaning the site dev plan should also
+be seen in the vertical stacking. Better yet, there should be a separate tab entirely dedicated for
+3D views, since this sub-module is getting heavy."*
+
+⚠️⚠️ **The site view already existed, three levels down — which is why the two asks are one change.**
+The answer to the first question was a button called **Site**, inside a scope segment, inside the
+toolbar of a pane, itself behind one unlabelled icon among fourteen in the Project Schedule's
+toolbar — and only visible while that pane happened to be open.
+
+- **3D Views** is now a destination beside Schedule Setup, Project Schedule and Cost Loading.
+  `#ps-vstack` moved into `#ps-view-3d` — markup moved, **id unchanged**, because every renderer and
+  the scene registry address it by that id.
+- ⚠️⚠️ **Leaving the tab turns the pane off**, or the WebGL contexts stay live behind a hidden view.
+  Entering goes through `setVStackMode`, the function that registers the scenes and kicks the
+  location-levels refetch — two ways to turn one pane on is how a view ends up half initialised.
+- ⚠️ **The old toolbar button still works — it comes here now.** It is the door planners already
+  know, and a shortcut that lands you where the thing moved to is kinder than one that vanished.
+- ⚠️ **The tab opens in 3D and, when a site plan has been traced, on the Site scope** — the first
+  question answered without anyone having to find anything. One-shot, so a planner who switches to 2D
+  in there can leave and come back to it.
+- ⚠️⚠️ **And when there is no plan, a live way to go and draw one.** The Site button stays absent (it
+  would draw every tower at the same place on a guessed grid), but the gap now holds a **Draw the
+  site plan…** button that goes to Schedule Setup › Floors & Zones. When the answer is "nobody has
+  drawn it yet", the only honest control is the one that takes you where it gets drawn.
+
+⚠️ The shipped `switchTab` was sliced verbatim and driven in a browser against the real view
+containers: across seven switches exactly one view is visible at a time, the pane turns on and off
+with the tab, and the title, toolbar and page-scroll class all follow. Plus 26 assertions on the
+wiring, gated against the previous commit. **Not verified signed in** — the tab has not been opened
+on a real project.
+
+`MODULE_V` → `20260913a`. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
 ### 2026-09-12 — Progress Photos: the 360° stitcher samples denser on a fast video, and skips a frame that won't join rather than forcing a bad one
 
 Owner, off the live "11 of 11 frame-to-frame joins could not be matched confidently" report:
