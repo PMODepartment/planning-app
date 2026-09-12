@@ -194,6 +194,43 @@ window.Pano360 = (function () {
     });
   }
 
+  // ⚠️⚠️ 2026-09-12, verified against a REAL recorded video in an isolated
+  // test harness (real @techstark/opencv-js + real Pannellum, installed from
+  // npm and driven in a real headless Chromium — see the changelog entry;
+  // this sandbox has no network path to a CDN, so the harness lives at
+  // scratchpad/pano-test in that session rather than in this repo): a
+  // homography between two ADJACENT frames of a slow lateral pan must be
+  // close to a pure translation — small rotation, scale near 1, no flip.
+  // `cv.findHomography(..., cv.RANSAC)` only guarantees its inlier set is
+  // internally CONSISTENT, never that the resulting model is physically
+  // plausible — on a scene with repetitive/periodic texture (tiled flooring,
+  // a repeated railing, evenly-spaced studs/blocks — exactly what a
+  // construction site walk-around often is) it can converge on a model with
+  // plenty of "good" matches whose linear part is a near-180° rotation+flip,
+  // which two frames a fraction of a second apart could never actually
+  // exhibit. Reproduced directly: a real MediaRecorder-encoded test video
+  // produced a homography `[[-0.97,-0.105],[0.169,-1.28]]` backed by 113
+  // ratio-test-passing matches — well above MIN_GOOD_MATCHES, so the
+  // existing match-COUNT gate never caught it — and because every frame's
+  // placement composes onto the one before it (`placements[i] =
+  // placements[i-1] * step`), that ONE bad homography poisoned every later
+  // frame, turning what should be a wide panorama into a tall, garbled mess
+  // while still reporting quality 'ok'. This is very likely the concrete
+  // shape of "the app crashes / does not work when processing", on top of
+  // the grayscale fix below: even once stitching runs without throwing, a
+  // single implausible homography can silently wreck the whole mosaic.
+  function isPlausiblePanHomography(H) {
+    var d = H.data64F;
+    var a = d[0], b = d[1], c = d[3], e = d[4];
+    var det = a * e - b * c;
+    if (!(det > 0.2 && det < 5)) return false;      // a flip or a wild scale jump
+    var scale = Math.sqrt(Math.abs(det));
+    if (scale < 0.55 || scale > 1.8) return false;  // frame-to-frame scale can't swing this far
+    var angleDeg = Math.atan2(c, a) * 180 / Math.PI;
+    if (Math.abs(angleDeg) > 30) return false;      // consecutive video frames can't rotate this much
+    return true;
+  }
+
   // ------------------------------------------------------------- stitching --
   // ORB + BFMatcher(Hamming) + ratio test + findHomography(RANSAC) +
   // warpPerspective, composing frame N onto the mosaic built from frames
@@ -256,6 +293,7 @@ window.Pano360 = (function () {
         dstPts = cv.matFromArray(good.length, 1, cv.CV_32FC2, dstArr);
         H = cv.findHomography(srcPts, dstPts, cv.RANSAC);
         if (H.empty()) H = null;
+        if (H && !isPlausiblePanHomography(H)) H = (H.delete(), null);
       }
       return { H: H, matches: good.length };
     } finally {
@@ -521,6 +559,7 @@ window.Pano360 = (function () {
     _mat3Scale: mat3Scale,
     _applyH3: applyH3,
     _featherStops: featherStops,
-    _stitchFrames: stitchFrames
+    _stitchFrames: stitchFrames,
+    _isPlausiblePanHomography: isPlausiblePanHomography
   };
 })();
