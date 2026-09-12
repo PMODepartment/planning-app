@@ -36826,7 +36826,10 @@
                  zk: 1, zx: 0, zy: 0,
                  // ⚠️ The setup rows open on a BLANK sheet, where attaching the plan really is the
                  // first move, and shut once anything is drawn — when the stage is what matters.
-                 more: !(plate && ((plate.polys && plate.polys.length) || plate.img)) };
+                 more: !(plate && ((plate.polys && plate.polys.length) || plate.img)),
+                 // ⚠️ And the sharing panel's, for the same reason: a repaint would shut it on
+                 // every tick. Starts closed — it is a question about OTHER floors.
+                 apply: false };
 
       function H() { return zpH(_zpWin.draft); }
       /* ⚠️ READ STRAIGHT OFF THE BAG, never through zpIdFor: that resolves a floor, and a
@@ -36979,6 +36982,11 @@
            ⚠️ Handles, labels and line weights are sized on SCREEN, not in plan units: a corner
            handle that grew with the zoom would cover the very corner you zoomed in to reach. */
         var V = zView(), zs = 1 / V.k;
+        /* ⚠️ THE MODAL IS THE SCROLLING BOX, and this window repaints on every gesture. Replacing
+           the whole of its contents resets the scroll, so a tick in the sharing panel at the bottom
+           threw the planner back to the top of the window — the same gesture they were repeating.
+           Saved here and put back after the write. */
+        var _scroll = box ? box.scrollTop : 0;
         var all = allCodes();
         var sel = selShape();
         var mine = SUBJ.users(W.plateId);
@@ -37365,7 +37373,14 @@
                a project, so "also use this drawing on…" has nothing it could offer, and the
                no-level band is a floor-scoped idea. */
             (SUBJ.site ? '' :
-            '<details class="zpw-apply">' +
+            /* ⚠️⚠️ ITS OPEN STATE IS ON THE WINDOW, or it shuts under the planner's hand. Owner
+               2026-09-12: *"when checking other floors it always closes the options of other
+               floors."* Ticking a floor has to repaint — the summary counts the floors sharing this
+               plan, and the warning on a floor that has its own is part of the list — and a repaint
+               rebuilds this <details> from scratch, which means closed. So a planner ticking four
+               floors had to re-open the panel four times, and the fourth tick looked like it had
+               undone the third. Same fix as the sheet fold above it. */
+            '<details class="zpw-apply" id="zpw-apply"' + (W.apply ? ' open' : '') + '>' +
               /* ⚠️ The tower is NAMED in the summary on a multi-tower job, because the list below is
                  scoped to it and a panel that silently shows a subset reads as a bug. */
               '<summary>Also use this plan on other floors' + (multiTower() ? ' of ' + e2(towerLabel(SUBJ.towerId)) : '') + '…' +
@@ -37393,6 +37408,9 @@
               '<p class="sbld-hint" style="margin:6px 0 0;">One drawing, shared by reference — re-draw it once and everything ticked follows.</p>' +
             '</details>') +
           '</div>';
+        // ⚠️ After the write, before wire(): the browser clamps scrollTop to the new content, so
+        // this has to happen once the new content is in place.
+        if (box && _scroll) box.scrollTop = _scroll;
         wire();
       }
 
@@ -37535,7 +37553,11 @@
           snap();
           d2.polys = (d2.polys || []).concat(res.polys);
           W2.sel = res.polys[res.polys.length - 1].id;
-          commit(); render();
+          /* ⚠️⚠️ paint(), NOT render(). `render()` rebuilds the SETUP STEP BEHIND this modal and
+             never touches the window, so the footprints landed in the data and the drawing sat
+             there unchanged until the window was closed and opened again. See the note on the
+             Orient handlers — same bug, same one-word cause. */
+          commit(); paint();
           // ⚠️ The toast says what a footprint IS for, and by omission what it is not: there is no
           // reshaping in that sentence because there is none on the shape.
           var msg = 'Brought in ' + res.placed + ' tower footprint' + (res.placed === 1 ? '' : 's') +
@@ -37577,7 +37599,17 @@
                its diagonal no longer clears the sheet, which is the planner's own doing and is
                undone by pressing − once. */
             if (!np) { UI.toast('That area is too big to turn on this sheet — press − to make it smaller first, or give the sheet a different shape.', 'warn'); return; }
-            snap(); s.pts = np; commit(); render();
+            /* ⚠️⚠️ paint(), NOT render(). Owner 2026-09-12, with a screenshot: *"the re-orientation
+               is not working. like it is not live, every time i close that is when it rotates."*
+               And that is exactly what it was: `render()` is the SETUP STEP's render — it rebuilds
+               the trade list, the tower bar and the floor rows BEHIND this modal, and it does not
+               repaint the modal at all. So the points really did rotate, commit() really did save
+               them, and the drawing on screen was simply never redrawn — until the window closed
+               (which calls render(), rebuilding the step) and was opened again on the new points.
+               ⚠️ Every other gesture in this window already called paint(); these three were the
+               odd ones out. A repaint here is also what redraws the ORIENT buttons' own enabled
+               state and the selection, so a half-live window would be wrong in more than one way. */
+            snap(); s.pts = np; commit(); paint();
           };
         });
         wrap.querySelectorAll('[data-zpscale]').forEach(function (b) {
@@ -37597,7 +37629,8 @@
               UI.toast('That is as big as ' + zpLabelOf(s.code) + ' can go and still be turned on this sheet.', 'warn');
               return;
             }
-            snap(); s.pts = np; commit(); render();
+            // ⚠️ paint(), not render() — see the Orient handler above.
+            snap(); s.pts = np; commit(); paint();
           };
         });
         var del = q('zpw-del');
@@ -37810,6 +37843,8 @@
            repaints on every gesture — would spring it open again under the planner's hands. */
         var _mo = q('zpw-more');
         if (_mo) _mo.ontoggle = function () { W.more = _mo.open; };
+        var _ap = q('zpw-apply');
+        if (_ap) _ap.ontoggle = function () { W.apply = _ap.open; };
         /* Dragging the marker. ⚠️ NO snap() AND NO UNDO ENTRY: the marker is not part of the
            outline, and putting it in the drawing's history would make Ctrl+Z step through
            where somebody had dropped a pin instead of through the shapes they drew.

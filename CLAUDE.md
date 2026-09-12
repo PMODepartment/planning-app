@@ -102,6 +102,34 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### Orient redraws the window it changed; the sharing panel stops shutting on every tick (2026-09-12) — ethanrobles10
+
+Owner, with a screenshot: *"the re-orientation is not working. like it is not live, every time i
+close that is when it rotates. In addition, for individual tower footprints, applying that footprint
+to other floors, when checking other floors it always closes the options of other floors."*
+
+- ⚠️⚠️ **One word: `render()` where it had to be `paint()`.** Three handlers in the floor-plan window
+  — Orient's turn buttons, its − / + buttons and *Bring in N tower footprints* — ended
+  `commit(); render();`. `render()` is the **setup step's** render: it rebuilds the trade list, the
+  tower bar and the floor rows **behind** the modal and never touches the window. The points really
+  did rotate and really were saved; the drawing was just never redrawn — until the window closed
+  (which calls `render()`) and was opened again on the new points. Every other gesture in that window
+  already called `paint()`; these three were the odd ones out.
+- ⚠️⚠️ **A `<details>` rebuilt by a repaint comes back closed.** Ticking a floor has to repaint (the
+  summary counts the floors sharing the plan), and the sharing panel was emitted with no state, so
+  every tick shut it. Its open state now lives on the window object, like the sheet fold above it.
+- ⚠️ **And the modal's scroll went with it** — the panel sits at the bottom of a window that scrolls,
+  so each tick also threw the planner back to the top, away from the control they were repeating.
+  `paint()` now saves `scrollTop` before the write and restores it after.
+
+⚠️ Reproduced in a browser before and after: with the fix the panel is still open after three ticks
+and the scroll holds; without it the panel is shut after the FIRST tick and the scroll drops. Plus 23
+assertions reading the shipped `openPlate` source, gated against the previous version. **Not verified
+signed in** — the anon key has no grants, so no real footprint has been turned in the app.
+
+`MODULE_V` → `20260912m`. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
 ### The zoom control reaches the 3D stacking; migrated footprints come in smaller, turnable and uneditable (2026-09-12) — ethanrobles10
 
 Owner: *"the zoom control should also work on the vertical stacking 3d view and also, when the per

@@ -13,6 +13,71 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### Orient redraws the window it changed, and the sharing panel stops shutting on every tick (2026-09-12 m) — ethanrobles10
+
+Owner, with a screenshot: *"the re-orientation is not working. like it is not live, every time i
+close that is when it rotates. In addition, for individual tower footprints, applying that footprint
+to other floors, when checking other floors it always closes the options of other floors."*
+
+### ⚠️⚠️ ONE WORD: `render()` WHERE IT HAD TO BE `paint()`
+Three handlers in the floor-plan window — **Orient's turn buttons, its − / + buttons, and Bring in N
+tower footprints** — ended `commit(); render();`.
+
+`render()` is the **setup step's** render. It rebuilds the trade list, the tower bar and the floor
+rows **behind** this modal and never touches the window. So the points genuinely rotated, `commit()`
+genuinely saved them, and the drawing on screen was simply never redrawn — until the window was
+closed (closing calls `render()`, which rebuilds the step from the saved points) and opened again.
+Hence the owner's exact words: *"every time i close that is when it rotates."*
+
+- ⚠️ **Every other gesture in this window already called `paint()`** — drawing, dragging, undo,
+  delete, paste, the palette, the grid. These three were the odd ones out, and the two newest of them
+  were the ones a planner uses most on a site plan.
+- ⚠️ The repaint is also what redraws the **selection and the Orient buttons' own enabled state**, so
+  a window that skipped it was stale in more than one way, not just late.
+- ⚠️ `_close(); render();` at the end of the window is correct and stays: closing it does have to
+  refresh the Site plan button's count on the step behind.
+
+### ⚠️⚠️ A `<details>` REBUILT BY A REPAINT COMES BACK CLOSED
+Ticking a floor in **Also use this plan on other floors…** has to repaint — the summary counts the
+floors sharing the plan, and the "has its own" warning on each floor is part of the list — and
+`paint()` rewrites `wrap.innerHTML` wholesale. The panel was emitted as a bare
+`<details class="zpw-apply">`, so every tick rebuilt it **shut**. A planner ticking four floors
+re-opened it four times, and the fourth tick looked like it had undone the third.
+
+- Its open state now lives on `_zpWin.apply` and is written back into the markup, with `ontoggle`
+  recording it — the same fix the sheet fold above it already had.
+- ⚠️⚠️ **AND THE MODAL'S SCROLL, which was the other half of what the owner saw.** The sharing panel
+  is at the BOTTOM of a window that scrolls inside `.pd-modal`; replacing the contents resets
+  `scrollTop`, so every tick also threw them back to the top of the window, away from the very
+  control they were repeating. `paint()` now saves the scroll before the write and restores it after
+  — after `innerHTML`, before `wire()`, because the browser clamps `scrollTop` to the content that is
+  actually there.
+
+### Verified
+- **In a browser, on the mechanism**: a container repainted from a state object, driven with a real
+  click on the summary and a real `onchange` per tick. **With the fix**: the panel is still open after
+  three ticks and the scroll holds at 156. **Without it**: the panel is shut after the FIRST tick and
+  the scroll drops 156 → 104. That is the owner's report, reproduced and then closed.
+  ⚠️ It reproduces the mechanism — a rewritten `innerHTML`, the state flag, the `ontoggle` — not the
+  module itself, which cannot be opened without a signed-in session.
+- ⚠️ A trap worth recording: **`toggle` is queued, not synchronous.** The first cut of that harness
+  set `.open = true` in script and repainted in the same task, so the flag had not been written yet
+  and the "fixed" case looked broken. A real click and one turn of the event loop is the only honest
+  way to drive it.
+- **23 assertions reading the shipped `openPlate` source** (harness gitignored, deleted): no gesture
+  that changes the drawing ends in `render()`; both `data-zprot` and `data-zpscale` repaint and do
+  not re-render the step; the import handler repaints; both `<details>` carry their state into the
+  markup, write it back on toggle, and are initialised on the window object; the scroll is saved
+  before the write and restored between `innerHTML` and `wire()`.
+  ⚠️ Block comments are stripped as a whole before that scan — the notes explaining this fix contain
+  the word `render()` in prose, and a line-by-line filter reported them as the bug.
+- ⚠️ **Gated against HEAD**: the previous version ends three drawing gestures in `render()`, emits
+  `<details class="zpw-apply">` with no state, and never touches `scrollTop`.
+- ⚠️ **Not verified signed in.** The anon key has no grants, so no real footprint has been turned in
+  the app. What is proven is the call sites and the repaint mechanism. First thing to check on a real
+  project: press Orient ↷90 on a footprint and it should turn **under your cursor**, with no need to
+  close anything.
+
 ### The zoom control reaches the 3D stacking; migrated footprints arrive smaller, turnable, and with their corners fixed (2026-09-12 k) — ethanrobles10
 
 Owner: *"the zoom control should also work on the vertical stacking 3d view and also, when the per
