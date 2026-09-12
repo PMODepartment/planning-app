@@ -717,7 +717,12 @@ html.pd-dark .pd-seg-multi > button.on:hover { color: #FF8A80; }
 
 /* ---- Forms ---- */
 .pd-field { margin-bottom: 14px; }
-.pd-field label { display: block; font-size: var(--pd-fs-xs); font-weight: 500; color: var(--pd-muted); margin-bottom: 5px;
+/* ⚠️⚠️ WAS --pd-fs-xs (11px) while `.pd-input`/`.pd-select`/`.pd-textarea` below sit at
+   --pd-fs-sm (12.5px) — a label visibly smaller than the value it labels, on every form
+   in the app. `.pd-label` (below) already used --pd-fs-sm; this brings the far more common
+   bare `label` inside `.pd-field` onto the SAME rung, so a field's caption and its value
+   read as one size, not two. */
+.pd-field label { display: block; font-size: var(--pd-fs-sm); font-weight: 500; color: var(--pd-muted); margin-bottom: 5px;
   text-transform: uppercase; letter-spacing: .03em; }
 .pd-input, .pd-select, .pd-textarea {
   /* ⚠️⚠️ WAS 7px WHILE `.pd-btn` IS 8px, so a Filter button and the search box beside it in
@@ -1416,6 +1421,13 @@ body { overflow-x: clip; }
   .pd-input, .pd-select, .pd-textarea, .pd-input-sm,
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="hidden"]),
   select, textarea { font-size: var(--pd-fs-tap) !important; }
+  /* ⚠️⚠️ A LABEL CANNOT SHRINK TO MATCH — the input above is pinned at --pd-fs-tap (16px)
+     because iOS zooms the page under that on focus, and that floor is not negotiable (see
+     the guard above). So "input text the same size as its label" on a phone can only be
+     reached by raising the LABEL to the same 16px, never by lowering the input. Desktop
+     still matches at the smaller --pd-fs-sm rung (see `.pd-field label`/`.pd-label` above),
+     where nothing forces a floor. */
+  .pd-field label, .pd-label { font-size: var(--pd-fs-tap); }
   /* ⚠️ And the same fields measured 22–35px tall, under the 44px this block already enforces on
      `.pd-btn`. A control you cannot reliably hit is not fixed by being legible. `min-height`,
      never `height`: a textarea must still grow, which is why it is not in this list. */

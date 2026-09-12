@@ -2290,10 +2290,12 @@ window.MinutesOfMeeting = (function () {
             '<div class="il-form-row">' +
               '<div class="pd-field" style="flex:1 1 150px;"><label>Date</label>' +
                 '<input class="pd-input" type="date" id="il-nx-date" value="' + dateVal(defDate) + '"></div>' +
-              '<div class="pd-field" style="flex:1 1 120px;"><label>Start time</label>' +
-                '<input class="pd-input" type="time" id="il-nx-start" value="' + Fmt.esc(defStart) + '"></div>' +
-              '<div class="pd-field" style="flex:1 1 120px;"><label>End time</label>' +
-                '<input class="pd-input" type="time" id="il-nx-end" value="' + Fmt.esc(defEnd) + '"></div>' +
+              '<div class="il-timepair">' +
+                '<div class="pd-field"><label>Start time</label>' +
+                  '<input class="pd-input" type="time" id="il-nx-start" value="' + Fmt.esc(defStart) + '"></div>' +
+                '<div class="pd-field"><label>End time</label>' +
+                  '<input class="pd-input" type="time" id="il-nx-end" value="' + Fmt.esc(defEnd) + '"></div>' +
+              '</div>' +
             '</div>'
           // ⚠️ ITEM 2 (round 4) — "ask for inputs in two input groups. first
           // input group is Schedule - including regular/irregular, series
@@ -2320,14 +2322,18 @@ window.MinutesOfMeeting = (function () {
             // of this — "no need for the schedule input group" (round 3,
             // item 7's rule, unchanged).
             '<div class="il-form-row" id="il-nx-schedwrap">' +
-              '<div class="pd-field" style="flex:1 1 150px;"><label>Series start date *</label>' +
-                '<input class="pd-input" type="date" id="il-nx-sstart" value="' + dateVal((seed && seed.meeting_date) || momToday()) + '"></div>' +
-              '<div class="pd-field" style="flex:1 1 150px;"><label>Series end date (optional)</label>' +
-                '<input class="pd-input" type="date" id="il-nx-send"></div>' +
-              '<div class="pd-field" style="flex:1 1 120px;"><label>Start time *</label>' +
-                '<input class="pd-input" type="time" id="il-nx-schedstart" value="' + Fmt.esc(defStart) + '"></div>' +
-              '<div class="pd-field" style="flex:1 1 120px;"><label>End time *</label>' +
-                '<input class="pd-input" type="time" id="il-nx-schedend" value="' + Fmt.esc(defEnd) + '"></div>' +
+              '<div class="il-timepair">' +
+                '<div class="pd-field"><label>Series start date *</label>' +
+                  '<input class="pd-input" type="date" id="il-nx-sstart" value="' + dateVal((seed && seed.meeting_date) || momToday()) + '"></div>' +
+                '<div class="pd-field"><label>Series end date (optional)</label>' +
+                  '<input class="pd-input" type="date" id="il-nx-send"></div>' +
+              '</div>' +
+              '<div class="il-timepair">' +
+                '<div class="pd-field"><label>Start time *</label>' +
+                  '<input class="pd-input" type="time" id="il-nx-schedstart" value="' + Fmt.esc(defStart) + '"></div>' +
+                '<div class="pd-field"><label>End time *</label>' +
+                  '<input class="pd-input" type="time" id="il-nx-schedend" value="' + Fmt.esc(defEnd) + '"></div>' +
+              '</div>' +
             '</div>' +
             '<div class="il-form-row" id="il-nx-freqwrap">' +
               '<div class="pd-field" style="flex:1 1 220px;"><label>Frequency *</label><select class="pd-select" id="il-nx-freq">' +
@@ -2348,10 +2354,12 @@ window.MinutesOfMeeting = (function () {
             '<div class="il-form-row">' +
               '<div class="pd-field" style="flex:1 1 150px;"><label>Date *</label>' +
                 '<input class="pd-input" type="date" id="il-nx-date" value="' + dateVal(defDate) + '"></div>' +
-              '<div class="pd-field" style="flex:1 1 120px;"><label>Start time</label>' +
-                '<input class="pd-input" type="time" id="il-nx-start" value="' + Fmt.esc(defStart) + '"></div>' +
-              '<div class="pd-field" style="flex:1 1 120px;"><label>End time</label>' +
-                '<input class="pd-input" type="time" id="il-nx-end" value="' + Fmt.esc(defEnd) + '"></div>' +
+              '<div class="il-timepair">' +
+                '<div class="pd-field"><label>Start time</label>' +
+                  '<input class="pd-input" type="time" id="il-nx-start" value="' + Fmt.esc(defStart) + '"></div>' +
+                '<div class="pd-field"><label>End time</label>' +
+                  '<input class="pd-input" type="time" id="il-nx-end" value="' + Fmt.esc(defEnd) + '"></div>' +
+              '</div>' +
             '</div>') +
       '</div>' +
       '<div class="pd-modal-footer">' +
@@ -2660,14 +2668,18 @@ window.MinutesOfMeeting = (function () {
         // once it exists" is superseded by this and removed.)
         '<div class="il-mom-sectile" id="il-am-schedtile" hidden><h4 class="il-mom-sechead">Schedule</h4>' +
         '<div class="il-form-row">' +
-          '<div class="pd-field" style="flex:1 1 150px;"><label>Series start date *</label>' +
-            '<input class="pd-input" type="date" id="il-am-sstart" value="' + dateVal(momToday()) + '"></div>' +
-          '<div class="pd-field" style="flex:1 1 150px;"><label>Series end date (optional)</label>' +
-            '<input class="pd-input" type="date" id="il-am-send"></div>' +
-          '<div class="pd-field" style="flex:1 1 120px;"><label>Start time *</label>' +
-            '<input class="pd-input" type="time" id="il-am-schedstart"></div>' +
-          '<div class="pd-field" style="flex:1 1 120px;"><label>End time *</label>' +
-            '<input class="pd-input" type="time" id="il-am-schedend"></div>' +
+          '<div class="il-timepair">' +
+            '<div class="pd-field"><label>Series start date *</label>' +
+              '<input class="pd-input" type="date" id="il-am-sstart" value="' + dateVal(momToday()) + '"></div>' +
+            '<div class="pd-field"><label>Series end date (optional)</label>' +
+              '<input class="pd-input" type="date" id="il-am-send"></div>' +
+          '</div>' +
+          '<div class="il-timepair">' +
+            '<div class="pd-field"><label>Start time *</label>' +
+              '<input class="pd-input" type="time" id="il-am-schedstart"></div>' +
+            '<div class="pd-field"><label>End time *</label>' +
+              '<input class="pd-input" type="time" id="il-am-schedend"></div>' +
+          '</div>' +
         '</div>' +
         '<div class="il-form-row">' +
           '<div class="pd-field" style="flex:1 1 220px;"><label>Frequency *</label><select class="pd-select" id="il-am-freq">' +
@@ -2685,8 +2697,10 @@ window.MinutesOfMeeting = (function () {
         '<div class="il-form-row" id="il-am-datetimewrap">' +
           '<div class="pd-field" style="flex:1 1 150px;"><label>Date *</label>' +
             '<input class="pd-input" type="date" id="il-am-date" value="' + dateVal(momToday()) + '"></div>' +
-          '<div class="pd-field" style="flex:1 1 120px;"><label>Start time *</label><input class="pd-input" type="time" id="il-am-start"></div>' +
-          '<div class="pd-field" style="flex:1 1 120px;"><label>End time *</label><input class="pd-input" type="time" id="il-am-end"></div>' +
+          '<div class="il-timepair">' +
+            '<div class="pd-field"><label>Start time *</label><input class="pd-input" type="time" id="il-am-start"></div>' +
+            '<div class="pd-field"><label>End time *</label><input class="pd-input" type="time" id="il-am-end"></div>' +
+          '</div>' +
         '</div>' +
         '<div class="il-form-row">' +
           '<div class="pd-field" style="flex:1 1 200px;"><label>Venue *</label><input class="pd-input" id="il-am-venue"></div>' +
@@ -3227,14 +3241,18 @@ window.MinutesOfMeeting = (function () {
       (showSchedTile
         ? '<div class="il-mom-sectile"><h4 class="il-mom-sechead">Schedule</h4>' +
           '<div class="il-form-row">' +
-            '<div class="pd-field" style="flex:1 1 150px;"><label>Series start date</label>' +
-              '<input class="pd-input" type="date" id="il-mds-sstart" value="' + dateVal(momSch.start_date) + '"' + d + '></div>' +
-            '<div class="pd-field" style="flex:1 1 150px;"><label>Series end date (optional)</label>' +
-              '<input class="pd-input" type="date" id="il-mds-send" value="' + dateVal(momSch.end_date) + '"' + d + '></div>' +
-            '<div class="pd-field" style="flex:1 1 110px;"><label>Start time</label>' +
-              '<input class="pd-input" type="time" id="il-mds-schedstart" value="' + Fmt.esc(momSch.start_time || '') + '"' + d + '></div>' +
-            '<div class="pd-field" style="flex:1 1 110px;"><label>End time</label>' +
-              '<input class="pd-input" type="time" id="il-mds-schedend" value="' + Fmt.esc(momSch.end_time || '') + '"' + d + '></div>' +
+            '<div class="il-timepair">' +
+              '<div class="pd-field"><label>Series start date</label>' +
+                '<input class="pd-input" type="date" id="il-mds-sstart" value="' + dateVal(momSch.start_date) + '"' + d + '></div>' +
+              '<div class="pd-field"><label>Series end date (optional)</label>' +
+                '<input class="pd-input" type="date" id="il-mds-send" value="' + dateVal(momSch.end_date) + '"' + d + '></div>' +
+            '</div>' +
+            '<div class="il-timepair">' +
+              '<div class="pd-field"><label>Start time</label>' +
+                '<input class="pd-input" type="time" id="il-mds-schedstart" value="' + Fmt.esc(momSch.start_time || '') + '"' + d + '></div>' +
+              '<div class="pd-field"><label>End time</label>' +
+                '<input class="pd-input" type="time" id="il-mds-schedend" value="' + Fmt.esc(momSch.end_time || '') + '"' + d + '></div>' +
+            '</div>' +
           '</div>' +
           '<div class="il-form-row">' +
             '<div class="pd-field" style="flex:1 1 220px;"><label>Frequency</label><select class="pd-select" id="il-mds-freq"' + d + '>' +
@@ -3253,10 +3271,12 @@ window.MinutesOfMeeting = (function () {
       '<div class="il-mom-sectile"><h4 class="il-mom-sechead">Date and Venue</h4>' +
       '<div class="il-form-row">' +
         '<div class="pd-field" style="flex:1 1 140px;"><label>Date</label><input class="pd-input" type="date" id="il-mom-date" value="' + (dateVal(mom.meeting_date)) + '"' + d + '></div>' +
-        '<div class="pd-field" style="flex:1 1 110px;"><label>Start time</label>' +
-          '<input class="pd-input" type="time" id="il-mom-stime" value="' + Fmt.esc(mom.start_time || '') + '"' + d + '></div>' +
-        '<div class="pd-field" style="flex:1 1 110px;"><label>End time</label>' +
-          '<input class="pd-input" type="time" id="il-mom-etime" value="' + Fmt.esc(mom.end_time || '') + '"' + d + '></div>' +
+        '<div class="il-timepair">' +
+          '<div class="pd-field"><label>Start time</label>' +
+            '<input class="pd-input" type="time" id="il-mom-stime" value="' + Fmt.esc(mom.start_time || '') + '"' + d + '></div>' +
+          '<div class="pd-field"><label>End time</label>' +
+            '<input class="pd-input" type="time" id="il-mom-etime" value="' + Fmt.esc(mom.end_time || '') + '"' + d + '></div>' +
+        '</div>' +
       '</div>' +
       // ⚠️ ITEM 3/5 — planned start/end alongside the ACTUAL start/end.
       // Both are always shown, never conditionally revealed once "the meeting
