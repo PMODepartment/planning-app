@@ -6,6 +6,32 @@ can't do that. One entry per prompt, newest first.
 
 ---
 
+## 2026-09-12 (d) — Chat/New chat "don't work": one was never wired, the other was a race
+
+Owner: *"chat and new chat buttons dont work. what are they supposed to do."*
+
+- **"Chat" is inert by design, not by bug.** It is the only tab in `.pmc-tabs` — a
+  conversation-history browser was explicitly deferred when this module was first built (see
+  the "not built in this pass" note below) — so it carries no click handler at all. Nothing
+  changed here; it is correctly a no-op today.
+- ⚠️⚠️ **"New chat" had a real bug: its handler was wired AFTER an `await`.** `#pmc-new` and
+  `#pmc-send` are static markup in the topbar/composer — they paint and look clickable the
+  instant the page loads, well before `init()` has run. Their `onclick` was previously set
+  only once `await loadProjects()` resolved, so any hiccup fetching `projects` (RLS, a network
+  blip, a slow connection) threw out of `init()` right there and **every handler below it —
+  New chat, Send, Enter-to-send — never got attached, silently.** The buttons looked exactly
+  as clickable as a moment before; nothing on screen said why they had stopped responding.
+  Fixed by wiring all four handlers **before** the first `await`, and wrapping
+  `loadProjects()` in its own try/catch with a toast on failure — a broken project fetch now
+  costs only the project picker (grounding falls back to `pid === null`), never the chat
+  itself.
+
+⚠️ Not verified signed in — no live login is possible in this environment; the fix is argued
+from the control flow (handlers now attach synchronously, before any `await`), not observed
+against a real failing fetch.
+
+---
+
 ## 2026-09-12 (c) — Pormac gets a face: a Megawide-branded avatar on every assistant bubble
 
 Owner supplied a cartoon construction-worker illustration (white Megawide hardhat, black

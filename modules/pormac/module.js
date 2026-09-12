@@ -48,13 +48,15 @@ window.Pormac = (function () {
   async function init(user, prof) {
     profile = prof;
 
-    await loadProjects();
-    $('pmc-project').onchange = function (e) {
-      pid = e.target.value || null;
-      sessionStorage.setItem('pd_project', pid || '');
-      conversationId = null; chatHistory = [];
-      renderMessages();
-    };
+    // ⚠️⚠️ WIRE THE BUTTONS BEFORE ANY `await`. `#pmc-new` / `#pmc-send` are
+    // static markup in the topbar and composer — they render and look
+    // clickable the instant the page paints, well before this function has
+    // run at all. They used to get their onclick only after `loadProjects()`
+    // resolved below, so a slow or failing project fetch (RLS hiccup, a
+    // network blip) left them sitting there inert with nothing on screen
+    // to say why — "the buttons don't work" with no visible cause. Wiring
+    // first means a project-list failure can only ever cost the project
+    // picker, never the chat controls.
     $('pmc-new').onclick = function () { conversationId = null; chatHistory = []; renderMessages(); };
     $('pmc-send').onclick = onSend;
     $('pmc-input').addEventListener('keydown', function (e) {
@@ -64,6 +66,20 @@ window.Pormac = (function () {
       this.style.height = 'auto';
       this.style.height = Math.min(160, this.scrollHeight) + 'px';
     });
+
+    try {
+      await loadProjects();
+      $('pmc-project').onchange = function (e) {
+        pid = e.target.value || null;
+        sessionStorage.setItem('pd_project', pid || '');
+        conversationId = null; chatHistory = [];
+        renderMessages();
+      };
+    } catch (e) {
+      // A planner can still chat without a project selected — this only
+      // costs project-scoped grounding, never the chat itself.
+      UI.toast('Pormac: could not load the project list (' + ((e && e.message) || e) + ')', 'warn');
+    }
 
     // ⚠️ No access gate here (2026-09-12, owner's call: "available to
     // everyone, no need for settings to define accessibility"). Every user

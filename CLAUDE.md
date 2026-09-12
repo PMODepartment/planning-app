@@ -102,6 +102,19 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-12 — Pormac: "New chat" was never a click-handler race until it was
+
+Owner: *"chat and new chat buttons dont work. what are they supposed to do."* Detail:
+[`modules/pormac/CLAUDE.md`](modules/pormac/CLAUDE.md).
+
+`#pmc-new` and `#pmc-send` paint in the topbar/composer before `init()` runs, but their
+`onclick` was wired only after `await loadProjects()` resolved — so a failed or slow project
+fetch silently left every button in the module unwired, with no visible sign why. Handlers now
+attach before the first `await`; a broken project fetch costs only the project picker. The
+"Chat" tab remains intentionally inert — it is the module's only screen.
+
+⚠️ Not verified signed in.
+
 ### 2026-09-12 — Pormac gets a Megawide-branded avatar
 
 Owner supplied a cartoon construction-worker illustration and asked it be used as the
