@@ -13,6 +13,392 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### The site grid is the project's, not the press's; and the view steps back to 25% (2026-09-12 n) — ethanrobles10
+
+Owner: *"look at this, this does not enable users to fit more towers. enlargen the space, there
+should be like a maximum of 50 or 25% zoom out."*
+
+### ⚠️⚠️ THE GRID WAS SIZED BY THE PRESS, NOT BY THE PROJECT — AND THAT IS THE WHOLE COMPLAINT
+`zpSitePlaceFootprints` built its layout grid from `found.length`: how many footprints were being
+brought in **at that moment**. On the owner's eight-tower job only Tower 1 had a traced floor plan,
+so the button read *"Bring in 1 tower footprint"*, `n` was 1, and that one tower was handed a
+**one-cell grid — the whole sheet as its cell**. Measured against the previous code:
+
+| | previous | now |
+|---|---|---|
+| Tower 1 arriving alone on an 8-tower job | **353 × 236** on a 1000 × 620 sheet | **127 × 78** |
+| the same tower when all eight arrive at once | 118 wide | 118 wide |
+| ⚠️ so the same site plan carried the same tower at | **two different scales** (353 vs 118) | one |
+| bringing the eight in one at a time | **all eight in cell 4, 28 overlapping pairs** | eight cells, 0 overlaps |
+
+That last row is the one that mattered most and I had not predicted it: the cell index came from the
+footprint's position in **this press's** list, so every tower brought in on its own landed in the
+same cell, on top of the last. A planner adding each tower as they traced it would have stacked all
+eight on one spot.
+
+- ⚠️ The grid is now sized by **`opts.total`** — `SUBJ.codes.length`, the subject's own list of tower
+  names (the setup's chips plus whatever the schedule carries). The first tower to arrive already
+  sits in the space it will still be in when all eight are there.
+- ⚠️ **A new arrival takes a FREE cell.** What is already on the sheet is passed in as `opts.busy`; a
+  cell counts as taken if any existing area's centre falls in it. Bringing in the fourth tower after
+  arranging three must not drop it on one of them.
+- ⚠️ Past the last free cell it **wraps rather than refusing**: a sheet with every cell taken is still
+  better served by a footprint the planner can see and drag than by one that silently never arrived.
+- ⚠️ `total` is capped at 64, so a malformed tower list cannot ask for an 8000-cell grid.
+
+### ⚠️ THE VIEW STEPS BACK PAST THE SHEET NOW — 25% TO 1200%
+Zooming out past 100% used to be refused, on the grounds that the whole sheet already IS everything
+there is. True of the **drawing**, and beside the point for someone arranging eight towers who wants
+to see the sheet whole with room around it to judge the arrangement by. `ZP_ZMIN = 0.25`.
+
+- ⚠️⚠️ **The sheet is drawn as a PAGE from here on.** The moment the view is bigger than the sheet,
+  "where does the paper end" stops being obvious — the stage's own edge used to be the answer.
+  A `.zpw-sheet` rect marks the edge and a `.zpw-off` path dims everything outside it.
+- ⚠️⚠️ **`fill:none` on that rect, and that is not a detail**: the svg sits ABOVE the plan image, so a
+  filled rectangle the size of the sheet would hide the very drawing the planner attached to trace
+  over. The paper is marked by its edge and by the margin being dimmed, never by being painted.
+- ⚠️ **The margin is somewhere to look from, not somewhere to build.** Nothing can be drawn or
+  dragged off the sheet — every stored coordinate is in sheet units — so `ptOnSheet()` now guards the
+  tracing and marker clicks. `ptOf` clamps, which is right for a drag (a shape pushed at the edge
+  should stop there) and wrong for a click, where it would drop a corner on the nearest edge,
+  somewhere the planner did not click. Ignored silently: at 25% the margin is most of the window and
+  a warning per stray click would be a stream of them.
+- ⚠️ **Below 100% the sheet is CENTRED in the view**, not pinned to the corner the clamp would have
+  put it in — that is what makes zooming out read as stepping back from the paper rather than as the
+  drawing sliding away.
+- ⚠️ The backdrop image is transformed at **any** zoom that is not 1, not just above it: zoomed out,
+  `V.x` is negative and the image has to shrink and move right by exactly what the trace does, or the
+  plan would part company with the zones drawn on it. **Measured in a browser**: at 25% the image
+  lands on the sheet rect to within 1.5px on all four edges.
+- ⚠️ `Fit` is now a point in the MIDDLE of the range rather than one end of it, so it is live whenever
+  the view is not at 100%, in either direction.
+
+### Verified
+- **563 assertions** driving the shipped placement and rotation code, sliced verbatim (harness
+  gitignored, deleted), including the new grid: a lone arrival on an 8-tower job fits a 1-of-8 cell;
+  one-at-a-time and all-at-once give the **same size**; eight towers brought in one by one take eight
+  different cells with **zero overlapping pairs**, all on the sheet and all still turnable at all 25
+  angles.
+- ⚠️ **Gated against the previous commit**: the same suite fails **12** assertions there — the table
+  above is that gate's output, including the 28 overlapping pairs.
+- **68 assertions** on the view maths (`zView` / `zSet` / `zFit` / `ptOf`, sliced verbatim): at 0.75,
+  0.5 and 0.25 the view is bigger than the sheet, the sheet is centred to 1e-9 with equal margins on
+  both sides, the whole sheet is inside the view, the aspect is unchanged, the stage centre is still
+  the sheet centre, a click in the margin clamps onto the paper; Fit from 25% restores exactly; the
+  cursor anchor still holds when zooming back in from 25%; a tall sheet behaves the same.
+- **Measured in a browser** against the shipped stylesheets: at 25% the sheet is 0.2495 of the stage
+  width and 0.2493 of its height, centred, the image lands exactly on it, and the dim path covers the
+  stage with the sheet punched out; at 100% the sheet rect lands on the stage's own edges.
+- ⚠️ **Not verified signed in.** The anon key has no grants, so no real site plan has been zoomed out
+  or had a second tower imported into a free cell. First thing to check on a real project: trace one
+  tower of eight, bring it in, and it should arrive small and in the top-left cell — not filling the
+  middle of the sheet.
+
+### Orient redraws the window it changed, and the sharing panel stops shutting on every tick (2026-09-12 m) — ethanrobles10
+
+Owner, with a screenshot: *"the re-orientation is not working. like it is not live, every time i
+close that is when it rotates. In addition, for individual tower footprints, applying that footprint
+to other floors, when checking other floors it always closes the options of other floors."*
+
+### ⚠️⚠️ ONE WORD: `render()` WHERE IT HAD TO BE `paint()`
+Three handlers in the floor-plan window — **Orient's turn buttons, its − / + buttons, and Bring in N
+tower footprints** — ended `commit(); render();`.
+
+`render()` is the **setup step's** render. It rebuilds the trade list, the tower bar and the floor
+rows **behind** this modal and never touches the window. So the points genuinely rotated, `commit()`
+genuinely saved them, and the drawing on screen was simply never redrawn — until the window was
+closed (closing calls `render()`, which rebuilds the step from the saved points) and opened again.
+Hence the owner's exact words: *"every time i close that is when it rotates."*
+
+- ⚠️ **Every other gesture in this window already called `paint()`** — drawing, dragging, undo,
+  delete, paste, the palette, the grid. These three were the odd ones out, and the two newest of them
+  were the ones a planner uses most on a site plan.
+- ⚠️ The repaint is also what redraws the **selection and the Orient buttons' own enabled state**, so
+  a window that skipped it was stale in more than one way, not just late.
+- ⚠️ `_close(); render();` at the end of the window is correct and stays: closing it does have to
+  refresh the Site plan button's count on the step behind.
+
+### ⚠️⚠️ A `<details>` REBUILT BY A REPAINT COMES BACK CLOSED
+Ticking a floor in **Also use this plan on other floors…** has to repaint — the summary counts the
+floors sharing the plan, and the "has its own" warning on each floor is part of the list — and
+`paint()` rewrites `wrap.innerHTML` wholesale. The panel was emitted as a bare
+`<details class="zpw-apply">`, so every tick rebuilt it **shut**. A planner ticking four floors
+re-opened it four times, and the fourth tick looked like it had undone the third.
+
+- Its open state now lives on `_zpWin.apply` and is written back into the markup, with `ontoggle`
+  recording it — the same fix the sheet fold above it already had.
+- ⚠️⚠️ **AND THE MODAL'S SCROLL, which was the other half of what the owner saw.** The sharing panel
+  is at the BOTTOM of a window that scrolls inside `.pd-modal`; replacing the contents resets
+  `scrollTop`, so every tick also threw them back to the top of the window, away from the very
+  control they were repeating. `paint()` now saves the scroll before the write and restores it after
+  — after `innerHTML`, before `wire()`, because the browser clamps `scrollTop` to the content that is
+  actually there.
+
+### Verified
+- **In a browser, on the mechanism**: a container repainted from a state object, driven with a real
+  click on the summary and a real `onchange` per tick. **With the fix**: the panel is still open after
+  three ticks and the scroll holds at 156. **Without it**: the panel is shut after the FIRST tick and
+  the scroll drops 156 → 104. That is the owner's report, reproduced and then closed.
+  ⚠️ It reproduces the mechanism — a rewritten `innerHTML`, the state flag, the `ontoggle` — not the
+  module itself, which cannot be opened without a signed-in session.
+- ⚠️ A trap worth recording: **`toggle` is queued, not synchronous.** The first cut of that harness
+  set `.open = true` in script and repainted in the same task, so the flag had not been written yet
+  and the "fixed" case looked broken. A real click and one turn of the event loop is the only honest
+  way to drive it.
+- **23 assertions reading the shipped `openPlate` source** (harness gitignored, deleted): no gesture
+  that changes the drawing ends in `render()`; both `data-zprot` and `data-zpscale` repaint and do
+  not re-render the step; the import handler repaints; both `<details>` carry their state into the
+  markup, write it back on toggle, and are initialised on the window object; the scroll is saved
+  before the write and restored between `innerHTML` and `wire()`.
+  ⚠️ Block comments are stripped as a whole before that scan — the notes explaining this fix contain
+  the word `render()` in prose, and a line-by-line filter reported them as the bug.
+- ⚠️ **Gated against HEAD**: the previous version ends three drawing gestures in `render()`, emits
+  `<details class="zpw-apply">` with no state, and never touches `scrollTop`.
+- ⚠️ **Not verified signed in.** The anon key has no grants, so no real footprint has been turned in
+  the app. What is proven is the call sites and the repaint mechanism. First thing to check on a real
+  project: press Orient ↷90 on a footprint and it should turn **under your cursor**, with no need to
+  close anything.
+
+### The zoom control reaches the 3D stacking; migrated footprints arrive smaller, turnable, and with their corners fixed (2026-09-12 k) — ethanrobles10
+
+Owner: *"the zoom control should also work on the vertical stacking 3d view and also, when the per
+tower footprints are migrated, the default scale of the site plan should be way less. what if the
+footprint of tower 1 is so big it is unable to be rotated? Also the migration of the footprints of
+the tower, the users should not be able to edit the corner points of the footprint. It was already
+defined. Meaning the only thing users are able to do are rotate the orientation and change
+locations. that is it."*
+
+### ⚠️ THE 3D VIEW ALREADY DOLLIED — NOTHING ON IT SAID SO
+`cv.onwheel` has always moved `rot.r`, and it is unchanged. What was missing was any affordance: a
+WebGL canvas has no scrollbar, no handle and nothing that looks zoomable, so the only statement that
+it could be zoomed was the words "scroll to zoom" in small grey text under the card — a manual, not a
+control. The same `.ps-zoomctl` the plan window uses is now built in `_vs3Build`, so it is on **every**
+3D scene: the cards, the four panes of the focus window, and the Site view.
+
+- ⚠️⚠️ **ONE CLASS FOR BOTH DRAWINGS.** `.zpw-zoom` / `.zpw-zpct` were renamed `.ps-zoomctl` /
+  `.ps-zoomctl-pct` rather than copied. It is the same question asked of a different drawing, and
+  two controls that looked different would be two things to learn.
+- ⚠️⚠️ **ONE CLAMP.** `RMIN` / `RMAX` and `clampR()` replace the pair of limits that had been written
+  out twice (the wheel and `setCam`). The buttons drive `rot.r` through the same function, so they
+  can never offer a framing the wheel cannot reach, or stop short of one it can. **Measured**: the
+  wheel and the buttons land on exactly the same two limits, on three model sizes.
+- ⚠️ **`Fit` is `r0`** — this model's own default framing, not a number typed in here.
+- ⚠️ **The readout is a RATIO of that default**, not a distance: "160%" means closer than the view
+  the card opens at, which a planner can act on. Scene units mean nothing they can see, and they
+  differ between a 3-storey model and a 40-storey one.
+- ⚠️ **Synced from `applyRot`, not from the wheel handler.** The distance also changes on a restored
+  camera, on a linked pane following this one, and on the buttons themselves; a readout wired to one
+  of those three paths would sit there being wrong after the other two. It is why the four linked
+  panes of the focus window all read the same number.
+- ⚠️ `stopPropagation` on `pointerdown` as well as on click: the buttons sit ON the canvas, and the
+  canvas starts an orbit on pointerdown — without it, pressing "+" would also turn the building.
+- ⚠️ Removed in `dispose()`, beside the label layer and for the same reason: it is DOM this scene put
+  on the host, and every repaint of this view disposes its scenes.
+
+### ⚠️ THE DEFAULT SCALE: 0.62 OF A CELL → 0.38
+A site plan is a **larger scale** than the floor plans it is built from — a tower that filled its own
+sheet is a small object on a site. At two thirds of a cell the sheet read as a floor plan of four big
+rooms, and the planner's first job was shrinking every footprint before they could start arranging.
+Small is also the cheaper mistake: pressing + a few times is one gesture, dragging four overlapping
+towers apart is not.
+
+### ⚠️⚠️ "WHAT IF THE FOOTPRINT IS SO BIG IT IS UNABLE TO BE ROTATED?" — TWO WAYS IN, ONE CLOSED, ONE GUARDED
+A shape's bounding box **grows as it turns**: a w x h rectangle at 45° needs `(w + h) / √2` each way.
+`zpRotatePts` refuses a turn whose result will not fit the sheet, so a footprint can genuinely become
+unturnable.
+
+- ⚠️ **On IMPORT it could not, and measurement says so.** Even at 0.62, a slot is at most
+  `0.62 x 0.62` of a cell and every angle still cleared the sheet. The import path was already safe;
+  saying otherwise would have been claiming a fix for a bug that was not there.
+- ⚠️⚠️ **The way in is the `+` BUTTON, and it was wide open.** Measured against the shipped code at
+  HEAD: a footprint of an ordinary 2:1 tower, grown with eleven presses of `+`, reaches 988 x 494 on
+  a 1000 x 620 sheet and **22 of 25 angles are then refused — including every quarter turn**. The
+  planner would not find out until a turn they expected simply would not go.
+- ⚠️ **`zpTurnable(pts, h)`**: every rotation of a shape fits inside the circle through its own
+  corners, so the whole question is whether the **diagonal** of its bounding box clears the shorter
+  side of the sheet. Import now caps the diagonal at `0.92 x min(ZP_W, siteH)` — it shrinks nothing
+  that already fits — and `+` refuses the press that would take a **locked** area past it, at the
+  point of growth, where the reason is still legible.
+- ⚠️ **Only locked areas are guarded.** A hand-traced one may legitimately fill the sheet — the site
+  outline drawn around the towers is supposed to.
+- ⚠️ The rotate refusal now names the fix ("press − to make it smaller first"), because the fix is one
+  button away and the planner is already looking at it.
+
+### ⚠️⚠️ A MIGRATED FOOTPRINT'S CORNERS ARE THE FLOOR PLAN'S, AND ARE NOT EDITABLE HERE
+Owner: *"It was already defined."* A corner dragged on the site plan would make it disagree with the
+floor plan it was taken from — silently, with no way to tell afterwards which of the two drawings is
+the building. `zpSitePlaceFootprints` marks every area it places `lock: 1`.
+
+- ⚠️⚠️ **The enforcement is that paint() draws no handles**, and that is the right place for it:
+  every corner gesture in this window — drag a corner, alt-click to remove one, click a midpoint to
+  add one — reaches its corner through one of those two circles. No circles, no gesture. The body
+  still drags, so moving is untouched, and **Orient** still turns it. The pointer handler checks
+  `lock` too, so that anything drawing a handle in future cannot quietly re-open the corners.
+- ⚠️⚠️ **The lock survives `zpNormPoly`.** That function rebuilds every area from scratch on load and
+  returned exactly `{id, code, pts}` — a flag it did not copy would have been gone on the next
+  reload, and a footprint that came back editable after a refresh is invisible until somebody drags a
+  corner. **Verified** across the save/load round trip, and that a hand-traced area gains no lock.
+- ⚠️ **Copy and Duplicate are refused on one.** A copy is written back as an ordinary area carrying
+  the same tower name — a SECOND outline of one building, which is what this whole feature exists to
+  prevent, and the "already on the site" check would then read the tower as done while one of the two
+  drawings belongs to nobody. **Delete stays**, or a mistaken import could not be undone.
+- ⚠️ **Resize (− / +) stays**, and that is a judgement against the letter of *"that is it"*: a uniform
+  scale does not change the outline, it is the only way to say one tower is bigger than another on a
+  plan where every footprint arrives at the same width, and the window's own scale note tells the
+  planner to use it. The shape — which is what *"already defined"* is about — cannot be touched.
+- ⚠️ Said in three places, because a planner reaching for a corner that is not there needs the answer
+  where they are looking: a **dashed** outline when selected (a traced area shows its corners, this
+  one has none to show), an SVG `<title>` on the shape itself, and its own line under the stage.
+
+### Verified
+- **538 assertions** driving the shipped `zpSitePlaceFootprints` / `zpTowerPlate` / `zpRotatePts` /
+  `zpScalePts` / `zpTurnable` / `zpNormPoly`, sliced verbatim (harness gitignored, deleted): all 25
+  angles on all four footprint shapes, area preserved and landing on the sheet each time; 24
+  consecutive 15° turns never stick; every footprint's diagonal clears the sheet; every one fits its
+  0.38 slot with its **own aspect** intact (7.5:1, 1:1, 1:3, 3:2); `lock: 1` on every migrated area
+  and through normalize; a tall sheet and a multi-piece footprint behave; and a locked footprint
+  grown with `+` until the guard stops it is **still turnable at all 25 angles**, on three sheet
+  shapes.
+- ⚠️ **Sanity-gated against HEAD**: the same harness run on the previous code fails 14 assertions
+  (the slot sizes and every lock), and the growth gate above reports the 22-refused-angles state that
+  the new guard prevents. A test that passes on both versions proves nothing.
+- **42 assertions** on the 3D zoom, slicing `clampR`, the three button handlers and the `zoomUI`
+  readout out of `_vs3Build` and running them against stub buttons: opens at 100% with Fit disabled,
+  `+` and `−` stop exactly at `RMIN`/`RMAX` and disable themselves there, the readout crosses 100%
+  the right way, Fit returns to `r0` exactly, and **the wheel reaches the same two limits and no
+  further** — on three model sizes.
+- **Layout measured in a browser** against the shipped stylesheets: the control sits inside the 3D
+  mount and inside the plan stage, the same size in both; a locked area's outline computes to dashed
+  `12px, 7px` where a traced one computes to `none`.
+- ⚠️⚠️ **Not verified signed in.** The anon key has no grants, so no real footprint has been imported,
+  locked, turned or grown in the app, and no three.js scene has been built — the zoom control's DOM
+  and clamp are proven, a canvas with a building on it is not. First things to check on a real
+  project: that a footprint brought in shows no corner dots, and that `+` on the 3D card moves the
+  camera in and the readout with it.
+
+
+### The plan window zooms like a CAD drawing, and the step behind it sheds three rows (2026-09-12 j) — ethanrobles10
+
+Owner: *"make the space allotted for the site plan bigger. meaning it should be similar to autocad,
+wheren you can zoom in zoom out. And also, simplify the UI pls, refer to the screenshot."*
+
+### ⚠️⚠️ THE STAGE WAS ALREADY HUGE — IT JUST WOULD NOT FIT ON THE SCREEN
+`.zpw-stage` was `width:100%` with the sheet's aspect, so on a 1180px modal it computed to roughly
+1136 x 704. `.pd-modal` is capped at `max-height:90vh` and scrolls past it, so the drawing the window
+exists for was the part you had to scroll to — and widening the modal could not have helped: every
+extra pixel of width bought 0.62 more pixels of height the modal could not show.
+
+- ⚠️⚠️ **The width is now capped by the height that actually fits**:
+  `width:min(100%, calc(var(--zpvh) * var(--zpar)))` with `--zpvh: max(300px, calc(90vh - 360px))`.
+  The whole sheet is on screen at once, and getting closer is the zoom's job rather than the
+  scrollbar's.
+- ⚠️ **90vh, not 100vh** — the sum that has to fit is the MODAL's, and the modal is the thing capped
+  at 90vh. The 360px is this window's own chrome measured on the **site** plan, which is the taller
+  subject (it carries the scale note); a budget that fitted the floor plan and not the site plan
+  would scroll on exactly the drawing this was asked for.
+- ⚠️ **The box keeps the sheet's aspect in BOTH dimensions.** The svg is stretched over it with
+  `preserveAspectRatio="none"`, so a box of any other shape silently distorts every trace and
+  `ptOf()` stops agreeing with what is drawn. `--zpar` is written by paint() from the sheet's own
+  height; the literal in the CSS is only a fallback.
+- The modal itself went `min(1180px, 96vw)` to `min(1560px, 97vw)`, which is what lets a wide sheet
+  use the height once the height is the constraint.
+
+### ⚠️⚠️ THE ZOOM IS A WINDOW ON THE SHEET, IN PLAN UNITS — NOT A TRANSFORM OVER THE DRAWING
+`_zpWin.zk / zx / zy` is the zoom and the top-left corner of what is visible, **in the same units
+every traced point is already stored in**. The svg's `viewBox` IS that window, so there is no second
+coordinate system to keep in step and nothing to convert on the way out.
+
+- ⚠️⚠️ **`ptOf()` was the only thing that had to change.** Every pointer position in this window —
+  tracing a corner, dragging a shape, dragging a vertex, dropping the front marker — asks that one
+  function where the cursor is in plan units. Adding the view offset there made every gesture work
+  zoomed, with no gesture rewritten.
+- ⚠️⚠️ **Clamped to the sheet, unlike AutoCAD.** Model space is infinite, so panning into nothing is
+  harmless there; a plate is ZP_W x h and nothing exists outside it, so panning past the edge could
+  only lose the drawing off-screen and leave a planner staring at blank paper. Zooming out past the
+  whole sheet is refused for the same reason — that view already IS everything there is. Cap 12x.
+- ⚠️ **The wheel zooms on the CURSOR** (`zSet(k, ax, ay)` holds the anchor point still), which is what
+  makes it a magnifier rather than a slider: zooming in on a corner arrives at that corner, not at
+  the middle of the sheet. The plus/minus buttons anchor on the middle, because they have no cursor.
+- ⚠️ **Pan is a background drag, and only once zoomed in** — at 100% the whole sheet is already on
+  screen, so a drag that moved nothing would read as broken. Middle-button drag pans at any zoom,
+  which is the habit AutoCAD leaves people with. Shapes and the marker stopPropagation on their own
+  `pointerdown`, so dragging one still moves it; panning only ever sees a press on empty paper. Not
+  while tracing or placing — those are pointer modes of their own, and a left drag that panned
+  mid-trace would swallow the click meant to be a corner.
+- ⚠️ **Every annotation is sized on SCREEN, not in plan units.** Line weights hold through
+  `vector-effect:non-scaling-stroke`; handle radii are divided by the zoom in paint(); labels use
+  `--zs` (1/zoom) written on the svg. A 3-unit stroke at 6x is a fat band that swallows a small zone,
+  and a handle that grew with the zoom would cover the very corner you zoomed in to reach.
+- ⚠️ **The control sits ON the stage**, not in a toolbar row: it is a control for the VIEW, and the
+  edit row it would otherwise live in is not emitted at all until the sheet has a zone to draw — so a
+  planner zooming in to place their first corner would have had no control at all.
+- ⚠️ The pan rewrites the `viewBox` live and repaints once on release. A full `paint()` per
+  pointermove rebuilds every control in the window underneath the cursor, and the pan judders.
+
+### ⚠️ THE WINDOW'S OWN SETUP ROWS ARE FOLDED
+Which image is underneath, how the sheet is shaped and which way the building faces are answered once
+and then carried for the life of the drawing — and they cost ~90px of stage on every repaint. Folded
+into one `<details>`, **open on a blank sheet** (attaching the plan really is the first move there)
+and shut once anything is drawn.
+
+- ⚠️ **The summary carries the STATE**, not just a name: sheet shape, image attached or not, where the
+  front is. A fold that hides the facts as well as the controls is one you have to open to find out
+  whether you need to open it.
+- ⚠️ **The Floor-shape brush moved OUT of that fold** and onto the end of the palette row. It is a
+  brush, and it had been sitting in a row of controls for the front marker, which is not a brush at
+  all. The earlier note about keeping it out of the zone palette was protecting the DISTINCTION, not
+  the row — a dashed swatch behind the words "Floor shape", after a divider, cannot be misread as a
+  zone somebody forgot they named.
+- ⚠️ `<details>` keeps its contents in the DOM when shut, so every id inside stays wired exactly as it
+  was. The open/shut state lives on `_zpWin.more`, or every repaint — and this window repaints on
+  every gesture — would spring it open under the planner's hands.
+
+### ⚠️⚠️ `.sbld-mini` IS `width:62px`, AND IT HAD CAUGHT TWO MORE CONTROLS
+The owner's screenshot shows it: **"Site plan 1/8" wrapped onto two lines inside a 30px-tall button**,
+so the one number that button exists to report was cut in half, and the **Activity level** select read
+**"Aut"** where it had to read "Auto (deepest defined)". That class is sized for the two-character
+number inputs it was written for — the same trap already recorded in this file for the copy-from-trade
+select on 2026-09-03. Measured after the fix: the site-plan button is 111px wide with
+`scrollHeight === clientHeight`; the old one is 62px with `scrollHeight 36 > clientHeight 29`.
+
+- New `.sbld-twbtn` (auto width, `white-space:nowrap`) for the tower bar; `width:auto` on the select.
+- ⚠️ **Rename / Copy from… / Delete went behind one ⋯ menu.** They are all "…this tower", all
+  occasional, and three of them in a row read as three more primary actions beside the two that ARE
+  primary — adding a tower, and the site plan. Delete names the tower in its label, because it is the
+  destructive one and a menu row reading just "Delete" does not say what it takes with it.
+- ⚠️ The menu closes on the next press outside; the listener removes ITSELF once the step re-renders
+  and its element is detached, rather than leaving one dead handler behind per render.
+- ⚠️ **Quick-generate and copy-from-trade folded into one "Quick setup" panel**, open exactly when
+  this tower and trade have no floors — the only moment either is the next thing to do. Two rows of
+  controls that stood above the floors a planner had already typed, on every render, for the life of
+  the project.
+- ⚠️ The Activity level row's worked example moved into the select's `title`: a sentence about what
+  four options mean, read once, that sat on that row forever.
+
+### ⚠️ A CSS BLOCK THAT ONLY WORKED BY ACCIDENT
+`.sbld-towerbar {` opened its declaration block, three unrelated `.sbld-towerbar-note` rules were
+written INSIDE it, and its own `padding`/`border` closed the block ten lines later. It rendered only
+because CSS nesting happens to be supported and the note really is a descendant of the bar — in a
+browser without nesting every note rule was dropped and the drift warning lost its styling. Written
+out flat.
+
+### Verified
+- **39 assertions** against `zView` / `zSet` / `zFit` / `ptOf`, sliced verbatim out of the shipped
+  file and driven in node (harness gitignored, deleted): the wheel anchor holds the point under the
+  cursor **exactly** where the clamp does not bite, and stays on the sheet where it does; the view
+  never leaves the sheet at any zoom or anchor, including a tall sheet; the zoom clamps at 1 and 12;
+  the window is always the sheet over k with the **aspect unchanged**; `ptOf` never returns an
+  off-sheet point; 100px of screen is worth a quarter of the plan at 4x; Fit restores exactly.
+- **Layout measured in a browser** against the shipped stylesheets (`dashboard.css` and the module's
+  own `<style>`, both sliced verbatim into a gitignored harness, deleted): at 1440x900 the whole
+  window is **782px against an 810px cap — it fits**; the stage is 725.8 x 450, an aspect of 1.6129
+  against the sheet's 1.6129; the zoom control sits inside the stage; the ⋯ menu opens below the bar
+  and fully on screen; and the two button measurements above.
+- ⚠️⚠️ **Not verified signed in.** The anon key has no grants, so no real plate has been opened: what
+  is proven is the view arithmetic and the CSS layout, not a drag on a real traced zone at 6x. The
+  first thing to check on a real project is that dragging a corner while zoomed lands it under the
+  cursor.
+
 ### The site plan is BUILT from the towers' own floor plans; all that is left is arranging and orienting (2026-09-12 g) — ethanrobles10
 
 Owner: *"the pre-requisites first is to establish the per tower floor plan. meaning once the per tower

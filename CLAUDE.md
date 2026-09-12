@@ -160,6 +160,137 @@ ancestor's wrap), not observed on a real 375px device.
 `person.html`, its two referencing pages — `module.js` there is unchanged and stays `20260911ud`). No
 `MODULE_V` bump — no module's `index.html` changed structurally, only version query strings.
 
+### The site grid is the project's, not the press's; and the view steps back to 25% (2026-09-12) — ethanrobles10
+
+Owner: *"look at this, this does not enable users to fit more towers. enlargen the space, there
+should be like a maximum of 50 or 25% zoom out."*
+
+⚠️⚠️ **The layout grid was sized by how many footprints were being brought in at that moment**, not by
+how many towers the project has. On an eight-tower job where only Tower 1 was traced, that one tower
+got a one-cell grid — **the whole sheet as its cell** — and arrived 353 × 236 on a 1000 × 620 sheet.
+Measured against the previous code, it is now 127 × 78, the same size it would be if all eight
+arrived together (it used to be 353 alone and 118 together: two scales on one drawing).
+
+- ⚠️⚠️ **And every tower brought in on its own landed in the same cell.** The cell index came from the
+  footprint's position in *this press's* list, so a planner importing each tower as they traced it
+  stacked all eight on one spot — 28 overlapping pairs in the gate. A new arrival now takes a **free**
+  cell, counted from what is already on the sheet.
+- ⚠️ **The view now goes down to 25%**, and the sheet is drawn as a page: a rect marks the paper's
+  edge and everything outside it is dimmed. `fill:none` on that rect, deliberately — the svg sits
+  above the plan image, and a filled rectangle would hide the drawing being traced over.
+- ⚠️ **The margin is somewhere to look from, not somewhere to build.** Nothing can live off the sheet
+  (every stored point is in sheet units), so clicks out there are ignored while tracing rather than
+  clamped onto the nearest edge, and below 100% the sheet is centred rather than pinned to a corner.
+
+⚠️ 563 assertions on the placement code and 68 on the view maths, both sliced verbatim from the
+shipped file, plus browser measurement of the 25% view (the sheet is 0.2495 of the stage, centred,
+with the image landing on it to within 1.5px). Gated against the previous commit, where the same
+suite fails 12. **Not verified signed in** — no real site plan has been zoomed out or had a second
+tower imported into a free cell.
+
+`MODULE_V` → `20260912n`. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+### Orient redraws the window it changed; the sharing panel stops shutting on every tick (2026-09-12) — ethanrobles10
+
+Owner, with a screenshot: *"the re-orientation is not working. like it is not live, every time i
+close that is when it rotates. In addition, for individual tower footprints, applying that footprint
+to other floors, when checking other floors it always closes the options of other floors."*
+
+- ⚠️⚠️ **One word: `render()` where it had to be `paint()`.** Three handlers in the floor-plan window
+  — Orient's turn buttons, its − / + buttons and *Bring in N tower footprints* — ended
+  `commit(); render();`. `render()` is the **setup step's** render: it rebuilds the trade list, the
+  tower bar and the floor rows **behind** the modal and never touches the window. The points really
+  did rotate and really were saved; the drawing was just never redrawn — until the window closed
+  (which calls `render()`) and was opened again on the new points. Every other gesture in that window
+  already called `paint()`; these three were the odd ones out.
+- ⚠️⚠️ **A `<details>` rebuilt by a repaint comes back closed.** Ticking a floor has to repaint (the
+  summary counts the floors sharing the plan), and the sharing panel was emitted with no state, so
+  every tick shut it. Its open state now lives on the window object, like the sheet fold above it.
+- ⚠️ **And the modal's scroll went with it** — the panel sits at the bottom of a window that scrolls,
+  so each tick also threw the planner back to the top, away from the control they were repeating.
+  `paint()` now saves `scrollTop` before the write and restores it after.
+
+⚠️ Reproduced in a browser before and after: with the fix the panel is still open after three ticks
+and the scroll holds; without it the panel is shut after the FIRST tick and the scroll drops. Plus 23
+assertions reading the shipped `openPlate` source, gated against the previous version. **Not verified
+signed in** — the anon key has no grants, so no real footprint has been turned in the app.
+
+`MODULE_V` → `20260912m`. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+### The zoom control reaches the 3D stacking; migrated footprints come in smaller, turnable and uneditable (2026-09-12) — ethanrobles10
+
+Owner: *"the zoom control should also work on the vertical stacking 3d view and also, when the per
+tower footprints are migrated, the default scale of the site plan should be way less. what if the
+footprint of tower 1 is so big it is unable to be rotated? … the users should not be able to edit the
+corner points of the footprint. It was already defined."*
+
+- ⚠️ **The 3D view always dollied on the wheel — nothing on it said so.** A WebGL canvas carries no
+  affordance at all, so the only statement that it could be zoomed was small grey text under the
+  card. The same `.ps-zoomctl` the plan window uses is now built in `_vs3Build`, on every 3D scene:
+  the cards, the focus window's four panes and the Site view. One clamp (`clampR`) now serves the
+  wheel, the buttons and a restored camera, so they cannot disagree; the readout is a ratio of the
+  model's own default framing, and it is synced from `applyRot` so a linked pane cannot leave it
+  lying.
+- ⚠️ **The default scale went 0.62 of a cell → 0.38.** A site plan is a larger scale than the floor
+  plans it is built from, and small is the cheaper mistake: pressing + is one gesture, dragging four
+  overlapping towers apart is not.
+- ⚠️⚠️ **"So big it is unable to be rotated" was real, but not where it looked.** A shape's bounding
+  box grows as it turns, and measurement against the previous code says import was already safe —
+  the way in was the `+` button. Eleven presses took an ordinary 2:1 footprint to 988 x 494 on a
+  1000 x 620 sheet, and **22 of 25 angles were then refused, every quarter turn among them**. Import
+  now caps the **diagonal** (every rotation fits inside the circle through a shape's own corners),
+  and `+` refuses the press that would take a migrated footprint past it.
+- ⚠️⚠️ **A migrated footprint's corners are fixed.** Dragging one would make the site plan disagree
+  with the floor plan it came from, silently. paint() draws no handles on a locked area — which is
+  the whole enforcement, because every corner gesture reaches its corner through one of those
+  handles — and the lock now survives `zpNormPoly`, which rebuilt every area as `{id, code, pts}` and
+  would have dropped it on the next reload. Move and Orient are untouched; Copy and Duplicate are
+  refused (a copy would be a second outline of one building); Delete stays, or a mistaken import
+  could not be undone.
+
+⚠️ **Not verified signed in** — the anon key has no grants. 538 assertions drive the shipped
+migration and rotation code and 42 the 3D zoom logic, both sliced verbatim, and the footprint suite
+is gated against the previous version (it fails 14 there). What has not been seen is a real footprint
+locked and turned in the app, or a three.js scene with the control on it.
+
+`MODULE_V` → `20260912k`. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+### The plan window zooms and pans like a CAD drawing; the setup step sheds three rows (2026-09-12) — ethanrobles10
+
+Owner: *"make the space allotted for the site plan bigger. meaning it should be similar to autocad,
+wheren you can zoom in zoom out. And also, simplify the UI pls, refer to the screenshot."*
+
+⚠️⚠️ **The stage was already huge — it just would not fit on the screen.** At `width:100%` it computed
+to about 1136 x 704, and `.pd-modal` is capped at `max-height:90vh`, so the drawing the window exists
+for was the part you had to scroll to. Its width is now capped by the height that actually fits, so
+the whole sheet is on screen at once and getting closer is the zoom's job.
+
+- ⚠️⚠️ **The zoom is a window on the sheet, in PLAN UNITS** — the svg's `viewBox` is the view, so
+  there is no second coordinate system to keep in step. `ptOf()` was the only function that had to
+  change, and every gesture (trace, drag, reshape, drop the marker) works zoomed without being
+  rewritten.
+- ⚠️ **Clamped to the sheet, unlike AutoCAD**: model space is infinite, a plate is not, and panning
+  past the edge could only lose the drawing off-screen. The wheel zooms on the cursor; a background
+  drag pans once zoomed in; middle-drag pans at any zoom. Handles, labels and line weights are sized
+  on SCREEN, so the drawing does not change as you look closer at it.
+- ⚠️ **Three rows folded.** The window's own setup rows (image, sheet shape, front) into one
+  `<details>` whose summary carries the state; in the setup step behind it, quick-generate and
+  copy-from-trade into one "Quick setup" panel that is open exactly when the trade is empty.
+- ⚠️⚠️ **`.sbld-mini` is `width:62px`** and had caught two more controls — the owner's screenshot shows
+  "Site plan 1/8" wrapped onto two lines inside a 30px button, and the Activity level select reading
+  "Aut". Fixed, and the three per-tower actions moved behind one ⋯ menu.
+
+⚠️ **Not verified signed in** — the anon key has no grants. The view arithmetic is proven by 39
+assertions against the shipped functions, and the layout by measuring the shipped stylesheets in a
+browser (the window fits 782px inside an 810px cap at 1440x900, aspect exact). What has not been seen
+is a corner dragged on a real traced plate at 6x.
+
+`MODULE_V` → `20260912j`. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
 ### The site plan is built from the towers' own floor plans — arrange and orient, never re-trace (2026-09-12) — ethanrobles10
 
 Owner: *"the pre-requisites first is to establish the per tower floor plan. meaning once the per tower
