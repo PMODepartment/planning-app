@@ -477,11 +477,12 @@ html.pd-dark .sm-ap-row.is-here .sm-ap-tag { color: #FF8A80; }
 .pp-formhost .pd-field { padding: 9px 0; border-bottom: 1px solid var(--pd-line); }
 .pd-modal-body .sm-fsec + .sm-frow .pd-field:first-child,
 .pp-formhost .sm-fsec + .sm-frow .pd-field:first-child { padding-top: 0; }
-/* ⚠️ --pd-fs-xs, matching the app-wide `.pd-field label` rung (2026-09-12: both moved
-   down from --pd-fs-sm on an explicit "smaller, more minimalist" request — kept in step
-   with the shared rule rather than left one rung above it). */
+/* ⚠️ --pd-fs-micro, matching the app-wide `.pd-field label` rung (2026-09-12, second
+   pass same day: the shared rule dropped a further rung to the smallest defined size on
+   an explicit repeated "smaller, more minimalist" request — kept in step here rather
+   than left one rung above it). */
 .pd-modal-body .pd-field > label,
-.pp-formhost .pd-field > label { font-size: var(--pd-fs-xs); font-weight: 500;
+.pp-formhost .pd-field > label { font-size: var(--pd-fs-micro); font-weight: 500;
   color: var(--pd-muted); margin-bottom: 4px; display: block; }
 
 /* ⚠️⚠️ A LOCKED FIELD MUST NOT READ AS AN EMPTY BOX YOU COULD TYPE IN — that is
