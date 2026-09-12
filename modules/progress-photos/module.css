@@ -646,6 +646,15 @@
 .pp-form2 {
   display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;
 }
+/* ⚠️⚠️ A GRID ITEM's default `min-width` is `auto`, not `0` — its content's
+   intrinsic size (e.g. a full-resolution key-plan photo's natural width) can
+   force the grid TRACK wider than the column actually has room for, which is
+   exactly what overflowed the "Add 360° photo" modal off the right edge of a
+   phone screen: `.bim-conestage img { width:100% }` only constrains the image
+   to its OWN box, but that box's own grid item was still sized by the image's
+   natural width first. `min-width: 0` on every item lets `width:100%`/
+   `max-width:100%` actually win. */
+.pp-form2 > * { min-width: 0; }
 .pp-span2 { grid-column: 1 / -1; }
 .pp-formpreview {
   width: 100%; max-height: 210px; object-fit: contain;
