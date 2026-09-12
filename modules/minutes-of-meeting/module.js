@@ -962,6 +962,13 @@ window.MinutesOfMeeting = (function () {
   function schedDatesInRange(sch, startISO, endISO) {
     var out = [];
     if (!sch || sch.active === false) return out;
+    // ⚠️ 2026-09-12 — 'irregular' (item 7's regularity choice) has NO fixed
+    // cadence to predict from, by design: it recurs on no pattern, only on
+    // whatever date is set each time via "Carry over to next meeting." So it
+    // never contributes a planned/expected date to the calendar, and
+    // `schedNextOccurrence` always answers null for it (see below) rather
+    // than guessing a date nothing about the schedule actually implies.
+    if (sch.frequency === 'irregular') return out;
     var lo = (sch.start_date && sch.start_date > startISO) ? sch.start_date : startISO;
     if (lo > endISO) return out;
     var loP = lo.split('-'), hiP = endISO.split('-');
@@ -1017,6 +1024,9 @@ window.MinutesOfMeeting = (function () {
   // and the schedules list both print ("every first Monday of the month").
   function schedFrequencyLabel(sch) {
     if (!sch) return '';
+    // ⚠️ 2026-09-12 — 'irregular' has no weekday/ordinal/day-of-month to read,
+    // so it must be handled before any of that is touched.
+    if (sch.frequency === 'irregular') return 'Irregular — no fixed schedule';
     var wd = WEEKDAY_NAMES[sch.weekday == null ? 0 : sch.weekday];
     if (sch.frequency === 'weekly') {
       var n = Math.max(1, sch.interval_n || 1);
@@ -2229,6 +2239,11 @@ window.MinutesOfMeeting = (function () {
     var defDate = opts.presetDate || next || (seed ? plusDaysISO(seed.meeting_date, 7) : momToday());
     var defVenue = (seed && seed.venue) || '';
     var defLink = (seed && seed.meeting_link) || '';
+    // ⚠️ ITEM 8 (2026-09-12) — carrying over always defaults start/end time
+    // from the SEED meeting, whichever branch (regular or irregular) is
+    // taken — "other details ... will be carried over."
+    var defStart = (seed && seed.start_time) || '';
+    var defEnd = (seed && seed.end_time) || '';
     var reqIds = (seed && seed.attendees_required && seed.attendees_required.ids) || [];
     var reqText = (seed && seed.attendees_required && seed.attendees_required.text) || '';
     var optIds = (seed && seed.attendees_optional && seed.attendees_optional.ids) || [];
@@ -2245,16 +2260,35 @@ window.MinutesOfMeeting = (function () {
         (isRecur
           ? '<p class="il-mom-note">Creates the next occurrence of <b>' + Fmt.esc(defTitle || '(untitled)') +
             '</b>, and carries forward whatever is still open from the last one.</p>'
+          // ⚠️ ITEM 8 (2026-09-12) — the wording no longer assumes a fixed
+          // repeat pattern: promoting a plain meeting can become a REGULAR
+          // series (pick how often it repeats) or an IRREGULAR one (no fixed
+          // pattern — just this next date each time you carry it over).
           : '<p class="il-mom-note">Creates the next meeting and carries forward whatever is still open ' +
-            'from this one. <b>This also makes it a recurring meeting</b> — pick how often it repeats.</p>') +
+            'from this one. <b>This also makes it a recurring meeting.</b></p>') +
         '<div class="il-form-row">' +
           '<div class="pd-field" style="flex:2 1 200px;"><label>Title</label>' +
             '<input class="pd-input" id="il-nx-title" value="' + Fmt.esc(defTitle) + '"></div>' +
           '<div class="pd-field" style="flex:1 1 150px;"><label>Date</label>' +
             '<input class="pd-input" type="date" id="il-nx-date" value="' + dateVal(defDate) + '"></div>' +
         '</div>' +
+        // ⚠️ ITEM 8 — "just ask for next meeting date and time." Start/end
+        // time were missing from this modal entirely before now; they carry
+        // forward from the seed meeting like venue/link/attendees already do.
+        '<div class="il-form-row">' +
+          '<div class="pd-field" style="flex:1 1 120px;"><label>Start time</label>' +
+            '<input class="pd-input" type="time" id="il-nx-start" value="' + Fmt.esc(defStart) + '"></div>' +
+          '<div class="pd-field" style="flex:1 1 120px;"><label>End time</label>' +
+            '<input class="pd-input" type="time" id="il-nx-end" value="' + Fmt.esc(defEnd) + '"></div>' +
+          (isRecur ? '' :
+            '<div class="pd-field" style="flex:1 1 170px;"><label>Schedule</label>' +
+              '<select class="pd-select" id="il-nx-regularity">' +
+                '<option value="regular">Regular — repeats on a pattern</option>' +
+                '<option value="irregular">Irregular — no fixed pattern</option>' +
+              '</select></div>') +
+        '</div>' +
         (isRecur ? '' :
-          '<div class="il-form-row">' +
+          '<div class="il-form-row" id="il-nx-freqwrap">' +
             '<div class="pd-field" style="flex:1 1 220px;"><label>Repeats</label>' +
               '<select class="pd-select" id="il-nx-freq">' +
                 FREQUENCIES.map(function (f) { return '<option value="' + f.key + '">' + f.label + '</option>'; }).join('') +
@@ -2281,6 +2315,17 @@ window.MinutesOfMeeting = (function () {
       var wrap = m.el.querySelector('#il-nx-rulewrap');
       if (wrap) wrap.innerHTML = scheduleRuleFieldsHTML({ frequency: freqSel.value, weekday: seedWeekday });
     };
+    // ⚠️ ITEM 8 — "if irregular, no need for the schedule input group" (the
+    // same rule item 7 applies to the Add-meeting modal, applied here to the
+    // promotion form): Repeats + its rule fields disappear the moment
+    // Irregular is chosen, and reappear if switched back to Regular.
+    var regSel = m.el.querySelector('#il-nx-regularity');
+    if (regSel) regSel.onchange = function () {
+      var isIrregular = regSel.value === 'irregular';
+      var freqWrap = m.el.querySelector('#il-nx-freqwrap'), ruleWrap = m.el.querySelector('#il-nx-rulewrap');
+      if (freqWrap) freqWrap.hidden = isIrregular;
+      if (ruleWrap) ruleWrap.hidden = isIrregular;
+    };
     var create = m.el.querySelector('#il-nx-create');
     if (create) create.onclick = function () { createNextOccurrence(m, opts.schedId, seed, sch); };
   }
@@ -2298,6 +2343,10 @@ window.MinutesOfMeeting = (function () {
     var dateV = g('il-nx-date');
     if (!dateV) { UI.toast('Pick a date for the next meeting.', 'warn'); return; }
     var venue = g('il-nx-venue').trim(), link = g('il-nx-link').trim();
+    // ⚠️ ITEM 8 (2026-09-12) — start/end time carry across from the seed
+    // meeting (see openNextMeetingModal's defStart/defEnd) but are editable
+    // here like everything else in this modal.
+    var startT = g('il-nx-start'), endT = g('il-nx-end');
     var reqRoot = root.querySelector('[data-people="nx-req"]'), optRoot = root.querySelector('[data-people="nx-opt"]');
     var reqIds = reqRoot ? idsOf(reqRoot) : [], reqText = reqRoot ? textOf(reqRoot) : '';
     var optIds = optRoot ? idsOf(optRoot) : [], optText = optRoot ? textOf(optRoot) : '';
@@ -2306,25 +2355,36 @@ window.MinutesOfMeeting = (function () {
     try {
       var schedIdToUse = schedId;
       if (!schedIdToUse) {
+        // ⚠️ ITEM 8 — "ask if regular or irregular; if irregular, no need for
+        // the schedule input group." Mirrors item 7's Add-meeting choice:
+        // Irregular writes no frequency/rule fields at all, just the fact
+        // that this is now a recurring (but patternless) series.
+        var regSel = root.querySelector('#il-nx-regularity');
+        var isIrregular = !!(regSel && regSel.value === 'irregular');
         // Promote: a brand-new schedule, anchored on the SEED meeting's own
         // date — so the series reads as starting from the meeting that was
         // just carried forward, not from today.
-        var freq = g('il-nx-freq') || FREQUENCIES[0].key;
         var payload = {
           project_id: pid, title: title,
           meeting_group: (seed && seed.meeting_group) || 'Internal',
-          frequency: freq, start_date: (seed && seed.meeting_date) || momToday(),
+          start_date: (seed && seed.meeting_date) || momToday(),
           weekday: null, week_ordinal: null, day_of_month: null, interval_n: 1,
           created_by: UID,
         };
-        if (freq === 'weekly') {
-          payload.weekday = +g('il-sf-weekday') || 0;
-          payload.interval_n = Math.max(1, +g('il-sf-interval') || 1);
-        } else if (freq === 'monthly_weekday') {
-          payload.weekday = +g('il-sf-weekday') || 0;
-          payload.week_ordinal = +g('il-sf-ordinal') || 1;
+        if (isIrregular) {
+          payload.frequency = 'irregular';
         } else {
-          payload.day_of_month = Math.max(1, Math.min(31, +g('il-sf-dom') || 1));
+          var freq = g('il-nx-freq') || FREQUENCIES[0].key;
+          payload.frequency = freq;
+          if (freq === 'weekly') {
+            payload.weekday = +g('il-sf-weekday') || 0;
+            payload.interval_n = Math.max(1, +g('il-sf-interval') || 1);
+          } else if (freq === 'monthly_weekday') {
+            payload.weekday = +g('il-sf-weekday') || 0;
+            payload.week_ordinal = +g('il-sf-ordinal') || 1;
+          } else {
+            payload.day_of_month = Math.max(1, Math.min(31, +g('il-sf-dom') || 1));
+          }
         }
         var schIns = await sb().from('mom_schedules').insert(payload).select().single();
         if (schIns.error) throw schIns.error;
@@ -2346,8 +2406,16 @@ window.MinutesOfMeeting = (function () {
         project_id: pid, schedule_id: schedIdToUse, title: title,
         meeting_date: dateV, meeting_group: (sch && sch.meeting_group) || (seed && seed.meeting_group) || 'Internal',
         venue: venue || null, meeting_link: link || null,
+        start_time: startT || null, end_time: endT || null,
         attendees_required: { ids: reqIds, text: reqText },
         attendees_optional: { ids: optIds, text: optText },
+        // ⚠️ ITEMS 8/9 (2026-09-12) — "other details ... including agenda
+        // ... will be carried over": the seed's own AGENDA (the topic-headline
+        // jsonb list `meeting_minutes.agenda`, distinct from its `mom_items`
+        // rows — those are what `momCarryOver` below brings across as the
+        // still-open minutes) travels forward the same way venue/link/
+        // attendees do.
+        agenda: (seed && seed.agenda) || null,
         created_by: UID,
       }).select().single();
       if (ins.error) throw ins.error;
@@ -2463,10 +2531,30 @@ window.MinutesOfMeeting = (function () {
           // ITEM 4 (round 2): shortened to "Recurring" (was "Recurring meeting").
           '<div class="pd-field" style="flex:0 0 auto;">' + amGhostLabel() +
             '<label class="il-am-checklabel"><input type="checkbox" id="il-am-recur" style="width:auto;"> Recurring</label></div>' +
+          // ⚠️ ITEM 7 (2026-09-12) — "ask if schedule will be regular or
+          // irregular, beside the recurring input." Hidden until Recurring is
+          // checked (a one-time meeting has no schedule to be regular or
+          // irregular about); defaults to Regular. Irregular skips the whole
+          // Schedule tile (see updateAmScheduleVis below) — there is no fixed
+          // frequency to configure, so nothing is asked beyond "this repeats,
+          // on no fixed pattern." Each future date is then set by hand, one
+          // "Carry over to next meeting" at a time.
+          '<div class="pd-field" id="il-am-regwrap" style="flex:0 0 auto;" hidden>' + amGhostLabel() +
+            '<select class="pd-select" id="il-am-regularity" style="width:auto;">' +
+              '<option value="regular">Regular schedule</option>' +
+              '<option value="irregular">Irregular</option>' +
+            '</select></div>' +
         '</div>' +
         '<div class="il-form-row">' +
-          '<div class="pd-field" style="flex:1 1 130px;"><label>Meeting type</label>' +
+          // ⚠️ ITEM 4 (2026-09-12): "meeting type is required." It always
+          // carried a value (Internal defaulted silently, with no blank
+          // option to leave unpicked), which made it required in name only —
+          // nobody was ever asked to actually choose. A real blank first
+          // option plus validateAddMeeting's own check below is what makes
+          // the requirement genuine rather than a label on a foregone default.
+          '<div class="pd-field" style="flex:1 1 130px;"><label>Meeting type *</label>' +
             '<select class="pd-select" id="il-am-group">' +
+              '<option value="">— Select —</option>' +
               '<option value="Internal">Internal</option><option value="External">External</option>' +
             '</select></div>' +
           '<div class="pd-field" style="flex:2 1 220px;"><label>Meeting description</label>' +
@@ -2474,42 +2562,49 @@ window.MinutesOfMeeting = (function () {
             '<datalist id="il-am-desclist">' + momTypeDatalistOptions() + '</datalist></div>' +
         '</div></div>' +   /* end Details tile */
 
-        '<div class="il-mom-sectile"><h4 class="il-mom-sechead">Schedule</h4>' +
-        // ITEM 6: the plain Date field and the recurring series' Start/End dates
-        // occupy the SAME row and are mutually exclusive — recur.onchange below
-        // toggles which pair is hidden, so a recurring meeting's date field is
-        // genuinely replaced rather than merely duplicated further down the form.
-        // ITEM 3: Start/End time stay in this SAME row so they are always
-        // beside each other, whichever date fields are showing.
+        // ⚠️ ITEM 6 (2026-09-12) — a "Schedule" tile now exists ONLY for a
+        // recurring meeting (hidden entirely, not just its fields, while
+        // Recurring is unchecked): Series start/end date and the Frequency +
+        // rule fields. A one-time meeting's own date/time questions moved
+        // into the "Date and Venue" tile below instead of sitting in an
+        // otherwise-empty box.
+        '<div class="il-mom-sectile" id="il-am-schedtile" hidden><h4 class="il-mom-sechead">Schedule</h4>' +
         '<div class="il-form-row">' +
-          '<div class="pd-field" id="il-am-datewrap" style="flex:1 1 150px;"><label>Date *</label>' +
-            '<input class="pd-input" type="date" id="il-am-date" value="' + dateVal(momToday()) + '"></div>' +
-          '<div class="pd-field" id="il-am-sstartwrap" style="flex:1 1 150px;" hidden><label>Series start date *</label>' +
+          '<div class="pd-field" style="flex:1 1 150px;"><label>Series start date *</label>' +
             '<input class="pd-input" type="date" id="il-am-sstart" value="' + dateVal(momToday()) + '"></div>' +
-          '<div class="pd-field" id="il-am-sendwrap" style="flex:1 1 150px;" hidden><label>Series end date (optional)</label>' +
+          '<div class="pd-field" style="flex:1 1 150px;"><label>Series end date (optional)</label>' +
             '<input class="pd-input" type="date" id="il-am-send"></div>' +
+        '</div>' +
+        '<div class="il-form-row">' +
+          '<div class="pd-field" style="flex:1 1 220px;"><label>Frequency *</label><select class="pd-select" id="il-am-freq">' +
+            FREQUENCIES.map(function (f) { return '<option value="' + f.key + '">' + f.label + '</option>'; }).join('') +
+          '</select></div>' +
+        '</div>' +
+        '<div class="il-form-row" id="il-sf-rulewrap">' + scheduleRuleFieldsHTML({ frequency: FREQUENCIES[0].key }) + '</div>' +
+        // ⚠️ Each occurrence's own start/end time is set once it exists, in
+        // the meeting view (momDetailHTML's own Schedule tile) — asking for
+        // it here, before a recurring series has any occurrences of its own
+        // dates, is asking a question this form cannot yet give a true answer
+        // to for anything past the first meeting.
+        '<p class="il-mom-note">Each occurrence\'s own start/end time is set on the meeting itself, ' +
+          'once it exists.</p>' +
+        '</div>' +   /* end Schedule tile */
+
+        '<div class="il-mom-sectile"><h4 class="il-mom-sechead">Date and Venue</h4>' +
+        // ⚠️ ITEM 6 — Date + Start/End time are the plain, ONE-TIME-MEETING
+        // schedule questions now, merged into this tile and hidden outright
+        // (the whole row, not field-by-field) the moment Recurring is
+        // checked — see recur.onchange.
+        '<div class="il-form-row" id="il-am-datetimewrap">' +
+          '<div class="pd-field" style="flex:1 1 150px;"><label>Date *</label>' +
+            '<input class="pd-input" type="date" id="il-am-date" value="' + dateVal(momToday()) + '"></div>' +
           '<div class="pd-field" style="flex:1 1 120px;"><label>Start time *</label><input class="pd-input" type="time" id="il-am-start"></div>' +
           '<div class="pd-field" style="flex:1 1 120px;"><label>End time *</label><input class="pd-input" type="time" id="il-am-end"></div>' +
         '</div>' +
-        // ITEM 5: Frequency/weekday/"every N weeks" sit directly BELOW the
-        // date row now — was after Attendees/Agenda, at the very bottom of
-        // the whole form, which read as an afterthought to the very thing it
-        // reshapes.
-        '<div id="il-am-recurwrap" hidden>' +
-          '<div class="il-form-row">' +
-            '<div class="pd-field" style="flex:1 1 220px;"><label>Frequency *</label><select class="pd-select" id="il-am-freq">' +
-              FREQUENCIES.map(function (f) { return '<option value="' + f.key + '">' + f.label + '</option>'; }).join('') +
-            '</select></div>' +
-          '</div>' +
-          '<div class="il-form-row" id="il-sf-rulewrap">' + scheduleRuleFieldsHTML({ frequency: FREQUENCIES[0].key }) + '</div>' +
-        '</div>' +
-        '</div>' +   /* end Schedule tile */
-
-        '<div class="il-mom-sectile"><h4 class="il-mom-sechead">Venue</h4>' +
         '<div class="il-form-row">' +
           '<div class="pd-field" style="flex:1 1 200px;"><label>Venue *</label><input class="pd-input" id="il-am-venue"></div>' +
           '<div class="pd-field" style="flex:1 1 200px;"><label>Meeting link</label><input class="pd-input" id="il-am-link" placeholder="https://…"></div>' +
-        '</div></div>' +   /* end Venue tile */
+        '</div></div>' +   /* end Date and Venue tile */
 
         '<div class="il-mom-sectile"><h4 class="il-mom-sechead">Attendees</h4>' +
         '<div class="pd-field"><label>Required attendees *</label>' + peoplePickerHTML('am-req', [], '', false) + '</div>' +
@@ -2540,16 +2635,31 @@ window.MinutesOfMeeting = (function () {
       };
     }
     wireFavBtn();
+    // ⚠️ ITEMS 6+7 (2026-09-12) — three things toggle off ONE pair of controls
+    // (Recurring, and Regular/Irregular once Recurring is checked):
+    //   not recurring        -> Date/Venue's own date+time row shown, no
+    //                           Regularity control, no Schedule tile.
+    //   recurring + regular  -> Schedule tile shown (Series dates + Frequency
+    //                           + rule fields), no date+time row.
+    //   recurring + irregular -> NEITHER shown — "no need for the schedule
+    //                           input group" (item 7). Nothing computes a
+    //                           cadence for an irregular series; each future
+    //                           date is set by hand via Carry over.
+    function updateAmScheduleVis() {
+      var isRecur = !!recur.checked;
+      var regSel = root.querySelector('#il-am-regularity');
+      var isRegular = !regSel || regSel.value !== 'irregular';
+      var regWrap = root.querySelector('#il-am-regwrap');
+      if (regWrap) regWrap.hidden = !isRecur;
+      var schedTile = root.querySelector('#il-am-schedtile');
+      if (schedTile) schedTile.hidden = !(isRecur && isRegular);
+      var dtWrap = root.querySelector('#il-am-datetimewrap');
+      if (dtWrap) dtWrap.hidden = isRecur;
+    }
     var recur = root.querySelector('#il-am-recur');
-    if (recur) recur.onchange = function () {
-      var wrap = root.querySelector('#il-am-recurwrap');
-      if (wrap) wrap.hidden = !recur.checked;
-      var dw = root.querySelector('#il-am-datewrap'), sw = root.querySelector('#il-am-sstartwrap'),
-        ew = root.querySelector('#il-am-sendwrap');
-      if (dw) dw.hidden = recur.checked;
-      if (sw) sw.hidden = !recur.checked;
-      if (ew) ew.hidden = !recur.checked;
-    };
+    if (recur) recur.onchange = updateAmScheduleVis;
+    var regSelEl = root.querySelector('#il-am-regularity');
+    if (regSelEl) regSelEl.onchange = updateAmScheduleVis;
     var freqSel = root.querySelector('#il-am-freq');
     if (freqSel) freqSel.onchange = function () {
       var wrap = root.querySelector('#il-sf-rulewrap');
@@ -2563,16 +2673,20 @@ window.MinutesOfMeeting = (function () {
   }
 
   // ⚠️ ITEM 7 (2026-09-03): required fields, matching what a meeting needs to
-  // be useful rather than merely well-formed — start/end time, venue, at least
+  // be useful rather than merely well-formed — venue, meeting type, at least
   // one required attendee and at least one agenda item are always demanded; a
   // RECURRING series additionally demands its own scheduling fields (frequency,
   // weekday/"which" where the chosen frequency uses them, and a series start
   // date) since those replace the plain Date field entirely (item 6).
+  // ⚠️ ITEM 6 (2026-09-12): Date/Start time/End time are demanded only for a
+  // ONE-TIME meeting now — a recurring series never shows those fields in
+  // this form at all (they are set per-occurrence in the meeting view once
+  // it exists), so requiring them unconditionally would refuse every
+  // recurring save on fields the planner was never asked to fill in.
   function validateAddMeeting(root, g, isRecur) {
     if (!g('il-am-title').trim()) return 'Meeting title is required.';
-    if (!g('il-am-start')) return 'Start time is required.';
-    if (!g('il-am-end')) return 'End time is required.';
     if (!g('il-am-venue').trim()) return 'Venue is required.';
+    if (!g('il-am-group')) return 'Meeting type is required.';
     var reqRoot = root.querySelector('[data-people="am-req"]');
     var reqIds = reqRoot ? idsOf(reqRoot) : [];
     var reqText = reqRoot ? textOf(reqRoot).trim() : '';
@@ -2580,8 +2694,14 @@ window.MinutesOfMeeting = (function () {
     if (!agendaValuesOf(root).length) return 'At least one agenda item is required.';
     if (!isRecur) {
       if (!g('il-am-date')) return 'Date is required.';
+      if (!g('il-am-start')) return 'Start time is required.';
+      if (!g('il-am-end')) return 'End time is required.';
       return '';
     }
+    // ⚠️ ITEM 7 (2026-09-12) — Irregular has nothing further to validate: no
+    // Frequency, no Series start date, no weekday/ordinal, because none of
+    // those fields are shown for it (see updateAmScheduleVis).
+    if (g('il-am-regularity') === 'irregular') return '';
     if (!g('il-am-freq')) return 'Frequency is required.';
     if (!g('il-am-sstart')) return 'Series start date is required.';
     // ⚠️ Weekday/"Which" only exist in the DOM for the frequencies that use
@@ -2594,6 +2714,25 @@ window.MinutesOfMeeting = (function () {
     var ordEl = root.querySelector('#il-sf-ordinal');
     if (ordEl && ordEl.value === '') return 'Which week is required.';
     return '';
+  }
+
+  // ⚠️ Each agenda item becomes a real `mom_items` row — the same table every
+  // action item lives in, so it gets the full workflow (owner, due date,
+  // hold/close, history) the moment the meeting exists, rather than being a
+  // second, throwaway list of text. Factored out of `saveAddMeeting`'s
+  // non-recurring branch (2026-09-12) so the recurring branch's newly-created
+  // FIRST occurrence (item 5) can seed the same agenda without a second,
+  // subtly-different copy of this loop.
+  async function momSeedAgendaItems(momId, agenda) {
+    for (var i = 0; i < agenda.length; i++) {
+      try {
+        var itemIns = await sb().from('mom_items').insert({
+          mom_id: momId, project_id: pid, seq: i,
+          description: agenda[i], action_item: '', type: 'Report', status: 'Open', created_by: UID,
+        }).select().single();
+        if (!itemIns.error && itemIns.data) { MOM_ITEMS.push(itemIns.data); logItemHistory(itemIns.data.id, pid, 'create', null, null); }
+      } catch (e) {}
+    }
   }
 
   async function saveAddMeeting(root, close, saveBtn) {
@@ -2625,42 +2764,92 @@ window.MinutesOfMeeting = (function () {
     if (saveBtn) saveBtn.disabled = true;
     try {
       if (isRecur) {
-        var freq = g('il-am-freq') || 'monthly_date';
-        // ⚠️ `mom_schedules` has no `meeting_type` column (only
-        // `meeting_group` — see migrations/2026-09-01-…sql) — a series has no
-        // single "description" the way one meeting does, so the Details
-        // section's description field is silently not carried onto it. Each
-        // occurrence gets its own description from the full Detail editor.
-        var payload = {
-          project_id: pid, title: title, meeting_group: group, frequency: freq,
-          start_date: g('il-am-sstart') || date, end_date: g('il-am-send') || null,
-          is_favorite: isFav, venue: venue || null, meeting_link: link || null,
-          start_time: startT || null, end_time: endT || null,
-          attendees_required: { ids: reqIds, text: reqText },
-          attendees_optional: { ids: optIds, text: optText },
-          default_agenda: agenda.length ? agenda : null,
-          weekday: null, week_ordinal: null, day_of_month: null, interval_n: 1,
-          created_by: UID,
-        };
-        // The rule fields are the shared scheduleRuleFieldsHTML() markup, so
-        // they carry the `il-sf-*` ids that helper always emits (the same ones
-        // the series-page edit form reads), not `il-am-*`.
-        if (freq === 'weekly') {
-          payload.weekday = +g('il-sf-weekday') || 0;
-          payload.interval_n = Math.max(1, +g('il-sf-interval') || 1);
-        } else if (freq === 'monthly_weekday') {
-          payload.weekday = +g('il-sf-weekday') || 0;
-          payload.week_ordinal = +g('il-sf-ordinal') || 1;
+        // ⚠️ ITEM 7 (2026-09-12) — Irregular skips Frequency and every rule
+        // field entirely (they are not even read here): there is no cadence
+        // to store, only the fact that this meeting recurs on no fixed
+        // pattern. `start_date` becomes today, since nothing else names a
+        // date for it — the Schedule tile that would otherwise ask for a
+        // Series start date is hidden for exactly this choice.
+        var regSel = root.querySelector('#il-am-regularity');
+        var isIrregular = !!(regSel && regSel.value === 'irregular');
+        var payload;
+        if (isIrregular) {
+          payload = {
+            project_id: pid, title: title, meeting_group: group, frequency: 'irregular',
+            start_date: momToday(), end_date: null,
+            is_favorite: isFav, venue: venue || null, meeting_link: link || null,
+            start_time: startT || null, end_time: endT || null,
+            attendees_required: { ids: reqIds, text: reqText },
+            attendees_optional: { ids: optIds, text: optText },
+            default_agenda: agenda.length ? agenda : null,
+            weekday: null, week_ordinal: null, day_of_month: null, interval_n: 1,
+            created_by: UID,
+          };
         } else {
-          payload.day_of_month = Math.max(1, Math.min(31, +g('il-sf-dom') || 1));
+          var freq = g('il-am-freq') || 'monthly_date';
+          // ⚠️ `mom_schedules` has no `meeting_type` column (only
+          // `meeting_group` — see migrations/2026-09-01-…sql) — a series has no
+          // single "description" the way one meeting does, so the Details
+          // section's description field is silently not carried onto it. Each
+          // occurrence gets its own description from the full Detail editor.
+          payload = {
+            project_id: pid, title: title, meeting_group: group, frequency: freq,
+            start_date: g('il-am-sstart') || date, end_date: g('il-am-send') || null,
+            is_favorite: isFav, venue: venue || null, meeting_link: link || null,
+            start_time: startT || null, end_time: endT || null,
+            attendees_required: { ids: reqIds, text: reqText },
+            attendees_optional: { ids: optIds, text: optText },
+            default_agenda: agenda.length ? agenda : null,
+            weekday: null, week_ordinal: null, day_of_month: null, interval_n: 1,
+            created_by: UID,
+          };
+          // The rule fields are the shared scheduleRuleFieldsHTML() markup, so
+          // they carry the `il-sf-*` ids that helper always emits (the same ones
+          // the series-page edit form reads), not `il-am-*`.
+          if (freq === 'weekly') {
+            payload.weekday = +g('il-sf-weekday') || 0;
+            payload.interval_n = Math.max(1, +g('il-sf-interval') || 1);
+          } else if (freq === 'monthly_weekday') {
+            payload.weekday = +g('il-sf-weekday') || 0;
+            payload.week_ordinal = +g('il-sf-ordinal') || 1;
+          } else {
+            payload.day_of_month = Math.max(1, Math.min(31, +g('il-sf-dom') || 1));
+          }
         }
         var ins = await sb().from('mom_schedules').insert(payload).select().single();
         if (ins.error) throw ins.error;
         SCHEDULES.push(ins.data);
         SCHEDULES.sort(function (a, b) { return (a.title || '').localeCompare(b.title || ''); });
+        // ⚠️ ITEM 5 (2026-09-12) — "use the date of the first applicable
+        // meeting." `start_date` is only a LOWER BOUND for the recurrence
+        // (schedDatesInRange finds occurrences ON OR AFTER it, not
+        // necessarily AT it — a start date that happens to fall on a Tuesday
+        // is not itself a meeting date for a Wednesday-weekly schedule), so
+        // the first real minute is dated to whatever `schedNextOccurrence`
+        // actually resolves, never the raw typed date.
+        // ⚠️⚠️ Without creating this occurrence, a brand-new series had NO
+        // meeting at all — `momUnifiedRows` shows only a schedule's own
+        // occurrences, never a bare schedule row — so it existed in the
+        // database yet was unreachable from the Meetings List, findable only
+        // by opening the Calendar in the right month and clicking its dashed
+        // "planned" chip. The series row is no longer the list entry by
+        // itself; its first real minute is.
+        var firstDate = schedNextOccurrence(ins.data, ins.data.start_date) || ins.data.start_date;
+        var occIns = await sb().from('meeting_minutes').insert({
+          project_id: pid, schedule_id: ins.data.id, title: title,
+          meeting_date: firstDate, meeting_group: group,
+          is_favorite: isFav, venue: venue || null, meeting_link: link || null,
+          start_time: startT || null, end_time: endT || null,
+          attendees_required: { ids: reqIds, text: reqText },
+          attendees_optional: { ids: optIds, text: optText },
+          created_by: UID,
+        }).select().single();
+        if (occIns.error) throw occIns.error;
+        MOMS.unshift(occIns.data); _momErr = '';
+        await momSeedAgendaItems(occIns.data.id, agenda);
+        try { await momPullIssues(occIns.data.id, { quiet: true }); } catch (e) {}
         close();
-        UI.toast('Recurring meeting series created', 'ok');
-        _momErr = ''; renderBrowse();
+        momOpenMeeting(occIns.data.id);
       } else {
         var mpayload = {
           project_id: pid, title: title, meeting_date: date, meeting_group: group,
@@ -2676,19 +2865,7 @@ window.MinutesOfMeeting = (function () {
         var minsRes = await sb().from('meeting_minutes').insert(mpayload).select().single();
         if (minsRes.error) throw minsRes.error;
         MOMS.unshift(minsRes.data); _momErr = '';
-        // Each agenda item becomes a real action item on the new meeting — the
-        // same mom_items table every action lives in, so it gets the full
-        // workflow (owner, due date, hold/close, history) the moment the
-        // meeting exists, rather than being a second, throwaway list of text.
-        for (var i = 0; i < agenda.length; i++) {
-          try {
-            var itemIns = await sb().from('mom_items').insert({
-              mom_id: minsRes.data.id, project_id: pid, seq: i,
-              description: agenda[i], action_item: '', type: 'Report', status: 'Open', created_by: UID,
-            }).select().single();
-            if (!itemIns.error && itemIns.data) { MOM_ITEMS.push(itemIns.data); logItemHistory(itemIns.data.id, pid, 'create', null, null); }
-          } catch (e) {}
-        }
+        await momSeedAgendaItems(minsRes.data.id, agenda);
         // Still-open register issues are quietly seeded onto the new agenda,
         // the same rule every other "new minute" path in this module follows.
         try { await momPullIssues(minsRes.data.id, { quiet: true }); } catch (e) {}
@@ -2787,7 +2964,17 @@ window.MinutesOfMeeting = (function () {
     // the empty state. Rendering the filtered set as if it were everything is how a
     // hidden row gets mistaken for a deleted one.
     var vis = momVisibleItems(mom.id);
-    var others = MOMS.filter(function (x) { return x.id !== mom.id && momCarryable(x).length; });
+    // ⚠️ Same test `momItemRowHTML` computes per row (see its own comment): a
+    // filtered/searched subset, a locked/read-only card, or the presenting slide
+    // deck all mean the seq math for whatever is off-screen would be ambiguous,
+    // so drag is offered only when NONE of those hold. Computed once here so the
+    // Table view (momItemsTableHTML) and the Card view agree on it exactly.
+    var canDrag = !ro && !momFilterOn() && !_momReport;
+    // ⚠️ 2026-09-12 — the item-level "Carry over…" button (which pulled still-open
+    // minutes IN from another meeting) is gone: "Carry over to next meeting" in
+    // the toolbar (#il-mom-carrynext) is the one carry-over control now, and it
+    // covers the same ground going the other direction — see the note above that
+    // button and `createNextOccurrence`'s own call to `momCarryOver`.
     // ⚠️ ITEM 5 (round 2): "if the meeting is recurring, the meeting title
     // and favorite button should be fixed/sticky." `schedule_id` is what
     // makes a meeting an occurrence of a recurring SERIES (as opposed to the
@@ -2845,10 +3032,15 @@ window.MinutesOfMeeting = (function () {
         //    ("I am not sure if one of the buttons are present view"). "Present" is
         //    the owner's own word for it; the title still names it as the reporting
         //    view so the two vocabularies stay connected.
+        // ⚠️ 2026-09-12 — icon-only again: the text label + the mode-switching
+        // reasoning (a MODE, not an ACTION, so it earned a label the other
+        // icon-only controls did not) was correct in 2026-09-08, but the owner
+        // has since asked for icon-only here specifically — the `title` still
+        // carries the words the label used to. `eye` -> `slides`, since a
+        // "present" toggle is a slide-deck idea, not a "look/watch" one.
         '<button class="pd-btn pd-btn-sm il-mom-modebtn' + (_momReport ? ' is-active' : '') + '" id="il-mom-report" ' +
-          'title="' + (_momReport ? 'Exit reporting view' : 'Reporting view -- a clean read-only record to present from') +
-          '" aria-label="Reporting view"><span data-ico="eye" data-ico-size="16"></span>' +
-          '<span class="il-mom-modetxt">' + (_momReport ? 'Exit' : 'Present') + '</span></button>' +
+          'title="' + (_momReport ? 'Exit reporting view' : 'Present -- a clean read-only record to present from') +
+          '" aria-label="' + (_momReport ? 'Exit reporting view' : 'Present') + '"><span data-ico="slides" data-ico-size="16"></span></button>' +
         // Item 8: one control surface for HTML/PDF/PowerPoint/Excel, plus a
         // separate Email action — both reads, offered the same way PDF was.
         iconMenuHTML('il-mom-exportsel', 'download', 'Export these minutes', [
@@ -3045,7 +3237,7 @@ window.MinutesOfMeeting = (function () {
         // prints; a third bespoke layout would let the screen and the PDF drift.
         (vis.length
           ? (!_momReport && _minutesView === 'table'
-              ? momItemsTableHTML(vis)
+              ? momItemsTableHTML(vis, canDrag)
               : '<div class="il-mi-cards">' +
                 vis.map(function (it, i) { return momItemRowHTML(it, ro, d, mayEdit, locked, i); }).join('') +
                 '</div>')
@@ -3053,18 +3245,6 @@ window.MinutesOfMeeting = (function () {
         (ro ? '' :
           '<div class="il-mom-addrow">' +
             '<button class="pd-btn pd-btn-sm" id="il-mom-additem">+ Add minute</button>' +
-            // Carry-over is offered on ANY minute, not only a brand-new one — a recurring
-            // meeting often has its agenda seeded after the fact. Only meetings that
-            // actually still have something open are listed; an empty dropdown would
-            // invite a click that does nothing.
-            // ⚠️ OWNER ITEM 3 (2026-09-02) — "the carry over dropdown should not be
-            // shown initially. clicking carry over should open a pop up window
-            // where user can select which minutes to carry over from." One button;
-            // the source meetings are listed inside the modal.
-            (others.length
-              ? '<button class="pd-btn pd-btn-sm" id="il-mom-carrygo" ' +
-                  'title="Bring still-open minutes forward from an earlier meeting">Carry over…</button>'
-              : '') +
             // ⚠️ OWNER ITEM 4 (2026-09-02) — "get from issue button is not working."
             // It was not broken: a brand-new meeting auto-seeds EVERY open issue, so
             // momOpenIssuesFor() legitimately returned an empty set and the button
@@ -3253,38 +3433,6 @@ window.MinutesOfMeeting = (function () {
     };
     paint();
     setTimeout(function () { try { m.el.querySelector('#il-gi-q').focus(); } catch (e) {} }, 30);
-  }
-
-  // ⚠️ ITEM 3 — the carry-over picker, replacing the always-visible dropdown.
-  // One row per earlier meeting that actually still has something open on it
-  // (momCarryable — the REGISTER decides openness for a linked minute), so the
-  // modal can never list a meeting that would carry nothing across.
-  function openCarryOverModal(momId) {
-    var others = MOMS.filter(function (x) { return x.id !== momId && momCarryable(x).length; })
-      .sort(function (a, b) { return String(b.meeting_date || '').localeCompare(String(a.meeting_date || '')); });
-    var m = UI.modal(
-      '<div class="pd-modal-header"><h3>Carry over minutes</h3>' +
-        '<button class="pd-modal-close" data-close>&times;</button></div>' +
-      '<div class="pd-modal-body">' +
-        '<p class="il-mom-note">Bring whatever is still open on an earlier meeting onto this one. ' +
-        'A carried minute is the SAME minute discussed again — its register link comes with it, so ' +
-        'it is never chased twice. Running it again adds nothing that is already here.</p>' +
-        (others.length
-          ? '<div class="il-mom-getlist">' + others.map(function (x) {
-              return '<button type="button" class="il-mom-geti" data-carry="' + Fmt.esc(x.id) + '">' +
-                '<span class="il-mom-geti-txt">' + Fmt.esc(x.title || '(untitled)') + '</span>' +
-                '<span class="il-mom-geti-meta">' +
-                  (x.meeting_date ? Fmt.esc(Fmt.date(x.meeting_date)) + ' · ' : '') +
-                  momCarryable(x).length + ' still open</span></button>';
-            }).join('') + '</div>'
-          : '<div class="il-empty" style="padding:12px;">No earlier meeting on this project has ' +
-            'anything still open to carry over.</div>') +
-      '</div>' +
-      '<div class="pd-modal-footer"><button class="pd-btn" data-close>Cancel</button></div>');
-    wireModalChrome(m, 560);
-    m.el.querySelectorAll('[data-carry]').forEach(function (b) {
-      b.onclick = function () { var id = b.dataset.carry; m.close(); momCarryOver(id); };
-    });
   }
 
   // ⚠️ `ro` is "can this row's FIELDS be typed into" = permission AND not-locked.
@@ -3539,14 +3687,23 @@ window.MinutesOfMeeting = (function () {
   // a wide table, so it scrolls horizontally rather than reflowing into cards
   // of its own. Clicking a row switches back to Card view and scrolls to that
   // minute; this table never edits a field itself.
-  function momItemsTableHTML(vis) {
+  // ⚠️ 2026-09-12 — `canDrag` (identical test to momItemRowHTML's own, computed
+  // once by the caller so Card and Table can't disagree — see momDetailHTML)
+  // adds a leading grip column, wired by the SAME `wireMinuteDrag` the Card
+  // view already uses: the grip's own click handler stops the click from
+  // reaching the row (which otherwise jumps to Card view on any click), and
+  // `data-reorder-row` on the `<tr>` is what makes a row a valid drop target.
+  function momItemsTableHTML(vis, canDrag) {
     var body = vis.map(function (it, i) {
       var iss = momIssueOf(it);
       var st = iss ? (iss.status || 'Open') : (it.status || 'Open');
       var no = it.item_no || String((it.seq == null ? (i || 0) : it.seq) + 1);
       var actText = it.action_item || it.description || '';
       var who = championText(it.owner_ids, it.owner);
-      return '<tr data-item="' + Fmt.esc(it.id) + '" title="Click to edit in Card view">' +
+      return '<tr data-item="' + Fmt.esc(it.id) + '"' +
+        (canDrag ? ' data-reorder-row="' + Fmt.esc(it.id) + '"' : '') +
+        ' title="Click to edit in Card view">' +
+        (canDrag ? '<td class="il-mt-drag">' + momDragGripHTML(it.id) + '</td>' : '') +
         '<td class="il-mt-no">' + Fmt.esc(no) +
           (it.carried_from_item_id ? ' <span class="il-mom-carried" title="Carried over from an earlier meeting">carried</span>' : '') +
         '</td>' +
@@ -3560,7 +3717,8 @@ window.MinutesOfMeeting = (function () {
       '</tr>';
     }).join('');
     return '<div class="pd-tablewrap"><table class="pd-table il-mom-mtable">' +
-      '<thead><tr><th>No.</th><th>Status</th><th>Responsible</th><th>Target date</th><th>Issue / Agenda</th><th>Action item</th></tr></thead>' +
+      '<thead><tr>' + (canDrag ? '<th></th>' : '') +
+        '<th>No.</th><th>Status</th><th>Responsible</th><th>Target date</th><th>Issue / Agenda</th><th>Action item</th></tr></thead>' +
       '<tbody>' + body + '</tbody>' +
     '</table></div>';
   }
@@ -5328,10 +5486,13 @@ window.MinutesOfMeeting = (function () {
   // this), and this one writes `mom_items.seq` rather than a `sort_order`
   // column, since that is what this table already orders by.
   function wireMinuteDrag(host, momId) {
-    var wrap = host.querySelector('.il-mi-cards');
-    if (!wrap) return;
-    var grips = wrap.querySelectorAll('[data-reorder]');
-    var rows = wrap.querySelectorAll('[data-reorder-row]');
+    // ⚠️ 2026-09-12 — no longer scoped to `.il-mi-cards`: the Table view
+    // (momItemsTableHTML) now carries its own grips + `data-reorder-row`
+    // rows too, and Card/Table never both render at once, so wiring the
+    // whole HOST covers either without caring which is on screen.
+    var grips = host.querySelectorAll('[data-reorder]');
+    if (!grips.length) return;
+    var rows = host.querySelectorAll('[data-reorder-row]');
     function clearMarks() {
       Array.prototype.forEach.call(rows, function (x) { x.classList.remove('il-drop-before', 'il-drop-after'); });
     }
@@ -5373,7 +5534,7 @@ window.MinutesOfMeeting = (function () {
       }
       el.onpointerup = function (e) {
         if (pointerId == null || e.pointerId !== pointerId) return;
-        var marked = wrap.querySelector('.il-drop-before, .il-drop-after');
+        var marked = host.querySelector('.il-drop-before, .il-drop-after');
         var before = marked ? marked.classList.contains('il-drop-before') : false;
         var targetId = marked ? marked.dataset.reorderRow : null;
         var from = dragId;
@@ -5514,9 +5675,9 @@ window.MinutesOfMeeting = (function () {
     // ⚠️ NO "#il-mom-pullissues" wiring here any more — bringing issues in is
     // the Get-from-issue modal's job (openGetIssueModal), which ticks as many
     // as you like and adds them in one go.
-    // ITEM 3 — one button, the source meetings live inside the modal.
-    var cgo = host.querySelector('#il-mom-carrygo');
-    if (cgo) cgo.onclick = function () { openCarryOverModal(_momSel); };
+    // ⚠️ NO "#il-mom-carrygo" wiring either, per 2026-09-12 — see the note in
+    // momDetailHTML: "Carry over to next meeting" below is the one carry-over
+    // control now.
 
     // ⚠️ ROUND 3 — "Carry over to next meeting." A recurring occurrence
     // (schedule_id set) opens the modal against its OWN schedule; a plain

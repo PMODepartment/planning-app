@@ -172,6 +172,27 @@ shipped code in a gitignored harness (29 assertions).
 `MODULE_V` → `20260912e`. Detail:
 [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
 
+### 2026-09-12 (c) — Minutes of Meeting: table-view drag, Regular/Irregular scheduling, a `slides` icon
+
+Owner's nine-item list against Minutes of Meeting — table-view drag-to-reorder, retiring the
+item-level carry-over button in favour of the meeting-level one, an icon-only Present toggle,
+required meeting type, a real first occurrence created for a brand-new recurring series (dated to
+the first date the frequency actually resolves, not the raw typed start date), a restructured
+"Date and Venue" tile, and a new Regular/Irregular scheduling choice for both creating and carrying
+over a recurring meeting. Full detail, every ⚠️ decision and the verification is in
+`modules/minutes-of-meeting/CLAUDE.md` — module-local, since the module contract reserves
+shared-file edits for the app owner.
+
+**`assets/js/icons.js` — one new icon**, `slides` (a presentation screen on a stand, for the
+Present/Reporting-view toggle — distinct from `eye`, which reads as "view/watch" rather than
+"present"). Shared asset changed → **`icons.js?v=` bumped `20260909ui` → `20260912h` across all 22
+referencing HTML files.**
+
+⚠️ Re-derived past `20260912g`, which concurrent work had already reached on `main` by the time this
+branch (previously merged as PR #84) was rebased back onto it.
+
+`MODULE_V` (via `modules-grid.js?v=` on `dashboard.html`/`modules.html`) → `20260912h`.
+
 ### A master site development plan, and the Vertical Stacking's Site view (2026-09-12) — ethanrobles10
 
 Owner: *"if defined the floor plan of each tower, then there should be like a master site development
