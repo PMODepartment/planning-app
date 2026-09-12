@@ -13,6 +13,126 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### The master site development plan: one drawing for where the towers stand (2026-09-12 d) — ethanrobles10
+
+Owner: *"if defined the floor plan of each tower, then there should be like a master site
+development plan to showcase all towers. and then link that schedule to the vertical stacking.
+propose how and where you would define the plan showcasing the site dev plan (showing all towers
+orientation and location)."*
+
+### ⚠️⚠️ WHERE IT IS DEFINED: on the TOWER BAR, in Floors & Zones
+**Schedule Setup → Floors & Zones → the `Site plan…` button beside the tower chips.**
+
+That bar is the only place in the app that enumerates the project's towers, and the site plan is a
+statement *about that list* — where each of those towers stands and which way it faces. Put anywhere
+else it would be orphaned from the names it has to use. It is deliberately **not** on a floor row,
+which is where a floor plan lives: a floor plan is per trade and per floor; a site plan is one
+drawing for the whole project, and filing it beside the towers is what makes that difference visible
+instead of something to be explained. The button counts what is traced against the towers that exist
+(`Site plan 3/4`), so a project that has grown a fourth tower reads as incomplete without anyone
+opening it.
+
+### ⚠️⚠️ HOW IT IS STORED: as one more plate, not a second store
+`cfg.zonePlan` already is *"drawings, and what points at them"* — `{ plate: {id: …}, of: {key: id} }`.
+The site plan is one more plate, pointed at by a reserved key (`ZP_SITE_ID = 'site'`) exactly as the
+un-levelled band is by `'nolev'`, and **every polygon's `code` is a TOWER name instead of a zone
+code**. Nothing in the schema, the normaliser, the save path or the garbage collector had to learn
+about it, and it inherits the image upload, the presets, undo, copy/paste, the grid, the sheet
+proportions and the colour bag for free.
+
+- A separate `cfg.sitePlan` was the obvious alternative and it is the wrong one: a second normaliser,
+  a second GC rule, a second set of tracing gestures to keep in step, and two places for "the drawing
+  of this project" to live.
+- The one thing a site plan genuinely does not share with a floor plan is **the trade** — floor plans
+  are per trade (`zpByLabelOf`), a site plan is a fact about the project. That is expressed by the
+  key it is filed under, not by a separate store.
+- ⚠️ `*site*` is a **protocol key, not a label**, same rule as `ZP_NOLEV_KEY`. Both sides name the
+  constant and point at each other.
+
+### ⚠️⚠️ ONE TRACING WINDOW, TWO SUBJECTS — never two windows
+The floor plan and the site plan are the same gesture over the same structure: attach a drawing,
+trace named areas, name which is which. Copying `openZonePlan` would have duplicated ~900 lines whose
+second copy starts drifting on the first bug fixed in only one of them — a failure this module has
+already recorded twice. So everything that depends on *what* is being traced is named in a subject
+descriptor (`zpSubjFloor` / `zpSubjSite`) and the window reads that instead of `floor` and `tr`:
+
+| | Floor plan | Site plan |
+|---|---|---|
+| `key` (what `zonePlan.of` files it under) | the floor's id | `'site'` |
+| `codes` (the paintable areas) | that floor's zones | the project's towers |
+| sharing panel / trace-over | yes | **absent** — there is one site plan |
+| outline row | "floor outline" | "site boundary" |
+
+⚠️ `SUBJ.key`, not `floor.id`, is what `commit()` assigns — that one line is what makes the plate a
+fact about the project rather than about a floor.
+
+### The link into the Vertical Stacking
+A **Site** scope button joins Per trade / Per tower / Consolidated, and draws one card: every tower
+at its traced footprint, **as tall as its own storey count**, shaded by its own progress, on the same
+as-of scrubber as everything else.
+
+⚠️⚠️ **The site view is a MODEL, not a second renderer.** `_vs3Build` already draws N named cells at
+their traced positions on a plate, shades each by its own progress, registers them for the
+click-through and outlines them on hover. A site plan is that exact picture with the plate set to the
+site drawing and the cells named after towers. A bespoke site renderer would have needed its own
+camera, tones, picking, compare edges and as-of handling — every one of them a chance to disagree
+with the tower views about the same project. `_vsSiteModel` is `_vsTowerModel`-shaped and carries the
+three hooks a site actually differs by:
+
+- `plateFor` — the site plan instead of a floor's (`_vs3Build` now asks the model, falling back to
+  the floor lookup, so the override is one line at each of two call sites);
+- `cellH` — **the one structural addition**. On a floor every cell is a zone of the same storey, so
+  they are all one storey tall. On the site the cells are towers, and a 14-storey tower drawn the
+  same height as a 40-storey one says something false about the project. `cellH` is a *multiplier*,
+  so `SH` stays the single unit of height; it is 1 everywhere else, where the maths is the identity.
+- `rowCells` — the towers, in the module's own tower order, in the module's own tower colours
+  (`_vsTowerColor`, which already existed — a duplicate I wrote was caught and removed).
+
+⚠️ Storey counts come from the **schedule**, not from the setup's floor list: the site view stands
+beside the tower views and those are drawn from the schedule too. A tower whose setup says forty
+floors but whose schedule carries eight would otherwise be drawn forty tall and eight tall in two
+views of one project.
+
+⚠️ **The button is absent when there is no site plan**, not disabled-looking-live: a Site view with
+nothing traced is every tower at the same place on a guessed grid, which is a picture that lies about
+where the buildings stand. Same for a single-tower project — the site *is* the tower there.
+
+⚠️ **3D only, and it says so.** The 2D card is a SECTION; two towers north and south of each other
+occupy the same place in an elevation. That is the same reason the 2D card has never drawn a floor
+plan.
+
+⚠️ The footer names the one thing a reader cannot see: **a tower the plan does not name keeps its
+slot on the wrap grid**, so it is on the site, in the wrong place, looking exactly like one that was
+traced. That is the most misleading thing this view can do, so `_vsSiteFit` counts it and the footer
+prints it.
+
+### Verified
+Two node harnesses (gitignored, deleted) driving the **shipped** code sliced verbatim — the builder
+chain (`zpNormAll` → `zpSiteOf` → `zpShapeOfBag`) and the stacking chain (`_vsSitePolysOf` /
+`_vsSiteBoundary` / `_vsSiteFit`), plus the `zoneMesh` geometry.
+
+| Checked | Result |
+|---|---|
+| Storage | a site plan round-trips as a plate; points normalised 0..1; the sheet's aspect travels with it; a colour resolves for every area; tower names survive verbatim |
+| "No plan" | no `zonePlan`, an empty plate, a bag with no site pointer and a null config all return **null** — one answer, not four |
+| ⚠️ Normalise + GC | the site plate **survives** (it is pointed at) alongside a floor plate, and an orphan plate is **still collected** — the reserved key does not defeat the GC |
+| The name join | case and spacing normalised away; an untraced tower returns null; **the site boundary is never returned as a tower** |
+| The fit verdict | 2 of 3 placed, the unplaced one named, the boundary not counted as a traced area, "nothing matches" distinct from "no plan" |
+| A tall sheet | proportions preserved rather than squared |
+| `cellH = 1` | **identity** — floor cards and Consolidated bands land at exactly the pre-change heights |
+| `cellH < 1` | a 14-storey tower is 0.35 of a 40-storey one, **both standing on the ground**, progress filling upward inside each tower |
+
+⚠️ **Not verified signed in, and this is the big one.** The anon key has no grants, so nothing here
+has been run against a real project: the tracing window has not been opened on the site subject, no
+site plan has been saved or read back, and the 3D site card has never been rendered. What is proven
+is the storage contract, the name join, the fit arithmetic and the geometry — the wiring between them
+is argued, not measured. Open **Floors & Zones → Site plan…**, trace one area per tower, **save**,
+then check the Vertical Stacking's Site button appears; the footer under the model is the thing to
+read first.
+
+⚠️ Also unverified: the icon. `data-ico="map"` does not exist in the shared set (it would have
+rendered nothing) — caught before shipping and changed to `compass`, which does.
+
 ### The geometry audit, and the suite stops living in a temp folder (2026-09-12) — fmlozano
 
 Overnight audit, agenda item 5 — the geometry half of the UI audit: hunting the `zh` defect class

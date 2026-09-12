@@ -2089,6 +2089,17 @@
        number for both, so a per-pane legend would print the same figure twice.
        ⚠️ It sits over the top-right of the drawing, where the pan hint does not (that is bottom
        right) — the two overlays must never share a corner. */
+    /* ---- The site development plan ----------------------------------------------------------
+       Owner 2026-09-12: *"there should be like a master site development plan to showcase all
+       towers."*
+       ⚠️ The Site card is WIDER than a tower card and never tiles with them: it is one picture of
+       the whole project, and a site squeezed into a 340px column beside three tower cards reads as
+       a fourth tower. It is the only card on screen when it is on screen. */
+    .ps-vs-sitecard { grid-column:1 / -1; width:100%; }
+    .ps-vs-sitecard .ps-vs3-mount { min-height:420px; }
+    /* The Site plan button on the setup's tower bar. ⚠️ `.has` is the same affordance the floor
+       rows' Plan button uses, so "this is drawn" reads identically in both places. */
+    .sbld-sitebtn.has { border-color:var(--pd-red); color:var(--pd-red); font-weight:700; }
     .ps-vs-fz-leg { position:absolute; top:9px; right:10px; z-index:3; width:186px;
       padding:7px 8px 6px; border-radius:var(--pd-radius-md);
       border:1px solid var(--pd-line); background:var(--pd-card);
@@ -15746,10 +15757,14 @@
   // ⚠️ The MEMO only. The fetched map is keyed by project and checked against `pid` at every
   // read, so a repaint must not throw away a load that is still valid - that would re-fetch the
   // same rows on every basis switch, zoom and filter change.
-  function _vsZpClear() { _vsZpMemo = null; }
+  function _vsZpClear() { _vsZpMemo = null; _vsSiteMemo = null; _vsSiteMemoAt = null; }
   /* The saved plan, fetched once per project when the builder has none in memory. ⚠️ `_vsZpAsked`
      is set even when the answer is EMPTY - otherwise a project with no plan would fetch, repaint,
      find nothing, and fetch again on every single repaint. */
+  // The master site development plan, once fetched. ⚠️ Its own variable beside _vsZpGot rather
+  // than a key inside it: that map is keyed `trade|floor` and walked by every floor lookup, and a
+  // site entry living in it would have to be skipped by each of them.
+  var _vsSiteGot = null;
   var _vsZpGot = null, _vsZpAsked = null, _vsZpBusy = false;
   // The model the last tower drew, so _vsZpSync can report the SAME verdict the footer prints.
   var _vsLastModel = null;
@@ -15789,11 +15804,12 @@
       // same saved row, so one fetch carries them.
       var m = (res && res.byLabel) || {};
       _vsZpFrontGot = (res && res.front) || null;
+      _vsSiteGot = (res && res.site) || null;
       _vsZpGot = m;
       // ⚠️ Only repaint if it CHANGES something and the planner is still on the same project and
       // the card is still on screen. A repaint for an empty answer would be a flicker for nothing.
       if (want !== pid || !Object.keys(_vsZpGot).length) return;
-      _vsZpMemo = null;
+      _vsZpMemo = null; _vsSiteMemo = null; _vsSiteMemoAt = null;
       if (document.getElementById('ps-vstack')) { try { renderVStack(); } catch (e) {} }
     }).catch(function () { _vsZpBusy = false; _vsZpAsked = want; });
   }
@@ -15804,6 +15820,7 @@
      than no button. */
   function _vsZpSync(after) {
     _vsZpMemo = null; _vsZpGot = null; _vsZpAsked = null; _vsZpBusy = false;
+    _vsSiteMemo = null; _vsSiteMemoAt = null; _vsSiteGot = null;
     if (!(typeof ScheduleBuilder !== 'undefined' && ScheduleBuilder.zonePlanFetch)) {
       UI.toast('The Schedule Setup module is not loaded, so there is nothing to sync from.', 'warn');
       return;
@@ -15819,7 +15836,8 @@
          missed. The cold-open path (_vsZpKick) was moved to the new shape; this one was not. */
       _vsZpGot = (res && res.byLabel) || {};
       _vsZpFrontGot = (res && res.front) || null;
-      _vsZpAsked = want; _vsZpMemo = null;
+      _vsSiteGot = (res && res.site) || null;
+      _vsZpAsked = want; _vsZpMemo = null; _vsSiteMemo = null; _vsSiteMemoAt = null;
       // ⚠️ Distinct FLOORS, not map keys: the map holds one entry per trade per floor.
       var have = _vsZpLabels(_vsZpGot);
       if (!have.length) {
@@ -15849,6 +15867,74 @@
         }
       }
     }).catch(function () { UI.toast('The floor plans could not be read.', 'error'); });
+  }
+  /* ==== THE MASTER SITE DEVELOPMENT PLAN, AS THE STACKING SEES IT ==========================
+     Owner 2026-09-12: *"if defined the floor plan of each tower, then there should be like a master
+     site development plan to showcase all towers. and then link that schedule to the vertical
+     stacking."*
+
+     ⚠️ SAME TWO-SOURCE RULE AS `_vsZpAll`, and for the same reason: the Schedule Setup tab has
+     usually never been opened, so `ScheduleBuilder` holds no config and the live call returns
+     nothing. The saved setup fetched once per project is the fallback — and `_vsZpKick` already
+     fetches it, so the site plan arrives on the SAME round trip as the floor plans rather than
+     costing a second one.
+     ⚠️ The memo is `_vsZpMemo`'s sibling and is cleared by the same paths, so a planner who draws
+     the site plan and presses Sync sees it without a reload. */
+  var _vsSiteMemo = null, _vsSiteMemoAt = null;
+  function _vsSitePlan() {
+    if (_vsSiteMemo !== null && _vsSiteMemoAt === pid) return _vsSiteMemo;
+    var out = null;
+    try {
+      // ⚠️ `typeof`, not `window.` — this module is one big IIFE and ScheduleBuilder is a closure
+      // local. Testing it the other way is how the traced plan never once reached this card.
+      if (typeof ScheduleBuilder !== 'undefined' && ScheduleBuilder.sitePlan) out = ScheduleBuilder.sitePlan() || null;
+    } catch (e) { out = null; }
+    if (!out && _vsSiteGot && _vsZpAsked === pid) out = _vsSiteGot;
+    if (!out) _vsZpKick();
+    _vsSiteMemo = out; _vsSiteMemoAt = pid;
+    return out;
+  }
+  /* One tower's traced footprint on the site plan, or null.
+     ⚠️⚠️ THE JOIN IS BY NAME, AND IT IS THE RISKY PART. The site plan names its areas with the
+     TOWER NAMES from the setup's tower bar; the stacking knows a tower as a token off an activity's
+     location (`_vsTowerOf`). They are the same string on a project built through the wizard and can
+     differ on an imported one, so the match is normalised the same way both sides normalise a floor
+     label — and a tower that does not match keeps its place in the fallback layout rather than
+     vanishing, exactly as an untraced zone does.
+     ⚠️ The site BOUNDARY (`*floor*`, the reserved whole-plate code) is never returned as a tower:
+     it is the extent of the site, and extruding it would put a slab over every building on it. */
+  function _vsSitePolysOf(towerName) {
+    var sp = _vsSitePlan();
+    if (!sp || !towerName) return null;
+    var want = _vsZpNorm(towerName);
+    if (!want) return null;
+    var out = (sp.polys || []).filter(function (q) {
+      var k = _vsZpNorm(q.code);
+      return k && k !== _VS_ZP_ALL && k === want;
+    });
+    return out.length ? out : null;
+  }
+  // The site's own boundary, if one was drawn. ⚠️ Drawn as a ground slab under the towers and
+  // never as a tower — see the note above.
+  function _vsSiteBoundary() {
+    var sp = _vsSitePlan();
+    if (!sp) return null;
+    var out = (sp.polys || []).filter(function (q) { return _vsZpNorm(q.code) === _VS_ZP_ALL; });
+    return out.length ? out : null;
+  }
+  /* How many of this card's towers the site plan actually places. ⚠️ Reported, never assumed: the
+     Site view's own footer prints it, because "the plan is drawn" and "the plan names the towers
+     this schedule uses" are two different things and only the second one draws a building. */
+  function _vsSiteFit(towers) {
+    var out = { n: (towers || []).length, hit: 0, miss: [], have: 0 };
+    var sp = _vsSitePlan();
+    if (!sp) return out;
+    out.have = (sp.polys || []).filter(function (q) { return _vsZpNorm(q.code) !== _VS_ZP_ALL; }).length;
+    (towers || []).forEach(function (t) {
+      if (_vsSitePolysOf(t)) out.hit++;
+      else if (out.miss.length < 4) out.miss.push(String(t));
+    });
+    return out;
   }
   function _vsZpAll() {
     if (_vsZpMemo) return _vsZpMemo;
@@ -16304,7 +16390,7 @@
     var VS_PLATE = 2;
     var _arAt = null;
     for (var _ai = 0; _ai < model.disp.length && _arAt == null; _ai++) {
-      var _ap = _vsZpFor(model.disp[_ai], model.trade);
+      var _ap = model.plateFor ? model.plateFor(model.disp[_ai]) : _vsZpFor(model.disp[_ai], model.trade);
       if (_ap) _arAt = (+_ap.ar > 0.05 && +_ap.ar < 20) ? +_ap.ar : (1000 / 620);
     }
     var PW = _arAt ? VS_PLATE : PLATE.cols * CELL;
@@ -16317,7 +16403,11 @@
       var plateW = PW, plateD = PD;
       // ⚠️ The storey's own traced plan, if it has one. A zone the plan does not name keeps its
       // wrap slot, which is why a half-traced plan degrades instead of losing zones.
-      var _plate = _vsZpFor(v, model.trade);
+      /* ⚠️ `model.plateFor` is the SITE view's hook: there the row is the site and the cells are
+         towers, so the plate is the site development plan rather than a floor's. One override, so
+         everything downstream — the outline fallback, the zone colour, the compare mark, the
+         picking — works on the site exactly as it works on a floor. */
+      var _plate = model.plateFor ? model.plateFor(v) : _vsZpFor(v, model.trade);
       var slots = _vsPlanSlots(n, PLATE);
       // The storey's Y: top of the list is the highest floor, so invert the index.
       var y = (storeys - 1 - li) * (SH + GAPY);
@@ -16371,10 +16461,21 @@
         if (!_pg && _plate && model.tradeSplit) _pg = _vsZpOutlineOf(_plate);
         var bandN = (model.tradeSplit && _pg && n > 1) ? n : 1;
         var bandI = bandN > 1 ? ci : 0;
+        /* ==== HOW TALL THIS CELL IS ========================================================
+           ⚠️⚠️ THE SITE VIEW'S ONE STRUCTURAL ADDITION. On a floor every cell is a zone of the same
+           storey, so they are all exactly one storey tall — `cellH` is 1 and nothing changes. On the
+           SITE the cells are TOWERS, and a 14-storey tower drawn the same height as a 40-storey one
+           is a picture that says something false about the project. So the model may state a
+           multiplier per cell, and the site model derives it from each tower's own storey count.
+           ⚠️ A MULTIPLIER, not an absolute: it keeps `SH` as the single unit of height, so the
+           storey proportion the whole module is drawn at still governs the site view too.
+           ⚠️ Floors under 0.12 are clamped up, or a two-storey annexe beside a forty-storey tower
+           renders as a mark on the ground you cannot click. */
+        var cellH = model.cellH ? Math.max(0.12, +model.cellH(c) || 1) : 1;
         // ⚠️ The storey height THIS cell actually gets. Every fraction below is a fraction of the
         // BAND, not of the storey, or a banded cell's fill line and sliver test would be sized for
         // a slab n times taller than the one being drawn.
-        var SHb = SH / bandN;
+        var SHb = SH * cellH / bandN;
         var pct = _vsProgress(c.list);
         var fill = c.color || baseColor;
         /* ⚠️ FALLS BACK PER CELL, not per card. A zone the plan does not name — and every cell
@@ -16430,7 +16531,9 @@
           // trade over a traced floor, one band for the whole storey otherwise (bandN === 1, so
           // this is the identity and every untraced card is byte-for-byte what it was).
           var g0 = (bandI + f0) / bandN, g1 = (bandI + f1) / bandN;
-          var h2 = SH * (g1 - g0), base = SH * g0;
+          // ⚠️ `SH * cellH` is this cell's OWN full height — one storey on a floor card, one whole
+          // tower on the site. cellH is 1 everywhere but the site view, so this is the identity there.
+          var h2 = SH * cellH * (g1 - g0), base = SH * cellH * g0;
           if (_pg) return _vs3PolyMesh(_pg, colr, opacity, T, plateW, plateD, h2, y + base);
           return box(h2, base, colr, opacity);
         }
@@ -16521,7 +16624,7 @@
               new T.MeshBasicMaterial({ color: _vsDarkTheme() ? 0xdfe4ea : 0x2b3038 }));
             // ⚠️ Inside this cell's own BAND. Left at SH the baseline mark of a banded trade
             // would float above its slab, over the trade stacked on top of it.
-            _mk.position.set(_mx, y + SH * ((bandI + _at) / bandN), _mz);
+            _mk.position.set(_mx, y + SH * cellH * ((bandI + _at) / bandN), _mz);
             _mk.userData.key = _key;
             grp.add(_mk); picks.push(_mk);
           }
@@ -17031,6 +17134,34 @@
     out.state = out.hit ? (out.hit < out.n ? 'partial' : 'all') : 'nomatch';
     return out;
   }
+  /* The Site view's own footer. ⚠️ It exists for the same reason `_vs3Foot` does: the picture is a
+     SCHEMATIC and has to say so, and the one thing a reader cannot see is which towers the plan
+     failed to place. A tower the site plan does not name keeps its slot in the wrap grid — so it is
+     ON the site, in the wrong place, looking exactly like one that was traced. That is the single
+     most misleading thing this view can do, so it is named here rather than left to be noticed. */
+  function _vsSiteFoot(model, fit) {
+    var miss = (fit.miss || []).slice();
+    var msg;
+    if (!fit.hit) {
+      msg = '<b>No tower on this schedule matches the site plan.</b> The plan names ' + fit.have +
+        ' area' + (fit.have === 1 ? '' : 's') + ', and none of them is one of these towers — the names have ' +
+        'to match. Rename the areas in <b>Schedule Setup › Floors &amp; Zones › Site plan</b>, or rename the ' +
+        'towers, and they meet.';
+    } else if (miss.length) {
+      msg = '<b>' + fit.hit + ' of ' + fit.n + ' towers are placed as you traced them</b>; the rest sit on the ' +
+        'wrap grid and are <b>not where they stand on site</b> — no area is named ' +
+        esc(miss.join(', ')) + (fit.miss.length >= 4 ? '…' : '') + '. Trace them on the site plan to place them.';
+    } else {
+      msg = '<b>Every tower is placed as you traced it.</b>';
+    }
+    return '<p class="ps-vs3-foot">' + msg +
+      ' Each tower is as tall as its <b>own storey count</b> (' +
+      Object.keys(model.storeyN || {}).map(function (k) { return esc(k) + ' ' + model.storeyN[k]; }).join(' · ') +
+      '), scaled against the tallest — a proportion, never a dimension. Brightness is progress, exactly ' +
+      'as it is inside a tower; click a tower for its activities, and use <b>Per tower</b> above to go inside one. ' +
+      '⚠️ The footprint is the outline somebody traced, so it is only as true as the drawing under it, ' +
+      'and this view states no distance, area or setback.</p>';
+  }
   function _vs3Foot(model) {
     // ⚠️ The compare sentence appears only under Planned vs Actual. Naming a channel that is not
     // being painted teaches a planner to look for something that is not there.
@@ -17214,6 +17345,67 @@
      ⚠️ Returns null for "nothing to stack" rather than the message, because the message is the
      2D card’s markup and the 3D card needs its own.
      ========================================================================================== */
+  /* ==========================================================================================
+     THE SITE MODEL — one row, and the cells are TOWERS.
+     Owner 2026-09-12: *"there should be like a master site development plan to showcase all towers.
+     and then link that schedule to the vertical stacking."*
+
+     ⚠️⚠️ IT IS A `_vsTowerModel`-SHAPED OBJECT, DELIBERATELY, AND THAT IS WHAT MADE THIS SMALL.
+     `_vs3Build` already draws N named cells at their traced positions on a plate, shades each by its
+     own progress, registers them for the click-through and outlines them on hover. A site plan is
+     that exact picture with the plate set to the site drawing and the cells named after towers — so
+     the site view is a MODEL, not a second renderer. A bespoke site renderer would have needed its
+     own camera, tones, picking, compare edges and as-of handling, and every one of them is a chance
+     to disagree with the tower views about the same project.
+
+     The three things a site genuinely differs by are the three hooks the model carries:
+       plateFor — the site plan instead of a floor's plan
+       cellH    — each tower as tall as its own storey count, not one storey
+       rowCells — the towers, in the tower order the rest of the module uses
+     ⚠️ `disp` is a SINGLE row, so `storeys` is 1 and the whole stack sits on one ground plane. That
+     is the site: towers side by side, not floors above each other.
+     ⚠️ `trade: null` — a site holds every trade, so no floor plan of any one trade may be read for
+     it. `plateFor` overrides the lookup anyway; this keeps the footer's own verdict honest.
+     ========================================================================================== */
+  var VS_SITE_ROW = '— Site —';
+  function _vsSiteModel(list, towers) {
+    if (!towers || !towers.length) return null;
+    var byTower = {};
+    towers.forEach(function (t) { byTower[t] = []; });
+    list.forEach(function (r) { var t = _vsTowerOf(r); if (t && byTower[t]) byTower[t].push(r); });
+    /* How many storeys each tower has, as this SCHEDULE describes it — the distinct level values
+       its own activities carry. ⚠️ Off the schedule, not off the setup's floor list: the site view
+       stands beside the tower views, and those are drawn from the schedule too. A tower whose setup
+       says forty floors but whose schedule carries eight would otherwise be drawn forty tall and
+       eight tall in two views of one project. */
+    var storeyN = {}, maxN = 1;
+    towers.forEach(function (t) {
+      var seen = {}, k = 0;
+      byTower[t].forEach(function (r) {
+        var v = _vsLevVal(r, _vsAxis()[0].id);
+        if (v && !seen[v]) { seen[v] = 1; k++; }
+      });
+      storeyN[t] = k || 1;
+      if (storeyN[t] > maxN) maxN = storeyN[t];
+    });
+    var cells = towers.map(function (t) {
+      return { label: t, list: byTower[t], color: _vsTowerColor(t, towers) };
+    }).filter(function (c) { return c.list.length; });
+    if (!cells.length) return null;
+    var byLevel = {}; byLevel[VS_SITE_ROW] = list;
+    return {
+      byLevel: byLevel, levels: [VS_SITE_ROW], disp: [VS_SITE_ROW], groundAt: 1, detail: 1,
+      above: [VS_SITE_ROW], below: [], trade: null, tradeSplit: false, site: true,
+      rowCells: function () { return cells; },
+      cellKey: function (keyPrefix, v, c) { return keyPrefix + '|' + v + '|' + (c.label || '*'); },
+      // ⚠️ THE SITE PLAN, for every row — there is only one, and it is not a floor's.
+      plateFor: function () { return _vsSitePlan(); },
+      // Each tower's share of the tallest. ⚠️ Its own storey count over the TALLEST tower's, so the
+      // picture is a comparison rather than a set of unrelated heights.
+      cellH: function (c) { return (storeyN[c.label] || 1) / maxN; },
+      storeyN: storeyN, maxN: maxN
+    };
+  }
   function _vsTowerModel(list, tradeSplit) {
     var _ax = _vsAxis(), lvl0 = _ax[0].id, detail = _vsDetailNow();
     var byLevel = {}, levels = [], noLev = [];
@@ -18814,6 +19006,11 @@
     _vsSetFilledDepth(_actsAll);
     // "Per tower" is only a meaningful view when there is more than one tower to compare.
     if (_vsScope === 'tower' && towerNames.length < 2) _vsScope = 'trade';
+    /* ⚠️ AND SITE FALLS BACK THE SAME WAY. The button is only emitted when a site plan exists, but
+       _vsScope is remembered across renders — so a planner who was on Site and then switched to a
+       project with no plan (or filtered down to one tower) would be left on a scope whose control
+       is no longer on screen, looking at a card that cannot be drawn. */
+    if (_vsScope === 'site' && (towerNames.length < 2 || !_vsSitePlan())) _vsScope = 'trade';
     var trades = [], seen = {};
     acts.forEach(function (r) { var t = _vsTradeOf(r); if (!seen[t]) { seen[t] = 1; trades.push(t); } });
     trades.sort(_vsCmpTrade);   // canonical trade order, not alphabetical
@@ -18837,7 +19034,7 @@
     // mixed when the scope COMBINES trades and the selection holds more than one of them:
     // narrowing the chips to a single trade un-mixes it and the zones come straight back.
     // Per trade never mixes - each card there is one trade.
-    _vsMixTrades = (_vsScope === 'tower' || _vsScope === 'all') && tradesShown.length > 1;
+    _vsMixTrades = (_vsScope === 'tower' || _vsScope === 'all' || _vsScope === 'site') && tradesShown.length > 1;
     detail = _vsDetailNow();
 
     var detailBtns = '';
@@ -18914,7 +19111,18 @@
     var bar = '<div class="ps-vs-bar">' + twSel + '<span class="ps-tb-div"></span>' +
       '<span class="ps-vs-seg"><button data-vssc="trade"' + (_vsScope === 'trade' ? ' class="on"' : '') + ' title="One building model per trade">Per trade</button>' +
       (towerNames.length > 1 ? '<button data-vssc="tower"' + (_vsScope === 'tower' ? ' class="on"' : '') + ' title="One building model per tower, all trades combined">Per tower</button>' : '') +
-      '<button data-vssc="all"' + (_vsScope === 'all' ? ' class="on"' : '') + ' title="One model for the whole project, all trades combined">Consolidated</button></span>' +
+      '<button data-vssc="all"' + (_vsScope === 'all' ? ' class="on"' : '') + ' title="One model for the whole project, all trades combined">Consolidated</button>' +
+      /* ⚠️⚠️ THE SITE BUTTON ONLY EXISTS WHEN THERE IS A SITE PLAN TO DRAW, and that is not
+         timidity — a Site view with no traced plan is every tower at the same place on a guessed
+         grid, which is a picture that says something false about where the buildings stand. A
+         control that looks live and does nothing is the failure this module keeps recording, so
+         it is absent, and the note under the towers says where to draw one.
+         ⚠️ And only with a tower breakdown at all: on a single-tower project the site IS the
+         tower, and the Per-tower view already is it. */
+      ((towerNames.length > 1 && _vsSitePlan())
+        ? '<button data-vssc="site"' + (_vsScope === 'site' ? ' class="on"' : '') +
+          ' title="The master site development plan — every tower where it actually stands, each as tall as its own storey count and shaded by its own progress. Drawn in Schedule Setup › Floors &amp; Zones › Site plan.">Site</button>'
+        : '') + '</span>' +
       '<span class="ps-tb-div"></span>' +
       '<span class="ps-vs-seg">' +
         '<button data-vs3d="0"' + (!_vs3D ? ' class="on"' : '') + ' title="The section: storeys as rows, zones across">2D</button>' +
@@ -19176,6 +19384,38 @@
           ' · ' + tt.length + ' trade' + (tt.length === 1 ? '' : 's') + '</span>' + _vsFocusReg(t, col, list, 'TW:' + t) + '</div>' + _vsCardMeter(list) +
           _vsTowerBody(list, col, 'TW:' + t) + '</div>';
       }).join('');
+    } else if (_vsScope === 'site') {
+      /* ==== THE SITE VIEW ================================================================
+         ⚠️⚠️ ONE CARD, NOT ONE PER TOWER. Every other scope answers "what does this building look
+         like"; this one answers "where do the buildings stand", which is a single picture by
+         definition — splitting it into cards would be a set of site plans, each showing one tower
+         on an empty site.
+         ⚠️ 3D ONLY, and it says so rather than drawing something wrong in 2D. The 2D card is a
+         SECTION — storeys as rows — and a section cannot show a plan: two towers north and south
+         of each other occupy the same place in an elevation. That is the same reason the 2D card
+         has never drawn a floor plan, recorded on _vsPlanLay. */
+      var _sm = _vsSiteModel(acts, towerNames);
+      var _sfit = _vsSiteFit(towerNames);
+      if (!_sm) {
+        towers = '<div class="ps-vs-empty">Nothing to place on the site for this selection.</div>';
+      } else if (!_vs3D) {
+        towers = '<div class="ps-vs-tower" style="--tc:var(--pd-red)"><div class="ps-vs-towerh">' +
+          '<span class="n">Site development plan</span></div>' +
+          '<div class="ps-vs-empty">The site plan is a <b>plan</b>, and the 2D card is a <b>section</b> — ' +
+          'two towers north and south of each other occupy the same place in an elevation, so there is ' +
+          'nothing honest to draw here. Switch to <b>3D</b> above.</div></div>';
+      } else {
+        _vsLastModel = _sm;
+        _vs3Pending.push({ key: 'SITE', model: _sm, color: 'var(--pd-red)' });
+        towers = '<div class="ps-vs-tower ps-vs-sitecard" style="--tc:var(--pd-red)"><div class="ps-vs-towerh">' +
+          '<span class="n"><span class="ps-vs-dot" style="background:var(--pd-red)"></span>Site development plan</span>' +
+          '<span class="ct">' + _sfit.hit + ' of ' + _sfit.n + ' tower' + (_sfit.n === 1 ? '' : 's') +
+          ' placed · ' + acts.length + ' activities · ' + _vsProgress(acts) + '% ' + _vsProgressWord() + '</span>' +
+          '</div>' + _vsCardMeter(acts) +
+          _vs3Bar('SITE') + '<div class="ps-vs3-mount" data-vs3mount="SITE">' +
+          '<div class="ps-vs3-load">Loading the site view…</div></div>' +
+          _vsSiteFoot(_sm, _sfit) + '</div>';
+      }
     } else if (_vsScope === 'all') {
       towers = '<div class="ps-vs-tower" style="--tc:var(--pd-red)"><div class="ps-vs-towerh"><span class="n">Consolidated &mdash; ' +
         (_vsTradeSel.length ? esc(tradesShown.join(', ')) : 'all trades') +
@@ -35104,6 +35344,33 @@
             e2((t.code ? t.code + ' — ' : '') + (t.name || '')) + '">' + e2(t.name || t.code || 'Tower') + '</button>';
         }).join('') +
         '<button class="pd-btn sbld-mini" id="b-twadd" title="Add another tower">+ Tower</button>' +
+        /* ==== WHERE THE SITE PLAN IS DEFINED ==============================================
+           ⚠️⚠️ ON THE TOWER BAR, and that is the answer to the owner's *"propose how and where
+           you would define the plan"*. This bar is the only place in the app that enumerates the
+           project's towers, and the site plan is a statement ABOUT that list — where each of
+           those towers stands and which way it faces. Put anywhere else it would be orphaned
+           from the names it has to use.
+           ⚠️ NOT on a floor row, which is where a floor plan lives: a floor plan is per trade and
+           per floor, a site plan is one drawing for the whole project. Filing it beside the
+           towers is what makes that difference visible rather than something to be explained.
+           ⚠️ The button counts what is traced against the towers that exist, so a project that
+           has grown a fourth tower reads "3/4" without anyone opening it. */
+        (function () {
+          var _sp = zpBag().plate[zpBag().of[ZP_SITE_ID] || ''] || null;
+          var _tw = towerList().length;
+          var _hit = _sp ? zpCodesOf(_sp).filter(function (c) {
+            if (zpIsAll(c)) return false;
+            var k = zpNormCode(c);
+            return towerList().some(function (t) { return zpNormCode(t.name) === k || zpNormCode(t.code) === k; });
+          }).length : 0;
+          return '<button class="pd-btn sbld-mini sbld-sitebtn' + (_sp ? ' has' : '') + '" id="b-siteplan" title="' +
+            e2(_sp ? ('Site development plan · ' + _hit + ' of ' + _tw + ' tower' + (_tw === 1 ? '' : 's') +
+                      ' traced' + (_sp.img ? ' · drawing attached' : ' · no drawing attached') +
+                      ' — the Vertical Stacking’s Site view is built from it')
+                    : 'Draw the master site development plan — one area per tower, on the site drawing. The Vertical Stacking then shows every tower where it actually stands.') + '">' +
+            '<span data-ico="compass" data-ico-size="14"></span> ' +
+            (_sp ? 'Site plan ' + _hit + '/' + _tw : 'Site plan…') + '</button>';
+        })() +
         '<button class="pd-btn sbld-mini" id="b-twren" title="Rename the active tower">Rename</button>' +
         (list.length > 1 ? '<button class="pd-btn sbld-mini" id="b-twcopy" title="Copy another tower\'s floors, zones, units and sequencing into this one">Copy from…</button>' : '') +
         (list.length > 1 ? '<button class="pd-btn sbld-mini sbld-del" id="b-twdel" title="Delete the active tower and its floors">Delete</button>' : '') +
@@ -35291,6 +35558,31 @@
        text ("— No level —") and is free to be rewritten; the two sides would then silently stop
        meeting. Each side names this constant and points at the other — see _VS_ZP_NOLEV. */
     var ZP_NOLEV_ID = 'nolev', ZP_NOLEV_KEY = '*nolevel*';
+    /* ==== THE MASTER SITE DEVELOPMENT PLAN ===============================================
+       Owner 2026-09-12: *"if defined the floor plan of each tower, then there should be like a
+       master site development plan to showcase all towers. and then link that schedule to the
+       vertical stacking. propose how and where you would define the plan showcasing the site dev
+       plan (showing all towers orientation and location)."*
+
+       ⚠️⚠️ IT IS A PLATE LIKE ANY OTHER, AND THAT IS THE WHOLE DESIGN. A floor plan says "here are
+       the zones of this floor"; the site plan says "here are the towers of this project" — the same
+       sentence one level up. So it is stored as one more entry in `cfg.zonePlan`, pointed at by a
+       reserved key exactly as the un-levelled band is, and every polygon's `code` is a TOWER's name
+       instead of a zone's. Nothing in the schema, the normaliser, the save path or the garbage
+       collector needed to learn about it, and it inherits the image upload, the presets, undo,
+       copy/paste, the grid, the sheet proportions and the colour bag for free.
+
+       ⚠️ A SECOND STORE WAS THE OBVIOUS ALTERNATIVE AND IT IS THE WRONG ONE. `cfg.sitePlan` with
+       its own shape would mean a second normaliser, a second GC rule, a second set of tracing
+       gestures to keep in step with the first, and two places for "the drawing of this project" to
+       live. The one thing a site plan genuinely does NOT share with a floor plan is the trade: a
+       floor plan is per trade (see zpByLabelOf), and a site plan is a fact about the project. That
+       is expressed by the key it is filed under, not by a separate store.
+
+       ⚠️ `*site*` IS A PROTOCOL KEY, NOT A LABEL — same rule as ZP_NOLEV_KEY above. A tower can be
+       called anything, including "Site", so the reserved code is one no tower name can normalise to
+       without the planner going out of their way. The stacking names the same constant. */
+    var ZP_SITE_ID = 'site', ZP_SITE_KEY = '*site*';
     /* ==== WHICH WAY THE BUILDING FACES — AN OBJECT ON THE DRAWING ========================
        Owner 2026-09-10: *"in the floor plan, remove the front faces etc. I just want you to add
        a feature wherein users are just able to place an object and then you would be able to
@@ -35567,6 +35859,35 @@
        fetched by the Vertical Stacking when the Schedule Setup tab has never been opened.
        ⚠️ Resolves the floor -> plate pointer from the PASSED bag, never from cfg, so loading a
        plan for a card cannot read or disturb a setup the planner has open elsewhere. */
+    /* ==== ONE PLATE → ONE SHAPE, for every consumer ======================================
+       ⚠️⚠️ EXTRACTED so the floor map and the SITE plan cannot convert a plate two different ways.
+       `zpByLabelOf`'s own `shapeOf` now delegates here; if the two had stayed separate, the site
+       view and the tower views would be one normalisation apart and nothing on screen would say so.
+       ⚠️⚠️ THE SHEET'S PROPORTIONS TRAVEL WITH THE OUTLINE. The points are normalised to 0..1 on
+       both axes, which throws the aspect away — so a plan traced on a 1000 x 620 sheet arrives as a
+       square unless the ratio comes with it. The stacking sizes its plate from this; without it, a
+       landscape plate was drawn square.
+       ⚠️ THE COLOUR TRAVELS WITH IT TOO, resolved here where the bag is owned. The stacking must not
+       have to know that a colour can be an override or a hash of the code — it asks what colour this
+       area is and gets one answer, the same answer the tracing window is painting on screen. */
+    function zpShapeOfBag(bag, p) {
+      var H = zpH(p);
+      return { ar: ZP_W / H, polys: p.polys.map(function (q) {
+        return { code: q.code, color: zpColorOfBag(bag, q.code),
+                 pts: q.pts.map(function (pt) { return [pt[0] / ZP_W, pt[1] / H]; }) };
+      }) };
+    }
+    /* The master site development plan for a config, or null.
+       ⚠️ `null` when nobody has drawn one, and null when the plate holds nothing — "no site plan"
+       and "a site plan with nothing on it" must not be two answers the caller has to tell apart. */
+    function zpSiteOf(c) {
+      if (!c) return null;
+      var bag = zpNormAll(c.zonePlan || {});
+      var id = bag.of && bag.of[ZP_SITE_ID];
+      var p = id ? bag.plate[id] : null;
+      if (!p || !p.polys || !p.polys.length) return null;
+      return zpShapeOfBag(bag, p);
+    }
     function zpByLabelOf(c) {
       var out = {};
       if (!c || !c.zoning) return out;
@@ -35577,17 +35898,10 @@
          floor-plan window is painting on screen.
          ⚠️ ONE builder for the storeys and for the un-levelled band below, so the band cannot
          end up carrying its outline in a different shape from every other floor's. */
-      function shapeOf(p) {
-        var H = zpH(p);
-        /* ⚠️⚠️ THE SHEET'S PROPORTIONS TRAVEL WITH THE OUTLINE. The points are normalised to
-           0..1 on both axes, which throws the aspect away — so a plan traced on a 1000 x 620
-           sheet arrives as a square unless the ratio comes with it. The stacking sizes its
-           plate from this; without it, a landscape floor plate was drawn square. */
-        return { ar: ZP_W / H, polys: p.polys.map(function (q) {
-          return { code: q.code, color: zpColorOfBag(bag, q.code),
-                   pts: q.pts.map(function (pt) { return [pt[0] / ZP_W, pt[1] / H]; }) };
-        }) };
-      }
+      // ⚠️ ONE converter for every consumer — see zpShapeOfBag. This used to be the only copy;
+      // the site plan needed the same conversion and two of them would have been one normalisation
+      // apart with nothing on screen to say so.
+      function shapeOf(p) { return zpShapeOfBag(bag, p); }
       /* ==== KEYED BY TRADE AND FLOOR, NOT BY FLOOR ALONE ==================================
          Owner 2026-09-10: *"the defined section for structural is coinciding the defined floor
          plan and zoning shapes with other trades … I have defined a new floor plan for
@@ -35880,21 +36194,84 @@
       });
       return out;
     }
-    function openZonePlan(tr, floorId) {
+    /* ==== WHAT THE TRACING WINDOW IS TRACING =============================================
+       ⚠️⚠️ ONE WINDOW, TWO SUBJECTS — never two windows. The floor plan and the site plan are the
+       same gesture over the same data structure: attach a drawing, trace named areas on it, name
+       which area is which. Copying `openZonePlan` for the site plan would have duplicated the
+       undo stack, the presets, the paste handler, the grid, the sheet control, the image upload
+       and the colour bag — nine hundred lines whose second copy starts drifting on the first bug
+       fixed in only one of them. This module already records that failure shape twice.
+
+       So everything the window does that depends on WHAT is being traced is named here, and the
+       window reads the subject instead of reading `floor` and `tr` directly:
+         key    — what the plate is filed under in `zonePlan.of` (a floor id, or the site key)
+         codes  — the named areas the planner can paint (a floor's zones, or the project's towers)
+         users/refs/others — the sharing and trace-over panels, which only a floor has
+       ⚠️ `site: true` is the flag the window branches on for the handful of things that genuinely
+       differ (the title, the share panel, the outline row's wording). Everything else is identical
+       by construction, which is the point. */
+    function zpSubjFloor(tr, floorId) {
       var floors = (cfg.zoning[tr] ? cfg.zoning[tr].floors : []);
       var floor = floors.filter(function (f) { return f.id === floorId; })[0];
-      if (!floor) return;
-      var plateId = zpIdFor(floor);
+      if (!floor) return null;
+      return {
+        site: false, tr: tr, floor: floor,
+        key: floor.id, imgKey: floor.id,
+        plateId: zpIdFor(floor),
+        title: 'Floor plan', name: (floor.name || floor.code || 'Floor'),
+        sub: (GLABEL[tr] || tr) + ' · ' + (floor.zones || []).length + ' zone' +
+             ((floor.zones || []).length === 1 ? '' : 's'),
+        codes: (floor.zones || []).map(function (z) { return String(z.code || z.name || '').trim(); }).filter(Boolean),
+        codeWord: 'zone', codeWordP: 'zones',
+        outlineWord: 'floor outline',
+        users: function (plateId) { return zpUsers(tr, plateId); },
+        refs: function (plateId) { return zpRefsFor(tr, floor, plateId); },
+        others: function () { return floors.filter(function (f) { return f.id !== floor.id; }); }
+      };
+    }
+    /* The site plan. ⚠️ Its `codes` are the TOWERS, taken from the tower list the step above it
+       already shows as chips — there is no second place to name a tower, so the site plan cannot
+       name one the project does not have.
+       ⚠️ No sharing panel and no trace-over: there is exactly ONE site plan in a project, so
+       "also use this plan on…" has nothing to offer and "trace over another floor" would offer a
+       floor plate at site scale. Both are absent rather than present-and-empty. */
+    function zpSubjSite() {
+      return {
+        site: true, tr: null, floor: null,
+        key: ZP_SITE_ID, imgKey: ZP_SITE_ID,
+        plateId: zpBag().of[ZP_SITE_ID] || null,
+        title: 'Site development plan', name: 'All towers',
+        sub: towerList().length + ' tower' + (towerList().length === 1 ? '' : 's') + ' · whole project, all trades',
+        codes: towerList().map(function (t) { return String(t.name || t.code || '').trim(); }).filter(Boolean),
+        codeWord: 'tower', codeWordP: 'towers',
+        outlineWord: 'site boundary',
+        users: function () { return []; },
+        refs: function () { return []; },
+        others: function () { return []; }
+      };
+    }
+    // The two ways in. ⚠️ Both go through ONE window — see the note on zpSubjFloor.
+    function openZonePlan(tr, floorId) { openPlate(zpSubjFloor(tr, floorId)); }
+    function openSitePlan() { openPlate(zpSubjSite()); }
+    function openPlate(SUBJ) {
+      if (!SUBJ) return;
+      /* ⚠️ KEPT AS LOCALS so the ~900 lines below read exactly as they did when this window only
+         ever traced a floor. `floor` is null for the site plan, and every use of it is now behind
+         the subject — these two exist for the handful of places that legitimately want the floor
+         object itself (the sharing panel, which the site subject turns off). */
+      var tr = SUBJ.tr, floor = SUBJ.floor;
+      var floors = (tr && cfg.zoning[tr] ? cfg.zoning[tr].floors : []);
+      var plateId = SUBJ.plateId;
       var plate = (plateId && zpBag().plate[plateId]) || null;
       var draft = plate || zpBlank();
-      var codes = (floor.zones || []).map(function (z) { return String(z.code || z.name || '').trim(); }).filter(Boolean);
+      var codes = SUBJ.codes;
 
       var m = UI.modal('<div class="zpw" id="zpw"></div>', { noBackdropClose: true });
       var wrap = m.el.querySelector('#zpw');
       var box = m.el.querySelector('.pd-modal');
       if (box) box.classList.add('zpw-modal');
 
-      _zpWin = { tr: tr, floor: floor, draft: draft, owned: !!plate, plateId: plateId,
+      _zpWin = { tr: tr, floor: floor, subj: SUBJ, draft: draft, owned: !!plate, plateId: plateId,
                  // ⚠️ On a floor with no zones the brush is the WHOLE-FLOOR outline, so the
                  // window opens ready to draw rather than opening with nothing selectable.
                  brush: codes[0] || ZP_ALL, drawing: false, pts: [], sel: null, url: null,
@@ -35974,7 +36351,9 @@
         if (!W.owned) {
           W.plateId = zpNewId();
           bag.plate[W.plateId] = W.draft;
-          zpAssign(floor.id, W.plateId);
+          // ⚠️ SUBJ.key, not floor.id: for the site plan the plate is filed under the reserved
+          // site key, which is what makes it a fact about the project rather than about a floor.
+          zpAssign(SUBJ.key, W.plateId);
           W.owned = true;
         }
         markDirty();
@@ -36003,7 +36382,7 @@
       // Drop a preset in the middle of the plate, as the zone — or the outline — the brush carries.
       function addPreset(kind) {
         var W = _zpWin;
-        if (!W.brush) { UI.toast('Pick the zone this shape is, or draw the floor outline, first.', 'warn'); return; }
+        if (!W.brush) { UI.toast('Pick the ' + SUBJ.codeWord + ' this shape is, or draw the ' + SUBJ.outlineWord + ', first.', 'warn'); return; }
         snap();
         var w = ZP_W * 0.34, h = H() * 0.34;
         var pts = zpPreset(kind, w, h);
@@ -36036,9 +36415,9 @@
         var W = _zpWin, d = W.draft, hh = H();
         var all = allCodes();
         var sel = selShape();
-        var mine = zpUsers(tr, W.plateId);
-        var refs = zpRefsFor(tr, floor, W.plateId);
-        var others = floors.filter(function (f) { return f.id !== floor.id; });
+        var mine = SUBJ.users(W.plateId);
+        var refs = SUBJ.refs(W.plateId);
+        var others = SUBJ.others();
 
         var shapes = d.polys.map(function (q) {
           var on = (W.sel === q.id);
@@ -36116,9 +36495,8 @@
 
         wrap.innerHTML =
           '<div class="zpw-head">' +
-            '<span class="zpw-title">Floor plan — <b>' + e2(floor.name || floor.code || 'Floor') + '</b>' +
-              '<span class="zpw-sub">' + e2(GLABEL[tr] || tr) + ' · ' + (floor.zones || []).length + ' zone' +
-              ((floor.zones || []).length === 1 ? '' : 's') +
+            '<span class="zpw-title">' + e2(SUBJ.title) + ' — <b>' + e2(SUBJ.name) + '</b>' +
+              '<span class="zpw-sub">' + e2(SUBJ.sub) +
               (mine.length > 1 ? ' · shared by ' + mine.length + ' floors' : '') + '</span></span>' +
             '<span class="zpw-sp"></span>' +
             '<button class="pd-btn" id="zpw-x">Close</button>' +
@@ -36191,7 +36569,7 @@
               var _on = sel ? zpIsAll(sel.code) : zpIsAll(W.brush);
               return '<button class="zpw-sw all' + (_on ? ' on' : '') + '" data-zpb="' + e2(ZP_ALL) + '"' +
                   ' style="--zc:' + zpColor(ZP_ALL) + '" title="' + e2(sel
-                    ? 'Make this area the floor outline rather than a zone'
+                    ? ('Make this area the ' + SUBJ.outlineWord + ' rather than a ' + SUBJ.codeWord)
                     : 'Draw the floor’s own outline — use it when the slab is bigger than the zones on it, or when the floor has no zones at all') +
                   '">' + e2(ZP_ALL_LABEL) + '</button>' +
                 (_out.length
@@ -36217,12 +36595,12 @@
               var on = sel ? (zpNormCode(c) === zpNormCode(sel.code)) : (zpNormCode(c) === zpNormCode(W.brush));
               return '<button class="zpw-sw' + (zpIsAll(c) ? ' all' : '') + (on ? ' on' : '') + '" data-zpb="' + e2(c) + '"' +
                 ' style="--zc:' + zpColor(c) + '" title="' + e2(zpIsAll(c)
-                  ? (sel ? 'Make this area the floor outline' : 'Draw the floor’s own outline — use this when the floor is not split into zones')
+                  ? (sel ? ('Make this area the ' + SUBJ.outlineWord) : ('Draw the ' + SUBJ.outlineWord + (SUBJ.site ? ' — the extent of the site itself, drawn around the towers' : ' — use this when the floor is not split into zones')))
                   : (sel ? ('Make this area ' + c) : ('Draw the next area as ' + c))) + '">' +
                 e2(zpLabelOf(c)) + '</button>';
             }).join('') : '') +
             '</span>' +
-            (codes.length ? '' : '<span class="sbld-hint" style="margin:0;">This floor has no zones — draw its <b>outline</b> in the row below, or add zones in the step behind.</span>') +
+            (codes.length ? '' : '<span class="sbld-hint" style="margin:0;">' + (SUBJ.site ? 'This project has no towers named yet — add them on the <b>Tower</b> bar behind this window, then trace one area per tower.' : 'This floor has no zones — draw its <b>outline</b> in the row below, or add zones in the step behind.') + '</span>') +
             /* ---- the zone's colour -----------------------------------------------------
                ⚠️ IT SITS IN THIS ROW, not a row of its own, because it is the same question
                the row already asks — which zone is this — answered on the other axis. The
@@ -36296,6 +36674,10 @@
                 return miss.length ? '<span class="zpw-miss">not drawn: <b>' + e2(miss.join(', ')) + '</b></span>' : '';
               })() +
             '</div>' +
+            /* ⚠️ ABSENT on the site plan, not present-and-empty: there is exactly ONE site plan in
+               a project, so "also use this drawing on…" has nothing it could offer, and the
+               no-level band is a floor-scoped idea. */
+            (SUBJ.site ? '' :
             '<details class="zpw-apply">' +
               '<summary>Also use this plan elsewhere…' + (mine.length > 1 ? ' <b>' + mine.length + ' floors using it</b>' : '') +
                 (nolevOn() ? ' <b>+ the no-level band</b>' : '') + '</summary>' +
@@ -36319,7 +36701,7 @@
               }).join('') + '</div>' +
               (others.length ? '' : '<p class="sbld-hint" style="margin:6px 0 0;">This trade has no other floor to share with.</p>') +
               '<p class="sbld-hint" style="margin:6px 0 0;">One drawing, shared by reference — re-draw it once and everything ticked follows.</p>' +
-            '</details>' +
+            '</details>') +
           '</div>';
         wire();
       }
@@ -36471,7 +36853,7 @@
           // ⚠️ Recomputed here, NOT read from paint()'s `refs` - that is a different scope and
           // reading it threw on every click. Rebuilding it also means the reference cannot have
           // gone stale between the paint and the press.
-          var r = zpRefsFor(tr, floor, W.plateId).filter(function (x) { return x.plateId === W.ref; })[0];
+          var r = SUBJ.refs(W.plateId).filter(function (x) { return x.plateId === W.ref; })[0];
           if (!r) return;
           if (!confirm('Copy ' + r.plate.polys.length + ' area(s) from ' + r.label + ' onto this floor?')) return;
           snap();
@@ -36697,7 +37079,7 @@
           if (!f) return;
           if (f.size > 12 * 1024 * 1024) { UI.toast('That image is over 12 MB — export the plan smaller and try again.', 'error'); return; }
           _zpWin.busy = true; _zpWin.err = ''; paint();
-          var path = zpImgPath(floor.id), old = _zpWin.draft.img;
+          var path = zpImgPath(SUBJ.imgKey), old = _zpWin.draft.img;
           sb().storage.from(ZP_BUCKET).upload(path, f, { upsert: false, contentType: f.type || 'image/png' })
             .then(function (r) {
               _zpWin.busy = false;
@@ -36901,6 +37283,9 @@
       host.querySelectorAll('[data-zpopen]').forEach(function (b) {
         b.onclick = function () { openZonePlan(tr, b.dataset.zpopen); };
       });
+      // ⚠️ Wired next to the floor-plan buttons, because it is the same window — see openPlate.
+      var _sb = host.querySelector("#b-siteplan");
+      if (_sb) _sb.onclick = function () { openSitePlan(); };
       _locBarWire(host);
       var lvlSel = host.querySelector('#b-loclevel'); if (lvlSel) lvlSel.onchange = function () {
         // Changing the activity level changes every leaf uid, so links can't survive it — confirm first.
@@ -41152,6 +41537,18 @@
       zonePlanByLabel: function () { try { return cfg ? zpByLabel() : {}; } catch (e) { return {}; } },
       // Which edge of the plan the planner nominated as the FRONT, or null if nobody has said.
       zonePlanFront: function () { try { return cfg ? zpFront() : null; } catch (e) { return null; } },
+      /* ==== THE SITE DEVELOPMENT PLAN, AS THE STACKING READS IT ==========================
+         ⚠️⚠️ THE SAME SHAPE `zonePlanByLabel` HANDS OUT — `{ ar, polys:[{code,color,pts}] }`, points
+         normalised 0..1 — so the stacking's existing `_vsZpPolysOf` / `_vs3PolyMesh` place a TOWER
+         on the site exactly as they place a zone on a floor. A second geometry contract for the
+         same picture is how the site view and the tower views would come to disagree about which
+         way the project faces.
+         ⚠️ `null`, not `{}`, when nobody has drawn one: "no site plan" and "a site plan with
+         nothing on it" are different answers, and the stacking's Site view has to be able to say
+         which it is rather than drawing an empty world.
+         ⚠️ Deep-copied by shapeOfBag, same rule as the floor plates: a caller that mutated this
+         would be editing the planner's setup from another module. */
+      sitePlan: function () { try { return cfg ? zpSiteOf(cfg) : null; } catch (e) { return null; } },
       /* ⚠️⚠️ THE COLD-OPEN PATH. The Vertical Stacking is usually reached WITHOUT the Schedule
          Setup tab ever having been opened, and until now that meant the traced floor plan simply
          did not exist as far as the card was concerned. This reads the saved setup row directly.
@@ -41164,7 +41561,7 @@
          same drawing and saved in the same row, so fetching it separately would mean a second
          round trip for a fact that arrived with the first. */
       zonePlanFetch: async function (projectId) {
-        var EMPTY = { byLabel: {}, front: null };
+        var EMPTY = { byLabel: {}, front: null, site: null };
         if (!projectId) return EMPTY;
         try {
           var r = await sbc().from('schedule_builder').select('config,updated_at').eq('project_id', projectId);
@@ -41172,18 +41569,22 @@
           var rows = r.data.slice().sort(function (a, b) {
             return String(b.updated_at || '').localeCompare(String(a.updated_at || ''));
           });
-          var front = null;
+          var front = null, site = null;
           for (var i = 0; i < rows.length; i++) {
             var c = normalize(rows[i].config || {});
             var m = zpByLabelOf(c);
             // ⚠️ The newest setup that names a front wins, even if its plan is empty - the two
             // facts are independent and a planner may set one before drawing the other.
             if (!front) front = zpFrontOfBag(c.zonePlan);
+            // ⚠️ Same "newest that has one wins" rule as the front edge, and for the same reason:
+            // the site plan, the front and the floor plans are three independent facts saved in one
+            // row, and a planner may well have drawn one before the others.
+            if (!site) site = zpSiteOf(c);
             // ⚠️ The most recent setup may hold no plan while an older one does. Falling through
             // beats showing the guessed layout next to a plan the planner knows they drew.
-            if (Object.keys(m).length) return { byLabel: m, front: front };
+            if (Object.keys(m).length) return { byLabel: m, front: front, site: site };
           }
-          return { byLabel: {}, front: front };
+          return { byLabel: {}, front: front, site: site };
         } catch (e) { return EMPTY; }
       },
       /* ⚠️⚠️ THE COLD-OPEN GAP, CLOSED. `cfg` is only populated once the Schedule Setup tab has

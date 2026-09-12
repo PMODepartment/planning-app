@@ -102,6 +102,47 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### A master site development plan, and the Vertical Stacking's Site view (2026-09-12) — ethanrobles10
+
+Owner: *"if defined the floor plan of each tower, then there should be like a master site development
+plan to showcase all towers. and then link that schedule to the vertical stacking. propose how and
+where you would define the plan showcasing the site dev plan (showing all towers orientation and
+location)."*
+
+**Where it is defined:** Schedule Setup → **Floors & Zones → the `Site plan…` button on the tower
+bar**. That bar is the only place in the app that enumerates the towers, and the site plan is a
+statement *about that list*. Not on a floor row: a floor plan is per trade and per floor, a site plan
+is one drawing for the whole project.
+
+**How it is stored:** as **one more plate** in the existing `cfg.zonePlan` bag, filed under a
+reserved key (`'site'`) exactly as the un-levelled band is, with every polygon's `code` a **tower
+name** instead of a zone code. Nothing in the schema, the normaliser, the save path or the GC had to
+learn about it; it inherits the image upload, presets, undo, copy/paste and the colour bag for free.
+⚠️ A separate `cfg.sitePlan` store was the obvious alternative and it is the wrong one — two
+normalisers, two GC rules and two places for "the drawing of this project" to live.
+
+**One tracing window, two subjects** — never two windows. What is being traced is named in a subject
+descriptor (`zpSubjFloor` / `zpSubjSite`) and the window reads it instead of `floor` and `tr`, so the
+site plan reuses ~900 lines rather than copying them.
+
+**The link:** a **Site** scope joins Per trade / Per tower / Consolidated and draws every tower at
+its traced footprint, as tall as its own storey count, shaded by its own progress. ⚠️ It is a MODEL,
+not a second renderer — `_vs3Build` already draws named cells at traced positions, so the site view
+is that picture with the plate set to the site drawing. Its one structural addition is `cellH`, a
+per-cell height multiplier (1 everywhere else, where the maths is the identity).
+
+⚠️ The button is **absent** without a site plan, and the view is **3D only** — a section cannot show
+a plan. The footer names the trap: a tower the plan does not name keeps its slot on the wrap grid, so
+it is on the site in the wrong place, looking exactly like one that was traced.
+
+⚠️ **Not verified signed in, and that is the main caveat.** The anon key has no grants, so no site
+plan has been saved or read back and the 3D site card has never been rendered. The storage contract,
+the name join, the fit arithmetic and the geometry were measured against the shipped code in
+gitignored harnesses (40 assertions); the wiring between them is argued, not measured.
+
+`MODULE_V` → `20260912d`. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
 ### 2026-09-12 — Every module swept signed in: the first live API baseline
 
 Follow-on to the vendor-view fix, which was invisible until somebody opened a console. **No file
