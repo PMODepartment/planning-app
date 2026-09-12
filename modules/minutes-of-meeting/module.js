@@ -2229,6 +2229,13 @@ window.MinutesOfMeeting = (function () {
   // button — creating the next meeting here PROMOTES it into a brand-new
   // series, per the owner's own rule: "if current meeting is non-recurring,
   // hitting the carry over button will make the meeting a recurring one."
+  // ⚠️⚠️ 2026-09-12 round 2 — this modal asks ONLY for what genuinely differs
+  // meeting to meeting: the next date/time, and — when promoting a plain
+  // meeting — whether the new series is Regular or Irregular. Title, venue,
+  // meeting link and attendees are NEVER asked here any more; they, the
+  // agenda and the still-open minutes are all silently carried forward in
+  // createNextOccurrence, per the owner's own wording ("other fields no need
+  // to ask, just copy previous details").
   function openNextMeetingModal(opts) {
     opts = opts || {};
     var sch = opts.schedId ? SCHEDULES.find(function (x) { return x.id === opts.schedId; }) : null;
@@ -2237,17 +2244,13 @@ window.MinutesOfMeeting = (function () {
     var defTitle = (sch && sch.title) || (seed && seed.title) || '';
     var next = sch ? schedNextOccurrence(sch, momToday()) : null;
     var defDate = opts.presetDate || next || (seed ? plusDaysISO(seed.meeting_date, 7) : momToday());
-    var defVenue = (seed && seed.venue) || '';
-    var defLink = (seed && seed.meeting_link) || '';
-    // ⚠️ ITEM 8 (2026-09-12) — carrying over always defaults start/end time
-    // from the SEED meeting, whichever branch (regular or irregular) is
-    // taken — "other details ... will be carried over."
-    var defStart = (seed && seed.start_time) || '';
-    var defEnd = (seed && seed.end_time) || '';
-    var reqIds = (seed && seed.attendees_required && seed.attendees_required.ids) || [];
-    var reqText = (seed && seed.attendees_required && seed.attendees_required.text) || '';
-    var optIds = (seed && seed.attendees_optional && seed.attendees_optional.ids) || [];
-    var optText = (seed && seed.attendees_optional && seed.attendees_optional.text) || '';
+    // ⚠️ ITEM 1 — for an EXISTING series, a recurring meeting happens at the
+    // same time every occurrence, so the default is the SCHEDULE's own time
+    // first (set once, in the Add-meeting modal's Schedule tile — see item 3)
+    // and only falls back to the seed meeting's own time for an older
+    // schedule that predates that field.
+    var defStart = (sch && sch.start_time) || (seed && seed.start_time) || '';
+    var defEnd = (sch && sch.end_time) || (seed && seed.end_time) || '';
     // ⚠️ The frequency's default weekday comes from the SEED meeting's own
     // date, not a bare Monday — a meeting that has always fallen on a
     // Wednesday should not be promoted into a Monday series.
@@ -2258,73 +2261,90 @@ window.MinutesOfMeeting = (function () {
         '<button class="pd-modal-close" data-close>&times;</button></div>' +
       '<div class="pd-modal-body">' +
         (isRecur
+          // ⚠️ ITEM 1 (2026-09-12 round 2) — "ask only for the next date and
+          // time. other fields no need to ask, just copy the previous
+          // details including schedule, attendees, title, agenda, open
+          // minutes." The schedule itself is untouched (schedIdToUse stays
+          // the existing series); nothing else in this dialog can change it.
           ? '<p class="il-mom-note">Creates the next occurrence of <b>' + Fmt.esc(defTitle || '(untitled)') +
-            '</b>, and carries forward whatever is still open from the last one.</p>'
-          // ⚠️ ITEM 8 (2026-09-12) — the wording no longer assumes a fixed
-          // repeat pattern: promoting a plain meeting can become a REGULAR
-          // series (pick how often it repeats) or an IRREGULAR one (no fixed
-          // pattern — just this next date each time you carry it over).
+            '</b> — same schedule, venue, attendees and agenda, carrying forward whatever is still ' +
+            'open. Only the date and time can differ.</p>' +
+            '<div class="il-form-row">' +
+              '<div class="pd-field" style="flex:1 1 150px;"><label>Date</label>' +
+                '<input class="pd-input" type="date" id="il-nx-date" value="' + dateVal(defDate) + '"></div>' +
+              '<div class="pd-field" style="flex:1 1 120px;"><label>Start time</label>' +
+                '<input class="pd-input" type="time" id="il-nx-start" value="' + Fmt.esc(defStart) + '"></div>' +
+              '<div class="pd-field" style="flex:1 1 120px;"><label>End time</label>' +
+                '<input class="pd-input" type="time" id="il-nx-end" value="' + Fmt.esc(defEnd) + '"></div>' +
+            '</div>'
+          // ⚠️ ITEM 2 — "ask for schedule: if regular or irregular. if
+          // regular, ask for start date, end date, frequency as usual. ask
+          // also for next date. if irregular, just ask for next date and
+          // time. other fields no need to ask, just copy previous details
+          // including title, agenda, attendees, open minutes."
           : '<p class="il-mom-note">Creates the next meeting and carries forward whatever is still open ' +
-            'from this one. <b>This also makes it a recurring meeting.</b></p>') +
-        '<div class="il-form-row">' +
-          '<div class="pd-field" style="flex:2 1 200px;"><label>Title</label>' +
-            '<input class="pd-input" id="il-nx-title" value="' + Fmt.esc(defTitle) + '"></div>' +
-          '<div class="pd-field" style="flex:1 1 150px;"><label>Date</label>' +
-            '<input class="pd-input" type="date" id="il-nx-date" value="' + dateVal(defDate) + '"></div>' +
-        '</div>' +
-        // ⚠️ ITEM 8 — "just ask for next meeting date and time." Start/end
-        // time were missing from this modal entirely before now; they carry
-        // forward from the seed meeting like venue/link/attendees already do.
-        '<div class="il-form-row">' +
-          '<div class="pd-field" style="flex:1 1 120px;"><label>Start time</label>' +
-            '<input class="pd-input" type="time" id="il-nx-start" value="' + Fmt.esc(defStart) + '"></div>' +
-          '<div class="pd-field" style="flex:1 1 120px;"><label>End time</label>' +
-            '<input class="pd-input" type="time" id="il-nx-end" value="' + Fmt.esc(defEnd) + '"></div>' +
-          (isRecur ? '' :
-            '<div class="pd-field" style="flex:1 1 170px;"><label>Schedule</label>' +
-              '<select class="pd-select" id="il-nx-regularity">' +
-                '<option value="regular">Regular — repeats on a pattern</option>' +
-                '<option value="irregular">Irregular — no fixed pattern</option>' +
-              '</select></div>') +
-        '</div>' +
-        (isRecur ? '' :
-          '<div class="il-form-row" id="il-nx-freqwrap">' +
-            '<div class="pd-field" style="flex:1 1 220px;"><label>Repeats</label>' +
-              '<select class="pd-select" id="il-nx-freq">' +
+            'from this one — same title, venue, attendees and agenda. <b>This also makes it a ' +
+            'recurring meeting.</b></p>' +
+            '<div class="il-form-row">' +
+              '<div class="pd-field" style="flex:1 1 220px;"><label>Schedule</label>' +
+                '<select class="pd-select" id="il-nx-regularity">' +
+                  '<option value="regular">Regular — repeats on a pattern</option>' +
+                  '<option value="irregular">Irregular — no fixed pattern</option>' +
+                '</select></div>' +
+            '</div>' +
+            // Regular only: Series start/end date + Frequency + rule fields.
+            '<div class="il-form-row" id="il-nx-schedwrap">' +
+              '<div class="pd-field" style="flex:1 1 150px;"><label>Series start date *</label>' +
+                '<input class="pd-input" type="date" id="il-nx-sstart" value="' + dateVal((seed && seed.meeting_date) || momToday()) + '"></div>' +
+              '<div class="pd-field" style="flex:1 1 150px;"><label>Series end date (optional)</label>' +
+                '<input class="pd-input" type="date" id="il-nx-send"></div>' +
+            '</div>' +
+            '<div class="il-form-row" id="il-nx-freqwrap">' +
+              '<div class="pd-field" style="flex:1 1 220px;"><label>Frequency *</label><select class="pd-select" id="il-nx-freq">' +
                 FREQUENCIES.map(function (f) { return '<option value="' + f.key + '">' + f.label + '</option>'; }).join('') +
               '</select></div>' +
-          '</div>' +
-          '<div class="il-form-row" id="il-nx-rulewrap">' +
-            scheduleRuleFieldsHTML({ frequency: FREQUENCIES[0].key, weekday: seedWeekday }) +
-          '</div>') +
-        '<div class="il-form-row">' +
-          '<div class="pd-field" style="flex:1 1 200px;"><label>Venue</label><input class="pd-input" id="il-nx-venue" value="' + Fmt.esc(defVenue) + '"></div>' +
-          '<div class="pd-field" style="flex:1 1 200px;"><label>Meeting link</label><input class="pd-input" id="il-nx-link" value="' + Fmt.esc(defLink) + '" placeholder="https://…"></div>' +
-        '</div>' +
-        '<div class="pd-field"><label>Required attendees</label>' + peoplePickerHTML('nx-req', reqIds, reqText, false) + '</div>' +
-        '<div class="pd-field"><label>Optional attendees</label>' + peoplePickerHTML('nx-opt', optIds, optText, false) + '</div>' +
+            '</div>' +
+            '<div class="il-form-row" id="il-nx-rulewrap">' +
+              scheduleRuleFieldsHTML({ frequency: FREQUENCIES[0].key, weekday: seedWeekday }) +
+            '</div>' +
+            // Next date, always shown; Start/End time only for Irregular
+            // (a Regular series' time is set once, on the schedule itself,
+            // the same rule the Add-meeting modal's Schedule tile follows —
+            // it is not asked again per occurrence).
+            '<div class="il-form-row">' +
+              '<div class="pd-field" style="flex:1 1 150px;"><label>Date *</label>' +
+                '<input class="pd-input" type="date" id="il-nx-date" value="' + dateVal(defDate) + '"></div>' +
+              '<div class="pd-field" id="il-nx-timewrap" style="flex:1 1 120px;" hidden><label>Start time</label>' +
+                '<input class="pd-input" type="time" id="il-nx-start" value="' + Fmt.esc(defStart) + '"></div>' +
+              '<div class="pd-field" id="il-nx-timeendwrap" style="flex:1 1 120px;" hidden><label>End time</label>' +
+                '<input class="pd-input" type="time" id="il-nx-end" value="' + Fmt.esc(defEnd) + '"></div>' +
+            '</div>') +
       '</div>' +
       '<div class="pd-modal-footer">' +
         '<button class="pd-btn" data-close>Cancel</button>' +
         '<button class="pd-btn pd-btn-primary" id="il-nx-create">Create meeting</button>' +
       '</div>');
-    wireModalChrome(m, 640);
-    wirePeople(m.el, null);
+    wireModalChrome(m, 560);
     var freqSel = m.el.querySelector('#il-nx-freq');
     if (freqSel) freqSel.onchange = function () {
       var wrap = m.el.querySelector('#il-nx-rulewrap');
       if (wrap) wrap.innerHTML = scheduleRuleFieldsHTML({ frequency: freqSel.value, weekday: seedWeekday });
     };
-    // ⚠️ ITEM 8 — "if irregular, no need for the schedule input group" (the
-    // same rule item 7 applies to the Add-meeting modal, applied here to the
-    // promotion form): Repeats + its rule fields disappear the moment
-    // Irregular is chosen, and reappear if switched back to Regular.
+    // ⚠️ ITEM 2 — Regular shows the schedule fields and hides the time
+    // fields (time lives on the schedule, asked once); Irregular is the
+    // exact opposite — no schedule input group at all, just the next
+    // date AND time.
     var regSel = m.el.querySelector('#il-nx-regularity');
     if (regSel) regSel.onchange = function () {
       var isIrregular = regSel.value === 'irregular';
-      var freqWrap = m.el.querySelector('#il-nx-freqwrap'), ruleWrap = m.el.querySelector('#il-nx-rulewrap');
+      var schedWrap = m.el.querySelector('#il-nx-schedwrap'), freqWrap = m.el.querySelector('#il-nx-freqwrap'),
+        ruleWrap = m.el.querySelector('#il-nx-rulewrap'), timeWrap = m.el.querySelector('#il-nx-timewrap'),
+        timeEndWrap = m.el.querySelector('#il-nx-timeendwrap');
+      if (schedWrap) schedWrap.hidden = isIrregular;
       if (freqWrap) freqWrap.hidden = isIrregular;
       if (ruleWrap) ruleWrap.hidden = isIrregular;
+      if (timeWrap) timeWrap.hidden = !isIrregular;
+      if (timeEndWrap) timeEndWrap.hidden = !isIrregular;
     };
     var create = m.el.querySelector('#il-nx-create');
     if (create) create.onclick = function () { createNextOccurrence(m, opts.schedId, seed, sch); };
@@ -2339,23 +2359,29 @@ window.MinutesOfMeeting = (function () {
   async function createNextOccurrence(m, schedId, seed, sch) {
     var root = m.el;
     var g = function (id) { var e = root.querySelector('#' + id); return e ? e.value : ''; };
-    var title = g('il-nx-title').trim() || '(untitled)';
     var dateV = g('il-nx-date');
     if (!dateV) { UI.toast('Pick a date for the next meeting.', 'warn'); return; }
-    var venue = g('il-nx-venue').trim(), link = g('il-nx-link').trim();
-    // ⚠️ ITEM 8 (2026-09-12) — start/end time carry across from the seed
-    // meeting (see openNextMeetingModal's defStart/defEnd) but are editable
-    // here like everything else in this modal.
-    var startT = g('il-nx-start'), endT = g('il-nx-end');
-    var reqRoot = root.querySelector('[data-people="nx-req"]'), optRoot = root.querySelector('[data-people="nx-opt"]');
-    var reqIds = reqRoot ? idsOf(reqRoot) : [], reqText = reqRoot ? textOf(reqRoot) : '';
-    var optIds = optRoot ? idsOf(optRoot) : [], optText = optRoot ? textOf(optRoot) : '';
+    // ⚠️ 2026-09-12 round 2 — title/venue/link/attendees/agenda are NEVER
+    // read from this form any more (it doesn't ask for them): they are
+    // copied straight from the seed meeting (or, for title, the schedule
+    // when one already exists) — "other fields no need to ask, just copy
+    // previous details."
+    var title = (sch && sch.title) || (seed && seed.title) || '(untitled)';
+    var venue = (seed && seed.venue) || '', link = (seed && seed.meeting_link) || '';
+    var reqIds = (seed && seed.attendees_required && seed.attendees_required.ids) || [];
+    var reqText = (seed && seed.attendees_required && seed.attendees_required.text) || '';
+    var optIds = (seed && seed.attendees_optional && seed.attendees_optional.ids) || [];
+    var optText = (seed && seed.attendees_optional && seed.attendees_optional.text) || '';
     var btn = root.querySelector('#il-nx-create');
     if (btn) btn.disabled = true;
+    // ⚠️ ITEM 1 — for an EXISTING series, time is asked (`#il-nx-start`/`-end`
+    // always render there); the fields further down (isIrregular) fill it in
+    // for the promotion path instead.
+    var startT = schedId ? g('il-nx-start') : '', endT = schedId ? g('il-nx-end') : '';
     try {
       var schedIdToUse = schedId;
       if (!schedIdToUse) {
-        // ⚠️ ITEM 8 — "ask if regular or irregular; if irregular, no need for
+        // ⚠️ ITEM 2 — "ask if regular or irregular; if irregular, no need for
         // the schedule input group." Mirrors item 7's Add-meeting choice:
         // Irregular writes no frequency/rule fields at all, just the fact
         // that this is now a recurring (but patternless) series.
@@ -2373,9 +2399,15 @@ window.MinutesOfMeeting = (function () {
         };
         if (isIrregular) {
           payload.frequency = 'irregular';
+          // ⚠️ ITEM 2 — "if irregular, just ask for next date and time": the
+          // time fields DO render for this branch (see openNextMeetingModal's
+          // regSel.onchange), unlike the regular branch below.
+          startT = g('il-nx-start'); endT = g('il-nx-end');
         } else {
           var freq = g('il-nx-freq') || FREQUENCIES[0].key;
           payload.frequency = freq;
+          payload.start_date = g('il-nx-sstart') || payload.start_date;
+          payload.end_date = g('il-nx-send') || null;
           if (freq === 'weekly') {
             payload.weekday = +g('il-sf-weekday') || 0;
             payload.interval_n = Math.max(1, +g('il-sf-interval') || 1);
@@ -2385,7 +2417,13 @@ window.MinutesOfMeeting = (function () {
           } else {
             payload.day_of_month = Math.max(1, Math.min(31, +g('il-sf-dom') || 1));
           }
+          // ⚠️ ITEM 2 — a Regular series is NOT asked for a time (it repeats
+          // at one fixed time, set once — see item 3's Add-meeting Schedule
+          // tile); it is silently carried from the seed meeting instead, the
+          // same as venue/attendees/agenda below.
+          startT = (seed && seed.start_time) || ''; endT = (seed && seed.end_time) || '';
         }
+        payload.start_time = startT || null; payload.end_time = endT || null;
         var schIns = await sb().from('mom_schedules').insert(payload).select().single();
         if (schIns.error) throw schIns.error;
         SCHEDULES.push(schIns.data);
@@ -2409,10 +2447,10 @@ window.MinutesOfMeeting = (function () {
         start_time: startT || null, end_time: endT || null,
         attendees_required: { ids: reqIds, text: reqText },
         attendees_optional: { ids: optIds, text: optText },
-        // ⚠️ ITEMS 8/9 (2026-09-12) — "other details ... including agenda
-        // ... will be carried over": the seed's own AGENDA (the topic-headline
-        // jsonb list `meeting_minutes.agenda`, distinct from its `mom_items`
-        // rows — those are what `momCarryOver` below brings across as the
+        // ⚠️ ITEMS 1/2 — "carry over previous details including agenda": the
+        // seed's own AGENDA (the topic-headline jsonb list
+        // `meeting_minutes.agenda`, distinct from its `mom_items` rows —
+        // those are what `momCarryOver` below brings across as the
         // still-open minutes) travels forward the same way venue/link/
         // attendees do.
         agenda: (seed && seed.agenda) || null,
@@ -2568,12 +2606,23 @@ window.MinutesOfMeeting = (function () {
         // rule fields. A one-time meeting's own date/time questions moved
         // into the "Date and Venue" tile below instead of sitting in an
         // otherwise-empty box.
+        // ⚠️ ITEM 3 (2026-09-12 round 2) — "the Schedule input group must
+        // only contain start and end dates, time, frequency and must only
+        // be for recurring meetings." A recurring meeting happens at ONE
+        // fixed time every occurrence, so that time is asked HERE, once, as
+        // part of defining the series — not per occurrence. (The previous
+        // round's note claiming "each occurrence's own start/end time is set
+        // once it exists" is superseded by this and removed.)
         '<div class="il-mom-sectile" id="il-am-schedtile" hidden><h4 class="il-mom-sechead">Schedule</h4>' +
         '<div class="il-form-row">' +
           '<div class="pd-field" style="flex:1 1 150px;"><label>Series start date *</label>' +
             '<input class="pd-input" type="date" id="il-am-sstart" value="' + dateVal(momToday()) + '"></div>' +
           '<div class="pd-field" style="flex:1 1 150px;"><label>Series end date (optional)</label>' +
             '<input class="pd-input" type="date" id="il-am-send"></div>' +
+          '<div class="pd-field" style="flex:1 1 120px;"><label>Start time *</label>' +
+            '<input class="pd-input" type="time" id="il-am-schedstart"></div>' +
+          '<div class="pd-field" style="flex:1 1 120px;"><label>End time *</label>' +
+            '<input class="pd-input" type="time" id="il-am-schedend"></div>' +
         '</div>' +
         '<div class="il-form-row">' +
           '<div class="pd-field" style="flex:1 1 220px;"><label>Frequency *</label><select class="pd-select" id="il-am-freq">' +
@@ -2581,13 +2630,6 @@ window.MinutesOfMeeting = (function () {
           '</select></div>' +
         '</div>' +
         '<div class="il-form-row" id="il-sf-rulewrap">' + scheduleRuleFieldsHTML({ frequency: FREQUENCIES[0].key }) + '</div>' +
-        // ⚠️ Each occurrence's own start/end time is set once it exists, in
-        // the meeting view (momDetailHTML's own Schedule tile) — asking for
-        // it here, before a recurring series has any occurrences of its own
-        // dates, is asking a question this form cannot yet give a true answer
-        // to for anything past the first meeting.
-        '<p class="il-mom-note">Each occurrence\'s own start/end time is set on the meeting itself, ' +
-          'once it exists.</p>' +
         '</div>' +   /* end Schedule tile */
 
         '<div class="il-mom-sectile"><h4 class="il-mom-sechead">Date and Venue</h4>' +
@@ -2704,6 +2746,12 @@ window.MinutesOfMeeting = (function () {
     if (g('il-am-regularity') === 'irregular') return '';
     if (!g('il-am-freq')) return 'Frequency is required.';
     if (!g('il-am-sstart')) return 'Series start date is required.';
+    // ⚠️ ITEM 3 (2026-09-12 round 2) — a Regular series' start/end time now
+    // lives in the Schedule tile itself (`il-am-schedstart`/`-schedend`, not
+    // the one-time-meeting `il-am-start`/`-end`), and is required there too —
+    // one fixed time for every occurrence, asked once.
+    if (!g('il-am-schedstart')) return 'Start time is required.';
+    if (!g('il-am-schedend')) return 'End time is required.';
     // ⚠️ Weekday/"Which" only exist in the DOM for the frequencies that use
     // them (scheduleRuleFieldsHTML renders a different field set per
     // frequency) — validated only when actually present, so a monthly-date
@@ -2760,7 +2808,13 @@ window.MinutesOfMeeting = (function () {
     // needed during initial add") — a meeting that hasn't happened yet has
     // nothing to record; the Detail editor's own Recording field is where it
     // belongs once the meeting exists, whether one-time or a series occurrence.
-    var startT = g('il-am-start'), endT = g('il-am-end');
+    // ⚠️ ITEM 3 (2026-09-12 round 2) — a recurring meeting's time comes from
+    // the SCHEDULE tile (`il-am-schedstart`/`-schedend`, asked once for the
+    // whole series), never the one-time-meeting row (`il-am-start`/`-end`,
+    // which sits inside `#il-am-datetimewrap` and is hidden — and therefore
+    // blank — while Recurring is checked).
+    var startT = isRecur ? g('il-am-schedstart') : g('il-am-start');
+    var endT = isRecur ? g('il-am-schedend') : g('il-am-end');
     if (saveBtn) saveBtn.disabled = true;
     try {
       if (isRecur) {
@@ -3108,7 +3162,12 @@ window.MinutesOfMeeting = (function () {
           '<datalist id="il-mom-typelist">' + momTypeDatalistOptions() + '</datalist></div>' +
       '</div></div>' +   /* end Details tile */
 
-      '<div class="il-mom-sectile"><h4 class="il-mom-sechead">Schedule</h4>' +
+      // ⚠️ ITEM 4 (2026-09-12 round 2) — "the date, planned start and finish
+      // time and actual start and finish time should be combined with the
+      // venue group as date and venue." The separate Schedule and Venue
+      // tiles this meeting view carried are now ONE tile; no field, id, or
+      // writer changed — only which box each one renders inside.
+      '<div class="il-mom-sectile"><h4 class="il-mom-sechead">Date and Venue</h4>' +
       '<div class="il-form-row">' +
         '<div class="pd-field" style="flex:1 1 140px;"><label>Date</label><input class="pd-input" type="date" id="il-mom-date" value="' + (dateVal(mom.meeting_date)) + '"' + d + '></div>' +
         '<div class="pd-field" style="flex:1 1 110px;"><label>Start time</label>' +
@@ -3127,9 +3186,7 @@ window.MinutesOfMeeting = (function () {
           '<input class="pd-input" type="time" id="il-mom-astime" value="' + Fmt.esc(mom.actual_start_time || '') + '"' + d + '></div>' +
         '<div class="pd-field" style="flex:1 1 110px;"><label>Actual finish</label>' +
           '<input class="pd-input" type="time" id="il-mom-aetime" value="' + Fmt.esc(mom.actual_end_time || '') + '"' + d + '></div>' +
-      '</div></div>' +   /* end Schedule tile */
-
-      '<div class="il-mom-sectile"><h4 class="il-mom-sechead">Venue</h4>' +
+      '</div>' +
       '<div class="il-form-row">' +
         '<div class="pd-field" style="flex:1 1 160px;"><label>Venue</label>' +
           '<input class="pd-input" id="il-mom-venue" value="' + Fmt.esc(mom.venue || '') + '"' + d + '></div>' +
@@ -3138,7 +3195,7 @@ window.MinutesOfMeeting = (function () {
           '<input class="pd-input" id="il-mom-link" value="' + Fmt.esc(mom.meeting_link || '') + '" placeholder="https://…"' + d + '></div>' +
         '<div class="pd-field" style="flex:1 1 200px;"><label>Recording</label>' +
           '<input class="pd-input" id="il-mom-rec" value="' + Fmt.esc(mom.recording_url || '') + '" placeholder="https://… (optional)"' + d + '></div>' +
-      '</div></div>' +   /* end Venue tile */
+      '</div></div>' +   /* end Date and Venue tile */
 
       '<div class="il-mom-sectile"><h4 class="il-mom-sechead">Attendees</h4>' +
       // ⚠️ ITEM #20 — three attendee tiers, each the same hybrid ids+text

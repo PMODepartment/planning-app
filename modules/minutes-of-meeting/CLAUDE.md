@@ -1,5 +1,60 @@
 # Module: minutes-of-meeting
 
+## 2026-09-12 (c) — Carry-over asks only for what differs; the Schedule tile gets its own time; Date and Venue merge in the meeting view
+
+Owner's four-item refinement of the previous round's Regular/Irregular work. **No migration.**
+
+1. **"if meeting is already recurring, when carrying over meeting, ask only for the next date and
+   time. other fields no need to ask, just copy the previous details including schedule, attendees,
+   title, agenda, open minutes."** `openNextMeetingModal`'s `isRecur` branch drops Title, Venue,
+   Meeting link and the Required/Optional attendee pickers entirely — it now asks for **Date, Start
+   time, End time** and nothing else. `createNextOccurrence` reads title/venue/link/attendees
+   straight off `sch`/`seed` instead of DOM inputs that no longer exist; the schedule itself
+   (`schedIdToUse`) is untouched, since this branch never touches `mom_schedules` at all.
+2. **"if meeting is not recurring, when carrying over meeting, ask for schedule: if regular or
+   irregular. if regular, ask for start date, end date, frequency as usual. ask also for next date.
+   if irregular, just ask for next date and time. other fields no need to ask, just copy previous
+   details including title, agenda, attendees, open minutes."** The `!isRecur` (promotion) branch
+   drops the same fields (Title/Venue/Link/Attendees). What remains: a **Schedule** select
+   (Regular/Irregular); **Regular** shows Series start date, Series end date, Frequency + rule
+   fields, plus a **Date** field for the next meeting — no time; **Irregular** shows only Date +
+   Start time + End time. ⚠️⚠️ A Regular series' time is not asked here at all — it is silently
+   carried from the seed meeting's own `start_time`/`end_time`, the same as venue/attendees, since a
+   Regular series' fixed meeting time is now captured once, on the schedule itself (item 3).
+3. **"the Schedule input group must only contain start and end dates, time, frequency and Must only
+   be for recurring meetings."** `openAddMeetingModal`'s `#il-am-schedtile` gains its own **Start
+   time \* / End time \*** fields (new ids `il-am-schedstart`/`il-am-schedend`, distinct from the
+   one-time-meeting row's `il-am-start`/`il-am-end`, which live in a different tile and would
+   otherwise collide) — required, validated in `validateAddMeeting`. ⚠️⚠️ **This reverses the
+   previous round's own reasoning** ("each occurrence's own start/end time is set on the meeting
+   itself, once it exists" — deleted along with the note paragraph that said so): a recurring
+   meeting happens at ONE fixed time every occurrence, so asking for it once, as part of defining
+   the series, is more honest than asking a fresh instance every time an occurrence is created.
+   `saveAddMeeting` reads `isRecur ? g('il-am-schedstart') : g('il-am-start')` (and the `-end`
+   equivalent) so the right field feeds both the schedule's own `start_time`/`end_time` and the
+   first occurrence's (item 5 from the previous round, unchanged).
+4. **"the date, planned start and finish time and actual start and finish time should be combined
+   with the venue group as date and venue."** `momDetailHTML`'s separate **Schedule** tile (Date,
+   Start time, End time, Actual start, Actual finish) and **Venue** tile (Venue, Location, Meeting
+   link, Recording) merge into one **Date and Venue** tile — no field, id, or writer changed, only
+   which box each renders inside. Unlike item 3, this is the per-MEETING Detail view, unconditional
+   on recurring/non-recurring — every meeting's own record shows one merged tile.
+
+### Verified
+`node --check` clean; CSS unchanged this round (357/357 braces, no edits to `module.css`); every new
+id (`il-am-schedstart`, `il-am-schedend`, `il-nx-schedwrap`, `il-nx-timewrap`, `il-nx-timeendwrap`,
+`il-nx-sstart`, `il-nx-send`) appears exactly once in the template it belongs to; `il-nx-date`/
+`il-nx-start`/`il-nx-end` appear twice in source but inside mutually-exclusive `isRecur` ternary
+branches, so at most one set ever renders into the DOM at once; repo-wide grep confirms zero
+remaining references to the removed `il-nx-title`/`il-nx-venue`/`il-nx-link`/`nx-req`/`nx-opt`.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment. No live carry-over
+(existing series, or promoting a plain meeting, regular or irregular) or "+ Add meeting" save against
+real data.
+
+`module.js?v=` → `20260912i` (`module.css` unchanged this round, stays `20260912h`). No `MODULE_V`
+bump — no shared asset touched.
+
 ## 2026-09-12 (b) — Table-view drag, the item-level carry-over button retired, an icon-only Present toggle, required meeting type, a real first occurrence for a new series, and Regular/Irregular scheduling
 
 Owner's nine-item list, all against this module. **No migration.**
