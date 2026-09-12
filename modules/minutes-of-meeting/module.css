@@ -182,13 +182,16 @@
 .il-mom-lrow { cursor: pointer; }
 .il-mom-lrow:hover td { background: var(--pd-bg); }
 
-/* ---- Item 1 (2026-09-11 round): Meetings List drag-to-reorder ------------
-   Pointer Events (module.js momWireReorder), one gesture for mouse, touch and
-   pen — the identical mechanism and class names issues-lessons/module.css
-   uses, kept as its own copy here per MODULE_CONTRACT.md (no shared-file
-   drag component exists, and each module owns its own CSS). */
-.il-mom-dragth { width: 22px; text-align: center; }
-.il-mom-dragcell { width: 22px; text-align: center; }
+/* ---- Drag-to-reorder (Pointer Events) --------------------------------------
+   ⚠️ ROUND 3 — the Meetings List no longer drags at all: "no need to allow
+   drag to reorder. by default, sort by date with favorite always at top."
+   The ⋮⋮ manual-order column, its "Sorted by X — drag reorder disabled" note
+   and its own drag wiring are gone (see momSortedRows/wireBrowse). This
+   generic drag-handle/drop-mark set SURVIVES because the Minutes list inside
+   a single meeting's Detail view now uses it instead (momDragGripHTML/
+   wireMinuteDrag) — the identical mechanism and class names
+   issues-lessons/module.css uses, kept as its own copy here per
+   MODULE_CONTRACT.md (no shared-file drag component exists). */
 .il-reorderable { cursor: grab; }
 .il-dragging { opacity: .45; }
 .il-drop-before { box-shadow: inset 0 2px 0 0 var(--pd-red); }
@@ -199,14 +202,6 @@
   touch-action: none;   /* ⚠️ load-bearing on touch — see the note in module.js */
 }
 .il-draghandle:hover { color: var(--pd-muted); }
-.il-mom-sortnote {
-  display: flex; align-items: center; gap: 8px; padding: 8px 2px;
-  font-size: var(--pd-fs-sm); color: var(--pd-muted);
-}
-.il-mom-sortnote button {
-  border: 0; background: none; padding: 0; color: var(--pd-red);
-  font-size: inherit; font-weight: 700; cursor: pointer; text-decoration: underline;
-}
 .il-mom-draft {
   display: inline-block; font-size: var(--pd-fs-micro); font-weight: 700; letter-spacing: .06em;
   padding: 2px 7px; border-radius: 3px;
@@ -288,11 +283,16 @@
 }
 .il-mom-favbtn:hover { color: var(--pd-warn-text); }
 .il-mom-favbtn.on { color: #D4A017; }
-/* The series page's own labelled pd-btn copy ("★ Favorited" / "☆ Favorite"
-   text) — the Detail toolbar's own star is icon-only now, see .il-mom-favbig
-   below. */
 button.il-mom-favbtn { font-size: var(--pd-fs-sm); }
 button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
+/* ⚠️ ROUND 3 — "there should be a column with read-only tickbox if meeting
+   is recurring or not". A plain disabled checkbox, centred in its own
+   narrow column — read-only by construction (nothing here can toggle it;
+   see momHistorySectionHTML/createNextOccurrence for the only way a meeting
+   actually becomes recurring). */
+.il-mom-rectd { width: 76px; text-align: center; }
+.il-mom-rectd input[type="checkbox"] { cursor: not-allowed; }
+.il-mom-opencell { white-space: nowrap; }
 /* Individual View item 5 (round 2, owner: "remove the favorite label
    entirely, just make the star icon larger") — the Detail toolbar's star,
    icon-only, no text, no button chrome, bigger than the list row's bare
@@ -316,11 +316,6 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
   background: var(--pd-card); border-bottom: 1px solid var(--pd-line);
 }
 .il-mom-stickytitle { font-size: var(--pd-fs-md); font-weight: 700; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.il-mom-recur {
-  display: inline-block; font-size: var(--pd-fs-micro); font-weight: 700; letter-spacing: .06em;
-  padding: 2px 7px; border-radius: 3px; background: var(--pd-bg); color: var(--pd-muted);
-  border: 1px solid var(--pd-line);
-}
 /* Add-meeting modal's star (round 2, owner: "remove the Favorite label AND
    the rectangular button — just show a plain star"). ⚠️ NO border, NO
    background, NO radius here — the earlier pass had drawn a bordered 34px
@@ -432,15 +427,18 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
   .il-mom-wk-scroll { max-height: 420px; }
 }
 
-/* ---- Series page (item 6) --------------------------------------------------
-   A recurring schedule's own details, then every meeting actually held
-   under it — reusing the same pd-card rhythm as everything else. */
-.il-mom-seriescard { margin-bottom: 14px; }
-.il-mom-seriesheadrow { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: flex-start; }
-.il-mom-seriestitle { margin: 0 0 4px; font-size: var(--pd-fs-lg); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.il-mom-seriesmeta { font-size: var(--pd-fs-sm); color: var(--pd-muted); }
-.il-mom-seriesacts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-.il-mom-seriespast h3 { margin: 0 0 10px; font-size: var(--pd-fs-base); text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); }
+/* ⚠️ ROUND 3 — the series page (.il-mom-seriescard/-seriesheadrow/-seriestitle/
+   -seriesmeta/-seriesacts/-seriespast, plus .il-mom-recur/.il-mom-schedpasti/
+   .il-mom-schedform/.il-mom-occform/.il-mom-schedform-acts below) is GONE —
+   there is no separate screen for a recurring schedule any more. Its
+   replacement, the "Meeting history" table on a recurring occurrence's own
+   Detail view, is styled just below (.il-mom-history). */
+.il-mom-history { margin-top: 16px; }
+.il-mom-history h4 { margin: 0 0 8px; font-size: var(--pd-fs-base); }
+.il-mom-histrow:not(.is-current) { cursor: pointer; }
+.il-mom-histrow:not(.is-current):hover td { background: var(--pd-bg); }
+.il-mom-histrow.is-current td { background: var(--pd-red-light); }
+.il-mom-histcur { font-size: var(--pd-fs-micro); color: var(--pd-muted); font-weight: 400; }
 
 /* ---- Agenda list (item 3's "+ Add meeting" modal) -------------------------
    DOM-driven, not a JS array — each row is a real input; add/remove just
@@ -518,19 +516,15 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
 .il-mt-linked {
   display: inline-block; margin-left: 4px; font-size: var(--pd-fs-xs); color: var(--pd-muted);
 }
-/* Individual View item 3 (round 2) — manual drag-to-reorder, replacing the
-   removed "sort by" control. A card wireMinuteDrag() can actually pick up
-   makes room for a small grip glyph at its top-left; the drag itself is
-   plain HTML5 drag events (module.js), this is only the affordance + the
-   two feedback states while one is in flight. */
-.il-mi-card[draggable="true"] { padding-left: 26px; cursor: grab; }
-.il-mi-draghandle {
-  position: absolute; left: 6px; top: 12px; width: 16px; text-align: center;
-  font-size: var(--pd-fs-base); line-height: 1; color: var(--pd-muted); cursor: grab; user-select: none;
-}
-.il-mi-card.is-dragging { opacity: .45; }
-.il-mi-card.drop-before { box-shadow: inset 0 3px 0 0 var(--pd-red); }
-.il-mi-card.drop-after { box-shadow: inset 0 -3px 0 0 var(--pd-red); }
+/* Individual View item 3 (round 2) / round 3 (Pointer Events) — manual
+   drag-to-reorder over the minute cards, using the shared `.il-draghandle`/
+   `.il-reorderable`/`.il-dragging`/`.il-drop-before`/`.il-drop-after` set
+   above (module.js wireMinuteDrag/momDragGripHTML). A card that CAN drag
+   makes room for the grip glyph at its top-left; `data-reorder-row` sits
+   directly on `.il-mi-card`, so the generic drop-mark rules above apply to
+   it with no card-specific override needed. */
+.il-mi-card.has-drag { padding-left: 26px; }
+.il-mi-card > .il-draghandle { position: absolute; left: 6px; top: 12px; }
 
 .il-mi-meta { display: grid; gap: 8px; margin-bottom: 8px; grid-template-columns: repeat(2, 1fr); }
 @media (min-width: 700px)  { .il-mi-meta { grid-template-columns: repeat(3, 1fr); } }
@@ -933,40 +927,14 @@ div.il-mom-acrow { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--p
 .il-mom-mgrouptbl tr[data-openmom] { cursor: pointer; }
 .il-mom-mgroup > .il-mom-note { padding: 10px 14px; margin: 0; }
 
-/* ---- Items #19/#22: recurring meeting schedules --------------------------- */
-.il-mom-schedpanel { margin-bottom: 16px; padding: 14px 16px; border-radius: 10px; background: var(--pd-card); border: 1px solid var(--pd-line); }
-.il-mom-schedhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
-.il-mom-schedhead h4 { margin: 0; font-size: var(--pd-fs-base); text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); }
-.il-mom-schedbody { display: flex; gap: 14px; align-items: flex-start; }
-.il-mom-schedlist { display: flex; flex-direction: column; gap: 6px; flex: 1 1 260px; min-width: 220px; }
-.il-mom-schedbody.has-sel .il-mom-schedlist { flex: 0 0 260px; }
-.il-mom-schedright { flex: 1 1 320px; min-width: 0; padding: 12px 14px; border-radius: var(--pd-radius-md); background: var(--pd-bg); border: 1px solid var(--pd-line); }
-.il-mom-schedrow {
-  display: flex; flex-direction: column; gap: 2px; text-align: left;
-  padding: 8px 10px; border-radius: var(--pd-radius-md); border: 1px solid var(--pd-line);
-  background: var(--pd-bg); cursor: pointer; font-family: var(--pd-font); width: 100%;
-}
-.il-mom-schedrow:hover { border-color: var(--pd-red); }
-.il-mom-schedrow.active { border-color: var(--pd-red); background: var(--pd-red-light); }
-.il-mom-schedrow-title { font-weight: 700; font-size: var(--pd-fs-base); color: var(--pd-ink); }
-.il-mom-schedrow-meta, .il-mom-schedrow-next { font-size: var(--pd-fs-xs); color: var(--pd-muted); }
-.il-mom-schedright-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
-.il-mom-schedright-acts { display: flex; gap: 6px; flex: none; }
-.il-mom-schedright-sub { margin: 14px 0 8px; font-size: var(--pd-fs-xs); text-transform: uppercase; letter-spacing: .04em; color: var(--pd-muted); }
-.il-mom-schedpast { display: flex; flex-direction: column; gap: 4px; }
-.il-mom-schedpasti {
-  display: flex; justify-content: space-between; gap: 10px; text-align: left;
-  padding: 6px 8px; border-radius: 6px; border: 1px solid transparent; background: none;
-  cursor: pointer; font-family: var(--pd-font); font-size: var(--pd-fs-sm); color: var(--pd-ink); width: 100%;
-}
-.il-mom-schedpasti:hover { background: var(--pd-card); border-color: var(--pd-line); }
-.il-mom-schedform, .il-mom-occform {
-  margin-bottom: 10px; padding: 10px 12px; border-radius: var(--pd-radius-md);
-  background: var(--pd-bg); border: 1px dashed var(--pd-line);
-}
-.il-mom-schedform-acts { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+/* ⚠️ ROUND 3 — the always-visible schedule panel this block styled
+   (.il-mom-schedpanel/-schedhead/-schedbody/-schedlist/-schedright/-schedrow/
+   -schedpast/-schedpasti/-schedform/-occform/-schedform-acts) had already
+   been dead CSS since the series page superseded it (2026-09-02) — grepped
+   module.js for every one of these classes and none remain. Removed rather
+   than left as rot now that this exact area is being touched anyway.
 
-/* A PLANNED (not-yet-recorded) occurrence chip on the calendar — dashed and
+   A PLANNED (not-yet-recorded) occurrence chip on the calendar — dashed and
    muted, distinct from the solid ACTUAL chips its cell may also carry. */
 .il-mom-calchip.is-planned { background: none; border: 1px dashed var(--pd-line); color: var(--pd-muted); }
 .il-mom-calchip.is-planned:hover { border-color: var(--pd-red); color: var(--pd-red); }
