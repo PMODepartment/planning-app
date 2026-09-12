@@ -38,6 +38,8 @@ window.Pormac = (function () {
   var engine = null;              // the WebLLM engine instance, once loaded
   var engineModelId = null;
   var sending = false;
+  var view = 'chat';              // 'chat' | 'history'
+  var PROJECTS = [];              // cached from loadProjects(), for labelling History rows
 
   function sb() { return AppAuth.getSB(); }
   function $(id) { return document.getElementById(id); }
@@ -57,7 +59,10 @@ window.Pormac = (function () {
     // to say why — "the buttons don't work" with no visible cause. Wiring
     // first means a project-list failure can only ever cost the project
     // picker, never the chat controls.
-    $('pmc-new').onclick = function () { conversationId = null; chatHistory = []; renderMessages(); };
+    // "New chat" has to work from EITHER tab — a planner reading History who
+    // hits it should land back in a blank Chat, not have the reset happen
+    // invisibly behind the pane they're still looking at.
+    $('pmc-new').onclick = function () { conversationId = null; chatHistory = []; switchView('chat'); renderMessages(); };
     $('pmc-send').onclick = onSend;
     $('pmc-input').addEventListener('keydown', function (e) {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSend(); }
@@ -66,6 +71,16 @@ window.Pormac = (function () {
       this.style.height = 'auto';
       this.style.height = Math.min(160, this.scrollHeight) + 'px';
     });
+
+    // Chat / History screen switcher — same `UI.tabsToDropdown` convention
+    // every other module's tab strip already uses, so it collapses into the
+    // compact dropdown trigger rather than staying a row of buttons. Wiring
+    // the real buttons is this module's job; the dropdown just proxies clicks
+    // to them and mirrors whichever one carries `.active`.
+    Array.prototype.forEach.call(document.querySelectorAll('.pmc-tab'), function (btn) {
+      btn.onclick = function () { switchView(btn.dataset.view); };
+    });
+    if (window.UI && UI.tabsToDropdown) UI.tabsToDropdown('.pmc-tabs');
 
     try {
       await loadProjects();
@@ -89,7 +104,7 @@ window.Pormac = (function () {
     // still exists in the database purely for `supabase/functions/pormac-chat`
     // (the hosted fallback) to lean on the same rule server-side; it is just
     // `is_approved()` now, not a per-user allow-list.
-    $('pmc-chrome').style.display = 'flex';
+    switchView('chat');
     renderTierBar();
     renderMessages();
 
@@ -106,6 +121,7 @@ window.Pormac = (function () {
 
   async function loadProjects() {
     var projects = await PDb.getProjects();
+    PROJECTS = projects; // cached so History rows can label a conversation's project without a second fetch
     var sel = $('pmc-project');
     pid = sessionStorage.getItem('pd_project') || null;
     sel.innerHTML = '<option value="">General (no project selected)</option>' +
@@ -114,6 +130,108 @@ window.Pormac = (function () {
           Fmt.esc(p.name) + '</option>';
       }).join('');
     UI.enhanceProjectSelect(sel);
+  }
+
+  // ==========================================================================
+  // Chat / History screens
+  // ==========================================================================
+  function switchView(v) {
+    view = v;
+    Array.prototype.forEach.call(document.querySelectorAll('.pmc-tab'), function (b) {
+      b.classList.toggle('active', b.dataset.view === v);
+    });
+    $('pmc-chrome').style.display = v === 'chat' ? 'flex' : 'none';
+    $('pmc-history').style.display = v === 'history' ? 'flex' : 'none';
+    if (v === 'history') renderHistory();
+  }
+
+  // Personal, not project-shared — RLS already scopes `select` on
+  // pormac_conversations to `created_by = auth.uid() or is_admin()`, so this
+  // reads across every project the planner has ever chatted about, not just
+  // the one currently selected, with each row saying which project it was.
+  async function renderHistory() {
+    var host = $('pmc-history');
+    host.innerHTML = '<div class="pmc-muted" style="padding:16px;">Loading…</div>';
+    try {
+      var { data, error } = await sb().from('pormac_conversations')
+        .select('id,project_id,title,updated_at')
+        .order('updated_at', { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      var rows = data || [];
+      if (!rows.length) {
+        host.innerHTML = '<div class="pmc-muted" style="padding:16px;">No past conversations yet — anything you send in Chat is saved here.</div>';
+        return;
+      }
+      host.innerHTML = rows.map(function (r) {
+        var proj = PROJECTS.filter(function (p) { return p.id === r.project_id; })[0];
+        return '<div class="pmc-hist-row" data-id="' + Fmt.esc(r.id) + '">' +
+          '<div class="pmc-hist-txt">' +
+            '<div class="pmc-hist-title">' + Fmt.esc(r.title || 'New conversation') + '</div>' +
+            '<div class="pmc-hist-meta">' + Fmt.esc(proj ? proj.name : 'General') + ' · ' + Fmt.esc(Fmt.date(r.updated_at)) + '</div>' +
+          '</div>' +
+          '<button type="button" class="pd-icon-btn pmc-hist-del" data-id="' + Fmt.esc(r.id) + '" ' +
+            'title="Delete this conversation" data-ico="trash" data-ico-size="14"></button>' +
+        '</div>';
+      }).join('');
+      if (window.Icons) Icons.hydrate(host);
+      Array.prototype.forEach.call(host.querySelectorAll('.pmc-hist-row'), function (row) {
+        row.onclick = function (e) {
+          if (e.target.closest('.pmc-hist-del')) return; // the delete button has its own handler below
+          openConversation(row.dataset.id);
+        };
+      });
+      Array.prototype.forEach.call(host.querySelectorAll('.pmc-hist-del'), function (btn) {
+        btn.onclick = function (e) { e.stopPropagation(); deleteConversation(btn.dataset.id); };
+      });
+    } catch (e) {
+      host.innerHTML = '<div class="pmc-muted" style="padding:16px;">Could not load past conversations (' +
+        Fmt.esc((e && e.message) || String(e)) + ').</div>';
+    }
+  }
+
+  async function openConversation(id) {
+    try {
+      var { data: conv, error: convErr } = await sb().from('pormac_conversations')
+        .select('id,project_id').eq('id', id).single();
+      if (convErr) throw convErr;
+      var { data: msgs, error: msgErr } = await sb().from('pormac_messages')
+        .select('role,content').eq('conversation_id', id).order('created_at', { ascending: true });
+      if (msgErr) throw msgErr;
+
+      conversationId = conv.id;
+      // A message row's own `role` check allows 'system' too, but nothing in
+      // this module ever WRITES one — only the shape chatHistory/promptMessages
+      // expects is kept.
+      chatHistory = (msgs || []).filter(function (m) { return m.role === 'user' || m.role === 'assistant'; })
+        .map(function (m) { return { role: m.role, content: m.content }; });
+
+      // Restore the project this conversation was grounded in — but only if
+      // it's still one the planner can see. A project they've since lost
+      // access to isn't in `#pmc-project`'s own option list, and forcing pid
+      // to it anyway would just have every context provider query a project
+      // RLS refuses; General is the honest fallback there, not a query.
+      var sel = $('pmc-project');
+      var hasOption = conv.project_id && Array.prototype.some.call(sel.options, function (o) { return o.value === conv.project_id; });
+      pid = hasOption ? conv.project_id : null;
+      sel.value = pid || '';
+      sessionStorage.setItem('pd_project', pid || '');
+
+      switchView('chat');
+      renderMessages();
+    } catch (e) {
+      UI.toast('Pormac: could not open that conversation (' + ((e && e.message) || e) + ')', 'warn');
+    }
+  }
+
+  async function deleteConversation(id) {
+    if (!confirm('Delete this conversation? This cannot be undone.')) return;
+    var { error } = await sb().from('pormac_conversations').delete().eq('id', id);
+    if (error) { UI.toast('Pormac: could not delete that conversation (' + error.message + ')', 'warn'); return; }
+    // Deleting the one currently open in Chat drops it back to blank —
+    // its messages are gone (cascade delete), so there is nothing left to show.
+    if (id === conversationId) { conversationId = null; chatHistory = []; renderMessages(); }
+    renderHistory();
   }
 
   // ==========================================================================
@@ -480,6 +598,11 @@ window.Pormac = (function () {
           .select('id').single();
         if (error) throw error;
         conversationId = data.id;
+      } else {
+        // History sorts by `updated_at desc`, and nothing else in this table
+        // ever bumps it — without this an ongoing conversation would sink
+        // to the bottom of its own list the moment a newer one was created.
+        await sb().from('pormac_conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId);
       }
       await sb().from('pormac_messages').insert([
         { conversation_id: conversationId, role: 'user', content: userText },

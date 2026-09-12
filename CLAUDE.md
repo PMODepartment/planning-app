@@ -102,6 +102,23 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-12 — Pormac gets a real History tab, and "New chat" works from it too
+
+Owner: *"include already the char history in this build. fix also new chat so it should
+work."* Detail: [`modules/pormac/CLAUDE.md`](modules/pormac/CLAUDE.md).
+
+`Chat`/`History` is now a working two-tab switcher (via the shared `UI.tabsToDropdown()` —
+the reason the lone `Chat` tab was inert before is that helper refuses to run below two
+buttons). History lists every conversation the signed-in planner has ever had, across every
+project, with each row naming which one; clicking a row reopens it, restoring its project
+context when the planner can still see that project. Delete cascades to its messages.
+`persistTurn()` now bumps `pormac_conversations.updated_at` on every turn — it was declared,
+indexed and never once written, so History would have sorted every conversation by its
+creation time forever. "New chat" now also switches back to the Chat tab, since resetting the
+thread while on History was invisible.
+
+⚠️ Not verified signed in.
+
 ### 2026-09-12 — Pormac: "New chat" was never a click-handler race until it was
 
 Owner: *"chat and new chat buttons dont work. what are they supposed to do."* Detail:

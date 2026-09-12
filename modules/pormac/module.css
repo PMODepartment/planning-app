@@ -57,6 +57,22 @@
 .pmc-input { flex: 1; min-height: 40px; max-height: 160px; resize: none; }
 .pmc-hint { font-size: var(--pd-fs-micro, 10px); color: var(--pd-muted); padding: 0 2px 4px; text-align: center; }
 
+/* ---- History (past conversations) ---- */
+.pmc-history {
+  flex-direction: column; flex: 1; min-height: 0; overflow-y: auto;
+  max-width: 880px; width: 100%; margin: 0 auto; padding: 16px; gap: 6px;
+}
+.pmc-hist-row {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  border: 1px solid var(--pd-line); border-radius: var(--pd-radius, 4px); cursor: pointer;
+}
+.pmc-hist-row:hover { background: var(--pd-bg); }
+.pmc-hist-txt { flex: 1; min-width: 0; }
+.pmc-hist-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pmc-hist-meta { font-size: var(--pd-fs-micro, 10px); color: var(--pd-muted); }
+.pmc-hist-del { flex: none; }
+.pmc-hist-del:hover { color: var(--pd-bad-text, var(--pd-red)); }
+
 @media (max-width: 700px) {
   .pmc-msg { max-width: 94%; }
 }
