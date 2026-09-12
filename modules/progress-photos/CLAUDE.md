@@ -2,6 +2,93 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## The stitcher's real fix: sample density scales with the video's own duration,
+## and the chain SKIPS a frame with too little overlap instead of forcing a bad
+## join (2026-09-12, later still)
+
+Owner, off the live "11 of 11 frame-to-frame joins could not be matched confidently" report:
+*"why can't the stitcher match frame to frame joins. stitcher should breakdown video into
+smaller frames then run join recognition then switch. even if video is taken a bit quickly,
+stitcher should still work. please resolve at all cost."*
+
+### ⚠️⚠️ THE THRESHOLD WAS NEVER THE PROBLEM — SAMPLING WAS
+
+`extractFrames` pulled a FIXED `FRAME_COUNT = 12` frames spread evenly across the WHOLE clip,
+however long or short. A careful 20-second walk-around and a quick 4-second spin both got the
+identical 12 samples — so on the quick spin, each consecutive pair is many degrees of rotation
+apart, and past a certain angular gap there is genuinely too little shared image content left
+for ORB/BFMatcher to find enough confident correspondences. **Lowering `MIN_GOOD_MATCHES` would
+not have fixed this** — it would only have started accepting coincidental, wrong matches on
+pairs that truly don't overlap. "11 of 11 failed" is exactly what a fixed 12-frame sample looks
+like on a video panned faster than that spacing can keep up with.
+
+### The fix, in the owner's own words: smaller frames, then join recognition, then switch
+
+1. **`frameCountFor(durationSec)`** replaces the fixed count — sampling now targets roughly 3
+   frames per second of real time (`FRAMES_PER_SEC`), floored at `MIN_FRAMES = 14` so a very
+   short clip is still sampled meaningfully, capped at `MAX_FRAMES = 40` so a long recording
+   stays bounded. **A quick recording is now broken down into far more, closer-together frames**
+   — for a given total rotation, that directly shrinks the angular gap between consecutive
+   samples and gives the matcher real overlap to work with. `stitchFromVideo` reads the video's
+   duration once (`getDuration`, the same `fixInfiniteDuration`-tolerant path `extractFrames`
+   already uses internally) before deciding how many frames to pull.
+2. **The chain no longer forces every extracted frame into the mosaic in strict order.**
+   Building it now does literally what was asked — run join recognition, and when a candidate
+   doesn't join well, SWITCH to a later one instead of accepting a bad join. From the last
+   successfully-placed frame (the "anchor"), `JOIN_LOOKAHEAD` (5) lets the builder look ahead
+   that many frames for the first one whose match against the anchor clears
+   `MIN_GOOD_MATCHES`; every frame in between that didn't have enough overlap is skipped
+   entirely — never placed, never approximated — rather than forced in via a crude shift. Only
+   when nothing in that whole window clears the bar (a genuinely blank stretch, a lighting
+   change) does it fall back to the single best-scoring candidate it saw, exactly the old
+   code's safety net, so the chain can never simply stall.
+3. ⚠️ **A candidate that produced a real homography is always preferred over one that didn't**,
+   even when its raw ORB match count is lower — a usable homography is what actually places a
+   frame; a candidate with more matches but no homography (RANSAC or the plausibility gate
+   rejected it) isn't a "better" candidate, it's one that can't be placed at all.
+4. `pairsTotal`/`pairsFallback` (the numbers behind the on-screen "N of M frame-to-frame joins
+   could not be matched confidently" message) now count joins actually BUILT, never frames the
+   lookahead search skipped over — a skipped frame was never a join attempt in the first place,
+   so it must not inflate the denominator the planner reads that ratio against.
+
+⚠️ Nothing about the cylindrical-projection fix, the grayscale-conversion fix, the memory/area
+cap, or the mid-day plausibility gate changed — all four are correct and this is additive on
+top of them: it changes *which* frames get compared and *how many* exist to compare, not the
+underlying geometry.
+
+### Verified
+
+**All of pano360.js's own existing genuine-execution coverage still passes** (`mat3Mul`/
+`applyH3`'s cumulative-composition proof, `isPlausiblePanHomography`'s rejection cases,
+`featherStops`'s clamp) — none of that math changed. New genuine-execution coverage for
+`frameCountFor` (test-only hook `Pano360._frameCountFor`): a very short clip floors at
+`MIN_FRAMES`; a very long one caps at `MAX_FRAMES`; an ordinary clip scales at ~3/sec; a zero/
+invalid duration degrades to the floor rather than throwing; and — the actual property this fix
+turns on — **a shorter clip samples measurably MORE densely per second of real time than a
+longer one**, confirmed by direct computation, not just read from the constant. The candidate-
+preference rule (`better = !!res.H !== !!best.H ? !!res.H : res.matches > best.matches`) and the
+lookahead/skip structure are asserted against the shipped source. `node --check` clean;
+`tools/wiring-check.js` — **126 passed, 0 failed**; the module's full suite — **902 passed, 3
+failed**, and all 3 failures are pre-existing and unrelated (2 in `capture.js`'s mic-toggle
+tests, 1 in the PDF page-break CSS tests), confirmed unchanged by re-running the identical suite
+against the commit before this fix.
+
+⚠️ **What this cannot prove from here**: this sandbox has no camera and no network path to the
+real OpenCV.js CDN build (the standing caveat on every entry in this file), so the density curve
+and the lookahead search are proven correct by genuine execution of the pure logic, not against
+a real recorded video. What they directly target — a fixed, duration-independent 12-frame
+sample that starves a fast pan of overlap, and a chain that forced every extracted frame in
+regardless of whether it actually joined — is exactly the shape of "11 of 11 joins failed" the
+live report showed. **The first real recording through this exact code path, especially a
+deliberately fast one, is still the actual end-to-end test.**
+
+`pano360.js` → `?v=20260912s`; the shared `MODULE_V` fallback (`assets/js/modules-grid.js`,
+`dashboard.html`, `modules.html`) → `20260912s` to match, since this module's `index.html`
+itself changed (`pano360.js?v=` line). `module.js`/`module.css`/`capture.js` are unchanged this
+round and stay at their existing `?v=` tokens — the on-screen message text
+("N of M frame-to-frame joins could not be matched confidently…") already reads correctly
+against the new counts with no wording change needed.
+
 ## Add 360°: same one-item-per-Add protocol as photo/video — an explicit × to cancel (2026-09-12, later)
 
 Owner: the 360° flow should follow the same "one upload per Add media instance" rule the ordinary

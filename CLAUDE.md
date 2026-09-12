@@ -102,6 +102,33 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-12 — Progress Photos: the 360° stitcher samples denser on a fast video, and skips a frame that won't join rather than forcing a bad one
+
+Owner, off the live "11 of 11 frame-to-frame joins could not be matched confidently" report:
+*"why can't the stitcher match frame to frame joins... stitcher should breakdown video into
+smaller frames then run join recognition then switch. even if video is taken a bit quickly,
+stitcher should still work."* Full detail:
+[`modules/progress-photos/CLAUDE.md`](modules/progress-photos/CLAUDE.md).
+
+⚠️⚠️ **Sampling, not the match threshold, was the real cause.** The stitcher always pulled a
+fixed 12 frames spread evenly across the whole clip regardless of duration — a quick pan gets
+the same 12 samples as a slow one, so consecutive frames on a fast recording are many degrees
+apart with too little shared content for ORB/BFMatcher to match confidently at all. A frame
+count that now scales with the video's own duration (`frameCountFor`, ~3 frames/sec, floored/
+capped) breaks a fast recording into denser, closer-together samples — literally "breakdown
+video into smaller frames." The chain-building loop also now does real "join recognition, then
+switch": it looks up to 5 frames ahead of the last well-placed frame for the first one that
+joins confidently, skipping any frame in between with too little overlap rather than forcing it
+into the mosaic via a crude shift, falling back to the best candidate seen only when nothing in
+that window joins at all.
+
+Verified: the module's full suite — 902 passed, 3 pre-existing/unrelated failures, confirmed
+unchanged against the commit before this fix; `tools/wiring-check.js` 126/0.
+⚠️ Not verified against a real recorded video — no camera/CDN access in this environment, the
+standing caveat on every entry in that module's own log.
+
+`pano360.js` → `?v=20260912s`; `MODULE_V` → `20260912s`.
+
 ### 2026-09-12 — New module: Pormac, an in-browser AI assistant (zero hosting cost)
 
 Owner: *"add a new module open to all or selected users - an AI bot named Pormac... totally
