@@ -34,6 +34,22 @@
 //   (still returned — a low-confidence panorama beats losing the walk-
 //   around entirely) rather than silently publishing a bad stitch as if it
 //   were fine.
+//
+// ⚠️⚠️ Item 4 (2026-09-11, third round — "explore using open source Hugin
+// to stitch frames"): Hugin was investigated and is NOT integrated, for a
+// concrete reason rather than a preference — it is a native, desktop C++
+// application (wxWidgets UI, its own `nona`/`enblend`/`align_image_stack`
+// command-line tools under the hood), with no WebAssembly build and no JS
+// bindings anywhere. There is nothing to load into a browser tab; running
+// it here would mean shipping a server that runs Hugin's binaries, which
+// is a different architecture from "this module does its own client-side
+// processing" and a materially larger undertaking than this pass's scope.
+// What IS done instead is a real, verifiable improvement reachable inside
+// the EXISTING OpenCV.js-primitives pipeline: seam FEATHERING (see
+// `featheredFrame` below), which is the specific defect a from-scratch
+// primitives-based stitcher (ours, and the one this replaced) is prone to
+// that a tool like Hugin's `enblend` step exists to fix — a visible hard
+// edge where one frame's contribution stops and the next one's starts.
 // ============================================================================
 
 window.Pano360 = (function () {
@@ -251,6 +267,57 @@ window.Pano360 = (function () {
     return [X / W, Y / W];
   }
 
+  // ---------------------------------------------------------- seam feather --
+  // Item 4 (2026-09-11, third round — "stitching of video frames is not
+  // good"): the compositing loop below used to draw every warped frame at
+  // FULL opacity and let 'destination-over' decide, per pixel, which one
+  // whole frame wins in an overlap — a hard, visible cut at the exact
+  // boundary between the two source images. `featheredFrame` instead fades
+  // each frame's OWN left/right edges to transparent before it's warped, so
+  // two adjacent frames blend smoothly across their shared overlap instead
+  // of snapping from one to the other. FEATHER_FRAC is a fraction of the
+  // frame's own width — 12% is enough to soften a seam without eating so
+  // much of a narrow-overlap frame that its centre starts fading too.
+  var FEATHER_FRAC = 0.12;
+  // Pure, and exported (Pano360._featherStops) so a wrong clamp here — which
+  // would silently feather too much of a frame, or not enough to matter —
+  // can be genuinely checked rather than only read from the drawing code
+  // that uses it.
+  function featherStops(width, marginFrac) {
+    var marginPx = Math.max(4, Math.round(width * marginFrac));
+    marginPx = Math.min(marginPx, Math.floor(width / 2));
+    return { marginPx: marginPx, stopFrac: marginPx / width };
+  }
+  // Returns a NEW canvas — the source frame's own pixels, unchanged, with an
+  // alpha gradient composited over its left and/or right edge via
+  // 'destination-in'. `featherLeft`/`featherRight` are false for the very
+  // first/last frame's OUTER edge specifically — there is nothing on the
+  // far side of the mosaic for that edge to blend into, and fading it would
+  // leave a transparent void at the panorama's own extremity rather than a
+  // seam. When neither edge needs feathering the source is returned as-is.
+  function featheredFrame(srcCanvas, featherLeft, featherRight, marginFrac) {
+    if (!featherLeft && !featherRight) return srcCanvas;
+    var w = srcCanvas.width, h = srcCanvas.height;
+    var stops = featherStops(w, marginFrac);
+    var out = document.createElement('canvas');
+    out.width = w; out.height = h;
+    var octx = out.getContext('2d');
+    octx.drawImage(srcCanvas, 0, 0);
+    var mask = document.createElement('canvas');
+    mask.width = w; mask.height = h;
+    var mctx = mask.getContext('2d');
+    var grad = mctx.createLinearGradient(0, 0, w, 0);
+    grad.addColorStop(0, featherLeft ? 'rgba(255,255,255,0)' : 'rgba(255,255,255,1)');
+    grad.addColorStop(stops.stopFrac, 'rgba(255,255,255,1)');
+    grad.addColorStop(1 - stops.stopFrac, 'rgba(255,255,255,1)');
+    grad.addColorStop(1, featherRight ? 'rgba(255,255,255,0)' : 'rgba(255,255,255,1)');
+    mctx.fillStyle = grad;
+    mctx.fillRect(0, 0, w, h);
+    octx.globalCompositeOperation = 'destination-in';
+    octx.drawImage(mask, 0, 0);
+    return out;
+  }
+
   // Frame-by-frame progress, reported via `onProgress(fraction)` — a 12-
   // frame stitch is real, if modest, CPU work, and a caller (module.js's
   // upload modal) needs something to show while it runs.
@@ -310,23 +377,29 @@ window.Pano360 = (function () {
       var mctx = mosaic.getContext('2d');
       for (var idx2 = 0; idx2 < frames.length; idx2++) {
         var placed = mat3Mul(shift, placements[idx2]);
-        var dstMat = null, Hmat = null;
+        var dstMat = null, Hmat = null, featherMat = null;
         try {
+          // Item 4: warp a FEATHERED copy of the frame (its own left/right
+          // edges faded to transparent, except the mosaic's own outer
+          // edges — see featheredFrame's own comment), not the raw pixels.
+          // ORB feature matching above still runs against the pristine
+          // `rawMats` — feathering only ever touches what gets DRAWN.
+          var feathered = featheredFrame(frames[idx2], idx2 > 0, idx2 < frames.length - 1, FEATHER_FRAC);
+          featherMat = cv.imread(feathered);
           Hmat = cv.matFromArray(3, 3, cv.CV_64F, placed);
           dstMat = new cv.Mat();
-          cv.warpPerspective(rawMats[idx2], dstMat, Hmat, new cv.Size(outW, outH), cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar(0, 0, 0, 0));
+          cv.warpPerspective(featherMat, dstMat, Hmat, new cv.Size(outW, outH), cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar(0, 0, 0, 0));
           var tmp = document.createElement('canvas');
           tmp.width = outW; tmp.height = outH;
           cv.imshow(tmp, dstMat);
-          // Earlier frames stay authoritative where they overlap a later
-          // one — destination-over only fills pixels the mosaic doesn't
-          // already have, matching the original stitcher's own rule.
-          mctx.globalCompositeOperation = idx2 === 0 ? 'source-over' : 'destination-over';
+          // Painted in ORDER, later frames on top of earlier ones — their
+          // feathered edges blend smoothly into whatever is already there
+          // instead of the earlier hard destination-over cut.
           mctx.drawImage(tmp, 0, 0);
-          mctx.globalCompositeOperation = 'source-over';
         } finally {
           if (Hmat) Hmat.delete();
           if (dstMat) dstMat.delete();
+          if (featherMat) featherMat.delete();
         }
         if (onProgress) onProgress(0.5 + (idx2 / (frames.length - 1)) * 0.5);
       }
@@ -359,6 +432,7 @@ window.Pano360 = (function () {
     _fixInfiniteDuration: fixInfiniteDuration,
     _homographyBetween: homographyBetween,
     _mat3Mul: mat3Mul,
-    _applyH3: applyH3
+    _applyH3: applyH3,
+    _featherStops: featherStops
   };
 })();

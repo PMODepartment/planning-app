@@ -2669,6 +2669,7 @@ window.ProgressPhotos = (function () {
   function closeLightbox() {
     $('pp-lightbox').hidden = true;
     var vidEl = $('pp-lb-video'); if (vidEl) { vidEl.pause(); vidEl.src = ''; }
+    teardownLbPano();
   }
   function stepLightbox(d) {
     if (!lightboxIds.length) return;
@@ -2697,8 +2698,15 @@ window.ProgressPhotos = (function () {
     // available" -- media_type stays '360' for both, distinguishing it
     // from an ordinary photo only in which element shows it.
     var isPano = r.media_type === '360';
-    var imgEl = $('pp-lb-img'), vidEl = $('pp-lb-video'), panoWrap = $('pp-lb-panowrap'), panoImg = $('pp-lb-pano');
+    var imgEl = $('pp-lb-img'), vidEl = $('pp-lb-video'), panoWrap = $('pp-lb-panowrap');
+    // Item 5 (2026-09-11, third round): the panorama is now shown through a
+    // real Pannellum viewer, mounted into #pp-lb-pano-viewer once the
+    // full-resolution image resolves below; #pp-lb-pano-standin is the
+    // plain thumbnail-backed <img> that stands in the instant the lightbox
+    // opens, exactly like the ordinary-photo path already does.
+    var panoStandin = $('pp-lb-pano-standin'), panoViewerEl = $('pp-lb-pano-viewer');
     lightboxPanoHeadingDeg = 0;   // a fresh photo/step always resets the followed heading
+    teardownLbPano();            // never leave a stale viewer/yaw-poll running past this photo
     if (isVideo) {
       if (imgEl) { imgEl.hidden = true; imgEl.src = ''; }
       if (panoWrap) panoWrap.hidden = true;
@@ -2706,8 +2714,9 @@ window.ProgressPhotos = (function () {
     } else if (isPano) {
       if (imgEl) { imgEl.hidden = true; imgEl.src = ''; }
       if (vidEl) { vidEl.hidden = true; vidEl.pause(); vidEl.src = ''; }
-      if (panoWrap) { panoWrap.hidden = false; panoWrap.scrollLeft = 0; }
-      if (panoImg) panoImg.src = u || '';   // the representative frame stands in until the wide panorama is signed
+      if (panoWrap) panoWrap.hidden = false;
+      if (panoViewerEl) panoViewerEl.innerHTML = '';
+      if (panoStandin) { panoStandin.hidden = false; panoStandin.src = u || ''; }   // stands in until the viewer mounts, below
     } else {
       if (vidEl) { vidEl.hidden = true; vidEl.pause(); vidEl.src = ''; }
       if (panoWrap) panoWrap.hidden = true;
@@ -2737,13 +2746,39 @@ window.ProgressPhotos = (function () {
       if (!$('pp-lightbox') || $('pp-lightbox').hidden) return;
       u = full;
       if (isVideo) { if (vidEl) vidEl.src = full; }
-      else if (isPano) { if (panoImg) panoImg.src = full; }
+      else if (isPano) {
+        if (panoStandin) panoStandin.src = full;
+        // Pannellum needs the image's real aspect ratio for `vaov` (see
+        // mountPannellumViewer's own comment) — read off the stand-in
+        // <img> we just pointed at the same full-res file, once it has
+        // actually decoded (a cache hit resolves this synchronously via
+        // `.complete`; a cold load waits for `onload`).
+        var mountNow = function () {
+          if (lightboxIds[lightboxAt] !== openedId) return;   // the lightbox moved on before this resolved
+          if (!$('pp-lightbox') || $('pp-lightbox').hidden) return;
+          var hOverW = (panoStandin && panoStandin.naturalWidth) ? (panoStandin.naturalHeight / panoStandin.naturalWidth) : 0.35;
+          if (panoViewerEl) {
+            lbPanoViewer = mountPannellumViewer(panoViewerEl, full, hOverW);
+            if (lbPanoViewer) {
+              if (panoStandin) panoStandin.hidden = true;
+              lbPanoStopYawPoll = startPanoYawPoll(lbPanoViewer, function (yaw) {
+                lightboxPanoHeadingDeg = yaw;
+                var rr = byId(lightboxIds[lightboxAt]);
+                if (rr && rr.media_type === '360' && lightboxKeyPlanVisible) paintKeyPlanOverlay(rr);
+              });
+            }
+          }
+        };
+        if (panoStandin) { if (panoStandin.complete) mountNow(); else panoStandin.onload = mountNow; }
+      }
       else { if (imgEl) imgEl.src = full; }
     });
     // Item 5 (overnight batch): exposure/brightness/contrast now render
-    // live via CSS filter on video too, not just photos -- CSS `filter`
-    // applies to a <video> element exactly the same way it does an <img>.
-    var adjFilterEl = isVideo ? vidEl : (isPano ? panoImg : imgEl);
+    // live via CSS filter -- applied to the whole panorama WRAP for a 360
+    // row (a CSS filter composites everything rendered inside an element,
+    // WebGL canvas included, so this reaches the Pannellum viewer exactly
+    // as it did the old <img>), and to the <video>/<img> directly otherwise.
+    var adjFilterEl = isVideo ? vidEl : (isPano ? panoWrap : imgEl);
     if (adjFilterEl) adjFilterEl.style.filter = cssFilterFor(adjustmentsOf(r));
     $('pp-lb-cap').innerHTML =
       '<strong>' + Fmt.esc(r.view_name || r.description || 'Progress photo') + '</strong>' +
@@ -2794,7 +2829,7 @@ window.ProgressPhotos = (function () {
       adjBtn.onclick = function () {
         openAdjustEditor(u, r.adjustments || {}, async function (newAdj) {
           r.adjustments = newAdj;
-          var filterEl = isVideo ? vidEl : (isPano ? panoImg : imgEl);
+          var filterEl = isVideo ? vidEl : (isPano ? panoWrap : imgEl);
           if (filterEl) filterEl.style.filter = cssFilterFor(newAdj);
           var w = await tolerantWrite({ table: TABLE, op: 'update', id: r.id, patch: { adjustments: newAdj, updated_at: new Date().toISOString() } });
           if (!w.ok) UI.toast(w.error && w.error.message || 'Could not save adjustments', 'error');
@@ -2974,65 +3009,94 @@ window.ProgressPhotos = (function () {
     }
     setShown(true);
   }
-  // Item 4: drag-to-pan for the 360° viewer -- .pp-lb-panowrap is a plain
-  // overflow-x:auto strip (native touch swipe for free); this adds
-  // click-and-drag for a mouse and, on every scroll however it happened,
-  // updates lightboxPanoHeadingDeg and re-paints the key-plan cone so it
-  // keeps following the direction actually on screen.
-  // Item 7 (performance): the cone repaint is coalesced to at most once per
-  // animation frame, the same "raw high-frequency input event -> a dirty
-  // flag + a single rAF-driven repaint" discipline this app's own 360°
-  // cylindrical-viewer history already established -- a touch-scrolled
-  // strip firing its native 'scroll' event doesn't need a full
-  // BIM.coneWedgeSVGAt()+innerHTML rebuild for every one of them. The
-  // pointermove handler only WRITES scrollLeft; it never calls the repaint
-  // itself, since that write already fires the 'scroll' listener below.
-  // Generic drag-to-pan for an overflow-x:auto strip — pulled out of
-  // wirePanoDrag() below (2026-09-11, second round item 5: "preview should
-  // be navigable or operable as 360") so the 360°-upload modal's own
-  // stitched-panorama preview can reuse the EXACT same pan gesture the
-  // saved-photo lightbox viewer already has, rather than a second,
-  // independently-behaved widget. `onScrollFrac(frac)` is optional and, when
-  // given, is called at most once per animation frame with the strip's
-  // current scroll position as a 0..1 fraction — the same "raw high-frequency
-  // input -> a dirty flag + a single rAF-driven callback" discipline this
-  // app's own 360° viewer history already established, now shared rather
-  // than reimplemented per caller.
-  function wireDragPan(wrap, onScrollFrac) {
-    if (!wrap) return;
-    var dragging = false, startX = 0, startScroll = 0, rafId = null;
-    function fire() {
-      rafId = null;
-      if (!onScrollFrac) return;
-      var maxScroll = Math.max(1, wrap.scrollWidth - wrap.clientWidth);
-      onScrollFrac(wrap.scrollLeft / maxScroll);
-    }
-    function onScrollChange() {
-      if (rafId) return;
-      rafId = requestAnimationFrame(fire);
-    }
-    wrap.addEventListener('pointerdown', function (e) {
-      dragging = true; startX = e.clientX; startScroll = wrap.scrollLeft;
-      try { wrap.setPointerCapture(e.pointerId); } catch (err) {}
-    });
-    wrap.addEventListener('pointermove', function (e) {
-      if (!dragging) return;
-      wrap.scrollLeft = startScroll - (e.clientX - startX);
-    });
-    wrap.addEventListener('pointerup', function () { dragging = false; });
-    wrap.addEventListener('pointercancel', function () { dragging = false; });
-    wrap.addEventListener('scroll', onScrollChange);
+  // ============================================================================
+  // Item 5 (2026-09-11, third round): "viewing of 360 is also not good, use
+  // Pannellum for 360 viewer" -- REPLACES the earlier plain drag-to-pan
+  // strip (wireDragPan/wirePanoDrag, both deleted, not left dormant — a
+  // second panorama viewer is exactly the kind of drift this file's own
+  // history warns about) with a real WebGL panorama viewer, shared by both
+  // the saved-360°-photo lightbox and the 360°-upload preview (item 6)
+  // through this ONE mount function, so the two can never independently
+  // drift in how they configure the same library.
+  //
+  // ⚠️ Our stitched mosaic is a CYLINDRICAL panorama (pano360.js's own
+  // header comment), not a true equirectangular sphere. Pannellum's
+  // 'equirectangular' type still handles this correctly for a PARTIAL
+  // panorama via its own documented `haov`/`vaov` (horizontal/vertical
+  // angle of view) config -- exactly the mechanism it offers for an image
+  // that doesn't cover the full sphere. `haov: 360` assumes the capture
+  // guide's own instruction (a full walk-around) was followed; `vaov` is
+  // derived from the image's own aspect ratio, treating pixels as
+  // uniformly-spaced degrees in both directions -- the same assumption an
+  // equirectangular projection already makes, and the same "read a real
+  // property instead of a guessed constant" discipline this app's other
+  // pin/cone geometry already follows.
+  function mountPannellumViewer(container, imageUrl, heightOverWidth) {
+    if (!container || !window.pannellum) return null;
+    if (!container.id) container.id = 'pp-pnlm-' + Math.random().toString(36).slice(2);
+    var vaov = Math.min(140, Math.max(20, 360 * (heightOverWidth || 0.35)));
+    try {
+      return pannellum.viewer(container.id, {
+        type: 'equirectangular', panorama: imageUrl, haov: 360, vaov: vaov,
+        autoLoad: true, showZoomCtrl: true, showFullscreenCtrl: false, compass: false,
+        minHfov: 30, maxHfov: 120, hfov: 100
+      });
+    } catch (e) { return null; }
   }
-  // Item 4: drag-to-pan for the LIGHTBOX's 360° viewer specifically — wires
-  // the shared wireDragPan() onto #pp-lb-panowrap and, on every scroll
-  // however it happened, updates lightboxPanoHeadingDeg and re-paints the
-  // key-plan cone so it keeps following the direction actually on screen.
-  function wirePanoDrag() {
-    wireDragPan($('pp-lb-panowrap'), function (frac) {
-      lightboxPanoHeadingDeg = frac * 360;
-      var r = byId(lightboxIds[lightboxAt]);
-      if (r && r.media_type === '360' && lightboxKeyPlanVisible) paintKeyPlanOverlay(r);
-    });
+  // Item 4 (original): the key-plan cone still follows wherever the 360°
+  // viewer is currently looking. Pannellum's stable API has no continuous
+  // "view changed" event to subscribe to, so this polls `viewer.getYaw()`
+  // once per animation frame -- but only calls the DOM-touching callback
+  // when the yaw actually CHANGED since the last tick, the same "dirty
+  // flag, not an unconditional repaint" discipline item 7's own performance
+  // pass already established for this exact cone repaint (see that entry's
+  // rAF-coalescing note) -- an idle, unmoved view costs nothing beyond one
+  // cheap getter read per frame while the panorama is open.
+  function startPanoYawPoll(viewer, onYawChange) {
+    var raf = null, lastYaw = null;
+    function tick() {
+      var yaw = null;
+      try { yaw = viewer.getYaw(); } catch (e) {}
+      if (yaw != null && yaw !== lastYaw) { lastYaw = yaw; onYawChange(yaw); }
+      raf = requestAnimationFrame(tick);
+    }
+    raf = requestAnimationFrame(tick);
+    return function stop() { if (raf) { cancelAnimationFrame(raf); raf = null; } };
+  }
+  // Item 6 (2026-09-11, third round): "use the 360 viewer as both a
+  // preview and to select the thumbnail frame ... no need to have a
+  // separate preview and thumbnail selector" -- captures whatever the
+  // Pannellum viewer is CURRENTLY rendering, cropped to a fixed aspect
+  // ratio, as a real image Blob. Shared by open360Upload's own "Use this
+  // view as thumbnail" button and its automatic first-render capture.
+  // ⚠️ "standard 3:4 landscape ratio" is self-contradictory (3:4 is a
+  // PORTRAIT ratio) -- read as the standard 4:3 LANDSCAPE ratio the word
+  // "landscape" actually names; a thumbnail cropped from a landscape
+  // panorama view has no sensible reason to come out portrait-shaped.
+  var THUMB_ASPECT = 4 / 3;
+  function captureViewerThumbnail(containerEl, cb) {
+    try {
+      var srcCanvas = containerEl && containerEl.querySelector('canvas');
+      if (!srcCanvas || !srcCanvas.width) { cb(null); return; }
+      var sw = srcCanvas.width, sh = srcCanvas.height;
+      var cropW = sw, cropH = Math.round(sw / THUMB_ASPECT);
+      if (cropH > sh) { cropH = sh; cropW = Math.round(sh * THUMB_ASPECT); }
+      var sx = Math.round((sw - cropW) / 2), sy = Math.round((sh - cropH) / 2);
+      var out = document.createElement('canvas');
+      out.width = 640; out.height = Math.round(640 / THUMB_ASPECT);
+      var ctx = out.getContext('2d');
+      ctx.drawImage(srcCanvas, sx, sy, cropW, cropH, 0, 0, out.width, out.height);
+      out.toBlob(function (blob) { cb(blob); }, 'image/jpeg', 0.85);
+    } catch (e) { cb(null); }
+  }
+  var lbPanoViewer = null, lbPanoStopYawPoll = null;
+  // Torn down at the START of every paintLightbox() call (idempotent — a
+  // no-op when nothing is mounted), so stepping ←/→ between two 360 photos,
+  // or from a 360 photo to any other kind, can never leave a stale viewer
+  // instance or a stray yaw-poll rAF loop running behind what's now shown.
+  function teardownLbPano() {
+    if (lbPanoStopYawPoll) { lbPanoStopYawPoll(); lbPanoStopYawPoll = null; }
+    if (lbPanoViewer) { try { lbPanoViewer.destroy(); } catch (e) {} lbPanoViewer = null; }
   }
   // Round-2 item 4: drag the overlay's bottom-left corner to resize it —
   // pinned top/right, so only the WIDTH needs to change; the <img>'s own
@@ -5317,7 +5381,11 @@ window.ProgressPhotos = (function () {
       '<div class="pd-modal-header"><h3>Add a ' + nounSingular + '</h3>' +
         '<button class="pd-modal-close" data-close>×</button></div>' +
       '<div class="pp-form">' +
-        '<p class="pp-hint">One ' + nounSingular + ' per add — take or choose another to replace it.</p>' +
+        // Item 1 (2026-09-11, third round): the buttons row itself now hides
+        // once a file is staged (see renderStagedGrid's syncAddButtonsRow),
+        // so the hint no longer describes an auto-replace — it describes
+        // the new remove-then-add-again flow.
+        '<p class="pp-hint" id="pp-addhint">One ' + nounSingular + ' per add — remove the current one to choose another.</p>' +
         '<div class="pd-field" id="pp-filesfield"><label>' + nounPlural + '</label>' +
           // Item 1: "provide separate buttons for take photo/video and
           // upload photo/video" -- Take opens the in-app camera overlay
@@ -5335,7 +5403,12 @@ window.ProgressPhotos = (function () {
           // opens the ordinary file/photo picker for both kinds, where
           // `multiple` genuinely lets several files be picked in one go.
           // "Take" (capture.js) is the one deliberately single-shot path.
-          '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 8px;">' +
+          // Item 1 (2026-09-11, third round): this whole row is HIDDEN the
+          // moment a file is staged (renderStagedGrid), and reappears only
+          // once the staged item is removed via the card's own × button —
+          // "do not allow multiple uploads per add media" is now enforced
+          // by there being nothing left to click, not just by replacing.
+          '<div id="pp-addbtnsrow" style="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 8px;">' +
             '<button type="button" class="pd-btn" id="pp-take">Take ' + (isVideoKind ? 'Video' : 'Photo') + '</button>' +
             '<button type="button" class="pd-btn" id="pp-choosefiles">Upload ' + (isVideoKind ? 'Video' : 'Photo') + '</button>' +
           '</div>' +
@@ -5374,8 +5447,16 @@ window.ProgressPhotos = (function () {
     // entirely), which is the reported "the preview for the video ... is
     // not working". Every staged file now gets a real object URL and a
     // real preview element, image or video.
+    // Item 1 (2026-09-11, third round): the Take/Upload row is hidden while
+    // a file is staged, and reappears once the staged item is removed —
+    // hides/shows the SAME element every render so it can never drift out
+    // of sync with `stagedFiles.length`.
+    function syncAddButtonsRow() {
+      var row = $('pp-addbtnsrow'); if (row) row.style.display = stagedFiles.length ? 'none' : 'flex';
+    }
     function renderStagedGrid() {
       var grid = $('pp-stagedgrid'); if (!grid) return;
+      syncAddButtonsRow();
       grid.innerHTML = stagedFiles.map(function (f, i) {
         if (stagedUrls[i] === undefined) stagedUrls[i] = URL.createObjectURL(f);
         var url = stagedUrls[i];
@@ -5386,7 +5467,11 @@ window.ProgressPhotos = (function () {
         // Item 5: "extend feature of adjusting photo to videos and 360 ...
         // no need for mark-up for video" -- Adjust is offered for every
         // staged file; Markup only for a real image.
+        // Item 1 (2026-09-11, third round): a corner × removes the staged
+        // item — same fixed dark-scrim corner-overlay language as
+        // .pp-cardsel (top-left) / .pp-mkeditbtn, mirrored to the top-right.
         return '<figure class="pp-card" data-staged="' + i + '">' +
+          '<button type="button" class="pp-stagermv" data-removestage="' + i + '" title="Remove this ' + nounSingular + '" aria-label="Remove">×</button>' +
           '<div class="pp-cardimg">' + media + '</div>' +
           '<div class="pp-cardactions">' +
             (fIsVideo ? '' : '<button type="button" class="pd-btn" style="margin:6px;" data-markupstage="' + i + '">Markup</button>') +
@@ -5407,6 +5492,21 @@ window.ProgressPhotos = (function () {
           openAdjustEditor(stagedUrls[i], pendingAdjust[i] || {}, function (adj) { pendingAdjust[i] = adj; }, fIsVideo);
         };
       });
+      Array.prototype.forEach.call(grid.querySelectorAll('[data-removestage]'), function (b) {
+        b.onclick = function () { removeStaged(+this.dataset.removestage); };
+      });
+    }
+    // Item 1 (2026-09-11, third round): removing the (only) staged item
+    // clears its object URL and any pending markup/adjustments for it, then
+    // re-renders — which is what brings the Take/Upload row back via
+    // syncAddButtonsRow() at the top of renderStagedGrid().
+    function removeStaged(i) {
+      if (stagedUrls[i]) { try { URL.revokeObjectURL(stagedUrls[i]); } catch (e) {} }
+      stagedFiles.splice(i, 1);
+      stagedUrls.splice(i, 1);
+      pendingMarkup = {};
+      pendingAdjust = {};
+      renderStagedGrid();
     }
     function addStagedFiles(list) {
       var incoming = Array.prototype.slice.call(list || []);
@@ -5569,12 +5669,13 @@ window.ProgressPhotos = (function () {
     var today = new Date().toISOString().slice(0, 10);
     var videoBlob = null, videoUrl = null;
     var stitchResult = null, stitchUrl = null;   // { blob, quality, width, height }
-    var repBlob = null, repUrl = null;           // representative frame -- becomes thumb_url
+    var repBlob = null, repUrl = null;           // thumbnail frame, captured from the viewer -- becomes thumb_url
     var pendingAdjust = {};                       // item 5: Adjust applies to 360 too, keyed 0 (a single item)
-    var repTimer = null;
+    var pp360Viewer = null;                       // item 5/6: the live Pannellum preview, mounted once stitching finishes
 
     function revokeAll() {
       [videoUrl, stitchUrl, repUrl].forEach(function (u) { if (u) { try { URL.revokeObjectURL(u); } catch (e) {} } });
+      if (pp360Viewer) { try { pp360Viewer.destroy(); } catch (e) {} pp360Viewer = null; }
       if (window.Capture && Capture.close) Capture.close();
       _uploadModalOpen = false;
     }
@@ -5607,20 +5708,28 @@ window.ProgressPhotos = (function () {
         '<div id="pp360-result" hidden>' +
           '<div id="pp360-qualitywarn" class="pp-hint" hidden style="color:var(--pd-warn,#a66);">' +
             'Low confidence stitch -- the video may not have had enough overlap between frames. Review before presenting.</div>' +
-          // Item 5: "preview should be navigable or operable as 360, dont
-          // just show a panoramic still photo" -- reuses the SAME
-          // drag-to-pan strip the saved-360°-photo lightbox viewer already
-          // uses (wireDragPan, factored out of wirePanoDrag below), rather
-          // than a second, differently-behaved preview widget.
+          // Item 5 (2026-09-11, third round): "use Pannellum for 360
+          // viewer" -- a real WebGL panorama viewer, the SAME
+          // mountPannellumViewer() the saved-photo lightbox uses, mounted
+          // into #pp360-pano-viewer once stitching finishes.
           '<div class="pp-lb-panowrap" id="pp360-panowrap" style="border-radius:var(--pd-radius);">' +
-            '<img class="pp-lb-pano" id="pp360-pano" alt="Processed 360° preview" />' +
+            '<div id="pp360-pano-viewer" class="pp-lb-panoviewer"></div>' +
           '</div>' +
-          '<p class="pp-hint">Drag to look around the stitched panorama.</p>' +
-          '<div style="margin:6px 0;"><button type="button" class="pd-btn" id="pp360-adjust">Adjust</button></div>' +
-          '<div class="pd-field"><label>Thumbnail frame ' +
-            '<span class="pd-muted" style="font-weight:400;">(defaults to the last frame of your walk-around)</span></label>' +
-            '<input type="range" id="pp360-repslider" min="0" max="1" step="0.01" value="1" style="width:100%;" />' +
-            '<img id="pp360-repframe" alt="Thumbnail frame" style="max-width:220px;display:block;margin-top:6px;" />' +
+          '<p class="pp-hint">Drag to look around the stitched panorama, then frame the view you want as the thumbnail below.</p>' +
+          '<div style="margin:6px 0;display:flex;gap:8px;flex-wrap:wrap;">' +
+            '<button type="button" class="pd-btn" id="pp360-adjust">Adjust</button>' +
+            // Item 6: "use the 360 viewer as both a preview and to select
+            // the thumbnail frame ... no need to have a separate preview
+            // and thumbnail selector" -- replaces the old
+            // extractFrameAt()-driven video scrubber entirely. A default
+            // thumbnail is captured automatically the moment the viewer
+            // first renders (see runStitch's own `load` listener), so
+            // Save is never blocked on remembering to press this; pressing
+            // it again updates the thumbnail to whatever's on screen now.
+            '<button type="button" class="pd-btn" id="pp360-usethumb">Use this view as thumbnail</button>' +
+          '</div>' +
+          '<div class="pd-field" id="pp360-thumbfield" hidden><label>Thumbnail</label>' +
+            '<img id="pp360-thumbpreview" alt="Selected thumbnail" style="max-width:200px;display:block;border-radius:var(--pd-radius);" />' +
           '</div>' +
         '</div>' +
         '<div class="pp-form2">' +
@@ -5662,6 +5771,19 @@ window.ProgressPhotos = (function () {
       runStitch();
     }
 
+    // Item 6: sets the thumbnail from a captured Blob, wherever it came
+    // from (the automatic first-render capture, or the "Use this view"
+    // button) -- one place, so the two can never disagree about what
+    // updating the thumbnail actually does.
+    function setThumbFromBlob(blob) {
+      if (!blob) return;
+      if (repUrl) { try { URL.revokeObjectURL(repUrl); } catch (e) {} }
+      repBlob = blob;
+      repUrl = URL.createObjectURL(blob);
+      var img = $('pp360-thumbpreview'); if (img) img.src = repUrl;
+      var field = $('pp360-thumbfield'); if (field) field.hidden = false;
+    }
+
     async function runStitch() {
       show('pp360-step-source', false);
       show('pp360-progress', true);
@@ -5675,34 +5797,24 @@ window.ProgressPhotos = (function () {
         stitchUrl = URL.createObjectURL(res.blob);
         show('pp360-progress', false);
         show('pp360-result', true);
-        var img = $('pp360-pano'); if (img) img.src = stitchUrl;
-        wireDragPan($('pp360-panowrap'));
+        var viewerEl = $('pp360-pano-viewer');
+        if (viewerEl) {
+          var hOverW = (res.width && res.height) ? (res.height / res.width) : 0.35;
+          pp360Viewer = mountPannellumViewer(viewerEl, stitchUrl, hOverW);
+          // Item 6: a default thumbnail is captured the moment the viewer
+          // has actually rendered once, so Save is never blocked on the
+          // planner remembering to press "Use this view as thumbnail" --
+          // they can still press it again any time to pick a different one.
+          if (pp360Viewer && pp360Viewer.on) {
+            pp360Viewer.on('load', function () { captureViewerThumbnail(viewerEl, setThumbFromBlob); });
+          }
+        }
         var warn = $('pp360-qualitywarn'); if (warn) warn.hidden = res.quality !== 'poor';
-        // Item 5 (2026-09-11, second round): "the 360 preview should also
-        // be the basis of the thumbnail where in last frame will be used
-        // as thumbnail" -- the scrubber now defaults to the END of the
-        // walk-around (was the midpoint) rather than requiring the planner
-        // to pick one; it stays adjustable in case the very last instant is
-        // blurry (the camera still moving as recording stopped).
-        var dur = await Pano360.getDuration(videoBlob);
-        var slider = $('pp360-repslider');
-        if (slider) { slider.max = String(Math.max(0.01, dur)); slider.value = String(dur); }
-        updateRepFrame(dur);
       } catch (err) {
         show('pp360-progress', false);
         UI.toast('Could not build the panorama' + (err && err.message ? ' (' + err.message + ')' : ''), 'error');
         show('pp360-step-source', true);
       }
-    }
-
-    async function updateRepFrame(atSeconds) {
-      try {
-        var blob = await Pano360.extractFrameAt(videoBlob, atSeconds, 640);
-        if (repUrl) { try { URL.revokeObjectURL(repUrl); } catch (e) {} }
-        repBlob = blob;
-        repUrl = URL.createObjectURL(blob);
-        var img = $('pp360-repframe'); if (img) img.src = repUrl;
-      } catch (e) { /* the video is still fine — the scrubber just has nothing new to show this tick */ }
     }
 
     if ($('pp360-choose')) $('pp360-choose').onclick = function () { var el = $('pp360-file'); if (el) el.click(); };
@@ -5716,13 +5828,16 @@ window.ProgressPhotos = (function () {
       Capture.take360(function (blob) { if (blob) haveVideo(blob); });
     };
     if ($('pp360-offlineclose')) $('pp360-offlineclose').onclick = function () { m.close(); };
-    if ($('pp360-repslider')) {
-      $('pp360-repslider').oninput = function () {
-        var t = +this.value;
-        clearTimeout(repTimer);
-        repTimer = setTimeout(function () { updateRepFrame(t); }, 150);
-      };
-    }
+    // Item 6: captures whatever the viewer is CURRENTLY showing, replacing
+    // the old separate rep-frame scrubber.
+    if ($('pp360-usethumb')) $('pp360-usethumb').onclick = function () {
+      var viewerEl = $('pp360-pano-viewer');
+      if (!viewerEl) return;
+      captureViewerThumbnail(viewerEl, function (blob) {
+        if (!blob) { UI.toast('Could not capture the current view — try again', 'warn'); return; }
+        setThumbFromBlob(blob);
+      });
+    };
     // Item 5: Adjust extends to 360 -- previewed against the stitched
     // panorama image, saved onto the row exactly like a photo's adjustments.
     if ($('pp360-adjust')) $('pp360-adjust').onclick = function () {
@@ -6732,12 +6847,13 @@ window.ProgressPhotos = (function () {
     _setCanWrite: function (v) { canWrite = v; },
     _favBtnHTML: function (r) { return favBtnHTML(r); },
     _toggleFavorite: function (r) { return toggleFavorite(r); },
-    // Test-only hook for the 360 pano-drag rAF coalescing fix (2026-09-11
-    // performance pass) — genuinely EXECUTES wirePanoDrag() so a test can
-    // prove the scroll-driven cone repaint really coalesces into at most
-    // one requestAnimationFrame callback per burst, rather than only
-    // reading the source. Reads `$('pp-lb-panowrap')` exactly as the real
-    // call site does; a test wires a fake element into that id first.
-    _wirePanoDrag: function () { return wirePanoDrag(); }
+    // Test-only hooks for the Pannellum 360° viewer (2026-09-11, third
+    // round) — genuinely EXECUTE the real, shipped functions (never a
+    // re-description of them) against an injected `window.pannellum`
+    // stub/a fake canvas-bearing container, the same convention as every
+    // other hook above.
+    _mountPannellumViewer: function (container, url, hOverW) { return mountPannellumViewer(container, url, hOverW); },
+    _captureViewerThumbnail: function (containerEl, cb) { return captureViewerThumbnail(containerEl, cb); },
+    _startPanoYawPoll: function (viewer, onYawChange) { return startPanoYawPoll(viewer, onYawChange); }
   };
 })();

@@ -229,7 +229,7 @@ function winRemoveEventListener(type, fn) {
 const ctx = {
   __rafQueue: [],
   console, Promise, JSON, Math, Date, String, Number, Object, Array, Boolean,
-  setTimeout, clearTimeout, isNaN, parseInt, parseFloat, encodeURIComponent,
+  setTimeout, clearTimeout, setInterval, clearInterval, isNaN, parseInt, parseFloat, encodeURIComponent,
   document: documentStub,
   window: {},
   addEventListener: winAddEventListener,
@@ -243,6 +243,11 @@ const ctx = {
   sessionStorage: { _d: { pd_project: 'DEMO01' }, getItem(k) { return this._d[k] ?? null; }, setItem(k, v) { this._d[k] = String(v); } },
   indexedDB: { open: () => ({ onupgradeneeded: null, onsuccess: null, onerror: null }) },
   URL: { createObjectURL: () => 'blob://x', revokeObjectURL() {} },
+  // Item 2 (2026-09-11, third round): capture.js's MediaRecorder.onstop
+  // handler builds a real `new Blob(...)` — a minimal stand-in (records
+  // its parts/type, nothing more) so that code path can genuinely execute
+  // here, same reasoning as every other minimal browser-API stand-in above.
+  Blob: function Blob(parts, opts) { this.parts = parts || []; this.type = (opts && opts.type) || ''; this.size = 0; },
   // Item 1 (2026-08-30): fileToImage()'s decode step, real enough to execute
   // makeThumbnailBlob()'s downscale math end to end — see FakeImage's own
   // comment above for why `src` firing onload synchronously is sufficient.
@@ -739,7 +744,11 @@ console.log('\n[misc] insert().select() returns the new row id');
   // .pp-tab.active/.pd-btn-primary two entries up -- .ppr-panelabel.is-current
   // is the Current-slide pill in a presentation pane, .bim-revbadge is the
   // "current revision" pill in the floor-plan revision-history list.
-  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.pp-kpmini-pin\b|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.bim-pin\b|\.bim-pinstage-dot\b|#bim-place\.is-active|\.pp-plancluster\b|\.ppr-mktool\b|\.ppr-sortno\b|\.pp-mk-tool\.active|\.bim-regpt\b|\.bim-conehandle-el\b|\.bim-dirhandle-el\b|\.pp-livebtn\.is-live\b|\.pp-iconbtn\.is-active\b|\.pp-cardfav\b|\.pp-360badge\b|\.ppr-panelabel\.is-current\b|\.bim-revbadge\b/;
+  // Item 1 (2026-09-11, third round): .pp-stagermv is the SAME fixed-dark-
+  // scrim-corner-overlay family as .pp-cardsel/.pp-cardfav -- a remove-×
+  // button over an arbitrary staged photo/video thumbnail, never a
+  // themeable light surface.
+  const ALLOWED_FFF_CONTEXT = /\.pp-lightbox|\.pp-lb-|\.pp-kpmini-pin\b|\.ppr-tmpl-locorder|\.pp-tab\.active|\.pd-btn-primary|\.pp-del:hover|\.pp-syncbtn:hover|\.bim-pin\b|\.bim-pinstage-dot\b|#bim-place\.is-active|\.pp-plancluster\b|\.ppr-mktool\b|\.ppr-sortno\b|\.pp-mk-tool\.active|\.bim-regpt\b|\.bim-conehandle-el\b|\.bim-dirhandle-el\b|\.pp-livebtn\.is-live\b|\.pp-iconbtn\.is-active\b|\.pp-cardfav\b|\.pp-360badge\b|\.ppr-panelabel\.is-current\b|\.bim-revbadge\b|\.pp-stagermv\b/;
   const stray = fffRules.filter((sel) => !ALLOWED_FFF_CONTEXT.test(sel));
   ok('every #fff use sits under a documented fixed-colour selector', stray.length === 0 && fffRules.length > 0,
      JSON.stringify(stray));
@@ -1903,13 +1912,18 @@ console.log('\n[misc] insert().select() returns the new row id');
      /var filt = adjustmentsAreDefault\(r\.adjustments\) \? '' : ' style="filter:'/.test(mjs));
   // Overnight batch item 5: "extend feature of adjusting photo to videos
   // and 360" -- Adjust is no longer photo-only; it applies live to
-  // whichever media element is on screen (<video> for a video/360 row via
+  // whichever media element is on screen (<video> for a video row via
   // adjFilterEl, resolved from isVideo/isPano) and re-applies the instant
   // Save returns a new value.
-  ok('the lightbox applies the SAME filter live to whichever media element is on screen (img/video/pano) and re-applies it the instant Save returns a new value',
-     /var adjFilterEl = isVideo \? vidEl : \(isPano \? panoImg : imgEl\);/.test(mjs) &&
+  // ⚠️ 2026-09-11, THIRD round: a 360 row's filter target changed from the
+  // retired <img id="pp-lb-pano"> to the whole panorama WRAP
+  // (#pp-lb-panowrap) — a CSS filter composites everything rendered inside
+  // an element, WebGL canvas included, so filtering the wrap reaches the
+  // Pannellum viewer exactly as it did the old <img>.
+  ok('the lightbox applies the SAME filter live to whichever media element is on screen (img/video/panorama-wrap) and re-applies it the instant Save returns a new value',
+     /var adjFilterEl = isVideo \? vidEl : \(isPano \? panoWrap : imgEl\);/.test(mjs) &&
      /if \(adjFilterEl\) adjFilterEl\.style\.filter = cssFilterFor\(adjustmentsOf\(r\)\);/.test(mjs) &&
-     /var filterEl = isVideo \? vidEl : \(isPano \? panoImg : imgEl\);\s*if \(filterEl\) filterEl\.style\.filter = cssFilterFor\(newAdj\);/.test(mjs));
+     /var filterEl = isVideo \? vidEl : \(isPano \? panoWrap : imgEl\);\s*if \(filterEl\) filterEl\.style\.filter = cssFilterFor\(newAdj\);/.test(mjs));
   ok('the Adjust button is now available for photo, video AND 360 -- only Markup stays photo-only',
      /adjBtn\.style\.display = canWrite \? '' : 'none';/.test(mjs) &&
      /var markupExcluded = isVideo \|\| isPano;/.test(mjs));
@@ -3471,10 +3485,17 @@ console.log('\n[misc] insert().select() returns the new row id');
      /function keyPlanMiniMarkerHTML\(pin\) \{\s*return coneWedgeSVG\(pin\) \+\s*'<span class="pp-kpmini-pin pp-kpmini-pin-' \+ esc\(pin\.item_type \|\| 'photo'\) \+ '" '/.test(bmjs));
   // ⚠️ 2026-09-11, second round (item 4 — "the same pin as when adding,
   // the red circle with corresponding icon, don't use the green pin"):
-  // the mini pin is now 16px/circular/red with an icon inside, not a
-  // bare 12px teardrop coloured --pd-ok. Updated in place.
-  ok('module.css: .pp-kpmini-pin (the shared scaled-down pin) is now a CIRCLE (not a teardrop) sized to hold an icon, and coloured RED — matching .bim-pinstage-dot, "the same pin as when adding"; the old lightbox-only-named .pp-lb-kpoverlay-pin/.pp-lb-kppin-photo classes are still gone (renamed, not duplicated)',
-     /\.pp-kpmini-pin \{[^}]*width: 16px; height: 16px; border-radius: 50%;/.test(css) &&
+  // the mini pin is now circular/red with an icon inside, not a bare
+  // teardrop coloured --pd-ok. Updated in place.
+  // ⚠️ 2026-09-11, THIRD round (item 3 — "the pin should be proportionally
+  // smaller"): the pin's own size moved from a FIXED 16px to a PERCENTAGE
+  // of its containing overlay box (`width:10%`, `aspect-ratio:1` deriving
+  // the height from the resolved width) so it scales with the overlay's
+  // own drag-resized size instead of staying a constant pixel size — the
+  // shape (circle) and colour (red) are unchanged, only the sizing rule.
+  ok('module.css: .pp-kpmini-pin (the shared scaled-down pin) is now a CIRCLE (not a teardrop) sized PROPORTIONALLY (a % of its own overlay box, via aspect-ratio, not a fixed px) so it scales with the overlay, and coloured RED — matching .bim-pinstage-dot, "the same pin as when adding"; the old lightbox-only-named .pp-lb-kpoverlay-pin/.pp-lb-kppin-photo classes are still gone (renamed, not duplicated)',
+     /\.pp-kpmini-pin \{[^}]*width: 10%; aspect-ratio: 1;[^}]*border-radius: 50%;/.test(css) &&
+     !/\.pp-kpmini-pin \{[^}]*width: 16px; height: 16px;/.test(css) &&
      /\.pp-kpmini-pin\.pp-kpmini-pin-photo \{ background: var\(--pd-red\); \}/.test(css) &&
      !/\.pp-kpmini-pin\.pp-kpmini-pin-photo \{ background: var\(--pd-ok\); \}/.test(css) &&
      !/\.pp-lb-kpoverlay-pin\s*\{/.test(css) && !/\.pp-lb-kppin-photo/.test(css));
@@ -3782,43 +3803,40 @@ console.log('\n[misc] insert().select() returns the new row id');
   ok('the plain, synchronous redraw() definition itself is untouched — only discrete click actions elsewhere in the editor still call it directly',
      /function redraw\(\) \{ drawMarkupObjects\(ctx, objs, canvas\.width, canvas\.height, selectedIdx\); \}/.test(mjs));
 
-  // Genuine execution: wirePanoDrag()'s scroll-driven key-plan cone repaint
-  // really coalesces a burst of rapid scroll events into AT MOST ONE queued
-  // requestAnimationFrame callback, using the real production function (not
-  // a re-description of it) against the harness's real, queue-based rAF
-  // stub — never an immediate-call stub, which would make this pass
-  // whether the app coalesced anything or not.
+  // ⚠️ 2026-09-11, THIRD round: wireDragPan/wirePanoDrag (the scroll-driven
+  // pan strip this rAF-coalescing test originally proved) were DELETED —
+  // "use Pannellum for 360 viewer" replaced the plain drag-to-pan image
+  // with a real WebGL panorama viewer (see mountPannellumViewer/
+  // startPanoYawPoll near "Item 5" in module.js). The coalescing DISCIPLINE
+  // this test exists to protect still applies — the cone repaint must not
+  // run on every animation frame regardless of whether anything changed —
+  // it is just enforced a different way now (a per-frame yaw POLL that only
+  // fires its callback when the value actually changed, since Pannellum's
+  // stable API has no subscribable "view changed" event). Rewritten to
+  // prove THAT discipline against the current mechanism, not the retired
+  // one — genuine execution against the harness's real, queue-based rAF
+  // stub, never an immediate-call stub that would pass regardless.
   (function () {
-    var listeners = {};
-    var wrapEl = {
-      scrollLeft: 0, scrollWidth: 1000, clientWidth: 200,
-      addEventListener: function (type, fn) { listeners[type] = fn; },
-      removeEventListener: function () {},
-      setPointerCapture: function () {}
-    };
-    byId['pp-lb-panowrap'] = wrapEl;
-    try {
-      PP._wirePanoDrag();
-      ok('wirePanoDrag() wires a real scroll listener onto #pp-lb-panowrap', typeof listeners.scroll === 'function');
+    var fakeViewer = { _yaw: 0, getYaw: function () { return fakeViewer._yaw; }, destroy: function () {} };
+    var yawSeen = [];
+    var stop = PP._startPanoYawPoll(fakeViewer, function (yaw) { yawSeen.push(yaw); });
 
-      eq('before any scroll: 0 queued rAF callbacks', rafPending(), 0);
-      wrapEl.scrollLeft = 100; listeners.scroll();
-      wrapEl.scrollLeft = 200; listeners.scroll();
-      wrapEl.scrollLeft = 300; listeners.scroll();
-      eq('three rapid scroll events in the same burst coalesce into exactly ONE queued rAF callback, not three',
-         rafPending(), 1);
+    flushRaf();
+    eq('startPanoYawPoll: the first tick reports the viewer\'s current yaw', JSON.stringify(yawSeen), JSON.stringify([0]));
 
-      flushRaf();
-      eq('flushing the frame drains the queue back to 0 — the callback resets its own "pending" flag rather than leaving it stuck forever',
-         rafPending(), 0);
+    flushRaf();
+    eq('…an UNCHANGED yaw between two ticks does NOT fire the callback again — the same "only repaint on real change" discipline every other coalesced-repaint fix in this file already follows',
+       yawSeen.length, 1);
 
-      listeners.scroll();
-      eq('a scroll AFTER the frame has already run schedules a FRESH rAF — the coalescing guard is per-burst, not a permanent "never repaint again" latch',
-         rafPending(), 1);
-      flushRaf();
-    } finally {
-      delete byId['pp-lb-panowrap'];
-    }
+    fakeViewer._yaw = 42;
+    flushRaf();
+    eq('…a CHANGED yaw does fire, with the new value', JSON.stringify(yawSeen), JSON.stringify([0, 42]));
+
+    stop();
+    fakeViewer._yaw = 99;
+    flushRaf();
+    eq('stop() cancels the poll — no further callbacks fire after it, even though the yaw kept changing underneath it',
+       yawSeen.length, 2);
   })();
 
   console.log('\n[53] Key-plan pin/camera-angle display fix (2026-09-11): shared "mini" marker, not the full-size Plans-tab one');
@@ -3937,11 +3955,267 @@ console.log('\n[misc] insert().select() returns the new row id');
     }
   })();
 
+  // ⚠️ 2026-09-11, THIRD round — item 2 ("the close button does not work"),
+  // re-reported: a SECOND, real close-during-recording race, distinct from
+  // the getUserMedia one above. Tapping × WHILE a video is recording used
+  // to call close() (which stops the MediaRecorder and fires opts.onCancel
+  // -> onDone(null) immediately) — but the recorder's own ASYNC 'stop'
+  // event still caught up afterward and ran the callback wired at
+  // record-start, which called onDone(blob) a SECOND time with a real
+  // file. From the planner's side: the overlay visibly closed, then the
+  // recording got added anyway — exactly "I closed it and it didn't work".
+  // Genuinely executed against a controllable fake MediaRecorder (never an
+  // immediate no-op stub) so the timing this bug depends on is real.
+  await (async function () {
+    var fakeEl = { style: {}, classList: { add() {}, remove() {}, toggle() {} }, srcObject: null, onclick: null,
+      setAttribute() {}, getAttribute() { return null; }, querySelector: () => null, appendChild() {}, remove() {},
+      dataset: {}, hidden: false, disabled: false, title: '' };
+    var builtEl = { className: '', innerHTML: '', parentNode: { removeChild() {} }, appendChild() {} };
+    var idEls = {};
+    var origGetElementById = ctx.document.getElementById;
+    var origCreateElement = ctx.document.createElement;
+    var origHead = ctx.document.head;
+    var origBody = ctx.document.body;
+    var origMediaRecorder = ctx.MediaRecorder;
+    var origNavigator = ctx.navigator;
+    try {
+      ctx.document.getElementById = function (id) {
+        if (id === 'pp-capture-style') return null;
+        if (!idEls[id]) idEls[id] = Object.assign({}, fakeEl, { id: id });
+        return idEls[id];
+      };
+      ctx.document.createElement = function (tag) {
+        if (tag === 'style') return { id: '', textContent: '' };
+        return Object.assign({}, builtEl);
+      };
+      ctx.document.head = { appendChild() {} };
+      ctx.document.body = { appendChild() {} };
+
+      var fakeTrack = { stop() {}, enabled: true, getCapabilities: () => ({}) };
+      var fakeStream = {
+        getTracks: () => [fakeTrack], getAudioTracks: () => [fakeTrack], getVideoTracks: () => [fakeTrack]
+      };
+      ctx.navigator = { mediaDevices: { getUserMedia: () => Promise.resolve(fakeStream) } };
+
+      var lastRecorder = null;
+      function FakeRecorder() {
+        lastRecorder = this;
+        this.state = 'recording';
+        this.start = function () {};
+        this.stop = function () { this.state = 'inactive'; };   // does NOT itself fire onstop — the test drives that, matching a real async event
+      }
+      FakeRecorder.isTypeSupported = function () { return false; };
+      ctx.MediaRecorder = FakeRecorder;
+
+      var doneArgs = [];
+      CAP.takeVideo(function (blob) { doneArgs.push(blob); });
+      // Video mode routes through openStreamWithAudioFallback() (an extra
+      // async/await hop beyond photo mode's direct openStream() call above),
+      // so a fixed few `await Promise.resolve()` ticks isn't reliably enough
+      // — a real macrotask flush drains every pending microtask first,
+      // regardless of how many hops the chain actually has.
+      await new Promise(function (r) { setTimeout(r, 0); });
+
+      idEls['pp-cap-shutter'].onclick();   // idle -> recording
+      ok('a fake MediaRecorder was actually constructed and started recording', !!lastRecorder && lastRecorder.state === 'recording');
+
+      idEls['pp-cap-close'].onclick();   // × tapped WHILE recording — the exact reported scenario
+      eq('closing mid-recording fires onCancel immediately with null', JSON.stringify(doneArgs), JSON.stringify([null]));
+      eq('…and close() already stopped the recorder synchronously', lastRecorder.state, 'inactive');
+
+      lastRecorder.onstop();   // the recorder's own async 'stop' event, catching up AFTER close() already ran
+      eq('the stray onstop-driven onDone is SKIPPED — stale() correctly detects that close() already ran, so a cancelled recording is never handed back as a "successful" one afterward',
+         doneArgs.length, 1);
+    } finally {
+      ctx.document.getElementById = origGetElementById;
+      ctx.document.createElement = origCreateElement;
+      ctx.document.head = origHead;
+      ctx.document.body = origBody;
+      ctx.MediaRecorder = origMediaRecorder;
+      ctx.navigator = origNavigator;
+    }
+  })();
+
+  // …and the INVERSE case: recording stopped the ordinary way (tapping the
+  // shutter a second time, nobody closed anything) must still hand back the
+  // real blob — the stale() guard must not swallow a genuine completion.
+  await (async function () {
+    var fakeEl = { style: {}, classList: { add() {}, remove() {}, toggle() {} }, srcObject: null, onclick: null,
+      setAttribute() {}, getAttribute() { return null; }, querySelector: () => null, appendChild() {}, remove() {},
+      dataset: {}, hidden: false, disabled: false, title: '' };
+    var builtEl = { className: '', innerHTML: '', parentNode: { removeChild() {} }, appendChild() {} };
+    var idEls = {};
+    var origGetElementById = ctx.document.getElementById;
+    var origCreateElement = ctx.document.createElement;
+    var origHead = ctx.document.head;
+    var origBody = ctx.document.body;
+    var origMediaRecorder = ctx.MediaRecorder;
+    var origNavigator = ctx.navigator;
+    try {
+      ctx.document.getElementById = function (id) {
+        if (id === 'pp-capture-style') return null;
+        if (!idEls[id]) idEls[id] = Object.assign({}, fakeEl, { id: id });
+        return idEls[id];
+      };
+      ctx.document.createElement = function (tag) {
+        if (tag === 'style') return { id: '', textContent: '' };
+        return Object.assign({}, builtEl);
+      };
+      ctx.document.head = { appendChild() {} };
+      ctx.document.body = { appendChild() {} };
+
+      var fakeTrack = { stop() {}, enabled: true, getCapabilities: () => ({}) };
+      var fakeStream = { getTracks: () => [fakeTrack], getAudioTracks: () => [fakeTrack], getVideoTracks: () => [fakeTrack] };
+      ctx.navigator = { mediaDevices: { getUserMedia: () => Promise.resolve(fakeStream) } };
+
+      var lastRecorder = null;
+      function FakeRecorder() {
+        lastRecorder = this;
+        this.state = 'recording'; this.mimeType = 'video/webm';
+        this.start = function () {};
+        this.stop = function () { this.state = 'inactive'; };
+      }
+      FakeRecorder.isTypeSupported = function () { return false; };
+      ctx.MediaRecorder = FakeRecorder;
+
+      var doneArgs = [];
+      CAP.takeVideo(function (blob) { doneArgs.push(blob); });
+      await new Promise(function (r) { setTimeout(r, 0); });
+
+      idEls['pp-cap-shutter'].onclick();   // idle -> recording
+      idEls['pp-cap-shutter'].onclick();   // recording -> stop, via the shutter itself (no close() involved)
+      lastRecorder.onstop();               // the real completion event
+
+      ok('stopping via the shutter (nobody closed anything) still hands back the real recorded blob — stale() must not swallow a genuine completion',
+         doneArgs.length === 1 && doneArgs[0] && doneArgs[0].constructor && doneArgs[0].constructor.name === 'Blob');
+    } finally {
+      ctx.document.getElementById = origGetElementById;
+      ctx.document.createElement = origCreateElement;
+      ctx.document.head = origHead;
+      ctx.document.body = origBody;
+      ctx.MediaRecorder = origMediaRecorder;
+      ctx.navigator = origNavigator;
+    }
+  })();
+
+  // Item 2 (2026-09-11, third round): flash on/off/auto — genuinely
+  // executed against a fake video track exposing a `torch` capability, so
+  // the actual applyConstraints call (and its absence when unsupported)
+  // is proven, not just read from source.
+  await (async function () {
+    var fakeEl = { style: {}, classList: { add() {}, remove() {}, toggle() {} }, srcObject: null, onclick: null,
+      setAttribute() {}, getAttribute() { return null; }, querySelector: () => null, appendChild() {}, remove() {},
+      dataset: {}, hidden: false, disabled: false, title: '' };
+    var builtEl = { className: '', innerHTML: '', parentNode: { removeChild() {} }, appendChild() {} };
+    var idEls = {};
+    var origGetElementById = ctx.document.getElementById;
+    var origCreateElement = ctx.document.createElement;
+    var origHead = ctx.document.head;
+    var origBody = ctx.document.body;
+    var origNavigator = ctx.navigator;
+    try {
+      ctx.document.getElementById = function (id) {
+        if (id === 'pp-capture-style') return null;
+        if (!idEls[id]) idEls[id] = Object.assign({}, fakeEl, { id: id });
+        return idEls[id];
+      };
+      ctx.document.createElement = function (tag) {
+        if (tag === 'style') return { id: '', textContent: '' };
+        return Object.assign({}, builtEl);
+      };
+      ctx.document.head = { appendChild() {} };
+      ctx.document.body = { appendChild() {} };
+
+      var appliedConstraints = [];
+      var fakeTrack = {
+        getCapabilities: () => ({ torch: true }),
+        applyConstraints: function (c) { appliedConstraints.push(c); return Promise.resolve(); }
+      };
+      var fakeStream = { getTracks: () => [fakeTrack], getAudioTracks: () => [], getVideoTracks: () => [fakeTrack] };
+      ctx.navigator = { mediaDevices: { getUserMedia: () => Promise.resolve(fakeStream) } };
+
+      CAP.takePhoto(function () {});
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+
+      var flashBtn = idEls['pp-cap-flash'];
+      ok('the flash button is enabled the moment the stream\'s video track reports a torch capability',
+         flashBtn.disabled === false);
+
+      flashBtn.onclick();   // off -> on
+      eq('tapping the flash button while a torch-capable track is live applies torch:true',
+         JSON.stringify(appliedConstraints[appliedConstraints.length - 1]), JSON.stringify({ advanced: [{ torch: true }] }));
+
+      flashBtn.onclick();   // on -> auto
+      eq('…"auto" has no continuous-flash platform equivalent, so it applies torch:false — an honest degrade, not a fabricated third mode',
+         JSON.stringify(appliedConstraints[appliedConstraints.length - 1]), JSON.stringify({ advanced: [{ torch: false }] }));
+
+      flashBtn.onclick();   // auto -> off
+      eq('…cycling back to "off" also applies torch:false',
+         JSON.stringify(appliedConstraints[appliedConstraints.length - 1]), JSON.stringify({ advanced: [{ torch: false }] }));
+    } finally {
+      ctx.document.getElementById = origGetElementById;
+      ctx.document.createElement = origCreateElement;
+      ctx.document.head = origHead;
+      ctx.document.body = origBody;
+      ctx.navigator = origNavigator;
+    }
+  })();
+
+  // …and the disabled/no-torch-capability case: the flash button must
+  // never look live while doing nothing (same convention as syncAudioBtn).
+  await (async function () {
+    var fakeEl = { style: {}, classList: { add() {}, remove() {}, toggle() {} }, srcObject: null, onclick: null,
+      setAttribute() {}, getAttribute() { return null; }, querySelector: () => null, appendChild() {}, remove() {},
+      dataset: {}, hidden: false, disabled: false, title: '' };
+    var builtEl = { className: '', innerHTML: '', parentNode: { removeChild() {} }, appendChild() {} };
+    var idEls = {};
+    var origGetElementById = ctx.document.getElementById;
+    var origCreateElement = ctx.document.createElement;
+    var origHead = ctx.document.head;
+    var origBody = ctx.document.body;
+    var origNavigator = ctx.navigator;
+    try {
+      ctx.document.getElementById = function (id) {
+        if (id === 'pp-capture-style') return null;
+        if (!idEls[id]) idEls[id] = Object.assign({}, fakeEl, { id: id });
+        return idEls[id];
+      };
+      ctx.document.createElement = function (tag) {
+        if (tag === 'style') return { id: '', textContent: '' };
+        return Object.assign({}, builtEl);
+      };
+      ctx.document.head = { appendChild() {} };
+      ctx.document.body = { appendChild() {} };
+
+      var fakeTrack = { getCapabilities: () => ({}) };   // no torch key at all
+      var fakeStream = { getTracks: () => [fakeTrack], getAudioTracks: () => [], getVideoTracks: () => [fakeTrack] };
+      ctx.navigator = { mediaDevices: { getUserMedia: () => Promise.resolve(fakeStream) } };
+
+      CAP.takePhoto(function () {});
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+
+      eq('a video track reporting no torch capability leaves the flash button DISABLED, never a control that looks live but silently does nothing',
+         idEls['pp-cap-flash'].disabled, true);
+    } finally {
+      ctx.document.getElementById = origGetElementById;
+      ctx.document.createElement = origCreateElement;
+      ctx.document.head = origHead;
+      ctx.document.body = origBody;
+      ctx.navigator = origNavigator;
+    }
+  })();
+
   // Item 5: the mic toggle exists for video/360 and never for photo, and
   // openStream()'s audio argument tracks it.
-  ok('capture.js: buildOverlay renders #pp-cap-audio for video/360, a plain spacer for photo — never both',
+  // ⚠️ 2026-09-11, THIRD round (item 2 — "provide button for on/off/auto
+  // flash"): the mic toggle now shares a right-side cluster with a NEW
+  // flash button that's offered for EVERY mode (photo included) — so
+  // photo mode no longer needs the old plain `<span class="pp-cap-side">`
+  // spacer at all; the cluster simply renders the flash button alone.
+  ok('capture.js: buildOverlay renders #pp-cap-flash for every mode, and #pp-cap-audio ADDITIONALLY for video/360 — never for photo',
+     /id="pp-cap-flash"/.test(cjs) &&
      /opts\.mode !== 'photo'[\s\S]{0,120}id="pp-cap-audio"/.test(cjs) &&
-     /: '<span class="pp-cap-side"><\/span>'/.test(cjs));
+     /pp-cap-rightcluster/.test(cjs));
   // ⚠️ 2026-09-11, second round ("the mute button ... is not working"):
   // the mic toggle no longer reopens the whole stream, and no longer
   // refuses mid-recording — both assertions below are rewritten to match,
@@ -4032,49 +4306,81 @@ console.log('\n[misc] insert().select() returns the new row id');
     var j = mjs.indexOf("\n  function ", i + 10);
     var body = mjs.slice(i, j > i ? j : i + 14000);
     var resultStart = body.indexOf('id="pp360-result"');
-    var resultEnd = body.indexOf("'</div>' +\n        '<div class=\"pp-form2\">'".replace(/\s+/g, ' '));
     var form2Idx = body.indexOf('class="pp-form2"');
     ok('open360Upload: the metadata fields (.pp-form2 — Description/Date/Works/Location/Pin) render OUTSIDE #pp360-result, so they are visible immediately, matching the ordinary photo/video Add Media form',
        resultStart > -1 && form2Idx > resultStart && !/id="pp360-result"[\s\S]{0,50}class="pp-form2"/.test(body.slice(resultStart, resultStart + 60)));
     ok('open360Upload: the footer (Cancel/Save) is no longer gated behind processing — no id="pp360-footer", no hidden attribute on it',
        !/pp360-footer/.test(mjs) &&
        /<div class="pd-modal-footer">'\s*\+\s*'<button class="pd-btn" data-close>Cancel<\/button>'\s*\+\s*'<button class="pd-btn pd-btn-primary" id="pp360-save">Save 360° photo/.test(body));
-    ok('open360Upload: the thumbnail-frame scrubber defaults to the END of the walk-around (the LAST frame), not the midpoint — "the last frame will be used as thumbnail"',
-       /slider\.max = String\(Math\.max\(0\.01, dur\)\); slider\.value = String\(dur\);/.test(body) &&
-       !/slider\.value = String\(dur \/ 2\);/.test(body));
-    ok('open360Upload: the preview is the shared drag-to-pan strip (.pp-lb-panowrap/.pp-lb-pano), not a plain static <img> — "navigable ... not just a panoramic still photo"',
-       /class="pp-lb-panowrap" id="pp360-panowrap"/.test(body) && /class="pp-lb-pano" id="pp360-pano"/.test(body) &&
-       /wireDragPan\(\$\('pp360-panowrap'\)\);/.test(mjs));
+    // ⚠️ 2026-09-11, THIRD round: items 5/6 replace this preview's own
+    // drag-to-pan <img> strip with a real Pannellum viewer, AND remove the
+    // separate video-frame thumbnail scrubber entirely — "use the 360
+    // viewer as both a preview and to select the thumbnail frame ... no
+    // need to have a separate preview and thumbnail selector". Both
+    // rewritten in place rather than left asserting the retired shape.
+    ok('open360Upload: the preview is a real Pannellum viewer, mounted into #pp360-pano-viewer via the SAME mountPannellumViewer() the saved-photo lightbox uses — "navigable ... not just a panoramic still photo"',
+       /class="pp-lb-panowrap" id="pp360-panowrap"/.test(body) && /id="pp360-pano-viewer" class="pp-lb-panoviewer"/.test(body) &&
+       /pp360Viewer = mountPannellumViewer\(viewerEl, stitchUrl, hOverW\);/.test(mjs));
+    ok('open360Upload: the separate video-frame thumbnail scrubber is GONE — no #pp360-repslider, no #pp360-repframe, no Pano360.extractFrameAt call in this function',
+       !/pp360-repslider/.test(mjs) && !/pp360-repframe/.test(mjs) && !/Pano360\.extractFrameAt\(videoBlob/.test(body));
+    ok('open360Upload: "Use this view as thumbnail" captures whatever the viewer is CURRENTLY showing via the shared captureViewerThumbnail(), and a default is captured automatically the first time the panorama actually renders (viewer.on(\'load\', ...)) so Save is never blocked on remembering to press it',
+       /id="pp360-usethumb">Use this view as thumbnail/.test(body) &&
+       /captureViewerThumbnail\(viewerEl, setThumbFromBlob\)/.test(mjs) &&
+       /pp360Viewer\.on\('load', function \(\) \{ captureViewerThumbnail/.test(mjs));
   })();
 
-  // wireDragPan/wirePanoDrag — the lightbox's pan-drag mechanism was
-  // factored into a generic, reusable helper (wireDragPan) so the 360°
-  // upload preview above could reuse it rather than duplicating the drag
-  // gesture. Re-confirms the EXACT rAF-coalescing contract section [51]'s
-  // test already proved for wirePanoDrag() still holds after the refactor
-  // — same real, queue-based rAF stub, never an immediate-call one.
+  // Genuine execution: captureViewerThumbnail() — proves the 4:3-landscape
+  // crop (see the function's own comment on why "3:4 landscape" is read as
+  // 4:3) and the graceful null when the viewer hasn't rendered a canvas
+  // yet, against a fake canvas-bearing container rather than only reading
+  // the source.
   (function () {
-    var listeners = {};
-    var wrapEl = {
-      scrollLeft: 0, scrollWidth: 1000, clientWidth: 200,
-      addEventListener: function (type, fn) { listeners[type] = fn; },
-      removeEventListener: function () {},
-      setPointerCapture: function () {}
-    };
-    byId['pp-lb-panowrap'] = wrapEl;
+    var wideContainer = { querySelector: function (sel) { return sel === 'canvas' ? { width: 1200, height: 600 } : null; } };
+    var captured = null;
+    PP._captureViewerThumbnail(wideContainer, function (blob) { captured = blob; });
+    ok('captureViewerThumbnail hands back a real JPEG Blob, cropped to a 640×480 (4:3) box',
+       captured && captured.__fakeBlob === true && captured.type === 'image/jpeg' && captured.size === 640 * 480);
+
+    var emptyContainer = { querySelector: function () { return null; } };
+    var captured2 = 'unset';
+    PP._captureViewerThumbnail(emptyContainer, function (blob) { captured2 = blob; });
+    eq('…and hands back null (never throws) when the viewer has not rendered a canvas yet', captured2, null);
+  })();
+
+  // Genuine execution: mountPannellumViewer() against an injected
+  // window.pannellum stub — confirms it calls the REAL library with a
+  // partial-equirectangular config (haov 360 for a full walk-around, vaov
+  // derived from the image's own aspect ratio and clamped to a sane
+  // range), auto-generates a container id when none is supplied, and
+  // degrades to null rather than throwing when the library itself is
+  // unavailable (a real, if narrow, possibility this app's own history
+  // already treats seriously for every optional third-party dependency).
+  (function () {
+    var lastConfig = null;
+    var fakeViewer = { getYaw: function () { return 0; }, destroy: function () {} };
+    var savedPannellum = ctx.pannellum;
+    ctx.pannellum = { viewer: function (id, config) { lastConfig = config; return fakeViewer; } };
     try {
-      PP._wirePanoDrag();
-      eq('wireDragPan (via wirePanoDrag): a burst of 3 rapid scroll events still coalesces to exactly ONE queued rAF callback after the refactor',
-         (function () {
-           wrapEl.scrollLeft = 50; listeners.scroll();
-           wrapEl.scrollLeft = 100; listeners.scroll();
-           wrapEl.scrollLeft = 150; listeners.scroll();
-           return rafPending();
-         })(), 1);
-      flushRaf();
+      var container = { querySelector: function () { return null; } };
+      var v = PP._mountPannellumViewer(container, 'blob:pano.jpg', 0.4);
+      eq('mountPannellumViewer returns the real pannellum.viewer(...) instance', v, fakeViewer);
+      ok('…auto-generates a container id when the element has none, rather than requiring every caller to supply one',
+         typeof container.id === 'string' && container.id.length > 0);
+      ok('…configured as a partial equirectangular panorama: haov 360 (a full walk-around), vaov derived from the image\'s own height/width ratio',
+         lastConfig.type === 'equirectangular' && lastConfig.panorama === 'blob:pano.jpg' && lastConfig.haov === 360 &&
+         lastConfig.vaov === Math.min(140, Math.max(20, 360 * 0.4)));
+
+      lastConfig = null;
+      PP._mountPannellumViewer({ querySelector: function () { return null; } }, 'blob:tall.jpg', 3);
+      eq('…vaov is CLAMPED for an extreme (very tall/narrow) aspect ratio, never left wildly obtuse', lastConfig.vaov, 140);
     } finally {
-      delete byId['pp-lb-panowrap'];
+      ctx.pannellum = savedPannellum;
     }
+
+    delete ctx.pannellum;
+    eq('mountPannellumViewer degrades to null (never throws) when window.pannellum itself is unavailable',
+       PP._mountPannellumViewer({ querySelector: function () { return null; } }, 'blob:x.jpg', 0.4), null);
+    ctx.pannellum = savedPannellum;
   })();
 
   // Item 5 (processing failures) — pano360.js's stitching math, genuinely
@@ -4111,6 +4417,32 @@ console.log('\n[misc] insert().select() returns the new row id');
   ok('pano360.js: the mosaic canvas is sized from the REAL bounding box of every frame\'s warped corners, never a fixed-width guess',
      /var minX = 0, maxX = 0, minY = 0, maxY = 0;/.test(p3js) &&
      /var MAX_DIM = 8000;/.test(p3js));
+
+  console.log('\n[55] Item 4 (2026-09-11, third round): Hugin is infeasible in-browser (documented, not integrated); seam feathering replaces the hard destination-over cut');
+
+  ok('pano360.js states, plainly, why Hugin was investigated and is NOT integrated — a native desktop app with no WASM/JS bindings, not merely "not chosen"',
+     /Hugin was investigated and is NOT integrated/.test(p3js) &&
+     /no WebAssembly build and no JS/.test(p3js) && /bindings anywhere/.test(p3js));
+  ok('…and the compositing loop no longer draws raw frames with a hard destination-over cut — every frame is feathered first, then painted in order with plain source-over blending',
+     !/globalCompositeOperation = idx2 === 0 \? 'source-over' : 'destination-over';/.test(p3js) &&
+     /var feathered = featheredFrame\(frames\[idx2\], idx2 > 0, idx2 < frames\.length - 1, FEATHER_FRAC\);/.test(p3js) &&
+     /featherMat = cv\.imread\(feathered\);/.test(p3js));
+  ok('…ORB feature matching still runs against the PRISTINE frames (rawMats), never the feathered copies — feathering only touches what gets drawn, not what gets matched',
+     /var rawMats = frames\.map\(function \(f\) \{ return cv\.imread\(f\); \}\);/.test(p3js) &&
+     /homographyBetween\(rawMats\[i - 1\], rawMats\[i\]\)/.test(p3js));
+
+  // Genuine execution of featherStops() — the one piece of the feathering
+  // fix that is silently wrong in a specific, easy-to-miss way if the clamp
+  // is off: an unclamped margin on a NARROW frame could exceed half its own
+  // width, which would make the two edge gradients overlap and invert.
+  (function () {
+    eq('featherStops: an ordinary-width frame gets a plain 12%-of-width margin',
+       JSON.stringify(P360._featherStops(1000, 0.12)), JSON.stringify({ marginPx: 120, stopFrac: 0.12 }));
+    eq('featherStops: the margin is CLAMPED to at most half the frame\'s own width, so the two edge gradients can never overlap/invert on a very narrow frame',
+       JSON.stringify(P360._featherStops(10, 0.9)), JSON.stringify({ marginPx: 5, stopFrac: 0.5 }));
+    eq('featherStops: a tiny frame still gets at least a 4px margin (never zero, which would make the gradient a no-op)',
+       P360._featherStops(20, 0.01).marginPx, 4);
+  })();
 
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
   process.exit(fails ? 1 : 0);
