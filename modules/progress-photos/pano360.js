@@ -57,6 +57,29 @@ window.Pano360 = (function () {
   var WORK_MAXW = 640;           // per-frame width used for feature matching/warping — kept small for mobile CPU cost
   var MIN_GOOD_MATCHES = 12;     // below this, the pair is stitched anyway but the whole result is flagged 'poor'
 
+  // ⚠️⚠️ 2026-09-12 (item 4, second fix in the same round — "processing has
+  // never worked well, app crashes when processing"): the grayscale fix above
+  // makes the ALGORITHM correct, but a real device recording can still crash
+  // the whole tab for a reason no try/catch can ever recover from — a mobile
+  // browser killing the page for exhausting memory or for one JS task
+  // blocking the main thread too long. Neither is a thrown JS exception, so
+  // wrapping stitchFromVideo's caller in try/catch (module.js already does
+  // this) cannot help with either. Two changes below address both directly:
+  // yieldToUI() below breaks the per-frame work into separate browser tasks
+  // (so a slow phone stays responsive AND the previous iteration's canvases/
+  // cv.Mats get a real chance to be garbage-collected before the next
+  // allocation), and stitchFrames' new pixel-area cap bounds how large the
+  // transient per-frame buffers (dstMat/tmp canvas, each outW*outH*4 bytes)
+  // can ever get — the old code clamped each dimension to 8000px
+  // independently, which still allowed a ~256MB buffer, repeated per frame,
+  // with nothing forcing the previous one to be freed first.
+  function yieldToUI() {
+    return new Promise(function (resolve) {
+      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(function () { resolve(); });
+      else setTimeout(resolve, 0);
+    });
+  }
+
   function ensureOpenCV() {
     return new Promise(function (resolve, reject) {
       if (typeof cv !== 'undefined' && cv.Mat) { resolve(); return; }
@@ -280,6 +303,7 @@ window.Pano360 = (function () {
     return r;
   }
   function mat3Translate(tx, ty) { return [1, 0, tx, 0, 1, ty, 0, 0, 1]; }
+  function mat3Scale(sx, sy) { return [sx, 0, 0, 0, sy, 0, 0, 0, 1]; }
   // Applies a row-major 3x3 homography `m` to point (x,y), returning the
   // dehomogenized [X, Y] — exported (Pano360._applyH3) so a sign/order
   // mistake here (which would silently place every frame at the wrong
@@ -347,8 +371,25 @@ window.Pano360 = (function () {
   // Frame-by-frame progress, reported via `onProgress(fraction)` — a 12-
   // frame stitch is real, if modest, CPU work, and a caller (module.js's
   // upload modal) needs something to show while it runs.
+  // ⚠️⚠️ 2026-09-12: bounds the OUTPUT mosaic's total pixel count, not just
+  // each dimension independently. The prior code clamped width and height to
+  // 8000px each — which still permits a ~256MB buffer (8000*8000*4 bytes),
+  // and every frame of the warp loop below allocates one (`dstMat`) plus a
+  // same-sized `<canvas>` (`tmp`) on top of it. That is very plausibly the
+  // actual crash: not a thrown error, but the browser killing the tab for
+  // memory pressure once several of these land before GC catches up.
+  // MAX_PIXELS keeps the per-buffer footprint to a few tens of MB regardless
+  // of how wide the real pan (or a garbage homography) makes the mosaic;
+  // MAX_DIM is a backstop for a very long, thin mosaic that could otherwise
+  // pass the area check while still running one dimension away.
+  var MAX_PIXELS = 6000000;   // ~6 megapixels of OUTPUT — the actual memory-bounding cap
+  var MAX_DIM = 6000;         // per-dimension backstop, independent of the area cap above
+
   async function stitchFrames(frames, onProgress) {
     await ensureOpenCV();
+    if (frames.some(function (f) { return !f || !f.width || !f.height; })) {
+      throw new Error('Could not read the recorded frames — the camera may not have captured any video.');
+    }
     var poor = false;
     var rawMats = frames.map(function (f) { return cv.imread(f); });
     try {
@@ -377,6 +418,12 @@ window.Pano360 = (function () {
         // exactly the composition this fix was missing.
         placements.push(mat3Mul(placements[i - 1], step));
         if (onProgress) onProgress((i / (frames.length - 1)) * 0.5);
+        // Break each pair's ORB/BFMatcher/RANSAC work into its own browser
+        // task — a 12-frame stitch run as ONE synchronous block is exactly
+        // the shape that reads as an unresponsive/crashed page on a slower
+        // phone, and yielding here lets the previous iteration's temporary
+        // Mats actually be reclaimed before the next one is allocated.
+        await yieldToUI();
       }
 
       // The real bounding box of every frame's warped corners — never a
@@ -391,12 +438,21 @@ window.Pano360 = (function () {
           if (p[1] < minY) minY = p[1]; if (p[1] > maxY) maxY = p[1];
         });
       });
-      // A runaway/garbage homography must never try to allocate an
-      // unbounded canvas — clamp rather than let the browser OOM.
-      var MAX_DIM = 8000;
-      var outW = Math.min(MAX_DIM, Math.max(1, Math.round(maxX - minX)));
-      var outH = Math.min(MAX_DIM, Math.max(1, Math.round(maxY - minY)));
-      var shift = mat3Translate(-minX, -minY);
+      // A runaway/garbage homography (or a genuinely very wide pan) must
+      // never try to allocate an unbounded canvas — scale the WHOLE mosaic
+      // down proportionally (never distorting it) so its total pixel count
+      // stays under MAX_PIXELS, with MAX_DIM as a per-axis backstop.
+      var rawW = Math.max(1, maxX - minX), rawH = Math.max(1, maxY - minY);
+      var scale = 1;
+      if (rawW * rawH > MAX_PIXELS) scale = Math.sqrt(MAX_PIXELS / (rawW * rawH));
+      if (rawW * scale > MAX_DIM) scale = Math.min(scale, MAX_DIM / rawW);
+      if (rawH * scale > MAX_DIM) scale = Math.min(scale, MAX_DIM / rawH);
+      var outW = Math.max(1, Math.round(rawW * scale));
+      var outH = Math.max(1, Math.round(rawH * scale));
+      // Scale composed with the translate — applied to every frame's own
+      // placement below, so the whole mosaic shrinks together rather than
+      // each frame being placed at full size and then cropped.
+      var shift = mat3Mul(mat3Scale(scale, scale), mat3Translate(-minX, -minY));
 
       var mosaic = document.createElement('canvas');
       mosaic.width = outW; mosaic.height = outH;
@@ -428,6 +484,10 @@ window.Pano360 = (function () {
           if (featherMat) featherMat.delete();
         }
         if (onProgress) onProgress(0.5 + (idx2 / (frames.length - 1)) * 0.5);
+        // Same reasoning as the homography loop's own yield above — each
+        // frame's warp allocates a full mosaic-sized Mat + canvas, and this
+        // gives the browser a real chance to free the previous one first.
+        await yieldToUI();
       }
       return { canvas: mosaic, quality: poor ? 'poor' : 'ok' };
     } finally {
@@ -458,7 +518,9 @@ window.Pano360 = (function () {
     _fixInfiniteDuration: fixInfiniteDuration,
     _homographyBetween: homographyBetween,
     _mat3Mul: mat3Mul,
+    _mat3Scale: mat3Scale,
     _applyH3: applyH3,
-    _featherStops: featherStops
+    _featherStops: featherStops,
+    _stitchFrames: stitchFrames
   };
 })();

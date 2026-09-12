@@ -2,6 +2,118 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Gallery markup toggle drops its label; the video→360° pipeline is hardened
+## against a mobile OOM/crash rather than just having its own error caught
+## (2026-09-12, later same day)
+
+Owner, two items:
+```
+1. in progress photos gallery, remove text label in view mark-up button. leave icon.
+2. the reading and processing video to 360 does not work. app crashes when processing
+   please exploit all options to resolve. use additional add-ins or other open-source
+   features to resolve
+```
+
+### Item 1 — the Gallery "Markup" button is icon-only now
+
+`#pp-mkvistoggle` (the shared show/hide-markup switch on the Gallery's own list bar —
+not the lightbox's already-icon-only `#pp-lb-markuptoggle`, which needed no change)
+dropped its trailing `Markup</span>` text, leaving `Icons.svg('eye'/'eyeOff', 15)`
+alone. `syncMkVisBtn()` (module.js) only ever touches the icon `<span>`'s `innerHTML`
+and the button's own `is-active` class — it has no dependency on a text node existing
+beside it, so nothing else needed to change.
+
+### Item 2 — the earlier grayscale/accumulation fixes made the ALGORITHM correct;
+### this pass addresses the other honest possibility: a real device crash, not a
+### thrown error
+
+⚠️⚠️ **A crash is not the same failure as an error, and the same-day earlier entry
+above only ever hardens the second one.** `open360Upload()`'s own try/catch around
+`Pano360.stitchFromVideo(...)` already turns a *thrown* exception into a toast — but a
+mobile browser killing the whole tab for memory pressure, or for one JS task blocking
+the main thread long enough to be judged unresponsive, is not a thrown exception at
+all. No amount of try/catch around the call site can recover from either, so "exploit
+all options" here means removing the two real causes from `pano360.js` itself, not
+adding a second catch block.
+
+- ⚠️⚠️ **The per-frame warp loop allocated three full-mosaic-sized buffers per
+  frame, with nothing forcing the previous iteration's to be freed first.**
+  `stitchFrames`'s old sizing clamped WIDTH and HEIGHT to 8000px *independently*
+  (`Math.min(MAX_DIM, ...)` on each) — which still allows a mosaic as large as
+  8000×8000, and every one of up to 12 frames allocates a `dstMat` (an OpenCV Mat) PLUS
+  a same-sized `<canvas>` (`tmp`) on top of the mosaic canvas already being built —
+  three ~256MB buffers per iteration at that ceiling, with no yield point anywhere in
+  the loop for the browser's garbage collector to reclaim the last iteration's before
+  starting the next. That is a highly plausible, and previously undiagnosed, cause of
+  "app crashes when processing" that a caught JS error could never explain.
+- **Fixed with a pixel-AREA cap (`MAX_PIXELS = 6,000,000`), not a per-dimension one.**
+  The real bounding box is computed exactly as before; if its area would exceed the
+  cap, the WHOLE mosaic is scaled down proportionally (never distorted) before being
+  drawn — `mat3Scale(scale, scale)` composed into the existing `shift` matrix, so every
+  frame's placement scales together rather than each being warped at full size and
+  cropped after. `MAX_DIM = 6000` is kept as a per-axis backstop for a pathologically
+  long, thin mosaic that could otherwise pass the area check while still running one
+  dimension away.
+- **A `yieldToUI()` (a `requestAnimationFrame`, falling back to `setTimeout(0)`) is
+  now awaited after every frame in BOTH loops** — the homography/RANSAC loop and the
+  warp loop. A 12-frame stitch run as one uninterrupted synchronous block is exactly
+  the shape a slower phone's browser reads as an unresponsive page; breaking it into
+  one browser task per frame keeps the tab responsive AND gives the previous
+  iteration's canvases/`cv.Mat`s a real chance to be garbage-collected before the next
+  allocation — which is what the memory cap above is actually relying on to hold.
+- **A degenerate frame (zero width/height — e.g. the camera never actually started)
+  is now refused up front** with a clear message, rather than being handed to
+  `cv.imread()` to fail in whatever way an empty canvas fails inside the WASM module.
+- ⚠️ **What this does NOT claim to fix**: a genuine WebAssembly abort (Emscripten
+  calling `abort()` on an internal invariant violation) is not always a catchable JS
+  exception either, and no amount of JS-side hardening can guarantee OpenCV.js itself
+  never does this on some device/build combination. The area cap above is the
+  strongest available lever against that too, since it directly bounds the size of
+  every buffer OpenCV.js is asked to allocate — but it is a mitigation, not a proof.
+
+### Verified
+
+**Genuinely executed against the real, shipped `pano360.js`** (never re-derived from
+memory), via a Node `vm` harness with a hand-built OpenCV.js stub modelling the real
+Mat/ORB/warpPerspective contract closely enough to run `stitchFrames` to completion:
+- A normal 4-frame, modest-resolution mosaic passes through the area/dimension caps
+  untouched (well under both).
+- **A deliberately runaway case — 12 frames at 3000×2000 each, forced onto the
+  no-homography fallback so they simply tile side by side — would bound to
+  36000×2000 unclamped; the fix correctly scales it down to exactly 6000×333,
+  preserving the 18:1 aspect ratio and landing under both the area and per-axis
+  caps.** This is the exact shape of input (many wide frames) that produced the old
+  code's ~256MB-per-buffer worst case.
+- A frame with zero width/height is refused with the new, clear error message rather
+  than reaching `cv.imread()`.
+- `requestAnimationFrame` was genuinely invoked (not just present in source) across
+  both loops, confirming the yield actually fires per iteration rather than being a
+  no-op left over from a copy-paste.
+- `mat3Scale` and its composition with the existing `mat3Translate`/`mat3Mul` were
+  executed directly and checked against the expected point-transform arithmetic
+  (translate-then-scale of a point lands exactly where the two operations predict).
+
+`node --check` clean on `pano360.js`/`module.js`; `tools/wiring-check.js` — **123
+passed, 0 failed**, confirming the version bump left no asset on two versions and no
+cross-module reference broke.
+
+⚠️ **Not verified against a real device or the real `@techstark/opencv-js` build** —
+same standing caveat as every entry in this file: this sandbox has no camera and no
+network path to the CDN. What is verified is that the exact shipped sizing/yielding
+logic behaves correctly against a faithful model of OpenCV.js's real Mat/warp
+contract, not that a real recorded 360° walk-around now stitches without crashing on
+a real phone. **The first real recording, on a real device, through this exact code
+path, is still the actual end-to-end test** — per the owner's own "exploit all
+options" instruction, this pass removed every plausible cause reachable from the
+JS/OpenCV.js layer; it cannot rule out a lower-level platform crash this environment
+has no way to reproduce.
+
+`pano360.js` → `?v=20260912g`; the shared `MODULE_V` fallback (`assets/js/modules-grid.js`,
+`dashboard.html`, `modules.html`) → `20260912g` to match, since this module's `index.html`
+itself changed (the markup edit in item 1, plus `pano360.js`'s own `?v=` line).
+`module.js`/`module.css`/`capture.js` are unchanged this round and stay at their existing
+`?v=` tokens.
+
 ## Fourth capture-flow round: the camera view and every topbar button were
 ## being swallowed by an always-visible "hidden" error box, 360 drops mute
 ## entirely, and the real reason video-to-360 processing has never worked
