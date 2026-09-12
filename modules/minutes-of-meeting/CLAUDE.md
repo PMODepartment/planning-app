@@ -1,5 +1,73 @@
 # Module: minutes-of-meeting
 
+## 2026-09-12 (d) — The recurring series gets its own editable Schedule group in the meeting view, and the carry-over modal splits into Schedule and Next Meeting
+
+Owner's three-item refinement of round (c). **No migration.**
+
+1. **"for recurring meetings, below meeting details, add the schedule input group including the
+   start date, end date (optional), start and finish time, frequency."** `momDetailHTML` gains a
+   **Schedule** tile directly below Details, for a recurring occurrence whose series is Regular —
+   Series start date, Series end date (optional), Start time, End time, Frequency (+ rule fields).
+   ⚠️⚠️ **This is the SERIES' own `mom_schedules` row, not the occurrence's own date/time** in the
+   "Date and Venue" tile beneath it — two different facts (when does the whole series run, vs when
+   is this one meeting). ⚠️ Shown only when the series is Regular (`momSch.frequency !==
+   'irregular'`) — an Irregular series has no series dates or frequency to edit, the same "no
+   schedule input group" rule already established for Irregular everywhere else in this feature; the
+   tile is simply absent rather than showing empty/disabled fields.
+   ⚠️⚠️ **`scheduleRuleFieldsHTML` gained an `idPrefix` argument, and it is not cosmetic.** This
+   tile's own rule fields (`il-mds-sf-weekday` etc.) sit permanently in the Detail view's DOM, and
+   the Carry-over modal — opened from that same Detail view's "Carry over to next meeting" button —
+   already renders rule fields at the default `il-sf-*` ids. Reusing the default prefix for this
+   third caller would have put two elements with the same id in the document AT THE SAME TIME the
+   moment that button is clicked — the exact duplicate-DOM-id defect this app's history polices for.
+   The two existing callers (Add-meeting modal, Carry-over modal) keep the default prefix — they are
+   mutually exclusive with each other, reached from different, never-simultaneous screens — only the
+   Detail tile passes `'il-mds-sf'`.
+   New `momSaveSchedTile(mom)` writes the tile's fields to `mom_schedules` (keyed on
+   `mom.schedule_id`), called from `momSaveHeader()` right after the occurrence's own
+   `meeting_minutes` write succeeds — a SEPARATE table, so a separate write, best-effort and never
+   folded into `momSaveHeader`'s own return value: the minute has already saved by the time it runs,
+   and a schedule-side failure must not read as "your minute did not save."
+2. **"for non-recurring, when carrying over meeting, ask for inputs in two input groups. first
+   input group is Schedule - including regular/irregular, series start date, series end date
+   (optional), start time, finish time, and frequency including weekdays every n weeks. second
+   input group is Next Meeting - date, start time, finish time - pre-fill these as per schedule."**
+   `openNextMeetingModal`'s promotion branch (no existing series) is relabelled into two headed
+   groups. ⚠️⚠️ **This reverses round (c)'s own item 2** ("a Regular series' time is not asked here
+   at all — it is silently carried from the seed meeting's own `start_time`/`end_time`"): the
+   Schedule group now asks for **Start time \*** / **End time \*** explicitly
+   (`il-nx-schedstart`/`-schedend`), required when Regular, matching the Add-meeting modal's own
+   Schedule tile. Irregular still hides the whole Schedule group beyond the regularity selector
+   itself — round (b)'s rule is unchanged.
+3. **"for recurring meetings, just need one group which is Next Meeting including date, start
+   time, finish time. pre-fill these as per recurring meetings schedule."** Both branches' trailing
+   date/time row gets an `<h4 class="il-mom-sechead">Next Meeting</h4>` heading. ⚠️ For the
+   promotion branch, this row's Start/End time fields (`il-nx-start`/`-end`) are no longer
+   conditionally hidden for Regular (round (c) hid them entirely and copied the seed's time in
+   silently) — they are now always shown, defaulting to the same value the Schedule group's own
+   time defaults to (`defStart`/`defEnd`, already derived from the seed), and stay independently
+   editable for this one occurrence — "pre-fill … as per schedule" read as a default value, not a
+   locked one.
+
+### Verified
+`node --check` clean; `module.css` unchanged this round (357/357 braces) — the new heading reuses
+the existing bare `.il-mom-sechead` rule (it has its own base styling independent of
+`.il-mom-sectile`, confirmed by reading the CSS, so no wrapping box was needed inside a modal);
+tag-balance of the touched functions counted by hand and cross-checked against a whole-file
+open/close tag count taken before and after the edit — identical proportional imbalance both times
+(a pre-existing quirk in the crude counting method itself, unrelated to this change), confirming no
+new mismatch was introduced. Every new id (`il-mds-sstart`, `il-mds-send`, `il-mds-schedstart`,
+`il-mds-schedend`, `il-mds-freq`, `il-mds-rulewrap`, `il-nx-schedstart`, `il-nx-schedend`) appears
+exactly where expected and none collide with the pre-existing `il-sf-*`/`il-nx-*` ids; the removed
+`il-nx-timewrap`/`il-nx-timeendwrap` ids have zero remaining references.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment. No live save of the
+Detail view's new Schedule tile, no live promotion of a plain meeting into a Regular series through
+the restructured Carry-over modal, against real data.
+
+`module.js?v=` → `20260912j` (`module.css` unchanged, stays `20260912h`). No `MODULE_V` bump — no
+shared asset touched.
+
 ## 2026-09-12 (c) — Carry-over asks only for what differs; the Schedule tile gets its own time; Date and Venue merge in the meeting view
 
 Owner's four-item refinement of the previous round's Regular/Irregular work. **No migration.**

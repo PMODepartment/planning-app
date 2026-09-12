@@ -1745,10 +1745,25 @@ window.MinutesOfMeeting = (function () {
     if (window.Icons && Icons.hydrate) Icons.hydrate(host);
   }
 
-  // ⚠️ Re-rendered in place (into #il-sf-rulewrap) whenever the frequency
-  // select changes, so the fields relevant to weekly/monthly/quarterly show
-  // up without a full-form repaint that would drop other in-progress edits.
-  function scheduleRuleFieldsHTML(s) {
+  // ⚠️ Re-rendered in place (into #il-sf-rulewrap / #il-nx-rulewrap /
+  // #il-mds-rulewrap) whenever the frequency select changes, so the fields
+  // relevant to weekly/monthly/quarterly show up without a full-form
+  // repaint that would drop other in-progress edits.
+  // ⚠️ ITEM 1 (2026-09-12 round 4) — `idPrefix` exists because a THIRD
+  // caller was added (the Detail view's own Schedule tile, momDetailHTML)
+  // that can be ON SCREEN AT THE SAME TIME as the Carry-over modal (opened
+  // from that same Detail view's "Carry over to next meeting" button) —
+  // two elements sharing `id="il-sf-weekday"` at once would be a real
+  // duplicate-DOM-id bug, the exact defect this app's own history polices
+  // for. The two existing callers (the Add-meeting modal, the Carry-over
+  // modal) are mutually exclusive with each other (reached from different,
+  // never-simultaneous screens) and keep the default `'il-sf'` prefix
+  // unchanged; only the Detail tile passes a distinct one.
+  // `dis` is the same `' disabled'`/`''` string every other Detail-view
+  // field already threads through as `d` — the two modal callers never
+  // pass it, since neither has a read-only state.
+  function scheduleRuleFieldsHTML(s, idPrefix, dis) {
+    var p = idPrefix || 'il-sf', dd = dis || '';
     var freq = s.frequency || 'monthly_date';
     var wdOpts = function (cur) {
       return WEEKDAY_NAMES.map(function (n, i) {
@@ -1757,24 +1772,24 @@ window.MinutesOfMeeting = (function () {
     };
     if (freq === 'weekly') {
       return '<div class="pd-field" style="flex:1 1 140px;"><label>Weekday</label>' +
-          '<select class="pd-select" id="il-sf-weekday">' + wdOpts(s.weekday == null ? 0 : s.weekday) + '</select></div>' +
+          '<select class="pd-select" id="' + p + '-weekday"' + dd + '>' + wdOpts(s.weekday == null ? 0 : s.weekday) + '</select></div>' +
         '<div class="pd-field" style="flex:1 1 140px;"><label>Every N week(s)</label>' +
-          '<input class="pd-input" type="number" min="1" id="il-sf-interval" value="' + (s.interval_n || 1) + '"></div>';
+          '<input class="pd-input" type="number" min="1" id="' + p + '-interval" value="' + (s.interval_n || 1) + '"' + dd + '></div>';
     }
     if (freq === 'monthly_weekday') {
       return '<div class="pd-field" style="flex:1 1 140px;"><label>Which</label>' +
-          '<select class="pd-select" id="il-sf-ordinal">' +
+          '<select class="pd-select" id="' + p + '-ordinal"' + dd + '>' +
             [1, 2, 3, 4, -1].map(function (o) {
               return '<option value="' + o + '"' + ((s.week_ordinal == null ? 1 : s.week_ordinal) === o ? ' selected' : '') +
                 '>' + ORDINAL_NAMES[String(o)] + '</option>';
             }).join('') +
           '</select></div>' +
         '<div class="pd-field" style="flex:1 1 140px;"><label>Weekday</label>' +
-          '<select class="pd-select" id="il-sf-weekday">' + wdOpts(s.weekday == null ? 0 : s.weekday) + '</select></div>';
+          '<select class="pd-select" id="' + p + '-weekday"' + dd + '>' + wdOpts(s.weekday == null ? 0 : s.weekday) + '</select></div>';
     }
     // 'monthly_date' or 'quarterly'
     return '<div class="pd-field" style="flex:1 1 140px;"><label>Day of month</label>' +
-      '<input class="pd-input" type="number" min="1" max="31" id="il-sf-dom" value="' + (s.day_of_month || 1) + '"></div>';
+      '<input class="pd-input" type="number" min="1" max="31" id="' + p + '-dom" value="' + (s.day_of_month || 1) + '"' + dd + '></div>';
   }
 
   // ⚠️ ROUND 3 — scheduleFormHTML/scheduleOccFormHTML (the series page's own
@@ -2266,9 +2281,12 @@ window.MinutesOfMeeting = (function () {
           // details including schedule, attendees, title, agenda, open
           // minutes." The schedule itself is untouched (schedIdToUse stays
           // the existing series); nothing else in this dialog can change it.
+          // ⚠️ ITEM 3 (round 4) — "just need one group which is Next
+          // Meeting" — a single labelled group, not a bare row.
           ? '<p class="il-mom-note">Creates the next occurrence of <b>' + Fmt.esc(defTitle || '(untitled)') +
             '</b> — same schedule, venue, attendees and agenda, carrying forward whatever is still ' +
             'open. Only the date and time can differ.</p>' +
+            '<h4 class="il-mom-sechead">Next Meeting</h4>' +
             '<div class="il-form-row">' +
               '<div class="pd-field" style="flex:1 1 150px;"><label>Date</label>' +
                 '<input class="pd-input" type="date" id="il-nx-date" value="' + dateVal(defDate) + '"></div>' +
@@ -2277,14 +2295,19 @@ window.MinutesOfMeeting = (function () {
               '<div class="pd-field" style="flex:1 1 120px;"><label>End time</label>' +
                 '<input class="pd-input" type="time" id="il-nx-end" value="' + Fmt.esc(defEnd) + '"></div>' +
             '</div>'
-          // ⚠️ ITEM 2 — "ask for schedule: if regular or irregular. if
-          // regular, ask for start date, end date, frequency as usual. ask
-          // also for next date. if irregular, just ask for next date and
-          // time. other fields no need to ask, just copy previous details
-          // including title, agenda, attendees, open minutes."
+          // ⚠️ ITEM 2 (round 4) — "ask for inputs in two input groups. first
+          // input group is Schedule - including regular/irregular, series
+          // start date, series end date (optional), start time, finish
+          // time, and frequency including weekdays every n weeks. second
+          // input group is Next Meeting - date, start time, finish time -
+          // pre-fill these as per schedule." Supersedes round 2's item 2,
+          // which silently carried a Regular series' time from the seed —
+          // it is now asked explicitly, in the Schedule group itself,
+          // matching the Add-meeting modal's own Schedule tile (item 3).
           : '<p class="il-mom-note">Creates the next meeting and carries forward whatever is still open ' +
             'from this one — same title, venue, attendees and agenda. <b>This also makes it a ' +
             'recurring meeting.</b></p>' +
+            '<h4 class="il-mom-sechead">Schedule</h4>' +
             '<div class="il-form-row">' +
               '<div class="pd-field" style="flex:1 1 220px;"><label>Schedule</label>' +
                 '<select class="pd-select" id="il-nx-regularity">' +
@@ -2292,12 +2315,19 @@ window.MinutesOfMeeting = (function () {
                   '<option value="irregular">Irregular — no fixed pattern</option>' +
                 '</select></div>' +
             '</div>' +
-            // Regular only: Series start/end date + Frequency + rule fields.
+            // Regular only: Series start/end date + the series' own fixed
+            // Start/End time + Frequency + rule fields. Irregular hides all
+            // of this — "no need for the schedule input group" (round 3,
+            // item 7's rule, unchanged).
             '<div class="il-form-row" id="il-nx-schedwrap">' +
               '<div class="pd-field" style="flex:1 1 150px;"><label>Series start date *</label>' +
                 '<input class="pd-input" type="date" id="il-nx-sstart" value="' + dateVal((seed && seed.meeting_date) || momToday()) + '"></div>' +
               '<div class="pd-field" style="flex:1 1 150px;"><label>Series end date (optional)</label>' +
                 '<input class="pd-input" type="date" id="il-nx-send"></div>' +
+              '<div class="pd-field" style="flex:1 1 120px;"><label>Start time *</label>' +
+                '<input class="pd-input" type="time" id="il-nx-schedstart" value="' + Fmt.esc(defStart) + '"></div>' +
+              '<div class="pd-field" style="flex:1 1 120px;"><label>End time *</label>' +
+                '<input class="pd-input" type="time" id="il-nx-schedend" value="' + Fmt.esc(defEnd) + '"></div>' +
             '</div>' +
             '<div class="il-form-row" id="il-nx-freqwrap">' +
               '<div class="pd-field" style="flex:1 1 220px;"><label>Frequency *</label><select class="pd-select" id="il-nx-freq">' +
@@ -2307,16 +2337,20 @@ window.MinutesOfMeeting = (function () {
             '<div class="il-form-row" id="il-nx-rulewrap">' +
               scheduleRuleFieldsHTML({ frequency: FREQUENCIES[0].key, weekday: seedWeekday }) +
             '</div>' +
-            // Next date, always shown; Start/End time only for Irregular
-            // (a Regular series' time is set once, on the schedule itself,
-            // the same rule the Add-meeting modal's Schedule tile follows —
-            // it is not asked again per occurrence).
+            // ⚠️ ITEM 2 — "Next Meeting - date, start time, finish time -
+            // pre-fill these as per schedule." Always shown now (Regular or
+            // Irregular), and no longer conditionally hidden — the default
+            // VALUES are what carry the schedule's own time forward
+            // (`defStart`/`defEnd`, already derived from the schedule/seed
+            // above); the fields stay independently editable for this one
+            // occurrence.
+            '<h4 class="il-mom-sechead">Next Meeting</h4>' +
             '<div class="il-form-row">' +
               '<div class="pd-field" style="flex:1 1 150px;"><label>Date *</label>' +
                 '<input class="pd-input" type="date" id="il-nx-date" value="' + dateVal(defDate) + '"></div>' +
-              '<div class="pd-field" id="il-nx-timewrap" style="flex:1 1 120px;" hidden><label>Start time</label>' +
+              '<div class="pd-field" style="flex:1 1 120px;"><label>Start time</label>' +
                 '<input class="pd-input" type="time" id="il-nx-start" value="' + Fmt.esc(defStart) + '"></div>' +
-              '<div class="pd-field" id="il-nx-timeendwrap" style="flex:1 1 120px;" hidden><label>End time</label>' +
+              '<div class="pd-field" style="flex:1 1 120px;"><label>End time</label>' +
                 '<input class="pd-input" type="time" id="il-nx-end" value="' + Fmt.esc(defEnd) + '"></div>' +
             '</div>') +
       '</div>' +
@@ -2330,21 +2364,19 @@ window.MinutesOfMeeting = (function () {
       var wrap = m.el.querySelector('#il-nx-rulewrap');
       if (wrap) wrap.innerHTML = scheduleRuleFieldsHTML({ frequency: freqSel.value, weekday: seedWeekday });
     };
-    // ⚠️ ITEM 2 — Regular shows the schedule fields and hides the time
-    // fields (time lives on the schedule, asked once); Irregular is the
-    // exact opposite — no schedule input group at all, just the next
-    // date AND time.
+    // ⚠️ ITEM 2 (round 4) — Regular shows the Schedule group's series
+    // dates/fixed time/frequency; Irregular hides that whole group — "no
+    // need for the schedule input group." The Next Meeting group below is
+    // unconditional now (its own date/time are always asked), so nothing
+    // there needs to be toggled by this handler any more.
     var regSel = m.el.querySelector('#il-nx-regularity');
     if (regSel) regSel.onchange = function () {
       var isIrregular = regSel.value === 'irregular';
       var schedWrap = m.el.querySelector('#il-nx-schedwrap'), freqWrap = m.el.querySelector('#il-nx-freqwrap'),
-        ruleWrap = m.el.querySelector('#il-nx-rulewrap'), timeWrap = m.el.querySelector('#il-nx-timewrap'),
-        timeEndWrap = m.el.querySelector('#il-nx-timeendwrap');
+        ruleWrap = m.el.querySelector('#il-nx-rulewrap');
       if (schedWrap) schedWrap.hidden = isIrregular;
       if (freqWrap) freqWrap.hidden = isIrregular;
       if (ruleWrap) ruleWrap.hidden = isIrregular;
-      if (timeWrap) timeWrap.hidden = !isIrregular;
-      if (timeEndWrap) timeEndWrap.hidden = !isIrregular;
     };
     var create = m.el.querySelector('#il-nx-create');
     if (create) create.onclick = function () { createNextOccurrence(m, opts.schedId, seed, sch); };
@@ -2400,9 +2432,11 @@ window.MinutesOfMeeting = (function () {
         if (isIrregular) {
           payload.frequency = 'irregular';
           // ⚠️ ITEM 2 — "if irregular, just ask for next date and time": the
-          // time fields DO render for this branch (see openNextMeetingModal's
-          // regSel.onchange), unlike the regular branch below.
+          // Next Meeting group's own fields are what's asked (they're always
+          // present now); the schedule row gets the same values, there being
+          // no fixed pattern to give it a time of its own.
           startT = g('il-nx-start'); endT = g('il-nx-end');
+          payload.start_time = startT || null; payload.end_time = endT || null;
         } else {
           var freq = g('il-nx-freq') || FREQUENCIES[0].key;
           payload.frequency = freq;
@@ -2417,13 +2451,24 @@ window.MinutesOfMeeting = (function () {
           } else {
             payload.day_of_month = Math.max(1, Math.min(31, +g('il-sf-dom') || 1));
           }
-          // ⚠️ ITEM 2 — a Regular series is NOT asked for a time (it repeats
-          // at one fixed time, set once — see item 3's Add-meeting Schedule
-          // tile); it is silently carried from the seed meeting instead, the
-          // same as venue/attendees/agenda below.
-          startT = (seed && seed.start_time) || ''; endT = (seed && seed.end_time) || '';
+          // ⚠️ ITEM 2 (round 4) — a Regular series' fixed time is now asked
+          // explicitly, in the Schedule group's OWN Start/End time fields
+          // (`il-nx-schedstart`/`-schedend`) — no longer silently carried
+          // from the seed meeting, matching the Add-meeting modal's own
+          // Schedule tile (item 3, round 3).
+          var schedStartT = g('il-nx-schedstart'), schedEndT = g('il-nx-schedend');
+          if (!schedStartT || !schedEndT) {
+            UI.toast('Start and end time are required for a regular schedule.', 'warn');
+            if (btn) btn.disabled = false;
+            return;
+          }
+          payload.start_time = schedStartT; payload.end_time = schedEndT;
+          // ⚠️ ITEM 2 — "Next Meeting … pre-fill these as per schedule": the
+          // Next Meeting group's own fields already default to the schedule's
+          // time at render time (defStart/defEnd); read directly here since
+          // they may have been edited for this one occurrence.
+          startT = g('il-nx-start') || schedStartT; endT = g('il-nx-end') || schedEndT;
         }
-        payload.start_time = startT || null; payload.end_time = endT || null;
         var schIns = await sb().from('mom_schedules').insert(payload).select().single();
         if (schIns.error) throw schIns.error;
         SCHEDULES.push(schIns.data);
@@ -3036,6 +3081,18 @@ window.MinutesOfMeeting = (function () {
     // "recurring" this row can mean, since a plain meeting has no schedule to
     // be an occurrence of.
     var isRecurOcc = !!mom.schedule_id;
+    // ⚠️ ITEM 1 (2026-09-12 round 4) — "for recurring meetings, below
+    // meeting details, add the schedule input group including the start
+    // date, end date (optional), start and finish time, frequency." This
+    // is the SERIES' own row (`mom_schedules`, keyed by `mom.schedule_id`),
+    // not the occurrence's own date/time in the Date and Venue tile below —
+    // two different facts (when does the SERIES run, vs when is THIS one).
+    // ⚠️ Shown only for a REGULAR series: an Irregular one has no series
+    // start/end date or frequency to edit (the same "no schedule input
+    // group" rule the Add-meeting modal and Carry-over modal both already
+    // follow for Irregular) — it just recurs on no fixed pattern.
+    var momSch = isRecurOcc ? SCHEDULES.find(function (s) { return s.id === mom.schedule_id; }) : null;
+    var showSchedTile = !!(momSch && momSch.frequency !== 'irregular');
     return '<div class="il-mom-detail-card">' +
       (ro ? '' : '<input type="file" id="il-mom-fileinput" hidden ' +
         'accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx">') +
@@ -3161,6 +3218,32 @@ window.MinutesOfMeeting = (function () {
           '" placeholder="e.g. PPR Meeting, PSC Meeting"' + d + '>' +
           '<datalist id="il-mom-typelist">' + momTypeDatalistOptions() + '</datalist></div>' +
       '</div></div>' +   /* end Details tile */
+
+      // ⚠️ ITEM 1 (2026-09-12 round 4) — the series' own Schedule group,
+      // directly below Details. `showSchedTile` (computed above, from
+      // `momSch`) already excludes an Irregular series and a plain,
+      // non-recurring meeting, so this whole tile is simply absent for
+      // either — nothing to omit field-by-field.
+      (showSchedTile
+        ? '<div class="il-mom-sectile"><h4 class="il-mom-sechead">Schedule</h4>' +
+          '<div class="il-form-row">' +
+            '<div class="pd-field" style="flex:1 1 150px;"><label>Series start date</label>' +
+              '<input class="pd-input" type="date" id="il-mds-sstart" value="' + dateVal(momSch.start_date) + '"' + d + '></div>' +
+            '<div class="pd-field" style="flex:1 1 150px;"><label>Series end date (optional)</label>' +
+              '<input class="pd-input" type="date" id="il-mds-send" value="' + dateVal(momSch.end_date) + '"' + d + '></div>' +
+            '<div class="pd-field" style="flex:1 1 110px;"><label>Start time</label>' +
+              '<input class="pd-input" type="time" id="il-mds-schedstart" value="' + Fmt.esc(momSch.start_time || '') + '"' + d + '></div>' +
+            '<div class="pd-field" style="flex:1 1 110px;"><label>End time</label>' +
+              '<input class="pd-input" type="time" id="il-mds-schedend" value="' + Fmt.esc(momSch.end_time || '') + '"' + d + '></div>' +
+          '</div>' +
+          '<div class="il-form-row">' +
+            '<div class="pd-field" style="flex:1 1 220px;"><label>Frequency</label><select class="pd-select" id="il-mds-freq"' + d + '>' +
+              FREQUENCIES.map(function (f) { return '<option value="' + f.key + '"' + (momSch.frequency === f.key ? ' selected' : '') + '>' + f.label + '</option>'; }).join('') +
+            '</select></div>' +
+          '</div>' +
+          '<div class="il-form-row" id="il-mds-rulewrap">' + scheduleRuleFieldsHTML(momSch, 'il-mds-sf', d) + '</div>' +
+          '</div>'   /* end Schedule tile */
+        : '') +
 
       // ⚠️ ITEM 4 (2026-09-12 round 2) — "the date, planned start and finish
       // time and actual start and finish time should be combined with the
@@ -4466,6 +4549,45 @@ window.MinutesOfMeeting = (function () {
     return (ids.length || text.trim()) ? { ids: ids, text: text.trim() } : null;
   }
 
+  // ⚠️ ITEM 1 (2026-09-12 round 4) — the Detail view's own Schedule tile
+  // (momDetailHTML's `showSchedTile`) writes to `mom_schedules`, not
+  // `meeting_minutes` — a SEPARATE table from the one momSaveHeader below
+  // updates, so this is its own write rather than a few extra keys on that
+  // payload. Best-effort and never thrown into momSaveHeader's own
+  // success/failure: the occurrence's own fields have already saved by the
+  // time this runs, and a schedule-side failure (or an un-run migration —
+  // `mom_schedules.interval_n` in particular has its own history of this)
+  // must not read as "your minute did not save."
+  async function momSaveSchedTile(mom) {
+    if (!mom.schedule_id || !$('il-mds-sstart')) return;
+    var sch = SCHEDULES.find(function (s) { return s.id === mom.schedule_id; });
+    if (!sch) return;
+    var g = function (id) { var e = $(id); return e ? e.value : ''; };
+    var freq = g('il-mds-freq') || sch.frequency || FREQUENCIES[0].key;
+    var patch = {
+      start_date: g('il-mds-sstart') || sch.start_date,
+      end_date: g('il-mds-send') || null,
+      start_time: g('il-mds-schedstart') || null,
+      end_time: g('il-mds-schedend') || null,
+      frequency: freq,
+      weekday: null, week_ordinal: null, day_of_month: null, interval_n: 1,
+    };
+    if (freq === 'weekly') {
+      patch.weekday = +g('il-mds-sf-weekday') || 0;
+      patch.interval_n = Math.max(1, +g('il-mds-sf-interval') || 1);
+    } else if (freq === 'monthly_weekday') {
+      patch.weekday = +g('il-mds-sf-weekday') || 0;
+      patch.week_ordinal = +g('il-mds-sf-ordinal') || 1;
+    } else {
+      patch.day_of_month = Math.max(1, Math.min(31, +g('il-mds-sf-dom') || 1));
+    }
+    try {
+      var su = await sb().from('mom_schedules').update(patch).eq('id', mom.schedule_id);
+      if (su.error) throw su.error;
+      Object.assign(sch, patch);
+    } catch (e) { UI.toast('The schedule was not saved: ' + (e.message || e), 'warn'); }
+  }
+
   async function momSaveHeader() {
     var mom = MOMS.find(function (x) { return x.id === _momSel; });
     if (!mom || !canEditMinute(mom)) return false;
@@ -4495,6 +4617,7 @@ window.MinutesOfMeeting = (function () {
       var u = await sb().from('meeting_minutes').update(payload).eq('id', mom.id);
       if (u.error) throw u.error;
       Object.assign(mom, payload);
+      await momSaveSchedTile(mom);
       return true;
     } catch (e) {
       // ⚠️ Tolerant of the un-run 2026-09-01 migration — the same "drop the
@@ -4510,6 +4633,7 @@ window.MinutesOfMeeting = (function () {
           var u2 = await sb().from('meeting_minutes').update(stripped).eq('id', mom.id);
           if (u2.error) throw u2.error;
           Object.assign(mom, stripped);
+          await momSaveSchedTile(mom);
           UI.toast('Saved — some fields need migrations/2026-09-01-mom-schedules-attendees-item-history.sql ' +
             'and migrations/2026-09-02-meetings-rehaul.sql', 'warn');
           return true;
@@ -5699,6 +5823,19 @@ window.MinutesOfMeeting = (function () {
 
     var rep = host.querySelector('#il-mom-report');
     if (rep) rep.onclick = function () { _momReport = !_momReport; renderDetail(); };
+
+    // ⚠️ ITEM 1 (round 4) — the Detail view's own Schedule tile (a Regular
+    // recurring occurrence only — see showSchedTile in momDetailHTML).
+    // Re-renders just the rule-fields wrap on a frequency change, same as
+    // the Add-meeting modal and Carry-over modal's own wiring; it can only
+    // fire when the select is enabled, which is only when mayEdit && !locked
+    // (the tile's own `d`/disabled attribute), so there is nothing to gate
+    // here beyond the element existing at all.
+    var mdsFreq = host.querySelector('#il-mds-freq');
+    if (mdsFreq) mdsFreq.onchange = function () {
+      var wrap = host.querySelector('#il-mds-rulewrap');
+      if (wrap) wrap.innerHTML = scheduleRuleFieldsHTML({ frequency: mdsFreq.value }, 'il-mds-sf');
+    };
 
     // ⚠️ 2026-09-11 — Card/Table switch for the Minutes list (momItemsTableHTML).
     host.querySelectorAll('#il-mom-minview [data-minv]').forEach(function (b) {
