@@ -1,5 +1,16 @@
 # Module: stakeholder-map
 
+## 2026-09-12 — Label size brought onto the shared `--pd-fs-sm` rung
+
+Part of an app-wide label/input sizing pass — see root [`CLAUDE.md`](../../CLAUDE.md). This module's
+own `.pd-modal-body .pd-field > label` / `.pp-formhost .pd-field > label` override (the person page
+and the register's add/edit modal) sat at `--pd-fs-xs` (11px) against the input's `--pd-fs-sm`
+(12.5px) — the same mismatch fixed app-wide. Raised to `--pd-fs-sm`; the deliberate "small muted
+label, value below it" layout from (y5) is unchanged, only the size.
+
+`module.css?v=20260912l` on both referencing pages (`index.html`, `person.html`); `module.js`
+unchanged, stays `20260911ud`.
+
 ## 2026-09-10 (y5) — The form takes the read view's shape; one Save becomes two scoped ones
 
 - ⚠️⚠️ **`.sm-frow` was the whole layout.** 18 of them, `display:flex`, two or three controls per row.
