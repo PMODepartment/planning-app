@@ -5730,11 +5730,15 @@ window.ProgressPhotos = (function () {
         // right expectation instead of inviting the motion this cannot
         // handle well.
         '<p class="pp-hint">Stand in one spot and slowly turn all the way around (or through the angle you want), ' +
-          'or upload a video already recorded the same way, and it will be processed into a single 360° panorama.</p>' +
+          'or upload a video already recorded the same way, and it will be processed into a single 360° panorama. ' +
+          'Already have a finished 360° photo (equirectangular or similar, ready to view as-is)? Upload it directly ' +
+          '-- it skips processing entirely.</p>' +
         '<div id="pp360-step-source" style="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 8px;">' +
-          '<button type="button" class="pd-btn" id="pp360-take">Take 360°</button>' +
-          '<button type="button" class="pd-btn" id="pp360-choose">Upload 360° video</button>' +
+          '<button type="button" class="pd-btn" id="pp360-take">Take video</button>' +
+          '<button type="button" class="pd-btn" id="pp360-choose">Upload video</button>' +
+          '<button type="button" class="pd-btn" id="pp360-choosephoto">Upload 360° photo</button>' +
           '<input class="pd-input" type="file" id="pp360-file" hidden accept="video/*" />' +
+          '<input class="pd-input" type="file" id="pp360-photofile" hidden accept="image/*" />' +
         '</div>' +
         '<div id="pp360-offline" hidden>' +
           '<p class="pp-hint">You are offline right now, so this video cannot be processed and uploaded from here. ' +
@@ -5853,6 +5857,78 @@ window.ProgressPhotos = (function () {
       var field = $('pp360-thumbfield'); if (field) field.hidden = false;
     }
 
+    // Shared by both sources of a finished panorama image: a video that was
+    // just stitched (runStitch, below) and a pre-processed 360° photo
+    // uploaded directly (havePhoto, below) -- one place decides how the
+    // result is shown, so the two paths can never disagree about it.
+    function showStitchResult(res) {
+      stitchResult = res;
+      stitchUrl = URL.createObjectURL(res.blob);
+      show('pp360-progress', false);
+      show('pp360-result', true);
+      var viewerEl = $('pp360-pano-viewer');
+      var standinEl = $('pp360-pano-standin');
+      // ⚠️⚠️ 2026-09-12 (second pass, "the processed 360 still returns
+      // black"): show the flat stitched image FIRST, before the WebGL
+      // viewer is even attempted. If mountPannellumViewer never mounts
+      // (see its own comment -- a blocked/missing Pannellum script, or no
+      // WebGL), this is what keeps the preview from being nothing but
+      // .pp-lb-panowrap's own solid #000 background, which is exactly
+      // what a previous report of this same modal showed: the stitch had
+      // genuinely run (the frame-match warning above was real and
+      // correct) and the image itself was fine, but the viewer silently
+      // never mounted and nothing was left on screen to show for it.
+      if (standinEl) { standinEl.src = stitchUrl; standinEl.hidden = false; }
+      if (viewerEl) {
+        var hOverW = (res.width && res.height) ? (res.height / res.width) : 0.35;
+        pp360Viewer = mountPannellumViewer(viewerEl, stitchUrl, hOverW);
+        if (pp360Viewer && pp360Viewer.on) {
+          if (standinEl) standinEl.hidden = true;
+          // Item 6: a default thumbnail is captured the moment the viewer
+          // has actually rendered once, so Save is never blocked on the
+          // planner remembering to press "Use this view as thumbnail" --
+          // they can still press it again any time to pick a different one.
+          pp360Viewer.on('load', function () { captureViewerThumbnail(viewerEl, setThumbFromBlob); });
+        } else {
+          // The flat standin stays visible (set above) and the default
+          // thumbnail is captured from IT instead of from a viewer
+          // canvas that never existed -- otherwise Save would be stuck
+          // on "Still processing" forever with no way to proceed.
+          var vwarn = $('pp360-viewerwarn');
+          if (vwarn) {
+            vwarn.hidden = false;
+            vwarn.textContent = 'The interactive 360° pan viewer could not load on this device (a blocked ' +
+              'script, or no WebGL support) -- showing a flat preview instead. The stitched image itself is ' +
+              'unaffected and will still save normally.';
+          }
+          if (standinEl) {
+            if (standinEl.complete && standinEl.naturalWidth) captureImageThumbnail(standinEl, setThumbFromBlob);
+            else standinEl.onload = function () { captureImageThumbnail(standinEl, setThumbFromBlob); };
+          }
+        }
+      }
+      // ⚠️⚠️ 2026-09-12: the warning now names WHAT actually happened,
+      // built from `pairsFallback`/`pairsTotal` -- real counts the
+      // stitcher itself returns, not a fixed guess. A frame pair the
+      // stitcher could not confidently match falls back to a straight
+      // shift for that one join, which is exactly what a planner needs
+      // to know before deciding whether to re-record or just review the
+      // seam in question. A directly-uploaded photo never carries these
+      // (there was no stitch), so the warning stays hidden for that path.
+      var warn = $('pp360-qualitywarn');
+      if (warn) {
+        if (res.quality === 'poor' && res.pairsFallback) {
+          warn.hidden = false;
+          warn.textContent = res.pairsFallback + ' of ' + res.pairsTotal + ' frame-to-frame join' +
+            (res.pairsFallback === 1 ? '' : 's') + ' could not be matched confidently (the video moved too ' +
+            'fast, or that stretch had too little to match against) and ' + (res.pairsFallback === 1 ? 'was' : 'were') +
+            ' approximated with a straight shift instead. Look for a rough seam there before presenting.';
+        } else {
+          warn.hidden = true;
+        }
+      }
+    }
+
     async function runStitch() {
       show('pp360-step-source', false);
       show('pp360-progress', true);
@@ -5862,70 +5938,7 @@ window.ProgressPhotos = (function () {
           if (!prog) return;
           prog.textContent = (stage === 'frames' ? 'Reading frames…' : 'Stitching panorama…') + ' ' + Math.round(frac * 100) + '%';
         });
-        stitchResult = res;
-        stitchUrl = URL.createObjectURL(res.blob);
-        show('pp360-progress', false);
-        show('pp360-result', true);
-        var viewerEl = $('pp360-pano-viewer');
-        var standinEl = $('pp360-pano-standin');
-        // ⚠️⚠️ 2026-09-12 (second pass, "the processed 360 still returns
-        // black"): show the flat stitched image FIRST, before the WebGL
-        // viewer is even attempted. If mountPannellumViewer never mounts
-        // (see its own comment -- a blocked/missing Pannellum script, or no
-        // WebGL), this is what keeps the preview from being nothing but
-        // .pp-lb-panowrap's own solid #000 background, which is exactly
-        // what a previous report of this same modal showed: the stitch had
-        // genuinely run (the frame-match warning above was real and
-        // correct) and the image itself was fine, but the viewer silently
-        // never mounted and nothing was left on screen to show for it.
-        if (standinEl) { standinEl.src = stitchUrl; standinEl.hidden = false; }
-        if (viewerEl) {
-          var hOverW = (res.width && res.height) ? (res.height / res.width) : 0.35;
-          pp360Viewer = mountPannellumViewer(viewerEl, stitchUrl, hOverW);
-          if (pp360Viewer && pp360Viewer.on) {
-            if (standinEl) standinEl.hidden = true;
-            // Item 6: a default thumbnail is captured the moment the viewer
-            // has actually rendered once, so Save is never blocked on the
-            // planner remembering to press "Use this view as thumbnail" --
-            // they can still press it again any time to pick a different one.
-            pp360Viewer.on('load', function () { captureViewerThumbnail(viewerEl, setThumbFromBlob); });
-          } else {
-            // The flat standin stays visible (set above) and the default
-            // thumbnail is captured from IT instead of from a viewer
-            // canvas that never existed -- otherwise Save would be stuck
-            // on "Still processing" forever with no way to proceed.
-            var vwarn = $('pp360-viewerwarn');
-            if (vwarn) {
-              vwarn.hidden = false;
-              vwarn.textContent = 'The interactive 360° pan viewer could not load on this device (a blocked ' +
-                'script, or no WebGL support) -- showing a flat preview instead. The stitched image itself is ' +
-                'unaffected and will still save normally.';
-            }
-            if (standinEl) {
-              if (standinEl.complete && standinEl.naturalWidth) captureImageThumbnail(standinEl, setThumbFromBlob);
-              else standinEl.onload = function () { captureImageThumbnail(standinEl, setThumbFromBlob); };
-            }
-          }
-        }
-        // ⚠️⚠️ 2026-09-12: the warning now names WHAT actually happened,
-        // built from `pairsFallback`/`pairsTotal` -- real counts the
-        // stitcher itself returns, not a fixed guess. A frame pair the
-        // stitcher could not confidently match falls back to a straight
-        // shift for that one join, which is exactly what a planner needs
-        // to know before deciding whether to re-record or just review the
-        // seam in question.
-        var warn = $('pp360-qualitywarn');
-        if (warn) {
-          if (res.quality === 'poor' && res.pairsFallback) {
-            warn.hidden = false;
-            warn.textContent = res.pairsFallback + ' of ' + res.pairsTotal + ' frame-to-frame join' +
-              (res.pairsFallback === 1 ? '' : 's') + ' could not be matched confidently (the video moved too ' +
-              'fast, or that stretch had too little to match against) and ' + (res.pairsFallback === 1 ? 'was' : 'were') +
-              ' approximated with a straight shift instead. Look for a rough seam there before presenting.';
-          } else {
-            warn.hidden = true;
-          }
-        }
+        showStitchResult(res);
       } catch (err) {
         show('pp360-progress', false);
         // ⚠️⚠️ 2026-09-12: name what actually failed rather than a bare,
@@ -5941,11 +5954,50 @@ window.ProgressPhotos = (function () {
       }
     }
 
+    // A pre-processed 360° photo (already equirectangular/cylindrical --
+    // viewable as-is) skips capture and stitching entirely: it IS the
+    // panorama, so the only thing needed before showStitchResult() is its
+    // own real pixel dimensions (mountPannellumViewer needs the aspect
+    // ratio, same as a stitched result's res.width/res.height).
+    function imageDims(file) {
+      return new Promise(function (resolve) {
+        var url = URL.createObjectURL(file);
+        var img = new Image();
+        img.onload = function () {
+          URL.revokeObjectURL(url);
+          resolve({ width: img.naturalWidth || 0, height: img.naturalHeight || 0 });
+        };
+        img.onerror = function () { URL.revokeObjectURL(url); resolve({ width: 0, height: 0 }); };
+        img.src = url;
+      });
+    }
+
+    async function havePhoto(file) {
+      show('pp360-step-source', false);
+      show('pp360-progress', true);
+      var prog = $('pp360-prog'); if (prog) prog.textContent = 'Reading photo…';
+      try {
+        var dims = await imageDims(file);
+        showStitchResult({ blob: file, width: dims.width, height: dims.height, quality: 'ok' });
+      } catch (err) {
+        show('pp360-progress', false);
+        var reason = (err && err.message) ? err.message : 'an unknown error';
+        UI.toast('Could not read that photo: ' + reason, 'error');
+        show('pp360-step-source', true);
+      }
+    }
+
     if ($('pp360-choose')) $('pp360-choose').onclick = function () { var el = $('pp360-file'); if (el) el.click(); };
     if ($('pp360-file')) $('pp360-file').onchange = function () {
       var f = this.files && this.files[0];
       this.value = '';
       if (f) haveVideo(f);
+    };
+    if ($('pp360-choosephoto')) $('pp360-choosephoto').onclick = function () { var el = $('pp360-photofile'); if (el) el.click(); };
+    if ($('pp360-photofile')) $('pp360-photofile').onchange = function () {
+      var f = this.files && this.files[0];
+      this.value = '';
+      if (f) havePhoto(f);
     };
     if ($('pp360-take')) $('pp360-take').onclick = function () {
       if (!window.Capture) { UI.toast('In-app camera capture is not available on this device — upload a video instead', 'warn'); return; }

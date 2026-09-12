@@ -2,6 +2,52 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Add 360°: "Take video" / "Upload video" (renamed), plus a direct "Upload 360° photo" path (2026-09-12)
+
+Owner: rename the two capture-a-video options in the "Add 360°" flow to plain "Take video" /
+"Upload video", and add a third option — "Upload 360° photo" — for a pre-processed 360° photo
+(already equirectangular/cylindrical, viewable as 360° as-is) that needs no stitching at all.
+
+- **`open360Upload()`'s source-step buttons renamed**: `#pp360-take` "Take 360°" → "Take video",
+  `#pp360-choose` "Upload 360° video" → "Upload video". Neither's behaviour changed — both still
+  feed a video into `runStitch()`/`Pano360.stitchFromVideo`. The naming was the only thing that
+  claimed "360°" about acquiring the raw footage; the actual 360° result only exists once it's
+  stitched, which is what the new third button skips entirely.
+- **New `#pp360-choosephoto` "Upload 360° photo"** — a plain image file input
+  (`#pp360-photofile`, `accept="image/*"`). Picking a file goes straight to a new `havePhoto(file)`,
+  which reads the file's real pixel dimensions (`imageDims()`, a plain `<img>` decode) and hands it
+  to a new shared `showStitchResult({blob:file, width, height, quality:'ok'})` — no
+  `Pano360.stitchFromVideo` call, no frame extraction, no OpenCV.js.
+- ⚠️⚠️ **`showStitchResult()` is `runStitch()`'s own post-processing logic, pulled out so both
+  paths can never disagree about how a finished panorama is shown.** It's the exact same code that
+  used to run inline at the end of `runStitch()`'s `try` block (show the flat standin image first,
+  attempt to mount Pannellum, degrade to the standin + a named warning if the viewer can't mount,
+  capture a default thumbnail either way, and show/hide the frame-match quality warning). `runStitch()`
+  now just awaits the real stitch and calls `showStitchResult(res)`; `havePhoto()` calls the identical
+  function with a synthesized result carrying no `pairsFallback`/`pairsTotal` (a photo was never
+  stitched, so there's nothing to report a fallback join on) — the quality-warning branch is a no-op
+  for that shape by construction, not a special case bolted on.
+- ⚠️ The upload hint paragraph above the buttons now names the third path explicitly, so "no
+  processing needed" is stated rather than left for the button label alone to imply.
+- Save is otherwise unchanged for a photo-sourced result: `#pp360-save` still reads `stitchResult`/
+  `repBlob` and writes the same `progress_photos` row (`media_type:'360'`) regardless of which of
+  the three buttons produced them.
+
+### Verified
+
+`node --check` clean on `module.js`; `tools/wiring-check.js` — **123 passed, 0 failed**, 3525
+cross-module references checked, every asset on one version. 0 duplicate DOM ids (the two new
+button/input ids are unique). ⚠️ **Not verified against a real device or a real pre-processed 360°
+photo file** — the dimension-read path (`imageDims`) is the same plain `<img>` decode this file
+already uses elsewhere (`captureImageThumbnail`'s own standin-image path), and `showStitchResult`
+is the exact code that was already shipped and verified for the video path; what hasn't been
+exercised here is a real equirectangular photo actually mounting correctly in Pannellum end to end.
+
+`module.js` → `?v=20260912r`; the shared `MODULE_V` fallback (`assets/js/modules-grid.js`,
+`dashboard.html`, `modules.html`) → `20260912r` to match, since this module's `index.html` itself
+changed (its own `module.js?v=` line). `pano360.js`/`capture.js`/`module.css` are unchanged this
+round and stay at their existing `?v=` tokens.
+
 ## The "still returns black" bug survived the cylindrical-projection fix because
 ## it was never the stitch — it was the VIEWER silently failing to mount
 ## (2026-09-12, later still)
