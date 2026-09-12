@@ -108,11 +108,20 @@ options" instruction, this pass removed every plausible cause reachable from the
 JS/OpenCV.js layer; it cannot rule out a lower-level platform crash this environment
 has no way to reproduce.
 
-`pano360.js` → `?v=20260912g`; the shared `MODULE_V` fallback (`assets/js/modules-grid.js`,
-`dashboard.html`, `modules.html`) → `20260912g` to match, since this module's `index.html`
+`pano360.js` → `?v=20260912h`; the shared `MODULE_V` fallback (`assets/js/modules-grid.js`,
+`dashboard.html`, `modules.html`) → `20260912h` to match, since this module's `index.html`
 itself changed (the markup edit in item 1, plus `pano360.js`'s own `?v=` line).
 `module.js`/`module.css`/`capture.js` are unchanged this round and stay at their existing
 `?v=` tokens.
+
+⚠️ **A real `MODULE_V` collision, caught by merging `origin/main` forward before pushing.**
+A concurrent session's own same-day work (project-schedule's site-plan entry) independently
+bumped `20260912f` → `20260912g` for an unrelated reason, landing on `main` while this change
+was in progress; this change's own first pass had picked the identical `g`. A three-way merge
+sees both sides making the SAME textual edit and resolves it silently with no conflict — so the
+version stayed at `g` post-merge even though this file's own content had moved on again. Caught
+by re-checking the actual token against what this round's `pano360.js` edit needed, not assumed
+correct because the merge reported clean. Re-derived to `h`, past both.
 
 ## Fourth capture-flow round: the camera view and every topbar button were
 ## being swallowed by an always-visible "hidden" error box, 360 drops mute
