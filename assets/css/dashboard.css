@@ -1446,6 +1446,21 @@ body { overflow-x: clip; }
   select { min-height: var(--pd-tap); }
   .pd-input, .pd-select, .pd-textarea { padding: 10px 12px; }
   .pd-input-sm { height: 40px; padding: 8px 10px; }
+  /* ⚠️⚠️ `input[type="date"]`/`input[type="time"]` are NOT a plain text box on iOS Safari —
+     they are a native compound control, and their own intrinsic sizing answers to the
+     platform's UI, not to the `padding`/`min-height` two lines above, until that native
+     chrome is reset. Left alone, the visible field can render far taller than this app's
+     own 44px minimum with the locale-formatted value centred deep inside it — which reads
+     on screen as a wide gap between the label and the value, because nothing marks where
+     the field's own edge actually sits. `appearance:none` hands the box back to this
+     file's own border/background/padding/min-height, which is the standard fix for this
+     exact iOS symptom; the platform's tap-to-open picker is tied to the `type` attribute
+     itself and is unaffected by it. Desktop is untouched — every browser tested here
+     (Chromium) already renders these controls at the padding/min-height above with no
+     reset needed, so this is scoped to the one platform that does not. */
+  input[type="date"], input[type="time"], input[type="datetime-local"] {
+    -webkit-appearance: none; appearance: none;
+  }
 
   /* ⚠️ The phone-width `.pd-home-head h2` / `.pd-modulebar h1` shrink to 14px
      that stood here is GONE, not converted: the type scale has no 14px rung, so

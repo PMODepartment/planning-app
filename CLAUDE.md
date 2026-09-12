@@ -102,6 +102,44 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### iPhone date/time inputs were rendering at native, uncontrolled height — the visible gap was the box, not the margin (2026-09-12) — gwsia
+
+Owner, with a screenshot of Minutes of Meeting's "+ Add meeting" form on an iPhone: *"in iphone,
+input boxes still overflow. there are also many whitespaces between input label and input box.
+please audit and fix across app."*
+
+⚠️⚠️ **THE "WHITESPACE" WAS NOT A MARGIN — IT WAS THE BOX.** Measured the identical markup+CSS
+in a real (Chromium) browser at 375px first: label-to-input gap computed at a flat, correct
+**5px** everywhere, matching the CSS exactly. That ruled out a `.pd-field`/`.il-timepair` layout
+bug and pointed at something Chromium's own date/time control can't reproduce: **iOS Safari
+renders `input[type="date"]`/`type="time"` as a native compound control whose own intrinsic
+sizing does not obey `padding`/`min-height` until the native chrome is reset** — a
+long-documented WebKit quirk. Left alone, the box can render far taller than this app's own
+44px minimum, with the locale-formatted value centred deep inside it — which reads on screen as
+a wide gap between the label and the value, because nothing marks where the box's own edge
+actually sits. This is also the far more likely explanation for the residual "overflow" report
+than the `.il-timepair` stacking fixed earlier the same day (confirmed still correct, untouched).
+
+**Fixed with the standard companion rule for this exact symptom**: `-webkit-appearance: none;
+appearance: none;` on `input[type="date"], input[type="time"], input[type="datetime-local"]`,
+scoped inside the existing mobile `@media (max-width:700px)` block, right beside the padding/
+min-height rules those controls already carry. This hands the box back to this file's own
+border/background/padding/min-height instead of the platform's own chrome; the tap-to-open
+native picker is tied to the `type` attribute itself and is unaffected by an appearance reset.
+Desktop is untouched — confirmed byte-identical before/after in Chromium, since every browser
+tested here already renders these controls correctly at the shared padding/min-height with no
+reset needed.
+
+⚠️ **Not verified on a real iOS device** — this is the documented, standard fix for the exact
+symptom described and screenshotted, argued from the box model of native form controls rather
+than observed here, the same standing caveat this app's own CSS carries elsewhere for iOS-only
+behaviour Chromium cannot reproduce.
+
+**Verified:** brace balance holds on `dashboard.css` (536/536), 0 NUL bytes; `tools/wiring-check.js`
+126/126, 0 version splits.
+
+`dashboard.css` → `?v=20260912q` (31 pages).
+
 ### 2026-09-12 — Pormac gets a real History tab, and "New chat" works from it too
 
 Owner: *"include already the char history in this build. fix also new chat so it should
