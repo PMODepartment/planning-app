@@ -13,6 +13,123 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### The zoom control reaches the 3D stacking; migrated footprints arrive smaller, turnable, and with their corners fixed (2026-09-12 k) — ethanrobles10
+
+Owner: *"the zoom control should also work on the vertical stacking 3d view and also, when the per
+tower footprints are migrated, the default scale of the site plan should be way less. what if the
+footprint of tower 1 is so big it is unable to be rotated? Also the migration of the footprints of
+the tower, the users should not be able to edit the corner points of the footprint. It was already
+defined. Meaning the only thing users are able to do are rotate the orientation and change
+locations. that is it."*
+
+### ⚠️ THE 3D VIEW ALREADY DOLLIED — NOTHING ON IT SAID SO
+`cv.onwheel` has always moved `rot.r`, and it is unchanged. What was missing was any affordance: a
+WebGL canvas has no scrollbar, no handle and nothing that looks zoomable, so the only statement that
+it could be zoomed was the words "scroll to zoom" in small grey text under the card — a manual, not a
+control. The same `.ps-zoomctl` the plan window uses is now built in `_vs3Build`, so it is on **every**
+3D scene: the cards, the four panes of the focus window, and the Site view.
+
+- ⚠️⚠️ **ONE CLASS FOR BOTH DRAWINGS.** `.zpw-zoom` / `.zpw-zpct` were renamed `.ps-zoomctl` /
+  `.ps-zoomctl-pct` rather than copied. It is the same question asked of a different drawing, and
+  two controls that looked different would be two things to learn.
+- ⚠️⚠️ **ONE CLAMP.** `RMIN` / `RMAX` and `clampR()` replace the pair of limits that had been written
+  out twice (the wheel and `setCam`). The buttons drive `rot.r` through the same function, so they
+  can never offer a framing the wheel cannot reach, or stop short of one it can. **Measured**: the
+  wheel and the buttons land on exactly the same two limits, on three model sizes.
+- ⚠️ **`Fit` is `r0`** — this model's own default framing, not a number typed in here.
+- ⚠️ **The readout is a RATIO of that default**, not a distance: "160%" means closer than the view
+  the card opens at, which a planner can act on. Scene units mean nothing they can see, and they
+  differ between a 3-storey model and a 40-storey one.
+- ⚠️ **Synced from `applyRot`, not from the wheel handler.** The distance also changes on a restored
+  camera, on a linked pane following this one, and on the buttons themselves; a readout wired to one
+  of those three paths would sit there being wrong after the other two. It is why the four linked
+  panes of the focus window all read the same number.
+- ⚠️ `stopPropagation` on `pointerdown` as well as on click: the buttons sit ON the canvas, and the
+  canvas starts an orbit on pointerdown — without it, pressing "+" would also turn the building.
+- ⚠️ Removed in `dispose()`, beside the label layer and for the same reason: it is DOM this scene put
+  on the host, and every repaint of this view disposes its scenes.
+
+### ⚠️ THE DEFAULT SCALE: 0.62 OF A CELL → 0.38
+A site plan is a **larger scale** than the floor plans it is built from — a tower that filled its own
+sheet is a small object on a site. At two thirds of a cell the sheet read as a floor plan of four big
+rooms, and the planner's first job was shrinking every footprint before they could start arranging.
+Small is also the cheaper mistake: pressing + a few times is one gesture, dragging four overlapping
+towers apart is not.
+
+### ⚠️⚠️ "WHAT IF THE FOOTPRINT IS SO BIG IT IS UNABLE TO BE ROTATED?" — TWO WAYS IN, ONE CLOSED, ONE GUARDED
+A shape's bounding box **grows as it turns**: a w x h rectangle at 45° needs `(w + h) / √2` each way.
+`zpRotatePts` refuses a turn whose result will not fit the sheet, so a footprint can genuinely become
+unturnable.
+
+- ⚠️ **On IMPORT it could not, and measurement says so.** Even at 0.62, a slot is at most
+  `0.62 x 0.62` of a cell and every angle still cleared the sheet. The import path was already safe;
+  saying otherwise would have been claiming a fix for a bug that was not there.
+- ⚠️⚠️ **The way in is the `+` BUTTON, and it was wide open.** Measured against the shipped code at
+  HEAD: a footprint of an ordinary 2:1 tower, grown with eleven presses of `+`, reaches 988 x 494 on
+  a 1000 x 620 sheet and **22 of 25 angles are then refused — including every quarter turn**. The
+  planner would not find out until a turn they expected simply would not go.
+- ⚠️ **`zpTurnable(pts, h)`**: every rotation of a shape fits inside the circle through its own
+  corners, so the whole question is whether the **diagonal** of its bounding box clears the shorter
+  side of the sheet. Import now caps the diagonal at `0.92 x min(ZP_W, siteH)` — it shrinks nothing
+  that already fits — and `+` refuses the press that would take a **locked** area past it, at the
+  point of growth, where the reason is still legible.
+- ⚠️ **Only locked areas are guarded.** A hand-traced one may legitimately fill the sheet — the site
+  outline drawn around the towers is supposed to.
+- ⚠️ The rotate refusal now names the fix ("press − to make it smaller first"), because the fix is one
+  button away and the planner is already looking at it.
+
+### ⚠️⚠️ A MIGRATED FOOTPRINT'S CORNERS ARE THE FLOOR PLAN'S, AND ARE NOT EDITABLE HERE
+Owner: *"It was already defined."* A corner dragged on the site plan would make it disagree with the
+floor plan it was taken from — silently, with no way to tell afterwards which of the two drawings is
+the building. `zpSitePlaceFootprints` marks every area it places `lock: 1`.
+
+- ⚠️⚠️ **The enforcement is that paint() draws no handles**, and that is the right place for it:
+  every corner gesture in this window — drag a corner, alt-click to remove one, click a midpoint to
+  add one — reaches its corner through one of those two circles. No circles, no gesture. The body
+  still drags, so moving is untouched, and **Orient** still turns it. The pointer handler checks
+  `lock` too, so that anything drawing a handle in future cannot quietly re-open the corners.
+- ⚠️⚠️ **The lock survives `zpNormPoly`.** That function rebuilds every area from scratch on load and
+  returned exactly `{id, code, pts}` — a flag it did not copy would have been gone on the next
+  reload, and a footprint that came back editable after a refresh is invisible until somebody drags a
+  corner. **Verified** across the save/load round trip, and that a hand-traced area gains no lock.
+- ⚠️ **Copy and Duplicate are refused on one.** A copy is written back as an ordinary area carrying
+  the same tower name — a SECOND outline of one building, which is what this whole feature exists to
+  prevent, and the "already on the site" check would then read the tower as done while one of the two
+  drawings belongs to nobody. **Delete stays**, or a mistaken import could not be undone.
+- ⚠️ **Resize (− / +) stays**, and that is a judgement against the letter of *"that is it"*: a uniform
+  scale does not change the outline, it is the only way to say one tower is bigger than another on a
+  plan where every footprint arrives at the same width, and the window's own scale note tells the
+  planner to use it. The shape — which is what *"already defined"* is about — cannot be touched.
+- ⚠️ Said in three places, because a planner reaching for a corner that is not there needs the answer
+  where they are looking: a **dashed** outline when selected (a traced area shows its corners, this
+  one has none to show), an SVG `<title>` on the shape itself, and its own line under the stage.
+
+### Verified
+- **538 assertions** driving the shipped `zpSitePlaceFootprints` / `zpTowerPlate` / `zpRotatePts` /
+  `zpScalePts` / `zpTurnable` / `zpNormPoly`, sliced verbatim (harness gitignored, deleted): all 25
+  angles on all four footprint shapes, area preserved and landing on the sheet each time; 24
+  consecutive 15° turns never stick; every footprint's diagonal clears the sheet; every one fits its
+  0.38 slot with its **own aspect** intact (7.5:1, 1:1, 1:3, 3:2); `lock: 1` on every migrated area
+  and through normalize; a tall sheet and a multi-piece footprint behave; and a locked footprint
+  grown with `+` until the guard stops it is **still turnable at all 25 angles**, on three sheet
+  shapes.
+- ⚠️ **Sanity-gated against HEAD**: the same harness run on the previous code fails 14 assertions
+  (the slot sizes and every lock), and the growth gate above reports the 22-refused-angles state that
+  the new guard prevents. A test that passes on both versions proves nothing.
+- **42 assertions** on the 3D zoom, slicing `clampR`, the three button handlers and the `zoomUI`
+  readout out of `_vs3Build` and running them against stub buttons: opens at 100% with Fit disabled,
+  `+` and `−` stop exactly at `RMIN`/`RMAX` and disable themselves there, the readout crosses 100%
+  the right way, Fit returns to `r0` exactly, and **the wheel reaches the same two limits and no
+  further** — on three model sizes.
+- **Layout measured in a browser** against the shipped stylesheets: the control sits inside the 3D
+  mount and inside the plan stage, the same size in both; a locked area's outline computes to dashed
+  `12px, 7px` where a traced one computes to `none`.
+- ⚠️⚠️ **Not verified signed in.** The anon key has no grants, so no real footprint has been imported,
+  locked, turned or grown in the app, and no three.js scene has been built — the zoom control's DOM
+  and clamp are proven, a canvas with a building on it is not. First things to check on a real
+  project: that a footprint brought in shows no corner dots, and that `+` on the 3D card moves the
+  camera in and the readout with it.
+
 
 ### The plan window zooms like a CAD drawing, and the step behind it sheds three rows (2026-09-12 j) — ethanrobles10
 

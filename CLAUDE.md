@@ -102,6 +102,45 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### The zoom control reaches the 3D stacking; migrated footprints come in smaller, turnable and uneditable (2026-09-12) — ethanrobles10
+
+Owner: *"the zoom control should also work on the vertical stacking 3d view and also, when the per
+tower footprints are migrated, the default scale of the site plan should be way less. what if the
+footprint of tower 1 is so big it is unable to be rotated? … the users should not be able to edit the
+corner points of the footprint. It was already defined."*
+
+- ⚠️ **The 3D view always dollied on the wheel — nothing on it said so.** A WebGL canvas carries no
+  affordance at all, so the only statement that it could be zoomed was small grey text under the
+  card. The same `.ps-zoomctl` the plan window uses is now built in `_vs3Build`, on every 3D scene:
+  the cards, the focus window's four panes and the Site view. One clamp (`clampR`) now serves the
+  wheel, the buttons and a restored camera, so they cannot disagree; the readout is a ratio of the
+  model's own default framing, and it is synced from `applyRot` so a linked pane cannot leave it
+  lying.
+- ⚠️ **The default scale went 0.62 of a cell → 0.38.** A site plan is a larger scale than the floor
+  plans it is built from, and small is the cheaper mistake: pressing + is one gesture, dragging four
+  overlapping towers apart is not.
+- ⚠️⚠️ **"So big it is unable to be rotated" was real, but not where it looked.** A shape's bounding
+  box grows as it turns, and measurement against the previous code says import was already safe —
+  the way in was the `+` button. Eleven presses took an ordinary 2:1 footprint to 988 x 494 on a
+  1000 x 620 sheet, and **22 of 25 angles were then refused, every quarter turn among them**. Import
+  now caps the **diagonal** (every rotation fits inside the circle through a shape's own corners),
+  and `+` refuses the press that would take a migrated footprint past it.
+- ⚠️⚠️ **A migrated footprint's corners are fixed.** Dragging one would make the site plan disagree
+  with the floor plan it came from, silently. paint() draws no handles on a locked area — which is
+  the whole enforcement, because every corner gesture reaches its corner through one of those
+  handles — and the lock now survives `zpNormPoly`, which rebuilt every area as `{id, code, pts}` and
+  would have dropped it on the next reload. Move and Orient are untouched; Copy and Duplicate are
+  refused (a copy would be a second outline of one building); Delete stays, or a mistaken import
+  could not be undone.
+
+⚠️ **Not verified signed in** — the anon key has no grants. 538 assertions drive the shipped
+migration and rotation code and 42 the 3D zoom logic, both sliced verbatim, and the footprint suite
+is gated against the previous version (it fails 14 there). What has not been seen is a real footprint
+locked and turned in the app, or a three.js scene with the control on it.
+
+`MODULE_V` → `20260912k`. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
 ### The plan window zooms and pans like a CAD drawing; the setup step sheds three rows (2026-09-12) — ethanrobles10
 
 Owner: *"make the space allotted for the site plan bigger. meaning it should be similar to autocad,

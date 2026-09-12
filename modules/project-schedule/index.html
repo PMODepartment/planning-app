@@ -3403,20 +3403,24 @@
     .zpw-img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain;
       transform-origin:0 0; pointer-events:none; }
     .zpw-svg { position:absolute; inset:0; width:100%; height:100%; }
-    /* ==== THE ZOOM CONTROL ============================================================
-       ⚠️ ON the stage rather than in a toolbar row, for two reasons: it is a control for the
+    /* ==== THE ZOOM CONTROL, SHARED BY EVERY DRAWING IN THIS MODULE ====================
+       ⚠️ ON the drawing rather than in a toolbar row, for two reasons: it is a control for the
        VIEW and not for the drawing, and the edit row it would otherwise sit in is not emitted at
        all until the sheet has something to draw — so a planner zooming into a bare floor plan to
-       place their first corner would have had no control at all. */
-    .zpw-zoom { position:absolute; right:8px; bottom:8px; z-index:2; display:flex; align-items:center;
+       place their first corner would have had no control at all.
+       ⚠️⚠️ ONE CLASS FOR THE PLAN WINDOW AND THE 3D STACKING. Owner 2026-09-12: *"the zoom control
+       should also work on the vertical stacking 3d view."* It is the same question asked of a
+       different drawing, and two controls that looked different would be two things to learn. The
+       3D view builds it in _vs3Build; the plan window writes it in paint(). */
+    .ps-zoomctl { position:absolute; right:8px; bottom:8px; z-index:6; display:flex; align-items:center;
       gap:2px; padding:3px; border:1px solid var(--pd-line); border-radius:9px;
-      background:var(--pd-card); box-shadow:0 2px 8px rgba(0,0,0,.22); }
-    .zpw-zoom button { min-width:27px; height:24px; padding:0 7px; border:none; border-radius:6px;
+      background:var(--pd-card); box-shadow:0 2px 8px rgba(0,0,0,.22); pointer-events:auto; }
+    .ps-zoomctl button { min-width:27px; height:24px; padding:0 7px; border:none; border-radius:6px;
       background:none; color:var(--pd-ink); font:inherit; font-size:var(--pd-fs-sm); font-weight:700;
       line-height:1; cursor:pointer; }
-    .zpw-zoom button:hover:not(:disabled) { background:var(--pd-bg); color:var(--pd-red); }
-    .zpw-zoom button:disabled { opacity:.38; cursor:not-allowed; }
-    .zpw-zpct { min-width:44px; text-align:center; font-size:var(--pd-fs-xs); color:var(--pd-muted);
+    .ps-zoomctl button:hover:not(:disabled) { background:var(--pd-bg); color:var(--pd-red); }
+    .ps-zoomctl button:disabled { opacity:.38; cursor:not-allowed; }
+    .ps-zoomctl-pct { min-width:44px; text-align:center; font-size:var(--pd-fs-xs); color:var(--pd-muted);
       font-variant-numeric:tabular-nums; }
     /* ⚠️ vector-effect, so a line is the same weight at every zoom. Without it a 3-unit stroke at
        6× reads as a fat band and a small zone disappears under its own outline — the drawing
@@ -3461,6 +3465,11 @@
     .zpw-mid:hover { opacity:1; }
     .zpw-lv { fill:var(--pd-red); stroke:#fff; stroke-width:2; vector-effect:non-scaling-stroke; }
     .zpw-shape.drag polygon { fill-opacity:.6; cursor:grabbing; }
+    /* A migrated tower footprint. ⚠️ Selected, it draws a DASHED outline and no corner dots, and
+       that difference is the point: an area traced in this window shows its corners when selected,
+       and this one has none to show because its shape belongs to the floor plan it came from. The
+       cursor still says grab, because moving and turning it are exactly what is left. */
+    .zpw-shape.lk.sel polygon { stroke-dasharray:12 7; }
     /* ⚠️ vector-effect keeps the gridline ONE pixel wide however the stage is stretched. The svg
        is preserveAspectRatio="none", so a plain stroke-width would be scaled unevenly on the two
        axes and the grid would read as thicker verticals than horizontals. */
@@ -16891,7 +16900,14 @@
        means "twice as far out as this building's default" on the model it was taken from; applied
        raw to a taller building it is a different framing entirely. See setCam. */
     var r0 = Math.max(span * 2.6, tall * 1.9) + 1.5;
+    /* ⚠️ ONE clamp for the wheel, the zoom buttons and a restored camera. The pair of limits was
+       written out twice already; a third copy is a third chance for the buttons to offer a
+       distance the wheel cannot reach, or to stop short of one it can. */
+    var RMIN = span * 1.2, RMAX = span * 12 + tall * 6;
+    function clampR(r) { return Math.max(RMIN, Math.min(RMAX, r)); }
     var rot = { az: Math.PI / 4, el: 0.5, r: r0 }, drag = null;
+    // The zoom readout and the node it lives in — built below, once the canvas exists.
+    var zoomUI = null, zoomWrap = null;
     // Told when the camera moves, so a linked scene can adopt the same one. ⚠️ Fired from
     // applyRot, which every gesture and every setView funnels through — a hook on the drag alone
     // would leave the viewpoint buttons and the wheel unlinked.
@@ -16908,6 +16924,10 @@
       placeLabels();
       // ⚠️ `muted` is the re-entrancy guard, and it is not optional: A tells B, B's applyRot
       // tells A, and two linked panes would recurse until the stack blew on the first drag.
+      // ⚠️ Here, not in the wheel handler: the distance also changes on a restored camera, on a
+      // linked pane following this one, and on the zoom buttons themselves. A readout wired to
+      // one of those paths would sit there being wrong after the other two.
+      if (zoomUI) zoomUI();
       if (onCam && !muted) { try { onCam(cam()); } catch (e) {} }
     }
     // The whole camera: the named viewpoint AND the orbit the planner turned it to.
@@ -16925,7 +16945,7 @@
       if (typeof c.el === 'number') rot.el = Math.max(-0.2, Math.min(1.5, c.el));
       if (typeof c.r === 'number') {
         var want = (typeof c.r0 === 'number' && c.r0 > 0) ? c.r * (r0 / c.r0) : c.r;
-        rot.r = Math.max(span * 1.2, Math.min(span * 12 + tall * 6, want));
+        rot.r = clampR(want);
       }
       applyRot();
       muted = was;
@@ -16973,9 +16993,58 @@
     cv.onpointerleave = function () { drag = null; cv.style.cursor = 'grab'; setHover(null); };
     cv.onwheel = function (e) {
       e.preventDefault();
-      rot.r = Math.max(span * 1.2, Math.min(span * 12 + tall * 6, rot.r * (e.deltaY > 0 ? 1.08 : 0.93)));
+      rot.r = clampR(rot.r * (e.deltaY > 0 ? 1.08 : 0.93));
       applyRot();
     };
+    /* ==== THE ZOOM CONTROL ===============================================================
+       Owner 2026-09-12: *"the zoom control should also work on the vertical stacking 3d view."*
+
+       ⚠️⚠️ THE WHEEL ALREADY DOLLIED — WHAT WAS MISSING WAS ANYTHING THAT SAID SO. A WebGL canvas
+       carries no affordance of its own: nothing on it looks zoomable, there is no scrollbar and no
+       handle, so a planner who has not scrolled over a 3D model has no reason to think they can.
+       The line under the card said "scroll to zoom" in small grey text, which is a manual, not a
+       control. The wheel is unchanged and still works.
+       ⚠️ THE SAME CONTROL AS THE PLAN WINDOW'S, class for class (`.ps-zoomctl`), because it is the
+       same question asked of a different drawing.
+       ⚠️ It drives `rot.r` through `clampR` — the one number and the one clamp the wheel uses — so
+       the buttons can never reach a framing the wheel cannot, and `Fit` is exactly `r0`, this
+       model's own default distance rather than a number typed in here. */
+    (function () {
+      zoomWrap = document.createElement('div');
+      zoomWrap.className = 'ps-zoomctl';
+      var bOut = document.createElement('button'), pct = document.createElement('span'),
+          bIn = document.createElement('button'), bFit = document.createElement('button');
+      bOut.innerHTML = '&#8722;'; bOut.title = 'Zoom out';
+      bIn.textContent = '+'; bIn.title = 'Zoom in';
+      bFit.textContent = 'Fit'; bFit.title = 'Back to this model’s own framing';
+      pct.className = 'ps-zoomctl-pct';
+      zoomWrap.appendChild(bOut); zoomWrap.appendChild(pct);
+      zoomWrap.appendChild(bIn); zoomWrap.appendChild(bFit);
+      host.appendChild(zoomWrap);
+      function press(fn) {
+        return function (e) { e.preventDefault(); e.stopPropagation(); fn(); applyRot(); };
+      }
+      bOut.onclick = press(function () { rot.r = clampR(rot.r * 1.3); });
+      bIn.onclick = press(function () { rot.r = clampR(rot.r / 1.3); });
+      bFit.onclick = press(function () { rot.r = clampR(r0); });
+      /* ⚠️ The buttons sit ON the canvas, and the canvas starts an orbit on pointerdown. Without
+         this a press on "+" would also grab the building and turn it. */
+      [bOut, bIn, bFit].forEach(function (b) {
+        b.onpointerdown = function (e) { e.stopPropagation(); };
+      });
+      zoomUI = function () {
+        /* ⚠️ A RATIO of this model's own default framing, not a distance. "160%" means closer than
+           the view this card opens at, which is a reading a planner can act on; a radius in scene
+           units names nothing they can see, and the units differ between a 3-storey model and a
+           40-storey one. */
+        pct.textContent = Math.round(r0 / rot.r * 100) + '%';
+        bIn.disabled = rot.r <= RMIN * 1.001;
+        bOut.disabled = rot.r >= RMAX * 0.999;
+        bFit.disabled = Math.abs(rot.r - r0) < r0 * 0.005;
+      };
+      zoomUI();
+    })();
+
     // ⚠️ ONE picker for the click and the hover. Two raycasts written separately is how a card
     // ends up outlining one block and opening another.
     var ray = new T.Raycaster();
@@ -17105,6 +17174,12 @@
         // remove it, and a repaint would leave one full set of floor names behind per rebuild.
         if (labWrap && labWrap.parentNode) labWrap.parentNode.removeChild(labWrap);
         labWrap = null; labs = [];
+        // ⚠️ Same reason as the labels: the zoom control is DOM this scene put on the host, and
+        // disposing the renderer does not take it with it. Every repaint of this view disposes
+        // its scenes, so without this a planner switching basis a dozen times leaves a dozen zoom
+        // controls stacked in the corner of the card.
+        if (zoomWrap && zoomWrap.parentNode) zoomWrap.parentNode.removeChild(zoomWrap);
+        zoomWrap = null; zoomUI = null;
       }
     };
   }
@@ -35911,7 +35986,13 @@
         pts.push([zpClamp(x, 0, ZP_W), zpClamp(y, 0, h)]);
       });
       if (pts.length < 3) return null;
-      return { id: String(q.id || zpNewId()), code: code, pts: pts };
+      var out = { id: String(q.id || zpNewId()), code: code, pts: pts };
+      /* ⚠️⚠️ THE LOCK SURVIVES NORMALIZE, and it has to: this function rebuilds every area from
+         scratch on load, so a flag it did not copy would be gone on the next reload. A tower
+         footprint that came back editable after a refresh is the exact failure the lock exists to
+         prevent, and it would have been invisible until somebody dragged a corner. */
+      if (q.lock) out.lock = 1;
+      return out;
     }
     /* One plate, sanitised. ⚠️ AND MIGRATED: a plate saved in yesterday's cell-grid form is turned
        into one rectangle per painted cell, so a planner who used the grid keeps their layout instead
@@ -36387,6 +36468,16 @@
       if (b.y < 0) dy = -b.y; else if (b.y + b.h > h) dy = h - (b.y + b.h);
       return (dx || dy) ? pts.map(function (p) { return [p[0] + dx, p[1] + dy]; }) : pts;
     }
+    /* Can this outline be turned to ANY angle and still land on the sheet?
+       ⚠️⚠️ Owner 2026-09-12: *"what if the footprint of tower 1 is so big it is unable to be
+       rotated?"* Every rotation of a shape fits inside the circle through its own corners, so the
+       whole question is whether the DIAGONAL of its bounding box clears the shorter side of the
+       sheet. Import sizes footprints to satisfy this (see zpSitePlaceFootprints); this is the
+       other way in — pressing + until it no longer does. */
+    function zpTurnable(pts, h) {
+      var b = zpBBoxOf(pts);
+      return Math.sqrt(b.w * b.w + b.h * b.h) <= Math.min(ZP_W, h) + 0.01;
+    }
     function zpRotatePts(pts, deg, h) {
       var b = zpBBoxOf(pts), cx = b.x + b.w / 2, cy = b.y + b.h / 2;
       var r = deg * Math.PI / 180, cs = Math.cos(r), sn = Math.sin(r);
@@ -36617,9 +36708,14 @@
       var cols = Math.max(1, Math.ceil(Math.sqrt(n)));
       var rows = Math.max(1, Math.ceil(n / cols));
       var cellW = ZP_W / cols, cellH = siteH / rows;
-      // ⚠️ 0.62 of the cell, so two towers side by side have a street between them rather than
-      // touching edges the planner has to pull apart before they can arrange anything.
-      var slotW = cellW * 0.62, slotH = cellH * 0.62;
+      /* ⚠️⚠️ 0.38 OF THE CELL, NOT 0.62. Owner 2026-09-12: *"the default scale of the site plan
+         should be way less."* A site plan is a LARGER scale than the floor plans it is built from —
+         a tower that filled its own sheet is a small object on a site — so arriving at two thirds
+         of a cell made the sheet look like a floor plan of four big rooms, and left the planner
+         shrinking every footprint before they could begin arranging. Coming in small is also the
+         cheaper mistake: pressing + a few times is one gesture, and dragging four overlapping
+         towers apart is not. */
+      var slotW = cellW * 0.38, slotH = cellH * 0.38;
       var polys = [];
       found.forEach(function (it, i) {
         var col = i % cols, row = Math.floor(i / cols);
@@ -36630,13 +36726,31 @@
         var b = zpBBoxOf(all);
         if (!(b.w > 0) || !(b.h > 0)) return;
         var k = Math.min(slotW / b.w, slotH / b.h);
+        /* ⚠️⚠️ ROTATABILITY IS A CONSTRAINT HERE, NOT A HOPE. Owner 2026-09-12: *"what if the
+           footprint of tower 1 is so big it is unable to be rotated?"* — and it was a real state to
+           get into, because a shape's bounding box GROWS as it turns: a w x h rectangle at 45°
+           needs (w + h) / √2 each way. A long tower brought in filling its slot could therefore be
+           refused the moment the planner tried to turn it, on the one gesture this whole feature
+           exists to leave them.
+           ⚠️ Every rotation of a shape fits inside the circle through its own corners, so capping
+           the DIAGONAL at the shorter side of the sheet makes EVERY angle fit, at every position —
+           zpFitBack only ever has to translate it back on. It shrinks nothing that already fits. */
+        var diag = Math.sqrt(b.w * b.w + b.h * b.h) * k;
+        var turnLim = Math.min(ZP_W, siteH) * 0.92;
+        if (diag > turnLim) k *= turnLim / diag;
         var bx = b.x + b.w / 2, by = b.y + b.h / 2;
         var code = it.tower.name || it.tower.code || 'Tower';
         it.fp.polys.forEach(function (q) {
           var pts = (q.pts || []).map(function (p) {
             return [zpClamp(cx + (p[0] - bx) * k, 0, ZP_W), zpClamp(cy + (p[1] - by) * k, 0, siteH)];
           });
-          if (zpRingOk(pts)) polys.push({ id: zpNewId(), code: code, pts: pts });
+          /* ⚠️⚠️ `lock: 1` — THE SHAPE IS ALREADY DEFINED. Owner 2026-09-12: *"the users should not
+             be able to edit the corner points of the footprint. It was already defined. Meaning the
+             only thing users are able to do are rotate the orientation and change locations."* A
+             corner dragged here would make the site plan disagree with the floor plan it was taken
+             from, silently, and with no way to tell afterwards which of the two is the building.
+             See paint(): a locked area draws no corner handles at all. */
+          if (zpRingOk(pts)) polys.push({ id: zpNewId(), code: code, pts: pts, lock: 1 });
         });
       });
       return { polys: polys, placed: found.length, missing: missing };
@@ -36876,7 +36990,15 @@
           var c = q.pts.reduce(function (s, p) { return [s[0] + p[0] / q.pts.length, s[1] + p[1] / q.pts.length]; }, [0, 0]);
           // ⚠️ The corner handles exist only on the SELECTED shape. Every shape wearing them at
           // once turns a floor of six zones into a field of eighty dots.
-          var handles = on ? q.pts.map(function (p, i) {
+          /* ⚠️⚠️ A LOCKED AREA DRAWS NO HANDLES AT ALL. Owner 2026-09-12: *"the users should not be
+             able to edit the corner points of the footprint. It was already defined."* This is the
+             whole of the enforcement and it is the right place for it: every corner gesture in this
+             window — drag one, alt-click to remove one, click a midpoint to add one — reaches its
+             corner through one of these two circles. No circles, no gesture. The body still drags,
+             so moving it is untouched, and Orient still turns it.
+             ⚠️ The pointer handler checks `lock` as well. Not because it can fire without a handle,
+             but so that anything drawing a handle in future cannot quietly re-open the corners. */
+          var handles = (on && !q.lock) ? q.pts.map(function (p, i) {
             var nx = q.pts[(i + 1) % q.pts.length];
             return '<circle class="zpw-vx" data-vi="' + i + '" cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) +
               '" r="' + (9 * zs).toFixed(2) + '"></circle>' +
@@ -36884,7 +37006,12 @@
               '<circle class="zpw-mid" data-mid="' + i + '" cx="' + ((p[0] + nx[0]) / 2).toFixed(1) +
                 '" cy="' + ((p[1] + nx[1]) / 2).toFixed(1) + '" r="' + (7 * zs).toFixed(2) + '"></circle>';
           }).join('') : '';
-          return '<g class="zpw-shape' + (on ? ' sel' : '') + '" data-zpoly="' + e2(q.id) + '" style="--zc:' + zpColor(q.code) + '">' +
+          return '<g class="zpw-shape' + (on ? ' sel' : '') + (q.lock ? ' lk' : '') +
+              '" data-zpoly="' + e2(q.id) + '" style="--zc:' + zpColor(q.code) + '">' +
+            /* ⚠️ Said on the shape itself, not only in the toolbar: a planner who reaches for a
+               corner that is not there needs the answer where they are looking. */
+            (q.lock ? '<title>' + e2('Brought in from ' + zpLabelOf(q.code) + '’s own floor plan. ' +
+              'Drag it to move it and use Orient to turn it — its corners are fixed.') + '</title>' : '') +
             '<polygon points="' + zpPts(q.pts) + '"></polygon>' +
             '<text x="' + c[0].toFixed(1) + '" y="' + c[1].toFixed(1) + '">' + e2(zpLabelOf(q.code)) + '</text>' +
             handles + '</g>';
@@ -37124,10 +37251,18 @@
             '<button class="pd-btn' + (W.drawing ? ' pd-btn-primary' : '') + '" id="zpw-draw" title="Click corner by corner; click the first corner again, or double-click, to close">' +
               (W.drawing ? (W.pts.length >= 3 ? 'Finish' : 'Cancel') : 'Trace…') + '</button>' +
             '<span class="ps-tb-div"></span>' +
-            '<button class="pd-btn" id="zpw-copy"' + (sel ? '' : ' disabled') + ' title="Copy the selected area">Copy</button>' +
+            /* ⚠️ NOT on a migrated footprint. A copy is written back as an ordinary area with the
+               same tower name on it — a SECOND outline of one building, which is the thing this
+               feature exists to prevent, and the "already on the site" check would then see the
+               tower as done while one of the two drawings is nobody's. */
+            '<button class="pd-btn" id="zpw-copy"' + (sel && !sel.lock ? '' : ' disabled') + ' title="' +
+              (sel && sel.lock ? 'A tower footprint cannot be copied — it is one building, brought in from its own floor plan'
+                               : 'Copy the selected area') + '">Copy</button>' +
             '<button class="pd-btn" id="zpw-paste"' + (W.clip ? '' : ' disabled') + ' title="' +
               (W.clip ? e2('Paste the copied ' + W.clip.code + ' area, offset a little') : 'Nothing copied yet') + '">Paste</button>' +
-            '<button class="pd-btn" id="zpw-dup"' + (sel ? '' : ' disabled') + ' title="Copy and paste in one go">Duplicate</button>' +
+            '<button class="pd-btn" id="zpw-dup"' + (sel && !sel.lock ? '' : ' disabled') + ' title="' +
+              (sel && sel.lock ? 'A tower footprint cannot be duplicated — there is one of it'
+                               : 'Copy and paste in one go') + '">Duplicate</button>' +
             '<button class="pd-btn" id="zpw-del"' + (sel ? '' : ' disabled') + '>Delete</button>' +
             '<span class="ps-tb-div"></span>' +
             /* ==== ORIENT AND SIZE =========================================================
@@ -37191,9 +37326,9 @@
                ⚠️ The percentage is a READOUT, not decoration: a planner who has zoomed into one
                corner of a site plan needs to know that is what they are looking at before they
                judge anything on it by eye. */
-            '<div class="zpw-zoom">' +
+            '<div class="ps-zoomctl">' +
               '<button id="zpw-zout"' + (V.k > 1 ? '' : ' disabled') + ' title="Zoom out">&#8722;</button>' +
-              '<span class="zpw-zpct" title="' + e2(V.k > 1
+              '<span class="ps-zoomctl-pct" title="' + e2(V.k > 1
                 ? ('Showing about ' + Math.round(V.w) + ' × ' + Math.round(V.h) + ' of the ' +
                    ZP_W + ' × ' + Math.round(hh) + ' sheet')
                 : 'The whole sheet') + '">' + Math.round(V.k * 100) + '%</span>' +
@@ -37201,6 +37336,14 @@
               '<button id="zpw-zfit"' + (V.k > 1 ? '' : ' disabled') + ' title="Back to the whole sheet">Fit</button>' +
             '</div>' +
           '</div>' +
+          /* ⚠️ A migrated footprint gets its OWN line, above the general one, because the general
+             one is mostly about corners and this area has none. Said where the planner is when
+             they reach for a corner that is not there. */
+          (sel && sel.lock
+            ? '<p class="zpw-tip"><b>' + e2(zpLabelOf(sel.code)) + '</b> came in from its own floor plan \u2014 ' +
+              '<b>drag</b> it to move it, <b>Orient</b> to turn it. Its corners are fixed here; ' +
+              're-trace that tower\u2019s floor plan to change its shape.</p>'
+            : '') +
           '<p class="zpw-tip">Drag an area to move it · drag a corner to reshape · the faint dot between two corners adds one · ' +
             '<b>Alt</b>-click a corner removes it' +
             (W.grid > 0 ? ' · corners snap to a <b>' + W.grid + '</b>-unit grid' : '') +
@@ -37393,8 +37536,10 @@
           d2.polys = (d2.polys || []).concat(res.polys);
           W2.sel = res.polys[res.polys.length - 1].id;
           commit(); render();
+          // ⚠️ The toast says what a footprint IS for, and by omission what it is not: there is no
+          // reshaping in that sentence because there is none on the shape.
           var msg = 'Brought in ' + res.placed + ' tower footprint' + (res.placed === 1 ? '' : 's') +
-            '. Drag to arrange, and use Orient to turn them.';
+            '. Drag to arrange and use Orient to turn them \u2014 their shapes are fixed, straight off each tower\u2019s floor plan.';
           if (res.missing.length) msg += ' No floor plan yet for ' + res.missing.slice(0, 3).join(', ') +
             (res.missing.length > 3 ? '…' : '') + '.';
           if (want.length < towerList().length) msg += ' ' + (towerList().length - want.length) + ' already placed, left alone.';
@@ -37426,15 +37571,32 @@
           b.onclick = function () {
             var s = selShape(); if (!s) return;
             var np = zpRotatePts(s.pts, parseFloat(b.dataset.zprot) || 0, H());
-            if (!np) { UI.toast('That area is too big for the sheet to turn it — make it smaller first, or give the sheet a different shape.', 'warn'); return; }
+            /* ⚠️ The refusal NAMES THE FIX, because the fix is one button away and the planner is
+               already looking at it. Footprints brought in from the towers are sized so that every
+               angle fits (see zpSitePlaceFootprints) — this is reachable by scaling one up until
+               its diagonal no longer clears the sheet, which is the planner's own doing and is
+               undone by pressing − once. */
+            if (!np) { UI.toast('That area is too big to turn on this sheet — press − to make it smaller first, or give the sheet a different shape.', 'warn'); return; }
             snap(); s.pts = np; commit(); render();
           };
         });
         wrap.querySelectorAll('[data-zpscale]').forEach(function (b) {
           b.onclick = function () {
             var s = selShape(); if (!s) return;
-            var np = zpScalePts(s.pts, parseFloat(b.dataset.zpscale) || 1, H());
-            if (!np) { UI.toast('That is as ' + (parseFloat(b.dataset.zpscale) > 1 ? 'big' : 'small') + ' as this area can go on this sheet.', 'warn'); return; }
+            var _k = parseFloat(b.dataset.zpscale) || 1;
+            var np = zpScalePts(s.pts, _k, H());
+            if (!np) { UI.toast('That is as ' + (_k > 1 ? 'big' : 'small') + ' as this area can go on this sheet.', 'warn'); return; }
+            /* ⚠️⚠️ A MIGRATED FOOTPRINT CANNOT BE GROWN OUT OF BEING TURNABLE — the other half of
+               the owner's *"what if … it is unable to be rotated?"*. Import guarantees every angle
+               fits; without this, pressing + enough times takes that away again, and the planner
+               would not find out until a turn they expected to work simply refused. Refused at the
+               point of growth, where the reason is still legible.
+               ⚠️ ONLY on a locked area. A hand-traced one may legitimately fill the sheet — the
+               site outline drawn around the towers is supposed to. */
+            if (s.lock && _k > 1 && !zpTurnable(np, H())) {
+              UI.toast('That is as big as ' + zpLabelOf(s.code) + ' can go and still be turned on this sheet.', 'warn');
+              return;
+            }
             snap(); s.pts = np; commit(); render();
           };
         });
@@ -37611,7 +37773,7 @@
             if (W.drawing || W.placing) return;
             if (zView().k <= 1) return;
             if (ev.target && ev.target.closest &&
-                ev.target.closest('[data-zpoly],[data-zpmark],.zpw-zoom')) return;
+                ev.target.closest('[data-zpoly],[data-zpmark],.ps-zoomctl')) return;
           }
           var r = stage.getBoundingClientRect(); if (!r.width || !r.height) return;
           var v0 = zView(), sx = ev.clientX, sy = ev.clientY, hh4 = H(), moved = false;
@@ -37720,8 +37882,11 @@
             // Selecting is enough on a shape that was not already selected: the planner is
             // reaching for it, not moving it yet.
             if (W.sel !== id) { W.sel = id; paint(); return; }
-            var t = ev.target, vx = (t.classList && t.classList.contains('zpw-vx')) ? t : null;
-            var mid = (t.classList && t.classList.contains('zpw-mid')) ? t : null;
+            /* ⚠️ `!shape.lock` on both: paint() draws no handles on a locked area, so neither of
+               these can be hit today — this is the guard that keeps it true if anything ever draws
+               one. A migrated footprint's corners are the floor plan's, not this drawing's. */
+            var t = ev.target, vx = (!shape.lock && t.classList && t.classList.contains('zpw-vx')) ? t : null;
+            var mid = (!shape.lock && t.classList && t.classList.contains('zpw-mid')) ? t : null;
             if (mid) {
               var k = +mid.dataset.mid, a = shape.pts[k], b2 = shape.pts[(k + 1) % shape.pts.length];
               if (shape.pts.length >= ZP_MAXPTS) { UI.toast('That is as many corners as one area can take.', 'warn'); return; }
