@@ -512,6 +512,12 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
 .il-mom-mtable tbody tr:hover td { background: var(--pd-bg); }
 .il-mom-mtable td.il-mt-wrap { min-width: 220px; white-space: normal; overflow-wrap: anywhere; }
 .il-mom-mtable td.il-mt-no { white-space: nowrap; }
+/* ⚠️ 2026-09-12 — the Table view's own drag grip column (momItemsTableHTML),
+   using the same shared `.il-draghandle`/`.il-reorderable`/`data-reorder-row`
+   set the Card view (`.il-mi-card > .il-draghandle`) and this app's Issues &
+   Concerns / Lessons Learned register both already use. Narrow and padding-free,
+   or an empty `<th></th>` above it reads as a mistake rather than a grip column. */
+.il-mom-mtable td.il-mt-drag { width: 24px; padding-left: 4px; padding-right: 0; }
 .il-mt-blank { color: var(--pd-muted); }
 .il-mt-linked {
   display: inline-block; margin-left: 4px; font-size: var(--pd-fs-xs); color: var(--pd-muted);
@@ -599,13 +605,13 @@ div.il-mom-acrow { padding: 6px 10px; font-size: var(--pd-fs-xs); color: var(--p
 /* ⚠ `align-items:center` matters: the state chip and the 34px controls have
    different heights, and stretch made the chip a tall rounded slab. */
 .il-mom-toolbar { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
-/* The one labelled control in the detail toolbar -- see momDetailHTML. Sized like
-   .il-mom-iconbtn but free to hold its word. */
+/* ⚠️ 2026-09-12 — icon-only again (no more `.il-mom-modetxt` label), so this is
+   now just `.il-mom-iconbtn`'s own square box, kept as its own class only so the
+   active-state rule below still has something to key on. */
 .il-mom-modebtn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  height: 34px; padding: 0 11px; white-space: nowrap;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; padding: 0;
 }
-.il-mom-modetxt { font-size: var(--pd-fs-sm, 12px); font-weight: 700; }
 /* ⚠ Reporting mode hides nothing in this toolbar -- the Exit button IS the way
    back out, so it must stay legible in the mode it turns off. */
 .il-mom-report .il-mom-modebtn { border-color: var(--pd-red); color: var(--pd-red); }
