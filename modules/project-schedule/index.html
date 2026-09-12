@@ -3839,6 +3839,13 @@
     .sbld-tllag { font-size:var(--pd-fs-xs); font-weight:700; color:var(--pd-red); background:var(--pd-red-light); padding:1px 6px; border-radius:var(--pd-radius); }
     /* Step-2 tower strip. With one tower it is a single quiet chip; with more it is the selector. */
     .sbld-towerbar { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin:2px 0 10px;
+    /* What the step DETECTED about the towers. ⚠️ Its own row, wrapping under the chips: on a
+       four-tower job the drift message is a sentence, and squeezed into the chip row it would push
+       the controls onto a second line every time it appeared. */
+    .sbld-towerbar-note { flex:1 1 100%; font-size:var(--pd-fs-xs); color:var(--pd-muted);
+      margin-top:2px; line-height:1.5; }
+    .sbld-towerbar-note.warn { color:var(--pd-warn-text); background:var(--pd-warn-bg);
+      border-radius:var(--pd-radius-md); padding:5px 9px; }
       padding:8px 10px; border:1px solid var(--pd-line); border-radius:9px; background:var(--pd-bg); }
     .sbld-towerbar-l { font-size:var(--pd-fs-xs); text-transform:uppercase; letter-spacing:.05em; color:var(--pd-muted); font-weight:700; margin-right:2px; }
     /* relationship dialog */
@@ -32305,6 +32312,89 @@
       if (!uiTower || !towerById(uiTower)) uiTower = list[0].id;
       return uiTower;
     }
+    /* ==== IS THIS A MULTI-TOWER PROJECT? ================================================
+       Owner 2026-09-12: *"but the schedule setup should detect, if the project has multiple towers
+       or not."*
+
+       ⚠️⚠️ THERE ARE TWO ANSWERS AND THEY CAN DISAGREE, WHICH IS THE WHOLE POINT OF ASKING.
+         • What the SETUP names — `cfg.towers`, the chips on the tower bar. On a project nobody has
+           opened this step for, that is `blankTowers()`: exactly one tower called "Tower 1", which
+           is a DEFAULT, not a finding.
+         • What the SCHEDULE carries — the distinct values its execution activities hold on the
+           tower level of the Location Breakdown. That is the project as it actually is.
+       `multiTower()` only ever asked the first, so an imported 4-tower schedule whose setup had
+       never been touched reported "one tower" — and the Site plan offered one area named "Tower 1"
+       that matches nothing the Vertical Stacking knows about. That silent mismatch is precisely the
+       join the site plan depends on, so it is DETECTED and SAID rather than left to be discovered
+       when the Site view comes up empty.
+
+       ⚠️ `locTowerToken` — THE SAME TOKENISER THE STACKING USES (`_vsTowerOf`). The setup deciding
+       "Tower A" and the stacking deciding "TOWER A" are the same tower is not something two
+       normalisers can be trusted to agree on; there is one, and both sides call it.
+       ⚠️ Reads the SCHEDULE, not the setup's floors: a floor carries a `towerId` pointing back at
+       `cfg.towers`, so counting floors would be the first answer wearing a disguise. */
+    /* ⚠️⚠️ THE TOWER VALUES ARE READ WITH `_vsTowerOf` — THE STACKING'S OWN FUNCTION, not a second
+       reading of the same rows. The two sides did not agree about which LEVEL even is the tower:
+         • `sbDimsFromLevels` (this side) calls it a tower only on FOUR levels or more;
+         • `_vsTowerLevelId` (the stacking) takes a level NAMED tower/building/block, else the first.
+       So on a `Tower › Level › Zone` project — three levels, first one literally called "Tower" —
+       the stacking has towers and this side had none. Detection that disagrees with the thing it is
+       detecting FOR is worse than no detection, and the site plan's whole value is that the names
+       match. So the names come from the stacking verbatim.
+       ⚠️ BUT THE GATE IS THIS SIDE'S, and it is deliberately conservative. `_vsTowerOf` falls back
+       to the first location level whatever it is, so on a single-building project whose only level
+       is "Level" it would report "5th Floor", "6th Floor"… as towers — and this step would announce
+       a fifteen-tower project and offer a site plan for it. A tower axis is credible when a level is
+       NAMED for one, or when the breakdown is deep enough that the first level cannot be the storey
+       (the four-level reading `sbDimsFromLevels` already uses). */
+    function sbHasTowerAxis() {
+      var lv = (typeof LOC_LEVELS !== 'undefined' && LOC_LEVELS) ? LOC_LEVELS : [];
+      if (lv.length < 2) return false;
+      if (lv.length >= 4) return true;
+      return lv.some(function (l) { return /tower|building|block/i.test(l.name || ''); });
+    }
+    function sbTowersInSchedule() {
+      var out = [], seen = {};
+      if (!sbHasTowerAxis()) return out;
+      try {
+        if (typeof _vsTowerOf !== 'function') return out;
+        sbExecActs().forEach(function (r) {
+          var t = _vsTowerOf(r);
+          if (t && !seen[t]) { seen[t] = 1; out.push(t); }
+        });
+      } catch (e) { return []; }
+      return out;
+    }
+    /* One verdict, for every caller that needs to know. ⚠️ `multi` is true when EITHER source says
+       so: a planner who has named four towers here but not yet pushed them has a multi-tower
+       project, and so does one whose imported schedule holds four towers nobody has named. Taking
+       only the setup's word is the bug above; taking only the schedule's would break the ordinary
+       forward path, where the setup is filled in before anything exists to read. */
+    function towerReality() {
+      var named = towerList();
+      var inSched = sbTowersInSchedule();
+      /* ⚠️ The default tower does not count as "named". `blankTowers()` invents one so the rest of
+         the step has something to hang floors off; treating that invention as the planner's own
+         statement is what made the first answer wrong. */
+      var reallyNamed = (cfg && cfg.towers && cfg.towers.length) ? cfg.towers : [];
+      var nameSet = {};
+      reallyNamed.forEach(function (t) {
+        [t.name, t.code].forEach(function (v) {
+          var k = String(v == null ? '' : v).trim().toLowerCase();
+          if (k) nameSet[k] = 1;
+          var tok = (typeof locTowerToken === 'function' ? locTowerToken(v) : '') || '';
+          if (tok) nameSet[tok.toLowerCase()] = 1;
+        });
+      });
+      var unnamed = inSched.filter(function (t) { return !nameSet[String(t).trim().toLowerCase()]; });
+      return {
+        named: named, nNamed: reallyNamed.length, inSchedule: inSched, unnamed: unnamed,
+        multi: (reallyNamed.length > 1) || (inSched.length > 1),
+        // ⚠️ "The schedule knows towers this setup has not named" — the state that silently breaks
+        // the site plan's name join, and the only one worth putting on screen unprompted.
+        drift: inSched.length > 0 && unnamed.length > 0
+      };
+    }
     function multiTower() { return towerList().length > 1; }
     function towerLinks() { return (cfg && Array.isArray(cfg.towerLinks)) ? cfg.towerLinks : []; }
     // ---- LIFECYCLE PHASES ------------------------------------------------------------------
@@ -35337,6 +35427,12 @@
     // two or more turn it into a real selector. Floors below are filtered to the active tower.
     function _towerBar() {
       var list = towerList(), act = activeTower();
+      /* ⚠️⚠️ THE STEP DETECTS, IT DOES NOT ASSUME. Owner 2026-09-12: *"the schedule setup should
+         detect, if the project has multiple towers or not."* `towerList()` alone cannot answer
+         that — on a setup nobody has opened it returns `blankTowers()`, one invented "Tower 1",
+         which reads identically to a planner who genuinely has one. `towerReality()` asks the
+         SCHEDULE as well, and everything on this bar that depends on the answer reads it. */
+      var TR = towerReality();
       return '<div class="sbld-towerbar">' +
         '<span class="sbld-towerbar-l">Tower</span>' +
         list.map(function (t) {
@@ -35353,15 +35449,27 @@
            ⚠️ NOT on a floor row, which is where a floor plan lives: a floor plan is per trade and
            per floor, a site plan is one drawing for the whole project. Filing it beside the
            towers is what makes that difference visible rather than something to be explained.
+           ⚠️⚠️ AND ONLY ON A MULTI-TOWER PROJECT. A "master site development plan showing all
+           towers" on a single-tower job is a drawing of one building, which the floor plans
+           already describe — and the Vertical Stacking's Site view is hidden there for the same
+           reason (the site IS the tower). An offered control that leads nowhere useful is the
+           looks-live-does-nothing failure this module keeps recording, so it is absent and the
+           line beside it says what was detected.
            ⚠️ The button counts what is traced against the towers that exist, so a project that
            has grown a fourth tower reads "3/4" without anyone opening it. */
-        (function () {
+        (TR.multi ? (function () {
           var _sp = zpBag().plate[zpBag().of[ZP_SITE_ID] || ''] || null;
-          var _tw = towerList().length;
+          /* ⚠️ Counted against EVERY tower the project has — the ones named here and the ones only
+             the schedule knows about. Counting against `towerList()` alone would report "1/1 traced"
+             on the very project whose site plan names nothing the stacking can find. */
+          var _all = list.map(function (t) { return t.name || t.code || ''; })
+                         .concat(TR.unnamed).filter(Boolean);
+          var _seen = {}, _tw = 0;
+          _all.forEach(function (nm) { var k = zpNormCode(nm); if (k && !_seen[k]) { _seen[k] = 1; _tw++; } });
+          if (!_tw) _tw = 1;
           var _hit = _sp ? zpCodesOf(_sp).filter(function (c) {
             if (zpIsAll(c)) return false;
-            var k = zpNormCode(c);
-            return towerList().some(function (t) { return zpNormCode(t.name) === k || zpNormCode(t.code) === k; });
+            return !!_seen[zpNormCode(c)];
           }).length : 0;
           return '<button class="pd-btn sbld-mini sbld-sitebtn' + (_sp ? ' has' : '') + '" id="b-siteplan" title="' +
             e2(_sp ? ('Site development plan · ' + _hit + ' of ' + _tw + ' tower' + (_tw === 1 ? '' : 's') +
@@ -35370,10 +35478,33 @@
                     : 'Draw the master site development plan — one area per tower, on the site drawing. The Vertical Stacking then shows every tower where it actually stands.') + '">' +
             '<span data-ico="compass" data-ico-size="14"></span> ' +
             (_sp ? 'Site plan ' + _hit + '/' + _tw : 'Site plan…') + '</button>';
-        })() +
+        })() : '') +
         '<button class="pd-btn sbld-mini" id="b-twren" title="Rename the active tower">Rename</button>' +
         (list.length > 1 ? '<button class="pd-btn sbld-mini" id="b-twcopy" title="Copy another tower\'s floors, zones, units and sequencing into this one">Copy from…</button>' : '') +
         (list.length > 1 ? '<button class="pd-btn sbld-mini sbld-del" id="b-twdel" title="Delete the active tower and its floors">Delete</button>' : '') +
+        /* ==== WHAT WAS DETECTED, SAID OUT LOUD ============================================
+           ⚠️⚠️ THE DRIFT CASE IS THE ONE WORTH INTERRUPTING FOR. A schedule carrying towers this
+           setup has never named is the exact state in which the site plan's name join fails — the
+           planner traces "Tower 1" because that is the only chip on the bar, and the Vertical
+           Stacking, which knows the schedule's own "Tower A".."Tower D", finds nothing. It is
+           invisible until the Site view comes up empty, so it is reported here with the names.
+           ⚠️ The single-tower line is a STATEMENT, not a warning: one tower is a perfectly ordinary
+           project, and it exists only so the missing Site plan button is explained rather than
+           merely absent. */
+        (TR.drift
+          ? '<span class="sbld-towerbar-note warn" title="These are the values the schedule’s activities carry on the tower level of the Location Breakdown.">' +
+            '⚠️ The schedule carries <b>' + TR.inSchedule.length + ' tower' + (TR.inSchedule.length === 1 ? '' : 's') +
+            '</b>, and <b>' + TR.unnamed.length + '</b> ' + (TR.unnamed.length === 1 ? 'is' : 'are') + ' not named here: <b>' +
+            e2(TR.unnamed.slice(0, 4).join(', ')) + (TR.unnamed.length > 4 ? '…' : '') + '</b>. ' +
+            'Add them with <b>+ Tower</b> so the names match — the site plan and the Vertical Stacking join on them.</span>'
+          : (!TR.multi
+            ? '<span class="sbld-towerbar-note">Single-tower project' +
+              (TR.inSchedule.length === 1 ? ' — the schedule carries one tower' : '') +
+              '. A site development plan needs more than one, so it is not offered here.</span>'
+            : (TR.nNamed <= 1 && TR.inSchedule.length > 1
+              ? '<span class="sbld-towerbar-note">Detected <b>' + TR.inSchedule.length +
+                ' towers</b> in the schedule.</span>'
+              : ''))) +
         '</div>';
     }
     // Copy one tower's LOCATIONS and its SEQUENCING into another (owner request). Floors/zones/units
@@ -36214,19 +36345,40 @@
       var floors = (cfg.zoning[tr] ? cfg.zoning[tr].floors : []);
       var floor = floors.filter(function (f) { return f.id === floorId; })[0];
       if (!floor) return null;
+      /* ⚠️⚠️ THE APPLY LIST IS SCOPED TO THIS FLOOR'S OWN TOWER. Owner 2026-09-12: *"for the option
+         of … defining a floor plan, and applying it to other floors. The other floors detected must
+         be applicable to that tower only. Right now it displays all other floors of all towers."*
+
+         And they are right twice over. On a four-tower job every trade's floor list holds every
+         tower's floors, so "apply this plan to…" offered forty tick boxes of which thirty were
+         other buildings — and ticking one silently gave Tower A's 5th floor Tower D's outline.
+         Worse, the LABELS collide: every tower has an "F5", so the list read as ten identical
+         rows and there was no way to tell which building any of them belonged to.
+         ⚠️ Scoped by `towerIdOf`, which is also what `floorsOfTower` uses — one reading of "which
+         tower is this floor in", not a second one written here.
+         ⚠️ It is the TICK LIST that is scoped, not `zpUsers`: that one COUNTS what actually shares
+         the plate, and a setup from before this fix may genuinely share one across towers. Reporting
+         "shared by 6 floors" when six floors share it stays true; what changes is that you can no
+         longer create that state by accident. */
+      var myTower = towerIdOf(floor);
       return {
         site: false, tr: tr, floor: floor,
         key: floor.id, imgKey: floor.id,
         plateId: zpIdFor(floor),
         title: 'Floor plan', name: (floor.name || floor.code || 'Floor'),
-        sub: (GLABEL[tr] || tr) + ' · ' + (floor.zones || []).length + ' zone' +
+        sub: (GLABEL[tr] || tr) +
+             (multiTower() ? ' · ' + towerLabel(myTower) : '') +
+             ' · ' + (floor.zones || []).length + ' zone' +
              ((floor.zones || []).length === 1 ? '' : 's'),
         codes: (floor.zones || []).map(function (z) { return String(z.code || z.name || '').trim(); }).filter(Boolean),
         codeWord: 'zone', codeWordP: 'zones',
         outlineWord: 'floor outline',
+        towerId: myTower,
         users: function (plateId) { return zpUsers(tr, plateId); },
         refs: function (plateId) { return zpRefsFor(tr, floor, plateId); },
-        others: function () { return floors.filter(function (f) { return f.id !== floor.id; }); }
+        others: function () {
+          return floors.filter(function (f) { return f.id !== floor.id && towerIdOf(f) === myTower; });
+        }
       };
     }
     /* The site plan. ⚠️ Its `codes` are the TOWERS, taken from the tower list the step above it
@@ -36236,13 +36388,32 @@
        "also use this plan on…" has nothing to offer and "trace over another floor" would offer a
        floor plate at site scale. Both are absent rather than present-and-empty. */
     function zpSubjSite() {
+      /* ⚠️⚠️ THE PAINTABLE TOWERS ARE BOTH SOURCES, NOT JUST THE CHIPS. Owner 2026-09-12: *"the
+         schedule setup should detect, if the project has multiple towers or not."* A planner
+         tracing the site on an imported project would otherwise be offered the one invented
+         "Tower 1" from `blankTowers()`, paint the whole site with it, and produce a plan naming
+         nothing the Vertical Stacking can find — the join failure is silent on both ends.
+         So the brush list is what the setup NAMES plus what the SCHEDULE carries, de-duplicated by
+         the same normaliser the plan is matched with, and the schedule's own names come last
+         because the planner's chosen names are the ones they will look for first. */
+      var TR = towerReality();
+      var codes = [], seen = {};
+      TR.named.map(function (t) { return String(t.name || t.code || '').trim(); })
+        .concat(TR.unnamed.map(function (t) { return String(t).trim(); }))
+        .forEach(function (nm) {
+          var k = zpNormCode(nm);
+          if (!k || seen[k]) return;
+          seen[k] = 1; codes.push(nm);
+        });
       return {
         site: true, tr: null, floor: null,
         key: ZP_SITE_ID, imgKey: ZP_SITE_ID,
         plateId: zpBag().of[ZP_SITE_ID] || null,
         title: 'Site development plan', name: 'All towers',
-        sub: towerList().length + ' tower' + (towerList().length === 1 ? '' : 's') + ' · whole project, all trades',
-        codes: towerList().map(function (t) { return String(t.name || t.code || '').trim(); }).filter(Boolean),
+        sub: codes.length + ' tower' + (codes.length === 1 ? '' : 's') +
+             (TR.unnamed.length ? ' (' + TR.unnamed.length + ' read from the schedule)' : '') +
+             ' · whole project, all trades',
+        codes: codes,
         codeWord: 'tower', codeWordP: 'towers',
         outlineWord: 'site boundary',
         users: function () { return []; },
@@ -36679,7 +36850,10 @@
                no-level band is a floor-scoped idea. */
             (SUBJ.site ? '' :
             '<details class="zpw-apply">' +
-              '<summary>Also use this plan elsewhere…' + (mine.length > 1 ? ' <b>' + mine.length + ' floors using it</b>' : '') +
+              /* ⚠️ The tower is NAMED in the summary on a multi-tower job, because the list below is
+                 scoped to it and a panel that silently shows a subset reads as a bug. */
+              '<summary>Also use this plan on other floors' + (multiTower() ? ' of ' + e2(towerLabel(SUBJ.towerId)) : '') + '…' +
+                (mine.length > 1 ? ' <b>' + mine.length + ' floors using it</b>' : '') +
                 (nolevOn() ? ' <b>+ the no-level band</b>' : '') + '</summary>' +
               /* ⚠️ The band that has no floor. Owner: *"for floors without levels … edit the
                  shape of that floor"* — in the Vertical Stacking, work whose activities carry no
@@ -36699,7 +36873,7 @@
                   (hasOwn ? '<em title="This floor already has a plan of its own. Ticking it replaces that.">has its own</em>' : '') +
                   '</label>';
               }).join('') + '</div>' +
-              (others.length ? '' : '<p class="sbld-hint" style="margin:6px 0 0;">This trade has no other floor to share with.</p>') +
+              (others.length ? '' : '<p class="sbld-hint" style="margin:6px 0 0;">' + (multiTower() ? ('<b>' + e2(towerLabel(SUBJ.towerId)) + '</b> has no other floor of this trade to share with. The list is scoped to this tower on purpose — another tower’s floors are another building.') : 'This trade has no other floor to share with.') + '</p>') +
               '<p class="sbld-hint" style="margin:6px 0 0;">One drawing, shared by reference — re-draw it once and everything ticked follows.</p>' +
             '</details>') +
           '</div>';

@@ -102,6 +102,38 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### The setup detects its own towers, and the floor-plan apply list stops crossing buildings (2026-09-12) — ethanrobles10
+
+Owner: *"but the schedule setup should detect, if the project has multiple towers or not."* And:
+*"for the option of … defining a floor plan, and applying it to other floors. The other floors detected
+must be applicable to that tower only. Right now it displays all other floors of all towers. fix"*
+
+- ⚠️⚠️ **`multiTower()` could not answer the question it is named for.** It reads `cfg.towers`, which on
+  an untouched setup is `blankTowers()` — **one invented "Tower 1"** — indistinguishable from a planner
+  who genuinely has one. That is the exact state in which yesterday's site plan fails silently: the
+  planner traces the whole site as `Tower 1` and the Vertical Stacking, which knows the schedule's own
+  `Tower A`..`Tower D`, finds nothing. `towerReality()` asks the **schedule** as well and reports both,
+  including **drift** — towers the schedule carries that the setup has never named.
+- ⚠️⚠️ **Writing it surfaced an older disagreement: the two sides did not agree which LEVEL is the
+  tower.** The setup called it a tower only on four levels or more; the stacking takes a level *named*
+  tower/building/block. So on a `Tower › Level › Zone` project the stacking had towers and the setup had
+  none. The names now come from the stacking's own `_vsTowerOf` verbatim — ⚠️ but the gate stays
+  conservative, or a single-building project whose only level is *Level* would report fifteen "towers".
+- **The `Site plan…` button is absent on a single-tower project**, with the tower bar saying what was
+  detected — a site plan of one building is what the floor plans already are.
+- ⚠️⚠️ **The apply list was offering every tower's floors**, so ticking one silently gave Tower A's 5th
+  floor Tower D's outline — and since every tower has an `F5`, the list read as ten identical rows.
+  Scoped to the floor's own tower, with the tower named in the panel and the header. ⚠️ `zpUsers` is
+  **not** scoped: it counts what actually shares a plate, and an old setup may genuinely share one
+  across towers — what changes is that you can no longer create that state by accident.
+
+⚠️ **Not verified signed in** — the anon key has no grants, so no tower has been read off a live
+schedule. The two-source verdict, the axis gate, the name join and the scoping were measured against the
+shipped code in a gitignored harness (29 assertions).
+
+`MODULE_V` → `20260912e`. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
 ### A master site development plan, and the Vertical Stacking's Site view (2026-09-12) — ethanrobles10
 
 Owner: *"if defined the floor plan of each tower, then there should be like a master site development

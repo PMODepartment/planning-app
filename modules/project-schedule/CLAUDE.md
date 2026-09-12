@@ -13,6 +13,110 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### The setup detects its own towers, and "apply this plan to other floors" stops crossing buildings (2026-09-12 e) — ethanrobles10
+
+Owner, on yesterday's site plan: *"but the schedule setup should detect, if the project has multiple
+towers or not."* Then, separately: *"for the option of for example defining a floor plan, and applying
+it to other floors. The other floors detected must be applicable to that tower only. Right now it
+displays all other floors of all towers. fix"*
+
+### 1. ⚠️⚠️ `multiTower()` COULD NOT ANSWER THE QUESTION IT IS NAMED FOR
+It is `towerList().length > 1`, and `towerList()` falls back to `blankTowers()` — **one invented
+"Tower 1"** — on a setup nobody has opened. So an imported four-tower schedule reported *one tower*,
+which reads identically to a planner who genuinely has one.
+
+That is not a cosmetic gap, it is the exact state in which yesterday's site plan **silently fails**:
+the tower bar offers one chip called `Tower 1`, the planner traces the whole site as `Tower 1`, and the
+Vertical Stacking — which knows the schedule's own `Tower A`..`Tower D` — finds nothing. Invisible
+until the Site view comes up empty.
+
+`towerReality()` asks **both sources** and returns one verdict:
+
+| | source | on an untouched setup |
+|---|---|---|
+| `nNamed` | `cfg.towers` **only** — never `blankTowers()` | **0**, not 1 |
+| `inSchedule` | the tower values the execution activities carry | 4 |
+| `multi` | either says so | **true** |
+| `drift` | the schedule knows towers the setup has not named | **true** |
+
+⚠️ `multi` is true when **either** source says so: a planner who has named four towers but not pushed
+has a multi-tower project, and so does one whose imported schedule holds four nobody has named.
+Taking only the setup's word is the bug; taking only the schedule's breaks the ordinary forward path.
+
+### 2. ⚠️⚠️ THE TWO SIDES DISAGREED ABOUT WHICH LEVEL EVEN IS THE TOWER
+Writing the detection surfaced a second, older problem. There were already two rules:
+
+- `sbDimsFromLevels` (setup): the first level is a tower **only on four levels or more**;
+- `_vsTowerLevelId` (stacking): a level **named** tower/building/block, else the first.
+
+So on a `Tower › Level › Zone` project — three levels, the first literally called *Tower* — the
+stacking has towers and this side had **none**. Detection that disagrees with the thing it is detecting
+*for* is worse than no detection, and the site plan's whole value is that the names match.
+
+**So the names come from `_vsTowerOf` verbatim** — the stacking's own function, not a second reading of
+the same rows. ⚠️ **But the gate is this side's, and deliberately conservative:** `_vsTowerOf` falls
+back to the first location level whatever it is, so on a single-building project whose only level is
+*Level* it would report "5th Floor", "6th Floor"… as towers, and this step would announce a
+fifteen-tower project and offer a site plan for it. A tower axis is credible when a level is **named**
+for one, or when the breakdown is deep enough that the first level cannot be the storey.
+
+### 3. What the tower bar now does
+- **The `Site plan…` button is absent on a single-tower project.** A "master site development plan
+  showing all towers" on a one-tower job is a drawing of one building, which the floor plans already
+  describe — and the stacking's Site view is hidden there for the same reason. An offered control that
+  leads nowhere is the looks-live-does-nothing failure this module keeps recording.
+- **It counts against EVERY tower the project has**, named here *and* known only to the schedule.
+  Counting against `towerList()` alone would report `1/1 traced` on the very project whose site plan
+  names nothing the stacking can find.
+- **The drift case is reported with the names**, in the warn surface, telling the planner to add them
+  with **+ Tower** so the names match. The single-tower line is a plain statement, not a warning — one
+  tower is an ordinary project, and it exists only so the missing button is explained rather than
+  merely absent.
+- **The site plan's brush list is both sources too**, de-duplicated by the same normaliser the plan is
+  matched with, with the schedule's own names last (the planner's chosen names are the ones they look
+  for first). Otherwise the planner is offered the one invented `Tower 1` and paints the whole site
+  with it.
+
+### 4. ⚠️⚠️ THE APPLY LIST WAS SHOWING EVERY TOWER'S FLOORS, AND THE LABELS COLLIDED
+On a four-tower job every trade's floor list holds every tower's floors, so *"also use this plan on…"*
+offered **forty tick boxes of which thirty were other buildings** — and ticking one silently gave Tower
+A's 5th floor Tower D's outline. Worse, **every tower has an `F5`**, so the list read as ten identical
+rows with nothing saying which building any of them belonged to.
+
+- Scoped by `towerIdOf`, which is what `floorsOfTower` already uses — one reading of "which tower is
+  this floor in", not a second written here.
+- ⚠️ **It is the TICK LIST that is scoped, not `zpUsers`.** That one COUNTS what actually shares the
+  plate, and a setup from before this fix may genuinely share one across towers. Reporting *"shared by
+  6 floors"* when six floors share it stays true; what changes is that you can no longer create that
+  state by accident.
+- The panel summary and the window header **name the tower** on a multi-tower job, because a list that
+  silently shows a subset reads as a bug. The empty state says the scoping is deliberate rather than
+  implying this trade has no other floor anywhere.
+- ⚠️ **Single-tower projects are unaffected**, asserted: `towerIdOf` defaults every floor to the first
+  tower, so they all still share, and the header does not mention a tower at all.
+
+### Verified
+A gitignored harness (deleted) driving the **shipped** `sbExecActs` / `sbHasTowerAxis` /
+`sbTowersInSchedule` / `towerReality` / `zpSubjFloor` / `locTowerToken`, sliced verbatim.
+
+| Checked | Result |
+|---|---|
+| An untouched setup | reads single-tower, and `nNamed` is **0** — `blankTowers()` does not count as a finding |
+| **The bug**: an imported 4-tower schedule nobody has named | all four read, `multi` **true**, all four reported unnamed, **drift flagged** |
+| The forward path (named here, nothing pushed) | multi-tower from the setup alone, **no drift** |
+| Names that match | no drift; a partial match names **only** what is missing |
+| ⚠️ `Tower › Level › Zone` (3 levels, first named Tower) | **is** a tower axis and both towers are read — the old four-level rule read **none** |
+| Four levels, none named | still a tower axis (the depth rule) |
+| ⚠️ `Level › Zone` | **not** a tower axis — floors are not towers, and the project reads single-tower |
+| ⚠️ The apply list | only Tower A's own floor offered; **Tower B and C's are not** — this was the bug |
+| | Tower B sees only Tower B; a tower with one floor offers nothing |
+| Single-tower | both floors still share, and the header names no tower |
+
+⚠️ **Not verified signed in.** The anon key has no grants, so nothing has been run against a real
+project: no tower has been read off a live schedule, and the drift line has never been seen. What is
+proven is the two-source verdict, the axis gate, the name join and the scoping. On the real project the
+thing to read first is the line under the tower chips — it says what was detected.
+
 ### The master site development plan: one drawing for where the towers stand (2026-09-12 d) — ethanrobles10
 
 Owner: *"if defined the floor plan of each tower, then there should be like a master site
