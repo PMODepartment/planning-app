@@ -1,5 +1,118 @@
 # Module: minutes-of-meeting
 
+## 2026-09-12 (b) — Table-view drag, the item-level carry-over button retired, an icon-only Present toggle, required meeting type, a real first occurrence for a new series, and Regular/Irregular scheduling
+
+Owner's nine-item list, all against this module. **No migration.**
+
+1. **"in minutes list table view, allow drag to reorder."** `momItemsTableHTML(vis, canDrag)` now
+   takes the same `canDrag` test `momItemRowHTML` already computes (`!ro && !momFilterOn() &&
+   !_momReport`, now hoisted once in `momDetailHTML` so Card and Table can't disagree on it) and
+   emits a leading grip column — the same `momDragGripHTML`/`data-reorder-row` shape the Card view
+   already uses. ⚠️⚠️ `wireMinuteDrag(host, momId)` no longer requires a `.il-mi-cards` wrapper —
+   it now looks for `[data-reorder]`/`[data-reorder-row]` across the whole detail HOST, which
+   covers either view without caring which is on screen (Card and Table never render at once).
+2. **"in minutes list, remove the carry over button as this has been moved to the meeting."** The
+   item-level "Carry over…" button (`#il-mom-carrygo` → `openCarryOverModal`, which pulled
+   still-open minutes IN from another meeting) is deleted along with the modal function — "Carry
+   over to next meeting" in the toolbar (`#il-mom-carrynext`) is the one carry-over control now.
+   ⚠️ `momCarryable`/`momCarryOver` are untouched and still called from `createNextOccurrence` —
+   only the button and its own modal are gone, not the underlying carry mechanism.
+3. **"for the present button in the meeting, remove the text label. instead of eye icon, use
+   slides icon."** `#il-mom-report` drops `.il-mom-modetxt` and its Present/Exit text; a new
+   `slides` glyph (`assets/js/icons.js` — a presentation screen on a stand, distinct from `eye`,
+   which reads as "view/watch" rather than "present") replaces `eye`. `.il-mom-modebtn`'s CSS
+   collapses to the same 34×34 square every other icon-only toolbar button already uses, keeping
+   only the class name (so the active-state colour rule `.il-mom-report .il-mom-modebtn` still has
+   something to key on) — the `title`/`aria-label` still name the action in full.
+4. **"for adding new meeting, meeting type is required. meeting agenda is also required at least
+   1."** Agenda was *already* required (`validateAddMeeting`'s `agendaValuesOf(root).length`
+   check, unchanged). Meeting type (the Internal/External select, literally labelled "Meeting
+   type" — not "Meeting description", which is the free-text field mapped to the `meeting_type`
+   column) previously always carried a value with no blank option, so "required" was true only by
+   accident of a forced default. It now opens on a real blank `— Select —` option, validated in
+   `validateAddMeeting`.
+5. **"when creating a new recurring meeting, use the date of the first applicable meeting."**
+   ⚠️⚠️ **Before this, creating a recurring series inserted ONLY a `mom_schedules` row — no
+   occurrence at all.** Since the 2026-09-12(a) removal of the series page, `momUnifiedRows` shows
+   only a schedule's own occurrences, never a bare schedule row — so a brand-new series existed in
+   the database and was completely unreachable from the Meetings List, findable only by opening the
+   Calendar in the right month and clicking its dashed "planned" chip. `saveAddMeeting`'s recurring
+   branch now also inserts the FIRST real `meeting_minutes` occurrence, dated to
+   `schedNextOccurrence(schedule, schedule.start_date)` — never the raw typed "Series start date",
+   which is only a lower bound (`schedDatesInRange` finds dates ON OR AFTER it, not necessarily AT
+   it — a start date landing on a Tuesday is not itself a meeting date for a Wednesday-weekly
+   schedule). The agenda items collected in the modal are seeded onto this first occurrence through
+   a new `momSeedAgendaItems(momId, agenda)` helper, factored out of the non-recurring branch's
+   identical loop so there is one copy of "turn an agenda array into real `mom_items` rows," not two
+   subtly different ones.
+6. **"change the input group of venue to date and venue. for non-recurring meetings, the schedule
+   inputs are moved to this new group. for recurring meetings, the date and time in the date and
+   venue field stays in the meeting view."** In `openAddMeetingModal`: the "Venue" tile is renamed
+   **"Date and Venue"** and gains the Date/Start time/End time row — but only for a **one-time**
+   meeting (`#il-am-datetimewrap`, hidden the moment Recurring is checked). The old "Schedule" tile
+   (Series start/end date, Frequency, rule fields) now exists **only** while Recurring is checked
+   (`#il-am-schedtile`, hidden as a whole tile rather than field-by-field) — for a recurring series
+   there is no per-occurrence date/time question in this form at all; each occurrence's own
+   start/end time is set "in the meeting view" (`momDetailHTML`'s own Schedule tile) once it exists,
+   which is exactly item 5's newly-created first occurrence and every later one.
+7. **"when adding a recurring meeting, ask input from user if schedule will be regular or
+   irregular beside the recurring input. if irregular, no need for the schedule input group."** A
+   `Regular schedule | Irregular` select (`#il-am-regularity`) appears beside the Recurring checkbox
+   once it is ticked. Irregular hides `#il-am-schedtile` entirely (no Frequency, no rule fields, no
+   Series start/end date) and writes `mom_schedules.frequency = 'irregular'` with `start_date =
+   momToday()` — there is no cadence to store, only the fact that the meeting recurs on no fixed
+   pattern. ⚠️⚠️ `frequency` carries **no CHECK constraint** (`text not null default
+   'monthly_date'`), so `'irregular'` is a legitimate value to write, but `schedDatesInRange` had to
+   be taught it explicitly: without the guard, `'irregular'` would fall through to the `else` branch
+   and be silently treated as `monthly_date`, inventing a monthly cadence nobody asked for.
+   `schedDatesInRange` now returns `[]` for it (so `schedNextOccurrence` always answers `null`, and
+   the Calendar's planned-chip prediction correctly shows nothing to predict), and
+   `schedFrequencyLabel` reads "Irregular — no fixed schedule" instead of computing garbage off a
+   weekday/ordinal/day-of-month that was never set.
+8. **"when a non-recurring meeting is carried over, ask user if regular or irregular. if regular,
+   ask for schedule. if irregular, just ask for next meeting date and time. other details like
+   venue, attendees, agenda will be carried over along with the open minutes."** This is
+   `openNextMeetingModal`'s promotion path (`opts.seedMom` set, no `opts.schedId` — a plain
+   meeting's own "Carry over to next meeting" button). It gains the identical Regular/Irregular
+   select (`#il-nx-regularity`), which toggles `#il-nx-freqwrap`/`#il-nx-rulewrap` off for
+   Irregular — the same "no need for the schedule input group" rule as item 7, applied to promoting
+   an existing meeting rather than creating a fresh one. ⚠️⚠️ **The modal had no Start/End time
+   fields at all before this** — added (`#il-nx-start`/`#il-nx-end`, defaulting from the seed
+   meeting's own `start_time`/`end_time`) so "next meeting date and time" is something this screen
+   can actually ask for. Venue/link/attendees already defaulted from the seed; the seed's own
+   `meeting_minutes.agenda` (the topic-headline jsonb list, distinct from its `mom_items` rows —
+   those are what `momCarryOver` brings across separately as "the open minutes") now travels
+   forward onto the new occurrence too, the one thing in this list that was not already carried.
+9. **"when a recurring meeting is carried over, ask user for next meeting date. if recurring, use
+   the next date in sequence by default. carry over all other details including open minutes."**
+   ⚠️ **Already true before this pass** — `openNextMeetingModal`'s `isRecur` (`opts.schedId` set)
+   branch already defaults `Date` to `schedNextOccurrence(sch, momToday())` and already carries
+   venue/link/attendees from the schedule's last occurrence, with `momCarryOver(seed.id)` bringing
+   forward whatever is still open. It now additionally gets the Start/End time fields and the
+   agenda carry-over built for item 8 (both sit outside the `isRecur` branch, so they apply
+   uniformly), and — via item 7's fix — a schedule that happens to be Irregular now correctly falls
+   back to `plusDaysISO(seed.meeting_date, 7)` for its default next date (since
+   `schedNextOccurrence` answers `null` for it) instead of silently computing a monthly-cadence date
+   nobody set.
+
+### Verified
+`node --check` clean on `module.js`, `assets/js/icons.js`, `assets/js/modules-grid.js`; CSS brace
+balance holds (357/357) and every `/* … */` opened is closed (90/90); 0 NUL bytes across every
+touched file; every new dynamically-emitted id (`il-am-schedtile`, `il-am-datetimewrap`,
+`il-am-regwrap`, `il-am-regularity`, `il-nx-regularity`, `il-nx-freqwrap`, `il-nx-start`,
+`il-nx-end`) appears exactly once in the template it belongs to; repo-wide grep for
+`openCarryOverModal`/`il-am-recurwrap`/`il-am-datewrap`/`il-am-sstartwrap`/`il-am-sendwrap` —
+zero remaining references outside this changelog's own historical entries; `momCarryable`/
+`momCarryOver` confirmed still called from `createNextOccurrence` after the button removal.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment. No live drag in the
+Table view, no live creation of a first occurrence (regular or irregular), and no live "Carry over
+to next meeting" round-trip (either direction) against a real project.
+
+`module.css`/`module.js?v=` → `20260912f`; shared `assets/js/icons.js?v=` → `20260912f` (22
+referencing pages); `MODULE_V` (via `modules-grid.js?v=` on `dashboard.html`/`modules.html`) →
+`20260912f`.
+
 ## 2026-09-12 — The Meetings List drops manual order, the Minutes list gets a real drag gesture, and recurring meetings stop having a second screen
 
 Owner's three items: (1) "for meeting list, no need to allow drag to reorder. by default, sort by
