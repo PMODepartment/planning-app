@@ -102,6 +102,60 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-12 — New module: Pormac, an in-browser AI assistant (zero hosting cost)
+
+Owner: *"add a new module open to all or selected users - an AI bot named Pormac... totally
+free... in-browser inference... capacity detection and tiered fallback... connect to all data
+linked to the planning app as well as data linked to the procurement app and engineering app."*
+Full detail and every ⚠️ decision: [`modules/pormac/CLAUDE.md`](modules/pormac/CLAUDE.md).
+
+**New `modules/pormac/`** — a chat assistant that runs inference in the browser (WebLLM/WebGPU),
+so operating it costs nothing, with a hosted free-tier fallback (Groq, via the new
+`supabase/functions/pormac-chat`) for devices that can't run it locally.
+
+- ⚠️⚠️ **It does NOT query the Procurement (WPM) or Engineering apps' own databases.** Checked,
+  not assumed: cloning both repos shows three separate Supabase projects with separate auth — a
+  Planners-app session has no standing in either, so a browser call to them would run as an
+  anonymous stranger against another department's data. What it reads instead are the mirrors
+  this app **already maintains** for this — `wpm_work_packages`/`wpm_vendors`
+  (`supabase/functions/sync-wpm`) and `eng_design_progress` (`supabase/functions/sync-eng`) —
+  under the signed-in planner's own RLS, exactly as Cash Flow and the Schedule's Design
+  Development branch already do.
+- **Access is "open to all or selected users" as a runtime toggle**, not a code flag: a new
+  `pormac_can_use()` SQL function (migration below) that an admin manages from inside the module
+  itself. Defaults to admin-only until deliberately opened wider.
+- **Capability detection is an honest heuristic** (WebGPU presence, `navigator.deviceMemory`
+  where the browser exposes it, a conservative UA fallback where it doesn't), and a runtime
+  failure steps the tier down and remembers it per device — "slow down instead of crash."
+- **Grounding reuses `PDb.moduleMetrics()`** — the exact engine the Project Dashboard tile
+  already calls off each module's own `dash` spec in `config.js` — so Pormac's figures can never
+  disagree with the Dashboard's, and a future module's `dash` spec gives Pormac that context for
+  free.
+
+**Run `migrations/2026-09-12-pormac.sql`** (also folded into `supabase-schema.sql`) —
+`pormac_settings`, `pormac_allowed_users`, `pormac_conversations`, `pormac_messages`,
+`pormac_usage`, and the `pormac_can_use()` function.
+
+**New `supabase/functions/pormac-chat`** — the hosted fallback. Needs
+`supabase functions deploy pormac-chat --project-ref bgupuqnkqhixpuctyder` and a `GROQ_API_KEY`
+secret (free at console.groq.com); see the file's own header. It checks access via the caller's
+OWN JWT rather than re-implementing the rule, and never fetches app data itself — the module
+assembles context client-side, under the caller's RLS, so the fallback can never see more than
+the signed-in user already can.
+
+`config.js` / `icons.js` are shared assets → bumped across every referencing page (29 / 23), 0
+version splits. New `botChat` icon.
+
+⚠️⚠️ **Not verified signed in.** No live login is possible from here, so `pormac_can_use()` has
+never been called against a real session, no WebGPU device has loaded a real model, and the Edge
+Function has not been deployed (needs the app owner's Supabase CLI access + a Groq key). The
+first real test: run the migration, deploy the function, open the module as an admin, and send
+one message on both a capable laptop and an older phone.
+
+⚠️ **Not built in this pass:** streaming for the remote tier (local streams token-by-token;
+remote returns one JSON response), a screen to browse/delete past conversations, and pinning a
+tested WebLLM package version instead of always resolving `+esm` latest.
+
 ### Orient redraws the window it changed; the sharing panel stops shutting on every tick (2026-09-12) — ethanrobles10
 
 Owner, with a screenshot: *"the re-orientation is not working. like it is not live, every time i
