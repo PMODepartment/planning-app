@@ -6,6 +6,98 @@ can't do that. One entry per prompt, newest first.
 
 ---
 
+## 2026-09-12 (f) — One conversation per project, and the composer a slow fetch could hide
+
+Owner: *"no need for chat and history tab switcher. keep only 1 conversation per user per
+project. history should be scrollable as needed. no need also for new chat since everything is
+in one conversation"* and *"I cant type text to ask pormac. please fix"*.
+
+### ⚠️⚠️ THE COMPOSER WAS `display:none`, BEHIND AN `await` — MEASURED, NOT GUESSED
+`#pmc-chrome` — the tier bar, the thread, the composer and the hint, i.e. everything you can
+type into — shipped as `style="display:none"` and was revealed by `switchView('chat')`, which
+sat **below `await loadProjects()`**. So a project fetch that was slow, refused or simply never
+resolved left the planner looking at a topbar and an empty page with **no input on it at all**
+and nothing saying why. Reproduced in a browser against the shipped bytes with the fetch left
+pending: `#pmc-input` renders **0×0** and a click on it times out; with the fetch resolving it
+renders and accepts text. That is the reported symptom exactly.
+
+⚠️ This is the (d) bug one layer up. That entry moved the *handlers* above the first `await`
+for precisely this reason and left the *pane's visibility* below it. The pane is now visible in
+the markup itself — there is only one screen, so there is nothing left for a switcher to reveal.
+
+⚠️⚠️ **AND `module.js` / `module.css` HAD NO `?v=` AT ALL.** Every same-day fix to this module
+since it launched — (b), (c), (d), (e) — changed those two files under a URL a browser had
+already cached, so any of them may never have reached the owner's tab. That alone can look like
+"the buttons don't work" long after they were fixed. Both now carry `?v=20260912r`.
+
+### The layout was never docked, so the composer also drifted below the fold
+`.pmc-main` asked for `height:100%` inside `.pd-content`, which the shared stylesheet declares
+as `flex:1; min-width:0` with **no height** — so it resolved to `auto`, the thread grew with the
+conversation, and the **page** scrolled rather than the thread. `.pd-content` now takes a
+viewport height (`100vh`, then `100dvh`) and becomes the flex column, the same thing
+project-schedule does for its docked details panel. The thread is the one thing that scrolls —
+which is also what *"history should be scrollable as needed"* asks for — and the composer is
+pinned where it can always be reached. ⚠️ `.pd-topbar` needs `flex:none` with it: a flex item
+defaults to `flex-shrink:1`, so a height-constrained column crushes the bar below its own
+content and paints it over the chat (the 2026-09-10 z5 defect, in this module's shape).
+
+### One conversation per planner per project
+`.pmc-tabs`, `#pmc-new` and the whole `#pmc-history` pane are gone, along with `switchView` /
+`renderHistory` / `openConversation` / `deleteConversation`. Opening the module — or switching
+project — resumes that project's single running thread through one new `loadConversation()`.
+
+- ⚠️⚠️ **"ONE" IS ENFORCED BY WHAT THE CLIENT READS, NOT BY A UNIQUE INDEX, AND THAT IS A
+  DELIBERATE CALL.** Rows already exist from before this change (every press of the old "New
+  chat" made one), so a unique constraint could not be added without first destroying or merging
+  real conversations. And the **General (no project)** case cannot be covered by a plain unique
+  index at all: Postgres treats NULLs as distinct, so `(created_by, project_id)` would happily
+  admit a second NULL-project row — the same trap `2026-09-10-boq-project-scope.sql` had to use
+  a *partial* index for. So there is **no migration**: `loadConversation()` reads **every**
+  conversation the planner has for this project and merges their messages into one chronological
+  thread, so *"everything is in one conversation"* is true on screen from the first load,
+  **including retroactively**, while new turns are written to the most recently updated row —
+  which converges them over time without deleting anything.
+- ⚠️ **`.eq('created_by', …)` is not redundant with RLS.** The select policy is
+  `created_by = auth.uid() OR is_admin()`, so without it an admin would load every planner's
+  conversations into their own thread.
+- ⚠️ **The message read is newest-first + `limit`, then reversed.** An *ascending* limit would
+  have returned the OLDEST 200 and silently dropped everything recent — the half a planner is
+  actually reading. The cap is 200 and, when it bites, the thread says so at the top rather than
+  letting a capped thread read as the start of the conversation. Older turns stay in the database.
+- ⚠️ A **token guard** (`convToken`) drops a conversation load that lands after the planner has
+  already switched project — otherwise the slower of two fetches wins and paints the wrong
+  project's history.
+- ⚠️ A failed history read **says so in the thread and leaves the chat usable**, rather than
+  showing a blank thread that reads as "nothing was ever saved".
+- ⚠️ `updated_at` is still bumped on every turn by `persistTurn()` — its role changed from
+  sorting the History list to **choosing which row is canonical**, so it is still load-bearing.
+
+### Verified
+Driven in a real browser (Chromium, the shipped `index.html` with only auth/DB stubbed, harness
+deleted afterwards), at 1440×900 and 390×740, light and dark:
+- **The input is in the viewport, is the top element at its own centre, and accepts typed text
+  in all five scenarios — including with the project fetch left permanently pending.** The same
+  probe against the pre-fix bytes reports `0×0` and a click timeout, so it bites.
+- 300 stored messages → the cap note, then `msg 101 … msg 300` in **chronological** order, the
+  thread scrolling and pinned at the bottom. ⚠️ The first version of the probe stubbed the query
+  builder without honouring `.order()`/`.limit()` and reported the thread reversed — a defect in
+  the checker, not the code; the stub now applies both the way PostgREST does.
+- Switching project reloads that project's own thread; a project with no conversation shows the
+  empty state. 0 tabs, no New-chat button, no history pane, 0 page errors, no horizontal or
+  vertical page scroll at either width.
+- `node --check` clean; `module.css` braces 30/30; 0 NUL bytes; `tools/wiring-check.js`
+  **126/126, 0 version splits**; `tools/dead-hooks.js` unchanged against its documented 9-finding
+  baseline (`.pmc-tab` did not become a dead hook — the query went with the markup).
+- `.pmc-muted` was only used by the History pane and is removed with it. ⚠️ `.pmc-meta` is dead
+  too and is **left alone** — it has never been emitted since this module's first build, so it
+  is pre-existing and outside this change.
+
+⚠️ **Not verified signed in.** No real conversation has been loaded, merged or written; the
+merge-across-old-rows behaviour in particular has only been exercised against a stub. **The
+first thing to check on a real login is whether a project's earlier chats appear in one thread.**
+
+---
+
 ## 2026-09-12 (e) — Chat history: a real second screen, and "New chat" made to work from it
 
 Owner: *"include already the char history in this build. fix also new chat so it should
