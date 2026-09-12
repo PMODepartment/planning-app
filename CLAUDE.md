@@ -102,6 +102,32 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-12 — Every module swept signed in: the first live API baseline
+
+Follow-on to the vendor-view fix, which was invisible until somebody opened a console. **No file
+changed.** Each module was loaded in an iframe against the live signed-in session on OPW101 and
+its own `performance.getEntriesByType('resource')` read for 4xx/5xx — per-document, because
+the pane's console log is **cumulative** across navigations and mixes in earlier pages' errors.
+
+| | API calls | failures |
+|---|---|---|
+| contracts-claims | 30 | 0 |
+| progress-photos | 34 | 0 |
+| equipment-loading | 16 | 0 |
+| cash-flow / manpower-loading / productivity-rates | 12 each | 0 |
+| minutes-of-meeting | 10 | 0 |
+| issues-lessons | 8 | 0 |
+| stakeholder-map | 7 | 0 |
+| risk-register | 5 | 0 |
+| portfolio-overview | 3 | 0 |
+
+**13 modules, ~150 API calls, 0 failures and 0 asset failures** — so the two vendor views
+were the only relations failing, not the first of many.
+
+⚠️ **Coverage is the landing view only.** portfolio-overview issued **3** calls, so its deeper
+tabs were not exercised; the same is true of any module whose data sits behind a second tab. A
+clean sweep here means the load path is clean, not that every screen is.
+
 ### 2026-09-12 — `tools/selectall-key.js`: so the FIFTH one is found by a command
 
 The vendor-view bug above was found by opening a console on a signed-in page. That is not a
