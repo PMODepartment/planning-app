@@ -102,6 +102,60 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-12 — New module: Pormac, an in-browser AI assistant (zero hosting cost)
+
+Owner: *"add a new module open to all or selected users - an AI bot named Pormac... totally
+free... in-browser inference... capacity detection and tiered fallback... connect to all data
+linked to the planning app as well as data linked to the procurement app and engineering app."*
+Full detail and every ⚠️ decision: [`modules/pormac/CLAUDE.md`](modules/pormac/CLAUDE.md).
+
+**New `modules/pormac/`** — a chat assistant that runs inference in the browser (WebLLM/WebGPU),
+so operating it costs nothing, with a hosted free-tier fallback (Groq, via the new
+`supabase/functions/pormac-chat`) for devices that can't run it locally.
+
+- ⚠️⚠️ **It does NOT query the Procurement (WPM) or Engineering apps' own databases.** Checked,
+  not assumed: cloning both repos shows three separate Supabase projects with separate auth — a
+  Planners-app session has no standing in either, so a browser call to them would run as an
+  anonymous stranger against another department's data. What it reads instead are the mirrors
+  this app **already maintains** for this — `wpm_work_packages`/`wpm_vendors`
+  (`supabase/functions/sync-wpm`) and `eng_design_progress` (`supabase/functions/sync-eng`) —
+  under the signed-in planner's own RLS, exactly as Cash Flow and the Schedule's Design
+  Development branch already do.
+- **Access is "open to all or selected users" as a runtime toggle**, not a code flag: a new
+  `pormac_can_use()` SQL function (migration below) that an admin manages from inside the module
+  itself. Defaults to admin-only until deliberately opened wider.
+- **Capability detection is an honest heuristic** (WebGPU presence, `navigator.deviceMemory`
+  where the browser exposes it, a conservative UA fallback where it doesn't), and a runtime
+  failure steps the tier down and remembers it per device — "slow down instead of crash."
+- **Grounding reuses `PDb.moduleMetrics()`** — the exact engine the Project Dashboard tile
+  already calls off each module's own `dash` spec in `config.js` — so Pormac's figures can never
+  disagree with the Dashboard's, and a future module's `dash` spec gives Pormac that context for
+  free.
+
+**Run `migrations/2026-09-12-pormac.sql`** (also folded into `supabase-schema.sql`) —
+`pormac_settings`, `pormac_allowed_users`, `pormac_conversations`, `pormac_messages`,
+`pormac_usage`, and the `pormac_can_use()` function.
+
+**New `supabase/functions/pormac-chat`** — the hosted fallback. Needs
+`supabase functions deploy pormac-chat --project-ref bgupuqnkqhixpuctyder` and a `GROQ_API_KEY`
+secret (free at console.groq.com); see the file's own header. It checks access via the caller's
+OWN JWT rather than re-implementing the rule, and never fetches app data itself — the module
+assembles context client-side, under the caller's RLS, so the fallback can never see more than
+the signed-in user already can.
+
+`config.js` / `icons.js` are shared assets → bumped across every referencing page (29 / 23), 0
+version splits. New `botChat` icon.
+
+⚠️⚠️ **Not verified signed in.** No live login is possible from here, so `pormac_can_use()` has
+never been called against a real session, no WebGPU device has loaded a real model, and the Edge
+Function has not been deployed (needs the app owner's Supabase CLI access + a Groq key). The
+first real test: run the migration, deploy the function, open the module as an admin, and send
+one message on both a capable laptop and an older phone.
+
+⚠️ **Not built in this pass:** streaming for the remote tier (local streams token-by-token;
+remote returns one JSON response), a screen to browse/delete past conversations, and pinning a
+tested WebLLM package version instead of always resolving `+esm` latest.
+
 ### Seventeen towers fit, and they are legible: the site grid is chosen, not assumed (2026-09-12) — ethanrobles10
 
 Owner: *"bruh you just defeated the purpose of the zoom out… my point is that there should be more
@@ -136,6 +190,74 @@ of the chooser. **Not verified signed in** — no seventeen-tower project has be
 
 `MODULE_V` → `20260912p`. Detail:
 [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+### Labels/inputs one rung smaller, a real grid-overflow bug in the 360° form, and one verified dead export removed (2026-09-12) — gwsia
+
+Owner, following the same-day mobile form pass: *"1. reduce size of labels and input texts to make
+app minimalistic. 2. attached photo still has overflowing textbox width as shown in photo. audit
+code and correct. 3. audit also code to delete dead code."* — with a screenshot of Progress Photos'
+"Add 360° photo" form on a phone, showing the KEY PLAN section's floor-plan image running off the
+right edge of the screen.
+
+**1 · Labels and inputs drop one more rung.** The shared `.pd-field label` / `.pd-label` /
+`.pd-input, .pd-select, .pd-textarea` desktop font-size moved from `--pd-fs-sm` (12.5px, set the
+same day to make labels match their inputs) down to `--pd-fs-xs` (11px) — both together, so they
+stay equal, just smaller. ⚠️ **The mobile iOS-zoom floor is untouched, deliberately** — the
+`!important` rule pinning every real `<input>`/`<select>`/`<textarea>` at `--pd-fs-tap` (16px) below
+700px still stands (iOS Safari zooms the page if a focused field computes under 16px), and the
+matching mobile label rule still rides up to meet it there; only the desktop rung moved. A
+module-local override in stakeholder-map (`.pd-modal-body .pd-field > label`,
+`.pp-formhost .pd-field > label`) that had been pinned to `--pd-fs-sm` to *match* the old shared
+rung is brought down to `--pd-fs-xs` with it, so it doesn't end up one rung above the app-wide rule.
+
+**2 · ⚠️⚠️ THE OVERFLOW WAS A CSS-GRID MIN-WIDTH BUG, not a missing `max-width`.** `.pp-form2`
+(the two-column field grid every Add/Edit-photo modal, including the 360° form, lays its fields out
+in) is `display:grid`, and a grid item's *default* `min-width` is `auto` — not `0`. That means an
+item's own **intrinsic content size** can force its track wider than the column actually has room
+for, regardless of any `width:100%`/`max-width:100%` set on something *inside* it.
+`BIM.pinFieldHTML`'s Key Plan section renders the project's uploaded floor-plan photo at
+`.bim-conestage img { width:100% }` — correctly sized to its own box — but that box's own **grid
+item** was still being sized first by the photo's real, often large, natural width, which is exactly
+what pushed the whole modal (and the page under it) wider than the phone screen. Fixed with one rule,
+`.pp-form2 > * { min-width: 0; }`, which lets every existing `width:100%`/`max-width:100%` inside a
+field actually take effect. This is the standard "image inside CSS Grid overflows" trap, not
+specific to the 360° form — it fixes the ordinary Add-photo and Edit-photo modals' identical Key
+Plan section the same way, since all three embed `BIM.pinFieldHTML` inside the same `.pp-form2`.
+
+**3 · Dead-code audit.** `tools/dead-hooks.js` still reports exactly the documented 9-finding
+baseline (retired-module hooks, the blocked project-schedule file, minutes-of-meeting's fallback
+selector) — no new dead hooks. `tools/dead-exports.js` surfaced ~50 "unread" exports, but checking
+each by hand: the overwhelming majority are either (a) called cross-file through a
+`window.X && X.method(...)` guard the checker's static scan doesn't always resolve — confirmed real
+callers exist for `ProgressPhotos.openLocationPicker`/`openMarkupEditor`/`openAdjustEditor`/
+`hasLocationLevels`/`locBreadcrumbOf`, `BIM.coneWedgeSVGAt`, `ppr.js`'s `photoById` — or (b)
+underscore-prefixed test-only hooks, a convention this module's own `CLAUDE.md` documents
+extensively and by design (exported specifically so `test.js` can genuinely execute them). Neither
+is dead code to delete. ⚠️⚠️ **One genuine, verified dead export was found and removed**:
+`BIM.coneWedgeSVG` (bim.js) — the *public wrapper* around the private `coneWedgeSVG()` function.
+Every real caller in this module was confirmed, by grep, to call `BIM.coneWedgeSVGAt` (the rotated
+variant, still exported and still used at `module.js:3006`) instead; the bare `coneWedgeSVG` public
+property had no call site anywhere in the module, only stale comments naming it. Removed the export
+line only — the private function it wrapped is untouched and still used internally by
+`pinConeHTML`/`keyPlanMiniMarkerHTML`/`coneWedgeSVGAt`/`stageHTML`. ⚠️ Left alone, on the same
+evidence basis: shared-asset exports (`PDLoc.ORD`/`._calc`, `PDProgram.labelFor`/`isShared`,
+`MyWork._internals`) and every module's own `_internals` object — these are outside this session's
+scope (shared files) or a documented, intentional debug/audit surface (`_internals`), not orphaned
+code.
+
+**Verified:** `node --check` clean on `bim.js`/`module.js`; CSS brace-balance holds on
+`dashboard.css` (535/535), `progress-photos/module.css` (542/542), `stakeholder-map/module.css`
+(221/221); 0 NUL bytes across all three; `tools/wiring-check.js` 123/123, 3,523 cross-module
+references, 0 failed (confirming the removed `BIM.coneWedgeSVG` export was genuinely unreferenced,
+not just unread by the audit tool); `tools/dead-hooks.js` unchanged against its documented baseline.
+⚠️ **Not verified signed in** — no live login is possible in this environment; the grid-overflow fix
+is argued from the CSS box model (a grid item's default `min-width:auto` vs. its content's intrinsic
+size), not observed on a real device.
+
+`dashboard.css` → `?v=20260912o` (30 pages); `progress-photos/module.css`/`bim.js` → `?v=20260912o`;
+`stakeholder-map/module.css` → `?v=20260912o` (both `index.html` and `person.html`, its two
+referencing pages). No `MODULE_V` bump — no module's `index.html` changed structurally, only
+version query strings and the CSS/JS content those pages reference.
 
 ### Mobile form audit: Start/End pairs stop splitting apart, and labels catch up to their inputs (2026-09-12) — gwsia
 

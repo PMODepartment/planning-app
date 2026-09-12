@@ -717,12 +717,11 @@ html.pd-dark .pd-seg-multi > button.on:hover { color: #FF8A80; }
 
 /* ---- Forms ---- */
 .pd-field { margin-bottom: 14px; }
-/* ⚠️⚠️ WAS --pd-fs-xs (11px) while `.pd-input`/`.pd-select`/`.pd-textarea` below sit at
-   --pd-fs-sm (12.5px) — a label visibly smaller than the value it labels, on every form
-   in the app. `.pd-label` (below) already used --pd-fs-sm; this brings the far more common
-   bare `label` inside `.pd-field` onto the SAME rung, so a field's caption and its value
-   read as one size, not two. */
-.pd-field label { display: block; font-size: var(--pd-fs-sm); font-weight: 500; color: var(--pd-muted); margin-bottom: 5px;
+/* ⚠️⚠️ WAS --pd-fs-sm (12.5px), matched to the input beside it (2026-09-12 first pass).
+   Dropped a further rung, to --pd-fs-xs (11px), on an explicit "make labels and inputs
+   smaller, more minimalist" request — the two stay EQUAL to each other, just both one
+   rung down. `.pd-label` (below) moves with it for the same reason. */
+.pd-field label { display: block; font-size: var(--pd-fs-xs); font-weight: 500; color: var(--pd-muted); margin-bottom: 5px;
   text-transform: uppercase; letter-spacing: .03em; }
 .pd-input, .pd-select, .pd-textarea {
   /* ⚠️⚠️ WAS 7px WHILE `.pd-btn` IS 8px, so a Filter button and the search box beside it in
@@ -730,7 +729,10 @@ html.pd-dark .pd-seg-multi > button.on:hover { color: #FF8A80; }
      the BUTTON down to 7px to match, which is the same observation reached from the other
      end — someone had already decided these should agree. Both are --pd-radius-md now. */
   width: 100%; padding: 6px 10px; border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md);
-  font-size: var(--pd-fs-sm); font-family: inherit; background: var(--pd-card); color: var(--pd-ink);
+  /* ⚠️ Matches `.pd-field label`/`.pd-label` at --pd-fs-xs (11px), one rung below the prior
+     --pd-fs-sm — desktop only; the phone `!important` floor below still pins this at
+     --pd-fs-tap (16px) so iOS never zooms on focus. */
+  font-size: var(--pd-fs-xs); font-family: inherit; background: var(--pd-card); color: var(--pd-ink);
 }
 /* ⚠️⚠️ AN INPUT, A DATE INPUT AND A SELECT WITH IDENTICAL PADDING AND FONT-SIZE STILL
    COME OUT AT THREE DIFFERENT HEIGHTS, because each control type adds its own intrinsic
@@ -978,7 +980,7 @@ button.pd-psel-btn { height: auto; min-height: 30px; padding-top: 4px; padding-b
 /* Form label used outside .pd-field (cash-flow's tabbed Assumptions, resource-loading).
    ⚠️ Same values as `.pd-field label` on purpose -- two label styles that drift apart is
       how one dialog ends up looking like a different product. */
-.pd-label { display: block; font-size: var(--pd-fs-sm); font-weight: 500; color: var(--pd-muted); margin-bottom: 5px; }
+.pd-label { display: block; font-size: var(--pd-fs-xs); font-weight: 500; color: var(--pd-muted); margin-bottom: 5px; }
 
 /* Autosave status badge (assets/js/autosave.js), placed beside an Edit modal's title. */
 .pd-autosave { font-size: var(--pd-fs-xs); font-weight: 500; padding: 3px 9px; border-radius: var(--pd-radius-pill);

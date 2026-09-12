@@ -965,3 +965,122 @@ begin
 end $$;
 create index if not exists project_schedule_split_group_idx
   on project_schedule (project_id, split_group, split_seq);
+
+-- ---- Pormac (in-browser AI assistant) --------------------------------------
+-- Idempotent, per MODULE_CONTRACT section 8. Full rationale — why this is NOT
+-- given live access to the Procurement/Engineering apps' own databases, and
+-- reads their already-mirrored tables (wpm_work_packages, wpm_vendors,
+-- eng_design_progress) instead — lives in migrations/2026-09-12-pormac.sql.
+create table if not exists pormac_settings (
+  id            smallint primary key default 1,
+  access_mode   text not null default 'selected' check (access_mode in ('all', 'selected')),
+  updated_by    uuid references users(id),
+  updated_at    timestamptz default now(),
+  constraint pormac_settings_singleton check (id = 1)
+);
+insert into pormac_settings (id) values (1) on conflict (id) do nothing;
+
+create table if not exists pormac_allowed_users (
+  user_id     uuid primary key references users(id) on delete cascade,
+  added_by    uuid references users(id),
+  added_at    timestamptz default now()
+);
+
+create or replace function pormac_can_use() returns boolean
+  language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from users u
+    where u.id = auth.uid() and u.status = 'approved'
+      and (
+        u.role in ('admin', 'super_admin')
+        or (select access_mode from pormac_settings where id = 1) = 'all'
+        or exists (select 1 from pormac_allowed_users a where a.user_id = auth.uid())
+      )
+  );
+$$;
+grant execute on function pormac_can_use() to authenticated;
+
+grant select, insert, update on pormac_settings to authenticated;
+alter table pormac_settings enable row level security;
+drop policy if exists pormac_settings_read on pormac_settings;
+create policy pormac_settings_read on pormac_settings for select using (is_approved());
+drop policy if exists pormac_settings_write on pormac_settings;
+create policy pormac_settings_write on pormac_settings for update
+  using (is_admin()) with check (is_admin());
+
+grant select, insert, delete on pormac_allowed_users to authenticated;
+alter table pormac_allowed_users enable row level security;
+drop policy if exists pormac_allowed_users_read on pormac_allowed_users;
+create policy pormac_allowed_users_read on pormac_allowed_users for select
+  using (is_admin() or user_id = auth.uid());
+drop policy if exists pormac_allowed_users_write on pormac_allowed_users;
+create policy pormac_allowed_users_write on pormac_allowed_users for insert
+  with check (is_admin());
+drop policy if exists pormac_allowed_users_del on pormac_allowed_users;
+create policy pormac_allowed_users_del on pormac_allowed_users for delete
+  using (is_admin());
+
+create table if not exists pormac_conversations (
+  id            uuid primary key default gen_random_uuid(),
+  project_id    text references projects(id),
+  title         text,
+  created_by    uuid references users(id),
+  created_at    timestamptz default now(),
+  updated_at    timestamptz default now()
+);
+create index if not exists idx_pormac_conv_owner on pormac_conversations (created_by, updated_at desc);
+
+create table if not exists pormac_messages (
+  id                uuid primary key default gen_random_uuid(),
+  conversation_id   uuid not null references pormac_conversations(id) on delete cascade,
+  role              text not null check (role in ('user', 'assistant', 'system')),
+  content           text not null,
+  model_tier        text,
+  context_used      text[],
+  created_at        timestamptz default now()
+);
+create index if not exists idx_pormac_msg_conv on pormac_messages (conversation_id, created_at);
+
+grant select, insert, update, delete on pormac_conversations to authenticated;
+grant select, insert on pormac_messages to authenticated;
+
+alter table pormac_conversations enable row level security;
+drop policy if exists pormac_conv_read on pormac_conversations;
+create policy pormac_conv_read on pormac_conversations for select
+  using (pormac_can_use() and (created_by = auth.uid() or is_admin()));
+drop policy if exists pormac_conv_ins on pormac_conversations;
+create policy pormac_conv_ins on pormac_conversations for insert
+  with check (pormac_can_use() and created_by = auth.uid() and (project_id is null or can_access_project(project_id)));
+drop policy if exists pormac_conv_upd on pormac_conversations;
+create policy pormac_conv_upd on pormac_conversations for update
+  using (pormac_can_use() and created_by = auth.uid())
+  with check (pormac_can_use() and created_by = auth.uid());
+drop policy if exists pormac_conv_del on pormac_conversations;
+create policy pormac_conv_del on pormac_conversations for delete
+  using (pormac_can_use() and created_by = auth.uid());
+
+alter table pormac_messages enable row level security;
+drop policy if exists pormac_msg_read on pormac_messages;
+create policy pormac_msg_read on pormac_messages for select
+  using (pormac_can_use() and exists (
+    select 1 from pormac_conversations c
+    where c.id = conversation_id and (c.created_by = auth.uid() or is_admin())
+  ));
+drop policy if exists pormac_msg_ins on pormac_messages;
+create policy pormac_msg_ins on pormac_messages for insert
+  with check (pormac_can_use() and exists (
+    select 1 from pormac_conversations c
+    where c.id = conversation_id and c.created_by = auth.uid()
+  ));
+
+create table if not exists pormac_usage (
+  user_id       uuid not null references users(id),
+  day           date not null default current_date,
+  remote_calls  int not null default 0,
+  primary key (user_id, day)
+);
+alter table pormac_usage enable row level security;
+grant select on pormac_usage to authenticated;
+drop policy if exists pormac_usage_read on pormac_usage;
+create policy pormac_usage_read on pormac_usage for select
+  using (user_id = auth.uid() or is_admin());

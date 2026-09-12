@@ -2311,11 +2311,6 @@ window.BIM = (function () {
     // comment) — every small corner overlay should call THIS, never
     // keyPlanMarkerHTML above, which is sized for the full Plans-tab stage.
     keyPlanMiniMarkerHTML: function (pin) { return keyPlanMiniMarkerHTML(pin); },
-    // The cone alone (no pin dot) — module.js's lightbox key-plan overlay
-    // draws its own differently-styled/coloured pin dot per item kind, but
-    // must not draw its own cone shape a second time; this is the same
-    // accurate geometry pinConeHTML uses internally.
-    coneWedgeSVG: function (pin, ids) { return coneWedgeSVG(pin, ids); },
     // Item 4 (360° viewer): the same cone, rotated by however far the
     // viewer has been panned since the photo was captured.
     coneWedgeSVGAt: function (pin, rotationOffsetDeg, ids) { return coneWedgeSVGAt(pin, rotationOffsetDeg, ids); },

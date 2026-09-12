@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" type="image/png" href="../../assets/img/favicon-icon.png?v=20260903a" />
+  <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
+  <script src="../../assets/js/theme.js?v=20260910w7"></script>
+  <title>Pormac · Planners Dashboard</title>
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260912o" />
+  <link rel="stylesheet" href="module.css" />
+</head>
+<body>
+  <div class="pd-app">
+    <!-- Persistent module sidebar — copied verbatim per MODULE_CONTRACT.md. -->
+    <aside class="pd-sidebar">
+      <div class="pd-brand"><img class="pd-brand-logo" src="../../assets/img/logo-white.png" alt="Megawide Construction"><img class="pd-brand-mark" src="../../assets/img/favicon-icon.png?v=20260903a" alt="" aria-hidden="true">Planners Dashboard<small>Pormac</small></div>
+      <nav id="side-nav"></nav>
+      <div class="pd-nav-foot">
+        <a class="pd-nav-sibling" href="https://pmodepartment.github.io/engineering-app/" target="_blank" rel="noopener" title="Opens Engineering App in a new tab">
+          <span class="pd-navico" data-ico="appEngineering"></span><span class="pd-navtxt">Engineering App</span>
+        </a>
+        <a class="pd-nav-sibling" href="https://pmodepartment.github.io/prc-app/" target="_blank" rel="noopener" title="Opens Procurement App in a new tab">
+          <span class="pd-navico" data-ico="appProcurement"></span><span class="pd-navtxt">Procurement App</span>
+        </a>
+      </div>
+      <div class="pd-sidebar-foot">Megawide Construction Corporation<br>PMO Department</div>
+    </aside>
+    <div class="pd-content">
+      <!-- Uniform top bar per MODULE_CONTRACT.md. -->
+      <div class="pd-topbar">
+        <h1 class="pmc-title" style="margin:0;">
+          <span class="pmc-title-ico" data-ico="botChat" data-ico-size="20"></span>
+          <span class="pmc-title-txt">Pormac</span>
+        </h1>
+        <div class="pmc-projctx">
+          <select class="pd-select pmc-project" id="pmc-project" title="Project"></select>
+        </div>
+        <div class="pmc-tabs" role="tablist">
+          <button class="pmc-tab active" data-view="chat">Chat</button>
+        </div>
+        <div class="pmc-topbar-tools">
+          <button class="pd-btn" id="pmc-new" title="Start a new conversation">New chat</button>
+          <button class="pd-btn" id="pmc-settings" title="Who can use Pormac" style="display:none;">
+            <span data-ico="settings" data-ico-size="16"></span>
+          </button>
+        </div>
+        <div id="user-bar"></div>
+      </div>
+      <div class="pd-main pmc-main">
+        <!-- Blocked / not-enabled state -->
+        <div class="pd-card pmc-blocked" id="pmc-blocked" style="display:none;">
+          <span data-ico="botChat" data-ico-size="28"></span>
+          <h3>Pormac isn't turned on for your account yet</h3>
+          <p id="pmc-blocked-msg" class="pmc-muted">Ask an admin to enable it for everyone, or add you to the allow-list.</p>
+        </div>
+
+        <div class="pmc-chrome" id="pmc-chrome" style="display:none;">
+          <div class="pmc-tierbar" id="pmc-tierbar"></div>
+          <div class="pmc-thread" id="pmc-thread"></div>
+          <div class="pmc-composer">
+            <textarea class="pd-input pmc-input" id="pmc-input" rows="1"
+              placeholder="Ask about this project's schedule, risks, stakeholders, procurement, engineering progress…"></textarea>
+            <button class="pd-btn pd-btn-primary" id="pmc-send">Send</button>
+          </div>
+          <div class="pmc-hint">
+            Pormac reads this project's own data (and its already-mirrored Procurement/Engineering
+            figures) to answer — it can still be wrong, and it always says which data it used.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="../../assets/js/config.js?v=20260912a"></script>
+  <script src="../../assets/js/auth.js?v=20260901b"></script>
+  <script src="../../assets/js/db.js?v=20260909n"></script>
+  <script src="../../assets/js/ui.js?v=20260909s"></script>
+  <script src="../../assets/js/icons.js?v=20260912i"></script>
+  <script src="module.js"></script>
+  <script>
+    AppAuth.requireLogin(function (user, profile) {
+      UI.renderUserBar(profile);
+      UI.initShell();
+      var pname = sessionStorage.getItem('pd_project_name') || sessionStorage.getItem('pd_project') || '';
+      UI.renderNav(document.getElementById('side-nav'), 'project', {
+        active: 'pormac', base: '../../', pname: pname, modules: APP_CONFIG.MODULES,
+      });
+      Pormac.init(user, profile);
+    });
+  </script>
+</body>
+</html>

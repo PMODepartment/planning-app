@@ -1,0 +1,68 @@
+/* Pormac — module-local styles. Shared tokens only (--pd-*), per MODULE_CONTRACT.md
+   §"Dark mode is automatic" — never a hard-coded light background here. */
+
+.pmc-muted { color: var(--pd-muted); }
+
+/* ---- Blocked / not-enabled state ---- */
+.pmc-blocked {
+  max-width: 480px; margin: 48px auto; padding: 32px 28px; text-align: center;
+}
+.pmc-blocked [data-ico] { color: var(--pd-red); margin-bottom: 8px; }
+.pmc-blocked h3 { margin: 8px 0 4px; }
+
+/* ---- Overall chrome ---- */
+.pmc-main { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.pmc-chrome { display: flex; flex-direction: column; flex: 1; min-height: 0; max-width: 880px; width: 100%; margin: 0 auto; padding: 0 16px 16px; }
+
+.pmc-tierbar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-size: var(--pd-fs-xs, 11px); color: var(--pd-muted);
+  padding: 8px 2px; border-bottom: 1px solid var(--pd-line);
+}
+.pmc-tierbar .pmc-tierpill {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 9px; border-radius: 999px; border: 1px solid var(--pd-line);
+  background: var(--pd-card);
+}
+.pmc-tierbar .pmc-tierpill.busy .pmc-dot { background: var(--pd-warn, #C77700); }
+.pmc-tierpill .pmc-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--pd-ok, #1f8f4e); flex: none; }
+.pmc-tierbar button.pd-btn-sm { margin-left: auto; }
+
+/* ---- Thread ---- */
+.pmc-thread {
+  flex: 1; min-height: 0; overflow-y: auto; padding: 16px 2px 8px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.pmc-msg { max-width: 86%; display: flex; flex-direction: column; gap: 4px; }
+.pmc-msg.user { align-self: flex-end; align-items: flex-end; }
+.pmc-msg.assistant { align-self: flex-start; align-items: flex-start; }
+.pmc-bubble {
+  padding: 10px 14px; border-radius: var(--pd-radius-lg, 12px); line-height: 1.5;
+  white-space: pre-wrap; word-break: break-word;
+}
+.pmc-msg.user .pmc-bubble { background: var(--pd-red); color: #fff; }
+.pmc-msg.assistant .pmc-bubble { background: var(--pd-card); border: 1px solid var(--pd-line); }
+.pmc-msg.system .pmc-bubble { background: transparent; border: 1px dashed var(--pd-line); color: var(--pd-muted); font-size: var(--pd-fs-xs, 11px); }
+.pmc-msg .pmc-meta { font-size: var(--pd-fs-micro, 10px); color: var(--pd-muted); padding: 0 2px; }
+.pmc-ctxchips { display: flex; gap: 4px; flex-wrap: wrap; padding: 0 2px; }
+.pmc-ctxchip {
+  font-size: var(--pd-fs-micro, 10px); padding: 1px 7px; border-radius: 999px;
+  background: var(--pd-bg); border: 1px solid var(--pd-line); color: var(--pd-muted);
+}
+.pmc-bubble .pmc-cursor { display: inline-block; width: 7px; height: 1em; background: var(--pd-muted); vertical-align: text-bottom; animation: pmc-blink 1s step-end infinite; }
+@keyframes pmc-blink { 50% { opacity: 0; } }
+
+/* ---- Composer ---- */
+.pmc-composer { display: flex; gap: 8px; align-items: flex-end; padding: 10px 2px; border-top: 1px solid var(--pd-line); }
+.pmc-input { flex: 1; min-height: 40px; max-height: 160px; resize: none; }
+.pmc-hint { font-size: var(--pd-fs-micro, 10px); color: var(--pd-muted); padding: 0 2px 4px; text-align: center; }
+
+/* ---- Settings modal ---- */
+.pmc-set-mode { display: flex; gap: 14px; margin: 10px 0 14px; }
+.pmc-set-list { max-height: 260px; overflow-y: auto; border: 1px solid var(--pd-line); border-radius: var(--pd-radius, 4px); }
+.pmc-set-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; border-bottom: 1px solid var(--pd-line); }
+.pmc-set-row:last-child { border-bottom: none; }
+
+@media (max-width: 700px) {
+  .pmc-msg { max-width: 94%; }
+}

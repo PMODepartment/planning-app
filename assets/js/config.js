@@ -224,6 +224,18 @@ window.APP_CONFIG = {
           where: [{ column: 'record_type', values: ['Claim'] }, { column: 'date_resolved', absent: true }] }
       ] } },
     { key: 'cash-flow',         name: 'Cash Flow',                             path: 'modules/cash-flow/index.html',         icon: 'cash',       enabled: true, superAdminOnly: true, dash: { table: 'cash_flow_rollup', unit: 'periods' } },
+    // ⚠️ Pormac (2026-09-12) — an AI chat assistant. Runs inference IN THE
+    // BROWSER (WebLLM/WebGPU) so the module has no hosting cost, falling back
+    // to a shared free hosted model (supabase/functions/pormac-chat) on a
+    // device that can't run it locally. `enabled:true` here only controls
+    // whether the nav ROW is visible — actual USE is gated at runtime by
+    // `pormac_can_use()` (migrations/2026-09-12-pormac.sql): an admin toggles
+    // "everyone" vs "selected users only" from inside the module itself, no
+    // code change needed, which is the whole point of a configurable
+    // all-vs-selected access model. Everyone sees the row; only allowed users
+    // get past the module's own "not turned on for you yet" screen.
+    { key: 'pormac', name: 'Pormac', path: 'modules/pormac/index.html', icon: 'botChat', enabled: true,
+      dash: { table: 'pormac_conversations', unit: 'conversations' } },
     // ⚠️ RETIRED — these two moved to the ENGINEERING APP, which is now the single
     // source for both registers. The modules and their tables are still here, and the
     // rows in them are the pre-cutover originals: readable, but STALE the moment

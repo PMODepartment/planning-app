@@ -183,6 +183,26 @@ fails leaves the real image on screen) rather than depending on diagnosing which
 changed (its own `?v=` line). `pano360.js`/`module.css`/`capture.js` are unchanged this round and
 stay at their existing `?v=` tokens.
 
+## The Key Plan photo overflowed the "Add 360° photo" modal on a phone — a CSS-grid
+## min-width bug, not a missing max-width; one verified dead export removed (2026-09-12)
+
+Owner, screenshot of the Add 360° photo form on a phone: the KEY PLAN section's floor-plan image
+ran off the right edge of the screen. See the root-cause CLAUDE.md entry for the full writeup
+(shared `.pp-form2` fix, applies to Add/Edit photo too) — summarized here for this module's own log:
+
+- `.pp-form2` is `display:grid`, and a grid item's default `min-width` is `auto`, not `0` — so the
+  Key Plan photo's real intrinsic width (not its CSS `width:100%`) was sizing the grid track, pushing
+  the whole modal wider than the viewport. Fixed with `.pp-form2 > * { min-width: 0; }` — one rule,
+  no markup change, fixes all three embeddings of `BIM.pinFieldHTML` (Add/Edit photo, Add 360°).
+- Dead-code audit alongside the earlier same-day font-size pass: `BIM.coneWedgeSVG`'s **public
+  export wrapper** was confirmed genuinely unreferenced (every real caller uses
+  `BIM.coneWedgeSVGAt` instead) and removed; the private function it wrapped is untouched and still
+  used internally. Everything else `tools/dead-exports.js` flagged in this module checked out as
+  either a real cross-file caller the tool's static scan missed, or a documented test-only `_`
+  hook — neither touched.
+
+`module.css`/`bim.js` → `?v=20260912o`. ⚠️ Not verified signed in.
+
 ## Still black on a real 180° capture — the earlier fix was necessary but not
 ## sufficient; the actual bug was an unimplemented CYLINDRICAL projection
 ## (2026-09-12, later still)

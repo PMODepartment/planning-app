@@ -65,6 +65,12 @@
     // (2026-09-03, owner: distinguish it from the calendar glyph Minutes of Meeting uses).
     ganttChart:  '<line x1="4" y1="6" x2="12" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="6" y1="18" x2="16" y2="18"/>',
     cash:        '<rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><line x1="6" y1="9" x2="6" y2="9.01"/><line x1="18" y1="15" x2="18" y2="15.01"/>',
+    // Pormac's own icon (2026-09-12) — a speech bubble with two "eye" dots and
+    // a smile curve, so it reads as a friendly chat assistant rather than a
+    // generic message icon (`clipboard`/`contract` etc. are already taken by
+    // other modules; this is the one glyph in the set that has to read as
+    // "bot", not just "chat").
+    botChat:     '<path d="M4 5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-4 3.5V16H6a2 2 0 0 1-2-2z"/><circle cx="9" cy="9.3" r="1"/><circle cx="15" cy="9.3" r="1"/><path d="M9 12.6c1 .9 5 .9 6 0"/>',
 
     // --- KPI / misc ---
     user:        '<circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.9 3.1-7 7-7s7 3.1 7 7"/>',
