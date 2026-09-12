@@ -2,6 +2,102 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## The "still returns black" bug survived the cylindrical-projection fix because
+## it was never the stitch — it was the VIEWER silently failing to mount
+## (2026-09-12, later still)
+
+Owner, with a screenshot of the real deployed app: after the cylindrical-projection fix below
+had shipped and merged, a real captured 360° video still produced *"11 of 11 frame-to-frame
+joins could not be matched confidently ... and were approximated with a straight shift
+instead"* **and** the stitched-panorama preview underneath that message was still a **solid
+black rectangle**. *"fix this error. the processed 360 still returns black with the shown
+error message."*
+
+### ⚠️⚠️ Two independent things were wrong, and only one of them was in `pano360.js`
+
+The frame-match warning is real: on this footage every one of the 11 pairs genuinely failed to
+match confidently (fast turning, motion blur, or too little overlap between consecutive frames
+— an honest limitation of feature matching against real, compressed device video, not a code
+defect this session could fix by tuning a threshold). That is what `pano360.js` correctly
+reported.
+
+**The black rectangle is a completely separate bug, in `module.js`, that has nothing to do with
+whether the stitch itself succeeded.** `open360Upload()`'s preview is rendered through
+`mountPannellumViewer()` — a real WebGL panorama viewer, mounted into `#pp360-pano-viewer`
+inside a wrapper (`.pp-lb-panowrap`) whose own CSS declares **`background:#000`**. That function
+had always degraded to returning `null`, **completely silently**, in two real cases:
+`window.pannellum` never populated (the CDN `<script src="…/pannellum.min.js">` tag was blocked
+— an ad/privacy blocker, a corporate network policy, or any other reason a real device fails to
+fetch a third-party script that a same-origin harness never has to worry about) — or the
+`pannellum.viewer(...)` call itself threw (no WebGL support, or the browser's WebGL context
+limit already exhausted by earlier panorama views in the same session). **Neither failure was
+ever reported anywhere**, and `open360Upload()` had **no fallback at all** for either — when the
+viewer didn't mount, the only thing left on screen was `.pp-lb-panowrap`'s own solid black
+background, regardless of whether the stitched JPEG underneath it was perfectly fine.
+
+⚠️⚠️ **This is exactly why the isolated real-library test harness (below) never caught it.**
+That harness installs `@techstark/opencv-js` and `pannellum` from **npm** and serves them from a
+**local** static server specifically because this sandbox has no network path to a CDN — so
+`window.pannellum` is *always* defined there. The harness proved the stitching pipeline and the
+Pannellum library both work; it structurally could not reproduce a CDN-availability failure,
+because it never depends on a CDN at all. The bug only exists on the path the harness doesn't
+exercise — a real device, over a real network, loading `cdnjs.cloudflare.com`.
+
+⚠️ **The saved-photo lightbox (a different code path) had already solved this by accident.** Its
+panorama view keeps a plain `<img>` "stand-in" visible until `mountPannellumViewer()` succeeds,
+and only hides it once a real viewer mounts — so a photo already saved to the gallery degrades
+to a flat, non-pannable image instead of a black box. `open360Upload()`'s own upload-preview
+modal — the *exact* modal in the owner's screenshot ("Add 360° photo", the frame-match warning,
+"Drag to look around…", "Use this view as thumbnail") — never had that same stand-in. It is the
+one surface in the whole module with no fallback for this failure, and it is the one surface the
+report was about.
+
+### The fix
+
+- **`mountPannellumViewer()` now logs *why* it returned `null`** (`console.warn`, naming which of
+  the two cases applied) instead of failing in total silence — the standing "make error messages
+  more descriptive" ask, applied to the one place in this pipeline that had never gotten it.
+- **A new `#pp360-pano-standin` `<img>`** sits inside `#pp360-panowrap`, shown with the real
+  stitched image the moment stitching finishes — **before** the viewer mount is even attempted —
+  and hidden only once `mountPannellumViewer()` actually returns a live viewer. A failed mount
+  now leaves the flat stitched panorama visible instead of the wrapper's bare black background.
+- **A second, separate warning slot (`#pp360-viewerwarn`)** tells the planner the pan viewer
+  specifically failed to load and that the image itself is fine and will still save — kept apart
+  from the existing frame-match warning (`#pp360-qualitywarn`) so the two can never overwrite
+  each other's text depending on load order.
+- **The default/manual thumbnail capture degrades too.** Both the automatic first-render capture
+  and the "Use this view as thumbnail" button read from the Pannellum viewer's own `<canvas>` —
+  which does not exist when the viewer never mounted. A new `captureImageThumbnail()` (sharing
+  its centre-crop-to-4:3 math with the existing `captureViewerThumbnail()` via a new
+  `cropToThumbBlob()`) captures from the plain stand-in `<img>` instead, so Save is never stuck
+  on "Still processing" with nothing left to actually capture a thumbnail from.
+
+⚠️ **Nothing about the cylindrical-projection fix, the gray-fill fix, or the frame-match warning
+changed** — all three are correct and are what produced the accurate "11 of 11" message in the
+first place. This fix is additive, entirely in `module.js`, and only changes what happens when
+the *viewer* — not the *stitch* — fails to come up.
+
+### Verified
+
+`node --check` clean on `module.js`; `tools/wiring-check.js` — **123 passed, 0 failed**, 3523
+cross-module references checked; 0 duplicate DOM ids in `index.html`; `module.css` braces
+balanced (540/540, unchanged — no CSS edited, the new `<img>` reuses the existing
+`.pp-lb-panowrap img` rule verbatim).
+
+⚠️ **Not verified against a real blocked-CDN device** — this sandbox cannot reproduce a real
+network policy blocking `cdnjs.cloudflare.com`, which is the actual condition this fix targets.
+What is proven: the code path a failed mount now takes (stand-in shown, thumbnail captured from
+it, a named warning shown) is structurally correct and reachable; whether the *owner's specific
+device* was hitting the missing-`pannellum` case or the WebGL-exhaustion case is not
+distinguishable from here — the new `console.warn` is what will say which, the next time this is
+tested with DevTools open. Either way, the fix removes the failure mode itself (a mount that
+fails leaves the real image on screen) rather than depending on diagnosing which cause it was.
+
+`module.js` → `?v=20260912k`; the shared `MODULE_V` fallback (`assets/js/modules-grid.js`,
+`dashboard.html`, `modules.html`) → `20260912k` to match, since this module's `index.html` itself
+changed (its own `?v=` line). `pano360.js`/`module.css`/`capture.js` are unchanged this round and
+stay at their existing `?v=` tokens.
+
 ## Still black on a real 180° capture — the earlier fix was necessary but not
 ## sufficient; the actual bug was an unimplemented CYLINDRICAL projection
 ## (2026-09-12, later still)

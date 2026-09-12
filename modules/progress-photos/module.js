@@ -3032,7 +3032,22 @@ window.ProgressPhotos = (function () {
   // property instead of a guessed constant" discipline this app's other
   // pin/cone geometry already follows.
   function mountPannellumViewer(container, imageUrl, heightOverWidth) {
-    if (!container || !window.pannellum) return null;
+    if (!container) return null;
+    // ⚠️⚠️ 2026-09-12 (second pass): this used to degrade to `null`
+    // completely silently on either failure below -- which is exactly why a
+    // reported "the processed 360 still returns black" bug went unexplained:
+    // the caller had no way to tell "the viewer legitimately isn't needed
+    // here" apart from "it just failed", and nothing in the console named
+    // which. `window.pannellum` being undefined here means the CDN
+    // <script> tag never actually populated the global -- a blocked
+    // request, an ad/privacy blocker, or (rarely) a load race -- and is a
+    // real, previously-unreported failure mode on a real device even
+    // though it never reproduces in a controlled/offline test harness.
+    if (!window.pannellum) {
+      console.warn('[progress-photos] Pannellum did not load (window.pannellum is undefined) -- ' +
+        'the interactive 360° pan viewer cannot mount. Falling back to a flat image preview.');
+      return null;
+    }
     if (!container.id) container.id = 'pp-pnlm-' + Math.random().toString(36).slice(2);
     var vaov = Math.min(140, Math.max(20, 360 * (heightOverWidth || 0.35)));
     try {
@@ -3041,7 +3056,11 @@ window.ProgressPhotos = (function () {
         autoLoad: true, showZoomCtrl: true, showFullscreenCtrl: false, compass: false,
         minHfov: 30, maxHfov: 120, hfov: 100
       });
-    } catch (e) { return null; }
+    } catch (e) {
+      console.warn('[progress-photos] Pannellum viewer() threw while mounting (no WebGL support, or the ' +
+        'browser\'s WebGL context limit is already exhausted) -- falling back to a flat image preview.', e);
+      return null;
+    }
   }
   // Item 4 (original): the key-plan cone still follows wherever the 360°
   // viewer is currently looking. Pannellum's stable API has no continuous
@@ -3074,20 +3093,36 @@ window.ProgressPhotos = (function () {
   // "landscape" actually names; a thumbnail cropped from a landscape
   // panorama view has no sensible reason to come out portrait-shaped.
   var THUMB_ASPECT = 4 / 3;
-  function captureViewerThumbnail(containerEl, cb) {
+  // Shared centre-crop-to-4:3 math, pulled out so captureViewerThumbnail
+  // (source: the Pannellum viewer's own live <canvas>) and
+  // captureImageThumbnail (source: a plain <img>, the fallback used when
+  // the WebGL viewer itself never mounted -- see mountPannellumViewer's own
+  // comment) can never disagree about how the crop is framed.
+  function cropToThumbBlob(src, sw, sh, cb) {
     try {
-      var srcCanvas = containerEl && containerEl.querySelector('canvas');
-      if (!srcCanvas || !srcCanvas.width) { cb(null); return; }
-      var sw = srcCanvas.width, sh = srcCanvas.height;
       var cropW = sw, cropH = Math.round(sw / THUMB_ASPECT);
       if (cropH > sh) { cropH = sh; cropW = Math.round(sh * THUMB_ASPECT); }
       var sx = Math.round((sw - cropW) / 2), sy = Math.round((sh - cropH) / 2);
       var out = document.createElement('canvas');
       out.width = 640; out.height = Math.round(640 / THUMB_ASPECT);
       var ctx = out.getContext('2d');
-      ctx.drawImage(srcCanvas, sx, sy, cropW, cropH, 0, 0, out.width, out.height);
+      ctx.drawImage(src, sx, sy, cropW, cropH, 0, 0, out.width, out.height);
       out.toBlob(function (blob) { cb(blob); }, 'image/jpeg', 0.85);
     } catch (e) { cb(null); }
+  }
+  function captureViewerThumbnail(containerEl, cb) {
+    var srcCanvas = containerEl && containerEl.querySelector('canvas');
+    if (!srcCanvas || !srcCanvas.width) { cb(null); return; }
+    cropToThumbBlob(srcCanvas, srcCanvas.width, srcCanvas.height, cb);
+  }
+  // ⚠️⚠️ 2026-09-12 (second pass): the flat-preview fallback's own thumbnail
+  // source -- open360Upload's own automatic-first-thumbnail capture and its
+  // "Use this view as thumbnail" button both need SOMETHING to draw from
+  // when the WebGL viewer never mounted, or Save is stuck forever on
+  // "Still processing" with nothing to actually capture.
+  function captureImageThumbnail(imgEl, cb) {
+    if (!imgEl || !imgEl.naturalWidth) { cb(null); return; }
+    cropToThumbBlob(imgEl, imgEl.naturalWidth, imgEl.naturalHeight, cb);
   }
   var lbPanoViewer = null, lbPanoStopYawPoll = null;
   // Torn down at the START of every paintLightbox() call (idempotent — a
@@ -5723,11 +5758,30 @@ window.ProgressPhotos = (function () {
           // itself returns, naming how many of the frame-to-frame transitions
           // it could not confidently match, rather than a generic guess.
           '<div id="pp360-qualitywarn" class="pp-hint" hidden style="color:var(--pd-warn,#a66);"></div>' +
+          // ⚠️⚠️ 2026-09-12 (second pass, "the processed 360 still returns
+          // black"): a SEPARATE warning slot from #pp360-qualitywarn above --
+          // that one reports on the STITCH (frame-matching); this one reports
+          // on the VIEWER (whether Pannellum actually mounted). The two can
+          // fail independently and must never overwrite each other's text.
+          '<div id="pp360-viewerwarn" class="pp-hint" hidden style="color:var(--pd-warn,#a66);"></div>' +
           // Item 5 (2026-09-11, third round): "use Pannellum for 360
           // viewer" -- a real WebGL panorama viewer, the SAME
           // mountPannellumViewer() the saved-photo lightbox uses, mounted
           // into #pp360-pano-viewer once stitching finishes.
+          // ⚠️⚠️ 2026-09-12 (second pass): #pp360-pano-standin is a plain
+          // <img> shown the moment stitching finishes, BEFORE the WebGL
+          // viewer is even attempted -- mountPannellumViewer degrades to
+          // null (see its own comment) whenever the Pannellum script never
+          // loaded (a blocked CDN request, an ad/privacy blocker) or WebGL
+          // is unavailable/exhausted, and neither of those says anything
+          // about whether the STITCHED IMAGE ITSELF is any good. Before
+          // this, a failed mount left nothing on screen but
+          // .pp-lb-panowrap's own solid #000 background -- a real, reported
+          // "still returns black" bug that had nothing to do with the
+          // stitch. The standin only ever gets hidden once a real viewer
+          // has actually mounted (below).
           '<div class="pp-lb-panowrap" id="pp360-panowrap" style="border-radius:var(--pd-radius);">' +
+            '<img id="pp360-pano-standin" alt="Stitched panorama preview" hidden />' +
             '<div id="pp360-pano-viewer" class="pp-lb-panoviewer"></div>' +
           '</div>' +
           '<p class="pp-hint">Drag to look around the stitched panorama, then frame the view you want as the thumbnail below.</p>' +
@@ -5813,15 +5867,44 @@ window.ProgressPhotos = (function () {
         show('pp360-progress', false);
         show('pp360-result', true);
         var viewerEl = $('pp360-pano-viewer');
+        var standinEl = $('pp360-pano-standin');
+        // ⚠️⚠️ 2026-09-12 (second pass, "the processed 360 still returns
+        // black"): show the flat stitched image FIRST, before the WebGL
+        // viewer is even attempted. If mountPannellumViewer never mounts
+        // (see its own comment -- a blocked/missing Pannellum script, or no
+        // WebGL), this is what keeps the preview from being nothing but
+        // .pp-lb-panowrap's own solid #000 background, which is exactly
+        // what a previous report of this same modal showed: the stitch had
+        // genuinely run (the frame-match warning above was real and
+        // correct) and the image itself was fine, but the viewer silently
+        // never mounted and nothing was left on screen to show for it.
+        if (standinEl) { standinEl.src = stitchUrl; standinEl.hidden = false; }
         if (viewerEl) {
           var hOverW = (res.width && res.height) ? (res.height / res.width) : 0.35;
           pp360Viewer = mountPannellumViewer(viewerEl, stitchUrl, hOverW);
-          // Item 6: a default thumbnail is captured the moment the viewer
-          // has actually rendered once, so Save is never blocked on the
-          // planner remembering to press "Use this view as thumbnail" --
-          // they can still press it again any time to pick a different one.
           if (pp360Viewer && pp360Viewer.on) {
+            if (standinEl) standinEl.hidden = true;
+            // Item 6: a default thumbnail is captured the moment the viewer
+            // has actually rendered once, so Save is never blocked on the
+            // planner remembering to press "Use this view as thumbnail" --
+            // they can still press it again any time to pick a different one.
             pp360Viewer.on('load', function () { captureViewerThumbnail(viewerEl, setThumbFromBlob); });
+          } else {
+            // The flat standin stays visible (set above) and the default
+            // thumbnail is captured from IT instead of from a viewer
+            // canvas that never existed -- otherwise Save would be stuck
+            // on "Still processing" forever with no way to proceed.
+            var vwarn = $('pp360-viewerwarn');
+            if (vwarn) {
+              vwarn.hidden = false;
+              vwarn.textContent = 'The interactive 360° pan viewer could not load on this device (a blocked ' +
+                'script, or no WebGL support) -- showing a flat preview instead. The stitched image itself is ' +
+                'unaffected and will still save normally.';
+            }
+            if (standinEl) {
+              if (standinEl.complete && standinEl.naturalWidth) captureImageThumbnail(standinEl, setThumbFromBlob);
+              else standinEl.onload = function () { captureImageThumbnail(standinEl, setThumbFromBlob); };
+            }
           }
         }
         // ⚠️⚠️ 2026-09-12: the warning now names WHAT actually happened,
@@ -5872,12 +5955,25 @@ window.ProgressPhotos = (function () {
     // Item 6: captures whatever the viewer is CURRENTLY showing, replacing
     // the old separate rep-frame scrubber.
     if ($('pp360-usethumb')) $('pp360-usethumb').onclick = function () {
-      var viewerEl = $('pp360-pano-viewer');
-      if (!viewerEl) return;
-      captureViewerThumbnail(viewerEl, function (blob) {
-        if (!blob) { UI.toast('Could not capture the current view — try again', 'warn'); return; }
-        setThumbFromBlob(blob);
-      });
+      // ⚠️⚠️ 2026-09-12 (second pass): pp360Viewer is only ever truthy once
+      // mountPannellumViewer actually mounted -- when it didn't (see that
+      // function's own comment), there's no viewer <canvas> to capture from
+      // at all, so this has to fall back to the flat standin image instead
+      // of silently doing nothing.
+      if (pp360Viewer) {
+        var viewerEl = $('pp360-pano-viewer');
+        if (!viewerEl) return;
+        captureViewerThumbnail(viewerEl, function (blob) {
+          if (!blob) { UI.toast('Could not capture the current view — try again', 'warn'); return; }
+          setThumbFromBlob(blob);
+        });
+      } else {
+        var standinEl = $('pp360-pano-standin');
+        captureImageThumbnail(standinEl, function (blob) {
+          if (!blob) { UI.toast('Could not capture the panorama — try again', 'warn'); return; }
+          setThumbFromBlob(blob);
+        });
+      }
     };
     // Item 5: Adjust extends to 360 -- previewed against the stitched
     // panorama image, saved onto the row exactly like a photo's adjustments.
