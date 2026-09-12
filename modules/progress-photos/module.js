@@ -5684,8 +5684,18 @@ window.ProgressPhotos = (function () {
       '<div class="pd-modal-header"><h3>Add 360° photo</h3>' +
         '<button class="pd-modal-close" data-close>×</button></div>' +
       '<div class="pp-form" id="pp360-body">' +
-        '<p class="pp-hint">Record a slow walk-around, or upload a video already recorded, and it will be ' +
-          'processed into a single 360° panorama.</p>' +
+        // ⚠️⚠️ 2026-09-12: reworded from "Record a slow walk-around" -- the
+        // stitcher assumes the camera ROTATES about one fixed spot (a real
+        // cylindrical-panorama capture), not that the person physically
+        // walks/strafes while filming. Confirmed by building a corrected
+        // isolated test that models a true rotating-camera capture (the
+        // previous test scene modelled a lateral SLIDE, which is a different
+        // motion and was never what this feature is meant to capture) --
+        // see the changelog. Saying "stand in one spot" up front sets the
+        // right expectation instead of inviting the motion this cannot
+        // handle well.
+        '<p class="pp-hint">Stand in one spot and slowly turn all the way around (or through the angle you want), ' +
+          'or upload a video already recorded the same way, and it will be processed into a single 360° panorama.</p>' +
         '<div id="pp360-step-source" style="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 8px;">' +
           '<button type="button" class="pd-btn" id="pp360-take">Take 360°</button>' +
           '<button type="button" class="pd-btn" id="pp360-choose">Upload 360° video</button>' +
@@ -5706,8 +5716,13 @@ window.ProgressPhotos = (function () {
         // ordinary photo/video Add Media form -- only the PREVIEW itself
         // (which obviously cannot exist before processing) still waits.
         '<div id="pp360-result" hidden>' +
-          '<div id="pp360-qualitywarn" class="pp-hint" hidden style="color:var(--pd-warn,#a66);">' +
-            'Low confidence stitch -- the video may not have had enough overlap between frames. Review before presenting.</div>' +
+          // ⚠️⚠️ 2026-09-12: this used to be one fixed sentence regardless of
+          // WHAT actually went wrong -- exactly the "error message should be
+          // more descriptive" gap the owner reported. It is now filled in by
+          // runStitch() from the real pairsFallback/pairsTotal the stitcher
+          // itself returns, naming how many of the frame-to-frame transitions
+          // it could not confidently match, rather than a generic guess.
+          '<div id="pp360-qualitywarn" class="pp-hint" hidden style="color:var(--pd-warn,#a66);"></div>' +
           // Item 5 (2026-09-11, third round): "use Pannellum for 360
           // viewer" -- a real WebGL panorama viewer, the SAME
           // mountPannellumViewer() the saved-photo lightbox uses, mounted
@@ -5809,10 +5824,36 @@ window.ProgressPhotos = (function () {
             pp360Viewer.on('load', function () { captureViewerThumbnail(viewerEl, setThumbFromBlob); });
           }
         }
-        var warn = $('pp360-qualitywarn'); if (warn) warn.hidden = res.quality !== 'poor';
+        // ⚠️⚠️ 2026-09-12: the warning now names WHAT actually happened,
+        // built from `pairsFallback`/`pairsTotal` -- real counts the
+        // stitcher itself returns, not a fixed guess. A frame pair the
+        // stitcher could not confidently match falls back to a straight
+        // shift for that one join, which is exactly what a planner needs
+        // to know before deciding whether to re-record or just review the
+        // seam in question.
+        var warn = $('pp360-qualitywarn');
+        if (warn) {
+          if (res.quality === 'poor' && res.pairsFallback) {
+            warn.hidden = false;
+            warn.textContent = res.pairsFallback + ' of ' + res.pairsTotal + ' frame-to-frame join' +
+              (res.pairsFallback === 1 ? '' : 's') + ' could not be matched confidently (the video moved too ' +
+              'fast, or that stretch had too little to match against) and ' + (res.pairsFallback === 1 ? 'was' : 'were') +
+              ' approximated with a straight shift instead. Look for a rough seam there before presenting.';
+          } else {
+            warn.hidden = true;
+          }
+        }
       } catch (err) {
         show('pp360-progress', false);
-        UI.toast('Could not build the panorama' + (err && err.message ? ' (' + err.message + ')' : ''), 'error');
+        // ⚠️⚠️ 2026-09-12: name what actually failed rather than a bare,
+        // undifferentiated "Could not build the panorama" -- `err.message`
+        // already carries a specific reason from pano360.js (a duration
+        // that could not be read, no recorded frames at all, the vision
+        // library failing to load, ...); showing it in full, rather than
+        // parenthetically appended, makes it something a planner can act on
+        // (e.g. re-record) instead of retry the identical failing video.
+        var reason = (err && err.message) ? err.message : 'an unknown error';
+        UI.toast('Could not build the 360° panorama: ' + reason, 'error');
         show('pp360-step-source', true);
       }
     }
