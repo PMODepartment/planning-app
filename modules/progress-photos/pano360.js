@@ -178,14 +178,39 @@ window.Pano360 = (function () {
   // since standard OpenCV.js builds don't expose cv.Stitcher at all.
   function homographyBetween(prevMat, curMat) {
     var orb, kp1, kp2, desc1, desc2, matcher, matches, mask1, mask2, H = null;
-    var srcPts, dstPts;
+    var srcPts, dstPts, gray1, gray2;
     try {
+      // ⚠️⚠️ THE ACTUAL BUG BEHIND "processing from video to 360 photo is not
+      // working" (2026-09-12): `prevMat`/`curMat` come from `cv.imread()` on
+      // a <canvas> — which OpenCV.js ALWAYS returns as a 4-channel RGBA Mat,
+      // never grayscale. ORB's own detectAndCompute (per OpenCV's C++
+      // implementation, and every OpenCV.js ORB example, official ones
+      // included) expects a single-channel image and converts internally via
+      // cv.COLOR_BGR2GRAY — which throws (or, depending on the build,
+      // silently detects nothing) on a 4-channel input. This file never
+      // converted to grayscale before this call, so on a real device this
+      // either threw on every single frame pair (surfaced to the planner as
+      // "Could not build the panorama") or returned zero keypoints for every
+      // pair — which is indistinguishable from a genuinely bad stitch: every
+      // pair fell back to the no-homography path (a pure horizontal shift),
+      // so the "mosaic" was never actually aligned, just 12 frames placed
+      // side by side. Every prior fix to the ACCUMULATION math (see this
+      // file's own header) was correct and moot — there was rarely a real
+      // homography to accumulate in the first place. Converting to
+      // grayscale here — mirroring the one extra step every OpenCV.js
+      // feature-detection sample takes right after `cv.imread()` — is the
+      // fix; ORB itself is untouched, and this never touches `prevMat`/
+      // `curMat` themselves, so the caller's own cleanup of those is
+      // unaffected.
+      gray1 = new cv.Mat(); gray2 = new cv.Mat();
+      cv.cvtColor(prevMat, gray1, cv.COLOR_RGBA2GRAY, 0);
+      cv.cvtColor(curMat, gray2, cv.COLOR_RGBA2GRAY, 0);
       mask1 = new cv.Mat(); mask2 = new cv.Mat();
       orb = new cv.ORB(700);
       kp1 = new cv.KeyPointVector(); desc1 = new cv.Mat();
       kp2 = new cv.KeyPointVector(); desc2 = new cv.Mat();
-      orb.detectAndCompute(prevMat, mask1, kp1, desc1);
-      orb.detectAndCompute(curMat, mask2, kp2, desc2);
+      orb.detectAndCompute(gray1, mask1, kp1, desc1);
+      orb.detectAndCompute(gray2, mask2, kp2, desc2);
       if (desc1.rows < 4 || desc2.rows < 4) return { H: null, matches: 0 };
       matcher = new cv.BFMatcher(cv.NORM_HAMMING, false);
       var knn = new cv.DMatchVectorVector();
@@ -217,6 +242,7 @@ window.Pano360 = (function () {
       if (matcher) matcher.delete();
       if (mask1) mask1.delete(); if (mask2) mask2.delete();
       if (srcPts) srcPts.delete(); if (dstPts) dstPts.delete();
+      if (gray1) gray1.delete(); if (gray2) gray2.delete();
       // H is deliberately NOT deleted here — the caller owns it and must
       // delete it once it's done warping with it.
     }
