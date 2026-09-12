@@ -2,6 +2,165 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## The video→360° stitcher's real bug — found by building an isolated harness with
+## the REAL OpenCV.js and REAL Pannellum, driving a REAL recorded video, not by
+## reading the code again (2026-09-12, later still)
+
+Owner: *"the conversion of video to 360 photo and viewer is really not working. can we
+work on this separately in a separate test module first before pushing the module
+features to the planning app."* Direct, and correct — every fix shipped to this
+pipeline so far, including the same-day grayscale fix and the memory/crash hardening
+above, was verified only against a hand-built Node `vm` stub modelling OpenCV.js's
+API surface. A stub that models the API cannot reproduce a bug that lives in what the
+REAL library actually decides given real pixels, and that is exactly where this one
+was hiding.
+
+### Built the isolated test module the owner asked for, with real libraries
+
+⚠️⚠️ **This sandbox has no network path to `cdn.jsdelivr.net`/`cdnjs.cloudflare.com`**
+(confirmed directly — the agent egress proxy answers both with `connect_rejected` /
+policy denial), so the CDN scripts this module actually loads could not be fetched
+here. `registry.npmjs.org` **is** reachable, though, so the exact real libraries were
+installed from npm instead of stubbed:
+- `@techstark/opencv-js@4.10.0-release.1` — the identical version and package this
+  module's own `index.html` pins from jsdelivr, just fetched via npm instead of a CDN
+  URL. Same file, same bytes, same real WASM build.
+- `pannellum@2.5.6` — npm ships this as unminified source
+  (`src/js/libpannellum.js` + `src/js/pannellum.js`) rather than the built
+  `pannellum.min.js` cdnjs serves, but it is the same real library code — the minifier
+  changes nothing about behaviour.
+
+A throwaway harness (Node `http` static server + a plain HTML page loading the real,
+**verbatim-copied** `pano360.js`, the two real libraries above, and nothing else) was
+driven by the real, pre-installed Playwright + Chromium this environment ships, with
+`--use-fake-ui-for-media-stream` so `MediaRecorder` works headlessly with no camera.
+This is genuinely the isolated test module the owner asked for — it never touched the
+committed module until the fix below was verified there.
+
+### The test itself: build a real video, run the real pipeline, look at the real output
+
+A richly-textured synthetic scene (checkerboard + ~220 numbered coloured shapes +
+diagonal reference lines — plenty of ORB-friendly texture) was drawn to a canvas, then
+two independent tests were run against the real, unmodified `pano360.js`:
+- **Test A** — the pure math path: hand-cropped overlapping frames fed directly to
+  the exported `Pano360._stitchFrames`, no video involved. Consistently produced a
+  correct, wide, coherent mosaic (2380×480) across every run.
+- **Test B** — the REAL end-to-end path: `canvas.captureStream()` + a real
+  `MediaRecorder` recorded an actual panning animation to a genuine VP8 `.webm` Blob
+  (865 KB, `type: "video/webm;codecs=vp8"` — a real encoded video, not a synthetic
+  stand-in), then that blob was handed to the public `Pano360.stitchFromVideo(blob,
+  onProgress)` exactly as `module.js` calls it, exercising the real
+  `extractFrames`/`fixInfiniteDuration`/`homographyBetween`/`stitchFrames` chain
+  against real decoded, real-compressed video frames.
+
+⚠️⚠️ **Test B reproduced a real, previously-unknown defect on every run.** Test A was
+clean and stable every time; Test B — same scene, same pan, going through a real
+video encode/decode round-trip — consistently produced a badly malformed mosaic
+(observed dimensions across runs: 2099×2859, 2290×2620, 1256×4778, 1615×2045 — tall
+and narrow, the opposite of a panorama), while still reporting `quality: 'ok'`.
+
+### Root cause, found by instrumenting the REAL run, not guessed
+
+Capturing every canvas handed to `cv.imread()` during a real `stitchFromVideo` call
+and re-running `Pano360._homographyBetween` on the actual extracted frame pairs
+showed the raw extracted frames themselves were clean, valid, correctly-panned
+images (confirmed visually — a strip of all 12 frames showed a smooth, gradual pan
+with no corruption). The defect was in one specific pair's **homography**:
+
+```
+pair "0->1": 113 matches, H = [[-0.97, -0.105, 779.8], [0.169, -1.28, 416.2], [0.001, 0, 1]]
+```
+
+Every other pair in the same run looked like `[[~1, ~0, ~150], [~0, ~1, ~0], ...]` —
+almost pure horizontal translation, exactly right for a lateral pan. Pair 0→1's
+linear part is instead close to a **180° rotation with a flip** — physically
+impossible between two video frames a fraction of a second apart — yet it was backed
+by 113 ratio-test-passing matches, well above `MIN_GOOD_MATCHES` (12), so the
+existing match-**count** gate had no way to catch it.
+
+⚠️⚠️ **`cv.findHomography(..., cv.RANSAC)` only guarantees its inlier set is
+internally self-consistent, never that the resulting transform is physically
+plausible.** On a scene with repetitive/periodic texture (this test's checkerboard;
+a real site's tiled flooring, a repeated railing, evenly-spaced studs — exactly the
+kind of texture a construction walkthrough often has), RANSAC can converge on a
+wrong-but-internally-consistent model when enough spurious correspondences agree
+with each other. And because every frame's placement composes onto the one before
+it (`placements[i] = placements[i-1] * step`), that ONE bad homography poisoned
+every later frame in the chain, blowing the whole mosaic's bounding box into a tall,
+garbled shape — while `quality` still read `'ok'`, since quality was only ever a
+function of match count, never of whether the fitted model made geometric sense.
+This is very plausibly the real substance of "conversion of video to 360 photo …
+really not working": a mosaic that isn't thrown-away-and-erroring, it's silently
+wrong, on every real (encoded) video and specifically NOT on the frames-only path —
+exactly why nothing in this repo's stub-based verification history ever saw it.
+
+### The fix, verified in the isolated harness first
+
+New `isPlausiblePanHomography(H)` rejects a homography whose linear 2×2 part isn't
+close to a small-rotation, near-unit-scale transform — checked on the determinant
+(rejects a flip or a wild scale swing) and the implied rotation angle (rejects
+anything past 30°, since two adjacent frames of a slow pan cannot rotate anywhere
+near that much). `homographyBetween` now calls it right after `findHomography`
+succeeds; a rejected homography is deleted and treated exactly like "no usable
+homography" — the **existing** fallback (a plain horizontal shift, and `poor` marked
+honestly) — so this is a pure additional gate, no new code path for the rest of the
+pipeline to disagree with.
+
+**Verified the fix in the isolated harness, not assumed from reading it**: 5
+consecutive full runs (real video → real stitch) all correctly rejected pair 0→1
+(`H: null`) and produced a clean, wide, coherent mosaic every time (~2760–2820 ×
+~480–488 — matching Test A's shape), each one visibly confirmed via a saved
+screenshot of the actual rendered `<img>` output. `quality` now honestly reads
+`'poor'` for these runs (one pair genuinely has no usable geometric fit — the
+fallback shift is a real, lesser degrade, not a full alignment), rather than a false
+`'ok'` over a broken mosaic.
+
+### The real Pannellum viewer, also verified for the first time against real output
+
+The stitched result was mounted through the exact config `module.js`'s
+`mountPannellumViewer` uses (`type:'equirectangular'`, `haov:360`, `vaov` from the
+image's real aspect ratio) directly against the real, unminified Pannellum library.
+⚠️ A first pass reported the viewer's own canvas at **`900x0`** — a real, if
+harness-only, bug: the test set `container.id` to a fixed id *after* the CSS sizing
+rule was written to target that same id by selector, so renaming it out from under
+the CSS collapsed its height to 0. This is a bug in the **test page**, not in
+`mountPannellumViewer` — the real module sizes its containers with a **class**
+(`.pp-lb-panowrap`), never an id selector, precisely so the id `mountPannellumViewer`
+assigns (only when none exists) can never interfere with layout. Fixed the harness to
+match that same class-based convention; re-verified the viewer then reports its real
+container size (`900x300`), renders visible, undistorted panorama content, and
+responds correctly to `getYaw()`/`setYaw()` (0 → 45° after a programmatic set).
+
+### Ported into the real module, byte-checked against the harness-verified copy
+
+`isPlausiblePanHomography` and its one call-site addition were copied into the real
+`modules/progress-photos/pano360.js` (comments rewritten for this file's own
+convention; the logic is identical) and the exact shipped file was re-copied back
+into the isolated harness and run **3 more times** — same result every time: pair 0→1
+rejected, a clean wide mosaic, `quality: 'poor'`, Pannellum rendering it correctly.
+⚠️ **Nothing else in this file changed** — the grayscale-conversion fix and the
+memory/yield hardening from earlier the same day are untouched; this is one
+additional plausibility gate on top of them.
+
+`tools/wiring-check.js`: **123 passed, 0 failed**, 3517 cross-module references
+checked. `node --check` clean.
+
+⚠️ **What this still does not prove**: a real phone camera's video has different
+compression artifacts, motion blur and lighting than this test's clean synthetic
+recording — the specific 30°/scale/determinant thresholds chosen here are a
+physically-reasoned gate (justified by what a slow lateral pan can and cannot do
+frame-to-frame), not numbers tuned against a real device recording, because none is
+available in this environment. What IS now proven, for the first time in this
+feature's history: the full real pipeline — real OpenCV.js, a real encoded video,
+real Pannellum — runs end to end and produces a correct, viewable panorama, not just
+a stub that says it should. **The first real recording on a real phone is still the
+actual remaining test**, and this fix is aimed squarely at the one failure mode this
+session could reproduce and explain, not a guarantee against every possible one.
+
+`pano360.js` → `?v=20260912i`; the shared `MODULE_V` fallback
+(`assets/js/modules-grid.js`, `dashboard.html`, `modules.html`) → `20260912i` to
+match, since this module's `index.html` itself changed (`pano360.js?v=`).
+
 ## Gallery markup toggle drops its label; the video→360° pipeline is hardened
 ## against a mobile OOM/crash rather than just having its own error caught
 ## (2026-09-12, later same day)
