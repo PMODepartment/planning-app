@@ -150,6 +150,23 @@ window.Capture = (function () {
       '.pp-cap-hint{color:rgba(255,255,255,.75);font-size:12px;text-align:center;margin-top:10px;}' +
       '.pp-cap-error{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;' +
         'gap:14px;color:#fff;text-align:center;padding:0 24px;z-index:3;background:rgba(0,0,0,.6);}' +
+      // ⚠️⚠️ THE ACTUAL BUG BEHIND "can't see the camera view" / "close and
+      // flash button not working" (2026-09-12): `.pp-cap-error` sets
+      // `display:flex` unconditionally, at the SAME (0,1,0) specificity as
+      // the browser's own `[hidden]{display:none}` — and an author rule
+      // always wins over a UA rule at equal specificity. So the `hidden`
+      // attribute on this element (present from the moment the overlay is
+      // built, and correct — see buildOverlay) did NOTHING: the box rendered
+      // `display:flex` regardless, a `rgba(0,0,0,.6)` scrim sitting at
+      // z-index:3 — HIGHER than `.pp-cap-topbar`'s z-index:2 — covering the
+      // camera preview from the very first frame of every session (photo,
+      // video and 360 alike) and swallowing every click meant for Close,
+      // Flash, and (video/360) the mic toggle, since its box overlaps theirs.
+      // This is the EXACT defect this app's own `dashboard.css` already
+      // documents and fixes for `.pd-btn[hidden]` — never generalised here.
+      // Fixed the identical way: an attribute-selector override, which wins
+      // on specificity ALONE (0,2,0 > 0,1,0), regardless of source order.
+      '.pp-cap-error[hidden]{display:none;}' +
       '.pp-cap-error p{max-width:320px;margin:0;}';
     document.head.appendChild(el);
   }
@@ -257,7 +274,12 @@ window.Capture = (function () {
         // with no torch capability, same convention as the mic button.
         '<div class="pp-cap-rightcluster">' +
           '<button type="button" class="pp-cap-flash" id="pp-cap-flash" title="Flash" aria-label="Flash"></button>' +
-          (opts.mode !== 'photo'
+          // Item 3 (2026-09-12): "no need for mute [in 360 mode], by default
+          // this should be mute" — the mic toggle is now video-only.
+          // wantsAudioTrack() below never even requests an audio track for
+          // 360, so a 360 recording carries no audio at all, by default,
+          // with nothing for a planner to toggle.
+          (opts.mode === 'video'
             ? '<button type="button" class="pp-cap-audiotoggle" id="pp-cap-audio" title="Toggle microphone" aria-label="Toggle microphone"></button>'
             : '') +
         '</div>' +
@@ -310,10 +332,14 @@ window.Capture = (function () {
     var mySession = ++sessionToken;
     function stale() { return mySession !== sessionToken; }
     $('pp-cap-close').onclick = function () { close(); if (opts.onCancel) opts.onCancel(); };
-    // Audio is now requested up front for every non-photo capture (see
+    // Audio is requested up front for VIDEO only (see
     // openStreamWithAudioFallback's own comment) — `wantAudio` no longer
     // decides WHETHER a track is requested, only whether it starts enabled.
-    function wantsAudioTrack() { return mode !== 'photo'; }
+    // Item 3 (2026-09-12): 360 never requests an audio track at all — "no
+    // need for mute, by default this should be mute" is satisfied by there
+    // being no track to mute in the first place, not by a forced-off flag
+    // on top of one nobody asked for.
+    function wantsAudioTrack() { return mode === 'video'; }
 
     function attach(s) {
       stream = s;

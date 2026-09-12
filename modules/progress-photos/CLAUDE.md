@@ -2,6 +2,137 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Fourth capture-flow round: the camera view and every topbar button were
+## being swallowed by an always-visible "hidden" error box, 360 drops mute
+## entirely, and the real reason video-to-360 processing has never worked
+## (2026-09-12)
+
+Owner, with four numbered items and "resolve at all cost" on three of them:
+```
+1. when taking photo, I cant see the camera view. the flash and close button is also not working.
+2. when taking video, there seems to be an overlay on the video view. the flash, mute, and close
+   buttons are also not working.
+3. when taking video for 360, no need for mute, by default this should be mute. the close and
+   flash button are also not working.
+4. the processing from video to 360 photo is also not working. this has never worked well ever
+   since.
+```
+
+### ⚠️⚠️ ITEMS 1–3's SHARED ROOT CAUSE: `.pp-cap-error` NEVER ACTUALLY RESPECTED `hidden`
+
+`capture.js`'s overlay markup is `<div class="pp-cap-error" id="pp-cap-error" hidden></div>` —
+correct, and the JS never touches that attribute until a real error fires (`showError()`). But its
+own stylesheet declared `.pp-cap-error{display:flex; ...; z-index:3; background:rgba(0,0,0,.6)}`
+**unconditionally** — a class selector at (0,1,0), the exact same specificity as the browser's own
+`[hidden]{display:none}`, and an **author** rule always beats a **UA** rule at equal specificity.
+So the box rendered `display:flex` from the very first frame of *every* session — photo, video and
+360 alike — regardless of the `hidden` attribute being present and correct the whole time.
+
+⚠️⚠️ **This is the identical defect this app's own `dashboard.css` already found and fixed once, for
+`.pd-btn[hidden]`** ("THE `hidden` ATTRIBUTE DID NOT WORK ON ANY `.pd-btn` IN THIS APP, ANYWHERE") —
+never generalised, and `capture.js` walked into the exact same shape independently. The box is a
+`rgba(0,0,0,.6)` scrim sitting at `z-index:3`, **higher than `.pp-cap-topbar`'s `z-index:2`** — so it
+sat over the whole camera preview (which is what "I can't see the camera view" actually was: not a
+dark/dim preview, an always-on 60%-black scrim over it) **and** intercepted every click meant for
+Close, Flash, and — for video — the mic toggle, since its box overlaps theirs. This is items 1, 2 and
+the close/flash half of item 3 in one bug, not three separate ones.
+
+**Fixed the identical way `dashboard.css` fixed its own instance**: `.pp-cap-error[hidden]{display:
+none;}` — an attribute-selector override wins purely on specificity (0,2,0 > 0,1,0), so it holds
+regardless of source order.
+
+**Verified by genuine execution, not just read** — a throwaway Playwright/Chromium harness (no
+network needed; deleted after use) loaded the real, unmodified `capture.js`, called
+`Capture.takePhoto()` and checked the DOM **synchronously, before any async `getUserMedia` result
+could touch it** (`buildOverlay()` runs synchronously inside `takePhoto`/`takeVideo`/`take360`, only
+the camera permission prompt is async):
+
+| | `hidden` attribute present | computed `display` | topmost element at Close's centre | at Flash's centre |
+|---|---|---|---|---|
+| **pre-fix** (the override rule stripped back out, as a negative control) | true | **`flex`** | `.pp-cap-error` | `.pp-cap-error` |
+| **fixed** (shipped) | true | **`none`** | `.pp-cap-close` itself | inside `.pp-cap-flash` itself |
+
+The negative control reproduces the report exactly — both buttons' own clicks land on the invisible
+scrim, not the button — and the fix restores both to receiving their own clicks.
+
+### Item 3 — 360 drops the mic toggle entirely, and never requests an audio track
+
+`buildOverlay`'s condition for the mic button was `opts.mode !== 'photo'`, which included **both**
+`'video'` and `'360'` — so 360 showed a mute control nobody asked for. Narrowed to
+`opts.mode === 'video'` only. `wantsAudioTrack()` — which decides whether `getUserMedia` even
+requests an audio track — went from `mode !== 'photo'` to `mode === 'video'`, so a 360 recording
+never has an audio track to begin with: "by default this should be mute" is satisfied by there being
+nothing to mute, not a forced-off flag layered on top of a track nobody needs.
+
+**Verified by execution**: the same harness confirmed `#pp-cap-audio` exists only when
+`Capture.takeVideo()` is the active session (absent for `takePhoto()` and `take360()`), and a stubbed
+`getUserMedia` recorded the exact constraints object passed for each mode — `audio:false` for photo,
+`audio:true` for video, **`audio:false` for 360**.
+
+### Item 4 — the real reason video→360 stitching has never worked: no grayscale conversion before ORB
+
+⚠️⚠️ **`prevMat`/`curMat` in `homographyBetween` come straight from `cv.imread()` on a `<canvas>` —
+which OpenCV.js *always* returns as a 4-channel RGBA `Mat`, never grayscale.** ORB's own
+`detectAndCompute` (per OpenCV's C++ implementation, and every OpenCV.js ORB sample, the library's
+own official one included) expects a single-channel image and converts internally via
+`COLOR_BGR2GRAY` — which asserts/throws on a 4-channel input. `pano360.js` never once called
+`cv.cvtColor()` anywhere in the file (`grep` confirms zero occurrences before this fix) — every
+OpenCV.js tutorial that reads from a canvas does this conversion as the very next line after
+`cv.imread()`, and this file skipped it.
+
+This explains "has never worked well ever since" far better than a tuning problem: on a real device,
+this either **throws on the very first frame pair** (surfaced to the planner as "Could not build the
+panorama" — every prior changelog entry's "fix" was to the homography-accumulation MATH, which is
+correct but moot if `detectAndCompute` never produces a real homography to accumulate in the first
+place) or, depending on the build, silently returns zero keypoints — either way, every pair falls
+back to the no-homography path (a bare horizontal shift), so what came back was never actually an
+aligned mosaic, just frames placed side by side.
+
+**Fix**: `homographyBetween` now converts both frames to grayscale (`cv.cvtColor(prevMat, gray1,
+cv.COLOR_RGBA2GRAY, 0)`, same for `curMat`/`gray2`) before handing them to `orb.detectAndCompute` —
+the exact extra step every OpenCV.js feature-detection example takes. `prevMat`/`curMat` themselves
+are untouched (the caller's own cleanup of them is unaffected); the two new grayscale Mats are
+deleted in the function's existing `finally` block alongside everything else.
+
+⚠️ **Not verified against real OpenCV.js or a real video** — this sandbox has no network access to
+the CDN (`cdn.jsdelivr.net` is blocked by the environment's egress policy) and no camera, so the real
+`@techstark/opencv-js` binary has never been loaded here. What **is** verified, genuinely: a
+hand-built stub modelling OpenCV.js's real, documented API surface (`cv.Mat`, `cv.cvtColor`,
+`cv.ORB`, `cv.BFMatcher`, `cv.findHomography`, …) was driven against the actual exported test hook
+`Pano360._homographyBetween` — the SAME function that ships — with the stub's `detectAndCompute`
+modelling the real OpenCV constraint (throws on a non-single-channel image, matching the exact
+assertion OpenCV raises):
+
+| | calls made | result |
+|---|---|---|
+| **pre-fix** (the two `cvtColor` lines reverted back out, as a negative control) | `detectAndCompute` called directly on the 4-channel Mat | **throws** `Assertion failed: image.channels() == 1` — reproducing "processing has been failing" |
+| **fixed** (shipped) | `cvtColor` → `cvtColor` → `detectAndCompute` (×2, both on 1-channel Mats) → `knnMatch` → `findHomography` | returns `{matches:6, H:<Mat>}` — a real homography |
+
+This proves the fix changes exactly what it claims to (grayscale conversion happens before feature
+detection, and detection succeeds once it does) against a model of the real constraint — it does
+**not** prove the real `@techstark/opencv-js` build behaves identically to the stub, or that a real
+recorded 360° walk-around now produces a good mosaic. **The first real recording on a real device,
+through this exact code path, is still the actual end-to-end test**, and per the owner's own
+instruction that is stated plainly here rather than glossed over.
+
+### Verified (whole round)
+
+`node --check` clean on both touched files. `tools/wiring-check.js`: **123 passed, 0 failed** — every
+asset reference still resolves and is on one version after the `?v=` bump. No other file's behaviour
+was touched — `module.js`'s Add Media / 360-upload flow, and `module.css`, are unchanged.
+
+`capture.js` / `pano360.js` → `?v=20260912c`; the shared `MODULE_V` fallback
+(`assets/js/modules-grid.js`, `dashboard.html`, `modules.html`) → `20260912f` to match, since this
+module's `index.html` itself changed (its own `?v=` lines).
+
+⚠️ **Not verified signed in or on a real device** — same standing caveat as every capture-flow entry
+in this file. The CSS fix and the mode-gating fix are proven by genuine execution against the real,
+shipped `capture.js` in a real (if camera-less) Chromium; the stitching fix is proven against a
+faithful model of the real OpenCV constraint, not the real library. The camera-view/button-click fix
+in particular should be the fastest thing to confirm on a real phone — the previous behaviour was a
+permanent, unconditional black scrim over the whole capture screen, which was never testable inside
+this sandbox no matter how the harness was built.
+
 ## Third capture-flow round: the Add Media modal actually hides its own
 ## buttons now, a real close-during-recording race fixed, flash on/off/
 ## auto, a proportional key-plan pin, Pannellum replaces the drag-strip
