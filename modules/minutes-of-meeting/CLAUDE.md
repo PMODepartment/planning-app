@@ -1,5 +1,23 @@
 # Module: minutes-of-meeting
 
+## 2026-09-12 (g) — `.il-timepair` stacks vertically on a phone, closing a real overflow the pairing fix (f) could not
+
+Owner, with a phone screenshot of the "+ Add meeting" recurring-series Schedule tile: an input box
+was overflowing past the screen edge. Full detail and the reasoning (a native `type="date"`/
+`type="time"` control's own rendering, squeezed to half a row at the mandatory 16px mobile font,
+needs more room than half a narrow phone screen gives) is in the root
+[`CLAUDE.md`](../../CLAUDE.md)'s matching entry.
+
+`.il-timepair` (f, below) correctly keeps a Start/End pair from splitting apart across a wrap —
+that fix is untouched. This is the other half: below 700px, the pair's own two fields now stack
+(`flex-direction: column`) instead of sitting side by side, so each one gets the full row width
+instead of being squeezed to half of it. Confirmed by elimination that no other date-pair row in
+the app shares this risk — every other one already wraps to full-width lines on a phone; this
+module's `.il-timepair` is the one place built to force two such controls onto one line.
+
+`module.css` → `?v=20260912p` (`module.js` unchanged, stays `?v=20260912l`).
+⚠️ **Not verified signed in.**
+
 ## 2026-09-12 (f) — Every Start/End (and series-start/-end) pair gets `.il-timepair`
 
 Detail and verification in the root [`CLAUDE.md`](../../CLAUDE.md)'s matching entry — a shared-CSS

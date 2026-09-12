@@ -112,6 +112,26 @@
    together — they can never be split apart from each other. */
 .il-timepair { display: flex; gap: 10px; flex: 1 1 220px; min-width: 0; }
 .il-timepair > .pd-field { flex: 1 1 0; min-width: 0; }
+/* ⚠️⚠️ ON A PHONE, SIDE-BY-SIDE STILL OVERFLOWS THE SCREEN — a real, reported bug
+   distinct from (and surviving) the "must never split apart" fix above.
+   `input[type="date"]`/`input[type="time"]` are native controls: `width:100%` sizes
+   their BOX, but the browser's own rendering of the locale-formatted value/placeholder
+   inside is not text this app's CSS can `text-overflow:ellipsis` or otherwise compact —
+   at the `--pd-fs-tap` (16px) size the shared iOS zoom-guard forces onto every mobile
+   input (dashboard.css), that rendered content needs more room than HALF a narrow row
+   can give once two such controls share one `.il-timepair` line, and the second one
+   overflows past its own box rather than being clipped. Reproduced in the screenshot
+   this fixes: the Series-end-date box's right edge overflowed the viewport while every
+   SINGLE-column field (Title, Group, Venue…) on the same form did not — the difference
+   being exactly whether a field gets the full row width or only half of it.
+   Fixed by giving each field the full row width below the same breakpoint the iOS
+   zoom-guard itself uses — not by touching font-size, which stays at the mandatory
+   16px floor. The pair still moves as ONE unit relative to the rest of the row (the
+   fix above is untouched); only how its own two children sit relative to EACH OTHER
+   changes, from side-by-side to stacked. */
+@media (max-width: 700px) {
+  .il-timepair { flex-direction: column; }
+}
 
 /* ---- Add Meeting form (round 2): named sections + guaranteed row
    alignment ------------------------------------------------------------- */

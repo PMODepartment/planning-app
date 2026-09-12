@@ -138,6 +138,66 @@ whether or not the original version was already applied). `assets/js/ui.js` chan
 
 ⚠️ **Not verified signed in.**
 
+### Whole-app label/input pass, part two: the smallest rung yet, decoupled from the mobile input floor; and the one place a date/time pair was actually overflowing (2026-09-12) — gwsia
+
+Owner, off a phone screenshot of Minutes of Meeting's "+ Add meeting" form (the recurring-series
+Schedule tile — Series start/end date, Start/End time): *"audit the whole app. for all inputs
+reduce size of both label and input text to make more minimalistic. audit also whole app as some
+input boxes are still overflowing in mobile view as in photo."*
+
+**1 · Labels and inputs drop to the smallest rung the app's own scale defines.** Shared
+`.pd-field label` / `.pd-label` / `.pd-input, .pd-select, .pd-textarea` desktop font-size moves
+from `--pd-fs-xs` (11px, set earlier the same day) to `--pd-fs-micro` (10px) — label and input stay
+equal on desktop, one rung smaller again. Stakeholder Map's matching module-local override
+(`.pd-modal-body .pd-field > label`, `.pp-formhost .pd-field > label`) is brought down with it.
+
+**2 · ⚠️⚠️ ON MOBILE, LABEL AND INPUT ARE DELIBERATELY DECOUPLED — REVERSING an earlier same-day
+decision, not extending it.** The 2026-09-12 first pass made mobile labels match the input's
+mandatory `--pd-fs-tap` (16px) floor, on an explicit "input text the same size as its label" ask.
+That trade stops making sense once the ask becomes "smaller, more minimalist" on the very screen
+where the input genuinely cannot shrink: **only a focusable form control can trigger iOS's
+zoom-on-focus** — a `<label>` is never focused and receives no caret, so it carries none of the
+16px constraint. The mobile rule now drops `.pd-field label, .pd-label` to `--pd-fs-micro` (the
+same rung the desktop rule uses) while the **input** stays pinned at `--pd-fs-tap` — the only way
+to make a mobile form read smaller without reopening the zoom bug that floor exists to prevent.
+
+**3 · ⚠️⚠️ THE OVERFLOW WAS A NATIVE-CONTROL RENDERING LIMIT, not a flex-math bug in the pairing
+fix shipped hours earlier.** That fix (`.il-timepair`) correctly stops a Start/End (or
+Series-start/-end) pair splitting across a wrap — verified, and untouched here. But once such a
+pair is squeezed to **half** a narrow row, `input[type="date"]`/`input[type="time"]`'s own native
+rendering of the locale-formatted value/placeholder — at the `--pd-fs-tap` (16px) size the shared
+iOS zoom-guard forces onto every mobile input — needs more room than half a phone-width row can
+give, and (unlike a text node) that content is not something CSS can `text-overflow:ellipsis` or
+otherwise compact; the second field's box overflows past its own edge rather than being clipped.
+Confirmed by elimination: this app's OTHER paired date-field rows (Risk Register's Identified /
+Target close / Next review, Contracts & Claims' Period start/end and Start/Finish, Drawing
+Register's Planned/Actual approval) all sit in ordinary `flex-wrap: wrap` rows with no forced
+same-line pairing, so on a narrow phone they simply wrap to their own full-width lines already —
+`.il-timepair` (built the same day, specifically to KEEP a pair on one line) is the one place in
+the whole app that forces two such native controls to share half a row, and grepping for the same
+`flex-wrap: nowrap` pattern elsewhere found nothing else shaped like it.
+
+Fixed by letting each field in a `.il-timepair` take the FULL row width below the same 700px
+breakpoint the iOS zoom-guard itself uses — `flex-direction: column` — rather than touching
+font-size (which stays at the mandatory 16px floor) or reverting the "never split apart" fix: the
+pair still moves as one unit relative to the rest of the row; only how its own two children sit
+*relative to each other* changes, from side-by-side to stacked.
+
+**Verified:** `node --check` clean on `minutes-of-meeting/module.js` (unchanged this round — only
+its stylesheet moved); CSS brace-balance holds on `dashboard.css` (535/535),
+`minutes-of-meeting/module.css` (361/361), `stakeholder-map/module.css` (221/221); 0 NUL bytes
+across all three; `tools/wiring-check.js` 126/126, 0 version splits; `tools/dead-hooks.js`
+unchanged against its documented 9-finding baseline.
+⚠️ **Not verified signed in** — no live login is possible in this environment; the overflow
+diagnosis is argued from the box model of native form controls (a locale-formatted value the
+browser renders, not text this app's CSS can compact) and confirmed by elimination against every
+other paired-date-field row in the app, not observed on a real device.
+
+`dashboard.css` → `?v=20260912p` (31 pages); `minutes-of-meeting/module.css` → `?v=20260912p`
+(`module.js` unchanged, stays `?v=20260912l`); `stakeholder-map/module.css` → `?v=20260912p` (both
+`index.html` and `person.html`). No `MODULE_V` bump — no module's `index.html` changed
+structurally, only version query strings and the CSS content those pages reference.
+
 ### 2026-09-12 — New module: Pormac, an in-browser AI assistant (zero hosting cost)
 
 Owner: *"add a new module open to all or selected users - an AI bot named Pormac... totally
