@@ -1,18 +1,25 @@
 /* Pormac — module-local styles. Shared tokens only (--pd-*), per MODULE_CONTRACT.md
    §"Dark mode is automatic" — never a hard-coded light background here. */
 
-.pmc-muted { color: var(--pd-muted); }
-
-/* ---- Blocked / not-enabled state ---- */
-.pmc-blocked {
-  max-width: 480px; margin: 48px auto; padding: 32px 28px; text-align: center;
-}
-.pmc-blocked [data-ico] { color: var(--pd-red); margin-bottom: 8px; }
-.pmc-blocked h3 { margin: 8px 0 4px; }
-
-/* ---- Overall chrome ---- */
-.pmc-main { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.pmc-chrome { display: flex; flex-direction: column; flex: 1; min-height: 0; max-width: 880px; width: 100%; margin: 0 auto; padding: 0 16px 16px; }
+/* ---- Overall chrome ----
+   ⚠️⚠️ THE CHAT IS A DOCKED LAYOUT, AND IT NEEDS A DEFINITE HEIGHT TO BE ONE.
+   `.pd-content` is `flex:1; min-width:0` in the shared stylesheet with NO height,
+   so `height:100%` here resolved to `auto` — the thread grew with the
+   conversation, the page scrolled instead of the thread, and the composer drifted
+   further below the fold with every reply. Giving `.pd-content` a viewport height
+   (the same thing project-schedule does for its docked details panel) makes the
+   thread the one thing that scrolls and pins the composer where a planner can
+   always reach it, which is also what "history should be scrollable as needed"
+   asks for.
+   ⚠️ `flex:none` on the topbar is not optional: a flex item defaults to
+   `flex-shrink:1`, so in a height-constrained column the browser crushes the bar
+   below its own content and paints it over the chat (the 2026-09-10 z5 defect).
+   ⚠️ `100dvh` second so a browser that doesn't know it keeps the `100vh` above —
+   on a phone it keeps the composer clear of the collapsing URL bar. */
+.pd-content { height: 100vh; height: 100dvh; display: flex; flex-direction: column; }
+.pd-content > .pd-topbar { flex: none; }
+.pmc-main { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 0; }
+.pmc-chrome { display: flex; flex-direction: column; flex: 1; min-height: 0; max-width: 880px; width: 100%; margin: 0 auto; padding: 0 16px 12px; }
 
 .pmc-tierbar {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
@@ -35,7 +42,14 @@
 }
 .pmc-msg { max-width: 86%; display: flex; flex-direction: column; gap: 4px; }
 .pmc-msg.user { align-self: flex-end; align-items: flex-end; }
-.pmc-msg.assistant { align-self: flex-start; align-items: flex-start; }
+/* Assistant messages carry the Pormac avatar, so that row is a ROW (avatar +
+   a bubble column) rather than the column every other message type uses. */
+.pmc-msg.assistant { align-self: flex-start; align-items: flex-end; flex-direction: row; gap: 8px; }
+.pmc-avatar {
+  width: 30px; height: 30px; border-radius: 50%; flex: none;
+  object-fit: cover; border: 1px solid var(--pd-line);
+}
+.pmc-msgcol { display: flex; flex-direction: column; gap: 4px; min-width: 0; align-items: flex-start; }
 .pmc-bubble {
   padding: 10px 14px; border-radius: var(--pd-radius-lg, 12px); line-height: 1.5;
   white-space: pre-wrap; word-break: break-word;
@@ -56,12 +70,6 @@
 .pmc-composer { display: flex; gap: 8px; align-items: flex-end; padding: 10px 2px; border-top: 1px solid var(--pd-line); }
 .pmc-input { flex: 1; min-height: 40px; max-height: 160px; resize: none; }
 .pmc-hint { font-size: var(--pd-fs-micro, 10px); color: var(--pd-muted); padding: 0 2px 4px; text-align: center; }
-
-/* ---- Settings modal ---- */
-.pmc-set-mode { display: flex; gap: 14px; margin: 10px 0 14px; }
-.pmc-set-list { max-height: 260px; overflow-y: auto; border: 1px solid var(--pd-line); border-radius: var(--pd-radius, 4px); }
-.pmc-set-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; border-bottom: 1px solid var(--pd-line); }
-.pmc-set-row:last-child { border-bottom: none; }
 
 @media (max-width: 700px) {
   .pmc-msg { max-width: 94%; }

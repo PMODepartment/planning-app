@@ -1,5 +1,16 @@
 # Module: stakeholder-map
 
+## 2026-09-12 (later) — Label rung dropped one further, to match the app-wide `--pd-fs-micro` size
+
+Part of a second, same-day app-wide label/input sizing pass — see root [`CLAUDE.md`](../../CLAUDE.md).
+The shared `.pd-field label` rule dropped a further rung to `--pd-fs-micro` (10px), the smallest size
+this app's scale defines. This module's own `.pd-modal-body .pd-field > label` / `.pp-formhost
+.pd-field > label` override (the person page and the register's add/edit modal) moves with it, so it
+does not end up one rung above the app-wide rule again.
+
+`module.css?v=20260912p` on both referencing pages (`index.html`, `person.html`); `module.js`
+unchanged, stays `20260911ud`.
+
 ## 2026-09-12 — Label size brought onto the shared `--pd-fs-sm` rung
 
 Part of an app-wide label/input sizing pass — see root [`CLAUDE.md`](../../CLAUDE.md). This module's

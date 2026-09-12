@@ -129,6 +129,268 @@ standing caveat on every entry in that module's own log.
 
 `pano360.js` → `?v=20260912s`; `MODULE_V` → `20260912s`.
 
+### Minutes of Meeting: the Add-meeting form's own ghost-label reservation, not the shared label/input rules, was the "very big" mobile gap (2026-09-12)
+
+Owner, two phone screenshots of the same "+ Add meeting" form: *"space between recurring and
+meeting title is very big"* and *"the vertical gap between label and input box is still quite
+large as in first photo. second photo shows better tighter spacing between label and box."* The
+second photo is this module's own Detail (edit) view, offered as the tighter comparison.
+
+⚠️⚠️ **Not the same cause as the whole-app label/input pass or the `.il-timepair` overflow fix
+recorded just above** — both of those hold, untouched. This is a third, narrower thing:
+`.il-am-form .pd-field > label:not(.il-am-checklabel) { min-height: 26px; line-height: 13px; }`
+(module-local, "guaranteed row alignment" from an earlier round) reserves two lines' worth of
+height under every label in this ONE form, including the empty **ghost label**
+(`amGhostLabel()`) that sits above the Favorite star, the Recurring checkbox, and the
+Regular/Irregular select purely to keep each level with a real label on the same desktop row.
+Below 700px that row can hold four such fields at once, and a narrow phone wraps the rest onto
+their own line — where a field alone still pays the full 26px reservation with nothing left to
+align with, which is the "very big" gap between Recurring and the title above it. The same rule
+also leaves every label in the form, real or ghost, sitting well above its input even on a row
+that never wraps at all — the other half of the report.
+
+Fixed by resetting the reservation to a natural single-line label below 700px (rather than
+special-casing which rows still pair up two-wide at a given width) — because the ghost label is
+caught by the very same selector as the real ones, this keeps the Favorite star's ghost label
+shrinking in step with Meeting title's real label whenever the two DO still share a line, so
+alignment where it still matters is unaffected. Scoped to `.il-am-form` only; the Detail view
+never carried this reservation and was already tight, matching the owner's own comparison.
+Full detail: [`modules/minutes-of-meeting/CLAUDE.md`](modules/minutes-of-meeting/CLAUDE.md).
+
+**Verified:** brace balance holds (363/363); 0 NUL bytes; `node tools/wiring-check.js` 126/126,
+0 version splits; `node tools/dead-hooks.js` unchanged against its documented 9-finding baseline.
+⚠️ **Not verified signed in and no screenshot** — no live login or compositing/screenshot tool is
+available this session; reasoned from the CSS cascade and the current `main` markup, not observed
+rendered on a device.
+
+`modules/minutes-of-meeting/module.css` → `?v=20260912r`. No shared asset touched, no `MODULE_V`
+bump.
+
+### 2026-09-12 — Pormac: one conversation per project, and the composer a slow fetch could hide
+
+Owner: *"no need for chat and history tab switcher. keep only 1 conversation per user per project.
+history should be scrollable as needed. no need also for new chat since everything is in one
+conversation"* and *"I cant type text to ask pormac. please fix"*. Detail:
+[`modules/pormac/CLAUDE.md`](modules/pormac/CLAUDE.md). Module-only, **no migration**.
+
+⚠️⚠️ **THE COMPOSER WAS `display:none` BEHIND AN `await`, AND THAT IS THE WHOLE OF "I CAN'T
+TYPE".** `#pmc-chrome` — the thread, the composer, everything you type into — shipped hidden and
+was revealed by `switchView('chat')`, which sat **below `await loadProjects()`**. A project fetch
+that was slow, refused or never resolved therefore left the planner with no input on the page at
+all and nothing saying why. Reproduced in a browser against the shipped bytes: with the fetch
+pending, `#pmc-input` renders **0×0** and a click on it times out. ⚠️ This is the same-day (d)
+bug one layer up — that pass moved the *handlers* above the first `await` for exactly this reason
+and left the *pane's visibility* below it. The pane is now visible in the markup itself.
+
+⚠️⚠️ **AND `modules/pormac/module.js` / `module.css` HAD NO `?v=` AT ALL** — so every same-day fix
+to this module since it launched changed those files under a URL a browser had already cached, and
+any of them may never have reached the owner's tab. Both now carry `?v=20260912r`.
+
+**The layout was never docked either.** `.pmc-main` asked for `height:100%` inside `.pd-content`,
+which the shared stylesheet declares as `flex:1; min-width:0` with **no height** — so it resolved
+to `auto`, the thread grew with the conversation and the **page** scrolled instead of the thread,
+drifting the composer below the fold with every reply. `.pd-content` now takes a viewport height
+and becomes the flex column (what project-schedule already does for its docked details panel), so
+the thread is the one thing that scrolls — which is also *"history should be scrollable as
+needed"* — with the composer pinned. ⚠️ `.pd-topbar` takes `flex:none` with it, or a
+height-constrained column crushes the bar below its own content and paints it over the chat (the
+2026-09-10 z5 defect, in this module's shape).
+
+**One conversation per planner per project.** The `Chat`/`History` tabs, `New chat` and the whole
+history pane are gone; opening the module or switching project resumes that project's single
+running thread. ⚠️⚠️ **"One" is enforced by what the client READS, not by a unique index, and that
+is a deliberate call** — rows already exist from every press of the old "New chat", so a
+constraint could not be added without first destroying or merging real conversations, and the
+**General (no project)** case cannot be covered by a plain unique index at all, since Postgres
+treats NULLs as distinct (the same trap `2026-09-10-boq-project-scope.sql` needed a *partial*
+index for). So there is no migration: the loader reads **every** conversation the planner has for
+this project and merges their messages into one chronological thread — making *"everything is in
+one conversation"* true on screen **including retroactively** — while new turns write to the most
+recently updated row, converging them without deleting anything.
+
+⚠️ The message read is **newest-first + limit, then reversed**: an ascending limit would have
+returned the OLDEST 200 and silently dropped everything recent. ⚠️ `.eq('created_by', …)` is not
+redundant with RLS — the policy is `created_by = auth.uid() OR is_admin()`, so without it an admin
+would load every planner's conversations into their own thread.
+
+**Verified** in a real browser (the shipped page, auth/DB stubbed, harness deleted) at 1440×900
+and 390×740, light and dark: the input is in the viewport, is the top element at its own centre
+and accepts typed text in all five scenarios **including with the project fetch left permanently
+pending** — the same probe against the pre-fix bytes reports 0×0 and a click timeout, so it bites.
+300 stored messages render as the cap note then `msg 101 … msg 300` chronologically, thread
+scrolling and pinned at the bottom; switching project reloads that project's own thread. ⚠️ The
+first cut of that probe stubbed the query builder without honouring `.order()`/`.limit()` and
+reported the thread reversed — a defect in the checker, not the code.
+`node --check` clean; `module.css` braces 30/30; 0 NUL bytes; `tools/wiring-check.js` **126/126,
+0 version splits**; `tools/dead-hooks.js` unchanged against its documented 9-finding baseline.
+⚠️ **Not verified signed in** — no real conversation has been loaded, merged or written.
+
+`MODULE_V` → `20260912r` (the module's `index.html` changed structurally).
+
+### iPhone date/time inputs were rendering at native, uncontrolled height — the visible gap was the box, not the margin (2026-09-12) — gwsia
+
+Owner, with a screenshot of Minutes of Meeting's "+ Add meeting" form on an iPhone: *"in iphone,
+input boxes still overflow. there are also many whitespaces between input label and input box.
+please audit and fix across app."*
+
+⚠️⚠️ **THE "WHITESPACE" WAS NOT A MARGIN — IT WAS THE BOX.** Measured the identical markup+CSS
+in a real (Chromium) browser at 375px first: label-to-input gap computed at a flat, correct
+**5px** everywhere, matching the CSS exactly. That ruled out a `.pd-field`/`.il-timepair` layout
+bug and pointed at something Chromium's own date/time control can't reproduce: **iOS Safari
+renders `input[type="date"]`/`type="time"` as a native compound control whose own intrinsic
+sizing does not obey `padding`/`min-height` until the native chrome is reset** — a
+long-documented WebKit quirk. Left alone, the box can render far taller than this app's own
+44px minimum, with the locale-formatted value centred deep inside it — which reads on screen as
+a wide gap between the label and the value, because nothing marks where the box's own edge
+actually sits. This is also the far more likely explanation for the residual "overflow" report
+than the `.il-timepair` stacking fixed earlier the same day (confirmed still correct, untouched).
+
+**Fixed with the standard companion rule for this exact symptom**: `-webkit-appearance: none;
+appearance: none;` on `input[type="date"], input[type="time"], input[type="datetime-local"]`,
+scoped inside the existing mobile `@media (max-width:700px)` block, right beside the padding/
+min-height rules those controls already carry. This hands the box back to this file's own
+border/background/padding/min-height instead of the platform's own chrome; the tap-to-open
+native picker is tied to the `type` attribute itself and is unaffected by an appearance reset.
+Desktop is untouched — confirmed byte-identical before/after in Chromium, since every browser
+tested here already renders these controls correctly at the shared padding/min-height with no
+reset needed.
+
+⚠️ **Not verified on a real iOS device** — this is the documented, standard fix for the exact
+symptom described and screenshotted, argued from the box model of native form controls rather
+than observed here, the same standing caveat this app's own CSS carries elsewhere for iOS-only
+behaviour Chromium cannot reproduce.
+
+**Verified:** brace balance holds on `dashboard.css` (536/536), 0 NUL bytes; `tools/wiring-check.js`
+126/126, 0 version splits.
+
+`dashboard.css` → `?v=20260912q` (31 pages).
+
+### 2026-09-12 — Pormac gets a real History tab, and "New chat" works from it too
+
+Owner: *"include already the char history in this build. fix also new chat so it should
+work."* Detail: [`modules/pormac/CLAUDE.md`](modules/pormac/CLAUDE.md).
+
+`Chat`/`History` is now a working two-tab switcher (via the shared `UI.tabsToDropdown()` —
+the reason the lone `Chat` tab was inert before is that helper refuses to run below two
+buttons). History lists every conversation the signed-in planner has ever had, across every
+project, with each row naming which one; clicking a row reopens it, restoring its project
+context when the planner can still see that project. Delete cascades to its messages.
+`persistTurn()` now bumps `pormac_conversations.updated_at` on every turn — it was declared,
+indexed and never once written, so History would have sorted every conversation by its
+creation time forever. "New chat" now also switches back to the Chat tab, since resetting the
+thread while on History was invisible.
+
+⚠️ Not verified signed in.
+
+### 2026-09-12 — Pormac: "New chat" was never a click-handler race until it was
+
+Owner: *"chat and new chat buttons dont work. what are they supposed to do."* Detail:
+[`modules/pormac/CLAUDE.md`](modules/pormac/CLAUDE.md).
+
+`#pmc-new` and `#pmc-send` paint in the topbar/composer before `init()` runs, but their
+`onclick` was wired only after `await loadProjects()` resolved — so a failed or slow project
+fetch silently left every button in the module unwired, with no visible sign why. Handlers now
+attach before the first `await`; a broken project fetch costs only the project picker. The
+"Chat" tab remains intentionally inert — it is the module's only screen.
+
+⚠️ Not verified signed in.
+
+### 2026-09-12 — Pormac gets a Megawide-branded avatar
+
+Owner supplied a cartoon construction-worker illustration and asked it be used as the
+chatbot's profile photo, "only the upper portion of the upper body." Detail:
+[`modules/pormac/CLAUDE.md`](modules/pormac/CLAUDE.md).
+
+New `assets/img/pormac-avatar.png` — a square bust crop (helmet, face, shoulders) of the
+supplied full-figure image. Shown only on assistant chat bubbles (`modules/pormac/module.js`
+`pushMessage()`), never on the planner's own messages. `modules/pormac/module.css` gains
+`.pmc-avatar` (30px, circular) and turns `.pmc-msg.assistant` into a row so the avatar sits
+beside the bubble rather than above it.
+
+⚠️ Not verified signed in — no live conversation has rendered it.
+
+### 2026-09-12 — Pormac opened to everyone; moved to the top of the sidebar
+
+Owner: *"pormac should be available to everyone. no need for the settings to define
+accessibility of pormac."* Also: *"in the sidebar, put Pormac before dashboards as the very
+first module."* Follow-up to the Pormac build below, same day. Detail:
+[`modules/pormac/CLAUDE.md`](modules/pormac/CLAUDE.md).
+
+- **The access-control layer is removed.** `pormac_settings` / `pormac_allowed_users` and the
+  admin Settings modal are gone; `pormac_can_use()` is now simply `is_approved()` — kept under
+  that name only because `supabase/functions/pormac-chat` already calls it. ⚠️ The client-side
+  gate in `module.js` is deleted outright, not simplified: `AppAuth.requireLogin` already
+  redirects anyone not `approved` before the module's own code runs, so the extra check could
+  never fail.
+- **Pormac renders before the Dashboard link**, in both the project and portfolio sidebars —
+  the one exception to "config.js's `MODULES` order is the nav order."
+
+`migrations/2026-09-12-pormac.sql` updated to drop the now-removed tables (safe to re-run
+whether or not the original version was already applied). `assets/js/ui.js` changed
+(`renderNav`) — shared file.
+
+⚠️ **Not verified signed in.**
+
+### Whole-app label/input pass, part two: the smallest rung yet, decoupled from the mobile input floor; and the one place a date/time pair was actually overflowing (2026-09-12) — gwsia
+
+Owner, off a phone screenshot of Minutes of Meeting's "+ Add meeting" form (the recurring-series
+Schedule tile — Series start/end date, Start/End time): *"audit the whole app. for all inputs
+reduce size of both label and input text to make more minimalistic. audit also whole app as some
+input boxes are still overflowing in mobile view as in photo."*
+
+**1 · Labels and inputs drop to the smallest rung the app's own scale defines.** Shared
+`.pd-field label` / `.pd-label` / `.pd-input, .pd-select, .pd-textarea` desktop font-size moves
+from `--pd-fs-xs` (11px, set earlier the same day) to `--pd-fs-micro` (10px) — label and input stay
+equal on desktop, one rung smaller again. Stakeholder Map's matching module-local override
+(`.pd-modal-body .pd-field > label`, `.pp-formhost .pd-field > label`) is brought down with it.
+
+**2 · ⚠️⚠️ ON MOBILE, LABEL AND INPUT ARE DELIBERATELY DECOUPLED — REVERSING an earlier same-day
+decision, not extending it.** The 2026-09-12 first pass made mobile labels match the input's
+mandatory `--pd-fs-tap` (16px) floor, on an explicit "input text the same size as its label" ask.
+That trade stops making sense once the ask becomes "smaller, more minimalist" on the very screen
+where the input genuinely cannot shrink: **only a focusable form control can trigger iOS's
+zoom-on-focus** — a `<label>` is never focused and receives no caret, so it carries none of the
+16px constraint. The mobile rule now drops `.pd-field label, .pd-label` to `--pd-fs-micro` (the
+same rung the desktop rule uses) while the **input** stays pinned at `--pd-fs-tap` — the only way
+to make a mobile form read smaller without reopening the zoom bug that floor exists to prevent.
+
+**3 · ⚠️⚠️ THE OVERFLOW WAS A NATIVE-CONTROL RENDERING LIMIT, not a flex-math bug in the pairing
+fix shipped hours earlier.** That fix (`.il-timepair`) correctly stops a Start/End (or
+Series-start/-end) pair splitting across a wrap — verified, and untouched here. But once such a
+pair is squeezed to **half** a narrow row, `input[type="date"]`/`input[type="time"]`'s own native
+rendering of the locale-formatted value/placeholder — at the `--pd-fs-tap` (16px) size the shared
+iOS zoom-guard forces onto every mobile input — needs more room than half a phone-width row can
+give, and (unlike a text node) that content is not something CSS can `text-overflow:ellipsis` or
+otherwise compact; the second field's box overflows past its own edge rather than being clipped.
+Confirmed by elimination: this app's OTHER paired date-field rows (Risk Register's Identified /
+Target close / Next review, Contracts & Claims' Period start/end and Start/Finish, Drawing
+Register's Planned/Actual approval) all sit in ordinary `flex-wrap: wrap` rows with no forced
+same-line pairing, so on a narrow phone they simply wrap to their own full-width lines already —
+`.il-timepair` (built the same day, specifically to KEEP a pair on one line) is the one place in
+the whole app that forces two such native controls to share half a row, and grepping for the same
+`flex-wrap: nowrap` pattern elsewhere found nothing else shaped like it.
+
+Fixed by letting each field in a `.il-timepair` take the FULL row width below the same 700px
+breakpoint the iOS zoom-guard itself uses — `flex-direction: column` — rather than touching
+font-size (which stays at the mandatory 16px floor) or reverting the "never split apart" fix: the
+pair still moves as one unit relative to the rest of the row; only how its own two children sit
+*relative to each other* changes, from side-by-side to stacked.
+
+**Verified:** `node --check` clean on `minutes-of-meeting/module.js` (unchanged this round — only
+its stylesheet moved); CSS brace-balance holds on `dashboard.css` (535/535),
+`minutes-of-meeting/module.css` (361/361), `stakeholder-map/module.css` (221/221); 0 NUL bytes
+across all three; `tools/wiring-check.js` 126/126, 0 version splits; `tools/dead-hooks.js`
+unchanged against its documented 9-finding baseline.
+⚠️ **Not verified signed in** — no live login is possible in this environment; the overflow
+diagnosis is argued from the box model of native form controls (a locale-formatted value the
+browser renders, not text this app's CSS can compact) and confirmed by elimination against every
+other paired-date-field row in the app, not observed on a real device.
+
+`dashboard.css` → `?v=20260912p` (31 pages); `minutes-of-meeting/module.css` → `?v=20260912p`
+(`module.js` unchanged, stays `?v=20260912l`); `stakeholder-map/module.css` → `?v=20260912p` (both
+`index.html` and `person.html`). No `MODULE_V` bump — no module's `index.html` changed
+structurally, only version query strings and the CSS content those pages reference.
+
 ### 2026-09-12 — New module: Pormac, an in-browser AI assistant (zero hosting cost)
 
 Owner: *"add a new module open to all or selected users - an AI bot named Pormac... totally

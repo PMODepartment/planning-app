@@ -971,54 +971,15 @@ create index if not exists project_schedule_split_group_idx
 -- given live access to the Procurement/Engineering apps' own databases, and
 -- reads their already-mirrored tables (wpm_work_packages, wpm_vendors,
 -- eng_design_progress) instead — lives in migrations/2026-09-12-pormac.sql.
-create table if not exists pormac_settings (
-  id            smallint primary key default 1,
-  access_mode   text not null default 'selected' check (access_mode in ('all', 'selected')),
-  updated_by    uuid references users(id),
-  updated_at    timestamptz default now(),
-  constraint pormac_settings_singleton check (id = 1)
-);
-insert into pormac_settings (id) values (1) on conflict (id) do nothing;
-
-create table if not exists pormac_allowed_users (
-  user_id     uuid primary key references users(id) on delete cascade,
-  added_by    uuid references users(id),
-  added_at    timestamptz default now()
-);
-
+-- ⚠️ Available to every approved user — no per-user allow-list (owner's call,
+-- 2026-09-12; see migrations/2026-09-12-pormac.sql for the "originally shipped
+-- with a settings screen, removed same day" history). `pormac_can_use()` is
+-- kept under this name only because supabase/functions/pormac-chat calls it.
 create or replace function pormac_can_use() returns boolean
   language sql stable security definer set search_path = public as $$
-  select exists (
-    select 1 from users u
-    where u.id = auth.uid() and u.status = 'approved'
-      and (
-        u.role in ('admin', 'super_admin')
-        or (select access_mode from pormac_settings where id = 1) = 'all'
-        or exists (select 1 from pormac_allowed_users a where a.user_id = auth.uid())
-      )
-  );
+  select is_approved();
 $$;
 grant execute on function pormac_can_use() to authenticated;
-
-grant select, insert, update on pormac_settings to authenticated;
-alter table pormac_settings enable row level security;
-drop policy if exists pormac_settings_read on pormac_settings;
-create policy pormac_settings_read on pormac_settings for select using (is_approved());
-drop policy if exists pormac_settings_write on pormac_settings;
-create policy pormac_settings_write on pormac_settings for update
-  using (is_admin()) with check (is_admin());
-
-grant select, insert, delete on pormac_allowed_users to authenticated;
-alter table pormac_allowed_users enable row level security;
-drop policy if exists pormac_allowed_users_read on pormac_allowed_users;
-create policy pormac_allowed_users_read on pormac_allowed_users for select
-  using (is_admin() or user_id = auth.uid());
-drop policy if exists pormac_allowed_users_write on pormac_allowed_users;
-create policy pormac_allowed_users_write on pormac_allowed_users for insert
-  with check (is_admin());
-drop policy if exists pormac_allowed_users_del on pormac_allowed_users;
-create policy pormac_allowed_users_del on pormac_allowed_users for delete
-  using (is_admin());
 
 create table if not exists pormac_conversations (
   id            uuid primary key default gen_random_uuid(),

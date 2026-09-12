@@ -717,11 +717,12 @@ html.pd-dark .pd-seg-multi > button.on:hover { color: #FF8A80; }
 
 /* ---- Forms ---- */
 .pd-field { margin-bottom: 14px; }
-/* ⚠️⚠️ WAS --pd-fs-sm (12.5px), matched to the input beside it (2026-09-12 first pass).
-   Dropped a further rung, to --pd-fs-xs (11px), on an explicit "make labels and inputs
-   smaller, more minimalist" request — the two stay EQUAL to each other, just both one
-   rung down. `.pd-label` (below) moves with it for the same reason. */
-.pd-field label { display: block; font-size: var(--pd-fs-xs); font-weight: 500; color: var(--pd-muted); margin-bottom: 5px;
+/* ⚠️⚠️ WAS --pd-fs-sm (12.5px) → --pd-fs-xs (11px) on 2026-09-12's first pass, "make
+   labels and inputs smaller, more minimalist". Dropped a further rung on the SAME
+   request repeated the same day — --pd-fs-micro (10px), the smallest rung this app's
+   own scale defines. Label and input stay EQUAL to each other on desktop; `.pd-label`
+   (below) moves with it for the same reason. */
+.pd-field label { display: block; font-size: var(--pd-fs-micro); font-weight: 500; color: var(--pd-muted); margin-bottom: 5px;
   text-transform: uppercase; letter-spacing: .03em; }
 .pd-input, .pd-select, .pd-textarea {
   /* ⚠️⚠️ WAS 7px WHILE `.pd-btn` IS 8px, so a Filter button and the search box beside it in
@@ -729,10 +730,11 @@ html.pd-dark .pd-seg-multi > button.on:hover { color: #FF8A80; }
      the BUTTON down to 7px to match, which is the same observation reached from the other
      end — someone had already decided these should agree. Both are --pd-radius-md now. */
   width: 100%; padding: 6px 10px; border: 1px solid var(--pd-line); border-radius: var(--pd-radius-md);
-  /* ⚠️ Matches `.pd-field label`/`.pd-label` at --pd-fs-xs (11px), one rung below the prior
-     --pd-fs-sm — desktop only; the phone `!important` floor below still pins this at
-     --pd-fs-tap (16px) so iOS never zooms on focus. */
-  font-size: var(--pd-fs-xs); font-family: inherit; background: var(--pd-card); color: var(--pd-ink);
+  /* ⚠️ Matches `.pd-field label`/`.pd-label` at --pd-fs-micro (10px) — desktop only; the
+     phone `!important` floor below still pins the INPUT at --pd-fs-tap (16px) so iOS
+     never zooms on focus, and the mobile label rule below no longer matches it (see the
+     note there for why that decoupling is deliberate, not a regression). */
+  font-size: var(--pd-fs-micro); font-family: inherit; background: var(--pd-card); color: var(--pd-ink);
 }
 /* ⚠️⚠️ AN INPUT, A DATE INPUT AND A SELECT WITH IDENTICAL PADDING AND FONT-SIZE STILL
    COME OUT AT THREE DIFFERENT HEIGHTS, because each control type adds its own intrinsic
@@ -980,7 +982,7 @@ button.pd-psel-btn { height: auto; min-height: 30px; padding-top: 4px; padding-b
 /* Form label used outside .pd-field (cash-flow's tabbed Assumptions, resource-loading).
    ⚠️ Same values as `.pd-field label` on purpose -- two label styles that drift apart is
       how one dialog ends up looking like a different product. */
-.pd-label { display: block; font-size: var(--pd-fs-xs); font-weight: 500; color: var(--pd-muted); margin-bottom: 5px; }
+.pd-label { display: block; font-size: var(--pd-fs-micro); font-weight: 500; color: var(--pd-muted); margin-bottom: 5px; }
 
 /* Autosave status badge (assets/js/autosave.js), placed beside an Edit modal's title. */
 .pd-autosave { font-size: var(--pd-fs-xs); font-weight: 500; padding: 3px 9px; border-radius: var(--pd-radius-pill);
@@ -1423,13 +1425,19 @@ body { overflow-x: clip; }
   .pd-input, .pd-select, .pd-textarea, .pd-input-sm,
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="hidden"]),
   select, textarea { font-size: var(--pd-fs-tap) !important; }
-  /* ⚠️⚠️ A LABEL CANNOT SHRINK TO MATCH — the input above is pinned at --pd-fs-tap (16px)
-     because iOS zooms the page under that on focus, and that floor is not negotiable (see
-     the guard above). So "input text the same size as its label" on a phone can only be
-     reached by raising the LABEL to the same 16px, never by lowering the input. Desktop
-     still matches at the smaller --pd-fs-sm rung (see `.pd-field label`/`.pd-label` above),
-     where nothing forces a floor. */
-  .pd-field label, .pd-label { font-size: var(--pd-fs-tap); }
+  /* ⚠️⚠️ REVERSED 2026-09-12, LATER THE SAME DAY — this used to raise the label to match
+     the 16px input floor ("input text the same size as its label"). A fresh "reduce size
+     of both label and input text… make more minimalistic" pass, aimed straight at a phone
+     screenshot, makes that the wrong trade now: the INPUT genuinely cannot shrink below
+     16px (the guard above is a platform fact, not a preference — iOS zooms), but the
+     LABEL carries no such constraint at all. A label is never focused and never receives
+     a caret; only a focusable form control triggers the zoom. So the two are decoupled on
+     mobile: the input stays pinned at --pd-fs-tap for iOS safety, and the label drops to
+     the SAME small rung the desktop rule now uses (--pd-fs-micro), rather than being
+     dragged up to meet an input it cannot follow down. This is the only way to make a
+     mobile form actually read smaller without reintroducing the zoom-on-focus bug the
+     original --pd-fs-tap floor exists to prevent. */
+  .pd-field label, .pd-label { font-size: var(--pd-fs-micro); }
   /* ⚠️ And the same fields measured 22–35px tall, under the 44px this block already enforces on
      `.pd-btn`. A control you cannot reliably hit is not fixed by being legible. `min-height`,
      never `height`: a textarea must still grow, which is why it is not in this list. */
@@ -1438,6 +1446,21 @@ body { overflow-x: clip; }
   select { min-height: var(--pd-tap); }
   .pd-input, .pd-select, .pd-textarea { padding: 10px 12px; }
   .pd-input-sm { height: 40px; padding: 8px 10px; }
+  /* ⚠️⚠️ `input[type="date"]`/`input[type="time"]` are NOT a plain text box on iOS Safari —
+     they are a native compound control, and their own intrinsic sizing answers to the
+     platform's UI, not to the `padding`/`min-height` two lines above, until that native
+     chrome is reset. Left alone, the visible field can render far taller than this app's
+     own 44px minimum with the locale-formatted value centred deep inside it — which reads
+     on screen as a wide gap between the label and the value, because nothing marks where
+     the field's own edge actually sits. `appearance:none` hands the box back to this
+     file's own border/background/padding/min-height, which is the standard fix for this
+     exact iOS symptom; the platform's tap-to-open picker is tied to the `type` attribute
+     itself and is unaffected by it. Desktop is untouched — every browser tested here
+     (Chromium) already renders these controls at the padding/min-height above with no
+     reset needed, so this is scoped to the one platform that does not. */
+  input[type="date"], input[type="time"], input[type="datetime-local"] {
+    -webkit-appearance: none; appearance: none;
+  }
 
   /* ⚠️ The phone-width `.pd-home-head h2` / `.pd-modulebar h1` shrink to 14px
      that stood here is GONE, not converted: the type scale has no 14px rung, so

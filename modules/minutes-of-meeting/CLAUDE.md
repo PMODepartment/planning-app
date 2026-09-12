@@ -1,5 +1,66 @@
 # Module: minutes-of-meeting
 
+## 2026-09-12 (h) — The Details tile's own ghost-label reservation, not the shared label/input rules, was the "very big" gap
+
+Owner, two phone screenshots of the same "+ Add meeting" form: *"space between recurring and
+meeting title is very big"* and *"the vertical gap between label and input box is still quite
+large as in first photo. second photo shows better tighter spacing between label and box."* The
+second photo is this module's Detail (edit) view on GPR101, offered as the tighter comparison.
+
+⚠️⚠️ **The shared label/input work done earlier the same day (parts (e)-(g), and the root-level
+"whole-app label/input pass") is NOT what's still wrong here — this is a THIRD, separate cause,
+local to the Add-meeting form alone.** `.il-am-form .pd-field > label:not(.il-am-checklabel) {
+min-height: 26px; line-height: 13px; }` (round 2, "guaranteed row alignment") reserves two lines'
+worth of height under every label in this ONE form, including the empty **ghost label**
+(`amGhostLabel()`, a bare `<label aria-hidden>` with no class, so it's caught by this same
+selector) that sits above the Favorite star, the Recurring checkbox, and — since item 7 the same
+day — the Regular/Irregular select, purely to keep each one level with a real label on the same
+row at desktop widths. Below 700px `.il-am-titlerow` can hold up to four such fields at once and a
+narrow phone can only fit the title with one or two of the icon-sized ones beside it before the
+rest wrap onto their own line — and a field alone on its own line still pays the FULL 26px
+reservation with nothing left to align with, which is exactly the "very big" gap between Recurring
+and the title above it. The same rule is also why every label in the form — real or ghost, on a
+row that never wraps at all — sits ~13px above its input with nothing visibly there: at this app's
+current `--pd-fs-micro` (10px) label size, 26px is roughly double what a single line actually
+needs.
+
+**Fix:** reset the reservation to a natural single-line label below 700px, rather than
+special-casing which rows still happen to pair up two-wide at a given width — because the ghost
+label is caught by the very same selector as the real ones, this single change also keeps the
+Favorite star's ghost label shrinking in step with Meeting title's real label whenever the two DO
+still share a line, so the alignment that still matters on a wider phone is unaffected. Scoped to
+`.il-am-form` only — the Detail/reporting form (`momFieldHTML`) never carried this reservation and
+was already tight, which is precisely why the owner's own second photo read as better.
+
+**Verified:** brace balance holds (363/363, was 361/361 — one rule + one media wrapper added);
+0 NUL bytes; `node tools/wiring-check.js` — 126/126, 0 version splits; `node tools/dead-hooks.js`
+unchanged against its documented 9-finding baseline (none of them this module's `.il-am-form`).
+⚠️ **Not verified signed in and no screenshot** — this session has no live login and no
+compositing/screenshot tool available; the fix is reasoned from the CSS cascade and the exact
+markup `openAddMeetingModal`/`amGhostLabel` emit (re-read fresh off `main`, not the stale copy this
+session started from), not observed rendered on a device.
+
+`module.css` → `?v=20260912r` (`module.js` unchanged, stays `?v=20260912l`). No shared asset
+touched, no `MODULE_V` bump.
+
+## 2026-09-12 (g) — `.il-timepair` stacks vertically on a phone, closing a real overflow the pairing fix (f) could not
+
+Owner, with a phone screenshot of the "+ Add meeting" recurring-series Schedule tile: an input box
+was overflowing past the screen edge. Full detail and the reasoning (a native `type="date"`/
+`type="time"` control's own rendering, squeezed to half a row at the mandatory 16px mobile font,
+needs more room than half a narrow phone screen gives) is in the root
+[`CLAUDE.md`](../../CLAUDE.md)'s matching entry.
+
+`.il-timepair` (f, below) correctly keeps a Start/End pair from splitting apart across a wrap —
+that fix is untouched. This is the other half: below 700px, the pair's own two fields now stack
+(`flex-direction: column`) instead of sitting side by side, so each one gets the full row width
+instead of being squeezed to half of it. Confirmed by elimination that no other date-pair row in
+the app shares this risk — every other one already wraps to full-width lines on a phone; this
+module's `.il-timepair` is the one place built to force two such controls onto one line.
+
+`module.css` → `?v=20260912p` (`module.js` unchanged, stays `?v=20260912l`).
+⚠️ **Not verified signed in.**
+
 ## 2026-09-12 (f) — Every Start/End (and series-start/-end) pair gets `.il-timepair`
 
 Detail and verification in the root [`CLAUDE.md`](../../CLAUDE.md)'s matching entry — a shared-CSS

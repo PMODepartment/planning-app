@@ -7,8 +7,8 @@
   <link rel="apple-touch-icon" href="../../assets/img/icon.png?v=20260830b" />
   <script src="../../assets/js/theme.js?v=20260910w7"></script>
   <title>Pormac · Planners Dashboard</title>
-  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260912o" />
-  <link rel="stylesheet" href="module.css" />
+  <link rel="stylesheet" href="../../assets/css/dashboard.css?v=20260912q" />
+  <link rel="stylesheet" href="module.css?v=20260912r" />
 </head>
 <body>
   <div class="pd-app">
@@ -36,26 +36,10 @@
         <div class="pmc-projctx">
           <select class="pd-select pmc-project" id="pmc-project" title="Project"></select>
         </div>
-        <div class="pmc-tabs" role="tablist">
-          <button class="pmc-tab active" data-view="chat">Chat</button>
-        </div>
-        <div class="pmc-topbar-tools">
-          <button class="pd-btn" id="pmc-new" title="Start a new conversation">New chat</button>
-          <button class="pd-btn" id="pmc-settings" title="Who can use Pormac" style="display:none;">
-            <span data-ico="settings" data-ico-size="16"></span>
-          </button>
-        </div>
         <div id="user-bar"></div>
       </div>
       <div class="pd-main pmc-main">
-        <!-- Blocked / not-enabled state -->
-        <div class="pd-card pmc-blocked" id="pmc-blocked" style="display:none;">
-          <span data-ico="botChat" data-ico-size="28"></span>
-          <h3>Pormac isn't turned on for your account yet</h3>
-          <p id="pmc-blocked-msg" class="pmc-muted">Ask an admin to enable it for everyone, or add you to the allow-list.</p>
-        </div>
-
-        <div class="pmc-chrome" id="pmc-chrome" style="display:none;">
+        <div class="pmc-chrome" id="pmc-chrome">
           <div class="pmc-tierbar" id="pmc-tierbar"></div>
           <div class="pmc-thread" id="pmc-thread"></div>
           <div class="pmc-composer">
@@ -76,9 +60,9 @@
   <script src="../../assets/js/config.js?v=20260912a"></script>
   <script src="../../assets/js/auth.js?v=20260901b"></script>
   <script src="../../assets/js/db.js?v=20260909n"></script>
-  <script src="../../assets/js/ui.js?v=20260909s"></script>
+  <script src="../../assets/js/ui.js?v=20260912a"></script>
   <script src="../../assets/js/icons.js?v=20260912i"></script>
-  <script src="module.js"></script>
+  <script src="module.js?v=20260912r"></script>
   <script>
     AppAuth.requireLogin(function (user, profile) {
       UI.renderUserBar(profile);
