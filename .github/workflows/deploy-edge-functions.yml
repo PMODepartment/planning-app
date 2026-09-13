@@ -1,0 +1,143 @@
+# Deploy Supabase Edge Functions
+# -----------------------------------------------------------------------------
+# ⚠️ WHY THIS EXISTS: every function under supabase/functions/ could previously
+# only be deployed from a developer's own machine with the Supabase CLI. So a
+# merged change to an Edge Function did NOT reach production — pormac-chat sat
+# undeployed for a day while the module it serves was live, and the module had
+# to say so on screen. A repo whose only deploy path is somebody's laptop has no
+# deploy path on the days that laptop is shut.
+#
+# SETUP (once, and it is the only manual step):
+#   1. supabase.com/dashboard/account/tokens → Generate new token
+#   2. This repo → Settings → Secrets and variables → Actions → New repository
+#      secret, named SUPABASE_ACCESS_TOKEN
+# Both pages work in a phone browser.
+#
+# ⚠️ PROVIDER SECRETS ARE NOT SET HERE. GROQ_API_KEY and friends live in
+# Supabase (Edge Functions → Secrets), never in GitHub — this workflow ships
+# code, and a key added here would be a second place for one to go stale.
+#
+# HOW IT RUNS:
+#   · push to main touching supabase/functions/** → deploys ONLY the functions
+#     that changed in that push
+#   · Actions → this workflow → Run workflow → deploys whatever you name
+#     (one function, or "all") — two taps from a phone
+# -----------------------------------------------------------------------------
+name: Deploy Edge Functions
+
+on:
+  push:
+    branches: [main]
+    paths: ['supabase/functions/**']
+  workflow_dispatch:
+    inputs:
+      function:
+        description: 'Function to deploy, or "all"'
+        required: true
+        default: 'pormac-chat'
+        type: string
+
+# ⚠️ One deploy at a time, and a queued run is NOT cancelled. Cancelling the
+# in-flight one would leave a half-pushed function; cancelling the queued one
+# would silently drop somebody's merge.
+concurrency:
+  group: deploy-edge-functions
+  cancel-in-progress: false
+
+env:
+  # Public already — it is the same ref in assets/js/config.js, which ships to
+  # every browser. A secret here would imply it is one.
+  PROJECT_REF: bgupuqnkqhixpuctyder
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # ⚠️ Two commits, so the push path can diff HEAD against its parent.
+          # At depth 1 there is no parent and every push would deploy nothing.
+          fetch-depth: 2
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Work out which functions to deploy
+        id: pick
+        # ⚠️⚠️ EVERY GitHub expression reaches this script through `env:`, never
+        # interpolated into the script body. `REQ='${{ inputs.function }}'` is
+        # substituted BEFORE bash parses the line, so a function name containing
+        # a quote would close the string and run whatever follows it — the
+        # standard Actions script-injection hole. Through env the value is data
+        # bash never re-parses. It also makes this step runnable outside CI by
+        # setting the same four variables, which is how it was tested.
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT: ${{ inputs.function }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            REQ="$INPUT"
+            if [ "$REQ" = "all" ]; then
+              FNS=$(ls supabase/functions)
+            else
+              # ⚠️ Validated against the directory rather than passed straight
+              # to the CLI: a typo would otherwise fail deep in the deploy with
+              # a message that reads like a Supabase outage.
+              if [ ! -d "supabase/functions/$REQ" ]; then
+                echo "::error::No such function: $REQ. Available: $(ls supabase/functions | tr '\n' ' ')"
+                exit 1
+              fi
+              FNS="$REQ"
+            fi
+          else
+            # Only what this push actually touched. Deploying all eight on any
+            # change would redeploy seven functions nobody edited.
+            # ⚠️ `before` is unreachable after a force-push, and at fetch-depth 2
+            # it can be unfetched; fall back to this commit's own first parent
+            # rather than letting the diff fail into "nothing changed", which
+            # would silently skip a real deploy.
+            BASE="$BEFORE"
+            if ! git rev-parse --verify --quiet "$BASE^{commit}" >/dev/null; then
+              BASE=$(git rev-parse --verify --quiet 'HEAD^' || echo '')
+            fi
+            if [ -z "$BASE" ]; then
+              echo "::warning::Could not resolve a base commit to diff against — deploying nothing. Use Run workflow to deploy by hand."
+              FNS=""
+            else
+              FNS=$(git diff --name-only "$BASE" "$SHA" -- supabase/functions/ \
+                | awk -F/ '{print $3}' | sort -u | grep -v '^$' || true)
+            fi
+          fi
+          if [ -z "$FNS" ]; then
+            echo "::notice::No Edge Function changed — nothing to deploy."
+          fi
+          echo "list<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$FNS" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy
+        if: steps.pick.outputs.list != ''
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          FN_LIST: ${{ steps.pick.outputs.list }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then
+            echo "::error::SUPABASE_ACCESS_TOKEN is not set. See this file's header for the two setup steps."
+            exit 1
+          fi
+          while read -r fn; do
+            [ -z "$fn" ] && continue
+            echo "::group::$fn"
+            # ⚠️ verify_jwt stays ON (the CLI default). pormac-chat trusts the
+            # caller's `sub` claim precisely BECAUSE the platform has already
+            # signature-checked the token — turning it off would accept a forged
+            # one. Never add --no-verify-jwt here without reading that function.
+            supabase functions deploy "$fn" --project-ref "$PROJECT_REF"
+            echo "::endgroup::"
+          done <<< "$FN_LIST"
+          echo "Deployed: $(echo "$FN_LIST" | tr '\n' ' ')"

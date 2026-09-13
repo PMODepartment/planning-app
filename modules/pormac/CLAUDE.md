@@ -6,6 +6,26 @@ can't do that. One entry per prompt, newest first.
 
 ---
 
+## 2026-09-13 (c) — The hosted path gets a deploy route that is not a laptop
+
+`supabase functions deploy pormac-chat` has been the standing caveat on every entry below since this
+module launched: until it runs with a `GROQ_API_KEY`, the hosted path does not exist and every planner
+falls back to the on-device model — the state that produced *"the model is not so smart"*.
+
+The blocker was never the command; it was that **the repo had no `.github/workflows/` at all**, so the
+only way to run it was a developer's own machine with the Supabase CLI. New
+`.github/workflows/deploy-edge-functions.yml` (covering all eight functions, not just this one) makes it
+**Actions → Run workflow**, which is reachable from a phone. Reasoning, the injection defect found in my
+own first cut, and the 7-case execution proof: the root [`CLAUDE.md`](../../CLAUDE.md) entry.
+
+⚠️ **The caveat is NOT discharged yet.** Two things still gate it, and both are the owner's:
+`SUPABASE_ACCESS_TOKEN` as a GitHub Actions secret, and `GROQ_API_KEY` as a Supabase Edge Function
+secret. The workflow ships code; it never sets a provider key, because a key in two places is a key that
+goes stale in one of them.
+⚠️ **`verify_jwt` stays ON.** This function trusts the caller's `sub` claim *because* the platform has
+already signature-checked the token — a deploy with `--no-verify-jwt` would make it accept a forged one.
+The workflow carries that warning beside its deploy line and passes no such flag.
+
 ## 2026-09-13 (b) — "Simplify what you edited": one tier table, and two bugs that fell out of it
 
 Owner, on the two changes above: *"can you simplify what you edited."* A quality pass over the same

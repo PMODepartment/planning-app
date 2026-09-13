@@ -102,6 +102,63 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-13 (c) — The Edge Functions had no deploy path but somebody's laptop
+
+Owner, on the standing Pormac caveat: *"how to address issue 3"* — the hosted model being unreachable
+because `pormac-chat` has never been deployed. **New `.github/workflows/deploy-edge-functions.yml`.
+No shipped asset changed, so no `MODULE_V` bump.**
+
+⚠️⚠️ **THE GAP IS WIDER THAN PORMAC AND THAT IS THE FINDING.** The repo carries **eight** Edge
+Functions — `pormac-chat`, `sync-wpm`, `sync-eng`, three `push-*`, two reconstruction endpoints — and
+`.github/workflows/` **did not exist**. Every one of them could only ever be deployed by a developer
+running the Supabase CLI on their own machine, so a merged change to an Edge Function did **not** reach
+production: `pormac-chat` sat undeployed for a day while the module it serves was live, and the module
+had to say so on screen. A repo whose only deploy path is somebody's laptop has no deploy path on the
+days that laptop is shut, and the owner is on a phone.
+
+- **Two triggers, one job.** A push to `main` touching `supabase/functions/**` deploys **only the
+  functions that changed in that push** — ⚠️ deploying all eight on any change would redeploy seven
+  nobody edited. And `workflow_dispatch` takes a name or `all`, which is two taps from a phone and the
+  only route that does not need a terminal.
+- ⚠️⚠️ **EVERY GitHub expression reaches the script through `env:`, never interpolated into the body.**
+  The first cut wrote `REQ='${{ inputs.function }}'` — substituted **before** bash parses the line, so a
+  name containing a quote closes the string and runs what follows: the standard Actions
+  script-injection hole, written by me and caught by executing the step rather than reading it.
+  ⚠️ It also makes the step **runnable outside CI** by setting the same four variables, which is how
+  the seven cases below were driven.
+- ⚠️ **A name is validated against the directory before it reaches the CLI** — a typo would otherwise
+  fail deep inside the deploy with a message that reads like a Supabase outage.
+- ⚠️ **`fetch-depth: 2`, and the base commit is verified before the diff.** At depth 1 there is no
+  parent and every push would deploy nothing; after a force-push `github.event.before` is unreachable,
+  so it falls back to this commit's own first parent rather than letting the diff fail into *"nothing
+  changed"* and silently skipping a real deploy.
+- ⚠️ **`concurrency` does NOT cancel in progress.** Cancelling the in-flight run leaves a half-pushed
+  function; cancelling the queued one silently drops somebody's merge.
+- ⚠️⚠️ **`verify_jwt` STAYS ON — the CLI default, with no `--no-verify-jwt` anywhere.** `pormac-chat`
+  trusts the caller's `sub` claim **because** the platform has already signature-checked the token
+  (`index.ts:147`), so that flag would make it accept a forged one. The file carries the warning beside
+  the deploy line; grep confirms the string appears **once, in that comment, never in a command**.
+- ⚠️ **Provider secrets are deliberately NOT set here.** `GROQ_API_KEY` lives in Supabase, not GitHub —
+  this workflow ships code, and a key added here would be a second place for one to go stale.
+
+**Verified by execution, not by reading.** The two `run:` blocks were **sliced verbatim out of the
+shipped YAML** and driven: the picker across **7 cases** — one function, `all` (8), a typo (exit 1,
+naming what exists, nothing deployed), a push that touches a function (`pormac-chat`, diffed over the
+real `7a0a476..4426a9f`), a push that touches none, an unreachable base, and an injection attempt
+(`x'; echo PWNED; '` — refused as a name, **PWNED never printed**); the deploy loop against a stub CLI
+— a missing token refuses with exit 1 rather than deploying, and two functions each emit the right
+command. YAML parses, both blocks pass `bash -n`, **0** GitHub expressions remain inside any script
+body.
+
+⚠️ **ONE MANUAL STEP REMAINS AND IT IS THE OWNER'S.** Settings → Secrets and variables → Actions →
+`SUPABASE_ACCESS_TOKEN` (generate at supabase.com/dashboard/account/tokens). Both pages work in a phone
+browser. Until that secret exists the workflow refuses with the reason rather than half-deploying.
+⚠️ **And `workflow_dispatch` only appears in the Actions tab once this file is on `main`** — on a
+branch it is invisible, so the first run has to wait for the merge.
+
+⚠️ **Not verified against a real deploy.** Egress to Supabase is blocked from here, so what is proved
+is the workflow's own logic executed against a stub; no function has been deployed by it.
+
 ### The landing page renames itself, gets a version line, and asks to "Select Project" (2026-09-13)
 
 Owner, off a screenshot of `home.html`'s "Select Dashboard" card:
