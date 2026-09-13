@@ -102,6 +102,34 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### The landing page renames itself, gets a version line, and asks to "Select Project" (2026-09-13)
+
+Owner, off a screenshot of `home.html`'s "Select Dashboard" card:
+1. *"Planners Dashboard should be Planning Suite"*
+2. *"Below Planning Suite, specify v1.0.X. X depending on the number of changes which will be
+   changed by Claude per PR merge"*
+3. *"instead of select dashboard, select project"*
+
+Scoped to this one page — the sidebar's own brand block (a separate element, already reading
+"PLANNING SUITE" as its caption per the 2026-09-09 (x) entry) is untouched.
+
+1. `.pd-home-brandname` text: **Planning Suite**.
+2. New `APP_CONFIG.VERSION` (`assets/js/config.js`) is the single source of truth for the
+   number — `v1.0.1` on this PR. ⚠️ Nothing else in the app reads or derives it yet; it exists
+   purely for this line. Read into a new `.pd-home-version` div directly at script start (before
+   the `AppAuth.requireLogin` round-trip, since `config.js` has already run by then). ⚠️ Bumping
+   the patch digit on every merged PR is a manual convention, not something the code enforces —
+   there is no CI hook counting merges, so it is Claude's job to increment it each time this file
+   changes as part of a PR.
+3. `.pd-home-title` text: **Select Project**.
+
+**Verified:** inline `<script>` extracted and parsed clean; `<style>` brace balance holds
+(33/33); 0 NUL bytes; `node tools/wiring-check.js` — 126/126, 0 version splits.
+⚠️ **Not verified signed in** — no live login is possible in this environment; the version line
+is confirmed to read from `APP_CONFIG.VERSION` by source inspection, not observed rendered.
+
+`assets/js/config.js?v=` → `20260913a` (29 referencing pages, shared asset).
+
 ### The site plan expands to full screen, like every other card (2026-09-13) — ethanrobles10
 
 Owner: *"add a full screen also for the site"*

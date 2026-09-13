@@ -22,6 +22,11 @@ window.APP_CONFIG = {
   // ---- App ----
   APP_NAME: 'Planners Dashboard',
   ORG: 'Megawide Construction Corporation',
+  // Shown on the landing page (home.html) under "Planning Suite". Bumped by
+  // Claude with each merged PR — the middle number (minor) is reserved for a
+  // deliberate release milestone; the last number (patch) is the per-PR count.
+  // Single source of truth: nothing else in the app reads or derives this.
+  VERSION: 'v1.0.1',
 
   // ---- Phase 1 modules (the module launcher reads this list) ----
   // `key`   — folder name under /modules and DB table prefix

@@ -26,6 +26,7 @@
     .pd-home-mark { display: block; height: 46px; width: auto; margin: 0 auto 10px; }
     .pd-home-brandname { color: var(--pd-red); font-weight: 800; font-size: var(--pd-fs-stat); letter-spacing: .01em; }
     .pd-home-brandsub { color: var(--pd-muted); font-size: var(--pd-fs-xs); margin-top: 2px; }
+    .pd-home-version { color: var(--pd-muted); font-size: var(--pd-fs-micro); margin-top: 2px; opacity: .7; }
 
     .pd-home-title { text-align: center; font-size: var(--pd-fs-stat); font-weight: 800; color: var(--pd-ink);
       margin: 18px 20px 2px; }
@@ -91,10 +92,11 @@
           <div class="pd-home-card">
             <div class="pd-home-brand">
               <img class="pd-home-mark" src="assets/img/favicon.png" alt="Megawide">
-              <div class="pd-home-brandname">Planners Dashboard</div>
+              <div class="pd-home-brandname">Planning Suite</div>
+              <div class="pd-home-version" id="home-version"></div>
               <div class="pd-home-brandsub">Megawide Construction Corporation</div>
             </div>
-            <div class="pd-home-title">Select Dashboard</div>
+            <div class="pd-home-title">Select Project</div>
             <div class="pd-home-greet" id="home-greet"></div>
             <div class="pd-home-sub">Select the Portfolio, or a project under its Group Head, to continue.</div>
 
@@ -112,13 +114,19 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="assets/js/config.js?v=20260912a"></script>
+  <script src="assets/js/config.js?v=20260913a"></script>
   <script src="assets/js/auth.js?v=20260901b"></script>
   <script src="assets/js/db.js?v=20260909n"></script>
   <script>
   (function () {
     var esc = (window.Fmt && Fmt.esc) || function (s) { return String(s == null ? '' : s); };
     var PROJECTS = [], GROUP_HEADS = [];
+
+    // config.js (loaded above) already assigned window.APP_CONFIG by the time
+    // this block runs, so the version can be set immediately rather than
+    // waiting on the auth round-trip below.
+    document.getElementById('home-version').textContent =
+      (window.APP_CONFIG && APP_CONFIG.VERSION) || '';
 
     function firstName(profile) {
       var label = profile.name || profile.email || '';
