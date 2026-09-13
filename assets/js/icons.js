@@ -97,6 +97,13 @@
     pulse:       '<path d="M3 12h4l2-8 4 16 2-8h6"/>',
     undo:        '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
     redo:        '<path d="M15 14l5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/>',
+    // A recurring/cyclical schedule — two bracket-shaped arrows facing opposite
+    // directions, forming a loop. Deliberately distinct from `refresh` (a single
+    // circular double-arrow used for "reload the data on this screen"): the two
+    // read as different verbs even though both involve arrows in a loop, and
+    // this app's own history records that overloading one glyph for two
+    // meanings is a trap ("eye" vs "slides" for view-vs-present).
+    repeat:      '<polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>',
     printer:     '<polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8" rx="1"/>',
     layout:      '<rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/>',
     columns:     '<rect x="3" y="4" width="18" height="16" rx="1"/><line x1="9" y1="4" x2="9" y2="20"/><line x1="15" y1="4" x2="15" y2="20"/>',

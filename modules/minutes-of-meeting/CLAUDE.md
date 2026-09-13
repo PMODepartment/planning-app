@@ -1,5 +1,70 @@
 # Module: minutes-of-meeting
 
+## 2026-09-13 — Recurring becomes a tinted cycle-icon toggle, matching the star; the Meetings List drops its "Recurring" label for the same icon
+
+Owner, off the "+ Add meeting" screenshot: *"the recurring button is still off. to fix, beside the
+star, we could have a cycle fill as well. if filled meeting is recurring."* Then: *"in meetings
+list, no need to label the column as recurring. instead of checkbox, if meeting is recurring, just
+show the cycle icon."*
+
+**The "off" complaint was real, and it is the same defect the favorite field had before it became a
+star.** `#il-am-recur` was a bare `<input type="checkbox">` plus a text label — small, low-contrast
+chrome that reads as barely different from unticked at a glance, especially beside a 34px-tall
+title input and star. `amRecurBtnHTML(on)` replaces it with a button holding the new `repeat` icon
+(`assets/js/icons.js`), wired exactly like `amFavBtnHTML`/`wireFavBtn`: click toggles `data-on`,
+swaps its own `outerHTML`, re-hydrates the icon, and (unlike the star) also re-runs
+`updateAmScheduleVis()` since the recurring state still gates the Schedule tile and the Date/Venue
+row.
+
+⚠️⚠️ **"Filled" is a colour, not a second glyph.** Every icon in this app's shared set
+(`assets/js/icons.js`) is a stroke-only outline drawn through one `svg()` wrapper with `fill="none"`
+— there is no separate solid/filled variant of anything to swap in on click. The star already
+solved this the same way (★/☆ are two literal characters, but its `.on` state is still just a
+colour change to gold); the recurring toggle reuses that exact idiom — one icon, `.on` tints it
+`var(--pd-red)`, `:hover` (off state) tints `var(--pd-ink)`.
+
+⚠️⚠️ **A new `repeat` icon, deliberately NOT the existing `refresh` glyph.** `refresh` already
+means "reload the data on this screen" (the module's own topbar Reload button uses it) — reusing
+it for "this meeting recurs" would be the exact icon-overloading trap this app's own history
+records for `eye` vs `slides` (view vs present read as different verbs even though both involve a
+related motion). `repeat` is Feather's classic two-bracket-arrow loop glyph, visually distinct from
+`refresh`'s single circular double-arrow.
+
+**Three read sites updated from `.checked` to `dataset.on === '1'`** (`updateAmScheduleVis`,
+`saveAddMeeting`'s `isRecur`), since the state now lives on a button attribute, not a checkbox
+property. ⚠️⚠️ **`updateAmScheduleVis` re-queries `#il-am-recur` fresh on every call, rather than
+closing over a variable captured once** — the button's `outerHTML` is replaced on every click (same
+as the star), so a captured reference would point at a detached node after the first toggle. The
+same trap this app's own history already recorded for the star elsewhere (a stale reference to a
+swapped-out node reading its old, frozen state forever).
+
+⚠️ **`.il-am-checklabel` is deleted, not left dead.** It existed for exactly one thing — the
+recurring checkbox's `<label>` — which no longer renders; the two `:not(.il-am-checklabel)`
+exclusions on `.il-am-form .pd-field > label` (added 2026-09-12 (h), same day as the ghost-label
+fix) are simplified back to a bare selector, since nothing can match the excluded class any more.
+
+**The Meetings List column loses its text label and its checkbox.** The `<th>` renders empty (a
+`title` still names the column for a hover/screen reader); the `<td>` renders the same `repeat`
+icon — tinted `var(--pd-red)`, matching the toggle button's "on" colour — only when `r.recurring`,
+and nothing at all for a one-time meeting. Still read-only by construction, exactly as the checkbox
+was: nothing on this screen can toggle it; see `momHistorySectionHTML`/`createNextOccurrence` for
+the only way a meeting actually becomes recurring.
+
+### Verified
+`node --check` clean on `module.js` and `assets/js/icons.js`; CSS braces balanced (366/366);
+0 NUL bytes; `Icons.svg('repeat', 18)`/`Icons.names` confirmed to include the new glyph by loading
+the shipped file directly; every new class (`.il-mom-recic`, `.il-am-recurfield`,
+`.il-mom-recurbtn`) resolves to a rule in `module.css`; `node tools/wiring-check.js` — 126/126,
+0 version splits; `node tools/dead-hooks.js` — unchanged against its documented 9-finding baseline.
+
+⚠️ **Not verified signed in** — no live login is possible in this environment; the toggle's click
+handler and the list's conditional icon are reasoned from the markup and CSS, not observed
+rendered or clicked on a device.
+
+`module.css`/`module.js?v=` → `20260913a`; shared `assets/js/icons.js?v=` → `20260913a` (23
+referencing pages); `MODULE_V` (via `modules-grid.js?v=` on `dashboard.html`/`modules.html`) →
+`20260913a`.
+
 ## 2026-09-12 (h) — The Details tile's own ghost-label reservation, not the shared label/input rules, was the "very big" gap
 
 Owner, two phone screenshots of the same "+ Add meeting" form: *"space between recurring and
