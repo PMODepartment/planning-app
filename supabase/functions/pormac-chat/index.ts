@@ -90,9 +90,24 @@ const MODEL_CHAIN = [
 // A model-level rejection (dead id, no entitlement) is worth retrying on the
 // next model; a rate limit or a server fault is NOT — retrying those just burns
 // the same quota against a different model for the same result.
-const MODEL_DEAD = (status: number, body: string) =>
-  (status === 400 || status === 404) &&
-  /model|decommission|deprecat|does not exist|not found/i.test(body);
+//
+// ⚠️⚠️ CLASSIFIED BY THE PROVIDER'S OWN ERROR CODE, NOT BY ITS PROSE. The first
+// cut matched /model|decommission|deprecat|…/ against the response text, and the
+// bare word "model" appears in errors that have nothing to do with a dead id —
+// `max_tokens exceeds the model's limit`, a malformed `messages` array naming
+// the model. Those would burn the entire chain re-asking three models the same
+// bad question and then report the LAST model's error, turning a client-side
+// bug into what looks like a provider outage. Groq is OpenAI-compatible and
+// returns {error:{code}}, so the code is authoritative; the regex survives only
+// as a last resort for a provider that sends no code.
+const MODEL_DEAD = (status: number, body: string) => {
+  if (status !== 400 && status !== 404) return false;
+  try {
+    const code = JSON.parse(body)?.error?.code;
+    if (code) return /model_not_found|model_decommissioned|does_not_exist/i.test(String(code));
+  } catch { /* not JSON — fall through to the prose check below */ }
+  return /decommission|deprecat|does not exist|no such model/i.test(body);
+};
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -128,13 +143,13 @@ Deno.serve(async (req) => {
     auth: { persistSession: false },
     global: { headers: { Authorization: "Bearer " + auth } },
   });
-  const { data: canUse, error: cuErr } = await asUser.rpc("pormac_can_use");
-  if (cuErr) return json({ error: "Access check failed: " + cuErr.message }, 500);
-  if (!canUse) return json({ error: "Pormac is not enabled for your account yet." }, 403);
 
   // Trust the `sub` claim of a JWT the platform has already signature-checked
   // (verify_jwt=true) — the same shortcut sync-wpm/sync-eng take to avoid a
   // second GoTrue round trip that trips over disabled legacy keys.
+  // ⚠️ Parsed BEFORE either query starts. Starting the access-check RPC first
+  // and then returning 401 here would abandon an in-flight promise nobody
+  // awaits — a floating rejection on the one path that is already an error.
   let uid: string | null = null;
   try {
     const seg = auth.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
@@ -145,8 +160,16 @@ Deno.serve(async (req) => {
   // ---- Per-user daily cap (service role — the only writer of this table) ---
   const admin = createClient(PL_URL, PL_SERVICE, { auth: { persistSession: false } });
   const today = new Date().toISOString().slice(0, 10);
-  const { data: usageRow } = await admin.from("pormac_usage")
-    .select("remote_calls").eq("user_id", uid).eq("day", today).maybeSingle();
+  // ⚠️ The access check and the usage read are INDEPENDENT — the usage row is
+  // keyed on the uid parsed above, not on anything the RPC returns. Sequenced,
+  // they put two Postgres round trips end to end in front of every probe, which
+  // is what the planner's first message blocks on.
+  const [{ data: canUse, error: cuErr }, { data: usageRow }] = await Promise.all([
+    asUser.rpc("pormac_can_use"),
+    admin.from("pormac_usage").select("remote_calls").eq("user_id", uid).eq("day", today).maybeSingle(),
+  ]);
+  if (cuErr) return json({ error: "Access check failed: " + cuErr.message }, 500);
+  if (!canUse) return json({ error: "Pormac is not enabled for your account yet." }, 403);
   const used = usageRow?.remote_calls || 0;
   if (used >= DAILY_REMOTE_CAP) return json({
     code: "quota",
@@ -170,11 +193,11 @@ Deno.serve(async (req) => {
   // planner types anything — the alternative is a failed first message and a
   // 2GB model download starting underneath it.
   if (body?.probe) {
-    return json({
-      ok: true, configured: true, model: models[0],
-      used_today: used, cap: DAILY_REMOTE_CAP,
-      remaining_today: Math.max(0, DAILY_REMOTE_CAP - used),
-    });
+    // ⚠️ Only what a caller reads. This used to answer `configured`, `model`,
+    // `used_today` and `cap` as well — none of which any client ever read, and
+    // `model` was a guess anyway (it named the head of the chain, not whichever
+    // model would actually end up answering).
+    return json({ ok: true, remaining_today: Math.max(0, DAILY_REMOTE_CAP - used) });
   }
 
   const messages = Array.isArray(body?.messages) ? body.messages : null;
@@ -191,7 +214,7 @@ Deno.serve(async (req) => {
   // model-level rejection advances to the next one — a 429 or a 5xx is the
   // provider telling us to stop, and re-asking with a different model would
   // spend the same quota to be refused again.
-  let out: any = null, usedModel = "", lastErr = "", lastStatus = 502;
+  let out: any = null, usedModel = "", lastErr = "", lastStatus = 502;  // 502 only if models[] were ever empty
   for (const model of models) {
     let resp: Response;
     try {

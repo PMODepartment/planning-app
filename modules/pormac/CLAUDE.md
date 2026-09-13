@@ -6,6 +6,120 @@ can't do that. One entry per prompt, newest first.
 
 ---
 
+## 2026-09-13 (b) — "Simplify what you edited": one tier table, and two bugs that fell out of it
+
+Owner, on the two changes above: *"can you simplify what you edited."* A quality pass over the same
+diff — reuse, simplification, efficiency, altitude — not a bug hunt. **Two real defects came out of
+it anyway, and both were invisible in the code as written.**
+
+### ⚠️⚠️ THE TIER FACTS LIVED IN SIX PARALLEL TERNARY CHAINS, AND THAT SHAPE HID THE BUGS
+`local-max` / `local-full` / `local-lite` / `remote` had their label, model patterns, VRAM ceiling,
+context cap, history depth and downgrade position each written as its own independent
+`tier === '…' ? … : tier === '…' ? …` chain, scattered across ~400 lines. Adding a rung meant editing
+six places; every chain had its own silent `else`; and no single chain was wrong enough to notice.
+They are now **one `TIERS` table, one row per rung**, read through one `rung(id)` lookup.
+
+**Two defects were a direct consequence of that shape, not of any one line:**
+
+- ⚠️⚠️ **`downgrade()` UPGRADED on an unrecognised tier.** It did `order.indexOf(tier)`, and
+  `indexOf` answers **-1** for anything not in the list, so `Math.min(-1 + 1, 3)` is **0** — the
+  heaviest 8B rung. A local failure could therefore promote a planner to the *largest* local model,
+  which is the opposite of "slow down instead of crash" and would fail again immediately. Now
+  `(i < 0 ? 0 : i) + 1`, clamped at `'remote'` — ⚠️ never past it into `'none'`, because a GPU
+  running out of memory says nothing about whether the hosted path works.
+- ⚠️⚠️ **A stale `pormac_tier_override` flowed in unvalidated.** `detectCapability()` returned
+  `localStorage.getItem(...)` verbatim, so a key left by an older build (or hand-edited) became the
+  tier and landed in every chain's else-branch while the bar read *"Choosing a model…"* forever. It
+  is validated against `TIER_IDS` now, and `rung()` fails **closed** — an unknown id falls back to
+  the **smallest** local rung, never the largest, because the safe guess when you do not know what a
+  device can take is the one that asks least of it.
+
+### ⚠️ `none` becomes a REAL tier, which closes a path that was already reachable
+`tierBroken` was a boolean beside the tier, and **only the tier BAR honoured it**. `onSend` did not:
+with no WebGPU and the hosted path unreachable, the bar correctly read *"No model available — the
+cloud assistant has not been deployed yet"* and a send still went down a path already known to be
+dead, replacing that diagnosis with a generic *"something went wrong"*. It is now a row in the table
+with an `onSend` guard, so the planner keeps the one line that says what to fix.
+
+### The rest, each a duplication or a waste rather than a defect
+- **One Edge Function caller.** `probeRemote` and `sendRemote` carried the same six lines character
+  for character — the session-token walk, the URL literal, both headers, the empty-object JSON guard
+  — so the function's route name and that guard each had two owners. `callPormacChat(payload,
+  timeoutMs)` is the one caller; each keeps only its own error mapping. ⚠️ The timeout is **not**
+  applied to a real message: a 70B reply can legitimately take a while, and aborting one would be
+  worse than waiting.
+- ⚠️ **The probe is bounded at 3s, and `onSend` blocks on it.** Unbounded, a captive portal or a
+  function that hangs rather than 404s stalls the first Enter press for the browser's whole network
+  timeout — in a module whose whole point is that a local model can answer with no network at all.
+- ⚠️⚠️ **`renderTierBar` stopped destroying the Quality control on every repaint, and that is a fix
+  rather than an optimisation.** It rewrote the bar's whole `innerHTML` including the `<select>`, and
+  WebLLM's `initProgressCallback` fires once per downloaded shard — so during a first-time load (a
+  ~5GB download on the large rung) the control was rebuilt every few hundred milliseconds, dropping
+  focus and closing its dropdown mid-click, at exactly the moment a planner would want to escape a
+  slow local model. Status text and the busy dot are mutated in place; controls are re-emitted only
+  when the preference or the downgrade flag genuinely differs.
+- **`resolveTier` is an ordered walk, not nested ifs.** The preference chooses an ORDER (`['local',
+  'remote']` or the reverse), so the probe call and the reason-building exist once instead of twice,
+  and *"nothing worked"* falls out of exhausting the list rather than needing a separate flag. The
+  reasons now compose: *"this device cannot run a local model — 197 cloud messages left today."*
+- **Edge Function.** ⚠️⚠️ `MODEL_DEAD` matched the bare word **"model"** in the response prose, which
+  appears in errors that have nothing to do with a dead id (`max_tokens exceeds the model's limit`, a
+  malformed `messages` array). Those would have burned the whole three-model chain re-asking the same
+  bad question and then reported the LAST model's error — turning a client-side bug into what looks
+  like a provider outage. Groq is OpenAI-compatible and returns `{error:{code}}`, so the **code** is
+  authoritative; the regex survives only as a fallback for a provider that sends none. The access
+  check and the usage read are now `Promise.all` (independent — the usage row is keyed on the uid, not
+  on anything the RPC returns), which takes two Postgres round trips out of the front of every probe;
+  ⚠️ the uid is parsed **before** either query starts, so the 401 path cannot abandon an in-flight
+  promise. The probe response drops `configured` / `model` / `used_today` / `cap` — no client read any
+  of them, and `model` was a guess anyway (it named the head of the chain, not whichever model would
+  actually answer).
+- **CSS.** ⚠️⚠️ `.pmc-quality + button.pd-btn-sm { margin-left: 0 }` was **inert**: it ties on
+  specificity with `.pmc-tierbar button.pd-btn-sm { margin-left: auto }`, which is declared later and
+  wins. Two auto margins then split the free space — the "select floating in the middle" the comment
+  above it claimed to have fixed. It only ever looked right because the reset button is absent unless
+  the planner has been downgraded, and my own browser check never covered that state. The old rule is
+  **deleted** rather than cancelled: the select renders unconditionally, so it is the only anchor
+  needed.
+
+### Verified
+**41 context assertions, 0 failing** — including **21 new equivalence assertions** proving the
+simplify pass left behaviour byte-identical to the pre-simplify commit (`promptMessages` history depth
+and `gatherContext` module cap, per tier, against the old ternaries executed from that commit), plus
+the **5 original contrast assertions** against the pre-feature commit, which still bite. ⚠️ Both bases
+are pinned to **SHAs**, never `HEAD` — `HEAD` stopped meaning "before this work" the moment the
+feature commit landed, and two assertions had quietly become self-comparison before that was caught.
+
+**11 new browser assertions** on the three new behaviours: the `<select>` node **survives 50 repaints**
+(witness attribute intact, exactly one select, controls signature recorded), the probe fetch carries an
+`AbortSignal`, the composer is typable while the probe hangs, and `tier === 'none'` refuses the send
+with the diagnosis while sending **0** messages. **All 9 tier-resolution paths** re-run green with
+composing reasons and 0 page errors.
+
+**The tier bar was measured before and after against the pre-simplify build** and is
+**byte-identical** — same height (51px), same row count, same pill and Quality rects to the pixel, same
+text. An always-present but empty `.pmc-tierwhy` collapses to width 0 and the Quality control stays
+flush right, so the extra flex gap costs nothing.
+
+`node --check` clean; the Edge Function parses (esbuild); `module.css` braces 29/29; 0 NUL bytes;
+`tools/wiring-check.js` **126/126, 0 version splits**; `tools/dead-hooks.js` unchanged at its
+documented 9-finding baseline.
+
+⚠️ **Not verified signed in, and the owner action from the entry above still gates everything.** Until
+`supabase functions deploy pormac-chat` has run and `GROQ_API_KEY` is set, the hosted path does not
+exist and every planner falls back to the on-device model.
+
+⚠️ **Skipped deliberately, with reasons:** querying Groq's `/models` catalogue to validate the chain
+(adds a network call plus a cache to the Edge Function, and egress to Groq is blocked from here so it
+could not be verified); re-reading `pormac_tier_override` as a *ceiling* rather than an override (a
+behaviour change, and it adds more than it removes); caching the probe result in `sessionStorage` (a
+cache-invalidation hazard exactly when the owner deploys the function); migrating to
+`sb().functions.invoke()` (the probe needs the HTTP **status** and `body.code`, which `invoke()` does
+not surface cleanly — the reuse review said so itself); and removing the `PORMAC_MAX_PROMPT_CHARS`
+guard, which is a safety limit whose removal could not be verified here.
+
+---
+
 ## 2026-09-13 — "The model is not so smart": the better the laptop, the worse the model
 
 Owner: *"pormac is working already, but the model is not so smart."*
