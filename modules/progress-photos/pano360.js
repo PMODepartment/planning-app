@@ -129,21 +129,45 @@
 // real phone than the previous 14-40 frame range — expected and accepted as
 // the direct cost of the requested density, not a regression to silently
 // walk back.
+// ⚠️⚠️ 2026-09-13 (later still — "since it's taking too long to process and
+// stitch an image, divide video to a fixed 48 frames per process"): the
+// 30fps/up-to-1200-frame density above (2026-09-12) fixed the real overlap/
+// join-density problem, but its honest cost — stated plainly in that same
+// entry — was that a real walk-around recording is several hundred frames of
+// SEQUENTIAL, per-pair OpenCV work (ORB detect + BFMatcher + RANSAC for up to
+// JOIN_LOOKAHEAD candidates per join), which is genuinely slow on a real
+// phone. The owner's own fix for that cost is a hard cap: extraction now
+// always samples a FIXED 48 frames, regardless of the clip's duration —
+// never scaled up by how long the recording is. `frameCountFor` still takes
+// `durationSec` (unchanged call shape for `stitchFromVideo`/`extractFrames`,
+// and still exported for genuine execution) but no longer reads it to decide
+// a count; every recording, short or long, is broken into the same 48
+// samples spread evenly across whatever duration it actually has.
+// ⚠️ This is a deliberate trade against 2026-09-12's own density fix: a very
+// long, fast recording will again have wider angular gaps between
+// consecutive samples than a short one sampled at the same 48-frame count —
+// the exact overlap problem that fix existed to solve. Accepted here because
+// the owner asked for a fixed frame count specifically to bound processing
+// time, not because the overlap problem stopped mattering; if a future
+// report says fast recordings are failing to join again, the fix is a
+// per-pair remedy (JOIN_LOOKAHEAD, or asking for a slower turn), not
+// silently re-scaling this count back up.
 window.Pano360 = (function () {
   var WORK_MAXW = 640;           // per-frame width used for feature matching/warping — kept small for mobile CPU cost
   var MIN_GOOD_MATCHES = 12;     // below this, a join is not "confident" — see the lookahead search below
-  var MIN_FRAMES = 14;           // floor on how few frames a very short clip still gets sampled into
-  var MAX_FRAMES = 1200;         // safety ceiling only (40s @ 30fps) — not meant to bind on an ordinary recording
-  var FRAMES_PER_SEC = 30;       // target sampling density: one frame per recorded video frame, assuming 30fps
+  var FIXED_FRAME_COUNT = 48;    // every recording is sampled into exactly this many frames, regardless of duration
   var JOIN_LOOKAHEAD = 5;        // how many frames ahead of the last-placed one to search for a confident join
 
-  // Pure, and exported (Pano360._frameCountFor) so the density curve itself
-  // — the actual fix for "video taken quickly" — can be genuinely executed
-  // and checked, not just read from source.
+  // Pure, and exported (Pano360._frameCountFor) so the fixed count itself can
+  // be genuinely executed and checked, not just read from source.
+  // ⚠️ `durationSec` is accepted (and still validated) purely to keep this
+  // function's call shape unchanged for every existing caller — it no longer
+  // influences the returned count at all. A degenerate duration (0/NaN/
+  // negative/undefined) does not change the outcome either: 48 frames spread
+  // evenly across a near-zero-length clip via extractFrames' own fraction
+  // math simply lands very close together, which is harmless.
   function frameCountFor(durationSec) {
-    if (!durationSec || !isFinite(durationSec) || durationSec <= 0) return MIN_FRAMES;
-    var n = Math.round(durationSec * FRAMES_PER_SEC);
-    return Math.max(MIN_FRAMES, Math.min(MAX_FRAMES, n));
+    return FIXED_FRAME_COUNT;
   }
 
   // ⚠️⚠️ 2026-09-12 (item 4, second fix in the same round — "processing has

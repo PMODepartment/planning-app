@@ -203,6 +203,29 @@ floor by floor.
 `MODULE_V` → `20260913f`. Detail:
 [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
 
+### Progress Photos: 360° frame sampling capped at a fixed 48 frames per video (2026-09-13, later)
+
+Owner: *"since it's taking too long to process and stitch an image, divide video to a fixed 48
+frames per process."* The 2026-09-12 density fix (30fps, up to 1200 frames) was correct and
+honest that it would be slow on a real phone — with the same-day progress-reporting fix making
+that work visible, "several hundred sequential per-pair OpenCV joins" read as "too slow."
+
+`frameCountFor` no longer scales with duration at all — every recording, short or long, now
+samples exactly **48** frames. `FRAMES_PER_SEC`/`MIN_FRAMES`/`MAX_FRAMES` are removed.
+⚠️ Deliberate trade-off, not a silent reversal: a long *and* fast recording is again sampled more
+sparsely than a short one, reintroducing some of the overlap risk the 2026-09-12 fix existed to
+remove — accepted because the owner asked for a fixed count specifically to bound processing
+time.
+
+Verified: 910 checks green (1 new + 6 rewritten to the fixed-48 behavior), `frameCountFor` called
+directly across five durations (0/0.3/6/24/9999s) all returning 48; `tools/wiring-check.js`
+126/0; the same 3 pre-existing, unrelated failures confirmed unchanged.
+⚠️ Not verified signed in — no real device recording has confirmed the actual speedup, or that a
+long/fast recording still joins correctly at this lower density.
+
+`pano360.js` → `?v=20260913i`; `MODULE_V` → `20260913i`. Detail:
+[`modules/progress-photos/CLAUDE.md`](modules/progress-photos/CLAUDE.md).
+
 ### Progress Photos: the 360° "Reading video…" status stops being static through the one phase that actually takes a while (2026-09-13)
 
 Owner, off a screenshot of the "Add 360° photo" modal mid-upload: *"when uploading video, reading
