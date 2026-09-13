@@ -102,6 +102,36 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### Level rules across the whole site, so a floor name reaches the towers on the right (2026-09-13) — ethanrobles10
+
+Owner: *"can you add like lines that would extend all throughout the end. bc you have one label that
+is just situated at the left, therefore towers on the right, their floors cannot be seen."*
+
+⚠️⚠️ **The labels are a column at one edge.** `placeLabels` pins each name to the leftmost projected
+corner of the plate — right for a single building, where the names sit against the wall they name.
+On the site the buildings are spread across the whole plate, so a floor name at the left names
+nothing a planner can follow to a tower at the right. There is now a rule at every floor **boundary**,
+the full width and depth of the site: the band between two lines is that floor, wherever you look.
+
+- ⚠️ **Boundaries, not label heights** — a line through the middle of a slice would cut in half the
+  floor it names. The label sits between its two lines, which is what a section drawing means by
+  "between these levels".
+- ⚠️ **A closed loop at each level, not one line**: in an isometric view a single edge reads as a line
+  going away from you, and four read as a plane at that height.
+- ⚠️ Not pickable (a rule is not a thing to click), only drawn where the model has floors to line up,
+  and carried a little past the plate so it clears the buildings on its edge.
+- ⚠️⚠️ **It works for every tower, not just the tallest, and that is measured**: the rules are at
+  `SH * i / n` for the tallest tower's `n` floors, and a shorter tower is `SH * (N/maxN)` tall cut
+  into `N` — the same spacing. Every tower's floor boundaries land exactly on these lines.
+
+⚠️ 102 assertions drive the shipped block against a fake three.js that records what was built: every
+level flat, closed and the full size of the site; the rules evenly spaced from the ground to the top;
+every one of fourteen labels strictly between its two rules; and 1-, 2-, 7- and 14-floor towers all
+landing on them. **Not verified signed in** — no WebGL frame has been seen.
+
+`MODULE_V` → `20260913k`. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
 ### A GitHub Actions workflow deploys the Edge Functions; laptop-only deploy is gone (2026-09-13)
 
 Follow-up to Pormac's own log, which has flagged this gap for a day: `pormac-chat` sat undeployed

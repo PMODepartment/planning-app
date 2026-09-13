@@ -13,6 +13,56 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### Level rules across the whole site, so a floor name reaches the towers on the right (2026-09-13 k) — ethanrobles10
+
+Owner, with a screenshot of the floor-by-floor site: *"can you add like lines that would extend all
+throughout the end. bc you have one label that is just situated at the left, therefore towers on the
+right, their floors cannot be seen."*
+
+⚠️⚠️ **THE LABELS ARE A COLUMN AT ONE EDGE.** `placeLabels` pins each name to the leftmost projected
+corner of the plate, which is right for a single building — the labels sit against the wall they
+name. On the site the buildings are spread across the whole plate, so "8th Floor" at the left edge
+names nothing a planner can follow to a tower standing at the right. A rule at every floor
+**boundary**, the full width and depth of the site, is the section drawing's own answer: the band
+between two lines is that floor, wherever on the site you are looking.
+
+- ⚠️ **Boundaries, not label heights.** A line through the middle of a slice would cut in half the
+  floor it is naming. The label sits between its two lines, which is what "between these levels"
+  means on paper — and it is what makes the rules usable as a scale rather than as decoration.
+- ⚠️ **A closed loop at each level, not one line.** In an isometric view a single edge reads as a
+  line going away from you; four read as a plane at that height, which is what a storey level IS.
+- ⚠️ **Not pushed to `picks`.** It is a rule, not a thing to click, and in the raycast it would let a
+  planner select a line instead of the floor behind it.
+- ⚠️ **Only where the model has floors to line up** (`model.floorLabels`). The massing view has none,
+  and a grid over nothing is furniture.
+- ⚠️ Drawn a little past the plate (1.06), so the rule clears the buildings standing on its edge
+  rather than dying into their corners.
+
+### ⚠️ WHY THIS WORKS FOR EVERY TOWER AND NOT JUST THE TALLEST
+The rules are at `SH * i / n` for the tallest tower's `n` floors. A shorter tower is `SH * (N/maxN)`
+tall and cut into `N`, so its slices are `SH / maxN` — **the same spacing**. Every tower's floor
+boundaries therefore land exactly on these lines, which is what makes one column of names on the left
+readable against a tower on the right. Measured, not assumed: see below.
+
+### Verified
+- **102 assertions** driving the shipped block, sliced verbatim, against a fake three.js that records
+  what was built (harness gitignored, deleted), with the owner's own fourteen floors:
+  - the massing view and an empty floor list draw **no** rules at all;
+  - one translucent `LineSegments` is added, with a rule at every floor boundary including the ground
+    and the top — `(n + 1) x 4` segments;
+  - every level is **flat** (one Y for all eight of its vertices), **closes on itself**, and spans the
+    full width and depth of the site;
+  - the rules climb from 0 to `SH` and are **evenly spaced**;
+  - ⚠️ every one of the fourteen labels sits **strictly between its two rules**, never on one — the
+    label arithmetic is read out of the shipped `buildLabels` rather than retyped;
+  - ⚠️ and a 1-, 2-, 7- and 14-floor tower all have **every** slice boundary landing exactly on a
+    rule, which is the claim the whole feature rests on.
+- ⚠️ **Gated against the previous commit**: no level lines existed, and the floor labels already did.
+- ⚠️ **Not verified signed in.** The anon key has no grants, so no WebGL frame has been seen. What is
+  proven is the geometry: where the lines are, that they close, and that every tower's floors land on
+  them. First thing to check on the real project: follow "8th Floor" from the label across to the
+  purple tower on the right.
+
 ### The site's floors are slices inside each tower, not rows across the property (2026-09-13 h) — ethanrobles10
 
 Owner, with two screenshots: *"nothing happened, still the same problem!!! The 2nd pic view is

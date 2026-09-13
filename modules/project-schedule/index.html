@@ -16882,6 +16882,43 @@
       gm.rotation.x = -Math.PI / 2; gm.position.y = gy;
       grp.add(gm);
     }
+    /* ==== THE SITE'S LEVEL LINES ======================================================
+       Owner 2026-09-13, with a screenshot: *"can you add like lines that would extend all
+       throughout the end. bc you have one label that is just situated at the left, therefore
+       towers on the right, their floors cannot be seen."*
+
+       ⚠️⚠️ THE LABELS ARE A COLUMN AT ONE EDGE, and on the site the buildings are spread across the
+       whole plate — so a floor name at the left names nothing a planner can follow to a tower
+       standing at the right. A rule at every floor BOUNDARY, the full width and depth of the site,
+       is the section drawing's own answer: the band between two lines is that floor, wherever on
+       the site you are looking.
+       ⚠️ BOUNDARIES, not label heights. A line through the middle of a slice would cut in half the
+       floor it is naming; the label sits between its two lines, which is what "between these
+       levels" means on paper.
+       ⚠️ A closed loop at each level rather than one line: in an isometric view a single edge reads
+       as a line going away from you, and four read as a plane at that height — which is what a
+       storey level IS.
+       ⚠️ NOT pushed to `picks`. It is a rule, not a thing to click, and in the raycast it would let
+       a planner select a line instead of the floor behind it.
+       ⚠️ ONLY where the model has floors to line up (`floorLabels`). The massing view has none, and
+       a grid over nothing is furniture. */
+    if (model.floorLabels && model.floorLabels.length) {
+      var _fn2 = model.floorLabels.length;
+      // ⚠️ A little past the plate, so the rule clears the buildings standing on its edge rather
+      // than dying into their corners.
+      var _lw = PW / 2 * 1.06, _ld = PD / 2 * 1.06, _lp = [];
+      for (var _li = 0; _li <= _fn2; _li++) {
+        var _ly = SH * _li / _fn2;
+        _lp.push(-_lw, _ly, -_ld, _lw, _ly, -_ld);
+        _lp.push(_lw, _ly, -_ld, _lw, _ly, _ld);
+        _lp.push(_lw, _ly, _ld, -_lw, _ly, _ld);
+        _lp.push(-_lw, _ly, _ld, -_lw, _ly, -_ld);
+      }
+      var _lg = new T.BufferGeometry();
+      _lg.setAttribute('position', new T.Float32BufferAttribute(_lp, 3));
+      grp.add(new T.LineSegments(_lg, new T.LineBasicMaterial({
+        color: _vsDarkTheme() ? 0x9aa4b2 : 0x6b7280, transparent: true, opacity: 0.34 })));
+    }
     scene.add(grp);
     /* ⚠️⚠️ THE LIGHTS WERE CLIPPING THE MODEL WHITE. Lambert shades a face by
        `colour * (ambient + directional * NdotL)`, and a top face — the one the Top and Iso views
