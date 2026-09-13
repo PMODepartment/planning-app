@@ -1875,6 +1875,9 @@
     /* The tower checklist. ⚠️ Its own row ABOVE the trades and carrying a label, because the two
        rows now look alike and a reader has to be able to tell which one they are ticking. */
     .ps-vs-twchips { align-items:center; margin-bottom:6px; }
+    /* The site card's own Show control. ⚠️ Inside the card, above the viewpoint bar, because it
+       changes what the model IS rather than where the camera is. */
+    .ps-vs-sitemode { display:flex; align-items:center; gap:8px; padding:8px 14px 0; }
     .ps-vs-twchips > .ps-vs-note { margin-right:2px; }
     .ps-vs-chip { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--pd-line); background:var(--pd-card);
       color:var(--pd-ink); border-radius:var(--pd-radius-pill); padding:4px 10px; font-size:var(--pd-fs-sm); cursor:pointer; }
@@ -17404,11 +17407,27 @@
     } else {
       msg = '<b>Every tower is placed as you traced it.</b>';
     }
-    return '<p class="ps-vs3-foot">' + msg +
-      ' Each tower is as tall as its <b>own storey count</b> (' +
-      Object.keys(model.storeyN || {}).map(function (k) { return esc(k) + ' ' + model.storeyN[k]; }).join(' · ') +
-      '), scaled against the tallest — a proportion, never a dimension. Brightness is progress, exactly ' +
-      'as it is inside a tower; click a tower for its activities, and use <b>Per tower</b> above to go inside one. ' +
+    /* ⚠️ THE FLOOR-BY-FLOOR READING HAS ITS OWN SENTENCE, because the two models earn their heights
+       differently and the reader has to know which one they are looking at. The massing SCALES each
+       tower against the tallest; the floors do not scale anything — a tower occupies one row per
+       level it has work on, so the proportion falls out of the rows themselves.
+       ⚠️ And it says what a GAP means. A row where a tower has no block is a floor that tower has no
+       work on, which is a fact about the schedule; two towers naming their floors differently will
+       interleave instead of aligning, and that is worth saying before somebody reads it as an
+       error. */
+    var _tall = model.siteFloors
+      ? (' Each tower stands one row per <b>level it has work on</b> (' +
+         Object.keys(model.storeyN || {}).map(function (k) { return esc(k) + ' ' + model.storeyN[k]; }).join(' · ') +
+         '), so the heights are proportional without anything being scaled. A row where a tower has ' +
+         '<b>no block</b> is a floor it has no work on \u2014 and towers whose schedules name their floors ' +
+         'differently interleave rather than line up, because the rows ARE the level names. ')
+      : (' Each tower is as tall as its <b>own storey count</b> (' +
+         Object.keys(model.storeyN || {}).map(function (k) { return esc(k) + ' ' + model.storeyN[k]; }).join(' · ') +
+         '), scaled against the tallest \u2014 a proportion, never a dimension. ');
+    return '<p class="ps-vs3-foot">' + msg + _tall +
+      'Brightness is progress, exactly ' +
+      'as it is inside a tower; click a ' + (model.siteFloors ? 'floor' : 'tower') +
+      ' for its activities, and use <b>Per tower</b> above to go inside one. ' +
       '⚠️ The footprint is the outline somebody traced, so it is only as true as the drawing under it, ' +
       'and this view states no distance, area or setback.</p>';
   }
@@ -17618,6 +17637,11 @@
      it. `plateFor` overrides the lookup anyway; this keeps the footer's own verdict honest.
      ========================================================================================== */
   var VS_SITE_ROW = '— Site —';
+  /* Whole towers, or floor by floor. ⚠️ Session state, like `_vsScope` and not like the 2D/3D
+     toggle: it is a way of LOOKING at one drawing rather than a preference about the module, and a
+     remembered "floor by floor" is how somebody opens this next week and reports the site view
+     duplicated into forty rows they did not ask for. */
+  var _vsSiteFloors = false;
   function _vsSiteModel(list, towers) {
     if (!towers || !towers.length) return null;
     var byTower = {};
@@ -17655,6 +17679,88 @@
       cellH: function (c) { return (storeyN[c.label] || 1) / maxN; },
       storeyN: storeyN, maxN: maxN
     };
+  }
+  /* ==== THE SITE, FLOOR BY FLOOR ======================================================
+     Owner 2026-09-13: *"can you show the per floor basis in the site view 3D perspective?"*
+
+     ⚠️⚠️ THE OTHER SITE MODEL DRAWS EACH TOWER AS ONE SOLID. `_vsSiteModel` puts every tower in a
+     single row and gives each a `cellH` share of the tallest, so the site reads as a massing study:
+     where the buildings stand and how tall they are. What it cannot show is the one thing a site
+     plan is usually being read for on a Monday — WHICH FLOORS ARE DONE, tower by tower.
+
+     ⚠️⚠️ THE ROWS ARE THE LEVEL NAMES, NOT STOREY NUMBERS, and that is what makes the picture
+     comparable across towers: "8th Floor" is one row, and the towers that have an 8th floor each
+     put a block on it, over their own traced footprint. Numbering the storeys 1..n per tower would
+     line up a 40-storey tower's 8th with an 8-storey tower's 8th ONLY by accident — and would put
+     a podium level beside a typical floor with nothing saying they were different.
+     ⚠️ Ordered by the SAME `_vsOrderLevels` + `levelRank` the per-tower model uses, so the site and
+     the towers beside it cannot disagree about what is above grade or about what order floors come
+     in. The grade line therefore works here exactly as it does there.
+     ⚠️ A tower that has no work on a row simply has no block on it — a gap, not a guess. Two towers
+     whose schedules name their floors differently will interleave rather than align, which is the
+     schedule's own shape and is reported in the footer rather than smoothed over.
+     ⚠️ NO `cellH`. Each row is ONE storey tall, so a tower with eight floors occupies eight rows
+     and one with forty occupies forty: the heights come out proportional on their own, from the
+     same fact the other model has to compute a ratio for. */
+  function _vsSiteFloorModel(list, towers) {
+    if (!towers || !towers.length) return null;
+    var lvl0 = _vsAxis()[0].id;
+    var byLevel = {}, levels = [], storeyN = {}, maxN = 1, seenTL = {};
+    (list || []).forEach(function (r) {
+      var t = _vsTowerOf(r);
+      if (!t || towers.indexOf(t) < 0) return;
+      var v = _vsLevVal(r, lvl0);
+      if (!v) return;                       // project-wide work has no floor to stand on
+      if (!(v in byLevel)) { byLevel[v] = []; levels.push(v); }
+      byLevel[v].push(r);
+      /* ⚠️ A NESTED map, not a composite key. The first cut joined the tower and the level with a
+         delimiter, which is a guess about what a tower name cannot contain — and the escape for it
+         landed in the file as a real control byte, which made the whole module read as binary. */
+      if (!seenTL[t]) seenTL[t] = {};
+      if (!seenTL[t][v]) { seenTL[t][v] = 1; storeyN[t] = (storeyN[t] || 0) + 1; if (storeyN[t] > maxN) maxN = storeyN[t]; }
+    });
+    if (!levels.length) return null;
+    // ⚠️ Lifted from _vsTowerModel unchanged: sort_order decides the ORDER when it can, levelRank
+    // decides what is underground, and "below grade" is the run of below-grade levels at the bottom
+    // of that order — so the line cannot cut through the middle of a tree-ordered stack.
+    var _byWbs = _vsOrderLevels(levels, byLevel);
+    var below;
+    if (_byWbs) {
+      var _cut = 0;
+      while (_cut < levels.length) { var _rk = levelRank(levels[_cut]); if (_rk == null || _rk >= 0) break; _cut++; }
+      below = levels.slice(0, _cut);
+    } else {
+      below = levels.filter(function (v) { var rk = levelRank(v); return rk != null && rk < 0; });
+    }
+    var above = levels.filter(function (v) { return below.indexOf(v) < 0; });
+    var disp = above.slice().reverse().concat(below.slice().reverse());
+    return {
+      byLevel: byLevel, levels: levels, disp: disp, groundAt: above.length, detail: 1,
+      above: above, below: below, trade: null, tradeSplit: false, site: true, siteFloors: true,
+      /* One cell per TOWER that has work on this floor. ⚠️ In the site's own tower order, not in
+         the order the activities happened to arrive: the colour of a tower is assigned from its
+         position in that list (see _vsTowerColor), and a row that reordered them would repaint the
+         buildings from floor to floor. */
+      rowCells: function (rowList) {
+        var m = {};
+        (rowList || []).forEach(function (r) { var t = _vsTowerOf(r); if (t) (m[t] = m[t] || []).push(r); });
+        return towers.filter(function (t) { return m[t] && m[t].length; }).map(function (t) {
+          return { label: t, list: m[t], color: _vsTowerColor(t, towers) };
+        });
+      },
+      // ⚠️ The SAME key format every other model composes — see the note on _vsTowerModel.cellKey.
+      cellKey: function (keyPrefix, v, c) { return keyPrefix + '|' + v + '|' + (c.label || '*'); },
+      // ⚠️ The site plan for every row: the cells are towers, so their outlines are the footprints
+      // traced on the site, exactly as in the massing model.
+      plateFor: function () { return _vsSitePlan(); },
+      storeyN: storeyN, maxN: maxN
+    };
+  }
+  /* ⚠️ ONE DECISION POINT for both renderers. The card and the focus window must build the same
+     site, and a second `if (_vsSiteFloors)` at the other call site is how the full-screen ends up
+     showing a different drawing from the card it was opened from. */
+  function _vsSiteModelFor(list, towers) {
+    return _vsSiteFloors ? _vsSiteFloorModel(list, towers) : _vsSiteModel(list, towers);
   }
   function _vsTowerModel(list, tradeSplit) {
     var _ax = _vsAxis(), lvl0 = _ax[0].id, detail = _vsDetailNow();
@@ -18083,7 +18189,7 @@
          stacks one building's storeys; `_vsSiteModel` places every tower where the site plan says
          it stands, each as tall as its own storey count. Handing the site card to the tower builder
          would fill the window with one merged building and no sign that anything was wrong. */
-      var model = siteTowers ? _vsSiteModel(list, siteTowers) : _vsTowerModel(list, null);
+      var model = siteTowers ? _vsSiteModelFor(list, siteTowers) : _vsTowerModel(list, null);
       if (!model) { mount.innerHTML = '<div class="ps-vs-empty">Nothing to stack for this selection.</div>'; return null; }
       scene = _vs3Build(mount, model, color, prefix, T);
       cells = _vsCells;
@@ -19731,7 +19837,7 @@
          SECTION — storeys as rows — and a section cannot show a plan: two towers north and south
          of each other occupy the same place in an elevation. That is the same reason the 2D card
          has never drawn a floor plan, recorded on _vsPlanLay. */
-      var _sm = _vsSiteModel(acts, towerNames);
+      var _sm = _vsSiteModelFor(acts, towerNames);
       var _sfit = _vsSiteFit(towerNames);
       if (!_sm) {
         towers = '<div class="ps-vs-empty">Nothing to place on the site for this selection.</div>';
@@ -19755,6 +19861,22 @@
              DIFFERENT model (see _vs3FocusBuild) and the window has to know which one to build. */
           _vsFocusReg('Site development plan', 'var(--pd-red)', acts, 'SITE', towerNames) +
           '</div>' + _vsCardMeter(acts) +
+          /* ==== WHOLE TOWERS, OR FLOOR BY FLOOR ==========================================
+             Owner 2026-09-13: *"can you show the per floor basis in the site view 3D
+             perspective?"* Two readings of one site, and they answer different questions: the
+             massing says where the buildings stand and how tall they are, the floors say which
+             floors are done in each of them.
+             ⚠️ ON THE SITE CARD, not in the toolbar. The toolbar's Detail control means depth
+             through the location axis (Level › Zone › Unit) and the site's rows are towers, not
+             levels — borrowing it would have given one control two meanings depending on a scope
+             three controls away. This one is only on screen where it applies, and it says what it
+             does in words rather than in a number. */
+          '<div class="ps-vs-sitemode"><span class="ps-vs-note">Show</span><span class="ps-vs-seg">' +
+            '<button data-vssm="0"' + (!_vsSiteFloors ? ' class="on"' : '') +
+              ' title="Each tower as one solid, as tall as its own storey count — where the buildings stand, and how far each has got overall">Whole towers</button>' +
+            '<button data-vssm="1"' + (_vsSiteFloors ? ' class="on"' : '') +
+              ' title="Every tower stacked floor by floor on its own footprint, each floor shaded by its own progress — rows are the level names, so the same floor of two towers sits on one row">Floor by floor</button>' +
+          '</span></div>' +
           _vs3Bar('SITE') + '<div class="ps-vs3-mount" data-vs3mount="SITE">' +
           '<div class="ps-vs3-load">Loading the site view…</div></div>' +
           _vsSiteFoot(_sm, _sfit) + '</div>';
@@ -19859,6 +19981,11 @@
         else _vsTradeToggle(b.dataset.vstr);
         _vsAnim = 'in'; renderVStack();
       };
+    });
+    host.querySelectorAll('[data-vssm]').forEach(function (b) {
+      // ⚠️ 'in', not 'fade': the model changes shape entirely — one row becomes forty — so the
+      // cards are rebuilt rather than recoloured, and the entrance animation is the honest one.
+      b.onclick = function () { _vsSiteFloors = b.dataset.vssm === '1'; _vsAnim = 'in'; renderVStack(); };
     });
     host.querySelectorAll('[data-vstw]').forEach(function (b) {
       b.onclick = function () {

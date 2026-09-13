@@ -102,6 +102,43 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### The site view reads floor by floor, not just as massing (2026-09-13) — ethanrobles10
+
+Owner: *"can you show the per floor basis in the site view 3D perspective?"*
+
+⚠️⚠️ **The site was one row, and every tower was one solid** — a massing study that says where the
+buildings stand and how tall they are, and cannot say which floors are done in each of them. A new
+`_vsSiteFloorModel` draws the same site with every tower stacked on its own traced footprint, one
+block per floor, each shaded by its own progress. A **Show: Whole towers | Floor by floor** segment
+on the site card chooses between them.
+
+- ⚠️⚠️ **The rows are the LEVEL NAMES, not storey numbers.** Numbering each tower 1..n and pairing by
+  index would line up a 40-storey tower's 8th with an 8-storey tower's 8th by accident. With names as
+  rows, "8th Floor" is one row and every tower that has one puts a block on it, over its own
+  footprint. Ordered by the same `_vsOrderLevels` + `levelRank` the per-tower model uses, so the two
+  views cannot disagree about what is above grade.
+- ⚠️⚠️ **No `cellH`** — each row is one storey tall, so a tower with eight floors occupies eight rows
+  and one with forty occupies forty. The heights come out proportional on their own, from the same
+  fact the massing model has to compute a ratio for.
+- ⚠️ A row where a tower has no block is a floor it has no work on. Towers naming their floors
+  differently interleave rather than align — the schedule's own shape, said in the footer rather than
+  smoothed over.
+- ⚠️ `_vsSiteModelFor()` is the single place the choice is made, and both the card and the full
+  screen go through it: a second `if` at the other call site is how a focus window ends up showing a
+  different drawing from the card it was opened from.
+- ⚠️⚠️ **A NUL byte got written into the module.** The first cut keyed a counter on
+  `tower + ' ' + level` and the escape landed in the file as a real control byte — `grep` began
+  calling the module a binary file. Replaced with a nested map, which needs no delimiter at all; the
+  harness now checks the whole file for control bytes.
+
+⚠️ 43 assertions drive the shipped model, sliced verbatim, over a fixture with a basement, an absent
+tower, project-wide work and a tower outside the list. Gated against the previous commit, plus
+browser measurement of the new control. **Not verified signed in** — no real site has been drawn
+floor by floor.
+
+`MODULE_V` → `20260913f`. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
 ### Progress Photos: the 360° "Reading video…" status stops being static through the one phase that actually takes a while (2026-09-13)
 
 Owner, off a screenshot of the "Add 360° photo" modal mid-upload: *"when uploading video, reading
