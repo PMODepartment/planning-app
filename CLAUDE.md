@@ -102,6 +102,34 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### The floor labels crashed the site view: a collector declared after the loop that fills it (2026-09-14) — ethanrobles10
+
+Owner, with a screenshot reading *"Could not draw this building in 3D: Cannot read properties of
+undefined (reading 'push')"*: *"what is this error"*
+
+⚠️⚠️ **Mine, shipped an hour earlier.** `floorLabs` is the collector the cell loop fills with one entry
+per floor so that each tower can be labelled beside itself. I declared it beside the function that
+READS it, three hundred lines below the loop, and `var` hoists the binding without the assignment —
+so `floorLabs.push(...)` ran against `undefined` and the build's own guard replaced the scene with
+that message. The massing view was unaffected (its cells carry no floor), which is why the screenshot
+shows it under **Floor by floor**. A collector belongs above the code that collects into it.
+
+⚠️⚠️ **The lesson is what could not see it.** The model harness tests the model, which was correct;
+the source lints check the call sites, which existed. A use-before-assignment inside a 900-line
+function is invisible to both — the only check that catches it is RUNNING the function. `_vs3Build`
+is now executed in the harness against a fake three.js and a fake DOM, and the same harness runs the
+previous commit's copy and asserts it throws **with the exact message from the screenshot**. A
+regression test for a crash has to fail on the crash.
+
+⚠️ 12 assertions on the executed builder: it completes and returns a scene; the label layer names
+B1/1/2/3 **and Tower 2's own 1/2** — six floor labels, not four, which is the per-tower labelling
+working; "Grade" is named; the untraced tower contributes no floor name; every label carries its
+tower; every slice registers separately with the floor as its level. **Not verified signed in** — a
+fake renderer draws no pixels.
+
+`MODULE_V` → `20260914b`. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
 ### Every tower names its own floors, and the site gets a grade plate (2026-09-14) — ethanrobles10
 
 Owner: *"what's better if you just attach the labels of the ground floor, 2nd floor etc just beside to

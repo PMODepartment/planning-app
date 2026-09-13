@@ -16585,6 +16585,13 @@
     var PW = _arAt ? VS_PLATE : PLATE.cols * CELL;
     var PD = _arAt ? (VS_PLATE / _arAt) : PLATE.rows * CELL;
     var maxCols = PW / CELL, maxRows = PD / CELL;
+    /* ⚠️⚠️ DECLARED HERE, ABOVE THE LOOP THAT FILLS IT, and that is the whole of a crash shipped an
+       hour ago: it was declared beside `labs`, three hundred lines further down beside the function
+       that READS it, and `var` hoists the binding without the assignment — so `floorLabs.push` in
+       the loop below ran against `undefined` and the site view came up
+       "Could not draw this building in 3D: Cannot read properties of undefined (reading 'push')".
+       A collector belongs above the code that collects into it, not beside the code that reads it. */
+    var floorLabs = [];
     model.disp.forEach(function (v, li) {
       var cells = model.rowCells(model.byLevel[v], model.detail);
       var n = cells.length || 1;
@@ -16994,7 +17001,9 @@
        floors — but hiding one at this zoom is not the same as never drawing it. */
     // ⚠️ Filled by the cell loop and read by buildLabels, which runs after it — a floor's label can
     // only know where to stand once the floor it names has been placed.
-    var labWrap = null, labs = [], floorLabs = [];
+    // ⚠️ `floorLabs` is NOT declared here — it is filled by the cell loop far above and so is
+    // declared above it. See the note there.
+    var labWrap = null, labs = [];
     var _plW = PW, _plD = PD;
     function buildLabels() {
       if (!_vsFloorMarks || !storeys) return;

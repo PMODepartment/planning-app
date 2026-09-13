@@ -13,6 +13,52 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### The floor labels crashed the site view: a collector declared after the loop that fills it (2026-09-14 b) — ethanrobles10
+
+Owner, with a screenshot of the site view reading *"Could not draw this building in 3D: Cannot read
+properties of undefined (reading 'push')"*: *"what is this error"*
+
+### ⚠️⚠️ MY OWN, SHIPPED AN HOUR EARLIER
+`floorLabs` is the collector the cell loop fills with one entry per floor, so that `buildLabels` can
+put a name beside each tower. I declared it where the thing that READS it lives —
+`var labWrap = null, labs = [], floorLabs = [];`, three hundred lines below the loop — and `var`
+hoists the binding **without the assignment**. So `floorLabs.push(...)` in the loop ran against
+`undefined`, threw, and the whole scene was caught by the build's own guard and replaced with that
+message. The massing view was unaffected (its cells carry no `floor`, so the branch never ran), which
+is exactly why the screenshot shows it under **Floor by floor**.
+
+⚠️ **A collector belongs above the code that collects into it, not beside the code that reads it.**
+Moved to just above `model.disp.forEach`, with the reason written where the old declaration was.
+
+### ⚠️⚠️ AND THE REAL LESSON: NOTHING I HAD COULD SEE IT
+The model harness tests `_vsSiteFloorModel`, which is correct and was never the problem. The source
+lints check that the call sites exist, and they did. A use-before-assignment inside a 900-line
+function is invisible to both — **the only check that catches it is running the function.**
+
+So `_vs3Build` is now executed in the harness, sliced verbatim, against a fake three.js and a fake
+DOM: 20 constructors, ~20 module helpers, and a site model of three towers — one traced with four
+floors, one traced with two, and one untraced with no levelled work, so the run covers the polygon
+path and the wrap-box path, a spanning band and a single-rung band.
+
+⚠️ **Gated the only way that means anything here**: the same harness runs the PREVIOUS commit's copy
+of `_vs3Build` and asserts it throws — and that the message matches
+`Cannot read properties of undefined (reading 'push')`, the words in the owner's screenshot. A
+regression test for a crash has to fail on the crash.
+
+### Verified
+- **12 assertions**, executing the shipped builder:
+  - the site view **builds without throwing** and returns a scene with a `dispose`;
+  - a label layer is added to the host, and it names **B1, 1, 2, 3** — and Tower 2's own **1** and
+    **2** as well, six floor labels rather than four, which is the per-tower labelling working;
+  - the **Grade** line is named;
+  - the untraced tower contributes no floor name (it has no levels to name);
+  - every floor label carries its tower in the `title`, so two floors called "1" can be told apart;
+  - every slice registers separately in `_vsCells`, and the registry names the **floor**, not the row.
+  - ⚠️ GATE: the previous commit's builder throws, with the owner's exact message.
+- The model, focus-window, tower-filter and window lints still pass unchanged (63 / 24 / 33 / 23).
+- ⚠️ **Not verified signed in.** A fake renderer draws no pixels: what is proven is that the code path
+  completes and produces the labels, not how it looks. The screenshot's error should simply be gone.
+
 ### Every tower names its own floors, and the site gets a grade plate (2026-09-14 a) — ethanrobles10
 
 Owner: *"what's better if you just attach the labels of the ground floor, 2nd floor etc just beside to
