@@ -241,6 +241,28 @@ standing caveat on every entry in that module's own log.
 
 `pano360.js` → `?v=20260912s`; `MODULE_V` → `20260912s`.
 
+### Minutes of Meeting: Recurring becomes a tinted cycle-icon toggle beside the star, and the Meetings List swaps its checkbox for the same icon (2026-09-13)
+
+Owner: *"the recurring button is still off. to fix, beside the star, we could have a cycle fill as
+well. if filled meeting is recurring."* Then: *"in meetings list, no need to label the column as
+recurring. instead of checkbox, if meeting is recurring, just show the cycle icon."* The
+Add-meeting modal's plain checkbox+label read as barely different from unticked — the same problem
+the favorite field had before it became a star — and is now a `repeat`-icon button matching that
+same idiom: one stroke-only glyph, `.on` tints it red rather than swapping in a second "filled"
+graphic, since nothing in this app's icon set has a filled variant. A new `repeat` icon is added
+deliberately distinct from the toolbar's `refresh` (view-vs-present's `eye`/`slides` split is the
+precedent for not overloading one glyph across two meanings). The Meetings List column drops its
+text header and its disabled checkbox for the same icon, shown only on a recurring row.
+
+Full detail: [`modules/minutes-of-meeting/CLAUDE.md`](modules/minutes-of-meeting/CLAUDE.md).
+
+**Verified:** CSS braces balanced (366/366); 0 NUL bytes; `node tools/wiring-check.js` 126/126,
+0 version splits; `node tools/dead-hooks.js` unchanged against its documented 9-finding baseline.
+⚠️ **Not verified signed in** — no live login is possible this session.
+
+`modules/minutes-of-meeting/module.css`/`module.js?v=` → `20260913a`; shared
+`assets/js/icons.js?v=` → `20260913a` (23 pages); `MODULE_V` → `20260913a`.
+
 ### Minutes of Meeting: the Add-meeting form's own ghost-label reservation, not the shared label/input rules, was the "very big" mobile gap (2026-09-12)
 
 Owner, two phone screenshots of the same "+ Add meeting" form: *"space between recurring and

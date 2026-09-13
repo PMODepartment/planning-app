@@ -1836,9 +1836,13 @@ window.MinutesOfMeeting = (function () {
         '<th class="il-mom-favtd"></th>' +
         momListSortTh('Title', 'title') + momListSortTh('Date', 'date') +
         // Round 3, item 1: a read-only fact about the row, not a control — no
-        // click handler, no sort, just a checkbox stating whether this
-        // meeting belongs to a recurring series.
-        '<th class="il-mom-rectd" title="Is this meeting part of a recurring series?">Recurring</th>' +
+        // click handler, no sort. Owner (2026-09-13): "no need to label the
+        // column as recurring. instead of checkbox, if meeting is recurring,
+        // just show the cycle icon" — the header carries no text (a title
+        // still names the column for a screen reader/hover), and the cell
+        // below holds the `repeat` icon only for a recurring row, nothing at
+        // all for a one-time meeting.
+        '<th class="il-mom-rectd" title="Recurring meeting"></th>' +
         momListSortTh('Attendees', 'attendees') + momListSortTh('Location', 'location') +
         momListSortTh('Minutes', 'open') +
       '</tr></thead><tbody>' +
@@ -1850,8 +1854,9 @@ window.MinutesOfMeeting = (function () {
           '<td>' + Fmt.esc(r.title) +
             (r.draft ? ' <span class="il-mom-draft">Draft</span>' : '') + '</td>' +
           '<td>' + Fmt.esc(r.dateLabel) + '</td>' +
-          '<td class="il-mom-rectd"><input type="checkbox" disabled' + (r.recurring ? ' checked' : '') +
-            ' aria-label="' + (r.recurring ? 'Recurring meeting' : 'One-time meeting') + '"></td>' +
+          '<td class="il-mom-rectd">' + (r.recurring ?
+            '<span class="il-mom-recic" data-ico="repeat" data-ico-size="16" title="Recurring meeting" aria-label="Recurring meeting"></span>' :
+            '') + '</td>' +
           '<td>' + (r.attendees || '—') + '</td>' +
           '<td>' + Fmt.esc(r.location) + '</td>' +
           // Item 11 — "X of Y open", never a bare total. ⚠️ A meeting with no
@@ -2596,9 +2601,22 @@ window.MinutesOfMeeting = (function () {
       '" aria-label="' + (on ? 'Remove from favorites' : 'Add to favorites') + '" aria-pressed="' + (on ? 'true' : 'false') + '">' +
       (on ? '★' : '☆') + '</button>';
   }
+  // ⚠️ Owner: "the recurring button is still off. to fix, beside the star,
+  // we could have a cycle fill as well. if filled meeting is recurring." A
+  // plain checkbox+label read as barely different from "unticked" at a
+  // glance; this is the same fix the favorite checkbox already got —
+  // a clickable icon button whose `.on` state is a colour, not a second
+  // glyph (every icon in this app's set is a stroke-only outline with no
+  // filled variant, so "filled" here means "tinted", exactly like the star).
+  function amRecurBtnHTML(on) {
+    return '<button type="button" class="il-mom-recurbtn' + (on ? ' on' : '') + '" id="il-am-recur" data-on="' +
+      (on ? '1' : '0') + '" title="' + (on ? 'Recurring meeting — click to make one-time' : 'Make this a recurring meeting') +
+      '" aria-label="' + (on ? 'Recurring meeting' : 'One-time meeting') + '" aria-pressed="' + (on ? 'true' : 'false') + '">' +
+      '<span data-ico="repeat" data-ico-size="18"></span></button>';
+  }
   // ⚠️ A "ghost" label — same block the real labels above it occupy, but
   // empty and `aria-hidden` — reserves the identical vertical space so a
-  // field with no label text (the star, the recurring checkbox) still starts
+  // field with no label text (the star, the recurring toggle) still starts
   // its control on the SAME Y as every input beside it in the row. Combined
   // with `.il-am-form .pd-field > label`'s fixed min-height (module.css),
   // this is what makes "align to the meeting title input" and "same Y/height
@@ -2619,9 +2637,10 @@ window.MinutesOfMeeting = (function () {
           // ITEM 1 (round 2): a plain star, no rectangular button chrome, no
           // "Favorite" text anywhere — the star icon alone is the control.
           '<div class="pd-field il-am-favfield" style="flex:0 0 auto;">' + amGhostLabel() + amFavBtnHTML(false) + '</div>' +
-          // ITEM 4 (round 2): shortened to "Recurring" (was "Recurring meeting").
-          '<div class="pd-field" style="flex:0 0 auto;">' + amGhostLabel() +
-            '<label class="il-am-checklabel"><input type="checkbox" id="il-am-recur" style="width:auto;"> Recurring</label></div>' +
+          // ITEM 4 (round 2): shortened to "Recurring" (was "Recurring
+          // meeting"); now a `repeat`-icon toggle beside the star rather
+          // than a checkbox+label, so the "on" state actually reads as on.
+          '<div class="pd-field il-am-recurfield" style="flex:0 0 auto;">' + amGhostLabel() + amRecurBtnHTML(false) + '</div>' +
           // ⚠️ ITEM 7 (2026-09-12) — "ask if schedule will be regular or
           // irregular, beside the recurring input." Hidden until Recurring is
           // checked (a one-time meeting has no schedule to be regular or
@@ -2747,7 +2766,12 @@ window.MinutesOfMeeting = (function () {
     //                           cadence for an irregular series; each future
     //                           date is set by hand via Carry over.
     function updateAmScheduleVis() {
-      var isRecur = !!recur.checked;
+      // ⚠️ Re-queried fresh rather than closing over a captured element:
+      // wireRecurBtn() replaces the button's outerHTML on every click (same
+      // as the favorite star), so a variable set once before the first
+      // toggle would point at a detached node afterwards.
+      var recurEl = root.querySelector('#il-am-recur');
+      var isRecur = !!(recurEl && recurEl.dataset.on === '1');
       var regSel = root.querySelector('#il-am-regularity');
       var isRegular = !regSel || regSel.value !== 'irregular';
       var regWrap = root.querySelector('#il-am-regwrap');
@@ -2757,8 +2781,18 @@ window.MinutesOfMeeting = (function () {
       var dtWrap = root.querySelector('#il-am-datetimewrap');
       if (dtWrap) dtWrap.hidden = isRecur;
     }
-    var recur = root.querySelector('#il-am-recur');
-    if (recur) recur.onchange = updateAmScheduleVis;
+    function wireRecurBtn() {
+      var recurBtn = root.querySelector('#il-am-recur');
+      if (!recurBtn) return;
+      recurBtn.onclick = function () {
+        var on = recurBtn.dataset.on !== '1';
+        recurBtn.outerHTML = amRecurBtnHTML(on);
+        wireRecurBtn();
+        if (window.Icons && Icons.hydrate) Icons.hydrate(root);
+        updateAmScheduleVis();
+      };
+    }
+    wireRecurBtn();
     var regSelEl = root.querySelector('#il-am-regularity');
     if (regSelEl) regSelEl.onchange = updateAmScheduleVis;
     var freqSel = root.querySelector('#il-am-freq');
@@ -2846,7 +2880,10 @@ window.MinutesOfMeeting = (function () {
     var g = function (id) { var e = root.querySelector('#' + id); return e ? e.value : ''; };
     var title = g('il-am-title').trim();
     var date = g('il-am-date');
-    var isRecur = !!(root.querySelector('#il-am-recur') || {}).checked;
+    // ITEM (2026-09-13): the recurring state lives on the toggle button's
+    // `data-on` attribute now, not a checkbox's `.checked` — same shape as
+    // the favorite star two lines below.
+    var isRecur = (function () { var e = root.querySelector('#il-am-recur'); return !!(e && e.dataset.on === '1'); })();
     var vErr = validateAddMeeting(root, g, isRecur);
     if (vErr) { UI.toast(vErr, 'warn'); return; }
     var reqRoot = root.querySelector('[data-people="am-req"]'), optRoot = root.querySelector('[data-people="am-opt"]');

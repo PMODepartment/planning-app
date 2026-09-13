@@ -169,7 +169,7 @@
    to reserve the identical space). That is what makes every input/control
    in a row start on the same Y, rather than depending on no label ever
    wrapping at whatever width the modal happens to be. */
-.il-am-form .pd-field > label:not(.il-am-checklabel) { min-height: 26px; line-height: 13px; }
+.il-am-form .pd-field > label { min-height: 26px; line-height: 13px; }
 /* ⚠️⚠️ Owner report (phone screenshot of this exact form): "space between
    recurring and meeting title is very big" / "the vertical gap between label
    and input box is still quite large… second photo [the Detail view] shows
@@ -184,7 +184,7 @@
    title with one or two of the icon-sized ones before the rest wrap to their
    own line. A wrapped field with nothing beside it to align with still pays
    the full 26px reservation — a solid block of nothing above its own
-   checkbox/star/select — stacking with the row's ordinary `.pd-field`
+   button/select — stacking with the row's ordinary `.pd-field`
    bottom margin into the "very big" gap reported. The other half of the
    report (label text itself sitting far above its input, even on a row that
    never wraps) is the SAME rule: 26px is roughly double this label's actual
@@ -199,11 +199,7 @@
    had this reservation and was already tight — matching the owner's own
    "second photo is better" comparison exactly. */
 @media (max-width: 700px) {
-  .il-am-form .pd-field > label:not(.il-am-checklabel) { min-height: 0; line-height: normal; }
-}
-.il-am-checklabel {
-  display: flex; align-items: center; gap: 6px; font-weight: 400;
-  height: 34px; font-size: var(--pd-fs-base); color: var(--pd-ink);
+  .il-am-form .pd-field > label { min-height: 0; line-height: normal; }
 }
 
 /* ============================================================================
@@ -348,13 +344,16 @@
 .il-mom-favbtn.on { color: #D4A017; }
 button.il-mom-favbtn { font-size: var(--pd-fs-sm); }
 button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
-/* ⚠️ ROUND 3 — "there should be a column with read-only tickbox if meeting
-   is recurring or not". A plain disabled checkbox, centred in its own
-   narrow column — read-only by construction (nothing here can toggle it;
-   see momHistorySectionHTML/createNextOccurrence for the only way a meeting
-   actually becomes recurring). */
-.il-mom-rectd { width: 76px; text-align: center; }
-.il-mom-rectd input[type="checkbox"] { cursor: not-allowed; }
+/* ⚠️ ROUND 3, revised — "no need to label the column as recurring. instead
+   of checkbox, if meeting is recurring, just show the cycle icon." The
+   header carries no text and the cell holds nothing at all for a one-time
+   meeting; the `repeat` icon (a genuinely distinct glyph from the toolbar's
+   `refresh` — see icons.js) appears ONLY when `r.recurring`, tinted the same
+   as the toggle button below reads "on". Still read-only by construction —
+   nothing here can toggle it; see momHistorySectionHTML/createNextOccurrence
+   for the only way a meeting actually becomes recurring. */
+.il-mom-rectd { width: 40px; text-align: center; }
+.il-mom-recic { display: inline-flex; color: var(--pd-red); }
 .il-mom-opencell { white-space: nowrap; }
 /* Individual View item 5 (round 2, owner: "remove the favorite label
    entirely, just make the star icon larger") — the Detail toolbar's star,
@@ -392,6 +391,22 @@ button.il-mom-favbtn.on { color: #D4A017; border-color: #D4A017; }
   font-size: var(--pd-fs-stat); border: 0; background: transparent; padding: 0 4px;
 }
 .il-am-favfield .il-mom-favbtn.on { color: #D4A017; }
+/* ⚠️ Owner: "the recurring button is still off. to fix, beside the star, we
+   could have a cycle fill as well. if filled meeting is recurring." The
+   plain `Recurring` checkbox+label read as indistinguishable from "off" at a
+   glance — the same problem the favourite checkbox had before it became a
+   star. Same fix, same shape: `amRecurBtnHTML(on)` renders a button holding
+   the `repeat` glyph (icons.js) beside the star, and `.on` tints it the same
+   way the star tints gold — a "filled" reading achieved through colour,
+   since every icon in this set is a stroke-only outline with no separate
+   filled variant to swap in. */
+.il-am-recurfield { display: flex; flex-direction: column; }
+.il-mom-recurbtn {
+  height: 34px; display: inline-flex; align-items: center; justify-content: center;
+  border: 0; background: transparent; padding: 0 4px; color: var(--pd-line); cursor: pointer;
+}
+.il-mom-recurbtn:hover { color: var(--pd-ink); }
+.il-mom-recurbtn.on { color: var(--pd-red); }
 
 /* ---- Icon-only toolbar buttons + icon dropdown (individual-view item 3,
    list item 2, 2026-09-03) — a `<select>`/text `<button>` reduced to just its
