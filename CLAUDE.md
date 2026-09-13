@@ -102,6 +102,40 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### Every tower names its own floors, and the site gets a grade plate (2026-09-14) — ethanrobles10
+
+Owner: *"what's better if you just attach the labels of the ground floor, 2nd floor etc just beside to
+each tower. Remove the lines you just created in the recent prompt. In addition, can you create a
+plate that identifies the grade line or the ground line."*
+
+⚠️ **The lines are gone.** Rules across the whole plate let one column of names at the left edge reach
+a tower at the right, and turned the view into a cage to do it. The problem was never that the names
+were hard to follow — it was that they belonged to no tower in particular.
+
+- ⚠️⚠️ **Each floor carries its own anchor now.** `placeLabels` pins a label to the leftmost projected
+  corner of the plate, which is right for a single building; a label may now carry `ax`/`az` and be
+  projected there instead. The anchor is the footprint's **left edge** — the label is drawn with its
+  right edge on the anchor, so a centre anchor would lay every name across the building it names.
+- ⚠️⚠️ **The thinning rule had to learn about columns.** It hid any label within 17px of one already
+  shown, which on a site would have deleted every tower's names but the first — two towers' floors at
+  the same height are two labels that belong side by side.
+- ⚠️⚠️ **The towers are aligned at GRADE, not at their bases**, which is what makes a grade plate
+  possible at all: banding each tower from its own lowest level put a two-basement tower's ground
+  floor two slices higher than a no-basement tower's, so any line drawn as "the ground" would be true
+  of one building and a lie about the other. Every cell is placed on one site-wide ladder instead.
+  `cellH` is gone with it — the proportions now come out of how many rungs a tower has.
+- ⚠️ The plate reads `model.groundY`, takes the **shape of the site** rather than a square, carries an
+  edge (a translucent plane seen edge-on from an isometric camera is nearly invisible), and is named
+  "Grade".
+
+⚠️ 63 assertions on the shipped model over four towers — two basements, one, none, and one with no
+levelled work at all — including the claim the plate rests on: all three towers' ground floors on the
+same rung, and the one-basement tower level with the two-basement tower's B1 rather than its B2.
+Gated against the previous commit. **Not verified signed in** — no WebGL frame has been seen.
+
+`MODULE_V` → `20260914a`. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
 ### Level rules across the whole site, so a floor name reaches the towers on the right (2026-09-13) — ethanrobles10
 
 Owner: *"can you add like lines that would extend all throughout the end. bc you have one label that

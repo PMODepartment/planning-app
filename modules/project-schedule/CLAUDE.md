@@ -13,6 +13,88 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### Every tower names its own floors, and the site gets a grade plate (2026-09-14 a) — ethanrobles10
+
+Owner: *"what's better if you just attach the labels of the ground floor, 2nd floor etc just beside to
+each tower. Remove the lines you just created in the recent prompt. In addition, can you create a
+plate that identifies the grade line or the ground line."*
+
+### ⚠️ THE LINES ARE GONE, AND THEY WERE THE WRONG ANSWER TO THE RIGHT PROBLEM
+Rules across the whole plate let one column of names at the left edge reach a tower at the right —
+and turned the view into a cage to do it. The problem was never that the names were hard to follow;
+it was that they belonged to no tower in particular. Deleted.
+
+### ⚠️⚠️ EACH FLOOR CARRIES ITS OWN ANCHOR NOW
+`placeLabels` pins a label to the leftmost projected corner of the plate, which is right for a single
+building — the names sit against the wall they name. A label may now carry `ax`/`az` and be projected
+**there** instead, so a tower's floor names stand beside that tower.
+
+- ⚠️ **The anchor is the footprint's LEFT edge**, not its centre: `.ps-vs3-lab` is drawn with its
+  RIGHT edge on the anchor (`transform: translate(-100%, -50%)`), so a centre anchor would lay every
+  name across the left half of the building it names.
+- ⚠️ It is the traced footprint's leftmost point where one exists and the wrap slot's left edge where
+  it does not — the same two answers the geometry itself uses, so a label cannot end up beside a
+  building that is somewhere else.
+- ⚠️⚠️ **The thinning rule had to learn about columns.** It hid any label within 17px of one already
+  shown — right with one building and one column, and on a site it would have deleted every tower's
+  names but the first, because two towers' floors at the same height are two different labels that
+  belong side by side. It now compares the column too (60px: wider than a floor name, narrower than
+  the gap between two buildings).
+
+### ⚠️⚠️ THE TOWERS ARE ALIGNED AT GRADE, WHICH IS WHAT MAKES A GRADE PLATE POSSIBLE
+Banding each tower from its own lowest level upwards put a two-basement tower's ground floor two
+slices higher than a no-basement tower's — so any line drawn as "the ground" would have been true of
+one building and a lie about the other. **Every cell is placed on ONE site-wide ladder instead**:
+`belowMax` rungs of basement below the line, `aboveMax` above it, and a tower occupies the rungs it
+actually has.
+
+- A tower with no basement starts **at** grade with nothing under it, which is what a building with
+  no basement looks like in section; a one-basement tower hangs one rung below the line, level with
+  the two-basement tower's B1 rather than beside its B2.
+- ⚠️ **`cellH` is gone.** Every tower spans the same ladder, so the proportions come out of how many
+  rungs a tower has — the same fact `cellH` used to compute a ratio from, without a second number
+  that could disagree with the bands.
+- ⚠️ A band may now be **several rungs deep** (`band.span`), which is how a tower whose work carries
+  no level at all is drawn: one undivided solid spanning the above-grade run rather than being cut
+  into floors it does not have.
+
+### ⚠️ AND THE PLATE ITSELF
+The row-based grade rule could never fire on the site — it is ONE row, so `groundAt < storeys` is
+false. The model states `groundY` as a fraction of the storey instead, and the plate is drawn there.
+
+- ⚠️ **The shape of the SITE, not a square.** On a single building the plane is a square a little
+  larger than the plate because the building sits in the middle of it; a site is as wide as the
+  property, so the datum takes the plate's own proportions.
+- ⚠️ **With an edge.** A translucent plane seen edge-on from an isometric camera is nearly invisible
+  — which is the angle this view opens at. The line round it is the difference between a plate you
+  can see and one that is technically there.
+- ⚠️ And it is **named** "Grade", through the same label path as everything else.
+
+### Verified
+- **63 assertions** driving the shipped model, sliced verbatim (harness gitignored, deleted), over a
+  site of four towers: two basements + three floors, one basement + two floors, **no basement** + two
+  floors, and one whose work carries no level at all.
+  - ⚠️ **The claim the plate rests on, measured**: all three towers' ground floors are on the **same
+    rung**, and so are their second floors; the one-basement tower's B1 is level with the
+    two-basement tower's B1 (not its B2); the no-basement tower has nothing below rung 2, so its
+    lowest rung IS grade.
+  - The ladder is 5 rungs with 2 below, so grade sits exactly two fifths up; every cell bands against
+    all 5; the unlevelled tower starts at grade and spans all 3 above-grade rungs while a real floor
+    spans exactly 1.
+  - A site with **no basements at all** puts grade at 0 and the ladder at the tallest run.
+  - Keys stay distinct and name the floor, slots stay per tower, the footprint lookup still resolves,
+    and `cellH` is gone.
+- Source checks in the same run: the span reaches `SHb` and the slice placement; the grade plate
+  reads `model.groundY`, is the shape of the site, carries an edge and is named; each floor collects
+  an anchor at its footprint's left edge and is placed there; the thinning compares the column; the
+  level lines and the single shared name column are both gone; and the file carries no control bytes.
+- ⚠️ **Gated against the previous commit**: the lines were there, the names were one shared column,
+  the towers were banded from their own base, and there was no site grade plate.
+- ⚠️ **Not verified signed in.** The anon key has no grants, so no WebGL frame has been seen — what is
+  proven is the ladder, the anchors and the wiring. First things to check on the real project: the
+  floor names should stand beside **each** tower, and the grade plate should pass through the base of
+  every tower that has no basement and through the underside of every ground floor that does.
+
 ### Level rules across the whole site, so a floor name reaches the towers on the right (2026-09-13 k) — ethanrobles10
 
 Owner, with a screenshot of the floor-by-floor site: *"can you add like lines that would extend all

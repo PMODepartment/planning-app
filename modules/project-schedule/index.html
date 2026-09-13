@@ -16664,6 +16664,11 @@
         var _cb = c.band;
         var bandN = (_cb && _cb.n > 1) ? _cb.n : ((model.tradeSplit && _pg && n > 1) ? n : 1);
         var bandI = (_cb && _cb.n > 1) ? _cb.i : (bandN > 1 ? ci : 0);
+        /* ⚠️ A band may be more than one rung deep. The site's ladder has a rung per floor, and a
+           tower whose work carries no level at all is ONE solid spanning the whole above-grade run
+           — so it says how many rungs it occupies rather than being cut into them. Everything else
+           is a single rung, which is the identity. */
+        var bandS = (_cb && _cb.span > 0) ? _cb.span : 1;
         /* ==== HOW TALL THIS CELL IS ========================================================
            ⚠️⚠️ THE SITE VIEW'S ONE STRUCTURAL ADDITION. On a floor every cell is a zone of the same
            storey, so they are all exactly one storey tall — `cellH` is 1 and nothing changes. On the
@@ -16678,7 +16683,7 @@
         // ⚠️ The storey height THIS cell actually gets. Every fraction below is a fraction of the
         // BAND, not of the storey, or a banded cell's fill line and sliver test would be sized for
         // a slab n times taller than the one being drawn.
-        var SHb = SH * cellH / bandN;
+        var SHb = SH * cellH * bandS / bandN;
         var pct = _vsProgress(c.list);
         var fill = c.color || baseColor;
         /* ⚠️ FALLS BACK PER CELL, not per card. A zone the plan does not name — and every cell
@@ -16704,6 +16709,39 @@
         }
         var x = (p.col - (p.cols - 1) / 2) * shW;
         var z = (p.row - (p.rows - 1) / 2) * shD;
+        /* ==== A FLOOR LABEL BESIDE ITS OWN TOWER =========================================
+           Owner 2026-09-14: *"what's better if you just attach the labels of the ground floor, 2nd
+           floor etc just beside to each tower."*
+           ⚠️⚠️ ONE COLUMN OF NAMES AT THE PLATE'S EDGE CANNOT SERVE A SITE. `placeLabels` pins a
+           label to the leftmost projected corner of the plate, which is right for a single building
+           — the names sit against the wall they name. With the buildings spread across a site, a
+           name at the left edge belongs to no tower in particular, and the rules drawn across the
+           whole plate to reach them (the previous attempt) turned the view into a cage. Each floor
+           now carries its OWN anchor, at its own tower.
+           ⚠️ THE ANCHOR IS THE FOOTPRINT'S CENTRE where one is traced, and the wrap slot's centre
+           where it is not — the same two answers the geometry itself uses, so the label cannot end
+           up beside a building that is somewhere else. */
+        if (c.floor && _vsFloorMarks) {
+          /* ⚠️ THE LEFT EDGE of the footprint, not its centre. `.ps-vs3-lab` is drawn with its
+             RIGHT edge on the anchor (transform: translate(-100%, -50%)), so a centre anchor would
+             lay every name across the left half of the building it names. The left edge puts it
+             just outside, where a dimension label goes. */
+          var _ax = x - exW / 2, _az = z;
+          if (_pg && _pg.length) {
+            var _mnx = null, _sz = 0, _sn = 0;
+            _pg.forEach(function (q2) {
+              (q2.pts || []).forEach(function (pt2) {
+                var _X = (pt2[0] - 0.5) * plateW;
+                if (_mnx === null || _X < _mnx) _mnx = _X;
+                _sz += (pt2[1] - 0.5) * plateD; _sn++;
+              });
+            });
+            if (_sn) { _ax = _mnx; _az = _sz / _sn; }
+          }
+          // ⚠️ The middle of the slice, in the same terms the slice itself is placed in.
+          floorLabs.push({ text: String(c.floor), tower: c.label,
+                           y: y + SH * cellH * (bandI + bandS / 2) / bandN, ax: _ax, az: _az });
+        }
         /* ==== PROGRESS FILLS UPWARD, AND THE TWO PARTS DO NOT OVERLAP ======================
            Owner 2026-09-10: *"for the progress can you make it that the progress for the 3D
            version is from bottom to top? not like horizontal direction"* and *"the shades are
@@ -16749,7 +16787,9 @@
           // ⚠️ f0/f1 are fractions of this cell's BAND. One band per cell when the row is split by
           // trade over a traced floor, one band for the whole storey otherwise (bandN === 1, so
           // this is the identity and every untraced card is byte-for-byte what it was).
-          var g0 = (bandI + f0) / bandN, g1 = (bandI + f1) / bandN;
+          // ⚠️ f0/f1 are fractions of the BAND, and a band may be `bandS` rungs deep — so they are
+          // scaled by the span before being placed on the ladder, not after.
+          var g0 = (bandI + f0 * bandS) / bandN, g1 = (bandI + f1 * bandS) / bandN;
           // ⚠️ `SH * cellH` is this cell's OWN full height — one storey on a floor card, one whole
           // tower on the site. cellH is 1 everywhere but the site view, so this is the identity there.
           var h2 = SH * cellH * (g1 - g0), base = SH * cellH * g0;
@@ -16873,51 +16913,39 @@
         grp.add(sm);
       });
     }
-    // The grade plane, at the same place the 2D card draws its grade line.
-    if (model.groundAt > 0 && model.groundAt < storeys) {
-      var gy = (storeys - model.groundAt) * (SH + GAPY) - GAPY / 2;
-      var pw = Math.max(maxCols, maxRows) * CELL * 1.9;   // ⚠️ the plate, not the tallest storey's own grid
-      var gm = new T.Mesh(new T.PlaneGeometry(pw, pw),
-        new T.MeshBasicMaterial({ color: 0x8a8f98, transparent: true, opacity: 0.16, side: T.DoubleSide }));
+    /* The grade plane, at the same place the 2D card draws its grade line.
+       ⚠️⚠️ THE SITE STATES ITS OWN. Owner 2026-09-14: *"can you create a plate that identifies the
+       grade line or the ground line."* The row-based rule above cannot answer it there: the site is
+       ONE row, so `groundAt < storeys` is false and no plane was ever drawn. The site's grade is a
+       height INSIDE that row — the line every tower's basements hang below and every ground floor
+       stands on — so the model hands it over as a fraction of the storey and this draws it there. */
+    var _gy = null;
+    if (model.groundY != null) _gy = SH * model.groundY;
+    else if (model.groundAt > 0 && model.groundAt < storeys) _gy = (storeys - model.groundAt) * (SH + GAPY) - GAPY / 2;
+    if (_gy != null) {
+      var gy = _gy;
+      /* ⚠️ THE SITE'S GRADE PLATE IS THE SHAPE OF THE SITE, not a square. On a single building the
+         plane is a square a little larger than the plate because the building sits in the middle of
+         it; a site is as wide as the property and the datum has to read as the ground of THAT, so
+         it takes the plate's own proportions with a margin. */
+      var _gw = (model.groundY != null) ? PW * 1.12 : Math.max(maxCols, maxRows) * CELL * 1.9;
+      var _gd = (model.groundY != null) ? PD * 1.12 : _gw;
+      var gm = new T.Mesh(new T.PlaneGeometry(_gw, _gd),
+        new T.MeshBasicMaterial({ color: 0x8a8f98, transparent: true,
+          opacity: (model.groundY != null ? 0.22 : 0.16), side: T.DoubleSide }));
       gm.rotation.x = -Math.PI / 2; gm.position.y = gy;
       grp.add(gm);
-    }
-    /* ==== THE SITE'S LEVEL LINES ======================================================
-       Owner 2026-09-13, with a screenshot: *"can you add like lines that would extend all
-       throughout the end. bc you have one label that is just situated at the left, therefore
-       towers on the right, their floors cannot be seen."*
-
-       ⚠️⚠️ THE LABELS ARE A COLUMN AT ONE EDGE, and on the site the buildings are spread across the
-       whole plate — so a floor name at the left names nothing a planner can follow to a tower
-       standing at the right. A rule at every floor BOUNDARY, the full width and depth of the site,
-       is the section drawing's own answer: the band between two lines is that floor, wherever on
-       the site you are looking.
-       ⚠️ BOUNDARIES, not label heights. A line through the middle of a slice would cut in half the
-       floor it is naming; the label sits between its two lines, which is what "between these
-       levels" means on paper.
-       ⚠️ A closed loop at each level rather than one line: in an isometric view a single edge reads
-       as a line going away from you, and four read as a plane at that height — which is what a
-       storey level IS.
-       ⚠️ NOT pushed to `picks`. It is a rule, not a thing to click, and in the raycast it would let
-       a planner select a line instead of the floor behind it.
-       ⚠️ ONLY where the model has floors to line up (`floorLabels`). The massing view has none, and
-       a grid over nothing is furniture. */
-    if (model.floorLabels && model.floorLabels.length) {
-      var _fn2 = model.floorLabels.length;
-      // ⚠️ A little past the plate, so the rule clears the buildings standing on its edge rather
-      // than dying into their corners.
-      var _lw = PW / 2 * 1.06, _ld = PD / 2 * 1.06, _lp = [];
-      for (var _li = 0; _li <= _fn2; _li++) {
-        var _ly = SH * _li / _fn2;
-        _lp.push(-_lw, _ly, -_ld, _lw, _ly, -_ld);
-        _lp.push(_lw, _ly, -_ld, _lw, _ly, _ld);
-        _lp.push(_lw, _ly, _ld, -_lw, _ly, _ld);
-        _lp.push(-_lw, _ly, _ld, -_lw, _ly, -_ld);
+      /* ⚠️ AND AN EDGE, on the site. A translucent plane seen edge-on from an isometric camera is
+         nearly invisible — which is the angle this view opens at — so the datum gets a line round
+         it. That is the difference between a plate you can see and one that is technically there. */
+      if (model.groundY != null) {
+        var _ge = new T.LineSegments(
+          new T.EdgesGeometry(new T.PlaneGeometry(_gw, _gd)),
+          new T.LineBasicMaterial({ color: _vsDarkTheme() ? 0xb8c0cc : 0x5b6472,
+            transparent: true, opacity: 0.6 }));
+        _ge.rotation.x = -Math.PI / 2; _ge.position.y = gy;
+        grp.add(_ge);
       }
-      var _lg = new T.BufferGeometry();
-      _lg.setAttribute('position', new T.Float32BufferAttribute(_lp, 3));
-      grp.add(new T.LineSegments(_lg, new T.LineBasicMaterial({
-        color: _vsDarkTheme() ? 0x9aa4b2 : 0x6b7280, transparent: true, opacity: 0.34 })));
     }
     scene.add(grp);
     /* ⚠️⚠️ THE LIGHTS WERE CLIPPING THE MODEL WHITE. Lambert shades a face by
@@ -16964,7 +16992,9 @@
        of the one already placed above it is hidden for that frame and comes back as soon as the
        planner zooms in or turns the model. Overlapping labels are worse than none — they misname
        floors — but hiding one at this zoom is not the same as never drawing it. */
-    var labWrap = null, labs = [];
+    // ⚠️ Filled by the cell loop and read by buildLabels, which runs after it — a floor's label can
+    // only know where to stand once the floor it names has been placed.
+    var labWrap = null, labs = [], floorLabs = [];
     var _plW = PW, _plD = PD;
     function buildLabels() {
       if (!_vsFloorMarks || !storeys) return;
@@ -16980,15 +17010,28 @@
          solid is SH tall (its cellH is 1) cut into `n`, so floor `i` sits at `SH * (i + 0.5) / n`.
          ⚠️ Bottom-up, because that is the order the model lists them in and the order they are
          stacked in — reversing one and not the other is how a roof ends up labelled "Ground". */
-      if (model.floorLabels && model.floorLabels.length) {
-        var _fl = model.floorLabels, _fn = _fl.length;
-        _fl.forEach(function (nm, i) {
+      /* ⚠️⚠️ THE SITE'S FLOORS LABEL THEMSELVES, BESIDE THEIR OWN TOWER. `model.disp` carries one
+         entry there — "— Site —" — so labelling from the rows would print that word once and
+         nothing else. The cell loop has already worked out where each floor stands (see floorLabs);
+         these are those, with their anchors carried through to placeLabels. */
+      if (floorLabs.length) {
+        floorLabs.forEach(function (f) {
           var el = document.createElement('div');
           el.className = 'ps-vs3-lab';
-          el.textContent = String(nm);
+          el.textContent = f.text;
+          el.title = f.tower + ' · ' + f.text;
           labWrap.appendChild(el);
-          labs.push({ el: el, y: SH * (i + 0.5) / _fn });
+          labs.push({ el: el, y: f.y, ax: f.ax, az: f.az });
         });
+        // ⚠️ And the grade line is named here too — see the note on the row path below. On the site
+        // it is a height inside the one row, so the row rule cannot reach it.
+        if (model.groundY != null && model.groundY > 0 && model.groundY < 1) {
+          var _gel = document.createElement('div');
+          _gel.className = 'ps-vs3-lab ground';
+          _gel.textContent = 'Grade';
+          labWrap.appendChild(_gel);
+          labs.push({ el: _gel, y: SH * model.groundY });
+        }
         return;
       }
       model.disp.forEach(function (v, li) {
@@ -17018,7 +17061,13 @@
       var shown = [];
       labs.forEach(function (L2) {
         var bx = null, by = 0, ok = false;
-        [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]].forEach(function (c) {
+        /* ⚠️ A LABEL WITH ITS OWN ANCHOR IS PROJECTED THERE, not against the plate's corners: the
+           site's floor names belong to one tower each and have to stand beside it. Everything else
+           still takes the leftmost corner, which is where a single building's storey names go. */
+        var _corners = (L2.ax != null)
+          ? [[L2.ax, L2.az]]
+          : [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]];
+        _corners.forEach(function (c) {
           v3.set(c[0], L2.y, c[1]).project(camera);
           if (v3.z > 1) return;                       // behind the camera
           var x = (v3.x * 0.5 + 0.5) * r.width, y2 = (-v3.y * 0.5 + 0.5) * r.height;
@@ -17035,10 +17084,15 @@
            ⚠️ 17px is the label's own height (10px text at 1.4, plus its two borders) plus a
            hairline — measured against the CSS rather than guessed, because a threshold smaller
            than the label lets two of them touch, which is the thing this rule exists to stop. */
-        if (!hide) hide = shown.some(function (s) { return Math.abs(s - by) < 17; });
+        /* ⚠️⚠️ AND AGAINST THE SAME COLUMN, not against the whole frame. With one building there is
+           one column of names and comparing heights alone is right. On the site each tower carries
+           its own column, and two towers' floors at the same height are two different labels that
+           belong side by side — thinning on `y` alone would delete every tower's names but the
+           first. 60px is wider than a floor name and narrower than the gap between two buildings. */
+        if (!hide) hide = shown.some(function (s) { return Math.abs(s.y - by) < 17 && Math.abs(s.x - bx) < 60; });
         L2.el.style.display = hide ? 'none' : 'block';
         if (hide) return;
-        shown.push(by);
+        shown.push({ x: bx, y: by });
         L2.el.style.left = (ox + bx - 9) + 'px';
         L2.el.style.top = (oy + by) + 'px';
       });
@@ -17509,15 +17563,23 @@
          Object.keys(model.storeyN || {}).map(function (k) { return esc(k) + ' ' + model.storeyN[k]; }).join(' · ') +
          '), every floor the same height across the whole site, so the towers stay in proportion and ' +
          'each floor carries its own progress, dates and click. ' +
-         /* ⚠️ WHOSE NAMES THESE ARE, said out loud. Every tower's slices line up by index, but the
-            names can only come from one tower — and a planner reading "8th Floor" beside a tower
-            whose schedule calls it something else would be reading a floor this view made up. */
-         (model.floorLabelOf ? ('The floor names down the side are <b>' + esc(model.floorLabelOf) +
-           '</b>\u2019s, the tallest \u2014 another tower\u2019s floors line up with them by position, not by name. ') : '')) +
-        ''
+         /* ⚠️ WHAT THE GRADE PLATE IS, and that the towers are hung from it rather than stood on a
+            common base — a planner reading a basement as "the bottom of the site" would be reading
+            the excavation of one building as the ground of all of them. */
+         (model.belowRungs
+           ? ('The plate is the <b>grade line</b>: every tower stands on it and its basements hang ' +
+              'below — ' + model.belowRungs + ' level' + (model.belowRungs === 1 ? '' : 's') +
+              ' deep at the deepest. ')
+           : 'The plate is the <b>grade line</b>. ') +
+         /* ⚠️ EVERY TOWER LABELS ITS OWN FLOORS NOW. The names used to be one column at the plate's
+            edge, taken from the tallest tower — a name that belonged to no tower in particular and
+            could not be followed to a building standing at the other end of the site. Each floor
+            carries its own anchor instead (see the cell loop), so a tower's names are ITS names,
+            beside it, and nothing has to be inferred by position. */
+         'Every tower carries its <b>own floor names</b>, beside it. ')
       : (' Each tower is as tall as its <b>own storey count</b> (' +
          Object.keys(model.storeyN || {}).map(function (k) { return esc(k) + ' ' + model.storeyN[k]; }).join(' · ') +
-         '), scaled against the tallest \u2014 a proportion, never a dimension. ');
+         '), scaled against the tallest — a proportion, never a dimension. ');
     return '<p class="ps-vs3-foot">' + msg + _tall +
       'Brightness is progress, exactly ' +
       'as it is inside a tower; click a ' + (model.siteFloors ? 'floor' : 'tower') +
@@ -17778,35 +17840,36 @@
     };
   }
   /* ==== THE SITE, FLOOR BY FLOOR ======================================================
-     Owner 2026-09-13: *"can you show the per floor basis in the site view 3D perspective?"* — and
-     then, of the first attempt: *"NO … Literally, it is just like how you show an individual tower,
-     but instead multiple towers. not like a singular plate that would cover the whole site plan.
-     The 2nd pic view is already ok, just add the labeling and identity of the floors."*
+     Owner 2026-09-13: *"can you show the per floor basis in the site view 3D perspective?"*, then
+     *"Literally, it is just like how you show an individual tower, but instead multiple towers"*,
+     and 2026-09-14: *"attach the labels of the ground floor, 2nd floor etc just beside to each
+     tower"* and *"create a plate that identifies the grade line or the ground line."*
 
-     ⚠️⚠️ THE FIRST ATTEMPT MADE THE ROWS THE FLOORS, and that is what produced the picture they
-     rejected. One row per level across the WHOLE SITE means every row is a storey of the site, so
-     everything that has no traced footprint on that row is drawn as a share of the site plate — a
-     slab the size of the property, once per floor. The massing view was already the right picture;
-     what it was missing was the floors inside each tower.
+     ⚠️⚠️ THE SITE IS ONE ROW, and each tower is one solid standing on its own traced footprint. The
+     floors are SLICES inside each solid — one cell per (tower, floor), every slice of a tower
+     sharing that tower's footprint and stacked up its height by `band`. That is the mechanism the
+     Consolidated fix already uses to stack trades inside a storey, pointed at floors instead: the
+     footprint stays true, no two slices are coplanar, and each floor keeps its own progress, dates
+     and click.
 
-     ⚠️⚠️ SO THE SITE IS STILL ONE ROW, and each tower is still one solid standing on its own traced
-     footprint. What changes is that the solid is SLICED: one cell per (tower, floor), every slice of
-     a tower sharing that tower's footprint and stacked up its height by `band`. That is exactly the
-     mechanism the Consolidated fix already uses to stack trades inside one storey, pointed at floors
-     instead — so the footprint stays true, no two slices are coplanar, and each floor keeps its own
-     progress, its own dates and its own click.
-
-     ⚠️ EVERY FLOOR IS THE SAME HEIGHT ACROSS THE WHOLE SITE, and it falls out rather than being
-     arranged: a tower's solid is `SH x cellH` tall with `cellH = N / maxN`, and it is cut into N
-     slices, so one slice is `SH / maxN` whatever tower it belongs to. An eight-storey tower beside a
-     forty-storey one is eight of the same floors, not eight taller ones. */
+     ⚠️⚠️ THE TOWERS ARE ALIGNED AT GRADE, NOT AT THEIR BASES, and that is what makes a grade plate
+     possible at all. Banding each tower from its own lowest level upwards puts a two-basement
+     tower's ground floor two slices higher than a no-basement tower's — so any line drawn as "the
+     ground" would be true of one building and a lie about the other. Every cell is placed on ONE
+     site-wide ladder instead: `belowMax` slices of basement below the line, `aboveMax` above it,
+     and a tower occupies the rungs it actually has. A tower with no basement starts AT grade, with
+     nothing under it — which is what a building with no basement looks like in section.
+     ⚠️ A tower missing a rung leaves a gap. That is a floor it has no work on, and it is a fact
+     about the schedule rather than something to close up. */
   function _vsSiteFloorModel(list, towers) {
     if (!towers || !towers.length) return null;
     var lvl0 = _vsAxis()[0].id;
     var byTower = {};
     towers.forEach(function (t) { byTower[t] = []; });
     (list || []).forEach(function (r) { var t = _vsTowerOf(r); if (t && byTower[t]) byTower[t].push(r); });
-    var cells = [], storeyN = {}, maxN = 1, tallest = null, tallLevs = null;
+    /* Each tower's own levels, split at grade. ⚠️ `levelRank` is the SAME test the per-tower model
+       uses to decide what is underground, so a basement is a basement in both views. */
+    var per = [], belowMax = 0, aboveMax = 0, storeyN = {};
     towers.forEach(function (t, ti) {
       if (!byTower[t].length) return;
       var byLev = {}, levs = [];
@@ -17816,27 +17879,42 @@
         if (!(v in byLev)) { byLev[v] = []; levs.push(v); }
         byLev[v].push(r);
       });
-      /* ⚠️ A tower whose work carries no level is still a BUILDING, drawn as one undivided solid
-         rather than dropped. The site is a picture of what is being built; a tower missing from it
-         because nobody typed floors on its activities is a worse answer than a tower with no
-         floors drawn on it. */
-      if (!levs.length) {
-        cells.push({ label: t, list: byTower[t], color: _vsTowerColor(t, towers),
-                     slot: ti, floor: null, band: { i: 0, n: 1 } });
-        storeyN[t] = 1;
+      // ⚠️ Bottom-up, by the same rule the per-tower view orders storeys by. Sorts in place.
+      if (levs.length) _vsOrderLevels(levs, byLev);
+      var below = [], above = [];
+      levs.forEach(function (v) {
+        var rk = levelRank(v);
+        if (rk != null && rk < 0) below.push(v); else above.push(v);
+      });
+      belowMax = Math.max(belowMax, below.length);
+      aboveMax = Math.max(aboveMax, above.length);
+      storeyN[t] = levs.length || 1;
+      per.push({ t: t, ti: ti, byLev: byLev, below: below, above: above, any: byTower[t] });
+    });
+    if (!per.length) return null;
+    if (!aboveMax) aboveMax = 1;                 // nothing above grade: the ladder still needs a rung
+    var total = belowMax + aboveMax;
+    var cells = [], labels = [];
+    per.forEach(function (p) {
+      var col = _vsTowerColor(p.t, towers);
+      /* A tower whose work carries NO level is still a building — one undivided solid spanning the
+         above-grade run. ⚠️ Drawn rather than dropped: a tower missing from the site because nobody
+         typed floors on its activities is a worse answer than a tower with no floors drawn on it. */
+      if (!p.below.length && !p.above.length) {
+        cells.push({ label: p.t, list: p.any, color: col, slot: p.ti, floor: null,
+                     band: { i: belowMax, n: total, span: aboveMax } });
         return;
       }
-      // ⚠️ Bottom-up, by the SAME rule the per-tower view orders its storeys by, so a tower reads
-      // the same way in both views. _vsOrderLevels sorts in place.
-      _vsOrderLevels(levs, byLev);
-      storeyN[t] = levs.length;
-      if (levs.length > maxN) { maxN = levs.length; tallest = t; tallLevs = levs.slice(); }
-      levs.forEach(function (v, i) {
-        /* ⚠️ `label` STAYS THE TOWER NAME. It is what the footprint is looked up by on the site
-           plan (`_vsZpPolysOf(plate, label)`) and what the tower's colour is keyed on — the floor
-           travels beside it in `floor`, and the key builder below puts both in the cell's id. */
-        cells.push({ label: t, list: byLev[v], color: _vsTowerColor(t, towers),
-                     slot: ti, floor: v, band: { i: i, n: levs.length } });
+      /* ⚠️ `below` is deepest-first (the list is bottom-up), and the run has to END at grade — so
+         the deepest basement of a one-basement tower sits on the rung directly under the line, not
+         at the bottom of the excavation beside a three-basement tower's. */
+      p.below.forEach(function (v, j) {
+        cells.push({ label: p.t, list: p.byLev[v], color: col, slot: p.ti, floor: v,
+                     band: { i: belowMax - p.below.length + j, n: total, span: 1 } });
+      });
+      p.above.forEach(function (v, k) {
+        cells.push({ label: p.t, list: p.byLev[v], color: col, slot: p.ti, floor: v,
+                     band: { i: belowMax + k, n: total, span: 1 } });
       });
     });
     if (!cells.length) return null;
@@ -17851,17 +17929,19 @@
         return keyPrefix + '|' + v + '|' + (c.label || '*') + (c.floor ? '|' + c.floor : '');
       },
       plateFor: function () { return _vsSitePlan(); },
-      // ⚠️ The wrap slots are per TOWER, not per slice: eight towers make an eight-slot grid, and
-      // every floor of a tower sits in its tower's slot. See `slotN` in _vs3Build.
+      // ⚠️ Slots are per TOWER: every floor of a tower stands in its tower's place on the wrap grid.
       slotN: towers.length,
       cellSpan: Math.min(0.26, 1 / (towers.length + 2)),
-      cellH: function (c) { return (storeyN[c.label] || 1) / maxN; },
-      /* ⚠️ The floor labels are the TALLEST tower's, and the footer says so. Every tower's slices
-         are the same height, so one column of labels lines up with all of them by index — but the
-         NAMES can only come from one tower, and inventing "Level 7" for a tower whose schedule
-         calls it something else would be this view making up a floor. */
-      floorLabels: tallLevs, floorLabelOf: tallest,
-      storeyN: storeyN, maxN: maxN
+      /* ⚠️⚠️ NO `cellH` ANY MORE. Every tower now spans the SAME ladder, so each is a full storey
+         tall and its slices are the rungs it occupies — the proportions come out of how many rungs
+         a tower has, which is the same fact `cellH` used to compute a ratio from, without a second
+         number that could disagree with the bands. */
+      /* ⚠️⚠️ WHERE THE GROUND IS, as a fraction of the storey — the rung count below grade over the
+         whole ladder. This is what the grade plate is drawn at, and it is true of every tower
+         because every tower is placed against this ladder. */
+      groundY: belowMax / total,
+      floorRungs: total, belowRungs: belowMax,
+      storeyN: storeyN, maxN: total
     };
   }
   /* ⚠️ ONE DECISION POINT for both renderers. The card and the focus window must build the same
