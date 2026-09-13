@@ -13,6 +13,78 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 ---
 
+### The site's floors are slices inside each tower, not rows across the property (2026-09-13 h) — ethanrobles10
+
+Owner, with two screenshots: *"nothing happened, still the same problem!!! The 2nd pic view is
+already ok, just add the labeling and identity of the floors."*
+
+### ⚠️⚠️ THE ROWS WERE THE MISTAKE, AND CAPPING THE CELLS WAS NEVER GOING TO FIX IT
+`_vsSiteFloorModel` made one row per LEVEL across the whole site. That is what produced the picture
+they rejected twice: if a row is a storey **of the site**, then everything on it is laid out on the
+site's plate, and anything without a traced footprint is drawn as a share of the property — a slab,
+once per floor. The previous commit capped how big that share could be, which made the slabs smaller
+and left them exactly where they were. **The shape was wrong, not the size.**
+
+The second screenshot is the massing view, and the owner says it is right: two solids standing on
+their own footprints. So the site stays **one row with one solid per tower**, and the floors become
+**slices inside each solid**.
+
+- ⚠️⚠️ One cell per **(tower, floor)**, every slice of a tower sharing that tower's footprint and
+  stacked up its own height by `band`. That is the mechanism the Consolidated fix already uses to
+  stack trades inside one storey, pointed at floors instead — so the footprint stays true, no two
+  slices are coplanar, and each floor keeps its own progress, dates and click.
+- ⚠️ `c.band` is the floor's index within **its own tower**. Read off the cell's position in the row
+  instead, eight towers of thirteen floors would band each slice against 104.
+- ⚠️ `c.slot` is the **tower's** wrap slot, and `model.slotN` shapes the grid from the tower count.
+  Without both, an untraced tower's thirteen floors would be scattered across thirteen squares of
+  the wrap grid instead of standing in one place.
+- ⚠️ `c.label` stays the TOWER name — it is what the footprint is looked up by on the site plan and
+  what the colour is keyed on. The floor travels beside it in `c.floor`, and the key builder puts
+  both in the cell's id: without that every slice of a tower shares one id and clicking any floor
+  opens the same one.
+- ⚠️ A tower whose work carries **no level** is still a building, drawn as one undivided solid. A
+  tower missing from the site because nobody typed floors on its activities is a worse answer than a
+  tower with no floors drawn on it.
+
+### ⚠️ EVERY FLOOR IS THE SAME HEIGHT ACROSS THE SITE, AND IT FALLS OUT
+A tower's solid is `SH x cellH` tall with `cellH = N / maxN`, and it is cut into N slices — so one
+slice is `SH / maxN` whatever tower it belongs to. An eight-storey tower beside a forty-storey one is
+eight of the same floors, not eight taller ones. Nothing computes that; it is what the two existing
+rules already say when you put them together.
+
+### ⚠️ THE LABELS
+`model.disp` carries one entry on the site — "— Site —" — so labelling from the rows would print that
+word once and nothing else. The model hands over the floor names instead, and `buildLabels` places
+them with the same arithmetic the slices use: floor `i` of `n` sits at `SH * (i + 0.5) / n`.
+
+⚠️⚠️ **They are the TALLEST tower's names, and the footer says so.** Every tower's slices line up by
+index — that is what the equal slice height buys — but the NAMES can only come from one tower, and
+printing "8th Floor" beside a tower whose schedule calls it something else would be this view
+inventing a floor.
+
+### Verified
+- **56 assertions** driving the shipped model, sliced verbatim (harness gitignored, deleted), against
+  Tower 1 (a basement and three floors), Tower 2 (two floors), a tower whose work carries no level at
+  all, and a tower outside the list: **one row, and it is the site**; Tower 1 comes out as four cells
+  banded 0..3 bottom-up with the basement at 0; Tower 2 bands against its own two, not the row; the
+  unlevelled tower is one undivided solid and is not dropped; every cell keeps the tower as its label
+  so the footprint still resolves; **a Tower 1 floor and a Tower 2 floor are the same height to
+  1e-12**; every cell has a distinct key and the key names the floor; every floor of a tower shares
+  one slot and the towers have different ones; the labels are the tallest tower's, as many as it has
+  floors, and the model says whose they are.
+- Source checks in the same run: the band, slot, grid, registry, readout and label hooks are all
+  wired; both renderers still go through the one decision point; a site cell can still never fall
+  back to the site outline; and the file carries no control bytes.
+- ⚠️ **Gated against the previous commit**: the floors WERE the rows, there were no per-cell bands,
+  no floor labels, and slots were per cell.
+- ⚠️ **Not verified signed in, and this is the third attempt at this picture.** The anon key has no
+  grants, so what is proven is the model — the cells, the bands, the heights, the keys and the label
+  arithmetic — and not a WebGL frame. The thing to check is the one the screenshots showed: switch to
+  **Floor by floor** and the towers should look exactly as they do in the second screenshot, each cut
+  into its own floors, with the floor names down the side. If a slab the size of the site is still
+  there, it is a tower with no traced footprint and it will be standing in one place, not repeated
+  per floor.
+
 ### A tower is never the site: the floor-by-floor view stops drawing property-sized slabs (2026-09-13 g) — ethanrobles10
 
 Owner, with a screenshot of what shipped an hour earlier: *"NO. i was thinking that when clicking

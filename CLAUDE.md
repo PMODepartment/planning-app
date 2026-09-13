@@ -102,6 +102,41 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### The site's floors are slices inside each tower, not rows across the property (2026-09-13) — ethanrobles10
+
+Owner, with two screenshots: *"nothing happened, still the same problem!!! The 2nd pic view is
+already ok, just add the labeling and identity of the floors."*
+
+⚠️⚠️ **The rows were the mistake, and capping the cells was never going to fix it.** One row per level
+across the whole site means every row is a storey OF THE SITE — so anything without a traced
+footprint is drawn as a share of the property, a slab, once per floor. The previous commit capped how
+big that share could be, which made the slabs smaller and left them exactly where they were. The
+shape was wrong, not the size.
+
+The massing view was already right. So the site stays **one row with one solid per tower**, and the
+floors become **slices inside each solid** — one cell per (tower, floor), every slice sharing that
+tower's footprint and stacked up its own height. That is the mechanism the Consolidated fix already
+uses to stack trades inside a storey, pointed at floors instead.
+
+- ⚠️ The band is the floor's index within **its own tower**, and the wrap slot is the **tower's**, so
+  an untraced tower stands in one place instead of having thirteen floors scattered across thirteen
+  squares of the grid.
+- ⚠️ `c.label` stays the tower name — the footprint is looked up by it — and the floor travels beside
+  it in `c.floor`, which the key builder puts in the cell's id: without that, every slice of a tower
+  shares one id and clicking any floor opens the same one.
+- ⚠️ **Every floor is the same height across the site, and it falls out rather than being arranged**:
+  a tower is `SH x (N/maxN)` tall and cut into N, so one slice is `SH/maxN` whatever tower it belongs
+  to.
+- ⚠️ The floor names come from the **tallest** tower and the footer says so. Every tower's slices line
+  up by index, but the names can only come from one of them — printing "8th Floor" beside a tower
+  whose schedule calls it something else would be this view inventing a floor.
+
+⚠️ 56 assertions on the shipped model, gated against the previous commit. **Not verified signed in,
+and this is the third attempt at this picture** — what is proven is the model, not a WebGL frame.
+
+`MODULE_V` → `20260913h`. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
 ### A tower is never the site: the floor-by-floor view stops drawing property-sized slabs (2026-09-13) — ethanrobles10
 
 Owner, with a screenshot of what shipped an hour earlier: *"NO … not like a singular plate that would
