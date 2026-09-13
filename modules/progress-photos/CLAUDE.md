@@ -2,6 +2,63 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Frame sampling capped at a fixed 48 frames per video, regardless of duration (2026-09-13, later)
+
+Owner: *"also, since it's taking too long to process and stitch an image, divide video to a fixed
+48 frames per process."*
+
+⚠️⚠️ **The 2026-09-12 density fix (30fps, up to `MAX_FRAMES = 1200`) was correct about the problem
+it solved and honest about its cost** — its own changelog entry states plainly that a real
+walk-around recording at that density is "several hundred frames of SEQUENTIAL, per-pair OpenCV
+work" and "meaningfully slower on a real phone than the previous 14–40 frame range." That cost is
+exactly what this report is about: with `stitchFromVideo`'s new per-frame progress reporting
+(the entry directly above) making the work visible in real time, "up to several hundred frames,
+each a real video seek plus its own ORB/BFMatcher/RANSAC join attempt" reads as "taking too long,"
+not as a bug in the status text.
+
+### The fix
+
+`frameCountFor(durationSec)` no longer scales with duration at all — it now always returns a
+**fixed 48**, whatever the clip's length. `FRAMES_PER_SEC`, `MIN_FRAMES` and `MAX_FRAMES` are
+removed entirely; `FIXED_FRAME_COUNT = 48` is the one number that decides sampling density for
+every recording. `frameCountFor` still takes `durationSec` — its call shape inside
+`stitchFromVideo`/`extractFrames` is unchanged — but the parameter no longer influences the
+answer; it is accepted purely so no caller needed to change.
+
+⚠️⚠️ **This is a deliberate trade-off against the 2026-09-12 fix, not a silent reversal of it.**
+That fix existed because a fixed, duration-independent frame count starves a *fast* recording of
+overlap between consecutive samples (too few frames spread across a fast pan means a wide angular
+gap between them, which is what made "11 of 11 joins could not be matched confidently" happen in
+the first place). Going back to a fixed count reintroduces exactly that risk for a recording that
+is both long *and* fast — 48 frames spread across, say, a 30-second recording is a much sparser
+sample than 48 frames across a 6-second one. This is accepted here because the owner asked
+specifically for a fixed count to bound processing time, not because the overlap problem stopped
+being real. If a future report describes joins failing again on a longer or faster recording, the
+fix is a per-pair remedy (raising `JOIN_LOOKAHEAD`, or asking for a slower/shorter walk-around),
+not silently re-scaling this count back up to duration-based sampling.
+
+### Verified
+
+**910 checks green** (was 909 — 1 assertion added, 6 rewritten in place to the new fixed-48
+behaviour rather than silently deleted, "healthy churn from an intentional change" per this file's
+own convention): confirms `FIXED_FRAME_COUNT = 48` is declared and `frameCountFor` simply returns
+it, and that `FRAMES_PER_SEC`/`MIN_FRAMES`/`MAX_FRAMES` no longer exist in the file at all.
+**Genuinely executed**, not just read: `Pano360._frameCountFor` was called directly with a very
+short duration (0.3s), a very long one (9999s), an ordinary one (6s and 24s) and a degenerate one
+(0) — every case returns exactly **48** — and a 4-second clip and a 20-second clip are confirmed to
+resolve to the identical count, which the retired 30fps scaling would never have done. `node
+--check` clean on `pano360.js`/`test.js`; `tools/wiring-check.js` — **126 passed, 0 failed**. The
+same **3** pre-existing, unrelated failures (a PDF page-break assertion + 2 `capture.js`
+audio/flash assertions) from the entry above are unchanged.
+
+⚠️ **Not verified signed in** — same standing caveat as every entry in this file; no real device
+recording has been run through the fixed-48 sampling to confirm the actual wall-clock speedup, or
+to confirm a long/fast recording doesn't now fail to join the way a fast one did before the
+2026-09-12 density fix.
+
+`pano360.js`/`index.html?v=` → `20260913i`; `MODULE_V` (`assets/js/modules-grid.js?v=` in
+`dashboard.html`/`modules.html`) → `20260913i`. `module.js` is unchanged this round.
+
 ## The "Reading video…" status was static for the entire frame-extraction phase — it now reports real per-frame progress (2026-09-13)
 
 Owner, off a screenshot of the "Add 360° photo" modal mid-upload: *"when uploading video, reading

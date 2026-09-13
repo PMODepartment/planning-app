@@ -4448,24 +4448,32 @@ console.log('\n[misc] insert().select() returns the new row id');
   ok('…a candidate that produced a real homography is always preferred over one that did not, even when the raw match count says otherwise — a homography is what actually places a frame',
      /var better = !best \? true : \(!!res\.H !== !!best\.H \? !!res\.H : res\.matches > best\.matches\);/.test(p3js));
 
-  // Genuine execution of frameCountFor() — the actual density fix for "even
-  // if video is taken a bit quickly, stitcher should still work": a quick
-  // recording must be sampled MORE densely in time, not the same fixed
-  // count as a slow one, or the angular gap between consecutive frames
-  // stays exactly as wide as it was before this fix.
+  console.log('\n[56c] 2026-09-13 (later still): "since it\'s taking too long to process and stitch an image, divide video to a fixed 48 frames per process" — frameCountFor no longer scales with duration at all');
+
+  ok('frameCountFor is now a FIXED count (48), regardless of duration — the 30fps/duration-scaled density this replaces is gone from the function body',
+     /var FIXED_FRAME_COUNT = 48;/.test(p3js) &&
+     /function frameCountFor\(durationSec\) \{\s*return FIXED_FRAME_COUNT;\s*\}/.test(p3js) &&
+     !/var FRAMES_PER_SEC/.test(p3js) &&
+     !/var MIN_FRAMES/.test(p3js) &&
+     !/var MAX_FRAMES/.test(p3js));
+
+  // Genuine execution of frameCountFor() — confirms the fixed count is
+  // ACTUALLY fixed (same output for a very short clip, an ordinary one, a
+  // very long one, and a degenerate/invalid duration), not just declared
+  // fixed in a comment while the body still varies its answer.
   (function () {
-    eq('frameCountFor: a very short clip is still floored at MIN_FRAMES, never sampled down to almost nothing',
-       P360._frameCountFor(0.3), 14);
-    eq('frameCountFor: a very long clip is capped at the MAX_FRAMES safety ceiling, never left to grow unbounded',
-       P360._frameCountFor(9999), 1200);
-    eq('frameCountFor: an ordinary mid-length clip is exactly 30 * duration (30fps) rather than a fixed 12 or the old 3fps rate',
-       P360._frameCountFor(6), 180);
-    eq('frameCountFor: a zero/invalid duration degrades to MIN_FRAMES rather than throwing or sampling zero frames',
-       P360._frameCountFor(0), 14);
-    ok('…and a SHORTER (faster) clip samples MORE densely per second of real time than a longer one covering the same rotation — the actual fix, not just a bigger fixed number',
-       P360._frameCountFor(4) / 4 >= P360._frameCountFor(20) / 20);
-    eq('frameCountFor: a typical ~24s walk-around (the capture guide\'s own assumed pace) is not capped by the new safety ceiling',
-       P360._frameCountFor(24), 720);
+    eq('frameCountFor: a very short clip still samples exactly 48 frames',
+       P360._frameCountFor(0.3), 48);
+    eq('frameCountFor: a very long clip still samples exactly 48 frames — no longer scaled up or capped by duration',
+       P360._frameCountFor(9999), 48);
+    eq('frameCountFor: an ordinary mid-length clip samples exactly 48 frames, not 30 * duration',
+       P360._frameCountFor(6), 48);
+    eq('frameCountFor: a zero/invalid duration still returns 48 rather than throwing or sampling zero frames',
+       P360._frameCountFor(0), 48);
+    eq('frameCountFor: a typical ~24s walk-around (the capture guide\'s own assumed pace) samples the same fixed 48, not the old 720',
+       P360._frameCountFor(24), 48);
+    ok('…the count truly does not vary with duration — a 4s clip and a 20s clip get the identical frame count, unlike the retired 30fps scaling',
+       P360._frameCountFor(4) === P360._frameCountFor(20));
   })();
 
   console.log('\n[57] 2026-09-13: "reading video status is taking too long" — extractFrames now reports real per-frame progress, and skips re-resolving a duration the caller already knows');
