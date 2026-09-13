@@ -6,6 +6,52 @@ can't do that. One entry per prompt, newest first.
 
 ---
 
+## 2026-09-13 (c) — The deploy workflow this module's own log has flagged all week, actually built
+
+Follow-up to the (b) entry's own closing line: *"the workflow has to reach `main` before it can run —
+`workflow_dispatch` doesn't appear in the Actions tab while the file is only on a branch."* That file
+never reached `main` — a prior session's `840577e` is unreachable from this checkout's history, and
+`.github/workflows/` did not exist at all here. Rebuilt from scratch on a branch created for exactly
+this (`claude/edge-functions-deploy-workflow-d89r3h`).
+
+`.github/workflows/deploy-edge-functions.yml` — two ways in: **Actions → Deploy Edge Functions → Run
+workflow** (a function name or `all`), or a merge to `main` touching `supabase/functions/**`, which
+deploys only the functions that changed in that push.
+
+- ⚠️⚠️ **The known-function list is read off the checkout's own `supabase/functions/` directory,
+  never hardcoded.** A prior write-up of this same workflow named the eight functions in prose; a
+  ninth function added later would have had no way to ask for `all` and include it. `find … -maxdepth
+  1 -type d` is the single source, so the list can't drift from the repo.
+- ⚠️⚠️ **Every `${{ }}` expression reaches the shell through `env:`, never interpolated into `run:`
+  text.** GitHub substitutes an expression *before* bash sees the line, so a function name containing
+  a quote would close the string and run whatever follows it — the standard Actions script-injection
+  hole. Verified by feeding the step `x'; echo PWNED; '` as the function name: refused as an unknown
+  name, and `PWNED` is never printed, over three separate runs of the extracted step script.
+- ⚠️⚠️ **`--no-verify-jwt` is scoped to exactly one function, `reconstruction-webhook`, not a global
+  flag.** Every other function in this repo deploys with the platform's default JWT check ON — several
+  of them (`pormac-chat` included) trust the caller's `sub` claim *because* that check already ran.
+  `reconstruction-webhook`'s own header explains why it's the one exception: it's called by RunPod,
+  which has no Supabase session. Getting this backwards either rejects RunPod's callback or silently
+  turns off a check a function is relying on.
+- Seven cases run against the extracted step logic before shipping: one function, `all` (8), a typo
+  (exit 1, naming what exists), a push diffed over two real commits from this repo's own history
+  (`7a0a476..4426a9f`, correctly resolving to the one function that PR actually touched), a push
+  touching none, an unreachable base commit, and the injection string above. The deploy loop itself
+  ran against a stub `supabase` CLI: a missing token aborts after the first function (`set -e`),
+  never half-deploying the rest.
+
+⚠️ **Two owner actions still gate the hosted path, and neither can be done from here:** a
+`SUPABASE_ACCESS_TOKEN` repo secret (Settings → Secrets and variables → Actions; generate at
+supabase.com/dashboard/account/tokens) and `GROQ_API_KEY` in Supabase's own Edge Function secrets
+(free at console.groq.com). The workflow deliberately does not touch the Groq key — it ships code, and
+a provider key living in two places is a key that goes stale in one of them.
+
+⚠️ **Not verified against a real Actions run** — no GitHub Actions runner is reachable from this
+environment, so what's proven is the extracted step logic against real inputs (above) and that the
+YAML parses; the workflow has not fired for real, and the two secrets above have not been set.
+
+---
+
 ## 2026-09-13 (b) — "Simplify what you edited": one tier table, and two bugs that fell out of it
 
 Owner, on the two changes above: *"can you simplify what you edited."* A quality pass over the same

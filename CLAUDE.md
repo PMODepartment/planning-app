@@ -102,6 +102,50 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### A GitHub Actions workflow deploys the Edge Functions; laptop-only deploy is gone (2026-09-13)
+
+Follow-up to Pormac's own log, which has flagged this gap for a day: `pormac-chat` sat undeployed
+while the module serving it was live, because this repo's **eight** Supabase Edge Functions
+(`pormac-chat`, `sync-wpm`, `sync-eng`, three `push-*`, two reconstruction endpoints) had exactly one
+deploy path — the Supabase CLI, run by hand, on somebody's own machine. A repo whose only deploy path
+is one laptop has no deploy path on the days that laptop is off.
+
+**New `.github/workflows/deploy-edge-functions.yml`.** Two ways in: **Actions → Deploy Edge
+Functions → Run workflow** (type a function name or `all`), or a merge to `main` touching
+`supabase/functions/**`, which deploys only the functions that changed in that push — never all
+eight for a one-function edit.
+
+⚠️⚠️ **A prior attempt at this same file (`840577e`, per another session's own report) never actually
+reached this repo** — that commit is unreachable from this checkout's history and `.github/workflows/`
+did not exist here at all. Rebuilt on a fresh branch rather than assumed present.
+
+⚠️⚠️ **Every `${{ }}` expression reaches the shell only through `env:`, never spliced into `run:`
+text** — a function name containing a quote otherwise closes the string early and runs whatever
+follows it, the standard Actions injection hole. Proven, not asserted: the extracted step was fed
+`x'; echo PWNED; '` as the function name across three runs, and it was refused as an unknown name with
+`PWNED` never printed.
+
+⚠️ **`--no-verify-jwt` is scoped to exactly one function** — `reconstruction-webhook`, which is called
+by RunPod and has no Supabase session to check. Every other function, `pormac-chat` included, keeps
+the platform's default JWT verification ON; several of them trust the caller's `sub` claim *because*
+that check already ran. A blanket flag here would either reject RunPod's callback or silently disable
+a check a function is relying on.
+
+**Verified:** the extraction of both shell steps parses (`bash -n`) and was run through seven cases —
+single function, `all` (8), a typo (refused, naming what exists), a real push diffed over two commits
+from this repo's own history, a push touching nothing, an unreachable base commit, and the injection
+string above — plus the deploy loop against a stub `supabase` CLI, where a missing token aborts after
+the first function rather than half-deploying the rest. The workflow YAML parses.
+⚠️ **Not verified against a real Actions run** — no runner is reachable from this environment.
+
+⚠️ **Two owner actions still gate the hosted Pormac path, and only the owner can do them:** a
+`SUPABASE_ACCESS_TOKEN` repo secret (Settings → Secrets and variables → Actions) and `GROQ_API_KEY` in
+Supabase's own Edge Function secrets — deliberately not set by this workflow, since a provider key in
+two places is a key that goes stale in one of them.
+
+`.github/workflows/deploy-edge-functions.yml` is new; no shared browser-facing asset changed, so no
+`?v=` bump and no `MODULE_V` bump. Detail: [`modules/pormac/CLAUDE.md`](modules/pormac/CLAUDE.md).
+
 ### The landing page's brand block is reordered: org name in red under the mark, "Planning Suite" in black below it (2026-09-13)
 
 Owner, refining the same landing-page card from the entry directly below: *"move megawide construction
