@@ -102,6 +102,27 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### The landing page's brand block is reordered: org name in red under the mark, "Planning Suite" in black below it (2026-09-13)
+
+Owner, refining the same landing-page card from the entry directly below: *"move megawide construction
+corporation below the logo red font. planning suite is then to be in black font."*
+
+`home.html`'s `.pd-home-brand` block is reordered so `.pd-home-brandsub` ("Megawide Construction
+Corporation") sits directly under the mark, and `.pd-home-brandname` ("Planning Suite") follows it —
+reversing yesterday's order, where the product name led. Colours swap with the reorder: the org name is
+now `--pd-red`, the product name `--pd-ink`. ⚠️ `--pd-ink`, never a literal `#000` — it is near-black in
+light mode and light-coloured in dark mode, which is the only way "black font" stays legible once the
+theme flips; a hardcoded black would vanish on a dark card. `.pd-home-version` is unaffected — it stays
+last, reading off `APP_CONFIG.VERSION` exactly as it did before this reorder.
+
+This is the sidebar's own brand block's mirror image on purpose: `.pd-brand` (used on `projects.html`,
+`dashboard.html` and every module page) already reads the org name below a red "M" mark with "PLANNING
+SUITE" as a separate caption (2026-09-09 (x)) — a different, unrelated element, not touched here.
+
+**Verified:** inline `<script>` unchanged and still parses; CSS brace balance holds (59/59); 0 NUL
+bytes. No shared asset changed, so no `?v=` bump and no `wiring-check` re-run needed.
+⚠️ **Not verified signed in** — no live login is possible in this environment.
+
 ### The landing page renames itself, gets a version line, and asks to "Select Project" (2026-09-13)
 
 Owner, off a screenshot of `home.html`'s "Select Dashboard" card:
