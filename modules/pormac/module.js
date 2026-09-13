@@ -33,7 +33,7 @@ window.Pormac = (function () {
   var profile = null;
   var conversationId = null;      // pormac_conversations.id, once persisted
   var chatHistory = [];           // [{role:'user'|'assistant', content}] — sent to the model
-  var tier = null;                // 'local-full' | 'local-lite' | 'remote'
+  var tier = null;                // a TIERS[].id, or null while being resolved
   var capPromise = null;          // resolves once detectCapability() has set `tier`
   var engine = null;              // the WebLLM engine instance, once loaded
   var engineModelId = null;
@@ -97,11 +97,7 @@ window.Pormac = (function () {
     // typing immediately. onSend() awaits `capPromise` if it hasn't landed yet,
     // so a message sent in the first instant still waits for a real answer
     // (null vs 'local-full' vs 'remote') rather than racing against it.
-    capPromise = detectCapability().then(function (cap) {
-      tier = cap.tier;
-      renderTierBar(cap.reason);
-      return cap;
-    });
+    capPromise = applyTier();
   }
 
   async function loadProjects() {
@@ -203,8 +199,13 @@ window.Pormac = (function () {
   // the full model on a 6GB phone) risks the tab crashing mid-conversation.
   // See modules/pormac/CLAUDE.md for the reasoning and its limits.
   async function detectCapability() {
+    // ⚠️ VALIDATED against the table. An unrecognised string here (a stale key
+    // from an older build, a hand-edited value) used to flow straight through
+    // as the tier and land in every ternary's silent else-branch.
     var saved = localStorage.getItem('pormac_tier_override');
-    if (saved) return { tier: saved, reason: 'downgraded earlier on this device after a local run failed' };
+    if (saved && TIER_IDS.indexOf(saved) >= 0 && saved !== 'none') {
+      return { tier: saved, reason: 'downgraded earlier on this device after a local run failed' };
+    }
 
     if (!('gpu' in navigator)) return { tier: 'remote', reason: 'this browser has no WebGPU' };
     var adapter = null;
@@ -217,6 +218,11 @@ window.Pormac = (function () {
     var mem = navigator.deviceMemory || null; // undefined on Safari/Firefox always
 
     if (mem != null) {
+      // ⚠️ `local-max` (a 7–8B model) is NOT offered on a guess: it is a ~5GB
+      // one-time download and several GB of VRAM, so it needs a machine that
+      // has actually reported enough memory. Below that the old 3B/1B rungs
+      // are unchanged.
+      if (mem >= 16 && !isMobile) return { tier: 'local-max', reason: mem + 'GB reported (desktop)' };
       if (mem >= 8 && !isMobile) return { tier: 'local-full', reason: mem + 'GB reported (desktop)' };
       if (mem >= 6) return { tier: 'local-lite', reason: mem + 'GB reported' };
       return { tier: 'remote', reason: mem + 'GB reported — too little to risk a local model' };
@@ -227,13 +233,168 @@ window.Pormac = (function () {
     return { tier: 'local-full', reason: 'desktop, memory unreadable on this browser' };
   }
 
+  // ==========================================================================
+  // Which model answers: a CHOICE, not only a capability
+  // ==========================================================================
+  // ⚠️⚠️ THIS REVERSES THE MODULE'S ORIGINAL DEFAULT, AND THE REVERSAL IS THE
+  // WHOLE POINT (2026-09-12, owner: "the model is not so smart").
+  // `detectCapability()` above answers "what can this device run?" — and the
+  // first build used that answer as the whole decision, so a planner on a good
+  // laptop was routed to the LARGEST model a browser tab can hold (3B) while
+  // the hosted path they could have reached carries a 70B-class model. The
+  // better the machine, the worse the answer. Capability now decides only the
+  // LOCAL rung; the hosted model is preferred whenever it is actually reachable.
+  //
+  // ⚠️ It stays a visible choice rather than a silent switch, because the
+  // original ask was explicitly in-browser inference ("totally free... no
+  // hosting cost"). Both remain true — Groq's free tier costs nothing either —
+  // but "runs on your device" is a property somebody chose on purpose, so it
+  // is one click away and remembered per device, not deleted.
+  function qualityPref() {
+    var q = localStorage.getItem('pormac_quality');
+    return q === 'device' ? 'device' : 'best';
+  }
+
+  // Asks the Edge Function whether the hosted path is usable for THIS caller
+  // right now — deployed, keyed, and not out of quota. ⚠️ It costs no model
+  // call and no daily allowance (the function answers `probe` before it
+  // reaches the provider), which is what makes it safe to run on every load.
+  // ⚠️ ONE caller for the Edge Function. `probeRemote` and `sendRemote` had the
+  // same six lines character for character — the token walk, the URL literal,
+  // both headers and the empty-object JSON guard — so the function's route name
+  // and that guard each had two owners. Each is now just its own error mapping.
+  // ⚠️ `timeoutMs` is optional and deliberately NOT applied to a real message:
+  // a 70B reply can legitimately take a while, and aborting one would be worse
+  // than waiting for it.
+  async function callPormacChat(payload, timeoutMs) {
+    var { data: sess } = await sb().auth.getSession();
+    var token = sess && sess.session && sess.session.access_token;
+    if (!token) return { noAuth: true };
+    var opts = {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    };
+    if (timeoutMs && typeof AbortSignal !== 'undefined' && AbortSignal.timeout) {
+      opts.signal = AbortSignal.timeout(timeoutMs);
+    }
+    var resp = await fetch(APP_CONFIG.SUPABASE_URL + '/functions/v1/pormac-chat', opts);
+    return { resp: resp, body: await resp.json().catch(function () { return {}; }) };
+  }
+
+  async function probeRemote() {
+    try {
+      // ⚠️⚠️ BOUNDED, because `onSend` blocks on this before the first message.
+      // Unbounded, a captive portal or a function that hangs rather than 404s
+      // stalls the planner's first Enter press for the browser's whole network
+      // timeout — in a module whose entire point is that a local model can
+      // answer with no network at all. The catch below degrades to the local
+      // rung, so a timeout costs 3 seconds, not the session.
+      var r = await callPormacChat({ probe: true }, 3000);
+      if (r.noAuth) return { ok: false, why: 'not signed in' };
+      if (r.resp.ok && r.body.ok) return { ok: true, left: r.body.remaining_today };
+      // ⚠️ The three ways this path can be unusable are DIFFERENT problems with
+      // different remedies, and a planner told only "unavailable" cannot act on
+      // any of them. 404 = the function was never deployed; 503/no_key = it is
+      // deployed but has no provider key; 429 = today's allowance is spent.
+      if (r.resp.status === 404) return { ok: false, why: 'the cloud assistant has not been deployed yet' };
+      if (r.body.code === 'no_key') return { ok: false, why: 'the cloud assistant has no provider key set' };
+      if (r.body.code === 'quota') return { ok: false, why: "today's cloud allowance is used up" };
+      return { ok: false, why: (r.body.error || ('cloud check returned ' + r.resp.status)) };
+    } catch (e) {
+      return { ok: false, why: 'the cloud assistant could not be reached' };
+    }
+  }
+
+
+  // The one place the tier is decided. Returns the capability answer too, so
+  // the Quality control can say what "On this device" would actually give you
+  // without re-running the probe.
+  async function resolveTier() {
+    // ⚠️ The preference chooses an ORDER, not a branch. Written as nested ifs
+    // this same logic duplicated the probe call and the reason-building across
+    // two arms, and the arm where the planner chose "on this device" on a
+    // device that CANNOT run one silently skipped the probe and claimed a
+    // hosted model that was never deployed. As a walk, "nothing worked" falls
+    // out of exhausting the list instead of needing a separate flag.
+    var deviceFirst = qualityPref() === 'device';
+    var cap = await detectCapability();          // '…' or 'remote' if it can run nothing locally
+    var localOk = cap.tier !== 'remote';
+    var order = deviceFirst ? ['local', 'remote'] : ['remote', 'local'];
+    var why = [];
+
+    for (var i = 0; i < order.length; i++) {
+      if (order[i] === 'local') {
+        if (localOk) {
+          return { tier: cap.tier, reason: deviceFirst
+            ? cap.reason + ' — your choice: on this device'
+            : why.concat(['running the smaller on-device model instead']).join(' — ') };
+        }
+        why.push('this device cannot run a local model');
+      } else {
+        var probe = await probeRemote();
+        if (probe.ok) {
+          return { tier: 'remote', reason: why.concat([probe.left != null
+            ? probe.left + ' cloud messages left today' : 'the larger hosted model']).join(' — ') };
+        }
+        why.push(probe.why);
+      }
+    }
+    return { tier: 'none', reason: why.join(' — ') };
+  }
+
+
+  // ==========================================================================
+  // The tier table — ONE row per rung, heaviest first
+  // ==========================================================================
+  // ⚠️⚠️ EVERY PROPERTY OF A TIER LIVES IN THIS TABLE, and that is the point.
+  // These same facts used to be spread across six independent `tier === '…'`
+  // ternary chains (labels, model patterns, VRAM ceiling, context cap, history
+  // depth, the downgrade ladder), so adding one rung meant editing six places
+  // and each chain had its own silent `else`. Two real defects came out of that
+  // shape, neither of them visible in any single chain:
+  //   · `downgrade()` did `order.indexOf(tier)` and an UNRECOGNISED tier gives
+  //     -1, so `Math.min(-1 + 1, 3)` is 0 — a failure "downgraded" a planner
+  //     UP to the heaviest 8B rung.
+  //   · a stale `pormac_tier_override` in localStorage flowed in unvalidated
+  //     and landed in every else-branch while the bar read "Choosing a model…"
+  //     forever.
+  // Both are now impossible: there is one lookup, it validates, and it fails
+  // closed. Adding a rung is one row.
+  //
+  // ⚠️ `none` is a REAL tier, not a flag. "Nothing can answer" is a state this
+  // module genuinely reaches (no WebGPU and the hosted path unreachable), and
+  // expressing it as a boolean beside the tier meant only the tier BAR honoured
+  // it — `onSend` still sent, and the planner got "something went wrong"
+  // instead of the diagnosis already on screen two lines above.
+  var TIERS = [
+    { id: 'local-max',  label: 'On this device — large model',  ctxCap: 5, keep: 12, maxVram: 6500,
+      patterns: [/Llama-3\.1-8B-Instruct/i, /Qwen2\.5-7B-Instruct/i, /Mistral-7B-Instruct/i] },
+    { id: 'local-full', label: 'On this device — medium model', ctxCap: 4, keep: 8,  maxVram: 3300,
+      patterns: [/Llama-3\.2-3B-Instruct/i, /Qwen2\.5-3B-Instruct/i, /Phi-3\.5-mini-instruct/i] },
+    { id: 'local-lite', label: 'On this device — small model',  ctxCap: 4, keep: 8,  maxVram: 1400,
+      patterns: [/Llama-3\.2-1B-Instruct/i, /Qwen2\.5-1\.5B-Instruct/i, /Qwen2-0\.5B-Instruct/i] },
+    { id: 'remote',     label: 'Best quality — large hosted model', ctxCap: 8, keep: 30 },
+    { id: 'none',       label: 'No model available',                ctxCap: 0, keep: 0 },
+  ];
+  var TIER_IDS = TIERS.map(function (t) { return t.id; });
+  // ⚠️ Falls back to the SMALLEST local rung, never the largest — an unknown
+  // tier is a bug, and the safe guess when you do not know what the device can
+  // take is the one that asks least of it.
+  function rung(id) {
+    var hit = TIERS.filter(function (t) { return t.id === id; })[0];
+    return hit || TIERS[2];
+  }
+
   // Step the tier down after a real failure (OOM, context lost, load error),
   // and remember it on THIS device so the next visit does not repeat the
   // failure. This is the "slow down instead of crash" behaviour.
   function downgrade(reason) {
-    var order = ['local-full', 'local-lite', 'remote'];
-    var i = order.indexOf(tier);
-    var next = order[Math.min(i + 1, order.length - 1)];
+    // ⚠️ Never past 'remote' into 'none' — a local failure says nothing about
+    // whether the hosted path works, and parking a planner on "No model
+    // available" because their GPU ran out of memory would be a lie.
+    var i = TIER_IDS.indexOf(tier);
+    var next = TIER_IDS[Math.min((i < 0 ? 0 : i) + 1, TIER_IDS.indexOf('remote'))];
     UI.toast('Pormac: switching to a lighter mode (' + reason + ')', 'warn');
     localStorage.setItem('pormac_tier_override', next);
     tier = next;
@@ -241,27 +402,82 @@ window.Pormac = (function () {
     renderTierBar(reason);
   }
 
-  var TIER_LABEL = {
-    'local-full': 'Running locally (full model)',
-    'local-lite': 'Running locally (lite model)',
-    'remote': 'Cloud fallback (this device can’t run it locally)',
-    null: 'Checking this device…',
-  };
+  // ⚠️ `tierReason` is genuine state — "what the bar is currently saying" — and
+  // it has to be, because `ensureEngine`'s progress callback repaints with a
+  // reason hundreds of times during a model load while other callers repaint
+  // with none.
+  var tierReason = '';
 
+  // ⚠️⚠️ THE CONTROLS ARE REBUILT ONLY WHEN THEY ACTUALLY CHANGE, AND THAT IS
+  // NOT AN OPTIMISATION — IT IS THE FIX FOR A DEFECT.
+  // This used to rewrite the whole bar's innerHTML on every call, including the
+  // <select>. WebLLM's initProgressCallback fires once per downloaded shard, so
+  // during a first-time load (a ~5GB download on the large rung) the Quality
+  // control was destroyed and rebuilt every few hundred milliseconds — dropping
+  // focus and closing its dropdown mid-click, at exactly the moment a planner
+  // would want to escape a slow local model. The status text and the busy dot
+  // are mutated in place instead; the controls are re-emitted only when the
+  // preference or the downgrade flag genuinely differs.
   function renderTierBar(reason) {
+    if (reason != null) tierReason = reason;
     var bar = $('pmc-tierbar');
     if (!bar) return;
-    var label = TIER_LABEL[tier] || TIER_LABEL[null];
-    bar.innerHTML =
-      '<span class="pmc-tierpill' + (sending ? ' busy' : '') + '"><span class="pmc-dot"></span>' + Fmt.esc(label) + '</span>' +
-      (reason ? '<span>' + Fmt.esc(reason) + '</span>' : '') +
-      (tier === 'remote' ? '<button class="pd-btn pd-btn-sm" id="pmc-retry-local">Try running locally again</button>' : '');
-    var retry = $('pmc-retry-local');
-    if (retry) retry.onclick = function () {
-      localStorage.removeItem('pormac_tier_override');
-      tier = null; renderTierBar();
-      detectCapability().then(function (cap) { tier = cap.tier; renderTierBar(cap.reason); });
-    };
+    var pref = qualityPref();
+    var downgraded = !!localStorage.getItem('pormac_tier_override');
+    var sig = pref + '|' + downgraded;
+
+    if (bar.getAttribute('data-controls') !== sig) {
+      bar.innerHTML =
+        '<span class="pmc-tierpill"><span class="pmc-dot"></span><span class="pmc-tierlabel"></span></span>' +
+        '<span class="pmc-tierwhy"></span>' +
+        '<label class="pmc-quality" title="Which model answers. Best quality runs on a much larger hosted ' +
+          'model; on-device runs a smaller one in your browser with no daily limit.">Quality' +
+          '<select class="pd-select pd-input-sm" id="pmc-quality">' +
+            '<option value="best"' + (pref === 'best' ? ' selected' : '') + '>Best quality</option>' +
+            '<option value="device"' + (pref === 'device' ? ' selected' : '') + '>On this device</option>' +
+          '</select></label>' +
+        (downgraded ? '<button class="pd-btn pd-btn-sm" id="pmc-retry-local">Reset device model</button>' : '');
+      bar.setAttribute('data-controls', sig);
+
+      $('pmc-quality').onchange = function (e) {
+        localStorage.setItem('pormac_quality', e.target.value === 'device' ? 'device' : 'best');
+        // ⚠️ Drop the loaded engine: switching to Best must not keep answering
+        // from the small model already sitting in memory, which would make the
+        // control look broken while quietly doing nothing.
+        engine = null; engineModelId = null;
+        tier = null; renderTierBar('switching…');
+        capPromise = applyTier();
+      };
+      var retry = $('pmc-retry-local');
+      if (retry) retry.onclick = function () {
+        localStorage.removeItem('pormac_tier_override');
+        engine = null; engineModelId = null;
+        tier = null; renderTierBar('re-checking this device…');
+        capPromise = applyTier();
+      };
+    }
+
+    bar.querySelector('.pmc-tierlabel').textContent = tier ? rung(tier).label : 'Choosing a model…';
+    bar.querySelector('.pmc-tierwhy').textContent = tierReason;
+    setBusy(sending);
+  }
+
+  // The busy dot is a class on one element. Repainting the bar to flip it is
+  // what forced `tierReason` into module state in the first place.
+  function setBusy(b) {
+    var bar = $('pmc-tierbar');
+    var pill = bar && bar.querySelector('.pmc-tierpill');
+    if (pill) pill.classList.toggle('busy', !!b);
+  }
+
+  // One writer for `tier` and the bar — three call sites setting them by hand
+  // is three chances for the two to disagree.
+  function applyTier() {
+    return resolveTier().then(function (r) {
+      tier = r.tier;
+      renderTierBar(r.reason);
+      return r;
+    });
   }
 
   // Lazy-loaded only once a local tier is actually needed — matches this
@@ -295,10 +511,14 @@ window.Pormac = (function () {
     try { webllm = await loadWebLLM(); }
     catch (e) { downgrade('could not load the local model runtime'); return null; }
 
-    var patterns = tier === 'local-full'
-      ? [/Llama-3\.2-3B-Instruct/i, /Qwen2\.5-3B-Instruct/i, /Phi-3\.5-mini-instruct/i]
-      : [/Llama-3\.2-1B-Instruct/i, /Qwen2\.5-1\.5B-Instruct/i, /Qwen2-0\.5B-Instruct/i];
-    var maxVram = tier === 'local-full' ? 3300 : 1400;
+    // ⚠️ The ceiling was 3B for every capable machine. A 7–8B model is a real
+    // step up in reasoning and WebLLM ships several, so a workstation is no
+    // longer capped at what a mid-range laptop can hold. The cost is honest and
+    // paid once: ~5GB downloaded and cached by the browser on first use.
+    // Which patterns and how much VRAM come from the tier table — this used to
+    // be two separate ternary chains testing the same tier three lines apart.
+    var spec = rung(tier);
+    var patterns = spec.patterns, maxVram = spec.maxVram;
     var modelId = pickModelId(webllm, maxVram, patterns);
     if (!modelId) { downgrade('no suitable local model is available for this tier'); return null; }
 
@@ -450,33 +670,81 @@ window.Pormac = (function () {
   // default to a small, generally-useful set so a vague question still gets
   // something rather than nothing. Capped, so the prompt stays small enough
   // for a 1–3B local model's context window.
+  // The project the planner has selected, named the way the picker names it —
+  // read off the live <select> so it cannot disagree with what is on screen.
+  function projectLabel() {
+    var sel = $('pmc-project');
+    var opt = sel && sel.options[sel.selectedIndex];
+    return (pid && opt && opt.text) || '';
+  }
+
   async function gatherContext(question) {
     var providers = allProviders();
     var matched = providers.filter(function (p) { return p.keywords.test(question); });
     if (!matched.length) matched = providers.filter(function (p) { return p.key === 'project-schedule' || p.key === 'risk-register'; });
-    matched = matched.slice(0, 4);
+
+    // ⚠️ How many modules to pull in is bounded by the MODEL's window, not by a
+    // constant. Four was chosen for a 1B model; on the hosted model it was
+    // withholding most of the project from a question that spans modules
+    // ("are the delays on the critical path tied to any open claim?"), which
+    // is exactly the kind of question a planner asks an assistant.
+    matched = matched.slice(0, rung(tier).ctxCap);
+
+    // ⚠️ Fetched in PARALLEL, not in sequence. Each provider is its own round
+    // trip, so eight of them in a row put eight latencies between the planner's
+    // question and the first token. `Promise.all` over per-provider catches
+    // keeps the isolation the sequential loop had — one failing provider must
+    // not take the others with it — while costing one latency instead of N.
+    var results = await Promise.all(matched.map(function (p) {
+      if (p.needsProject && !pid) return Promise.resolve(null);
+      return Promise.resolve().then(p.fetch).then(
+        function (text) { return text ? { label: p.label, text: text } : null; },
+        function () { return null; }
+      );
+    }));
 
     var used = [], blocks = [];
-    for (var i = 0; i < matched.length; i++) {
-      var p = matched[i];
-      if (p.needsProject && !pid) continue;
-      try {
-        var text = await p.fetch();
-        if (text) { blocks.push(text); used.push(p.label); }
-      } catch (e) { /* one provider failing must not block the others */ }
-    }
+    // ⚠️ Name the project first. Without it the model is reading a pile of
+    // figures with nothing saying what they describe, and answers generically
+    // about "the project" because that is genuinely all it was told.
+    var proj = projectLabel();
+    if (proj) blocks.push('Project: ' + proj);
+    results.forEach(function (r) {
+      if (!r) return;
+      blocks.push(r.text);
+      used.push(r.label);
+    });
     return { used: used, text: blocks.join('\n') };
   }
 
   // ==========================================================================
   // Sending a message
   // ==========================================================================
-  var SYSTEM_PROMPT =
-    'You are Pormac, an assistant embedded in Megawide’s Planners Dashboard. Answer the ' +
-    'planner’s question using ONLY the context given below when it is relevant; say plainly ' +
-    'when you don’t have enough information rather than guessing. Be concise. If the context ' +
-    'includes figures mirrored from the Procurement or Engineering apps, make clear they may lag ' +
-    'the live register there.';
+  // ⚠️ A weak model gets much of its apparent intelligence from the instructions,
+  // so this says what a good answer LOOKS like rather than only what to avoid.
+  // The original was three sentences of prohibitions ("don't guess, be
+  // concise"), which is most of what made replies read as evasive: told only
+  // what not to do, a small model hedges.
+  var SYSTEM_PROMPT = [
+    'You are Pormac, an assistant inside Megawide’s Planners Dashboard. You help construction',
+    'Planning Engineers read their own project data: schedule, risks, stakeholders, contracts,',
+    'claims, cash flow, manpower, equipment, progress photos, procurement and engineering design.',
+    '',
+    'How to answer:',
+    '- Lead with the direct answer in one sentence, then the figures that support it.',
+    '- QUOTE THE ACTUAL NUMBERS from the context below. A planner asking "how far behind are we"',
+    '  wants the days and the dates, not a description of where to find them.',
+    '- Use the planner’s vocabulary: activity, WBS, float, baseline, POC, BOQ, variation, EOT.',
+    '- Keep it short. A few sentences or a tight list. No preamble, no restating the question.',
+    '',
+    'Honesty rules:',
+    '- The context below is the ONLY project data you have. Never invent a figure, date, name or',
+    '  ID that is not in it.',
+    '- If the context does not answer the question, say so in one line and name the module the',
+    '  planner should open. Do not pad the answer with generic construction advice.',
+    '- Figures mirrored from the Procurement or Engineering apps may lag the live register there;',
+    '  say so when you quote one.',
+  ].join('\n');
 
   async function onSend() {
     if (sending) return;
@@ -488,9 +756,19 @@ window.Pormac = (function () {
     input.value = ''; input.style.height = 'auto';
     pushMessage('user', text, null, null);
 
+    // ⚠️ `none` means resolveTier() already established that nothing can
+    // answer. Sending anyway would replace the diagnosis on the tier bar with
+    // a generic "something went wrong" — the planner would lose the one line
+    // that says what to fix.
+    if (tier === 'none') {
+      pushMessage('assistant', 'No model is available right now — ' + tierReason + '.');
+      sending = false;
+      return;
+    }
+
     var ctx = await gatherContext(text);
     var placeholder = pushMessage('assistant', '', null, ctx.used);
-    renderTierBar();
+    setBusy(true);
 
     try {
       var reply;
@@ -506,15 +784,18 @@ window.Pormac = (function () {
       updateMessage(placeholder, 'Sorry — something went wrong answering that (' + ((e && e.message) || e) + ').');
     } finally {
       sending = false;
-      renderTierBar();
+      setBusy(false);
     }
   }
 
   function promptMessages(question, contextText) {
-    var msgs = [{ role: 'system', content: SYSTEM_PROMPT + (contextText ? '\n\nContext:\n' + contextText : '') }];
-    // Keep only the last few turns — a local model's context window is small,
-    // and the context block above is rebuilt fresh every message anyway.
-    var recent = chatHistory.slice(-8);
+    var msgs = [{ role: 'system', content: SYSTEM_PROMPT + (contextText ? '\n\nProject data available to you:\n' + contextText : '\n\nNo project data is loaded for this question.') }];
+    // ⚠️ How much conversation to carry is a property of the MODEL, not of the
+    // module. A 1B model's window is a few thousand tokens and stuffing it
+    // makes answers worse; the hosted model accepts 131k, where cutting the
+    // thread at 8 turns was throwing away the context that makes a follow-up
+    // question ("and the one after that?") answerable at all.
+    var recent = chatHistory.slice(-rung(tier).keep);
     return msgs.concat(recent, [{ role: 'user', content: question }]);
   }
 
@@ -530,18 +811,17 @@ window.Pormac = (function () {
   }
 
   async function sendRemote(question, contextText) {
-    var { data: sess } = await sb().auth.getSession();
-    var token = sess && sess.session && sess.session.access_token;
-    if (!token) throw new Error('not signed in');
-    var resp = await fetch(APP_CONFIG.SUPABASE_URL + '/functions/v1/pormac-chat', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: promptMessages(question, contextText) }),
-    });
-    var body = await resp.json().catch(function () { return {}; });
-    if (!resp.ok) throw new Error(body.error || ('cloud fallback returned ' + resp.status));
-    return body.reply || '(no response)';
+    var r = await callPormacChat({ messages: promptMessages(question, contextText) });
+    if (r.noAuth) throw new Error('not signed in');
+    if (!r.resp.ok) throw new Error(r.body.error || ('the hosted model returned ' + r.resp.status));
+    // ⚠️ The reply carries the allowance left, so the tier bar is refreshed from
+    // the answer rather than re-probing for a number the send already returned.
+    if (r.body.remaining_today != null && tier === 'remote') {
+      renderTierBar(r.body.remaining_today + ' cloud messages left today');
+    }
+    return r.body.reply || '(no response)';
   }
+
 
   // ==========================================================================
   // Persistence — best-effort. A migration that hasn't run yet, or an access

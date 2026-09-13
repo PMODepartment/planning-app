@@ -130,6 +130,278 @@ is confirmed to read from `APP_CONFIG.VERSION` by source inspection, not observe
 
 `assets/js/config.js?v=` → `20260913a` (29 referencing pages, shared asset).
 
+### The site's floors are slices inside each tower, not rows across the property (2026-09-13) — ethanrobles10
+
+Owner, with two screenshots: *"nothing happened, still the same problem!!! The 2nd pic view is
+already ok, just add the labeling and identity of the floors."*
+
+⚠️⚠️ **The rows were the mistake, and capping the cells was never going to fix it.** One row per level
+across the whole site means every row is a storey OF THE SITE — so anything without a traced
+footprint is drawn as a share of the property, a slab, once per floor. The previous commit capped how
+big that share could be, which made the slabs smaller and left them exactly where they were. The
+shape was wrong, not the size.
+
+The massing view was already right. So the site stays **one row with one solid per tower**, and the
+floors become **slices inside each solid** — one cell per (tower, floor), every slice sharing that
+tower's footprint and stacked up its own height. That is the mechanism the Consolidated fix already
+uses to stack trades inside a storey, pointed at floors instead.
+
+- ⚠️ The band is the floor's index within **its own tower**, and the wrap slot is the **tower's**, so
+  an untraced tower stands in one place instead of having thirteen floors scattered across thirteen
+  squares of the grid.
+- ⚠️ `c.label` stays the tower name — the footprint is looked up by it — and the floor travels beside
+  it in `c.floor`, which the key builder puts in the cell's id: without that, every slice of a tower
+  shares one id and clicking any floor opens the same one.
+- ⚠️ **Every floor is the same height across the site, and it falls out rather than being arranged**:
+  a tower is `SH x (N/maxN)` tall and cut into N, so one slice is `SH/maxN` whatever tower it belongs
+  to.
+- ⚠️ The floor names come from the **tallest** tower and the footer says so. Every tower's slices line
+  up by index, but the names can only come from one of them — printing "8th Floor" beside a tower
+  whose schedule calls it something else would be this view inventing a floor.
+
+⚠️ 56 assertions on the shipped model, gated against the previous commit. **Not verified signed in,
+and this is the third attempt at this picture** — what is proven is the model, not a WebGL frame.
+
+`MODULE_V` → `20260913h`. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+### A tower is never the site: the floor-by-floor view stops drawing property-sized slabs (2026-09-13) — ethanrobles10
+
+Owner, with a screenshot of what shipped an hour earlier: *"NO … not like a singular plate that would
+cover the whole site plan."* Two slender towers standing inside a stack of huge translucent slabs,
+one per floor, each the size of the whole property. **Two faults, both from the site borrowing rules
+written for a floor.**
+
+- ⚠️⚠️ **The whole-floor fallback.** `if (!_pg && _plate && n === 1) _pg = _vsZpOutlineOf(_plate)` is
+  right on a floor — one cell on a storey IS that floor — and on the site the plate is the site
+  development plan, so its outline is the **property boundary**. Every row where one tower had work
+  drew that tower as a slab covering the entire site, once per floor. Now gated on `!model.site`.
+- ⚠️⚠️ **The wrap slot is a share of the plate.** A cell with no traced outline takes `plate / cols`
+  — right for a zone on a storey, and on the site half the property, one storey tall, on every floor.
+  Those are the towers nobody has traced a footprint for yet (this project has 1 of 8).
+  `model.cellSpan` caps an untraced site cell at `1 / (towers + 2)` of the plate, max 0.26: eight
+  towers get a tenth of the site each, three get a fifth.
+- ⚠️ The cap applies **only** where there is no traced outline — a footprint somebody drew is the
+  drawing — and the slot still decides WHERE the block stands, so the footer's *"not where they stand
+  on site"* warning stays true. Both site models carry it; the massing view had the same two faults,
+  one solid per tower just made them less obvious than forty do.
+
+⚠️ 50 assertions on the shipped models, including the cap's arithmetic and both fallbacks. Two harness
+bugs were caught first — a fixture asking for towers with no activities, and an expected value of
+0.125 where the rule gives 0.1 — both the test being wrong about the code. **Not verified signed in**;
+the fix has not been seen on the project in the screenshot.
+
+`MODULE_V` → `20260913g`. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+### The site view reads floor by floor, not just as massing (2026-09-13) — ethanrobles10
+
+Owner: *"can you show the per floor basis in the site view 3D perspective?"*
+
+⚠️⚠️ **The site was one row, and every tower was one solid** — a massing study that says where the
+buildings stand and how tall they are, and cannot say which floors are done in each of them. A new
+`_vsSiteFloorModel` draws the same site with every tower stacked on its own traced footprint, one
+block per floor, each shaded by its own progress. A **Show: Whole towers | Floor by floor** segment
+on the site card chooses between them.
+
+- ⚠️⚠️ **The rows are the LEVEL NAMES, not storey numbers.** Numbering each tower 1..n and pairing by
+  index would line up a 40-storey tower's 8th with an 8-storey tower's 8th by accident. With names as
+  rows, "8th Floor" is one row and every tower that has one puts a block on it, over its own
+  footprint. Ordered by the same `_vsOrderLevels` + `levelRank` the per-tower model uses, so the two
+  views cannot disagree about what is above grade.
+- ⚠️⚠️ **No `cellH`** — each row is one storey tall, so a tower with eight floors occupies eight rows
+  and one with forty occupies forty. The heights come out proportional on their own, from the same
+  fact the massing model has to compute a ratio for.
+- ⚠️ A row where a tower has no block is a floor it has no work on. Towers naming their floors
+  differently interleave rather than align — the schedule's own shape, said in the footer rather than
+  smoothed over.
+- ⚠️ `_vsSiteModelFor()` is the single place the choice is made, and both the card and the full
+  screen go through it: a second `if` at the other call site is how a focus window ends up showing a
+  different drawing from the card it was opened from.
+- ⚠️⚠️ **A NUL byte got written into the module.** The first cut keyed a counter on
+  `tower + '\0' + level` and the escape landed in the file as a real control byte — `grep` began
+  calling the module a binary file. Replaced with a nested map, which needs no delimiter at all; the
+  harness now checks the whole file for control bytes.
+
+⚠️ 43 assertions drive the shipped model, sliced verbatim, over a fixture with a basement, an absent
+tower, project-wide work and a tower outside the list. Gated against the previous commit, plus
+browser measurement of the new control. **Not verified signed in** — no real site has been drawn
+floor by floor.
+
+`MODULE_V` → `20260913f`. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+### Progress Photos: 360° frame sampling capped at a fixed 48 frames per video (2026-09-13, later)
+
+Owner: *"since it's taking too long to process and stitch an image, divide video to a fixed 48
+frames per process."* The 2026-09-12 density fix (30fps, up to 1200 frames) was correct and
+honest that it would be slow on a real phone — with the same-day progress-reporting fix making
+that work visible, "several hundred sequential per-pair OpenCV joins" read as "too slow."
+
+`frameCountFor` no longer scales with duration at all — every recording, short or long, now
+samples exactly **48** frames. `FRAMES_PER_SEC`/`MIN_FRAMES`/`MAX_FRAMES` are removed.
+⚠️ Deliberate trade-off, not a silent reversal: a long *and* fast recording is again sampled more
+sparsely than a short one, reintroducing some of the overlap risk the 2026-09-12 fix existed to
+remove — accepted because the owner asked for a fixed count specifically to bound processing
+time.
+
+Verified: 910 checks green (1 new + 6 rewritten to the fixed-48 behavior), `frameCountFor` called
+directly across five durations (0/0.3/6/24/9999s) all returning 48; `tools/wiring-check.js`
+126/0; the same 3 pre-existing, unrelated failures confirmed unchanged.
+⚠️ Not verified signed in — no real device recording has confirmed the actual speedup, or that a
+long/fast recording still joins correctly at this lower density.
+
+`pano360.js` → `?v=20260913i`; `MODULE_V` → `20260913i`. Detail:
+[`modules/progress-photos/CLAUDE.md`](modules/progress-photos/CLAUDE.md).
+
+### Progress Photos: the 360° "Reading video…" status stops being static through the one phase that actually takes a while (2026-09-13)
+
+Owner, off a screenshot of the "Add 360° photo" modal mid-upload: *"when uploading video, reading
+video status is taking too long. provide better description of status."*
+
+⚠️⚠️ **The status text was blind to the one real long phase, not wrong.** `Pano360.stitchFromVideo`'s
+progress callback fired exactly once for the whole frame-extraction phase — after every frame had
+already been pulled — so at the current 30fps/up-to-1200-frame sampling density the planner watched a
+frozen sentence for however long several hundred real video seeks took, with nothing to say it wasn't
+stuck. `extractFrames` now reports progress per frame, `stitchFromVideo` reports four named stages
+(duration → frame count decided → per-frame extraction → stitching), and the module reads all four
+into a real, moving message ("Extracting frames — 145 of 600 (24%)").
+
+Verified: 909 checks green (3 new + 3 rewritten to the new call shape), including genuine execution
+of `extractFrames` against a fake, controllable `<video>` element proving `onProgress` fires once per
+frame in order; `tools/wiring-check.js` 126/0; the same 3 pre-existing, unrelated failures confirmed
+unchanged against the commit before this fix.
+⚠️ Not verified signed in — no real device recording has been run through the new reporting; this
+fixes the status text during real work, not how long that work takes.
+
+`pano360.js`/`module.js` → `?v=20260913e`; `MODULE_V` → `20260913e`. Detail:
+[`modules/progress-photos/CLAUDE.md`](modules/progress-photos/CLAUDE.md).
+
+### 2026-09-13 (b) — Pormac simplified: one tier table, and the two bugs its absence was hiding
+
+Owner, on the two Pormac changes below: *"can you simplify what you edited."* A quality pass over the
+same diff — reuse, simplification, efficiency, altitude. Detail:
+[`modules/pormac/CLAUDE.md`](modules/pormac/CLAUDE.md). Module + its Edge Function, **no migration**.
+
+⚠️⚠️ **THE FACTS ABOUT A TIER LIVED IN SIX PARALLEL TERNARY CHAINS, AND THAT SHAPE IS WHAT HID TWO
+REAL DEFECTS.** Each rung's label, model patterns, VRAM ceiling, context cap, history depth and
+downgrade position was its own independent `tier === '…' ? …` chain, scattered across ~400 lines —
+so adding a rung meant editing six places and every chain had its own silent `else`. They are now
+**one table, one row per rung**, read through one validating lookup. What fell out:
+
+- ⚠️⚠️ **`downgrade()` UPGRADED on an unrecognised tier.** `order.indexOf(tier)` answers **-1**, so
+  `Math.min(-1 + 1, 3)` is **0** — the heaviest local rung. A local failure could promote a planner
+  to the *largest* model, the exact opposite of "slow down instead of crash". Now guarded and clamped
+  at `remote` — ⚠️ never past it, because a GPU running out of memory says nothing about whether the
+  hosted path works.
+- ⚠️⚠️ **A stale `pormac_tier_override` flowed in unvalidated** and landed in every chain's
+  else-branch while the bar read *"Choosing a model…"* forever. Validated now, and the lookup fails
+  **closed** — an unknown id falls back to the **smallest** local rung, never the largest.
+- ⚠️ **`none` becomes a real tier rather than a boolean beside one.** `tierBroken` was honoured only
+  by the tier BAR, so with no WebGPU and the hosted path unreachable the bar correctly named the
+  cause and `onSend` still sent into a path already known dead — replacing that diagnosis with
+  *"something went wrong"*.
+
+**Also, each a duplication or a waste:** one Edge Function caller replaces six lines duplicated
+character-for-character between the probe and the send (⚠️ the new 3s timeout is deliberately **not**
+applied to a real message — a 70B reply can legitimately take a while); ⚠️⚠️ **`renderTierBar` stopped
+destroying the Quality `<select>` on every repaint**, which is a fix rather than an optimisation —
+WebLLM's progress callback fires once per downloaded shard, so a ~5GB first load rebuilt that control
+every few hundred milliseconds, dropping focus and closing its dropdown at exactly the moment a
+planner would want to escape a slow local model; and `resolveTier` becomes an ordered walk, so the
+probe call and the reason-building exist once instead of twice and the reasons compose.
+
+**The Edge Function:** ⚠️⚠️ `MODEL_DEAD` matched the bare word **"model"** in the response prose,
+which appears in errors that have nothing to do with a dead id — so a client-side mistake would have
+burned the whole three-model chain and then reported the last model's error, looking exactly like a
+provider outage. It reads the structured `error.code` now, with the regex only as a fallback. The
+access check and the usage read run in parallel (independent), with ⚠️ the uid parsed **before**
+either starts so the 401 path cannot abandon an in-flight promise.
+
+⚠️⚠️ **And one CSS rule was inert.** `.pmc-quality + button.pd-btn-sm { margin-left: 0 }` ties on
+specificity with the older `.pmc-tierbar button.pd-btn-sm { margin-left: auto }`, declared later, so
+it never applied — two auto margins split the free space, which is the "select floating in the
+middle" the comment above it claimed to have fixed. It only looked right because the reset button is
+absent unless the planner has been downgraded, and my own browser check never covered that state.
+Deleted rather than cancelled.
+
+**Verified:** 41 context assertions, **21 of them new equivalence assertions** proving the pass left
+behaviour byte-identical to the pre-simplify commit, plus the 5 original contrasts against the
+pre-feature commit, which still bite — ⚠️ both bases pinned to **SHAs**, never `HEAD`, which had
+already turned two assertions into self-comparison once. 11 new browser assertions (the `<select>`
+survives **50 repaints**; the probe carries an `AbortSignal`; the composer stays typable while the
+probe hangs; `none` refuses the send while sending **0** messages) and all 9 tier paths green with 0
+page errors. ⚠️ **The tier bar was measured before and after and is byte-identical** — same height,
+row count, pill and Quality rects to the pixel, same text. `node --check` clean, Edge Function
+parses, braces 29/29, 0 NUL bytes, `wiring-check` **126/126**, `dead-hooks` at its 9-finding baseline.
+
+⚠️ **Not verified signed in, and the owner action from the entry below still gates all of it** —
+until `supabase functions deploy pormac-chat` has run with a `GROQ_API_KEY`, the hosted path does not
+exist and every planner falls back to the on-device model.
+
+`MODULE_V` → `20260913j`. ⚠️ **Not the next letter, and re-derived twice:** the first cut took
+`20260913d` past `main`'s `20260913c`; by the time this branch rebased again `main` had reached
+`20260913i`, and `d` sorts *earlier* — a browser already holding `i` would never fetch it, which is
+worse than a collision. So the token is re-derived past whatever `main` actually has **after** each
+rebase, never guessed before one. The rule this log has now recorded six times.
+
+### 2026-09-13 — Pormac: the better the laptop, the worse the model
+
+Owner: *"pormac is working already, but the model is not so smart."* Detail:
+[`modules/pormac/CLAUDE.md`](modules/pormac/CLAUDE.md). Module + its Edge Function, **no migration**.
+
+⚠️⚠️ **THE ROUTING WAS BACKWARDS, AND THAT IS THE FINDING.** `detectCapability()` answers *"what can
+this device run?"*, and the first build used that as the **entire** decision: WebGPU present → run
+locally. So a planner on a capable workstation got the largest model a browser tab can practically
+hold (**Llama-3.2-3B**), while the hosted path carries **llama-3.3-70b-versatile** — roughly 20× the
+parameters — reserved by design for the devices that *could not* run anything locally. The better the
+machine, the worse the model answering. Capability now decides only the **local rung**; the hosted
+model is preferred whenever it is actually reachable.
+
+⚠️ **It stays a visible choice, not a silent reversal.** The original ask was explicitly in-browser
+inference; both halves survive (Groq's free tier costs nothing either), but *"runs on your device"* is
+a decision somebody made on purpose, so it is a **Quality** control in the tier bar, remembered per
+device. ⚠️ Switching it drops the loaded engine — otherwise the control looks broken while the small
+model already in memory goes on answering.
+
+⚠️ **The three ways the hosted path can fail are three different problems** and a planner told only
+*"unavailable"* can act on none of them: **404** never deployed · **503** no provider key · **429**
+allowance spent. A probe on load distinguishes them and the bar names the remedy — and it costs **no
+model call and no daily allowance**, because the function answers `probe` before reaching the
+provider. When neither path works the bar reads **"No model available"** rather than claiming a hosted
+model that is not there.
+
+**Also raised, because a weak model is only half of it:** a new **`local-max`** rung (7–8B, ⚠️ only at
+`deviceMemory ≥ 16GB` — it is a ~5GB download, never offered on a guess); the system prompt, which was
+three sentences of prohibitions and so produced hedging, now asks for the **actual figures**;
+conversation depth 8 turns → 30 on remote and context 4 modules → 8, both of which were sized for a 1B
+window and were starving a model that accepts 131k; the context now **names the project**, which it
+never did; and providers are fetched **in parallel** — measured **60ms against 241ms** for 6 providers.
+
+**The Edge Function** gains a **model chain**: ⚠️⚠️ `GROQ_MODEL` was one hard-coded id, and Groq
+retires ids on its own schedule, so a decommissioned model was a total outage with no way to survive
+it. Only a **model-level** rejection advances the chain (a 429 or 5xx is the provider saying stop), and
+the response reports the model that **actually answered** rather than the one requested. The daily cap
+goes 30 → 200 and the prompt guard 24k → 120k characters, both env-tunable — both were sized for a
+last-resort fallback, not a primary path.
+
+**Verified:** 20 assertions executing `promptMessages`/`gatherContext`/`projectLabel` sliced out of the
+shipped file, ⚠️ **5 of them contrast assertions against HEAD, all biting**; nine tier-resolution paths
+driven in a real browser, each failure naming its own cause, 0 page errors. ⚠️ **Two of my own bugs
+found by the harness, not by reading** — a stub that clobbered the injected probe response and reported
+all four failure paths as successes, and a real one: `On this device` on a device that cannot run
+locally claimed a working hosted model without probing it. `node --check` clean, Edge Function parses,
+braces 35/35, 0 NUL bytes, `wiring-check` **126/126**, `dead-hooks` unchanged at its 9-finding baseline.
+
+⚠️⚠️ **NOT VERIFIED AGAINST A REAL MODEL, AND ONE OWNER ACTION GATES ALL OF IT.** Egress to Groq and to
+this project's own Supabase is blocked from here, so everything above is the shipped code executed
+against stubs. **Until `supabase functions deploy pormac-chat` has run AND `GROQ_API_KEY` is set, the
+hosted path does not exist and every planner falls back to the on-device model** — the state that
+produced the complaint. The module now says so on screen instead of hiding it, but saying so is not the
+fix; that deploy is, and only the owner can do it (free key at console.groq.com, no card).
+
+`MODULE_V` → `20260913j` (re-derived on rebase — see the entry above).
+
 ### The site plan expands to full screen, like every other card (2026-09-13) — ethanrobles10
 
 Owner: *"add a full screen also for the site"*

@@ -129,21 +129,45 @@
 // real phone than the previous 14-40 frame range — expected and accepted as
 // the direct cost of the requested density, not a regression to silently
 // walk back.
+// ⚠️⚠️ 2026-09-13 (later still — "since it's taking too long to process and
+// stitch an image, divide video to a fixed 48 frames per process"): the
+// 30fps/up-to-1200-frame density above (2026-09-12) fixed the real overlap/
+// join-density problem, but its honest cost — stated plainly in that same
+// entry — was that a real walk-around recording is several hundred frames of
+// SEQUENTIAL, per-pair OpenCV work (ORB detect + BFMatcher + RANSAC for up to
+// JOIN_LOOKAHEAD candidates per join), which is genuinely slow on a real
+// phone. The owner's own fix for that cost is a hard cap: extraction now
+// always samples a FIXED 48 frames, regardless of the clip's duration —
+// never scaled up by how long the recording is. `frameCountFor` still takes
+// `durationSec` (unchanged call shape for `stitchFromVideo`/`extractFrames`,
+// and still exported for genuine execution) but no longer reads it to decide
+// a count; every recording, short or long, is broken into the same 48
+// samples spread evenly across whatever duration it actually has.
+// ⚠️ This is a deliberate trade against 2026-09-12's own density fix: a very
+// long, fast recording will again have wider angular gaps between
+// consecutive samples than a short one sampled at the same 48-frame count —
+// the exact overlap problem that fix existed to solve. Accepted here because
+// the owner asked for a fixed frame count specifically to bound processing
+// time, not because the overlap problem stopped mattering; if a future
+// report says fast recordings are failing to join again, the fix is a
+// per-pair remedy (JOIN_LOOKAHEAD, or asking for a slower turn), not
+// silently re-scaling this count back up.
 window.Pano360 = (function () {
   var WORK_MAXW = 640;           // per-frame width used for feature matching/warping — kept small for mobile CPU cost
   var MIN_GOOD_MATCHES = 12;     // below this, a join is not "confident" — see the lookahead search below
-  var MIN_FRAMES = 14;           // floor on how few frames a very short clip still gets sampled into
-  var MAX_FRAMES = 1200;         // safety ceiling only (40s @ 30fps) — not meant to bind on an ordinary recording
-  var FRAMES_PER_SEC = 30;       // target sampling density: one frame per recorded video frame, assuming 30fps
+  var FIXED_FRAME_COUNT = 48;    // every recording is sampled into exactly this many frames, regardless of duration
   var JOIN_LOOKAHEAD = 5;        // how many frames ahead of the last-placed one to search for a confident join
 
-  // Pure, and exported (Pano360._frameCountFor) so the density curve itself
-  // — the actual fix for "video taken quickly" — can be genuinely executed
-  // and checked, not just read from source.
+  // Pure, and exported (Pano360._frameCountFor) so the fixed count itself can
+  // be genuinely executed and checked, not just read from source.
+  // ⚠️ `durationSec` is accepted (and still validated) purely to keep this
+  // function's call shape unchanged for every existing caller — it no longer
+  // influences the returned count at all. A degenerate duration (0/NaN/
+  // negative/undefined) does not change the outcome either: 48 frames spread
+  // evenly across a near-zero-length clip via extractFrames' own fraction
+  // math simply lands very close together, which is harmless.
   function frameCountFor(durationSec) {
-    if (!durationSec || !isFinite(durationSec) || durationSec <= 0) return MIN_FRAMES;
-    var n = Math.round(durationSec * FRAMES_PER_SEC);
-    return Math.max(MIN_FRAMES, Math.min(MAX_FRAMES, n));
+    return FIXED_FRAME_COUNT;
   }
 
   // ⚠️⚠️ 2026-09-12 (item 4, second fix in the same round — "processing has
@@ -220,7 +244,21 @@ window.Pano360 = (function () {
   // Extracts `count` frames evenly spaced across the whole clip, at up to
   // `maxW` wide, as an array of <canvas> elements (never <img> — a canvas is
   // already decoded pixel data, no further async load needed downstream).
-  function extractFrames(videoBlob, count, maxW) {
+  //
+  // 2026-09-13: two additions, both aimed at the "reading video status is
+  // taking too long, with no way to tell" report. (1) `knownDuration` lets a
+  // caller that already resolved the duration (stitchFromVideo always has,
+  // via getDuration) skip re-running fixInfiniteDuration a SECOND time on a
+  // fresh video element — that resolution can itself take up to ~2.5s on a
+  // MediaRecorder blob with no duration atom, and paying it twice for the
+  // same file was pure dead time. (2) `onProgress(done, total)` fires after
+  // every single frame is extracted — at the new higher sample density this
+  // loop can run to several hundred iterations (frameCountFor can return up
+  // to MAX_FRAMES), each involving a real video seek, so it is the actual
+  // long pole behind "Reading video…" sitting static the whole time; this is
+  // what lets the caller show real per-frame progress instead of a frozen
+  // message with no way to tell it apart from a hang.
+  function extractFrames(videoBlob, count, maxW, knownDuration, onProgress) {
     return new Promise(function (resolve, reject) {
       var video = document.createElement('video');
       video.muted = true; video.playsInline = true; video.preload = 'auto';
@@ -228,7 +266,7 @@ window.Pano360 = (function () {
       video.src = url;
       video.onloadedmetadata = async function () {
         try {
-          var dur = await fixInfiniteDuration(video);
+          var dur = (isFinite(knownDuration) && knownDuration > 0) ? knownDuration : await fixInfiniteDuration(video);
           if (!isFinite(dur) || dur <= 0) { URL.revokeObjectURL(url); reject(new Error('Could not read the video duration.')); return; }
           var frames = [];
           for (var i = 0; i < count; i++) {
@@ -237,6 +275,7 @@ window.Pano360 = (function () {
             var t = dur * (0.03 + (i / (count - 1)) * 0.94);
             await seekTo(video, t);
             frames.push(drawFrame(video, maxW));
+            if (onProgress) onProgress(i + 1, count);
           }
           URL.revokeObjectURL(url);
           resolve(frames);
@@ -794,17 +833,36 @@ window.Pano360 = (function () {
   }
 
   // Public entry point: video Blob in, stitched-panorama Blob + quality out.
-  // `onProgress(stage, fraction)` — stage is 'frames' then 'stitch', so the
-  // caller can show one continuous progress bar across both phases.
+  //
+  // ⚠️⚠️ 2026-09-13: `onProgress` now reports THREE distinct stages, not two,
+  // and 'frames' now fires on every extracted frame rather than once at the
+  // very end — this is the direct fix for "reading video status is taking
+  // too long, provide better description of status". Before this, the ONLY
+  // callback fired during the whole extraction phase was a single
+  // `onProgress('frames', 1)` AFTER every frame had already been pulled —
+  // so for a real recording (frameCountFor can ask for up to MAX_FRAMES, a
+  // few hundred real video seeks) the caller had nothing to show but a
+  // static "Reading video…" for however long that took, indistinguishable
+  // from a hang. The shape callers now receive:
+  //   onProgress('duration')                — resolving the clip's length
+  //   onProgress('framecount', frameCount)   — density decided; extraction starting
+  //   onProgress('frames', done, frameCount) — fires after EVERY frame
+  //   onProgress('stitch', fraction)         — unchanged, the join/warp phase
   async function stitchFromVideo(videoBlob, onProgress) {
     // Duration decides the sample density (frameCountFor) — read once, up
     // front, via the SAME fixInfiniteDuration path extractFrames uses
     // internally, so a MediaRecorder blob with no duration atom in its
     // header is handled identically here as it is there.
+    if (onProgress) onProgress('duration');
     var duration = await getDuration(videoBlob);
     var frameCount = frameCountFor(duration);
-    var frames = await extractFrames(videoBlob, frameCount, WORK_MAXW);
-    if (onProgress) onProgress('frames', 1);
+    if (onProgress) onProgress('framecount', frameCount);
+    // `duration` is handed to extractFrames as its `knownDuration` so it
+    // never has to re-run fixInfiniteDuration's own (up to ~2.5s) resolution
+    // a second time on a fresh video element for the same file.
+    var frames = await extractFrames(videoBlob, frameCount, WORK_MAXW, duration, function (done, total) {
+      if (onProgress) onProgress('frames', done, total);
+    });
     var result = await stitchFrames(frames, function (f) { if (onProgress) onProgress('stitch', f); });
     return new Promise(function (resolve) {
       result.canvas.toBlob(function (blob) {
@@ -822,6 +880,7 @@ window.Pano360 = (function () {
     getDuration: getDuration,
     stitchFromVideo: stitchFromVideo,
     // Test-only hooks — genuinely execute the pure/near-pure pieces.
+    _extractFrames: extractFrames,
     _fixInfiniteDuration: fixInfiniteDuration,
     _homographyBetween: homographyBetween,
     _mat3Mul: mat3Mul,

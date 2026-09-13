@@ -1875,6 +1875,9 @@
     /* The tower checklist. ⚠️ Its own row ABOVE the trades and carrying a label, because the two
        rows now look alike and a reader has to be able to tell which one they are ticking. */
     .ps-vs-twchips { align-items:center; margin-bottom:6px; }
+    /* The site card's own Show control. ⚠️ Inside the card, above the viewpoint bar, because it
+       changes what the model IS rather than where the camera is. */
+    .ps-vs-sitemode { display:flex; align-items:center; gap:8px; padding:8px 14px 0; }
     .ps-vs-twchips > .ps-vs-note { margin-right:2px; }
     .ps-vs-chip { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--pd-line); background:var(--pd-card);
       color:var(--pd-ink); border-radius:var(--pd-radius-pill); padding:4px 10px; font-size:var(--pd-fs-sm); cursor:pointer; }
@@ -16545,7 +16548,9 @@
        a 2-zone floor at half the width of a 4-zone floor, which made the model ragged AND made it
        say something false — a floor with two zones has the SAME floor plate as one with four, cut
        differently. So the plate is fixed here and each storey's cells divide it. */
-    var _maxCells = model.disp.reduce(function (m, v) {
+    // ⚠️ `model.slotN` wins where the model has one: the wrap grid must be shaped for the things
+    // that need a PLACE (eight towers), not for the cells (eight towers x thirteen floors).
+    var _maxCells = model.slotN || model.disp.reduce(function (m, v) {
       return Math.max(m, (model.rowCells(model.byLevel[v], model.detail) || []).length || 1);
     }, 1);
     /* ⚠️⚠️ THE WRAP STILL SIZES THE PLATE, EVEN WHEN A PLAN IS TRACED, and that is the point of
@@ -16592,12 +16597,15 @@
          everything downstream — the outline fallback, the zone colour, the compare mark, the
          picking — works on the site exactly as it works on a floor. */
       var _plate = model.plateFor ? model.plateFor(v) : _vsZpFor(v, model.trade);
-      var slots = _vsPlanSlots(n, PLATE);
+      // ⚠️ Slots are per SLOT, not per cell: on the site's floor model every floor of a tower
+      // shares that tower's slot, so an untraced tower stands in one place instead of having its
+      // thirteen floors scattered across thirteen squares of the wrap grid.
+      var slots = _vsPlanSlots(model.slotN || n, PLATE);
       // The storey's Y: top of the list is the highest floor, so invert the index.
       var y = (storeys - 1 - li) * (SH + GAPY);
       var isNo = (v === VS_NOLEV);
       cells.forEach(function (c, ci) {
-        var p = slots[ci] || { row: 0, col: 0, cols: 1, rows: 1 };
+        var p = slots[(c.slot == null ? ci : c.slot)] || { row: 0, col: 0, cols: 1, rows: 1 };
         // The cell's share of the plate, less a hairline so neighbouring zones read as separate.
         var shW = plateW / p.cols, shD = plateD / p.rows;
         var _sp = null;
@@ -16616,7 +16624,13 @@
         /* ⚠️ THE FLOOR'S OWN OUTLINE, when the storey is one cell and no zone matched. Keyed on
            `n`, not on `ci`: the question is whether this STOREY is undivided, not whether this
            cell happens to be the first of several. */
-        if (!_pg && _plate && n === 1) { _pg = _vsZpOutlineOf(_plate); _pgZone = true; }
+        /* ⚠️⚠️ NEVER ON THE SITE. Owner 2026-09-13, with a screenshot: *"not like a singular plate
+           that would cover the whole site plan."* On a floor this fallback is right — one cell on a
+           storey IS that floor, so it takes the floor's outline. On the SITE the plate is the site
+           development plan and its outline is the SITE BOUNDARY, so a row where only one tower has
+           work drew that tower as a slab covering the whole site: a building the size of the
+           property, once per floor. A tower is never the site. */
+        if (!_pg && _plate && n === 1 && !model.site) { _pg = _vsZpOutlineOf(_plate); _pgZone = true; }
         /* ==== CONSOLIDATED: A TRADE CELL IS THE WHOLE FLOOR ================================
            Owner 2026-09-11: *"how come when pressing the consolidated and combining 2 trades
            that have the same floor plan per floor but just different zones, the overall shape
@@ -16643,8 +16657,13 @@
            ⚠️ UNTRACED CARDS ARE UNTOUCHED: no plate, no outline, `bandN` stays 1 and the wrap grid
            is exactly what it was — the footprint there honestly IS the cell count on a grid. */
         if (!_pg && _plate && model.tradeSplit) _pg = _vsZpOutlineOf(_plate);
-        var bandN = (model.tradeSplit && _pg && n > 1) ? n : 1;
-        var bandI = bandN > 1 ? ci : 0;
+        /* ⚠️⚠️ A CELL MAY STATE ITS OWN BAND. The site's floor-by-floor model emits one cell per
+           (tower, floor), every slice of a tower sharing that tower's footprint — so the band is
+           the floor's index within ITS OWN tower, not the cell's position in the row. Read off
+           `ci` instead, eight towers of thirteen floors would band each slice against 104. */
+        var _cb = c.band;
+        var bandN = (_cb && _cb.n > 1) ? _cb.n : ((model.tradeSplit && _pg && n > 1) ? n : 1);
+        var bandI = (_cb && _cb.n > 1) ? _cb.i : (bandN > 1 ? ci : 0);
         /* ==== HOW TALL THIS CELL IS ========================================================
            ⚠️⚠️ THE SITE VIEW'S ONE STRUCTURAL ADDITION. On a floor every cell is a zone of the same
            storey, so they are all exactly one storey tall — `cellH` is 1 and nothing changes. On the
@@ -16671,6 +16690,18 @@
         // ⚠️ THE SAME THREE CHANNELS THE 2D CELL USES, so the two cards cannot say different things:
         //   colour = which trade/category · brightness = done vs remaining · height = the storey.
         var dim = _tone.rem;
+        /* ⚠️⚠️ A SITE CELL WITH NO TRACED FOOTPRINT IS A BUILDING, NOT A SHARE OF THE SITE.
+           The wrap slot is `plate / cols`, which is right on a floor — a zone really is a share of
+           its storey — and on the site it is a slab half the property wide and one storey tall,
+           drawn again on every floor. `model.cellSpan` caps it to something tower-shaped; the slot
+           still decides WHERE it stands, so an untraced tower keeps its place on the wrap grid and
+           the footer's warning stays true.
+           ⚠️ Only when there is no traced outline: a footprint somebody drew is the drawing, and
+           capping that would be this view inventing a size. */
+        if (!_pg && model.cellSpan > 0) {
+          exW = Math.min(exW, plateW * model.cellSpan);
+          exD = Math.min(exD, plateD * model.cellSpan);
+        }
         var x = (p.col - (p.cols - 1) / 2) * shW;
         var z = (p.row - (p.rows - 1) / 2) * shD;
         /* ==== PROGRESS FILLS UPWARD, AND THE TWO PARTS DO NOT OVERLAP ======================
@@ -16704,7 +16735,11 @@
         // the same pure helpers the 2D cell calls. Clicking a box therefore opens the identical
         // panel — there is no second drill-down to keep in step with the first.
         var _key = model.cellKey(keyPrefix, v, c), _done = _vsDone(c.list);
-        _vsCells[_key] = { level: v, cell: c.label, list: c.list, pct: pct, fin: _vsDate(c.list),
+        /* ⚠️ THE FLOOR IS THE LEVEL, where the cell has one. On the site's floor model the ROW is
+           "— Site —" and the storey is the cell's own — so the drill-down, the hover readout and
+           the frozen row in the focus window all name the floor the planner pointed at rather than
+           the word "Site" thirteen times. */
+        _vsCells[_key] = { level: (c.floor || v), cell: c.label, list: c.list, pct: pct, fin: _vsDate(c.list),
           done: _done, fslip: _done ? _vsFinSlip(c.list) : null };
         /* ⚠️ ONE builder for both paths, so everything downstream — the compare edges, the
            baseline mark, the registry, the picking — is written once and cannot drift between a
@@ -16754,7 +16789,7 @@
            line as well would put a second loop through the middle of the block and read as a
            division the planner had made. */
         byKey[_key] = parts.filter(function (m) { return m !== _line; });
-        info[_key] = { level: v, cell: c.label, pct: pct, n: c.list.length, fin: _vsDate(c.list) };
+        info[_key] = { level: (c.floor || v), cell: c.label, pct: pct, n: c.list.length, fin: _vsDate(c.list) };
         /* ⚠️⚠️ COMPARE KEEPS THE TRADE COLOUR HERE TOO, and that is not a style choice — it is the
            rule the 2D cell records: replacing the fill with the slip colour turned every building
            into four greys and reds and the trades became unidentifiable (owner: *"when clicking
@@ -16899,6 +16934,26 @@
       labWrap = document.createElement('div');
       labWrap.className = 'ps-vs3-labs';
       host.appendChild(labWrap);
+      /* ==== THE SITE'S FLOORS, NAMED =====================================================
+         Owner 2026-09-13: *"just add the labeling and identity of the floors."*
+         ⚠️⚠️ THE ROWS ARE NOT THE FLOORS THERE. The site is one row and the floors are slices
+         INSIDE each tower's solid, so `model.disp` carries one entry — "— Site —" — and labelling
+         from it would print that word once and nothing else. The model hands over the floor names
+         instead, and their heights are derived the same way the slices are: the tallest tower's
+         solid is SH tall (its cellH is 1) cut into `n`, so floor `i` sits at `SH * (i + 0.5) / n`.
+         ⚠️ Bottom-up, because that is the order the model lists them in and the order they are
+         stacked in — reversing one and not the other is how a roof ends up labelled "Ground". */
+      if (model.floorLabels && model.floorLabels.length) {
+        var _fl = model.floorLabels, _fn = _fl.length;
+        _fl.forEach(function (nm, i) {
+          var el = document.createElement('div');
+          el.className = 'ps-vs3-lab';
+          el.textContent = String(nm);
+          labWrap.appendChild(el);
+          labs.push({ el: el, y: SH * (i + 0.5) / _fn });
+        });
+        return;
+      }
       model.disp.forEach(function (v, li) {
         var el = document.createElement('div');
         el.className = 'ps-vs3-lab' + (v === VS_NOLEV ? ' nolev' : '');
@@ -17404,11 +17459,32 @@
     } else {
       msg = '<b>Every tower is placed as you traced it.</b>';
     }
-    return '<p class="ps-vs3-foot">' + msg +
-      ' Each tower is as tall as its <b>own storey count</b> (' +
-      Object.keys(model.storeyN || {}).map(function (k) { return esc(k) + ' ' + model.storeyN[k]; }).join(' · ') +
-      '), scaled against the tallest — a proportion, never a dimension. Brightness is progress, exactly ' +
-      'as it is inside a tower; click a tower for its activities, and use <b>Per tower</b> above to go inside one. ' +
+    /* ⚠️ THE FLOOR-BY-FLOOR READING HAS ITS OWN SENTENCE, because the two models earn their heights
+       differently and the reader has to know which one they are looking at. The massing SCALES each
+       tower against the tallest; the floors do not scale anything — a tower occupies one row per
+       level it has work on, so the proportion falls out of the rows themselves.
+       ⚠️ And it says what a GAP means. A row where a tower has no block is a floor that tower has no
+       work on, which is a fact about the schedule; two towers naming their floors differently will
+       interleave instead of aligning, and that is worth saying before somebody reads it as an
+       error. */
+    var _tall = model.siteFloors
+      ? (' Each tower is cut into <b>its own floors</b> (' +
+         Object.keys(model.storeyN || {}).map(function (k) { return esc(k) + ' ' + model.storeyN[k]; }).join(' · ') +
+         '), every floor the same height across the whole site, so the towers stay in proportion and ' +
+         'each floor carries its own progress, dates and click. ' +
+         /* ⚠️ WHOSE NAMES THESE ARE, said out loud. Every tower's slices line up by index, but the
+            names can only come from one tower — and a planner reading "8th Floor" beside a tower
+            whose schedule calls it something else would be reading a floor this view made up. */
+         (model.floorLabelOf ? ('The floor names down the side are <b>' + esc(model.floorLabelOf) +
+           '</b>\u2019s, the tallest \u2014 another tower\u2019s floors line up with them by position, not by name. ') : '')) +
+        ''
+      : (' Each tower is as tall as its <b>own storey count</b> (' +
+         Object.keys(model.storeyN || {}).map(function (k) { return esc(k) + ' ' + model.storeyN[k]; }).join(' · ') +
+         '), scaled against the tallest \u2014 a proportion, never a dimension. ');
+    return '<p class="ps-vs3-foot">' + msg + _tall +
+      'Brightness is progress, exactly ' +
+      'as it is inside a tower; click a ' + (model.siteFloors ? 'floor' : 'tower') +
+      ' for its activities, and use <b>Per tower</b> above to go inside one. ' +
       '⚠️ The footprint is the outline somebody traced, so it is only as true as the drawing under it, ' +
       'and this view states no distance, area or setback.</p>';
   }
@@ -17618,6 +17694,11 @@
      it. `plateFor` overrides the lookup anyway; this keeps the footer's own verdict honest.
      ========================================================================================== */
   var VS_SITE_ROW = '— Site —';
+  /* Whole towers, or floor by floor. ⚠️ Session state, like `_vsScope` and not like the 2D/3D
+     toggle: it is a way of LOOKING at one drawing rather than a preference about the module, and a
+     remembered "floor by floor" is how somebody opens this next week and reports the site view
+     duplicated into forty rows they did not ask for. */
+  var _vsSiteFloors = false;
   function _vsSiteModel(list, towers) {
     if (!towers || !towers.length) return null;
     var byTower = {};
@@ -17650,11 +17731,107 @@
       cellKey: function (keyPrefix, v, c) { return keyPrefix + '|' + v + '|' + (c.label || '*'); },
       // ⚠️ THE SITE PLAN, for every row — there is only one, and it is not a floor's.
       plateFor: function () { return _vsSitePlan(); },
+      // ⚠️ How much of the site an UNTRACED tower may take — see the note in _vs3Build. A building,
+      // not a share of the property: eight towers each get an eighth-ish, two get a quarter each.
+      cellSpan: Math.min(0.26, 1 / (towers.length + 2)),
       // Each tower's share of the tallest. ⚠️ Its own storey count over the TALLEST tower's, so the
       // picture is a comparison rather than a set of unrelated heights.
       cellH: function (c) { return (storeyN[c.label] || 1) / maxN; },
       storeyN: storeyN, maxN: maxN
     };
+  }
+  /* ==== THE SITE, FLOOR BY FLOOR ======================================================
+     Owner 2026-09-13: *"can you show the per floor basis in the site view 3D perspective?"* — and
+     then, of the first attempt: *"NO … Literally, it is just like how you show an individual tower,
+     but instead multiple towers. not like a singular plate that would cover the whole site plan.
+     The 2nd pic view is already ok, just add the labeling and identity of the floors."*
+
+     ⚠️⚠️ THE FIRST ATTEMPT MADE THE ROWS THE FLOORS, and that is what produced the picture they
+     rejected. One row per level across the WHOLE SITE means every row is a storey of the site, so
+     everything that has no traced footprint on that row is drawn as a share of the site plate — a
+     slab the size of the property, once per floor. The massing view was already the right picture;
+     what it was missing was the floors inside each tower.
+
+     ⚠️⚠️ SO THE SITE IS STILL ONE ROW, and each tower is still one solid standing on its own traced
+     footprint. What changes is that the solid is SLICED: one cell per (tower, floor), every slice of
+     a tower sharing that tower's footprint and stacked up its height by `band`. That is exactly the
+     mechanism the Consolidated fix already uses to stack trades inside one storey, pointed at floors
+     instead — so the footprint stays true, no two slices are coplanar, and each floor keeps its own
+     progress, its own dates and its own click.
+
+     ⚠️ EVERY FLOOR IS THE SAME HEIGHT ACROSS THE WHOLE SITE, and it falls out rather than being
+     arranged: a tower's solid is `SH x cellH` tall with `cellH = N / maxN`, and it is cut into N
+     slices, so one slice is `SH / maxN` whatever tower it belongs to. An eight-storey tower beside a
+     forty-storey one is eight of the same floors, not eight taller ones. */
+  function _vsSiteFloorModel(list, towers) {
+    if (!towers || !towers.length) return null;
+    var lvl0 = _vsAxis()[0].id;
+    var byTower = {};
+    towers.forEach(function (t) { byTower[t] = []; });
+    (list || []).forEach(function (r) { var t = _vsTowerOf(r); if (t && byTower[t]) byTower[t].push(r); });
+    var cells = [], storeyN = {}, maxN = 1, tallest = null, tallLevs = null;
+    towers.forEach(function (t, ti) {
+      if (!byTower[t].length) return;
+      var byLev = {}, levs = [];
+      byTower[t].forEach(function (r) {
+        var v = _vsLevVal(r, lvl0);
+        if (!v) return;
+        if (!(v in byLev)) { byLev[v] = []; levs.push(v); }
+        byLev[v].push(r);
+      });
+      /* ⚠️ A tower whose work carries no level is still a BUILDING, drawn as one undivided solid
+         rather than dropped. The site is a picture of what is being built; a tower missing from it
+         because nobody typed floors on its activities is a worse answer than a tower with no
+         floors drawn on it. */
+      if (!levs.length) {
+        cells.push({ label: t, list: byTower[t], color: _vsTowerColor(t, towers),
+                     slot: ti, floor: null, band: { i: 0, n: 1 } });
+        storeyN[t] = 1;
+        return;
+      }
+      // ⚠️ Bottom-up, by the SAME rule the per-tower view orders its storeys by, so a tower reads
+      // the same way in both views. _vsOrderLevels sorts in place.
+      _vsOrderLevels(levs, byLev);
+      storeyN[t] = levs.length;
+      if (levs.length > maxN) { maxN = levs.length; tallest = t; tallLevs = levs.slice(); }
+      levs.forEach(function (v, i) {
+        /* ⚠️ `label` STAYS THE TOWER NAME. It is what the footprint is looked up by on the site
+           plan (`_vsZpPolysOf(plate, label)`) and what the tower's colour is keyed on — the floor
+           travels beside it in `floor`, and the key builder below puts both in the cell's id. */
+        cells.push({ label: t, list: byLev[v], color: _vsTowerColor(t, towers),
+                     slot: ti, floor: v, band: { i: i, n: levs.length } });
+      });
+    });
+    if (!cells.length) return null;
+    var byLevel = {}; byLevel[VS_SITE_ROW] = list;
+    return {
+      byLevel: byLevel, levels: [VS_SITE_ROW], disp: [VS_SITE_ROW], groundAt: 1, detail: 1,
+      above: [VS_SITE_ROW], below: [], trade: null, tradeSplit: false, site: true, siteFloors: true,
+      rowCells: function () { return cells; },
+      /* ⚠️ THE FLOOR IS IN THE KEY. Without it every slice of a tower would share one id, the
+         registry would keep only the last, and clicking any floor would open the same one. */
+      cellKey: function (keyPrefix, v, c) {
+        return keyPrefix + '|' + v + '|' + (c.label || '*') + (c.floor ? '|' + c.floor : '');
+      },
+      plateFor: function () { return _vsSitePlan(); },
+      // ⚠️ The wrap slots are per TOWER, not per slice: eight towers make an eight-slot grid, and
+      // every floor of a tower sits in its tower's slot. See `slotN` in _vs3Build.
+      slotN: towers.length,
+      cellSpan: Math.min(0.26, 1 / (towers.length + 2)),
+      cellH: function (c) { return (storeyN[c.label] || 1) / maxN; },
+      /* ⚠️ The floor labels are the TALLEST tower's, and the footer says so. Every tower's slices
+         are the same height, so one column of labels lines up with all of them by index — but the
+         NAMES can only come from one tower, and inventing "Level 7" for a tower whose schedule
+         calls it something else would be this view making up a floor. */
+      floorLabels: tallLevs, floorLabelOf: tallest,
+      storeyN: storeyN, maxN: maxN
+    };
+  }
+  /* ⚠️ ONE DECISION POINT for both renderers. The card and the focus window must build the same
+     site, and a second `if (_vsSiteFloors)` at the other call site is how the full-screen ends up
+     showing a different drawing from the card it was opened from. */
+  function _vsSiteModelFor(list, towers) {
+    return _vsSiteFloors ? _vsSiteFloorModel(list, towers) : _vsSiteModel(list, towers);
   }
   function _vsTowerModel(list, tradeSplit) {
     var _ax = _vsAxis(), lvl0 = _ax[0].id, detail = _vsDetailNow();
@@ -18083,7 +18260,7 @@
          stacks one building's storeys; `_vsSiteModel` places every tower where the site plan says
          it stands, each as tall as its own storey count. Handing the site card to the tower builder
          would fill the window with one merged building and no sign that anything was wrong. */
-      var model = siteTowers ? _vsSiteModel(list, siteTowers) : _vsTowerModel(list, null);
+      var model = siteTowers ? _vsSiteModelFor(list, siteTowers) : _vsTowerModel(list, null);
       if (!model) { mount.innerHTML = '<div class="ps-vs-empty">Nothing to stack for this selection.</div>'; return null; }
       scene = _vs3Build(mount, model, color, prefix, T);
       cells = _vsCells;
@@ -19731,7 +19908,7 @@
          SECTION — storeys as rows — and a section cannot show a plan: two towers north and south
          of each other occupy the same place in an elevation. That is the same reason the 2D card
          has never drawn a floor plan, recorded on _vsPlanLay. */
-      var _sm = _vsSiteModel(acts, towerNames);
+      var _sm = _vsSiteModelFor(acts, towerNames);
       var _sfit = _vsSiteFit(towerNames);
       if (!_sm) {
         towers = '<div class="ps-vs-empty">Nothing to place on the site for this selection.</div>';
@@ -19755,6 +19932,22 @@
              DIFFERENT model (see _vs3FocusBuild) and the window has to know which one to build. */
           _vsFocusReg('Site development plan', 'var(--pd-red)', acts, 'SITE', towerNames) +
           '</div>' + _vsCardMeter(acts) +
+          /* ==== WHOLE TOWERS, OR FLOOR BY FLOOR ==========================================
+             Owner 2026-09-13: *"can you show the per floor basis in the site view 3D
+             perspective?"* Two readings of one site, and they answer different questions: the
+             massing says where the buildings stand and how tall they are, the floors say which
+             floors are done in each of them.
+             ⚠️ ON THE SITE CARD, not in the toolbar. The toolbar's Detail control means depth
+             through the location axis (Level › Zone › Unit) and the site's rows are towers, not
+             levels — borrowing it would have given one control two meanings depending on a scope
+             three controls away. This one is only on screen where it applies, and it says what it
+             does in words rather than in a number. */
+          '<div class="ps-vs-sitemode"><span class="ps-vs-note">Show</span><span class="ps-vs-seg">' +
+            '<button data-vssm="0"' + (!_vsSiteFloors ? ' class="on"' : '') +
+              ' title="Each tower as one solid, as tall as its own storey count — where the buildings stand, and how far each has got overall">Whole towers</button>' +
+            '<button data-vssm="1"' + (_vsSiteFloors ? ' class="on"' : '') +
+              ' title="Every tower stacked floor by floor on its own footprint, each floor shaded by its own progress — rows are the level names, so the same floor of two towers sits on one row">Floor by floor</button>' +
+          '</span></div>' +
           _vs3Bar('SITE') + '<div class="ps-vs3-mount" data-vs3mount="SITE">' +
           '<div class="ps-vs3-load">Loading the site view…</div></div>' +
           _vsSiteFoot(_sm, _sfit) + '</div>';
@@ -19859,6 +20052,11 @@
         else _vsTradeToggle(b.dataset.vstr);
         _vsAnim = 'in'; renderVStack();
       };
+    });
+    host.querySelectorAll('[data-vssm]').forEach(function (b) {
+      // ⚠️ 'in', not 'fade': the model changes shape entirely — one row becomes forty — so the
+      // cards are rebuilt rather than recoloured, and the entrance animation is the honest one.
+      b.onclick = function () { _vsSiteFloors = b.dataset.vssm === '1'; _vsAnim = 'in'; renderVStack(); };
     });
     host.querySelectorAll('[data-vstw]').forEach(function (b) {
       b.onclick = function () {

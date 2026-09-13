@@ -4440,7 +4440,7 @@ console.log('\n[misc] insert().select() returns the new row id');
      /function frameCountFor\(durationSec\)/.test(p3js) &&
      /var duration = await getDuration\(videoBlob\);/.test(p3js) &&
      /var frameCount = frameCountFor\(duration\);/.test(p3js) &&
-     /extractFrames\(videoBlob, frameCount, WORK_MAXW\)/.test(p3js));
+     /extractFrames\(videoBlob, frameCount, WORK_MAXW, duration, function \(done, total\)/.test(p3js));
   ok('…and the chain-building loop looks AHEAD up to JOIN_LOOKAHEAD frames from the last-placed anchor for the first confident join, rather than always forcing frame i against i-1',
      /var JOIN_LOOKAHEAD = 5;/.test(p3js) &&
      /var windowEnd = Math\.min\(lastIdx, i \+ JOIN_LOOKAHEAD - 1\);/.test(p3js) &&
@@ -4448,24 +4448,95 @@ console.log('\n[misc] insert().select() returns the new row id');
   ok('…a candidate that produced a real homography is always preferred over one that did not, even when the raw match count says otherwise — a homography is what actually places a frame',
      /var better = !best \? true : \(!!res\.H !== !!best\.H \? !!res\.H : res\.matches > best\.matches\);/.test(p3js));
 
-  // Genuine execution of frameCountFor() — the actual density fix for "even
-  // if video is taken a bit quickly, stitcher should still work": a quick
-  // recording must be sampled MORE densely in time, not the same fixed
-  // count as a slow one, or the angular gap between consecutive frames
-  // stays exactly as wide as it was before this fix.
+  console.log('\n[56c] 2026-09-13 (later still): "since it\'s taking too long to process and stitch an image, divide video to a fixed 48 frames per process" — frameCountFor no longer scales with duration at all');
+
+  ok('frameCountFor is now a FIXED count (48), regardless of duration — the 30fps/duration-scaled density this replaces is gone from the function body',
+     /var FIXED_FRAME_COUNT = 48;/.test(p3js) &&
+     /function frameCountFor\(durationSec\) \{\s*return FIXED_FRAME_COUNT;\s*\}/.test(p3js) &&
+     !/var FRAMES_PER_SEC/.test(p3js) &&
+     !/var MIN_FRAMES/.test(p3js) &&
+     !/var MAX_FRAMES/.test(p3js));
+
+  // Genuine execution of frameCountFor() — confirms the fixed count is
+  // ACTUALLY fixed (same output for a very short clip, an ordinary one, a
+  // very long one, and a degenerate/invalid duration), not just declared
+  // fixed in a comment while the body still varies its answer.
   (function () {
-    eq('frameCountFor: a very short clip is still floored at MIN_FRAMES, never sampled down to almost nothing',
-       P360._frameCountFor(0.3), 14);
-    eq('frameCountFor: a very long clip is capped at the MAX_FRAMES safety ceiling, never left to grow unbounded',
-       P360._frameCountFor(9999), 1200);
-    eq('frameCountFor: an ordinary mid-length clip is exactly 30 * duration (30fps) rather than a fixed 12 or the old 3fps rate',
-       P360._frameCountFor(6), 180);
-    eq('frameCountFor: a zero/invalid duration degrades to MIN_FRAMES rather than throwing or sampling zero frames',
-       P360._frameCountFor(0), 14);
-    ok('…and a SHORTER (faster) clip samples MORE densely per second of real time than a longer one covering the same rotation — the actual fix, not just a bigger fixed number',
-       P360._frameCountFor(4) / 4 >= P360._frameCountFor(20) / 20);
-    eq('frameCountFor: a typical ~24s walk-around (the capture guide\'s own assumed pace) is not capped by the new safety ceiling',
-       P360._frameCountFor(24), 720);
+    eq('frameCountFor: a very short clip still samples exactly 48 frames',
+       P360._frameCountFor(0.3), 48);
+    eq('frameCountFor: a very long clip still samples exactly 48 frames — no longer scaled up or capped by duration',
+       P360._frameCountFor(9999), 48);
+    eq('frameCountFor: an ordinary mid-length clip samples exactly 48 frames, not 30 * duration',
+       P360._frameCountFor(6), 48);
+    eq('frameCountFor: a zero/invalid duration still returns 48 rather than throwing or sampling zero frames',
+       P360._frameCountFor(0), 48);
+    eq('frameCountFor: a typical ~24s walk-around (the capture guide\'s own assumed pace) samples the same fixed 48, not the old 720',
+       P360._frameCountFor(24), 48);
+    ok('…the count truly does not vary with duration — a 4s clip and a 20s clip get the identical frame count, unlike the retired 30fps scaling',
+       P360._frameCountFor(4) === P360._frameCountFor(20));
+  })();
+
+  console.log('\n[57] 2026-09-13: "reading video status is taking too long" — extractFrames now reports real per-frame progress, and skips re-resolving a duration the caller already knows');
+
+  ok('stitchFromVideo now reports 4 real stages ( duration / framecount / per-frame frames / stitch ), not the old single end-of-extraction "frames" callback',
+     /if \(onProgress\) onProgress\('duration'\);/.test(p3js) &&
+     /if \(onProgress\) onProgress\('framecount', frameCount\);/.test(p3js) &&
+     /function \(done, total\) \{\s*\n\s*if \(onProgress\) onProgress\('frames', done, total\);/.test(p3js) &&
+     !/if \(onProgress\) onProgress\('frames', 1\);/.test(p3js));
+  ok('…and extractFrames itself now takes a knownDuration + onProgress(done,total), firing after EVERY frame rather than once at the end',
+     /function extractFrames\(videoBlob, count, maxW, knownDuration, onProgress\)/.test(p3js) &&
+     /var dur = \(isFinite\(knownDuration\) && knownDuration > 0\) \? knownDuration : await fixInfiniteDuration\(video\);/.test(p3js) &&
+     /if \(onProgress\) onProgress\(i \+ 1, count\);/.test(p3js));
+  ok('module.js\'s runStitch reads all 4 stages into a real, changing status message — not one static "Reading video…" for the whole extraction phase',
+     /Extracting up to ' \+ a \+ ' frame' \+ \(a === 1 \? '' : 's'\) \+ '…';/.test(mjs) &&
+     /Extracting frames — ' \+ a \+ ' of ' \+ b \+ ' \(' \+ Math\.round\(\(a \/ b\) \* 100\) \+ '%\)';/.test(mjs) &&
+     /Stitching panorama — ' \+ Math\.round\(a \* 100\) \+ '%';/.test(mjs));
+
+  // Genuine execution: a fake, controllable <video> element (same
+  // monkey-patch-document.createElement convention as the capture.js race
+  // tests above, restored in a `finally` so it can never leak into a later
+  // test) proves extractFrames actually fires onProgress once per frame, in
+  // order, ending at (count, count) — and that a valid knownDuration really
+  // is used as-is rather than re-derived via fixInfiniteDuration (which
+  // would need a real 'timeupdate' event this fake video never fires).
+  await (async function () {
+    function makeFakeVideo() {
+      var listeners = {};
+      var _ct = 0;
+      return {
+        muted: false, playsInline: false, preload: '', src: null,
+        duration: NaN, videoWidth: 640, videoHeight: 480,
+        onloadedmetadata: null, onerror: null,
+        addEventListener: function (type, fn) { (listeners[type] = listeners[type] || []).push(fn); },
+        removeEventListener: function (type, fn) {
+          if (!listeners[type]) return;
+          listeners[type] = listeners[type].filter(function (f) { return f !== fn; });
+        },
+        get currentTime() { return _ct; },
+        set currentTime(v) {
+          _ct = v;
+          setTimeout(function () { (listeners.seeked || []).slice().forEach(function (f) { f(); }); }, 0);
+        }
+      };
+    }
+    var origCreateElement = ctx.document.createElement;
+    var fakeVideo = makeFakeVideo();
+    ctx.document.createElement = function (tag) {
+      if (tag === 'video') return fakeVideo;
+      return origCreateElement(tag);
+    };
+    try {
+      var progressCalls = [];
+      var p = P360._extractFrames({}, 5, 640, 12.5, function (done, total) { progressCalls.push([done, total]); });
+      fakeVideo.onloadedmetadata();   // simulate the metadata load firing
+      var frames = await p;
+      eq('extractFrames: extracted exactly `count` frames', frames.length, 5);
+      eq('extractFrames: onProgress fired exactly `count` times (once per frame, not once at the end)', progressCalls.length, 5);
+      ok('…in strict 1-of-5 .. 5-of-5 order, every call carrying the same total',
+         JSON.stringify(progressCalls) === JSON.stringify([[1, 5], [2, 5], [3, 5], [4, 5], [5, 5]]));
+    } finally {
+      ctx.document.createElement = origCreateElement;
+    }
   })();
 
   // Genuine execution of featherStops() — the one piece of the feathering

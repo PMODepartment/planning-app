@@ -2,6 +2,126 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## Frame sampling capped at a fixed 48 frames per video, regardless of duration (2026-09-13, later)
+
+Owner: *"also, since it's taking too long to process and stitch an image, divide video to a fixed
+48 frames per process."*
+
+⚠️⚠️ **The 2026-09-12 density fix (30fps, up to `MAX_FRAMES = 1200`) was correct about the problem
+it solved and honest about its cost** — its own changelog entry states plainly that a real
+walk-around recording at that density is "several hundred frames of SEQUENTIAL, per-pair OpenCV
+work" and "meaningfully slower on a real phone than the previous 14–40 frame range." That cost is
+exactly what this report is about: with `stitchFromVideo`'s new per-frame progress reporting
+(the entry directly above) making the work visible in real time, "up to several hundred frames,
+each a real video seek plus its own ORB/BFMatcher/RANSAC join attempt" reads as "taking too long,"
+not as a bug in the status text.
+
+### The fix
+
+`frameCountFor(durationSec)` no longer scales with duration at all — it now always returns a
+**fixed 48**, whatever the clip's length. `FRAMES_PER_SEC`, `MIN_FRAMES` and `MAX_FRAMES` are
+removed entirely; `FIXED_FRAME_COUNT = 48` is the one number that decides sampling density for
+every recording. `frameCountFor` still takes `durationSec` — its call shape inside
+`stitchFromVideo`/`extractFrames` is unchanged — but the parameter no longer influences the
+answer; it is accepted purely so no caller needed to change.
+
+⚠️⚠️ **This is a deliberate trade-off against the 2026-09-12 fix, not a silent reversal of it.**
+That fix existed because a fixed, duration-independent frame count starves a *fast* recording of
+overlap between consecutive samples (too few frames spread across a fast pan means a wide angular
+gap between them, which is what made "11 of 11 joins could not be matched confidently" happen in
+the first place). Going back to a fixed count reintroduces exactly that risk for a recording that
+is both long *and* fast — 48 frames spread across, say, a 30-second recording is a much sparser
+sample than 48 frames across a 6-second one. This is accepted here because the owner asked
+specifically for a fixed count to bound processing time, not because the overlap problem stopped
+being real. If a future report describes joins failing again on a longer or faster recording, the
+fix is a per-pair remedy (raising `JOIN_LOOKAHEAD`, or asking for a slower/shorter walk-around),
+not silently re-scaling this count back up to duration-based sampling.
+
+### Verified
+
+**910 checks green** (was 909 — 1 assertion added, 6 rewritten in place to the new fixed-48
+behaviour rather than silently deleted, "healthy churn from an intentional change" per this file's
+own convention): confirms `FIXED_FRAME_COUNT = 48` is declared and `frameCountFor` simply returns
+it, and that `FRAMES_PER_SEC`/`MIN_FRAMES`/`MAX_FRAMES` no longer exist in the file at all.
+**Genuinely executed**, not just read: `Pano360._frameCountFor` was called directly with a very
+short duration (0.3s), a very long one (9999s), an ordinary one (6s and 24s) and a degenerate one
+(0) — every case returns exactly **48** — and a 4-second clip and a 20-second clip are confirmed to
+resolve to the identical count, which the retired 30fps scaling would never have done. `node
+--check` clean on `pano360.js`/`test.js`; `tools/wiring-check.js` — **126 passed, 0 failed**. The
+same **3** pre-existing, unrelated failures (a PDF page-break assertion + 2 `capture.js`
+audio/flash assertions) from the entry above are unchanged.
+
+⚠️ **Not verified signed in** — same standing caveat as every entry in this file; no real device
+recording has been run through the fixed-48 sampling to confirm the actual wall-clock speedup, or
+to confirm a long/fast recording doesn't now fail to join the way a fast one did before the
+2026-09-12 density fix.
+
+`pano360.js`/`index.html?v=` → `20260913i`; `MODULE_V` (`assets/js/modules-grid.js?v=` in
+`dashboard.html`/`modules.html`) → `20260913i`. `module.js` is unchanged this round.
+
+## The "Reading video…" status was static for the entire frame-extraction phase — it now reports real per-frame progress (2026-09-13)
+
+Owner, off a screenshot of the "Add 360° photo" modal mid-upload: *"when uploading video, reading
+video status is taking too long. provide better description of status."*
+
+⚠️⚠️ **The status text was never wrong, it was just BLIND to the one phase that actually takes a
+while.** `Pano360.stitchFromVideo`'s `onProgress(stage, frac)` callback fired exactly ONCE for the
+whole frame-extraction phase — `onProgress('frames', 1)`, called only AFTER every frame had already
+been pulled. Everything before that single call (resolving the clip's duration, then looping through
+`extractFrames`' real, awaited `seekTo()` per frame) was invisible to the caller. And at the sampling
+density this pipeline now uses (`frameCountFor`, 30fps, up to `MAX_FRAMES = 1200` per the 2026-09-12
+density fix), that loop is genuinely several hundred real video seeks — the actual long pole a
+planner was staring at as a frozen "Reading video…" sentence with nothing distinguishing "still
+working" from "stuck".
+
+### The fix
+
+- **`extractFrames` now reports progress on every single frame**, not once at the end:
+  `extractFrames(videoBlob, count, maxW, knownDuration, onProgress)` — `onProgress(done, total)`
+  fires immediately after each frame is drawn, so a caller can show a real N-of-M count and
+  percentage throughout the phase that was previously silent.
+- **A `knownDuration` parameter lets a caller that already resolved the duration skip re-running
+  `fixInfiniteDuration` a second time on a fresh video element for the same file** —
+  `stitchFromVideo` always calls `getDuration()` first (to pick the sample density via
+  `frameCountFor`), so `extractFrames` no longer pays that resolution's own (up to ~2.5s, on a
+  `MediaRecorder` blob with no duration atom) cost twice for one capture.
+- **`stitchFromVideo`'s `onProgress` now reports four real, named stages** instead of the old two:
+  `'duration'` (resolving the clip's length), `'framecount'` (density decided, extraction about to
+  start — carries the real frame count so the caller can announce the job's scale up front),
+  `'frames'` (fires per-frame, carrying `done`/`total`), and `'stitch'` (unchanged — the join/warp
+  phase).
+- **`module.js`'s `runStitch()` reads all four stages into a real, changing message**: "Reading
+  video…" → "Extracting up to *N* frames…" → "Extracting frames — *k* of *N* (*p*%)" (updating on
+  every frame) → "Stitching panorama — *p*%". A planner watching a 20-second recording process now
+  sees the count climb in real time instead of a sentence that never moves.
+
+### Verified
+
+**909 checks green** (was 906 — 3 new, plus 3 existing assertions rewritten in place to the new
+call shape, "healthy churn from an intentional change" per this file's own convention): the exact
+`extractFrames(videoBlob, frameCount, WORK_MAXW, duration, function (done, total) { … })` call site
+inside `stitchFromVideo`, and the four-stage `onProgress` dispatch in both `pano360.js` and
+`module.js`'s `runStitch`. **Genuinely executed, not just structurally matched**: a fake, controllable
+`<video>` element (the same monkey-patch-`document.createElement` convention this file already uses
+for `capture.js`'s close-during-recording race tests, restored in a `finally`) drives the real,
+shipped `extractFrames` (exported as a new test-only hook, `Pano360._extractFrames`) end to end —
+confirms `onProgress` fires exactly `count` times, in strict `[1,total] .. [total,total]` order, and
+that a valid `knownDuration` is used as-is with no `'timeupdate'` event ever needed (the fake video
+never fires one — if `fixInfiniteDuration` had still been called, the promise would hang and the test
+would time out). `node --check` clean on all three touched files; `tools/wiring-check.js` — **126
+passed, 0 failed**. Confirmed against a clean checkout of the commit before this fix: the exact same
+**3** pre-existing, unrelated failures (a PDF page-break assertion + 2 `capture.js` audio/flash
+assertions) appear before and after, byte-for-byte identical — zero regressions.
+
+⚠️ **Not verified signed in** — same standing caveat as every entry in this file; no real device
+recording has been run through the new progress reporting. What this fixes is the STATUS TEXT during
+a phase that was always real work happening correctly — it does not change how long that work
+actually takes (that is the separate, already-shipped 2026-09-12 density work), only whether a
+planner watching it can tell the difference between "processing a long recording" and "hung".
+
+`pano360.js`/`module.js`/`index.html?v=` → `20260913e`; `MODULE_V` (`assets/js/modules-grid.js?v=` in
+`dashboard.html`/`modules.html`) → `20260913e`.
+
 ## Sampling density raised to 30fps — the mosaic was covering only a fraction of the actual 360° recorded, not a cropping bug (2026-09-12, later still)
 
 Owner, continuing from PR #97: *"the 360 feature ... is working better, taking off from PR97. but we
