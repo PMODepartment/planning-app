@@ -102,6 +102,29 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### Progress Photos: the 360° "Reading video…" status stops being static through the one phase that actually takes a while (2026-09-13)
+
+Owner, off a screenshot of the "Add 360° photo" modal mid-upload: *"when uploading video, reading
+video status is taking too long. provide better description of status."*
+
+⚠️⚠️ **The status text was blind to the one real long phase, not wrong.** `Pano360.stitchFromVideo`'s
+progress callback fired exactly once for the whole frame-extraction phase — after every frame had
+already been pulled — so at the current 30fps/up-to-1200-frame sampling density the planner watched a
+frozen sentence for however long several hundred real video seeks took, with nothing to say it wasn't
+stuck. `extractFrames` now reports progress per frame, `stitchFromVideo` reports four named stages
+(duration → frame count decided → per-frame extraction → stitching), and the module reads all four
+into a real, moving message ("Extracting frames — 145 of 600 (24%)").
+
+Verified: 909 checks green (3 new + 3 rewritten to the new call shape), including genuine execution
+of `extractFrames` against a fake, controllable `<video>` element proving `onProgress` fires once per
+frame in order; `tools/wiring-check.js` 126/0; the same 3 pre-existing, unrelated failures confirmed
+unchanged against the commit before this fix.
+⚠️ Not verified signed in — no real device recording has been run through the new reporting; this
+fixes the status text during real work, not how long that work takes.
+
+`pano360.js`/`module.js` → `?v=20260913e`; `MODULE_V` → `20260913e`. Detail:
+[`modules/progress-photos/CLAUDE.md`](modules/progress-photos/CLAUDE.md).
+
 ### The site plan expands to full screen, like every other card (2026-09-13) — ethanrobles10
 
 Owner: *"add a full screen also for the site"*

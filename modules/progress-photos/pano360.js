@@ -220,7 +220,21 @@ window.Pano360 = (function () {
   // Extracts `count` frames evenly spaced across the whole clip, at up to
   // `maxW` wide, as an array of <canvas> elements (never <img> — a canvas is
   // already decoded pixel data, no further async load needed downstream).
-  function extractFrames(videoBlob, count, maxW) {
+  //
+  // 2026-09-13: two additions, both aimed at the "reading video status is
+  // taking too long, with no way to tell" report. (1) `knownDuration` lets a
+  // caller that already resolved the duration (stitchFromVideo always has,
+  // via getDuration) skip re-running fixInfiniteDuration a SECOND time on a
+  // fresh video element — that resolution can itself take up to ~2.5s on a
+  // MediaRecorder blob with no duration atom, and paying it twice for the
+  // same file was pure dead time. (2) `onProgress(done, total)` fires after
+  // every single frame is extracted — at the new higher sample density this
+  // loop can run to several hundred iterations (frameCountFor can return up
+  // to MAX_FRAMES), each involving a real video seek, so it is the actual
+  // long pole behind "Reading video…" sitting static the whole time; this is
+  // what lets the caller show real per-frame progress instead of a frozen
+  // message with no way to tell it apart from a hang.
+  function extractFrames(videoBlob, count, maxW, knownDuration, onProgress) {
     return new Promise(function (resolve, reject) {
       var video = document.createElement('video');
       video.muted = true; video.playsInline = true; video.preload = 'auto';
@@ -228,7 +242,7 @@ window.Pano360 = (function () {
       video.src = url;
       video.onloadedmetadata = async function () {
         try {
-          var dur = await fixInfiniteDuration(video);
+          var dur = (isFinite(knownDuration) && knownDuration > 0) ? knownDuration : await fixInfiniteDuration(video);
           if (!isFinite(dur) || dur <= 0) { URL.revokeObjectURL(url); reject(new Error('Could not read the video duration.')); return; }
           var frames = [];
           for (var i = 0; i < count; i++) {
@@ -237,6 +251,7 @@ window.Pano360 = (function () {
             var t = dur * (0.03 + (i / (count - 1)) * 0.94);
             await seekTo(video, t);
             frames.push(drawFrame(video, maxW));
+            if (onProgress) onProgress(i + 1, count);
           }
           URL.revokeObjectURL(url);
           resolve(frames);
@@ -794,17 +809,36 @@ window.Pano360 = (function () {
   }
 
   // Public entry point: video Blob in, stitched-panorama Blob + quality out.
-  // `onProgress(stage, fraction)` — stage is 'frames' then 'stitch', so the
-  // caller can show one continuous progress bar across both phases.
+  //
+  // ⚠️⚠️ 2026-09-13: `onProgress` now reports THREE distinct stages, not two,
+  // and 'frames' now fires on every extracted frame rather than once at the
+  // very end — this is the direct fix for "reading video status is taking
+  // too long, provide better description of status". Before this, the ONLY
+  // callback fired during the whole extraction phase was a single
+  // `onProgress('frames', 1)` AFTER every frame had already been pulled —
+  // so for a real recording (frameCountFor can ask for up to MAX_FRAMES, a
+  // few hundred real video seeks) the caller had nothing to show but a
+  // static "Reading video…" for however long that took, indistinguishable
+  // from a hang. The shape callers now receive:
+  //   onProgress('duration')                — resolving the clip's length
+  //   onProgress('framecount', frameCount)   — density decided; extraction starting
+  //   onProgress('frames', done, frameCount) — fires after EVERY frame
+  //   onProgress('stitch', fraction)         — unchanged, the join/warp phase
   async function stitchFromVideo(videoBlob, onProgress) {
     // Duration decides the sample density (frameCountFor) — read once, up
     // front, via the SAME fixInfiniteDuration path extractFrames uses
     // internally, so a MediaRecorder blob with no duration atom in its
     // header is handled identically here as it is there.
+    if (onProgress) onProgress('duration');
     var duration = await getDuration(videoBlob);
     var frameCount = frameCountFor(duration);
-    var frames = await extractFrames(videoBlob, frameCount, WORK_MAXW);
-    if (onProgress) onProgress('frames', 1);
+    if (onProgress) onProgress('framecount', frameCount);
+    // `duration` is handed to extractFrames as its `knownDuration` so it
+    // never has to re-run fixInfiniteDuration's own (up to ~2.5s) resolution
+    // a second time on a fresh video element for the same file.
+    var frames = await extractFrames(videoBlob, frameCount, WORK_MAXW, duration, function (done, total) {
+      if (onProgress) onProgress('frames', done, total);
+    });
     var result = await stitchFrames(frames, function (f) { if (onProgress) onProgress('stitch', f); });
     return new Promise(function (resolve) {
       result.canvas.toBlob(function (blob) {
@@ -822,6 +856,7 @@ window.Pano360 = (function () {
     getDuration: getDuration,
     stitchFromVideo: stitchFromVideo,
     // Test-only hooks — genuinely execute the pure/near-pure pieces.
+    _extractFrames: extractFrames,
     _fixInfiniteDuration: fixInfiniteDuration,
     _homographyBetween: homographyBetween,
     _mat3Mul: mat3Mul,

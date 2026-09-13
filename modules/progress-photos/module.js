@@ -5964,14 +5964,35 @@ window.ProgressPhotos = (function () {
       }
     }
 
+    // ⚠️⚠️ 2026-09-13: "reading video status is taking too long, provide
+    // better description of status" -- the previous version set this text
+    // ONCE ('Reading video…') and never touched it again until
+    // Pano360.stitchFromVideo's callback fired with 'frames'/'stitch' -- and
+    // that callback used to fire exactly ONCE for the whole frame-extraction
+    // phase, AFTER every frame had already been pulled. For a real
+    // recording (frameCountFor can ask for several hundred frames at the
+    // current sampling density) that phase is the actual long pole, and it
+    // rendered as a frozen sentence with nothing to distinguish "still
+    // working" from "stuck". pano360.js now reports four real stages
+    // (duration / framecount / frames-per-frame / stitch); this reads each
+    // one into a message that names what is actually happening and, once
+    // the frame count is known, a real N-of-M count and percentage.
     async function runStitch() {
       show('pp360-step-source', false);
       show('pp360-progress', true);
       var prog = $('pp360-prog'); if (prog) prog.textContent = 'Reading video…';
       try {
-        var res = await Pano360.stitchFromVideo(videoBlob, function (stage, frac) {
+        var res = await Pano360.stitchFromVideo(videoBlob, function (stage, a, b) {
           if (!prog) return;
-          prog.textContent = (stage === 'frames' ? 'Reading frames…' : 'Stitching panorama…') + ' ' + Math.round(frac * 100) + '%';
+          if (stage === 'duration') {
+            prog.textContent = 'Reading video…';
+          } else if (stage === 'framecount') {
+            prog.textContent = 'Extracting up to ' + a + ' frame' + (a === 1 ? '' : 's') + '…';
+          } else if (stage === 'frames') {
+            prog.textContent = 'Extracting frames — ' + a + ' of ' + b + ' (' + Math.round((a / b) * 100) + '%)';
+          } else {
+            prog.textContent = 'Stitching panorama — ' + Math.round(a * 100) + '%';
+          }
         });
         showStitchResult(res);
       } catch (err) {
