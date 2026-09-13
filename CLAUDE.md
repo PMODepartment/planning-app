@@ -102,6 +102,35 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### A tower is never the site: the floor-by-floor view stops drawing property-sized slabs (2026-09-13) — ethanrobles10
+
+Owner, with a screenshot of what shipped an hour earlier: *"NO … not like a singular plate that would
+cover the whole site plan."* Two slender towers standing inside a stack of huge translucent slabs,
+one per floor, each the size of the whole property. **Two faults, both from the site borrowing rules
+written for a floor.**
+
+- ⚠️⚠️ **The whole-floor fallback.** `if (!_pg && _plate && n === 1) _pg = _vsZpOutlineOf(_plate)` is
+  right on a floor — one cell on a storey IS that floor — and on the site the plate is the site
+  development plan, so its outline is the **property boundary**. Every row where one tower had work
+  drew that tower as a slab covering the entire site, once per floor. Now gated on `!model.site`.
+- ⚠️⚠️ **The wrap slot is a share of the plate.** A cell with no traced outline takes `plate / cols`
+  — right for a zone on a storey, and on the site half the property, one storey tall, on every floor.
+  Those are the towers nobody has traced a footprint for yet (this project has 1 of 8).
+  `model.cellSpan` caps an untraced site cell at `1 / (towers + 2)` of the plate, max 0.26: eight
+  towers get a tenth of the site each, three get a fifth.
+- ⚠️ The cap applies **only** where there is no traced outline — a footprint somebody drew is the
+  drawing — and the slot still decides WHERE the block stands, so the footer's *"not where they stand
+  on site"* warning stays true. Both site models carry it; the massing view had the same two faults,
+  one solid per tower just made them less obvious than forty do.
+
+⚠️ 50 assertions on the shipped models, including the cap's arithmetic and both fallbacks. Two harness
+bugs were caught first — a fixture asking for towers with no activities, and an expected value of
+0.125 where the rule gives 0.1 — both the test being wrong about the code. **Not verified signed in**;
+the fix has not been seen on the project in the screenshot.
+
+`MODULE_V` → `20260913g`. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
 ### The site view reads floor by floor, not just as massing (2026-09-13) — ethanrobles10
 
 Owner: *"can you show the per floor basis in the site view 3D perspective?"*

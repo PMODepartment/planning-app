@@ -16619,7 +16619,13 @@
         /* ⚠️ THE FLOOR'S OWN OUTLINE, when the storey is one cell and no zone matched. Keyed on
            `n`, not on `ci`: the question is whether this STOREY is undivided, not whether this
            cell happens to be the first of several. */
-        if (!_pg && _plate && n === 1) { _pg = _vsZpOutlineOf(_plate); _pgZone = true; }
+        /* ⚠️⚠️ NEVER ON THE SITE. Owner 2026-09-13, with a screenshot: *"not like a singular plate
+           that would cover the whole site plan."* On a floor this fallback is right — one cell on a
+           storey IS that floor, so it takes the floor's outline. On the SITE the plate is the site
+           development plan and its outline is the SITE BOUNDARY, so a row where only one tower has
+           work drew that tower as a slab covering the whole site: a building the size of the
+           property, once per floor. A tower is never the site. */
+        if (!_pg && _plate && n === 1 && !model.site) { _pg = _vsZpOutlineOf(_plate); _pgZone = true; }
         /* ==== CONSOLIDATED: A TRADE CELL IS THE WHOLE FLOOR ================================
            Owner 2026-09-11: *"how come when pressing the consolidated and combining 2 trades
            that have the same floor plan per floor but just different zones, the overall shape
@@ -16674,6 +16680,18 @@
         // ⚠️ THE SAME THREE CHANNELS THE 2D CELL USES, so the two cards cannot say different things:
         //   colour = which trade/category · brightness = done vs remaining · height = the storey.
         var dim = _tone.rem;
+        /* ⚠️⚠️ A SITE CELL WITH NO TRACED FOOTPRINT IS A BUILDING, NOT A SHARE OF THE SITE.
+           The wrap slot is `plate / cols`, which is right on a floor — a zone really is a share of
+           its storey — and on the site it is a slab half the property wide and one storey tall,
+           drawn again on every floor. `model.cellSpan` caps it to something tower-shaped; the slot
+           still decides WHERE it stands, so an untraced tower keeps its place on the wrap grid and
+           the footer's warning stays true.
+           ⚠️ Only when there is no traced outline: a footprint somebody drew is the drawing, and
+           capping that would be this view inventing a size. */
+        if (!_pg && model.cellSpan > 0) {
+          exW = Math.min(exW, plateW * model.cellSpan);
+          exD = Math.min(exD, plateD * model.cellSpan);
+        }
         var x = (p.col - (p.cols - 1) / 2) * shW;
         var z = (p.row - (p.rows - 1) / 2) * shD;
         /* ==== PROGRESS FILLS UPWARD, AND THE TWO PARTS DO NOT OVERLAP ======================
@@ -17674,6 +17692,9 @@
       cellKey: function (keyPrefix, v, c) { return keyPrefix + '|' + v + '|' + (c.label || '*'); },
       // ⚠️ THE SITE PLAN, for every row — there is only one, and it is not a floor's.
       plateFor: function () { return _vsSitePlan(); },
+      // ⚠️ How much of the site an UNTRACED tower may take — see the note in _vs3Build. A building,
+      // not a share of the property: eight towers each get an eighth-ish, two get a quarter each.
+      cellSpan: Math.min(0.26, 1 / (towers.length + 2)),
       // Each tower's share of the tallest. ⚠️ Its own storey count over the TALLEST tower's, so the
       // picture is a comparison rather than a set of unrelated heights.
       cellH: function (c) { return (storeyN[c.label] || 1) / maxN; },
@@ -17753,6 +17774,9 @@
       // ⚠️ The site plan for every row: the cells are towers, so their outlines are the footprints
       // traced on the site, exactly as in the massing model.
       plateFor: function () { return _vsSitePlan(); },
+      // ⚠️ And the same cap on an untraced tower: floor by floor, a site-sized slab would be drawn
+      // once per storey, which is the state the owner sent the screenshot of.
+      cellSpan: Math.min(0.26, 1 / (towers.length + 2)),
       storeyN: storeyN, maxN: maxN
     };
   }
