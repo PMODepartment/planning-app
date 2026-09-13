@@ -33,7 +33,21 @@
 }
 .pmc-tierbar .pmc-tierpill.busy .pmc-dot { background: var(--pd-warn, #C77700); }
 .pmc-tierpill .pmc-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--pd-ok, #1f8f4e); flex: none; }
+/* The Quality control and the reset button sit at the far end of the tier bar,
+   away from the state pill they modify. ⚠️ `margin-left:auto` goes on whichever
+   of the two comes FIRST — the select is always present, the reset button only
+   after a downgrade, so anchoring it to the button alone left the select
+   floating in the middle of the bar on every ordinary load. */
+.pmc-quality { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.pmc-quality .pd-select { width: auto; min-width: 132px; }
+.pmc-quality + button.pd-btn-sm { margin-left: 0; }
 .pmc-tierbar button.pd-btn-sm { margin-left: auto; }
+
+@media (max-width: 700px) {
+  /* On a phone the bar is already wrapping; a control pinned right ends up
+     alone on its own line, so it simply follows the text instead. */
+  .pmc-quality { margin-left: 0; }
+}
 
 /* ---- Thread ---- */
 .pmc-thread {

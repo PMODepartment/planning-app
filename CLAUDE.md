@@ -249,6 +249,63 @@ fixes the status text during real work, not how long that work takes.
 `pano360.js`/`module.js` → `?v=20260913e`; `MODULE_V` → `20260913e`. Detail:
 [`modules/progress-photos/CLAUDE.md`](modules/progress-photos/CLAUDE.md).
 
+### 2026-09-13 — Pormac: the better the laptop, the worse the model
+
+Owner: *"pormac is working already, but the model is not so smart."* Detail:
+[`modules/pormac/CLAUDE.md`](modules/pormac/CLAUDE.md). Module + its Edge Function, **no migration**.
+
+⚠️⚠️ **THE ROUTING WAS BACKWARDS, AND THAT IS THE FINDING.** `detectCapability()` answers *"what can
+this device run?"*, and the first build used that as the **entire** decision: WebGPU present → run
+locally. So a planner on a capable workstation got the largest model a browser tab can practically
+hold (**Llama-3.2-3B**), while the hosted path carries **llama-3.3-70b-versatile** — roughly 20× the
+parameters — reserved by design for the devices that *could not* run anything locally. The better the
+machine, the worse the model answering. Capability now decides only the **local rung**; the hosted
+model is preferred whenever it is actually reachable.
+
+⚠️ **It stays a visible choice, not a silent reversal.** The original ask was explicitly in-browser
+inference; both halves survive (Groq's free tier costs nothing either), but *"runs on your device"* is
+a decision somebody made on purpose, so it is a **Quality** control in the tier bar, remembered per
+device. ⚠️ Switching it drops the loaded engine — otherwise the control looks broken while the small
+model already in memory goes on answering.
+
+⚠️ **The three ways the hosted path can fail are three different problems** and a planner told only
+*"unavailable"* can act on none of them: **404** never deployed · **503** no provider key · **429**
+allowance spent. A probe on load distinguishes them and the bar names the remedy — and it costs **no
+model call and no daily allowance**, because the function answers `probe` before reaching the
+provider. When neither path works the bar reads **"No model available"** rather than claiming a hosted
+model that is not there.
+
+**Also raised, because a weak model is only half of it:** a new **`local-max`** rung (7–8B, ⚠️ only at
+`deviceMemory ≥ 16GB` — it is a ~5GB download, never offered on a guess); the system prompt, which was
+three sentences of prohibitions and so produced hedging, now asks for the **actual figures**;
+conversation depth 8 turns → 30 on remote and context 4 modules → 8, both of which were sized for a 1B
+window and were starving a model that accepts 131k; the context now **names the project**, which it
+never did; and providers are fetched **in parallel** — measured **60ms against 241ms** for 6 providers.
+
+**The Edge Function** gains a **model chain**: ⚠️⚠️ `GROQ_MODEL` was one hard-coded id, and Groq
+retires ids on its own schedule, so a decommissioned model was a total outage with no way to survive
+it. Only a **model-level** rejection advances the chain (a 429 or 5xx is the provider saying stop), and
+the response reports the model that **actually answered** rather than the one requested. The daily cap
+goes 30 → 200 and the prompt guard 24k → 120k characters, both env-tunable — both were sized for a
+last-resort fallback, not a primary path.
+
+**Verified:** 20 assertions executing `promptMessages`/`gatherContext`/`projectLabel` sliced out of the
+shipped file, ⚠️ **5 of them contrast assertions against HEAD, all biting**; nine tier-resolution paths
+driven in a real browser, each failure naming its own cause, 0 page errors. ⚠️ **Two of my own bugs
+found by the harness, not by reading** — a stub that clobbered the injected probe response and reported
+all four failure paths as successes, and a real one: `On this device` on a device that cannot run
+locally claimed a working hosted model without probing it. `node --check` clean, Edge Function parses,
+braces 35/35, 0 NUL bytes, `wiring-check` **126/126**, `dead-hooks` unchanged at its 9-finding baseline.
+
+⚠️⚠️ **NOT VERIFIED AGAINST A REAL MODEL, AND ONE OWNER ACTION GATES ALL OF IT.** Egress to Groq and to
+this project's own Supabase is blocked from here, so everything above is the shipped code executed
+against stubs. **Until `supabase functions deploy pormac-chat` has run AND `GROQ_API_KEY` is set, the
+hosted path does not exist and every planner falls back to the on-device model** — the state that
+produced the complaint. The module now says so on screen instead of hiding it, but saying so is not the
+fix; that deploy is, and only the owner can do it (free key at console.groq.com, no card).
+
+`MODULE_V` → `20260913a`.
+
 ### The site plan expands to full screen, like every other card (2026-09-13) — ethanrobles10
 
 Owner: *"add a full screen also for the site"*

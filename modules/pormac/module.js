@@ -97,11 +97,7 @@ window.Pormac = (function () {
     // typing immediately. onSend() awaits `capPromise` if it hasn't landed yet,
     // so a message sent in the first instant still waits for a real answer
     // (null vs 'local-full' vs 'remote') rather than racing against it.
-    capPromise = detectCapability().then(function (cap) {
-      tier = cap.tier;
-      renderTierBar(cap.reason);
-      return cap;
-    });
+    capPromise = applyTier();
   }
 
   async function loadProjects() {
@@ -217,6 +213,11 @@ window.Pormac = (function () {
     var mem = navigator.deviceMemory || null; // undefined on Safari/Firefox always
 
     if (mem != null) {
+      // ⚠️ `local-max` (a 7–8B model) is NOT offered on a guess: it is a ~5GB
+      // one-time download and several GB of VRAM, so it needs a machine that
+      // has actually reported enough memory. Below that the old 3B/1B rungs
+      // are unchanged.
+      if (mem >= 16 && !isMobile) return { tier: 'local-max', reason: mem + 'GB reported (desktop)' };
       if (mem >= 8 && !isMobile) return { tier: 'local-full', reason: mem + 'GB reported (desktop)' };
       if (mem >= 6) return { tier: 'local-lite', reason: mem + 'GB reported' };
       return { tier: 'remote', reason: mem + 'GB reported — too little to risk a local model' };
@@ -227,11 +228,89 @@ window.Pormac = (function () {
     return { tier: 'local-full', reason: 'desktop, memory unreadable on this browser' };
   }
 
+  // ==========================================================================
+  // Which model answers: a CHOICE, not only a capability
+  // ==========================================================================
+  // ⚠️⚠️ THIS REVERSES THE MODULE'S ORIGINAL DEFAULT, AND THE REVERSAL IS THE
+  // WHOLE POINT (2026-09-12, owner: "the model is not so smart").
+  // `detectCapability()` above answers "what can this device run?" — and the
+  // first build used that answer as the whole decision, so a planner on a good
+  // laptop was routed to the LARGEST model a browser tab can hold (3B) while
+  // the hosted path they could have reached carries a 70B-class model. The
+  // better the machine, the worse the answer. Capability now decides only the
+  // LOCAL rung; the hosted model is preferred whenever it is actually reachable.
+  //
+  // ⚠️ It stays a visible choice rather than a silent switch, because the
+  // original ask was explicitly in-browser inference ("totally free... no
+  // hosting cost"). Both remain true — Groq's free tier costs nothing either —
+  // but "runs on your device" is a property somebody chose on purpose, so it
+  // is one click away and remembered per device, not deleted.
+  function qualityPref() {
+    var q = localStorage.getItem('pormac_quality');
+    return q === 'device' ? 'device' : 'best';
+  }
+
+  // Asks the Edge Function whether the hosted path is usable for THIS caller
+  // right now — deployed, keyed, and not out of quota. ⚠️ It costs no model
+  // call and no daily allowance (the function answers `probe` before it
+  // reaches the provider), which is what makes it safe to run on every load.
+  async function probeRemote() {
+    try {
+      var { data: sess } = await sb().auth.getSession();
+      var token = sess && sess.session && sess.session.access_token;
+      if (!token) return { ok: false, why: 'not signed in' };
+      var resp = await fetch(APP_CONFIG.SUPABASE_URL + '/functions/v1/pormac-chat', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ probe: true }),
+      });
+      var body = await resp.json().catch(function () { return {}; });
+      if (resp.ok && body.ok) return { ok: true, model: body.model, left: body.remaining_today };
+      // ⚠️ The three ways this path can be unusable are DIFFERENT problems with
+      // different remedies, and a planner told only "unavailable" cannot act on
+      // any of them. 404 = the function was never deployed; 503/no_key = it is
+      // deployed but has no provider key; 429 = today's allowance is spent.
+      if (resp.status === 404) return { ok: false, why: 'the cloud assistant has not been deployed yet' };
+      if (body.code === 'no_key') return { ok: false, why: 'the cloud assistant has no provider key set' };
+      if (body.code === 'quota') return { ok: false, why: "today's cloud allowance is used up" };
+      return { ok: false, why: (body.error || ('cloud check returned ' + resp.status)) };
+    } catch (e) {
+      return { ok: false, why: 'the cloud assistant could not be reached' };
+    }
+  }
+
+  // The one place the tier is decided. Returns the capability answer too, so
+  // the Quality control can say what "On this device" would actually give you
+  // without re-running the probe.
+  async function resolveTier() {
+    var cap = await detectCapability();
+    if (qualityPref() === 'device') {
+      // ⚠️ "On this device" cannot conjure WebGPU. A device that genuinely
+      // cannot run a local model still goes remote — the preference is a
+      // preference, not an override of physics.
+      if (cap.tier !== 'remote') return { tier: cap.tier, reason: cap.reason + ' — your choice: on this device', cap: cap };
+      // ⚠️ The device cannot honour the preference, so it falls to the hosted
+      // path — and that path must still be CHECKED. Reporting "large hosted
+      // model" without probing is how the bar ends up naming a model that was
+      // never deployed, on the one device that has nothing else to fall back to.
+      var pr = await probeRemote();
+      return { tier: 'remote', broken: !pr.ok, cap: cap,
+        reason: pr.ok ? 'this device cannot run a local model, so Pormac is using the hosted one'
+                      : 'this device cannot run a local model, and ' + pr.why };
+    }
+    var probe = await probeRemote();
+    if (probe.ok) {
+      return { tier: 'remote', reason: (probe.left != null ? probe.left + ' cloud messages left today' : 'the larger hosted model'), cap: cap };
+    }
+    if (cap.tier === 'remote') return { tier: 'remote', reason: probe.why, cap: cap, broken: true };
+    return { tier: cap.tier, reason: probe.why + ' — running the smaller on-device model instead', cap: cap };
+  }
+
   // Step the tier down after a real failure (OOM, context lost, load error),
   // and remember it on THIS device so the next visit does not repeat the
   // failure. This is the "slow down instead of crash" behaviour.
   function downgrade(reason) {
-    var order = ['local-full', 'local-lite', 'remote'];
+    var order = ['local-max', 'local-full', 'local-lite', 'remote'];
     var i = order.indexOf(tier);
     var next = order[Math.min(i + 1, order.length - 1)];
     UI.toast('Pormac: switching to a lighter mode (' + reason + ')', 'warn');
@@ -242,26 +321,67 @@ window.Pormac = (function () {
   }
 
   var TIER_LABEL = {
-    'local-full': 'Running locally (full model)',
-    'local-lite': 'Running locally (lite model)',
-    'remote': 'Cloud fallback (this device can’t run it locally)',
-    null: 'Checking this device…',
+    'local-max': 'On this device — large model',
+    'local-full': 'On this device — medium model',
+    'local-lite': 'On this device — small model',
+    'remote': 'Best quality — large hosted model',
+    null: 'Choosing a model…',
   };
 
+  // ⚠️ The reason is kept in module state rather than passed in on every call.
+  // `onSend` repaints this bar twice per message just to flip the busy dot, and
+  // when it did so without a reason the bar silently dropped whatever it was
+  // saying — so the one line explaining WHICH model is answering vanished the
+  // moment you asked anything.
+  var tierReason = '';
+  var tierBroken = false;
   function renderTierBar(reason) {
+    if (reason != null) tierReason = reason;
     var bar = $('pmc-tierbar');
     if (!bar) return;
-    var label = TIER_LABEL[tier] || TIER_LABEL[null];
+    // ⚠️ `tierBroken` is the case where remote is the only path left AND it is
+    // not usable. Without it the pill reads "Best quality — large hosted model"
+    // on a device that can reach no model at all.
+    var label = (tier === 'remote' && tierBroken) ? 'No model available' : (TIER_LABEL[tier] || TIER_LABEL[null]);
+    var pref = qualityPref();
+    var downgraded = !!localStorage.getItem('pormac_tier_override');
     bar.innerHTML =
       '<span class="pmc-tierpill' + (sending ? ' busy' : '') + '"><span class="pmc-dot"></span>' + Fmt.esc(label) + '</span>' +
-      (reason ? '<span>' + Fmt.esc(reason) + '</span>' : '') +
-      (tier === 'remote' ? '<button class="pd-btn pd-btn-sm" id="pmc-retry-local">Try running locally again</button>' : '');
+      (tierReason ? '<span>' + Fmt.esc(tierReason) + '</span>' : '') +
+      '<label class="pmc-quality" title="Which model answers. Best quality runs on a much larger hosted ' +
+        'model; on-device runs a smaller one in your browser with no daily limit.">Quality' +
+        '<select class="pd-select pd-input-sm" id="pmc-quality">' +
+          '<option value="best"' + (pref === 'best' ? ' selected' : '') + '>Best quality</option>' +
+          '<option value="device"' + (pref === 'device' ? ' selected' : '') + '>On this device</option>' +
+        '</select></label>' +
+      (downgraded ? '<button class="pd-btn pd-btn-sm" id="pmc-retry-local">Reset device model</button>' : '');
+
+    $('pmc-quality').onchange = function (e) {
+      localStorage.setItem('pormac_quality', e.target.value === 'device' ? 'device' : 'best');
+      // ⚠️ Drop the loaded engine: switching to Best must not keep answering
+      // from the small model already sitting in memory, which would make the
+      // control look broken while quietly doing nothing.
+      engine = null; engineModelId = null;
+      tier = null; renderTierBar('switching…');
+      capPromise = applyTier();
+    };
     var retry = $('pmc-retry-local');
     if (retry) retry.onclick = function () {
       localStorage.removeItem('pormac_tier_override');
-      tier = null; renderTierBar();
-      detectCapability().then(function (cap) { tier = cap.tier; renderTierBar(cap.reason); });
+      engine = null; engineModelId = null;
+      tier = null; renderTierBar('re-checking this device…');
+      capPromise = applyTier();
     };
+  }
+
+  // One writer for `tier` / `tierBroken` / the bar — three call sites setting
+  // them by hand is three chances for the flag and the label to disagree.
+  function applyTier() {
+    return resolveTier().then(function (r) {
+      tier = r.tier; tierBroken = !!r.broken;
+      renderTierBar(r.reason);
+      return r;
+    });
   }
 
   // Lazy-loaded only once a local tier is actually needed — matches this
@@ -295,10 +415,16 @@ window.Pormac = (function () {
     try { webllm = await loadWebLLM(); }
     catch (e) { downgrade('could not load the local model runtime'); return null; }
 
-    var patterns = tier === 'local-full'
+    // ⚠️ The ceiling was 3B for every capable machine. A 7–8B model is a real
+    // step up in reasoning and WebLLM ships several, so a workstation is no
+    // longer capped at what a mid-range laptop can hold. The cost is honest and
+    // paid once: ~5GB downloaded and cached by the browser on first use.
+    var patterns = tier === 'local-max'
+      ? [/Llama-3\.1-8B-Instruct/i, /Qwen2\.5-7B-Instruct/i, /Mistral-7B-Instruct/i]
+      : tier === 'local-full'
       ? [/Llama-3\.2-3B-Instruct/i, /Qwen2\.5-3B-Instruct/i, /Phi-3\.5-mini-instruct/i]
       : [/Llama-3\.2-1B-Instruct/i, /Qwen2\.5-1\.5B-Instruct/i, /Qwen2-0\.5B-Instruct/i];
-    var maxVram = tier === 'local-full' ? 3300 : 1400;
+    var maxVram = tier === 'local-max' ? 6500 : tier === 'local-full' ? 3300 : 1400;
     var modelId = pickModelId(webllm, maxVram, patterns);
     if (!modelId) { downgrade('no suitable local model is available for this tier'); return null; }
 
@@ -450,33 +576,82 @@ window.Pormac = (function () {
   // default to a small, generally-useful set so a vague question still gets
   // something rather than nothing. Capped, so the prompt stays small enough
   // for a 1–3B local model's context window.
+  // The project the planner has selected, named the way the picker names it —
+  // read off the live <select> so it cannot disagree with what is on screen.
+  function projectLabel() {
+    var sel = $('pmc-project');
+    var opt = sel && sel.options[sel.selectedIndex];
+    return (pid && opt && opt.text) || '';
+  }
+
   async function gatherContext(question) {
     var providers = allProviders();
     var matched = providers.filter(function (p) { return p.keywords.test(question); });
     if (!matched.length) matched = providers.filter(function (p) { return p.key === 'project-schedule' || p.key === 'risk-register'; });
-    matched = matched.slice(0, 4);
+
+    // ⚠️ How many modules to pull in is bounded by the MODEL's window, not by a
+    // constant. Four was chosen for a 1B model; on the hosted model it was
+    // withholding most of the project from a question that spans modules
+    // ("are the delays on the critical path tied to any open claim?"), which
+    // is exactly the kind of question a planner asks an assistant.
+    var cap = tier === 'remote' ? 8 : tier === 'local-max' ? 5 : 4;
+    matched = matched.slice(0, cap);
+
+    // ⚠️ Fetched in PARALLEL, not in sequence. Each provider is its own round
+    // trip, so eight of them in a row put eight latencies between the planner's
+    // question and the first token. `Promise.all` over per-provider catches
+    // keeps the isolation the sequential loop had — one failing provider must
+    // not take the others with it — while costing one latency instead of N.
+    var results = await Promise.all(matched.map(function (p) {
+      if (p.needsProject && !pid) return Promise.resolve(null);
+      return Promise.resolve().then(p.fetch).then(
+        function (text) { return text ? { label: p.label, text: text } : null; },
+        function () { return null; }
+      );
+    }));
 
     var used = [], blocks = [];
-    for (var i = 0; i < matched.length; i++) {
-      var p = matched[i];
-      if (p.needsProject && !pid) continue;
-      try {
-        var text = await p.fetch();
-        if (text) { blocks.push(text); used.push(p.label); }
-      } catch (e) { /* one provider failing must not block the others */ }
-    }
+    // ⚠️ Name the project first. Without it the model is reading a pile of
+    // figures with nothing saying what they describe, and answers generically
+    // about "the project" because that is genuinely all it was told.
+    var proj = projectLabel();
+    if (proj) blocks.push('Project: ' + proj);
+    results.forEach(function (r) {
+      if (!r) return;
+      blocks.push(r.text);
+      used.push(r.label);
+    });
     return { used: used, text: blocks.join('\n') };
   }
 
   // ==========================================================================
   // Sending a message
   // ==========================================================================
-  var SYSTEM_PROMPT =
-    'You are Pormac, an assistant embedded in Megawide’s Planners Dashboard. Answer the ' +
-    'planner’s question using ONLY the context given below when it is relevant; say plainly ' +
-    'when you don’t have enough information rather than guessing. Be concise. If the context ' +
-    'includes figures mirrored from the Procurement or Engineering apps, make clear they may lag ' +
-    'the live register there.';
+  // ⚠️ A weak model gets much of its apparent intelligence from the instructions,
+  // so this says what a good answer LOOKS like rather than only what to avoid.
+  // The original was three sentences of prohibitions ("don't guess, be
+  // concise"), which is most of what made replies read as evasive: told only
+  // what not to do, a small model hedges.
+  var SYSTEM_PROMPT = [
+    'You are Pormac, an assistant inside Megawide’s Planners Dashboard. You help construction',
+    'Planning Engineers read their own project data: schedule, risks, stakeholders, contracts,',
+    'claims, cash flow, manpower, equipment, progress photos, procurement and engineering design.',
+    '',
+    'How to answer:',
+    '- Lead with the direct answer in one sentence, then the figures that support it.',
+    '- QUOTE THE ACTUAL NUMBERS from the context below. A planner asking "how far behind are we"',
+    '  wants the days and the dates, not a description of where to find them.',
+    '- Use the planner’s vocabulary: activity, WBS, float, baseline, POC, BOQ, variation, EOT.',
+    '- Keep it short. A few sentences or a tight list. No preamble, no restating the question.',
+    '',
+    'Honesty rules:',
+    '- The context below is the ONLY project data you have. Never invent a figure, date, name or',
+    '  ID that is not in it.',
+    '- If the context does not answer the question, say so in one line and name the module the',
+    '  planner should open. Do not pad the answer with generic construction advice.',
+    '- Figures mirrored from the Procurement or Engineering apps may lag the live register there;',
+    '  say so when you quote one.',
+  ].join('\n');
 
   async function onSend() {
     if (sending) return;
@@ -511,10 +686,14 @@ window.Pormac = (function () {
   }
 
   function promptMessages(question, contextText) {
-    var msgs = [{ role: 'system', content: SYSTEM_PROMPT + (contextText ? '\n\nContext:\n' + contextText : '') }];
-    // Keep only the last few turns — a local model's context window is small,
-    // and the context block above is rebuilt fresh every message anyway.
-    var recent = chatHistory.slice(-8);
+    var msgs = [{ role: 'system', content: SYSTEM_PROMPT + (contextText ? '\n\nProject data available to you:\n' + contextText : '\n\nNo project data is loaded for this question.') }];
+    // ⚠️ How much conversation to carry is a property of the MODEL, not of the
+    // module. A 1B model's window is a few thousand tokens and stuffing it
+    // makes answers worse; the hosted model accepts 131k, where cutting the
+    // thread at 8 turns was throwing away the context that makes a follow-up
+    // question ("and the one after that?") answerable at all.
+    var keep = tier === 'remote' ? 30 : tier === 'local-max' ? 12 : 8;
+    var recent = chatHistory.slice(-keep);
     return msgs.concat(recent, [{ role: 'user', content: question }]);
   }
 

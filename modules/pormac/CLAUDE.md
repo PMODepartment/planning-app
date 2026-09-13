@@ -6,6 +6,125 @@ can't do that. One entry per prompt, newest first.
 
 ---
 
+## 2026-09-13 — "The model is not so smart": the better the laptop, the worse the model
+
+Owner: *"pormac is working already, but the model is not so smart."*
+
+### ⚠️⚠️ THE ROUTING WAS BACKWARDS, AND THAT IS THE WHOLE FINDING
+`detectCapability()` answers *"what can this device run?"* — and the first build used that answer as
+the **entire** decision. WebGPU present → run locally. So a planner on a capable workstation was
+routed to the largest model a browser tab can practically hold (**Llama-3.2-3B**), while the hosted
+path they could have reached carries **llama-3.3-70b-versatile** — roughly 20× the parameters. The
+hosted model was reserved, by design, for the devices that *could not* run anything locally. **The
+better your machine, the worse the model answering you.** That is the reported symptom exactly, and
+it is an architecture decision rather than a tuning problem.
+
+Capability now decides only which **local rung** is used. The hosted model is **preferred whenever it
+is actually reachable**.
+
+⚠️ **It stays a visible choice rather than a silent reversal.** The original ask was explicitly
+in-browser inference (*"totally free… in-browser inference"*). Both halves survive — Groq's free tier
+costs nothing either, so "free" is untouched — but *"runs on your device"* is something somebody
+chose on purpose, so it is a **Quality** control in the tier bar (`Best quality` / `On this device`),
+remembered per device, not deleted. Switching it drops the loaded engine; otherwise the control would
+look broken while the small model already in memory went on answering.
+
+### ⚠️ The three ways the hosted path can be unusable are three different problems
+A planner told only *"unavailable"* can act on none of them, so `probeRemote()` distinguishes them and
+the tier bar names the remedy: **404** the function was never deployed · **503 `no_key`** deployed but
+no provider key · **429 `quota`** today's allowance is spent. The probe runs once on load, costs **no
+model call and no daily allowance** (the Edge Function answers `{probe:true}` before it reaches the
+provider), so the bar is honest before the planner types anything — the alternative is a failed first
+message with a 2GB model download starting underneath it.
+
+⚠️ **`On this device` cannot conjure WebGPU.** A device that genuinely cannot run a local model still
+goes remote — and that path is **probed too**, or the bar would read *"Best quality — large hosted
+model"* on the one device with nothing to fall back to. When neither path works it reads **"No model
+available"** and says why.
+
+### The local ceiling was 3B for every capable machine
+New **`local-max`** rung — Llama-3.1-8B / Qwen2.5-7B / Mistral-7B, 6500MB VRAM — above the existing
+3B and 1B rungs. ⚠️ Offered only at `deviceMemory ≥ 16GB` on a desktop, never on a guess: it is a
+~5GB one-time download. The downgrade ladder gains it at the top, so a failed 8B run steps to 3B
+rather than straight to the cloud.
+
+### The prompt and the grounding, which is the other half of "not smart"
+- ⚠️ **The system prompt was three sentences of prohibitions** (*"don't guess, be concise"*). Told only
+  what not to do, a small model hedges — which is most of what made replies read as evasive. It now
+  says what a good answer looks like, and in particular **to quote the actual figures**: a planner
+  asking *"how far behind are we"* wants the days and the dates, not a description of where to find
+  them.
+- ⚠️ **Conversation depth is a property of the MODEL, not the module.** `chatHistory.slice(-8)` was
+  right for a 1B window and was throwing away the context that makes a follow-up answerable against a
+  model that accepts 131k. Now 30 turns on remote, 12 on `local-max`, 8 below.
+- ⚠️ **The context cap was 4 modules**, chosen for a 1B model, so a question spanning modules (*"are
+  the delays on the critical path tied to any open claim?"*) was answered from a quarter of the
+  project. Now 8 on remote, 5 on `local-max`, 4 below.
+- ⚠️ **The context never named the project.** The model was reading a pile of figures with nothing
+  saying what they described, and answered generically about "the project" because that was genuinely
+  all it had been told. A `Project: …` header now leads, read off the live `<select>` so it cannot
+  disagree with what is on screen.
+- ⚠️ **Providers are fetched in PARALLEL.** Each is its own round trip, so eight in sequence put eight
+  latencies between the question and the first token. **Measured: 6 providers × 60ms — 60ms parallel
+  against 241ms sequential**, with the same per-provider error isolation the loop had.
+
+### The Edge Function, reshaped for being the primary path
+- ⚠️⚠️ **`GROQ_MODEL` was a single hard-coded id, and a retired id is a total outage.** Groq
+  decommissions hosted models on its own schedule and then answers every request with a 400 naming the
+  dead id. There is now a **model chain** (configured id first, then `llama-3.3-70b-versatile` →
+  `openai/gpt-oss-120b` → `llama-3.1-8b-instant`). ⚠️ Only a **model-level** rejection advances — a 429
+  or a 5xx is the provider saying stop, and retrying those spends the same quota to be refused again.
+  ⚠️ The response reports the model that **actually answered**, never the one asked for; after a chain
+  fallback those differ, and a tier bar naming a model no longer serving the planner is a lie the UI
+  cannot detect on its own.
+- **The daily cap was 30** — fine while this was a last resort for a handful of old phones, half a
+  morning as the primary path. Now **200**, env-tunable (`PORMAC_DAILY_CAP`).
+- **The prompt guard was 24,000 characters** (~6k tokens) against a model that accepts 131k — so it was
+  discarding most of the grounding that makes an answer good, to protect a quota measured in
+  **requests**. Now 120,000, env-tunable. `max_tokens` 1024 → 2048.
+- ⚠️ **The 429 told every caller their device was too old** and pointed at a remedy that is not the
+  remedy. It now names the Quality control.
+
+### Verified
+- **20 assertions, 0 failing**, executing `promptMessages` / `gatherContext` / `projectLabel` **sliced
+  out of the shipped file by name** — history budget per tier, provider cap per tier, the project
+  header, the no-project case, parallel timing, and a failing provider not taking the others with it.
+  ⚠️ **Five are CONTRAST assertions against HEAD and all bite**: HEAD keeps 8 turns on remote, caps at
+  4 providers, names no project, runs sequentially (241ms), and has a shorter prompt.
+- **Nine tier-resolution paths driven in a real browser** (the shipped page, auth/DB/fetch stubbed,
+  harness deleted): deployed+keyed → remote; 404 / no-key / quota → the right local rung **each naming
+  its own cause**; `pref=device` → local with no probe at all; `pref=device` with no WebGPU → probes and
+  goes remote; 8GB desktop → the 3B rung; no WebGPU **and** not deployed → **"No model available"**;
+  and the Quality control switching best→device→best, persisting to localStorage. **0 page errors.**
+- ⚠️ **Two of my own bugs, both found by the harness rather than by reading.** The harness stub
+  clobbered the test's injected probe response, so the first run reported all four failure paths as
+  successes — the same "stub overwrites the fixture" trap as the previous session's message-list test.
+  And the `pref=device` + no-WebGPU path really did claim a working hosted model without probing it;
+  that is now fixed, not just tested.
+- `node --check` clean; the Edge Function parses as TypeScript; `module.css` braces 35/35; 0 NUL
+  bytes; `tools/wiring-check.js` **126/126, 0 version splits**; `tools/dead-hooks.js` unchanged at its
+  documented 9-finding baseline.
+
+### ⚠️⚠️ NOT VERIFIED AGAINST A REAL MODEL, AND ONE OWNER ACTION GATES ALL OF IT
+No message has been sent to Groq or to WebLLM from here: egress to both `console.groq.com` and this
+project's own Supabase is blocked by this environment's proxy, so the probe, the model chain and the
+70B answer itself are proved by executing the shipped code against stubs, never observed.
+
+**Until `supabase functions deploy pormac-chat` has run AND `GROQ_API_KEY` is set, the hosted path
+does not exist and every planner silently falls back to the on-device model** — which is the state
+that produced the complaint. The module now says so on screen instead of hiding it, but saying so is
+not the fix. That deploy is the single highest-impact action and only the owner can take it; the free
+key is at console.groq.com, no card required. The exact commands are in
+`supabase/functions/pormac-chat/index.ts`'s own header.
+
+⚠️ **The model chain's second and third ids are not confirmed against a live Groq account.**
+`llama-3.3-70b-versatile` is confirmed current; `openai/gpt-oss-120b` and `llama-3.1-8b-instant` are
+reported available but were not verified (the docs host is blocked here). They are fallbacks behind a
+confirmed id, and `GROQ_MODEL` overrides the lot — but if the owner wants a specific newer model as
+the primary, set that env var rather than trusting this list.
+
+---
+
 ## 2026-09-12 (f) — One conversation per project, and the composer a slow fetch could hide
 
 Owner: *"no need for chat and history tab switcher. keep only 1 conversation per user per
