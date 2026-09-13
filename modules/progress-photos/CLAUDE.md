@@ -2,6 +2,69 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## The "Reading video…" status was static for the entire frame-extraction phase — it now reports real per-frame progress (2026-09-13)
+
+Owner, off a screenshot of the "Add 360° photo" modal mid-upload: *"when uploading video, reading
+video status is taking too long. provide better description of status."*
+
+⚠️⚠️ **The status text was never wrong, it was just BLIND to the one phase that actually takes a
+while.** `Pano360.stitchFromVideo`'s `onProgress(stage, frac)` callback fired exactly ONCE for the
+whole frame-extraction phase — `onProgress('frames', 1)`, called only AFTER every frame had already
+been pulled. Everything before that single call (resolving the clip's duration, then looping through
+`extractFrames`' real, awaited `seekTo()` per frame) was invisible to the caller. And at the sampling
+density this pipeline now uses (`frameCountFor`, 30fps, up to `MAX_FRAMES = 1200` per the 2026-09-12
+density fix), that loop is genuinely several hundred real video seeks — the actual long pole a
+planner was staring at as a frozen "Reading video…" sentence with nothing distinguishing "still
+working" from "stuck".
+
+### The fix
+
+- **`extractFrames` now reports progress on every single frame**, not once at the end:
+  `extractFrames(videoBlob, count, maxW, knownDuration, onProgress)` — `onProgress(done, total)`
+  fires immediately after each frame is drawn, so a caller can show a real N-of-M count and
+  percentage throughout the phase that was previously silent.
+- **A `knownDuration` parameter lets a caller that already resolved the duration skip re-running
+  `fixInfiniteDuration` a second time on a fresh video element for the same file** —
+  `stitchFromVideo` always calls `getDuration()` first (to pick the sample density via
+  `frameCountFor`), so `extractFrames` no longer pays that resolution's own (up to ~2.5s, on a
+  `MediaRecorder` blob with no duration atom) cost twice for one capture.
+- **`stitchFromVideo`'s `onProgress` now reports four real, named stages** instead of the old two:
+  `'duration'` (resolving the clip's length), `'framecount'` (density decided, extraction about to
+  start — carries the real frame count so the caller can announce the job's scale up front),
+  `'frames'` (fires per-frame, carrying `done`/`total`), and `'stitch'` (unchanged — the join/warp
+  phase).
+- **`module.js`'s `runStitch()` reads all four stages into a real, changing message**: "Reading
+  video…" → "Extracting up to *N* frames…" → "Extracting frames — *k* of *N* (*p*%)" (updating on
+  every frame) → "Stitching panorama — *p*%". A planner watching a 20-second recording process now
+  sees the count climb in real time instead of a sentence that never moves.
+
+### Verified
+
+**909 checks green** (was 906 — 3 new, plus 3 existing assertions rewritten in place to the new
+call shape, "healthy churn from an intentional change" per this file's own convention): the exact
+`extractFrames(videoBlob, frameCount, WORK_MAXW, duration, function (done, total) { … })` call site
+inside `stitchFromVideo`, and the four-stage `onProgress` dispatch in both `pano360.js` and
+`module.js`'s `runStitch`. **Genuinely executed, not just structurally matched**: a fake, controllable
+`<video>` element (the same monkey-patch-`document.createElement` convention this file already uses
+for `capture.js`'s close-during-recording race tests, restored in a `finally`) drives the real,
+shipped `extractFrames` (exported as a new test-only hook, `Pano360._extractFrames`) end to end —
+confirms `onProgress` fires exactly `count` times, in strict `[1,total] .. [total,total]` order, and
+that a valid `knownDuration` is used as-is with no `'timeupdate'` event ever needed (the fake video
+never fires one — if `fixInfiniteDuration` had still been called, the promise would hang and the test
+would time out). `node --check` clean on all three touched files; `tools/wiring-check.js` — **126
+passed, 0 failed**. Confirmed against a clean checkout of the commit before this fix: the exact same
+**3** pre-existing, unrelated failures (a PDF page-break assertion + 2 `capture.js` audio/flash
+assertions) appear before and after, byte-for-byte identical — zero regressions.
+
+⚠️ **Not verified signed in** — same standing caveat as every entry in this file; no real device
+recording has been run through the new progress reporting. What this fixes is the STATUS TEXT during
+a phase that was always real work happening correctly — it does not change how long that work
+actually takes (that is the separate, already-shipped 2026-09-12 density work), only whether a
+planner watching it can tell the difference between "processing a long recording" and "hung".
+
+`pano360.js`/`module.js`/`index.html?v=` → `20260913e`; `MODULE_V` (`assets/js/modules-grid.js?v=` in
+`dashboard.html`/`modules.html`) → `20260913e`.
+
 ## Sampling density raised to 30fps — the mosaic was covering only a fraction of the actual 360° recorded, not a cropping bug (2026-09-12, later still)
 
 Owner, continuing from PR #97: *"the 360 feature ... is working better, taking off from PR97. but we
