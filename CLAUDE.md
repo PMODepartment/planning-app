@@ -249,6 +249,131 @@ fixes the status text during real work, not how long that work takes.
 `pano360.js`/`module.js` → `?v=20260913e`; `MODULE_V` → `20260913e`. Detail:
 [`modules/progress-photos/CLAUDE.md`](modules/progress-photos/CLAUDE.md).
 
+### 2026-09-13 (b) — Pormac simplified: one tier table, and the two bugs its absence was hiding
+
+Owner, on the two Pormac changes below: *"can you simplify what you edited."* A quality pass over the
+same diff — reuse, simplification, efficiency, altitude. Detail:
+[`modules/pormac/CLAUDE.md`](modules/pormac/CLAUDE.md). Module + its Edge Function, **no migration**.
+
+⚠️⚠️ **THE FACTS ABOUT A TIER LIVED IN SIX PARALLEL TERNARY CHAINS, AND THAT SHAPE IS WHAT HID TWO
+REAL DEFECTS.** Each rung's label, model patterns, VRAM ceiling, context cap, history depth and
+downgrade position was its own independent `tier === '…' ? …` chain, scattered across ~400 lines —
+so adding a rung meant editing six places and every chain had its own silent `else`. They are now
+**one table, one row per rung**, read through one validating lookup. What fell out:
+
+- ⚠️⚠️ **`downgrade()` UPGRADED on an unrecognised tier.** `order.indexOf(tier)` answers **-1**, so
+  `Math.min(-1 + 1, 3)` is **0** — the heaviest local rung. A local failure could promote a planner
+  to the *largest* model, the exact opposite of "slow down instead of crash". Now guarded and clamped
+  at `remote` — ⚠️ never past it, because a GPU running out of memory says nothing about whether the
+  hosted path works.
+- ⚠️⚠️ **A stale `pormac_tier_override` flowed in unvalidated** and landed in every chain's
+  else-branch while the bar read *"Choosing a model…"* forever. Validated now, and the lookup fails
+  **closed** — an unknown id falls back to the **smallest** local rung, never the largest.
+- ⚠️ **`none` becomes a real tier rather than a boolean beside one.** `tierBroken` was honoured only
+  by the tier BAR, so with no WebGPU and the hosted path unreachable the bar correctly named the
+  cause and `onSend` still sent into a path already known dead — replacing that diagnosis with
+  *"something went wrong"*.
+
+**Also, each a duplication or a waste:** one Edge Function caller replaces six lines duplicated
+character-for-character between the probe and the send (⚠️ the new 3s timeout is deliberately **not**
+applied to a real message — a 70B reply can legitimately take a while); ⚠️⚠️ **`renderTierBar` stopped
+destroying the Quality `<select>` on every repaint**, which is a fix rather than an optimisation —
+WebLLM's progress callback fires once per downloaded shard, so a ~5GB first load rebuilt that control
+every few hundred milliseconds, dropping focus and closing its dropdown at exactly the moment a
+planner would want to escape a slow local model; and `resolveTier` becomes an ordered walk, so the
+probe call and the reason-building exist once instead of twice and the reasons compose.
+
+**The Edge Function:** ⚠️⚠️ `MODEL_DEAD` matched the bare word **"model"** in the response prose,
+which appears in errors that have nothing to do with a dead id — so a client-side mistake would have
+burned the whole three-model chain and then reported the last model's error, looking exactly like a
+provider outage. It reads the structured `error.code` now, with the regex only as a fallback. The
+access check and the usage read run in parallel (independent), with ⚠️ the uid parsed **before**
+either starts so the 401 path cannot abandon an in-flight promise.
+
+⚠️⚠️ **And one CSS rule was inert.** `.pmc-quality + button.pd-btn-sm { margin-left: 0 }` ties on
+specificity with the older `.pmc-tierbar button.pd-btn-sm { margin-left: auto }`, declared later, so
+it never applied — two auto margins split the free space, which is the "select floating in the
+middle" the comment above it claimed to have fixed. It only looked right because the reset button is
+absent unless the planner has been downgraded, and my own browser check never covered that state.
+Deleted rather than cancelled.
+
+**Verified:** 41 context assertions, **21 of them new equivalence assertions** proving the pass left
+behaviour byte-identical to the pre-simplify commit, plus the 5 original contrasts against the
+pre-feature commit, which still bite — ⚠️ both bases pinned to **SHAs**, never `HEAD`, which had
+already turned two assertions into self-comparison once. 11 new browser assertions (the `<select>`
+survives **50 repaints**; the probe carries an `AbortSignal`; the composer stays typable while the
+probe hangs; `none` refuses the send while sending **0** messages) and all 9 tier paths green with 0
+page errors. ⚠️ **The tier bar was measured before and after and is byte-identical** — same height,
+row count, pill and Quality rects to the pixel, same text. `node --check` clean, Edge Function
+parses, braces 29/29, 0 NUL bytes, `wiring-check` **126/126**, `dead-hooks` at its 9-finding baseline.
+
+⚠️ **Not verified signed in, and the owner action from the entry below still gates all of it** —
+until `supabase functions deploy pormac-chat` has run with a `GROQ_API_KEY`, the hosted path does not
+exist and every planner falls back to the on-device model.
+
+`MODULE_V` → `20260913j`. ⚠️ **Not the next letter, and re-derived twice:** the first cut took
+`20260913d` past `main`'s `20260913c`; by the time this branch rebased again `main` had reached
+`20260913i`, and `d` sorts *earlier* — a browser already holding `i` would never fetch it, which is
+worse than a collision. So the token is re-derived past whatever `main` actually has **after** each
+rebase, never guessed before one. The rule this log has now recorded six times.
+
+### 2026-09-13 — Pormac: the better the laptop, the worse the model
+
+Owner: *"pormac is working already, but the model is not so smart."* Detail:
+[`modules/pormac/CLAUDE.md`](modules/pormac/CLAUDE.md). Module + its Edge Function, **no migration**.
+
+⚠️⚠️ **THE ROUTING WAS BACKWARDS, AND THAT IS THE FINDING.** `detectCapability()` answers *"what can
+this device run?"*, and the first build used that as the **entire** decision: WebGPU present → run
+locally. So a planner on a capable workstation got the largest model a browser tab can practically
+hold (**Llama-3.2-3B**), while the hosted path carries **llama-3.3-70b-versatile** — roughly 20× the
+parameters — reserved by design for the devices that *could not* run anything locally. The better the
+machine, the worse the model answering. Capability now decides only the **local rung**; the hosted
+model is preferred whenever it is actually reachable.
+
+⚠️ **It stays a visible choice, not a silent reversal.** The original ask was explicitly in-browser
+inference; both halves survive (Groq's free tier costs nothing either), but *"runs on your device"* is
+a decision somebody made on purpose, so it is a **Quality** control in the tier bar, remembered per
+device. ⚠️ Switching it drops the loaded engine — otherwise the control looks broken while the small
+model already in memory goes on answering.
+
+⚠️ **The three ways the hosted path can fail are three different problems** and a planner told only
+*"unavailable"* can act on none of them: **404** never deployed · **503** no provider key · **429**
+allowance spent. A probe on load distinguishes them and the bar names the remedy — and it costs **no
+model call and no daily allowance**, because the function answers `probe` before reaching the
+provider. When neither path works the bar reads **"No model available"** rather than claiming a hosted
+model that is not there.
+
+**Also raised, because a weak model is only half of it:** a new **`local-max`** rung (7–8B, ⚠️ only at
+`deviceMemory ≥ 16GB` — it is a ~5GB download, never offered on a guess); the system prompt, which was
+three sentences of prohibitions and so produced hedging, now asks for the **actual figures**;
+conversation depth 8 turns → 30 on remote and context 4 modules → 8, both of which were sized for a 1B
+window and were starving a model that accepts 131k; the context now **names the project**, which it
+never did; and providers are fetched **in parallel** — measured **60ms against 241ms** for 6 providers.
+
+**The Edge Function** gains a **model chain**: ⚠️⚠️ `GROQ_MODEL` was one hard-coded id, and Groq
+retires ids on its own schedule, so a decommissioned model was a total outage with no way to survive
+it. Only a **model-level** rejection advances the chain (a 429 or 5xx is the provider saying stop), and
+the response reports the model that **actually answered** rather than the one requested. The daily cap
+goes 30 → 200 and the prompt guard 24k → 120k characters, both env-tunable — both were sized for a
+last-resort fallback, not a primary path.
+
+**Verified:** 20 assertions executing `promptMessages`/`gatherContext`/`projectLabel` sliced out of the
+shipped file, ⚠️ **5 of them contrast assertions against HEAD, all biting**; nine tier-resolution paths
+driven in a real browser, each failure naming its own cause, 0 page errors. ⚠️ **Two of my own bugs
+found by the harness, not by reading** — a stub that clobbered the injected probe response and reported
+all four failure paths as successes, and a real one: `On this device` on a device that cannot run
+locally claimed a working hosted model without probing it. `node --check` clean, Edge Function parses,
+braces 35/35, 0 NUL bytes, `wiring-check` **126/126**, `dead-hooks` unchanged at its 9-finding baseline.
+
+⚠️⚠️ **NOT VERIFIED AGAINST A REAL MODEL, AND ONE OWNER ACTION GATES ALL OF IT.** Egress to Groq and to
+this project's own Supabase is blocked from here, so everything above is the shipped code executed
+against stubs. **Until `supabase functions deploy pormac-chat` has run AND `GROQ_API_KEY` is set, the
+hosted path does not exist and every planner falls back to the on-device model** — the state that
+produced the complaint. The module now says so on screen instead of hiding it, but saying so is not the
+fix; that deploy is, and only the owner can do it (free key at console.groq.com, no card).
+
+`MODULE_V` → `20260913j` (re-derived on rebase — see the entry above).
+
 ### The site plan expands to full screen, like every other card (2026-09-13) — ethanrobles10
 
 Owner: *"add a full screen also for the site"*
