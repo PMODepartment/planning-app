@@ -16539,6 +16539,36 @@
     _vs3Scenes.forEach(function (s) { try { s.dispose(); } catch (e) {} });
     _vs3Scenes = [];
   }
+  /* ==== THE FOOTPRINT, REDUCED TO THE POINTS A SILHOUETTE CAN USE ========================
+     Owner 2026-09-14: *"the labels are closer to the towers itself."*
+     A floor label stands at the SCREEN-leftmost point of the tower it names, which means
+     projecting the footprint every frame. A traced outline is a list of quads and can carry
+     forty-odd points; only its CONVEX HULL can ever be the leftmost one — no interior point
+     is ever outside the ring — so the hull is taken once at build time and the per-frame work
+     is four to eight projections per label instead of forty.
+     ⚠️ Monotone chain, on [x, z] pairs in plate coordinates. Points are sorted and the two
+     half-hulls built in turn; `<= 0` drops collinear points, so a rectangle traced as a grid of
+     quads comes back as its four corners and not as every point along its edges. */
+  function _vs3Hull(pts) {
+    var p = (pts || []).filter(function (q) { return q && isFinite(q[0]) && isFinite(q[1]); })
+      .slice().sort(function (a, b) { return a[0] - b[0] || a[1] - b[1]; });
+    if (p.length < 3) return p;
+    function cross(o, a, b) { return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]); }
+    var lo = [], hi = [], i;
+    for (i = 0; i < p.length; i++) {
+      while (lo.length >= 2 && cross(lo[lo.length - 2], lo[lo.length - 1], p[i]) <= 0) lo.pop();
+      lo.push(p[i]);
+    }
+    for (i = p.length - 1; i >= 0; i--) {
+      while (hi.length >= 2 && cross(hi[hi.length - 2], hi[hi.length - 1], p[i]) <= 0) hi.pop();
+      hi.push(p[i]);
+    }
+    lo.pop(); hi.pop();
+    var h = lo.concat(hi);
+    // ⚠️ A degenerate ring (every point collinear) leaves fewer than three: hand back the sorted
+    // points rather than nothing, or a label whose footprint is a line loses its anchor entirely.
+    return h.length >= 3 ? h : p;
+  }
   /* Build one building. `model` is _vsTowerModel's output, so the storeys, the grade split and the
      cells are the 2D card's own. Returns a dispose function. */
   function _vs3Build(host, model, baseColor, keyPrefix, T) {
@@ -16751,29 +16781,52 @@
            name at the left edge belongs to no tower in particular, and the rules drawn across the
            whole plate to reach them (the previous attempt) turned the view into a cage. Each floor
            now carries its OWN anchor, at its own tower.
-           ⚠️ THE ANCHOR IS THE FOOTPRINT'S CENTRE where one is traced, and the wrap slot's centre
-           where it is not — the same two answers the geometry itself uses, so the label cannot end
-           up beside a building that is somewhere else. */
+           ⚠️ THE ANCHOR IS THE FOOTPRINT ITSELF — the traced ring where one is traced, the wrap
+           slot's box where it is not, the same two answers the geometry is extruded on, so the
+           label cannot end up beside a building that is somewhere else. WHICH point of that ring
+           it stands on is decided per frame, on screen; see below. */
         if (c.floor && _vsFloorMarks) {
-          /* ⚠️ THE LEFT EDGE of the footprint, not its centre. `.ps-vs3-lab` is drawn with its
-             RIGHT edge on the anchor (transform: translate(-100%, -50%)), so a centre anchor would
-             lay every name across the left half of the building it names. The left edge puts it
-             just outside, where a dimension label goes. */
-          var _ax = x - exW / 2, _az = z;
+          /* ==== THE LABEL STANDS ON THE TOWER'S OWN SILHOUETTE ============================
+             Owner 2026-09-14, with a screenshot of two towers and two columns of names floating
+             clear of both: *"look at the labels. Pls revise, wherein the labels are closer to the
+             towers itself."*
+
+             ⚠️⚠️ A SINGLE WORLD-SPACE ANCHOR CANNOT BE "THE LEFT SIDE" OF ANYTHING. The previous
+             anchor was the footprint's smallest world X at its mean Z, chosen because `.ps-vs3-lab`
+             is drawn with its RIGHT edge on the anchor and a label therefore hangs to the anchor's
+             left. But LEFT ON SCREEN IS NOT −X: this view orbits, and at the default iso azimuth
+             (az = π/4) the −X face projects to the RIGHT of the building. So every name was pinned
+             to the tower's far side and then hung backwards from it — the gap in the screenshot is
+             the width of the tower the label had to reach across, and it grows and shrinks as the
+             planner turns the model.
+
+             ⚠️ SO THE ANCHOR IS CHOSEN PER FRAME, IN SCREEN SPACE, from the footprint's hull: the
+             corner that projects furthest left at this floor's height IS the silhouette edge beside
+             it, whichever way the model is facing. That is the rule the single-building path has
+             always used on the plate's four corners (see placeLabels); the site's floors now carry
+             their own ring instead of the plate's, which is the whole of the difference between a
+             name beside its tower and a name beside the property line.
+             ⚠️ Hull, not every traced point: only a hull vertex can ever be the leftmost, and the
+             ring is projected on every camera move. See _vs3Hull. */
+          var _fp = null;
           if (_pg && _pg.length) {
-            var _mnx = null, _sz = 0, _sn = 0;
+            var _all = [];
             _pg.forEach(function (q2) {
               (q2.pts || []).forEach(function (pt2) {
-                var _X = (pt2[0] - 0.5) * plateW;
-                if (_mnx === null || _X < _mnx) _mnx = _X;
-                _sz += (pt2[1] - 0.5) * plateD; _sn++;
+                _all.push([(pt2[0] - 0.5) * plateW, (pt2[1] - 0.5) * plateD]);
               });
             });
-            if (_sn) { _ax = _mnx; _az = _sz / _sn; }
+            _fp = _vs3Hull(_all);
+          }
+          /* ⚠️ The wrap slot's own box where nothing is traced — the same four corners the block
+             is extruded on, so the name cannot stand beside a building that is somewhere else. */
+          if (!_fp || _fp.length < 3) {
+            _fp = [[x - exW / 2, z - exD / 2], [x + exW / 2, z - exD / 2],
+                   [x + exW / 2, z + exD / 2], [x - exW / 2, z + exD / 2]];
           }
           // ⚠️ The middle of the slice, in the same terms the slice itself is placed in.
           floorLabs.push({ text: String(c.floor), tower: c.label,
-                           y: y + SH * cellH * (bandI + bandS / 2) / bandN, ax: _ax, az: _az });
+                           y: y + SH * cellH * (bandI + bandS / 2) / bandN, pts: _fp });
         }
         /* ==== PROGRESS FILLS UPWARD, AND THE TWO PARTS DO NOT OVERLAP ======================
            Owner 2026-09-10: *"for the progress can you make it that the progress for the 3D
@@ -17056,7 +17109,7 @@
           el.textContent = f.text;
           el.title = f.tower + ' · ' + f.text;
           labWrap.appendChild(el);
-          labs.push({ el: el, y: f.y, ax: f.ax, az: f.az });
+          labs.push({ el: el, y: f.y, pts: f.pts });
         });
         // ⚠️ And the grade line is named here too — see the note on the row path below. On the site
         // it is a height inside the one row, so the row rule cannot reach it.
@@ -17086,6 +17139,8 @@
         labs.push({ el: ge, y: (storeys - model.groundAt) * (SH + GAPY) - GAPY / 2 });
       }
     }
+    // ⚠️ How far a name stands off the wall it names, in px. Small on purpose: see placeLabels.
+    var LAB_GAP = 6;
     function placeLabels() {
       if (!labs.length) return;
       var r = cv.getBoundingClientRect(), hb = host.getBoundingClientRect();
@@ -17096,11 +17151,13 @@
       var shown = [];
       labs.forEach(function (L2) {
         var bx = null, by = 0, ok = false;
-        /* ⚠️ A LABEL WITH ITS OWN ANCHOR IS PROJECTED THERE, not against the plate's corners: the
-           site's floor names belong to one tower each and have to stand beside it. Everything else
-           still takes the leftmost corner, which is where a single building's storey names go. */
-        var _corners = (L2.ax != null)
-          ? [[L2.ax, L2.az]]
+        /* ⚠️ A LABEL WITH ITS OWN FOOTPRINT IS PROJECTED ON THAT RING, not on the plate's corners:
+           the site's floor names belong to one tower each and have to stand beside it. Everything
+           else takes the plate, which is where a single building's storey names go. Either way the
+           rule below is the same one — the LEFTMOST projection wins — so a site label hugs its own
+           tower exactly as a storey label hugs its building's wall. */
+        var _corners = (L2.pts && L2.pts.length)
+          ? L2.pts
           : [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]];
         _corners.forEach(function (c) {
           v3.set(c[0], L2.y, c[1]).project(camera);
@@ -17128,7 +17185,11 @@
         L2.el.style.display = hide ? 'none' : 'block';
         if (hide) return;
         shown.push({ x: bx, y: by });
-        L2.el.style.left = (ox + bx - 9) + 'px';
+        /* ⚠️ THE ONLY GAP IS THIS ONE. The label's right edge lands LAB_GAP px outside the
+           silhouette point it was anchored to — near enough to read as attached to that tower,
+           clear enough not to sit on its wall. Everything that used to widen it was the wrong
+           anchor, not this number. */
+        L2.el.style.left = (ox + bx - LAB_GAP) + 'px';
         L2.el.style.top = (oy + by) + 'px';
       });
     }

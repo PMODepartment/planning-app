@@ -22,6 +22,57 @@ headings / 345 distinct** (the repeats are sub-headings like `### Verified`, whi
 
 ---
 
+### A floor name stands on its tower's own silhouette, not on a world-space guess (2026-09-14 c) — ethanrobles10
+
+Owner, with a screenshot of the site view and two columns of names floating clear of both towers:
+*"For the vertical stacking, see the image attached and look at the labels. Pls revise, wherein the
+labels are closer to the towers itself."*
+
+### ⚠️⚠️ "LEFT" WAS BEING ANSWERED IN THE WRONG SPACE, AND THAT IS THE WHOLE GAP
+Yesterday's anchor was the footprint's **smallest world X at its mean Z**, picked because
+`.ps-vs3-lab` is drawn with its RIGHT edge on the anchor (`translate(-100%, -50%)`) and therefore
+hangs to the anchor's left. The reasoning only holds if −X is left **on screen** — and this view
+orbits. At the default iso azimuth (π/4) the −X face projects to the **right** of the building, so
+every name was pinned to its tower's far side and then hung backwards across it. The gap in the
+screenshot is the width of the tower the label had to reach over, and it breathes as the model turns.
+
+⚠️ **So the anchor is chosen per frame, in screen space.** A site floor label now carries its
+tower's whole **footprint ring**, and `placeLabels` projects that ring at the floor's own height and
+takes the **leftmost projection** — the silhouette edge beside it, whichever way the model faces.
+That is the rule the single-building path has always used on the plate's four corners; the site's
+floors simply bring their own ring instead of the plate's. One rule, two footprints.
+
+⚠️ **The ring is the CONVEX HULL, taken once at build time** (`_vs3Hull`, monotone chain, collinear
+points dropped). A traced outline is a list of quads and can carry forty-odd points, and this ring is
+projected on every camera move — but only a hull vertex can ever be the leftmost, so a rectangle
+traced as a grid of quads costs four projections, not forty. An untraced tower keeps the wrap slot's
+four corners, which is what its block is extruded on.
+
+⚠️ The stand-off is now **one named number**, `LAB_GAP = 6`px, instead of a `- 9` buried in the
+style write. Everything that used to widen the gap was the wrong anchor, not this number.
+
+### Verified
+⚠️ **Executed, not linted** — `_vs3Build` is sliced out by name and run twice: once against a fake
+three.js in node, and once **against real three.js r128 in a browser**, on a site of three towers
+(two traced, one untraced with no levelled work).
+- **51 assertions** in the node harness, 0 failed: the site builds; Tower A names **B1**, Tower B
+  names its **own** 1 and 2, the untraced tower contributes no floor name, the Grade line is named
+  once, and `_vs3Hull` reduces a quad grid to four corners, drops an L's reflex corner, survives a
+  degenerate line and a non-finite point.
+- **The measurement, over 15 camera angles** (12 azimuths plus two elevations): every name's anchor
+  lands within **7% of the tower's width** of that tower's screen-left edge. ⚠️ GATE: the previous
+  commit's builder fails 14 of those same assertions, drifting to **95%** of the width — the label
+  anchored on the far side of the tower, which is the screenshot.
+- **Real three.js, at the default iso**: names stand **0.3–3.1 px** off each tower's left edge
+  (was 21–29 px), and across eight azimuths the worst case is **6%** of the tower width (was
+  13% → **98%** at 180°).
+- The single-building path is untouched and proven so in the same run: its storey names carry no
+  footprint, still fall back to the plate's corners, and still land at the plate's edge.
+- `test-lsm.js` **675/675** and `wiring-check` **126/126** pass unchanged.
+- ⚠️ **Not verified signed in, and not seen as pixels.** The desktop pane would not capture a WebGL
+  frame this session, so what is proven is where each label element is positioned relative to its
+  own tower's projected outline — measured, in a real renderer — not how the finished frame looks.
+
 ### The toolbar face names the preset, and two icon-only buttons stop being identical (2026-09-14) — fmlozano
 
 Owner, two reports off the live OPW101 screen: *"In the toolbar when LSM is selected let's have the
