@@ -218,6 +218,95 @@ headings / 345 distinct** (the repeats are sub-headings like `### Verified`, whi
 
 ---
 
+### Ink on the tint, welded labels, and a name for the trades row (2026-09-14) — fmlozano
+
+Owner, on the colour pass that shipped hours earlier: *"still needs work"*, then *"Placement of the
+trades buttons need work."*
+
+### ⚠️⚠️ The first cut swapped five red FILLS for five red TEXTS, and that is why it was not enough
+
+`25d8cbc` took `.ps-vs-seg > button.on` from a solid `--pd-red` fill to
+`background:var(--pd-red-light); color:var(--pd-red-dark)`, borrowed from the shared
+`.pd-seg-multi`. The fills went, the **count of red marks in the row did not** — five active rungs,
+five red words. The owner's "still needs work" was exactly right.
+
+⚠️ **And `.pd-seg-multi` was the wrong sibling to copy.** That pattern is for **multi-select**
+groups; every segment in this bar is single-select, and the shared file's single-select pattern
+(`.pd-seg > button.on`) is a solid red fill — which is what we were leaving. Neither shared pattern
+was designed for *five single-selects in one row*.
+
+**The right precedent was one row above, in this very pane.** `.ps-vs-chip.on` had already settled
+it, and its own note says so: *"INK on the red tint, not brand red as text … the red stays as the
+border and the tint, which carry the state without being the text."* The chips had been ink-on-tint
+since 2026-09-02 and the segments disagreed with them, in the same pane, at the same moment.
+
+So the active rung is now `background:var(--pd-red-light); color:var(--pd-ink)` plus the 2px red
+underline — **the underline is the only red left in an active control.**
+
+**Measured in a browser, both themes:**
+
+| | first cut (red text) | now (ink) |
+|---|---|---|
+| red fills anywhere in the pane | 0 | **0** |
+| red **texts** anywhere in the pane | 5 | **0** |
+| active contrast, light | 5.11:1 | **14.25:1** |
+| active contrast, dark | 6.76:1 | **13.45:1** |
+| chip and segment active state | disagreed | **identical** (`#FDECEA` / `#231F20`) |
+
+⚠️ **No `html.pd-dark` ink override is needed, and the one the first cut added is gone rather than
+merely unused** — `--pd-ink` is itself theme-remapped (`#231F20` / `#F0EFEF`), which is the whole
+reason ink works here where `--pd-red-dark` needed a `#FF8A80` override.
+
+### Four labels that floated beside their controls are now welded inside them
+
+Detail, Dates, Show and Zoom were free-standing grey words next to their segments, so the row read
+as eleven loose things rather than five named controls — and `.ps-vs-grp` existed purely to stop a
+label being wrapped away from the control it names (see its own note). New `.ps-vs-seglab` puts each
+label **inside** the segment's border on the quiet surface; `Model` gains one too, and the scope
+segment finally says what it is.
+
+⚠️ Shape taken from the shared `.pd-seg-lab` (risk-register and stakeholder-map already use it) so
+the two read as one idiom, but not reusing the class: it is sized for `.pd-seg`'s 34px rung and this
+bar's segments are shorter. Same values, different sizing.
+
+⚠️ **Zoom's two buttons stopped being loose `.pd-btn`s** and became a real segment, so the bar has
+one kind of control rather than two. `#ps-vs-zout` / `#ps-vs-zin` are preserved — they are what
+`wireVStack` binds to.
+
+⚠️ The site card's own **Show** was welded too. It is a different surface (inside the card, because
+it changes what the model *is* rather than where the camera is), but leaving one "Show" floating
+while welding the other is the inconsistency that gets reported next.
+
+### The trades row now says what it is
+
+Owner: *"Placement of the trades buttons need work."* It sat at the top of the pane as an
+**unlabelled** row of pills directly above a dense control bar, so nothing distinguished a *filter*
+from more toolbar.
+
+⚠️ **Its sibling already had a label and it did not.** The Towers row has carried one since
+2026-09-13 for precisely this reason — its comment reads *"the two rows now look alike and a reader
+has to be able to tell which one they are ticking."* The trades row never got the same treatment.
+Both now use `.ps-vs-rowlab`: the welded label's typography, without a border to sit inside.
+
+Kept on its own row rather than folded into the bar: a project can carry ten trades, and a filter
+behind a click is not what this owner wants (direct controls over nested menus).
+
+### Verified
+
+Rendered in a browser against a harness whose CSS is the **shipped `<style>` block extracted
+verbatim**, in both themes. Zero red fills and zero red texts in the whole pane; six welded labels
+present (Trades, Model, Detail, Dates, Show, Zoom); the divider intact; no bar overflow and no page
+horizontal scroll at 1180px and 1400px.
+
+`<span>` tags in the generated bar balance 34/34 — the four welds each replaced a
+`<note/><seg>` pair with a `<seg><lab/>` pair, which keeps the existing closers correct, and the
+Zoom weld replaced a whole `.ps-vs-grp` including its closer. Inline script parses.
+
+⚠️ **Not verified signed in.** The bar was measured on its real CSS with reproduced markup, not
+against live data — so the wrap behaviour at a real trade count (this project has four; ten would
+wrap sooner) is inferred, not seen.
+
+`MODULE_V` → `20260914zvs2`, sort-checked against `20260914zvs`.
 ### Five solid red blocks in one bar, and a pane with no edge above it (2026-09-14) — fmlozano
 
 Owner: *"toolbar UI needs to be properly reworked. Main toolbar does not [have] a divider with the

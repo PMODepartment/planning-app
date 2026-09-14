@@ -102,6 +102,40 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-14 (zvs2) — The red moved from the fill to the text; now it is neither
+
+Owner, on the colour pass that shipped hours earlier: *"still needs work"*, then *"Placement of the
+trades buttons need work."* Module only — detail in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+- ⚠️⚠️ **THE FIRST CUT SWAPPED FIVE RED FILLS FOR FIVE RED TEXTS.** `25d8cbc` removed the solid
+  fills but set `color:var(--pd-red-dark)`, so the **count of red marks never changed** — five active
+  rungs, five red words. "Still needs work" was exactly right.
+- ⚠️⚠️ **AND IT COPIED THE WRONG SIBLING.** `.pd-seg-multi` is the shared pattern for **multi-select**
+  groups; every segment in this bar is single-select, and the shared single-select pattern is the
+  solid fill we were leaving. Neither was designed for five single-selects in one row. **The right
+  precedent was one row above in the same pane** — `.ps-vs-chip.on`, whose own note already read
+  *"INK on the red tint, not brand red as text … the red stays as the border and the tint, which
+  carry the state without being the text."* The chips had settled it in September and the segments
+  disagreed with them.
+- Active rung is now tint + **ink** + the 2px underline — **the underline is the only red left**.
+  Measured both themes: red texts in the pane **5 → 0**; contrast **5.11 → 14.25** light and
+  **6.76 → 13.45** dark; chip and segment active states now **identical** rather than disagreeing.
+- ⚠️ The `html.pd-dark` ink override the first cut needed is **gone, not merely unused**: `--pd-ink`
+  is itself theme-remapped, which is exactly why ink works where `--pd-red-dark` needed `#FF8A80`.
+- **Four labels welded inside their controls.** Detail / Dates / Show / Zoom were free-standing grey
+  words, so the row read as eleven loose things rather than five named controls — `.ps-vs-grp` existed
+  only to stop a label being wrapped away from its own control. Shape taken from the shared
+  `.pd-seg-lab`; Model gains one too, and Zoom's loose `.pd-btn`s became a real segment (ids
+  preserved — the wiring binds to them).
+- **The trades row now says what it is.** ⚠️ Its sibling already had a label and it did not: the
+  Towers row has carried one since 2026-09-13 precisely because *"the two rows now look alike and a
+  reader has to be able to tell which one they are ticking"*. Kept on its own row — a project can
+  carry ten trades, and a filter behind a click is not what this owner wants.
+- **Verified** in a browser against a harness whose CSS is the shipped `<style>` block extracted
+  verbatim, both themes: 0 red fills, 0 red texts, 6 welded labels, divider intact, no bar overflow
+  or page scroll at 1180px and 1400px. Generated `<span>` tags balance 34/34.
+- ⚠️ Not verified signed in. `MODULE_V` → `20260914zvs2`, sort-checked.
 ### 2026-09-14 (zvs) — The Vertical Stacking bar had five red blocks and no edge above it
 
 Owner: *"toolbar UI needs to be properly reworked. Main toolbar does not [have] a divider with the

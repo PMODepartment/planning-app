@@ -1679,19 +1679,45 @@
        solid brand-red blocks in one row at once. Nothing was wrong with any one of them; the
        problem was that with five maximum-emphasis marks competing, none of them is emphasis and
        the eye has no entry point -- which is exactly what reads as "a wall of controls".
-       ⚠ THE TREATMENT IS THE APP'S OWN, NOT A NEW ONE. `.pd-seg-multi > button.on` in the shared
-         dashboard.css settled this already: the tint carries the state, a 2px red underline keeps
-         the brand cue, and the ink stays readable. Its contrast is MEASURED in both themes --
-         5.11:1 light, and 6.76:1 dark via the #FF8A80 override below, because --pd-red-dark is
-         only 2.64:1 on the dark tint. (dashboard.css quotes 6.2 for #FF8A80, but that is on a
-         CARD; on this tint it measures 6.76 -- same ink, different ground.) Copying the values
-         rather than the class because `.ps-vs-seg` has
-         its own sizing and overflow; if these two ever need to differ, say why here.
+       ⚠⚠ INK ON THE TINT, AND THE RED IS NOT THE TEXT -- which corrects this rule's own first
+         cut (2026-09-14, same day). That cut borrowed `.pd-seg-multi > button.on` from the shared
+         dashboard.css, which sets `color:var(--pd-red-dark)`. It removed the five solid fills but
+         replaced them with five red TEXTS, so the COUNT of red marks in the row never changed and
+         the owner's answer was "still needs work" -- correctly.
+       ⚠ AND `.pd-seg-multi` WAS THE WRONG SIBLING TO COPY. That pattern is for MULTI-select
+         groups; every segment in this bar is single-select. The right precedent was one row above,
+         in this very pane: `.ps-vs-chip.on`, whose own note reads *"INK on the red tint, not brand
+         red as text ... the red stays as the border and the tint, which carry the state without
+         being the text"*. The chips had settled this already and the segments disagreed with them.
+       ⚠ MEASURED: ink on the tint is 14.25:1 light and 13.45:1 dark, against 5.11 / 6.76 for the
+         red text it replaces. No dark-mode ink override is needed -- `--pd-ink` is itself
+         theme-remapped (#231F20 / #F0EFEF), which is why the `html.pd-dark` rule that used to sit
+         here is gone rather than merely unused.
        ⚠ `--pd-red-light` IS theme-remapped (#FDECEA light / #3D1A19 dark), so the tint follows the
-         theme. A fixed light tint here would be the `.ps-fmt` "why is there light colors?" bug. */
-    .ps-vs-seg > button.on { background:var(--pd-red-light); color:var(--pd-red-dark);
+         theme. A fixed light tint here would be the `.ps-fmt` "why is there light colors?" bug.
+       ⚠ The 2px red underline is now the ONLY red in an active rung, which is the whole point:
+         one accent per control instead of one shout per control. */
+    .ps-vs-seg > button.on { background:var(--pd-red-light); color:var(--pd-ink);
       box-shadow:inset 0 -2px 0 var(--pd-red); font-weight:700; }
-    html.pd-dark .ps-vs-seg > button.on { color:#FF8A80; }
+
+    /* ⚠⚠ A LABEL WELDED INSIDE THE CONTROL IT NAMES. Owner 2026-09-14: *"toolbar UI needs to be
+       properly reworked"*, after the colour pass alone was not enough. Four grey words -- Detail,
+       Dates, Show, Zoom -- floated beside their segments as free-standing text, so the row read as
+       eleven loose things rather than five named controls, and `.ps-vs-grp` existed purely to stop
+       a label being wrapped away from its own control (see its note).
+       ⚠ The shape is the shared `.pd-seg-lab` (dashboard.css), which risk-register and
+         stakeholder-map already use: inside the border, on the quiet surface, uppercase micro. Not
+         reusing the class itself because it is sized for `.pd-seg`'s 34px rung and this bar's
+         segments are shorter; the VALUES are the same so the two read as one idiom. */
+    .ps-vs-seglab { display:inline-flex; align-items:center; flex:none; padding:0 9px;
+      background:var(--pd-bg); color:var(--pd-muted); font-size:var(--pd-fs-micro); font-weight:700;
+      letter-spacing:.06em; text-transform:uppercase; border-right:1px solid var(--pd-line);
+      white-space:nowrap; }
+    /* The same label, for a row of CHIPS rather than a segment -- it has no border to sit inside,
+       so it carries its own quiet weight instead. */
+    .ps-vs-rowlab { display:inline-flex; align-items:center; flex:none; color:var(--pd-muted);
+      font-size:var(--pd-fs-micro); font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+      white-space:nowrap; margin-right:2px; }
     /* HOLLOW, not merely inert. Owner 2026-09-07: *"if the per tower or consolidate option is
        chosen, can you at least hollow the options for the other levels of details."* Right - the
        `disabled` attribute stops the click but leaves the button looking live, and a control that
@@ -19869,7 +19895,13 @@
     // ⚠️ Multi-select. Clicking a trade TOGGLES it, so several can be shown side by side; "All
     // trades" clears the selection rather than ticking every box (see the note on _vsTradeSel).
     // Each chip carries aria-pressed so the state is not colour-only.
-    var chips = '<div class="ps-vs-chips"><button class="ps-vs-chip' + (!_vsTradeSel.length ? ' on' : '') +
+    /* ⚠ THE TRADE ROW NAMES ITSELF. Owner 2026-09-14: *"Placement of the trades buttons need
+       work."* It sat at the top of the pane as an unlabelled row of pills, directly above a dense
+       control bar -- so nothing said it was a FILTER rather than more toolbar. Its sibling, the
+       Towers row, has carried a label since 2026-09-13 for exactly this reason ("the two rows now
+       look alike and a reader has to be able to tell which one they are ticking"); the trades row
+       never got one. Same treatment for both now. */
+    var chips = '<div class="ps-vs-chips"><span class="ps-vs-rowlab">Trades</span><button class="ps-vs-chip' + (!_vsTradeSel.length ? ' on' : '') +
       '" data-vstr="ALL" aria-pressed="' + (!_vsTradeSel.length) + '" title="Show every trade">All trades</button>' +
       trades.map(function (t) {
         var on = _vsTradeSel.indexOf(t) >= 0;
@@ -19933,7 +19965,7 @@
        ⚠️ Emitted only when there is more than one thing to choose between: on a single-tower project
        a row reading "All towers · Tower 1" is two controls for a question with one answer. */
     var twChips = (_twOpts.length > 1)
-      ? '<div class="ps-vs-chips ps-vs-twchips"><span class="ps-vs-note">Towers</span>' +
+      ? '<div class="ps-vs-chips ps-vs-twchips"><span class="ps-vs-rowlab">Towers</span>' +
         '<button class="ps-vs-chip' + (!_vsTowerSel.length ? ' on' : '') + '" data-vstw="ALL"' +
           ' aria-pressed="' + (!_vsTowerSel.length) + '" title="Show every tower, side by side">All towers</button>' +
         _twOpts.filter(function (o) { return o.v !== 'ALL'; }).map(function (o) {
@@ -19947,7 +19979,7 @@
       : '';
 
     var bar = '<div class="ps-vs-bar">' +
-      '<span class="ps-vs-seg"><button data-vssc="trade"' + (_vsScope === 'trade' ? ' class="on"' : '') + ' title="One building model per trade">Per trade</button>' +
+      '<span class="ps-vs-seg"><span class="ps-vs-seglab">Model</span><button data-vssc="trade"' + (_vsScope === 'trade' ? ' class="on"' : '') + ' title="One building model per trade">Per trade</button>' +
       (towerNames.length > 1 ? '<button data-vssc="tower"' + (_vsScope === 'tower' ? ' class="on"' : '') + ' title="One building model per tower, all trades combined">Per tower</button>' : '') +
       '<button data-vssc="all"' + (_vsScope === 'all' ? ' class="on"' : '') + ' title="One model for the whole project, all trades combined">Consolidated</button>' +
       /* ⚠️⚠️ THE SITE BUTTON ONLY EXISTS WHEN THERE IS A SITE PLAN TO DRAW, and that is not
@@ -19978,25 +20010,26 @@
         '<button data-vs3d="0"' + (!_vs3D ? ' class="on"' : '') + ' title="The section: storeys as rows, zones across">2D</button>' +
         '<button data-vs3d="1"' + (_vs3D ? ' class="on"' : '') + ' title="The same storeys and zones as a solid model you can orbit, with the four elevations named">3D</button>' +
       '</span>' +
-      '<span class="ps-vs-grp"><span class="ps-vs-note">Detail</span><span class="ps-vs-seg">' + detailBtns + '</span>' +
+      '<span class="ps-vs-grp"><span class="ps-vs-seg"><span class="ps-vs-seglab">Detail</span>' + detailBtns + '</span>' +
       '<span class="ps-vs-note"' + (_vsMixTrades ? ' title="' + esc(VS_MIX_NOTE) + '"' : '') + '>' +
         esc(_vsAxis().slice(0, detail).map(function (l) { return l.name; }).join(' › ')) +
         (_vsMixTrades ? ' — levels only (trades combined)' : '') + '</span></span>' +
       '<span class="ps-tb-div"></span>' +
-      '<span class="ps-vs-grp"><span class="ps-vs-note">Dates</span><span class="ps-vs-seg">' +
+      '<span class="ps-vs-grp"><span class="ps-vs-seg"><span class="ps-vs-seglab">Dates</span>' +
         [['actual', 'Actual', 'Actual where recorded, forecast where not — the dates the grid shows'],
          ['planned', 'Planned', 'The baseline (BL Start / BL Finish)'],
          ['compare', 'Planned vs Actual', 'Both, with the slip in days. Cells are coloured by slip, not by progress']]
           .map(function (o) { return '<button data-vsbasis="' + o[0] + '"' + (_vsBasis === o[0] ? ' class="on"' : '') + ' title="' + esc(o[2]) + '">' + o[1] + '</button>'; }).join('') +
       '</span></span>' +
       '<span class="ps-tb-div"></span>' +
-      '<span class="ps-vs-grp"><span class="ps-vs-note">Show</span><span class="ps-vs-seg">' +
+      '<span class="ps-vs-grp"><span class="ps-vs-seg"><span class="ps-vs-seglab">Show</span>' +
         '<button data-vsdt="finish"' + (_vsDateMode === 'finish' ? ' class="on"' : '') + ' title="Each cell shows when it COMPLETES (its last activity\'s finish)">Finish</button>' +
         '<button data-vsdt="start"' + (_vsDateMode === 'start' ? ' class="on"' : '') + ' title="Each cell shows when it BEGINS (its first activity\'s start)">Start</button>' +
       '</span></span>' +
       '<span class="ps-tb-div"></span>' +
-      '<span class="ps-vs-grp"><span class="ps-vs-note">Zoom</span><button class="pd-btn ps-icobtn" id="ps-vs-zout" title="Narrower cells">&#8722;</button>' +
-      '<button class="pd-btn ps-icobtn" id="ps-vs-zin" title="Wider cells — more room for the dates">+</button></span>' +
+      '<span class="ps-vs-seg"><span class="ps-vs-seglab">Zoom</span>' +
+        '<button id="ps-vs-zout" title="Narrower cells">&#8722;</button>' +
+        '<button id="ps-vs-zin" title="Wider cells — more room for the dates">+</button></span>' +
       // \u26a0\ufe0f The PDF is built from the buildings ALREADY ON SCREEN (their svg is cloned), not re-derived.
       // Re-deriving would be a second renderer to keep in step with this one, and the first divergence
       // would be a report that disagrees with the screen it was exported from.
@@ -20278,7 +20311,10 @@
              levels — borrowing it would have given one control two meanings depending on a scope
              three controls away. This one is only on screen where it applies, and it says what it
              does in words rather than in a number. */
-          '<div class="ps-vs-sitemode"><span class="ps-vs-note">Show</span><span class="ps-vs-seg">' +
+          /* ⚠ Welded like the main bar's four, so the same control does not read two ways in one
+             pane. This one is the SITE CARD's own Show -- it changes what the model IS, not where
+             the camera is, which is why it sits in the card rather than in the toolbar. */
+          '<div class="ps-vs-sitemode"><span class="ps-vs-seg"><span class="ps-vs-seglab">Show</span>' +
             '<button data-vssm="0"' + (!_vsSiteFloors ? ' class="on"' : '') +
               ' title="Each tower as one solid, as tall as its own storey count — where the buildings stand, and how far each has got overall">Whole towers</button>' +
             '<button data-vssm="1"' + (_vsSiteFloors ? ' class="on"' : '') +
