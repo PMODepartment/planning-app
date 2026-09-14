@@ -2,6 +2,110 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## A 360° draft now survives a session timeout — persisted per-user in IndexedDB, restarted rather than resumed on reload (2026-09-14, later still again)
+
+Owner: *"since the processing of 360 takes long, the session already times out before completion.
+draft should extend beyond the session though this should only be per person."*
+
+⚠️⚠️ **This directly reverses the "keep it in the session only as draft" architecture decision
+from earlier the same day (2026-09-13, "360° upload becomes a session-only draft"), and the
+reversal is deliberate, not an oversight.** That entry's own header comment stated plainly:
+*"'Keep it in the session only as draft' means literally in-memory, never persisted. Closing or
+reloading the tab loses any unconfirmed draft — by design."* A real stitch at this pipeline's
+current 48-frame-fixed sampling density is genuinely several minutes of sequential per-pair OpenCV
+work on a real phone (per the 2026-09-13/14 entries above), and a browser tab timing out — or a
+planner simply closing the tab to do something else while it churns — before that finishes was
+always going to happen. The fix is to let the draft's own bytes survive that, not just its
+in-memory processing state.
+
+⚠️⚠️ **The one thing that does NOT change: no write to the shared database/Storage happens before
+Confirm & Save.** `uploadFile()`/`tolerantWrite()` are still called from exactly one place — the
+gated Confirm & Save handler inside `openPano360Review`, checked on `draft.status === 'ready' &&
+draft.stitchResult && draft.repBlob` — never from `persistPano360Draft`, `rehydratePano360Drafts`,
+or either background-processing function. This entry is entirely about **local** persistence (an
+IndexedDB store, private to this browser) standing in for what used to be a bare in-memory array;
+it does not touch, weaken, or bypass the safety gate the earlier entry built.
+
+### `Pano360DraftStore` — a small IndexedDB wrapper, same shape as the existing `OfflineQueue`
+
+New `Pano360DraftStore` IIFE (`DB_NAME = 'pp_pano360_drafts_v1'`, `STORE = 'drafts'`) is built as a
+close cousin of the offline-sync outbox's own `OfflineQueue` (`open`/`add`/`all`/`remove`) already
+in this file — the same convention, not a new one invented for this feature. `put(record)`/
+`remove(id)`/`all()`/`allForUser(userId)` (the last one filters `all()`'s result by `r.uid ===
+userId`, client-side — IndexedDB has no query language of its own to push that filter down into).
+
+`persistPano360Draft(draft)` snapshots a draft (metadata, the typed fields, the stitched result and
+thumbnail blobs once they exist, and — **only while `status === 'processing'`** — the original
+source video/photo blob via a new `draft._persistSourceBlob` field) and writes it, tagged with the
+CURRENT signed-in `uid`. Called from every point a draft's state meaningfully changes: on the
+source-picker screen (`captureSrcMeta`), on every metadata edit in the review modal
+(`captureMeta`, the adjust-editor callback, "Use this view as thumbnail"), and — the two points
+that matter most for surviving a timeout — the moment a stitch finishes (`finishDraftStitch`,
+which also clears `_persistSourceBlob` back to `null` since a finished draft no longer needs its
+raw source) and the moment one fails (the `catch` blocks of `runStitchForDraft`/`runPhotoForDraft`).
+
+`rehydratePano360Drafts()` runs once, from `init()`, **not awaited** (it's independent background
+work with nothing else in `init()` waiting on it) — reads `Pano360DraftStore.allForUser(uid)`,
+skips anything already present in the live `PANO360_DRAFTS` array (a draft created earlier in the
+*same* session, never re-added), and rebuilds each persisted record into a live draft object.
+
+### Restart, not resume, for a draft interrupted mid-stitch
+
+⚠️⚠️ **A draft that was `'processing'` when the tab closed cannot pick its computation back up —
+there is no way to serialize an in-flight WASM/OpenCV stitch across a reload — so it is fully
+re-run from the persisted source blob instead.** `rehydratePano360Drafts()` checks: if
+`rec.sourceBlob` exists, it rebuilds the draft's `video`/`videoUrl` (video source) or calls
+`runPhotoForDraft` directly (photo source) — genuinely restarting the stitch from scratch, not
+pretending to continue it. If **no** source blob was persisted (the record predates this feature,
+or was itself interrupted before the source was ever attached), the draft is marked `status:
+'error'` with a plain message — *"Processing was interrupted and could not be resumed — please
+record or upload again"* — rather than silently vanishing or hanging forever in an unfixable
+`'processing'` state. A draft that had already reached `'ready'` or `'error'` **before** the
+interruption is restored exactly as it was, with zero reprocessing — its stitch result, thumbnail
+and typed metadata all come back from the persisted record as-is.
+
+### "Per person" is enforced by filtering on READ, not by storage isolation
+
+⚠️⚠️ **IndexedDB is scoped per-ORIGIN, not per-user — this store is genuinely shared across
+whichever accounts sign into the same browser, and this entry does not pretend otherwise.** What
+makes it "per person" is that every persisted record carries the `uid` of whoever created it, and
+`rehydratePano360Drafts()` only ever loads records matching whoever is **currently** signed in
+(`allForUser(uid)`). A different person signing into the same browser/device will never see, load,
+or get notified about another person's unconfirmed draft — but the raw bytes do sit in that
+browser's IndexedDB regardless of who's looking. This is a visibility guarantee, not physical
+storage isolation, and is stated in the header comment above `PANO360_DRAFTS` in the same terms.
+
+### Verified
+
+**949 checks green** (was 936 — 13 new): all genuinely executing the shipped code against a
+hand-built, event/queue-based fake IndexedDB (`setTimeout(...,0)`-deferred callbacks, real cursor
+iteration over a `Map`-backed store — never an immediate-resolving stub, per this repo's own "a
+test that cannot fail is not evidence" standard). Confirms: `persistPano360Draft` writes a real
+record carrying the current `uid` and, only while `status === 'processing'`, the source blob; the
+source blob is dropped once a draft reaches `'ready'`; `allForUser` correctly isolates two
+different users' drafts written to the same store; persisting with no signed-in `uid` is a no-op;
+rehydrating restores a `'ready'` draft's stitch result and thumbnail intact, for the matching user
+only; rehydrating a stuck `'processing'` record with no persisted source blob converts it to an
+honest `'error'` and re-persists that corrected state; and `removePano360Draft` (Discard, and the
+cleanup after a successful Confirm & Save) deletes the IndexedDB record too, not just the in-memory
+entry. Three pre-existing byte-adjacency regex assertions (checking that `finishDraftStitch`/
+`runStitchForDraft`/`runPhotoForDraft` call `notifyPano360Draft` immediately after the status/error
+assignment) were updated to allow the new `draft._persistSourceBlob = null;` line landing between
+them — healthy churn from an intentional change, not a weakened check. Full suite: **949 passed, 3
+failed** — the same 3 pre-existing, unrelated failures this file already documents (a PDF
+page-break assertion + 2 `capture.js` mic/audio-flash assertions), confirmed unchanged.
+
+⚠️ **Not verified signed in** — same standing caveat as every entry in this file; no live login is
+possible in this environment. In particular, nobody has actually let a real stitch run past a real
+browser tab timeout and watched it resume correctly on reopen — the rehydrate path is proven by
+genuine execution against a real (if fake) IndexedDB, not by observing a real interrupted session.
+
+`module.js?v=` → `20260914g`; `assets/js/modules-grid.js` (and the `dashboard.html`/`modules.html`
+script tags that load it) → `20260914g` to match, since this module's `index.html` itself changed
+(its own `module.js?v=` line). Re-derived past both this branch's own prior `20260914f` and
+`origin/main`'s own concurrently-advanced `20260914e` fallback, neither of which carries this
+change.
+
 ## "The other input fields are still not showing" — the metadata fields were only ever added to the SECOND 360° modal (2026-09-14, later still)
 
 Owner, off a screenshot of the live "Add 360° photo" modal showing only the three source buttons
