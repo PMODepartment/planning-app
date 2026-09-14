@@ -282,6 +282,10 @@ window.ProgressPhotos = (function () {
                             // LOC_LEVELS/SCHED_ACTS are ready — see its own comment there for why.
     try { fillFilterOptions(); } catch (e) { console.error(e); }
     await refreshQueueBadge();
+    // Reconnect this user's own 360° drafts (see the big comment above
+    // PANO360_DRAFTS) -- deliberately not awaited, since it's independent
+    // background work that must not delay the rest of init().
+    rehydratePano360Drafts();
     window.addEventListener('online', function () { if (pid) flushQueue(); });
     joinCollab();
   }
@@ -5699,10 +5703,8 @@ window.ProgressPhotos = (function () {
   // on `draft.status === 'ready'`. Starting a capture
   // (openPano360SourcePicker) and background-stitching it
   // (runStitchForDraft/runPhotoForDraft/finishDraftStitch) never touch
-  // Storage or the database, and never persist a draft to sessionStorage/
-  // localStorage/IndexedDB -- a draft lives ONLY in the PANO360_DRAFTS array
-  // in memory, for the life of this tab. Closing or reloading the tab loses
-  // any unconfirmed draft, by design.
+  // Storage or the shared database. This invariant is unchanged by the
+  // persistence added below.
   //
   // Architecture: a "draft" is decoupled from any one modal's lifecycle --
   // starting a capture creates a draft and kicks off background processing,
@@ -5712,6 +5714,30 @@ window.ProgressPhotos = (function () {
   // something to show" pattern, lists every draft for the current project
   // and can reopen any of them). Only the explicit Confirm & Save action on
   // a READY draft ever writes to Storage/the database.
+  //
+  // ⚠️⚠️ 2026-09-14, later still: "since it's taking too long to process, the
+  // session already times out before completion. draft should extend beyond
+  // the session though this should only be per person." Reverses the
+  // "kept in memory only, closing the tab loses it, by design" decision the
+  // original build made -- a real stitch can genuinely outlast a browser
+  // session (an auth-session timeout redirecting to login, or simply
+  // closing the tab), and losing the whole recording over that is exactly
+  // the "long processing" complaint this feature already exists to soften.
+  // A draft's own bytes (the source video/photo, the stitched result once
+  // there is one, the thumbnail, and the typed metadata) are now ALSO kept
+  // in a per-browser IndexedDB store (Pano360DraftStore, below) and
+  // reloaded on the next `init()` via rehydratePano360Drafts(). This is
+  // ADDITIVE to the safety gate above, never a way around it -- IndexedDB is
+  // local browser storage, not the shared Supabase database, so nothing
+  // here lets a draft reach the shared table before Confirm & Save.
+  // ⚠️⚠️ "PER PERSON" is enforced by FILTERING ON READ, not by storage
+  // isolation. Every persisted record carries the `uid` that created it,
+  // and rehydratePano360Drafts() only ever loads/shows/notifies about
+  // records whose `uid` matches whoever is CURRENTLY signed in on this
+  // device. A different person signing into the same shared browser never
+  // sees someone else's in-progress capture appear -- their own drafts (if
+  // any) simply sit untouched in the same local database until they sign
+  // back in themselves.
   // ============================================================================
   var PANO360_DRAFTS = [];
   var _pano360DraftSeq = 0;
@@ -5781,7 +5807,8 @@ window.ProgressPhotos = (function () {
       repBlob: null, repUrl: null,           // thumbnail frame -- becomes thumb_url
       pendingAdjust: {},                      // keyed 0 (a single item, same convention as the old single-slot flow)
       meta: { desc: '', date: new Date().toISOString().slice(0, 10), works: [], locVals: {}, viewName: '', tags: [], pinData: null },
-      onUpdate: null                          // set by whichever review modal is currently watching this draft, if any
+      onUpdate: null,                         // set by whichever review modal is currently watching this draft, if any
+      _persistSourceBlob: null                // the ORIGINAL video/photo file -- kept only while status==='processing', so an interrupted stitch can be restarted after a reload without re-recording; see persistPano360Draft()
     };
     PANO360_DRAFTS.push(d);
     renderPano360DraftsBadge();
@@ -5800,6 +5827,11 @@ window.ProgressPhotos = (function () {
     var i = PANO360_DRAFTS.indexOf(d);
     if (i >= 0) PANO360_DRAFTS.splice(i, 1);
     [d.videoUrl, d.stitchUrl, d.repUrl].forEach(function (u) { if (u) { try { URL.revokeObjectURL(u); } catch (e) {} } });
+    // Covers both a deliberate Discard and a successful Confirm & Save (the
+    // one call site that follows a real DB write) -- either way, once a
+    // draft leaves PANO360_DRAFTS it must also leave the local persistence
+    // store, or it would reappear on the next rehydrate.
+    Pano360DraftStore.remove(d.id).catch(function () {});
     renderPano360DraftsBadge();
   }
   // Mirrors #pp-sync's own established convention exactly (module.js/
@@ -5814,6 +5846,154 @@ window.ProgressPhotos = (function () {
     var n = pano360DraftsForProject().length;
     btn.hidden = !n;
     if (n) btn.title = n + ' 360° draft' + (n === 1 ? '' : 's') + ' processing or awaiting review';
+  }
+
+  // ------------------------------------------------- 360° draft persistence -
+  // Same shape/convention as the OfflineQueue IIFE above (open/put/remove/
+  // all) -- a plain, dedicated IndexedDB database, never sessionStorage/
+  // localStorage (neither can hold a Blob without a lossy base64 round
+  // trip, and a stitched panorama or a source video is exactly the kind of
+  // thing that would make that expensive). See the big header comment
+  // above PANO360_DRAFTS for what this is for and the "per person" rule.
+  var Pano360DraftStore = (function () {
+    var DB_NAME = 'pp_pano360_drafts_v1', STORE = 'drafts', dbp = null;
+    function open() {
+      if (dbp) return dbp;
+      dbp = new Promise(function (resolve, reject) {
+        var req = indexedDB.open(DB_NAME, 1);
+        req.onupgradeneeded = function () {
+          var d = req.result;
+          if (!d.objectStoreNames.contains(STORE)) d.createObjectStore(STORE, { keyPath: 'id' });
+        };
+        req.onsuccess = function () { resolve(req.result); };
+        req.onerror = function () { reject(req.error); };
+      });
+      return dbp;
+    }
+    function put(record) {
+      return open().then(function (d) { return new Promise(function (resolve, reject) {
+        var tx = d.transaction(STORE, 'readwrite');
+        tx.objectStore(STORE).put(record);
+        tx.oncomplete = function () { resolve(); };
+        tx.onerror = function () { reject(tx.error); };
+      }); });
+    }
+    function remove(id) {
+      return open().then(function (d) { return new Promise(function (resolve, reject) {
+        var tx = d.transaction(STORE, 'readwrite');
+        tx.objectStore(STORE).delete(id);
+        tx.oncomplete = function () { resolve(); };
+        tx.onerror = function () { reject(tx.error); };
+      }); });
+    }
+    function all() {
+      return open().then(function (d) { return new Promise(function (resolve, reject) {
+        var out = [];
+        var req = d.transaction(STORE, 'readonly').objectStore(STORE).openCursor();
+        req.onsuccess = function (e) {
+          var cur = e.target.result;
+          if (cur) { out.push(cur.value); cur.continue(); } else resolve(out);
+        };
+        req.onerror = function () { reject(req.error); };
+      }); });
+    }
+    // ⚠️⚠️ "Per person": filtered here, client-side, after a plain `all()` --
+    // not by a separate database per user, and not by an IndexedDB index
+    // (this store is small -- a handful of drafts at most -- so the extra
+    // index/query machinery isn't worth it, matching OfflineQueue's own
+    // queuedCountFor(), which filters its own `all()` result in JS too).
+    function allForUser(userId) {
+      return all().then(function (list) { return list.filter(function (r) { return r.uid === userId; }); });
+    }
+    return { put: put, remove: remove, all: all, allForUser: allForUser };
+  })();
+
+  // Snapshots a draft's current, structured-clone-safe state into
+  // IndexedDB. Called at every point the draft's own state actually
+  // SETTLES -- created, metadata captured, stitched, errored, thumbnail
+  // captured, adjustments changed -- never from the many intermediate
+  // progress ticks touchPano360Draft() drives (a 48-frame stitch reports
+  // progress dozens of times; the source blob never changes mid-stitch, so
+  // persisting it once up front is enough to resume from).
+  function persistPano360Draft(draft) {
+    if (!uid || typeof indexedDB === 'undefined') return;
+    var res = draft.stitchResult;
+    var rec = {
+      id: draft.id, pid: draft.pid, uid: uid, source: draft.source,
+      status: draft.status, error: draft.error, meta: draft.meta,
+      // The source video/photo is only worth keeping while there is
+      // something to resume TOWARD -- once a draft is 'ready' or 'error' the
+      // stitched result (or the failure) is the fact that matters, and
+      // keeping a large video blob around forever would just waste space.
+      sourceBlob: draft.status === 'processing' ? (draft._persistSourceBlob || null) : null,
+      stitchBlob: res ? res.blob : null,
+      stitchWidth: res ? res.width : null, stitchHeight: res ? res.height : null,
+      stitchQuality: res ? res.quality : null,
+      pairsFallback: res ? res.pairsFallback : null, pairsTotal: res ? res.pairsTotal : null,
+      repBlob: draft.repBlob || null,
+      pendingAdjust: draft.pendingAdjust || {},
+      updatedAt: Date.now()
+    };
+    Pano360DraftStore.put(rec).catch(function () {});
+  }
+
+  // Reconnects this signed-in user's own in-progress/finished-but-
+  // unconfirmed 360° drafts after a reload or a fresh login -- called once
+  // from init(), right after `uid` is known. ⚠️⚠️ A draft still mid-stitch is
+  // genuinely RESTARTED, not resumed from wherever it left off -- there is
+  // no way to pick a half-finished WASM computation back up across a page
+  // reload. What survives is the ORIGINAL recording, so the planner never
+  // has to re-record; the CPU time already spent on the interrupted attempt
+  // does not. A draft that had already reached 'ready' or 'error' before the
+  // reload is restored exactly as it was, with no reprocessing at all.
+  async function rehydratePano360Drafts() {
+    if (!uid || typeof indexedDB === 'undefined') return;
+    var records;
+    try { records = await Pano360DraftStore.allForUser(uid); } catch (e) { return; }
+    records.forEach(function (rec) {
+      if (findPano360Draft(rec.id)) return;
+      var d = {
+        id: rec.id, pid: rec.pid, source: rec.source, status: rec.status,
+        progressMsg: rec.status === 'processing' ? 'Resuming…' : null,
+        error: rec.error || null,
+        video: null, videoUrl: null,
+        stitchResult: null, stitchUrl: null,
+        repBlob: rec.repBlob || null, repUrl: null,
+        pendingAdjust: rec.pendingAdjust || {},
+        meta: rec.meta || { desc: '', date: new Date().toISOString().slice(0, 10), works: [], locVals: {}, viewName: '', tags: [], pinData: null },
+        onUpdate: null,
+        _persistSourceBlob: null
+      };
+      if (rec.repBlob) { try { d.repUrl = URL.createObjectURL(rec.repBlob); } catch (e) {} }
+      if (rec.stitchBlob) {
+        d.stitchResult = {
+          blob: rec.stitchBlob, width: rec.stitchWidth, height: rec.stitchHeight,
+          quality: rec.stitchQuality, pairsFallback: rec.pairsFallback, pairsTotal: rec.pairsTotal
+        };
+        try { d.stitchUrl = URL.createObjectURL(rec.stitchBlob); } catch (e) {}
+      }
+      PANO360_DRAFTS.push(d);
+      if (d.status === 'processing') {
+        if (rec.sourceBlob) {
+          d._persistSourceBlob = rec.sourceBlob;
+          if (d.source === 'video') {
+            d.video = rec.sourceBlob;
+            try { d.videoUrl = URL.createObjectURL(rec.sourceBlob); } catch (e) {}
+            runStitchForDraft(d);
+          } else {
+            runPhotoForDraft(d, rec.sourceBlob);
+          }
+        } else {
+          // Nothing left to resume from -- leaving this at 'processing'
+          // forever with no way for it to ever settle would be worse than
+          // an honest failure the planner can Discard.
+          d.status = 'error';
+          d.error = 'Processing was interrupted and could not be resumed -- please record or upload again';
+          persistPano360Draft(d);
+        }
+      }
+    });
+    renderPano360DraftsBadge();
   }
 
   // A pre-processed 360° photo (already equirectangular/cylindrical --
@@ -5850,11 +6030,13 @@ window.ProgressPhotos = (function () {
     draft.stitchUrl = URL.createObjectURL(res.blob);
     draft.status = 'ready';
     draft.progressMsg = null;
+    draft._persistSourceBlob = null; // the source is no longer needed to resume anything -- the stitched result is what matters from here
     notifyPano360Draft(draft, true);
+    persistPano360Draft(draft);
     var img = new Image();
     img.onload = function () {
       captureImageThumbnail(img, function (blob) {
-        if (blob) { draft.repBlob = blob; draft.repUrl = URL.createObjectURL(blob); }
+        if (blob) { draft.repBlob = blob; draft.repUrl = URL.createObjectURL(blob); persistPano360Draft(draft); }
         touchPano360Draft(draft);
       });
     };
@@ -5892,7 +6074,9 @@ window.ProgressPhotos = (function () {
     } catch (err) {
       draft.status = 'error';
       draft.error = (err && err.message) ? err.message : 'an unknown error';
+      draft._persistSourceBlob = null;
       notifyPano360Draft(draft, false);
+      persistPano360Draft(draft);
       touchPano360Draft(draft);
     }
   }
@@ -5905,7 +6089,9 @@ window.ProgressPhotos = (function () {
     } catch (err) {
       draft.status = 'error';
       draft.error = (err && err.message) ? err.message : 'an unknown error';
+      draft._persistSourceBlob = null;
       notifyPano360Draft(draft, false);
+      persistPano360Draft(draft);
       touchPano360Draft(draft);
     }
   }
@@ -5918,11 +6104,12 @@ window.ProgressPhotos = (function () {
   }
 
   // Step 1: pick a source (record / upload video / upload a finished photo).
-  // On success this creates a session-only draft, starts its background
-  // processing (which never writes to Storage/the DB -- see the header
-  // comment above), and immediately opens the review modal for it -- the
-  // review modal is what shows live progress and is the ONLY place a draft
-  // can ever be confirmed and saved.
+  // On success this creates a draft (persisted locally, per-user, so it
+  // survives a reload -- see the header comment above), starts its
+  // background processing (which never writes to Storage/the shared DB --
+  // see that same comment), and immediately opens the review modal for it --
+  // the review modal is what shows live progress and is the ONLY place a
+  // draft can ever be confirmed and saved.
   function openPano360SourcePicker() {
     if (_uploadModalOpen) return;
     _uploadModalOpen = true;
@@ -5932,10 +6119,20 @@ window.ProgressPhotos = (function () {
       '<div class="pd-modal-header"><h3>Add 360° photo</h3>' +
         '<button class="pd-modal-close" data-close>×</button></div>' +
       '<div class="pp-form" id="pp360src-body">' +
-        '<p class="pp-hint">Stand in one spot and slowly turn all the way around (or through the angle you want), ' +
-          'or upload a video already recorded the same way -- it will be processed into a single 360° panorama ' +
-          'in the background, so you can keep working while it stitches. Already have a finished 360° photo ' +
-          '(equirectangular or similar, ready to view as-is)? Upload it directly -- it skips processing entirely.</p>' +
+        '<p class="pp-hint">Fill in the details below, then pick a source. Stand in one spot and slowly turn all ' +
+          'the way around (or through the angle you want), or upload a video already recorded the same way -- it ' +
+          'will be processed into a single 360° panorama in the background, so you can keep working while it ' +
+          'stitches. Already have a finished 360° photo (equirectangular or similar, ready to view as-is)? Upload ' +
+          'it directly -- it skips processing entirely.</p>' +
+        '<div class="pp-form2">' +
+          '<div class="pd-field"><label>Description</label>' +
+            '<input class="pd-input" id="pp360src-desc" placeholder="e.g. Model Unit" /></div>' +
+          '<div class="pd-field"><label>Capture date' + reqMark() + '</label>' +
+            '<input class="pd-input" type="date" id="pp360src-date" value="' + Fmt.esc(new Date().toISOString().slice(0, 10)) + '" required /></div>' +
+          worksMultiFieldHTML('pp360src', []) +
+          locationFieldHTML('pp360src', {}, '') +
+          (window.BIM ? BIM.pinFieldHTML('pp360src', null) : '') +
+        '</div>' +
         '<div id="pp360src-step" style="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 8px;">' +
           '<button type="button" class="pd-btn" id="pp360src-take">Take video</button>' +
           '<button type="button" class="pd-btn" id="pp360src-choose">Upload video</button>' +
@@ -5953,14 +6150,36 @@ window.ProgressPhotos = (function () {
       '<div class="pd-modal-footer">' +
         '<button class="pd-btn" data-close>Cancel</button></div>';
 
-    var m = openModal(html, 520, close);
+    var m = openModal(html, 640, close);
+    wireLocationField('pp360src');
+    wireWorksMultiField('pp360src');
+    if (window.BIM) BIM.wirePinField('pp360src');
+    hydrate(m.el);
 
     function show(id, on) { var el = $(id); if (el) el.hidden = !on; }
+
+    // Carries whatever was typed on THIS screen into the draft's own meta,
+    // before the review modal (which reads draft.meta to pre-fill its own
+    // copies of these same fields) ever opens -- so the fields are genuinely
+    // filled in once, not typed twice. Also persists (see persistPano360Draft)
+    // so a reload right after picking a source doesn't lose what was typed.
+    function captureSrcMeta(draft) {
+      var descEl = $('pp360src-desc'); if (descEl) draft.meta.desc = descEl.value.trim();
+      var dateEl = $('pp360src-date'); if (dateEl && dateEl.value) draft.meta.date = dateEl.value;
+      draft.meta.works = readWorksMulti('pp360src');
+      draft.meta.locVals = currentLocValues('pp360src');
+      draft.meta.viewName = ($('pp360src-viewname') ? $('pp360src-viewname').value.trim() : '') || draft.meta.viewName;
+      draft.meta.tags = readCodeTags('pp360src');
+      if (window.BIM) draft.meta.pinData = BIM.readPinField('pp360src');
+      persistPano360Draft(draft);
+    }
 
     function startVideoDraft(blob) {
       var draft = newPano360Draft('video');
       draft.video = blob;
       draft.videoUrl = URL.createObjectURL(blob);
+      draft._persistSourceBlob = blob;
+      captureSrcMeta(draft);
       m.close();
       openPano360Review(draft);
       runStitchForDraft(draft);
@@ -5987,6 +6206,8 @@ window.ProgressPhotos = (function () {
 
     function havePhoto(file) {
       var draft = newPano360Draft('photo');
+      draft._persistSourceBlob = file;
+      captureSrcMeta(draft);
       m.close();
       openPano360Review(draft);
       runPhotoForDraft(draft, file);
@@ -6085,9 +6306,11 @@ window.ProgressPhotos = (function () {
     var pp360Viewer = null;
 
     // Pulls whatever the planner has typed/picked back into the draft's OWN
-    // meta object -- never sessionStorage/localStorage, just the in-memory
-    // draft -- so closing this modal mid-background-stitch, or to go do
-    // something else, loses nothing typed and saves nothing either.
+    // meta object -- the in-memory draft, then persisted (see
+    // persistPano360Draft) to this browser's own local IndexedDB store, so
+    // closing this modal mid-background-stitch, or to go do something else
+    // (even closing the tab), loses nothing typed and saves nothing to the
+    // shared database either.
     function captureMeta() {
       var descEl = $('pp360rv-desc'); if (descEl) draft.meta.desc = descEl.value.trim();
       var dateEl = $('pp360rv-date'); if (dateEl) draft.meta.date = dateEl.value;
@@ -6096,6 +6319,7 @@ window.ProgressPhotos = (function () {
       draft.meta.locVals = currentLocValues('pp360rv');
       draft.meta.tags = readCodeTags('pp360rv');
       if (window.BIM) draft.meta.pinData = BIM.readPinField('pp360rv');
+      persistPano360Draft(draft);
     }
 
     function closeReview() {
@@ -6233,7 +6457,7 @@ window.ProgressPhotos = (function () {
 
     if ($('pp360rv-adjust')) $('pp360rv-adjust').onclick = function () {
       if (!draft.stitchUrl) return;
-      openAdjustEditor(draft.stitchUrl, draft.pendingAdjust[0] || {}, function (adj) { draft.pendingAdjust[0] = adj; });
+      openAdjustEditor(draft.stitchUrl, draft.pendingAdjust[0] || {}, function (adj) { draft.pendingAdjust[0] = adj; persistPano360Draft(draft); });
     };
     if ($('pp360rv-usethumb')) $('pp360rv-usethumb').onclick = function () {
       if (pp360Viewer) {
@@ -6244,6 +6468,7 @@ window.ProgressPhotos = (function () {
           draft.repBlob = blob;
           if (draft.repUrl) { try { URL.revokeObjectURL(draft.repUrl); } catch (e) {} }
           draft.repUrl = URL.createObjectURL(blob);
+          persistPano360Draft(draft);
           paintThumb();
         });
       } else {
@@ -6253,6 +6478,7 @@ window.ProgressPhotos = (function () {
           draft.repBlob = blob;
           if (draft.repUrl) { try { URL.revokeObjectURL(draft.repUrl); } catch (e) {} }
           draft.repUrl = URL.createObjectURL(blob);
+          persistPano360Draft(draft);
           paintThumb();
         });
       }
@@ -7285,6 +7511,17 @@ window.ProgressPhotos = (function () {
     // and their own argument) to expose directly, no closure state to
     // save/restore.
     _ensurePano360NotifyPermission: function () { return ensurePano360NotifyPermission(); },
-    _notifyPano360Draft: function (draft, ok) { return notifyPano360Draft(draft, ok); }
+    _notifyPano360Draft: function (draft, ok) { return notifyPano360Draft(draft, ok); },
+    // Test-only hooks for the 360° draft per-user persistence (2026-09-14,
+    // later still) — genuinely execute the real, shipped functions against
+    // an injected fake IndexedDB (see test.js), never a re-description.
+    _newPano360Draft: function (source) { return newPano360Draft(source); },
+    _persistPano360Draft: function (draft) { return persistPano360Draft(draft); },
+    _rehydratePano360Drafts: function () { return rehydratePano360Drafts(); },
+    _removePano360Draft: function (d) { return removePano360Draft(d); },
+    _findPano360Draft: function (id) { return findPano360Draft(id); },
+    _pano360Drafts: function () { return PANO360_DRAFTS; },
+    _Pano360DraftStore: Pano360DraftStore,
+    _setUid: function (v) { uid = v; }
   };
 })();

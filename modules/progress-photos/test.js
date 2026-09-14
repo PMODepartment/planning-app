@@ -4380,9 +4380,68 @@ console.log('\n[misc] insert().select() returns the new row id');
     var draftsRegionEnd = mjs.indexOf('async function uploadFile(file) {', draftsRegionStart);
     var draftsRegion = mjs.slice(draftsRegionStart, draftsRegionEnd > draftsRegionStart ? draftsRegionEnd : draftsRegionStart + 12000)
       .replace(/^\s*\/\/.*$/gm, ''); // strip // comments — a bare mention in prose (e.g. "never persist a draft to sessionStorage") must not count, only real code
-    ok('a 360° draft never touches sessionStorage/localStorage/IndexedDB — it is kept in the PANO360_DRAFTS array in memory only, per the explicit "keep it in the session only as draft" requirement',
+    // ⚠️⚠️ 2026-09-14, later still: REWRITTEN, not left asserting the old
+    // "never persisted anywhere" rule — that rule was intentionally reversed
+    // ("the session already times out before completion... draft should
+    // extend beyond the session"). sessionStorage/localStorage are STILL
+    // never touched (neither can hold a Blob without a lossy round trip);
+    // IndexedDB is now used deliberately, gated on a real `uid`.
+    ok('a 360° draft still never touches sessionStorage/localStorage (neither can hold a Blob cheaply) — only IndexedDB, and only for the draft-persistence feature',
        draftsRegionStart > -1 && draftsRegionEnd > draftsRegionStart &&
-       !/sessionStorage\.(setItem|getItem)|localStorage\.(setItem|getItem)|indexedDB\.open/i.test(draftsRegion));
+       !/sessionStorage\.(setItem|getItem)|localStorage\.(setItem|getItem)/i.test(draftsRegion));
+    ok('…IndexedDB usage IS present now (Pano360DraftStore), a dedicated database separate from the existing pp_offline_v1 queue',
+       /var Pano360DraftStore = \(function \(\) \{/.test(draftsRegion) &&
+       /DB_NAME = 'pp_pano360_drafts_v1'/.test(draftsRegion) &&
+       /indexedDB\.open\(DB_NAME, 1\)/.test(draftsRegion));
+    ok('persistPano360Draft()/rehydratePano360Drafts() both refuse to run without a real uid — a draft can never be written or read back for "nobody in particular"',
+       /function persistPano360Draft\(draft\) \{\s*\n\s*if \(!uid \|\| typeof indexedDB === 'undefined'\) return;/.test(draftsRegion) &&
+       /async function rehydratePano360Drafts\(\) \{\s*\n\s*if \(!uid \|\| typeof indexedDB === 'undefined'\) return;/.test(draftsRegion));
+    ok('"per person": every persisted record carries the CURRENT uid, and reads are filtered to records whose uid matches it — allForUser(userId), never a bare all()',
+       /uid: uid,/.test(draftsRegion) &&
+       /function allForUser\(userId\) \{\s*\n\s*return all\(\)\.then\(function \(list\) \{ return list\.filter\(function \(r\) \{ return r\.uid === userId; \}\); \}\);/.test(draftsRegion) &&
+       /records = await Pano360DraftStore\.allForUser\(uid\);/.test(draftsRegion));
+    ok('the safety gate is untouched by the new persistence: persistPano360Draft/Pano360DraftStore never call uploadFile()/tolerantWrite() — IndexedDB is local browser storage, not the shared database',
+       !/uploadFile\(|tolerantWrite\(/.test(draftsRegion.slice(draftsRegion.indexOf("var Pano360DraftStore"), draftsRegion.indexOf('async function rehydratePano360Drafts') + 4000)));
+  })();
+
+  // 2026-09-14 (later still): "the other input fields are still not
+  // showing" — a real, confirmed gap in the fix above. openPano360Review's
+  // fields render immediately, but that is the SECOND modal, reached only
+  // after a source has already been picked in openPano360SourcePicker() —
+  // the FIRST modal, which the owner's own screenshot showed carrying only
+  // the three source buttons and Cancel, no fields at all. Fixed by moving
+  // the SAME Description/Capture date/Works/Location/Pin block onto the
+  // source-picker screen too, and carrying whatever was typed there into
+  // the draft's own meta (captureSrcMeta) before the review modal — which
+  // still shows the same fields, now pre-filled from what was already
+  // typed — ever opens.
+  (function () {
+    var i = mjs.indexOf('function openPano360SourcePicker()');
+    var j = mjs.indexOf('\n  function openPano360DraftsList()');
+    var body = mjs.slice(i, j > i ? j : i + 12000);
+    var form2Idx = body.indexOf('class="pp-form2"');
+    var stepIdx = body.indexOf('id="pp360src-step"');
+    ok('openPano360SourcePicker: the metadata fields (.pp-form2 — Description/Capture date/Works/Location/Pin) now render on THIS FIRST screen, before any source is picked — not only in the review modal reached afterward',
+       form2Idx > -1 && stepIdx > -1 && form2Idx < stepIdx &&
+       /id="pp360src-desc"/.test(body) && /id="pp360src-date"/.test(body) &&
+       /worksMultiFieldHTML\('pp360src', \[\]\)/.test(body) &&
+       /locationFieldHTML\('pp360src', \{\}, ''\)/.test(body) &&
+       /BIM\.pinFieldHTML\('pp360src', null\)/.test(body));
+    ok('…and the fields are genuinely wired (wireLocationField/wireWorksMultiField/BIM.wirePinField + hydrate), the same way every other field-carrying modal in this module wires itself',
+       /wireLocationField\('pp360src'\);/.test(body) &&
+       /wireWorksMultiField\('pp360src'\);/.test(body) &&
+       /BIM\.wirePinField\('pp360src'\)/.test(body) &&
+       /hydrate\(m\.el\);/.test(body));
+    ok('captureSrcMeta() is called for BOTH the video path (startVideoDraft) and the pre-processed-photo path (havePhoto), and in each case BEFORE the modal closes / the review modal opens — so nothing typed on the first screen is lost',
+       /function captureSrcMeta\(draft\)/.test(body) &&
+       /function startVideoDraft\(blob\) \{[\s\S]{0,200}captureSrcMeta\(draft\);[\s\S]{0,80}m\.close\(\);[\s\S]{0,40}openPano360Review\(draft\);/.test(body) &&
+       /function havePhoto\(file\) \{[\s\S]{0,120}captureSrcMeta\(draft\);[\s\S]{0,80}m\.close\(\);[\s\S]{0,40}openPano360Review\(draft\);/.test(body));
+    ok('captureSrcMeta reads exactly the same fields the review modal itself reads back — desc/date/works/locVals/viewName/tags/pinData — onto draft.meta, so the review modal opens already pre-filled instead of asking twice',
+       /draft\.meta\.desc = descEl\.value\.trim\(\);/.test(body) &&
+       /draft\.meta\.works = readWorksMulti\('pp360src'\);/.test(body) &&
+       /draft\.meta\.locVals = currentLocValues\('pp360src'\);/.test(body) &&
+       /draft\.meta\.tags = readCodeTags\('pp360src'\);/.test(body) &&
+       /draft\.meta\.pinData = BIM\.readPinField\('pp360src'\);/.test(body));
   })();
 
   // Genuine execution: captureViewerThumbnail() — proves the 4:3-landscape
@@ -4722,16 +4781,194 @@ console.log('\n[misc] insert().select() returns the new row id');
   // actually settles — never from any of the many intermediate progress
   // ticks touchPano360Draft() also drives elsewhere in the same functions.
   (function () {
-    ok('finishDraftStitch calls notifyPano360Draft(draft, true) right after draft.status is set to \'ready\' — the moment stitching genuinely finishes',
-       /draft\.status = 'ready';\s*\n\s*draft\.progressMsg = null;\s*\n\s*notifyPano360Draft\(draft, true\);/.test(mjs));
+    // ⚠️ 2026-09-14, later still: rewritten in place (not weakened) — a new
+    // `draft._persistSourceBlob = null;` line now sits between the status/
+    // error assignment and the notify call at all three sites (the source
+    // blob is dropped once a draft settles; see persistPano360Draft's own
+    // comment), so each pattern now allows exactly that one extra line
+    // rather than requiring byte-adjacency.
+    ok('finishDraftStitch calls notifyPano360Draft(draft, true) right after draft.status is set to \'ready\' (allowing the new _persistSourceBlob=null line in between) — the moment stitching genuinely finishes',
+       /draft\.status = 'ready';\s*\n\s*draft\.progressMsg = null;\s*\n\s*draft\._persistSourceBlob = null;[^\n]*\n\s*notifyPano360Draft\(draft, true\);/.test(mjs));
     var runStitchBody = mjs.slice(mjs.indexOf('async function runStitchForDraft'), mjs.indexOf('async function runPhotoForDraft'));
     var runPhotoBody = mjs.slice(mjs.indexOf('async function runPhotoForDraft'), mjs.indexOf('function open360Upload()'));
     ok('runStitchForDraft\'s catch block calls notifyPano360Draft(draft, false) — a failed background stitch still notifies, not just a silent draft.status flip',
-       /draft\.error = \(err && err\.message\) \? err\.message : 'an unknown error';\s*\n\s*notifyPano360Draft\(draft, false\);/.test(runStitchBody));
+       /draft\.error = \(err && err\.message\) \? err\.message : 'an unknown error';\s*\n\s*draft\._persistSourceBlob = null;\s*\n\s*notifyPano360Draft\(draft, false\);/.test(runStitchBody));
     ok('runPhotoForDraft\'s catch block does the same for a pre-processed 360° photo upload that fails to read',
-       /draft\.error = \(err && err\.message\) \? err\.message : 'an unknown error';\s*\n\s*notifyPano360Draft\(draft, false\);/.test(runPhotoBody));
+       /draft\.error = \(err && err\.message\) \? err\.message : 'an unknown error';\s*\n\s*draft\._persistSourceBlob = null;\s*\n\s*notifyPano360Draft\(draft, false\);/.test(runPhotoBody));
     ok('ensurePano360NotifyPermission() is called from newPano360Draft() — the permission prompt is tied to the click/onchange that actually starts a capture, never asked for proactively on page load',
        /function newPano360Draft\(source\) \{\s*_pano360DraftSeq\+\+;\s*ensurePano360NotifyPermission\(\);/.test(mjs));
+  })();
+
+  // 2026-09-14, later still: "since it's taking too long to process, the
+  // session already times out before completion. draft should extend
+  // beyond the session though this should only be per person." Genuinely
+  // executes persistPano360Draft/rehydratePano360Drafts/Pano360DraftStore
+  // against a REAL (if minimal) fake IndexedDB — a queue/event-based one,
+  // not an immediate-call stub, matching this file's own "a test that
+  // cannot fail is not evidence" standard for every other browser-API fake
+  // in this harness (the fake rAF queue, the fake Notification). The
+  // module-level `ctx.indexedDB` stub near the top of this file is a
+  // non-functional placeholder (never fires onsuccess/onupgradeneeded) —
+  // swapped out here for the duration of this section only, then restored.
+  // ⚠️ Must be `await`ed (matching every other genuinely-async section in
+  // this file) — the fake DB below defers through real setTimeout(...,0)
+  // macrotasks, and the file's own final process.exit() sits a few lines
+  // below this; an un-awaited IIFE here would let that exit run before any
+  // of these assertions ever fired.
+  await (async function () {
+    function makeFakeIndexedDB() {
+      var databases = new Map();
+      function getDb(name) {
+        if (!databases.has(name)) databases.set(name, { stores: new Map(), keyPaths: {} });
+        return databases.get(name);
+      }
+      return {
+        open: function (name) {
+          var req = { onupgradeneeded: null, onsuccess: null, onerror: null, result: null };
+          setTimeout(function () {
+            var db = getDb(name);
+            var fakeDb = {
+              objectStoreNames: { contains: function (n) { return db.stores.has(n); } },
+              createObjectStore: function (n, opts) { db.stores.set(n, new Map()); db.keyPaths[n] = opts.keyPath; return {}; },
+              transaction: function (storeName) {
+                var storeMap = db.stores.get(storeName);
+                var tx = { oncomplete: null, onerror: null };
+                var store = {
+                  put: function (record) { storeMap.set(record[db.keyPaths[storeName]], record); },
+                  delete: function (key) { storeMap.delete(key); },
+                  openCursor: function () {
+                    var entries = Array.from(storeMap.values());
+                    var i = 0;
+                    var curReq = { onsuccess: null, onerror: null };
+                    function step() {
+                      setTimeout(function () {
+                        if (i < entries.length) {
+                          var value = entries[i++];
+                          curReq.onsuccess && curReq.onsuccess({ target: { result: { value: value, continue: step } } });
+                        } else {
+                          curReq.onsuccess && curReq.onsuccess({ target: { result: null } });
+                        }
+                      }, 0);
+                    }
+                    step();
+                    return curReq;
+                  }
+                };
+                setTimeout(function () { tx.oncomplete && tx.oncomplete(); }, 0);
+                return { objectStore: function () { return store; } };
+              }
+            };
+            req.result = fakeDb;
+            if (db.stores.size === 0) req.onupgradeneeded && req.onupgradeneeded({ target: { result: fakeDb } });
+            req.onsuccess && req.onsuccess({ target: { result: fakeDb } });
+          }, 0);
+          return req;
+        }
+      };
+    }
+    var savedIndexedDB = ctx.indexedDB;
+    ctx.indexedDB = makeFakeIndexedDB();
+
+    function clearDrafts() { PP._pano360Drafts().length = 0; }
+    function makeDraft(overrides) {
+      return Object.assign({
+        id: 'test_' + Math.random().toString(36).slice(2), pid: 'DEMO01', source: 'video',
+        status: 'processing', error: null, video: null, videoUrl: null,
+        stitchResult: null, stitchUrl: null, repBlob: null, repUrl: null,
+        pendingAdjust: {}, meta: { desc: 'A test 360', date: '2026-09-14', works: [], locVals: {}, viewName: '', tags: [], pinData: null },
+        onUpdate: null, _persistSourceBlob: null
+      }, overrides || {});
+    }
+
+    // A real put/all/allForUser/remove round trip through the fake DB.
+    PP._setUid('user-A');
+    var draft1 = makeDraft({ id: 'd1', _persistSourceBlob: { fake: 'video-bytes' } });
+    PP._persistPano360Draft(draft1);
+    await new Promise(function (r) { setTimeout(r, 20); });
+    var stored1 = await PP._Pano360DraftStore.all();
+    ok('persistPano360Draft() writes a real record into IndexedDB, carrying the CURRENT uid and (while status==="processing") the source blob',
+       stored1.length === 1 && stored1[0].id === 'd1' && stored1[0].uid === 'user-A' &&
+       stored1[0].sourceBlob && stored1[0].sourceBlob.fake === 'video-bytes' &&
+       stored1[0].meta.desc === 'A test 360');
+
+    // ⚠️⚠️ The "processing only" gate is proven from the STATUS, not from
+    // whether the caller remembered to null out _persistSourceBlob -- even
+    // an object that still carries a stale _persistSourceBlob stops being
+    // persisted as 'ready' the instant status changes.
+    draft1.status = 'ready';
+    draft1.stitchResult = { blob: { fake: 'stitched-jpeg' }, width: 4000, height: 700, quality: 'ok', pairsFallback: 0, pairsTotal: 9 };
+    draft1.repBlob = { fake: 'thumb-jpeg' };
+    PP._persistPano360Draft(draft1);
+    await new Promise(function (r) { setTimeout(r, 20); });
+    var stored1b = (await PP._Pano360DraftStore.all())[0];
+    ok('…and once a draft settles to "ready", the source blob is dropped from the persisted record even though draft._persistSourceBlob was never explicitly cleared — the gate reads draft.status, not a caller-maintained flag',
+       stored1b.sourceBlob === null && stored1b.stitchBlob && stored1b.stitchBlob.fake === 'stitched-jpeg' &&
+       stored1b.stitchWidth === 4000 && stored1b.repBlob.fake === 'thumb-jpeg');
+
+    // "should only be per person": a second user's draft is written to the
+    // SAME local database, and allForUser() must not let the two cross.
+    PP._setUid('user-B');
+    var draft2 = makeDraft({ id: 'd2', status: 'error', error: 'stitching failed' });
+    PP._persistPano360Draft(draft2);
+    await new Promise(function (r) { setTimeout(r, 20); });
+    var forA = await PP._Pano360DraftStore.allForUser('user-A');
+    var forB = await PP._Pano360DraftStore.allForUser('user-B');
+    ok('allForUser() filters strictly by uid — user A\'s drafts never include user B\'s, and vice versa, even though both live in the same local IndexedDB database',
+       forA.length === 1 && forA[0].id === 'd1' && forB.length === 1 && forB[0].id === 'd2');
+
+    // persistPano360Draft/rehydratePano360Drafts both refuse with no uid —
+    // proven by execution, not just read: writing a THIRD record with uid
+    // cleared must add nothing to the store.
+    PP._setUid(null);
+    var draft3 = makeDraft({ id: 'd3' });
+    PP._persistPano360Draft(draft3);
+    await new Promise(function (r) { setTimeout(r, 20); });
+    var storedAll = await PP._Pano360DraftStore.all();
+    ok('persistPano360Draft() is a no-op with no signed-in uid — a draft can never be written to local storage for "nobody in particular"',
+       storedAll.length === 2 && !storedAll.some(function (r) { return r.id === 'd3'; }));
+
+    // Rehydrate: a 'ready' record (this is the actual point of the feature —
+    // surviving a reload) restores with no reprocessing needed.
+    PP._setUid('user-A');
+    clearDrafts();
+    await PP._rehydratePano360Drafts();
+    var live = PP._pano360Drafts();
+    var d1live = PP._findPano360Draft('d1');
+    ok('rehydratePano360Drafts(): a persisted "ready" draft for the CURRENT user restores into PANO360_DRAFTS with its stitch result and thumbnail intact, and none of user B\'s drafts',
+       live.length === 1 && d1live && d1live.status === 'ready' &&
+       d1live.stitchResult && d1live.stitchResult.blob.fake === 'stitched-jpeg' &&
+       d1live.stitchResult.width === 4000 && d1live.repUrl);
+
+    // A 'processing' record with nothing left to resume from must not sit
+    // stuck forever -- it degrades to a real, Discard-able error instead.
+    PP._setUid('user-C');
+    var draft4 = makeDraft({ id: 'd4', status: 'processing', _persistSourceBlob: null });
+    PP._persistPano360Draft(draft4);
+    await new Promise(function (r) { setTimeout(r, 20); });
+    clearDrafts();
+    await PP._rehydratePano360Drafts();
+    var d4live = PP._findPano360Draft('d4');
+    ok('rehydratePano360Drafts(): a "processing" draft with NO source blob to resume from (should not normally happen) becomes an honest error instead of a permanently stuck "Resuming…" draft',
+       d4live && d4live.status === 'error' && /interrupted/i.test(d4live.error));
+    var d4stored = (await PP._Pano360DraftStore.allForUser('user-C'))[0];
+    ok('…and that recovery is itself persisted, so the next reload sees the same honest error rather than trying (and failing) to resume again',
+       d4stored && d4stored.status === 'error');
+
+    // Discard removes the record from local storage too, not just memory.
+    clearDrafts();
+    PP._setUid('user-A');
+    var draft5 = makeDraft({ id: 'd5', status: 'error', error: 'x' });
+    PP._pano360Drafts().push(draft5);
+    PP._persistPano360Draft(draft5);
+    await new Promise(function (r) { setTimeout(r, 20); });
+    ok('sanity: d5 is persisted before being removed', (await PP._Pano360DraftStore.allForUser('user-A')).some(function (r) { return r.id === 'd5'; }));
+    PP._removePano360Draft(draft5);
+    await new Promise(function (r) { setTimeout(r, 20); });
+    var afterRemove = await PP._Pano360DraftStore.allForUser('user-A');
+    ok('removePano360Draft() (Discard, and the same call after a successful Confirm & Save) deletes the record from IndexedDB too — a removed draft can never reappear on the next rehydrate',
+       !afterRemove.some(function (r) { return r.id === 'd5'; }) && !PP._findPano360Draft('d5'));
+
+    ctx.indexedDB = savedIndexedDB;
   })();
 
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
