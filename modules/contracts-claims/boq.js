@@ -1651,6 +1651,7 @@ window.BOQ = (function () {
      surface, or a failed write reads as a success. */
   var _allocRungOk = true;
   var _allocScopeOk = true;   // cleared once per session by the degrade above
+  var _allocLinkOk = true;    // 'link' needs 2026-09-14-boq-alloc-method-link.sql
   async function upsertAllocs(rows) {
     if (!rows.length) return { ok: true, dropped: '' };
     var strip = function (list) {
@@ -1672,8 +1673,26 @@ window.BOQ = (function () {
       }
       return null;
     };
-    var err = await send(_allocScopeOk ? (_allocRungOk ? rows : strip(rows))
-                                       : stripScope(_allocRungOk ? rows : strip(rows)));
+    /* ⚠️⚠️ 'link' NEEDS ITS OWN MIGRATION, SO IT NEEDS ITS OWN DEGRADE.
+       `method` is NOT NULL with a CHECK, so on a database where
+       2026-09-14-boq-alloc-method-link.sql has not been run, a 'link' row is refused with
+       23514 and THE WHOLE BATCH FAILS — exactly what the rung degrade above exists to
+       prevent for `matched_by`. It falls back to 'manual', which is what those rows said
+       before this fix, and reports it. ⚠️ Losing the distinction is a smaller harm than
+       refusing to record the allocation — the same trade the other two degrades make. */
+    var unlink = function (list) {
+      return list.map(function (p) {
+        if (p.method !== 'link') return p;
+        var c = Object.assign({}, p); c.method = 'manual'; return c;
+      });
+    };
+    var shape = function (list) {
+      var out = _allocRungOk ? list : strip(list);
+      if (!_allocScopeOk) out = stripScope(out);
+      if (!_allocLinkOk) out = unlink(out);
+      return out;
+    };
+    var err = await send(shape(rows));
     if (!err) return { ok: true, dropped: _allocRungOk ? '' : 'The match rung was not recorded — run migrations/2026-09-10-boq-match-rung.sql.' };
     var msg = String(err.message || err);
     if (_allocScopeOk && /\bscope\b/i.test(msg) && /PGRST204|schema cache|column/i.test(msg)) {
@@ -1691,6 +1710,15 @@ window.BOQ = (function () {
       var err2 = await send(strip(rows));
       if (!err2) return { ok: true, dropped: 'The match rung was not recorded — run migrations/2026-09-10-boq-match-rung.sql.' };
       return { ok: false, msg: String(err2.message || err2) };
+    }
+    /* ⚠️ Matched on the CONSTRAINT NAME and the value, never on 23514 alone — this table
+       carries other checks (the scope/activity_id exclusivity among them) and swallowing
+       one of those as "the migration is not run" would hide a real refusal. */
+    if (_allocLinkOk && /method/i.test(msg) && /check|23514|violates/i.test(msg)) {
+      _allocLinkOk = false;                                   // ⚠️ once per session, not per row
+      var err3 = await send(shape(rows));
+      if (!err3) return { ok: true, dropped: 'Links were recorded as "manual" — run migrations/2026-09-14-boq-alloc-method-link.sql to tell a link from a hand-made choice.' };
+      return { ok: false, msg: String(err3.message || err3) };
     }
     return { ok: false, msg: msg };
   }
@@ -3223,15 +3251,26 @@ window.BOQ = (function () {
           var id = byRow[x.key]; if (!id) return;
           (alloc[x.code] || []).forEach(function (actId) {
             if (!actId) return;
+            /* ⚠️⚠️ 'link' and 'code', NOT 'manual' and nothing. These links exist BECAUSE the
+               activity carries this line's class code — scheduleSeedPlan groups on
+               `a.class_code` and on nothing else — so the code rung is what found them, and
+               qty is 0, so no split happened. The old pair asserted a human picked each one
+               and recorded no rung at all. */
             allocRows.push({ project_id: pid, boq_item_id: id, activity_id: String(actId),
-                             qty: 0, method: 'manual', accepted_by: UID });
+                             qty: 0, method: 'link', accepted_by: UID,
+                             matched_by: 'code', match_score: RUNG_SCORE.code || null });
           });
         });
+        /* ⚠️⚠️ THROUGH upsertAllocs, THE ONE WRITER — this path had its own bare upsert and
+           therefore NONE of the three un-run-migration degrades. Writing `matched_by` from here
+           would have failed outright on a database without 2026-09-10-boq-match-rung.sql, and
+           'link' would fail on one without 2026-09-14-boq-alloc-method-link.sql. The chunk loop
+           and its progress line stay: upsertAllocs batches at 300 internally and uses the same
+           onConflict pair, so handing it a 300-slice is a drop-in. */
         for (var a2 = 0; a2 < allocRows.length; a2 += 300) {
           say('Matching to the programme ' + (a2 + 1) + ' of ' + allocRows.length + '…');
-          var ar = await sb().from(T_ALLOC).upsert(allocRows.slice(a2, a2 + 300),
-                                                   { onConflict: 'boq_item_id,activity_id' });
-          if (ar.error) throw ar.error;
+          var ar = await upsertAllocs(allocRows.slice(a2, a2 + 300));
+          if (!ar.ok) throw new Error(ar.msg);
         }
       }
 
@@ -5332,7 +5371,11 @@ window.BOQ = (function () {
         var ins = await upsertAllocs(parts.map(function (p) {
           return { project_id: pid, boq_item_id: r.id, activity_id: p.activity_id,
                    scope: p.scope || 'activity',
-                   qty: Number(p.qty), method: prop.method || 'manual', accepted_by: UID,
+                   /* ⚠️⚠️ 'link', NOT 'manual'. proposeSplit returns method null at qty 0
+                      on purpose — nothing was split — and coercing that to 'manual' asserted a
+                      human picked it. Measured on DEMO01: 37 of 50 allocations claimed a hand
+                      decision while `matched_by` recorded the matcher that actually found them. */
+                   qty: Number(p.qty), method: prop.method || 'link', accepted_by: UID,
                    matched_by: (prop.method === 'manual' ? 'manual' : (p.rung || null)),
                    match_score: (prop.method === 'manual' ? null : (RUNG_SCORE[p.rung] || null)) };
         }));
@@ -5342,7 +5385,7 @@ window.BOQ = (function () {
       ALLOC = ALLOC.filter(function (a) { return a.boq_item_id !== r.id; })
         /* ⚠️ `scope` is mirrored, or the worklist would repaint the line as an ordinary activity
            allocation until the next full load — the screen disagreeing with what was just saved. */
-        .concat(parts.map(function (p) { return { boq_item_id: r.id, activity_id: p.activity_id, scope: p.scope || 'activity', qty: Number(p.qty), method: prop.method || 'manual', project_id: pid }; }));
+        .concat(parts.map(function (p) { return { boq_item_id: r.id, activity_id: p.activity_id, scope: p.scope || 'activity', qty: Number(p.qty), method: prop.method || 'link', project_id: pid }; }));
       UI.toast('Allocation applied.', 'success'); render();
     }
   }
@@ -5375,7 +5418,11 @@ window.BOQ = (function () {
     ok.forEach(function (x) {
       x.p.parts.forEach(function (p) {
         payload.push({ project_id: pid, boq_item_id: x.r.id, activity_id: p.activity_id,
-                       qty: Number(p.qty), method: x.p.method, accepted_by: UID,
+                       /* ⚠️ `|| 'link'` is insurance, not decoration: planAllocs filters on
+                          qtyLine so proposeSplit cannot return null here TODAY, but widening that
+                          filter to linkLine (as the worklist already was) would put a null into a
+                          NOT NULL column and fail the entire batch. */
+                       qty: Number(p.qty), method: x.p.method || 'link', accepted_by: UID,
                        matched_by: p.rung || null, match_score: RUNG_SCORE[p.rung] || null });
       });
     });

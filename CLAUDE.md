@@ -102,6 +102,48 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-14 (r) — #5: a link that nobody picked stopped claiming a human picked it
+
+**Run `migrations/2026-09-14-boq-alloc-method-link.sql`.** Owner: *“Let's do #5”* — the Method column
+reading `manual` on an accepted automatic proposal. Detail:
+[`modules/contracts-claims/CLAUDE.md`](modules/contracts-claims/CLAUDE.md).
+
+- ⚠️⚠️ **Measured on the live database before touching anything — 37 of DEMO01's 50 allocations
+  asserted a hand decision that never happened.** `method=manual` with `matched_by=code` on 14 rows
+  and `matched_by=name` on 23, each carrying a real match score. Only 13 were genuinely by hand.
+- ⚠️⚠️ **The cause is a coercion meeting a constraint, and the code already said so in two places.**
+  `proposeSplit` returns `method: null` at qty 0 on purpose — *“nothing has been split, and labelling
+  this 'prorata' would claim an arithmetic that did not happen”* — and the write then did
+  `prop.method || 'manual'`. It had to: the column is `not null` with
+  `check (method in ('location','prorata','manual'))`, so **the vocabulary had no value for “matched,
+  not yet quantified”**, the state 2026-09-07 (h) deliberately created. `scheduleSeedPlan`'s own
+  comment names the same trap.
+- **`'link'` is that missing value.** The migration widens the CHECK and back-fills, ⚠️ **narrowly —
+  `qty = 0` only**: a row with a quantity really was split and its method is a true statement.
+  ⚠️ It moves the hand-picked links too, and loses nothing — `method` describes the split, and at
+  qty 0 there wasn't one; **who** chose it is recorded in `matched_by`, which is the column that
+  answers that question.
+- ⚠️⚠️ **The degrade is the risky half, and it is proven against the live error text.** `method` is
+  NOT NULL with a CHECK, so on a database without this migration a `'link'` row is refused and **the
+  whole batch fails**. `upsertAllocs` — the one writer — gains a third fallback beside the two it
+  already had, mapping `link → manual` once per session and naming the migration. Probed live
+  (read-only, nothing written): `23514 … violates check constraint "boq_allocations_method_check"`,
+  which the matcher recognises. ⚠️ It matches on **the column name as well as the code**, never 23514
+  alone — this table carries other checks, and swallowing one as *“not migrated”* would hide a real
+  refusal.
+- ⚠️ **Seed-from-schedule had its own bare upsert and therefore NONE of the three degrades.** It now
+  writes through `upsertAllocs`, keeping its chunk loop and progress line (same `onConflict`, so a
+  300-slice is a drop-in), and records `matched_by: 'code'` — those links exist **because** the
+  activity carries the line's class code, which `scheduleSeedPlan` groups on and nothing else.
+- ⚠️ A latent `NOT NULL` violation closed in passing: `applyAllocPlans` wrote `method: x.p.method`
+  with no fallback. Safe today only because `planAllocs` filters on `qtyLine`; widening that to
+  `linkLine` — as the worklist already was — would have put a null in and failed the entire batch.
+
+**52 assertions, 0 failing; four negative builds bite (1 / 1 / 2 / 1).** `node --check` clean,
+**195 functions unchanged**, wiring-check 126/0. `boq.js` → `?v=20260914q`; `MODULE_V` → `20260914q`.
+⚠️ **Until the migration is run the app still writes `'manual'`** — correctly, via the degrade, with
+a toast naming the file.
+
 ### 2026-09-14 (q) — #6 answered: `trade_map` IS read, and the answer disappears the moment a BOQ is issued
 
 Owner: *“Let's do #6 first”*. Measured on the **live, signed-in database**, not read off the source.

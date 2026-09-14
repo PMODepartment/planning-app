@@ -270,6 +270,47 @@ block('6 link states', async function () {
   ok('kind' in st, 'carrying a kind');
 });
 
+/* ===== 7 · A LINK NO LONGER CLAIMS A HUMAN PICKED IT (2026-09-14 p5) ========================= */
+block('7 method provenance', function () {
+  /* ⚠️⚠️ STRUCTURAL, AND LABELLED AS SUCH — these write sites sit inside click handlers
+     `_internals` does not reach, so this reads the shipped source rather than executing it. The
+     behaviour itself was measured on the LIVE database instead: DEMO01's 50 allocations read
+       method=manual | matched_by=code   | 0.1  -> 14
+       method=manual | matched_by=name   | 0.6  -> 23
+       method=manual | matched_by=manual | null -> 13
+     i.e. 37 of 50 asserted a hand decision while `matched_by` recorded the matcher that found
+     them. These assertions pin the fix so it cannot silently revert. */
+  ok(!/method: prop\.method \|\| 'manual'/.test(SRC),
+     "the apply write no longer coerces a null method to 'manual'");
+  ok(/method: prop\.method \|\| 'link'/.test(SRC),
+     "it writes 'link' — matched, not yet quantified");
+  ok(/method: x\.p\.method \|\| 'link'/.test(SRC),
+     'the bulk write cannot put a null into a NOT NULL column');
+  /* ⚠️ proposeSplit's honest null is the thing being preserved, not replaced. */
+  ok(/if \(!q\) return \{ method: null/.test(SRC),
+     'proposeSplit still returns null at qty 0 rather than naming a split that did not happen');
+
+  /* The seed path: these links exist BECAUSE the activity carries the code. */
+  ok(/matched_by: 'code', match_score: RUNG_SCORE\.code/.test(SRC),
+     'seed-from-schedule records the code rung it actually used');
+  ok(!/qty: 0, method: 'manual', accepted_by: UID \}\);/.test(SRC),
+     "and no longer stamps those links 'manual' with no rung at all");
+  ok(/var ar = await upsertAllocs\(allocRows/.test(SRC),
+     'and writes through upsertAllocs, so it gains the un-run-migration degrades');
+
+  /* ⚠️⚠️ THE DEGRADE IS THE RISKY HALF. `method` is NOT NULL with a CHECK, so on a
+     database without 2026-09-14-boq-alloc-method-link.sql a 'link' row is refused with 23514 and
+     the WHOLE batch fails. Without this the fix would break every Apply on an un-migrated
+     database — which is exactly what the rung degrade beside it exists to prevent. */
+  ok(/_allocLinkOk/.test(SRC), 'the link degrade has its own session flag');
+  ok(/c\.method = 'manual'; return c;/.test(SRC), 'and falls back to what those rows said before');
+  ok(/boq-alloc-method-link\.sql/.test(SRC), 'and names the migration to run');
+  /* ⚠️ Never on 23514 alone: this table carries other checks (scope/activity_id
+     exclusivity), and swallowing one of those as "not migrated" would hide a real refusal. */
+  ok(/\/method\/i\.test\(msg\) && \/check\|23514\|violates\/i\.test\(msg\)/.test(SRC),
+     'and matches on the column as well as the code, so it cannot swallow another check');
+});
+
 /* ------------------------------------------------------------------ runner + report ------------
    ⚠⚠ THE REPORT MUST BE AWAITED PAST EVERY BLOCK. Measured on the first cut of this suite:
    block 1 is async, the report was top-level and synchronous, so 9 of 41 assertions — every one
