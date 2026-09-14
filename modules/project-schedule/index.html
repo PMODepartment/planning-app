@@ -3942,6 +3942,11 @@
     /* A duration this LEVEL TYPE owns (forked from the default) — see t4Set. Marked so the planner
        can tell at a glance which numbers are this category's own and which are inherited. */
     .sbld-xl td.xl-cell.sbld-ownd { font-weight:700; box-shadow:inset 2px 0 0 var(--pd-red); }
+    /* ⚠️ A code the chart does not know. Toned, never the error red — it is a fact about
+       the code, not a failure, and the row is still perfectly usable for a programme nobody
+       intends to cost-load. Uses the warn token pair, never `--pd-warn` as a text colour. */
+    .sbld-xl td.xl-cell.sbld-badcode { background:var(--pd-warn-bg); color:var(--pd-warn-text);
+      box-shadow:inset 2px 0 0 var(--pd-warn-line); font-weight:700; }
     /* Step-3 tower relationships — one readable sentence per row. */
     /* The Tower-links form. See the note in stTowerLinks: these are labelled, auto-width
        controls laid out as a sentence, never `.sbld-mini`. */
@@ -35286,9 +35291,33 @@
       var totalW = 40 + cols.reduce(function (t, c) { return t + CW(c); }, 0) + 40;
       var colgroup = '<colgroup><col style="width:40px" />' + cols.map(function (c) { return '<col style="width:' + CW(c) + 'px" />'; }).join('') + '<col style="width:40px" /></colgroup>';
       var head = '<tr><th class="xl-corner"></th>' + cols.map(function (c, ci) { return '<th data-ci="' + ci + '">' + e2(c.label) + '<span class="xl-colgrip" data-ci="' + ci + '" title="Drag to resize this column"></span></th>'; }).join('') + '<th class="xl-rowact"></th></tr>';
+      /* ⚠️⚠️ THE GUARD IS THE IMPORTANT HALF. With the chart not yet loaded, `ccByCode`
+         answers null for EVERY code, and an unguarded test would mark a correct programme as
+         entirely unmatchable — a false accusation is worse than no warning. Says nothing until
+         the chart is actually in memory, and says nothing about a blank code, which is a
+         different state (not chosen yet) from a wrong one. */
+      function _seedCodeUnknown(code) {
+        var k = String(code == null ? '' : code).trim();
+        if (!k) return false;
+        if (!CLASS_CODES || !CLASS_CODES.length) return false;
+        return !ccByCode(k);
+      }
+      var _badCodeN = cfg.activities.filter(function (a) { return _seedCodeUnknown(a.code); }).length;
       var body = cfg.activities.map(function (a, r) {
         return '<tr>' + '<td class="xl-rn" data-r="' + r + '">' + (r + 1) + '</td>' +
-          cols.map(function (c, ci) { return '<td class="xl-cell" data-r="' + r + '" data-c="' + ci + '">' + e2(xlGet(a, c.k)) + '</td>'; }).join('') +
+          cols.map(function (c, ci) {
+            /* ⚠️⚠️ A CODE THE CHART DOES NOT KNOW IS MARKED, because it is the difference
+               between a programme that can be linked to a BOQ and one that cannot, and nothing
+               said so until the planner reached Contracts & Claims and found every line
+               reporting "not scheduled". Covers `+ Library` and hand-typed codes too, not just
+               the seed. */
+            var _bad = (c.k === 'code') && _seedCodeUnknown(a.code);
+            return '<td class="xl-cell' + (_bad ? ' sbld-badcode' : '') + '" data-r="' + r +
+              '" data-c="' + ci + '"' +
+              (_bad ? ' title="' + e2('This code is not in the class-code chart, so a BOQ line can never'
+                + ' match it. Pick one from the library, or read the codes off the project BOQ.') + '"' : '') +
+              '>' + e2(xlGet(a, c.k)) + '</td>';
+          }).join('') +
           '<td class="xl-rowact"><button class="sbld-del" data-del="' + r + '" title="Delete row"><span data-ico="trash" data-ico-size="14"></span></button></td></tr>';
       }).join('');
       var holdItems = cfg.catalog.map(function (a) {
@@ -35311,6 +35340,11 @@
       var shuttle = '<div class="sbld-shuttle"><button class="pd-btn" id="b-load" title="Load the ticked class codes into the build">&larr;</button><button class="pd-btn" id="b-unload" title="Remove the selected grid rows from the build (send to the list)">&rarr;</button></div>';
       host.innerHTML = '<h2>' + _stepNo('Activities') + ' · Activities &amp; required duration</h2>' +
         '<p class="sbld-lede">The class codes this programme is built from — code, name, trade, <b>scope</b> and its interior/exterior duration — as a spreadsheet, beside a holding list of every code available.</p>' +
+        /* ⚠️ Counted, not implied. A per-cell mark alone is easy to scroll past; the number
+           is what tells the planner whether this is one typo or the whole programme. */
+        (_badCodeN ? '<p class="pd-caution" style="margin:0 0 8px;"><b>' + _badCodeN +
+          '</b> of these codes ' + (_badCodeN === 1 ? 'is' : 'are') + ' not in the class-code chart, so a BOQ line'
+          + ' can never match ' + (_badCodeN === 1 ? 'it' : 'them') + '. Marked in the Code column.</p>' : '') +
         _sbldHow('The grid works like Excel: <b>click</b> a cell, <b>drag</b> or <b>Shift-click</b> to select a range, <b>double-click</b> or type to edit, <b>Ctrl+C / Ctrl+V</b> to copy &amp; paste (paste one cell into a selection to fill it), <b>Ctrl+D</b> to fill down, <b>Delete</b> to clear — or paste a block straight from Excel.' +
           '<ul><li><b>&larr;</b> loads ticked codes from the holding list into the build; <b>&rarr;</b> sends selected grid rows back out.</li>' +
           '<li><b>+ Library</b> loads the standard class-code library into the holding list.</li>' +
@@ -35350,7 +35384,17 @@
       host.querySelector('#b-upl').onclick = function () { uf.click(); };
       uf.onchange = function () { if (uf.files && uf.files[0]) uploadActivities(uf.files[0]); uf.value = ''; };
       host.querySelector('#b-seed').onclick = function () {
-        [['MOB','Mobilization','GR',3,3],['EXC','Excavation','SW',4,4],['BACKFILL','Backfilling','SW',3,3],['REBAR','Rebar','ST',3,4],['FORM','Formworks','ST',3,4],['POUR','Concreting','ST',2,3],['MAS','Masonry','AR',5,6],['PLA','Plastering','AR',5,6],['TILE','Tiling','AR',4,5],['CEIL','Ceiling','AR',3,4],['PAINT','Painting','AR',4,5]].forEach(function (r) { cfg.activities.push({ id: uidv(), code: r[0], name: r[1], group: r[2], durInt: r[3], durExt: r[4] }); });
+        /* ⚠️⚠️ REAL LEVEL-3 CHART CODES, NOT MNEMONICS. This seeded `MOB`/`EXC`/`REBAR`/
+           `FORM`/`POUR`/... and **not one of the eleven resolved** against Finance's 702-row
+           `class_codes` chart. `boq_allocations` gates on `class_code`, so a programme built
+           from the typical set could NEVER be linked to a BOQ line — measured end to end on
+           DEMO01, where every code had to be hand-edited before anything would match.
+           ⚠️ Each code below was taken from the chart, and each one's chart TRADE agrees with
+           the row's builder group (01051 General Requirement/GR, 03051 Structural/ST,
+           10101 Architectural/AR, ...) — verified against the live chart, all 11 active.
+           ⚠️ The NAMES are unchanged: they are what the planner reads, and renaming them
+           would change every existing habit for no gain. Only the codes moved. */
+        [['01051','Mobilization','GR',3,3],['02051','Excavation','SW',4,4],['02055','Backfilling','SW',3,3],['03051','Rebar','ST',3,4],['04051','Formworks','ST',3,4],['05051','Concreting','ST',2,3],['08601','Masonry','AR',5,6],['08401','Plastering','AR',5,6],['10101','Tiling','AR',4,5],['11101','Ceiling','AR',3,4],['16401','Painting','AR',4,5]].forEach(function (r) { cfg.activities.push({ id: uidv(), code: r[0], name: r[1], group: r[2], durInt: r[3], durExt: r[4] }); });
         markDirty(); render();
       };
       var libBtn = host.querySelector('#b-lib'); if (libBtn) libBtn.onclick = loadClassCodeLibrary;

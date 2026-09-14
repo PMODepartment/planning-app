@@ -22,6 +22,45 @@ headings / 345 distinct** (the repeats are sub-headings like `### Verified`, whi
 
 ---
 
+### The typical set carries real chart codes, and a strange code is flagged (2026-09-14) — fmlozano
+
+Owner, after the DEMO01 end-to-end run: *“Both — re-seed and flag”*.
+
+### ⚠️⚠️ “LOAD TYPICAL SET” SEEDED CODES THAT RESOLVE TO NOTHING
+It staged `MOB`, `EXC`, `BACKFILL`, `REBAR`, `FORM`, `POUR`, `MAS`, `PLA`, `TILE`, `CEIL`,
+`PAINT` — **0 of 11 exist in Finance's 702-row `class_codes` chart**, which holds
+`03051 Rebar Works`, `04051 Formworks`, `05051 Ready Mix Concrete` and so on.
+`boq_allocations` gates on `class_code`, so **a programme built from the typical set could never
+be linked to a BOQ line**. Measured end to end on DEMO01: every code had to be hand-edited before
+anything would match, and that is what forced every workaround in that run.
+
+- **Re-seeded with real Level-3 codes.** ⚠️ Each one's chart TRADE agrees with the row's builder
+  group (01051 General Requirement/GR, 02051 Site Works/SW, 03051 Structural/ST,
+  10101 Architectural/AR), verified against the live chart — all 11 present and active.
+- ⚠️ **The NAMES are unchanged.** They are what the planner reads; renaming them would change
+  every existing habit for no gain. Only the codes moved.
+
+### ⚠️ AND ANY CODE THE CHART DOES NOT KNOW IS NOW MARKED
+The re-seed fixes the seed; it does nothing for `+ Library` or a typed code. The Code column now
+tones a cell the chart cannot resolve, with the consequence in its tooltip, and a counted line
+above the grid: *“**3** of these codes are not in the class-code chart, so a BOQ line can never
+match them.”* Nothing said this until the planner reached Contracts & Claims and found every line
+reporting “not scheduled”.
+
+### ⚠️⚠️ THE GUARD IS THE IMPORTANT HALF
+With the chart not yet loaded `ccByCode` answers null for **everything**, so an unguarded test
+would mark a perfectly good programme as entirely unmatchable. It says nothing until the chart is
+in memory, and nothing about a blank code — *not chosen yet* is a different state from *wrong*.
+A false accusation is worse than no warning.
+
+### Verified
+**702 assertions, 0 failing** (686 before). **Three negative builds, all bite:** dropping the
+chart-loaded guard fails **2** (it accuses a good code), restoring the mnemonics fails **1**,
+dropping the blank-code check fails **2**. The flag is sliced out of the shipped file and
+executed, not re-typed. `node --check` clean, **0 functions lost**, wiring-check 126/0.
+⚠️ The seeded codes are asserted on the SOURCE; they have not been pushed through a new project
+since the change.
+
 ### The overflow button became the overflow, and a legend that called a pinned date "today" (2026-09-14) — fmlozano
 
 Owner, two reports off the live OPW101 screen: *"More toolbar options spills over to two rows in the

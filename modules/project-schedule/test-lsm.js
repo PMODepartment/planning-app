@@ -1503,6 +1503,50 @@ function grpRow(name, anc, acts, idx, field) {
   eq(Object.keys(R.ord[serKey]).length, 3, 'and the ordinals cover every storey');
 })();
 
+/* ====== THE TYPICAL SET CARRIES REAL CHART CODES, AND A STRANGE CODE IS FLAGGED (2026-09-14) === */
+(function () {
+  /* \u26a0\u26a0 The seed used to stage MOB/EXC/REBAR/FORM/POUR/... and NOT ONE of the eleven resolved
+     against Finance's chart. boq_allocations gates on class_code, so a programme built from the
+     typical set could never be linked to a BOQ. Measured end to end on DEMO01. */
+  const seed = src.match(/\[\['[^']+','Mobilization','GR',3,3\][\s\S]{0,600}?\]\]/);
+  ok(!!seed, 'the typical-set seed is present');
+  if (!seed) { ok(false, 'cannot read the seed'); return; }
+  const codes = [...seed[0].matchAll(/\['([^']+)','([^']+)','([A-Z]{2})'/g)].map(m => ({ code: m[1], name: m[2], grp: m[3] }));
+  eq(codes.length, 11, 'eleven seeded activities');
+  const mnemonic = codes.filter(c => !/^[0-9]{5,6}$/.test(c.code));
+  eq(mnemonic.length, 0, 'every seeded code is a numeric chart code, not a mnemonic');
+  /* The names are deliberately unchanged - they are what the planner reads. */
+  ok(codes.some(c => c.name === 'Rebar' && c.code === '03051'), 'Rebar carries 03051 Rebar Works');
+  ok(codes.some(c => c.name === 'Formworks' && c.code === '04051'), 'Formworks carries 04051');
+  ok(codes.some(c => c.name === 'Concreting' && c.code === '05051'), 'Concreting carries 05051');
+  /* \u26a0 Each code's chart trade must agree with the row's builder group, checked live when this
+     shipped: 01051 General Requirement/GR, 02051 Site Works/SW, 03051 Structural/ST,
+     10101 Architectural/AR. Asserted here as the pairing the seed encodes. */
+  const byName = {}; codes.forEach(c => byName[c.name] = c);
+  eq(byName['Mobilization'].grp, 'GR', 'Mobilization is General Requirements');
+  eq(byName['Excavation'].grp, 'SW', 'Excavation is Site Works');
+  eq(byName['Tiling'].grp, 'AR', 'Tiling is Architectural');
+
+  /* ---- the flag, executed ---------------------------------------------------------------- */
+  const fnSrc = sliceFn('_seedCodeUnknown', 6) || '';
+  ok(fnSrc !== '', '_seedCodeUnknown is sliceable');
+  if (!fnSrc) { ok(false, 'cannot execute the flag'); return; }
+  const make = (chart) => new Function('CLASS_CODES', 'ccByCode',
+    fnSrc + '; return _seedCodeUnknown;')(chart, function (k) { return chart.indexOf(k) >= 0 ? { code: k } : null; });
+
+  const loaded = make(['03051', '04051']);
+  eq(loaded('03051'), false, 'a code the chart knows is not flagged');
+  eq(loaded('REBAR'), true, 'a code the chart does not know IS flagged');
+  eq(loaded(''), false, 'a BLANK code is not flagged - not chosen yet is not the same as wrong');
+  eq(loaded(null), false, 'and neither is a null');
+  /* \u26a0\u26a0 THE GUARD. With the chart not yet loaded ccByCode answers null for EVERYTHING, and an
+     unguarded test would mark a perfectly good programme as entirely unmatchable. A false
+     accusation is worse than no warning. */
+  const notLoaded = make([]);
+  eq(notLoaded('03051'), false, 'chart not loaded -> says nothing about a good code');
+  eq(notLoaded('REBAR'), false, 'chart not loaded -> says nothing about a bad one either');
+})();
+
 /* ====== THE DATA-DATE LEGEND STOPS SAYING "today" WHEN A DATE IS PINNED (2026-09-14) ========== */
 (function () {
   /* The chip is emitted by marksLegendHTML() - a FUNCTION, because a const froze it at load. */

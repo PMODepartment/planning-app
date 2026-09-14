@@ -102,6 +102,24 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-14 (n) — The typical set carries real chart codes, and a strange code is flagged
+
+Owner, after the DEMO01 end-to-end run: *“Both — re-seed and flag”*. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+- ⚠️⚠️ **“Load typical set” seeded `MOB`/`EXC`/`REBAR`/`FORM`/`POUR`/… and 0 of 11 resolved**
+  against Finance's 702-row chart. `boq_allocations` gates on `class_code`, so a programme built
+  from it could never link to a BOQ — which is what forced every workaround in that run.
+- Re-seeded with real Level-3 codes, each one's chart trade agreeing with the row's builder group.
+  ⚠️ The names are unchanged; only the codes moved.
+- ⚠️ **Any unresolvable code is now marked** in the Code column with a counted line above the
+  grid — this covers `+ Library` and typed codes, which the re-seed does not.
+- ⚠️⚠️ **The guard is the important half:** with the chart not loaded `ccByCode` answers null for
+  everything, so an unguarded test would accuse a good programme. It stays silent until the chart
+  is in memory, and about a blank code.
+
+**702 assertions, 0 failing; three negative builds bite (2/1/2).** `MODULE_V` → `20260914n`.
+
 ### 2026-09-14 (m) — The Match-to-schedule worklist hid two thirds of the bill, silently
 
 Detail: [`modules/contracts-claims/CLAUDE.md`](modules/contracts-claims/CLAUDE.md).
