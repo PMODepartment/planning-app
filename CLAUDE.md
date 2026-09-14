@@ -102,6 +102,25 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-14 (k) — Match names wrote nothing, because the write said "do not overwrite"
+
+Found building a project end to end on DEMO01. Detail:
+[`modules/contracts-claims/CLAUDE.md`](modules/contracts-claims/CLAUDE.md).
+
+- ⚠️⚠️ **`applyTagPlan` hardcoded `overwrite = false`.** `boq_tag_activities` skips a row that
+  already carries a code unless told otherwise, so the Match-names screen could never write to the
+  population it was widened to serve on 2026-09-11 (b1): the selection was widened, the write was
+  not. Measured live — the same RPC call returns **0** with the flag off and **1** with it on.
+- The flag is a parameter now and **still defaults to false**; only `openNameMatch` passes `true`,
+  and the footer says *"Tag 20 activities (13 replace a code)"* before it runs.
+- ⚠️⚠️ **The toast blamed RLS** while every skipped row was skipped for a third cause its own
+  comment did not list. Both corrected.
+- ⚠️ **Two of my diagnoses were wrong first:** I reported the RPC and `trade_map` as missing;
+  both are applied, and both probes used parameter/column names I guessed rather than read.
+
+`node --check` clean, 195 functions unchanged, wiring-check 126/0. `boq.js` → `?v=20260914k`;
+`MODULE_V` → `20260914k`.
+
 ### 2026-09-14 (h) — The overflow button became the overflow; the legend stops calling a pinned date "today"
 
 Owner, from the live app. Detail:

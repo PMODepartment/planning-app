@@ -1,5 +1,52 @@
 # Module: contracts-claims
 
+## 2026-09-14 (k) — Match names wrote nothing, because the write said "do not overwrite"
+
+Found by building a project end to end on DEMO01 — Schedule Setup from scratch, a hand-built BOQ,
+then linking the two. The reconciliation screen offered **20 activities**, reported
+**"Only 0 of 20 tagged"**, and blamed RLS.
+
+### ⚠️⚠️ `applyTagPlan` HARDCODED `overwrite = false`
+`boq_tag_activities` skips a row that already carries a class code unless `p_overwrite` is true.
+`applyTagPlan` passed a literal `false`, so the Match-names screen could never write to the one
+population it exists for — 2026-09-11 (b1) widened it so *"an activity qualifies when it carries
+no code **or a code this bill does not use**"*, but only the SELECTION was widened; the write was
+not. The two halves have disagreed ever since.
+
+**Measured live on DEMO01, against the real RPC:** `p_overwrite:false` → **0**;
+`p_overwrite:true` on the same row → **1**, and the code actually changed. So the function was
+fine and the caller was not.
+
+- The flag is now a **parameter that still defaults to false**, so every other caller keeps the
+  safer behaviour. Only `openNameMatch` passes `true`.
+- ⚠️ **That screen had already earned the right to overwrite**: it prints the code each row
+  carries today (`boq-nm-had`, *"now FORM"*), offers **Skip** as the decline, and makes the planner
+  pick a line per name. That IS the decision to replace it.
+- ⚠️ **And it now says so before it runs.** The footer reads *"Tag 20 activities (13 replace a
+  code)"*. Moving a code moves money; the count of replacements should be visible before the press,
+  not discovered afterwards.
+
+### ⚠️⚠️ THE MESSAGE BLAMED THE WRONG THING, AND ITS COMMENT SAID "EXACTLY TWO CAUSES"
+There are three, and the invisible one was the common case: already-coded-and-not-overwriting.
+The toast named the second (RLS) while every one of the 20 was skipped for the third. Corrected in
+both the copy and the comment.
+
+### ⚠️ Two of my own diagnoses here were WRONG before they were right
+I first reported `boq_tag_activities` as a **missing function** (`PGRST202`) and `trade_map` as a
+**missing table** (`42703`). Both were my probes using names I GUESSED rather than read — the RPC
+takes `p_project_id/p_class_code/p_activity_ids`, not `p_project/p_code/p_ids`, and PostgREST
+echoes the signature you asked for; `trade_map`'s columns are `finance_trade`/`procurement_trade`,
+not `trade`. Both are fully applied. **Probe a name you have read, not one you expect** — the same
+shape as the `selectAll` key trap already on file.
+
+### Verified
+`node --check` clean; **195 functions before and after, 0 lost, 0 added** (comments stripped — the
+raw grep reported a phantom `function unable` from this entry's own prose, which is the
+checker-measuring-the-changelog trap this repo already records). `wiring-check` 126/0 — the check
+that would catch `window.BOQ` failing to assign. `dead-hooks` 9 known.
+⚠️ **No committed suite covers this module** — the `suite-namematch` runs cited in earlier entries
+were scratch files and are not in the repo. Live re-verification follows the deploy.
+
 ## 2026-09-10 (z1) — BOQ→schedule matching gets four rungs, and the location key was wrong twice
 
 **Run `migrations/2026-09-10-boq-match-rung.sql`.** Owner: *"How should we match the BOQ to the

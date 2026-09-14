@@ -3769,7 +3769,14 @@ window.BOQ = (function () {
   /* The write half of pass B. ⚠️ Chunked and shortfall-aware through `tagRpc`, and it
      REPORTS rather than returns silently — see `reportTagged`. `onStep` drives the caller's
      own progress label; the loop is identical whichever button started it. */
-  async function applyTagPlan(plan, onStep) {
+  /* ⚠️⚠️ THE OVERWRITE FLAG IS A PARAMETER, AND IT USED TO BE A HARDCODED `false`.
+     That made this function unable to do the one job the Match-names screen exists for: an
+     activity qualifies for that screen when it carries **no code OR a code this bill does not
+     use** (2026-09-11 b1), and `boq_tag_activities` skips a row that already has a code unless
+     `p_overwrite` is true. So the screen offered 20 activities, wrote 0, and blamed RLS.
+     Measured on DEMO01: 0 of 20 before, and the RPC returns 1 for the same row with the flag on.
+     ⚠️ It still DEFAULTS to false, so every other caller keeps the safer behaviour. */
+  async function applyTagPlan(plan, onStep, overwrite) {
     var wrote = 0, wanted = 0, failed = [];
     for (var i = 0; i < plan.length; i++) {
       var p = plan[i];
@@ -3777,7 +3784,7 @@ window.BOQ = (function () {
       var ids = p.hits.map(function (x) { return x.a.activity_id; });
       wanted += ids.length;
       if (onStep) onStep(i + 1, plan.length);
-      try { wrote += await tagRpc(p.code, ids, false); }
+      try { wrote += await tagRpc(p.code, ids, !!overwrite); }
       catch (e) { failed.push(p.code + ': ' + (e.message || e)); }
     }
     return { wrote: wrote, wanted: wanted, failed: failed };
@@ -3805,9 +3812,16 @@ window.BOQ = (function () {
     m.el.querySelector('#nm-x').onclick = m.close;
 
     function counts() {
-      var n = 0, d = 0;
-      groups.forEach(function (g) { if (g.pick) { d++; n += g.acts.length; } });
-      return { decided: d, acts: n };
+      var n = 0, d = 0, rt = 0;
+      groups.forEach(function (g) {
+        if (!g.pick) return;
+        d++; n += g.acts.length;
+        /* ⚠️ A REPLACEMENT IS COUNTED SEPARATELY so the button can say so. Moving a code
+           moves money, and this write now overwrites — the planner should see that before
+           pressing it, not discover it afterwards. */
+        if (g.retag) rt += g.acts.length;
+      });
+      return { decided: d, acts: n, retag: rt };
     }
 
     function paint() {
@@ -3857,7 +3871,10 @@ window.BOQ = (function () {
       var go = foot.querySelector('#nm-go');
       /* One text node — `.pd-btn` is a flex row with a gap, so a word split across elements
          renders with the gap inside it. */
-      go.textContent = c.acts ? 'Tag ' + c.acts + ' activit' + (c.acts === 1 ? 'y' : 'ies') : 'Nothing chosen';
+      go.textContent = c.acts
+        ? 'Tag ' + c.acts + ' activit' + (c.acts === 1 ? 'y' : 'ies') +
+          (c.retag ? ' (' + c.retag + ' replace' + (c.retag === 1 ? 's' : '') + ' a code)' : '')
+        : 'Nothing chosen';
       foot.querySelector('#nm-c').onclick = m.close;
       if (c.acts) go.onclick = function () { run(go); };
     }
@@ -3866,7 +3883,11 @@ window.BOQ = (function () {
       btn.disabled = true;
       var plan = nameTagPlan(groups);
       try {
-        var r = await applyTagPlan(plan, function (i, n) { btn.textContent = 'Tagging ' + i + ' of ' + n + '…'; });
+        /* ⚠️⚠️ TRUE HERE, AND ONLY HERE. This screen names the code each row carries
+           today (see `boq-nm-had`), offers Skip as the decline, and the planner picks a line per
+           name — that IS the decision to replace it. Passing false made every one of those
+           decisions a no-op. The footer says how many rows are replacements before it runs. */
+        var r = await applyTagPlan(plan, function (i, n) { btn.textContent = 'Tagging ' + i + ' of ' + n + '…'; }, true);
         await refreshActs();
         m.close();
         reportTagged(r.wrote, r.wanted, r.failed);
@@ -4088,9 +4109,13 @@ window.BOQ = (function () {
     return wrote;
   }
   /* ⚠️ THE SHORTFALL IS REPORTED, NEVER SWALLOWED. Fewer rows written than asked for has
-     exactly two causes and the planner can act on both: RLS refused the rows (they did not
-     import this schedule), or the activity id no longer exists (the schedule was
-     re-imported since this screen was opened). Saying "done" would hide both. */
+     THREE causes and the planner can act on all of them: the activity already carries a code and
+     the caller did not ask to overwrite, RLS refused the rows (they did not import this
+     schedule), or the activity id no longer exists (the schedule was re-imported since this
+     screen was opened). Saying "done" would hide all three.
+     ⚠️⚠️ THE FIRST ONE USED TO BE INVISIBLE AND IT WAS THE COMMON CASE. This comment said
+     "exactly two causes"; measured on DEMO01, every one of 20 activities was skipped for the
+     third reason while the message named the second. */
   function reportTagged(wrote, wanted, failed) {
     if (failed && failed.length) {
       UI.toast('Some codes failed — ' + failed.join(' | '), 'error');
@@ -4098,8 +4123,9 @@ window.BOQ = (function () {
     }
     if (!wanted) { UI.toast('Nothing to tag.', 'warn'); return; }
     if (wrote >= wanted) { UI.toast('Tagged ' + wrote + ' activit' + (wrote === 1 ? 'y' : 'ies') + '.', 'success'); return; }
-    UI.toast('Only ' + wrote + ' of ' + wanted + ' tagged — the rest were refused, usually because somebody else ' +
-      'imported this schedule. Nothing was skipped silently.', 'error');
+    UI.toast('Only ' + wrote + ' of ' + wanted + ' tagged — the rest were skipped. Either they already '
+      + 'carry a class code (this route only replaces one where you picked the line it should be), or '
+      + 'somebody else imported this schedule. Nothing was skipped silently.', 'error');
   }
   // ⚠️ WBSNAME is rebuilt by the same read, so it must be cleared with ACTS or a re-read after an
   //    import would keep naming branches the previous schedule's way.
