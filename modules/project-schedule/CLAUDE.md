@@ -6,12 +6,71 @@ too large to orient in. Entries older than 2026-09-04 moved **verbatim** into
 
 - ⚠️ **No duplication here.** The doubling that hit the root `CLAUDE.md` (a merge that kept both
   whole logs) never touched this file: **398 entries, 398 unique**. It only looked otherwise when
-  the splitter treated `### Verified` and `### The fix` as entry headings — entries are dated
+  the splitter treated `### ⚠️⚠️ AND THIS FILE ITSELF HELD A NUL BYTE
+Counting headings to check for merge-doubling returned *417 headings, 1 distinct* — impossible,
+and the tell that `grep` had switched to **binary mode**: `file` called this changelog **data**.
+One NUL at line 416, inside the entry **about a NUL byte**, where `tower + '\0' + level` was
+written with the raw control character rather than the escape. Third time in this repo.
+Replaced: **NUL 1 → 0**, the file is *UTF-8 text* again, and the honest count is **417
+headings / 345 distinct** (the repeats are sub-headings like `### Verified`, which is expected).
+⚠️ Every audit that has grepped this file since it appeared was reading nothing.
+
+### Verified` and `### The fix` as entry headings — entries are dated
   headings, sub-sections are not.
 - Verified against the pre-change file: unique dated headings **398 → 398, 0 lost**.
 - Nothing was summarised. Read `changelog/2026-08.md` and friends for anything older.
 
 ---
+
+### The toolbar face names the preset, and two icon-only buttons stop being identical (2026-09-14) — fmlozano
+
+Owner, two reports off the live OPW101 screen: *"In the toolbar when LSM is selected let's have the
+toolbar name dropdown also be named LSM not Tower > etc applies the same for other Presets"*, and,
+with a screenshot of the two buttons side by side, *"These two icons are identical might cause
+confusion"*.
+
+### The face said which DIMENSIONS, not which PRESET
+With LSM picked the grouping button read **"Tower › … › Unit (4)"** — the dimensions that
+preset happens to use, which is not what the planner chose. The Group menu was already highlighting
+LSM correctly, so the information existed; the face just never asked for it.
+
+- ⚠️⚠️ **The presets moved into ONE function, `groupPresets()`, rather than the face getting its own
+  copy.** The menu decides which preset is active and now the face names it, so two copies would be
+  two opinions about the same question — the drift this module has already paid for with the
+  S-curve maths and the identity matcher. `renderGroupMenu` reads it; the suite asserts it does,
+  so a second copy fails a test rather than shipping.
+- ⚠️⚠️ **The LSM preset only counts as live when the LAYOUT is on.** The same dims with the mode
+  off is an ordinary location-led grouping, and calling that "LSM" would be a lie — the name
+  refers to the layout, not the dimension list. `setGroupBys` already drops the mode when the
+  grouping stops being location-led, so the two cannot disagree.
+- ⚠️ **The full path still goes on the button's title**, so naming the preset hides nothing.
+
+### ⚠️⚠️ TWO ADJACENT ICON-ONLY BUTTONS DREW THE SAME GLYPH
+`#ps-lsmbtn` and `#ps-outlinebtn` sit next to each other and **both** carried `data-ico="layers"`.
+Neither has a label, so the icon was the only thing telling them apart. Worse than the same glyph on
+a labelled button (`#ps-groupbtn` also uses `layers`, but reads "WBS" beside it).
+
+Outline takes **`listView`** — three lines with leading bullet dots, which is literally what an
+outline is, and unmistakable against stacked diamonds. LSM keeps `layers`: stacked storeys is apt,
+and it matches the Group menu where the LSM preset lives.
+⚠️ **An existing glyph, deliberately.** Adding one to `icons.js` would bump a SHARED asset across
+21 pages for a two-button problem. ⚠️ Chosen by reading the path data, not the name: `org` sounds
+like a hierarchy and is actually a **buildings** shape (house outline plus window dots), which beside
+a tower schedule would have been worse than the duplicate.
+
+### Verified
+**675 assertions, 0 failing** (660 before). ⚠️⚠️ **The face block is CUT OUT OF THE SHIPPED
+`populateGroupSelect` AND EXECUTED**, never re-typed — this suite has already been caught passing a
+negative build because an assertion re-stated a condition instead of running it. **Two negative
+builds bite:** dropping the mode gate fails **2** (the same dims with the layout off wrongly read
+"LSM"), and stopping the face adopting the name fails **5**.
+⚠️ **The suite caught this change**: two assertions pinned to where the presets lived failed when
+they moved. **Retargeted, not weakened** — every property still asserted, plus a new one (the menu
+must read the single source).
+Both glyphs rendered against the real `icons.js`: **both present, geometry differs, both 15px**, so a
+misspelt name could not pass as a fix.
+⚠️ **Not verified signed in** — the Browser pane's session was lost and Claude in Chrome is not
+connected, so neither the face nor the icons have been seen on a loaded project.
 
 ### The floor labels crashed the site view: a collector declared after the loop that fills it (2026-09-14 b) — ethanrobles10
 
@@ -363,7 +422,7 @@ screen ends up showing a different drawing from the card it was opened from.
 somebody opens this next week and reports the site duplicated into forty rows they did not ask for.
 
 ### ⚠️⚠️ A NUL BYTE, WRITTEN INTO THE MODULE
-The first cut keyed "have I counted this tower's level yet" on `tower + ' ' + level`. The escape
+The first cut keyed "have I counted this tower's level yet" on `tower + '\0' + level`. The escape
 **landed in the file as a real control byte** — `grep` began reporting `modules/project-schedule/
 index.html` as a binary file, and an HTML document carrying a NUL is invalid. Replaced with a nested
 map (`seen[tower][level]`), which needs no delimiter at all and so cannot be wrong about what a tower

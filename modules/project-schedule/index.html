@@ -4221,7 +4221,7 @@
                "Activity › Location" — confirmed by the owner after the change. -->
           <button class="pd-btn ps-icobtn" id="ps-flowbtn" aria-label="Flowline" title="Flowline — the time-location chart: time across, storeys up, each trade a diagonal band whose slope is its production rate. The deck's own form; the LSM rows are the same model laid out as a Gantt."><span data-ico="trendingUp" data-ico-size="15"></span></button>
           <button class="pd-btn ps-icobtn" id="ps-lsmbtn" aria-label="LSM rows" title="LSM rows — the time-location layout: one row per storey, one bar per trade, the slope of the staircase being the production rate. Groups by location and collapses to one row per floor. The Group menu's &quot;LSM&quot; preset is the same thing; the Flowline button draws the same model as a time-location chart."><span data-ico="layers" data-ico-size="15"></span></button>
-          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-outlinebtn" aria-label="Outline" title="Outline — expand all, or collapse the whole schedule to one WBS level"><span data-ico="layers" data-ico-size="15"></span></button><div class="ps-menu" id="ps-outline-menu"></div></div>
+          <div class="ps-menu-wrap"><button class="pd-btn ps-icobtn" id="ps-outlinebtn" aria-label="Outline" title="Outline — expand all, or collapse the whole schedule to one WBS level"><span data-ico="listView" data-ico-size="15"></span></button><div class="ps-menu" id="ps-outline-menu"></div></div>
           <!-- Outline and Saved layouts used to be two more toolbar buttons here. They are sections of
                the View ▾ menu now: both answer "how am I looking at this schedule", the same question
                View already owns, and the row was two lines deep at laptop widths. See renderLayoutMenu. -->
@@ -10028,6 +10028,22 @@
        how fine it is. Four or more levels show BOTH ENDS and the depth instead. */
     var _face = _labels.length <= 3 ? _full
       : (_labels[0] + ' › … › ' + _labels[_labels.length - 1] + ' (' + _labels.length + ')');
+    /* ⚠️⚠️ A PRESET IS NAMED, NOT SPELLED OUT. Owner, 2026-09-14: with LSM picked the face
+       read "Tower › … › Unit (4)" -- the dimensions the preset happens to use, which is not
+       what the planner chose. When the active grouping IS a preset, the face is its name.
+       ⚠️ The LSM preset only counts as live when the LSM LAYOUT is actually on: the same dims
+       with the mode off is a location-led grouping and calling that "LSM" would be a lie.
+       ⚠️ The full path still goes on the title below, so nothing is hidden. */
+    var _pname = null;
+    try {
+      var _gp = groupPresets(), _gj = JSON.stringify(groupBys);
+      for (var _pi = 0; _pi < _gp.length; _pi++) {
+        if (JSON.stringify(_gp[_pi].dims) !== _gj) continue;
+        if (_gp[_pi].lsm && !_lsmRows) continue;
+        _pname = _gp[_pi].name; break;
+      }
+    } catch (e) { _pname = null; }
+    if (_pname) _face = _pname;
     if (t) t.textContent = _face;   // value only — see _paintViewBtn
     /* ⚠️ The face is capped at 190px and ellipsised, so a long path is TRUNCATED ON SCREEN. The
        whole thing goes on the title, or capping it would have hidden which grouping is live —
@@ -10171,6 +10187,43 @@
   }
   // The grouping picker: presets for the two layouts a planner actually switches between, plus a
   // free-form ordered list. Order IS the hierarchy, so each chosen level shows its position.
+  /* ⚠️ THE ONE PLACE THE PRESETS ARE DEFINED. The Group menu highlights the active preset and
+     the toolbar face NAMES it, so a second copy would let the two disagree about which preset
+     is live -- the drift this module has already paid for with the S-curve maths and the
+     identity matcher. Owner, 2026-09-14: the face must read "LSM", not the dimension path. */
+  function groupPresets() {
+    var locDims = LOC_LEVELS.map(function (l) { return 'loc:' + l.id; });
+      var _setupDims = [];
+      try { _setupDims = (typeof ScheduleBuilder !== 'undefined' && ScheduleBuilder.setupGroupDims) ? ScheduleBuilder.setupGroupDims() : []; } catch (e) { _setupDims = []; }
+      var presets = [
+        { name: 'Schedule Setup structure', dims: _setupDims },
+        { name: 'WBS tree (default)', dims: ['wbs'] },
+        // The swap the planners asked for: the ACTIVITY on top, its locations beneath it.
+        // ⚠️ No trailing 'wbs' — the location levels already say where the work is, so the WBS path
+        // underneath them was pure duplication in this view (owner's call after seeing it live).
+        /* ⚠️ SHORT NAMES, because the path is already on the row. Each preset renders its full
+           dimension list as a `.ps-gm-hint` underneath ("Activity › Tower › Level › Zone › Unit"),
+           so spelling the path out in the NAME too was the row saying the same thing twice — and it
+           made the menu read as four long sentences rather than four choices.
+           Owner, 2026-09-11, named these: *"WBS tree (default) · LSM · By Activity"*. */
+        /* ⚠️⚠️ THE "LSM" PRESET IS THE LSM LAYOUT, AND PICKING IT TURNS THE MODE ON.
+           Owner's call (2026-09-11) over a recommendation to keep the two apart, asked as *"Should we
+           toggle the LSM through the group -> LSM preset?"* — so the preset's dims are now what
+           the layout actually needs: LOCATION-LED, not the activity-led transpose it carried before.
+           That also makes the hint printed underneath it true again, which it would not be if the
+           preset kept its old dims and produced a different grouping.
+           ⚠️ `lsm: true` is read by the click handler below; it is not a dimension.
+           ⚠️⚠️ AND THE OLD DIMS ARE RENAMED, NOT DELETED. `['act'] + locDims` is a real
+           grouping somebody may be using today — Activity over its locations — and silently
+           removing it to free up a name would be a worse trade than one more row in this menu. It is
+           now called what it is. */
+        { name: 'LSM', dims: locDims, lsm: true },
+        { name: 'Activity › Location', dims: ['act'].concat(locDims) },
+        { name: 'By Activity', dims: ['work', 'act'].concat(locDims) }
+      ].filter(function (p) { return p.dims.length; });
+    return presets;
+  }
+
   function renderGroupMenu() {
     var m = document.getElementById('ps-group-menu'); if (!m) return;
     var locDims = LOC_LEVELS.map(function (l) { return 'loc:' + l.id; });
@@ -10178,34 +10231,7 @@
        already said how this project is organised, and a grouping menu that ignores it is a second
        opinion about the same decision. Hidden when there is no setup loaded or nothing resolves —
        never an empty or half-resolved preset. */
-    var _setupDims = [];
-    try { _setupDims = (typeof ScheduleBuilder !== 'undefined' && ScheduleBuilder.setupGroupDims) ? ScheduleBuilder.setupGroupDims() : []; } catch (e) { _setupDims = []; }
-    var presets = [
-      { name: 'Schedule Setup structure', dims: _setupDims },
-      { name: 'WBS tree (default)', dims: ['wbs'] },
-      // The swap the planners asked for: the ACTIVITY on top, its locations beneath it.
-      // ⚠️ No trailing 'wbs' — the location levels already say where the work is, so the WBS path
-      // underneath them was pure duplication in this view (owner's call after seeing it live).
-      /* ⚠️ SHORT NAMES, because the path is already on the row. Each preset renders its full
-         dimension list as a `.ps-gm-hint` underneath ("Activity › Tower › Level › Zone › Unit"),
-         so spelling the path out in the NAME too was the row saying the same thing twice — and it
-         made the menu read as four long sentences rather than four choices.
-         Owner, 2026-09-11, named these: *"WBS tree (default) · LSM · By Activity"*. */
-      /* ⚠️⚠️ THE "LSM" PRESET IS THE LSM LAYOUT, AND PICKING IT TURNS THE MODE ON.
-         Owner's call (2026-09-11) over a recommendation to keep the two apart, asked as *"Should we
-         toggle the LSM through the group -> LSM preset?"* — so the preset's dims are now what
-         the layout actually needs: LOCATION-LED, not the activity-led transpose it carried before.
-         That also makes the hint printed underneath it true again, which it would not be if the
-         preset kept its old dims and produced a different grouping.
-         ⚠️ `lsm: true` is read by the click handler below; it is not a dimension.
-         ⚠️⚠️ AND THE OLD DIMS ARE RENAMED, NOT DELETED. `['act'] + locDims` is a real
-         grouping somebody may be using today — Activity over its locations — and silently
-         removing it to free up a name would be a worse trade than one more row in this menu. It is
-         now called what it is. */
-      { name: 'LSM', dims: locDims, lsm: true },
-      { name: 'Activity › Location', dims: ['act'].concat(locDims) },
-      { name: 'By Activity', dims: ['work', 'act'].concat(locDims) }
-    ].filter(function (p) { return p.dims.length; });
+    var presets = groupPresets();
     var h = '<div class="ps-gm-sec">Presets</div>';
     presets.forEach(function (p, i) {
       var on = JSON.stringify(p.dims) === JSON.stringify(groupBys);

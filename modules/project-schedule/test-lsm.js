@@ -1503,10 +1503,69 @@ function grpRow(name, anc, acts, idx, field) {
   eq(Object.keys(R.ord[serKey]).length, 3, 'and the ordinals cover every storey');
 })();
 
+/* ====== THE TOOLBAR FACE NAMES THE ACTIVE PRESET (owner, 2026-09-14) ========================== */
+(function () {
+  const gpSrc = sliceFn('groupPresets') || '';
+  ok(gpSrc !== '', 'groupPresets is sliceable');
+
+  /* The REAL preset builder, executed against a two-level breakdown. */
+  function presetsWith(levels) {
+    const f = new Function('LOC_LEVELS', 'ScheduleBuilder',
+      gpSrc.replace(/^\s*function groupPresets\s*\(\)\s*\{/, '') .replace(/\}\s*$/, ''));
+    return f(levels, undefined);
+  }
+  const LV = [{ id: 'tower' }, { id: 'level' }];
+  const P = presetsWith(LV);
+  const byName = {};
+  P.forEach(function (p) { byName[p.name] = p; });
+  ok(!!byName['LSM'], 'the LSM preset is built');
+  eq(JSON.stringify(byName['LSM'].dims), JSON.stringify(['loc:tower', 'loc:level']),
+     'and it is location-led');
+  ok(byName['LSM'].lsm === true, 'and flagged as a mode');
+  ok(!!byName['WBS tree (default)'], 'the WBS preset is built');
+
+  /* ⚠️ THE SHIPPED FACE BLOCK, CUT OUT AND RUN. */
+  const pgs = sliceFn('populateGroupSelect') || '';
+  ok(pgs !== '', 'populateGroupSelect is sliceable');
+  const i = pgs.indexOf('var _pname = null;');
+  const j = pgs.indexOf('if (_pname) _face = _pname;');
+  ok(i > -1 && j > i, 'the face block is present in the shipped function');
+  const faceSrc = pgs.slice(i, j + 'if (_pname) _face = _pname;'.length);
+  ok(/_gp\[_pi\]\.lsm && !_lsmRows/.test(faceSrc),
+     'the LSM preset is gated on the LAYOUT actually being on');
+
+  function faceFor(groupBys, lsmOn, fallback) {
+    const f = new Function('groupPresets', 'groupBys', '_lsmRows', '_face',
+      faceSrc + '; return _face;');
+    return f(function () { return presetsWith(LV); }, groupBys, lsmOn, fallback);
+  }
+  const PATH = 'Tower \u203a Level';
+  eq(faceFor(['loc:tower', 'loc:level'], true, PATH), 'LSM',
+     'LSM picked + layout on  ->  the face reads LSM');
+  /* ⚠️⚠️ THE SAME DIMS WITH THE MODE OFF ARE NOT LSM. Calling that LSM would be a lie: it is an
+     ordinary location-led grouping, and the layout is what the name refers to. */
+  eq(faceFor(['loc:tower', 'loc:level'], false, PATH), PATH,
+     'same dims, layout OFF  ->  the face keeps the dimension path');
+  eq(faceFor(['act', 'loc:tower', 'loc:level'], false, PATH), 'Activity \u203a Location',
+     'the renamed preset is named too');
+  eq(faceFor(['wbs'], false, PATH), 'WBS tree (default)', 'and so is the default');
+  eq(faceFor(['status', 'loc:tower'], false, PATH), PATH,
+     'a grouping that is NOT a preset keeps its path');
+})();
+
 /* ============== THE GROUP PRESET IS THE TOGGLE (owner's call, 2026-09-11) ====================== */
 (function () {
-  const menu = sliceFn('renderGroupMenu') || '';
-  ok(menu !== '', 'renderGroupMenu is present');
+  const menu0 = sliceFn('renderGroupMenu') || '';
+  ok(menu0 !== '', 'renderGroupMenu is present');
+  /* ⚠️⚠️ THE PRESETS MOVED INTO groupPresets() so the toolbar FACE can name the active
+     one (owner, 2026-09-14). These assertions described where they lived, so they failed
+     -- retargeted, and made stricter: the menu must READ that one source rather than
+     carrying a second copy, which is the drift the extraction exists to prevent. */
+  const gp = sliceFn('groupPresets') || '';
+  ok(gp !== '', 'groupPresets() is the one place the presets are defined');
+  ok(/var presets = groupPresets\(\);/.test(menu0),
+     'and renderGroupMenu reads it rather than redefining them');
+  const menu = gp + menu0;
   /* The preset is the LAYOUT's grouping now, not the activity-led transpose. */
   ok(/\{ name: 'LSM', dims: locDims, lsm: true \}/.test(menu),
      'the LSM preset is LOCATION-LED and flagged as a mode');

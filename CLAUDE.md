@@ -102,6 +102,49 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-14 — The grouping face names the preset; two identical icon-only buttons separated
+
+Owner, from the live app: the toolbar read *"Tower › … › Unit (4)"* with **LSM** picked, and
+two adjacent icon-only buttons drew the same glyph. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+- ⚠️⚠️ **The presets became ONE function** (`groupPresets()`) read by both the menu and the face,
+  rather than the face getting a copy that could disagree about which preset is live.
+- ⚠️⚠️ **"LSM" is shown only when the LAYOUT is on** — the same dims with the mode off is an
+  ordinary location-led grouping, and naming that LSM would be false.
+- ⚠️⚠️ **`#ps-lsmbtn` and `#ps-outlinebtn` both drew `layers`, and neither has a label**, so the
+  icon was the only thing separating them. Outline takes `listView`; an EXISTING glyph, because a
+  new one in `icons.js` would bump a shared asset across 21 pages for a two-button problem.
+
+**675 assertions, 0 failing; two negative builds bite (2 and 5).** The face block is cut out of the
+shipped function and executed, not re-typed. wiring-check 126/0, dead-hooks 9 known, dark-remap 0,
+selectall-key 84/0 broken. `MODULE_V` → `20260914c`.
+
+⚠️ **Also this cycle, no shipped file changed:**
+- **The two frozen-column tables that had no rows on their landing pages are now measured, with REAL
+  labels** — both are drawn from fixed vocabularies in the shipped source, not project data, so a
+  fixture could not overstate them the way one overstated `.sc-table` by ~2.5x. `.pr-ttable`'s widest
+  is `metricLabel()`'s *"Manpower / Equipment"*: **187px, 13% of a 1440 pane, 21% at 900**.
+  `.pr-ed`'s is `MABBR[mo] + ' ' + year`, always 8 characters: **74–109px, 8–11%**. The 132px cap
+  engages at ≤700px. **Severity LOW**, and `.rl-matrix` remains unmeasured — its first column is
+  `esc(b.name)`, genuinely data-driven, so it needs a signed-in project.
+- ⚠️⚠️ **THE MODULE'S OWN CHANGELOG HELD A LITERAL NUL BYTE, AND `grep` HAS BEEN LYING ABOUT
+  IT EVER SINCE.** Found by accident while counting headings for the merge-doubling check: the
+  count said *417 headings, 1 distinct*, which is impossible. `file` called the file **data**, so
+  grep had silently switched to binary mode. One NUL at line 416 — inside the entry **about a
+  NUL byte**, where `tower + '\0' + level` was written with the raw control character instead of
+  the escape. Third occurrence of that trap here (`exactKey`, the 2026-09-10 (u1) draft, now
+  this), and the (u1) entry warns about it in as many words. Replaced with the escape: **NUL
+  1 → 0**, `file` now reads *UTF-8 text*, and the real heading count is **417 / 345 distinct**.
+  ⚠️ The root `CLAUDE.md` was already clean (234 / 234, 0 NUL).
+- ⚠️⚠️ **Reported, NOT actioned — an activity sitting outside every WBS branch.** Owner, of
+  `SB700002 Elevators`: *"why is elevator not part of any WBS is this an error?"* The grid emits a
+  synthetic **Execution Phase** wrapper under a location-led grouping, carves out non-Execution work
+  to render by its own WBS path, and files the rest by location; `dimValOf` gives a blank location a
+  named `— Unassigned —` bucket. So there are exactly **two** candidate causes — the activity
+  carries no location value, or its `wbs` is not under the Execution Phase code — and they are told
+  apart by data this session could not read. Not guessed at.
+
 ### The floor labels crashed the site view: a collector declared after the loop that fills it (2026-09-14) — ethanrobles10
 
 Owner, with a screenshot reading *"Could not draw this building in 3D: Cannot read properties of
