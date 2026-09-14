@@ -6,6 +6,60 @@ can't do that. One entry per prompt, newest first.
 
 ---
 
+## 2026-09-13 (d) — The daily cloud-message cap is role-based, not flat
+
+Owner: *"instead of 200 messages per user, limit this to 100 for admin and super-admin, while 50 for
+others."* Follow-up to the flat 200/day cap from earlier this week (2026-09-12 — *"the better the
+laptop, the worse the model"*), which was one number for every role sharing the one Groq account.
+
+`DAILY_REMOTE_CAP` splits into **`DAILY_REMOTE_CAP_ADMIN`** (100, env `PORMAC_DAILY_CAP_ADMIN`) and
+**`DAILY_REMOTE_CAP_USER`** (50, keeping the existing `PORMAC_DAILY_CAP` env name so nobody's already-set
+override silently stops applying).
+
+- ⚠️ **The role check goes through `is_admin()`, never a client-guessed or re-implemented rule.**
+  `is_admin()` is the same `security definer` SQL helper every RLS policy in this repo already trusts
+  for the admin/super_admin boundary (`u.role in ('admin','super_admin')`), called via
+  `asUser.rpc('is_admin')` — **as the caller**, exactly how `pormac_can_use()` is already called two
+  lines above it. Re-deriving the admin test inside the Edge Function would be a second copy of the
+  rule that could disagree with the database about who is an admin.
+- ⚠️ **Batched into the SAME `Promise.all` as the access check and the usage read** — `pormac_can_use`,
+  `is_admin` and the `pormac_usage` row are all independent of each other, so this is still one round
+  trip in front of the planner's first message, not three sequenced ones.
+- ⚠️⚠️ **A failed role check fails CLOSED to the smaller cap, not the larger one.** This is a rate limit,
+  not an authorization gate — the safe default when the role can't be determined is "assume the tighter
+  allowance," never "assume admin and hand out the bigger one." `isAdmin = !adminErr && isAdminRaw ===
+  true`, so an RPC error or a non-`true` value both land on `DAILY_REMOTE_CAP_USER`.
+- Every place that read the flat cap — the quota-exceeded message, the `probe` response, and the
+  success response's `remaining_today` — now reads the resolved `dailyCap` instead, so a viewer of the
+  tier bar sees the number that actually applied to them, not a stale flat figure.
+
+⚠️ **Still one shared Groq account underneath both tiers** — the split changes who gets how much of the
+one pool, not the size of the pool itself. The math from the earlier per-role-cap discussion still
+holds directionally: enough admins and users maxing out their own cap on the same day can still exceed
+Groq's own account-level daily ceiling on `llama-3.3-70b-versatile`, at which point the model chain does
+**not** paper over it (a 429/5xx from Groq does not advance to the next model, deliberately — see the
+`MODEL_DEAD` comment). Nothing in this change addresses that; it only makes the per-user share smaller
+and role-aware, which is what was asked.
+
+**Verified:** brace/paren/bracket balance holds (128/128, 55/55, 9/9), 0 NUL bytes; grepped the client
+module (`modules/pormac/module.js`) to confirm nothing there hardcodes the old flat 200 — it only ever
+reads `remaining_today` off the response, so no client change was needed.
+⚠️ **Not verified against a real deploy or a real request.** No `deno` binary is reachable from this
+environment to type-check the file, and there is no live Supabase session to confirm `is_admin()` is
+actually callable via PostgREST RPC for an `authenticated` caller — the repo's schema shows no `revoke`
+on it (Postgres grants `EXECUTE` to `PUBLIC` by default, and `pormac_can_use()` is called the identical
+way from the same file), so this is inferred from the schema rather than observed. The real test: once
+deployed, an admin account and a non-admin account should report 100 and 50 respectively in the tier
+bar's "N cloud messages left today," and the quota-exceeded message should name the right number for
+each.
+
+No migration — this is a code-only change to `pormac-chat`. Re-deploy the function
+(`supabase functions deploy pormac-chat --project-ref bgupuqnkqhixpuctyder`, or the new Deploy Edge
+Functions GitHub Action once merged) for it to take effect; the existing `pormac_usage` rows are
+untouched, since the cap is compared against `remote_calls`, not stored per row.
+
+---
+
 ## 2026-09-13 (c) — The deploy workflow this module's own log has flagged all week, actually built
 
 Follow-up to the (b) entry's own closing line: *"the workflow has to reach `main` before it can run —

@@ -237,6 +237,28 @@ landing on them. **Not verified signed in** — no WebGL frame has been seen.
 `MODULE_V` → `20260913k`. Detail:
 [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
 
+### Pormac's daily cloud-message cap becomes role-based: 100 for admin/super_admin, 50 for everyone else (2026-09-13)
+
+Owner: *"instead of 200 messages per user, limit this to 100 for admin and super-admin, while 50 for
+others."* Detail: [`modules/pormac/CLAUDE.md`](modules/pormac/CLAUDE.md).
+
+`pormac-chat`'s single flat `DAILY_REMOTE_CAP` (200) splits into two, env-tunable independently:
+`DAILY_REMOTE_CAP_ADMIN` (100) and `DAILY_REMOTE_CAP_USER` (50, keeping the existing `PORMAC_DAILY_CAP`
+env name). The admin/super_admin check goes through `is_admin()` — the same `security definer` SQL
+helper every RLS policy in this repo already trusts for that boundary — called as the caller, batched
+into the same round trip as the existing access check and usage read. ⚠️ A failed role check fails
+**closed to the smaller cap**, never the larger one, since this is a rate limit rather than an
+authorization gate.
+
+⚠️ Still one shared Groq account underneath both tiers — the split changes who gets how much of the one
+pool, not the pool's own size. Enough admins and users each maxing out their own cap on the same day can
+still exceed Groq's own account-level daily ceiling.
+
+No migration; code-only change to `pormac-chat`, needs a re-deploy to take effect.
+⚠️ **Not verified against a real deploy** — no `deno` binary or live Supabase session reachable from
+this environment; verified by brace balance, 0 NUL bytes, and confirming the client module never
+hardcodes the old flat number (it only reads `remaining_today` off the response).
+
 ### A GitHub Actions workflow deploys the Edge Functions; laptop-only deploy is gone (2026-09-13)
 
 Follow-up to Pormac's own log, which has flagged this gap for a day: `pormac-chat` sat undeployed
