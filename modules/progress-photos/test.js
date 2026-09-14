@@ -4543,9 +4543,57 @@ console.log('\n[misc] insert().select() returns the new row id');
      !/globalCompositeOperation = idx2 === 0 \? 'source-over' : 'destination-over';/.test(p3js) &&
      /var feathered = featheredFrame\(cylFrames\[frameIdx\], pi > 0, pi < lastPi, FEATHER_FRAC\);/.test(p3js) &&
      /featherMat = cv\.imread\(feathered\);/.test(p3js));
-  ok('…ORB feature matching still runs against the PRISTINE frames (rawMats), never the feathered copies — feathering only touches what gets drawn, not what gets matched',
-     /var rawMats = cylFrames\.map\(function \(f\) \{ return cv\.imread\(f\); \}\);/.test(p3js) &&
-     /homographyBetween\(rawMats\[anchor\], rawMats\[c\]\)/.test(p3js));
+  ok('…ORB feature matching still runs against the PRISTINE frames (rawMats), never the feathered copies — feathering only touches what gets drawn, not what gets matched (2026-09-14: matching now goes through a per-frame feature cache, featuresFor(idx) -> computeFeatures(rawMats[idx]), rather than calling homographyBetween(rawMats[...]) directly, but rawMats — never the feathered copies — is still the only thing ORB ever sees)',
+     /rawMats\.push\(cv\.imread\(warpedCanvas\)\);/.test(p3js) &&
+     /featureCache\[idx\] = computeFeatures\(rawMats\[idx\]\);/.test(p3js) &&
+     /matchAndHomography\(featuresFor\(anchor\), featuresFor\(c\)\)/.test(p3js));
+
+  console.log('\n[55b] 2026-09-14 (review pass — "review 360 processing code to improve and optimize"): ORB feature detection split out of the pairwise match step and cached per frame index, so the join-search loop stops recomputing the SAME anchor frame\'s keypoints/descriptors on every one of up to JOIN_LOOKAHEAD candidate attempts');
+
+  ok('pano360.js: computeFeatures(mat) does ONLY the grayscale+ORB half (cv.cvtColor + orb.detectAndCompute), and deliberately does NOT delete the kp/desc it returns — the caller (the feature cache) owns their lifetime now, not this function',
+     /function computeFeatures\(mat\) \{/.test(p3js) &&
+     /cv\.cvtColor\(mat, gray, cv\.COLOR_RGBA2GRAY, 0\);/.test(p3js) &&
+     /orb\.detectAndCompute\(gray, mask, kp, desc\);/.test(p3js) &&
+     /return \{ kp: kp, desc: desc \};/.test(p3js));
+  ok('…matchAndHomography(prevFeat, curFeat) does ONLY the match/RANSAC/plausibility half, taking two ALREADY-COMPUTED feature sets — no cv.cvtColor, no new cv.ORB, anywhere in its body',
+     /function matchAndHomography\(prevFeat, curFeat\) \{/.test(p3js) &&
+     /matcher\.knnMatch\(prevFeat\.desc, curFeat\.desc, knn, 2\);/.test(p3js) &&
+     (function () {
+       var start = p3js.indexOf('function matchAndHomography(prevFeat, curFeat) {');
+       var end = p3js.indexOf('\n  function homographyBetween', start);
+       var body = p3js.slice(start, end);
+       return !/cv\.cvtColor/.test(body) && !/new cv\.ORB/.test(body);
+     })());
+  ok('…homographyBetween(prevMat, curMat) — the exported, backward-compatible single-pair function — is now a THIN WRAPPER: computeFeatures both sides, matchAndHomography once, delete both feature sets itself (nothing to cache across a single call)',
+     /function homographyBetween\(prevMat, curMat\) \{/.test(p3js) &&
+     /prevFeat = computeFeatures\(prevMat\);/.test(p3js) &&
+     /curFeat = computeFeatures\(curMat\);/.test(p3js) &&
+     /return matchAndHomography\(prevFeat, curFeat\);/.test(p3js) &&
+     /prevFeat\.kp\.delete\(\); prevFeat\.desc\.delete\(\);/.test(p3js) &&
+     /curFeat\.kp\.delete\(\); curFeat\.desc\.delete\(\);/.test(p3js));
+  ok('…stitchFrames\' own lookahead loop calls matchAndHomography(featuresFor(...)) — it never calls homographyBetween itself, which would silently reintroduce the per-candidate recomputation this whole change exists to remove',
+     !/homographyBetween\(rawMats\[anchor\]/.test(p3js) &&
+     /var res = matchAndHomography\(featuresFor\(anchor\), featuresFor\(c\)\);/.test(p3js));
+  ok('…every cached feature set is deleted exactly once in stitchFrames\' own cleanup, alongside rawMats — a frame skipped over by the lookahead search still had its features computed (and cached) the moment it was first tried, so it must still be cleaned up even though it was never placed',
+     /Object\.keys\(featureCache\)\.forEach\(function \(k\) \{/.test(p3js) &&
+     /featureCache\[k\]\.kp\.delete\(\); \} catch \(e\) \{\}/.test(p3js) &&
+     /featureCache\[k\]\.desc\.delete\(\); \} catch \(e\) \{\}/.test(p3js));
+  ok('pano360.js exports the two new pure/near-pure pieces as test-only hooks, same convention as every other pano360 hook',
+     /_computeFeatures: computeFeatures,/.test(p3js) &&
+     /_matchAndHomography: matchAndHomography/.test(p3js));
+  ok('the frame-warping loop that used to be TWO separate synchronous .map() passes with no yield at all is now ONE for-loop, yielding between frames — the one stretch of this pipeline that had no yieldToUI() call before this pass',
+     /for \(var wf = 0; wf < frames\.length; wf\+\+\) \{/.test(p3js) &&
+     /var warpedCanvas = cylindricalWarpFrame\(frames\[wf\], cylMaps\);/.test(p3js) &&
+     /cylFrames\.push\(warpedCanvas\);/.test(p3js) &&
+     (function () {
+       var start = p3js.indexOf('for (var wf = 0; wf < frames.length; wf++) {');
+       var end = p3js.indexOf('\n    } finally {\n      cylMaps.mapX.delete()', start);
+       return end > start && /await yieldToUI\(\);/.test(p3js.slice(start, end));
+     })());
+  ok('…a Mat-reuse variant (skip the second cv.imread by handing back cylindricalWarpFrame\'s own intermediate dst Mat) was tried, measured against a REAL OpenCV.js build, and DELIBERATELY NOT KEPT — it produced a small but real and repeatable divergence in the final mosaic\'s pixel dimensions versus the untouched code, for a measured ~2% extra speed on top of the caching change alone; cylindricalWarpFrame therefore still deletes dst and returns a bare canvas',
+     /cylindricalWarpFrame\(frameCanvas, maps\) \{/.test(p3js) &&
+     /return out;\n    \} finally \{ src\.delete\(\); dst\.delete\(\); \}/.test(p3js) &&
+     /it was NOT pixel-\n  \/\/ identical/.test(p3js));
 
   console.log('\n[56] 2026-09-12 (later still): the stitcher now samples frame density from the video\'s own duration, and the chain SKIPS a frame with too little overlap rather than forcing a bad join');
   console.log('[56b] 2026-09-12 (later still): sampling density raised to 30fps (frames = 30 * duration) so consecutive frames overlap enough to join across the WHOLE recording, not just a fraction of it');
