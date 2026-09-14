@@ -102,6 +102,42 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### Pormac gets a Portfolio scope: a checkbox that grounds it in every project, not one (2026-09-14)
+
+Owner: *"in portfolio, pormac should be able to answer based on data from all projects on the
+list."* Detail: [`modules/pormac/CLAUDE.md`](modules/pormac/CLAUDE.md).
+
+Pormac's own sidebar link opens the same module page from both the Project and Portfolio nav, and
+until now every context provider gated on "a specific project is selected" — so asked from the
+Portfolio side of the app, it had nothing grounded to answer from at all, or a stale project's
+figures left over from `pd_project` sessionStorage. A new **Portfolio (all projects)** checkbox next
+to the project select switches every provider to answering across every project the planner can see;
+arriving via the Portfolio sidebar now ticks it by default (a `#pmc_scope=portfolio` hash on that one
+link), so the literal ask is the default, not a control to go find.
+
+⚠️⚠️ `assets/js/db.js`'s `PDb.moduleMetrics(spec, projectId)` now also accepts an **array** of project
+ids (`.in(...)` instead of `.eq(...)`), which is the one shared-file change this needed — Pormac's
+`dash`-spec-derived providers were already calling it per project, so portfolio-wide grounding is one
+argument, not a second aggregation engine. The Project Dashboard tile, the only other caller, still
+passes a bare id and is unaffected.
+
+⚠️ The checkbox is deliberate, not a third value inside the project `<select>` — that select goes
+through the shared `UI.enhanceProjectSelect()` popover (every other module's own project filter uses
+it too), whose row list only offers real projects; a sentinel value would render as the button's
+starting label and then be unreachable again once any real project had been picked.
+
+**Verified:** `node --check` on every touched `.js` file; brace/paren balance and 0 NUL bytes hold;
+`db.js`/`ui.js`/`modules-grid.js` each confirmed at one version across every referencing page before
+and after the bump (25 / 23 / 2 pages).
+⚠️⚠️ **Not verified signed in** — no live login is possible in this environment, so the portfolio-wide
+queries have never executed against a real database and the checkbox has never been clicked for real.
+
+`assets/js/db.js?v=` → `20260914d` (25 pages, shared); `assets/js/ui.js?v=` → `20260914d` (23 pages,
+shared); `assets/js/modules-grid.js?v=` → `20260914t` (2 pages, MODULE_V fallback too, since Pormac's
+`index.html` changed structurally; re-derived past main's own concurrent `20260914s` after rebasing
+this branch onto it — see [[concurrent-sessions]]); Pormac's own `module.js`/`module.css`/`index.html`
+→ `20260914d`.
+
 ### 2026-09-14 (t) — The end-to-end run redone with Auto-trace actually pressed
 
 Owner: *“Let's redo the whole process from scratch. Make sure that the zone and trade sequence is

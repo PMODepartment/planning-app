@@ -214,8 +214,13 @@
     //     { key:'finish', agg:'max', column:'end_date' },
     //     { key:'poc',    agg:'wavg', column:'percent_complete', weight:'duration_days' } ] }
     //
+    // ⚠️ `projectId` may be a single id (the normal, single-project case — dashboard.html's
+    // tile) OR an array of ids (a portfolio-wide read across every project the caller can
+    // see, e.g. Pormac's "Portfolio (all projects)" scope). A single-element array reads
+    // identically to a bare id, so no existing caller's behaviour changes.
     async moduleMetrics(spec, projectId) {
-      if (!spec || !spec.table || !projectId || (!(spec.metrics && spec.metrics.length) && !spec.recent)) return {};
+      var ids = Array.isArray(projectId) ? projectId.filter(Boolean) : (projectId ? [projectId] : []);
+      if (!spec || !spec.table || !ids.length || (!(spec.metrics && spec.metrics.length) && !spec.recent)) return {};
       var col = spec.projectCol || 'project_id';
       // Only what the spec asked for — plus id, which selectAll paginates on.
       var want = { id: 1 };
@@ -247,7 +252,7 @@
       }
       var rows;
       try {
-        rows = await PDb.selectAll(spec.table, function (q) { return q.eq(col, projectId); },
+        rows = await PDb.selectAll(spec.table, function (q) { return ids.length === 1 ? q.eq(col, ids[0]) : q.in(col, ids); },
           Object.keys(want).join(','));
       } catch (e) {
         // A metric spec naming a column the project's database does not have yet is a spec/migration

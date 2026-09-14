@@ -6,6 +6,130 @@ can't do that. One entry per prompt, newest first.
 
 ---
 
+## 2026-09-14 — Portfolio scope: Pormac can answer across every project, not just one
+
+Owner: *"in portfolio, pormac should be able to answer based on data from all projects on the
+list."*
+
+### ⚠️⚠️ "NO PROJECT SELECTED" WAS THE ONLY STATE PORTFOLIO NAVIGATION COULD REACH, AND IT MEANT "NO GROUNDING"
+Pormac's link renders first in **both** sidebars (2026-09-12) — but `ui.js`'s portfolio-mode branch
+has no `PORTFOLIO_TAB` entry for `pormac`, so clicking it just opens the same module page project
+mode does, with whatever `pd_project` sessionStorage happens to hold (a shared, app-wide key — often
+still the last project the planner was looking at before switching to the Portfolio nav, sometimes
+empty). Every context provider gates on `needsProject && !pid`, so a planner asking a portfolio
+question from the Portfolio side of the app got either a stale single project's figures or nothing
+grounded at all — never the portfolio.
+
+### A checkbox, not a third `<select>` value
+**New `#pmc-portfolio`** beside the project select — checking it sets `portfolioAll = true` and
+disables the select (mutual exclusivity enforced by the browser, not by extra code).
+
+⚠️⚠️ **Deliberately NOT a sentinel option inside `#pmc-project`.** That select goes through the
+shared, app-wide `UI.enhanceProjectSelect()` — the same convention every other module's project
+filter uses — which hides the native `<select>` (`display:none !important`) and replaces it with a
+popover whose row list (`renderNavListInto`) is built from **real projects only**, plus a fixed
+"Portfolio" row that **navigates away** to `portfolio-overview/index.html`. A sentinel value with no
+matching project would render correctly as the button's *starting* label (exactly how "General (no
+project selected)" already behaves today) but be **unreachable again once any real project had been
+picked** — there is no row in the popover that could select it back. A plain checkbox beside the
+select has none of that trap: always visible, always clickable, native keyboard/tap semantics, no
+change to the widely-shared `enhanceProjectSelect`/`renderNavListInto` that fourteen other modules
+also rely on.
+
+### Arriving from the Portfolio sidebar defaults to Portfolio scope
+`ui.js`'s `renderNav('portfolio', …)` now gives Pormac's own row a dedicated `pormacRow()` builder
+(rather than the generic `pmodRow()` every other module's row goes through) that appends
+`#pmc_scope=portfolio` to its href. `Pormac.init()` reads that hash once, at load, and pre-checks the
+box — so the literal ask ("in portfolio…") is the *default* reached with zero clicks, not a control
+the planner has to go find, while still leaving it a real toggle they can turn off.
+
+⚠️ The hash is read **only** because nothing else distinguishes "arrived via the Portfolio sidebar"
+from "arrived via a project's own module grid" — `pd_project` sessionStorage is shared and mutable,
+and the shared sidebar renderer (`UI.renderNav`) always renders a MODULE page under `mode:'project'`
+regardless of which nav family linked to it (MODULE_CONTRACT.md's own convention), so the page itself
+carries no other signal.
+
+### `PDb.moduleMetrics` accepts an array of project ids
+`assets/js/db.js` — `projectId` may now be a single id (unchanged, every existing caller) **or** an
+array, read via `.in(col, ids)` instead of `.eq(col, id)`. This is the one place that needed to change
+to make portfolio-wide grounding possible at all: Pormac's context providers are built entirely from
+`APP_CONFIG.MODULES`' own `dash` specs through `PDb.moduleMetrics`, so aggregating across the
+portfolio is one array argument, not a second aggregation engine — the same `wavg`/`sum`/`groupSpan`
+arithmetic runs over a wider row set, under the caller's own RLS (which already limits `.in(...)` to
+projects the planner can see).
+
+⚠️ A single-element array behaves byte-identically to the old bare-id call (`ids.length === 1 ?
+q.eq(...) : q.in(...)`), so `dashboard.html`'s own tile — the only other caller — is untouched.
+
+### Portfolio mode across every provider
+- **`moduleProviders()`** (the `dash`-spec-derived providers — schedule, risk, contracts, cash flow,
+  etc.): `portfolioAll ? allProjectIds() : pid`, and `summarizeDash` says *"recorded across every
+  project you can see"* rather than a bare count that could be mistaken for one project's.
+- **Procurement (WPM mirror)**: `needsProject:false` already, so it always ran; the single-project
+  match attempt is now skipped outright when Portfolio is checked (asking for a match it was never
+  going to want first is a wasted round trip), and the fallback wording distinguishes "portfolio-wide
+  because nothing could be confirmed" from "portfolio-wide, as asked."
+- **Engineering design progress**: the one provider that needed real thought. ⚠️⚠️ **Listing every
+  row** (every tower of every project) would have been the single largest context block Pormac
+  produces, on a portfolio with more than a couple of projects, crowding out every other module's
+  context out of the same `ctxCap` budget. It groups by `project_id` instead — one line per project,
+  that project's own average `percent_complete` — capped at 12 projects with a "+N more" tail, the
+  same "top N" discipline `summarizeDash`'s own lists already use.
+- **`gatherContext`'s `needsProject` gate**: Portfolio satisfies it too (`!pid && !portfolioAll`,
+  not `!pid` alone) — Portfolio *is* a project scope (every project at once), not the absence of one.
+- **`projectLabel()`**: checked first, before reading the (now disabled, and left showing whatever it
+  last did) select — otherwise the context block's opening line would read a stale single project's
+  name while every provider had already switched to answering across all of them. Prints `Scope:
+  Portfolio — every project you can see (N projects)` rather than `Project: …`.
+
+### Conversations: Portfolio shares the "no project" bucket, not a project_id of its own
+`pormac_conversations.project_id` is a foreign key to `projects(id)` — there is no schema slot for
+"this thread was asked across the portfolio," and adding one is a migration nobody asked for here.
+Both `loadConversation()`'s read (`pid && !portfolioAll`) and `persistTurn()`'s write
+(`portfolioAll ? null : pid`) treat Portfolio identically to General (no project selected): `pid`
+could still be holding a stale real id while Portfolio is checked (the select is disabled, not reset —
+see below), so every read of it for scoping purposes checks `portfolioAll` first, never `pid`'s own
+truthiness alone.
+
+⚠️ **The select is disabled, not reset to blank, when Portfolio is checked.** Turning Portfolio back
+off returns the planner to whichever project they had chosen before, with nothing to re-pick. The
+visible cost: while Portfolio is checked, the (greyed-out) select still shows that old project's name
+rather than "General" — cosmetic only, since every functional read of scope already checks
+`portfolioAll` ahead of `pid`.
+
+### Verified
+- `node --check` on `module.js`, `db.js`, `ui.js`, `modules-grid.js` — all parse.
+- Brace/paren balance holds on every touched file; 0 NUL bytes.
+- Traced every remaining `pid` reference in the file after the change (grep, by hand) and confirmed
+  each site that scopes a query checks `portfolioAll` before falling back to `pid` — the one bug shape
+  this change could plausibly introduce (a stale `pid` leaking through while Portfolio is checked) and
+  the one deliberately guarded against everywhere.
+- `PDb.moduleMetrics`'s array-vs-single-id branch reasoned through by hand for the one other caller
+  (`dashboard.html`'s Project Dashboard tile, always a bare id — unaffected) and for an empty-array
+  edge case (zero visible projects: `ids.length` guard returns `{}`, same as "no spec").
+- `db.js`/`ui.js`/`modules-grid.js` version-audited: **one `?v=` each across every referencing page**
+  (25 / 23 / 2), 0 splits, confirmed both before and after the bump.
+
+⚠️⚠️ **Not verified signed in, and this is the change that most needs it.** No live login is possible
+from here, so nothing above has been driven against a real portfolio: the `.in(project_id, ids)`
+queries have never executed against a real database, the checkbox has never been clicked in a real
+browser, and the `#pmc_scope=portfolio` hash has never been followed from a real Portfolio sidebar
+click. The first real test: open Pormac from the Portfolio nav, confirm the checkbox is already
+ticked and the select disabled, ask a schedule question, and check the reply's context chips and the
+"Scope: Portfolio — every project you can see (N projects)" line both name more than one project's
+worth of data.
+
+⚠️ **Deliberately not built:** a per-project breakdown for every `dash`-spec provider (only the
+engineering mirror groups by project; the rest report one portfolio-wide aggregate, matching how
+`moduleMetrics` has always answered — one number, not a table); and resetting the project `<select>`'s
+displayed value when Portfolio is checked (kept as-is so unchecking it needs no re-pick — see above).
+
+`assets/js/db.js` → `?v=20260914d` (25 pages); `assets/js/ui.js` → `?v=20260914d` (23 pages);
+`assets/js/modules-grid.js` → `?v=20260914d` (2 pages, MODULE_V fallback too); Pormac's own
+`module.js`/`module.css`/`index.html` → `?v=20260914d`.
+
+---
+
 ## 2026-09-13 (d) — The daily cloud-message cap is role-based, not flat
 
 Owner: *"instead of 200 messages per user, limit this to 100 for admin and super-admin, while 50 for
