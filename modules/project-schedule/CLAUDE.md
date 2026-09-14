@@ -218,6 +218,123 @@ headings / 345 distinct** (the repeats are sub-headings like `### Verified`, whi
 
 ---
 
+### Five solid red blocks in one bar, and a pane with no edge above it (2026-09-14) — fmlozano
+
+Owner: *"toolbar UI needs to be properly reworked. Main toolbar does not [have] a divider with the
+vertical stacking toolbar."* Plus: verify the side-panel clipping **on all modes**.
+
+### ⚠️⚠️ The bar was not too big. It had five maximum-emphasis marks and no entry point
+
+`.ps-vs-seg > button.on` was `background:var(--pd-red); color:#fff` — and this bar carries **five
+segmented controls that each always show exactly one active button**: scope, 2D/3D, Detail, Dates,
+Show. So the row rendered **five solid brand-red blocks at once**, every time, whatever the planner
+had chosen. Nothing was wrong with any one of them; with five things shouting, none of them is
+emphasis. That is what reads as "a wall of controls", and it is why the earlier passes that removed
+*words* from this bar did not fix the feeling — the noise was never the word count.
+
+**Measured in a browser, before and after, on the shipped stylesheet:**
+
+| | before | after |
+|---|---|---|
+| controls in the pane with a solid brand-red fill | **5** | **0** |
+| active-state contrast, light | **4.12:1** — below AA | **5.11:1** |
+| active-state contrast, dark | **4.12:1** | **6.76:1** |
+| `.ps-vstack` top border | `0px none` | `1px solid var(--pd-line)` |
+
+⚠️ **The old state also failed AA.** White on `#EE3124` is 4.12:1, under the 4.5 threshold for
+normal text — so this was never only a taste question. `dashboard.css`'s own token comment already
+said as much about brand red at this size; the segmented control had just never been held to it.
+
+⚠️ **THE TREATMENT IS THE APP'S OWN, NOT A NEW ONE.** `.pd-seg-multi > button.on` in the shared
+`dashboard.css` settled this already: the tint carries the state, a 2px red underline keeps the
+brand cue, the ink stays readable, and dark mode overrides the ink to `#FF8A80` because
+`--pd-red-dark` is only **2.64:1** on the dark tint. Those exact values are reused here, and the
+suite asserts the two rules still agree — if they ever diverge, the app is back to two different
+segmented-active states, which is the inconsistency this removes. Copied rather than shared as a
+class because `.ps-vs-seg` has its own sizing and overflow.
+
+⚠️ `--pd-red-light` **is** theme-remapped (`#FDECEA` light / `#3D1A19` dark), so the tint follows
+the theme. A fixed light tint here would have been the `.ps-fmt` *"why is there light colors?"* bug
+all over again.
+
+⚠️ **The scrubber keeps its solid red, deliberately.** `.ps-vs-fz-scrub .ps-vs-seg button.on` sits
+on the focus window's **scrim over the 3D stage**, not on a card — a tint designed to read against
+`--pd-card` all but disappears there. It is also more specific, so it wins without `!important`.
+Documented in place so the next pass does not "finish the job".
+
+### The divider
+
+`.ps-vstack` was padding and nothing else, so the pane's trade chips began 12px under the module
+toolbar with no edge between them and the two bars read as one three-row control block. It now
+carries `border-top:1px solid var(--pd-line); margin-top:4px; padding-top:14px`.
+
+⚠️ **On the pane, not under the toolbar.** `.ps-toolbar` is shared by every view in this module
+(grid, network, progress, flow line); a bottom border there would rule off views that have no
+second bar to be divided *from*. The pane that introduces its own toolbar is what owes the reader
+an edge.
+
+### Verifying the clipping on all modes — and the one that was never a bug
+
+The previous pass (`f494c81`) fixed a sticky sidebar and a 3D canvas 419px wider than its box, and
+its note said *"four things decide the class now"*. Enumerating from the source rather than from
+that function: there are **four** `ps-*-mode` classes, and `_psSyncLongDoc` names **three**.
+
+**`ps-net-mode` is the missing one, and withholding the class is correct.** It hides `.ps-split`
+exactly like the other three, so it looks like a fourth long document — but its own rule gives
+`.ps-network` `flex:1 1 auto; min-height:0; overflow:hidden`, which **fills the viewport and clips
+internally instead of growing the page**. `.ps-longdoc` exists only to let `.pd-content` grow so a
+sticky sidebar has travel; a pane that never grows does not need it, and giving it the class would
+switch `.pd-content` to `height:auto` for a view that wants to be exactly one viewport tall.
+Asserted **both ways**: the class is withheld, *and* the CSS that makes withholding it correct is
+still present — so if `overflow:hidden` is ever removed from that rule, the suite fails and says why.
+
+All **15** mode × tab states executed against the sliced `_psSyncLongDoc`; 15/15 as expected.
+
+### ⚠️ Found, named, not fixed: this file declares the same rules twice
+
+Measured: **14 rule lines are byte-identical** across two interleaved regions (~1529-1810 and
+~1829-2262) — `.ps-vstack`, `.ps-vs-bar`, `.ps-vs-note`, `.ps-vs-chips`, `.ps-vs-chip`,
+`.ps-vs-chip.on`, `.ps-vs-dot`, `.ps-vs-towerh` and friends. They are identical **today**, so
+nothing renders wrong; the hazard is entirely for the next editor, who can change one of them, see
+no effect, and conclude the CSS is not loading.
+
+Not deduplicated here: the regions are interleaved rather than one pasted block (the later one also
+carries rules the earlier never had), so reconciling them is its own careful diff and not something
+to do inside a toolbar change. A warning block now sits at the head of the earlier region naming
+every affected rule, and the divider is deliberately declared **after both copies** — the suite
+asserts that ordering, because a new property added to the earlier copy would work today only
+because the later copy happens not to set it.
+
+### Verified
+
+**33 assertions** executing `_psSyncLongDoc` sliced from the shipped file and parsing the shipped
+`<style>` blocks, with a **contrast build pinned to `f494c81`** (not `HEAD:`, which stops being the
+pre-change state the moment this commits) failing **11** of them — exactly the active-state and
+divider groups. Section A passes in both builds, correctly: it verifies existing behaviour rather
+than new.
+
+Browser measurements taken against a harness whose CSS is the **shipped `<style>` block extracted
+verbatim**, not re-typed — the last time a control was verified against a hand-copied shell, two of
+the host's own rules never applied and it passed on a layout that overlapped in the real app.
+
+⚠️ **Two measurement traps hit and corrected in the doing.** (1) Reading `getComputedStyle` in the
+same JS turn as a class change returned stale values. (2) More seriously, **a hidden Browser pane
+serves stale computed styles, not just void geometry** — it reported the dark tint on a light-themed
+root while `--pd-red-light` on the same element computed to `#FDECEA`. The dark figures above were
+taken while visible; the light ones are arithmetic on the token values, and they agree with both the
+browser's dark reading and `dashboard.css`'s own recorded 5.11 / 2.64.
+
+⚠️ The raw `{`/`}` count in this file does not balance and **never did** — one `{` inside a CSS
+comment. With comments stripped it balances exactly (2172 → 2174, +2 open, +2 close). The
+comments-stripped count is the honest gate; the suite asserts the raw imbalance is still exactly
+one, so nobody chases it as a regression.
+
+⚠️ **Not verified signed in** — no project loaded, so the bar was measured on its real CSS with
+reproduced markup rather than against live data.
+
+`MODULE_V` → `20260914zvs`. ⚠️ Sort-checked against the current `20260914x`: a natural-looking
+`20260914vsbar` would have sorted **backwards** (`v` < `x`), which is the regression this repo has
+already had once.
 ### The typical set carries real chart codes, and a strange code is flagged (2026-09-14) — fmlozano
 
 Owner, after the DEMO01 end-to-end run: *“Both — re-seed and flag”*.

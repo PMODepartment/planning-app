@@ -102,6 +102,53 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-14 (zvs) — The Vertical Stacking bar had five red blocks and no edge above it
+
+Owner: *"toolbar UI needs to be properly reworked. Main toolbar does not [have] a divider with the
+vertical stacking toolbar"*, plus: verify the side-panel clipping **on all modes**. Module only —
+detail in [`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+- ⚠️⚠️ **THE BAR WAS NOT TOO BIG — IT HAD FIVE MAXIMUM-EMPHASIS MARKS AND NO ENTRY POINT.**
+  `.ps-vs-seg > button.on` was a solid `--pd-red` fill with white text, and the bar carries **five
+  segmented controls that each always show exactly one active button** (scope, 2D/3D, Detail, Dates,
+  Show). So it rendered **five solid brand-red blocks at once**, always. That is why the earlier
+  passes that removed *words* from this bar never fixed the feeling: the noise was never the word
+  count. Measured, before → after: **5 → 0** solid-red controls in the pane.
+- ⚠️ **AND THE OLD STATE FAILED AA.** White on `#EE3124` is **4.12:1**, under the 4.5 threshold for
+  normal text — so this was never only a taste question. The new state measures **5.11:1 light /
+  6.76:1 dark**.
+- ⚠️ **The treatment is the app's own, not a new one.** `.pd-seg-multi > button.on` in the shared
+  `dashboard.css` settled this already — tint carries the state, a 2px red underline keeps the brand
+  cue, and dark mode overrides the ink to `#FF8A80` because `--pd-red-dark` is only **2.64:1** on the
+  dark tint. Those exact values are reused, and the suite asserts the two rules still agree, or the
+  app is back to two different segmented-active states.
+- ⚠️ **The 3D scrubber keeps its solid red, deliberately** — it sits on a scrim over the stage, not
+  on a card, where a tint all but disappears. Documented in place so the next pass does not flatten it.
+- **The divider** is `border-top` on `.ps-vstack`, ⚠️ **not** on `.ps-toolbar`: that bar is shared by
+  every view in the module, and a rule there would divide off views that have no second bar.
+- ⚠️⚠️ **"Verify on all modes" found a fourth mode — and the answer is that it is correctly
+  excluded.** Enumerating from the source rather than from the function under test: there are **four**
+  `ps-*-mode` classes and `_psSyncLongDoc` names **three**. `ps-net-mode` hides `.ps-split` like the
+  others, but its own rule makes `.ps-network` `flex:1 1 auto; overflow:hidden` — it **fills** the
+  viewport and clips internally instead of growing the page, and `.ps-longdoc` exists only to let the
+  page grow. Asserted **both ways**, so removing that `overflow:hidden` later fails the suite and says
+  why. All **15** mode × tab states executed: 15/15.
+- ⚠️ **Found, named, not fixed:** `modules/project-schedule/index.html` declares **14 rule lines
+  twice**, byte-identical, across two interleaved CSS regions. Identical today so nothing renders
+  wrong — the hazard is the next editor changing one copy and seeing no effect. A warning block now
+  names every affected rule, and the new divider is declared **after both copies**, which the suite
+  asserts.
+- **Verified: 33 assertions** with a contrast build **pinned to `f494c81`** failing 11 — exactly the
+  active-state and divider groups. Browser measurements taken against a harness whose CSS is the
+  **shipped `<style>` block extracted verbatim**, after the last hand-copied-shell harness passed on a
+  layout that overlapped in the real app.
+- ⚠️ **A hidden Browser pane serves stale computed styles, not just void geometry** — it reported the
+  dark tint on a light-themed root while the token on that same element computed light. Caught because
+  the harness refuses to report when `visibilityState !== 'visible'`; the light figures are arithmetic
+  on the token values and agree with both the browser's dark reading and `dashboard.css`'s own
+  recorded 5.11 / 2.64.
+- ⚠️ Not verified signed in. `MODULE_V` → `20260914zvs`, **sort-checked** against the current
+  `20260914x` — a natural `20260914vsbar` would have sorted backwards.
 ### Pormac gets a Clear history button (2026-09-14)
 
 Owner: *"provide also option to clear history."* Detail: [`modules/pormac/CLAUDE.md`](modules/pormac/CLAUDE.md).

@@ -1642,6 +1642,17 @@
     .pscl-mo > i { display:block; width:100%; background:var(--pd-red); border-radius:3px 3px 0 0; min-height:0; }
     .pscl-mo > span { margin-top:4px; font-size:var(--pd-fs-micro); color:var(--pd-muted); white-space:nowrap;
       transform:rotate(-45deg); transform-origin:center; width:26px; text-align:center; }
+    /* ⚠⚠ SEVERAL RULES IN THIS BLOCK ARE DECLARED A SECOND TIME FURTHER DOWN (~1829-2262), and
+       the later copy is the one that wins. Measured 2026-09-14: 14 rule lines are byte-identical
+       across the two regions -- `.ps-vstack`, `.ps-vs-bar`, `.ps-vs-note`, `.ps-vs-chips`,
+       `.ps-vs-chip`, `.ps-vs-chip.on`, `.ps-vs-dot`, `.ps-vs-towerh` and friends. They are
+       identical TODAY, so nothing renders wrong; the hazard is entirely for the next editor, who
+       can change one of them here, see no effect, and conclude the CSS is not loading.
+       ⚠ Not deduplicated in this pass: the two regions are interleaved rather than one pasted
+         block (the later one also carries rules the earlier one never had), so reconciling them is
+         its own careful diff and not something to do inside a toolbar change.
+       ⚠ UNTIL THEN: edit the LAST occurrence of any rule named above. Rules that appear only once
+         -- `.ps-vs-seg`, `.ps-vs-seg > button`, `.ps-vs-sel`, `.ps-vs-warn` -- are safe here. */
     .pscl-phase .pscl-note { padding:0 12px 10px; }
     .ps-vs-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
     .ps-vs-note { font-size:var(--pd-fs-sm); color:var(--pd-muted); }
@@ -1661,7 +1672,26 @@
     .ps-vs-seg > button { border:0; background:var(--pd-card); color:var(--pd-ink); font:inherit; font-size:var(--pd-fs-sm);
       padding:6px 11px; cursor:pointer; border-right:1px solid var(--pd-line); }
     .ps-vs-seg > button:last-child { border-right:0; }
-    .ps-vs-seg > button.on { background:var(--pd-red); border-color:var(--pd-red); color:#fff; font-weight:700; }
+    /* ⚠⚠ THE ACTIVE RUNG IS A TINT AND AN UNDERLINE, NOT A SOLID RED BLOCK -- and this is the
+       whole of the owner's *"toolbar UI needs to be properly reworked"* (2026-09-14).
+       This bar carries FIVE segmented controls that are each always showing one active button
+       (scope, 2D/3D, Detail, Dates, Show), so `background:var(--pd-red); color:#fff` put FIVE
+       solid brand-red blocks in one row at once. Nothing was wrong with any one of them; the
+       problem was that with five maximum-emphasis marks competing, none of them is emphasis and
+       the eye has no entry point -- which is exactly what reads as "a wall of controls".
+       ⚠ THE TREATMENT IS THE APP'S OWN, NOT A NEW ONE. `.pd-seg-multi > button.on` in the shared
+         dashboard.css settled this already: the tint carries the state, a 2px red underline keeps
+         the brand cue, and the ink stays readable. Its contrast is MEASURED in both themes --
+         5.11:1 light, and 6.76:1 dark via the #FF8A80 override below, because --pd-red-dark is
+         only 2.64:1 on the dark tint. (dashboard.css quotes 6.2 for #FF8A80, but that is on a
+         CARD; on this tint it measures 6.76 -- same ink, different ground.) Copying the values
+         rather than the class because `.ps-vs-seg` has
+         its own sizing and overflow; if these two ever need to differ, say why here.
+       ⚠ `--pd-red-light` IS theme-remapped (#FDECEA light / #3D1A19 dark), so the tint follows the
+         theme. A fixed light tint here would be the `.ps-fmt` "why is there light colors?" bug. */
+    .ps-vs-seg > button.on { background:var(--pd-red-light); color:var(--pd-red-dark);
+      box-shadow:inset 0 -2px 0 var(--pd-red); font-weight:700; }
+    html.pd-dark .ps-vs-seg > button.on { color:#FF8A80; }
     /* HOLLOW, not merely inert. Owner 2026-09-07: *"if the per tower or consolidate option is
        chosen, can you at least hollow the options for the other levels of details."* Right - the
        `disabled` attribute stops the click but leaves the button looking live, and a control that
@@ -1827,6 +1857,21 @@
        Same "panel replaces the split" behaviour as Activity Progress. Card + cell styling is
        deliberately close to the Schedule Setup's Stacking step so the two read as one idea. */
     .ps-vstack { padding:12px 14px 20px; }
+    /* ⚠⚠ THE RULE BETWEEN THE MODULE TOOLBAR AND THIS PANE. Owner 2026-09-14: *"Main toolbar
+       does not [have] a divider with the vertical stacking toolbar."* Correct -- `.ps-vstack` was
+       padding and nothing else, so the pane's own trade chips began 12px under the module's
+       toolbar with no edge between them, and the two toolbars read as one 3-row control block.
+       ⚠ ON THE PANE, NOT UNDER THE TOOLBAR. `.ps-toolbar` is shared by every view in this module
+         (grid, network, progress, flow line); a bottom border there would draw a rule under the
+         toolbar in views that do not have a second bar to be divided FROM. The pane that
+         introduces its own toolbar is the thing that owes the reader an edge.
+       ⚠ The margin is what makes it a divider rather than a box edge: without it the rule sits
+         tight against the chips and reads as the top of a card.
+       ⚠ DECLARED HERE, AFTER the older duplicate of `.ps-vstack` at ~1529 -- see the duplication
+         note on that block. A new property added to the earlier copy would work today only because
+         the later copy happens not to set it, which is not a thing to rely on. */
+    .ps-vstack { border-top:1px solid var(--pd-line); margin-top:4px; padding-top:14px; }
+
     /* ---- The TIME BAR under the stack ------------------------------------------------------
        Owner 2026-08-26: drag the line and the stacking re-reads at that date, so the building
        fills up as you move through the programme. */
@@ -2096,6 +2141,11 @@
        playback speed rather than a second date filter. */
     .ps-vs-fz-speed { width:auto; min-width:104px; max-width:140px; height:auto; min-height:28px;
       font-size:var(--pd-fs-xs); padding:4px 7px; flex:0 0 auto; }
+    /* ⚠ SOLID RED IS KEPT HERE, DELIBERATELY, and it is the one exception to the tint treatment
+       the bar above now uses. This segment sits on the focus window's SCRIM over the 3D stage, not
+       on a card: `--pd-red-light` is a tint designed to read against `--pd-card`, and over a dark
+       scrim it all but disappears. The rule is also more specific than `.ps-vs-seg > button.on`,
+       so it wins without !important. Do not "finish the job" by flattening this one too. */
     .ps-vs-fz-scrub .ps-vs-seg button.on { background:var(--pd-red); color:#fff; }
     /* The play/pause glyph is drawn, not typed: ▶/⏸ render at wildly different sizes across the
        fonts this app ships with, and one of them is a colour emoji on Windows. */
