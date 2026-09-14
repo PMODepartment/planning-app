@@ -3318,13 +3318,25 @@ window.ProgressPhotos = (function () {
     // spacing, tuned generously now that the strip's own height is no
     // longer spoken for.
     'header{background:#fff;color:#231F20}' +
-    'header .dl-hdrbody{padding:18px 22px 14px}' +
+    // ⚠️ Real defect found live (2026-09-14) — see ppr.js's identical
+    // `.hdrbody` fix for the full writeup: `<header>` had no width cap of its
+    // own, so it did not line up with `.wrap`/`.dl-pagegroup` below it on any
+    // window wider than ~1180px. `.dl-hdrbody` now shares `.wrap`'s own
+    // max-width+centering formula (never a second, guessed number).
+    'header .dl-hdrbody{max-width:1180px;margin:0 auto;padding:18px 22px 14px}' +
     'header h1{margin:0;font-size:21px;letter-spacing:.01em;font-weight:700}' +
     'header p{margin:3px 0 0;font-size:13px;color:#6b6b6b;line-height:1.3}' +
     '.wrap{max-width:1180px;margin:0 auto;padding:18px}' +
     // Item 1 (2026-09-11): `.dl-pagegroup` wraps one `.dl-slide` + its own
     // footer as a single page-break unit — see ppr.js's identical
     // `.pagegroup` comment for the full reasoning.
+    //
+    // ⚠️ This base "card + separate footer strip" look is what the PDF export
+    // still uses (unchanged, approved — `exportSelectedPdf()` shares this
+    // same DL_CSS). The offline HTML export's OWN look is overridden by
+    // `DL_PAGECARD_CSS`, below — appended only to the offline-export's own
+    // `<style>` tag, never to the PDF capture's — see ppr.js's identical
+    // `EXPORT_PAGECARD_CSS` for the full writeup.
     '.dl-pagegroup{position:relative}' +
     '.dl-slide{background:#fff;border:1px solid #DCDBDB;border-radius:4px;padding:12px 14px;margin-bottom:10px}' +
     // `break-after`/`page-break-after` is kept for a real browser printing
@@ -3380,7 +3392,33 @@ window.ProgressPhotos = (function () {
   // with photos "unnecessarily small" per that half-width column. Kept as a
   // SEPARATE fragment, appended only to the offline-HTML export's own CSS
   // (dlBodyHTML's caller) — never to the PDF capture's `wrap`.
-  var DL_MOBILE_CSS = '@media (max-width:820px){.dl-pair,.dl-pair.dl-single{grid-template-columns:1fr}}';
+  //
+  // ⚠️⚠️ A second, distinct bug (2026-09-14, same root cause as ppr.js's own
+  // EXPORT_MOBILE_CSS — see that comment for the full live-measured writeup):
+  // a bare `@media (max-width:820px)`, with no `screen` qualifier, also
+  // matches during PRINT — and a standard PORTRAIT A4/Letter page's usable
+  // content width is under 820px. Printing (or "Save as PDF") the saved
+  // offline HTML file therefore silently collapsed Previous/Current to one
+  // column too, roughly doubling each page's height and pushing the footer
+  // onto its own page 2. `screen and` scopes this breakpoint to on-screen
+  // viewing only (an actual phone browser), so it can never fire during
+  // print/PDF regardless of paper size or orientation.
+  var DL_MOBILE_CSS = '@media screen and (max-width:820px){.dl-pair,.dl-pair.dl-single{grid-template-columns:1fr}}';
+  // ⚠️⚠️ Real defect found live (2026-09-14) — see ppr.js's identical
+  // `EXPORT_PAGECARD_CSS` for the full writeup. `.dl-slide`'s own bordered
+  // card, immediately followed by `<footer>` as a plain un-boxed sibling
+  // with a visible gap, reads as two disconnected fragments rather than one
+  // complete page. HTML-EXPORT-ONLY, deliberately kept out of DL_CSS itself
+  // — the PDF export shares DL_CSS byte-for-byte and is already approved
+  // with the base "card + separate footer" look; this fragment is appended
+  // only to the offline export's own `<style>` tag, never to
+  // `exportSelectedPdf()`'s `wrap`. Moves the white background/border/radius
+  // from `.dl-slide` onto `.dl-pagegroup` instead, so the footer sits flush
+  // inside the same bordered card as its bottom section.
+  var DL_PAGECARD_CSS =
+    '.dl-pagegroup{background:#fff;border:1px solid #DCDBDB;border-radius:4px;overflow:hidden;margin-bottom:16px}' +
+    '.dl-slide{background:transparent;border:0;margin-bottom:0}' +
+    '@media print{.dl-pagegroup{border:0}}';
   // ⚠️ PDF-capture-only override (2026-09-11/12) — see ppr.js's identical
   // `EXPORT_PDF_CSS`/`layoutPagegroups()` for the full root-cause writeup.
   // Neutralizes `.dl-pagegroup`'s own `page-break-after` back to `auto`
@@ -3474,7 +3512,7 @@ window.ProgressPhotos = (function () {
     var html = '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" />' +
       '<meta name="viewport" content="width=device-width, initial-scale=1" />' +
       '<title>' + Fmt.esc(projName || pid) + ' — Progress Photos</title>' +
-      '<style>' + DL_CSS + DL_MOBILE_CSS + '</style></head><body>' + dlBodyHTML(list, res.imgs, logo, tagline) + '</body></html>';
+      '<style>' + DL_CSS + DL_MOBILE_CSS + DL_PAGECARD_CSS + '</style></head><body>' + dlBodyHTML(list, res.imgs, logo, tagline) + '</body></html>';
     var blob = new Blob([html], { type: 'text/html;charset=utf-8' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
