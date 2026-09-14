@@ -84,7 +84,6 @@ window.Pormac = (function () {
         sessionStorage.setItem('pd_project', pid || '');
         loadConversation();
       };
-      $('pmc-portfolio').onchange = function (e) { setPortfolioAll(e.target.checked); loadConversation(); };
     } catch (e) {
       // A planner can still chat without a project selected — this only
       // costs project-scoped grounding, never the chat itself.
@@ -121,25 +120,31 @@ window.Pormac = (function () {
       }).join('');
     UI.enhanceProjectSelect(sel);
 
-    // ⚠️⚠️ ARRIVING FROM THE PORTFOLIO SIDEBAR DEFAULTS TO PORTFOLIO SCOPE.
-    // `ui.js`'s `renderNav('portfolio', …)` puts this hash on Pormac's own
-    // link for exactly this reason — `pd_project` sessionStorage is shared
-    // app-wide and, arriving here from the Portfolio nav, usually still holds
-    // whatever project the planner was last looking at, which is a worse
-    // default than "answer across everything" when the planner explicitly
-    // came from the portfolio-wide side of the app.
-    if (/(^|[#&])pmc_scope=portfolio(&|$)/.test(location.hash)) {
-      $('pmc-portfolio').checked = true;
-      setPortfolioAll(true);
-    }
+    // ⚠️⚠️ SCOPE IS NOW DERIVED SOLELY FROM HOW THE PLANNER ARRIVED, NOT A
+    // CONTROL THEY SET. `ui.js`'s `renderNav('portfolio', …)` puts this hash
+    // on Pormac's own Portfolio-sidebar link, and — per MODULE_CONTRACT.md —
+    // that is the ONE signal distinguishing "opened from the Portfolio nav"
+    // from "opened from a project's own module grid" (a module page always
+    // renders under `mode:'project'` in `UI.renderNav` regardless of which
+    // nav family linked to it, so `pd_project` sessionStorage cannot tell the
+    // two apart on its own). A checkbox here used to let a planner flip that
+    // scope mid-session — removed 2026-09-14 (owner: "no need for the
+    // portfolio checkbox") because the whole point is that the answer's basis
+    // should follow WHERE Pormac was opened from, not a toggle somebody could
+    // leave in the wrong position and not notice.
+    if (/(^|[#&])pmc_scope=portfolio(&|$)/.test(location.hash)) setPortfolioAll(true);
   }
 
-  // One writer for the portfolio-scope flag and the controls it affects, so
-  // the checkbox, the (disabled) project select and `portfolioAll` cannot
-  // drift out of sync the way three separate call sites would risk.
+  // One writer for the portfolio-scope flag and the project select it hides,
+  // so the two cannot drift out of sync the way two separate call sites would
+  // risk. ⚠️ Hidden, not merely disabled — with no toggle left to turn
+  // Portfolio back off, a visible-but-unusable select would just be a control
+  // that does nothing, where the earlier checkbox-driven design at least gave
+  // a reason to keep it in view (disabled, so it still answered "why can't I
+  // pick a project right now").
   function setPortfolioAll(on) {
     portfolioAll = !!on;
-    $('pmc-project').disabled = portfolioAll;
+    $('pmc-project').style.display = portfolioAll ? 'none' : '';
   }
 
   // ==========================================================================
@@ -803,12 +808,11 @@ window.Pormac = (function () {
   // for a 1–3B local model's context window.
   // The project the planner has selected, named the way the picker names it —
   // read off the live <select> so it cannot disagree with what is on screen.
-  // ⚠️ Portfolio checked wins over whatever the (disabled) select still shows
-  // — the select is deliberately left holding its last real value rather than
-  // reset to blank when Portfolio is ticked (see `setPortfolioAll`), so
-  // reading it here without checking `portfolioAll` first would report a
-  // stale single project while every context provider had already switched
-  // to answering across all of them.
+  // ⚠️ Portfolio scope wins over whatever the (hidden) select still shows —
+  // it is left holding its last real value rather than reset to blank (see
+  // `setPortfolioAll`), so reading it here without checking `portfolioAll`
+  // first would report a stale single project while every context provider
+  // had already switched to answering across all of them.
   function projectLabel() {
     if (portfolioAll) return 'Portfolio — every project you can see (' + PROJECTS.length + ' projects)';
     var sel = $('pmc-project');
@@ -1040,7 +1044,7 @@ window.Pormac = (function () {
         ? 'Ask me anything across the portfolio — I’ll answer using data from every project you can see. Everything you ask here stays in one running conversation — scroll back any time.'
         : pid
         ? 'Ask me anything about this project. Everything you ask here stays in one running conversation — scroll back any time.'
-        : 'Pick a project above for grounded answers, tick Portfolio (all projects) for a portfolio-wide answer, or ask a general question.');
+        : 'Pick a project above for grounded answers, or ask a general question.');
       return;
     }
     if (truncated) pushMessage('system', 'Showing the most recent ' + MSG_CAP + ' messages of this conversation.');

@@ -6,6 +6,64 @@ can't do that. One entry per prompt, newest first.
 
 ---
 
+## 2026-09-14 (c) — The Portfolio checkbox is gone: scope now follows how the module was opened, with nothing to flip
+
+Owner: *"remove the portfolio checkbox. when pormac is in project, discuss only based on project
+data. when pormac is in portfolio, answer based on all projects. no need for the portfolio
+checkbox."*
+
+⚠️⚠️ **The checkbox was never the only signal — it was a REDUNDANT, reversible one sitting on top
+of a signal that already existed and was already correct.** The 2026-09-14 (a) entry below built
+`#pmc_scope=portfolio` on Pormac's own Portfolio-sidebar link (`ui.js`'s `pormacRow`) specifically
+*because* `pd_project` sessionStorage is shared app-wide and cannot by itself say whether a
+planner opened Pormac from a project's own module grid or from the cross-project Portfolio nav.
+That hash was always the real answer to "which context is this"; the checkbox only ever set its
+*default* state on load, and it happened to also let a planner turn Portfolio scope back off
+mid-session — which the owner is now saying should not be possible at all. If Pormac is opened
+from the Portfolio side, the answer should be portfolio-wide, full stop; there being a control
+that could quietly leave it unchecked (or checked from a stale click) is the very failure mode
+"no need for the checkbox" is naming.
+
+- **`#pmc-portfolio` is deleted** from `index.html`, `module.js` and `module.css` — markup,
+  `onchange` wiring, and the `.pmc-portfolio-toggle` styling all removed rather than left dead.
+- **`loadProjects()` reads the hash once, on load, and calls `setPortfolioAll(true)` directly** —
+  no checkbox left to check or read state from. There is no code path left that can set
+  `portfolioAll` back to `false` once it is `true`; the only way to get project scope is to open
+  Pormac from a project's own module grid in the first place, which is exactly the owner's rule.
+- ⚠️ **`setPortfolioAll` now HIDES `#pmc-project` outright (`display:none`) rather than disabling
+  it.** Disabling it was the checkbox-era answer — a visible-but-inert control still explained
+  itself (*"why can't I pick a project? because Portfolio is ticked"*) to a planner who could
+  un-tick it. With no toggle left to act on that explanation, a disabled select is just a dead
+  control taking up the topbar; hiding it says the same thing (nothing to pick, because
+  everything is in scope) without inviting a click that goes nowhere.
+- **The empty-state hint** (`renderMessages`, no-project case) drops its *"tick Portfolio (all
+  projects) for a portfolio-wide answer"* clause — nothing on screen can be ticked any more, and
+  a planner reaching that empty state has already, by construction, opened Pormac from the
+  project side (the portfolio branch of that same conditional is unreachable with the checkbox
+  gone: `portfolioAll` is decided before the thread ever renders empty).
+- ⚠️ **Everything downstream of `portfolioAll` is untouched, deliberately.** `loadConversation`,
+  `clearHistory`, `moduleProviders`/`mirrorProviders`, `gatherContext`, `projectLabel` and
+  `persistTurn` all already branched correctly on the flag; none of them cared HOW it got set.
+  Removing the checkbox is entirely a UI change to the one place that set it, not a change to
+  what the flag means anywhere it is read.
+- ⚠️ **The 2026-09-14 (a) entry's own case for a checkbox over a sentinel `<select>` option is now
+  moot rather than wrong** — that reasoning (a sentinel value being unreachable once a real
+  project is picked, inside `UI.enhanceProjectSelect()`'s popover) explained why a *reversible*
+  toggle needed its own control. With scope no longer reversible at all, there is nothing left
+  needing either shape of control.
+
+**Verified:** `node --check` on `module.js`; CSS brace balance holds (unchanged shape, minus the
+removed rules); 0 NUL bytes; `node tools/wiring-check.js` **126/126, 0 failed**, 0 version splits
+across 3,566 cross-module references. `grep` confirms zero remaining references to `#pmc-portfolio`
+or `.pmc-portfolio-toggle` in any file.
+⚠️ **Not verified signed in** — no live login is possible in this environment, so the hash-driven
+scope has not been exercised against a real Portfolio-sidebar click; the hash detection itself
+is unchanged from (a), which was already the load-bearing mechanism.
+
+Pormac's own `module.js`/`module.css`/`index.html` → `?v=20260914zx`;
+`assets/js/modules-grid.js` → `?v=20260914zx` (2 pages, MODULE_V fallback too; re-derived past
+main's own concurrent `20260914zvs4` after rebasing this branch onto it).
+
 ## 2026-09-14 (b) — Clear history: a trash button, and it deletes every row this scope's thread merges
 
 Owner: *"provide also option to clear history."*
