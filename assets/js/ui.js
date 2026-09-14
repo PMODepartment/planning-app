@@ -403,10 +403,23 @@
         return '<a href="' + href + '" title="' + esc(m.name) + (tab ? ' — portfolio-wide' : '') + '">' +
           '<span class="pd-navico" data-ico="' + esc(m.icon) + '"></span><span class="pd-navtxt">' + esc(m.name) + '</span></a>';
       }
+      // ⚠️⚠️ Pormac has no PORTFOLIO_TAB entry — it is one module page reused
+      // in both modes, not a cross-project view of its own — so `pmodRow`
+      // would otherwise link it to the exact same URL as the project-mode
+      // sidebar does. Reached from THIS row, `pd_project` sessionStorage
+      // (shared app-wide) may still hold whatever project the planner was
+      // last looking at, which is a worse default than portfolio-wide when
+      // the click came from the Portfolio nav specifically. The hash is read
+      // once, on load, by `Pormac.init` — see modules/pormac/module.js.
+      function pormacRow(m) {
+        var href = (window.ModulesGrid ? base + ModulesGrid.href(m) : base + m.path) + '#pmc_scope=portfolio';
+        return '<a href="' + href + '" title="' + esc(m.name) + ' — portfolio-wide">' +
+          '<span class="pd-navico" data-ico="' + esc(m.icon) + '"></span><span class="pd-navtxt">' + esc(m.name) + '</span></a>';
+      }
       html = '<div class="pd-navsec">Portfolio</div>' +
         '<a href="' + base + 'projects.html"' + cls('projects') + ' title="Projects">' +
           '<span class="pd-navico" data-ico="grid"></span><span class="pd-navtxt">Projects</span></a>' +
-        (pPormac ? pmodRow(pPormac) : '') +
+        (pPormac ? pormacRow(pPormac) : '') +
         '<a href="' + poBase + '"' + cls('portfolio-dashboard') + ' title="Portfolio Dashboard">' +
           '<span class="pd-navico" data-ico="barChart"></span><span class="pd-navtxt">Dashboard</span></a>' +
         // ⚠️⚠️ MILESTONES HAS NO MODULE, so `pmods` below cannot produce it — it is a
