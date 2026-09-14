@@ -65,6 +65,15 @@
 }
 .pmc-portfolio-toggle input { margin: 0; }
 .pmc-project:disabled { opacity: .55; cursor: not-allowed; }
+/* ⚠️ `margin-left: auto` pins it to the row's trailing edge — a destructive
+   control belongs at arm's length from the project picker it sits beside,
+   not adjacent enough to be a mis-click while switching projects.
+   ⚠️ `height` is explicit for the same reason `.pd-toolbar-right .pd-icon-btn`
+   states its own: an icon button with no height collapses to its bare glyph
+   and rides high in a row of 34px controls — `.pmc-clearbtn` sits outside
+   that toolbar class, so it needs the same fix repeated here. */
+.pmc-clearbtn { flex: none; margin-left: auto; width: 34px; height: 34px;
+  display: inline-flex; align-items: center; justify-content: center; }
 
 @media (max-width: 700px) {
   /* On a phone the bar is already wrapping; a control pinned right ends up

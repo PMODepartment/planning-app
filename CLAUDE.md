@@ -102,6 +102,26 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### Pormac gets a Clear history button (2026-09-14)
+
+Owner: *"provide also option to clear history."* Detail: [`modules/pormac/CLAUDE.md`](modules/pormac/CLAUDE.md).
+
+A trash-icon button beside the project select clears the current scope's conversation
+(project, General, or Portfolio) after a confirm. ⚠️⚠️ It deletes **every**
+`pormac_conversations` row for that scope — not only the canonical one — using the identical
+scope predicate `loadConversation()` reads with, since that function merges every row for a
+scope and deleting only the canonical one would let an older row silently resurface as "the"
+conversation on the next load. `pormac_messages` cascades on delete, so no separate delete or
+policy is needed there. `.eq('created_by', profile.id)` keeps an admin's click scoped to their
+own conversation, matching the read side's own guard.
+
+**Verified:** `node --check`, brace balance, `node tools/wiring-check.js` 126/126, 0 version
+splits. ⚠️ Not verified signed in.
+
+Pormac's own `module.js`/`module.css`/`index.html` → `?v=20260914w`;
+`assets/js/modules-grid.js` → `?v=20260914w` (2 pages, MODULE_V fallback too; re-derived past
+main's own concurrent `20260914v` after rebasing this branch onto it).
+
 ### 2026-09-14 (u) — Two buttons drawing one glyph, a Towers row listing floors, and a label torn off its control
 
 Owner, from the live app with two screenshots: *“1. These two icons are the same. let's fix
@@ -207,7 +227,6 @@ rows. The lever with precedent is folding the low-frequency controls behind the 
 **Display ▾** pattern (2026-09-10 collapsed 21 controls that way). That changes **where a planner
 finds a control**, so it is the owner's call rather than my judgement — the measurements above are
 the evidence for it.
-
 
 ### Pormac gets a Portfolio scope: a checkbox that grounds it in every project, not one (2026-09-14)
 

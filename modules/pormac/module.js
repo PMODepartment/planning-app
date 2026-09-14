@@ -70,6 +70,12 @@ window.Pormac = (function () {
       this.style.height = 'auto';
       this.style.height = Math.min(160, this.scrollHeight) + 'px';
     });
+    // ⚠️ Wired here, not inside the `loadProjects()` try block below, for the
+    // same reason the composer handlers are: it needs `pid`/`portfolioAll`
+    // and `profile`, none of which depend on the project list ever loading,
+    // so a failed fetch must not also take away the one way to clear a stuck
+    // or unwanted thread.
+    $('pmc-clear').onclick = clearHistory;
 
     try {
       await loadProjects();
@@ -217,6 +223,50 @@ window.Pormac = (function () {
     }
   }
 
+
+  // Owner, 2026-09-14: "provide also option to clear history." Deletes every
+  // `pormac_conversations` row for the CURRENT scope (this project, General,
+  // or Portfolio — General and Portfolio share the same NULL-project bucket,
+  // same as everywhere else this module reads/writes that scope) rather than
+  // only the canonical row `loadConversation()` picked.
+  //
+  // ⚠️⚠️ DELETING ONLY `conversationId` WOULD LEAVE THE THREAD COMING BACK.
+  // `loadConversation()` merges EVERY conversation row for this scope, not
+  // just the canonical one — a leftover from before this module converged on
+  // "one conversation per project" (2026-09-12). Deleting the single
+  // canonical row and reopening the module would silently resurrect whatever
+  // older row was next in line, which reads as "clear history did nothing."
+  // The delete uses the identical scope predicate `loadConversation()` reads
+  // with, so the two can never disagree about what "this conversation" means.
+  //
+  // ⚠️ `pormac_messages.conversation_id` is `references … on delete cascade`
+  // (migrations/2026-09-12-pormac.sql), and a foreign-key cascade runs at the
+  // constraint level rather than through the deleting role's own RLS — so
+  // deleting the conversation rows here is enough; no separate messages
+  // delete or policy is needed.
+  //
+  // ⚠️ `.eq('created_by', profile.id)` is not redundant with the table's own
+  // delete policy (`created_by = auth.uid() OR is_admin()`) — without it an
+  // admin's "clear history" would delete every planner's conversation for
+  // this scope, not just their own.
+  async function clearHistory() {
+    var scopeLabel = portfolioAll ? 'the portfolio-wide conversation'
+      : pid ? 'this project’s conversation' : 'the general conversation';
+    if (!confirm('Clear ' + scopeLabel + '? This deletes it for everyone who can see this project — it cannot be undone.')) return;
+    try {
+      var q = sb().from('pormac_conversations').delete().eq('created_by', profile.id);
+      q = (pid && !portfolioAll) ? q.eq('project_id', pid) : q.is('project_id', null);
+      var { error } = await q;
+      if (error) throw error;
+      convToken++;              // drop any in-flight loadConversation() for the old state
+      conversationId = null;
+      chatHistory = [];
+      renderMessages();
+      UI.toast('Cleared ' + scopeLabel + '.', 'ok');
+    } catch (e) {
+      UI.toast('Could not clear history (' + ((e && e.message) || e) + ').', 'warn');
+    }
+  }
 
   // ==========================================================================
   // Capability detection + tiered model selection

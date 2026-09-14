@@ -6,6 +6,64 @@ can't do that. One entry per prompt, newest first.
 
 ---
 
+## 2026-09-14 (b) — Clear history: a trash button, and it deletes every row this scope's thread merges
+
+Owner: *"provide also option to clear history."*
+
+A **🗑 trash** icon button in the topbar, beside the project select and the Portfolio checkbox,
+that clears the CURRENT scope's conversation — this project, General, or Portfolio (General and
+Portfolio still share the one NULL-`project_id` bucket, as everywhere else in this module).
+Confirm-gated (`confirm()`, this app's standing convention for a destructive action with no
+undo — risk-register and issues-lessons both use it the same way), then deletes and resets the
+thread to the same empty-state message a brand-new project shows.
+
+⚠️⚠️ **Deleting only `conversationId` would have left the thread coming back.** Since 2026-09-12
+`loadConversation()` reads and merges **every** `pormac_conversations` row for this scope — a
+leftover from before this module converged on "one conversation per project," kept so that
+threads made by the old, removed "New chat" button still surface. Deleting just the row
+`loadConversation()` currently treats as canonical and reopening the module would have silently
+resurrected whichever older row was next by `updated_at`, which reads as "clear history did
+nothing." `clearHistory()` therefore deletes with the **identical scope predicate**
+`loadConversation()` reads with (`project_id = pid`, or `is null` for General/Portfolio) — the two
+can never disagree about what "this conversation" means, because they are the same clause.
+
+⚠️ **`pormac_messages` needs no delete call of its own.** Its FK is
+`references pormac_conversations(id) on delete cascade`
+(`migrations/2026-09-12-pormac.sql`), and a foreign-key cascade runs at the constraint level
+rather than through the deleting role's own RLS — so removing the conversation rows here is
+sufficient, and there is correctly no delete policy on `pormac_messages` for a client to need.
+
+⚠️ **`.eq('created_by', profile.id)` is not redundant with the table's own delete policy**
+(`created_by = auth.uid() OR is_admin()`) — without it, an admin's own "clear history" click
+would delete every planner's conversation for that scope, not only their own. It is the same
+guard `loadConversation()`'s read already carries, for the same reason.
+
+⚠️ **Wired OUTSIDE the `loadProjects()` try block, beside the composer handlers, not beside the
+project-select/Portfolio-checkbox handlers it sits next to on screen.** Those two *need* the
+project list to have loaded; Clear needs only `pid`/`portfolioAll`/`profile`, none of which
+depend on that fetch succeeding — this module's own log has now recorded twice that gating a
+handler behind an `await` that can fail is how a control goes silently dead, and a failed
+project fetch must not also take away the one way to clear a stuck or unwanted thread.
+
+⚠️ A `.pmc-clearbtn` module-local rule repeats the exact fix `dashboard.css`'s own
+`.pd-toolbar-right .pd-icon-btn` states for itself: an icon button with no explicit height
+collapses to its bare glyph and rides high in a row of 34px controls. `.pmc-clearbtn` sits
+outside that toolbar class, so it needs the same `height:34px` restated locally rather than
+inheriting it.
+
+**Verified:** `node --check` on `module.js`; CSS braces balanced (39/39) on `module.css`; 0 NUL
+bytes; `node tools/wiring-check.js` — 126/126, 0 version splits; the delete's scope predicate
+read side-by-side against `loadConversation()`'s and confirmed to be the identical clause,
+statement for statement.
+⚠️ **Not verified signed in** — no live login is possible in this environment, so no real
+conversation has actually been cleared; the cascade-delete behaviour is argued from the FK
+declaration in the migration, not observed.
+
+Pormac's own `module.js`/`module.css`/`index.html` → `?v=20260914w`; `assets/js/modules-grid.js`
+→ `?v=20260914w` (2 pages, MODULE_V fallback too — Pormac's `index.html` changed structurally).
+
+---
+
 ## 2026-09-14 — Portfolio scope: Pormac can answer across every project, not just one
 
 Owner: *"in portfolio, pormac should be able to answer based on data from all projects on the
