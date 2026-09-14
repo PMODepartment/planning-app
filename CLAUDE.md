@@ -102,6 +102,67 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-14 (t) — The end-to-end run redone with Auto-trace actually pressed
+
+Owner: *“Let's redo the whole process from scratch. Make sure that the zone and trade sequence is
+followed”*, then: *“the auto-trace logic should be clicked”*. Rebuilt on **DEMO01** (sandbox), owner
+choosing to replace what was there. **No shipped file changed** — this is a live run and what it found.
+
+### ⚠️⚠️ THE EARLIER RUN NEVER PRESSED AUTO-TRACE, AND THE DEFAULTS HIDE THAT
+Measured on the old DEMO01 before touching it: **50 tasks, 19 with no predecessor**, and Mobilization,
+Excavation and Rebar **all starting on the same day** — the project start. The zone graph was empty.
+
+The takt dialog's own defaults are why that is easy to ship: **“start together” is ticked for every
+trade** and **zones-at-once is 2 of 2**. Accept them and every trade begins on day one with both zones
+in parallel — a schedule that looks generated and encodes no sequence at all. Set to one zone at a time
+and each trade one level behind, the same eleven codes produce **48 zone links** where there were 0.
+
+⚠️ **And the setup itself had never been saved.** DEMO01 had **no `schedule_builder` row** — confirmed
+twice, and absent from the list of eleven projects that have one. So `cfg.links` / `cfg.actLinks` from
+that run never existed to be followed. It is saved this time before generating.
+
+### What was rebuilt, and what it proves
+11 class codes → 4 trades × 3 floors × 2 zones → **66 activities, 106 rows**, then a BOQ seeded from
+the programme: **21 lines (11 leaves + 10 headings) and 66 allocations**.
+
+**43 assertions against the LIVE pushed schedule, 0 failing** — not the preview, the rows in the table:
+
+| | checks |
+|---|---|
+| **zone sequence** — Z2 never starts before Z1 finishes, same trade+floor | 12 |
+| **floor sequence** — F(n+1)·Z1 after F(n)·Z1 | 8 |
+| **trade handoff** — GR→SW→ST→AR, each trailing the one before | 3 |
+| **code chain inside a zone** — the declared order, e.g. Masonry→Plastering→Tiling→Ceiling→Painting | 18 |
+| every task carries a floor and a zone · exactly one true start | 2 |
+
+Plus 6 on the hand-off: every leaf line linked, every coded activity linked, no orphan, and the
+provenance honest.
+
+### ⚠️⚠️ A NEW DEFECT THE REBUILD EXPOSED: REGENERATING RE-POINTS STALE LINKS, SILENTLY
+After clearing the schedule and pushing again, of the **50 allocations left behind: 26 were orphaned
+and 24 were NOT — they had silently re-attached to different work.** `boq_allocations.activity_id` is
+text keyed on the planner's Activity ID, deliberately (an import reinserts every row, so a uuid link
+would be destroyed — the `schedule-document-links` rule). But a **regenerated** schedule reissues the
+same generated ID space (`SB100000`, `SB300003`…) to different activities, so a stale link does not
+break, it **lands on whatever now holds that id**. ⚠️ A broken link is visible; this is not — the
+allocation still resolves, still reports a quantity, and names work nobody allocated it to.
+**Reported, not fixed:** the honest answer is probably to clear or revalidate a project's allocations
+when its schedule is regenerated, and that is a decision about somebody's data rather than a bug fix.
+
+### Two older questions closed by the same run
+- ⚠️ **The Elevators question** (2026-09-14 c, *“why is elevator not part of any WBS”*) is
+  **answered**: `AL900001 Passenger Elevator`, `MP900002` and `OT900003` carried `location: {}` —
+  **no location value at all**, the first of the two candidate causes named then and unresolvable
+  without data. They were trades with no floors, falling into the `__all__` bucket. Giving all four
+  trades floors and zones produces **0 activities with no location** this time.
+- **The #5 fix was exercised in production on its first real run:** all 66 allocations read
+  `method=link · matched_by=code · score=0.1 · qty=0`. Before today every one would have claimed
+  `method=manual` with no rung recorded.
+
+⚠️ **Nothing here is a code change**, and the sequence figures are from the live database rather than
+the preview pane. The BOQ lines carry no quantities yet, so nothing rolls up — which is what
+`qty = 0` links mean.
+
 ### 2026-09-14 (s) — #6: the procurement-trade answer stops vanishing when a bill is issued
 
 Owner: *“Let's do #6”* — the latent gate reported in (q). Detail:
