@@ -2,6 +2,104 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## A completion notification when a 360° draft finishes processing — and the background-stall bug that would have made it nearly useless (2026-09-14, later)
+
+Owner: *"once the 360 is done processing, provide push notifications."*
+
+⚠️⚠️ **Nothing in this app runs a push server** — no service-worker `push` event handler in
+`sw.js`, no push subscription, no VAPID keys — confirmed by reading `sw.js` end to end before
+writing anything (it is a pure offline-caching worker, nothing notification-related). So this is
+a **local** notification, fired directly from this tab via the plain browser `Notification` API
+the moment a draft's status settles, not a true background push that could reach the planner
+once the tab itself is closed — the draft is already lost the moment the tab closes anyway (the
+session-only draft architecture, shipped earlier the same day), so that limit changes nothing
+about what was actually asked for.
+
+- **`ensurePano360NotifyPermission()`** asks for permission exactly once, from inside
+  `newPano360Draft()` — called synchronously by the click/`onchange` handler that starts a
+  capture (Take video / Upload video / Upload 360° photo), never proactively on page load. Only
+  fires `Notification.requestPermission()` while permission is still genuinely undecided
+  (`'default'`); an already-granted or already-denied answer is left alone.
+- **`notifyPano360Draft(draft, ok)`** fires from the three places a draft's processing actually
+  *settles*, never from the many intermediate progress ticks `touchPano360Draft()` also drives:
+  `finishDraftStitch()` (success, right after `draft.status = 'ready'`) and the `catch` blocks of
+  both `runStitchForDraft()` and `runPhotoForDraft()` (failure). Naming the draft's own
+  description in the body, tagged with the draft's own id (`tag: draft.id` — a second notification
+  for the *same* draft replaces the first rather than stacking a pile of them).
+- ⚠️ **Falls back to a toast only in the one case that would otherwise go completely silent**:
+  permission not granted (or the API not present at all) **and** no review modal currently
+  watching this draft (`!draft.onUpdate`). If a modal *is* open, `paint()` already updates the
+  screen the planner is looking at — piling a toast on top of that would just be noise. If a real
+  OS notification fires, no toast rides along with it either — one signal, not two.
+
+### ⚠️⚠️ The real find: `yieldToUI()` would have frozen the whole pipeline the instant the tab lost focus — exactly when this notification matters most
+
+Read `pano360.js`'s per-frame loops (the homography/RANSAC pass and the per-frame warp pass —
+both `await yieldToUI()` per iteration, the 2026-09-01 fix that breaks the stitch into separate
+browser tasks so a slow phone stays responsive) before assuming the background processing this
+notification reports on actually keeps running once a planner switches away. It didn't:
+
+```js
+function yieldToUI() {
+  return new Promise(function (resolve) {
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(function () { resolve(); });
+    else setTimeout(resolve, 0);
+  });
+}
+```
+
+`requestAnimationFrame` callbacks are **suspended entirely** in a hidden/backgrounded browser tab
+— no paint, no tick, per every browser's own documented behaviour — and every real browser
+defines `requestAnimationFrame`, so the `setTimeout` branch was dead code that could never
+actually run. The planner asking for "notify me once it's done" is, almost by definition, the
+planner who is about to switch away from this tab to do something else while it stitches — and
+switching away is exactly the moment this would have silently frozen the whole pipeline until
+they came back and looked at it again, at which point the notification finishing would have felt
+instant and pointless rather than the point of the feature.
+
+**Fixed by switching to `setTimeout` unconditionally.** `setTimeout` is *throttled* in a hidden
+tab (down to roughly once a second in most browsers), never suspended — slower, but never
+stalled, so a stitch (and the notification at the end of it) keeps making real progress while the
+tab sits in the background. ⚠️ Scoped narrowly: the other three `requestAnimationFrame` call sites
+in this module family (the Pannellum pano viewer's render loop, the markup editor's redraw
+coalescing, the capture flash animation) are all genuinely tied to visible on-screen rendering and
+correctly keep using rAF — this fix touches only the one yield point that exists purely to keep a
+CPU-bound loop from blocking the main thread, with no frame to actually paint.
+
+### Verified
+
+**19 new checks, all genuinely executing the shipped functions** (932 passed total, the same 3
+pre-existing, unrelated failures as before — a PDF page-break assertion + 2 `capture.js` mic/
+audio-flash assertions, confirmed unchanged by name): `ensurePano360NotifyPermission()` against a
+new controllable `Notification` stand-in in the test harness across all four states (default →
+requests; granted/denied → does not; the API absent entirely → a no-op, never a throw);
+`notifyPano360Draft()` across success/failure, granted/denied/absent, and modal-open/modal-closed
+— confirming the real title/body/tag a granted notification is given, that a toast fires only in
+the one case with no other feedback, and that it never fires alongside a real notification or a
+still-open modal; the three wiring call sites (`finishDraftStitch` and both catch blocks) each
+confirmed to call `notifyPano360Draft` at the exact line the status settles; and a source
+assertion that `yieldToUI()` no longer references `requestAnimationFrame` at all. ⚠️ **The
+success-path wiring assertion was proven to bite, not just written to pass**: temporarily removing
+the `notifyPano360Draft(draft, true)` call from `finishDraftStitch` and re-running the suite makes
+that one assertion fail (and only that one) — restored afterward, byte-identical to before the
+negative test (diffed to confirm).
+
+⚠️ **Not verified signed in** — no live login is possible in this environment; the Notification
+API's real permission-prompt UX, and whether a real stitch genuinely keeps making progress in a
+backgrounded real browser tab (versus the documented rAF-suspension/setTimeout-throttling
+behaviour this fix is reasoned from), have not been observed on a real device.
+
+`module.js`/`pano360.js`/`index.html?v=` → `20260914b`.
+⚠️ **`MODULE_V` is `20260914d`, not `b` — re-derived twice across a rebase onto a concurrently
+merged PR.** This branch's own two commits (this one and the badge/label fix just before it) each
+picked the next unused letter in sequence (`c`, then `b` was reused as this commit's own local
+module.js/pano360.js token, separate from MODULE_V) — but PR #111 had already merged by the time
+this landed, and rebasing these two follow-up commits onto the then-current `main` found a THIRD,
+concurrently-merged PR had independently bumped `MODULE_V` to `20260914c` in the meantime. `c`
+sorts after this commit's own first attempt (`a`) and after the badge fix's rebased value; `d` is
+what a fresh derivation past all three actually resolves to. `assets/js/modules-grid.js?v=` on
+`dashboard.html`/`modules.html`, and its own fallback literal, all read `20260914d`.
+
 ## The drafts badge is scoped to Gallery, gets a shorter label, and the Description-through-Key-Plan fields were already confirmed to render immediately (2026-09-14)
 
 Owner, off a screenshot of the topbar with the badge label clipped at the viewport edge:
@@ -48,6 +146,9 @@ mechanism already exercised by every other `PHOTO_TOOLS` entry, not newly invent
 `modules-grid.js?v=` (and the `dashboard.html`/`modules.html` `<script>` tags that load it) →
 `20260914a`, since this module's `index.html` itself changed structurally; `module.js`/
 `module.css` are untouched this round and keep their existing tokens.
+⚠️ **This landed after PR #111 had already merged** — restarted from a fresh `main` and rebased
+this commit onto it, which is when `20260914a` collided with a concurrently-merged PR's own bump;
+see the next entry's own note for the re-derivation this forced (final value `20260914d`).
 
 ## 360° upload becomes a session-only draft: stitching runs in the background, nothing is pushed to the database until the planner confirms (2026-09-13, later still)
 

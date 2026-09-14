@@ -257,6 +257,29 @@ const ctx = {
   // path can run inside this sandbox at all; the fake ctx's stroke() doesn't
   // care what it's handed, it just records the call.
   Path2D: function Path2D(d) { this.d = d; },
+  // 2026-09-14: a controllable stand-in for the browser Notification API —
+  // `.permission` and `.requestPermission()`'s resolved value are mutated
+  // directly by individual tests (default/granted/denied), and `ctx.Notification`
+  // can be deleted entirely to model a browser/context where the API doesn't
+  // exist at all (module.js's own `typeof Notification === 'undefined'` guard
+  // is what that's checked against). Every constructed instance is recorded on
+  // `.__created` so a test can assert the real title/body/icon/tag it was
+  // given, not just that "something" was shown.
+  Notification: (function () {
+    function FakeNotification(title, opts) {
+      FakeNotification.__created.push({ title: title, opts: opts });
+      this.title = title; this.opts = opts; this.onclick = null;
+      this.close = function () { FakeNotification.__closed = (FakeNotification.__closed || 0) + 1; };
+    }
+    FakeNotification.permission = 'default';
+    FakeNotification.__created = [];
+    FakeNotification.__requestCount = 0;
+    FakeNotification.requestPermission = function () {
+      FakeNotification.__requestCount++;
+      return Promise.resolve(FakeNotification.permission);
+    };
+    return FakeNotification;
+  })(),
   fetch: async () => ({ ok: true, blob: async () => ({}) }),
   prompt: () => 'Typed Works Value',
   AppAuth: { getSB: () => sbStub, requireLogin() {} },
@@ -4583,6 +4606,132 @@ console.log('\n[misc] insert().select() returns the new row id');
        JSON.stringify(P360._featherStops(10, 0.9)), JSON.stringify({ marginPx: 5, stopFrac: 0.5 }));
     eq('featherStops: a tiny frame still gets at least a 4px margin (never zero, which would make the gradient a no-op)',
        P360._featherStops(20, 0.01).marginPx, 4);
+  })();
+
+  console.log('\n[58] 2026-09-14: "once the 360 is done processing, provide push notifications" — a real completion notification via the browser Notification API, plus the background-stall fix that makes it reachable at all');
+
+  // ⚠️⚠️ yieldToUI() switched from requestAnimationFrame to setTimeout — rAF
+  // is SUSPENDED ENTIRELY in a backgrounded/hidden tab, which would freeze
+  // the whole stitching pipeline (and so the completion notification it
+  // ends with) exactly when a planner switches away to another tab/app
+  // while it churns. Asserted on the shipped source, not merely described:
+  // the function body must contain no requestAnimationFrame call at all.
+  (function () {
+    var i = p3js.indexOf('function yieldToUI()');
+    var j = p3js.indexOf('\n  }', i);
+    var body = p3js.slice(i, j > i ? j + 4 : i + 300);
+    ok('yieldToUI() no longer calls requestAnimationFrame at all — only setTimeout, which is throttled (not suspended) in a hidden tab',
+       !/requestAnimationFrame/.test(body) && /setTimeout\(resolve, 0\)/.test(body));
+  })();
+
+  // Genuine execution of ensurePano360NotifyPermission(): requests
+  // permission ONLY when it's genuinely undecided ('default') — never when
+  // the planner has already answered (granted or denied), and never throws
+  // when the Notification API doesn't exist in this browser/context at all.
+  (function () {
+    var N = ctx.Notification;
+    try {
+      N.permission = 'default'; N.__requestCount = 0;
+      PP._ensurePano360NotifyPermission();
+      eq('ensurePano360NotifyPermission: permission is "default" (undecided) — requestPermission() IS called', N.__requestCount, 1);
+
+      N.permission = 'granted'; N.__requestCount = 0;
+      PP._ensurePano360NotifyPermission();
+      eq('…permission already "granted" — requestPermission() is NOT called again', N.__requestCount, 0);
+
+      N.permission = 'denied'; N.__requestCount = 0;
+      PP._ensurePano360NotifyPermission();
+      eq('…permission already "denied" — requestPermission() is NOT called again either', N.__requestCount, 0);
+
+      delete ctx.Notification;
+      var threw = false;
+      try { PP._ensurePano360NotifyPermission(); } catch (e) { threw = true; }
+      ok('…the Notification API not existing at all (typeof Notification === "undefined") is a plain no-op, never a throw', !threw);
+    } finally {
+      ctx.Notification = N; N.permission = 'default'; N.__requestCount = 0;
+    }
+  })();
+
+  // Genuine execution of notifyPano360Draft(): a real OS notification when
+  // granted (with the actual title/body/tag it was given, not just "some
+  // notification"), a toast fallback ONLY when there's no modal open to show
+  // the result live, and no double feedback when a modal IS open.
+  (function () {
+    var N = ctx.Notification;
+    function freshDraft(overrides) {
+      return Object.assign({ id: 'pano360draft_test_1', source: 'video', error: null, onUpdate: null,
+        meta: { desc: '' } }, overrides);
+    }
+    try {
+      // Granted: a real Notification is created, naming the draft's own
+      // description, and NO toast is fired on top of it.
+      N.permission = 'granted'; N.__created = []; ctx.__toasts = [];
+      var d1 = freshDraft({ meta: { desc: 'Roof deck, tower B' } });
+      PP._notifyPano360Draft(d1, true);
+      eq('notifyPano360Draft(ok=true, granted): exactly one real Notification is created', N.__created.length, 1);
+      ok('…titled for success, naming the draft\'s own description in the body, tagged with the draft\'s own id (so a re-notify of the same draft replaces rather than stacks)',
+         N.__created[0].title === '360° photo ready' &&
+         /Roof deck, tower B/.test(N.__created[0].opts.body) &&
+         N.__created[0].opts.tag === d1.id);
+      eq('…and no toast is fired alongside a real OS notification', (ctx.__toasts || []).length, 0);
+
+      N.__created = []; ctx.__toasts = [];
+      var d2 = freshDraft({ error: 'the video moved too fast to match' });
+      PP._notifyPano360Draft(d2, false);
+      ok('notifyPano360Draft(ok=false, granted): titled for failure and the body names the real underlying error, not a generic message',
+         N.__created[0].title === '360° photo failed' &&
+         /the video moved too fast to match/.test(N.__created[0].opts.body));
+
+      // Not granted (denied) AND no modal open on this draft (onUpdate is
+      // null) — the one case with no other feedback at all, so it degrades
+      // to a toast rather than going completely silent.
+      N.permission = 'denied'; N.__created = []; ctx.__toasts = [];
+      var d3 = freshDraft({ meta: { desc: 'Lobby walkthrough' } });
+      PP._notifyPano360Draft(d3, true);
+      eq('notifyPano360Draft(ok=true, denied, no modal open): falls back to a toast — 0 Notifications created', N.__created.length, 0);
+      eq('…exactly one "ok" toast fired, naming the draft', (ctx.__toasts || []).length, 1);
+      ok('…and it names the same description a granted notification would have', /Lobby walkthrough/.test(ctx.__toasts[0][1]) && ctx.__toasts[0][0] === 'ok');
+
+      var d3f = freshDraft({ error: 'stitching failed' });
+      ctx.__toasts = [];
+      PP._notifyPano360Draft(d3f, false);
+      eq('…a failure with no modal open toasts at "error" level', ctx.__toasts[0][0], 'error');
+
+      // Not granted, but a review modal IS open on this draft (onUpdate is
+      // set — the same flag openPano360Review() sets while it's watching a
+      // draft) — paint() already shows the result live, so no toast either.
+      N.permission = 'denied'; ctx.__toasts = [];
+      var d4 = freshDraft({ onUpdate: function () {} });
+      PP._notifyPano360Draft(d4, true);
+      eq('notifyPano360Draft: not granted, but a review modal IS watching this draft (onUpdate set) — no toast either, since paint() already updates what the planner is looking at', (ctx.__toasts || []).length, 0);
+
+      // Unsupported entirely (no Notification global at all) behaves
+      // exactly like "denied" for the purposes of the toast fallback.
+      delete ctx.Notification; ctx.__toasts = [];
+      var d5 = freshDraft({ meta: { desc: 'No Notification API here' } });
+      PP._notifyPano360Draft(d5, true);
+      eq('notifyPano360Draft: the Notification API not existing at all degrades the same way as "denied" — a toast, no throw', (ctx.__toasts || []).length, 1);
+    } finally {
+      ctx.Notification = N; N.permission = 'default'; N.__created = []; ctx.__toasts = [];
+    }
+  })();
+
+  // Wiring: the ONE success path (finishDraftStitch) and BOTH failure paths
+  // (the catch blocks in runStitchForDraft/runPhotoForDraft) each call
+  // notifyPano360Draft exactly once, at the real moment `draft.status`
+  // actually settles — never from any of the many intermediate progress
+  // ticks touchPano360Draft() also drives elsewhere in the same functions.
+  (function () {
+    ok('finishDraftStitch calls notifyPano360Draft(draft, true) right after draft.status is set to \'ready\' — the moment stitching genuinely finishes',
+       /draft\.status = 'ready';\s*\n\s*draft\.progressMsg = null;\s*\n\s*notifyPano360Draft\(draft, true\);/.test(mjs));
+    var runStitchBody = mjs.slice(mjs.indexOf('async function runStitchForDraft'), mjs.indexOf('async function runPhotoForDraft'));
+    var runPhotoBody = mjs.slice(mjs.indexOf('async function runPhotoForDraft'), mjs.indexOf('function open360Upload()'));
+    ok('runStitchForDraft\'s catch block calls notifyPano360Draft(draft, false) — a failed background stitch still notifies, not just a silent draft.status flip',
+       /draft\.error = \(err && err\.message\) \? err\.message : 'an unknown error';\s*\n\s*notifyPano360Draft\(draft, false\);/.test(runStitchBody));
+    ok('runPhotoForDraft\'s catch block does the same for a pre-processed 360° photo upload that fails to read',
+       /draft\.error = \(err && err\.message\) \? err\.message : 'an unknown error';\s*\n\s*notifyPano360Draft\(draft, false\);/.test(runPhotoBody));
+    ok('ensurePano360NotifyPermission() is called from newPano360Draft() — the permission prompt is tied to the click/onchange that actually starts a capture, never asked for proactively on page load',
+       /function newPano360Draft\(source\) \{\s*_pano360DraftSeq\+\+;\s*ensurePano360NotifyPermission\(\);/.test(mjs));
   })();
 
   console.log('\n================ ' + passes + ' passed, ' + fails + ' failed ================');
