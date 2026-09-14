@@ -4210,7 +4210,7 @@
                ⚠️ `.ps-icobtn` is the toolbar's existing convention and already carries the lit
                `.active` state, which is what stops an unlabelled control being unreadable: Progress
                and Stacking light red while you are in them. -->
-          <button class="pd-btn ps-icobtn" id="ps-progressbtn" aria-label="Activity Progress" title="Activity Progress — physical vs planned, as a table"><span data-ico="trendingUp" data-ico-size="15"></span></button>
+          <button class="pd-btn ps-icobtn" id="ps-progressbtn" aria-label="Activity Progress" title="Activity Progress — physical vs planned, as a table"><span data-ico="barChart" data-ico-size="15"></span></button>
           <button class="pd-btn ps-icobtn" id="ps-vstackbtn" aria-label="Vertical Stacking" title="Vertical Stacking — the building model, one cell per zone"><span data-ico="box" data-ico-size="15"></span></button>
           <!-- ⚠️⚠️ THE LSM LAYOUT'S DOOR. It was only reachable through a checkbox in
                the Legend, which is itself hidden until "Colour activities by" is ticked and can be
@@ -15150,8 +15150,18 @@
     // and `sort_order` is what LOC_LEVELS is loaded by. A name test is only a tie-breaker for a
     // project that ordered its levels differently; it must never be the primary rule, because a
     // level legitimately called "Building" or "Block" is still the tower axis.
+    var named = _vsTowerLevelNamedId();
+    return named || LOC_LEVELS[0].id;
+  }
+  /* ⚠⚠ THE LEVEL THAT REALLY IS THE TOWER AXIS, or '' when no level is one. Separate from
+     _vsTowerLevelId because the two answer different questions and conflating them mislabelled a
+     whole project: _vsTowerLevelId must always name SOME level (it drives the band axis, which
+     cannot be empty), so it falls back to LOC_LEVELS[0]. That fallback is right for a breakdown
+     ordered Tower › Level › Zone whose first level is called something else, and WRONG as an
+     answer to "is there a tower level at all?" — on a Floor › Zone project it names the FLOOR. */
+  function _vsTowerLevelNamedId() {
     var named = LOC_LEVELS.find(function (l) { return /tower|building|block/i.test(l.name || ''); });
-    return (named || LOC_LEVELS[0]).id;
+    return named ? named.id : '';
   }
   // ⚠️⚠️ THE STACK'S OWN AXIS — the location levels this view bands and cells by, and it is NOT
   // `LOC_LEVELS`. The TOWER is already expressed twice over: one CARD per tower (the per-tower
@@ -15192,9 +15202,21 @@
      passed through untouched — those projects are byte-identical to before. */
   function _vsTowerOf(r) {
     if (!r || !r.location) return '';
+    /* ⚠⚠ THE RESERVED `tower` KEY IS PREFERRED OVER LOC_LEVELS[0], and that ordering is the
+       whole of this fix. The push (see the `out.tower` note in the location writer) stamps the
+       tower under the literal key ALWAYS and under a level id ONLY when locLevelFor('tower')
+       resolves one — its own comment calls the literal "a fallback the stacking still reads".
+       Reading `LOC_LEVELS[0]` first meant that fallback was never reached on a project with no
+       tower level: DEMO01 is Floor › Zone, so every row answered its FLOOR here and the picker
+       offered "All towers / F1 / F2 / F3" while `location.tower` said "Tower 1" on all 66.
+       ⚠ A level that genuinely IS the tower still wins, so a Tower › Level › Zone project is
+       unchanged — and there the push writes both from the SAME towerLabel() call, so they agree.
+       ⚠ LOC_LEVELS[0] is still the last resort, so an IMPORT that never carried the literal key
+       is byte-identical to before. */
     var id = _vsTowerLevelId();
-    var v = id ? r.location[id] : '';
-    var raw = String(v || r.location[VS_LOC_TOWER] || '').trim();
+    var namedId = _vsTowerLevelNamedId();
+    var v = namedId ? r.location[namedId] : '';
+    var raw = String(v || r.location[VS_LOC_TOWER] || (id ? r.location[id] : '') || '').trim();
     if (!raw) return '';
     return locTowerToken(raw) || raw;
   }
