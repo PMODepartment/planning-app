@@ -2,6 +2,53 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## The drafts badge is scoped to Gallery, gets a shorter label, and the Description-through-Key-Plan fields were already confirmed to render immediately (2026-09-14)
+
+Owner, off a screenshot of the topbar with the badge label clipped at the viewport edge:
+1. *"when adding the 360 media, show already all the input fields from description to key plan."*
+2. *"the 360 drafts button should also appear only in progress photos, not in presentation and floor plan."*
+3. *"instead of 360 drafts, leave only as drafts label. make sure label also does not overflow like in photo attached."*
+
+**Item 1 — already true, checked rather than re-built.** `openPano360Review(draft)`'s
+`.pp-form2` block (Description / Capture date / Works / Location / the BIM pin/key-plan
+field) sits **outside** `#pp360rv-result`, the only part of the modal gated on
+`draft.status`, and is opened immediately after picking a source — before the background
+stitch has produced anything (`startVideoDraft`/`havePhoto` call `openPano360Review(draft)`
+synchronously, then kick off `runStitchForDraft`/`runPhotoForDraft` unawaited). This is the
+same shape `test.js`'s own `[openPano360Review: the metadata fields … render OUTSIDE
+#pp360rv-result …]` assertion already pins down. Re-read end to end and confirmed nothing
+regressed it; no code change was needed for this item.
+
+**Item 2 — the badge was never screen-scoped at all.** `#pp360-drafts`' visibility was driven
+by exactly one thing, `renderPano360DraftsBadge()`'s `hidden` attribute (draft count), with a
+comment explaining it was **deliberately** left out of `PHOTO_TOOLS` — reasoning that held
+back when the module had only Gallery and drafts didn't exist yet, but means a draft captured
+on Gallery went on showing the badge on Presentations and Plans too, since neither of those
+screens ever touched it. `pp360-drafts` is now IN `PHOTO_TOOLS`, so `setScreen()`'s
+`show(PHOTO_TOOLS, isPhotos)` forces `style.display:none` on the other two screens regardless
+of draft count, and clears that inline style back to nothing on Gallery — where the `hidden`
+attribute (still driven purely by the draft count) is the only thing left deciding it. The two
+mechanisms don't fight: `dashboard.css`'s `.pd-btn[hidden]{display:none}` rule means an empty
+`style.display` on Gallery still correctly hides a zero-draft badge.
+
+**Item 3 — the label shortens to "Drafts"; the tooltip (`title`, and the dynamic
+`renderPano360DraftsBadge()` count message) keeps saying "360° draft(s)"** so the context isn't
+lost, just the on-screen text that was overflowing its container. Shortening the label is the
+actual overflow fix here — the button's own CSS (`.pp-syncbtn`, shared with the offline-sync
+pill) sets no width constraint of its own; the topbar row is what runs out of room, and the
+previous "360° drafts" text was the widest thing riding in it next to the sync pill, the
+presence avatars and the user menu.
+
+**Verified**: inline `<script>` in `index.html` still parses (checked with a fresh `new
+Function()` pass over every non-`src` script block); the button/`PHOTO_TOOLS` change is plain
+markup + one array entry, no duplicate ids introduced. ⚠️ **Not verified signed in** — no live
+login is possible in this environment; the screen-gating is the same `show()`/`hidden`-attribute
+mechanism already exercised by every other `PHOTO_TOOLS` entry, not newly invented here.
+
+`modules-grid.js?v=` (and the `dashboard.html`/`modules.html` `<script>` tags that load it) →
+`20260914a`, since this module's `index.html` itself changed structurally; `module.js`/
+`module.css` are untouched this round and keep their existing tokens.
+
 ## 360° upload becomes a session-only draft: stitching runs in the background, nothing is pushed to the database until the planner confirms (2026-09-13, later still)
 
 Owner: *"I still have open items regarding the add 360 photo of the progress photos. at 48 frames
