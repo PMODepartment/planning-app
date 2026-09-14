@@ -4893,7 +4893,18 @@ window.BOQ = (function () {
        and it was what this said. */
     if (!list.length) h += '<tr><td colspan="8" class="cc-mut" style="text-align:center;padding:30px;">' +
       'No line matches “' + esc(filt.q) + '”. Clear the search to see the worklist.</td></tr>';
-    list.slice(0, 300).forEach(function (r) {
+    /* ⚠️⚠️ THE CAP IS NAMED, AND WHAT IT HOLDS BACK IS REPORTED BELOW.
+       This was a bare `.slice(0, 300)`. Measured on a 903-line bill: exactly 300 rows
+       rendered, **Structural Works and Site Works got none at all**, and a line whose activity
+       was waiting to be linked could only be reached by guessing to type in the search box.
+       A planner reading this table saw a complete worklist that was two thirds absent.
+       ⚠️ The cap itself stays — the sort puts unallocated lines first, so the 300 shown
+       ARE the worklist — but a cap whose only signal is that the table stops is one nobody
+       can act on. Same rule the activity picker arrived at: say the number, and say how to
+       reach the rest. */
+    var ALLOC_ROW_CAP = 300;
+    var _capHidden = Math.max(0, list.length - ALLOC_ROW_CAP);
+    list.slice(0, ALLOC_ROW_CAP).forEach(function (r) {
       var al = allocOf(r.id), s = allocSum(al), qOn = hasQty(r), q = Number(r.qty) || 0, rem = q - s;
       // One state per row, read by BOTH the Activities cell and the Method cell - two calls would
       // let the two columns disagree about the same line.
@@ -4964,6 +4975,15 @@ window.BOQ = (function () {
         (canWrite ? '<td class="cc-actcol"><button class="pd-btn" data-split="' + esc(r.id) + '">' + (qOn ? 'Allocate…' : 'Link…') + '</button></td>' : '') +
         '</tr>';
     });
+    /* ⚠️ Emitted INSIDE the table body, after the last row, so it cannot be mistaken for
+       a line of the bill: muted, spanning every column, naming the search as the way through. */
+    if (_capHidden) {
+      h += '<tr><td colspan="8" class="cc-mut" style="text-align:center;padding:14px;">' +
+        'Showing the first ' + ALLOC_ROW_CAP + ' of ' + list.length + ' lines \u2014 ' +
+        '<strong>' + _capHidden + ' more not shown</strong>. ' +
+        'Unallocated lines are listed first; use the search above to reach any line by code or description.' +
+        '</td></tr>';
+    }
     h += '</tbody></table></div>';
     return h;
   }

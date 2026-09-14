@@ -102,6 +102,21 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-14 (m) — The Match-to-schedule worklist hid two thirds of the bill, silently
+
+Detail: [`modules/contracts-claims/CLAUDE.md`](modules/contracts-claims/CLAUDE.md).
+
+- ⚠️⚠️ **900-line bill, 300 rows rendered, no notice of any kind.** Counted live: **Structural
+  Works and Site Works got ZERO rows**, and a line with an activity waiting to be linked was
+  reachable only by guessing to type in the search box.
+- The cap stays (unallocated sorts first, so the 300 shown are the worklist); what it holds back
+  is now stated: *“Showing the first 300 of 903 lines — 603 more not shown”*, with the search named
+  as the way through.
+- The rule the activity picker already reached: *“a cap whose entire signal is a `+` is one a
+  planner cannot act on”*. This one had no signal.
+
+`boq.js` → `?v=20260914m`; `MODULE_V` → `20260914m`.
+
 ### 2026-09-14 (k) — Match names wrote nothing, because the write said "do not overwrite"
 
 Found building a project end to end on DEMO01. Detail:

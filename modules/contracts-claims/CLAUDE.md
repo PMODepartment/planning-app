@@ -1,5 +1,31 @@
 # Module: contracts-claims
 
+## 2026-09-14 (m) — The Match-to-schedule worklist hid two thirds of the bill, silently
+
+Same DEMO01 end-to-end run. With the bill grown to **903 lines** across all seven trades, the
+table rendered **exactly 300 rows and stopped**. No pager, no notice, nothing.
+
+### ⚠️⚠️ IT WAS NOT A SCROLL PROBLEM — WHOLE TRADES WERE ABSENT
+Counted in the live DOM: Allied 7, Architectural 104, General Requirement 120, MEPF 68, Others 1.
+**Structural Works and Site Works rendered ZERO rows.** A line (`255531 Smoke Sensor`) whose
+activity was sitting there waiting to be linked was reachable only by guessing to type in the
+search box — nothing on screen said so, or said the table was incomplete at all.
+
+- The cap **stays at 300**: the sort puts unallocated lines first, so the 300 shown genuinely ARE
+  the worklist, and rendering 903 rows of a bill is not the fix.
+- What was missing is the signal. The last row now reads *“Showing the first 300 of 903 lines —
+  **603 more not shown**. Unallocated lines are listed first; use the search above to reach any
+  line by code or description.”*
+- ⚠️ Emitted INSIDE the body so it cannot read as a line of the bill, muted, spanning every
+  column — the same `colspan="8"` the table's own empty state already uses.
+
+This is the rule the activity picker reached on 2026-09-10 (za2), where the note reads *“a cap
+whose entire signal is a `+` is one a planner cannot act on”*. This table had no signal at all.
+
+### Verified
+`node --check` clean; `wiring-check` 126/0; `dead-hooks` 9 known. Live re-verification follows
+the deploy, on the 903-line DEMO01 bill that produced the finding.
+
 ## 2026-09-14 (k) — Match names wrote nothing, because the write said "do not overwrite"
 
 Found by building a project end to end on DEMO01 — Schedule Setup from scratch, a hand-built BOQ,
