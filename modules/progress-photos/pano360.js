@@ -186,11 +186,23 @@ window.Pano360 = (function () {
   // can ever get — the old code clamped each dimension to 8000px
   // independently, which still allowed a ~256MB buffer, repeated per frame,
   // with nothing forcing the previous one to be freed first.
+  // ⚠️⚠️ 2026-09-14: switched from requestAnimationFrame to setTimeout, on
+  // purpose -- this is a background draft that keeps stitching after the
+  // review modal closes (module.js's PANO360_DRAFTS), and a planner who
+  // switches away to another tab/app while it churns is exactly who the new
+  // "notify me once it's done" completion notification is for. rAF callbacks
+  // are SUSPENDED ENTIRELY in a hidden/backgrounded tab (no paint, no tick,
+  // per every browser's own documented behaviour) -- so every yieldToUI()
+  // call in the loops below would silently FREEZE the whole pipeline the
+  // moment the tab lost visibility, and it would only resume (and the
+  // notification only fire) once the planner came back to look at it, which
+  // defeats the entire point of a background notification. setTimeout is
+  // throttled in a hidden tab (down to roughly once a second in most
+  // browsers), not suspended -- slower, never stalled, so completion (and the
+  // notification) still arrives on its own while the tab is in the
+  // background.
   function yieldToUI() {
-    return new Promise(function (resolve) {
-      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(function () { resolve(); });
-      else setTimeout(resolve, 0);
-    });
+    return new Promise(function (resolve) { setTimeout(resolve, 0); });
   }
 
   function ensureOpenCV() {

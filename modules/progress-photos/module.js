@@ -5720,8 +5720,55 @@ window.ProgressPhotos = (function () {
     for (var i = 0; i < PANO360_DRAFTS.length; i++) if (PANO360_DRAFTS[i].id === id) return PANO360_DRAFTS[i];
     return null;
   }
+  // ⚠️⚠️ 2026-09-14: "once the 360 is done processing, provide push
+  // notifications" -- a draft can take a real while to stitch, and the
+  // whole point of running it in the background is that the planner is free
+  // to close the review modal and go do something else while it churns.
+  // Nothing in this app runs a push server (no service-worker `push` event,
+  // no VAPID keys) -- this is a LOCAL notification, fired directly from
+  // this tab via the plain browser Notification API, not a true background
+  // push that can reach the planner once the tab itself is closed. Asking
+  // for permission is done here, at the moment a capture actually starts
+  // (called synchronously from the click/onchange handler that creates the
+  // draft), rather than proactively on page load -- tying the prompt to the
+  // one action that will actually use it is both the better UX and what
+  // gives the ask its best chance of surviving whatever gesture-adjacent
+  // rules a given browser enforces around it.
+  function ensurePano360NotifyPermission() {
+    if (typeof Notification === 'undefined') return;
+    if (Notification.permission === 'default') {
+      try { Notification.requestPermission(); } catch (e) {}
+    }
+  }
+  // Fired exactly once per draft, at the moment it finishes (finishDraftStitch,
+  // on success) or fails for good (the catch blocks in runStitchForDraft/
+  // runPhotoForDraft) -- never from the many intermediate progress ticks
+  // touchPano360Draft() also drives. Always tries the real OS notification
+  // first; when it's unavailable or not granted, a toast covers the one case
+  // that would otherwise go completely silent -- no review modal open on
+  // this draft to show the result live via paint(). If a modal IS open,
+  // paint() already updates the screen the planner is looking at, so no
+  // extra toast is piled on top of it.
+  function notifyPano360Draft(draft, ok) {
+    var label = (draft.meta && draft.meta.desc) ? draft.meta.desc :
+      (draft.source === 'photo' ? 'Your 360° photo' : 'Your 360° video');
+    var body = ok
+      ? label + ' finished stitching and is ready to review.'
+      : label + ' could not be stitched (' + (draft.error || 'an unknown error') + ').';
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      try {
+        var n = new Notification(ok ? '360° photo ready' : '360° photo failed', {
+          body: body, tag: draft.id, icon: '../../assets/img/favicon-icon.png?v=20260903a'
+        });
+        n.onclick = function () { try { window.focus(); } catch (e) {} try { n.close(); } catch (e) {} };
+      } catch (e) {}
+    } else if (!draft.onUpdate) {
+      UI.toast(body, ok ? 'ok' : 'error');
+    }
+  }
   function newPano360Draft(source) {
     _pano360DraftSeq++;
+    ensurePano360NotifyPermission();
     var d = {
       id: 'pano360draft_' + Date.now() + '_' + _pano360DraftSeq,
       pid: pid,
@@ -5803,6 +5850,7 @@ window.ProgressPhotos = (function () {
     draft.stitchUrl = URL.createObjectURL(res.blob);
     draft.status = 'ready';
     draft.progressMsg = null;
+    notifyPano360Draft(draft, true);
     var img = new Image();
     img.onload = function () {
       captureImageThumbnail(img, function (blob) {
@@ -5844,6 +5892,7 @@ window.ProgressPhotos = (function () {
     } catch (err) {
       draft.status = 'error';
       draft.error = (err && err.message) ? err.message : 'an unknown error';
+      notifyPano360Draft(draft, false);
       touchPano360Draft(draft);
     }
   }
@@ -5856,6 +5905,7 @@ window.ProgressPhotos = (function () {
     } catch (err) {
       draft.status = 'error';
       draft.error = (err && err.message) ? err.message : 'an unknown error';
+      notifyPano360Draft(draft, false);
       touchPano360Draft(draft);
     }
   }
@@ -7229,6 +7279,12 @@ window.ProgressPhotos = (function () {
     // other hook above.
     _mountPannellumViewer: function (container, url, hOverW) { return mountPannellumViewer(container, url, hOverW); },
     _captureViewerThumbnail: function (containerEl, cb) { return captureViewerThumbnail(containerEl, cb); },
-    _startPanoYawPoll: function (viewer, onYawChange) { return startPanoYawPoll(viewer, onYawChange); }
+    _startPanoYawPoll: function (viewer, onYawChange) { return startPanoYawPoll(viewer, onYawChange); },
+    // Test-only hooks for the 360° draft completion notification (2026-09-14)
+    // — both functions are pure enough (touch only `Notification`/`UI.toast`
+    // and their own argument) to expose directly, no closure state to
+    // save/restore.
+    _ensurePano360NotifyPermission: function () { return ensurePano360NotifyPermission(); },
+    _notifyPano360Draft: function (draft, ok) { return notifyPano360Draft(draft, ok); }
   };
 })();
