@@ -102,6 +102,28 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### Pormac's Portfolio checkbox is removed; scope now follows how the module was opened (2026-09-14)
+
+Owner: *"remove the portfolio checkbox. when pormac is in project, discuss only based on project
+data. when pormac is in portfolio, answer based on all projects. no need for the portfolio
+checkbox."* Detail: [`modules/pormac/CLAUDE.md`](modules/pormac/CLAUDE.md).
+
+The checkbox only ever set a *default* and could be flipped back off mid-session; the real signal
+— `#pmc_scope=portfolio` on Pormac's own Portfolio-sidebar link — already existed and was already
+correct, since a module page always renders under `mode:'project'` in `UI.renderNav` regardless of
+which nav family linked to it. Scope is now decided once from that hash on load, with no control
+left that can change it: opened from a project's module grid, Pormac answers from that project
+only; opened from the Portfolio sidebar, it answers across every project the planner can see. The
+project `<select>` is hidden (not merely disabled) in portfolio scope, since there is nothing left
+in the UI that could turn it back off.
+
+**Verified:** `node --check`, brace balance, 0 NUL bytes, `node tools/wiring-check.js` 126/126,
+0 version splits. ⚠️ Not verified signed in.
+
+Pormac's own `module.js`/`module.css`/`index.html` → `?v=20260914zx`;
+`assets/js/modules-grid.js` → `?v=20260914zx` (2 pages, MODULE_V fallback too; re-derived past the
+concurrent `20260914zvs4` after rebasing this branch onto it).
+
 ### 2026-09-14 (z2) — Project Schedule: "out of the toolbar" was not the same request as "out of the way"
 
 Owner, an hour after the legend moved out of the stacking toolbar: *"This should be relocated so that
