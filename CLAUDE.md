@@ -102,6 +102,29 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-14 (h) — The overflow button became the overflow; the legend stops calling a pinned date "today"
+
+Owner, from the live app. Detail:
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+- ⚠️⚠️ **`#ps-tb-more` was not counted while deciding how much to overflow.** It ships `hidden`, so
+  it cost zero width for the whole shed loop; the loop stopped once the row fitted *without* it and
+  revealing it afterwards pushed it to a second row. Measured on the shipped markup with icons
+  hydrated, at true viewport widths: **1366 / 1410 / 1512 all came out 78px (two rows)** with the
+  ⋯ alone on the second, and are **36px (one row)** now. 1280 and 1600+ are unchanged, and each
+  broken width sheds exactly one more control.
+- ⚠️⚠️ **"Data date (today)" was false whenever a date is pinned** — `today()` is
+  `dataDate || wallToday()`, and the owner's screen read "(today)" beside a badge saying 01-Feb-27.
+- ⚠️⚠️ **The first cut of that fix was INERT and the suite caught it:** the label lived in a `var`
+  evaluated at module load, before `loadDataDate()` runs, so the ternary would have read `null` for
+  ever. It is a function now; a negative build restoring the constant fails 3.
+- ⚠️ **Reported, not changed:** the data date is stored per BROWSER (`ps_datadate_<pid>` in
+  localStorage, never written to any table) while driving **62** call sites including the CPM,
+  `plannedPOC`, the lookahead report and threshold monitoring. Two planners on one project can hold
+  different data dates and every derived figure differs, with nothing on screen saying so.
+
+**686 assertions, 0 failing; three negative builds bite (2 / 2 / 3).** `MODULE_V` → `20260914h`.
+
 ### 2026-09-14 — The grouping face names the preset; two identical icon-only buttons separated
 
 Owner, from the live app: the toolbar read *"Tower › … › Unit (4)"* with **LSM** picked, and

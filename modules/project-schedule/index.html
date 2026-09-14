@@ -44658,12 +44658,25 @@
        a control that is narrower is still a control the planner can see — one moved into the
        overflow row is one they have to go looking for. So compact first, shed only if that is not
        enough, and on a wide window neither happens and the names stay. */
+    /* ⚠️⚠️ THE OVERFLOW BUTTON IS MEASURED WHILE DECIDING HOW MUCH TO OVERFLOW.
+       It ships `hidden`, so it used to cost ZERO width for the whole shed loop: the loop stopped
+       the moment the row fitted WITHOUT it, and revealing it afterwards is what pushed it onto a
+       second row — the overflow control itself becoming the overflow. Measured on the shipped
+       markup with the icons hydrated: at 1366 / 1410 / 1512 the row came out 78px (two rows) with
+       the ⋯ alone on the second, shedding only 5 / 3 / 1. A whole band of laptop widths.
+       ⚠️ Hidden FIRST, so a window wide enough to need no overflow still sheds nothing and the
+       button stays away. Shown BEFORE the loop, but only once the row is known not to fit, so every
+       comparison from there on includes its width. */
+    moreBtn.hidden = true;
     if (row.offsetHeight > unit + 8) row.classList.add('ps-tb-compact');
 
-    for (var i = 0; i < _TB_SHED.length && row.offsetHeight > unit + 8; i++) {
-      var el = _tbUnit(_TB_SHED[i]);
-      if (!el || _TB_KEEP[_TB_SHED[i]]) continue;
-      more.appendChild(el);
+    if (row.offsetHeight > unit + 8) {
+      moreBtn.hidden = false;
+      for (var i = 0; i < _TB_SHED.length && row.offsetHeight > unit + 8; i++) {
+        var el = _tbUnit(_TB_SHED[i]);
+        if (!el || _TB_KEEP[_TB_SHED[i]]) continue;
+        more.appendChild(el);
+      }
     }
     var any = more.children.length > 0;
     moreBtn.hidden = !any;
@@ -47033,7 +47046,15 @@
         '— coloured in the Execution Phase, plain outside it ' +
         '<span style="color:var(--pd-red);">(red = % complete)</span></em></span>';
   }
-  var MARKS_LEGEND_HTML =
+  /* ⚠️⚠️ A FUNCTION, NOT A CONSTANT, AND THAT IS THE WHOLE POINT.
+     It used to be `var MARKS_LEGEND_HTML = '...'`, evaluated ONCE at module load -- which is
+     before loadDataDate() reads the pinned date out of localStorage. Any value read here at load
+     time is therefore the value nobody chose yet. Built per render instead, so the data-date
+     label can tell the truth. ⚠️ Keep it a function: turning it back into a constant would
+     silently freeze the label at boot again, and it would look correct on a project with no
+     pinned date. */
+  function marksLegendHTML() {
+    return
       '<span class="lg lg-lsmoff"><span class="lg-swatch lg-sum"></span> WBS summary (roll-up)</span>' +
       // ⚠️ .lg-lsmoff AGAIN, deliberately — and this is a fold, not a removal. It used to show in
       // both views, but in the coloured view the bar sample below ALREADY draws the rail and names
@@ -47051,7 +47072,14 @@
          caption under the key, which is where they were moved on 2026-09-02 for being too long to
          sit inside a chip. Deleting the chip does not touch them. */
       '<span class="lg"><span class="lg-swatch lg-mile"></span> Milestone</span>' +
-      '<span class="lg"><span class="lg-swatch lg-dd"></span> Data date (today)</span>';
+      /* ⚠️⚠️ "(today)" IS ONLY TRUE WHEN NOTHING IS PINNED. `today()` is
+         `dataDate || wallToday()`, so with a data date set this label was a FALSE STATEMENT sitting
+         next to a line drawn months from today — owner, 2026-09-14, reading "Data date (today)"
+         beside a badge saying 01-Feb-27. The badge already carries the value; what the reader is
+         missing is whether it is the wall clock or a date somebody chose. */
+      '<span class="lg"><span class="lg-swatch lg-dd"></span> Data date' +
+        (dataDate ? ' (pinned)' : ' (today)') + '</span>';
+  }
   // ⚠️ The three facts a coloured bar encodes, moved OUT of the Activity chip and onto their own
   // line (see the `.lg-note` rule). The chip carried them as a parenthetical and measured 482px
   // against 77 / 113 / 128 / 136 for every other chip, so the colour key read as an afterthought
@@ -47059,7 +47087,7 @@
   // each fact can be named in full ("where the bar ENDS" rather than "bar =") instead of in the
   // compressed shorthand the chip forced. `lg-lsmon` like the chip it belongs to: it describes a
   // coloured bar and means nothing in the plain view.
-  // ⚠️ SEPARATE FROM MARKS_LEGEND_HTML, and appended LAST — not merely tidier. `flex-basis:100%`
+  // ⚠️ SEPARATE FROM marksLegendHTML(), and appended LAST — not merely tidier. `flex-basis:100%`
   // takes a whole line wherever it sits, so inside the marks block it broke the row between the
   // marks and the trade chips and the one key ran over THREE lines (measured 66px). After the
   // trades it costs exactly one line (42px).
@@ -47240,7 +47268,7 @@
       // always belongs; with them on it describes the plain bars drawn for non-execution work, so it
       // belongs only when one of those is actually on screen. Shipping it unconditionally put an
       // unexplained second Activity chip in a legend that had no plain bar in it.
-      '<div class="ps-actlegend-items">' + plainActChipHTML(cfg.on, _hasPlainBars) + MARKS_LEGEND_HTML +
+      '<div class="ps-actlegend-items">' + plainActChipHTML(cfg.on, _hasPlainBars) + marksLegendHTML() +
         (items ? '<span class="ps-alg-sep"></span>' + items : '') + BAR_NOTE_HTML + '</div>' +
       _lsmRateHTML() + _lsmClashHTML();
     // ⚠️ The fold chevron is INJECTED markup, so Icons.hydrate does not reach it on its own --

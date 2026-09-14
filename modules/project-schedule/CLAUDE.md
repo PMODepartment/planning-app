@@ -22,6 +22,65 @@ headings / 345 distinct** (the repeats are sub-headings like `### Verified`, whi
 
 ---
 
+### The overflow button became the overflow, and a legend that called a pinned date "today" (2026-09-14) — fmlozano
+
+Owner, two reports off the live OPW101 screen: *"More toolbar options spills over to two rows in the
+toolbar. Let's make sure that this doesn't happen in this resolution"*, and *"Can we check the data
+date label what does this cover?"*
+
+### ⚠️⚠️ THE OVERFLOW CONTROL WAS NOT COUNTED WHILE DECIDING HOW MUCH TO OVERFLOW
+`#ps-tb-more` ships `hidden`, and `_tbFit` only revealed it **after** the shed loop had finished. So
+through every comparison in that loop it cost **zero width**: the loop stopped the moment the row
+fitted *without* it, and then revealing it pushed it onto a second row. The control that exists to
+prevent a two-row toolbar was the thing on the second row.
+
+**Measured on the shipped markup, icons hydrated, inside iframes at true viewport widths** (the
+toolbar has 1400px media queries, so a container-width fixture would get the wrong control set):
+
+| viewport | before | after |
+|---|---|---|
+| 1280 | 1 row, 7 shed | 1 row, 7 shed |
+| **1366** | **2 rows (78px), 5 shed** | **1 row (36px), 6 shed** |
+| **1410** | **2 rows (78px), 3 shed** | **1 row (36px), 4 shed** |
+| **1512** | **2 rows (78px), 1 shed** | **1 row (36px), 2 shed** |
+| 1600 / 1920 | 1 row, nothing shed | 1 row, nothing shed |
+
+⚠️ **A band of laptop widths, not one resolution.** ⚠️ **The fix is minimal:** each broken width
+sheds exactly ONE more control, and the wide windows are untouched — the button is hidden for the
+first measurement, so a window that needs no overflow still sheds nothing, and is revealed **before**
+the loop only once the row is known not to fit.
+
+### ⚠️⚠️ AND THE LEGEND CALLED A PINNED DATE "today"
+`today()` is `dataDate || wallToday()`, so *"Data date (today)"* was hardcoded and **false whenever a
+data date is pinned** — the owner's own screen read "(today)" beside a badge saying **01-Feb-27**.
+Now `(pinned)` or `(today)`, decided from `dataDate`.
+
+⚠️⚠️ **THE FIRST CUT OF THAT FIX WAS INERT, AND THE SUITE IS WHAT CAUGHT IT.** The label lived in
+`var MARKS_LEGEND_HTML = '…'` — evaluated **once at module load**, which is before
+`loadDataDate()` reads the pinned date out of localStorage. A ternary there sees `dataDate === null`
+for ever, so the label would still always have said "(today)": a change that looks like a fix,
+renders green, and does nothing. It is a **function** now, called per render, with a comment saying
+why it must stay one. ⚠️ A negative build turning it back into a constant fails **3**.
+
+### What the data date actually covers, since it was asked
+`today()` has **62 call sites** — `recomputeCPM`, `rebuild`, `range`, `plannedPOC` (so SPI, EVM and
+the S-curve), `repLookahead` / `repPackages` / `runReport`, `thrValue`, the `usage*` charts,
+`renderBlList` / `renderScnList` / `_snapSummary`, and `rowMatches`. It is the module's single
+"as of" date.
+⚠️⚠️ **And it is stored per BROWSER, not per project**: `ddKey()` is `'ps_datadate_' + pid` in
+localStorage and **nothing writes it to any table** (checked for insert/update/upsert). So two
+planners on the same project can hold different data dates and every figure above differs between
+them, with nothing on screen saying so. **Reported, not changed** — making it shared is a schema
+decision.
+
+### Verified
+**686 assertions, 0 failing** (675 before). **Three negative builds, all bite:** the reveal moved
+back after the loop fails **2**, a hardcoded "(today)" fails **2**, the load-time constant fails
+**3**. ⚠️ The toolbar's own proof is the measurement above — the pre-fix run on the real file IS
+the negative build. ⚠️ **One of my own assertions crashed instead of failing** (a `[^)]*` that
+cannot cross the `)` inside `' (pinned)'`, then dereferenced a null match) — third time in this
+suite; guarded and the pattern fixed. ⚠️ **Not verified signed in** — no session available.
+
 ### A floor name stands on its tower's own silhouette, not on a world-space guess (2026-09-14 c) — ethanrobles10
 
 Owner, with a screenshot of the site view and two columns of names floating clear of both towers:

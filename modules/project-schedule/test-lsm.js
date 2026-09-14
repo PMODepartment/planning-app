@@ -1503,6 +1503,48 @@ function grpRow(name, anc, acts, idx, field) {
   eq(Object.keys(R.ord[serKey]).length, 3, 'and the ordinals cover every storey');
 })();
 
+/* ====== THE DATA-DATE LEGEND STOPS SAYING "today" WHEN A DATE IS PINNED (2026-09-14) ========== */
+(function () {
+  /* The chip is emitted by marksLegendHTML() - a FUNCTION, because a const froze it at load. */
+  const leg = sliceFn('marksLegendHTML') || '';
+  ok(leg !== '', 'marksLegendHTML is sliceable');
+  /* \u26a0\ufe0f THE SHIPPED EXPRESSION, LIFTED AND RUN - not re-typed. */
+  /* \u26a0\u26a0 The ternary is LIFTED and executed. An earlier cut of this used [^)]*, which cannot
+     cross the ')' inside "' (pinned)'", so the match was null and the next line CRASHED instead of
+     failing -- the third time a check here has done that. Guarded, and the pattern fixed. */
+  const m = leg.match(/\(dataDate \? '[^']*' : '[^']*'\)/);
+  ok(!!m, 'the label is built from dataDate rather than hardcoded');
+  if (!m) { ok(false, 'cannot execute the label expression'); return; }
+  const label = function (dd) {
+    return 'Data date' + new Function('dataDate', 'return ' + m[0])(dd);
+  };
+  eq(label(null), 'Data date (today)', 'no data date pinned -> it really is today');
+  eq(label(new Date(2027, 1, 1)), 'Data date (pinned)',
+     'a pinned data date is NOT called today');
+  ok(!/Data date \(today\)<\/span>/.test(leg),
+     'the hardcoded "(today)" is gone from the legend');
+})();
+
+/* ====== THE TOOLBAR OVERFLOW BUTTON IS COUNTED BEFORE SHEDDING (2026-09-14) =================== */
+(function () {
+  const fit = sliceFn('_tbFit') || '';
+  ok(fit !== '', '_tbFit is sliceable');
+  const iHide = fit.indexOf('moreBtn.hidden = true;');
+  const iShow = fit.indexOf('moreBtn.hidden = false;');
+  const iShed = fit.indexOf('more.appendChild(el);');
+  ok(iHide > -1, 'it measures with the button hidden first');
+  ok(iShow > -1, 'and reveals it explicitly');
+  ok(iHide < iShed, 'the hide happens BEFORE any shedding');
+  /* \u26a0\u26a0 THE ONE THAT MATTERS: the reveal must precede the shed loop, or the loop stops as
+     soon as the row fits WITHOUT the button and revealing it afterwards overflows the row again -
+     the overflow control becoming the overflow. Measured on the shipped markup at 1366/1410/1512:
+     78px (two rows) before, 36px (one row) after. */
+  ok(iShow < iShed, 'and the REVEAL precedes the shed loop, so its width is counted');
+  /* The reveal is inside the not-fitting guard, so a wide window still sheds nothing. */
+  ok(/if \(row\.offsetHeight > unit \+ 8\) \{\s*\n\s*moreBtn\.hidden = false;/.test(fit),
+     'the reveal is gated on the row actually not fitting');
+})();
+
 /* ====== THE TOOLBAR FACE NAMES THE ACTIVE PRESET (owner, 2026-09-14) ========================== */
 (function () {
   const gpSrc = sliceFn('groupPresets') || '';
