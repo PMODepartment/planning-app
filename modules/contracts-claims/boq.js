@@ -6262,6 +6262,12 @@ window.BOQ = (function () {
       openNameMatch: openNameMatch,
       /* The three planners and the dry run that chains them — exported so a suite can assert the
          whole-BOQ preview equals what the three buttons would do, without a database. */
+      /* ⚠️⚠️ THE WRITE PATH, EXPORTED SO THE OVERWRITE FLAG IS TESTABLE BY EXECUTION.
+         `applyTagPlan` hardcoded `false` and the Match-names screen wrote nothing for a year
+         of already-coded activities (2026-09-14 k). That was found by driving the live app,
+         not by a test, because nothing here could reach the function. It can now.
+         ⚠️ Both names exist above; a name here that does NOT is the z6 outage exactly. */
+      applyTagPlan: applyTagPlan, reportTagged: reportTagged, tagRpc: tagRpc,
       planCodeMap: planCodeMap, planTags: planTags, planAllocs: planAllocs,
       lineLinkState: lineLinkState, tradeActivityCounts: tradeActivityCounts,
       clearTradeActs: clearTradeActs, mergePickedParts: mergePickedParts,

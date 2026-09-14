@@ -1,5 +1,62 @@
 # Module: contracts-claims
 
+## 2026-09-14 (p) — The module gets its first committed suite, and it could not see 9 of its own assertions
+
+Owner, after the DEMO01 end-to-end run: *“Continue with boq.js instead”* — a committed test suite for
+this module rather than the next fix. It had **none**: the `suite-namematch` / `suite-retag` runs cited
+in entries since 2026-09-11 were scratch files and are not in the repo, which is why (k) and (m) were
+both found by driving the live app instead of by a test.
+
+New `modules/contracts-claims/test-boq.js` — **41 assertions, 0 failing; three negative builds bite
+(1 / 2 / 2).** Run it with `node modules/contracts-claims/test-boq.js`.
+
+### ⚠️⚠️ THE SUITE REPORTED “PASS: 32” WHILE NINE RESULTS WERE STILL PENDING
+Block 1 — the overwrite flag, **the entire bug this file exists for** — is `async`, and the report was
+top-level and synchronous. So every assertion after its first `await` resolved in a microtask *after*
+the summary had printed: `pass` read **32** at report time and **41** a tick later. They happened to
+pass. Had all nine failed, the run would still have said PASS, and the one defect the suite was written
+to pin would have been the one it could not see.
+
+Measured rather than reasoned: the same file with a `setTimeout` probe prints `PASS: 32` and then
+`AFTER MICROTASKS: pass=41`. Fixed by shape, not by patching the symptom — `block()` is a **registrar**,
+and one runner awaits every block in order before `report()` is called. A block that throws now fails
+with its name rather than aborting the run, which is the trap this repo has recorded twice (a raw-dot
+read of a nested shape; a null regex match) and which a suite this async would have hit next.
+
+### ⚠️⚠️ AND ONE ASSERTION PASSED FOR THE WRONG REASON
+`matchAct(a, c)` takes an **activity object and a code object** and returns `{score, why}` or null. I
+wrote it as two strings compared to a number. Two of the three assertions failed outright — and the
+third, `eq(matchAct('Rebar', 'Rebar Works'), null)`, **passed**: a string has no `.activity_name`, so
+`normKey('')` is `''` and the empty-name guard returns null long before the `an.length > 6` rung it
+claimed to pin is ever reached. **A null for the wrong cause is indistinguishable from a null for the
+right one.** Rewritten against the real shapes, with a 7-character control beside the 5-character case
+so the assertion is provably measuring the length guard and not something else about those strings.
+
+### What the suite pins, and why each one
+- **The overwrite flag reaches the RPC** — default `false`, `true` only when asked, the code and the id
+  array carried, and **no call at all** for a plan entry with no hits. Negative build: reverting
+  `tagRpc(p.code, ids, !!overwrite)` to the hardcoded `false` fails 1.
+- **The shortfall message names the already-coded cause.** Negative build: restoring the RLS-only blame
+  fails 2.
+- **The allocation cap states what it hides.** Negative build: un-naming `ALLOC_ROW_CAP` fails 2.
+- **`normKey` keeps spaces** — asserted *before* anything that depends on it, because 2026-09-11 (ue)
+  records a harness that injected `PDLoc.normKey` (which strips every separator) and so reported that
+  the screen built for this case finds nothing.
+- ⚠️ **It self-tests by reproducing the z6 outage first** — an `_internals` key naming a deleted
+  function, injected into the real `boq.js` in memory — and aborts unless it catches it. A checker that
+  has never failed proves nothing.
+
+### The one shipped change
+`_internals` gains `applyTagPlan`, `reportTagged` and `tagRpc`. ⚠️ Both names in each pair exist above
+that literal — a name here that does **not** is the z6 outage exactly, which is why `wiring-check`
+(126/0) is the gate that matters on this edit rather than `node --check`.
+
+**Verified:** `node --check` clean on both files; **195 functions before and after, 0 lost**;
+`wiring-check` 126/126, 0 version splits; `dead-hooks` 9 known; 0 NUL bytes, pure LF.
+⚠️ **Structural assertions are labelled as such in the file** — the cap notice is emitted inside a
+render function `_internals` does not reach, so those four read the source and say so rather than
+claiming to have executed it. `boq.js` → `?v=20260914p`; `MODULE_V` → `20260914p`.
+
 ## 2026-09-14 (m) — The Match-to-schedule worklist hid two thirds of the bill, silently
 
 Same DEMO01 end-to-end run. With the bill grown to **903 lines** across all seven trades, the

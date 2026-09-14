@@ -102,6 +102,31 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-14 (p) — Contracts & Claims gets its first committed suite, and it could not see 9 of its own assertions
+
+Owner: *“Continue with boq.js instead”*. Detail:
+[`modules/contracts-claims/CLAUDE.md`](modules/contracts-claims/CLAUDE.md).
+
+- ⚠️⚠️ **The module had NO committed test**, which is why (k) and (m) were both found by driving the
+  live app. New `modules/contracts-claims/test-boq.js` — **41 assertions, 0 failing; three negative
+  builds bite (1 / 2 / 2)**.
+- ⚠️⚠️ **It reported “PASS: 32” while nine results were still pending.** Block 1 — the overwrite flag,
+  the entire bug it exists for — is `async`, and the report was synchronous, so every assertion past
+  its first `await` resolved after the summary printed. Measured with a probe: `PASS: 32`, then
+  `AFTER MICROTASKS: pass=41`. They happened to pass; had they all failed the run would still have
+  said PASS. `block()` is a registrar now and one runner awaits each block before reporting.
+- ⚠️⚠️ **And one assertion passed for the wrong reason.** `matchAct` takes two OBJECTS and returns
+  `{score, why}`; I passed strings and compared to a number. Two failed, and the third returned null
+  from the **empty-name** guard rather than the `an.length > 6` guard it claimed to pin — a null for
+  the wrong cause reads exactly like a null for the right one. Rewritten with a 7-character control
+  beside the 5-character case so it provably measures the length guard.
+- The one shipped change is three `_internals` exports (`applyTagPlan`, `reportTagged`, `tagRpc`).
+  ⚠️ A name there that does not exist above it **is** the z6 outage, so `wiring-check` is the gate on
+  this edit, not `node --check`.
+
+`node --check` clean, **195 functions unchanged**, wiring-check 126/0, dead-hooks 9 known, 0 NUL bytes.
+`boq.js` → `?v=20260914p`; `MODULE_V` → `20260914p`.
+
 ### 2026-09-14 (n) — The typical set carries real chart codes, and a strange code is flagged
 
 Owner, after the DEMO01 end-to-end run: *“Both — re-seed and flag”*. Detail:
