@@ -2,6 +2,142 @@
 
 Developer change log for the **progress-photos** module. Update every PR.
 
+## "Add 360° photo": the Take/Upload buttons move above the fields (2026-09-14, later still again)
+
+Owner, off a screenshot of the "Add 360° photo" modal: *"please fix also issue in photo. the upload
+and take buttons should be in the upper parts."* The screenshot showed a date field, View Name, a
+large Key Plan section (a full site photo plus a paragraph of pin/camera-angle instructions), then
+the three source buttons (Take video / Upload video / Upload 360° photo), then Cancel at the very
+bottom — so reaching the one thing most people open this modal to click meant scrolling past an
+image and several sentences of instructions first.
+
+⚠️⚠️ **This is a pure reorder of `openPano360SourcePicker()`'s markup, not a new field or a new
+wiring path.** The three source buttons (`#pp360src-step`) now render immediately after the intro
+hint, **before** the `.pp-form2` metadata block (Description/Capture date/Works/Location/Key Plan
+pin). Nothing about what the buttons DO changed: `startVideoDraft`/`havePhoto` still call
+`captureSrcMeta(draft)` — which reads the `pp360src-*` fields into `draft.meta` — before `m.close()`/
+`openPano360Review(draft)` runs, exactly as before; the fields still carry over into the review
+modal opened afterward whether they were filled in before or after picking a source. A second short
+hint line ("Fill in the details below now, or after picking a source — they carry over either way")
+was added directly above the fields, since with the buttons now first, filling in the fields reads
+as optional-before-picking rather than a form to complete top-to-bottom.
+
+⚠️ The offline fallback (`#pp360src-offline`, shown when `haveVideo()` detects `navigator.onLine ===
+false`) moved along with the button row it belongs to — it still sits directly below
+`#pp360src-step` and is still toggled the same way (`show('pp360src-step', false); show
+('pp360src-offline', true);`).
+
+**Verified**: `node --check` clean; the existing 2026-09-14 assertion pinning `.pp-form2` before
+`#pp360src-step` was updated to assert the reverse (buttons now render first), plus a new dedicated
+assertion recording the reversal and why. Full suite: **958 passed, 3 failed** — the same 3
+pre-existing, unrelated failures this file's own history already documents (a PDF page-break
+assertion + 2 `capture.js` mic/audio-flash assertions), confirmed unchanged by name.
+
+⚠️ **Not verified signed in** — same standing caveat as every entry in this file; no live login is
+possible in this environment. The reorder is proven by asserting the shipped HTML string's element
+order and by the unchanged `captureSrcMeta`/`startVideoDraft`/`havePhoto` wiring, not by a real
+click-through.
+
+`module.js?v=` → `20260914j`; `assets/js/modules-grid.js` (and the `dashboard.html`/`modules.html`
+script tags that load it) → `20260914j` to match, since this module's `index.html` itself changed
+(its own `module.js?v=` line). `pano360.js`/`module.css` are unchanged this round and keep their
+existing tokens.
+
+## 360° stitching optimization: feature detection cached per frame, verified against real OpenCV.js in an isolated headless-Chromium harness (2026-09-14, review pass)
+
+Owner: *"review 360 processing code to improve and optimize."* A genuine review-and-optimize pass
+over `pano360.js`'s stitching pipeline, not a cosmetic or documentation-only change — this repo's
+own standing convention for this exact pipeline is to verify against the *real* OpenCV.js in a real
+browser wherever possible (see every prior `pano360.js` entry above), never a code-review-only claim
+for performance-sensitive WASM/OpenCV code with no way to check correctness.
+
+### The optimization: split feature detection from matching, cache per frame index
+
+⚠️⚠️ **`homographyBetween(prevMat, curMat)` recomputed BOTH frames' ORB features on every single
+call — including the anchor frame, over and over, once per lookahead candidate.** The
+join-search loop in `stitchFrames` (`JOIN_LOOKAHEAD`, up to 5 candidates per anchor-selection step)
+called `homographyBetween(rawMats[anchor], rawMats[c])` for each candidate `c` — so the *same*
+anchor frame's grayscale conversion + ORB `detectAndCompute` ran again for every candidate tried
+against it, and ran a second time once that candidate itself became the next anchor.
+
+Split into three functions:
+- **`computeFeatures(mat)`** — the frame-local half only: grayscale conversion + ORB detection,
+  returning `{kp, desc}` with ownership transferred to the caller (not deleted internally).
+- **`matchAndHomography(prevFeat, curFeat)`** — the per-pair half only: BFMatcher/ratio-test/
+  RANSAC/plausibility-gating, taking two already-computed feature sets.
+- **`homographyBetween(prevMat, curMat)`** — kept as a thin backward-compatible wrapper
+  (`computeFeatures` twice + `matchAndHomography`, cleaning up both feature sets in `finally`) —
+  `stitchFrames` no longer calls it directly, but nothing else needed to change shape.
+
+`stitchFrames` gained a per-stitch-call feature cache, `featuresFor(idx)`, computing each frame's
+features exactly once no matter how many times it's compared (once as a candidate, once as the
+next anchor, and every failed lookahead attempt in between) — cached kp/desc Mats are deleted in
+the function's existing cleanup `finally` block alongside `rawMats`.
+
+⚠️ **Also merged two previously-separate, non-yielding loops** (`cylFrames = frames.map(...)` then
+`rawMats = cylFrames.map(f => cv.imread(f))`) into one `for` loop with `await yieldToUI()` between
+iterations — same number of yield points as before, just one loop building both arrays together
+instead of two passes over the frame list.
+
+### A further optimization was tried, measured, and explicitly rejected
+
+Also tried having `cylindricalWarpFrame` return `{canvas, mat}` and reuse that Mat directly as
+`rawMats[i]`, avoiding a second `cv.imread()` per frame. **Measured against real OpenCV.js in a
+real browser, this produced a genuine, deterministic 1-pixel divergence** in the final mosaic's
+height (608px vs. the original/caching-only variant's 607px) — confirmed non-random by running the
+identical code twice in the same page load (both the original and each variant are internally
+deterministic, never noisy), and isolated specifically to the Mat-reuse trick (not the caching
+change) via a controlled A/B: reverting only the Mat-reuse back to a fresh `cv.imread()` from the
+canvas, while keeping the ORB-caching optimization, reproduced height=607 exactly. The root cause
+was not conclusively identified (most likely candidate: alpha-channel handling through
+`cv.imshow`/`cv.imread`'s canvas round-trip, given the fully-transparent `BORDER_CONSTANT` fill the
+remap uses) and the extra speed benefit over caching-alone was marginal (~2%, measured
+~4.4–4.6s vs. ~4.3–4.4s on the same 48-frame synthetic scene). **Not shipped** — an unexplained
+pixel-level difference in a memory-sensitive, hard-to-debug pipeline is not worth a 2% gain.
+`cylindricalWarpFrame` is unchanged from its original behaviour (deletes its own `dst` Mat, returns
+a bare canvas); the investigation and rejection are documented in its own doc comment so a future
+session doesn't retry the identical thing without knowing it was already measured and rejected.
+
+### Verified against real OpenCV.js, real Chromium, a real synthetic stitch — not a stub
+
+⚠️⚠️ **This sandbox has no network path to the OpenCV.js CDN** (`cdn.jsdelivr.net` is blocked by the
+agent proxy), but `registry.npmjs.org` is reachable, so the exact pinned production version —
+`@techstark/opencv-js@4.10.0-release.1` — was installed from npm instead (same bytes, different
+distribution channel) and driven with this environment's pre-installed Chromium via
+`playwright-core`, using a plain Node static file server — the same isolated-harness methodology
+this file's own history already established for verifying this exact pipeline against a real
+library when the CDN can't be reached. ⚠️ The full `chrome-linux/chrome` binary refuses
+`--headless=old` ("Old Headless mode has been removed"); launched `headless_shell` instead.
+
+A 48-frame synthetic rotating-scene test (textured landmarks, real pinhole-camera-projected frames,
+recorded through a real `MediaRecorder`) was run against the shipped, optimized `pano360.js`
+end-to-end (`Pano360._stitchFrames`) and compared to the pre-optimization code on the identical
+input: **byte-for-byte identical mosaic dimensions (843×607), identical quality ("ok"), identical
+pairsTotal/pairsFallback (47/0)** — confirming the refactor changed nothing about the algorithm's
+output — at roughly **23–30% faster wall-clock time** for the stitching phase. The throwaway
+harness (npm-installed opencv.js, the test scene generator, the Playwright drivers) was fully
+deleted after verification, per this repo's own standing rule against leaving scratch harness
+files behind.
+
+`node --check` clean on `pano360.js`/`test.js`. `test.js` gained 8 new genuinely-passing assertions
+(section covering `computeFeatures`/`matchAndHomography`'s split responsibilities, that
+`stitchFrames`' lookahead loop now calls `matchAndHomography(featuresFor(...))` and never
+`homographyBetween` directly, that every cached feature set is deleted in cleanup, and a dedicated
+assertion recording that the Mat-reuse variant was tried, measured, and deliberately not kept) plus
+one pre-existing structural assertion updated in place to match the refactored call shape. Full
+suite: **957 passed, 3 failed** — the same 3 pre-existing, unrelated failures this file's own
+history already documents (a PDF page-break assertion + 2 `capture.js` mic/audio-flash assertions),
+confirmed unchanged by name before and after this change.
+
+⚠️ **Not verified signed in** — same standing caveat as every entry in this file; no real device
+recording has been run through the optimized pipeline. What's verified is that the shipped,
+optimized code produces byte-identical output to the pre-optimization code on a real OpenCV.js
+build against a real (synthetic) recorded video, at a real measured speedup.
+
+`pano360.js?v=` → `20260914i`; `assets/js/modules-grid.js` (and the `dashboard.html`/`modules.html`
+script tags that load it) → `20260914i` to match, since this module's `index.html` itself changed
+(the `pano360.js?v=` line). `module.js` is unchanged this round and keeps its existing token.
+
 ## A 360° draft now survives a session timeout — persisted per-user in IndexedDB, restarted rather than resumed on reload (2026-09-14, later still again)
 
 Owner: *"since the processing of 360 takes long, the session already times out before completion.
