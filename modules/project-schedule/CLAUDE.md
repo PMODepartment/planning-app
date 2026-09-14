@@ -1,3 +1,71 @@
+## 2026-09-14 (z2) — The key goes under the figure, not one row below the toolbar
+
+Owner, on the caption that shipped an hour earlier: *"This should be relocated so that the toolbars
+are grouped. Legend should be relocated to another location."*
+
+### ⚠️⚠️ THE FIRST MOVE FIXED THE WRONG HALF
+
+`829f488` took the legend out of `.ps-vs-bar` and put it in a `.ps-vs-caption` **directly beneath**
+it. That answered *"a proper location than the toolbar itself"* literally and missed what the
+arrangement was doing: a reader coming down the pane still met **controls, controls, then a line of
+prose** before any content. The header was three bands deep, and a strip parked between the last
+control and the first building reads as part of the header no matter what it is called.
+
+Owner's phrasing has both halves in it — *"so that the toolbars are grouped"* is about what the
+caption was **separating**, not about where it should go.
+
+**So it is a footer.** `.ps-vs-pane` is a flex column, and the caption is now its middle child:
+
+```
+.ps-vs-pane  =  [ .ps-vs-body (the scroller)  |  .ps-vs-caption  |  the timeline card ]
+```
+
+- **A figure's caption goes under the figure.** The key describes the fills and the DONE pills in the
+  buildings; it now sits under them.
+- ⚠️ **Above the timeline card, not below it.** That card is a *control* — drag the handle to walk the
+  programme. Putting the key under it would separate the key from what it keys **by a control**,
+  which is the arrangement this move exists to undo.
+- ⚠️ **Pinned, not scrolled.** It is a sibling of `.ps-vs-body`, not a child, so the buildings scroll
+  past it. Measured: `body.scrollTop` 0 → 400 while the caption moved **0px**. Same reasoning the
+  existing note gives for keeping the toolbars outside the scroller, applied to the other end.
+
+### The rule moved to the other edge
+
+As a header strip the caption deliberately had **no** border — it sat 10px under the pane's own rule
+and a second hairline read as a stack of boxes. As a footer it is the only thing separating a line of
+grey text from the drawing above it, so it now carries `border-top`. Measured `1px solid
+rgb(220,219,219)` light and `1px solid rgba(255,255,255,.12)` dark — the token follows the theme.
+
+⚠️ **`flex:0 0 auto` is load-bearing.** `.ps-vs-pane` is a flex column whose body is `1 1 auto`;
+without it this strip would share the leftover height and the key would stretch down the pane.
+
+### Verified
+
+Harness CSS is the shipped `<style>` block **extracted verbatim** (376,190 bytes), asserted to carry
+every rule under test first. Both themes, 1024px and 1440px, 4 and 11 trades, with and without the
+Towers row and the compare basis:
+
+| | result |
+|---|---|
+| Trades row → control bar | **10px**, every case |
+| control bar → the pane | **10px** — nothing between the toolbars and the content |
+| caption below the stage | **true**, every case |
+| caption above the timeline | **true**, every case |
+| caption a sibling of the bar (i.e. still in the header) | **false**, every case |
+| caption movement while the body scrolls 400px | **0px** |
+| caption lines / overflow / page h-scroll | 1 / none / none |
+
+Static gates green: inline script parses (3.29 MB), CSS braces balance comments-stripped, no
+duplicate ids, no orphaned `return`, `caption` built before use and emitted **exactly once** — a gate
+added because the obvious way to move a string is to paste it and forget to delete the original, and
+the symptom would be the key rendering twice.
+
+⚠️ **Not verified signed in.** Measured on the real CSS with reproduced markup; no live project
+opened. ⚠️ The tick/untick report against `#ps-actlegend` from the previous entry is still open and
+untouched by this change.
+
+`MODULE_V` → `20260914zvs4`, sort-checked against `20260914zvs3`.
+
 ## 2026-09-14 (z) — An even rhythm, a caption instead of a toolbar, and a legend four views thought they were hiding
 
 Owner: *"The Toolbar, Trades, and Model toolbars UI needs more work. There is a bigger space between

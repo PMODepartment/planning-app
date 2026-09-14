@@ -2030,20 +2030,25 @@
     .ps-vs-fz-3dbar { flex:0 0 auto; padding:8px 14px 0; }
     .ps-vs-fz-3dbar .ps-vs3-bar { margin-bottom:0; }
     .ps-vs-legendtxt { min-width:0; white-space:normal; overflow-wrap:break-word; }
-    /* ⚠⚠ A CAPTION IS NOT A TOOLBAR, AND THE LEGEND WAS IN THE WRONG ONE. Owner
-       2026-09-14: *"If we can also relocate the legend and tooltip to a proper location than the
-       toolbar itself."* The split is by KIND, not by length: a toolbar holds what you press, a
-       caption holds what you read. So the fill/DONE key, the compare slip colours and the activity
-       count sit here, under the bar and above the buildings they describe -- and the planned-marker
-       COLOUR PICKER stays in the bar, because demoting a live input to a caption is the same
-       mistake pointing the other way.
-       ⚠ `border-top` deliberately absent: the pane's own rule already draws one 10px above and
-         a second hairline would turn a two-row header into a stack of boxes. The caption is set
-         apart by being smaller and quieter, not by another line.
-       ⚠ `align-items:center` and the same 8px/10px rhythm as `.ps-vs-bar`, so a caption that
+    /* ⚠⚠ A CAPTION IS NOT A TOOLBAR, AND IT IS NOT A HEADER EITHER. Owner 2026-09-14, in
+       two passes: first *"relocate the legend ... to a proper location than the toolbar itself"*,
+       then, when it landed one row below the bar, *"This should be relocated so that the toolbars
+       are grouped. Legend should be relocated to another location."* So it is a FOOTER: it sits at
+       the bottom of `.ps-vs-pane`, under the buildings it describes and above the timeline card.
+       The split is by KIND -- a toolbar holds what you press, a caption holds what you read -- so
+       the fill/DONE key, the compare slip colours and the activity count live here, while the
+       planned-marker COLOUR PICKER stays in the bar, because demoting a live input to a caption is
+       the same mistake pointing the other way.
+       ⚠ `border-top` NOW, where the header version deliberately had none. As a header strip it
+         sat 10px under the pane's own rule and a second hairline read as a stack of boxes; as a
+         footer it is the only thing separating a quiet grey line from the drawing above it.
+       ⚠ `flex:0 0 auto` because `.ps-vs-pane` is a flex COLUMN whose body takes `1 1 auto` --
+         without it this strip would share the leftover height and the key would stretch.
+       ⚠ `align-items:center` and the same 16px column gap as `.ps-vs-bar`, so a caption that
          wraps to two lines still reads as one strip. */
-    .ps-vs-caption { display:flex; align-items:center; flex-wrap:wrap; gap:6px 16px;
-      margin:-2px 0 10px; font-size:var(--pd-fs-sm); color:var(--pd-muted); max-width:100%; }
+    .ps-vs-caption { display:flex; flex:0 0 auto; align-items:center; flex-wrap:wrap; gap:6px 16px;
+      margin:0; padding:8px 2px 2px; border-top:1px solid var(--pd-line);
+      font-size:var(--pd-fs-sm); color:var(--pd-muted); max-width:100%; }
     .ps-vs-caption .ps-vs-note { min-width:0; }
     /* In the caption the legend is no longer competing with controls for the row, so it may take
        the width it needs -- the `flex:0 1 auto` above was a concession to sharing a toolbar. */
@@ -20430,14 +20435,28 @@
     // ⚠️ Towers above trades: the tower is the coarser cut (which BUILDINGS), the trade the finer
     // one (which work inside them), and reading them the other way round is reading the filter
     // backwards.
-    host.innerHTML = twChips + chips + bar + caption + warn + _vsHatchDefs() +
+    /* ⚠⚠ THE TWO TOOLBARS ARE ADJACENT AND NOTHING SITS BETWEEN THEM AND THE BUILDINGS.
+       Owner 2026-09-14, on the caption one row under the bar: *"This should be relocated so that the
+       toolbars are grouped. Legend should be relocated to another location."* The first move took
+       the key out of `.ps-vs-bar` and put it directly beneath -- which fixed the wrong half. A
+       reader coming down the pane still met controls, controls, then a line of prose before any
+       content, so the header was three bands deep and the key still read as part of it.
+       ⚠ `caption` is now emitted INSIDE `.ps-vs-pane`, after `.ps-vs-body` -- see below. */
+    host.innerHTML = twChips + chips + bar + warn + _vsHatchDefs() +
       // ⚠️ The toolbar and the chips sit OUTSIDE the scroller on purpose — scrolling the buildings
       // must never take the controls that drive them off screen.
       '<div class="ps-vs-pane"><div class="ps-vs-body">' +
       '<div class="ps-vs-stage"><div class="ps-vs-viewport"><div class="ps-vs-grid' + (_vsAnim === 'in' ? ' ps-vs-in' : _vsAnim === 'fade' ? ' ps-vs-fade' : '') + '">' + towers + '</div></div>' +
       // The magnifier panel is part of the same flex row, so the towers narrow to make room for it
       // rather than being covered by it.
-      '</div></div>' + _vsTimelineHTML(acts) + '</div>';
+      /* ⚠⚠ THE KEY GOES WHERE A FIGURE'S CAPTION GOES: UNDER THE FIGURE. `.ps-vs-pane` is a
+         flex column of [body, caption, timeline], so this strip is pinned at the foot of the stage
+         and the buildings scroll past it rather than taking it with them -- the same reasoning the
+         note above gives for keeping the toolbars outside the scroller, applied to the other end.
+         ⚠ Above the timeline card, not below it. The card is a CONTROL (drag the handle to walk
+           the programme); putting a legend under it would separate the key from the thing it keys
+           by a control, which is the arrangement this move exists to undo. */
+      '</div></div>' + caption + _vsTimelineHTML(acts) + '</div>';
     // Stagger the entrance, capped: past the 8th tower the delay stops growing, so a trade-heavy
     // project still settles in well under half a second instead of trickling in.
     if (_vsAnim === 'in') {

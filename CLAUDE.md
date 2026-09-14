@@ -102,6 +102,26 @@ developer, plug into one shared shell.
 
 ## Changelog
 
+### 2026-09-14 (z2) — Project Schedule: "out of the toolbar" was not the same request as "out of the way"
+
+Owner, an hour after the legend moved out of the stacking toolbar: *"This should be relocated so that
+the toolbars are grouped. Legend should be relocated to another location."* Module detail in
+[`modules/project-schedule/CLAUDE.md`](modules/project-schedule/CLAUDE.md).
+
+- ⚠️⚠️ **A strip parked between the last control and the first pixel of content still reads as
+  header.** The previous pass took the legend out of the control bar and dropped it one row below —
+  which satisfies *"not in the toolbar"* and changes nothing a reader experiences: the pane still
+  opened with controls, controls, prose, content. **Read the whole sentence for what the item is
+  separating**, not just for where it is being moved from. The fix is a footer under the figure, the
+  place a caption has always gone.
+- ⚠️ **Pin a caption by parentage, not by CSS.** Making it a sibling of the scroller rather than a
+  child is what keeps it still while the content scrolls — no `position:sticky`, nothing to fight.
+  Verify it by scrolling and asserting the caption moved **0px**, not by reading the rule.
+- ⚠️ **In a flex column, a footer needs `flex:0 0 auto`** or it shares the leftover height with the
+  body and stretches.
+
+`MODULE_V` → `20260914zvs4`, sort-checked against `20260914zvs3`.
+
 ### 2026-09-14 (z) — Project Schedule: a dead selector four views were hiding nothing with, and a `return` that returned nothing
 
 Owner, on the stacking view: *"Is this supposed to be shown when vertical stacking is opened?"*, plus
